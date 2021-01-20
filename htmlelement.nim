@@ -15,7 +15,7 @@ type
     NODE_ELEMENT, NODE_TEXT, NODE_COMMENT
   DisplayType* =
     enum
-    DISPLAY_INLINE, DISPLAY_BLOCK, DISPLAY_SINGLE, DISPLAY_NONE
+    DISPLAY_INLINE, DISPLAY_BLOCK, DISPLAY_SINGLE, DISPLAY_LIST_ITEM, DISPLAY_NONE
   InputType* =
     enum
     INPUT_BUTTON, INPUT_CHECKBOX, INPUT_COLOR, INPUT_DATE, INPUT_DATETIME_LOCAL,
@@ -33,10 +33,9 @@ type
   HtmlText* = ref HtmlTextObj
   HtmlTextObj = object
     parent*: HtmlElement
-    text*: string
-    formattedText*: string
   HtmlElement* = ref HtmlElementObj
   HtmlElementObj = object
+    node*: HtmlNode
     id*: string
     name*: string
     value*: string
@@ -44,19 +43,17 @@ type
     hidden*: bool
     display*: DisplayType
     innerText*: string
-    formattedElem*: string
-    rawElem*: string
     textNodes*: int
     margintop*: int
     marginbottom*: int
     marginleft*: int
     marginright*: int
     margin*: int
-    pad*: bool
     bold*: bool
     italic*: bool
     underscore*: bool
-    parentElement*: HtmlElement
+    islink*: bool
+    parent*: HtmlElement
     case htmlTag*: HtmlTag
     of tagInput:
       itype*: InputType
@@ -66,8 +63,6 @@ type
       selected*: bool
     else:
       discard
-
-type
   HtmlNode* = ref HtmlNodeObj
   HtmlNodeObj = object
     case nodeType*: NodeType
@@ -77,12 +72,25 @@ type
       text*: HtmlText
     of NODE_COMMENT:
       comment*: string
+    rawtext*: string
+    fmttext*: string
     x*: int
     y*: int
     width*: int
     height*: int
     openblock*: bool
     closeblock*: bool
+    next*: HtmlNode
+    prev*: HtmlNode
+
+func nodeAttr*(node: HtmlNode): HtmlElement =
+  case node.nodeType
+  of NODE_TEXT: return node.text.parent
+  of NODE_ELEMENT: return node.element
+  else: assert(false)
+
+func displayed*(node: HtmlNode): bool =
+  return node.rawtext.len > 0 and node.nodeAttr().display != DISPLAY_NONE
 
 func isTextNode*(node: HtmlNode): bool =
   return node.nodeType == NODE_TEXT
@@ -90,51 +98,17 @@ func isTextNode*(node: HtmlNode): bool =
 func isElemNode*(node: HtmlNode): bool =
   return node.nodeType == NODE_ELEMENT
 
-func getFormattedLen*(htmlText: HtmlText): int =
-  return htmlText.formattedText.strip().len
-
-func getFormattedLen*(htmlElem: HtmlElement): int =
-  return htmlElem.formattedElem.len
-
-func getFormattedLen*(htmlNode: HtmlNode): int =
-  case htmlNode.nodeType
-  of NODE_TEXT: return htmlNode.text.getFormattedLen()
-  of NODE_ELEMENT: return htmlNode.element.getFormattedLen()
-  else:
-    assert(false)
-    return 0
-
-func getRawLen*(htmlText: HtmlText): int =
-  return htmlText.text.len
-
-func getRawLen*(htmlElem: HtmlElement): int =
-  return htmlElem.rawElem.len
+func getFmtLen*(htmlNode: HtmlNode): int =
+  return htmlNode.fmttext.len
 
 func getRawLen*(htmlNode: HtmlNode): int =
-  case htmlNode.nodeType
-  of NODE_TEXT: return htmlNode.text.getRawLen()
-  of NODE_ELEMENT: return htmlNode.element.getRawLen()
-  else:
-    assert(false)
-    return 0
+  return htmlNode.rawtext.len
 
 func visibleNode*(node: HtmlNode): bool =
   case node.nodeType
   of NODE_TEXT: return true
   of NODE_ELEMENT: return true
   else: return false
-
-func displayed*(elem: HtmlElement): bool =
-  return elem.display != DISPLAY_NONE and (elem.getFormattedLen() > 0 or elem.htmlTag == tagBr) and not elem.hidden
-
-func displayed*(node: HtmlNode): bool =
-  if node.isTextNode():
-    return node.getRawLen() > 0
-  elif node.isElemNode():
-    return node.element.displayed()
-
-func empty*(elem: HtmlElement): bool =
-  return elem.textNodes == 0 or not elem.displayed()
 
 func toInputType*(str: string): InputType =
   case str
@@ -170,21 +144,23 @@ func toInputSize*(str: string): int =
 func getInputElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
   assert(htmlElement.htmlTag == tagInput)
   htmlElement.itype = xmlElement.attr("type").toInputType()
+  if htmlElement.itype == INPUT_HIDDEN:
+    htmlElement.hidden = true
   htmlElement.size = xmlElement.attr("size").toInputSize()
   htmlElement.value = xmlElement.attr("value")
-  htmlElement.pad = true
   return htmlElement
 
 func getAnchorElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
   assert(htmlElement.htmlTag == tagA)
   htmlElement.href = xmlElement.attr("href")
+  htmlElement.islink = true
   return htmlElement
 
 func getSelectElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
   assert(htmlElement.htmlTag == tagSelect)
   for item in xmlElement.items:
     if item.kind == xnElement:
-      if item.tag == "option" and item.attr("value") != "":
+      if item.tag == "option":
         htmlElement.value = item.attr("value")
         break
   htmlElement.name = xmlElement.attr("name")
@@ -193,7 +169,7 @@ func getSelectElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElemen
 func getOptionElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
   assert(htmlElement.htmlTag == tagOption)
   htmlElement.value = xmlElement.attr("value")
-  if htmlElement.parentElement.value != htmlElement.value:
+  if htmlElement.parent.value != htmlElement.value:
     htmlElement.hidden = true
   return htmlElement
 
@@ -201,53 +177,69 @@ func getFormattedInput(htmlElement: HtmlElement): string =
   case htmlElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
     let valueFit = fitValueToSize(htmlElement.value, htmlElement.size)
-    return "[" & valueFit.addAnsiStyle(styleUnderscore).addAnsiFgColor(fgRed) & "]"
-  of INPUT_SUBMIT: return ("[" & htmlElement.value & "]").addAnsiFgColor(fgRed)
+    return valueFit.addAnsiStyle(styleUnderscore).buttonStr()
+  of INPUT_SUBMIT:
+    return htmlElement.value.buttonStr()
   else: discard
 
 func getRawInput(htmlElement: HtmlElement): string =
   case htmlElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
     return "[" & htmlElement.value.fitValueToSize(htmlElement.size) & "]"
-  of INPUT_SUBMIT: return "[" & htmlElement.value & "]"
+  of INPUT_SUBMIT:
+    return "[" & htmlElement.value & "]"
   else: discard
 
-func getRawElem*(htmlElement: HtmlElement): string =
-  case htmlElement.htmlTag
-  of tagInput: return htmlElement.getRawInput()
-  of tagOption: return "[]"
-  else: return ""
+func getParent*(htmlElement: HtmlElement, htmlTag: HtmlTag): HtmlElement =
+  result = htmlElement
+  while result != nil and result.htmlTag != htmlTag:
+    result = result.parent
 
-func getFormattedElem*(htmlElement: HtmlElement): string =
-  case htmlElement.htmlTag
-  of tagInput: return htmlElement.getFormattedInput()
-  else: return ""
-
-func getRawText*(htmlText: HtmlText): string =
-  if htmlText.parent.htmlTag != tagPre:
-    result = htmlText.text.replace(re"\n").strip()
+func getRawText*(htmlNode: HtmlNode): string =
+  if htmlNode.isElemNode():
+    case htmlNode.element.htmlTag
+    of tagInput: return htmlNode.element.getRawInput()
+    else: return ""
+  elif htmlNode.isTextNode():
+    if htmlNode.text.parent.htmlTag != tagPre:
+      result = htmlNode.rawtext.replace(re"\n")
+      if result.strip().len > 0:
+        if htmlNode.nodeAttr().display != DISPLAY_INLINE:
+          if htmlNode.prev == nil or htmlNode.prev.nodeAttr().display != DISPLAY_INLINE:
+            result = result.strip(true, false)
+          if htmlNode.next == nil or htmlNode.next.nodeAttr().display != DISPLAY_INLINE:
+            result = result.strip(false, true)
+      else:
+        result = ""
+    else:
+      result = htmlNode.rawtext.strip()
+    if htmlNode.text.parent.htmlTag == tagOption:
+      result = "[" & result & "]"
   else:
-    result = htmlText.text
+    assert(false)
 
-  if htmlText.parent.htmlTag == tagOption:
-    result = "[" & result & "]"
+func getFmtText*(htmlNode: HtmlNode): string =
+  if htmlNode.isElemNode():
+    case htmlNode.element.htmlTag
+    of tagInput: return htmlNode.element.getFormattedInput()
+    else: return ""
+  elif htmlNode.isTextNode():
+    result = htmlNode.rawtext
+    if htmlNode.text.parent.islink:
+      result = result.addAnsiFgColor(fgBlue)
+      let parent = htmlNode.text.parent.getParent(tagA)
+      if parent != nil and parent.selected:
+        result = result.addAnsiStyle(styleUnderscore)
 
-func getFormattedText*(htmlText: HtmlText): string =
-  result = htmlText.text
-  case htmlText.parent.htmlTag
-  of tagA:
-    result = result.addAnsiFgColor(fgBlue)
-    if htmlText.parent.selected:
+    if htmlNode.text.parent.htmlTag == tagOption:
+      result = result.addAnsiFgColor(fgRed)
+
+    if htmlNode.text.parent.bold:
+      result = result.addAnsiStyle(styleBright)
+    if htmlNode.text.parent.italic:
+      result = result.addAnsiStyle(styleItalic)
+    if htmlNode.text.parent.underscore:
       result = result.addAnsiStyle(styleUnderscore)
-  of tagOption: result = result.addAnsiFgColor(fgRed)
-  else: discard
-
-  if htmlText.parent.bold:
-    result = result.addAnsiStyle(styleBright)
-  if htmlText.parent.italic:
-    result = result.addAnsiStyle(styleItalic)
-  if htmlText.parent.underscore:
-    result = result.addAnsiStyle(styleUnderscore)
 
 proc newElemFromParent(elem: HtmlElement, parentOpt: Option[HtmlElement]): HtmlElement =
   if parentOpt.isSome:
@@ -263,8 +255,8 @@ proc newElemFromParent(elem: HtmlElement, parentOpt: Option[HtmlElement]): HtmlE
     #elem.marginbottom = parent.marginbottom
     #elem.marginleft = parent.marginleft
     #elem.marginright = parent.marginright
-    elem.parentElement = parent
-  elem.pad = false
+    elem.parent = parent
+    elem.islink = parent.islink
 
   return elem
 
@@ -278,9 +270,10 @@ proc getHtmlElement*(xmlElement: XmlNode, inherit: Option[HtmlElement]): HtmlEle
     htmlElement.display = DISPLAY_INLINE
   elif htmlElement.htmlTag in BlockTags:
     htmlElement.display = DISPLAY_BLOCK
-    htmlElement.pad = true
   elif htmlElement.htmlTag in SingleTags:
     htmlElement.display = DISPLAY_SINGLE
+  elif htmlElement.htmlTag ==  tagLi:
+    htmlElement.display = DISPLAY_LIST_ITEM
   else:
     htmlElement.display = DISPLAY_NONE
 
@@ -316,25 +309,25 @@ proc getHtmlElement*(xmlElement: XmlNode, inherit: Option[HtmlElement]): HtmlEle
     if child.kind == xnText and child.text.strip().len > 0:
       htmlElement.textNodes += 1
   
-  htmlElement.rawElem = htmlElement.getRawElem()
-  htmlElement.formattedElem = htmlElement.getFormattedElem()
   return htmlElement
 
-proc getHtmlText*(text: string, parent: HtmlElement): HtmlText =
-  var textNode = HtmlText(parent: parent, text: text)
-  textNode.text = textNode.getRawText()
-  textNode.formattedText = textNode.getFormattedText()
-  return textNode
+proc getHtmlText*(parent: HtmlElement): HtmlText =
+  return HtmlText(parent: parent)
 
 proc getHtmlNode*(xmlElement: XmlNode, parent: Option[HtmlElement]): HtmlNode =
   case kind(xmlElement)
   of xnElement:
-    return HtmlNode(nodeType: NODE_ELEMENT, element: getHtmlElement(xmlElement, parent))
+    result = HtmlNode(nodeType: NODE_ELEMENT, element: getHtmlElement(xmlElement, parent))
+    result.element.node = result
   of xnText:
     assert(parent.isSome)
-    return HtmlNode(nodeType: NODE_TEXT, text: getHtmlText(xmlElement.text, parent.get()))
+    result = HtmlNode(nodeType: NODE_TEXT, text: getHtmlText(parent.get()))
+    result.rawtext = xmlElement.text
   of xnComment:
-    return HtmlNode(nodeType: NODE_COMMENT, comment: xmlElement.text)
+    result = HtmlNode(nodeType: NODE_COMMENT, comment: xmlElement.text)
   of xnCData:
-    return HtmlNode(nodeType: NODE_TEXT, text: getHtmlText(xmlElement.text, parent.get()))
+    result = HtmlNode(nodeType: NODE_TEXT, text: getHtmlText(parent.get()))
+    result.rawtext = xmlElement.text
   else: assert(false)
+  result.rawtext = result.getRawText()
+  result.fmttext = result.getFmtText()

@@ -9,7 +9,7 @@ template print*(s: varargs[string, `$`]) =
   for x in s:
     stdout.write(x)
 
-template eprint*(s: varargs[string, `$`]) =
+template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect).}:
   var a = false
   for x in s:
     if not a:

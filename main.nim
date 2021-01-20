@@ -19,7 +19,6 @@ proc loadLocalPage*(url: string): string =
 
 proc loadPageUri(uri: Uri, currentcontent: XmlNode): XmlNode =
   var moduri = uri
-  var page: XmlNode
   moduri.anchor = ""
   if uri.scheme == "" and uri.path == "" and uri.anchor != "" and currentcontent != nil:
     return currentcontent
@@ -38,11 +37,12 @@ proc main*() =
     eprint "Failed to read keymap, falling back to default"
     parseKeymap(keymapStr)
   let attrs = getTermAttributes()
-  var buffer = newBuffer(attrs)
-  var url = parseUri(paramStr(1))
+  let buffer = newBuffer(attrs)
+  let uri = parseUri(paramStr(1))
   buffers.add(buffer)
   buffer.setLocation(uri)
   buffer.htmlSource = loadPageUri(uri, buffer.htmlSource)
+  buffer.renderHtml()
   var lastUri = uri
   while displayPage(attrs, buffer):
     statusMsg("Loading...", buffer.height)
@@ -50,9 +50,9 @@ proc main*() =
     lastUri.anchor = ""
     newUri.anchor = ""
     if $lastUri != $newUri:
-      buffer.htmlSource = loadPageUri(buffer.location, buffer.htmlSource)
       buffer.clearBuffer()
-    else
+      buffer.htmlSource = loadPageUri(buffer.location, buffer.htmlSource)
+      buffer.renderHtml()
     lastUri = newUri
 
 #waitFor loadPage("https://lite.duckduckgo.com/lite/?q=hello%20world")

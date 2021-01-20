@@ -28,6 +28,7 @@ type
     fromY*: int
     nodes*: seq[HtmlNode]
     links*: seq[HtmlNode]
+    clickables*: seq[HtmlNode]
     elements*: seq[HtmlNode]
     idelements*: Table[string, HtmlNode]
     selectedlink*: HtmlNode
@@ -84,7 +85,7 @@ func atPercentOf*(buffer: Buffer): int =
   return (100 * buffer.cursorY) div buffer.lastLine()
 
 func visibleText*(buffer: Buffer): string = 
-  return buffer.text.substr(buffer.lines[buffer.fromY], buffer.lines[buffer.lastVisibleLine() - 1])
+  return buffer.text.substr(buffer.lines[buffer.fromY], buffer.lines[buffer.lastVisibleLine() - 1] - 2)
 
 func lastNode*(buffer: Buffer): HtmlNode =
   return buffer.nodes[^1]
@@ -95,13 +96,17 @@ func onNewLine*(buffer: Buffer): bool =
 func onSpace*(buffer: Buffer): bool =
   return buffer.text.len > 0 and buffer.text[^1] == ' '
 
+func cursorOnNode*(buffer: Buffer, node: HtmlNode): bool =
+    return buffer.cursorY >= node.y and buffer.cursorY < node.y + node.height and
+           buffer.cursorX >= node.x and buffer.cursorX < node.x + node.width
+
 func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
   if buffer.selectedlink != nil:
     return some(buffer.selectedlink.text.parent)
   for node in buffer.nodes:
-    if node.nodeType == NODE_ELEMENT:
-      if node.element.formattedElem.len > 0:
-        if buffer.cursorY >= node.y and buffer.cursorY <= node.y + node.height and buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width: return some(node.element)
+    if node.isElemNode():
+      if node.getFmtLen() > 0:
+        if buffer.cursorOnNode(node): return some(node.element)
   return none(HtmlElement)
 
 func cursorAt*(buffer: Buffer): int =
@@ -113,9 +118,6 @@ func cursorChar*(buffer: Buffer): char =
 func canScroll*(buffer: Buffer): bool =
   return buffer.lastLine() > buffer.height
 
-func cursorOnNode*(buffer: Buffer, node: HtmlNode): bool =
-    return buffer.cursorY >= node.y and buffer.cursorY <= node.y + node.height and buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width
-
 func getElementById*(buffer: Buffer, id: string): HtmlNode =
   if buffer.idelements.hasKey(id):
     return buffer.idelements[id]
@@ -123,15 +125,28 @@ func getElementById*(buffer: Buffer, id: string): HtmlNode =
 
 proc findSelectedNode*(buffer: Buffer): Option[HtmlNode] =
   for node in buffer.nodes:
-    if node.getFormattedLen() > 0 and node.displayed():
+    if node.getFmtLen() > 0 and node.displayed():
       if buffer.cursorY >= node.y and buffer.cursorY <= node.y + node.height and buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width:
         return some(node)
   return none(HtmlNode)
 
 proc addNode*(buffer: Buffer, htmlNode: HtmlNode) =
   buffer.nodes.add(htmlNode)
-  if htmlNode.isTextNode() and htmlNode.text.parent.htmlTag == tagA:
+
+  if htmlNode.isTextNode() and htmlNode.text.parent.islink:
     buffer.links.add(htmlNode)
+
+  if htmlNode.isElemNode():
+    case htmlNode.element.htmlTag
+    of tagInput, tagOption:
+      if not htmlNode.element.hidden:
+        buffer.clickables.add(htmlNode)
+    else: discard
+  elif htmlNode.isTextNode():
+    if htmlNode.text.parent.islink:
+      let anchor = htmlNode.text.parent.getParent(tagA)
+      buffer.clickables.add(anchor.node)
+
   if htmlNode.isElemNode():
     buffer.elements.add(htmlNode)
     if htmlNode.element.id != "":
@@ -170,6 +185,7 @@ proc clearText*(buffer: Buffer) =
 proc clearNodes*(buffer: Buffer) =
   buffer.nodes.setLen(0)
   buffer.links.setLen(0)
+  buffer.clickables.setLen(0)
   buffer.elements.setLen(0)
   buffer.idelements.clear()
 
@@ -181,6 +197,23 @@ proc clearBuffer*(buffer: Buffer) =
   buffer.fromX = 0
   buffer.fromY = 0
   buffer.hovertext = ""
+
+proc scrollTo*(buffer: Buffer, y: int): bool =
+  if y == buffer.fromY:
+    return false
+  buffer.fromY = min(max(buffer.lastLine() - buffer.height + 1, 0), y)
+  buffer.cursorY = min(max(buffer.fromY, buffer.cursorY), buffer.fromY + buffer.height)
+  return true
+
+proc cursorTo*(buffer: Buffer, x: int, y: int): bool =
+  buffer.cursorY = min(max(y, 0), buffer.lastLine())
+  if buffer.fromY > buffer.cursorY:
+    buffer.fromY = min(buffer.cursorY, buffer.lastLine() - buffer.height)
+  elif buffer.fromY + buffer.height < buffer.cursorY:
+    buffer.fromY = max(buffer.cursorY - buffer.height, 0)
+  buffer.cursorX = min(max(x, 0), buffer.currentRawLineLength())
+  buffer.fromX = min(max(buffer.currentRawLineLength() - buffer.width + 1, 0), 0) #TODO
+  return true
 
 proc cursorDown*(buffer: Buffer): bool =
   if buffer.cursorY < buffer.lastLine():
@@ -302,44 +335,23 @@ proc cursorPrevWord*(buffer: Buffer): bool =
       return false
     discard buffer.cursorLeft()
 
-iterator revNodes*(buffer: Buffer): HtmlNode {.inline.} =
-  var i = buffer.nodes.len - 1
+iterator revclickables*(buffer: Buffer): HtmlNode {.inline.} =
+  var i = buffer.clickables.len - 1
   while i >= 0:
-    yield buffer.nodes[i]
+    yield buffer.clickables[i]
     i -= 1
 
 proc cursorNextLink*(buffer: Buffer): bool =
-  var next = false
-  for node in buffer.nodes:
-    if node.nodeType == NODE_ELEMENT:
-      case node.element.htmlTag
-      of tagInput, tagA:
-        if next:
-          var res = false
-          while buffer.cursorY < node.y:
-            res = res or buffer.cursorDown()
-          buffer.cursorLineBegin()
-          while buffer.cursorX < node.x:
-            res = res or buffer.cursorRight()
-          return res
-        if buffer.cursorY >= node.y and buffer.cursorY <= node.y + node.height and buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width:
-          next = true
-      else: discard
+  for node in buffer.clickables:
+    if node.y > buffer.cursorY or (node.y == buffer.cursorY and node.x > buffer.cursorX):
+      return buffer.cursorTo(node.x, node.y)
+  return false
 
 proc cursorPrevLink*(buffer: Buffer): bool =
-  var next = false
-  for node in buffer.revNodes:
-    if node.nodeType == NODE_ELEMENT and node.element.htmlTag == tagInput:
-      if next:
-        var res = false
-        while buffer.cursorY < node.y:
-          res = res or buffer.cursorDown()
-        buffer.cursorLineBegin()
-        while buffer.cursorX < node.x:
-          res = res or buffer.cursorRight()
-        return true
-      if buffer.cursorY >= node.y and buffer.cursorY <= node.y + node.height and buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width:
-        next = true
+  for node in buffer.revclickables:
+    if node.y < buffer.cursorY or (node.y == buffer.cursorY and node.x < buffer.cursorX):
+      return buffer.cursorTo(node.x, node.y)
+  return false
 
 proc cursorFirstLine*(buffer: Buffer): bool =
   if buffer.fromY > 0:
@@ -394,12 +406,6 @@ proc cursorBottom*(buffer: Buffer): bool =
   buffer.cursorY = min(buffer.fromY + buffer.height - 1, buffer.lastLine())
   return false
 
-proc scrollTo*(buffer: Buffer, y: int): bool =
-  if y == buffer.fromY:
-    return false
-  buffer.fromY = min(max(buffer.lastLine() - buffer.height + 1, 0), y - buffer.height)
-  return true
-
 proc scrollDown*(buffer: Buffer): bool =
   if buffer.fromY + buffer.height <= buffer.lastLine():
     buffer.fromY += 1
@@ -423,13 +429,17 @@ proc checkLinkSelection*(buffer: Buffer): bool =
     if buffer.cursorOnNode(buffer.selectedlink):
       return false
     else:
+      let anchor = buffer.selectedlink.text.parent.getParent(tagA)
+      anchor.selected = false
       buffer.selectedlink = nil
       buffer.hovertext = ""
   for node in buffer.links:
     if buffer.cursorOnNode(node):
       buffer.selectedlink = node
-      node.text.parent.selected = true
-      buffer.hovertext = node.text.parent.href
+      let anchor = node.text.parent.getParent(tagA)
+      assert(anchor != nil)
+      anchor.selected = true
+      buffer.hovertext = anchor.href
       return true
   return false
 
