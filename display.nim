@@ -64,28 +64,18 @@ proc addSpaces(buffer: Buffer, state: var RenderState, n: int) =
   state.atchar += n
   state.atrawchar += n
 
+const runeSpace = " ".toRunes()[0]
 proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
   state.lastwidth = 0
   var n = 0
-  var fmtword: ustring = @[]
-  var rawword: ustring = @[]
+  var fmtword = ""
+  var rawword = ""
   var prevl = false
-  for r in node.fmttext:
-    fmtword &= r
-
-    if n >= node.rawtext.len or r != node.rawtext[n]:
-      continue
-
+  for r in node.rawtext.runes:
     rawword &= r
     state.x += 1
 
     if state.x > buffer.width:
-      if buffer.rawtext.len > 0 and buffer.rawtext[^1] == ' ':
-        buffer.rawtext = buffer.rawtext.substr(0, buffer.rawtext.len - 2)
-        buffer.text = buffer.text.substr(0, buffer.text.len - 2)
-        state.atchar -= 1
-        state.atrawchar -= 1
-        state.x -= 1
       state.lastwidth = max(state.lastwidth, state.x)
       buffer.flushLine(state)
       prevl = true
@@ -93,21 +83,21 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
       state.lastwidth = max(state.lastwidth, state.x)
 
     if r == runeSpace:
-      buffer.writefmt($fmtword)
-      buffer.writeraw($rawword)
-      state.atchar += ($fmtword).len
-      state.atrawchar += ($rawword).len
+      eprint "x at", rawword, "is", state.x, "."
+      buffer.writefmt(fmtword)
+      buffer.writeraw(rawword)
+      state.atchar += fmtword.len
+      state.atrawchar += rawword.len
       if prevl:
-        state.x += rawword.len
+        state.x += rawword.runeLen
         prevl = false
-      fmtword = @[]
-      rawword = @[]
-    n += 1
+      fmtword = ""
+      rawword = ""
 
-  buffer.writefmt($fmtword)
-  buffer.writeraw($rawword)
-  state.atchar += ($fmtword).len
-  state.atrawchar += ($rawword).len
+  buffer.writefmt(fmtword)
+  buffer.writeraw(rawword)
+  state.atchar += fmtword.len
+  state.atrawchar += rawword.len
   state.lastwidth = max(state.lastwidth, state.x)
 
 proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
@@ -173,8 +163,6 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     buffer.flushLine(state)
 
 proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
-  if not node.visibleNode():
-    return
   let elem = node.nodeAttr()
   if elem.tagType == TAG_TITLE:
     if node.isTextNode():
@@ -205,9 +193,9 @@ proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   node.x = state.x
   node.y = state.y
   buffer.writeWrappedText(state, node)
-  if state.x != node.x:
-    eprint node.x, node.y, state.x, state.y, node.nodeAttr().tagType
-    eprint "len", state.atrawchar
+  #if state.x != node.x:
+  #  eprint node.x, node.y, state.x, state.y, node.nodeAttr().tagType
+  #  eprint "len", state.atrawchar
   node.width = state.lastwidth - node.x
   node.height = state.y - node.y + 1
 
@@ -228,8 +216,8 @@ type
 
 proc setLastHtmlLine(buffer: Buffer, state: var RenderState) =
   if buffer.text.len != buffer.lines[^1]:
-    state.atchar = buffer.text.len + 1
-    state.atrawchar = buffer.rawtext.len + 1
+    state.atchar = buffer.text.len
+    state.atrawchar = buffer.rawtext.len
   buffer.flushLine(state)
 
 proc renderHtml*(buffer: Buffer) =
@@ -250,7 +238,7 @@ proc renderHtml*(buffer: Buffer) =
                                 html: getHtmlNode(item, currElem.html))
         stack.add(child)
         currElem.html.childNodes.add(child.html)
-        if not last and child.html.visibleNode():
+        if not last and not child.html.hidden:
           last = true
           if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
             stack[^1].html.closeblock = true
@@ -339,8 +327,8 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
             redraw = true
         else: discard
         if selectedElem.get().islink:
-          let anchor = HtmlAnchorElement(buffer.selectedlink.getParent(TAG_A)).href
-          buffer.setLocation(parseUri(anchor))
+          let anchor = HtmlAnchorElement(buffer.selectedlink.ancestor(TAG_A)).href
+          buffer.gotoLocation(parseUri(anchor))
           return true
     of ACTION_CHANGE_LOCATION:
       var url = $buffer.document.location

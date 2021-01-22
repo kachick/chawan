@@ -2,6 +2,8 @@ import tables
 import strutils
 import macros
 
+import twtstr
+
 type
   TwtAction* =
     enum
@@ -29,13 +31,6 @@ type
 
 var normalActionRemap*: Table[string, TwtAction]
 var linedActionRemap*: Table[string, TwtAction]
-
-func getControlChar(c: char): char =
-  if int(c) >= int('a'):
-    return char(int(c) - int('a') + 1)
-  elif c == '?':
-    return char(127)
-  assert(false)
 
 proc getRealKey(key: string): string =
   var realk: string

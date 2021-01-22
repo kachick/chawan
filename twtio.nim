@@ -1,6 +1,7 @@
 import terminal
 import tables
 import strutils
+import unicode
 
 import twtstr
 import config
@@ -8,6 +9,13 @@ import config
 template print*(s: varargs[string, `$`]) =
   for x in s:
     stdout.write(x)
+
+template printesc*(s: string) =
+  for ruby in s:
+    if ($ruby)[0].isControlChar():
+      stdout.write(($($ruby)[0].getControlLetter()).ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
+    else:
+      stdout.write($ruby)
 
 template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect).}:
   var a = false
@@ -36,10 +44,11 @@ proc readLine*(prompt: string, current: var string): bool =
   var new = current
   print(prompt)
   print(' ')
-  print(new)
+  printesc(new)
   var s = ""
   var feedNext = false
-  var cursor = new.len
+  var escNext = false
+  var cursor = new.runeLen
   while true:
     if not feedNext:
       s = ""
@@ -47,7 +56,10 @@ proc readLine*(prompt: string, current: var string): bool =
       feedNext = false
     let c = getch()
     s &= c
-    let action = getLinedAction(s)
+    var rl = new.runeLen()
+    var action = getLinedAction(s)
+    if escNext:
+      action = NO_ACTION
     case action
     of ACTION_LINED_CANCEL:
       return false
@@ -56,70 +68,95 @@ proc readLine*(prompt: string, current: var string): bool =
       return true
     of ACTION_LINED_BACKSPACE:
       if cursor > 0:
-        print(' '.repeat(new.len - cursor + 1))
-        print('\b'.repeat(new.len - cursor + 1))
+        print(' '.repeat(rl - cursor + 1))
+        print('\b'.repeat(rl - cursor + 1))
         print("\b \b")
-        new = new.substr(0, cursor - 2) & new.substr(cursor, new.len)
+        new = new.runeSubstr(0, cursor - 1) & new.runeSubstr(cursor, rl)
+        rl = new.runeLen()
         cursor -= 1
-        print(new.substr(cursor, new.len))
-        print('\b'.repeat(new.len - cursor))
+        printesc(new.runeSubstr(cursor, rl))
+        print('\b'.repeat(rl - cursor))
     of ACTION_LINED_ESC:
-      new &= c
-      print("^[".ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
+      escNext = true
     of ACTION_LINED_CLEAR:
-      print(' '.repeat(new.len - cursor + 1))
-      print('\b'.repeat(new.len - cursor + 1))
+      print(' '.repeat(rl - cursor + 1))
+      print('\b'.repeat(rl - cursor + 1))
       print('\b'.repeat(cursor))
       print(' '.repeat(cursor))
       print('\b'.repeat(cursor))
-      new = new.substr(cursor, new.len)
-      print(new)
-      print('\b'.repeat(new.len))
+      new = new.runeSubstr(cursor, rl)
+      rl = new.runeLen()
+      printesc(new)
+      print('\b'.repeat(rl))
       cursor = 0
     of ACTION_LINED_KILL:
-      print(' '.repeat(new.len - cursor + 1))
-      print('\b'.repeat(new.len - cursor + 1))
-      new = new.substr(0, cursor - 1)
+      print(' '.repeat(rl - cursor + 1))
+      print('\b'.repeat(rl - cursor + 1))
+      new = new.runeSubstr(0, cursor)
     of ACTION_LINED_BACK:
       if cursor > 0:
         cursor -= 1
         print("\b")
     of ACTION_LINED_FORWARD:
-      if cursor < new.len:
-        print(new[cursor])
+      if cursor < rl:
+        var rune: Rune
+        new.fastRuneAt(cursor, rune, false)
+        printesc($rune)
         cursor += 1
     of ACTION_LINED_PREV_WORD:
       while cursor > 0:
         print('\b')
         cursor -= 1
-        if new[cursor] == ' ':
+        var rune: Rune
+        new.fastRuneAt(cursor, rune, false)
+        if rune == runeSpace:
           break
     of ACTION_LINED_NEXT_WORD:
-      while cursor < new.len:
-        print(new[cursor])
+      while cursor < rl:
+        var rune: Rune
+        new.fastRuneAt(cursor, rune, false)
+        printesc($rune)
         cursor += 1
-        if cursor < new.len and new[cursor] == ' ':
-          break
+        if cursor < rl:
+          new.fastRuneAt(cursor, rune, false)
+          if rune == runeSpace:
+            break
     of ACTION_LINED_KILL_WORD:
       var chars = 0
       while cursor > chars:
         chars += 1
-        if new[cursor - chars] == ' ':
+        var rune: Rune
+        new.fastRuneAt(cursor - chars, rune, false)
+        if rune == runeSpace:
           break
       if chars > 0:
-        print(' '.repeat(new.len - cursor + 1))
-        print('\b'.repeat(new.len - cursor + 1))
+        print(' '.repeat(rl - cursor + 1))
+        print('\b'.repeat(rl - cursor + 1))
         print("\b \b".repeat(chars))
-        new = new.substr(0, cursor - 1 - chars) & new.substr(cursor, new.len)
+        new = new.runeSubstr(0, cursor - chars) & new.runeSubstr(cursor, rl)
+        rl = new.runeLen()
         cursor -= chars
-        print(new.substr(cursor, new.len))
-        print('\b'.repeat(new.len - cursor))
+        printesc(new.runeSubstr(cursor, rl))
+        print('\b'.repeat(rl - cursor))
     of ACTION_FEED_NEXT:
       feedNext = true
-    else:
-      print(' '.repeat(new.len - cursor + 1))
-      print('\b'.repeat(new.len - cursor + 1))
-      new = new.substr(0, cursor - 1) & c & new.substr(cursor, new.len)
-      print(new.substr(cursor, new.len))
-      print('\b'.repeat(new.len - cursor - 1))
+    elif validateUtf8(s) == -1:
+      var cs = ""
+      for c in s:
+        if not c.isControlChar():
+          cs &= c
+        elif escNext:
+          cs &= c
+          escNext = false
+      escNext = false
+      if cs.len == 0:
+        continue
+      print(' '.repeat(rl - cursor + 1))
+      print('\b'.repeat(rl - cursor + 1))
+      new = new.runeSubstr(0, cursor) & cs & new.runeSubstr(cursor, rl)
+      rl = new.runeLen()
+      printesc(new.runeSubstr(cursor, rl))
+      print('\b'.repeat(rl - cursor - 1))
       cursor += 1
+    else:
+      feedNext = true

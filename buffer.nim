@@ -14,7 +14,7 @@ type
   Buffer* = ref BufferObj
   BufferObj = object
     text*: string
-    rawText*: string
+    rawtext*: string
     lines*: seq[int]
     rawlines*: seq[int]
     title*: string
@@ -45,14 +45,12 @@ proc newBuffer*(attrs: TermAttributes): Buffer =
                 cursorY: 1,
                 document: newDocument())
 
-
-
 func lastLine*(buffer: Buffer): int =
-  assert buffer.rawlines.len == buffer.lines.len
+  assert(buffer.rawlines.len == buffer.lines.len)
   return buffer.lines.len - 1
 
 func lastVisibleLine*(buffer: Buffer): int =
-  return min(buffer.fromY + buffer.height - 2, buffer.lastLine())
+  return min(buffer.fromY + buffer.height - 1, buffer.lastLine())
 
 #doesn't include newline
 func lineLength*(buffer: Buffer, line: int): int =
@@ -147,7 +145,7 @@ proc addNode*(buffer: Buffer, htmlNode: HtmlNode) =
     else: discard
   elif htmlNode.isTextNode():
     if htmlNode.parentElement != nil and htmlNode.parentElement.islink:
-      let anchor = htmlNode.getParent(TAG_A)
+      let anchor = htmlNode.ancestor(TAG_A)
       assert(anchor != nil)
       buffer.clickables.add(anchor)
 
@@ -434,14 +432,14 @@ proc checkLinkSelection*(buffer: Buffer): bool =
     if buffer.cursorOnNode(buffer.selectedlink):
       return false
     else:
-      let anchor = buffer.selectedlink.getParent(TAG_A)
+      let anchor = buffer.selectedlink.ancestor(TAG_A)
       anchor.selected = false
       buffer.selectedlink = nil
       buffer.hovertext = ""
   for node in buffer.links:
     if buffer.cursorOnNode(node):
       buffer.selectedlink = node
-      let anchor = node.getParent(TAG_A)
+      let anchor = node.ancestor(TAG_A)
       assert(anchor != nil)
       anchor.selected = true
       buffer.hovertext = HtmlAnchorElement(anchor).href
@@ -456,4 +454,7 @@ proc gotoAnchor*(buffer: Buffer): bool =
   return false
 
 proc setLocation*(buffer: Buffer, uri: Uri) =
+  buffer.document.location = uri
+
+proc gotoLocation*(buffer: Buffer, uri: Uri) =
   buffer.document.location = buffer.document.location.combine(uri)

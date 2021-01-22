@@ -24,8 +24,8 @@ type
     parentNode*: HtmlNode
     parentElement*: HtmlElement
 
-    rawtext*: ustring
-    fmttext*: ustring
+    rawtext*: string
+    fmttext*: string
     x*: int
     y*: int
     width*: int
@@ -130,12 +130,6 @@ func getFmtLen*(htmlNode: HtmlNode): int =
 func getRawLen*(htmlNode: HtmlNode): int =
   return htmlNode.rawtext.len
 
-func visibleNode*(node: HtmlNode): bool =
-  case node.nodeType
-  of NODE_TEXT: return true
-  of NODE_ELEMENT: return true
-  else: return false
-
 func toInputType*(str: string): InputType =
   case str
   of "button": INPUT_BUTTON
@@ -170,63 +164,61 @@ func toInputSize*(str: string): int =
       return 20
   return str.parseInt()
 
-func getFmtInput(inputElement: HtmlInputElement): ustring =
+func getFmtInput(inputElement: HtmlInputElement): string =
   case inputElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
-    let valueFit = fitValueToSize(inputElement.value.toRunes(), inputElement.size)
+    let valueFit = fitValueToSize(inputElement.value, inputElement.size)
     return valueFit.ansiStyle(styleUnderscore).ansiReset().buttonFmt()
   of INPUT_SUBMIT:
-    return inputElement.value.toRunes().buttonFmt()
+    return inputElement.value.buttonFmt()
   else: discard
 
-func getRawInput(inputElement: HtmlInputElement): ustring =
+func getRawInput(inputElement: HtmlInputElement): string =
   case inputElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
-    return inputElement.value.toRunes().fitValueToSize(inputElement.size).buttonFmt()
+    return inputElement.value.fitValueToSize(inputElement.size).buttonRaw()
   of INPUT_SUBMIT:
-    return inputElement.value.toRunes().buttonFmt()
+    return inputElement.value.buttonRaw()
   else: discard
 
-func getParent*(htmlNode: HtmlNode, tagType: TagType): HtmlElement =
-  var pnode = htmlNode.parentElement
-  while pnode != nil and pnode.tagType != tagType:
-    pnode = pnode.parentElement
-  
-  return pnode
+func ancestor*(htmlNode: HtmlNode, tagType: TagType): HtmlElement =
+  result = htmlNode.parentElement
+  while result != nil and result.tagType != tagType:
+    result = result.parentElement
 
-proc getRawText*(htmlNode: HtmlNode): ustring =
+proc getRawText*(htmlNode: HtmlNode): string =
   if htmlNode.isElemNode():
     case HtmlElement(htmlNode).tagType
     of TAG_INPUT: return HtmlInputElement(htmlNode).getRawInput()
-    else: return @[]
+    else: return ""
   elif htmlNode.isTextNode():
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
-      result = htmlNode.rawtext.remove(runeNewline)
+      result = htmlNode.rawtext.remove("\n")
       if unicode.strip($result).toRunes().len > 0:
         if htmlNode.nodeAttr().display != DISPLAY_INLINE:
           if htmlNode.previousSibling == nil or htmlNode.previousSibling.nodeAttr().display != DISPLAY_INLINE:
-            result = unicode.strip($result, true, false).toRunes()
+            result = unicode.strip(result, true, false)
           if htmlNode.nextSibling == nil or htmlNode.nextSibling.nodeAttr().display != DISPLAY_INLINE:
-            result = unicode.strip($result, false, true).toRunes()
+            result = unicode.strip(result, false, true)
       else:
-        result = @[]
+        result = ""
     else:
-      result = unicode.strip($htmlNode.rawtext).toRunes()
+      result = unicode.strip(htmlNode.rawtext)
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType == TAG_OPTION:
       result = result.buttonRaw()
   else:
     assert(false)
 
-func getFmtText*(htmlNode: HtmlNode): ustring =
+func getFmtText*(htmlNode: HtmlNode): string =
   if htmlNode.isElemNode():
     case HtmlElement(htmlNode).tagType
     of TAG_INPUT: return HtmlInputElement(htmlNode).getFmtInput()
-    else: return @[]
+    else: return ""
   elif htmlNode.isTextNode():
     result = htmlNode.rawtext
     if htmlNode.parentElement != nil and htmlNode.parentElement.islink:
       result = result.ansiFgColor(fgBlue)
-      let parent = HtmlElement(htmlNode.parentNode).getParent(TAG_A)
+      let parent = HtmlElement(htmlNode.parentNode).ancestor(TAG_A)
       if parent != nil and parent.selected:
         result = result.ansiStyle(styleUnderscore).ansiReset()
 
@@ -334,15 +326,15 @@ proc getHtmlNode*(xmlElement: XmlNode, parent: HtmlNode): HtmlNode =
   of xnText:
     new(result)
     result.nodeType = NODE_TEXT
-    result.rawtext = xmlElement.text.toRunes()
+    result.rawtext = xmlElement.text
   of xnComment:
     new(result)
     result.nodeType = NODE_COMMENT
-    result.rawtext = xmlElement.text.toRunes()
+    result.rawtext = xmlElement.text
   of xnCData:
     new(result)
     result.nodeType = NODE_CDATA
-    result.rawtext = xmlElement.text.toRunes()
+    result.rawtext = xmlElement.text
   else: assert(false)
 
   result.parentNode = parent
