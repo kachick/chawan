@@ -88,13 +88,46 @@ proc constructActionTable*(origTable: var Table[string, TwtAction]): Table[strin
     newTable[realk] = v
   return newTable
 
-var keymapStr*: string
 macro staticReadKeymap(): untyped =
   var keymap = staticRead"keymap"
+  var normalActionMap: Table[string, TwtAction]
+  var linedActionMap: Table[string, TwtAction]
+  for line in keymap.split('\n'):
+    if line.len == 0 or line[0] == '#':
+      continue
+    let cmd = line.split(' ')
+    if cmd.len == 3:
+      if cmd[0] == "nmap":
+        normalActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction](cmd[2])
+      elif cmd[0] == "lemap":
+        linedActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction](cmd[2])
 
-  let keymapLit = newLit(keymap)
-  result = quote do:
-    keymapStr = `keymapLit`
+  normalActionMap = constructActionTable(normalActionMap)
+  linedActionMap = constructActionTable(linedActionMap)
+
+  let normalActionConstr = nnkTableConstr.newTree()
+  for k, v in normalActionMap:
+    let colonExpr = nnkExprColonExpr.newTree()
+    colonExpr.add(newLit(k))
+    colonExpr.add(newLit(v))
+    normalActionConstr.add(colonExpr)
+
+  let normalActionAsgn = nnkAsgn.newTree()
+  normalActionAsgn.add(ident("normalActionRemap"))
+  normalActionAsgn.add(newCall(ident("toTable"), normalActionConstr))
+
+  let linedActionConstr = nnkTableConstr.newTree()
+  for k, v in linedActionMap:
+    let colonExpr = nnkExprColonExpr.newTree()
+    colonExpr.add(newLit(k))
+    colonExpr.add(newLit(v))
+    linedActionConstr.add(colonExpr)
+
+  let linedActionAsgn = nnkAsgn.newTree()
+  linedActionAsgn.add(ident("linedActionRemap"))
+  linedActionAsgn.add(newCall(ident("toTable"), linedActionConstr))
+  result = newStmtList()
+  result.add(normalActionAsgn)
 
 staticReadKeymap()
 

@@ -1,13 +1,14 @@
 import options
 import uri
 import tables
+import strutils
 
 import fusion/htmlparser/xmltree
-import fusion/htmlparser
 
 import termattrs
 import htmlelement
 import twtio
+import enums
 
 type
   Buffer* = ref BufferObj
@@ -29,19 +30,20 @@ type
     nodes*: seq[HtmlNode]
     links*: seq[HtmlNode]
     clickables*: seq[HtmlNode]
-    elements*: seq[HtmlNode]
-    idelements*: Table[string, HtmlNode]
+    elements*: seq[HtmlElement]
+    idelements*: Table[string, HtmlElement]
     selectedlink*: HtmlNode
-    location*: Uri
     printwrite*: bool
     attrs*: TermAttributes
+    document*: Document
 
 proc newBuffer*(attrs: TermAttributes): Buffer =
   return Buffer(lines: @[0],
                 rawlines: @[0],
                 width: attrs.termWidth,
                 height: attrs.termHeight,
-                cursorY: 1)
+                cursorY: 1,
+                document: newDocument())
 
 
 
@@ -50,7 +52,7 @@ func lastLine*(buffer: Buffer): int =
   return buffer.lines.len - 1
 
 func lastVisibleLine*(buffer: Buffer): int =
-  return min(buffer.fromY + buffer.height, buffer.lastLine() + 1) - 1
+  return min(buffer.fromY + buffer.height - 2, buffer.lastLine())
 
 #doesn't include newline
 func lineLength*(buffer: Buffer, line: int): int =
@@ -85,7 +87,8 @@ func atPercentOf*(buffer: Buffer): int =
   return (100 * buffer.cursorY) div buffer.lastLine()
 
 func visibleText*(buffer: Buffer): string = 
-  return buffer.text.substr(buffer.lines[buffer.fromY], buffer.lines[buffer.lastVisibleLine() - 1] - 2)
+  result = buffer.text.substr(buffer.lines[buffer.fromY], buffer.lines[buffer.lastVisibleLine()])
+  result.stripLineEnd()
 
 func lastNode*(buffer: Buffer): HtmlNode =
   return buffer.nodes[^1]
@@ -98,15 +101,15 @@ func onSpace*(buffer: Buffer): bool =
 
 func cursorOnNode*(buffer: Buffer, node: HtmlNode): bool =
     return buffer.cursorY >= node.y and buffer.cursorY < node.y + node.height and
-           buffer.cursorX >= node.x and buffer.cursorX < node.x + node.width
+           buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width
 
 func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
-  if buffer.selectedlink != nil:
-    return some(buffer.selectedlink.text.parent)
+  if buffer.selectedlink != nil and buffer.selectedLink.parentNode of HtmlElement:
+    return some(HtmlElement(buffer.selectedlink.parentNode))
   for node in buffer.nodes:
     if node.isElemNode():
       if node.getFmtLen() > 0:
-        if buffer.cursorOnNode(node): return some(node.element)
+        if buffer.cursorOnNode(node): return some(HtmlElement(node))
   return none(HtmlElement)
 
 func cursorAt*(buffer: Buffer): int =
@@ -118,7 +121,7 @@ func cursorChar*(buffer: Buffer): char =
 func canScroll*(buffer: Buffer): bool =
   return buffer.lastLine() > buffer.height
 
-func getElementById*(buffer: Buffer, id: string): HtmlNode =
+func getElementById*(buffer: Buffer, id: string): HtmlElement =
   if buffer.idelements.hasKey(id):
     return buffer.idelements[id]
   return nil
@@ -133,24 +136,26 @@ proc findSelectedNode*(buffer: Buffer): Option[HtmlNode] =
 proc addNode*(buffer: Buffer, htmlNode: HtmlNode) =
   buffer.nodes.add(htmlNode)
 
-  if htmlNode.isTextNode() and htmlNode.text.parent.islink:
+  if htmlNode.isTextNode() and htmlNode.parentElement != nil and htmlNode.parentElement.islink:
     buffer.links.add(htmlNode)
 
   if htmlNode.isElemNode():
-    case htmlNode.element.htmlTag
-    of tagInput, tagOption:
-      if not htmlNode.element.hidden:
+    case HtmlElement(htmlNode).tagType
+    of TAG_INPUT, TAG_OPTION:
+      if not HtmlElement(htmlNode).hidden:
         buffer.clickables.add(htmlNode)
     else: discard
   elif htmlNode.isTextNode():
-    if htmlNode.text.parent.islink:
-      let anchor = htmlNode.text.parent.getParent(tagA)
-      buffer.clickables.add(anchor.node)
+    if htmlNode.parentElement != nil and htmlNode.parentElement.islink:
+      let anchor = htmlNode.getParent(TAG_A)
+      assert(anchor != nil)
+      buffer.clickables.add(anchor)
 
   if htmlNode.isElemNode():
-    buffer.elements.add(htmlNode)
-    if htmlNode.element.id != "":
-      buffer.idelements[htmlNode.element.id] = htmlNode
+    let elem = HtmlElement(htmlNode)
+    buffer.elements.add(elem)
+    if elem.id != "" and not buffer.idelements.hasKey(elem.id):
+      buffer.idelements[elem.id] = elem
 
 proc writefmt*(buffer: Buffer, str: string) =
   buffer.text &= str
@@ -279,7 +284,7 @@ proc cursorNextNode*(buffer: Buffer):  bool =
   var res = buffer.cursorRight()
   if selectedNode.isNone:
     return res
-  while buffer.findSelectedNode().isSome and buffer.findSelectedNode().get() == selectedNode.get():
+  while buffer.findSelectedNode().isNone or buffer.findSelectedNode().get() == selectedNode.get():
     if buffer.cursorAtLineEnd():
       return res
     res = buffer.cursorRight()
@@ -314,7 +319,7 @@ proc cursorPrevNode*(buffer: Buffer): bool =
   var res = buffer.cursorLeft()
   if selectedNode.isNone:
     return res
-  while buffer.findSelectedNode().isSome and buffer.findSelectedNode().get() == selectedNode.get():
+  while buffer.findSelectedNode().isNone or buffer.findSelectedNode().get() == selectedNode.get():
     if buffer.cursorX == 0:
       return res
     res = res or buffer.cursorLeft()
@@ -429,26 +434,26 @@ proc checkLinkSelection*(buffer: Buffer): bool =
     if buffer.cursorOnNode(buffer.selectedlink):
       return false
     else:
-      let anchor = buffer.selectedlink.text.parent.getParent(tagA)
+      let anchor = buffer.selectedlink.getParent(TAG_A)
       anchor.selected = false
       buffer.selectedlink = nil
       buffer.hovertext = ""
   for node in buffer.links:
     if buffer.cursorOnNode(node):
       buffer.selectedlink = node
-      let anchor = node.text.parent.getParent(tagA)
+      let anchor = node.getParent(TAG_A)
       assert(anchor != nil)
       anchor.selected = true
-      buffer.hovertext = anchor.href
+      buffer.hovertext = HtmlAnchorElement(anchor).href
       return true
   return false
 
 proc gotoAnchor*(buffer: Buffer): bool =
-  if buffer.location.anchor != "":
-    let node =  buffer.getElementById(buffer.location.anchor)
+  if buffer.document.location.anchor != "":
+    let node =  buffer.getElementById(buffer.document.location.anchor)
     if node != nil:
       return buffer.scrollTo(node.y)
   return false
 
 proc setLocation*(buffer: Buffer, uri: Uri) =
-  buffer.location = buffer.location.combine(uri)
+  buffer.document.location = buffer.document.location.combine(uri)

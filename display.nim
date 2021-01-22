@@ -2,9 +2,9 @@ import terminal
 import options
 import uri
 import strutils
+import unicode
 
 import fusion/htmlparser/xmltree
-import fusion/htmlparser
 
 import buffer
 import termattrs
@@ -12,6 +12,7 @@ import htmlelement
 import twtstr
 import twtio
 import config
+import enums
 
 proc clearStatusMsg*(at: int) =
   setCursorPos(0, at)
@@ -19,7 +20,7 @@ proc clearStatusMsg*(at: int) =
 
 proc statusMsg*(str: string, at: int) =
   clearStatusMsg(at)
-  print(str.addAnsiStyle(styleReverse))
+  print(str.ansiStyle(styleReverse).ansiReset())
 
 type
   RenderState = object
@@ -63,26 +64,19 @@ proc addSpaces(buffer: Buffer, state: var RenderState, n: int) =
   state.atchar += n
   state.atrawchar += n
 
-proc addSpace(buffer: Buffer, state: var RenderState) =
-  buffer.addSpaces(state, 1)
-
-proc addSpacePadding(buffer: Buffer, state: var RenderState) =
-  if not buffer.onSpace():
-    buffer.addSpace(state)
-
-proc writeWrappedText(buffer: Buffer, state: var RenderState, fmttext: string, rawtext: string) =
+proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
   state.lastwidth = 0
   var n = 0
-  var fmtword = ""
-  var rawword = ""
+  var fmtword: ustring = @[]
+  var rawword: ustring = @[]
   var prevl = false
-  for c in fmttext:
-    fmtword &= c
+  for r in node.fmttext:
+    fmtword &= r
 
-    if n >= rawtext.len or rawtext[n] != c:
+    if n >= node.rawtext.len or r != node.rawtext[n]:
       continue
 
-    rawword &= c
+    rawword &= r
     state.x += 1
 
     if state.x > buffer.width:
@@ -98,22 +92,22 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, fmttext: string, r
     else:
       state.lastwidth = max(state.lastwidth, state.x)
 
-    if c == ' ':
-      buffer.writefmt(fmtword)
-      buffer.writeraw(rawword)
-      state.atchar += fmtword.len
-      state.atrawchar += rawword.len
+    if r == runeSpace:
+      buffer.writefmt($fmtword)
+      buffer.writeraw($rawword)
+      state.atchar += ($fmtword).len
+      state.atrawchar += ($rawword).len
       if prevl:
         state.x += rawword.len
         prevl = false
-      fmtword = ""
-      rawword = ""
+      fmtword = @[]
+      rawword = @[]
     n += 1
 
-  buffer.writefmt(fmtword)
-  buffer.writeraw(rawword)
-  state.atchar += fmtword.len
-  state.atrawchar += rawword.len
+  buffer.writefmt($fmtword)
+  buffer.writeraw($rawword)
+  state.atchar += ($fmtword).len
+  state.atrawchar += ($rawword).len
   state.lastwidth = max(state.lastwidth, state.x)
 
 proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
@@ -125,7 +119,6 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     while state.blanklines < max(elem.margin, elem.margintop):
       buffer.flushLine(state)
     if elem.display == DISPLAY_LIST_ITEM:
-      eprint "???"
       state.indent += 1
 
   if not buffer.onNewLine() and state.blanklines == 0 and node.displayed():
@@ -140,11 +133,10 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   
   if elem.display == DISPLAY_LIST_ITEM and state.indent > 0:
     var listchar = ""
-    eprint "Display", listchar, elem.parent.htmlTag
-    case elem.parent.htmlTag
-    of tagUl:
+    case elem.parentElement.tagType
+    of TAG_UL:
       listchar = "*"
-    of tagOl:
+    of TAG_OL:
       state.listval += 1
       listchar = $state.listval & ")"
     else:
@@ -174,7 +166,7 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     if elem.display == DISPLAY_LIST_ITEM and node.isTextNode():
       state.indent -= 1
 
-  if elem.htmlTag == tagBr and not node.openblock:
+  if elem.tagType == TAG_BR and not node.openblock:
     buffer.flushLine(state)
 
   if elem.display == DISPLAY_LIST_ITEM and node.isElemNode():
@@ -184,16 +176,16 @@ proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   if not node.visibleNode():
     return
   let elem = node.nodeAttr()
-  if elem.htmlTag == tagTitle:
+  if elem.tagType == TAG_TITLE:
     if node.isTextNode():
-      buffer.title = node.rawtext
+      buffer.title = $node.rawtext
     return
   else: discard
   if elem.hidden: return
 
   if not state.docenter:
     if elem.centered:
-      if not node.closeblock and elem.htmlTag != tagBr:
+      if not node.closeblock and elem.tagType != TAG_BR:
         state.centerqueue += 1
         return
     if state.centerqueue > 0:
@@ -212,8 +204,11 @@ proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
 
   node.x = state.x
   node.y = state.y
-  buffer.writeWrappedText(state, node.fmttext, node.rawtext)
-  node.width = state.lastwidth - node.x + 1
+  buffer.writeWrappedText(state, node)
+  if state.x != node.x:
+    eprint node.x, node.y, state.x, state.y, node.nodeAttr().tagType
+    eprint "len", state.atrawchar
+  node.width = state.lastwidth - node.x
   node.height = state.y - node.y + 1
 
   buffer.postAlignNode(node, state)
@@ -240,7 +235,7 @@ proc setLastHtmlLine(buffer: Buffer, state: var RenderState) =
 proc renderHtml*(buffer: Buffer) =
   var stack: seq[XmlHtmlNode]
   let first = XmlHtmlNode(xml: buffer.htmlSource,
-                         html: getHtmlNode(buffer.htmlSource, none(HtmlElement)))
+                         html: getHtmlNode(buffer.htmlSource, buffer.document))
   stack.add(first)
 
   var state = newRenderState()
@@ -248,23 +243,20 @@ proc renderHtml*(buffer: Buffer) =
     let currElem = stack.pop()
     buffer.renderNode(currElem.html, state)
     buffer.addNode(currElem.html)
-    var last = false
-    var prev: HtmlNode = nil
-    for item in currElem.xml.revItems:
-      let child = XmlHtmlNode(xml: item,
-                              html: getHtmlNode(item, some(currElem.html.element)))
-      stack.add(child)
-      child.html.prev = prev
-      prev = child.html
-      if not last and child.html.visibleNode():
-        last = true
-        if currElem.html.element.display == DISPLAY_BLOCK:
-          stack[^1].html.closeblock = true
-      else:
-        child.html.next = stack[^1].html
-    if last:
-      if currElem.html.element.display == DISPLAY_BLOCK:
-        stack[^1].html.openblock = true
+    if currElem.xml.len > 0:
+      var last = false
+      for item in currElem.xml.revItems:
+        let child = XmlHtmlNode(xml: item,
+                                html: getHtmlNode(item, currElem.html))
+        stack.add(child)
+        currElem.html.childNodes.add(child.html)
+        if not last and child.html.visibleNode():
+          last = true
+          if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
+            stack[^1].html.closeblock = true
+      if last:
+        if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
+          stack[^1].html.openblock = true
   buffer.setLastHtmlLine(state)
 
 proc drawHtml(buffer: Buffer) =
@@ -338,20 +330,20 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_CLICK:
       let selectedElem = buffer.findSelectedElement()
       if selectedElem.isSome:
-        case selectedElem.get().htmlTag
-        of tagInput:
+        case selectedElem.get().tagType
+        of TAG_INPUT:
           clearStatusMsg(buffer.height)
-          let status = readLine("TEXT:", selectedElem.get().value)
+          let status = readLine("TEXT:", HtmlInputElement(selectedElem.get()).value)
           if status:
             reshape = true
             redraw = true
         else: discard
         if selectedElem.get().islink:
-          let anchor = buffer.selectedlink.text.parent.getParent(tagA).href
+          let anchor = HtmlAnchorElement(buffer.selectedlink.getParent(TAG_A)).href
           buffer.setLocation(parseUri(anchor))
           return true
     of ACTION_CHANGE_LOCATION:
-      var url = $buffer.location
+      var url = $buffer.document.location
       clearStatusMsg(buffer.height)
       let status = readLine("URL:", url)
       if status:
@@ -374,8 +366,6 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     buffer.statusMsgForBuffer()
 
 proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
-  eraseScreen()
-  termGoto(0, 0)
   #buffer.printwrite = true
   discard buffer.gotoAnchor()
   buffer.displayBuffer()

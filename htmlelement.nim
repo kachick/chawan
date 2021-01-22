@@ -1,49 +1,51 @@
 import strutils
-import re
 import terminal
-import options
+import uri
+import unicode
 
 import fusion/htmlparser
 import fusion/htmlparser/xmltree
 
 import twtstr
 import twtio
+import enums
+import macros
 
 type
-  NodeType* =
-    enum
-    NODE_ELEMENT, NODE_TEXT, NODE_COMMENT
-  DisplayType* =
-    enum
-    DISPLAY_INLINE, DISPLAY_BLOCK, DISPLAY_SINGLE, DISPLAY_LIST_ITEM, DISPLAY_NONE
-  InputType* =
-    enum
-    INPUT_BUTTON, INPUT_CHECKBOX, INPUT_COLOR, INPUT_DATE, INPUT_DATETIME_LOCAL,
-    INPUT_EMAIL, INPUT_FILE, INPUT_HIDDEN, INPUT_IMAGE, INPUT_MONTH,
-    INPUT_NUMBER, INPUT_PASSWORD, INPUT_RADIO, INPUT_RANGE, INPUT_RESET,
-    INPUT_SEARCH, INPUT_SUBMIT, INPUT_TEL, INPUT_TEXT, INPUT_TIME, INPUT_URL,
-    INPUT_WEEK, INPUT_UNKNOWN
-  WhitespaceType* =
-    enum
-    WHITESPACE_NORMAL, WHITESPACE_NOWRAP,
-    WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP,
-    WHITESPACE_INITIAL, WHITESPACE_INHERIT
+  HtmlNode* = ref HtmlNodeObj
+  HtmlNodeObj = object of RootObj
+    nodeType*: NodeType
+    childNodes*: seq[HtmlNode]
+    firstChild*: HtmlNode
+    isConnected*: bool
+    lastChild*: HtmlNode
+    nextSibling*: HtmlNode
+    previousSibling*: HtmlNode
+    parentNode*: HtmlNode
+    parentElement*: HtmlElement
 
-type
-  HtmlText* = ref HtmlTextObj
-  HtmlTextObj = object
-    parent*: HtmlElement
-  HtmlElement* = ref HtmlElementObj
-  HtmlElementObj = object
-    node*: HtmlNode
-    id*: string
-    name*: string
-    value*: string
-    centered*: bool
+    rawtext*: ustring
+    fmttext*: ustring
+    x*: int
+    y*: int
+    width*: int
+    height*: int
+    openblock*: bool
+    closeblock*: bool
     hidden*: bool
+
+  Document* = ref DocumentObj
+  DocumentObj = object of HtmlNodeObj
+    location*: Uri
+
+  HtmlElement* = ref HtmlElementObj
+  HtmlElementObj = object of HtmlNodeObj
+    id*: string
+    tagType*: TagType
+    name*: string
+    centered*: bool
     display*: DisplayType
     innerText*: string
-    textNodes*: int
     margintop*: int
     marginbottom*: int
     marginleft*: int
@@ -53,40 +55,55 @@ type
     italic*: bool
     underscore*: bool
     islink*: bool
-    parent*: HtmlElement
-    case htmlTag*: HtmlTag
-    of tagInput:
-      itype*: InputType
-      size*: int
-    of tagA:
-      href*: string
-      selected*: bool
-    else:
-      discard
-  HtmlNode* = ref HtmlNodeObj
-  HtmlNodeObj = object
-    case nodeType*: NodeType
-    of NODE_ELEMENT:
-      element*: HtmlElement
-    of NODE_TEXT:
-      text*: HtmlText
-    of NODE_COMMENT:
-      comment*: string
-    rawtext*: string
-    fmttext*: string
-    x*: int
-    y*: int
-    width*: int
-    height*: int
-    openblock*: bool
-    closeblock*: bool
-    next*: HtmlNode
-    prev*: HtmlNode
+    selected*: bool
+
+  HtmlInputElement* = ref HtmlInputElementObj
+  HtmlInputElementObj = object of HtmlElementObj
+    itype*: InputType
+    autofocus*: bool
+    required*: bool
+    value*: string
+    size*: int
+
+  HtmlAnchorElement* = ref HtmlAnchorElementObj
+  HtmlAnchorElementObj = object of HtmlElementObj
+    href*: string
+
+  HtmlSelectElement* = ref HtmlSelectElementObj
+  HtmlSelectElementObj = object of HtmlElementObj
+    value*: string
+
+  HtmlOptionElement* = ref HtmlOptionElementObj
+  HtmlOptionElementObj = object of HtmlElementObj
+    value*: string
+
+#no I won't manually write all this down
+#maybe todo to accept stuff other than tagtype (idk how useful that'd be)
+macro genEnumCase(s: string): untyped =
+  let casestmt = nnkCaseStmt.newTree() 
+  casestmt.add(ident("s"))
+  for i in low(TagType) .. high(TagType):
+    let ret = nnkReturnStmt.newTree()
+    ret.add(newLit(TagType(i)))
+    let branch = nnkOfBranch.newTree()
+    let enumname = $TagType(i)
+    let tagname = enumname.substr("TAG_".len, enumname.len - 1).tolower()
+    branch.add(newLit(tagname))
+    branch.add(ret)
+    casestmt.add(branch)
+  let ret = nnkReturnStmt.newTree()
+  ret.add(newLit(TAG_UNKNOWN))
+  let branch = nnkElse.newTree()
+  branch.add(ret)
+  casestmt.add(branch)
+
+func tagType*(s: string): TagType =
+  genEnumCase(s)
 
 func nodeAttr*(node: HtmlNode): HtmlElement =
   case node.nodeType
-  of NODE_TEXT: return node.text.parent
-  of NODE_ELEMENT: return node.element
+  of NODE_TEXT: return node.parentElement
+  of NODE_ELEMENT: return HtmlElement(node)
   else: assert(false)
 
 func displayed*(node: HtmlNode): bool =
@@ -97,6 +114,15 @@ func isTextNode*(node: HtmlNode): bool =
 
 func isElemNode*(node: HtmlNode): bool =
   return node.nodeType == NODE_ELEMENT
+
+func isComment*(node: HtmlNode): bool =
+  return node.nodeType == NODE_COMMENT
+
+func isCData*(node: HtmlNode): bool =
+  return node.nodeType == NODE_CDATA
+
+func isDocument*(node: HtmlNode): bool =
+  return node.nodeType == NODE_DOCUMENT
 
 func getFmtLen*(htmlNode: HtmlNode): int =
   return htmlNode.fmttext.len
@@ -139,195 +165,197 @@ func toInputType*(str: string): InputType =
 func toInputSize*(str: string): int =
   if str.len == 0:
     return 20
+  for c in str:
+    if not c.isDigit:
+      return 20
   return str.parseInt()
 
-func getInputElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
-  assert(htmlElement.htmlTag == tagInput)
-  htmlElement.itype = xmlElement.attr("type").toInputType()
-  if htmlElement.itype == INPUT_HIDDEN:
-    htmlElement.hidden = true
-  htmlElement.size = xmlElement.attr("size").toInputSize()
-  htmlElement.value = xmlElement.attr("value")
-  return htmlElement
-
-func getAnchorElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
-  assert(htmlElement.htmlTag == tagA)
-  htmlElement.href = xmlElement.attr("href")
-  htmlElement.islink = true
-  return htmlElement
-
-func getSelectElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
-  assert(htmlElement.htmlTag == tagSelect)
-  for item in xmlElement.items:
-    if item.kind == xnElement:
-      if item.tag == "option":
-        htmlElement.value = item.attr("value")
-        break
-  htmlElement.name = xmlElement.attr("name")
-  return htmlElement
-
-func getOptionElement(xmlElement: XmlNode, htmlElement: HtmlElement): HtmlElement =
-  assert(htmlElement.htmlTag == tagOption)
-  htmlElement.value = xmlElement.attr("value")
-  if htmlElement.parent.value != htmlElement.value:
-    htmlElement.hidden = true
-  return htmlElement
-
-func getFormattedInput(htmlElement: HtmlElement): string =
-  case htmlElement.itype
+func getFmtInput(inputElement: HtmlInputElement): ustring =
+  case inputElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
-    let valueFit = fitValueToSize(htmlElement.value, htmlElement.size)
-    return valueFit.addAnsiStyle(styleUnderscore).buttonStr()
+    let valueFit = fitValueToSize(inputElement.value.toRunes(), inputElement.size)
+    return valueFit.ansiStyle(styleUnderscore).ansiReset().buttonFmt()
   of INPUT_SUBMIT:
-    return htmlElement.value.buttonStr()
+    return inputElement.value.toRunes().buttonFmt()
   else: discard
 
-func getRawInput(htmlElement: HtmlElement): string =
-  case htmlElement.itype
+func getRawInput(inputElement: HtmlInputElement): ustring =
+  case inputElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
-    return "[" & htmlElement.value.fitValueToSize(htmlElement.size) & "]"
+    return inputElement.value.toRunes().fitValueToSize(inputElement.size).buttonFmt()
   of INPUT_SUBMIT:
-    return "[" & htmlElement.value & "]"
+    return inputElement.value.toRunes().buttonFmt()
   else: discard
 
-func getParent*(htmlElement: HtmlElement, htmlTag: HtmlTag): HtmlElement =
-  result = htmlElement
-  while result != nil and result.htmlTag != htmlTag:
-    result = result.parent
+func getParent*(htmlNode: HtmlNode, tagType: TagType): HtmlElement =
+  var pnode = htmlNode.parentElement
+  while pnode != nil and pnode.tagType != tagType:
+    pnode = pnode.parentElement
+  
+  return pnode
 
-func getRawText*(htmlNode: HtmlNode): string =
+proc getRawText*(htmlNode: HtmlNode): ustring =
   if htmlNode.isElemNode():
-    case htmlNode.element.htmlTag
-    of tagInput: return htmlNode.element.getRawInput()
-    else: return ""
+    case HtmlElement(htmlNode).tagType
+    of TAG_INPUT: return HtmlInputElement(htmlNode).getRawInput()
+    else: return @[]
   elif htmlNode.isTextNode():
-    if htmlNode.text.parent.htmlTag != tagPre:
-      result = htmlNode.rawtext.replace(re"\n")
-      if result.strip().len > 0:
+    if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
+      result = htmlNode.rawtext.remove(runeNewline)
+      if unicode.strip($result).toRunes().len > 0:
         if htmlNode.nodeAttr().display != DISPLAY_INLINE:
-          if htmlNode.prev == nil or htmlNode.prev.nodeAttr().display != DISPLAY_INLINE:
-            result = result.strip(true, false)
-          if htmlNode.next == nil or htmlNode.next.nodeAttr().display != DISPLAY_INLINE:
-            result = result.strip(false, true)
+          if htmlNode.previousSibling == nil or htmlNode.previousSibling.nodeAttr().display != DISPLAY_INLINE:
+            result = unicode.strip($result, true, false).toRunes()
+          if htmlNode.nextSibling == nil or htmlNode.nextSibling.nodeAttr().display != DISPLAY_INLINE:
+            result = unicode.strip($result, false, true).toRunes()
       else:
-        result = ""
+        result = @[]
     else:
-      result = htmlNode.rawtext.strip()
-    if htmlNode.text.parent.htmlTag == tagOption:
-      result = "[" & result & "]"
+      result = unicode.strip($htmlNode.rawtext).toRunes()
+    if htmlNode.parentElement != nil and htmlNode.parentElement.tagType == TAG_OPTION:
+      result = result.buttonRaw()
   else:
     assert(false)
 
-func getFmtText*(htmlNode: HtmlNode): string =
+func getFmtText*(htmlNode: HtmlNode): ustring =
   if htmlNode.isElemNode():
-    case htmlNode.element.htmlTag
-    of tagInput: return htmlNode.element.getFormattedInput()
-    else: return ""
+    case HtmlElement(htmlNode).tagType
+    of TAG_INPUT: return HtmlInputElement(htmlNode).getFmtInput()
+    else: return @[]
   elif htmlNode.isTextNode():
     result = htmlNode.rawtext
-    if htmlNode.text.parent.islink:
-      result = result.addAnsiFgColor(fgBlue)
-      let parent = htmlNode.text.parent.getParent(tagA)
+    if htmlNode.parentElement != nil and htmlNode.parentElement.islink:
+      result = result.ansiFgColor(fgBlue)
+      let parent = HtmlElement(htmlNode.parentNode).getParent(TAG_A)
       if parent != nil and parent.selected:
-        result = result.addAnsiStyle(styleUnderscore)
+        result = result.ansiStyle(styleUnderscore).ansiReset()
 
-    if htmlNode.text.parent.htmlTag == tagOption:
-      result = result.addAnsiFgColor(fgRed)
+    if HtmlElement(htmlNode.parentNode).tagType == TAG_OPTION:
+      result = result.ansiFgColor(fgRed).ansiReset()
 
-    if htmlNode.text.parent.bold:
-      result = result.addAnsiStyle(styleBright)
-    if htmlNode.text.parent.italic:
-      result = result.addAnsiStyle(styleItalic)
-    if htmlNode.text.parent.underscore:
-      result = result.addAnsiStyle(styleUnderscore)
+    if HtmlElement(htmlNode.parentNode).bold:
+      result = result.ansiStyle(styleBright).ansiReset()
+    if HtmlElement(htmlNode.parentNode).italic:
+      result = result.ansiStyle(styleItalic).ansiReset()
+    if HtmlElement(htmlNode.parentNode).underscore:
+      result = result.ansiStyle(styleUnderscore).ansiReset()
+  else:
+    assert(false)
 
-proc newElemFromParent(elem: HtmlElement, parentOpt: Option[HtmlElement]): HtmlElement =
-  if parentOpt.isSome:
-    let parent = parentOpt.get()
-    elem.centered = parent.centered
-    elem.bold = parent.bold
-    elem.italic = parent.italic
-    elem.underscore = parent.underscore
-    elem.hidden = parent.hidden
-    elem.display = parent.display
-    #elem.margin = parent.margin
-    #elem.margintop = parent.margintop
-    #elem.marginbottom = parent.marginbottom
-    #elem.marginleft = parent.marginleft
-    #elem.marginright = parent.marginright
-    elem.parent = parent
-    elem.islink = parent.islink
-
-  return elem
-
-proc getHtmlElement*(xmlElement: XmlNode, inherit: Option[HtmlElement]): HtmlElement =
+proc getHtmlElement*(xmlElement: XmlNode, parentNode: HtmlNode): HtmlElement =
   assert kind(xmlElement) == xnElement
-  var htmlElement: HtmlElement
-  htmlElement = newElemFromParent(HtmlElement(htmlTag: htmlTag(xmlElement)), inherit)
-  htmlElement.id = xmlElement.attr("id")
+  let tagType = xmlElement.tag().tagType()
 
-  if htmlElement.htmlTag in InlineTags:
-    htmlElement.display = DISPLAY_INLINE
-  elif htmlElement.htmlTag in BlockTags:
-    htmlElement.display = DISPLAY_BLOCK
-  elif htmlElement.htmlTag in SingleTags:
-    htmlElement.display = DISPLAY_SINGLE
-  elif htmlElement.htmlTag ==  tagLi:
-    htmlElement.display = DISPLAY_LIST_ITEM
+  case tagType
+  of TAG_INPUT: result = new(HtmlInputElement)
+  of TAG_A: result = new(HtmlAnchorElement)
+  else: new(result)
+
+  result.tagType = tagType
+  result.parentNode = parentNode
+  if parentNode.isElemNode():
+    result.parentElement = HtmlElement(parentNode)
+
+  result.id = xmlElement.attr("id")
+
+  if tagType in InlineTagTypes:
+    result.display = DISPLAY_INLINE
+  elif tagType in BlockTagTypes:
+    result.display = DISPLAY_BLOCK
+  elif tagType in SingleTagTypes:
+    result.display = DISPLAY_SINGLE
+  elif tagType ==  TAG_LI:
+    result.display = DISPLAY_LIST_ITEM
   else:
-    htmlElement.display = DISPLAY_NONE
+    result.display = DISPLAY_NONE
 
-  case htmlElement.htmlTag
-  of tagCenter:
-    htmlElement.centered = true
-  of tagB:
-    htmlElement.bold = true
-  of tagI:
-    htmlElement.italic = true
-  of tagU:
-    htmlElement.underscore = true
-  of tagHead:
-    htmlElement.hidden = true
-  of tagStyle:
-    htmlElement.hidden = true
-  of tagScript:
-    htmlElement.hidden = true
-  of tagInput:
-    htmlElement = getInputElement(xmlElement, htmlElement)
-  of tagA:
-    htmlElement = getAnchorElement(xmlElement, htmlElement)
-  of tagSelect:
-    htmlElement = getSelectElement(xmlElement, htmlElement)
-  of tagOption:
-    htmlElement = getOptionElement(xmlElement, htmlElement)
-  of tagPre, tagTd, tagTh:
-    htmlElement.margin = 1
-  else:
-    discard
+  case tagType
+  of TAG_CENTER:
+    result.centered = true
+  of TAG_B:
+    result.bold = true
+  of TAG_I:
+    result.italic = true
+  of TAG_U:
+    result.underscore = true
+  of TAG_HEAD:
+    result.hidden = true
+  of TAG_STYLE:
+    result.hidden = true
+  of TAG_SCRIPT:
+    result.hidden = true
+  of TAG_INPUT:
+    let inputElement = HtmlInputElement(result)
+    inputElement.itype = xmlElement.attr("type").toInputType()
+    if inputElement.itype == INPUT_HIDDEN:
+      inputElement.hidden = true
+    inputElement.size = xmlElement.attr("size").toInputSize()
+    inputElement.value = xmlElement.attr("value")
+    result = inputElement
+  of TAG_A:
+    let anchorElement = HtmlAnchorElement(result)
+    anchorElement.href = xmlElement.attr("href")
+    anchorElement.islink = true
+    result = anchorElement
+  of TAG_SELECT:
+    var selectElement = new(HtmlSelectElement)
+    for item in xmlElement.items:
+      if item.kind == xnElement:
+        if item.tag == "option":
+          selectElement.value = item.attr("value")
+          break
+    selectElement.name = xmlElement.attr("name")
+    result = selectElement
+  of TAG_OPTION:
+    var optionElement = new(HtmlOptionElement)
+    optionElement.value = xmlElement.attr("value")
+    if parentNode.isElemNode() and HtmlSelectElement(parentNode).value != optionElement.value:
+      optionElement.hidden = true
+    result = optionElement
+  of TAG_PRE, TAG_TD, TAG_TH:
+    result.margin = 1
+  else: discard
 
-  for child in xmlElement.items:
-    if child.kind == xnText and child.text.strip().len > 0:
-      htmlElement.textNodes += 1
+  if parentNode.isElemNode():
+    let parent = HtmlElement(parentNode)
+    result.centered = result.centered or parent.centered
+    result.bold = result.bold or parent.bold
+    result.italic = result.italic or parent.italic
+    result.underscore = result.underscore or parent.underscore
+    result.hidden = result.hidden or parent.hidden
+    result.islink = result.islink or parent.islink
   
-  return htmlElement
 
-proc getHtmlText*(parent: HtmlElement): HtmlText =
-  return HtmlText(parent: parent)
-
-proc getHtmlNode*(xmlElement: XmlNode, parent: Option[HtmlElement]): HtmlNode =
+proc getHtmlNode*(xmlElement: XmlNode, parent: HtmlNode): HtmlNode =
   case kind(xmlElement)
   of xnElement:
-    result = HtmlNode(nodeType: NODE_ELEMENT, element: getHtmlElement(xmlElement, parent))
-    result.element.node = result
+    result = getHtmlElement(xmlElement, parent)
+    result.nodeType = NODE_ELEMENT
   of xnText:
-    assert(parent.isSome)
-    result = HtmlNode(nodeType: NODE_TEXT, text: getHtmlText(parent.get()))
-    result.rawtext = xmlElement.text
+    new(result)
+    result.nodeType = NODE_TEXT
+    result.rawtext = xmlElement.text.toRunes()
   of xnComment:
-    result = HtmlNode(nodeType: NODE_COMMENT, comment: xmlElement.text)
+    new(result)
+    result.nodeType = NODE_COMMENT
+    result.rawtext = xmlElement.text.toRunes()
   of xnCData:
-    result = HtmlNode(nodeType: NODE_TEXT, text: getHtmlText(parent.get()))
-    result.rawtext = xmlElement.text
+    new(result)
+    result.nodeType = NODE_CDATA
+    result.rawtext = xmlElement.text.toRunes()
   else: assert(false)
+
+  result.parentNode = parent
+  if parent.isElemNode():
+    result.parentElement = HtmlElement(parent)
+
   result.rawtext = result.getRawText()
   result.fmttext = result.getFmtText()
+  if parent.childNodes.len > 0:
+    result.previousSibling = parent.childNodes[^1]
+    result.previousSibling.nextSibling = result
+  parent.childNodes.add(result)
+
+func newDocument*(): Document =
+  new(result)
+  result.nodeType = NODE_DOCUMENT

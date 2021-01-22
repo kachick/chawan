@@ -65,7 +65,7 @@ proc readLine*(prompt: string, current: var string): bool =
         print('\b'.repeat(new.len - cursor))
     of ACTION_LINED_ESC:
       new &= c
-      print("^[".addAnsiFgColor(fgBlue).addAnsiStyle(styleBright))
+      print("^[".ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
     of ACTION_LINED_CLEAR:
       print(' '.repeat(new.len - cursor + 1))
       print('\b'.repeat(new.len - cursor + 1))

@@ -35,7 +35,6 @@ proc main*() =
     quit(1)
   if not readKeymap("keymap"):
     eprint "Failed to read keymap, falling back to default"
-    parseKeymap(keymapStr)
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
@@ -46,12 +45,12 @@ proc main*() =
   var lastUri = uri
   while displayPage(attrs, buffer):
     statusMsg("Loading...", buffer.height)
-    var newUri = buffer.location
+    var newUri = buffer.document.location
     lastUri.anchor = ""
     newUri.anchor = ""
     if $lastUri != $newUri:
       buffer.clearBuffer()
-      buffer.htmlSource = loadPageUri(buffer.location, buffer.htmlSource)
+      buffer.htmlSource = loadPageUri(buffer.document.location, buffer.htmlSource)
       buffer.renderHtml()
     lastUri = newUri
 
