@@ -4,13 +4,25 @@ import unicode
 
 const runeSpace* = " ".runeAt(0)
 
-func ansiStyle*(str: string, style: Style): string =
-  return ansiStyleCode(style) & str & "\e[0m"
+func ansiStyle*(str: string, style: Style): seq[string] =
+  result &= ansiStyleCode(style)
+  result &= str
 
-func ansiFgColor*(str: string, color: ForegroundColor): string =
-  return ansiForegroundColorCode(color) & str & ansiResetCode
+func ansiFgColor*(str: string, color: ForegroundColor): seq[string] =
+  result &= ansiForegroundColorCode(color)
+  result &= str
 
-func ansiReset*(str: string): string =
+func ansiReset*(str: string): seq[string] =
+  result &= str
+  result &= ansiResetCode
+
+func ansiStyle*(str: seq[string], style: Style): seq[string] =
+  return ansiStyleCode(style) & str
+
+func ansiFgColor*(str: seq[string], color: ForegroundColor): seq[string] =
+  return ansiForegroundColorCode(color) & str
+
+func ansiReset*(str: seq[string]): seq[string] =
   return str & ansiResetCode
 
 func maxString*(str: string, max: int): string =
@@ -23,7 +35,10 @@ func fitValueToSize*(str: string, size: int): string =
     return str & ' '.repeat(size - str.runeLen)
   return str.maxString(size)
 
-func buttonFmt*(str: string): string =
+func buttonFmt*(str: string): seq[string] =
+  return "[".ansiFgColor(fgRed) & str.ansiFgColor(fgRed).ansiReset() & "]".ansiFgColor(fgRed).ansiReset()
+
+func buttonFmt*(str: seq[string]): seq[string] =
   return "[".ansiFgColor(fgRed) & str.ansiFgColor(fgRed).ansiReset() & "]".ansiFgColor(fgRed).ansiReset()
 
 func buttonRaw*(str: string): string =
@@ -51,3 +66,11 @@ func getControlLetter*(c: char): char =
   elif c == '\x7F':
     return '?'
   assert(false)
+
+func findChar*(str: string, c: char, start: int = 0): int =
+  var i = start
+  while i < str.len:
+    if str[i] == c:
+      return i
+    i += 1
+  return -1

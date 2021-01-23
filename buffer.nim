@@ -98,8 +98,8 @@ func onSpace*(buffer: Buffer): bool =
   return buffer.text.len > 0 and buffer.text[^1] == ' '
 
 func cursorOnNode*(buffer: Buffer, node: HtmlNode): bool =
-    return buffer.cursorY >= node.y and buffer.cursorY < node.y + node.height and
-           buffer.cursorX >= node.x and buffer.cursorX <= node.x + node.width
+  return buffer.rawlines[buffer.cursorY - 1] + buffer.cursorX >= node.rawchar and
+         buffer.rawlines[buffer.cursorY - 1] + buffer.cursorX < node.rawend
 
 func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
   if buffer.selectedlink != nil and buffer.selectedLink.parentNode of HtmlElement:
@@ -200,6 +200,7 @@ proc clearBuffer*(buffer: Buffer) =
   buffer.fromX = 0
   buffer.fromY = 0
   buffer.hovertext = ""
+  buffer.selectedlink = nil
 
 proc scrollTo*(buffer: Buffer, y: int): bool =
   if y == buffer.fromY:
@@ -209,14 +210,16 @@ proc scrollTo*(buffer: Buffer, y: int): bool =
   return true
 
 proc cursorTo*(buffer: Buffer, x: int, y: int): bool =
+  result = false
   buffer.cursorY = min(max(y, 0), buffer.lastLine())
   if buffer.fromY > buffer.cursorY:
-    buffer.fromY = min(buffer.cursorY, buffer.lastLine() - buffer.height)
-  elif buffer.fromY + buffer.height < buffer.cursorY:
-    buffer.fromY = max(buffer.cursorY - buffer.height, 0)
+    buffer.fromY = min(buffer.cursorY - 1, buffer.lastLine() - buffer.height)
+    result = true
+  elif buffer.fromY + buffer.height <= buffer.cursorY:
+    buffer.fromY = max(buffer.cursorY - buffer.height + 1, 0)
+    result = true
   buffer.cursorX = min(max(x, 0), buffer.currentRawLineLength())
   buffer.fromX = min(max(buffer.currentRawLineLength() - buffer.width + 1, 0), 0) #TODO
-  return true
 
 proc cursorDown*(buffer: Buffer): bool =
   if buffer.cursorY < buffer.lastLine():
@@ -409,6 +412,12 @@ proc cursorBottom*(buffer: Buffer): bool =
   buffer.cursorY = min(buffer.fromY + buffer.height - 1, buffer.lastLine())
   return false
 
+proc centerLine*(buffer: Buffer): bool =
+  if min(buffer.cursorY - buffer.height div 2, buffer.lastLine()) == buffer.fromY:
+    return false
+  buffer.fromY = min(buffer.cursorY - buffer.height div 2, buffer.lastLine())
+  return true
+
 proc scrollDown*(buffer: Buffer): bool =
   if buffer.fromY + buffer.height <= buffer.lastLine():
     buffer.fromY += 1
@@ -434,6 +443,7 @@ proc checkLinkSelection*(buffer: Buffer): bool =
     else:
       let anchor = buffer.selectedlink.ancestor(TAG_A)
       anchor.selected = false
+      buffer.selectedlink.fmttext = buffer.selectedlink.getFmtText()
       buffer.selectedlink = nil
       buffer.hovertext = ""
   for node in buffer.links:
@@ -443,6 +453,7 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       assert(anchor != nil)
       anchor.selected = true
       buffer.hovertext = HtmlAnchorElement(anchor).href
+      node.fmttext = node.getFmtText()
       return true
   return false
 

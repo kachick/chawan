@@ -33,7 +33,7 @@ proc main*() =
   if paramCount() != 1:
     eprint "Invalid parameters. Usage:\ntwt <url>"
     quit(1)
-  if not readKeymap("keymap"):
+  if not readConfig("config"):
     eprint "Failed to read keymap, falling back to default"
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)

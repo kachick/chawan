@@ -29,7 +29,7 @@ type
     lastwidth: int
     atchar: int
     atrawchar: int
-    centerqueue: int
+    centerqueue: seq[HtmlNode]
     centerlen: int
     blanklines: int
     blankspaces: int
@@ -71,33 +71,49 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
   var fmtword = ""
   var rawword = ""
   var prevl = false
-  for r in node.rawtext.runes:
-    rawword &= r
-    state.x += 1
+  for w in node.fmttext:
+    if w.len > 0 and w[0] == '\e':
+      fmtword &= w
+      continue
 
-    if state.x > buffer.width:
-      state.lastwidth = max(state.lastwidth, state.x)
-      buffer.flushLine(state)
-      prevl = true
-    else:
-      state.lastwidth = max(state.lastwidth, state.x)
+    for r in w.runes:
+      fmtword &= r
+      rawword &= r
 
-    if r == runeSpace:
-      eprint "x at", rawword, "is", state.x, "."
-      buffer.writefmt(fmtword)
-      buffer.writeraw(rawword)
-      state.atchar += fmtword.len
-      state.atrawchar += rawword.len
+      state.x += 1
+
       if prevl:
         state.x += rawword.runeLen
         prevl = false
-      fmtword = ""
-      rawword = ""
+
+      if r == runeSpace:
+        buffer.writefmt(fmtword)
+        buffer.writeraw(rawword)
+        state.atchar += fmtword.len
+        state.atrawchar += rawword.runeLen()
+        fmtword = ""
+        rawword = ""
+
+      if state.x > buffer.width:
+        if buffer.rawtext.len > 0 and buffer.rawtext[^1] == ' ':
+          buffer.rawtext = buffer.rawtext.substr(0, buffer.rawtext.len - 2)
+          buffer.text = buffer.text.substr(0, buffer.text.len - 2)
+          state.atchar -= 1
+          state.atrawchar -= 1
+          state.x -= 1
+        state.lastwidth = max(state.lastwidth, state.x)
+        buffer.flushLine(state)
+        state.x = -1
+        prevl = true
+      else:
+        state.lastwidth = max(state.lastwidth, state.x)
+
+      n += 1
 
   buffer.writefmt(fmtword)
   buffer.writeraw(rawword)
   state.atchar += fmtword.len
-  state.atrawchar += rawword.len
+  state.atrawchar += rawword.runeLen()
   state.lastwidth = max(state.lastwidth, state.x)
 
 proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
@@ -108,8 +124,7 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   if node.openblock:
     while state.blanklines < max(elem.margin, elem.margintop):
       buffer.flushLine(state)
-    if elem.display == DISPLAY_LIST_ITEM:
-      state.indent += 1
+    state.indent += elem.indent
 
   if not buffer.onNewLine() and state.blanklines == 0 and node.displayed():
     buffer.addSpaces(state, state.nextspaces)
@@ -121,11 +136,12 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     buffer.addSpaces(state, max(buffer.width div 2 - state.centerlen div 2, 0))
     state.centerlen = 0
   
-  if elem.display == DISPLAY_LIST_ITEM and state.indent > 0:
+  if node.isElemNode() and elem.display == DISPLAY_LIST_ITEM and state.indent > 0:
+    buffer.flushLine(state)
     var listchar = ""
     case elem.parentElement.tagType
     of TAG_UL:
-      listchar = "*"
+      listchar = "•"
     of TAG_OL:
       state.listval += 1
       listchar = $state.listval & ")"
@@ -133,9 +149,9 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
       return
     buffer.addSpaces(state, state.indent)
     buffer.write(listchar)
-    state.x += 1
-    state.atchar += 1
-    state.atrawchar += 1
+    state.x += listchar.runeLen()
+    state.atchar += listchar.len
+    state.atrawchar += listchar.runeLen()
     buffer.addSpaces(state, 1)
 
 proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
@@ -147,56 +163,61 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
 
   if not buffer.onNewLine() and state.blanklines == 0:
     state.nextspaces += max(elem.margin, elem.marginright)
-    if node.closeblock:
+    if node.closeblock and (node.isTextNode() or elem.numChildNodes == 0):
       buffer.flushLine(state)
 
   if node.closeblock:
     while state.blanklines < max(elem.margin, elem.marginbottom):
       buffer.flushLine(state)
-    if elem.display == DISPLAY_LIST_ITEM and node.isTextNode():
-      state.indent -= 1
+    state.indent -= elem.indent
 
   if elem.tagType == TAG_BR and not node.openblock:
-    buffer.flushLine(state)
-
-  if elem.display == DISPLAY_LIST_ITEM and node.isElemNode():
     buffer.flushLine(state)
 
 proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   let elem = node.nodeAttr()
   if elem.tagType == TAG_TITLE:
     if node.isTextNode():
-      buffer.title = $node.rawtext
+      buffer.title = node.rawtext
     return
   else: discard
   if elem.hidden: return
 
   if not state.docenter:
     if elem.centered:
-      if not node.closeblock and elem.tagType != TAG_BR:
-        state.centerqueue += 1
+      state.centerqueue.add(node)
+      if node.closeblock or elem.tagType == TAG_BR:
+        state.docenter = true
+        state.centerlen = 0
+        for node in state.centerqueue:
+          state.centerlen += node.getRawLen()
+        for node in state.centerqueue:
+          buffer.renderNode(node, state)
+        state.centerqueue.setLen(0)
+        state.docenter = false
         return
-    if state.centerqueue > 0:
+      else:
+        return
+    if state.centerqueue.len > 0:
       state.docenter = true
       state.centerlen = 0
-      var i = state.centerqueue
-      while i > 0:
-        state.centerlen += buffer.nodes[^i].getRawLen()
-        i -= 1
-      while state.centerqueue > 0:
-        buffer.renderNode(buffer.nodes[^state.centerqueue], state)
-        state.centerqueue -= 1
+      for node in state.centerqueue:
+        state.centerlen += node.getRawLen()
+      for node in state.centerqueue:
+        buffer.renderNode(node, state)
+      state.centerqueue.setLen(0)
       state.docenter = false
 
   buffer.preAlignNode(node, state)
 
   node.x = state.x
   node.y = state.y
+  node.fmtchar = state.atchar
+  node.rawchar = state.atrawchar
   buffer.writeWrappedText(state, node)
-  #if state.x != node.x:
-  #  eprint node.x, node.y, state.x, state.y, node.nodeAttr().tagType
-  #  eprint "len", state.atrawchar
-  node.width = state.lastwidth - node.x
+  node.fmtend = state.atchar
+  node.rawend = state.atrawchar
+  node.width = state.lastwidth - node.x - 1
   node.height = state.y - node.y + 1
 
   buffer.postAlignNode(node, state)
@@ -229,8 +250,8 @@ proc renderHtml*(buffer: Buffer) =
   var state = newRenderState()
   while stack.len > 0:
     let currElem = stack.pop()
-    buffer.renderNode(currElem.html, state)
     buffer.addNode(currElem.html)
+    buffer.renderNode(currElem.html, state)
     if currElem.xml.len > 0:
       var last = false
       for item in currElem.xml.revItems:
@@ -272,7 +293,7 @@ proc displayBuffer(buffer: Buffer) =
   eraseScreen()
   termGoto(0, 0)
 
-  print(buffer.visibleText())
+  print(buffer.visibleText().ansiReset())
 
 proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
   var s = ""
@@ -288,6 +309,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     let action = getNormalAction(s)
     var redraw = false
     var reshape = false
+    var nostatus = false
     case action
     of ACTION_QUIT:
       eraseScreen()
@@ -313,6 +335,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_CURSOR_TOP: redraw = buffer.cursorTop()
     of ACTION_CURSOR_MIDDLE: redraw = buffer.cursorMiddle()
     of ACTION_CURSOR_BOTTOM: redraw = buffer.cursorBottom()
+    of ACTION_CENTER_LINE: redraw = buffer.centerLine()
     of ACTION_SCROLL_DOWN: redraw = buffer.scrollDown()
     of ACTION_SCROLL_UP: redraw = buffer.scrollUp()
     of ACTION_CLICK:
@@ -332,11 +355,15 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
           return true
     of ACTION_CHANGE_LOCATION:
       var url = $buffer.document.location
+
       clearStatusMsg(buffer.height)
       let status = readLine("URL:", url)
       if status:
         buffer.setLocation(parseUri(url))
         return true
+    of ACTION_LINE_INFO:
+      statusMsg("line " & $buffer.cursorY & "/" & $buffer.lastLine() & " col " & $buffer.cursorX & "/" & $buffer.currentLineLength(), buffer.width)
+      nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true
     of ACTION_RELOAD: return true
@@ -345,13 +372,31 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       redraw = true
     of ACTION_REDRAW: redraw = true
     else: discard
-    redraw = redraw or buffer.checkLinkSelection()
+
     if reshape:
       buffer.clearText()
       buffer.drawHtml()
     if redraw:
       buffer.displayBuffer()
-    buffer.statusMsgForBuffer()
+
+    let prevlink = buffer.selectedlink
+    let sel = buffer.checkLinkSelection()
+    if prevlink != nil and prevlink != buffer.selectedlink:
+      termGoto(prevlink.x - buffer.fromX, prevlink.y - buffer.fromY - 1)
+      print(buffer.text.substr(prevlink.fmtchar, prevlink.fmtend))
+    if sel:
+      termGoto(buffer.selectedlink.x - buffer.fromX, buffer.selectedlink.y - buffer.fromY - 1)
+      let str = buffer.text.substr(buffer.selectedlink.fmtchar, buffer.selectedlink.fmtend)
+      var i = str.findChar('\n') 
+      while i != -1:
+        print("".ansiStyle(styleUnderscore))
+        i = str.findChar('\n', i + 1)
+      print(str.ansiStyle(styleUnderscore).ansiReset())
+
+    if not nostatus:
+      buffer.statusMsgForBuffer()
+    else:
+      nostatus = false
 
 proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
   #buffer.printwrite = true

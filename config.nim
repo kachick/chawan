@@ -23,6 +23,7 @@ type
     ACTION_RELOAD, ACTION_RESHAPE, ACTION_REDRAW,
     ACTION_CURSOR_FIRST_LINE, ACTION_CURSOR_LAST_LINE,
     ACTION_CURSOR_TOP, ACTION_CURSOR_MIDDLE, ACTION_CURSOR_BOTTOM,
+    ACTION_CENTER_LINE, ACTION_LINE_INFO,
     ACTION_LINED_SUBMIT, ACTION_LINED_CANCEL,
     ACTION_LINED_BACKSPACE, ACTION_LINED_CLEAR, ACTION_LINED_KILL, ACTION_LINED_KILL_WORD,
     ACTION_LINED_BACK, ACTION_LINED_FORWARD,
@@ -84,10 +85,10 @@ proc constructActionTable*(origTable: var Table[string, TwtAction]): Table[strin
   return newTable
 
 macro staticReadKeymap(): untyped =
-  var keymap = staticRead"keymap"
+  var config = staticRead"config"
   var normalActionMap: Table[string, TwtAction]
   var linedActionMap: Table[string, TwtAction]
-  for line in keymap.split('\n'):
+  for line in config.split('\n'):
     if line.len == 0 or line[0] == '#':
       continue
     let cmd = line.split(' ')
@@ -126,7 +127,7 @@ macro staticReadKeymap(): untyped =
 
 staticReadKeymap()
 
-proc readKeymap*(filename: string): bool =
+proc readConfig*(filename: string): bool =
   var f: File
   let status = f.open(filename, fmRead)
   var normalActionMap: Table[string, TwtAction]

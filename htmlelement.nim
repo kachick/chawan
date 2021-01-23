@@ -25,9 +25,13 @@ type
     parentElement*: HtmlElement
 
     rawtext*: string
-    fmttext*: string
+    fmttext*: seq[string]
     x*: int
     y*: int
+    fmtchar*: int
+    rawchar*: int
+    fmtend*: int
+    rawend*: int
     width*: int
     height*: int
     openblock*: bool
@@ -56,6 +60,8 @@ type
     underscore*: bool
     islink*: bool
     selected*: bool
+    numChildNodes*: int
+    indent*: int
 
   HtmlInputElement* = ref HtmlInputElementObj
   HtmlInputElementObj = object of HtmlElementObj
@@ -125,10 +131,10 @@ func isDocument*(node: HtmlNode): bool =
   return node.nodeType == NODE_DOCUMENT
 
 func getFmtLen*(htmlNode: HtmlNode): int =
-  return htmlNode.fmttext.len
+  return htmlNode.fmttext.join().runeLen()
 
 func getRawLen*(htmlNode: HtmlNode): int =
-  return htmlNode.rawtext.len
+  return htmlNode.rawtext.runeLen()
 
 func toInputType*(str: string): InputType =
   case str
@@ -164,7 +170,7 @@ func toInputSize*(str: string): int =
       return 20
   return str.parseInt()
 
-func getFmtInput(inputElement: HtmlInputElement): string =
+func getFmtInput(inputElement: HtmlInputElement): seq[string] =
   case inputElement.itype
   of INPUT_TEXT, INPUT_SEARCH:
     let valueFit = fitValueToSize(inputElement.value, inputElement.size)
@@ -194,7 +200,7 @@ proc getRawText*(htmlNode: HtmlNode): string =
   elif htmlNode.isTextNode():
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
       result = htmlNode.rawtext.remove("\n")
-      if unicode.strip($result).toRunes().len > 0:
+      if unicode.strip(result).runeLen() > 0:
         if htmlNode.nodeAttr().display != DISPLAY_INLINE:
           if htmlNode.previousSibling == nil or htmlNode.previousSibling.nodeAttr().display != DISPLAY_INLINE:
             result = unicode.strip(result, true, false)
@@ -209,28 +215,31 @@ proc getRawText*(htmlNode: HtmlNode): string =
   else:
     assert(false)
 
-func getFmtText*(htmlNode: HtmlNode): string =
+func getFmtText*(htmlNode: HtmlNode): seq[string] =
   if htmlNode.isElemNode():
     case HtmlElement(htmlNode).tagType
     of TAG_INPUT: return HtmlInputElement(htmlNode).getFmtInput()
-    else: return ""
+    else: return @[]
   elif htmlNode.isTextNode():
-    result = htmlNode.rawtext
-    if htmlNode.parentElement != nil and htmlNode.parentElement.islink:
-      result = result.ansiFgColor(fgBlue)
-      let parent = HtmlElement(htmlNode.parentNode).ancestor(TAG_A)
-      if parent != nil and parent.selected:
+    result &= htmlNode.rawtext
+    if htmlNode.parentElement != nil:
+      if htmlNode.parentElement.islink:
+        result = result.ansiFgColor(fgBlue).ansiReset()
+        let anchor = htmlNode.ancestor(TAG_A)
+        if anchor != nil and anchor.selected:
+          result = result.ansiStyle(styleUnderscore).ansiReset()
+
+      if htmlNode.parentElement.tagType == TAG_OPTION:
+        result = result.ansiFgColor(fgRed).ansiReset()
+
+      if htmlNode.parentElement.bold:
+        result = result.ansiStyle(styleBright).ansiReset()
+      if htmlNode.parentElement.italic:
+        result = result.ansiStyle(styleItalic).ansiReset()
+      if htmlNode.parentElement.underscore:
         result = result.ansiStyle(styleUnderscore).ansiReset()
-
-    if HtmlElement(htmlNode.parentNode).tagType == TAG_OPTION:
-      result = result.ansiFgColor(fgRed).ansiReset()
-
-    if HtmlElement(htmlNode.parentNode).bold:
-      result = result.ansiStyle(styleBright).ansiReset()
-    if HtmlElement(htmlNode.parentNode).italic:
-      result = result.ansiStyle(styleItalic).ansiReset()
-    if HtmlElement(htmlNode.parentNode).underscore:
-      result = result.ansiStyle(styleUnderscore).ansiReset()
+    else:
+      assert(false, "Uhhhh I'm pretty sure we should have parent elements for text nodes?" & htmlNode.rawtext)
   else:
     assert(false)
 
@@ -306,6 +315,11 @@ proc getHtmlElement*(xmlElement: XmlNode, parentNode: HtmlNode): HtmlElement =
     result = optionElement
   of TAG_PRE, TAG_TD, TAG_TH:
     result.margin = 1
+  of TAG_UL, TAG_OL:
+    result.indent = 1
+  of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
+    result.bold = true
+    result.marginbottom = 1
   else: discard
 
   if parentNode.isElemNode():
@@ -317,6 +331,7 @@ proc getHtmlElement*(xmlElement: XmlNode, parentNode: HtmlNode): HtmlElement =
     result.hidden = result.hidden or parent.hidden
     result.islink = result.islink or parent.islink
   
+  result.numChildNodes = xmlElement.len
 
 proc getHtmlNode*(xmlElement: XmlNode, parent: HtmlNode): HtmlNode =
   case kind(xmlElement)
