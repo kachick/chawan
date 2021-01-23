@@ -355,13 +355,13 @@ proc getHtmlNode*(xmlElement: XmlNode, parent: HtmlNode): HtmlNode =
   result.parentNode = parent
   if parent.isElemNode():
     result.parentElement = HtmlElement(parent)
-
-  result.rawtext = result.getRawText()
-  result.fmttext = result.getFmtText()
   if parent.childNodes.len > 0:
     result.previousSibling = parent.childNodes[^1]
     result.previousSibling.nextSibling = result
   parent.childNodes.add(result)
+
+  result.rawtext = result.getRawText()
+  result.fmttext = result.getFmtText()
 
 func newDocument*(): Document =
   new(result)

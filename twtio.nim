@@ -71,10 +71,10 @@ proc readLine*(prompt: string, current: var string): bool =
         print(' '.repeat(rl - cursor + 1))
         print('\b'.repeat(rl - cursor + 1))
         print("\b \b")
-        new = new.runeSubstr(0, cursor - 1) & new.runeSubstr(cursor, rl)
+        new = new.runeSubstr(0, cursor - 1) & new.runeSubstr(cursor)
         rl = new.runeLen()
         cursor -= 1
-        printesc(new.runeSubstr(cursor, rl))
+        printesc(new.runeSubstr(cursor))
         print('\b'.repeat(rl - cursor))
     of ACTION_LINED_ESC:
       escNext = true
@@ -84,7 +84,7 @@ proc readLine*(prompt: string, current: var string): bool =
       print('\b'.repeat(cursor))
       print(' '.repeat(cursor))
       print('\b'.repeat(cursor))
-      new = new.runeSubstr(cursor, rl)
+      new = new.runeSubstr(cursor)
       rl = new.runeLen()
       printesc(new)
       print('\b'.repeat(rl))
@@ -109,7 +109,7 @@ proc readLine*(prompt: string, current: var string): bool =
         cursor -= 1
         var rune: Rune
         new.fastRuneAt(cursor, rune, false)
-        if rune == runeSpace:
+        if rune == Rune(' '):
           break
     of ACTION_LINED_NEXT_WORD:
       while cursor < rl:
@@ -119,7 +119,7 @@ proc readLine*(prompt: string, current: var string): bool =
         cursor += 1
         if cursor < rl:
           new.fastRuneAt(cursor, rune, false)
-          if rune == runeSpace:
+          if rune == Rune(' '):
             break
     of ACTION_LINED_KILL_WORD:
       var chars = 0
@@ -127,16 +127,16 @@ proc readLine*(prompt: string, current: var string): bool =
         chars += 1
         var rune: Rune
         new.fastRuneAt(cursor - chars, rune, false)
-        if rune == runeSpace:
+        if rune == Rune(' '):
           break
       if chars > 0:
         print(' '.repeat(rl - cursor + 1))
         print('\b'.repeat(rl - cursor + 1))
         print("\b \b".repeat(chars))
-        new = new.runeSubstr(0, cursor - chars) & new.runeSubstr(cursor, rl)
+        new = new.runeSubstr(0, cursor - chars) & new.runeSubstr(cursor)
         rl = new.runeLen()
         cursor -= chars
-        printesc(new.runeSubstr(cursor, rl))
+        printesc(new.runeSubstr(cursor))
         print('\b'.repeat(rl - cursor))
     of ACTION_FEED_NEXT:
       feedNext = true
@@ -153,9 +153,9 @@ proc readLine*(prompt: string, current: var string): bool =
         continue
       print(' '.repeat(rl - cursor + 1))
       print('\b'.repeat(rl - cursor + 1))
-      new = new.runeSubstr(0, cursor) & cs & new.runeSubstr(cursor, rl)
+      new = new.runeSubstr(0, cursor) & cs & new.runeSubstr(cursor)
       rl = new.runeLen()
-      printesc(new.runeSubstr(cursor, rl))
+      printesc(new.runeSubstr(cursor))
       print('\b'.repeat(rl - cursor - 1))
       cursor += 1
     else:

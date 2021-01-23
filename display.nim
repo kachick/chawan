@@ -64,7 +64,6 @@ proc addSpaces(buffer: Buffer, state: var RenderState, n: int) =
   state.atchar += n
   state.atrawchar += n
 
-const runeSpace = " ".toRunes()[0]
 proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
   state.lastwidth = 0
   var n = 0
@@ -77,30 +76,31 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
       continue
 
     for r in w.runes:
-      fmtword &= r
-      rawword &= r
-
-      state.x += 1
-
-      if prevl:
-        state.x += rawword.runeLen
-        prevl = false
-
-      if r == runeSpace:
+      if r == Rune(' '):
+        var s: Rune
+        fastRuneAt(rawword, 0, s, false)
+        #if s == Rune(' ') and prevl:
+        #  fmtword = fmtword.runeSubstr(1)
+        #  rawword = rawword.runeSubstr(1)
+        #  state.x -= 1
         buffer.writefmt(fmtword)
         buffer.writeraw(rawword)
-        state.atchar += fmtword.len
+        state.atchar += fmtword.runeLen()
         state.atrawchar += rawword.runeLen()
+        var a = rawword
         fmtword = ""
         rawword = ""
 
+      fmtword &= r
+      rawword &= r
+
+      state.x += mk_wcwidth_cjk(r)
+
+      if prevl:
+        state.x += mk_wcswidth_cjk(rawword)
+        prevl = false
+
       if state.x > buffer.width:
-        if buffer.rawtext.len > 0 and buffer.rawtext[^1] == ' ':
-          buffer.rawtext = buffer.rawtext.substr(0, buffer.rawtext.len - 2)
-          buffer.text = buffer.text.substr(0, buffer.text.len - 2)
-          state.atchar -= 1
-          state.atrawchar -= 1
-          state.x -= 1
         state.lastwidth = max(state.lastwidth, state.x)
         buffer.flushLine(state)
         state.x = -1
@@ -112,7 +112,7 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
 
   buffer.writefmt(fmtword)
   buffer.writeraw(rawword)
-  state.atchar += fmtword.len
+  state.atchar += fmtword.runeLen()
   state.atrawchar += rawword.runeLen()
   state.lastwidth = max(state.lastwidth, state.x)
 
@@ -150,7 +150,7 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     buffer.addSpaces(state, state.indent)
     buffer.write(listchar)
     state.x += listchar.runeLen()
-    state.atchar += listchar.len
+    state.atchar += listchar.runeLen()
     state.atrawchar += listchar.runeLen()
     buffer.addSpaces(state, 1)
 
@@ -169,7 +169,8 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   if node.closeblock:
     while state.blanklines < max(elem.margin, elem.marginbottom):
       buffer.flushLine(state)
-    state.indent -= elem.indent
+    if node.isElemNode():
+      state.indent -= elem.indent
 
   if elem.tagType == TAG_BR and not node.openblock:
     buffer.flushLine(state)
@@ -238,7 +239,7 @@ type
 proc setLastHtmlLine(buffer: Buffer, state: var RenderState) =
   if buffer.text.len != buffer.lines[^1]:
     state.atchar = buffer.text.len
-    state.atrawchar = buffer.rawtext.len
+    state.atrawchar = buffer.rawtext.runeLen()
   buffer.flushLine(state)
 
 proc renderHtml*(buffer: Buffer) =
@@ -284,8 +285,6 @@ proc statusMsgForBuffer(buffer: Buffer) =
 
 proc cursorBufferPos(buffer: Buffer) =
   var x = buffer.cursorX
-  if x > buffer.currentRawLineLength():
-    x = buffer.currentRawLineLength()
   var y = buffer.cursorY - 1 - buffer.fromY
   termGoto(x, y)
 
@@ -362,7 +361,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      statusMsg("line " & $buffer.cursorY & "/" & $buffer.lastLine() & " col " & $buffer.cursorX & "/" & $buffer.currentLineLength(), buffer.width)
+      statusMsg("line " & $buffer.cursorY & "/" & $buffer.lastLine() & " col " & $buffer.cursorX & "/" & $buffer.currentRawLineLength(), buffer.width)
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true
@@ -383,14 +382,14 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     let sel = buffer.checkLinkSelection()
     if prevlink != nil and prevlink != buffer.selectedlink:
       termGoto(prevlink.x - buffer.fromX, prevlink.y - buffer.fromY - 1)
-      print(buffer.text.substr(prevlink.fmtchar, prevlink.fmtend))
-    if sel:
+      print(buffer.textBetween(prevlink.fmtchar, prevlink.fmtend).ansiReset())
+    if sel and buffer.selectedlink.y < buffer.fromY + buffer.height:
       termGoto(buffer.selectedlink.x - buffer.fromX, buffer.selectedlink.y - buffer.fromY - 1)
-      let str = buffer.text.substr(buffer.selectedlink.fmtchar, buffer.selectedlink.fmtend)
-      var i = str.findChar('\n') 
-      while i != -1:
-        print("".ansiStyle(styleUnderscore))
-        i = str.findChar('\n', i + 1)
+      let str = buffer.textBetween(buffer.selectedlink.fmtchar, buffer.selectedlink.fmtend)
+      #var i = str.findChar(Rune('\n'))
+      #while i != -1:
+      #  print("".ansiStyle(styleUnderscore))
+      #  i = str.findChar(Rune('\n'), i + 1)
       print(str.ansiStyle(styleUnderscore).ansiReset())
 
     if not nostatus:

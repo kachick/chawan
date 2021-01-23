@@ -2,6 +2,7 @@ import options
 import uri
 import tables
 import strutils
+import unicode
 
 import fusion/htmlparser/xmltree
 
@@ -9,6 +10,7 @@ import termattrs
 import htmlelement
 import twtio
 import enums
+import twtstr
 
 type
   Buffer* = ref BufferObj
@@ -52,21 +54,26 @@ func lastLine*(buffer: Buffer): int =
 func lastVisibleLine*(buffer: Buffer): int =
   return min(buffer.fromY + buffer.height - 1, buffer.lastLine())
 
+func currentLine*(buffer: Buffer): int =
+  return buffer.cursorY - 1
+
+func textBetween*(buffer: Buffer, s: int, e: int): string =
+  return buffer.text.runeSubstr(s, e - s)
+
 #doesn't include newline
 func lineLength*(buffer: Buffer, line: int): int =
   assert buffer.lines.len > line
-  let len = buffer.lines[line] - buffer.lines[line - 1] - 2
+  let str = buffer.textBetween(buffer.lines[line - 1], buffer.lines[line])
+  let len = mk_wcswidth_cjk(str)
   if len >= 0:
     return len
   else:
     return 0
 
-func currentLine*(buffer: Buffer): int =
-  return buffer.cursorY - 1
-
 func rawLineLength*(buffer: Buffer, line: int): int =
   assert buffer.rawlines.len > line
-  let len = buffer.rawlines[line] - buffer.rawlines[line - 1] - 2
+  let str = buffer.textBetween(buffer.rawlines[line - 1], buffer.rawlines[line])
+  let len = mk_wcswidth_cjk(str)
   if len >= 0:
     return len
   else:
@@ -84,9 +91,9 @@ func cursorAtLineEnd*(buffer: Buffer): bool =
 func atPercentOf*(buffer: Buffer): int =
   return (100 * buffer.cursorY) div buffer.lastLine()
 
+
 func visibleText*(buffer: Buffer): string = 
-  result = buffer.text.substr(buffer.lines[buffer.fromY], buffer.lines[buffer.lastVisibleLine()])
-  result.stripLineEnd()
+  return buffer.textBetween(buffer.lines[buffer.fromY], buffer.lines[buffer.lastVisibleLine()])
 
 func lastNode*(buffer: Buffer): HtmlNode =
   return buffer.nodes[^1]
@@ -112,9 +119,6 @@ func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
 
 func cursorAt*(buffer: Buffer): int =
   return buffer.rawlines[buffer.currentLine()] + buffer.cursorX
-
-func cursorChar*(buffer: Buffer): char =
-  return buffer.text[buffer.cursorAt()]
 
 func canScroll*(buffer: Buffer): bool =
   return buffer.lastLine() > buffer.height
@@ -211,9 +215,9 @@ proc scrollTo*(buffer: Buffer, y: int): bool =
 
 proc cursorTo*(buffer: Buffer, x: int, y: int): bool =
   result = false
-  buffer.cursorY = min(max(y, 0), buffer.lastLine())
-  if buffer.fromY > buffer.cursorY:
-    buffer.fromY = min(buffer.cursorY - 1, buffer.lastLine() - buffer.height)
+  buffer.cursorY = min(max(y, 1), buffer.lastLine())
+  if buffer.fromY >= buffer.cursorY:
+    buffer.fromY = max(buffer.cursorY - 1, 0)
     result = true
   elif buffer.fromY + buffer.height <= buffer.cursorY:
     buffer.fromY = max(buffer.cursorY - buffer.height + 1, 0)
@@ -251,7 +255,7 @@ proc cursorUp*(buffer: Buffer): bool =
 
 proc cursorRight*(buffer: Buffer): bool =
   if buffer.cursorX < buffer.currentRawLineLength():
-    buffer.cursorX += 1
+    buffer.cursorX += mk_wcwidth_cjk(buffer.rawtext.runeAt(buffer.rawlines[buffer.currentLine()] + buffer.cursorX))
     buffer.xend = 0
   else:
     buffer.xend = buffer.cursorX
@@ -259,6 +263,7 @@ proc cursorRight*(buffer: Buffer): bool =
 
 proc cursorLeft*(buffer: Buffer): bool =
   if buffer.cursorX > 0:
+    buffer.cursorX -= mk_wcwidth_cjk(buffer.rawtext.runeAt(buffer.rawlines[buffer.currentLine()] + buffer.cursorX))
     buffer.cursorX -= 1
   buffer.xend = 0
   return false
@@ -271,24 +276,29 @@ proc cursorLineEnd*(buffer: Buffer) =
   buffer.cursorX = buffer.currentRawLineLength()
   buffer.xend = buffer.cursorX
 
-proc cursorNextNode*(buffer: Buffer):  bool =
-  if buffer.cursorAtLineEnd():
-    if buffer.cursorY < buffer.lastLine():
-      let ret = buffer.cursorDown()
-      buffer.cursorLineEnd()
-      return ret
-    else:
-      buffer.cursorLineBegin()
-      return false
+iterator revnodes*(buffer: Buffer): HtmlNode {.inline.} =
+  var i = buffer.nodes.len - 1
+  while i >= 0:
+    yield buffer.nodes[i]
+    i -= 1
 
-  let selectedNode = buffer.findSelectedNode()
-  var res = buffer.cursorRight()
-  if selectedNode.isNone:
-    return res
-  while buffer.findSelectedNode().isNone or buffer.findSelectedNode().get() == selectedNode.get():
-    if buffer.cursorAtLineEnd():
-      return res
-    res = buffer.cursorRight()
+proc cursorNextNode*(buffer: Buffer): bool =
+  for node in buffer.nodes:
+    if node.displayed():
+      if node.y > buffer.cursorY or (node.y == buffer.cursorY and node.x > buffer.cursorX):
+        return buffer.cursorTo(node.x, node.y)
+  buffer.cursorLineEnd()
+  return false
+
+proc cursorPrevNode*(buffer: Buffer): bool =
+  var prevnode: HtmlNode
+  for node in buffer.nodes:
+    if node.displayed():
+      if node.y >= buffer.cursorY and node.x >= buffer.cursorX and prevnode != nil:
+        return buffer.cursorTo(prevnode.x, prevnode.y)
+      prevnode = node
+  buffer.cursorLineBegin()
+  return false
 
 proc cursorNextWord*(buffer: Buffer): bool =
   if buffer.cursorAtLineEnd():
@@ -301,29 +311,10 @@ proc cursorNextWord*(buffer: Buffer): bool =
       return false
 
   var res = buffer.cursorRight()
-  while buffer.rawtext[buffer.rawlines[buffer.currentLine()] + buffer.cursorX] != ' ':
+  while buffer.rawtext.runeAt(buffer.rawlines[buffer.currentLine()] + buffer.cursorX) != Rune(' '):
     if buffer.cursorAtLineEnd():
       return res
     res = res or buffer.cursorRight()
-
-proc cursorPrevNode*(buffer: Buffer): bool =
-  if buffer.cursorX <= 1:
-    if buffer.cursorY > 1:
-      let res = buffer.cursorUp()
-      buffer.cursorLineEnd()
-      return res
-    else:
-      buffer.cursorLineBegin()
-      return false
-
-  let selectedNode = buffer.findSelectedNode()
-  var res = buffer.cursorLeft()
-  if selectedNode.isNone:
-    return res
-  while buffer.findSelectedNode().isNone or buffer.findSelectedNode().get() == selectedNode.get():
-    if buffer.cursorX == 0:
-      return res
-    res = res or buffer.cursorLeft()
 
 proc cursorPrevWord*(buffer: Buffer): bool =
   if buffer.cursorX <= 1:
@@ -336,7 +327,7 @@ proc cursorPrevWord*(buffer: Buffer): bool =
       return false
 
   discard buffer.cursorLeft()
-  while buffer.rawtext[buffer.rawlines[buffer.currentLine()] + buffer.cursorX] != ' ':
+  while buffer.rawtext.runeAt(buffer.rawlines[buffer.currentLine()] + buffer.cursorX) != Rune(' '):
     if buffer.cursorX == 0:
       return false
     discard buffer.cursorLeft()
@@ -461,7 +452,7 @@ proc gotoAnchor*(buffer: Buffer): bool =
   if buffer.document.location.anchor != "":
     let node =  buffer.getElementById(buffer.document.location.anchor)
     if node != nil:
-      return buffer.scrollTo(node.y)
+      return buffer.scrollTo(max(node.y - buffer.height div 2, 0))
   return false
 
 proc setLocation*(buffer: Buffer, uri: Uri) =
