@@ -86,6 +86,8 @@ func newHtmlElement(tagType: TagType, parentNode: HtmlNode): HtmlElement =
   of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
     result.bold = true
     result.marginbottom = 1
+  of TAG_A:
+    result.islink = true
   else: discard
 
   if parentNode.isElemNode():
@@ -179,8 +181,10 @@ proc applyNodeText(htmlNode: HtmlNode) =
   htmlNode.rawtext = htmlNode.getRawText()
   htmlNode.fmttext = htmlNode.getFmtText()
 
+#TODO honestly parsexml sucks I should just make my own
 proc nparseHtml*(inputStream: Stream): Document =
   var x: XmlParser
+  let options = @[reportWhitespace, allowUnquotedAttribs, allowEmptyAttribs]
   x.open(inputStream, "")
   var state: ParseState
   let document = newDocument()
@@ -212,8 +216,13 @@ proc nparseHtml*(inputStream: Stream): Document =
         elif x.kind == xmlCharData:
           if x.rawData.strip() == "/>":
             break
+        elif x.kind == xmlElementEnd:
+          break
+        elif x.kind == xmlElementOpen:
+          #wtf??? TODO
+          break
         else:
-          assert(false, "wtf") #TODO
+          assert(false, "wtf " & $x.kind & " " & x.rawdata) #TODO
         x.next()
       s &= ">"
       eprint s

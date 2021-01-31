@@ -257,7 +257,6 @@ proc cursorNextWord*(buffer: Buffer): bool =
   var r: Rune
   var x = buffer.cursorx
   var y = buffer.cursory
-  eprint 1
   if llen >= 0:
     fastRuneAt(buffer.rawtext[y], x, r, false)
 
@@ -265,14 +264,12 @@ proc cursorNextWord*(buffer: Buffer): bool =
       if x >= llen:
         break
       inc x
-      eprint 2
       fastRuneAt(buffer.rawtext[y], x, r, false)
 
     while r == Rune(' '):
       if x >= llen:
         break
       inc x
-      eprint 3
       fastRuneAt(buffer.rawtext[y], x, r, false)
 
   if x >= llen:

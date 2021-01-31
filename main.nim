@@ -24,16 +24,17 @@ proc loadLocalPage*(url: string): string =
 proc getRemotePage*(url: string): Stream =
   return clientInstance.get(url).bodyStream
 
-proc loadPageUri(uri: Uri, currentcontent: XmlNode): XmlNode =
+proc getLocalPage*(url: string): Stream =
+  return newFileStream(url, fmRead)
+
+proc getPageUri(uri: Uri): Stream =
   var moduri = uri
   moduri.anchor = ""
-  if uri.scheme == "" and uri.path == "" and uri.anchor != "" and currentcontent != nil:
-    return currentcontent
-  elif uri.scheme == "" or uri.scheme == "file":
-    return parseHtml(loadLocalPage($moduri))
+  if uri.scheme == "" or uri.scheme == "file":
+    return getLocalPage($moduri)
   else:
     #return nparseHtml(getRemotePage($moduri))
-    return parseHtml(loadRemotePage($moduri))
+    return getRemotePage($moduri)
 
 var buffers: seq[Buffer]
 
@@ -45,26 +46,25 @@ proc main*() =
     eprint "Failed to read keymap, falling back to default"
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
-  buffer.document = nparseHtml(getRemotePage("http://lite.duckduckgo.com"))
+  let uri = parseUri(paramStr(1))
+  buffers.add(buffer)
+  buffer.document = nparseHtml(getPageUri(uri))
+  buffer.setLocation(uri)
   buffer.nrenderHtml()
-  discard displayPage(getTermAttributes(), buffer)
-  return
-  #let uri = parseUri(paramStr(1))
-  #buffers.add(buffer)
-  #buffer.setLocation(uri)
-  #buffer.htmlSource = loadPageUri(uri, buffer.htmlSource)
-  #buffer.renderHtml()
-  #var lastUri = uri
-  #while displayPage(attrs, buffer):
-  #  statusMsg("Loading...", buffer.height)
-  #  var newUri = buffer.document.location
-  #  lastUri.anchor = ""
-  #  newUri.anchor = ""
-  #  if $lastUri != $newUri:
-  #    buffer.clearBuffer()
-  #    buffer.htmlSource = loadPageUri(buffer.document.location, buffer.htmlSource)
-  #    buffer.renderHtml()
-  #  lastUri = newUri
+  var lastUri = uri
+  while displayPage(attrs, buffer):
+    statusMsg("Loading...", buffer.height)
+    var newUri = buffer.document.location
+    lastUri.anchor = ""
+    newUri.anchor = ""
+    if $lastUri != $newUri:
+      buffer.clearBuffer()
+      if uri.scheme == "" and uri.path == "" and uri.anchor != "":
+        discard
+      else:
+        buffer.document = nparseHtml(getPageUri(buffer.document.location))
+      buffer.nrenderHtml()
+    lastUri = newUri
 
 #waitFor loadPage("https://lite.duckduckgo.com/lite/?q=hello%20world")
 #eprint mk_wcswidth_cjk("abc•de")

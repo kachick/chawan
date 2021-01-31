@@ -275,8 +275,10 @@ proc nrenderHtml*(buffer: Buffer) =
     let currElem = stack.pop()
     buffer.addNode(currElem)
     buffer.renderNode(currElem, state)
-    for item in currElem.childNodes:
-      stack.add(item)
+    var i = currElem.childNodes.len - 1
+    while i >= 0:
+      stack.add(currElem.childNodes[i])
+      i -= 1
 
   buffer.setLastHtmlLine(state)
 
