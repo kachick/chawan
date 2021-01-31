@@ -59,7 +59,7 @@ func currentLineLength*(buffer: Buffer): int =
   return buffer.rawtext[buffer.cursory].runeLen()
 
 func atPercentOf*(buffer: Buffer): int =
-  return (100 * buffer.cursory) div buffer.lastLine()
+  return (100 * (buffer.cursory + 1)) div (buffer.lastLine() + 1)
 
 func fmtBetween*(buffer: Buffer, sx: int, sy: int, ex: int, ey: int): string =
   if sy < ey:
@@ -257,19 +257,23 @@ proc cursorNextWord*(buffer: Buffer): bool =
   var r: Rune
   var x = buffer.cursorx
   var y = buffer.cursory
-  fastRuneAt(buffer.rawtext[y], x, r, false)
-
-  while r != Rune(' '):
-    if x >= llen:
-      break
-    inc x
+  eprint 1
+  if llen >= 0:
     fastRuneAt(buffer.rawtext[y], x, r, false)
 
-  while r == Rune(' '):
-    if x >= llen:
-      break
-    inc x
-    fastRuneAt(buffer.rawtext[y], x, r, false)
+    while r != Rune(' '):
+      if x >= llen:
+        break
+      inc x
+      eprint 2
+      fastRuneAt(buffer.rawtext[y], x, r, false)
+
+    while r == Rune(' '):
+      if x >= llen:
+        break
+      inc x
+      eprint 3
+      fastRuneAt(buffer.rawtext[y], x, r, false)
 
   if x >= llen:
     if y < buffer.lastLine():
@@ -281,19 +285,20 @@ proc cursorPrevWord*(buffer: Buffer): bool =
   var r: Rune
   var x = buffer.cursorx
   var y = buffer.cursory
-  fastRuneAt(buffer.rawtext[y], x, r, false)
-
-  while r != Rune(' '):
-    if x == 0:
-      break
-    dec x
+  if buffer.currentLineLength() > 0:
     fastRuneAt(buffer.rawtext[y], x, r, false)
 
-  while r == Rune(' '):
-    if x == 0:
-      break
-    dec x
-    fastRuneAt(buffer.rawtext[y], x, r, false)
+    while r != Rune(' '):
+      if x == 0:
+        break
+      dec x
+      fastRuneAt(buffer.rawtext[y], x, r, false)
+
+    while r == Rune(' '):
+      if x == 0:
+        break
+      dec x
+      fastRuneAt(buffer.rawtext[y], x, r, false)
 
   if x == 0:
     if y < buffer.lastLine():

@@ -7,6 +7,12 @@ import twtio
 import enums
 import strutils
 
+type
+  ParseState = object
+    closed: bool
+    parents: seq[HtmlNode]
+    parsedNode: HtmlNode
+
 #> no I won't manually write all this down
 #> maybe todo to accept stuff other than tagtype (idk how useful that'd be)
 #still todo, it'd be very useful
@@ -31,15 +37,65 @@ macro genEnumCase(s: string): untyped =
 func tagType(s: string): TagType =
   genEnumCase(s)
 
-func newHtmlElement(tagType: TagType): HtmlElement =
+func newHtmlElement(tagType: TagType, parentNode: HtmlNode): HtmlElement =
   case tagType
   of TAG_INPUT: result = new(HtmlInputElement)
   of TAG_A: result = new(HtmlAnchorElement)
   of TAG_SELECT: result = new(HtmlSelectElement)
   of TAG_OPTION: result = new(HtmlOptionElement)
   else: result = new(HtmlElement)
-  result.tagType = tagType
+
   result.nodeType = NODE_ELEMENT
+  result.tagType = tagType
+  result.parentNode = parentNode
+  if parentNode.isElemNode():
+    result.parentElement = HtmlElement(parentNode)
+
+  if tagType in DisplayInlineTags:
+    result.display = DISPLAY_INLINE
+  elif tagType in DisplayBlockTags:
+    result.display = DISPLAY_BLOCK
+  elif tagType in DisplayInlineBlockTags:
+    result.display = DISPLAY_INLINE_BLOCK
+  elif tagType == TAG_LI:
+    result.display = DISPLAY_LIST_ITEM
+  else:
+    result.display = DISPLAY_NONE
+
+  case tagType
+  of TAG_CENTER:
+    result.centered = true
+  of TAG_B:
+    result.bold = true
+  of TAG_I:
+    result.italic = true
+  of TAG_U:
+    result.underscore = true
+  of TAG_HEAD:
+    result.hidden = true
+  of TAG_STYLE:
+    result.hidden = true
+  of TAG_SCRIPT:
+    result.hidden = true
+  of TAG_OPTION:
+    result.hidden = true #TODO
+  of TAG_PRE, TAG_TD, TAG_TH:
+    result.margin = 1
+  of TAG_UL, TAG_OL:
+    result.indent = 1
+  of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
+    result.bold = true
+    result.marginbottom = 1
+  else: discard
+
+  if parentNode.isElemNode():
+    let parent = HtmlElement(parentNode)
+    result.centered = result.centered or parent.centered
+    result.bold = result.bold or parent.bold
+    result.italic = result.italic or parent.italic
+    result.underscore = result.underscore or parent.underscore
+    result.hidden = result.hidden or parent.hidden
+    result.islink = result.islink or parent.islink
 
 func toInputType*(str: string): InputType =
   case str
@@ -103,77 +159,77 @@ proc applyAttribute(htmlElement: HtmlElement, key: string, value: string) =
     else: discard
   else: return
 
-var s = ""
+proc closeNode(state: var ParseState) =
+  state.parents.setLen(state.parents.len - 1)
+  state.closed = true
+
+proc closeSingleNodes(state: var ParseState) =
+  if not state.closed and state.parents[^1].isElemNode() and HtmlElement(state.parents[^1]).tagType in SingleTagTypes:
+    state.closeNode()
+
+proc processHtmlElement(state: var ParseState, htmlElement: HtmlElement) =
+  state.closed = false
+  if state.parents[^1].childNodes.len > 0:
+    htmlElement.previousSibling = state.parents[^1].childNodes[^1]
+    htmlElement.previousSibling.nextSibling = htmlElement
+  state.parents[^1].childNodes.add(htmlElement)
+  state.parents.add(htmlElement)
+
+proc applyNodeText(htmlNode: HtmlNode) =
+  htmlNode.rawtext = htmlNode.getRawText()
+  htmlNode.fmttext = htmlNode.getFmtText()
+
 proc nparseHtml*(inputStream: Stream): Document =
   var x: XmlParser
   x.open(inputStream, "")
-  var parents: seq[HtmlNode]
+  var state: ParseState
   let document = newDocument()
-  parents.add(document)
-  var closed = true
-  while parents.len > 0 and x.kind != xmlEof:
-    var currParent = parents[^1]
-    while true:
-      var parsedNode: HtmlNode
+  state.parents.add(document)
+  while state.parents.len > 0 and x.kind != xmlEof:
+    x.next()
+    case x.kind
+    of xmlComment: discard #TODO
+    of xmlElementStart:
+      eprint "<" & x.rawdata & ">"
+      state.closeSingleNodes()
+      let parsedNode = newHtmlElement(tagType(x.rawData), state.parents[^1])
+      parsedNode.applyNodeText()
+      state.processHtmlElement(parsedNode)
+    of xmlElementEnd:
+      eprint "</" & x.rawdata & ">"
+      state.closeNode()
+    of xmlElementOpen:
+      var s = "<" & x.rawdata
+      state.closeSingleNodes()
+      let parsedNode = newHtmlElement(tagType(x.rawData), state.parents[^1])
       x.next()
-      case x.kind
-      of xmlComment: discard #TODO
-      of xmlElementStart:
-        if not closed and currParent.isElemNode() and HtmlElement(currParent).tagType in SingleTagTypes:
-          parents.setLen(parents.len - 1)
-          currParent = parents[^1]
-          closed = true
-        eprint "<" & x.rawData & ">"
-        parsedNode = newHtmlElement(tagType(x.rawData))
-        currParent.childNodes.add(parsedNode)
-        if currParent.isElemNode():
-          parsedNode.parentElement = HtmlElement(currParent)
-        parsedNode.parentNode = currParent
-        parents.add(parsedNode)
-        closed = false
-        break
-      of xmlElementEnd:
-        eprint "</" & x.rawData & ">"
-        parents.setLen(parents.len - 1)
-        closed = true
-      of xmlElementOpen:
-        if not closed and currParent.isElemNode() and HtmlElement(currParent).tagType in SingleTagTypes:
-          parents.setLen(parents.len - 1)
-          currParent = parents[^1]
-          closed = true
-        parsedNode = newHtmlElement(tagType(x.rawData))
-        s = "<" & x.rawData
+      while x.kind != xmlElementClose and x.kind != xmlEof:
+        if x.kind == xmlAttribute:
+          HtmlElement(parsedNode).applyAttribute(x.rawData.tolower(), x.rawData2)
+          s &= " " & x.rawdata & "=\"" & x.rawdata2 & "\""
+        elif x.kind == xmlError:
+          HtmlElement(parsedNode).applyAttribute(x.rawData.tolower(), "")
+        elif x.kind == xmlCharData:
+          if x.rawData.strip() == "/>":
+            break
+        else:
+          assert(false, "wtf") #TODO
         x.next()
-        while x.kind != xmlElementClose and x.kind != xmlEof:
-          if x.kind == xmlAttribute:
-            HtmlElement(parsedNode).applyAttribute(x.rawData.tolower(), x.rawData2)
-            s &= " "
-            s &= x.rawData
-            s &= "=\""
-            s &= x.rawData2
-            s &= "\""
-          x.next()
-        s &= ">"
-        eprint s
-
-        currParent.childNodes.add(parsedNode)
-        if currParent.isElemNode():
-          parsedNode.parentElement = HtmlElement(currParent)
-        parsedNode.parentNode = currParent
-        parents.add(parsedNode)
-        closed = false
-        break
-      of xmlCharData:
-        let textNode = new(HtmlNode)
-        textNode.nodeType = NODE_TEXT
-        textNode.rawtext = x.rawData
-        currParent.childNodes.add(textNode)
-        textNode.parentNode = currParent
-        if currParent.isElemNode():
-          textNode.parentElement = HtmlElement(currParent)
-        eprint x.rawData, currParent.nodeType
-      of xmlEntity:
-        eprint "entity", x.rawData
-      of xmlEof: break
-      else: discard
+      s &= ">"
+      eprint s
+      parsedNode.applyNodeText()
+      state.processHtmlElement(parsedNode)
+    of xmlCharData:
+      eprint x.rawdata
+      let textNode = new(HtmlNode)
+      textNode.nodeType = NODE_TEXT
+      state.parents[^1].childNodes.add(textNode)
+      textNode.parentNode = state.parents[^1]
+      if state.parents[^1].isElemNode():
+        textNode.parentElement = HtmlElement(state.parents[^1])
+      textNode.rawtext = x.rawData
+      textNode.applyNodeText()
+    of xmlEntity: discard #TODO
+    of xmlEof: break
+    else: discard
   return document

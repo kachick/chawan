@@ -45,27 +45,27 @@ proc main*() =
     eprint "Failed to read keymap, falling back to default"
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
-  let uri = parseUri(paramStr(1))
-  buffers.add(buffer)
-  buffer.setLocation(uri)
-  buffer.htmlSource = loadPageUri(uri, buffer.htmlSource)
-  buffer.renderHtml()
-  var lastUri = uri
-  while displayPage(attrs, buffer):
-    statusMsg("Loading...", buffer.height)
-    var newUri = buffer.document.location
-    lastUri.anchor = ""
-    newUri.anchor = ""
-    if $lastUri != $newUri:
-      buffer.clearBuffer()
-      buffer.htmlSource = loadPageUri(buffer.document.location, buffer.htmlSource)
-      buffer.renderHtml()
-    lastUri = newUri
+  buffer.document = nparseHtml(getRemotePage("http://lite.duckduckgo.com"))
+  buffer.nrenderHtml()
+  discard displayPage(getTermAttributes(), buffer)
+  return
+  #let uri = parseUri(paramStr(1))
+  #buffers.add(buffer)
+  #buffer.setLocation(uri)
+  #buffer.htmlSource = loadPageUri(uri, buffer.htmlSource)
+  #buffer.renderHtml()
+  #var lastUri = uri
+  #while displayPage(attrs, buffer):
+  #  statusMsg("Loading...", buffer.height)
+  #  var newUri = buffer.document.location
+  #  lastUri.anchor = ""
+  #  newUri.anchor = ""
+  #  if $lastUri != $newUri:
+  #    buffer.clearBuffer()
+  #    buffer.htmlSource = loadPageUri(buffer.document.location, buffer.htmlSource)
+  #    buffer.renderHtml()
+  #  lastUri = newUri
 
 #waitFor loadPage("https://lite.duckduckgo.com/lite/?q=hello%20world")
 #eprint mk_wcswidth_cjk("abc•de")
-var buf = newBuffer(getTermAttributes())
-buf.document = nparseHtml(getRemotePage("http://lite.duckduckgo.com"))
-buf.nrenderHtml()
-discard displayPage(getTermAttributes(), buf)
-#main()
+main()

@@ -172,7 +172,7 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     buffer.flushLine(state)
 
 proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
-  if node.isDocument() or node.parentNode == nil:
+  if node.isDocument():
     return
   let elem = node.nodeAttr()
   if elem.tagType == TAG_TITLE:
@@ -275,9 +275,8 @@ proc nrenderHtml*(buffer: Buffer) =
     let currElem = stack.pop()
     buffer.addNode(currElem)
     buffer.renderNode(currElem, state)
-    if currElem.childNodes.len > 0:
-      for item in currElem.childNodes:
-        stack.add(item)
+    for item in currElem.childNodes:
+      stack.add(item)
 
   buffer.setLastHtmlLine(state)
 
@@ -288,7 +287,7 @@ proc drawHtml(buffer: Buffer) =
   buffer.setLastHtmlLine(state)
 
 proc statusMsgForBuffer(buffer: Buffer) =
-  var msg = $buffer.cursory & "/" & $buffer.lastLine() & " (" &
+  var msg = $(buffer.cursory + 1) & "/" & $(buffer.lastLine() + 1) & " (" &
             $buffer.atPercentOf() & "%) " &
             "<" & buffer.title & ">"
   if buffer.hovertext.len > 0:

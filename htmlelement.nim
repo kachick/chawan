@@ -76,6 +76,7 @@ type
   HtmlSelectElementObj = object of HtmlElementObj
     name*: string
     value*: string
+    valueSet*: bool
 
   HtmlOptionElement* = ref HtmlOptionElementObj
   HtmlOptionElementObj = object of HtmlElementObj

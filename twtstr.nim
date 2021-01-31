@@ -88,7 +88,7 @@ func findChar*(str: string, c: Rune, start: int = 0): int =
 #Measure length of rune. Transpiled from https://www.cl.cam.ac.uk/~mgk25/ucs/wcwidth.c
 
 #auxiliary function for binary search in interval table
-#TODO: use binary search in stdlib?
+#TODO: use binary search from stdlib?
 func bisearch(ucs: Rune, table: openarray[(int, int)]): bool =
   var max = table.high
   var min = 0
