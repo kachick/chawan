@@ -6,7 +6,6 @@ type
     termHeight*: int
 
 proc getTermAttributes*(): TermAttributes =
-  var t = TermAttributes()
-  t.termWidth = terminalWidth()
-  t.termHeight = terminalHeight()
-  return t
+  let attrs = TermAttributes(termWidth: terminalWidth(),
+                             termHeight: terminalHeight())
+  return attrs

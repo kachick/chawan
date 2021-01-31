@@ -102,7 +102,7 @@ proc readLine*(prompt: string, current: var string): bool =
         var rune: Rune
         new.fastRuneAt(cursor, rune, false)
         printesc($rune)
-        cursor += 1
+        inc cursor
     of ACTION_LINED_PREV_WORD:
       while cursor > 0:
         print('\b')
@@ -116,7 +116,7 @@ proc readLine*(prompt: string, current: var string): bool =
         var rune: Rune
         new.fastRuneAt(cursor, rune, false)
         printesc($rune)
-        cursor += 1
+        inc cursor
         if cursor < rl:
           new.fastRuneAt(cursor, rune, false)
           if rune == Rune(' '):
@@ -124,7 +124,7 @@ proc readLine*(prompt: string, current: var string): bool =
     of ACTION_LINED_KILL_WORD:
       var chars = 0
       while cursor > chars:
-        chars += 1
+        inc chars
         var rune: Rune
         new.fastRuneAt(cursor - chars, rune, false)
         if rune == Rune(' '):
@@ -157,6 +157,6 @@ proc readLine*(prompt: string, current: var string): bool =
       rl = new.runeLen()
       printesc(new.runeSubstr(cursor))
       print('\b'.repeat(rl - cursor - 1))
-      cursor += 1
+      inc cursor
     else:
       feedNext = true

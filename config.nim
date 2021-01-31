@@ -13,7 +13,6 @@ type
     ACTION_CURSOR_UP, ACTION_CURSOR_DOWN, ACTION_CURSOR_LEFT, ACTION_CURSOR_RIGHT,
     ACTION_CURSOR_LINEEND, ACTION_CURSOR_LINEBEGIN,
     ACTION_CURSOR_NEXT_WORD, ACTION_CURSOR_PREV_WORD,
-    ACTION_CURSOR_NEXT_NODE, ACTION_CURSOR_PREV_NODE,
     ACTION_CURSOR_NEXT_LINK, ACTION_CURSOR_PREV_LINK,
     ACTION_PAGE_DOWN, ACTION_PAGE_UP,
     ACTION_HALF_PAGE_DOWN, ACTION_HALF_PAGE_UP,
@@ -48,10 +47,10 @@ proc getRealKey(key: string): string =
         realk &= c
       skip = false
     elif c == 'C':
-      control += 1
+      inc control
       currchar = c
     elif c == '-' and control == 1:
-      control += 1
+      inc control
     elif control == 1:
       realk &= 'C' & c
       control = 0

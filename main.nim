@@ -1,6 +1,7 @@
 import httpClient
 import uri
 import os
+import streams
 
 import fusion/htmlparser
 import fusion/htmlparser/xmltree
@@ -10,12 +11,18 @@ import termattrs
 import buffer
 import twtio
 import config
+import twtstr
+import parser
 
+let clientInstance = newHttpClient()
 proc loadRemotePage*(url: string): string =
-  return newHttpClient().getContent(url)
+  return clientInstance.getContent(url)
 
 proc loadLocalPage*(url: string): string =
   return readFile(url)
+
+proc getRemotePage*(url: string): Stream =
+  return clientInstance.get(url).bodyStream
 
 proc loadPageUri(uri: Uri, currentcontent: XmlNode): XmlNode =
   var moduri = uri
@@ -25,6 +32,7 @@ proc loadPageUri(uri: Uri, currentcontent: XmlNode): XmlNode =
   elif uri.scheme == "" or uri.scheme == "file":
     return parseHtml(loadLocalPage($moduri))
   else:
+    #return nparseHtml(getRemotePage($moduri))
     return parseHtml(loadRemotePage($moduri))
 
 var buffers: seq[Buffer]
@@ -55,4 +63,9 @@ proc main*() =
     lastUri = newUri
 
 #waitFor loadPage("https://lite.duckduckgo.com/lite/?q=hello%20world")
-main()
+#eprint mk_wcswidth_cjk("abc•de")
+var buf = newBuffer(getTermAttributes())
+buf.document = nparseHtml(getRemotePage("http://lite.duckduckgo.com"))
+buf.nrenderHtml()
+discard displayPage(getTermAttributes(), buf)
+#main()

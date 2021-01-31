@@ -3,7 +3,6 @@ import terminal
 import uri
 import unicode
 
-import fusion/htmlparser
 import fusion/htmlparser/xmltree
 
 import twtstr
@@ -28,10 +27,8 @@ type
     fmttext*: seq[string]
     x*: int
     y*: int
-    fmtchar*: int
-    rawchar*: int
-    fmtend*: int
-    rawend*: int
+    ex*: int
+    ey*: int
     width*: int
     height*: int
     openblock*: bool
@@ -45,8 +42,8 @@ type
   HtmlElement* = ref HtmlElementObj
   HtmlElementObj = object of HtmlNodeObj
     id*: string
+    class*: string
     tagType*: TagType
-    name*: string
     centered*: bool
     display*: DisplayType
     innerText*: string
@@ -77,6 +74,7 @@ type
 
   HtmlSelectElement* = ref HtmlSelectElementObj
   HtmlSelectElementObj = object of HtmlElementObj
+    name*: string
     value*: string
 
   HtmlOptionElement* = ref HtmlOptionElementObj
@@ -103,7 +101,7 @@ macro genEnumCase(s: string): untyped =
   branch.add(ret)
   casestmt.add(branch)
 
-func tagType*(s: string): TagType =
+func tagType(s: string): TagType =
   genEnumCase(s)
 
 func nodeAttr*(node: HtmlNode): HtmlElement =
@@ -192,6 +190,9 @@ func ancestor*(htmlNode: HtmlNode, tagType: TagType): HtmlElement =
   while result != nil and result.tagType != tagType:
     result = result.parentElement
 
+func displayWhitespace*(htmlElem: HtmlElement): bool =
+  return htmlElem.display == DISPLAY_INLINE or htmlElem.display == DISPLAY_INLINE_BLOCK
+
 proc getRawText*(htmlNode: HtmlNode): string =
   if htmlNode.isElemNode():
     case HtmlElement(htmlNode).tagType
@@ -202,9 +203,9 @@ proc getRawText*(htmlNode: HtmlNode): string =
       result = htmlNode.rawtext.remove("\n")
       if unicode.strip(result).runeLen() > 0:
         if htmlNode.nodeAttr().display != DISPLAY_INLINE:
-          if htmlNode.previousSibling == nil or htmlNode.previousSibling.nodeAttr().display != DISPLAY_INLINE:
+          if htmlNode.previousSibling == nil or htmlNode.previousSibling.nodeAttr().displayWhitespace():
             result = unicode.strip(result, true, false)
-          if htmlNode.nextSibling == nil or htmlNode.nextSibling.nodeAttr().display != DISPLAY_INLINE:
+          if htmlNode.nextSibling == nil or htmlNode.nextSibling.nodeAttr().displayWhitespace():
             result = unicode.strip(result, false, true)
       else:
         result = ""
@@ -259,12 +260,12 @@ proc getHtmlElement*(xmlElement: XmlNode, parentNode: HtmlNode): HtmlElement =
 
   result.id = xmlElement.attr("id")
 
-  if tagType in InlineTagTypes:
+  if tagType in DisplayInlineTags:
     result.display = DISPLAY_INLINE
-  elif tagType in BlockTagTypes:
+  elif tagType in DisplayBlockTags:
     result.display = DISPLAY_BLOCK
-  elif tagType in SingleTagTypes:
-    result.display = DISPLAY_SINGLE
+  elif tagType in DisplayInlineBlockTags:
+    result.display = DISPLAY_INLINE_BLOCK
   elif tagType ==  TAG_LI:
     result.display = DISPLAY_LIST_ITEM
   else:

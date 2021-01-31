@@ -70,7 +70,7 @@ func findChar*(str: string, c: char, start: int = 0): int =
   while i < str.len:
     if str[i] == c:
       return i
-    i += 1
+    inc i
   return -1
 
 func findChar*(str: string, c: Rune, start: int = 0): int =
@@ -306,10 +306,10 @@ func mk_wcwidth_cjk*(ucs: Rune): int =
 
 
 func mk_wcswidth_cjk*(s: string): int =
-  result = 0
-  for r in s.runes:
-    result += mk_wcwidth_cjk(r)
-  return result
+  #result = 0
+  #for r in s.runes:
+  #  result += mk_wcwidth_cjk(r)
+  #return result
   result = 0
   var i = 0
   while i < len(s):

@@ -27,8 +27,8 @@ type
     x: int
     y: int
     lastwidth: int
-    atchar: int
-    atrawchar: int
+    fmtline: string
+    rawline: string
     centerqueue: seq[HtmlNode]
     centerlen: int
     blanklines: int
@@ -39,30 +39,35 @@ type
     listval: int
 
 func newRenderState(): RenderState =
-  return RenderState(y: 1)
+  return RenderState()
+
+proc write(state: var RenderState, s: string) =
+  state.fmtline &= s
+  state.rawline &= s
+
+proc write(state: var RenderState, fs: string, rs: string) =
+  state.fmtline &= fs
+  state.rawline &= rs
 
 proc flushLine(buffer: Buffer, state: var RenderState) =
-  if buffer.onNewLine():
-    state.blanklines += 1
-  buffer.write('\n')
+  if state.rawline.len == 0:
+    inc state.blanklines
+  assert(state.rawline.runeLen() < buffer.width, "line too long:\n" & state.rawline)
+  buffer.writefmt(state.fmtline)
+  buffer.writeraw(state.rawline)
   state.x = 0
-  state.y += 1
-  state.atchar += 1
-  state.atrawchar += 1
+  inc state.y
   state.nextspaces = 0
-  buffer.lines.add(state.atchar)
-  buffer.rawlines.add(state.atrawchar)
-  assert(buffer.onNewLine())
+  state.fmtline = ""
+  state.rawline = ""
 
 proc addSpaces(buffer: Buffer, state: var RenderState, n: int) =
   if state.x + n > buffer.width:
     buffer.flushLine(state)
     return
   state.blankspaces += n
-  buffer.write(' '.repeat(n))
+  state.write(' '.repeat(n))
   state.x += n
-  state.atchar += n
-  state.atrawchar += n
 
 proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
   state.lastwidth = 0
@@ -77,17 +82,12 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
 
     for r in w.runes:
       if r == Rune(' '):
-        var s: Rune
-        fastRuneAt(rawword, 0, s, false)
-        #if s == Rune(' ') and prevl:
-        #  fmtword = fmtword.runeSubstr(1)
-        #  rawword = rawword.runeSubstr(1)
-        #  state.x -= 1
-        buffer.writefmt(fmtword)
-        buffer.writeraw(rawword)
-        state.atchar += fmtword.runeLen()
-        state.atrawchar += rawword.runeLen()
-        var a = rawword
+        if rawword[0] == ' ' and prevl: #first byte can't fool comparison to ascii
+          fmtword = fmtword.substr(1)
+          rawword = rawword.substr(1)
+          state.x -= 1
+          prevl = false
+        state.write(fmtword, rawword)
         fmtword = ""
         rawword = ""
 
@@ -96,29 +96,26 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
 
       state.x += mk_wcwidth_cjk(r)
 
-      if prevl:
-        state.x += mk_wcswidth_cjk(rawword)
-        prevl = false
-
-      if state.x > buffer.width:
+      if state.x >= buffer.width:
         state.lastwidth = max(state.lastwidth, state.x)
         buffer.flushLine(state)
-        state.x = -1
+        state.x = mk_wcswidth_cjk(rawword)
         prevl = true
       else:
         state.lastwidth = max(state.lastwidth, state.x)
 
-      n += 1
+      inc n
 
-  buffer.writefmt(fmtword)
-  buffer.writeraw(rawword)
-  state.atchar += fmtword.runeLen()
-  state.atrawchar += rawword.runeLen()
+  state.write(fmtword, rawword)
+  if prevl:
+    state.x += mk_wcswidth_cjk(rawword)
+    prevl = false
+
   state.lastwidth = max(state.lastwidth, state.x)
 
 proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   let elem = node.nodeAttr()
-  if not buffer.onNewLine() and node.openblock and state.blanklines == 0:
+  if state.rawline.len > 0 and node.openblock and state.blanklines == 0:
     buffer.flushLine(state)
 
   if node.openblock:
@@ -126,13 +123,13 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
       buffer.flushLine(state)
     state.indent += elem.indent
 
-  if not buffer.onNewLine() and state.blanklines == 0 and node.displayed():
+  if state.rawline.len > 0 and state.blanklines == 0 and node.displayed():
     buffer.addSpaces(state, state.nextspaces)
     state.nextspaces = 0
     if state.blankspaces < max(elem.margin, elem.marginleft):
       buffer.addSpaces(state, max(elem.margin, elem.marginleft) - state.blankspaces)
 
-  if elem.centered and buffer.onNewLine() and node.displayed():
+  if elem.centered and state.rawline.len == 0 and node.displayed():
     buffer.addSpaces(state, max(buffer.width div 2 - state.centerlen div 2, 0))
     state.centerlen = 0
   
@@ -143,15 +140,13 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     of TAG_UL:
       listchar = "•"
     of TAG_OL:
-      state.listval += 1
+      inc state.listval
       listchar = $state.listval & ")"
     else:
       return
     buffer.addSpaces(state, state.indent)
-    buffer.write(listchar)
+    state.write(listchar)
     state.x += listchar.runeLen()
-    state.atchar += listchar.runeLen()
-    state.atrawchar += listchar.runeLen()
     buffer.addSpaces(state, 1)
 
 proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
@@ -161,9 +156,10 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     state.blanklines = 0
     state.blankspaces = 0
 
-  if not buffer.onNewLine() and state.blanklines == 0:
+  if state.rawline.len > 0 and state.blanklines == 0:
     state.nextspaces += max(elem.margin, elem.marginright)
     if node.closeblock and (node.isTextNode() or elem.numChildNodes == 0):
+      state.write($node.nodeAttr().tagType)
       buffer.flushLine(state)
 
   if node.closeblock:
@@ -176,6 +172,8 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     buffer.flushLine(state)
 
 proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
+  if node.isDocument() or node.parentNode == nil:
+    return
   let elem = node.nodeAttr()
   if elem.tagType == TAG_TITLE:
     if node.isTextNode():
@@ -213,11 +211,9 @@ proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
 
   node.x = state.x
   node.y = state.y
-  node.fmtchar = state.atchar
-  node.rawchar = state.atrawchar
   buffer.writeWrappedText(state, node)
-  node.fmtend = state.atchar
-  node.rawend = state.atrawchar
+  node.ex = state.x
+  node.ey = state.y
   node.width = state.lastwidth - node.x - 1
   node.height = state.y - node.y + 1
 
@@ -237,10 +233,8 @@ type
     html*: HtmlNode
 
 proc setLastHtmlLine(buffer: Buffer, state: var RenderState) =
-  if buffer.text.len != buffer.lines[^1]:
-    state.atchar = buffer.text.len
-    state.atrawchar = buffer.rawtext.runeLen()
-  buffer.flushLine(state)
+  if state.rawline.len != 0:
+    buffer.flushLine(state)
 
 proc renderHtml*(buffer: Buffer) =
   var stack: seq[XmlHtmlNode]
@@ -263,10 +257,28 @@ proc renderHtml*(buffer: Buffer) =
         if not last and not child.html.hidden:
           last = true
           if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
+            eprint "elem", HtmlElement(currElem.html).tagType, "close @", child.html.nodeAttr().tagType
             stack[^1].html.closeblock = true
       if last:
+        eprint "elem", HtmlElement(currElem.html).tagType, "open @", stack[^1].html.nodeAttr().tagType
         if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
           stack[^1].html.openblock = true
+  buffer.setLastHtmlLine(state)
+
+proc nrenderHtml*(buffer: Buffer) =
+  var stack: seq[HtmlNode]
+  let first = buffer.document
+  stack.add(first)
+
+  var state = newRenderState()
+  while stack.len > 0:
+    let currElem = stack.pop()
+    buffer.addNode(currElem)
+    buffer.renderNode(currElem, state)
+    if currElem.childNodes.len > 0:
+      for item in currElem.childNodes:
+        stack.add(item)
+
   buffer.setLastHtmlLine(state)
 
 proc drawHtml(buffer: Buffer) =
@@ -276,7 +288,7 @@ proc drawHtml(buffer: Buffer) =
   buffer.setLastHtmlLine(state)
 
 proc statusMsgForBuffer(buffer: Buffer) =
-  var msg = $buffer.cursorY & "/" & $buffer.lastLine() & " (" &
+  var msg = $buffer.cursory & "/" & $buffer.lastLine() & " (" &
             $buffer.atPercentOf() & "%) " &
             "<" & buffer.title & ">"
   if buffer.hovertext.len > 0:
@@ -284,9 +296,9 @@ proc statusMsgForBuffer(buffer: Buffer) =
   statusMsg(msg.maxString(buffer.width), buffer.height)
 
 proc cursorBufferPos(buffer: Buffer) =
-  var x = buffer.cursorX
-  var y = buffer.cursorY - 1 - buffer.fromY
-  termGoto(x, y)
+  var x = buffer.cursorx
+  var y = buffer.cursory - 1 - buffer.fromY
+  termGoto(x, y + 1)
 
 proc displayBuffer(buffer: Buffer) =
   eraseScreen()
@@ -298,7 +310,8 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
   var s = ""
   var feedNext = false
   while true:
-    cursorBufferPos(buffer)
+    stdout.showCursor()
+    buffer.cursorBufferPos()
     if not feedNext:
       s = ""
     else:
@@ -320,9 +333,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_CURSOR_LINEBEGIN: buffer.cursorLineBegin()
     of ACTION_CURSOR_LINEEND: buffer.cursorLineEnd()
     of ACTION_CURSOR_NEXT_WORD: redraw = buffer.cursorNextWord()
-    of ACTION_CURSOR_NEXT_NODE: redraw = buffer.cursorNextNode()
     of ACTION_CURSOR_PREV_WORD: redraw = buffer.cursorPrevWord()
-    of ACTION_CURSOR_PREV_NODE: redraw = buffer.cursorPrevNode()
     of ACTION_CURSOR_NEXT_LINK: redraw = buffer.cursorNextLink()
     of ACTION_CURSOR_PREV_LINK: redraw = buffer.cursorPrevLink()
     of ACTION_PAGE_DOWN: redraw = buffer.pageDown()
@@ -361,7 +372,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      statusMsg("line " & $buffer.cursorY & "/" & $buffer.lastLine() & " col " & $buffer.cursorX & "/" & $buffer.currentRawLineLength(), buffer.width)
+      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $buffer.cursorx & "/" & $buffer.realCurrentLineLength(), buffer.width)
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true
@@ -371,26 +382,43 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       redraw = true
     of ACTION_REDRAW: redraw = true
     else: discard
+    stdout.hideCursor()
+
+    let prevlink = buffer.selectedlink
+    let sel = buffer.checkLinkSelection()
+    if sel:
+      buffer.clearText()
+      buffer.drawHtml()
+      termGoto(0, buffer.selectedlink.y - buffer.fromy)
+      stdout.eraseLine()
+      for i in buffer.selectedlink.y..buffer.selectedlink.ey:
+        if i < buffer.fromy + buffer.height - 1:
+          let line = buffer.fmttext[i]
+          print(line)
+          print('\n')
+      print("".ansiReset())
+    
+    if prevlink != nil:
+      buffer.clearText()
+      buffer.drawHtml()
+      termGoto(0, prevlink.y - buffer.fromy)
+      for i in prevlink.y..prevlink.ey:
+        if i < buffer.fromy + buffer.height - 1:
+          let line = buffer.fmttext[i]
+          stdout.eraseLine()
+          print(line)
+          print('\n')
+      print("".ansiReset())
+
+    if buffer.refreshTermAttrs():
+      redraw = true
+      reshape = true
 
     if reshape:
       buffer.clearText()
       buffer.drawHtml()
     if redraw:
       buffer.displayBuffer()
-
-    let prevlink = buffer.selectedlink
-    let sel = buffer.checkLinkSelection()
-    if prevlink != nil and prevlink != buffer.selectedlink:
-      termGoto(prevlink.x - buffer.fromX, prevlink.y - buffer.fromY - 1)
-      print(buffer.textBetween(prevlink.fmtchar, prevlink.fmtend).ansiReset())
-    if sel and buffer.selectedlink.y < buffer.fromY + buffer.height:
-      termGoto(buffer.selectedlink.x - buffer.fromX, buffer.selectedlink.y - buffer.fromY - 1)
-      let str = buffer.textBetween(buffer.selectedlink.fmtchar, buffer.selectedlink.fmtend)
-      #var i = str.findChar(Rune('\n'))
-      #while i != -1:
-      #  print("".ansiStyle(styleUnderscore))
-      #  i = str.findChar(Rune('\n'), i + 1)
-      print(str.ansiStyle(styleUnderscore).ansiReset())
 
     if not nostatus:
       buffer.statusMsgForBuffer()
