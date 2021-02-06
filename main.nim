@@ -3,15 +3,11 @@ import uri
 import os
 import streams
 
-import fusion/htmlparser
-import fusion/htmlparser/xmltree
-
 import display
 import termattrs
 import buffer
 import twtio
 import config
-import twtstr
 import parser
 
 let clientInstance = newHttpClient()

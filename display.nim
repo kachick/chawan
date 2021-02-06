@@ -158,8 +158,7 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
 
   if state.rawline.len > 0 and state.blanklines == 0:
     state.nextspaces += max(elem.margin, elem.marginright)
-    if node.closeblock and (node.isTextNode() or elem.numChildNodes == 0):
-      state.write($node.nodeAttr().tagType)
+    if node.closeblock and (node.isTextNode() or elem.childNodes.len == 0):
       buffer.flushLine(state)
 
   if node.closeblock:
@@ -355,7 +354,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         case selectedElem.get().tagType
         of TAG_INPUT:
           clearStatusMsg(buffer.height)
-          let status = readLine("TEXT:", HtmlInputElement(selectedElem.get()).value)
+          let status = readLine("TEXT: ", HtmlInputElement(selectedElem.get()).value, buffer.width)
           if status:
             reshape = true
             redraw = true
@@ -368,7 +367,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       var url = $buffer.document.location
 
       clearStatusMsg(buffer.height)
-      let status = readLine("URL:", url)
+      let status = readLine("URL: ", url, buffer.width)
       if status:
         buffer.setLocation(parseUri(url))
         return true

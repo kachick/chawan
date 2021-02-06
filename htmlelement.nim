@@ -332,8 +332,6 @@ proc getHtmlElement*(xmlElement: XmlNode, parentNode: HtmlNode): HtmlElement =
     result.underscore = result.underscore or parent.underscore
     result.hidden = result.hidden or parent.hidden
     result.islink = result.islink or parent.islink
-  
-  result.numChildNodes = xmlElement.len
 
 proc getHtmlNode*(xmlElement: XmlNode, parent: HtmlNode): HtmlNode =
   case kind(xmlElement)

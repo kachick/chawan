@@ -298,7 +298,7 @@ proc cursorPrevWord*(buffer: Buffer): bool =
       fastRuneAt(buffer.rawtext[y], x, r, false)
 
   if x == 0:
-    if y < buffer.lastLine():
+    if y > 0:
       dec y
       x = buffer.rawtext[y].runeLen() - 1
   return buffer.cursorTo(x, y)

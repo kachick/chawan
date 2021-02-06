@@ -24,8 +24,8 @@ func ansiReset*(str: seq[string]): seq[string] =
   return str & ansiResetCode
 
 func maxString*(str: string, max: int): string =
-  if max < str.len:
-    return str.substr(0, max - 2) & "$"
+  if max < str.runeLen():
+    return str.runeSubstr(0, max - 2) & "$"
   return str
 
 func fitValueToSize*(str: string, size: int): string =
@@ -49,10 +49,10 @@ func remove*(str: string, c: string): string =
       result &= $rune
 
 func isControlChar*(c: char): bool =
-  return int(c) <= 0x1F or int(c) == 0x7F
+  return c <= char(0x1F) or c == char(0x7F)
 
 func getControlChar*(c: char): char =
-  if int(c) >= int('a'):
+  if c >= 'a':
     return char(int(c) - int('a') + 1)
   elif c == '?':
     return char(127)
