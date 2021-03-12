@@ -6,10 +6,8 @@ import tables
 import strutils
 import unicode
 
-import fusion/htmlparser/xmltree
-
 import termattrs
-import htmlelement
+import dom
 import twtio
 import enums
 import twtstr
@@ -21,21 +19,19 @@ type
     rawtext*: seq[string]
     title*: string
     hovertext*: string
-    htmlsource*: XmlNode
     width*: int
     height*: int
     cursorx*: int
     cursory*: int
-    cursorchar*: int
     xend*: int
     fromx*: int
     fromy*: int
-    nodes*: seq[HtmlNode]
-    links*: seq[HtmlNode]
-    clickables*: seq[HtmlNode]
+    nodes*: seq[Node]
+    links*: seq[Node]
+    clickables*: seq[Node]
     elements*: seq[HtmlElement]
     idelements*: Table[string, HtmlElement]
-    selectedlink*: HtmlNode
+    selectedlink*: Node
     printwrite*: bool
     attrs*: TermAttributes
     document*: Document
@@ -52,13 +48,11 @@ func lastLine*(buffer: Buffer): int =
 func lastVisibleLine*(buffer: Buffer): int =
   return min(buffer.fromy + buffer.height - 1, buffer.lastLine())
 
-func realCurrentLineLength*(buffer: Buffer): int =
-  return mk_wcswidth_cjk(buffer.rawtext[buffer.cursory])
-
 func currentLineLength*(buffer: Buffer): int =
-  return buffer.rawtext[buffer.cursory].runeLen()
+  return buffer.rawtext[buffer.cursory].width()
 
 func atPercentOf*(buffer: Buffer): int =
+  if buffer.fmttext.len == 0: return 100
   return (100 * (buffer.cursory + 1)) div (buffer.lastLine() + 1)
 
 func fmtBetween*(buffer: Buffer, sx: int, sy: int, ex: int, ey: int): string =
@@ -75,10 +69,10 @@ func fmtBetween*(buffer: Buffer, sx: int, sy: int, ex: int, ey: int): string =
 func visibleText*(buffer: Buffer): string = 
   return buffer.fmttext[buffer.fromy..buffer.lastVisibleLine()].join("\n")
 
-func lastNode*(buffer: Buffer): HtmlNode =
+func lastNode*(buffer: Buffer): Node =
   return buffer.nodes[^1]
 
-func cursorOnNode*(buffer: Buffer, node: HtmlNode): bool =
+func cursorOnNode*(buffer: Buffer, node: Node): bool =
   if node.y == node.ey and node.y == buffer.cursory:
     return buffer.cursorx >= node.x and buffer.cursorx < node.ex
   else:
@@ -103,17 +97,18 @@ func getElementById*(buffer: Buffer, id: string): HtmlElement =
     return buffer.idelements[id]
   return nil
 
-proc findSelectedNode*(buffer: Buffer): Option[HtmlNode] =
+proc findSelectedNode*(buffer: Buffer): Option[Node] =
   for node in buffer.nodes:
     if node.getFmtLen() > 0 and node.displayed():
       if buffer.cursory >= node.y and buffer.cursory <= node.y + node.height and buffer.cursorx >= node.x and buffer.cursorx <= node.x + node.width:
         return some(node)
-  return none(HtmlNode)
+  return none(Node)
 
-proc addNode*(buffer: Buffer, htmlNode: HtmlNode) =
+proc addNode*(buffer: Buffer, htmlNode: Node) =
   buffer.nodes.add(htmlNode)
 
-  if htmlNode.isTextNode() and htmlNode.parentElement != nil and htmlNode.parentElement.islink:
+  #TODO
+  if htmlNode.isTextNode() and htmlNode.parentElement != nil and HtmlElement(htmlNode.parentElement).islink:
     buffer.links.add(htmlNode)
 
   if htmlNode.isElemNode():
@@ -123,7 +118,8 @@ proc addNode*(buffer: Buffer, htmlNode: HtmlNode) =
         buffer.clickables.add(htmlNode)
     else: discard
   elif htmlNode.isTextNode():
-    if htmlNode.parentElement != nil and htmlNode.parentElement.islink:
+    #TODO
+    if htmlNode.parentElement != nil and HtmlElement(htmlNode.parentElement).islink:
       let anchor = htmlNode.ancestor(TAG_A)
       assert(anchor != nil)
       buffer.clickables.add(anchor)
@@ -216,9 +212,9 @@ proc cursorUp*(buffer: Buffer): bool =
     if buffer.cursorx > buffer.currentLineLength():
       if buffer.cursorx == 0:
         buffer.xend = buffer.cursorx
-      buffer.cursorx = buffer.currentLineLength()
+      buffer.cursorx = max(buffer.currentLineLength() - 1, 0)
     elif buffer.xend > 0:
-      buffer.cursorx = min(buffer.currentLineLength(), buffer.xend)
+      buffer.cursorx = min(buffer.currentLineLength() - 1, buffer.xend)
     if buffer.cursory < buffer.fromy:
       dec buffer.fromy
       return true
@@ -246,7 +242,7 @@ proc cursorLineEnd*(buffer: Buffer) =
   buffer.cursorx = buffer.currentLineLength() - 1
   buffer.xend = buffer.cursorx
 
-iterator revnodes*(buffer: Buffer): HtmlNode {.inline.} =
+iterator revnodes*(buffer: Buffer): Node {.inline.} =
   var i = buffer.nodes.len - 1
   while i >= 0:
     yield buffer.nodes[i]
@@ -303,7 +299,7 @@ proc cursorPrevWord*(buffer: Buffer): bool =
       x = buffer.rawtext[y].runeLen() - 1
   return buffer.cursorTo(x, y)
 
-iterator revclickables*(buffer: Buffer): HtmlNode {.inline.} =
+iterator revclickables*(buffer: Buffer): Node {.inline.} =
   var i = buffer.clickables.len - 1
   while i >= 0:
     yield buffer.clickables[i]
@@ -419,7 +415,7 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       buffer.selectedlink.fmttext = buffer.selectedlink.getFmtText()
       buffer.selectedlink = nil
       buffer.hovertext = ""
-      var stack: seq[HtmlNode]
+      var stack: seq[Node]
       stack.add(anchor)
       while stack.len > 0:
         let elem = stack.pop()
@@ -433,7 +429,7 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       assert(anchor != nil)
       anchor.selected = true
       buffer.hovertext = HtmlAnchorElement(anchor).href
-      var stack: seq[HtmlNode]
+      var stack: seq[Node]
       stack.add(anchor)
       while stack.len > 0:
         let elem = stack.pop()

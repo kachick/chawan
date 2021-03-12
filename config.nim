@@ -1,8 +1,8 @@
 import tables
 import strutils
-import macros
 
 import twtstr
+import radixtree
 
 type
   TwtAction* =
@@ -25,15 +25,21 @@ type
     ACTION_CURSOR_TOP, ACTION_CURSOR_MIDDLE, ACTION_CURSOR_BOTTOM,
     ACTION_CENTER_LINE, ACTION_LINE_INFO,
     ACTION_LINED_SUBMIT, ACTION_LINED_CANCEL,
-    ACTION_LINED_BACKSPACE, ACTION_LINED_CLEAR, ACTION_LINED_KILL, ACTION_LINED_KILL_WORD,
+    ACTION_LINED_BACKSPACE, ACTION_LINED_DELETE,
+    ACTION_LINED_CLEAR, ACTION_LINED_KILL, ACTION_LINED_KILL_WORD,
     ACTION_LINED_BACK, ACTION_LINED_FORWARD,
     ACTION_LINED_PREV_WORD, ACTION_LINED_NEXT_WORD,
+    ACTION_LINED_COMPOSE_TOGGLE, ACTION_LINED_COMPOSE_ON, ACTION_LINED_COMPOSE_OFF
     ACTION_LINED_ESC
 
-var normalActionRemap*: Table[string, TwtAction]
-var linedActionRemap*: Table[string, TwtAction]
+  ActionMap = Table[string, TwtAction]
+  ComposeMap = RadixTree[string]
 
-proc getRealKey(key: string): string =
+var normalActionRemap*: ActionMap
+var linedActionRemap*: ActionMap
+var composeRemap*: ComposeMap
+
+func getRealKey(key: string): string =
   var realk: string
   var currchar: char
   var control = 0
@@ -64,9 +70,9 @@ proc getRealKey(key: string): string =
     realk &= 'C'
   return realk
 
-proc constructActionTable*(origTable: var Table[string, TwtAction]): Table[string, TwtAction] =
-  var newTable: Table[string, TwtAction]
-  var strs = newSeq[string](0)
+func constructActionTable*(origTable: ActionMap): ActionMap =
+  var newTable: ActionMap
+  var strs: seq[string]
   for k in origTable.keys:
     let realk = getRealKey(k)
     var teststr = ""
@@ -74,7 +80,7 @@ proc constructActionTable*(origTable: var Table[string, TwtAction]): Table[strin
       teststr &= c
       strs.add(teststr)
 
-  for k, v in origTable.mpairs:
+  for k, v in origTable:
     let realk = getRealKey(k)
     var teststr = ""
     for c in realk:
@@ -84,84 +90,50 @@ proc constructActionTable*(origTable: var Table[string, TwtAction]): Table[strin
     newTable[realk] = v
   return newTable
 
-macro staticReadKeymap(): untyped =
-  var config = staticRead"config"
-  var normalActionMap: Table[string, TwtAction]
-  var linedActionMap: Table[string, TwtAction]
+proc parseConfigLine(line: string, nmap: var ActionMap, lemap: var ActionMap,
+                     compose: var ComposeMap) =
+  if line.len == 0 or line[0] == '#':
+    return
+  let cmd = line.split(' ')
+  if cmd.len == 3:
+    if cmd[0] == "nmap":
+      nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+    elif cmd[0] == "lemap":
+      lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+    elif cmd[0] == "comp":
+      compose[getRealKey(cmd[1])] = cmd[2]
+
+proc staticReadKeymap(): (ActionMap, ActionMap, ComposeMap) =
+  let config = staticRead"config"
+  var nmap: ActionMap
+  var lemap: ActionMap
+  var compose = newRadixTree[string]()
   for line in config.split('\n'):
-    if line.len == 0 or line[0] == '#':
-      continue
-    let cmd = line.split(' ')
-    if cmd.len == 3:
-      if cmd[0] == "nmap":
-        normalActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
-      elif cmd[0] == "lemap":
-        linedActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+    parseConfigLine(line, nmap, lemap, compose)
 
-  normalActionMap = constructActionTable(normalActionMap)
-  linedActionMap = constructActionTable(linedActionMap)
+  nmap = constructActionTable(nmap)
+  lemap = constructActionTable(lemap)
+  return (nmap, lemap, compose)
 
-  let normalActionConstr = nnkTableConstr.newTree()
-  for k, v in normalActionMap:
-    let colonExpr = nnkExprColonExpr.newTree()
-    colonExpr.add(newLit(k))
-    colonExpr.add(newLit(v))
-    normalActionConstr.add(colonExpr)
+const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
 
-  let normalActionAsgn = nnkAsgn.newTree()
-  normalActionAsgn.add(ident("normalActionRemap"))
-  normalActionAsgn.add(newCall(ident("toTable"), normalActionConstr))
-
-  let linedActionConstr = nnkTableConstr.newTree()
-  for k, v in linedActionMap:
-    let colonExpr = nnkExprColonExpr.newTree()
-    colonExpr.add(newLit(k))
-    colonExpr.add(newLit(v))
-    linedActionConstr.add(colonExpr)
-
-  let linedActionAsgn = nnkAsgn.newTree()
-  linedActionAsgn.add(ident("linedActionRemap"))
-  linedActionAsgn.add(newCall(ident("toTable"), linedActionConstr))
-  result = newStmtList()
-  result.add(normalActionAsgn)
-
-staticReadKeymap()
+normalActionRemap = normalActionMap
+linedActionRemap = linedActionMap
+composeRemap = composeMap
 
 proc readConfig*(filename: string): bool =
   var f: File
   let status = f.open(filename, fmRead)
-  var normalActionMap: Table[string, TwtAction]
-  var linedActionMap: Table[string, TwtAction]
+  var nmap: ActionMap
+  var lemap: ActionMap
+  var compose = newRadixTree[string]()
   if status:
     var line: TaintedString
     while f.readLine(line):
-      if line.string.len == 0 or line.string[0] == '#':
-        continue
-      let cmd = line.split(' ')
-      if cmd.len == 3:
-        if cmd[0] == "nmap":
-          normalActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
-        elif cmd[0] == "lemap":
-          linedActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+      parseConfigLine(line, nmap, lemap, compose)
 
     normalActionRemap = constructActionTable(normalActionMap)
     linedActionRemap = constructActionTable(linedActionMap)
     return true
   else:
     return false
-
-proc parseKeymap*(keymap: string) =
-  var normalActionMap: Table[string, TwtAction]
-  var linedActionMap: Table[string, TwtAction]
-  for line in keymap.split('\n'):
-    if line.len == 0 or line[0] == '#':
-      continue
-    let cmd = line.split(' ')
-    if cmd.len == 3:
-      if cmd[0] == "nmap":
-        normalActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
-      elif cmd[0] == "lemap":
-        linedActionMap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
-
-  normalActionRemap = constructActionTable(normalActionMap)
-  linedActionRemap = constructActionTable(linedActionMap)

@@ -45,6 +45,7 @@ lemap C-m LINED_SUBMIT
 lemap C-j LINED_SUBMIT
 lemap C-h LINED_BACKSPACE
 lemap C-? LINED_BACKSPACE
+lemap C-d LINED_DELETE
 lemap C-c LINED_CANCEL
 lemap \eb LINED_PREV_WORD
 lemap \ef LINED_NEXT_WORD
@@ -54,3 +55,345 @@ lemap C-u LINED_CLEAR
 lemap C-k LINED_KILL
 lemap C-w LINED_KILL_WORD
 lemap C-v LINED_ESC
+lemap C-g LINED_COMPOSE_TOGGLE
+
+#compose keybindings
+
+#european
+comp a: ä
+comp o: ö
+comp u: ü
+comp u" ű
+comp o" ő
+
+comp a' á
+comp e' é
+comp i' í
+comp o' ó
+comp u' ú
+
+comp sS ß
+comp n~ ñ
+
+#hiragana
+comp a あ
+comp i い
+comp u う
+comp e え
+comp o お
+
+comp la ぁ
+comp li ぃ
+comp lu ぅ
+comp le ぇ
+comp lo ぉ
+
+comp ka か
+comp ki き
+comp ku く
+comp ke け
+comp ko こ
+
+comp kka っか
+comp kki っき
+comp kku っく
+comp kke っけ
+comp kko っこ
+
+comp sa さ
+comp shi し
+comp su す
+comp se せ
+comp so そ
+
+comp ssa っさ
+comp sshi っし
+comp ssu っす
+comp sse っせ
+comp sso っそ
+
+comp ta た
+comp chi ち
+comp tsu つ
+comp te て
+comp to と
+
+comp tta った
+comp tchi っち
+comp ttsu っつ
+comp tte って
+comp tto っと
+
+comp na な
+comp ni に
+comp nu ぬ
+comp ne ね
+comp no の
+
+comp ha は
+comp hi ひ
+comp fu ふ
+comp he へ
+comp ho ほ
+
+comp ma ま
+comp mi み
+comp mu む
+comp me め
+comp mo も
+
+comp ya や
+comp yu ゆ
+comp yo よ
+
+comp ra ら
+comp ri り
+comp ru る
+comp re れ
+comp ro ろ
+
+comp wa わ
+comp wi ゐ
+comp we ゑ
+comp wo を
+
+comp ga が
+comp gi ぎ
+comp gu ぐ
+comp ge げ
+comp go ご
+
+comp za ざ
+comp ji じ
+comp zu ず
+comp ze ぜ
+comp zo ぞ
+
+comp da だ
+comp dji ぢ
+comp dzu づ
+comp de で
+comp do ど
+
+comp ba ば
+comp bi び
+comp bu ぶ
+comp be べ
+comp bo ぼ
+
+comp pa ぱ
+comp pi ぴ
+comp pu ぷ
+comp pe ぺ
+comp po ぽ
+
+comp n ん
+
+comp kya きゃ
+comp kyu きゅ
+comp kyo きょ
+
+comp sha しゃ
+comp shu しゅ
+comp sho しょ
+
+comp cha ちゃ
+comp chu ちゅ
+comp cho ちょ
+
+comp nya にゃ
+comp nyu にゅ
+comp nyo にょ
+
+comp hya ひゃ
+comp hyu ひゅ
+comp hyo ひょ
+
+comp mya みゃ
+comp myu みゅ
+comp myo みょ
+
+comp rya りゃ
+comp ryu りゅ
+comp ryo りょ
+
+comp gya ぎゃ
+comp gyu ぎゅ
+comp gyo ぎょ
+
+comp ja じゃ
+comp ju じゅ
+comp jo じょ
+
+comp bya びゃ
+comp byu びゅ
+comp byo びょ
+
+comp pya ぴゃ
+comp pyu ぴゅ
+comp pyo ぴょ
+
+comp kwa くゎ
+comp gwa ぐゎ
+
+#katakana
+comp A ア
+comp I イ
+comp U ウ
+comp E エ
+comp O オ
+
+comp LA ォ
+comp LI ィ
+comp LU ゥ
+comp LE ェ
+comp LO ォ
+
+comp KA か
+comp KI き
+comp KU く
+comp KE け
+comp KO こ
+
+comp KKA ッカ
+comp KKI ッキ
+comp KKU ック
+comp KKE ッケ
+comp KKO ッコ
+
+comp SA サ
+comp SHI シ
+comp SU ス
+comp SE セ
+comp SO ソ
+
+comp SSA ッサ
+comp SSHI ッシ
+comp SSU ッス
+comp SSE ッセ
+comp SSO ッソ
+
+comp TA タ
+comp CHI チ
+comp TSU ツ
+comp TE テ
+comp TO ト
+
+comp TTA ッタ
+comp TCHI ッチ
+comp TTSU ッツ
+comp TTE ッテ
+comp TTO ッと
+
+comp NA ナ
+comp NI ニ
+comp NU ヌ
+comp NE ネ
+comp NO ノ
+
+comp HA ハ
+comp HI ヒ
+comp FU フ
+comp HE ヘ
+comp HO ホ
+
+comp MA マ
+comp MI ミ
+comp MU ム
+comp ME メ
+comp MO モ
+
+comp YA ヤ
+comp YU ユ
+comp YO ヨ
+
+comp RA ラ
+comp RI リ
+comp RU ル
+comp RE レ
+comp RO ロ
+
+comp WA ワ
+comp WI ヰ
+comp WE ヱ
+comp WO ヲ
+
+comp GA ガ
+comp GI ギ
+comp GU グ
+comp GE ゲ
+comp GO ゴ
+
+comp ZA ザ
+comp JI ジ
+comp ZU ズ
+comp ZE ゼ
+comp ZO ゾ
+
+comp DA ダ
+comp DJI ヂ
+comp DZU ヅ
+comp DE デ
+comp DO ド
+
+comp BA バ
+comp BI ビ
+comp BU ブ
+comp BE ベ
+comp BO ボ
+
+comp PA パ
+comp PI ピ
+comp PU プ
+comp PE ペ
+comp PO ポ
+
+comp N ン
+comp xc ー
+
+comp KYA キャ
+comp KYU キュ
+comp KYO キョ
+
+comp SHA シャ
+comp SHU シュ
+comp SHO ショ
+
+comp CHA チャ
+comp CHU チュ
+comp CHO チョ
+
+comp NYA ニャ
+comp NYU ニュ
+comp NYO ニョ
+
+comp HYA ヒャ
+comp HYU ヒュ
+comp HYO ヒョ
+
+comp MYA ミャ
+comp MYU ミュ
+comp MYO ミョ
+
+comp RYA リャ
+comp RYU リュ
+comp RYO リョ
+
+comp GYA ギャ
+comp GYU ギュ
+comp GYO ギョ
+
+comp JA ジャ
+comp JU ジュ
+comp JO ジョ
+
+comp BYA ビャ
+comp BYU ビュ
+comp BYO ビョ
+
+comp PYA ピャ
+comp PYU ピュ
+comp PYO ピョ
+
+comp KWA クヮ
+comp GWA グヮ

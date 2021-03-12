@@ -4,11 +4,9 @@ import uri
 import strutils
 import unicode
 
-import fusion/htmlparser/xmltree
-
 import buffer
 import termattrs
-import htmlelement
+import dom
 import twtstr
 import twtio
 import config
@@ -29,7 +27,7 @@ type
     lastwidth: int
     fmtline: string
     rawline: string
-    centerqueue: seq[HtmlNode]
+    centerqueue: seq[Node]
     centerlen: int
     blanklines: int
     blankspaces: int
@@ -39,7 +37,7 @@ type
     listval: int
 
 func newRenderState(): RenderState =
-  return RenderState()
+  return RenderState(blanklines: 1)
 
 proc write(state: var RenderState, s: string) =
   state.fmtline &= s
@@ -69,20 +67,21 @@ proc addSpaces(buffer: Buffer, state: var RenderState, n: int) =
   state.write(' '.repeat(n))
   state.x += n
 
-proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
+proc writeWrappedText(buffer: Buffer, state: var RenderState, node: Node) =
   state.lastwidth = 0
   var n = 0
   var fmtword = ""
   var rawword = ""
   var prevl = false
-  for w in node.fmttext:
+  let fmttext = node.getFmtText()
+  for w in fmttext:
     if w.len > 0 and w[0] == '\e':
       fmtword &= w
       continue
 
     for r in w.runes:
       if r == Rune(' '):
-        if rawword[0] == ' ' and prevl: #first byte can't fool comparison to ascii
+        if rawword.len > 0 and rawword[0] == ' ' and prevl: #first byte can't fool comparison to ascii
           fmtword = fmtword.substr(1)
           rawword = rawword.substr(1)
           state.x -= 1
@@ -91,15 +90,21 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
         fmtword = ""
         rawword = ""
 
-      fmtword &= r
-      rawword &= r
+      if r == Rune('\n'):
+        state.write(fmtword, rawword)
+        buffer.flushLine(state)
+        rawword = ""
+        fmtword = ""
+      else:
+        fmtword &= r
+        rawword &= r
 
-      state.x += mk_wcwidth_cjk(r)
+      state.x += r.width()
 
       if state.x >= buffer.width:
         state.lastwidth = max(state.lastwidth, state.x)
         buffer.flushLine(state)
-        state.x = mk_wcswidth_cjk(rawword)
+        state.x = rawword.width()
         prevl = true
       else:
         state.lastwidth = max(state.lastwidth, state.x)
@@ -108,20 +113,21 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: HtmlNode) =
 
   state.write(fmtword, rawword)
   if prevl:
-    state.x += mk_wcswidth_cjk(rawword)
+    state.x += rawword.width()
     prevl = false
 
   state.lastwidth = max(state.lastwidth, state.x)
 
-proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
+proc preAlignNode(buffer: Buffer, node: Node, state: var RenderState) =
   let elem = node.nodeAttr()
-  if state.rawline.len > 0 and node.openblock and state.blanklines == 0:
+  if state.rawline.len > 0 and node.firstNode() and state.blanklines == 0:
     buffer.flushLine(state)
 
-  if node.openblock:
-    while state.blanklines < max(elem.margin, elem.margintop):
+  if node.firstNode():
+    while state.blanklines < max(node.parentElement.margin, node.parentElement.margintop):
       buffer.flushLine(state)
-    state.indent += elem.indent
+    if elem.parentNode.nodeType == ELEMENT_NODE:
+      state.indent += elem.parentElement.indent
 
   if state.rawline.len > 0 and state.blanklines == 0 and node.displayed():
     buffer.addSpaces(state, state.nextspaces)
@@ -134,7 +140,8 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     state.centerlen = 0
   
   if node.isElemNode() and elem.display == DISPLAY_LIST_ITEM and state.indent > 0:
-    buffer.flushLine(state)
+    if state.blanklines == 0:
+      buffer.flushLine(state)
     var listchar = ""
     case elem.parentElement.tagType
     of TAG_UL:
@@ -149,7 +156,7 @@ proc preAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
     state.x += listchar.runeLen()
     buffer.addSpaces(state, 1)
 
-proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
+proc postAlignNode(buffer: Buffer, node: Node, state: var RenderState) =
   let elem = node.nodeAttr()
 
   if node.getRawLen() > 0:
@@ -158,25 +165,32 @@ proc postAlignNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
 
   if state.rawline.len > 0 and state.blanklines == 0:
     state.nextspaces += max(elem.margin, elem.marginright)
-    if node.closeblock and (node.isTextNode() or elem.childNodes.len == 0):
-      buffer.flushLine(state)
+    #if node.lastNode() and (node.isTextNode() or elem.childNodes.len == 0):
+    #  buffer.flushLine(state)
 
-  if node.closeblock:
-    while state.blanklines < max(elem.margin, elem.marginbottom):
+  if node.lastNode():
+    while state.blanklines < max(node.parentElement.margin, node.parentElement.marginbottom):
       buffer.flushLine(state)
-    if node.isElemNode():
-      state.indent -= elem.indent
+    if elem.parentElement != nil:
+      state.indent -= elem.parentElement.indent
 
-  if elem.tagType == TAG_BR and not node.openblock:
+  if elem.tagType == TAG_BR and not node.firstNode():
     buffer.flushLine(state)
 
-proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
-  if node.isDocument():
+  if elem.display == DISPLAY_LIST_ITEM and node.lastNode():
+    buffer.flushLine(state)
+
+proc renderNode(buffer: Buffer, node: Node, state: var RenderState) =
+  if not (node.nodeType in {ELEMENT_NODE, TEXT_NODE}):
+    return
+  if node.parentNode.nodeType != ELEMENT_NODE:
     return
   let elem = node.nodeAttr()
+  if elem.tagType in {TAG_SCRIPT, TAG_STYLE, TAG_NOSCRIPT}:
+    return
   if elem.tagType == TAG_TITLE:
     if node.isTextNode():
-      buffer.title = node.rawtext
+      buffer.title = node.getRawText()
     return
   else: discard
   if elem.hidden: return
@@ -184,7 +198,7 @@ proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
   if not state.docenter:
     if elem.centered:
       state.centerqueue.add(node)
-      if node.closeblock or elem.tagType == TAG_BR:
+      if node.lastNode() or elem.tagType == TAG_BR:
         state.docenter = true
         state.centerlen = 0
         for node in state.centerqueue:
@@ -218,54 +232,12 @@ proc renderNode(buffer: Buffer, node: HtmlNode, state: var RenderState) =
 
   buffer.postAlignNode(node, state)
 
-iterator revItems*(n: XmlNode): XmlNode {.inline.} =
-  var i = n.len - 1
-  while i >= 0:
-    if n[i].kind != xnComment:
-      yield n[i]
-    i -= 1
-
-type
-  XmlHtmlNode* = ref XmlHtmlNodeObj
-  XmlHtmlNodeObj = object
-    xml*: XmlNode
-    html*: HtmlNode
-
 proc setLastHtmlLine(buffer: Buffer, state: var RenderState) =
   if state.rawline.len != 0:
     buffer.flushLine(state)
 
 proc renderHtml*(buffer: Buffer) =
-  var stack: seq[XmlHtmlNode]
-  let first = XmlHtmlNode(xml: buffer.htmlSource,
-                         html: getHtmlNode(buffer.htmlSource, buffer.document))
-  stack.add(first)
-
-  var state = newRenderState()
-  while stack.len > 0:
-    let currElem = stack.pop()
-    buffer.addNode(currElem.html)
-    buffer.renderNode(currElem.html, state)
-    if currElem.xml.len > 0:
-      var last = false
-      for item in currElem.xml.revItems:
-        let child = XmlHtmlNode(xml: item,
-                                html: getHtmlNode(item, currElem.html))
-        stack.add(child)
-        currElem.html.childNodes.add(child.html)
-        if not last and not child.html.hidden:
-          last = true
-          if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
-            eprint "elem", HtmlElement(currElem.html).tagType, "close @", child.html.nodeAttr().tagType
-            stack[^1].html.closeblock = true
-      if last:
-        eprint "elem", HtmlElement(currElem.html).tagType, "open @", stack[^1].html.nodeAttr().tagType
-        if HtmlElement(currElem.html).display == DISPLAY_BLOCK:
-          stack[^1].html.openblock = true
-  buffer.setLastHtmlLine(state)
-
-proc nrenderHtml*(buffer: Buffer) =
-  var stack: seq[HtmlNode]
+  var stack: seq[Node]
   let first = buffer.document
   stack.add(first)
 
@@ -372,7 +344,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $buffer.cursorx & "/" & $buffer.realCurrentLineLength(), buffer.width)
+      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineLength(), buffer.width)
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true

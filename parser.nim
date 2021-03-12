@@ -1,131 +1,97 @@
-import parsexml
-import htmlelement
 import streams
-import macros
 import unicode
+import strutils
+import tables
+import json
 
 import twtio
 import enums
-import strutils
+import twtstr
+import dom
+import radixtree
 
 type
   ParseState = object
     stream: Stream
     closed: bool
-    parents: seq[HtmlNode]
-    parsedNode: HtmlNode
+    parents: seq[Node]
+    parsedNode: Node
     a: string
+    b: string
     attrs: seq[string]
+    in_comment: bool
+    in_script: bool
+    in_style: bool
+    in_noscript: bool
+    parentNode: Node
+    textNode: Text
 
-  ParseEvent =
-    enum
-    NO_EVENT, EVENT_COMMENT, EVENT_STARTELEM, EVENT_ENDELEM, EVENT_OPENELEM,
-    EVENT_CLOSEELEM, EVENT_ATTRIBUTE, EVENT_TEXT
+#func newHtmlElement(tagType: TagType, parentNode: Node): HtmlElement =
+#  case tagType
+#  of TAG_INPUT: result = new(HtmlInputElement)
+#  of TAG_A: result = new(HtmlAnchorElement)
+#  of TAG_SELECT: result = new(HtmlSelectElement)
+#  of TAG_OPTION: result = new(HtmlOptionElement)
+#  else: result = new(HtmlElement)
+#
+#  result.nodeType = ELEMENT_NODE
+#  result.tagType = tagType
+#  result.parentNode = parentNode
+#  if parentNode.isElemNode():
+#    result.parentElement = HtmlElement(parentNode)
+#
+#  if tagType in DisplayInlineTags:
+#    result.display = DISPLAY_INLINE
+#  elif tagType in DisplayBlockTags:
+#    result.display = DISPLAY_BLOCK
+#  elif tagType in DisplayInlineBlockTags:
+#    result.display = DISPLAY_INLINE_BLOCK
+#  elif tagType == TAG_LI:
+#    result.display = DISPLAY_LIST_ITEM
+#  else:
+#    result.display = DISPLAY_NONE
+#
+#  case tagType
+#  of TAG_CENTER:
+#    result.centered = true
+#  of TAG_B:
+#    result.bold = true
+#  of TAG_I:
+#    result.italic = true
+#  of TAG_U:
+#    result.underscore = true
+#  of TAG_HEAD:
+#    result.hidden = true
+#  of TAG_STYLE:
+#    result.hidden = true
+#  of TAG_SCRIPT:
+#    result.hidden = true
+#  of TAG_OPTION:
+#    result.hidden = true #TODO
+#  of TAG_PRE, TAG_TD, TAG_TH:
+#    result.margin = 1
+#  of TAG_UL, TAG_OL:
+#    result.indent = 2
+#    result.margin = 1
+#  of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
+#    result.bold = true
+#    result.margin = 1
+#  of TAG_A:
+#    result.islink = true
+#  of TAG_INPUT:
+#    HtmlInputElement(result).size = 20
+#  else: discard
+#
+#  if parentNode.isElemNode():
+#    let parent = HtmlElement(parentNode)
+#    result.centered = result.centered or parent.centered
+#    result.bold = result.bold or parent.bold
+#    result.italic = result.italic or parent.italic
+#    result.underscore = result.underscore or parent.underscore
+#    result.hidden = result.hidden or parent.hidden
+#    result.islink = result.islink or parent.islink
 
-#> no I won't manually write all this down
-#yes this is incredibly ugly
-#...but hey, so long as it works
-
-macro genEnumCase(s: string, t: typedesc) =
-  result = quote do:
-    let casestmt = nnkCaseStmt.newTree() 
-    casestmt.add(ident(`s`))
-    var first = true
-    for e in low(`t`) .. high(`t`):
-      if first:
-        first = false
-        continue
-      let ret = nnkReturnStmt.newTree()
-      ret.add(newLit(e))
-      let branch = nnkOfBranch.newTree()
-      let enumname = $e
-      let tagname = enumname.split('_')[1..^1].join("_").tolower()
-      branch.add(newLit(tagname))
-      branch.add(ret)
-      casestmt.add(branch)
-    let ret = nnkReturnStmt.newTree()
-    ret.add(newLit(low(`t`)))
-    let branch = nnkElse.newTree()
-    branch.add(ret)
-    casestmt.add(branch)
-
-macro genTagTypeCase() =
-  genEnumCase("s", TagType)
-
-macro genInputTypeCase() =
-  genEnumCase("s", InputType)
-
-func tagType(s: string): TagType =
-  genTagTypeCase
-
-func inputType(s: string): InputType =
-  genInputTypeCase
-
-func newHtmlElement(tagType: TagType, parentNode: HtmlNode): HtmlElement =
-  case tagType
-  of TAG_INPUT: result = new(HtmlInputElement)
-  of TAG_A: result = new(HtmlAnchorElement)
-  of TAG_SELECT: result = new(HtmlSelectElement)
-  of TAG_OPTION: result = new(HtmlOptionElement)
-  else: result = new(HtmlElement)
-
-  result.nodeType = NODE_ELEMENT
-  result.tagType = tagType
-  result.parentNode = parentNode
-  if parentNode.isElemNode():
-    result.parentElement = HtmlElement(parentNode)
-
-  if tagType in DisplayInlineTags:
-    result.display = DISPLAY_INLINE
-  elif tagType in DisplayBlockTags:
-    result.display = DISPLAY_BLOCK
-  elif tagType in DisplayInlineBlockTags:
-    result.display = DISPLAY_INLINE_BLOCK
-  elif tagType == TAG_LI:
-    result.display = DISPLAY_LIST_ITEM
-  else:
-    result.display = DISPLAY_NONE
-
-  case tagType
-  of TAG_CENTER:
-    result.centered = true
-  of TAG_B:
-    result.bold = true
-  of TAG_I:
-    result.italic = true
-  of TAG_U:
-    result.underscore = true
-  of TAG_HEAD:
-    result.hidden = true
-  of TAG_STYLE:
-    result.hidden = true
-  of TAG_SCRIPT:
-    result.hidden = true
-  of TAG_OPTION:
-    result.hidden = true #TODO
-  of TAG_PRE, TAG_TD, TAG_TH:
-    result.margin = 1
-  of TAG_UL, TAG_OL:
-    result.indent = 1
-  of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
-    result.bold = true
-    result.marginbottom = 1
-  of TAG_A:
-    result.islink = true
-  of TAG_INPUT:
-    HtmlInputElement(result).size = 20
-  else: discard
-
-  if parentNode.isElemNode():
-    let parent = HtmlElement(parentNode)
-    result.centered = result.centered or parent.centered
-    result.bold = result.bold or parent.bold
-    result.italic = result.italic or parent.italic
-    result.underscore = result.underscore or parent.underscore
-    result.hidden = result.hidden or parent.hidden
-    result.islink = result.islink or parent.islink
-
-func toInputSize*(str: string): int =
+func inputSize*(str: string): int =
   if str.len == 0:
     return 20
   for c in str:
@@ -133,297 +99,400 @@ func toInputSize*(str: string): int =
       return 20
   return str.parseInt()
 
-proc applyAttribute(htmlElement: HtmlElement, key: string, value: string) =
-  case key
-  of "id": htmlElement.id = value
-  of "class": htmlElement.class = value
-  of "name":
-    case htmlElement.tagType
-    of TAG_SELECT: HtmlSelectElement(htmlElement).name = value
-    else: discard
-  of "value":
-    case htmlElement.tagType
-    of TAG_INPUT: HtmlInputElement(htmlElement).value = value
-    of TAG_SELECT: HtmlSelectElement(htmlElement).value = value
-    of TAG_OPTION: HtmlOptionElement(htmlElement).value = value
-    else: discard
-  of "href":
-    case htmlElement.tagType
-    of TAG_A: HtmlAnchorElement(htmlElement).href = value
-    else: discard
-  of "type":
-    case htmlElement.tagType
-    of TAG_INPUT: HtmlInputElement(htmlElement).itype = value.inputType()
-    else: discard
-  of "size":
-    case htmlElement.tagType
-    of TAG_INPUT: HtmlInputElement(htmlElement).size = value.toInputSize()
-    else: discard
-  else: return
+proc genEntityMap(): RadixTree[string] =
+  let entity = staticRead"entity.json"
+  let entityJson = parseJson(entity)
+  var entityMap = newRadixTree[string]()
 
-proc closeNode(state: var ParseState) =
-  let node = state.parents[^1]
-  if node.childNodes.len > 0 and node.isElemNode() and HtmlElement(node).display == DISPLAY_BLOCK:
-    node.childNodes[0].openblock = true
-    node.childNodes[^1].closeblock = true
-  state.parents.setLen(state.parents.len - 1)
-  state.closed = true
+  for k, v in entityJson:
+    entityMap[k.substr(1)] = v{"characters"}.getStr()
 
-proc closeSingleNodes(state: var ParseState) =
-  if not state.closed and state.parents[^1].isElemNode() and HtmlElement(state.parents[^1]).tagType in SingleTagTypes:
-    state.closeNode()
+  return entityMap
 
-proc applyNodeText(htmlNode: HtmlNode) =
-  htmlNode.rawtext = htmlNode.getRawText()
-  htmlNode.fmttext = htmlNode.getFmtText()
+const entityMap = genEntityMap()
 
-proc setParent(state: var ParseState, htmlNode: HtmlNode) =
-  htmlNode.parentNode = state.parents[^1]
-  if state.parents[^1].isElemNode():
-    htmlNode.parentElement = HtmlElement(state.parents[^1])
-  if state.parents[^1].childNodes.len > 0:
-    htmlNode.previousSibling = state.parents[^1].childNodes[^1]
-    htmlNode.previousSibling.nextSibling = htmlNode
-  state.parents[^1].childNodes.add(htmlNode)
+func genHexCharMap(): seq[int] =
+  for i in 0..255:
+    case chr(i)
+    of '0'..'9': result &= i - ord('0')
+    of 'a'..'f': result &= i - ord('a') + 10
+    of 'A'..'F': result &= i - ord('A') + 10
+    else: result &= -1
 
-proc processHtmlElement(state: var ParseState, htmlElement: HtmlElement) =
-  state.closed = false
-  state.setParent(htmlElement)
-  state.parents.add(htmlElement)
+func genDecCharMap(): seq[int] =
+  for i in 0..255:
+    case chr(i)
+    of '0'..'9': result &= i - ord('0')
+    else: result &= -1
 
-proc parsecomment(state: var ParseState) =
-  var s = ""
-  state.a = ""
-  var e = 0
-  while not state.stream.atEnd():
-    let c = cast[char](state.stream.readInt8())
-    if c > char(127):
-      s &= c
-      if s.validateUtf8() == -1:
-        state.a &= s
-        s = ""
-    else:
-      case e
-      of 0:
-        if c == '-': inc e
-      of 1:
-        if c == '-': inc e
-        else:
-          e = 0
-          state.a &= '-' & c
-      of 2:
-        if c == '>': return
-        else:
-          e = 0
-          state.a &= "--" & c
-      else: state.a &= c
+const hexCharMap = genHexCharMap()
+const decCharMap = genDecCharMap()
 
-proc parsecdata(state: var ParseState) =
-  var s = ""
-  var e = 0
-  while not state.stream.atEnd():
-    let c = cast[char](state.stream.readInt8())
-    if c > char(127):
-      s &= c
-      if s.validateUtf8() == -1:
-        state.a &= s
-        s = ""
-    else:
-      case e
-      of 0:
-        if c == ']': inc e
-      of 1:
-        if c == ']': inc e
-        else: e = 0
-      of 2:
-        if c == '>': return
-        else: e = 0
-      else: discard
-      state.a &= c
-
-proc next(state: var ParseState): ParseEvent =
-  result = NO_EVENT
-  if state.stream.atEnd(): return result
-
-  var c = cast[char](state.stream.readInt8())
-  var cdata = false
-  var s = ""
-  state.a = ""
-  if c < char(128): #ascii
-    case c
-    of '<':
-      if state.stream.atEnd():
-        state.a = $c
-        return EVENT_TEXT
-      let d = char(state.stream.peekInt8())
-      case d
-      of '/': result = EVENT_ENDELEM
-      of '!':
-        state.a = state.stream.readStr(2)
-        case state.a
-        of "[C":
-          state.a &= state.stream.readStr(7)
-          if state.a == "[CDATA[":
-            state.parsecdata()
-            return EVENT_COMMENT
-          result = EVENT_TEXT
-        of "--":
-          state.parsecomment()
-          return EVENT_COMMENT
-        else:
-          while not state.stream.atEnd():
-            c = cast[char](state.stream.readInt8())
-            if s.len == 0 and c == '>':
-              break
-            elif c > char(127):
-              s &= c
-              if s.validateUtf8() == -1:
-                s = ""
-          return NO_EVENT
-      of Letters:
-        result = EVENT_STARTELEM
-      else:
-        result = EVENT_TEXT
-        state.a = c & d
-    of '>':
-      return EVENT_CLOSEELEM
-    else: result = EVENT_TEXT
-  else: result = EVENT_TEXT
-
-  case result
-  of EVENT_STARTELEM:
-    var atspace = false
-    var atattr = false
-    while not state.stream.atEnd():
-      c = cast[char](state.stream.peekInt8())
-      if s.len == 0 and c < char(128):
-        case c
-        of Whitespace: atspace = true
-        of '>':
-          discard state.stream.readInt8()
-          break
-        else:
-          if atspace:
-            return EVENT_OPENELEM
-          else:
-            state.a &= s
-      else:
-        if atspace:
-          return EVENT_OPENELEM
-        s &= c
-        if s.validateUtf8() == -1:
-          state.a &= s
-          s = ""
-      discard state.stream.readInt8()
-  of EVENT_ENDELEM:
-    while not state.stream.atEnd():
-      c = cast[char](state.stream.readInt8())
-      if s.len == 0 and c < char(128):
-        if c == '>': break
-        elif c in Whitespace: discard
-        else: state.a &= c
-      else:
-        s &= c
-        if s.validateUtf8() == -1:
-          state.a &= s
-          s = ""
-  of EVENT_TEXT:
-    while not state.stream.atEnd():
-      c = cast[char](state.stream.peekInt8())
-      if s.len == 0 and c < char(128):
-        if c in {'<', '>'}: break
-        state.a &= c
-      else:
-        s &= c
-        if s.validateUtf8() == -1:
-          state.a &= s
-          s = ""
-      discard state.stream.readInt8()
-  else: assert(false)
-
-proc nparseHtml*(inputStream: Stream): Document =
-  var state = ParseState(stream: inputStream)
-  let document = newDocument()
-  state.parents.add(document)
-  while state.parents.len > 0 and not inputStream.atEnd():
-    let event = state.next()
-    case event
-    of EVENT_COMMENT: discard #TODO
-    of EVENT_STARTELEM:
-      state.closeSingleNodes()
-      let parsedNode = newHtmlElement(tagType(state.a), state.parents[^1])
-      parsedNode.applyNodeText()
-      state.processHtmlElement(parsedNode)
-    of EVENT_ENDELEM:
-      state.closeNode()
-    of EVENT_OPENELEM:
-      state.closeSingleNodes()
-      let parsedNode = newHtmlElement(tagType(state.a), state.parents[^1])
-      var next = state.next()
-      while next != EVENT_CLOSEELEM and not inputStream.atEnd():
-        #TODO
-        #if next == EVENT_ATTRIBUTE:
-        #  parsedNode.applyAttribute(state.a.tolower(), state.b)
-        #  s &= " " & x.rawdata & "=\"" & x.rawdata2 & "\""
-        #else:
-        #  assert(false, "wtf " & $x.kind & " " & x.rawdata) #TODO
-        next = state.next()
-      parsedNode.applyNodeText()
-      state.processHtmlElement(parsedNode)
-    of EVENT_TEXT:
-      if unicode.strip(state.a).len == 0:
-        continue
-      let textNode = new(HtmlNode)
-      textNode.nodeType = NODE_TEXT
-      state.setParent(textNode)
-      textNode.rawtext = state.a
-      textNode.applyNodeText()
-    else: discard
-  return document
-
-#old nparseHtml because I don't trust myself
-#proc nparseHtml*(inputStream: Stream): Document =
-#  var x: XmlParser
-#  let options = {reportWhitespace, allowUnquotedAttribs, allowEmptyAttribs}
-#  x.open(inputStream, "", options)
-#  var state = ParseState(stream: inputStream)
-#  let document = newDocument()
-#  state.parents.add(document)
-#  while state.parents.len > 0 and x.kind != xmlEof:
-#    #let event = state.next()
-#    x.next()
-#    case x.kind
-#    of xmlComment: discard #TODO
-#    of xmlElementStart:
-#      state.closeSingleNodes()
-#      let parsedNode = newHtmlElement(tagType(x.rawData), state.parents[^1])
-#      parsedNode.applyNodeText()
-#      state.processHtmlElement(parsedNode)
-#    of xmlElementEnd:
-#      state.closeNode()
-#    of xmlElementOpen:
-#      var s = "<" & x.rawdata
-#      state.closeSingleNodes()
-#      let parsedNode = newHtmlElement(tagType(x.rawData), state.parents[^1])
-#      x.next()
-#      while x.kind != xmlElementClose and x.kind != xmlEof:
-#        if x.kind == xmlAttribute:
-#          parsedNode.applyAttribute(x.rawData.tolower(), x.rawData2)
-#          s &= " " & x.rawdata & "=\"" & x.rawdata2 & "\""
-#        else:
-#          assert(false, "wtf " & $x.kind & " " & x.rawdata) #TODO
-#        x.next()
-#      s &= ">"
-#      parsedNode.applyNodeText()
-#      state.processHtmlElement(parsedNode)
-#    of xmlCharData:
-#      let textNode = new(HtmlNode)
-#      textNode.nodeType = NODE_TEXT
+#w3m's getescapecmd and parse_tag, transpiled to nim.
+#(C) Copyright 1994-2002 by Akinori Ito
+#(C) Copyright 2002-2011 by Akinori Ito, Hironori Sakamoto, Fumitoshi Ukai
 #
-#      state.setParent(textNode)
-#      textNode.rawtext = x.rawData
-#      textNode.applyNodeText()
-#    of xmlEntity: discard #TODO
-#    of xmlEof: break
-#    else: discard
-#  return document
+#Use, modification and redistribution of this software is hereby granted,
+#provided that this entire copyright notice is included on any copies of
+#this software and applications and derivations thereof.
+#
+#This software is provided on an "as is" basis, without warranty of any
+#kind, either expressed or implied, as to any matter including, but not
+#limited to warranty of fitness of purpose, or merchantability, or
+#results obtained from use of this software.
+proc getescapecmd(buf: string, at: var int): string =
+  var i = at
+
+  if buf[i] == '#': #num
+    inc i
+    var num: int
+    if buf[i].tolower() == 'x': #hex
+      inc i
+      if not isdigit(buf[i]):
+        at = i
+        return ""
+
+      num = hexCharMap[int(buf[i])]
+      inc i
+      while i < buf.len and hexCharMap[int(buf[i])] != -1:
+        num *= 0x10
+        num += hexCharMap[int(buf[i])]
+        inc i
+    else: #dec
+      if not isDigit(buf[i]):
+        at = i
+        return ""
+
+      num = decCharMap[int(buf[i])]
+      inc i
+      while i < buf.len and isDigit(buf[i]):
+        num *= 10
+        num += decCharMap[int(buf[i])]
+        inc i
+
+    if buf[i] == ';':
+      inc i
+    at = i
+    return $(Rune(num))
+  elif not isAlphaAscii(buf[i]):
+    return ""
+
+  var n: uint16 = 0
+  var s = ""
+  while true:
+    let c = buf[i]
+    s &= c
+    if not entityMap.hasPrefix(s, n):
+      break
+    let pn = n
+    n = entityMap.getPrefix(s, n)
+    if n != pn:
+      s = ""
+    inc i
+
+  if entityMap.nodes[n].leaf:
+    at = i
+    return entityMap.nodes[n].value
+
+  return ""
+
+type
+  DOMParsedTag = object
+    tagid: TagType
+    attrs: Table[string, string]
+    open: bool
+
+proc parse_tag(buf: string, at: var int): DOMParsedTag =
+  var tag = DOMParsedTag()
+  tag.open = true
+
+  #Parse tag name
+  var tagname = ""
+  inc at
+  if buf[at] == '/':
+    inc at
+    tag.open = false
+    skipBlanks(buf, at)
+
+  while at < buf.len and not buf[at].isWhitespace() and not (tag.open and buf[at] == '/') and buf[at] != '>':
+    tagname &= buf[at].tolower()
+    at += buf.runeLenAt(at)
+
+  tag.tagid = tagType(tagname)
+  skipBlanks(buf, at)
+
+  while at < buf.len and buf[at] != '>':
+    var value = ""
+    var attrname = ""
+    while at < buf.len and buf[at] != '=' and not buf[at].isWhitespace() and buf[at] != '>':
+      attrname &= buf[at].tolower()
+      at += buf.runeLenAt(at)
+
+    skipBlanks(buf, at)
+    if buf[at] == '=':
+      inc at
+      skipBlanks(buf, at)
+      if at < buf.len and (buf[at] == '"' or buf[at] == '\''):
+        let startc = buf[at]
+        inc at
+        while at < buf.len and buf[at] != startc:
+          var r: Rune
+          fastRuneAt(buf, at, r)
+          if r == Rune('&'):
+            value &= getescapecmd(buf, at)
+          else:
+            value &= $r
+        if at < buf.len:
+          inc at
+      elif at < buf.len:
+        while at < buf.len and not buf[at].isWhitespace() and buf[at] != '>':
+          value &= buf[at]
+          at += buf.runeLenAt(at)
+
+    if attrname.len > 0:
+      tag.attrs[attrname] = value
+
+  while at < buf.len and buf[at] != '>':
+    at += buf.runeLenAt(at)
+
+  if at < buf.len and buf[at] == '>':
+    inc at
+  return tag
+
+proc insertNode(parent: Node, node: Node) =
+  parent.childNodes.add(node)
+
+  if parent.firstChild == nil:
+    parent.firstChild = node
+
+  parent.lastChild = node
+
+  if parent.childNodes.len > 1:
+    let prevSibling = parent.childNodes[^1]
+    prevSibling.nextSibling = node
+    node.previousSibling = prevSibling
+
+  node.parentNode = parent
+  if parent.nodeType == ELEMENT_NODE:
+    node.parentElement = Element(parent)
+
+  if parent.ownerDocument != nil:
+    node.ownerDocument = parent.ownerDocument
+  elif parent.nodeType == DOCUMENT_NODE:
+    node.ownerDocument = Document(parent)
+
+proc processDocumentStartNode(state: var ParseState, newNode: Node) =
+  insertNode(state.parentNode, newNode)
+  state.parentNode = newNode
+
+proc processDocumentEndNode(state: var ParseState) =
+  if state.parentNode == nil or state.parentNode.parentNode == nil:
+    return
+  state.parentNode = state.parentNode.parentNode
+
+proc processDocumentText(state: var ParseState) =
+  if state.textNode == nil:
+    state.textNode = newText()
+
+    processDocumentStartNode(state, state.textNode)
+    processDocumentEndNode(state)
+
+proc processDocumentStartElement(state: var ParseState, element: Element, tag: DOMParsedTag) =
+  for k, v in tag.attrs:
+    element.attributes[k] = element.newAttr(k, v)
+  
+  element.id = element.getAttrValue("id")
+  if element.attributes.hasKey("class"):
+    for w in unicode.split(element.attributes["class"].value, Rune(' ')):
+      element.classList.add(w)
+
+  case element.tagType
+  of TAG_SCRIPT:
+    state.in_script = true
+  of TAG_NOSCRIPT:
+    state.in_noscript = true
+  of TAG_STYLE:
+    state.in_style = true
+  of TAG_SELECT:
+    HTMLSelectElement(element).name = element.getAttrValue("name")
+    HTMLSelectElement(element).value = element.getAttrValue("value")
+  of TAG_INPUT:
+    HTMLInputElement(element).value = element.getAttrValue("value")
+    HTMLInputElement(element).itype = element.getAttrValue("type").inputType()
+    HTMLInputElement(element).size = element.getAttrValue("size").inputSize()
+  of TAG_A:
+    HTMLAnchorElement(element).href = element.getAttrValue("href")
+  of TAG_OPTION:
+    HTMLOptionElement(element).value = element.getAttrValue("href")
+  else: discard
+
+  if state.parentNode.nodeType == ELEMENT_NODE:
+    case element.tagType
+    of TAG_LI, TAG_P:
+      if Element(state.parentNode).tagType == element.tagType:
+        processDocumentEndNode(state)
+    of TAG_H1:
+      HTMLHeadingElement(element).rank = 1
+    of TAG_H2:
+      HTMLHeadingElement(element).rank = 2
+    of TAG_H3:
+      HTMLHeadingElement(element).rank = 3
+    of TAG_H4:
+      HTMLHeadingElement(element).rank = 4
+    of TAG_H5:
+      HTMLHeadingElement(element).rank = 5
+    of TAG_H6:
+      HTMLHeadingElement(element).rank = 6
+    else: discard
+
+  processDocumentStartNode(state, element)
+
+  if element.tagType in VoidTagTypes:
+    processDocumentEndNode(state)
+
+proc processDocumentEndElement(state: var ParseState, tag: DOMParsedTag) =
+  if tag.tagid in VoidTagTypes:
+    return
+  if state.parentNode.nodeType == ELEMENT_NODE:
+    if Element(state.parentNode).tagType in {TAG_LI, TAG_P}:
+      processDocumentEndNode(state)
+  
+  processDocumentEndNode(state)
+
+proc processDocumentTag(state: var ParseState, tag: DOMParsedTag) =
+  if state.in_script:
+    if tag.tagid == TAG_SCRIPT:
+      state.in_script = false
+    else:
+      return
+
+  if state.in_style:
+    if tag.tagid == TAG_STYLE:
+      state.in_style = false
+    else:
+      return
+
+  if state.in_noscript:
+    if tag.tagid == TAG_NOSCRIPT:
+      state.in_noscript = false
+    else:
+      return
+
+  if tag.open:
+    processDocumentStartElement(state, newHtmlElement(tag.tagid), tag)
+  else:
+    processDocumentEndElement(state, tag)
+  #XXX PROCDOCCASE stuff... good lord I'll never finish this thing
+
+proc processDocumentPart(state: var ParseState, buf: string) =
+  var at = 0
+  var max = 0
+  var was_script = false
+
+  max = buf.len
+
+  while at < max:
+    case buf[at]
+    of '&':
+      inc at
+      let p = getescapecmd(buf, at)
+      if state.in_comment:
+        CharacterData(state.parentNode).data &= p
+      else:
+        processDocumentText(state)
+        state.textNode.data &= p
+    of '<':
+      if state.in_comment:
+        CharacterData(state.parentNode).data &= buf[at]
+        inc at
+      else:
+        var p = at
+        inc p
+        if p < max and buf[p] == '!':
+          inc p
+          if p < max and buf[p] == '-':
+            inc p
+            if p < max and buf[p] == '-':
+              inc p
+              at = p
+              state.in_comment = true
+              processDocumentStartNode(state, newComment())
+              if state.textNode != nil:
+                state.textNode.rawtext = state.textNode.getRawText()
+                state.textNode = nil
+
+        if not state.in_comment:
+          if state.textNode != nil:
+            state.textNode.rawtext = state.textNode.getRawText()
+            state.textNode = nil
+          p = at
+          var tag = parse_tag(buf, at)
+          was_script = state.in_script
+
+          processDocumentTag(state, tag)
+#         if (was_script) {
+#             if (state->in_script) {
+#                 ptr = p;
+#                 processDocumentText(&state->parentNode, &state->textNode);
+#                 Strcat_char(((CharacterData *)state->textNode)->data, *ptr++);
+#             } else if (buffer->javascript_enabled) {
+#                 loadJSToBuffer(buffer, childTextContentNode(state->parentNode->lastChild)->ptr, "<inline>", state->document);
+#             }
+#         }
+    elif buf[at] == '-' and state.in_comment:
+      var p = at
+      inc p
+      if p < max and buf[p] == '-':
+        inc p
+        if p < max and buf[p] == '>':
+          inc p
+          at = p
+          state.in_comment = false
+          processDocumentEndNode(state)
+
+      if state.in_comment:
+        CharacterData(state.parentNode).data &= buf[at]
+        inc at
+    else:
+      var r: Rune
+      fastRuneAt(buf, at, r)
+      if state.in_comment:
+        CharacterData(state.parentNode).data &= $r
+      else:
+        processDocumentText(state)
+        state.textNode.data &= $r
+
+proc parseHtml*(inputStream: Stream): Document =
+  let document = newDocument()
+
+  var state = ParseState(stream: inputStream)
+  state.parentNode = document
+
+  var till_when = false
+
+  var buf = ""
+  var lineBuf: string
+  while not inputStream.atEnd():
+    lineBuf = inputStream.readLine()
+    if lineBuf.len == 0:
+      break
+    buf &= lineBuf
+
+    var at = 0
+    while at < lineBuf.len:
+      case lineBuf[at]
+      of '<':
+        till_when = true
+      of '>':
+        till_when = false
+      else: discard
+      at += lineBuf.runeLenAt(at)
+
+    if till_when:
+      continue
+
+    processDocumentPart(state, buf)
+    buf = ""
+
+  inputStream.close()
+  return document

@@ -29,7 +29,6 @@ proc getPageUri(uri: Uri): Stream =
   if uri.scheme == "" or uri.scheme == "file":
     return getLocalPage($moduri)
   else:
-    #return nparseHtml(getRemotePage($moduri))
     return getRemotePage($moduri)
 
 var buffers: seq[Buffer]
@@ -44,9 +43,9 @@ proc main*() =
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  buffer.document = nparseHtml(getPageUri(uri))
+  buffer.document = parseHtml(getPageUri(uri))
   buffer.setLocation(uri)
-  buffer.nrenderHtml()
+  buffer.renderHtml()
   var lastUri = uri
   while displayPage(attrs, buffer):
     statusMsg("Loading...", buffer.height)
@@ -58,10 +57,9 @@ proc main*() =
       if uri.scheme == "" and uri.path == "" and uri.anchor != "":
         discard
       else:
-        buffer.document = nparseHtml(getPageUri(buffer.document.location))
-      buffer.nrenderHtml()
+        buffer.document = parseHtml(getPageUri(buffer.document.location))
+      buffer.renderHtml()
     lastUri = newUri
 
 #waitFor loadPage("https://lite.duckduckgo.com/lite/?q=hello%20world")
-#eprint mk_wcswidth_cjk("abc•de")
 main()
