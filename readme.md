@@ -16,7 +16,8 @@ Currently implemented features are:
 
 Planned features (roughly in order of importance):
 
-* improved html rendering and parsing
+* stylesheets
+* improved html rendering (like, actually functioning)
 * form
 * table
 * cookie
@@ -25,11 +26,11 @@ Planned features (roughly in order of importance):
 * image (sixel/kitty)
 * audio
 * JavaScript
-* extension API (adblock support?)
 * video (sixel/kitty)
-* custom charsets?
+* extension API?
+* non-unicode charsets?
 * async?
-* markdown? (with pandoc or built-in parser?)
+* markdown? (with built-in parser)
 * gopher?
 * gemini?
 

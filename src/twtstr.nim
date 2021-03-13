@@ -48,25 +48,36 @@ func remove*(str: string, c: string): string =
     if rem != rune:
       result &= $rune
 
-const ControlChars = {chr(0x00)..chr(0x1F), chr(0x7F)}
-
-const Whitespace = { ' ', '\n', '\r', '\t' }
-
 func isWhitespace*(c: char): bool =
-  return c in Whitespace
+  case c
+  of ' ', '\n', '\r', '\t', '\f': return true
+  else: return false
 
 func isControlChar*(c: char): bool =
-  return c in ControlChars
+  case c
+  of chr(0x00)..chr(0x1F): return true
+  of chr(0x7F): return true
+  else: return false
 
 func isControlChar*(r: Rune): bool =
-  return int(r) <= int(high(char)) and char(r) in ControlChars
+  case r
+  of Rune(0x00)..Rune(0x1F): return true
+  of Rune(0x7F): return true
+  else: return false
+
+func genControlCharMap*(): string =
+  for c in low(char)..high(char):
+    if c >= 'a':
+      result &= char(int(c) - int('a') + 1)
+    elif c == '?':
+      result &= char(127)
+    else:
+      result &= char(0)
+
+const controlCharMap = genControlCharMap()
 
 func getControlChar*(c: char): char =
-  if c >= 'a':
-    return char(int(c) - int('a') + 1)
-  elif c == '?':
-    return char(127)
-  assert(false)
+  return controlCharMap[int(c)]
 
 func getControlLetter*(c: char): char =
   if int(c) <= 0x1F:
@@ -112,8 +123,56 @@ const breakWord = [
   Rune('?'), Rune('.'), Rune(';')
 ]
 
+func genHexCharMap(): seq[int] =
+  for i in 0..255:
+    case chr(i)
+    of '0'..'9': result &= i - ord('0')
+    of 'a'..'f': result &= i - ord('a') + 10
+    of 'A'..'F': result &= i - ord('A') + 10
+    else: result &= -1
+
+func genDecCharMap(): seq[int] =
+  for i in 0..255:
+    case chr(i)
+    of '0'..'9': result &= i - ord('0')
+    else: result &= -1
+
+const hexCharMap = genHexCharMap()
+const decCharMap = genDecCharMap()
+
+func hexValue*(c: char): int =
+  return hexCharMap[int(c)]
+
+func decValue*(c: char): int =
+  return decCharMap[int(c)]
+
+func isAscii*(r: Rune): bool =
+  return int(r) <= int(high(char))
+
+func hexValue*(r: Rune): int =
+  if isAscii(r):
+    return hexValue(char(r))
+  return -1
+
+func decValue*(r: Rune): int =
+  if isAscii(r):
+    return decValue(char(r))
+  return -1
+
 func breaksWord*(r: Rune): bool =
   return r in breakWord
+
+func isAlphaAscii*(r: Rune): bool =
+  return isAscii(r) and isAlphaAscii(char(r))
+
+func isDigitAscii*(r: Rune): bool =
+  return isAscii(r) and isDigit(char(r))
+
+func isNameStartCodePoint*(r: Rune): bool =
+  return not isAscii(r) or r == Rune('_') or isAlphaAscii(r)
+
+func isNameCodePoint*(r: Rune): bool =
+  return isNameStartCodePoint(r) or isDigitAscii(r) or r == Rune('-')
 
 func substr*(s: seq[Rune], i: int, j: int): seq[Rune] =
   if s.len == 0:
@@ -346,7 +405,19 @@ func mk_wcswidth_cjk(s: string): int =
     result += mk_wcwidth_cjk(r)
   return result
 
+func skipBlanks*(buf: string, at: int): int =
+  result = at
+  while result < buf.len and buf[result].isWhitespace():
+    inc result
 
-proc skipBlanks*(buf: string, at: var int) =
-  while at < buf.len and buf[at].isWhitespace():
-    inc at
+iterator split*(s: seq[Rune], sep: Rune): seq[Rune] =
+  var i = 0
+  var prev = 0
+  while i < s.len:
+    if s[i] == sep:
+      yield s.substr(prev, i)
+      prev = i
+    inc i
+
+  if prev < i:
+    yield s.substr(prev, i)

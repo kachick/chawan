@@ -7,6 +7,7 @@ import tables
 import twtstr
 import twtio
 import enums
+import style
 
 type
   EventTarget* = ref EventTargetObj
@@ -71,22 +72,7 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, Attr]
-
-    margintop*: int
-    marginbottom*: int
-    marginleft*: int
-    marginright*: int
-    margin*: int
-    centered*: bool
-    display*: DisplayType
-    innerText*: string
-    bold*: bool
-    italic*: bool
-    underscore*: bool
-    islink*: bool
-    selected*: bool
-    numChildNodes*: int
-    indent*: int
+    style*: CSS2Properties
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -155,8 +141,14 @@ func nodeAttr*(node: Node): HtmlElement =
   of ELEMENT_NODE: return HtmlElement(node)
   else: assert(false)
 
+func getStyle*(node: Node): CSS2Properties =
+  case node.nodeType
+  of TEXT_NODE: return node.parentElement.style
+  of ELEMENT_NODE: return Element(node).style
+  else: assert(false)
+
 func displayed*(node: Node): bool =
-  return node.rawtext.len > 0 and node.nodeAttr().display != DISPLAY_NONE
+  return node.rawtext.len > 0 and node.getStyle().display != DISPLAY_NONE
 
 func isTextNode*(node: Node): bool =
   return node.nodeType == TEXT_NODE
@@ -215,7 +207,7 @@ func toInputSize*(str: string): int =
   if str.len == 0:
     return 20
   for c in str:
-    if not c.isDigit:
+    if not c.isDigit():
       return 20
   return str.parseInt()
 
@@ -242,9 +234,6 @@ func ancestor*(htmlNode: Node, tagType: TagType): HtmlElement =
   while result != nil and result.tagType != tagType:
     result = HtmlElement(result.parentElement)
 
-func displayWhitespace*(htmlElem: HtmlElement): bool =
-  return htmlElem.display == DISPLAY_INLINE or htmlElem.display == DISPLAY_INLINE_BLOCK
-
 proc getRawText*(htmlNode: Node): string =
   if htmlNode.isElemNode():
     case HtmlElement(htmlNode).tagType
@@ -255,11 +244,8 @@ proc getRawText*(htmlNode: Node): string =
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
       result = chardata.data.remove("\n")
       if unicode.strip(result).runeLen() > 0:
-        if htmlNode.nodeAttr().display != DISPLAY_INLINE:
-          if htmlNode.previousSibling == nil or htmlNode.previousSibling.nodeAttr().displayWhitespace():
-            result = unicode.strip(result, true, false)
-          if htmlNode.nextSibling == nil or htmlNode.nextSibling.nodeAttr().displayWhitespace():
-            result = unicode.strip(result, false, true)
+        if htmlNode.getStyle().display != DISPLAY_INLINE:
+          result = unicode.strip(result)
       else:
         result = ""
     else:
@@ -278,22 +264,20 @@ func getFmtText*(htmlNode: Node): seq[string] =
     let chardata = CharacterData(htmlNode)
     result &= chardata.data
     if htmlNode.parentElement != nil:
-      #TODO
-      if HtmlElement(htmlNode.parentElement).islink:
+      if htmlNode.parentElement.style.islink:
         result = result.ansiFgColor(fgBlue).ansiReset()
         let anchor = htmlNode.ancestor(TAG_A)
-        if anchor != nil and anchor.selected:
+        if anchor != nil and anchor.style.selected:
           result = result.ansiStyle(styleUnderscore).ansiReset()
 
       if htmlNode.parentElement.tagType == TAG_OPTION:
         result = result.ansiFgColor(fgRed).ansiReset()
 
-      #TODO
-      if HtmlElement(htmlNode.parentElement).bold:
+      if htmlNode.parentElement.style.bold:
         result = result.ansiStyle(styleBright).ansiReset()
-      if HtmlElement(htmlNode.parentElement).italic:
+      if htmlNode.parentElement.style.italic:
         result = result.ansiStyle(styleItalic).ansiReset()
-      if HtmlElement(htmlNode.parentElement).underscore:
+      if htmlNode.parentElement.style.underscore:
         result = result.ansiStyle(styleUnderscore).ansiReset()
     else:
       assert(false, "Uhhhh I'm pretty sure we should have parent elements for text nodes?" & htmlNode.rawtext)
@@ -331,6 +315,7 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
+  result.style = new(CSS2Properties)
 
 func newAttr*(parent: Element, key: string, value: string): Attr =
   new(result)

@@ -1,5 +1,3 @@
-#beware, awful code ahead
-
 import options
 import uri
 import tables
@@ -29,8 +27,8 @@ type
     nodes*: seq[Node]
     links*: seq[Node]
     clickables*: seq[Node]
-    elements*: seq[HtmlElement]
-    idelements*: Table[string, HtmlElement]
+    elements*: seq[Element]
+    idelements*: Table[string, Element]
     selectedlink*: Node
     printwrite*: bool
     attrs*: TermAttributes
@@ -92,7 +90,7 @@ func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
 func canScroll*(buffer: Buffer): bool =
   return buffer.lastLine() > buffer.height
 
-func getElementById*(buffer: Buffer, id: string): HtmlElement =
+func getElementById*(buffer: Buffer, id: string): Element =
   if buffer.idelements.hasKey(id):
     return buffer.idelements[id]
   return nil
@@ -104,28 +102,26 @@ proc findSelectedNode*(buffer: Buffer): Option[Node] =
         return some(node)
   return none(Node)
 
-proc addNode*(buffer: Buffer, htmlNode: Node) =
-  buffer.nodes.add(htmlNode)
+proc addNode*(buffer: Buffer, node: Node) =
+  buffer.nodes.add(node)
 
-  #TODO
-  if htmlNode.isTextNode() and htmlNode.parentElement != nil and HtmlElement(htmlNode.parentElement).islink:
-    buffer.links.add(htmlNode)
+  if node.isTextNode() and node.parentElement != nil and node.parentElement.getStyle().islink:
+    buffer.links.add(node)
 
-  if htmlNode.isElemNode():
-    case HtmlElement(htmlNode).tagType
+  if node.isElemNode():
+    case Element(node).tagType
     of TAG_INPUT, TAG_OPTION:
-      if not HtmlElement(htmlNode).hidden:
-        buffer.clickables.add(htmlNode)
+      if not Element(node).hidden:
+        buffer.clickables.add(node)
     else: discard
-  elif htmlNode.isTextNode():
-    #TODO
-    if htmlNode.parentElement != nil and HtmlElement(htmlNode.parentElement).islink:
-      let anchor = htmlNode.ancestor(TAG_A)
+  elif node.isTextNode():
+    if node.parentElement != nil and node.parentElement.style.islink:
+      let anchor = node.ancestor(TAG_A)
       assert(anchor != nil)
       buffer.clickables.add(anchor)
 
-  if htmlNode.isElemNode():
-    let elem = HtmlElement(htmlNode)
+  if node.isElemNode():
+    let elem = Element(node)
     buffer.elements.add(elem)
     if elem.id != "" and not buffer.idelements.hasKey(elem.id):
       buffer.idelements[elem.id] = elem
@@ -411,7 +407,7 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       return false
     else:
       let anchor = buffer.selectedlink.ancestor(TAG_A)
-      anchor.selected = false
+      anchor.style.selected = false
       buffer.selectedlink.fmttext = buffer.selectedlink.getFmtText()
       buffer.selectedlink = nil
       buffer.hovertext = ""
@@ -427,7 +423,7 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       buffer.selectedlink = node
       let anchor = node.ancestor(TAG_A)
       assert(anchor != nil)
-      anchor.selected = true
+      anchor.style.selected = true
       buffer.hovertext = HtmlAnchorElement(anchor).href
       var stack: seq[Node]
       stack.add(anchor)

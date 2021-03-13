@@ -48,7 +48,7 @@ proc readLine*(prompt: string, current: var string, termwidth: int): bool =
   var feedNext = false
   var escNext = false
   var comp = false
-  var compi: uint16 = 0
+  var compi = 0
   var compa = 0
   var comps = ""
   var cursor = news.len
@@ -141,7 +141,7 @@ proc readLine*(prompt: string, current: var string, termwidth: int): bool =
       feedNext = true
     elif comp:
       comps &= c
-      let n = composeRemap.getPrefix(comps, compi)
+      let n = composeRemap[comps, compi]
       if n != compi:
         compi = n
         compa += comps.len

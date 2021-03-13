@@ -9,10 +9,11 @@ import enums
 import twtstr
 import dom
 import radixtree
+import style
+import entity
 
 type
-  ParseState = object
-    stream: Stream
+  HTMLParseState = object
     closed: bool
     parents: seq[Node]
     parsedNode: Node
@@ -25,6 +26,9 @@ type
     in_noscript: bool
     parentNode: Node
     textNode: Text
+
+  CSSParseState = object
+    in_comment: bool
 
 #func newHtmlElement(tagType: TagType, parentNode: Node): HtmlElement =
 #  case tagType
@@ -99,35 +103,6 @@ func inputSize*(str: string): int =
       return 20
   return str.parseInt()
 
-proc genEntityMap(): RadixTree[string] =
-  let entity = staticRead"entity.json"
-  let entityJson = parseJson(entity)
-  var entityMap = newRadixTree[string]()
-
-  for k, v in entityJson:
-    entityMap[k.substr(1)] = v{"characters"}.getStr()
-
-  return entityMap
-
-const entityMap = genEntityMap()
-
-func genHexCharMap(): seq[int] =
-  for i in 0..255:
-    case chr(i)
-    of '0'..'9': result &= i - ord('0')
-    of 'a'..'f': result &= i - ord('a') + 10
-    of 'A'..'F': result &= i - ord('A') + 10
-    else: result &= -1
-
-func genDecCharMap(): seq[int] =
-  for i in 0..255:
-    case chr(i)
-    of '0'..'9': result &= i - ord('0')
-    else: result &= -1
-
-const hexCharMap = genHexCharMap()
-const decCharMap = genDecCharMap()
-
 #w3m's getescapecmd and parse_tag, transpiled to nim.
 #(C) Copyright 1994-2002 by Akinori Ito
 #(C) Copyright 2002-2011 by Akinori Ito, Hironori Sakamoto, Fumitoshi Ukai
@@ -152,22 +127,22 @@ proc getescapecmd(buf: string, at: var int): string =
         at = i
         return ""
 
-      num = hexCharMap[int(buf[i])]
+      num = hexValue(buf[i])
       inc i
-      while i < buf.len and hexCharMap[int(buf[i])] != -1:
+      while i < buf.len and hexValue(buf[i]) != -1:
         num *= 0x10
-        num += hexCharMap[int(buf[i])]
+        num += hexValue(buf[i])
         inc i
     else: #dec
       if not isDigit(buf[i]):
         at = i
         return ""
 
-      num = decCharMap[int(buf[i])]
+      num = decValue(buf[i])
       inc i
       while i < buf.len and isDigit(buf[i]):
         num *= 10
-        num += decCharMap[int(buf[i])]
+        num += decValue(buf[i])
         inc i
 
     if buf[i] == ';':
@@ -177,15 +152,14 @@ proc getescapecmd(buf: string, at: var int): string =
   elif not isAlphaAscii(buf[i]):
     return ""
 
-  var n: uint16 = 0
+  var n = 0
   var s = ""
   while true:
-    let c = buf[i]
-    s &= c
+    s &= buf[i]
     if not entityMap.hasPrefix(s, n):
       break
     let pn = n
-    n = entityMap.getPrefix(s, n)
+    n = entityMap[s, n]
     if n != pn:
       s = ""
     inc i
@@ -212,14 +186,14 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
   if buf[at] == '/':
     inc at
     tag.open = false
-    skipBlanks(buf, at)
+    at = skipBlanks(buf, at)
 
   while at < buf.len and not buf[at].isWhitespace() and not (tag.open and buf[at] == '/') and buf[at] != '>':
     tagname &= buf[at].tolower()
     at += buf.runeLenAt(at)
 
   tag.tagid = tagType(tagname)
-  skipBlanks(buf, at)
+  at = skipBlanks(buf, at)
 
   while at < buf.len and buf[at] != '>':
     var value = ""
@@ -228,10 +202,10 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
       attrname &= buf[at].tolower()
       at += buf.runeLenAt(at)
 
-    skipBlanks(buf, at)
+    at = skipBlanks(buf, at)
     if buf[at] == '=':
       inc at
-      skipBlanks(buf, at)
+      at = skipBlanks(buf, at)
       if at < buf.len and (buf[at] == '"' or buf[at] == '\''):
         let startc = buf[at]
         inc at
@@ -281,23 +255,23 @@ proc insertNode(parent: Node, node: Node) =
   elif parent.nodeType == DOCUMENT_NODE:
     node.ownerDocument = Document(parent)
 
-proc processDocumentStartNode(state: var ParseState, newNode: Node) =
+proc processDocumentStartNode(state: var HTMLParseState, newNode: Node) =
   insertNode(state.parentNode, newNode)
   state.parentNode = newNode
 
-proc processDocumentEndNode(state: var ParseState) =
+proc processDocumentEndNode(state: var HTMLParseState) =
   if state.parentNode == nil or state.parentNode.parentNode == nil:
     return
   state.parentNode = state.parentNode.parentNode
 
-proc processDocumentText(state: var ParseState) =
+proc processDocumentText(state: var HTMLParseState) =
   if state.textNode == nil:
     state.textNode = newText()
 
     processDocumentStartNode(state, state.textNode)
     processDocumentEndNode(state)
 
-proc processDocumentStartElement(state: var ParseState, element: Element, tag: DOMParsedTag) =
+proc processDocumentStartElement(state: var HTMLParseState, element: Element, tag: DOMParsedTag) =
   for k, v in tag.attrs:
     element.attributes[k] = element.newAttr(k, v)
   
@@ -350,7 +324,7 @@ proc processDocumentStartElement(state: var ParseState, element: Element, tag: D
   if element.tagType in VoidTagTypes:
     processDocumentEndNode(state)
 
-proc processDocumentEndElement(state: var ParseState, tag: DOMParsedTag) =
+proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
   if tag.tagid in VoidTagTypes:
     return
   if state.parentNode.nodeType == ELEMENT_NODE:
@@ -359,7 +333,7 @@ proc processDocumentEndElement(state: var ParseState, tag: DOMParsedTag) =
   
   processDocumentEndNode(state)
 
-proc processDocumentTag(state: var ParseState, tag: DOMParsedTag) =
+proc processDocumentTag(state: var HTMLParseState, tag: DOMParsedTag) =
   if state.in_script:
     if tag.tagid == TAG_SCRIPT:
       state.in_script = false
@@ -382,9 +356,8 @@ proc processDocumentTag(state: var ParseState, tag: DOMParsedTag) =
     processDocumentStartElement(state, newHtmlElement(tag.tagid), tag)
   else:
     processDocumentEndElement(state, tag)
-  #XXX PROCDOCCASE stuff... good lord I'll never finish this thing
 
-proc processDocumentPart(state: var ParseState, buf: string) =
+proc processDocumentPart(state: var HTMLParseState, buf: string) =
   var at = 0
   var max = 0
   var was_script = false
@@ -465,7 +438,7 @@ proc processDocumentPart(state: var ParseState, buf: string) =
 proc parseHtml*(inputStream: Stream): Document =
   let document = newDocument()
 
-  var state = ParseState(stream: inputStream)
+  var state = HTMLParseState()
   state.parentNode = document
 
   var till_when = false
@@ -474,8 +447,6 @@ proc parseHtml*(inputStream: Stream): Document =
   var lineBuf: string
   while not inputStream.atEnd():
     lineBuf = inputStream.readLine()
-    if lineBuf.len == 0:
-      break
     buf &= lineBuf
 
     var at = 0
@@ -496,3 +467,89 @@ proc parseHtml*(inputStream: Stream): Document =
 
   inputStream.close()
   return document
+
+proc consumeCSSString(state: var CSSParseState, line: seq[Rune], at: var int): CSSToken =
+    var s: seq[Rune]
+    let ending = line[at]
+    inc at
+    if at >= line.len:
+      return CSSToken(tokenType: CSS_STRING_TOKEN, value: s)
+
+    while line[at] != ending:
+      inc at
+
+      if at >= line.len:
+        return CSSToken(tokenType: CSS_STRING_TOKEN, value: s)
+
+      s &= line[at]
+
+      case line[at]
+      of Rune('\n'):
+        return CSSToken(tokenType: CSS_BAD_STRING_TOKEN)
+      of Rune('\\'):
+        inc at
+        if at > line.len:
+          break
+        var num = hexValue(line[at])
+        if num != -1:
+          let ca = at
+          inc at
+          while at < line.len and hexValue(line[at]) != -1 and ca - at <= 5:
+            num *= 0x10
+            num += hexValue(line[at])
+            inc at
+          if num == 0 or num > 0x10FFFF or num in {0xD800..0xDFFF}:
+            s &= Rune(0xFFFD)
+          else:
+            s &= Rune(num)
+      else: discard
+
+proc consumeCSSNumberSign(state: var CSSParseState, line: seq[Rune], at: var int): CSSToken =
+  inc at
+  if at < line.len:
+    if isNameCodePoint(line[at]):
+      discard
+  else:
+    discard
+
+
+proc consumeCSSToken(state: var CSSParseState, line: seq[Rune], at: var int): CSSToken =
+  case line[at]
+  of Rune('\n'), Rune('\t'), Rune(' '):
+    while at < line.len and line[at].isWhitespace():
+      inc at
+    return CSSToken(tokenType: CSS_WHITESPACE_TOKEN)
+  of Rune('"'):
+    return consumeCSSString(state, line, at)
+  of Rune('#'):
+    return consumeCSSNumberSign(state, line, at)
+  else: inc at
+
+proc tokenizeCSS*(inputStream: Stream): seq[CSSToken] =
+  var line: seq[Rune]
+  var state: CSSParseState
+  while not inputStream.atEnd():
+    line = inputStream.readLine().toRunes()
+    var cline: seq[Rune] = @[]
+    var lfc = false
+    for r in line:
+      case r
+      of Rune('\r'), Rune('\f'), Rune('\n'):
+        lfc = true
+      of Rune(0), Rune(0xD800)..Rune(0xDFFF):
+        cline &= Rune(0xFFFD)
+      else:
+        if lfc:
+          cline &= Rune('\n')
+        cline &= r
+
+    cline &= Rune('\n')
+    var lat = 0
+    while lat < cline.len:
+      result.add(consumeCSSToken(state, cline, lat))
+
+  inputStream.close()
+
+proc parseCSS*(inputStream: Stream) =
+  for t in tokenizeCSS(inputStream):
+    eprint t.tokenType

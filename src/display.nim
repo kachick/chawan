@@ -119,86 +119,75 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: Node) =
   state.lastwidth = max(state.lastwidth, state.x)
 
 proc preAlignNode(buffer: Buffer, node: Node, state: var RenderState) =
-  let elem = node.nodeAttr()
+  let style = node.getStyle()
   if state.rawline.len > 0 and node.firstNode() and state.blanklines == 0:
     buffer.flushLine(state)
 
   if node.firstNode():
-    while state.blanklines < max(node.parentElement.margin, node.parentElement.margintop):
+    while state.blanklines < max(style.margin, style.margintop):
       buffer.flushLine(state)
-    if elem.parentNode.nodeType == ELEMENT_NODE:
-      state.indent += elem.parentElement.indent
+    state.indent += style.indent
 
   if state.rawline.len > 0 and state.blanklines == 0 and node.displayed():
     buffer.addSpaces(state, state.nextspaces)
     state.nextspaces = 0
-    if state.blankspaces < max(elem.margin, elem.marginleft):
-      buffer.addSpaces(state, max(elem.margin, elem.marginleft) - state.blankspaces)
+    if state.blankspaces < max(style.margin, style.marginleft):
+      buffer.addSpaces(state, max(style.margin, style.marginleft) - state.blankspaces)
 
-  if elem.centered and state.rawline.len == 0 and node.displayed():
+  if style.centered and state.rawline.len == 0 and node.displayed():
     buffer.addSpaces(state, max(buffer.width div 2 - state.centerlen div 2, 0))
     state.centerlen = 0
   
-  if node.isElemNode() and elem.display == DISPLAY_LIST_ITEM and state.indent > 0:
+  if node.isElemNode() and style.display == DISPLAY_LIST_ITEM and state.indent > 0:
     if state.blanklines == 0:
       buffer.flushLine(state)
-    var listchar = ""
-    case elem.parentElement.tagType
-    of TAG_UL:
-      listchar = "•"
-    of TAG_OL:
-      inc state.listval
-      listchar = $state.listval & ")"
-    else:
-      return
+    var listchar = "•"
+    #case elem.parentElement.tagType
+    #of TAG_UL:
+    #  listchar = "•"
+    #of TAG_OL:
+    #  inc state.listval
+    #  listchar = $state.listval & ")"
+    #else:
+    #  return
     buffer.addSpaces(state, state.indent)
     state.write(listchar)
     state.x += listchar.runeLen()
     buffer.addSpaces(state, 1)
 
 proc postAlignNode(buffer: Buffer, node: Node, state: var RenderState) =
-  let elem = node.nodeAttr()
+  let style = node.getStyle()
 
   if node.getRawLen() > 0:
     state.blanklines = 0
     state.blankspaces = 0
 
   if state.rawline.len > 0 and state.blanklines == 0:
-    state.nextspaces += max(elem.margin, elem.marginright)
+    state.nextspaces += max(style.margin, style.marginright)
     #if node.lastNode() and (node.isTextNode() or elem.childNodes.len == 0):
     #  buffer.flushLine(state)
 
   if node.lastNode():
-    while state.blanklines < max(node.parentElement.margin, node.parentElement.marginbottom):
+    while state.blanklines < max(style.margin, style.marginbottom):
       buffer.flushLine(state)
-    if elem.parentElement != nil:
-      state.indent -= elem.parentElement.indent
+    state.indent -= style.indent
 
-  if elem.tagType == TAG_BR and not node.firstNode():
-    buffer.flushLine(state)
-
-  if elem.display == DISPLAY_LIST_ITEM and node.lastNode():
+  if style.display == DISPLAY_LIST_ITEM and node.lastNode():
     buffer.flushLine(state)
 
 proc renderNode(buffer: Buffer, node: Node, state: var RenderState) =
   if not (node.nodeType in {ELEMENT_NODE, TEXT_NODE}):
     return
-  if node.parentNode.nodeType != ELEMENT_NODE:
-    return
-  let elem = node.nodeAttr()
-  if elem.tagType in {TAG_SCRIPT, TAG_STYLE, TAG_NOSCRIPT}:
-    return
-  if elem.tagType == TAG_TITLE:
-    if node.isTextNode():
-      buffer.title = node.getRawText()
-    return
-  else: discard
-  if elem.hidden: return
+  let style = node.getStyle()
+  if node.nodeType == ELEMENT_NODE:
+    if Element(node).tagType in {TAG_SCRIPT, TAG_STYLE, TAG_NOSCRIPT, TAG_TITLE}:
+      return
+  if style.hidden: return
 
   if not state.docenter:
-    if elem.centered:
+    if style.centered:
       state.centerqueue.add(node)
-      if node.lastNode() or elem.tagType == TAG_BR:
+      if node.lastNode():
         state.docenter = true
         state.centerlen = 0
         for node in state.centerqueue:
@@ -331,7 +320,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
             reshape = true
             redraw = true
         else: discard
-        if selectedElem.get().islink:
+        if selectedElem.get().getStyle().islink:
           let anchor = HtmlAnchorElement(buffer.selectedlink.ancestor(TAG_A)).href
           buffer.gotoLocation(parseUri(anchor))
           return true

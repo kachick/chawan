@@ -61,5 +61,5 @@ proc main*() =
       buffer.renderHtml()
     lastUri = newUri
 
-#waitFor loadPage("https://lite.duckduckgo.com/lite/?q=hello%20world")
 main()
+#parseCSS(newFileStream("default.css", fmRead))
