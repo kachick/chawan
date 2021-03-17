@@ -1,5 +1,9 @@
-import enums
+import streams
 import unicode
+
+import enums
+import cssparser
+import twtio
 
 type
   CSS2Properties* = ref object
@@ -28,15 +32,43 @@ type
     selected*: bool
     indent*: int
 
-  CSSToken* = object
-    case tokenType*: CSSTokenType
-    of CSS_IDENT_TOKEN, CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN,
-       CSS_HASH_TOKEN, CSS_STRING_TOKEN, CSS_URL_TOKEN:
-      value*: seq[Rune]
-      tflaga*: bool #id / unrestricted
-    of CSS_DELIM_TOKEN:
-      rvalue*: Rune
-    of CSS_NUMBER_TOKEN, CSS_PERCENTAGE_TOKEN, CSS_DIMENSION_TOKEN:
-      ivalue*: int
-      tflagb*: bool #integer / number
-    else: discard
+  CSSRect* = object
+    x1*: int
+    y1*: int
+    x2*: int
+    y2*: int
+
+  CSSBox* = ref object
+    display*: DisplayType
+    x*: int
+    y*: int
+    innerEdge*: CSSRect
+    paddingEdge*: CSSRect
+    borderEdge*: CSSRect
+    marginEdge*: CSSRect
+    parent*: CSSBox
+    color*: CSSColor
+    margintop*: int
+    marginbottom*: int
+    marginleft*: int
+    marginright*: int
+    margin*: int
+
+proc applyProperties*(box: var CSSBox, props: string) =
+  var decls = parseCSSListOfDeclarations(newStringStream(props))
+
+  for item in decls:
+    if item of CSSDeclaration:
+      let d = CSSDeclaration(item)
+      case $d.name
+      of "color":
+        if d.value.len > 0 and d.value[0] of CSSToken and
+            CSSToken(d.value[0]).tokenType == CSS_HASH_TOKEN:
+          box.color = toColor(CSSToken(d.value[0]).value)
+      of "margin-top":
+        if d.value.len > 0 and d.value[0] of CSSToken:
+          if CSSToken(d.value[0]).tokenType == CSS_PERCENTAGE_TOKEN:
+            discard
+            #box.margintop = CSSToken(d.value[0]).nvalue #TODO represent percentages
+      else:
+        printc(d)

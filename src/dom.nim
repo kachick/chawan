@@ -48,6 +48,8 @@ type
   Document* = ref DocumentObj
   DocumentObj = object of NodeObj
     location*: Uri
+    id_elements*: Table[string, Element]
+    class_elements*: Table[string, seq[Element]]
 
   CharacterData* = ref CharacterDataObj
   CharacterDataObj = object of NodeObj
@@ -329,3 +331,28 @@ func getAttrValue*(element: Element, s: string): string =
   if attr != nil:
     return attr.value
   return ""
+
+
+#type
+#  SelectorType = enum
+#    TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR, CHILD_SELECTOR,
+#    UNIVERSAL_SELECTOR
+#
+#  Selector = object
+#    t: SelectorType
+#    s0: string
+#    s1: string
+#
+#proc querySelector*(document: Document, q: string): seq[Element] =
+#  #let ss = newStringStream(q)
+#  #let cvals = parseCSSListOfComponentValues(ss)
+#  #var selectors: seq[Selector]
+#  return
+#
+#  #for cval in cvals:
+#  #  if cval of CSSToken:
+#  #    case CSSToken(cval).tokenType
+#  #    of CSS_DELIM_TOKEN:
+#  #      if cval.rvalue == Rune('*'):
+#  #        selectors.add(Selector(t))
+#  #  printc(cval)

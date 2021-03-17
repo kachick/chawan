@@ -1,18 +1,29 @@
 import radixtree
 import json
-import tables
-import strutils
-import unicode
-import twtstr
 
-proc genEntityMap(): RadixTree[string] =
-  let entity = staticRead"entity.json"
-  let entityJson = parseJson(entity)
-  var entityMap = newRadixTree[string]()
+when defined(small):
+  proc genEntityMap(data: seq[tuple[a: string, b: string]]): StaticRadixTree[string] =
+    result = newStaticRadixTree[string]()
+    for pair in data:
+      result[pair.a] = pair.b
 
-  for k, v in entityJson:
-    entityMap[k.substr(1)] = v{"characters"}.getStr()
+  proc genEntityHashMap(): seq[tuple[a: string, b: string]] =
+    let entity = staticRead"../res/entity.json"
+    let entityJson = parseJson(entity)
 
-  return entityMap
+    for k, v in entityJson:
+      result.add((k.substr(1), v{"characters"}.getStr()))
+  const entityHashMap = genEntityHashMap()
+  let entityMap* = genEntityMap(entityHashMap) #TODO: use refs here
+else:
+  import tables
+  proc genEntityMap(): StaticRadixTree[string] =
+    let entity = staticRead"../res/entity.json"
+    let entityJson = parseJson(entity)
+    var entityMap = newStaticRadixTree[string]()
 
-const entityMap* = genEntityMap()
+    for k, v in entityJson:
+      entityMap[k.substr(1)] = v{"characters"}.getStr()
+
+    return entityMap
+  const entityMap* = genEntityMap()

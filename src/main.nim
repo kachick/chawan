@@ -8,7 +8,9 @@ import termattrs
 import buffer
 import twtio
 import config
-import parser
+import htmlparser
+import dom
+import style
 
 let clientInstance = newHttpClient()
 proc loadRemotePage*(url: string): string =
@@ -44,6 +46,9 @@ proc main*() =
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
   buffer.document = parseHtml(getPageUri(uri))
+  #discard buffer.document.querySelector("#hi.a[title=\"test\"]")
+  var box = CSSBox()
+  applyProperties(box, "color: #090; line-height: 1.2")
   buffer.setLocation(uri)
   buffer.renderHtml()
   var lastUri = uri

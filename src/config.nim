@@ -29,11 +29,11 @@ type
     ACTION_LINED_CLEAR, ACTION_LINED_KILL, ACTION_LINED_KILL_WORD,
     ACTION_LINED_BACK, ACTION_LINED_FORWARD,
     ACTION_LINED_PREV_WORD, ACTION_LINED_NEXT_WORD,
-    ACTION_LINED_COMPOSE_TOGGLE, ACTION_LINED_COMPOSE_ON, ACTION_LINED_COMPOSE_OFF
-    ACTION_LINED_ESC
+    ACTION_LINED_BEGIN, ACTION_LINED_END,
+    ACTION_LINED_COMPOSE_TOGGLE, ACTION_LINED_ESC
 
   ActionMap = Table[string, TwtAction]
-  ComposeMap = RadixTree[string]
+  ComposeMap = RadixNode[string]
 
 var normalActionRemap*: ActionMap
 var linedActionRemap*: ActionMap
@@ -91,7 +91,7 @@ func constructActionTable*(origTable: ActionMap): ActionMap =
   return newTable
 
 proc parseConfigLine(line: string, nmap: var ActionMap, lemap: var ActionMap,
-                     compose: var ComposeMap) =
+                     compose: var Table[string, string]) =
   if line.len == 0 or line[0] == '#':
     return
   let cmd = line.split(' ')
@@ -103,11 +103,11 @@ proc parseConfigLine(line: string, nmap: var ActionMap, lemap: var ActionMap,
     elif cmd[0] == "comp":
       compose[getRealKey(cmd[1])] = cmd[2]
 
-proc staticReadKeymap(): (ActionMap, ActionMap, ComposeMap) =
-  let config = staticRead"config"
+proc staticReadKeymap(): (ActionMap, ActionMap, Table[string, string]) =
+  let config = staticRead"../res/config"
   var nmap: ActionMap
   var lemap: ActionMap
-  var compose = newRadixTree[string]()
+  var compose: Table[string, string]
   for line in config.split('\n'):
     parseConfigLine(line, nmap, lemap, compose)
 
@@ -119,14 +119,21 @@ const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
 
 normalActionRemap = normalActionMap
 linedActionRemap = linedActionMap
-composeRemap = composeMap
+composeRemap = composeMap.toRadixTree()
+proc traverseRemap[T](m: RadixNode[T], s: string) =
+  echo s
+  for k in m.keys:
+    assert(m{k, m} != m, s & " " & k)
+    m{k, m}.traverseRemap(s & k)
+
+composeRemap.traverseRemap("")
 
 proc readConfig*(filename: string): bool =
   var f: File
   let status = f.open(filename, fmRead)
   var nmap: ActionMap
   var lemap: ActionMap
-  var compose = newRadixTree[string]()
+  var compose: Table[string, string]
   if status:
     var line: TaintedString
     while f.readLine(line):
@@ -134,6 +141,7 @@ proc readConfig*(filename: string): bool =
 
     normalActionRemap = constructActionTable(normalActionMap)
     linedActionRemap = constructActionTable(linedActionMap)
+    composeRemap = compose.toRadixTree()
     return true
   else:
     return false

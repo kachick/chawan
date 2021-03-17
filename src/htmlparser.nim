@@ -9,7 +9,6 @@ import enums
 import twtstr
 import dom
 import radixtree
-import style
 import entity
 
 type
@@ -26,9 +25,6 @@ type
     in_noscript: bool
     parentNode: Node
     textNode: Text
-
-  CSSParseState = object
-    in_comment: bool
 
 #func newHtmlElement(tagType: TagType, parentNode: Node): HtmlElement =
 #  case tagType
@@ -159,7 +155,7 @@ proc getescapecmd(buf: string, at: var int): string =
     if not entityMap.hasPrefix(s, n):
       break
     let pn = n
-    n = entityMap[s, n]
+    n = entityMap{s, n}
     if n != pn:
       s = ""
     inc i
@@ -320,6 +316,12 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     else: discard
 
   processDocumentStartNode(state, element)
+  if element.ownerDocument != nil:
+    for c in element.classList:
+      element.ownerDocument.id_elements[c] = element
+      if not (c in element.ownerDocument.class_elements):
+        element.ownerDocument.class_elements[c] = newSeq[Element]()
+      element.ownerDocument.class_elements[c].add(element)
 
   if element.tagType in VoidTagTypes:
     processDocumentEndNode(state)
@@ -467,89 +469,3 @@ proc parseHtml*(inputStream: Stream): Document =
 
   inputStream.close()
   return document
-
-proc consumeCSSString(state: var CSSParseState, line: seq[Rune], at: var int): CSSToken =
-    var s: seq[Rune]
-    let ending = line[at]
-    inc at
-    if at >= line.len:
-      return CSSToken(tokenType: CSS_STRING_TOKEN, value: s)
-
-    while line[at] != ending:
-      inc at
-
-      if at >= line.len:
-        return CSSToken(tokenType: CSS_STRING_TOKEN, value: s)
-
-      s &= line[at]
-
-      case line[at]
-      of Rune('\n'):
-        return CSSToken(tokenType: CSS_BAD_STRING_TOKEN)
-      of Rune('\\'):
-        inc at
-        if at > line.len:
-          break
-        var num = hexValue(line[at])
-        if num != -1:
-          let ca = at
-          inc at
-          while at < line.len and hexValue(line[at]) != -1 and ca - at <= 5:
-            num *= 0x10
-            num += hexValue(line[at])
-            inc at
-          if num == 0 or num > 0x10FFFF or num in {0xD800..0xDFFF}:
-            s &= Rune(0xFFFD)
-          else:
-            s &= Rune(num)
-      else: discard
-
-proc consumeCSSNumberSign(state: var CSSParseState, line: seq[Rune], at: var int): CSSToken =
-  inc at
-  if at < line.len:
-    if isNameCodePoint(line[at]):
-      discard
-  else:
-    discard
-
-
-proc consumeCSSToken(state: var CSSParseState, line: seq[Rune], at: var int): CSSToken =
-  case line[at]
-  of Rune('\n'), Rune('\t'), Rune(' '):
-    while at < line.len and line[at].isWhitespace():
-      inc at
-    return CSSToken(tokenType: CSS_WHITESPACE_TOKEN)
-  of Rune('"'):
-    return consumeCSSString(state, line, at)
-  of Rune('#'):
-    return consumeCSSNumberSign(state, line, at)
-  else: inc at
-
-proc tokenizeCSS*(inputStream: Stream): seq[CSSToken] =
-  var line: seq[Rune]
-  var state: CSSParseState
-  while not inputStream.atEnd():
-    line = inputStream.readLine().toRunes()
-    var cline: seq[Rune] = @[]
-    var lfc = false
-    for r in line:
-      case r
-      of Rune('\r'), Rune('\f'), Rune('\n'):
-        lfc = true
-      of Rune(0), Rune(0xD800)..Rune(0xDFFF):
-        cline &= Rune(0xFFFD)
-      else:
-        if lfc:
-          cline &= Rune('\n')
-        cline &= r
-
-    cline &= Rune('\n')
-    var lat = 0
-    while lat < cline.len:
-      result.add(consumeCSSToken(state, cline, lat))
-
-  inputStream.close()
-
-proc parseCSS*(inputStream: Stream) =
-  for t in tokenizeCSS(inputStream):
-    eprint t.tokenType

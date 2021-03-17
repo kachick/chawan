@@ -1,9 +1,16 @@
+NIMC = nim compile
+FLAGS = -d:ssl -o:twt
+FILES = src/main.nim
+
 debug:
-	nim compile -d:ssl -o:twt src/main.nim
+	$(NIMC) $(FLAGS) -d:small $(FILES)
 release:
-	nim compile -d:release -d:ssl -o:twt src/main.nim
-release_opt:
-	nim compile -d:danger -d:ssl -o:twt src/main.nim
+	$(NIMC) $(FLAGS) -d:release $(FILES)
+danger:
+	$(NIMC) $(FLAGS) -d:danger $(FILES)
+small:
+	$(NIMC) $(FLAGS) -d:release -d:small $(FILES)
+lowmem:
+	$(NIMC) $(FLAGS) -d:release -d:lowmem $(FILES)
 clean:
 	rm ./twt
-all: debug release release_opt

@@ -54,6 +54,8 @@ lemap C-f LINED_FORWARD
 lemap C-u LINED_CLEAR
 lemap C-k LINED_KILL
 lemap C-w LINED_KILL_WORD
+lemap C-a LINED_BEGIN
+lemap C-e LINED_END
 lemap C-v LINED_ESC
 lemap C-g LINED_COMPOSE_TOGGLE
 
@@ -135,6 +137,11 @@ comp hi ひ
 comp fu ふ
 comp he へ
 comp ho ほ
+
+comp fa ふぁ
+comp fi ふぃ
+comp fe ふぇ
+comp fo ふぉ
 
 comp ma ま
 comp mi み
@@ -236,6 +243,18 @@ comp pyo ぴょ
 comp kwa くゎ
 comp gwa ぐゎ
 
+comp ti ってぃ
+comp tti ってぃ
+
+comp di てぃ
+comp ddi ってぃ
+
+comp she しぇ
+comp sshe っしぇ
+
+comp je じぇ
+comp jje っじぇ
+
 #katakana
 comp A ア
 comp I イ
@@ -249,11 +268,11 @@ comp LU ゥ
 comp LE ェ
 comp LO ォ
 
-comp KA か
-comp KI き
-comp KU く
-comp KE け
-comp KO こ
+comp KA カ
+comp KI キ
+comp KU ク
+comp KE ケ
+comp KO コ
 
 comp KKA ッカ
 comp KKI ッキ
@@ -296,6 +315,11 @@ comp HI ヒ
 comp FU フ
 comp HE ヘ
 comp HO ホ
+
+comp FA ファ
+comp FI フィ
+comp FE フェ
+comp FO フォ
 
 comp MA マ
 comp MI ミ
@@ -349,7 +373,7 @@ comp PE ペ
 comp PO ポ
 
 comp N ン
-comp xc ー
+comp X ー
 
 comp KYA キャ
 comp KYU キュ
@@ -397,3 +421,14 @@ comp PYO ピョ
 
 comp KWA クヮ
 comp GWA グヮ
+
+comp TI ティ
+comp TTI ッティ
+comp DI ディ
+comp DDI ッディ
+
+comp SHE シェ
+comp SSHE ッシェ
+
+comp JE ジェ
+comp JJE ッジェ
