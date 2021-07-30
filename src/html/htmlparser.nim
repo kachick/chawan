@@ -4,11 +4,15 @@ import strutils
 import tables
 import json
 
-import twtio
-import enums
-import twtstr
+import ../types/enums
+import ../types/tagtypes
+
+import ../utils/twtstr
+import ../utils/radixtree
+
+import ../io/twtio
+
 import dom
-import radixtree
 import entity
 
 type
@@ -23,6 +27,7 @@ type
     in_script: bool
     in_style: bool
     in_noscript: bool
+    in_body: bool
     parentNode: Node
     textNode: Text
 
@@ -148,21 +153,39 @@ proc getescapecmd(buf: string, at: var int): string =
   elif not isAlphaAscii(buf[i]):
     return ""
 
-  var n = 0
-  var s = ""
-  while true:
-    s &= buf[i]
-    if not entityMap.hasPrefix(s, n):
-      break
-    let pn = n
-    n = entityMap{s, n}
-    if n != pn:
-      s = ""
-    inc i
+  #TODO this could be way more efficient (and radixnode needs better interface)
+  when defined(small):
+    var n = entityMap
+    var s = ""
+    while true:
+      s &= buf[i]
+      if not entityMap.hasPrefix(s, n):
+        break
+      let pn = n
+      n = n{s}
+      if n != pn:
+        s = ""
+      inc i
 
-  if entityMap.nodes[n].leaf:
-    at = i
-    return entityMap.nodes[n].value
+    if n.leaf:
+      at = i
+      return n.value
+  else:
+    var n = 0
+    var s = ""
+    while true:
+      s &= buf[i]
+      if not entityMap.hasPrefix(s, n):
+        break
+      let pn = n
+      n = entityMap{s, n}
+      if n != pn:
+        s = ""
+      inc i
+
+    if entityMap.nodes[n].leaf:
+      at = i
+      return entityMap.nodes[n].value
 
   return ""
 
@@ -232,11 +255,6 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
 proc insertNode(parent: Node, node: Node) =
   parent.childNodes.add(node)
 
-  if parent.firstChild == nil:
-    parent.firstChild = node
-
-  parent.lastChild = node
-
   if parent.childNodes.len > 1:
     let prevSibling = parent.childNodes[^1]
     prevSibling.nextSibling = node
@@ -244,14 +262,43 @@ proc insertNode(parent: Node, node: Node) =
 
   node.parentNode = parent
   if parent.nodeType == ELEMENT_NODE:
-    node.parentElement = Element(parent)
+    node.parentElement = (Element)parent
 
   if parent.ownerDocument != nil:
     node.ownerDocument = parent.ownerDocument
   elif parent.nodeType == DOCUMENT_NODE:
-    node.ownerDocument = Document(parent)
+    node.ownerDocument = (Document)parent
+
+  if node.nodeType == ELEMENT_NODE:
+    parent.children.add((Element)node)
+
+    let element = ((Element)node)
+    if element.ownerDocument != nil:
+      node.ownerDocument.all_elements.add((Element)node)
+      element.ownerDocument.type_elements[element.tagType].add(element)
+      if element.id != "":
+        if not (element.id in element.ownerDocument.id_elements):
+          element.ownerDocument.id_elements[element.id] = newSeq[Element]()
+        element.ownerDocument.id_elements[element.id].add(element)
+
+      for c in element.classList:
+        if not (c in element.ownerDocument.class_elements):
+          element.ownerDocument.class_elements[c] = newSeq[Element]()
+        element.ownerDocument.class_elements[c].add(element)
+
+proc processDocumentBody(state: var HTMLParseState) =
+  if not state.in_body:
+    state.in_body = true
+    if state.parentNode.ownerDocument != nil:
+      state.parentNode = state.parentNode.ownerDocument.body
 
 proc processDocumentStartNode(state: var HTMLParseState, newNode: Node) =
+  if state.parentNode.nodeType == ELEMENT_NODE and ((Element)state.parentNode).tagType == TAG_HTML:
+    if state.in_body:
+      state.parentNode = state.parentNode.ownerDocument.body
+    else:
+      state.parentNode = state.parentNode.ownerDocument.head
+
   insertNode(state.parentNode, newNode)
   state.parentNode = newNode
 
@@ -261,6 +308,8 @@ proc processDocumentEndNode(state: var HTMLParseState) =
   state.parentNode = state.parentNode.parentNode
 
 proc processDocumentText(state: var HTMLParseState) =
+  if state.textNode != nil and state.textNode.data.len > 0:
+    processDocumentBody(state)
   if state.textNode == nil:
     state.textNode = newText()
 
@@ -268,6 +317,8 @@ proc processDocumentText(state: var HTMLParseState) =
     processDocumentEndNode(state)
 
 proc processDocumentStartElement(state: var HTMLParseState, element: Element, tag: DOMParsedTag) =
+  var add = true
+
   for k, v in tag.attrs:
     element.attributes[k] = element.newAttr(k, v)
   
@@ -294,6 +345,13 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     HTMLAnchorElement(element).href = element.getAttrValue("href")
   of TAG_OPTION:
     HTMLOptionElement(element).value = element.getAttrValue("href")
+  of TAG_HTML:
+    add = false
+  of TAG_HEAD:
+    add = false
+  of TAG_BODY:
+    add = false
+    processDocumentBody(state)
   else: discard
 
   if state.parentNode.nodeType == ELEMENT_NODE:
@@ -315,19 +373,19 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
       HTMLHeadingElement(element).rank = 6
     else: discard
 
-  processDocumentStartNode(state, element)
-  if element.ownerDocument != nil:
-    for c in element.classList:
-      element.ownerDocument.id_elements[c] = element
-      if not (c in element.ownerDocument.class_elements):
-        element.ownerDocument.class_elements[c] = newSeq[Element]()
-      element.ownerDocument.class_elements[c].add(element)
+  if add:
+    processDocumentStartNode(state, element)
 
   if element.tagType in VoidTagTypes:
     processDocumentEndNode(state)
 
 proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
   if tag.tagid in VoidTagTypes:
+    return
+  if tag.tagid == TAG_HEAD:
+    state.in_body = true
+    return
+  if tag.tagid == TAG_BODY:
     return
   if state.parentNode.nodeType == ELEMENT_NODE:
     if Element(state.parentNode).tagType in {TAG_LI, TAG_P}:
@@ -395,6 +453,12 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
               if state.textNode != nil:
                 state.textNode.rawtext = state.textNode.getRawText()
                 state.textNode = nil
+          else:
+            #TODO for doctype
+            while p < max and buf[p] != '>':
+              inc p
+            at = p
+            continue
 
         if not state.in_comment:
           if state.textNode != nil:
@@ -439,9 +503,14 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
 
 proc parseHtml*(inputStream: Stream): Document =
   let document = newDocument()
+  let html = newHtmlElement(TAG_HTML)
+  insertNode(document, html)
+  insertNode(html, document.head)
+  insertNode(html, document.body)
+  #eprint document.body.firstElementChild != nil
 
   var state = HTMLParseState()
-  state.parentNode = document
+  state.parentNode = html
 
   var till_when = false
 

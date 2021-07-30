@@ -4,13 +4,17 @@ import uri
 import strutils
 import unicode
 
-import buffer
-import termattrs
-import dom
-import twtstr
+import ../types/enums
+
+import ../utils/termattrs
+import ../utils/twtstr
+
+import ../html/dom
+
+import ../buffer
+import ../config
+
 import twtio
-import config
-import enums
 
 proc clearStatusMsg*(at: int) =
   setCursorPos(0, at)
@@ -81,7 +85,7 @@ proc writeWrappedText(buffer: Buffer, state: var RenderState, node: Node) =
 
     for r in w.runes:
       if r == Rune(' '):
-        if rawword.len > 0 and rawword[0] == ' ' and prevl: #first byte can't fool comparison to ascii
+        if rawword.len > 0 and rawword[0] == ' ' and prevl:
           fmtword = fmtword.substr(1)
           rawword = rawword.substr(1)
           state.x -= 1
@@ -124,15 +128,15 @@ proc preAlignNode(buffer: Buffer, node: Node, state: var RenderState) =
     buffer.flushLine(state)
 
   if node.firstNode():
-    while state.blanklines < max(style.margin, style.margintop):
-      buffer.flushLine(state)
+    #while state.blanklines < max(style.margin, style.margintop):
+    #  buffer.flushLine(state)
     state.indent += style.indent
 
   if state.rawline.len > 0 and state.blanklines == 0 and node.displayed():
     buffer.addSpaces(state, state.nextspaces)
     state.nextspaces = 0
-    if state.blankspaces < max(style.margin, style.marginleft):
-      buffer.addSpaces(state, max(style.margin, style.marginleft) - state.blankspaces)
+    #if state.blankspaces < max(style.margin, style.marginleft):
+    #  buffer.addSpaces(state, max(style.margin, style.marginleft) - state.blankspaces)
 
   if style.centered and state.rawline.len == 0 and node.displayed():
     buffer.addSpaces(state, max(buffer.width div 2 - state.centerlen div 2, 0))
@@ -162,14 +166,14 @@ proc postAlignNode(buffer: Buffer, node: Node, state: var RenderState) =
     state.blanklines = 0
     state.blankspaces = 0
 
-  if state.rawline.len > 0 and state.blanklines == 0:
-    state.nextspaces += max(style.margin, style.marginright)
-    #if node.lastNode() and (node.isTextNode() or elem.childNodes.len == 0):
-    #  buffer.flushLine(state)
+  #if state.rawline.len > 0 and state.blanklines == 0:
+  #  state.nextspaces += max(style.margin, style.marginright)
+  #  if node.lastNode() and (node.isTextNode() or elem.childNodes.len == 0):
+  #    buffer.flushLine(state)
 
   if node.lastNode():
-    while state.blanklines < max(style.margin, style.marginbottom):
-      buffer.flushLine(state)
+    #while state.blanklines < max(style.margin, style.marginbottom):
+    #  buffer.flushLine(state)
     state.indent -= style.indent
 
   if style.display == DISPLAY_LIST_ITEM and node.lastNode():

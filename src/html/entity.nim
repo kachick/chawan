@@ -1,24 +1,23 @@
-import radixtree
 import json
 
+import ../utils/radixtree
+
+const entity = staticRead"../../res/entity.json"
 when defined(small):
-  proc genEntityMap(data: seq[tuple[a: string, b: string]]): StaticRadixTree[string] =
-    result = newStaticRadixTree[string]()
+  proc genEntityMap(data: seq[tuple[a: string, b: string]]): RadixNode[string] =
+    result = newRadixTree[string]()
     for pair in data:
       result[pair.a] = pair.b
 
-  proc genEntityHashMap(): seq[tuple[a: string, b: string]] =
-    let entity = staticRead"../res/entity.json"
+  proc genEntityTable(): seq[tuple[a: string, b: string]] =
     let entityJson = parseJson(entity)
 
     for k, v in entityJson:
       result.add((k.substr(1), v{"characters"}.getStr()))
-  const entityHashMap = genEntityHashMap()
-  let entityMap* = genEntityMap(entityHashMap) #TODO: use refs here
+  const entityTable = genEntityTable()
+  let entityMap* = genEntityMap(entityTable)
 else:
-  import tables
   proc genEntityMap(): StaticRadixTree[string] =
-    let entity = staticRead"../res/entity.json"
     let entityJson = parseJson(entity)
     var entityMap = newStaticRadixTree[string]()
 

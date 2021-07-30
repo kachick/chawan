@@ -6,11 +6,9 @@ debug:
 	$(NIMC) $(FLAGS) -d:small $(FILES)
 release:
 	$(NIMC) $(FLAGS) -d:release $(FILES)
+small:
+	$(NIMC) $(FLAGS) -d:danger -d:small $(FILES)
 danger:
 	$(NIMC) $(FLAGS) -d:danger $(FILES)
-small:
-	$(NIMC) $(FLAGS) -d:release -d:small $(FILES)
-lowmem:
-	$(NIMC) $(FLAGS) -d:release -d:lowmem $(FILES)
 clean:
 	rm ./twt

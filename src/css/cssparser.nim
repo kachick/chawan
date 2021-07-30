@@ -7,9 +7,11 @@ import streams
 import math
 import options
 
-import twtstr
-import twtio
-import enums
+import ../io/twtio
+
+import ../utils/twtstr
+
+import ../types/enums
 
 type
   CSSTokenizerState = object
@@ -71,9 +73,7 @@ type
 
   SyntaxError = object of ValueError
 
-  CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
-
-func `==`(a: CSSParsedItem, b: CSSTokenType): bool =
+func `==`*(a: CSSParsedItem, b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).tokenType == b
 
 func toNumber(s: seq[Rune]): float64 =
@@ -118,31 +118,6 @@ func toNumber(s: seq[Rune]): float64 =
       inc i
 
   return float64(sign) * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
-
-func toColor*(s: seq[Rune]): CSSColor =
-  if s.len == 3:
-    for r in s:
-      if hexValue(r) == -1:
-        return
-    let r = hexValue(s[0]) * 0x10 + hexValue(s[0])
-    let g = hexValue(s[1]) * 0x10 + hexValue(s[1])
-    let b = hexValue(s[2]) * 0x10 + hexValue(s[2])
-
-    result.r = uint8(r)
-    result.g = uint8(g)
-    result.b = uint8(b)
-    result.a = 0
-  elif s.len == 6:
-    for r in s:
-      if hexValue(r) == -1:
-        return
-    let r = hexValue(s[0]) * 0x10 + hexValue(s[1])
-    let g = hexValue(s[2]) * 0x10 + hexValue(s[3])
-    let b = hexValue(s[4]) * 0x10 + hexValue(s[5])
-    result.r = uint8(r)
-    result.g = uint8(g)
-    result.b = uint8(b)
-    result.a = 0
 
 func isNameStartCodePoint*(r: Rune): bool =
   return not isAscii(r) or r == Rune('_') or isAlphaAscii(r)
@@ -470,7 +445,6 @@ proc tokenizeCSS*(inputStream: Stream): seq[CSSParsedItem] =
   state.buf = state.stream.readLine().toRunes()
   while state.has():
     result.add(state.consumeToken())
-    eprint "consume token", CSSToken(result[^1]).tokenType
 
   inputStream.close()
 
@@ -512,10 +486,26 @@ proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
         result.value.add(CSSComponentValue(t))
   return result
 
+proc consumeComponentValue*(state: var CSSParseState): CSSComponentValue
+
+proc consumeFunction(state: var CSSParseState): CSSFunction =
+  let t = (CSSToken)state.consume()
+  result = CSSFunction(name: t.value)
+  while state.at < state.tokens.len:
+    let t = state.consume()
+    if t == CSS_RPAREN_TOKEN:
+      return result
+    else:
+      state.reconsume()
+      result.value.add(state.consumeComponentValue())
+
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue =
   let t = state.consume()
   if t == CSS_LBRACE_TOKEN or t == CSS_LBRACKET_TOKEN or t == CSS_LPAREN_TOKEN:
     return state.consumeSimpleBlock()
+  elif t == CSS_FUNCTION_TOKEN:
+    state.reconsume()
+    return state.consumeFunction()
   return CSSComponentValue(t)
 
 proc consumeQualifiedRule(state: var CSSParseState): Option[CSSQualifiedRule] =
@@ -559,15 +549,11 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
   if not state.has() or state.curr() != CSS_COLON_TOKEN:
     return none(CSSDeclaration)
   discard state.consume()
-  eprint state.tokens.len
   while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
-    eprint "ok...", CSSToken(state.curr()).tokenType
     discard state.consume()
 
   while state.has():
-    eprint "ok..."
     decl.value.add(state.consumeComponentValue())
-  eprint "helloo?", decl.value.len
 
   var i = decl.value.len - 1
   var j = 2
@@ -641,15 +627,6 @@ proc consumeListOfRules(state: var CSSParseState): seq[CSSRule] =
       let q = state.consumeQualifiedRule()
       if q.isSome:
         result.add(q.get)
-
-proc consumeFunction(state: var CSSParseState): CSSFunction =
-  while state.at < state.tokens.len:
-    let t = state.consume()
-    if t == CSS_RPAREN_TOKEN:
-      return result
-    else:
-      state.reconsume()
-      result.value.add(state.consumeComponentValue())
 
 proc parseStylesheet(state: var CSSParseState): CSSStylesheet =
   state.top_level = true
@@ -793,9 +770,10 @@ proc printc*(c: CSSComponentValue) =
       printc(s)
     stderr.write(";\n")
   elif c of CSSFunction:
-    eprint "FUNCTION", CSSFunction(c).name
+    stderr.write($CSSFunction(c).name & "(")
     for s in CSSFunction(c).value:
       printc(s)
+    stderr.write(")")
   elif c of CSSSimpleBlock:
     case CSSSimpleBlock(c).token.tokenType
     of CSS_LBRACE_TOKEN: eprint "{"
@@ -810,8 +788,10 @@ proc printc*(c: CSSComponentValue) =
     of CSS_LBRACKET_TOKEN: stderr.write("]")
     else: discard
 
+proc parseCSS*(inputStream: Stream): CSSStylesheet =
+  return inputstream.parseStylesheet()
 
-proc parseCSS*(inputStream: Stream) =
+proc debugparseCSS*(inputStream: Stream) =
   let ss = inputStream.parseStylesheet()
   for v in ss.value:
     if v of CSSAtRule:

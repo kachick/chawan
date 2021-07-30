@@ -5,28 +5,28 @@ area, base, source, track, link, meta, param, wbr, head, style, script {
 address, blockquote, center, del, dir, div, dl, fieldset, form, h1, h2, h3, h4,
 h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, table, ul, center, dir,
 menu, noframes, body {
-	display: block
+	display: block;
 }
 
 br {
 	display: block;
-	content: ' '
+	content: ' ';
 }
 
 a, abbr, b, bdo, button, cite, code, del, dfn, em, font, i, img, ins,
 input, iframe, kbd, label, map, object, q, samp, select, small, span, strong,
 sub, sup, textarea, tt, var, font, iframe, u, s, strike, frame, img, input {
-	display: inline
+	display: inline;
 }
 
 col {
-	display: table-column
+	display: table-column;
 }
 
 img {
-	display: inline-block
+	display: inline-block;
 }
 
 li {
-	display: list-item
+	display: list-item;
 }

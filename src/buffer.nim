@@ -4,11 +4,14 @@ import tables
 import strutils
 import unicode
 
-import termattrs
-import dom
-import twtio
-import enums
-import twtstr
+import types/enums
+
+import utils/termattrs
+import utils/twtstr
+
+import html/dom
+
+import io/twtio
 
 type
   Buffer* = ref BufferObj
@@ -115,7 +118,7 @@ proc addNode*(buffer: Buffer, node: Node) =
         buffer.clickables.add(node)
     else: discard
   elif node.isTextNode():
-    if node.parentElement != nil and node.parentElement.style.islink:
+    if node.parentElement != nil and node.getStyle().islink:
       let anchor = node.ancestor(TAG_A)
       assert(anchor != nil)
       buffer.clickables.add(anchor)
@@ -407,7 +410,6 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       return false
     else:
       let anchor = buffer.selectedlink.ancestor(TAG_A)
-      anchor.style.selected = false
       buffer.selectedlink.fmttext = buffer.selectedlink.getFmtText()
       buffer.selectedlink = nil
       buffer.hovertext = ""
@@ -423,7 +425,6 @@ proc checkLinkSelection*(buffer: Buffer): bool =
       buffer.selectedlink = node
       let anchor = node.ancestor(TAG_A)
       assert(anchor != nil)
-      anchor.style.selected = true
       buffer.hovertext = HtmlAnchorElement(anchor).href
       var stack: seq[Node]
       stack.add(anchor)

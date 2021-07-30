@@ -3,14 +3,18 @@ import uri
 import os
 import streams
 
-import display
-import termattrs
+import css/style
+
+import utils/termattrs
+
+import html/dom
+import html/htmlparser
+
+import io/display
+import io/twtio
+
 import buffer
-import twtio
 import config
-import htmlparser
-import dom
-import style
 
 let clientInstance = newHttpClient()
 proc loadRemotePage*(url: string): string =
@@ -39,16 +43,17 @@ proc main*() =
   if paramCount() != 1:
     eprint "Invalid parameters. Usage:\ntwt <url>"
     quit(1)
-  if not readConfig("config"):
-    eprint "Failed to read keymap, falling back to default"
+  if not readConfig("res/config"):
+    eprint "Failed to read keymap, fallback to default"
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
   buffer.document = parseHtml(getPageUri(uri))
-  #discard buffer.document.querySelector("#hi.a[title=\"test\"]")
-  var box = CSSBox()
-  applyProperties(box, "color: #090; line-height: 1.2")
+  let s = buffer.document.querySelector(":not(:first-child)")
+  eprint s.len
+  for q in s:
+    eprint q
   buffer.setLocation(uri)
   buffer.renderHtml()
   var lastUri = uri
@@ -65,6 +70,5 @@ proc main*() =
         buffer.document = parseHtml(getPageUri(buffer.document.location))
       buffer.renderHtml()
     lastUri = newUri
-
 main()
 #parseCSS(newFileStream("default.css", fmRead))

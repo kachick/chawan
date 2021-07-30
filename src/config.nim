@@ -1,8 +1,8 @@
 import tables
 import strutils
 
-import twtstr
-import radixtree
+import utils/twtstr
+import utils/radixtree
 
 type
   TwtAction* =
@@ -43,21 +43,30 @@ func getRealKey(key: string): string =
   var realk: string
   var currchar: char
   var control = 0
+  var meta = 0
   var skip = false
   for c in key:
     if c == '\\':
       skip = true
     elif skip:
-      if c == 'e':
-        realk &= '\e'
-      else:
-        realk &= c
+      realk &= c
       skip = false
+    elif c == 'M':
+      inc meta
+      currchar = c
     elif c == 'C':
       inc control
       currchar = c
     elif c == '-' and control == 1:
       inc control
+    elif c == '-' and meta == 1:
+      inc meta
+    elif meta == 1:
+      realk &= 'C' & c
+      meta = 0
+    elif meta == 2:
+      realk &= '\e'
+      realk &= c
     elif control == 1:
       realk &= 'C' & c
       control = 0
@@ -115,18 +124,11 @@ proc staticReadKeymap(): (ActionMap, ActionMap, Table[string, string]) =
   lemap = constructActionTable(lemap)
   return (nmap, lemap, compose)
 
-const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
-
-normalActionRemap = normalActionMap
-linedActionRemap = linedActionMap
-composeRemap = composeMap.toRadixTree()
-proc traverseRemap[T](m: RadixNode[T], s: string) =
-  echo s
-  for k in m.keys:
-    assert(m{k, m} != m, s & " " & k)
-    m{k, m}.traverseRemap(s & k)
-
-composeRemap.traverseRemap("")
+when not defined(small):
+  const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
+  normalActionRemap = normalActionMap
+  linedActionRemap = linedActionMap
+  composeRemap = composeMap.toRadixTree()
 
 proc readConfig*(filename: string): bool =
   var f: File
@@ -139,8 +141,8 @@ proc readConfig*(filename: string): bool =
     while f.readLine(line):
       parseConfigLine(line, nmap, lemap, compose)
 
-    normalActionRemap = constructActionTable(normalActionMap)
-    linedActionRemap = constructActionTable(linedActionMap)
+    normalActionRemap = constructActionTable(nmap)
+    linedActionRemap = constructActionTable(lemap)
     composeRemap = compose.toRadixTree()
     return true
   else:

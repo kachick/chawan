@@ -3,11 +3,23 @@ import uri
 import unicode
 import strutils
 import tables
+import streams
+import sequtils
+import sugar
 
-import twtstr
-import twtio
-import enums
-import style
+import ../css/style
+import ../css/cssparser
+import ../css/selector
+
+import ../types/enums
+import ../types/tagtypes
+
+import ../utils/twtstr
+
+import ../io/twtio
+
+const css = staticRead"../../res/default.css"
+let stylesheet = parseCSS(newStringStream(css))
 
 type
   EventTarget* = ref EventTargetObj
@@ -17,9 +29,8 @@ type
   NodeObj = object of EventTargetObj
     nodeType*: NodeType
     childNodes*: seq[Node]
-    firstChild*: Node
+    children*: seq[Element]
     isConnected*: bool
-    lastChild*: Node
     nextSibling*: Node
     previousSibling*: Node
     parentNode*: Node
@@ -48,8 +59,12 @@ type
   Document* = ref DocumentObj
   DocumentObj = object of NodeObj
     location*: Uri
-    id_elements*: Table[string, Element]
+    type_elements*: array[low(TagType)..high(TagType), seq[Element]]
+    id_elements*: Table[string, seq[Element]]
     class_elements*: Table[string, seq[Element]]
+    all_elements*: seq[Element]
+    head*: HTMLElement
+    body*: HTMLElement
 
   CharacterData* = ref CharacterDataObj
   CharacterDataObj = object of NodeObj
@@ -74,7 +89,7 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, Attr]
-    style*: CSS2Properties
+    box*: CSSBox
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -97,6 +112,9 @@ type
     value*: string
     valueSet*: bool
 
+  HTMLSpanElement* = ref HTMLSpanElementObj
+  HTMLSpanElementObj = object of HTMLElementObj
+
   HTMLOptionElement* = ref HTMLOptionElementObj
   HTMLOptionElementObj = object of HTMLElementObj
     value*: string
@@ -109,32 +127,28 @@ type
   HTMLBRElementObj = object of HTMLElementObj
 
 
-func getTagTypeMap(): Table[string, TagType] =
-  for i in low(TagType) .. high(TagType):
-    let enumname = $TagType(i)
-    let tagname = enumname.split('_')[1..^1].join("_").tolower()
-    result[tagname] = TagType(i)
+func firstChild(node: Node): Node =
+  if node.childNodes.len == 0:
+    return nil
+  return node.childNodes[0]
 
-func getInputTypeMap(): Table[string, InputType] =
-  for i in low(InputType) .. high(InputType):
-    let enumname = $InputType(i)
-    let tagname = enumname.split('_')[1..^1].join("_").tolower()
-    result[tagname] = InputType(i)
+func lastChild(node: Node): Node =
+  if node.childNodes.len == 0:
+    return nil
+  return node.childNodes[^1]
 
-const tagTypeMap = getTagTypeMap()
-const inputTypeMap = getInputTypeMap()
+func firstElementChild(node: Node): Element =
+  if node.children.len == 0:
+    return nil
+  return node.children[0]
 
-func tagType*(s: string): TagType =
-  if tagTypeMap.hasKey(s):
-    return tagTypeMap[s]
-  else:
-    return TAG_UNKNOWN
+func lastElementChild(node: Node): Element =
+  if node.children.len == 0:
+    return nil
+  return node.children[^1]
 
-func inputType*(s: string): InputType =
-  if inputTypeMap.hasKey(s):
-    return inputTypeMap[s]
-  else:
-    return INPUT_UNKNOWN
+func `$`*(element: Element): string =
+  return "Element of " & $element.tagType
 
 #TODO
 func nodeAttr*(node: Node): HtmlElement =
@@ -145,8 +159,8 @@ func nodeAttr*(node: Node): HtmlElement =
 
 func getStyle*(node: Node): CSS2Properties =
   case node.nodeType
-  of TEXT_NODE: return node.parentElement.style
-  of ELEMENT_NODE: return Element(node).style
+  of TEXT_NODE: return node.parentElement.box.props
+  of ELEMENT_NODE: return Element(node).box.props
   else: assert(false)
 
 func displayed*(node: Node): bool =
@@ -243,6 +257,7 @@ proc getRawText*(htmlNode: Node): string =
     else: return ""
   elif htmlNode.isTextNode():
     let chardata = CharacterData(htmlNode)
+    #eprint "char data", chardata.data
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
       result = chardata.data.remove("\n")
       if unicode.strip(result).runeLen() > 0:
@@ -257,38 +272,32 @@ proc getRawText*(htmlNode: Node): string =
   else:
     assert(false)
 
-func getFmtText*(htmlNode: Node): seq[string] =
-  if htmlNode.isElemNode():
-    case HtmlElement(htmlNode).tagType
-    of TAG_INPUT: return HtmlInputElement(htmlNode).getFmtInput()
+func getFmtText*(node: Node): seq[string] =
+  if node.isElemNode():
+    case HtmlElement(node).tagType
+    of TAG_INPUT: return HtmlInputElement(node).getFmtInput()
     else: return @[]
-  elif htmlNode.isTextNode():
-    let chardata = CharacterData(htmlNode)
+  elif node.isTextNode():
+    let chardata = CharacterData(node)
     result &= chardata.data
-    if htmlNode.parentElement != nil:
-      if htmlNode.parentElement.style.islink:
-        result = result.ansiFgColor(fgBlue).ansiReset()
-        let anchor = htmlNode.ancestor(TAG_A)
-        if anchor != nil and anchor.style.selected:
-          result = result.ansiStyle(styleUnderscore).ansiReset()
+    if node.parentElement != nil:
+      let style = node.getStyle()
+      if style.hasColor():
+        result = result.ansiFgColor(style.termColor())
 
-      if htmlNode.parentElement.tagType == TAG_OPTION:
+      if node.parentElement.tagType == TAG_OPTION:
         result = result.ansiFgColor(fgRed).ansiReset()
 
-      if htmlNode.parentElement.style.bold:
+      if style.bold:
         result = result.ansiStyle(styleBright).ansiReset()
-      if htmlNode.parentElement.style.italic:
+      if style.italic:
         result = result.ansiStyle(styleItalic).ansiReset()
-      if htmlNode.parentElement.style.underscore:
+      if style.underscore:
         result = result.ansiStyle(styleUnderscore).ansiReset()
     else:
-      assert(false, "Uhhhh I'm pretty sure we should have parent elements for text nodes?" & htmlNode.rawtext)
+      assert(false, node.rawtext)
   else:
     assert(false)
-
-func newDocument*(): Document =
-  new(result)
-  result.nodeType = DOCUMENT_NODE
 
 func newText*(): Text =
   new(result)
@@ -297,6 +306,10 @@ func newText*(): Text =
 func newComment*(): Comment =
   new(result)
   result.nodeType = COMMENT_NODE
+
+func newBox*(element: HTMLElement): CSSBox =
+  new(result)
+  result.props = CSS2Properties()
 
 func newHtmlElement*(tagType: TagType): HTMLElement =
   case tagType
@@ -312,12 +325,20 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
     result = new(HTMLHeadingElement)
   of TAG_BR:
     result = new(HTMLBRElement)
+  of TAG_SPAN:
+    result = new(HTMLSpanElement)
   else:
     new(result)
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
-  result.style = new(CSS2Properties)
+  result.box = result.newBox()
+
+func newDocument*(): Document =
+  new(result)
+  result.head = newHtmlElement(TAG_HEAD)
+  result.body = newHtmlElement(TAG_BODY)
+  result.nodeType = DOCUMENT_NODE
 
 func newAttr*(parent: Element, key: string, value: string): Attr =
   new(result)
@@ -332,27 +353,140 @@ func getAttrValue*(element: Element, s: string): string =
     return attr.value
   return ""
 
+#TODO case sensitivity
+func attrSelectorMatches(elem: Element, sel: Selector): bool =
+  case sel.rel
+  of ' ': return sel.attr in elem.attributes
+  of '=': return elem.getAttrValue(sel.attr) == sel.value
+  of '~': return sel.value in unicode.split(elem.getAttrValue(sel.attr))
+  of '|':
+    let val = elem.getAttrValue(sel.attr)
+    return val == sel.value or sel.value.startsWith(val & '-')
+  of '^': return elem.getAttrValue(sel.attr).startsWith(sel.value)
+  of '$': return elem.getAttrValue(sel.attr).endsWith(sel.value)
+  of '*': return elem.getAttrValue(sel.attr).contains(sel.value)
+  else: return false
 
-#type
-#  SelectorType = enum
-#    TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR, CHILD_SELECTOR,
-#    UNIVERSAL_SELECTOR
-#
-#  Selector = object
-#    t: SelectorType
-#    s0: string
-#    s1: string
-#
-#proc querySelector*(document: Document, q: string): seq[Element] =
-#  #let ss = newStringStream(q)
-#  #let cvals = parseCSSListOfComponentValues(ss)
-#  #var selectors: seq[Selector]
-#  return
-#
-#  #for cval in cvals:
-#  #  if cval of CSSToken:
-#  #    case CSSToken(cval).tokenType
-#  #    of CSS_DELIM_TOKEN:
-#  #      if cval.rvalue == Rune('*'):
-#  #        selectors.add(Selector(t))
-#  #  printc(cval)
+func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
+  case sel.pseudo
+  of "first-child": return elem.parentNode.firstElementChild == elem
+  of "last-child": return elem.parentNode.lastElementChild == elem
+  else: return false
+
+func pseudoElemSelectorMatches(elem: Element, sel: Selector): bool =
+  case sel.elem
+  of "after": return false
+  of "before": return false
+  else: return false
+
+func selectorMatches(elem: Element, sel: Selector): bool =
+  case sel.t
+  of TYPE_SELECTOR:
+    return elem.tagType == sel.tag
+  of CLASS_SELECTOR:
+    return sel.class in elem.classList
+  of ID_SELECTOR:
+    return sel.id == elem.id
+  of ATTR_SELECTOR:
+    return elem.attrSelectorMatches(sel)
+  of PSEUDO_SELECTOR:
+    return pseudoSelectorMatches(elem, sel)
+  of PSELEM_SELECTOR:
+    return pseudoElemSelectorMatches(elem, sel)
+  of UNIVERSAL_SELECTOR:
+    return true
+  of FUNC_SELECTOR:
+    return false
+
+func selectorsMatch(elem: Element, selectors: SelectorList): bool =
+  for sel in selectors.sels:
+    if not selectorMatches(elem, sel):
+      return false
+  return true
+
+func selectElems(document: Document, sel: Selector): seq[Element] =
+  case sel.t
+  of TYPE_SELECTOR:
+    return document.type_elements[sel.tag]
+  of ID_SELECTOR:
+    return document.id_elements[sel.id]
+  of CLASS_SELECTOR:
+    return document.class_elements[sel.class]
+  of UNIVERSAL_SELECTOR:
+    return document.all_elements
+  #TODO: following selectors are rather inefficient
+  of ATTR_SELECTOR:
+    return document.all_elements.filter((elem) => attrSelectorMatches(elem, sel))
+  of PSEUDO_SELECTOR:
+    return document.all_elements.filter((elem) => pseudoSelectorMatches(elem, sel))
+  of PSELEM_SELECTOR:
+    return document.all_elements.filter((elem) => pseudoElemSelectorMatches(elem, sel))
+  of FUNC_SELECTOR:
+    if sel.name == "not":
+      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.selectors))
+    return newSeq[Element]()
+
+func optimizeSelectorList(selectors: SelectorList): SelectorList =
+  new(result)
+  #pass 1: check for invalid sequences
+  var i = 1
+  while i < selectors.len:
+    let sel = selectors[i]
+    if sel.t == TYPE_SELECTOR or sel.t == UNIVERSAL_SELECTOR:
+      return SelectorList()
+    inc i
+
+  #pass 2: move selectors in combination
+  if selectors.len > 1:
+    var i = 0
+    var slow = SelectorList()
+    if selectors[0].t == UNIVERSAL_SELECTOR:
+      inc i
+
+    while i < selectors.len:
+      if selectors[i].t in {ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR}:
+        slow.add(selectors[i])
+      else:
+        result.add(selectors[i])
+      inc i
+
+    result.add(slow)
+  else:
+    result.add(selectors[0])
+
+func selectElems(document: Document, selectors: SelectorList): seq[Element] =
+  assert(selectors.len > 0)
+  let sellist = optimizeSelectorList(selectors)
+  result = document.selectElems(selectors[0])
+  var i = 1
+
+  while i < sellist.len:
+    if sellist[i].t == FUNC_SELECTOR:
+      if sellist[i].name == "not":
+        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].selectors))
+    else:
+      result = result.filter((elem) => selectorMatches(elem, sellist[i]))
+    inc i
+
+proc querySelector*(document: Document, q: string): seq[Element] =
+  let ss = newStringStream(q)
+  let cvals = parseCSSListOfComponentValues(ss)
+  let selectors = parseSelectors(cvals)
+
+  for sel in selectors:
+    result.add(document.selectElems(sel))
+
+proc applyRule(elem: Element, rule: CSSRule) =
+  let selectors = parseSelectors(rule.prelude)
+  for sel in selectors:
+    if elem.selectorsMatch(sel):
+      eprint "match!"
+
+proc applyRules(document: Document, rules: CSSStylesheet) =
+  var stack: seq[Element]
+
+  stack.add(document.firstElementChild)
+  while stack.len > 0:
+    let elem = stack.pop()
+    for child in elem.children:
+      stack.add(child)

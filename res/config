@@ -4,10 +4,10 @@ nmap h CURSOR_LEFT
 nmap j CURSOR_DOWN
 nmap k CURSOR_UP
 nmap l CURSOR_RIGHT
-nmap \e[D CURSOR_LEFT
-nmap \e[B CURSOR_DOWN
-nmap \e[A CURSOR_UP
-nmap \e[C CURSOR_RIGHT
+nmap M-[D CURSOR_LEFT
+nmap M-[B CURSOR_DOWN
+nmap M-[A CURSOR_UP
+nmap M-[C CURSOR_RIGHT
 nmap ^ CURSOR_LINEBEGIN
 nmap $ CURSOR_LINEEND
 nmap b CURSOR_PREV_WORD
@@ -21,8 +21,8 @@ nmap C-d HALF_PAGE_DOWN
 nmap C-u HALF_PAGE_UP
 nmap C-f PAGE_DOWN
 nmap C-b PAGE_UP
-nmap \e[6~ PAGE_DOWN
-nmap \e[5~ PAGE_UP
+nmap M-[6~ PAGE_DOWN
+nmap M-[5~ PAGE_UP
 nmap C-e SCROLL_DOWN
 nmap C-y SCROLL_UP
 nmap J SCROLL_DOWN
@@ -35,8 +35,8 @@ nmap r RESHAPE
 nmap R REDRAW
 nmap gg CURSOR_FIRST_LINE
 nmap G CURSOR_LAST_LINE
-nmap \e[H CURSOR_FIRST_LINE
-nmap \e[F CURSOR_LAST_LINE
+nmap M-[H CURSOR_FIRST_LINE
+nmap M-[F CURSOR_LAST_LINE
 nmap z CENTER_LINE
 nmap C-g LINE_INFO
 
@@ -47,8 +47,8 @@ lemap C-h LINED_BACKSPACE
 lemap C-? LINED_BACKSPACE
 lemap C-d LINED_DELETE
 lemap C-c LINED_CANCEL
-lemap \eb LINED_PREV_WORD
-lemap \ef LINED_NEXT_WORD
+lemap M-b LINED_PREV_WORD
+lemap M-f LINED_NEXT_WORD
 lemap C-b LINED_BACK
 lemap C-f LINED_FORWARD
 lemap C-u LINED_CLEAR
@@ -121,7 +121,7 @@ comp te て
 comp to と
 
 comp tta った
-comp tchi っち
+comp cchi っち
 comp ttsu っつ
 comp tte って
 comp tto っと
@@ -160,8 +160,6 @@ comp re れ
 comp ro ろ
 
 comp wa わ
-comp wi ゐ
-comp we ゑ
 comp wo を
 
 comp ga が
@@ -195,6 +193,7 @@ comp pe ぺ
 comp po ぽ
 
 comp n ん
+comp n' ん
 
 comp kya きゃ
 comp kyu きゅ
@@ -249,10 +248,22 @@ comp tti ってぃ
 comp di てぃ
 comp ddi ってぃ
 
-comp she しぇ
-comp sshe っしぇ
+comp kkya っきゃ
+comp kkyu っきゅ
+comp kkyo っきょ
 
+comp ssha っしゃ
+comp sshu っしゅ
+comp ssho っしょ
+
+comp ccha っちゃ
+comp cchu っちゅ
+comp ccho っちょ
+
+comp she しぇ
 comp je じぇ
+
+comp sshe っしぇ
 comp jje っじぇ
 
 #katakana
@@ -299,7 +310,7 @@ comp TE テ
 comp TO ト
 
 comp TTA ッタ
-comp TCHI ッチ
+comp CCHI ッチ
 comp TTSU ッツ
 comp TTE ッテ
 comp TTO ッと
@@ -338,8 +349,6 @@ comp RE レ
 comp RO ロ
 
 comp WA ワ
-comp WI ヰ
-comp WE ヱ
 comp WO ヲ
 
 comp GA ガ
@@ -373,7 +382,8 @@ comp PE ペ
 comp PO ポ
 
 comp N ン
-comp X ー
+comp N' ン
+comp - ー
 
 comp KYA キャ
 comp KYU キュ
@@ -432,3 +442,6 @@ comp SSHE ッシェ
 
 comp JE ジェ
 comp JJE ッジェ
+
+comp WI ウィ
+comp WE ウェ
