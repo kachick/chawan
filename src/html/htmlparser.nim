@@ -31,71 +31,6 @@ type
     parentNode: Node
     textNode: Text
 
-#func newHtmlElement(tagType: TagType, parentNode: Node): HtmlElement =
-#  case tagType
-#  of TAG_INPUT: result = new(HtmlInputElement)
-#  of TAG_A: result = new(HtmlAnchorElement)
-#  of TAG_SELECT: result = new(HtmlSelectElement)
-#  of TAG_OPTION: result = new(HtmlOptionElement)
-#  else: result = new(HtmlElement)
-#
-#  result.nodeType = ELEMENT_NODE
-#  result.tagType = tagType
-#  result.parentNode = parentNode
-#  if parentNode.isElemNode():
-#    result.parentElement = HtmlElement(parentNode)
-#
-#  if tagType in DisplayInlineTags:
-#    result.display = DISPLAY_INLINE
-#  elif tagType in DisplayBlockTags:
-#    result.display = DISPLAY_BLOCK
-#  elif tagType in DisplayInlineBlockTags:
-#    result.display = DISPLAY_INLINE_BLOCK
-#  elif tagType == TAG_LI:
-#    result.display = DISPLAY_LIST_ITEM
-#  else:
-#    result.display = DISPLAY_NONE
-#
-#  case tagType
-#  of TAG_CENTER:
-#    result.centered = true
-#  of TAG_B:
-#    result.bold = true
-#  of TAG_I:
-#    result.italic = true
-#  of TAG_U:
-#    result.underscore = true
-#  of TAG_HEAD:
-#    result.hidden = true
-#  of TAG_STYLE:
-#    result.hidden = true
-#  of TAG_SCRIPT:
-#    result.hidden = true
-#  of TAG_OPTION:
-#    result.hidden = true #TODO
-#  of TAG_PRE, TAG_TD, TAG_TH:
-#    result.margin = 1
-#  of TAG_UL, TAG_OL:
-#    result.indent = 2
-#    result.margin = 1
-#  of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
-#    result.bold = true
-#    result.margin = 1
-#  of TAG_A:
-#    result.islink = true
-#  of TAG_INPUT:
-#    HtmlInputElement(result).size = 20
-#  else: discard
-#
-#  if parentNode.isElemNode():
-#    let parent = HtmlElement(parentNode)
-#    result.centered = result.centered or parent.centered
-#    result.bold = result.bold or parent.bold
-#    result.italic = result.italic or parent.italic
-#    result.underscore = result.underscore or parent.underscore
-#    result.hidden = result.hidden or parent.hidden
-#    result.islink = result.islink or parent.islink
-
 func inputSize*(str: string): int =
   if str.len == 0:
     return 20
@@ -104,7 +39,7 @@ func inputSize*(str: string): int =
       return 20
   return str.parseInt()
 
-#w3m's getescapecmd and parse_tag, transpiled to nim.
+#w3m's getescapecmd and parse_tag, transpiled to nim and heavily modified.
 #(C) Copyright 1994-2002 by Akinori Ito
 #(C) Copyright 2002-2011 by Akinori Ito, Hironori Sakamoto, Fumitoshi Ukai
 #
@@ -153,7 +88,6 @@ proc getescapecmd(buf: string, at: var int): string =
   elif not isAlphaAscii(buf[i]):
     return ""
 
-  #TODO this could be way more efficient (and radixnode needs better interface)
   when defined(small):
     var n = entityMap
     var s = ""

@@ -1,4 +1,3 @@
-import streams
 import unicode
 import terminal
 import tables
@@ -9,7 +8,7 @@ import ../utils/twtstr
 
 import ../types/enums
 
-import cssparser
+import ./cssparser
 
 type
   CSSLength* = object
@@ -36,13 +35,14 @@ type
     centered*: bool
     display*: DisplayType
     bold*: bool
-    italic*: bool
+    fontStyle*: CSSFontStyle
     underscore*: bool
     islink*: bool
     selected*: bool
     indent*: int
     color*: CSSColor
     position*: CSSPosition
+    content*: seq[Rune]
 
   CSSCanvas* = object
     rootBox*: CSSBox
@@ -63,13 +63,32 @@ type
     paddingEdge*: CSSRect
     borderEdge*: CSSRect
     marginEdge*: CSSRect
-    color*: CSSColor
     props*: CSS2Properties
     content*: seq[Rune]
     dispcontent*: string
     children*: seq[CSSBox]
 
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
+  
+  CSSComputedValue* = object of RootObj
+    case t: CSSRuleType
+    of RULE_ALL: discard
+    of RULE_COLOR:
+      color: CSSColor
+    of RULE_MARGIN, RULE_MARGIN_TOP, RULE_MARGIN_LEFT, RULE_MARGIN_RIGHT,
+       RULE_MARGIN_BOTTOM:
+      length: CSSLength
+    of RULE_FONT_STYLE:
+      fontStyle: CSSFontStyle
+    of RULE_DISPLAY:
+      display: DisplayType
+    of RULE_CONTENT:
+      content: seq[Rune]
+
+  CSSSpecifiedValue* = object of CSSComputedValue
+    hasGlobalValue: bool
+    globalValue: CSSGlobalValueType
+
 
 func `+`(a: CSSRect, b: CSSRect): CSSRect =
   result.x1 = a.x1 + b.x1
@@ -82,7 +101,7 @@ proc `+=`(a: var CSSRect, b: CSSRect) =
 
 func cells(l: CSSLength): int =
   case l.unit
-  of EM_UNIT:
+  of UNIT_EM:
     return int(l.num)
   else:
     #TODO
@@ -112,22 +131,22 @@ const defaultColor = (0xffu8, 0xffu8, 0xffu8, 0x00u8)
 
 func cssLength(val: float64, unit: string): CSSLength =
   case unit
-  of "%": return CSSLength(num: val, unit: PERC_UNIT)
-  of "cm": return CSSLength(num: val, unit: CM_UNIT)
-  of "mm": return CSSLength(num: val, unit: MM_UNIT)
-  of "in": return CSSLength(num: val, unit: IN_UNIT)
-  of "px": return CSSLength(num: val, unit: PX_UNIT)
-  of "pt": return CSSLength(num: val, unit: PT_UNIT)
-  of "pc": return CSSLength(num: val, unit: PC_UNIT)
-  of "em": return CSSLength(num: val, unit: EM_UNIT)
-  of "ex": return CSSLength(num: val, unit: EX_UNIT)
-  of "ch": return CSSLength(num: val, unit: CH_UNIT)
-  of "rem": return CSSLength(num: val, unit: REM_UNIT)
-  of "vw": return CSSLength(num: val, unit: VW_UNIT)
-  of "vh": return CSSLength(num: val, unit: VH_UNIT)
-  of "vmin": return CSSLength(num: val, unit: VMIN_UNIT)
-  of "vmax": return CSSLength(num: val, unit: VMAX_UNIT)
-  else: return CSSLength(num: 0, unit: EM_UNIT)
+  of "%": return CSSLength(num: val, unit: UNIT_PERC)
+  of "cm": return CSSLength(num: val, unit: UNIT_CM)
+  of "mm": return CSSLength(num: val, unit: UNIT_MM)
+  of "in": return CSSLength(num: val, unit: UNIT_IN)
+  of "px": return CSSLength(num: val, unit: UNIT_PX)
+  of "pt": return CSSLength(num: val, unit: UNIT_PT)
+  of "pc": return CSSLength(num: val, unit: UNIT_PC)
+  of "em": return CSSLength(num: val, unit: UNIT_EM)
+  of "ex": return CSSLength(num: val, unit: UNIT_EX)
+  of "ch": return CSSLength(num: val, unit: UNIT_CH)
+  of "rem": return CSSLength(num: val, unit: UNIT_REM)
+  of "vw": return CSSLength(num: val, unit: UNIT_VW)
+  of "vh": return CSSLength(num: val, unit: UNIT_VH)
+  of "vmin": return CSSLength(num: val, unit: UNIT_VMIN)
+  of "vmax": return CSSLength(num: val, unit: UNIT_VMAX)
+  else: return CSSLength(num: 0, unit: UNIT_EM)
 
 func cssColor*(d: CSSDeclaration): CSSColor =
   if d.value.len > 0:
@@ -165,7 +184,7 @@ func cssColor*(d: CSSDeclaration): CSSColor =
       else:
         eprint "else", tok.tokenType
         return defaultColor
-    elif d of CSSFunction:
+    elif d.value[0] of CSSFunction:
       let f = CSSFunction(d.value[0])
       eprint "func", f.name
       #todo calc etc (cssnumber function or something)
@@ -209,11 +228,11 @@ func cssLength(d: CSSDeclaration): CSSLength =
       return cssLength(tok.nvalue, $tok.unit)
     of CSS_IDENT_TOKEN:
       if $tok.value == "auto":
-        return CSSLength(num: 0, unit: EM_UNIT, auto: true)
+        return CSSLength(auto: true)
     else:
-      return CSSLength(num: 0, unit: EM_UNIT)
+      return CSSLength(num: 0, unit: UNIT_EM)
 
-  return CSSLength(num: 0, unit: EM_UNIT)
+  return CSSLength(num: 0, unit: UNIT_EM)
 
 func hasColor*(style: CSS2Properties): bool =
   return style.color.r != 0 or style.color.b != 0 or style.color.g != 0 or style.color.a != 0
@@ -228,35 +247,101 @@ func termColor*(style: CSS2Properties): ForegroundColor =
   else:
     return fgWhite
 
-proc applyProperties*(box: CSSBox, s: string) =
-  let decls = parseCSSListOfDeclarations(newStringStream(s))
-  if box.props == nil:
-    box.props = CSS2Properties()
-  let props = box.props
+func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
+func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
 
-  for item in decls:
-    if item of CSSDeclaration:
-      let d = CSSDeclaration(item)
-      case $d.name
-      of "color":
-        props.color = cssColor(d)
-        eprint props.color #TODO
-      of "margin":
-        let l = cssLength(d)
-        props.margintop = l
-        props.marginbottom = l
-        props.marginleft = l
-        props.marginright = l
-      of "margin-top":
-        props.margintop = cssLength(d)
-      of "margin-left":
-        props.marginleft = cssLength(d)
-      of "margin-right":
-        props.marginright = cssLength(d)
-      of "margin-bottom":
-        props.marginbottom = cssLength(d)
-      else:
-        printc(d) #TODO
+func cssString(d: CSSDeclaration): seq[Rune] =
+  if isToken(d):
+    let tok = getToken(d)
+    case tok.tokenType
+    of CSS_IDENT_TOKEN, CSS_STRING_TOKEN:
+      return tok.value
+    else: return
+
+func cssDisplay(d: CSSDeclaration): DisplayType =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "block": return DISPLAY_BLOCK
+      of "inline": return DISPLAY_INLINE
+      of "inline-block": return DISPLAY_INLINE_BLOCK
+      of "list-item": return DISPLAY_LIST_ITEM
+      of "table-column": return DISPLAY_TABLE_COLUMN
+      of "none": return DISPLAY_NONE
+      else: return DISPLAY_INLINE
+  return DISPLAY_INLINE
+
+func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "normal": return FONTSTYLE_NORMAL
+      of "italic": return FONTSTYLE_ITALIC
+      of "oblique": return FONTSTYLE_OBLIQUE
+      else: return FONTSTYLE_NORMAL
+  return FONTSTYLE_NORMAL
+
+func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
+  case $d.name
+  of "color":
+    return CSSSpecifiedValue(t: RULE_COLOR, color: cssColor(d))
+  of "margin":
+    return CSSSpecifiedValue(t: RULE_MARGIN, length: cssLength(d))
+  of "margin-top":
+    return CSSSpecifiedValue(t: RULE_MARGIN_TOP, length: cssLength(d))
+  of "margin-left":
+    return CSSSpecifiedValue(t: RULE_MARGIN_LEFT, length: cssLength(d))
+  of "margin-bottom":
+    return CSSSpecifiedValue(t: RULE_MARGIN_BOTTOM, length: cssLength(d))
+  of "margin-right":
+    return CSSSpecifiedValue(t: RULE_MARGIN_RIGHT, length: cssLength(d))
+  of "font-style":
+    return CSSSpecifiedValue(t: RULE_FONT_STYLE, fontStyle: cssFontStyle(d))
+  of "display":
+    return CSSSpecifiedValue(t: RULE_DISPLAY, display: cssDisplay(d))
+  of "content":
+    return CSSSpecifiedValue(t: RULE_CONTENT, content: cssString(d))
+
+func getComputedValue*(rule: CSSSpecifiedValue): CSSComputedValue =
+  let inherit = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
+  let initial = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
+  let unset = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
+  let revert = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
+  #case rule.t
+  #of RULE_COLOR:
+  #  return CSSComputedValue(t: rule.t, 
+
+func getComputedValue*(d: CSSDeclaration): CSSComputedValue =
+  return getComputedValue(getSpecifiedValue(d))
+
+proc applyProperty*(props: CSS2Properties, d: CSSDeclaration) =
+  case $d.name
+  of "color":
+    props.color = cssColor(d)
+  of "margin":
+    let l = cssLength(d)
+    props.margintop = l
+    props.marginbottom = l
+    props.marginleft = l
+    props.marginright = l
+  of "margin-top":
+    props.margintop = cssLength(d)
+  of "margin-left":
+    props.marginleft = cssLength(d)
+  of "margin-right":
+    props.marginright = cssLength(d)
+  of "margin-bottom":
+    props.marginbottom = cssLength(d)
+  of "font-style":
+    props.fontStyle = cssFontStyle(d)
+  of "display":
+    props.display = cssDisplay(d)
+  of "content":
+    props.content = cssString(d)
+  else:
+    printc(d) #TODO
 
 func getLength(s: seq[Rune], start: int, wlimit: int): tuple[wrap: bool, len: int, width: int] =
   var len = 0

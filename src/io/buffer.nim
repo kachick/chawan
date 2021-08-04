@@ -4,20 +4,19 @@ import tables
 import strutils
 import unicode
 
-import types/enums
+import ../types/enums
 
-import utils/termattrs
-import utils/twtstr
+import ../utils/termattrs
+import ../utils/twtstr
 
-import html/dom
+import ../html/dom
 
-import io/twtio
+import ./twtio
 
 type
   Buffer* = ref BufferObj
   BufferObj = object
-    fmttext*: seq[string]
-    rawtext*: seq[string]
+    text*: seq[Rune]
     title*: string
     hovertext*: string
     width*: int
@@ -37,11 +36,16 @@ type
     attrs*: TermAttributes
     document*: Document
 
+    #TODO remove these
+    fmttext*: seq[string]
+    rawtext*: seq[string]
+
 proc newBuffer*(attrs: TermAttributes): Buffer =
   return Buffer(width: attrs.termWidth,
                 height: attrs.termHeight,
                 attrs: attrs)
 
+#TODO go through these and remove ones that don't make sense in the new model
 func lastLine*(buffer: Buffer): int =
   assert(buffer.fmttext.len == buffer.rawtext.len)
   return buffer.fmttext.len - 1

@@ -11,10 +11,10 @@ import ../utils/twtstr
 
 import ../html/dom
 
-import ../buffer
 import ../config
 
-import twtio
+import ./buffer
+import ./twtio
 
 proc clearStatusMsg*(at: int) =
   setCursorPos(0, at)

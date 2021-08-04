@@ -6,13 +6,13 @@ import tables
 import streams
 import sequtils
 import sugar
+import algorithm
 
 import ../css/style
 import ../css/cssparser
 import ../css/selector
 
 import ../types/enums
-import ../types/tagtypes
 
 import ../utils/twtstr
 
@@ -46,6 +46,7 @@ type
     width*: int
     height*: int
     hidden*: bool
+    box*: CSSBox
 
   Attr* = ref AttrObj
   AttrObj = object of NodeObj
@@ -89,7 +90,8 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, Attr]
-    box*: CSSBox
+    style*: CSS2Properties
+    cssvalues*: seq[CSSComputedValue]
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -159,8 +161,8 @@ func nodeAttr*(node: Node): HtmlElement =
 
 func getStyle*(node: Node): CSS2Properties =
   case node.nodeType
-  of TEXT_NODE: return node.parentElement.box.props
-  of ELEMENT_NODE: return Element(node).box.props
+  of TEXT_NODE: return node.parentElement.style
+  of ELEMENT_NODE: return Element(node).style
   else: assert(false)
 
 func displayed*(node: Node): bool =
@@ -260,11 +262,11 @@ proc getRawText*(htmlNode: Node): string =
     #eprint "char data", chardata.data
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
       result = chardata.data.remove("\n")
-      if unicode.strip(result).runeLen() > 0:
-        if htmlNode.getStyle().display != DISPLAY_INLINE:
-          result = unicode.strip(result)
-      else:
-        result = ""
+      #if unicode.strip(result).runeLen() > 0:
+      #  if htmlNode.getStyle().display != DISPLAY_INLINE:
+      #    result = unicode.strip(result)
+      #else:
+      #  result = ""
     else:
       result = unicode.strip(chardata.data)
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType == TAG_OPTION:
@@ -290,7 +292,7 @@ func getFmtText*(node: Node): seq[string] =
 
       if style.bold:
         result = result.ansiStyle(styleBright).ansiReset()
-      if style.italic:
+      if style.fontStyle == FONTSTYLE_ITALIC or style.fontStyle == FONTSTYLE_OBLIQUE:
         result = result.ansiStyle(styleItalic).ansiReset()
       if style.underscore:
         result = result.ansiStyle(styleUnderscore).ansiReset()
@@ -306,10 +308,6 @@ func newText*(): Text =
 func newComment*(): Comment =
   new(result)
   result.nodeType = COMMENT_NODE
-
-func newBox*(element: HTMLElement): CSSBox =
-  new(result)
-  result.props = CSS2Properties()
 
 func newHtmlElement*(tagType: TagType): HTMLElement =
   case tagType
@@ -332,7 +330,7 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
-  result.box = result.newBox()
+  result.style = CSS2Properties()
 
 func newDocument*(): Document =
   new(result)
@@ -414,7 +412,6 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
     return document.class_elements[sel.class]
   of UNIVERSAL_SELECTOR:
     return document.all_elements
-  #TODO: following selectors are rather inefficient
   of ATTR_SELECTOR:
     return document.all_elements.filter((elem) => attrSelectorMatches(elem, sel))
   of PSEUDO_SELECTOR:
@@ -422,37 +419,12 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
   of PSELEM_SELECTOR:
     return document.all_elements.filter((elem) => pseudoElemSelectorMatches(elem, sel))
   of FUNC_SELECTOR:
-    if sel.name == "not":
+    case sel.name
+    of "not":
       return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.selectors))
+    of "is", "where":
+      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.selectors))
     return newSeq[Element]()
-
-func optimizeSelectorList(selectors: SelectorList): SelectorList =
-  new(result)
-  #pass 1: check for invalid sequences
-  var i = 1
-  while i < selectors.len:
-    let sel = selectors[i]
-    if sel.t == TYPE_SELECTOR or sel.t == UNIVERSAL_SELECTOR:
-      return SelectorList()
-    inc i
-
-  #pass 2: move selectors in combination
-  if selectors.len > 1:
-    var i = 0
-    var slow = SelectorList()
-    if selectors[0].t == UNIVERSAL_SELECTOR:
-      inc i
-
-    while i < selectors.len:
-      if selectors[i].t in {ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR}:
-        slow.add(selectors[i])
-      else:
-        result.add(selectors[i])
-      inc i
-
-    result.add(slow)
-  else:
-    result.add(selectors[0])
 
 func selectElems(document: Document, selectors: SelectorList): seq[Element] =
   assert(selectors.len > 0)
@@ -462,8 +434,12 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
 
   while i < sellist.len:
     if sellist[i].t == FUNC_SELECTOR:
-      if sellist[i].name == "not":
+      case sellist[i].name
+      of "not":
         result = result.filter((elem) => not selectorsMatch(elem, sellist[i].selectors))
+      of "is", "where":
+        result = result.filter((elem) => selectorsMatch(elem, sellist[i].selectors))
+      else: discard
     else:
       result = result.filter((elem) => selectorMatches(elem, sellist[i]))
     inc i
@@ -476,17 +452,65 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-proc applyRule(elem: Element, rule: CSSRule) =
-  let selectors = parseSelectors(rule.prelude)
-  for sel in selectors:
-    if elem.selectorsMatch(sel):
-      eprint "match!"
+func calcRules(elem: Element, rules: CSSStylesheet): seq[CSSSimpleBlock] =
+  var tosort: seq[tuple[s:int,b:CSSSimpleBlock]]
+  for rule in rules.value:
+    let selectors = parseSelectors(rule.prelude) #TODO perf: compute this once
+    for sel in selectors:
+      if elem.selectorsMatch(sel):
+        let spec = getSpecificity(sel)
+        tosort.add((spec,rule.oblock))
 
-proc applyRules(document: Document, rules: CSSStylesheet) =
+  tosort.sort((x, y) => cmp(x.s,y.s))
+  return tosort.map((x) => x.b)
+
+proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration]] =
   var stack: seq[Element]
 
   stack.add(document.firstElementChild)
   while stack.len > 0:
     let elem = stack.pop()
+    for oblock in calcRules(elem, rules):
+      let decls = parseCSSListOfDeclarations(oblock.value)
+      for item in decls:
+        if item of CSSDeclaration:
+          if ((CSSDeclaration)item).important:
+            result.add((elem, (CSSDeclaration)item))
+          else:
+            elem.style.applyProperty((CSSDeclaration)item)
+
     for child in elem.children:
       stack.add(child)
+
+proc addBoxes*(elem: Element) =
+  var b = false
+  for child in elem.childNodes:
+    if child.nodeType == ELEMENT_NODE:
+      if ((Element)child).style.display == DISPLAY_BLOCK:
+        b = true
+        break
+  for child in elem.childNodes:
+    if child.nodeType == ELEMENT_NODE:
+      if b:
+        child.box = CSSBox(display: DISPLAY_BLOCK)
+      else:
+        child.box = CSSBox()
+
+proc generateBoxModel(document: Document) =
+  var stack: seq[Element]
+
+  stack.add(document.firstElementChild)
+  document.firstElementChild.box = CSSBox()
+  while stack.len > 0:
+    let elem = stack.pop()
+    elem.addBoxes()
+    for child in elem.children:
+      stack.add(child)
+
+proc applyDefaultStylesheet*(document: Document) =
+  let important = document.applyRules(stylesheet)
+  for rule in important:
+    rule.e.style.applyProperty(rule.d)
+    rule.e.cssvalues.add(getComputedValue(rule.d))
+
+  document.generateBoxModel()

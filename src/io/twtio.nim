@@ -3,6 +3,7 @@ import tables
 import unicode
 import strutils
 import sequtils
+import sugar
 
 import ../utils/twtstr
 import ../utils/radixtree
@@ -20,9 +21,6 @@ template printesc*(s: string) =
                    .ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
     else:
       stdout.write($r)
-
-template printspc(i: int) =
-  print(' '.repeat(i))
 
 template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect).}:
   var a = false
@@ -134,11 +132,12 @@ proc zeroShiftRedraw(state: var LineState) =
 
 proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
   let escNext = state.escNext
-  cs.keepIf(func(r: Rune): bool = escNext or not r.isControlChar())
+  cs.keepIf((r) => escNext or not r.isControlChar())
   state.escNext = false
   if cs.len == 0:
     return
-  elif state.cursor >= state.news.len and state.news.width(state.shift, state.cursor) + cs.width() < state.displen:
+
+  if state.cursor >= state.news.len and state.news.width(state.shift, state.cursor) + cs.width() < state.displen:
     state.news &= cs
     state.cursor += cs.len
     printesc($cs)
@@ -185,7 +184,7 @@ proc readLine*(current: var string, minlen: int, maxlen: int): bool =
   state.minlen = minlen
   state.maxlen = maxlen
   state.displen = state.maxlen - 1
-  #ugh
+  #cache strings
   for i in 0..(maxlen - minlen):
     state.spaces.add(' '.repeat(i))
   printesc(current)

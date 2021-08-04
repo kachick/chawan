@@ -19,6 +19,10 @@ sub, sup, textarea, tt, var, font, iframe, u, s, strike, frame, img, input {
 	display: inline;
 }
 
+i {
+	font-style: italic;
+}
+
 col {
 	display: table-column;
 }

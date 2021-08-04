@@ -6,6 +6,8 @@ import unicode
 import streams
 import math
 import options
+import sequtils
+import sugar
 
 import ../io/twtio
 
@@ -464,6 +466,8 @@ func curr(state: CSSParseState): CSSParsedItem =
 func has(state: CSSParseState): bool =
   return state.at < state.tokens.len
 
+proc consumeComponentValue(state: var CSSParseState): CSSComponentValue
+
 proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
   state.reconsume()
   let t = CSSToken(state.consume())
@@ -483,10 +487,9 @@ proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
       if t == CSS_LBRACE_TOKEN or t == CSS_LBRACKET_TOKEN or t == CSS_LPAREN_TOKEN:
         result.value.add(state.consumeSimpleBlock())
       else:
-        result.value.add(CSSComponentValue(t))
+        state.reconsume()
+        result.value.add(state.consumeComponentValue())
   return result
-
-proc consumeComponentValue*(state: var CSSParseState): CSSComponentValue
 
 proc consumeFunction(state: var CSSParseState): CSSFunction =
   let t = (CSSToken)state.consume()
@@ -689,6 +692,13 @@ proc parseCSSDeclaration*(inputStream: Stream): CSSDeclaration =
   return state.parseDeclaration()
 
 proc parseListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
+  return state.consumeListOfDeclarations()
+
+proc parseCSSListOfDeclarations*(cvals: seq[CSSComponentValue]): seq[CSSParsedItem] =
+  var state = CSSParseState()
+  state.tokens = collect(newSeq):
+    for cval in cvals:
+      CSSParsedItem(cval)
   return state.consumeListOfDeclarations()
 
 proc parseCSSListOfDeclarations*(inputStream: Stream): seq[CSSParsedItem] =

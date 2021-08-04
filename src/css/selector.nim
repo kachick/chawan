@@ -3,7 +3,7 @@ import unicode
 import ../types/enums
 import ../types/tagtypes
 
-import cssparser
+import ./cssparser
 
 type
   SelectorType* = enum
@@ -52,10 +52,65 @@ proc setLen*(sellist: SelectorList, i: int) = sellist.sels.setLen(i)
 proc `[]`*(sellist: SelectorList, i: int): Selector = sellist.sels[i]
 proc len*(sellist: SelectorList): int = sellist.sels.len
 
+func getSpecificity(sel: Selector): int =
+  case sel.t
+  of ID_SELECTOR:
+    result += 1000000
+  of CLASS_SELECTOR, ATTR_SELECTOR, PSEUDO_SELECTOR:
+    result += 1000
+  of TYPE_SELECTOR, PSELEM_SELECTOR:
+    result += 1
+  of FUNC_SELECTOR:
+    case sel.name
+    of "is":
+      var best = 0
+      for child in sel.selectors.sels:
+        let s = getSpecificity(child)
+        if s > best:
+          best = s
+      result += best
+    of "not":
+      for child in sel.selectors.sels:
+        result += getSpecificity(child)
+    else: discard
+  of UNIVERSAL_SELECTOR:
+    discard
+
+func getSpecificity*(sels: SelectorList): int =
+  for sel in sels.sels:
+    result += getSpecificity(sel)
+
+func optimizeSelectorList*(selectors: SelectorList): SelectorList =
+  new(result)
+  #pass 1: check for invalid sequences
+  var i = 1
+  while i < selectors.len:
+    let sel = selectors[i]
+    if sel.t == TYPE_SELECTOR or sel.t == UNIVERSAL_SELECTOR:
+      return SelectorList()
+    inc i
+
+  #pass 2: move selectors in combination
+  if selectors.len > 1:
+    var i = 0
+    var slow = SelectorList()
+    if selectors[0].t == UNIVERSAL_SELECTOR:
+      inc i
+
+    while i < selectors.len:
+      if selectors[i].t in {ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR}:
+        slow.add(selectors[i])
+      else:
+        result.add(selectors[i])
+      inc i
+
+    result.add(slow)
+  else:
+    result.add(selectors[0])
+
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
   case csstoken.tokenType
   of CSS_IDENT_TOKEN:
-    var sel: Selector
     case state.query
     of QUERY_CLASS:
       state.selectors[^1].add(Selector(t: CLASS_SELECTOR, class: $csstoken.value))
@@ -120,7 +175,7 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
 
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
   case $cssfunction.name
-  of "not":
+  of "not", "is":
     if state.query != QUERY_PSEUDO:
       return
     state.query = QUERY_TYPE

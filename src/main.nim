@@ -3,8 +3,6 @@ import uri
 import os
 import streams
 
-import css/style
-
 import utils/termattrs
 
 import html/dom
@@ -12,8 +10,8 @@ import html/htmlparser
 
 import io/display
 import io/twtio
+import io/buffer
 
-import buffer
 import config
 
 let clientInstance = newHttpClient()
@@ -39,6 +37,9 @@ proc getPageUri(uri: Uri): Stream =
 
 var buffers: seq[Buffer]
 
+
+const defaultcss = staticRead"../res/default.css"
+
 proc main*() =
   if paramCount() != 1:
     eprint "Invalid parameters. Usage:\ntwt <url>"
@@ -50,10 +51,7 @@ proc main*() =
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
   buffer.document = parseHtml(getPageUri(uri))
-  let s = buffer.document.querySelector(":not(:first-child)")
-  eprint s.len
-  for q in s:
-    eprint q
+  buffer.document.applyDefaultStylesheet()
   buffer.setLocation(uri)
   buffer.renderHtml()
   var lastUri = uri
@@ -71,4 +69,3 @@ proc main*() =
       buffer.renderHtml()
     lastUri = newUri
 main()
-#parseCSS(newFileStream("default.css", fmRead))
