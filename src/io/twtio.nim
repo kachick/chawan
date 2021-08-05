@@ -1,4 +1,4 @@
-import terminal
+import std/terminal
 import tables
 import unicode
 import strutils
@@ -9,6 +9,8 @@ import ../utils/twtstr
 import ../utils/radixtree
 
 import ../config
+
+import ./terminal
 
 template print*(s: varargs[string, `$`]) =
   for x in s:
@@ -21,19 +23,6 @@ template printesc*(s: string) =
                    .ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
     else:
       stdout.write($r)
-
-template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect).}:
-  var a = false
-  for x in s:
-    if not a:
-      a = true
-    else:
-      stderr.write(' ')
-    stderr.write(x)
-  stderr.write('\n')
-
-proc termGoto*(x: int, y: int) =
-  setCursorPos(stdout, x, y)
 
 proc getNormalAction*(s: string): TwtAction =
   if normalActionRemap.hasKey(s):

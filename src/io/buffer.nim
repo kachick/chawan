@@ -7,27 +7,35 @@ import unicode
 import ../types/enums
 import ../types/color
 
-import ../utils/termattrs
 import ../utils/twtstr
+import ../utils/eprint
 
 import ../html/dom
 
 import ./twtio
+import ./term
 
 type
-  BufferCell = object
-    rune*: Rune
+  Cell = object of RootObj
     fgcolor*: CellColor
     bgcolor*: CellColor
     italic: bool
     bold: bool
     underline: bool
 
+  BufferCell = object of Cell
+    rune*: Rune
+
+# xterm supports max 2 characters per cell by default. might make the tuple a
+# seq in the future but for now it's fine like this
+  DisplayCell = object of Cell
+    runes*: tuple[a: Rune, b: Rune]
+
   Buffer* = ref BufferObj
   BufferObj = object
     title*: string
     lines*: seq[seq[BufferCell]]
-    display*: seq[BufferCell]
+    display*: seq[DisplayCell]
     hovertext*: string
     width*: int
     height*: int
@@ -38,7 +46,6 @@ type
     fromy*: int
     nodes*: seq[Node]
     links*: seq[Node]
-    clickables*: seq[Node]
     elements*: seq[Element]
     idelements*: Table[string, Element]
     selectedlink*: Node
@@ -46,82 +53,52 @@ type
     attrs*: TermAttributes
     document*: Document
     displaycontrols*: bool
+    redraw*: bool
+    location*: Uri
 
-    #TODO remove these
-    fmttext*: seq[string]
-    rawtext*: seq[string]
-
-proc newBuffer*(attrs: TermAttributes): Buffer =
+func newBuffer*(attrs: TermAttributes): Buffer =
   new(result)
   result.width = attrs.termWidth
   result.height = attrs.termHeight
   result.attrs = attrs
 
-  let cells = result.width * result.height
-  result.display = newSeq[BufferCell](cells)
-
-proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
-  discard
-
-proc setDisplayText(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
-  let pos = y * buffer.width + x
-  var i = 0
-  while i < text.len:
-    buffer.display[pos + i].rune = text[i]
-
-proc refreshDisplay*(buffer: Buffer) =
-  var y = 0
-  for line in buffer.lines[buffer.fromy..buffer.fromy+buffer.height]:
-    var w = 0
-    var i = 0
-    while w < buffer.fromx and i < line.len:
-      w += line[i].rune.width()
-      inc i
-
-    let dls = y * buffer.width
-    var j = 0
-    while w < buffer.fromx + buffer.width and i < line.len:
-      w += line[i].rune.width()
-      buffer.display[dls + j] = line[i]
-      inc i
-
-    inc y
+  result.display = newSeq[DisplayCell](result.width * result.height)
 
 func generateFullOutput*(buffer: Buffer): string =
   var x = 0
   var y = 0
   for cell in buffer.display:
-    
-    discard
+    if x >= buffer.width:
+      inc y
+      result &= '\n'
+      x = 0
 
-#TODO go through these and remove ones that don't make sense in the new model
+    if cell.runes.a != Rune(0):
+      result &= $cell.runes.a
+    if cell.runes.b != Rune(0):
+      result &= $cell.runes.b
+    inc x
+
 func lastLine*(buffer: Buffer): int =
-  assert(buffer.fmttext.len == buffer.rawtext.len)
-  return buffer.fmttext.len - 1
+  return buffer.lines.len - 1
 
 func lastVisibleLine*(buffer: Buffer): int =
   return min(buffer.fromy + buffer.height - 1, buffer.lastLine())
 
-func currentLineLength*(buffer: Buffer): int =
-  return buffer.rawtext[buffer.cursory].width()
+func width(line: seq[BufferCell]): int =
+  for c in line:
+    result += c.rune.width()
+
+func currentLineWidth*(buffer: Buffer): int =
+  return buffer.lines[buffer.cursory].width()
+
+func maxScreenWidth*(buffer: Buffer): int =
+  for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine()]:
+    result = max(line.width(), result)
 
 func atPercentOf*(buffer: Buffer): int =
-  if buffer.fmttext.len == 0: return 100
+  if buffer.lines.len == 0: return 100
   return (100 * (buffer.cursory + 1)) div (buffer.lastLine() + 1)
-
-func fmtBetween*(buffer: Buffer, sx: int, sy: int, ex: int, ey: int): string =
-  if sy < ey:
-    result &= buffer.rawtext[sy].runeSubstr(sx)
-    var i = sy + 1
-    while i < ey - 1:
-      result &= buffer.rawtext[i]
-      inc i
-    result &= buffer.rawtext[i].runeSubstr(0, ex - sx)
-  else:
-    result &= buffer.rawtext[sy].runeSubstr(sx, ex - sx)
-
-func visibleText*(buffer: Buffer): string = 
-  return buffer.fmttext[buffer.fromy..buffer.lastVisibleLine()].join("\n")
 
 func lastNode*(buffer: Buffer): Node =
   return buffer.nodes[^1]
@@ -158,45 +135,17 @@ proc findSelectedNode*(buffer: Buffer): Option[Node] =
         return some(node)
   return none(Node)
 
-proc addNode*(buffer: Buffer, node: Node) =
-  buffer.nodes.add(node)
-
-  if node.isTextNode() and node.parentElement != nil and node.parentElement.getStyle().islink:
-    buffer.links.add(node)
-
-  if node.isElemNode():
-    case Element(node).tagType
-    of TAG_INPUT, TAG_OPTION:
-      if not Element(node).hidden:
-        buffer.clickables.add(node)
-    else: discard
-  elif node.isTextNode():
-    if node.parentElement != nil and node.getStyle().islink:
-      let anchor = node.ancestor(TAG_A)
-      assert(anchor != nil)
-      buffer.clickables.add(anchor)
-
-  if node.isElemNode():
-    let elem = Element(node)
-    buffer.elements.add(elem)
-    if elem.id != "" and not buffer.idelements.hasKey(elem.id):
-      buffer.idelements[elem.id] = elem
-
 proc writefmt*(buffer: Buffer, str: string) =
-  buffer.fmttext &= str
-  if buffer.printwrite:
-    stdout.write(str)
+  discard
 
 proc writefmt*(buffer: Buffer, c: char) =
-  buffer.rawtext &= $c
-  if buffer.printwrite:
-    stdout.write(c)
+  discard
 
 proc writeraw*(buffer: Buffer, str: string) =
-  buffer.rawtext &= str
+  discard
 
 proc writeraw*(buffer: Buffer, c: char) =
-  buffer.rawtext &= $c
+  discard
 
 proc write*(buffer: Buffer, str: string) =
   buffer.writefmt(str)
@@ -207,13 +156,11 @@ proc write*(buffer: Buffer, c: char) =
   buffer.writeraw(c)
 
 proc clearText*(buffer: Buffer) =
-  buffer.fmttext.setLen(0)
-  buffer.rawtext.setLen(0)
+  buffer.lines.setLen(0)
 
 proc clearNodes*(buffer: Buffer) =
   buffer.nodes.setLen(0)
   buffer.links.setLen(0)
-  buffer.clickables.setLen(0)
   buffer.elements.setLen(0)
   buffer.idelements.clear()
 
@@ -227,72 +174,77 @@ proc clearBuffer*(buffer: Buffer) =
   buffer.hovertext = ""
   buffer.selectedlink = nil
 
-proc scrollTo*(buffer: Buffer, y: int): bool =
+proc restoreCursorX(buffer: Buffer) =
+  buffer.cursorx = min(buffer.currentLineWidth() - 1, buffer.xend)
+
+proc scrollTo*(buffer: Buffer, y: int) =
   if y == buffer.fromy:
-    return false
+    return
   buffer.fromy = min(max(buffer.lastLine() - buffer.height + 1, 0), y)
   buffer.cursory = min(max(buffer.fromy, buffer.cursory), buffer.fromy + buffer.height)
-  return true
+  buffer.redraw = true
+  buffer.restoreCursorX()
 
-proc cursorTo*(buffer: Buffer, x: int, y: int): bool =
-  result = false
+proc cursorTo*(buffer: Buffer, x: int, y: int) =
+  buffer.redraw = false
   buffer.cursory = min(max(y, 0), buffer.lastLine())
   if buffer.fromy > buffer.cursory:
     buffer.fromy = max(buffer.cursory, 0)
-    result = true
+    buffer.redraw = true
   elif buffer.fromy + buffer.height - 1 <= buffer.cursory:
     buffer.fromy = max(buffer.cursory - buffer.height + 2, 0)
-    result = true
-  buffer.cursorx = min(max(x, 0), buffer.currentLineLength())
-  #buffer.fromX = min(max(buffer.currentLineLength() - buffer.width + 1, 0), 0) #TODO
+    buffer.redraw = true
+  buffer.cursorx = min(max(x, 0), buffer.currentLineWidth())
+  #buffer.fromX = min(max(buffer.currentLineWidth() - buffer.width + 1, 0), 0) #TODO
 
-proc cursorDown*(buffer: Buffer): bool =
+proc cursorDown*(buffer: Buffer) =
   if buffer.cursory < buffer.lastLine():
     inc buffer.cursory
-    if buffer.cursorx >= buffer.currentLineLength():
-      buffer.cursorx = max(buffer.currentLineLength() - 1, 0)
-    elif buffer.xend > 0:
-      buffer.cursorx = min(buffer.currentLineLength() - 1, buffer.xend)
+    buffer.restoreCursorX()
     if buffer.cursory >= buffer.lastVisibleLine() and buffer.lastVisibleLine() != buffer.lastLine():
       inc buffer.fromy
-      return true
-  return false
+      buffer.redraw = true
 
-proc cursorUp*(buffer: Buffer): bool =
+proc cursorUp*(buffer: Buffer) =
   if buffer.cursory > 0:
     dec buffer.cursory
-    if buffer.cursorx > buffer.currentLineLength():
-      if buffer.cursorx == 0:
-        buffer.xend = buffer.cursorx
-      buffer.cursorx = max(buffer.currentLineLength() - 1, 0)
-    elif buffer.xend > 0:
-      buffer.cursorx = min(buffer.currentLineLength() - 1, buffer.xend)
+    buffer.restoreCursorX()
     if buffer.cursory < buffer.fromy:
       dec buffer.fromy
-      return true
-  return false
+      buffer.redraw = true
 
-proc cursorRight*(buffer: Buffer): bool =
-  if buffer.cursorx < buffer.currentLineLength() - 1:
+proc cursorRight*(buffer: Buffer) =
+  if buffer.cursorx < buffer.currentLineWidth() - 1:
     inc buffer.cursorx
-    buffer.xend = 0
-  else:
     buffer.xend = buffer.cursorx
-  return false
+    if buffer.cursorx - buffer.width >= buffer.fromx:
+      inc buffer.fromx
+      buffer.redraw = true
 
-proc cursorLeft*(buffer: Buffer): bool =
-  if buffer.cursorx > 0:
+proc cursorLeft*(buffer: Buffer) =
+  if buffer.fromx > buffer.cursorx:
+    buffer.fromx = buffer.cursorx
+    buffer.redraw = true
+  elif buffer.cursorx > 0:
     dec buffer.cursorx
-  buffer.xend = 0
-  return false
+    if buffer.fromx > buffer.cursorx:
+      buffer.fromx = buffer.cursorx
+      buffer.redraw = true
+
+  buffer.xend = buffer.cursorx
 
 proc cursorLineBegin*(buffer: Buffer) =
   buffer.cursorx = 0
   buffer.xend = 0
+  if buffer.fromx > 0:
+    buffer.fromx = 0
+    buffer.redraw = true
 
 proc cursorLineEnd*(buffer: Buffer) =
-  buffer.cursorx = buffer.currentLineLength() - 1
+  buffer.cursorx = buffer.currentLineWidth() - 1
   buffer.xend = buffer.cursorx
+  buffer.fromx = max(buffer.cursorx - buffer.width + 1, 0)
+  buffer.redraw = buffer.fromx > 0
 
 iterator revnodes*(buffer: Buffer): Node {.inline.} =
   var i = buffer.nodes.len - 1
@@ -300,207 +252,174 @@ iterator revnodes*(buffer: Buffer): Node {.inline.} =
     yield buffer.nodes[i]
     dec i
 
-proc cursorNextWord*(buffer: Buffer): bool =
-  let llen = buffer.currentLineLength() - 1
-  var r: Rune
+proc cursorNextWord*(buffer: Buffer) =
+  let llen = buffer.currentLineWidth() - 1
   var x = buffer.cursorx
   var y = buffer.cursory
   if llen >= 0:
-    fastRuneAt(buffer.rawtext[y], x, r, false)
 
-    while r != Rune(' '):
+    while buffer.lines[y][x].rune != Rune(' '):
       if x >= llen:
         break
       inc x
-      fastRuneAt(buffer.rawtext[y], x, r, false)
 
-    while r == Rune(' '):
+    while buffer.lines[y][x].rune == Rune(' '):
       if x >= llen:
         break
       inc x
-      fastRuneAt(buffer.rawtext[y], x, r, false)
 
   if x >= llen:
     if y < buffer.lastLine():
       inc y
       x = 0
-  return buffer.cursorTo(x, y)
+  buffer.cursorTo(x, y)
 
-proc cursorPrevWord*(buffer: Buffer): bool =
-  var r: Rune
+proc cursorPrevWord*(buffer: Buffer) =
   var x = buffer.cursorx
   var y = buffer.cursory
-  if buffer.currentLineLength() > 0:
-    fastRuneAt(buffer.rawtext[y], x, r, false)
-
-    while r != Rune(' '):
+  if buffer.currentLineWidth() > 0:
+    while buffer.lines[y][x].rune != Rune(' '):
       if x == 0:
         break
       dec x
-      fastRuneAt(buffer.rawtext[y], x, r, false)
 
-    while r == Rune(' '):
+    while buffer.lines[y][x].rune == Rune(' '):
       if x == 0:
         break
       dec x
-      fastRuneAt(buffer.rawtext[y], x, r, false)
 
   if x == 0:
     if y > 0:
       dec y
-      x = buffer.rawtext[y].runeLen() - 1
-  return buffer.cursorTo(x, y)
+      x = buffer.lines[y].len - 1
+  buffer.cursorTo(x, y)
 
-iterator revclickables*(buffer: Buffer): Node {.inline.} =
-  var i = buffer.clickables.len - 1
-  while i >= 0:
-    yield buffer.clickables[i]
-    dec i
+proc cursorNextLink*(buffer: Buffer) =
+  #TODO
+  return
 
-proc cursorNextLink*(buffer: Buffer): bool =
-  for node in buffer.clickables:
-    if node.y > buffer.cursory or (node.y == buffer.cursorY and node.x > buffer.cursorx):
-      result = buffer.cursorTo(node.x, node.y)
-      if buffer.cursorx < buffer.currentLineLength():
-        var r: Rune
-        fastRuneAt(buffer.rawtext[buffer.cursory], buffer.cursorx, r, false)
-        if r == Rune(' '):
-          return result or buffer.cursorNextWord()
-      return result
-  return false
+proc cursorPrevLink*(buffer: Buffer) =
+  #TODO
+  return
 
-proc cursorPrevLink*(buffer: Buffer): bool =
-  for node in buffer.revclickables:
-    if node.y < buffer.cursorY or (node.y == buffer.cursorY and node.x < buffer.cursorx):
-      return buffer.cursorTo(node.x, node.y)
-  return false
-
-proc cursorFirstLine*(buffer: Buffer): bool =
+proc cursorFirstLine*(buffer: Buffer) =
   if buffer.fromy > 0:
     buffer.fromy = 0
-    result = true
+    buffer.redraw = true
   else:
-    result = false
+    buffer.redraw = false
 
-  buffer.cursorY = 0
-  buffer.cursorLineBegin()
+  buffer.cursory = 0
+  buffer.restoreCursorX()
 
-proc cursorLastLine*(buffer: Buffer): bool =
+proc cursorLastLine*(buffer: Buffer) =
   if buffer.fromy < buffer.lastLine() - buffer.height:
     buffer.fromy = buffer.lastLine() - (buffer.height - 2)
-    result = true
+    buffer.redraw = true
   else:
-    result = false
+    buffer.redraw = false
   buffer.cursory = buffer.lastLine()
-  buffer.cursorLineBegin()
+  buffer.restoreCursorX()
 
-proc cursorTop*(buffer: Buffer): bool =
-  buffer.cursorY = buffer.fromy
-  return false
+proc cursorTop*(buffer: Buffer) =
+  buffer.cursory = buffer.fromy
+  buffer.restoreCursorX()
 
-proc cursorMiddle*(buffer: Buffer): bool =
-  buffer.cursorY = min(buffer.fromy + (buffer.height - 2) div 2, buffer.lastLine())
-  return false
+proc cursorMiddle*(buffer: Buffer) =
+  buffer.cursory = min(buffer.fromy + (buffer.height - 2) div 2, buffer.lastLine())
+  buffer.restoreCursorX()
 
-proc cursorBottom*(buffer: Buffer): bool =
-  buffer.cursorY = min(buffer.fromy + buffer.height - 2, buffer.lastLine())
-  return false
+proc cursorBottom*(buffer: Buffer) =
+  buffer.cursory = min(buffer.fromy + buffer.height - 2, buffer.lastLine())
+  buffer.restoreCursorX()
 
-proc centerLine*(buffer: Buffer): bool =
+proc centerLine*(buffer: Buffer) =
   let ny = max(min(buffer.cursory - buffer.height div 2, buffer.lastLine() - buffer.height + 2), 0)
   if ny != buffer.fromy:
     buffer.fromy = ny
-    return true
-  return false
+    buffer.redraw = true
 
-proc halfPageUp*(buffer: Buffer): bool =
-  buffer.cursory = max(buffer.cursorY - buffer.height div 2 + 1, 0)
+proc halfPageUp*(buffer: Buffer) =
+  buffer.cursory = max(buffer.cursory - buffer.height div 2 + 1, 0)
   let nfy = max(0, buffer.fromy - buffer.height div 2 + 1)
   if nfy != buffer.fromy:
     buffer.fromy = nfy
-    return true
-  return false
+    buffer.redraw = true
+  buffer.restoreCursorX()
 
-proc halfPageDown*(buffer: Buffer): bool =
-  buffer.cursory = min(buffer.cursorY + buffer.height div 2 - 1, buffer.lastLine())
+proc halfPageDown*(buffer: Buffer) =
+  buffer.cursory = min(buffer.cursory + buffer.height div 2 - 1, buffer.lastLine())
   let nfy = min(max(buffer.lastLine() - buffer.height + 2, 0), buffer.fromy + buffer.height div 2 - 1)
   if nfy != buffer.fromy:
     buffer.fromy = nfy
-    return true
-  return false
+    buffer.redraw = true
+  buffer.restoreCursorX()
 
-proc pageUp*(buffer: Buffer): bool =
-  buffer.cursorY = max(buffer.cursorY - buffer.height + 1, 1)
+proc pageUp*(buffer: Buffer) =
+  buffer.cursory = max(buffer.cursory - buffer.height + 1, 1)
   buffer.fromy = max(0, buffer.fromy - buffer.height)
-  return true
+  buffer.redraw = true
+  buffer.restoreCursorX()
 
-proc pageDown*(buffer: Buffer): bool =
-  buffer.cursorY = min(buffer.cursorY + buffer.height div 2 - 1, buffer.lastLine())
+proc pageDown*(buffer: Buffer) =
+  buffer.cursory = min(buffer.cursory + buffer.height div 2 - 1, buffer.lastLine())
   buffer.fromy = min(max(buffer.lastLine() - buffer.height + 1, 0), buffer.fromy + buffer.height div 2)
-  return true
+  buffer.redraw = true
+  buffer.restoreCursorX()
 
-proc scrollDown*(buffer: Buffer): bool =
+proc pageLeft*(buffer: Buffer) =
+  buffer.cursorx = max(buffer.cursorx - buffer.width, 0)
+  buffer.fromx = max(0, buffer.fromx - buffer.width)
+  buffer.redraw = true
+
+proc pageRight*(buffer: Buffer) =
+  buffer.cursorx = min(buffer.fromx, buffer.currentLineWidth())
+  buffer.fromx = min(max(buffer.maxScreenWidth() - buffer.width, 0), buffer.fromx + buffer.width)
+  buffer.redraw = true
+
+proc scrollDown*(buffer: Buffer) =
   if buffer.fromy + buffer.height - 1 <= buffer.lastLine():
     inc buffer.fromy
-    if buffer.fromy >= buffer.cursory:
-      discard buffer.cursorDown()
-    return true
-  discard buffer.cursorDown()
-  return false
+    if buffer.fromy > buffer.cursory:
+      buffer.cursorDown()
+    buffer.redraw = true
+  else:
+    buffer.cursorDown()
 
-proc scrollUp*(buffer: Buffer): bool =
+proc scrollUp*(buffer: Buffer) =
   if buffer.fromy > 0:
     dec buffer.fromy
-    if buffer.fromy + buffer.height - 1 <= buffer.cursorY:
-      discard buffer.cursorUp()
-    return true
-  discard buffer.cursorUp()
-  return false
+    if buffer.fromy + buffer.height - 1 <= buffer.cursory:
+      buffer.cursorUp()
+    buffer.redraw = true
+  else:
+    buffer.cursorUp()
 
-proc checkLinkSelection*(buffer: Buffer): bool =
-  if buffer.selectedlink != nil:
-    if buffer.cursorOnNode(buffer.selectedlink):
-      return false
-    else:
-      let anchor = buffer.selectedlink.ancestor(TAG_A)
-      buffer.selectedlink.fmttext = buffer.selectedlink.getFmtText()
-      buffer.selectedlink = nil
-      buffer.hovertext = ""
-      var stack: seq[Node]
-      stack.add(anchor)
-      while stack.len > 0:
-        let elem = stack.pop()
-        elem.fmttext = elem.getFmtText()
-        for child in elem.childNodes:
-          stack.add(child)
-  for node in buffer.links:
-    if buffer.cursorOnNode(node):
-      buffer.selectedlink = node
-      let anchor = node.ancestor(TAG_A)
-      assert(anchor != nil)
-      buffer.hovertext = HtmlAnchorElement(anchor).href
-      var stack: seq[Node]
-      stack.add(anchor)
-      while stack.len > 0:
-        let elem = stack.pop()
-        elem.fmttext = elem.getFmtText()
-        for child in elem.childNodes:
-          stack.add(child)
-      return true
-  return false
+proc scrollRight*(buffer: Buffer) =
+  if buffer.fromx + buffer.width < buffer.maxScreenWidth():
+    inc buffer.fromx
+    if buffer.fromx >= buffer.cursorx:
+      buffer.cursorRight()
+    buffer.redraw = true
+
+proc scrollLeft*(buffer: Buffer) =
+  if buffer.fromx > 0:
+    dec buffer.fromx
+    if buffer.fromx + buffer.height <= buffer.cursorx:
+      buffer.cursorLeft()
+    buffer.redraw = true
 
 proc gotoAnchor*(buffer: Buffer): bool =
-  if buffer.document.location.anchor != "":
-    let node =  buffer.getElementById(buffer.document.location.anchor)
+  if buffer.location.anchor != "":
+    let node =  buffer.getElementById(buffer.location.anchor)
     if node != nil:
-      return buffer.scrollTo(max(node.y - buffer.height div 2, 0))
-  return false
+      buffer.scrollTo(max(node.y - buffer.height div 2, 0))
 
 proc setLocation*(buffer: Buffer, uri: Uri) =
-  buffer.document.location = uri
+  buffer.location = uri
 
 proc gotoLocation*(buffer: Buffer, uri: Uri) =
-  buffer.document.location = buffer.document.location.combine(uri)
+  buffer.location = buffer.location.combine(uri)
 
 proc refreshTermAttrs*(buffer: Buffer): bool =
   let newAttrs = getTermAttributes()
@@ -510,3 +429,77 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
     buffer.height = newAttrs.termHeight
     return true
   return false
+
+proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
+  while buffer.lines.len <= y:
+    buffer.lines.add(newSeq[BufferCell]())
+
+  while buffer.lines[y].len < x + text.len:
+    buffer.lines[y].add(BufferCell())
+  
+  var i = 0
+  while i < text.len:
+    buffer.lines[y][i].rune = text[i]
+    inc i
+
+proc setDisplayText(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
+  let pos = y * buffer.width + x
+  var i = 0
+  var n = 0
+  while i < text.len:
+    if text[i].width() == 0:
+      buffer.display[pos + i - n].runes.b = text[i]
+      inc n
+    else:
+      buffer.display[pos + i - n].runes.a = text[i]
+    inc i
+
+proc reshape*(buffer: Buffer) =
+  buffer.display = newSeq[DisplayCell](buffer.width * buffer.height)
+
+proc refreshDisplay*(buffer: Buffer) =
+  var y = 0
+  for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine()]:
+    var w = 0
+    var i = 0
+    var n = 0
+    while w < buffer.fromx and i < line.len:
+      w += line[i].rune.width()
+      inc i
+
+    let dls = y * buffer.width
+    var j = 0
+    while w < buffer.fromx + buffer.width and i < line.len:
+      w += line[i].rune.width()
+      if line[i].rune.width() == 0:
+        buffer.display[dls + j].runes.b = line[i].rune
+      else:
+        buffer.display[dls + j].runes.a = line[i].rune
+      inc i
+      inc j
+
+    while j < buffer.width:
+      buffer.display[dls + j].runes.a = Rune(0)
+      buffer.display[dls + j].runes.b = Rune(0)
+      inc j
+
+    inc y
+
+proc renderPlainText*(buffer: Buffer, text: string) =
+  var i = 0
+  var y = 0
+  var line = ""
+  while i < text.len:
+    if text[i] == '\n':
+      buffer.setText(0, y, line.toRunes())
+      inc y
+      line = ""
+    elif text[i] == '\t':
+      line &= ' '.repeat(8)
+    else:
+      line &= text[i]
+    inc i
+  if line.len > 0:
+    buffer.setText(0, y, line.toRunes())
+
+  buffer.refreshDisplay()

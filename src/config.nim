@@ -15,9 +15,9 @@ type
     ACTION_CURSOR_NEXT_WORD, ACTION_CURSOR_PREV_WORD,
     ACTION_CURSOR_NEXT_NODE, ACTION_CURSOR_PREV_NODE,
     ACTION_CURSOR_NEXT_LINK, ACTION_CURSOR_PREV_LINK,
-    ACTION_PAGE_DOWN, ACTION_PAGE_UP,
+    ACTION_PAGE_DOWN, ACTION_PAGE_UP, ACTION_PAGE_LEFT, ACTION_PAGE_RIGHT,
     ACTION_HALF_PAGE_DOWN, ACTION_HALF_PAGE_UP,
-    ACTION_SCROLL_DOWN, ACTION_SCROLL_UP,
+    ACTION_SCROLL_DOWN, ACTION_SCROLL_UP, ACTION_SCROLL_LEFT, ACTION_SCROLL_RIGHT,
     ACTION_CLICK,
     ACTION_CHANGE_LOCATION,
     ACTION_RELOAD, ACTION_RESHAPE, ACTION_REDRAW,
@@ -62,7 +62,7 @@ func getRealKey(key: string): string =
     elif c == '-' and meta == 1:
       inc meta
     elif meta == 1:
-      realk &= 'C' & c
+      realk &= 'M' & c
       meta = 0
     elif meta == 2:
       realk &= '\e'
@@ -77,6 +77,8 @@ func getRealKey(key: string): string =
       realk &= c
   if control == 1:
     realk &= 'C'
+  if meta == 1:
+    realk &= 'M'
   return realk
 
 func constructActionTable*(origTable: ActionMap): ActionMap =

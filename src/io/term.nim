@@ -9,3 +9,6 @@ proc getTermAttributes*(): TermAttributes =
   let attrs = TermAttributes(termWidth: terminalWidth(),
                              termHeight: terminalHeight())
   return attrs
+
+proc termGoto*(x: int, y: int) =
+  setCursorPos(stdout, x, y)

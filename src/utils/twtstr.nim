@@ -211,8 +211,7 @@ iterator split*(s: seq[Rune], sep: Rune): seq[Rune] =
 #
 #   - The null character (U+0000) has a column width of 0.
 #
-#   - Other C0/C1 control characters and DEL will lead to a return value of 2
-#     (changed from 0 b/c we normally display control chars like ^H - TODO?).
+#   - Other C0/C1 control characters and DEL will lead to a return value of 0
 #
 #   - Non-spacing and enclosing combining characters (general category code Mn
 #     or Me in the Unicode database) have a column width of 0.
@@ -305,7 +304,7 @@ func is_dwidth(r: Rune): bool =
 func makewidthtable(): array[0..0x10FFFF, byte] =
   for r in low(char)..high(char):
     if r.isControlChar():
-      result[int(r)] = 2
+      result[int(r)] = 2 #TODO this should be 0
     else:
       result[int(r)] = 1
 
@@ -545,6 +544,3 @@ proc fullwidth*(s: seq[Rune]): seq[Rune] =
 
 proc fullwidth*(s: string): string =
   return $fullwidth(s.toRunes())
-
-echo (halfwidth("とうギょう"))
-echo "東京"

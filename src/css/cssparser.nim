@@ -9,9 +9,8 @@ import options
 import sequtils
 import sugar
 
-import ../io/twtio
-
 import ../utils/twtstr
+import ../utils/eprint
 
 import ../types/enums
 

@@ -3,14 +3,14 @@ import uri
 import os
 import streams
 
-import utils/termattrs
+import utils/eprint
 
 import html/dom
 import html/htmlparser
 
 import io/display
-import io/twtio
 import io/buffer
+import io/term
 
 import config
 
@@ -43,19 +43,21 @@ proc main*() =
     eprint "Invalid parameters. Usage:\ntwt <url>"
     quit(1)
   if not readConfig("res/config"):
-    eprint "Failed to read keymap, fallback to default"
+    #eprint "Failed to read keymap, fallback to default"
+    discard
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  buffer.document = parseHtml(getPageUri(uri))
-  buffer.document.applyDefaultStylesheet()
-  buffer.setLocation(uri)
-  buffer.renderHtml()
+  buffer.renderPlainText(getPageUri(uri).readAll())
+  #buffer.document = parseHtml(getPageUri(uri))
+  #buffer.setLocation(uri)
+  #buffer.document.applyDefaultStylesheet()
+  #buffer.renderHtml()
   var lastUri = uri
   while displayPage(attrs, buffer):
     statusMsg("Loading...", buffer.height)
-    var newUri = buffer.document.location
+    var newUri = buffer.location
     lastUri.anchor = ""
     newUri.anchor = ""
     if $lastUri != $newUri:
@@ -63,7 +65,7 @@ proc main*() =
       if uri.scheme == "" and uri.path == "" and uri.anchor != "":
         discard
       else:
-        buffer.document = parseHtml(getPageUri(buffer.document.location))
+        buffer.document = parseHtml(getPageUri(buffer.location))
       buffer.renderHtml()
     lastUri = newUri
 main()

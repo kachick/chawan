@@ -2,9 +2,9 @@ import unicode
 import terminal
 import tables
 
-import ../io/twtio
 
 import ../utils/twtstr
+import ../utils/eprint
 
 import ../types/enums
 

@@ -6,7 +6,6 @@ import unicode
 
 import ../types/enums
 
-import ../utils/termattrs
 import ../utils/twtstr
 
 import ../html/dom
@@ -15,6 +14,7 @@ import ../config
 
 import ./buffer
 import ./twtio
+import ./term
 
 proc clearStatusMsg*(at: int) =
   setCursorPos(0, at)
@@ -243,7 +243,6 @@ proc renderHtml*(buffer: Buffer) =
   var state = newRenderState()
   while stack.len > 0:
     let currElem = stack.pop()
-    buffer.addNode(currElem)
     buffer.renderNode(currElem, state)
     var i = currElem.childNodes.len - 1
     while i >= 0:
@@ -267,20 +266,21 @@ proc statusMsgForBuffer(buffer: Buffer) =
   statusMsg(msg.maxString(buffer.width), buffer.height)
 
 proc cursorBufferPos(buffer: Buffer) =
-  var x = buffer.cursorx
-  var y = buffer.cursory - 1 - buffer.fromY
-  termGoto(x, y + 1)
+  var x = max(buffer.cursorx - buffer.fromx, 0)
+  var y = buffer.cursory - buffer.fromy
+  termGoto(x, y)
 
 proc displayBuffer(buffer: Buffer) =
   eraseScreen()
   termGoto(0, 0)
 
-  print(buffer.visibleText().ansiReset())
+  print(buffer.generateFullOutput().ansiReset())
 
 proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
   var s = ""
   var feedNext = false
   while true:
+    buffer.redraw = false
     stdout.showCursor()
     buffer.cursorBufferPos()
     if not feedNext:
@@ -296,46 +296,38 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     case action
     of ACTION_QUIT:
       eraseScreen()
+      setCursorPos(0, 0)
       return false
-    of ACTION_CURSOR_LEFT: redraw = buffer.cursorLeft()
-    of ACTION_CURSOR_DOWN: redraw = buffer.cursorDown()
-    of ACTION_CURSOR_UP: redraw = buffer.cursorUp()
-    of ACTION_CURSOR_RIGHT: redraw = buffer.cursorRight()
+    of ACTION_CURSOR_LEFT: buffer.cursorLeft()
+    of ACTION_CURSOR_DOWN: buffer.cursorDown()
+    of ACTION_CURSOR_UP: buffer.cursorUp()
+    of ACTION_CURSOR_RIGHT: buffer.cursorRight()
     of ACTION_CURSOR_LINEBEGIN: buffer.cursorLineBegin()
     of ACTION_CURSOR_LINEEND: buffer.cursorLineEnd()
-    of ACTION_CURSOR_NEXT_WORD: redraw = buffer.cursorNextWord()
-    of ACTION_CURSOR_PREV_WORD: redraw = buffer.cursorPrevWord()
-    of ACTION_CURSOR_NEXT_LINK: redraw = buffer.cursorNextLink()
-    of ACTION_CURSOR_PREV_LINK: redraw = buffer.cursorPrevLink()
-    of ACTION_PAGE_DOWN: redraw = buffer.pageDown()
-    of ACTION_PAGE_UP: redraw = buffer.pageUp()
-    of ACTION_HALF_PAGE_DOWN: redraw = buffer.halfPageDown()
-    of ACTION_HALF_PAGE_UP: redraw = buffer.halfPageUp()
-    of ACTION_CURSOR_FIRST_LINE: redraw = buffer.cursorFirstLine()
-    of ACTION_CURSOR_LAST_LINE: redraw = buffer.cursorLastLine()
-    of ACTION_CURSOR_TOP: redraw = buffer.cursorTop()
-    of ACTION_CURSOR_MIDDLE: redraw = buffer.cursorMiddle()
-    of ACTION_CURSOR_BOTTOM: redraw = buffer.cursorBottom()
-    of ACTION_CENTER_LINE: redraw = buffer.centerLine()
-    of ACTION_SCROLL_DOWN: redraw = buffer.scrollDown()
-    of ACTION_SCROLL_UP: redraw = buffer.scrollUp()
+    of ACTION_CURSOR_NEXT_WORD: buffer.cursorNextWord()
+    of ACTION_CURSOR_PREV_WORD: buffer.cursorPrevWord()
+    of ACTION_CURSOR_NEXT_LINK: buffer.cursorNextLink()
+    of ACTION_CURSOR_PREV_LINK: buffer.cursorPrevLink()
+    of ACTION_PAGE_DOWN: buffer.pageDown()
+    of ACTION_PAGE_UP: buffer.pageUp()
+    of ACTION_PAGE_RIGHT: buffer.pageRight()
+    of ACTION_PAGE_LEFT: buffer.pageLeft()
+    of ACTION_HALF_PAGE_DOWN: buffer.halfPageDown()
+    of ACTION_HALF_PAGE_UP: buffer.halfPageUp()
+    of ACTION_CURSOR_FIRST_LINE: buffer.cursorFirstLine()
+    of ACTION_CURSOR_LAST_LINE: buffer.cursorLastLine()
+    of ACTION_CURSOR_TOP: buffer.cursorTop()
+    of ACTION_CURSOR_MIDDLE: buffer.cursorMiddle()
+    of ACTION_CURSOR_BOTTOM: buffer.cursorBottom()
+    of ACTION_CENTER_LINE: buffer.centerLine()
+    of ACTION_SCROLL_DOWN: buffer.scrollDown()
+    of ACTION_SCROLL_UP: buffer.scrollUp()
+    of ACTION_SCROLL_LEFT: buffer.scrollLeft()
+    of ACTION_SCROLL_RIGHT: buffer.scrollRight()
     of ACTION_CLICK:
-      let selectedElem = buffer.findSelectedElement()
-      if selectedElem.isSome:
-        case selectedElem.get().tagType
-        of TAG_INPUT:
-          clearStatusMsg(buffer.height)
-          let status = readLine("TEXT: ", HtmlInputElement(selectedElem.get()).value, buffer.width)
-          if status:
-            reshape = true
-            redraw = true
-        else: discard
-        if selectedElem.get().getStyle().islink:
-          let anchor = HtmlAnchorElement(buffer.selectedlink.ancestor(TAG_A)).href
-          buffer.gotoLocation(parseUri(anchor))
-          return true
+      discard
     of ACTION_CHANGE_LOCATION:
-      var url = $buffer.document.location
+      var url = $buffer.location
 
       clearStatusMsg(buffer.height)
       let status = readLine("URL: ", url, buffer.width)
@@ -343,7 +335,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineLength(), buffer.width)
+      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth(), buffer.width)
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true
@@ -355,40 +347,17 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     else: discard
     stdout.hideCursor()
 
-    let prevlink = buffer.selectedlink
-    let sel = buffer.checkLinkSelection()
-    if sel:
-      buffer.clearText()
-      buffer.drawHtml()
-      termGoto(0, buffer.selectedlink.y - buffer.fromy)
-      stdout.eraseLine()
-      for i in buffer.selectedlink.y..buffer.selectedlink.ey:
-        if i < buffer.fromy + buffer.height - 1:
-          let line = buffer.fmttext[i]
-          print(line)
-          print('\n')
-      print("".ansiReset())
-    
-    if prevlink != nil:
-      buffer.clearText()
-      buffer.drawHtml()
-      termGoto(0, prevlink.y - buffer.fromy)
-      for i in prevlink.y..prevlink.ey:
-        if i < buffer.fromy + buffer.height - 1:
-          let line = buffer.fmttext[i]
-          stdout.eraseLine()
-          print(line)
-          print('\n')
-      print("".ansiReset())
-
     if buffer.refreshTermAttrs():
       redraw = true
       reshape = true
 
+    if buffer.redraw:
+      redraw = true
+
     if reshape:
-      buffer.clearText()
-      buffer.drawHtml()
+      buffer.reshape()
     if redraw:
+      buffer.refreshDisplay()
       buffer.displayBuffer()
 
     if not nostatus:

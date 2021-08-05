@@ -1,6 +1,5 @@
 # Radix tree implementation. It isn't that much faster than a hash table,
-# however it *is* faster. Use StaticRadixTree for saving trees in the
-# executable and RadixNode otherwise (which needs less bounds checking).
+# however it *is* faster.
 
 import json
 import tables
