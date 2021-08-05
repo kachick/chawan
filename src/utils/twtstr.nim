@@ -325,12 +325,10 @@ func makewidthtable(): array[0..0x10FFFF, byte] =
     else:
       result[ucs] = 1
 
-when defined(full):
-  # store lookup table in executable
-  const width_table = makewidthtable()
-else:
-  # compute lookup table on startup
-  let width_table = makewidthtable()
+# compute lookup table on startup
+# TODO: we could have an option to store it in the executable but honestly I
+# don't see the need to
+let width_table = makewidthtable()
 
 {.push boundChecks:off.}
 func width*(r: Rune): int =

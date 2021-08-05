@@ -89,38 +89,21 @@ proc getescapecmd(buf: string, at: var int): string =
   elif not isAlphaAscii(buf[i]):
     return ""
 
-  when defined(full):
-    var n = 0
-    var s = ""
-    while true:
-      s &= buf[i]
-      if not entityMap.hasPrefix(s, n):
-        break
-      let pn = n
-      n = entityMap{s, n}
-      if n != pn:
-        s = ""
-      inc i
+  var n = entityMap
+  var s = ""
+  while true:
+    s &= buf[i]
+    if not entityMap.hasPrefix(s, n):
+      break
+    let pn = n
+    n = n{s}
+    if n != pn:
+      s = ""
+    inc i
 
-    if entityMap.nodes[n].leaf:
-      at = i
-      return entityMap.nodes[n].value
-  else:
-    var n = entityMap
-    var s = ""
-    while true:
-      s &= buf[i]
-      if not entityMap.hasPrefix(s, n):
-        break
-      let pn = n
-      n = n{s}
-      if n != pn:
-        s = ""
-      inc i
-
-    if n.leaf:
-      at = i
-      return n.value
+  if n.leaf:
+    at = i
+    return n.value
 
   return ""
 

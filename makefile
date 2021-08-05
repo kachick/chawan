@@ -3,12 +3,10 @@ FLAGS = -d:ssl -o:twt
 FILES = src/main.nim
 
 debug:
-	$(NIMC) $(FLAGS) -d:small $(FILES)
-small:
-	$(NIMC) $(FLAGS) -d:danger $(FILES)
+	$(NIMC) $(FLAGS) $(FILES)
 release:
-	$(NIMC) $(FLAGS) -d:release -d:full $(FILES)
+	$(NIMC) $(FLAGS) -d:release $(FILES)
 danger:
-	$(NIMC) $(FLAGS) -d:danger -d:full $(FILES)
+	$(NIMC) $(FLAGS) -d:danger $(FILES)
 clean:
 	rm ./twt
