@@ -28,8 +28,9 @@ type
     in_style: bool
     in_noscript: bool
     in_body: bool
-    parentNode: Node
+    elementNode: Element
     textNode: Text
+    commentNode: Comment
 
 func inputSize*(str: string): int =
   if str.len == 0:
@@ -88,23 +89,7 @@ proc getescapecmd(buf: string, at: var int): string =
   elif not isAlphaAscii(buf[i]):
     return ""
 
-  when defined(small):
-    var n = entityMap
-    var s = ""
-    while true:
-      s &= buf[i]
-      if not entityMap.hasPrefix(s, n):
-        break
-      let pn = n
-      n = n{s}
-      if n != pn:
-        s = ""
-      inc i
-
-    if n.leaf:
-      at = i
-      return n.value
-  else:
+  when defined(full):
     var n = 0
     var s = ""
     while true:
@@ -120,6 +105,22 @@ proc getescapecmd(buf: string, at: var int): string =
     if entityMap.nodes[n].leaf:
       at = i
       return entityMap.nodes[n].value
+  else:
+    var n = entityMap
+    var s = ""
+    while true:
+      s &= buf[i]
+      if not entityMap.hasPrefix(s, n):
+        break
+      let pn = n
+      n = n{s}
+      if n != pn:
+        s = ""
+      inc i
+
+    if n.leaf:
+      at = i
+      return n.value
 
   return ""
 
@@ -163,12 +164,13 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
         let startc = buf[at]
         inc at
         while at < buf.len and buf[at] != startc:
-          var r: Rune
-          fastRuneAt(buf, at, r)
-          if r == Rune('&'):
+          if buf[at + 1] == '&':
+            inc at
             value &= getescapecmd(buf, at)
           else:
-            value &= $r
+            var r: Rune
+            fastRuneAt(buf, at, r)
+            value &= r
         if at < buf.len:
           inc at
       elif at < buf.len:
@@ -223,23 +225,22 @@ proc insertNode(parent: Node, node: Node) =
 proc processDocumentBody(state: var HTMLParseState) =
   if not state.in_body:
     state.in_body = true
-    if state.parentNode.ownerDocument != nil:
-      state.parentNode = state.parentNode.ownerDocument.body
+    if state.elementNode.ownerDocument != nil:
+      state.elementNode = state.elementNode.ownerDocument.body
 
-proc processDocumentStartNode(state: var HTMLParseState, newNode: Node) =
-  if state.parentNode.nodeType == ELEMENT_NODE and ((Element)state.parentNode).tagType == TAG_HTML:
+proc processDocumentAddNode(state: var HTMLParseState, newNode: Node) =
+  if state.elementNode.nodeType == ELEMENT_NODE and ((Element)state.elementNode).tagType == TAG_HTML:
     if state.in_body:
-      state.parentNode = state.parentNode.ownerDocument.body
+      state.elementNode = state.elementNode.ownerDocument.body
     else:
-      state.parentNode = state.parentNode.ownerDocument.head
+      state.elementNode = state.elementNode.ownerDocument.head
 
-  insertNode(state.parentNode, newNode)
-  state.parentNode = newNode
+  insertNode(state.elementNode, newNode)
 
 proc processDocumentEndNode(state: var HTMLParseState) =
-  if state.parentNode == nil or state.parentNode.parentNode == nil:
+  if state.elementNode == nil or state.elementNode.nodeType == DOCUMENT_NODE:
     return
-  state.parentNode = state.parentNode.parentNode
+  state.elementNode = state.elementNode.parentElement
 
 proc processDocumentText(state: var HTMLParseState) =
   if state.textNode != nil and state.textNode.data.len > 0:
@@ -247,8 +248,7 @@ proc processDocumentText(state: var HTMLParseState) =
   if state.textNode == nil:
     state.textNode = newText()
 
-    processDocumentStartNode(state, state.textNode)
-    processDocumentEndNode(state)
+    processDocumentAddNode(state, state.textNode)
 
 proc processDocumentStartElement(state: var HTMLParseState, element: Element, tag: DOMParsedTag) =
   var add = true
@@ -288,10 +288,10 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     processDocumentBody(state)
   else: discard
 
-  if state.parentNode.nodeType == ELEMENT_NODE:
+  if state.elementNode.nodeType == ELEMENT_NODE:
     case element.tagType
-    of TAG_LI, TAG_P:
-      if Element(state.parentNode).tagType == element.tagType:
+    of SelfClosingTagTypes:
+      if Element(state.elementNode).tagType == element.tagType:
         processDocumentEndNode(state)
     of TAG_H1:
       HTMLHeadingElement(element).rank = 1
@@ -307,8 +307,12 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
       HTMLHeadingElement(element).rank = 6
     else: discard
 
+    if Element(state.elementNode).tagType == TAG_P and element.tagType in PClosingTagTypes:
+      processDocumentEndNode(state)
+
   if add:
-    processDocumentStartNode(state, element)
+    processDocumentAddNode(state, element)
+    state.elementNode = element
 
   if element.tagType in VoidTagTypes:
     processDocumentEndNode(state)
@@ -321,8 +325,8 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
     return
   if tag.tagid == TAG_BODY:
     return
-  if state.parentNode.nodeType == ELEMENT_NODE:
-    if Element(state.parentNode).tagType in {TAG_LI, TAG_P}:
+  if state.elementNode.nodeType == ELEMENT_NODE and tag.tagid != Element(state.elementNode).tagType:
+    if Element(state.elementNode).tagType in SelfClosingTagTypes:
       processDocumentEndNode(state)
   
   processDocumentEndNode(state)
@@ -364,13 +368,13 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
       inc at
       let p = getescapecmd(buf, at)
       if state.in_comment:
-        CharacterData(state.parentNode).data &= p
+        state.commentNode.data &= p
       else:
         processDocumentText(state)
         state.textNode.data &= p
     of '<':
       if state.in_comment:
-        CharacterData(state.parentNode).data &= buf[at]
+        state.commentNode.data &= buf[at]
         inc at
       else:
         var p = at
@@ -383,7 +387,9 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
               inc p
               at = p
               state.in_comment = true
-              processDocumentStartNode(state, newComment())
+              let comment = newComment()
+              state.commentNode = comment
+              processDocumentAddNode(state, comment)
               if state.textNode != nil:
                 state.textNode.rawtext = state.textNode.getRawText()
                 state.textNode = nil
@@ -420,31 +426,29 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
         if p < max and buf[p] == '>':
           inc p
           at = p
+          state.commentNode = nil
           state.in_comment = false
-          processDocumentEndNode(state)
 
       if state.in_comment:
-        CharacterData(state.parentNode).data &= buf[at]
+        state.commentNode.data &= buf[at]
         inc at
     else:
       var r: Rune
       fastRuneAt(buf, at, r)
       if state.in_comment:
-        CharacterData(state.parentNode).data &= $r
+        state.commentNode.data &= $r
       else:
         processDocumentText(state)
         state.textNode.data &= $r
 
 proc parseHtml*(inputStream: Stream): Document =
   let document = newDocument()
-  let html = newHtmlElement(TAG_HTML)
-  insertNode(document, html)
-  insertNode(html, document.head)
-  insertNode(html, document.body)
-  #eprint document.body.firstElementChild != nil
+  insertNode(document, document.root)
+  insertNode(document.root, document.head)
+  insertNode(document.root, document.body)
 
   var state = HTMLParseState()
-  state.parentNode = html
+  state.elementNode = document.root
 
   var till_when = false
 

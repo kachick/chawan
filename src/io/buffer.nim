@@ -5,6 +5,7 @@ import strutils
 import unicode
 
 import ../types/enums
+import ../types/color
 
 import ../utils/termattrs
 import ../utils/twtstr
@@ -14,10 +15,19 @@ import ../html/dom
 import ./twtio
 
 type
+  BufferCell = object
+    rune*: Rune
+    fgcolor*: CellColor
+    bgcolor*: CellColor
+    italic: bool
+    bold: bool
+    underline: bool
+
   Buffer* = ref BufferObj
   BufferObj = object
-    text*: seq[Rune]
     title*: string
+    lines*: seq[seq[BufferCell]]
+    display*: seq[BufferCell]
     hovertext*: string
     width*: int
     height*: int
@@ -35,15 +45,54 @@ type
     printwrite*: bool
     attrs*: TermAttributes
     document*: Document
+    displaycontrols*: bool
 
     #TODO remove these
     fmttext*: seq[string]
     rawtext*: seq[string]
 
 proc newBuffer*(attrs: TermAttributes): Buffer =
-  return Buffer(width: attrs.termWidth,
-                height: attrs.termHeight,
-                attrs: attrs)
+  new(result)
+  result.width = attrs.termWidth
+  result.height = attrs.termHeight
+  result.attrs = attrs
+
+  let cells = result.width * result.height
+  result.display = newSeq[BufferCell](cells)
+
+proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
+  discard
+
+proc setDisplayText(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
+  let pos = y * buffer.width + x
+  var i = 0
+  while i < text.len:
+    buffer.display[pos + i].rune = text[i]
+
+proc refreshDisplay*(buffer: Buffer) =
+  var y = 0
+  for line in buffer.lines[buffer.fromy..buffer.fromy+buffer.height]:
+    var w = 0
+    var i = 0
+    while w < buffer.fromx and i < line.len:
+      w += line[i].rune.width()
+      inc i
+
+    let dls = y * buffer.width
+    var j = 0
+    while w < buffer.fromx + buffer.width and i < line.len:
+      w += line[i].rune.width()
+      buffer.display[dls + j] = line[i]
+      inc i
+
+    inc y
+
+func generateFullOutput*(buffer: Buffer): string =
+  var x = 0
+  var y = 0
+  for cell in buffer.display:
+    
+    discard
 
 #TODO go through these and remove ones that don't make sense in the new model
 func lastLine*(buffer: Buffer): int =

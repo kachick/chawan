@@ -66,6 +66,7 @@ type
     all_elements*: seq[Element]
     head*: HTMLElement
     body*: HTMLElement
+    root*: Element
 
   CharacterData* = ref CharacterDataObj
   CharacterDataObj = object of NodeObj
@@ -259,14 +260,8 @@ proc getRawText*(htmlNode: Node): string =
     else: return ""
   elif htmlNode.isTextNode():
     let chardata = CharacterData(htmlNode)
-    #eprint "char data", chardata.data
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
       result = chardata.data.remove("\n")
-      #if unicode.strip(result).runeLen() > 0:
-      #  if htmlNode.getStyle().display != DISPLAY_INLINE:
-      #    result = unicode.strip(result)
-      #else:
-      #  result = ""
     else:
       result = unicode.strip(chardata.data)
     if htmlNode.parentElement != nil and htmlNode.parentElement.tagType == TAG_OPTION:
@@ -334,6 +329,7 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
 
 func newDocument*(): Document =
   new(result)
+  result.root = newHtmlElement(TAG_HTML)
   result.head = newHtmlElement(TAG_HEAD)
   result.body = newHtmlElement(TAG_BODY)
   result.nodeType = DOCUMENT_NODE
@@ -467,7 +463,8 @@ func calcRules(elem: Element, rules: CSSStylesheet): seq[CSSSimpleBlock] =
 proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration]] =
   var stack: seq[Element]
 
-  stack.add(document.firstElementChild)
+  stack.add(document.root)
+
   while stack.len > 0:
     let elem = stack.pop()
     for oblock in calcRules(elem, rules):
@@ -475,9 +472,9 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
       for item in decls:
         if item of CSSDeclaration:
           if ((CSSDeclaration)item).important:
-            result.add((elem, (CSSDeclaration)item))
+            result.add((elem, CSSDeclaration(item)))
           else:
-            elem.style.applyProperty((CSSDeclaration)item)
+            elem.style.applyProperty(CSSDeclaration(item))
 
     for child in elem.children:
       stack.add(child)

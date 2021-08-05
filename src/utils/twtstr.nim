@@ -1,6 +1,10 @@
 import terminal
 import strutils
 import unicode
+import tables
+import json
+import sugar
+import sequtils
 
 func ansiStyle*(str: string, style: Style): seq[string] =
   result &= ansiStyleCode(style)
@@ -321,12 +325,12 @@ func makewidthtable(): array[0..0x10FFFF, byte] =
     else:
       result[ucs] = 1
 
-when defined(small):
-  # compute lookup table on startup
-  let width_table = makewidthtable()
-else:
+when defined(full):
   # store lookup table in executable
   const width_table = makewidthtable()
+else:
+  # compute lookup table on startup
+  let width_table = makewidthtable()
 
 {.push boundChecks:off.}
 func width*(r: Rune): int =
@@ -453,3 +457,96 @@ func mk_wcswidth_cjk(s: string): int =
   for r in s.runes:
     result += mk_wcwidth_cjk(r)
   return result
+
+const CanHaveDakuten = "かきくけこさしすせそたちつてとはひふへほカキクケコサシスセソタチツテトハヒフヘホ".toRunes()
+
+const CanHaveHandakuten = "はひふへほハヒフヘホ".toRunes()
+
+const HasDakuten = "がぎぐげござじずぜぞだぢづでどばびぶべぼガギグゲゴザジゼゾダヂヅデドバビブベボ".toRunes()
+
+const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toRunes()
+
+#in unicode, char + 1 is dakuten and char + 2 handakuten
+#ﾞﾟ
+
+const Dakuten = "ﾞ".toRunes()[0]
+const HanDakuten = "ﾟ".toRunes()[0]
+
+func dakuten*(r: Rune): Rune =
+  if r in CanHaveDakuten:
+    return cast[Rune](cast[int](r) + 1)
+  return r
+
+func handakuten*(r: Rune): Rune =
+  if r in CanHaveHandakuten:
+    return cast[Rune](cast[int](r) + 2)
+
+func nodakuten*(r: Rune): Rune =
+  return cast[Rune](cast[int](r) - 1)
+
+func nohandakuten*(r: Rune): Rune =
+  return cast[Rune](cast[int](r) - 2)
+
+# Halfwidth to fullwidth & vice versa
+const widthconv = staticRead"../../res/widthconv.json"
+proc genHalfWidthTable(): Table[Rune, Rune] =
+  let widthconvjson = parseJson(widthconv)
+  for k, v in widthconvjson:
+    if v.kind == JString:
+      result[v.getStr().toRunes()[0]] = k.toRunes()[0]
+    else:
+      for s in v:
+        result[s.getStr().toRunes()[0]] = k.toRunes()[0]
+
+proc genFullWidthTable(): Table[Rune, Rune] =
+  let widthconvjson = parseJson(widthconv)
+  for k, v in widthconvjson:
+    if v.kind == JString:
+      result[k.toRunes()[0]] = v.getStr().toRunes()[0]
+    else:
+      result[k.toRunes()[0]] = v[0].getStr().toRunes()[0]
+
+const halfwidthtable = genHalfWidthTable()
+const fullwidthtable = genFullWidthTable()
+
+func halfwidth*(r: Rune): Rune =
+  return halfwidthtable.getOrDefault(r, r)
+
+func halfwidth*(s: seq[Rune]): seq[Rune] =
+  for r in s:
+    #TODO implement a setting to enable this, I personally dislike it
+    #if r in HasDakuten:
+    #  result.add(halfwidth(r.nodakuten()))
+    #  result.add(Dakuten)
+    #elif r in HasHanDakuten:
+    #  result.add(halfwidth(r.nohandakuten()))
+    #  result.add(HanDakuten)
+    #else:
+    result.add(halfwidth(r))
+
+func halfwidth*(s: string): string =
+  return $halfwidth(s.toRunes())
+
+func fullwidth*(r: Rune): Rune =
+  return fullwidthtable.getOrDefault(r, r)
+
+proc fullwidth*(s: seq[Rune]): seq[Rune] =
+  for r in s:
+    if r == Rune(0xFF9E): #dakuten
+      if result.len > 0:
+        result[^1] = result[^1].dakuten()
+      else:
+        result.add(r)
+    elif r == Rune(0xFF9F): #handakuten
+      if result.len > 0:
+        result[^1] = result[^1].handakuten()
+      else:
+        result.add(r)
+    else:
+      result.add(fullwidth(r))
+
+proc fullwidth*(s: string): string =
+  return $fullwidth(s.toRunes())
+
+echo (halfwidth("とうギょう"))
+echo "東京"

@@ -124,11 +124,10 @@ proc staticReadKeymap(): (ActionMap, ActionMap, Table[string, string]) =
   lemap = constructActionTable(lemap)
   return (nmap, lemap, compose)
 
-when not defined(small):
-  const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
-  normalActionRemap = normalActionMap
-  linedActionRemap = linedActionMap
-  composeRemap = composeMap.toRadixTree()
+const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
+normalActionRemap = normalActionMap
+linedActionRemap = linedActionMap
+composeRemap = composeMap.toRadixTree()
 
 proc readConfig*(filename: string): bool =
   var f: File

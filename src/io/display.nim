@@ -39,6 +39,7 @@ type
     docenter: bool
     indent: int
     listval: int
+    lastelem: Element
 
 func newRenderState(): RenderState =
   return RenderState(blanklines: 1)
@@ -54,7 +55,8 @@ proc write(state: var RenderState, fs: string, rs: string) =
 proc flushLine(buffer: Buffer, state: var RenderState) =
   if state.rawline.len == 0:
     inc state.blanklines
-  assert(state.rawline.runeLen() < buffer.width, "line too long:\n" & state.rawline)
+  assert(state.rawline.runeLen() < buffer.width, "line too long: (for node " &
+         $state.lastelem & " " & $state.lastelem.style.display & ")\n" & state.rawline)
   buffer.writefmt(state.fmtline)
   buffer.writeraw(state.rawline)
   state.x = 0
@@ -186,7 +188,11 @@ proc renderNode(buffer: Buffer, node: Node, state: var RenderState) =
   if node.nodeType == ELEMENT_NODE:
     if Element(node).tagType in {TAG_SCRIPT, TAG_STYLE, TAG_NOSCRIPT, TAG_TITLE}:
       return
-  if style.hidden: return
+  if style.hidden or style.display == DISPLAY_NONE: return
+  if node.nodeType == ELEMENT_NODE:
+    state.lastelem = (Element)node
+  else:
+    state.lastelem = node.parentElement
 
   if not state.docenter:
     if style.centered:
@@ -231,7 +237,7 @@ proc setLastHtmlLine(buffer: Buffer, state: var RenderState) =
 
 proc renderHtml*(buffer: Buffer) =
   var stack: seq[Node]
-  let first = buffer.document
+  let first = buffer.document.root
   stack.add(first)
 
   var state = newRenderState()

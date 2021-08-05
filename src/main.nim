@@ -38,8 +38,6 @@ proc getPageUri(uri: Uri): Stream =
 var buffers: seq[Buffer]
 
 
-const defaultcss = staticRead"../res/default.css"
-
 proc main*() =
   if paramCount() != 1:
     eprint "Invalid parameters. Usage:\ntwt <url>"
