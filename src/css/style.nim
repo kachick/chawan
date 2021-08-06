@@ -44,60 +44,27 @@ type
     position*: CSSPosition
     content*: seq[Rune]
 
-  CSSCanvas* = object
-    rootBox*: CSSBox
-    width*: int
-    height*: int
-
-  CSSRect* = object
-    x1*: int
-    y1*: int
-    x2*: int
-    y2*: int
-
-  CSSBox* = ref object
-    display*: DisplayType
-    x*: int
-    y*: int
-    innerEdge*: CSSRect
-    paddingEdge*: CSSRect
-    borderEdge*: CSSRect
-    marginEdge*: CSSRect
-    props*: CSS2Properties
-    content*: seq[Rune]
-    dispcontent*: string
-    children*: seq[CSSBox]
-
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
   
   CSSComputedValue* = object of RootObj
-    case t: CSSRuleType
+    case t*: CSSRuleType
     of RULE_ALL: discard
     of RULE_COLOR:
-      color: CSSColor
+      color*: CSSColor
     of RULE_MARGIN, RULE_MARGIN_TOP, RULE_MARGIN_LEFT, RULE_MARGIN_RIGHT,
        RULE_MARGIN_BOTTOM:
-      length: CSSLength
+      length*: CSSLength
     of RULE_FONT_STYLE:
-      fontStyle: CSSFontStyle
+      fontStyle*: CSSFontStyle
     of RULE_DISPLAY:
-      display: DisplayType
+      display*: DisplayType
     of RULE_CONTENT:
-      content: seq[Rune]
+      content*: seq[Rune]
 
   CSSSpecifiedValue* = object of CSSComputedValue
     hasGlobalValue: bool
     globalValue: CSSGlobalValueType
 
-
-func `+`(a: CSSRect, b: CSSRect): CSSRect =
-  result.x1 = a.x1 + b.x1
-  result.y1 = a.y1 + b.y1
-  result.x2 = a.x2 + b.x2
-  result.y2 = a.y2 + b.y2
-
-proc `+=`(a: var CSSRect, b: CSSRect) =
-  a = a + b
 
 func cells(l: CSSLength): int =
   case l.unit
@@ -309,9 +276,15 @@ func getComputedValue*(rule: CSSSpecifiedValue): CSSComputedValue =
   let initial = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
   let unset = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
   let revert = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
+  return rule
   #case rule.t
   #of RULE_COLOR:
   #  return CSSComputedValue(t: rule.t, 
+
+func getValue*(vals: seq[CSSComputedValue], rule: CSSRuleType): CSSComputedValue =
+  for val in vals:
+    if val.t == rule:
+      result = val
 
 func getComputedValue*(d: CSSDeclaration): CSSComputedValue =
   return getComputedValue(getSpecifiedValue(d))
@@ -342,65 +315,3 @@ proc applyProperty*(props: CSS2Properties, d: CSSDeclaration) =
     props.content = cssString(d)
   else:
     printc(d) #TODO
-
-func getLength(s: seq[Rune], start: int, wlimit: int): tuple[wrap: bool, len: int, width: int] =
-  var len = 0
-  var width = 0
-  var i = start
-  while i < s.len:
-    let r = s[i]
-    let cw = r.width()
-    if width + cw > wlimit:
-      return (wrap: true, len: len, width: width)
-    width += cw
-    len += 1
-  
-  return (wrap: false, len: len, width: width)
-
-proc arrangeBoxes*(canvas: CSSCanvas) =
-  var stack: seq[CSSBox]
-  stack.add(canvas.rootBox)
-  var x = 0
-  var y = 0
-
-  while stack.len > 0:
-    let box = stack.pop()
-
-    #arrange box
-    box.marginEdge.x1 = x
-    box.marginEdge.y1 = y
-    x += box.props.marginleft.cells()
-    y += box.props.margintop.cells()
-
-    if box.display == DISPLAY_BLOCK:
-      x = 0
-      inc y
-
-    if x > canvas.width:
-      x = 0
-      inc y
-
-    box.x = x
-    box.y = y
-
-    var l = 0
-    while l < box.content.len:
-      let (wrap, wraplen, wrapwidth) = box.content.getLength(l, canvas.width - x)
-      var wrapbox = new(CSSBox)
-      wrapbox.content = box.content.substr(l, l + wraplen)
-      box.children.add(wrapbox)
-      l += wraplen
-      x += wrapwidth
-      if wrap:
-        inc y
-        x = 0
-
-    x += box.props.marginright.cells()
-    y += box.props.marginbottom.cells()
-    box.marginEdge.x2 = x
-    box.marginEdge.y2 = y
-
-    var i = box.children.len - 1
-    while i >= 0:
-      stack.add(box.children[i])
-      i -= 1

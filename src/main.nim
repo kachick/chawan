@@ -6,6 +6,7 @@ import streams
 import utils/eprint
 
 import html/htmlparser
+import html/dom
 
 import io/buffer
 import io/term
@@ -45,10 +46,11 @@ proc main*() =
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  #buffer.document = parseHtml(getPageUri(uri))
-  #buffer.setLocation(uri)
-  #buffer.document.applyDefaultStylesheet()
-  buffer.renderPlainText(getPageUri(uri).readAll())
+  buffer.document = parseHtml(getPageUri(uri))
+  buffer.setLocation(uri)
+  buffer.document.applyDefaultStylesheet()
+  #buffer.renderPlainText(getPageUri(uri).readAll())
+  buffer.renderDocument()
   var lastUri = uri
   while displayPage(attrs, buffer):
     buffer.setStatusMessage("Loading...")

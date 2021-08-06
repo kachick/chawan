@@ -13,6 +13,8 @@ import ../utils/eprint
 
 import ../html/dom
 
+import ../css/box
+
 import ../config
 
 import ./term
@@ -322,10 +324,10 @@ proc cursorTo*(buffer: Buffer, x: int, y: int) =
     buffer.redraw = true
 
 proc cursorDown*(buffer: Buffer) =
-  if buffer.cursory < buffer.numLines:
+  if buffer.cursory < buffer.numLines - 1:
     inc buffer.cursory
     buffer.restoreCursorX()
-    if buffer.cursory >= buffer.lastVisibleLine and buffer.lastVisibleLine != buffer.numLines - 1:
+    if buffer.cursory - buffer.height >= buffer.fromy:
       inc buffer.fromy
       buffer.redraw = true
 
@@ -620,6 +622,15 @@ proc renderPlainText*(buffer: Buffer, text: string) =
   if line.len > 0:
     buffer.setText(0, y, line.toRunes())
 
+proc renderDocument*(buffer: Buffer) =
+  var stack: seq[CSSBox]
+  stack.add(buffer.document.root.box)
+  while stack.len > 0:
+    let box = stack.pop()
+    buffer.setText(box.innerEdge.x1, box.innerEdge.y1, box.content)
+
+    for child in box.children:
+      stack.add(child)
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)

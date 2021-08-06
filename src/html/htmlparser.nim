@@ -378,7 +378,7 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
             #TODO for doctype
             while p < max and buf[p] != '>':
               inc p
-            at = p
+            at = p + 1
             continue
 
         if not state.in_comment:
