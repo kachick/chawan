@@ -6,6 +6,7 @@ import strutils
 import unicode
 
 import ../types/color
+import ../types/enums
 
 import ../utils/twtstr
 import ../utils/eprint
@@ -34,6 +35,22 @@ type
     runes*: seq[Rune]
 
   DisplayRow = seq[DisplayCell]
+
+  DrawInstruction = object
+    case t: DrawInstructionType
+    of DRAW_TEXT:
+      text: seq[Rune]
+    of DRAW_GOTO:
+      x: int
+      y: int
+    of DRAW_FGCOLOR, DRAW_BGCOLOR:
+      color: CellColor
+    of DRAW_STYLE:
+      bold: bool
+      italic: bool
+      underline: bool
+    of DRAW_RESET:
+      discard
 
   Buffer* = ref BufferObj
   BufferObj = object
@@ -68,22 +85,104 @@ func newBuffer*(attrs: TermAttributes): Buffer =
   result.attrs = attrs
 
   result.display = newSeq[DisplayCell](result.width * result.height)
+  result.prevdisplay = newSeq[DisplayCell](result.width * result.height)
   result.statusmsg = newSeq[DisplayCell](result.width)
 
-func generateFullOutput*(buffer: Buffer): string =
+func generateFullOutput*(buffer: Buffer): seq[string] =
   var x = 0
   var y = 0
+  var s = ""
   for cell in buffer.display:
     if x >= buffer.width:
       inc y
-      result &= '\n'
+      result.add(s)
       x = 0
+      s = ""
+    s &= $cell.runes
+    inc x
 
-    for r in cell.runes:
-      if r != Rune(0):
-        result &= $r
+  result.add(s)
+
+# generate a sequence of instructions to replace the previous frame with the
+# current one. ideally we should have some mechanism in place to determine
+# where we should use this and where we should just rewrite the frame
+func generateSwapOutput*(buffer: Buffer): seq[DrawInstruction] =
+  var fgcolor: CellColor
+  var bgcolor: CellColor
+  var italic = false
+  var bold = false
+  var underline = false
+
+  let max = buffer.width * buffer.height
+  let curr = buffer.display
+  let prev = buffer.prevdisplay
+  var x = 0
+  var y = 0
+  var cx = 0
+  var cy = 0
+  var i = 0
+  var text: seq[Rune]
+  while i < max:
+    if x >= buffer.width:
+      x = 0
+      cx = 0
+      text &= Rune('\n')
+      inc y
+      inc cy
+
+    if curr[i] != prev[i]:
+      let currwidth = curr[i].runes.width()
+      let prevwidth = prev[i].runes.width()
+      if (curr[i].runes.len > 0 or currwidth < prevwidth) and (x != cx or y != cy):
+        if text.len > 0:
+          result.add(DrawInstruction(t: DRAW_TEXT, text: text))
+          text.setLen(0)
+        result.add(DrawInstruction(t: DRAW_GOTO, x: x, y: y))
+        cx = x
+        cy = y
+
+      let cancont =
+        (curr[i].fgcolor == fgcolor and curr[i].bgcolor == bgcolor and
+         curr[i].italic == italic and curr[i].bold == bold and curr[i].underline == underline)
+
+      if text.len > 0 and not cancont:
+        result.add(DrawInstruction(t: DRAW_TEXT, text: text))
+        text.setLen(0)
+
+      if curr[i].fgcolor != fgcolor:
+        fgcolor = curr[i].fgcolor
+        result.add(DrawInstruction(t: DRAW_FGCOLOR, color: fgcolor))
+
+      if curr[i].bgcolor != bgcolor:
+        bgcolor = curr[i].bgcolor
+        result.add(DrawInstruction(t: DRAW_BGCOLOR, color: bgcolor))
+
+      if curr[i].italic != italic or curr[i].bold != bold or curr[i].underline != underline:
+        if italic and not curr[i].italic or bold and not curr[i].bold or underline and not curr[i].underline:
+          result.add(DrawInstruction(t: DRAW_RESET))
+          if fgcolor != defaultColor:
+            result.add(DrawInstruction(t: DRAW_FGCOLOR, color: fgcolor))
+          if bgcolor != defaultColor:
+            result.add(DrawInstruction(t: DRAW_BGCOLOR, color: bgcolor))
+        italic = curr[i].italic
+        bold = curr[i].bold
+        underline = curr[i].underline
+        result.add(DrawInstruction(t: DRAW_STYLE, italic: italic, bold: bold, underline: underline))
+
+      text &= curr[i].runes
+      if currwidth < prevwidth:
+        var j = 0
+        while j < prevwidth - currwidth:
+          text &= Rune(' ')
+          inc j
+      if text.len > 0:
+        inc cx
 
     inc x
+    inc i
+  
+  if text.len > 0:
+    result.add(DrawInstruction(t: DRAW_TEXT, text: text))
 
 func generateStatusMessage*(buffer: Buffer): string =
   for cell in buffer.statusmsg:
@@ -521,7 +620,6 @@ proc renderPlainText*(buffer: Buffer, text: string) =
   if line.len > 0:
     buffer.setText(0, y, line.toRunes())
 
-  buffer.refreshDisplay()
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
@@ -553,10 +651,58 @@ proc statusMsgForBuffer(buffer: Buffer) =
     msg &= " " & buffer.hovertext
   buffer.setStatusMessage(msg)
 
-proc displayBuffer(buffer: Buffer) =
-  eraseScreen()
+proc displayBufferSwapOutput(buffer: Buffer) =
   termGoto(0, 0)
-  print(buffer.generateFullOutput().ansiReset())
+  let instructions = buffer.generateSwapOutput()
+  for inst in instructions:
+    case inst.t
+    of DRAW_TEXT:
+      print(inst.text)
+    of DRAW_GOTO:
+      termGoto(inst.x, inst.y)
+    of DRAW_FGCOLOR:
+      let color = inst.color
+      if inst.color.rgb:
+        let rgb = color.rgbcolor
+        print("\e38;2" & $rgb.r & ";" & $rgb.b & ";" & $rgb.g)
+      else:
+        print("\e[" & $color.color & "m")
+    of DRAW_BGCOLOR:
+      let color = inst.color
+      if inst.color.rgb:
+        let rgb = color.rgbcolor
+        print("\e48;2" & $rgb.r & ";" & $rgb.b & ";" & $rgb.g)
+      else:
+        print("\e[" & $color.color & "m")
+    of DRAW_STYLE:
+      var os = "\e["
+      var p = false
+      if inst.italic:
+        os &= "3"
+        p = true
+      if inst.bold:
+        if p:
+          os &= ";"
+        os &= "1"
+        p = true
+      if inst.underline:
+        if p:
+          os &= ";"
+        os &= "4"
+        p = true
+      os &= "m"
+      print(os)
+    of DRAW_RESET:
+      print("\e[0m")
+
+proc displayBuffer(buffer: Buffer) =
+  termGoto(0, 0)
+  let full = buffer.generateFullOutput()
+  for line in full:
+    print(line)
+    #TODO
+    print("\e[K")
+    print('\n')
 
 proc displayStatusMessage(buffer: Buffer) =
   termGoto(0, buffer.height)
@@ -643,6 +789,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
 
     if reshape:
       buffer.reshape()
+      buffer.displayBuffer()
     if redraw:
       buffer.refreshDisplay()
       buffer.displayBuffer()
@@ -654,6 +801,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
 
 proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
   discard buffer.gotoAnchor()
+  buffer.refreshDisplay()
   buffer.displayBuffer()
   buffer.statusMsgForBuffer()
   return inputLoop(attrs, buffer)

@@ -78,6 +78,9 @@ type
   CSSGlobalValueType* = enum
     VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
 
+  DrawInstructionType* = enum
+    DRAW_TEXT, DRAW_GOTO, DRAW_FGCOLOR, DRAW_BGCOLOR, DRAW_STYLE, DRAW_RESET
+
 const SelfClosingTagTypes* = {
   TAG_LI, TAG_P
 }
