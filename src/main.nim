@@ -5,7 +5,6 @@ import streams
 
 import utils/eprint
 
-import html/dom
 import html/htmlparser
 
 import io/buffer
@@ -52,7 +51,7 @@ proc main*() =
   buffer.renderPlainText(getPageUri(uri).readAll())
   var lastUri = uri
   while displayPage(attrs, buffer):
-    statusMsg("Loading...", buffer.height)
+    buffer.setStatusMessage("Loading...")
     var newUri = buffer.location
     lastUri.anchor = ""
     newUri.anchor = ""

@@ -1,5 +1,4 @@
 import terminal
-import tables
 import unicode
 import strutils
 import sequtils

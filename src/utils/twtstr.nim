@@ -3,8 +3,6 @@ import strutils
 import unicode
 import tables
 import json
-import sugar
-import sequtils
 
 func ansiStyle*(str: string, style: Style): seq[string] =
   result &= ansiStyleCode(style)

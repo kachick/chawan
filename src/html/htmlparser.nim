@@ -210,7 +210,7 @@ proc processDocumentBody(state: var HTMLParseState) =
       state.elementNode = state.elementNode.ownerDocument.body
 
 proc processDocumentAddNode(state: var HTMLParseState, newNode: Node) =
-  if state.elementNode.nodeType == ELEMENT_NODE and ((Element)state.elementNode).tagType == TAG_HTML:
+  if state.elementNode.nodeType == ELEMENT_NODE and state.elementNode.tagType == TAG_HTML:
     if state.in_body:
       state.elementNode = state.elementNode.ownerDocument.body
     else:
@@ -272,7 +272,7 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
   if state.elementNode.nodeType == ELEMENT_NODE:
     case element.tagType
     of SelfClosingTagTypes:
-      if Element(state.elementNode).tagType == element.tagType:
+      if state.elementNode.tagType == element.tagType:
         processDocumentEndNode(state)
     of TAG_H1:
       HTMLHeadingElement(element).rank = 1
@@ -288,7 +288,7 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
       HTMLHeadingElement(element).rank = 6
     else: discard
 
-    if Element(state.elementNode).tagType == TAG_P and element.tagType in PClosingTagTypes:
+    if state.elementNode.tagType == TAG_P and element.tagType in PClosingTagTypes:
       processDocumentEndNode(state)
 
   if add:
@@ -306,8 +306,8 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
     return
   if tag.tagid == TAG_BODY:
     return
-  if state.elementNode.nodeType == ELEMENT_NODE and tag.tagid != Element(state.elementNode).tagType:
-    if Element(state.elementNode).tagType in SelfClosingTagTypes:
+  if state.elementNode.nodeType == ELEMENT_NODE and tag.tagid != state.elementNode.tagType:
+    if state.elementNode.tagType in SelfClosingTagTypes:
       processDocumentEndNode(state)
   
   processDocumentEndNode(state)

@@ -6,7 +6,6 @@ import unicode
 import streams
 import math
 import options
-import sequtils
 import sugar
 
 import ../utils/twtstr

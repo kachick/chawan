@@ -1,5 +1,3 @@
-import tables
-
 type
   NodeType* = enum
     UNKNOWN_NODE = 0,

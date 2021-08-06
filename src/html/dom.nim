@@ -477,30 +477,13 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
     for child in elem.children:
       stack.add(child)
 
-proc addBoxes*(elem: Element) =
-  var b = false
+proc generateBox*(elem: Element) =
+  if elem.style.display == DISPLAY_INLINE:
+    discard
+
   for child in elem.childNodes:
     if child.nodeType == ELEMENT_NODE:
-      if ((Element)child).style.display == DISPLAY_BLOCK:
-        b = true
-        break
-  for child in elem.childNodes:
-    if child.nodeType == ELEMENT_NODE:
-      if b:
-        child.box = CSSBox(display: DISPLAY_BLOCK)
-      else:
-        child.box = CSSBox()
-
-proc generateBoxModel(document: Document) =
-  var stack: seq[Element]
-
-  stack.add(document.firstElementChild)
-  document.firstElementChild.box = CSSBox()
-  while stack.len > 0:
-    let elem = stack.pop()
-    elem.addBoxes()
-    for child in elem.children:
-      stack.add(child)
+      Element(child).generateBox()
 
 proc applyDefaultStylesheet*(document: Document) =
   let important = document.applyRules(stylesheet)
@@ -508,4 +491,4 @@ proc applyDefaultStylesheet*(document: Document) =
     rule.e.style.applyProperty(rule.d)
     rule.e.cssvalues.add(getComputedValue(rule.d))
 
-  document.generateBoxModel()
+  document.root.generateBox()
