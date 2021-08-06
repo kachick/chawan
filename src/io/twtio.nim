@@ -25,13 +25,13 @@ template printesc*(s: string) =
       stdout.write($r)
 
 proc getNormalAction*(s: string): TwtAction =
-  if normalActionRemap.hasKey(s):
-    return normalActionRemap[s]
+  if gconfig.nmap.hasKey(s):
+    return gconfig.nmap[s]
   return NO_ACTION
 
 proc getLinedAction*(s: string): TwtAction =
-  if linedActionRemap.hasKey(s):
-    return linedActionRemap[s]
+  if gconfig.lemap.hasKey(s):
+    return gconfig.lemap[s]
   return NO_ACTION
 
 type LineState = object
@@ -151,16 +151,16 @@ proc insertCompose(state: var LineState, c: char) =
     else:
       cs = state.s.substr(0, state.compa - 1).toRunes()
     state.comps = state.s.substr(state.compa)
-    if state.comps.len > 0 and composeRemap.hasPrefix(state.comps):
+    if state.comps.len > 0 and gconfig.cmap.hasPrefix(state.comps):
       state.compa = state.comps.len
-      state.compn = composeRemap{state.comps}
+      state.compn = gconfig.cmap{state.comps}
       state.s = state.comps
       state.comps = ""
       state.feedNext = true
     else:
       cs &= state.comps.toRunes()
       state.compa = 0
-      state.compn = composeRemap
+      state.compn = gconfig.cmap
       state.comps = ""
 
     state.insertCharseq(cs)
@@ -168,7 +168,7 @@ proc insertCompose(state: var LineState, c: char) =
 proc readLine*(current: var string, minlen: int, maxlen: int): bool =
   var state: LineState
   state.news = current.toRunes()
-  state.compn = composeRemap
+  state.compn = gconfig.cmap
   state.cursor = state.news.len
   state.minlen = minlen
   state.maxlen = maxlen
@@ -293,7 +293,7 @@ proc readLine*(current: var string, minlen: int, maxlen: int): bool =
         state.cursor = state.news.len
     of ACTION_LINED_COMPOSE_TOGGLE:
       state.comp = not state.comp
-      state.compn = composeRemap
+      state.compn = gconfig.cmap
       state.compa = 0
       state.comps = ""
     of ACTION_FEED_NEXT:

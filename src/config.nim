@@ -1,4 +1,5 @@
 import tables
+import os
 import strutils
 
 import utils/twtstr
@@ -33,11 +34,18 @@ type
     ACTION_LINED_COMPOSE_TOGGLE, ACTION_LINED_ESC
 
   ActionMap = Table[string, TwtAction]
-  ComposeMap = RadixNode[string]
+  StaticConfig = object
+    nmap: ActionMap
+    lemap: ActionMap
+    cmap: Table[string, string]
 
-var normalActionRemap*: ActionMap
-var linedActionRemap*: ActionMap
-var composeRemap*: ComposeMap
+  Config = object
+    nmap*: ActionMap
+    lemap*: ActionMap
+    cmap*: RadixNode[string]
+
+func getConfig(s: StaticConfig): Config =
+  return Config(nmap: s.nmap, lemap: s.lemap, cmap: s.cmap.toRadixTree())
 
 func getRealKey(key: string): string =
   var realk: string
@@ -101,37 +109,30 @@ func constructActionTable*(origTable: ActionMap): ActionMap =
     newTable[realk] = v
   return newTable
 
-proc parseConfigLine(line: string, nmap: var ActionMap, lemap: var ActionMap,
-                     compose: var Table[string, string]) =
+proc parseConfigLine[T](line: string, config: var T) =
   if line.len == 0 or line[0] == '#':
     return
   let cmd = line.split(' ')
   if cmd.len == 3:
     if cmd[0] == "nmap":
-      nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+      config.nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
     elif cmd[0] == "lemap":
-      lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+      config.lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
     elif cmd[0] == "comp":
-      compose[getRealKey(cmd[1])] = cmd[2]
+      config.cmap[getRealKey(cmd[1])] = cmd[2]
 
-proc staticReadKeymap(): (ActionMap, ActionMap, Table[string, string]) =
-  let config = staticRead"../res/config"
-  var nmap: ActionMap
-  var lemap: ActionMap
-  var compose: Table[string, string]
-  for line in config.split('\n'):
-    parseConfigLine(line, nmap, lemap, compose)
+proc staticReadConfig(): StaticConfig =
+  let default = staticRead"../res/config"
+  for line in default.split('\n'):
+    parseConfigLine(line, result)
 
-  nmap = constructActionTable(nmap)
-  lemap = constructActionTable(lemap)
-  return (nmap, lemap, compose)
+  result.nmap = constructActionTable(result.nmap)
+  result.lemap = constructActionTable(result.lemap)
 
-const (normalActionMap, linedActionMap, composeMap) = staticReadKeymap()
-normalActionRemap = normalActionMap
-linedActionRemap = linedActionMap
-composeRemap = composeMap.toRadixTree()
+const defaultConfig = staticReadConfig()
+var gconfig* = getConfig(defaultConfig)
 
-proc readConfig*(filename: string): bool =
+proc readConfig(filename: string) =
   var f: File
   let status = f.open(filename, fmRead)
   var nmap: ActionMap
@@ -140,11 +141,13 @@ proc readConfig*(filename: string): bool =
   if status:
     var line: TaintedString
     while f.readLine(line):
-      parseConfigLine(line, nmap, lemap, compose)
+      parseConfigLine(line, gconfig)
 
-    normalActionRemap = constructActionTable(nmap)
-    linedActionRemap = constructActionTable(lemap)
-    composeRemap = compose.toRadixTree()
-    return true
-  else:
-    return false
+    gconfig.nmap = constructActionTable(nmap)
+    gconfig.lemap = constructActionTable(lemap)
+    gconfig.cmap = compose.toRadixTree()
+
+proc readConfig*() =
+  when defined(debug):
+    readConfig("res" / "config")
+  readConfig(getConfigDir() / "twt" / "config")

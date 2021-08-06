@@ -335,7 +335,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth(), buffer.width)
+      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentCellWidth(), buffer.width)
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true

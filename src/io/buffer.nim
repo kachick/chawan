@@ -26,16 +26,19 @@ type
   BufferCell = object of Cell
     rune*: Rune
 
-# xterm supports max 2 characters per cell by default. might make the tuple a
-# seq in the future but for now it's fine like this
+  BufferRow = seq[BufferCell]
+
   DisplayCell = object of Cell
-    runes*: tuple[a: Rune, b: Rune]
+    runes*: seq[Rune]
+
+  DisplayRow = seq[DisplayCell]
 
   Buffer* = ref BufferObj
   BufferObj = object
     title*: string
-    lines*: seq[seq[BufferCell]]
-    display*: seq[DisplayCell]
+    lines*: seq[BufferRow]
+    display*: DisplayRow
+    prevdisplay*: DisplayRow
     hovertext*: string
     width*: int
     height*: int
@@ -73,10 +76,10 @@ func generateFullOutput*(buffer: Buffer): string =
       result &= '\n'
       x = 0
 
-    if cell.runes.a != Rune(0):
-      result &= $cell.runes.a
-    if cell.runes.b != Rune(0):
-      result &= $cell.runes.b
+    for r in cell.runes:
+      if r != Rune(0):
+        result &= $r
+
     inc x
 
 func lastLine*(buffer: Buffer): int =
@@ -88,6 +91,15 @@ func lastVisibleLine*(buffer: Buffer): int =
 func width(line: seq[BufferCell]): int =
   for c in line:
     result += c.rune.width()
+
+func cellWidthOverlap*(buffer: Buffer, x: int, y: int): int =
+  let row = y * buffer.width
+  var ox = x
+  while buffer.display[row + ox].runes.len == 0 and ox > 0:
+    dec ox
+  return buffer.display[row + ox].runes.width()
+
+func currentCellWidth*(buffer: Buffer): int = buffer.cellWidthOverlap(buffer.cursorx - buffer.fromx, buffer.cursory - buffer.fromy)
 
 func currentLineWidth*(buffer: Buffer): int =
   return buffer.lines[buffer.cursory].width()
@@ -214,19 +226,22 @@ proc cursorUp*(buffer: Buffer) =
       buffer.redraw = true
 
 proc cursorRight*(buffer: Buffer) =
-  if buffer.cursorx < buffer.currentLineWidth() - 1:
-    inc buffer.cursorx
+  let cellwidth = buffer.currentCellWidth()
+  let lw = buffer.currentLineWidth()
+  if buffer.cursorx < lw - 1:
+    buffer.cursorx = min(lw - 1, buffer.cursorx + cellwidth)
     buffer.xend = buffer.cursorx
     if buffer.cursorx - buffer.width >= buffer.fromx:
       inc buffer.fromx
       buffer.redraw = true
 
 proc cursorLeft*(buffer: Buffer) =
+  let cellwidth = buffer.currentCellWidth()
   if buffer.fromx > buffer.cursorx:
     buffer.fromx = buffer.cursorx
     buffer.redraw = true
   elif buffer.cursorx > 0:
-    dec buffer.cursorx
+    buffer.cursorx = max(0, buffer.cursorx - cellwidth)
     if buffer.fromx > buffer.cursorx:
       buffer.fromx = buffer.cursorx
       buffer.redraw = true
@@ -448,40 +463,40 @@ proc setDisplayText(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
   var n = 0
   while i < text.len:
     if text[i].width() == 0:
-      buffer.display[pos + i - n].runes.b = text[i]
       inc n
-    else:
-      buffer.display[pos + i - n].runes.a = text[i]
+    buffer.display[pos + i - n].runes.add(text[i])
     inc i
 
 proc reshape*(buffer: Buffer) =
   buffer.display = newSeq[DisplayCell](buffer.width * buffer.height)
 
+proc clearDisplay*(buffer: Buffer) =
+  var i = 0
+  while i < buffer.display.len:
+    buffer.display[i].runes.setLen(0)
+    inc i
+
 proc refreshDisplay*(buffer: Buffer) =
   var y = 0
+  buffer.prevdisplay = buffer.display
+  buffer.clearDisplay()
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine()]:
     var w = 0
     var i = 0
-    var n = 0
     while w < buffer.fromx and i < line.len:
       w += line[i].rune.width()
       inc i
 
     let dls = y * buffer.width
     var j = 0
+    var n = 0
     while w < buffer.fromx + buffer.width and i < line.len:
       w += line[i].rune.width()
       if line[i].rune.width() == 0:
-        buffer.display[dls + j].runes.b = line[i].rune
-      else:
-        buffer.display[dls + j].runes.a = line[i].rune
+        inc n
+      buffer.display[dls + j - n].runes.add(line[i].rune)
+      j += line[i].rune.width()
       inc i
-      inc j
-
-    while j < buffer.width:
-      buffer.display[dls + j].runes.a = Rune(0)
-      buffer.display[dls + j].runes.b = Rune(0)
-      inc j
 
     inc y
 
@@ -494,6 +509,8 @@ proc renderPlainText*(buffer: Buffer, text: string) =
       buffer.setText(0, y, line.toRunes())
       inc y
       line = ""
+    elif text[i] == '\r':
+      discard
     elif text[i] == '\t':
       line &= ' '.repeat(8)
     else:

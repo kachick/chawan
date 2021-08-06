@@ -42,9 +42,7 @@ proc main*() =
   if paramCount() != 1:
     eprint "Invalid parameters. Usage:\ntwt <url>"
     quit(1)
-  if not readConfig("res/config"):
-    #eprint "Failed to read keymap, fallback to default"
-    discard
+  readConfig()
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
