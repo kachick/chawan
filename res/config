@@ -27,10 +27,10 @@ nmap > PAGE_RIGHT
 nmap < PAGE_LEFT
 nmap C-e SCROLL_DOWN
 nmap C-y SCROLL_UP
-nmap zh SCROLL_LEFT
-nmap zl SCROLL_RIGHT
 nmap J SCROLL_DOWN
 nmap K SCROLL_UP
+nmap ( SCROLL_LEFT
+nmap ) SCROLL_RIGHT
 nmap C-m CLICK
 nmap C-j CLICK
 nmap C-l CHANGE_LOCATION
@@ -41,7 +41,7 @@ nmap gg CURSOR_FIRST_LINE
 nmap G CURSOR_LAST_LINE
 nmap M-[H CURSOR_FIRST_LINE
 nmap M-[F CURSOR_LAST_LINE
-nmap zz CENTER_LINE
+nmap z CENTER_LINE
 nmap C-g LINE_INFO
 
 #line editing keybindings

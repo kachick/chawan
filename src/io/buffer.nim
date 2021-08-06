@@ -1,4 +1,5 @@
 import options
+import terminal
 import uri
 import tables
 import strutils
@@ -12,8 +13,10 @@ import ../utils/eprint
 
 import ../html/dom
 
-import ./twtio
+import ../config
+
 import ./term
+import ./lineedit
 
 type
   Cell = object of RootObj
@@ -52,7 +55,6 @@ type
     elements*: seq[Element]
     idelements*: Table[string, Element]
     selectedlink*: Node
-    printwrite*: bool
     attrs*: TermAttributes
     document*: Document
     displaycontrols*: bool
@@ -187,7 +189,7 @@ proc clearBuffer*(buffer: Buffer) =
   buffer.selectedlink = nil
 
 proc restoreCursorX(buffer: Buffer) =
-  buffer.cursorx = min(buffer.currentLineWidth() - 1, buffer.xend)
+  buffer.cursorx = max(min(buffer.currentLineWidth() - 1, buffer.xend), 0)
 
 proc scrollTo*(buffer: Buffer, y: int) =
   if y == buffer.fromy:
@@ -206,8 +208,14 @@ proc cursorTo*(buffer: Buffer, x: int, y: int) =
   elif buffer.fromy + buffer.height - 1 <= buffer.cursory:
     buffer.fromy = max(buffer.cursory - buffer.height + 2, 0)
     buffer.redraw = true
+
   buffer.cursorx = min(max(x, 0), buffer.currentLineWidth())
-  #buffer.fromX = min(max(buffer.currentLineWidth() - buffer.width + 1, 0), 0) #TODO
+  if buffer.fromx < buffer.cursorx - buffer.width:
+    buffer.fromx = max(0, buffer.cursorx - buffer.width)
+    buffer.redraw = true
+  elif buffer.fromx > buffer.cursorx:
+    buffer.fromx = buffer.cursorx
+    buffer.redraw = true
 
 proc cursorDown*(buffer: Buffer) =
   if buffer.cursory < buffer.lastLine():
@@ -273,12 +281,12 @@ proc cursorNextWord*(buffer: Buffer) =
   var y = buffer.cursory
   if llen >= 0:
 
-    while buffer.lines[y][x].rune != Rune(' '):
+    while not buffer.lines[y][x].rune.breaksWord():
       if x >= llen:
         break
       inc x
 
-    while buffer.lines[y][x].rune == Rune(' '):
+    while buffer.lines[y][x].rune.breaksWord():
       if x >= llen:
         break
       inc x
@@ -293,12 +301,12 @@ proc cursorPrevWord*(buffer: Buffer) =
   var x = buffer.cursorx
   var y = buffer.cursory
   if buffer.currentLineWidth() > 0:
-    while buffer.lines[y][x].rune != Rune(' '):
+    while not buffer.lines[y][x].rune.breaksWord():
       if x == 0:
         break
       dec x
 
-    while buffer.lines[y][x].rune == Rune(' '):
+    while buffer.lines[y][x].rune.breaksWord():
       if x == 0:
         break
       dec x
@@ -520,3 +528,126 @@ proc renderPlainText*(buffer: Buffer, text: string) =
     buffer.setText(0, y, line.toRunes())
 
   buffer.refreshDisplay()
+
+proc cursorBufferPos(buffer: Buffer) =
+  var x = max(buffer.cursorx - buffer.fromx, 0)
+  var y = buffer.cursory - buffer.fromy
+  termGoto(x, y)
+
+proc clearStatusMsg*(at: int) =
+  setCursorPos(0, at)
+  eraseLine()
+
+proc statusMsg*(str: string, at: int) =
+  clearStatusMsg(at)
+  print(str.ansiStyle(styleReverse).ansiReset())
+
+proc statusMsgForBuffer(buffer: Buffer) =
+  var msg = $(buffer.cursory + 1) & "/" & $(buffer.lastLine() + 1) & " (" &
+            $buffer.atPercentOf() & "%) " &
+            "<" & buffer.title & ">"
+  if buffer.hovertext.len > 0:
+    msg &= " " & buffer.hovertext
+  statusMsg(msg.maxString(buffer.width), buffer.height)
+
+proc displayBuffer(buffer: Buffer) =
+  eraseScreen()
+  termGoto(0, 0)
+
+  print(buffer.generateFullOutput().ansiReset())
+
+proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
+  var s = ""
+  var feedNext = false
+  while true:
+    buffer.redraw = false
+    stdout.showCursor()
+    buffer.cursorBufferPos()
+    if not feedNext:
+      s = ""
+    else:
+      feedNext = false
+    let c = getch()
+    s &= c
+    let action = getNormalAction(s)
+    var redraw = false
+    var reshape = false
+    var nostatus = false
+    case action
+    of ACTION_QUIT:
+      eraseScreen()
+      setCursorPos(0, 0)
+      return false
+    of ACTION_CURSOR_LEFT: buffer.cursorLeft()
+    of ACTION_CURSOR_DOWN: buffer.cursorDown()
+    of ACTION_CURSOR_UP: buffer.cursorUp()
+    of ACTION_CURSOR_RIGHT: buffer.cursorRight()
+    of ACTION_CURSOR_LINEBEGIN: buffer.cursorLineBegin()
+    of ACTION_CURSOR_LINEEND: buffer.cursorLineEnd()
+    of ACTION_CURSOR_NEXT_WORD: buffer.cursorNextWord()
+    of ACTION_CURSOR_PREV_WORD: buffer.cursorPrevWord()
+    of ACTION_CURSOR_NEXT_LINK: buffer.cursorNextLink()
+    of ACTION_CURSOR_PREV_LINK: buffer.cursorPrevLink()
+    of ACTION_PAGE_DOWN: buffer.pageDown()
+    of ACTION_PAGE_UP: buffer.pageUp()
+    of ACTION_PAGE_RIGHT: buffer.pageRight()
+    of ACTION_PAGE_LEFT: buffer.pageLeft()
+    of ACTION_HALF_PAGE_DOWN: buffer.halfPageDown()
+    of ACTION_HALF_PAGE_UP: buffer.halfPageUp()
+    of ACTION_CURSOR_FIRST_LINE: buffer.cursorFirstLine()
+    of ACTION_CURSOR_LAST_LINE: buffer.cursorLastLine()
+    of ACTION_CURSOR_TOP: buffer.cursorTop()
+    of ACTION_CURSOR_MIDDLE: buffer.cursorMiddle()
+    of ACTION_CURSOR_BOTTOM: buffer.cursorBottom()
+    of ACTION_CENTER_LINE: buffer.centerLine()
+    of ACTION_SCROLL_DOWN: buffer.scrollDown()
+    of ACTION_SCROLL_UP: buffer.scrollUp()
+    of ACTION_SCROLL_LEFT: buffer.scrollLeft()
+    of ACTION_SCROLL_RIGHT: buffer.scrollRight()
+    of ACTION_CLICK:
+      discard
+    of ACTION_CHANGE_LOCATION:
+      var url = $buffer.location
+
+      clearStatusMsg(buffer.height)
+      let status = readLine("URL: ", url, buffer.width)
+      if status:
+        buffer.setLocation(parseUri(url))
+        return true
+    of ACTION_LINE_INFO:
+      statusMsg("line " & $buffer.cursory & "/" & $buffer.lastLine() & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentCellWidth(), buffer.width)
+      nostatus = true
+    of ACTION_FEED_NEXT:
+      feedNext = true
+    of ACTION_RELOAD: return true
+    of ACTION_RESHAPE:
+      reshape = true
+      redraw = true
+    of ACTION_REDRAW: redraw = true
+    else: discard
+    stdout.hideCursor()
+
+    if buffer.refreshTermAttrs():
+      redraw = true
+      reshape = true
+
+    if buffer.redraw:
+      redraw = true
+
+    if reshape:
+      buffer.reshape()
+    if redraw:
+      buffer.refreshDisplay()
+      buffer.displayBuffer()
+
+    if not nostatus:
+      buffer.statusMsgForBuffer()
+    else:
+      nostatus = false
+
+proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
+  discard buffer.gotoAnchor()
+  buffer.displayBuffer()
+  buffer.statusMsgForBuffer()
+  return inputLoop(attrs, buffer)
+

@@ -1,4 +1,4 @@
-import std/terminal
+import terminal
 import tables
 import unicode
 import strutils
@@ -7,32 +7,11 @@ import sugar
 
 import ../utils/twtstr
 import ../utils/radixtree
+import ../utils/eprint
 
 import ../config
 
 import ./terminal
-
-template print*(s: varargs[string, `$`]) =
-  for x in s:
-    stdout.write(x)
-
-template printesc*(s: string) =
-  for r in s.runes:
-    if r.isControlChar():
-      stdout.write(('^' & $($r)[0].getControlLetter())
-                   .ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
-    else:
-      stdout.write($r)
-
-proc getNormalAction*(s: string): TwtAction =
-  if gconfig.nmap.hasKey(s):
-    return gconfig.nmap[s]
-  return NO_ACTION
-
-proc getLinedAction*(s: string): TwtAction =
-  if gconfig.lemap.hasKey(s):
-    return gconfig.lemap[s]
-  return NO_ACTION
 
 type LineState = object
   news: seq[Rune]

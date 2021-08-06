@@ -151,3 +151,14 @@ proc readConfig*() =
   when defined(debug):
     readConfig("res" / "config")
   readConfig(getConfigDir() / "twt" / "config")
+
+proc getNormalAction*(s: string): TwtAction =
+  if gconfig.nmap.hasKey(s):
+    return gconfig.nmap[s]
+  return NO_ACTION
+
+proc getLinedAction*(s: string): TwtAction =
+  if gconfig.lemap.hasKey(s):
+    return gconfig.lemap[s]
+  return NO_ACTION
+

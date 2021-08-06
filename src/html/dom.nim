@@ -16,8 +16,6 @@ import ../types/enums
 
 import ../utils/twtstr
 
-import ../io/twtio
-
 const css = staticRead"../../res/default.css"
 let stylesheet = parseCSS(newStringStream(css))
 

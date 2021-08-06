@@ -10,8 +10,6 @@ import ../types/tagtypes
 import ../utils/twtstr
 import ../utils/radixtree
 
-import ../io/twtio
-
 import dom
 import entity
 

@@ -8,7 +8,6 @@ import utils/eprint
 import html/dom
 import html/htmlparser
 
-import io/display
 import io/buffer
 import io/term
 
@@ -47,11 +46,10 @@ proc main*() =
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  buffer.renderPlainText(getPageUri(uri).readAll())
   #buffer.document = parseHtml(getPageUri(uri))
   #buffer.setLocation(uri)
   #buffer.document.applyDefaultStylesheet()
-  #buffer.renderHtml()
+  buffer.renderPlainText(getPageUri(uri).readAll())
   var lastUri = uri
   while displayPage(attrs, buffer):
     statusMsg("Loading...", buffer.height)
@@ -64,6 +62,6 @@ proc main*() =
         discard
       else:
         buffer.document = parseHtml(getPageUri(buffer.location))
-      buffer.renderHtml()
+      buffer.renderPlainText(getPageUri(uri).readAll())
     lastUri = newUri
 main()
