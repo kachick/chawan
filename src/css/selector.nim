@@ -1,9 +1,8 @@
 import unicode
 
-import ../types/enums
-import ../types/tagtypes
-
-import ./cssparser
+import types/enums
+import types/tagtypes
+import css/cssparser
 
 type
   SelectorType* = enum

@@ -483,7 +483,7 @@ func nohandakuten*(r: Rune): Rune =
   return cast[Rune](cast[int](r) - 2)
 
 # Halfwidth to fullwidth & vice versa
-const widthconv = staticRead"../../res/widthconv.json"
+const widthconv = staticRead"res/widthconv.json"
 proc genHalfWidthTable(): Table[Rune, Rune] =
   let widthconvjson = parseJson(widthconv)
   for k, v in widthconvjson:

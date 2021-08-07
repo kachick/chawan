@@ -2,13 +2,9 @@ import unicode
 import terminal
 import tables
 
-
-import ../utils/twtstr
-import ../utils/eprint
-
-import ../types/enums
-
-import ./cssparser
+import utils/twtstr
+import types/enums
+import css/cssparser
 
 type
   CSSLength* = object

@@ -3,15 +3,11 @@ import uri
 import os
 import streams
 
-import utils/eprint
-
-import html/htmlparser
+import html/parser
 import html/dom
-
 import io/buffer
 import io/term
-
-import config
+import config/config
 
 let clientInstance = newHttpClient()
 proc loadRemotePage*(url: string): string =

@@ -1,8 +1,7 @@
 import unicode
 
-import ../types/enums
-
-import ../utils/twtstr
+import types/enums
+import utils/twtstr
 
 type
   CSSRect* = object

@@ -4,13 +4,9 @@ import strutils
 import sequtils
 import sugar
 
-import ../utils/twtstr
-import ../utils/radixtree
-import ../utils/eprint
-
-import ../config
-
-import ./terminal
+import utils/twtstr
+import utils/radixtree
+import config/config
 
 type LineState = object
   news: seq[Rune]

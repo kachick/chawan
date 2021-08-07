@@ -75,6 +75,7 @@ func getRealKey(key: string): string =
     elif meta == 2:
       realk &= '\e'
       realk &= c
+      meta = 0
     elif control == 1:
       realk &= 'C' & c
       control = 0
@@ -122,7 +123,7 @@ proc parseConfigLine[T](line: string, config: var T) =
       config.cmap[getRealKey(cmd[1])] = cmd[2]
 
 proc staticReadConfig(): StaticConfig =
-  let default = staticRead"../res/config"
+  let default = staticRead"res/config"
   for line in default.split('\n'):
     parseConfigLine(line, result)
 

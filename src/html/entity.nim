@@ -1,8 +1,8 @@
 import json
 
-import ../utils/radixtree
+import utils/radixtree
 
-const entity = staticRead"../../res/entity.json"
+const entity = staticRead"res/entity.json"
 proc genEntityMap(data: seq[tuple[a: string, b: string]]): RadixNode[string] =
   result = newRadixTree[string]()
   for pair in data:

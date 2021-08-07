@@ -8,10 +8,8 @@ import math
 import options
 import sugar
 
-import ../utils/twtstr
-import ../utils/eprint
-
-import ../types/enums
+import utils/twtstr
+import types/enums
 
 type
   CSSTokenizerState = object

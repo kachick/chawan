@@ -5,20 +5,14 @@ import tables
 import strutils
 import unicode
 
-import ../types/color
-import ../types/enums
-
-import ../utils/twtstr
-import ../utils/eprint
-
-import ../html/dom
-
-import ../css/box
-
-import ../config
-
-import ./term
-import ./lineedit
+import types/color
+import types/enums
+import utils/twtstr
+import html/dom
+import css/box
+import config/config
+import io/term
+import io/lineedit
 
 type
   Cell = object of RootObj
@@ -774,6 +768,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_CHANGE_LOCATION:
       var url = $buffer.location
 
+      termGoto(0, buffer.height)
       let status = readLine("URL: ", url, buffer.width)
       if status:
         buffer.setLocation(parseUri(url))

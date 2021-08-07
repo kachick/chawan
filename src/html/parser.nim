@@ -4,14 +4,12 @@ import strutils
 import tables
 import json
 
-import ../types/enums
-import ../types/tagtypes
-
-import ../utils/twtstr
-import ../utils/radixtree
-
-import dom
-import entity
+import types/enums
+import types/tagtypes
+import utils/twtstr
+import utils/radixtree
+import html/dom
+import html/entity
 
 type
   HTMLParseState = object
