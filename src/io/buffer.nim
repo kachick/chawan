@@ -619,6 +619,7 @@ proc renderPlainText*(buffer: Buffer, text: string) =
     buffer.setText(0, y, line.toRunes())
 
 proc renderDocument*(buffer: Buffer) =
+  buffer.clearText()
   var stack: seq[CSSBox]
   stack.add(buffer.document.root.box)
   while stack.len > 0:
