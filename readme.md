@@ -2,28 +2,29 @@
 
 ## What is this?
 
-A terminal web browser. It displays websites in your terminal and allows you to navigate on them.
+A terminal web browser. It displays websites in your terminal and allows you to
+navigate on them.
 
 ## How to compile?
 
 1. Install the nim compiler.
 2. Use one of the following:
 	- `make release` - normal release build
-	- `make small` - small release build
 	- `make` - debug build
 
 ## Why make another web browser?
 
 I've found other terminal web browsers insufficient for my needs, so I thought
-it'd be a fun excercise to write one myself.  
+it'd be a fun excercise to write one by myself, for myself.
 
-I don't really want a standard-compliant browser, or one that displays pages
-perfectly - the only way you could do that in a terminal is to work like
-browsh, which kinda defeats the point of a terminal web browser. I want one
-that is good enough for daily use, something like lynx or w3m.  
+The end result will of course not support nearly as many websites as Firefox or
+Chromium (so forget PWAs I guess), but I'd like it to be at least somewhat more
+functional on the "modern web" than w3m or lynx.
 
-So the aim is to implement HTML rendering, some degree of JS support, and a
-very limited subset of CSS. Plus some other things.
+While the original idea was to implement something similar to w3m's rendering
+with JS and minimal CSS support, I've got a bit carried away with my CSS parser
+so the new plan is to mostly implement basic CSS stuff and then JS with the
+most important APIs. Plus some other things.
 
 ## So what can this do?
 
@@ -31,15 +32,20 @@ Currently implemented features are:
 
 * basic html rendering (very much WIP)
 * custom keybindings
+* compose (basically a mini-IME, I might get rid of it later)
 
 Planned features (roughly in order of importance):
 
-* stylesheets
-* JavaScript
 * improved html rendering (i.e. actually functioning)
-* form
+* anchor
+* html generator (for source view)	
+* loading author stylesheets (i.e. ones in web pages)
+* markdown (with built-in parser)
+* form (w/ input etc)
+* JavaScript
 * table
 * cookie
+* adblock (use uBO?)
 * SOCKS proxy
 * HTTP proxy
 * image (sixel/kitty)
@@ -48,11 +54,14 @@ Planned features (roughly in order of importance):
 * frame?
 * extension API?
 * non-unicode charsets?
-* async?
-* markdown? (with built-in parser)
+* tabs (async?)
 * gopher?
 * gemini??
 
 ## How do I configure stuff?
 
-Currently only keybindings can be configured. See the res/config file for the default (built-in) configuration.
+Currently only keybindings and compose key combinations can be configured. See
+the res/config file for the default (built-in) configuration.
+
+twt will look for a config file in the ~/.config/twt/ directory, so you can
+just copy the one from res/ there and customize that to your liking.
