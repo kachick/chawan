@@ -468,10 +468,12 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
       let decls = parseCSSListOfDeclarations(oblock.value)
       for item in decls:
         if item of CSSDeclaration:
-          if ((CSSDeclaration)item).important:
-            result.add((elem, CSSDeclaration(item)))
+          let decl = CSSDeclaration(item)
+          if decl.important:
+            result.add((elem, decl))
           else:
-            elem.style.applyProperty(CSSDeclaration(item))
+            elem.style.applyProperty(decl)
+            elem.cssvalues.add(getComputedValue(decl))
 
     for child in elem.children:
       stack.add(child)
@@ -492,12 +494,13 @@ proc generateBox*(elem: Element, x: int, y: int, w: int, h: int) =
     if child.nodeType == ELEMENT_NODE:
       let elem = Element(child)
       elem.generateBox(rx, ry, w, h)
-      box.innerEdge.x2 += elem.box.size().w
-      box.innerEdge.y2 += elem.box.size().h
-      rx = x
-      lx = x
-      ry += elem.box.size().h
-      box.children.add(elem.box)
+      if elem.box != nil:
+        box.innerEdge.x2 += elem.box.size().w
+        box.innerEdge.y2 += elem.box.size().h
+        rx = x
+        lx = x
+        ry += elem.box.size().h
+        box.children.add(elem.box)
     elif child.nodeType == TEXT_NODE:
       let text = Text(child)
       let runes = text.data.toRunes()

@@ -42,10 +42,10 @@ proc main*() =
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  buffer.document = parseHtml(getPageUri(uri))
+  buffer.source = getPageUri(uri).readAll() #TODO buffer.renderPlainText(getPageUri(uri).readAll())
+  buffer.document = parseHtml(newStringStream(buffer.source))
   buffer.setLocation(uri)
   buffer.document.applyDefaultStylesheet()
-  #buffer.renderPlainText(getPageUri(uri).readAll())
   buffer.renderDocument()
   var lastUri = uri
   while displayPage(attrs, buffer):

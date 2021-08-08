@@ -73,6 +73,8 @@ type
     displaycontrols*: bool
     redraw*: bool
     location*: Uri
+    source*: string #TODO
+    showsource*: bool
 
 func newBuffer*(attrs: TermAttributes): Buffer =
   new(result)
@@ -783,6 +785,13 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       reshape = true
       redraw = true
     of ACTION_REDRAW: redraw = true
+    of ACTION_TOGGLE_SOURCE:
+      buffer.showsource = not buffer.showsource
+      if buffer.showsource:
+        buffer.renderPlainText(buffer.source)
+      else:
+        buffer.renderDocument()
+      redraw = true
     else: discard
     stdout.hideCursor()
 

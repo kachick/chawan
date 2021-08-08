@@ -43,6 +43,7 @@ nmap M-[H CURSOR_FIRST_LINE
 nmap M-[F CURSOR_LAST_LINE
 nmap z CENTER_LINE
 nmap C-g LINE_INFO
+nmap gh TOGGLE_SOURCE
 
 #line editing keybindings
 lemap C-m LINED_SUBMIT
@@ -61,7 +62,7 @@ lemap C-w LINED_KILL_WORD
 lemap C-a LINED_BEGIN
 lemap C-e LINED_END
 lemap C-v LINED_ESC
-lemap C-g LINED_COMPOSE_TOGGLE
+lemap M-j LINED_COMPOSE_TOGGLE
 
 #compose keybindings
 

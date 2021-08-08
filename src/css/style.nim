@@ -43,24 +43,39 @@ type
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
   
   CSSComputedValue* = object of RootObj
-    case t*: CSSRuleType
-    of RULE_ALL: discard
-    of RULE_COLOR:
+    t*: CSSRuleType
+    case v*: CSSValueType
+    of VALUE_COLOR:
       color*: CSSColor
-    of RULE_MARGIN, RULE_MARGIN_TOP, RULE_MARGIN_LEFT, RULE_MARGIN_RIGHT,
-       RULE_MARGIN_BOTTOM:
+    of VALUE_LENGTH:
       length*: CSSLength
-    of RULE_FONT_STYLE:
-      fontStyle*: CSSFontStyle
-    of RULE_DISPLAY:
+    of VALUE_FONT_STYLE:
+      fontstyle*: CSSFontStyle
+    of VALUE_DISPLAY:
       display*: DisplayType
-    of RULE_CONTENT:
+    of VALUE_CONTENT:
       content*: seq[Rune]
+    of VALUE_NONE: discard
 
   CSSSpecifiedValue* = object of CSSComputedValue
     hasGlobalValue: bool
     globalValue: CSSGlobalValueType
 
+const ValueTypes = {
+  RULE_ALL: VALUE_NONE,
+  RULE_COLOR: VALUE_COLOR,
+  RULE_MARGIN: VALUE_LENGTH,
+  RULE_MARGIN_TOP: VALUE_LENGTH,
+  RULE_MARGIN_BOTTOM: VALUE_LENGTH,
+  RULE_MARGIN_LEFT: VALUE_LENGTH,
+  RULE_MARGIN_RIGHT: VALUE_LENGTH,
+  RULE_FONT_STYLE: VALUE_FONT_STYLE,
+  RULE_DISPLAY: VALUE_DISPLAY,
+  RULE_CONTENT: VALUE_CONTENT,
+}.toTable()
+
+func getValueType*(rule: CSSRuleType): CSSValueType =
+  return ValueTypes[rule]
 
 func cells(l: CSSLength): int =
   case l.unit
@@ -249,33 +264,41 @@ func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   case $d.name
   of "color":
-    return CSSSpecifiedValue(t: RULE_COLOR, color: cssColor(d))
+    return CSSSpecifiedValue(t: RULE_COLOR, v: VALUE_COLOR, color: cssColor(d))
   of "margin":
-    return CSSSpecifiedValue(t: RULE_MARGIN, length: cssLength(d))
+    return CSSSpecifiedValue(t: RULE_MARGIN, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-top":
-    return CSSSpecifiedValue(t: RULE_MARGIN_TOP, length: cssLength(d))
+    return CSSSpecifiedValue(t: RULE_MARGIN_TOP, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-left":
-    return CSSSpecifiedValue(t: RULE_MARGIN_LEFT, length: cssLength(d))
+    return CSSSpecifiedValue(t: RULE_MARGIN_LEFT, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-bottom":
-    return CSSSpecifiedValue(t: RULE_MARGIN_BOTTOM, length: cssLength(d))
+    return CSSSpecifiedValue(t: RULE_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-right":
-    return CSSSpecifiedValue(t: RULE_MARGIN_RIGHT, length: cssLength(d))
+    return CSSSpecifiedValue(t: RULE_MARGIN_RIGHT, v: VALUE_LENGTH, length: cssLength(d))
   of "font-style":
-    return CSSSpecifiedValue(t: RULE_FONT_STYLE, fontStyle: cssFontStyle(d))
+    return CSSSpecifiedValue(t: RULE_FONT_STYLE, v: VALUE_FONT_STYLE, fontStyle: cssFontStyle(d))
   of "display":
-    return CSSSpecifiedValue(t: RULE_DISPLAY, display: cssDisplay(d))
+    return CSSSpecifiedValue(t: RULE_DISPLAY, v: VALUE_DISPLAY, display: cssDisplay(d))
   of "content":
-    return CSSSpecifiedValue(t: RULE_CONTENT, content: cssString(d))
+    return CSSSpecifiedValue(t: RULE_CONTENT, v: VALUE_CONTENT, content: cssString(d))
 
 func getComputedValue*(rule: CSSSpecifiedValue): CSSComputedValue =
   let inherit = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
   let initial = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
   let unset = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
   let revert = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
-  return rule
-  #case rule.t
-  #of RULE_COLOR:
-  #  return CSSComputedValue(t: rule.t, 
+  case rule.v
+  of VALUE_COLOR:
+    return CSSComputedValue(t: rule.t, v: VALUE_COLOR, color: rule.color)
+  of VALUE_LENGTH:
+    return CSSComputedValue(t: rule.t, v: VALUE_LENGTH, length: rule.length)
+  of VALUE_DISPLAY:
+    return CSSComputedValue(t: rule.t, v: VALUE_DISPLAY, display: rule.display)
+  of VALUE_FONT_STYLE:
+    return CSSComputedValue(t: rule.t, v: VALUE_FONT_STYLE, fontstyle: rule.fontstyle)
+  of VALUE_CONTENT:
+    return CSSComputedValue(t: rule.t, v: VALUE_CONTENT, content: rule.content)
+  of VALUE_NONE: return CSSComputedValue(t: rule.t, v: VALUE_NONE)
 
 func getValue*(vals: seq[CSSComputedValue], rule: CSSRuleType): CSSComputedValue =
   for val in vals:

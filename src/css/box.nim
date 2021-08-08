@@ -1,6 +1,5 @@
 import unicode
 
-import types/enums
 import utils/twtstr
 
 type

@@ -21,7 +21,7 @@ type
     ACTION_SCROLL_DOWN, ACTION_SCROLL_UP, ACTION_SCROLL_LEFT, ACTION_SCROLL_RIGHT,
     ACTION_CLICK,
     ACTION_CHANGE_LOCATION,
-    ACTION_RELOAD, ACTION_RESHAPE, ACTION_REDRAW,
+    ACTION_RELOAD, ACTION_RESHAPE, ACTION_REDRAW, ACTION_TOGGLE_SOURCE,
     ACTION_CURSOR_FIRST_LINE, ACTION_CURSOR_LAST_LINE,
     ACTION_CURSOR_TOP, ACTION_CURSOR_MIDDLE, ACTION_CURSOR_BOTTOM,
     ACTION_CENTER_LINE, ACTION_LINE_INFO,
@@ -49,7 +49,6 @@ func getConfig(s: StaticConfig): Config =
 
 func getRealKey(key: string): string =
   var realk: string
-  var currchar: char
   var control = 0
   var meta = 0
   var skip = false
@@ -59,12 +58,10 @@ func getRealKey(key: string): string =
     elif skip:
       realk &= c
       skip = false
-    elif c == 'M':
+    elif c == 'M' and meta == 0:
       inc meta
-      currchar = c
-    elif c == 'C':
+    elif c == 'C' and control == 0:
       inc control
-      currchar = c
     elif c == '-' and control == 1:
       inc control
     elif c == '-' and meta == 1:

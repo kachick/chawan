@@ -1,5 +1,5 @@
 NIMC = nim compile
-FLAGS = -d:ssl -o:twt -p:src/ -p:. --import:utils/eprint
+FLAGS = -o:twt -p:src/ -p:. --import:utils/eprint
 FILES = src/main.nim
 
 debug:
