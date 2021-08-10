@@ -4,7 +4,7 @@ import tables
 
 import utils/twtstr
 import types/enums
-import css/cssparser
+import css/parser
 
 type
   CSSLength* = object

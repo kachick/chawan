@@ -9,7 +9,7 @@ import sugar
 import algorithm
 
 import css/style
-import css/cssparser
+import css/parser
 import css/selector
 import types/enums
 import utils/twtstr
