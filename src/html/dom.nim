@@ -11,7 +11,6 @@ import algorithm
 import css/style
 import css/cssparser
 import css/selector
-import css/box
 import types/enums
 import utils/twtstr
 
@@ -89,7 +88,6 @@ type
     attributes*: Table[string, Attr]
     style*: CSS2Properties
     cssvalues*: seq[CSSComputedValue]
-    box*: CSSBox
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -478,39 +476,6 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
     for child in elem.children:
       stack.add(child)
 
-proc generateBox*(elem: Element, x: int, y: int, w: int, h: int) =
-  let display = elem.cssvalues.getValue(RULE_DISPLAY)
-  if display.t == RULE_DISPLAY:
-    if display.display == DISPLAY_NONE:
-      return
-  var box = new(CSSBlockBox)
-  box.innerEdge.x1 = x
-  box.innerEdge.y1 = y
-
-  var lx = x
-  var rx = x
-  var ry = y
-  for child in elem.childNodes:
-    if child.nodeType == ELEMENT_NODE:
-      let elem = Element(child)
-      elem.generateBox(rx, ry, w, h)
-      if elem.box != nil:
-        box.innerEdge.x2 += elem.box.size().w
-        box.innerEdge.y2 += elem.box.size().h
-        rx = x
-        lx = x
-        ry += elem.box.size().h
-        box.children.add(elem.box)
-    elif child.nodeType == TEXT_NODE:
-      let text = Text(child)
-      let runes = text.data.toRunes()
-      let boxes = boxesForText(runes, w, h, lx, rx, ry)
-      for child in boxes:
-        box.children.add(child)
-        box.innerEdge.y2 += child.size().h
-        ry += child.size().h
-      lx = boxes[^1].innerEdge.x2
-  elem.box = box
 
 proc applyDefaultStylesheet*(document: Document) =
   let important = document.applyRules(stylesheet)
@@ -518,4 +483,3 @@ proc applyDefaultStylesheet*(document: Document) =
     rule.e.style.applyProperty(rule.d)
     rule.e.cssvalues.add(getComputedValue(rule.d))
 
-  document.root.generateBox(0, 0, 80, 24)

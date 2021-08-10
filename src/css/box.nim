@@ -1,6 +1,7 @@
 import unicode
 
 import utils/twtstr
+import io/cell
 
 type
   CSSRect* = object
@@ -20,7 +21,7 @@ type
 
   CSSInlineBox* = ref CSSInlineBoxObj
   CSSInlineBoxObj = object of CSSBox
-    nextpart: CSSInlineBox
+    nextpart*: CSSInlineBox
 
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox
@@ -36,35 +37,3 @@ proc `+=`(a: var CSSRect, b: CSSRect) =
 
 func size*(box: CSSBox): tuple[w: int, h: int] =
   return (box.innerEdge.x2 - box.innerEdge.x1, box.innerEdge.y2 - box.innerEdge.x1)
-
-func boxesForText*(text: seq[Rune], width: int, height: int, lx: int, x: int, y: int): seq[CSSInlineBox] =
-  result.add(CSSInlineBox())
-  var w = x
-  var sx = x
-  var sy = y
-  var i = 0
-  while i < text.len and sy < height:
-    let cw = text[i].width()
-    if w + cw > width:
-      result[^1].innerEdge.x1 = sx
-      result[^1].innerEdge.x2 = sx + w
-      result[^1].innerEdge.y1 = sy
-      result[^1].innerEdge.y2 = sy + 1
-      sx = lx
-      inc sy
-      w = 0
-
-      result[^2].nextpart = result[^1]
-      result.add(CSSInlineBox())
-
-    result[^1].content &= text[i]
-    w += cw
-    inc i
-
-  if result.len > 1:
-    result[^2].nextpart = result[^1]
-  if w > 0:
-    result[^1].innerEdge.x1 = sx
-    result[^1].innerEdge.x2 = sx + w
-    result[^1].innerEdge.y1 = sy
-    result[^1].innerEdge.y2 = sy + 1

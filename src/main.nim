@@ -5,6 +5,7 @@ import streams
 
 import html/parser
 import html/dom
+import html/renderer
 import io/buffer
 import io/term
 import config/config
@@ -32,7 +33,6 @@ proc getPageUri(uri: Uri): Stream =
 
 var buffers: seq[Buffer]
 
-
 proc main*() =
   if paramCount() != 1:
     eprint "Invalid parameters. Usage:\ntwt <url>"
@@ -42,10 +42,11 @@ proc main*() =
   let buffer = newBuffer(attrs)
   let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  buffer.source = getPageUri(uri).readAll() #TODO buffer.renderPlainText(getPageUri(uri).readAll())
+  buffer.source = getPageUri(uri).readAll() #TODO get rid of this
   buffer.document = parseHtml(newStringStream(buffer.source))
   buffer.setLocation(uri)
   buffer.document.applyDefaultStylesheet()
+  buffer.alignBoxes()
   buffer.renderDocument()
   var lastUri = uri
   while displayPage(attrs, buffer):

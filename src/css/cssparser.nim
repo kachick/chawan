@@ -1,6 +1,5 @@
-# CSS tokenizer and parser. The tokenizer is a mess, and may or may not work
-# correctly. The parser should work, though the outputted object model is
-# questionable at best.
+# CSS tokenizer and parser. It kinda works, though certain less specific
+# details of the specification might have been implemented incorrectly.
 
 import unicode
 import streams

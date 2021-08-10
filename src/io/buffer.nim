@@ -13,25 +13,9 @@ import css/box
 import config/config
 import io/term
 import io/lineedit
+import io/cell
 
 type
-  Cell = object of RootObj
-    fgcolor*: CellColor
-    bgcolor*: CellColor
-    italic: bool
-    bold: bool
-    underline: bool
-
-  BufferCell = object of Cell
-    rune*: Rune
-
-  BufferRow = seq[BufferCell]
-
-  DisplayCell = object of Cell
-    runes*: seq[Rune]
-
-  DisplayRow = seq[DisplayCell]
-
   DrawInstruction = object
     case t: DrawInstructionType
     of DRAW_TEXT:
@@ -51,10 +35,10 @@ type
   Buffer* = ref BufferObj
   BufferObj = object
     title*: string
-    lines*: seq[BufferRow]
-    display*: DisplayRow
-    prevdisplay*: DisplayRow
-    statusmsg*: DisplayRow
+    lines*: FlexibleGrid
+    display*: FixedGrid
+    prevdisplay*: FixedGrid
+    statusmsg*: FixedGrid
     hovertext*: string
     width*: int
     height*: int
@@ -75,6 +59,7 @@ type
     location*: Uri
     source*: string #TODO
     showsource*: bool
+    rootbox*: CSSBox
 
 func newBuffer*(attrs: TermAttributes): Buffer =
   new(result)
@@ -82,9 +67,9 @@ func newBuffer*(attrs: TermAttributes): Buffer =
   result.height = attrs.termHeight - 1
   result.attrs = attrs
 
-  result.display = newSeq[DisplayCell](result.width * result.height)
-  result.prevdisplay = newSeq[DisplayCell](result.width * result.height)
-  result.statusmsg = newSeq[DisplayCell](result.width)
+  result.display = newSeq[FixedCell](result.width * result.height)
+  result.prevdisplay = newSeq[FixedCell](result.width * result.height)
+  result.statusmsg = newSeq[FixedCell](result.width)
 
 func generateFullOutput*(buffer: Buffer): seq[string] =
   var x = 0
@@ -192,7 +177,7 @@ func numLines*(buffer: Buffer): int = buffer.lines.len
 
 func lastVisibleLine*(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines - 1)
 
-func width(line: seq[BufferCell]): int =
+func width(line: seq[FlexibleCell]): int =
   for c in line:
     result += c.rune.width()
 
@@ -553,21 +538,11 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
     return true
   return false
 
-proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) =
-  while buffer.lines.len <= y:
-    buffer.lines.add(newSeq[BufferCell]())
-
-  while buffer.lines[y].len < x + text.len:
-    buffer.lines[y].add(BufferCell())
-  
-  var i = 0
-  while i < text.len:
-    buffer.lines[y][i].rune = text[i]
-    inc i
+proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) = buffer.lines.setText(x, y, text)
 
 proc reshape*(buffer: Buffer) =
-  buffer.display = newSeq[DisplayCell](buffer.width * buffer.height)
-  buffer.statusmsg = newSeq[DisplayCell](buffer.width)
+  buffer.display = newSeq[FixedCell](buffer.width * buffer.height)
+  buffer.statusmsg = newSeq[FixedCell](buffer.width)
 
 proc clearDisplay*(buffer: Buffer) =
   var i = 0
@@ -620,8 +595,10 @@ proc renderPlainText*(buffer: Buffer, text: string) =
 
 proc renderDocument*(buffer: Buffer) =
   buffer.clearText()
+  if buffer.rootbox == nil:
+    return
   var stack: seq[CSSBox]
-  stack.add(buffer.document.root.box)
+  stack.add(buffer.rootbox)
   while stack.len > 0:
     let box = stack.pop()
     buffer.setText(box.innerEdge.x1, box.innerEdge.y1, box.content)

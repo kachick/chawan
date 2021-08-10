@@ -79,6 +79,18 @@ comp i' í
 comp o' ó
 comp u' ú
 
+COMP A: Ä
+COMP O: Ö
+COMP U: Ü
+COMP U" Ű
+COMP O" Ő
+
+COMP A' Á
+COMP E' É
+COMP I' Í
+COMP O' Ó
+COMP U' Ú
+
 comp sS ß
 comp n~ ñ
 
@@ -441,6 +453,18 @@ comp TI ティ
 comp TTI ッティ
 comp DI ディ
 comp DDI ッディ
+
+comp KKYA ッキャ
+comp KKYU ッキュ
+comp KKYO ッキョ
+
+comp SSHA ッシャ
+comp SSHU ッシュ
+comp SSHO ッショ
+
+comp CCHA ッチャ
+comp CCHU ッチュ
+comp CCHO ッチョ
 
 comp SHE シェ
 comp SSHE ッシェ
