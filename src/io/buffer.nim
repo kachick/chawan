@@ -213,13 +213,7 @@ func cursorOnNode*(buffer: Buffer, node: Node): bool =
            (buffer.cursory == node.ey and buffer.cursorx < node.ex)
 
 func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
-  if buffer.selectedlink != nil and buffer.selectedLink.parentNode of HtmlElement:
-    return some(HtmlElement(buffer.selectedlink.parentNode))
-  for node in buffer.nodes:
-    if node.isElemNode():
-      if node.getFmtLen() > 0:
-        if buffer.cursorOnNode(node): return some(HtmlElement(node))
-  return none(HtmlElement)
+  discard #TODO
 
 func canScroll*(buffer: Buffer): bool =
   return buffer.numLines >= buffer.height
@@ -230,31 +224,7 @@ func getElementById*(buffer: Buffer, id: string): Element =
   return nil
 
 proc findSelectedNode*(buffer: Buffer): Option[Node] =
-  for node in buffer.nodes:
-    if node.getFmtLen() > 0 and node.displayed():
-      if buffer.cursory >= node.y and buffer.cursory <= node.y + node.height and buffer.cursorx >= node.x and buffer.cursorx <= node.x + node.width:
-        return some(node)
-  return none(Node)
-
-proc writefmt*(buffer: Buffer, str: string) =
-  discard
-
-proc writefmt*(buffer: Buffer, c: char) =
-  discard
-
-proc writeraw*(buffer: Buffer, str: string) =
-  discard
-
-proc writeraw*(buffer: Buffer, c: char) =
-  discard
-
-proc write*(buffer: Buffer, str: string) =
-  buffer.writefmt(str)
-  buffer.writeraw(str)
-
-proc write*(buffer: Buffer, c: char) =
-  buffer.writefmt(c)
-  buffer.writeraw(c)
+  discard #TODO
 
 proc clearText*(buffer: Buffer) =
   buffer.lines.setLen(0)

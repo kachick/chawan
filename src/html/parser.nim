@@ -370,7 +370,6 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
               state.commentNode = comment
               processDocumentAddNode(state, comment)
               if state.textNode != nil:
-                state.textNode.rawtext = state.textNode.getRawText()
                 state.textNode = nil
           else:
             #TODO for doctype
@@ -381,7 +380,6 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
 
         if not state.in_comment:
           if state.textNode != nil:
-            state.textNode.rawtext = state.textNode.getRawText()
             state.textNode = nil
           p = at
           var tag = parse_tag(buf, at)

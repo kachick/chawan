@@ -41,7 +41,7 @@ func boxesForText*(text: seq[Rune], width: int, height: int, lx: int, x: int, y:
     result[^1].innerEdge.y2 = sy + 1
 
 proc generateBox(elem: Element, x: int, y: int, w: int, h: int, fromx: int = x): CSSBox =
-  let display = elem.cssvalues.getValue(RULE_DISPLAY)
+  let display = elem.cssvalues[RULE_DISPLAY]
   if display.t == RULE_DISPLAY:
     if display.display == DISPLAY_NONE:
       return nil
@@ -51,7 +51,7 @@ proc generateBox(elem: Element, x: int, y: int, w: int, h: int, fromx: int = x):
 
   var anonBoxes = false
   for child in elem.children:
-    let rule = child.cssvalues.getValue(RULE_DISPLAY)
+    let rule = child.cssvalues[RULE_DISPLAY]
     if rule.t == RULE_DISPLAY and rule.display == DISPLAY_BLOCK:
       anonBoxes = true
       break

@@ -40,6 +40,8 @@ type
     position*: CSSPosition
     content*: seq[Rune]
 
+  CSSValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
+
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
   
   CSSComputedValue* = object of RootObj
@@ -282,14 +284,32 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   of "content":
     return CSSSpecifiedValue(t: RULE_CONTENT, v: VALUE_CONTENT, content: cssString(d))
 
-func getComputedValue*(rule: CSSSpecifiedValue): CSSComputedValue =
+func getInitialColor*(t: CSSRuleType): CSSColor =
+  case t
+  of RULE_COLOR:
+    return (r: 255u8, g: 255u8, b: 255u8, a: 255u8)
+  else:
+    return (r: 0u8, g: 0u8, b: 0u8, a: 255u8)
+
+func getComputedValue*(rule: CSSSpecifiedValue, parent: CSSValues): CSSComputedValue =
   let inherit = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
-  let initial = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
-  let unset = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
-  let revert = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
+  let initial = rule.hasGlobalValue and (rule.globalValue == VALUE_INITIAL)
+  let unset = rule.hasGlobalValue and (rule.globalValue == VALUE_UNSET)
+  let revert = rule.hasGlobalValue and (rule.globalValue == VALUE_REVERT)
   case rule.v
   of VALUE_COLOR:
-    return CSSComputedValue(t: rule.t, v: VALUE_COLOR, color: rule.color)
+    var val = rule.color
+    if inherit: #TODO and inherited(rule.t):
+      val = parent[rule.t].color
+    if initial:
+      val = getInitialColor(rule.t)
+    if unset:
+      val = getInitialColor(rule.t)
+      #TODO if inherited
+    if revert:
+      #TODO
+      discard
+    return CSSComputedValue(t: rule.t, v: VALUE_COLOR, color: val)
   of VALUE_LENGTH:
     return CSSComputedValue(t: rule.t, v: VALUE_LENGTH, length: rule.length)
   of VALUE_DISPLAY:
@@ -300,37 +320,15 @@ func getComputedValue*(rule: CSSSpecifiedValue): CSSComputedValue =
     return CSSComputedValue(t: rule.t, v: VALUE_CONTENT, content: rule.content)
   of VALUE_NONE: return CSSComputedValue(t: rule.t, v: VALUE_NONE)
 
-func getValue*(vals: seq[CSSComputedValue], rule: CSSRuleType): CSSComputedValue =
-  for val in vals:
-    if val.t == rule:
-      result = val
+func getComputedValue*(d: CSSDeclaration, parent: CSSValues): CSSComputedValue =
+  return getComputedValue(getSpecifiedValue(d), parent)
 
-func getComputedValue*(d: CSSDeclaration): CSSComputedValue =
-  return getComputedValue(getSpecifiedValue(d))
-
-proc applyProperty*(props: CSS2Properties, d: CSSDeclaration) =
-  case $d.name
-  of "color":
-    props.color = cssColor(d)
-  of "margin":
-    let l = cssLength(d)
-    props.margintop = l
-    props.marginbottom = l
-    props.marginleft = l
-    props.marginright = l
-  of "margin-top":
-    props.margintop = cssLength(d)
-  of "margin-left":
-    props.marginleft = cssLength(d)
-  of "margin-right":
-    props.marginright = cssLength(d)
-  of "margin-bottom":
-    props.marginbottom = cssLength(d)
-  of "font-style":
-    props.fontStyle = cssFontStyle(d)
-  of "display":
-    props.display = cssDisplay(d)
-  of "content":
-    props.content = cssString(d)
-  else:
-    printc(d) #TODO
+func getInitialProperties*(): array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue] =
+  for i in low(result)..high(result):
+    let t = CSSRuleType(i)
+    let v = getValueType(t)
+    case v
+    of VALUE_COLOR:
+      result[i] = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
+    else:
+      result[i] = CSSComputedValue(t: t, v: v)

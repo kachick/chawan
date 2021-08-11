@@ -33,8 +33,6 @@ type
     parentElement*: Element
     ownerDocument*: Document
 
-    rawtext*: string
-    fmttext*: seq[string]
     x*: int
     y*: int
     ex*: int
@@ -86,8 +84,7 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, Attr]
-    style*: CSS2Properties
-    cssvalues*: seq[CSSComputedValue]
+    cssvalues*: array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -155,15 +152,6 @@ func nodeAttr*(node: Node): HtmlElement =
   of ELEMENT_NODE: return HtmlElement(node)
   else: assert(false)
 
-func getStyle*(node: Node): CSS2Properties =
-  case node.nodeType
-  of TEXT_NODE: return node.parentElement.style
-  of ELEMENT_NODE: return Element(node).style
-  else: assert(false)
-
-func displayed*(node: Node): bool =
-  return node.rawtext.len > 0 and node.getStyle().display != DISPLAY_NONE
-
 func isTextNode*(node: Node): bool =
   return node.nodeType == TEXT_NODE
 
@@ -178,12 +166,6 @@ func isCData*(node: Node): bool =
 
 func isDocument*(node: Node): bool =
   return node.nodeType == DOCUMENT_NODE
-
-func getFmtLen*(htmlNode: Node): int =
-  return htmlNode.fmttext.join().runeLen()
-
-func getRawLen*(htmlNode: Node): int =
-  return htmlNode.rawtext.runeLen()
 
 func firstNode*(htmlNode: Node): bool =
   return htmlNode.parentElement != nil and htmlNode.parentElement.childNodes[0] == htmlNode
@@ -225,71 +207,11 @@ func toInputSize*(str: string): int =
       return 20
   return str.parseInt()
 
-func getFmtInput(inputElement: HtmlInputElement): seq[string] =
-  case inputElement.itype
-  of INPUT_TEXT, INPUT_SEARCH:
-    let valueFit = fitValueToSize(inputElement.value, inputElement.size)
-    return valueFit.ansiStyle(styleUnderscore).ansiReset().buttonFmt()
-  of INPUT_SUBMIT:
-    return inputElement.value.buttonFmt()
-  else: discard
-
-func getRawInput(inputElement: HtmlInputElement): string =
-  case inputElement.itype
-  of INPUT_TEXT, INPUT_SEARCH:
-    return inputElement.value.fitValueToSize(inputElement.size).buttonRaw()
-  of INPUT_SUBMIT:
-    return inputElement.value.buttonRaw()
-  else: discard
-
 #TODO
 func ancestor*(htmlNode: Node, tagType: TagType): HtmlElement =
   result = HtmlElement(htmlNode.parentElement)
   while result != nil and result.tagType != tagType:
     result = HtmlElement(result.parentElement)
-
-proc getRawText*(htmlNode: Node): string =
-  if htmlNode.isElemNode():
-    case HtmlElement(htmlNode).tagType
-    of TAG_INPUT: return HtmlInputElement(htmlNode).getRawInput()
-    else: return ""
-  elif htmlNode.isTextNode():
-    let chardata = CharacterData(htmlNode)
-    if htmlNode.parentElement != nil and htmlNode.parentElement.tagType != TAG_PRE:
-      result = chardata.data.remove("\n")
-    else:
-      result = unicode.strip(chardata.data)
-    if htmlNode.parentElement != nil and htmlNode.parentElement.tagType == TAG_OPTION:
-      result = result.buttonRaw()
-  else:
-    assert(false)
-
-func getFmtText*(node: Node): seq[string] =
-  if node.isElemNode():
-    case HtmlElement(node).tagType
-    of TAG_INPUT: return HtmlInputElement(node).getFmtInput()
-    else: return @[]
-  elif node.isTextNode():
-    let chardata = CharacterData(node)
-    result &= chardata.data
-    if node.parentElement != nil:
-      let style = node.getStyle()
-      if style.hasColor():
-        result = result.ansiFgColor(style.termColor())
-
-      if node.parentElement.tagType == TAG_OPTION:
-        result = result.ansiFgColor(fgRed).ansiReset()
-
-      if style.bold:
-        result = result.ansiStyle(styleBright).ansiReset()
-      if style.fontStyle == FONTSTYLE_ITALIC or style.fontStyle == FONTSTYLE_OBLIQUE:
-        result = result.ansiStyle(styleItalic).ansiReset()
-      if style.underscore:
-        result = result.ansiStyle(styleUnderscore).ansiReset()
-    else:
-      assert(false, node.rawtext)
-  else:
-    assert(false)
 
 func newText*(): Text =
   new(result)
@@ -320,7 +242,7 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
-  result.style = CSS2Properties()
+  result.cssvalues = getInitialProperties()
 
 func newDocument*(): Document =
   new(result)
@@ -455,6 +377,15 @@ func calcRules(elem: Element, rules: CSSStylesheet): seq[CSSSimpleBlock] =
   tosort.sort((x, y) => cmp(x.s,y.s))
   return tosort.map((x) => x.b)
 
+proc applyProperty(elem: Element, decl: CSSDeclaration) =
+  var parentprops: array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
+  if elem.parentElement != nil:
+    parentprops = elem.parentElement.cssvalues
+  else:
+    parentprops = getInitialProperties()
+  let cval = getComputedValue(decl, parentprops)
+  elem.cssvalues[cval.t] = cval
+
 proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration]] =
   var stack: seq[Element]
 
@@ -470,8 +401,7 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
           if decl.important:
             result.add((elem, decl))
           else:
-            elem.style.applyProperty(decl)
-            elem.cssvalues.add(getComputedValue(decl))
+            elem.applyProperty(decl)
 
     for child in elem.children:
       stack.add(child)
@@ -480,6 +410,5 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
 proc applyDefaultStylesheet*(document: Document) =
   let important = document.applyRules(stylesheet)
   for rule in important:
-    rule.e.style.applyProperty(rule.d)
-    rule.e.cssvalues.add(getComputedValue(rule.d))
+    rule.e.applyProperty(rule.d)
 

@@ -464,8 +464,11 @@ const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toRunes()
 #in unicode, char + 1 is dakuten and char + 2 handakuten
 #ﾞﾟ
 
-const Dakuten = "ﾞ".toRunes()[0]
-const HanDakuten = "ﾟ".toRunes()[0]
+const HalfDakuten = "ﾞ".toRunes()[0]
+const HalfHanDakuten = "ﾟ".toRunes()[0]
+
+const Dakuten = Rune(0x3099)
+const HanDakuten = Rune(0x309A)
 
 func dakuten*(r: Rune): Rune =
   if r in CanHaveDakuten:
@@ -509,15 +512,20 @@ func halfwidth*(r: Rune): Rune =
 
 func halfwidth*(s: seq[Rune]): seq[Rune] =
   for r in s:
-    #TODO implement a setting to enable this, I personally dislike it
-    #if r in HasDakuten:
-    #  result.add(halfwidth(r.nodakuten()))
-    #  result.add(Dakuten)
-    #elif r in HasHanDakuten:
-    #  result.add(halfwidth(r.nohandakuten()))
-    #  result.add(HanDakuten)
-    #else:
-    result.add(halfwidth(r))
+    #TODO combining dakuten don't always work with half width chars
+    #a proper solution would be something like:
+    #* try to detect if they work, if not fallback to halfwidth handakuten
+    #* add a config option for overriding this
+    #* also add an option to completely ignore dakuten
+    #* and one to disable half width ruby of course
+    if r in HasDakuten:
+      result.add(halfwidth(r.nodakuten()))
+      result.add(Dakuten)
+    elif r in HasHanDakuten:
+      result.add(halfwidth(r.nohandakuten()))
+      result.add(HanDakuten)
+    else:
+      result.add(halfwidth(r))
 
 func halfwidth*(s: string): string =
   return $halfwidth(s.toRunes())
@@ -542,3 +550,4 @@ proc fullwidth*(s: seq[Rune]): seq[Rune] =
 
 proc fullwidth*(s: string): string =
   return $fullwidth(s.toRunes())
+
