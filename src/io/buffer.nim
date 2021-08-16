@@ -545,6 +545,7 @@ proc refreshDisplay*(buffer: Buffer) =
     inc y
 
 proc renderPlainText*(buffer: Buffer, text: string) =
+  buffer.clearText()
   var i = 0
   var y = 0
   var line = ""

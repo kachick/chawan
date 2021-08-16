@@ -1,12 +1,10 @@
-NIMC = nim compile
-FLAGS = -o:twt -p:src/ -p:. --import:utils/eprint
+NIMC = nim c
+FLAGS = -o:twt
 FILES = src/main.nim
 
 debug:
 	$(NIMC) $(FLAGS) $(FILES)
 release:
-	$(NIMC) $(FLAGS) -d:release -d:strip $(FILES)
-danger:
-	$(NIMC) $(FLAGS) -d:danger -d:strip $(FILES)
+	$(NIMC) $(FLAGS) -d:release -d:strip -d:lto $(FILES)
 clean:
 	rm ./twt

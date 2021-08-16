@@ -13,6 +13,7 @@ func boxesForText*(text: seq[Rune], width: int, height: int, lx: int, x: int, y:
   var sx = x
   var sy = y
   var i = 0
+  var whitespace = false
   while i < text.len and sy < height:
     let cw = text[i].width()
     if w + cw > width:
@@ -27,7 +28,13 @@ func boxesForText*(text: seq[Rune], width: int, height: int, lx: int, x: int, y:
       result[^1].innerEdge.x1 = sx
       result[^1].innerEdge.y1 = sy
 
-    result[^1].content &= text[i]
+    if text[i].isWhitespace():
+      if not whitespace:
+        whitespace = true
+        result[^1].content &= text[i]
+    else:
+      whitespace = false
+      result[^1].content &= text[i]
     w += cw
     inc i
 
@@ -40,19 +47,18 @@ func boxesForText*(text: seq[Rune], width: int, height: int, lx: int, x: int, y:
     result[^1].innerEdge.x2 = sx + w
     result[^1].innerEdge.y2 = sy + 1
 
+#func insertText(text: seq[Rune], 
+
 proc generateBox(elem: Element, x: int, y: int, w: int, h: int, fromx: int = x): CSSBox =
-  let display = elem.cssvalues[RULE_DISPLAY]
-  if display.t == RULE_DISPLAY:
-    if display.display == DISPLAY_NONE:
-      return nil
+  if elem.cssvalues[RULE_DISPLAY].display == DISPLAY_NONE:
+    return nil
   new(result)
   result.innerEdge.x1 = x
   result.innerEdge.y1 = y
 
   var anonBoxes = false
   for child in elem.children:
-    let rule = child.cssvalues[RULE_DISPLAY]
-    if rule.t == RULE_DISPLAY and rule.display == DISPLAY_BLOCK:
+    if child.cssvalues[RULE_DISPLAY].display == DISPLAY_BLOCK:
       anonBoxes = true
       break
   var lx = fromx
@@ -71,12 +77,15 @@ proc generateBox(elem: Element, x: int, y: int, w: int, h: int, fromx: int = x):
     elif child.nodeType == TEXT_NODE:
       let text = Text(child)
       let runes = text.data.toRunes()
-      let boxes = boxesForText(runes, w, h, lx, rx, ry)
-      for child in boxes:
-        result.children.add(child)
-        result.innerEdge.y2 += child.size().h
-        ry += child.size().h
-      lx = boxes[^1].innerEdge.x2
+      if anonBoxes:
+        let boxes = boxesForText(runes, w, h, lx, rx, ry)
+        for child in boxes:
+          result.children.add(child)
+          result.innerEdge.y2 += child.size().h
+          ry += child.size().h
+        lx = boxes[^1].innerEdge.x2
+      else:
+        discard #TODO TODO TODO
 
 proc alignBoxes*(buffer: Buffer) =
   buffer.rootbox = buffer.document.root.generateBox(0, 0, buffer.width, buffer.height)

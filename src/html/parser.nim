@@ -13,12 +13,6 @@ import html/entity
 
 type
   HTMLParseState = object
-    closed: bool
-    parents: seq[Node]
-    parsedNode: Node
-    a: string
-    b: string
-    attrs: seq[string]
     in_comment: bool
     in_script: bool
     in_style: bool

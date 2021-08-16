@@ -330,5 +330,7 @@ func getInitialProperties*(): array[low(CSSRuleType)..high(CSSRuleType), CSSComp
     case v
     of VALUE_COLOR:
       result[i] = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
+    of VALUE_DISPLAY:
+      result[i] = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
     else:
       result[i] = CSSComputedValue(t: t, v: v)

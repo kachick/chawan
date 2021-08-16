@@ -51,6 +51,7 @@ Planned features (roughly in order of importance):
 * image (sixel/kitty)
 * audio
 * video (sixel/kitty)
+* user style sheet w/ editor
 * frame?
 * extension API?
 * non-unicode charsets?
