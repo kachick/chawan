@@ -1,6 +1,7 @@
 import unicode
 
 import types/color
+import utils/twtstr
 
 type
   Cell* = object of RootObj
@@ -13,7 +14,9 @@ type
   FlexibleCell* = object of Cell
     rune*: Rune
 
-  FlexibleGrid* = seq[seq[FlexibleCell]]
+  FlexibleLine* = seq[FlexibleCell]
+
+  FlexibleGrid* = seq[FlexibleLine]
 
   FixedCell* = object of Cell
     runes*: seq[Rune]
@@ -32,3 +35,9 @@ proc setText*(grid: var FlexibleGrid, x: int, y: int, text: seq[Rune]) =
     grid[y][i].rune = text[i]
     inc i
 
+func newFixedGrid*(w: int, h: int = 1): FixedGrid =
+  return newSeq[FixedCell](w * h)
+
+func width*(line: FlexibleLine): int =
+  for c in line:
+    result += c.rune.width()

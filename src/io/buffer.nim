@@ -67,9 +67,9 @@ func newBuffer*(attrs: TermAttributes): Buffer =
   result.height = attrs.termHeight - 1
   result.attrs = attrs
 
-  result.display = newSeq[FixedCell](result.width * result.height)
-  result.prevdisplay = newSeq[FixedCell](result.width * result.height)
-  result.statusmsg = newSeq[FixedCell](result.width)
+  result.display = newFixedGrid(result.width, result.height)
+  result.prevdisplay = newFixedGrid(result.width, result.height)
+  result.statusmsg = newFixedGrid(result.width)
 
 func generateFullOutput*(buffer: Buffer): seq[string] =
   var x = 0
@@ -510,9 +510,25 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
 
 proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) = buffer.lines.setText(x, y, text)
 
+proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
+  while buffer.lines.len <= y:
+    buffer.lines.add(newSeq[FlexibleCell]())
+
+  var i = 0
+  var cx = 0
+  while cx < x and i < buffer.lines[y].len:
+    cx += buffer.lines[y][i].rune.width()
+    inc i
+
+  buffer.lines[y].setLen(i)
+  i = 0
+  while i < line.len:
+    buffer.lines[y].add(line[i])
+    inc i
+
 proc reshape*(buffer: Buffer) =
-  buffer.display = newSeq[FixedCell](buffer.width * buffer.height)
-  buffer.statusmsg = newSeq[FixedCell](buffer.width)
+  buffer.display = newFixedGrid(buffer.width, buffer.height)
+  buffer.statusmsg = newFixedGrid(buffer.width)
 
 proc clearDisplay*(buffer: Buffer) =
   var i = 0
@@ -524,6 +540,9 @@ proc refreshDisplay*(buffer: Buffer) =
   var y = 0
   buffer.prevdisplay = buffer.display
   buffer.clearDisplay()
+  if buffer.fromy > buffer.lastVisibleLine - 1:
+    buffer.fromy = 0
+    buffer.cursory = buffer.lastVisibleLine - 1
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
     var w = 0
     var i = 0
@@ -572,7 +591,15 @@ proc renderDocument*(buffer: Buffer) =
   stack.add(buffer.rootbox)
   while stack.len > 0:
     let box = stack.pop()
-    buffer.setText(box.innerEdge.x1, box.innerEdge.y1, box.content)
+    if box of CSSInlineBox:
+      let inline = CSSInlineBox(box)
+      var i = 0
+      for line in inline.content:
+        var x = inline.innerEdge.x1
+        if i == 0:
+          x = inline.fromx
+        var y = box.innerEdge.y1 + i
+        buffer.setLine(x, y, line)
 
     for child in box.children:
       stack.add(child)

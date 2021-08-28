@@ -5,87 +5,107 @@ import html/dom
 import css/box
 import css/style
 import io/buffer
+import io/cell
 import utils/twtstr
 
-func boxesForText*(text: seq[Rune], width: int, height: int, lx: int, x: int, y: int): seq[CSSInlineBox] =
-  result.add(CSSInlineBox())
-  var w = x
-  var sx = x
-  var sy = y
+# basically these are the "line boxes". though honestly this is an awful
+# way to model them... but it's fine for now, I guess. TODO
+# no it's actually not fine number one priority is making it work TODO TODO TODO
+proc generateGrids(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fromx: int = x): FlexibleGrid =
+  var r: Rune
+  var rowgrid: FlexibleLine
   var i = 0
-  var whitespace = false
-  while i < text.len and sy < height:
-    let cw = text[i].width()
-    if w + cw > width:
-      result[^1].innerEdge.x2 = sx + w
-      result[^1].innerEdge.y2 = sy + 1
-      sx = lx
-      inc sy
-      w = 0
+  if fromx > x:
+    let m = fromx - x + maxwidth
+    var w = 0
+    while i < text.data.len:
+      let pi = i
+      fastRuneAt(text.data, i, r)
+      let rw = r.width()
+      if rw + w > m:
+        i = pi
+        break
+      else:
+        rowgrid.add(FlexibleCell(rune: r))
+        w += rw
+    result.add(rowgrid)
 
-      result[^2].nextpart = result[^1]
-      result.add(CSSInlineBox())
-      result[^1].innerEdge.x1 = sx
-      result[^1].innerEdge.y1 = sy
+  if i < text.data.len:
+    rowgrid.setLen(0)
+    var w = 0
+    while i < text.data.len:
+      let pi = i
+      fastRuneAt(text.data, i, r)
+      let rw = r.width()
+      if rw + w > maxwidth:
+        i = pi
+        w = 0
+        result.add(rowgrid)
+        rowgrid.setLen(0)
+      else:
+        rowgrid.add(FlexibleCell(rune: r))
+        w += rw
 
-    if text[i].isWhitespace():
-      if not whitespace:
-        whitespace = true
-        result[^1].content &= text[i]
+  if rowgrid.len > 0:
+    result.add(rowgrid)
+
+proc generateBox(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fromx: int): CSSInlineBox =
+  new(result)
+  result.content = text.generateGrids(maxwidth, maxheight, x, y, fromx)
+  result.fromx = fromx
+  result.innerEdge.x1 = x
+  result.innerEdge.y1 = y
+  var height = 0
+  var width = 0
+  for grid in result.content:
+    inc height
+    width = max(width, grid.len)
+  
+  height = min(height, maxheight)
+  width = min(width, maxwidth)
+  result.innerEdge.x2 = x + width
+  result.innerEdge.y2 = y + height
+
+proc generateBox(elem: Element, maxwidth: int, maxheight: int, x: int = 0, y: int = 0, fromx: int = x): CSSBox
+
+proc generateChildBoxes(elem: Element, maxwidth: int, maxheight: int, x: int, y: int, fromx: int = 0): seq[CSSBox] =
+  var cx = fromx
+  var cy = y
+  for child in elem.childNodes:
+    case child.nodeType
+    of TEXT_NODE:
+      let box = Text(child).generateBox(maxwidth, maxheight, x, cy, cx)
+      if box != nil:
+        result.add(box)
+        cy += box.h
+        if box.content.len > 0:
+          cx = box.content[^1].width()
+    of ELEMENT_NODE:
+      let box = Element(child).generateBox(maxwidth, maxheight, x, cy, cx)
+      if box != nil:
+        result.add(box)
     else:
-      whitespace = false
-      result[^1].content &= text[i]
-    w += cw
-    inc i
+      discard
 
-    result[^1].innerEdge.y1 = sy
-  if result.len > 1:
-    result[^2].nextpart = result[^1]
-  if w > 0:
-    result[^1].innerEdge.x1 = sx
-    result[^1].innerEdge.y1 = sy
-    result[^1].innerEdge.x2 = sx + w
-    result[^1].innerEdge.y2 = sy + 1
-
-#func insertText(text: seq[Rune], 
-
-proc generateBox(elem: Element, x: int, y: int, w: int, h: int, fromx: int = x): CSSBox =
+proc generateBox(elem: Element, maxwidth: int, maxheight: int, x: int = 0, y: int = 0, fromx: int = x): CSSBox =
   if elem.cssvalues[RULE_DISPLAY].display == DISPLAY_NONE:
     return nil
-  new(result)
+
+  result = CSSBlockBox()
   result.innerEdge.x1 = x
   result.innerEdge.y1 = y
 
-  var anonBoxes = false
-  for child in elem.children:
-    if child.cssvalues[RULE_DISPLAY].display == DISPLAY_BLOCK:
-      anonBoxes = true
-      break
-  var lx = fromx
-  var rx = x
-  var ry = y
-  for child in elem.childNodes:
-    if child.nodeType == ELEMENT_NODE:
-      let elem = Element(child)
-      let nbox = elem.generateBox(rx, ry, w, h)
-      if nbox != nil:
-        result.innerEdge.x2 = min(max(nbox.size().w, result.innerEdge.x2), w)
-        result.innerEdge.y2 = min(result.innerEdge.y2 + nbox.size().h, w)
-        rx = x
-        ry += nbox.size().h
-        result.children.add(nbox)
-    elif child.nodeType == TEXT_NODE:
-      let text = Text(child)
-      let runes = text.data.toRunes()
-      if anonBoxes:
-        let boxes = boxesForText(runes, w, h, lx, rx, ry)
-        for child in boxes:
-          result.children.add(child)
-          result.innerEdge.y2 += child.size().h
-          ry += child.size().h
-        lx = boxes[^1].innerEdge.x2
-      else:
-        discard #TODO TODO TODO
+  var width = 0
+  var height = 0
+  for box in elem.generateChildBoxes(maxwidth, maxheight, x, y, fromx):
+    result.children.add(box)
+    height += box.h
+    height = min(height, maxheight)
+    width = max(width, box.w)
+    width = min(width, maxwidth)
+
+  result.innerEdge.x2 = x + width
+  result.innerEdge.y2 = y + height
 
 proc alignBoxes*(buffer: Buffer) =
-  buffer.rootbox = buffer.document.root.generateBox(0, 0, buffer.width, buffer.height)
+  buffer.rootbox = buffer.document.root.generateBox(buffer.width, buffer.height)

@@ -12,7 +12,6 @@ type
 
   CSSBox* = ref CSSBoxObj
   CSSBoxObj = object of RootObj
-    content*: seq[Rune]
     innerEdge*: CSSRect
     paddingEdge*: CSSRect
     borderEdge*: CSSRect
@@ -21,7 +20,8 @@ type
 
   CSSInlineBox* = ref CSSInlineBoxObj
   CSSInlineBoxObj = object of CSSBox
-    nextpart*: CSSInlineBox
+    fromx*: int
+    content*: FlexibleGrid
 
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox
@@ -37,3 +37,9 @@ proc `+=`(a: var CSSRect, b: CSSRect) =
 
 func size*(box: CSSBox): tuple[w: int, h: int] =
   return (box.innerEdge.x2 - box.innerEdge.x1, box.innerEdge.y2 - box.innerEdge.x1)
+
+func w*(box: CSSBox): int =
+  return box.innerEdge.x2 - box.innerEdge.x1
+
+func h*(box: CSSBox): int =
+  return box.innerEdge.y2 - box.innerEdge.y1
