@@ -13,10 +13,6 @@ type LineState = object
   s: string
   feedNext: bool
   escNext: bool
-  comp: bool
-  compn: RadixNode[string]
-  compa: int
-  comps: string
   cursor: int
   shift: int
   minlen: int
@@ -25,13 +21,15 @@ type LineState = object
   spaces: seq[string]
 
 proc backward(state: LineState, i: int) =
-  if i == 1:
-    print('\b')
-  else:
-    cursorBackward(i)
+  if i > 0:
+    if i == 1:
+      print('\b')
+    else:
+      cursorBackward(i)
 
 proc forward(state: LineState, i: int) =
-  cursorForward(i)
+  if i > 0:
+    cursorForward(i)
 
 proc begin(state: LineState) =
   print('\r')
@@ -41,57 +39,48 @@ proc begin(state: LineState) =
 proc space(state: LineState, i: int) =
   print(state.spaces[i])
 
-proc kill(state: LineState) =
-  when defined(windows):
-    let w = min(state.news.width(state.cursor), state.displen)
-    state.space(w)
-    state.backward(w)
-  else:
-    print("\e[K")
+template kill(state: LineState, i: int) =
+  state.space(i)
+  state.backward(i)
+  #print("\e[K")
 
-proc fullRedraw(state: var LineState) =
-    state.displen = state.maxlen - 1
-    if state.cursor > state.shift:
-      var shiftw = state.news.width(state.shift, state.cursor)
-      while shiftw > state.maxlen - 1:
-        inc state.shift
-        shiftw -= state.news[state.shift].width()
-    else:
-      state.shift = max(state.cursor - 1, 0)
+template kill(state: LineState) =
+  let w = min(state.news.width(state.cursor), state.displen)
+  state.kill(w)
 
-    var dispw = state.news.width(state.shift, state.shift + state.displen)
-    if state.shift + state.displen > state.news.len:
-      state.displen = state.news.len - state.shift
-    while dispw > state.maxlen - 1:
-      dispw -= state.news[state.shift + state.displen - 1].width()
-      dec state.displen
+proc redraw(state: var LineState) =
+  var dispw = state.news.width(state.shift, state.shift + state.displen)
+  if state.shift + state.displen > state.news.len:
+    state.displen = state.news.len - state.shift
+  while dispw > state.maxlen - 1:
+    dispw -= state.news[state.shift + state.displen - 1].width()
+    dec state.displen
 
-    state.begin()
-    let os = state.news.substr(state.shift, state.shift + state.displen)
-    printesc($os)
-    state.space(max(state.maxlen - os.width(), 0))
+  state.begin()
+  let os = state.news.substr(state.shift, state.shift + state.displen)
+  printesc($os)
+  state.space(max(state.maxlen - state.minlen - os.width(), 0))
 
-    state.begin()
-    state.forward(state.news.width(state.shift, state.cursor))
+  state.begin()
+  state.forward(state.news.width(state.shift, state.cursor))
 
 proc zeroShiftRedraw(state: var LineState) =
   state.shift = 0
   state.displen = state.maxlen - 1
 
-  var dispw = state.news.width(0, state.displen)
-  if state.displen > state.news.len:
-    state.displen = state.news.len
-  while dispw > state.maxlen - 1:
-    dispw -= state.news[state.displen - 1].width()
-    dec state.displen
+  state.redraw()
 
-  state.begin()
-  let os = state.news.substr(0, state.displen)
-  printesc($os)
-  state.space(max(state.maxlen - os.width(), 0))
+proc fullRedraw(state: var LineState) =
+  state.displen = state.maxlen - 1
+  if state.cursor > state.shift:
+    var shiftw = state.news.width(state.shift, state.cursor)
+    while shiftw > state.maxlen - 1:
+      inc state.shift
+      shiftw -= state.news[state.shift].width()
+  else:
+    state.shift = max(state.cursor - 1, 0)
 
-  state.begin()
-  state.forward(state.news.width(0, state.cursor))
+  state.redraw()
 
 proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
   let escNext = state.escNext
@@ -109,40 +98,9 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
     state.cursor += cs.len
     state.fullRedraw()
 
-proc insertCompose(state: var LineState, c: char) =
-  state.comps &= c
-  let n = state.compn{state.comps}
-  if n != state.compn:
-    state.compn = n
-    state.compa += state.comps.len
-    state.comps = ""
-  if state.compn.hasPrefix(state.comps, state.compn) and n.children.len > 0:
-    state.feedNext = true
-  else:
-    var cs: seq[Rune]
-    if state.compn.leaf:
-      cs = state.compn.value.toRunes()
-    else:
-      cs = state.s.substr(0, state.compa - 1).toRunes()
-    state.comps = state.s.substr(state.compa)
-    if state.comps.len > 0 and gconfig.cmap.hasPrefix(state.comps):
-      state.compa = state.comps.len
-      state.compn = gconfig.cmap{state.comps}
-      state.s = state.comps
-      state.comps = ""
-      state.feedNext = true
-    else:
-      cs &= state.comps.toRunes()
-      state.compa = 0
-      state.compn = gconfig.cmap
-      state.comps = ""
-
-    state.insertCharseq(cs)
-
 proc readLine*(current: var string, minlen: int, maxlen: int): bool =
   var state: LineState
   state.news = current.toRunes()
-  state.compn = gconfig.cmap
   state.cursor = state.news.len
   state.minlen = minlen
   state.maxlen = maxlen
@@ -173,11 +131,18 @@ proc readLine*(current: var string, minlen: int, maxlen: int): bool =
       if state.cursor > 0:
         state.news.delete(state.cursor - 1, state.cursor - 1)
         dec state.cursor
-        state.fullRedraw()
+        if state.cursor == state.news.len and state.shift == 0:
+          state.backward(1)
+          state.kill(1)
+        else:
+          state.fullRedraw()
     of ACTION_LINED_DELETE:
       if state.cursor > 0 and state.cursor < state.news.len:
         state.news.delete(state.cursor, state.cursor)
-        state.fullRedraw()
+        if state.cursor == state.news.len and state.shift == 0:
+          state.kill(1)
+        else:
+          state.fullRedraw()
     of ACTION_LINED_ESC:
       state.escNext = true
     of ACTION_LINED_CLEAR:
@@ -245,10 +210,9 @@ proc readLine*(current: var string, minlen: int, maxlen: int): bool =
         let w = state.news.width(state.cursor - chars, state.cursor)
         state.news.delete(state.cursor - chars, state.cursor - 1)
         state.cursor -= chars
-        if state.cursor > state.news.len and state.shift == 0:
+        if state.cursor == state.news.len and state.shift == 0:
           state.backward(w)
-          state.space(w)
-          state.backward(w)
+          state.kill(w)
         else:
           state.fullRedraw()
     of ACTION_LINED_BEGIN:
@@ -265,15 +229,8 @@ proc readLine*(current: var string, minlen: int, maxlen: int): bool =
         else:
           state.fullRedraw()
         state.cursor = state.news.len
-    of ACTION_LINED_COMPOSE_TOGGLE:
-      state.comp = not state.comp
-      state.compn = gconfig.cmap
-      state.compa = 0
-      state.comps = ""
     of ACTION_FEED_NEXT:
       state.feedNext = true
-    elif state.comp:
-      state.insertCompose(c)
     elif validateUtf8(state.s) == -1:
       var cs = state.s.toRunes()
       state.insertCharseq(cs)

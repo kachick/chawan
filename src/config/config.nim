@@ -37,15 +37,13 @@ type
   StaticConfig = object
     nmap: ActionMap
     lemap: ActionMap
-    cmap: Table[string, string]
 
   Config = object
     nmap*: ActionMap
     lemap*: ActionMap
-    cmap*: RadixNode[string]
 
 func getConfig(s: StaticConfig): Config =
-  return Config(nmap: s.nmap, lemap: s.lemap, cmap: s.cmap.toRadixTree())
+  return Config(nmap: s.nmap, lemap: s.lemap)
 
 func getRealKey(key: string): string =
   var realk: string
@@ -116,8 +114,6 @@ proc parseConfigLine[T](line: string, config: var T) =
       config.nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
     elif cmd[0] == "lemap":
       config.lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
-    elif cmd[0] == "comp":
-      config.cmap[getRealKey(cmd[1])] = cmd[2]
 
 proc staticReadConfig(): StaticConfig =
   let default = staticRead"res/config"
@@ -135,7 +131,6 @@ proc readConfig(filename: string) =
   let status = f.open(filename, fmRead)
   var nmap: ActionMap
   var lemap: ActionMap
-  var compose: Table[string, string]
   if status:
     var line: TaintedString
     while f.readLine(line):
@@ -143,7 +138,6 @@ proc readConfig(filename: string) =
 
     gconfig.nmap = constructActionTable(nmap)
     gconfig.lemap = constructActionTable(lemap)
-    gconfig.cmap = compose.toRadixTree()
 
 proc readConfig*() =
   when defined(debug):

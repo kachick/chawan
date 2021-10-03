@@ -31,8 +31,7 @@ most important APIs. Plus some other things.
 Currently implemented features are:
 
 * basic html rendering (very much WIP)
-* custom keybindings
-* compose (basically a mini-IME, I might get rid of it later)
+* fully functioning 2d pager with custom keybindings
 
 Planned features (roughly in order of importance):
 
@@ -45,13 +44,13 @@ Planned features (roughly in order of importance):
 * JavaScript
 * table
 * cookie
-* adblock (use uBO?)
 * SOCKS proxy
 * HTTP proxy
 * image (sixel/kitty)
 * audio
 * video (sixel/kitty)
 * user style sheet w/ editor
+* adblock (use uBO?)
 * frame?
 * extension API?
 * non-unicode charsets?
@@ -61,8 +60,8 @@ Planned features (roughly in order of importance):
 
 ## How do I configure stuff?
 
-Currently only keybindings and compose key combinations can be configured. See
-the res/config file for the default (built-in) configuration.
+Currently only keybindings can be configured. See the res/config file for the
+default (built-in) configuration.
 
 twt will look for a config file in the ~/.config/twt/ directory, so you can
 just copy the one from res/ there and customize that to your liking.
