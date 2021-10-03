@@ -18,10 +18,15 @@ type
     marginEdge*: CSSRect
     children*: seq[CSSBox]
 
+  CSSRowBox* = object
+    width*: int
+    height*: int
+    runes*: seq[Rune]
+
   CSSInlineBox* = ref CSSInlineBoxObj
   CSSInlineBoxObj = object of CSSBox
     fromx*: int
-    content*: FlexibleGrid
+    content*: seq[CSSRowBox]
 
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox

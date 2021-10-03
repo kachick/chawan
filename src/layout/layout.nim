@@ -8,13 +8,11 @@ import io/buffer
 import io/cell
 import utils/twtstr
 
-# basically these are the "line boxes". though honestly this is an awful
-# way to model them... but it's fine for now, I guess. TODO
-# no it's actually not fine number one priority is making it work TODO TODO TODO
-proc generateGrids(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fromx: int = x): FlexibleGrid =
+proc generateGrids(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fromx: int = x): seq[CSSRowBox] =
   var r: Rune
-  var rowgrid: FlexibleLine
+  var rowbox: CSSRowBox
   var i = 0
+  var whitespace = false
   if fromx > x:
     let m = fromx - x + maxwidth
     var w = 0
@@ -26,12 +24,23 @@ proc generateGrids(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fr
         i = pi
         break
       else:
-        rowgrid.add(FlexibleCell(rune: r))
-        w += rw
-    result.add(rowgrid)
+        if r.isWhitespace():
+          if not whitespace:
+            whitespace = true
+            rowbox.runes.add(Rune(' '))
+            inc rowbox.width
+            w += rw
+        else:
+          if whitespace:
+            whitespace = false
+          rowbox.runes.add(r)
+          inc rowbox.width
+          w += rw
+
+    result.add(rowbox)
 
   if i < text.data.len:
-    rowgrid.setLen(0)
+    rowbox = CSSRowBox()
     var w = 0
     while i < text.data.len:
       let pi = i
@@ -40,14 +49,15 @@ proc generateGrids(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fr
       if rw + w > maxwidth:
         i = pi
         w = 0
-        result.add(rowgrid)
-        rowgrid.setLen(0)
+        result.add(rowbox)
+        rowbox = CSSRowBox()
       else:
-        rowgrid.add(FlexibleCell(rune: r))
+        rowbox.runes.add(r)
+        inc rowbox.width
         w += rw
 
-  if rowgrid.len > 0:
-    result.add(rowgrid)
+  if rowbox.width > 0:
+    result.add(rowbox)
 
 proc generateBox(text: Text, maxwidth: int, maxheight: int, x: int, y: int, fromx: int): CSSInlineBox =
   new(result)
@@ -59,7 +69,7 @@ proc generateBox(text: Text, maxwidth: int, maxheight: int, x: int, y: int, from
   var width = 0
   for grid in result.content:
     inc height
-    width = max(width, grid.len)
+    width = max(width, grid.width)
   
   height = min(height, maxheight)
   width = min(width, maxwidth)
@@ -79,7 +89,7 @@ proc generateChildBoxes(elem: Element, maxwidth: int, maxheight: int, x: int, y:
         result.add(box)
         cy += box.h
         if box.content.len > 0:
-          cx = box.content[^1].width()
+          cx = box.content[^1].width
     of ELEMENT_NODE:
       let box = Element(child).generateBox(maxwidth, maxheight, x, cy, cx)
       if box != nil:

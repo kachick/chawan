@@ -5,7 +5,7 @@ import streams
 
 import html/parser
 import html/dom
-import html/renderer
+import layout/layout
 import io/buffer
 import io/term
 import config/config

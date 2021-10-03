@@ -191,6 +191,8 @@ func cellWidthOverlap*(buffer: Buffer, x: int, y: int): int =
 func currentCellWidth*(buffer: Buffer): int = buffer.cellWidthOverlap(buffer.cursorx - buffer.fromx, buffer.cursory - buffer.fromy)
 
 func currentLineWidth*(buffer: Buffer): int =
+  if buffer.cursory > buffer.lines.len:
+    return 0
   return buffer.lines[buffer.cursory].width()
 
 func maxScreenWidth*(buffer: Buffer): int =
@@ -526,6 +528,22 @@ proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
     buffer.lines[y].add(line[i])
     inc i
 
+proc setRowBox(buffer: Buffer, x: int, y: int, line: CSSRowBox) =
+  while buffer.lines.len <= y:
+    buffer.lines.add(newSeq[FlexibleCell]())
+
+  var i = 0
+  var cx = 0
+  while cx < x and i < buffer.lines[y].len:
+    cx += buffer.lines[y][i].rune.width()
+    inc i
+
+  buffer.lines[y].setLen(i)
+  i = 0
+  while i < line.width:
+    buffer.lines[y].add(FlexibleCell(rune: line.runes[i]))
+    inc i
+
 proc reshape*(buffer: Buffer) =
   buffer.display = newFixedGrid(buffer.width, buffer.height)
   buffer.statusmsg = newFixedGrid(buffer.width)
@@ -543,6 +561,11 @@ proc refreshDisplay*(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:
     buffer.fromy = 0
     buffer.cursory = buffer.lastVisibleLine - 1
+
+  if buffer.lines.len == 0:
+    buffer.cursory = 0
+    return
+
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
     var w = 0
     var i = 0
@@ -599,10 +622,13 @@ proc renderDocument*(buffer: Buffer) =
         if i == 0:
           x = inline.fromx
         var y = box.innerEdge.y1 + i
-        buffer.setLine(x, y, line)
+
+        buffer.setRowBox(x, y, line)
 
     for child in box.children:
       stack.add(child)
+  
+  eprint "lines", buffer.lines.len
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
