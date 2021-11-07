@@ -9,7 +9,7 @@ import types/color
 import types/enums
 import utils/twtstr
 import html/dom
-import css/box
+import layout/box
 import config/config
 import io/term
 import io/lineedit
@@ -57,7 +57,7 @@ type
     displaycontrols*: bool
     redraw*: bool
     location*: Uri
-    source*: string #TODO
+    source*: string
     showsource*: bool
     rootbox*: CSSBox
 
@@ -608,6 +608,7 @@ proc renderPlainText*(buffer: Buffer, text: string) =
 
 proc renderDocument*(buffer: Buffer) =
   buffer.clearText()
+  #TODO
   if buffer.rootbox == nil:
     return
   var stack: seq[CSSBox]
@@ -617,18 +618,13 @@ proc renderDocument*(buffer: Buffer) =
     if box of CSSInlineBox:
       let inline = CSSInlineBox(box)
       var i = 0
+      eprint "NEW BOX"
       for line in inline.content:
-        var x = inline.innerEdge.x1
-        if i == 0:
-          x = inline.fromx
-        var y = box.innerEdge.y1 + i
-
-        buffer.setRowBox(x, y, line)
+        eprint line
+        buffer.setRowBox(inline.x + line.x, inline.y + line.y, line)
 
     for child in box.children:
       stack.add(child)
-  
-  eprint "lines", buffer.lines.len
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
@@ -709,7 +705,6 @@ proc displayBuffer(buffer: Buffer) =
   let full = buffer.generateFullOutput()
   for line in full:
     print(line)
-    #TODO
     print("\e[K")
     print('\n')
 
@@ -773,6 +768,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       var url = $buffer.location
 
       termGoto(0, buffer.height)
+      print("\e[K")
       let status = readLine("URL: ", url, buffer.width)
       if status:
         buffer.setLocation(parseUri(url))
