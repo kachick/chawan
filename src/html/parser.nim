@@ -52,7 +52,7 @@ proc getescapecmd(buf: string, at: var int): string =
       inc i
       if not isdigit(buf[i]):
         at = i
-        return ""
+        return "&"
 
       num = hexValue(buf[i])
       inc i
@@ -63,7 +63,7 @@ proc getescapecmd(buf: string, at: var int): string =
     else: #dec
       if not isDigit(buf[i]):
         at = i
-        return ""
+        return "&"
 
       num = decValue(buf[i])
       inc i
@@ -77,7 +77,7 @@ proc getescapecmd(buf: string, at: var int): string =
     at = i
     return $(Rune(num))
   elif not isAlphaAscii(buf[i]):
-    return ""
+    return "&"
 
   var n = entityMap
   var s = ""
@@ -95,7 +95,7 @@ proc getescapecmd(buf: string, at: var int): string =
     at = i
     return n.value
 
-  return ""
+  return "&"
 
 type
   DOMParsedTag = object
