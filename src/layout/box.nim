@@ -14,6 +14,7 @@ type
   CSSBoxObj = object of RootObj
     x*: int
     y*: int
+    fromx*: int
     width*: int
     height*: int
     children*: seq[CSSBox]

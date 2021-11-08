@@ -88,7 +88,8 @@ func generateFullOutput*(buffer: Buffer): seq[string] =
 
 # generate a sequence of instructions to replace the previous frame with the
 # current one. ideally we should have some mechanism in place to determine
-# where we should use this and where we should just rewrite the frame
+# where we should use this and where we should just rewrite the frame, though
+# now that I think about it rewriting every frame might be a better option
 func generateSwapOutput*(buffer: Buffer): seq[DrawInstruction] =
   var fgcolor: CellColor
   var bgcolor: CellColor
@@ -175,7 +176,7 @@ func generateStatusMessage*(buffer: Buffer): string =
 
 func numLines*(buffer: Buffer): int = buffer.lines.len
 
-func lastVisibleLine*(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines - 1)
+func lastVisibleLine*(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
 
 func width(line: seq[FlexibleCell]): int =
   for c in line:
@@ -228,8 +229,12 @@ func getElementById*(buffer: Buffer, id: string): Element =
 proc findSelectedNode*(buffer: Buffer): Option[Node] =
   discard #TODO
 
+proc addLine(buffer: Buffer) =
+  buffer.lines.add(newSeq[FlexibleCell]())
+
 proc clearText*(buffer: Buffer) =
   buffer.lines.setLen(0)
+  buffer.addLine()
 
 proc clearNodes*(buffer: Buffer) =
   buffer.nodes.setLen(0)
@@ -514,7 +519,7 @@ proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) = buffer.lines.se
 
 proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
   while buffer.lines.len <= y:
-    buffer.lines.add(newSeq[FlexibleCell]())
+    buffer.addLine()
 
   var i = 0
   var cx = 0
@@ -528,9 +533,11 @@ proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
     buffer.lines[y].add(line[i])
     inc i
 
-proc setRowBox(buffer: Buffer, x: int, y: int, line: CSSRowBox) =
+proc setRowBox(buffer: Buffer, line: CSSRowBox) =
+  let x = line.x
+  let y = line.y
   while buffer.lines.len <= y:
-    buffer.lines.add(newSeq[FlexibleCell]())
+    buffer.addLine()
 
   var i = 0
   var cx = 0
@@ -538,15 +545,41 @@ proc setRowBox(buffer: Buffer, x: int, y: int, line: CSSRowBox) =
     cx += buffer.lines[y][i].rune.width()
     inc i
 
+  let oline = buffer.lines[y][i..high(buffer.lines[y])]
   buffer.lines[y].setLen(i)
+  var j = 0
+  var nx = cx
+
+  #TODO not sure
+  while nx < x:
+    buffer.lines[y].add(FlexibleCell(rune: Rune(' ')))
+    inc nx
+
+  while j < line.runes.len:
+    buffer.lines[y].add(FlexibleCell(rune: line.runes[j]))
+    nx += line.runes[j].width()
+    inc j
+
   i = 0
-  while i < line.width:
-    buffer.lines[y].add(FlexibleCell(rune: line.runes[i]))
+  while cx < nx and i < oline.len:
+    cx += oline[i].rune.width()
     inc i
+
+  if i < oline.len:
+    buffer.lines[y].add(oline[i..high(oline)])
 
 proc reshape*(buffer: Buffer) =
   buffer.display = newFixedGrid(buffer.width, buffer.height)
   buffer.statusmsg = newFixedGrid(buffer.width)
+
+proc updateCursor(buffer: Buffer) =
+  if buffer.fromy > buffer.lastVisibleLine - 1:
+    buffer.fromy = 0
+    buffer.cursory = buffer.lastVisibleLine - 1
+
+  if buffer.lines.len == 0:
+    buffer.cursory = 0
+    return
 
 proc clearDisplay*(buffer: Buffer) =
   var i = 0
@@ -558,13 +591,6 @@ proc refreshDisplay*(buffer: Buffer) =
   var y = 0
   buffer.prevdisplay = buffer.display
   buffer.clearDisplay()
-  if buffer.fromy > buffer.lastVisibleLine - 1:
-    buffer.fromy = 0
-    buffer.cursory = buffer.lastVisibleLine - 1
-
-  if buffer.lines.len == 0:
-    buffer.cursory = 0
-    return
 
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
     var w = 0
@@ -621,10 +647,14 @@ proc renderDocument*(buffer: Buffer) =
       eprint "NEW BOX"
       for line in inline.content:
         eprint line
-        buffer.setRowBox(inline.x + line.x, inline.y + line.y, line)
+        buffer.setRowBox(line)
+    else:
+      eprint "BLOCK"
 
-    for child in box.children:
-      stack.add(child)
+    var i = box.children.len - 1
+    while i >= 0:
+      stack.add(box.children[i])
+      dec i
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
