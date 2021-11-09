@@ -2,6 +2,8 @@ import unicode
 
 import utils/twtstr
 import io/cell
+import types/enums
+import css/style
 
 type
   CSSRect* = object
@@ -14,10 +16,20 @@ type
   CSSBoxObj = object of RootObj
     x*: int
     y*: int
-    fromx*: int
     width*: int
     height*: int
+    bh*: int
+    bw*: int
     children*: seq[CSSBox]
+    context*: FormatContext
+
+  FormatContext* = ref object
+    context*: FormatContextType
+    fromx*: int
+    fromy*: int
+    conty*: bool
+    whitespace*: bool
+    cssvalues*: CSSComputedValues
 
   CSSRowBox* = object
     x*: int

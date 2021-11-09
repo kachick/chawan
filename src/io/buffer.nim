@@ -182,14 +182,23 @@ func width(line: seq[FlexibleCell]): int =
   for c in line:
     result += c.rune.width()
 
-func cellWidthOverlap*(buffer: Buffer, x: int, y: int): int =
+func cellOrigin(buffer: Buffer, x: int, y: int): int =
   let row = y * buffer.width
   var ox = x
   while buffer.display[row + ox].runes.len == 0 and ox > 0:
     dec ox
+  return ox
+
+func currentCellOrigin(buffer: Buffer): int =
+  return buffer.cellOrigin(buffer.cursorx - buffer.fromx, buffer.cursory - buffer.fromy)
+
+func cellWidthOverlap*(buffer: Buffer, x: int, y: int): int =
+  let ox = buffer.cellOrigin(x, y)
+  let row = y * buffer.width
   return buffer.display[row + ox].runes.width()
 
-func currentCellWidth*(buffer: Buffer): int = buffer.cellWidthOverlap(buffer.cursorx - buffer.fromx, buffer.cursory - buffer.fromy)
+func currentCellWidth*(buffer: Buffer): int =
+  return buffer.cellWidthOverlap(buffer.cursorx - buffer.fromx, buffer.cursory - buffer.fromy)
 
 func currentLineWidth*(buffer: Buffer): int =
   if buffer.cursory > buffer.lines.len:
@@ -299,21 +308,22 @@ proc cursorUp*(buffer: Buffer) =
 
 proc cursorRight*(buffer: Buffer) =
   let cellwidth = buffer.currentCellWidth()
+  let cellorigin = buffer.currentCellOrigin()
   let lw = buffer.currentLineWidth()
   if buffer.cursorx < lw - 1:
-    buffer.cursorx = min(lw - 1, buffer.cursorx + cellwidth)
+    buffer.cursorx = min(lw - 1, cellorigin + cellwidth)
     buffer.xend = buffer.cursorx
     if buffer.cursorx - buffer.width >= buffer.fromx:
       inc buffer.fromx
       buffer.redraw = true
 
 proc cursorLeft*(buffer: Buffer) =
-  let cellwidth = buffer.currentCellWidth()
+  let cellorigin = buffer.currentCellOrigin()
   if buffer.fromx > buffer.cursorx:
     buffer.fromx = buffer.cursorx
     buffer.redraw = true
   elif buffer.cursorx > 0:
-    buffer.cursorx = max(0, buffer.cursorx - cellwidth)
+    buffer.cursorx = max(0, cellorigin - 1)
     if buffer.fromx > buffer.cursorx:
       buffer.fromx = buffer.cursorx
       buffer.redraw = true
@@ -644,12 +654,12 @@ proc renderDocument*(buffer: Buffer) =
     if box of CSSInlineBox:
       let inline = CSSInlineBox(box)
       var i = 0
-      eprint "NEW BOX"
+      eprint "NEW BOX", inline.context.conty
       for line in inline.content:
         eprint line
         buffer.setRowBox(line)
     else:
-      eprint "BLOCK"
+      eprint "BLOCK h", box.height
 
     var i = box.children.len - 1
     while i >= 0:

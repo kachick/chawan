@@ -12,34 +12,6 @@ type
     unit*: CSSUnit
     auto*: bool
 
-  CSS2Properties* = ref object
-    rawtext*: string
-    fmttext*: seq[string]
-    x*: int
-    y*: int
-    ex*: int
-    ey*: int
-    width*: int
-    height*: int
-    hidden*: bool
-    before*: CSS2Properties
-    after*: CSS2Properties
-    margintop*: CSSLength
-    marginbottom*: CSSLength
-    marginleft*: CSSLength
-    marginright*: CSSLength
-    centered*: bool
-    display*: DisplayType
-    bold*: bool
-    fontStyle*: CSSFontStyle
-    underscore*: bool
-    islink*: bool
-    selected*: bool
-    indent*: int
-    color*: CSSColor
-    position*: CSSPosition
-    content*: seq[Rune]
-
   CSSValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
 
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
@@ -58,6 +30,8 @@ type
     of VALUE_CONTENT:
       content*: seq[Rune]
     of VALUE_NONE: discard
+
+  CSSComputedValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
 
   CSSSpecifiedValue* = object of CSSComputedValue
     hasGlobalValue: bool
@@ -79,7 +53,7 @@ const ValueTypes = {
 func getValueType*(rule: CSSRuleType): CSSValueType =
   return ValueTypes[rule]
 
-func cells(l: CSSLength): int =
+func cells*(l: CSSLength): int =
   case l.unit
   of UNIT_EM:
     return int(l.num)
@@ -214,18 +188,18 @@ func cssLength(d: CSSDeclaration): CSSLength =
 
   return CSSLength(num: 0, unit: UNIT_EM)
 
-func hasColor*(style: CSS2Properties): bool =
-  return style.color.r != 0 or style.color.b != 0 or style.color.g != 0 or style.color.a != 0
-
-func termColor*(style: CSS2Properties): ForegroundColor =
-  if style.color.r > 120:
-    return fgRed
-  elif style.color.b > 120:
-    return fgBlue
-  elif style.color.g > 120:
-    return fgGreen
-  else:
-    return fgWhite
+#func hasColor*(style: CSS2Properties): bool =
+#  return style.color.r != 0 or style.color.b != 0 or style.color.g != 0 or style.color.a != 0
+#
+#func termColor*(style: CSS2Properties): ForegroundColor =
+#  if style.color.r > 120:
+#    return fgRed
+#  elif style.color.b > 120:
+#    return fgBlue
+#  elif style.color.g > 120:
+#    return fgGreen
+#  else:
+#    return fgWhite
 
 func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
 func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]

@@ -84,6 +84,9 @@ type
   DrawInstructionType* = enum
     DRAW_TEXT, DRAW_GOTO, DRAW_FGCOLOR, DRAW_BGCOLOR, DRAW_STYLE, DRAW_RESET
 
+  FormatContextType* = enum
+    CONTEXT_BLOCK, CONTEXT_INLINE
+
 const SelfClosingTagTypes* = {
   TAG_LI, TAG_P
 }

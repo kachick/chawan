@@ -7,6 +7,7 @@ import streams
 import sequtils
 import sugar
 import algorithm
+import options
 
 import css/style
 import css/parser
@@ -84,7 +85,9 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, Attr]
-    cssvalues*: array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
+    cssvalues*: CSSComputedValues
+    cssvalues_before*: Option[CSSComputedValues]
+    cssvalues_after*: Option[CSSComputedValues]
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -284,13 +287,13 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of "last-child": return elem.parentNode.lastElementChild == elem
   else: return false
 
-func pseudoElemSelectorMatches(elem: Element, sel: Selector): bool =
+func pseudoElemSelectorMatches(elem: Element, sel: Selector, pseudo: PseudoElem = PSEUDO_NONE): bool =
   case sel.elem
-  of "after": return false
-  of "before": return false
+  of "after": return pseudo == PSEUDO_AFTER
+  of "before": return pseudo == PSEUDO_BEFORE
   else: return false
 
-func selectorMatches(elem: Element, sel: Selector): bool =
+func selectorMatches(elem: Element, sel: Selector, pseudo: PseudoElem = PSEUDO_NONE): bool =
   case sel.t
   of TYPE_SELECTOR:
     return elem.tagType == sel.tag
@@ -303,15 +306,15 @@ func selectorMatches(elem: Element, sel: Selector): bool =
   of PSEUDO_SELECTOR:
     return pseudoSelectorMatches(elem, sel)
   of PSELEM_SELECTOR:
-    return pseudoElemSelectorMatches(elem, sel)
+    return pseudoElemSelectorMatches(elem, sel, pseudo)
   of UNIVERSAL_SELECTOR:
     return true
   of FUNC_SELECTOR:
     return false
 
-func selectorsMatch(elem: Element, selectors: SelectorList): bool =
+func selectorsMatch(elem: Element, selectors: SelectorList, pseudo: PseudoElem = PSEUDO_NONE): bool =
   for sel in selectors.sels:
-    if not selectorMatches(elem, sel):
+    if not selectorMatches(elem, sel, pseudo):
       return false
   return true
 
@@ -365,47 +368,69 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-func calcRules(elem: Element, rules: CSSStylesheet): seq[CSSSimpleBlock] =
-  var tosort: seq[tuple[s:int,b:CSSSimpleBlock]]
-  for rule in rules.value:
-    let selectors = parseSelectors(rule.prelude) #TODO perf: compute this once
-    for sel in selectors:
-      if elem.selectorsMatch(sel):
-        let spec = getSpecificity(sel)
-        tosort.add((spec,rule.oblock))
 
-  tosort.sort((x, y) => cmp(x.s,y.s))
-  return tosort.map((x) => x.b)
-
-proc applyProperty(elem: Element, decl: CSSDeclaration) =
+proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem = PSEUDO_NONE) =
   var parentprops: array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
   if elem.parentElement != nil:
     parentprops = elem.parentElement.cssvalues
   else:
     parentprops = getInitialProperties()
   let cval = getComputedValue(decl, parentprops)
-  elem.cssvalues[cval.t] = cval
+  case pseudo
+  of PSEUDO_NONE:
+    elem.cssvalues[cval.t] = cval
+  of PSEUDO_BEFORE:
+    if elem.cssvalues_before.isNone:
+      elem.cssvalues_before = some(getInitialProperties())
+    elem.cssvalues_before.get[cval.t] = cval
+  of PSEUDO_AFTER:
+    if elem.cssvalues_after.isNone:
+      elem.cssvalues_after = some(getInitialProperties())
+    elem.cssvalues_after.get[cval.t] = cval
+
+type ParsedRule = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
+
+func calcRules(elem: Element, rules: seq[ParsedRule]):
+    array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]] =
+  var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
+  for rule in rules:
+    for sel in rule.sels:
+      #TODO: optimize, like rewrite selector match algorithm output or something
+      for pseudo in low(PseudoElem)..high(PseudoElem):
+        if elem.selectorsMatch(sel, pseudo):
+          let spec = getSpecificity(sel)
+          tosorts[pseudo].add((spec,rule.oblock))
+
+  for i in low(PseudoElem)..high(PseudoElem):
+    tosorts[i].sort((x, y) => cmp(x.s,y.s))
+    result[i] = tosorts[i].map((x) => x.b)
 
 proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration]] =
   var stack: seq[Element]
 
   stack.add(document.root)
 
+  let parsed = rules.value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
   while stack.len > 0:
     let elem = stack.pop()
-    for oblock in calcRules(elem, rules):
-      let decls = parseCSSListOfDeclarations(oblock.value)
-      for item in decls:
-        if item of CSSDeclaration:
-          let decl = CSSDeclaration(item)
-          if decl.important:
-            result.add((elem, decl))
-          else:
-            elem.applyProperty(decl)
+    #TODO: optimize
+    #ok this whole idea was stupid, what I should've done is to just check for
+    #pseudo elem selectors, this is way too slow
+    let rules_pseudo = calcRules(elem, parsed)
+    for pseudo in low(PseudoElem)..high(PseudoElem):
+      let rules = rules_pseudo[pseudo]
+      for rule in rules:
+        let decls = parseCSSListOfDeclarations(rule.value)
+        for item in decls:
+          if item of CSSDeclaration:
+            let decl = CSSDeclaration(item)
+            if decl.important:
+              result.add((elem, decl))
+            else:
+              elem.applyProperty(decl, pseudo)
 
-    for child in elem.children:
-      stack.add(child)
-
+      for child in elem.children:
+        stack.add(child)
 
 proc applyDefaultStylesheet*(document: Document) =
   let important = document.applyRules(stylesheet)

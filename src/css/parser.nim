@@ -132,7 +132,7 @@ proc reconsume(state: var CSSTokenizerState) =
 func peek(state: CSSTokenizerState, i: int): Rune =
   return state.buf[state.at + i]
 
-proc has(state: var CSSTokenizerState, i: int): bool =
+proc has(state: var CSSTokenizerState, i: int = 0): bool =
   if state.at + i >= state.buf.len and not state.stream.atEnd():
     state.buf &= state.stream.readLine().toRunes() & Rune('\n')
   return state.at + i < state.buf.len
@@ -142,11 +142,6 @@ func curr(state: CSSTokenizerState): Rune =
 
 proc isValidEscape*(state: var CSSTokenizerState): bool =
   return state.has(1) and state.curr() == Rune('\\') and state.peek(1) != Rune('\n')
-
-proc has(state: var CSSTokenizerState): bool =
-  if state.at >= state.buf.len and not state.stream.atEnd():
-    state.buf &= state.stream.readLine().toRunes() & Rune('\n')
-  return state.at < state.buf.len
 
 proc startsWithIdentifier*(state: var CSSTokenizerState): bool =
   if not state.has():
@@ -345,15 +340,15 @@ proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
   return CSSToken(tokenType: CSS_IDENT_TOKEN, value: s)
 
 proc consumeComments(state: var CSSTokenizerState) =
-  if state.has(2) and state.peek(1) == Rune('/') and state.peek(2) == Rune('*'):
+  if state.has(1) and state.curr() == Rune('/') and state.peek(1) == Rune('*'):
     discard state.consume()
     discard state.consume()
-    while state.has(2) and not (state.peek(1) == Rune('*') and state.peek(2) == Rune('/')):
+    while state.has(1) and not (state.curr() == Rune('*') and state.peek(1) == Rune('/')):
       discard state.consume()
 
-    if state.has(2):
-      discard state.consume()
     if state.has(1):
+      discard state.consume()
+    if state.has():
       discard state.consume()
 
 proc consumeToken(state: var CSSTokenizerState): CSSToken =

@@ -13,6 +13,9 @@ type
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
     QUERY_PSEUDO, QUERY_PSELEM
 
+  PseudoElem* = enum
+    PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER
+
   SelectorParser = object
     selectors: seq[SelectorList]
     query: QueryMode
