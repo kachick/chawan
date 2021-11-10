@@ -29,6 +29,8 @@ type
       display*: DisplayType
     of VALUE_CONTENT:
       content*: seq[Rune]
+    of VALUE_WHITESPACE:
+      whitespace*: WhitespaceType
     of VALUE_NONE: discard
 
   CSSComputedValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
@@ -48,6 +50,7 @@ const ValueTypes = {
   RULE_FONT_STYLE: VALUE_FONT_STYLE,
   RULE_DISPLAY: VALUE_DISPLAY,
   RULE_CONTENT: VALUE_CONTENT,
+  RULE_WHITESPACE: VALUE_WHITESPACE,
 }.toTable()
 
 func getValueType*(rule: CSSRuleType): CSSValueType =
@@ -237,6 +240,19 @@ func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
       else: return FONTSTYLE_NORMAL
   return FONTSTYLE_NORMAL
 
+func cssWhiteSpace(d: CSSDeclaration): WhitespaceType =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "normal": return WHITESPACE_NORMAL
+      of "nowrap": return WHITESPACE_NOWRAP
+      of "pre": return WHITESPACE_PRE
+      of "pre-line": return WHITESPACE_PRE_LINE
+      of "pre-wrap": return WHITESPACE_PRE_WRAP
+      else: return WHITESPACE_NORMAL
+  return WHITESPACE_NORMAL
+
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   case $d.name
   of "color":
@@ -257,6 +273,8 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
     return CSSSpecifiedValue(t: RULE_DISPLAY, v: VALUE_DISPLAY, display: cssDisplay(d))
   of "content":
     return CSSSpecifiedValue(t: RULE_CONTENT, v: VALUE_CONTENT, content: cssString(d))
+  of "white-space":
+    return CSSSpecifiedValue(t: RULE_WHITESPACE, v: VALUE_WHITESPACE, whitespace: cssWhiteSpace(d))
 
 func getInitialColor*(t: CSSRuleType): CSSColor =
   case t
@@ -292,6 +310,8 @@ func getComputedValue*(rule: CSSSpecifiedValue, parent: CSSValues): CSSComputedV
     return CSSComputedValue(t: rule.t, v: VALUE_FONT_STYLE, fontstyle: rule.fontstyle)
   of VALUE_CONTENT:
     return CSSComputedValue(t: rule.t, v: VALUE_CONTENT, content: rule.content)
+  of VALUE_WHITESPACE:
+    return CSSComputedValue(t: rule.t, v: VALUE_WHITESPACE, whitespace: rule.whitespace)
   of VALUE_NONE: return CSSComputedValue(t: rule.t, v: VALUE_NONE)
 
 func getComputedValue*(d: CSSDeclaration, parent: CSSValues): CSSComputedValue =

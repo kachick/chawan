@@ -30,19 +30,20 @@ most important APIs. Plus some other things.
 
 Currently implemented features are:
 
-* basic html rendering (very much WIP)
+* basic html rendering with CSS (very much WIP)
 * fully functioning 2d pager with custom keybindings
 
 Planned features (roughly in order of importance):
 
-* improved html rendering (i.e. actually functioning)
+* refactored and improved layout engine (with colors, inline blocks etc)
 * anchor
 * html generator (for source view)	
-* loading author stylesheets (i.e. ones in web pages)
+* load external resources (e.g. css)
 * markdown (with built-in parser)
 * form (w/ input etc)
 * JavaScript
 * table
+* config editor
 * cookie
 * SOCKS proxy
 * HTTP proxy

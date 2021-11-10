@@ -268,6 +268,18 @@ func getAttrValue*(element: Element, s: string): string =
   return ""
 
 #TODO case sensitivity
+
+
+type SelectResult = object
+  success: bool
+  pseudo: PseudoElem
+
+func selectres(s: bool, p: PseudoElem = PSEUDO_NONE): SelectResult =
+  return SelectResult(success: s, pseudo: p)
+
+func psuccess(s: SelectResult): bool =
+  return s.pseudo == PSEUDO_NONE and s.success
+
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel
   of ' ': return sel.attr in elem.attributes
@@ -287,36 +299,41 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of "last-child": return elem.parentNode.lastElementChild == elem
   else: return false
 
-func pseudoElemSelectorMatches(elem: Element, sel: Selector, pseudo: PseudoElem = PSEUDO_NONE): bool =
+func pseudoElemSelectorMatches(elem: Element, sel: Selector, pseudo: PseudoElem = PSEUDO_NONE): SelectResult =
   case sel.elem
-  of "after": return pseudo == PSEUDO_AFTER
-  of "before": return pseudo == PSEUDO_BEFORE
-  else: return false
+  of "after": return selectres(true, PSEUDO_AFTER)
+  of "before": return selectres(true, PSEUDO_AFTER)
+  else: return selectres(false)
 
-func selectorMatches(elem: Element, sel: Selector, pseudo: PseudoElem = PSEUDO_NONE): bool =
+func selectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.t
   of TYPE_SELECTOR:
-    return elem.tagType == sel.tag
+    return selectres(elem.tagType == sel.tag)
   of CLASS_SELECTOR:
-    return sel.class in elem.classList
+    return selectres(sel.class in elem.classList)
   of ID_SELECTOR:
-    return sel.id == elem.id
+    return selectres(sel.id == elem.id)
   of ATTR_SELECTOR:
-    return elem.attrSelectorMatches(sel)
+    return selectres(elem.attrSelectorMatches(sel))
   of PSEUDO_SELECTOR:
-    return pseudoSelectorMatches(elem, sel)
+    return selectres(pseudoSelectorMatches(elem, sel))
   of PSELEM_SELECTOR:
-    return pseudoElemSelectorMatches(elem, sel, pseudo)
+    return pseudoElemSelectorMatches(elem, sel)
   of UNIVERSAL_SELECTOR:
-    return true
+    return selectres(true)
   of FUNC_SELECTOR:
-    return false
+    return selectres(false)
 
-func selectorsMatch(elem: Element, selectors: SelectorList, pseudo: PseudoElem = PSEUDO_NONE): bool =
+func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult =
   for sel in selectors.sels:
-    if not selectorMatches(elem, sel, pseudo):
-      return false
-  return true
+    let res = selectorMatches(elem, sel)
+    if not res.success:
+      return selectres(false)
+    if res.pseudo != PSEUDO_NONE:
+      if result.pseudo != PSEUDO_NONE:
+        return selectres(false)
+      result.pseudo = res.pseudo
+  result.success = true
 
 func selectElems(document: Document, sel: Selector): seq[Element] =
   case sel.t
@@ -337,9 +354,9 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
   of FUNC_SELECTOR:
     case sel.name
     of "not":
-      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.selectors))
+      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.selectors).psuccess)
     of "is", "where":
-      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.selectors))
+      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.selectors).psuccess)
     return newSeq[Element]()
 
 func selectElems(document: Document, selectors: SelectorList): seq[Element] =
@@ -352,12 +369,12 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
     if sellist[i].t == FUNC_SELECTOR:
       case sellist[i].name
       of "not":
-        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].selectors))
+        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].selectors).psuccess)
       of "is", "where":
-        result = result.filter((elem) => selectorsMatch(elem, sellist[i].selectors))
+        result = result.filter((elem) => selectorsMatch(elem, sellist[i].selectors).psuccess)
       else: discard
     else:
-      result = result.filter((elem) => selectorMatches(elem, sellist[i]))
+      result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
     inc i
 
 proc querySelector*(document: Document, q: string): seq[Element] =
@@ -389,17 +406,17 @@ proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem = PSE
     elem.cssvalues_after.get[cval.t] = cval
 
 type ParsedRule = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
+type ParsedStylesheet = seq[ParsedRule]
 
-func calcRules(elem: Element, rules: seq[ParsedRule]):
+func calcRules(elem: Element, rules: ParsedStylesheet):
     array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]] =
   var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
   for rule in rules:
     for sel in rule.sels:
-      #TODO: optimize, like rewrite selector match algorithm output or something
-      for pseudo in low(PseudoElem)..high(PseudoElem):
-        if elem.selectorsMatch(sel, pseudo):
-          let spec = getSpecificity(sel)
-          tosorts[pseudo].add((spec,rule.oblock))
+      let match = elem.selectorsMatch(sel)
+      if match.success:
+        let spec = getSpecificity(sel)
+        tosorts[match.pseudo].add((spec,rule.oblock))
 
   for i in low(PseudoElem)..high(PseudoElem):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
@@ -413,9 +430,6 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
   let parsed = rules.value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
   while stack.len > 0:
     let elem = stack.pop()
-    #TODO: optimize
-    #ok this whole idea was stupid, what I should've done is to just check for
-    #pseudo elem selectors, this is way too slow
     let rules_pseudo = calcRules(elem, parsed)
     for pseudo in low(PseudoElem)..high(PseudoElem):
       let rules = rules_pseudo[pseudo]
@@ -429,11 +443,53 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
             else:
               elem.applyProperty(decl, pseudo)
 
-      for child in elem.children:
-        stack.add(child)
+    for child in elem.children:
+      stack.add(child)
 
-proc applyDefaultStylesheet*(document: Document) =
-  let important = document.applyRules(stylesheet)
-  for rule in important:
+proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration]] =
+  var stack: seq[Element]
+  var embedded_rules: seq[ParsedStylesheet]
+
+  stack.add(document.root)
+
+  #let parsed = rules.value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+
+  while stack.len > 0:
+    let elem = stack.pop()
+    var rules_local = ""
+    for child in elem.children:
+      if child.tagType == TAG_STYLE:
+        for ct in child.childNodes:
+          if ct.nodeType == TEXT_NODE:
+            rules_local &= Text(ct).data
+
+    if rules_local.len > 0:
+      let parsed = parseCSS(newStringStream(rules_local)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+      embedded_rules.add(parsed)
+    let this_rules = embedded_rules.concat()
+    let rules_pseudo = calcRules(elem, this_rules)
+
+    for pseudo in low(PseudoElem)..high(PseudoElem):
+      let rules = rules_pseudo[pseudo]
+      for rule in rules:
+        let decls = parseCSSListOfDeclarations(rule.value)
+        for item in decls:
+          if item of CSSDeclaration:
+            let decl = CSSDeclaration(item)
+            if decl.important:
+              result.add((elem, decl))
+            else:
+              elem.applyProperty(decl, pseudo)
+
+    for child in elem.children:
+      stack.add(child)
+
+    if rules_local.len > 0:
+      discard embedded_rules.pop()
+
+proc applyStylesheets*(document: Document) =
+  let important_ua = document.applyRules(stylesheet)
+  let important_author = document.applyAuthorRules()
+  for rule in important_ua:
     rule.e.applyProperty(rule.d)
 

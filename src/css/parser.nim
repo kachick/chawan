@@ -789,6 +789,8 @@ proc printc*(c: CSSComponentValue) =
     else: discard
 
 proc parseCSS*(inputStream: Stream): CSSStylesheet =
+  if inputStream.atEnd():
+    return CSSStylesheet()
   return inputstream.parseStylesheet()
 
 proc debugparseCSS*(inputStream: Stream) =

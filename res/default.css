@@ -10,6 +10,8 @@ menu, noframes, body {
 
 pre {
 	margin-top: 1em;
+	margin-bottom: 1em;
+	white-space: pre;
 }
 
 a, abbr, b, bdo, button, cite, code, del, dfn, em, font, i, img, ins,

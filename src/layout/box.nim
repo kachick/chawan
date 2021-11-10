@@ -18,18 +18,24 @@ type
     y*: int
     width*: int
     height*: int
-    bh*: int
-    bw*: int
     children*: seq[CSSBox]
-    context*: FormatContext
+    context*: InlineContext
+    bcontext*: BlockContext
 
-  FormatContext* = ref object
+  InlineContext* = ref object
     context*: FormatContextType
     fromx*: int
     fromy*: int
+    marginx*: int
+    marginy*: int
     conty*: bool
     whitespace*: bool
     cssvalues*: CSSComputedValues
+
+  BlockContext* = ref object
+    context*: FormatContextType
+    marginx*: int
+    marginy*: int
 
   CSSRowBox* = object
     x*: int
@@ -44,6 +50,7 @@ type
 
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox
+    tag*: string
 
 func `+`(a: CSSRect, b: CSSRect): CSSRect =
   result.x1 = a.x1 + b.x1

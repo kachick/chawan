@@ -45,7 +45,7 @@ proc main*() =
   buffer.source = getPageUri(uri).readAll() #TODO get rid of this
   buffer.document = parseHtml(newStringStream(buffer.source))
   buffer.setLocation(uri)
-  buffer.document.applyDefaultStylesheet()
+  buffer.document.applyStylesheets()
   buffer.alignBoxes()
   buffer.renderDocument()
   var lastUri = uri

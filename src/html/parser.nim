@@ -202,11 +202,20 @@ proc processDocumentBody(state: var HTMLParseState) =
       state.elementNode = state.elementNode.ownerDocument.body
 
 proc processDocumentAddNode(state: var HTMLParseState, newNode: Node) =
-  if state.elementNode.nodeType == ELEMENT_NODE and state.elementNode.tagType == TAG_HTML:
+  if state.elementNode.tagType == TAG_HTML:
     if state.in_body:
       state.elementNode = state.elementNode.ownerDocument.body
     else:
       state.elementNode = state.elementNode.ownerDocument.head
+
+  #> If the next token is a U+000A LINE FEED (LF) character token, then ignore
+  #> that token and move on to the next one. (Newlines at the start of pre
+  #> blocks are ignored as an authoring convenience.)
+  elif state.elementNode.tagType == TAG_PRE:
+    if state.elementNode.childNodes.len == 1 and
+        state.elementNode.childNodes[0].nodeType == TEXT_NODE and
+        Text(state.elementNode.childNodes[0]).data == "\n":
+      discard state.elementNode.childNodes.pop()
 
   insertNode(state.elementNode, newNode)
 
@@ -220,7 +229,6 @@ proc processDocumentText(state: var HTMLParseState) =
     processDocumentBody(state)
   if state.textNode == nil:
     state.textNode = newText()
-
     processDocumentAddNode(state, state.textNode)
 
 proc processDocumentStartElement(state: var HTMLParseState, element: Element, tag: DOMParsedTag) =
@@ -426,7 +434,7 @@ proc parseHtml*(inputStream: Stream): Document =
   var buf = ""
   var lineBuf: string
   while not inputStream.atEnd():
-    lineBuf = inputStream.readLine()
+    lineBuf = inputStream.readLine() & '\n'
     buf &= lineBuf
 
     var at = 0
