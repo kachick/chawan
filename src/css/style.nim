@@ -5,6 +5,7 @@ import tables
 import utils/twtstr
 import types/enums
 import css/parser
+import types/color
 
 type
   CSSLength* = object
@@ -31,6 +32,8 @@ type
       content*: seq[Rune]
     of VALUE_WHITESPACE:
       whitespace*: WhitespaceType
+    of VALUE_INTEGER:
+      integer*: int
     of VALUE_NONE: discard
 
   CSSComputedValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
@@ -51,6 +54,7 @@ const ValueTypes = {
   RULE_DISPLAY: VALUE_DISPLAY,
   RULE_CONTENT: VALUE_CONTENT,
   RULE_WHITESPACE: VALUE_WHITESPACE,
+  RULE_FONT_WEIGHT: VALUE_INTEGER,
 }.toTable()
 
 func getValueType*(rule: CSSRuleType): CSSValueType =
@@ -133,7 +137,6 @@ func cssColor*(d: CSSDeclaration): CSSColor =
           return defaultColor
       of CSS_IDENT_TOKEN:
         let s = tok.value
-        eprint "ident", s
         if $s in colors:
           return colors[$s]
         else:
@@ -158,11 +161,9 @@ func cssColor*(d: CSSDeclaration): CSSColor =
         return (uint8(r), uint8(g), uint8(b), 0x00u8)
       of "rgba":
         if f.value.len != 4:
-          eprint "too few args"
           return defaultColor
         for c in f.value:
           if c != CSS_NUMBER_TOKEN:
-            eprint "not number"
             return defaultColor
         let r = CSSToken(f.value[0]).nvalue
         let g = CSSToken(f.value[1]).nvalue
@@ -170,10 +171,14 @@ func cssColor*(d: CSSDeclaration): CSSColor =
         let a = CSSToken(f.value[3]).nvalue
         return (uint8(r), uint8(g), uint8(b), uint8(a))
       else:
-        eprint "not rgba"
         return defaultColor
 
   return defaultColor
+
+func cellColor*(color: CSSColor): CellColor =
+  #TODO better would be to store color names and return term colors on demand
+  #option)
+  return CellColor(rgb: true, rgbcolor: (r: color.r, g: color.g, b: color.b))
 
 func cssLength(d: CSSDeclaration): CSSLength =
   if d.value.len > 0 and d.value[0] of CSSToken:
@@ -253,6 +258,23 @@ func cssWhiteSpace(d: CSSDeclaration): WhitespaceType =
       else: return WHITESPACE_NORMAL
   return WHITESPACE_NORMAL
 
+#TODO
+func cssFontWeight(d: CSSDeclaration): int =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "normal": return 400
+      of "bold": return 700
+      of "lighter": return 400
+      of "bolder": return 700
+      else: return 400
+
+    elif tok.tokenType == CSS_NUMBER_TOKEN:
+      return int(tok.nvalue)
+
+  return 400
+
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   case $d.name
   of "color":
@@ -268,13 +290,15 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   of "margin-right":
     return CSSSpecifiedValue(t: RULE_MARGIN_RIGHT, v: VALUE_LENGTH, length: cssLength(d))
   of "font-style":
-    return CSSSpecifiedValue(t: RULE_FONT_STYLE, v: VALUE_FONT_STYLE, fontStyle: cssFontStyle(d))
+    return CSSSpecifiedValue(t: RULE_FONT_STYLE, v: VALUE_FONT_STYLE, fontstyle: cssFontStyle(d))
   of "display":
     return CSSSpecifiedValue(t: RULE_DISPLAY, v: VALUE_DISPLAY, display: cssDisplay(d))
   of "content":
     return CSSSpecifiedValue(t: RULE_CONTENT, v: VALUE_CONTENT, content: cssString(d))
   of "white-space":
     return CSSSpecifiedValue(t: RULE_WHITESPACE, v: VALUE_WHITESPACE, whitespace: cssWhiteSpace(d))
+  of "font-weight":
+    return CSSSpecifiedValue(t: RULE_FONT_WEIGHT, v: VALUE_INTEGER, integer: cssFontWeight(d))
 
 func getInitialColor*(t: CSSRuleType): CSSColor =
   case t
@@ -312,6 +336,8 @@ func getComputedValue*(rule: CSSSpecifiedValue, parent: CSSValues): CSSComputedV
     return CSSComputedValue(t: rule.t, v: VALUE_CONTENT, content: rule.content)
   of VALUE_WHITESPACE:
     return CSSComputedValue(t: rule.t, v: VALUE_WHITESPACE, whitespace: rule.whitespace)
+  of VALUE_INTEGER:
+    return CSSComputedValue(t: rule.t, v: VALUE_INTEGER, integer: rule.integer)
   of VALUE_NONE: return CSSComputedValue(t: rule.t, v: VALUE_NONE)
 
 func getComputedValue*(d: CSSDeclaration, parent: CSSValues): CSSComputedValue =

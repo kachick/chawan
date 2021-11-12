@@ -6,6 +6,7 @@ import unicode
 
 import types/color
 import types/enums
+import css/style
 import utils/twtstr
 import html/dom
 import layout/box
@@ -75,6 +76,31 @@ func generateFullOutput*(buffer: Buffer): seq[string] =
       result.add(s)
       x = 0
       s = ""
+
+    s &= "\e[0m"
+    if cell.fgcolor != defaultColor:
+      var color = cell.fgcolor
+      if color.rgb:
+        let rgb = color.rgbcolor
+        s &= "\e[38;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m"
+      else:
+        s &= "\e[" & $color.color & "m"
+
+    if cell.bgcolor != defaultColor:
+      var color = cell.bgcolor
+      if color.rgb:
+        let rgb = color.rgbcolor
+        s &= "\e[48;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m"
+      else:
+        s &= "\e[" & $color.color & "m"
+
+    if cell.bold:
+      s &= "\e[1m"
+    if cell.italic:
+      s &= "\e[3m"
+    if cell.underline:
+      s &= "\e[4m"
+
     s &= $cell.runes
     inc x
 
@@ -306,7 +332,6 @@ proc cursorRight*(buffer: Buffer) =
       inc buffer.cursorx
 
 proc cursorLeft*(buffer: Buffer) =
-  eprint "??", buffer.currentCellOrigin(), buffer.fromx
   let cellorigin = buffer.fromx + buffer.currentCellOrigin()
   let lw = buffer.currentLineWidth()
   if buffer.fromx > buffer.cursorx:
@@ -524,6 +549,14 @@ proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
     buffer.lines[y].add(line[i])
     inc i
 
+func cellFromLine(line: CSSRowBox, i: int): FlexibleCell =
+  result.rune = line.runes[i]
+  result.fgcolor = line.color.cellColor()
+  if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
+    result.italic = true
+  if line.fontweight > 500:
+    result.bold = true
+
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   let x = line.x
   let y = line.y
@@ -547,7 +580,7 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
     inc nx
 
   while j < line.runes.len:
-    buffer.lines[y].add(FlexibleCell(rune: line.runes[j]))
+    buffer.lines[y].add(line.cellFromLine(j))
     nx += line.runes[j].width()
     inc j
 
@@ -601,6 +634,11 @@ proc refreshDisplay*(buffer: Buffer) =
       if line[i].rune.width() == 0 and j != 0:
         inc n
       buffer.display[dls + j - n].runes.add(line[i].rune)
+      buffer.display[dls + j - n].fgcolor = line[i].fgcolor
+      buffer.display[dls + j - n].bgcolor = line[i].bgcolor
+      buffer.display[dls + j - n].italic = line[i].italic
+      buffer.display[dls + j - n].bold = line[i].bold
+      buffer.display[dls + j - n].underline = line[i].underline
       j += line[i].rune.width()
       inc i
 
@@ -694,14 +732,14 @@ proc displayBufferSwapOutput(buffer: Buffer) =
       let color = inst.color
       if inst.color.rgb:
         let rgb = color.rgbcolor
-        print("\e38;2" & $rgb.r & ";" & $rgb.b & ";" & $rgb.g)
+        print("\e[38;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m")
       else:
         print("\e[" & $color.color & "m")
     of DRAW_BGCOLOR:
       let color = inst.color
       if inst.color.rgb:
         let rgb = color.rgbcolor
-        print("\e48;2" & $rgb.r & ";" & $rgb.b & ";" & $rgb.g)
+        print("\e[48;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m")
       else:
         print("\e[" & $color.color & "m")
     of DRAW_STYLE:
@@ -750,6 +788,8 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       s = ""
     else:
       feedNext = false
+
+
     let c = getch()
     s &= c
     let action = getNormalAction(s)

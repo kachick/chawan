@@ -16,7 +16,7 @@ func newContext*(box: CSSBox): InlineContext =
 
 func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   new(result)
-  result.bcontext = parent.bcontext #TODO make this something like state or something
+  result.bcontext = parent.bcontext #TODO statify
   result.x = parent.x
   if parent.context.conty:
     inc parent.height
@@ -34,9 +34,9 @@ func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   result.context = newContext(parent)
   eprint "inc to", result.y
   result.context.fromy = result.y
-  result.context.cssvalues = vals
+  result.cssvalues = vals
 
-func newInlineBox*(parent: CSSBox): CSSInlineBox =
+func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
   assert parent != nil
   new(result)
   result.x = parent.x
@@ -45,8 +45,15 @@ func newInlineBox*(parent: CSSBox): CSSInlineBox =
   result.width = parent.width
   result.context = parent.context
   result.bcontext = parent.bcontext
+  result.cssvalues = vals
   if result.context == nil:
     result.context = newContext(parent)
+
+#TODO there should be actual inline contexts to store these stuff
+proc setup(rowbox: var CSSRowBox, cssvalues: CSSComputedValues) =
+  rowbox.color = cssvalues[RULE_COLOR].color
+  rowbox.fontstyle = cssvalues[RULE_FONT_STYLE].fontstyle
+  rowbox.fontweight = cssvalues[RULE_FONT_WEIGHT].integer
 
 proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: var CSSRowBox) =
   ibox.content.add(rowbox)
@@ -55,7 +62,9 @@ proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: v
   ibox.context.whitespace = true
   ibox.context.conty = true
   rowbox = CSSRowBox(x: ibox.x, y: ibox.y + rowi)
+  rowbox.setup(ibox.cssvalues)
 
+#TODO statify
 proc processInlineBox(parent: CSSBox, str: string): CSSBox =
   var ibox: CSSInlineBox
   var use_parent = false
@@ -63,7 +72,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
     ibox = CSSInlineBox(parent)
     use_parent = true
   else:
-    ibox = newInlineBox(parent)
+    ibox = newInlineBox(parent, parent.cssvalues)
 
   if str.len == 0:
     return
@@ -72,6 +81,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
   var rowi = 0
   var fromx = ibox.context.fromx
   var rowbox = CSSRowBox(x: fromx, y: ibox.context.fromy)
+  rowbox.setup(ibox.cssvalues)
   var r: Rune
   while i < str.len:
     fastRuneAt(str, i, r)
@@ -81,7 +91,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
       if ibox.context.whitespace:
         continue
       else:
-        let wsr = ibox.context.cssvalues[RULE_WHITESPACE].whitespace
+        let wsr = ibox.cssvalues[RULE_WHITESPACE].whitespace
 
         case wsr
         of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
@@ -122,8 +132,7 @@ proc processElemBox(parent: CSSBox, elem: Element): CSSBox =
     result = newBlockBox(parent, elem.cssvalues)
     CSSBlockBox(result).tag = $elem.tagType
   of DISPLAY_INLINE:
-    result = newInlineBox(parent)
-    result.context.cssvalues = elem.cssvalues
+    result = newInlineBox(parent, elem.cssvalues)
   of DISPLAY_NONE:
     return nil
   else:
@@ -140,7 +149,7 @@ proc add(parent: var CSSBox, box: CSSBox) =
       eprint "inc a"
       inc box.context.fromy
       box.context.conty = false
-    let mbot = box.context.cssvalues[RULE_MARGIN_BOTTOM].length.cells()
+    let mbot = box.cssvalues[RULE_MARGIN_BOTTOM].length.cells()
     eprint "inc b", mbot
     box.context.fromy += mbot
     box.bcontext.marginy = mbot

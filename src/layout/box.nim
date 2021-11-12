@@ -21,6 +21,7 @@ type
     children*: seq[CSSBox]
     context*: InlineContext
     bcontext*: BlockContext
+    cssvalues*: CSSComputedValues
 
   InlineContext* = ref object
     context*: FormatContextType
@@ -30,7 +31,6 @@ type
     marginy*: int
     conty*: bool
     whitespace*: bool
-    cssvalues*: CSSComputedValues
 
   BlockContext* = ref object
     context*: FormatContextType
@@ -42,6 +42,9 @@ type
     y*: int
     width*: int
     height*: int
+    color*: CSSColor
+    fontstyle*: CSSFontStyle
+    fontweight*: int
     runes*: seq[Rune]
 
   CSSInlineBox* = ref CSSInlineBoxObj

@@ -225,8 +225,6 @@ proc processDocumentEndNode(state: var HTMLParseState) =
   state.elementNode = state.elementNode.parentElement
 
 proc processDocumentText(state: var HTMLParseState) =
-  if state.textNode != nil and state.textNode.data.len > 0:
-    processDocumentBody(state)
   if state.textNode == nil:
     state.textNode = newText()
     processDocumentAddNode(state, state.textNode)
@@ -264,10 +262,15 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     add = false
   of TAG_HEAD:
     add = false
+    state.in_body = false
+    if state.elementNode.ownerDocument != nil:
+      state.elementNode = state.elementNode.ownerDocument.head
   of TAG_BODY:
     add = false
-    processDocumentBody(state)
   else: discard
+
+  if not state.in_body and not (element.tagType in HeadTagTypes):
+    processDocumentBody(state)
 
   if state.elementNode.nodeType == ELEMENT_NODE:
     case element.tagType
@@ -302,7 +305,7 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
   if tag.tagid in VoidTagTypes:
     return
   if tag.tagid == TAG_HEAD:
-    state.in_body = true
+    processDocumentBody(state)
     return
   if tag.tagid == TAG_BODY:
     return

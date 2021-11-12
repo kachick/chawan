@@ -443,16 +443,33 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
             else:
               elem.applyProperty(decl, pseudo)
 
-    for child in elem.children:
+    var i = elem.children.len - 1
+    while i >= 0:
+      let child = elem.children[i]
       stack.add(child)
+      dec i
 
 proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration]] =
   var stack: seq[Element]
   var embedded_rules: seq[ParsedStylesheet]
 
-  stack.add(document.root)
+  stack.add(document.head)
+  var rules_head = ""
 
-  #let parsed = rules.value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+  for child in document.head.children:
+    if child.tagType == TAG_STYLE:
+      for ct in child.childNodes:
+        if ct.nodeType == TEXT_NODE:
+          rules_head &= Text(ct).data
+
+  
+  stack.setLen(0)
+
+  stack.add(document.body)
+
+  if rules_head.len > 0:
+    let parsed = parseCSS(newStringStream(rules_head)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+    embedded_rules.add(parsed)
 
   while stack.len > 0:
     let elem = stack.pop()
@@ -481,8 +498,11 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
             else:
               elem.applyProperty(decl, pseudo)
 
-    for child in elem.children:
+    var i = elem.children.len - 1
+    while i >= 0:
+      let child = elem.children[i]
       stack.add(child)
+      dec i
 
     if rules_local.len > 0:
       discard embedded_rules.pop()
@@ -490,6 +510,8 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
 proc applyStylesheets*(document: Document) =
   let important_ua = document.applyRules(stylesheet)
   let important_author = document.applyAuthorRules()
+  for rule in important_author:
+    rule.e.applyProperty(rule.d)
   for rule in important_ua:
     rule.e.applyProperty(rule.d)
 

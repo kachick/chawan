@@ -2,6 +2,7 @@ import httpClient
 import uri
 import os
 import streams
+import terminal
 
 import html/parser
 import html/dom
@@ -33,22 +34,36 @@ proc getPageUri(uri: Uri): Stream =
 
 var buffers: seq[Buffer]
 
+proc die() =
+  eprint "Invalid parameters. Usage:\ntwt <url>"
+  quit(1)
+
 proc main*() =
-  if paramCount() != 1:
-    eprint "Invalid parameters. Usage:\ntwt <url>"
-    quit(1)
-  readConfig()
   let attrs = getTermAttributes()
   let buffer = newBuffer(attrs)
-  let uri = parseUri(paramStr(1))
   buffers.add(buffer)
-  buffer.source = getPageUri(uri).readAll() #TODO get rid of this
+
+  var lastUri: Uri
+  if paramCount() < 1:
+    if not isatty(stdin):
+      try:
+        while true:
+          buffer.source &= stdin.readChar()
+      except EOFError:
+        #TODO handle failure (also, is this even portable at all?)
+        discard reopen(stdin, "/dev/tty", fmReadWrite);
+    else:
+      die()
+    buffer.setLocation(lastUri)
+  else: 
+    lastUri = parseUri(paramStr(1))
+    buffer.source = getPageUri(lastUri).readAll() #TODO get rid of this
+
+  buffer.setLocation(lastUri)
   buffer.document = parseHtml(newStringStream(buffer.source))
-  buffer.setLocation(uri)
   buffer.document.applyStylesheets()
   buffer.alignBoxes()
   buffer.renderDocument()
-  var lastUri = uri
   while displayPage(attrs, buffer):
     buffer.setStatusMessage("Loading...")
     var newUri = buffer.location
@@ -56,10 +71,12 @@ proc main*() =
     newUri.anchor = ""
     if $lastUri != $newUri:
       buffer.clearBuffer()
-      if uri.scheme == "" and uri.path == "" and uri.anchor != "":
+      if lastUri.scheme == "" and lastUri.path == "" and lastUri.anchor != "":
         discard
       else:
         buffer.document = parseHtml(getPageUri(buffer.location))
-      buffer.renderPlainText(getPageUri(uri).readAll())
+      buffer.renderPlainText(getPageUri(lastUri).readAll())
     lastUri = newUri
+
+readConfig()
 main()
