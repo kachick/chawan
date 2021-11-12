@@ -6,7 +6,6 @@ import types/enums
 import html/dom
 import css/style
 import io/buffer
-import io/cell
 import utils/twtstr
 
 func newContext*(box: CSSBox): InlineContext =

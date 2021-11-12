@@ -1,5 +1,4 @@
 import unicode
-import terminal
 import tables
 
 import utils/twtstr

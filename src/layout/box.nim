@@ -1,7 +1,5 @@
 import unicode
 
-import utils/twtstr
-import io/cell
 import types/enums
 import css/style
 
@@ -54,12 +52,3 @@ type
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox
     tag*: string
-
-func `+`(a: CSSRect, b: CSSRect): CSSRect =
-  result.x1 = a.x1 + b.x1
-  result.y1 = a.y1 + b.y1
-  result.x2 = a.x2 + b.x2
-  result.y2 = a.y2 + b.y2
-
-proc `+=`(a: var CSSRect, b: CSSRect) =
-  a = a + b

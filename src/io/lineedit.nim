@@ -5,7 +5,6 @@ import sequtils
 import sugar
 
 import utils/twtstr
-import utils/radixtree
 import config/config
 
 type LineState = object

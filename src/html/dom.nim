@@ -1,4 +1,3 @@
-import terminal
 import uri
 import unicode
 import strutils
@@ -13,7 +12,6 @@ import css/style
 import css/parser
 import css/selector
 import types/enums
-import utils/twtstr
 
 const css = staticRead"res/default.css"
 let stylesheet = parseCSS(newStringStream(css))
