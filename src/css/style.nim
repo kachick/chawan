@@ -12,12 +12,12 @@ type
     unit*: CSSUnit
     auto*: bool
 
-  CSSValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
+  CSSComputedValues* = array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
 
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
   
   CSSComputedValue* = object of RootObj
-    t*: CSSRuleType
+    t*: CSSPropertyType
     case v*: CSSValueType
     of VALUE_COLOR:
       color*: CSSColor
@@ -35,29 +35,42 @@ type
       integer*: int
     of VALUE_NONE: discard
 
-  CSSComputedValues* = array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
-
   CSSSpecifiedValue* = object of CSSComputedValue
-    hasGlobalValue: bool
     globalValue: CSSGlobalValueType
 
 const ValueTypes = {
-  RULE_ALL: VALUE_NONE,
-  RULE_COLOR: VALUE_COLOR,
-  RULE_MARGIN: VALUE_LENGTH,
-  RULE_MARGIN_TOP: VALUE_LENGTH,
-  RULE_MARGIN_BOTTOM: VALUE_LENGTH,
-  RULE_MARGIN_LEFT: VALUE_LENGTH,
-  RULE_MARGIN_RIGHT: VALUE_LENGTH,
-  RULE_FONT_STYLE: VALUE_FONT_STYLE,
-  RULE_DISPLAY: VALUE_DISPLAY,
-  RULE_CONTENT: VALUE_CONTENT,
-  RULE_WHITESPACE: VALUE_WHITESPACE,
-  RULE_FONT_WEIGHT: VALUE_INTEGER,
+  PROPERTY_ALL: VALUE_NONE,
+  PROPERTY_COLOR: VALUE_COLOR,
+  PROPERTY_MARGIN: VALUE_LENGTH,
+  PROPERTY_MARGIN_TOP: VALUE_LENGTH,
+  PROPERTY_MARGIN_BOTTOM: VALUE_LENGTH,
+  PROPERTY_MARGIN_LEFT: VALUE_LENGTH,
+  PROPERTY_MARGIN_RIGHT: VALUE_LENGTH,
+  PROPERTY_FONT_STYLE: VALUE_FONT_STYLE,
+  PROPERTY_DISPLAY: VALUE_DISPLAY,
+  PROPERTY_CONTENT: VALUE_CONTENT,
+  PROPERTY_WHITESPACE: VALUE_WHITESPACE,
+  PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
 }.toTable()
 
-func getValueType*(rule: CSSRuleType): CSSValueType =
-  return ValueTypes[rule]
+const InheritedProperties = {
+  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITESPACE, PROPERTY_FONT_WEIGHT
+}
+
+func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
+  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+    if prop in InheritedProperties:
+      result[prop] = true
+    else:
+      result[prop] = false
+
+const InheritedArray = getPropInheritedArray()
+
+func inherited(t: CSSPropertyType): bool =
+  return InheritedArray[t]
+
+func getValueType*(prop: CSSPropertyType): CSSValueType =
+  return ValueTypes[prop]
 
 func cells*(l: CSSLength): int =
   case l.unit
@@ -274,82 +287,107 @@ func cssFontWeight(d: CSSDeclaration): int =
 
   return 400
 
+proc cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "inherit": return VALUE_INHERIT
+      of "initial": return VALUE_INITIAL
+      of "unset": return VALUE_UNSET
+      of "revert": return VALUE_REVERT
+  return VALUE_NOGLOBAL
+
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   case $d.name
   of "color":
-    return CSSSpecifiedValue(t: RULE_COLOR, v: VALUE_COLOR, color: cssColor(d))
+    result = CSSSpecifiedValue(t: PROPERTY_COLOR, v: VALUE_COLOR, color: cssColor(d))
   of "margin":
-    return CSSSpecifiedValue(t: RULE_MARGIN, v: VALUE_LENGTH, length: cssLength(d))
+    result = CSSSpecifiedValue(t: PROPERTY_MARGIN, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-top":
-    return CSSSpecifiedValue(t: RULE_MARGIN_TOP, v: VALUE_LENGTH, length: cssLength(d))
+    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-left":
-    return CSSSpecifiedValue(t: RULE_MARGIN_LEFT, v: VALUE_LENGTH, length: cssLength(d))
+    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-bottom":
-    return CSSSpecifiedValue(t: RULE_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cssLength(d))
+    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cssLength(d))
   of "margin-right":
-    return CSSSpecifiedValue(t: RULE_MARGIN_RIGHT, v: VALUE_LENGTH, length: cssLength(d))
+    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cssLength(d))
   of "font-style":
-    return CSSSpecifiedValue(t: RULE_FONT_STYLE, v: VALUE_FONT_STYLE, fontstyle: cssFontStyle(d))
+    result = CSSSpecifiedValue(t: PROPERTY_FONT_STYLE, v: VALUE_FONT_STYLE, fontstyle: cssFontStyle(d))
   of "display":
-    return CSSSpecifiedValue(t: RULE_DISPLAY, v: VALUE_DISPLAY, display: cssDisplay(d))
+    result = CSSSpecifiedValue(t: PROPERTY_DISPLAY, v: VALUE_DISPLAY, display: cssDisplay(d))
   of "content":
-    return CSSSpecifiedValue(t: RULE_CONTENT, v: VALUE_CONTENT, content: cssString(d))
+    result = CSSSpecifiedValue(t: PROPERTY_CONTENT, v: VALUE_CONTENT, content: cssString(d))
   of "white-space":
-    return CSSSpecifiedValue(t: RULE_WHITESPACE, v: VALUE_WHITESPACE, whitespace: cssWhiteSpace(d))
+    result = CSSSpecifiedValue(t: PROPERTY_WHITESPACE, v: VALUE_WHITESPACE, whitespace: cssWhiteSpace(d))
   of "font-weight":
-    return CSSSpecifiedValue(t: RULE_FONT_WEIGHT, v: VALUE_INTEGER, integer: cssFontWeight(d))
+    result = CSSSpecifiedValue(t: PROPERTY_FONT_WEIGHT, v: VALUE_INTEGER, integer: cssFontWeight(d))
 
-func getInitialColor*(t: CSSRuleType): CSSColor =
+  result.globalValue = cssGlobal(d)
+
+func getInitialColor*(t: CSSPropertyType): CSSColor =
   case t
-  of RULE_COLOR:
+  of PROPERTY_COLOR:
     return (r: 255u8, g: 255u8, b: 255u8, a: 255u8)
   else:
     return (r: 0u8, g: 0u8, b: 0u8, a: 255u8)
 
-func getComputedValue*(rule: CSSSpecifiedValue, parent: CSSValues): CSSComputedValue =
-  let inherit = rule.hasGlobalValue and (rule.globalValue == VALUE_INHERIT)
-  let initial = rule.hasGlobalValue and (rule.globalValue == VALUE_INITIAL)
-  let unset = rule.hasGlobalValue and (rule.globalValue == VALUE_UNSET)
-  let revert = rule.hasGlobalValue and (rule.globalValue == VALUE_REVERT)
-  case rule.v
+func getDefault(t: CSSPropertyType): CSSComputedValue =
+  let v = getValueType(t)
+  var nv: CSSComputedValue
+  case v
   of VALUE_COLOR:
-    var val = rule.color
-    if inherit: #TODO and inherited(rule.t):
-      val = parent[rule.t].color
-    if initial:
-      val = getInitialColor(rule.t)
-    if unset:
-      val = getInitialColor(rule.t)
-      #TODO if inherited
-    if revert:
-      #TODO
-      discard
-    return CSSComputedValue(t: rule.t, v: VALUE_COLOR, color: val)
-  of VALUE_LENGTH:
-    return CSSComputedValue(t: rule.t, v: VALUE_LENGTH, length: rule.length)
+    nv = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
   of VALUE_DISPLAY:
-    return CSSComputedValue(t: rule.t, v: VALUE_DISPLAY, display: rule.display)
-  of VALUE_FONT_STYLE:
-    return CSSComputedValue(t: rule.t, v: VALUE_FONT_STYLE, fontstyle: rule.fontstyle)
-  of VALUE_CONTENT:
-    return CSSComputedValue(t: rule.t, v: VALUE_CONTENT, content: rule.content)
-  of VALUE_WHITESPACE:
-    return CSSComputedValue(t: rule.t, v: VALUE_WHITESPACE, whitespace: rule.whitespace)
-  of VALUE_INTEGER:
-    return CSSComputedValue(t: rule.t, v: VALUE_INTEGER, integer: rule.integer)
-  of VALUE_NONE: return CSSComputedValue(t: rule.t, v: VALUE_NONE)
+    nv = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
+  else:
+    nv = CSSComputedValue(t: t, v: v)
+  return nv
 
-func getComputedValue*(d: CSSDeclaration, parent: CSSValues): CSSComputedValue =
+func getComputedValue*(prop: CSSSpecifiedValue, parent: CSSComputedValues): CSSComputedValue =
+  case prop.globalValue
+  of VALUE_INHERIT:
+    if inherited(prop.t):
+      return parent[prop.t]
+  of VALUE_INITIAL:
+    return getDefault(prop.t)
+  of VALUE_UNSET:
+    if inherited(prop.t):
+      return parent[prop.t]
+    return getDefault(prop.t)
+  of VALUE_REVERT:
+    #TODO
+    discard
+  of VALUE_NOGLOBAL: discard
+
+  case prop.v
+  of VALUE_COLOR:
+    return CSSComputedValue(t: prop.t, v: VALUE_COLOR, color: prop.color)
+  of VALUE_LENGTH:
+    return CSSComputedValue(t: prop.t, v: VALUE_LENGTH, length: prop.length)
+  of VALUE_DISPLAY:
+    return CSSComputedValue(t: prop.t, v: VALUE_DISPLAY, display: prop.display)
+  of VALUE_FONT_STYLE:
+    return CSSComputedValue(t: prop.t, v: VALUE_FONT_STYLE, fontstyle: prop.fontstyle)
+  of VALUE_CONTENT:
+    return CSSComputedValue(t: prop.t, v: VALUE_CONTENT, content: prop.content)
+  of VALUE_WHITESPACE:
+    return CSSComputedValue(t: prop.t, v: VALUE_WHITESPACE, whitespace: prop.whitespace)
+  of VALUE_INTEGER:
+    return CSSComputedValue(t: prop.t, v: VALUE_INTEGER, integer: prop.integer)
+  of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
+
+func getComputedValue*(d: CSSDeclaration, parent: CSSComputedValues): CSSComputedValue =
   return getComputedValue(getSpecifiedValue(d), parent)
 
-func getInitialProperties*(): array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue] =
-  for i in low(result)..high(result):
-    let t = CSSRuleType(i)
-    let v = getValueType(t)
-    case v
-    of VALUE_COLOR:
-      result[i] = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
-    of VALUE_DISPLAY:
-      result[i] = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
+func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
+  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+    if inherited(prop):
+      result[prop] = parent[prop]
     else:
-      result[i] = CSSComputedValue(t: t, v: v)
+      result[prop] = getDefault(prop)
+
+func rootProperties*(): CSSComputedValues =
+  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+    result[prop] = getDefault(prop)
+    eprint result[prop]

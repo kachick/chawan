@@ -6,7 +6,6 @@ import streams
 import sequtils
 import sugar
 import algorithm
-import options
 
 import css/style
 import css/parser
@@ -84,8 +83,8 @@ type
     classList*: seq[string]
     attributes*: Table[string, Attr]
     cssvalues*: CSSComputedValues
-    cssvalues_before*: Option[CSSComputedValues]
-    cssvalues_after*: Option[CSSComputedValues]
+    cssvalues_before*: CSSComputedValues
+    cssvalues_after*: CSSComputedValues
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -243,7 +242,6 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
-  result.cssvalues = getInitialProperties()
 
 func newDocument*(): Document =
   new(result)
@@ -385,23 +383,18 @@ proc querySelector*(document: Document, q: string): seq[Element] =
 
 
 proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem = PSEUDO_NONE) =
-  var parentprops: array[low(CSSRuleType)..high(CSSRuleType), CSSComputedValue]
+  var parentprops: CSSComputedValues
   if elem.parentElement != nil:
     parentprops = elem.parentElement.cssvalues
-  else:
-    parentprops = getInitialProperties()
+
   let cval = getComputedValue(decl, parentprops)
   case pseudo
   of PSEUDO_NONE:
     elem.cssvalues[cval.t] = cval
   of PSEUDO_BEFORE:
-    if elem.cssvalues_before.isNone:
-      elem.cssvalues_before = some(getInitialProperties())
-    elem.cssvalues_before.get[cval.t] = cval
+    elem.cssvalues_before[cval.t] = cval
   of PSEUDO_AFTER:
-    if elem.cssvalues_after.isNone:
-      elem.cssvalues_after = some(getInitialProperties())
-    elem.cssvalues_after.get[cval.t] = cval
+    elem.cssvalues_after[cval.t] = cval
 
 type ParsedRule = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
 type ParsedStylesheet = seq[ParsedRule]
@@ -423,11 +416,14 @@ func calcRules(elem: Element, rules: ParsedStylesheet):
 proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration]] =
   var stack: seq[Element]
 
-  stack.add(document.root)
+  stack.add(document.head)
+  stack.add(document.body)
+  document.root.cssvalues = rootProperties()
 
   let parsed = rules.value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
   while stack.len > 0:
     let elem = stack.pop()
+    elem.cssvalues = inheritProperties(elem.parentElement.cssvalues)
     let rules_pseudo = calcRules(elem, parsed)
     for pseudo in low(PseudoElem)..high(PseudoElem):
       let rules = rules_pseudo[pseudo]

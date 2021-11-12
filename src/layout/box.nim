@@ -17,11 +17,11 @@ type
     width*: int
     height*: int
     children*: seq[CSSBox]
-    context*: InlineContext
+    context*: Context
     bcontext*: BlockContext
     cssvalues*: CSSComputedValues
 
-  InlineContext* = ref object
+  Context* = ref object
     context*: FormatContextType
     fromx*: int
     fromy*: int
@@ -29,6 +29,9 @@ type
     marginy*: int
     conty*: bool
     whitespace*: bool
+
+  InlineContext* = object
+    cssvalues*: CSSComputedValues
 
   BlockContext* = ref object
     context*: FormatContextType

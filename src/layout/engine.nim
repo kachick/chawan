@@ -1,5 +1,4 @@
 import unicode
-import options
 
 import layout/box
 import types/enums
@@ -8,7 +7,7 @@ import css/style
 import io/buffer
 import utils/twtstr
 
-func newContext*(box: CSSBox): InlineContext =
+func newContext*(box: CSSBox): Context =
   new(result)
   result.fromx = box.x
   result.whitespace = true
@@ -23,7 +22,7 @@ func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
     inc parent.context.fromy
     parent.context.conty = false
   result.y = parent.context.fromy
-  let mtop = vals[RULE_MARGIN_TOP].length.cells()
+  let mtop = vals[PROPERTY_MARGIN_TOP].length.cells()
   if mtop > parent.bcontext.marginy:
     result.y += mtop - parent.bcontext.marginy
     eprint "my", mtop, parent.bcontext.marginy
@@ -50,9 +49,9 @@ func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
 
 #TODO there should be actual inline contexts to store these stuff
 proc setup(rowbox: var CSSRowBox, cssvalues: CSSComputedValues) =
-  rowbox.color = cssvalues[RULE_COLOR].color
-  rowbox.fontstyle = cssvalues[RULE_FONT_STYLE].fontstyle
-  rowbox.fontweight = cssvalues[RULE_FONT_WEIGHT].integer
+  rowbox.color = cssvalues[PROPERTY_COLOR].color
+  rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
+  rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
 
 proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: var CSSRowBox) =
   ibox.content.add(rowbox)
@@ -90,7 +89,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
       if ibox.context.whitespace:
         continue
       else:
-        let wsr = ibox.cssvalues[RULE_WHITESPACE].whitespace
+        let wsr = ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
 
         case wsr
         of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
@@ -125,7 +124,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
   return ibox
 
 proc processElemBox(parent: CSSBox, elem: Element): CSSBox =
-  case elem.cssvalues[RULE_DISPLAY].display
+  case elem.cssvalues[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
     eprint "START", elem.tagType
     result = newBlockBox(parent, elem.cssvalues)
@@ -148,7 +147,7 @@ proc add(parent: var CSSBox, box: CSSBox) =
       eprint "inc a"
       inc box.context.fromy
       box.context.conty = false
-    let mbot = box.cssvalues[RULE_MARGIN_BOTTOM].length.cells()
+    let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells()
     eprint "inc b", mbot
     box.context.fromy += mbot
     box.bcontext.marginy = mbot
@@ -159,12 +158,12 @@ proc add(parent: var CSSBox, box: CSSBox) =
   parent.children.add(box)
 
 proc processPseudoBox(parent: CSSBox, cssvalues: CSSComputedValues): CSSBox =
-  case cssvalues[RULE_DISPLAY].display
+  case cssvalues[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
     result = newBlockBox(parent, cssvalues)
-    result.add(processInlineBox(parent, $cssvalues[RULE_CONTENT].content)) 
+    result.add(processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)) 
   of DISPLAY_INLINE:
-    result = processInlineBox(parent, $cssvalues[RULE_CONTENT].content)
+    result = processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)
   of DISPLAY_NONE:
     return nil
   else:
@@ -179,18 +178,19 @@ proc processNode(parent: CSSBox, node: Node): CSSBox =
     if result == nil:
       return
 
-    if elem.cssvalues_before.isSome:
-      let bbox = processPseudoBox(parent, elem.cssvalues_before.get)
-      if bbox != nil:
-        result.add(bbox)
+    #TODO pseudo
+    #if elem.cssvalues_before.isSome:
+    #  let bbox = processPseudoBox(parent, elem.cssvalues_before.get)
+    #  if bbox != nil:
+    #    result.add(bbox)
 
     for child in elem.childNodes:
       result.add(processNode(result, child))
 
-    if elem.cssvalues_after.isSome:
-      let abox = processPseudoBox(parent, elem.cssvalues_after.get)
-      if abox != nil:
-        result.add(abox)
+    #if elem.cssvalues_after.isSome:
+    #  let abox = processPseudoBox(parent, elem.cssvalues_after.get)
+    #  if abox != nil:
+    #    result.add(abox)
   of TEXT_NODE:
     let text = Text(node)
     return processInlineBox(parent, text.data)
