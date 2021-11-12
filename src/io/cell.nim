@@ -10,6 +10,8 @@ type
     italic*: bool
     bold*: bool
     underline*: bool
+    strike*: bool
+    overline*: bool
 
   FlexibleCell* = object of Cell
     rune*: Rune

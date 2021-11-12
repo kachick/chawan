@@ -33,6 +33,8 @@ type
       whitespace*: WhitespaceType
     of VALUE_INTEGER:
       integer*: int
+    of VALUE_TEXT_DECORATION:
+      textdecoration*: CSSTextDecoration
     of VALUE_NONE: discard
 
   CSSSpecifiedValue* = object of CSSComputedValue
@@ -54,6 +56,7 @@ const PropertyNames = {
   "content": PROPERTY_CONTENT,
   "white-space": PROPERTY_WHITE_SPACE,
   "font-weight": PROPERTY_FONT_WEIGHT,
+  "text-decoration": PROPERTY_TEXT_DECORATION,
 }.toTable()
 
 const ValueTypes = {
@@ -70,10 +73,12 @@ const ValueTypes = {
   PROPERTY_CONTENT: VALUE_CONTENT,
   PROPERTY_WHITE_SPACE: VALUE_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
+  PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
 }.toTable()
 
 const InheritedProperties = {
-  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE, PROPERTY_FONT_WEIGHT
+  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
+  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION
 }
 
 func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
@@ -300,14 +305,24 @@ func cssFontWeight(d: CSSDeclaration): int =
       of "bold": return 700
       of "lighter": return 400
       of "bolder": return 700
-      else: return 400
 
     elif tok.tokenType == CSS_NUMBER_TOKEN:
       return int(tok.nvalue)
 
   raise newException(CSSValueError, "Invalid font weight")
 
-proc cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
+func cssTextDecoration(d: CSSDeclaration): CSSTextDecoration =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "underline": return TEXT_DECORATION_UNDERLINE
+      of "overline": return TEXT_DECORATION_OVERLINE
+      of "line-through": return TEXT_DECORATION_LINE_THROUGH
+      of "blink": return TEXT_DECORATION_BLINK
+  raise newException(CSSValueError, "Invalid text decoration")
+
+func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -336,6 +351,7 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
       of PROPERTY_FONT_WEIGHT:
         result.integer = cssFontWeight(d)
       else: discard #???
+    of VALUE_TEXT_DECORATION: result.textdecoration = cssTextDecoration(d)
     of VALUE_NONE: discard
   except CSSValueError:
     result.globalValue = VALUE_UNSET
@@ -393,6 +409,8 @@ func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSS
     return CSSComputedValue(t: prop.t, v: VALUE_WHITESPACE, whitespace: prop.whitespace)
   of VALUE_INTEGER:
     return CSSComputedValue(t: prop.t, v: VALUE_INTEGER, integer: prop.integer)
+  of VALUE_TEXT_DECORATION:
+    return CSSComputedValue(t: prop.t, v: VALUE_TEXT_DECORATION, textdecoration: prop.textdecoration)
   of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
 
 func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =

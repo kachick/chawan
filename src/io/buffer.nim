@@ -76,8 +76,7 @@ func generateFullOutput*(buffer: Buffer): seq[string] =
       result.add(s)
       x = 0
       s = ""
-
-    s &= "\e[0m"
+    s &= "\e[m"
     if cell.fgcolor != defaultColor:
       var color = cell.fgcolor
       if color.rgb:
@@ -100,6 +99,10 @@ func generateFullOutput*(buffer: Buffer): seq[string] =
       s &= "\e[3m"
     if cell.underline:
       s &= "\e[4m"
+    if cell.strike:
+      s &= "\e[9m"
+    if cell.overline:
+      s &= "\e[53m"
 
     s &= $cell.runes
     inc x
@@ -556,6 +559,12 @@ func cellFromLine(line: CSSRowBox, i: int): FlexibleCell =
     result.italic = true
   if line.fontweight > 500:
     result.bold = true
+  if line.textdecoration == TEXT_DECORATION_UNDERLINE:
+    result.underline = true
+  if line.textdecoration == TEXT_DECORATION_OVERLINE:
+    result.overline = true
+  if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
+    result.strike = true
 
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   let x = line.x
@@ -639,6 +648,8 @@ proc refreshDisplay*(buffer: Buffer) =
       buffer.display[dls + j - n].italic = line[i].italic
       buffer.display[dls + j - n].bold = line[i].bold
       buffer.display[dls + j - n].underline = line[i].underline
+      buffer.display[dls + j - n].strike = line[i].strike
+      buffer.display[dls + j - n].overline = line[i].overline
       j += line[i].rune.width()
       inc i
 

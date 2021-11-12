@@ -52,6 +52,7 @@ proc setup(rowbox: var CSSRowBox, cssvalues: CSSComputedValues) =
   rowbox.color = cssvalues[PROPERTY_COLOR].color
   rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
   rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
+  rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
 
 proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: var CSSRowBox) =
   ibox.content.add(rowbox)

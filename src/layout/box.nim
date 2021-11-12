@@ -46,6 +46,7 @@ type
     color*: CSSColor
     fontstyle*: CSSFontStyle
     fontweight*: int
+    textdecoration*: CSSTextDecoration
     runes*: seq[Rune]
 
   CSSInlineBox* = ref CSSInlineBoxObj
