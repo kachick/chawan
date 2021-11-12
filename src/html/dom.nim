@@ -382,12 +382,8 @@ proc querySelector*(document: Document, q: string): seq[Element] =
     result.add(document.selectElems(sel))
 
 
-proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem = PSEUDO_NONE) =
-  var parentprops: CSSComputedValues
-  if elem.parentElement != nil:
-    parentprops = elem.parentElement.cssvalues
-
-  let cval = getComputedValue(decl, parentprops)
+proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem) =
+  let cval = getComputedValue(decl, elem.cssvalues)
   case pseudo
   of PSEUDO_NONE:
     elem.cssvalues[cval.t] = cval
@@ -413,7 +409,7 @@ func calcRules(elem: Element, rules: ParsedStylesheet):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
     result[i] = tosorts[i].map((x) => x.b)
 
-proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration]] =
+proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]] =
   var stack: seq[Element]
 
   stack.add(document.head)
@@ -433,7 +429,7 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
           if item of CSSDeclaration:
             let decl = CSSDeclaration(item)
             if decl.important:
-              result.add((elem, decl))
+              result.add((elem, decl, pseudo))
             else:
               elem.applyProperty(decl, pseudo)
 
@@ -443,7 +439,7 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
       stack.add(child)
       dec i
 
-proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration]] =
+proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]] =
   var stack: seq[Element]
   var embedded_rules: seq[ParsedStylesheet]
 
@@ -488,9 +484,12 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
           if item of CSSDeclaration:
             let decl = CSSDeclaration(item)
             if decl.important:
-              result.add((elem, decl))
+              result.add((elem, decl, pseudo))
             else:
               elem.applyProperty(decl, pseudo)
+            if elem.id == "wrong":
+              eprint "wrong", elem.cssvalues
+              eprint decl
 
     var i = elem.children.len - 1
     while i >= 0:
@@ -505,7 +504,7 @@ proc applyStylesheets*(document: Document) =
   let important_ua = document.applyRules(stylesheet)
   let important_author = document.applyAuthorRules()
   for rule in important_author:
-    rule.e.applyProperty(rule.d)
+    rule.e.applyProperty(rule.d, rule.p)
   for rule in important_ua:
-    rule.e.applyProperty(rule.d)
+    rule.e.applyProperty(rule.d, rule.p)
 

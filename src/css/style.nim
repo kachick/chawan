@@ -38,7 +38,26 @@ type
   CSSSpecifiedValue* = object of CSSComputedValue
     globalValue: CSSGlobalValueType
 
+  CSSValueError* = object of ValueError
+
+#TODO calculate this during compile time
+const PropertyNames = {
+  "all": PROPERTY_ALL,
+  "color": PROPERTY_COLOR,
+  "margin": PROPERTY_MARGIN,
+  "margin-top": PROPERTY_MARGIN_TOP,
+  "margin-bottom": PROPERTY_MARGIN_BOTTOM,
+  "margin-left": PROPERTY_MARGIN_LEFT,
+  "margin-right": PROPERTY_MARGIN_RIGHT,
+  "font-style": PROPERTY_FONT_STYLE,
+  "display": PROPERTY_DISPLAY,
+  "content": PROPERTY_CONTENT,
+  "white-space": PROPERTY_WHITE_SPACE,
+  "font-weight": PROPERTY_FONT_WEIGHT,
+}.toTable()
+
 const ValueTypes = {
+  PROPERTY_NONE: VALUE_NONE,
   PROPERTY_ALL: VALUE_NONE,
   PROPERTY_COLOR: VALUE_COLOR,
   PROPERTY_MARGIN: VALUE_LENGTH,
@@ -49,12 +68,12 @@ const ValueTypes = {
   PROPERTY_FONT_STYLE: VALUE_FONT_STYLE,
   PROPERTY_DISPLAY: VALUE_DISPLAY,
   PROPERTY_CONTENT: VALUE_CONTENT,
-  PROPERTY_WHITESPACE: VALUE_WHITESPACE,
+  PROPERTY_WHITE_SPACE: VALUE_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
 }.toTable()
 
 const InheritedProperties = {
-  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITESPACE, PROPERTY_FONT_WEIGHT
+  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE, PROPERTY_FONT_WEIGHT
 }
 
 func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
@@ -66,11 +85,14 @@ func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType),
 
 const InheritedArray = getPropInheritedArray()
 
+func propertyType*(s: string): CSSPropertyType =
+  return PropertyNames.getOrDefault(s, PROPERTY_NONE)
+
+func valueType*(prop: CSSPropertyType): CSSValueType =
+  return ValueTypes[prop]
+
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
-
-func getValueType*(prop: CSSPropertyType): CSSValueType =
-  return ValueTypes[prop]
 
 func cells*(l: CSSLength): int =
   case l.unit
@@ -119,7 +141,7 @@ func cssLength(val: float64, unit: string): CSSLength =
   of "vh": return CSSLength(num: val, unit: UNIT_VH)
   of "vmin": return CSSLength(num: val, unit: UNIT_VMIN)
   of "vmax": return CSSLength(num: val, unit: UNIT_VMAX)
-  else: return CSSLength(num: 0, unit: UNIT_EM)
+  else: raise newException(CSSValueError, "Invalid unit")
 
 func cssColor*(d: CSSDeclaration): CSSColor =
   if d.value.len > 0:
@@ -131,7 +153,7 @@ func cssColor*(d: CSSDeclaration): CSSColor =
         if s.len == 3:
           for r in s:
             if hexValue(r) == -1:
-              return
+              raise newException(CSSValueError, "Invalid color")
           let r = hexValue(s[0]) * 0x10 + hexValue(s[0])
           let g = hexValue(s[1]) * 0x10 + hexValue(s[1])
           let b = hexValue(s[2]) * 0x10 + hexValue(s[2])
@@ -140,52 +162,50 @@ func cssColor*(d: CSSDeclaration): CSSColor =
         elif s.len == 6:
           for r in s:
             if hexValue(r) == -1:
-              return
+              raise newException(CSSValueError, "Invalid color")
           let r = hexValue(s[0]) * 0x10 + hexValue(s[1])
           let g = hexValue(s[2]) * 0x10 + hexValue(s[3])
           let b = hexValue(s[4]) * 0x10 + hexValue(s[5])
           return (uint8(r), uint8(g), uint8(b), 0x00u8)
         else:
-          return defaultColor
+          raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:
         let s = tok.value
         if $s in colors:
           return colors[$s]
         else:
-          return defaultColor
+          raise newException(CSSValueError, "Invalid color")
       else:
-        eprint "else", tok.tokenType
-        return defaultColor
+        raise newException(CSSValueError, "Invalid color")
     elif d.value[0] of CSSFunction:
       let f = CSSFunction(d.value[0])
       eprint "func", f.name
-      #todo calc etc (cssnumber function or something)
+      #TODO calc etc (cssnumber function or something)
       case $f.name
       of "rgb":
         if f.value.len != 3:
-          return defaultColor
+          raise newException(CSSValueError, "Invalid color")
         for c in f.value:
           if c != CSS_NUMBER_TOKEN:
-            return defaultColor
+            raise newException(CSSValueError, "Invalid color")
         let r = CSSToken(f.value[0]).nvalue
         let g = CSSToken(f.value[1]).nvalue
         let b = CSSToken(f.value[2]).nvalue
         return (uint8(r), uint8(g), uint8(b), 0x00u8)
       of "rgba":
         if f.value.len != 4:
-          return defaultColor
+          raise newException(CSSValueError, "Invalid color")
         for c in f.value:
           if c != CSS_NUMBER_TOKEN:
-            return defaultColor
+            raise newException(CSSValueError, "Invalid color")
         let r = CSSToken(f.value[0]).nvalue
         let g = CSSToken(f.value[1]).nvalue
         let b = CSSToken(f.value[2]).nvalue
         let a = CSSToken(f.value[3]).nvalue
         return (uint8(r), uint8(g), uint8(b), uint8(a))
-      else:
-        return defaultColor
+      else: discard
 
-  return defaultColor
+  raise newException(CSSValueError, "Invalid color")
 
 func cellColor*(color: CSSColor): CellColor =
   #TODO better would be to store color names and return term colors on demand
@@ -244,7 +264,7 @@ func cssDisplay(d: CSSDeclaration): DisplayType =
       of "table-column": return DISPLAY_TABLE_COLUMN
       of "none": return DISPLAY_NONE
       else: return DISPLAY_INLINE
-  return DISPLAY_INLINE
+  raise newException(CSSValueError, "Invalid display")
 
 func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
   if isToken(d):
@@ -254,8 +274,8 @@ func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
       of "normal": return FONTSTYLE_NORMAL
       of "italic": return FONTSTYLE_ITALIC
       of "oblique": return FONTSTYLE_OBLIQUE
-      else: return FONTSTYLE_NORMAL
-  return FONTSTYLE_NORMAL
+      else: raise newException(CSSValueError, "Invalid font style")
+  raise newException(CSSValueError, "Invalid font style")
 
 func cssWhiteSpace(d: CSSDeclaration): WhitespaceType =
   if isToken(d):
@@ -268,7 +288,7 @@ func cssWhiteSpace(d: CSSDeclaration): WhitespaceType =
       of "pre-line": return WHITESPACE_PRE_LINE
       of "pre-wrap": return WHITESPACE_PRE_WRAP
       else: return WHITESPACE_NORMAL
-  return WHITESPACE_NORMAL
+  raise newException(CSSValueError, "Invalid whitespace")
 
 #TODO
 func cssFontWeight(d: CSSDeclaration): int =
@@ -285,7 +305,7 @@ func cssFontWeight(d: CSSDeclaration): int =
     elif tok.tokenType == CSS_NUMBER_TOKEN:
       return int(tok.nvalue)
 
-  return 400
+  raise newException(CSSValueError, "Invalid font weight")
 
 proc cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
   if isToken(d):
@@ -299,31 +319,29 @@ proc cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
   return VALUE_NOGLOBAL
 
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
-  case $d.name
-  of "color":
-    result = CSSSpecifiedValue(t: PROPERTY_COLOR, v: VALUE_COLOR, color: cssColor(d))
-  of "margin":
-    result = CSSSpecifiedValue(t: PROPERTY_MARGIN, v: VALUE_LENGTH, length: cssLength(d))
-  of "margin-top":
-    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: cssLength(d))
-  of "margin-left":
-    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cssLength(d))
-  of "margin-bottom":
-    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cssLength(d))
-  of "margin-right":
-    result = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cssLength(d))
-  of "font-style":
-    result = CSSSpecifiedValue(t: PROPERTY_FONT_STYLE, v: VALUE_FONT_STYLE, fontstyle: cssFontStyle(d))
-  of "display":
-    result = CSSSpecifiedValue(t: PROPERTY_DISPLAY, v: VALUE_DISPLAY, display: cssDisplay(d))
-  of "content":
-    result = CSSSpecifiedValue(t: PROPERTY_CONTENT, v: VALUE_CONTENT, content: cssString(d))
-  of "white-space":
-    result = CSSSpecifiedValue(t: PROPERTY_WHITESPACE, v: VALUE_WHITESPACE, whitespace: cssWhiteSpace(d))
-  of "font-weight":
-    result = CSSSpecifiedValue(t: PROPERTY_FONT_WEIGHT, v: VALUE_INTEGER, integer: cssFontWeight(d))
+  let name = $d.name
+  let ptype = propertyType(name)
+  let vtype = valueType(ptype)
+  result = CSSSpecifiedValue(t: ptype, v: vtype)
+  try:
+    case vtype
+    of VALUE_COLOR: result.color = cssColor(d)
+    of VALUE_LENGTH: result.length = cssLength(d)
+    of VALUE_FONT_STYLE: result.fontstyle = cssFontStyle(d)
+    of VALUE_DISPLAY: result.display = cssDisplay(d)
+    of VALUE_CONTENT: result.content = cssString(d)
+    of VALUE_WHITE_SPACE: result.whitespace = cssWhiteSpace(d)
+    of VALUE_INTEGER:
+      case ptype
+      of PROPERTY_FONT_WEIGHT:
+        result.integer = cssFontWeight(d)
+      else: discard #???
+    of VALUE_NONE: discard
+  except CSSValueError:
+    result.globalValue = VALUE_UNSET
 
-  result.globalValue = cssGlobal(d)
+  if result.globalValue == VALUE_NOGLOBAL:
+    result.globalValue = cssGlobal(d)
 
 func getInitialColor*(t: CSSPropertyType): CSSColor =
   case t
@@ -333,7 +351,7 @@ func getInitialColor*(t: CSSPropertyType): CSSColor =
     return (r: 0u8, g: 0u8, b: 0u8, a: 255u8)
 
 func getDefault(t: CSSPropertyType): CSSComputedValue =
-  let v = getValueType(t)
+  let v = valueType(t)
   var nv: CSSComputedValue
   case v
   of VALUE_COLOR:
@@ -344,16 +362,16 @@ func getDefault(t: CSSPropertyType): CSSComputedValue =
     nv = CSSComputedValue(t: t, v: v)
   return nv
 
-func getComputedValue*(prop: CSSSpecifiedValue, parent: CSSComputedValues): CSSComputedValue =
+func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSSComputedValue =
   case prop.globalValue
   of VALUE_INHERIT:
     if inherited(prop.t):
-      return parent[prop.t]
+      return current[prop.t]
   of VALUE_INITIAL:
     return getDefault(prop.t)
   of VALUE_UNSET:
     if inherited(prop.t):
-      return parent[prop.t]
+      return current[prop.t]
     return getDefault(prop.t)
   of VALUE_REVERT:
     #TODO
@@ -377,8 +395,8 @@ func getComputedValue*(prop: CSSSpecifiedValue, parent: CSSComputedValues): CSSC
     return CSSComputedValue(t: prop.t, v: VALUE_INTEGER, integer: prop.integer)
   of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
 
-func getComputedValue*(d: CSSDeclaration, parent: CSSComputedValues): CSSComputedValue =
-  return getComputedValue(getSpecifiedValue(d), parent)
+func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =
+  return getComputedValue(getSpecifiedValue(d), current)
 
 func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
@@ -390,4 +408,3 @@ func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
 func rootProperties*(): CSSComputedValues =
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
     result[prop] = getDefault(prop)
-    eprint result[prop]

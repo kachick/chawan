@@ -734,58 +734,58 @@ proc parseCommaSeparatedListOfComponentValues(inputStream: Stream): seq[CSSCompo
   state.tokens = tokenizeCSS(inputStream)
   return state.parseCommaSeparatedListOfComponentValues()
 
-proc printc*(c: CSSComponentValue) =
+func `$`*(c: CSSComponentValue): string =
   if c of CSSToken:
     case CSSToken(c).tokenType:
     of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
-      eprint CSSToken(c).tokenType, CSSToken(c).value
+      result &= $CSSToken(c).tokenType & $CSSToken(c).value & '\n'
     of CSS_HASH_TOKEN:
-      stderr.write('#' & $CSSToken(c).value)
+      result &= '#' & $CSSToken(c).value
     of CSS_IDENT_TOKEN:
-      stderr.write(CSSToken(c).value)
+      result &= $CSSToken(c).value
     of CSS_STRING_TOKEN:
-      stderr.write("\"" & $CSSToken(c).value & "\"")
+      result &= ("\"" & $CSSToken(c).value & "\"")
     of CSS_DELIM_TOKEN:
-      stderr.write(CSSToken(c).rvalue)
+      result &= $CSSToken(c).rvalue
     of CSS_DIMENSION_TOKEN:
-      eprint CSSToken(c).tokenType, CSSToken(c).nvalue, "unit", CSSToken(c).unit, CSSToken(c).tflagb
+      result &= $CSSToken(c).tokenType & $CSSToken(c).nvalue & "unit" & $CSSToken(c).unit & $CSSToken(c).tflagb
     of CSS_NUMBER_TOKEN:
-      stderr.write($CSSToken(c).nvalue & $CSSToken(c).unit)
+      result &= $CSSToken(c).nvalue & $CSSToken(c).unit
     of CSS_PERCENTAGE_TOKEN:
-      stderr.write($CSSToken(c).nvalue & "%")
+      result &= $CSSToken(c).nvalue & "%"
     of CSS_COLON_TOKEN:
-      stderr.write(":")
+      result &= ":"
     of CSS_WHITESPACE_TOKEN:
-      stderr.write(" ")
+      result &= " "
     of CSS_SEMICOLON_TOKEN:
-      stderr.write(";\n")
+      result &= ";\n"
     of CSS_COMMA_TOKEN:
-      stderr.write(",")
+      result &= ","
     else:
-      eprint CSSToken(c).tokenType
+      result &= $CSSToken(c).tokenType & '\n'
   elif c of CSSDeclaration:
-    stderr.write(CSSDeclaration(c).name)
-    stderr.write(": ")
+    result &= $CSSDeclaration(c).name
+    result &= ": "
     for s in CSSDeclaration(c).value:
-      printc(s)
-    stderr.write(";\n")
+      result &= $s
+    result &= ";\n"
   elif c of CSSFunction:
-    stderr.write($CSSFunction(c).name & "(")
+    result &= $CSSFunction(c).name & "("
     for s in CSSFunction(c).value:
-      printc(s)
-    stderr.write(")")
+      result &= $s
+    result &= ")"
   elif c of CSSSimpleBlock:
     case CSSSimpleBlock(c).token.tokenType
-    of CSS_LBRACE_TOKEN: eprint "{"
-    of CSS_LPAREN_TOKEN: stderr.write("(")
-    of CSS_LBRACKET_TOKEN: stderr.write("[")
+    of CSS_LBRACE_TOKEN: result &= "{\n"
+    of CSS_LPAREN_TOKEN: result &= "("
+    of CSS_LBRACKET_TOKEN: result &= "["
     else: discard
     for s in CSSSimpleBlock(c).value:
-      printc(s)
+      result &= $s
     case CSSSimpleBlock(c).token.tokenType
-    of CSS_LBRACE_TOKEN: eprint "}"
-    of CSS_LPAREN_TOKEN: stderr.write(")")
-    of CSS_LBRACKET_TOKEN: stderr.write("]")
+    of CSS_LBRACE_TOKEN: result &= "\n}"
+    of CSS_LPAREN_TOKEN: result &= ")"
+    of CSS_LBRACKET_TOKEN: result &= "]"
     else: discard
 
 proc parseCSS*(inputStream: Stream): CSSStylesheet =
@@ -800,14 +800,14 @@ proc debugparseCSS*(inputStream: Stream) =
       eprint CSSAtRule(v).name
     else:
       for c in CSSQualifiedRule(v).prelude:
-        printc(c)
+        eprint c
     case v.oblock.token.tokenType
     of CSS_LBRACE_TOKEN: eprint "\n{"
     of CSS_LPAREN_TOKEN: eprint "("
     of CSS_LBRACKET_TOKEN: eprint "["
     else: discard
     for s in v.oblock.value:
-      printc(s)
+      eprint s
     case v.oblock.token.tokenType
     of CSS_LBRACE_TOKEN: eprint "\n}"
     of CSS_LPAREN_TOKEN: eprint ")"
