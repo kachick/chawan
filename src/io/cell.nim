@@ -4,7 +4,7 @@ import types/color
 import utils/twtstr
 
 type
-  Cell* = object of RootObj
+  Formatting* = object
     fgcolor*: CellColor
     bgcolor*: CellColor
     italic*: bool
@@ -12,6 +12,9 @@ type
     underline*: bool
     strike*: bool
     overline*: bool
+
+  Cell* = object of RootObj
+    formatting*: Formatting
 
   FlexibleCell* = object of Cell
     rune*: Rune
@@ -43,3 +46,6 @@ func newFixedGrid*(w: int, h: int = 1): FixedGrid =
 func width*(line: FlexibleLine): int =
   for c in line:
     result += c.rune.width()
+
+func newFormatting*(): Formatting =
+  return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)

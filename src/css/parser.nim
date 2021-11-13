@@ -399,7 +399,6 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
       elif state.startsWithIdentifier():
         state.reconsume()
         result = state.consumeIdentLikeToken()
-        eprint result.value
       else:
         return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
   of Rune('.'):

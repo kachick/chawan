@@ -18,19 +18,19 @@ func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   result.x = parent.x
   if parent.context.conty:
     inc parent.height
-    eprint "inc n"
+    #eprint "inc n"
     inc parent.context.fromy
     parent.context.conty = false
   result.y = parent.context.fromy
   let mtop = vals[PROPERTY_MARGIN_TOP].length.cells()
   if mtop > parent.bcontext.marginy:
     result.y += mtop - parent.bcontext.marginy
-    eprint "my", mtop, parent.bcontext.marginy
+    #eprint "my", mtop, parent.bcontext.marginy
     parent.bcontext.marginy = mtop
 
   result.width = parent.width
   result.context = newContext(parent)
-  eprint "inc to", result.y
+  #eprint "inc to", result.y
   result.context.fromy = result.y
   result.cssvalues = vals
 
@@ -116,7 +116,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
     ibox.context.conty = true
 
   ibox.height += rowi
-  eprint "inc i", rowi, rowbox.runes
+  #eprint "inc i", rowi, rowbox.runes
   if rowi > 0 or rowbox.width > 0:
     parent.bcontext.marginy = 0
   ibox.context.fromy += rowi
@@ -127,7 +127,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
 proc processElemBox(parent: CSSBox, elem: Element): CSSBox =
   case elem.cssvalues[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
-    eprint "START", elem.tagType
+    #eprint "START", elem.tagType
     result = newBlockBox(parent, elem.cssvalues)
     CSSBlockBox(result).tag = $elem.tagType
   of DISPLAY_INLINE:
@@ -145,16 +145,16 @@ proc add(parent: var CSSBox, box: CSSBox) =
     parent.context.whitespace = true
     if box.context.conty:
       inc box.height
-      eprint "inc a"
+      #eprint "inc a"
       inc box.context.fromy
       box.context.conty = false
     let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells()
-    eprint "inc b", mbot
+    #eprint "inc b", mbot
     box.context.fromy += mbot
     box.bcontext.marginy = mbot
-    eprint "END", CSSBlockBox(box).tag
+    #eprint "END", CSSBlockBox(box).tag
   parent.height += box.height
-  eprint "parent to", box.context.fromy
+  #eprint "parent to", box.context.fromy
   parent.context.fromy = box.context.fromy
   parent.children.add(box)
 

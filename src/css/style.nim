@@ -184,7 +184,6 @@ func cssColor*(d: CSSDeclaration): CSSColor =
         raise newException(CSSValueError, "Invalid color")
     elif d.value[0] of CSSFunction:
       let f = CSSFunction(d.value[0])
-      eprint "func", f.name
       #TODO calc etc (cssnumber function or something)
       case $f.name
       of "rgb":
