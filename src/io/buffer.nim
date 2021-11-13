@@ -581,22 +581,31 @@ proc refreshDisplay*(buffer: Buffer) =
 proc renderPlainText*(buffer: Buffer, text: string) =
   buffer.clearText()
   var i = 0
+  var x = 0
   var y = 0
-  var line = ""
+  var r: Rune
+  var format = newFormatting()
   while i < text.len:
     if text[i] == '\n':
-      buffer.setText(0, y, line.toRunes())
+      buffer.addLine()
       inc y
-      line = ""
+      x = 0
+      inc i
     elif text[i] == '\r':
-      discard
+      inc i
     elif text[i] == '\t':
-      line &= ' '.repeat(8)
+      for i in 0..8:
+        buffer.lines[^1].add(FlexibleCell(rune: Rune(' '), formatting: format))
+      inc i
+    elif text[i] == '\e':
+      i = format.parseAnsiCode(text, i)
+    elif text[i].isControlChar():
+      buffer.lines[^1].add(FlexibleCell(rune: Rune('^'), formatting: format))
+      buffer.lines[^1].add(FlexibleCell(rune: Rune(text[i].getControlLetter()), formatting: format))
+      inc i
     else:
-      line &= text[i]
-    inc i
-  if line.len > 0:
-    buffer.setText(0, y, line.toRunes())
+      fastRuneAt(text, i, r)
+      buffer.lines[^1].add(FlexibleCell(rune: r, formatting: format))
   buffer.updateCursor()
 
 proc renderDocument*(buffer: Buffer) =
