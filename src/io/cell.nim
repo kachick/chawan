@@ -49,3 +49,95 @@ func width*(line: FlexibleLine): int =
 
 func newFormatting*(): Formatting =
   return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)
+
+proc processFormatting*(formatting: var Formatting, cellf: Formatting): string =
+    if formatting.bold and not cellf.bold:
+      result &= SGR(22)
+    if formatting.italic and not cellf.italic:
+      result &= SGR(23)
+    if formatting.underline and not cellf.underline:
+      result &= SGR(24)
+    if formatting.strike and not cellf.strike:
+      result &= SGR(29)
+    if formatting.overline and not cellf.overline:
+      result &= SGR(55)
+
+    if cellf.fgcolor != formatting.fgcolor:
+      var color = cellf.fgcolor
+      if color.rgb:
+        let rgb = color.rgbcolor
+        result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
+      elif color == defaultColor:
+        result &= SGR()
+        formatting = newFormatting()
+      else:
+        result &= SGR(color.color)
+
+    if cellf.bgcolor != formatting.bgcolor:
+      var color = cellf.bgcolor
+      if color.rgb:
+        let rgb = color.rgbcolor
+        result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
+      elif color == defaultColor:
+        result &= SGR()
+        formatting = newFormatting()
+      else:
+        result &= SGR(color.color)
+
+    if not formatting.bold and cellf.bold:
+      result &= SGR(1)
+    if not formatting.italic and cellf.italic:
+      result &= SGR(3)
+    if not formatting.underline and cellf.underline:
+      result &= SGR(4)
+    if not formatting.strike and cellf.strike:
+      result &= SGR(9)
+    if not formatting.overline and cellf.overline:
+      result &= SGR(53)
+
+    formatting = cellf
+    if formatting.bold and not cellf.bold:
+      result &= SGR(22)
+    if formatting.italic and not cellf.italic:
+      result &= SGR(23)
+    if formatting.underline and not cellf.underline:
+      result &= SGR(24)
+    if formatting.strike and not cellf.strike:
+      result &= SGR(29)
+    if formatting.overline and not cellf.overline:
+      result &= SGR(55)
+
+    if cellf.fgcolor != formatting.fgcolor:
+      var color = cellf.fgcolor
+      if color.rgb:
+        let rgb = color.rgbcolor
+        result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
+      elif color == defaultColor:
+        result &= SGR()
+        formatting = newFormatting()
+      else:
+        result &= SGR(color.color)
+
+    if cellf.bgcolor != formatting.bgcolor:
+      var color = cellf.bgcolor
+      if color.rgb:
+        let rgb = color.rgbcolor
+        result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
+      elif color == defaultColor:
+        result &= SGR()
+        formatting = newFormatting()
+      else:
+        result &= SGR(color.color)
+
+    if not formatting.bold and cellf.bold:
+      result &= SGR(1)
+    if not formatting.italic and cellf.italic:
+      result &= SGR(3)
+    if not formatting.underline and cellf.underline:
+      result &= SGR(4)
+    if not formatting.strike and cellf.strike:
+      result &= SGR(9)
+    if not formatting.overline and cellf.overline:
+      result &= SGR(53)
+
+    formatting = cellf

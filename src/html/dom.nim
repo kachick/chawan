@@ -487,9 +487,6 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
               result.add((elem, decl, pseudo))
             else:
               elem.applyProperty(decl, pseudo)
-            if elem.id == "wrong":
-              eprint "wrong", elem.cssvalues
-              eprint decl
 
     var i = elem.children.len - 1
     while i >= 0:

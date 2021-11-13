@@ -16,22 +16,6 @@ import io/lineedit
 import io/cell
 
 type
-  DrawInstruction = object
-    case t: DrawInstructionType
-    of DRAW_TEXT:
-      text: seq[Rune]
-    of DRAW_GOTO:
-      x: int
-      y: int
-    of DRAW_FGCOLOR, DRAW_BGCOLOR:
-      color: CellColor
-    of DRAW_STYLE:
-      bold: bool
-      italic: bool
-      underline: bool
-    of DRAW_RESET:
-      discard
-
   Buffer* = ref BufferObj
   BufferObj = object
     title*: string
@@ -79,42 +63,7 @@ func generateFullOutput*(buffer: Buffer): seq[string] =
       x = 0
       s = ""
 
-    if formatting.bold and not cell.formatting.bold or
-        formatting.italic and not cell.formatting.italic or
-        formatting.underline and not cell.formatting.underline or
-        formatting.strike and not cell.formatting.strike or
-        formatting.overline and not cell.formatting.overline:
-      s &= "\e[m"
-      formatting = newFormatting()
-
-    if cell.formatting.fgcolor != formatting.fgcolor and cell.formatting.fgcolor != defaultColor:
-      var color = cell.formatting.fgcolor
-      if color.rgb:
-        let rgb = color.rgbcolor
-        s &= "\e[38;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m"
-      else:
-        s &= "\e[" & $color.color & "m"
-
-    if cell.formatting.bgcolor != formatting.bgcolor and cell.formatting.bgcolor != defaultColor:
-      var color = cell.formatting.bgcolor
-      if color.rgb:
-        let rgb = color.rgbcolor
-        s &= "\e[48;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m"
-      else:
-        s &= "\e[" & $color.color & "m"
-
-    if not formatting.bold and cell.formatting.bold:
-      s &= "\e[1m"
-    if not formatting.italic and cell.formatting.italic:
-      s &= "\e[3m"
-    if not formatting.underline and cell.formatting.underline:
-      s &= "\e[4m"
-    if not formatting.strike and cell.formatting.strike:
-      s &= "\e[9m"
-    if not formatting.overline and cell.formatting.overline:
-      s &= "\e[53m"
-
-    formatting = cell.formatting
+    s &= formatting.processFormatting(cell.formatting)
 
     s &= $cell.runes
     inc x
@@ -122,86 +71,54 @@ func generateFullOutput*(buffer: Buffer): seq[string] =
   result.add(s)
 
 # generate a sequence of instructions to replace the previous frame with the
-# current one. ideally we should have some mechanism in place to determine
-# where we should use this and where we should just rewrite the frame, though
-# now that I think about it rewriting every frame might be a better option
-#func generateSwapOutput*(buffer: Buffer): seq[DrawInstruction] =
-#  var fgcolor: CellColor
-#  var bgcolor: CellColor
-#  var italic = false
-#  var bold = false
-#  var underline = false
-#
-#  let max = buffer.width * buffer.height
-#  let curr = buffer.display
-#  let prev = buffer.prevdisplay
-#  var x = 0
-#  var y = 0
-#  var cx = 0
-#  var cy = 0
-#  var i = 0
-#  var text: seq[Rune]
-#  while i < max:
-#    if x >= buffer.width:
-#      x = 0
-#      cx = 0
-#      text &= Rune('\n')
-#      inc y
-#      inc cy
-#
-#    if curr[i] != prev[i]:
-#      let currwidth = curr[i].runes.width()
-#      let prevwidth = prev[i].runes.width()
-#      if (curr[i].runes.len > 0 or currwidth < prevwidth) and (x != cx or y != cy):
-#        if text.len > 0:
-#          result.add(DrawInstruction(t: DRAW_TEXT, text: text))
-#          text.setLen(0)
-#        result.add(DrawInstruction(t: DRAW_GOTO, x: x, y: y))
-#        cx = x
-#        cy = y
-#
-#      let cancont =
-#        (curr[i].fgcolor == fgcolor and curr[i].bgcolor == bgcolor and
-#         curr[i].italic == italic and curr[i].bold == bold and curr[i].underline == underline)
-#
-#      if text.len > 0 and not cancont:
-#        result.add(DrawInstruction(t: DRAW_TEXT, text: text))
-#        text.setLen(0)
-#
-#      if curr[i].fgcolor != fgcolor:
-#        fgcolor = curr[i].fgcolor
-#        result.add(DrawInstruction(t: DRAW_FGCOLOR, color: fgcolor))
-#
-#      if curr[i].bgcolor != bgcolor:
-#        bgcolor = curr[i].bgcolor
-#        result.add(DrawInstruction(t: DRAW_BGCOLOR, color: bgcolor))
-#
-#      if curr[i].italic != italic or curr[i].bold != bold or curr[i].underline != underline:
-#        if italic and not curr[i].italic or bold and not curr[i].bold or underline and not curr[i].underline:
-#          result.add(DrawInstruction(t: DRAW_RESET))
-#          if fgcolor != defaultColor:
-#            result.add(DrawInstruction(t: DRAW_FGCOLOR, color: fgcolor))
-#          if bgcolor != defaultColor:
-#            result.add(DrawInstruction(t: DRAW_BGCOLOR, color: bgcolor))
-#        italic = curr[i].italic
-#        bold = curr[i].bold
-#        underline = curr[i].underline
-#        result.add(DrawInstruction(t: DRAW_STYLE, italic: italic, bold: bold, underline: underline))
-#
-#      text &= curr[i].runes
-#      if currwidth < prevwidth:
-#        var j = 0
-#        while j < prevwidth - currwidth:
-#          text &= Rune(' ')
-#          inc j
-#      if text.len > 0:
-#        inc cx
-#
-#    inc x
-#    inc i
-#  
-#  if text.len > 0:
-#    result.add(DrawInstruction(t: DRAW_TEXT, text: text))
+# current one. ideally should be used when small changes are made (e.g. hover
+# changes underlining)
+func generateSwapOutput*(buffer: Buffer): string =
+  var formatting = newFormatting()
+
+  let max = buffer.width * buffer.height
+  let curr = buffer.display
+  let prev = buffer.prevdisplay
+  var x = 0
+  var y = 0
+  var cx = 0
+  var cy = 0
+  var i = 0
+  var text = ""
+  while i < max:
+    if x >= buffer.width:
+      x = 0
+      cx = 0
+      text &= '\n'
+      inc y
+      inc cy
+
+    if curr[i] != prev[i]:
+      let currwidth = curr[i].runes.width()
+      let prevwidth = prev[i].runes.width()
+      if (curr[i].runes.len > 0 or currwidth < prevwidth) and (x != cx or y != cy):
+        if text.len > 0:
+          result &= text
+          text = ""
+        result &= HVP(y + 1, x + 1)
+        cx = x
+        cy = y
+
+      text &= formatting.processFormatting(curr[i].formatting)
+
+      text &= $curr[i].runes
+      if currwidth < prevwidth:
+        var j = 0
+        while j < prevwidth - currwidth:
+          text &= ' '
+          inc j
+      if text.len > 0:
+        inc cx
+
+    inc x
+    inc i
+  if text.len > 0:
+    result &= $text
 
 func generateStatusMessage*(buffer: Buffer): string =
   for cell in buffer.statusmsg:
@@ -737,56 +654,16 @@ proc statusMsgForBuffer(buffer: Buffer) =
     msg &= " " & buffer.hovertext
   buffer.setStatusMessage(msg)
 
-#proc displayBufferSwapOutput(buffer: Buffer) =
-#  termGoto(0, 0)
-#  let instructions = buffer.generateSwapOutput()
-#  for inst in instructions:
-#    case inst.t
-#    of DRAW_TEXT:
-#      print(inst.text)
-#    of DRAW_GOTO:
-#      termGoto(inst.x, inst.y)
-#    of DRAW_FGCOLOR:
-#      let color = inst.color
-#      if inst.color.rgb:
-#        let rgb = color.rgbcolor
-#        print("\e[38;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m")
-#      else:
-#        print("\e[" & $color.color & "m")
-#    of DRAW_BGCOLOR:
-#      let color = inst.color
-#      if inst.color.rgb:
-#        let rgb = color.rgbcolor
-#        print("\e[48;2;" & $rgb.r & ";" & $rgb.g & ";" & $rgb.b & "m")
-#      else:
-#        print("\e[" & $color.color & "m")
-#    of DRAW_STYLE:
-#      var os = "\e["
-#      var p = false
-#      if inst.italic:
-#        os &= "3"
-#        p = true
-#      if inst.bold:
-#        if p:
-#          os &= ";"
-#        os &= "1"
-#        p = true
-#      if inst.underline:
-#        if p:
-#          os &= ";"
-#        os &= "4"
-#        p = true
-#      os &= "m"
-#      print(os)
-#    of DRAW_RESET:
-#      print("\e[0m")
+proc displayBufferSwapOutput(buffer: Buffer) =
+  termGoto(0, 0)
+  print(buffer.generateSwapOutput())
 
 proc displayBuffer(buffer: Buffer) =
   termGoto(0, 0)
   let full = buffer.generateFullOutput()
   for line in full:
     print(line)
-    print("\e[K")
+    print(EL())
     print('\n')
 
 proc displayStatusMessage(buffer: Buffer) =

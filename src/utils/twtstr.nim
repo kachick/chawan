@@ -190,6 +190,25 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
+template ESC*(s: varargs[string, `$`]): string =
+  var r = "\e["
+  var first = true
+  for x in s:
+    if not first:
+      r &= ";"
+    first = false
+    r &= x
+  r
+
+template SGR*(s: varargs[string, `$`]): string =
+  ESC(s) & "m"
+
+template HVP*(s: varargs[string, `$`]): string =
+  ESC(s) & "f"
+
+template EL*(s: varargs[string, `$`]): string =
+  ESC(s) & "K"
+
 iterator split*(s: seq[Rune], sep: Rune): seq[Rune] =
   var i = 0
   var prev = 0
