@@ -44,8 +44,8 @@ type
 
 func newBuffer*(attrs: TermAttributes): Buffer =
   new(result)
-  result.width = attrs.termWidth
-  result.height = attrs.termHeight - 1
+  result.width = attrs.width
+  result.height = attrs.height - 1
   result.attrs = attrs
 
   result.display = newFixedGrid(result.width, result.height)
@@ -325,21 +325,6 @@ proc cursorLineEnd*(buffer: Buffer) =
   buffer.fromx = max(buffer.cursorx - buffer.width + 1, 0)
   buffer.redraw = buffer.fromx > 0
 
-#TODO this is sloooooow
-proc cursorRightOverflow(buffer: Buffer) =
-  buffer.cursorRight()
-  if buffer.cursorx >= buffer.currentLineWidth() - 1 and buffer.cursory < buffer.numLines - 1:
-    buffer.cursorDown()
-    buffer.cursorLineBegin()
-  buffer.refreshDisplay()
-
-proc cursorLeftOverflow(buffer: Buffer) =
-  buffer.cursorLeft()
-  if buffer.cursorx <= 0 and buffer.cursory > 0:
-    buffer.cursorUp()
-    buffer.cursorLineEnd()
-  buffer.refreshDisplay()
-
 proc cursorNextWord*(buffer: Buffer) =
   let llen = buffer.currentLineWidth() - 1
   if llen >= 0:
@@ -374,6 +359,21 @@ proc cursorPrevWord*(buffer: Buffer) =
     if buffer.cursory > 0:
       buffer.cursorUp()
       buffer.cursorLineEnd()
+
+#TODO this is sloooooow
+#proc cursorRightOverflow(buffer: Buffer) =
+#  buffer.cursorRight()
+#  if buffer.cursorx >= buffer.currentLineWidth() - 1 and buffer.cursory < buffer.numLines - 1:
+#    buffer.cursorDown()
+#    buffer.cursorLineBegin()
+#  buffer.refreshDisplay()
+#
+#proc cursorLeftOverflow(buffer: Buffer) =
+#  buffer.cursorLeft()
+#  if buffer.cursorx <= 0 and buffer.cursory > 0:
+#    buffer.cursorUp()
+#    buffer.cursorLineEnd()
+#  buffer.refreshDisplay()
 
 proc cursorNextLink*(buffer: Buffer) =
   #TODO
@@ -531,8 +531,8 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
   let newAttrs = getTermAttributes()
   if newAttrs != buffer.attrs:
     buffer.attrs = newAttrs
-    buffer.width = newAttrs.termWidth
-    buffer.height = newAttrs.termHeight
+    buffer.width = newAttrs.width
+    buffer.height = newAttrs.height
     return true
   return false
 

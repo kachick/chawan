@@ -3,6 +3,7 @@ import strutils
 import unicode
 import tables
 import json
+import bitops
 
 func ansiStyle*(str: string, style: Style): seq[string] =
   result &= ansiStyleCode(style)
@@ -67,26 +68,11 @@ func isControlChar*(r: Rune): bool =
   of Rune(0x7F): return true
   else: return false
 
-func genControlCharMap*(): string =
-  for c in low(char)..high(char):
-    if c >= 'a':
-      result &= char(int(c) - int('a') + 1)
-    elif c == '?':
-      result &= char(127)
-    else:
-      result &= char(0)
-
-const controlCharMap = genControlCharMap()
-
 func getControlChar*(c: char): char =
-  return controlCharMap[int(c)]
+  return char(bitand(int(c), 0x1f))
 
 func getControlLetter*(c: char): char =
-  if int(c) <= 0x1F:
-    return char(int(c) + int('A') - 1)
-  elif c == '\x7F':
-    return '?'
-  assert(false)
+  return char(bitor(int(c), 0x40))
 
 func findChar*(str: string, c: char, start: int = 0): int =
   var i = start
