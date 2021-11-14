@@ -4,7 +4,6 @@ import layout/box
 import types/enums
 import html/dom
 import css/style
-import io/buffer
 import utils/twtstr
 
 func newContext*(box: CSSBox): Context =
@@ -48,11 +47,12 @@ func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
     result.context = newContext(parent)
 
 #TODO there should be actual inline contexts to store these stuff
-proc setup(rowbox: var CSSRowBox, cssvalues: CSSComputedValues) =
+proc setup(rowbox: var CSSRowBox, cssvalues: CSSComputedValues, nodes: seq[Node]) =
   rowbox.color = cssvalues[PROPERTY_COLOR].color
   rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
   rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
   rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
+  rowbox.nodes = nodes
 
 proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: var CSSRowBox) =
   ibox.content.add(rowbox)
@@ -61,7 +61,7 @@ proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: v
   ibox.context.whitespace = true
   ibox.context.conty = true
   rowbox = CSSRowBox(x: ibox.x, y: ibox.y + rowi)
-  rowbox.setup(ibox.cssvalues)
+  rowbox.setup(ibox.cssvalues, ibox.bcontext.nodes)
 
 #TODO statify
 proc processInlineBox(parent: CSSBox, str: string): CSSBox =
@@ -80,7 +80,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
   var rowi = 0
   var fromx = ibox.context.fromx
   var rowbox = CSSRowBox(x: fromx, y: ibox.context.fromy)
-  rowbox.setup(ibox.cssvalues)
+  rowbox.setup(ibox.cssvalues, ibox.bcontext.nodes)
   var r: Rune
   while i < str.len:
     fastRuneAt(str, i, r)
@@ -158,22 +158,23 @@ proc add(parent: var CSSBox, box: CSSBox) =
   parent.context.fromy = box.context.fromy
   parent.children.add(box)
 
-proc processPseudoBox(parent: CSSBox, cssvalues: CSSComputedValues): CSSBox =
-  case cssvalues[PROPERTY_DISPLAY].display
-  of DISPLAY_BLOCK:
-    result = newBlockBox(parent, cssvalues)
-    result.add(processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)) 
-  of DISPLAY_INLINE:
-    result = processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)
-  of DISPLAY_NONE:
-    return nil
-  else:
-    return nil
+#proc processPseudoBox(parent: CSSBox, cssvalues: CSSComputedValues): CSSBox =
+#  case cssvalues[PROPERTY_DISPLAY].display
+#  of DISPLAY_BLOCK:
+#    result = newBlockBox(parent, cssvalues)
+#    result.add(processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)) 
+#  of DISPLAY_INLINE:
+#    result = processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)
+#  of DISPLAY_NONE:
+#    return nil
+#  else:
+#    return nil
 
 proc processNode(parent: CSSBox, node: Node): CSSBox =
   case node.nodeType
   of ELEMENT_NODE:
     let elem = Element(node)
+    parent.bcontext.nodes.add(node)
 
     result = processElemBox(parent, elem)
     if result == nil:
@@ -192,14 +193,16 @@ proc processNode(parent: CSSBox, node: Node): CSSBox =
     #  let abox = processPseudoBox(parent, elem.cssvalues_after.get)
     #  if abox != nil:
     #    result.add(abox)
+    discard parent.bcontext.nodes.pop()
   of TEXT_NODE:
     let text = Text(node)
-    return processInlineBox(parent, text.data)
+    result = processInlineBox(parent, text.data)
   else: discard
 
-proc alignBoxes*(buffer: Buffer) =
-  buffer.rootbox = CSSBlockBox(x: 0, y: 0, width: buffer.width, height: 0)
-  buffer.rootbox.context = newContext(buffer.rootbox)
-  buffer.rootbox.bcontext = new(BlockContext)
-  for child in buffer.document.root.childNodes:
-    buffer.rootbox.add(processNode(buffer.rootbox, child))
+proc alignBoxes*(document: Document, width: int, height: int): CSSBox =
+  var rootbox = CSSBlockBox(x: 0, y: 0, width: width, height: 0)
+  rootbox.context = newContext(rootbox)
+  rootbox.bcontext = new(BlockContext)
+  for child in document.root.childNodes:
+    CSSBox(rootbox).add(processNode(rootbox, child))
+  return rootbox

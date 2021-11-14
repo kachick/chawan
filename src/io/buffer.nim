@@ -1,4 +1,3 @@
-import options
 import terminal
 import uri
 import strutils
@@ -14,6 +13,7 @@ import config/config
 import io/term
 import io/lineedit
 import io/cell
+import layout/engine
 
 type
   Buffer* = ref BufferObj
@@ -35,10 +35,12 @@ type
     document*: Document
     displaycontrols*: bool
     redraw*: bool
+    reshape*: bool
     location*: Uri
     source*: string
     showsource*: bool
     rootbox*: CSSBox
+    prevnodes*: seq[Node]
 
 func newBuffer*(attrs: TermAttributes): Buffer =
   new(result)
@@ -150,17 +152,25 @@ func cellOrigin(buffer: Buffer, x: int, y: int): int =
 func currentCellOrigin(buffer: Buffer): int =
   return buffer.cellOrigin(buffer.acursorx, buffer.acursory)
 
-func currentRune(buffer: Buffer): Rune =
+#TODO counter-intuitive naming?
+func currentCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
-  return buffer.display[row + buffer.currentCellOrigin()].runes[0]
+  return buffer.display[row + buffer.currentCellOrigin()]
 
-func cellWidthOverlap*(buffer: Buffer, x: int, y: int): int =
-  let ox = buffer.cellOrigin(x, y)
-  let row = y * buffer.width
-  return buffer.display[row + ox].runes.width()
+func currentRune(buffer: Buffer): Rune =
+  let cell = buffer.currentCell()
+  if cell.runes.len == 0:
+    return Rune(' ')
+  return cell.runes[0]
 
-func currentCellWidth*(buffer: Buffer): int =
-  return buffer.cellWidthOverlap(buffer.cursorx - buffer.fromx, buffer.cursory - buffer.fromy)
+func getCursorLink(buffer: Buffer): Element =
+  let nodes = buffer.currentCell().nodes
+  for node in nodes:
+    if node.nodeType == ELEMENT_NODE:
+      let elem = Element(node)
+      if elem.tagType == TAG_A:
+        return elem
+  return nil
 
 func currentLineWidth*(buffer: Buffer): int =
   if buffer.cursory > buffer.lines.len:
@@ -174,17 +184,6 @@ func maxScreenWidth*(buffer: Buffer): int =
 func atPercentOf*(buffer: Buffer): int =
   if buffer.lines.len == 0: return 100
   return (100 * (buffer.cursory + 1)) div buffer.numLines
-
-func cursorOnNode*(buffer: Buffer, node: Node): bool =
-  if node.y == node.ey and node.y == buffer.cursory:
-    return buffer.cursorx >= node.x and buffer.cursorx < node.ex
-  else:
-    return (buffer.cursory == node.y and buffer.cursorx >= node.x) or
-           (buffer.cursory > node.y and buffer.cursory < node.ey) or
-           (buffer.cursory == node.ey and buffer.cursorx < node.ex)
-
-func findSelectedElement*(buffer: Buffer): Option[HtmlElement] =
-  discard #TODO
 
 func canScroll*(buffer: Buffer): bool =
   return buffer.numLines >= buffer.height
@@ -203,6 +202,41 @@ proc clearBuffer*(buffer: Buffer) =
   buffer.fromx = 0
   buffer.fromy = 0
   buffer.hovertext = ""
+
+proc clearDisplay*(buffer: Buffer) =
+  var i = 0
+  while i < buffer.display.len:
+    buffer.display[i].runes.setLen(0)
+    inc i
+
+proc refreshDisplay*(buffer: Buffer) =
+  var y = 0
+  buffer.prevdisplay = buffer.display
+  buffer.clearDisplay()
+
+  for line in buffer.lines[buffer.fromy..
+                           buffer.lastVisibleLine - 1]:
+    var w = 0
+    var i = 0
+    while w < buffer.fromx and i < line.len:
+      w += line[i].rune.width()
+      inc i
+
+    let dls = y * buffer.width
+    var j = 0
+    var n = 0
+    while w < buffer.fromx + buffer.width and i < line.len:
+      w += line[i].rune.width()
+      if line[i].rune.width() == 0 and j != 0:
+        inc n
+      buffer.display[dls + j - n].runes.add(line[i].rune)
+      buffer.display[dls + j - n].formatting = line[i].formatting
+      buffer.display[dls + j - n].nodes.add(line[i].nodes)
+      j += line[i].rune.width()
+      inc i
+
+    inc y
+
 
 proc restoreCursorX(buffer: Buffer) =
   buffer.cursorx = max(min(buffer.currentLineWidth() - 1, buffer.xend), 0)
@@ -250,7 +284,7 @@ proc cursorUp*(buffer: Buffer) =
       buffer.redraw = true
 
 proc cursorRight*(buffer: Buffer) =
-  let cellwidth = buffer.currentCellWidth()
+  let cellwidth = max(buffer.currentCell().width(), 1)
   let cellorigin = buffer.fromx + buffer.currentCellOrigin()
   let lw = buffer.currentLineWidth()
   if buffer.cursorx < lw - 1:
@@ -291,10 +325,24 @@ proc cursorLineEnd*(buffer: Buffer) =
   buffer.fromx = max(buffer.cursorx - buffer.width + 1, 0)
   buffer.redraw = buffer.fromx > 0
 
+#TODO this is sloooooow
+proc cursorRightOverflow(buffer: Buffer) =
+  buffer.cursorRight()
+  if buffer.cursorx >= buffer.currentLineWidth() - 1 and buffer.cursory < buffer.numLines - 1:
+    buffer.cursorDown()
+    buffer.cursorLineBegin()
+  buffer.refreshDisplay()
+
+proc cursorLeftOverflow(buffer: Buffer) =
+  buffer.cursorLeft()
+  if buffer.cursorx <= 0 and buffer.cursory > 0:
+    buffer.cursorUp()
+    buffer.cursorLineEnd()
+  buffer.refreshDisplay()
+
 proc cursorNextWord*(buffer: Buffer) =
   let llen = buffer.currentLineWidth() - 1
   if llen >= 0:
-
     while not buffer.currentRune().breaksWord():
       if buffer.cursorx >= llen:
         break
@@ -329,7 +377,32 @@ proc cursorPrevWord*(buffer: Buffer) =
 
 proc cursorNextLink*(buffer: Buffer) =
   #TODO
-  return
+  #let ocx = buffer.cursorx
+  #let ocy = buffer.cursory
+  #let ofx = buffer.fromx
+  #let ofy = buffer.fromy
+  #let elem = buffer.getCursorLink()
+  #if elem != nil:
+  #  while buffer.getCursorLink() == elem:
+  #    buffer.cursorRightOverflow()
+  #    if buffer.cursorx >= buffer.currentLineWidth() - 1 and
+  #        buffer.cursory >= buffer.numLines - 1:
+  #      buffer.cursorx = ocx
+  #      buffer.cursory = ocy
+  #      buffer.fromx = ofx
+  #      buffer.fromy = ofy
+  #      break
+
+  #while buffer.getCursorLink() == nil:
+  #  buffer.cursorRightOverflow()
+  #  if buffer.cursorx >= buffer.currentLineWidth() - 1 and
+  #      buffer.cursory >= buffer.numLines - 1:
+  #    buffer.cursorx = ocx
+  #    buffer.cursory = ocy
+  #    buffer.fromx = ofx
+  #    buffer.fromy = ofy
+  #    break
+  discard
 
 proc cursorPrevLink*(buffer: Buffer) =
   #TODO
@@ -494,6 +567,7 @@ func cellFromLine(line: CSSRowBox, i: int): FlexibleCell =
     result.formatting.overline = true
   if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
     result.formatting.strike = true
+  result.nodes = line.nodes
 
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   let x = line.x
@@ -530,10 +604,6 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   if i < oline.len:
     buffer.lines[y].add(oline[i..high(oline)])
 
-proc reshape*(buffer: Buffer) =
-  buffer.display = newFixedGrid(buffer.width, buffer.height)
-  buffer.statusmsg = newFixedGrid(buffer.width)
-
 proc updateCursor(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:
     buffer.fromy = 0
@@ -545,38 +615,29 @@ proc updateCursor(buffer: Buffer) =
   if buffer.lines.len == 0:
     buffer.cursory = 0
 
-proc clearDisplay*(buffer: Buffer) =
-  var i = 0
-  while i < buffer.display.len:
-    buffer.display[i].runes.setLen(0)
-    inc i
-
-proc refreshDisplay*(buffer: Buffer) =
-  var y = 0
-  buffer.prevdisplay = buffer.display
-  buffer.clearDisplay()
-
-  for line in buffer.lines[buffer.fromy..
-                           buffer.lastVisibleLine - 1]:
-    var w = 0
-    var i = 0
-    while w < buffer.fromx and i < line.len:
-      w += line[i].rune.width()
-      inc i
-
-    let dls = y * buffer.width
-    var j = 0
-    var n = 0
-    while w < buffer.fromx + buffer.width and i < line.len:
-      w += line[i].rune.width()
-      if line[i].rune.width() == 0 and j != 0:
-        inc n
-      buffer.display[dls + j - n].runes.add(line[i].rune)
-      buffer.display[dls + j - n].formatting = line[i].formatting
-      j += line[i].rune.width()
-      inc i
-
-    inc y
+#TODO this works, but needs rethinking:
+#* reshape is called every time the cursor moves onto or off a line box, which
+#  practically means we're re-interpreting all style-sheets AND re-applying all
+#  rules way too often
+#* reshape also calls redraw so the entire window gets re-painted too which
+#  looks pretty bad
+#* and finally it re-arranges all CSS boxes too, which is a rather
+#  resource-intensive operation
+#overall the second point is the easiest to solve, then the first and finally
+#the last (there's only so much you can do in a flow layout, especially with
+#the current layout engine)
+proc updateHover(buffer: Buffer) =
+  let nodes = buffer.currentCell().nodes
+  if nodes != buffer.prevnodes:
+    for node in nodes:
+      if not node.hover:
+        node.hover = true
+        buffer.reshape = true
+    for node in buffer.prevnodes:
+      if node.hover and not (node in nodes):
+        node.hover = false
+        buffer.reshape = true
+  buffer.prevnodes = nodes
 
 proc renderPlainText*(buffer: Buffer, text: string) =
   buffer.clearText()
@@ -610,7 +671,8 @@ proc renderPlainText*(buffer: Buffer, text: string) =
 
 proc renderDocument*(buffer: Buffer) =
   buffer.clearText()
-  #TODO
+  buffer.document.applyStylesheets()
+  buffer.rootbox = buffer.document.alignBoxes(buffer.width, buffer.height)
   if buffer.rootbox == nil:
     return
   var stack: seq[CSSBox]
@@ -632,6 +694,15 @@ proc renderDocument*(buffer: Buffer) =
       stack.add(box.children[i])
       dec i
   buffer.updateCursor()
+
+proc reshapeBuffer*(buffer: Buffer) =
+  buffer.display = newFixedGrid(buffer.width, buffer.height)
+  #TODO
+  #buffer.statusmsg = newFixedGrid(buffer.width)
+  if buffer.showsource:
+    buffer.renderPlainText(buffer.source)
+  else:
+    buffer.renderDocument()
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
@@ -677,8 +748,8 @@ proc displayBuffer(buffer: Buffer) =
 
 proc displayStatusMessage(buffer: Buffer) =
   termGoto(0, buffer.height)
-  eraseLine()
   print(buffer.generateStatusMessage())
+  print(EL())
 
 proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
   var s = ""
@@ -697,8 +768,6 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     let c = getch()
     s &= c
     let action = getNormalAction(s)
-    var redraw = false
-    var reshape = false
     var nostatus = false
     case action
     of ACTION_QUIT:
@@ -743,38 +812,35 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentCellWidth())
+      buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentCell().width())
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true
     of ACTION_RELOAD: return true
     of ACTION_RESHAPE:
-      reshape = true
-      redraw = true
-    of ACTION_REDRAW: redraw = true
+      buffer.reshape = true
+      buffer.redraw = true
+    of ACTION_REDRAW: buffer.redraw = true
     of ACTION_TOGGLE_SOURCE:
       buffer.showsource = not buffer.showsource
-      if buffer.showsource:
-        buffer.renderPlainText(buffer.source)
-      else:
-        buffer.renderDocument()
-      redraw = true
+      buffer.reshape = true
+      buffer.redraw = true
     else: discard
     stdout.hideCursor()
+    buffer.updateHover()
 
     if buffer.refreshTermAttrs():
-      redraw = true
-      reshape = true
+      buffer.redraw = true
+      buffer.reshape = true
 
+    if buffer.reshape:
+      buffer.reshapeBuffer()
+      buffer.reshape = false
+      buffer.redraw = true #?
     if buffer.redraw:
-      redraw = true
-
-    if reshape:
-      buffer.reshape()
-      buffer.displayBuffer()
-    if redraw:
       buffer.refreshDisplay()
       buffer.displayBuffer()
+      buffer.redraw = false
 
     if not nostatus:
       buffer.statusMsgForBuffer()
@@ -787,4 +853,3 @@ proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
   buffer.displayBuffer()
   buffer.statusMsgForBuffer()
   return inputLoop(attrs, buffer)
-

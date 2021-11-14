@@ -2,6 +2,7 @@ import unicode
 
 import types/enums
 import css/style
+import html/dom
 
 type
   CSSRect* = object
@@ -37,6 +38,7 @@ type
     context*: FormatContextType
     marginx*: int
     marginy*: int
+    nodes*: seq[Node]
 
   CSSRowBox* = object
     x*: int
@@ -48,6 +50,7 @@ type
     fontweight*: int
     textdecoration*: CSSTextDecoration
     runes*: seq[Rune]
+    nodes*: seq[Node]
 
   CSSInlineBox* = ref CSSInlineBoxObj
   CSSInlineBoxObj = object of CSSBox

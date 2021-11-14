@@ -5,8 +5,6 @@ import streams
 import terminal
 
 import html/parser
-import html/dom
-import layout/engine
 import io/buffer
 import io/term
 import config/config
@@ -61,8 +59,6 @@ proc main*() =
 
   buffer.setLocation(lastUri)
   buffer.document = parseHtml(newStringStream(buffer.source))
-  buffer.document.applyStylesheets()
-  buffer.alignBoxes()
   buffer.renderDocument()
   while displayPage(attrs, buffer):
     buffer.setStatusMessage("Loading...")

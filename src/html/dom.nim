@@ -31,13 +31,8 @@ type
     parentElement*: Element
     ownerDocument*: Document
 
-    x*: int
-    y*: int
-    ex*: int
-    ey*: int
-    width*: int
-    height*: int
     hidden*: bool
+    hover*: bool
 
   Attr* = ref AttrObj
   AttrObj = object of NodeObj
@@ -293,9 +288,10 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.pseudo
   of "first-child": return elem.parentNode.firstElementChild == elem
   of "last-child": return elem.parentNode.lastElementChild == elem
+  of "hover": return elem.hover
   else: return false
 
-func pseudoElemSelectorMatches(elem: Element, sel: Selector, pseudo: PseudoElem = PSEUDO_NONE): SelectResult =
+func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.elem
   of "after": return selectres(true, PSEUDO_AFTER)
   of "before": return selectres(true, PSEUDO_AFTER)
