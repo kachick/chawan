@@ -129,10 +129,6 @@ func numLines*(buffer: Buffer): int = buffer.lines.len
 
 func lastVisibleLine*(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
 
-func width(line: seq[FlexibleCell]): int =
-  for c in line:
-    result += c.rune.width()
-
 func acursorx(buffer: Buffer): int =
   return max(0, buffer.cursorx - buffer.fromx)
 
@@ -186,7 +182,7 @@ func canScroll*(buffer: Buffer): bool =
   return buffer.numLines >= buffer.height
 
 proc addLine(buffer: Buffer) =
-  buffer.lines.add(newSeq[FlexibleCell]())
+  buffer.lines.addLine()
 
 proc clearText*(buffer: Buffer) =
   buffer.lines.setLen(0)
@@ -454,26 +450,34 @@ proc halfPageDown*(buffer: Buffer) =
   buffer.restoreCursorX()
 
 proc pageUp*(buffer: Buffer) =
-  buffer.cursory = max(buffer.cursory - buffer.height + 1, 1)
-  buffer.fromy = max(0, buffer.fromy - buffer.height)
-  buffer.redraw = true
+  buffer.cursory = max(buffer.cursory - buffer.height, 0)
+  let nfy = max(0, buffer.fromy - buffer.height)
+  if nfy != buffer.fromy:
+    buffer.fromy = nfy
+    buffer.redraw = true
   buffer.restoreCursorX()
 
 proc pageDown*(buffer: Buffer) =
-  buffer.cursory = min(buffer.cursory + buffer.height div 2 - 1, buffer.numLines - 1)
-  buffer.fromy = min(max(buffer.numLines - buffer.height, 0), buffer.fromy + buffer.height div 2)
-  buffer.redraw = true
+  buffer.cursory = min(buffer.cursory + buffer.height, buffer.numLines - 1)
+  let nfy = min(buffer.fromy + buffer.height, max(buffer.numLines - buffer.height, 0))
+  if nfy != buffer.fromy:
+    buffer.fromy = nfy
+    buffer.redraw = true
   buffer.restoreCursorX()
 
 proc pageLeft*(buffer: Buffer) =
   buffer.cursorx = max(buffer.cursorx - buffer.width, 0)
-  buffer.fromx = max(0, buffer.fromx - buffer.width)
-  buffer.redraw = true
+  let nfx = max(0, buffer.fromx - buffer.width)
+  if nfx != buffer.fromx:
+    buffer.fromx = nfx
+    buffer.redraw = true
 
 proc pageRight*(buffer: Buffer) =
   buffer.cursorx = min(buffer.fromx, buffer.currentLineWidth())
-  buffer.fromx = min(max(buffer.maxScreenWidth() - buffer.width, 0), buffer.fromx + buffer.width)
-  buffer.redraw = true
+  let nfx = min(max(buffer.maxScreenWidth() - buffer.width, 0), buffer.fromx + buffer.width)
+  if nfx != buffer.fromx:
+    buffer.fromx = nfx
+    buffer.redraw = true
 
 proc scrollDown*(buffer: Buffer) =
   if buffer.fromy + buffer.height < buffer.numLines:
@@ -532,22 +536,6 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
 
 proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) = buffer.lines.setText(x, y, text)
 
-proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
-  while buffer.lines.len <= y:
-    buffer.addLine()
-
-  var i = 0
-  var cx = 0
-  while cx < x and i < buffer.lines[y].len:
-    cx += buffer.lines[y][i].rune.width()
-    inc i
-
-  buffer.lines[y].setLen(i)
-  i = 0
-  while i < line.len:
-    buffer.lines[y].add(line[i])
-    inc i
-
 func formatFromLine(line: CSSRowBox): Formatting =
   result.fgcolor = line.color.cellColor()
   if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
@@ -560,11 +548,6 @@ func formatFromLine(line: CSSRowBox): Formatting =
     result.overline = true
   if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
     result.strike = true
-
-func cellFromLine(line: CSSRowBox, i: int, format: Formatting): FlexibleCell =
-  result.rune = line.runes[i]
-  result.formatting = format
-  result.nodes = line.nodes
 
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   if line.runes.len == 0:
@@ -590,11 +573,11 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
 
   #TODO not sure
   while nx < x:
-    buffer.lines[y].add(FlexibleCell(rune: Rune(' ')))
+    buffer.lines.addCell(y, Rune(' '))
     inc nx
 
   while j < line.runes.len:
-    buffer.lines[y].add(line.cellFromLine(j, format))
+    buffer.lines.addCell(y, line.runes[j], format, line.nodes)
     nx += line.runes[j].width()
     inc j
 
@@ -659,17 +642,17 @@ proc renderPlainText*(buffer: Buffer, text: string) =
       inc i
     elif text[i] == '\t':
       for i in 0..8:
-        buffer.lines[^1].add(FlexibleCell(rune: Rune(' '), formatting: format))
+        buffer.lines.addCell(Rune(' '), format)
       inc i
     elif text[i] == '\e':
       i = format.parseAnsiCode(text, i)
     elif text[i].isControlChar():
-      buffer.lines[^1].add(FlexibleCell(rune: Rune('^'), formatting: format))
-      buffer.lines[^1].add(FlexibleCell(rune: Rune(text[i].getControlLetter()), formatting: format))
+      buffer.lines.addCell(Rune('^'), format)
+      buffer.lines.addCell(Rune(text[i].getControlLetter()), format)
       inc i
     else:
       fastRuneAt(text, i, r)
-      buffer.lines[^1].add(FlexibleCell(rune: r, formatting: format))
+      buffer.lines.addCell(r, format)
   buffer.updateCursor()
 
 proc renderDocument*(buffer: Buffer) =

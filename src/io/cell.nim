@@ -46,6 +46,21 @@ func width*(cell: FixedCell): int =
 func newFormatting*(): Formatting =
   return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)
 
+proc addLine*(grid: var FlexibleGrid) =
+  grid.add(newSeq[FlexibleCell]())
+
+proc addCell*(grid: var FlexibleGrid, y: int, r: Rune) =
+  grid[y].add(FlexibleCell(rune: r))
+
+proc addCell*(grid: var FlexibleGrid, y: int, r: Rune, format: Formatting) =
+  grid[y].add(FlexibleCell(rune: r, formatting: format))
+
+proc addCell*(grid: var FlexibleGrid, y: int, r: Rune, format: Formatting, nodes: seq[Node]) =
+  grid[y].add(FlexibleCell(rune: r, formatting: format, nodes: nodes))
+
+proc addCell*(grid: var FlexibleGrid, r: Rune, format: Formatting) =
+  grid[^1].add(FlexibleCell(rune: r, formatting: format))
+
 proc setText*(grid: var FlexibleGrid, x: int, y: int, text: seq[Rune]) =
   while grid.len <= y:
     grid.add(newSeq[FlexibleCell]())

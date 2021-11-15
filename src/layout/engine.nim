@@ -84,11 +84,9 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
   rowbox.setup(ibox.cssvalues, ibox.bcontext.nodes)
   var r: Rune
   while i < str.len:
-    fastRuneAt(str, i, r)
-    if rowbox.width + r.width() > ibox.width:
-      inlineWrap(ibox, rowi, fromx, rowbox)
-    if r != Rune(0x00A0) and #NBSP
-        r.isWhitespace():
+    case str[i]
+    of ' ', '\n', '\t':
+      inc i
       let wsr = ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
       if ibox.context.whitespace:
         if ibox.context.ws_initial:
@@ -114,6 +112,10 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
         ibox.context.whitespace = false
     else:
       ibox.context.whitespace = false
+      fastRuneAt(str, i, r)
+      if rowbox.width + r.width() > ibox.width:
+        inlineWrap(ibox, rowi, fromx, rowbox)
+
     rowbox.width += r.width()
     rowbox.runes.add(r)
   if rowbox.runes.len > 0:
