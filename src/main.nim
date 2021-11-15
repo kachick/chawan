@@ -3,6 +3,8 @@ import uri
 import os
 import streams
 import terminal
+when defined(profile):
+  import nimprof
 
 import html/parser
 import io/buffer

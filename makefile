@@ -6,6 +6,8 @@ debug:
 	$(NIMC) $(FLAGS) $(FILES)
 release:
 	$(NIMC) $(FLAGS) -d:release -d:strip -d:lto $(FILES)
+profile:
+	$(NIMC) $(FLAGS) --profiler:on --stacktrace:on -d:profile $(FILES)
 install:
 	cp twt /usr/local/bin/
 clean:

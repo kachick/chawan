@@ -3,8 +3,7 @@ area, base, source, track, link, meta, param, wbr, head, style, script {
 }
 
 address, blockquote, center, del, dir, div, dl, fieldset, form, h1, h2, h3, h4,
-h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, table, ul, center, dir,
-menu, noframes, body {
+h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, table, ul, body {
 	display: block;
 }
 
@@ -42,6 +41,12 @@ li {
 	display: list-item;
 }
 
+h1, h2, h3, h4, h5, h6 {
+	margin-top: 1em;
+	margin-bottom: 1em;
+	font-weight: bold;
+}
+
 pre {
 	margin-top: 1em;
 	margin-bottom: 1em;
@@ -49,7 +54,7 @@ pre {
 }
 
 a {
-	color: yellow;
+	color: #c4a000;
 }
 
 a:hover {

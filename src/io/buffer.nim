@@ -548,24 +548,32 @@ proc setLine*(buffer: Buffer, x: int, y: int, line: FlexibleLine) =
     buffer.lines[y].add(line[i])
     inc i
 
-func cellFromLine(line: CSSRowBox, i: int): FlexibleCell =
-  result.rune = line.runes[i]
-  result.formatting.fgcolor = line.color.cellColor()
+func formatFromLine(line: CSSRowBox): Formatting =
+  result.fgcolor = line.color.cellColor()
   if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
-    result.formatting.italic = true
+    result.italic = true
   if line.fontweight > 500:
-    result.formatting.bold = true
+    result.bold = true
   if line.textdecoration == TEXT_DECORATION_UNDERLINE:
-    result.formatting.underline = true
+    result.underline = true
   if line.textdecoration == TEXT_DECORATION_OVERLINE:
-    result.formatting.overline = true
+    result.overline = true
   if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
-    result.formatting.strike = true
+    result.strike = true
+
+func cellFromLine(line: CSSRowBox, i: int, format: Formatting): FlexibleCell =
+  result.rune = line.runes[i]
+  result.formatting = format
   result.nodes = line.nodes
 
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
+  if line.runes.len == 0:
+    return
+
   let x = line.x
   let y = line.y
+
+  let format = line.formatFromLine()
   while buffer.lines.len <= y:
     buffer.addLine()
 
@@ -586,7 +594,7 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
     inc nx
 
   while j < line.runes.len:
-    buffer.lines[y].add(line.cellFromLine(j))
+    buffer.lines[y].add(line.cellFromLine(j, format))
     nx += line.runes[j].width()
     inc j
 
