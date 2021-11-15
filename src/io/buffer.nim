@@ -83,17 +83,14 @@ func generateSwapOutput*(buffer: Buffer): string =
   let prev = buffer.prevdisplay
   var x = 0
   var y = 0
-  var cx = 0
-  var cy = 0
+  var cx = -1
+  var cy = -1
   var i = 0
   var text = ""
   while i < max:
     if x >= buffer.width:
       x = 0
-      cx = 0
-      text &= '\n'
       inc y
-      inc cy
 
     if curr[i] != prev[i]:
       let currwidth = curr[i].runes.width()
@@ -683,9 +680,6 @@ proc renderDocument*(buffer: Buffer) =
       for line in inline.content:
         #eprint line
         buffer.setRowBox(line)
-    else:
-      discard
-      #eprint "BLOCK h", box.height
 
     var i = box.children.len - 1
     while i >= 0:
@@ -729,7 +723,6 @@ proc statusMsgForBuffer(buffer: Buffer) =
   buffer.setStatusMessage(msg)
 
 proc displayBufferSwapOutput(buffer: Buffer) =
-  termGoto(0, 0)
   print(buffer.generateSwapOutput())
 
 proc displayBuffer(buffer: Buffer) =
@@ -814,7 +807,6 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_RELOAD: return true
     of ACTION_RESHAPE:
       buffer.reshape = true
-      buffer.redraw = true
     of ACTION_REDRAW: buffer.redraw = true
     of ACTION_TOGGLE_SOURCE:
       buffer.showsource = not buffer.showsource
@@ -837,11 +829,8 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     if buffer.reshape:
       buffer.reshapeBuffer()
       buffer.reshape = false
-      buffer.redraw = true #?
-    if buffer.redraw:
       buffer.refreshDisplay()
       buffer.displayBufferSwapOutput()
-      buffer.redraw = false
 
     if not nostatus:
       buffer.statusMsgForBuffer()
