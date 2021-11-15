@@ -1,11 +1,11 @@
 NIMC = nim c
-FLAGS = -o:twt
+FLAGS = -d:ssl -o:twt
 FILES = src/main.nim
 
 debug:
 	$(NIMC) $(FLAGS) $(FILES)
 release:
-	$(NIMC) $(FLAGS) -d:release -d:strip -d:ssl -d:lto $(FILES)
+	$(NIMC) $(FLAGS) -d:release -d:strip -d:lto $(FILES)
 install:
 	cp twt /usr/local/bin/
 clean:
