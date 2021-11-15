@@ -204,14 +204,11 @@ proc clearBuffer*(buffer: Buffer) =
   buffer.hovertext = ""
 
 proc clearDisplay*(buffer: Buffer) =
-  var i = 0
-  while i < buffer.display.len:
-    buffer.display[i].runes.setLen(0)
-    inc i
+  buffer.prevdisplay = buffer.display
+  buffer.display = newFixedGrid(buffer.width, buffer.height)
 
 proc refreshDisplay*(buffer: Buffer) =
   var y = 0
-  buffer.prevdisplay = buffer.display
   buffer.clearDisplay()
 
   for line in buffer.lines[buffer.fromy..
@@ -231,7 +228,7 @@ proc refreshDisplay*(buffer: Buffer) =
         inc n
       buffer.display[dls + j - n].runes.add(line[i].rune)
       buffer.display[dls + j - n].formatting = line[i].formatting
-      buffer.display[dls + j - n].nodes.add(line[i].nodes)
+      buffer.display[dls + j - n].nodes = line[i].nodes
       j += line[i].rune.width()
       inc i
 
@@ -610,7 +607,8 @@ proc updateCursor(buffer: Buffer) =
     buffer.cursory = buffer.lastVisibleLine - 1
 
   if buffer.cursorx >= buffer.currentLineWidth() - 1:
-    buffer.cursorLineEnd()
+    buffer.cursorx = max(buffer.currentLineWidth() - 1, 0)
+    buffer.fromx = max(buffer.cursorx - buffer.width + 1, 0)
 
   if buffer.lines.len == 0:
     buffer.cursory = 0
@@ -620,7 +618,7 @@ proc updateCursor(buffer: Buffer) =
 #  practically means we're re-interpreting all style-sheets AND re-applying all
 #  rules way too often
 #* reshape also calls redraw so the entire window gets re-painted too which
-#  looks pretty bad
+#  looks pretty bad (tick)
 #* and finally it re-arranges all CSS boxes too, which is a rather
 #  resource-intensive operation
 #overall the second point is the easiest to solve, then the first and finally
@@ -696,7 +694,6 @@ proc renderDocument*(buffer: Buffer) =
   buffer.updateCursor()
 
 proc reshapeBuffer*(buffer: Buffer) =
-  buffer.display = newFixedGrid(buffer.width, buffer.height)
   #TODO
   #buffer.statusmsg = newFixedGrid(buffer.width)
   if buffer.showsource:
@@ -710,10 +707,7 @@ proc cursorBufferPos(buffer: Buffer) =
   termGoto(x, y)
 
 proc clearStatusMessage(buffer: Buffer) =
-  var i = 0
-  while i < buffer.statusmsg.len:
-    buffer.statusmsg[i].runes.setLen(0)
-    inc i
+  buffer.statusmsg = newFixedGrid(buffer.width)
 
 proc setStatusMessage*(buffer: Buffer, str: string) =
   buffer.clearStatusMessage()
@@ -748,6 +742,7 @@ proc displayBuffer(buffer: Buffer) =
 
 proc displayStatusMessage(buffer: Buffer) =
   termGoto(0, buffer.height)
+  print(SGR())
   print(buffer.generateStatusMessage())
   print(EL())
 
@@ -827,19 +822,25 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       buffer.redraw = true
     else: discard
     stdout.hideCursor()
-    buffer.updateHover()
 
     if buffer.refreshTermAttrs():
       buffer.redraw = true
       buffer.reshape = true
 
+    if buffer.redraw:
+      buffer.refreshDisplay()
+      buffer.displayBuffer()
+      buffer.redraw = false
+
+    #TODO
+    buffer.updateHover()
     if buffer.reshape:
       buffer.reshapeBuffer()
       buffer.reshape = false
       buffer.redraw = true #?
     if buffer.redraw:
       buffer.refreshDisplay()
-      buffer.displayBuffer()
+      buffer.displayBufferSwapOutput()
       buffer.redraw = false
 
     if not nostatus:

@@ -30,6 +30,7 @@ type
     marginy*: int
     conty*: bool
     whitespace*: bool
+    ws_initial*: bool
 
   InlineContext* = object
     cssvalues*: CSSComputedValues

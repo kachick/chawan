@@ -18,6 +18,7 @@ type
     in_style: bool
     in_noscript: bool
     in_body: bool
+    skip_lf: bool
     elementNode: Element
     textNode: Text
     commentNode: Comment
@@ -208,15 +209,6 @@ proc processDocumentAddNode(state: var HTMLParseState, newNode: Node) =
     else:
       state.elementNode = state.elementNode.ownerDocument.head
 
-  #> If the next token is a U+000A LINE FEED (LF) character token, then ignore
-  #> that token and move on to the next one. (Newlines at the start of pre
-  #> blocks are ignored as an authoring convenience.)
-  elif state.elementNode.tagType == TAG_PRE:
-    if state.elementNode.childNodes.len == 1 and
-        state.elementNode.childNodes[0].nodeType == TEXT_NODE and
-        Text(state.elementNode.childNodes[0]).data == "\n":
-      discard state.elementNode.childNodes.pop()
-
   insertNode(state.elementNode, newNode)
 
 proc processDocumentEndNode(state: var HTMLParseState) =
@@ -267,6 +259,8 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
       state.elementNode = state.elementNode.ownerDocument.head
   of TAG_BODY:
     add = false
+  of TAG_PRE:
+    state.skip_lf = true
   else: discard
 
   if not state.in_body and not (element.tagType in HeadTagTypes):
@@ -420,8 +414,10 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
       if state.in_comment:
         state.commentNode.data &= $r
       else:
-        processDocumentText(state)
-        state.textNode.data &= $r
+        if not (state.skip_lf and r == Rune('\n')):
+          processDocumentText(state)
+          state.textNode.data &= $r
+        state.skip_lf = false
 
 proc parseHtml*(inputStream: Stream): Document =
   let document = newDocument()

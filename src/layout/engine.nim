@@ -10,6 +10,7 @@ func newContext*(box: CSSBox): Context =
   new(result)
   result.fromx = box.x
   result.whitespace = true
+  result.ws_initial = true
 
 func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   new(result)
@@ -17,19 +18,18 @@ func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   result.x = parent.x
   if parent.context.conty:
     inc parent.height
-    #eprint "inc n"
+    #eprint "CONTY N"
     inc parent.context.fromy
     parent.context.conty = false
   result.y = parent.context.fromy
   let mtop = vals[PROPERTY_MARGIN_TOP].length.cells()
   if mtop > parent.bcontext.marginy:
     result.y += mtop - parent.bcontext.marginy
-    #eprint "my", mtop, parent.bcontext.marginy
     parent.bcontext.marginy = mtop
+    #eprint "M-TOP", mtop - parent.bcontext.marginy
 
   result.width = parent.width
   result.context = newContext(parent)
-  #eprint "inc to", result.y
   result.context.fromy = result.y
   result.cssvalues = vals
 
@@ -59,7 +59,8 @@ proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: v
   inc rowi
   fromx = ibox.x
   ibox.context.whitespace = true
-  ibox.context.conty = true
+  ibox.context.ws_initial = true
+  ibox.context.conty = false
   rowbox = CSSRowBox(x: ibox.x, y: ibox.y + rowi)
   rowbox.setup(ibox.cssvalues, ibox.bcontext.nodes)
 
@@ -87,25 +88,29 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
     if rowbox.width + r.width() > ibox.width:
       inlineWrap(ibox, rowi, fromx, rowbox)
     if r.isWhitespace():
+      let wsr = ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
       if ibox.context.whitespace:
-        continue
-      else:
-        let wsr = ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
-
-        case wsr
-        of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
-          r = Rune(' ')
-        of WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP:
-          if r == Rune('\n'):
-            inlineWrap(ibox, rowi, fromx, rowbox)
-            ibox.context.whitespace = false
+        if ibox.context.ws_initial:
+          ibox.context.ws_initial = false
+          if not (wsr in {WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP}):
             continue
-
-        case wsr
-        of WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE_LINE:
-          ibox.context.whitespace = true
         else:
+          continue
+      case wsr
+      of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
+        r = Rune(' ')
+      of WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP:
+        if r == Rune('\n'):
+          inlineWrap(ibox, rowi, fromx, rowbox)
           ibox.context.whitespace = false
+          ibox.context.ws_initial = true
+          continue
+        r = Rune(' ')
+      case wsr
+      of WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE_LINE:
+        ibox.context.whitespace = true
+      else:
+        ibox.context.whitespace = false
     else:
       ibox.context.whitespace = false
     rowbox.width += r.width()
@@ -127,7 +132,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
 proc processElemBox(parent: CSSBox, elem: Element): CSSBox =
   case elem.cssvalues[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
-    #eprint "START", elem.tagType
+    #eprint "START", elem.tagType, parent.context.fromy
     result = newBlockBox(parent, elem.cssvalues)
     CSSBlockBox(result).tag = $elem.tagType
   of DISPLAY_INLINE:
@@ -143,18 +148,18 @@ proc add(parent: var CSSBox, box: CSSBox) =
   if box of CSSBlockBox:
     parent.context.fromx = 0
     parent.context.whitespace = true
+    parent.context.ws_initial = true
     if box.context.conty:
+      #eprint "CONTY A"
       inc box.height
-      #eprint "inc a"
       inc box.context.fromy
       box.context.conty = false
     let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells()
-    #eprint "inc b", mbot
     box.context.fromy += mbot
     box.bcontext.marginy = mbot
-    #eprint "END", CSSBlockBox(box).tag
+    #eprint "M-BOT", mbot
+    #eprint "END", CSSBlockBox(box).tag, box.context.fromy
   parent.height += box.height
-  #eprint "parent to", box.context.fromy
   parent.context.fromy = box.context.fromy
   parent.children.add(box)
 
