@@ -3,7 +3,6 @@ import uri
 import strutils
 import unicode
 
-import types/color
 import types/enums
 import css/style
 import utils/twtstr
@@ -221,7 +220,6 @@ proc refreshDisplay*(buffer: Buffer) =
         inc n
       buffer.display[dls + j - n].runes.add(line[i].rune)
       buffer.display[dls + j - n].formatting = line[i].formatting
-      buffer.display[dls + j - n].nodes = line[i].nodes
       j += line[i].rune.width()
       inc i
 
@@ -534,8 +532,6 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
     return true
   return false
 
-proc setText*(buffer: Buffer, x: int, y: int, text: seq[Rune]) = buffer.lines.setText(x, y, text)
-
 func formatFromLine(line: CSSRowBox): Formatting =
   result.fgcolor = line.color.cellColor()
   if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
@@ -566,7 +562,7 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
     cx += buffer.lines[y][i].rune.width()
     inc i
 
-  let oline = buffer.lines[y][i..high(buffer.lines[y])]
+  var oline = buffer.lines[y].subline(i)
   buffer.lines[y].setLen(i)
   var j = 0
   var nx = cx
@@ -576,8 +572,9 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
     buffer.lines.addCell(y, Rune(' '))
     inc nx
 
+  buffer.lines.addFormat(y, format)
   while j < line.runes.len:
-    buffer.lines.addCell(y, line.runes[j], format, line.nodes)
+    buffer.lines.addCell(y, line.runes[j])
     nx += line.runes[j].width()
     inc j
 
@@ -587,7 +584,8 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
     inc i
 
   if i < oline.len:
-    buffer.lines[y].add(oline[i..high(oline)])
+    let nol = oline.subLine(i)
+    buffer.lines[y].add(nol)
 
 proc updateCursor(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:

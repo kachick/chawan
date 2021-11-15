@@ -99,7 +99,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
       of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
         r = Rune(' ')
       of WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP:
-        if r == Rune('\n'):
+        if str[i - 1] == '\n':
           inlineWrap(ibox, rowi, fromx, rowbox)
           ibox.context.whitespace = false
           ibox.context.ws_initial = true
