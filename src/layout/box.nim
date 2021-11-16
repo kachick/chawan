@@ -1,5 +1,3 @@
-import unicode
-
 import types/enums
 import css/style
 import html/dom
@@ -50,7 +48,7 @@ type
     fontstyle*: CSSFontStyle
     fontweight*: int
     textdecoration*: CSSTextDecoration
-    runes*: seq[Rune]
+    str*: string
     nodes*: seq[Node]
 
   CSSInlineBox* = ref CSSInlineBoxObj

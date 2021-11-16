@@ -21,15 +21,12 @@ type
     formatting*: Formatting
     nodes*: seq[Node]
 
-  FlexibleCell* = object of Cell
-    rune*: Rune
-
-  FormattingCell = object of Cell
-    pos: int
+  FormattingCell* = object of Cell
+    pos*: int
 
   FlexibleLine* = object
     str*: string
-    formats: seq[FormattingCell]
+    formats*: seq[FormattingCell]
 
   FlexibleGrid* = seq[FlexibleLine]
 
@@ -37,6 +34,12 @@ type
     runes*: seq[Rune]
 
   FixedGrid* = seq[FixedCell]
+
+#TODO ?????
+func `==`*(a: FixedCell, b: FixedCell): bool =
+  return a.formatting == b.formatting and
+    a.runes == b.runes and
+    a.nodes == b.nodes
 
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
   return newSeq[FixedCell](w * h)
@@ -53,8 +56,7 @@ func len*(line: FlexibleLine): int =
 func newFormatting*(): Formatting =
   return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)
 
-func `[]`*(line: FlexibleLine, pos: int): FlexibleCell =
-  result.rune = line.str.runeAtPos(pos)
+func findFormat*(line: FlexibleLine, pos: int): FormattingCell =
   var i = 0
   while i < line.formats.len:
     if line.formats[i].pos > pos:
@@ -62,26 +64,49 @@ func `[]`*(line: FlexibleLine, pos: int): FlexibleCell =
     inc i 
   dec i
   if i != -1:
-    result.formatting = line.formats[i].formatting
+    result = line.formats[i]
   else:
-    result.formatting = newFormatting()
+    result.pos = -1
 
-func subLine*(line: FlexibleLine, i: int): FlexibleLine =
-  for f in line.formats:
-    if f.pos >= i:
-      result.formats.add(f)
-  result.str = line.str.runeSubstr(i)
+func findNextFormat*(line: FlexibleLine, pos: int): FormattingCell =
+  var i = 0
+  while i < line.formats.len:
+    if line.formats[i].pos > pos:
+      break
+    inc i 
+  if i < line.formats.len:
+    result = line.formats[i]
+  else:
+    result.pos = -1
 
-proc setLen*(line: var FlexibleLine, i: int) =
-  var nf = newSeq[FormattingCell]()
-  for f in line.formats:
-    if f.pos < i:
-      nf.add(f)
-  line.str = line.str.runeSubstr(0, i)
+func subformats*(formats: seq[FormattingCell], pos: int): seq[FormattingCell] =
+  var i = 0
+  while i < formats.len:
+    if formats[i].pos >= pos:
+      if result.len == 0 and i > 0:
+        var f = formats[i - 1]
+        f.pos = 0
+        result.add(f)
+      var f = formats[i]
+      f.pos -= pos
+      result.add(f)
+    inc i
+
+  if result.len == 0 and i > 0:
+    var f = formats[i - 1]
+    f.pos = 0
+    result.add(f)
+
+proc setLen*(line: var FlexibleLine, len: int) =
+  for i in 0 ..< line.formats.len:
+    if line.formats[i].pos >= len:
+      line.formats.setLen(i)
+      break
+  #line.formats = line.formats.filter((x) => x.pos < len)
 
 proc add*(a: var FlexibleLine, b: FlexibleLine) =
   let l = a.len
-  a.formats.add(b.formats.map((x) => FormattingCell(formatting: x.formatting, pos: l + x.pos)))
+  a.formats.add(b.formats.map((x) => FormattingCell(formatting: x.formatting, nodes: x.nodes, pos: l + x.pos)))
   a.str &= b.str
 
 proc addLine*(grid: var FlexibleGrid) =
@@ -90,16 +115,14 @@ proc addLine*(grid: var FlexibleGrid) =
 proc addFormat*(grid: var FlexibleGrid, y: int, format: Formatting) =
   grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].len))
 
+proc addFormat*(grid: var FlexibleGrid, y: int, pos: int, format: Formatting, nodes: seq[Node]) =
+  grid[y].formats.add(FormattingCell(formatting: format, nodes: nodes, pos: pos))
+
 proc addCell*(grid: var FlexibleGrid, y: int, r: Rune) =
   grid[y].str &= $r
 
-proc addCell*(grid: var FlexibleGrid, y: int, r: Rune, format: Formatting) =
-  if grid[y].formats.len == 0 or grid[y].formats[^1].formatting != format:
-    grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].len))
-  grid[y].str &= $r
-
-proc addCell*(grid: var FlexibleGrid, r: Rune, format: Formatting) =
-  grid.addCell(grid.len - 1, r, format)
+proc addCell*(grid: var FlexibleGrid, r: Rune) =
+  grid.addCell(grid.len - 1, r)
 
 template inc_check(i: int) =
   inc i

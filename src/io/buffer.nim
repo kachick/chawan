@@ -200,6 +200,7 @@ proc clearDisplay*(buffer: Buffer) =
   buffer.display = newFixedGrid(buffer.width, buffer.height)
 
 proc refreshDisplay*(buffer: Buffer) =
+  var r: Rune
   var y = 0
   buffer.clearDisplay()
 
@@ -207,21 +208,31 @@ proc refreshDisplay*(buffer: Buffer) =
                            buffer.lastVisibleLine - 1]:
     var w = 0
     var i = 0
+    var j = 0
     while w < buffer.fromx and i < line.len:
-      w += line[i].rune.width()
-      inc i
+      fastRuneAt(line.str, i, r)
+      w += r.width()
+      inc j
 
     let dls = y * buffer.width
-    var j = 0
+    var k = 0
     var n = 0
-    while w < buffer.fromx + buffer.width and i < line.len:
-      w += line[i].rune.width()
-      if line[i].rune.width() == 0 and j != 0:
+    var cf = line.findFormat(j)
+    var nf = line.findNextFormat(j)
+    while w < buffer.fromx + buffer.width and i < line.str.len:
+      fastRuneAt(line.str, i, r)
+      w += r.width()
+      if nf.pos != -1 and nf.pos <= j:
+        cf = nf
+        nf = line.findNextFormat(j)
+      if r.width() == 0 and k != 0:
         inc n
-      buffer.display[dls + j - n].runes.add(line[i].rune)
-      buffer.display[dls + j - n].formatting = line[i].formatting
-      j += line[i].rune.width()
-      inc i
+      buffer.display[dls + k - n].runes.add(r)
+      if cf.pos != -1:
+        buffer.display[dls + k - n].formatting = cf.formatting
+        buffer.display[dls + k - n].nodes = cf.nodes
+      k += r.width()
+      inc j
 
     inc y
 
@@ -528,7 +539,7 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
   if newAttrs != buffer.attrs:
     buffer.attrs = newAttrs
     buffer.width = newAttrs.width
-    buffer.height = newAttrs.height
+    buffer.height = newAttrs.height - 1
     return true
   return false
 
@@ -546,46 +557,47 @@ func formatFromLine(line: CSSRowBox): Formatting =
     result.strike = true
 
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
-  if line.runes.len == 0:
-    return
+  var r: Rune
 
   let x = line.x
   let y = line.y
 
-  let format = line.formatFromLine()
   while buffer.lines.len <= y:
     buffer.addLine()
 
   var i = 0
-  var cx = 0
-  while cx < x and i < buffer.lines[y].len:
-    cx += buffer.lines[y][i].rune.width()
-    inc i
-
-  var oline = buffer.lines[y].subline(i)
-  buffer.lines[y].setLen(i)
   var j = 0
-  var nx = cx
-
-  #TODO not sure
-  while nx < x:
-    buffer.lines.addCell(y, Rune(' '))
-    inc nx
-
-  buffer.lines.addFormat(y, format)
-  while j < line.runes.len:
-    buffer.lines.addCell(y, line.runes[j])
-    nx += line.runes[j].width()
+  var cx = 0
+  while cx < x and i < buffer.lines[y].str.len:
+    fastRuneAt(buffer.lines[y].str, i, r)
+    cx += r.width()
     inc j
 
-  i = 0
-  while cx < nx and i < oline.len:
-    cx += oline[i].rune.width()
-    inc i
+  let ostr = buffer.lines[y].str.substr(i)
+  let oformats = buffer.lines[y].formats.subformats(j)
+  buffer.lines[y].str.setLen(i)
+  buffer.lines[y].setLen(j)
 
-  if i < oline.len:
-    let nol = oline.subLine(i)
-    buffer.lines[y].add(nol)
+  buffer.lines.addFormat(y, j, line.formatFromLine(), line.nodes)
+
+  var nx = cx
+  if nx < x:
+    buffer.lines[y].str &= ' '.repeat(x - nx)
+    nx = x
+
+  buffer.lines[y].str &= line.str
+  nx += line.str.width()
+
+  i = 0
+  j = 0
+  while cx < nx and i < ostr.len:
+    fastRuneAt(ostr, i, r)
+    cx += r.width()
+    inc j
+
+  if i < ostr.len:
+    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(j))
+    buffer.lines[y].add(oline)
 
 proc updateCursor(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:
@@ -633,6 +645,7 @@ proc renderPlainText*(buffer: Buffer, text: string) =
   while i < text.len:
     if text[i] == '\n':
       buffer.addLine()
+      buffer.lines.addFormat(buffer.lines.len - 1, format)
       inc y
       x = 0
       inc i
@@ -640,17 +653,17 @@ proc renderPlainText*(buffer: Buffer, text: string) =
       inc i
     elif text[i] == '\t':
       for i in 0..8:
-        buffer.lines.addCell(Rune(' '), format)
+        buffer.lines[^1].str &= ' '
       inc i
     elif text[i] == '\e':
       i = format.parseAnsiCode(text, i)
     elif text[i].isControlChar():
-      buffer.lines.addCell(Rune('^'), format)
-      buffer.lines.addCell(Rune(text[i].getControlLetter()), format)
+      buffer.lines.addCell(Rune('^'))
+      buffer.lines.addCell(Rune(text[i].getControlLetter()))
       inc i
     else:
       fastRuneAt(text, i, r)
-      buffer.lines.addCell(r, format)
+      buffer.lines.addCell(r)
   buffer.updateCursor()
 
 proc renderDocument*(buffer: Buffer) =
