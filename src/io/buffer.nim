@@ -644,10 +644,11 @@ proc renderPlainText*(buffer: Buffer, text: string) =
   var format = newFormatting()
   while i < text.len:
     if text[i] == '\n':
-      buffer.addLine()
-      buffer.lines.addFormat(buffer.lines.len - 1, format)
-      inc y
-      x = 0
+      if i != text.len - 1:
+        buffer.addLine()
+        buffer.lines.addFormat(buffer.lines.len - 1, format)
+        inc y
+        x = 0
       inc i
     elif text[i] == '\r':
       inc i
@@ -796,7 +797,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       var url = $buffer.location
 
       termGoto(0, buffer.height)
-      print("\e[K")
+      print(EL())
       let status = readLine("URL: ", url, buffer.width)
       if status:
         buffer.setLocation(parseUri(url))
