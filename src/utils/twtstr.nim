@@ -4,6 +4,10 @@ import unicode
 import tables
 import json
 import bitops
+import os
+
+when defined(posix):
+  import posix
 
 func ansiStyle*(str: string, style: Style): seq[string] =
   result &= ansiStyleCode(style)
@@ -175,6 +179,28 @@ func skipBlanks*(buf: string, at: int): int =
   result = at
   while result < buf.len and buf[result].isWhitespace():
     inc result
+
+proc expandPath*(path: string): string =
+  if path.len == 0:
+    return path
+  result = path
+  var i = 0
+  if path[0] == '~':
+    if path.len == 1:
+      result = getHomeDir()
+    elif path[1] == '/':
+      result = getHomeDir() / path.substr(2)
+      inc i
+    else:
+      when defined(posix):
+        i = 1
+        var usr = ""
+        while path[i] != '/':
+          usr &= path[i]
+          inc i
+        let p = getpwnam(usr)
+        if p != nil:
+          result = $p.pw_dir / path.substr(i)
 
 template CSI*(s: varargs[string, `$`]): string =
   var r = "\e["

@@ -37,10 +37,12 @@ type
   StaticConfig = object
     nmap: ActionMap
     lemap: ActionMap
+    stylesheet*: string
 
   Config = object
     nmap*: ActionMap
     lemap*: ActionMap
+    stylesheet*: string
 
 func getConfig(s: StaticConfig): Config =
   return Config(nmap: s.nmap, lemap: s.lemap)
@@ -105,15 +107,53 @@ func constructActionTable*(origTable: ActionMap): ActionMap =
     newTable[realk] = v
   return newTable
 
+proc readUserStylesheet(dir: string, file: string): string =
+  if file.len == 0:
+    return ""
+  if file[0] == '~' or file[0] == '/':
+    var f: File
+    if f.open(expandPath(file)):
+      result = f.readAll()
+      f.close()
+  else:
+    var f: File
+    if f.open(dir / file):
+      result = f.readAll()
+      f.close()
+
 proc parseConfigLine[T](line: string, config: var T) =
   if line.len == 0 or line[0] == '#':
     return
-  let cmd = line.split(' ')
+  var cmd: seq[string]
+  var s = ""
+  var quote = false
+  var escape = false
+  for c in line:
+    if escape:
+      escape = false
+      s &= c
+      continue
+
+    if not quote and c == ' ' and s.len > 0:
+      cmd.add(s)
+      s = ""
+    elif c == '"':
+      quote = not quote
+    elif c == '\\' and not quote:
+      escape = true
+    else:
+      s &= c
+  if s.len > 0:
+    cmd.add(s)
+
   if cmd.len == 3:
     if cmd[0] == "nmap":
       config.nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
     elif cmd[0] == "lemap":
       config.lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+  elif cmd.len == 2:
+    if cmd[0] == "stylesheet":
+      config.stylesheet = cmd[1]
 
 proc staticReadConfig(): StaticConfig =
   let default = staticRead"res/config"
@@ -124,25 +164,26 @@ proc staticReadConfig(): StaticConfig =
   result.lemap = constructActionTable(result.lemap)
 
 const defaultConfig = staticReadConfig()
-var gconfig* = getConfig(defaultConfig)
+var gconfig*: Config
 
-proc readConfig(filename: string) =
+proc readConfig(dir: string) =
   var f: File
-  let status = f.open(filename, fmRead)
-  var nmap: ActionMap
-  var lemap: ActionMap
+  let status = f.open(dir / "config", fmRead)
   if status:
     var line: TaintedString
     while f.readLine(line):
       parseConfigLine(line, gconfig)
 
-    gconfig.nmap = constructActionTable(nmap)
-    gconfig.lemap = constructActionTable(lemap)
+    gconfig.nmap = constructActionTable(gconfig.nmap)
+    gconfig.lemap = constructActionTable(gconfig.lemap)
+    gconfig.stylesheet = readUserStylesheet(dir, gconfig.stylesheet)
+    f.close()
 
 proc readConfig*() =
+  gconfig = getConfig(defaultConfig)
   when defined(debug):
-    readConfig("res" / "config")
-  readConfig(getConfigDir() / "twt" / "config")
+    readConfig(getCurrentDir() / "res")
+  readConfig(getConfigDir() / "twt")
 
 proc getNormalAction*(s: string): TwtAction =
   if gconfig.nmap.hasKey(s):

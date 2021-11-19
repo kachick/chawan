@@ -12,9 +12,6 @@ import css/parser
 import css/selector
 import types/enums
 
-const css = staticRead"res/default.css"
-let stylesheet = parseCSS(newStringStream(css))
-
 type
   EventTarget* = ref EventTargetObj
   EventTargetObj = object of RootObj
@@ -30,9 +27,6 @@ type
     parentNode*: Node
     parentElement*: Element
     ownerDocument*: Document
-
-    hidden*: bool
-    hover*: bool
 
   Attr* = ref AttrObj
   AttrObj = object of NodeObj
@@ -80,6 +74,8 @@ type
     cssvalues*: CSSComputedValues
     cssvalues_before*: CSSComputedValues
     cssvalues_after*: CSSComputedValues
+    hover*: bool
+    cssapplied*: bool
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -140,13 +136,6 @@ func lastElementChild(node: Node): Element =
 func `$`*(element: Element): string =
   return "Element of " & $element.tagType
 
-#TODO
-func nodeAttr*(node: Node): HtmlElement =
-  case node.nodeType
-  of TEXT_NODE: return HtmlElement(node.parentElement)
-  of ELEMENT_NODE: return HtmlElement(node)
-  else: assert(false)
-
 func isTextNode*(node: Node): bool =
   return node.nodeType == TEXT_NODE
 
@@ -193,20 +182,6 @@ func toInputType*(str: string): InputType =
   of "url": INPUT_URL
   of "week": INPUT_WEEK
   else: INPUT_UNKNOWN
-
-func toInputSize*(str: string): int =
-  if str.len == 0:
-    return 20
-  for c in str:
-    if not c.isDigit():
-      return 20
-  return str.parseInt()
-
-#TODO
-func ancestor*(htmlNode: Node, tagType: TagType): HtmlElement =
-  result = HtmlElement(htmlNode.parentElement)
-  while result != nil and result.tagType != tagType:
-    result = HtmlElement(result.parentElement)
 
 func newText*(): Text =
   new(result)
@@ -259,7 +234,6 @@ func getAttrValue*(element: Element, s: string): string =
   return ""
 
 #TODO case sensitivity
-
 
 type SelectResult = object
   success: bool
@@ -377,7 +351,6 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-
 proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem) =
   let cval = getComputedValue(decl, elem.cssvalues)
   case pseudo
@@ -387,9 +360,14 @@ proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem) =
     elem.cssvalues_before[cval.t] = cval
   of PSEUDO_AFTER:
     elem.cssvalues_after[cval.t] = cval
+  elem.cssapplied = true
 
-type ParsedRule = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
-type ParsedStylesheet = seq[ParsedRule]
+type
+  ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
+  ParsedStylesheet* = seq[ParsedRule]
+  ApplyResult = object
+    normal: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
+    important: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
 
 func calcRules(elem: Element, rules: ParsedStylesheet):
     array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]] =
@@ -405,29 +383,30 @@ func calcRules(elem: Element, rules: ParsedStylesheet):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
     result[i] = tosorts[i].map((x) => x.b)
 
-proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]] =
+proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false): ApplyResult =
   var stack: seq[Element]
 
   stack.add(document.head)
   stack.add(document.body)
-  document.root.cssvalues = rootProperties()
+  document.root.cssvalues.rootProperties()
 
-  let parsed = rules.value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
   while stack.len > 0:
     let elem = stack.pop()
-    elem.cssvalues = inheritProperties(elem.parentElement.cssvalues)
-    let rules_pseudo = calcRules(elem, parsed)
-    for pseudo in low(PseudoElem)..high(PseudoElem):
-      let rules = rules_pseudo[pseudo]
-      for rule in rules:
-        let decls = parseCSSListOfDeclarations(rule.value)
-        for item in decls:
-          if item of CSSDeclaration:
-            let decl = CSSDeclaration(item)
-            if decl.important:
-              result.add((elem, decl, pseudo))
-            else:
-              elem.applyProperty(decl, pseudo)
+    if not elem.cssapplied:
+      if reset:
+        elem.cssvalues.rootProperties()
+      let rules_pseudo = calcRules(elem, pss)
+      for pseudo in low(PseudoElem)..high(PseudoElem):
+        let rules = rules_pseudo[pseudo]
+        for rule in rules:
+          let decls = parseCSSListOfDeclarations(rule.value)
+          for item in decls:
+            if item of CSSDeclaration:
+              let decl = CSSDeclaration(item)
+              if decl.important:
+                result.important.add((elem, decl, pseudo))
+              else:
+                result.normal.add((elem, decl, pseudo))
 
     var i = elem.children.len - 1
     while i >= 0:
@@ -435,7 +414,7 @@ proc applyRules*(document: Document, rules: CSSStylesheet): seq[tuple[e:Element,
       stack.add(child)
       dec i
 
-proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]] =
+proc applyAuthorRules*(document: Document): ApplyResult =
   var stack: seq[Element]
   var embedded_rules: seq[ParsedStylesheet]
 
@@ -448,7 +427,6 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
         if ct.nodeType == TEXT_NODE:
           rules_head &= Text(ct).data
 
-  
   stack.setLen(0)
 
   stack.add(document.body)
@@ -469,20 +447,22 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
     if rules_local.len > 0:
       let parsed = parseCSS(newStringStream(rules_local)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
       embedded_rules.add(parsed)
-    let this_rules = embedded_rules.concat()
-    let rules_pseudo = calcRules(elem, this_rules)
 
-    for pseudo in low(PseudoElem)..high(PseudoElem):
-      let rules = rules_pseudo[pseudo]
-      for rule in rules:
-        let decls = parseCSSListOfDeclarations(rule.value)
-        for item in decls:
-          if item of CSSDeclaration:
-            let decl = CSSDeclaration(item)
-            if decl.important:
-              result.add((elem, decl, pseudo))
-            else:
-              elem.applyProperty(decl, pseudo)
+    if not elem.cssapplied:
+      let this_rules = embedded_rules.concat()
+      let rules_pseudo = calcRules(elem, this_rules)
+
+      for pseudo in low(PseudoElem)..high(PseudoElem):
+        let rules = rules_pseudo[pseudo]
+        for rule in rules:
+          let decls = parseCSSListOfDeclarations(rule.value)
+          for item in decls:
+            if item of CSSDeclaration:
+              let decl = CSSDeclaration(item)
+              if decl.important:
+                result.important.add((elem, decl, pseudo))
+              else:
+                result.normal.add((elem, decl, pseudo))
 
     var i = elem.children.len - 1
     while i >= 0:
@@ -493,11 +473,37 @@ proc applyAuthorRules*(document: Document): seq[tuple[e:Element,d:CSSDeclaration
     if rules_local.len > 0:
       discard embedded_rules.pop()
 
-proc applyStylesheets*(document: Document) =
-  let important_ua = document.applyRules(stylesheet)
-  let important_author = document.applyAuthorRules()
-  for rule in important_author:
+proc applyStylesheets*(document: Document, uass: ParsedStylesheet, userss: ParsedStylesheet) =
+  let ua = document.applyRules(uass, true)
+  let user = document.applyRules(userss)
+  let author = document.applyAuthorRules()
+  var elems: seq[Element]
+
+  for rule in ua.normal:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
     rule.e.applyProperty(rule.d, rule.p)
-  for rule in important_ua:
+  for rule in user.normal:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in author.normal:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
     rule.e.applyProperty(rule.d, rule.p)
 
+  for rule in author.important:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in user.important:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in ua.important:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+
+  for elem in elems:
+    elem.cssvalues.inheritProperties(elem.parentElement.cssvalues)

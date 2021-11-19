@@ -30,27 +30,27 @@ most important APIs. Plus some other things.
 
 Currently implemented features are:
 
-* basic html rendering with CSS (very much WIP)
-* fully functioning 2d pager with custom keybindings
+* pager with custom keybindings
+* css rules (with user-agent, user, non-remote author stylesheets)
+* html display with CSS-capable layout engine (very much WIP)
 
 Planned features (roughly in order of importance):
 
-* refactored and improved layout engine (with colors, inline blocks etc)
+* refactored and improved layout engine (with inline blocks etc)
 * anchor
 * html generator (for source view)	
-* load external resources (e.g. css)
+* load external/remote resources (e.g. css)
 * markdown (with built-in parser)
 * form (w/ input etc)
 * JavaScript
 * table
-* config editor
+* config (& user stylesheet) editor
 * cookie
 * SOCKS proxy
 * HTTP proxy
 * image (sixel/kitty)
 * audio
 * video (sixel/kitty)
-* user style sheet w/ editor
 * adblock (use uBO?)
 * frame?
 * extension API?

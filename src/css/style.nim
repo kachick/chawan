@@ -12,11 +12,9 @@ type
     unit*: CSSUnit
     auto*: bool
 
-  CSSComputedValues* = array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
-
   CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
   
-  CSSComputedValue* = object of RootObj
+  CSSComputedValue* = ref object of RootObj
     t*: CSSPropertyType
     case v*: CSSValueType
     of VALUE_COLOR:
@@ -36,6 +34,8 @@ type
     of VALUE_TEXT_DECORATION:
       textdecoration*: CSSTextDecoration
     of VALUE_NONE: discard
+
+  CSSComputedValues* = array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
 
   CSSSpecifiedValue* = object of CSSComputedValue
     globalValue: CSSGlobalValueType
@@ -59,22 +59,22 @@ const PropertyNames = {
   "text-decoration": PROPERTY_TEXT_DECORATION,
 }.toTable()
 
-const ValueTypes = {
+const ValueTypes = [
   PROPERTY_NONE: VALUE_NONE,
   PROPERTY_ALL: VALUE_NONE,
   PROPERTY_COLOR: VALUE_COLOR,
   PROPERTY_MARGIN: VALUE_LENGTH,
   PROPERTY_MARGIN_TOP: VALUE_LENGTH,
-  PROPERTY_MARGIN_BOTTOM: VALUE_LENGTH,
   PROPERTY_MARGIN_LEFT: VALUE_LENGTH,
   PROPERTY_MARGIN_RIGHT: VALUE_LENGTH,
+  PROPERTY_MARGIN_BOTTOM: VALUE_LENGTH,
   PROPERTY_FONT_STYLE: VALUE_FONT_STYLE,
   PROPERTY_DISPLAY: VALUE_DISPLAY,
   PROPERTY_CONTENT: VALUE_CONTENT,
   PROPERTY_WHITE_SPACE: VALUE_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
   PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
-}.toTable()
+]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
@@ -365,7 +365,7 @@ func getInitialColor*(t: CSSPropertyType): CSSColor =
   else:
     return (r: 0u8, g: 0u8, b: 0u8, a: 255u8)
 
-func getDefault(t: CSSPropertyType): CSSComputedValue =
+func calcDefault(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
   var nv: CSSComputedValue
   case v
@@ -376,6 +376,16 @@ func getDefault(t: CSSPropertyType): CSSComputedValue =
   else:
     nv = CSSComputedValue(t: t, v: v)
   return nv
+
+func getDefaultTable(): array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue] =
+  for i in low(result)..high(result):
+    result[i] = calcDefault(i)
+
+let defaultTable = getDefaultTable()
+
+func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
+  assert defaultTable[t] != nil
+  return defaultTable[t]
 
 func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSSComputedValue =
   case prop.globalValue
@@ -415,13 +425,13 @@ func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSS
 func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =
   return getComputedValue(getSpecifiedValue(d), current)
 
-func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
+proc inheritProperties*(vals: var CSSComputedValues, parent: CSSComputedValues) =
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    if inherited(prop):
-      result[prop] = parent[prop]
-    else:
-      result[prop] = getDefault(prop)
+    if vals[prop] == nil:
+      vals[prop] = getDefault(prop)
+    if inherited(prop) and parent[prop] != nil and vals[prop] == getDefault(prop):
+      vals[prop] = parent[prop]
 
-func rootProperties*(): CSSComputedValues =
+proc rootProperties*(vals: var CSSComputedValues) =
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    result[prop] = getDefault(prop)
+    vals[prop] = getDefault(prop)

@@ -3,7 +3,7 @@ FLAGS = -d:ssl -o:twt
 FILES = src/main.nim
 
 debug:
-	$(NIMC) $(FLAGS) $(FILES)
+	$(NIMC) $(FLAGS) -d:debug $(FILES)
 release:
 	$(NIMC) $(FLAGS) -d:release -d:strip -d:lto $(FILES)
 profile:

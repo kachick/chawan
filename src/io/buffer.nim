@@ -2,17 +2,22 @@ import terminal
 import uri
 import strutils
 import unicode
+import streams
+import sequtils
+import sugar
 
 import types/enums
 import css/style
+import css/parser
+import css/selector
 import utils/twtstr
 import html/dom
 import layout/box
+import layout/engine
 import config/config
 import io/term
 import io/lineedit
 import io/cell
-import layout/engine
 
 type
   Buffer* = ref BufferObj
@@ -32,7 +37,6 @@ type
     fromy*: int
     attrs*: TermAttributes
     document*: Document
-    displaycontrols*: bool
     redraw*: bool
     reshape*: bool
     location*: Uri
@@ -611,28 +615,35 @@ proc updateCursor(buffer: Buffer) =
   if buffer.lines.len == 0:
     buffer.cursory = 0
 
-#TODO this works, but needs rethinking:
-#* reshape is called every time the cursor moves onto or off a line box, which
-#  practically means we're re-interpreting all style-sheets AND re-applying all
-#  rules way too often
-#* reshape also calls redraw so the entire window gets re-painted too which
-#  looks pretty bad (tick)
-#* and finally it re-arranges all CSS boxes too, which is a rather
-#  resource-intensive operation
-#overall the second point is the easiest to solve, then the first and finally
-#the last (there's only so much you can do in a flow layout, especially with
-#the current layout engine)
+#TODO this works, but reshape rearranges all CSS boxes which is a *very*
+#resource-intensive operation, and a significant restructuring of the layout
+#engine is needed to avoid this
 proc updateHover(buffer: Buffer) =
   let nodes = buffer.currentCell().nodes
   if nodes != buffer.prevnodes:
     for node in nodes:
-      if not node.hover:
-        node.hover = true
+      var elem: Element
+      if node of Element:
+        elem = Element(node)
+      else:
+        elem = node.parentElement
+        assert elem != nil
+
+      if not elem.hover:
+        elem.hover = true
         buffer.reshape = true
+        elem.cssapplied = false
     for node in buffer.prevnodes:
-      if node.hover and not (node in nodes):
-        node.hover = false
+      var elem: Element
+      if node of Element:
+        elem = Element(node)
+      else:
+        elem = node.parentElement
+        assert elem != nil
+      if elem.hover and not (node in nodes):
+        elem.hover = false
         buffer.reshape = true
+        elem.cssapplied = false
   buffer.prevnodes = nodes
 
 proc renderPlainText*(buffer: Buffer, text: string) =
@@ -667,9 +678,21 @@ proc renderPlainText*(buffer: Buffer, text: string) =
       buffer.lines.addCell(r)
   buffer.updateCursor()
 
+
+const css = staticRead"res/default.css"
+let ua_stylesheet = parseCSS(newStringStream(css)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+
+#TODO refactor
+var ss_init = false
+var user_stylesheet: ParsedStylesheet
 proc renderDocument*(buffer: Buffer) =
   buffer.clearText()
-  buffer.document.applyStylesheets()
+
+  if not ss_init:
+    user_stylesheet = parseCSS(newStringStream(gconfig.stylesheet)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+    ss_init = true
+
+  buffer.document.applyStylesheets(ua_stylesheet, user_stylesheet)
   buffer.rootbox = buffer.document.alignBoxes(buffer.width, buffer.height)
   if buffer.rootbox == nil:
     return
@@ -754,7 +777,6 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       s = ""
     else:
       feedNext = false
-
 
     let c = getch()
     s &= c
