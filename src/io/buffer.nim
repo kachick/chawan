@@ -7,9 +7,10 @@ import sequtils
 import sugar
 
 import types/enums
-import css/style
+import css/values
 import css/parser
 import css/selector
+import css/style
 import utils/twtstr
 import html/dom
 import layout/box

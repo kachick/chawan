@@ -1,437 +1,288 @@
 import unicode
+import strutils
 import tables
+import streams
+import sequtils
+import sugar
+import algorithm
 
-import utils/twtstr
-import types/enums
+import css/selector
 import css/parser
-import types/color
+import css/values
+import html/dom
+import types/enums
+
+#TODO case sensitivity
+
+type SelectResult = object
+  success: bool
+  pseudo: PseudoElem
+
+func selectres(s: bool, p: PseudoElem = PSEUDO_NONE): SelectResult =
+  return SelectResult(success: s, pseudo: p)
+
+func psuccess(s: SelectResult): bool =
+  return s.pseudo == PSEUDO_NONE and s.success
+
+func attrSelectorMatches(elem: Element, sel: Selector): bool =
+  case sel.rel
+  of ' ': return sel.attr in elem.attributes
+  of '=': return elem.getAttrValue(sel.attr) == sel.value
+  of '~': return sel.value in unicode.split(elem.getAttrValue(sel.attr))
+  of '|':
+    let val = elem.getAttrValue(sel.attr)
+    return val == sel.value or sel.value.startsWith(val & '-')
+  of '^': return elem.getAttrValue(sel.attr).startsWith(sel.value)
+  of '$': return elem.getAttrValue(sel.attr).endsWith(sel.value)
+  of '*': return elem.getAttrValue(sel.attr).contains(sel.value)
+  else: return false
+
+func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
+  case sel.pseudo
+  of "first-child": return elem.parentNode.firstElementChild == elem
+  of "last-child": return elem.parentNode.lastElementChild == elem
+  of "hover": return elem.hover
+  else: return false
+
+func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
+  case sel.elem
+  of "after": return selectres(true, PSEUDO_AFTER)
+  of "before": return selectres(true, PSEUDO_AFTER)
+  else: return selectres(false)
+
+func selectorMatches(elem: Element, sel: Selector): SelectResult =
+  case sel.t
+  of TYPE_SELECTOR:
+    return selectres(elem.tagType == sel.tag)
+  of CLASS_SELECTOR:
+    return selectres(sel.class in elem.classList)
+  of ID_SELECTOR:
+    return selectres(sel.id == elem.id)
+  of ATTR_SELECTOR:
+    return selectres(elem.attrSelectorMatches(sel))
+  of PSEUDO_SELECTOR:
+    return selectres(pseudoSelectorMatches(elem, sel))
+  of PSELEM_SELECTOR:
+    return pseudoElemSelectorMatches(elem, sel)
+  of UNIVERSAL_SELECTOR:
+    return selectres(true)
+  of FUNC_SELECTOR:
+    return selectres(false)
+
+func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult =
+  for sel in selectors.sels:
+    let res = selectorMatches(elem, sel)
+    if not res.success:
+      return selectres(false)
+    if res.pseudo != PSEUDO_NONE:
+      if result.pseudo != PSEUDO_NONE:
+        return selectres(false)
+      result.pseudo = res.pseudo
+  result.success = true
+
+func selectElems(document: Document, sel: Selector): seq[Element] =
+  case sel.t
+  of TYPE_SELECTOR:
+    return document.type_elements[sel.tag]
+  of ID_SELECTOR:
+    return document.id_elements[sel.id]
+  of CLASS_SELECTOR:
+    return document.class_elements[sel.class]
+  of UNIVERSAL_SELECTOR:
+    return document.all_elements
+  of ATTR_SELECTOR:
+    return document.all_elements.filter((elem) => attrSelectorMatches(elem, sel))
+  of PSEUDO_SELECTOR:
+    return document.all_elements.filter((elem) => pseudoSelectorMatches(elem, sel))
+  of PSELEM_SELECTOR:
+    return document.all_elements.filter((elem) => pseudoElemSelectorMatches(elem, sel))
+  of FUNC_SELECTOR:
+    case sel.name
+    of "not":
+      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.selectors).psuccess)
+    of "is", "where":
+      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.selectors).psuccess)
+    return newSeq[Element]()
+
+func selectElems(document: Document, selectors: SelectorList): seq[Element] =
+  assert(selectors.len > 0)
+  let sellist = optimizeSelectorList(selectors)
+  result = document.selectElems(selectors[0])
+  var i = 1
+
+  while i < sellist.len:
+    if sellist[i].t == FUNC_SELECTOR:
+      case sellist[i].name
+      of "not":
+        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].selectors).psuccess)
+      of "is", "where":
+        result = result.filter((elem) => selectorsMatch(elem, sellist[i].selectors).psuccess)
+      else: discard
+    else:
+      result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
+    inc i
+
+proc querySelector*(document: Document, q: string): seq[Element] =
+  let ss = newStringStream(q)
+  let cvals = parseCSSListOfComponentValues(ss)
+  let selectors = parseSelectors(cvals)
+
+  for sel in selectors:
+    result.add(document.selectElems(sel))
+
+proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem) =
+  let cval = getComputedValue(decl, elem.cssvalues)
+  case pseudo
+  of PSEUDO_NONE:
+    elem.cssvalues[cval.t] = cval
+  of PSEUDO_BEFORE:
+    elem.cssvalues_before[cval.t] = cval
+  of PSEUDO_AFTER:
+    elem.cssvalues_after[cval.t] = cval
+  elem.cssapplied = true
 
 type
-  CSSLength* = object
-    num*: float64
-    unit*: CSSUnit
-    auto*: bool
+  ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
+  ParsedStylesheet* = seq[ParsedRule]
+  ApplyResult = object
+    normal: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
+    important: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
 
-  CSSColor* = tuple[r: uint8, g: uint8, b: uint8, a: uint8]
-  
-  CSSComputedValue* = ref object of RootObj
-    t*: CSSPropertyType
-    case v*: CSSValueType
-    of VALUE_COLOR:
-      color*: CSSColor
-    of VALUE_LENGTH:
-      length*: CSSLength
-    of VALUE_FONT_STYLE:
-      fontstyle*: CSSFontStyle
-    of VALUE_DISPLAY:
-      display*: DisplayType
-    of VALUE_CONTENT:
-      content*: seq[Rune]
-    of VALUE_WHITESPACE:
-      whitespace*: WhitespaceType
-    of VALUE_INTEGER:
-      integer*: int
-    of VALUE_TEXT_DECORATION:
-      textdecoration*: CSSTextDecoration
-    of VALUE_NONE: discard
+func calcRules(elem: Element, rules: ParsedStylesheet):
+    array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]] =
+  var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
+  for rule in rules:
+    for sel in rule.sels:
+      let match = elem.selectorsMatch(sel)
+      if match.success:
+        let spec = getSpecificity(sel)
+        tosorts[match.pseudo].add((spec,rule.oblock))
 
-  CSSComputedValues* = array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
+  for i in low(PseudoElem)..high(PseudoElem):
+    tosorts[i].sort((x, y) => cmp(x.s,y.s))
+    result[i] = tosorts[i].map((x) => x.b)
 
-  CSSSpecifiedValue* = object of CSSComputedValue
-    globalValue: CSSGlobalValueType
+proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false): ApplyResult =
+  var stack: seq[Element]
 
-  CSSValueError* = object of ValueError
+  stack.add(document.head)
+  stack.add(document.body)
+  document.root.cssvalues.rootProperties()
 
-#TODO calculate this during compile time
-const PropertyNames = {
-  "all": PROPERTY_ALL,
-  "color": PROPERTY_COLOR,
-  "margin": PROPERTY_MARGIN,
-  "margin-top": PROPERTY_MARGIN_TOP,
-  "margin-bottom": PROPERTY_MARGIN_BOTTOM,
-  "margin-left": PROPERTY_MARGIN_LEFT,
-  "margin-right": PROPERTY_MARGIN_RIGHT,
-  "font-style": PROPERTY_FONT_STYLE,
-  "display": PROPERTY_DISPLAY,
-  "content": PROPERTY_CONTENT,
-  "white-space": PROPERTY_WHITE_SPACE,
-  "font-weight": PROPERTY_FONT_WEIGHT,
-  "text-decoration": PROPERTY_TEXT_DECORATION,
-}.toTable()
+  while stack.len > 0:
+    let elem = stack.pop()
+    if not elem.cssapplied:
+      if reset:
+        elem.cssvalues.rootProperties()
+      let rules_pseudo = calcRules(elem, pss)
+      for pseudo in low(PseudoElem)..high(PseudoElem):
+        let rules = rules_pseudo[pseudo]
+        for rule in rules:
+          let decls = parseCSSListOfDeclarations(rule.value)
+          for item in decls:
+            if item of CSSDeclaration:
+              let decl = CSSDeclaration(item)
+              if decl.important:
+                result.important.add((elem, decl, pseudo))
+              else:
+                result.normal.add((elem, decl, pseudo))
 
-const ValueTypes = [
-  PROPERTY_NONE: VALUE_NONE,
-  PROPERTY_ALL: VALUE_NONE,
-  PROPERTY_COLOR: VALUE_COLOR,
-  PROPERTY_MARGIN: VALUE_LENGTH,
-  PROPERTY_MARGIN_TOP: VALUE_LENGTH,
-  PROPERTY_MARGIN_LEFT: VALUE_LENGTH,
-  PROPERTY_MARGIN_RIGHT: VALUE_LENGTH,
-  PROPERTY_MARGIN_BOTTOM: VALUE_LENGTH,
-  PROPERTY_FONT_STYLE: VALUE_FONT_STYLE,
-  PROPERTY_DISPLAY: VALUE_DISPLAY,
-  PROPERTY_CONTENT: VALUE_CONTENT,
-  PROPERTY_WHITE_SPACE: VALUE_WHITE_SPACE,
-  PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
-  PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
-]
+    var i = elem.children.len - 1
+    while i >= 0:
+      let child = elem.children[i]
+      stack.add(child)
+      dec i
 
-const InheritedProperties = {
-  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
-  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION
-}
+proc applyAuthorRules*(document: Document): ApplyResult =
+  var stack: seq[Element]
+  var embedded_rules: seq[ParsedStylesheet]
 
-func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    if prop in InheritedProperties:
-      result[prop] = true
-    else:
-      result[prop] = false
+  stack.add(document.head)
+  var rules_head = ""
 
-const InheritedArray = getPropInheritedArray()
+  for child in document.head.children:
+    if child.tagType == TAG_STYLE:
+      for ct in child.childNodes:
+        if ct.nodeType == TEXT_NODE:
+          rules_head &= Text(ct).data
 
-func propertyType*(s: string): CSSPropertyType =
-  return PropertyNames.getOrDefault(s, PROPERTY_NONE)
+  stack.setLen(0)
 
-func valueType*(prop: CSSPropertyType): CSSValueType =
-  return ValueTypes[prop]
+  stack.add(document.body)
 
-func inherited(t: CSSPropertyType): bool =
-  return InheritedArray[t]
+  if rules_head.len > 0:
+    let parsed = parseCSS(newStringStream(rules_head)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+    embedded_rules.add(parsed)
 
-func cells*(l: CSSLength): int =
-  case l.unit
-  of UNIT_EM:
-    return int(l.num)
-  else:
-    #TODO
-    return int(l.num / 8)
+  while stack.len > 0:
+    let elem = stack.pop()
+    var rules_local = ""
+    for child in elem.children:
+      if child.tagType == TAG_STYLE:
+        for ct in child.childNodes:
+          if ct.nodeType == TEXT_NODE:
+            rules_local &= Text(ct).data
 
-const colors = {
-  "maroon":  (0x80u8, 0x00u8, 0x00u8, 0x00u8),
-  "red":     (0xffu8, 0x00u8, 0x00u8, 0x00u8),
-  "orange":  (0xffu8, 0xa5u8, 0x00u8, 0x00u8),
-  "yellow":  (0xffu8, 0xffu8, 0x00u8, 0x00u8),
-  "olive":   (0x80u8, 0x80u8, 0x00u8, 0x00u8),
-  "purple":  (0x80u8, 0x00u8, 0x80u8, 0x00u8),
-  "fuchsia": (0xffu8, 0x00u8, 0x00u8, 0x00u8),
-  "white":   (0xffu8, 0xffu8, 0xffu8, 0x00u8),
-  "lime":    (0x00u8, 0xffu8, 0x00u8, 0x00u8),
-  "green":   (0x00u8, 0x80u8, 0x00u8, 0x00u8),
-  "navy":    (0x00u8, 0x00u8, 0x80u8, 0x00u8),
-  "blue":    (0x00u8, 0x00u8, 0xffu8, 0x00u8),
-  "aqua":    (0x00u8, 0xffu8, 0xffu8, 0x00u8),
-  "teal":    (0x00u8, 0x80u8, 0x80u8, 0x00u8),
-  "black":   (0x00u8, 0x00u8, 0x00u8, 0x00u8),
-  "silver":  (0xc0u8, 0xc0u8, 0xc0u8, 0x00u8),
-  "gray":    (0x80u8, 0x80u8, 0x80u8, 0x00u8),
-}.toTable()
+    if rules_local.len > 0:
+      let parsed = parseCSS(newStringStream(rules_local)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+      embedded_rules.add(parsed)
 
-const defaultColor = (0xffu8, 0xffu8, 0xffu8, 0x00u8)
+    if not elem.cssapplied:
+      let this_rules = embedded_rules.concat()
+      let rules_pseudo = calcRules(elem, this_rules)
 
-func cssLength(val: float64, unit: string): CSSLength =
-  case unit
-  of "%": return CSSLength(num: val, unit: UNIT_PERC)
-  of "cm": return CSSLength(num: val, unit: UNIT_CM)
-  of "mm": return CSSLength(num: val, unit: UNIT_MM)
-  of "in": return CSSLength(num: val, unit: UNIT_IN)
-  of "px": return CSSLength(num: val, unit: UNIT_PX)
-  of "pt": return CSSLength(num: val, unit: UNIT_PT)
-  of "pc": return CSSLength(num: val, unit: UNIT_PC)
-  of "em": return CSSLength(num: val, unit: UNIT_EM)
-  of "ex": return CSSLength(num: val, unit: UNIT_EX)
-  of "ch": return CSSLength(num: val, unit: UNIT_CH)
-  of "rem": return CSSLength(num: val, unit: UNIT_REM)
-  of "vw": return CSSLength(num: val, unit: UNIT_VW)
-  of "vh": return CSSLength(num: val, unit: UNIT_VH)
-  of "vmin": return CSSLength(num: val, unit: UNIT_VMIN)
-  of "vmax": return CSSLength(num: val, unit: UNIT_VMAX)
-  else: raise newException(CSSValueError, "Invalid unit")
+      for pseudo in low(PseudoElem)..high(PseudoElem):
+        let rules = rules_pseudo[pseudo]
+        for rule in rules:
+          let decls = parseCSSListOfDeclarations(rule.value)
+          for item in decls:
+            if item of CSSDeclaration:
+              let decl = CSSDeclaration(item)
+              if decl.important:
+                result.important.add((elem, decl, pseudo))
+              else:
+                result.normal.add((elem, decl, pseudo))
 
-func cssColor*(d: CSSDeclaration): CSSColor =
-  if d.value.len > 0:
-    if d.value[0] of CSSToken:
-      let tok = CSSToken(d.value[0])
-      case tok.tokenType
-      of CSS_HASH_TOKEN:
-        let s = tok.value
-        if s.len == 3:
-          for r in s:
-            if hexValue(r) == -1:
-              raise newException(CSSValueError, "Invalid color")
-          let r = hexValue(s[0]) * 0x10 + hexValue(s[0])
-          let g = hexValue(s[1]) * 0x10 + hexValue(s[1])
-          let b = hexValue(s[2]) * 0x10 + hexValue(s[2])
+    var i = elem.children.len - 1
+    while i >= 0:
+      let child = elem.children[i]
+      stack.add(child)
+      dec i
 
-          return (uint8(r), uint8(g), uint8(b), 0x00u8)
-        elif s.len == 6:
-          for r in s:
-            if hexValue(r) == -1:
-              raise newException(CSSValueError, "Invalid color")
-          let r = hexValue(s[0]) * 0x10 + hexValue(s[1])
-          let g = hexValue(s[2]) * 0x10 + hexValue(s[3])
-          let b = hexValue(s[4]) * 0x10 + hexValue(s[5])
-          return (uint8(r), uint8(g), uint8(b), 0x00u8)
-        else:
-          raise newException(CSSValueError, "Invalid color")
-      of CSS_IDENT_TOKEN:
-        let s = tok.value
-        if $s in colors:
-          return colors[$s]
-        else:
-          raise newException(CSSValueError, "Invalid color")
-      else:
-        raise newException(CSSValueError, "Invalid color")
-    elif d.value[0] of CSSFunction:
-      let f = CSSFunction(d.value[0])
-      #TODO calc etc (cssnumber function or something)
-      case $f.name
-      of "rgb":
-        if f.value.len != 3:
-          raise newException(CSSValueError, "Invalid color")
-        for c in f.value:
-          if c != CSS_NUMBER_TOKEN:
-            raise newException(CSSValueError, "Invalid color")
-        let r = CSSToken(f.value[0]).nvalue
-        let g = CSSToken(f.value[1]).nvalue
-        let b = CSSToken(f.value[2]).nvalue
-        return (uint8(r), uint8(g), uint8(b), 0x00u8)
-      of "rgba":
-        if f.value.len != 4:
-          raise newException(CSSValueError, "Invalid color")
-        for c in f.value:
-          if c != CSS_NUMBER_TOKEN:
-            raise newException(CSSValueError, "Invalid color")
-        let r = CSSToken(f.value[0]).nvalue
-        let g = CSSToken(f.value[1]).nvalue
-        let b = CSSToken(f.value[2]).nvalue
-        let a = CSSToken(f.value[3]).nvalue
-        return (uint8(r), uint8(g), uint8(b), uint8(a))
-      else: discard
+    if rules_local.len > 0:
+      discard embedded_rules.pop()
 
-  raise newException(CSSValueError, "Invalid color")
+proc applyStylesheets*(document: Document, uass: ParsedStylesheet, userss: ParsedStylesheet) =
+  let ua = document.applyRules(uass, true)
+  let user = document.applyRules(userss)
+  let author = document.applyAuthorRules()
+  var elems: seq[Element]
 
-func cellColor*(color: CSSColor): CellColor =
-  #TODO better would be to store color names and return term colors on demand
-  #option)
-  return CellColor(rgb: true, rgbcolor: (r: color.r, g: color.g, b: color.b))
+  for rule in ua.normal:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in user.normal:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in author.normal:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
 
-func cssLength(d: CSSDeclaration): CSSLength =
-  if d.value.len > 0 and d.value[0] of CSSToken:
-    let tok = CSSToken(d.value[0])
-    case tok.tokenType
-    of CSS_PERCENTAGE_TOKEN:
-      return cssLength(tok.nvalue, "%")
-    of CSS_DIMENSION_TOKEN:
-      return cssLength(tok.nvalue, $tok.unit)
-    of CSS_IDENT_TOKEN:
-      if $tok.value == "auto":
-        return CSSLength(auto: true)
-    else:
-      return CSSLength(num: 0, unit: UNIT_EM)
+  for rule in author.important:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in user.important:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
+  for rule in ua.important:
+    if not rule.e.cssapplied:
+      elems.add(rule.e)
+    rule.e.applyProperty(rule.d, rule.p)
 
-  return CSSLength(num: 0, unit: UNIT_EM)
-
-#func hasColor*(style: CSS2Properties): bool =
-#  return style.color.r != 0 or style.color.b != 0 or style.color.g != 0 or style.color.a != 0
-#
-#func termColor*(style: CSS2Properties): ForegroundColor =
-#  if style.color.r > 120:
-#    return fgRed
-#  elif style.color.b > 120:
-#    return fgBlue
-#  elif style.color.g > 120:
-#    return fgGreen
-#  else:
-#    return fgWhite
-
-func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
-func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
-
-func cssString(d: CSSDeclaration): seq[Rune] =
-  if isToken(d):
-    let tok = getToken(d)
-    case tok.tokenType
-    of CSS_IDENT_TOKEN, CSS_STRING_TOKEN:
-      return tok.value
-    else: return
-
-func cssDisplay(d: CSSDeclaration): DisplayType =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
-      of "block": return DISPLAY_BLOCK
-      of "inline": return DISPLAY_INLINE
-      of "inline-block": return DISPLAY_INLINE_BLOCK
-      of "list-item": return DISPLAY_LIST_ITEM
-      of "table-column": return DISPLAY_TABLE_COLUMN
-      of "none": return DISPLAY_NONE
-      else: return DISPLAY_INLINE
-  raise newException(CSSValueError, "Invalid display")
-
-func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
-      of "normal": return FONTSTYLE_NORMAL
-      of "italic": return FONTSTYLE_ITALIC
-      of "oblique": return FONTSTYLE_OBLIQUE
-      else: raise newException(CSSValueError, "Invalid font style")
-  raise newException(CSSValueError, "Invalid font style")
-
-func cssWhiteSpace(d: CSSDeclaration): WhitespaceType =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
-      of "normal": return WHITESPACE_NORMAL
-      of "nowrap": return WHITESPACE_NOWRAP
-      of "pre": return WHITESPACE_PRE
-      of "pre-line": return WHITESPACE_PRE_LINE
-      of "pre-wrap": return WHITESPACE_PRE_WRAP
-      else: return WHITESPACE_NORMAL
-  raise newException(CSSValueError, "Invalid whitespace")
-
-#TODO
-func cssFontWeight(d: CSSDeclaration): int =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
-      of "normal": return 400
-      of "bold": return 700
-      of "lighter": return 400
-      of "bolder": return 700
-
-    elif tok.tokenType == CSS_NUMBER_TOKEN:
-      return int(tok.nvalue)
-
-  raise newException(CSSValueError, "Invalid font weight")
-
-func cssTextDecoration(d: CSSDeclaration): CSSTextDecoration =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
-      of "underline": return TEXT_DECORATION_UNDERLINE
-      of "overline": return TEXT_DECORATION_OVERLINE
-      of "line-through": return TEXT_DECORATION_LINE_THROUGH
-      of "blink": return TEXT_DECORATION_BLINK
-  raise newException(CSSValueError, "Invalid text decoration")
-
-func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
-      of "inherit": return VALUE_INHERIT
-      of "initial": return VALUE_INITIAL
-      of "unset": return VALUE_UNSET
-      of "revert": return VALUE_REVERT
-  return VALUE_NOGLOBAL
-
-func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
-  let name = $d.name
-  let ptype = propertyType(name)
-  let vtype = valueType(ptype)
-  result = CSSSpecifiedValue(t: ptype, v: vtype)
-  try:
-    case vtype
-    of VALUE_COLOR: result.color = cssColor(d)
-    of VALUE_LENGTH: result.length = cssLength(d)
-    of VALUE_FONT_STYLE: result.fontstyle = cssFontStyle(d)
-    of VALUE_DISPLAY: result.display = cssDisplay(d)
-    of VALUE_CONTENT: result.content = cssString(d)
-    of VALUE_WHITE_SPACE: result.whitespace = cssWhiteSpace(d)
-    of VALUE_INTEGER:
-      case ptype
-      of PROPERTY_FONT_WEIGHT:
-        result.integer = cssFontWeight(d)
-      else: discard #???
-    of VALUE_TEXT_DECORATION: result.textdecoration = cssTextDecoration(d)
-    of VALUE_NONE: discard
-  except CSSValueError:
-    result.globalValue = VALUE_UNSET
-
-  if result.globalValue == VALUE_NOGLOBAL:
-    result.globalValue = cssGlobal(d)
-
-func getInitialColor*(t: CSSPropertyType): CSSColor =
-  case t
-  of PROPERTY_COLOR:
-    return (r: 255u8, g: 255u8, b: 255u8, a: 255u8)
-  else:
-    return (r: 0u8, g: 0u8, b: 0u8, a: 255u8)
-
-func calcDefault(t: CSSPropertyType): CSSComputedValue =
-  let v = valueType(t)
-  var nv: CSSComputedValue
-  case v
-  of VALUE_COLOR:
-    nv = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
-  of VALUE_DISPLAY:
-    nv = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
-  else:
-    nv = CSSComputedValue(t: t, v: v)
-  return nv
-
-func getDefaultTable(): array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue] =
-  for i in low(result)..high(result):
-    result[i] = calcDefault(i)
-
-let defaultTable = getDefaultTable()
-
-func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
-  assert defaultTable[t] != nil
-  return defaultTable[t]
-
-func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSSComputedValue =
-  case prop.globalValue
-  of VALUE_INHERIT:
-    if inherited(prop.t):
-      return current[prop.t]
-  of VALUE_INITIAL:
-    return getDefault(prop.t)
-  of VALUE_UNSET:
-    if inherited(prop.t):
-      return current[prop.t]
-    return getDefault(prop.t)
-  of VALUE_REVERT:
-    #TODO
-    discard
-  of VALUE_NOGLOBAL: discard
-
-  case prop.v
-  of VALUE_COLOR:
-    return CSSComputedValue(t: prop.t, v: VALUE_COLOR, color: prop.color)
-  of VALUE_LENGTH:
-    return CSSComputedValue(t: prop.t, v: VALUE_LENGTH, length: prop.length)
-  of VALUE_DISPLAY:
-    return CSSComputedValue(t: prop.t, v: VALUE_DISPLAY, display: prop.display)
-  of VALUE_FONT_STYLE:
-    return CSSComputedValue(t: prop.t, v: VALUE_FONT_STYLE, fontstyle: prop.fontstyle)
-  of VALUE_CONTENT:
-    return CSSComputedValue(t: prop.t, v: VALUE_CONTENT, content: prop.content)
-  of VALUE_WHITESPACE:
-    return CSSComputedValue(t: prop.t, v: VALUE_WHITESPACE, whitespace: prop.whitespace)
-  of VALUE_INTEGER:
-    return CSSComputedValue(t: prop.t, v: VALUE_INTEGER, integer: prop.integer)
-  of VALUE_TEXT_DECORATION:
-    return CSSComputedValue(t: prop.t, v: VALUE_TEXT_DECORATION, textdecoration: prop.textdecoration)
-  of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
-
-func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =
-  return getComputedValue(getSpecifiedValue(d), current)
-
-proc inheritProperties*(vals: var CSSComputedValues, parent: CSSComputedValues) =
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    if vals[prop] == nil:
-      vals[prop] = getDefault(prop)
-    if inherited(prop) and parent[prop] != nil and vals[prop] == getDefault(prop):
-      vals[prop] = parent[prop]
-
-proc rootProperties*(vals: var CSSComputedValues) =
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    vals[prop] = getDefault(prop)
+  for elem in elems:
+    elem.cssvalues.inheritProperties(elem.parentElement.cssvalues)

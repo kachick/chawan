@@ -1,5 +1,5 @@
 import types/enums
-import css/style
+import css/values
 import html/dom
 
 type

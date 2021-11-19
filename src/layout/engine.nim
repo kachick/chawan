@@ -3,7 +3,7 @@ import unicode
 import layout/box
 import types/enums
 import html/dom
-import css/style
+import css/values
 import utils/twtstr
 
 func newContext*(box: CSSBox): Context =
