@@ -72,11 +72,29 @@ func isControlChar*(r: Rune): bool =
   of Rune(0x7F): return true
   else: return false
 
+func genControlCharMap*(): string =
+  for c in low(char)..high(char):
+    if c == '?':
+      result &= char(127)
+    else:
+      result &= char(bitand(int(c), 0x1f))
+
+const controlCharMap = genControlCharMap()
+
 func getControlChar*(c: char): char =
-  return char(bitand(int(c), 0x1f))
+  return controlCharMap[int(c)]
+
+func genControlLetterMap*(): string =
+  for c in low(char)..high(char):
+    if c == char(127):
+      result &= '?'
+    else:
+      result &= char(bitor(int(c), 0x40))
+
+const controlLetterMap = genControlLetterMap()
 
 func getControlLetter*(c: char): char =
-  return char(bitor(int(c), 0x40))
+  return controlLetterMap[int(c)]
 
 func findChar*(str: string, c: char, start: int = 0): int =
   var i = start
