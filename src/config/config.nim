@@ -14,7 +14,6 @@ type
     ACTION_CURSOR_UP, ACTION_CURSOR_DOWN, ACTION_CURSOR_LEFT, ACTION_CURSOR_RIGHT,
     ACTION_CURSOR_LINEEND, ACTION_CURSOR_LINEBEGIN,
     ACTION_CURSOR_NEXT_WORD, ACTION_CURSOR_PREV_WORD,
-    ACTION_CURSOR_NEXT_NODE, ACTION_CURSOR_PREV_NODE,
     ACTION_CURSOR_NEXT_LINK, ACTION_CURSOR_PREV_LINK,
     ACTION_PAGE_DOWN, ACTION_PAGE_UP, ACTION_PAGE_LEFT, ACTION_PAGE_RIGHT,
     ACTION_HALF_PAGE_DOWN, ACTION_HALF_PAGE_UP,
@@ -31,7 +30,7 @@ type
     ACTION_LINED_BACK, ACTION_LINED_FORWARD,
     ACTION_LINED_PREV_WORD, ACTION_LINED_NEXT_WORD,
     ACTION_LINED_BEGIN, ACTION_LINED_END,
-    ACTION_LINED_COMPOSE_TOGGLE, ACTION_LINED_ESC
+    ACTION_LINED_ESC
 
   ActionMap = Table[string, TwtAction]
   StaticConfig = object
@@ -148,9 +147,15 @@ proc parseConfigLine[T](line: string, config: var T) =
 
   if cmd.len == 3:
     if cmd[0] == "nmap":
-      config.nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+      if cmd[2] == "NULL":
+        config.nmap[getRealKey(cmd[1])] = NO_ACTION
+      else:
+        config.nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
     elif cmd[0] == "lemap":
-      config.lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
+      if cmd[2] == "NULL":
+        config.lemap[getRealKey(cmd[1])] = NO_ACTION
+      else:
+        config.lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_LINED_" & cmd[2])
   elif cmd.len == 2:
     if cmd[0] == "stylesheet":
       config.stylesheet = cmd[1]

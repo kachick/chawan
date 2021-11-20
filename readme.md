@@ -61,8 +61,4 @@ Planned features (roughly in order of importance):
 
 ## How do I configure stuff?
 
-Currently only keybindings can be configured. See the res/config file for the
-default (built-in) configuration.
-
-twt will look for a config file in the ~/.config/twt/ directory, so you can
-just copy the one from res/ there and customize that to your liking.
+See [doc/config.md](doc/config.md).

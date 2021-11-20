@@ -26,6 +26,3 @@ proc getTermAttributes*(): TermAttributes =
     result.height = 24
   result.ppc = 9
   result.ppl = 18
-
-proc termGoto*(x: int, y: int) =
-  setCursorPos(stdout, x, y)

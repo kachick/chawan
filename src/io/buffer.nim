@@ -56,25 +56,26 @@ func newBuffer*(attrs: TermAttributes): Buffer =
   result.prevdisplay = newFixedGrid(result.width, result.height)
   result.statusmsg = newFixedGrid(result.width)
 
-func generateFullOutput*(buffer: Buffer): seq[string] =
+func generateFullOutput*(buffer: Buffer): string =
   var x = 0
-  var y = 0
-  var s = ""
+  var w = 0
   var formatting = newFormatting()
 
   for cell in buffer.display:
     if x >= buffer.width:
-      inc y
-      result.add(s)
+      if w < buffer.width:
+        result &= EL()
+      result &= '\n'
       x = 0
-      s = ""
+      w = 0
 
-    s &= formatting.processFormatting(cell.formatting)
+    result &= formatting.processFormatting(cell.formatting)
 
-    s &= $cell.runes
+    result &= $cell.runes
+    w += cell.runes.width()
     inc x
 
-  result.add(s)
+  result &= EL()
 
 # generate a sequence of instructions to replace the previous frame with the
 # current one. ideally should be used when small changes are made (e.g. hover
@@ -725,7 +726,7 @@ proc reshapeBuffer*(buffer: Buffer) =
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
   let y = buffer.cursory - buffer.fromy
-  termGoto(x, y)
+  print(HVP(y + 1, x + 1))
 
 proc clearStatusMessage(buffer: Buffer) =
   buffer.statusmsg = newFixedGrid(buffer.width)
@@ -753,15 +754,11 @@ proc displayBufferSwapOutput(buffer: Buffer) =
   print(buffer.generateSwapOutput())
 
 proc displayBuffer(buffer: Buffer) =
-  termGoto(0, 0)
-  let full = buffer.generateFullOutput()
-  for line in full:
-    print(line)
-    print(EL())
-    print('\n')
+  print(HVP(1, 1))
+  print(buffer.generateFullOutput())
 
 proc displayStatusMessage(buffer: Buffer) =
-  termGoto(0, buffer.height)
+  print(HVP(buffer.height + 1, 1))
   print(SGR())
   print(buffer.generateStatusMessage())
   print(EL())
@@ -786,7 +783,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     case action
     of ACTION_QUIT:
       eraseScreen()
-      setCursorPos(0, 0)
+      print(HVP(0, 0))
       return false
     of ACTION_CURSOR_LEFT: buffer.cursorLeft()
     of ACTION_CURSOR_DOWN: buffer.cursorDown()
@@ -819,7 +816,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_CHANGE_LOCATION:
       var url = $buffer.location
 
-      termGoto(0, buffer.height)
+      print(HVP(buffer.height + 1, 1))
       print(EL())
       let status = readLine("URL: ", url, buffer.width)
       if status:
@@ -850,7 +847,6 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       buffer.displayBuffer()
       buffer.redraw = false
 
-    #TODO
     buffer.updateHover()
     if buffer.reshape:
       buffer.reshapeBuffer()
