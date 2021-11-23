@@ -7,22 +7,26 @@ import css/parser
 type
   SelectorType* = enum
     TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR,
-    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, FUNC_SELECTOR
+    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, FUNC_SELECTOR,
+    COMBINATOR_SELECTOR
 
   QueryMode* = enum
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
-    QUERY_PSEUDO, QUERY_PSELEM
+    QUERY_PSEUDO, QUERY_PSELEM, QUERY_COMBINATOR
 
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER
 
+  CombinatorType* = enum
+    DESCENDANT_COMBINATOR
+
   SelectorParser = object
     selectors: seq[SelectorList]
     query: QueryMode
-    negate: bool
+    combinator: Selector
 
   #TODO combinators
-  Selector* = object
+  Selector* = ref object of RootObj
     case t*: SelectorType
     of TYPE_SELECTOR:
       tag*: TagType
@@ -42,7 +46,10 @@ type
       elem*: string
     of FUNC_SELECTOR:
       name*: string
-      selectors*: SelectorList
+      fsels*: SelectorList
+    of COMBINATOR_SELECTOR:
+      ct*: CombinatorType
+      csels*: seq[SelectorList]
 
   SelectorList* = ref object
     sels*: seq[Selector]
@@ -53,6 +60,8 @@ proc add*(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sel
 proc setLen*(sellist: SelectorList, i: int) = sellist.sels.setLen(i)
 proc `[]`*(sellist: SelectorList, i: int): Selector = sellist.sels[i]
 proc len*(sellist: SelectorList): int = sellist.sels.len
+
+func getSpecificity*(sels: SelectorList): int
 
 func getSpecificity(sel: Selector): int =
   case sel.t
@@ -66,17 +75,21 @@ func getSpecificity(sel: Selector): int =
     case sel.name
     of "is":
       var best = 0
-      for child in sel.selectors.sels:
+      for child in sel.fsels.sels:
         let s = getSpecificity(child)
         if s > best:
           best = s
       result += best
     of "not":
-      for child in sel.selectors.sels:
-        result += getSpecificity(child)
+      result += getSpecificity(sel.fsels)
     else: discard
   of UNIVERSAL_SELECTOR:
     discard
+  of COMBINATOR_SELECTOR:
+    case sel.ct
+    of DESCENDANT_COMBINATOR:
+      for child in sel.csels:
+        result += getSpecificity(child)
 
 func getSpecificity*(sels: SelectorList): int =
   for sel in sels.sels:
@@ -110,28 +123,54 @@ func optimizeSelectorList*(selectors: SelectorList): SelectorList =
   else:
     result.add(selectors[0])
 
+proc addSelector(state: var SelectorParser, sel: Selector) =
+  if state.combinator != nil:
+    state.combinator.csels[^1].add(sel)
+  else:
+    state.selectors[^1].add(sel)
+
+proc addSelectorList(state: var SelectorParser) =
+  if state.combinator != nil:
+    state.selectors[^1].add(state.combinator)
+    state.combinator = nil
+  state.selectors.add(SelectorList())
+
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
+  if state.query == QUERY_COMBINATOR:
+    if csstoken.tokenType in {CSS_IDENT_TOKEN, CSS_HASH_TOKEN,
+                              CSS_COLON_TOKEN}:
+      if state.combinator == nil:
+        state.combinator = Selector(t: COMBINATOR_SELECTOR, ct: DESCENDANT_COMBINATOR)
+      state.combinator.csels.add(state.selectors[^1])
+      if state.combinator.csels[^1].len > 0:
+        state.combinator.csels.add(SelectorList())
+      state.selectors[^1] = SelectorList()
+      state.query = QUERY_TYPE
+
   case csstoken.tokenType
   of CSS_IDENT_TOKEN:
     case state.query
     of QUERY_CLASS:
-      state.selectors[^1].add(Selector(t: CLASS_SELECTOR, class: $csstoken.value))
+      state.addSelector(Selector(t: CLASS_SELECTOR, class: $csstoken.value))
     of QUERY_TYPE:
-      state.selectors[^1].add(Selector(t: TYPE_SELECTOR, tag: tagType($csstoken.value)))
+      state.addSelector(Selector(t: TYPE_SELECTOR, tag: tagType($csstoken.value)))
     of QUERY_PSEUDO:
-      state.selectors[^1].add(Selector(t: PSEUDO_SELECTOR, pseudo: $csstoken.value))
+      state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: $csstoken.value))
     of QUERY_PSELEM:
-      state.selectors[^1].add(Selector(t: PSELEM_SELECTOR, elem: $csstoken.value))
+      state.addSelector(Selector(t: PSELEM_SELECTOR, elem: $csstoken.value))
     else: discard
     state.query = QUERY_TYPE
   of CSS_DELIM_TOKEN:
     if csstoken.rvalue == Rune('.'):
       state.query = QUERY_CLASS
   of CSS_HASH_TOKEN:
-    state.selectors[^1].add(Selector(t: ID_SELECTOR, id: $csstoken.value))
+    state.addSelector(Selector(t: ID_SELECTOR, id: $csstoken.value))
   of CSS_COMMA_TOKEN:
     if state.selectors[^1].len > 0:
-      state.selectors.add(SelectorList())
+      state.addSelectorList()
+  of CSS_WHITESPACE_TOKEN:
+    if state.selectors[^1].len > 0 or state.combinator != nil:
+      state.query = QUERY_COMBINATOR
   of CSS_COLON_TOKEN:
     if state.query == QUERY_PSEUDO:
       state.query = QUERY_PSELEM
@@ -151,7 +190,7 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
           case state.query
           of QUERY_ATTR:
             state.query = QUERY_DELIM
-            state.selectors[^1].add(Selector(t: ATTR_SELECTOR, attr: $csstoken.value, rel: ' '))
+            state.addSelector(Selector(t: ATTR_SELECTOR, attr: $csstoken.value, rel: ' '))
           of QUERY_VALUE:
             state.selectors[^1].sels[^1].value = $csstoken.value
             break
@@ -183,26 +222,29 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
     state.query = QUERY_TYPE
   else: return
   var fun = Selector(t: FUNC_SELECTOR, name: $cssfunction.name)
-  fun.selectors = SelectorList(parent: state.selectors[^1])
-  state.selectors[^1].add(fun)
-  state.selectors[^1] = fun.selectors
+  fun.fsels = SelectorList(parent: state.selectors[^1])
+  state.addSelector(fun)
+  state.selectors[^1] = fun.fsels
   for cval in cssfunction.value:
     if cval of CSSToken:
-      state.parseSelectorToken((CSSToken)cval)
+      state.parseSelectorToken(CSSToken(cval))
     elif cval of CSSSimpleBlock:
-      state.parseSelectorSimpleBlock((CSSSimpleBlock)cval)
+      state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
-      state.parseSelectorFunction((CSSFunction)cval)
-  state.selectors[^1] = fun.selectors.parent
+      state.parseSelectorFunction(CSSFunction(cval))
+  state.selectors[^1] = fun.fsels.parent
 
 func parseSelectors*(cvals: seq[CSSComponentValue]): seq[SelectorList] =
   var state = SelectorParser()
-  state.selectors.add(SelectorList())
+  state.addSelectorList()
   for cval in cvals:
     if cval of CSSToken:
-      state.parseSelectorToken((CSSToken)cval)
+      state.parseSelectorToken(CSSToken(cval))
     elif cval of CSSSimpleBlock:
-      state.parseSelectorSimpleBlock((CSSSimpleBlock)cval)
+      state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
-      state.parseSelectorFunction((CSSFunction)cval)
+      state.parseSelectorFunction(CSSFunction(cval))
+  if state.combinator != nil:
+    state.selectors[^1].add(state.combinator)
+    state.combinator = nil
   return state.selectors

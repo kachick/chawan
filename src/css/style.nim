@@ -50,6 +50,8 @@ func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
   of "before": return selectres(true, PSEUDO_AFTER)
   else: return selectres(false)
 
+func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult
+
 func selectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.t
   of TYPE_SELECTOR:
@@ -68,6 +70,29 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
     return selectres(true)
   of FUNC_SELECTOR:
     return selectres(false)
+  of COMBINATOR_SELECTOR:
+    case sel.ct
+    of DESCENDANT_COMBINATOR:
+      #combinator without at least two members makes no sense
+      assert sel.csels.len > 1
+      if elem.selectorsMatch(sel.csels[^1]).success:
+        var i = sel.csels.len - 2
+        var e = elem.parentElement
+        var pseudo = PSEUDO_NONE
+        while e != nil and e != elem.ownerDocument.root and i >= 0:
+          let res = e.selectorsMatch(sel.csels[i])
+
+          if res.pseudo != PSEUDO_NONE:
+            if pseudo != PSEUDO_NONE:
+              return selectres(false)
+            pseudo = res.pseudo
+
+          if res.success:
+            dec i
+          e = e.parentElement
+        return selectres(i == -1, pseudo)
+      else:
+        return selectres(false)
 
 func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult =
   for sel in selectors.sels:
@@ -99,10 +124,13 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
   of FUNC_SELECTOR:
     case sel.name
     of "not":
-      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.selectors).psuccess)
+      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.fsels).psuccess)
     of "is", "where":
-      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.selectors).psuccess)
+      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.fsels).psuccess)
     return newSeq[Element]()
+  of COMBINATOR_SELECTOR:
+    #TODO
+    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
 
 func selectElems(document: Document, selectors: SelectorList): seq[Element] =
   assert(selectors.len > 0)
@@ -114,9 +142,9 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
     if sellist[i].t == FUNC_SELECTOR:
       case sellist[i].name
       of "not":
-        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].selectors).psuccess)
+        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].fsels).psuccess)
       of "is", "where":
-        result = result.filter((elem) => selectorsMatch(elem, sellist[i].selectors).psuccess)
+        result = result.filter((elem) => selectorsMatch(elem, sellist[i].fsels).psuccess)
       else: discard
     else:
       result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
@@ -147,6 +175,12 @@ type
   ApplyResult = object
     normal: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
     important: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
+
+proc parseStylesheet*(s: Stream): ParsedStylesheet =
+  for v in parseCSS(s).value:
+    let sels = parseSelectors(v.prelude)
+    if sels.len > 1 or sels[^1].len > 0:
+      result.add((sels: sels, oblock: v.oblock))
 
 func calcRules(elem: Element, rules: ParsedStylesheet):
     array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]] =
@@ -211,7 +245,7 @@ proc applyAuthorRules*(document: Document): ApplyResult =
   stack.add(document.body)
 
   if rules_head.len > 0:
-    let parsed = parseCSS(newStringStream(rules_head)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+    let parsed = newStringStream(rules_head).parseStylesheet()
     embedded_rules.add(parsed)
 
   while stack.len > 0:
@@ -224,7 +258,7 @@ proc applyAuthorRules*(document: Document): ApplyResult =
             rules_local &= Text(ct).data
 
     if rules_local.len > 0:
-      let parsed = parseCSS(newStringStream(rules_local)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+      let parsed = newStringStream(rules_local).parseStylesheet()
       embedded_rules.add(parsed)
 
     if not elem.cssapplied:

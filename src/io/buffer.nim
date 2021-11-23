@@ -3,13 +3,9 @@ import uri
 import strutils
 import unicode
 import streams
-import sequtils
-import sugar
 
 import types/enums
 import css/values
-import css/parser
-import css/selector
 import css/style
 import utils/twtstr
 import html/dom
@@ -682,7 +678,7 @@ proc renderPlainText*(buffer: Buffer, text: string) =
 
 
 const css = staticRead"res/default.css"
-let ua_stylesheet = parseCSS(newStringStream(css)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+let ua_stylesheet = newStringStream(css).parseStylesheet()
 
 #TODO refactor
 var ss_init = false
@@ -691,7 +687,7 @@ proc renderDocument*(buffer: Buffer) =
   buffer.clearText()
 
   if not ss_init:
-    user_stylesheet = parseCSS(newStringStream(gconfig.stylesheet)).value.map((x) => (sels: parseSelectors(x.prelude), oblock: x.oblock))
+    user_stylesheet = newStringStream(gconfig.stylesheet).parseStylesheet()
     ss_init = true
 
   buffer.document.applyStylesheets(ua_stylesheet, user_stylesheet)
