@@ -24,15 +24,17 @@ type
     of VALUE_FONT_STYLE:
       fontstyle*: CSSFontStyle
     of VALUE_DISPLAY:
-      display*: DisplayType
+      display*: CSSDisplay
     of VALUE_CONTENT:
       content*: seq[Rune]
     of VALUE_WHITESPACE:
-      whitespace*: WhitespaceType
+      whitespace*: CSSWhitespace
     of VALUE_INTEGER:
       integer*: int
     of VALUE_TEXT_DECORATION:
       textdecoration*: CSSTextDecoration
+    of VALUE_WORD_BREAK:
+      wordbreak*: CSSWordBreak
     of VALUE_NONE: discard
 
   CSSComputedValues* = array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
@@ -57,6 +59,7 @@ const PropertyNames = {
   "white-space": PROPERTY_WHITE_SPACE,
   "font-weight": PROPERTY_FONT_WEIGHT,
   "text-decoration": PROPERTY_TEXT_DECORATION,
+  "word-break": PROPERTY_WORD_BREAK,
 }.toTable()
 
 const ValueTypes = [
@@ -74,11 +77,12 @@ const ValueTypes = [
   PROPERTY_WHITE_SPACE: VALUE_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
   PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
+  PROPERTY_WORD_BREAK: VALUE_WORD_BREAK,
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
-  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION
+  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK
 }
 
 func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
@@ -246,6 +250,17 @@ func cssLength(d: CSSDeclaration): CSSLength =
 func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
 func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
 
+func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "inherit": return VALUE_INHERIT
+      of "initial": return VALUE_INITIAL
+      of "unset": return VALUE_UNSET
+      of "revert": return VALUE_REVERT
+  return VALUE_NOGLOBAL
+
 func cssString(d: CSSDeclaration): seq[Rune] =
   if isToken(d):
     let tok = getToken(d)
@@ -254,7 +269,7 @@ func cssString(d: CSSDeclaration): seq[Rune] =
       return tok.value
     else: return
 
-func cssDisplay(d: CSSDeclaration): DisplayType =
+func cssDisplay(d: CSSDeclaration): CSSDisplay =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -263,7 +278,14 @@ func cssDisplay(d: CSSDeclaration): DisplayType =
       of "inline": return DISPLAY_INLINE
       of "inline-block": return DISPLAY_INLINE_BLOCK
       of "list-item": return DISPLAY_LIST_ITEM
+      of "table": return DISPLAY_TABLE
+      of "table-row-group": return DISPLAY_TABLE_ROW_GROUP
+      of "table-header-group": return DISPLAY_TABLE_HEADER_GROUP
+      of "table-footer-group": return DISPLAY_TABLE_FOOTER_GROUP
+      of "table-column-group": return DISPLAY_TABLE_COLUMN_GROUP
+      of "table-row": return DISPLAY_TABLE_ROW
       of "table-column": return DISPLAY_TABLE_COLUMN
+      of "table-cell": return DISPLAY_TABLE_CELL
       of "none": return DISPLAY_NONE
       else: return DISPLAY_INLINE
   raise newException(CSSValueError, "Invalid display")
@@ -279,7 +301,7 @@ func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
       else: raise newException(CSSValueError, "Invalid font style")
   raise newException(CSSValueError, "Invalid font style")
 
-func cssWhiteSpace(d: CSSDeclaration): WhitespaceType =
+func cssWhiteSpace(d: CSSDeclaration): CSSWhitespace =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -319,16 +341,15 @@ func cssTextDecoration(d: CSSDeclaration): CSSTextDecoration =
       of "blink": return TEXT_DECORATION_BLINK
   raise newException(CSSValueError, "Invalid text decoration")
 
-func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
+func cssWordBreak(d: CSSDeclaration): CSSWordBreak =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case $tok.value
-      of "inherit": return VALUE_INHERIT
-      of "initial": return VALUE_INITIAL
-      of "unset": return VALUE_UNSET
-      of "revert": return VALUE_REVERT
-  return VALUE_NOGLOBAL
+      of "normal": return WORD_BREAK_NORMAL
+      of "break-all": return WORD_BREAK_BREAK_ALL
+      of "keep-all": return WORD_BREAK_KEEP_ALL
+  raise newException(CSSValueError, "Invalid text decoration")
 
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   let name = $d.name
@@ -349,6 +370,7 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
         result.integer = cssFontWeight(d)
       else: discard #???
     of VALUE_TEXT_DECORATION: result.textdecoration = cssTextDecoration(d)
+    of VALUE_WORD_BREAK: result.wordbreak = cssWordBreak(d)
     of VALUE_NONE: discard
   except CSSValueError:
     result.globalValue = VALUE_UNSET
@@ -371,6 +393,8 @@ func calcDefault(t: CSSPropertyType): CSSComputedValue =
     nv = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
   of VALUE_DISPLAY:
     nv = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
+  of VALUE_WORD_BREAK:
+    nv = CSSComputedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
   else:
     nv = CSSComputedValue(t: t, v: v)
   return nv
@@ -418,6 +442,8 @@ func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSS
     return CSSComputedValue(t: prop.t, v: VALUE_INTEGER, integer: prop.integer)
   of VALUE_TEXT_DECORATION:
     return CSSComputedValue(t: prop.t, v: VALUE_TEXT_DECORATION, textdecoration: prop.textdecoration)
+  of VALUE_WORD_BREAK:
+    return CSSComputedValue(t: prop.t, v: VALUE_WORD_BREAK, wordbreak: prop.wordbreak)
   of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
 
 func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =

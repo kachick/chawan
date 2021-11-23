@@ -58,3 +58,6 @@ type
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox
     tag*: string
+
+  FormatContextType* = enum
+    CONTEXT_BLOCK, CONTEXT_INLINE

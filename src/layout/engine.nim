@@ -46,94 +46,181 @@ func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
   if result.context == nil:
     result.context = newContext(parent)
 
-#TODO there should be actual inline contexts to store these stuff
-proc setup(rowbox: var CSSRowBox, cssvalues: CSSComputedValues, nodes: seq[Node]) =
-  rowbox.color = cssvalues[PROPERTY_COLOR].color
-  rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
-  rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
-  rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
-  rowbox.nodes = nodes
+type InlineState = object
+  ibox: CSSInlineBox
+  rowi: int
+  rowbox: CSSRowBox
+  word: seq[Rune]
+  ww: int
+  skip: bool
 
-proc inlineWrap(ibox: var CSSInlineBox, rowi: var int, fromx: var int, rowbox: var CSSRowBox) =
-  ibox.content.add(rowbox)
-  inc rowi
-  fromx = ibox.x
-  ibox.context.whitespace = true
-  ibox.context.ws_initial = true
-  ibox.context.conty = false
-  rowbox = CSSRowBox(x: ibox.x, y: ibox.y + rowi)
-  rowbox.setup(ibox.cssvalues, ibox.bcontext.nodes)
+func fromx(state: InlineState): int = state.ibox.context.fromx
 
-#TODO statify
+func width(state: InlineState): int = state.rowbox.width
+
+proc newRowBox(state: var InlineState) =
+  state.rowbox = CSSRowBox()
+  state.rowbox.x = state.ibox.context.fromx
+  state.rowbox.y = state.ibox.context.fromy + state.rowi
+
+  let cssvalues = state.ibox.cssvalues
+  state.rowbox.color = cssvalues[PROPERTY_COLOR].color
+  state.rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
+  state.rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
+  state.rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
+  state.rowbox.nodes = state.ibox.bcontext.nodes
+
+proc inlineWrap(state: var InlineState) =
+  state.ibox.content.add(state.rowbox)
+  inc state.rowi
+  state.ibox.context.fromx = state.ibox.x
+  if state.word.len == 0:
+    state.ibox.context.whitespace = true
+    state.ibox.context.ws_initial = true
+    state.ibox.context.conty = false
+  else:
+    if state.word[^1] == Rune(' '):
+      state.ibox.context.whitespace = true
+      state.ibox.context.ws_initial = false
+    state.ibox.context.conty = true
+  state.newRowBox()
+
+proc addWord(state: var InlineState) =
+  state.rowbox.str &= $state.word
+  state.rowbox.width += state.ww
+  state.word.setLen(0)
+  state.ww = 0
+
+proc wrapNormal(state: var InlineState, r: Rune) =
+  if state.fromx + state.width + state.ww == state.ibox.width and r == Rune(' '):
+    state.addWord()
+  if state.word.len == 0:
+    if r == Rune(' '):
+      state.skip = true
+  elif state.word[0] == Rune(' '):
+    state.word = state.word.substr(1)
+    dec state.ww
+  state.inlineWrap()
+  if not state.skip and r == Rune(' '):
+    state.ibox.context.whitespace = true
+    state.ibox.context.ws_initial = false
+
+proc checkWrap(state: var InlineState, r: Rune) =
+  if state.ibox.cssvalues[PROPERTY_WHITESPACE].whitespace in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
+    return
+  case state.ibox.cssvalues[PROPERTY_WORD_BREAK].wordbreak
+  of WORD_BREAK_NORMAL:
+    if state.fromx + state.width > state.ibox.x and
+        state.fromx + state.width + state.ww + r.width() > state.ibox.width:
+      state.wrapNormal(r)
+  of WORD_BREAK_BREAK_ALL:
+    if state.fromx + state.width + state.ww + r.width() > state.ibox.width:
+      var pl: seq[Rune]
+      var i = 0
+      var w = 0
+      while i < state.word.len and
+          state.ibox.context.fromx + state.rowbox.width + w <
+            state.ibox.width:
+        pl &= state.word[i]
+        w += state.word[i].width()
+        inc i
+
+      if pl.len > 0:
+        state.rowbox.str &= $pl
+        state.rowbox.width += w
+        state.word = state.word.substr(pl.len)
+        state.ww = state.word.width()
+      if r == Rune(' '):
+        state.skip = true
+      state.inlineWrap()
+  of WORD_BREAK_KEEP_ALL:
+    if state.fromx + state.width > state.ibox.x and
+        state.fromx + state.width + state.ww + r.width() > state.ibox.width:
+      state.wrapNormal(r)
+
+proc preWrap(state: var InlineState) =
+  state.inlineWrap()
+  state.ibox.context.whitespace = false
+  state.ibox.context.ws_initial = true
+  state.skip = true
+
 proc processInlineBox(parent: CSSBox, str: string): CSSBox =
-  var ibox: CSSInlineBox
+  var state: InlineState
   var use_parent = false
   if parent of CSSInlineBox:
-    ibox = CSSInlineBox(parent)
+    state.ibox = CSSInlineBox(parent)
     use_parent = true
   else:
-    ibox = newInlineBox(parent, parent.cssvalues)
+    state.ibox = newInlineBox(parent, parent.cssvalues)
 
   if str.len == 0:
     return
 
   var i = 0
-  var rowi = 0
-  var fromx = ibox.context.fromx
-  var rowbox = CSSRowBox(x: fromx, y: ibox.context.fromy)
-  rowbox.setup(ibox.cssvalues, ibox.bcontext.nodes)
+  state.newRowBox()
+
   var r: Rune
   while i < str.len:
     var rw = 0
     case str[i]
     of ' ', '\n', '\t':
       rw = 1
+      r = Rune(str[i])
       inc i
-      let wsr = ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
-      if ibox.context.whitespace:
-        if ibox.context.ws_initial:
-          ibox.context.ws_initial = false
-          if not (wsr in {WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP}):
-            continue
-        else:
-          continue
-      case wsr
+      state.addWord()
+
+      case state.ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
       of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
-        r = Rune(' ')
-      of WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP:
-        if str[i - 1] == '\n':
-          inlineWrap(ibox, rowi, fromx, rowbox)
-          ibox.context.whitespace = false
-          ibox.context.ws_initial = true
-          continue
-        r = Rune(' ')
-      case wsr
-      of WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE_LINE:
-        ibox.context.whitespace = true
-      else:
-        ibox.context.whitespace = false
+        if state.ibox.context.whitespace:
+          if state.ibox.context.ws_initial:
+            state.ibox.context.ws_initial = false
+            state.skip = true
+          else:
+            state.skip = true
+        state.ibox.context.whitespace = true
+      of WHITESPACE_PRE_LINE:
+        if state.ibox.context.whitespace:
+          state.skip = true
+        state.ibox.context.ws_initial = false
+        if r == Rune('\n'):
+          state.preWrap()
+      of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
+        state.ibox.context.ws_initial = false
+        if r == Rune('\n'):
+          state.preWrap()
+      r = Rune(' ')
     else:
-      ibox.context.whitespace = false
+      state.ibox.context.whitespace = false
       fastRuneAt(str, i, r)
       rw = r.width()
-      if fromx + rowbox.width + r.width() > ibox.width:
-        inlineWrap(ibox, rowi, fromx, rowbox)
 
-    rowbox.width += rw
-    rowbox.str &= $r
-  if rowbox.str.len > 0:
-    ibox.content.add(rowbox)
-    ibox.context.fromx = fromx + rowbox.width
-    ibox.context.conty = true
+    #TODO a better line wrapping algorithm would be nice
+    if rw > 1 and state.ibox.cssvalues[PROPERTY_WORD_BREAK].wordbreak != WORD_BREAK_KEEP_ALL:
+      state.addWord()
 
-  ibox.height += rowi
-  #eprint "inc i", rowi, rowbox.runes
-  if rowi > 0 or rowbox.width > 0:
+    state.checkWrap(r)
+
+    if state.skip:
+      state.skip = false
+      continue
+
+    state.word &= r
+    state.ww += rw
+
+  state.addWord()
+
+  if state.rowbox.str.len > 0:
+    state.ibox.content.add(state.rowbox)
+    state.ibox.context.fromx += state.rowbox.width
+    state.ibox.context.conty = true
+
+  state.ibox.height += state.rowi
+  if state.rowi > 0 or state.rowbox.width > 0:
     parent.bcontext.marginy = 0
-  ibox.context.fromy += rowi
+  state.ibox.context.fromy += state.rowi
   if use_parent:
     return nil
-  return ibox
+  return state.ibox
 
 proc processElemBox(parent: CSSBox, elem: Element): CSSBox =
   case elem.cssvalues[PROPERTY_DISPLAY].display

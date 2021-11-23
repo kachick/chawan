@@ -189,7 +189,7 @@ func substr*(s: seq[Rune], i: int, j: int): seq[Rune] =
   return s[min(high(s), i)..min(high(s), j - 1)]
 
 func substr*(s: seq[Rune], i: int): seq[Rune] =
-  if i >= high(s) or s.len == 0:
+  if i > high(s) or s.len == 0:
     return @[]
   return s[min(high(s), i)..high(s)]
 
