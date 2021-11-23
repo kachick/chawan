@@ -32,6 +32,7 @@ type
 
   FixedCell* = object of Cell
     runes*: seq[Rune]
+    ow*: int
 
   FixedGrid* = seq[FixedCell]
 

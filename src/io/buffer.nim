@@ -65,13 +65,15 @@ func generateFullOutput*(buffer: Buffer): string =
       x = 0
       w = 0
 
-    result &= formatting.processFormatting(cell.formatting)
 
+    result &= formatting.processFormatting(cell.formatting)
     result &= $cell.runes
-    w += cell.runes.width()
+
+    w += cell.width()
     inc x
 
-  result &= EL()
+  if w < buffer.width:
+    result &= EL()
   result &= '\n'
 
 # generate a sequence of instructions to replace the previous frame with the
@@ -152,6 +154,10 @@ func currentCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
   return buffer.display[row + buffer.currentCellOrigin()]
 
+func cell(buffer: Buffer): FixedCell =
+  let row = (buffer.cursory - buffer.fromy) * buffer.width
+  return buffer.display[row + buffer.acursorx]
+
 func currentRune(buffer: Buffer): Rune =
   let cell = buffer.currentCell()
   if cell.runes.len == 0:
@@ -219,22 +225,31 @@ proc refreshDisplay*(buffer: Buffer) =
 
     let dls = y * buffer.width
     var k = 0
-    var n = 0
     var cf = line.findFormat(j)
     var nf = line.findNextFormat(j)
-    while w < buffer.fromx + buffer.width and i < line.str.len:
+    if w > buffer.fromx:
+      while k < w - buffer.fromx:
+        buffer.display[dls + k].runes.add(Rune(' '))
+        buffer.display[dls + k].ow = r.width()
+        inc k
+
+    while i < line.str.len:
       fastRuneAt(line.str, i, r)
       w += r.width()
+      if w > buffer.fromx + buffer.width:
+        buffer.display[dls + k].ow += r.width()
+        break
       if nf.pos != -1 and nf.pos <= j:
         cf = nf
         nf = line.findNextFormat(j)
-      if r.width() == 0 and k != 0:
-        inc n
-      buffer.display[dls + k - n].runes.add(r)
+      buffer.display[dls + k].runes.add(r)
       if cf.pos != -1:
-        buffer.display[dls + k - n].formatting = cf.formatting
-        buffer.display[dls + k - n].nodes = cf.nodes
-      k += r.width()
+        buffer.display[dls + k].formatting = cf.formatting
+        buffer.display[dls + k].nodes = cf.nodes
+      let tk = k + r.width()
+      while k < tk:
+        buffer.display[dls + k].ow += r.width()
+        inc k
       inc j
 
     inc y
@@ -285,16 +300,16 @@ proc cursorUp*(buffer: Buffer) =
       dec buffer.fromy
       buffer.redraw = true
 
+#TODO these don't exactly work as intended, I think
 proc cursorRight*(buffer: Buffer) =
-  let cellwidth = max(buffer.currentCell().width(), 1)
-  let cellorigin = buffer.fromx + buffer.currentCellOrigin()
+  let cellwidth = buffer.cell().ow
   let lw = buffer.currentLineWidth()
   if buffer.cursorx < lw - 1:
-    buffer.cursorx = min(lw - 1, cellorigin + cellwidth)
+    buffer.cursorx = min(lw - 1, buffer.cursorx + cellwidth)
     assert buffer.cursorx >= 0
     buffer.xend = buffer.cursorx
-    if buffer.cursorx - buffer.width >= buffer.fromx:
-      inc buffer.fromx
+    if buffer.cursorx - buffer.width + (cellwidth - 1) >= buffer.fromx:
+      buffer.fromx += cellwidth
       buffer.redraw = true
     if buffer.cursorx == buffer.fromx:
       inc buffer.cursorx
@@ -308,8 +323,8 @@ proc cursorLeft*(buffer: Buffer) =
     buffer.redraw = true
   elif buffer.cursorx > 0:
     buffer.cursorx = max(0, cellorigin - 1)
-    if buffer.fromx > buffer.cursorx:
-      buffer.fromx = buffer.cursorx
+    if buffer.fromx > buffer.cursorx - (buffer.cell().ow - 1):
+      buffer.fromx = buffer.cursorx - max(0, buffer.cell().ow - 1)
       buffer.redraw = true
 
   buffer.xend = buffer.cursorx
@@ -849,7 +864,9 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       buffer.reshapeBuffer()
       buffer.reshape = false
       buffer.refreshDisplay()
-      buffer.displayBufferSwapOutput()
+      #TODO fix double width
+      #buffer.displayBufferSwapOutput()
+      buffer.displayBuffer()
 
     if not nostatus:
       buffer.statusMsgForBuffer()
