@@ -71,26 +71,42 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
   of FUNC_SELECTOR:
     return selectres(false)
   of COMBINATOR_SELECTOR:
+    #combinator without at least two members makes no sense
+    assert sel.csels.len > 1
     case sel.ct
     of DESCENDANT_COMBINATOR:
-      #combinator without at least two members makes no sense
-      assert sel.csels.len > 1
-      if elem.selectorsMatch(sel.csels[^1]).success:
+      let match = elem.selectorsMatch(sel.csels[^1])
+      if match.success:
         var i = sel.csels.len - 2
         var e = elem.parentElement
-        var pseudo = PSEUDO_NONE
         while e != nil and e != elem.ownerDocument.root and i >= 0:
           let res = e.selectorsMatch(sel.csels[i])
 
           if res.pseudo != PSEUDO_NONE:
-            if pseudo != PSEUDO_NONE:
-              return selectres(false)
-            pseudo = res.pseudo
+            return selectres(false)
 
           if res.success:
             dec i
           e = e.parentElement
-        return selectres(i == -1, pseudo)
+        return selectres(i == -1, match.pseudo)
+      else:
+        return selectres(false)
+    of CHILD_COMBINATOR:
+      let match = elem.selectorsMatch(sel.csels[^1])
+      if match.success:
+        var i = sel.csels.len - 2
+        var e = elem.parentElement
+        while e != nil and e != elem.ownerDocument.root and i >= 0:
+          let res = e.selectorsMatch(sel.csels[i])
+
+          if res.pseudo != PSEUDO_NONE:
+            return selectres(false)
+
+          if not res.success:
+            return selectres(false)
+          dec i
+          e = e.parentElement
+        return selectres(i == -1, match.pseudo)
       else:
         return selectres(false)
 
@@ -129,7 +145,6 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
       return document.all_elements.filter((elem) => selectorsMatch(elem, sel.fsels).psuccess)
     return newSeq[Element]()
   of COMBINATOR_SELECTOR:
-    #TODO
     return document.all_elements.filter((elem) => selectorMatches(elem, sel))
 
 func selectElems(document: Document, selectors: SelectorList): seq[Element] =

@@ -12,13 +12,13 @@ type
 
   QueryMode* = enum
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
-    QUERY_PSEUDO, QUERY_PSELEM, QUERY_COMBINATOR
+    QUERY_PSEUDO, QUERY_PSELEM, QUERY_DESC_COMBINATOR, QUERY_CHILD_COMBINATOR
 
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER
 
   CombinatorType* = enum
-    DESCENDANT_COMBINATOR
+    DESCENDANT_COMBINATOR, CHILD_COMBINATOR
 
   SelectorParser = object
     selectors: seq[SelectorList]
@@ -86,10 +86,8 @@ func getSpecificity(sel: Selector): int =
   of UNIVERSAL_SELECTOR:
     discard
   of COMBINATOR_SELECTOR:
-    case sel.ct
-    of DESCENDANT_COMBINATOR:
-      for child in sel.csels:
-        result += getSpecificity(child)
+    for child in sel.csels:
+      result += getSpecificity(child)
 
 func getSpecificity*(sels: SelectorList): int =
   for sel in sels.sels:
@@ -135,17 +133,31 @@ proc addSelectorList(state: var SelectorParser) =
     state.combinator = nil
   state.selectors.add(SelectorList())
 
+proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csstoken: CSSToken) =
+  if csstoken.tokenType in {CSS_IDENT_TOKEN, CSS_HASH_TOKEN,
+                            CSS_COLON_TOKEN}:
+    if state.combinator != nil and state.combinator.ct != ct:
+      let nc = Selector(t: COMBINATOR_SELECTOR, ct: ct)
+      nc.csels.add(SelectorList())
+      nc.csels[^1].add(state.combinator)
+      state.combinator = nc
+
+    if state.combinator == nil:
+      state.combinator = Selector(t: COMBINATOR_SELECTOR, ct: ct)
+
+    state.combinator.csels.add(state.selectors[^1])
+    if state.combinator.csels[^1].len > 0:
+      state.combinator.csels.add(SelectorList())
+    state.selectors[^1] = SelectorList()
+    state.query = QUERY_TYPE
+
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
-  if state.query == QUERY_COMBINATOR:
-    if csstoken.tokenType in {CSS_IDENT_TOKEN, CSS_HASH_TOKEN,
-                              CSS_COLON_TOKEN}:
-      if state.combinator == nil:
-        state.combinator = Selector(t: COMBINATOR_SELECTOR, ct: DESCENDANT_COMBINATOR)
-      state.combinator.csels.add(state.selectors[^1])
-      if state.combinator.csels[^1].len > 0:
-        state.combinator.csels.add(SelectorList())
-      state.selectors[^1] = SelectorList()
-      state.query = QUERY_TYPE
+  if state.query == QUERY_DESC_COMBINATOR:
+    state.parseSelectorCombinator(DESCENDANT_COMBINATOR, csstoken)
+  elif state.query == QUERY_CHILD_COMBINATOR:
+    if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
+      return
+    state.parseSelectorCombinator(CHILD_COMBINATOR, csstoken)
 
   case csstoken.tokenType
   of CSS_IDENT_TOKEN:
@@ -163,6 +175,9 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
   of CSS_DELIM_TOKEN:
     if csstoken.rvalue == Rune('.'):
       state.query = QUERY_CLASS
+    elif csstoken.rvalue == Rune('>'):
+      if state.selectors[^1].len > 0 or state.combinator != nil:
+        state.query = QUERY_CHILD_COMBINATOR
   of CSS_HASH_TOKEN:
     state.addSelector(Selector(t: ID_SELECTOR, id: $csstoken.value))
   of CSS_COMMA_TOKEN:
@@ -170,7 +185,7 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
       state.addSelectorList()
   of CSS_WHITESPACE_TOKEN:
     if state.selectors[^1].len > 0 or state.combinator != nil:
-      state.query = QUERY_COMBINATOR
+      state.query = QUERY_DESC_COMBINATOR
   of CSS_COLON_TOKEN:
     if state.query == QUERY_PSEUDO:
       state.query = QUERY_PSELEM
