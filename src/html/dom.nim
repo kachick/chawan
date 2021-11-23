@@ -125,6 +125,22 @@ func lastElementChild*(node: Node): Element =
     return nil
   return node.children[^1]
 
+func previousElementSibling*(elem: Element): Element =
+  var e = elem.previousSibling
+  while e != nil:
+    if e.nodeType == ELEMENT_NODE:
+      return Element(e)
+    e = e.previousSibling
+  return nil
+
+func nextElementSibling*(elem: Element): Element =
+  var e = elem.nextSibling
+  while e != nil:
+    if e.nodeType == ELEMENT_NODE:
+      return Element(e)
+    e = e.nextSibling
+  return nil
+
 func `$`*(element: Element): string =
   return "Element of " & $element.tagType
 

@@ -73,11 +73,11 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
   of COMBINATOR_SELECTOR:
     #combinator without at least two members makes no sense
     assert sel.csels.len > 1
-    case sel.ct
-    of DESCENDANT_COMBINATOR:
-      let match = elem.selectorsMatch(sel.csels[^1])
-      if match.success:
-        var i = sel.csels.len - 2
+    let match = elem.selectorsMatch(sel.csels[^1])
+    if match.success:
+      var i = sel.csels.len - 2
+      case sel.ct
+      of DESCENDANT_COMBINATOR:
         var e = elem.parentElement
         while e != nil and e != elem.ownerDocument.root and i >= 0:
           let res = e.selectorsMatch(sel.csels[i])
@@ -88,13 +88,7 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
           if res.success:
             dec i
           e = e.parentElement
-        return selectres(i == -1, match.pseudo)
-      else:
-        return selectres(false)
-    of CHILD_COMBINATOR:
-      let match = elem.selectorsMatch(sel.csels[^1])
-      if match.success:
-        var i = sel.csels.len - 2
+      of CHILD_COMBINATOR:
         var e = elem.parentElement
         while e != nil and e != elem.ownerDocument.root and i >= 0:
           let res = e.selectorsMatch(sel.csels[i])
@@ -106,9 +100,33 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
             return selectres(false)
           dec i
           e = e.parentElement
-        return selectres(i == -1, match.pseudo)
-      else:
-        return selectres(false)
+      of NEXT_SIBLING_COMBINATOR:
+        var e = elem.previousElementSibling
+        while e != nil and i >= 0:
+          let res = e.selectorsMatch(sel.csels[i])
+
+          if res.pseudo != PSEUDO_NONE:
+            return selectres(false)
+
+          if not res.success:
+            eprint "fail", e.tagType
+            return selectres(false)
+          dec i
+          e = e.previousElementSibling
+      of SUBSEQ_SIBLING_COMBINATOR:
+        var e = elem.previousElementSibling
+        while e != nil and i >= 0:
+          let res = e.selectorsMatch(sel.csels[i])
+
+          if res.pseudo != PSEUDO_NONE:
+            return selectres(false)
+
+          if res.success:
+            dec i
+          e = e.previousElementSibling
+      return selectres(i == -1, match.pseudo)
+    else:
+      return selectres(false)
 
 func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult =
   for sel in selectors.sels:

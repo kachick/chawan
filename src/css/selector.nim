@@ -12,13 +12,15 @@ type
 
   QueryMode* = enum
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
-    QUERY_PSEUDO, QUERY_PSELEM, QUERY_DESC_COMBINATOR, QUERY_CHILD_COMBINATOR
+    QUERY_PSEUDO, QUERY_PSELEM, QUERY_DESC_COMBINATOR, QUERY_CHILD_COMBINATOR,
+    QUERY_NEXT_SIBLING_COMBINATOR, QUERY_SUBSEQ_SIBLING_COMBINATOR
 
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER
 
   CombinatorType* = enum
-    DESCENDANT_COMBINATOR, CHILD_COMBINATOR
+    DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
+    SUBSEQ_SIBLING_COMBINATOR
 
   SelectorParser = object
     selectors: seq[SelectorList]
@@ -152,12 +154,22 @@ proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csst
     state.query = QUERY_TYPE
 
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
-  if state.query == QUERY_DESC_COMBINATOR:
+  case state.query
+  of QUERY_DESC_COMBINATOR:
     state.parseSelectorCombinator(DESCENDANT_COMBINATOR, csstoken)
-  elif state.query == QUERY_CHILD_COMBINATOR:
+  of QUERY_CHILD_COMBINATOR:
     if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
       return
     state.parseSelectorCombinator(CHILD_COMBINATOR, csstoken)
+  of QUERY_NEXT_SIBLING_COMBINATOR:
+    if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
+      return
+    state.parseSelectorCombinator(NEXT_SIBLING_COMBINATOR, csstoken)
+  of QUERY_SUBSEQ_SIBLING_COMBINATOR:
+    if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
+      return
+    state.parseSelectorCombinator(SUBSEQ_SIBLING_COMBINATOR, csstoken)
+  else: discard
 
   case csstoken.tokenType
   of CSS_IDENT_TOKEN:
@@ -173,11 +185,19 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     else: discard
     state.query = QUERY_TYPE
   of CSS_DELIM_TOKEN:
-    if csstoken.rvalue == Rune('.'):
+    case csstoken.rvalue
+    of Rune('.'):
       state.query = QUERY_CLASS
-    elif csstoken.rvalue == Rune('>'):
+    of Rune('>'):
       if state.selectors[^1].len > 0 or state.combinator != nil:
         state.query = QUERY_CHILD_COMBINATOR
+    of Rune('+'):
+      if state.selectors[^1].len > 0 or state.combinator != nil:
+        state.query = QUERY_NEXT_SIBLING_COMBINATOR
+    of Rune('~'):
+      if state.selectors[^1].len > 0 or state.combinator != nil:
+        state.query = QUERY_SUBSEQ_SIBLING_COMBINATOR
+    else: discard
   of CSS_HASH_TOKEN:
     state.addSelector(Selector(t: ID_SELECTOR, id: $csstoken.value))
   of CSS_COMMA_TOKEN:

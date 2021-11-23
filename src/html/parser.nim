@@ -166,25 +166,25 @@ proc insertNode(parent: Node, node: Node) =
   parent.childNodes.add(node)
 
   if parent.childNodes.len > 1:
-    let prevSibling = parent.childNodes[^1]
+    let prevSibling = parent.childNodes[^2]
     prevSibling.nextSibling = node
     node.previousSibling = prevSibling
 
   node.parentNode = parent
   if parent.nodeType == ELEMENT_NODE:
-    node.parentElement = (Element)parent
+    node.parentElement = Element(parent)
 
   if parent.ownerDocument != nil:
     node.ownerDocument = parent.ownerDocument
   elif parent.nodeType == DOCUMENT_NODE:
-    node.ownerDocument = (Document)parent
+    node.ownerDocument = Document(parent)
 
   if node.nodeType == ELEMENT_NODE:
-    parent.children.add((Element)node)
+    parent.children.add(Element(node))
 
-    let element = ((Element)node)
+    let element = (Element(node))
     if element.ownerDocument != nil:
-      node.ownerDocument.all_elements.add((Element)node)
+      node.ownerDocument.all_elements.add(Element(node))
       element.ownerDocument.type_elements[element.tagType].add(element)
       if element.id != "":
         if not (element.id in element.ownerDocument.id_elements):
