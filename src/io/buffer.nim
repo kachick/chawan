@@ -72,6 +72,7 @@ func generateFullOutput*(buffer: Buffer): string =
     inc x
 
   result &= EL()
+  result &= '\n'
 
 # generate a sequence of instructions to replace the previous frame with the
 # current one. ideally should be used when small changes are made (e.g. hover

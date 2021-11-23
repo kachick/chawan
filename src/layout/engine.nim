@@ -214,6 +214,7 @@ proc alignBoxes*(document: Document, width: int, height: int): CSSBox =
   var rootbox = CSSBlockBox(x: 0, y: 0, width: width, height: 0)
   rootbox.context = newContext(rootbox)
   rootbox.bcontext = new(BlockContext)
+  rootbox.bcontext.nodes.add(document.root)
   for child in document.root.childNodes:
     CSSBox(rootbox).add(processNode(rootbox, child))
   return rootbox

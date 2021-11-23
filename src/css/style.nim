@@ -42,6 +42,7 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of "first-child": return elem.parentNode.firstElementChild == elem
   of "last-child": return elem.parentNode.lastElementChild == elem
   of "hover": return elem.hover
+  of "root": return elem == elem.ownerDocument.root
   else: return false
 
 func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
@@ -79,7 +80,7 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
       case sel.ct
       of DESCENDANT_COMBINATOR:
         var e = elem.parentElement
-        while e != nil and e != elem.ownerDocument.root and i >= 0:
+        while e != nil and i >= 0:
           let res = e.selectorsMatch(sel.csels[i])
 
           if res.pseudo != PSEUDO_NONE:
@@ -90,7 +91,7 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
           e = e.parentElement
       of CHILD_COMBINATOR:
         var e = elem.parentElement
-        while e != nil and e != elem.ownerDocument.root and i >= 0:
+        while e != nil and i >= 0:
           let res = e.selectorsMatch(sel.csels[i])
 
           if res.pseudo != PSEUDO_NONE:
@@ -232,9 +233,8 @@ func calcRules(elem: Element, rules: ParsedStylesheet):
 proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false): ApplyResult =
   var stack: seq[Element]
 
-  stack.add(document.head)
-  stack.add(document.body)
   document.root.cssvalues.rootProperties()
+  stack.add(document.root)
 
   while stack.len > 0:
     let elem = stack.pop()
@@ -275,7 +275,7 @@ proc applyAuthorRules*(document: Document): ApplyResult =
 
   stack.setLen(0)
 
-  stack.add(document.body)
+  stack.add(document.root)
 
   if rules_head.len > 0:
     let parsed = newStringStream(rules_head).parseStylesheet()
@@ -352,4 +352,5 @@ proc applyStylesheets*(document: Document, uass: ParsedStylesheet, userss: Parse
     rule.e.applyProperty(rule.d, rule.p)
 
   for elem in elems:
-    elem.cssvalues.inheritProperties(elem.parentElement.cssvalues)
+    if elem.parentElement != nil:
+      elem.cssvalues.inheritProperties(elem.parentElement.cssvalues)
