@@ -211,7 +211,7 @@ proc refreshDisplay*(buffer: Buffer) =
     var w = 0
     var i = 0
     var j = 0
-    while w < buffer.fromx and i < line.len:
+    while w < buffer.fromx and i < line.str.len:
       fastRuneAt(line.str, i, r)
       w += r.width()
       inc j
