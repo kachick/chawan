@@ -116,7 +116,7 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
       ibox.context.whitespace = false
       fastRuneAt(str, i, r)
       rw = r.width()
-      if rowbox.width + r.width() > ibox.width:
+      if fromx + rowbox.width + r.width() > ibox.width:
         inlineWrap(ibox, rowi, fromx, rowbox)
 
     rowbox.width += rw
