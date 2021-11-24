@@ -56,6 +56,7 @@ func generateFullOutput*(buffer: Buffer): string =
   var x = 0
   var w = 0
   var formatting = newFormatting()
+  result &= HVP(1, 1)
 
   for cell in buffer.display:
     if x >= buffer.width:
@@ -81,47 +82,67 @@ func generateFullOutput*(buffer: Buffer): string =
 # changes underlining)
 func generateSwapOutput*(buffer: Buffer): string =
   var formatting = newFormatting()
-
-  let max = buffer.width * buffer.height
   let curr = buffer.display
   let prev = buffer.prevdisplay
+  var i = 0
   var x = 0
   var y = 0
-  var cx = -1
-  var cy = -1
-  var i = 0
-  var text = ""
-  while i < max:
+  var line = ""
+  var lr = false
+  while i < curr.len:
     if x >= buffer.width:
+      if lr:
+        result &= HVP(y + 1, 1)
+        result &= EL()
+        result &= line
+        lr = false
       x = 0
       inc y
-
-    if curr[i] != prev[i]:
-      let currwidth = curr[i].runes.width()
-      let prevwidth = prev[i].runes.width()
-      if (curr[i].runes.len > 0 or currwidth < prevwidth) and (x != cx or y != cy):
-        if text.len > 0:
-          result &= text
-          text = ""
-        result &= HVP(y + 1, x + 1)
-        cx = x
-        cy = y
-
-      text &= formatting.processFormatting(curr[i].formatting)
-
-      text &= $curr[i].runes
-      if currwidth < prevwidth:
-        var j = 0
-        while j < prevwidth - currwidth:
-          text &= ' '
-          inc j
-      if text.len > 0:
-        inc cx
-
-    inc x
+      line = ""
+    lr = lr or (curr[i] != prev[i])
+    line &= formatting.processFormatting(curr[i].formatting)
+    line &= $curr[i].runes
     inc i
-  if text.len > 0:
-    result &= $text
+    inc x
+  
+  #TODO maybe fix this
+  #var x = 0
+  #var y = 0
+  #var cx = -1
+  #var cy = -1
+  #var i = 0
+  #var text = ""
+  #while i < max:
+  #  if x >= buffer.width:
+  #    x = 0
+  #    inc y
+
+  #  if curr[i] != prev[i]:
+  #    let currwidth = curr[i].runes.width()
+  #    let prevwidth = prev[i].runes.width()
+  #    if (curr[i].runes.len > 0 or currwidth < prevwidth) and (x != cx or y != cy):
+  #      if text.len > 0:
+  #        result &= text
+  #        text = ""
+  #      result &= HVP(y + 1, x + 1)
+  #      cx = x
+  #      cy = y
+
+  #    text &= formatting.processFormatting(curr[i].formatting)
+
+  #    text &= $curr[i].runes
+  #    if currwidth < prevwidth:
+  #      var j = 0
+  #      while j < prevwidth - currwidth:
+  #        text &= ' '
+  #        inc j
+  #    if text.len > 0:
+  #      inc cx
+
+  #  inc x
+  #  inc i
+  #if text.len > 0:
+  #  result &= $text
 
 func generateStatusMessage*(buffer: Buffer): string =
   for cell in buffer.statusmsg:
@@ -766,7 +787,6 @@ proc displayBufferSwapOutput(buffer: Buffer) =
   print(buffer.generateSwapOutput())
 
 proc displayBuffer(buffer: Buffer) =
-  print(HVP(1, 1))
   print(buffer.generateFullOutput())
 
 proc displayStatusMessage(buffer: Buffer) =
@@ -864,9 +884,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       buffer.reshapeBuffer()
       buffer.reshape = false
       buffer.refreshDisplay()
-      #TODO fix double width
-      #buffer.displayBufferSwapOutput()
-      buffer.displayBuffer()
+      buffer.displayBufferSwapOutput()
 
     if not nostatus:
       buffer.statusMsgForBuffer()
