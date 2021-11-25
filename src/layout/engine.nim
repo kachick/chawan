@@ -6,45 +6,57 @@ import html/dom
 import css/values
 import utils/twtstr
 
-func newContext*(box: CSSBox): Context =
+func newInlineContext*(box: CSSBox): InlineContext =
   new(result)
   result.fromx = box.x
   result.whitespace = true
   result.ws_initial = true
 
-func newBlockBox*(parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
+func newBlockContext(): BlockContext =
   new(result)
-  result.bcontext = parent.bcontext #TODO statify
+
+proc flushLines(box: CSSBox) =
+  if box.icontext.conty:
+    inc box.height
+    inc box.icontext.fromy
+    inc box.bcontext.fromy
+    box.icontext.conty = false
+  box.icontext.fromy += box.bcontext.margin_todo
+  box.bcontext.margin_done += box.bcontext.margin_todo
+  box.bcontext.margin_todo = 0
+
+func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
+  new(result)
   result.x = parent.x
-  if parent.context.conty:
-    inc parent.height
-    #eprint "CONTY N"
-    inc parent.context.fromy
-    parent.context.conty = false
-  result.y = parent.context.fromy
+  result.bcontext = newBlockContext()
+
+  parent.flushLines()
+
   let mtop = vals[PROPERTY_MARGIN_TOP].length.cells()
-  if mtop > parent.bcontext.marginy:
-    result.y += mtop - parent.bcontext.marginy
-    parent.bcontext.marginy = mtop
-    #eprint "M-TOP", mtop - parent.bcontext.marginy
+  if mtop > parent.bcontext.margin_done:
+    let diff = mtop - parent.bcontext.margin_done
+    parent.icontext.fromy += diff
+    parent.bcontext.margin_done += diff
+
+  result.y = parent.icontext.fromy
+
+  result.bcontext.margin_done = parent.bcontext.margin_done
 
   result.width = parent.width
-  result.context = newContext(parent)
-  result.context.fromy = result.y
+  result.icontext = newInlineContext(parent)
+  result.icontext.fromy = result.y
   result.cssvalues = vals
 
 func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
   assert parent != nil
   new(result)
   result.x = parent.x
-  result.y = parent.context.fromy
+  result.y = parent.icontext.fromy
 
   result.width = parent.width
-  result.context = parent.context
+  result.icontext = parent.icontext
   result.bcontext = parent.bcontext
   result.cssvalues = vals
-  if result.context == nil:
-    result.context = newContext(parent)
 
 type InlineState = object
   ibox: CSSInlineBox
@@ -53,36 +65,38 @@ type InlineState = object
   word: seq[Rune]
   ww: int
   skip: bool
+  nodes: seq[Node]
 
-func fromx(state: InlineState): int = state.ibox.context.fromx
-
+func fromx(state: InlineState): int = state.ibox.icontext.fromx
+func fromy(state: InlineState): int = state.ibox.icontext.fromy
 func width(state: InlineState): int = state.rowbox.width
 
 proc newRowBox(state: var InlineState) =
   state.rowbox = CSSRowBox()
-  state.rowbox.x = state.ibox.context.fromx
-  state.rowbox.y = state.ibox.context.fromy + state.rowi
+  state.rowbox.x = state.fromx
+  state.rowbox.y = state.fromy + state.rowi
 
   let cssvalues = state.ibox.cssvalues
   state.rowbox.color = cssvalues[PROPERTY_COLOR].color
   state.rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
   state.rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
   state.rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
-  state.rowbox.nodes = state.ibox.bcontext.nodes
+  state.rowbox.nodes = state.nodes
 
 proc inlineWrap(state: var InlineState) =
   state.ibox.content.add(state.rowbox)
   inc state.rowi
-  state.ibox.context.fromx = state.ibox.x
+  state.ibox.icontext.fromx = state.ibox.x
   if state.word.len == 0:
-    state.ibox.context.whitespace = true
-    state.ibox.context.ws_initial = true
-    state.ibox.context.conty = false
+    state.ibox.icontext.whitespace = true
+    state.ibox.icontext.ws_initial = true
+    state.ibox.icontext.conty = false
   else:
     if state.word[^1] == Rune(' '):
-      state.ibox.context.whitespace = true
-      state.ibox.context.ws_initial = false
-    state.ibox.context.conty = true
+      state.ibox.icontext.whitespace = true
+      state.ibox.icontext.ws_initial = false
+    state.ibox.icontext.conty = true
+  #eprint "wrap", state.rowbox.y, state.rowbox.str
   state.newRowBox()
 
 proc addWord(state: var InlineState) =
@@ -102,8 +116,8 @@ proc wrapNormal(state: var InlineState, r: Rune) =
     dec state.ww
   state.inlineWrap()
   if not state.skip and r == Rune(' '):
-    state.ibox.context.whitespace = true
-    state.ibox.context.ws_initial = false
+    state.ibox.icontext.whitespace = true
+    state.ibox.icontext.ws_initial = false
 
 proc checkWrap(state: var InlineState, r: Rune) =
   if state.ibox.cssvalues[PROPERTY_WHITESPACE].whitespace in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
@@ -119,7 +133,7 @@ proc checkWrap(state: var InlineState, r: Rune) =
       var i = 0
       var w = 0
       while i < state.word.len and
-          state.ibox.context.fromx + state.rowbox.width + w <
+          state.ibox.icontext.fromx + state.rowbox.width + w <
             state.ibox.width:
         pl &= state.word[i]
         w += state.word[i].width()
@@ -140,12 +154,18 @@ proc checkWrap(state: var InlineState, r: Rune) =
 
 proc preWrap(state: var InlineState) =
   state.inlineWrap()
-  state.ibox.context.whitespace = false
-  state.ibox.context.ws_initial = true
+  state.ibox.icontext.whitespace = false
+  state.ibox.icontext.ws_initial = true
   state.skip = true
 
-proc processInlineBox(parent: CSSBox, str: string): CSSBox =
+proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSSBox =
+  if str.len > 0:
+    parent.icontext.fromy += parent.bcontext.margin_todo
+    parent.bcontext.margin_done += parent.bcontext.margin_todo
+    parent.bcontext.margin_todo = 0
+
   var state: InlineState
+  state.nodes = lstate.nodes
   var use_parent = false
   if parent of CSSInlineBox:
     state.ibox = CSSInlineBox(parent)
@@ -171,26 +191,26 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
 
       case state.ibox.cssvalues[PROPERTY_WHITESPACE].whitespace
       of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
-        if state.ibox.context.whitespace:
-          if state.ibox.context.ws_initial:
-            state.ibox.context.ws_initial = false
+        if state.ibox.icontext.whitespace:
+          if state.ibox.icontext.ws_initial:
+            state.ibox.icontext.ws_initial = false
             state.skip = true
           else:
             state.skip = true
-        state.ibox.context.whitespace = true
+        state.ibox.icontext.whitespace = true
       of WHITESPACE_PRE_LINE:
-        if state.ibox.context.whitespace:
+        if state.ibox.icontext.whitespace:
           state.skip = true
-        state.ibox.context.ws_initial = false
+        state.ibox.icontext.ws_initial = false
         if r == Rune('\n'):
           state.preWrap()
       of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
-        state.ibox.context.ws_initial = false
+        state.ibox.icontext.ws_initial = false
         if r == Rune('\n'):
           state.preWrap()
       r = Rune(' ')
     else:
-      state.ibox.context.whitespace = false
+      state.ibox.icontext.whitespace = false
       fastRuneAt(str, i, r)
       rw = r.width()
 
@@ -208,100 +228,90 @@ proc processInlineBox(parent: CSSBox, str: string): CSSBox =
     state.ww += rw
 
   state.addWord()
+  #eprint "write", state.rowbox.y, state.rowbox.str
 
   if state.rowbox.str.len > 0:
     state.ibox.content.add(state.rowbox)
-    state.ibox.context.fromx += state.rowbox.width
-    state.ibox.context.conty = true
+    state.ibox.icontext.fromx += state.rowbox.width
+    state.ibox.icontext.conty = true
 
   state.ibox.height += state.rowi
   if state.rowi > 0 or state.rowbox.width > 0:
-    parent.bcontext.marginy = 0
-  state.ibox.context.fromy += state.rowi
+    state.ibox.bcontext.margin_todo = 0
+    state.ibox.bcontext.margin_done = 0
+  state.ibox.icontext.fromy += state.rowi
   if use_parent:
     return nil
   return state.ibox
 
-proc processElemBox(parent: CSSBox, elem: Element): CSSBox =
+proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+  if box == nil:
+    return
+  if box of CSSBlockBox:
+    parent.icontext.fromx = parent.x
+    parent.icontext.whitespace = true
+    parent.icontext.ws_initial = true
+
+    box.flushLines()
+
+    let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells()
+    parent.bcontext.margin_todo += mbot
+
+    parent.bcontext.margin_done = box.bcontext.margin_done
+    parent.bcontext.margin_todo = max(parent.bcontext.margin_todo - box.bcontext.margin_done, 0)
+
+    #eprint "END", CSSBlockBox(box).tag, box.icontext.fromy
+  parent.height += box.height
+  parent.icontext.fromy = box.icontext.fromy
+  parent.children.add(box)
+
+proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSBox =
+  if elem.tagType == TAG_BR:
+    if parent.icontext.conty:
+      #eprint "CONTY A"
+      inc parent.height
+      inc parent.icontext.fromy
+      parent.icontext.conty = false
+    else:
+      inc parent.icontext.fromy
+    parent.icontext.fromx = parent.x
   case elem.cssvalues[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
-    #eprint "START", elem.tagType, parent.context.fromy
-    result = newBlockBox(parent, elem.cssvalues)
-    CSSBlockBox(result).tag = $elem.tagType
+    #eprint "START", elem.tagType, parent.icontext.fromy
+    result = state.newBlockBox(parent, elem.cssvalues)
   of DISPLAY_INLINE:
+    #TODO anonymous block boxes
     result = newInlineBox(parent, elem.cssvalues)
   of DISPLAY_NONE:
     return nil
   else:
     return nil
 
-proc add(parent: var CSSBox, box: CSSBox) =
-  if box == nil:
-    return
-  if box of CSSBlockBox:
-    parent.context.fromx = 0
-    parent.context.whitespace = true
-    parent.context.ws_initial = true
-    if box.context.conty:
-      #eprint "CONTY A"
-      inc box.height
-      inc box.context.fromy
-      box.context.conty = false
-    let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells()
-    box.context.fromy += mbot
-    box.bcontext.marginy = mbot
-    #eprint "M-BOT", mbot
-    #eprint "END", CSSBlockBox(box).tag, box.context.fromy
-  parent.height += box.height
-  parent.context.fromy = box.context.fromy
-  parent.children.add(box)
+proc processNodes(state: var LayoutState, parent: CSSBox, node: Node)
 
-#proc processPseudoBox(parent: CSSBox, cssvalues: CSSComputedValues): CSSBox =
-#  case cssvalues[PROPERTY_DISPLAY].display
-#  of DISPLAY_BLOCK:
-#    result = newBlockBox(parent, cssvalues)
-#    result.add(processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)) 
-#  of DISPLAY_INLINE:
-#    result = processInlineBox(parent, $cssvalues[PROPERTY_CONTENT].content)
-#  of DISPLAY_NONE:
-#    return nil
-#  else:
-#    return nil
-
-proc processNode(parent: CSSBox, node: Node): CSSBox =
+proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
   case node.nodeType
   of ELEMENT_NODE:
-    let elem = Element(node)
-    parent.bcontext.nodes.add(node)
-
-    result = processElemBox(parent, elem)
+    result = state.processElemBox(parent, Element(node))
     if result == nil:
       return
-
-    #TODO pseudo
-    #if elem.cssvalues_before.isSome:
-    #  let bbox = processPseudoBox(parent, elem.cssvalues_before.get)
-    #  if bbox != nil:
-    #    result.add(bbox)
-
-    for child in elem.childNodes:
-      result.add(processNode(result, child))
-
-    #if elem.cssvalues_after.isSome:
-    #  let abox = processPseudoBox(parent, elem.cssvalues_after.get)
-    #  if abox != nil:
-    #    result.add(abox)
-    discard parent.bcontext.nodes.pop()
+    state.processNodes(result, node)
   of TEXT_NODE:
     let text = Text(node)
-    result = processInlineBox(parent, text.data)
+    result = state.processInlineBox(parent, text.data)
   else: discard
 
+proc processNodes(state: var LayoutState, parent: CSSBox, node: Node) =
+  state.nodes.add(node)
+  for c in node.childNodes:
+    state.add(parent, state.processNode(parent, c))
+  discard state.nodes.pop()
+
 proc alignBoxes*(document: Document, width: int, height: int): CSSBox =
+  var state: LayoutState
   var rootbox = CSSBlockBox(x: 0, y: 0, width: width, height: 0)
-  rootbox.context = newContext(rootbox)
-  rootbox.bcontext = new(BlockContext)
-  rootbox.bcontext.nodes.add(document.root)
-  for child in document.root.childNodes:
-    CSSBox(rootbox).add(processNode(rootbox, child))
+  rootbox.icontext = newInlineContext(rootbox)
+  rootbox.bcontext = newBlockContext()
+  state.nodes.add(document.root)
+  state.processNodes(rootbox, document.root)
   return rootbox

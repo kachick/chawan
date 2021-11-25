@@ -16,27 +16,24 @@ type
     width*: int
     height*: int
     children*: seq[CSSBox]
-    context*: Context
+    icontext*: InlineContext
     bcontext*: BlockContext
     cssvalues*: CSSComputedValues
 
-  Context* = ref object
-    context*: FormatContextType
+  #TODO move fromy
+  InlineContext* = ref object
     fromx*: int
     fromy*: int
-    marginx*: int
-    marginy*: int
     conty*: bool
     whitespace*: bool
     ws_initial*: bool
 
-  InlineContext* = object
-    cssvalues*: CSSComputedValues
-
   BlockContext* = ref object
-    context*: FormatContextType
-    marginx*: int
-    marginy*: int
+    fromy*: int
+    margin_done*: int
+    margin_todo*: int
+
+  LayoutState* = object
     nodes*: seq[Node]
 
   CSSRowBox* = object
@@ -57,7 +54,3 @@ type
 
   CSSBlockBox* = ref CSSBlockBoxObj
   CSSBlockBoxObj = object of CSSBox
-    tag*: string
-
-  FormatContextType* = enum
-    CONTEXT_BLOCK, CONTEXT_INLINE

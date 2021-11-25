@@ -1,5 +1,5 @@
 area, base, source, track, link, meta, param, wbr, head, style, script {
-	display: none;
+	display: none !important;
 }
 
 address, blockquote, center, del, dir, div, dl, fieldset, form, h1, h2, h3, h4,
@@ -7,8 +7,8 @@ h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, ul, body {
 	display: block;
 }
 
-a, abbr, b, bdo, button, cite, code, del, dfn, em, font, i, ins, iframe, kbd,
-label, map, object, q, samp, select, small, span, strong, sup {
+a, abbr, b, bdo, br, button, cite, code, del, dfn, em, font, i, ins, iframe,
+kbd, label, map, object, q, samp, select, small, span, strong, sup {
 	display: inline;
 }
 
@@ -34,6 +34,10 @@ tfoot {
 
 colgroup {
 	display: table-column-group;
+}
+
+input {
+	width: 20ch;
 }
 
 tr {
@@ -65,20 +69,20 @@ u, ins {
 }
 
 h1, h2, h3, h4, h5, h6 {
-	margin-top: 1em;
-	margin-bottom: 1em;
+	margin-top: 1ch;
+	margin-bottom: 1ch;
 	font-weight: bold;
 }
 
 pre {
-	margin-top: 1em;
-	margin-bottom: 1em;
+	margin-top: 1ch;
+	margin-bottom: 1ch;
 	white-space: pre;
 }
 
 p {
-	margin-top: 1em;
-	margin-bottom: 1em;
+	margin-top: 1ch;
+	margin-bottom: 1ch;
 }
 
 a {

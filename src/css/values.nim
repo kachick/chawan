@@ -107,6 +107,8 @@ func cells*(l: CSSLength): int =
   case l.unit
   of UNIT_EM:
     return int(l.num)
+  of UNIT_CH:
+    return int(l.num)
   else:
     #TODO
     return int(l.num / 8)
