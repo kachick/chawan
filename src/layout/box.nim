@@ -32,6 +32,8 @@ type
     fromy*: int
     margin_done*: int
     margin_todo*: int
+    has_blocks*: bool
+    anon_block*: CSSBlockBox
 
   LayoutState* = object
     nodes*: seq[Node]

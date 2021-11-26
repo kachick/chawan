@@ -265,10 +265,24 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   parent.icontext.fromy = box.icontext.fromy
   parent.children.add(box)
 
+func isBlock(node: Node): bool =
+  if node.nodeType != ELEMENT_NODE:
+    return false
+  let elem = Element(node)
+  return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_BLOCK
+
+func isInline(node: Node): bool =
+  if node.nodeType == TEXT_NODE:
+    return true
+  if node.nodeType == ELEMENT_NODE:
+    let elem = Element(node)
+    return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_INLINE or
+            elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_INLINE_BLOCK
+  return false
+
 proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSBox =
   if elem.tagType == TAG_BR:
     if parent.icontext.conty:
-      #eprint "CONTY A"
       inc parent.height
       inc parent.icontext.fromy
       parent.icontext.conty = false
@@ -279,8 +293,8 @@ proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSB
   of DISPLAY_BLOCK:
     #eprint "START", elem.tagType, parent.icontext.fromy
     result = state.newBlockBox(parent, elem.cssvalues)
+    #CSSBlockBox(result).tag = $elem.tagType
   of DISPLAY_INLINE:
-    #TODO anonymous block boxes
     result = newInlineBox(parent, elem.cssvalues)
   of DISPLAY_NONE:
     return nil
@@ -301,10 +315,35 @@ proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
     result = state.processInlineBox(parent, text.data)
   else: discard
 
+template processAnonBlock(state: var LayoutState, parent: CSSBox, c: Node) =
+  if parent.bcontext.has_blocks:
+    if c.isInline():
+      if parent.bcontext.anon_block == nil:
+        var cssvals: CSSComputedValues
+        cssvals.inheritProperties(parent.cssvalues)
+        parent.bcontext.anon_block = state.newBlockBox(parent, cssvals)
+      state.add(parent.bcontext.anon_block, state.processNode(parent.bcontext.anon_block, c))
+      continue
+    elif parent.bcontext.anon_block != nil:
+      state.add(parent, parent.bcontext.anon_block)
+      parent.bcontext.anon_block = nil
+
 proc processNodes(state: var LayoutState, parent: CSSBox, node: Node) =
   state.nodes.add(node)
+
   for c in node.childNodes:
-    state.add(parent, state.processNode(parent, c))
+    if c.isBlock():
+      parent.bcontext.has_blocks = true
+
+  for c in node.childNodes:
+    state.processAnonBlock(parent, c)
+    let box = state.processNode(parent, c)
+    state.add(parent, box)
+
+  if parent.bcontext.anon_block != nil:
+    state.add(parent, parent.bcontext.anon_block)
+    parent.bcontext.anon_block = nil
+
   discard state.nodes.pop()
 
 proc alignBoxes*(document: Document, width: int, height: int): CSSBox =
