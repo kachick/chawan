@@ -104,6 +104,11 @@ func generateSwapOutput*(buffer: Buffer): string =
     line &= $curr[i].runes
     inc i
     inc x
+  if lr:
+    result &= HVP(y + 1, 1)
+    result &= EL()
+    result &= line
+    lr = false
   
   #TODO maybe fix this
   #var x = 0
