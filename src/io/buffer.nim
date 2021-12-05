@@ -350,7 +350,7 @@ proc cursorLeft*(buffer: Buffer) =
   elif buffer.cursorx > 0:
     buffer.cursorx = max(0, cellorigin - 1)
     if buffer.fromx > buffer.cursorx - (buffer.cell().ow - 1):
-      buffer.fromx = buffer.cursorx - max(0, buffer.cell().ow - 1)
+      buffer.fromx = max(buffer.cursorx - max(0, buffer.cell().ow - 1), 0)
       buffer.redraw = true
 
   buffer.xend = buffer.cursorx
