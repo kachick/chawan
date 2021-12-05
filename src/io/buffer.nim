@@ -719,7 +719,7 @@ proc renderPlainText*(buffer: Buffer, text: string) =
   buffer.updateCursor()
 
 
-const css = staticRead"res/default.css"
+const css = staticRead"res/ua.css"
 let ua_stylesheet = newStringStream(css).parseStylesheet()
 
 #TODO refactor

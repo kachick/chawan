@@ -18,13 +18,11 @@ I've found other terminal web browsers insufficient for my needs, so I thought
 it'd be a fun excercise to write one by myself, for myself.
 
 The end result will of course not support nearly as many websites as Firefox or
-Chromium (so forget PWAs I guess), but I'd like it to be at least somewhat more
-functional on the "modern web" than w3m or lynx.
+Chromium, but I'd like it to be at least somewhat more functional on the
+"modern web" than w3m or lynx.
 
-While the original idea was to implement something similar to w3m's rendering
-with JS and minimal CSS support, I've got a bit carried away with my CSS parser
-so the new plan is to mostly implement basic CSS stuff and then JS with the
-most important APIs. Plus some other things.
+The plan is to mostly implement basic CSS stuff and then JS with the most
+important APIs. Plus some other things.
 
 ## So what can this do?
 

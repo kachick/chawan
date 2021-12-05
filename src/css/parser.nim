@@ -1,6 +1,3 @@
-# CSS tokenizer and parser. It kinda works, though certain less specific
-# details of the specification might have been implemented incorrectly.
-
 import unicode
 import streams
 import math
@@ -72,49 +69,6 @@ type
 
 func `==`*(a: CSSParsedItem, b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).tokenType == b
-
-func toNumber(s: seq[Rune]): float64 =
-  var sign = 1
-  var t = 1
-  var d = 0
-  var integer: float64 = 0
-  var f: float64 = 0
-  var e: float64 = 0
-
-  var i = 0
-  if i < s.len and s[i] == Rune('-'):
-    sign = -1
-    inc i
-  elif i < s.len and s[i] == Rune('+'):
-    inc i
-
-  while i < s.len and isDigitAscii(s[i]):
-    integer *= 10
-    integer += float64(decValue(s[i]))
-    inc i
-
-  if i < s.len and s[i] == Rune('.'):
-    inc i
-    while i < s.len and isDigitAscii(s[i]):
-      f *= 10
-      f += float64(decValue(s[i]))
-      inc i
-      inc d
-
-  if i < s.len and (s[i] == Rune('e') or s[i] == Rune('E')):
-    inc i
-    if i < s.len and s[i] == Rune('-'):
-      t = -1
-      inc i
-    elif i < s.len and s[i] == Rune('+'):
-      inc i
-
-    while i < s.len and isDigitAscii(s[i]):
-      e *= 10
-      e += float64(decValue(s[i]))
-      inc i
-
-  return float64(sign) * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
 
 func isNameStartCodePoint*(r: Rune): bool =
   return not isAscii(r) or r == Rune('_') or isAlphaAscii(r)
@@ -273,7 +227,7 @@ proc consumeNumber(state: var CSSTokenizerState): tuple[t: tflagb, val: float64]
         while state.has() and isDigitAscii(state.curr()):
           repr &= state.consume()
 
-  let val = toNumber(repr)
+  let val = parseFloat64($repr)
   return (t, val)
 
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =

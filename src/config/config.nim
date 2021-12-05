@@ -1,7 +1,9 @@
 import tables
 import os
 import strutils
+import streams
 
+import config/toml
 import utils/twtstr
 import utils/radixtree
 
@@ -33,18 +35,10 @@ type
     ACTION_LINED_ESC
 
   ActionMap = Table[string, TwtAction]
-  StaticConfig = object
-    nmap: ActionMap
-    lemap: ActionMap
-    stylesheet*: string
-
   Config = object
     nmap*: ActionMap
     lemap*: ActionMap
     stylesheet*: string
-
-func getConfig(s: StaticConfig): Config =
-  return Config(nmap: s.nmap, lemap: s.lemap)
 
 func getRealKey(key: string): string =
   var realk: string
@@ -106,6 +100,16 @@ func constructActionTable*(origTable: ActionMap): ActionMap =
     newTable[realk] = v
   return newTable
 
+func getAction(s: string): TwtAction =
+  if s == "NULL":
+    return NO_ACTION
+  return parseEnum[TwtAction]("ACTION_" & s)
+
+func getLineAction(s: string): TwtAction =
+  if s == "NULL":
+    return NO_ACTION
+  return parseEnum[TwtAction]("ACTION_LINED_" & s)
+
 proc readUserStylesheet(dir: string, file: string): string =
   if file.len == 0:
     return ""
@@ -120,75 +124,33 @@ proc readUserStylesheet(dir: string, file: string): string =
       result = f.readAll()
       f.close()
 
-proc parseConfigLine[T](line: string, config: var T) =
-  if line.len == 0 or line[0] == '#':
-    return
-  var cmd: seq[string]
-  var s = ""
-  var quote = false
-  var escape = false
-  for c in line:
-    if escape:
-      escape = false
-      s &= c
-      continue
+func parseConfig(t: TomlValue): Config =
+  if "page" in t:
+    for k, v in t["page"].pairs:
+      result.nmap[getRealKey(k)] = getAction(v.s)
+    for k, v in t["line"].pairs:
+      result.nmap[getRealKey(k)] = getLineAction(v.s)
+  if "stylesheet" in t:
+    result.stylesheet = t["stylesheet"].s
 
-    if not quote and c == ' ' and s.len > 0:
-      cmd.add(s)
-      s = ""
-    elif c == '"':
-      quote = not quote
-    elif c == '\\' and not quote:
-      escape = true
-    else:
-      s &= c
-  if s.len > 0:
-    cmd.add(s)
-
-  if cmd.len == 3:
-    if cmd[0] == "nmap":
-      if cmd[2] == "NULL":
-        config.nmap[getRealKey(cmd[1])] = NO_ACTION
-      else:
-        config.nmap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_" & cmd[2])
-    elif cmd[0] == "lemap":
-      if cmd[2] == "NULL":
-        config.lemap[getRealKey(cmd[1])] = NO_ACTION
-      else:
-        config.lemap[getRealKey(cmd[1])] = parseEnum[TwtAction]("ACTION_LINED_" & cmd[2])
-  elif cmd.len == 2:
-    if cmd[0] == "stylesheet":
-      config.stylesheet = cmd[1]
-
-proc staticReadConfig(): StaticConfig =
-  let default = staticRead"res/config"
-  for line in default.split('\n'):
-    parseConfigLine(line, result)
-
-  result.nmap = constructActionTable(result.nmap)
-  result.lemap = constructActionTable(result.lemap)
+proc staticReadConfig(): Config =
+  result = parseConfig(parseToml(newStringStream(staticRead"res/config.toml")))
+  result.stylesheet = readUserStylesheet("res", result.stylesheet)
 
 const defaultConfig = staticReadConfig()
-var gconfig*: Config
+var gconfig* = defaultConfig
 
 proc readConfig(dir: string) =
-  var f: File
-  let status = f.open(dir / "config", fmRead)
-  if status:
-    var line: TaintedString
-    while f.readLine(line):
-      parseConfigLine(line, gconfig)
-
-    gconfig.nmap = constructActionTable(gconfig.nmap)
-    gconfig.lemap = constructActionTable(gconfig.lemap)
-    gconfig.stylesheet = readUserStylesheet(dir, gconfig.stylesheet)
-    f.close()
-
-proc readConfig*() =
-  gconfig = getConfig(defaultConfig)
-  when defined(debug):
-    readConfig(getCurrentDir() / "res")
-  readConfig(getConfigDir() / "twt")
+  let fs = newFileStream(dir / "config.toml")
+  if fs != nil:
+    let t = parseToml(fs)
+    if "page" in t:
+      for k, v in t["page"].pairs:
+        gconfig.nmap[getRealKey(k)] = getAction(v.s)
+      for k, v in t["line"].pairs:
+        gconfig.lemap[getRealKey(k)] = getLineAction(v.s)
+    if "stylesheet" in t:
+      gconfig.stylesheet = readUserStylesheet(dir, t["stylesheet"].s)
 
 proc getNormalAction*(s: string): TwtAction =
   if gconfig.nmap.hasKey(s):
@@ -200,3 +162,9 @@ proc getLinedAction*(s: string): TwtAction =
     return gconfig.lemap[s]
   return NO_ACTION
 
+proc readConfig*() =
+  when defined(debug):
+    readConfig(getCurrentDir() / "res")
+  readConfig(getConfigDir() / "twt")
+  gconfig.nmap = constructActionTable(gconfig.nmap)
+  gconfig.lemap = constructActionTable(gconfig.lemap)

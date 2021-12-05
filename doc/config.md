@@ -1,6 +1,7 @@
 # Configuration
 
-Currently keybindings and a user stylesheet can be configured.
+Currently keybindings and a user stylesheet can be configured. The
+configuration format for twt is toml.
 
 twt will look for a config file in the ~/.config/twt/ directory, so you can
 just copy the one from res/ there and customize that to your liking.
@@ -9,26 +10,31 @@ A list of configurable options follows.
 
 ## Stylesheets
 
-To set a user stylesheet, use the format `stylesheet "path-to-user.css"`.
+To set a user stylesheet, use the format `stylesheet = "path-to-user.css"`.
 Relative paths are interpreted as relative to the config directory.
 
-For now, specifying a second stylesheet will override the first one.
+Specifying a second stylesheet will override the first one.
 
 ## Keybindings
-"Normal" (default pager browsing) mode keybindings are configured using the
-syntax
 
-	nmap <keybinding> <action>
+To specify a keybinding, you will first have to specify a mode:
 
-Similarly, "Line-edit" (line editing) mode keybindings are configured
-using the syntax
+* for page browsing: [page]
+* for line editing: [line]
 
-	lemap <keybinding> <action>
+Keybindings are configured using the syntax
+
+	'<keybinding>' = '<action>'
 
 Where `<keybinding>` is a combination of unicode characters with or without
 modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
 escape to the keybinding respectively (essentially making `M-` the same as
-`C-[`).
+`C-[`). Modifiers can be escaped with the `\` sign.
+
+```Example:
+'C-M-j' = 'CHANGE_LOCATION' # change URL when Control, Escape and j are pressed
+'gg' = 'CURSOR_FIRST_LINE' # go to the first line of the page when g is pressed twice
+```
 
 `<action>` is a valid normal or line-edit mode action. A detailed
 description of these follows.
@@ -37,7 +43,7 @@ description of these follows.
 
 <table>
 <tr><th>**Name**<th>**Function**
-<tr><td>`NULL`<td>Do nothing
+<tr><td>`NULL`<td>Do nothing (used for disabling default keybindings)
 <tr><td>`QUIT`<td>Exit the browser
 <tr><td>`CURSOR_UP`<td>Move the cursor to the previous line
 <tr><td>`CURSOR_DOWN`<td>Move cursor to the next line
@@ -75,7 +81,7 @@ description of these follows.
 <tr><td>`LINE_INFO`<td>Display information about line
 </table>
 
-### Line-edit mode actions
+### Line-editing actions
 
 <table>
 <tr><th>**Name**<th>**Function**

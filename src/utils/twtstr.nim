@@ -5,6 +5,7 @@ import tables
 import json
 import bitops
 import os
+import math
 
 when defined(posix):
   import posix
@@ -39,15 +40,6 @@ func fitValueToSize*(str: string, size: int): string =
   if str.runeLen < size:
     return str & ' '.repeat(size - str.runeLen)
   return str.maxString(size)
-
-func buttonFmt*(str: string): seq[string] =
-  return "[".ansiFgColor(fgRed) & str.ansiFgColor(fgRed).ansiReset() & "]".ansiFgColor(fgRed).ansiReset()
-
-func buttonFmt*(str: seq[string]): seq[string] =
-  return "[".ansiFgColor(fgRed) & str.ansiFgColor(fgRed).ansiReset() & "]".ansiFgColor(fgRed).ansiReset()
-
-func buttonRaw*(str: string): string =
-  return "[" & str & "]"
 
 func remove*(str: string, c: string): string =
   let rem = c.toRunes()[0]
@@ -197,6 +189,83 @@ func skipBlanks*(buf: string, at: int): int =
   result = at
   while result < buf.len and buf[result].isWhitespace():
     inc result
+
+func parseInt64*(s: string): int64 =
+  var sign = 1
+  var t = 1
+  var d = 0
+  var integer: int64 = 0
+  var e: int64 = 0
+
+  var i = 0
+  if i < s.len and s[i] == '-':
+    sign = -1
+    inc i
+  elif i < s.len and s[i] == '+':
+    inc i
+
+  while i < s.len and isDigit(s[i]):
+    integer *= 10
+    integer += decValue(s[i])
+    inc i
+
+  if i < s.len and (s[i] == 'e' or s[i] == 'E'):
+    inc i
+    if i < s.len and s[i] == '-':
+      t = -1
+      inc i
+    elif i < s.len and s[i] == '+':
+      inc i
+
+    while i < s.len and isDigit(s[i]):
+      e *= 10
+      e += decValue(s[i])
+      inc i
+
+  return sign * integer * 10 ^ t * e
+
+func parseFloat64*(s: string): float64 =
+  var sign = 1
+  var t = 1
+  var d = 0
+  var integer: float64 = 0
+  var f: float64 = 0
+  var e: float64 = 0
+
+  var i = 0
+  if i < s.len and s[i] == '-':
+    sign = -1
+    inc i
+  elif i < s.len and s[i] == '+':
+    inc i
+
+  while i < s.len and isDigit(s[i]):
+    integer *= 10
+    integer += float64(decValue(s[i]))
+    inc i
+
+  if i < s.len and s[i] == '.':
+    inc i
+    while i < s.len and isDigit(s[i]):
+      f *= 10
+      f += float64(decValue(s[i]))
+      inc i
+      inc d
+
+  if i < s.len and (s[i] == 'e' or s[i] == 'E'):
+    inc i
+    if i < s.len and s[i] == '-':
+      t = -1
+      inc i
+    elif i < s.len and s[i] == '+':
+      inc i
+
+    while i < s.len and isDigit(s[i]):
+      e *= 10
+      e += float64(decValue(s[i]))
+      inc i
+
+  return float64(sign) * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
 
 proc expandPath*(path: string): string =
   if path.len == 0:
@@ -599,4 +668,3 @@ proc fullwidth*(s: seq[Rune]): seq[Rune] =
 
 proc fullwidth*(s: string): string =
   return $fullwidth(s.toRunes())
-
