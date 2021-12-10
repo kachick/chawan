@@ -1,6 +1,5 @@
 import unicode
 import streams
-import math
 import options
 import sugar
 

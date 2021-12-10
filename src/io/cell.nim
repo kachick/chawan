@@ -194,12 +194,12 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
               if ip[pi] == 2:
                 inc pi
                 if pi + 2 < ip.len:
-                  let r = uint8(ip[pi])
+                  let r = ip[pi]
                   inc pi
-                  let g = uint8(ip[pi])
+                  let g = ip[pi]
                   inc pi
-                  let b = uint8(ip[pi])
-                  formatting.fgcolor = CellColor(rgb: true, rgbcolor: (r: r, g: g, b: b))
+                  let b = ip[pi]
+                  formatting.fgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
               else:
                 #TODO
                 inc pi
@@ -216,12 +216,12 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
               if ip[pi] == 2:
                 inc pi
                 if pi + 2 < ip.len:
-                  let r = uint8(ip[pi])
+                  let r = ip[pi]
                   inc pi
-                  let g = uint8(ip[pi])
+                  let g = ip[pi]
                   inc pi
-                  let b = uint8(ip[pi])
-                  formatting.bgcolor = CellColor(rgb: true, rgbcolor: (r: r, g: g, b: b))
+                  let b = ip[pi]
+                  formatting.bgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
               else:
                 #TODO
                 inc pi

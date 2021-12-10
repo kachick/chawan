@@ -5,7 +5,6 @@ import streams
 
 import config/toml
 import utils/twtstr
-import utils/radixtree
 
 type
   TwtAction* =
@@ -124,18 +123,17 @@ proc readUserStylesheet(dir: string, file: string): string =
       result = f.readAll()
       f.close()
 
-func parseConfig(t: TomlValue): Config =
+proc parseConfig(config: var Config, dir: string, t: TomlValue) =
   if "page" in t:
     for k, v in t["page"].pairs:
-      result.nmap[getRealKey(k)] = getAction(v.s)
+      config.nmap[getRealKey(k)] = getAction(v.s)
     for k, v in t["line"].pairs:
-      result.nmap[getRealKey(k)] = getLineAction(v.s)
+      config.lemap[getRealKey(k)] = getLineAction(v.s)
   if "stylesheet" in t:
-    result.stylesheet = t["stylesheet"].s
+    config.stylesheet = readUserStylesheet(dir, t["stylesheet"].s)
 
 proc staticReadConfig(): Config =
-  result = parseConfig(parseToml(newStringStream(staticRead"res/config.toml")))
-  result.stylesheet = readUserStylesheet("res", result.stylesheet)
+  result.parseConfig("res", parseToml(newStringStream(staticRead"res/config.toml")))
 
 const defaultConfig = staticReadConfig()
 var gconfig* = defaultConfig
@@ -143,14 +141,7 @@ var gconfig* = defaultConfig
 proc readConfig(dir: string) =
   let fs = newFileStream(dir / "config.toml")
   if fs != nil:
-    let t = parseToml(fs)
-    if "page" in t:
-      for k, v in t["page"].pairs:
-        gconfig.nmap[getRealKey(k)] = getAction(v.s)
-      for k, v in t["line"].pairs:
-        gconfig.lemap[getRealKey(k)] = getLineAction(v.s)
-    if "stylesheet" in t:
-      gconfig.stylesheet = readUserStylesheet(dir, t["stylesheet"].s)
+    gconfig.parseConfig(dir, parseToml(fs))
 
 proc getNormalAction*(s: string): TwtAction =
   if gconfig.nmap.hasKey(s):

@@ -3,7 +3,6 @@ import strutils
 import unicode
 import tables
 import json
-import bitops
 import os
 import math
 
@@ -69,7 +68,7 @@ func genControlCharMap*(): string =
     if c == '?':
       result &= char(127)
     else:
-      result &= char(bitand(int(c), 0x1f))
+      result &= char((int(c) and 0x1f))
 
 const controlCharMap = genControlCharMap()
 
@@ -81,7 +80,7 @@ func genControlLetterMap*(): string =
     if c == char(127):
       result &= '?'
     else:
-      result &= char(bitor(int(c), 0x40))
+      result &= char((int(c) or 0x40))
 
 const controlLetterMap = genControlLetterMap()
 
@@ -193,7 +192,6 @@ func skipBlanks*(buf: string, at: int): int =
 func parseInt64*(s: string): int64 =
   var sign = 1
   var t = 1
-  var d = 0
   var integer: int64 = 0
   var e: int64 = 0
 
