@@ -27,14 +27,14 @@ func psuccess(s: SelectResult): bool =
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel
   of ' ': return sel.attr in elem.attributes
-  of '=': return elem.getAttrValue(sel.attr) == sel.value
-  of '~': return sel.value in unicode.split(elem.getAttrValue(sel.attr))
+  of '=': return elem.attr(sel.attr) == sel.value
+  of '~': return sel.value in unicode.split(elem.attr(sel.attr))
   of '|':
-    let val = elem.getAttrValue(sel.attr)
+    let val = elem.attr(sel.attr)
     return val == sel.value or sel.value.startsWith(val & '-')
-  of '^': return elem.getAttrValue(sel.attr).startsWith(sel.value)
-  of '$': return elem.getAttrValue(sel.attr).endsWith(sel.value)
-  of '*': return elem.getAttrValue(sel.attr).contains(sel.value)
+  of '^': return elem.attr(sel.attr).startsWith(sel.value)
+  of '$': return elem.attr(sel.attr).endsWith(sel.value)
+  of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
 func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
@@ -230,6 +230,15 @@ func calcRules(elem: Element, rules: ParsedStylesheet):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
     result[i] = tosorts[i].map((x) => x.b)
 
+proc applyItems*(ares: var ApplyResult, elem: Element, decls: seq[CSSParsedItem], pseudo: PseudoElem) =
+  for item in decls:
+    if item of CSSDeclaration:
+      let decl = CSSDeclaration(item)
+      if decl.important:
+        ares.important.add((elem, decl, pseudo))
+      else:
+        ares.normal.add((elem, decl, pseudo))
+
 proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false): ApplyResult =
   var stack: seq[Element]
 
@@ -246,13 +255,7 @@ proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false)
         let rules = rules_pseudo[pseudo]
         for rule in rules:
           let decls = parseCSSListOfDeclarations(rule.value)
-          for item in decls:
-            if item of CSSDeclaration:
-              let decl = CSSDeclaration(item)
-              if decl.important:
-                result.important.add((elem, decl, pseudo))
-              else:
-                result.normal.add((elem, decl, pseudo))
+          result.applyItems(elem, decls, pseudo)
 
     var i = elem.children.len - 1
     while i >= 0:
@@ -302,13 +305,12 @@ proc applyAuthorRules*(document: Document): ApplyResult =
         let rules = rules_pseudo[pseudo]
         for rule in rules:
           let decls = parseCSSListOfDeclarations(rule.value)
-          for item in decls:
-            if item of CSSDeclaration:
-              let decl = CSSDeclaration(item)
-              if decl.important:
-                result.important.add((elem, decl, pseudo))
-              else:
-                result.normal.add((elem, decl, pseudo))
+          result.applyItems(elem, decls, pseudo)
+
+      let style = elem.attr("style")
+      if style.len > 0:
+        let inline_rules = newStringStream(style).parseCSSListOfDeclarations()
+        result.applyItems(elem, inline_rules, PSEUDO_NONE)
 
     var i = elem.children.len - 1
     while i >= 0:

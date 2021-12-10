@@ -225,11 +225,11 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
   var add = true
 
   for k, v in tag.attrs:
-    element.attributes[k] = element.newAttr(k, v)
+    element.attributes[k] = v
   
-  element.id = element.getAttrValue("id")
+  element.id = element.attr("id")
   if element.attributes.hasKey("class"):
-    for w in unicode.split(element.attributes["class"].value, Rune(' ')):
+    for w in unicode.split(element.attributes["class"], Rune(' ')):
       element.classList.add(w)
 
   case element.tagType
@@ -240,16 +240,16 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
   of TAG_STYLE:
     state.in_style = true
   of TAG_SELECT:
-    HTMLSelectElement(element).name = element.getAttrValue("name")
-    HTMLSelectElement(element).value = element.getAttrValue("value")
+    HTMLSelectElement(element).name = element.attr("name")
+    HTMLSelectElement(element).value = element.attr("value")
   of TAG_INPUT:
-    HTMLInputElement(element).value = element.getAttrValue("value")
-    HTMLInputElement(element).itype = element.getAttrValue("type").inputType()
-    HTMLInputElement(element).size = element.getAttrValue("size").inputSize()
+    HTMLInputElement(element).value = element.attr("value")
+    HTMLInputElement(element).itype = element.attr("type").inputType()
+    HTMLInputElement(element).size = element.attr("size").inputSize()
   of TAG_A:
-    HTMLAnchorElement(element).href = element.getAttrValue("href")
+    HTMLAnchorElement(element).href = element.attr("href")
   of TAG_OPTION:
-    HTMLOptionElement(element).value = element.getAttrValue("href")
+    HTMLOptionElement(element).value = element.attr("href")
   of TAG_HTML:
     add = false
   of TAG_HEAD:

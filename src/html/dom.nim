@@ -62,7 +62,7 @@ type
 
     id*: string
     classList*: seq[string]
-    attributes*: Table[string, Attr]
+    attributes*: Table[string, string]
     cssvalues*: CSSComputedValues
     cssvalues_before*: CSSComputedValues
     cssvalues_after*: CSSComputedValues
@@ -103,7 +103,6 @@ type
 
   HTMLBRElement* = ref HTMLBRElementObj
   HTMLBRElementObj = object of HTMLElementObj
-
 
 func firstChild(node: Node): Node =
   if node.childNodes.len == 0:
@@ -235,8 +234,5 @@ func newAttr*(parent: Element, key: string, value: string): Attr =
   result.name = key
   result.value = value
 
-func getAttrValue*(element: Element, s: string): string =
-  let attr = element.attributes.getOrDefault(s, nil)
-  if attr != nil:
-    return attr.value
-  return ""
+func attr*(element: Element, s: string): string =
+  return element.attributes.getOrDefault(s, "")
