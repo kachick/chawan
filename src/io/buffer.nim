@@ -273,7 +273,7 @@ proc refreshDisplay*(buffer: Buffer) =
         buffer.display[dls + k].formatting = cf.formatting
         buffer.display[dls + k].nodes = cf.nodes
       let tk = k + r.width()
-      while k < tk:
+      while k < tk and k < buffer.width - 1:
         buffer.display[dls + k].ow += r.width()
         inc k
       inc j

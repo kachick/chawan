@@ -42,7 +42,12 @@ func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues
 
   result.bcontext.margin_done = parent.bcontext.margin_done
 
-  result.width = parent.width
+  let pwidth = vals[PROPERTY_WIDTH]
+  if pwidth.length.auto:
+    result.width = parent.width
+  else:
+    result.width = pwidth.length.cells()
+
   result.icontext = newInlineContext(parent)
   result.icontext.fromy = result.y
   result.cssvalues = vals
@@ -215,7 +220,7 @@ proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSS
       rw = r.width()
 
     #TODO a better line wrapping algorithm would be nice
-    if rw > 1 and state.ibox.cssvalues[PROPERTY_WORD_BREAK].wordbreak != WORD_BREAK_KEEP_ALL:
+    if rw > 1 or state.ibox.cssvalues[PROPERTY_WORD_BREAK].wordbreak == WORD_BREAK_BREAK_ALL:
       state.addWord()
 
     state.checkWrap(r)

@@ -64,6 +64,7 @@ const PropertyNames = {
   "font-weight": PROPERTY_FONT_WEIGHT,
   "text-decoration": PROPERTY_TEXT_DECORATION,
   "word-break": PROPERTY_WORD_BREAK,
+  "width": PROPERTY_WIDTH,
 }.toTable()
 
 const ValueTypes = [
@@ -82,6 +83,7 @@ const ValueTypes = [
   PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
   PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
   PROPERTY_WORD_BREAK: VALUE_WORD_BREAK,
+  PROPERTY_WIDTH: VALUE_LENGTH,
 ]
 
 const InheritedProperties = {
@@ -534,12 +536,19 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   if result.globalValue == VALUE_NOGLOBAL:
     result.globalValue = cssGlobal(d)
 
-func getInitialColor*(t: CSSPropertyType): CSSColor =
+func getInitialColor(t: CSSPropertyType): CSSColor =
   case t
   of PROPERTY_COLOR:
     return colors["white"]
   else:
     return colors["black"]
+
+func getInitialLength(t: CSSPropertyType): CSSLength =
+  case t
+  of PROPERTY_WIDTH:
+    return CSSLength(auto: true)
+  else:
+    return CSSLength()
 
 func calcDefault(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
@@ -551,6 +560,8 @@ func calcDefault(t: CSSPropertyType): CSSComputedValue =
     nv = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
   of VALUE_WORD_BREAK:
     nv = CSSComputedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
+  of VALUE_LENGTH:
+    nv = CSSComputedValue(t: t, v: v, length: getInitialLength(t))
   else:
     nv = CSSComputedValue(t: t, v: v)
   return nv
