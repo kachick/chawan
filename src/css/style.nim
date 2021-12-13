@@ -47,8 +47,8 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
 
 func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.elem
+  of "before": return selectres(true, PSEUDO_BEFORE)
   of "after": return selectres(true, PSEUDO_AFTER)
-  of "before": return selectres(true, PSEUDO_AFTER)
   else: return selectres(false)
 
 func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult
@@ -198,10 +198,15 @@ proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem) =
   of PSEUDO_NONE:
     elem.cssvalues[cval.t] = cval
   of PSEUDO_BEFORE:
+    if elem.cssvalues_before == nil:
+      elem.cssvalues_before.rootProperties()
     elem.cssvalues_before[cval.t] = cval
   of PSEUDO_AFTER:
+    if elem.cssvalues_after == nil:
+      elem.cssvalues_after.rootProperties()
     elem.cssvalues_after[cval.t] = cval
   elem.cssapplied = true
+  elem.rendered = false
 
 type
   ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
@@ -250,6 +255,8 @@ proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false)
     if not elem.cssapplied:
       if reset:
         elem.cssvalues.rootProperties()
+        elem.cssvalues_before = nil
+        elem.cssvalues_after = nil
       let rules_pseudo = calcRules(elem, pss)
       for pseudo in low(PseudoElem)..high(PseudoElem):
         let rules = rules_pseudo[pseudo]
@@ -356,3 +363,12 @@ proc applyStylesheets*(document: Document, uass: ParsedStylesheet, userss: Parse
   for elem in elems:
     if elem.parentElement != nil:
       elem.cssvalues.inheritProperties(elem.parentElement.cssvalues)
+      if elem.cssvalues_before != nil:
+        elem.cssvalues_before.inheritProperties(elem.cssvalues)
+      if elem.cssvalues_after != nil:
+        elem.cssvalues_after.inheritProperties(elem.cssvalues)
+
+proc refreshStyle*(elem: Element) =
+  elem.cssapplied = false
+  for child in elem.children:
+    child.refreshStyle()

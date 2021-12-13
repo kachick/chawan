@@ -669,10 +669,10 @@ proc updateHover(buffer: Buffer) =
         elem = node.parentElement
         assert elem != nil
 
-      if not elem.hover:
+      if not elem.hover and not (node in buffer.prevnodes):
         elem.hover = true
         buffer.reshape = true
-        elem.cssapplied = false
+        elem.refreshStyle()
     for node in buffer.prevnodes:
       var elem: Element
       if node of Element:
@@ -683,7 +683,7 @@ proc updateHover(buffer: Buffer) =
       if elem.hover and not (node in nodes):
         elem.hover = false
         buffer.reshape = true
-        elem.cssapplied = false
+        elem.refreshStyle()
   buffer.prevnodes = nodes
 
 proc renderPlainText*(buffer: Buffer, text: string) =
@@ -900,5 +900,11 @@ proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
   discard buffer.gotoAnchor()
   buffer.refreshDisplay()
   buffer.displayBuffer()
+  buffer.updateHover()
+  if buffer.reshape:
+    buffer.reshapeBuffer()
+    buffer.reshape = false
+    buffer.refreshDisplay()
+    buffer.displayBufferSwapOutput()
   buffer.statusMsgForBuffer()
   return inputLoop(attrs, buffer)

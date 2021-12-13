@@ -19,6 +19,7 @@ type
     icontext*: InlineContext
     bcontext*: BlockContext
     cssvalues*: CSSComputedValues
+    node*: Node
 
   #TODO move fromy
   InlineContext* = ref object

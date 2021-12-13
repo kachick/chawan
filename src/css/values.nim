@@ -41,7 +41,7 @@ type
       wordbreak*: CSSWordBreak
     of VALUE_NONE: discard
 
-  CSSComputedValues* = array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
+  CSSComputedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
 
   CSSSpecifiedValue* = object of CSSComputedValue
     globalValue: CSSGlobalValueType
@@ -605,13 +605,16 @@ func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSS
 func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =
   return getComputedValue(getSpecifiedValue(d), current)
 
+proc rootProperties*(vals: var CSSComputedValues) =
+  new(vals)
+  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+    vals[prop] = getDefault(prop)
+
 proc inheritProperties*(vals: var CSSComputedValues, parent: CSSComputedValues) =
+  if vals == nil:
+    new(vals)
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
     if vals[prop] == nil:
       vals[prop] = getDefault(prop)
     if inherited(prop) and parent[prop] != nil and vals[prop] == getDefault(prop):
       vals[prop] = parent[prop]
-
-proc rootProperties*(vals: var CSSComputedValues) =
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    vals[prop] = getDefault(prop)

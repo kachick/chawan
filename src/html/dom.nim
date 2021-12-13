@@ -68,6 +68,7 @@ type
     cssvalues_after*: CSSComputedValues
     hover*: bool
     cssapplied*: bool
+    rendered*: bool
 
   HTMLElement* = ref HTMLElementObj
   HTMLElementObj = object of ElementObj
@@ -215,10 +216,11 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
   of TAG_SPAN:
     result = new(HTMLSpanElement)
   else:
-    new(result)
+    result = new(HTMLElement)
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
+  result.cssvalues.rootProperties()
 
 func newDocument*(): Document =
   new(result)
