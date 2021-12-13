@@ -192,8 +192,18 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-proc applyProperty(elem: Element, decl: CSSDeclaration, pseudo: PseudoElem) =
-  let cval = getComputedValue(decl, elem.cssvalues)
+proc applyProperty(elem: Element, s: CSSSpecifiedValue, pseudo: PseudoElem) =
+  let cval = getComputedValue(s, elem.cssvalues)
+  if cval.t == PROPERTY_MARGIN:
+    let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
+    let right = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
+    let top = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
+    let bottom = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
+    elem.applyProperty(left, pseudo)
+    elem.applyProperty(right, pseudo)
+    elem.applyProperty(top, pseudo)
+    elem.applyProperty(bottom, pseudo)
+    return
   case pseudo
   of PSEUDO_NONE:
     elem.cssvalues[cval.t] = cval
@@ -212,8 +222,8 @@ type
   ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
   ParsedStylesheet* = seq[ParsedRule]
   ApplyResult = object
-    normal: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
-    important: seq[tuple[e:Element,d:CSSDeclaration,p:PseudoElem]]
+    normal: seq[tuple[e:Element,d:CSSSpecifiedValue,p:PseudoElem]]
+    important: seq[tuple[e:Element,d:CSSSpecifiedValue,p:PseudoElem]]
 
 proc parseStylesheet*(s: Stream): ParsedStylesheet =
   for v in parseCSS(s).value:
@@ -240,9 +250,9 @@ proc applyItems*(ares: var ApplyResult, elem: Element, decls: seq[CSSParsedItem]
     if item of CSSDeclaration:
       let decl = CSSDeclaration(item)
       if decl.important:
-        ares.important.add((elem, decl, pseudo))
+        ares.important.add((elem, getSpecifiedValue(decl), pseudo))
       else:
-        ares.normal.add((elem, decl, pseudo))
+        ares.normal.add((elem, getSpecifiedValue(decl), pseudo))
 
 proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false): ApplyResult =
   var stack: seq[Element]

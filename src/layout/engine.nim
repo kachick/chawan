@@ -8,7 +8,6 @@ import utils/twtstr
 
 func newInlineContext*(box: CSSBox): InlineContext =
   new(result)
-  result.fromx = box.x
   result.whitespace = true
   result.ws_initial = true
 
@@ -28,6 +27,7 @@ proc flushLines(box: CSSBox) =
 func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   new(result)
   result.x = parent.x
+  result.x += vals[PROPERTY_MARGIN_LEFT].length.cells()
   result.bcontext = newBlockContext()
 
   parent.flushLines()
@@ -50,6 +50,7 @@ func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues
 
   result.icontext = newInlineContext(parent)
   result.icontext.fromy = result.y
+  result.icontext.fromx = result.x
   result.cssvalues = vals
 
 func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
@@ -62,6 +63,7 @@ func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
   result.icontext = parent.icontext
   result.bcontext = parent.bcontext
   result.cssvalues = vals
+  result.icontext.fromx += vals[PROPERTY_MARGIN_LEFT].length.cells()
 
 type InlineState = object
   ibox: CSSInlineBox
@@ -176,7 +178,11 @@ proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSS
     state.ibox = CSSInlineBox(parent)
     use_parent = true
   else:
-    state.ibox = newInlineBox(parent, parent.cssvalues)
+    # TODO TODO TODO I highly doubt this is correct but it's the only way it
+    # makes sense...
+    var inherit: CSSComputedValues
+    inherit.inheritProperties(parent.cssvalues)
+    state.ibox = newInlineBox(parent, inherit)
 
   if str.len == 0:
     return
@@ -266,8 +272,20 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
     parent.bcontext.margin_todo = max(parent.bcontext.margin_todo - box.bcontext.margin_done, 0)
 
     #eprint "END", CSSBlockBox(box).tag, box.icontext.fromy
+  elif box of CSSInlineBox:
+    parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells()
+
+  let pheight = box.cssvalues[PROPERTY_HEIGHT]
   parent.height += box.height
   parent.icontext.fromy = box.icontext.fromy
+
+  if not pheight.length.auto:
+    let max = pheight.length.cells()
+    let diff = box.height - max
+    if diff > 0:
+      parent.height -= diff
+      parent.icontext.fromy -= diff
+
   parent.children.add(box)
 
 func isBlock(node: Node): bool =

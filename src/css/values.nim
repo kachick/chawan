@@ -44,7 +44,7 @@ type
   CSSComputedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
 
   CSSSpecifiedValue* = object of CSSComputedValue
-    globalValue: CSSGlobalValueType
+    globalValue*: CSSGlobalValueType
 
   CSSValueError* = object of ValueError
 
@@ -65,6 +65,7 @@ const PropertyNames = {
   "text-decoration": PROPERTY_TEXT_DECORATION,
   "word-break": PROPERTY_WORD_BREAK,
   "width": PROPERTY_WIDTH,
+  "height": PROPERTY_HEIGHT,
 }.toTable()
 
 const ValueTypes = [
@@ -84,6 +85,7 @@ const ValueTypes = [
   PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
   PROPERTY_WORD_BREAK: VALUE_WORD_BREAK,
   PROPERTY_WIDTH: VALUE_LENGTH,
+  PROPERTY_HEIGHT: VALUE_LENGTH,
 ]
 
 const InheritedProperties = {
@@ -523,10 +525,8 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
     of VALUE_CONTENT: result.content = cssString(d)
     of VALUE_WHITE_SPACE: result.whitespace = cssWhiteSpace(d)
     of VALUE_INTEGER:
-      case ptype
-      of PROPERTY_FONT_WEIGHT:
+      if ptype == PROPERTY_FONT_WEIGHT:
         result.integer = cssFontWeight(d)
-      else: discard #???
     of VALUE_TEXT_DECORATION: result.textdecoration = cssTextDecoration(d)
     of VALUE_WORD_BREAK: result.wordbreak = cssWordBreak(d)
     of VALUE_NONE: discard
@@ -545,7 +545,7 @@ func getInitialColor(t: CSSPropertyType): CSSColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of PROPERTY_WIDTH:
+  of PROPERTY_WIDTH, PROPERTY_HEIGHT:
     return CSSLength(auto: true)
   else:
     return CSSLength()
