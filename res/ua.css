@@ -16,6 +16,10 @@ textarea, tt, var, font, iframe, u, s, strike, frame, input, img {
 	display: inline-block;
 }
 
+ol, ul {
+	margin-left: 3ch;
+}
+
 table {
 	display: table;
 }
@@ -99,4 +103,20 @@ sup::before {
 
 sub::before {
 	content: '~';
+}
+
+ol {
+	list-style-type: decimal;
+}
+
+ul {
+	list-style-type: disc;
+}
+
+:is(ol, ul, menu, dir) ul {
+	list-style-type: circle;
+}
+
+:is(ol, ul, menu, dir) :is(ol, ul, menu, dir) ul {
+	list-style-type: square;
 }

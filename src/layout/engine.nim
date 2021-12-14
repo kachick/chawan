@@ -292,7 +292,8 @@ func isBlock(node: Node): bool =
   if node.nodeType != ELEMENT_NODE:
     return false
   let elem = Element(node)
-  return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_BLOCK
+  return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
+          elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM
 
 func isInline(node: Node): bool =
   if node.nodeType == TEXT_NODE:
@@ -311,6 +312,8 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
     #CSSBlockBox(result).tag = $elem.tagType
   of DISPLAY_INLINE:
     result = newInlineBox(parent, values)
+  of DISPLAY_LIST_ITEM:
+    result = state.newBlockBox(parent, values)
   of DISPLAY_NONE:
     return nil
   else:
@@ -351,8 +354,7 @@ proc processAnonComputedValues(state: var LayoutState, parent: CSSBox, c: CSSCom
   if parent.bcontext.has_blocks:
     if c[PROPERTY_DISPLAY].display == DISPLAY_INLINE:
       if parent.bcontext.anon_block == nil:
-        var cssvals: CSSComputedValues
-        cssvals.inheritProperties(parent.cssvalues)
+        let cssvals = parent.cssvalues.inheritProperties()
         parent.bcontext.anon_block = state.newBlockBox(parent, cssvals)
       state.add(parent.bcontext.anon_block, state.processComputedValueBox(parent.bcontext.anon_block, c))
       return true
@@ -376,13 +378,17 @@ proc processAnonBlock(state: var LayoutState, parent: CSSBox, c: Node): bool =
   return false
 
 func needsAnonymousBlockBoxes(node: Node): bool =
+  if not node.isBlock():
+    return false
   if node.nodeType == ELEMENT_NODE:
     let elem = Element(node)
     if elem.cssvalues_before != nil:
-      if elem.cssvalues_before[PROPERTY_DISPLAY].display == DISPLAY_BLOCK:
+      if elem.cssvalues_before[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
+          elem.cssvalues_before[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
         return true
     if elem.cssvalues_after != nil:
-      if elem.cssvalues_after[PROPERTY_DISPLAY].display == DISPLAY_BLOCK:
+      if elem.cssvalues_after[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
+          elem.cssvalues_after[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
         return true
 
   for c in node.childNodes:
@@ -443,12 +449,28 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, node: Node) 
       if box != parent.bcontext.anon_block:
         state.add(parent, box)
 
+proc processMarker(state: var LayoutState, parent: CSSBox, node: Node) =
+  if node.nodeType == ELEMENT_NODE:
+    let elem = Element(node)
+    if elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
+      var ordinalvalue = 1
+      if elem.tagType == TAG_LI:
+        ordinalvalue = HTMLLIElement(elem).ordinalvalue
+
+      let text = elem.cssvalues[PROPERTY_LIST_STYLE_TYPE].liststyletype.listMarker(ordinalvalue)
+      let tlen = text.width()
+      parent.icontext.fromx -= tlen
+      let marker = state.processInlineBox(parent, text)
+      state.add(parent, marker)
+
 proc processNodes(state: var LayoutState, parent: CSSBox, node: Node) =
   state.nodes.add(node)
 
   parent.bcontext.has_blocks = node.needsAnonymousBlockBoxes()
 
   state.processBeforePseudoElem(parent, node)
+
+  state.processMarker(parent, node)
 
   for c in node.childNodes:
     let isanon = state.processAnonBlock(parent, c)

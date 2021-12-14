@@ -48,7 +48,7 @@ type
       elem*: string
     of FUNC_SELECTOR:
       name*: string
-      fsels*: SelectorList
+      fsels*: seq[SelectorList]
     of COMBINATOR_SELECTOR:
       ct*: CombinatorType
       csels*: seq[SelectorList]
@@ -77,13 +77,14 @@ func getSpecificity(sel: Selector): int =
     case sel.name
     of "is":
       var best = 0
-      for child in sel.fsels.sels:
+      for child in sel.fsels:
         let s = getSpecificity(child)
         if s > best:
           best = s
       result += best
     of "not":
-      result += getSpecificity(sel.fsels)
+      for child in sel.fsels:
+        result += getSpecificity(child)
     else: discard
   of UNIVERSAL_SELECTOR:
     discard
@@ -128,6 +129,12 @@ proc addSelector(state: var SelectorParser, sel: Selector) =
     state.combinator.csels[^1].add(sel)
   else:
     state.selectors[^1].add(sel)
+
+proc getLastSel(state: SelectorParser): Selector =
+  if state.combinator != nil:
+    return state.combinator.csels[^1].sels[^1]
+  else:
+    return state.selectors[^1].sels[^1]
 
 proc addSelectorList(state: var SelectorParser) =
   if state.combinator != nil:
@@ -227,22 +234,24 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
             state.query = QUERY_DELIM
             state.addSelector(Selector(t: ATTR_SELECTOR, attr: $csstoken.value, rel: ' '))
           of QUERY_VALUE:
-            state.selectors[^1].sels[^1].value = $csstoken.value
+            state.getLastSel().value = $csstoken.value
             break
           else: discard
         of CSS_STRING_TOKEN:
           case state.query
           of QUERY_VALUE:
-            state.selectors[^1].sels[^1].value = $csstoken.value
+            state.getLastSel().value = $csstoken.value
             break
           else: discard
         of CSS_DELIM_TOKEN:
           case csstoken.rvalue
           of Rune('~'), Rune('|'), Rune('^'), Rune('$'), Rune('*'):
             if state.query == QUERY_DELIM:
-              state.selectors[^1].sels[^1].rel = char(csstoken.rvalue)
+              state.getLastSel().rel = char(csstoken.rvalue)
           of Rune('='):
             if state.query == QUERY_DELIM:
+              if state.getLastSel().rel == ' ':
+                state.getLastSel().rel = '='
               state.query = QUERY_VALUE
           else: discard
         else: discard
@@ -257,9 +266,13 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
     state.query = QUERY_TYPE
   else: return
   var fun = Selector(t: FUNC_SELECTOR, name: $cssfunction.name)
-  fun.fsels = SelectorList(parent: state.selectors[^1])
   state.addSelector(fun)
-  state.selectors[^1] = fun.fsels
+
+  let osels = state.selectors
+  let ocomb = state.combinator
+  state.combinator = nil
+  state.selectors = newSeq[SelectorList]()
+  state.addSelectorList()
   for cval in cssfunction.value:
     if cval of CSSToken:
       state.parseSelectorToken(CSSToken(cval))
@@ -267,7 +280,9 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  state.selectors[^1] = fun.fsels.parent
+  fun.fsels = state.selectors
+  state.selectors = osels
+  state.combinator = ocomb
 
 func parseSelectors*(cvals: seq[CSSComponentValue]): seq[SelectorList] =
   var state = SelectorParser()

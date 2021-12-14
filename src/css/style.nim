@@ -53,6 +53,22 @@ func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
 
 func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult
 
+func funcSelectorMatches(elem: Element, sel: Selector): SelectResult =
+  case sel.name
+  of "not":
+    for slist in sel.fsels:
+      let res = elem.selectorsMatch(slist)
+      if res.success:
+        return selectres(false)
+    return selectres(true)
+  of "is", "where":
+    for slist in sel.fsels:
+      let res = elem.selectorsMatch(slist)
+      if not res.success:
+        return selectres(false)
+    return selectres(true)
+  else: discard
+
 func selectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.t
   of TYPE_SELECTOR:
@@ -70,7 +86,7 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
   of UNIVERSAL_SELECTOR:
     return selectres(true)
   of FUNC_SELECTOR:
-    return selectres(false)
+    return funcSelectorMatches(elem, sel)
   of COMBINATOR_SELECTOR:
     #combinator without at least two members makes no sense
     assert sel.csels.len > 1
@@ -110,7 +126,6 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
             return selectres(false)
 
           if not res.success:
-            eprint "fail", e.tagType
             return selectres(false)
           dec i
           e = e.previousElementSibling
@@ -157,12 +172,7 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
   of PSELEM_SELECTOR:
     return document.all_elements.filter((elem) => pseudoElemSelectorMatches(elem, sel))
   of FUNC_SELECTOR:
-    case sel.name
-    of "not":
-      return document.all_elements.filter((elem) => not selectorsMatch(elem, sel.fsels).psuccess)
-    of "is", "where":
-      return document.all_elements.filter((elem) => selectorsMatch(elem, sel.fsels).psuccess)
-    return newSeq[Element]()
+    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
   of COMBINATOR_SELECTOR:
     return document.all_elements.filter((elem) => selectorMatches(elem, sel))
 
@@ -173,15 +183,7 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
   var i = 1
 
   while i < sellist.len:
-    if sellist[i].t == FUNC_SELECTOR:
-      case sellist[i].name
-      of "not":
-        result = result.filter((elem) => not selectorsMatch(elem, sellist[i].fsels).psuccess)
-      of "is", "where":
-        result = result.filter((elem) => selectorsMatch(elem, sellist[i].fsels).psuccess)
-      else: discard
-    else:
-      result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
+    result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
     inc i
 
 proc querySelector*(document: Document, q: string): seq[Element] =

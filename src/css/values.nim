@@ -39,6 +39,8 @@ type
       textdecoration*: CSSTextDecoration
     of VALUE_WORD_BREAK:
       wordbreak*: CSSWordBreak
+    of VALUE_LIST_STYLE_TYPE:
+      liststyletype*: CSSListStyleType
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
@@ -66,6 +68,7 @@ const PropertyNames = {
   "word-break": PROPERTY_WORD_BREAK,
   "width": PROPERTY_WIDTH,
   "height": PROPERTY_HEIGHT,
+  "list-style-type": PROPERTY_LIST_STYLE_TYPE,
 }.toTable()
 
 const ValueTypes = [
@@ -86,11 +89,13 @@ const ValueTypes = [
   PROPERTY_WORD_BREAK: VALUE_WORD_BREAK,
   PROPERTY_WIDTH: VALUE_LENGTH,
   PROPERTY_HEIGHT: VALUE_LENGTH,
+  PROPERTY_LIST_STYLE_TYPE: VALUE_LIST_STYLE_TYPE,
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
-  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK
+  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
+  PROPERTY_LIST_STYLE_TYPE
 }
 
 func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
@@ -122,6 +127,15 @@ func cells*(l: CSSLength): int =
   else:
     #TODO
     return int(l.num / 8)
+
+func listMarker*(t: CSSListStyleType, i: int): string =
+  case t
+  of LIST_STYLE_TYPE_NONE: return ""
+  of LIST_STYLE_TYPE_DISC: return "* "
+  of LIST_STYLE_TYPE_CIRCLE: return "o "
+  of LIST_STYLE_TYPE_SQUARE: return "O "
+  of LIST_STYLE_TYPE_DECIMAL: return $i & ". "
+  of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
 func r(c: CSSColor): int =
   return c.rgba.r
@@ -436,8 +450,8 @@ func cssDisplay(d: CSSDeclaration): CSSDisplay =
       case $tok.value
       of "block": return DISPLAY_BLOCK
       of "inline": return DISPLAY_INLINE
+      of "list-item": return DISPLAY_LIST_ITEM
       # of "inline-block": return DISPLAY_INLINE_BLOCK
-      # of "list-item": return DISPLAY_LIST_ITEM
       # of "table": return DISPLAY_TABLE
       # of "table-row-group": return DISPLAY_TABLE_ROW_GROUP
       # of "table-header-group": return DISPLAY_TABLE_HEADER_GROUP
@@ -511,6 +525,19 @@ func cssWordBreak(d: CSSDeclaration): CSSWordBreak =
       of "keep-all": return WORD_BREAK_KEEP_ALL
   raise newException(CSSValueError, "Invalid text decoration")
 
+func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "none": return LIST_STYLE_TYPE_NONE
+      of "disc": return LIST_STYLE_TYPE_DISC
+      of "circle": return LIST_STYLE_TYPE_CIRCLE
+      of "square": return LIST_STYLE_TYPE_SQUARE
+      of "decimal": return LIST_STYLE_TYPE_DECIMAL
+      of "japanese-informal": return LIST_STYLE_TYPE_JAPANESE_INFORMAL
+  raise newException(CSSValueError, "Invalid list style")
+
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   let name = $d.name
   let ptype = propertyType(name)
@@ -529,6 +556,7 @@ func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
         result.integer = cssFontWeight(d)
     of VALUE_TEXT_DECORATION: result.textdecoration = cssTextDecoration(d)
     of VALUE_WORD_BREAK: result.wordbreak = cssWordBreak(d)
+    of VALUE_LIST_STYLE_TYPE: result.liststyletype = cssListStyleType(d)
     of VALUE_NONE: discard
   except CSSValueError:
     result.globalValue = VALUE_UNSET
@@ -611,6 +639,8 @@ func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSS
     return CSSComputedValue(t: prop.t, v: VALUE_TEXT_DECORATION, textdecoration: prop.textdecoration)
   of VALUE_WORD_BREAK:
     return CSSComputedValue(t: prop.t, v: VALUE_WORD_BREAK, wordbreak: prop.wordbreak)
+  of VALUE_LIST_STYLE_TYPE:
+    return CSSComputedValue(t: prop.t, v: VALUE_LIST_STYLE_TYPE, liststyletype: prop.liststyletype)
   of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
 
 func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =
@@ -629,3 +659,11 @@ proc inheritProperties*(vals: var CSSComputedValues, parent: CSSComputedValues) 
       vals[prop] = getDefault(prop)
     if inherited(prop) and parent[prop] != nil and vals[prop] == getDefault(prop):
       vals[prop] = parent[prop]
+
+func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
+  new(result)
+  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+    if inherited(prop) and parent[prop] != nil:
+      result[prop] = parent[prop]
+    else:
+      result[prop] = getDefault(prop)

@@ -5,6 +5,7 @@ import tables
 import json
 import os
 import math
+import sugar
 
 when defined(posix):
   import posix
@@ -189,6 +190,106 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
+#TODO
+func japaneseNumber*(i: int): string =
+  if i == 0:
+    return "〇"
+  var n = i
+  if i < 0:
+    result &= "ス"
+    n *= -1
+
+  let o = n
+
+  var ss: seq[string]
+  var d = 0
+  var mark = false
+  var res = false
+  while n > 0:
+    let m = n mod 10
+
+    if m != 0:
+      case d
+      of 1: ss.add("十")
+      of 2: ss.add("百")
+      of 3: ss.add("千")
+      of 4:
+        ss.add("万")
+        ss.add("一")
+      of 5:
+        ss.add("万")
+        ss.add("十")
+      of 6:
+        ss.add("万")
+        ss.add("百")
+      of 7:
+        ss.add("万")
+        ss.add("千")
+        ss.add("一")
+      of 8:
+        ss.add("億")
+        ss.add("一")
+      of 9:
+        ss.add("億")
+        ss.add("十")
+      else: discard
+    case m
+    of 0:
+      inc d
+      n = n div 10
+      mark = true
+    of 1:
+      if o == n:
+        ss.add("一")
+    of 2: ss.add("二")
+    of 3: ss.add("三")
+    of 4: ss.add("四")
+    of 5: ss.add("五")
+    of 6: ss.add("六")
+    of 7: ss.add("七")
+    of 8: ss.add("八")
+    of 9: ss.add("九")
+    else: discard
+    n -= m
+
+  n = ss.len - 1
+  while n >= 0:
+    result &= ss[n]
+    dec n
+
+func parseInt32*(s: string): int =
+  var sign = 1
+  var t = 1
+  var integer: int = 0
+  var e: int = 0
+
+  var i = 0
+  if i < s.len and s[i] == '-':
+    sign = -1
+    inc i
+  elif i < s.len and s[i] == '+':
+    inc i
+
+  while i < s.len and isDigit(s[i]):
+    integer *= 10
+    integer += decValue(s[i])
+    inc i
+
+  if i < s.len and (s[i] == 'e' or s[i] == 'E'):
+    inc i
+    if i < s.len and s[i] == '-':
+      t = -1
+      inc i
+    elif i < s.len and s[i] == '+':
+      inc i
+
+    while i < s.len and isDigit(s[i]):
+      e *= 10
+      e += decValue(s[i])
+      inc i
+
+  return sign * integer * 10 ^ (t * e)
+
 func parseInt64*(s: string): int64 =
   var sign = 1
   var t = 1
@@ -220,7 +321,7 @@ func parseInt64*(s: string): int64 =
       e += decValue(s[i])
       inc i
 
-  return sign * integer * 10 ^ t * e
+  return sign * integer * 10 ^ (t * e)
 
 func parseFloat64*(s: string): float64 =
   var sign = 1

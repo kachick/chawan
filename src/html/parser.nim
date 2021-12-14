@@ -3,6 +3,7 @@ import unicode
 import strutils
 import tables
 import json
+import options
 
 import types/enums
 import types/tagtypes
@@ -250,6 +251,11 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     HTMLAnchorElement(element).href = element.attr("href")
   of TAG_OPTION:
     HTMLOptionElement(element).value = element.attr("href")
+  of TAG_OL:
+    HTMLOListElement(element).start = element.attri("start") 
+    HTMLOListElement(element).ordinalcounter = HTMLOListElement(element).start.get(1)
+  of TAG_LI:
+    HTMLLIElement(element).value = element.attri("value")
   of TAG_HTML:
     add = false
   of TAG_HEAD:
@@ -261,29 +267,27 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     add = false
   of TAG_PRE:
     state.skip_lf = true
+  of TAG_H1:
+    HTMLHeadingElement(element).rank = 1
+  of TAG_H2:
+    HTMLHeadingElement(element).rank = 2
+  of TAG_H3:
+    HTMLHeadingElement(element).rank = 3
+  of TAG_H4:
+    HTMLHeadingElement(element).rank = 4
+  of TAG_H5:
+    HTMLHeadingElement(element).rank = 5
+  of TAG_H6:
+    HTMLHeadingElement(element).rank = 6
   else: discard
 
   if not state.in_body and not (element.tagType in HeadTagTypes):
     processDocumentBody(state)
 
   if state.elementNode.nodeType == ELEMENT_NODE:
-    case element.tagType
-    of SelfClosingTagTypes:
+    if element.tagType in SelfClosingTagTypes:
       if state.elementNode.tagType == element.tagType:
         processDocumentEndNode(state)
-    of TAG_H1:
-      HTMLHeadingElement(element).rank = 1
-    of TAG_H2:
-      HTMLHeadingElement(element).rank = 2
-    of TAG_H3:
-      HTMLHeadingElement(element).rank = 3
-    of TAG_H4:
-      HTMLHeadingElement(element).rank = 4
-    of TAG_H5:
-      HTMLHeadingElement(element).rank = 5
-    of TAG_H6:
-      HTMLHeadingElement(element).rank = 6
-    else: discard
 
     if state.elementNode.tagType == TAG_P and element.tagType in PClosingTagTypes:
       processDocumentEndNode(state)
@@ -292,8 +296,12 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     processDocumentAddNode(state, element)
     state.elementNode = element
 
-  if element.tagType in VoidTagTypes:
-    processDocumentEndNode(state)
+    case element.tagType
+    of VoidTagTypes:
+      processDocumentEndNode(state)
+    of TAG_LI:
+      HTMLLIElement(element).applyOrdinal() #needs to know parent
+    else: discard
 
 proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
   if tag.tagid in VoidTagTypes:

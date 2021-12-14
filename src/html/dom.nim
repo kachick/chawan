@@ -1,5 +1,7 @@
 import uri
 import tables
+import options
+import strutils
 
 import css/values
 import types/enums
@@ -70,40 +72,46 @@ type
     cssapplied*: bool
     rendered*: bool
 
-  HTMLElement* = ref HTMLElementObj
-  HTMLElementObj = object of ElementObj
+  HTMLElement* = ref object of ElementObj
 
-  HTMLInputElement* = ref HTMLInputElementObj
-  HTMLInputElementObj = object of HTMLElementObj
+  HTMLInputElement* = ref object of HTMLElement
     itype*: InputType
     autofocus*: bool
     required*: bool
     value*: string
     size*: int
 
-  HTMLAnchorElement* = ref HTMLAnchorElementObj
-  HTMLAnchorElementObj = object of HTMLElementObj
+  HTMLAnchorElement* = ref object of HTMLElement
     href*: string
 
-  HTMLSelectElement* = ref HTMLSelectElementObj
-  HTMLSelectElementObj = object of HTMLElementObj
+  HTMLSelectElement* = ref object of HTMLElement
     name*: string
     value*: string
     valueSet*: bool
 
-  HTMLSpanElement* = ref HTMLSpanElementObj
-  HTMLSpanElementObj = object of HTMLElementObj
+  HTMLSpanElement* = ref object of HTMLElement
 
-  HTMLOptionElement* = ref HTMLOptionElementObj
-  HTMLOptionElementObj = object of HTMLElementObj
+  HTMLOptionElement* = ref object of HTMLElement
     value*: string
   
-  HTMLHeadingElement* = ref HTMLHeadingElementObj
-  HTMLHeadingElementObj = object of HTMLElementObj
+  HTMLHeadingElement* = ref object of HTMLElement
     rank*: uint16
 
-  HTMLBRElement* = ref HTMLBRElementObj
-  HTMLBRElementObj = object of HTMLElementObj
+  HTMLBRElement* = ref object of HTMLElement
+
+  HTMLMenuElement* = ref object of HTMLElement
+    ordinalcounter*: int
+
+  HTMLUListElement* = ref object of HTMLElement
+    ordinalcounter*: int
+
+  HTMLOListElement* = ref object of HTMLElement
+    start*: Option[int]
+    ordinalcounter*: int
+
+  HTMLLIElement* = ref object of HTMLElement
+    value*: Option[int]
+    ordinalvalue*: int
 
 func firstChild(node: Node): Node =
   if node.childNodes.len == 0:
@@ -191,6 +199,49 @@ func toInputType*(str: string): InputType =
   of "week": INPUT_WEEK
   else: INPUT_UNKNOWN
 
+func ancestor(node: Node, tagTypes: set[TagType]): Element =
+  var elem = node.parentElement
+  while elem != nil:
+    if elem.tagType in tagTypes:
+      return elem
+
+    elem = elem.parentElement
+  return nil
+
+func attr*(element: Element, s: string): string =
+  return element.attributes.getOrDefault(s, "")
+
+func attri*(element: Element, s: string): Option[int] =
+  let a = element.attr(s)
+  try:
+    return some(parseInt(a))
+  except ValueError:
+    return none(int)
+
+proc applyOrdinal*(elem: HTMLLIElement) =
+  let val = elem.attri("value")
+  if val.issome:
+    elem.ordinalvalue = val.get
+  else:
+    let owner = elem.ancestor({TAG_OL, TAG_UL, TAG_MENU})
+    if owner == nil:
+      elem.ordinalvalue = 1
+    else:
+      case owner.tagType
+      of TAG_OL:
+        let ol = HTMLOListElement(owner)
+        elem.ordinalvalue = ol.ordinalcounter
+        inc ol.ordinalcounter
+      of TAG_UL:
+        let ul = HTMLUListElement(owner)
+        elem.ordinalvalue = ul.ordinalcounter
+        inc ul.ordinalcounter
+      of TAG_MENU:
+        let menu = HTMLMenuElement(owner)
+        elem.ordinalvalue = menu.ordinalcounter
+        inc menu.ordinalcounter
+      else: discard
+
 func newText*(): Text =
   new(result)
   result.nodeType = TEXT_NODE
@@ -215,6 +266,16 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
     result = new(HTMLBRElement)
   of TAG_SPAN:
     result = new(HTMLSpanElement)
+  of TAG_OL:
+    result = new(HTMLOListElement)
+  of TAG_UL:
+    result = new(HTMLUListElement)
+    HTMLUListElement(result).ordinalcounter = 1
+  of TAG_MENU:
+    result = new(HTMLMenuElement)
+    HTMLMenuElement(result).ordinalcounter = 1
+  of TAG_LI:
+    result = new(HTMLLIElement)
   else:
     result = new(HTMLElement)
 
@@ -235,6 +296,3 @@ func newAttr*(parent: Element, key: string, value: string): Attr =
   result.ownerElement = parent
   result.name = key
   result.value = value
-
-func attr*(element: Element, s: string): string =
-  return element.attributes.getOrDefault(s, "")
