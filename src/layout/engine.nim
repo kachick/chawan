@@ -350,53 +350,6 @@ proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
       result.node = node
   else: discard
 
-proc processAnonComputedValues(state: var LayoutState, parent: CSSBox, c: CSSComputedValues): bool =
-  if parent.bcontext.has_blocks:
-    if c[PROPERTY_DISPLAY].display == DISPLAY_INLINE:
-      if parent.bcontext.anon_block == nil:
-        let cssvals = parent.cssvalues.inheritProperties()
-        parent.bcontext.anon_block = state.newBlockBox(parent, cssvals)
-      state.add(parent.bcontext.anon_block, state.processComputedValueBox(parent.bcontext.anon_block, c))
-      return true
-    elif parent.bcontext.anon_block != nil:
-      state.add(parent, parent.bcontext.anon_block)
-      parent.bcontext.anon_block = nil
-  return false
-
-proc processAnonBlock(state: var LayoutState, parent: CSSBox, c: Node): bool =
-  if parent.bcontext.has_blocks:
-    if c.isInline():
-      if parent.bcontext.anon_block == nil:
-        var cssvals: CSSComputedValues
-        cssvals.inheritProperties(parent.cssvalues)
-        parent.bcontext.anon_block = state.newBlockBox(parent, cssvals)
-      state.add(parent.bcontext.anon_block, state.processNode(parent.bcontext.anon_block, c))
-      return true
-    elif parent.bcontext.anon_block != nil:
-      state.add(parent, parent.bcontext.anon_block)
-      parent.bcontext.anon_block = nil
-  return false
-
-func needsAnonymousBlockBoxes(node: Node): bool =
-  if not node.isBlock():
-    return false
-  if node.nodeType == ELEMENT_NODE:
-    let elem = Element(node)
-    if elem.cssvalues_before != nil:
-      if elem.cssvalues_before[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
-          elem.cssvalues_before[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
-        return true
-    if elem.cssvalues_after != nil:
-      if elem.cssvalues_after[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
-          elem.cssvalues_after[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
-        return true
-
-  for c in node.childNodes:
-    if c.isBlock():
-      return true
-
-  return false
-
 # ugh this is ugly, but it works...
 # basically this
 # * checks if there's a ::before pseudo element
@@ -410,21 +363,15 @@ proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, node: Node)
 
     if elem.cssvalues_before != nil:
       var box: CSSBox
-      if not state.processAnonComputedValues(parent, elem.cssvalues_before):
-        box = state.processComputedValueBox(parent, elem.cssvalues_before)
-        if box != nil:
-          box.node = node
-      else:
-        box = parent.bcontext.anon_block
+      box = state.processComputedValueBox(parent, elem.cssvalues_before)
+      if box != nil:
+        box.node = node
 
       let text = elem.cssvalues_before[PROPERTY_CONTENT].content
       var inline = state.processInlineBox(box, $text)
       if inline != nil:
         inline.node = node
         state.add(box, inline)
-
-      if box != parent.bcontext.anon_block:
-        state.add(parent, box)
 
 # same as before except it's after
 proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, node: Node) =
@@ -433,12 +380,9 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, node: Node) 
 
     if elem.cssvalues_after != nil:
       var box: CSSBox
-      if not state.processAnonComputedValues(parent, elem.cssvalues_after):
-        box = state.processComputedValueBox(parent, elem.cssvalues_after)
-        if box != nil:
-          box.node = node
-      else:
-        box = parent.bcontext.anon_block
+      box = state.processComputedValueBox(parent, elem.cssvalues_after)
+      if box != nil:
+        box.node = node
 
       let text = elem.cssvalues_after[PROPERTY_CONTENT].content
       var inline = state.processInlineBox(box, $text)
@@ -446,8 +390,7 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, node: Node) 
         inline.node = node
         state.add(box, inline)
 
-      if box != parent.bcontext.anon_block:
-        state.add(parent, box)
+      state.add(parent, box)
 
 proc processMarker(state: var LayoutState, parent: CSSBox, node: Node) =
   if node.nodeType == ELEMENT_NODE:
@@ -466,23 +409,15 @@ proc processMarker(state: var LayoutState, parent: CSSBox, node: Node) =
 proc processNodes(state: var LayoutState, parent: CSSBox, node: Node) =
   state.nodes.add(node)
 
-  parent.bcontext.has_blocks = node.needsAnonymousBlockBoxes()
-
   state.processBeforePseudoElem(parent, node)
 
   state.processMarker(parent, node)
 
   for c in node.childNodes:
-    let isanon = state.processAnonBlock(parent, c)
-    if not isanon:
-      let box = state.processNode(parent, c)
-      state.add(parent, box)
+    let box = state.processNode(parent, c)
+    state.add(parent, box)
 
   state.processAfterPseudoElem(parent, node)
-
-  if parent.bcontext.anon_block != nil:
-    state.add(parent, parent.bcontext.anon_block)
-    parent.bcontext.anon_block = nil
 
   discard state.nodes.pop()
 
