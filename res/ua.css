@@ -16,8 +16,8 @@ textarea, tt, var, font, iframe, u, s, strike, frame, input, img {
 	display: inline-block;
 }
 
-ol, ul {
-	margin-left: 3ch;
+ol, ul, menu, dir {
+	margin-left: 2ch;
 }
 
 table {

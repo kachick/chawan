@@ -131,9 +131,9 @@ func cells*(l: CSSLength): int =
 func listMarker*(t: CSSListStyleType, i: int): string =
   case t
   of LIST_STYLE_TYPE_NONE: return ""
-  of LIST_STYLE_TYPE_DISC: return "* "
-  of LIST_STYLE_TYPE_CIRCLE: return "o "
-  of LIST_STYLE_TYPE_SQUARE: return "O "
+  of LIST_STYLE_TYPE_DISC: return "• "
+  of LIST_STYLE_TYPE_CIRCLE: return "○ "
+  of LIST_STYLE_TYPE_SQUARE: return "□ "
   of LIST_STYLE_TYPE_DECIMAL: return $i & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
