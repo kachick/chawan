@@ -64,9 +64,9 @@ func funcSelectorMatches(elem: Element, sel: Selector): SelectResult =
   of "is", "where":
     for slist in sel.fsels:
       let res = elem.selectorsMatch(slist)
-      if not res.success:
-        return selectres(false)
-    return selectres(true)
+      if res.success:
+        return selectres(true)
+    return selectres(false)
   else: discard
 
 func selectorMatches(elem: Element, sel: Selector): SelectResult =
