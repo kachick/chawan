@@ -47,7 +47,7 @@ func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues
   parent.flushLines()
 
   let mtop = vals[PROPERTY_MARGIN_TOP].length.cells_h(state, parent.bcontext.width)
-  if mtop > parent.bcontext.margin_done:
+  if mtop > parent.bcontext.margin_done or mtop < 0:
     let diff = mtop - parent.bcontext.margin_done
     parent.icontext.fromy += diff
     parent.bcontext.margin_done += diff
@@ -308,15 +308,6 @@ func isBlock(node: Node): bool =
   return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
           elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM
 
-func isInline(node: Node): bool =
-  if node.nodeType == TEXT_NODE:
-    return true
-  if node.nodeType == ELEMENT_NODE:
-    let elem = Element(node)
-    return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_INLINE or
-            elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_INLINE_BLOCK
-  return false
-
 proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSComputedValues): CSSBox =
   case values[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
@@ -332,15 +323,21 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
   else:
     return nil
 
-proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSBox =
-  if elem.tagType == TAG_BR:
+proc processBr(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues) =
+  if vals[PROPERTY_DISPLAY].display == DISPLAY_INLINE:
     if parent.icontext.conty:
       inc parent.height
       inc parent.icontext.fromy
       parent.icontext.conty = false
     else:
       inc parent.icontext.fromy
+    parent.icontext.whitespace = true
+    parent.icontext.ws_initial = true
     parent.icontext.fromx = parent.x
+
+proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSBox =
+  if elem.tagType == TAG_BR:
+    state.processBr(parent, elem.cssvalues)
 
   result = state.processComputedValueBox(parent, elem.cssvalues)
   if result != nil:

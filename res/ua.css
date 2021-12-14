@@ -2,14 +2,9 @@ area, base, source, track, link, meta, param, wbr, head, style, script {
 	display: none !important;
 }
 
-address, blockquote, center, del, dir, div, dl, fieldset, form, h1, h2, h3, h4,
+address, blockquote, center, del, dir, div, dl, dt, dd, fieldset, form, h1, h2, h3, h4,
 h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, ul, body {
 	display: block;
-}
-
-a, abbr, b, bdo, br, button, cite, code, del, dfn, em, font, i, ins, iframe,
-kbd, label, map, object, q, samp, select, small, span, strong, sup, sub {
-	display: inline;
 }
 
 textarea, tt, var, font, iframe, u, s, strike, frame, input, img {
@@ -119,4 +114,24 @@ ul {
 
 :is(ol, ul, menu, dir) :is(ol, ul, menu, dir) ul {
 	list-style-type: square;
+}
+
+dl {
+	margin-bottom: 1em;
+}
+
+:is(ul, ol, dir, menu, dl) dl {
+	margin-bottom: 0em;
+}
+
+dt {
+	font-weight: bold;
+}
+
+dd {
+	margin-left: 4ch;
+}
+
+dl[compact] dt + br {
+	display: none;
 }

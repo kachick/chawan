@@ -41,6 +41,7 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.pseudo
   of "first-child": return elem.parentNode.firstElementChild == elem
   of "last-child": return elem.parentNode.lastElementChild == elem
+  of "only-child": return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
   of "hover": return elem.hover
   of "root": return elem == elem.ownerDocument.root
   else: return false
