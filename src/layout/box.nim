@@ -1,6 +1,9 @@
+import options
+
 import types/enums
 import css/values
 import html/dom
+import io/term
 
 type
   CSSRect* = object
@@ -33,11 +36,13 @@ type
     fromy*: int
     margin_done*: int
     margin_todo*: int
-    has_blocks*: bool
-    anon_block*: CSSBlockBox
+    #following are *specified* dimensions. actual dimensions are in CSSBox
+    width*: int
+    height*: Option[int]
 
   LayoutState* = object
     nodes*: seq[Node]
+    term*: TermAttributes
 
   CSSRowBox* = object
     x*: int

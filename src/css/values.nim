@@ -2,6 +2,7 @@ import unicode
 import tables
 import sugar
 import sequtils
+import options
 
 import utils/twtstr
 import types/enums
@@ -116,17 +117,34 @@ func valueType*(prop: CSSPropertyType): CSSValueType =
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
-func cells*(l: CSSLength): int =
+func px(n: float64, d: int): int =
+  return int(n / float(d))
+
+func cells*(l: CSSLength, d, w, h: int, p: Option[int], o: bool): int =
   case l.unit
-  of UNIT_EM:
-    return int(l.num)
+  of UNIT_EM, UNIT_REM:
+    if o: int(l.num * 2) #horizontal
+    else: int(l.num) #vertical
   of UNIT_CH:
-    return int(l.num)
-  of UNIT_REM:
-    return int(l.num)
-  else:
-    #TODO
-    return int(l.num / 8)
+    if o: int(l.num) #horizontal
+    else: int(l.num / 2) #vertical
+  of UNIT_IC:
+    if o: int(l.num * 2) #horizontal
+    else: int(l.num) #vertical
+  of UNIT_EX:
+    if o: int(l.num / 2) #horizontal
+    else: int(l.num / 4) #vertical
+  of UNIT_PERC: int(p.get / 100 * l.num)
+  of UNIT_PX: px(l.num, d)
+  of UNIT_CM: px(l.num * 37.8, d)
+  of UNIT_MM: px(l.num * 3.78, d)
+  of UNIT_IN: px(l.num * 96, d)
+  of UNIT_PC: px(l.num * 96 / 6, d)
+  of UNIT_PT: px(l.num * 96 / 72, d)
+  of UNIT_VW: px(w / 100 * l.num, d)
+  of UNIT_VH: px(h / 100 * l.num, d)
+  of UNIT_VMIN: px(min(w, h) / 100 * l.num, d)
+  of UNIT_VMAX: px(max(w, h) / 100 * l.num, d)
 
 func listMarker*(t: CSSListStyleType, i: int): string =
   case t
@@ -300,24 +318,30 @@ const colors = {
   "rebeccapurple": 0x663399,
 }.map((a) => (a[0], CSSColor(rgba: RGBAColor(a[1])))).toTable()
 
+const units = {
+  "%": UNIT_PERC,
+  "cm": UNIT_CM,
+  "mm": UNIT_MM,
+  "in": UNIT_IN,
+  "px": UNIT_PX,
+  "pt": UNIT_PT,
+  "pc": UNIT_PC,
+  "em": UNIT_EM,
+  "ex": UNIT_EX,
+  "ch": UNIT_CH,
+  "ic": UNIT_CH,
+  "rem": UNIT_REM,
+  "vw": UNIT_VW,
+  "vh": UNIT_VH,
+  "vmin": UNIT_VMIN,
+  "vmax": UNIT_VMAX,
+}.toTable()
+
 func cssLength(val: float64, unit: string): CSSLength =
-  case unit
-  of "%": return CSSLength(num: val, unit: UNIT_PERC)
-  of "cm": return CSSLength(num: val, unit: UNIT_CM)
-  of "mm": return CSSLength(num: val, unit: UNIT_MM)
-  of "in": return CSSLength(num: val, unit: UNIT_IN)
-  of "px": return CSSLength(num: val, unit: UNIT_PX)
-  of "pt": return CSSLength(num: val, unit: UNIT_PT)
-  of "pc": return CSSLength(num: val, unit: UNIT_PC)
-  of "em": return CSSLength(num: val, unit: UNIT_EM)
-  of "ex": return CSSLength(num: val, unit: UNIT_EX)
-  of "ch": return CSSLength(num: val, unit: UNIT_CH)
-  of "rem": return CSSLength(num: val, unit: UNIT_REM)
-  of "vw": return CSSLength(num: val, unit: UNIT_VW)
-  of "vh": return CSSLength(num: val, unit: UNIT_VH)
-  of "vmin": return CSSLength(num: val, unit: UNIT_VMIN)
-  of "vmax": return CSSLength(num: val, unit: UNIT_VMAX)
-  else: raise newException(CSSValueError, "Invalid unit")
+  if unit in units:
+    CSSLength(num: val, unit: units[unit])
+  else:
+    raise newException(CSSValueError, "Invalid unit")
 
 func color(r, g, b: int): CSSColor =
   return CSSColor(rgba: rgba(r, g, b, 256))
@@ -604,7 +628,7 @@ func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
   assert defaultTable[t] != nil
   return defaultTable[t]
 
-func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSSComputedValue =
+func getComputedValue*(prop: CSSSpecifiedValue, current, parent: CSSComputedValues): CSSComputedValue =
   case prop.globalValue
   of VALUE_INHERIT:
     if inherited(prop.t):
@@ -643,9 +667,6 @@ func getComputedValue*(prop: CSSSpecifiedValue, current: CSSComputedValues): CSS
     return CSSComputedValue(t: prop.t, v: VALUE_LIST_STYLE_TYPE, liststyletype: prop.liststyletype)
   of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
 
-func getComputedValue*(d: CSSDeclaration, current: CSSComputedValues): CSSComputedValue =
-  return getComputedValue(getSpecifiedValue(d), current)
-
 proc rootProperties*(vals: var CSSComputedValues) =
   new(vals)
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
@@ -667,3 +688,8 @@ func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
       result[prop] = parent[prop]
     else:
       result[prop] = getDefault(prop)
+
+func rootProperties*(): CSSComputedValues =
+  new(result)
+  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+    result[prop] = getDefault(prop)

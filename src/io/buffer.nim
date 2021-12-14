@@ -733,7 +733,7 @@ proc renderDocument*(buffer: Buffer) =
     ss_init = true
 
   buffer.document.applyStylesheets(ua_stylesheet, user_stylesheet)
-  buffer.rootbox = buffer.document.alignBoxes(buffer.width, buffer.height)
+  buffer.rootbox = buffer.document.alignBoxes(buffer.attrs)
   if buffer.rootbox == nil:
     return
   var stack: seq[CSSBox]

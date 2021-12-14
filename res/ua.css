@@ -73,20 +73,20 @@ u, ins {
 }
 
 h1, h2, h3, h4, h5, h6 {
-	margin-top: 1ch;
-	margin-bottom: 1ch;
+	margin-top: 1em;
+	margin-bottom: 1em;
 	font-weight: bold;
 }
 
 pre {
-	margin-top: 1ch;
-	margin-bottom: 1ch;
+	margin-top: 1em;
+	margin-bottom: 1em;
 	white-space: pre;
 }
 
 p {
-	margin-top: 1ch;
-	margin-bottom: 1ch;
+	margin-top: 1em;
+	margin-bottom: 1em;
 }
 
 a {

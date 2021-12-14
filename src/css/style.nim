@@ -195,7 +195,12 @@ proc querySelector*(document: Document, q: string): seq[Element] =
     result.add(document.selectElems(sel))
 
 proc applyProperty(elem: Element, s: CSSSpecifiedValue, pseudo: PseudoElem) =
-  let cval = getComputedValue(s, elem.cssvalues)
+  var parent: CSSComputedValues
+  if elem.parentElement != nil:
+    parent = elem.parentElement.cssvalues
+  else:
+    parent = rootProperties()
+  let cval = getComputedValue(s, elem.cssvalues, parent)
   if cval.t == PROPERTY_MARGIN:
     let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
     let right = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)

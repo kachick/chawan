@@ -1,10 +1,24 @@
 import unicode
+import options
 
 import layout/box
 import types/enums
 import html/dom
 import css/values
 import utils/twtstr
+import io/term
+
+func cells_in(l: CSSLength, state: LayoutState, d: int, p: Option[int], o: bool): int =
+  return cells(l, d, state.term.width, state.term.height, p, o)
+
+func cells_w(l: CSSLength, state: LayoutState, p: int): int =
+  return l.cells_in(state, state.term.ppc, p.some, true)
+
+func cells_h(l: CSSLength, state: LayoutState, p: Option[int]): int =
+  return l.cells_in(state, state.term.ppl, p, false)
+
+func cells_h(l: CSSLength, state: LayoutState, p: int): int =
+  return l.cells_in(state, state.term.ppl, p.some, false)
 
 func newInlineContext*(box: CSSBox): InlineContext =
   new(result)
@@ -16,9 +30,9 @@ func newBlockContext(): BlockContext =
 
 proc flushLines(box: CSSBox) =
   if box.icontext.conty:
-    inc box.height
     inc box.icontext.fromy
     inc box.bcontext.fromy
+    inc box.height
     box.icontext.conty = false
   box.icontext.fromy += box.bcontext.margin_todo
   box.bcontext.margin_done += box.bcontext.margin_todo
@@ -27,12 +41,12 @@ proc flushLines(box: CSSBox) =
 func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   new(result)
   result.x = parent.x
-  result.x += vals[PROPERTY_MARGIN_LEFT].length.cells()
+  result.x += vals[PROPERTY_MARGIN_LEFT].length.cells_w(state, parent.bcontext.width)
   result.bcontext = newBlockContext()
 
   parent.flushLines()
 
-  let mtop = vals[PROPERTY_MARGIN_TOP].length.cells()
+  let mtop = vals[PROPERTY_MARGIN_TOP].length.cells_h(state, parent.bcontext.width)
   if mtop > parent.bcontext.margin_done:
     let diff = mtop - parent.bcontext.margin_done
     parent.icontext.fromy += diff
@@ -42,28 +56,32 @@ func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues
 
   result.bcontext.margin_done = parent.bcontext.margin_done
 
-  let pwidth = vals[PROPERTY_WIDTH]
-  if pwidth.length.auto:
-    result.width = parent.width
+  let pwidth = vals[PROPERTY_WIDTH].length
+  if pwidth.auto:
+    result.bcontext.width = parent.bcontext.width
   else:
-    result.width = pwidth.length.cells()
+    result.bcontext.width = pwidth.cells_w(state, parent.bcontext.width)
+
+  let pheight = vals[PROPERTY_HEIGHT].length
+  if not pheight.auto:
+    if pheight.unit != UNIT_PERC or parent.bcontext.height.issome:
+      result.bcontext.height = pheight.cells_h(state, parent.bcontext.height).some
 
   result.icontext = newInlineContext(parent)
   result.icontext.fromy = result.y
   result.icontext.fromx = result.x
   result.cssvalues = vals
 
-func newInlineBox*(parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
+func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
   assert parent != nil
   new(result)
   result.x = parent.x
   result.y = parent.icontext.fromy
 
-  result.width = parent.width
   result.icontext = parent.icontext
   result.bcontext = parent.bcontext
   result.cssvalues = vals
-  result.icontext.fromx += vals[PROPERTY_MARGIN_LEFT].length.cells()
+  result.icontext.fromx += vals[PROPERTY_MARGIN_LEFT].length.cells_w(state, parent.bcontext.width)
 
 type InlineState = object
   ibox: CSSInlineBox
@@ -113,7 +131,7 @@ proc addWord(state: var InlineState) =
   state.ww = 0
 
 proc wrapNormal(state: var InlineState, r: Rune) =
-  if state.fromx + state.width + state.ww == state.ibox.width and r == Rune(' '):
+  if state.fromx + state.width + state.ww == state.ibox.bcontext.width and r == Rune(' '):
     state.addWord()
   if state.word.len == 0:
     if r == Rune(' '):
@@ -132,16 +150,16 @@ proc checkWrap(state: var InlineState, r: Rune) =
   case state.ibox.cssvalues[PROPERTY_WORD_BREAK].wordbreak
   of WORD_BREAK_NORMAL:
     if state.fromx + state.width > state.ibox.x and
-        state.fromx + state.width + state.ww + r.width() > state.ibox.width:
+        state.fromx + state.width + state.ww + r.width() > state.ibox.bcontext.width:
       state.wrapNormal(r)
   of WORD_BREAK_BREAK_ALL:
-    if state.fromx + state.width + state.ww + r.width() > state.ibox.width:
+    if state.fromx + state.width + state.ww + r.width() > state.ibox.bcontext.width:
       var pl: seq[Rune]
       var i = 0
       var w = 0
       while i < state.word.len and
           state.ibox.icontext.fromx + state.rowbox.width + w <
-            state.ibox.width:
+            state.ibox.bcontext.width:
         pl &= state.word[i]
         w += state.word[i].width()
         inc i
@@ -156,7 +174,7 @@ proc checkWrap(state: var InlineState, r: Rune) =
       state.inlineWrap()
   of WORD_BREAK_KEEP_ALL:
     if state.fromx + state.width > state.ibox.x and
-        state.fromx + state.width + state.ww + r.width() > state.ibox.width:
+        state.fromx + state.width + state.ww + r.width() > state.ibox.bcontext.width:
       state.wrapNormal(r)
 
 proc preWrap(state: var InlineState) =
@@ -180,9 +198,7 @@ proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSS
   else:
     # TODO TODO TODO I highly doubt this is correct but it's the only way it
     # makes sense...
-    var inherit: CSSComputedValues
-    inherit.inheritProperties(parent.cssvalues)
-    state.ibox = newInlineBox(parent, inherit)
+    state.ibox = lstate.newInlineBox(parent, parent.cssvalues.inheritProperties())
 
   if str.len == 0:
     return
@@ -225,7 +241,8 @@ proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSS
       fastRuneAt(str, i, r)
       rw = r.width()
 
-    #TODO a better line wrapping algorithm would be nice
+    # TODO a better line wrapping algorithm would be nice... especially because
+    # this one doesn't even work
     if rw > 1 or state.ibox.cssvalues[PROPERTY_WORD_BREAK].wordbreak == WORD_BREAK_BREAK_ALL:
       state.addWord()
 
@@ -265,26 +282,22 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
 
     box.flushLines()
 
-    let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells()
+    let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells_h(state, parent.bcontext.width)
     parent.bcontext.margin_todo += mbot
 
     parent.bcontext.margin_done = box.bcontext.margin_done
     parent.bcontext.margin_todo = max(parent.bcontext.margin_todo - box.bcontext.margin_done, 0)
 
+    if box.bcontext.height.isnone:
+      parent.icontext.fromy = box.icontext.fromy
+    else:
+      parent.icontext.fromy += box.bcontext.height.get
     #eprint "END", CSSBlockBox(box).tag, box.icontext.fromy
   elif box of CSSInlineBox:
-    parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells()
+    parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
+    parent.icontext.fromy = box.icontext.fromy
 
-  let pheight = box.cssvalues[PROPERTY_HEIGHT]
   parent.height += box.height
-  parent.icontext.fromy = box.icontext.fromy
-
-  if not pheight.length.auto:
-    let max = pheight.length.cells()
-    let diff = box.height - max
-    if diff > 0:
-      parent.height -= diff
-      parent.icontext.fromy -= diff
 
   parent.children.add(box)
 
@@ -311,7 +324,7 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
     result = state.newBlockBox(parent, values)
     #CSSBlockBox(result).tag = $elem.tagType
   of DISPLAY_INLINE:
-    result = newInlineBox(parent, values)
+    result = state.newInlineBox(parent, values)
   of DISPLAY_LIST_ITEM:
     result = state.newBlockBox(parent, values)
   of DISPLAY_NONE:
@@ -373,14 +386,15 @@ proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, node: Node)
         inline.node = node
         state.add(box, inline)
 
+      state.add(parent, box)
+
 # same as before except it's after
 proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, node: Node) =
   if node.nodeType == ELEMENT_NODE:
     let elem = Element(node)
 
     if elem.cssvalues_after != nil:
-      var box: CSSBox
-      box = state.processComputedValueBox(parent, elem.cssvalues_after)
+      let box = state.processComputedValueBox(parent, elem.cssvalues_after)
       if box != nil:
         box.node = node
 
@@ -421,15 +435,14 @@ proc processNodes(state: var LayoutState, parent: CSSBox, node: Node) =
 
   discard state.nodes.pop()
 
-proc alignBoxes*(document: Document, width: int, height: int): CSSBox =
+proc alignBoxes*(document: Document, term: TermAttributes): CSSBox =
   var state: LayoutState
-  var rootbox = CSSBlockBox(x: 0, y: 0, width: width, height: 0)
-  rootbox.cssvalues = document.root.cssvalues
+  state.term = term
+  var rootbox = CSSBlockBox(x: 0, y: 0)
+  rootbox.cssvalues = rootProperties()
   rootbox.icontext = newInlineContext(rootbox)
   rootbox.bcontext = newBlockContext()
+  rootbox.bcontext.width = term.width
   state.nodes.add(document.root)
   state.processNodes(rootbox, document.root)
   return rootbox
-
-proc realignBoxes*(document: Document, width, height: int) =
-  var state: LayoutState
