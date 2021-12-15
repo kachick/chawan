@@ -58,6 +58,7 @@ type
   CSSListStyleType* = enum
     LIST_STYLE_TYPE_NONE, LIST_STYLE_TYPE_DISC, LIST_STYLE_TYPE_CIRCLE,
     LIST_STYLE_TYPE_SQUARE, LIST_STYLE_TYPE_DECIMAL,
+    LIST_STYLE_TYPE_LOWER_ROMAN, LIST_STYLE_TYPE_UPPER_ROMAN,
     LIST_STYLE_TYPE_JAPANESE_INFORMAL
 
 type
@@ -204,6 +205,8 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_CIRCLE: return "○ "
   of LIST_STYLE_TYPE_SQUARE: return "□ "
   of LIST_STYLE_TYPE_DECIMAL: return $i & ". "
+  of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
+  of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
 func r(c: CSSColor): int =
@@ -610,7 +613,8 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
       of "circle": return LIST_STYLE_TYPE_CIRCLE
       of "square": return LIST_STYLE_TYPE_SQUARE
       of "decimal": return LIST_STYLE_TYPE_DECIMAL
-      of "roman": return LIST_STYLE_TYPE_DECIMAL
+      of "upper-roman": return LIST_STYLE_TYPE_UPPER_ROMAN
+      of "lower-roman": return LIST_STYLE_TYPE_LOWER_ROMAN
       of "japanese-informal": return LIST_STYLE_TYPE_JAPANESE_INFORMAL
   raise newException(CSSValueError, "Invalid list style")
 

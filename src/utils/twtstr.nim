@@ -6,6 +6,7 @@ import json
 import os
 import math
 import sugar
+import sequtils
 
 when defined(posix):
   import posix
@@ -41,22 +42,11 @@ func fitValueToSize*(str: string, size: int): string =
     return str & ' '.repeat(size - str.runeLen)
   return str.maxString(size)
 
-func remove*(str: string, c: string): string =
-  let rem = c.toRunes()[0]
-  for rune in str.runes:
-    if rem != rune:
-      result &= $rune
-
 func isWhitespace*(c: char): bool =
-  case c
-  of ' ', '\n', '\r', '\t', '\f': return true
-  else: return false
+  return c in {' ', '\n', '\r', '\t', '\f'}
 
 func isControlChar*(c: char): bool =
-  case c
-  of chr(0x00)..chr(0x1F): return true
-  of chr(0x7F): return true
-  else: return false
+  return c in {chr(0x00)..chr(0x1F), chr(0x7F)}
 
 func isControlChar*(r: Rune): bool =
   case r
@@ -190,7 +180,35 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
-#TODO
+func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, string)]): string =
+  if i notin range:
+    return $i
+
+  var n = i
+  let o = n
+  var at = 0
+  while n > 0:
+    if n >= symbols[at][0]:
+      n -= symbols[at][0]
+      result &= symbols[at][1]
+      continue
+    inc at
+
+  return result
+
+const romanNumbers = [
+  (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"), (50, "L"),
+  (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+]
+
+const romanNumbers_lower = romanNumbers.map((x) => (x[0], x[1].tolower()))
+
+func romanNumber*(i: int): string =
+  return number_additive(i, 1..3999, romanNumbers)
+
+func romanNumber_lower*(i: int): string =
+  return number_additive(i, 1..3999, romanNumbers_lower)
+
 func japaneseNumber*(i: int): string =
   if i == 0:
     return "〇"
@@ -203,8 +221,6 @@ func japaneseNumber*(i: int): string =
 
   var ss: seq[string]
   var d = 0
-  var mark = false
-  var res = false
   while n > 0:
     let m = n mod 10
 
@@ -237,7 +253,6 @@ func japaneseNumber*(i: int): string =
     of 0:
       inc d
       n = n div 10
-      mark = true
     of 1:
       if o == n:
         ss.add("一")
