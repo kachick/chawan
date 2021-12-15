@@ -23,7 +23,6 @@ type
     cssvalues*: CSSComputedValues
     node*: Node
 
-  #TODO move fromy
   InlineContext* = ref object
     fromx*: int
     fromy*: int
@@ -55,9 +54,9 @@ type
     str*: string
     nodes*: seq[Node]
 
-  CSSInlineBox* = ref CSSInlineBoxObj
-  CSSInlineBoxObj = object of CSSBox
+  CSSInlineBox* = ref object of CSSBox
     content*: seq[CSSRowBox]
 
-  CSSBlockBox* = ref CSSBlockBoxObj
-  CSSBlockBoxObj = object of CSSBox
+  CSSBlockBox* = ref object of CSSBox
+
+  CSSInlineBlockBox* = ref object of CSSBox

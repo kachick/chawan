@@ -28,15 +28,22 @@ func newInlineContext*(box: CSSBox): InlineContext =
 func newBlockContext(): BlockContext =
   new(result)
 
-proc flushLines(box: CSSBox) =
-  if box.icontext.conty:
-    inc box.icontext.fromy
-    inc box.bcontext.fromy
-    inc box.height
-    box.icontext.conty = false
+proc flushConty(box: CSSBox) =
+  inc box.icontext.fromy
+  inc box.bcontext.fromy
+  box.icontext.conty = false
+  box.icontext.whitespace = true
+  box.icontext.ws_initial = true
+
+proc flushMargins(box: CSSBox) =
   box.icontext.fromy += box.bcontext.margin_todo
   box.bcontext.margin_done += box.bcontext.margin_todo
   box.bcontext.margin_todo = 0
+
+proc flushLines(box: CSSBox) =
+  if box.icontext.conty:
+    box.flushConty()
+  box.flushMargins()
 
 func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   new(result)
@@ -82,6 +89,39 @@ func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues):
   result.bcontext = parent.bcontext
   result.cssvalues = vals
   result.icontext.fromx += vals[PROPERTY_MARGIN_LEFT].length.cells_w(state, parent.bcontext.width)
+
+func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSInlineBlockBox =
+  assert parent != nil
+  new(result)
+  result.x = parent.icontext.fromx
+  result.x += vals[PROPERTY_MARGIN_LEFT].length.cells_w(state, parent.bcontext.width)
+  result.bcontext = newBlockContext()
+
+  let mtop = vals[PROPERTY_MARGIN_TOP].length.cells_h(state, parent.bcontext.width)
+  if mtop > parent.bcontext.margin_done or mtop < 0:
+    let diff = mtop - parent.bcontext.margin_done
+    parent.icontext.fromy += diff
+    parent.bcontext.margin_done += diff
+
+  result.y = parent.icontext.fromy
+
+  result.bcontext.margin_done = parent.bcontext.margin_done
+
+  let pwidth = vals[PROPERTY_WIDTH].length
+  if pwidth.auto:
+    result.bcontext.width = parent.bcontext.width
+  else:
+    result.bcontext.width = pwidth.cells_w(state, parent.bcontext.width)
+
+  let pheight = vals[PROPERTY_HEIGHT].length
+  if not pheight.auto:
+    if pheight.unit != UNIT_PERC or parent.bcontext.height.issome:
+      result.bcontext.height = pheight.cells_h(state, parent.bcontext.height).some
+
+  result.icontext = newInlineContext(parent)
+  result.icontext.fromy = result.y
+  result.icontext.fromx = result.x
+  result.cssvalues = vals
 
 type InlineState = object
   ibox: CSSInlineBox
@@ -183,25 +223,10 @@ proc preWrap(state: var InlineState) =
   state.ibox.icontext.ws_initial = true
   state.skip = true
 
-proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSSBox =
-  if str.len > 0:
-    parent.icontext.fromy += parent.bcontext.margin_todo
-    parent.bcontext.margin_done += parent.bcontext.margin_todo
-    parent.bcontext.margin_todo = 0
-
+proc processInlineText(lstate: var LayoutState, ibox: CSSInlineBox, str: string) =
   var state: InlineState
   state.nodes = lstate.nodes
-  var use_parent = false
-  if parent of CSSInlineBox:
-    state.ibox = CSSInlineBox(parent)
-    use_parent = true
-  else:
-    # TODO TODO TODO I highly doubt this is correct but it's the only way it
-    # makes sense...
-    state.ibox = lstate.newInlineBox(parent, parent.cssvalues.inheritProperties())
-
-  if str.len == 0:
-    return
+  state.ibox = ibox
 
   var i = 0
   state.newRowBox()
@@ -268,9 +293,25 @@ proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSS
     state.ibox.bcontext.margin_todo = 0
     state.ibox.bcontext.margin_done = 0
   state.ibox.icontext.fromy += state.rowi
-  if use_parent:
+
+proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSSBox =
+  #TODO this doesn't really belong in here
+  if str.len > 0:
+    parent.icontext.fromy += parent.bcontext.margin_todo
+    parent.bcontext.margin_done += parent.bcontext.margin_todo
+    parent.bcontext.margin_todo = 0
+
+  if str.len == 0:
     return nil
-  return state.ibox
+
+  if parent of CSSInlineBox:
+    let ibox = CSSInlineBox(parent)
+    lstate.processInlineText(ibox, str)
+    return nil
+
+  let ibox = lstate.newInlineBox(parent, parent.cssvalues.inheritProperties())
+  lstate.processInlineText(ibox, str)
+  return ibox
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   if box == nil:
@@ -296,6 +337,9 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   elif box of CSSInlineBox:
     parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
     parent.icontext.fromy = box.icontext.fromy
+  elif box of CSSInlineBlockBox:
+    parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
+    parent.icontext.fromy = box.icontext.fromy
 
   parent.height += box.height
 
@@ -306,7 +350,7 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
   of DISPLAY_BLOCK:
     result = state.newBlockBox(parent, values)
   of DISPLAY_INLINE_BLOCK:
-    result = state.newInlineBox(parent, values)
+    result = state.newInlineBlockBox(parent, values)
   of DISPLAY_INLINE:
     result = state.newInlineBox(parent, values)
   of DISPLAY_LIST_ITEM:
@@ -325,13 +369,10 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
 proc processBr(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues) =
   if vals[PROPERTY_DISPLAY].display == DISPLAY_INLINE:
     if parent.icontext.conty:
-      inc parent.height
-      inc parent.icontext.fromy
-      parent.icontext.conty = false
+      parent.flushConty()
     else:
+      inc parent.bcontext.fromy
       inc parent.icontext.fromy
-    parent.icontext.whitespace = true
-    parent.icontext.ws_initial = true
     parent.icontext.fromx = parent.x
 
 proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSBox =
