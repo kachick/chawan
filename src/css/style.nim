@@ -10,7 +10,7 @@ import css/selector
 import css/parser
 import css/values
 import html/dom
-import types/enums
+import html/tags
 
 #TODO case sensitivity
 

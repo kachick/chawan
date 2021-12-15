@@ -2,7 +2,7 @@ import unicode
 import options
 
 import layout/box
-import types/enums
+import html/tags
 import html/dom
 import css/values
 import utils/twtstr

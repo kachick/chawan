@@ -4,11 +4,11 @@ import strutils
 import unicode
 import streams
 
-import types/enums
 import css/values
 import css/style
 import utils/twtstr
 import html/dom
+import html/tags
 import layout/box
 import layout/engine
 import config/config

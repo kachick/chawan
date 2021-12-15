@@ -1,6 +1,5 @@
 import options
 
-import types/enums
 import css/values
 import html/dom
 import io/term

@@ -4,7 +4,7 @@ import options
 import strutils
 
 import css/values
-import types/enums
+import html/tags
 
 type
   EventTarget* = ref EventTargetObj

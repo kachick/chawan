@@ -5,12 +5,11 @@ import tables
 import json
 import options
 
-import types/enums
-import types/tagtypes
 import utils/twtstr
 import utils/radixtree
 import html/dom
 import html/entity
+import html/tags
 
 type
   HTMLParseState = object

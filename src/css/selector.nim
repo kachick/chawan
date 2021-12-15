@@ -1,8 +1,7 @@
 import unicode
 
-import types/enums
-import types/tagtypes
 import css/parser
+import html/tags
 
 type
   SelectorType* = enum
