@@ -301,23 +301,22 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
 
   parent.children.add(box)
 
-func isBlock(node: Node): bool =
-  if node.nodeType != ELEMENT_NODE:
-    return false
-  let elem = Element(node)
-  return elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_BLOCK or
-          elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM
-
 proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSComputedValues): CSSBox =
   case values[PROPERTY_DISPLAY].display
   of DISPLAY_BLOCK:
-    #eprint "START", elem.tagType, parent.icontext.fromy
     result = state.newBlockBox(parent, values)
-    #CSSBlockBox(result).tag = $elem.tagType
+  of DISPLAY_INLINE_BLOCK:
+    result = state.newInlineBox(parent, values)
   of DISPLAY_INLINE:
     result = state.newInlineBox(parent, values)
   of DISPLAY_LIST_ITEM:
     result = state.newBlockBox(parent, values)
+  of DISPLAY_TABLE:
+    result = state.newBlockBox(parent, values)
+  of DISPLAY_TABLE_ROW:
+    result = state.newBlockBox(parent, values)
+  of DISPLAY_TABLE_CELL:
+    result = state.newInlineBox(parent, values)
   of DISPLAY_NONE:
     return nil
   else:
@@ -343,16 +342,17 @@ proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSB
   if result != nil:
     result.node = elem
 
-proc processNodes(state: var LayoutState, parent: CSSBox, node: Node)
+proc processElemChildren(state: var LayoutState, parent: CSSBox, elem: Element)
 
 proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
   case node.nodeType
   of ELEMENT_NODE:
+    let elem = Element(node)
     result = state.processElemBox(parent, Element(node))
     if result == nil:
       return
 
-    state.processNodes(result, node)
+    state.processElemChildren(result, elem)
   of TEXT_NODE:
     let text = Text(node)
     result = state.processInlineBox(parent, text.data)
@@ -360,75 +360,59 @@ proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
       result.node = node
   else: discard
 
-# ugh this is ugly, but it works...
-# basically this
-# * checks if there's a ::before pseudo element
-# * checks if we need to wrap things in anonymous block boxes
-# * in case we do, it adds the text to the anonymous box
-# * in case we don't, it tries to add the text to a new parent box
-# * but only if a new parent box is needed.
-proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, node: Node) =
-  if node.nodeType == ELEMENT_NODE:
-    let elem = Element(node)
+proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Element) =
+  if elem.cssvalues_before != nil:
+    var box: CSSBox
+    box = state.processComputedValueBox(parent, elem.cssvalues_before)
+    if box != nil:
+      box.node = elem
 
-    if elem.cssvalues_before != nil:
-      var box: CSSBox
-      box = state.processComputedValueBox(parent, elem.cssvalues_before)
-      if box != nil:
-        box.node = node
+    let text = elem.cssvalues_before[PROPERTY_CONTENT].content
+    var inline = state.processInlineBox(box, $text)
+    if inline != nil:
+      inline.node = elem
+      state.add(box, inline)
 
-      let text = elem.cssvalues_before[PROPERTY_CONTENT].content
-      var inline = state.processInlineBox(box, $text)
-      if inline != nil:
-        inline.node = node
-        state.add(box, inline)
-
-      state.add(parent, box)
-
-# same as before except it's after
-proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, node: Node) =
-  if node.nodeType == ELEMENT_NODE:
-    let elem = Element(node)
-
-    if elem.cssvalues_after != nil:
-      let box = state.processComputedValueBox(parent, elem.cssvalues_after)
-      if box != nil:
-        box.node = node
-
-      let text = elem.cssvalues_after[PROPERTY_CONTENT].content
-      var inline = state.processInlineBox(box, $text)
-      if inline != nil:
-        inline.node = node
-        state.add(box, inline)
-
-      state.add(parent, box)
-
-proc processMarker(state: var LayoutState, parent: CSSBox, node: Node) =
-  if node.nodeType == ELEMENT_NODE:
-    let elem = Element(node)
-    if elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
-      var ordinalvalue = 1
-      if elem.tagType == TAG_LI:
-        ordinalvalue = HTMLLIElement(elem).ordinalvalue
-
-      let text = elem.cssvalues[PROPERTY_LIST_STYLE_TYPE].liststyletype.listMarker(ordinalvalue)
-      let tlen = text.width()
-      parent.icontext.fromx -= tlen
-      let marker = state.processInlineBox(parent, text)
-      state.add(parent, marker)
-
-proc processNodes(state: var LayoutState, parent: CSSBox, node: Node) =
-  state.nodes.add(node)
-
-  state.processBeforePseudoElem(parent, node)
-
-  state.processMarker(parent, node)
-
-  for c in node.childNodes:
-    let box = state.processNode(parent, c)
     state.add(parent, box)
 
-  state.processAfterPseudoElem(parent, node)
+proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Element) =
+  if elem.cssvalues_after != nil:
+    let box = state.processComputedValueBox(parent, elem.cssvalues_after)
+    if box != nil:
+      box.node = elem
+
+    let text = elem.cssvalues_after[PROPERTY_CONTENT].content
+    var inline = state.processInlineBox(box, $text)
+    if inline != nil:
+      inline.node = elem
+      state.add(box, inline)
+
+    state.add(parent, box)
+
+proc processMarker(state: var LayoutState, parent: CSSBox, elem: Element) =
+  if elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
+    var ordinalvalue = 1
+    if elem.tagType == TAG_LI:
+      ordinalvalue = HTMLLIElement(elem).ordinalvalue
+
+    let text = elem.cssvalues[PROPERTY_LIST_STYLE_TYPE].liststyletype.listMarker(ordinalvalue)
+    let tlen = text.width()
+    parent.icontext.fromx -= tlen
+    let marker = state.processInlineBox(parent, text)
+    state.add(parent, marker)
+
+proc processNodes(state: var LayoutState, parent: CSSBox, nodes: seq[Node]) =
+  for node in nodes:
+    let box = state.processNode(parent, node)
+    state.add(parent, box)
+
+proc processElemChildren(state: var LayoutState, parent: CSSBox, elem: Element) =
+  state.nodes.add(elem)
+
+  state.processBeforePseudoElem(parent, elem)
+  state.processMarker(parent, elem)
+  state.processNodes(parent, elem.childNodes)
+  state.processAfterPseudoElem(parent, elem)
 
   discard state.nodes.pop()
 
@@ -441,5 +425,5 @@ proc alignBoxes*(document: Document, term: TermAttributes): CSSBox =
   rootbox.bcontext = newBlockContext()
   rootbox.bcontext.width = term.width
   state.nodes.add(document.root)
-  state.processNodes(rootbox, document.root)
+  state.processElemChildren(rootbox, document.root)
   return rootbox

@@ -139,31 +139,34 @@ func decValue*(c: char): int =
   return decCharMap[int(c)]
 
 func isAscii*(r: Rune): bool =
-  return int(r) <= int(high(char))
+  return int(r) < 128
 
 func hexValue*(r: Rune): int =
-  if isAscii(r):
+  if int(r) < 256:
     return hexValue(char(r))
   return -1
 
 func decValue*(r: Rune): int =
-  if isAscii(r):
+  if int(r) < 256:
     return decValue(char(r))
   return -1
 
-func toAsciiLower*(s: seq[Rune]): string =
-  for r in s:
-    if isAscii(r):
-      result &= lowerChars[int(r)]
+func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
+  var i = 0
+  while i < min(s1.len, s2.len):
+    if not s1[i].isAscii() or cast[char](s1[i]).tolower() != s2[i]:
+      return false
+    inc i
+  return true
 
 func breaksWord*(r: Rune): bool =
   return r in breakWord
 
 func isAlphaAscii*(r: Rune): bool =
-  return isAscii(r) and isAlphaAscii(char(r))
+  return int(r) < 256 and isAlphaAscii(char(r))
 
 func isDigitAscii*(r: Rune): bool =
-  return isAscii(r) and isDigit(char(r))
+  return int(r) < 256 and isDigit(char(r))
 
 func substr*(s: seq[Rune], i: int, j: int): seq[Rune] =
   if s.len == 0:
@@ -214,7 +217,7 @@ func japaneseNumber*(i: int): string =
     return "〇"
   var n = i
   if i < 0:
-    result &= "ス"
+    result &= "マイナス"
     n *= -1
 
   let o = n

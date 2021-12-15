@@ -127,11 +127,15 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
     var value = ""
     var attrname = ""
     while at < buf.len and buf[at] != '=' and not buf[at].isWhitespace() and buf[at] != '>':
-      attrname &= buf[at].tolower()
-      at += buf.runeLenAt(at)
+      var r: Rune
+      fastRuneAt(buf, at, r)
+      if r.isAscii():
+        attrname &= char(r).tolower()
+      else:
+        attrname &= r
 
     at = skipBlanks(buf, at)
-    if buf[at] == '=':
+    if at < buf.len and buf[at] == '=':
       inc at
       at = skipBlanks(buf, at)
       if at < buf.len and (buf[at] == '"' or buf[at] == '\''):
@@ -142,9 +146,8 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
             inc at
             value &= getescapecmd(buf, at)
           else:
-            var r: Rune
-            fastRuneAt(buf, at, r)
-            value &= r
+            value &= buf[at]
+            inc at
         if at < buf.len:
           inc at
       elif at < buf.len:
@@ -416,15 +419,14 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
         state.commentNode.data &= buf[at]
         inc at
     else:
-      var r: Rune
-      fastRuneAt(buf, at, r)
       if state.in_comment:
-        state.commentNode.data &= $r
+        state.commentNode.data &= buf[at]
       else:
-        if not (state.skip_lf and r == Rune('\n')):
+        if not (state.skip_lf and buf[at] == '\n'):
           processDocumentText(state)
-          state.textNode.data &= $r
+          state.textNode.data &= buf[at]
         state.skip_lf = false
+      inc at
 
 proc parseHtml*(inputStream: Stream): Document =
   let document = newDocument()

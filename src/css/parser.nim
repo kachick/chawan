@@ -286,7 +286,7 @@ proc consumeURL(state: var CSSTokenizerState): CSSToken =
 
 proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
   let s = state.consumeName()
-  if s.toAsciiLower() == "url" and state.has() and state.curr() == Rune('('):
+  if s.equalsIgnoreCase("url") and state.has() and state.curr() == Rune('('):
     discard state.consume()
     while state.has(1) and state.curr().isWhitespace() and state.peek(1).isWhitespace():
       discard state.consume()
@@ -516,7 +516,7 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
     if decl.value[i] != CSS_WHITESPACE_TOKEN:
       dec j
       if decl.value[i] == CSS_IDENT_TOKEN and k == 0:
-        if CSSToken(decl.value[i]).value.toAsciiLower() == "important":
+        if CSSToken(decl.value[i]).value.equalsIgnoreCase("important"):
           inc k
           l = i
       elif k == 1 and decl.value[i] == CSS_DELIM_TOKEN:
