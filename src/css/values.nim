@@ -588,6 +588,7 @@ func cssTextDecoration(d: CSSDeclaration): CSSTextDecoration =
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case $tok.value
+      of "none": return TEXT_DECORATION_NONE
       of "underline": return TEXT_DECORATION_UNDERLINE
       of "overline": return TEXT_DECORATION_OVERLINE
       of "line-through": return TEXT_DECORATION_LINE_THROUGH

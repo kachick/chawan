@@ -161,7 +161,6 @@ proc inlineWrap(state: var InlineState) =
       state.ibox.icontext.whitespace = true
       state.ibox.icontext.ws_initial = false
     state.ibox.icontext.conty = true
-  #eprint "wrap", state.rowbox.y, state.rowbox.str
   state.newRowBox()
 
 proc addWord(state: var InlineState) =
@@ -281,7 +280,6 @@ proc processInlineText(lstate: var LayoutState, ibox: CSSInlineBox, str: string)
     state.ww += rw
 
   state.addWord()
-  #eprint "write", state.rowbox.y, state.rowbox.str
 
   if state.rowbox.str.len > 0:
     state.ibox.content.add(state.rowbox)
@@ -313,37 +311,59 @@ proc processInlineBox(lstate: var LayoutState, parent: CSSBox, str: string): CSS
   lstate.processInlineText(ibox, str)
   return ibox
 
+proc addBlock(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+  parent.icontext.fromx = parent.x
+  parent.icontext.whitespace = true
+  parent.icontext.ws_initial = true
+
+  box.flushLines()
+
+  let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells_h(state, parent.bcontext.width)
+  parent.bcontext.margin_todo += mbot
+
+  parent.bcontext.margin_done = box.bcontext.margin_done
+  parent.bcontext.margin_todo = max(parent.bcontext.margin_todo - box.bcontext.margin_done, 0)
+
+  if box.bcontext.height.isnone:
+    parent.icontext.fromy = box.icontext.fromy
+  else:
+    parent.icontext.fromy += box.bcontext.height.get
+
+  parent.children.add(box)
+
+proc addInline(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+  parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
+  parent.icontext.fromy = box.icontext.fromy
+
+  parent.children.add(box)
+
+proc addInlineBlock(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+  parent.icontext.fromx = box.icontext.fromx
+
+  parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
+
+  let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells_h(state, parent.bcontext.width)
+  parent.bcontext.margin_todo += mbot
+
+  parent.bcontext.margin_done = box.bcontext.margin_done
+  parent.bcontext.margin_todo = max(parent.bcontext.margin_todo - box.bcontext.margin_done, 0)
+
+  if box.bcontext.height.isnone:
+    parent.icontext.fromy = box.icontext.fromy
+  else:
+    parent.icontext.fromy += box.bcontext.height.get
+
+  parent.children.add(box)
+
 proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   if box == nil:
     return
   if box of CSSBlockBox:
-    parent.icontext.fromx = parent.x
-    parent.icontext.whitespace = true
-    parent.icontext.ws_initial = true
-
-    box.flushLines()
-
-    let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells_h(state, parent.bcontext.width)
-    parent.bcontext.margin_todo += mbot
-
-    parent.bcontext.margin_done = box.bcontext.margin_done
-    parent.bcontext.margin_todo = max(parent.bcontext.margin_todo - box.bcontext.margin_done, 0)
-
-    if box.bcontext.height.isnone:
-      parent.icontext.fromy = box.icontext.fromy
-    else:
-      parent.icontext.fromy += box.bcontext.height.get
-    #eprint "END", CSSBlockBox(box).tag, box.icontext.fromy
+    state.addBlock(parent, box)
   elif box of CSSInlineBox:
-    parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
-    parent.icontext.fromy = box.icontext.fromy
+    state.addInline(parent, box)
   elif box of CSSInlineBlockBox:
-    parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
-    parent.icontext.fromy = box.icontext.fromy
-
-  parent.height += box.height
-
-  parent.children.add(box)
+    state.addInlineBlock(parent, box)
 
 proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSComputedValues): CSSBox =
   case values[PROPERTY_DISPLAY].display
@@ -355,12 +375,6 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
     result = state.newInlineBox(parent, values)
   of DISPLAY_LIST_ITEM:
     result = state.newBlockBox(parent, values)
-  of DISPLAY_TABLE:
-    result = state.newBlockBox(parent, values)
-  of DISPLAY_TABLE_ROW:
-    result = state.newBlockBox(parent, values)
-  of DISPLAY_TABLE_CELL:
-    result = state.newInlineBox(parent, values)
   of DISPLAY_NONE:
     return nil
   else:
@@ -403,8 +417,7 @@ proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
 
 proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Element) =
   if elem.cssvalues_before != nil:
-    var box: CSSBox
-    box = state.processComputedValueBox(parent, elem.cssvalues_before)
+    let box = state.processComputedValueBox(parent, elem.cssvalues_before)
     if box != nil:
       box.node = elem
 
@@ -412,7 +425,7 @@ proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Eleme
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
-      state.add(box, inline)
+      state.addInline(box, inline)
 
     state.add(parent, box)
 
@@ -426,7 +439,7 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Elemen
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
-      state.add(box, inline)
+      state.addInline(box, inline)
 
     state.add(parent, box)
 
@@ -440,7 +453,7 @@ proc processMarker(state: var LayoutState, parent: CSSBox, elem: Element) =
     let tlen = text.width()
     parent.icontext.fromx -= tlen
     let marker = state.processInlineBox(parent, text)
-    state.add(parent, marker)
+    state.addInline(parent, marker)
 
 proc processNodes(state: var LayoutState, parent: CSSBox, nodes: seq[Node]) =
   for node in nodes:

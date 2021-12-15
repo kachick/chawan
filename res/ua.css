@@ -35,8 +35,20 @@ colgroup {
 	display: table-column-group;
 }
 
-input {
+input[type="text"] {
 	width: 20ch;
+	margin-left: 1ch;
+	margin-right: 1ch;
+}
+
+input[type="text"]::before {
+	content: '[';
+	text-decoration: none !important;
+}
+
+input[type="text"]::after {
+	content: ']';
+	text-decoration: none !important;
 }
 
 tr {
