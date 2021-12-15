@@ -20,7 +20,9 @@ type
     PROPERTY_MARGIN_BOTTOM, PROPERTY_FONT_STYLE, PROPERTY_DISPLAY,
     PROPERTY_CONTENT, PROPERTY_WHITE_SPACE, PROPERTY_FONT_WEIGHT,
     PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK, PROPERTY_WIDTH,
-    PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE
+    PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE, PROPERTY_PADDING,
+    PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
+    PROPERTY_PADDING_BOTTOM
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -71,7 +73,7 @@ type
     rgba: RGBAColor
     termcolor: int
   
-  CSSComputedValue* = ref object of RootObj
+  CSSComputedValue* = ref object
     t*: CSSPropertyType
     case v*: CSSValueType
     of VALUE_COLOR:
@@ -98,8 +100,9 @@ type
 
   CSSComputedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
 
-  CSSSpecifiedValue* = object of CSSComputedValue
-    globalValue*: CSSGlobalValueType
+  CSSSpecifiedValue* = object
+    global*: CSSGlobalValueType
+    computed*: CSSComputedValue
 
   CSSValueError* = object of ValueError
 
@@ -122,6 +125,11 @@ const PropertyNames = {
   "width": PROPERTY_WIDTH,
   "height": PROPERTY_HEIGHT,
   "list-style-type": PROPERTY_LIST_STYLE_TYPE,
+  "padding": PROPERTY_PADDING,
+  "padding-top": PROPERTY_PADDING_TOP,
+  "padding-bottom": PROPERTY_PADDING_BOTTOM,
+  "padding-left": PROPERTY_PADDING_LEFT,
+  "padding-right": PROPERTY_PADDING_RIGHT,
 }.toTable()
 
 const ValueTypes = [
@@ -143,6 +151,11 @@ const ValueTypes = [
   PROPERTY_WIDTH: VALUE_LENGTH,
   PROPERTY_HEIGHT: VALUE_LENGTH,
   PROPERTY_LIST_STYLE_TYPE: VALUE_LIST_STYLE_TYPE,
+  PROPERTY_PADDING: VALUE_LENGTH,
+  PROPERTY_PADDING_TOP: VALUE_LENGTH,
+  PROPERTY_PADDING_LEFT: VALUE_LENGTH,
+  PROPERTY_PADDING_RIGHT: VALUE_LENGTH,
+  PROPERTY_PADDING_BOTTOM: VALUE_LENGTH,
 ]
 
 const InheritedProperties = {
@@ -208,18 +221,6 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
-
-func r(c: CSSColor): int =
-  return c.rgba.r
-
-func g(c: CSSColor): int =
-  return c.rgba.g
-
-func b(c: CSSColor): int =
-  return c.rgba.b
-
-func a(c: CSSColor): int =
-  return c.rgba.a
 
 const colors = {
   "aliceblue": 0xf0f8ff,
@@ -618,31 +619,34 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
       of "japanese-informal": return LIST_STYLE_TYPE_JAPANESE_INFORMAL
   raise newException(CSSValueError, "Invalid list style")
 
+proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
+  case vtype
+  of VALUE_COLOR: val.color = cssColor(d)
+  of VALUE_LENGTH: val.length = cssLength(d)
+  of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(d)
+  of VALUE_DISPLAY: val.display = cssDisplay(d)
+  of VALUE_CONTENT: val.content = cssString(d)
+  of VALUE_WHITE_SPACE: val.whitespace = cssWhiteSpace(d)
+  of VALUE_INTEGER:
+    if ptype == PROPERTY_FONT_WEIGHT:
+      val.integer = cssFontWeight(d)
+  of VALUE_TEXT_DECORATION: val.textdecoration = cssTextDecoration(d)
+  of VALUE_WORD_BREAK: val.wordbreak = cssWordBreak(d)
+  of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(d)
+  of VALUE_NONE: discard
+
 func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
   let name = $d.name
   let ptype = propertyType(name)
   let vtype = valueType(ptype)
-  result = CSSSpecifiedValue(t: ptype, v: vtype)
+  result.computed = CSSComputedValue(t: ptype, v: vtype)
   try:
-    case vtype
-    of VALUE_COLOR: result.color = cssColor(d)
-    of VALUE_LENGTH: result.length = cssLength(d)
-    of VALUE_FONT_STYLE: result.fontstyle = cssFontStyle(d)
-    of VALUE_DISPLAY: result.display = cssDisplay(d)
-    of VALUE_CONTENT: result.content = cssString(d)
-    of VALUE_WHITE_SPACE: result.whitespace = cssWhiteSpace(d)
-    of VALUE_INTEGER:
-      if ptype == PROPERTY_FONT_WEIGHT:
-        result.integer = cssFontWeight(d)
-    of VALUE_TEXT_DECORATION: result.textdecoration = cssTextDecoration(d)
-    of VALUE_WORD_BREAK: result.wordbreak = cssWordBreak(d)
-    of VALUE_LIST_STYLE_TYPE: result.liststyletype = cssListStyleType(d)
-    of VALUE_NONE: discard
+    result.computed.getValueFromDecl(d, vtype, ptype)
   except CSSValueError:
-    result.globalValue = VALUE_UNSET
+    result.global = VALUE_UNSET
 
-  if result.globalValue == VALUE_NOGLOBAL:
-    result.globalValue = cssGlobal(d)
+  if result.global == VALUE_NOGLOBAL:
+    result.global = cssGlobal(d)
 
 func getInitialColor(t: CSSPropertyType): CSSColor =
   case t
@@ -685,43 +689,20 @@ func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
   return defaultTable[t]
 
 func getComputedValue*(prop: CSSSpecifiedValue, current, parent: CSSComputedValues): CSSComputedValue =
-  case prop.globalValue
+  case prop.global
   of VALUE_INHERIT:
-    if inherited(prop.t):
-      return current[prop.t]
+    if inherited(prop.computed.t):
+      return current[prop.computed.t]
   of VALUE_INITIAL:
-    return getDefault(prop.t)
+    return getDefault(prop.computed.t)
   of VALUE_UNSET:
-    if inherited(prop.t):
-      return current[prop.t]
-    return getDefault(prop.t)
-  of VALUE_REVERT:
-    #TODO
-    discard
+    if inherited(prop.computed.t):
+      return current[prop.computed.t]
+    return getDefault(prop.computed.t)
+  of VALUE_REVERT: discard #TODO
   of VALUE_NOGLOBAL: discard
 
-  case prop.v
-  of VALUE_COLOR:
-    return CSSComputedValue(t: prop.t, v: VALUE_COLOR, color: prop.color)
-  of VALUE_LENGTH:
-    return CSSComputedValue(t: prop.t, v: VALUE_LENGTH, length: prop.length)
-  of VALUE_DISPLAY:
-    return CSSComputedValue(t: prop.t, v: VALUE_DISPLAY, display: prop.display)
-  of VALUE_FONT_STYLE:
-    return CSSComputedValue(t: prop.t, v: VALUE_FONT_STYLE, fontstyle: prop.fontstyle)
-  of VALUE_CONTENT:
-    return CSSComputedValue(t: prop.t, v: VALUE_CONTENT, content: prop.content)
-  of VALUE_WHITESPACE:
-    return CSSComputedValue(t: prop.t, v: VALUE_WHITESPACE, whitespace: prop.whitespace)
-  of VALUE_INTEGER:
-    return CSSComputedValue(t: prop.t, v: VALUE_INTEGER, integer: prop.integer)
-  of VALUE_TEXT_DECORATION:
-    return CSSComputedValue(t: prop.t, v: VALUE_TEXT_DECORATION, textdecoration: prop.textdecoration)
-  of VALUE_WORD_BREAK:
-    return CSSComputedValue(t: prop.t, v: VALUE_WORD_BREAK, wordbreak: prop.wordbreak)
-  of VALUE_LIST_STYLE_TYPE:
-    return CSSComputedValue(t: prop.t, v: VALUE_LIST_STYLE_TYPE, liststyletype: prop.liststyletype)
-  of VALUE_NONE: return CSSComputedValue(t: prop.t, v: VALUE_NONE)
+  return prop.computed
 
 proc rootProperties*(vals: var CSSComputedValues) =
   new(vals)

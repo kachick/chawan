@@ -195,23 +195,7 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-proc applyProperty(elem: Element, s: CSSSpecifiedValue, pseudo: PseudoElem) =
-  var parent: CSSComputedValues
-  if elem.parentElement != nil:
-    parent = elem.parentElement.cssvalues
-  else:
-    parent = rootProperties()
-  let cval = getComputedValue(s, elem.cssvalues, parent)
-  if cval.t == PROPERTY_MARGIN:
-    let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
-    let right = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
-    let top = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
-    let bottom = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cval.length, globalValue: s.globalValue)
-    elem.applyProperty(left, pseudo)
-    elem.applyProperty(right, pseudo)
-    elem.applyProperty(top, pseudo)
-    elem.applyProperty(bottom, pseudo)
-    return
+proc applyComputed(elem: Element, cval: CSSComputedValue, pseudo: PseudoElem) =
   case pseudo
   of PSEUDO_NONE:
     elem.cssvalues[cval.t] = cval
@@ -225,6 +209,36 @@ proc applyProperty(elem: Element, s: CSSSpecifiedValue, pseudo: PseudoElem) =
     elem.cssvalues_after[cval.t] = cval
   elem.cssapplied = true
   elem.rendered = false
+
+proc applyShorthand(elem: Element, left, right, top, bottom: CSSComputedValue, pseudo: PseudoElem) =
+  elem.applyComputed(left, pseudo)
+  elem.applyComputed(right, pseudo)
+  elem.applyComputed(top, pseudo)
+  elem.applyComputed(bottom, pseudo)
+
+proc applyProperty(elem: Element, s: CSSSpecifiedValue, pseudo: PseudoElem) =
+  var parent: CSSComputedValues
+  if elem.parentElement != nil:
+    parent = elem.parentElement.cssvalues
+  else:
+    parent = rootProperties()
+
+  let cval = getComputedValue(s, elem.cssvalues, parent)
+  case cval.t
+  of PROPERTY_MARGIN:
+    let left = CSSComputedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cval.length)
+    let right = CSSComputedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cval.length)
+    let top = CSSComputedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: cval.length)
+    let bottom = CSSComputedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cval.length)
+    elem.applyShorthand(left, right, top, bottom, pseudo)
+  of PROPERTY_PADDING:
+    let left = CSSComputedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: cval.length)
+    let right = CSSComputedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: cval.length)
+    let top = CSSComputedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: cval.length)
+    let bottom = CSSComputedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: cval.length)
+    elem.applyShorthand(left, right, top, bottom, pseudo)
+  else: elem.applyComputed(cval, pseudo)
+
 
 type
   ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
