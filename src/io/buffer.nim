@@ -590,15 +590,15 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
 func formatFromLine(line: CSSRowBox): Formatting =
   result.fgcolor = line.color.cellColor()
   if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
-    result.italic = true
+    result.italic_on
   if line.fontweight > 500:
-    result.bold = true
+    result.bold_on
   if line.textdecoration == TEXT_DECORATION_UNDERLINE:
-    result.underline = true
+    result.underline_on
   if line.textdecoration == TEXT_DECORATION_OVERLINE:
-    result.overline = true
+    result.overline_on
   if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
-    result.strike = true
+    result.strike_on
 
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   var r: Rune
@@ -655,9 +655,6 @@ proc updateCursor(buffer: Buffer) =
   if buffer.lines.len == 0:
     buffer.cursory = 0
 
-#TODO this works, but reshape rearranges all CSS boxes which is a *very*
-#resource-intensive operation, and a significant restructuring of the layout
-#engine is needed to avoid this
 proc updateHover(buffer: Buffer) =
   let nodes = buffer.currentCell().nodes
   if nodes != buffer.prevnodes:
@@ -754,8 +751,6 @@ proc renderDocument*(buffer: Buffer) =
   buffer.updateCursor()
 
 proc reshapeBuffer*(buffer: Buffer) =
-  #TODO
-  #buffer.statusmsg = newFixedGrid(buffer.width)
   if buffer.showsource:
     buffer.renderPlainText(buffer.source)
   else:
