@@ -603,13 +603,19 @@ func formatFromLine(line: CSSRowBox): Formatting =
 proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   var r: Rune
 
-  let x = line.x
+  var x = line.x
+  var i = 0
+  while x < 0:
+    fastRuneAt(line.str, i, r)
+    x += r.width()
+  let linestr = line.str.substr(i)
+  i = 0
+
   let y = line.y
 
   while buffer.lines.len <= y:
     buffer.addLine()
 
-  var i = 0
   var j = 0
   var cx = 0
   while cx < x and i < buffer.lines[y].str.len:
@@ -629,8 +635,8 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
     buffer.lines[y].str &= ' '.repeat(x - nx)
     nx = x
 
-  buffer.lines[y].str &= line.str
-  nx += line.str.width()
+  buffer.lines[y].str &= linestr
+  nx += linestr.width()
 
   i = 0
   j = 0
