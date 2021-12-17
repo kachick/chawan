@@ -21,12 +21,18 @@ type
     cssvalues*: CSSComputedValues
     node*: Node
 
+  RowContainer* = object
+    case leaf*: bool
+    of true: row*: CSSRowBox
+    of false: ctx*: InlineContext
+
   InlineContext* = ref object
     fromx*: int
     fromy*: int
     conty*: bool
     whitespace*: bool
     ws_initial*: bool
+    conts*: seq[RowContainer]
 
   BlockContext* = ref object
     fromy*: int
