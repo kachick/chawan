@@ -97,7 +97,7 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
     state.cursor += cs.len
     state.fullRedraw()
 
-proc readLine*(current: var string, minlen: int, maxlen: int): bool =
+proc readLine*(current: var string, minlen, maxlen: int): bool =
   var state: LineState
   state.news = current.toRunes()
   state.cursor = state.news.len

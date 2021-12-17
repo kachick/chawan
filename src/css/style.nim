@@ -360,7 +360,7 @@ proc applyAuthorRules*(document: Document): ApplyResult =
     if rules_local.len > 0:
       discard embedded_rules.pop()
 
-proc applyStylesheets*(document: Document, uass: ParsedStylesheet, userss: ParsedStylesheet) =
+proc applyStylesheets*(document: Document, uass, userss: ParsedStylesheet) =
   let ua = document.applyRules(uass, true)
   let user = document.applyRules(userss)
   let author = document.applyAuthorRules()

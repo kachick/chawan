@@ -156,7 +156,7 @@ proc addLine*(grid: var FlexibleGrid) =
 proc addFormat*(grid: var FlexibleGrid, y: int, format: Formatting) =
   grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].len))
 
-proc addFormat*(grid: var FlexibleGrid, y: int, pos: int, format: Formatting, nodes: seq[Node]) =
+proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting, nodes: seq[Node]) =
   grid[y].formats.add(FormattingCell(formatting: format, nodes: nodes, pos: pos))
 
 proc addCell*(grid: var FlexibleGrid, y: int, r: Rune) =
@@ -213,19 +213,19 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
           of 0:
             formatting = newFormatting()
           of 1:
-            formatting.bold = true
+            formatting.bold_on
           of 3:
             formatting.italic_on
           of 4:
-            formatting.underline = true
+            formatting.underline_on
           of 9:
-            formatting.strike = true
+            formatting.strike_on
           of 22:
-            formatting.bold = false
+            formatting.bold_off
           of 23:
             formatting.italic_off
           of 29:
-            formatting.strike = false
+            formatting.strike_off
           of 30..37:
             formatting.fgcolor = CellColor(rgb: false, color: uint8(ip[pi]))
           of 38:
@@ -271,9 +271,9 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
           of 49:
             formatting.bgcolor = defaultColor
           of 53:
-            formatting.overline = true
+            formatting.overline_on
           of 55:
-            formatting.overline = false
+            formatting.overline_off
           else: discard
           inc pi
       except ValueError: discard

@@ -109,7 +109,7 @@ func getLineAction(s: string): TwtAction =
     return NO_ACTION
   return parseEnum[TwtAction]("ACTION_LINED_" & s)
 
-proc readUserStylesheet(dir: string, file: string): string =
+proc readUserStylesheet(dir, file: string): string =
   if file.len == 0:
     return ""
   if file[0] == '~' or file[0] == '/':

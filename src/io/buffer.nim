@@ -165,7 +165,7 @@ func acursorx(buffer: Buffer): int =
 func acursory(buffer: Buffer): int =
   return buffer.cursory - buffer.fromy
 
-func cellOrigin(buffer: Buffer, x: int, y: int): int =
+func cellOrigin(buffer: Buffer, x, y: int): int =
   let row = y * buffer.width
   var ox = x
   while buffer.display[row + ox].runes.len == 0 and ox > 0:
@@ -292,7 +292,7 @@ proc scrollTo*(buffer: Buffer, y: int) =
   buffer.redraw = true
   buffer.restoreCursorX()
 
-proc cursorTo*(buffer: Buffer, x: int, y: int) =
+proc cursorTo*(buffer: Buffer, x, y: int) =
   buffer.redraw = false
   buffer.cursory = min(max(y, 0), buffer.numLines - 1)
   if buffer.fromy > buffer.cursory:

@@ -340,7 +340,7 @@ proc applyBlockEnd(state: var LayoutState, parent, box: CSSBox) =
   else:
     parent.icontext.fromy += box.bcontext.height.get
 
-proc addBlock(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+proc addBlock(state: var LayoutState, parent, box: CSSBox) =
   parent.icontext.fromx = parent.x
   if box.icontext.conty:
     box.flushConty()
@@ -348,13 +348,13 @@ proc addBlock(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   state.applyBlockEnd(parent, box)
   parent.children.add(box)
 
-proc addInline(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+proc addInline(state: var LayoutState, parent, box: CSSBox) =
   parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
   parent.icontext.fromy = box.icontext.fromy
 
   parent.children.add(box)
 
-proc addInlineBlock(state: var LayoutState, parent: CSSBox, box: CSSBox) =
+proc addInlineBlock(state: var LayoutState, parent, box: CSSBox) =
   parent.icontext.fromx = box.icontext.fromx
   parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
   parent.icontext.conty = box.icontext.conty

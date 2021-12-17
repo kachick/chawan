@@ -290,7 +290,7 @@ func newDocument*(): Document =
   result.body = newHtmlElement(TAG_BODY)
   result.nodeType = DOCUMENT_NODE
 
-func newAttr*(parent: Element, key: string, value: string): Attr =
+func newAttr*(parent: Element, key, value: string): Attr =
   new(result)
   result.nodeType = ATTRIBUTE_NODE
   result.ownerElement = parent

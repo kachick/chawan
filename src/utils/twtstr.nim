@@ -168,7 +168,7 @@ func isAlphaAscii*(r: Rune): bool =
 func isDigitAscii*(r: Rune): bool =
   return int(r) < 256 and isDigit(char(r))
 
-func substr*(s: seq[Rune], i: int, j: int): seq[Rune] =
+func substr*(s: seq[Rune], i, j: int): seq[Rune] =
   if s.len == 0:
     return @[]
   return s[min(high(s), i)..min(high(s), j - 1)]
@@ -188,7 +188,6 @@ func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, 
     return $i
 
   var n = i
-  let o = n
   var at = 0
   while n > 0:
     if n >= symbols[at][0]:
@@ -575,7 +574,7 @@ func width*(s: seq[Rune]): int =
   for r in s:
     result += width(r)
 
-func width*(s: seq[Rune], min: int, max: int): int =
+func width*(s: seq[Rune], min, max: int): int =
   var i = min
   var mi = min(max, s.len)
   while i < mi:

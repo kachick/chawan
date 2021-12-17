@@ -10,7 +10,7 @@ type
     of false:
       color*: uint8
 
-func `==`*(color1: CellColor, color2: CellColor): bool =
+func `==`*(color1, color2: CellColor): bool =
   if color1.rgb != color2.rgb:
     return false
   if color1.rgb:

@@ -165,7 +165,7 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
     inc at
   return tag
 
-proc insertNode(parent: Node, node: Node) =
+proc insertNode(parent, node: Node) =
   parent.childNodes.add(node)
 
   if parent.childNodes.len > 1:
