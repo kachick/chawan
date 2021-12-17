@@ -15,8 +15,6 @@ type
   CSSBoxObj = object of RootObj
     x*: int
     y*: int
-    width*: int
-    height*: int
     children*: seq[CSSBox]
     icontext*: InlineContext
     bcontext*: BlockContext
@@ -34,7 +32,6 @@ type
     fromy*: int
     margin_done*: int
     margin_todo*: int
-    #following are *specified* dimensions. actual dimensions are in CSSBox
     width*: int
     height*: Option[int]
 
