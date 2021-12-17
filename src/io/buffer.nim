@@ -743,11 +743,8 @@ proc renderDocument*(buffer: Buffer) =
   stack.add(buffer.rootbox)
   while stack.len > 0:
     let box = stack.pop()
-    if box of CSSInlineBox:
-      let inline = CSSInlineBox(box)
-      #eprint "NEW BOX", inline.context.conty
-      for line in inline.content:
-        #eprint line
+    if box of CSSBlockBox:
+      for line in box.icontext.rows:
         buffer.setRowBox(line)
 
     var i = box.children.len - 1

@@ -5,14 +5,17 @@ import html/dom
 import io/term
 
 type
+  BoxType* = enum
+    INLINE, BLOCK, INLINE_BLOCK
+
   CSSRect* = object
     x1*: int
     y1*: int
     x2*: int
     y2*: int
 
-  CSSBox* = ref CSSBoxObj
-  CSSBoxObj = object of RootObj
+  CSSBox* = ref object of RootObj
+    t*: BoxType
     x*: int
     y*: int
     children*: seq[CSSBox]
@@ -33,6 +36,7 @@ type
     whitespace*: bool
     ws_initial*: bool
     conts*: seq[RowContainer]
+    rows*: seq[CSSRowBox]
 
   BlockContext* = ref object
     fromy*: int
@@ -58,8 +62,5 @@ type
     nodes*: seq[Node]
 
   CSSInlineBox* = ref object of CSSBox
-    content*: seq[CSSRowBox]
-
   CSSBlockBox* = ref object of CSSBox
-
   CSSInlineBlockBox* = ref object of CSSBox

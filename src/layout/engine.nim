@@ -99,27 +99,33 @@ proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSComputedV
     if pheight.unit != UNIT_PERC or parent.bcontext.height.issome:
       box.bcontext.height = pheight.cells_h(state, parent.bcontext.height).some
 
-  box.icontext = newInlineContext()
-  box.icontext.fromy = box.y
-  box.icontext.fromx = box.x
   box.cssvalues = vals
 
 func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
   new(result)
+  result.t = BLOCK
   if parent.icontext.conty:
     parent.flushConty()
   result.x = parent.x
 
   state.applyBlockStart(result, parent, vals)
+  result.icontext = newInlineContext()
+  result.icontext.fromy = result.y
+  result.icontext.fromx = result.x
 
 func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSInlineBlockBox =
   new(result)
+  result.t = INLINE_BLOCK
   result.x = parent.icontext.fromx
 
   state.applyBlockStart(result, parent, vals)
+  result.icontext = parent.icontext
+  result.icontext.fromy = result.y
+  result.icontext.fromx = result.x
 
 func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
   new(result)
+  result.t = INLINE
   result.x = parent.x
   result.y = parent.icontext.fromy
 
@@ -156,8 +162,11 @@ proc newRowBox(state: var InlineState) =
   state.rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
   state.rowbox.nodes = state.nodes
 
-proc inlineWrap(state: var InlineState) =
+proc addRowBox(state: var InlineState) =
   state.rowboxes.add(state.rowbox)
+
+proc inlineWrap(state: var InlineState) =
+  state.addRowBox()
   inc state.rowi
   state.icontext.fromx = state.x
   if state.word.len == 0:
@@ -295,7 +304,7 @@ proc processInlineText(str: string, icontext: InlineContext,
   state.addWord()
 
   if state.rowbox.str.len > 0:
-    state.rowboxes.add(state.rowbox)
+    state.addRowBox()
     state.icontext.fromx += state.rowbox.width
     state.icontext.conty = true
 
@@ -308,9 +317,9 @@ proc processInlineText(str: string, icontext: InlineContext,
 
 proc processInlineContext(ibox: CSSInlineBox, str: string, nodes: seq[Node]) =
   let rows = processInlineText(str, ibox.icontext, ibox.bcontext, ibox.cssvalues, ibox.x, nodes)
-  ibox.content.add(rows)
+  ibox.icontext.rows.add(rows)
 
-proc processInlineBox(state: var LayoutState, parent: CSSBox, str: string): CSSBox =
+proc processInlineBox(state: var LayoutState, parent: CSSBox, str: string): CSSInlineBox =
   if str.len == 0:
     return nil
 
@@ -340,7 +349,7 @@ proc applyBlockEnd(state: var LayoutState, parent, box: CSSBox) =
   else:
     parent.icontext.fromy += box.bcontext.height.get
 
-proc addBlock(state: var LayoutState, parent, box: CSSBox) =
+proc add(state: var LayoutState, parent: CSSBox, box: CSSBlockBox) =
   parent.icontext.fromx = parent.x
   if box.icontext.conty:
     box.flushConty()
@@ -348,13 +357,13 @@ proc addBlock(state: var LayoutState, parent, box: CSSBox) =
   state.applyBlockEnd(parent, box)
   parent.children.add(box)
 
-proc addInline(state: var LayoutState, parent, box: CSSBox) =
+proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBox) =
   parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
   parent.icontext.fromy = box.icontext.fromy
 
   parent.children.add(box)
 
-proc addInlineBlock(state: var LayoutState, parent, box: CSSBox) =
+proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBlockBox) =
   parent.icontext.fromx = box.icontext.fromx
   parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
   parent.icontext.conty = box.icontext.conty
@@ -363,12 +372,10 @@ proc addInlineBlock(state: var LayoutState, parent, box: CSSBox) =
   parent.children.add(box)
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
-  if box of CSSBlockBox:
-    state.addBlock(parent, box)
-  elif box of CSSInlineBox:
-    state.addInline(parent, box)
-  elif box of CSSInlineBlockBox:
-    state.addInlineBlock(parent, box)
+  case box.t
+  of BLOCK: state.add(parent, CSSBlockBox(box))
+  of INLINE: state.add(parent, CSSInlineBox(box))
+  of INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
 
 proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSComputedValues): CSSBox =
   case values[PROPERTY_DISPLAY].display
@@ -430,7 +437,7 @@ proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Eleme
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
-      state.addInline(box, inline)
+      state.add(box, inline)
 
     state.add(parent, box)
 
@@ -444,7 +451,7 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Elemen
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
-      state.addInline(box, inline)
+      state.add(box, inline)
 
     state.add(parent, box)
 
@@ -459,7 +466,7 @@ proc processMarker(state: var LayoutState, parent: CSSBox, elem: Element) =
     parent.icontext.fromx -= tlen
     let marker = state.processInlineBox(parent, text)
     if marker != nil:
-      state.addInline(parent, marker)
+      state.add(parent, marker)
 
 proc processNodes(state: var LayoutState, parent: CSSBox, nodes: seq[Node]) =
   for node in nodes:
