@@ -12,7 +12,15 @@ textarea, tt, var, font, iframe, u, s, strike, frame, input, img {
 }
 
 ol, ul, menu, dir {
-	margin-left: 3ch;
+	margin-left: 4ch;
+	margin-top: 1em;
+	margin-bottom: 1em;
+}
+
+:is(ol, ul, menu, dir) :is(ol, ul, menu, dir) {
+	margin-left: 2ch;
+	margin-top: unset;
+	margin-bottom: unset;
 }
 
 table {
@@ -133,7 +141,7 @@ dl {
 }
 
 :is(ul, ol, dir, menu, dl) dl {
-	margin-bottom: 0em;
+	margin-bottom: unset;
 }
 
 dt {
