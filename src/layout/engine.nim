@@ -77,9 +77,9 @@ proc flushMargins(box: CSSBox) =
 proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSComputedValues) =
   parent.flushMargins()
   box.bcontext = newBlockContext()
-  box.x += vals[PROPERTY_MARGIN_LEFT].length.cells_w(state, parent.bcontext.width)
+  box.x += vals{"margin-left"}.cells_w(state, parent.bcontext.width)
 
-  let mtop = vals[PROPERTY_MARGIN_TOP].length.cells_h(state, parent.bcontext.width)
+  let mtop = vals{"margin-top"}.cells_h(state, parent.bcontext.width)
   if mtop > parent.bcontext.margin_done or mtop < 0:
     let diff = mtop - parent.bcontext.margin_done
     parent.icontext.fromy += diff
@@ -88,13 +88,13 @@ proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSComputedV
   box.y = parent.icontext.fromy
   box.bcontext.margin_done = parent.bcontext.margin_done
 
-  let pwidth = vals[PROPERTY_WIDTH].length
+  let pwidth = vals{"width"}
   if pwidth.auto:
     box.bcontext.width = parent.bcontext.width
   else:
     box.bcontext.width = pwidth.cells_w(state, parent.bcontext.width)
 
-  let pheight = vals[PROPERTY_HEIGHT].length
+  let pheight = vals{"height"}
   if not pheight.auto:
     if pheight.unit != UNIT_PERC or parent.bcontext.height.issome:
       box.bcontext.height = pheight.cells_h(state, parent.bcontext.height).some
@@ -132,7 +132,7 @@ func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues):
   result.icontext = parent.icontext
   result.bcontext = parent.bcontext
   result.cssvalues = vals
-  result.icontext.fromx += vals[PROPERTY_MARGIN_LEFT].length.cells_w(state, parent.bcontext.width)
+  result.icontext.fromx += vals{"margin-left"}.cells_w(state, parent.bcontext.width)
 
 type InlineState = object
   icontext: InlineContext
@@ -156,10 +156,10 @@ proc newRowBox(state: var InlineState) =
   state.rowbox.y = state.icontext.fromy + state.rowi
 
   let cssvalues = state.cssvalues
-  state.rowbox.color = cssvalues[PROPERTY_COLOR].color
-  state.rowbox.fontstyle = cssvalues[PROPERTY_FONT_STYLE].fontstyle
-  state.rowbox.fontweight = cssvalues[PROPERTY_FONT_WEIGHT].integer
-  state.rowbox.textdecoration = cssvalues[PROPERTY_TEXT_DECORATION].textdecoration
+  state.rowbox.color = cssvalues{"color"}
+  state.rowbox.fontstyle = cssvalues{"font-style"}
+  state.rowbox.fontweight = cssvalues{"font-weight"}
+  state.rowbox.textdecoration = cssvalues{"text-decoration"}
   state.rowbox.nodes = state.nodes
 
 proc addRowBox(state: var InlineState) =
@@ -201,9 +201,9 @@ proc wrapNormal(state: var InlineState, r: Rune) =
     state.icontext.ws_initial = false
 
 proc checkWrap(state: var InlineState, r: Rune) =
-  if state.cssvalues[PROPERTY_WHITESPACE].whitespace in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
+  if state.cssvalues{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     return
-  case state.cssvalues[PROPERTY_WORD_BREAK].wordbreak
+  case state.cssvalues{"word-break"}
   of WORD_BREAK_NORMAL:
     if state.fromx + state.width > state.x and
         state.fromx + state.width + state.ww + r.width() > state.x + state.bcontext.width:
@@ -262,7 +262,7 @@ proc processInlineText(str: string, icontext: InlineContext,
       inc i
       state.addWord()
 
-      case state.cssvalues[PROPERTY_WHITESPACE].whitespace
+      case state.cssvalues{"white-space"}
       of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
         if state.icontext.whitespace:
           if state.icontext.ws_initial:
@@ -289,7 +289,7 @@ proc processInlineText(str: string, icontext: InlineContext,
 
     # TODO a better line wrapping algorithm would be nice... especially because
     # this one doesn't even work
-    if rw > 1 or state.cssvalues[PROPERTY_WORD_BREAK].wordbreak == WORD_BREAK_BREAK_ALL:
+    if rw > 1 or state.cssvalues{"word-break"} == WORD_BREAK_BREAK_ALL:
       state.addWord()
 
     state.checkWrap(r)
@@ -338,7 +338,7 @@ proc processInlineBox(state: var LayoutState, parent: CSSBox, str: string): CSSI
 proc applyBlockEnd(state: var LayoutState, parent, box: CSSBox) =
   box.flushMargins()
 
-  let mbot = box.cssvalues[PROPERTY_MARGIN_BOTTOM].length.cells_h(state, parent.bcontext.width)
+  let mbot = box.cssvalues{"margin-bottom"}.cells_h(state, parent.bcontext.width)
   parent.bcontext.margin_todo += mbot
 
   parent.bcontext.margin_done = box.bcontext.margin_done
@@ -358,14 +358,14 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBlockBox) =
   parent.children.add(box)
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBox) =
-  parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
+  parent.icontext.fromx += box.cssvalues{"margin-right"}.cells_w(state, parent.bcontext.width)
   parent.icontext.fromy = box.icontext.fromy
 
   parent.children.add(box)
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBlockBox) =
   parent.icontext.fromx = box.icontext.fromx
-  parent.icontext.fromx += box.cssvalues[PROPERTY_MARGIN_RIGHT].length.cells_w(state, parent.bcontext.width)
+  parent.icontext.fromx += box.cssvalues{"margin-right"}.cells_w(state, parent.bcontext.width)
   parent.icontext.conty = box.icontext.conty
 
   state.applyBlockEnd(parent, box)
@@ -378,7 +378,7 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   of INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
 
 proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSComputedValues): CSSBox =
-  case values[PROPERTY_DISPLAY].display
+  case values{"display"}
   of DISPLAY_BLOCK:
     result = state.newBlockBox(parent, values)
   of DISPLAY_INLINE_BLOCK:
@@ -393,7 +393,7 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
     return nil
 
 proc processBr(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues) =
-  if vals[PROPERTY_DISPLAY].display == DISPLAY_INLINE:
+  if vals{"display"} == DISPLAY_INLINE:
     if parent.icontext.conty:
       parent.flushConty()
     else:
@@ -433,7 +433,7 @@ proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Eleme
     if box == nil: return
     box.node = elem
 
-    let text = elem.cssvalues_before[PROPERTY_CONTENT].content
+    let text = elem.cssvalues_before{"content"}
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
@@ -447,7 +447,7 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Elemen
     if box == nil: return
     box.node = elem
 
-    let text = elem.cssvalues_after[PROPERTY_CONTENT].content
+    let text = elem.cssvalues_after{"content"}
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
@@ -456,12 +456,12 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Elemen
     state.add(parent, box)
 
 proc processMarker(state: var LayoutState, parent: CSSBox, elem: Element) =
-  if elem.cssvalues[PROPERTY_DISPLAY].display == DISPLAY_LIST_ITEM:
+  if elem.cssvalues{"display"} == DISPLAY_LIST_ITEM:
     var ordinalvalue = 1
     if elem.tagType == TAG_LI:
       ordinalvalue = HTMLLIElement(elem).ordinalvalue
 
-    let text = elem.cssvalues[PROPERTY_LIST_STYLE_TYPE].liststyletype.listMarker(ordinalvalue)
+    let text = elem.cssvalues{"list-style-type"}.listMarker(ordinalvalue)
     let tlen = text.width()
     parent.icontext.fromx -= tlen
     let marker = state.processInlineBox(parent, text)

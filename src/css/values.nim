@@ -3,6 +3,8 @@ import tables
 import sugar
 import sequtils
 import options
+import macros
+import strutils
 
 import utils/twtstr
 import css/parser
@@ -106,7 +108,6 @@ type
 
   CSSValueError* = object of ValueError
 
-#TODO calculate this during compile time
 const PropertyNames = {
   "all": PROPERTY_ALL,
   "color": PROPERTY_COLOR,
@@ -178,6 +179,13 @@ func propertyType*(s: string): CSSPropertyType =
 
 func valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
+
+macro `{}`*(vals: CSSComputedValues, s: typed): untyped =
+  let t = propertyType($s)
+  let v = valueType(t)
+  let vs = $v
+  let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
+  result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
@@ -487,20 +495,8 @@ func cssLength(d: CSSDeclaration): CSSLength =
 
   return CSSLength(num: 0, unit: UNIT_EM)
 
-#func hasColor*(style: CSS2Properties): bool =
-#  return style.color.r != 0 or style.color.b != 0 or style.color.g != 0 or style.color.a != 0
-#
-#func termColor*(style: CSS2Properties): ForegroundColor =
-#  if style.color.r > 120:
-#    return fgRed
-#  elif style.color.b > 120:
-#    return fgBlue
-#  elif style.color.g > 120:
-#    return fgGreen
-#  else:
-#    return fgWhite
-
 func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
+
 func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
 
 func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
