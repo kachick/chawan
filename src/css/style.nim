@@ -195,57 +195,31 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-proc applyComputed(elem: Element, cval: CSSComputedValue, pseudo: PseudoElem) =
-  case pseudo
-  of PSEUDO_NONE:
-    elem.cssvalues[cval.t] = cval
-  of PSEUDO_BEFORE:
-    if elem.cssvalues_before == nil:
-      elem.cssvalues_before.rootProperties()
-    elem.cssvalues_before[cval.t] = cval
-  of PSEUDO_AFTER:
-    if elem.cssvalues_after == nil:
-      elem.cssvalues_after.rootProperties()
-    elem.cssvalues_after[cval.t] = cval
-  elem.cssapplied = true
-  elem.rendered = false
-
-proc applyShorthand(elem: Element, left, right, top, bottom: CSSComputedValue, pseudo: PseudoElem) =
-  elem.applyComputed(left, pseudo)
-  elem.applyComputed(right, pseudo)
-  elem.applyComputed(top, pseudo)
-  elem.applyComputed(bottom, pseudo)
-
-proc applyProperty(elem: Element, s: CSSSpecifiedValue, pseudo: PseudoElem) =
-  var parent: CSSComputedValues
+proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
+  var parent: CSSSpecifiedValues
   if elem.parentElement != nil:
-    parent = elem.parentElement.cssvalues
+    parent = elem.parentElement.css
   else:
     parent = rootProperties()
 
-  let cval = getComputedValue(s, elem.cssvalues, parent)
-  case cval.t
-  of PROPERTY_MARGIN:
-    let left = CSSComputedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: cval.length)
-    let right = CSSComputedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: cval.length)
-    let top = CSSComputedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: cval.length)
-    let bottom = CSSComputedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: cval.length)
-    elem.applyShorthand(left, right, top, bottom, pseudo)
-  of PROPERTY_PADDING:
-    let left = CSSComputedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: cval.length)
-    let right = CSSComputedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: cval.length)
-    let top = CSSComputedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: cval.length)
-    let bottom = CSSComputedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: cval.length)
-    elem.applyShorthand(left, right, top, bottom, pseudo)
-  else: elem.applyComputed(cval, pseudo)
+  case pseudo
+  of PSEUDO_NONE:
+    elem.css.applyValue(parent, d)
+  of PSEUDO_BEFORE, PSEUDO_AFTER:
+    if elem.pseudo[pseudo] == nil:
+      elem.pseudo[pseudo] = elem.css.inheritProperties()
+    elem.pseudo[pseudo].applyValue(parent, d)
 
+  elem.cssapplied = true
+  elem.rendered = false
 
 type
   ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
   ParsedStylesheet* = seq[ParsedRule]
   ApplyResult = object
-    normal: seq[tuple[e:Element,d:CSSSpecifiedValue,p:PseudoElem]]
-    important: seq[tuple[e:Element,d:CSSSpecifiedValue,p:PseudoElem]]
+    normal: seq[CSSDeclaration]
+    important: seq[CSSDeclaration]
+  RuleList = array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]]
 
 proc parseStylesheet*(s: Stream): ParsedStylesheet =
   for v in parseCSS(s).value:
@@ -253,8 +227,7 @@ proc parseStylesheet*(s: Stream): ParsedStylesheet =
     if sels.len > 1 or sels[^1].len > 0:
       result.add((sels: sels, oblock: v.oblock))
 
-func calcRules(elem: Element, rules: ParsedStylesheet):
-    array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]] =
+func calcRules(elem: Element, rules: ParsedStylesheet): RuleList =
   var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
   for rule in rules:
     for sel in rule.sels:
@@ -267,43 +240,48 @@ func calcRules(elem: Element, rules: ParsedStylesheet):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
     result[i] = tosorts[i].map((x) => x.b)
 
-proc applyItems*(ares: var ApplyResult, elem: Element, decls: seq[CSSParsedItem], pseudo: PseudoElem) =
+proc applyItems(ares: var ApplyResult, decls: seq[CSSParsedItem]) =
   for item in decls:
     if item of CSSDeclaration:
       let decl = CSSDeclaration(item)
       if decl.important:
-        ares.important.add((elem, getSpecifiedValue(decl), pseudo))
+        ares.important.add(decl)
       else:
-        ares.normal.add((elem, getSpecifiedValue(decl), pseudo))
+        ares.normal.add(decl)
 
-proc applyRules*(document: Document, pss: ParsedStylesheet, reset: bool = false): ApplyResult =
+proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
+  var ares: ApplyResult
+
+  let rules_user_agent = ua[pseudo]
+  for rule in rules_user_agent:
+    let decls = parseCSSListOfDeclarations(rule.value)
+    ares.applyItems(decls)
+
+  let rules_user = user[pseudo]
+  for rule in rules_user:
+    let decls = parseCSSListOfDeclarations(rule.value)
+    ares.applyItems(decls)
+
+  let rules_author = author[pseudo]
+  for rule in rules_author:
+    let decls = parseCSSListOfDeclarations(rule.value)
+    ares.applyItems(decls)
+
+  if pseudo == PSEUDO_NONE:
+    let style = element.attr("style")
+    if style.len > 0:
+      let inline_rules = newStringStream(style).parseCSSListOfDeclarations()
+      ares.applyItems(inline_rules)
+
+  for rule in ares.normal:
+    element.applyProperty(rule, pseudo)
+
+  for rule in ares.important:
+    element.applyProperty(rule, pseudo)
+
+proc applyRules*(document: Document, ua, user: ParsedStylesheet) =
   var stack: seq[Element]
 
-  document.root.cssvalues.rootProperties()
-  stack.add(document.root)
-
-  while stack.len > 0:
-    let elem = stack.pop()
-    if not elem.cssapplied:
-      if reset:
-        elem.cssvalues.rootProperties()
-        elem.cssvalues_before = nil
-        elem.cssvalues_after = nil
-      let rules_pseudo = calcRules(elem, pss)
-      for pseudo in low(PseudoElem)..high(PseudoElem):
-        let rules = rules_pseudo[pseudo]
-        for rule in rules:
-          let decls = parseCSSListOfDeclarations(rule.value)
-          result.applyItems(elem, decls, pseudo)
-
-    var i = elem.children.len - 1
-    while i >= 0:
-      let child = elem.children[i]
-      stack.add(child)
-      dec i
-
-proc applyAuthorRules*(document: Document): ApplyResult =
-  var stack: seq[Element]
   var embedded_rules: seq[ParsedStylesheet]
 
   stack.add(document.head)
@@ -315,16 +293,19 @@ proc applyAuthorRules*(document: Document): ApplyResult =
         if ct.nodeType == TEXT_NODE:
           rules_head &= Text(ct).data
 
-  stack.setLen(0)
-
-  stack.add(document.root)
-
   if rules_head.len > 0:
     let parsed = newStringStream(rules_head).parseStylesheet()
     embedded_rules.add(parsed)
 
+  stack.setLen(0)
+
+  stack.add(document.root)
+
+  document.root.css = rootProperties()
+
   while stack.len > 0:
     let elem = stack.pop()
+
     var rules_local = ""
     for child in elem.children:
       if child.tagType == TAG_STYLE:
@@ -337,19 +318,18 @@ proc applyAuthorRules*(document: Document): ApplyResult =
       embedded_rules.add(parsed)
 
     if not elem.cssapplied:
+      if elem.parentElement != nil:
+        elem.css = elem.parentElement.css.inheritProperties()
+      else:
+        elem.css = rootProperties()
+
+      let uarules = calcRules(elem, ua)
+      let userrules = calcRules(elem, user)
       let this_rules = embedded_rules.concat()
-      let rules_pseudo = calcRules(elem, this_rules)
+      let authorrules = calcRules(elem, this_rules)
 
       for pseudo in low(PseudoElem)..high(PseudoElem):
-        let rules = rules_pseudo[pseudo]
-        for rule in rules:
-          let decls = parseCSSListOfDeclarations(rule.value)
-          result.applyItems(elem, decls, pseudo)
-
-      let style = elem.attr("style")
-      if style.len > 0:
-        let inline_rules = newStringStream(style).parseCSSListOfDeclarations()
-        result.applyItems(elem, inline_rules, PSEUDO_NONE)
+        elem.applyRules(uarules, userrules, authorrules, pseudo)
 
     var i = elem.children.len - 1
     while i >= 0:
@@ -361,44 +341,7 @@ proc applyAuthorRules*(document: Document): ApplyResult =
       discard embedded_rules.pop()
 
 proc applyStylesheets*(document: Document, uass, userss: ParsedStylesheet) =
-  let ua = document.applyRules(uass, true)
-  let user = document.applyRules(userss)
-  let author = document.applyAuthorRules()
-  var elems: seq[Element]
-
-  for rule in ua.normal:
-    if not rule.e.cssapplied:
-      elems.add(rule.e)
-    rule.e.applyProperty(rule.d, rule.p)
-  for rule in user.normal:
-    if not rule.e.cssapplied:
-      elems.add(rule.e)
-    rule.e.applyProperty(rule.d, rule.p)
-  for rule in author.normal:
-    if not rule.e.cssapplied:
-      elems.add(rule.e)
-    rule.e.applyProperty(rule.d, rule.p)
-
-  for rule in author.important:
-    if not rule.e.cssapplied:
-      elems.add(rule.e)
-    rule.e.applyProperty(rule.d, rule.p)
-  for rule in user.important:
-    if not rule.e.cssapplied:
-      elems.add(rule.e)
-    rule.e.applyProperty(rule.d, rule.p)
-  for rule in ua.important:
-    if not rule.e.cssapplied:
-      elems.add(rule.e)
-    rule.e.applyProperty(rule.d, rule.p)
-
-  for elem in elems:
-    if elem.parentElement != nil:
-      elem.cssvalues.inheritProperties(elem.parentElement.cssvalues)
-      if elem.cssvalues_before != nil:
-        elem.cssvalues_before.inheritProperties(elem.cssvalues)
-      if elem.cssvalues_after != nil:
-        elem.cssvalues_after.inheritProperties(elem.cssvalues)
+  document.applyRules(uass, userss)
 
 proc refreshStyle*(elem: Element) =
   elem.cssapplied = false

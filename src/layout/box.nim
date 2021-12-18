@@ -21,7 +21,7 @@ type
     children*: seq[CSSBox]
     icontext*: InlineContext
     bcontext*: BlockContext
-    cssvalues*: CSSComputedValues
+    cssvalues*: CSSSpecifiedValues
     node*: Node
 
   RowContainer* = object

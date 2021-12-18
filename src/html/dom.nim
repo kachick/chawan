@@ -65,9 +65,8 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, string]
-    cssvalues*: CSSComputedValues
-    cssvalues_before*: CSSComputedValues
-    cssvalues_after*: CSSComputedValues
+    css*: CSSSpecifiedValues
+    pseudo*: array[low(PseudoElem)..high(PseudoElem), CSSSpecifiedValues]
     hover*: bool
     cssapplied*: bool
     rendered*: bool
@@ -281,7 +280,7 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
-  result.cssvalues.rootProperties()
+  result.css = rootProperties()
 
 func newDocument*(): Document =
   new(result)

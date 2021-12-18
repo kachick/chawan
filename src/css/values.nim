@@ -8,7 +8,10 @@ import strutils
 
 import utils/twtstr
 import css/parser
+import css/selector
 import types/color
+
+export selector.PseudoElem
 
 type
   CSSUnit* = enum
@@ -75,7 +78,7 @@ type
     rgba: RGBAColor
     termcolor: int
   
-  CSSComputedValue* = ref object
+  CSSSpecifiedValue* = ref object
     t*: CSSPropertyType
     case v*: CSSValueType
     of VALUE_COLOR:
@@ -100,11 +103,9 @@ type
       liststyletype*: CSSListStyleType
     of VALUE_NONE: discard
 
-  CSSComputedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue]
+  CSSSpecifiedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSSpecifiedValue]
 
-  CSSSpecifiedValue* = object
-    global*: CSSGlobalValueType
-    computed*: CSSComputedValue
+  CSSValues* = array[low(PseudoElem)..high(PseudoElem), CSSSpecifiedValues]
 
   CSSValueError* = object of ValueError
 
@@ -174,16 +175,15 @@ func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType),
 
 const InheritedArray = getPropInheritedArray()
 
-func propertyType*(s: string): CSSPropertyType =
+func propertyType(s: string): CSSPropertyType =
   return PropertyNames.getOrDefault(s, PROPERTY_NONE)
 
-func valueType*(prop: CSSPropertyType): CSSValueType =
+func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
-macro `{}`*(vals: CSSComputedValues, s: typed): untyped =
+macro `{}`*(vals: CSSSpecifiedValues, s: typed): untyped =
   let t = propertyType($s)
-  let v = valueType(t)
-  let vs = $v
+  let vs = $valueType(t)
   let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
   result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
@@ -412,7 +412,7 @@ func color(r, g, b: int): CSSColor =
 func color(r, g, b, a: int): CSSColor =
   return CSSColor(rgba: rgba(r, g, b, a))
 
-func cssColor*(d: CSSDeclaration): CSSColor =
+func cssColor(d: CSSDeclaration): CSSColor =
   if d.value.len > 0:
     if d.value[0] of CSSToken:
       let tok = CSSToken(d.value[0])
@@ -499,7 +499,7 @@ func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSTok
 
 func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
 
-func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
+func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -616,7 +616,7 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
       of "japanese-informal": return LIST_STYLE_TYPE_JAPANESE_INFORMAL
   raise newException(CSSValueError, "Invalid list style")
 
-proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
+proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   case vtype
   of VALUE_COLOR: val.color = cssColor(d)
   of VALUE_LENGTH: val.length = cssLength(d)
@@ -632,19 +632,6 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(d)
   of VALUE_NONE: discard
 
-func getSpecifiedValue*(d: CSSDeclaration): CSSSpecifiedValue =
-  let name = $d.name
-  let ptype = propertyType(name)
-  let vtype = valueType(ptype)
-  result.computed = CSSComputedValue(t: ptype, v: vtype)
-  try:
-    result.computed.getValueFromDecl(d, vtype, ptype)
-  except CSSValueError:
-    result.global = VALUE_UNSET
-
-  if result.global == VALUE_NOGLOBAL:
-    result.global = cssGlobal(d)
-
 func getInitialColor(t: CSSPropertyType): CSSColor =
   case t
   of PROPERTY_COLOR:
@@ -659,63 +646,90 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
   else:
     return CSSLength()
 
-func calcDefault(t: CSSPropertyType): CSSComputedValue =
+func calcInitial(t: CSSPropertyType): CSSSpecifiedValue =
   let v = valueType(t)
-  var nv: CSSComputedValue
+  var nv: CSSSpecifiedValue
   case v
   of VALUE_COLOR:
-    nv = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
+    nv = CSSSpecifiedValue(t: t, v: v, color: getInitialColor(t))
   of VALUE_DISPLAY:
-    nv = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
+    nv = CSSSpecifiedValue(t: t, v: v, display: DISPLAY_INLINE)
   of VALUE_WORD_BREAK:
-    nv = CSSComputedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
+    nv = CSSSpecifiedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
   of VALUE_LENGTH:
-    nv = CSSComputedValue(t: t, v: v, length: getInitialLength(t))
+    nv = CSSSpecifiedValue(t: t, v: v, length: getInitialLength(t))
   else:
-    nv = CSSComputedValue(t: t, v: v)
+    nv = CSSSpecifiedValue(t: t, v: v)
   return nv
 
-func getDefaultTable(): array[low(CSSPropertyType)..high(CSSPropertyType), CSSComputedValue] =
+func getInitialTable(): array[low(CSSPropertyType)..high(CSSPropertyType), CSSSpecifiedValue] =
   for i in low(result)..high(result):
-    result[i] = calcDefault(i)
+    result[i] = calcInitial(i)
 
-let defaultTable = getDefaultTable()
+let defaultTable = getInitialTable()
 
-func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
+func getDefault(t: CSSPropertyType): CSSSpecifiedValue = {.cast(noSideEffect).}:
   assert defaultTable[t] != nil
   return defaultTable[t]
 
-func getComputedValue*(prop: CSSSpecifiedValue, current, parent: CSSComputedValues): CSSComputedValue =
-  case prop.global
-  of VALUE_INHERIT:
-    if inherited(prop.computed.t):
-      return current[prop.computed.t]
+func getSpecifiedValue(d: CSSDeclaration, parent: CSSSpecifiedValues): tuple[a:CSSSpecifiedValue,b:CSSGlobalValueType] =
+  let name = $d.name
+  let ptype = propertyType(name)
+  let vtype = valueType(ptype)
+
+  var val = CSSSpecifiedValue(t: ptype, v: vtype)
+  try:
+    val.getValueFromDecl(d, vtype, ptype)
+  except CSSValueError:
+    val = getDefault(ptype)
+
+  return (val, cssGlobal(d))
+
+proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSpecifiedValue, global: CSSGlobalValueType) =
+  case global
+  of VALUE_INHERIT, VALUE_UNSET:
+    if inherited(t):
+      if parent[t] != nil:
+        vals[t] = parent[t]
+    vals[t] = getDefault(t)
   of VALUE_INITIAL:
-    return getDefault(prop.computed.t)
-  of VALUE_UNSET:
-    if inherited(prop.computed.t):
-      return current[prop.computed.t]
-    return getDefault(prop.computed.t)
-  of VALUE_REVERT: discard #TODO
-  of VALUE_NOGLOBAL: discard
+    vals[t] = getDefault(t)
+  of VALUE_REVERT:
+    vals[t] = getDefault(t) #TODO
+  of VALUE_NOGLOBAL:
+    vals[t] = val
 
-  return prop.computed
+proc applyShorthand(vals, parent: CSSSpecifiedValues, left, right, top, bottom: CSSSpecifiedValue, global: CSSGlobalValueType) =
+  vals.applyValue(parent, left.t, left, global)
+  vals.applyValue(parent, left.t, right, global)
+  vals.applyValue(parent, left.t, top, global)
+  vals.applyValue(parent, left.t, bottom, global)
 
-proc rootProperties*(vals: var CSSComputedValues) =
-  new(vals)
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    vals[prop] = getDefault(prop)
+proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
+  let vv = getSpecifiedValue(d, parent)
+  let val = vv.a
+  case val.t
+  of PROPERTY_ALL:
+    let global = cssGlobal(d)
+    if global != VALUE_NOGLOBAL:
+      for t in low(CSSPropertyType)..high(CSSPropertyType):
+        vals.applyValue(parent, t, nil, global)
+  of PROPERTY_MARGIN:
+    let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
+    let right = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: val.length)
+    let top = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: val.length)
+    let bottom = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: val.length)
+    vals.applyShorthand(parent, left, right, top, bottom, vv.b)
+  of PROPERTY_PADDING:
+    let left = CSSSpecifiedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: val.length)
+    let right = CSSSpecifiedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: val.length)
+    let top = CSSSpecifiedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: val.length)
+    let bottom = CSSSpecifiedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: val.length)
+    vals.applyShorthand(parent, left, right, top, bottom, vv.b)
+  else:
+    vals.applyValue(parent, val.t, vv.a, vv.b)
 
-proc inheritProperties*(vals: var CSSComputedValues, parent: CSSComputedValues) =
-  if vals == nil:
-    new(vals)
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
-    if vals[prop] == nil:
-      vals[prop] = getDefault(prop)
-    if inherited(prop) and parent[prop] != nil and vals[prop] == getDefault(prop):
-      vals[prop] = parent[prop]
-
-func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
+func inheritProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
   new(result)
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
     if inherited(prop) and parent[prop] != nil:
@@ -723,7 +737,7 @@ func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
     else:
       result[prop] = getDefault(prop)
 
-func rootProperties*(): CSSComputedValues =
+func rootProperties*(): CSSSpecifiedValues =
   new(result)
   for prop in low(CSSPropertyType)..high(CSSPropertyType):
     result[prop] = getDefault(prop)

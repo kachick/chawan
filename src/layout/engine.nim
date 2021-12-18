@@ -74,7 +74,7 @@ proc flushMargins(box: CSSBox) =
   box.bcontext.margin_done += box.bcontext.margin_todo
   box.bcontext.margin_todo = 0
 
-proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSComputedValues) =
+proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSSpecifiedValues) =
   parent.flushMargins()
   box.bcontext = newBlockContext()
   box.x += vals{"margin-left"}.cells_w(state, parent.bcontext.width)
@@ -101,7 +101,7 @@ proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSComputedV
 
   box.cssvalues = vals
 
-func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSBlockBox =
+func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSBlockBox =
   new(result)
   result.t = BLOCK
   if parent.icontext.conty:
@@ -113,7 +113,7 @@ func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues
   result.icontext.fromy = result.y
   result.icontext.fromx = result.x
 
-func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSInlineBlockBox =
+func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSInlineBlockBox =
   new(result)
   result.t = INLINE_BLOCK
   result.x = parent.icontext.fromx
@@ -123,7 +123,7 @@ func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedVal
   result.icontext.fromy = result.y
   result.icontext.fromx = result.x
 
-func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSComputedValues): CSSInlineBox =
+func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSInlineBox =
   new(result)
   result.t = INLINE
   result.x = parent.x
@@ -144,7 +144,7 @@ type InlineState = object
   ww: int
   skip: bool
   nodes: seq[Node]
-  cssvalues: CSSComputedValues
+  cssvalues: CSSSpecifiedValues
   x: int
 
 func fromx(state: InlineState): int = state.icontext.fromx
@@ -240,7 +240,7 @@ proc preWrap(state: var InlineState) =
   state.skip = true
 
 proc processInlineText(str: string, icontext: InlineContext,
-                       bcontext: BlockContext, cssvalues: CSSComputedValues,
+                       bcontext: BlockContext, cssvalues: CSSSpecifiedValues,
                        x: int, nodes: seq[Node]): seq[CSSRowBox] =
   var state: InlineState
   state.icontext = icontext
@@ -377,7 +377,7 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   of INLINE: state.add(parent, CSSInlineBox(box))
   of INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
 
-proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSComputedValues): CSSBox =
+proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSSpecifiedValues): CSSBox =
   case values{"display"}
   of DISPLAY_BLOCK:
     result = state.newBlockBox(parent, values)
@@ -392,7 +392,7 @@ proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSS
   else:
     return nil
 
-proc processBr(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues) =
+proc processBr(state: var LayoutState, parent: CSSBox, vals: CSSSpecifiedValues) =
   if vals{"display"} == DISPLAY_INLINE:
     if parent.icontext.conty:
       parent.flushConty()
@@ -403,9 +403,9 @@ proc processBr(state: var LayoutState, parent: CSSBox, vals: CSSComputedValues) 
 
 proc processElemBox(state: var LayoutState, parent: CSSBox, elem: Element): CSSBox =
   if elem.tagType == TAG_BR:
-    state.processBr(parent, elem.cssvalues)
+    state.processBr(parent, elem.css)
 
-  result = state.processComputedValueBox(parent, elem.cssvalues)
+  result = state.processComputedValueBox(parent, elem.css)
   if result != nil:
     result.node = elem
 
@@ -428,12 +428,12 @@ proc processNode(state: var LayoutState, parent: CSSBox, node: Node): CSSBox =
   else: discard
 
 proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Element) =
-  if elem.cssvalues_before != nil:
-    let box = state.processComputedValueBox(parent, elem.cssvalues_before)
+  if elem.pseudo[PSEUDO_BEFORE] != nil:
+    let box = state.processComputedValueBox(parent, elem.pseudo[PSEUDO_BEFORE])
     if box == nil: return
     box.node = elem
 
-    let text = elem.cssvalues_before{"content"}
+    let text = elem.pseudo[PSEUDO_BEFORE]{"content"}
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
@@ -442,12 +442,12 @@ proc processBeforePseudoElem(state: var LayoutState, parent: CSSBox, elem: Eleme
     state.add(parent, box)
 
 proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Element) =
-  if elem.cssvalues_after != nil:
-    let box = state.processComputedValueBox(parent, elem.cssvalues_after)
+  if elem.pseudo[PSEUDO_AFTER] != nil:
+    let box = state.processComputedValueBox(parent, elem.pseudo[PSEUDO_AFTER])
     if box == nil: return
     box.node = elem
 
-    let text = elem.cssvalues_after{"content"}
+    let text = elem.pseudo[PSEUDO_AFTER]{"content"}
     var inline = state.processInlineBox(box, $text)
     if inline != nil:
       inline.node = elem
@@ -456,12 +456,12 @@ proc processAfterPseudoElem(state: var LayoutState, parent: CSSBox, elem: Elemen
     state.add(parent, box)
 
 proc processMarker(state: var LayoutState, parent: CSSBox, elem: Element) =
-  if elem.cssvalues{"display"} == DISPLAY_LIST_ITEM:
+  if elem.css{"display"} == DISPLAY_LIST_ITEM:
     var ordinalvalue = 1
     if elem.tagType == TAG_LI:
       ordinalvalue = HTMLLIElement(elem).ordinalvalue
 
-    let text = elem.cssvalues{"list-style-type"}.listMarker(ordinalvalue)
+    let text = elem.css{"list-style-type"}.listMarker(ordinalvalue)
     let tlen = text.width()
     parent.icontext.fromx -= tlen
     let marker = state.processInlineBox(parent, text)
