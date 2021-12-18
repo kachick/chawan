@@ -8,10 +8,10 @@ import strutils
 
 import utils/twtstr
 import css/parser
-import css/selector
+import css/selparser
 import types/color
 
-export selector.PseudoElem
+export selparser.PseudoElem
 
 type
   CSSUnit* = enum

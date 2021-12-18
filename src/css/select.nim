@@ -1,22 +1,17 @@
 import unicode
-import strutils
 import tables
-import streams
+import strutils
 import sequtils
 import sugar
-import algorithm
+import streams
 
-import css/selector
+import css/selparser
 import css/parser
-import css/values
 import html/dom
-import html/tags
 
-#TODO case sensitivity
-
-type SelectResult = object
-  success: bool
-  pseudo: PseudoElem
+type SelectResult* = object
+  success*: bool
+  pseudo*: PseudoElem
 
 func selectres(s: bool, p: PseudoElem = PSEUDO_NONE): SelectResult =
   return SelectResult(success: s, pseudo: p)
@@ -52,7 +47,7 @@ func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
   of "after": return selectres(true, PSEUDO_AFTER)
   else: return selectres(false)
 
-func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult
+func selectorsMatch*(elem: Element, selectors: SelectorList): SelectResult
 
 func funcSelectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.name
@@ -145,7 +140,7 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
     else:
       return selectres(false)
 
-func selectorsMatch(elem: Element, selectors: SelectorList): SelectResult =
+func selectorsMatch*(elem: Element, selectors: SelectorList): SelectResult =
   for sel in selectors.sels:
     let res = selectorMatches(elem, sel)
     if not res.success:
@@ -195,155 +190,3 @@ proc querySelector*(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
-proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
-  var parent: CSSSpecifiedValues
-  if elem.parentElement != nil:
-    parent = elem.parentElement.css
-  else:
-    parent = rootProperties()
-
-  case pseudo
-  of PSEUDO_NONE:
-    elem.css.applyValue(parent, d)
-  of PSEUDO_BEFORE, PSEUDO_AFTER:
-    if elem.pseudo[pseudo] == nil:
-      elem.pseudo[pseudo] = elem.css.inheritProperties()
-    elem.pseudo[pseudo].applyValue(parent, d)
-
-  elem.cssapplied = true
-  elem.rendered = false
-
-type
-  ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
-  ParsedStylesheet* = seq[ParsedRule]
-  ApplyResult = object
-    normal: seq[CSSDeclaration]
-    important: seq[CSSDeclaration]
-  RuleList = array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]]
-
-proc parseStylesheet*(s: Stream): ParsedStylesheet =
-  for v in parseCSS(s).value:
-    let sels = parseSelectors(v.prelude)
-    if sels.len > 1 or sels[^1].len > 0:
-      result.add((sels: sels, oblock: v.oblock))
-
-func calcRules(elem: Element, rules: ParsedStylesheet): RuleList =
-  var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
-  for rule in rules:
-    for sel in rule.sels:
-      let match = elem.selectorsMatch(sel)
-      if match.success:
-        let spec = getSpecificity(sel)
-        tosorts[match.pseudo].add((spec,rule.oblock))
-
-  for i in low(PseudoElem)..high(PseudoElem):
-    tosorts[i].sort((x, y) => cmp(x.s,y.s))
-    result[i] = tosorts[i].map((x) => x.b)
-
-proc applyItems(ares: var ApplyResult, decls: seq[CSSParsedItem]) =
-  for item in decls:
-    if item of CSSDeclaration:
-      let decl = CSSDeclaration(item)
-      if decl.important:
-        ares.important.add(decl)
-      else:
-        ares.normal.add(decl)
-
-proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
-  var ares: ApplyResult
-
-  let rules_user_agent = ua[pseudo]
-  for rule in rules_user_agent:
-    let decls = parseCSSListOfDeclarations(rule.value)
-    ares.applyItems(decls)
-
-  let rules_user = user[pseudo]
-  for rule in rules_user:
-    let decls = parseCSSListOfDeclarations(rule.value)
-    ares.applyItems(decls)
-
-  let rules_author = author[pseudo]
-  for rule in rules_author:
-    let decls = parseCSSListOfDeclarations(rule.value)
-    ares.applyItems(decls)
-
-  if pseudo == PSEUDO_NONE:
-    let style = element.attr("style")
-    if style.len > 0:
-      let inline_rules = newStringStream(style).parseCSSListOfDeclarations()
-      ares.applyItems(inline_rules)
-
-  for rule in ares.normal:
-    element.applyProperty(rule, pseudo)
-
-  for rule in ares.important:
-    element.applyProperty(rule, pseudo)
-
-proc applyRules*(document: Document, ua, user: ParsedStylesheet) =
-  var stack: seq[Element]
-
-  var embedded_rules: seq[ParsedStylesheet]
-
-  stack.add(document.head)
-  var rules_head = ""
-
-  for child in document.head.children:
-    if child.tagType == TAG_STYLE:
-      for ct in child.childNodes:
-        if ct.nodeType == TEXT_NODE:
-          rules_head &= Text(ct).data
-
-  if rules_head.len > 0:
-    let parsed = newStringStream(rules_head).parseStylesheet()
-    embedded_rules.add(parsed)
-
-  stack.setLen(0)
-
-  stack.add(document.root)
-
-  document.root.css = rootProperties()
-
-  while stack.len > 0:
-    let elem = stack.pop()
-
-    var rules_local = ""
-    for child in elem.children:
-      if child.tagType == TAG_STYLE:
-        for ct in child.childNodes:
-          if ct.nodeType == TEXT_NODE:
-            rules_local &= Text(ct).data
-
-    if rules_local.len > 0:
-      let parsed = newStringStream(rules_local).parseStylesheet()
-      embedded_rules.add(parsed)
-
-    if not elem.cssapplied:
-      if elem.parentElement != nil:
-        elem.css = elem.parentElement.css.inheritProperties()
-      else:
-        elem.css = rootProperties()
-
-      let uarules = calcRules(elem, ua)
-      let userrules = calcRules(elem, user)
-      let this_rules = embedded_rules.concat()
-      let authorrules = calcRules(elem, this_rules)
-
-      for pseudo in low(PseudoElem)..high(PseudoElem):
-        elem.applyRules(uarules, userrules, authorrules, pseudo)
-
-    var i = elem.children.len - 1
-    while i >= 0:
-      let child = elem.children[i]
-      stack.add(child)
-      dec i
-
-    if rules_local.len > 0:
-      discard embedded_rules.pop()
-
-proc applyStylesheets*(document: Document, uass, userss: ParsedStylesheet) =
-  document.applyRules(uass, userss)
-
-proc refreshStyle*(elem: Element) =
-  elem.cssapplied = false
-  for child in elem.children:
-    child.refreshStyle()

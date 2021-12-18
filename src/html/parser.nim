@@ -10,6 +10,7 @@ import utils/radixtree
 import html/dom
 import html/entity
 import html/tags
+import css/selparser
 
 type
   HTMLParseState = object
@@ -306,18 +307,27 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     else: discard
 
 proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
-  if tag.tagid in VoidTagTypes:
-    return
-  if tag.tagid == TAG_HEAD:
-    processDocumentBody(state)
-    return
-  if tag.tagid == TAG_BODY:
-    return
-  if state.elementNode.nodeType == ELEMENT_NODE and tag.tagid != state.elementNode.tagType:
+  if tag.tagid != state.elementNode.tagType:
     if state.elementNode.tagType in SelfClosingTagTypes:
       processDocumentEndNode(state)
-  
-  processDocumentEndNode(state)
+      processDocumentEndNode(state)
+  else:
+    case tag.tagid
+    of VoidTagTypes:
+      return
+    of TAG_HEAD:
+      processDocumentBody(state)
+      return
+    of TAG_BODY:
+      return
+    of TAG_STYLE:
+      let style = HTMLStyleElement(state.elementNode)
+      var str = ""
+      for child in style.textNodes:
+        str &= child.data
+      style.stylesheet = newStringStream(str).parseStylesheet()
+    else: discard
+    processDocumentEndNode(state)
 
 proc processDocumentTag(state: var HTMLParseState, tag: DOMParsedTag) =
   if state.in_script:

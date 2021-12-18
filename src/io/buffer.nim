@@ -5,7 +5,8 @@ import unicode
 import streams
 
 import css/values
-import css/style
+import css/cascade
+import css/selparser
 import utils/twtstr
 import html/dom
 import html/tags

@@ -4,6 +4,7 @@ import options
 import strutils
 
 import css/values
+import css/selparser
 import html/tags
 
 type
@@ -111,6 +112,14 @@ type
   HTMLLIElement* = ref object of HTMLElement
     value*: Option[int]
     ordinalvalue*: int
+
+  HTMLStyleElement* = ref object of HTMLElement
+    stylesheet*: ParsedStylesheet
+
+iterator textNodes*(node: Node): Text {.inline.} =
+  for node in node.childNodes:
+    if node.nodeType == TEXT_NODE:
+      yield Text(node)
 
 func firstChild(node: Node): Node =
   if node.childNodes.len == 0:
@@ -275,6 +284,8 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
     HTMLMenuElement(result).ordinalcounter = 1
   of TAG_LI:
     result = new(HTMLLIElement)
+  of TAG_STYLE:
+    result = new(HTMLStyleElement)
   else:
     result = new(HTMLElement)
 
