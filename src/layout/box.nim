@@ -24,19 +24,14 @@ type
     cssvalues*: CSSSpecifiedValues
     node*: Node
 
-  RowContainer* = object
-    case leaf*: bool
-    of true: row*: CSSRowBox
-    of false: ctx*: InlineContext
-
   InlineContext* = ref object
     fromx*: int
     fromy*: int
     conty*: bool
     whitespace*: bool
     ws_initial*: bool
-    conts*: seq[RowContainer]
     rows*: seq[CSSRowBox]
+    thisrow*: seq[CSSRowBox]
 
   BlockContext* = ref object
     fromy*: int
@@ -60,6 +55,7 @@ type
     textdecoration*: CSSTextDecoration
     str*: string
     nodes*: seq[Node]
+    bottom*: int
 
   CSSInlineBox* = ref object of CSSBox
   CSSBlockBox* = ref object of CSSBox

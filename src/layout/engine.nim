@@ -28,41 +28,38 @@ func newInlineContext*(): InlineContext =
 func newBlockContext(): BlockContext =
   new(result)
 
-#proc calcConts(conts: var seq[RowContainer]) =
-#  if conts.len == 0: return
-#  var y = 0
-#  var re = false
-#  if conts[0].leaf:
-#    y = conts[0].row.y
-#  else:
-#    y = conts[0].ctx.fromy
-#  var i = 1
-#  while i < conts.len:
-#    let cont = conts[i]
-#    if cont.leaf:
-#      if y != cont.row.y:
-#        re = true
-#        if y < cont.row.y:
-#          y = cont.row.y
-#    else:
-#      if y != cont.ctx.fromy:
-#        re = true
-#        if y < cont.ctx.fromy:
-#          y = cont.ctx.fromy
-#    inc i
-#
-#  if re:
-#    i = 0
-#    while i < conts.len:
-#      if conts[i].leaf:
-#        conts[i].row.y = y
-#      else:
-#        let diff = y - conts[i].ctx.fromy
-#        #TODO
-#        conts[i].row.y += diff
-#      inc i
-  
+proc putRows(icontext: InlineContext) =
+  var i = 0
+  while i < icontext.rows.len:
+    icontext.rows[i].bottom = icontext.fromy
+    inc i
+
+proc flushRows(icontext: InlineContext) =
+  if icontext.thisrow.len == 0: return
+  icontext.putRows()
+  var y = 0
+  var re = false
+  y = icontext.thisrow[0].bottom
+  var i = 1
+  while i < icontext.thisrow.len:
+    let ry = icontext.thisrow[i].bottom
+    if y != ry:
+      re = true
+      if y < ry:
+        y = ry
+    inc i
+
+  if re:
+    i = 0
+    while i < icontext.thisrow.len:
+      icontext.thisrow[i].y = y + icontext.thisrow[i].y - icontext.thisrow[i].bottom
+      inc i
+  icontext.rows.add(icontext.thisrow)
+  icontext.thisrow.setLen(0)
+
 proc flushConty(box: CSSBox) =
+  box.icontext.flushRows()
+  box.icontext.fromx = box.x
   inc box.icontext.fromy
   inc box.bcontext.fromy
   box.icontext.conty = false
@@ -119,7 +116,7 @@ func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedVa
   result.x = parent.icontext.fromx
 
   state.applyBlockStart(result, parent, vals)
-  result.icontext = parent.icontext
+  result.icontext = newInlineContext()
   result.icontext.fromy = result.y
   result.icontext.fromx = result.x
 
@@ -137,9 +134,7 @@ func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues)
 type InlineState = object
   icontext: InlineContext
   bcontext: BlockContext
-  rowi: int
   rowbox: CSSRowBox
-  rowboxes: seq[CSSRowBox]
   word: seq[Rune]
   ww: int
   skip: bool
@@ -147,13 +142,11 @@ type InlineState = object
   cssvalues: CSSSpecifiedValues
   x: int
 
-func fromx(state: InlineState): int = state.icontext.fromx
-func width(state: InlineState): int = state.rowbox.width
-
 proc newRowBox(state: var InlineState) =
   state.rowbox = CSSRowBox()
-  state.rowbox.x = state.fromx
-  state.rowbox.y = state.icontext.fromy + state.rowi
+  state.rowbox.x = state.icontext.fromx
+  state.rowbox.y = state.icontext.fromy
+  state.rowbox.bottom = state.rowbox.y
 
   let cssvalues = state.cssvalues
   state.rowbox.color = cssvalues{"color"}
@@ -163,11 +156,12 @@ proc newRowBox(state: var InlineState) =
   state.rowbox.nodes = state.nodes
 
 proc addRowBox(state: var InlineState) =
-  state.rowboxes.add(state.rowbox)
+  state.icontext.thisrow.add(state.rowbox)
 
 proc inlineWrap(state: var InlineState) =
   state.addRowBox()
-  inc state.rowi
+  state.icontext.flushRows()
+  inc state.icontext.fromy
   state.icontext.fromx = state.x
   if state.word.len == 0:
     state.icontext.whitespace = true
@@ -187,7 +181,7 @@ proc addWord(state: var InlineState) =
   state.ww = 0
 
 proc wrapNormal(state: var InlineState, r: Rune) =
-  if state.fromx + state.width + state.ww == state.bcontext.width and r == Rune(' '):
+  if state.icontext.fromx + state.rowbox.width + state.ww == state.bcontext.width and r == Rune(' '):
     state.addWord()
   if state.word.len == 0:
     if r == Rune(' '):
@@ -205,11 +199,11 @@ proc checkWrap(state: var InlineState, r: Rune) =
     return
   case state.cssvalues{"word-break"}
   of WORD_BREAK_NORMAL:
-    if state.fromx + state.width > state.x and
-        state.fromx + state.width + state.ww + r.width() > state.x + state.bcontext.width:
+    if state.icontext.fromx + state.rowbox.width > state.x and
+        state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
       state.wrapNormal(r)
   of WORD_BREAK_BREAK_ALL:
-    if state.fromx + state.width + state.ww + r.width() > state.x + state.bcontext.width:
+    if state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
       var pl: seq[Rune]
       var i = 0
       var w = 0
@@ -229,8 +223,8 @@ proc checkWrap(state: var InlineState, r: Rune) =
         state.skip = true
       state.inlineWrap()
   of WORD_BREAK_KEEP_ALL:
-    if state.fromx + state.width > state.x and
-        state.fromx + state.width + state.ww + r.width() > state.x + state.bcontext.width:
+    if state.icontext.fromx + state.rowbox.width > state.x and
+        state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
       state.wrapNormal(r)
 
 proc preWrap(state: var InlineState) =
@@ -241,7 +235,7 @@ proc preWrap(state: var InlineState) =
 
 proc processInlineText(str: string, icontext: InlineContext,
                        bcontext: BlockContext, cssvalues: CSSSpecifiedValues,
-                       x: int, nodes: seq[Node]): seq[CSSRowBox] =
+                       x: int, nodes: seq[Node]) =
   var state: InlineState
   state.icontext = icontext
   state.bcontext = bcontext
@@ -308,16 +302,11 @@ proc processInlineText(str: string, icontext: InlineContext,
     state.icontext.fromx += state.rowbox.width
     state.icontext.conty = true
 
-  if state.rowi > 0 or state.rowbox.width > 0:
-    state.bcontext.margin_todo = 0
-    state.bcontext.margin_done = 0
-  state.icontext.fromy += state.rowi
-
-  return state.rowboxes
+  state.bcontext.margin_todo = 0
+  state.bcontext.margin_done = 0
 
 proc processInlineContext(ibox: CSSInlineBox, str: string, nodes: seq[Node]) =
-  let rows = processInlineText(str, ibox.icontext, ibox.bcontext, ibox.cssvalues, ibox.x, nodes)
-  ibox.icontext.rows.add(rows)
+  processInlineText(str, ibox.icontext, ibox.bcontext, ibox.cssvalues, ibox.x, nodes)
 
 proc processInlineBox(state: var LayoutState, parent: CSSBox, str: string): CSSInlineBox =
   if str.len == 0:
@@ -367,6 +356,12 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBlockBox) =
   parent.icontext.fromx = box.icontext.fromx
   parent.icontext.fromx += box.cssvalues{"margin-right"}.cells_w(state, parent.bcontext.width)
   parent.icontext.conty = box.icontext.conty
+
+  box.icontext.putRows()
+  parent.icontext.thisrow.add(box.icontext.rows)
+  parent.icontext.thisrow.add(box.icontext.thisrow)
+  box.icontext.rows.setLen(0)
+  box.icontext.thisrow.setLen(0)
 
   state.applyBlockEnd(parent, box)
   parent.children.add(box)
