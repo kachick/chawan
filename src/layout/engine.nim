@@ -353,7 +353,7 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBox) =
   parent.children.add(box)
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBlockBox) =
-  parent.icontext.fromx = box.icontext.fromx
+  parent.icontext.fromx = max(box.icontext.fromx, box.bcontext.width)
   parent.icontext.fromx += box.cssvalues{"margin-right"}.cells_w(state, parent.bcontext.width)
   parent.icontext.conty = box.icontext.conty
 

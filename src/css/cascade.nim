@@ -6,6 +6,7 @@ import algorithm
 import css/select
 import css/selparser
 import css/parser
+import css/sheet
 import css/values
 import html/dom
 import html/tags
@@ -34,14 +35,16 @@ proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
   elem.cssapplied = true
   elem.rendered = false
 
-func calcRules(elem: Element, rules: ParsedStylesheet): RuleList =
+func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
   var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
   for rule in rules:
-    for sel in rule.sels:
-      let match = elem.selectorsMatch(sel)
-      if match.success:
-        let spec = getSpecificity(sel)
-        tosorts[match.pseudo].add((spec,rule.oblock))
+    if rule of CSSRuleDef:
+      let rule = CSSRuleDef(rule)
+      for sel in rule.sels:
+        let match = elem.selectorsMatch(sel)
+        if match.success:
+          let spec = getSpecificity(sel)
+          tosorts[match.pseudo].add((spec,rule.oblock))
 
   for i in low(PseudoElem)..high(PseudoElem):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
@@ -86,18 +89,18 @@ proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem
   for rule in ares.important:
     element.applyProperty(rule, pseudo)
 
-proc applyRules*(document: Document, ua, user: ParsedStylesheet) =
+proc applyRules*(document: Document, ua, user: CSSStylesheet) =
   var stack: seq[Element]
 
-  var embedded_rules: seq[ParsedStylesheet]
+  var embedded_rules: seq[CSSStylesheet]
 
   stack.add(document.head)
-  var rules_head: ParsedStylesheet
+  var rules_head: CSSStylesheet
 
   for child in document.head.children:
     if child.tagType == TAG_STYLE:
       let style = HTMLStyleElement(child)
-      rules_head.add(style.stylesheet)
+      rules_head.add(style.sheet)
 
   if rules_head.len > 0:
     embedded_rules.add(rules_head)
@@ -111,11 +114,11 @@ proc applyRules*(document: Document, ua, user: ParsedStylesheet) =
   while stack.len > 0:
     let elem = stack.pop()
 
-    var rules_local: ParsedStylesheet
+    var rules_local: CSSStylesheet
     for child in document.head.children:
       if child.tagType == TAG_STYLE:
         let style = HTMLStyleElement(child)
-        rules_local.add(style.stylesheet)
+        rules_local.add(style.sheet)
 
     if rules_local.len > 0:
       embedded_rules.add(rules_local)
@@ -143,7 +146,7 @@ proc applyRules*(document: Document, ua, user: ParsedStylesheet) =
     if rules_local.len > 0:
       discard embedded_rules.pop()
 
-proc applyStylesheets*(document: Document, uass, userss: ParsedStylesheet) =
+proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet) =
   document.applyRules(uass, userss)
 
 proc refreshStyle*(elem: Element) =

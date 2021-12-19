@@ -69,7 +69,7 @@ type
     token*: CSSToken
     value*: seq[CSSComponentValue]
 
-  CSSStylesheet* = object
+  CSSRawStylesheet* = object
     value*: seq[CSSRule]
 
   SyntaxError = object of ValueError
@@ -581,11 +581,11 @@ proc consumeListOfRules(state: var CSSParseState): seq[CSSRule] =
       if q.isSome:
         result.add(q.get)
 
-proc parseStylesheet(state: var CSSParseState): CSSStylesheet =
+proc parseStylesheet(state: var CSSParseState): CSSRawStylesheet =
   state.top_level = true
   result.value.add(state.consumeListOfRules())
 
-proc parseStylesheet(inputStream: Stream): CSSStylesheet =
+proc parseStylesheet(inputStream: Stream): CSSRawStylesheet =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseStylesheet()
@@ -748,9 +748,9 @@ func `$`*(c: CSSComponentValue): string =
     of CSS_LBRACKET_TOKEN: result &= "]"
     else: discard
 
-proc parseCSS*(inputStream: Stream): CSSStylesheet =
+proc parseCSS*(inputStream: Stream): CSSRawStylesheet =
   if inputStream.atEnd():
-    return CSSStylesheet()
+    return CSSRawStylesheet()
   return inputstream.parseStylesheet()
 
 proc debugparseCSS*(inputStream: Stream) =

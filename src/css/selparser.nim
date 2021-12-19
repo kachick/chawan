@@ -1,5 +1,4 @@
 import unicode
-import streams
 
 import css/parser
 import html/tags
@@ -56,9 +55,6 @@ type
   SelectorList* = ref object
     sels*: seq[Selector]
     parent*: SelectorList
-
-  ParsedRule* = tuple[sels: seq[SelectorList], oblock: CSSSimpleBlock]
-  ParsedStylesheet* = seq[ParsedRule]
 
 proc add*(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
 proc add*(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
@@ -301,10 +297,3 @@ func parseSelectors*(cvals: seq[CSSComponentValue]): seq[SelectorList] =
     state.selectors[^1].add(state.combinator)
     state.combinator = nil
   return state.selectors
-
-#TODO this is pretty dumb
-proc parseStylesheet*(s: Stream): ParsedStylesheet =
-  for v in parseCSS(s).value:
-    let sels = parseSelectors(v.prelude)
-    if sels.len > 1 or sels[^1].len > 0:
-      result.add((sels, v.oblock))

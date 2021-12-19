@@ -6,7 +6,7 @@ import streams
 
 import css/values
 import css/cascade
-import css/selparser
+import css/sheet
 import utils/twtstr
 import html/dom
 import html/tags
@@ -728,7 +728,7 @@ let ua_stylesheet = newStringStream(css).parseStylesheet()
 
 #TODO refactor
 var ss_init = false
-var user_stylesheet: ParsedStylesheet
+var user_stylesheet: CSSStylesheet
 proc renderDocument*(buffer: Buffer) =
   buffer.clearText()
 

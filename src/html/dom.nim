@@ -4,7 +4,7 @@ import options
 import strutils
 
 import css/values
-import css/selparser
+import css/sheet
 import html/tags
 
 type
@@ -114,7 +114,7 @@ type
     ordinalvalue*: int
 
   HTMLStyleElement* = ref object of HTMLElement
-    stylesheet*: ParsedStylesheet
+    sheet*: CSSStylesheet
 
 iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childNodes:

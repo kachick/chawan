@@ -10,7 +10,7 @@ import utils/radixtree
 import html/dom
 import html/entity
 import html/tags
-import css/selparser
+import css/sheet
 
 type
   HTMLParseState = object
@@ -325,7 +325,7 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
       var str = ""
       for child in style.textNodes:
         str &= child.data
-      style.stylesheet = newStringStream(str).parseStylesheet()
+      style.sheet = newStringStream(str).parseStylesheet()
     else: discard
     processDocumentEndNode(state)
 
