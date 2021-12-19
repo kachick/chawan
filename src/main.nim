@@ -47,6 +47,7 @@ proc main*() =
   var lastUri: Uri
   if paramCount() < 1:
     if not isatty(stdin):
+      buffer.showsource = true
       try:
         while true:
           buffer.source &= stdin.readChar()

@@ -91,9 +91,6 @@ func width*(line: FlexibleLine): int =
 func width*(cell: FixedCell): int =
   return cell.runes.width()
 
-func len*(line: FlexibleLine): int =
-  return line.str.runeLen()
-
 func newFormatting*(): Formatting =
   return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)
 
@@ -143,18 +140,19 @@ proc setLen*(line: var FlexibleLine, len: int) =
     if line.formats[i].pos >= len:
       line.formats.setLen(i)
       break
+  line.str.setLen(len)
   #line.formats = line.formats.filter((x) => x.pos < len)
 
 proc add*(a: var FlexibleLine, b: FlexibleLine) =
-  let l = a.len
+  let l = a.str.len
   a.formats.add(b.formats.map((x) => FormattingCell(formatting: x.formatting, nodes: x.nodes, pos: l + x.pos)))
   a.str &= b.str
 
 proc addLine*(grid: var FlexibleGrid) =
   grid.add(FlexibleLine())
 
-proc addFormat*(grid: var FlexibleGrid, y: int, format: Formatting) =
-  grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].len))
+proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting) =
+  grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].str.len))
 
 proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting, nodes: seq[Node]) =
   grid[y].formats.add(FormattingCell(formatting: format, nodes: nodes, pos: pos))

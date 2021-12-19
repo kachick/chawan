@@ -244,16 +244,14 @@ proc refreshDisplay*(buffer: Buffer) =
                            buffer.lastVisibleLine - 1]:
     var w = 0
     var i = 0
-    var j = 0
     while w < buffer.fromx and i < line.str.len:
       fastRuneAt(line.str, i, r)
       w += r.width()
-      inc j
 
     let dls = y * buffer.width
     var k = 0
-    var cf = line.findFormat(j)
-    var nf = line.findNextFormat(j)
+    var cf = line.findFormat(i)
+    var nf = line.findNextFormat(i)
     if w > buffer.fromx:
       while k < w - buffer.fromx:
         buffer.display[dls + k].runes.add(Rune(' '))
@@ -261,6 +259,7 @@ proc refreshDisplay*(buffer: Buffer) =
         inc k
 
     while i < line.str.len:
+      let j = i
       fastRuneAt(line.str, i, r)
       w += r.width()
       if w > buffer.fromx + buffer.width:
@@ -277,7 +276,6 @@ proc refreshDisplay*(buffer: Buffer) =
       while k < tk and k < buffer.width - 1:
         buffer.display[dls + k].ow += r.width()
         inc k
-      inc j
 
     inc y
 
@@ -617,19 +615,16 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   while buffer.lines.len <= y:
     buffer.addLine()
 
-  var j = 0
   var cx = 0
   while cx < x and i < buffer.lines[y].str.len:
     fastRuneAt(buffer.lines[y].str, i, r)
     cx += r.width()
-    inc j
 
   let ostr = buffer.lines[y].str.substr(i)
-  let oformats = buffer.lines[y].formats.subformats(j)
-  buffer.lines[y].str.setLen(i)
-  buffer.lines[y].setLen(j)
+  let oformats = buffer.lines[y].formats.subformats(i)
+  buffer.lines[y].setLen(i)
 
-  buffer.lines.addFormat(y, j, line.formatFromLine(), line.nodes)
+  buffer.lines.addFormat(y, i, line.formatFromLine(), line.nodes)
 
   var nx = cx
   if nx < x:
@@ -640,14 +635,12 @@ proc setRowBox(buffer: Buffer, line: CSSRowBox) =
   nx += linestr.width()
 
   i = 0
-  j = 0
   while cx < nx and i < ostr.len:
     fastRuneAt(ostr, i, r)
     cx += r.width()
-    inc j
 
   if i < ostr.len:
-    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(j))
+    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
     buffer.lines[y].add(oline)
 
 proc updateCursor(buffer: Buffer) =
@@ -691,35 +684,44 @@ proc updateHover(buffer: Buffer) =
   buffer.prevnodes = nodes
 
 proc renderPlainText*(buffer: Buffer, text: string) =
+  var format = newFormatting()
+  template add_format() =
+    if af:
+      af = false
+      buffer.lines.addFormat(y, buffer.lines[y].str.len, format)
+
   buffer.clearText()
   var i = 0
   var x = 0
   var y = 0
   var r: Rune
-  var format = newFormatting()
+  var af = false
   while i < text.len:
     if text[i] == '\n':
       if i != text.len - 1:
+        add_format
         buffer.addLine()
-        buffer.lines.addFormat(buffer.lines.len - 1, format)
         inc y
         x = 0
       inc i
     elif text[i] == '\r':
       inc i
     elif text[i] == '\t':
+      add_format
       for i in 0..8:
         buffer.lines[^1].str &= ' '
       inc i
     elif text[i] == '\e':
       i = format.parseAnsiCode(text, i)
+      af = true
     elif text[i].isControlChar():
-      buffer.lines.addCell(Rune('^'))
-      buffer.lines.addCell(Rune(text[i].getControlLetter()))
+      add_format
+      buffer.lines[y].str &= '^' & text[i].getControlLetter()
       inc i
     else:
-      fastRuneAt(text, i, r)
-      buffer.lines.addCell(r)
+      add_format
+      buffer.lines[y].str &= text[i]
+      inc i
   buffer.updateCursor()
 
 
