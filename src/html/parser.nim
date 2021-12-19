@@ -117,9 +117,9 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
     tag.open = false
     at = skipBlanks(buf, at)
 
-  while at < buf.len and not buf[at].isWhitespace() and not (tag.open and buf[at] == '/') and buf[at] != '>':
+  while at < buf.len and not buf[at].isWhitespace() and not (tag.open and buf[at] == '/') and buf[at] != '>' and buf[at].isAscii():
     tagname &= buf[at].tolower()
-    at += buf.runeLenAt(at)
+    inc at
 
   tag.tagid = tagType(tagname)
   at = skipBlanks(buf, at)
@@ -153,14 +153,15 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
           inc at
       elif at < buf.len:
         while at < buf.len and not buf[at].isWhitespace() and buf[at] != '>':
-          value &= buf[at]
-          at += buf.runeLenAt(at)
+          var r: Rune
+          fastRuneAt(buf, at, r)
+          value &= $r
 
     if attrname.len > 0:
       tag.attrs[attrname] = value
 
   while at < buf.len and buf[at] != '>':
-    at += buf.runeLenAt(at)
+    inc at
 
   if at < buf.len and buf[at] == '>':
     inc at
@@ -463,7 +464,7 @@ proc parseHtml*(inputStream: Stream): Document =
       of '>':
         till_when = false
       else: discard
-      at += lineBuf.runeLenAt(at)
+      inc at
 
     if till_when:
       continue

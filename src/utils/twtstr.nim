@@ -138,6 +138,9 @@ func hexValue*(c: char): int =
 func decValue*(c: char): int =
   return decCharMap[int(c)]
 
+func isAscii*(c: char): bool =
+  return int(c) < 128
+
 func isAscii*(r: Rune): bool =
   return int(r) < 128
 
