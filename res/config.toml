@@ -1,3 +1,6 @@
+[general]
+double-width-ambiguous = false
+
 [page]
 q = 'QUIT'
 h = 'CURSOR_LEFT' 
