@@ -479,6 +479,18 @@ proc cursorBottom*(buffer: Buffer) =
   buffer.cursory = min(buffer.fromy + buffer.height - 1, buffer.numLines - 1)
   buffer.restoreCursorX()
 
+proc cursorLeftEdge*(buffer: Buffer) =
+  buffer.cursorx = buffer.fromx
+  buffer.xend = buffer.cursorx
+
+proc cursorVertMiddle*(buffer: Buffer) =
+  buffer.cursorx = min(buffer.fromx + (buffer.width - 2) div 2, buffer.currentLineWidth)
+  buffer.xend = buffer.cursorx
+
+proc cursorRightEdge*(buffer: Buffer) =
+  buffer.cursorx = min(buffer.fromx + buffer.width - 1, buffer.currentLineWidth)
+  buffer.xend = buffer.cursorx
+
 proc centerLine*(buffer: Buffer) =
   let ny = max(min(buffer.cursory - buffer.height div 2, buffer.numLines - buffer.height), 0)
   if ny != buffer.fromy:
@@ -694,7 +706,6 @@ proc renderPlainText*(buffer: Buffer, text: string) =
   var i = 0
   var x = 0
   var y = 0
-  var r: Rune
   var af = false
   while i < text.len:
     if text[i] == '\n':
@@ -844,6 +855,9 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
     of ACTION_CURSOR_TOP: buffer.cursorTop()
     of ACTION_CURSOR_MIDDLE: buffer.cursorMiddle()
     of ACTION_CURSOR_BOTTOM: buffer.cursorBottom()
+    of ACTION_CURSOR_LEFT_EDGE: buffer.cursorLeftEdge()
+    of ACTION_CURSOR_VERT_MIDDLE: buffer.cursorVertMiddle()
+    of ACTION_CURSOR_RIGHT_EDGE: buffer.cursorRightEdge()
     of ACTION_CENTER_LINE: buffer.centerLine()
     of ACTION_SCROLL_DOWN: buffer.scrollDown()
     of ACTION_SCROLL_UP: buffer.scrollUp()
