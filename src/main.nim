@@ -10,6 +10,7 @@ import html/parser
 import io/buffer
 import io/term
 import config/config
+import utils/twtstr
 
 let clientInstance = newHttpClient()
 proc loadRemotePage*(url: string): string =
@@ -77,4 +78,5 @@ proc main*() =
     lastUri = newUri
 
 readConfig()
+width_table = makewidthtable(gconfig.ambiguous_double)
 main()

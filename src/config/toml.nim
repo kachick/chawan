@@ -8,7 +8,7 @@ import unicode
 import utils/twtstr
 
 type
-  ValueType = enum
+  ValueType* = enum
     VALUE_STRING, VALUE_INTEGER, VALUE_FLOAT, VALUE_BOOLEAN, VALUE_DATE_TIME,
     VALUE_TABLE, VALUE_ARRAY VALUE_TABLE_ARRAY
 
@@ -121,12 +121,12 @@ proc consumeString(state: var TomlParser, first: char): string =
 
   if first == '"':
     if state.has(1):
-      let s = state.peek(0, 2)
+      let s = state.peek(0, 1)
       if s == "\"\"":
         multiline = true
   elif first == '\'':
     if state.has(1):
-      let s = state.peek(0, 2)
+      let s = state.peek(0, 1)
       if s == "''":
         multiline = true
 
@@ -146,6 +146,8 @@ proc consumeString(state: var TomlParser, first: char): string =
         let c2 = state.peek(0)
         let c3 = state.peek(1)
         if c2 == first and c3 == first:
+          discard state.consume()
+          discard state.consume()
           break
       else:
         break

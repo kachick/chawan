@@ -3,21 +3,39 @@
 Currently keybindings and a user stylesheet can be configured. The
 configuration format for twt is toml.
 
-twt will look for a config file in the ~/.config/twt/ directory, so you can
-just copy the one from res/ there and customize that to your liking.
+twt will look for a config file in the ~/.config/twt/ directory called
+`config.toml`. For an example see the default configuration in the res/ folder.
 
 A list of configurable options follows.
 
+## General
+
+General options are to be placed in a section called [general].
+
+Following are general options:
+
+<table>
+<tr><th>**Name**<th>**Value**<th>**Function**
+<tr><td>double-width-ambiguous<td>boolean<td>assume the terminal displays characters in the East Asian Ambiguous category as double width
+</table>
+
 ## Stylesheets
 
-To set a user stylesheet, use the format `stylesheet = "path-to-user.css"`.
-Relative paths are interpreted as relative to the config directory.
+User stylesheets are to be placed in a section called [css].
 
-Specifying a second stylesheet will override the first one.
+There are two ways to import user stylesheets:
+
+1. Include a user stylesheet using the format `include = 'path-to-user.css'`.
+   To include multiple stylesheets, use `include = ['first-stylesheet.css,
+   second-stylesheet.css']`.  
+   Relative paths are interpreted as relative to the config directory.
+
+2. Place your stylesheet directly in your configuration file using `inline =
+   """your-style"""`.  
 
 ## Keybindings
 
-To specify a keybinding, you will first have to specify a mode:
+Keybindings are to be placed in these sections:
 
 * for page browsing: [page]
 * for line editing: [line]
@@ -30,6 +48,9 @@ Where `<keybinding>` is a combination of unicode characters with or without
 modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
 escape to the keybinding respectively (essentially making `M-` the same as
 `C-[`). Modifiers can be escaped with the `\` sign.
+
+(Note: it is **highly recommended** to use single quotes here; escaping can get
+quite ugly with double quotes.)
 
 ```Example:
 'C-M-j' = 'CHANGE_LOCATION' # change URL when Control, Escape and j are pressed

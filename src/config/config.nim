@@ -38,6 +38,7 @@ type
     nmap*: ActionMap
     lemap*: ActionMap
     stylesheet*: string
+    ambiguous_double*: bool
 
 func getRealKey(key: string): string =
   var realk: string
@@ -124,13 +125,28 @@ proc readUserStylesheet(dir, file: string): string =
       f.close()
 
 proc parseConfig(config: var Config, dir: string, t: TomlValue) =
+  if "general" in t:
+    let general = t["general"]
+    if "double-width-ambiguous" in general:
+      config.ambiguous_double = general["double-width-ambiguous"].b
   if "page" in t:
     for k, v in t["page"].pairs:
       config.nmap[getRealKey(k)] = getAction(v.s)
     for k, v in t["line"].pairs:
       config.lemap[getRealKey(k)] = getLineAction(v.s)
-  if "stylesheet" in t:
-    config.stylesheet = readUserStylesheet(dir, t["stylesheet"].s)
+  if "css" in t:
+    let css = t["css"]
+    if "include" in css:
+      let val = css["include"]
+      case val.vt
+      of VALUE_STRING:
+        config.stylesheet &= readUserStylesheet(dir, val.s)
+      of VALUE_ARRAY:
+        for child in val.a:
+          config.stylesheet &= readUserStylesheet(dir, child.s)
+      else: discard
+    if "inline" in css:
+      config.stylesheet &= css["inline"].s
 
 proc staticReadConfig(): Config =
   result.parseConfig("res", parseToml(newStringStream(staticRead"res/config.toml")))
