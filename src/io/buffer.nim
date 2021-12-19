@@ -177,7 +177,7 @@ func currentCellOrigin(buffer: Buffer): int =
   return buffer.cellOrigin(buffer.acursorx, buffer.acursory)
 
 #TODO counter-intuitive naming?
-func currentCell(buffer: Buffer): FixedCell =
+func currentDisplayCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
   return buffer.display[row + buffer.currentCellOrigin()]
 
@@ -186,13 +186,13 @@ func cell(buffer: Buffer): FixedCell =
   return buffer.display[row + buffer.acursorx]
 
 func currentRune(buffer: Buffer): Rune =
-  let cell = buffer.currentCell()
+  let cell = buffer.currentDisplayCell()
   if cell.runes.len == 0:
     return Rune(' ')
   return cell.runes[0]
 
 func getCursorLink(buffer: Buffer): Element =
-  let nodes = buffer.currentCell().nodes
+  let nodes = buffer.currentDisplayCell().nodes
   for node in nodes:
     if node.nodeType == ELEMENT_NODE:
       let elem = Element(node)
@@ -204,6 +204,20 @@ func currentLineWidth*(buffer: Buffer): int =
   if buffer.cursory > buffer.lines.len:
     return 0
   return buffer.lines[buffer.cursory].width()
+
+func currentLine(buffer: Buffer): string =
+  return buffer.lines[buffer.cursory].str
+
+func currentCursorBytes(buffer: Buffer): int =
+  let line = buffer.currentLine
+  var w = 0
+  var i = 0
+  let cc = buffer.fromx + buffer.cursorx
+  while i < line.len and w < cc:
+    var r: Rune
+    fastRuneAt(line, i, r)
+    w += r.width()
+  return i
 
 func maxScreenWidth*(buffer: Buffer): int =
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
@@ -279,7 +293,6 @@ proc refreshDisplay*(buffer: Buffer) =
 
     inc y
 
-
 proc restoreCursorX(buffer: Buffer) =
   buffer.cursorx = max(min(buffer.currentLineWidth() - 1, buffer.xend), 0)
 
@@ -354,6 +367,25 @@ proc cursorLeft*(buffer: Buffer) =
 
   buffer.xend = buffer.cursorx
 
+proc setCursorX*(buffer: Buffer, x: int) =
+  var b = buffer.currentCursorBytes()
+  var w = buffer.fromx + buffer.cursorx
+  while b < buffer.currentLine.len and w < x:
+    var r: Rune
+    fastRuneAt(buffer.currentLine, b, r)
+    w += r.width()
+  while b > 0 and w > x:
+    let (r, o) = lastRune(buffer.currentLine, b)
+    w -= r.width()
+    b -= o
+
+  if w - buffer.fromx <= buffer.width:
+    buffer.cursorx = w - buffer.fromx
+  else:
+    buffer.fromx = w - buffer.width
+    buffer.cursorx = w - buffer.fromx
+    buffer.redraw = true
+
 proc cursorLineBegin*(buffer: Buffer) =
   buffer.cursorx = 0
   buffer.xend = 0
@@ -368,82 +400,66 @@ proc cursorLineEnd*(buffer: Buffer) =
   buffer.redraw = buffer.fromx > 0
 
 proc cursorNextWord*(buffer: Buffer) =
-  let llen = buffer.currentLineWidth() - 1
-  if llen >= 0:
-    while not buffer.currentRune().breaksWord():
-      if buffer.cursorx >= llen:
-        break
-      buffer.cursorRight()
+  var r: Rune
+  var b = buffer.currentCursorBytes()
+  var x = buffer.fromx + buffer.cursorx
+  while b < buffer.currentLine.len:
+    let pb = b
+    fastRuneAt(buffer.currentLine, b, r)
+    if r.breaksWord():
+      b = pb
+      break
+    x += r.width()
 
-    while buffer.currentRune().breaksWord():
-      if buffer.cursorx >= llen:
-        break
-      buffer.cursorRight()
+  while b < buffer.currentLine.len:
+    let pb = b
+    fastRuneAt(buffer.currentLine, b, r)
+    if not r.breaksWord():
+      b = pb
+      break
+    x += r.width()
 
-  if buffer.cursorx >= buffer.currentLineWidth() - 1:
+  if b < buffer.currentLine.len:
+    buffer.setCursorX(x)
+  else:
     if buffer.cursory < buffer.numLines - 1:
       buffer.cursorDown()
       buffer.cursorLineBegin()
+    else:
+      buffer.cursorLineEnd()
 
 proc cursorPrevWord*(buffer: Buffer) =
-  if buffer.currentLineWidth() > 0:
-    while not buffer.currentRune().breaksWord():
-      if buffer.cursorx == 0:
+  var b = buffer.currentCursorBytes()
+  var x = buffer.fromx + buffer.cursorx
+  if buffer.currentLine.len > 0:
+    var r: Rune
+    while b >= 0:
+      let (r, o) = lastRune(buffer.currentLine, b)
+      if r.breaksWord():
         break
-      buffer.cursorLeft()
+      b -= o
+      x -= r.width()
 
-    while buffer.currentRune().breaksWord():
-      if buffer.cursorx == 0:
+    while b >= 0:
+      let (r, o) = lastRune(buffer.currentLine, b)
+      if not r.breaksWord():
         break
-      buffer.cursorLeft()
+      b -= o
+      x -= r.width()
+  else:
+    b = -1
 
-  if buffer.cursorx == 0:
+  if b >= 0:
+    buffer.setCursorX(x)
+  else:
     if buffer.cursory > 0:
       buffer.cursorUp()
       buffer.cursorLineEnd()
-
-#TODO this is sloooooow
-#proc cursorRightOverflow(buffer: Buffer) =
-#  buffer.cursorRight()
-#  if buffer.cursorx >= buffer.currentLineWidth() - 1 and buffer.cursory < buffer.numLines - 1:
-#    buffer.cursorDown()
-#    buffer.cursorLineBegin()
-#  buffer.refreshDisplay()
-#
-#proc cursorLeftOverflow(buffer: Buffer) =
-#  buffer.cursorLeft()
-#  if buffer.cursorx <= 0 and buffer.cursory > 0:
-#    buffer.cursorUp()
-#    buffer.cursorLineEnd()
-#  buffer.refreshDisplay()
+    else:
+      buffer.cursorLineBegin()
 
 proc cursorNextLink*(buffer: Buffer) =
   #TODO
-  #let ocx = buffer.cursorx
-  #let ocy = buffer.cursory
-  #let ofx = buffer.fromx
-  #let ofy = buffer.fromy
-  #let elem = buffer.getCursorLink()
-  #if elem != nil:
-  #  while buffer.getCursorLink() == elem:
-  #    buffer.cursorRightOverflow()
-  #    if buffer.cursorx >= buffer.currentLineWidth() - 1 and
-  #        buffer.cursory >= buffer.numLines - 1:
-  #      buffer.cursorx = ocx
-  #      buffer.cursory = ocy
-  #      buffer.fromx = ofx
-  #      buffer.fromy = ofy
-  #      break
-
-  #while buffer.getCursorLink() == nil:
-  #  buffer.cursorRightOverflow()
-  #  if buffer.cursorx >= buffer.currentLineWidth() - 1 and
-  #      buffer.cursory >= buffer.numLines - 1:
-  #    buffer.cursorx = ocx
-  #    buffer.cursory = ocy
-  #    buffer.fromx = ofx
-  #    buffer.fromy = ofy
-  #    break
   discard
 
 proc cursorPrevLink*(buffer: Buffer) =
@@ -668,7 +684,7 @@ proc updateCursor(buffer: Buffer) =
     buffer.cursory = 0
 
 proc updateHover(buffer: Buffer) =
-  let nodes = buffer.currentCell().nodes
+  let nodes = buffer.currentDisplayCell().nodes
   if nodes != buffer.prevnodes:
     for node in nodes:
       var elem: Element
@@ -875,7 +891,7 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
         buffer.setLocation(parseUri(url))
         return true
     of ACTION_LINE_INFO:
-      buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentCell().width())
+      buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentDisplayCell().width())
       nostatus = true
     of ACTION_FEED_NEXT:
       feedNext = true

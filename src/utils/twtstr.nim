@@ -110,9 +110,13 @@ const lowerChars = getLowerChars()
 func tolower*(c: char): char =
   return lowerChars[int(c)]
 
+func getrune(s: string): Rune =
+  return s.toRunes()[0]
+
 const breakWord = [
   Rune('\n'), Rune('/'), Rune('\\'), Rune(' '), Rune('&'), Rune('='),
-  Rune('?'), Rune('.'), Rune(';')
+  Rune('?'), Rune('.'), Rune(';'), "。".getrune(), "、".getrune(),
+  "「".getrune(), "」".getrune()
 ]
 
 func genHexCharMap(): seq[int] =
