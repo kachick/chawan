@@ -94,24 +94,23 @@ func width*(cell: FixedCell): int =
 func newFormatting*(): Formatting =
   return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)
 
-func findFormat*(line: FlexibleLine, pos: int): FormattingCell =
+func findFormatN*(line: FlexibleLine, pos: int): int =
   var i = 0
   while i < line.formats.len:
     if line.formats[i].pos > pos:
       break
     inc i 
-  dec i
+  return i
+
+func findFormat*(line: FlexibleLine, pos: int): FormattingCell =
+  let i = line.findFormatN(pos) - 1
   if i != -1:
     result = line.formats[i]
   else:
     result.pos = -1
 
 func findNextFormat*(line: FlexibleLine, pos: int): FormattingCell =
-  var i = 0
-  while i < line.formats.len:
-    if line.formats[i].pos > pos:
-      break
-    inc i 
+  let i = line.findFormatN(pos)
   if i < line.formats.len:
     result = line.formats[i]
   else:

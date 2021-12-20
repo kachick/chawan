@@ -11,26 +11,17 @@ import sequtils
 when defined(posix):
   import posix
 
-func ansiStyle*(str: string, style: Style): seq[string] =
+func ansiStyle*(str: string, style: Style): string =
   result &= ansiStyleCode(style)
   result &= str
 
-func ansiFgColor*(str: string, color: ForegroundColor): seq[string] =
+func ansiFgColor*(str: string, color: ForegroundColor): string =
   result &= ansiForegroundColorCode(color)
   result &= str
 
-func ansiReset*(str: string): seq[string] =
+func ansiReset*(str: string): string =
   result &= str
   result &= ansiResetCode
-
-func ansiStyle*(str: seq[string], style: Style): seq[string] =
-  return ansiStyleCode(style) & str
-
-func ansiFgColor*(str: seq[string], color: ForegroundColor): seq[string] =
-  return ansiForegroundColorCode(color) & str
-
-func ansiReset*(str: seq[string]): seq[string] =
-  return str & ansiResetCode
 
 func maxString*(str: string, max: int): string =
   if max < str.runeLen():
