@@ -677,13 +677,20 @@ proc scrollLeft*(buffer: Buffer) =
       buffer.cursorLeft()
     buffer.redraw = true
 
-proc gotoAnchor*(buffer: Buffer): bool =
-  discard
-  #TODO
-  #if buffer.location.anchor != "":
-  #  let node =  buffer.getElementById(buffer.location.anchor)
-  #  if node != nil:
-  #    buffer.scrollTo(max(node.y - buffer.height div 2, 0))
+proc gotoAnchor*(buffer: Buffer, id: string) =
+  let anchor = buffer.document.getElementById(id)
+  if anchor == nil: return
+  for y in 0..(buffer.numLines - 1):
+    let line = buffer.lines[y]
+    var i = 0
+    while i < line.formats.len:
+      let format = line.formats[i]
+      if anchor in format.nodes:
+        buffer.setCursorY(y)
+        buffer.centerLine()
+        buffer.setCursorXB(format.pos)
+        return
+      inc i
 
 proc setLocation*(buffer: Buffer, uri: Uri) =
   buffer.location = uri
@@ -1018,7 +1025,8 @@ proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
       nostatus = false
 
 proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
-  discard buffer.gotoAnchor()
+  eprint buffer.location.anchor
+  buffer.gotoAnchor(buffer.location.anchor)
   buffer.refreshDisplay()
   buffer.displayBuffer()
   buffer.updateHover()

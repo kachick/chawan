@@ -306,3 +306,8 @@ func newAttr*(parent: Element, key, value: string): Attr =
   result.ownerElement = parent
   result.name = key
   result.value = value
+
+func getElementById*(document: Document, id: string): Element =
+  if id.len == 0 or id notin document.id_elements:
+    return nil
+  return document.id_elements[id][0]
