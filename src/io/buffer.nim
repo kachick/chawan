@@ -14,7 +14,6 @@ import layout/box
 import layout/engine
 import config/config
 import io/term
-import io/lineedit
 import io/cell
 
 type
@@ -37,17 +36,19 @@ type
     document*: Document
     redraw*: bool
     reshape*: bool
+    nostatus*: bool
     location*: Uri
+    target*: string
     source*: string
     showsource*: bool
     rootbox*: CSSBox
     prevnodes*: seq[Node]
 
-func newBuffer*(attrs: TermAttributes): Buffer =
+proc newBuffer*(): Buffer =
   new(result)
-  result.width = attrs.width
-  result.height = attrs.height - 1
-  result.attrs = attrs
+  result.attrs = getTermAttributes()
+  result.width = result.attrs.width
+  result.height = result.attrs.height - 1
 
   result.display = newFixedGrid(result.width, result.height)
   result.prevdisplay = newFixedGrid(result.width, result.height)
@@ -677,8 +678,8 @@ proc scrollLeft*(buffer: Buffer) =
       buffer.cursorLeft()
     buffer.redraw = true
 
-proc gotoAnchor*(buffer: Buffer, id: string) =
-  let anchor = buffer.document.getElementById(id)
+proc gotoAnchor*(buffer: Buffer) =
+  let anchor = buffer.document.getElementById(buffer.location.anchor)
   if anchor == nil: return
   for y in 0..(buffer.numLines - 1):
     let line = buffer.lines[y]
@@ -881,13 +882,13 @@ proc renderDocument*(buffer: Buffer) =
       dec i
   buffer.updateCursor()
 
-proc reshapeBuffer*(buffer: Buffer) =
+proc render*(buffer: Buffer) =
   if buffer.showsource:
     buffer.renderPlainText(buffer.source)
   else:
     buffer.renderDocument()
 
-proc cursorBufferPos(buffer: Buffer) =
+proc cursorBufferPos*(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
   let y = buffer.cursory - buffer.fromy
   print(HVP(y + 1, x + 1))
@@ -913,127 +914,57 @@ proc statusMsgForBuffer(buffer: Buffer) =
     msg &= " " & buffer.hovertext
   buffer.setStatusMessage(msg.ansiStyle(styleReverse).ansiReset())
 
+proc lineInfo*(buffer: Buffer) =
+    buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentDisplayCell().width())
+    buffer.nostatus = true
+
 proc displayBufferSwapOutput(buffer: Buffer) =
   print(buffer.generateSwapOutput())
 
 proc displayBuffer(buffer: Buffer) =
   print(buffer.generateFullOutput())
 
-proc displayStatusMessage(buffer: Buffer) =
+proc displayStatusMessage*(buffer: Buffer) =
   print(HVP(buffer.height + 1, 1))
   print(SGR())
   print(buffer.generateStatusMessage())
   print(EL())
 
-proc inputLoop(attrs: TermAttributes, buffer: Buffer): bool =
-  var s = ""
-  var feedNext = false
-  while true:
+proc toggleSource*(buffer: Buffer) =
+  buffer.showsource = not buffer.showsource
+  buffer.reshape = true
+  buffer.redraw = true
+
+proc click*(buffer: Buffer): string =
+  let link = buffer.getCursorLink()
+  if link != nil:
+    if link.tagType == TAG_A:
+      return HTMLAnchorElement(link).href
+  return ""
+
+proc refreshBuffer*(buffer: Buffer) =
+  stdout.hideCursor()
+
+  if buffer.refreshTermAttrs():
+    buffer.redraw = true
+    buffer.reshape = true
+
+  if buffer.redraw:
+    buffer.refreshDisplay()
+    buffer.displayBuffer()
     buffer.redraw = false
-    buffer.displayStatusMessage()
-    stdout.showCursor()
-    buffer.cursorBufferPos()
-    if not feedNext:
-      s = ""
-    else:
-      feedNext = false
 
-    let c = getch()
-    s &= c
-    let action = getNormalAction(s)
-    var nostatus = false
-    case action
-    of ACTION_QUIT:
-      eraseScreen()
-      print(HVP(0, 0))
-      return false
-    of ACTION_CURSOR_LEFT: buffer.cursorLeft()
-    of ACTION_CURSOR_DOWN: buffer.cursorDown()
-    of ACTION_CURSOR_UP: buffer.cursorUp()
-    of ACTION_CURSOR_RIGHT: buffer.cursorRight()
-    of ACTION_CURSOR_LINEBEGIN: buffer.cursorLineBegin()
-    of ACTION_CURSOR_LINEEND: buffer.cursorLineEnd()
-    of ACTION_CURSOR_NEXT_WORD: buffer.cursorNextWord()
-    of ACTION_CURSOR_PREV_WORD: buffer.cursorPrevWord()
-    of ACTION_CURSOR_NEXT_LINK: buffer.cursorNextLink()
-    of ACTION_CURSOR_PREV_LINK: buffer.cursorPrevLink()
-    of ACTION_PAGE_DOWN: buffer.pageDown()
-    of ACTION_PAGE_UP: buffer.pageUp()
-    of ACTION_PAGE_RIGHT: buffer.pageRight()
-    of ACTION_PAGE_LEFT: buffer.pageLeft()
-    of ACTION_HALF_PAGE_DOWN: buffer.halfPageDown()
-    of ACTION_HALF_PAGE_UP: buffer.halfPageUp()
-    of ACTION_CURSOR_FIRST_LINE: buffer.cursorFirstLine()
-    of ACTION_CURSOR_LAST_LINE: buffer.cursorLastLine()
-    of ACTION_CURSOR_TOP: buffer.cursorTop()
-    of ACTION_CURSOR_MIDDLE: buffer.cursorMiddle()
-    of ACTION_CURSOR_BOTTOM: buffer.cursorBottom()
-    of ACTION_CURSOR_LEFT_EDGE: buffer.cursorLeftEdge()
-    of ACTION_CURSOR_VERT_MIDDLE: buffer.cursorVertMiddle()
-    of ACTION_CURSOR_RIGHT_EDGE: buffer.cursorRightEdge()
-    of ACTION_CENTER_LINE: buffer.centerLine()
-    of ACTION_SCROLL_DOWN: buffer.scrollDown()
-    of ACTION_SCROLL_UP: buffer.scrollUp()
-    of ACTION_SCROLL_LEFT: buffer.scrollLeft()
-    of ACTION_SCROLL_RIGHT: buffer.scrollRight()
-    of ACTION_CLICK:
-      discard
-    of ACTION_CHANGE_LOCATION:
-      var url = $buffer.location
-
-      print(HVP(buffer.height + 1, 1))
-      print(EL())
-      let status = readLine("URL: ", url, buffer.width)
-      if status:
-        buffer.setLocation(parseUri(url))
-        return true
-    of ACTION_LINE_INFO:
-      buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentDisplayCell().width())
-      nostatus = true
-    of ACTION_FEED_NEXT:
-      feedNext = true
-    of ACTION_RELOAD: return true
-    of ACTION_RESHAPE:
-      buffer.reshape = true
-    of ACTION_REDRAW: buffer.redraw = true
-    of ACTION_TOGGLE_SOURCE:
-      buffer.showsource = not buffer.showsource
-      buffer.reshape = true
-      buffer.redraw = true
-    else: discard
-    stdout.hideCursor()
-
-    if buffer.refreshTermAttrs():
-      buffer.redraw = true
-      buffer.reshape = true
-
-    if buffer.redraw:
-      buffer.refreshDisplay()
-      buffer.displayBuffer()
-      buffer.redraw = false
-
-    buffer.updateHover()
-    if buffer.reshape:
-      buffer.reshapeBuffer()
-      buffer.reshape = false
-      buffer.refreshDisplay()
-      buffer.displayBufferSwapOutput()
-
-    if not nostatus:
-      buffer.statusMsgForBuffer()
-    else:
-      nostatus = false
-
-proc displayPage*(attrs: TermAttributes, buffer: Buffer): bool =
-  eprint buffer.location.anchor
-  buffer.gotoAnchor(buffer.location.anchor)
-  buffer.refreshDisplay()
-  buffer.displayBuffer()
   buffer.updateHover()
   if buffer.reshape:
-    buffer.reshapeBuffer()
+    buffer.render()
     buffer.reshape = false
     buffer.refreshDisplay()
     buffer.displayBufferSwapOutput()
-  buffer.statusMsgForBuffer()
-  return inputLoop(attrs, buffer)
+
+  if not buffer.nostatus:
+    buffer.statusMsgForBuffer()
+  else:
+    buffer.nostatus = false
+  buffer.displayStatusMessage()
+  buffer.cursorBufferPos()
+  stdout.showCursor()
