@@ -940,8 +940,17 @@ proc click*(buffer: Buffer): string =
   return ""
 
 proc drawBuffer*(buffer: Buffer) =
-  buffer.refreshDisplay()
-  buffer.displayBuffer()
+  var formatting = newFormatting()
+  for line in buffer.lines:
+    if line.formats.len == 0:
+      print(line.str & '\n')
+    else:
+      var x = 0
+      for format in line.formats:
+        print(line.str.substr(x, format.pos - 1))
+        print(formatting.processFormatting(format.formatting))
+        x = format.pos
+      print(line.str.substr(x, line.str.len) & '\n')
 
 proc refreshBuffer*(buffer: Buffer) =
   buffer.title = $buffer.location
@@ -952,7 +961,8 @@ proc refreshBuffer*(buffer: Buffer) =
     buffer.reshape = true
 
   if buffer.redraw:
-    buffer.drawBuffer()
+    buffer.refreshDisplay()
+    buffer.displayBuffer()
     buffer.redraw = false
 
   buffer.updateHover()
