@@ -3,6 +3,7 @@ import uri
 import strutils
 import unicode
 import streams
+import os
 
 import css/values
 import css/cascade
@@ -44,6 +45,8 @@ type
     rootbox*: CSSBox
     prevnodes*: seq[Node]
     sourcepair*: Buffer
+    prev*: Buffer
+    next* {.cursor.}: Buffer
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -164,7 +167,7 @@ func generateStatusMessage(buffer: Buffer): string =
     result &= EL()
   result &= SGR()
 
-func numLines(buffer: Buffer): int = buffer.lines.len
+func numLines*(buffer: Buffer): int = buffer.lines.len
 
 func lastVisibleLine(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
 
@@ -759,6 +762,21 @@ proc updateCursor(buffer: Buffer) =
   if buffer.lines.len == 0:
     buffer.cursory = 0
 
+#TODO
+func mergeUri*(urla, urlb: Uri): Uri =
+  var moduri = urlb
+  if moduri.scheme == "":
+    moduri.scheme = urla.scheme
+  if moduri.scheme == "":
+    moduri.scheme = "file"
+  if moduri.hostname == "":
+    moduri.hostname = urla.hostname
+    if moduri.path == "":
+      moduri.path = urla.path
+    elif urla.path != "":
+      moduri.path = urla.path.splitFile().dir / moduri.path
+  return moduri
+
 proc updateHover(buffer: Buffer) =
   let nodes = buffer.currentDisplayCell().nodes
   if nodes != buffer.prevnodes:
@@ -777,7 +795,7 @@ proc updateHover(buffer: Buffer) =
     let link = nodes.getLink()
     if link != nil:
       if link.tagType == TAG_A:
-        buffer.hovertext = HTMLAnchorElement(link).href
+        buffer.hovertext = $buffer.location.mergeUri(parseUri(HTMLAnchorElement(link).href))
     else:
       buffer.hovertext = ""
     for node in buffer.prevnodes:
@@ -921,7 +939,12 @@ proc click*(buffer: Buffer): string =
       return HTMLAnchorElement(link).href
   return ""
 
+proc drawBuffer*(buffer: Buffer) =
+  buffer.refreshDisplay()
+  buffer.displayBuffer()
+
 proc refreshBuffer*(buffer: Buffer) =
+  buffer.title = $buffer.location
   stdout.hideCursor()
 
   if buffer.refreshTermAttrs():
@@ -929,8 +952,7 @@ proc refreshBuffer*(buffer: Buffer) =
     buffer.reshape = true
 
   if buffer.redraw:
-    buffer.refreshDisplay()
-    buffer.displayBuffer()
+    buffer.drawBuffer()
     buffer.redraw = false
 
   buffer.updateHover()

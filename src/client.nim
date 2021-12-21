@@ -2,7 +2,6 @@ import httpclient
 import streams
 import uri
 import terminal
-import os
 
 import io/buffer
 import io/lineedit
@@ -14,8 +13,7 @@ import utils/twtstr
 type
   Client* = ref object
     http: HttpClient
-    buffers: seq[Buffer]
-    currentbuffer: int
+    buffer: Buffer
     feednext: bool
     s: string
 
@@ -26,24 +24,6 @@ proc die() =
 proc newClient*(): Client =
   new(result)
   result.http = newHttpClient()
-  result.currentbuffer = -1
-
-func pbuffer(client: Client): Buffer =
-  if client.currentbuffer > 0:
-    return client.buffers[client.currentbuffer - 1]
-  return nil
-
-func buffer(client: Client): Buffer =
-  return client.buffers[client.currentbuffer]
-
-func nbuffer(client: Client): Buffer =
-  if client.currentbuffer < client.buffers.len - 1:
-    return client.buffers[client.currentbuffer + 1]
-  return nil
-
-func puri(client: Client): Uri =
-  if client.currentbuffer > 0:
-    return client.pbuffer.location
 
 proc loadRemotePage*(client: Client, url: string): string =
   return client.http.getContent(url)
@@ -66,39 +46,45 @@ proc getPageUri(client: Client, uri: Uri): Stream =
     return client.getRemotePage($moduri)
 
 proc addBuffer(client: Client) =
-  inc client.currentbuffer
-  client.buffers.insert(newBuffer(), client.currentbuffer)
+  let oldnext = client.buffer.next
+  client.buffer.next = newBuffer()
+  if oldnext != nil:
+    oldnext.prev = client.buffer.next
+  client.buffer.next.prev = client.buffer
+  client.buffer.next.next = oldnext
+  client.buffer = client.buffer.next
 
 proc prevBuffer(client: Client) =
-  if client.currentbuffer > 0:
-    dec client.currentbuffer
+  if client.buffer.prev != nil:
+    client.buffer = client.buffer.prev
     client.buffer.redraw = true
 
 proc nextBuffer(client: Client) =
-  if client.currentbuffer < client.buffers.len - 1:
-    inc client.currentbuffer
+  if client.buffer.next != nil:
+    client.buffer = client.buffer.next
     client.buffer.redraw = true
 
 proc discardBuffer(client: Client) =
-  if client.currentbuffer < client.buffers.len - 1:
-    client.buffers.delete(client.currentbuffer)
+  if client.buffer.next != nil:
+    client.buffer.next.prev = client.buffer.prev
+    client.buffer = client.buffer.next
     client.buffer.redraw = true
-  elif client.currentbuffer > 0:
-    client.buffers.delete(client.currentbuffer)
-    dec client.currentbuffer
+  elif client.buffer.prev != nil:
+    client.buffer.prev.next = client.buffer.next
+    client.buffer = client.buffer.prev
     client.buffer.redraw = true
   else:
     client.buffer.setStatusMessage("Can't discard last buffer!")
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
-  buffer.document = parseHtml(newStringStream(client.buffer.source))
+  buffer.document = parseHtml(newStringStream(buffer.source))
   buffer.render()
   buffer.gotoAnchor()
+  buffer.location.anchor = ""
   buffer.redraw = true
 
 proc readPipe(client: Client) =
-  client.addBuffer()
   if not stdin.isatty:
     client.buffer.showsource = true
     try:
@@ -111,27 +97,14 @@ proc readPipe(client: Client) =
     die()
   client.setupBuffer()
 
-proc mergeURLs(client: Client, urla, urlb: Uri): Uri =
-  var moduri = urlb
-  if moduri.scheme == "":
-    moduri.scheme = urla.scheme
-  if moduri.scheme == "":
-    moduri.scheme = "file"
-  if moduri.hostname == "":
-    moduri.hostname = urla.hostname
-    if moduri.path == "":
-      moduri.path = urla.path
-    elif urla.path != "":
-      moduri.path = urla.path.splitFile().dir / moduri.path
-  return moduri
-
-proc gotoURL(client: Client, url: Uri) =
-  var newuri = url
-  client.addBuffer()
-  newuri = client.mergeUrls(client.puri, newuri)
+proc gotoURL_impl(client: Client, uri: Uri) {.inline.} =
+  var olduri: Uri
+  if client.buffer.prev != nil:
+    olduri = client.buffer.prev.location
+  var newuri = olduri.mergeUri(uri)
   let newanchor = newuri.anchor
   newuri.anchor = ""
-  if client.puri != newuri or newanchor == "":
+  if client.buffer.prev == nil or client.buffer.prev.location != newuri or newanchor == "":
     let s = client.getPageUri(newuri)
     if s != nil:
       client.buffer.source = s.readAll() #TODO
@@ -140,26 +113,28 @@ proc gotoURL(client: Client, url: Uri) =
       client.buffer.setStatusMessage("Couldn't load " & $newuri)
       return
   elif newanchor != "":
-    if not client.pbuffer.hasAnchor(newanchor):
+    if not client.buffer.prev.hasAnchor(newanchor):
       client.discardBuffer()
       client.buffer.setStatusMessage("Couldn't find anchor " & newanchor)
       return
-    client.buffer.source = client.pbuffer.source
+    client.buffer.source = client.buffer.prev.source
     newuri.anchor = newanchor
   client.buffer.setLocation(newuri)
   client.setupBuffer()
+
+proc gotoURL(client: Client, url: Uri) =
+  client.addBuffer()
+  client.gotoURL_impl(url)
 
 proc gotoURL(client: Client, url: string) =
   client.gotoURL(parseUri(url))
 
 proc reloadPage(client: Client) =
-  let buffer = client.buffer
-  var location = buffer.location
-  location.anchor = ""
-  client.gotoURL(location)
-  client.buffer.setCursorXY(client.pbuffer.cursorx, client.pbuffer.cursory)
-  client.buffer.setFromXY(client.pbuffer.fromx, client.pbuffer.fromy)
-  client.buffer.showsource = client.pbuffer.showsource
+  let pbuffer = client.buffer
+  client.gotoURL("")
+  client.buffer.setCursorXY(pbuffer.cursorx, pbuffer.cursory)
+  client.buffer.setFromXY(pbuffer.fromx, pbuffer.fromy)
+  client.buffer.showsource = pbuffer.showsource
 
 proc changeLocation(client: Client) =
   let buffer = client.buffer
@@ -178,16 +153,12 @@ proc click(client: Client) =
 proc toggleSource*(client: Client) =
   let buffer = client.buffer
   if buffer.sourcepair != nil:
-    for i in 0..high(client.buffers):
-      if client.buffers[i] == buffer.sourcepair:
-        client.currentbuffer = i
-        break
-    eprint "Fatal error (???)"
+    client.buffer = buffer.sourcepair
   else:
     client.addBuffer()
-    client.buffer.sourcepair = client.pbuffer
-    client.buffer.source = client.pbuffer.source
-    client.buffer.showsource = not client.pbuffer.showsource
+    client.buffer.sourcepair = client.buffer.prev
+    client.buffer.source = client.buffer.prev.source
+    client.buffer.showsource = not client.buffer.prev.showsource
     client.setupBuffer()
 
 proc input(client: Client) =
@@ -247,11 +218,16 @@ proc input(client: Client) =
   else: discard
 
 proc launchClient*(client: Client, params: seq[string]) =
+  client.buffer = newBuffer()
   if params.len < 1:
     client.readPipe()
-  else: 
-    client.gotoURL(params[0])
+  else:
+    client.gotoURL_impl(parseUri(params[0]))
 
-  while true:
-    client.buffer.refreshBuffer()
-    client.input()
+  if stdout.isatty:
+    while true:
+      client.buffer.refreshBuffer()
+      client.input()
+  else:
+    client.buffer.height = client.buffer.numLines
+    client.buffer.drawBuffer()
