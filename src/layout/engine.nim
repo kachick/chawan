@@ -102,7 +102,7 @@ proc applyBlockStart(state: LayoutState, box, parent: CSSBox, vals: CSSSpecified
 
 func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSBlockBox =
   new(result)
-  result.t = BLOCK
+  result.t = BOX_BLOCK
   if parent.icontext.conty:
     parent.flushConty()
   result.x = parent.x
@@ -114,7 +114,7 @@ func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSSpecifiedValue
 
 func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSInlineBlockBox =
   new(result)
-  result.t = INLINE_BLOCK
+  result.t = BOX_INLINE_BLOCK
   result.x = parent.icontext.fromx
 
   state.applyBlockStart(result, parent, vals)
@@ -124,7 +124,7 @@ func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedVa
 
 func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSInlineBox =
   new(result)
-  result.t = INLINE
+  result.t = BOX_INLINE
   result.x = parent.x
   result.y = parent.icontext.fromy
 
@@ -145,7 +145,7 @@ type InlineState = object
   cssvalues: CSSSpecifiedValues
   x: int
 
-func maxwidth(state: InlineState): int = state.bcontext.width - state.x
+func maxwidth(state: InlineState): int = state.bcontext.width
 
 proc newRowBox(state: var InlineState) =
   state.rowbox = CSSRowBox()
@@ -208,7 +208,7 @@ proc checkWrap(state: var InlineState, r: Rune) =
         state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.maxwidth:
       state.wrapNormal(r)
   of WORD_BREAK_BREAK_ALL:
-    if state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
+    if state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.maxwidth:
       var pl: seq[Rune]
       var i = 0
       var w = 0
@@ -229,7 +229,7 @@ proc checkWrap(state: var InlineState, r: Rune) =
       state.inlineWrap()
   of WORD_BREAK_KEEP_ALL:
     if state.icontext.fromx + state.rowbox.width > state.x and
-        state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
+        state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.maxwidth:
       state.wrapNormal(r)
 
 proc preWrap(state: var InlineState) =
@@ -374,9 +374,9 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBlockBox) =
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
   case box.t
-  of BLOCK: state.add(parent, CSSBlockBox(box))
-  of INLINE: state.add(parent, CSSInlineBox(box))
-  of INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
+  of BOX_BLOCK: state.add(parent, CSSBlockBox(box))
+  of BOX_INLINE: state.add(parent, CSSInlineBox(box))
+  of BOX_INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
 
 proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSSpecifiedValues): CSSBox =
   case values{"display"}
