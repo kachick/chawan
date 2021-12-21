@@ -18,6 +18,7 @@ type
     t*: BoxType
     x*: int
     y*: int
+    width*: int
     children*: seq[CSSBox]
     icontext*: InlineContext
     bcontext*: BlockContext
@@ -27,7 +28,7 @@ type
   InlineContext* = ref object
     fromx*: int
     fromy*: int
-    conty*: bool
+    xhigh*: int
     whitespace*: bool
     ws_initial*: bool
     rows*: seq[CSSRowBox]

@@ -57,12 +57,14 @@ proc flushRows(icontext: InlineContext) =
   icontext.rows.add(icontext.thisrow)
   icontext.thisrow.setLen(0)
 
+func conty(icontext: InlineContext): bool =
+  icontext.thisrow.len > 0
+
 proc flushConty(box: CSSBox) =
   box.icontext.flushRows()
   box.icontext.fromx = box.x
   inc box.icontext.fromy
   inc box.bcontext.fromy
-  box.icontext.conty = false
   box.icontext.whitespace = true
   box.icontext.ws_initial = true
 
@@ -134,6 +136,7 @@ func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues)
 type InlineState = object
   icontext: InlineContext
   bcontext: BlockContext
+  ibox: CSSInlineBox
   rowbox: CSSRowBox
   word: seq[Rune]
   ww: int
@@ -141,6 +144,8 @@ type InlineState = object
   nodes: seq[Node]
   cssvalues: CSSSpecifiedValues
   x: int
+
+func maxwidth(state: InlineState): int = state.bcontext.width - state.x
 
 proc newRowBox(state: var InlineState) =
   state.rowbox = CSSRowBox()
@@ -166,22 +171,22 @@ proc inlineWrap(state: var InlineState) =
   if state.word.len == 0:
     state.icontext.whitespace = true
     state.icontext.ws_initial = true
-    state.icontext.conty = false
   else:
     if state.word[^1] == Rune(' '):
       state.icontext.whitespace = true
       state.icontext.ws_initial = false
-    state.icontext.conty = true
   state.newRowBox()
 
 proc addWord(state: var InlineState) =
   state.rowbox.str &= $state.word
   state.rowbox.width += state.ww
+  state.ibox.width += state.ww
+  state.ibox.width = min(state.maxwidth, state.ibox.width)
   state.word.setLen(0)
   state.ww = 0
 
 proc wrapNormal(state: var InlineState, r: Rune) =
-  if state.icontext.fromx + state.rowbox.width + state.ww == state.bcontext.width and r == Rune(' '):
+  if state.icontext.fromx + state.rowbox.width + state.ww == state.maxwidth and r == Rune(' '):
     state.addWord()
   if state.word.len == 0:
     if r == Rune(' '):
@@ -200,7 +205,7 @@ proc checkWrap(state: var InlineState, r: Rune) =
   case state.cssvalues{"word-break"}
   of WORD_BREAK_NORMAL:
     if state.icontext.fromx + state.rowbox.width > state.x and
-        state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
+        state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.maxwidth:
       state.wrapNormal(r)
   of WORD_BREAK_BREAK_ALL:
     if state.icontext.fromx + state.rowbox.width + state.ww + r.width() > state.x + state.bcontext.width:
@@ -233,14 +238,13 @@ proc preWrap(state: var InlineState) =
   state.icontext.ws_initial = true
   state.skip = true
 
-proc processInlineText(str: string, icontext: InlineContext,
-                       bcontext: BlockContext, cssvalues: CSSSpecifiedValues,
-                       x: int, nodes: seq[Node]) =
+proc processInlineText(str: string, ibox: CSSInlineBox, nodes: seq[Node]) =
   var state: InlineState
-  state.icontext = icontext
-  state.bcontext = bcontext
-  state.cssvalues = cssvalues
-  state.x = x
+  state.ibox = ibox
+  state.icontext = ibox.icontext
+  state.bcontext = ibox.bcontext
+  state.cssvalues = ibox.cssvalues
+  state.x = ibox.x
   state.nodes = nodes
 
   var i = 0
@@ -300,13 +304,12 @@ proc processInlineText(str: string, icontext: InlineContext,
   if state.rowbox.str.len > 0:
     state.addRowBox()
     state.icontext.fromx += state.rowbox.width
-    state.icontext.conty = true
 
   state.bcontext.margin_todo = 0
   state.bcontext.margin_done = 0
 
 proc processInlineContext(ibox: CSSInlineBox, str: string, nodes: seq[Node]) =
-  processInlineText(str, ibox.icontext, ibox.bcontext, ibox.cssvalues, ibox.x, nodes)
+  processInlineText(str, ibox, nodes)
 
 proc processInlineBox(state: var LayoutState, parent: CSSBox, str: string): CSSInlineBox =
   if str.len == 0:
@@ -347,15 +350,18 @@ proc add(state: var LayoutState, parent: CSSBox, box: CSSBlockBox) =
   parent.children.add(box)
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBox) =
+  parent.width = max(parent.width, box.width)
   parent.icontext.fromx += box.cssvalues{"margin-right"}.cells_w(state, parent.bcontext.width)
   parent.icontext.fromy = box.icontext.fromy
 
   parent.children.add(box)
 
 proc add(state: var LayoutState, parent: CSSBox, box: CSSInlineBlockBox) =
-  parent.icontext.fromx = max(box.icontext.fromx, box.bcontext.width)
+  parent.width = max(parent.width, box.width)
+  parent.icontext.fromx = max(box.icontext.fromx, box.x + box.width)
   parent.icontext.fromx += box.cssvalues{"margin-right"}.cells_w(state, parent.bcontext.width)
-  parent.icontext.conty = box.icontext.conty
+  parent.icontext.whitespace = box.icontext.whitespace
+  parent.icontext.ws_initial = box.icontext.ws_initial
 
   box.icontext.putRows()
   parent.icontext.thisrow.add(box.icontext.rows)

@@ -2,20 +2,44 @@ import httpclient
 import streams
 import uri
 import terminal
+import os
 
 import io/buffer
 import io/lineedit
 import config/config
 import html/parser
 import utils/twtstr
+#import types/url
 
 type
   Client* = ref object
     http: HttpClient
     buffers: seq[Buffer]
-    prevuri: Uri
+    currentbuffer: int
     feednext: bool
     s: string
+
+proc die() =
+  eprint "Invalid parameters. Usage:\ntwt <url>"
+  quit(1)
+
+proc newClient*(): Client =
+  new(result)
+  result.http = newHttpClient()
+  result.currentbuffer = -1
+
+func pbuffer(client: Client): Buffer =
+  return client.buffers[client.currentbuffer - 1]
+
+func buffer(client: Client): Buffer =
+  return client.buffers[client.currentbuffer]
+
+func nbuffer(client: Client): Buffer =
+  return client.buffers[client.currentbuffer + 1]
+
+func puri(client: Client): Uri =
+  if client.currentbuffer > 0:
+    return client.pbuffer.location
 
 proc loadRemotePage*(client: Client, url: string): string =
   return client.http.getContent(url)
@@ -31,35 +55,46 @@ proc getLocalPage*(url: string): Stream =
 
 proc getPageUri(client: Client, uri: Uri): Stream =
   var moduri = uri
-  moduri.anchor = ""
-  if uri.scheme == "" or uri.scheme == "file":
+  if moduri.scheme == "file":
+    moduri.scheme = ""
     return getLocalPage($moduri)
-  else:
+  elif moduri.scheme == "http" or moduri.scheme == "https":
     return client.getRemotePage($moduri)
 
-proc die() =
-  eprint "Invalid parameters. Usage:\ntwt <url>"
-  quit(1)
-
-proc newClient*(): Client =
-  new(result)
-  result.http = newHttpClient()
-
 proc addBuffer(client: Client) =
-  client.buffers.add(newBuffer())
+  inc client.currentbuffer
+  client.buffers.insert(newBuffer(), client.currentbuffer)
 
-func buffer(client: Client): Buffer =
-  return client.buffers[^1]
+proc prevBuffer(client: Client) =
+  if client.currentbuffer > 0:
+    dec client.currentbuffer
+    client.buffer.redraw = true
 
-proc setupBuffer*(client: Client) =
+proc nextBuffer(client: Client) =
+  if client.currentbuffer < client.buffers.len - 1:
+    inc client.currentbuffer
+    client.buffer.redraw = true
+
+proc discardBuffer(client: Client) =
+  if client.currentbuffer < client.buffers.len - 1:
+    client.buffers.delete(client.currentbuffer)
+    client.buffer.redraw = true
+  elif client.currentbuffer > 0:
+    client.buffers.delete(client.currentbuffer)
+    dec client.currentbuffer
+    client.buffer.redraw = true
+  else:
+    client.buffer.setStatusMessage("Can't discard last buffer!")
+
+proc setupBuffer(client: Client) =
   let buffer = client.buffer
-  buffer.setLocation(client.prevuri)
   buffer.document = parseHtml(newStringStream(client.buffer.source))
   buffer.render()
   buffer.gotoAnchor()
   buffer.redraw = true
 
 proc readPipe(client: Client) =
+  client.addBuffer()
   if not stdin.isatty:
     client.buffer.showsource = true
     try:
@@ -72,26 +107,51 @@ proc readPipe(client: Client) =
     die()
   client.setupBuffer()
 
-proc gotoURL(client: Client, url: string) =
-  var newuri = parseUri(url)
-  let newanchor = newuri.anchor
-  let prevanchor = client.prevuri.anchor
-  client.prevuri.anchor = ""
-  newuri.anchor = ""
-  let prevs = $client.prevuri
-  let news = $newuri
-  client.prevuri.anchor = prevanchor
-  newuri.anchor = newanchor
-  if news != "":
-    client.addBuffer()
-    client.buffer.source = client.getPageUri(newuri).readAll() #TODO
-  elif prevanchor != newanchor:
-    let psource = client.buffer.source
-    client.addBuffer()
-    client.buffer.source = psource
+proc mergeURLs(client: Client, urla, urlb: Uri): Uri =
+  var moduri = urlb
+  if moduri.scheme == "":
+    moduri.scheme = urla.scheme
+  if moduri.scheme == "":
+    moduri.scheme = "file"
+  if moduri.hostname == "":
+    moduri.hostname = urla.hostname
+    if moduri.path == "":
+      moduri.path = urla.path
+    elif urla.path != "":
+      moduri.path = urla.path.splitFile().dir / moduri.path
+  return moduri
 
-  client.prevuri = newuri
+proc gotoURL(client: Client, url: Uri) =
+  var newuri = url
+  client.addBuffer()
+  newuri = client.mergeUrls(client.puri, newuri)
+  if client.puri != url or newuri.anchor == "":
+    let s = client.getPageUri(newuri)
+    if s != nil:
+      client.buffer.source = s.readAll() #TODO
+    else:
+      client.discardBuffer()
+      client.buffer.setStatusMessage("Couldn't load " & $newuri)
+      return
+  elif newuri.anchor != "":
+    client.buffer.source = client.pbuffer.source
+    let newanchor = newuri.anchor
+    newuri = client.buffer.location
+    newuri.anchor = newanchor
+  client.buffer.setLocation(newuri)
   client.setupBuffer()
+
+proc gotoURL(client: Client, url: string) =
+  client.gotoURL(parseUri(url))
+
+proc reloadPage(client: Client) =
+  let buffer = client.buffer
+  var location = buffer.location
+  location.anchor = ""
+  client.gotoURL(location)
+  client.buffer.setCursorXY(client.pbuffer.cursorx, client.pbuffer.cursory)
+  client.buffer.setFromXY(client.pbuffer.fromx, client.pbuffer.fromy)
+  client.buffer.showsource = client.pbuffer.showsource
 
 proc changeLocation(client: Client) =
   let buffer = client.buffer
@@ -106,6 +166,21 @@ proc click(client: Client) =
   let s = client.buffer.click()
   if s != "":
     client.gotoURL(s)
+
+proc toggleSource*(client: Client) =
+  let buffer = client.buffer
+  if buffer.sourcepair != nil:
+    for i in 0..high(client.buffers):
+      if client.buffers[i] == buffer.sourcepair:
+        client.currentbuffer = i
+        break
+    eprint "Fatal error (???)"
+  else:
+    client.addBuffer()
+    client.buffer.sourcepair = client.pbuffer
+    client.buffer.source = client.pbuffer.source
+    client.buffer.showsource = not client.pbuffer.showsource
+    client.setupBuffer()
 
 proc input(client: Client) =
   let buffer = client.buffer
@@ -154,15 +229,16 @@ proc input(client: Client) =
   of ACTION_CHANGE_LOCATION: client.changeLocation()
   of ACTION_LINE_INFO: buffer.lineInfo()
   of ACTION_FEED_NEXT: client.feednext = true
-  of ACTION_RELOAD: client.gotoURL($buffer.location)
+  of ACTION_RELOAD: client.reloadPage()
   of ACTION_RESHAPE: buffer.reshape = true
   of ACTION_REDRAW: buffer.redraw = true
-  of ACTION_TOGGLE_SOURCE: buffer.toggleSource()
+  of ACTION_TOGGLE_SOURCE: client.toggleSource()
+  of ACTION_PREV_BUFFER: client.prevBuffer()
+  of ACTION_NEXT_BUFFER: client.nextBuffer()
+  of ACTION_DISCARD_BUFFER: client.discardBuffer()
   else: discard
 
 proc launchClient*(client: Client, params: seq[string]) =
-  client.addBuffer()
-
   if params.len < 1:
     client.readPipe()
   else: 

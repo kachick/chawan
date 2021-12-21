@@ -16,7 +16,7 @@ proc getTermAttributes*(): TermAttributes =
     when defined(posix):
       var win: IOctl_WinSize
       if ioctl(cint(getOsFileHandle(stdout)), TIOCGWINSZ, addr win) != -1:
-        result.width = int(win.ws_col)
+        result.width = int(win.ws_col) - 1
         result.height = int(win.ws_row)
         result.width_px = int(win.ws_xpixel)
         result.height_px = int(win.ws_ypixel)
@@ -24,7 +24,7 @@ proc getTermAttributes*(): TermAttributes =
         result.ppl = int(win.ws_ypixel) div int(win.ws_row)
         return
   #fail
-  result.width = terminalWidth()
+  result.width = terminalWidth() - 1
   result.height = terminalHeight()
   if result.height == 0:
     result.height = 24

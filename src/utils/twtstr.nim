@@ -45,6 +45,9 @@ func isControlChar*(r: Rune): bool =
   of Rune(0x7F): return true
   else: return false
 
+func isC0ControlOrSpace*(c: char): bool =
+  return c in {chr(0x00)..chr(0x1F), ' '}
+
 func genControlCharMap*(): string =
   for c in low(char)..high(char):
     if c == '?':

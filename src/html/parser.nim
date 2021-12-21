@@ -332,18 +332,18 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
 
 proc processDocumentTag(state: var HTMLParseState, tag: DOMParsedTag) =
   if state.in_script:
-    if tag.tagid == TAG_SCRIPT:
+    if not tag.open and tag.tagid == TAG_SCRIPT:
       state.in_script = false
     else:
       return
 
   if state.in_style:
-    if tag.tagid == TAG_STYLE:
+    if not tag.open and tag.tagid == TAG_STYLE:
       state.in_style = false
     else:
       return
 
-  if state.in_noscript:
+  if not tag.open and state.in_noscript:
     if tag.tagid == TAG_NOSCRIPT:
       state.in_noscript = false
     else:
@@ -361,16 +361,33 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
 
   max = buf.len
 
+  template process_char(c: char) =
+    if state.in_comment:
+      state.commentNode.data &= c
+    else:
+      if not (state.skip_lf and c == '\n'):
+        processDocumentText(state)
+        state.textNode.data &= c
+      state.skip_lf = false
+
+  template process_text(s: string) =
+    if state.in_comment:
+      state.commentNode.data &= s
+    else:
+      if not (state.skip_lf and s[0] == '\n'):
+        processDocumentText(state)
+        state.textNode.data &= s
+      state.skip_lf = false
+
+  template has(buf: string, s: string): bool =
+    (at + s.len < buf.len and buf.substr(at, at + 8) == "</script>")
+
   while at < max:
     case buf[at]
     of '&':
       inc at
       let p = getescapecmd(buf, at)
-      if state.in_comment:
-        state.commentNode.data &= p
-      else:
-        processDocumentText(state)
-        state.textNode.data &= p
+      process_text(p)
     of '<':
       if state.in_comment:
         state.commentNode.data &= buf[at]
@@ -402,19 +419,16 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
           if state.textNode != nil:
             state.textNode = nil
           p = at
-          var tag = parse_tag(buf, at)
-          was_script = state.in_script
-
-          processDocumentTag(state, tag)
-#         if (was_script) {
-#             if (state->in_script) {
-#                 ptr = p;
-#                 processDocumentText(&state->parentNode, &state->textNode);
-#                 Strcat_char(((CharacterData *)state->textNode)->data, *ptr++);
-#             } else if (buffer->javascript_enabled) {
-#                 loadJSToBuffer(buffer, childTextContentNode(state->parentNode->lastChild)->ptr, "<inline>", state->document);
-#             }
-#         }
+          if state.in_script:
+            if buf.has("</script>"):
+              var tag = parse_tag(buf, at)
+              processDocumentTag(state, tag)
+            else:
+              process_char(buf[at])
+              inc at
+          else:
+            var tag = parse_tag(buf, at)
+            processDocumentTag(state, tag)
     elif buf[at] == '-' and state.in_comment:
       var p = at
       inc p
@@ -430,13 +444,7 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
         state.commentNode.data &= buf[at]
         inc at
     else:
-      if state.in_comment:
-        state.commentNode.data &= buf[at]
-      else:
-        if not (state.skip_lf and buf[at] == '\n'):
-          processDocumentText(state)
-          state.textNode.data &= buf[at]
-        state.skip_lf = false
+      process_char(buf[at])
       inc at
 
 proc parseHtml*(inputStream: Stream): Document =

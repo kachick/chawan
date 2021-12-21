@@ -43,6 +43,7 @@ type
     showsource*: bool
     rootbox*: CSSBox
     prevnodes*: seq[Node]
+    sourcepair*: Buffer
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -68,7 +69,6 @@ func generateFullOutput*(buffer: Buffer): string =
       x = 0
       w = 0
 
-
     result &= formatting.processFormatting(cell.formatting)
     result &= $cell.runes
 
@@ -82,7 +82,7 @@ func generateFullOutput*(buffer: Buffer): string =
 # generate a sequence of instructions to replace the previous frame with the
 # current one. ideally should be used when small changes are made (e.g. hover
 # changes underlining)
-func generateSwapOutput*(buffer: Buffer): string =
+func generateSwapOutput(buffer: Buffer): string =
   var formatting = newFormatting()
   let curr = buffer.display
   let prev = buffer.prevdisplay
@@ -151,17 +151,24 @@ func generateSwapOutput*(buffer: Buffer): string =
   #if text.len > 0:
   #  result &= $text
 
-func generateStatusMessage*(buffer: Buffer): string =
+func generateStatusMessage(buffer: Buffer): string =
+  result &= HVP(buffer.height + 1, 1)
+  result &= SGR()
+  var formatting = newFormatting()
+  var w = 0
   for cell in buffer.statusmsg:
-    for r in cell.runes:
-      if r != Rune(0):
-        result &= $r
+    result &= formatting.processFormatting(cell.formatting)
+    result &= $cell.runes
+    w += cell.width()
+  if w < buffer.width:
+    result &= EL()
+  result &= SGR()
 
-func numLines*(buffer: Buffer): int = buffer.lines.len
+func numLines(buffer: Buffer): int = buffer.lines.len
 
-func lastVisibleLine*(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
+func lastVisibleLine(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
 
-func currentLineWidth*(buffer: Buffer): int =
+func currentLineWidth(buffer: Buffer): int =
   if buffer.cursory > buffer.lines.len:
     return 0
   return buffer.lines[buffer.cursory].width()
@@ -224,33 +231,22 @@ func maxScreenWidth*(buffer: Buffer): int =
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
     result = max(line.width(), result)
 
-func atPercentOf*(buffer: Buffer): int =
+func atPercentOf(buffer: Buffer): int =
   if buffer.lines.len == 0: return 100
   return (100 * (buffer.cursory + 1)) div buffer.numLines
-
-func canScroll*(buffer: Buffer): bool =
-  return buffer.numLines >= buffer.height
 
 proc addLine(buffer: Buffer) =
   buffer.lines.addLine()
 
-proc clearText*(buffer: Buffer) =
+proc clearText(buffer: Buffer) =
   buffer.lines.setLen(0)
   buffer.addLine()
 
-proc clearBuffer*(buffer: Buffer) =
-  buffer.clearText()
-  buffer.cursorx = 0
-  buffer.cursory = 0
-  buffer.fromx = 0
-  buffer.fromy = 0
-  buffer.hovertext = ""
-
-proc clearDisplay*(buffer: Buffer) =
+proc clearDisplay(buffer: Buffer) =
   buffer.prevdisplay = buffer.display
   buffer.display = newFixedGrid(buffer.width, buffer.height)
 
-proc refreshDisplay*(buffer: Buffer) =
+proc refreshDisplay(buffer: Buffer) =
   var r: Rune
   var y = 0
   buffer.clearDisplay()
@@ -297,33 +293,7 @@ proc refreshDisplay*(buffer: Buffer) =
 proc restoreCursorX(buffer: Buffer) =
   buffer.cursorx = max(min(buffer.currentLineWidth() - 1, buffer.xend), 0)
 
-proc scrollTo*(buffer: Buffer, y: int) =
-  if y == buffer.fromy:
-    return
-  buffer.fromy = min(max(buffer.numLines - buffer.height, 0), y)
-  buffer.cursory = min(max(buffer.fromy, buffer.cursory), buffer.fromy + buffer.height)
-  buffer.redraw = true
-  buffer.restoreCursorX()
-
-proc cursorTo*(buffer: Buffer, x, y: int) =
-  buffer.redraw = false
-  buffer.cursory = min(max(y, 0), buffer.numLines - 1)
-  if buffer.fromy > buffer.cursory:
-    buffer.fromy = max(buffer.cursory, 0)
-    buffer.redraw = true
-  elif buffer.fromy + buffer.height - 1 <= buffer.cursory:
-    buffer.fromy = max(buffer.cursory - buffer.height + 1, 0)
-    buffer.redraw = true
-
-  buffer.cursorx = min(max(x, 0), buffer.currentLineWidth())
-  if buffer.fromx < buffer.cursorx - buffer.width:
-    buffer.fromx = max(0, buffer.cursorx - buffer.width)
-    buffer.redraw = true
-  elif buffer.fromx > buffer.cursorx:
-    buffer.fromx = buffer.cursorx
-    buffer.redraw = true
-
-proc setCursorXB*(buffer: Buffer, byte: int) =
+proc setCursorXB(buffer: Buffer, byte: int) =
   var b = buffer.currentCursorBytes()
   if byte == b:
     return
@@ -352,8 +322,7 @@ proc setCursorXB*(buffer: Buffer, byte: int) =
     buffer.redraw = true
   buffer.xend = buffer.cursorx
 
-
-proc setCursorX*(buffer: Buffer, x: int) =
+proc setCursorX(buffer: Buffer, x: int) =
   if buffer.cursorx == x:
     return
   var b = buffer.currentCursorBytes()
@@ -380,7 +349,7 @@ proc setCursorX*(buffer: Buffer, x: int) =
     buffer.redraw = true
   buffer.xend = buffer.cursorx
 
-proc setCursorY*(buffer: Buffer, y: int) =
+proc setCursorY(buffer: Buffer, y: int) =
   if buffer.cursory == y:
     return
   if y - buffer.fromy >= 0 and y - buffer.height < buffer.fromy:
@@ -393,6 +362,18 @@ proc setCursorY*(buffer: Buffer, y: int) =
     buffer.cursory = y
     buffer.redraw = true
   buffer.restoreCursorX()
+
+proc setCursorXY*(buffer: Buffer, x, y: int) =
+  buffer.setCursorY(max(min(y, buffer.numLines - 1), 0))
+  buffer.setCursorX(max(min(buffer.currentLineWidth(), x), 0))
+
+proc setFromXY*(buffer: Buffer, x, y: int) =
+  buffer.fromy = max(min(y, buffer.maxfromy), 0)
+  buffer.fromx = max(min(x, buffer.maxfromx), 0)
+
+proc setCursorXBY(buffer: Buffer, x, y: int) =
+  buffer.setCursorY(y)
+  buffer.setCursorXB(x)
 
 proc cursorDown*(buffer: Buffer) =
   if buffer.cursory < buffer.numLines - 1:
@@ -507,8 +488,7 @@ proc cursorNextLink*(buffer: Buffer) =
       let format = line.formats[i]
       let fl = format.nodes.getLink()
       if fl != nil and fl != link:
-        buffer.setCursorY(y)
-        buffer.setCursorXB(format.pos)
+        buffer.setCursorXBY(format.pos, y)
         return
       inc i
 
@@ -548,8 +528,7 @@ proc cursorPrevLink*(buffer: Buffer) =
               ly = iy
               lx = format.pos
             dec i
-        buffer.setCursorY(ly)
-        buffer.setCursorXB(lx)
+        buffer.setCursorXBY(lx, ly)
         return
       dec i
 
@@ -794,7 +773,8 @@ proc updateHover(buffer: Buffer) =
         elem.refreshStyle()
     let link = nodes.getLink()
     if link != nil:
-      buffer.hovertext = "(link)"
+      if link.tagType == TAG_A:
+        buffer.hovertext = HTMLAnchorElement(link).href
     else:
       buffer.hovertext = ""
     for node in buffer.prevnodes:
@@ -857,7 +837,7 @@ let ua_stylesheet = newStringStream(css).parseStylesheet()
 #TODO refactor
 var ss_init = false
 var user_stylesheet: CSSStylesheet
-proc renderDocument*(buffer: Buffer) =
+proc renderDocument(buffer: Buffer) =
   buffer.clearText()
 
   if not ss_init:
@@ -866,8 +846,6 @@ proc renderDocument*(buffer: Buffer) =
 
   buffer.document.applyStylesheets(ua_stylesheet, user_stylesheet)
   buffer.rootbox = buffer.document.alignBoxes(buffer.attrs)
-  if buffer.rootbox == nil:
-    return
   var stack: seq[CSSBox]
   stack.add(buffer.rootbox)
   while stack.len > 0:
@@ -888,7 +866,7 @@ proc render*(buffer: Buffer) =
   else:
     buffer.renderDocument()
 
-proc cursorBufferPos*(buffer: Buffer) =
+proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)
   let y = buffer.cursory - buffer.fromy
   print(HVP(y + 1, x + 1))
@@ -896,27 +874,33 @@ proc cursorBufferPos*(buffer: Buffer) =
 proc clearStatusMessage(buffer: Buffer) =
   buffer.statusmsg = newFixedGrid(buffer.width)
 
-proc setStatusMessage*(buffer: Buffer, str: string) =
+proc writeStatusMessage(buffer: Buffer, str: string, formatting: Formatting = Formatting()) =
   buffer.clearStatusMessage()
-  let text = str.toRunes()
   var i = 0
-  var n = 0
-  while i < text.len:
-    if text[i].width() == 0:
-      inc n
-    buffer.statusmsg[i - n].runes.add(text[i])
-    inc i
+  for r in str.runes:
+    i += r.width()
+    if i >= buffer.statusmsg.len:
+      buffer.statusmsg[^1].runes.setLen(0)
+      buffer.statusmsg[^1].runes.add(Rune('$'))
+      break
+    buffer.statusmsg[i].runes.add(r)
+    buffer.statusmsg[i].formatting = formatting
 
 proc statusMsgForBuffer(buffer: Buffer) =
   var msg = $(buffer.cursory + 1) & "/" & $buffer.numLines & " (" &
             $buffer.atPercentOf() & "%) " & "<" & buffer.title & ">"
   if buffer.hovertext.len > 0:
     msg &= " " & buffer.hovertext
-  buffer.setStatusMessage(msg.ansiStyle(styleReverse).ansiReset())
+  var formatting: Formatting
+  formatting.reverse_on
+  buffer.writeStatusMessage(msg, formatting)
+
+proc setStatusMessage*(buffer: Buffer, str: string) =
+  buffer.writeStatusMessage(str)
+  buffer.nostatus = true
 
 proc lineInfo*(buffer: Buffer) =
     buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentDisplayCell().width())
-    buffer.nostatus = true
 
 proc displayBufferSwapOutput(buffer: Buffer) =
   print(buffer.generateSwapOutput())
@@ -925,15 +909,7 @@ proc displayBuffer(buffer: Buffer) =
   print(buffer.generateFullOutput())
 
 proc displayStatusMessage*(buffer: Buffer) =
-  print(HVP(buffer.height + 1, 1))
-  print(SGR())
   print(buffer.generateStatusMessage())
-  print(EL())
-
-proc toggleSource*(buffer: Buffer) =
-  buffer.showsource = not buffer.showsource
-  buffer.reshape = true
-  buffer.redraw = true
 
 proc click*(buffer: Buffer): string =
   let link = buffer.getCursorLink()

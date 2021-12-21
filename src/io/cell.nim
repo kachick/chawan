@@ -14,6 +14,7 @@ type
     FLAG_UNDERLINE
     FLAG_STRIKE
     FLAG_OVERLINE
+    FLAG_REVERSE
 
   Formatting* = object
     fgcolor*: CellColor
@@ -42,6 +43,7 @@ type
 func italic(formatting: Formatting): bool = FLAG_ITALIC in formatting.flags
 func bold(formatting: Formatting): bool = FLAG_BOLD in formatting.flags
 func underline(formatting: Formatting): bool = FLAG_UNDERLINE in formatting.flags
+func reverse(formatting: Formatting): bool = FLAG_REVERSE in formatting.flags
 func strike(formatting: Formatting): bool = FLAG_STRIKE in formatting.flags
 func overline(formatting: Formatting): bool = FLAG_OVERLINE in formatting.flags
 
@@ -54,27 +56,14 @@ proc bold_off*(formatting: var Formatting) = formatting.flags.excl(FLAG_BOLD)
 proc underline_on*(formatting: var Formatting) = formatting.flags.incl(FLAG_UNDERLINE)
 proc underline_off*(formatting: var Formatting) = formatting.flags.excl(FLAG_UNDERLINE)
 
+proc reverse_on*(formatting: var Formatting) = formatting.flags.incl(FLAG_REVERSE)
+proc reverse_off*(formatting: var Formatting) = formatting.flags.excl(FLAG_REVERSE)
+
 proc strike_on*(formatting: var Formatting) = formatting.flags.incl(FLAG_STRIKE)
 proc strike_off*(formatting: var Formatting) = formatting.flags.excl(FLAG_STRIKE)
 
 proc overline_on*(formatting: var Formatting) = formatting.flags.incl(FLAG_OVERLINE)
 proc overline_off*(formatting: var Formatting) = formatting.flags.excl(FLAG_OVERLINE)
-
-proc `bold=`*(formatting: var Formatting, b: bool) =
-  if b: formatting.flags.incl(FLAG_BOLD)
-  else: formatting.flags.excl(FLAG_BOLD)
-
-proc `underline=`*(formatting: var Formatting, b: bool) =
-  if b: formatting.flags.incl(FLAG_UNDERLINE)
-  else: formatting.flags.excl(FLAG_UNDERLINE)
-
-proc `strike=`*(formatting: var Formatting, b: bool) =
-  if b: formatting.flags.incl(FLAG_STRIKE)
-  else: formatting.flags.excl(FLAG_STRIKE)
-
-proc `overline=`*(formatting: var Formatting, b: bool) =
-  if b: formatting.flags.incl(FLAG_OVERLINE)
-  else: formatting.flags.excl(FLAG_OVERLINE)
 
 #TODO ?????
 func `==`*(a: FixedCell, b: FixedCell): bool =
@@ -215,12 +204,16 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
             formatting.italic_on
           of 4:
             formatting.underline_on
+          of 7:
+            formatting.reverse_on
           of 9:
             formatting.strike_on
           of 22:
             formatting.bold_off
           of 23:
             formatting.italic_off
+          of 27:
+            formatting.reverse_off
           of 29:
             formatting.strike_off
           of 30..37:
@@ -285,6 +278,8 @@ proc processFormatting*(formatting: var Formatting, cellf: Formatting): string =
       result &= SGR(23)
     if formatting.underline and not cellf.underline:
       result &= SGR(24)
+    if formatting.reverse and not cellf.reverse:
+      result &= SGR(27)
     if formatting.strike and not cellf.strike:
       result &= SGR(29)
     if formatting.overline and not cellf.overline:
@@ -318,6 +313,8 @@ proc processFormatting*(formatting: var Formatting, cellf: Formatting): string =
       result &= SGR(3)
     if not formatting.underline and cellf.underline:
       result &= SGR(4)
+    if not formatting.reverse and cellf.reverse:
+      result &= SGR(7)
     if not formatting.strike and cellf.strike:
       result &= SGR(9)
     if not formatting.overline and cellf.overline:

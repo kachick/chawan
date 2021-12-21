@@ -48,6 +48,9 @@ G = 'CURSOR_LAST_LINE'
 z = 'CENTER_LINE'
 C-g = 'LINE_INFO'
 v = 'TOGGLE_SOURCE'
+D = 'DISCARD_BUFFER'
+',' = 'PREV_BUFFER'
+'.' = 'NEXT_BUFFER'
 
 [line]
 C-m = 'SUBMIT'
