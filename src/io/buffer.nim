@@ -235,6 +235,9 @@ func atPercentOf(buffer: Buffer): int =
   if buffer.lines.len == 0: return 100
   return (100 * (buffer.cursory + 1)) div buffer.numLines
 
+func hasAnchor*(buffer: Buffer, anchor: string): bool =
+  return buffer.document.getElementById(anchor) != nil
+
 proc addLine(buffer: Buffer) =
   buffer.lines.addLine()
 

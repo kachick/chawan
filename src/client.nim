@@ -29,13 +29,17 @@ proc newClient*(): Client =
   result.currentbuffer = -1
 
 func pbuffer(client: Client): Buffer =
-  return client.buffers[client.currentbuffer - 1]
+  if client.currentbuffer > 0:
+    return client.buffers[client.currentbuffer - 1]
+  return nil
 
 func buffer(client: Client): Buffer =
   return client.buffers[client.currentbuffer]
 
 func nbuffer(client: Client): Buffer =
-  return client.buffers[client.currentbuffer + 1]
+  if client.currentbuffer < client.buffers.len - 1:
+    return client.buffers[client.currentbuffer + 1]
+  return nil
 
 func puri(client: Client): Uri =
   if client.currentbuffer > 0:
@@ -125,7 +129,9 @@ proc gotoURL(client: Client, url: Uri) =
   var newuri = url
   client.addBuffer()
   newuri = client.mergeUrls(client.puri, newuri)
-  if client.puri != url or newuri.anchor == "":
+  let newanchor = newuri.anchor
+  newuri.anchor = ""
+  if client.puri != newuri or newanchor == "":
     let s = client.getPageUri(newuri)
     if s != nil:
       client.buffer.source = s.readAll() #TODO
@@ -133,10 +139,12 @@ proc gotoURL(client: Client, url: Uri) =
       client.discardBuffer()
       client.buffer.setStatusMessage("Couldn't load " & $newuri)
       return
-  elif newuri.anchor != "":
+  elif newanchor != "":
+    if not client.pbuffer.hasAnchor(newanchor):
+      client.discardBuffer()
+      client.buffer.setStatusMessage("Couldn't find anchor " & newanchor)
+      return
     client.buffer.source = client.pbuffer.source
-    let newanchor = newuri.anchor
-    newuri = client.buffer.location
     newuri.anchor = newanchor
   client.buffer.setLocation(newuri)
   client.setupBuffer()
