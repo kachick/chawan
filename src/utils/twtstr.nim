@@ -634,7 +634,7 @@ var width_table*: array[0..0x10FFFF, byte]
 func makewidthtable*(cjk: bool): array[0..0x10FFFF, byte] =
   for r in low(char)..high(char):
     if r.isControlChar():
-      result[int(r)] = 2 #TODO this should be 0
+      result[int(r)] = 0
     else:
       result[int(r)] = 1
 

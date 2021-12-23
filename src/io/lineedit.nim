@@ -19,6 +19,40 @@ type LineState = object
   displen: int
   spaces: seq[string]
 
+func lwidth(r: Rune): int =
+  if r.isControlChar():
+    return 2
+  return r.width()
+
+func lwidth(s: string): int =
+  for r in s.runes():
+    result += lwidth(r)
+
+func lwidth(s: seq[Rune]): int =
+  for r in s:
+    result += lwidth(r)
+
+func lwidth(s: seq[Rune], min, max: int): int =
+  var i = min
+  var mi = min(max, s.len)
+  while i < mi:
+    result += lwidth(s[i])
+    inc i
+
+func lwidth(s: seq[Rune], min: int): int =
+  var i = min
+  while i < s.len:
+    result += lwidth(s[i])
+    inc i
+
+template kill(state: LineState, i: int) =
+  state.space(i)
+  state.backward(i)
+
+template kill(state: LineState) =
+  let w = min(state.news.lwidth(state.cursor), state.displen)
+  state.kill(w)
+
 proc backward(state: LineState, i: int) =
   if i > 0:
     if i == 1:
@@ -32,50 +66,39 @@ proc forward(state: LineState, i: int) =
 
 proc begin(state: LineState) =
   print('\r')
-
   state.forward(state.minlen)
 
 proc space(state: LineState, i: int) =
   print(state.spaces[i])
 
-template kill(state: LineState, i: int) =
-  state.space(i)
-  state.backward(i)
-  #print("\e[K")
-
-template kill(state: LineState) =
-  let w = min(state.news.width(state.cursor), state.displen)
-  state.kill(w)
-
 proc redraw(state: var LineState) =
-  var dispw = state.news.width(state.shift, state.shift + state.displen)
+  var dispw = state.news.lwidth(state.shift, state.shift + state.displen)
   if state.shift + state.displen > state.news.len:
     state.displen = state.news.len - state.shift
   while dispw > state.maxlen - 1:
-    dispw -= state.news[state.shift + state.displen - 1].width()
+    dispw -= state.news[state.shift + state.displen - 1].lwidth()
     dec state.displen
 
   state.begin()
   let os = state.news.substr(state.shift, state.shift + state.displen)
   printesc($os)
-  state.space(max(state.maxlen - state.minlen - os.width(), 0))
+  state.space(max(state.maxlen - state.minlen - os.lwidth(), 0))
 
   state.begin()
-  state.forward(state.news.width(state.shift, state.cursor))
+  state.forward(state.news.lwidth(state.shift, state.cursor))
 
 proc zeroShiftRedraw(state: var LineState) =
   state.shift = 0
   state.displen = state.maxlen - 1
-
   state.redraw()
 
 proc fullRedraw(state: var LineState) =
   state.displen = state.maxlen - 1
   if state.cursor > state.shift:
-    var shiftw = state.news.width(state.shift, state.cursor)
+    var shiftw = state.news.lwidth(state.shift, state.cursor)
     while shiftw > state.maxlen - 1:
       inc state.shift
-      shiftw -= state.news[state.shift].width()
+      shiftw -= state.news[state.shift].lwidth()
   else:
     state.shift = max(state.cursor - 1, 0)
 
@@ -88,7 +111,7 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
   if cs.len == 0:
     return
 
-  if state.cursor >= state.news.len and state.news.width(state.shift, state.cursor) + cs.width() < state.displen:
+  if state.cursor >= state.news.len and state.news.lwidth(state.shift, state.cursor) + cs.lwidth() < state.displen:
     state.news &= cs
     state.cursor += cs.len
     printesc($cs)
@@ -128,18 +151,20 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
       return true
     of ACTION_LINED_BACKSPACE:
       if state.cursor > 0:
+        let w = state.news[state.cursor - 1].lwidth()
         state.news.delete(state.cursor - 1, state.cursor - 1)
         dec state.cursor
         if state.cursor == state.news.len and state.shift == 0:
-          state.backward(1)
-          state.kill(1)
+          state.backward(w)
+          state.kill(w)
         else:
           state.fullRedraw()
     of ACTION_LINED_DELETE:
       if state.cursor > 0 and state.cursor < state.news.len:
+        let w = state.news[state.cursor - 1].lwidth()
         state.news.delete(state.cursor, state.cursor)
         if state.cursor == state.news.len and state.shift == 0:
-          state.kill(1)
+          state.kill(w)
         else:
           state.fullRedraw()
     of ACTION_LINED_ESC:
@@ -157,16 +182,16 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
       if state.cursor > 0:
         dec state.cursor
         if state.cursor > state.shift or state.shift == 0:
-          state.backward(state.news[state.cursor].width())
+          state.backward(state.news[state.cursor].lwidth())
         else:
           state.fullRedraw()
     of ACTION_LINED_FORWARD:
       if state.cursor < state.news.len:
         inc state.cursor
-        if state.news.width(state.shift, state.cursor) < state.displen:
+        if state.news.lwidth(state.shift, state.cursor) < state.displen:
           var n = 1
           if state.news.len > state.cursor:
-            n = state.news[state.cursor].width()
+            n = state.news[state.cursor].lwidth()
           state.forward(n)
         else:
           state.fullRedraw()
@@ -178,7 +203,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
           break
       if state.cursor != oc:
         if state.cursor > state.shift or state.shift == 0:
-          state.backward(state.news.width(state.cursor, oc))
+          state.backward(state.news.lwidth(state.cursor, oc))
         else:
           state.fullRedraw()
     of ACTION_LINED_NEXT_WORD:
@@ -190,7 +215,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
             break
 
       if state.cursor != oc:
-        let dw = state.news.width(oc, state.cursor)
+        let dw = state.news.lwidth(oc, state.cursor)
         if oc + dw - state.shift < state.displen:
           state.forward(dw)
         else:
@@ -206,7 +231,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
           dec chars
           break
       if chars > 0:
-        let w = state.news.width(state.cursor - chars, state.cursor)
+        let w = state.news.lwidth(state.cursor - chars, state.cursor)
         state.news.delete(state.cursor - chars, state.cursor - 1)
         state.cursor -= chars
         if state.cursor == state.news.len and state.shift == 0:
@@ -217,14 +242,14 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
     of ACTION_LINED_BEGIN:
       if state.cursor > 0:
         if state.shift == 0:
-          state.backward(state.news.width(0, state.cursor))
+          state.backward(state.news.lwidth(0, state.cursor))
         else:
           state.fullRedraw()
         state.cursor = 0
     of ACTION_LINED_END:
       if state.cursor < state.news.len:
-        if state.news.width(state.shift, state.news.len) < maxlen:
-          state.forward(state.news.width(state.cursor, state.news.len))
+        if state.news.lwidth(state.shift, state.news.len) < maxlen:
+          state.forward(state.news.lwidth(state.cursor, state.news.len))
         else:
           state.fullRedraw()
         state.cursor = state.news.len
@@ -238,4 +263,4 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
 
 proc readLine*(prompt: string, current: var string, termwidth: int): bool =
   printesc(prompt)
-  readLine(current, prompt.width(), termwidth - prompt.len)
+  readLine(current, prompt.lwidth(), termwidth - prompt.len)

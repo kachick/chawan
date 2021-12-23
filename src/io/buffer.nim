@@ -169,8 +169,6 @@ func numLines*(buffer: Buffer): int = buffer.lines.len
 func lastVisibleLine(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
 
 func currentLineWidth(buffer: Buffer): int =
-  if buffer.cursory > buffer.lines.len:
-    return 0
   return buffer.lines[buffer.cursory].width()
 
 func maxfromy(buffer: Buffer): int = max(buffer.numLines - buffer.height, 0)
@@ -226,6 +224,37 @@ func currentCursorBytes(buffer: Buffer): int =
     fastRuneAt(line, i, r)
     w += r.width()
   return i
+
+func currentWidth(buffer: Buffer): int =
+  let line = buffer.currentLine
+  if line.len == 0: return 0
+  var w = 0
+  var i = 0
+  let cc = buffer.fromx + buffer.cursorx
+  var r: Rune
+  fastRuneAt(line, i, r)
+  while i < line.len and w < cc:
+    fastRuneAt(line, i, r)
+    w += r.width()
+  return r.width()
+
+func prevWidth(buffer: Buffer): int =
+  let line = buffer.currentLine
+  var w = 0
+  var i = 0
+  let cc = buffer.fromx + buffer.cursorx
+  if i >= line.len:
+    assert i == 0
+    return 0
+  var r: Rune
+  var pr: Rune
+  while i < line.len and w < cc:
+    pr = r
+    fastRuneAt(line, i, r)
+    w += r.width()
+  if pr == Rune(0):
+    return 0
+  return pr.width()
 
 func maxScreenWidth*(buffer: Buffer): int =
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
@@ -331,9 +360,8 @@ proc setCursorX(buffer: Buffer, x: int) =
     fastRuneAt(buffer.currentLine, b, r)
     w += r.width()
 
-  b = min(b, max(buffer.currentLine.len - 1, 0))
   while b > 0 and w > x:
-    let (r, o) = lastRune(buffer.currentLine, b)
+    let (r, o) = lastRune(buffer.currentLine, b - 1)
     w -= r.width()
     b -= o
 
@@ -383,27 +411,20 @@ proc cursorUp*(buffer: Buffer) =
     buffer.setCursorY(buffer.cursory - 1)
 
 proc cursorRight*(buffer: Buffer) =
-  let cellwidth = buffer.cell().ow
-  if buffer.cursorx < buffer.currentLineWidth() - 1:
+  let cellwidth = buffer.currentWidth()
+  if buffer.cursorx + cellwidth < buffer.currentLineWidth():
     buffer.setCursorX(buffer.cursorx + cellwidth)
 
 proc cursorLeft*(buffer: Buffer) =
-  let cellwidth = buffer.cell().ow
+  let cellwidth = buffer.currentWidth()
   if buffer.cursorx >= cellwidth:
     buffer.setCursorX(buffer.cursorx - cellwidth)
 
 proc cursorLineBegin*(buffer: Buffer) =
-  buffer.cursorx = 0
-  buffer.xend = 0
-  if buffer.fromx > 0:
-    buffer.fromx = 0
-    buffer.redraw = true
+  buffer.setCursorX(0)
 
 proc cursorLineEnd*(buffer: Buffer) =
-  buffer.cursorx = max(buffer.currentLineWidth() - 1, 0)
-  buffer.xend = buffer.cursorx
-  buffer.fromx = max(buffer.cursorx - buffer.width + 1, 0)
-  buffer.redraw = buffer.redraw or buffer.fromx > 0
+  buffer.setCursorX(max(buffer.currentLineWidth() - 1, 0))
 
 proc cursorNextWord*(buffer: Buffer) =
   var r: Rune
@@ -532,33 +553,19 @@ proc cursorPrevLink*(buffer: Buffer) =
       dec i
 
 proc cursorFirstLine*(buffer: Buffer) =
-  if buffer.fromy > 0:
-    buffer.fromy = 0
-    buffer.redraw = true
-  else:
-    buffer.redraw = false
-
-  buffer.cursory = 0
-  buffer.restoreCursorX()
+  buffer.setCursorY(0)
 
 proc cursorLastLine*(buffer: Buffer) =
-  if buffer.fromy < buffer.numLines - buffer.height:
-    buffer.fromy = buffer.numLines - buffer.height
-    buffer.redraw = true
-  buffer.cursory = buffer.numLines - 1
-  buffer.restoreCursorX()
+  buffer.setCursorY(buffer.numLines - 1)
 
 proc cursorTop*(buffer: Buffer) =
-  buffer.cursory = buffer.fromy
-  buffer.restoreCursorX()
+  buffer.setCursorY(buffer.fromy)
 
 proc cursorMiddle*(buffer: Buffer) =
-  buffer.cursory = min(buffer.fromy + (buffer.height - 2) div 2, buffer.numLines - 1)
-  buffer.restoreCursorX()
+  buffer.setCursorY(min(buffer.fromy + (buffer.height - 2) div 2, buffer.numLines - 1))
 
 proc cursorBottom*(buffer: Buffer) =
-  buffer.cursory = min(buffer.fromy + buffer.height - 1, buffer.numLines - 1)
-  buffer.restoreCursorX()
+  buffer.setCursorY(min(buffer.fromy + buffer.height - 1, buffer.numLines - 1))
 
 proc cursorLeftEdge*(buffer: Buffer) =
   buffer.cursorx = buffer.fromx
