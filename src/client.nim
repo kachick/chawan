@@ -1,13 +1,14 @@
 import httpclient
 import streams
-import uri
 import terminal
+import uri
 
 import io/buffer
 import io/lineedit
 import config/config
 import html/parser
 import utils/twtstr
+import css/sheet
 #import types/url
 
 type
@@ -16,6 +17,7 @@ type
     buffer: Buffer
     feednext: bool
     s: string
+    userstyle: CSSStylesheet
 
 proc die() =
   eprint "Invalid parameters. Usage:\ntwt <url>"
@@ -78,6 +80,7 @@ proc discardBuffer(client: Client) =
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
+  buffer.userstyle = client.userstyle
   buffer.document = parseHtml(newStringStream(buffer.source))
   buffer.render()
   buffer.gotoAnchor()
@@ -218,6 +221,7 @@ proc input(client: Client) =
   else: discard
 
 proc launchClient*(client: Client, params: seq[string]) =
+  client.userstyle = gconfig.stylesheet.parseStylesheet()
   client.buffer = newBuffer()
   if params.len < 1:
     client.readPipe()

@@ -496,3 +496,8 @@ proc alignBoxes*(document: Document, term: TermAttributes): CSSBox =
   state.nodes.add(document.root)
   state.processElemChildren(rootbox, document.root)
   return rootbox
+
+proc alignBoxes2*(document: Document, term: TermAttributes): CSSBlockBox =
+  result = CSSBlockBox()
+  result.bcontext = BlockContext()
+  result.bcontext.content.add(CSSInlineBox())

@@ -1,25 +1,21 @@
+import os
 import terminal
 import uri
-import strutils
 import unicode
-import streams
-import os
 
-import css/values
 import css/cascade
 import css/sheet
-import utils/twtstr
 import html/dom
 import html/tags
-import layout/box
-import layout/engine
-import config/config
 import io/term
 import io/cell
+import layout/box
+import render/renderdocument
+import render/rendertext
+import utils/twtstr
 
 type
-  Buffer* = ref BufferObj
-  BufferObj = object
+  Buffer* = ref object
     title*: string
     lines*: FlexibleGrid
     display*: FixedGrid
@@ -47,6 +43,7 @@ type
     sourcepair*: Buffer
     prev*: Buffer
     next* {.cursor.}: Buffer
+    userstyle*: CSSStylesheet
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -58,7 +55,7 @@ proc newBuffer*(): Buffer =
   result.prevdisplay = newFixedGrid(result.width, result.height)
   result.statusmsg = newFixedGrid(result.width)
 
-func generateFullOutput*(buffer: Buffer): string =
+func generateFullOutput(buffer: Buffer): string =
   var x = 0
   var w = 0
   var formatting = newFormatting()
@@ -243,10 +240,6 @@ func hasAnchor*(buffer: Buffer, anchor: string): bool =
 
 proc addLine(buffer: Buffer) =
   buffer.lines.addLine()
-
-proc clearText(buffer: Buffer) =
-  buffer.lines.setLen(0)
-  buffer.addLine()
 
 proc clearDisplay(buffer: Buffer) =
   buffer.prevdisplay = buffer.display
@@ -693,63 +686,6 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
     return true
   return false
 
-func formatFromLine(line: CSSRowBox): Formatting =
-  result.fgcolor = line.color.cellColor()
-  if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
-    result.italic_on
-  if line.fontweight > 500:
-    result.bold_on
-  if line.textdecoration == TEXT_DECORATION_UNDERLINE:
-    result.underline_on
-  if line.textdecoration == TEXT_DECORATION_OVERLINE:
-    result.overline_on
-  if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
-    result.strike_on
-
-proc setRowBox(buffer: Buffer, line: CSSRowBox) =
-  var r: Rune
-
-  var x = line.x
-  var i = 0
-  while x < 0:
-    fastRuneAt(line.str, i, r)
-    x += r.width()
-  let linestr = line.str.substr(i)
-  i = 0
-
-  let y = line.y
-
-  while buffer.lines.len <= y:
-    buffer.addLine()
-
-  var cx = 0
-  while cx < x and i < buffer.lines[y].str.len:
-    fastRuneAt(buffer.lines[y].str, i, r)
-    cx += r.width()
-
-  let ostr = buffer.lines[y].str.substr(i)
-  let oformats = buffer.lines[y].formats.subformats(i)
-  buffer.lines[y].setLen(i)
-
-  buffer.lines.addFormat(y, i, line.formatFromLine(), line.nodes)
-
-  var nx = cx
-  if nx < x:
-    buffer.lines[y].str &= ' '.repeat(x - nx)
-    nx = x
-
-  buffer.lines[y].str &= linestr
-  nx += linestr.width()
-
-  i = 0
-  while cx < nx and i < ostr.len:
-    fastRuneAt(ostr, i, r)
-    cx += r.width()
-
-  if i < ostr.len:
-    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
-    buffer.lines[y].add(oline)
-
 proc updateCursor(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:
     buffer.fromy = 0
@@ -811,81 +747,12 @@ proc updateHover(buffer: Buffer) =
         elem.refreshStyle()
   buffer.prevnodes = nodes
 
-proc renderPlainText*(buffer: Buffer, text: string) =
-  var format = newFormatting()
-  template add_format() =
-    if af:
-      af = false
-      buffer.lines.addFormat(y, buffer.lines[y].str.len, format)
-
-  buffer.clearText()
-  var i = 0
-  var x = 0
-  var y = 0
-  var af = false
-  while i < text.len:
-    if text[i] == '\n':
-      if i != text.len - 1:
-        add_format
-        buffer.addLine()
-        inc y
-        x = 0
-      inc i
-    elif text[i] == '\r':
-      inc i
-    elif text[i] == '\t':
-      add_format
-      for i in 0..8:
-        buffer.lines[^1].str &= ' '
-      inc i
-    elif text[i] == '\e':
-      i = format.parseAnsiCode(text, i)
-      af = true
-    elif text[i].isControlChar():
-      add_format
-      buffer.lines[y].str &= '^' & text[i].getControlLetter()
-      inc i
-    else:
-      add_format
-      buffer.lines[y].str &= text[i]
-      inc i
-  buffer.updateCursor()
-
-
-const css = staticRead"res/ua.css"
-let ua_stylesheet = newStringStream(css).parseStylesheet()
-
-#TODO refactor
-var ss_init = false
-var user_stylesheet: CSSStylesheet
-proc renderDocument(buffer: Buffer) =
-  buffer.clearText()
-
-  if not ss_init:
-    user_stylesheet = newStringStream(gconfig.stylesheet).parseStylesheet()
-    ss_init = true
-
-  buffer.document.applyStylesheets(ua_stylesheet, user_stylesheet)
-  buffer.rootbox = buffer.document.alignBoxes(buffer.attrs)
-  var stack: seq[CSSBox]
-  stack.add(buffer.rootbox)
-  while stack.len > 0:
-    let box = stack.pop()
-    if box of CSSBlockBox:
-      for line in box.icontext.rows:
-        buffer.setRowBox(line)
-
-    var i = box.children.len - 1
-    while i >= 0:
-      stack.add(box.children[i])
-      dec i
-  buffer.updateCursor()
-
 proc render*(buffer: Buffer) =
   if buffer.showsource:
-    buffer.renderPlainText(buffer.source)
+    buffer.lines = renderPlainText(buffer.source)
   else:
-    buffer.renderDocument()
+    buffer.lines = renderDocument(buffer.document, buffer.attrs, buffer.userstyle)
+  buffer.updateCursor()
 
 proc cursorBufferPos(buffer: Buffer) =
   let x = max(buffer.cursorx - buffer.fromx, 0)

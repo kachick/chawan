@@ -44,3 +44,6 @@ proc parseStylesheet*(s: Stream): CSSStylesheet =
       #result.add(CSSAtRule(v).parseAtRule())
     else:
       result.addRule(v)
+
+proc parseStylesheet*(s: string): CSSStylesheet =
+  return newStringStream(s).parseStylesheet()
