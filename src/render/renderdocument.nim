@@ -14,15 +14,15 @@ import utils/twtstr
 func formatFromLine(line: CSSRowBox): Formatting =
   result.fgcolor = line.color.cellColor()
   if line.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
-    result.italic_on
+    result.italic = true
   if line.fontweight > 500:
-    result.bold_on
+    result.bold = true
   if line.textdecoration == TEXT_DECORATION_UNDERLINE:
-    result.underline_on
+    result.underline = true
   if line.textdecoration == TEXT_DECORATION_OVERLINE:
-    result.overline_on
+    result.overline = true
   if line.textdecoration == TEXT_DECORATION_LINE_THROUGH:
-    result.strike_on
+    result.strike = true
 
 proc setRowBox(lines: var FlexibleGrid, line: CSSRowBox) =
   var r: Rune

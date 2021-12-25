@@ -191,14 +191,9 @@ func cellOrigin(buffer: Buffer, x, y: int): int =
 func currentCellOrigin(buffer: Buffer): int =
   return buffer.cellOrigin(buffer.acursorx, buffer.acursory)
 
-#TODO counter-intuitive naming?
 func currentDisplayCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
   return buffer.display[row + buffer.currentCellOrigin()]
-
-func cell(buffer: Buffer): FixedCell =
-  let row = (buffer.cursory - buffer.fromy) * buffer.width
-  return buffer.display[row + buffer.acursorx]
 
 func getLink(nodes: seq[Node]): Element =
   for node in nodes:
@@ -240,23 +235,20 @@ func currentWidth(buffer: Buffer): int =
 
 func prevWidth(buffer: Buffer): int =
   let line = buffer.currentLine
+  if line.len == 0: return 0
   var w = 0
   var i = 0
   let cc = buffer.fromx + buffer.cursorx
-  if i >= line.len:
-    assert i == 0
-    return 0
-  var r: Rune
   var pr: Rune
+  var r: Rune
+  fastRuneAt(line, i, r)
   while i < line.len and w < cc:
     pr = r
     fastRuneAt(line, i, r)
     w += r.width()
-  if pr == Rune(0):
-    return 0
   return pr.width()
 
-func maxScreenWidth*(buffer: Buffer): int =
+func maxScreenWidth(buffer: Buffer): int =
   for line in buffer.lines[buffer.fromy..buffer.lastVisibleLine - 1]:
     result = max(line.width(), result)
 
@@ -266,9 +258,6 @@ func atPercentOf(buffer: Buffer): int =
 
 func hasAnchor*(buffer: Buffer, anchor: string): bool =
   return buffer.document.getElementById(anchor) != nil
-
-proc addLine(buffer: Buffer) =
-  buffer.lines.addLine()
 
 proc clearDisplay(buffer: Buffer) =
   buffer.prevdisplay = buffer.display
@@ -294,7 +283,6 @@ proc refreshDisplay(buffer: Buffer) =
     if w > buffer.fromx:
       while k < w - buffer.fromx:
         buffer.display[dls + k].runes.add(Rune(' '))
-        buffer.display[dls + k].ow = r.width()
         inc k
 
     while i < line.str.len:
@@ -302,7 +290,6 @@ proc refreshDisplay(buffer: Buffer) =
       fastRuneAt(line.str, i, r)
       w += r.width()
       if w > buffer.fromx + buffer.width:
-        buffer.display[dls + k].ow += r.width()
         break
       if nf.pos != -1 and nf.pos <= j:
         cf = nf
@@ -313,19 +300,12 @@ proc refreshDisplay(buffer: Buffer) =
         buffer.display[dls + k].nodes = cf.nodes
       let tk = k + r.width()
       while k < tk and k < buffer.width - 1:
-        buffer.display[dls + k].ow += r.width()
         inc k
 
     inc y
 
-proc restoreCursorX(buffer: Buffer) =
-  buffer.cursorx = max(min(buffer.currentLineWidth() - 1, buffer.xend), 0)
-
 proc setCursorXB(buffer: Buffer, byte: int) =
   var b = buffer.currentCursorBytes()
-  if byte == b:
-    return
-
   var w = buffer.fromx + buffer.cursorx
   if b < byte:
     while b < byte:
@@ -350,31 +330,25 @@ proc setCursorXB(buffer: Buffer, byte: int) =
     buffer.redraw = true
   buffer.xend = buffer.cursorx
 
-proc setCursorX(buffer: Buffer, x: int) =
-  if buffer.cursorx == x:
-    return
-  var b = buffer.currentCursorBytes()
-  var w = buffer.fromx + buffer.cursorx
-  while b < buffer.currentLine.len and w < x:
-    var r: Rune
-    fastRuneAt(buffer.currentLine, b, r)
-    w += r.width()
-
-  while b > 0 and w > x:
-    let (r, o) = lastRune(buffer.currentLine, b - 1)
-    w -= r.width()
-    b -= o
-
-  if x - buffer.fromx >= 0 and x - buffer.width < buffer.fromx:
+proc setCursorX(buffer: Buffer, x: int, refresh = true, save = true) =
+  if (not refresh) or (buffer.fromx <= x and x < buffer.fromx + buffer.width):
     buffer.cursorx = x
   else:
-    if x > buffer.cursorx:
+    if refresh and buffer.fromx > buffer.cursorx:
+      buffer.fromx = max(buffer.currentLineWidth() - 1, 0)
+      buffer.cursorx = buffer.fromx
+    elif x > buffer.cursorx:
       buffer.fromx = max(x - buffer.width + 1, 0)
+      buffer.cursorx = x
     elif x < buffer.cursorx:
-      buffer.fromx = min(x, buffer.maxfromx)
-    buffer.cursorx = x
+      buffer.fromx = x
+      buffer.cursorx = x
     buffer.redraw = true
-  buffer.xend = buffer.cursorx
+  if save:
+    buffer.xend = buffer.cursorx
+
+proc restoreCursorX(buffer: Buffer) =
+  buffer.setCursorX(max(min(buffer.currentLineWidth() - 1, buffer.xend), 0), false, false)
 
 proc setCursorY(buffer: Buffer, y: int) =
   if buffer.cursory == y:
@@ -416,9 +390,7 @@ proc cursorRight*(buffer: Buffer) =
     buffer.setCursorX(buffer.cursorx + cellwidth)
 
 proc cursorLeft*(buffer: Buffer) =
-  let cellwidth = buffer.currentWidth()
-  if buffer.cursorx >= cellwidth:
-    buffer.setCursorX(buffer.cursorx - cellwidth)
+  buffer.setCursorX(max(buffer.cursorx - buffer.prevWidth(), 0))
 
 proc cursorLineBegin*(buffer: Buffer) =
   buffer.setCursorX(0)
@@ -568,16 +540,13 @@ proc cursorBottom*(buffer: Buffer) =
   buffer.setCursorY(min(buffer.fromy + buffer.height - 1, buffer.numLines - 1))
 
 proc cursorLeftEdge*(buffer: Buffer) =
-  buffer.cursorx = buffer.fromx
-  buffer.xend = buffer.cursorx
+  buffer.setCursorX(buffer.fromx)
 
 proc cursorVertMiddle*(buffer: Buffer) =
-  buffer.cursorx = min(buffer.fromx + (buffer.width - 2) div 2, buffer.currentLineWidth)
-  buffer.xend = buffer.cursorx
+  buffer.setCursorX(min(buffer.fromx + (buffer.width - 2) div 2, buffer.currentLineWidth))
 
 proc cursorRightEdge*(buffer: Buffer) =
-  buffer.cursorx = min(buffer.fromx + buffer.width - 1, buffer.currentLineWidth)
-  buffer.xend = buffer.cursorx
+  buffer.setCursorX(min(buffer.fromx + buffer.width - 1, buffer.currentLineWidth))
 
 proc centerLine*(buffer: Buffer) =
   let ny = max(min(buffer.cursory - buffer.height div 2, buffer.numLines - buffer.height), 0)
@@ -652,15 +621,13 @@ proc scrollUp*(buffer: Buffer) =
 proc scrollRight*(buffer: Buffer) =
   if buffer.fromx + buffer.width < buffer.maxScreenWidth():
     inc buffer.fromx
-    if buffer.fromx >= buffer.cursorx:
-      buffer.cursorRight()
     buffer.redraw = true
 
 proc scrollLeft*(buffer: Buffer) =
   if buffer.fromx > 0:
     dec buffer.fromx
-    if buffer.fromx + buffer.height <= buffer.cursorx:
-      buffer.cursorLeft()
+    if buffer.cursorx < buffer.fromx:
+      buffer.setCursorX(max(buffer.currentLineWidth() - 1, 0))
     buffer.redraw = true
 
 proc gotoAnchor*(buffer: Buffer) =
@@ -697,10 +664,6 @@ proc updateCursor(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:
     buffer.fromy = 0
     buffer.cursory = buffer.lastVisibleLine - 1
-
-  if buffer.cursorx >= buffer.currentLineWidth() - 1:
-    buffer.cursorx = max(buffer.currentLineWidth() - 1, 0)
-    buffer.fromx = max(buffer.cursorx - buffer.width + 1, 0)
 
   if buffer.lines.len == 0:
     buffer.cursory = 0
@@ -762,8 +725,8 @@ proc render*(buffer: Buffer) =
   buffer.updateCursor()
 
 proc cursorBufferPos(buffer: Buffer) =
-  let x = max(buffer.cursorx - buffer.fromx, 0)
-  let y = buffer.cursory - buffer.fromy
+  let x = buffer.acursorx
+  let y = buffer.acursory
   print(HVP(y + 1, x + 1))
 
 proc clearStatusMessage(buffer: Buffer) =
@@ -787,7 +750,7 @@ proc statusMsgForBuffer(buffer: Buffer) =
   if buffer.hovertext.len > 0:
     msg &= " " & buffer.hovertext
   var formatting: Formatting
-  formatting.reverse_on
+  formatting.reverse = true
   buffer.writeStatusMessage(msg, formatting)
 
 proc setStatusMessage*(buffer: Buffer, str: string) =
