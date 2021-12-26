@@ -1,6 +1,5 @@
-import os
+import options
 import terminal
-import uri
 import unicode
 
 import css/cascade
@@ -12,6 +11,7 @@ import io/cell
 import layout/box
 import render/renderdocument
 import render/rendertext
+import types/url
 import utils/twtstr
 
 type
@@ -34,7 +34,7 @@ type
     redraw*: bool
     reshape*: bool
     nostatus*: bool
-    location*: Uri
+    location*: Url
     target*: string
     source*: string
     showsource*: bool
@@ -151,9 +151,7 @@ func generateSwapOutput(buffer: Buffer): string =
   #if text.len > 0:
   #  result &= $text
 
-func generateStatusMessage(buffer: Buffer): string =
-  result &= HVP(buffer.height + 1, 1)
-  result &= SGR()
+func generateStatusMessage*(buffer: Buffer): string =
   var formatting = newFormatting()
   var w = 0
   for cell in buffer.statusmsg:
@@ -162,7 +160,6 @@ func generateStatusMessage(buffer: Buffer): string =
     w += cell.width()
   if w < buffer.width:
     result &= EL()
-  result &= SGR()
 
 func numLines*(buffer: Buffer): int = buffer.lines.len
 
@@ -258,6 +255,14 @@ func atPercentOf(buffer: Buffer): int =
 
 func hasAnchor*(buffer: Buffer, anchor: string): bool =
   return buffer.document.getElementById(anchor) != nil
+
+func getTitle(buffer: Buffer): string =
+  let titles = buffer.document.getElementsByTag(TAG_TITLE)
+  if titles.len > 0:
+    for text in titles[0].textNodes:
+      result &= text.data.strip().clearControls()
+  else:
+    result = $buffer.location
 
 proc clearDisplay(buffer: Buffer) =
   buffer.prevdisplay = buffer.display
@@ -645,11 +650,11 @@ proc gotoAnchor*(buffer: Buffer) =
         return
       inc i
 
-proc setLocation*(buffer: Buffer, uri: Uri) =
-  buffer.location = uri
+proc setLocation*(buffer: Buffer, location: Url) =
+  buffer.location = location
 
-proc gotoLocation*(buffer: Buffer, uri: Uri) =
-  buffer.location = buffer.location.combine(uri)
+proc gotoLocation*(buffer: Buffer, s: string) =
+  discard parseUrl(s, buffer.location.some, buffer.location, true)
 
 proc refreshTermAttrs*(buffer: Buffer): bool =
   let newAttrs = getTermAttributes()
@@ -667,21 +672,6 @@ proc updateCursor(buffer: Buffer) =
 
   if buffer.lines.len == 0:
     buffer.cursory = 0
-
-#TODO
-func mergeUri*(urla, urlb: Uri): Uri =
-  var moduri = urlb
-  if moduri.scheme == "":
-    moduri.scheme = urla.scheme
-  if moduri.scheme == "":
-    moduri.scheme = "file"
-  if moduri.hostname == "":
-    moduri.hostname = urla.hostname
-    if moduri.path == "":
-      moduri.path = urla.path
-    elif urla.path != "":
-      moduri.path = urla.path.splitFile().dir / moduri.path
-  return moduri
 
 proc updateHover(buffer: Buffer) =
   let nodes = buffer.currentDisplayCell().nodes
@@ -701,7 +691,7 @@ proc updateHover(buffer: Buffer) =
     let link = nodes.getLink()
     if link != nil:
       if link.tagType == TAG_A:
-        buffer.hovertext = $buffer.location.mergeUri(parseUri(HTMLAnchorElement(link).href))
+        buffer.hovertext = parseUrl(HTMLAnchorElement(link).href, buffer.location.some).serialize()
     else:
       buffer.hovertext = ""
     for node in buffer.prevnodes:
@@ -767,7 +757,10 @@ proc displayBuffer(buffer: Buffer) =
   print(buffer.generateFullOutput())
 
 proc displayStatusMessage*(buffer: Buffer) =
+  print(HVP(buffer.height + 1, 1))
+  print(SGR())
   print(buffer.generateStatusMessage())
+  print(SGR())
 
 proc click*(buffer: Buffer): string =
   let link = buffer.getCursorLink()
@@ -790,7 +783,7 @@ proc drawBuffer*(buffer: Buffer) =
       print(line.str.substr(x, line.str.len) & '\n')
 
 proc refreshBuffer*(buffer: Buffer) =
-  buffer.title = $buffer.location
+  buffer.title = buffer.getTitle()
   stdout.hideCursor()
 
   if buffer.refreshTermAttrs():

@@ -7,6 +7,7 @@ import os
 import math
 import sugar
 import sequtils
+import options
 
 when defined(posix):
   import posix
@@ -36,8 +37,17 @@ func fitValueToSize*(str: string, size: int): string =
 func isWhitespace*(c: char): bool =
   return c in {' ', '\n', '\r', '\t', '\f'}
 
+const C0Controls = {chr(0x00)..chr(0x1F)}
+const Controls = (C0Controls + {chr(0x7F)})
+const Ascii* = {chr(0x00)..chr(0x7F)}
+const Letters = {'A'..'Z', 'a'..'z'}
+const AllChars = {chr(0x00)..chr(0xFF)}
+const NonAscii = (AllChars - Ascii)
+const Digits = {'0'..'9'}
+const HexDigits = (Digits + {'a'..'f', 'A'..'F'})
+
 func isControlChar*(c: char): bool =
-  return c in {chr(0x00)..chr(0x1F), chr(0x7F)}
+  return c in Controls
 
 func isControlChar*(r: Rune): bool =
   case r
@@ -46,7 +56,7 @@ func isControlChar*(r: Rune): bool =
   else: return false
 
 func isC0ControlOrSpace*(c: char): bool =
-  return c in {chr(0x00)..chr(0x1F), ' '}
+  return c in (Controls + {' '})
 
 func genControlCharMap*(): string =
   for c in low(char)..high(char):
@@ -109,7 +119,7 @@ func getrune(s: string): Rune =
 
 const breakWord = [
   Rune('\n'), Rune('/'), Rune('\\'), Rune(' '), Rune('&'), Rune('='),
-  Rune('?'), Rune('.'), Rune(';'), "。".getrune(), "、".getrune(),
+  Rune('?'), Rune('.'), Rune(';'), Rune('"'), "。".getrune(), "、".getrune(),
   "「".getrune(), "」".getrune()
 ]
 
@@ -137,7 +147,7 @@ func decValue*(c: char): int =
   return decCharMap[int(c)]
 
 func isAscii*(c: char): bool =
-  return int(c) < 128
+  return c in Ascii
 
 func isAscii*(r: Rune): bool =
   return int(r) < 128
@@ -152,6 +162,12 @@ func decValue*(r: Rune): int =
     return decValue(char(r))
   return -1
 
+const HexChars = "0123456789ABCDEF"
+func toHex*(c: char): string =
+  result = newString(2)
+  result[0] = HexChars[(int8(c) and 0xF)]
+  result[1] = HexChars[(int8(c) shr 4)]
+
 func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
   var i = 0
   while i < min(s1.len, s2.len):
@@ -159,6 +175,9 @@ func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
       return false
     inc i
   return true
+
+func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
+  return s1.cmpIgnoreCase(s2) == 0
 
 func breaksWord*(r: Rune): bool =
   return r in breakWord
@@ -383,6 +402,60 @@ func parseFloat64*(s: string): float64 =
       inc i
 
   return float64(sign) * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
+
+const ControlPercentEncodeSet* = (Controls + NonAscii)
+const FragmentPercentEncodeSet* = (Controls + NonAscii)
+const QueryPercentEncodeSet* = (ControlPercentEncodeSet + {' ', '"', '#', '<', '>'})
+const SpecialQueryPercentEncodeSet* = (QueryPercentEncodeSet + {'\''})
+const PathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', '`', '{', '}'})
+const UserInfoPercentEncodeSet* = (PathPercentEncodeSet + {'/', ':', ';', '=', '@', '['..'^', '|'})
+proc percentEncode*(append: var string, c: char, set: set[char]) {.inline.} =
+  if c notin set:
+    append &= c
+  else:
+    append &= '%'
+    append &= c.toHex()
+
+proc percentEncode*(append: var string, s: string, set: set[char]) {.inline.} =
+  for c in s:
+    append.percentEncode(c, set)
+
+func percentEncode*(c: char, set: set[char]): string {.inline.} =
+  result.percentEncode(c, set)
+
+func percentDecode*(input: string): string =
+  for i in low(input)..high(input):
+    let c = input[i]
+    if c != '%' or i + 2 >= input.len or input[i + 1].hexValue == -1 or input[i + 2].hexValue == -1:
+      result &= c
+    else:
+      result &= char((input[i + 1].hexValue shr 4) or (input[i + 2].hexValue and 0xF))
+
+#basically std join but with char
+func join*(ss: openarray[string], sep: char): string =
+  if ss.len == 0:
+    return ""
+  var n = ss.high - 1
+  for i in 0..high(ss):
+    n += ss[i].len
+  result = newStringOfCap(n)
+  result &= ss[0]
+  for i in 1..high(ss):
+    result &= sep
+    result &= ss[i]
+
+func clearControls*(s: string): string =
+  for c in s:
+    if c notin Controls:
+      result &= c
+
+#TODO ugh this'll take a while to implement properly
+func domainToAscii*(domain: string): Option[string] =
+  result = some("")
+  for c in domain:
+    if c notin Ascii:
+      return none(string)
+    result.get &= c
 
 proc expandPath*(path: string): string =
   if path.len == 0:

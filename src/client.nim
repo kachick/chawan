@@ -1,7 +1,8 @@
 import httpclient
 import streams
 import terminal
-import uri
+import options
+import os
 
 import io/buffer
 import io/lineedit
@@ -9,7 +10,7 @@ import config/config
 import html/parser
 import utils/twtstr
 import css/sheet
-#import types/url
+import types/url
 
 type
   Client* = ref object
@@ -17,7 +18,13 @@ type
     buffer: Buffer
     feednext: bool
     s: string
+    iserror: bool
+    errormessage: string
     userstyle: CSSStylesheet
+
+  ActionError = object of IOError
+  LoadError = object of ActionError
+  InterruptError = object of LoadError
 
 proc die() =
   eprint "Invalid parameters. Usage:\ntwt <url>"
@@ -27,34 +34,38 @@ proc newClient*(): Client =
   new(result)
   result.http = newHttpClient()
 
-proc loadRemotePage*(client: Client, url: string): string =
-  return client.http.getContent(url)
+proc loadError(s: string) =
+  raise newException(LoadError, s)
 
-proc loadLocalPage*(url: string): string =
-  return readFile(url)
+proc actionError(s: string) =
+  raise newException(ActionError, s)
 
-proc getRemotePage*(client: Client, url: string): Stream =
+proc interruptError() =
+  raise newException(InterruptError, "Interrupted")
+
+proc getRemotePage(client: Client, url: string): Stream =
   return client.http.get(url).bodyStream
 
-proc getLocalPage*(url: string): Stream =
+proc getLocalPage(url: string): Stream =
   return newFileStream(url, fmRead)
 
-proc getPageUri(client: Client, uri: Uri): Stream =
-  var moduri = uri
-  if moduri.scheme == "file":
-    moduri.scheme = ""
-    return getLocalPage($moduri)
-  elif moduri.scheme == "http" or moduri.scheme == "https":
-    return client.getRemotePage($moduri)
+proc getPage(client: Client, url: Url): Stream =
+  if url.scheme == "file":
+    return getLocalPage($url.path)
+  elif url.scheme == "http" or url.scheme == "https":
+    return client.getRemotePage(url.serialize())
 
 proc addBuffer(client: Client) =
-  let oldnext = client.buffer.next
-  client.buffer.next = newBuffer()
-  if oldnext != nil:
-    oldnext.prev = client.buffer.next
-  client.buffer.next.prev = client.buffer
-  client.buffer.next.next = oldnext
-  client.buffer = client.buffer.next
+  if client.buffer == nil:
+    client.buffer = newBuffer()
+  else:
+    let oldnext = client.buffer.next
+    client.buffer.next = newBuffer()
+    if oldnext != nil:
+      oldnext.prev = client.buffer.next
+    client.buffer.next.prev = client.buffer
+    client.buffer.next.next = oldnext
+    client.buffer = client.buffer.next
 
 proc prevBuffer(client: Client) =
   if client.buffer.prev != nil:
@@ -76,7 +87,7 @@ proc discardBuffer(client: Client) =
     client.buffer = client.buffer.prev
     client.buffer.redraw = true
   else:
-    client.buffer.setStatusMessage("Can't discard last buffer!")
+    actionError("Can't discard last buffer!")
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
@@ -84,82 +95,99 @@ proc setupBuffer(client: Client) =
   buffer.document = parseHtml(newStringStream(buffer.source))
   buffer.render()
   buffer.gotoAnchor()
-  buffer.location.anchor = ""
   buffer.redraw = true
 
 proc readPipe(client: Client) =
-  if not stdin.isatty:
-    client.buffer.showsource = true
-    try:
-      while true:
-        client.buffer.source &= stdin.readChar()
-    except EOFError:
-      #TODO handle failure (also, is this even portable at all?)
-      discard reopen(stdin, "/dev/tty", fmReadWrite);
-  else:
-    die()
-  client.setupBuffer()
-
-proc gotoURL_impl(client: Client, uri: Uri) {.inline.} =
-  var olduri: Uri
-  if client.buffer.prev != nil:
-    olduri = client.buffer.prev.location
-  var newuri = olduri.mergeUri(uri)
-  let newanchor = newuri.anchor
-  newuri.anchor = ""
-  if client.buffer.prev == nil or client.buffer.prev.location != newuri or newanchor == "":
-    let s = client.getPageUri(newuri)
-    if s != nil:
-      client.buffer.source = s.readAll() #TODO
+  client.buffer = newBuffer()
+  client.buffer.showsource = true
+  try:
+    while true:
+      client.buffer.source &= stdin.readChar()
+  except EOFError:
+    #TODO is this portable at all?
+    if reopen(stdin, "/dev/tty", fmReadWrite):
+      client.setupBuffer()
     else:
-      client.discardBuffer()
-      client.buffer.setStatusMessage("Couldn't load " & $newuri)
-      return
-  elif newanchor != "":
-    if not client.buffer.prev.hasAnchor(newanchor):
-      client.discardBuffer()
-      client.buffer.setStatusMessage("Couldn't find anchor " & newanchor)
-      return
-    client.buffer.source = client.buffer.prev.source
-    newuri.anchor = newanchor
-  client.buffer.setLocation(newuri)
-  client.setupBuffer()
+      client.buffer.drawBuffer()
 
-proc gotoURL(client: Client, url: Uri) =
-  client.addBuffer()
-  client.gotoURL_impl(url)
+var g_client: Client
+proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false) =
+  var oldurl = prevurl
+  if oldurl.isnone and client.buffer != nil:
+    oldurl = client.buffer.location.some
+  let newurl = parseUrl(url, oldurl)
+  if newurl.isnone:
+    loadError("Invalid URL " & url)
+  if newurl.issome:
+    setControlCHook(proc() {.noconv.} =
+      raise newException(InterruptError, "Interrupted"))
+    let url = newurl.get
+    let prevurl = oldurl
+    if force or prevurl.issome or not prevurl.get.equals(url, true):
+      try:
+        let s = client.getPage(url)
+        if s != nil:
+          client.addBuffer()
+          g_client = client
+          setControlCHook(proc() {.noconv.} =
+            g_client.discardBuffer()
+            interruptError())
+          client.buffer.source = s.readAll() #TODO
+        else:
+          loadError("Couldn't load " & $url)
+      except IOError, OSError:
+        loadError("Couldn't load " & $url)
+    elif client.buffer != nil and prevurl.isnone or not prevurl.get.equals(url):
+      if not client.buffer.hasAnchor(url.anchor):
+        loadError("Couldn't find anchor " & url.anchor)
+    client.buffer.setLocation(url)
+    client.setupBuffer()
+  else:
+    loadError("Couldn't parse URL " & url)
+    eprint "none"
 
-proc gotoURL(client: Client, url: string) =
-  client.gotoURL(parseUri(url))
+proc loadUrl(client: Client, url: string) =
+  let firstparse = parseUrl(url)
+  if firstparse.issome:
+    client.gotoUrl(url, none(Url), true)
+  else:
+    try:
+      let cdir = parseUrl("file://" & getCurrentDir() & '/')
+      client.gotoUrl(url, cdir, true)
+    except InterruptError: discard
+    except LoadError:
+      client.gotoUrl("http://" & url, none(Url), true)
 
 proc reloadPage(client: Client) =
   let pbuffer = client.buffer
-  client.gotoURL("")
+  client.gotoUrl("", none(Url), true)
   client.buffer.setCursorXY(pbuffer.cursorx, pbuffer.cursory)
   client.buffer.setFromXY(pbuffer.fromx, pbuffer.fromy)
   client.buffer.showsource = pbuffer.showsource
 
 proc changeLocation(client: Client) =
   let buffer = client.buffer
-  var url = $buffer.location
+  var url = buffer.location.serialize(true)
   print(HVP(buffer.height + 1, 1))
   print(EL())
   let status = readLine("URL: ", url, buffer.width)
   if status:
-    client.gotoURL(url)
+    client.loadUrl(url)
 
 proc click(client: Client) =
   let s = client.buffer.click()
   if s != "":
-    client.gotoURL(s)
+    client.gotoUrl(s)
 
 proc toggleSource*(client: Client) =
   let buffer = client.buffer
   if buffer.sourcepair != nil:
     client.buffer = buffer.sourcepair
+    client.buffer.redraw = true
   else:
     client.addBuffer()
     client.buffer.sourcepair = client.buffer.prev
+    client.buffer.sourcepair.sourcepair = client.buffer
     client.buffer.source = client.buffer.prev.source
     client.buffer.showsource = not client.buffer.prev.showsource
     client.setupBuffer()
@@ -220,18 +248,27 @@ proc input(client: Client) =
   of ACTION_DISCARD_BUFFER: client.discardBuffer()
   else: discard
 
+proc inputLoop(client: Client) =
+  while true:
+    client.buffer.refreshBuffer()
+    try:
+      client.input()
+    except ActionError as e:
+      client.buffer.setStatusMessage(e.msg)
+
 proc launchClient*(client: Client, params: seq[string]) =
   client.userstyle = gconfig.stylesheet.parseStylesheet()
-  client.buffer = newBuffer()
   if params.len < 1:
-    client.readPipe()
+    if not stdin.isatty:
+      client.readPipe()
+    else:
+      die()
   else:
-    client.gotoURL_impl(parseUri(params[0]))
+    try:
+      client.loadUrl(params[0])
+    except LoadError as e:
+      print(e.msg & '\n')
+      quit(1)
 
-  if stdout.isatty:
-    while true:
-      client.buffer.refreshBuffer()
-      client.input()
-  else:
-    client.buffer.height = client.buffer.numLines
-    client.buffer.drawBuffer()
+  if stdout.isatty: client.inputLoop()
+  else: client.buffer.drawBuffer()

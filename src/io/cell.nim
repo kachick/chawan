@@ -1,11 +1,12 @@
-import unicode
-import strutils
 import sequtils
+import streams
+import strutils
 import sugar
+import unicode
 
+import html/dom
 import types/color
 import utils/twtstr
-import html/dom
 
 type
   FormatFlags* = enum
@@ -47,13 +48,6 @@ const FormatCodes: array[FormatFlags, tuple[s: int, e: int]] = [
   FLAG_STRIKE: (9, 29),
   FLAG_OVERLINE: (53, 55),
 ]
-
-func bold(formatting: Formatting): bool = FLAG_BOLD in formatting.flags
-func italic(formatting: Formatting): bool = FLAG_ITALIC in formatting.flags
-func underline(formatting: Formatting): bool = FLAG_UNDERLINE in formatting.flags
-func reverse(formatting: Formatting): bool = FLAG_REVERSE in formatting.flags
-func strike(formatting: Formatting): bool = FLAG_STRIKE in formatting.flags
-func overline(formatting: Formatting): bool = FLAG_OVERLINE in formatting.flags
 
 template flag_template(formatting: Formatting, val: bool, flag: FormatFlags) =
   if val: formatting.flags.incl(flag)
@@ -140,6 +134,9 @@ proc add*(a: var FlexibleLine, b: FlexibleLine) =
 proc addLine*(grid: var FlexibleGrid) =
   grid.add(FlexibleLine())
 
+proc addFormat*(line: var FlexibleLine, pos: int, format: Formatting) =
+  line.formats.add(FormattingCell(formatting: format, pos: line.str.len))
+
 proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting) =
   grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].str.len))
 
@@ -157,35 +154,7 @@ template inc_check(i: int) =
   if i >= buf.len:
     return i
 
-proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
-  var i = fi
-  if buf[i] != '\e':
-    return i
-
-  inc_check i
-  if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x5F:
-    if buf[i] != '[':
-      #C1, TODO?
-      return
-    inc_check i
-
-  let sp = i
-  #parameter bytes
-  while 0x30 <= int(buf[i]) and int(buf[i]) <= 0x3F:
-    inc_check i
-  let params = buf.substr(sp, i - 1)
-
-  let si = i
-  #intermediate bytes
-  while 0x20 <= int(buf[i]) and int(buf[i]) <= 0x2F:
-    inc_check i
-  #let interm = buf.substr(si, i)
-
-  let final = buf[i]
-  #final byte
-  if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x7E:
-    inc_check i
-
+proc handleAnsiCode(formatting: var Formatting, final: char, params: string) =
   case final
   of 'm':
     if params.len == 0:
@@ -257,7 +226,65 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
       except ValueError: discard
   else: discard
 
+proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
+  var i = fi
+  if buf[i] != '\e':
+    return i
+
+  inc_check i
+  if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x5F:
+    if buf[i] != '[':
+      #C1, TODO?
+      return
+    inc_check i
+
+  let sp = i
+  #parameter bytes
+  while 0x30 <= int(buf[i]) and int(buf[i]) <= 0x3F:
+    inc_check i
+  let params = buf.substr(sp, i - 1)
+
+  let si = i
+  #intermediate bytes
+  while 0x20 <= int(buf[i]) and int(buf[i]) <= 0x2F:
+    inc_check i
+  #let interm = buf.substr(si, i)
+
+  let final = buf[i]
+  #final byte
+  if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x7E:
+    formatting.handleAnsiCode(final, params)
+
   return i
+
+proc parseAnsiCode*(formatting: var Formatting, stream: Stream) =
+  if stream.atEnd(): return
+  var c = stream.readChar()
+  if 0x40 <= int(c) and int(c) <= 0x5F:
+    if c != '[':
+      #C1, TODO?
+      return
+    if stream.atEnd(): return
+    c = stream.readChar()
+
+  var params = $c
+  #parameter bytes
+  while 0x30 <= int(c) and int(c) <= 0x3F:
+    params &= c
+    if stream.atEnd(): return
+    c = stream.readChar()
+
+  #intermediate bytes
+  #var interm = $c
+  while 0x20 <= int(c) and int(c) <= 0x2F:
+    #interm &= c
+    if stream.atEnd(): return
+    c = stream.readChar()
+
+  #final byte
+  if 0x40 <= int(c) and int(c) <= 0x7E:
+    let final = c
+    formatting.handleAnsiCode(final, params)
 
 proc processFormatting*(formatting: var Formatting, cellf: Formatting): string =
   for flag in FormatFlags:

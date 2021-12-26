@@ -175,11 +175,11 @@ func isCData*(node: Node): bool =
 func isDocument*(node: Node): bool =
   return node.nodeType == DOCUMENT_NODE
 
-func firstNode*(htmlNode: Node): bool =
-  return htmlNode.parentElement != nil and htmlNode.parentElement.childNodes[0] == htmlNode
+func firstNode*(node: Node): bool =
+  return node.parentElement != nil and node.parentElement.childNodes[0] == node
 
-func lastNode*(htmlNode: Node): bool =
-  return htmlNode.parentElement != nil and htmlNode.parentElement.childNodes[^1] == htmlNode
+func lastNode*(node: Node): bool =
+  return node.parentElement != nil and node.parentElement.childNodes[^1] == node
 
 func toInputType*(str: string): InputType =
   case str
@@ -311,3 +311,6 @@ func getElementById*(document: Document, id: string): Element =
   if id.len == 0 or id notin document.id_elements:
     return nil
   return document.id_elements[id][0]
+
+func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
+  return document.type_elements[tag]
