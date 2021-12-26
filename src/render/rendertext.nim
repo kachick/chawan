@@ -16,9 +16,8 @@ proc renderPlainText*(text: string): FlexibleGrid =
   while i < text.len:
     case text[i]
     of '\n':
-      if i != text.len - 1:
-        add_format
-        result.addLine()
+      add_format
+      result.addLine()
     of '\r': discard
     of '\t':
       add_format
@@ -34,6 +33,9 @@ proc renderPlainText*(text: string): FlexibleGrid =
       add_format
       result[^1].str &= text[i]
     inc i
+
+  if result.len > 1 and result[^1].str.len == 0 and result[^1].formats.len == 0:
+    discard result.pop()
 
 proc renderStream*(stream: Stream): FlexibleGrid =
   var format = newFormatting()
@@ -64,3 +66,6 @@ proc renderStream*(stream: Stream): FlexibleGrid =
     else:
       add_format
       result[^1].str &= c
+
+  if result.len > 1 and result[^1].str.len == 0 and result[^1].formats.len == 0:
+    discard result.pop()

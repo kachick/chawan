@@ -1,4 +1,5 @@
 import options
+import streams
 import terminal
 import unicode
 
@@ -6,6 +7,7 @@ import css/cascade
 import css/sheet
 import html/dom
 import html/tags
+import html/parser
 import io/term
 import io/cell
 import layout/box
@@ -16,6 +18,7 @@ import utils/twtstr
 
 type
   Buffer* = ref object
+    contenttype*: string
     title*: string
     lines*: FlexibleGrid
     display*: FixedGrid
@@ -35,9 +38,10 @@ type
     reshape*: bool
     nostatus*: bool
     location*: Url
-    target*: string
+    ispipe*: bool
+    istream*: Stream
+    streamclosed*: bool
     source*: string
-    showsource*: bool
     rootbox*: CSSBox
     prevnodes*: seq[Node]
     sourcepair*: Buffer
@@ -257,10 +261,14 @@ func hasAnchor*(buffer: Buffer, anchor: string): bool =
   return buffer.document.getElementById(anchor) != nil
 
 func getTitle(buffer: Buffer): string =
-  let titles = buffer.document.getElementsByTag(TAG_TITLE)
-  if titles.len > 0:
-    for text in titles[0].textNodes:
-      result &= text.data.strip().clearControls()
+  if buffer.document != nil:
+    let titles = buffer.document.getElementsByTag(TAG_TITLE)
+    if titles.len > 0:
+      for text in titles[0].textNodes:
+        result &= text.data.strip().clearControls()
+    return
+  if buffer.ispipe:
+    result = "*pipe*"
   else:
     result = $buffer.location
 
@@ -707,11 +715,29 @@ proc updateHover(buffer: Buffer) =
         elem.refreshStyle()
   buffer.prevnodes = nodes
 
-proc render*(buffer: Buffer) =
-  if buffer.showsource:
-    buffer.lines = renderPlainText(buffer.source)
+proc load*(buffer: Buffer) =
+  case buffer.contenttype
+  of "text/html":
+    if not buffer.streamclosed:
+      #TODO not sure what to do with this.
+      #Ideally we could just throw away the source data after parsing but then
+      #source view won't work. Well we could still generate it... best would be a
+      #config option like a) store source b) generate source
+      buffer.source = buffer.istream.readAll()
+      buffer.istream.close()
+      buffer.document = parseHtml(newStringStream(buffer.source))
+      buffer.streamclosed = true
   else:
+    if not buffer.streamclosed:
+      buffer.lines = renderStream(buffer.istream)
+      buffer.istream.close()
+      buffer.streamclosed = true
+
+proc render*(buffer: Buffer) =
+  case buffer.contenttype
+  of "text/html":
     buffer.lines = renderDocument(buffer.document, buffer.attrs, buffer.userstyle)
+  else: discard
   buffer.updateCursor()
 
 proc cursorBufferPos(buffer: Buffer) =

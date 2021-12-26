@@ -7,9 +7,9 @@ import os
 import io/buffer
 import io/lineedit
 import config/config
-import html/parser
 import utils/twtstr
 import css/sheet
+import types/mime
 import types/url
 
 type
@@ -91,27 +91,28 @@ proc discardBuffer(client: Client) =
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
+  if not buffer.ispipe:
+    buffer.contenttype = guessContentType($buffer.location.path)
   buffer.userstyle = client.userstyle
-  buffer.document = parseHtml(newStringStream(buffer.source))
+  buffer.load()
   buffer.render()
   buffer.gotoAnchor()
   buffer.redraw = true
 
 proc readPipe(client: Client) =
   client.buffer = newBuffer()
-  client.buffer.showsource = true
-  try:
-    while true:
-      client.buffer.source &= stdin.readChar()
-  except EOFError:
-    #TODO is this portable at all?
-    if reopen(stdin, "/dev/tty", fmReadWrite):
-      client.setupBuffer()
-    else:
-      client.buffer.drawBuffer()
+  client.buffer.contenttype = "text/plain"
+  client.buffer.ispipe = true
+  client.buffer.istream = newFileStream(stdin)
+  client.buffer.load()
+  #TODO is this portable at all?
+  if reopen(stdin, "/dev/tty", fmReadWrite):
+    client.setupBuffer()
+  else:
+    client.buffer.drawBuffer()
 
 var g_client: Client
-proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false) =
+proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, newbuf = true) =
   var oldurl = prevurl
   if oldurl.isnone and client.buffer != nil:
     oldurl = client.buffer.location.some
@@ -127,12 +128,14 @@ proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false) =
       try:
         let s = client.getPage(url)
         if s != nil:
-          client.addBuffer()
-          g_client = client
-          setControlCHook(proc() {.noconv.} =
-            g_client.discardBuffer()
-            interruptError())
-          client.buffer.source = s.readAll() #TODO
+          if newbuf:
+            client.addBuffer()
+            g_client = client
+            setControlCHook(proc() {.noconv.} =
+              g_client.discardBuffer()
+              interruptError())
+          client.buffer.istream = s
+          client.buffer.streamclosed = false
         else:
           loadError("Couldn't load " & $url)
       except IOError, OSError:
@@ -144,7 +147,6 @@ proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false) =
     client.setupBuffer()
   else:
     loadError("Couldn't parse URL " & url)
-    eprint "none"
 
 proc loadUrl(client: Client, url: string) =
   let firstparse = parseUrl(url)
@@ -160,10 +162,10 @@ proc loadUrl(client: Client, url: string) =
 
 proc reloadPage(client: Client) =
   let pbuffer = client.buffer
-  client.gotoUrl("", none(Url), true)
+  client.gotoUrl("", none(Url), true, false)
   client.buffer.setCursorXY(pbuffer.cursorx, pbuffer.cursory)
   client.buffer.setFromXY(pbuffer.fromx, pbuffer.fromy)
-  client.buffer.showsource = pbuffer.showsource
+  client.buffer.contenttype = pbuffer.contenttype
 
 proc changeLocation(client: Client) =
   let buffer = client.buffer
@@ -189,7 +191,11 @@ proc toggleSource*(client: Client) =
     client.buffer.sourcepair = client.buffer.prev
     client.buffer.sourcepair.sourcepair = client.buffer
     client.buffer.source = client.buffer.prev.source
-    client.buffer.showsource = not client.buffer.prev.showsource
+    let prevtype = client.buffer.prev.contenttype
+    if prevtype == "text/html":
+      client.buffer.contenttype = "text/plain"
+    else:
+      client.buffer.contenttype = "text/html"
     client.setupBuffer()
 
 proc input(client: Client) =

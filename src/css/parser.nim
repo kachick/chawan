@@ -588,6 +588,7 @@ proc parseStylesheet(state: var CSSParseState): CSSRawStylesheet =
 proc parseStylesheet(inputStream: Stream): CSSRawStylesheet =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
+  inputStream.close()
   return state.parseStylesheet()
 
 proc parseListOfRules(state: var CSSParseState): seq[CSSRule] =

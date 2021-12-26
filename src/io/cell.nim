@@ -244,7 +244,7 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
     inc_check i
   let params = buf.substr(sp, i - 1)
 
-  let si = i
+  #let si = i
   #intermediate bytes
   while 0x20 <= int(buf[i]) and int(buf[i]) <= 0x2F:
     inc_check i
