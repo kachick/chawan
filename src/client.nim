@@ -43,17 +43,19 @@ proc actionError(s: string) =
 proc interruptError() =
   raise newException(InterruptError, "Interrupted")
 
-proc getRemotePage(client: Client, url: string): Stream =
-  return client.http.get(url).bodyStream
-
-proc getLocalPage(url: string): Stream =
-  return newFileStream(url, fmRead)
-
-proc getPage(client: Client, url: Url): Stream =
+proc getPage(client: Client, url: Url): tuple[s: Stream, contenttype: string] =
   if url.scheme == "file":
-    return getLocalPage($url.path)
+    let path = url.path.serialize()
+    result.contenttype = guessContentType(path)
+    result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":
-    return client.getRemotePage(url.serialize())
+    let resp = client.http.get(url.serialize(true))
+    let ct = resp.contentType()
+    if ct != "":
+      result.contenttype = ct
+    else:
+      result.contenttype = guessContentType(url.path.serialize())
+    result.s = resp.bodyStream
 
 proc addBuffer(client: Client) =
   if client.buffer == nil:
@@ -91,8 +93,6 @@ proc discardBuffer(client: Client) =
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
-  if not buffer.ispipe:
-    buffer.contenttype = guessContentType($buffer.location.path)
   buffer.userstyle = client.userstyle
   buffer.load()
   buffer.render()
@@ -126,15 +126,17 @@ proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, ne
     let prevurl = oldurl
     if force or prevurl.issome or not prevurl.get.equals(url, true):
       try:
-        let s = client.getPage(url)
-        if s != nil:
+        let page = client.getPage(url)
+        if page.s != nil:
           if newbuf:
             client.addBuffer()
             g_client = client
             setControlCHook(proc() {.noconv.} =
-              g_client.discardBuffer()
+              if g_client.buffer.prev != nil or g_client.buffer.next != nil:
+                g_client.discardBuffer()
               interruptError())
-          client.buffer.istream = s
+          client.buffer.istream = page.s
+          client.buffer.contenttype = page.contenttype
           client.buffer.streamclosed = false
         else:
           loadError("Couldn't load " & $url)
@@ -156,7 +158,6 @@ proc loadUrl(client: Client, url: string) =
     try:
       let cdir = parseUrl("file://" & getCurrentDir() & '/')
       client.gotoUrl(url, cdir, true)
-    except InterruptError: discard
     except LoadError:
       client.gotoUrl("http://" & url, none(Url), true)
 
@@ -191,12 +192,18 @@ proc toggleSource*(client: Client) =
     client.buffer.sourcepair = client.buffer.prev
     client.buffer.sourcepair.sourcepair = client.buffer
     client.buffer.source = client.buffer.prev.source
+    client.buffer.streamclosed = true
     let prevtype = client.buffer.prev.contenttype
     if prevtype == "text/html":
       client.buffer.contenttype = "text/plain"
     else:
       client.buffer.contenttype = "text/html"
     client.setupBuffer()
+
+proc quit(client: Client) =
+  eraseScreen()
+  print(HVP(0, 0))
+  quit(0)
 
 proc input(client: Client) =
   let buffer = client.buffer
@@ -208,10 +215,7 @@ proc input(client: Client) =
   client.s &= c
   let action = getNormalAction(client.s)
   case action
-  of ACTION_QUIT:
-    eraseScreen()
-    print(HVP(0, 0))
-    quit(0)
+  of ACTION_QUIT: client.quit()
   of ACTION_CURSOR_LEFT: buffer.cursorLeft()
   of ACTION_CURSOR_DOWN: buffer.cursorDown()
   of ACTION_CURSOR_UP: buffer.cursorUp()
@@ -256,6 +260,12 @@ proc input(client: Client) =
 
 proc inputLoop(client: Client) =
   while true:
+    g_client = client
+    setControlCHook(proc() {.noconv.} =
+      g_client.buffer.setStatusMessage("Interrupted rendering procedure")
+      g_client.buffer.redraw = true
+      g_client.buffer.reshape = false
+      g_client.inputLoop())
     client.buffer.refreshBuffer()
     try:
       client.input()

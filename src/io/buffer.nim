@@ -725,13 +725,14 @@ proc load*(buffer: Buffer) =
       #config option like a) store source b) generate source
       buffer.source = buffer.istream.readAll()
       buffer.istream.close()
-      buffer.document = parseHtml(newStringStream(buffer.source))
       buffer.streamclosed = true
+    buffer.document = parseHtml(newStringStream(buffer.source))
   else:
     if not buffer.streamclosed:
-      buffer.lines = renderStream(buffer.istream)
+      buffer.source = buffer.istream.readAll()
       buffer.istream.close()
       buffer.streamclosed = true
+    buffer.lines = renderPlainText(buffer.source)
 
 proc render*(buffer: Buffer) =
   case buffer.contenttype

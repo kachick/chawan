@@ -46,16 +46,16 @@ type
     rows*: seq[CSSRowBox]
     thisrow*: seq[CSSRowBox]
 
-    dimensions*: Rectangle
-    content*: seq[CSSInlineRow]
-    rcontent*: CSSInlineRow
-    color*: CSSColor
-    fontstyle*: CSSFontStyle
-    fontweight*: int
-    textdecoration*: CSSTextDecoration
-    nodes*: seq[Node]
+    #dimensions*: Rectangle
+    #content*: seq[CSSInlineRow]
+    #rcontent*: CSSInlineRow
+    #color*: CSSColor
+    #fontstyle*: CSSFontStyle
+    #fontweight*: int
+    #textdecoration*: CSSTextDecoration
+    #nodes*: seq[Node]
 
-    maxwidth*: int
+    #maxwidth*: int
 
   BlockContext* = ref object
     fromy*: int

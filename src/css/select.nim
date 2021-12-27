@@ -184,7 +184,7 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
 
 proc querySelector*(document: Document, q: string): seq[Element] =
   let ss = newStringStream(q)
-  let cvals = parseCSSListOfComponentValues(ss)
+  let cvals = parseListOfComponentValues(ss)
   let selectors = parseSelectors(cvals)
 
   for sel in selectors:

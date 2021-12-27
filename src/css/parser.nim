@@ -1,7 +1,7 @@
-import unicode
-import streams
 import options
+import streams
 import sugar
+import unicode
 
 import utils/twtstr
 
@@ -73,6 +73,65 @@ type
     value*: seq[CSSRule]
 
   SyntaxError = object of ValueError
+
+func `$`*(c: CSSParsedItem): string =
+  if c of CSSToken:
+    case CSSToken(c).tokenType:
+    of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
+      result &= $CSSToken(c).tokenType & $CSSToken(c).value & '\n'
+    of CSS_HASH_TOKEN:
+      result &= '#' & $CSSToken(c).value
+    of CSS_IDENT_TOKEN:
+      result &= $CSSToken(c).value
+    of CSS_STRING_TOKEN:
+      result &= ("\"" & $CSSToken(c).value & "\"")
+    of CSS_DELIM_TOKEN:
+      result &= $CSSToken(c).rvalue
+    of CSS_DIMENSION_TOKEN:
+      result &= $CSSToken(c).tokenType & $CSSToken(c).nvalue & "unit" & $CSSToken(c).unit & $CSSToken(c).tflagb
+    of CSS_NUMBER_TOKEN:
+      result &= $CSSToken(c).nvalue & $CSSToken(c).unit
+    of CSS_PERCENTAGE_TOKEN:
+      result &= $CSSToken(c).nvalue & "%"
+    of CSS_COLON_TOKEN:
+      result &= ":"
+    of CSS_WHITESPACE_TOKEN:
+      result &= " "
+    of CSS_SEMICOLON_TOKEN:
+      result &= ";\n"
+    of CSS_COMMA_TOKEN:
+      result &= ","
+    else:
+      result &= $CSSToken(c).tokenType & '\n'
+  elif c of CSSDeclaration:
+    result &= $CSSDeclaration(c).name
+    result &= ": "
+    for s in CSSDeclaration(c).value:
+      result &= $s
+    result &= ";\n"
+  elif c of CSSFunction:
+    result &= $CSSFunction(c).name & "("
+    for s in CSSFunction(c).value:
+      result &= $s
+    result &= ")"
+  elif c of CSSSimpleBlock:
+    case CSSSimpleBlock(c).token.tokenType
+    of CSS_LBRACE_TOKEN: result &= "{\n"
+    of CSS_LPAREN_TOKEN: result &= "("
+    of CSS_LBRACKET_TOKEN: result &= "["
+    else: discard
+    for s in CSSSimpleBlock(c).value:
+      result &= $s
+    case CSSSimpleBlock(c).token.tokenType
+    of CSS_LBRACE_TOKEN: result &= "\n}"
+    of CSS_LPAREN_TOKEN: result &= ")"
+    of CSS_LBRACKET_TOKEN: result &= "]"
+    else: discard
+  elif c of CSSRule:
+    if c of CSSAtRule:
+      result &= $CSSAtRule(c).name & " "
+    result &= $CSSRule(c).prelude & "\n"
+    result &= $CSSRule(c).oblock
 
 func `==`*(a: CSSParsedItem, b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).tokenType == b
@@ -466,7 +525,7 @@ proc consumeQualifiedRule(state: var CSSParseState): Option[CSSQualifiedRule] =
   while state.has():
     let t = state.consume()
     if t of CSSSimpleBlock:
-      r.oblock = state.consumeSimpleBlock()
+      r.oblock = CSSSimpleBlock(t)
       return some(r)
     elif t == CSS_LBRACE_TOKEN:
       r.oblock = state.consumeSimpleBlock()
@@ -484,7 +543,7 @@ proc consumeAtRule(state: var CSSParseState): CSSAtRule =
   while state.at < state.tokens.len:
     let t = state.consume()
     if t of CSSSimpleBlock:
-      result.oblock = state.consumeSimpleBlock()
+      result.oblock = CSSSimpleBlock(t)
     elif t == CSS_SEMICOLON_TOKEN:
       return result
     elif t ==  CSS_LBRACE_TOKEN:
@@ -535,7 +594,6 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
 #> and at-rules, as CSS 2.1 does for @page. Unexpected at-rules (which could be
 #> all of them, in a given context) are invalid and should be ignored by the
 #> consumer.
-#Wow this is ugly.
 proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
   while state.has():
     let t = state.consume()
@@ -594,9 +652,11 @@ proc parseStylesheet(inputStream: Stream): CSSRawStylesheet =
 proc parseListOfRules(state: var CSSParseState): seq[CSSRule] =
   return state.consumeListOfRules()
 
-proc parseListOfRules(inputStream: Stream): seq[CSSRule] =
+proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
   var state = CSSParseState()
-  state.tokens = tokenizeCSS(inputStream)
+  state.tokens = collect(newSeq):
+    for cval in cvals:
+      CSSParsedItem(cval)
   return state.parseListOfRules()
 
 proc parseRule(state: var CSSParseState): CSSRule =
@@ -637,7 +697,7 @@ proc parseDeclaration(state: var CSSParseState): CSSDeclaration =
 
   raise newException(SyntaxError, "No declaration found!")
 
-proc parseCSSDeclaration*(inputStream: Stream): CSSDeclaration =
+proc parseDeclaration*(inputStream: Stream): CSSDeclaration =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseDeclaration()
@@ -645,15 +705,15 @@ proc parseCSSDeclaration*(inputStream: Stream): CSSDeclaration =
 proc parseListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
   return state.consumeListOfDeclarations()
 
-proc parseCSSListOfDeclarations*(cvals: seq[CSSComponentValue]): seq[CSSParsedItem] =
-  var state = CSSParseState()
+proc parseListOfDeclarations*(cvals: seq[CSSComponentValue]): seq[CSSParsedItem] =
+  var state: CSSParseState
   state.tokens = collect(newSeq):
     for cval in cvals:
       CSSParsedItem(cval)
   return state.consumeListOfDeclarations()
 
-proc parseCSSListOfDeclarations*(inputStream: Stream): seq[CSSParsedItem] =
-  var state = CSSParseState()
+proc parseListOfDeclarations*(inputStream: Stream): seq[CSSParsedItem] =
+  var state: CSSParseState
   state.tokens = tokenizeCSS(inputStream)
   return state.parseListOfDeclarations()
 
@@ -670,8 +730,8 @@ proc parseComponentValue(state: var CSSParseState): CSSComponentValue =
   if state.has():
     raise newException(SyntaxError, "EOF not reached!")
 
-proc parseCSSComponentValue*(inputStream: Stream): CSSComponentValue =
-  var state = CSSParseState()
+proc parseComponentValue*(inputStream: Stream): CSSComponentValue =
+  var state: CSSParseState
   state.tokens = tokenizeCSS(inputStream)
   return state.parseComponentValue()
 
@@ -679,75 +739,33 @@ proc parseListOfComponentValues(state: var CSSParseState): seq[CSSComponentValue
   while state.has():
     result.add(state.consumeComponentValue())
 
-proc parseCSSListOfComponentValues*(inputStream: Stream): seq[CSSComponentValue] =
+proc parseListOfComponentValues*(inputStream: Stream): seq[CSSComponentValue] =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseListOfComponentValues()
 
-proc parseCommaSeparatedListOfComponentValues(state: var CSSParseState): seq[CSSComponentValue] =
-  while state.has(1):
+proc parseCommaSeparatedListOfComponentValues(state: var CSSParseState): seq[seq[CSSComponentValue]] =
+  if state.has():
+    result.add(newSeq[CSSComponentValue]())
+
+  while state.has():
     let cvl = state.consumeComponentValue()
     if cvl != CSS_COMMA_TOKEN:
-      result.add(state.consumeComponentValue())
+      result[^1].add(cvl)
+    else:
+      result.add(newSeq[CSSComponentValue]())
 
-proc parseCommaSeparatedListOfComponentValues(inputStream: Stream): seq[CSSComponentValue] =
+proc parseCommaSeparatedListOfComponentValues*(cvals: seq[CSSComponentValue]): seq[seq[CSSComponentValue]] =
+  var state: CSSParseState
+  state.tokens = collect(newSeq):
+    for cval in cvals:
+      CSSParsedItem(cval)
+  return state.parseCommaSeparatedListOfComponentValues()
+
+proc parseCommaSeparatedListOfComponentValues(inputStream: Stream): seq[seq[CSSComponentValue]] =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseCommaSeparatedListOfComponentValues()
-
-func `$`*(c: CSSComponentValue): string =
-  if c of CSSToken:
-    case CSSToken(c).tokenType:
-    of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
-      result &= $CSSToken(c).tokenType & $CSSToken(c).value & '\n'
-    of CSS_HASH_TOKEN:
-      result &= '#' & $CSSToken(c).value
-    of CSS_IDENT_TOKEN:
-      result &= $CSSToken(c).value
-    of CSS_STRING_TOKEN:
-      result &= ("\"" & $CSSToken(c).value & "\"")
-    of CSS_DELIM_TOKEN:
-      result &= $CSSToken(c).rvalue
-    of CSS_DIMENSION_TOKEN:
-      result &= $CSSToken(c).tokenType & $CSSToken(c).nvalue & "unit" & $CSSToken(c).unit & $CSSToken(c).tflagb
-    of CSS_NUMBER_TOKEN:
-      result &= $CSSToken(c).nvalue & $CSSToken(c).unit
-    of CSS_PERCENTAGE_TOKEN:
-      result &= $CSSToken(c).nvalue & "%"
-    of CSS_COLON_TOKEN:
-      result &= ":"
-    of CSS_WHITESPACE_TOKEN:
-      result &= " "
-    of CSS_SEMICOLON_TOKEN:
-      result &= ";\n"
-    of CSS_COMMA_TOKEN:
-      result &= ","
-    else:
-      result &= $CSSToken(c).tokenType & '\n'
-  elif c of CSSDeclaration:
-    result &= $CSSDeclaration(c).name
-    result &= ": "
-    for s in CSSDeclaration(c).value:
-      result &= $s
-    result &= ";\n"
-  elif c of CSSFunction:
-    result &= $CSSFunction(c).name & "("
-    for s in CSSFunction(c).value:
-      result &= $s
-    result &= ")"
-  elif c of CSSSimpleBlock:
-    case CSSSimpleBlock(c).token.tokenType
-    of CSS_LBRACE_TOKEN: result &= "{\n"
-    of CSS_LPAREN_TOKEN: result &= "("
-    of CSS_LBRACKET_TOKEN: result &= "["
-    else: discard
-    for s in CSSSimpleBlock(c).value:
-      result &= $s
-    case CSSSimpleBlock(c).token.tokenType
-    of CSS_LBRACE_TOKEN: result &= "\n}"
-    of CSS_LPAREN_TOKEN: result &= ")"
-    of CSS_LBRACKET_TOKEN: result &= "]"
-    else: discard
 
 proc parseCSS*(inputStream: Stream): CSSRawStylesheet =
   if inputStream.atEnd():

@@ -1,11 +1,12 @@
-import streams
-import sequtils
-import sugar
 import algorithm
+import sequtils
+import streams
+import sugar
 
+import css/mediaquery
+import css/parser
 import css/select
 import css/selparser
-import css/parser
 import css/sheet
 import css/values
 import html/dom
@@ -35,16 +36,57 @@ proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
   elem.cssapplied = true
   elem.rendered = false
 
+func applies(mq: MediaQuery): bool =
+  case mq.t
+  of CONDITION_MEDIA:
+    case mq.media
+    of MEDIA_TYPE_ALL: return true
+    of MEDIA_TYPE_PRINT: return false
+    of MEDIA_TYPE_SCREEN: return true
+    of MEDIA_TYPE_SPEECH: return false
+    of MEDIA_TYPE_TTY: return true
+    of MEDIA_TYPE_UNKNOWN: return false
+  of CONDITION_NOT:
+    return not mq.n.applies()
+  of CONDITION_AND:
+    return mq.anda.applies() and mq.andb.applies()
+  of CONDITION_OR:
+    return mq.ora.applies() or mq.orb.applies()
+  of CONDITION_FEATURE:
+    case mq.feature.t
+    of FEATURE_COLOR:
+      return true #TODO
+    of FEATURE_GRID:
+      return mq.feature.b
+    of FEATURE_HOVER:
+      return mq.feature.b
+    of FEATURE_PREFERS_COLOR_SCHEME:
+      return mq.feature.b
+
+func applies(mqlist: MediaQueryList): bool =
+  for mq in mqlist:
+    if mq.applies():
+      return true
+  return false
+
+func calcRule(tosorts: var array[PseudoElem, seq[tuple[s:int,b:CSSSimpleBlock]]], elem: Element, rule: CSSRuleBase) =
+  if rule of CSSRuleDef:
+    let rule = CSSRuleDef(rule)
+    for sel in rule.sels:
+      let match = elem.selectorsMatch(sel)
+      if match.success:
+        let spec = getSpecificity(sel)
+        tosorts[match.pseudo].add((spec,rule.oblock))
+  elif rule of CSSMediaQueryDef:
+    let def = CSSMediaQueryDef(rule)
+    if def.query.applies():
+      for child in def.children:
+        tosorts.calcRule(elem, child)
+
 func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
-  var tosorts: array[low(PseudoElem)..high(PseudoElem), seq[tuple[s:int,b:CSSSimpleBlock]]]
+  var tosorts: array[PseudoElem, seq[tuple[s:int,b:CSSSimpleBlock]]]
   for rule in rules:
-    if rule of CSSRuleDef:
-      let rule = CSSRuleDef(rule)
-      for sel in rule.sels:
-        let match = elem.selectorsMatch(sel)
-        if match.success:
-          let spec = getSpecificity(sel)
-          tosorts[match.pseudo].add((spec,rule.oblock))
+    tosorts.calcRule(elem, rule)
 
   for i in low(PseudoElem)..high(PseudoElem):
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
@@ -64,23 +106,23 @@ proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem
 
   let rules_user_agent = ua[pseudo]
   for rule in rules_user_agent:
-    let decls = parseCSSListOfDeclarations(rule.value)
+    let decls = parseListOfDeclarations(rule.value)
     ares.applyItems(decls)
 
   let rules_user = user[pseudo]
   for rule in rules_user:
-    let decls = parseCSSListOfDeclarations(rule.value)
+    let decls = parseListOfDeclarations(rule.value)
     ares.applyItems(decls)
 
   let rules_author = author[pseudo]
   for rule in rules_author:
-    let decls = parseCSSListOfDeclarations(rule.value)
+    let decls = parseListOfDeclarations(rule.value)
     ares.applyItems(decls)
 
   if pseudo == PSEUDO_NONE:
     let style = element.attr("style")
     if style.len > 0:
-      let inline_rules = newStringStream(style).parseCSSListOfDeclarations()
+      let inline_rules = newStringStream(style).parseListOfDeclarations()
       ares.applyItems(inline_rules)
 
   for rule in ares.normal:
