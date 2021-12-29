@@ -16,7 +16,7 @@ type
   ApplyResult = object
     normal: seq[CSSDeclaration]
     important: seq[CSSDeclaration]
-  RuleList* = array[low(PseudoElem)..high(PseudoElem), seq[CSSSimpleBlock]]
+  RuleList* = array[PseudoElem, seq[CSSSimpleBlock]]
 
 proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
   var parent: CSSSpecifiedValues
@@ -88,7 +88,7 @@ func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
   for rule in rules:
     tosorts.calcRule(elem, rule)
 
-  for i in low(PseudoElem)..high(PseudoElem):
+  for i in PseudoElem:
     tosorts[i].sort((x, y) => cmp(x.s,y.s))
     result[i] = tosorts[i].map((x) => x.b)
 
@@ -130,6 +130,15 @@ proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem
 
   for rule in ares.important:
     element.applyProperty(rule, pseudo)
+
+func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
+  for rule in ss:
+    if rule of CSSRuleDef:
+      result.add(rule)
+    elif rule of CSSMediaQueryDef:
+      let rule = CSSMediaQueryDef(rule)
+      if rule.query.applies():
+        result.add(rule.children.applyMediaQuery())
 
 proc applyRules*(document: Document, ua, user: CSSStylesheet) =
   var stack: seq[Element]
@@ -176,19 +185,18 @@ proc applyRules*(document: Document, ua, user: CSSStylesheet) =
       let this_rules = embedded_rules.concat()
       let authorrules = calcRules(elem, this_rules)
 
-      for pseudo in low(PseudoElem)..high(PseudoElem):
+      for pseudo in PseudoElem:
         elem.applyRules(uarules, userrules, authorrules, pseudo)
 
-    var i = elem.children.len - 1
-    while i >= 0:
-      let child = elem.children[i]
-      stack.add(child)
-      dec i
+    for i in countdown(elem.children.high, 0):
+      stack.add(elem.children[i])
 
     if rules_local.len > 0:
       discard embedded_rules.pop()
 
 proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet) =
+  let uass = uass.applyMediaQuery()
+  let userss = userss.applyMediaQuery()
   document.applyRules(uass, userss)
 
 proc refreshStyle*(elem: Element) =

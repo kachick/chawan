@@ -13,7 +13,7 @@ type
     oblock*: CSSSimpleBlock
 
   CSSConditionalDef* = ref object of CSSRuleBase
-    children*: seq[CSSRuleBase]
+    children*: CSSStylesheet
 
   CSSMediaQueryDef* = ref object of CSSConditionalDef
     query*: MediaQueryList
