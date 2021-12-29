@@ -35,7 +35,7 @@ type
   Document* = ref DocumentObj
   DocumentObj = object of NodeObj
     location*: Uri
-    type_elements*: array[low(TagType)..high(TagType), seq[Element]]
+    type_elements*: array[TagType, seq[Element]]
     id_elements*: Table[string, seq[Element]]
     class_elements*: Table[string, seq[Element]]
     all_elements*: seq[Element]

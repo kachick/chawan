@@ -45,13 +45,13 @@ type
     TAG_DIR, TAG_FONT, TAG_FRAME, TAG_NOFRAMES, TAG_FRAMESET, TAG_STRIKE, TAG_TT
 
 func getTagTypeMap(): Table[string, TagType] =
-  for i in low(TagType) .. high(TagType):
+  for i in TagType:
     let enumname = $TagType(i)
     let tagname = enumname.split('_')[1..^1].join("_").tolower()
     result[tagname] = TagType(i)
 
 func getInputTypeMap(): Table[string, InputType] =
-  for i in low(InputType) .. high(InputType):
+  for i in InputType:
     let enumname = $InputType(i)
     let tagname = enumname.split('_')[1..^1].join("_").tolower()
     result[tagname] = InputType(i)

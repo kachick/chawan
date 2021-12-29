@@ -103,9 +103,9 @@ type
       liststyletype*: CSSListStyleType
     of VALUE_NONE: discard
 
-  CSSSpecifiedValues* = ref array[low(CSSPropertyType)..high(CSSPropertyType), CSSSpecifiedValue]
+  CSSSpecifiedValues* = ref array[CSSPropertyType, CSSSpecifiedValue]
 
-  CSSValues* = array[low(PseudoElem)..high(PseudoElem), CSSSpecifiedValues]
+  CSSValues* = array[PseudoElem, CSSSpecifiedValues]
 
   CSSValueError* = object of ValueError
 
@@ -166,8 +166,8 @@ const InheritedProperties = {
   PROPERTY_LIST_STYLE_TYPE
 }
 
-func getPropInheritedArray(): array[low(CSSPropertyType)..high(CSSPropertyType), bool] =
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+func getPropInheritedArray(): array[CSSPropertyType, bool] =
+  for prop in CSSPropertyType:
     if prop in InheritedProperties:
       result[prop] = true
     else:
@@ -662,7 +662,7 @@ func calcInitial(t: CSSPropertyType): CSSSpecifiedValue =
     nv = CSSSpecifiedValue(t: t, v: v)
   return nv
 
-func getInitialTable(): array[low(CSSPropertyType)..high(CSSPropertyType), CSSSpecifiedValue] =
+func getInitialTable(): array[CSSPropertyType, CSSSpecifiedValue] =
   for i in low(result)..high(result):
     result[i] = calcInitial(i)
 
@@ -712,7 +712,7 @@ proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
   of PROPERTY_ALL:
     let global = cssGlobal(d)
     if global != VALUE_NOGLOBAL:
-      for t in low(CSSPropertyType)..high(CSSPropertyType):
+      for t in CSSPropertyType:
         vals.applyValue(parent, t, nil, global)
   of PROPERTY_MARGIN:
     let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
@@ -731,7 +731,7 @@ proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
 
 func inheritProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
   new(result)
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+  for prop in CSSPropertyType:
     if inherited(prop) and parent[prop] != nil:
       result[prop] = parent[prop]
     else:
@@ -739,5 +739,5 @@ func inheritProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
 
 func rootProperties*(): CSSSpecifiedValues =
   new(result)
-  for prop in low(CSSPropertyType)..high(CSSPropertyType):
+  for prop in CSSPropertyType:
     result[prop] = getDefault(prop)
