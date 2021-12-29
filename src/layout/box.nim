@@ -8,71 +8,65 @@ type
   BoxType* = enum
     BOX_INLINE, BOX_BLOCK, BOX_INLINE_BLOCK
 
-  Rectangle* = object
-    x1*: int
-    x2*: int
-    y1*: int
-    y2*: int
-
   CSSBox* = ref object of RootObj
     t*: BoxType
     x*: int
     y*: int
     width*: int
     children*: seq[CSSBox]
-    icontext*: InlineContext
-    bcontext*: BlockContext
+    ictx*: InlineContext
+    bctx*: BlockContext
     cssvalues*: CSSSpecifiedValues
     node*: Node
+    viewport*: Viewport
 
-  CSSInlineAtom* = ref object of CSSBox
-    dimensions*: Rectangle
+  InlineAtom* = ref object of RootObj
+    relx*: int
+    width*: int
 
-  CSSInlineRowPart* = ref object of CSSInlineAtom
+  InlineWord* = ref object of InlineAtom
     str*: string
-    rwidth*: int
+    fontstyle*: CSSFontStyle
+    fontweight*: int
+    textdecoration*: CSSTextDecoration
+    color*: CSSColor
+    nodes*: seq[Node]
 
-  CSSInlineRow* = ref object
-    content*: seq[CSSInlineAtom]
+  InlineRow* = ref object
+    atoms*: seq[InlineAtom]
+    relx*: int
     rely*: int
     width*: int
+    height*: int
 
   InlineContext* = ref object
-    fromx*: int
-    fromy*: int
-    xhigh*: int
+    relx*: int
+    width*: int
+    height*: int
+    rows*: seq[InlineRow]
+    thisrow*: InlineRow
+    specified*: CSSSpecifiedValues
+
     whitespace*: bool
     ws_initial*: bool
-    rows*: seq[CSSRowBox]
-    thisrow*: seq[CSSRowBox]
+    maxwidth*: int
 
-    #dimensions*: Rectangle
-    #content*: seq[CSSInlineRow]
-    #rcontent*: CSSInlineRow
-    #color*: CSSColor
-    #fontstyle*: CSSFontStyle
-    #fontweight*: int
-    #textdecoration*: CSSTextDecoration
-    #nodes*: seq[Node]
-
-    #maxwidth*: int
-
-  BlockContext* = ref object
-    fromy*: int
-    dimensions*: Rectangle
+  BlockContext* = ref object of InlineAtom
+    height*: int
     margin_done*: int
     margin_todo*: int
-    width*: int
-    height*: Option[int]
-    content*: seq[CSSBox]
+    inlines*: seq[InlineContext]
+    nested*: seq[BlockContext]
+    specified*: CSSSpecifiedValues
 
-  LayoutState* = object
-    nodes*: seq[Node]
+    compwidth*: int
+    compheight*: Option[int]
+
+  Viewport* = ref object
     term*: TermAttributes
-    fromy*: int
-    fromx*: int
+    nodes*: seq[Node]
 
-  CSSRowBox* = object
+  RowBox* = object
     x*: int
     y*: int
     width*: int
@@ -85,12 +79,6 @@ type
     nodes*: seq[Node]
     bottom*: int
 
-  CSSInlineBox* = ref object of CSSBox
-  CSSBlockBox* = ref object of CSSBox
-  CSSInlineBlockBox* = ref object of CSSBlockBox
-
-func width*(rectangle: Rectangle): int =
-  return rectangle.x2 - rectangle.x1
-
-func height*(rectangle: Rectangle): int =
-  return rectangle.y2 - rectangle.y1
+  InlineBox* = ref object of CSSBox
+  BlockBox* = ref object of CSSBox
+  InlineBlockBox* = ref object of CSSBox
