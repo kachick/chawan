@@ -248,6 +248,40 @@ func endsInNumber(input: string): bool =
     return true
   return false
 
+func domainToAscii*(domain: string, bestrict = false): Option[string] =
+  var needsprocessing = false
+  for s in domain.split('.'):
+    var i = 0
+    var xn = 0
+    while i < s.len:
+      if s[i] notin Ascii:
+        needsprocessing = true
+        break
+      case i
+      of 0:
+        if s[i] == 'x': inc xn
+      of 1:
+        if s[i] == 'n': inc xn
+      of 2:
+        if s[i] == '-': inc xn
+      of 3:
+        if s[i] == '-' and xn == 3:
+          needsprocessing = true
+          break
+      else: discard
+      inc i
+    if needsprocessing:
+      break
+  if bestrict or needsprocessing:
+    #Note: we don't implement STD3 separately, it's always true
+    result = domain.unicodeToAscii(false, true, true, false, bestrict)
+    if result.isnone or result.get == "":
+      #TODO validation error
+      return none(string)
+    return result
+  else:
+    return domain.toAsciiLower().some
+
 func parseHost(input: string, isnotspecial = false): Option[Host] =
   if input.len == 0: return
   if input[0] == '[':

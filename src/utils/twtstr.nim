@@ -8,6 +8,9 @@ import math
 import sugar
 import sequtils
 import options
+import punycode
+
+import data/idna
 
 when defined(posix):
   import posix
@@ -104,7 +107,7 @@ func findChar*(str: string, c: Rune, start: int = 0): int =
 func getLowerChars*(): string =
   result = ""
   for i in 0..255:
-    if chr(i) >= 'A' and chr(i) <= 'Z':
+    if chr(i) in 'A'..'Z':
       result &= chr(i + 32)
     else:
       result &= chr(i)
@@ -113,6 +116,11 @@ const lowerChars = getLowerChars()
 
 func tolower*(c: char): char =
   return lowerChars[int(c)]
+
+func toAsciiLower*(str: string): string =
+  result = newString(str.len)
+  for i in 0..str.high:
+    result[i] = str[i].tolower()
 
 func getrune(s: string): Rune =
   return s.toRunes()[0]
@@ -165,8 +173,8 @@ func decValue*(r: Rune): int =
 const HexChars = "0123456789ABCDEF"
 func toHex*(c: char): string =
   result = newString(2)
-  result[0] = HexChars[(int8(c) and 0xF)]
-  result[1] = HexChars[(int8(c) shr 4)]
+  result[0] = HexChars[(uint8(c) and 0xF)]
+  result[1] = HexChars[(uint8(c) shr 4)]
 
 func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
   var i = 0
@@ -449,13 +457,79 @@ func clearControls*(s: string): string =
     if c notin Controls:
       result &= c
 
-#TODO ugh this'll take a while to implement properly
-func domainToAscii*(domain: string): Option[string] =
-  result = some("")
-  for c in domain:
-    if c notin Ascii:
-      return none(string)
-    result.get &= c
+func processIdna(str: string, checkhyphens, checkbidi, checkjoiners, transitionalprocessing: bool): Option[string] =
+  var mapped = ""
+  var i = 0
+  while i < str.len:
+    var r: Rune
+    fastRuneAt(str, i, r)
+    let status = getIdnaTableStatus(r)
+    case status
+    of IDNA_DISALLOWED: return none(string) #error
+    of IDNA_IGNORED: discard
+    of IDNA_MAPPED: mapped &= getIdnaMapped(r)
+    of IDNA_DEVIATION:
+      if transitionalprocessing: mapped &= getDeviationMapped(r)
+      else: mapped &= r
+    of IDNA_VALID: mapped &= r
+  
+  #TODO normalize
+  var labels: seq[string]
+  for label in str.split('.'):
+    var s = label
+    if label.startsWith("xn--"):
+      try:
+        s = punycode.decode(label)
+      except PunyError:
+        return none(string) #error
+    #TODO check normalization
+    if checkhyphens:
+      if s.len >= 4 and s[2] == '-' and s[3] == '-':
+        return none(string) #error
+      if s.len > 0 and s[0] == '-' and s[^1] == '-':
+        return none(string) #error
+    var i = 0
+    while i < s.len:
+      if s[i] == '.':
+        return none(string) #error
+      var r: Rune
+      fastRuneAt(str, i, r)
+      #TODO check general category mark
+      let status = getIdnaTableStatus(r)
+      case status
+      of IDNA_DISALLOWED, IDNA_IGNORED, IDNA_MAPPED:
+        return none(string) #error
+      of IDNA_DEVIATION:
+        if transitionalprocessing:
+          return none(string) #error
+      of IDNA_VALID: discard
+      #TODO check joiners
+      #TODO check bidi
+    labels.add(s)
+  return labels.join('.').some
+
+func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitionalprocessing, verifydnslength: bool): Option[string] =
+  let processed = s.processIdna(checkhyphens, checkbidi, checkjoiners,
+                                transitionalprocessing)
+  if processed.isnone:
+    return none(string) #error
+  var labels: seq[string]
+  for label in processed.get.split('.'):
+    var needsconversion = false
+    for c in label:
+      if c notin Ascii:
+        needsconversion = true
+        break
+    if needsconversion:
+      try:
+        let converted = "xn--" & punycode.encode(label)
+        #TODO verify dns length
+        labels.add(converted)
+      except PunyError:
+        return none(string) #error
+    else:
+      labels.add(label)
+  return labels.join('.').some
 
 proc expandPath*(path: string): string =
   if path.len == 0:
@@ -672,8 +746,6 @@ const ambiguous = [
 # variant might be useful for users of CJK legacy encodings who want to migrate
 # to UCS without changing the traditional terminal character-width behaviour.
 # It is not otherwise recommended for general use.
-#
-# TODO: currently these are unused, the user should be able to toggle them
 
 # auxiliary function for binary search in interval table
 func bisearch(ucs: Rune, table: openarray[(int, int)]): bool =
