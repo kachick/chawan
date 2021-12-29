@@ -16,7 +16,7 @@ type
   ApplyResult = object
     normal: seq[CSSDeclaration]
     important: seq[CSSDeclaration]
-  RuleList* = array[PseudoElem, seq[CSSSimpleBlock]]
+  RuleList* = array[PseudoElem, seq[CSSDeclaration]]
 
 proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
   var parent: CSSSpecifiedValues
@@ -69,14 +69,16 @@ func applies(mqlist: MediaQueryList): bool =
       return true
   return false
 
-func calcRule(tosorts: var array[PseudoElem, seq[tuple[s:int,b:CSSSimpleBlock]]], elem: Element, rule: CSSRuleBase) =
+type ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
+
+proc calcRule(tosorts: var ToSorts, elem: Element, rule: CSSRuleBase) =
   if rule of CSSRuleDef:
     let rule = CSSRuleDef(rule)
     for sel in rule.sels:
       let match = elem.selectorsMatch(sel)
       if match.success:
         let spec = getSpecificity(sel)
-        tosorts[match.pseudo].add((spec,rule.oblock))
+        tosorts[match.pseudo].add((spec,rule.decls))
   elif rule of CSSMediaQueryDef:
     let def = CSSMediaQueryDef(rule)
     if def.query.applies():
@@ -84,45 +86,35 @@ func calcRule(tosorts: var array[PseudoElem, seq[tuple[s:int,b:CSSSimpleBlock]]]
         tosorts.calcRule(elem, child)
 
 func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
-  var tosorts: array[PseudoElem, seq[tuple[s:int,b:CSSSimpleBlock]]]
+  var tosorts: ToSorts
   for rule in rules:
     tosorts.calcRule(elem, rule)
 
   for i in PseudoElem:
-    tosorts[i].sort((x, y) => cmp(x.s,y.s))
-    result[i] = tosorts[i].map((x) => x.b)
+    tosorts[i].sort((x, y) => cmp(x[0], y[0]))
+    result[i] = collect(newSeq):
+      for item in tosorts[i]:
+        for dl in item[1]:
+          dl
 
-proc applyItems(ares: var ApplyResult, decls: seq[CSSParsedItem]) =
-  for item in decls:
-    if item of CSSDeclaration:
-      let decl = CSSDeclaration(item)
-      if decl.important:
-        ares.important.add(decl)
-      else:
-        ares.normal.add(decl)
+proc applyItems(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
+  for decl in decls:
+    if decl.important:
+      ares.important.add(decl)
+    else:
+      ares.normal.add(decl)
 
 proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
   var ares: ApplyResult
 
-  let rules_user_agent = ua[pseudo]
-  for rule in rules_user_agent:
-    let decls = parseListOfDeclarations(rule.value)
-    ares.applyItems(decls)
-
-  let rules_user = user[pseudo]
-  for rule in rules_user:
-    let decls = parseListOfDeclarations(rule.value)
-    ares.applyItems(decls)
-
-  let rules_author = author[pseudo]
-  for rule in rules_author:
-    let decls = parseListOfDeclarations(rule.value)
-    ares.applyItems(decls)
+  ares.applyItems(ua[pseudo])
+  ares.applyItems(user[pseudo])
+  ares.applyItems(author[pseudo])
 
   if pseudo == PSEUDO_NONE:
     let style = element.attr("style")
     if style.len > 0:
-      let inline_rules = newStringStream(style).parseListOfDeclarations()
+      let inline_rules = newStringStream(style).parseListOfDeclarations2()
       ares.applyItems(inline_rules)
 
   for rule in ares.normal:

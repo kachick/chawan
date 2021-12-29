@@ -181,7 +181,7 @@ func propertyType(s: string): CSSPropertyType =
 func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
-macro `{}`*(vals: CSSSpecifiedValues, s: typed): untyped =
+macro `{}`*(vals: CSSSpecifiedValues, s: string): untyped =
   let t = propertyType($s)
   let vs = $valueType(t)
   let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
@@ -230,7 +230,7 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
-const colors = {
+const Colors = {
   "aliceblue": 0xf0f8ff,
   "antiquewhite": 0xfaebd7,
   "aqua": 0x00ffff,
@@ -381,7 +381,7 @@ const colors = {
   "rebeccapurple": 0x663399,
 }.map((a) => (a[0], CSSColor(rgba: RGBAColor(a[1])))).toTable()
 
-const units = {
+const Units = {
   "%": UNIT_PERC,
   "cm": UNIT_CM,
   "mm": UNIT_MM,
@@ -401,8 +401,8 @@ const units = {
 }.toTable()
 
 func cssLength(val: float64, unit: string): CSSLength =
-  if unit in units:
-    CSSLength(num: val, unit: units[unit])
+  if unit in Units:
+    CSSLength(num: val, unit: Units[unit])
   else:
     raise newException(CSSValueError, "Invalid unit")
 
@@ -439,8 +439,8 @@ func cssColor(d: CSSDeclaration): CSSColor =
           raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:
         let s = tok.value
-        if $s in colors:
-          return colors[$s]
+        if $s in Colors:
+          return Colors[$s]
         else:
           raise newException(CSSValueError, "Invalid color")
       else:
@@ -475,8 +475,6 @@ func cssColor(d: CSSDeclaration): CSSColor =
   raise newException(CSSValueError, "Invalid color")
 
 func cellColor*(color: CSSColor): CellColor =
-  #TODO better would be to store color names and return term colors on demand
-  #option)
   return CellColor(rgb: true, rgbcolor: RGBColor(color.rgba))
 
 func cssLength(d: CSSDeclaration): CSSLength =
@@ -635,9 +633,9 @@ proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValue
 func getInitialColor(t: CSSPropertyType): CSSColor =
   case t
   of PROPERTY_COLOR:
-    return colors["white"]
+    return Colors["white"]
   else:
-    return colors["black"]
+    return Colors["black"]
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t

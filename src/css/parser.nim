@@ -594,6 +594,7 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
 #> and at-rules, as CSS 2.1 does for @page. Unexpected at-rules (which could be
 #> all of them, in a given context) are invalid and should be ignored by the
 #> consumer.
+#So we have two versions, one with at rules and one without.
 proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
   while state.has():
     let t = state.consume()
@@ -602,6 +603,29 @@ proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
     elif t == CSS_AT_KEYWORD_TOKEN:
       state.reconsume()
       result.add(state.consumeAtRule())
+    elif t == CSS_IDENT_TOKEN:
+      var tempList: seq[CSSParsedItem]
+      tempList.add(CSSToken(t))
+      while state.has() and state.curr() != CSS_SEMICOLON_TOKEN:
+        tempList.add(state.consumeComponentValue())
+
+      var tempState = CSSParseState(at: 0, tokens: tempList)
+      let decl = tempState.consumeDeclaration()
+      if decl.isSome:
+        result.add(decl.get)
+    else:
+      state.reconsume()
+      if state.curr() != CSS_SEMICOLON_TOKEN:
+        discard state.consumeComponentValue()
+
+proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
+  while state.has():
+    let t = state.consume()
+    if t == CSS_wHITESPACE_TOKEN or t == CSS_SEMICOLON_TOKEN:
+      continue
+    elif t == CSS_AT_KEYWORD_TOKEN:
+      state.reconsume()
+      discard state.consumeAtRule()
     elif t == CSS_IDENT_TOKEN:
       var tempList: seq[CSSParsedItem]
       tempList.add(CSSToken(t))
@@ -716,6 +740,21 @@ proc parseListOfDeclarations*(inputStream: Stream): seq[CSSParsedItem] =
   var state: CSSParseState
   state.tokens = tokenizeCSS(inputStream)
   return state.parseListOfDeclarations()
+
+proc parseListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
+  return state.consumeListOfDeclarations2()
+
+proc parseListOfDeclarations2*(cvals: seq[CSSComponentValue]): seq[CSSDeclaration] =
+  var state: CSSParseState
+  state.tokens = collect(newSeq):
+    for cval in cvals:
+      CSSParsedItem(cval)
+  return state.consumeListOfDeclarations2()
+
+proc parseListOfDeclarations2*(inputStream: Stream): seq[CSSDeclaration] =
+  var state: CSSParseState
+  state.tokens = tokenizeCSS(inputStream)
+  return state.parseListOfDeclarations2()
 
 proc parseComponentValue(state: var CSSParseState): CSSComponentValue =
   while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
