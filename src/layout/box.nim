@@ -6,7 +6,7 @@ import io/term
 
 type
   BoxType* = enum
-    BOX_INLINE, BOX_BLOCK, BOX_INLINE_BLOCK
+    BOX_INLINE, BOX_BLOCK, BOX_INLINE_BLOCK, BOX_LIST_ITEM
 
   CSSBox* = ref object of RootObj
     t*: BoxType
@@ -14,9 +14,8 @@ type
     y*: int
     width*: int
     children*: seq[CSSBox]
-    ictx*: InlineContext
-    bctx*: BlockContext
-    cssvalues*: CSSSpecifiedValues
+    inlinelayout*: bool
+    specified*: CSSSpecifiedValues
     node*: Node
     viewport*: Viewport
 
@@ -45,7 +44,6 @@ type
     height*: int
     rows*: seq[InlineRow]
     thisrow*: InlineRow
-    specified*: CSSSpecifiedValues
 
     whitespace*: bool
     ws_initial*: bool
@@ -55,9 +53,10 @@ type
     height*: int
     margin_done*: int
     margin_todo*: int
-    inlines*: seq[InlineContext]
+    inline*: InlineContext
     nested*: seq[BlockContext]
     specified*: CSSSpecifiedValues
+    rely*: int
 
     compwidth*: int
     compheight*: Option[int]
@@ -80,5 +79,10 @@ type
     bottom*: int
 
   InlineBox* = ref object of CSSBox
+    text*: seq[Text]
+    ictx*: InlineContext
+    newline*: bool
   BlockBox* = ref object of CSSBox
+    bctx*: BlockContext
   InlineBlockBox* = ref object of CSSBox
+  ListItemBox* = ref object of CSSBox

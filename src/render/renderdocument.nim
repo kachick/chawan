@@ -140,30 +140,22 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int) 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int) =
   var x = x
   var y = y
-  if ctx.nested.len == 0:
-    for ictx in ctx.inlines:
-      grid.renderInlineContext(ictx, x + ictx.relx, y)
+  if ctx.inline != nil:
+    assert ctx.nested.len == 0
+    grid.renderInlineContext(ctx.inline, x + ctx.inline.relx, y)
   else:
     for ctx in ctx.nested:
-      grid.renderBlockContext(ctx, x + ctx.relx, y)
+      grid.renderBlockContext(ctx, x + ctx.relx, y + ctx.rely)
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
 proc renderDocument*(document: Document, attrs: TermAttributes, userstyle: CSSStylesheet): FlexibleGrid =
   document.applyStylesheets(uastyle, userstyle)
-  let rootbox = document.alignBoxes(attrs)
+  let rootbox = document.renderLayout(attrs)
   var stack: seq[BlockContext]
-  stack.add(rootbox.bctx)
-  var x = 0
-  var y = 0
-  while stack.len > 0:
-    let ctx = stack.pop()
-    if ctx.nested.len == 0:
-      for ictx in ctx.inlines:
-        result.renderInlineContext(ictx, x, y)
-        y += ictx.height
-    else:
-      for i in countdown(ctx.nested.high, 0):
-        stack.add(ctx.nested[i])
+  if rootbox.bctx == nil: #TODO
+    result.addLine()
+    return
+  result.renderBlockContext(rootbox.bctx, 0, 0)
   if result.len == 0:
     result.addLine()

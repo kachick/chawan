@@ -97,7 +97,15 @@ func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
         for dl in item[1]:
           dl
 
-proc applyItems(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
+#TODO couldn't these two procedures be merged?
+proc applyNormal(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
+  for decl in decls:
+    if decl.important:
+      ares.important.add(decl)
+    else:
+      ares.normal.add(decl)
+
+proc applyImportant(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
   for decl in decls:
     if decl.important:
       ares.important.add(decl)
@@ -107,15 +115,21 @@ proc applyItems(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
 proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
   var ares: ApplyResult
 
-  ares.applyItems(ua[pseudo])
-  ares.applyItems(user[pseudo])
-  ares.applyItems(author[pseudo])
+  ares.applyNormal(ua[pseudo])
+  ares.applyNormal(user[pseudo])
+  ares.applyNormal(author[pseudo])
+
+  ares.applyImportant(author[pseudo])
 
   if pseudo == PSEUDO_NONE:
     let style = element.attr("style")
     if style.len > 0:
       let inline_rules = newStringStream(style).parseListOfDeclarations2()
-      ares.applyItems(inline_rules)
+      ares.applyNormal(inline_rules)
+      ares.applyImportant(inline_rules)
+
+  ares.applyImportant(user[pseudo])
+  ares.applyImportant(ua[pseudo])
 
   for rule in ares.normal:
     element.applyProperty(rule, pseudo)

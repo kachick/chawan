@@ -2,6 +2,10 @@ area, base, source, track, link, meta, param, wbr, head, style, script {
 	display: none !important;
 }
 
+:root {
+	display: block !important;
+}
+
 address, blockquote, center, del, dir, div, dl, dt, dd, fieldset, form, h1, h2, h3, h4,
 h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, ul, body {
 	display: block;

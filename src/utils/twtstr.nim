@@ -865,6 +865,7 @@ func dakuten*(r: Rune): Rune =
 func handakuten*(r: Rune): Rune =
   if r in CanHaveHandakuten:
     return cast[Rune](cast[int](r) + 2)
+  return r
 
 func nodakuten*(r: Rune): Rune =
   return cast[Rune](cast[int](r) - 1)

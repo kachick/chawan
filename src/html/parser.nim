@@ -207,6 +207,7 @@ proc processDocumentBody(state: var HTMLParseState) =
     if state.elementNode.ownerDocument != nil:
       state.elementNode = state.elementNode.ownerDocument.body
 
+#TODO this adds text nodes to head
 proc processDocumentAddNode(state: var HTMLParseState, newNode: Node) =
   if state.elementNode.tagType == TAG_HTML:
     if state.in_body:

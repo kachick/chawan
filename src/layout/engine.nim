@@ -503,39 +503,45 @@ type InlineState = object
   nodes: seq[Node]
   word: InlineWord
   maxwidth: int
+  specified: CSSSpecifiedValues
 
 proc newWord(state: var InlineState) =
   let word = InlineWord()
-  let specified = state.ictx.specified
+  let specified = state.specified
   word.color = specified{"color"}
   word.fontstyle = specified{"font-style"}
   word.fontweight = specified{"font-weight"}
   word.textdecoration = specified{"text-decoration"}
   word.nodes = state.nodes
-  word.relx = state.ictx.thisrow.width
   state.word = word
 
 proc addWord(state: var InlineState) =
-  let row = state.ictx.thisrow
-  let word = state.word
-  row.width += word.width
-  if row.height == 0: #first word => higher than 0
-    row.height = 1
-  row.atoms.add(word)
-  state.newWord()
+  if state.word.str != "":
+    let row = state.ictx.thisrow
+    var word = state.word
+    word.relx = state.ictx.thisrow.width
+    row.width += word.width
+    if row.height == 0: #first word => higher than 0
+      row.height = 1
+    row.atoms.add(word)
+    state.newWord()
 
-func wordLen(state: InlineState): int =
-  state.word.str.len
+proc finishRow(ictx: InlineContext) =
+  if ictx.thisrow != nil and ictx.thisrow.atoms.len > 0:
+    let oldrow = ictx.thisrow
+    ictx.rows.add(oldrow)
+    ictx.height += oldrow.height
+    ictx.thisrow = InlineRow()
+    ictx.thisrow.rely = oldrow.rely + oldrow.height
 
 proc inlineWrap(state: var InlineState) =
   state.addWord()
-  state.ictx.rows.add(state.ictx.thisrow)
-  state.ictx.thisrow = nil
+  state.ictx.finishRow()
 
 proc wrap(state: var InlineState, r: Rune) =
   if state.ictx.thisrow.width + state.word.width == state.maxwidth and r == Rune(' '):
     state.addWord()
-  if state.wordLen == 0:
+  if state.word.str.len == 0:
     if r == Rune(' '):
       state.skip = true
   elif state.word.str[0] == ' ':
@@ -547,32 +553,59 @@ proc wrap(state: var InlineState, r: Rune) =
     state.ictx.ws_initial = false
 
 proc checkWrap(state: var InlineState, r: Rune) =
+  if state.specified{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
+    return
   if state.ictx.thisrow.width > state.maxwidth:
     state.wrap(r)
 
-proc checkRow(ictx: InlineContext) =
-  if ictx.thisrow == nil:
-    ictx.thisrow = InlineRow()
-
 proc flushLine(ictx: InlineContext) =
   let oldrow = ictx.thisrow
-  ictx.rows.add(ictx.thisrow)
+  oldrow.height = max(oldrow.height, 1)
+  ictx.rows.add(oldrow)
   ictx.thisrow = InlineRow()
+  ictx.thisrow.relx = oldrow.relx
+  ictx.ws_initial = true
+  ictx.whitespace = true
   ictx.thisrow.rely = oldrow.rely + oldrow.height
+  inc ictx.height
 
-proc renderText*(ictx: InlineContext, str: string, maxwidth: int) =
+proc preWrap(state: var InlineState) =
+  state.inlineWrap()
+  state.ictx.whitespace = false
+  state.ictx.ws_initial = true
+  state.skip = true
+
+proc processWhitespace(state: var InlineState, r: Rune) =
+  case state.specified{"white-space"}
+  of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
+    if state.ictx.whitespace:
+      state.ictx.ws_initial = false
+      state.skip = true
+    state.ictx.whitespace = true
+  of WHITESPACE_PRE_LINE:
+    if state.ictx.whitespace:
+      state.skip = true
+    state.ictx.ws_initial = false
+    if r == Rune('\n'):
+      state.preWrap()
+  of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
+    state.ictx.ws_initial = false
+    if r == Rune('\n'):
+      state.preWrap()
+
+proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSSpecifiedValues) =
   var state: InlineState
+  state.specified = specified
   state.ictx = ictx
   state.maxwidth = maxwidth
-  state.ictx.checkRow()
   state.newWord()
 
   var i = 0
 
+  #if str.strip().len > 0:
+    #eprint "start", str.strip()
   var r: Rune
   while i < str.len:
-    state.ictx.checkRow()
-
     var rw = 0
     case str[i]
     of ' ', '\n', '\t':
@@ -580,10 +613,18 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int) =
       r = Rune(str[i])
       inc i
       state.addWord()
+      #eprint "process", int(r)
+      state.processWhitespace(r)
+      #eprint "skip?", state.skip
+      r = Rune(' ')
     else:
       ictx.whitespace = false
       fastRuneAt(str, i, r)
       rw = r.width()
+
+#    # TODO line wrapping
+#    if rw > 1 or state.cssvalues{"word-break"} == WORD_BREAK_BREAK_ALL:
+#      state.addWord()
 
     state.checkWrap(r)
 
@@ -591,52 +632,188 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int) =
       state.skip = false
       continue
 
+    #eprint "rune is", int(r)
     state.word.str &= r
     state.word.width += rw
 
-  if state.word.str.len > 0:
-    state.addWord()
+  state.addWord()
 
 proc finish(ictx: InlineContext) =
-  if ictx.thisrow != nil and ictx.thisrow.atoms.len > 0:
-    ictx.rows.add(ictx.thisrow)
-  ictx.thisrow = nil
+  ictx.finishRow()
 
-proc newBlockContext(parent: BlockBox, specified: CSSSpecifiedValues): BlockContext =
+proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
   new(result)
-  let pwidth = specified{"width"}
+  result.rely = parent.height
+  let pwidth = box.specified{"width"}
   if pwidth.auto:
-    result.compwidth = parent.bctx.compwidth
+    result.compwidth = parent.compwidth
   else:
-    result.compwidth = pwidth.cells_w(parent.viewport, parent.bctx.compwidth)
+    result.compwidth = pwidth.cells_w(box.viewport, parent.compwidth)
+  result.specified = parent.specified
+  parent.nested.add(result)
+
+proc newBlockContext(viewport: Viewport): BlockContext =
+  new(result)
+  result.compwidth = viewport.term.width
+  result.specified = rootProperties()
+
+proc newBlockContext(parent: BlockContext): BlockContext =
+  new(result)
+  result.rely = parent.height
+  result.compwidth = parent.compwidth
+  result.specified = parent.specified.inheritProperties()
+  parent.nested.add(result)
+
+proc newInlineContext(bctx: BlockContext): InlineContext =
+  new(result)
+  result.ws_initial = true
+  result.whitespace = true
+  result.thisrow = InlineRow()
+  bctx.inline = result
+
+proc alignInline(pctx: BlockContext, box: InlineBox) =
+  let box = InlineBox(box)
+  if box.ictx == nil:
+    box.ictx = pctx.newInlineContext()
+  if box.newline:
+    box.ictx.flushLine()
+  for text in box.text:
+    assert box.children.len == 0
+    box.ictx.renderText(text.data, pctx.compwidth, box.specified)
+
+  for child in box.children:
+    let child = InlineBox(child)
+    child.ictx = box.ictx
+    pctx.alignInline(child)
+
+proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
+  let ictx = bctx.newInlineContext()
+  for child in inlines:
+    assert child.t == BOX_INLINE
+    let child = InlineBox(child)
+    child.ictx = ictx
+    bctx.alignInline(child)
+  ictx.finish()
+  bctx.height += ictx.height
+  #eprint bctx.height, "add", ictx.height
+
+proc alignBlocks(bctx: BlockContext, viewport: Viewport, blocks: seq[CSSBox])
+
+proc alignBlock(pctx: BlockContext, box: BlockBox) =
+  box.bctx = newBlockContext(pctx, box)
+
+  if box.inlinelayout:
+    # Box only contains inline boxes.
+    box.bctx.alignInlines(box.children)
+  else:
+    box.bctx.alignBlocks(box.viewport, box.children)
+
+proc alignBlocks(bctx: BlockContext, viewport: Viewport, blocks: seq[CSSBox]) =
+  # Box contains block boxes.
+  # If present, group inline boxes together in anonymous block boxes. Place
+  # block boxes inbetween these.
+  var blockgroup: seq[CSSBox]
+  var has_noinline = false
+  template flush_group() =
+    if blockgroup.len > 0:
+      let gctx = newBlockContext(bctx)
+      gctx.alignInlines(blockgroup)
+      bctx.height += gctx.height
+      blockgroup.setLen(0)
+
+  for child in blocks:
+    case child.t
+    of BOX_BLOCK:
+      let child = BlockBox(child)
+      flush_group()
+      bctx.alignBlock(child)
+      bctx.height += child.bctx.height
+    of BOX_INLINE:
+      if child.inlinelayout:
+        blockgroup.add(child)
+      else:
+        flush_group()
+        bctx.alignBlocks(viewport, child.children)
+        #eprint "put"
+    else: discard #TODO
+  flush_group()
+
+proc getBox(specified: CSSSpecifiedValues): CSSBox =
+  case specified{"display"}
+  of DISPLAY_BLOCK:
+    result = BlockBox()
+    result.t = BOX_BLOCK
+  of DISPLAY_INLINE_BLOCK:
+    result = InlineBlockBox()
+    result.t = BOX_INLINE_BLOCK
+  of DISPLAY_INLINE:
+    result = InlineBox()
+    result.t = BOX_INLINE
+  of DISPLAY_LIST_ITEM:
+    result = ListItemBox()
+    result.t = BOX_LIST_ITEM
+  of DISPLAY_NONE: return nil
+  else: return nil
   result.specified = specified
 
-proc newBlockBox(parent: BlockBox, specified: CSSSpecifiedValues): BlockBox =
-  result = BlockBox()
-  result.bctx = parent.newBlockContext(specified)
+proc getTextBox(box: CSSBox): InlineBox =
+  new(result)
+  result.inlinelayout = true
+  result.specified = box.specified
 
-proc newBlockBox(viewport: Viewport, specified: CSSSpecifiedValues): BlockBox =
-  result = BlockBox()
-  result.bctx = BlockContext(compwidth: viewport.term.width)
-  result.bctx.specified = specified
+proc generateBox(elem: Element, viewport: Viewport): CSSBox =
+  let box = getBox(elem.css)
 
-proc newInlineContext(box: BlockBox): InlineContext =
-  result = InlineContext()
-  result.specified = box.bctx.specified
-  box.bctx.inlines.add(result)
+  if box == nil:
+    return nil
 
-proc processElement(parent: CSSBox, element: Element) =
-  if parent of BlockBox:
-    let parent = BlockBox(parent)
-    let inline = InlineBox()
-    inline.ictx = parent.newInlineContext()
-    inline.ictx.renderText("Hello, world!", parent.viewport.term.width)
-    inline.ictx.flushLine()
-    inline.ictx.renderText("Hello, world!", parent.viewport.term.width)
-    inline.ictx.finish()
+  var ibox: InlineBox
+  template add_ibox() =
+    if ibox != nil:
+      ibox.viewport = viewport #TODO
+      box.children.add(ibox)
+      ibox = nil
 
-proc alignBoxes*(document: Document, term: TermAttributes): BlockBox =
-  var viewport = Viewport(term: term)
-  result = newBlockBox(viewport, rootProperties())
-  result.viewport = viewport
-  result.processElement(document.root)
+  box.inlinelayout = true
+  for child in elem.childNodes:
+    case child.nodeType
+    of ELEMENT_NODE:
+      let elem = Element(child)
+      if elem.tagType == TAG_BR:
+        add_ibox()
+        if box.t == BOX_INLINE:
+          let box = InlineBox(box)
+          box.newline = true
+        else:
+          ibox = box.getTextBox()
+          ibox.newline = true
+
+      let cbox = generateBox(elem, viewport)
+      if cbox != nil:
+        add_ibox()
+        box.children.add(cbox)
+        if cbox.t != BOX_INLINE or not cbox.inlinelayout:
+          box.inlinelayout = false
+    of TEXT_NODE:
+      if ibox == nil:
+        ibox = box.getTextBox()
+      ibox.text.add(Text(child))
+    else: discard
+  add_ibox()
+
+  box.viewport = viewport #TODO
+
+  return box
+
+proc generateBoxes(document: Document, viewport: Viewport): BlockBox =
+  let box = document.root.generateBox(viewport)
+  assert box != nil and box.t == BOX_BLOCK #TODO this shouldn't be enforced by the ua stylesheet
+
+  return BlockBox(box)
+
+proc renderLayout*(document: Document, term: TermAttributes): BlockBox =
+  #eprint document.root
+  let viewport = Viewport(term: term)
+  let root = document.generateBoxes(viewport)
+  newBlockContext(root.viewport).alignBlock(root)
+  return root
