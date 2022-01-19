@@ -50,7 +50,6 @@ type
     thisrow*: InlineRow
 
     whitespace*: bool
-    ws_initial*: bool
     maxwidth*: int
 
   BlockContext* = ref object of InlineAtom

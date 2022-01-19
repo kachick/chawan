@@ -67,8 +67,7 @@ func generateFullOutput(buffer: Buffer): string =
 
   for cell in buffer.display:
     if x >= buffer.width:
-      if w < buffer.width:
-        result &= EL()
+      result &= EL()
       result &= '\n'
       x = 0
       w = 0
@@ -79,8 +78,7 @@ func generateFullOutput(buffer: Buffer): string =
     w += cell.width()
     inc x
 
-  if w < buffer.width:
-    result &= EL()
+  result &= EL()
   result &= '\n'
 
 # generate a sequence of instructions to replace the previous frame with the
