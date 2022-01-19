@@ -759,6 +759,13 @@ proc getBox(specified: CSSSpecifiedValues): CSSBox =
   result.t = specified{"display"}
   result.specified = specified
 
+# Returns a block box, disregarding the specified value
+proc getBlockBox(specified: CSSSpecifiedValues): BlockBox =
+  new(result)
+  result.t = DISPLAY_BLOCK
+  result.specified = specified.copyProperties()
+  result.specified{"display"} = DISPLAY_BLOCK
+
 proc getTextBox(box: CSSBox): InlineBox =
   new(result)
   result.inlinelayout = true
@@ -767,6 +774,7 @@ proc getTextBox(box: CSSBox): InlineBox =
 
 proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
   let box = getBox(specified)
+
   if box == nil:
     return nil
   box.inlinelayout = true
@@ -776,9 +784,7 @@ proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
     box.children.add(content)
   return box
 
-proc generateBox(elem: Element): CSSBox =
-  let box = getBox(elem.css)
-
+proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
   if box == nil:
     return nil
 
@@ -829,9 +835,9 @@ proc generateBox(elem: Element): CSSBox =
   return box
 
 proc generateBoxes(document: Document): BlockBox =
-  let box = document.root.generateBox()
+  let box = document.root.generateBox(getBlockBox(document.root.css))
   assert box != nil
-  assert box.t == DISPLAY_BLOCK #TODO this shouldn't be enforced by the ua stylesheet
+  assert box.t == DISPLAY_BLOCK
 
   return BlockBox(box)
 

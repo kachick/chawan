@@ -187,6 +187,14 @@ macro `{}`*(vals: CSSSpecifiedValues, s: string): untyped =
   let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
   result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
+macro `{}=`*(vals: CSSSpecifiedValues, s: string, v: typed): untyped =
+  let t = propertyType($s)
+  let vs = $valueType(t)
+  let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
+  let expr = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
+  result = quote do:
+    `expr` = `v`
+
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
@@ -734,6 +742,11 @@ func inheritProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
       result[prop] = parent[prop]
     else:
       result[prop] = getDefault(prop)
+
+func copyProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
+  new(result)
+  for prop in CSSPropertyType:
+    result[prop] = parent[prop]
 
 func rootProperties*(): CSSSpecifiedValues =
   new(result)
