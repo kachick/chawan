@@ -725,6 +725,13 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
       alignBlock(child)
       bctx.height += child.bctx.height
       bctx.width = max(bctx.width, child.bctx.width)
+    of DISPLAY_LIST_ITEM:
+      let child = ListItemBox(child)
+      flush_group()
+      child.bctx = newBlockContext(bctx, child)
+      alignBlock(child)
+      bctx.height += child.bctx.height
+      bctx.width = max(bctx.width, child.bctx.width)
     of DISPLAY_INLINE:
       if child.inlinelayout:
         blockgroup.add(child)
@@ -768,9 +775,9 @@ proc getBlockBox(specified: CSSSpecifiedValues): BlockBox =
 
 proc getTextBox(box: CSSBox): InlineBox =
   new(result)
-  result.inlinelayout = true
-  result.specified = box.specified
   result.t = DISPLAY_INLINE
+  result.inlinelayout = true
+  result.specified = box.specified.inheritProperties()
 
 proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
   let box = getBox(specified)
@@ -800,6 +807,15 @@ proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
       box.inlinelayout = false
 
   box.inlinelayout = true
+
+  if box.t == DISPLAY_LIST_ITEM:
+    var ordinalvalue = 1
+    if elem.tagType == TAG_LI:
+      ordinalvalue = HTMLLIElement(elem).ordinalvalue
+    let marker = box.getTextBox()
+    marker.text.add(elem.css{"list-style-type"}.listMarker(ordinalvalue))
+    add_box(marker)
+
   let before = elem.pseudo[PSEUDO_BEFORE]
   if before != nil:
     let bbox = getPseudoBox(before)

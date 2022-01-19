@@ -82,4 +82,4 @@ type
     bctx*: BlockContext
   InlineBlockBox* = ref object of BlockBox
     ictx*: InlineContext
-  ListItemBox* = ref object of CSSBox
+  ListItemBox* = ref object of BlockBox
