@@ -525,24 +525,22 @@ proc finishRow(ictx: InlineContext) =
 
 proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSSpecifiedValues) =
   # Whitespace between words
+  var shift = 0
+  let whitespacepre = specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
   if ictx.whitespace:
-    if ictx.thisrow.atoms.len > 0:
-      inc ictx.thisrow.width
-      ictx.whitespace = false
-    elif specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}:
-      inc ictx.thisrow.width
-    else:
-      ictx.whitespace = false
+    if ictx.thisrow.atoms.len > 0 or whitespacepre:
+      shift = 1
+    ictx.whitespace = false
 
   # Line wrapping
   if specified{"white-space"} notin {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     if specified{"word-break"} == WORD_BREAK_NORMAL and ictx.thisrow.width + atom.width > maxwidth:
       ictx.finishRow()
+      if not whitespacepre:
+        # No whitespace on newline
+        shift = 0
 
-  # Whitespace (from pre/pre-wrap)
-  if ictx.whitespace:
-    inc ictx.thisrow.relx
-    ictx.whitespace = false
+  ictx.thisrow.width += shift
 
   atom.relx = ictx.thisrow.width
   ictx.thisrow.width += atom.width
