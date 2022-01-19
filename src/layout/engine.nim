@@ -102,7 +102,7 @@ func cells_h(l: CSSLength, state: Viewport, p: int): int =
 #
 #func newBlockBox(state: var LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSBlockBox =
 #  new(result)
-#  result.t = BOX_BLOCK
+#  result.t = DISPLAY_BLOCK
 #  if parent.icontext.conty:
 #    parent.flushConty()
 #  result.x = parent.x
@@ -114,7 +114,7 @@ func cells_h(l: CSSLength, state: Viewport, p: int): int =
 #
 #func newInlineBlockBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSInlineBlockBox =
 #  new(result)
-#  result.t = BOX_INLINE_BLOCK
+#  result.t = DISPLAY_INLINE_BLOCK
 #  result.x = parent.icontext.fromx
 #
 #  state.applyBlockStart(result, parent, vals)
@@ -124,7 +124,7 @@ func cells_h(l: CSSLength, state: Viewport, p: int): int =
 #
 #func newInlineBox*(state: LayoutState, parent: CSSBox, vals: CSSSpecifiedValues): CSSInlineBox =
 #  new(result)
-#  result.t = BOX_INLINE
+#  result.t = DISPLAY_INLINE
 #  result.x = parent.x
 #  result.y = parent.icontext.fromy
 #
@@ -374,9 +374,9 @@ func cells_h(l: CSSLength, state: Viewport, p: int): int =
 #
 #proc add(state: var LayoutState, parent: CSSBox, box: CSSBox) =
 #  case box.t
-#  of BOX_BLOCK: state.add(parent, CSSBlockBox(box))
-#  of BOX_INLINE: state.add(parent, CSSInlineBox(box))
-#  of BOX_INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
+#  of DISPLAY_BLOCK: state.add(parent, CSSBlockBox(box))
+#  of DISPLAY_INLINE: state.add(parent, CSSInlineBox(box))
+#  of DISPLAY_INLINE_BLOCK: state.add(parent, CSSInlineBlockBox(box))
 #
 #proc processComputedValueBox(state: var LayoutState, parent: CSSBox, values: CSSSpecifiedValues): CSSBox =
 #  case values{"display"}
@@ -675,11 +675,11 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
 
   for child in box.children:
     case child.t
-    of BOX_INLINE:
+    of DISPLAY_INLINE:
       let child = InlineBox(child)
       child.ictx = box.ictx
       bctx.alignInline(child)
-    of BOX_INLINE_BLOCK:
+    of DISPLAY_INLINE_BLOCK:
       let child = InlineBlockBox(child)
       child.ictx = box.ictx
       bctx.alignInlineBlock(child, box.specified)
@@ -690,11 +690,11 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   let ictx = bctx.newInlineContext()
   for child in inlines:
     case child.t
-    of BOX_INLINE:
+    of DISPLAY_INLINE:
       let child = InlineBox(child)
       child.ictx = ictx
       bctx.alignInline(child)
-    of BOX_INLINE_BLOCK:
+    of DISPLAY_INLINE_BLOCK:
       let child = InlineBlockBox(child)
       child.ictx = ictx
       bctx.alignInlineBlock(child, bctx.specified)
@@ -720,21 +720,21 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
 
   for child in blocks:
     case child.t
-    of BOX_BLOCK:
+    of DISPLAY_BLOCK:
       let child = BlockBox(child)
       flush_group()
       child.bctx = newBlockContext(bctx, child)
       alignBlock(child)
       bctx.height += child.bctx.height
       bctx.width = max(bctx.width, child.bctx.width)
-    of BOX_INLINE:
+    of DISPLAY_INLINE:
       if child.inlinelayout:
         blockgroup.add(child)
       else:
         flush_group()
         bctx.alignBlocks(child.children)
         #eprint "put"
-    of BOX_INLINE_BLOCK:
+    of DISPLAY_INLINE_BLOCK:
       blockgroup.add(child)
     else: discard #TODO
   flush_group()
@@ -750,24 +750,22 @@ proc getBox(specified: CSSSpecifiedValues): CSSBox =
   case specified{"display"}
   of DISPLAY_BLOCK:
     result = BlockBox()
-    result.t = BOX_BLOCK
   of DISPLAY_INLINE_BLOCK:
     result = InlineBlockBox()
-    result.t = BOX_INLINE_BLOCK
   of DISPLAY_INLINE:
     result = InlineBox()
-    result.t = BOX_INLINE
   of DISPLAY_LIST_ITEM:
     result = ListItemBox()
-    result.t = BOX_LIST_ITEM
   of DISPLAY_NONE: return nil
   else: return nil
+  result.t = specified{"display"}
   result.specified = specified
 
 proc getTextBox(box: CSSBox): InlineBox =
   new(result)
   result.inlinelayout = true
   result.specified = box.specified
+  result.t = DISPLAY_INLINE
 
 proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
   let box = getBox(specified)
@@ -794,7 +792,7 @@ proc generateBox(elem: Element): CSSBox =
 
   template add_box(child: CSSBox) =
     box.children.add(child)
-    if child.t notin {BOX_INLINE, BOX_INLINE_BLOCK} or not child.inlinelayout:
+    if child.t notin {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK} or not child.inlinelayout:
       box.inlinelayout = false
 
   box.inlinelayout = true
@@ -835,7 +833,7 @@ proc generateBox(elem: Element): CSSBox =
 proc generateBoxes(document: Document): BlockBox =
   let box = document.root.generateBox()
   assert box != nil
-  assert box.t == BOX_BLOCK #TODO this shouldn't be enforced by the ua stylesheet
+  assert box.t == DISPLAY_BLOCK #TODO this shouldn't be enforced by the ua stylesheet
 
   return BlockBox(box)
 

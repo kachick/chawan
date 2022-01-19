@@ -5,11 +5,8 @@ import html/dom
 import io/term
 
 type
-  BoxType* = enum
-    BOX_INLINE, BOX_BLOCK, BOX_INLINE_BLOCK, BOX_LIST_ITEM
-
   CSSBox* = ref object of RootObj
-    t*: BoxType
+    t*: CSSDisplay
     x*: int
     y*: int
     width*: int
