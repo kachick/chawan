@@ -166,8 +166,6 @@ proc applyRules*(document: Document, ua, user: CSSStylesheet) =
 
   stack.add(document.root)
 
-  document.root.css = rootProperties()
-
   while stack.len > 0:
     let elem = stack.pop()
 

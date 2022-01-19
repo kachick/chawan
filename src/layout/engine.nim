@@ -644,11 +644,12 @@ proc finish(ictx: InlineContext) =
 proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
   new(result)
   result.rely = parent.height
+  result.viewport = parent.viewport
   let pwidth = box.specified{"width"}
   if pwidth.auto:
     result.compwidth = parent.compwidth
   else:
-    result.compwidth = pwidth.cells_w(box.viewport, parent.compwidth)
+    result.compwidth = pwidth.cells_w(parent.viewport, parent.compwidth)
   result.specified = parent.specified
   parent.nested.add(result)
 
@@ -656,12 +657,14 @@ proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
   result.compwidth = viewport.term.width
   result.specified = rootProperties()
+  result.viewport = viewport
 
 proc newBlockContext(parent: BlockContext): BlockContext =
   new(result)
   result.rely = parent.height
   result.compwidth = parent.compwidth
   result.specified = parent.specified.inheritProperties()
+  result.viewport = parent.viewport
   parent.nested.add(result)
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
@@ -697,7 +700,7 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   bctx.height += ictx.height
   #eprint bctx.height, "add", ictx.height
 
-proc alignBlocks(bctx: BlockContext, viewport: Viewport, blocks: seq[CSSBox])
+proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox])
 
 proc alignBlock(pctx: BlockContext, box: BlockBox) =
   box.bctx = newBlockContext(pctx, box)
@@ -706,9 +709,9 @@ proc alignBlock(pctx: BlockContext, box: BlockBox) =
     # Box only contains inline boxes.
     box.bctx.alignInlines(box.children)
   else:
-    box.bctx.alignBlocks(box.viewport, box.children)
+    box.bctx.alignBlocks(box.children)
 
-proc alignBlocks(bctx: BlockContext, viewport: Viewport, blocks: seq[CSSBox]) =
+proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   # Box contains block boxes.
   # If present, group inline boxes together in anonymous block boxes. Place
   # block boxes inbetween these.
@@ -733,7 +736,7 @@ proc alignBlocks(bctx: BlockContext, viewport: Viewport, blocks: seq[CSSBox]) =
         blockgroup.add(child)
       else:
         flush_group()
-        bctx.alignBlocks(viewport, child.children)
+        bctx.alignBlocks(child.children)
         #eprint "put"
     else: discard #TODO
   flush_group()
@@ -761,7 +764,7 @@ proc getTextBox(box: CSSBox): InlineBox =
   result.inlinelayout = true
   result.specified = box.specified
 
-proc generateBox(elem: Element, viewport: Viewport): CSSBox =
+proc generateBox(elem: Element): CSSBox =
   let box = getBox(elem.css)
 
   if box == nil:
@@ -770,7 +773,6 @@ proc generateBox(elem: Element, viewport: Viewport): CSSBox =
   var ibox: InlineBox
   template add_ibox() =
     if ibox != nil:
-      ibox.viewport = viewport #TODO
       box.children.add(ibox)
       ibox = nil
 
@@ -788,7 +790,7 @@ proc generateBox(elem: Element, viewport: Viewport): CSSBox =
           ibox = box.getTextBox()
           ibox.newline = true
 
-      let cbox = generateBox(elem, viewport)
+      let cbox = generateBox(elem)
       if cbox != nil:
         add_ibox()
         box.children.add(cbox)
@@ -801,19 +803,18 @@ proc generateBox(elem: Element, viewport: Viewport): CSSBox =
     else: discard
   add_ibox()
 
-  box.viewport = viewport #TODO
-
   return box
 
-proc generateBoxes(document: Document, viewport: Viewport): BlockBox =
-  let box = document.root.generateBox(viewport)
-  assert box != nil and box.t == BOX_BLOCK #TODO this shouldn't be enforced by the ua stylesheet
+proc generateBoxes(document: Document): BlockBox =
+  let box = document.root.generateBox()
+  assert box != nil
+  assert box.t == BOX_BLOCK #TODO this shouldn't be enforced by the ua stylesheet
 
   return BlockBox(box)
 
 proc renderLayout*(document: Document, term: TermAttributes): BlockBox =
   #eprint document.root
   let viewport = Viewport(term: term)
-  let root = document.generateBoxes(viewport)
-  newBlockContext(root.viewport).alignBlock(root)
+  let root = document.generateBoxes()
+  viewport.newBlockContext().alignBlock(root)
   return root

@@ -17,7 +17,10 @@ type
     inlinelayout*: bool
     specified*: CSSSpecifiedValues
     node*: Node
-    viewport*: Viewport
+
+  Viewport* = ref object of CSSBox
+    term*: TermAttributes
+    nodes*: seq[Node]
 
   InlineAtom* = ref object of RootObj
     relx*: int
@@ -56,14 +59,11 @@ type
     inline*: InlineContext
     nested*: seq[BlockContext]
     specified*: CSSSpecifiedValues
+    viewport*: Viewport
     rely*: int
 
     compwidth*: int
     compheight*: Option[int]
-
-  Viewport* = ref object
-    term*: TermAttributes
-    nodes*: seq[Node]
 
   RowBox* = object
     x*: int
@@ -86,3 +86,4 @@ type
     bctx*: BlockContext
   InlineBlockBox* = ref object of CSSBox
   ListItemBox* = ref object of CSSBox
+
