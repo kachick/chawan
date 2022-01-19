@@ -79,7 +79,7 @@ type
     bottom*: int
 
   InlineBox* = ref object of CSSBox
-    text*: seq[Text]
+    text*: seq[string]
     ictx*: InlineContext
     newline*: bool
   BlockBox* = ref object of CSSBox

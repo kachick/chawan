@@ -682,7 +682,7 @@ proc alignInline(pctx: BlockContext, box: InlineBox) =
     box.ictx.flushLine()
   for text in box.text:
     assert box.children.len == 0
-    box.ictx.renderText(text.data, pctx.compwidth, box.specified)
+    box.ictx.renderText(text, pctx.compwidth, box.specified)
 
   for child in box.children:
     let child = InlineBox(child)
@@ -764,6 +764,17 @@ proc getTextBox(box: CSSBox): InlineBox =
   result.inlinelayout = true
   result.specified = box.specified
 
+proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
+  let box = getBox(specified)
+  if box == nil:
+    return nil
+  box.inlinelayout = true
+  if specified{"content"}.len > 0:
+    let content = getTextBox(box)
+    content.text.add($specified{"content"})
+    box.children.add(content)
+  return box
+
 proc generateBox(elem: Element): CSSBox =
   let box = getBox(elem.css)
 
@@ -776,32 +787,43 @@ proc generateBox(elem: Element): CSSBox =
       box.children.add(ibox)
       ibox = nil
 
+  template add_box(child: CSSBox) =
+    box.children.add(child)
+    if child.t != BOX_INLINE or not child.inlinelayout:
+      box.inlinelayout = false
+
   box.inlinelayout = true
+  let before = elem.pseudo[PSEUDO_BEFORE]
+  if before != nil:
+    let bbox = getPseudoBox(before)
+    if bbox != nil:
+      add_box(bbox)
+
   for child in elem.childNodes:
     case child.nodeType
     of ELEMENT_NODE:
       let elem = Element(child)
       if elem.tagType == TAG_BR:
         add_ibox()
-        if box.t == BOX_INLINE:
-          let box = InlineBox(box)
-          box.newline = true
-        else:
-          ibox = box.getTextBox()
-          ibox.newline = true
+        ibox = box.getTextBox()
+        ibox.newline = true
 
       let cbox = generateBox(elem)
       if cbox != nil:
         add_ibox()
-        box.children.add(cbox)
-        if cbox.t != BOX_INLINE or not cbox.inlinelayout:
-          box.inlinelayout = false
+        add_box(cbox)
     of TEXT_NODE:
       if ibox == nil:
         ibox = box.getTextBox()
-      ibox.text.add(Text(child))
+      ibox.text.add(Text(child).data)
     else: discard
   add_ibox()
+
+  let after = elem.pseudo[PSEUDO_AFTER]
+  if after != nil:
+    let abox = getPseudoBox(after)
+    if abox != nil:
+      add_box(abox)
 
   return box
 
