@@ -67,7 +67,7 @@ type
     classList*: seq[string]
     attributes*: Table[string, string]
     css*: CSSSpecifiedValues
-    pseudo*: array[PseudoElem, CSSSpecifiedValues]
+    pseudo*: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSSpecifiedValues]
     hover*: bool
     cssapplied*: bool
     rendered*: bool
