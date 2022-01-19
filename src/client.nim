@@ -45,7 +45,7 @@ proc interruptError() =
 
 proc getPage(client: Client, url: Url): tuple[s: Stream, contenttype: string] =
   if url.scheme == "file":
-    let path = url.path.serialize()
+    let path = url.path.serialize_unicode()
     result.contenttype = guessContentType(path)
     result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":

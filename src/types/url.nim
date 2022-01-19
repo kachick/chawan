@@ -791,6 +791,13 @@ func serialize*(path: UrlPath): string {.inline.} =
     result &= '/'
     result &= s
 
+func serialize_unicode*(path: UrlPath): string {.inline.} =
+  if path.opaque:
+    return percentDecode(path.s)
+  for s in path.ss:
+    result &= '/'
+    result &= percentDecode(s)
+
 func serialize*(url: Url, excludefragment = false): string =
   result = url.scheme & ':'
   if url.host.issome:

@@ -173,8 +173,8 @@ func decValue*(r: Rune): int =
 const HexChars = "0123456789ABCDEF"
 func toHex*(c: char): string =
   result = newString(2)
-  result[0] = HexChars[(uint8(c) and 0xF)]
-  result[1] = HexChars[(uint8(c) shr 4)]
+  result[0] = HexChars[(uint8(c) shr 4)]
+  result[1] = HexChars[(uint8(c) and 0xF)]
 
 func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
   var i = 0
@@ -432,12 +432,20 @@ func percentEncode*(c: char, set: set[char]): string {.inline.} =
   result.percentEncode(c, set)
 
 func percentDecode*(input: string): string =
-  for i in low(input)..high(input):
+  var i = 0
+  while i < input.len:
     let c = input[i]
-    if c != '%' or i + 2 >= input.len or input[i + 1].hexValue == -1 or input[i + 2].hexValue == -1:
+    if c != '%' or i + 2 >= input.len:
       result &= c
     else:
-      result &= char((input[i + 1].hexValue shr 4) or (input[i + 2].hexValue and 0xF))
+      let h1 = input[i + 1].hexValue
+      let h2 = input[i + 2].hexValue
+      if h1 == -1 or h2 == -1:
+        result &= c
+      else:
+        result &= char((h1 shl 4) or h2)
+        i += 2
+    inc i
 
 #basically std join but with char
 func join*(ss: openarray[string], sep: char): string =
