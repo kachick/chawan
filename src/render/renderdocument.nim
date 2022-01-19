@@ -128,8 +128,11 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int)
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int) =
   for row in ctx.rows:
     let x = x + row.relx
-    let y = y + row.rely
+    let y = y + row.rely + row.height
     for atom in row.atoms:
+      # This aligns atoms with the baseline.
+      # (other alignment types in progress)
+      let y = y - atom.height
       if atom of BlockContext:
         let ctx = BlockContext(atom)
         grid.renderBlockContext(ctx, x + ctx.relx, y)

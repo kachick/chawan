@@ -100,17 +100,13 @@ func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
 #TODO couldn't these two procedures be merged?
 proc applyNormal(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
   for decl in decls:
-    if decl.important:
-      ares.important.add(decl)
-    else:
+    if not decl.important:
       ares.normal.add(decl)
 
 proc applyImportant(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
   for decl in decls:
     if decl.important:
       ares.important.add(decl)
-    else:
-      ares.normal.add(decl)
 
 proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
   var ares: ApplyResult

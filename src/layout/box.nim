@@ -25,6 +25,7 @@ type
   InlineAtom* = ref object of RootObj
     relx*: int
     width*: int
+    height*: int
 
   InlineWord* = ref object of InlineAtom
     str*: string
@@ -53,7 +54,6 @@ type
     maxwidth*: int
 
   BlockContext* = ref object of InlineAtom
-    height*: int
     margin_done*: int
     margin_todo*: int
     inline*: InlineContext
@@ -84,6 +84,7 @@ type
     newline*: bool
   BlockBox* = ref object of CSSBox
     bctx*: BlockContext
-  InlineBlockBox* = ref object of CSSBox
+  InlineBlockBox* = ref object of BlockBox
+    ictx*: InlineContext
   ListItemBox* = ref object of CSSBox
 

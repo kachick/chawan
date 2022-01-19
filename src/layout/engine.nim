@@ -515,15 +515,20 @@ proc newWord(state: var InlineState) =
   word.nodes = state.nodes
   state.word = word
 
+proc addAtom(row: InlineRow, atom: InlineAtom) =
+  atom.relx = row.width
+  row.width += atom.width
+  row.height = max(row.height, atom.height)
+  row.atoms.add(atom)
+
 proc addWord(state: var InlineState) =
   if state.word.str != "":
     let row = state.ictx.thisrow
     var word = state.word
-    word.relx = state.ictx.thisrow.width
-    row.width += word.width
-    if row.height == 0: #first word => higher than 0
-      row.height = 1
-    row.atoms.add(word)
+    # Note, this should technically be set as soon as word has one letter but
+    # in practice this doesn't matter.
+    word.height = 1
+    row.addAtom(word)
     state.newWord()
 
 proc finishRow(ictx: InlineContext) =
@@ -531,8 +536,8 @@ proc finishRow(ictx: InlineContext) =
     let oldrow = ictx.thisrow
     ictx.rows.add(oldrow)
     ictx.height += oldrow.height
-    ictx.thisrow = InlineRow()
-    ictx.thisrow.rely = oldrow.rely + oldrow.height
+    ictx.width = max(ictx.width, oldrow.width)
+    ictx.thisrow = InlineRow(rely: oldrow.rely + oldrow.height)
 
 proc inlineWrap(state: var InlineState) =
   state.addWord()
@@ -641,7 +646,7 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSS
 proc finish(ictx: InlineContext) =
   ictx.finishRow()
 
-proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
+template newBlockContext_common(parent: BlockContext, box: CSSBox) =
   new(result)
   result.rely = parent.height
   result.viewport = parent.viewport
@@ -651,7 +656,13 @@ proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
   else:
     result.compwidth = pwidth.cells_w(parent.viewport, parent.compwidth)
   result.specified = parent.specified
+
+proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
+  newBlockContext_common(parent, box)
   parent.nested.add(result)
+
+proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockContext =
+  newBlockContext_common(parent, box)
 
 proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
@@ -689,27 +700,31 @@ proc alignInline(pctx: BlockContext, box: InlineBox) =
     child.ictx = box.ictx
     pctx.alignInline(child)
 
+proc alignBlock(box: BlockBox)
+
 proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   let ictx = bctx.newInlineContext()
   for child in inlines:
-    assert child.t == BOX_INLINE
-    let child = InlineBox(child)
-    child.ictx = ictx
-    bctx.alignInline(child)
+    case child.t
+    of BOX_INLINE:
+      let child = InlineBox(child)
+      child.ictx = ictx
+      bctx.alignInline(child)
+    of BOX_INLINE_BLOCK:
+      let child = InlineBlockBox(child)
+      child.bctx = bctx.newInlineBlockContext(child)
+      alignBlock(child)
+      child.ictx = ictx
+      child.bctx.relx = ictx.thisrow.width
+      if ictx.thisrow.width + child.bctx.width > ictx.maxwidth:
+        ictx.finishRow()
+      ictx.thisrow.addAtom(child.bctx)
+      ictx.thisrow.height = max(ictx.thisrow.height, child.bctx.height)
+    else:
+      assert false
   ictx.finish()
   bctx.height += ictx.height
-  #eprint bctx.height, "add", ictx.height
-
-proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox])
-
-proc alignBlock(pctx: BlockContext, box: BlockBox) =
-  box.bctx = newBlockContext(pctx, box)
-
-  if box.inlinelayout:
-    # Box only contains inline boxes.
-    box.bctx.alignInlines(box.children)
-  else:
-    box.bctx.alignBlocks(box.children)
+  bctx.width = max(bctx.width, ictx.width)
 
 proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   # Box contains block boxes.
@@ -722,6 +737,7 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
       let gctx = newBlockContext(bctx)
       gctx.alignInlines(blockgroup)
       bctx.height += gctx.height
+      bctx.width = max(bctx.width, gctx.width)
       blockgroup.setLen(0)
 
   for child in blocks:
@@ -729,8 +745,10 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
     of BOX_BLOCK:
       let child = BlockBox(child)
       flush_group()
-      bctx.alignBlock(child)
+      child.bctx = newBlockContext(bctx, child)
+      alignBlock(child)
       bctx.height += child.bctx.height
+      bctx.width = max(bctx.width, child.bctx.width)
     of BOX_INLINE:
       if child.inlinelayout:
         blockgroup.add(child)
@@ -738,8 +756,17 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
         flush_group()
         bctx.alignBlocks(child.children)
         #eprint "put"
+    of BOX_INLINE_BLOCK:
+      blockgroup.add(child)
     else: discard #TODO
   flush_group()
+
+proc alignBlock(box: BlockBox) =
+  if box.inlinelayout:
+    # Box only contains inline boxes.
+    box.bctx.alignInlines(box.children)
+  else:
+    box.bctx.alignBlocks(box.children)
 
 proc getBox(specified: CSSSpecifiedValues): CSSBox =
   case specified{"display"}
@@ -838,5 +865,6 @@ proc renderLayout*(document: Document, term: TermAttributes): BlockBox =
   #eprint document.root
   let viewport = Viewport(term: term)
   let root = document.generateBoxes()
-  viewport.newBlockContext().alignBlock(root)
+  root.bctx = viewport.newBlockContext()
+  alignBlock(root)
   return root
