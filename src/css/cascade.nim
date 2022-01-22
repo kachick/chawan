@@ -27,11 +27,11 @@ proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
 
   case pseudo
   of PSEUDO_NONE:
-    elem.css.applyValue(parent, d)
+    elem.rendered = not elem.css.applyValue(parent, d)
   of PSEUDO_BEFORE, PSEUDO_AFTER:
     if elem.pseudo[pseudo] == nil:
       elem.pseudo[pseudo] = elem.css.inheritProperties()
-    elem.pseudo[pseudo].applyValue(parent, d)
+    elem.rendered = not elem.pseudo[pseudo].applyValue(parent, d)
 
   elem.cssapplied = true
   elem.rendered = false

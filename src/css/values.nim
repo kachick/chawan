@@ -691,7 +691,8 @@ func getSpecifiedValue(d: CSSDeclaration, parent: CSSSpecifiedValues): tuple[a:C
 
   return (val, cssGlobal(d))
 
-proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSpecifiedValue, global: CSSGlobalValueType) =
+proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSpecifiedValue, global: CSSGlobalValueType): bool =
+  let oval = vals[t]
   case global
   of VALUE_INHERIT, VALUE_UNSET:
     if inherited(t):
@@ -704,36 +705,39 @@ proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSp
     vals[t] = getDefault(t) #TODO
   of VALUE_NOGLOBAL:
     vals[t] = val
+  return oval != vals[t]
 
-proc applyShorthand(vals, parent: CSSSpecifiedValues, left, right, top, bottom: CSSSpecifiedValue, global: CSSGlobalValueType) =
-  vals.applyValue(parent, left.t, left, global)
-  vals.applyValue(parent, right.t, right, global)
-  vals.applyValue(parent, top.t, top, global)
-  vals.applyValue(parent, bottom.t, bottom, global)
+proc applyShorthand(vals, parent: CSSSpecifiedValues, left, right, top, bottom: CSSSpecifiedValue, global: CSSGlobalValueType): bool =
+  result = result or vals.applyValue(parent, left.t, left, global)
+  result = result or vals.applyValue(parent, right.t, right, global)
+  result = result or vals.applyValue(parent, top.t, top, global)
+  result = result or vals.applyValue(parent, bottom.t, bottom, global)
 
-proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
+# Returns true if anything has changed. (TODO: not always...)
+proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration): bool =
   let vv = getSpecifiedValue(d, parent)
   let val = vv.a
+  let oval = vals[val.t]
   case val.t
   of PROPERTY_ALL:
     let global = cssGlobal(d)
     if global != VALUE_NOGLOBAL:
       for t in CSSPropertyType:
-        vals.applyValue(parent, t, nil, global)
+        result = result or vals.applyValue(parent, t, nil, global)
   of PROPERTY_MARGIN:
     let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
     let right = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: val.length)
     let top = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: val.length)
     let bottom = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    vals.applyShorthand(parent, left, right, top, bottom, vv.b)
+    return vals.applyShorthand(parent, left, right, top, bottom, vv.b)
   of PROPERTY_PADDING:
     let left = CSSSpecifiedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: val.length)
     let right = CSSSpecifiedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: val.length)
     let top = CSSSpecifiedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: val.length)
     let bottom = CSSSpecifiedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    vals.applyShorthand(parent, left, right, top, bottom, vv.b)
+    return vals.applyShorthand(parent, left, right, top, bottom, vv.b)
   else:
-    vals.applyValue(parent, val.t, vv.a, vv.b)
+    return vals.applyValue(parent, val.t, vv.a, vv.b)
 
 func inheritProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
   new(result)

@@ -172,11 +172,15 @@ proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
 
 proc parseMediaOr(parser: var MediaQueryParser, left: MediaQuery): MediaQuery =
   let right = parser.parseMediaCondition()
-  return MediaQuery(t: CONDITION_OR, ora: left, orb: right)
+  if right != nil:
+    return MediaQuery(t: CONDITION_OR, ora: left, orb: right)
+  return nil
 
 proc parseMediaAnd(parser: var MediaQueryParser, left: MediaQuery): MediaQuery =
   let right = parser.parseMediaCondition()
-  return MediaQuery(t: CONDITION_AND, anda: left, andb: right)
+  if right != nil:
+    return MediaQuery(t: CONDITION_AND, anda: left, andb: right)
+  return nil
 
 proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false): MediaQuery =
   var non = non
