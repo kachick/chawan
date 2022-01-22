@@ -138,7 +138,7 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSS
 proc finish(ictx: InlineContext) =
   ictx.finishRow()
 
-proc computeWidth(bctx: BlockContext, width: int) =
+proc computedDimensions(bctx: BlockContext, width: int, height: Option[int]) =
   let pwidth = bctx.specified{"width"}
   if pwidth.auto:
     bctx.compwidth = width
@@ -151,12 +151,17 @@ proc computeWidth(bctx: BlockContext, width: int) =
   bctx.compwidth -= mlef
   bctx.compwidth -= mrig
 
+  let pheight = bctx.specified{"height"}
+  if not pheight.auto:
+    if pheight.unit != UNIT_PERC or height.issome:
+      bctx.compheight = pheight.cells_h(bctx.viewport, height).some
+
 proc newBlockContext_common(parent: BlockContext, box: CSSBox): BlockContext {.inline.} =
   new(result)
 
   result.viewport = parent.viewport
   result.specified = box.specified
-  result.computeWidth(parent.compwidth)
+  result.computedDimensions(parent.compwidth, parent.compheight)
 
 proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
   result = newBlockContext_common(parent, box)
@@ -170,7 +175,7 @@ proc newBlockContext(parent: BlockContext): BlockContext =
   new(result)
   result.specified = parent.specified.inheritProperties()
   result.viewport = parent.viewport
-  result.computeWidth(parent.compwidth)
+  result.computedDimensions(parent.compwidth, parent.compheight)
   parent.nested.add(result)
 
 # Anonymous block box (root).
@@ -178,7 +183,7 @@ proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
   result.specified = rootProperties()
   result.viewport = viewport
-  result.computeWidth(viewport.term.width)
+  result.computedDimensions(viewport.term.width, none(int))
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
   new(result)
@@ -225,6 +230,9 @@ proc arrangeBlocks(bctx: BlockContext) =
   let mbot = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
   if mbot > bctx.margin_bottom or mbot < 0:
     bctx.margin_bottom = mbot - bctx.margin_bottom
+
+  if bctx.compheight.issome:
+    bctx.height = bctx.compheight.get
 
 proc alignBlock(box: BlockBox)
 
@@ -280,6 +288,8 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
       assert false, "child.t is " & $child.t
   ictx.finish()
   bctx.height += ictx.height
+  if bctx.compheight.issome:
+    bctx.height = bctx.compheight.get
   bctx.width = max(ictx.width, ictx.width)
   bctx.margin_top = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
   bctx.margin_bottom = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)

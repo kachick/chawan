@@ -179,6 +179,8 @@ proc applyRules*(document: Document, ua, user: CSSStylesheet) =
         elem.css = elem.parentElement.css.inheritProperties()
       else:
         elem.css = rootProperties()
+      for pseudo in [PSEUDO_BEFORE, PSEUDO_AFTER]:
+        elem.pseudo[pseudo] = nil
 
       let uarules = calcRules(elem, ua)
       let userrules = calcRules(elem, user)
