@@ -174,6 +174,6 @@ proc getLinedAction*(s: string): TwtAction =
 proc readConfig*() =
   when defined(debug):
     readConfig(getCurrentDir() / "res")
-  readConfig(getConfigDir() / "twt")
+  readConfig(getConfigDir() / "chawan")
   gconfig.nmap = constructActionTable(gconfig.nmap)
   gconfig.lemap = constructActionTable(gconfig.lemap)

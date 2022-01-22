@@ -1,4 +1,4 @@
-# twt - a web browser in your terminal
+# chawan - a web browser in your terminal
 
 ## What is this?
 
@@ -19,23 +19,22 @@ It includes its own parsers, pager, and layout engine.
 Currently implemented features are:
 
 * a pager
-* a CSS-capable layout engine (very much WIP)
+* a (basic) CSS-capable layout engine
 * configuration
 
 **Planned** features (roughly in order of importance):
 
-* faster layout engine
-* links, navigation between buffers
+* incremental page loading (to function as a proper pager)
+* tables
+* forms
 * markdown (with built-in parser)
 * load external/remote resources (e.g. css)
 * image (sixel/kitty)
 * external viewers (for audio, video)
 * color contrast correction
-* form (w/ input etc)
 * non-unicode charsets
 * multi-processing
 * JavaScript
-* table
 * config (& user stylesheet) editor
 * cookie
 * SOCKS proxy

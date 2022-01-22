@@ -1,5 +1,5 @@
 NIMC = nim c
-FLAGS = -d:ssl -o:twt
+FLAGS = -d:ssl -o:cha
 FILES = src/main.nim
 
 debug:
@@ -9,6 +9,6 @@ release:
 profile:
 	$(NIMC) $(FLAGS) --profiler:on --stacktrace:on -d:profile $(FILES)
 install:
-	cp twt /usr/local/bin/
+	cp cha /usr/local/bin/
 clean:
-	rm ./twt
+	rm ./cha

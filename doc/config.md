@@ -1,9 +1,9 @@
 # Configuration
 
 Currently keybindings and a user stylesheet can be configured. The
-configuration format for twt is toml.
+configuration format for chawan is toml.
 
-twt will look for a config file in the ~/.config/twt/ directory called
+Chawan will look for a config file in the ~/.config/chawan/ directory called
 `config.toml`. For an example see the default configuration in the res/ folder.
 
 A list of configurable options follows.

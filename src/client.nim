@@ -26,10 +26,6 @@ type
   LoadError = object of ActionError
   InterruptError = object of LoadError
 
-proc die() =
-  eprint "Invalid parameters. Usage:\ntwt <url>"
-  quit(1)
-
 proc newClient*(): Client =
   new(result)
   result.http = newHttpClient()
@@ -81,10 +77,12 @@ proc nextBuffer(client: Client) =
 
 proc discardBuffer(client: Client) =
   if client.buffer.next != nil:
+    client.buffer.sourcepair.sourcepair = nil
     client.buffer.next.prev = client.buffer.prev
     client.buffer = client.buffer.next
     client.buffer.redraw = true
   elif client.buffer.prev != nil:
+    client.buffer.sourcepair.sourcepair = nil
     client.buffer.prev.next = client.buffer.next
     client.buffer = client.buffer.prev
     client.buffer.redraw = true
@@ -99,9 +97,9 @@ proc setupBuffer(client: Client) =
   buffer.gotoAnchor()
   buffer.redraw = true
 
-proc readPipe(client: Client) =
+proc readPipe(client: Client, ctype: string) =
   client.buffer = newBuffer()
-  client.buffer.contenttype = "text/plain"
+  client.buffer.contenttype = if ctype != "": ctype else: "text/plain"
   client.buffer.ispipe = true
   client.buffer.istream = newFileStream(stdin)
   client.buffer.load()
@@ -112,7 +110,7 @@ proc readPipe(client: Client) =
     client.buffer.drawBuffer()
 
 var g_client: Client
-proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbuf = true) =
+proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbuf = true, ctype = "") =
   setControlCHook(proc() {.noconv.} =
     raise newException(InterruptError, "Interrupted"))
   if force or prevurl.issome or not prevurl.get.equals(url, true):
@@ -127,7 +125,7 @@ proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbu
               g_client.discardBuffer()
             interruptError())
         client.buffer.istream = page.s
-        client.buffer.contenttype = page.contenttype
+        client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
         client.buffer.streamclosed = false
       else:
         loadError("Couldn't load " & $url)
@@ -139,25 +137,25 @@ proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbu
   client.buffer.location = url
   client.setupBuffer()
 
-proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, newbuf = true) =
+proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, newbuf = true, ctype = "") =
   var oldurl = prevurl
   if oldurl.isnone and client.buffer != nil:
     oldurl = client.buffer.location.some
   let newurl = parseUrl(url, oldurl)
   if newurl.isnone:
     loadError("Invalid URL " & url)
-  client.gotoUrl(newurl.get, oldurl, force, newbuf)
+  client.gotoUrl(newurl.get, oldurl, force, newbuf, ctype)
 
-proc loadUrl(client: Client, url: string) =
+proc loadUrl(client: Client, url: string, ctype = "") =
   let firstparse = parseUrl(url)
   if firstparse.issome:
-    client.gotoUrl(url, none(Url), true)
+    client.gotoUrl(url, none(Url), true, true, ctype)
   else:
     try:
       let cdir = parseUrl("file://" & getCurrentDir() & '/')
-      client.gotoUrl(url, cdir, true)
+      client.gotoUrl(url, cdir, true, true, ctype)
     except LoadError:
-      client.gotoUrl("http://" & url, none(Url), true)
+      client.gotoUrl("http://" & url, none(Url), true, true, ctype)
 
 proc reloadPage(client: Client) =
   let pbuffer = client.buffer
@@ -192,6 +190,7 @@ proc toggleSource*(client: Client) =
     client.buffer.source = client.buffer.prev.source
     client.buffer.streamclosed = true
     client.buffer.location = client.buffer.sourcepair.location
+    client.buffer.ispipe = client.buffer.sourcepair.ispipe
     let prevtype = client.buffer.prev.contenttype
     if prevtype == "text/html":
       client.buffer.contenttype = "text/plain"
@@ -271,19 +270,24 @@ proc inputLoop(client: Client) =
     except ActionError as e:
       client.buffer.setStatusMessage(e.msg)
 
-proc launchClient*(client: Client, params: seq[string]) =
+proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
   client.userstyle = gconfig.stylesheet.parseStylesheet()
-  if params.len < 1:
-    if not stdin.isatty:
-      client.readPipe()
-    else:
-      die()
-  else:
-    try:
-      client.loadUrl(params[0])
-    except LoadError as e:
-      print(e.msg & '\n')
-      quit(1)
+  if not stdin.isatty:
+    client.readPipe(ctype)
+  try:
+    for page in pages:
+      client.loadUrl(page, ctype)
+  except LoadError as e:
+    eprint(e.msg & '\n')
+    quit(1)
 
-  if stdout.isatty: client.inputLoop()
-  else: client.buffer.drawBuffer()
+  if stdout.isatty and not dump: client.inputLoop()
+  else:
+    var buffer = client.buffer
+    while buffer.next != nil:
+      buffer = buffer.next
+
+    buffer.drawBuffer()
+    while buffer.prev != nil:
+      buffer = buffer.prev
+      buffer.drawBuffer()
