@@ -135,7 +135,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int) 
       let y = y - atom.height
       if atom of BlockContext:
         let ctx = BlockContext(atom)
-        grid.renderBlockContext(ctx, x + ctx.relx, y)
+        grid.renderBlockContext(ctx, x + ctx.relx, y + ctx.rely)
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x + word.relx, y)

@@ -7,9 +7,6 @@ import io/term
 type
   CSSBox* = ref object of RootObj
     t*: CSSDisplay
-    x*: int
-    y*: int
-    width*: int
     children*: seq[CSSBox]
     inlinelayout*: bool
     specified*: CSSSpecifiedValues
@@ -50,13 +47,13 @@ type
     maxwidth*: int
 
   BlockContext* = ref object of InlineAtom
-    margin_done*: int
-    margin_todo*: int
     inline*: InlineContext
     nested*: seq[BlockContext]
     specified*: CSSSpecifiedValues
     viewport*: Viewport
     rely*: int
+    margin_top*: int
+    margin_bottom*: int
 
     compwidth*: int
     compheight*: Option[int]

@@ -542,10 +542,11 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CS
 
   ictx.thisrow.width += shift
 
-  atom.relx = ictx.thisrow.width
-  ictx.thisrow.width += atom.width
-  ictx.thisrow.height = max(ictx.thisrow.height, atom.height)
-  ictx.thisrow.atoms.add(atom)
+  if atom.width > 0:
+    atom.relx += ictx.thisrow.width
+    ictx.thisrow.width += atom.width
+    ictx.thisrow.height = max(ictx.thisrow.height, atom.height)
+    ictx.thisrow.atoms.add(atom)
 
 proc addWord(state: var InlineState) =
   if state.word.str != "":
@@ -613,19 +614,28 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSS
 proc finish(ictx: InlineContext) =
   ictx.finishRow()
 
-template newBlockContext_common(parent: BlockContext, box: CSSBox) =
-  new(result)
-  result.rely = parent.height
-  result.viewport = parent.viewport
-  let pwidth = box.specified{"width"}
+proc computeWidth(bctx: BlockContext, width: int) =
+  let pwidth = bctx.specified{"width"}
   if pwidth.auto:
-    result.compwidth = parent.compwidth
+    bctx.compwidth = width
   else:
-    result.compwidth = pwidth.cells_w(parent.viewport, parent.compwidth)
-  result.specified = parent.specified
+    bctx.compwidth = pwidth.cells_w(bctx.viewport, width)
+
+  let mlef = bctx.specified{"margin-left"}.cells_w(bctx.viewport, width)
+  let mrig = bctx.specified{"margin-right"}.cells_w(bctx.viewport, width)
+  bctx.relx = mlef
+  bctx.compwidth -= mlef
+  bctx.compwidth -= mrig
+
+proc newBlockContext_common(parent: BlockContext, box: CSSBox): BlockContext {.inline.} =
+  new(result)
+
+  result.viewport = parent.viewport
+  result.specified = box.specified
+  result.computeWidth(parent.compwidth)
 
 proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
-  newBlockContext_common(parent, box)
+  result = newBlockContext_common(parent, box)
   parent.nested.add(result)
 
 proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockContext =
@@ -634,37 +644,78 @@ proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockCont
 # Anonymous block box.
 proc newBlockContext(parent: BlockContext): BlockContext =
   new(result)
-  result.rely = parent.height
-  result.compwidth = parent.compwidth
   result.specified = parent.specified.inheritProperties()
   result.viewport = parent.viewport
+  result.computeWidth(parent.compwidth)
   parent.nested.add(result)
 
 # Anonymous block box (root).
 proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
-  result.compwidth = viewport.term.width
   result.specified = rootProperties()
   result.viewport = viewport
+  result.computeWidth(viewport.term.width)
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
   new(result)
   result.thisrow = InlineRow()
   bctx.inline = result
 
+# Blocks' positions do not have to be arranged if alignBlocks is called with
+# children, whence the separate procedure.
+proc arrangeBlocks(bctx: BlockContext) =
+  var y = 0
+  var margin_todo = 0
+
+  template apply_child(child: BlockContext) =
+    child.rely = y
+    y += child.height
+    bctx.height += child.height
+    bctx.width = max(bctx.width, child.width)
+    margin_todo = child.margin_bottom
+
+  var i = 0
+  if i < bctx.nested.len:
+    let child = bctx.nested[i]
+
+    bctx.margin_top = child.margin_top
+    let mtop = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
+    if mtop > bctx.margin_top or mtop < 0:
+      bctx.margin_top = mtop - bctx.margin_top
+
+    apply_child(child)
+    inc i
+
+  while i < bctx.nested.len:
+    let child = bctx.nested[i]
+
+    if child.margin_top > margin_todo or child.margin_top < 0:
+      margin_todo += child.margin_top - margin_todo
+    y += margin_todo
+    bctx.height += margin_todo
+
+    apply_child(child)
+    inc i
+
+  bctx.margin_bottom = margin_todo
+  let mbot = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
+  if mbot > bctx.margin_bottom or mbot < 0:
+    bctx.margin_bottom = mbot - bctx.margin_bottom
+
 proc alignBlock(box: BlockBox)
 
 proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox, parentcss: CSSSpecifiedValues) =
   box.bctx = bctx.newInlineBlockContext(box)
   alignBlock(box)
-  box.bctx.relx = box.ictx.thisrow.width
+  box.bctx.rely += box.bctx.margin_top
+  box.bctx.height += box.bctx.margin_top
+  box.bctx.height += box.bctx.margin_bottom
   box.ictx.addAtom(box.bctx, bctx.compwidth, parentcss)
   box.ictx.whitespace = false
 
 proc alignInline(bctx: BlockContext, box: InlineBox) =
   let box = InlineBox(box)
-  if box.ictx == nil:
-    box.ictx = bctx.newInlineContext()
+  assert box.ictx != nil
   if box.newline:
     box.ictx.flushLine()
   for text in box.text:
@@ -700,7 +751,9 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
       assert false, "child.t is " & $child.t
   ictx.finish()
   bctx.height += ictx.height
-  bctx.width = max(bctx.width, ictx.width)
+  bctx.width = max(ictx.width, ictx.width)
+  bctx.margin_top = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
+  bctx.margin_bottom = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
 
 proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   # Box contains block boxes.
@@ -708,30 +761,20 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   # block boxes inbetween these.
   var blockgroup: seq[CSSBox]
   var has_noinline = false
+
   template flush_group() =
     if blockgroup.len > 0:
       let gctx = newBlockContext(bctx)
       gctx.alignInlines(blockgroup)
-      bctx.height += gctx.height
-      bctx.width = max(bctx.width, gctx.width)
       blockgroup.setLen(0)
 
   for child in blocks:
     case child.t
-    of DISPLAY_BLOCK:
+    of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
       let child = BlockBox(child)
       flush_group()
       child.bctx = newBlockContext(bctx, child)
       alignBlock(child)
-      bctx.height += child.bctx.height
-      bctx.width = max(bctx.width, child.bctx.width)
-    of DISPLAY_LIST_ITEM:
-      let child = ListItemBox(child)
-      flush_group()
-      child.bctx = newBlockContext(bctx, child)
-      alignBlock(child)
-      bctx.height += child.bctx.height
-      bctx.width = max(bctx.width, child.bctx.width)
     of DISPLAY_INLINE:
       if child.inlinelayout:
         blockgroup.add(child)
@@ -750,6 +793,7 @@ proc alignBlock(box: BlockBox) =
     box.bctx.alignInlines(box.children)
   else:
     box.bctx.alignBlocks(box.children)
+    box.bctx.arrangeBlocks()
 
 proc getBox(specified: CSSSpecifiedValues): CSSBox =
   case specified{"display"}
@@ -836,9 +880,15 @@ proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
         add_ibox()
         add_box(cbox)
     of TEXT_NODE:
-      if ibox == nil:
-        ibox = box.getTextBox()
-      ibox.text.add(Text(child).data)
+      let text = Text(child)
+      # Don't generate empty anonymous inline blocks.
+      if box.specified{"display"} == DISPLAY_INLINE or
+          box.children.len > 0 and box.children[^1].specified{"display"} == DISPLAY_INLINE or
+          box.specified{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
+          not text.data.onlyWhitespace():
+        if ibox == nil:
+          ibox = box.getTextBox()
+        ibox.text.add(Text(child).data)
     else: discard
   add_ibox()
 

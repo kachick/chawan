@@ -37,8 +37,14 @@ func fitValueToSize*(str: string, size: int): string =
     return str & ' '.repeat(size - str.runeLen)
   return str.maxString(size)
 
-func isWhitespace*(c: char): bool =
+func isWhitespace*(c: char): bool {.inline.} =
   return c in {' ', '\n', '\r', '\t', '\f'}
+
+func onlyWhitespace*(s: string): bool =
+  for c in s:
+    if not c.isWhitespace():
+      return false
+  return true
 
 const C0Controls = {chr(0x00)..chr(0x1F)}
 const Controls = (C0Controls + {chr(0x7F)})

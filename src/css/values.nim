@@ -707,9 +707,9 @@ proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSp
 
 proc applyShorthand(vals, parent: CSSSpecifiedValues, left, right, top, bottom: CSSSpecifiedValue, global: CSSGlobalValueType) =
   vals.applyValue(parent, left.t, left, global)
-  vals.applyValue(parent, left.t, right, global)
-  vals.applyValue(parent, left.t, top, global)
-  vals.applyValue(parent, left.t, bottom, global)
+  vals.applyValue(parent, right.t, right, global)
+  vals.applyValue(parent, top.t, top, global)
+  vals.applyValue(parent, bottom.t, bottom, global)
 
 proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
   let vv = getSpecifiedValue(d, parent)
