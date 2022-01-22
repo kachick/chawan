@@ -532,7 +532,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
           return none(Url)
         url.host = host
         buffer = ""
-        state = PATH_STATE
+        state = PATH_START_STATE
         if override:
           return
       else:
