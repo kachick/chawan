@@ -22,6 +22,7 @@ type
     parentNode*: Node
     parentElement*: Element
     ownerDocument*: Document
+    uid*: int # Unique id
 
   Attr* = ref AttrObj
   AttrObj = object of NodeObj
@@ -266,7 +267,7 @@ func newComment*(): Comment =
   new(result)
   result.nodeType = COMMENT_NODE
 
-func newHtmlElement*(tagType: TagType): HTMLElement =
+func newHtmlElement*(document: Document, tagType: TagType): HTMLElement =
   case tagType
   of TAG_INPUT:
     result = new(HTMLInputElement)
@@ -300,12 +301,14 @@ func newHtmlElement*(tagType: TagType): HTMLElement =
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
   result.css = rootProperties()
+  result.uid = document.all_elements.len
+  document.all_elements.add(result)
 
 func newDocument*(): Document =
   new(result)
-  result.root = newHtmlElement(TAG_HTML)
-  result.head = newHtmlElement(TAG_HEAD)
-  result.body = newHtmlElement(TAG_BODY)
+  result.root = result.newHtmlElement(TAG_HTML)
+  result.head = result.newHtmlElement(TAG_HEAD)
+  result.body = result.newHtmlElement(TAG_BODY)
   result.nodeType = DOCUMENT_NODE
 
 func newAttr*(parent: Element, key, value: string): Attr =

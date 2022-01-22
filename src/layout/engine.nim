@@ -108,11 +108,12 @@ proc processWhitespace(state: var InlineState, c: char) =
     else:
       state.ictx.whitespace = true
 
-proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSSpecifiedValues) =
+proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSSpecifiedValues, nodes: seq[Node]) =
   var state: InlineState
   state.specified = specified
   state.ictx = ictx
   state.maxwidth = maxwidth
+  state.nodes = nodes
   state.newWord()
 
   #if str.strip().len > 0:
@@ -237,13 +238,16 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox, parentcss: CSSSpe
   box.ictx.whitespace = false
 
 proc alignInline(bctx: BlockContext, box: InlineBox) =
+  if box.node != nil:
+    bctx.viewport.nodes.add(box.node)
+
   let box = InlineBox(box)
   assert box.ictx != nil
   if box.newline:
     box.ictx.flushLine()
   for text in box.text:
     assert box.children.len == 0
-    box.ictx.renderText(text, bctx.compwidth, box.specified)
+    box.ictx.renderText(text, bctx.compwidth, box.specified, bctx.viewport.nodes)
 
   for child in box.children:
     case child.t
@@ -257,6 +261,8 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
       bctx.alignInlineBlock(child, box.specified)
     else:
       assert false, "child.t is " & $child.t
+  if box.node != nil:
+    discard bctx.viewport.nodes.pop()
 
 proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   let ictx = bctx.newInlineContext()
@@ -311,12 +317,16 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   flush_group()
 
 proc alignBlock(box: BlockBox) =
+  if box.node != nil:
+    box.bctx.viewport.nodes.add(box.node)
   if box.inlinelayout:
     # Box only contains inline boxes.
     box.bctx.alignInlines(box.children)
   else:
     box.bctx.alignBlocks(box.children)
     box.bctx.arrangeBlocks()
+  if box.node != nil:
+    discard box.bctx.viewport.nodes.pop()
 
 proc getBox(specified: CSSSpecifiedValues): CSSBox =
   case specified{"display"}
@@ -358,9 +368,19 @@ proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
     box.children.add(content)
   return box
 
-proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
+proc generateBox(elem: Element, viewport: Viewport, first = false): CSSBox =
+  if viewport.map[elem.uid] != nil:
+    return viewport.map[elem.uid]
+
+  let box = if not first:
+    getBox(elem.css)
+  else:
+    getBlockBox(elem.css)
+
   if box == nil:
     return nil
+
+  box.node = elem
 
   var ibox: InlineBox
   template add_ibox() =
@@ -386,6 +406,7 @@ proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
   let before = elem.pseudo[PSEUDO_BEFORE]
   if before != nil:
     let bbox = getPseudoBox(before)
+    bbox.node = elem
     if bbox != nil:
       add_box(bbox)
 
@@ -398,7 +419,7 @@ proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
         ibox = box.getTextBox()
         ibox.newline = true
 
-      let cbox = generateBox(elem)
+      let cbox = elem.generateBox(viewport)
       if cbox != nil:
         add_ibox()
         add_box(cbox)
@@ -411,7 +432,7 @@ proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
           not text.data.onlyWhitespace():
         if ibox == nil:
           ibox = box.getTextBox()
-        ibox.text.add(Text(child).data)
+        ibox.text.add(text.data)
     else: discard
   add_ibox()
 
@@ -421,19 +442,19 @@ proc generateBox(elem: Element, box = getBox(elem.css)): CSSBox =
     if abox != nil:
       add_box(abox)
 
+  viewport.map[elem.uid] = box
+
   return box
 
-proc generateBoxes(document: Document): BlockBox =
-  let box = document.root.generateBox(getBlockBox(document.root.css))
-  assert box != nil
-  assert box.t == DISPLAY_BLOCK
+proc renderLayout*(viewport: var Viewport, document: Document) =
+  if viewport.root == nil or document.all_elements.len != viewport.map.len:
+    viewport.map = newSeq[CSSBox](document.all_elements.len)
+    viewport.root = BlockBox(document.root.generateBox(viewport, true))
+  else:
+    for uid in 0..viewport.map.high:
+      if not document.all_elements[uid].rendered:
+        viewport.map[uid] = nil
+    viewport.root = BlockBox(document.root.generateBox(viewport))
 
-  return BlockBox(box)
-
-proc renderLayout*(document: Document, term: TermAttributes): BlockBox =
-  #eprint document.root
-  let viewport = Viewport(term: term)
-  let root = document.generateBoxes()
-  root.bctx = viewport.newBlockContext()
-  alignBlock(root)
-  return root
+  viewport.root.bctx = viewport.newBlockContext()
+  alignBlock(viewport.root)

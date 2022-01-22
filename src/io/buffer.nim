@@ -34,6 +34,7 @@ type
     fromy*: int
     attrs*: TermAttributes
     document*: Document
+    viewport*: Viewport
     redraw*: bool
     reshape*: bool
     nostatus*: bool
@@ -656,9 +657,6 @@ proc gotoAnchor*(buffer: Buffer) =
         return
       inc i
 
-proc setLocation*(buffer: Buffer, location: Url) =
-  buffer.location = location
-
 proc gotoLocation*(buffer: Buffer, s: string) =
   discard parseUrl(s, buffer.location.some, buffer.location, true)
 
@@ -735,7 +733,9 @@ proc load*(buffer: Buffer) =
 proc render*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
-    buffer.lines = renderDocument(buffer.document, buffer.attrs, buffer.userstyle)
+    if buffer.viewport == nil:
+      buffer.viewport = Viewport(term: buffer.attrs)
+    buffer.lines = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport)
   else: discard
   buffer.updateCursor()
 

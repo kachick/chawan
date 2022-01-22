@@ -5,16 +5,18 @@ import html/dom
 import io/term
 
 type
+  Viewport* = ref object
+    term*: TermAttributes
+    nodes*: seq[Node]
+    root*: BlockBox
+    map*: seq[CSSBox]
+
   CSSBox* = ref object of RootObj
     t*: CSSDisplay
     children*: seq[CSSBox]
     inlinelayout*: bool
     specified*: CSSSpecifiedValues
     node*: Node
-
-  Viewport* = ref object of CSSBox
-    term*: TermAttributes
-    nodes*: seq[Node]
 
   InlineAtom* = ref object of RootObj
     relx*: int
@@ -75,8 +77,11 @@ type
     text*: seq[string]
     ictx*: InlineContext
     newline*: bool
+
   BlockBox* = ref object of CSSBox
     bctx*: BlockContext
+
   InlineBlockBox* = ref object of BlockBox
     ictx*: InlineContext
+
   ListItemBox* = ref object of BlockBox

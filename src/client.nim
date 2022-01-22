@@ -52,7 +52,7 @@ proc getPage(client: Client, url: Url): tuple[s: Stream, contenttype: string] =
     let resp = client.http.get(url.serialize(true))
     let ct = resp.contentType()
     if ct != "":
-      result.contenttype = ct
+      result.contenttype = ct.until(';')
     else:
       result.contenttype = guessContentType(url.path.serialize())
     result.s = resp.bodyStream
@@ -112,6 +112,33 @@ proc readPipe(client: Client) =
     client.buffer.drawBuffer()
 
 var g_client: Client
+proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbuf = true) =
+  setControlCHook(proc() {.noconv.} =
+    raise newException(InterruptError, "Interrupted"))
+  if force or prevurl.issome or not prevurl.get.equals(url, true):
+    try:
+      let page = client.getPage(url)
+      if page.s != nil:
+        if newbuf:
+          client.addBuffer()
+          g_client = client
+          setControlCHook(proc() {.noconv.} =
+            if g_client.buffer.prev != nil or g_client.buffer.next != nil:
+              g_client.discardBuffer()
+            interruptError())
+        client.buffer.istream = page.s
+        client.buffer.contenttype = page.contenttype
+        client.buffer.streamclosed = false
+      else:
+        loadError("Couldn't load " & $url)
+    except IOError, OSError:
+      loadError("Couldn't load " & $url)
+  elif client.buffer != nil and prevurl.isnone or not prevurl.get.equals(url):
+    if not client.buffer.hasAnchor(url.anchor):
+      loadError("Couldn't find anchor " & url.anchor)
+  client.buffer.location = url
+  client.setupBuffer()
+
 proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, newbuf = true) =
   var oldurl = prevurl
   if oldurl.isnone and client.buffer != nil:
@@ -119,36 +146,7 @@ proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, ne
   let newurl = parseUrl(url, oldurl)
   if newurl.isnone:
     loadError("Invalid URL " & url)
-  if newurl.issome:
-    setControlCHook(proc() {.noconv.} =
-      raise newException(InterruptError, "Interrupted"))
-    let url = newurl.get
-    let prevurl = oldurl
-    if force or prevurl.issome or not prevurl.get.equals(url, true):
-      try:
-        let page = client.getPage(url)
-        if page.s != nil:
-          if newbuf:
-            client.addBuffer()
-            g_client = client
-            setControlCHook(proc() {.noconv.} =
-              if g_client.buffer.prev != nil or g_client.buffer.next != nil:
-                g_client.discardBuffer()
-              interruptError())
-          client.buffer.istream = page.s
-          client.buffer.contenttype = page.contenttype
-          client.buffer.streamclosed = false
-        else:
-          loadError("Couldn't load " & $url)
-      except IOError, OSError:
-        loadError("Couldn't load " & $url)
-    elif client.buffer != nil and prevurl.isnone or not prevurl.get.equals(url):
-      if not client.buffer.hasAnchor(url.anchor):
-        loadError("Couldn't find anchor " & url.anchor)
-    client.buffer.setLocation(url)
-    client.setupBuffer()
-  else:
-    loadError("Couldn't parse URL " & url)
+  client.gotoUrl(newurl.get, oldurl, force, newbuf)
 
 proc loadUrl(client: Client, url: string) =
   let firstparse = parseUrl(url)
@@ -163,7 +161,7 @@ proc loadUrl(client: Client, url: string) =
 
 proc reloadPage(client: Client) =
   let pbuffer = client.buffer
-  client.gotoUrl("", none(Url), true, false)
+  client.gotoUrl(pbuffer.location, none(Url), true, false)
   client.buffer.setCursorXY(pbuffer.cursorx, pbuffer.cursory)
   client.buffer.setFromXY(pbuffer.fromx, pbuffer.fromy)
   client.buffer.contenttype = pbuffer.contenttype
@@ -193,6 +191,7 @@ proc toggleSource*(client: Client) =
     client.buffer.sourcepair.sourcepair = client.buffer
     client.buffer.source = client.buffer.prev.source
     client.buffer.streamclosed = true
+    client.buffer.location = client.buffer.sourcepair.location
     let prevtype = client.buffer.prev.contenttype
     if prevtype == "text/html":
       client.buffer.contenttype = "text/plain"

@@ -6,6 +6,8 @@ const DefaultGuess = [
   ("xhtml", "application/xhtml+xml"),
   ("xhtm", "application/xhtml+xml"),
   ("xht", "application/xhtml+xml"),
+  ("txt", "text/plain"),
+  ("", "text/plain")
 ].toTable()
 
 proc guessContentType*(path: string): string =
@@ -13,7 +15,7 @@ proc guessContentType*(path: string): string =
   var n = 0
   while i > 0:
     if path[i] == '/':
-      return "text/plain"
+      return DefaultGuess[""]
     if path[i] == '.':
       n = i
       break
@@ -22,4 +24,4 @@ proc guessContentType*(path: string): string =
     let ext = path.substr(n + 1)
     if ext in DefaultGuess:
       return DefaultGuess[ext]
-  return "text/plain"
+  return DefaultGuess[""]

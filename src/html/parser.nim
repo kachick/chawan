@@ -23,6 +23,7 @@ type
     elementNode: Element
     textNode: Text
     commentNode: Comment
+    document: Document
 
 func inputSize*(str: string): int =
   if str.len == 0:
@@ -189,7 +190,6 @@ proc insertNode(parent, node: Node) =
 
     let element = (Element(node))
     if element.ownerDocument != nil:
-      node.ownerDocument.all_elements.add(Element(node))
       element.ownerDocument.type_elements[element.tagType].add(element)
       if element.id != "":
         if not (element.id in element.ownerDocument.id_elements):
@@ -351,7 +351,7 @@ proc processDocumentTag(state: var HTMLParseState, tag: DOMParsedTag) =
       return
 
   if tag.open:
-    processDocumentStartElement(state, newHtmlElement(tag.tagid), tag)
+    processDocumentStartElement(state, state.document.newHtmlElement(tag.tagid), tag)
   else:
     processDocumentEndElement(state, tag)
 
@@ -455,6 +455,7 @@ proc parseHtml*(inputStream: Stream): Document =
   insertNode(document.root, document.body)
 
   var state = HTMLParseState()
+  state.document = document
   state.elementNode = document.root
 
   var till_when = false

@@ -217,6 +217,14 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
+func until*(s: string, c: char): string =
+  var i = 0
+  while i < s.len:
+    if s[i] == c:
+      break
+    result.add(s[i])
+    inc i
+
 func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, string)]): string =
   if i notin range:
     return $i
