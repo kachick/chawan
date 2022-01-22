@@ -57,7 +57,7 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CS
 
   # Line wrapping
   if specified{"white-space"} notin {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
-    if specified{"word-break"} == WORD_BREAK_NORMAL and ictx.thisrow.width + atom.width > maxwidth:
+    if specified{"word-break"} == WORD_BREAK_NORMAL and ictx.thisrow.width + atom.width + shift > maxwidth:
       ictx.finishRow()
       if not whitespacepre:
         # No whitespace on newline
