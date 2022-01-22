@@ -165,7 +165,6 @@ proc newBlockContext_common(parent: BlockContext, box: CSSBox): BlockContext {.i
 
 proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
   result = newBlockContext_common(parent, box)
-  parent.nested.add(result)
 
 proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockContext =
   newBlockContext_common(parent, box)
@@ -176,7 +175,6 @@ proc newBlockContext(parent: BlockContext): BlockContext =
   result.specified = parent.specified.inheritProperties()
   result.viewport = parent.viewport
   result.computedDimensions(parent.compwidth, parent.compheight)
-  parent.nested.add(result)
 
 # Anonymous block box (root).
 proc newBlockContext(viewport: Viewport): BlockContext =
@@ -306,13 +304,14 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
       let gctx = newBlockContext(bctx)
       gctx.alignInlines(blockgroup)
       blockgroup.setLen(0)
+      bctx.nested.add(gctx)
 
   for child in blocks:
     case child.t
     of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
       let child = BlockBox(child)
       flush_group()
-      child.bctx = newBlockContext(bctx, child)
+      bctx.nested.add(child.bctx)
       alignBlock(child)
     of DISPLAY_INLINE:
       if child.inlinelayout:
@@ -327,6 +326,9 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   flush_group()
 
 proc alignBlock(box: BlockBox) =
+  if box.bctx.done:
+    return
+  box.bctx.done = true
   if box.node != nil:
     box.bctx.viewport.nodes.add(box.node)
   if box.inlinelayout:
@@ -378,11 +380,28 @@ proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
     box.children.add(content)
   return box
 
-proc generateBox(elem: Element, viewport: Viewport, first = false): CSSBox =
+proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): CSSBox =
+  elem.rendered = true
   if viewport.map[elem.uid] != nil:
+    let box = viewport.map[elem.uid]
+    var bctx = bctx
+    if box.specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}:
+      let box = BlockBox(box)
+      if bctx == nil:
+        box.bctx = viewport.newBlockContext()
+      else:
+        box.bctx = bctx.newBlockContext(box)
+      bctx = box.bctx
+
+    var i = 0
+    while i < box.children.len:
+      let child = box.children[i]
+      if child.element != nil:
+        box.children[i] = generateBox(child.element, viewport, bctx)
+      inc i
     return viewport.map[elem.uid]
 
-  let box = if not first:
+  let box = if bctx != nil:
     getBox(elem.css)
   else:
     getBlockBox(elem.css)
@@ -391,6 +410,16 @@ proc generateBox(elem: Element, viewport: Viewport, first = false): CSSBox =
     return nil
 
   box.node = elem
+  box.element = elem
+
+  var bctx = bctx
+  if box.specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}:
+    let box = BlockBox(box)
+    if bctx == nil:
+      box.bctx = viewport.newBlockContext()
+    else:
+      box.bctx = bctx.newBlockContext(box)
+    bctx = box.bctx
 
   var ibox: InlineBox
   template add_ibox() =
@@ -429,13 +458,13 @@ proc generateBox(elem: Element, viewport: Viewport, first = false): CSSBox =
         ibox = box.getTextBox()
         ibox.newline = true
 
-      let cbox = elem.generateBox(viewport)
+      let cbox = elem.generateBox(viewport, bctx)
       if cbox != nil:
         add_ibox()
         add_box(cbox)
     of TEXT_NODE:
       let text = Text(child)
-      # Don't generate empty anonymous inline blocks.
+      # Don't generate empty anonymous inline blocks between block boxes
       if box.specified{"display"} == DISPLAY_INLINE or
           box.children.len > 0 and box.children[^1].specified{"display"} == DISPLAY_INLINE or
           box.specified{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
@@ -459,12 +488,11 @@ proc generateBox(elem: Element, viewport: Viewport, first = false): CSSBox =
 proc renderLayout*(viewport: var Viewport, document: Document) =
   if viewport.root == nil or document.all_elements.len != viewport.map.len:
     viewport.map = newSeq[CSSBox](document.all_elements.len)
-    viewport.root = BlockBox(document.root.generateBox(viewport, true))
   else:
-    for uid in 0..viewport.map.high:
-      if not document.all_elements[uid].rendered:
-        viewport.map[uid] = nil
-    viewport.root = BlockBox(document.root.generateBox(viewport))
-
-  viewport.root.bctx = viewport.newBlockContext()
+    var i = 0
+    while i < viewport.map.len:
+      if not document.all_elements[i].rendered:
+        viewport.map[i] = nil
+      inc i
+  viewport.root = BlockBox(document.root.generateBox(viewport))
   alignBlock(viewport.root)

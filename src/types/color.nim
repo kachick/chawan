@@ -34,6 +34,9 @@ func a*(c: RGBAColor): int =
 func rgb*(r, g, b: int): RGBColor =
   return RGBColor((r shl 16) or (g shl 8) or b)
 
+func `==`*(a, b: RGBAColor): bool =
+  return int(a) == int(b)
+
 
 func r*(c: RGBColor): int =
   return int(c) shr 16 and 0xff

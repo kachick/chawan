@@ -691,7 +691,26 @@ func getSpecifiedValue(d: CSSDeclaration, parent: CSSSpecifiedValues): tuple[a:C
 
   return (val, cssGlobal(d))
 
-proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSpecifiedValue, global: CSSGlobalValueType): bool =
+func equals*(a, b: CSSSpecifiedValue): bool =
+  if a == b:
+    return true
+  if a == nil or b == nil:
+    return false
+  case valueType(a.t)
+  of VALUE_COLOR: return a.color == b.color
+  of VALUE_LENGTH: return a.length == b.length
+  of VALUE_FONT_STYLE: return a.fontstyle == b.fontstyle
+  of VALUE_DISPLAY: return a.display == b.display
+  of VALUE_CONTENT: return a.content == b.content
+  of VALUE_WHITESPACE: return a.whitespace == b.whitespace
+  of VALUE_INTEGER: return a.integer == a.integer
+  of VALUE_TEXT_DECORATION: return a.textdecoration == b.textdecoration
+  of VALUE_WORD_BREAK: return a.wordbreak == b.wordbreak
+  of VALUE_LIST_STYLE_TYPE: return a.liststyletype == b.liststyletype
+  of VALUE_NONE: return true
+  return false
+
+proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSpecifiedValue, global: CSSGlobalValueType) =
   let oval = vals[t]
   case global
   of VALUE_INHERIT, VALUE_UNSET:
@@ -705,16 +724,8 @@ proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSp
     vals[t] = getDefault(t) #TODO
   of VALUE_NOGLOBAL:
     vals[t] = val
-  return oval != vals[t]
 
-proc applyShorthand(vals, parent: CSSSpecifiedValues, left, right, top, bottom: CSSSpecifiedValue, global: CSSGlobalValueType): bool =
-  result = result or vals.applyValue(parent, left.t, left, global)
-  result = result or vals.applyValue(parent, right.t, right, global)
-  result = result or vals.applyValue(parent, top.t, top, global)
-  result = result or vals.applyValue(parent, bottom.t, bottom, global)
-
-# Returns true if anything has changed. (TODO: not always...)
-proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration): bool =
+proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
   let vv = getSpecifiedValue(d, parent)
   let val = vv.a
   let oval = vals[val.t]
@@ -723,21 +734,23 @@ proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration): bool =
     let global = cssGlobal(d)
     if global != VALUE_NOGLOBAL:
       for t in CSSPropertyType:
-        result = result or vals.applyValue(parent, t, nil, global)
+        vals.applyValue(parent, t, nil, global)
   of PROPERTY_MARGIN:
     let left = CSSSpecifiedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
     let right = CSSSpecifiedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: val.length)
     let top = CSSSpecifiedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: val.length)
     let bottom = CSSSpecifiedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    return vals.applyShorthand(parent, left, right, top, bottom, vv.b)
+    for val in [left, right, top, bottom]:
+      vals.applyValue(parent, val.t, val, vv.b)
   of PROPERTY_PADDING:
     let left = CSSSpecifiedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: val.length)
     let right = CSSSpecifiedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: val.length)
     let top = CSSSpecifiedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: val.length)
     let bottom = CSSSpecifiedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    return vals.applyShorthand(parent, left, right, top, bottom, vv.b)
+    for val in [left, right, top, bottom]:
+      vals.applyValue(parent, val.t, val, vv.b)
   else:
-    return vals.applyValue(parent, val.t, vv.a, vv.b)
+    vals.applyValue(parent, val.t, vv.a, vv.b)
 
 func inheritProperties*(parent: CSSSpecifiedValues): CSSSpecifiedValues =
   new(result)

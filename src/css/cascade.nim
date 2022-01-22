@@ -27,14 +27,13 @@ proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
 
   case pseudo
   of PSEUDO_NONE:
-    elem.rendered = not elem.css.applyValue(parent, d)
+    elem.css.applyValue(parent, d)
   of PSEUDO_BEFORE, PSEUDO_AFTER:
     if elem.pseudo[pseudo] == nil:
       elem.pseudo[pseudo] = elem.css.inheritProperties()
-    elem.rendered = not elem.pseudo[pseudo].applyValue(parent, d)
+    elem.pseudo[pseudo].applyValue(parent, d)
 
   elem.cssapplied = true
-  elem.rendered = false
 
 func applies(mq: MediaQuery): bool =
   case mq.t
@@ -108,6 +107,23 @@ proc applyImportant(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
     if decl.important:
       ares.important.add(decl)
 
+proc checkRendered(element: Element, prev: CSSSpecifiedValues, ppseudo: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSSpecifiedValues]) =
+  if element.rendered:
+    for p in PSEUDO_BEFORE..PSEUDO_AFTER:
+      if ppseudo[p] != element.pseudo[p] and ppseudo[p] == nil:
+        element.rendered = false
+        return
+    for t in CSSPropertyType:
+      if not element.css[t].equals(prev[t]):
+        element.rendered = false
+        return
+    for p in PSEUDO_BEFORE..PSEUDO_AFTER:
+      if ppseudo[p] != nil:
+        for t in CSSPropertyType:
+          if not element.pseudo[p][t].equals(ppseudo[p][t]):
+            element.rendered = false
+            return
+
 proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
   var ares: ApplyResult
 
@@ -175,11 +191,13 @@ proc applyRules*(document: Document, ua, user: CSSStylesheet) =
       embedded_rules.add(rules_local)
 
     if not elem.cssapplied:
+      let prev = elem.css
+      let ppseudo = elem.pseudo
       if elem.parentElement != nil:
         elem.css = elem.parentElement.css.inheritProperties()
       else:
         elem.css = rootProperties()
-      for pseudo in [PSEUDO_BEFORE, PSEUDO_AFTER]:
+      for pseudo in PSEUDO_BEFORE..PSEUDO_AFTER:
         elem.pseudo[pseudo] = nil
 
       let uarules = calcRules(elem, ua)
@@ -189,6 +207,8 @@ proc applyRules*(document: Document, ua, user: CSSStylesheet) =
 
       for pseudo in PseudoElem:
         elem.applyRules(uarules, userrules, authorrules, pseudo)
+
+      elem.checkRendered(prev, ppseudo)
 
     for i in countdown(elem.children.high, 0):
       stack.add(elem.children[i])

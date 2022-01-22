@@ -17,6 +17,7 @@ type
     inlinelayout*: bool
     specified*: CSSSpecifiedValues
     node*: Node
+    element*: Element
 
   InlineAtom* = ref object of RootObj
     relx*: int
@@ -59,6 +60,7 @@ type
 
     compwidth*: int
     compheight*: Option[int]
+    done*: bool
 
   RowBox* = object
     x*: int
