@@ -25,13 +25,12 @@ proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
   else:
     parent = rootProperties()
 
-  case pseudo
-  of PSEUDO_NONE:
+  if pseudo == PSEUDO_NONE:
     elem.css.applyValue(parent, d)
-  of PSEUDO_BEFORE, PSEUDO_AFTER:
+  else:
     if elem.pseudo[pseudo] == nil:
       elem.pseudo[pseudo] = elem.css.inheritProperties()
-    elem.pseudo[pseudo].applyValue(parent, d)
+    elem.pseudo[pseudo].applyValue(elem.css, d)
 
   elem.cssapplied = true
 
@@ -111,10 +110,14 @@ proc checkRendered(element: Element, prev: CSSSpecifiedValues, ppseudo: array[PS
   if element.rendered:
     for p in PSEUDO_BEFORE..PSEUDO_AFTER:
       if ppseudo[p] != element.pseudo[p] and ppseudo[p] == nil:
+        if element.parentElement != nil:
+          element.parentElement.rendered = false
         element.rendered = false
         return
     for t in CSSPropertyType:
       if not element.css[t].equals(prev[t]):
+        if element.parentElement != nil:
+          element.parentElement.rendered = false
         element.rendered = false
         return
     for p in PSEUDO_BEFORE..PSEUDO_AFTER:

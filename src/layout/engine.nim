@@ -368,11 +368,16 @@ proc getTextBox(box: CSSBox): InlineBox =
   result.inlinelayout = true
   result.specified = box.specified.inheritProperties()
 
-proc getPseudoBox(specified: CSSSpecifiedValues): CSSBox =
+proc getPseudoBox(bctx: BlockContext, specified: CSSSpecifiedValues): CSSBox =
   let box = getBox(specified)
 
   if box == nil:
     return nil
+
+  if specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}:
+    let box = BlockBox(box)
+    box.bctx = bctx.newBlockContext(box)
+
   box.inlinelayout = true
   if specified{"content"}.len > 0:
     let content = getTextBox(box)
@@ -442,13 +447,6 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
     marker.text.add(elem.css{"list-style-type"}.listMarker(ordinalvalue))
     add_box(marker)
 
-  let before = elem.pseudo[PSEUDO_BEFORE]
-  if before != nil:
-    let bbox = getPseudoBox(before)
-    bbox.node = elem
-    if bbox != nil:
-      add_box(bbox)
-
   for child in elem.childNodes:
     case child.nodeType
     of ELEMENT_NODE:
@@ -458,10 +456,23 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
         ibox = box.getTextBox()
         ibox.newline = true
 
+      let before = elem.pseudo[PSEUDO_BEFORE]
+      if before != nil:
+        let bbox = bctx.getPseudoBox(before)
+        bbox.node = elem
+        if bbox != nil:
+          add_box(bbox)
+
       let cbox = elem.generateBox(viewport, bctx)
       if cbox != nil:
         add_ibox()
         add_box(cbox)
+
+      let after = elem.pseudo[PSEUDO_AFTER]
+      if after != nil:
+        let abox = bctx.getPseudoBox(after)
+        if abox != nil:
+          add_box(abox)
     of TEXT_NODE:
       let text = Text(child)
       # Don't generate empty anonymous inline blocks between block boxes
@@ -474,12 +485,6 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
         ibox.text.add(text.data)
     else: discard
   add_ibox()
-
-  let after = elem.pseudo[PSEUDO_AFTER]
-  if after != nil:
-    let abox = getPseudoBox(after)
-    if abox != nil:
-      add_box(abox)
 
   viewport.map[elem.uid] = box
 
