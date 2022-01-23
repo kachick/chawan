@@ -203,6 +203,8 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     of Rune('~'):
       if state.selectors[^1].len > 0 or state.combinator != nil:
         state.query = QUERY_SUBSEQ_SIBLING_COMBINATOR
+    of Rune('*'):
+      state.addSelector(Selector(t: UNIVERSAL_SELECTOR))
     else: discard
   of CSS_HASH_TOKEN:
     state.addSelector(Selector(t: ID_SELECTOR, id: $csstoken.value))
