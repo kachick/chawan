@@ -17,12 +17,12 @@ proc getTermAttributes*(): TermAttributes =
     when defined(posix):
       var win: IOctl_WinSize
       if ioctl(cint(getOsFileHandle(stdout)), TIOCGWINSZ, addr win) != -1:
-        result.width = int(win.ws_col) - 1
-        result.height = int(win.ws_row)
-        result.width_px = int(win.ws_xpixel)
-        result.height_px = int(win.ws_ypixel)
         result.ppc = int(win.ws_xpixel) div int(win.ws_col)
         result.ppl = int(win.ws_ypixel) div int(win.ws_row)
+        result.width = int(win.ws_col) - 1
+        result.height = int(win.ws_row)
+        result.width_px = int(win.ws_xpixel) - result.ppc
+        result.height_px = int(win.ws_ypixel)
         result.cell_ratio = result.ppl / result.ppc
         return
   #fail

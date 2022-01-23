@@ -63,19 +63,6 @@ type
     compheight*: Option[int]
     done*: bool
 
-  RowBox* = object
-    x*: int
-    y*: int
-    width*: int
-    height*: int
-    color*: CSSColor
-    fontstyle*: CSSFontStyle
-    fontweight*: int
-    textdecoration*: CSSTextDecoration
-    str*: string
-    nodes*: seq[Node]
-    bottom*: int
-
   InlineBox* = ref object of CSSBox
     text*: seq[string]
     ictx*: InlineContext

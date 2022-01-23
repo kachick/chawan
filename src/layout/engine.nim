@@ -20,6 +20,9 @@ func cells_h(l: CSSLength, state: Viewport, p: Option[int]): int =
 func cells_h(l: CSSLength, state: Viewport, p: int): int =
   return l.cells_in(state, state.term.ppl, p.some, false)
 
+func px(l: CSSLength, state: Viewport, p = 0): int {.inline.} =
+  return px(l, state.term, p)
+
 type InlineState = object
   ictx: InlineContext
   skip: bool
@@ -27,6 +30,27 @@ type InlineState = object
   word: InlineWord
   maxwidth: int
   specified: CSSSpecifiedValues
+
+func whitespacepre(specified: CSSSpecifiedValues): bool {.inline.} =
+  specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
+
+func cellwidth(ictx: InlineContext): int {.inline.} =
+  ictx.viewport.term.ppc
+
+func cellheight(ictx: InlineContext): int {.inline.} =
+  ictx.viewport.term.ppl
+
+# Whitespace between words
+func computeShift(ictx: InlineContext, specified: CSSSpecifiedValues): int =
+  if ictx.whitespace:
+    if ictx.thisrow.atoms.len > 0 or specified.whitespacepre:
+      let spacing = specified{"word-spacing"}
+      if spacing.auto:
+        return ictx.cellwidth
+      #return spacing.cells_w(ictx.viewport, 0)
+      return spacing.px(ictx.viewport)
+    ictx.whitespace = false
+  return 0
 
 proc newWord(state: var InlineState) =
   let word = InlineWord()
@@ -45,20 +69,6 @@ proc finishRow(ictx: InlineContext) =
     ictx.height += oldrow.height
     ictx.width = max(ictx.width, oldrow.width)
     ictx.thisrow = InlineRow(rely: oldrow.rely + oldrow.height)
-
-func whitespacepre(specified: CSSSpecifiedValues): bool {.inline.} =
-  specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
-
-# Whitespace between words
-func computeShift(ictx: InlineContext, specified: CSSSpecifiedValues): int =
-  if ictx.whitespace:
-    if ictx.thisrow.atoms.len > 0 or specified.whitespacepre:
-      let spacing = specified{"word-spacing"}
-      if spacing.auto:
-        return 1
-      return spacing.cells_w(ictx.viewport, 0)
-    ictx.whitespace = false
-  return 0
 
 proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSSpecifiedValues) =
   var shift = ictx.computeShift(specified)
@@ -81,13 +91,13 @@ proc addWord(state: var InlineState) =
   if state.word.str != "":
     let row = state.ictx.thisrow
     var word = state.word
-    word.height = 1
+    word.height = state.ictx.cellheight
     state.ictx.addAtom(word, state.maxwidth, state.specified)
     state.newWord()
 
 # Start a new line, even if the previous one is empty
 proc flushLine(ictx: InlineContext) =
-  ictx.thisrow.height = max(ictx.thisrow.height, 1)
+  ictx.thisrow.height = max(ictx.thisrow.height, ictx.cellheight)
   ictx.finishRow()
 
 proc checkWrap(state: var InlineState, r: Rune) =
@@ -96,11 +106,11 @@ proc checkWrap(state: var InlineState, r: Rune) =
   let shift = state.ictx.computeShift(state.specified)
   case state.specified{"word-break"}
   of WORD_BREAK_BREAK_ALL:
-    if state.ictx.thisrow.width + state.word.width + shift + r.width() > state.maxwidth:
+    if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.addWord()
       state.ictx.finishRow()
   of WORD_BREAK_KEEP_ALL:
-    if state.ictx.thisrow.width + state.word.width + shift + r.width() > state.maxwidth:
+    if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.ictx.finishRow()
   else: discard
 
@@ -135,7 +145,7 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSS
       fastRuneAt(str, i, r)
       state.checkWrap(r)
       state.word.str &= r
-      state.word.width += r.width()
+      state.word.width += r.width() * state.ictx.cellwidth
 
   state.addWord()
 
@@ -147,18 +157,24 @@ proc computedDimensions(bctx: BlockContext, width: int, height: Option[int]) =
   if pwidth.auto:
     bctx.compwidth = width
   else:
-    bctx.compwidth = pwidth.cells_w(bctx.viewport, width)
+    #bctx.compwidth = pwidth.cells_w(bctx.viewport, width)
+    bctx.compwidth = pwidth.px(bctx.viewport, width)
 
-  let mlef = bctx.specified{"margin-left"}.cells_w(bctx.viewport, width)
-  let mrig = bctx.specified{"margin-right"}.cells_w(bctx.viewport, width)
+  #let mlef = bctx.specified{"margin-left"}.cells_w(bctx.viewport, width)
+  #let mrig = bctx.specified{"margin-right"}.cells_w(bctx.viewport, width)
+  let mlef = bctx.specified{"margin-left"}.px(bctx.viewport, width)
+  let mrig = bctx.specified{"margin-right"}.px(bctx.viewport, width)
   bctx.relx = mlef
   bctx.compwidth -= mlef
   bctx.compwidth -= mrig
 
   let pheight = bctx.specified{"height"}
   if not pheight.auto:
-    if pheight.unit != UNIT_PERC or height.issome:
-      bctx.compheight = pheight.cells_h(bctx.viewport, height).some
+    #bctx.compheight = pheight.cells_h(bctx.viewport, height).some
+    if pheight.unit != UNIT_PERC:
+      bctx.compheight = pheight.px(bctx.viewport).some
+    elif height.issome:
+      bctx.compheight = pheight.px(bctx.viewport, height.get).some
 
 proc newBlockContext_common(parent: BlockContext, box: CSSBox): BlockContext {.inline.} =
   new(result)
@@ -185,7 +201,7 @@ proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
   result.specified = rootProperties()
   result.viewport = viewport
-  result.computedDimensions(viewport.term.width, none(int))
+  result.computedDimensions(viewport.term.width_px, none(int))
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
   new(result)
@@ -211,7 +227,8 @@ proc arrangeBlocks(bctx: BlockContext) =
     let child = bctx.nested[i]
 
     bctx.margin_top = child.margin_top
-    let mtop = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
+    #let mtop = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
+    let mtop = bctx.specified{"margin-top"}.px(bctx.viewport, bctx.compwidth)
     if mtop > bctx.margin_top or mtop < 0:
       bctx.margin_top = mtop - bctx.margin_top
 
@@ -230,7 +247,8 @@ proc arrangeBlocks(bctx: BlockContext) =
     inc i
 
   bctx.margin_bottom = margin_todo
-  let mbot = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
+  #let mbot = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
+  let mbot = bctx.specified{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
   if mbot > bctx.margin_bottom or mbot < 0:
     bctx.margin_bottom = mbot - bctx.margin_bottom
 
@@ -295,8 +313,10 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   if bctx.compheight.issome:
     bctx.height = bctx.compheight.get
   bctx.width = max(ictx.width, ictx.width)
-  bctx.margin_top = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
-  bctx.margin_bottom = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
+  #bctx.margin_top = bctx.specified{"margin-top"}.cells_h(bctx.viewport, bctx.compwidth)
+  #bctx.margin_bottom = bctx.specified{"margin-bottom"}.cells_h(bctx.viewport, bctx.compwidth)
+  bctx.margin_top = bctx.specified{"margin-top"}.px(bctx.viewport, bctx.compwidth)
+  bctx.margin_bottom = bctx.specified{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
 
 proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
   # Box contains block boxes.
