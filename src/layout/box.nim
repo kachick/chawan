@@ -18,6 +18,7 @@ type
     specified*: CSSSpecifiedValues
     node*: Node
     element*: Element
+    nodes*: seq[Node]
 
   InlineAtom* = ref object of RootObj
     relx*: int
@@ -49,6 +50,7 @@ type
     whitespace*: bool
     maxwidth*: int
     viewport*: Viewport
+    nodes*: seq[Node]
 
   BlockContext* = ref object of InlineAtom
     inline*: InlineContext

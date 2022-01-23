@@ -280,7 +280,7 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
     box.ictx.flushLine()
   for text in box.text:
     assert box.children.len == 0
-    box.ictx.renderText(text, bctx.compwidth, box.specified, bctx.viewport.nodes)
+    box.ictx.renderText(text, bctx.compwidth, box.specified, box.nodes)
 
   for child in box.children:
     case child.t
@@ -321,20 +321,17 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   bctx.margin_top = bctx.specified{"margin-top"}.px(bctx.viewport, bctx.compwidth)
   bctx.margin_bottom = bctx.specified{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
 
-proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
+template flush_group() =
+  if blockgroup.len > 0:
+    let gctx = newBlockContext(bctx)
+    gctx.alignInlines(blockgroup)
+    blockgroup.setLen(0)
+    bctx.nested.add(gctx)
+
+proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox], blockgroup: var seq[CSSBox], node: Node) =
   # Box contains block boxes.
   # If present, group inline boxes together in anonymous block boxes. Place
   # block boxes inbetween these.
-  var blockgroup: seq[CSSBox]
-  var has_noinline = false
-
-  template flush_group() =
-    if blockgroup.len > 0:
-      let gctx = newBlockContext(bctx)
-      gctx.alignInlines(blockgroup)
-      blockgroup.setLen(0)
-      bctx.nested.add(gctx)
-
   for child in blocks:
     case child.t
     of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
@@ -344,15 +341,18 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
       alignBlock(child)
     of DISPLAY_INLINE:
       if child.inlinelayout:
+        child.nodes = bctx.viewport.nodes
         blockgroup.add(child)
       else:
-        flush_group()
-        bctx.alignBlocks(child.children)
+        if child.node != nil:
+          bctx.viewport.nodes.add(child.node)
+        bctx.alignBlocks(child.children, blockgroup, child.node)
+        if child.node != nil:
+          discard bctx.viewport.nodes.pop()
         #eprint "put"
     of DISPLAY_INLINE_BLOCK:
       blockgroup.add(child)
     else: discard #TODO
-  flush_group()
 
 proc alignBlock(box: BlockBox) =
   if box.bctx.done:
@@ -363,7 +363,10 @@ proc alignBlock(box: BlockBox) =
     # Box only contains inline boxes.
     box.bctx.alignInlines(box.children)
   else:
-    box.bctx.alignBlocks(box.children)
+    var blockgroup: seq[CSSBox]
+    box.bctx.alignBlocks(box.children, blockgroup, box.node)
+    let bctx = box.bctx
+    flush_group()
     box.bctx.arrangeBlocks()
   if box.node != nil:
     discard box.bctx.viewport.nodes.pop()
@@ -403,9 +406,15 @@ proc getPseudoBox(bctx: BlockContext, specified: CSSSpecifiedValues): CSSBox =
   if box == nil:
     return nil
 
-  if specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}:
+  case box.specified{"display"}
+  of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
     let box = BlockBox(box)
     box.bctx = bctx.newBlockContext(box)
+  of DISPLAY_INLINE_BLOCK:
+    let box = InlineBlockBox(box)
+    box.bctx = bctx.newInlineBlockContext(box)
+  else:
+    discard
 
   box.inlinelayout = true
   if specified{"content"}.len > 0:
@@ -480,8 +489,16 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
     if elem.tagType == TAG_LI:
       ordinalvalue = HTMLLIElement(elem).ordinalvalue
     let marker = box.getTextBox()
+    marker.node = elem
     marker.text.add(elem.css{"list-style-type"}.listMarker(ordinalvalue))
     add_box(marker)
+
+  let before = elem.pseudo[PSEUDO_BEFORE]
+  if before != nil:
+    let bbox = bctx.getPseudoBox(before)
+    if bbox != nil:
+      bbox.node = elem
+      add_box(bbox)
 
   for child in elem.childNodes:
     case child.nodeType
@@ -492,22 +509,9 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
         ibox = box.getTextBox()
         ibox.newline = true
 
-      let before = elem.pseudo[PSEUDO_BEFORE]
-      if before != nil:
-        let bbox = bctx.getPseudoBox(before)
-        bbox.node = elem
-        if bbox != nil:
-          add_box(bbox)
-
       let cbox = elem.generateBox(viewport, bctx)
       if cbox != nil:
         add_box(cbox)
-
-      let after = elem.pseudo[PSEUDO_AFTER]
-      if after != nil:
-        let abox = bctx.getPseudoBox(after)
-        if abox != nil:
-          add_box(abox)
     of TEXT_NODE:
       let text = Text(child)
       # Don't generate empty anonymous inline blocks between block boxes
@@ -517,9 +521,17 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
           not text.data.onlyWhitespace():
         if ibox == nil:
           ibox = box.getTextBox()
+          ibox.node = elem
         ibox.text.add(text.data)
     else: discard
   add_ibox()
+
+  let after = elem.pseudo[PSEUDO_AFTER]
+  if after != nil:
+    let abox = bctx.getPseudoBox(after)
+    if abox != nil:
+      abox.node = elem
+      add_box(abox)
 
   viewport.map[elem.uid] = box
 

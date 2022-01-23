@@ -32,14 +32,11 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
-func pseudoElemSelectorMatches(elem: Element, s: string): SelectResult =
-  case s
+func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
+  case sel.elem
   of "before": return selectres(true, PSEUDO_BEFORE)
   of "after": return selectres(true, PSEUDO_AFTER)
   else: return selectres(false)
-
-func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
-  return elem.pseudoElemSelectorMatches(sel.elem)
 
 func pseudoSelectorMatches(elem: Element, sel: Selector): SelectResult =
   case sel.pseudo
@@ -48,7 +45,9 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): SelectResult =
   of "only-child": return selectres(elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem)
   of "hover": return selectres(elem.hover)
   of "root": return selectres(elem == elem.ownerDocument.root)
-  else: return elem.pseudoElemSelectorMatches(sel.pseudo)
+  of "before": return selectres(true, PSEUDO_BEFORE)
+  of "after": return selectres(true, PSEUDO_AFTER)
+  else: return selectres(false)
 
 func selectorsMatch*(elem: Element, selectors: SelectorList): SelectResult
 
