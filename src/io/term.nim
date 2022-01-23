@@ -19,10 +19,11 @@ proc getTermAttributes*(): TermAttributes =
       if ioctl(cint(getOsFileHandle(stdout)), TIOCGWINSZ, addr win) != -1:
         result.ppc = int(win.ws_xpixel) div int(win.ws_col)
         result.ppl = int(win.ws_ypixel) div int(win.ws_row)
+        # some terminals don't like it when we fill the last cell. #TODO make this optional
         result.width = int(win.ws_col) - 1
         result.height = int(win.ws_row)
-        result.width_px = int(win.ws_xpixel) - result.ppc
-        result.height_px = int(win.ws_ypixel)
+        result.width_px = result.width * result.ppc
+        result.height_px = result.height * result.ppl
         result.cell_ratio = result.ppl / result.ppc
         return
   #fail

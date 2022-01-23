@@ -49,7 +49,6 @@ func computeShift(ictx: InlineContext, specified: CSSSpecifiedValues): int =
         return ictx.cellwidth
       #return spacing.cells_w(ictx.viewport, 0)
       return spacing.px(ictx.viewport)
-    ictx.whitespace = false
   return 0
 
 proc newWord(state: var InlineState) =
@@ -72,12 +71,14 @@ proc finishRow(ictx: InlineContext) =
 
 proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSSpecifiedValues) =
   var shift = ictx.computeShift(specified)
+  ictx.whitespace = false
   # Line wrapping
   if specified{"white-space"} notin {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     if ictx.thisrow.width + atom.width + shift > maxwidth:
       ictx.finishRow()
       # Recompute on newline
       shift = ictx.computeShift(specified)
+      ictx.whitespace = false
 
   ictx.thisrow.width += shift
 
@@ -109,9 +110,11 @@ proc checkWrap(state: var InlineState, r: Rune) =
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.addWord()
       state.ictx.finishRow()
+      state.ictx.whitespace = false
   of WORD_BREAK_KEEP_ALL:
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.ictx.finishRow()
+      state.ictx.whitespace = false
   else: discard
 
 proc processWhitespace(state: var InlineState, c: char) =
@@ -465,6 +468,7 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
       ibox = nil
 
   template add_box(child: CSSBox) =
+    add_ibox()
     box.children.add(child)
     if child.t notin {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK} or not child.inlinelayout:
       box.inlinelayout = false
@@ -497,7 +501,6 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
 
       let cbox = elem.generateBox(viewport, bctx)
       if cbox != nil:
-        add_ibox()
         add_box(cbox)
 
       let after = elem.pseudo[PSEUDO_AFTER]

@@ -96,10 +96,10 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
-proc renderDocument*(document: Document, attrs: TermAttributes, userstyle: CSSStylesheet, layout: var Viewport): FlexibleGrid =
+proc renderDocument*(document: Document, term: TermAttributes, userstyle: CSSStylesheet, layout: var Viewport): FlexibleGrid =
   document.applyStylesheets(uastyle, userstyle)
   layout.renderLayout(document)
   result.setLen(0)
-  result.renderBlockContext(layout.root.bctx, 0, 0, layout.term)
+  result.renderBlockContext(layout.root.bctx, 0, 0, term)
   if result.len == 0:
     result.addLine()
