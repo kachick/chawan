@@ -32,20 +32,23 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
-func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
-  case sel.pseudo
-  of "first-child": return elem.parentNode.firstElementChild == elem
-  of "last-child": return elem.parentNode.lastElementChild == elem
-  of "only-child": return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
-  of "hover": return elem.hover
-  of "root": return elem == elem.ownerDocument.root
-  else: return false
-
-func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
-  case sel.elem
+func pseudoElemSelectorMatches(elem: Element, s: string): SelectResult =
+  case s
   of "before": return selectres(true, PSEUDO_BEFORE)
   of "after": return selectres(true, PSEUDO_AFTER)
   else: return selectres(false)
+
+func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
+  return elem.pseudoElemSelectorMatches(sel.elem)
+
+func pseudoSelectorMatches(elem: Element, sel: Selector): SelectResult =
+  case sel.pseudo
+  of "first-child": return selectres(elem.parentNode.firstElementChild == elem)
+  of "last-child": return selectres(elem.parentNode.lastElementChild == elem)
+  of "only-child": return selectres(elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem)
+  of "hover": return selectres(elem.hover)
+  of "root": return selectres(elem == elem.ownerDocument.root)
+  else: return elem.pseudoElemSelectorMatches(sel.pseudo)
 
 func selectorsMatch*(elem: Element, selectors: SelectorList): SelectResult
 
@@ -133,7 +136,7 @@ func selectorMatches(elem: Element, sel: Selector): SelectResult =
   of ATTR_SELECTOR:
     return selectres(elem.attrSelectorMatches(sel))
   of PSEUDO_SELECTOR:
-    return selectres(pseudoSelectorMatches(elem, sel))
+    return pseudoSelectorMatches(elem, sel)
   of PSELEM_SELECTOR:
     return pseudoElemSelectorMatches(elem, sel)
   of UNIVERSAL_SELECTOR:
