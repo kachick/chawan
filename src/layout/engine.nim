@@ -9,7 +9,7 @@ import utils/twtstr
 import io/term
 
 func cells_in(l: CSSLength, state: Viewport, d: int, p: Option[int], o: bool): int =
-  return cells(l, d, state.term.width_px, state.term.height_px, p, o)
+  return cells(l, d, state.term, p, o)
 
 func cells_w(l: CSSLength, state: Viewport, p: int): int =
   return l.cells_in(state, state.term.ppc, p.some, true)

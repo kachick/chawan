@@ -6,8 +6,9 @@ type
   TermAttributes* = object
     width*: int
     height*: int
-    ppc*: int
-    ppl*: int
+    ppc*: int # cell width
+    ppl*: int # cell height
+    cell_ratio*: float64 # ppl / ppc
     width_px*: int
     height_px*: int
 
@@ -22,6 +23,7 @@ proc getTermAttributes*(): TermAttributes =
         result.height_px = int(win.ws_ypixel)
         result.ppc = int(win.ws_xpixel) div int(win.ws_col)
         result.ppl = int(win.ws_ypixel) div int(win.ws_row)
+        result.cell_ratio = result.ppl / result.ppc
         return
   #fail
   result.width = terminalWidth() - 1
@@ -30,5 +32,6 @@ proc getTermAttributes*(): TermAttributes =
     result.height = 24
   result.ppc = 9
   result.ppl = 18
+  result.cell_ratio = result.ppl / result.ppc
   result.width_px = result.ppc * result.width
   result.height_px = result.ppl * result.height

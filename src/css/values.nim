@@ -6,10 +6,11 @@ import options
 import macros
 import strutils
 
-import utils/twtstr
 import css/parser
 import css/selparser
+import io/term
 import types/color
+import utils/twtstr
 
 export selparser.PseudoElem
 
@@ -200,23 +201,25 @@ macro `{}=`*(vals: CSSSpecifiedValues, s: string, v: typed): untyped =
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
-func px(n: float64, d: int): int =
+func px(n: float64, d: int): int {.inline.} =
   return int(n / float(d))
 
-func cells*(l: CSSLength, d, w, h: int, p: Option[int], o: bool): int =
+func cells*(l: CSSLength, d: int, term: TermAttributes, p: Option[int], o: bool): int =
+  let w = term.width_px
+  let h = term.height_px
   case l.unit
   of UNIT_EM, UNIT_REM:
-    if o: int(l.num * 2) #horizontal
+    if o: int(l.num * term.cell_ratio) #horizontal
     else: int(l.num) #vertical
   of UNIT_CH:
     if o: int(l.num) #horizontal
-    else: int(l.num / 2) #vertical
+    else: int(l.num / term.cell_ratio) #vertical
   of UNIT_IC:
-    if o: int(l.num * 2) #horizontal
+    if o: int(l.num * term.cell_ratio) #horizontal
     else: int(l.num) #vertical
-  of UNIT_EX:
+  of UNIT_EX: # x-letter height, we assume it's em/2
     if o: int(l.num / 2) #horizontal
-    else: int(l.num / 4) #vertical
+    else: int(l.num / term.cell_ratio / 2) #vertical
   of UNIT_PERC: int(p.get / 100 * l.num)
   of UNIT_PX: px(l.num, d)
   of UNIT_CM: px(l.num * 37.8, d)
