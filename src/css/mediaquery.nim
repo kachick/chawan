@@ -186,7 +186,7 @@ proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false
   var non = non
   if not non:
     let cval = parser.consume()
-    if cval of CSSToken:
+    if cval of CSSToken and CSSToken(cval).tokenType == CSS_IDENT_TOKEN:
       if $CSSToken(cval).value == "not":
         non = true
     else:

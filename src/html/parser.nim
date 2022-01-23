@@ -284,6 +284,9 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     HTMLHeadingElement(element).rank = 5
   of TAG_H6:
     HTMLHeadingElement(element).rank = 6
+  of TAG_LINK:
+    HTMLLinkElement(element).href = element.attr("href")
+    HTMLLinkElement(element).rel = element.attr("rel")
   else: discard
 
   if not state.in_body and not (element.tagType in HeadTagTypes):

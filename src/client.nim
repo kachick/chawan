@@ -1,26 +1,25 @@
-import httpclient
 import streams
 import terminal
 import options
 import os
 
+import css/sheet
+import config/config
 import io/buffer
 import io/lineedit
-import config/config
-import utils/twtstr
-import css/sheet
-import types/mime
+import io/loader
 import types/url
+import utils/twtstr
 
 type
   Client* = ref object
-    http: HttpClient
     buffer: Buffer
     feednext: bool
     s: string
     iserror: bool
     errormessage: string
     userstyle: CSSStylesheet
+    loader: FileLoader
 
   ActionError = object of IOError
   LoadError = object of ActionError
@@ -28,7 +27,7 @@ type
 
 proc newClient*(): Client =
   new(result)
-  result.http = newHttpClient()
+  result.loader = newFileLoader()
 
 proc loadError(s: string) =
   raise newException(LoadError, s)
@@ -38,20 +37,6 @@ proc actionError(s: string) =
 
 proc interruptError() =
   raise newException(InterruptError, "Interrupted")
-
-proc getPage(client: Client, url: Url): tuple[s: Stream, contenttype: string] =
-  if url.scheme == "file":
-    let path = url.path.serialize_unicode()
-    result.contenttype = guessContentType(path)
-    result.s = newFileStream(path, fmRead)
-  elif url.scheme == "http" or url.scheme == "https":
-    let resp = client.http.get(url.serialize(true))
-    let ct = resp.contentType()
-    if ct != "":
-      result.contenttype = ct.until(';')
-    else:
-      result.contenttype = guessContentType(url.path.serialize())
-    result.s = resp.bodyStream
 
 proc addBuffer(client: Client) =
   if client.buffer == nil:
@@ -64,6 +49,7 @@ proc addBuffer(client: Client) =
     client.buffer.next.prev = client.buffer
     client.buffer.next.next = oldnext
     client.buffer = client.buffer.next
+  client.buffer.loader = client.loader
 
 proc prevBuffer(client: Client) =
   if client.buffer.prev != nil:
@@ -99,6 +85,7 @@ proc setupBuffer(client: Client) =
 
 proc readPipe(client: Client, ctype: string) =
   client.buffer = newBuffer()
+  client.buffer.loader = client.loader
   client.buffer.contenttype = if ctype != "": ctype else: "text/plain"
   client.buffer.ispipe = true
   client.buffer.istream = newFileStream(stdin)
@@ -115,7 +102,7 @@ proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbu
     raise newException(InterruptError, "Interrupted"))
   if force or prevurl.issome or not prevurl.get.equals(url, true):
     try:
-      let page = client.getPage(url)
+      let page = client.loader.getPage(url)
       if page.s != nil:
         if newbuf:
           client.addBuffer()

@@ -8,8 +8,9 @@ import css/sheet
 import html/dom
 import html/tags
 import html/parser
-import io/term
 import io/cell
+import io/loader
+import io/term
 import layout/box
 import render/renderdocument
 import render/rendertext
@@ -49,6 +50,7 @@ type
     prev*: Buffer
     next* {.cursor.}: Buffer
     userstyle*: CSSStylesheet
+    loader*: FileLoader
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -711,6 +713,17 @@ proc updateHover(buffer: Buffer) =
         elem.refreshStyle()
   buffer.prevnodes = nodes
 
+proc loadResources(buffer: Buffer, document: Document) =
+  for elem in document.head.children:
+    if elem.tagType == TAG_LINK:
+      let elem = HTMLLinkElement(elem)
+      if elem.rel == "stylesheet":
+        let url = parseUrl(elem.href, document.location.some)
+        if url.issome:
+          let res = buffer.loader.getPage(url.get)
+          if res.s != nil and res.contenttype == "text/css":
+            elem.s = res.s
+
 proc load*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
@@ -723,6 +736,8 @@ proc load*(buffer: Buffer) =
       buffer.istream.close()
       buffer.streamclosed = true
     buffer.document = parseHtml(newStringStream(buffer.source))
+    buffer.document.location = buffer.location
+    buffer.loadResources(buffer.document)
   else:
     if not buffer.streamclosed:
       buffer.source = buffer.istream.readAll()

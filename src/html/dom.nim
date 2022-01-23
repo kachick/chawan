@@ -1,11 +1,12 @@
-import uri
 import tables
 import options
+import streams
 import strutils
 
 import css/values
 import css/sheet
 import html/tags
+import types/url
 
 type
   EventTarget* = ref EventTargetObj
@@ -35,7 +36,7 @@ type
 
   Document* = ref DocumentObj
   DocumentObj = object of NodeObj
-    location*: Uri
+    location*: Url
     type_elements*: array[TagType, seq[Element]]
     id_elements*: Table[string, seq[Element]]
     class_elements*: Table[string, seq[Element]]
@@ -116,6 +117,12 @@ type
 
   HTMLStyleElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
+
+  HTMLLinkElement* = ref object of HTMLElement
+    href*: string
+    rel*: string
+    sheet*: CSSStylesheet
+    s*: Stream
 
 iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childNodes:
@@ -295,6 +302,8 @@ func newHtmlElement*(document: Document, tagType: TagType): HTMLElement =
     result = new(HTMLLIElement)
   of TAG_STYLE:
     result = new(HTMLStyleElement)
+  of TAG_LINK:
+    result = new(HTMLLinkElement)
   else:
     result = new(HTMLElement)
 

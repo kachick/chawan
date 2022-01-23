@@ -167,9 +167,20 @@ proc applyRules*(document: Document, ua, user: CSSStylesheet) =
   var rules_head: CSSStylesheet
 
   for child in document.head.children:
-    if child.tagType == TAG_STYLE:
+    case child.tagType
+    of TAG_STYLE:
       let style = HTMLStyleElement(child)
       rules_head.add(style.sheet)
+    of TAG_LINK:
+      let link = HTMLLinkElement(child)
+      if link.s != nil:
+        let content = link.s.readAll()
+        link.sheet = parseStylesheet(content)
+        link.s.close()
+        link.s = nil
+      rules_head.add(link.sheet)
+    else:
+      discard
 
   if rules_head.len > 0:
     embedded_rules.add(rules_head)

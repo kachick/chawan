@@ -317,7 +317,10 @@ proc shorten_path(url: var Url) {.inline.} =
     discard url.path.ss.pop()
 
 proc append(path: var UrlPath, s: string) =
-  path.ss.add(s)
+  if path.opaque:
+    path.s &= s
+  else:
+    path.ss.add(s)
 
 template includes_credentials(url: Url): bool = url.username != "" or url.password != ""
 
