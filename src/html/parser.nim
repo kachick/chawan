@@ -369,6 +369,10 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
     if state.in_comment:
       state.commentNode.data &= c
     else:
+      if not c.isWhitespace() and (state.textNode == nil or state.textNode.parentElement.tagType == TAG_HTML):
+        state.textNode = nil
+        processDocumentBody(state)
+        processDocumentText(state)
       if not (state.skip_lf and c == '\n'):
         processDocumentText(state)
         state.textNode.data &= c
@@ -410,8 +414,7 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
               let comment = newComment()
               state.commentNode = comment
               processDocumentAddNode(state, comment)
-              if state.textNode != nil:
-                state.textNode = nil
+              state.textNode = nil
           else:
             #TODO for doctype
             while p < max and buf[p] != '>':
@@ -420,8 +423,7 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
             continue
 
         if not state.in_comment:
-          if state.textNode != nil:
-            state.textNode = nil
+          state.textNode = nil
           p = at
           if state.in_script:
             if buf.has("</script>"):
