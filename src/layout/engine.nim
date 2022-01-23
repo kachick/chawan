@@ -46,22 +46,28 @@ proc finishRow(ictx: InlineContext) =
     ictx.width = max(ictx.width, oldrow.width)
     ictx.thisrow = InlineRow(rely: oldrow.rely + oldrow.height)
 
-proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSSpecifiedValues) =
-  # Whitespace between words
-  var shift = 0
-  let whitespacepre = specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
-  if ictx.whitespace:
-    if ictx.thisrow.atoms.len > 0 or whitespacepre:
-      shift = 1
-    ictx.whitespace = false
+func whitespacepre(specified: CSSSpecifiedValues): bool {.inline.} =
+  specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
 
+# Whitespace between words
+func computeShift(ictx: InlineContext, specified: CSSSpecifiedValues): int =
+  if ictx.whitespace:
+    if ictx.thisrow.atoms.len > 0 or specified.whitespacepre:
+      let spacing = specified{"word-spacing"}
+      if spacing.auto:
+        return 1
+      return spacing.cells_w(ictx.viewport, 0)
+    ictx.whitespace = false
+  return 0
+
+proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSSpecifiedValues) =
+  var shift = ictx.computeShift(specified)
   # Line wrapping
   if specified{"white-space"} notin {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
-    if specified{"word-break"} == WORD_BREAK_NORMAL and ictx.thisrow.width + atom.width + shift > maxwidth:
+    if ictx.thisrow.width + atom.width + shift > maxwidth:
       ictx.finishRow()
-      if not whitespacepre:
-        # No whitespace on newline
-        shift = 0
+      # Recompute on newline
+      shift = ictx.computeShift(specified)
 
   ictx.thisrow.width += shift
 
@@ -87,13 +93,14 @@ proc flushLine(ictx: InlineContext) =
 proc checkWrap(state: var InlineState, r: Rune) =
   if state.specified{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     return
+  let shift = state.ictx.computeShift(state.specified)
   case state.specified{"word-break"}
   of WORD_BREAK_BREAK_ALL:
-    if state.ictx.thisrow.width + state.word.width + r.width() > state.maxwidth:
+    if state.ictx.thisrow.width + state.word.width + shift + r.width() > state.maxwidth:
       state.addWord()
       state.ictx.finishRow()
   of WORD_BREAK_KEEP_ALL:
-    if state.ictx.thisrow.width + state.word.width + r.width() > state.maxwidth:
+    if state.ictx.thisrow.width + state.word.width + shift + r.width() > state.maxwidth:
       state.ictx.finishRow()
   else: discard
 
@@ -120,18 +127,15 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSS
     #eprint "start", str.strip()
   var i = 0
   while i < str.len:
-    var rw = 0
-    case str[i]
-    of ' ', '\n', '\t':
+    if str[i].isWhitespace():
       state.processWhitespace(str[i])
       inc i
     else:
       var r: Rune
       fastRuneAt(str, i, r)
-      rw = r.width()
       state.checkWrap(r)
       state.word.str &= r
-      state.word.width += rw
+      state.word.width += r.width()
 
   state.addWord()
 
@@ -186,6 +190,7 @@ proc newBlockContext(viewport: Viewport): BlockContext =
 proc newInlineContext(bctx: BlockContext): InlineContext =
   new(result)
   result.thisrow = InlineRow()
+  result.viewport = bctx.viewport
   bctx.inline = result
 
 # Blocks' positions do not have to be arranged if alignBlocks is called with
@@ -235,7 +240,8 @@ proc arrangeBlocks(bctx: BlockContext) =
 proc alignBlock(box: BlockBox)
 
 proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox, parentcss: CSSSpecifiedValues) =
-  box.bctx = bctx.newInlineBlockContext(box)
+  if box.bctx.done:
+    return
   alignBlock(box)
   box.bctx.rely += box.bctx.margin_top
   box.bctx.height += box.bctx.margin_top
@@ -328,7 +334,6 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox]) =
 proc alignBlock(box: BlockBox) =
   if box.bctx.done:
     return
-  box.bctx.done = true
   if box.node != nil:
     box.bctx.viewport.nodes.add(box.node)
   if box.inlinelayout:
@@ -339,6 +344,7 @@ proc alignBlock(box: BlockBox) =
     box.bctx.arrangeBlocks()
   if box.node != nil:
     discard box.bctx.viewport.nodes.pop()
+  box.bctx.done = true
 
 proc getBox(specified: CSSSpecifiedValues): CSSBox =
   case specified{"display"}
@@ -390,7 +396,7 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
   if viewport.map[elem.uid] != nil:
     let box = viewport.map[elem.uid]
     var bctx = bctx
-    if box.specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}:
+    if box.specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM, DISPLAY_INLINE_BLOCK}:
       let box = BlockBox(box)
       if bctx == nil:
         box.bctx = viewport.newBlockContext()
@@ -418,13 +424,19 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
   box.element = elem
 
   var bctx = bctx
-  if box.specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}:
+  case box.specified{"display"}
+  of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
     let box = BlockBox(box)
     if bctx == nil:
       box.bctx = viewport.newBlockContext()
     else:
       box.bctx = bctx.newBlockContext(box)
     bctx = box.bctx
+  of DISPLAY_INLINE_BLOCK:
+    let box = InlineBlockBox(box)
+    box.bctx = bctx.newInlineBlockContext(box)
+    bctx = box.bctx
+  else: discard
 
   var ibox: InlineBox
   template add_ibox() =

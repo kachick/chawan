@@ -48,6 +48,7 @@ type
 
     whitespace*: bool
     maxwidth*: int
+    viewport*: Viewport
 
   BlockContext* = ref object of InlineAtom
     inline*: InlineContext

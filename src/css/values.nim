@@ -27,7 +27,7 @@ type
     PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK, PROPERTY_WIDTH,
     PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE, PROPERTY_PADDING,
     PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
-    PROPERTY_PADDING_BOTTOM
+    PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -132,6 +132,7 @@ const PropertyNames = {
   "padding-bottom": PROPERTY_PADDING_BOTTOM,
   "padding-left": PROPERTY_PADDING_LEFT,
   "padding-right": PROPERTY_PADDING_RIGHT,
+  "word-spacing": PROPERTY_WORD_SPACING,
 }.toTable()
 
 const ValueTypes = [
@@ -158,12 +159,13 @@ const ValueTypes = [
   PROPERTY_PADDING_LEFT: VALUE_LENGTH,
   PROPERTY_PADDING_RIGHT: VALUE_LENGTH,
   PROPERTY_PADDING_BOTTOM: VALUE_LENGTH,
+  PROPERTY_WORD_SPACING: VALUE_LENGTH,
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
-  PROPERTY_LIST_STYLE_TYPE
+  PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -496,10 +498,20 @@ func cssLength(d: CSSDeclaration): CSSLength =
     of CSS_IDENT_TOKEN:
       if $tok.value == "auto":
         return CSSLength(auto: true)
-    else:
-      return CSSLength(num: 0, unit: UNIT_EM)
+    else: discard
+  raise newException(CSSValueError, "Invalid length")
 
-  return CSSLength(num: 0, unit: UNIT_EM)
+func cssWordSpacing(d: CSSDeclaration): CSSLength =
+  if d.value.len > 0 and d.value[0] of CSSToken:
+    let tok = CSSToken(d.value[0])
+    case tok.tokenType
+    of CSS_DIMENSION_TOKEN:
+      return cssLength(tok.nvalue, $tok.unit)
+    of CSS_IDENT_TOKEN:
+      if $tok.value == "normal":
+        return CSSLength(auto: true)
+    else: discard
+  raise newException(CSSValueError, "Invalid word spacing")
 
 func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
 
@@ -625,7 +637,11 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
 proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   case vtype
   of VALUE_COLOR: val.color = cssColor(d)
-  of VALUE_LENGTH: val.length = cssLength(d)
+  of VALUE_LENGTH:
+    if ptype == PROPERTY_WORD_SPACING:
+      val.length = cssWordSpacing(d)
+    else:
+      val.length = cssLength(d)
   of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(d)
   of VALUE_DISPLAY: val.display = cssDisplay(d)
   of VALUE_CONTENT: val.content = cssString(d)
@@ -647,7 +663,7 @@ func getInitialColor(t: CSSPropertyType): CSSColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of PROPERTY_WIDTH, PROPERTY_HEIGHT:
+  of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING:
     return CSSLength(auto: true)
   else:
     return CSSLength()
