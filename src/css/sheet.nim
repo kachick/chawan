@@ -1,9 +1,11 @@
 import streams
+import tables
 import unicode
 
 import css/mediaquery
 import css/parser
 import css/selparser
+import html/tags
 
 type
   CSSRuleBase* = ref object of RootObj
@@ -18,7 +20,98 @@ type
   CSSMediaQueryDef* = ref object of CSSConditionalDef
     query*: MediaQueryList
 
-  CSSStylesheet* = seq[CSSRuleBase]
+  CSSStylesheet* = ref object
+    mq_list*: seq[CSSMediaQueryDef]
+    tag_table*: array[TagType, seq[CSSRuleDef]]
+    id_table*: TableRef[string, seq[CSSRuleDef]]
+    class_table*: TableRef[string, seq[CSSRuleDef]]
+    general_list*: seq[CSSRuleDef]
+    len*: int
+
+type SelectorHashes = object
+  tag: TagType
+  id: string
+  class: string
+
+func newStylesheet*(cap: int): CSSStylesheet =
+  new(result)
+  let bucketsize = cap div 2
+  result.id_table = newTable[string, seq[CSSRuleDef]](bucketsize)
+  result.class_table = newTable[string, seq[CSSRuleDef]](bucketsize)
+  result.general_list = newSeqOfCap[CSSRuleDef](bucketsize)
+
+proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} =
+  case sel.t
+  of TYPE_SELECTOR:
+    hashes.tag = sel.tag
+    return true
+  of CLASS_SELECTOR:
+    hashes.class = sel.class
+    return true
+  of ID_SELECTOR:
+    hashes.id = sel.id
+    return true
+  of ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, COMBINATOR_SELECTOR:
+    discard
+  of FUNC_SELECTOR:
+    discard #TODO can we discard this?
+
+iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq[string]): CSSRuleDef =
+  for rule in sheet.tag_table[tag]:
+    yield rule
+  if id != "":
+    if sheet.id_table.hasKey(id):
+      for rule in sheet.id_table[id]:
+        yield rule
+  if classes.len > 0:
+    for class in classes:
+      if sheet.class_table.hasKey(class):
+        for rule in sheet.class_table[class]:
+          yield rule
+  for rule in sheet.general_list:
+    yield rule
+
+proc add(sheet: var CSSStylesheet, rule: CSSRuleDef) =
+  let rule = CSSRuleDef(rule)
+  var hashes: SelectorHashes
+  for list in rule.sels:
+    for sel in list.sels:
+      if hashes.getSelectorIds(sel):
+        break
+
+    if hashes.tag != TAG_UNKNOWN:
+      sheet.tag_table[hashes.tag].add(rule)
+    elif hashes.id != "":
+      if hashes.id notin sheet.id_table:
+        sheet.id_table[hashes.id] = newSeq[CSSRuleDef]()
+      sheet.id_table[hashes.id].add(rule)
+    elif hashes.class != "":
+      if hashes.class notin sheet.class_table:
+        sheet.class_table[hashes.class] = newSeq[CSSRuleDef]()
+      sheet.class_table[hashes.class].add(rule)
+    else:
+      sheet.general_list.add(rule)
+
+proc add*(sheet: var CSSStylesheet, rule: CSSRuleBase) {.inline.} =
+  if rule of CSSRuleDef:
+    sheet.add(CSSRuleDef(rule))
+  else:
+    sheet.mq_list.add(CSSMediaQueryDef(rule))
+  inc sheet.len
+
+proc add*(sheet: var CSSStylesheet, sheet2: CSSStylesheet) {.inline.} =
+  sheet.general_list.add(sheet2.general_list)
+  for tag in TagType:
+    sheet.tag_table[tag].add(sheet2.tag_table[tag])
+  for key, value in sheet2.id_table.pairs:
+    if key notin sheet.id_table:
+      sheet.id_table[key] = newSeq[CSSRuleDef]()
+    sheet.id_table[key].add(value)
+  for key, value in sheet2.class_table.pairs:
+    if key notin sheet.class_table:
+      sheet.class_table[key] = newSeq[CSSRuleDef]()
+    sheet.class_table[key].add(value)
+  sheet.len += sheet2.len
 
 proc getDeclarations(rule: CSSQualifiedRule): seq[CSSDeclaration] {.inline.} =
   rule.oblock.value.parseListOfDeclarations2()
@@ -36,6 +129,7 @@ proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
     let rules = atrule.oblock.value.parseListOfRules()
     if rules.len > 0:
       var media = CSSMediaQueryDef()
+      media.children = newStylesheet(rules.len)
       media.query = query
       for rule in rules:
         if rule of CSSAtRule:
@@ -46,7 +140,9 @@ proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
   else: discard #TODO
 
 proc parseStylesheet*(s: Stream): CSSStylesheet =
-  for v in parseCSS(s).value:
+  let css = parseCSS(s)
+  result = newStylesheet(css.value.len)
+  for v in css.value:
     if v of CSSAtRule: result.addAtRule(CSSAtRule(v))
     else: result.addRule(CSSQualifiedRule(v))
 

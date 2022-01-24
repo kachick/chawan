@@ -9,16 +9,6 @@ import css/selparser
 import css/parser
 import html/dom
 
-type SelectResult* = object
-  success*: bool
-  pseudo*: PseudoElem
-
-func selectres(s: bool, p: PseudoElem = PSEUDO_NONE): SelectResult =
-  return SelectResult(success: s, pseudo: p)
-
-func psuccess(s: SelectResult): bool =
-  return s.pseudo == PSEUDO_NONE and s.success
-
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel
   of ' ': return sel.attr in elem.attributes
@@ -32,129 +22,95 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
-func pseudoElemSelectorMatches(elem: Element, sel: Selector): SelectResult =
-  case sel.elem
-  of "before": return selectres(true, PSEUDO_BEFORE)
-  of "after": return selectres(true, PSEUDO_AFTER)
-  else: return selectres(false)
+func pseudoElemSelectorMatches(elem: Element, sel: Selector): bool {.inline.} =
+  return true
 
-func pseudoSelectorMatches(elem: Element, sel: Selector): SelectResult =
+func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.pseudo
-  of "first-child": return selectres(elem.parentNode.firstElementChild == elem)
-  of "last-child": return selectres(elem.parentNode.lastElementChild == elem)
-  of "only-child": return selectres(elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem)
-  of "hover": return selectres(elem.hover)
-  of "root": return selectres(elem == elem.ownerDocument.root)
-  of "before": return selectres(true, PSEUDO_BEFORE)
-  of "after": return selectres(true, PSEUDO_AFTER)
-  else: return selectres(false)
+  of "first-child": return elem.parentNode.firstElementChild == elem
+  of "last-child": return elem.parentNode.lastElementChild == elem
+  of "only-child": return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
+  of "hover": return elem.hover
+  of "root": return elem == elem.ownerDocument.root
+  else: return false
 
-func selectorsMatch*(elem: Element, selectors: SelectorList): SelectResult
+func selectorsMatch*(elem: Element, selectors: SelectorList): bool
 
-func funcSelectorMatches(elem: Element, sel: Selector): SelectResult =
+func funcSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.name
   of "not":
     for slist in sel.fsels:
-      let res = elem.selectorsMatch(slist)
-      if res.success:
-        return selectres(false)
-    return selectres(true)
+      if elem.selectorsMatch(slist):
+        return false
+    return true
   of "is", "where":
     for slist in sel.fsels:
-      let res = elem.selectorsMatch(slist)
-      if res.success:
-        return selectres(true)
-    return selectres(false)
+      if elem.selectorsMatch(slist):
+        return true
+    return false
   else: discard
 
-func combinatorSelectorMatches(elem: Element, sel: Selector): SelectResult =
+func combinatorSelectorMatches(elem: Element, sel: Selector): bool =
   #combinator without at least two members makes no sense
   assert sel.csels.len > 1
-  let match = elem.selectorsMatch(sel.csels[^1])
-  if match.success:
+  if elem.selectorsMatch(sel.csels[^1]):
     var i = sel.csels.len - 2
     case sel.ct
     of DESCENDANT_COMBINATOR:
       var e = elem.parentElement
       while e != nil and i >= 0:
-        let res = e.selectorsMatch(sel.csels[i])
-
-        if res.pseudo != PSEUDO_NONE:
-          return selectres(false)
-
-        if res.success:
+        if e.selectorsMatch(sel.csels[i]):
           dec i
         e = e.parentElement
     of CHILD_COMBINATOR:
       var e = elem.parentElement
       while e != nil and i >= 0:
-        let res = e.selectorsMatch(sel.csels[i])
-
-        if res.pseudo != PSEUDO_NONE:
-          return selectres(false)
-
-        if not res.success:
-          return selectres(false)
+        if not e.selectorsMatch(sel.csels[i]):
+          return false
         dec i
         e = e.parentElement
     of NEXT_SIBLING_COMBINATOR:
       var e = elem.previousElementSibling
       while e != nil and i >= 0:
-        let res = e.selectorsMatch(sel.csels[i])
-
-        if res.pseudo != PSEUDO_NONE:
-          return selectres(false)
-
-        if not res.success:
-          return selectres(false)
+        if not e.selectorsMatch(sel.csels[i]):
+          return false
         dec i
         e = e.previousElementSibling
     of SUBSEQ_SIBLING_COMBINATOR:
       var e = elem.previousElementSibling
       while e != nil and i >= 0:
-        let res = e.selectorsMatch(sel.csels[i])
-
-        if res.pseudo != PSEUDO_NONE:
-          return selectres(false)
-
-        if res.success:
+        if e.selectorsMatch(sel.csels[i]):
           dec i
         e = e.previousElementSibling
-    return selectres(i == -1, match.pseudo)
-  else:
-    return selectres(false)
+    return i == -1
+  return false
 
-func selectorMatches(elem: Element, sel: Selector): SelectResult =
+func selectorMatches(elem: Element, sel: Selector): bool =
   case sel.t
   of TYPE_SELECTOR:
-    return selectres(elem.tagType == sel.tag)
+    return elem.tagType == sel.tag
   of CLASS_SELECTOR:
-    return selectres(sel.class in elem.classList)
+    return sel.class in elem.classList
   of ID_SELECTOR:
-    return selectres(sel.id == elem.id)
+    return sel.id == elem.id
   of ATTR_SELECTOR:
-    return selectres(elem.attrSelectorMatches(sel))
+    return elem.attrSelectorMatches(sel)
   of PSEUDO_SELECTOR:
     return pseudoSelectorMatches(elem, sel)
   of PSELEM_SELECTOR:
     return pseudoElemSelectorMatches(elem, sel)
   of UNIVERSAL_SELECTOR:
-    return selectres(true)
+    return true
   of FUNC_SELECTOR:
     return funcSelectorMatches(elem, sel)
   of COMBINATOR_SELECTOR:
     return combinatorSelectorMatches(elem, sel)
 
-func selectorsMatch*(elem: Element, selectors: SelectorList): SelectResult =
+func selectorsMatch*(elem: Element, selectors: SelectorList): bool =
   for sel in selectors.sels:
-    let res = selectorMatches(elem, sel)
-    if not res.success:
-      return selectres(false)
-    if res.pseudo != PSEUDO_NONE:
-      if result.pseudo != PSEUDO_NONE:
-        return selectres(false)
-      result.pseudo = res.pseudo
-  result.success = true
+    if not selectorMatches(elem, sel):
+      return false
+  return true
 
 func selectElems(document: Document, sel: Selector): seq[Element] =
   case sel.t
@@ -184,7 +140,7 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
   var i = 1
 
   while i < sellist.len:
-    result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
+    result = result.filter((elem) => selectorMatches(elem, sellist[i]))
     inc i
 
 proc querySelector(document: Document, q: string): seq[Element] =

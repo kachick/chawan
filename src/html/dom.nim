@@ -65,6 +65,7 @@ type
     tagName*: string
     tagType*: TagType
 
+    sheets*: seq[CSSStylesheet]
     id*: string
     classList*: seq[string]
     attributes*: Table[string, string]

@@ -17,6 +17,10 @@ type
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER
 
+  #PseudoSelector* = enum
+  #  PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
+  #  PSEUDO_ROOT
+
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
     SUBSEQ_SIBLING_COMBINATOR
@@ -44,7 +48,7 @@ type
     of PSEUDO_SELECTOR:
       pseudo*: string
     of PSELEM_SELECTOR:
-      elem*: string
+      elem*: PseudoElem
     of FUNC_SELECTOR:
       name*: string
       fsels*: seq[SelectorList]
@@ -54,7 +58,7 @@ type
 
   SelectorList* = ref object
     sels*: seq[Selector]
-    parent*: SelectorList
+    pseudo*: PseudoElem
 
 proc add(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
 proc add(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
@@ -125,8 +129,12 @@ func optimizeSelectorList*(selectors: SelectorList): SelectorList =
 
 proc addSelector(state: var SelectorParser, sel: Selector) =
   if state.combinator != nil:
+    if sel.t == PSELEM_SELECTOR:
+      state.combinator.csels[^1].pseudo = sel.elem
     state.combinator.csels[^1].add(sel)
   else:
+    if sel.t == PSELEM_SELECTOR:
+      state.selectors[^1].pseudo = sel.elem
     state.selectors[^1].add(sel)
 
 proc getLastSel(state: SelectorParser): Selector =
@@ -185,9 +193,20 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     of QUERY_TYPE:
       state.addSelector(Selector(t: TYPE_SELECTOR, tag: tagType($csstoken.value)))
     of QUERY_PSEUDO:
-      state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: $csstoken.value))
+      case $csstoken.value
+      of "before":
+        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
+      of "after":
+        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_AFTER))
+      else:
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: $csstoken.value))
     of QUERY_PSELEM:
-      state.addSelector(Selector(t: PSELEM_SELECTOR, elem: $csstoken.value))
+      case $csstoken.value
+      of "before":
+        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
+      of "after":
+        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_AFTER))
+      else: discard
     else: discard
     state.query = QUERY_TYPE
   of CSS_DELIM_TOKEN:

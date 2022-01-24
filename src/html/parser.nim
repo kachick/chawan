@@ -307,6 +307,12 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     case element.tagType
     of VoidTagTypes:
       processDocumentEndNode(state)
+      if element.tagType == TAG_LINK:
+        if HTMLLinkElement(element).s != nil:
+          let content = HTMLLinkElement(element).s.readAll()
+          HTMLLinkElement(element).sheet = parseStylesheet(content)
+          HTMLLinkElement(element).s.close()
+          HTMLLinkElement(element).parentElement.sheets.add(HTMLLinkElement(element).sheet)
     of TAG_LI:
       HTMLLIElement(element).applyOrdinal() #needs to know parent
     else: discard
@@ -331,6 +337,7 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
       for child in style.textNodes:
         str &= child.data
       style.sheet = newStringStream(str).parseStylesheet()
+      style.parentElement.sheets.add(style.sheet)
     else: discard
     processDocumentEndNode(state)
 

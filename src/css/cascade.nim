@@ -1,5 +1,4 @@
 import algorithm
-import sequtils
 import streams
 import sugar
 
@@ -10,13 +9,12 @@ import css/selparser
 import css/sheet
 import css/values
 import html/dom
-import html/tags
 
 type
   ApplyResult = object
     normal: seq[CSSDeclaration]
     important: seq[CSSDeclaration]
-  RuleList* = array[PseudoElem, seq[CSSDeclaration]]
+  DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]
 
 proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
   var parent: CSSSpecifiedValues
@@ -69,23 +67,15 @@ func applies(mqlist: MediaQueryList): bool =
 
 type ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
 
-proc calcRule(tosorts: var ToSorts, elem: Element, rule: CSSRuleBase) =
-  if rule of CSSRuleDef:
-    let rule = CSSRuleDef(rule)
-    for sel in rule.sels:
-      let match = elem.selectorsMatch(sel)
-      if match.success:
-        let spec = getSpecificity(sel)
-        tosorts[match.pseudo].add((spec,rule.decls))
-  elif rule of CSSMediaQueryDef:
-    let def = CSSMediaQueryDef(rule)
-    if def.query.applies():
-      for child in def.children:
-        tosorts.calcRule(elem, child)
+proc calcRule(tosorts: var ToSorts, elem: Element, rule: CSSRuleDef) =
+  for sel in rule.sels:
+    if elem.selectorsMatch(sel):
+      let spec = getSpecificity(sel)
+      tosorts[sel.pseudo].add((spec,rule.decls))
 
-func calcRules(elem: Element, rules: CSSStylesheet): RuleList =
+func calcRules(elem: Element, sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
-  for rule in rules:
+  for rule in sheet.gen_rules(elem.tagType, elem.id, elem.classList):
     tosorts.calcRule(elem, rule)
 
   for i in PseudoElem:
@@ -127,14 +117,16 @@ proc checkRendered(element: Element, prev: CSSSpecifiedValues, ppseudo: array[PS
             element.rendered = false
             return
 
-proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem) =
+proc applyRules(element: Element, ua, user: DeclarationList, author: seq[DeclarationList], pseudo: PseudoElem) =
   var ares: ApplyResult
 
   ares.applyNormal(ua[pseudo])
   ares.applyNormal(user[pseudo])
-  ares.applyNormal(author[pseudo])
+  for rule in author:
+    ares.applyNormal(rule[pseudo])
 
-  ares.applyImportant(author[pseudo])
+  for rule in author:
+    ares.applyImportant(rule[pseudo])
 
   if pseudo == PSEUDO_NONE:
     let style = element.attr("style")
@@ -152,14 +144,12 @@ proc applyRules(element: Element, ua, user, author: RuleList, pseudo: PseudoElem
   for rule in ares.important:
     element.applyProperty(rule, pseudo)
 
+# TODO this is kinda broken
 func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
-  for rule in ss:
-    if rule of CSSRuleDef:
-      result.add(rule)
-    elif rule of CSSMediaQueryDef:
-      let rule = CSSMediaQueryDef(rule)
-      if rule.query.applies():
-        result.add(rule.children.applyMediaQuery())
+  result = ss
+  for mq in ss.mq_list:
+    if mq.query.applies():
+      result.add(mq.children.applyMediaQuery())
 
 proc applyRules(document: Document, ua, user: CSSStylesheet) =
   var stack: seq[Element]
@@ -167,26 +157,9 @@ proc applyRules(document: Document, ua, user: CSSStylesheet) =
   var embedded_rules: seq[CSSStylesheet]
 
   stack.add(document.head)
-  var rules_head: CSSStylesheet
 
-  for child in document.head.children:
-    case child.tagType
-    of TAG_STYLE:
-      let style = HTMLStyleElement(child)
-      rules_head.add(style.sheet)
-    of TAG_LINK:
-      let link = HTMLLinkElement(child)
-      if link.s != nil:
-        let content = link.s.readAll()
-        link.sheet = parseStylesheet(content)
-        link.s.close()
-        link.s = nil
-      rules_head.add(link.sheet)
-    else:
-      discard
-
-  if rules_head.len > 0:
-    embedded_rules.add(rules_head)
+  for sheet in document.head.sheets:
+    embedded_rules.add(sheet)
 
   stack.setLen(0)
 
@@ -195,14 +168,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet) =
   while stack.len > 0:
     let elem = stack.pop()
 
-    var rules_local: CSSStylesheet
-    for child in document.head.children:
-      if child.tagType == TAG_STYLE:
-        let style = HTMLStyleElement(child)
-        rules_local.add(style.sheet)
-
-    if rules_local.len > 0:
-      embedded_rules.add(rules_local)
+    embedded_rules.add(elem.sheets)
 
     if not elem.cssapplied:
       let prev = elem.css
@@ -216,8 +182,9 @@ proc applyRules(document: Document, ua, user: CSSStylesheet) =
 
       let uarules = calcRules(elem, ua)
       let userrules = calcRules(elem, user)
-      let this_rules = embedded_rules.concat()
-      let authorrules = calcRules(elem, this_rules)
+      var authorrules: seq[DeclarationList]
+      for rule in embedded_rules:
+        authorrules.add(calcRules(elem, rule))
 
       for pseudo in PseudoElem:
         elem.applyRules(uarules, userrules, authorrules, pseudo)
@@ -227,8 +194,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet) =
     for i in countdown(elem.children.high, 0):
       stack.add(elem.children[i])
 
-    if rules_local.len > 0:
-      discard embedded_rules.pop()
+    embedded_rules.setLen(embedded_rules.len - elem.sheets.len)
 
 proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet) =
   let uass = uass.applyMediaQuery()
