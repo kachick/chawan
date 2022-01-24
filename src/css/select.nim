@@ -22,17 +22,13 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
-func pseudoElemSelectorMatches(elem: Element, sel: Selector): bool {.inline.} =
-  return true
-
 func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.pseudo
-  of "first-child": return elem.parentNode.firstElementChild == elem
-  of "last-child": return elem.parentNode.lastElementChild == elem
-  of "only-child": return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
-  of "hover": return elem.hover
-  of "root": return elem == elem.ownerDocument.root
-  else: return false
+  of PSEUDO_FIRST_CHILD: return elem.parentNode.firstElementChild == elem
+  of PSEUDO_LAST_CHILD: return elem.parentNode.lastElementChild == elem
+  of PSEUDO_ONLY_CHILD: return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
+  of PSEUDO_HOVER: return elem.hover
+  of PSEUDO_ROOT: return elem == elem.ownerDocument.root
 
 func selectorsMatch*(elem: Element, selectors: SelectorList): bool
 
@@ -98,7 +94,7 @@ func selectorMatches(elem: Element, sel: Selector): bool =
   of PSEUDO_SELECTOR:
     return pseudoSelectorMatches(elem, sel)
   of PSELEM_SELECTOR:
-    return pseudoElemSelectorMatches(elem, sel)
+    return true
   of UNIVERSAL_SELECTOR:
     return true
   of FUNC_SELECTOR:
@@ -127,7 +123,7 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
   of PSEUDO_SELECTOR:
     return document.all_elements.filter((elem) => pseudoSelectorMatches(elem, sel))
   of PSELEM_SELECTOR:
-    return document.all_elements.filter((elem) => pseudoElemSelectorMatches(elem, sel))
+    return document.all_elements
   of FUNC_SELECTOR:
     return document.all_elements.filter((elem) => selectorMatches(elem, sel))
   of COMBINATOR_SELECTOR:

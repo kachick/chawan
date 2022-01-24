@@ -17,9 +17,9 @@ type
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER
 
-  #PseudoSelector* = enum
-  #  PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
-  #  PSEUDO_ROOT
+  PseudoClass* = enum
+    PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
+    PSEUDO_ROOT
 
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
@@ -46,7 +46,7 @@ type
     of UNIVERSAL_SELECTOR: #TODO namespaces?
       discard
     of PSEUDO_SELECTOR:
-      pseudo*: string
+      pseudo*: PseudoClass
     of PSELEM_SELECTOR:
       elem*: PseudoElem
     of FUNC_SELECTOR:
@@ -197,8 +197,16 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
         state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
       of "after":
         state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_AFTER))
-      else:
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: $csstoken.value))
+      of "first-child":
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_FIRST_CHILD))
+      of "last-child":
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_LAST_CHILD))
+      of "only-child":
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_ONLY_CHILD))
+      of "hover":
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_HOVER))
+      of "root":
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_ROOT))
     of QUERY_PSELEM:
       case $csstoken.value
       of "before":
