@@ -62,7 +62,6 @@ type
 
 proc add(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
 proc add(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
-proc setLen(sellist: SelectorList, i: int) = sellist.sels.setLen(i)
 proc `[]`*(sellist: SelectorList, i: int): Selector = sellist.sels[i]
 proc len*(sellist: SelectorList): int = sellist.sels.len
 

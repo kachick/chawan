@@ -90,7 +90,6 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CS
 
 proc addWord(state: var InlineState) =
   if state.word.str != "":
-    let row = state.ictx.thisrow
     var word = state.word
     word.height = state.ictx.cellheight
     state.ictx.addAtom(word, state.maxwidth, state.specified)
@@ -271,7 +270,6 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox, parentcss: CSSSpe
   box.ictx.whitespace = false
 
 proc alignInline(bctx: BlockContext, box: InlineBox) =
-  let box = InlineBox(box)
   assert box.ictx != nil
   if box.newline:
     box.ictx.flushLine()

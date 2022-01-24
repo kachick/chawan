@@ -760,7 +760,6 @@ func equals*(a, b: CSSSpecifiedValue): bool =
   return false
 
 proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSpecifiedValue, global: CSSGlobalValueType) =
-  let oval = vals[t]
   case global
   of VALUE_INHERIT, VALUE_UNSET:
     if inherited(t):
@@ -777,7 +776,6 @@ proc applyValue(vals, parent: CSSSpecifiedValues, t: CSSPropertyType, val: CSSSp
 proc applyValue*(vals, parent: CSSSpecifiedValues, d: CSSDeclaration) =
   let vv = getSpecifiedValue(d, parent)
   let val = vv.a
-  let oval = vals[val.t]
   case val.t
   of PROPERTY_ALL:
     let global = cssGlobal(d)

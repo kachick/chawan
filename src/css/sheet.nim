@@ -72,7 +72,6 @@ iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq
     yield rule
 
 proc add(sheet: var CSSStylesheet, rule: CSSRuleDef) =
-  let rule = CSSRuleDef(rule)
   var hashes: SelectorHashes
   for list in rule.sels:
     for sel in list.sels:
