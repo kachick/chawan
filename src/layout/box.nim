@@ -7,7 +7,6 @@ import io/term
 type
   Viewport* = ref object
     term*: TermAttributes
-    node*: Node
     root*: BlockBox
     map*: seq[CSSBox]
 

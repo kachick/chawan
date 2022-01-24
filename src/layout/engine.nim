@@ -338,10 +338,7 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox], blockgroup: var seq[CS
       if child.inlinelayout:
         blockgroup.add(child)
       else:
-        if child.node != nil:
-          bctx.viewport.node = child.node
         bctx.alignBlocks(child.children, blockgroup, child.node)
-        #eprint "put"
     of DISPLAY_INLINE_BLOCK:
       blockgroup.add(child)
     else: discard #TODO
