@@ -165,10 +165,18 @@ proc applyRules(document: Document, ua, user: CSSStylesheet) =
 
   stack.add(document.root)
 
+  var lastlen = 0
+
   while stack.len > 0:
     let elem = stack.pop()
 
+    # Add a nil after the last element, so we can remove the stylesheets
+    if elem == nil:
+      embedded_rules.setLen(embedded_rules.len - lastlen)
+      continue
+
     embedded_rules.add(elem.sheets)
+    lastlen = elem.sheets.len
 
     if not elem.cssapplied:
       let prev = elem.css
@@ -191,10 +199,9 @@ proc applyRules(document: Document, ua, user: CSSStylesheet) =
 
       elem.checkRendered(prev, ppseudo)
 
+    stack.add(nil)
     for i in countdown(elem.children.high, 0):
       stack.add(elem.children[i])
-
-    embedded_rules.setLen(embedded_rules.len - elem.sheets.len)
 
 proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet) =
   let uass = uass.applyMediaQuery()
