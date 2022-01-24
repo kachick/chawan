@@ -9,7 +9,7 @@ type
     UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, FUNC_SELECTOR,
     COMBINATOR_SELECTOR
 
-  QueryMode* = enum
+  QueryMode = enum
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
     QUERY_PSEUDO, QUERY_PSELEM, QUERY_DESC_COMBINATOR, QUERY_CHILD_COMBINATOR,
     QUERY_NEXT_SIBLING_COMBINATOR, QUERY_SUBSEQ_SIBLING_COMBINATOR
@@ -56,9 +56,9 @@ type
     sels*: seq[Selector]
     parent*: SelectorList
 
-proc add*(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
-proc add*(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
-proc setLen*(sellist: SelectorList, i: int) = sellist.sels.setLen(i)
+proc add(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
+proc add(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
+proc setLen(sellist: SelectorList, i: int) = sellist.sels.setLen(i)
 proc `[]`*(sellist: SelectorList, i: int): Selector = sellist.sels[i]
 proc len*(sellist: SelectorList): int = sellist.sels.len
 

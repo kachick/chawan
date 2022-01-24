@@ -166,7 +166,7 @@ func generateStatusMessage*(buffer: Buffer): string =
   if w < buffer.width:
     result &= EL()
 
-func numLines*(buffer: Buffer): int = buffer.lines.len
+func numLines(buffer: Buffer): int = buffer.lines.len
 
 func lastVisibleLine(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
 

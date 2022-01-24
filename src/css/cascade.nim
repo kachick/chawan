@@ -161,7 +161,7 @@ func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
       if rule.query.applies():
         result.add(rule.children.applyMediaQuery())
 
-proc applyRules*(document: Document, ua, user: CSSStylesheet) =
+proc applyRules(document: Document, ua, user: CSSStylesheet) =
   var stack: seq[Element]
 
   var embedded_rules: seq[CSSStylesheet]

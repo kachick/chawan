@@ -124,6 +124,18 @@ type
     sheet*: CSSStylesheet
     s*: Stream
 
+# For debugging
+template `$`*(node: Node): string =
+  case node.nodeType
+  of ELEMENT_NODE:
+    let element = Element(node)
+    return "Element of " & $element.tagType & ", children: {\n" & $element.childNodes & "\n}"
+  of TEXT_NODE:
+    let text = Text(node)
+    return "Text: " & text.data
+  else:
+    return "Node of " & $node.nodeType
+
 iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childNodes:
     if node.nodeType == TEXT_NODE:
@@ -188,17 +200,6 @@ func nextElementSibling*(elem: Element): Element =
       return Element(e)
     e = e.nextSibling
   return nil
-
-func `$`*(node: Node): string =
-  case node.nodeType
-  of ELEMENT_NODE:
-    let element = Element(node)
-    return "Element of " & $element.tagType & ", children: {\n" & $element.childNodes & "\n}"
-  of TEXT_NODE:
-    let text = Text(node)
-    return "Text: " & text.data
-  else:
-    return "Node of " & $node.nodeType
 
 func isTextNode*(node: Node): bool =
   return node.nodeType == TEXT_NODE

@@ -25,9 +25,9 @@ type
     at: int
     top_level: bool
 
-  tflaga = enum
+  tflaga* = enum
     TFLAGA_UNRESTRICTED, TFLAGA_ID
-  tflagb = enum
+  tflagb* = enum
     TFLAGB_INTEGER, TFLAGB_NUMBER
 
   CSSParsedItem* = ref object of RootObj
@@ -74,7 +74,8 @@ type
 
   SyntaxError = object of ValueError
 
-func `$`*(c: CSSParsedItem): string =
+# For debugging
+template `$`*(c: CSSParsedItem): string =
   if c of CSSToken:
     case CSSToken(c).tokenType:
     of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
@@ -136,10 +137,10 @@ func `$`*(c: CSSParsedItem): string =
 func `==`*(a: CSSParsedItem, b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).tokenType == b
 
-func isNameStartCodePoint*(r: Rune): bool =
+func isNameStartCodePoint(r: Rune): bool =
   return not isAscii(r) or r == Rune('_') or isAlphaAscii(r)
 
-func isNameCodePoint*(r: Rune): bool =
+func isNameCodePoint(r: Rune): bool =
   return isNameStartCodePoint(r) or isDigitAscii(r) or r == Rune('-')
 
 proc consume(state: var CSSTokenizerState): Rune =
@@ -160,10 +161,10 @@ proc has(state: var CSSTokenizerState, i: int = 0): bool =
 func curr(state: CSSTokenizerState): Rune =
   return state.buf[state.at]
 
-proc isValidEscape*(state: var CSSTokenizerState): bool =
+proc isValidEscape(state: var CSSTokenizerState): bool =
   return state.has(1) and state.curr() == Rune('\\') and state.peek(1) != Rune('\n')
 
-proc startsWithIdentifier*(state: var CSSTokenizerState): bool =
+proc startsWithIdentifier(state: var CSSTokenizerState): bool =
   if not state.has():
     return false
 
@@ -180,7 +181,7 @@ proc startsWithIdentifier*(state: var CSSTokenizerState): bool =
 
   return false
 
-proc startsWithNumber*(state: var CSSTokenizerState): bool =
+proc startsWithNumber(state: var CSSTokenizerState): bool =
   if state.has():
     case state.curr()
     of Rune('+'), Rune('-'):
@@ -810,24 +811,3 @@ proc parseCSS*(inputStream: Stream): CSSRawStylesheet =
   if inputStream.atEnd():
     return CSSRawStylesheet()
   return inputstream.parseStylesheet()
-
-proc debugparseCSS*(inputStream: Stream) =
-  let ss = inputStream.parseStylesheet()
-  for v in ss.value:
-    if v of CSSAtRule:
-      eprint CSSAtRule(v).name
-    else:
-      for c in CSSQualifiedRule(v).prelude:
-        eprint c
-    case v.oblock.token.tokenType
-    of CSS_LBRACE_TOKEN: eprint "\n{"
-    of CSS_LPAREN_TOKEN: eprint "("
-    of CSS_LBRACKET_TOKEN: eprint "["
-    else: discard
-    for s in v.oblock.value:
-      eprint s
-    case v.oblock.token.tokenType
-    of CSS_LBRACE_TOKEN: eprint "\n}"
-    of CSS_LPAREN_TOKEN: eprint ")"
-    of CSS_LBRACKET_TOKEN: eprint "]"
-    else: discard

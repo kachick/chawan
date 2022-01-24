@@ -187,7 +187,7 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
     result = result.filter((elem) => selectorMatches(elem, sellist[i]).psuccess)
     inc i
 
-proc querySelector*(document: Document, q: string): seq[Element] =
+proc querySelector(document: Document, q: string): seq[Element] =
   let ss = newStringStream(q)
   let cvals = parseListOfComponentValues(ss)
   let selectors = parseSelectors(cvals)

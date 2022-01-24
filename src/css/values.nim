@@ -81,7 +81,7 @@ type
   
   CSSSpecifiedValue* = ref object
     t*: CSSPropertyType
-    case v*: CSSValueType
+    case v: CSSValueType
     of VALUE_COLOR:
       color*: CSSColor
     of VALUE_LENGTH:
@@ -105,8 +105,6 @@ type
     of VALUE_NONE: discard
 
   CSSSpecifiedValues* = ref array[CSSPropertyType, CSSSpecifiedValue]
-
-  CSSValues* = array[PseudoElem, CSSSpecifiedValues]
 
   CSSValueError* = object of ValueError
 
