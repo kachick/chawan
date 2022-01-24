@@ -131,12 +131,6 @@ func toAsciiLower*(str: string): string =
 func getrune(s: string): Rune =
   return s.toRunes()[0]
 
-const breakWord = [
-  Rune('\n'), Rune('/'), Rune('\\'), Rune(' '), Rune('&'), Rune('='),
-  Rune('?'), Rune('.'), Rune(';'), Rune('"'), "。".getrune(), "、".getrune(),
-  "「".getrune(), "」".getrune()
-]
-
 func genHexCharMap(): seq[int] =
   for i in 0..255:
     case chr(i)
@@ -193,14 +187,14 @@ func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
 func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
-func breaksWord*(r: Rune): bool =
-  return r in breakWord
-
 func isAlphaAscii*(r: Rune): bool =
   return int(r) < 256 and isAlphaAscii(char(r))
 
 func isDigitAscii*(r: Rune): bool =
   return int(r) < 256 and isDigit(char(r))
+
+func breaksWord*(r: Rune): bool =
+  return not (r.isDigitAscii() or r.isAlpha())
 
 func substr*(s: seq[Rune], i, j: int): seq[Rune] =
   if s.len == 0:
