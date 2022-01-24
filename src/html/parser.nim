@@ -369,7 +369,7 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
     if state.in_comment:
       state.commentNode.data &= c
     else:
-      if not c.isWhitespace() and (state.textNode == nil or state.textNode.parentElement.tagType == TAG_HTML):
+      if not c.isWhitespace() and state.elementNode.tagType == TAG_HTML:
         state.textNode = nil
         processDocumentBody(state)
         processDocumentText(state)
