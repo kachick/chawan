@@ -45,7 +45,7 @@ type
     streamclosed*: bool
     source*: string
     rootbox*: CSSBox
-    prevnodes*: seq[Node]
+    prevnode*: Node
     sourcepair*: Buffer
     prev*: Buffer
     next* {.cursor.}: Buffer
@@ -197,16 +197,15 @@ func currentDisplayCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
   return buffer.display[row + buffer.currentCellOrigin()]
 
-func getLink(nodes: seq[Node]): Element =
-  for node in nodes:
-    if node.nodeType == ELEMENT_NODE:
-      let elem = Element(node)
-      if elem.tagType == TAG_A:
-        return elem
-  return nil
+func getLink(node: Node): Element =
+  if node == nil:
+    return nil
+  if node.nodeType == ELEMENT_NODE and Element(node).tagType == TAG_A:
+    return Element(node)
+  return node.findAncestor({TAG_A})
 
 func getCursorLink(buffer: Buffer): Element =
-  return buffer.currentDisplayCell().nodes.getLink()
+  return buffer.currentDisplayCell().node.getLink()
 
 func currentLine(buffer: Buffer): string =
   return buffer.lines[buffer.cursory].str
@@ -311,7 +310,7 @@ proc refreshDisplay(buffer: Buffer) =
       buffer.display[dls + k].runes.add(r)
       if cf.pos != -1:
         buffer.display[dls + k].formatting = cf.formatting
-        buffer.display[dls + k].nodes = cf.nodes
+        buffer.display[dls + k].node = cf.node
       let tk = k + r.width()
       while k < tk and k < buffer.width - 1:
         inc k
@@ -476,12 +475,12 @@ proc cursorNextLink*(buffer: Buffer) =
   var i = line.findFormatN(buffer.currentCursorBytes()) - 1
   var link: Element = nil
   if i >= 0:
-    link = line.formats[i].nodes.getLink()
+    link = line.formats[i].node.getLink()
   inc i
 
   while i < line.formats.len:
     let format = line.formats[i]
-    let fl = format.nodes.getLink()
+    let fl = format.node.getLink()
     if fl != nil and fl != link:
       buffer.setCursorXB(format.pos)
       return
@@ -492,7 +491,7 @@ proc cursorNextLink*(buffer: Buffer) =
     i = 0
     while i < line.formats.len:
       let format = line.formats[i]
-      let fl = format.nodes.getLink()
+      let fl = format.node.getLink()
       if fl != nil and fl != link:
         buffer.setCursorXBY(format.pos, y)
         return
@@ -503,12 +502,12 @@ proc cursorPrevLink*(buffer: Buffer) =
   var i = line.findFormatN(buffer.currentCursorBytes()) - 1
   var link: Element = nil
   if i >= 0:
-    link = line.formats[i].nodes.getLink()
+    link = line.formats[i].node.getLink()
   dec i
 
   while i >= 0:
     let format = line.formats[i]
-    let fl = format.nodes.getLink()
+    let fl = format.node.getLink()
     if fl != nil and fl != link:
       buffer.setCursorXB(format.pos)
       return
@@ -519,7 +518,7 @@ proc cursorPrevLink*(buffer: Buffer) =
     i = line.formats.len - 1
     while i >= 0:
       let format = line.formats[i]
-      let fl = format.nodes.getLink()
+      let fl = format.node.getLink()
       if fl != nil and fl != link:
         #go to beginning of link
         var ly = y #last y
@@ -529,7 +528,7 @@ proc cursorPrevLink*(buffer: Buffer) =
           i = line.formats.len - 1
           while i >= 0:
             let format = line.formats[i]
-            let nl = format.nodes.getLink()
+            let nl = format.node.getLink()
             if nl == fl:
               ly = iy
               lx = format.pos
@@ -652,7 +651,7 @@ proc gotoAnchor*(buffer: Buffer) =
     var i = 0
     while i < line.formats.len:
       let format = line.formats[i]
-      if anchor in format.nodes:
+      if anchor in format.node:
         buffer.setCursorY(y)
         buffer.centerLine()
         buffer.setCursorXB(format.pos)
@@ -680,38 +679,35 @@ proc updateCursor(buffer: Buffer) =
     buffer.cursory = 0
 
 proc updateHover(buffer: Buffer) =
-  let nodes = buffer.currentDisplayCell().nodes
-  if nodes != buffer.prevnodes:
-    for node in nodes:
-      var elem: Element
-      if node of Element:
-        elem = Element(node)
-      else:
-        elem = node.parentElement
-        assert elem != nil
+  let thisnode = buffer.currentDisplayCell().node
+  let prevnode = buffer.prevnode
 
-      if not elem.hover and not (node in buffer.prevnodes):
-        elem.hover = true
-        buffer.reshape = true
-        elem.refreshStyle()
-    let link = nodes.getLink()
+  if thisnode != prevnode:
+    for node in thisnode.branch:
+      if node.nodeType == ELEMENT_NODE:
+        let elem = Element(node)
+        if not elem.hover and node notin prevnode:
+          elem.hover = true
+          buffer.reshape = true
+          elem.refreshStyle()
+
+    let link = thisnode.getLink()
     if link != nil:
       if link.tagType == TAG_A:
-        buffer.hovertext = parseUrl(HTMLAnchorElement(link).href, buffer.location.some).serialize()
+        let anchor = HTMLAnchorElement(link)
+        buffer.hovertext = parseUrl(anchor.href, buffer.location.some).serialize()
     else:
       buffer.hovertext = ""
-    for node in buffer.prevnodes:
-      var elem: Element
-      if node of Element:
-        elem = Element(node)
-      else:
-        elem = node.parentElement
-        assert elem != nil
-      if elem.hover and not (node in nodes):
-        elem.hover = false
-        buffer.reshape = true
-        elem.refreshStyle()
-  buffer.prevnodes = nodes
+
+    for node in prevnode.branch:
+      if node.nodeType == ELEMENT_NODE:
+        let elem = Element(node)
+        if elem.hover and node notin thisnode:
+          elem.hover = false
+          buffer.reshape = true
+          elem.refreshStyle()
+
+  buffer.prevnode = thisnode
 
 proc loadResources(buffer: Buffer, document: Document) =
   for elem in document.head.children:

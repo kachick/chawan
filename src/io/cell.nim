@@ -24,7 +24,7 @@ type
 
   Cell* = object of RootObj
     formatting*: Formatting
-    nodes*: seq[Node]
+    node*: Node
 
   FormattingCell* = object of Cell
     pos*: int
@@ -64,7 +64,7 @@ template `overline=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_OVE
 func `==`*(a: FixedCell, b: FixedCell): bool =
   return a.formatting == b.formatting and
     a.runes == b.runes and
-    a.nodes == b.nodes
+    a.node == b.node
 
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
   return newSeq[FixedCell](w * h)
@@ -128,7 +128,7 @@ proc setLen*(line: var FlexibleLine, len: int) =
 
 proc add*(a: var FlexibleLine, b: FlexibleLine) =
   let l = a.str.len
-  a.formats.add(b.formats.map((x) => FormattingCell(formatting: x.formatting, nodes: x.nodes, pos: l + x.pos)))
+  a.formats.add(b.formats.map((x) => FormattingCell(formatting: x.formatting, node: x.node, pos: l + x.pos)))
   a.str &= b.str
 
 proc addLine*(grid: var FlexibleGrid) =
@@ -140,8 +140,8 @@ proc addFormat*(line: var FlexibleLine, pos: int, format: Formatting) =
 proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting) =
   grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].str.len))
 
-proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting, nodes: seq[Node]) =
-  grid[y].formats.add(FormattingCell(formatting: format, nodes: nodes, pos: pos))
+proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting, node: Node) =
+  grid[y].formats.add(FormattingCell(formatting: format, node: node, pos: pos))
 
 proc addCell*(grid: var FlexibleGrid, y: int, r: Rune) =
   grid[y].str &= $r

@@ -48,7 +48,7 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
   let oformats = lines[y].formats.subformats(i)
   lines[y].setLen(i)
 
-  lines.addFormat(y, i, word.formatFromWord(), word.nodes)
+  lines.addFormat(y, i, word.formatFromWord(), word.node)
 
   var nx = cx
   if nx < x:

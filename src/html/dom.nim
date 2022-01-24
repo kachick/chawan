@@ -129,6 +129,30 @@ iterator textNodes*(node: Node): Text {.inline.} =
     if node.nodeType == TEXT_NODE:
       yield Text(node)
 
+# Returns the node's ancestors
+iterator ancestors*(node: Node): Element {.inline.} =
+  var element = node.parentElement
+  while element != nil:
+    yield element
+    element = element.parentElement
+
+# Returns the node itself and its ancestors
+iterator branch*(node: Node): Node {.inline.} =
+  var node = node
+  while node != nil:
+    yield node
+    node = node.parentElement
+
+# a == b or b in a's ancestors
+func contains*(a, b: Node): bool =
+  for node in a.branch:
+    if node == b: return true
+  return false
+
+func branch*(node: Node): seq[Node] =
+  for node in node.branch:
+    result.add(node)
+
 func firstChild(node: Node): Node =
   if node.childNodes.len == 0:
     return nil
@@ -223,13 +247,10 @@ func toInputType*(str: string): InputType =
   of "week": INPUT_WEEK
   else: INPUT_UNKNOWN
 
-func ancestor(node: Node, tagTypes: set[TagType]): Element =
-  var elem = node.parentElement
-  while elem != nil:
-    if elem.tagType in tagTypes:
-      return elem
-
-    elem = elem.parentElement
+func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
+  for element in node.ancestors:
+    if element.tagType in tagTypes:
+      return element
   return nil
 
 func attr*(element: Element, s: string): string =
@@ -247,7 +268,7 @@ proc applyOrdinal*(elem: HTMLLIElement) =
   if val.issome:
     elem.ordinalvalue = val.get
   else:
-    let owner = elem.ancestor({TAG_OL, TAG_UL, TAG_MENU})
+    let owner = elem.findAncestor({TAG_OL, TAG_UL, TAG_MENU})
     if owner == nil:
       elem.ordinalvalue = 1
     else:

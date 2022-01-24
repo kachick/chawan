@@ -26,7 +26,7 @@ func px(l: CSSLength, state: Viewport, p = 0): int {.inline.} =
 type InlineState = object
   ictx: InlineContext
   skip: bool
-  nodes: seq[Node]
+  node: Node
   word: InlineWord
   maxwidth: int
   specified: CSSSpecifiedValues
@@ -58,7 +58,7 @@ proc newWord(state: var InlineState) =
   word.fontstyle = specified{"font-style"}
   word.fontweight = specified{"font-weight"}
   word.textdecoration = specified{"text-decoration"}
-  word.nodes = state.nodes
+  word.node = state.node
   state.word = word
 
 proc finishRow(ictx: InlineContext) =
@@ -128,12 +128,12 @@ proc processWhitespace(state: var InlineState, c: char) =
     else:
       state.ictx.whitespace = true
 
-proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSSpecifiedValues, nodes: seq[Node]) =
+proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSSpecifiedValues, node: Node) =
   var state: InlineState
   state.specified = specified
   state.ictx = ictx
   state.maxwidth = maxwidth
-  state.nodes = nodes
+  state.node = node
   state.newWord()
 
   #if str.strip().len > 0:
@@ -271,16 +271,13 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox, parentcss: CSSSpe
   box.ictx.whitespace = false
 
 proc alignInline(bctx: BlockContext, box: InlineBox) =
-  if box.node != nil:
-    bctx.viewport.nodes.add(box.node)
-
   let box = InlineBox(box)
   assert box.ictx != nil
   if box.newline:
     box.ictx.flushLine()
   for text in box.text:
     assert box.children.len == 0
-    box.ictx.renderText(text, bctx.compwidth, box.specified, box.nodes)
+    box.ictx.renderText(text, bctx.compwidth, box.specified, box.node)
 
   for child in box.children:
     case child.t
@@ -294,8 +291,6 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
       bctx.alignInlineBlock(child, box.specified)
     else:
       assert false, "child.t is " & $child.t
-  if box.node != nil:
-    discard bctx.viewport.nodes.pop()
 
 proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
   let ictx = bctx.newInlineContext()
@@ -341,14 +336,11 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox], blockgroup: var seq[CS
       alignBlock(child)
     of DISPLAY_INLINE:
       if child.inlinelayout:
-        child.nodes = bctx.viewport.nodes
         blockgroup.add(child)
       else:
         if child.node != nil:
-          bctx.viewport.nodes.add(child.node)
+          bctx.viewport.node = child.node
         bctx.alignBlocks(child.children, blockgroup, child.node)
-        if child.node != nil:
-          discard bctx.viewport.nodes.pop()
         #eprint "put"
     of DISPLAY_INLINE_BLOCK:
       blockgroup.add(child)
@@ -357,8 +349,6 @@ proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox], blockgroup: var seq[CS
 proc alignBlock(box: BlockBox) =
   if box.bctx.done:
     return
-  if box.node != nil:
-    box.bctx.viewport.nodes.add(box.node)
   if box.inlinelayout:
     # Box only contains inline boxes.
     box.bctx.alignInlines(box.children)
@@ -368,8 +358,6 @@ proc alignBlock(box: BlockBox) =
     let bctx = box.bctx
     flush_group()
     box.bctx.arrangeBlocks()
-  if box.node != nil:
-    discard box.bctx.viewport.nodes.pop()
   box.bctx.done = true
 
 proc getBox(specified: CSSSpecifiedValues): CSSBox =

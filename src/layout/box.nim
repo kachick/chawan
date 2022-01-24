@@ -7,7 +7,7 @@ import io/term
 type
   Viewport* = ref object
     term*: TermAttributes
-    nodes*: seq[Node]
+    node*: Node
     root*: BlockBox
     map*: seq[CSSBox]
 
@@ -18,7 +18,6 @@ type
     specified*: CSSSpecifiedValues
     node*: Node
     element*: Element
-    nodes*: seq[Node]
 
   InlineAtom* = ref object of RootObj
     relx*: int
@@ -31,7 +30,7 @@ type
     fontweight*: int
     textdecoration*: CSSTextDecoration
     color*: CSSColor
-    nodes*: seq[Node]
+    node*: Node
 
   InlineRow* = ref object
     atoms*: seq[InlineAtom]
@@ -50,7 +49,7 @@ type
     whitespace*: bool
     maxwidth*: int
     viewport*: Viewport
-    nodes*: seq[Node]
+    node*: Node
 
   BlockContext* = ref object of InlineAtom
     inline*: InlineContext
