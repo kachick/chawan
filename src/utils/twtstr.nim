@@ -190,9 +190,6 @@ func isAlphaAscii*(r: Rune): bool =
 func isDigitAscii*(r: Rune): bool =
   return int(r) < 256 and isDigit(char(r))
 
-func breaksWord*(r: Rune): bool =
-  return not (r.isDigitAscii() or r.isAlpha())
-
 func substr*(s: seq[Rune], i, j: int): seq[Rune] =
   if s.len == 0:
     return @[]
@@ -852,6 +849,9 @@ func width*(s: seq[Rune], min: int): int =
   while i < s.len:
     result += width(s[i])
     inc i
+
+func breaksWord*(r: Rune): bool =
+  return not (r.isDigitAscii() or r.isAlpha() or r.width() == 0)
 
 const CanHaveDakuten = "かきくけこさしすせそたちつてとはひふへほカキクケコサシスセソタチツテトハヒフヘホ".toRunes()
 
