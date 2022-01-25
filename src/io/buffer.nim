@@ -710,7 +710,11 @@ proc updateHover(buffer: Buffer) =
   buffer.prevnode = thisnode
 
 proc loadResources(buffer: Buffer, document: Document) =
-  for elem in document.head.children:
+  var stack: seq[Element]
+  stack.add(document.root)
+  while stack.len > 0:
+    let elem = stack.pop()
+
     if elem.tagType == TAG_LINK:
       let elem = HTMLLinkElement(elem)
       if elem.rel == "stylesheet":
@@ -718,7 +722,12 @@ proc loadResources(buffer: Buffer, document: Document) =
         if url.issome:
           let res = buffer.loader.getPage(url.get)
           if res.s != nil and res.contenttype == "text/css":
-            elem.s = res.s
+            let sheet = parseStylesheet(res.s.readAll())
+            elem.parentElement.sheets.add(sheet)
+
+    for i in countdown(elem.children.high, 0):
+      let child = elem.children[i]
+      stack.add(child)
 
 proc load*(buffer: Buffer) =
   case buffer.contenttype

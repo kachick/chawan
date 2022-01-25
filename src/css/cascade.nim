@@ -117,7 +117,7 @@ proc checkRendered(element: Element, prev: CSSSpecifiedValues, ppseudo: array[PS
             element.rendered = false
             return
 
-proc applyRules(element: Element, ua, user: DeclarationList, author: seq[DeclarationList], pseudo: PseudoElem) =
+proc applyDeclarations(element: Element, ua, user: DeclarationList, author: seq[DeclarationList], pseudo: PseudoElem) =
   var ares: ApplyResult
 
   ares.applyNormal(ua[pseudo])
@@ -144,62 +144,65 @@ proc applyRules(element: Element, ua, user: DeclarationList, author: seq[Declara
   for rule in ares.important:
     element.applyProperty(rule, pseudo)
 
-# TODO this is kinda broken
 func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
   result = ss
   for mq in ss.mq_list:
     if mq.query.applies():
       result.add(mq.children.applyMediaQuery())
 
+proc resetRules(elem: Element) =
+  elem.css = if elem.parentElement != nil:
+    elem.parentElement.css.inheritProperties()
+  else:
+    rootProperties()
+
+  for pseudo in PSEUDO_BEFORE..PSEUDO_AFTER:
+    elem.pseudo[pseudo] = nil
+
+proc applyRules(elem: Element, ua, user: CSSStylesheet, author: seq[CSSStylesheet]) {.inline.} =
+  let uadecls = calcRules(elem, ua)
+  let userdecls = calcRules(elem, user)
+  var authordecls: seq[DeclarationList]
+  for rule in author:
+    authordecls.add(calcRules(elem, rule))
+
+  for pseudo in PseudoElem:
+    elem.applyDeclarations(uadecls, userdecls, authordecls, pseudo)
+
 proc applyRules(document: Document, ua, user: CSSStylesheet) =
-  var stack: seq[Element]
-
-  var embedded_rules: seq[CSSStylesheet]
-
-  stack.add(document.head)
+  var author: seq[CSSStylesheet]
 
   for sheet in document.head.sheets:
-    embedded_rules.add(sheet)
+    author.add(sheet)
 
-  stack.setLen(0)
+  var stack: seq[Element]
 
   stack.add(document.root)
-
-  var lastlen = 0
+  var lenstack = newSeqOfCap[int](15)
 
   while stack.len > 0:
     let elem = stack.pop()
 
-    # Add a nil after the last element, so we can remove the stylesheets
+    # Remove stylesheets on nil
     if elem == nil:
-      embedded_rules.setLen(embedded_rules.len - lastlen)
+      let len = lenstack.pop()
+      author.setLen(author.len - len)
       continue
-
-    embedded_rules.add(elem.sheets)
-    lastlen = elem.sheets.len
 
     if not elem.cssapplied:
       let prev = elem.css
       let ppseudo = elem.pseudo
-      if elem.parentElement != nil:
-        elem.css = elem.parentElement.css.inheritProperties()
-      else:
-        elem.css = rootProperties()
-      for pseudo in PSEUDO_BEFORE..PSEUDO_AFTER:
-        elem.pseudo[pseudo] = nil
-
-      let uarules = calcRules(elem, ua)
-      let userrules = calcRules(elem, user)
-      var authorrules: seq[DeclarationList]
-      for rule in embedded_rules:
-        authorrules.add(calcRules(elem, rule))
-
-      for pseudo in PseudoElem:
-        elem.applyRules(uarules, userrules, authorrules, pseudo)
-
+      elem.resetRules()
+      elem.applyRules(ua, user, author)
       elem.checkRendered(prev, ppseudo)
 
-    stack.add(nil)
+    # Add nil before the last element (in-stack), so we can remove the
+    # stylesheets
+    if elem.sheets.len > 0:
+      author.add(elem.sheets)
+      lenstack.add(elem.sheets.len)
+      stack.add(nil)
+
     for i in countdown(elem.children.high, 0):
       stack.add(elem.children[i])
 

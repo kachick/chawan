@@ -1,6 +1,5 @@
 import tables
 import options
-import streams
 import strutils
 
 import css/values
@@ -117,13 +116,10 @@ type
     ordinalvalue*: int
 
   HTMLStyleElement* = ref object of HTMLElement
-    sheet*: CSSStylesheet
 
   HTMLLinkElement* = ref object of HTMLElement
     href*: string
     rel*: string
-    sheet*: CSSStylesheet
-    s*: Stream
 
 # For debugging
 template `$`*(node: Node): string =
