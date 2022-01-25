@@ -152,7 +152,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
     of ACTION_LINED_BACKSPACE:
       if state.cursor > 0:
         let w = state.news[state.cursor - 1].lwidth()
-        state.news.delete(state.cursor - 1, state.cursor - 1)
+        state.news.delete(state.cursor - 1..state.cursor - 1)
         dec state.cursor
         if state.cursor == state.news.len and state.shift == 0:
           state.backward(w)
@@ -162,7 +162,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
     of ACTION_LINED_DELETE:
       if state.cursor > 0 and state.cursor < state.news.len:
         let w = state.news[state.cursor - 1].lwidth()
-        state.news.delete(state.cursor, state.cursor)
+        state.news.delete(state.cursor..state.cursor)
         if state.cursor == state.news.len and state.shift == 0:
           state.kill(w)
         else:
@@ -171,7 +171,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
       state.escNext = true
     of ACTION_LINED_CLEAR:
       if state.cursor > 0:
-        state.news.delete(0, state.cursor - 1)
+        state.news.delete(0..state.cursor - 1)
         state.cursor = 0
         state.zeroShiftRedraw()
     of ACTION_LINED_KILL:
@@ -232,7 +232,7 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
           break
       if chars > 0:
         let w = state.news.lwidth(state.cursor - chars, state.cursor)
-        state.news.delete(state.cursor - chars, state.cursor - 1)
+        state.news.delete(state.cursor - chars..state.cursor - 1)
         state.cursor -= chars
         if state.cursor == state.news.len and state.shift == 0:
           state.backward(w)

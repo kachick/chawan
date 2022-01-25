@@ -63,12 +63,14 @@ proc nextBuffer(client: Client) =
 
 proc discardBuffer(client: Client) =
   if client.buffer.next != nil:
-    client.buffer.sourcepair.sourcepair = nil
+    if client.buffer.sourcepair != nil:
+      client.buffer.sourcepair.sourcepair = nil
     client.buffer.next.prev = client.buffer.prev
     client.buffer = client.buffer.next
     client.buffer.redraw = true
   elif client.buffer.prev != nil:
-    client.buffer.sourcepair.sourcepair = nil
+    if client.buffer.sourcepair != nil:
+      client.buffer.sourcepair.sourcepair = nil
     client.buffer.prev.next = client.buffer.next
     client.buffer = client.buffer.prev
     client.buffer.redraw = true
@@ -139,7 +141,7 @@ proc loadUrl(client: Client, url: string, ctype = "") =
     client.gotoUrl(url, none(Url), true, true, ctype)
   else:
     try:
-      let cdir = parseUrl("file://" & getCurrentDir() & '/')
+      let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
       client.gotoUrl(url, cdir, true, true, ctype)
     except LoadError:
       client.gotoUrl("http://" & url, none(Url), true, true, ctype)

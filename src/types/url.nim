@@ -323,6 +323,7 @@ proc append(path: var UrlPath, s: string) =
     path.ss.add(s)
 
 template includes_credentials(url: Url): bool = url.username != "" or url.password != ""
+template is_windows_drive_letter(s: string): bool = s.len == 2 and s[0] in Letters and (s[1] == ':' or s[1] == '|')
 
 #TODO encoding
 proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), override: bool = false): Option[Url] =
@@ -606,7 +607,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
           state = PATH_STATE
           dec pointer
     of FILE_HOST_STATE:
-      if (not has or c in {'/', '?', '#'}):
+      if (not has or c in {'/', '\\', '?', '#'}):
         dec pointer
         if not override and buffer.is_windows_drive_letter:
           #TODO validation error
@@ -800,6 +801,20 @@ func serialize_unicode*(path: UrlPath): string {.inline.} =
   for s in path.ss:
     result &= '/'
     result &= percentDecode(s)
+
+func serialize_unicode_dos*(path: UrlPath): string {.inline.} =
+  if path.opaque:
+    return percentDecode(path.s)
+  var i = 0
+  if i < path.ss.len:
+    if path.ss[i].is_windows_drive_letter:
+      result &= path.ss[i]
+      inc i
+  while i < path.ss.len:
+    let s = path.ss[i]
+    result &= '\\'
+    result &= percentDecode(s)
+    inc i
 
 func serialize*(url: Url, excludefragment = false): string =
   result = url.scheme & ':'

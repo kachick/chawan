@@ -128,9 +128,6 @@ func toAsciiLower*(str: string): string =
   for i in 0..str.high:
     result[i] = str[i].tolower()
 
-func getrune(s: string): Rune =
-  return s.toRunes()[0]
-
 func genHexCharMap(): seq[int] =
   for i in 0..255:
     case chr(i)
@@ -565,7 +562,7 @@ proc expandPath*(path: string): string =
         while path[i] != '/':
           usr &= path[i]
           inc i
-        let p = getpwnam(usr)
+        let p = getpwnam(cstring(usr))
         if p != nil:
           result = $p.pw_dir / path.substr(i)
 

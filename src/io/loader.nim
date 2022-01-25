@@ -20,7 +20,10 @@ proc newFileLoader*(): FileLoader =
 
 proc getPage*(loader: FileLoader, url: Url): LoadResult =
   if url.scheme == "file":
-    let path = url.path.serialize_unicode()
+    when defined(windows) or defined(OS2) or defined(DOS):
+      let path = url.path.serialize_unicode_windows()
+    else:
+      let path = url.path.serialize_unicode()
     result.contenttype = guessContentType(path)
     result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":
