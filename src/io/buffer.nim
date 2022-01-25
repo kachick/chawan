@@ -318,7 +318,9 @@ proc refreshDisplay(buffer: Buffer) =
     inc y
 
 proc setCursorXB(buffer: Buffer, byte: int) =
+  assert byte < buffer.currentLine.len
   var b = buffer.currentCursorBytes()
+  assert b < buffer.currentLine.len, $buffer.cursory & " " & $b & " " & $buffer.currentLine.len
   var w = buffer.fromx + buffer.cursorx
   if b < byte:
     while b < byte:
@@ -794,7 +796,7 @@ proc setStatusMessage*(buffer: Buffer, str: string) =
   buffer.nostatus = true
 
 proc lineInfo*(buffer: Buffer) =
-    buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " cell width: " & $buffer.currentDisplayCell().width())
+    buffer.setStatusMessage("line " & $(buffer.cursory + 1) & "/" & $buffer.numLines & " col " & $(buffer.cursorx + 1) & "/" & $buffer.currentLineWidth() & " x: " & $buffer.currentCursorBytes())
 
 proc displayBufferSwapOutput(buffer: Buffer) =
   print(buffer.generateSwapOutput())

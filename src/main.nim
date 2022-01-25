@@ -9,13 +9,15 @@ import config/config
 import utils/twtstr
 
 readConfig()
-width_table = makewidthtable(gconfig.ambiguous_double)
 let params = commandLineParams()
 
 proc help(i: int) =
   let s =  """
 Usage: cha [options] [URL(s) or file(s)...]
 Options:
+    -d, --dump                  Print page to stdout
+    -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
+    -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
     -T, --type <type>           Specify content mime type
     -v, --version               Print version information
     -h, --help                  Print this page"""
@@ -29,6 +31,8 @@ var i = 0
 var ctype = ""
 var pages: seq[string]
 var dump = false
+var opt_str = ""
+var css_str = ""
 while i < params.len:
   let param = params[i]
   case param
@@ -43,17 +47,34 @@ while i < params.len:
     else:
       help(1)
   of "-":
-    discard
-  of "-dump":
+    discard # emulate programs that accept - as stdin
+  of "-d", "--dump":
     dump = true
+  of "-c", "--css":
+    inc i
+    if i < params.len:
+      gconfig.stylesheet &= params[i]
+    else:
+      help(1)
+  of "-o", "--opt":
+    inc i
+    if i < params.len:
+      gconfig.parseConfig(getCurrentDir(), params[i])
+    else:
+      help(1)
   elif param[0] == '-':
     help(1)
   else:
     pages.add(param)
   inc i
 
-if params.len == 0:
+if pages.len == 0:
   if stdin.isatty:
     help(1)
+
+gconfig.nmap = constructActionTable(gconfig.nmap)
+gconfig.lemap = constructActionTable(gconfig.lemap)
+
+width_table = makewidthtable(gconfig.ambiguous_double)
 
 newClient().launchClient(pages, ctype, dump)

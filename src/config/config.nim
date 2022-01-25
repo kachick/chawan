@@ -134,6 +134,7 @@ proc parseConfig(config: var Config, dir: string, t: TomlValue) =
   if "page" in t:
     for k, v in t["page"].pairs:
       config.nmap[getRealKey(k)] = getAction(v.s)
+  if "line" in t:
     for k, v in t["line"].pairs:
       config.lemap[getRealKey(k)] = getLineAction(v.s)
   if "css" in t:
@@ -150,8 +151,14 @@ proc parseConfig(config: var Config, dir: string, t: TomlValue) =
     if "inline" in css:
       config.stylesheet &= css["inline"].s
 
+proc parseConfig(config: var Config, dir: string, stream: Stream) =
+  config.parseConfig(dir, parseToml(stream))
+
+proc parseConfig*(config: var Config, dir: string, s: string) =
+  config.parseConfig(dir, newStringStream(s))
+
 proc staticReadConfig(): Config =
-  result.parseConfig("res", parseToml(newStringStream(staticRead"res/config.toml")))
+  result.parseConfig("res", staticRead"res/config.toml")
 
 const defaultConfig = staticReadConfig()
 var gconfig* = defaultConfig
@@ -159,7 +166,7 @@ var gconfig* = defaultConfig
 proc readConfig(dir: string) =
   let fs = newFileStream(dir / "config.toml")
   if fs != nil:
-    gconfig.parseConfig(dir, parseToml(fs))
+    gconfig.parseConfig(dir, fs)
 
 proc getNormalAction*(s: string): TwtAction =
   if gconfig.nmap.hasKey(s):
@@ -175,5 +182,3 @@ proc readConfig*() =
   when defined(debug):
     readConfig(getCurrentDir() / "res")
   readConfig(getConfigDir() / "chawan")
-  gconfig.nmap = constructActionTable(gconfig.nmap)
-  gconfig.lemap = constructActionTable(gconfig.lemap)
