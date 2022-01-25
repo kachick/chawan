@@ -720,10 +720,11 @@ proc loadResources(buffer: Buffer, document: Document) =
       if elem.rel == "stylesheet":
         let url = parseUrl(elem.href, document.location.some)
         if url.issome:
-          let res = buffer.loader.getPage(url.get)
-          if res.s != nil and res.contenttype == "text/css":
-            let sheet = parseStylesheet(res.s.readAll())
-            elem.parentElement.sheets.add(sheet)
+          if url.get.scheme == buffer.location.scheme:
+            let res = buffer.loader.getPage(url.get)
+            if res.s != nil and res.contenttype == "text/css":
+              let sheet = parseStylesheet(res.s.readAll())
+              elem.parentElement.sheets.add(sheet)
 
     for i in countdown(elem.children.high, 0):
       let child = elem.children[i]
