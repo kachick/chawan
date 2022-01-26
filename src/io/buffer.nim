@@ -65,7 +65,7 @@ proc newBuffer*(): Buffer =
 func generateFullOutput(buffer: Buffer): string =
   var x = 0
   var w = 0
-  var formatting = newFormatting()
+  var format = newFormat()
   result &= HVP(1, 1)
 
   for cell in buffer.display:
@@ -75,7 +75,7 @@ func generateFullOutput(buffer: Buffer): string =
       x = 0
       w = 0
 
-    result &= formatting.processFormatting(cell.formatting)
+    result &= format.processFormat(cell.format)
     result &= $cell.runes
 
     w += cell.width()
@@ -88,7 +88,7 @@ func generateFullOutput(buffer: Buffer): string =
 # current one. ideally should be used when small changes are made (e.g. hover
 # changes underlining)
 func generateSwapOutput(buffer: Buffer): string =
-  var formatting = newFormatting()
+  var format = newFormat()
   let curr = buffer.display
   let prev = buffer.prevdisplay
   var i = 0
@@ -107,7 +107,7 @@ func generateSwapOutput(buffer: Buffer): string =
       inc y
       line = ""
     lr = lr or (curr[i] != prev[i])
-    line &= formatting.processFormatting(curr[i].formatting)
+    line &= format.processFormat(curr[i].format)
     line &= $curr[i].runes
     inc i
     inc x
@@ -140,7 +140,7 @@ func generateSwapOutput(buffer: Buffer): string =
   #      cx = x
   #      cy = y
 
-  #    text &= formatting.processFormatting(curr[i].formatting)
+  #    text &= format.processFormat(curr[i].format)
 
   #    text &= $curr[i].runes
   #    if currwidth < prevwidth:
@@ -157,10 +157,10 @@ func generateSwapOutput(buffer: Buffer): string =
   #  result &= $text
 
 func generateStatusMessage*(buffer: Buffer): string =
-  var formatting = newFormatting()
+  var format = newFormat()
   var w = 0
   for cell in buffer.statusmsg:
-    result &= formatting.processFormatting(cell.formatting)
+    result &= format.processFormat(cell.format)
     result &= $cell.runes
     w += cell.width()
   if w < buffer.width:
@@ -309,7 +309,7 @@ proc refreshDisplay(buffer: Buffer) =
         nf = line.findNextFormat(j)
       buffer.display[dls + k].runes.add(r)
       if cf.pos != -1:
-        buffer.display[dls + k].formatting = cf.formatting
+        buffer.display[dls + k].format = cf.format
         buffer.display[dls + k].node = cf.node
       let tk = k + r.width()
       while k < tk and k < buffer.width - 1:
@@ -763,7 +763,7 @@ proc cursorBufferPos(buffer: Buffer) =
 proc clearStatusMessage(buffer: Buffer) =
   buffer.statusmsg = newFixedGrid(buffer.width)
 
-proc writeStatusMessage(buffer: Buffer, str: string, formatting: Formatting = Formatting()) =
+proc writeStatusMessage(buffer: Buffer, str: string, format: Format = Format()) =
   buffer.clearStatusMessage()
   var i = 0
   for r in str.runes:
@@ -773,16 +773,16 @@ proc writeStatusMessage(buffer: Buffer, str: string, formatting: Formatting = Fo
       buffer.statusmsg[^1].runes.add(Rune('$'))
       break
     buffer.statusmsg[i].runes.add(r)
-    buffer.statusmsg[i].formatting = formatting
+    buffer.statusmsg[i].format = format
 
 proc statusMsgForBuffer(buffer: Buffer) =
   var msg = $(buffer.cursory + 1) & "/" & $buffer.numLines & " (" &
             $buffer.atPercentOf() & "%) " & "<" & buffer.title & ">"
   if buffer.hovertext.len > 0:
     msg &= " " & buffer.hovertext
-  var formatting: Formatting
-  formatting.reverse = true
-  buffer.writeStatusMessage(msg, formatting)
+  var format: Format
+  format.reverse = true
+  buffer.writeStatusMessage(msg, format)
 
 proc setStatusMessage*(buffer: Buffer, str: string) =
   buffer.writeStatusMessage(str)
@@ -811,16 +811,16 @@ proc click*(buffer: Buffer): string =
   return ""
 
 proc drawBuffer*(buffer: Buffer) =
-  var formatting = newFormatting()
+  var format = newFormat()
   for line in buffer.lines:
     if line.formats.len == 0:
       print(line.str & '\n')
     else:
       var x = 0
-      for format in line.formats:
-        print(line.str.substr(x, format.pos - 1))
-        print(formatting.processFormatting(format.formatting))
-        x = format.pos
+      for f in line.formats:
+        print(line.str.substr(x, f.pos - 1))
+        print(format.processFormat(f.format))
+        x = f.pos
       print(line.str.substr(x, line.str.len) & '\n')
 
 proc refreshBuffer*(buffer: Buffer) =

@@ -4,7 +4,7 @@ import io/cell
 import utils/twtstr
 
 proc renderPlainText*(text: string): FlexibleGrid =
-  var format = newFormatting()
+  var format = newFormat()
   template add_format() =
     if af:
       af = false
@@ -38,7 +38,7 @@ proc renderPlainText*(text: string): FlexibleGrid =
     discard result.pop()
 
 proc renderStream*(stream: Stream): FlexibleGrid =
-  var format = newFormatting()
+  var format = newFormat()
   template add_format() =
     if af:
       af = false

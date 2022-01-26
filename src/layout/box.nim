@@ -23,16 +23,19 @@ type
     width*: int
     height*: int
 
-  InlineSpacing* = ref object of InlineAtom
-    word*: InlineWord
-
-  InlineWord* = ref object of InlineAtom
-    str*: string
+  ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
     fontweight*: int
     textdecoration*: CSSTextDecoration
     color*: CSSColor
     node*: Node
+
+  InlineSpacing* = ref object of InlineAtom
+    format*: ComputedFormat
+
+  InlineWord* = ref object of InlineAtom
+    str*: string
+    format*: ComputedFormat
 
   InlineRow* = ref object
     atoms*: seq[InlineAtom]
@@ -43,6 +46,7 @@ type
 
   InlineContext* = ref object
     relx*: int
+    rely*: int
     width*: int
     height*: int
     rows*: seq[InlineRow]
@@ -61,6 +65,12 @@ type
     rely*: int
     margin_top*: int
     margin_bottom*: int
+    margin_left*: int
+    margin_right*: int
+    padding_top*: int
+    padding_bottom*: int
+    padding_left*: int
+    padding_right*: int
 
     compwidth*: int
     compheight*: Option[int]

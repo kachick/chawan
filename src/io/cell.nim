@@ -5,6 +5,7 @@ import sugar
 import unicode
 
 import html/dom
+import layout/box
 import types/color
 import utils/twtstr
 
@@ -17,21 +18,22 @@ type
     FLAG_STRIKE
     FLAG_OVERLINE
 
-  Formatting* = object
+  Format* = object
     fgcolor*: CellColor
     bgcolor*: CellColor
     flags: set[FormatFlags]
 
   Cell* = object of RootObj
-    formatting*: Formatting
+    format*: Format
     node*: Node
 
-  FormattingCell* = object of Cell
+  FormatCell* = object of Cell
     pos*: int
+    computed*: ComputedFormat
 
   FlexibleLine* = object
     str*: string
-    formats*: seq[FormattingCell]
+    formats*: seq[FormatCell]
 
   FlexibleGrid* = seq[FlexibleLine]
 
@@ -49,20 +51,20 @@ const FormatCodes: array[FormatFlags, tuple[s: int, e: int]] = [
   FLAG_OVERLINE: (53, 55),
 ]
 
-template flag_template(formatting: Formatting, val: bool, flag: FormatFlags) =
-  if val: formatting.flags.incl(flag)
-  else: formatting.flags.excl(flag)
+template flag_template(format: Format, val: bool, flag: FormatFlags) =
+  if val: format.flags.incl(flag)
+  else: format.flags.excl(flag)
 
-template `italic=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_ITALIC
-template `bold=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_BOLD
-template `underline=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_UNDERLINE
-template `reverse=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_REVERSE
-template `strike=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_STRIKE
-template `overline=`*(f: var Formatting, b: bool) = flag_template f, b, FLAG_OVERLINE
+template `italic=`*(f: var Format, b: bool) = flag_template f, b, FLAG_ITALIC
+template `bold=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BOLD
+template `underline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_UNDERLINE
+template `reverse=`*(f: var Format, b: bool) = flag_template f, b, FLAG_REVERSE
+template `strike=`*(f: var Format, b: bool) = flag_template f, b, FLAG_STRIKE
+template `overline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_OVERLINE
 
 #TODO ?????
 func `==`*(a: FixedCell, b: FixedCell): bool =
-  return a.formatting == b.formatting and
+  return a.format == b.format and
     a.runes == b.runes and
     a.node == b.node
 
@@ -75,8 +77,8 @@ func width*(line: FlexibleLine): int =
 func width*(cell: FixedCell): int =
   return cell.runes.width()
 
-func newFormatting*(): Formatting =
-  return Formatting(fgcolor: defaultColor, bgcolor: defaultColor)
+func newFormat*(): Format =
+  return Format(fgcolor: defaultColor, bgcolor: defaultColor)
 
 func findFormatN*(line: FlexibleLine, pos: int): int =
   var i = 0
@@ -86,21 +88,21 @@ func findFormatN*(line: FlexibleLine, pos: int): int =
     inc i 
   return i
 
-func findFormat*(line: FlexibleLine, pos: int): FormattingCell =
+func findFormat*(line: FlexibleLine, pos: int): FormatCell =
   let i = line.findFormatN(pos) - 1
   if i != -1:
     result = line.formats[i]
   else:
     result.pos = -1
 
-func findNextFormat*(line: FlexibleLine, pos: int): FormattingCell =
+func findNextFormat*(line: FlexibleLine, pos: int): FormatCell =
   let i = line.findFormatN(pos)
   if i < line.formats.len:
     result = line.formats[i]
   else:
     result.pos = -1
 
-func subformats*(formats: seq[FormattingCell], pos: int): seq[FormattingCell] =
+func subformats*(formats: seq[FormatCell], pos: int): seq[FormatCell] =
   var i = 0
   while i < formats.len:
     if formats[i].pos >= pos:
@@ -128,20 +130,18 @@ proc setLen*(line: var FlexibleLine, len: int) =
 
 proc add*(a: var FlexibleLine, b: FlexibleLine) =
   let l = a.str.len
-  a.formats.add(b.formats.map((x) => FormattingCell(formatting: x.formatting, node: x.node, pos: l + x.pos)))
+  a.formats.add(b.formats.map((x) => FormatCell(format: x.format, node: x.node, pos: l + x.pos)))
   a.str &= b.str
 
 proc addLine*(grid: var FlexibleGrid) =
   grid.add(FlexibleLine())
 
-proc addFormat*(line: var FlexibleLine, pos: int, format: Formatting) =
-  line.formats.add(FormattingCell(formatting: format, pos: line.str.len))
+proc addFormat*(line: var FlexibleLine, pos: int, format: Format) =
+  line.formats.add(FormatCell(format: format, pos: line.str.len))
 
-proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting) =
-  grid[y].formats.add(FormattingCell(formatting: format, pos: grid[y].str.len))
-
-proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Formatting, node: Node) =
-  grid[y].formats.add(FormattingCell(formatting: format, node: node, pos: pos))
+proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Format, computed: ComputedFormat = nil, node: Node = nil) =
+  if computed == nil or grid[y].formats.len == 0 or grid[y].formats[^1].computed != computed:
+    grid[y].formats.add(FormatCell(format: format, node: node, computed: computed, pos: pos))
 
 proc addCell*(grid: var FlexibleGrid, y: int, r: Rune) =
   grid[y].str &= $r
@@ -154,11 +154,11 @@ template inc_check(i: int) =
   if i >= buf.len:
     return i
 
-proc handleAnsiCode(formatting: var Formatting, final: char, params: string) =
+proc handleAnsiCode(format: var Format, final: char, params: string) =
   case final
   of 'm':
     if params.len == 0:
-      formatting = newFormatting()
+      format = newFormat()
     else:
       let sparams = params.split(';')
       try:
@@ -167,17 +167,17 @@ proc handleAnsiCode(formatting: var Formatting, final: char, params: string) =
         while pi < ip.len:
           case ip[pi]
           of 0:
-            formatting = newFormatting()
-          of 1: formatting.bold = true
-          of 3: formatting.italic = true
-          of 4: formatting.underline = true
-          of 7: formatting.reverse = true
-          of 9: formatting.strike = true
-          of 22: formatting.bold = false
-          of 23: formatting.italic = false
-          of 27: formatting.reverse = false
-          of 29: formatting.strike = false
-          of 30..37: formatting.fgcolor = CellColor(rgb: false, color: uint8(ip[pi]))
+            format = newFormat()
+          of 1: format.bold = true
+          of 3: format.italic = true
+          of 4: format.underline = true
+          of 7: format.reverse = true
+          of 9: format.strike = true
+          of 22: format.bold = false
+          of 23: format.italic = false
+          of 27: format.reverse = false
+          of 29: format.strike = false
+          of 30..37: format.fgcolor = CellColor(rgb: false, color: uint8(ip[pi]))
           of 38:
             inc pi
             if pi < ip.len:
@@ -189,7 +189,7 @@ proc handleAnsiCode(formatting: var Formatting, final: char, params: string) =
                   let g = ip[pi]
                   inc pi
                   let b = ip[pi]
-                  formatting.fgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
+                  format.fgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
               else:
                 #TODO
                 inc pi
@@ -197,9 +197,9 @@ proc handleAnsiCode(formatting: var Formatting, final: char, params: string) =
             else:
               break
           of 39:
-            formatting.fgcolor = defaultColor
+            format.fgcolor = defaultColor
           of 40..47:
-            formatting.bgcolor = CellColor(rgb: false, color: uint8(ip[0]))
+            format.bgcolor = CellColor(rgb: false, color: uint8(ip[0]))
           of 48:
             inc pi
             if pi < ip.len:
@@ -211,22 +211,22 @@ proc handleAnsiCode(formatting: var Formatting, final: char, params: string) =
                   let g = ip[pi]
                   inc pi
                   let b = ip[pi]
-                  formatting.bgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
+                  format.bgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
               else:
                 #TODO
                 inc pi
                 continue
             else:
               break
-          of 49: formatting.bgcolor = defaultColor
-          of 53: formatting.overline = true
-          of 55: formatting.overline = false
+          of 49: format.bgcolor = defaultColor
+          of 53: format.overline = true
+          of 55: format.overline = false
           else: discard
           inc pi
       except ValueError: discard
   else: discard
 
-proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
+proc parseAnsiCode*(format: var Format, buf: string, fi: int): int =
   var i = fi
   if buf[i] != '\e':
     return i
@@ -253,11 +253,11 @@ proc parseAnsiCode*(formatting: var Formatting, buf: string, fi: int): int =
   let final = buf[i]
   #final byte
   if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x7E:
-    formatting.handleAnsiCode(final, params)
+    format.handleAnsiCode(final, params)
 
   return i
 
-proc parseAnsiCode*(formatting: var Formatting, stream: Stream) =
+proc parseAnsiCode*(format: var Format, stream: Stream) =
   if stream.atEnd(): return
   var c = stream.readChar()
   if 0x40 <= int(c) and int(c) <= 0x5F:
@@ -284,37 +284,37 @@ proc parseAnsiCode*(formatting: var Formatting, stream: Stream) =
   #final byte
   if 0x40 <= int(c) and int(c) <= 0x7E:
     let final = c
-    formatting.handleAnsiCode(final, params)
+    format.handleAnsiCode(final, params)
 
-proc processFormatting*(formatting: var Formatting, cellf: Formatting): string =
+proc processFormat*(format: var Format, cellf: Format): string =
   for flag in FormatFlags:
-    if flag in formatting.flags and flag notin cellf.flags:
+    if flag in format.flags and flag notin cellf.flags:
       result &= SGR(FormatCodes[flag].e)
 
-  if cellf.fgcolor != formatting.fgcolor:
+  if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor
     if color.rgb:
       let rgb = color.rgbcolor
       result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
       result &= SGR()
-      formatting = newFormatting()
+      format = newFormat()
     else:
       result &= SGR(color.color)
 
-  if cellf.bgcolor != formatting.bgcolor:
+  if cellf.bgcolor != format.bgcolor:
     var color = cellf.bgcolor
     if color.rgb:
       let rgb = color.rgbcolor
       result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
       result &= SGR()
-      formatting = newFormatting()
+      format = newFormat()
     else:
       result &= SGR(color.color)
 
   for flag in FormatFlags:
-    if flag notin formatting.flags and flag in cellf.flags:
+    if flag notin format.flags and flag in cellf.flags:
       result &= SGR(FormatCodes[flag].s)
 
-  formatting = cellf
+  format = cellf

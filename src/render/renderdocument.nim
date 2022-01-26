@@ -11,24 +11,24 @@ import layout/box
 import layout/engine
 import utils/twtstr
 
-func formatFromWord(word: InlineWord): Formatting =
-  result.fgcolor = word.color.cellColor()
-  if word.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
+func formatFromWord(computed: ComputedFormat): Format =
+  result.fgcolor = computed.color.cellColor()
+  if computed.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
     result.italic = true
-  if word.fontweight > 500:
+  if computed.fontweight > 500:
     result.bold = true
-  if word.textdecoration == TEXT_DECORATION_UNDERLINE:
+  if computed.textdecoration == TEXT_DECORATION_UNDERLINE:
     result.underline = true
-  if word.textdecoration == TEXT_DECORATION_OVERLINE:
+  if computed.textdecoration == TEXT_DECORATION_OVERLINE:
     result.overline = true
-  if word.textdecoration == TEXT_DECORATION_LINE_THROUGH:
+  if computed.textdecoration == TEXT_DECORATION_LINE_THROUGH:
     result.strike = true
 
 proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
   var r: Rune
 
   let y = y div term.ppl
-  var x = x div term.ppc
+  var x = (x + word.relx) div term.ppc
   var i = 0
   while x < 0:
     fastRuneAt(word.str, i, r)
@@ -48,12 +48,14 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
   let oformats = lines[y].formats.subformats(i)
   lines[y].setLen(i)
 
-  lines.addFormat(y, i, word.formatFromWord(), word.node)
-
   var nx = cx
   if nx < x:
+    lines.addFormat(y, i, newFormat())
     lines[y].str &= ' '.repeat(x - nx)
+    i += x - nx
     nx = x
+
+  lines.addFormat(y, i, word.format.formatFromWord(), word.format, word.format.node)
 
   lines[y].str &= linestr
   nx += linestr.width()
@@ -71,7 +73,7 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term
   var r: Rune
 
   let y = y div term.ppl
-  var x = x div term.ppc
+  var x = (x + spacing.relx) div term.ppc
   let width = spacing.width div term.ppc
 
   var i = 0
@@ -94,16 +96,16 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term
   let oformats = lines[y].formats.subformats(i)
   lines[y].setLen(i)
 
-  if spacing.word != nil:
-    lines.addFormat(y, i, spacing.word.formatFromWord(), spacing.word.node)
-
   var nx = cx
   if nx < x:
+    lines.addFormat(y, i, newFormat())
     lines[y].str &= ' '.repeat(x - nx)
     nx = x
 
   lines[y].str &= linestr
   nx += linestr.len
+  if spacing.format != nil:
+    lines.addFormat(y, i, spacing.format.formatFromWord(), spacing.format, spacing.format.node)
 
   i = 0
   while cx < nx and i < ostr.len:
@@ -117,6 +119,8 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes)
 
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, term: TermAttributes) =
+  let x = x + ctx.relx
+  let y = y + ctx.rely
   for row in ctx.rows:
     let x = x + row.relx
     let y = y + row.rely + row.height
@@ -126,23 +130,23 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
       let y = y - atom.height
       if atom of BlockContext:
         let ctx = BlockContext(atom)
-        grid.renderBlockContext(ctx, x + ctx.relx, y + ctx.rely, term)
+        grid.renderBlockContext(ctx, x, y, term)
       elif atom of InlineWord:
         let word = InlineWord(atom)
-        grid.setRowWord(word, x + word.relx, y, term)
+        grid.setRowWord(word, x, y, term)
       elif atom of InlineSpacing:
         let spacing = InlineSpacing(atom)
-        grid.setSpacing(spacing, x + spacing.relx, y, term)
+        grid.setSpacing(spacing, x, y, term)
 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes) =
-  var x = x
-  var y = y
+  let x = x + ctx.relx
+  let y = y + ctx.rely
   if ctx.inline != nil:
     assert ctx.nested.len == 0
-    grid.renderInlineContext(ctx.inline, x + ctx.inline.relx, y, term)
+    grid.renderInlineContext(ctx.inline, x, y, term)
   else:
     for ctx in ctx.nested:
-      grid.renderBlockContext(ctx, x + ctx.relx, y + ctx.rely, term)
+      grid.renderBlockContext(ctx, x, y, term)
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
