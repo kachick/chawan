@@ -67,6 +67,53 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
     let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
     lines[y].add(oline)
 
+proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term: TermAttributes) =
+  var r: Rune
+
+  let y = y div term.ppl
+  var x = x div term.ppc
+  let width = spacing.width div term.ppc
+
+  var i = 0
+  if x < 0:
+    i -= x
+    x = 0
+
+  let linestr = ' '.repeat(width - i)
+  i = 0
+
+  while lines.len <= y:
+    lines.addLine()
+
+  var cx = 0
+  while cx < x and i < lines[y].str.len:
+    fastRuneAt(lines[y].str, i, r)
+    cx += r.width()
+
+  let ostr = lines[y].str.substr(i)
+  let oformats = lines[y].formats.subformats(i)
+  lines[y].setLen(i)
+
+  if spacing.word != nil:
+    lines.addFormat(y, i, spacing.word.formatFromWord(), spacing.word.node)
+
+  var nx = cx
+  if nx < x:
+    lines[y].str &= ' '.repeat(x - nx)
+    nx = x
+
+  lines[y].str &= linestr
+  nx += linestr.len
+
+  i = 0
+  while cx < nx and i < ostr.len:
+    fastRuneAt(ostr, i, r)
+    cx += r.width()
+
+  if i < ostr.len:
+    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
+    lines[y].add(oline)
+
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes)
 
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, term: TermAttributes) =
@@ -83,6 +130,9 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x + word.relx, y, term)
+      elif atom of InlineSpacing:
+        let spacing = InlineSpacing(atom)
+        grid.setSpacing(spacing, x + spacing.relx, y, term)
 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes) =
   var x = x

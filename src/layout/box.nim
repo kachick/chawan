@@ -23,6 +23,9 @@ type
     width*: int
     height*: int
 
+  InlineSpacing* = ref object of InlineAtom
+    word*: InlineWord
+
   InlineWord* = ref object of InlineAtom
     str*: string
     fontstyle*: CSSFontStyle

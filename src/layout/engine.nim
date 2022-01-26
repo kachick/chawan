@@ -80,9 +80,13 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CS
       shift = ictx.computeShift(specified)
       ictx.whitespace = false
 
-  ictx.thisrow.width += shift
+  if atom.width > 0 and atom.height > 0:
+    if shift > 0:
+      let spacing = InlineSpacing(width: shift, height: atom.height)
+      spacing.relx = ictx.thisrow.width
+      ictx.thisrow.width += spacing.width
+      ictx.thisrow.atoms.add(spacing)
 
-  if atom.width > 0:
     atom.relx += ictx.thisrow.width
     ictx.thisrow.width += atom.width
     ictx.thisrow.height = max(ictx.thisrow.height, atom.height)
