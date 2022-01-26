@@ -851,7 +851,7 @@ func width*(s: seq[Rune], min: int): int =
     inc i
 
 func breaksWord*(r: Rune): bool =
-  return not (r.isDigitAscii() or r.isAlpha() or r.width() == 0)
+  return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
 const CanHaveDakuten = "かきくけこさしすせそたちつてとはひふへほカキクケコサシスセソタチツテトハヒフヘホ".toRunes()
 

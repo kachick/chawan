@@ -318,20 +318,13 @@ proc refreshDisplay(buffer: Buffer) =
     inc y
 
 proc setCursorXB(buffer: Buffer, byte: int) =
-  assert byte < buffer.currentLine.len
-  var b = buffer.currentCursorBytes()
-  assert b < buffer.currentLine.len, $buffer.cursory & " " & $b & " " & $buffer.currentLine.len
-  var w = buffer.fromx + buffer.cursorx
-  if b < byte:
-    while b < byte:
-      var r: Rune
-      fastRuneAt(buffer.currentLine, b, r)
-      w += r.width()
-  else:
-    while b > byte:
-      let (r, o) = lastRune(buffer.currentLine, b)
-      w -= r.width()
-      b -= o
+  var r: Rune
+  var w = 0
+  var b = 0
+  while b < byte:
+    var r: Rune
+    fastRuneAt(buffer.currentLine, b, r)
+    w += r.width()
 
   let x = w
   if x - buffer.fromx >= 0 and x - buffer.width < buffer.fromx:
