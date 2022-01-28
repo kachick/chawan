@@ -28,12 +28,13 @@ type
     PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK, PROPERTY_WIDTH,
     PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE, PROPERTY_PADDING,
     PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
-    PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING
+    PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
+    PROPERTY_LINE_HEIGHT
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
     VALUE_FONT_STYLE, VALUE_WHITE_SPACE, VALUE_INTEGER, VALUE_TEXT_DECORATION,
-    VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE
+    VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -69,6 +70,11 @@ type
     LIST_STYLE_TYPE_LOWER_ROMAN, LIST_STYLE_TYPE_UPPER_ROMAN,
     LIST_STYLE_TYPE_JAPANESE_INFORMAL
 
+  CSSVerticalAlign2* = enum
+    VERTICAL_ALIGN_BASELINE, VERTICAL_ALIGN_SUB, VERTICAL_ALIGN_SUPER,
+    VERTICAL_ALIGN_TEXT_TOP, VERTICAL_ALIGN_TEXT_BOTTOM, VERTICAL_ALIGN_MIDDLE,
+    VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM
+
 type
   CSSLength* = object
     num*: float64
@@ -78,6 +84,10 @@ type
   CSSColor* = object
     rgba: RGBAColor
     termcolor: int
+
+  CSSVerticalAlign* = object
+    length*: CSSLength
+    keyword*: CSSVerticalAlign2
   
   CSSSpecifiedValue* = ref object
     t*: CSSPropertyType
@@ -102,6 +112,8 @@ type
       wordbreak*: CSSWordBreak
     of VALUE_LIST_STYLE_TYPE:
       liststyletype*: CSSListStyleType
+    of VALUE_VERTICAL_ALIGN:
+      verticalalign*: CSSVerticalAlign
     of VALUE_NONE: discard
 
   CSSSpecifiedValues* = ref array[CSSPropertyType, CSSSpecifiedValue]
@@ -132,6 +144,8 @@ const PropertyNames = {
   "padding-left": PROPERTY_PADDING_LEFT,
   "padding-right": PROPERTY_PADDING_RIGHT,
   "word-spacing": PROPERTY_WORD_SPACING,
+  "vertical-align": PROPERTY_VERTICAL_ALIGN,
+  "line-height": PROPERTY_LINE_HEIGHT,
 }.toTable()
 
 const ValueTypes = [
@@ -159,12 +173,14 @@ const ValueTypes = [
   PROPERTY_PADDING_RIGHT: VALUE_LENGTH,
   PROPERTY_PADDING_BOTTOM: VALUE_LENGTH,
   PROPERTY_WORD_SPACING: VALUE_LENGTH,
+  PROPERTY_VERTICAL_ALIGN: VALUE_VERTICAL_ALIGN,
+  PROPERTY_LINE_HEIGHT: VALUE_LENGTH,
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
-  PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING
+  PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -520,8 +536,10 @@ func cssColor(d: CSSDeclaration): CSSColor =
 func cellColor*(color: CSSColor): CellColor =
   return CellColor(rgb: true, rgbcolor: RGBColor(color.rgba))
 
+func isToken(d: CSSDeclaration): bool {.inline.} = d.value.len > 0 and d.value[0] of CSSToken
+
 func cssLength(d: CSSDeclaration): CSSLength =
-  if d.value.len > 0 and d.value[0] of CSSToken:
+  if isToken(d):
     let tok = CSSToken(d.value[0])
     case tok.tokenType
     of CSS_PERCENTAGE_TOKEN:
@@ -535,7 +553,7 @@ func cssLength(d: CSSDeclaration): CSSLength =
   raise newException(CSSValueError, "Invalid length")
 
 func cssWordSpacing(d: CSSDeclaration): CSSLength =
-  if d.value.len > 0 and d.value[0] of CSSToken:
+  if isToken(d):
     let tok = CSSToken(d.value[0])
     case tok.tokenType
     of CSS_DIMENSION_TOKEN:
@@ -545,8 +563,6 @@ func cssWordSpacing(d: CSSDeclaration): CSSLength =
         return CSSLength(auto: true)
     else: discard
   raise newException(CSSValueError, "Invalid word spacing")
-
-func isToken(d: CSSDeclaration): bool = d.value.len > 0 and d.value[0] of CSSToken
 
 func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
 
@@ -667,12 +683,49 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
       of "japanese-informal": return LIST_STYLE_TYPE_JAPANESE_INFORMAL
   raise newException(CSSValueError, "Invalid list style")
 
+func cssVerticalAlign(d: CSSDeclaration): CSSVerticalAlign =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case $tok.value
+      of "baseline": result.keyword = VERTICAL_ALIGN_BASELINE
+      of "sub": result.keyword = VERTICAL_ALIGN_SUB
+      of "super": result.keyword = VERTICAL_ALIGN_SUPER
+      of "text-top": result.keyword = VERTICAL_ALIGN_TEXT_BOTTOM
+      of "middle": result.keyword = VERTICAL_ALIGN_MIDDLE
+      of "top": result.keyword = VERTICAL_ALIGN_TOP
+      of "bottom": result.keyword = VERTICAL_ALIGN_BOTTOM
+      else:
+        raise newException(CSSValueError, "Invalid vertical align")
+      return result
+    else:
+      result.keyword = VERTICAL_ALIGN_BASELINE
+      result.length = cssLength(d)
+      return result
+  raise newException(CSSValueError, "Invalid vertical align")
+
+func cssLineHeight(d: CSSDeclaration): CSSLength =
+  if isToken(d):
+    let tok = CSSToken(d.value[0])
+    case tok.tokenType
+    of CSS_NUMBER_TOKEN:
+      return cssLength(tok.nvalue * 100, "%")
+    of CSS_IDENT_TOKEN:
+      if $tok.value == "normal":
+        return CSSLength(auto: true)
+    else:
+      return cssLength(d)
+  raise newException(CSSValueError, "Invalid line height")
+
 proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   case vtype
   of VALUE_COLOR: val.color = cssColor(d)
   of VALUE_LENGTH:
-    if ptype == PROPERTY_WORD_SPACING:
+    case ptype
+    of PROPERTY_WORD_SPACING:
       val.length = cssWordSpacing(d)
+    of PROPERTY_LINE_HEIGHT:
+      val.length = cssLineHeight(d)
     else:
       val.length = cssLength(d)
   of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(d)
@@ -685,6 +738,7 @@ proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValue
   of VALUE_TEXT_DECORATION: val.textdecoration = cssTextDecoration(d)
   of VALUE_WORD_BREAK: val.wordbreak = cssWordBreak(d)
   of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(d)
+  of VALUE_VERTICAL_ALIGN: val.verticalalign = cssVerticalAlign(d)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): CSSColor =
@@ -696,7 +750,7 @@ func getInitialColor(t: CSSPropertyType): CSSColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING:
+  of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT:
     return CSSLength(auto: true)
   else:
     return CSSLength()
@@ -756,6 +810,7 @@ func equals*(a, b: CSSSpecifiedValue): bool =
   of VALUE_TEXT_DECORATION: return a.textdecoration == b.textdecoration
   of VALUE_WORD_BREAK: return a.wordbreak == b.wordbreak
   of VALUE_LIST_STYLE_TYPE: return a.liststyletype == b.liststyletype
+  of VALUE_VERTICAL_ALIGN: return a.verticalalign == b.verticalalign
   of VALUE_NONE: return true
   return false
 

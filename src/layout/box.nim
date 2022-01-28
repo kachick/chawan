@@ -20,8 +20,10 @@ type
 
   InlineAtom* = ref object of RootObj
     relx*: int
+    rely*: int
     width*: int
     height*: int
+    vertalign*: CSSVerticalAlign
 
   ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
@@ -43,6 +45,7 @@ type
     rely*: int
     width*: int
     height*: int
+    lineheight*: int #line-height property
 
   InlineContext* = ref object
     relx*: int
@@ -62,7 +65,6 @@ type
     nested*: seq[BlockContext]
     specified*: CSSSpecifiedValues
     viewport*: Viewport
-    rely*: int
     margin_top*: int
     margin_bottom*: int
     margin_left*: int

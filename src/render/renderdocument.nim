@@ -27,7 +27,9 @@ func formatFromWord(computed: ComputedFormat): Format =
 proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
   var r: Rune
 
-  let y = y div term.ppl
+  var y = (y + word.rely) div term.ppl
+  if y < 0: y = 0
+
   var x = (x + word.relx) div term.ppc
   var i = 0
   while x < 0:
@@ -72,7 +74,9 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
 proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term: TermAttributes) =
   var r: Rune
 
-  let y = y div term.ppl
+  var y = (y + spacing.rely) div term.ppl
+  if y < 0: y = 0
+
   var x = (x + spacing.relx) div term.ppc
   let width = spacing.width div term.ppc
 
@@ -123,11 +127,8 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
   let y = y + ctx.rely
   for row in ctx.rows:
     let x = x + row.relx
-    let y = y + row.rely + row.height
+    let y = y + row.rely
     for atom in row.atoms:
-      # This aligns atoms with the baseline.
-      # (other alignment types in progress)
-      let y = y - atom.height
       if atom of BlockContext:
         let ctx = BlockContext(atom)
         grid.renderBlockContext(ctx, x, y, term)
