@@ -2,6 +2,7 @@
 # however it *is* faster.
 
 import json
+import options
 import tables
 
 type
@@ -9,9 +10,7 @@ type
 
   RadixNode*[T] = ref object
     children*: seq[RadixPair[T]]
-    case leaf*: bool
-    of true: value*: T
-    of false: discard
+    value*: Option[T]
 
 func newRadixTree*[T](): RadixNode[T] =
   new(result)
@@ -61,10 +60,10 @@ func contains[T](node: RadixNode[T], k: string): bool =
 
 # O(1) add procedures for insert
 proc add[T](node: RadixNode[T], k: string, v: T) =
-  node.children.add((k, RadixNode[T](leaf: true, value: v)))
+  node.children.add((k, RadixNode[T](value: v.some)))
 
 proc add[T](node: RadixNode[T], k: string) =
-  node.children.add((k, RadixNode[T](leaf: false)))
+  node.children.add((k, RadixNode[T]()))
 
 proc add[T](node: RadixNode[T], k: string, v: RadixNode[T]) =
   node.children.add((k, v))
@@ -124,7 +123,7 @@ proc `[]=`*[T](tree: RadixNode[T], key: string, value: T) =
     p.children.del(k)
   elif key.len == t.len:
     # new matches a node, so replace
-    p.children[k].v = RadixNode[T](leaf: true, value: value, children: n.children)
+    p.children[k].v = RadixNode[T](value: value.some, children: n.children)
   elif key.len > t.len:
     # new is longer than the old, so add child to old
     n.add(key.substr(i), value)

@@ -94,9 +94,9 @@ proc getescapecmd(buf: string, at: var int): string =
       s = ""
     inc i
 
-  if n.leaf:
+  if n.value.issome:
     at = i
-    return n.value
+    return n.value.get
 
   return "&"
 

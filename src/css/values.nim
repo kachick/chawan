@@ -29,12 +29,13 @@ type
     PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE, PROPERTY_PADDING,
     PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
     PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
-    PROPERTY_LINE_HEIGHT
+    PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
     VALUE_FONT_STYLE, VALUE_WHITE_SPACE, VALUE_INTEGER, VALUE_TEXT_DECORATION,
-    VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN
+    VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
+    VALUE_TEXT_ALIGN
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -75,6 +76,10 @@ type
     VERTICAL_ALIGN_TEXT_TOP, VERTICAL_ALIGN_TEXT_BOTTOM, VERTICAL_ALIGN_MIDDLE,
     VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM
 
+  CSSTextAlign* = enum
+    TEXT_ALIGN_START, TEXT_ALIGN_END, TEXT_ALIGN_LEFT, TEXT_ALIGN_RIGHT,
+    TEXT_ALIGN_CENTER, TEXT_ALIGN_JUSTIFY, TEXT_ALIGN_MOZ_CENTER
+
 type
   CSSLength* = object
     num*: float64
@@ -114,6 +119,8 @@ type
       liststyletype*: CSSListStyleType
     of VALUE_VERTICAL_ALIGN:
       verticalalign*: CSSVerticalAlign
+    of VALUE_TEXT_ALIGN:
+      textalign*: CSSTextAlign
     of VALUE_NONE: discard
 
   CSSSpecifiedValues* = ref array[CSSPropertyType, CSSSpecifiedValue]
@@ -146,6 +153,7 @@ const PropertyNames = {
   "word-spacing": PROPERTY_WORD_SPACING,
   "vertical-align": PROPERTY_VERTICAL_ALIGN,
   "line-height": PROPERTY_LINE_HEIGHT,
+  "text-align": PROPERTY_TEXT_ALIGN,
 }.toTable()
 
 const ValueTypes = [
@@ -175,12 +183,14 @@ const ValueTypes = [
   PROPERTY_WORD_SPACING: VALUE_LENGTH,
   PROPERTY_VERTICAL_ALIGN: VALUE_VERTICAL_ALIGN,
   PROPERTY_LINE_HEIGHT: VALUE_LENGTH,
+  PROPERTY_TEXT_ALIGN: VALUE_TEXT_ALIGN,
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
-  PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT
+  PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
+  PROPERTY_TEXT_ALIGN
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -717,6 +727,21 @@ func cssLineHeight(d: CSSDeclaration): CSSLength =
       return cssLength(d)
   raise newException(CSSValueError, "Invalid line height")
 
+func cssTextAlign(d: CSSDeclaration): CSSTextAlign =
+  if isToken(d):
+    let tok = getToken(d)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      return case $tok.value
+      of "start": TEXT_ALIGN_START
+      of "end": TEXT_ALIGN_END
+      of "left": TEXT_ALIGN_LEFT
+      of "right": TEXT_ALIGN_RIGHT
+      of "center": TEXT_ALIGN_CENTER
+      of "justify": TEXT_ALIGN_JUSTIFY
+      of "-moz-center": TEXT_ALIGN_MOZ_CENTER
+      else: raise newException(CSSValueError, "Invalid text align")
+  raise newException(CSSValueError, "Invalid text align")
+
 proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   case vtype
   of VALUE_COLOR: val.color = cssColor(d)
@@ -739,6 +764,7 @@ proc getValueFromDecl(val: CSSSpecifiedValue, d: CSSDeclaration, vtype: CSSValue
   of VALUE_WORD_BREAK: val.wordbreak = cssWordBreak(d)
   of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(d)
   of VALUE_VERTICAL_ALIGN: val.verticalalign = cssVerticalAlign(d)
+  of VALUE_TEXT_ALIGN: val.textalign = cssTextAlign(d)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): CSSColor =
@@ -811,6 +837,7 @@ func equals*(a, b: CSSSpecifiedValue): bool =
   of VALUE_WORD_BREAK: return a.wordbreak == b.wordbreak
   of VALUE_LIST_STYLE_TYPE: return a.liststyletype == b.liststyletype
   of VALUE_VERTICAL_ALIGN: return a.verticalalign == b.verticalalign
+  of VALUE_TEXT_ALIGN: return a.textalign == b.textalign
   of VALUE_NONE: return true
   return false
 

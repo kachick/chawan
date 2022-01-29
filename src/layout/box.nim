@@ -50,7 +50,6 @@ type
   InlineContext* = ref object
     relx*: int
     rely*: int
-    width*: int
     height*: int
     rows*: seq[InlineRow]
     thisrow*: InlineRow
@@ -59,6 +58,7 @@ type
     maxwidth*: int
     viewport*: Viewport
     node*: Node
+    shrink*: bool
 
   BlockContext* = ref object of InlineAtom
     inline*: InlineContext
@@ -75,7 +75,10 @@ type
     padding_right*: int
 
     compwidth*: int
+    maxwidth*: int
+    nocenter*: bool
     compheight*: Option[int]
+    shrink*: bool
     done*: bool
 
   InlineBox* = ref object of CSSBox

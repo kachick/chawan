@@ -74,51 +74,101 @@ proc newWord(state: var InlineState) =
   word.format.node = state.node
   state.word = word
 
-proc finishRow(ictx: InlineContext, specified: CSSSpecifiedValues, force = false) =
-  if ictx.thisrow.atoms.len != 0 or force:
-    let oldrow = ictx.thisrow
+proc horizontalAlignRow(ictx: InlineContext, row: InlineRow, specified: CSSSpecifiedValues, maxwidth: int, last = false) =
+  let maxwidth = if ictx.shrink:
+    ictx.maxwidth
+  else:
+    maxwidth
+  # we don't support directions for now so left = start and right = end
+  case specified{"text-align"}
+  of TEXT_ALIGN_START, TEXT_ALIGN_LEFT:
+    discard
+  of TEXT_ALIGN_END, TEXT_ALIGN_RIGHT:
+    # move everything
+    let x = max(maxwidth, row.width) - row.width
+    for atom in row.atoms:
+      atom.relx += x
+  of TEXT_ALIGN_CENTER:
+    let x = max((max(maxwidth - row.relx, row.width)) div 2 - row.width div 2, 0)
+    for atom in row.atoms:
+      atom.relx += x
+  of TEXT_ALIGN_JUSTIFY:
+    if not specified.whitespacepre and not last:
+      var sumwidth = 0
+      var spaces = 0
+      for atom in row.atoms:
+        if atom of InlineSpacing:
+          discard
+        else:
+          inc spaces
+          sumwidth += atom.width
+      dec spaces
+      if spaces > 0:
+        let spacingwidth = (ictx.maxwidth - sumwidth) div spaces
+        let oldwidth = row.width
+        row.width = 0
+        for atom in row.atoms:
+          atom.relx = row.width
+          if atom of InlineSpacing:
+            let atom = InlineSpacing(atom)
+            atom.width = spacingwidth
+          row.width += atom.width
+  else:
+    discard
 
-    var baseline = if oldrow.height < oldrow.lineheight:
-      let lines = oldrow.lineheight div ictx.cellheight
-      ceilDiv(lines, 2) * ictx.cellheight
+proc verticalAlignRow(ictx: InlineContext) =
+  let row = ictx.thisrow
+  var baseline = if row.height < row.lineheight:
+    let lines = row.lineheight div ictx.cellheight
+    int(ceil(lines / 2)) * ictx.cellheight
+  else:
+    0
+
+  # line-height is the minimum line height
+  row.height = max(row.height, row.lineheight)
+
+  for atom in row.atoms:
+    case atom.vertalign.keyword
+    of VERTICAL_ALIGN_BASELINE:
+      let len = atom.vertalign.length.px(ictx.viewport, row.lineheight)
+      baseline = max(baseline, atom.height + len)
+    of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
+      row.height = max(atom.height, row.height)
+    of VERTICAL_ALIGN_MIDDLE:
+      baseline = max(baseline, atom.height div 2)
     else:
+      baseline = max(baseline, atom.height)
+  row.height = max(baseline, row.height)
+
+  for atom in row.atoms:
+    let diff = case atom.vertalign.keyword
+    of VERTICAL_ALIGN_BASELINE:
+      let len = atom.vertalign.length.px(ictx.viewport, row.lineheight)
+      baseline - atom.height - len
+    of VERTICAL_ALIGN_MIDDLE:
+      baseline - atom.height div 2
+    of VERTICAL_ALIGN_TOP:
       0
+    of VERTICAL_ALIGN_BOTTOM:
+      row.height - atom.height
+    else:
+      baseline - atom.height
+    atom.rely += diff
 
-    # line-height is the minimum line height
-    oldrow.height = max(oldrow.height, oldrow.lineheight)
+proc finishRow(ictx: InlineContext, specified: CSSSpecifiedValues, maxwidth: int, force = false) =
+  if ictx.thisrow.atoms.len != 0 or force:
+    ictx.verticalAlignRow()
 
-    for atom in oldrow.atoms:
-      case atom.vertalign.keyword
-      of VERTICAL_ALIGN_BASELINE:
-        let len = atom.vertalign.length.px(ictx.viewport, oldrow.lineheight)
-        baseline = max(baseline, atom.height + len)
-      of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
-        oldrow.height = max(atom.height, oldrow.height)
-      of VERTICAL_ALIGN_MIDDLE:
-        baseline = max(baseline, atom.height div 2)
-      else:
-        baseline = max(baseline, atom.height)
-    oldrow.height = max(baseline, oldrow.height)
-
-    for atom in oldrow.atoms:
-      let diff = case atom.vertalign.keyword
-      of VERTICAL_ALIGN_BASELINE:
-        let len = atom.vertalign.length.px(ictx.viewport, oldrow.lineheight)
-        baseline - atom.height - len
-      of VERTICAL_ALIGN_MIDDLE:
-        baseline - atom.height div 2
-      of VERTICAL_ALIGN_TOP:
-        0
-      of VERTICAL_ALIGN_BOTTOM:
-        oldrow.height - atom.height
-      else:
-        baseline - atom.height
-      atom.rely += diff
-
+    let oldrow = ictx.thisrow
     ictx.rows.add(oldrow)
     ictx.height += oldrow.height
-    ictx.width = max(ictx.width, oldrow.width)
+    ictx.maxwidth = max(ictx.maxwidth, oldrow.width)
     ictx.thisrow = InlineRow(rely: oldrow.rely + oldrow.height)
+
+proc finish(ictx: InlineContext, specified: CSSSpecifiedValues, maxwidth: int) =
+  ictx.finishRow(specified, maxwidth)
+  for row in ictx.rows:
+    ictx.horizontalAlignRow(row, specified, maxwidth, row == ictx.rows[^1])
 
 proc addSpacing(row: InlineRow, width, height: int, format: ComputedFormat) {.inline.} =
   let spacing = InlineSpacing(width: width, height: height, format: format)
@@ -132,7 +182,7 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CS
   # Line wrapping
   if specified{"white-space"} notin {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     if ictx.thisrow.width + atom.width + shift > maxwidth:
-      ictx.finishRow(specified)
+      ictx.finishRow(specified, maxwidth, false)
       # Recompute on newline
       shift = ictx.computeShift(specified)
       ictx.whitespace = false
@@ -161,9 +211,9 @@ proc addWord(state: var InlineState) =
     state.newWord()
 
 # Start a new line, even if the previous one is empty
-proc flushLine(ictx: InlineContext, specified: CSSSpecifiedValues) =
+proc flushLine(ictx: InlineContext, specified: CSSSpecifiedValues, maxwidth: int) =
   ictx.thisrow.lineheight = computeLineHeight(ictx.viewport, specified)
-  ictx.finishRow(specified, true)
+  ictx.finishRow(specified, maxwidth, true)
 
 proc checkWrap(state: var InlineState, r: Rune) =
   if state.specified{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
@@ -173,11 +223,11 @@ proc checkWrap(state: var InlineState, r: Rune) =
   of WORD_BREAK_BREAK_ALL:
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.addWord()
-      state.ictx.finishRow(state.specified)
+      state.ictx.finishRow(state.specified, state.maxwidth, false)
       state.ictx.whitespace = false
   of WORD_BREAK_KEEP_ALL:
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
-      state.ictx.finishRow(state.specified)
+      state.ictx.finishRow(state.specified, state.maxwidth, false)
       state.ictx.whitespace = false
   else: discard
 
@@ -188,7 +238,7 @@ proc processWhitespace(state: var InlineState, c: char) =
     state.ictx.whitespace = true
   of WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     if c == '\n':
-      state.ictx.flushLine(state.specified)
+      state.ictx.flushLine(state.specified, state.maxwidth)
     else:
       state.ictx.whitespace = true
 
@@ -255,9 +305,11 @@ proc newBlockContext_common(parent: BlockContext, box: CSSBox): BlockContext {.i
 
 proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
   result = newBlockContext_common(parent, box)
+  result.shrink = result.specified{"width"}.auto and parent.shrink
 
 proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockContext =
   result = newBlockContext_common(parent, box)
+  result.shrink = result.specified{"width"}.auto
 
 # Anonymous block box.
 proc newBlockContext(parent: BlockContext): BlockContext =
@@ -265,6 +317,7 @@ proc newBlockContext(parent: BlockContext): BlockContext =
   result.specified = parent.specified.inheritProperties()
   result.viewport = parent.viewport
   result.computedDimensions(parent.compwidth, parent.compheight)
+  result.shrink = result.specified{"width"}.auto and parent.shrink
 
 # Anonymous block box (root).
 proc newBlockContext(viewport: Viewport): BlockContext =
@@ -277,6 +330,7 @@ proc newInlineContext(bctx: BlockContext): InlineContext =
   new(result)
   result.thisrow = InlineRow()
   result.viewport = bctx.viewport
+  result.shrink = bctx.shrink
   bctx.inline = result
 
 # Blocks' positions do not have to be arranged if alignBlocks is called with
@@ -290,10 +344,14 @@ proc arrangeBlocks(bctx: BlockContext, selfcontained: bool) =
   bctx.height += bctx.padding_top
 
   x += bctx.padding_left
+  if bctx.specified{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+    x += bctx.compwidth div 2
 
   template apply_child(child: BlockContext) =
     child.rely = y
     child.relx = x + child.margin_left
+    if bctx.specified{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+      child.relx -= child.width div 2
     y += child.height
     bctx.height += child.height
     bctx.width = max(bctx.width, child.width)
@@ -381,7 +439,7 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox) =
 proc alignInline(bctx: BlockContext, box: InlineBox) =
   assert box.ictx != nil
   if box.newline:
-    box.ictx.flushLine(bctx.specified)
+    box.ictx.flushLine(bctx.specified, bctx.compwidth)
 
   let margin_left = box.specified{"margin-left"}.px(bctx.viewport, bctx.compwidth)
   box.ictx.thisrow.width += margin_left
@@ -430,12 +488,12 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
         bctx.alignInlineBlock(child)
       else:
         assert false, "child.t is " & $child.t
-    ictx.finishRow(bctx.specified)
+    ictx.finish(bctx.specified, bctx.compwidth)
 
   bctx.height += ictx.height
   if bctx.compheight.issome:
     bctx.height = bctx.compheight.get
-  bctx.width = max(bctx.width, ictx.width)
+  bctx.width = max(bctx.width, ictx.maxwidth)
 
 template flush_group() =
   if blockgroup.len > 0:
@@ -538,13 +596,24 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
   if viewport.map[elem.uid] != nil:
     let box = viewport.map[elem.uid]
     var bctx = bctx
-    if box.specified{"display"} in {DISPLAY_BLOCK, DISPLAY_LIST_ITEM, DISPLAY_INLINE_BLOCK}:
+    case box.specified{"display"}
+    of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
       let box = BlockBox(box)
       if bctx == nil:
         box.bctx = viewport.newBlockContext()
       else:
         box.bctx = bctx.newBlockContext(box)
       bctx = box.bctx
+    of DISPLAY_INLINE_BLOCK:
+      let box = InlineBlockBox(box)
+      if bctx == nil:
+        assert false
+        box.bctx = viewport.newBlockContext()
+      else:
+        box.bctx = bctx.newInlineBlockContext(box)
+      bctx = box.bctx
+    else:
+      discard
 
     var i = 0
     while i < box.children.len:

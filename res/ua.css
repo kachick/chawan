@@ -162,3 +162,7 @@ dd {
 dl[compact] dt + br {
 	display: none;
 }
+
+center {
+	text-align: -moz-center;
+}
