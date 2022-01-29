@@ -128,6 +128,11 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
   for row in ctx.rows:
     let x = x + row.relx
     let y = y + row.rely
+
+    let r = y div term.ppl
+    while grid.len <= r:
+      grid.addLine()
+
     for atom in row.atoms:
       if atom of BlockContext:
         let ctx = BlockContext(atom)

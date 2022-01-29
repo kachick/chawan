@@ -49,13 +49,13 @@ func cellheight(ictx: InlineContext): int {.inline.} =
 
 # Whitespace between words
 func computeShift(ictx: InlineContext, specified: CSSSpecifiedValues): int =
-  if ictx.whitespace:
+  if ictx.whitespacenum > 0:
     if ictx.thisrow.atoms.len > 0 or specified.whitespacepre:
       let spacing = specified{"word-spacing"}
       if spacing.auto:
-        return ictx.cellwidth
+        return ictx.cellwidth * ictx.whitespacenum
       #return spacing.cells_w(ictx.viewport, 0)
-      return spacing.px(ictx.viewport)
+      return spacing.px(ictx.viewport) * ictx.whitespacenum
   return 0
 
 func computeLineHeight(viewport: Viewport, specified: CSSSpecifiedValues): int =
@@ -65,13 +65,15 @@ func computeLineHeight(viewport: Viewport, specified: CSSSpecifiedValues): int =
 
 proc newWord(state: var InlineState) =
   let word = InlineWord()
-  word.format = ComputedFormat()
+  let format = ComputedFormat()
   let specified = state.specified
-  word.format.color = specified{"color"}
-  word.format.fontstyle = specified{"font-style"}
-  word.format.fontweight = specified{"font-weight"}
-  word.format.textdecoration = specified{"text-decoration"}
-  word.format.node = state.node
+  format.color = specified{"color"}
+  format.fontstyle = specified{"font-style"}
+  format.fontweight = specified{"font-weight"}
+  format.textdecoration = specified{"text-decoration"}
+  format.node = state.node
+  word.format = format
+  state.ictx.format = format
   state.word = word
 
 proc horizontalAlignRow(ictx: InlineContext, row: InlineRow, specified: CSSSpecifiedValues, maxwidth: int, last = false) =
@@ -155,8 +157,21 @@ proc verticalAlignRow(ictx: InlineContext) =
       baseline - atom.height
     atom.rely += diff
 
+proc addSpacing(row: InlineRow, width, height: int, format: ComputedFormat) {.inline.} =
+  let spacing = InlineSpacing(width: width, height: height, format: format)
+  spacing.relx = row.width
+  row.width += spacing.width
+  row.atoms.add(spacing)
+
+proc flushWhitespace(ictx: InlineContext, specified: CSSSpecifiedValues) =
+  let shift = ictx.computeShift(specified)
+  ictx.whitespacenum = 0
+  if shift > 0:
+    ictx.thisrow.addSpacing(shift, ictx.cellheight, ictx.format)
+
 proc finishRow(ictx: InlineContext, specified: CSSSpecifiedValues, maxwidth: int, force = false) =
   if ictx.thisrow.atoms.len != 0 or force:
+    ictx.flushWhitespace(specified)
     ictx.verticalAlignRow()
 
     let oldrow = ictx.thisrow
@@ -170,37 +185,30 @@ proc finish(ictx: InlineContext, specified: CSSSpecifiedValues, maxwidth: int) =
   for row in ictx.rows:
     ictx.horizontalAlignRow(row, specified, maxwidth, row == ictx.rows[^1])
 
-proc addSpacing(row: InlineRow, width, height: int, format: ComputedFormat) {.inline.} =
-  let spacing = InlineSpacing(width: width, height: height, format: format)
-  spacing.relx = row.width
-  row.width += spacing.width
-  row.atoms.add(spacing)
-
 proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSSpecifiedValues) =
   var shift = ictx.computeShift(specified)
-  ictx.whitespace = false
+  ictx.whitespacenum = 0
   # Line wrapping
-  if specified{"white-space"} notin {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
+  if not specified.whitespacepre:
     if ictx.thisrow.width + atom.width + shift > maxwidth:
       ictx.finishRow(specified, maxwidth, false)
       # Recompute on newline
       shift = ictx.computeShift(specified)
-      ictx.whitespace = false
 
   if atom.width > 0 and atom.height > 0:
     atom.vertalign = specified{"vertical-align"}
 
     if shift > 0:
-      let format = if atom of InlineWord:
-        InlineWord(atom).format
-      else:
-        nil
-      ictx.thisrow.addSpacing(shift, ictx.cellheight, format)
+      ictx.thisrow.addSpacing(shift, ictx.cellheight, ictx.format)
 
     atom.relx += ictx.thisrow.width
     ictx.thisrow.lineheight = max(ictx.thisrow.lineheight, computeLineHeight(ictx.viewport, specified))
     ictx.thisrow.width += atom.width
     ictx.thisrow.height = max(ictx.thisrow.height, atom.height)
+    if atom of InlineWord:
+      ictx.format = InlineWord(atom).format
+    else:
+      ictx.format = nil
     ictx.thisrow.atoms.add(atom)
 
 proc addWord(state: var InlineState) =
@@ -224,23 +232,23 @@ proc checkWrap(state: var InlineState, r: Rune) =
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.addWord()
       state.ictx.finishRow(state.specified, state.maxwidth, false)
-      state.ictx.whitespace = false
+      state.ictx.whitespacenum = 0
   of WORD_BREAK_KEEP_ALL:
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.ictx.finishRow(state.specified, state.maxwidth, false)
-      state.ictx.whitespace = false
+      state.ictx.whitespacenum = 0
   else: discard
 
 proc processWhitespace(state: var InlineState, c: char) =
   state.addWord()
   case state.specified{"white-space"}
   of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
-    state.ictx.whitespace = true
+    state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
   of WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     if c == '\n':
       state.ictx.flushLine(state.specified, state.maxwidth)
     else:
-      state.ictx.whitespace = true
+      inc state.ictx.whitespacenum
 
 proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSSpecifiedValues, node: Node) =
   var state: InlineState
@@ -248,6 +256,7 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSS
   state.ictx = ictx
   state.maxwidth = maxwidth
   state.node = node
+  state.ictx.flushWhitespace(state.specified)
   state.newWord()
 
   #if str.strip().len > 0:
@@ -420,7 +429,10 @@ proc arrangeInlines(bctx: BlockContext, selfcontained: bool) =
 
   bctx.width += bctx.padding_right
 
-  bctx.width = min(bctx.width, bctx.compwidth)
+  if bctx.specified{"width"}.auto:
+    bctx.width = min(bctx.width, bctx.compwidth)
+  else:
+    bctx.width = bctx.compwidth
 
 proc alignBlock(box: BlockBox, selfcontained = false)
 
@@ -434,7 +446,7 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox) =
   box.bctx.width += box.bctx.margin_right
 
   box.ictx.addAtom(box.bctx, bctx.compwidth, box.specified)
-  box.ictx.whitespace = false
+  box.ictx.whitespacenum = 0
 
 proc alignInline(bctx: BlockContext, box: InlineBox) =
   assert box.ictx != nil
@@ -563,10 +575,7 @@ proc getTextBox(box: CSSBox): InlineBox =
   new(result)
   result.t = DISPLAY_INLINE
   result.inlinelayout = true
-  if box.specified{"display"} == DISPLAY_INLINE:
-    result.specified = box.specified
-  else:
-    result.specified = box.specified.inheritProperties()
+  result.specified = box.specified.inheritProperties()
 
 proc getPseudoBox(bctx: BlockContext, specified: CSSSpecifiedValues): CSSBox =
   let box = getBox(specified)
@@ -590,6 +599,12 @@ proc getPseudoBox(bctx: BlockContext, specified: CSSSpecifiedValues): CSSBox =
     content.text.add($specified{"content"})
     box.children.add(content)
   return box
+
+func getInputBox(box: CSSBox, input: HTMLInputElement, viewport: Viewport): InlineBox =
+  let textbox = box.getTextBox()
+  textbox.node = input
+  textbox.text.add(input.inputString())
+  return textbox
 
 proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): CSSBox =
   elem.rendered = true
@@ -678,6 +693,10 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
     if bbox != nil:
       bbox.node = elem
       add_box(bbox)
+
+  if elem.tagType == TAG_INPUT:
+    let input = HTMLInputElement(elem)
+    add_box(box.getInputBox(input, viewport))
 
   for child in elem.childNodes:
     case child.nodeType

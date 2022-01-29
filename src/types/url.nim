@@ -42,7 +42,7 @@ type
     port: Option[uint16]
     host: Option[Host]
     path*: UrlPath
-    query: Option[string]
+    query*: Option[string]
     fragment: Option[string]
     blob: Option[BlobUrlEntry]
 

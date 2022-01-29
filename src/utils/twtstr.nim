@@ -27,16 +27,6 @@ func ansiReset*(str: string): string =
   result &= str
   result &= ansiResetCode
 
-func maxString*(str: string, max: int): string =
-  if max < str.runeLen():
-    return str.runeSubstr(0, max - 2) & "$"
-  return str
-
-func fitValueToSize*(str: string, size: int): string =
-  if str.runeLen < size:
-    return str & ' '.repeat(size - str.runeLen)
-  return str.maxString(size)
-
 func isWhitespace*(c: char): bool {.inline.} =
   return c in {' ', '\n', '\r', '\t', '\f'}
 
@@ -419,14 +409,19 @@ const QueryPercentEncodeSet* = (ControlPercentEncodeSet + {' ', '"', '#', '<', '
 const SpecialQueryPercentEncodeSet* = (QueryPercentEncodeSet + {'\''})
 const PathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', '`', '{', '}'})
 const UserInfoPercentEncodeSet* = (PathPercentEncodeSet + {'/', ':', ';', '=', '@', '['..'^', '|'})
-proc percentEncode*(append: var string, c: char, set: set[char]) {.inline.} =
-  if c notin set:
+const ComponentPercentEncodeSet* = (UserInfoPercentEncodeSet + {'$'..'&', '+', ','})
+const ApplicationXWWWFormUrlEncodedSet* = (ComponentPercentEncodeSet + {'!', '\''..')', '~'})
+
+proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = false) {.inline.} =
+  if spaceAsPlus and c == ' ':
+    append &= c
+  elif c notin set:
     append &= c
   else:
     append &= '%'
     append &= c.toHex()
 
-proc percentEncode*(append: var string, s: string, set: set[char]) {.inline.} =
+proc percentEncode*(append: var string, s: string, set: set[char], spaceAsPlus = false) {.inline.} =
   for c in s:
     append.percentEncode(c, set)
 
@@ -852,6 +847,23 @@ func width*(s: seq[Rune], min: int): int =
 
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
+
+func padToWidth*(str: string, size: int, schar = '$'): string =
+  if str.width() < size:
+    return str & ' '.repeat(size - str.width())
+  else:
+    let size = size - 1
+    result = newStringOfCap(str.len)
+
+    var w = 0
+    var i = 0
+    while i < str.len:
+      var r: Rune
+      fastRuneAt(str, i, r)
+      if w + r.width <= size:
+        result &= r
+        w += r.width
+    result &= schar
 
 const CanHaveDakuten = "かきくけこさしすせそたちつてとはひふへほカキクケコサシスセソタチツテトハヒフヘホ".toRunes()
 

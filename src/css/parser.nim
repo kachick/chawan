@@ -374,6 +374,8 @@ proc consumeComments(state: var CSSTokenizerState) =
 
 proc consumeToken(state: var CSSTokenizerState): CSSToken =
   state.consumeComments()
+  if not state.has():
+    return
   let r = state.consume()
   case r
   of Rune('\n'), Rune('\t'), Rune(' '), Rune('\f'), Rune('\r'):
@@ -456,7 +458,9 @@ proc tokenizeCSS*(inputStream: Stream): seq[CSSParsedItem] =
   state.stream = inputStream
   state.buf = state.stream.readLine().toRunes()
   while state.has():
-    result.add(state.consumeToken())
+    let tok = state.consumeToken()
+    if tok != nil:
+      result.add(tok)
 
   inputStream.close()
 

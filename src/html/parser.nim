@@ -24,6 +24,7 @@ type
     textNode: Text
     commentNode: Comment
     document: Document
+    formowners: seq[HTMLFormElement]
 
 func inputSize*(str: string): int =
   if str.len == 0:
@@ -249,9 +250,14 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
     HTMLSelectElement(element).name = element.attr("name")
     HTMLSelectElement(element).value = element.attr("value")
   of TAG_INPUT:
-    HTMLInputElement(element).value = element.attr("value")
-    HTMLInputElement(element).itype = element.attr("type").inputType()
-    HTMLInputElement(element).size = element.attr("size").inputSize()
+    let element = HTMLInputElement(element)
+    element.value = element.attr("value")
+    element.inputType = element.attr("type").inputType()
+    element.size = element.attr("size").inputSize()
+    element.checked = element.attrb("checked")
+    if state.formowners.len > 0:
+      element.form = state.formowners[^1]
+      element.form.inputs.add(element)
   of TAG_A:
     HTMLAnchorElement(element).href = element.attr("href")
   of TAG_OPTION:
@@ -287,6 +293,14 @@ proc processDocumentStartElement(state: var HTMLParseState, element: Element, ta
   of TAG_LINK:
     HTMLLinkElement(element).href = element.attr("href")
     HTMLLinkElement(element).rel = element.attr("rel")
+  of TAG_FORM:
+    let element = HTMLFormElement(element)
+    element.name = element.attr("name")
+    element.smethod = element.attr("method")
+    element.enctype = element.attr("enctype")
+    element.target = element.attr("target")
+    element.novalidate = element.attrb("novalidate")
+    state.formowners.add(element)
   else: discard
 
   if not state.in_body and not (element.tagType in HeadTagTypes):
@@ -325,6 +339,9 @@ proc processDocumentEndElement(state: var HTMLParseState, tag: DOMParsedTag) =
       return
     of TAG_BODY:
       return
+    of TAG_FORM:
+      if state.formowners.len > 0:
+        discard state.formowners.pop()
     of TAG_STYLE:
       let style = HTMLStyleElement(state.elementNode)
       var str = ""

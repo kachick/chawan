@@ -6,6 +6,7 @@ import css/values
 import css/sheet
 import html/tags
 import types/url
+import utils/twtstr
 
 type
   EventTarget* = ref EventTargetObj
@@ -77,11 +78,16 @@ type
   HTMLElement* = ref object of ElementObj
 
   HTMLInputElement* = ref object of HTMLElement
-    itype*: InputType
+    inputType*: InputType
     autofocus*: bool
     required*: bool
     value*: string
     size*: int
+    checked*: bool
+    xcoord*: int
+    ycoord*: int
+    file*: Option[Url]
+    form*: HTMLFormElement
 
   HTMLAnchorElement* = ref object of HTMLElement
     href*: string
@@ -121,17 +127,49 @@ type
     href*: string
     rel*: string
 
+  HTMLFormElement* = ref object of HTMLElement
+    name*: string
+    smethod*: string
+    enctype*: string
+    target*: string
+    novalidate*: bool
+    constructingentrylist*: bool
+    inputs*: seq[HTMLInputElement]
+
 # For debugging
-template `$`*(node: Node): string =
+func `$`*(node: Node): string =
   case node.nodeType
   of ELEMENT_NODE:
     let element = Element(node)
-    return "Element of " & $element.tagType & ", children: {\n" & $element.childNodes & "\n}"
+    "Element of " & $element.tagType & ", children: {\n" & $element.childNodes & "\n}"
   of TEXT_NODE:
     let text = Text(node)
-    return "Text: " & text.data
+    "Text: " & text.data
   else:
-    return "Node of " & $node.nodeType
+    "Node of " & $node.nodeType
+
+iterator elements*(document: Document, tag: TagType): Element {.inline.} =
+  for element in document.type_elements[tag]:
+    yield element
+
+iterator radiogroup(form: HTMLFormElement): HTMLInputElement {.inline.} =
+  for input in form.inputs:
+    if input.inputType == INPUT_RADIO:
+      yield input
+
+iterator radiogroup(document: Document): HTMLInputElement {.inline.} =
+  for input in document.elements(TAG_INPUT):
+    let input = HTMLInputElement(input)
+    if input.form == nil and input.inputType == INPUT_RADIO:
+      yield input
+
+iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
+  if input.form != nil:
+    for input in input.form.radiogroup:
+      yield input
+  else:
+    for input in input.ownerDocument.radiogroup:
+      yield input
 
 iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childNodes:
@@ -219,6 +257,21 @@ func firstNode*(node: Node): bool =
 func lastNode*(node: Node): bool =
   return node.parentElement != nil and node.parentElement.childNodes[^1] == node
 
+func attr*(element: Element, s: string): string =
+  return element.attributes.getOrDefault(s, "")
+
+func attri*(element: Element, s: string): Option[int] =
+  let a = element.attr(s)
+  try:
+    return some(parseInt(a))
+  except ValueError:
+    return none(int)
+
+func attrb*(element: Element, s: string): bool =
+  if s in element.attributes:
+    return true
+  return false
+
 func toInputType*(str: string): InputType =
   case str
   of "button": INPUT_BUTTON
@@ -245,45 +298,91 @@ func toInputType*(str: string): InputType =
   of "week": INPUT_WEEK
   else: INPUT_UNKNOWN
 
+func inputString*(input: HTMLInputElement): string =
+  var text = case input.inputType
+  of INPUT_CHECKBOX, INPUT_RADIO:
+    if input.checked: "*"
+    else: " "
+  of INPUT_SEARCH, INPUT_TEXT:
+    if input.size > 0: input.value.padToWidth(input.size)
+    else: input.value
+  of INPUT_PASSWORD:
+    '*'.repeat(input.value.len).padToWidth(input.size)
+  of INPUT_RESET:
+    if input.value != "": input.value
+    else: "RESET"
+  of INPUT_SUBMIT, INPUT_BUTTON:
+    if input.value != "": input.value
+    else: "SUBMIT"
+  of INPUT_FILE:
+    if input.file.isnone: "".padToWidth(input.size)
+    else: input.file.get.path.serialize_unicode().padToWidth(input.size)
+  else:
+    input.value
+  return text
+
+func isButton*(element: Element): bool =
+  if element.tagType == TAG_BUTTON:
+    return true
+  if element.tagType == TAG_INPUT:
+    let element = HTMLInputElement(element)
+    return element.inputType in {INPUT_SUBMIT, INPUT_BUTTON, INPUT_RESET, INPUT_IMAGE}
+  return false
+
+func isSubmitButton*(element: Element): bool =
+  if element.tagType == TAG_BUTTON:
+    return element.attr("type") == "submit"
+  elif element.tagType == TAG_INPUT:
+    let element = HTMLInputElement(element)
+    return element.inputType in {INPUT_SUBMIT, INPUT_IMAGE}
+  return false
+
+func action*(element: Element): string =
+  if element.isSubmitButton():
+    if element.attrb("formaction"):
+      return element.attr("formaction")
+  if element.tagType == TAG_INPUT:
+    let element = HTMLInputElement(element)
+    if element.form != nil:
+      if element.form.attrb("action"):
+        return element.form.attr("action")
+  return ""
+
+func enctype*(element: Element): string =
+  if element.isSubmitButton():
+    if element.attrb("formenctype"):
+      return element.attr("formenctype")
+  if element.tagType == TAG_INPUT:
+    let element = HTMLInputElement(element)
+    if element.form != nil:
+      if element.form.attrb("enctype"):
+        return element.form.attr("enctype")
+  return "application/x-www-form-urlencoded"
+
+func smethod*(element: Element): string =
+  if element.isSubmitButton():
+    if element.attrb("formmethod"):
+      return element.attr("formmethod")
+  if element.tagType == TAG_INPUT:
+    let element = HTMLInputElement(element)
+    if element.form != nil:
+      if element.form.attrb("method"):
+        return element.form.attr("method")
+  return "GET"
+
+func target*(element: Element): string =
+  if element.attrb("target"):
+    return element.attr("target")
+  for base in element.ownerDocument.elements(TAG_BASE):
+    if base.attrb("target"):
+      return base.attr("target")
+  return ""
+
 func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
   for element in node.ancestors:
     if element.tagType in tagTypes:
       return element
   return nil
-
-func attr*(element: Element, s: string): string =
-  return element.attributes.getOrDefault(s, "")
-
-func attri*(element: Element, s: string): Option[int] =
-  let a = element.attr(s)
-  try:
-    return some(parseInt(a))
-  except ValueError:
-    return none(int)
-
-proc applyOrdinal*(elem: HTMLLIElement) =
-  let val = elem.attri("value")
-  if val.issome:
-    elem.ordinalvalue = val.get
-  else:
-    let owner = elem.findAncestor({TAG_OL, TAG_UL, TAG_MENU})
-    if owner == nil:
-      elem.ordinalvalue = 1
-    else:
-      case owner.tagType
-      of TAG_OL:
-        let ol = HTMLOListElement(owner)
-        elem.ordinalvalue = ol.ordinalcounter
-        inc ol.ordinalcounter
-      of TAG_UL:
-        let ul = HTMLUListElement(owner)
-        elem.ordinalvalue = ul.ordinalcounter
-        inc ul.ordinalcounter
-      of TAG_MENU:
-        let menu = HTMLMenuElement(owner)
-        elem.ordinalvalue = menu.ordinalcounter
-        inc menu.ordinalcounter
-      else: discard
 
 func newText*(): Text =
   new(result)
@@ -323,6 +422,8 @@ func newHtmlElement*(document: Document, tagType: TagType): HTMLElement =
     result = new(HTMLStyleElement)
   of TAG_LINK:
     result = new(HTMLLinkElement)
+  of TAG_FORM:
+    result = new(HTMLFormElement)
   else:
     result = new(HTMLElement)
 
@@ -351,5 +452,53 @@ func getElementById*(document: Document, id: string): Element =
     return nil
   return document.id_elements[id][0]
 
+func baseUrl*(document: Document): Url =
+  var href = ""
+  for base in document.elements(TAG_BASE):
+    if base.attr("href") != "":
+      href = base.attr("href")
+  if href == "":
+    return document.location
+  let url = parseUrl(href, document.location.some)
+  if url.isnone:
+    return document.location
+  return url.get
+
 func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
   return document.type_elements[tag]
+
+proc applyOrdinal*(elem: HTMLLIElement) =
+  let val = elem.attri("value")
+  if val.issome:
+    elem.ordinalvalue = val.get
+  else:
+    let owner = elem.findAncestor({TAG_OL, TAG_UL, TAG_MENU})
+    if owner == nil:
+      elem.ordinalvalue = 1
+    else:
+      case owner.tagType
+      of TAG_OL:
+        let ol = HTMLOListElement(owner)
+        elem.ordinalvalue = ol.ordinalcounter
+        inc ol.ordinalcounter
+      of TAG_UL:
+        let ul = HTMLUListElement(owner)
+        elem.ordinalvalue = ul.ordinalcounter
+        inc ul.ordinalcounter
+      of TAG_MENU:
+        let menu = HTMLMenuElement(owner)
+        elem.ordinalvalue = menu.ordinalcounter
+        inc menu.ordinalcounter
+      else: discard
+
+proc reset*(form: HTMLFormElement) =
+  for input in form.inputs:
+    case input.inputType
+    of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
+      input.value = input.attr("value")
+    of INPUT_CHECKBOX, INPUT_RADIO:
+      input.checked = input.attrb("checked")
+    of INPUT_FILE:
+      input.file = none(Url)
+    else: discard
+    input.rendered = false

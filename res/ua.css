@@ -48,22 +48,49 @@ colgroup {
 }
 
 input {
-	margin-left: 1ch;
 	margin-right: 1ch;
+	white-space: pre;
+	color: red;
 }
 
-input[type="text"] {
-	width: 20ch;
+input[type="hidden"] {
+	display: none;
 }
 
 input::before {
 	content: '[';
-	text-decoration: none !important;
+	text-decoration: none;
+	color: none;
 }
 
 input::after {
 	content: ']';
-	text-decoration: none !important;
+	text-decoration: none;
+	color: none;
+}
+
+input[type="radio"]::before {
+	content: '(';
+	text-decoration: none;
+	color: none;
+}
+
+input[type="radio"]::after {
+	content: ')';
+	text-decoration: none;
+	color: none;
+}
+
+:is(input[type="text"], input[type="password"], input[type="search"], input[type="file"]) {
+	text-decoration: underline;
+}
+
+:is(input[type="submit"], input[type="button"], input[type="reset"])::before {
+	color: red;
+}
+
+:is(input[type="submit"], input[type="button"], input[type="reset"])::after {
+	color: red;
 }
 
 tr {

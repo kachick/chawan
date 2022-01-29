@@ -54,11 +54,12 @@ type
     rows*: seq[InlineRow]
     thisrow*: InlineRow
 
-    whitespace*: bool
+    whitespacenum*: int
     maxwidth*: int
     viewport*: Viewport
     node*: Node
     shrink*: bool
+    format*: ComputedFormat
 
   BlockContext* = ref object of InlineAtom
     inline*: InlineContext

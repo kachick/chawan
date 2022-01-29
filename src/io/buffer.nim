@@ -1,5 +1,8 @@
+import httpclient
 import options
+import os
 import streams
+import tables
 import terminal
 import unicode
 
@@ -9,6 +12,7 @@ import html/dom
 import html/tags
 import html/parser
 import io/cell
+import io/lineedit
 import io/loader
 import io/term
 import layout/box
@@ -197,15 +201,31 @@ func currentDisplayCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
   return buffer.display[row + buffer.currentCellOrigin()]
 
-func getLink(node: Node): Element =
+func getLink(node: Node): HTMLAnchorElement =
   if node == nil:
     return nil
   if node.nodeType == ELEMENT_NODE and Element(node).tagType == TAG_A:
-    return Element(node)
-  return node.findAncestor({TAG_A})
+    return HTMLAnchorElement(node)
+  return HTMLAnchorElement(node.findAncestor({TAG_A}))
+
+const ClickableElements = {
+  TAG_A, TAG_INPUT
+}
+
+func getClickable(node: Node): Element =
+  if node == nil:
+    return nil
+  if node.nodeType == ELEMENT_NODE:
+    let element = Element(node)
+    if element.tagType in ClickableElements:
+      return element
+  return node.findAncestor(ClickableElements)
 
 func getCursorLink(buffer: Buffer): Element =
   return buffer.currentDisplayCell().node.getLink()
+
+func getCursorClickable(buffer: Buffer): Element =
+  return buffer.currentDisplayCell().node.getClickable()
 
 func currentLine(buffer: Buffer): string =
   return buffer.lines[buffer.cursory].str
@@ -470,12 +490,12 @@ proc cursorNextLink*(buffer: Buffer) =
   var i = line.findFormatN(buffer.currentCursorBytes()) - 1
   var link: Element = nil
   if i >= 0:
-    link = line.formats[i].node.getLink()
+    link = line.formats[i].node.getClickable()
   inc i
 
   while i < line.formats.len:
     let format = line.formats[i]
-    let fl = format.node.getLink()
+    let fl = format.node.getClickable()
     if fl != nil and fl != link:
       buffer.setCursorXB(format.pos)
       return
@@ -486,7 +506,7 @@ proc cursorNextLink*(buffer: Buffer) =
     i = 0
     while i < line.formats.len:
       let format = line.formats[i]
-      let fl = format.node.getLink()
+      let fl = format.node.getClickable()
       if fl != nil and fl != link:
         buffer.setCursorXBY(format.pos, y)
         return
@@ -497,12 +517,12 @@ proc cursorPrevLink*(buffer: Buffer) =
   var i = line.findFormatN(buffer.currentCursorBytes()) - 1
   var link: Element = nil
   if i >= 0:
-    link = line.formats[i].node.getLink()
+    link = line.formats[i].node.getClickable()
   dec i
 
   while i >= 0:
     let format = line.formats[i]
-    let fl = format.node.getLink()
+    let fl = format.node.getClickable()
     if fl != nil and fl != link:
       buffer.setCursorXB(format.pos)
       return
@@ -513,7 +533,7 @@ proc cursorPrevLink*(buffer: Buffer) =
     i = line.formats.len - 1
     while i >= 0:
       let format = line.formats[i]
-      let fl = format.node.getLink()
+      let fl = format.node.getClickable()
       if fl != nil and fl != link:
         #go to beginning of link
         var ly = y #last y
@@ -523,7 +543,7 @@ proc cursorPrevLink*(buffer: Buffer) =
           i = line.formats.len - 1
           while i >= 0:
             let format = line.formats[i]
-            let nl = format.node.getLink()
+            let nl = format.node.getClickable()
             if nl == fl:
               ly = iy
               lx = format.pos
@@ -688,9 +708,7 @@ proc updateHover(buffer: Buffer) =
 
     let link = thisnode.getLink()
     if link != nil:
-      if link.tagType == TAG_A:
-        let anchor = HTMLAnchorElement(link)
-        buffer.hovertext = parseUrl(anchor.href, buffer.location.some).serialize()
+      buffer.hovertext = parseUrl(link.href, buffer.location.some).serialize()
     else:
       buffer.hovertext = ""
 
@@ -803,12 +821,230 @@ proc displayStatusMessage*(buffer: Buffer) =
   print(buffer.generateStatusMessage())
   print(SGR())
 
-proc click*(buffer: Buffer): string =
-  let link = buffer.getCursorLink()
-  if link != nil:
-    if link.tagType == TAG_A:
-      return HTMLAnchorElement(link).href
-  return ""
+type
+  ClickAction* = object
+    url*: string
+    smethod*: string
+    mimetype*: string
+    body*: string
+    multipart*: MultipartData
+
+# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
+proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): Table[string, string] =
+  if form.constructingentrylist:
+    return
+  form.constructingentrylist = true
+
+  var entrylist: Table[string, string]
+  for field in form.inputs:
+    if field.findAncestor({TAG_DATALIST}) != nil or
+        field.attrb("disabled") or
+        field.isButton() and Element(field) != submitter:
+      continue
+
+    if field.inputType == INPUT_IMAGE:
+      let name = if field.attr("name") != "":
+        field.attr("name") & '.'
+      else:
+        ""
+      entrylist[name & 'x'] = $field.xcoord
+      entrylist[name & 'y'] = $field.ycoord
+      continue
+
+    if field.attr("name") == "":
+      continue
+
+    let name = field.attr("name")
+    #TODO select
+    if field.inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
+      let value = if field.attr("value") != "":
+        field.attr("value")
+      else:
+        "on"
+      entrylist[name] = value
+    elif field.inputType == INPUT_FILE:
+      #TODO file
+      discard
+    elif field.inputType == INPUT_HIDDEN and name.equalsIgnoreCase("_charset_"):
+      let charset = if encoding != "":
+        encoding
+      else:
+        "UTF-8"
+      entrylist[name] = charset
+    else:
+      entrylist[name] = field.value
+    if field.tagType == TAG_TEXTAREA or
+        field.tagType == TAG_INPUT and field.inputType in {INPUT_TEXT, INPUT_SEARCH}:
+      if field.attr("dirname") != "":
+        let dirname = field.attr("dirname")
+        let dir = "ltr" #TODO bidi
+        entrylist[dirname] = dir
+
+  form.constructingentrylist = false
+  return entrylist
+
+#https://url.spec.whatwg.org/#concept-urlencoded-serializer
+proc serializeApplicationXWWFormUrlEncoded(kvs: Table[string, string]): string =
+  for name, value in kvs:
+    if result != "":
+      result &= '&'
+    result.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, true)
+    result &= '='
+    result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, true)
+
+#https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
+proc makeCRLF(s: string): string =
+  result = newStringOfCap(s.len)
+  var i = 0
+  while i < s.len - 1:
+    if s[i] == '\r' and s[i + 1] != '\n':
+      result &= '\r'
+      result &= '\n'
+    elif s[i] != '\r' and s[i + 1] == '\n':
+      result &= s[i]
+      result &= '\r'
+      result &= '\n'
+      inc i
+    else:
+      result &= s[i]
+    inc i
+
+proc serializeMultipartFormData(kvs: Table[string, string]): MultipartData =
+  new(result)
+  for name, value in kvs:
+    let name = makeCRLF(name)
+    let value = makeCRLF(value)
+    result[name] = value
+
+proc serializePlainTextFormData(kvs: Table[string, string]): string =
+  for name, value in kvs:
+    result &= name
+    result &= '='
+    result &= value
+    result &= '\r'
+    result &= '\n'
+
+proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] =
+  let entrylist = form.constructEntryList(submitter)
+
+  let action = if submitter.action() == "":
+    $form.ownerDocument.location
+  else:
+    submitter.action()
+
+  let url = parseUrl(action, submitter.ownerDocument.baseUrl.some)
+  if url.isnone:
+    return none(ClickAction)
+
+  var parsedaction = url.get
+  let scheme = parsedaction.scheme
+  let enctype = submitter.enctype()
+  let smethod = submitter.smethod().toupper()
+  if smethod notin ["GET", "POST"]:
+    return none(ClickAction) #TODO this shouldn't be possible
+
+  let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
+    submitter.attr("formtarget")
+  else:
+    submitter.target()
+  let noopener = true #TODO
+
+  template mutateActionUrl() =
+    let query = serializeApplicationXWWFormUrlEncoded(entrylist)
+    parsedaction.query = query.some
+    return ClickAction(url: $parsedaction, smethod: smethod).some
+
+  template submitAsEntityBody() =
+    var body: string
+    var mimetype: string
+    var multipart: MultipartData
+    case enctype
+    of "application/x-www-form-urlencoded":
+      body = serializeApplicationXWWFormUrlEncoded(entrylist)
+      mimeType = enctype
+    of "multipart/form-data":
+      multipart = serializeMultipartFormData(entrylist) 
+      #mime type set by httpclient
+    of "text/plain":
+      body = serializePlainTextFormData(entrylist)
+      mimetype = enctype
+    else:
+      return none(ClickAction) #TODO this shouldn't be possible
+    return ClickAction(url: $parsedaction, smethod: smethod, body: body, mimetype: mimetype, multipart: multipart).some
+
+  template getActionUrl() =
+    return ClickAction(url: $parsedaction).some
+
+  case scheme
+  of "http", "https":
+    if smethod == "GET":
+      mutateActionUrl
+    elif smethod == "POST":
+      submitAsEntityBody
+  of "ftp":
+    getActionUrl
+  of "data":
+    if smethod == "GET":
+      mutateActionUrl
+    elif smethod == "POST":
+      getActionUrl
+
+proc click*(buffer: Buffer): Option[ClickAction] =
+  let clickable = buffer.getCursorClickable()
+  if clickable != nil:
+    case clickable.tagType
+    of TAG_A:
+      return ClickAction(url: HTMLAnchorElement(clickable).href).some
+    of TAG_INPUT:
+      let input = HTMLInputElement(clickable)
+      case input.inputType
+      of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
+        var value = input.value
+        print(HVP(buffer.height + 1, 1))
+        print(EL())
+        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'})
+        if status:
+          input.value = value
+          input.rendered = false
+          buffer.reshape = true
+      of INPUT_FILE:
+        var path = if input.file.issome:
+          input.file.get.path.serialize_unicode()
+        else:
+          ""
+        print(HVP(buffer.height + 1, 1))
+        print(EL())
+        let status = readLine("Filename: ", path, buffer.width, {'\r', '\n'})
+        if status:
+          let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
+          let path = parseUrl(path, cdir)
+          if path.issome:
+            input.file = path
+            input.rendered = false
+            buffer.reshape = true
+      of INPUT_CHECKBOX:
+        input.checked = not input.checked
+        input.rendered = false
+        buffer.reshape = true
+      of INPUT_RADIO:
+        for radio in input.radiogroup:
+          radio.checked = false
+          radio.rendered = false
+        input.checked = true
+        input.rendered = false
+        buffer.reshape = true
+      of INPUT_RESET:
+        if input.form != nil:
+          input.form.reset()
+          buffer.reshape = true
+      of INPUT_SUBMIT, INPUT_BUTTON:
+        if input.form != nil:
+          let submitaction = submitForm(input.form, input)
+          return submitaction
+      else:
+        discard
+    else:
+      discard
 
 proc drawBuffer*(buffer: Buffer) =
   var format = newFormat()

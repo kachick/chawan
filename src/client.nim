@@ -99,12 +99,15 @@ proc readPipe(client: Client, ctype: string) =
     client.buffer.drawBuffer()
 
 var g_client: Client
-proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbuf = true, ctype = "") =
+proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none(Url), force = false, newbuf = true, ctype = "") =
   setControlCHook(proc() {.noconv.} =
     raise newException(InterruptError, "Interrupted"))
   if force or prevurl.issome or not prevurl.get.equals(url, true):
     try:
-      let page = client.loader.getPage(url)
+      let page = if click.isnone:
+        client.loader.getPage(url)
+      else:
+        client.loader.getPage(url, click.get.smethod, click.get.mimetype, click.get.body, click.get.multipart)
       if page.s != nil:
         if newbuf:
           client.addBuffer()
@@ -126,29 +129,29 @@ proc gotoUrl(client: Client, url: Url, prevurl = none(Url), force = false, newbu
   client.buffer.location = url
   client.setupBuffer()
 
-proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, newbuf = true, ctype = "") =
+proc gotoUrl(client: Client, url: string, click = none(ClickAction), prevurl = none(Url), force = false, newbuf = true, ctype = "") =
   var oldurl = prevurl
   if oldurl.isnone and client.buffer != nil:
     oldurl = client.buffer.location.some
   let newurl = parseUrl(url, oldurl)
   if newurl.isnone:
     loadError("Invalid URL " & url)
-  client.gotoUrl(newurl.get, oldurl, force, newbuf, ctype)
+  client.gotoUrl(newurl.get, click, oldurl, force, newbuf, ctype)
 
 proc loadUrl(client: Client, url: string, ctype = "") =
   let firstparse = parseUrl(url)
   if firstparse.issome:
-    client.gotoUrl(url, none(Url), true, true, ctype)
+    client.gotoUrl(url, none(ClickAction), none(Url), true, true, ctype)
   else:
     try:
       let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
-      client.gotoUrl(url, cdir, true, true, ctype)
+      client.gotoUrl(url, none(ClickAction), cdir, true, true, ctype)
     except LoadError:
-      client.gotoUrl("http://" & url, none(Url), true, true, ctype)
+      client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, true, ctype)
 
 proc reloadPage(client: Client) =
   let pbuffer = client.buffer
-  client.gotoUrl(pbuffer.location, none(Url), true, false)
+  client.gotoUrl(pbuffer.location, none(ClickAction), none(Url), true, false)
   client.buffer.setCursorXY(pbuffer.cursorx, pbuffer.cursory)
   client.buffer.setFromXY(pbuffer.fromx, pbuffer.fromy)
   client.buffer.contenttype = pbuffer.contenttype
@@ -164,8 +167,8 @@ proc changeLocation(client: Client) =
 
 proc click(client: Client) =
   let s = client.buffer.click()
-  if s != "":
-    client.gotoUrl(s)
+  if s.issome and s.get.url != "":
+    client.gotoUrl(s.get.url, s)
 
 proc toggleSource*(client: Client) =
   let buffer = client.buffer

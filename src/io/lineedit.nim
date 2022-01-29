@@ -104,9 +104,9 @@ proc fullRedraw(state: var LineState) =
 
   state.redraw()
 
-proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
+proc insertCharseq(state: var LineState, cs: var seq[Rune], disallowed: set[char]) =
   let escNext = state.escNext
-  cs.keepIf((r) => escNext or not r.isControlChar())
+  cs.keepIf((r) => (escNext or not r.isControlChar) and not (r.isAscii and char(r) in disallowed))
   state.escNext = false
   if cs.len == 0:
     return
@@ -120,7 +120,7 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune]) =
     state.cursor += cs.len
     state.fullRedraw()
 
-proc readLine*(current: var string, minlen, maxlen: int): bool =
+proc readLine*(current: var string, minlen, maxlen: int, disallowed: set[char] = {}): bool =
   var state: LineState
   state.news = current.toRunes()
   state.cursor = state.news.len
@@ -257,10 +257,10 @@ proc readLine*(current: var string, minlen, maxlen: int): bool =
       state.feedNext = true
     elif validateUtf8(state.s) == -1:
       var cs = state.s.toRunes()
-      state.insertCharseq(cs)
+      state.insertCharseq(cs, disallowed)
     else:
       state.feedNext = true
 
-proc readLine*(prompt: string, current: var string, termwidth: int): bool =
+proc readLine*(prompt: string, current: var string, termwidth: int, disallowed: set[char] = {}): bool =
   printesc(prompt)
-  readLine(current, prompt.lwidth(), termwidth - prompt.len)
+  readLine(current, prompt.lwidth(), termwidth - prompt.len, disallowed)
