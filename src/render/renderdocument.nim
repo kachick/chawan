@@ -145,14 +145,19 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
         grid.setSpacing(spacing, x, y, term)
 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes) =
-  let x = x + ctx.relx
-  let y = y + ctx.rely
-  if ctx.inline != nil:
-    assert ctx.nested.len == 0
-    grid.renderInlineContext(ctx.inline, x, y, term)
-  else:
-    for ctx in ctx.nested:
-      grid.renderBlockContext(ctx, x, y, term)
+  var stack = newSeqOfCap[(BlockContext, int, int)](100)
+  stack.add((ctx, x, y))
+
+  while stack.len > 0:
+    var (ctx, x, y) = stack.pop()
+    x += ctx.relx
+    y += ctx.rely
+    if ctx.inline != nil:
+      assert ctx.nested.len == 0
+      grid.renderInlineContext(ctx.inline, x, y, term)
+    else:
+      for i in countdown(ctx.nested.high, 0):
+        stack.add((ctx.nested[i], x, y))
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
