@@ -448,6 +448,30 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox) =
   box.ictx.addAtom(box.bctx, bctx.compwidth, box.specified)
   box.ictx.whitespacenum = 0
 
+# ew.
+proc alignMarkerOutside(bctx: BlockContext, box: MarkerBox) =
+  let oldwidth = box.ictx.thisrow.width
+  let oldheight = box.ictx.thisrow.height
+  assert box.text.len == 1
+  assert box.children.len == 0
+
+  box.ictx.renderText(box.text[0], bctx.compwidth, box.specified, box.node)
+  # We assume this renders one row only. But there's no guarantee it does...
+  if box.ictx.thisrow.atoms.len > 0:
+    let atom = box.ictx.thisrow.atoms[^1]
+    atom.relx -= atom.width
+
+    box.ictx.flushWhitespace(box.specified)
+    let ws = box.ictx.thisrow.atoms[^1]
+
+    # If flushWhitespace did anything
+    if ws != atom:
+      atom.relx -= ws.width
+
+    box.ictx.thisrow.width = oldwidth
+    box.ictx.height -= box.ictx.thisrow.height - oldheight
+    box.ictx.thisrow.height = oldheight
+
 proc alignInline(bctx: BlockContext, box: InlineBox) =
   assert box.ictx != nil
   if box.newline:
@@ -470,7 +494,14 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
     of DISPLAY_INLINE:
       let child = InlineBox(child)
       child.ictx = box.ictx
-      bctx.alignInline(child)
+      if child of MarkerBox:
+        let child = MarkerBox(child)
+        if child.outside:
+          bctx.alignMarkerOutside(child)
+        else:
+          bctx.alignInline(child)
+      else:
+        bctx.alignInline(child)
     of DISPLAY_INLINE_BLOCK:
       let child = InlineBlockBox(child)
       child.ictx = box.ictx
@@ -493,7 +524,14 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
       of DISPLAY_INLINE:
         let child = InlineBox(child)
         child.ictx = ictx
-        bctx.alignInline(child)
+        if child of MarkerBox:
+          let child = MarkerBox(child)
+          if child.outside:
+            bctx.alignMarkerOutside(child)
+          else:
+            bctx.alignInline(child)
+        else:
+          bctx.alignInline(child)
       of DISPLAY_INLINE_BLOCK:
         let child = InlineBlockBox(child)
         child.ictx = ictx
@@ -572,6 +610,12 @@ proc getBlockBox(specified: CSSSpecifiedValues): BlockBox =
   result.specified{"display"} = DISPLAY_BLOCK
 
 proc getTextBox(box: CSSBox): InlineBox =
+  new(result)
+  result.t = DISPLAY_INLINE
+  result.inlinelayout = true
+  result.specified = box.specified.inheritProperties()
+
+proc getMarkerBox(box: CSSBox): MarkerBox =
   new(result)
   result.t = DISPLAY_INLINE
   result.inlinelayout = true
@@ -682,9 +726,11 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
     var ordinalvalue = 1
     if elem.tagType == TAG_LI:
       ordinalvalue = HTMLLIElement(elem).ordinalvalue
-    let marker = box.getTextBox()
+    let marker = box.getMarkerBox()
     marker.node = elem
     marker.text.add(elem.css{"list-style-type"}.listMarker(ordinalvalue))
+    if elem.css{"list-style-position"} == LIST_STYLE_POSITION_OUTSIDE:
+      marker.outside = true
     add_box(marker)
 
   let before = elem.pseudo[PSEUDO_BEFORE]

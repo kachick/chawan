@@ -87,6 +87,9 @@ type
     ictx*: InlineContext
     newline*: bool
 
+  MarkerBox* = ref object of InlineBox
+    outside*: bool
+
   BlockBox* = ref object of CSSBox
     bctx*: BlockContext
 

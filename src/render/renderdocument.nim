@@ -32,7 +32,7 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
 
   var x = (x + word.relx) div term.ppc
   var i = 0
-  while x < 0:
+  while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
     x += r.width()
   let linestr = word.str.substr(i)
