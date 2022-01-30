@@ -54,7 +54,57 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} 
   of ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, COMBINATOR_SELECTOR:
     discard
   of FUNC_SELECTOR:
-    discard #TODO can we discard this?
+    if sel.name == "is":
+      # Basically just hash whatever the selectors have in common:
+      #1. get the hashable values of selector 1
+      #2. for every other selector x:
+      #3.   get hashable values of selector x
+      #4.   store hashable values of selector x that aren't stored yet
+      #5.   for every hashable value of selector 1 that doesn't match selector x
+      #6.     cancel hashable value
+      var cancel_tag = false
+      var cancel_id = false
+      var cancel_class = false
+      var i = 0
+      if i < sel.fsels.len:
+        let list = sel.fsels[i]
+        for sel in list.sels:
+          if hashes.getSelectorIds(sel):
+            break
+        inc i
+
+      while i < sel.fsels.len:
+        let list = sel.fsels[i]
+        var nhashes: SelectorHashes
+        for sel in list.sels:
+          if nhashes.getSelectorIds(sel):
+            break
+        if hashes.tag == TAG_UNKNOWN:
+          hashes.tag = nhashes.tag
+        elif not cancel_tag and nhashes.tag != TAG_UNKNOWN and nhashes.tag != hashes.tag:
+          cancel_tag = true
+
+        if hashes.id == "":
+          hashes.id = nhashes.id
+        elif not cancel_id and nhashes.id != "" and nhashes.id != hashes.id:
+          cancel_id = true
+
+        if hashes.class == "":
+          hashes.class = nhashes.class
+        elif not cancel_class and nhashes.class != "" and nhashes.class != hashes.class:
+          cancel_class = true
+
+        inc i
+
+      if cancel_tag:
+        hashes.tag = TAG_UNKNOWN
+      if cancel_id:
+        hashes.id = ""
+      if cancel_class:
+        hashes.class = ""
+
+      if hashes.tag != TAG_UNKNOWN or hashes.id != "" or hashes.class != "":
+        return true
 
 iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq[string]): CSSRuleDef =
   for rule in sheet.tag_table[tag]:

@@ -81,15 +81,15 @@ input[type="radio"]::after {
 	color: none;
 }
 
-:is(input[type="text"], input[type="password"], input[type="search"], input[type="file"]) {
+input:is([type="text"], [type="password"], [type="search"], [type="file"]) {
 	text-decoration: underline;
 }
 
-:is(input[type="submit"], input[type="button"], input[type="reset"])::before {
+input:is([type="submit"], [type="button"], [type="reset"])::before {
 	color: red;
 }
 
-:is(input[type="submit"], input[type="button"], input[type="reset"])::after {
+input:is([type="submit"], [type="button"], [type="reset"])::after {
 	color: red;
 }
 
