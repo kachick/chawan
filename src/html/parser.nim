@@ -145,7 +145,7 @@ proc parse_tag(buf: string, at: var int): DOMParsedTag =
         let startc = buf[at]
         inc at
         while at < buf.len and buf[at] != startc:
-          if buf[at + 1] == '&':
+          if buf[at] == '&':
             inc at
             value &= getescapecmd(buf, at)
           else:
