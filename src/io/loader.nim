@@ -14,11 +14,19 @@ type
     s*: Stream
     contenttype*: string
 
+const DefaultHeaders = {
+  "User-Agent": "chawan",
+  "Accept": "text/html", "text/*;q=0.5",
+  "Accept-Language": "en;q=1.0",
+  "Pragma": "no-cache",
+  "Cache-control": "no-cache",
+}
+
 proc newFileLoader*(): FileLoader =
   new(result)
   result.http = newHttpClient()
 
-proc getPage*(loader: FileLoader, url: Url, smethod: string = "GET", mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
+proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
   if url.scheme == "file":
     when defined(windows) or defined(OS2) or defined(DOS):
       let path = url.path.serialize_unicode_windows()
@@ -27,12 +35,10 @@ proc getPage*(loader: FileLoader, url: Url, smethod: string = "GET", mimetype = 
     result.contenttype = guessContentType(path)
     result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":
-    let requestheaders = newHttpHeaders({ "User-Agent": "chawan", "Content-Type": mimetype}, true)
-    let requestmethod = if smethod == "":
-      "GET"
-    else:
-      smethod
-    let resp = loader.http.request(url.serialize(true), requestmethod, body, requestheaders, multipart)
+    var requestheaders = newHttpHeaders(DefaultHeaders, true)
+    if mimetype != "":
+      requestheaders["Content-Type"] = mimetype 
+    let resp = loader.http.request(url.serialize(true), smethod, body, requestheaders, multipart)
     let ct = resp.contentType()
     if ct != "":
       result.contenttype = ct.until(';')

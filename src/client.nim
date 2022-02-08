@@ -107,7 +107,7 @@ proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none
       let page = if click.isnone:
         client.loader.getPage(url)
       else:
-        client.loader.getPage(url, click.get.smethod, click.get.mimetype, click.get.body, click.get.multipart)
+        client.loader.getPage(url, click.get.httpmethod, click.get.mimetype, click.get.body, click.get.multipart)
       if page.s != nil:
         if newbuf:
           client.addBuffer()

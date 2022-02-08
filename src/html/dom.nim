@@ -9,6 +9,15 @@ import types/url
 import utils/twtstr
 
 type
+  FormMethod* = enum
+    FORM_METHOD_GET, FORM_METHOD_POST, FORM_METHOD_DIALOG
+
+  FormEncodingType* = enum
+    FORM_ENCODING_TYPE_URLENCODED = "application/x-www-form-urlencoded",
+    FORM_ENCODING_TYPE_MULTIPART = "multipart/form-data",
+    FORM_ENCODING_TYPE_TEXT_PLAIN = "text/plain"
+
+type
   EventTarget* = ref EventTargetObj
   EventTargetObj = object of RootObj
 
@@ -348,27 +357,48 @@ func action*(element: Element): string =
         return element.form.attr("action")
   return ""
 
-func enctype*(element: Element): string =
+func enctype*(element: Element): FormEncodingType =
   if element.isSubmitButton():
     if element.attrb("formenctype"):
-      return element.attr("formenctype")
+      return case element.attr("formenctype").tolower()
+      of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
+      of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
+      of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
+      else: FORM_ENCODING_TYPE_URLENCODED
+
   if element.tagType == TAG_INPUT:
     let element = HTMLInputElement(element)
     if element.form != nil:
       if element.form.attrb("enctype"):
-        return element.form.attr("enctype")
-  return "application/x-www-form-urlencoded"
+        return case element.attr("enctype").tolower()
+        of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
+        of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
+        of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
+        else: FORM_ENCODING_TYPE_URLENCODED
 
-func smethod*(element: Element): string =
+  return FORM_ENCODING_TYPE_URLENCODED
+
+func formmethod*(element: Element): FormMethod =
   if element.isSubmitButton():
     if element.attrb("formmethod"):
-      return element.attr("formmethod")
+      return case element.attr("formmethod").tolower()
+      of "get": FORM_METHOD_GET
+      of "post": FORM_METHOD_POST
+      of "dialog": FORM_METHOD_DIALOG
+      else: FORM_METHOD_GET
+
+  # has form (TODO not only input should be included)
   if element.tagType == TAG_INPUT:
     let element = HTMLInputElement(element)
     if element.form != nil:
       if element.form.attrb("method"):
-        return element.form.attr("method")
-  return "GET"
+        return case element.form.attr("method").tolower()
+        of "get": FORM_METHOD_GET
+        of "post": FORM_METHOD_POST
+        of "dialog": FORM_METHOD_DIALOG
+        else: FORM_METHOD_GET
+
+  return FORM_METHOD_GET
 
 func target*(element: Element): string =
   if element.attrb("target"):

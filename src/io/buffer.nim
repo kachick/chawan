@@ -824,7 +824,7 @@ proc displayStatusMessage*(buffer: Buffer) =
 type
   ClickAction* = object
     url*: string
-    smethod*: string
+    httpmethod*: HttpMethod
     mimetype*: string
     body*: string
     multipart*: MultipartData
@@ -939,9 +939,15 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
   var parsedaction = url.get
   let scheme = parsedaction.scheme
   let enctype = submitter.enctype()
-  let smethod = submitter.smethod().toupper()
-  if smethod notin ["GET", "POST"]:
-    return none(ClickAction) #TODO this shouldn't be possible
+  let formmethod = submitter.formmethod()
+  if formmethod == FORM_METHOD_DIALOG:
+    #TODO
+    return none(ClickAction)
+  let httpmethod = if formmethod == FORM_METHOD_GET:
+    HttpGet
+  else:
+    assert formmethod == FORM_METHOD_POST
+    HttpPost
 
   let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
     submitter.attr("formtarget")
@@ -952,41 +958,41 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
   template mutateActionUrl() =
     let query = serializeApplicationXWWFormUrlEncoded(entrylist)
     parsedaction.query = query.some
-    return ClickAction(url: $parsedaction, smethod: smethod).some
+    return ClickAction(url: $parsedaction, httpmethod: httpmethod).some
 
   template submitAsEntityBody() =
     var body: string
     var mimetype: string
     var multipart: MultipartData
     case enctype
-    of "application/x-www-form-urlencoded":
+    of FORM_ENCODING_TYPE_URLENCODED:
       body = serializeApplicationXWWFormUrlEncoded(entrylist)
-      mimeType = enctype
-    of "multipart/form-data":
+      mimeType = $enctype
+    of FORM_ENCODING_TYPE_MULTIPART:
       multipart = serializeMultipartFormData(entrylist) 
-      #mime type set by httpclient
-    of "text/plain":
+      mimetype = $enctype
+    of FORM_ENCODING_TYPE_TEXT_PLAIN:
       body = serializePlainTextFormData(entrylist)
-      mimetype = enctype
-    else:
-      return none(ClickAction) #TODO this shouldn't be possible
-    return ClickAction(url: $parsedaction, smethod: smethod, body: body, mimetype: mimetype, multipart: multipart).some
+      mimetype = $enctype
+    return ClickAction(url: $parsedaction, httpmethod: httpmethod, body: body, mimetype: mimetype, multipart: multipart).some
 
   template getActionUrl() =
     return ClickAction(url: $parsedaction).some
 
   case scheme
   of "http", "https":
-    if smethod == "GET":
+    if formmethod == FORM_METHOD_GET:
       mutateActionUrl
-    elif smethod == "POST":
+    else:
+      assert formmethod == FORM_METHOD_POST
       submitAsEntityBody
   of "ftp":
     getActionUrl
   of "data":
-    if smethod == "GET":
+    if formmethod == FORM_METHOD_GET:
       mutateActionUrl
-    elif smethod == "POST":
+    else:
+      assert formmethod == FORM_METHOD_POST
       getActionUrl
 
 proc click*(buffer: Buffer): Option[ClickAction] =
@@ -994,7 +1000,7 @@ proc click*(buffer: Buffer): Option[ClickAction] =
   if clickable != nil:
     case clickable.tagType
     of TAG_A:
-      return ClickAction(url: HTMLAnchorElement(clickable).href).some
+      return ClickAction(url: HTMLAnchorElement(clickable).href, httpmethod: HttpGet).some
     of TAG_INPUT:
       let input = HTMLInputElement(clickable)
       case input.inputType
