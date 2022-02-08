@@ -37,6 +37,12 @@ func loadStuff(s: string): (FullMap[cstring], # Map
       result[2][0].incl(uint16(i))
     else:
       result[2][1].incl(i)
+  template add_ignore(rstart, rend: uint32) =
+    for i in rstart..rend:
+      if i <= high(uint16):
+        result[3][0].incl(uint16(i))
+      else:
+        result[3][1].incl(i)
   template add_ignore(i: uint32) =
     if i <= high(uint16):
       result[3][0].incl(uint16(i))
@@ -61,8 +67,7 @@ func loadStuff(s: string): (FullMap[cstring], # Map
       let fcs = firstcol.split("..")
       let rstart = uint32(parseHexInt(fcs[0]))
       let rend = uint32(parseHexInt(fcs[1]))
-      for i in rstart..rend:
-        temp(i)
+      temp(rstart, rend)
     else:
       temp(uint32(parseHexInt(firstcol)))
 
