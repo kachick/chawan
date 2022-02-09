@@ -736,7 +736,7 @@ proc loadResources(buffer: Buffer, document: Document) =
           if url.get.scheme == buffer.location.scheme:
             let res = buffer.loader.getPage(url.get)
             if res.s != nil and res.contenttype == "text/css":
-              let sheet = parseStylesheet(res.s.readAll())
+              let sheet = parseStylesheet(res.s)
               elem.parentElement.sheets.add(sheet)
 
     for i in countdown(elem.children.high, 0):
@@ -747,14 +747,10 @@ proc load*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if not buffer.streamclosed:
-      #TODO not sure what to do with this.
-      #Ideally we could just throw away the source data after parsing but then
-      #source view won't work. Well we could still generate it... best would be a
-      #config option like a) store source b) generate source
-      buffer.source = buffer.istream.readAll()
-      buffer.istream.close()
+      buffer.document = parseHtml(buffer.istream, buffer.source)
       buffer.streamclosed = true
-    buffer.document = parseHtml(newStringStream(buffer.source))
+    else:
+      buffer.document = parseHtml(newStringStream(buffer.source))
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
   else:

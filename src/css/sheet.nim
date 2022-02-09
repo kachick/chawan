@@ -194,6 +194,7 @@ proc parseStylesheet*(s: Stream): CSSStylesheet =
   for v in css.value:
     if v of CSSAtRule: result.addAtRule(CSSAtRule(v))
     else: result.addRule(CSSQualifiedRule(v))
+  s.close()
 
 proc parseStylesheet*(s: string): CSSStylesheet =
   return newStringStream(s).parseStylesheet()

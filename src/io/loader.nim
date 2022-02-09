@@ -16,7 +16,7 @@ type
 
 const DefaultHeaders = {
   "User-Agent": "chawan",
-  "Accept": "text/html", "text/*;q=0.5",
+  "Accept": "text/html,text/*;q=0.5",
   "Accept-Language": "en;q=1.0",
   "Pragma": "no-cache",
   "Cache-control": "no-cache",
@@ -35,7 +35,9 @@ proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimet
     result.contenttype = guessContentType(path)
     result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":
-    var requestheaders = newHttpHeaders(DefaultHeaders, true)
+    var requestheaders = newHttpHeaders(true)
+    for header in DefaultHeaders:
+      requestheaders[header[0]] = header[1]
     if mimetype != "":
       requestheaders["Content-Type"] = mimetype 
     let resp = loader.http.request(url.serialize(true), smethod, body, requestheaders, multipart)

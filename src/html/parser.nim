@@ -471,7 +471,7 @@ proc processDocumentPart(state: var HTMLParseState, buf: string) =
       process_char(buf[at])
       inc at
 
-proc parseHtml*(inputStream: Stream): Document =
+proc parseHtml(inputStream: Stream, savesource: bool, source: var string): Document =
   let document = newDocument()
   insertNode(document, document.root)
   insertNode(document.root, document.head)
@@ -487,6 +487,8 @@ proc parseHtml*(inputStream: Stream): Document =
   var lineBuf: string
   while not inputStream.atEnd():
     lineBuf = inputStream.readLine() & '\n'
+    if savesource:
+      source &= lineBuf
     buf &= lineBuf
 
     var at = 0
@@ -507,3 +509,10 @@ proc parseHtml*(inputStream: Stream): Document =
 
   inputStream.close()
   return document
+
+proc parseHtml*(inputStream: Stream, source: var string): Document =
+  return parseHtml(inputStream, true, source)
+
+proc parseHtml*(inputStream: Stream): Document =
+  var placeholder = ""
+  return parseHtml(inputStream, false, placeholder)
