@@ -193,3 +193,7 @@ dl[compact] dt + br {
 center {
 	text-align: -moz-center;
 }
+
+blink {
+	text-decoration: blink;
+}

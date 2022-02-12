@@ -17,6 +17,7 @@ type
     FLAG_REVERSE
     FLAG_STRIKE
     FLAG_OVERLINE
+    FLAG_BLINK
 
   Format* = object
     fgcolor*: CellColor
@@ -49,6 +50,7 @@ const FormatCodes: array[FormatFlags, tuple[s: int, e: int]] = [
   FLAG_REVERSE: (7, 27),
   FLAG_STRIKE: (9, 29),
   FLAG_OVERLINE: (53, 55),
+  FLAG_BLINK: (5, 25),
 ]
 
 template flag_template(format: Format, val: bool, flag: FormatFlags) =
@@ -61,6 +63,7 @@ template `underline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_UNDERL
 template `reverse=`*(f: var Format, b: bool) = flag_template f, b, FLAG_REVERSE
 template `strike=`*(f: var Format, b: bool) = flag_template f, b, FLAG_STRIKE
 template `overline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_OVERLINE
+template `blink=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BLINK
 
 #TODO ?????
 func `==`*(a: FixedCell, b: FixedCell): bool =
@@ -171,10 +174,12 @@ proc handleAnsiCode(format: var Format, final: char, params: string) =
           of 1: format.bold = true
           of 3: format.italic = true
           of 4: format.underline = true
+          of 5: format.blink = true
           of 7: format.reverse = true
           of 9: format.strike = true
           of 22: format.bold = false
           of 23: format.italic = false
+          of 25: format.blink = false
           of 27: format.reverse = false
           of 29: format.strike = false
           of 30..37: format.fgcolor = CellColor(rgb: false, color: uint8(ip[pi]))

@@ -23,6 +23,8 @@ func formatFromWord(computed: ComputedFormat): Format =
     result.overline = true
   if computed.textdecoration == TEXT_DECORATION_LINE_THROUGH:
     result.strike = true
+  if computed.textdecoration == TEXT_DECORATION_BLINK:
+    result.blink = true
 
 proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
   var r: Rune
