@@ -31,8 +31,6 @@ var i = 0
 var ctype = ""
 var pages: seq[string]
 var dump = false
-var opt_str = ""
-var css_str = ""
 while i < params.len:
   let param = params[i]
   case param

@@ -221,9 +221,6 @@ func getClickable(node: Node): Element =
       return element
   return node.findAncestor(ClickableElements)
 
-func getCursorLink(buffer: Buffer): Element =
-  return buffer.currentDisplayCell().node.getLink()
-
 func getCursorClickable(buffer: Buffer): Element =
   return buffer.currentDisplayCell().node.getClickable()
 
@@ -338,7 +335,6 @@ proc refreshDisplay(buffer: Buffer) =
     inc y
 
 proc setCursorXB(buffer: Buffer, byte: int) =
-  var r: Rune
   var w = 0
   var b = 0
   while b < byte:
