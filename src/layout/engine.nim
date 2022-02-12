@@ -449,14 +449,18 @@ proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox) =
   box.ictx.whitespacenum = 0
 
 # ew.
+#TODO get rid of this hack
 proc alignMarkerOutside(bctx: BlockContext, box: MarkerBox) =
   let oldwidth = box.ictx.thisrow.width
   let oldheight = box.ictx.thisrow.height
+  let oldrow = box.ictx.thisrow
   assert box.text.len == 1
   assert box.children.len == 0
 
   box.ictx.renderText(box.text[0], bctx.compwidth, box.specified, box.node)
-  # We assume this renders one row only. But there's no guarantee it does...
+
+  box.ictx.thisrow = oldrow # If wrapped...
+
   if box.ictx.thisrow.atoms.len > 0:
     let atom = box.ictx.thisrow.atoms[^1]
     atom.relx -= atom.width
@@ -468,9 +472,9 @@ proc alignMarkerOutside(bctx: BlockContext, box: MarkerBox) =
     if ws != atom:
       atom.relx -= ws.width
 
-    box.ictx.thisrow.width = oldwidth
-    box.ictx.height -= box.ictx.thisrow.height - oldheight
-    box.ictx.thisrow.height = oldheight
+  box.ictx.height = -1 #TODO I'm not even sure why this works
+  box.ictx.thisrow.width = oldwidth
+  box.ictx.thisrow.height = oldheight
 
 proc alignInline(bctx: BlockContext, box: InlineBox) =
   assert box.ictx != nil
