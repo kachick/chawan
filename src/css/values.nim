@@ -29,7 +29,8 @@ type
     PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE, PROPERTY_PADDING,
     PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
     PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
-    PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION
+    PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION,
+    PROPERTY_BACKGROUND_COLOR
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -90,7 +91,7 @@ type
     auto*: bool
 
   CSSColor* = object
-    rgba: RGBAColor
+    rgba*: RGBAColor
     termcolor: int
 
   CSSVerticalAlign* = object
@@ -160,6 +161,7 @@ const PropertyNames = {
   "line-height": PROPERTY_LINE_HEIGHT,
   "text-align": PROPERTY_TEXT_ALIGN,
   "list-style-position": PROPERTY_LIST_STYLE_POSITION,
+  "background-color": PROPERTY_BACKGROUND_COLOR,
 }.toTable()
 
 const ValueTypes = [
@@ -191,13 +193,14 @@ const ValueTypes = [
   PROPERTY_LINE_HEIGHT: VALUE_LENGTH,
   PROPERTY_TEXT_ALIGN: VALUE_TEXT_ALIGN,
   PROPERTY_LIST_STYLE_POSITION: VALUE_LIST_STYLE_POSITION,
+  PROPERTY_BACKGROUND_COLOR: VALUE_COLOR,
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
-  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION
+  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_BACKGROUND_COLOR
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -306,7 +309,7 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
-const Colors = {
+const ColorsRGB = {
   "aliceblue": 0xf0f8ff,
   "antiquewhite": 0xfaebd7,
   "aqua": 0x00ffff,
@@ -455,7 +458,13 @@ const Colors = {
   "yellow": 0xffff00,
   "yellowgreen": 0x9acd32,
   "rebeccapurple": 0x663399,
-}.map((a) => (a[0], CSSColor(rgba: RGBAColor(a[1])))).toTable()
+}.map((a) => (a[0], RGBColor(a[1]))).toTable()
+
+const Colors: Table[string, CSSColor] = ((func (): Table[string, CSSColor] =
+  for name, rgb in ColorsRGB:
+    result[name] = CSSColor(rgba: rgb)
+  result["transparent"] = CSSColor(rgba: rgba(0x00, 0x00, 0x00, 0x00))
+)())
 
 const Units = {
   "%": UNIT_PERC,
@@ -789,6 +798,8 @@ func getInitialColor(t: CSSPropertyType): CSSColor =
   case t
   of PROPERTY_COLOR:
     return Colors["white"]
+  of PROPERTY_BACKGROUND_COLOR:
+    return Colors["transparent"]
   else:
     return Colors["black"]
 

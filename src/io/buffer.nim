@@ -1055,7 +1055,9 @@ proc drawBuffer*(buffer: Buffer) =
         print(line.str.substr(x, f.pos - 1))
         print(format.processFormat(f.format))
         x = f.pos
-      print(line.str.substr(x, line.str.len) & '\n')
+      print(line.str.substr(x, line.str.len))
+      print(format.processFormat(newFormat()))
+      print('\n')
 
 proc refreshBuffer*(buffer: Buffer) =
   buffer.title = buffer.getTitle()

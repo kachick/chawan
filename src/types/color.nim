@@ -1,3 +1,4 @@
+# TODO both should probably be distinct int32
 type
   RGBColor* = distinct int
 
@@ -52,3 +53,6 @@ func rgba*(r, g, b, a: int): RGBAColor =
 
 converter toRGBColor*(i: RGBAColor): RGBColor =
   return RGBColor(int(i) and 0xFFFFFF)
+
+converter toRGBAColor*(i: RGBColor): RGBAColor =
+  return RGBAColor(int(i) or 0xFF000000)

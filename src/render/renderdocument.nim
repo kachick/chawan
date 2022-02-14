@@ -9,6 +9,7 @@ import io/cell
 import io/term
 import layout/box
 import layout/engine
+import types/color
 import utils/twtstr
 
 func formatFromWord(computed: ComputedFormat): Format =
@@ -26,19 +27,34 @@ func formatFromWord(computed: ComputedFormat): Format =
   if computed.textdecoration == TEXT_DECORATION_BLINK:
     result.blink = true
 
-proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
+#TODO: this fails to set background colors on non-ascii text correctly.
+# Either figure out a workaround or change format.pos to signify width instead.
+proc setFormats(lines: var FlexibleGrid, y: int, newformat: Format, oformats: seq[FormatCell], i, len, olen: int) {.inline.} =
+  let obg = newformat.bgcolor
+  var newformat = newformat
+  var fpos = i
+  for format in oformats:
+    if format.pos >= i + len:
+      break
+    if format.format.bgcolor != newformat.bgcolor:
+      newformat.bgcolor = format.format.bgcolor
+      lines.addFormat(y, fpos, newformat)
+      fpos = format.pos
+
+  if fpos < i + len:
+    newformat.bgcolor = obg
+    lines.addFormat(y, fpos, newformat)
+
+    if fpos != i + olen:
+      fpos = i + olen
+      if fpos < i + len:
+        lines.addFormat(y, i + olen, newformat)
+
+proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x, y: int) {.inline.} =
   var r: Rune
-
-  var y = (y + word.rely) div term.ppl
-  if y < 0: y = 0
-
-  var x = (x + word.relx) div term.ppc
+  var x = x
+  var y = y
   var i = 0
-  while x < 0 and i < word.str.len:
-    fastRuneAt(word.str, i, r)
-    x += r.width()
-  let linestr = word.str.substr(i)
-  i = 0
 
   while lines.len <= y:
     lines.addLine()
@@ -54,12 +70,17 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
 
   var nx = cx
   if nx < x:
-    lines.addFormat(y, i, newFormat())
-    lines[y].str &= ' '.repeat(x - nx)
-    i += x - nx
+    let spacelength = x - nx
+    var spaceformat = newFormat()
+    let str = ' '.repeat(spacelength)
+    lines.setFormats(y, spaceformat, oformats, i, str.len, ostr.len)
+
+    lines[y].str &= str
+    i += spacelength
     nx = x
 
-  lines.addFormat(y, i, word.format.formatFromWord(), word.format, word.format.node)
+  var wordformat = format.formatFromWord()
+  lines.setFormats(y, wordformat, oformats, i, linestr.len, ostr.len)
 
   lines[y].str &= linestr
   nx += linestr.width()
@@ -72,6 +93,21 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
   if i < ostr.len:
     let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
     lines[y].add(oline)
+
+proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
+  var r: Rune
+
+  var y = (y + word.rely) div term.ppl
+  if y < 0: y = 0
+
+  var x = (x + word.relx) div term.ppc
+  var i = 0
+  while x < 0 and i < word.str.len:
+    fastRuneAt(word.str, i, r)
+    x += r.width()
+  let linestr = word.str.substr(i)
+
+  lines.setText(linestr, word.format, x, y)
 
 proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term: TermAttributes) =
   var r: Rune
@@ -86,41 +122,99 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term
   if x < 0:
     i -= x
     x = 0
-
   let linestr = ' '.repeat(width - i)
-  i = 0
 
-  while lines.len <= y:
+  lines.setText(linestr, spacing.format, x, y)
+
+proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, endx, endy: int, term: TermAttributes) =
+  let color = color.cellColor()
+
+  var starty = starty div term.ppl
+  if starty < 0: starty = 0
+
+  var endy = endy div term.ppl
+  if endy < 0: endy = 0
+
+  if starty > endy:
+    let swap = endy
+    endy = starty
+    starty = swap
+
+  var startx = startx div term.ppc
+  if starty < 0: starty = 0
+
+  var endx = endx div term.ppc
+  if endy < 0: endy = 0
+
+  if startx > endx:
+    let swap = endx
+    endx = startx
+    startx = swap
+
+  while lines.len <= endy:
     lines.addLine()
 
-  var cx = 0
-  while cx < x and i < lines[y].str.len:
-    fastRuneAt(lines[y].str, i, r)
-    cx += r.width()
+  var y = starty
+  while y < endy:
+    # Make sure line.width() >= endx
+    let linewidth = lines[y].width()
+    if linewidth < endx:
+      lines.addFormat(y, lines[y].str.len, newFormat())
+      lines[y].str &= ' '.repeat(endx - linewidth)
 
-  let ostr = lines[y].str.substr(i)
-  let oformats = lines[y].formats.subformats(i)
-  lines[y].setLen(i)
+    # Find byte (i) of startx
+    var i = 0
+    var x = 0
+    while x < startx:
+      var r: Rune
+      fastRuneAt(lines[y].str, i, r)
+      x += r.width()
 
-  var nx = cx
-  if nx < x:
-    lines.addFormat(y, i, newFormat())
-    lines[y].str &= ' '.repeat(x - nx)
-    nx = x
+    # Process formatting around startx
+    if lines[y].formats.len == 0:
+      # No formats
+      lines.addFormat(y, startx, newFormat())
+    else:
+      let fi = lines[y].findFormatN(i) - 1
+      if lines[y].formats[fi].pos == i:
+        # Previous format equals i => next comes after, nothing to be done
+        discard
+      else:
+        # Previous format lower than i => separate format from startx
+        let copy = lines[y].formats[fi]
+        lines[y].formats[fi].pos = i
+        lines[y].formats.insert(copy, fi)
 
-  lines[y].str &= linestr
-  nx += linestr.len
-  if spacing.format != nil:
-    lines.addFormat(y, i, spacing.format.formatFromWord(), spacing.format, spacing.format.node)
+    # Find byte (ei) of endx
+    var ei = i
+    while x < endx:
+      var r: Rune
+      fastRuneAt(lines[y].str, ei, r)
+      x += r.width()
 
-  i = 0
-  while cx < nx and i < ostr.len:
-    fastRuneAt(ostr, i, r)
-    cx += r.width()
+    # Process formatting around endx
+    block:
+      assert lines[y].formats.len > 0
+      let fi = lines[y].findFormatN(ei) - 1
+      if fi == lines[y].formats.len - 1:
+        # Last format => nothing to be done
+        discard
+      else:
+        # Format ends before endx => separate format from endx
+        let copy = lines[y].formats[fi]
+        lines[y].formats[fi].pos = ei
+        lines[y].formats.insert(copy, fi + 1)
 
-  if i < ostr.len:
-    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
-    lines[y].add(oline)
+    # Paint format backgrounds between startx (byte i) and endx (byte ei)
+    var fi = 0
+    while fi < lines[y].formats.len:
+      if lines[y].formats[fi].pos > ei:
+        break
+      if lines[y].formats[fi].pos >= i:
+        lines[y].formats[fi].format.bgcolor = color
+      inc fi
+
+    inc y
 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes)
 
@@ -154,6 +248,10 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
     var (ctx, x, y) = stack.pop()
     x += ctx.relx
     y += ctx.rely
+
+    if ctx.specified{"background-color"}.rgba.a != 0: #TODO color mixing
+      grid.paintBackground(ctx.specified{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
+
     if ctx.inline != nil:
       assert ctx.nested.len == 0
       grid.renderInlineContext(ctx.inline, x, y, term)
