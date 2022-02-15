@@ -39,6 +39,9 @@ type
     str*: string
     format*: ComputedFormat
 
+  InlineBlock* = ref object of InlineAtom
+    bctx*: BlockContext
+
   InlineRow* = ref object
     atoms*: seq[InlineAtom]
     relx*: int
@@ -61,11 +64,15 @@ type
     shrink*: bool
     format*: ComputedFormat
 
-  BlockContext* = ref object of InlineAtom
+  BlockContext* = ref object
     inline*: InlineContext
     nested*: seq[BlockContext]
     specified*: CSSSpecifiedValues
     viewport*: Viewport
+    relx*: int
+    rely*: int
+    width*: int
+    height*: int
     margin_top*: int
     margin_bottom*: int
     margin_left*: int
@@ -94,6 +101,7 @@ type
     bctx*: BlockContext
 
   InlineBlockBox* = ref object of BlockBox
+    iblock*: InlineBlock # iblock.bctx is equivalent to box.bctx
     ictx*: InlineContext
 
   ListItemBox* = ref object of BlockBox

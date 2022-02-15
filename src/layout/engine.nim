@@ -320,6 +320,10 @@ proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockCont
   result = newBlockContext_common(parent, box)
   result.shrink = result.specified{"width"}.auto
 
+proc newInlineBlock(parent: BlockContext, box: InlineBlockBox): InlineBlock =
+  new(result)
+  result.bctx = parent.newInlineBlockContext(box)
+
 # Anonymous block box.
 proc newBlockContext(parent: BlockContext): BlockContext =
   new(result)
@@ -437,15 +441,16 @@ proc arrangeInlines(bctx: BlockContext, selfcontained: bool) =
 proc alignBlock(box: BlockBox, selfcontained = false)
 
 proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox) =
-  if box.bctx.done:
+  if box.iblock.bctx.done:
     return
   alignBlock(box, true)
 
-  box.bctx.relx += box.bctx.margin_left
-  box.bctx.width += box.bctx.margin_left
-  box.bctx.width += box.bctx.margin_right
+  let iblock = box.iblock
+  iblock.relx = iblock.bctx.relx + iblock.bctx.margin_left
+  iblock.width = iblock.bctx.width + iblock.bctx.margin_left + iblock.bctx.margin_right
+  iblock.height = iblock.bctx.height
 
-  box.ictx.addAtom(box.bctx, bctx.compwidth, box.specified)
+  box.ictx.addAtom(box.iblock, bctx.compwidth, box.specified)
   box.ictx.whitespacenum = 0
 
 # ew.
@@ -637,7 +642,8 @@ proc getPseudoBox(bctx: BlockContext, specified: CSSSpecifiedValues): CSSBox =
     box.bctx = bctx.newBlockContext(box)
   of DISPLAY_INLINE_BLOCK:
     let box = InlineBlockBox(box)
-    box.bctx = bctx.newInlineBlockContext(box)
+    box.iblock = bctx.newInlineBlock(box)
+    box.bctx = box.iblock.bctx
   else:
     discard
 
@@ -669,11 +675,9 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
       bctx = box.bctx
     of DISPLAY_INLINE_BLOCK:
       let box = InlineBlockBox(box)
-      if bctx == nil:
-        assert false
-        box.bctx = viewport.newBlockContext()
-      else:
-        box.bctx = bctx.newInlineBlockContext(box)
+      assert bctx != nil
+      box.iblock = bctx.newInlineBlock(box)
+      box.bctx = box.iblock.bctx
       bctx = box.bctx
     else:
       discard
@@ -708,7 +712,8 @@ proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): C
     bctx = box.bctx
   of DISPLAY_INLINE_BLOCK:
     let box = InlineBlockBox(box)
-    box.bctx = bctx.newInlineBlockContext(box)
+    box.iblock = bctx.newInlineBlock(box)
+    box.bctx = box.iblock.bctx
     bctx = box.bctx
   else: discard
 

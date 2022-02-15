@@ -27,6 +27,8 @@ func formatFromWord(computed: ComputedFormat): Format =
   if computed.textdecoration == TEXT_DECORATION_BLINK:
     result.blink = true
 
+#TODO format.pos signifying byte instead of actual position was a huge
+# mistake...
 proc setFormats(lines: var FlexibleGrid, y, ox, i: int, nx, cx: var int,
                 newformat: Format, oformats: seq[FormatCell],
                 str, ostr: string, computed: ComputedFormat = nil) {.inline.} =
@@ -46,7 +48,12 @@ proc setFormats(lines: var FlexibleGrid, y, ox, i: int, nx, cx: var int,
     if cx > newstrwidth + ox:
       # last oformat starts after newformat ends
       nx = ox + newstrwidth
+      eprint "ret"
       return
+
+    if osi >= ostr.len:
+      # I don't even know anymore
+      break
 
     # move nx to cx
     while nsi < str.len and nx < cx:
@@ -56,12 +63,14 @@ proc setFormats(lines: var FlexibleGrid, y, ox, i: int, nx, cx: var int,
 
     if format.format.bgcolor != newformat.bgcolor:
       newformat.bgcolor = format.format.bgcolor
+      eprint "odd", i + nsi, newformat.bgcolor, ox, nx
       if computed == nil:
         lines.addFormat(y, i + nsi, newformat)
       else:
         # have to pass nil to force new format... TODO?
         lines.addFormat(y, i + nsi, newformat, nil, computed.node)
 
+  eprint "end", ostr, "->", str, obg, nsi
   # last oformat starts before newformat ends
 
   # move cx to last old char
@@ -78,6 +87,7 @@ proc setFormats(lines: var FlexibleGrid, y, ox, i: int, nx, cx: var int,
 
   if nsi < str.len:
     newformat.bgcolor = obg
+    eprint "add", str, ":", i + nsi
     if computed == nil:
       lines.addFormat(y, i + nsi, newformat)
     else:
@@ -265,9 +275,9 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
       grid.addLine()
 
     for atom in row.atoms:
-      if atom of BlockContext:
-        let ctx = BlockContext(atom)
-        grid.renderBlockContext(ctx, x, y, term)
+      if atom of InlineBlock:
+        let iblock = InlineBlock(atom)
+        grid.renderBlockContext(iblock.bctx, x + iblock.relx, y + iblock.rely, term)
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x, y, term)
