@@ -27,28 +27,62 @@ func formatFromWord(computed: ComputedFormat): Format =
   if computed.textdecoration == TEXT_DECORATION_BLINK:
     result.blink = true
 
-#TODO: this fails to set background colors on non-ascii text correctly.
-# Either figure out a workaround or change format.pos to signify width instead.
-proc setFormats(lines: var FlexibleGrid, y: int, newformat: Format, oformats: seq[FormatCell], i, len, olen: int) {.inline.} =
+proc setFormats(lines: var FlexibleGrid, y, ox, i: int, nx, cx: var int,
+                newformat: Format, oformats: seq[FormatCell],
+                str, ostr: string, computed: ComputedFormat = nil) {.inline.} =
   let obg = newformat.bgcolor
+  let newstrwidth = str.width()
   var newformat = newformat
-  var fpos = i
+  var osi = 0
+  var nsi = 0
   for format in oformats:
-    if format.pos >= i + len:
-      break
+    assert i + ostr.len > format.pos
+    # move cx to format.pos
+    while i + osi < format.pos:
+      var r: Rune
+      fastRuneAt(ostr, osi, r)
+      cx += r.width()
+
+    if cx > newstrwidth + ox:
+      # last oformat starts after newformat ends
+      nx = ox + newstrwidth
+      return
+
+    # move nx to cx
+    while nsi < str.len and nx < cx:
+      var r: Rune
+      fastRuneAt(str, nsi, r)
+      nx += r.width()
+
     if format.format.bgcolor != newformat.bgcolor:
       newformat.bgcolor = format.format.bgcolor
-      lines.addFormat(y, fpos, newformat)
-      fpos = format.pos
+      if computed == nil:
+        lines.addFormat(y, i + nsi, newformat)
+      else:
+        # have to pass nil to force new format... TODO?
+        lines.addFormat(y, i + nsi, newformat, nil, computed.node)
 
-  if fpos < i + len:
+  # last oformat starts before newformat ends
+
+  # move cx to last old char
+  while osi < ostr.len:
+    var r: Rune
+    fastRuneAt(ostr, osi, r)
+    cx += r.width()
+
+  # move nx to cx
+  while nsi < str.len and nx < cx:
+    var r: Rune
+    fastRuneAt(str, nsi, r)
+    nx += r.width()
+
+  if nsi < str.len:
     newformat.bgcolor = obg
-    lines.addFormat(y, fpos, newformat)
-
-    if fpos != i + olen:
-      fpos = i + olen
-      if fpos < i + len:
-        lines.addFormat(y, i + olen, newformat)
+    if computed == nil:
+      lines.addFormat(y, i + nsi, newformat)
+    else:
+      lines.addFormat(y, i + nsi, newformat, computed, computed.node)
+    nx = ox + newstrwidth
 
 proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x, y: int) {.inline.} =
   var r: Rune
@@ -69,23 +103,24 @@ proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x
   lines[y].setLen(i)
 
   var nx = cx
+  let ox = cx
   if nx < x:
     let spacelength = x - nx
     var spaceformat = newFormat()
     let str = ' '.repeat(spacelength)
-    lines.setFormats(y, spaceformat, oformats, i, str.len, ostr.len)
+    lines.setFormats(y, ox, i, nx, cx, spaceformat, oformats, str, ostr)
 
     lines[y].str &= str
     i += spacelength
-    nx = x
+    assert nx == x
 
   var wordformat = format.formatFromWord()
-  lines.setFormats(y, wordformat, oformats, i, linestr.len, ostr.len)
+  lines.setFormats(y, x, i, nx, cx, wordformat, oformats, linestr, ostr, format)
 
   lines[y].str &= linestr
-  nx += linestr.width()
 
   i = 0
+  cx = ox
   while cx < nx and i < ostr.len:
     fastRuneAt(ostr, i, r)
     cx += r.width()

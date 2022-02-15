@@ -146,12 +146,6 @@ proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Format, computed: C
   if computed == nil or grid[y].formats.len == 0 or grid[y].formats[^1].computed != computed:
     grid[y].formats.add(FormatCell(format: format, node: node, computed: computed, pos: pos))
 
-proc addCell*(grid: var FlexibleGrid, y: int, r: Rune) =
-  grid[y].str &= $r
-
-proc addCell*(grid: var FlexibleGrid, r: Rune) =
-  grid.addCell(grid.len - 1, r)
-
 template inc_check(i: int) =
   inc i
   if i >= buf.len:
