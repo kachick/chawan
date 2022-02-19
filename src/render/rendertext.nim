@@ -8,7 +8,7 @@ proc renderPlainText*(text: string): FlexibleGrid =
   template add_format() =
     if af:
       af = false
-      result.addFormat(result.high, result[^1].str.len, format)
+      result[result.high].addFormat(result[^1].str.len, format)
 
   result.addLine()
   var i = 0
@@ -42,7 +42,7 @@ proc renderStream*(stream: Stream): FlexibleGrid =
   template add_format() =
     if af:
       af = false
-      result.addFormat(result.high, result[^1].str.len, format)
+      result[result.high].addFormat(result[^1].str.len, format)
 
   result.addLine()
   var af = false

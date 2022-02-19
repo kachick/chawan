@@ -142,9 +142,13 @@ proc addLine*(grid: var FlexibleGrid) =
 proc addFormat*(line: var FlexibleLine, pos: int, format: Format) =
   line.formats.add(FormatCell(format: format, pos: line.str.len))
 
-proc addFormat*(grid: var FlexibleGrid, y, pos: int, format: Format, computed: ComputedFormat = nil, node: Node = nil) =
-  if computed == nil or grid[y].formats.len == 0 or grid[y].formats[^1].computed != computed:
-    grid[y].formats.add(FormatCell(format: format, node: node, computed: computed, pos: pos))
+proc addFormat*(line: var FlexibleLine, pos: int, format: Format, computed: ComputedFormat) =
+  if computed != nil and line.formats.len > 0 and line.formats[^1].computed == computed and line.formats[^1].format.bgcolor != format.bgcolor:
+    return
+  if computed == nil:
+    line.formats.add(FormatCell(format: format, pos: pos))
+  else:
+    line.formats.add(FormatCell(format: format, computed: computed, node: computed.node, pos: pos))
 
 template inc_check(i: int) =
   inc i

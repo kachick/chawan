@@ -308,22 +308,22 @@ proc refreshDisplay(buffer: Buffer) =
 
     let dls = y * buffer.width
     var k = 0
-    var cf = line.findFormat(i)
-    var nf = line.findNextFormat(i)
+    var cf = line.findFormat(w)
+    var nf = line.findNextFormat(w)
     if w > buffer.fromx:
       while k < w - buffer.fromx:
         buffer.display[dls + k].runes.add(Rune(' '))
         inc k
 
     while i < line.str.len:
-      let j = i
+      let pw = w
       fastRuneAt(line.str, i, r)
       w += r.width()
       if w > buffer.fromx + buffer.width:
         break
-      if nf.pos != -1 and nf.pos <= j:
+      if nf.pos != -1 and nf.pos <= pw:
         cf = nf
-        nf = line.findNextFormat(j)
+        nf = line.findNextFormat(pw)
       buffer.display[dls + k].runes.add(r)
       if cf.pos != -1:
         buffer.display[dls + k].format = cf.format
@@ -483,7 +483,7 @@ proc cursorPrevWord*(buffer: Buffer) =
 
 proc cursorNextLink*(buffer: Buffer) =
   let line = buffer.lines[buffer.cursory]
-  var i = line.findFormatN(buffer.currentCursorBytes()) - 1
+  var i = line.findFormatN(buffer.cursorx) - 1
   var link: Element = nil
   if i >= 0:
     link = line.formats[i].node.getClickable()
@@ -493,7 +493,7 @@ proc cursorNextLink*(buffer: Buffer) =
     let format = line.formats[i]
     let fl = format.node.getClickable()
     if fl != nil and fl != link:
-      buffer.setCursorXB(format.pos)
+      buffer.setCursorX(format.pos)
       return
     inc i
 
@@ -504,13 +504,13 @@ proc cursorNextLink*(buffer: Buffer) =
       let format = line.formats[i]
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
-        buffer.setCursorXBY(format.pos, y)
+        buffer.setCursorXY(format.pos, y)
         return
       inc i
 
 proc cursorPrevLink*(buffer: Buffer) =
   let line = buffer.lines[buffer.cursory]
-  var i = line.findFormatN(buffer.currentCursorBytes()) - 1
+  var i = line.findFormatN(buffer.cursorx) - 1
   var link: Element = nil
   if i >= 0:
     link = line.formats[i].node.getClickable()
@@ -520,7 +520,7 @@ proc cursorPrevLink*(buffer: Buffer) =
     let format = line.formats[i]
     let fl = format.node.getClickable()
     if fl != nil and fl != link:
-      buffer.setCursorXB(format.pos)
+      buffer.setCursorX(format.pos)
       return
     dec i
 
@@ -544,7 +544,7 @@ proc cursorPrevLink*(buffer: Buffer) =
               ly = iy
               lx = format.pos
             dec i
-        buffer.setCursorXBY(lx, ly)
+        buffer.setCursorXY(lx, ly)
         return
       dec i
 
@@ -665,7 +665,7 @@ proc gotoAnchor*(buffer: Buffer) =
       if anchor in format.node:
         buffer.setCursorY(y)
         buffer.centerLine()
-        buffer.setCursorXB(format.pos)
+        buffer.setCursorX(format.pos)
         return
       inc i
 
@@ -1051,11 +1051,18 @@ proc drawBuffer*(buffer: Buffer) =
       print(line.str & '\n')
     else:
       var x = 0
+      var i = 0
       for f in line.formats:
-        print(line.str.substr(x, f.pos - 1))
+        var outstr = ""
+        assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
+        while x < f.pos:
+          var r: Rune
+          fastRuneAt(line.str, i, r)
+          outstr &= r
+          x += r.width()
+        print(outstr)
         print(format.processFormat(f.format))
-        x = f.pos
-      print(line.str.substr(x, line.str.len))
+      print(line.str.substr(i))
       print(format.processFormat(newFormat()))
       print('\n')
 

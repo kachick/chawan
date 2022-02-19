@@ -18,81 +18,39 @@ func formatFromWord(computed: ComputedFormat): Format =
     result.italic = true
   if computed.fontweight > 500:
     result.bold = true
-  if computed.textdecoration == TEXT_DECORATION_UNDERLINE:
+  case computed.textdecoration
+  of TEXT_DECORATION_UNDERLINE:
     result.underline = true
-  if computed.textdecoration == TEXT_DECORATION_OVERLINE:
+  of TEXT_DECORATION_OVERLINE:
     result.overline = true
-  if computed.textdecoration == TEXT_DECORATION_LINE_THROUGH:
+  of TEXT_DECORATION_LINE_THROUGH:
     result.strike = true
-  if computed.textdecoration == TEXT_DECORATION_BLINK:
+  of TEXT_DECORATION_BLINK:
     result.blink = true
+  else: discard
 
-#TODO format.pos signifying byte instead of actual position was a huge
-# mistake...
-proc setFormats(lines: var FlexibleGrid, y, ox, i: int, nx, cx: var int,
-                newformat: Format, oformats: seq[FormatCell],
-                str, ostr: string, computed: ComputedFormat = nil) {.inline.} =
+proc setFormats(line: var FlexibleLine, ox, newwidth, oldwidth: int,
+                newformat: Format, oformats: seq[FormatCell], computed: ComputedFormat = nil) {.inline.} =
   let obg = newformat.bgcolor
-  let newstrwidth = str.width()
   var newformat = newformat
-  var osi = 0
-  var nsi = 0
   for format in oformats:
-    assert i + ostr.len > format.pos
-    # move cx to format.pos
-    while i + osi < format.pos:
-      var r: Rune
-      fastRuneAt(ostr, osi, r)
-      cx += r.width()
-
-    if cx > newstrwidth + ox:
-      # last oformat starts after newformat ends
-      nx = ox + newstrwidth
-      eprint "ret"
-      return
-
-    if osi >= ostr.len:
-      # I don't even know anymore
-      break
-
-    # move nx to cx
-    while nsi < str.len and nx < cx:
-      var r: Rune
-      fastRuneAt(str, nsi, r)
-      nx += r.width()
-
+    assert format.pos < ox + oldwidth
     if format.format.bgcolor != newformat.bgcolor:
       newformat.bgcolor = format.format.bgcolor
-      eprint "odd", i + nsi, newformat.bgcolor, ox, nx
-      if computed == nil:
-        lines.addFormat(y, i + nsi, newformat)
+
+      if format.pos < ox:
+        line.addFormat(ox, newformat, computed)
       else:
-        # have to pass nil to force new format... TODO?
-        lines.addFormat(y, i + nsi, newformat, nil, computed.node)
+        line.addFormat(format.pos, newformat, computed)
 
-  eprint "end", ostr, "->", str, obg, nsi
-  # last oformat starts before newformat ends
-
-  # move cx to last old char
-  while osi < ostr.len:
-    var r: Rune
-    fastRuneAt(ostr, osi, r)
-    cx += r.width()
-
-  # move nx to cx
-  while nsi < str.len and nx < cx:
-    var r: Rune
-    fastRuneAt(str, nsi, r)
-    nx += r.width()
-
-  if nsi < str.len:
+  if ox + oldwidth < ox + newwidth:
     newformat.bgcolor = obg
-    eprint "add", str, ":", i + nsi
-    if computed == nil:
-      lines.addFormat(y, i + nsi, newformat)
+
+    #TODO this is probably a workaround for a bug...
+    if line.formats.len > 0 and line.formats[^1].pos == ox + oldwidth:
+      line.formats[^1].format.bgcolor = obg
     else:
-      lines.addFormat(y, i + nsi, newformat, computed, computed.node)
-    nx = ox + newstrwidth
+      line.addFormat(ox + oldwidth, newformat, computed)
 
 proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x, y: int) {.inline.} =
   var r: Rune
@@ -113,24 +71,25 @@ proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x
   lines[y].setLen(i)
 
   var nx = cx
-  let ox = cx
+  let oldstrwidth = ostr.width()
   if nx < x:
     let spacelength = x - nx
     var spaceformat = newFormat()
     let str = ' '.repeat(spacelength)
-    lines.setFormats(y, ox, i, nx, cx, spaceformat, oformats, str, ostr)
+    lines[y].setFormats(nx, spacelength, oldstrwidth, spaceformat, oformats)
 
     lines[y].str &= str
     i += spacelength
-    assert nx == x
+    nx = x
 
   var wordformat = format.formatFromWord()
-  lines.setFormats(y, x, i, nx, cx, wordformat, oformats, linestr, ostr, format)
+  let newstrwidth = linestr.width()
+  lines[y].setFormats(nx, newstrwidth, oldstrwidth, wordformat, oformats, format)
+  nx += newstrwidth
 
   lines[y].str &= linestr
 
   i = 0
-  cx = ox
   while cx < nx and i < ostr.len:
     fastRuneAt(ostr, i, r)
     cx += r.width()
@@ -204,60 +163,42 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
     # Make sure line.width() >= endx
     let linewidth = lines[y].width()
     if linewidth < endx:
-      lines.addFormat(y, lines[y].str.len, newFormat())
+      lines[y].addFormat(linewidth, newFormat())
       lines[y].str &= ' '.repeat(endx - linewidth)
-
-    # Find byte (i) of startx
-    var i = 0
-    var x = 0
-    while x < startx:
-      var r: Rune
-      fastRuneAt(lines[y].str, i, r)
-      x += r.width()
 
     # Process formatting around startx
     if lines[y].formats.len == 0:
       # No formats
-      lines.addFormat(y, startx, newFormat())
+      lines[y].addFormat(startx, newFormat())
     else:
-      let fi = lines[y].findFormatN(i) - 1
-      if lines[y].formats[fi].pos == i:
-        # Previous format equals i => next comes after, nothing to be done
+      let fi = lines[y].findFormatN(startx) - 1
+      if lines[y].formats[fi].pos == startx:
+        # Last format equals startx => next comes after, nothing to be done
         discard
       else:
-        # Previous format lower than i => separate format from startx
+        # Last format lower than startx => separate format from startx
         let copy = lines[y].formats[fi]
-        lines[y].formats[fi].pos = i
+        lines[y].formats[fi].pos = startx
         lines[y].formats.insert(copy, fi)
 
-    # Find byte (ei) of endx
-    var ei = i
-    while x < endx:
-      var r: Rune
-      fastRuneAt(lines[y].str, ei, r)
-      x += r.width()
-
     # Process formatting around endx
-    block:
-      assert lines[y].formats.len > 0
-      let fi = lines[y].findFormatN(ei) - 1
-      if fi == lines[y].formats.len - 1:
-        # Last format => nothing to be done
-        discard
-      else:
-        # Format ends before endx => separate format from endx
-        let copy = lines[y].formats[fi]
-        lines[y].formats[fi].pos = ei
-        lines[y].formats.insert(copy, fi + 1)
+    assert lines[y].formats.len > 0
+    let fi = lines[y].findFormatN(endx) - 1
+    if fi == lines[y].formats.len - 1:
+      # Last format => nothing to be done
+      discard
+    else:
+      # Format ends before endx => separate format from endx
+      let copy = lines[y].formats[fi]
+      lines[y].formats[fi].pos = endx
+      lines[y].formats.insert(copy, fi + 1)
 
-    # Paint format backgrounds between startx (byte i) and endx (byte ei)
-    var fi = 0
-    while fi < lines[y].formats.len:
-      if lines[y].formats[fi].pos > ei:
+    # Paint format backgrounds between startx and endx
+    for fi in 0..lines[y].formats.high:
+      if lines[y].formats[fi].pos > endx:
         break
-      if lines[y].formats[fi].pos >= i:
+      if lines[y].formats[fi].pos >= startx:
         lines[y].formats[fi].format.bgcolor = color
-      inc fi
 
     inc y
 
@@ -294,7 +235,7 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
     x += ctx.relx
     y += ctx.rely
 
-    if ctx.specified{"background-color"}.rgba.a != 0: #TODO color mixing
+    if ctx.specified{"background-color"}.rgba.a != 0: #TODO color blending
       grid.paintBackground(ctx.specified{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
 
     if ctx.inline != nil:
