@@ -1,3 +1,4 @@
+import algorithm
 import terminal
 import strutils
 import unicode
@@ -760,28 +761,9 @@ const ambiguous = [
 # to UCS without changing the traditional terminal character-width behaviour.
 # It is not otherwise recommended for general use.
 
-# auxiliary function for binary search in interval table
-func bisearch(ucs: Rune, table: openarray[(int, int)]): bool =
-  var max = table.high
-  var min = 0
-  var mid: int
-
-  if int(ucs) < table[0][0] or int(ucs) > table[max][1]:
-    return false
-
-  while max >= min:
-    mid = (min + max) div 2
-    if int(ucs) > table[mid][1]:
-      min = mid + 1
-    elif int(ucs) < table[mid][0]:
-      max = mid - 1
-    else:
-      return true
-  return false
-
 func is_dwidth_cjk(r: Rune): bool =
   # binary search in table of non-spacing characters
-  if bisearch(r, ambiguous):
+  if binarySearch(ambiguous, int32(r), (x, y) => (if x[0] < y: -1 elif x[1] > y: 1 else: 0)) != -1:
     return true
 
   return r.is_dwidth()
