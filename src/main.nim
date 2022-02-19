@@ -20,7 +20,8 @@ Options:
     -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
     -T, --type <type>           Specify content mime type
     -v, --version               Print version information
-    -h, --help                  Print this page"""
+    -h, --help                  Print this page
+    --                          Interpret all following arguments as URLs/files"""
   if i == 0:
     echo s
   else:
@@ -31,8 +32,13 @@ var i = 0
 var ctype = ""
 var pages: seq[string]
 var dump = false
+var escape_all = false
 while i < params.len:
   let param = params[i]
+  if escape_all: # after --
+    pages.add(param)
+    inc i
+    continue
   case param
   of "-v", "--version":
     echo "Chawan browser v0.1 ",
@@ -60,10 +66,13 @@ while i < params.len:
       gconfig.parseConfig(getCurrentDir(), params[i])
     else:
       help(1)
-  elif param[0] == '-':
-    help(1)
-  else:
-    pages.add(param)
+  of "--":
+    escape_all = true
+  elif param.len > 0:
+    if param[0] == '-':
+      help(1)
+    else:
+      pages.add(param)
   inc i
 
 if pages.len == 0:
