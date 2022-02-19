@@ -411,6 +411,11 @@ const PathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', '`', '{', '}'})
 const UserInfoPercentEncodeSet* = (PathPercentEncodeSet + {'/', ':', ';', '=', '@', '['..'^', '|'})
 const ComponentPercentEncodeSet* = (UserInfoPercentEncodeSet + {'$'..'&', '+', ','})
 const ApplicationXWWWFormUrlEncodedSet* = (ComponentPercentEncodeSet + {'!', '\''..')', '~'})
+# used by client
+when defined(windows) or defined(OS2) or defined(DOS):
+  const LocalPathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', ':'})
+else:
+  const LocalPathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', ':', '\\'})
 
 proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = false) {.inline.} =
   if spaceAsPlus and c == ' ':
@@ -427,6 +432,9 @@ proc percentEncode*(append: var string, s: string, set: set[char], spaceAsPlus =
 
 func percentEncode*(c: char, set: set[char]): string {.inline.} =
   result.percentEncode(c, set)
+
+func percentEncode*(s: string, set: set[char]): string =
+  result.percentEncode(s, set)
 
 func percentDecode*(input: string): string =
   var i = 0

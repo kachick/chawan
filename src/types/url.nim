@@ -1,4 +1,4 @@
-#See https://url.spec.whatwg.org/#url-parsing.
+# See https://url.spec.whatwg.org/#url-parsing.
 import strutils
 import tables
 import options
@@ -698,12 +698,12 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
           state = FRAGMENT_STATE
       elif has:
         #TODO If c is not a URL code point and not U+0025 (%), validation error.
-        #TOOD If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
+        #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
         buffer &= c
     of FRAGMENT_STATE:
       if has:
         #TODO If c is not a URL code point and not U+0025 (%), validation error.
-        #TOOD If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
+        #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
         url.fragment.get.percentEncode(c, FragmentPercentEncodeSet)
     inc pointer
   return url.some

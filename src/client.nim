@@ -143,11 +143,17 @@ proc loadUrl(client: Client, url: string, ctype = "") =
   if firstparse.issome:
     client.gotoUrl(url, none(ClickAction), none(Url), true, true, ctype)
   else:
+    let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
     try:
-      let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
+      # attempt to load local file
       client.gotoUrl(url, none(ClickAction), cdir, true, true, ctype)
     except LoadError:
-      client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, true, ctype)
+      try:
+        # attempt to load local file (this time percent encoded)
+        client.gotoUrl(percentEncode(url, LocalPathPercentEncodeSet), none(ClickAction), cdir, true, true, ctype)
+      except LoadError:
+        # attempt to load remote page
+        client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, true, ctype)
 
 proc reloadPage(client: Client) =
   client.gotoUrl(client.buffer.location, none(ClickAction), none(Url), true, false, client.buffer.contenttype)
