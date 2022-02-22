@@ -29,7 +29,7 @@ proc newFileLoader*(): FileLoader =
 proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
   if url.scheme == "file":
     when defined(windows) or defined(OS2) or defined(DOS):
-      let path = url.path.serialize_unicode_windows()
+      let path = url.path.serialize_unicode_dos()
     else:
       let path = url.path.serialize_unicode()
     result.contenttype = guessContentType(path)
