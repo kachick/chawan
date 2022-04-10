@@ -1,0 +1,67 @@
+CHAWAN LAYOUT ENGINE DESIGN DOCUMENT
+
+Laying out boxes turns out to be pretty damn expensive. This is the outline of
+a simple (YMMV) yet effective layout engine that can take advantage of previous
+layout passes. It doesn't include CSS cascading, which is, by the way, pretty
+damn expensive as well but is done by a different module.
+
+Most algorithms required by this engine are recursive, which is a bit of a
+problem because nim has no guarantees of your program not running out of stack
+randomly.
+
+In most cases this shouldn't be a problem but avoiding DOS attacks will be a
+bit difficult. Currently we don't support CSS that can be much deeper than the
+DOM anyway (does that even exist?) so it shouldn't be that much of a problem if
+we can limit the DOM depth. (I've read Safari had like a 250 depth limit at
+some point, which sounds reasonable.)
+
+BUILDER GENERATION:
+-> *Box (BlockBox etc.) -> BlockBoxBuilder, InlineBoxBuilder, later also
+   Table/Ruby builders
+--> this means that it's not a direct representation of the DOM. and it follows
+    that we can't preserve builders (?), so they have to be VERY cheap to
+    create. (maybe we can, but I kind of doubt it's worth the trouble. might
+    have to investigate the performance implications here.)
+--> Builder attributes: children; css; direction; generated
+--> generated should have 1:1 correspondence to builders. this helps figure
+    out what to keep at a tree rebuild: those with matching builders are kept,
+    those without are re-generated.
+---> the re-generator algorithm sounds complicated... TODO figure something out
+     here
+
+BUILDING PROCESS:
+-> *Context -> BlockContext, InlineContext
+--> Context attributes: children; direction (for non-flow-roots, flow root
+    comes later); sizes: content box; padding box; border box; margin box
+--> meaning exact positions are NOT calculated until rendering, but sizes are.
+    this allows us to avoid rebuilding sibling contexts when a block context
+    changes.
+--> BlockContext children: children (BlockContext) OR flow root (InlineContext)
+--> BlockContext can either contain block children only or be a flow root.
+    those trying to be both are broken up in builder generation.
+--> flow root is whenever the outer display is block and the inner flow. in
+    practice it should be the same as flow-root. TODO: investigate non-flow
+    inline display.
+--> InlineContext is built from InlineBoxBuilder (TODO decide if these are
+    contexts or boxes... context should be better I think...)
+    it contains a sequence of line boxes, laid out top to bottom (ideally they
+    could be left-to-right, etc...)
+    line boxes contain inline atoms, which need to have exact positions, I
+    think. an inline atom is either an inline block or a word. inline atoms
+    are separated by inline spaces which are basically spaces you can click.
+--> apropos clicking, EVERY inline word has a reference to the html element it
+    belongs to.
+--> if ANY inline context is rebuilt, EVERY inline context in the same flow
+    root must be rebuilt as well. keeping track of line boxes that haven't
+    changed sounds like a pain in the ass with minimal benefits so we don't.
+
+RENDERING PROCESS
+-> calculating positions must be done here.
+--> so arrangeInlines/arrangeBlocks must be done here
+---> and we need to somehow manage margins as well.
+--> since we should now have box sizes we can easily draw backgrounds as well.
+-> the old layout engine renders the entire document, which kind of makes
+   rendering take way too long. so one thing we could try is to render the
+   pages the user is looking at, the one before that and the one after that.
+   not sure if this will actually help though, since it would mean we have to
+   re-render the entire page every time the user scrolls up/down...
