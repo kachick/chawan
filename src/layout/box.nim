@@ -7,16 +7,26 @@ import io/term
 type
   Viewport* = ref object
     term*: TermAttributes
-    root*: BlockBox
-    map*: seq[CSSBox]
+    root*: BlockBoxBuilder
 
-  CSSBox* = ref object of RootObj
-    t*: CSSDisplay
-    children*: seq[CSSBox]
+  BoxBuilder* = ref object of RootObj
+    children*: seq[BoxBuilder]
     inlinelayout*: bool
     specified*: CSSSpecifiedValues
     node*: Node
     element*: Element
+
+  InlineBoxBuilder* = ref object of BoxBuilder
+    text*: seq[string]
+    ictx*: InlineContext
+    newline*: bool
+
+  BlockBoxBuilder* = ref object of BoxBuilder
+    bctx*: BlockContext
+
+  InlineBlockBoxBuilder* = ref object of BlockBoxBuilder
+    iblock*: InlineBlock # iblock.bctx is equivalent to box.bctx
+    ictx*: InlineContext
 
   InlineAtom* = ref object of RootObj
     relx*: int
@@ -87,21 +97,8 @@ type
     nocenter*: bool
     compheight*: Option[int]
     shrink*: bool
-    done*: bool
 
-  InlineBox* = ref object of CSSBox
-    text*: seq[string]
-    ictx*: InlineContext
-    newline*: bool
+  #MarkerBox* = ref object of InlineBoxBuilder
+  #  outside*: bool
 
-  MarkerBox* = ref object of InlineBox
-    outside*: bool
-
-  BlockBox* = ref object of CSSBox
-    bctx*: BlockContext
-
-  InlineBlockBox* = ref object of BlockBox
-    iblock*: InlineBlock # iblock.bctx is equivalent to box.bctx
-    ictx*: InlineContext
-
-  ListItemBox* = ref object of BlockBox
+  #ListItemBox* = ref object of BlockBox

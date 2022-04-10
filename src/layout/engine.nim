@@ -24,6 +24,8 @@ func cells_h(l: CSSLength, state: Viewport, p: int): int =
 func px(l: CSSLength, state: Viewport, p = 0): int {.inline.} =
   return px(l, state.term, p)
 
+# Build phase
+
 type InlineState = object
   ictx: InlineContext
   skip: bool
@@ -305,22 +307,22 @@ proc computedDimensions(bctx: BlockContext, width: int, height: Option[int]) =
     elif height.issome:
       bctx.compheight = pheight.px(bctx.viewport, height.get).some
 
-proc newBlockContext_common(parent: BlockContext, box: CSSBox): BlockContext {.inline.} =
+proc newBlockContext_common(parent: BlockContext, box: BoxBuilder): BlockContext {.inline.} =
   new(result)
 
   result.viewport = parent.viewport
   result.specified = box.specified
   result.computedDimensions(parent.compwidth, parent.compheight)
 
-proc newBlockContext(parent: BlockContext, box: BlockBox): BlockContext =
+proc newBlockContext(parent: BlockContext, box: BlockBoxBuilder): BlockContext =
   result = newBlockContext_common(parent, box)
   result.shrink = result.specified{"width"}.auto and parent.shrink
 
-proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBox): BlockContext =
+proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBoxBuilder): BlockContext =
   result = newBlockContext_common(parent, box)
   result.shrink = result.specified{"width"}.auto
 
-proc newInlineBlock(parent: BlockContext, box: InlineBlockBox): InlineBlock =
+proc newInlineBlock(parent: BlockContext, box: InlineBlockBoxBuilder): InlineBlock =
   new(result)
   result.bctx = parent.newInlineBlockContext(box)
 
@@ -346,7 +348,7 @@ proc newInlineContext(bctx: BlockContext): InlineContext =
   result.shrink = bctx.shrink
   bctx.inline = result
 
-# Blocks' positions do not have to be arranged if alignBlocks is called with
+# Blocks' positions do not have to be arranged if buildBlocks is called with
 # children, whence the separate procedure.
 proc arrangeBlocks(bctx: BlockContext, selfcontained: bool) =
   var y = 0
@@ -438,50 +440,35 @@ proc arrangeInlines(bctx: BlockContext, selfcontained: bool) =
   else:
     bctx.width = bctx.compwidth
 
-proc alignBlock(box: BlockBox, selfcontained = false)
+proc buildBlock(box: BlockBoxBuilder, parent: BlockContext, selfcontained = false): BlockContext
 
-proc alignInlineBlock(bctx: BlockContext, box: InlineBlockBox) =
-  if box.iblock.bctx.done:
-    return
-  alignBlock(box, true)
+#TODO
+proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, parentblock: BlockContext): InlineBlock =
+  return
 
-  let iblock = box.iblock
-  iblock.relx = iblock.bctx.relx + iblock.bctx.margin_left
-  iblock.width = iblock.bctx.width + iblock.bctx.margin_left + iblock.bctx.margin_right
-  iblock.height = iblock.bctx.height
+proc buildInlineBlock(bctx: BlockContext, box: InlineBlockBoxBuilder) =
+  assert box.children.len == 1 and box.children[0].specified{"display"} == DISPLAY_BLOCK
+  #TODO
+  
+  #let nestedblock = BlockBoxBuilder(box.children[0])
+  #nestedblock.bctx = bctx.newInlineBlockContext(box)
+  #nestedblock.buildBlock(bctx)
 
-  box.ictx.addAtom(box.iblock, bctx.compwidth, box.specified)
-  box.ictx.whitespacenum = 0
+  #let box = InlineBlockBoxBuilder(box)
+  #box.iblock = InlineBlock(bctx: nestedblock.bctx)
+  #box.bctx = box.iblock.bctx
 
-# ew.
-#TODO get rid of this hack
-proc alignMarkerOutside(bctx: BlockContext, box: MarkerBox) =
-  let oldwidth = box.ictx.thisrow.width
-  let oldheight = box.ictx.thisrow.height
-  let oldrow = box.ictx.thisrow
-  assert box.text.len == 1
-  assert box.children.len == 0
+  #buildBlock(box, bctx, true)
 
-  box.ictx.renderText(box.text[0], bctx.compwidth, box.specified, box.node)
+  #let iblock = box.iblock
+  #iblock.relx = iblock.bctx.relx + iblock.bctx.margin_left
+  #iblock.width = iblock.bctx.width + iblock.bctx.margin_left + iblock.bctx.margin_right
+  #iblock.height = iblock.bctx.height
 
-  box.ictx.thisrow = oldrow # If wrapped...
+  #box.ictx.addAtom(box.iblock, bctx.compwidth, box.specified)
+  #box.ictx.whitespacenum = 0
 
-  if box.ictx.thisrow.atoms.len > 0:
-    let atom = box.ictx.thisrow.atoms[^1]
-    atom.relx -= atom.width
-
-    box.ictx.flushWhitespace(box.specified)
-    let ws = box.ictx.thisrow.atoms[^1]
-
-    # If flushWhitespace did anything
-    if ws != atom:
-      atom.relx -= ws.width
-
-  box.ictx.height = -1 #TODO I'm not even sure why this works
-  box.ictx.thisrow.width = oldwidth
-  box.ictx.thisrow.height = oldheight
-
-proc alignInline(bctx: BlockContext, box: InlineBox) =
+proc buildInline(bctx: BlockContext, box: InlineBoxBuilder) =
   assert box.ictx != nil
   if box.newline:
     box.ictx.flushLine(bctx.specified, bctx.compwidth)
@@ -499,24 +486,19 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
     box.ictx.renderText(text, bctx.compwidth, box.specified, box.node)
 
   for child in box.children:
-    case child.t
+    case child.specified{"display"}
     of DISPLAY_INLINE:
-      let child = InlineBox(child)
+      let child = InlineBoxBuilder(child)
       child.ictx = box.ictx
-      if child of MarkerBox:
-        let child = MarkerBox(child)
-        if child.outside:
-          bctx.alignMarkerOutside(child)
-        else:
-          bctx.alignInline(child)
-      else:
-        bctx.alignInline(child)
+      bctx.buildInline(child)
     of DISPLAY_INLINE_BLOCK:
-      let child = InlineBlockBox(child)
-      child.ictx = box.ictx
-      bctx.alignInlineBlock(child)
+      #TODO
+      #let child = InlineBlockBoxBuilder(child)
+      #child.ictx = box.ictx
+      #bctx.buildInlineBlock(child)
+      discard
     else:
-      assert false, "child.t is " & $child.t
+      assert false, "child.t is " & $child.specified{"display"}
 
   let padding_right = box.specified{"padding-right"}.px(bctx.viewport, bctx.compwidth)
   if padding_right > 0:
@@ -525,28 +507,28 @@ proc alignInline(bctx: BlockContext, box: InlineBox) =
   let margin_right = box.specified{"margin-right"}.px(bctx.viewport, bctx.compwidth)
   box.ictx.thisrow.width += margin_right
 
-proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
+proc buildInlines(bctx: BlockContext, inlines: seq[BoxBuilder]) =
   let ictx = bctx.newInlineContext()
   if inlines.len > 0:
     for child in inlines:
-      case child.t
+      case child.specified{"display"}
       of DISPLAY_INLINE:
-        let child = InlineBox(child)
+        let child = InlineBoxBuilder(child)
         child.ictx = ictx
-        if child of MarkerBox:
-          let child = MarkerBox(child)
-          if child.outside:
-            bctx.alignMarkerOutside(child)
-          else:
-            bctx.alignInline(child)
-        else:
-          bctx.alignInline(child)
+        #if child of MarkerBox:
+        #  let child = MarkerBox(child)
+        #  if child.outside:
+        #    bctx.buildMarkerOutside(child)
+        #  else:
+        #    bctx.buildInline(child)
+        #else:
+        bctx.buildInline(child)
       of DISPLAY_INLINE_BLOCK:
-        let child = InlineBlockBox(child)
+        let child = InlineBlockBoxBuilder(child)
         child.ictx = ictx
-        bctx.alignInlineBlock(child)
+        bctx.buildInlineBlock(child)
       else:
-        assert false, "child.t is " & $child.t
+        assert false, "child.t is " & $child.specified{"display"}
     ictx.finish(bctx.specified, bctx.compwidth)
 
   bctx.height += ictx.height
@@ -554,250 +536,247 @@ proc alignInlines(bctx: BlockContext, inlines: seq[CSSBox]) =
     bctx.height = bctx.compheight.get
   bctx.width = max(bctx.width, ictx.maxwidth)
 
-template flush_group() =
-  if blockgroup.len > 0:
-    let gctx = newBlockContext(bctx)
-    gctx.alignInlines(blockgroup)
-    blockgroup.setLen(0)
-    bctx.nested.add(gctx)
-
-proc alignBlocks(bctx: BlockContext, blocks: seq[CSSBox], blockgroup: var seq[CSSBox], node: Node) =
-  # Box contains block boxes.
-  # If present, group inline boxes together in anonymous block boxes. Place
-  # block boxes inbetween these.
+proc buildBlocks(bctx: BlockContext, blocks: seq[BoxBuilder], node: Node) =
   for child in blocks:
-    case child.t
+    case child.specified{"display"}
     of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
-      let child = BlockBox(child)
-      flush_group()
-      bctx.nested.add(child.bctx)
-      alignBlock(child)
-    of DISPLAY_INLINE:
-      if child.inlinelayout:
-        blockgroup.add(child)
-      else:
-        bctx.alignBlocks(child.children, blockgroup, child.node)
-    of DISPLAY_INLINE_BLOCK:
-      blockgroup.add(child)
-    else: discard #TODO
+      bctx.nested.add(buildBlock(BlockBoxBuilder(child), bctx))
+    else:
+      assert false, "child.t is " & $child.specified{"display"}
 
-proc alignBlock(box: BlockBox, selfcontained = false) =
-  if box.bctx.done:
-    return
+# Build a block box inside another block box, based on a builder.
+proc buildBlock(box: BlockBoxBuilder, parent: BlockContext, selfcontained = false): BlockContext =
+  assert parent != nil
+  result = parent.newBlockContext()
   if box.inlinelayout:
-    # Box only contains inline boxes.
-    box.bctx.alignInlines(box.children)
-    box.bctx.arrangeInlines(selfcontained)
+    # Builder only contains inline boxes.
+    result.buildInlines(box.children)
+    result.arrangeInlines(selfcontained)
   else:
-    var blockgroup: seq[CSSBox]
-    box.bctx.alignBlocks(box.children, blockgroup, box.node)
-    let bctx = box.bctx
-    flush_group()
-    box.bctx.arrangeBlocks(selfcontained)
-  box.bctx.done = true
+    # Builder only contains block boxes.
+    result.buildBlocks(box.children, box.node)
+    result.arrangeBlocks(selfcontained)
 
-proc getBox(specified: CSSSpecifiedValues): CSSBox =
-  case specified{"display"}
-  of DISPLAY_BLOCK:
-    result = BlockBox()
-  of DISPLAY_INLINE_BLOCK:
-    result = InlineBlockBox()
-  of DISPLAY_INLINE:
-    result = InlineBox()
-  of DISPLAY_LIST_ITEM:
-    result = ListItemBox()
-  of DISPLAY_NONE: return nil
-  else: return nil
-  result.t = specified{"display"}
+# Build a block box whose parent is the viewport, based on a builder.
+proc buildBlock(box: BlockBoxBuilder, viewport: Viewport, selfcontained = false): BlockContext =
+  result = viewport.newBlockContext()
+  if box.inlinelayout:
+    # Builder only contains inline boxes.
+    result.buildInlines(box.children)
+    result.arrangeInlines(selfcontained)
+  else:
+    # Builder only contains block boxes.
+    result.buildBlocks(box.children, box.node)
+    result.arrangeBlocks(selfcontained)
+
+# Generation phase
+
+proc getInlineBlockBox(specified: CSSSpecifiedValues): InlineBlockBoxBuilder =
+  assert specified{"display"} == DISPLAY_INLINE_BLOCK
+  new(result)
   result.specified = specified
 
-# Returns a block box, disregarding the specified value
-proc getBlockBox(specified: CSSSpecifiedValues): BlockBox =
+# Returns a block box, disregarding the specified value of display
+proc getBlockBox(specified: CSSSpecifiedValues): BlockBoxBuilder =
   new(result)
-  result.t = DISPLAY_BLOCK
   result.specified = specified.copyProperties()
-  result.specified{"display"} = DISPLAY_BLOCK
+  #WARNING yes there is a {}= macro but that modifies the specified value
+  # reference itself and those are copied across arrays...
+  #TODO figure something out here
+  result.specified[PROPERTY_DISPLAY] = CSSSpecifiedValue(t: PROPERTY_DISPLAY, v: VALUE_DISPLAY, display: DISPLAY_BLOCK)
 
-proc getTextBox(box: CSSBox): InlineBox =
+proc getTextBox(box: BoxBuilder): InlineBoxBuilder =
   new(result)
-  result.t = DISPLAY_INLINE
   result.inlinelayout = true
   result.specified = box.specified.inheritProperties()
 
-proc getMarkerBox(box: CSSBox): MarkerBox =
+proc getTextBox(specified: CSSSpecifiedValues): InlineBoxBuilder =
   new(result)
-  result.t = DISPLAY_INLINE
   result.inlinelayout = true
-  result.specified = box.specified.inheritProperties()
+  result.specified = specified.inheritProperties()
 
-proc getPseudoBox(bctx: BlockContext, specified: CSSSpecifiedValues): CSSBox =
-  let box = getBox(specified)
+#TODO
+#proc getMarkerBox(box: Box): MarkerBox =
+#  new(result)
+#  result.inlinelayout = true
+#  result.specified = box.specified.inheritProperties()
 
-  if box == nil:
-    return nil
-
-  case box.specified{"display"}
-  of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
-    let box = BlockBox(box)
-    box.bctx = bctx.newBlockContext(box)
-  of DISPLAY_INLINE_BLOCK:
-    let box = InlineBlockBox(box)
-    box.iblock = bctx.newInlineBlock(box)
-    box.bctx = box.iblock.bctx
-  else:
-    discard
-
-  box.inlinelayout = true
-  if specified{"content"}.len > 0:
-    let content = getTextBox(box)
-    content.text.add($specified{"content"})
-    box.children.add(content)
-  return box
-
-func getInputBox(box: CSSBox, input: HTMLInputElement, viewport: Viewport): InlineBox =
-  let textbox = box.getTextBox()
+func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
+  let textbox = parent.getTextBox()
   textbox.node = input
   textbox.text.add(input.inputString())
   return textbox
 
-proc generateBox(elem: Element, viewport: Viewport, bctx: BlockContext = nil): CSSBox =
-  elem.rendered = true
-  if viewport.map[elem.uid] != nil:
-    let box = viewport.map[elem.uid]
-    var bctx = bctx
-    case box.specified{"display"}
-    of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
-      let box = BlockBox(box)
-      if bctx == nil:
-        box.bctx = viewport.newBlockContext()
-      else:
-        box.bctx = bctx.newBlockContext(box)
-      bctx = box.bctx
-    of DISPLAY_INLINE_BLOCK:
-      let box = InlineBlockBox(box)
-      assert bctx != nil
-      box.iblock = bctx.newInlineBlock(box)
-      box.bctx = box.iblock.bctx
-      bctx = box.bctx
-    else:
-      discard
+func getInputBox(specified: CSSSpecifiedValues, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
+  let textbox = specified.getTextBox()
+  textbox.node = input
+  textbox.text.add(input.inputString())
+  return textbox
 
-    var i = 0
-    while i < box.children.len:
-      let child = box.children[i]
-      if child.element != nil:
-        box.children[i] = generateBox(child.element, viewport, bctx)
-      inc i
-    return viewport.map[elem.uid]
+# Don't generate empty anonymous inline blocks between block boxes
+func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], specified: CSSSpecifiedValues, text: Text): bool =
+  return blockgroup.len > 0 and blockgroup[^1].specified{"display"} == DISPLAY_INLINE or
+    specified{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
+    not text.data.onlyWhitespace()
 
-  let box = if bctx != nil:
-    getBox(elem.css)
-  else:
-    getBlockBox(elem.css)
+proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder
 
-  if box == nil:
-    return nil
+template flush_block_group3(specified: CSSSpecifiedValues) =
+  if blockgroup.len > 0:
+    let bbox = getBlockBox(specified.inheritProperties())
+    bbox.inlinelayout = true
+    bbox.children = blockgroup
+    box.children.add(bbox)
+    blockgroup.setLen(0)
 
-  box.node = elem
-  box.element = elem
+template flush_ibox() =
+  if ibox != nil:
+    assert ibox.specified{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK}
+    blockgroup.add(ibox)
+    ibox = nil
 
-  var bctx = bctx
-  case box.specified{"display"}
+template generate_from_elem(child: Element) =
+  if child.tagType == TAG_BR:
+    flush_ibox
+    ibox = box.getTextBox()
+    ibox.newline = true
+
+  case child.css{"display"}
   of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
-    let box = BlockBox(box)
-    if bctx == nil:
-      box.bctx = viewport.newBlockContext()
-    else:
-      box.bctx = bctx.newBlockContext(box)
-    bctx = box.bctx
+    flush_block_group3(elem.css)
+    let childbox = child.generateBlockBox(viewport)
+    box.children.add(childbox)
+  of DISPLAY_INLINE:
+    flush_ibox
+
+    box.generateInlineBoxes(child, blockgroup, viewport)
   of DISPLAY_INLINE_BLOCK:
-    let box = InlineBlockBox(box)
-    box.iblock = bctx.newInlineBlock(box)
-    box.bctx = box.iblock.bctx
-    bctx = box.bctx
-  else: discard
+    flush_ibox
+    let childbox = getInlineBlockBox(child.css)
+    let childblock = child.generateBlockBox(viewport)
+    childbox.children.add(childblock)
+    blockgroup.add(childbox)
+  else:
+    discard #TODO
 
-  var ibox: InlineBox
-  template add_ibox() =
-    if ibox != nil:
-      box.children.add(ibox)
-      ibox = nil
+proc generateInlinePseudoBox(box: BlockBoxBuilder, specified: CSSSpecifiedValues, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
+  var ibox: InlineBoxBuilder = nil
 
-  template add_box(child: CSSBox) =
-    add_ibox()
-    box.children.add(child)
-    if child.t notin {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK} or not child.inlinelayout:
-      box.inlinelayout = false
+  if specified{"content"}.len > 0:
+    ibox = getTextBox(specified)
+    ibox.text.add($specified{"content"})
 
-  box.inlinelayout = true
+  flush_ibox
 
-  if box.t == DISPLAY_LIST_ITEM:
-    var ordinalvalue = 1
-    if elem.tagType == TAG_LI:
-      ordinalvalue = HTMLLIElement(elem).ordinalvalue
-    let marker = box.getMarkerBox()
-    marker.node = elem
-    marker.text.add(elem.css{"list-style-type"}.listMarker(ordinalvalue))
-    if elem.css{"list-style-position"} == LIST_STYLE_POSITION_OUTSIDE:
-      marker.outside = true
-    add_box(marker)
+proc generateBlockPseudoBox(specified: CSSSpecifiedValues, viewport: Viewport): BlockBoxBuilder =
+  let box = getBlockBox(specified)
+  var blockgroup: seq[BoxBuilder]
+  var ibox: InlineBoxBuilder = nil
 
-  let before = elem.pseudo[PSEUDO_BEFORE]
-  if before != nil:
-    let bbox = bctx.getPseudoBox(before)
-    if bbox != nil:
-      bbox.node = elem
-      add_box(bbox)
+  if specified{"content"}.len > 0:
+    ibox = getTextBox(specified)
+    ibox.text.add($specified{"content"})
+    flush_ibox
+    flush_block_group3(specified)
+
+  return box
+
+template generate_pseudo(specified: CSSSpecifiedValues) =
+  case specified{"display"}
+  of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
+    flush_block_group3(elem.css)
+    let childbox = generateBlockPseudoBox(specified, viewport)
+    box.children.add(childbox)
+  of DISPLAY_INLINE:
+    flush_ibox
+    box.generateInlinePseudoBox(specified, blockgroup, viewport)
+  of DISPLAY_INLINE_BLOCK:
+    flush_ibox
+    let childbox = getInlineBlockBox(specified)
+    let childblock = generateBlockPseudoBox(specified, viewport)
+    childbox.children.add(childblock)
+    blockgroup.add(childbox)
+  else:
+    discard #TODO
+
+proc generateBoxBefore(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder) =
+  if elem.pseudo[PSEUDO_BEFORE] != nil:
+    generate_pseudo(elem.pseudo[PSEUDO_BEFORE])
+
+  #TODO
+  #if box.specified{"display"} == DISPLAY_LIST_ITEM:
+  #  flush_ibox
+  #  var ordinalvalue = 1
+  #  if elem.tagType == TAG_LI:
+  #    ordinalvalue = HTMLLIElement(elem).ordinalvalue
+  #  let marker = box.getMarkerBox()
+  #  marker.node = elem
+  #  marker.text.add(elem.css{"list-style-type"}.listMarker(ordinalvalue))
+  #  if elem.css{"list-style-position"} == LIST_STYLE_POSITION_OUTSIDE:
+  #    marker.outside = true
+  #  ibox = marker
 
   if elem.tagType == TAG_INPUT:
+    flush_ibox
     let input = HTMLInputElement(elem)
-    add_box(box.getInputBox(input, viewport))
+    ibox = box.getInputBox(input, viewport)
+
+proc generateBoxAfter(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder) =
+  if elem.pseudo[PSEUDO_AFTER] != nil:
+    generate_pseudo(elem.pseudo[PSEUDO_AFTER])
+
+proc generateInlineBoxes(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
+  var ibox: InlineBoxBuilder = nil
+
+  generateBoxBefore(box, elem, blockgroup, viewport, ibox)
 
   for child in elem.childNodes:
     case child.nodeType
     of ELEMENT_NODE:
-      let elem = Element(child)
-      if elem.tagType == TAG_BR:
-        add_ibox()
-        ibox = box.getTextBox()
-        ibox.newline = true
-
-      let cbox = elem.generateBox(viewport, bctx)
-      if cbox != nil:
-        add_box(cbox)
+      let child = Element(child)
+      generate_from_elem(child)
     of TEXT_NODE:
-      let text = Text(child)
-      # Don't generate empty anonymous inline blocks between block boxes
-      if box.specified{"display"} == DISPLAY_INLINE or
-          box.children.len > 0 and box.children[^1].specified{"display"} == DISPLAY_INLINE or
-          box.specified{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
-          not text.data.onlyWhitespace():
-        if ibox == nil:
-          ibox = box.getTextBox()
-          ibox.node = elem
-        ibox.text.add(text.data)
+      let child = Text(child)
+      if ibox == nil:
+        ibox = getTextBox(elem.css)
+        ibox.node = elem
+      ibox.text.add(child.data)
     else: discard
-  add_ibox()
 
-  let after = elem.pseudo[PSEUDO_AFTER]
-  if after != nil:
-    let abox = bctx.getPseudoBox(after)
-    if abox != nil:
-      abox.node = elem
-      add_box(abox)
+  generateBoxAfter(box, elem, blockgroup, viewport, ibox)
 
-  viewport.map[elem.uid] = box
+  flush_ibox
 
+proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
+  let box = getBlockBox(elem.css)
+  var blockgroup: seq[BoxBuilder]
+  var ibox: InlineBoxBuilder = nil
+
+  generateBoxBefore(box, elem, blockgroup, viewport, ibox)
+  
+  for child in elem.childNodes:
+    case child.nodeType
+    of ELEMENT_NODE:
+      let child = Element(child)
+      generate_from_elem(child)
+    of TEXT_NODE:
+      let child = Text(child)
+      if canGenerateAnonymousInline(blockgroup, box.specified, child):
+        if ibox == nil:
+          ibox = getTextBox(elem.css)
+          ibox.node = elem
+        ibox.text.add(child.data)
+    else: discard
+
+  generateBoxAfter(box, elem, blockgroup, viewport, ibox)
+
+  flush_ibox
+  flush_block_group3(elem.css)
   return box
 
+proc generateBoxBuilders(elem: Element, viewport: Viewport): BlockBoxBuilder =
+  return generateBlockBox(elem, viewport)
+
 proc renderLayout*(viewport: var Viewport, document: Document) =
-  if viewport.root == nil or document.all_elements.len != viewport.map.len:
-    viewport.map = newSeq[CSSBox](document.all_elements.len)
-  else:
-    var i = 0
-    while i < viewport.map.len:
-      if not document.all_elements[i].rendered:
-        viewport.map[i] = nil
-      inc i
-  viewport.root = BlockBox(document.root.generateBox(viewport))
-  alignBlock(viewport.root)
+  viewport.root = document.root.generateBlockBox(viewport)
+  viewport.root.bctx = buildBlock(viewport.root, viewport)

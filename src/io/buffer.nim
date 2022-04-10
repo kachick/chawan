@@ -48,7 +48,6 @@ type
     istream*: Stream
     streamclosed*: bool
     source*: string
-    rootbox*: CSSBox
     prevnode*: Node
     sourcepair*: Buffer
     prev*: Buffer

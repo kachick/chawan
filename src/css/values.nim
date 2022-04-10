@@ -100,7 +100,7 @@ type
   
   CSSSpecifiedValue* = ref object
     t*: CSSPropertyType
-    case v: CSSValueType
+    case v*: CSSValueType
     of VALUE_COLOR:
       color*: CSSColor
     of VALUE_LENGTH:
