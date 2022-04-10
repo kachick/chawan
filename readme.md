@@ -18,30 +18,40 @@ It includes its own parsers, pager, and layout engine.
 
 Currently implemented features are:
 
-* a pager
+* an unicode, double-width capable pager
 * a (basic) CSS-capable layout engine
 * configuration
+* incomplete support for forms
+* incomplete support for remote resources (i.e. css)
 
-**Planned** features (roughly in order of importance):
+**Planned** features, roughly in order of importance:
 
+* partial re-rendering of page layout
+* full support for forms
+* unicode normalization
+* non-unicode charsets (they currently crash the browser)
+* fast streams (aka pipes; use library?)
+* standard-compliant support for remote resources
 * incremental page loading (to function as a proper pager)
-* tables
-* forms
-* markdown (with built-in parser)
-* load external/remote resources (e.g. css)
-* image (sixel/kitty)
-* external viewers (for audio, video)
+* table
+* iframe
+* ruby (with non-standard extensions)
+* separate threads for io, fetching resources and rendering pages
+* http headers (incl. cookies)
+* external viewers (for audio, video, image, etc)
+* image (sixel & kitty?)
+* markdown (built-in parser)
 * color contrast correction
-* non-unicode charsets
-* multi-processing
+* terminal color mode
 * JavaScript
-* config (& user stylesheet) editor
-* cookie
+* config editor
+* user stylesheet editor
 * SOCKS proxy
 * HTTP proxy
+* firefox request imitation (might avoid being classified as a bot)
 * adblock (use uBO?)
-* frame?
-* extension API?
+* html-only renderer?
+* extension API? (or just cgi like in w3m?)
 * gopher?
 * gemini??
 
@@ -57,7 +67,7 @@ Chromium, but I'd like it to be at least somewhat more functional on the
 In one way this is supposed to be a spiritual successor of w3m, with lots of
 features but a completely different architecture. Meaning this browser should
 be able to function as a replacement of w3m, just better. (I am still quite far
-from that goal however.)
+from reaching that goal however.)
 
 ## How to configure stuff
 
