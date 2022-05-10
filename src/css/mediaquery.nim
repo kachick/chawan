@@ -1,7 +1,7 @@
 import tables
 import unicode
 
-import css/parser
+import css/cssparser
 
 type
   MediaQueryParser = object

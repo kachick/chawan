@@ -1,6 +1,6 @@
 import unicode
 
-import css/parser
+import css/cssparser
 import html/tags
 
 type

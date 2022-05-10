@@ -10,7 +10,7 @@ import css/cascade
 import css/sheet
 import html/dom
 import html/tags
-import html/parser
+import html/htmlparser
 import io/cell
 import io/lineedit
 import io/loader

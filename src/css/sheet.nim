@@ -3,8 +3,8 @@ import tables
 import unicode
 
 import css/mediaquery
-import css/parser
-import css/selparser
+import css/cssparser
+import css/selectorparser
 import html/tags
 
 type

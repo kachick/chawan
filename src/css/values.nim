@@ -6,13 +6,13 @@ import options
 import macros
 import strutils
 
-import css/parser
-import css/selparser
+import css/cssparser
+import css/selectorparser
 import io/term
 import types/color
 import utils/twtstr
 
-export selparser.PseudoElem
+export selectorparser.PseudoElem
 
 type
   CSSUnit* = enum

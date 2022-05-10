@@ -5,8 +5,8 @@ import sequtils
 import sugar
 import streams
 
-import css/selparser
-import css/parser
+import css/selectorparser
+import css/cssparser
 import html/dom
 
 func attrSelectorMatches(elem: Element, sel: Selector): bool =

@@ -3,9 +3,9 @@ import streams
 import sugar
 
 import css/mediaquery
-import css/parser
+import css/cssparser
 import css/select
-import css/selparser
+import css/selectorparser
 import css/sheet
 import css/values
 import html/dom
