@@ -29,6 +29,7 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of PSEUDO_ONLY_CHILD: return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
   of PSEUDO_HOVER: return elem.hover
   of PSEUDO_ROOT: return elem == elem.ownerDocument.root
+  of PSEUDO_NTH_CHILD: return int64(sel.pseudonum - 1) in elem.parentNode.children.low..elem.parentNode.children.high and elem.parentNode.children[int64(sel.pseudonum - 1)] == elem
 
 func selectorsMatch*(elem: Element, selectors: SelectorList): bool
 
@@ -113,9 +114,9 @@ func selectElems(document: Document, sel: Selector): seq[Element] =
   of TYPE_SELECTOR:
     return document.type_elements[sel.tag]
   of ID_SELECTOR:
-    return document.id_elements[sel.id]
+    return document.id_elements.getOrDefault(sel.id, newSeq[Element]())
   of CLASS_SELECTOR:
-    return document.class_elements[sel.class]
+    return document.class_elements.getOrDefault(sel.class, newSeq[Element]())
   of UNIVERSAL_SELECTOR:
     return document.all_elements
   of ATTR_SELECTOR:
@@ -139,7 +140,7 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
     result = result.filter((elem) => selectorMatches(elem, sellist[i]))
     inc i
 
-proc querySelector(document: Document, q: string): seq[Element] =
+proc querySelectorAll*(document: Document, q: string): seq[Element] =
   let ss = newStringStream(q)
   let cvals = parseListOfComponentValues(ss)
   let selectors = parseSelectors(cvals)
@@ -147,3 +148,8 @@ proc querySelector(document: Document, q: string): seq[Element] =
   for sel in selectors:
     result.add(document.selectElems(sel))
 
+proc querySelector*(document: Document, q: string): Element =
+  let elems = document.querySelectorAll(q)
+  if elems.len > 0:
+    return elems[0]
+  return nil

@@ -19,7 +19,7 @@ type
 
   PseudoClass* = enum
     PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
-    PSEUDO_ROOT
+    PSEUDO_ROOT, PSEUDO_NTH_CHILD
 
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
@@ -47,6 +47,7 @@ type
       discard
     of PSEUDO_SELECTOR:
       pseudo*: PseudoClass
+      pseudonum*: float64
     of PSELEM_SELECTOR:
       elem*: PseudoElem
     of FUNC_SELECTOR:
@@ -291,6 +292,18 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
     if state.query != QUERY_PSEUDO:
       return
     state.query = QUERY_TYPE
+  of "nth-child":
+    if state.query != QUERY_PSEUDO:
+      return
+    if cssfunction.value.len != 1 or not (cssfunction.value[0] of CSSToken):
+      return
+    if CSSToken(cssfunction.value[0]).tokenType != CSS_NUMBER_TOKEN:
+      return
+    let num = CSSToken(cssfunction.value[0]).nvalue
+    if num == float64(int64(num)):
+      state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_NTH_CHILD, pseudonum: num))
+    state.query = QUERY_TYPE
+    return
   else: return
   var fun = Selector(t: FUNC_SELECTOR, name: $cssfunction.name)
   state.addSelector(fun)

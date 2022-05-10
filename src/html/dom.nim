@@ -281,6 +281,17 @@ func attrb*(element: Element, s: string): bool =
     return true
   return false
 
+func textContent*(node: Node): string =
+  case node.nodeType
+  of DOCUMENT_NODE, DOCUMENT_TYPE_NODE:
+    return "" #TODO null
+  of CDATA_SECTION_NODE, COMMENT_NODE, PROCESSING_INSTRUCTION_NODE, TEXT_NODE:
+    return CharacterData(node).data
+  else:
+    for child in node.childNodes:
+      if child.nodeType != COMMENT_NODE:
+        result &= child.textContent
+
 func toInputType*(str: string): InputType =
   case str
   of "button": INPUT_BUTTON
