@@ -9,6 +9,7 @@ import utils/twtstr
 type
   FileLoader* = ref object
     http: HttpClient
+    headers: HttpHeaders
 
   LoadResult* = object
     s*: Stream
@@ -22,11 +23,18 @@ const DefaultHeaders = {
   "Cache-control": "no-cache",
 }
 
-proc newFileLoader*(): FileLoader =
+proc newFileLoader*(headers: HttpHeaders): FileLoader =
   new(result)
   result.http = newHttpClient()
 
-proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
+proc newFileLoader*(): FileLoader =
+  var headers = newHttpHeaders(true)
+  for header in DefaultHeaders:
+    headers[header[0]] = header[1]
+  newFileLoader(headers)
+
+proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet,
+              mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
   if url.scheme == "file":
     when defined(windows) or defined(OS2) or defined(DOS):
       let path = url.path.serialize_unicode_dos()
@@ -36,8 +44,7 @@ proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimet
     result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":
     var requestheaders = newHttpHeaders(true)
-    for header in DefaultHeaders:
-      requestheaders[header[0]] = header[1]
+    requestheaders.table = loader.headers.table
     if mimetype != "":
       requestheaders["Content-Type"] = mimetype 
     let resp = loader.http.request(url.serialize(true), smethod, body, requestheaders, multipart)
