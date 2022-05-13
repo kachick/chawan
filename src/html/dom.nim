@@ -78,8 +78,8 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, string]
-    css*: CSSSpecifiedValues
-    pseudo*: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSSpecifiedValues]
+    css*: CSSComputedValues
+    pseudo*: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSComputedValues]
     hover*: bool
     cssapplied*: bool
     rendered*: bool

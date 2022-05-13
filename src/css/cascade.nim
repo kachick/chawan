@@ -17,7 +17,7 @@ type
   DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]
 
 proc applyProperty(elem: Element, d: CSSDeclaration, pseudo: PseudoElem) =
-  var parent: CSSSpecifiedValues
+  var parent: CSSComputedValues
   if elem.parentElement != nil:
     parent = elem.parentElement.css
   else:
@@ -96,7 +96,7 @@ proc applyImportant(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
     if decl.important:
       ares.important.add(decl)
 
-proc checkRendered(element: Element, prev: CSSSpecifiedValues, ppseudo: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSSpecifiedValues]) =
+proc checkRendered(element: Element, prev: CSSComputedValues, ppseudo: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSComputedValues]) =
   if element.rendered:
     for p in PSEUDO_BEFORE..PSEUDO_AFTER:
       if ppseudo[p] != element.pseudo[p] and ppseudo[p] == nil:

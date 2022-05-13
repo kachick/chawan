@@ -12,7 +12,7 @@ type
   BoxBuilder* = ref object of RootObj
     children*: seq[BoxBuilder]
     inlinelayout*: bool
-    specified*: CSSSpecifiedValues
+    specified*: CSSComputedValues
     node*: Node
     element*: Element
 
@@ -77,7 +77,7 @@ type
   BlockContext* = ref object
     inline*: InlineContext
     nested*: seq[BlockContext]
-    specified*: CSSSpecifiedValues
+    specified*: CSSComputedValues
     viewport*: Viewport
     relx*: int
     rely*: int
