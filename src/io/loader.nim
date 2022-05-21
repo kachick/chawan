@@ -9,7 +9,7 @@ import utils/twtstr
 type
   FileLoader* = ref object
     http: HttpClient
-    headers: HttpHeaders
+    headers*: HttpHeaders
 
   LoadResult* = object
     s*: Stream
@@ -26,6 +26,7 @@ const DefaultHeaders = {
 proc newFileLoader*(headers: HttpHeaders): FileLoader =
   new(result)
   result.http = newHttpClient()
+  result.headers = headers
 
 proc newFileLoader*(): FileLoader =
   var headers = newHttpHeaders(true)
@@ -33,8 +34,7 @@ proc newFileLoader*(): FileLoader =
     headers[header[0]] = header[1]
   newFileLoader(headers)
 
-proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet,
-              mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
+proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
   if url.scheme == "file":
     when defined(windows) or defined(OS2) or defined(DOS):
       let path = url.path.serialize_unicode_dos()
@@ -55,3 +55,9 @@ proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet,
       result.contenttype = guessContentType(url.path.serialize())
     resp.bodystream.setPosition(0)
     result.s = resp.bodyStream
+
+proc getPage*(loader: FileLoader, url: string, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
+  let url = parseUrl(url)
+  if url.isnone:
+    raise newException(Exception, "Invalid URL")
+  loader.getPage(url.get, smethod, mimetype, body, multipart)
