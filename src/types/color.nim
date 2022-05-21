@@ -1,8 +1,7 @@
-# TODO both should probably be distinct int32
 type
-  RGBColor* = distinct int
+  RGBColor* = distinct uint32
 
-  RGBAColor* = distinct int
+  RGBAColor* = distinct uint32
 
   CellColor* = object
     case rgb*: bool
@@ -52,7 +51,7 @@ func rgba*(r, g, b, a: int): RGBAColor =
   return RGBAColor((a shl 24) or (r shl 16) or (g shl 8) or b)
 
 converter toRGBColor*(i: RGBAColor): RGBColor =
-  return RGBColor(int(i) and 0xFFFFFF)
+  return RGBColor(uint32(i) and 0xFFFFFFu32)
 
 converter toRGBAColor*(i: RGBColor): RGBAColor =
-  return RGBAColor(int(i) or 0xFF000000)
+  return RGBAColor(uint32(i) or 0xFF000000u32)
