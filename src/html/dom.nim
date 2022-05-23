@@ -199,6 +199,23 @@ iterator branch*(node: Node): Node {.inline.} =
     yield node
     node = node.parentElement
 
+func filterDescendants*(element: Element, predicate: (proc(child: Element): bool)): seq[Element] =
+  var stack: seq[Element]
+  stack.add(element.children)
+  while stack.len > 0:
+    let child = stack.pop()
+    if predicate(child):
+      result.add(child)
+    stack.add(child.children)
+
+func all_descendants*(element: Element): seq[Element] =
+  var stack: seq[Element]
+  stack.add(element.children)
+  while stack.len > 0:
+    let child = stack.pop()
+    result.add(child)
+    stack.add(child.children)
+
 # a == b or b in a's ancestors
 func contains*(a, b: Node): bool =
   for node in a.branch:

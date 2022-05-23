@@ -140,6 +140,37 @@ func selectElems(document: Document, selectors: SelectorList): seq[Element] =
     result = result.filter((elem) => selectorMatches(elem, sellist[i]))
     inc i
 
+func selectElems(element: Element, sel: Selector): seq[Element] =
+  case sel.t
+  of TYPE_SELECTOR:
+    return element.filterDescendants((elem) => elem.tagType == sel.tag)
+  of ID_SELECTOR:
+    return element.filterDescendants((elem) => elem.id == sel.id)
+  of CLASS_SELECTOR:
+    return element.filterDescendants((elem) => sel.class in elem.classList)
+  of UNIVERSAL_SELECTOR:
+    return element.all_descendants
+  of ATTR_SELECTOR:
+    return element.filterDescendants((elem) => attrSelectorMatches(elem, sel))
+  of PSEUDO_SELECTOR:
+    return element.filterDescendants((elem) => pseudoSelectorMatches(elem, sel))
+  of PSELEM_SELECTOR:
+    return element.all_descendants
+  of FUNC_SELECTOR:
+    return element.filterDescendants((elem) => selectorMatches(elem, sel))
+  of COMBINATOR_SELECTOR:
+    return element.filterDescendants((elem) => selectorMatches(elem, sel))
+
+func selectElems(element: Element, selectors: SelectorList): seq[Element] =
+  assert(selectors.len > 0)
+  let sellist = optimizeSelectorList(selectors)
+  result = element.selectElems(selectors[0])
+  var i = 1
+
+  while i < sellist.len:
+    result = result.filter((elem) => selectorMatches(elem, sellist[i]))
+    inc i
+
 proc querySelectorAll*(document: Document, q: string): seq[Element] =
   let ss = newStringStream(q)
   let cvals = parseListOfComponentValues(ss)
@@ -150,6 +181,20 @@ proc querySelectorAll*(document: Document, q: string): seq[Element] =
 
 proc querySelector*(document: Document, q: string): Element =
   let elems = document.querySelectorAll(q)
+  if elems.len > 0:
+    return elems[0]
+  return nil
+
+proc querySelectorAll*(element: Element, q: string): seq[Element] =
+  let ss = newStringStream(q)
+  let cvals = parseListOfComponentValues(ss)
+  let selectors = parseSelectors(cvals)
+
+  for sel in selectors:
+    result.add(element.selectElems(sel))
+
+proc querySelector*(element: Element, q: string): Element =
+  let elems = element.querySelectorAll(q)
   if elems.len > 0:
     return elems[0]
   return nil
