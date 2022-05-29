@@ -316,6 +316,9 @@ proc newBlockContext_common(parent: BlockContext, box: BoxBuilder): BlockContext
 
 proc newBlockContext(parent: BlockContext, box: BlockBoxBuilder): BlockContext =
   result = newBlockContext_common(parent, box)
+  result.offset = Offset(t: OFFSET_BLOCK_CONTEXT)
+  if parent.nested.len > 0:
+    result.offset.prev_sibling = parent.nested[^1].offset
   result.shrink = result.specified{"width"}.auto and parent.shrink
 
 proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBoxBuilder): BlockContext =
@@ -331,6 +334,7 @@ proc newBlockContext(parent: BlockContext): BlockContext =
   new(result)
   result.specified = parent.specified.inheritProperties()
   result.viewport = parent.viewport
+  result.offset = Offset(t: OFFSET_BLOCK_CONTEXT)
   result.computedDimensions(parent.compwidth, parent.compheight)
   result.shrink = result.specified{"width"}.auto and parent.shrink
 
@@ -339,6 +343,7 @@ proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
   result.specified = rootProperties()
   result.viewport = viewport
+  result.offset = Offset(t: OFFSET_BLOCK_CONTEXT)
   result.computedDimensions(viewport.term.width_px, none(int))
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
@@ -363,10 +368,10 @@ proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
     x += bctx.compwidth div 2
 
   template apply_child(child: BlockContext) =
-    child.rely = y
-    child.relx = x + child.margin_left
+    child.offset.rel.y = y
+    child.offset.rel.x = x + child.margin_left
     if bctx.specified{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
-      child.relx -= child.width div 2
+      child.offset.rel.x -= child.width div 2
     y += child.height
     bctx.height += child.height
     bctx.width = max(bctx.width, child.width)

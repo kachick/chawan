@@ -232,8 +232,8 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
 
   while stack.len > 0:
     var (ctx, x, y) = stack.pop()
-    x += ctx.relx
-    y += ctx.rely
+    x += ctx.offset.absx
+    y += ctx.offset.absy
 
     if ctx.specified{"background-color"}.rgba.a != 0: #TODO color blending
       grid.paintBackground(ctx.specified{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)

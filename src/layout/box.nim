@@ -5,6 +5,20 @@ import html/dom
 import io/term
 
 type
+  OffsetType* = enum
+    OFFSET_BLOCK_CONTEXT
+
+type
+  Position = object
+    x*: int
+    y*: int
+
+  Offset* = ref object
+    case t*: OffsetType
+    of OFFSET_BLOCK_CONTEXT:
+      rel*: Position
+      prev_sibling*: Offset
+
   Viewport* = ref object
     term*: TermAttributes
     root*: BlockBoxBuilder
@@ -79,8 +93,7 @@ type
     nested*: seq[BlockContext]
     specified*: CSSComputedValues
     viewport*: Viewport
-    relx*: int
-    rely*: int
+    offset*: Offset
     width*: int
     height*: int
     margin_top*: int
@@ -102,3 +115,13 @@ type
   #  outside*: bool
 
   #ListItemBox* = ref object of BlockBox
+
+func absx*(offset: Offset): int {.inline.} =
+  offset.rel.x
+
+#TODO cache
+func absy*(offset: Offset): int {.inline.} =
+  if offset.prev_sibling != nil:
+    offset.prev_sibling.absy + offset.rel.y
+  else:
+    offset.rel.y
