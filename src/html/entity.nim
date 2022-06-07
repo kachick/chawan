@@ -3,15 +3,15 @@ import json
 import utils/radixtree
 
 const entity = staticRead"res/entity.json"
-proc genEntityMap(data: seq[tuple[a: string, b: string]]): RadixNode[string] =
+proc genEntityMap(data: seq[tuple[a: cstring, b: cstring]]): RadixNode[string] =
   result = newRadixTree[string]()
   for pair in data:
-    result[pair.a] = pair.b
+    result[$pair.a] = $pair.b
 
-proc genEntityTable(): seq[tuple[a: string, b: string]] =
+proc genEntityTable(): seq[tuple[a: cstring, b: cstring]] =
   let entityJson = parseJson(entity)
 
   for k, v in entityJson:
-    result.add((k.substr(1), v{"characters"}.getStr()))
+    result.add((cstring(k.substr(1)), cstring(v{"characters"}.getStr())))
 const entityTable = genEntityTable()
 let entityMap* = genEntityMap(entityTable)
