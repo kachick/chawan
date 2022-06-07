@@ -41,6 +41,8 @@ type
     lemap*: ActionMap
     stylesheet*: string
     ambiguous_double*: bool
+    use_curl*: bool
+    curl_binary*: string
 
 func getRealKey(key: string): string =
   var realk: string
@@ -150,6 +152,13 @@ proc parseConfig(config: var Config, dir: string, t: TomlValue) =
       else: discard
     if "inline" in css:
       config.stylesheet &= css["inline"].s
+  if "network" in t:
+    let network = t["network"]
+    if "use-curl" in network:
+      let usecurl = network["use-curl"]
+      if usecurl.b:
+        config.use_curl = true
+        config.curl_binary = network["curl-binary"].s
 
 proc parseConfig(config: var Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))
