@@ -205,8 +205,8 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes)
 
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, term: TermAttributes) =
-  let x = x + ctx.relx
-  let y = y + ctx.rely
+  let x = x + ctx.offset.x
+  let y = y + ctx.offset.y
   for row in ctx.rows:
     let x = x + row.relx
     let y = y + row.rely
@@ -232,8 +232,8 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
 
   while stack.len > 0:
     var (ctx, x, y) = stack.pop()
-    x += ctx.offset.absx
-    y += ctx.offset.absy
+    x += ctx.offset.x
+    y += ctx.offset.y
 
     if ctx.specified{"background-color"}.rgba.a != 0: #TODO color blending
       grid.paintBackground(ctx.specified{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)

@@ -5,19 +5,9 @@ import html/dom
 import io/term
 
 type
-  OffsetType* = enum
-    OFFSET_BLOCK_CONTEXT
-
-type
-  Position = object
+  Offset* = object
     x*: int
     y*: int
-
-  Offset* = ref object
-    case t*: OffsetType
-    of OFFSET_BLOCK_CONTEXT:
-      rel*: Position
-      prev_sibling*: Offset
 
   Viewport* = ref object
     term*: TermAttributes
@@ -75,8 +65,7 @@ type
     lineheight*: int #line-height property
 
   InlineContext* = ref object
-    relx*: int
-    rely*: int
+    offset*: Offset
     height*: int
     rows*: seq[InlineRow]
     thisrow*: InlineRow
@@ -115,13 +104,3 @@ type
   #  outside*: bool
 
   #ListItemBox* = ref object of BlockBox
-
-func absx*(offset: Offset): int {.inline.} =
-  offset.rel.x
-
-#TODO cache
-func absy*(offset: Offset): int {.inline.} =
-  if offset.prev_sibling != nil:
-    offset.prev_sibling.absy + offset.rel.y
-  else:
-    offset.rel.y

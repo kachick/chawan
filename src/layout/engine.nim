@@ -316,9 +316,6 @@ proc newBlockContext_common(parent: BlockContext, box: BoxBuilder): BlockContext
 
 proc newBlockContext(parent: BlockContext, box: BlockBoxBuilder): BlockContext =
   result = newBlockContext_common(parent, box)
-  result.offset = Offset(t: OFFSET_BLOCK_CONTEXT)
-  if parent.nested.len > 0:
-    result.offset.prev_sibling = parent.nested[^1].offset
   result.shrink = result.specified{"width"}.auto and parent.shrink
 
 proc newInlineBlockContext(parent: BlockContext, box: InlineBlockBoxBuilder): BlockContext =
@@ -334,7 +331,6 @@ proc newBlockContext(parent: BlockContext): BlockContext =
   new(result)
   result.specified = parent.specified.inheritProperties()
   result.viewport = parent.viewport
-  result.offset = Offset(t: OFFSET_BLOCK_CONTEXT)
   result.computedDimensions(parent.compwidth, parent.compheight)
   result.shrink = result.specified{"width"}.auto and parent.shrink
 
@@ -343,7 +339,6 @@ proc newBlockContext(viewport: Viewport): BlockContext =
   new(result)
   result.specified = rootProperties()
   result.viewport = viewport
-  result.offset = Offset(t: OFFSET_BLOCK_CONTEXT)
   result.computedDimensions(viewport.term.width_px, none(int))
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
@@ -368,10 +363,10 @@ proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
     x += bctx.compwidth div 2
 
   template apply_child(child: BlockContext) =
-    child.offset.rel.y = y
-    child.offset.rel.x = x + child.margin_left
+    child.offset.y = y
+    child.offset.x = x + child.margin_left
     if bctx.specified{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
-      child.offset.rel.x -= child.width div 2
+      child.offset.x -= child.width div 2
     y += child.height
     bctx.height += child.height
     bctx.width = max(bctx.width, child.width)
@@ -426,15 +421,15 @@ proc positionInlines(bctx: BlockContext, selfcontained: bool) =
   bctx.margin_bottom = bctx.specified{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
 
   bctx.width += bctx.padding_left
-  bctx.inline.relx += bctx.padding_left
+  bctx.inline.offset.x += bctx.padding_left
 
   if selfcontained:
-    bctx.inline.rely += bctx.margin_top
+    bctx.inline.offset.x += bctx.margin_top
     bctx.height += bctx.margin_top
     bctx.height += bctx.margin_bottom
 
   bctx.height += bctx.padding_top
-  bctx.inline.rely += bctx.padding_top
+  bctx.inline.offset.x += bctx.padding_top
 
   bctx.height += bctx.padding_bottom
 
@@ -642,9 +637,9 @@ template flush_ibox() =
 
 template generate_from_elem(child: Element) =
   if child.tagType == TAG_BR:
-    flush_ibox
     ibox = box.getTextBox()
     ibox.newline = true
+    flush_ibox
 
   case child.css{"display"}
   of DISPLAY_BLOCK, DISPLAY_LIST_ITEM:
@@ -653,7 +648,6 @@ template generate_from_elem(child: Element) =
     box.children.add(childbox)
   of DISPLAY_INLINE:
     flush_ibox
-
     box.generateInlineBoxes(child, blockgroup, viewport)
   of DISPLAY_INLINE_BLOCK:
     flush_ibox
@@ -762,6 +756,7 @@ proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
   for child in elem.childNodes:
     case child.nodeType
     of ELEMENT_NODE:
+      flush_ibox
       let child = Element(child)
       generate_from_elem(child)
     of TEXT_NODE:
@@ -783,5 +778,5 @@ proc generateBoxBuilders(elem: Element, viewport: Viewport): BlockBoxBuilder =
   return generateBlockBox(elem, viewport)
 
 proc renderLayout*(viewport: var Viewport, document: Document) =
-  viewport.root = document.root.generateBlockBox(viewport)
+  viewport.root = document.root.generateBoxBuilders(viewport)
   viewport.root.bctx = buildBlock(viewport.root, viewport)
