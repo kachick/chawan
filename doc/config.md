@@ -10,18 +10,18 @@ A list of configurable options follows.
 
 ## General
 
-General options are to be placed in a section called [general].
+General options must be placed in a section called `[general]`.
 
-Following are general options:
+Following is a list of general options:
 
 <table>
 <tr><th>**Name**<th>**Value**<th>**Function**
-<tr><td>double-width-ambiguous<td>boolean<td>assume the terminal displays characters in the East Asian Ambiguous category as double width
+<tr><td>double-width-ambiguous<td>boolean<td>Assume the terminal displays characters in the East Asian Ambiguous category as double width
 </table>
 
 ## Stylesheets
 
-User stylesheets are to be placed in a section called [css].
+User stylesheets must be placed in a section called `[css]`.
 
 There are two ways to import user stylesheets:
 
@@ -35,10 +35,10 @@ There are two ways to import user stylesheets:
 
 ## Keybindings
 
-Keybindings are to be placed in these sections:
+Keybindings must be placed in these sections:
 
-* for page browsing: [page]
-* for line editing: [line]
+* for page browsing: `[page]`
+* for line editing: `[line]`
 
 Keybindings are configured using the syntax
 
@@ -122,3 +122,25 @@ description of these follows.
 <tr><td>`END`<td>Move cursor to the previous word by one character
 <tr><td>`ESC`<td>Ignore keybindings for next character
 </table>
+
+## Network
+
+Network options must be placed in a section called `[network]`.
+
+Chawan can use two separate back-ends to fetch remote resources (i.e. websites,
+css, etc.) The default back-end is the nim standard library's HTTP client.  
+As an alternative, curl is supported as well, by invoking an existing curl
+binary on your system.
+
+Following is a list of network options:
+
+<table>
+<tr><th>**Name**<th>**Value**<th>**Function**
+<tr><td>use-curl<td>boolean<td>Enable curl support
+<tr><td>curl-binary<td>string<td>Path to the curl binary (only used if use-curl is set to true)
+</table>
+
+To enable curl support, you must
+
+* set `use-curl` to true
+* and set `curl-binary` to the path of your curl binary.

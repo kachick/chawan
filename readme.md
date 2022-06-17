@@ -20,7 +20,6 @@ Currently implemented features are:
 
 * an unicode, double-width capable pager
 * a (basic) CSS-capable layout engine
-* configuration
 * incomplete support for forms
 * incomplete support for remote resources (i.e. css)
 
@@ -35,9 +34,9 @@ Currently implemented features are:
 * incremental page loading (to function as a proper pager)
 * table
 * iframe
-* ruby (with non-standard extensions)
+* ruby
 * separate threads for io, fetching resources and rendering pages
-* http headers (incl. cookies)
+* cookies
 * external viewers (for audio, video, image, etc)
 * image (sixel & kitty?)
 * markdown (built-in parser)
@@ -69,6 +68,6 @@ features but a completely different architecture. Meaning this browser should
 be able to function as a replacement of w3m, just better. (I am still quite far
 from reaching that goal however.)
 
-## How to configure stuff
+## Configuration
 
 See [doc/config.md](doc/config.md).
