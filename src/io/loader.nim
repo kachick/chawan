@@ -144,10 +144,11 @@ proc getPageCurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mi
   if not es.atEnd:
     discard es.readLine() # status code
   var headers = newHttpHeaders(true)
-  for line in es.lines:
+  while not es.atEnd:
+    let line = es.readLine()
     let k = line.until(':')
     if k.len == line.len:
-      continue # invalid, no colon
+      break # no colon, invalid or empty - so assume headers are done
     let v = line.substr(k.len + 1).strip()
     headers.add(k, v)
   let ct = headers.getOrDefault("Content-Type")
