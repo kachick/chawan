@@ -515,11 +515,41 @@ proc cursorPrevLink*(buffer: Buffer) =
     link = line.formats[i].node.getClickable()
   dec i
 
+  var ly = 0 #last y
+  var lx = 0 #last x
+  template link_beginning() =
+    #go to beginning of link
+    ly = y #last y
+    lx = format.pos #last x
+
+    #on the current line
+    let line = buffer.lines[y]
+    while i >= 0:
+      let format = line.formats[i]
+      let nl = format.node.getClickable()
+      if nl == fl:
+        lx = format.pos
+      dec i
+
+    #on previous lines
+    for iy in countdown(ly - 1, 0):
+      let line = buffer.lines[iy]
+      i = line.formats.len - 1
+      while i >= 0:
+        let format = line.formats[i]
+        let nl = format.node.getClickable()
+        if nl == fl:
+          ly = iy
+          lx = format.pos
+        dec i
+
   while i >= 0:
     let format = line.formats[i]
     let fl = format.node.getClickable()
     if fl != nil and fl != link:
-      buffer.setCursorX(format.pos)
+      let y = buffer.cursory
+      link_beginning
+      buffer.setCursorXY(lx, ly)
       return
     dec i
 
@@ -530,19 +560,7 @@ proc cursorPrevLink*(buffer: Buffer) =
       let format = line.formats[i]
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
-        #go to beginning of link
-        var ly = y #last y
-        var lx = format.pos #last x
-        for iy in countdown(ly - 1, 0):
-          let line = buffer.lines[iy]
-          i = line.formats.len - 1
-          while i >= 0:
-            let format = line.formats[i]
-            let nl = format.node.getClickable()
-            if nl == fl:
-              ly = iy
-              lx = format.pos
-            dec i
+        link_beginning
         buffer.setCursorXY(lx, ly)
         return
       dec i
