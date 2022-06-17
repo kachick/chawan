@@ -558,11 +558,13 @@ proc buildInlines(bctx: BlockContext, inlines: seq[BoxBuilder]): InlineContext =
         assert false, "child.t is " & $child.specified{"display"}
     ictx.finish(bctx.specified, bctx.compwidth)
 
-  bctx.height += ictx.height
+  return ictx
+
+proc applyInlineDimensions(bctx: BlockContext) =
+  bctx.height += bctx.inline.height
   if bctx.compheight.issome:
     bctx.height = bctx.compheight.get
-  bctx.width = max(bctx.width, ictx.maxwidth)
-  return ictx
+  bctx.width = max(bctx.width, bctx.inline.maxwidth)
 
 proc buildListItem(builder: ListItemBoxBuilder, parent: BlockContext, selfcontained = false): ListItem =
   result = parent.newListItem(builder)
@@ -572,6 +574,7 @@ proc buildListItem(builder: ListItemBoxBuilder, parent: BlockContext, selfcontai
   if builder.content.inlinelayout:
     # Builder only contains inline boxes.
     result.inline = result.buildInlines(builder.content.children)
+    result.applyInlineDimensions()
     result.positionInlines(selfcontained)
   else:
     # Builder only contains block boxes.
@@ -595,6 +598,7 @@ proc buildBlock(box: BlockBoxBuilder, parent: BlockContext, selfcontained = fals
   if box.inlinelayout:
     # Builder only contains inline boxes.
     result.inline = result.buildInlines(box.children)
+    result.applyInlineDimensions()
     result.positionInlines(selfcontained)
   else:
     # Builder only contains block boxes.
@@ -607,6 +611,7 @@ proc buildBlock(box: BlockBoxBuilder, viewport: Viewport, selfcontained = false)
   if box.inlinelayout:
     # Builder only contains inline boxes.
     result.inline = result.buildInlines(box.children)
+    result.applyInlineDimensions()
     result.positionInlines(selfcontained)
   else:
     # Builder only contains block boxes.
