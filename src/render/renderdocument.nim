@@ -236,6 +236,10 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
     if ctx.specified{"background-color"}.rgba.a != 0: #TODO color blending
       grid.paintBackground(ctx.specified{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
 
+    if ctx of ListItem:
+      let ctx = ListItem(ctx)
+      grid.renderInlineContext(ctx.marker, x - ctx.marker.maxwidth, y, term)
+
     if ctx.inline != nil:
       assert ctx.nested.len == 0
       grid.renderInlineContext(ctx.inline, x, y, term)

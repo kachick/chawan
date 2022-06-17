@@ -28,8 +28,16 @@ type
   BlockBoxBuilder* = ref object of BoxBuilder
     bctx*: BlockContext
 
-  InlineBlockBoxBuilder* = ref object of BlockBoxBuilder
-    iblock*: InlineBlock # iblock.bctx is equivalent to box.bctx
+  InlineBlockBoxBuilder* = ref object of BoxBuilder
+    content*: BlockBoxBuilder # iblock.bctx is equivalent to box.bctx
+
+  MarkerBoxBuilder* = ref object of InlineBoxBuilder
+    ordinalvalue*: int
+    inside*: bool
+
+  ListItemBoxBuilder* = ref object of BoxBuilder
+    marker*: MarkerBoxBuilder
+    content*: BlockBoxBuilder
 
   InlineAtom* = ref object of RootObj
     offset*: Offset
@@ -74,7 +82,7 @@ type
     shrink*: bool
     format*: ComputedFormat
 
-  BlockContext* = ref object
+  BlockContext* = ref object of RootObj
     inline*: InlineContext
     nested*: seq[BlockContext]
     specified*: CSSComputedValues
@@ -97,7 +105,5 @@ type
     compheight*: Option[int]
     shrink*: bool
 
-  #MarkerBox* = ref object of InlineBoxBuilder
-  #  outside*: bool
-
-  #ListItemBox* = ref object of BlockBox
+  ListItem* = ref object of BlockContext
+    marker*: InlineContext
