@@ -101,10 +101,10 @@ proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x
 proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
   var r: Rune
 
-  var y = (y + word.rely) div term.ppl
+  var y = (y + word.offset.y) div term.ppl
   if y < 0: y = 0
 
-  var x = (x + word.relx) div term.ppc
+  var x = (x + word.offset.x) div term.ppc
   var i = 0
   while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
@@ -114,12 +114,10 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
   lines.setText(linestr, word.format, x, y)
 
 proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term: TermAttributes) =
-  var r: Rune
-
-  var y = (y + spacing.rely) div term.ppl
+  var y = (y + spacing.offset.y) div term.ppl
   if y < 0: y = 0
 
-  var x = (x + spacing.relx) div term.ppc
+  var x = (x + spacing.offset.x) div term.ppc
   let width = spacing.width div term.ppc
 
   var i = 0
@@ -208,8 +206,8 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
   let x = x + ctx.offset.x
   let y = y + ctx.offset.y
   for row in ctx.rows:
-    let x = x + row.relx
-    let y = y + row.rely
+    let x = x + row.offset.x
+    let y = y + row.offset.y
 
     let r = y div term.ppl
     while grid.len <= r:
@@ -218,7 +216,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
     for atom in row.atoms:
       if atom of InlineBlock:
         let iblock = InlineBlock(atom)
-        grid.renderBlockContext(iblock.bctx, x + iblock.relx, y + iblock.rely, term)
+        grid.renderBlockContext(iblock.bctx, x + iblock.offset.x, y + iblock.offset.y, term)
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x, y, term)

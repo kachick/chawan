@@ -30,11 +30,9 @@ type
 
   InlineBlockBoxBuilder* = ref object of BlockBoxBuilder
     iblock*: InlineBlock # iblock.bctx is equivalent to box.bctx
-    ictx*: InlineContext
 
   InlineAtom* = ref object of RootObj
-    relx*: int
-    rely*: int
+    offset*: Offset
     width*: int
     height*: int
     vertalign*: CSSVerticalAlign
@@ -58,8 +56,7 @@ type
 
   InlineRow* = ref object
     atoms*: seq[InlineAtom]
-    relx*: int
-    rely*: int
+    offset*: Offset
     width*: int
     height*: int
     lineheight*: int #line-height property
