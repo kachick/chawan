@@ -995,7 +995,19 @@ proc click*(buffer: Buffer): Option[ClickAction] =
     of TAG_INPUT:
       let input = HTMLInputElement(clickable)
       case input.inputType
-      of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
+      of INPUT_SEARCH:
+        var value = input.value
+        print(HVP(buffer.height + 1, 1))
+        print(EL())
+        let status = readLine("SEARCH: ", value, buffer.width, {'\r', '\n'})
+        if status:
+          input.value = value
+          input.rendered = false
+          buffer.reshape = true
+        if input.form != nil:
+          let submitaction = submitForm(input.form, input)
+          return submitaction
+      of INPUT_TEXT, INPUT_PASSWORD:
         var value = input.value
         print(HVP(buffer.height + 1, 1))
         print(EL())
