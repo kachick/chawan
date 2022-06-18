@@ -33,10 +33,10 @@ type InlineState = object
   node: Node
   word: InlineWord
   maxwidth: int
-  specified: CSSComputedValues
+  computed: CSSComputedValues
 
-func whitespacepre(specified: CSSComputedValues): bool {.inline.} =
-  specified{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
+func whitespacepre(computed: CSSComputedValues): bool {.inline.} =
+  computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
 
 func cellwidth(viewport: Viewport): int {.inline.} =
   viewport.term.ppc
@@ -51,41 +51,41 @@ func cellheight(ictx: InlineContext): int {.inline.} =
   ictx.viewport.cellheight
 
 # Whitespace between words
-func computeShift(ictx: InlineContext, specified: CSSComputedValues): int =
+func computeShift(ictx: InlineContext, computed: CSSComputedValues): int =
   if ictx.whitespacenum > 0:
-    if ictx.thisrow.atoms.len > 0 or specified.whitespacepre:
-      let spacing = specified{"word-spacing"}
+    if ictx.thisrow.atoms.len > 0 or computed.whitespacepre:
+      let spacing = computed{"word-spacing"}
       if spacing.auto:
         return ictx.cellwidth * ictx.whitespacenum
       #return spacing.cells_w(ictx.viewport, 0)
       return spacing.px(ictx.viewport) * ictx.whitespacenum
   return 0
 
-func computeLineHeight(viewport: Viewport, specified: CSSComputedValues): int =
-  if specified{"line-height"}.auto:
+func computeLineHeight(viewport: Viewport, computed: CSSComputedValues): int =
+  if computed{"line-height"}.auto:
     return viewport.cellheight
-  return specified{"line-height"}.px(viewport, viewport.cellheight)
+  return computed{"line-height"}.px(viewport, viewport.cellheight)
 
 proc newWord(state: var InlineState) =
   let word = InlineWord()
   let format = ComputedFormat()
-  let specified = state.specified
-  format.color = specified{"color"}
-  format.fontstyle = specified{"font-style"}
-  format.fontweight = specified{"font-weight"}
-  format.textdecoration = specified{"text-decoration"}
+  let computed = state.computed
+  format.color = computed{"color"}
+  format.fontstyle = computed{"font-style"}
+  format.fontweight = computed{"font-weight"}
+  format.textdecoration = computed{"text-decoration"}
   format.node = state.node
   word.format = format
   state.ictx.format = format
   state.word = word
 
-proc horizontalAlignRow(ictx: InlineContext, row: InlineRow, specified: CSSComputedValues, maxwidth: int, last = false) =
+proc horizontalAlignRow(ictx: InlineContext, row: InlineRow, computed: CSSComputedValues, maxwidth: int, last = false) =
   let maxwidth = if ictx.shrink:
     ictx.maxwidth
   else:
     maxwidth
   # we don't support directions for now so left = start and right = end
-  case specified{"text-align"}
+  case computed{"text-align"}
   of TEXT_ALIGN_START, TEXT_ALIGN_LEFT:
     discard
   of TEXT_ALIGN_END, TEXT_ALIGN_RIGHT:
@@ -98,7 +98,7 @@ proc horizontalAlignRow(ictx: InlineContext, row: InlineRow, specified: CSSCompu
     for atom in row.atoms:
       atom.offset.x += x
   of TEXT_ALIGN_JUSTIFY:
-    if not specified.whitespacepre and not last:
+    if not computed.whitespacepre and not last:
       var sumwidth = 0
       var spaces = 0
       for atom in row.atoms:
@@ -166,15 +166,15 @@ proc addSpacing(row: InlineRow, width, height: int, format: ComputedFormat) {.in
   row.width += spacing.width
   row.atoms.add(spacing)
 
-proc flushWhitespace(ictx: InlineContext, specified: CSSComputedValues) =
-  let shift = ictx.computeShift(specified)
+proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues) =
+  let shift = ictx.computeShift(computed)
   ictx.whitespacenum = 0
   if shift > 0:
     ictx.thisrow.addSpacing(shift, ictx.cellheight, ictx.format)
 
-proc finishRow(ictx: InlineContext, specified: CSSComputedValues, maxwidth: int, force = false) =
+proc finishRow(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int, force = false) =
   if ictx.thisrow.atoms.len != 0 or force:
-    ictx.flushWhitespace(specified)
+    ictx.flushWhitespace(computed)
     ictx.verticalAlignRow()
 
     let oldrow = ictx.thisrow
@@ -183,29 +183,29 @@ proc finishRow(ictx: InlineContext, specified: CSSComputedValues, maxwidth: int,
     ictx.maxwidth = max(ictx.maxwidth, oldrow.width)
     ictx.thisrow = InlineRow(offset: Offset(y: oldrow.offset.y + oldrow.height))
 
-proc finish(ictx: InlineContext, specified: CSSComputedValues, maxwidth: int) =
-  ictx.finishRow(specified, maxwidth)
+proc finish(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int) =
+  ictx.finishRow(computed, maxwidth)
   for row in ictx.rows:
-    ictx.horizontalAlignRow(row, specified, maxwidth, row == ictx.rows[^1])
+    ictx.horizontalAlignRow(row, computed, maxwidth, row == ictx.rows[^1])
 
-proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, specified: CSSComputedValues) =
-  var shift = ictx.computeShift(specified)
+proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, computed: CSSComputedValues) =
+  var shift = ictx.computeShift(computed)
   ictx.whitespacenum = 0
   # Line wrapping
-  if not specified.whitespacepre:
+  if not computed.whitespacepre:
     if ictx.thisrow.width + atom.width + shift > maxwidth:
-      ictx.finishRow(specified, maxwidth, false)
+      ictx.finishRow(computed, maxwidth, false)
       # Recompute on newline
-      shift = ictx.computeShift(specified)
+      shift = ictx.computeShift(computed)
 
   if atom.width > 0 and atom.height > 0:
-    atom.vertalign = specified{"vertical-align"}
+    atom.vertalign = computed{"vertical-align"}
 
     if shift > 0:
       ictx.thisrow.addSpacing(shift, ictx.cellheight, ictx.format)
 
     atom.offset.x += ictx.thisrow.width
-    ictx.thisrow.lineheight = max(ictx.thisrow.lineheight, computeLineHeight(ictx.viewport, specified))
+    ictx.thisrow.lineheight = max(ictx.thisrow.lineheight, computeLineHeight(ictx.viewport, computed))
     ictx.thisrow.width += atom.width
     ictx.thisrow.height = max(ictx.thisrow.height, atom.height)
     if atom of InlineWord:
@@ -218,48 +218,48 @@ proc addWord(state: var InlineState) =
   if state.word.str != "":
     var word = state.word
     word.height = state.ictx.cellheight
-    state.ictx.addAtom(word, state.maxwidth, state.specified)
+    state.ictx.addAtom(word, state.maxwidth, state.computed)
     state.newWord()
 
 # Start a new line, even if the previous one is empty
-proc flushLine(ictx: InlineContext, specified: CSSComputedValues, maxwidth: int) =
-  ictx.thisrow.lineheight = computeLineHeight(ictx.viewport, specified)
-  ictx.finishRow(specified, maxwidth, true)
+proc flushLine(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int) =
+  ictx.thisrow.lineheight = computeLineHeight(ictx.viewport, computed)
+  ictx.finishRow(computed, maxwidth, true)
 
 proc checkWrap(state: var InlineState, r: Rune) =
-  if state.specified{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
+  if state.computed{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     return
-  let shift = state.ictx.computeShift(state.specified)
-  case state.specified{"word-break"}
+  let shift = state.ictx.computeShift(state.computed)
+  case state.computed{"word-break"}
   of WORD_BREAK_BREAK_ALL:
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.addWord()
-      state.ictx.finishRow(state.specified, state.maxwidth, false)
+      state.ictx.finishRow(state.computed, state.maxwidth, false)
       state.ictx.whitespacenum = 0
   of WORD_BREAK_KEEP_ALL:
     if state.ictx.thisrow.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
-      state.ictx.finishRow(state.specified, state.maxwidth, false)
+      state.ictx.finishRow(state.computed, state.maxwidth, false)
       state.ictx.whitespacenum = 0
   else: discard
 
 proc processWhitespace(state: var InlineState, c: char) =
   state.addWord()
-  case state.specified{"white-space"}
+  case state.computed{"white-space"}
   of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
     state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
   of WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     if c == '\n':
-      state.ictx.flushLine(state.specified, state.maxwidth)
+      state.ictx.flushLine(state.computed, state.maxwidth)
     else:
       inc state.ictx.whitespacenum
 
-proc renderText*(ictx: InlineContext, str: string, maxwidth: int, specified: CSSComputedValues, node: Node) =
+proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSComputedValues, node: Node) =
   var state: InlineState
-  state.specified = specified
+  state.computed = computed
   state.ictx = ictx
   state.maxwidth = maxwidth
   state.node = node
-  state.ictx.flushWhitespace(state.specified)
+  state.ictx.flushWhitespace(state.computed)
   state.newWord()
 
   #if str.strip().len > 0:
@@ -319,7 +319,7 @@ proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width:
       result.compheight = pheight.px(viewport, height.get).some
 
 proc setPreferredDimensions(bctx: BlockContext, width: int, height: Option[int]) =
-  let preferred = preferredDimensions(bctx.specified, bctx.viewport, width, height)
+  let preferred = preferredDimensions(bctx.computed, bctx.viewport, width, height)
   bctx.compwidth = preferred.compwidth
   bctx.compheight = preferred.compheight
   bctx.padding_top = preferred.padding_top
@@ -331,7 +331,7 @@ proc setPreferredDimensions(bctx: BlockContext, width: int, height: Option[int])
 
 proc newBlockContext_common2(bctx: BlockContext, parent: BlockContext, box: BoxBuilder) {.inline.} =
   bctx.viewport = parent.viewport
-  bctx.specified = box.specified
+  bctx.computed = box.computed
   bctx.setPreferredDimensions(parent.compwidth, parent.compheight)
 
 proc newBlockContext_common(parent: BlockContext, box: BoxBuilder): BlockContext {.inline.} =
@@ -340,16 +340,16 @@ proc newBlockContext_common(parent: BlockContext, box: BoxBuilder): BlockContext
 
 proc newBlockContext(parent: BlockContext, box: BlockBoxBuilder): BlockContext =
   result = newBlockContext_common(parent, box)
-  result.shrink = result.specified{"width"}.auto and parent.shrink
+  result.shrink = result.computed{"width"}.auto and parent.shrink
 
 proc newListItem(parent: BlockContext, builder: ListItemBoxBuilder): ListItem =
   new(result)
   result.newBlockContext_common2(parent, builder.content)
-  result.shrink = result.specified{"width"}.auto and parent.shrink
+  result.shrink = result.computed{"width"}.auto and parent.shrink
 
 proc newInlineBlockContext(parent: BlockContext, builder: InlineBlockBoxBuilder): BlockContext =
   result = newBlockContext_common(parent, builder.content)
-  result.shrink = result.specified{"width"}.auto
+  result.shrink = result.computed{"width"}.auto
 
 proc newInlineBlock(parent: BlockContext, builder: InlineBlockBoxBuilder): InlineBlock =
   new(result)
@@ -358,9 +358,9 @@ proc newInlineBlock(parent: BlockContext, builder: InlineBlockBoxBuilder): Inlin
 proc newBlockContext(viewport: Viewport, box: BlockBoxBuilder): BlockContext =
   new(result)
   result.viewport = viewport
-  result.specified = box.specified
+  result.computed = box.computed
   result.setPreferredDimensions(viewport.term.width_px, none(int))
-  result.shrink = result.specified{"width"}.auto
+  result.shrink = result.computed{"width"}.auto
 
 proc newInlineContext(bctx: BlockContext): InlineContext =
   new(result)
@@ -379,13 +379,13 @@ proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
   bctx.height += bctx.padding_top
 
   x += bctx.padding_left
-  if bctx.specified{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+  if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
     x += bctx.compwidth div 2
 
   template apply_child(child: BlockContext) =
     child.offset.y = y
     child.offset.x = x + child.margin_left
-    if bctx.specified{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+    if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
       child.offset.x -= child.width div 2
     y += child.height
     bctx.height += child.height
@@ -397,7 +397,7 @@ proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
     let child = bctx.nested[i]
 
     bctx.margin_top = child.margin_top
-    let mtop = bctx.specified{"margin-top"}.px(bctx.viewport, bctx.compwidth)
+    let mtop = bctx.computed{"margin-top"}.px(bctx.viewport, bctx.compwidth)
     if mtop > bctx.margin_top or mtop < 0:
       bctx.margin_top = mtop - bctx.margin_top
 
@@ -421,7 +421,7 @@ proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
     inc i
 
   bctx.margin_bottom = margin_todo
-  let mbot = bctx.specified{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
+  let mbot = bctx.computed{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
   if mbot > bctx.margin_bottom or mbot < 0:
     bctx.margin_bottom = mbot - bctx.margin_bottom
 
@@ -437,8 +437,8 @@ proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
   bctx.width += bctx.padding_right
 
 proc positionInlines(bctx: BlockContext, selfcontained: bool) =
-  bctx.margin_top = bctx.specified{"margin-top"}.px(bctx.viewport, bctx.compwidth)
-  bctx.margin_bottom = bctx.specified{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
+  bctx.margin_top = bctx.computed{"margin-top"}.px(bctx.viewport, bctx.compwidth)
+  bctx.margin_bottom = bctx.computed{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
 
   bctx.width += bctx.padding_left
   bctx.inline.offset.x += bctx.padding_left
@@ -455,7 +455,7 @@ proc positionInlines(bctx: BlockContext, selfcontained: bool) =
 
   bctx.width += bctx.padding_right
 
-  if bctx.specified{"width"}.auto:
+  if bctx.computed{"width"}.auto:
     bctx.width = min(bctx.width, bctx.compwidth)
   else:
     bctx.width = bctx.compwidth
@@ -485,8 +485,8 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
     result.bctx.buildBlocks(blockbuilder.children, blockbuilder.node)
     result.bctx.positionBlocks(false)
 
-  let preferred = preferredDimensions(builder.specified, parentblock.viewport, parentblock.compwidth, parentblock.compheight)
-  let pwidth = builder.specified{"width"}
+  let preferred = preferredDimensions(builder.computed, parentblock.viewport, parentblock.compwidth, parentblock.compheight)
+  let pwidth = builder.computed{"width"}
   if pwidth.auto:
     # Half-baked shrink-to-fit
     result.bctx.width = min(max(result.bctx.width, parent.maxwidth), preferred.compwidth)
@@ -510,13 +510,13 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
 proc buildInline(bctx: BlockContext, box: InlineBoxBuilder) =
   assert box.ictx != nil
   if box.newline:
-    box.ictx.flushLine(bctx.specified, bctx.compwidth)
+    box.ictx.flushLine(bctx.computed, bctx.compwidth)
 
-  let margin_left = box.specified{"margin-left"}.px(bctx.viewport, bctx.compwidth)
+  let margin_left = box.computed{"margin-left"}.px(bctx.viewport, bctx.compwidth)
   box.ictx.thisrow.width += margin_left
 
   let paddingformat = ComputedFormat(node: box.node)
-  let padding_left = box.specified{"padding-left"}.px(bctx.viewport, bctx.compwidth)
+  let padding_left = box.computed{"padding-left"}.px(bctx.viewport, bctx.compwidth)
   if padding_left > 0:
     box.ictx.thisrow.addSpacing(padding_left, box.ictx.cellheight, paddingformat)
 
@@ -525,10 +525,10 @@ proc buildInline(bctx: BlockContext, box: InlineBoxBuilder) =
 
   for text in box.text:
     assert box.children.len == 0
-    box.ictx.renderText(text, bctx.compwidth, box.specified, box.node)
+    box.ictx.renderText(text, bctx.compwidth, box.computed, box.node)
 
   for child in box.children:
-    case child.specified{"display"}
+    case child.computed{"display"}
     of DISPLAY_INLINE:
       let child = InlineBoxBuilder(child)
       child.ictx = box.ictx
@@ -536,22 +536,22 @@ proc buildInline(bctx: BlockContext, box: InlineBoxBuilder) =
     of DISPLAY_INLINE_BLOCK:
       let child = InlineBlockBoxBuilder(child)
       let iblock = child.buildInlineBlock(box.ictx, bctx)
-      box.ictx.addAtom(iblock, bctx.compwidth, child.specified)
+      box.ictx.addAtom(iblock, bctx.compwidth, child.computed)
     else:
-      assert false, "child.t is " & $child.specified{"display"}
+      assert false, "child.t is " & $child.computed{"display"}
 
-  let padding_right = box.specified{"padding-right"}.px(bctx.viewport, bctx.compwidth)
+  let padding_right = box.computed{"padding-right"}.px(bctx.viewport, bctx.compwidth)
   if padding_right > 0:
     box.ictx.thisrow.addSpacing(padding_right, max(box.ictx.thisrow.height, 1), paddingformat)
 
-  let margin_right = box.specified{"margin-right"}.px(bctx.viewport, bctx.compwidth)
+  let margin_right = box.computed{"margin-right"}.px(bctx.viewport, bctx.compwidth)
   box.ictx.thisrow.width += margin_right
 
 proc buildInlines(bctx: BlockContext, inlines: seq[BoxBuilder]): InlineContext =
   let ictx = bctx.newInlineContext()
   if inlines.len > 0:
     for child in inlines:
-      case child.specified{"display"}
+      case child.computed{"display"}
       of DISPLAY_INLINE:
         let child = InlineBoxBuilder(child)
         child.ictx = ictx
@@ -559,11 +559,11 @@ proc buildInlines(bctx: BlockContext, inlines: seq[BoxBuilder]): InlineContext =
       of DISPLAY_INLINE_BLOCK:
         let child = InlineBlockBoxBuilder(child)
         let iblock = child.buildInlineBlock(ictx, bctx)
-        ictx.addAtom(iblock, bctx.compwidth, child.specified)
+        ictx.addAtom(iblock, bctx.compwidth, child.computed)
         ictx.whitespacenum = 0
       else:
-        assert false, "child.t is " & $child.specified{"display"}
-    ictx.finish(bctx.specified, bctx.compwidth)
+        assert false, "child.t is " & $child.computed{"display"}
+    ictx.finish(bctx.computed, bctx.compwidth)
 
   return ictx
 
@@ -584,13 +584,13 @@ proc buildListItem(builder: ListItemBoxBuilder, parent: BlockContext, selfcontai
 
 proc buildBlocks(bctx: BlockContext, blocks: seq[BoxBuilder], node: Node) =
   for child in blocks:
-    case child.specified{"display"}
+    case child.computed{"display"}
     of DISPLAY_BLOCK:
       bctx.nested.add(buildBlock(BlockBoxBuilder(child), bctx))
     of DISPLAY_LIST_ITEM:
       bctx.nested.add(buildListItem(ListItemBoxBuilder(child), bctx))
     else:
-      assert false, "child.t is " & $child.specified{"display"}
+      assert false, "child.t is " & $child.computed{"display"}
 
 # Build a block box inside another block box, based on a builder.
 proc buildBlock(box: BlockBoxBuilder, parent: BlockContext, selfcontained = false): BlockContext =
@@ -621,38 +621,38 @@ proc buildBlock(box: BlockBoxBuilder, viewport: Viewport, selfcontained = false)
 
 # Generation phase
 
-#WARNING yes there is a {}= macro but that modifies the specified value
+#WARNING yes there is a {}= macro but that modifies the computed value
 # reference itself and those are copied across arrays...
 #TODO figure out something here
 proc setDisplay(computed: var CSSComputedValues, display: CSSDisplay) =
   computed[PROPERTY_DISPLAY] = CSSComputedValue(t: PROPERTY_DISPLAY, v: VALUE_DISPLAY, display: display)
 
-# Returns a block box, disregarding the specified value of display
-proc getBlockBox(specified: CSSComputedValues): BlockBoxBuilder =
+# Returns a block box, disregarding the computed value of display
+proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
   new(result)
-  result.specified = specified.copyProperties()
-  result.specified.setDisplay(DISPLAY_BLOCK)
+  result.computed = computed.copyProperties()
+  result.computed.setDisplay(DISPLAY_BLOCK)
 
-proc getInlineBlockBox(specified: CSSComputedValues): InlineBlockBoxBuilder =
+proc getInlineBlockBox(computed: CSSComputedValues): InlineBlockBoxBuilder =
   new(result)
-  result.specified = specified.copyProperties()
-  result.specified.setDisplay(DISPLAY_INLINE_BLOCK)
+  result.computed = computed.copyProperties()
+  result.computed.setDisplay(DISPLAY_INLINE_BLOCK)
 
 proc getTextBox(box: BoxBuilder): InlineBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.specified = box.specified.inheritProperties()
+  result.computed = box.computed.inheritProperties()
 
-proc getTextBox(specified: CSSComputedValues): InlineBoxBuilder =
+proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.specified = specified.inheritProperties()
+  result.computed = computed.inheritProperties()
 
 proc getMarkerBox(elem: Element): MarkerBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.specified = elem.css.inheritProperties()
-  result.specified.setDisplay(DISPLAY_INLINE)
+  result.computed = elem.css.inheritProperties()
+  result.computed.setDisplay(DISPLAY_INLINE)
 
   if elem.tagType == TAG_LI:
     result.ordinalvalue = HTMLLIElement(elem).ordinalvalue
@@ -665,7 +665,7 @@ proc getMarkerBox(elem: Element): MarkerBoxBuilder =
 proc getListItemBox(elem: Element): ListItemBoxBuilder =
   assert elem.css{"display"} == DISPLAY_LIST_ITEM
   new(result)
-  result.specified = elem.css.copyProperties()
+  result.computed = elem.css.copyProperties()
   result.marker = getMarkerBox(elem)
 
 func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
@@ -674,23 +674,23 @@ func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport
   textbox.text.add(input.inputString())
   return textbox
 
-func getInputBox(specified: CSSComputedValues, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
-  let textbox = specified.getTextBox()
+func getInputBox(computed: CSSComputedValues, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
+  let textbox = computed.getTextBox()
   textbox.node = input
   textbox.text.add(input.inputString())
   return textbox
 
 # Don't generate empty anonymous inline blocks between block boxes
-func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], specified: CSSComputedValues, text: Text): bool =
-  return blockgroup.len > 0 and blockgroup[^1].specified{"display"} == DISPLAY_INLINE or
-    specified{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
+func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], computed: CSSComputedValues, text: Text): bool =
+  return blockgroup.len > 0 and blockgroup[^1].computed{"display"} == DISPLAY_INLINE or
+    computed{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
     not text.data.onlyWhitespace()
 
 proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder
 
-template flush_block_group3(specified: CSSComputedValues) =
+template flush_block_group3(computed: CSSComputedValues) =
   if blockgroup.len > 0:
-    let bbox = getBlockBox(specified.inheritProperties())
+    let bbox = getBlockBox(computed.inheritProperties())
     bbox.inlinelayout = true
     bbox.children = blockgroup
     box.children.add(bbox)
@@ -698,7 +698,7 @@ template flush_block_group3(specified: CSSComputedValues) =
 
 template flush_ibox() =
   if ibox != nil:
-    assert ibox.specified{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK}
+    assert ibox.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK}
     blockgroup.add(ibox)
     ibox = nil
 
@@ -725,39 +725,39 @@ proc generateFromElem(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[B
     box.generateInlineBoxes(elem, blockgroup, viewport)
   of DISPLAY_INLINE_BLOCK:
     flush_ibox
-    let childbox = getInlineBlockBox(box.specified)
+    let childbox = getInlineBlockBox(box.computed)
     childbox.content = elem.generateBlockBox(viewport)
     blockgroup.add(childbox)
   else:
     discard #TODO
 
-proc generateInlinePseudoBox(box: BlockBoxBuilder, specified: CSSComputedValues, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
+proc generateInlinePseudoBox(box: BlockBoxBuilder, computed: CSSComputedValues, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
   var ibox: InlineBoxBuilder = nil
 
-  if specified{"content"}.len > 0:
-    ibox = getTextBox(specified)
-    ibox.text.add($specified{"content"})
+  if computed{"content"}.len > 0:
+    ibox = getTextBox(computed)
+    ibox.text.add($computed{"content"})
 
   flush_ibox
 
-proc generateBlockPseudoBox(specified: CSSComputedValues, viewport: Viewport): BlockBoxBuilder =
-  let box = getBlockBox(specified)
+proc generateBlockPseudoBox(computed: CSSComputedValues, viewport: Viewport): BlockBoxBuilder =
+  let box = getBlockBox(computed)
   var blockgroup: seq[BoxBuilder]
   var ibox: InlineBoxBuilder = nil
 
-  if specified{"content"}.len > 0:
-    ibox = getTextBox(specified)
-    ibox.text.add($specified{"content"})
+  if computed{"content"}.len > 0:
+    ibox = getTextBox(computed)
+    ibox.text.add($computed{"content"})
     flush_ibox
-    flush_block_group3(specified)
+    flush_block_group3(computed)
 
   return box
 
-proc generatePseudo(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, specified: CSSComputedValues) =
-  case specified{"display"}
+proc generatePseudo(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, computed: CSSComputedValues) =
+  case computed{"display"}
   of DISPLAY_BLOCK:
     flush_block_group3(elem.css)
-    let childbox = generateBlockPseudoBox(specified, viewport)
+    let childbox = generateBlockPseudoBox(computed, viewport)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
     flush_block_group3(elem.css)
@@ -766,11 +766,11 @@ proc generatePseudo(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[Box
     box.children.add(childbox)
   of DISPLAY_INLINE:
     flush_ibox
-    box.generateInlinePseudoBox(specified, blockgroup, viewport)
+    box.generateInlinePseudoBox(computed, blockgroup, viewport)
   of DISPLAY_INLINE_BLOCK:
     flush_ibox
-    let childbox = getInlineBlockBox(box.specified)
-    childbox.content = generateBlockPseudoBox(specified, viewport)
+    let childbox = getInlineBlockBox(box.computed)
+    childbox.content = generateBlockPseudoBox(computed, viewport)
     blockgroup.add(childbox)
   else:
     discard #TODO
@@ -825,7 +825,7 @@ proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
       box.generateFromElem(child, blockgroup, viewport, ibox)
     of TEXT_NODE:
       let child = Text(child)
-      if canGenerateAnonymousInline(blockgroup, box.specified, child):
+      if canGenerateAnonymousInline(blockgroup, box.computed, child):
         if ibox == nil:
           ibox = getTextBox(elem.css)
           ibox.node = elem

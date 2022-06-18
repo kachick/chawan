@@ -233,8 +233,8 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
     x += ctx.offset.x
     y += ctx.offset.y
 
-    if ctx.specified{"background-color"}.rgba.a != 0: #TODO color blending
-      grid.paintBackground(ctx.specified{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
+    if ctx.computed{"background-color"}.rgba.a != 0: #TODO color blending
+      grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
 
     if ctx of ListItem:
       let ctx = ListItem(ctx)
