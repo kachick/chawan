@@ -135,7 +135,7 @@ func loadStuff(s: string): (FullMap[cstring], # Map
     of "ignored":
       add(firstcol, add_ignore)
 
-when defined(release):
+when defined(release) or defined(small):
   const (MappedMap,
          DisallowedRanges,
          Disallowed,

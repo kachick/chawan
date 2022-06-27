@@ -85,7 +85,7 @@ func calcRules(elem: Element, sheet: CSSStylesheet): DeclarationList =
         for dl in item[1]:
           dl
 
-#TODO couldn't these two procedures be merged?
+ 
 proc applyNormal(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
   for decl in decls:
     if not decl.important:
@@ -172,12 +172,14 @@ proc applyRules(elem: Element, ua, user: CSSStylesheet, author: seq[CSSStyleshee
 proc applyRules(document: Document, ua, user: CSSStylesheet) =
   var author: seq[CSSStylesheet]
 
-  for sheet in document.head.sheets:
-    author.add(sheet)
+  if document.head != nil:
+    for sheet in document.head.sheets:
+      author.add(sheet)
 
   var stack: seq[Element]
 
-  stack.add(document.root)
+  if document.html != nil:
+    stack.add(document.html)
   var lenstack = newSeqOfCap[int](15)
 
   while stack.len > 0:

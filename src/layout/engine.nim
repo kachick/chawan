@@ -848,5 +848,5 @@ proc generateBoxBuilders(elem: Element, viewport: Viewport): BlockBoxBuilder =
   return generateBlockBox(elem, viewport)
 
 proc renderLayout*(viewport: var Viewport, document: Document) =
-  viewport.root = document.root.generateBoxBuilders(viewport)
+  viewport.root = document.html.generateBoxBuilders(viewport)
   viewport.root.bctx = buildBlock(viewport.root, viewport)

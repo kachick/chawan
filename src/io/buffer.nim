@@ -189,7 +189,7 @@ func acursory(buffer: Buffer): int =
 func cellOrigin(buffer: Buffer, x, y: int): int =
   let row = y * buffer.width
   var ox = x
-  while buffer.display[row + ox].runes.len == 0 and ox > 0:
+  while ox > 0 and buffer.display[row + ox].runes.len == 0:
     dec ox
   return ox
 
@@ -280,13 +280,10 @@ func getTitle(buffer: Buffer): string =
   if buffer.document != nil:
     let titles = buffer.document.getElementsByTag(TAG_TITLE)
     if titles.len > 0:
-      for text in titles[0].textNodes:
-        result &= text.data.strip().clearControls()
-    return
+      return titles[0].textContent.strip().clearControls()
   if buffer.ispipe:
-    result = "*pipe*"
-  else:
-    result = $buffer.location
+    return "*pipe*"
+  return $buffer.location
 
 proc clearDisplay(buffer: Buffer) =
   buffer.prevdisplay = buffer.display
@@ -737,8 +734,9 @@ proc updateHover(buffer: Buffer) =
 
 proc loadResources(buffer: Buffer, document: Document) =
   var stack: seq[Element]
-  stack.add(document.root)
-  while stack.len > 0:
+  if document.html != nil:
+    stack.add(document.html)
+  while stack.len > 0 and false: #TODO actually implement this
     let elem = stack.pop()
 
     if elem.tagType == TAG_LINK:
@@ -750,7 +748,7 @@ proc loadResources(buffer: Buffer, document: Document) =
             let res = buffer.loader.getPage(url.get)
             if res.s != nil and res.contenttype == "text/css":
               let sheet = parseStylesheet(res.s)
-              elem.parentElement.sheets.add(sheet)
+              #elem.parentElement.sheets.add(sheet) #TODO this is broken...
 
     for i in countdown(elem.children.high, 0):
       let child = elem.children[i]
@@ -760,10 +758,10 @@ proc load*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if not buffer.streamclosed:
-      buffer.document = parseHtml(buffer.istream, buffer.source)
+      buffer.document = parseHTML5(buffer.istream)
       buffer.streamclosed = true
     else:
-      buffer.document = parseHtml(newStringStream(buffer.source))
+      buffer.document = parseHTML5(newStringStream(buffer.source))
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
   else:
@@ -937,11 +935,11 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
   let entrylist = form.constructEntryList(submitter)
 
   let action = if submitter.action() == "":
-    $form.ownerDocument.location
+    $form.document.location
   else:
     submitter.action()
 
-  let url = parseUrl(action, submitter.ownerDocument.baseUrl.some)
+  let url = parseUrl(action, submitter.document.baseUrl.some)
   if url.isnone:
     return none(ClickAction)
 

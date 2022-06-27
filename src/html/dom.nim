@@ -1,5 +1,7 @@
 import tables
 import options
+import streams
+import strformat
 import strutils
 
 import css/values
@@ -17,25 +19,33 @@ type
     FORM_ENCODING_TYPE_MULTIPART = "multipart/form-data",
     FORM_ENCODING_TYPE_TEXT_PLAIN = "text/plain"
 
-type
-  EventTarget* = ref EventTargetObj
-  EventTargetObj = object of RootObj
+  QuirksMode* = enum
+    NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
 
-  Node* = ref NodeObj
-  NodeObj = object of EventTargetObj
+  Namespace* = enum
+    HTML = "http://www.w3.org/1999/xhtml",
+    MATHML = "http://www.w3.org/1998/Math/MathML",
+    SVG = "http://www.w3.org/2000/svg",
+    XLINK = "http://www.w3.org/1999/xlink",
+    XML = "http://www.w3.org/XML/1998/namespace",
+    XMLNS = "http://www.w3.org/2000/xmlns/"
+
+type
+  EventTarget* = ref object of RootObj
+
+  Node* = ref object of EventTarget
     nodeType*: NodeType
     childNodes*: seq[Node]
-    children*: seq[Element]
     isConnected*: bool
     nextSibling*: Node
     previousSibling*: Node
     parentNode*: Node
     parentElement*: Element
-    ownerDocument*: Document
+    rootNode: Node
+    document*: Document
     uid*: int # Unique id
 
-  Attr* = ref AttrObj
-  AttrObj = object of NodeObj
+  Attr* = ref object of Node
     namespaceURI*: string
     prefix*: string
     localName*: string
@@ -43,38 +53,40 @@ type
     value*: string
     ownerElement*: Element
 
-  Document* = ref DocumentObj
-  DocumentObj = object of NodeObj
+  Document* = ref object of Node
     location*: Url
     type_elements*: array[TagType, seq[Element]]
-    id_elements*: Table[string, seq[Element]]
     class_elements*: Table[string, seq[Element]]
     all_elements*: seq[Element]
-    head*: HTMLElement
-    body*: HTMLElement
-    root*: Element
+    mode*: QuirksMode
 
-  CharacterData* = ref CharacterDataObj
-  CharacterDataObj = object of NodeObj
+    parser_cannot_change_the_mode_flag*: bool
+    is_iframe_srcdoc*: bool
+
+  CharacterData* = ref object of Node
     data*: string
     length*: int
 
-  Text* = ref TextObj
-  TextObj = object of CharacterDataObj
+  Text* = ref object of CharacterData
     wholeText*: string
 
-  Comment* = ref CommentObj
-  CommentObj = object of CharacterDataObj
+  Comment* = ref object of CharacterData
 
-  Element* = ref ElementObj
-  ElementObj = object of NodeObj
-    namespaceURI*: string
+  DocumentFragment* = ref object of Node
+    host*: Element
+
+  DocumentType* = ref object of Node
+    name*: string
+    publicId*: string
+    systemId*: string
+
+  Element* = ref object of Node
+    namespace*: Namespace
+    namespacePrefix*: Option[string] #TODO namespaces
     prefix*: string
     localName*: string
-    tagName*: string
     tagType*: TagType
 
-    sheets*: seq[CSSStylesheet]
     id*: string
     classList*: seq[string]
     attributes*: Table[string, string]
@@ -84,7 +96,7 @@ type
     cssapplied*: bool
     rendered*: bool
 
-  HTMLElement* = ref object of ElementObj
+  HTMLElement* = ref object of Element
 
   HTMLInputElement* = ref object of HTMLElement
     inputType*: InputType
@@ -131,6 +143,8 @@ type
     ordinalvalue*: int
 
   HTMLStyleElement* = ref object of HTMLElement
+    sheet*: CSSStylesheet
+    sheet_invalid*: bool
 
   HTMLLinkElement* = ref object of HTMLElement
     href*: string
@@ -144,6 +158,22 @@ type
     novalidate*: bool
     constructingentrylist*: bool
     inputs*: seq[HTMLInputElement]
+
+  HTMLTemplateElement* = ref object of HTMLElement
+    content*: DocumentFragment
+
+  HTMLUnknownElement* = ref object of HTMLElement
+
+  HTMLScriptElement* = ref object of HTMLElement
+    parserDocument*: Document
+    preparationTimeDocument*: Document
+    forceAsync*: bool
+    fromAnExternalFile*: bool
+    readyToBeParser*: bool
+    alreadyStarted*: bool
+    delayingTheLoadEvent*: bool
+    ctype*: bool
+    #TODO result
 
 # For debugging
 func `$`*(node: Node): string =
@@ -177,7 +207,7 @@ iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
     for input in input.form.radiogroup:
       yield input
   else:
-    for input in input.ownerDocument.radiogroup:
+    for input in input.document.radiogroup:
       yield input
 
 iterator textNodes*(node: Node): Text {.inline.} =
@@ -197,7 +227,68 @@ iterator branch*(node: Node): Node {.inline.} =
   var node = node
   while node != nil:
     yield node
-    node = node.parentElement
+    node = node.parentNode
+
+iterator children*(node: Node): Element {.inline.} =
+  for child in node.childNodes:
+    if child.nodeType == ELEMENT_NODE:
+      yield Element(child)
+
+func qualifiedName*(element: Element): string =
+  if element.namespacePrefix.issome: element.namespacePrefix.get & ':' & element.localName
+  else: element.localName
+
+func html*(document: Document): HTMLElement =
+  for element in document.children:
+    if element.tagType == TAG_HTML:
+      return HTMLElement(element)
+  return nil
+
+func head*(document: Document): HTMLElement =
+  if document.html != nil:
+    for element in document.html.children:
+      if element.tagType == TAG_HEAD:
+        return HTMLElement(element)
+  return nil
+
+func body*(document: Document): HTMLElement =
+  if document.html != nil:
+    for element in document.html.children:
+      if element.tagType == TAG_BODY:
+        return HTMLElement(element)
+  return nil
+
+
+func countChildren(node: Node, nodeType: NodeType): int =
+  for child in node.childNodes:
+    if child.nodeType == nodeType:
+      inc result
+
+func hasChild(node: Node, nodeType: NodeType): bool =
+  for child in node.childNodes:
+    if child.nodeType == nodeType:
+      return false
+
+func hasNextSibling(node: Node, nodeType: NodeType): bool =
+  var node = node.nextSibling
+  while node != nil:
+    if node.nodeType == nodeType: return true
+    node = node.nextSibling
+  return false
+
+func hasPreviousSibling(node: Node, nodeType: NodeType): bool =
+  var node = node.previousSibling
+  while node != nil:
+    if node.nodeType == nodeType: return true
+    node = node.previousSibling
+  return false
+
+func inSameTree*(a, b: Node): bool =
+  a.rootNode == b.rootNode and (a.rootNode != nil or b.rootNode != nil)
+
+func children*(node: Node): seq[Element] =
+  for child in node.children:
+    result.add(child)
 
 func filterDescendants*(element: Element, predicate: (proc(child: Element): bool)): seq[Element] =
   var stack: seq[Element]
@@ -231,7 +322,7 @@ func firstChild(node: Node): Node =
     return nil
   return node.childNodes[0]
 
-func lastChild(node: Node): Node =
+func lastChild*(node: Node): Node =
   if node.childNodes.len == 0:
     return nil
   return node.childNodes[^1]
@@ -262,27 +353,6 @@ func nextElementSibling*(elem: Element): Element =
     e = e.nextSibling
   return nil
 
-func isTextNode*(node: Node): bool =
-  return node.nodeType == TEXT_NODE
-
-func isElemNode*(node: Node): bool =
-  return node.nodeType == ELEMENT_NODE
-
-func isComment*(node: Node): bool =
-  return node.nodeType == COMMENT_NODE
-
-func isCData*(node: Node): bool =
-  return node.nodeType == CDATA_SECTION_NODE
-
-func isDocument*(node: Node): bool =
-  return node.nodeType == DOCUMENT_NODE
-
-func firstNode*(node: Node): bool =
-  return node.parentElement != nil and node.parentElement.childNodes[0] == node
-
-func lastNode*(node: Node): bool =
-  return node.parentElement != nil and node.parentElement.childNodes[^1] == node
-
 func attr*(element: Element, s: string): string =
   return element.attributes.getOrDefault(s, "")
 
@@ -309,31 +379,13 @@ func textContent*(node: Node): string =
       if child.nodeType != COMMENT_NODE:
         result &= child.textContent
 
-func toInputType*(str: string): InputType =
-  case str
-  of "button": INPUT_BUTTON
-  of "checkbox": INPUT_CHECKBOX
-  of "color": INPUT_COLOR
-  of "date": INPUT_DATE
-  of "datetime_local": INPUT_DATETIME_LOCAL
-  of "email": INPUT_EMAIL
-  of "file": INPUT_FILE
-  of "hidden": INPUT_HIDDEN
-  of "image": INPUT_IMAGE
-  of "month": INPUT_MONTH
-  of "number": INPUT_NUMBER
-  of "password": INPUT_PASSWORD
-  of "radio": INPUT_RADIO
-  of "range": INPUT_RANGE
-  of "reset": INPUT_RESET
-  of "search": INPUT_SEARCH
-  of "submit": INPUT_SUBMIT
-  of "tel": INPUT_TEL
-  of "text": INPUT_TEXT
-  of "time": INPUT_TIME
-  of "url": INPUT_URL
-  of "week": INPUT_WEEK
-  else: INPUT_UNKNOWN
+proc sheets*(element: Element): seq[CSSStylesheet] =
+  for child in element.children:
+    if child.tagType == TAG_STYLE:
+      let child = HTMLStyleElement(child)
+      if child.sheet_invalid:
+        child.sheet = parseStylesheet(newStringStream(child.textContent))
+      result.add(child.sheet)
 
 func inputString*(input: HTMLInputElement): string =
   var text = case input.inputType
@@ -431,7 +483,7 @@ func formmethod*(element: Element): FormMethod =
 func target*(element: Element): string =
   if element.attrb("target"):
     return element.attr("target")
-  for base in element.ownerDocument.elements(TAG_BASE):
+  for base in element.document.elements(TAG_BASE):
     if base.attrb("target"):
       return base.attr("target")
   return ""
@@ -442,15 +494,27 @@ func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
       return element
   return nil
 
-func newText*(): Text =
+func newText*(document: Document, data: string = ""): Text =
   new(result)
   result.nodeType = TEXT_NODE
+  result.document = document
+  result.data = data
+  result.rootNode = result
 
-func newComment*(): Comment =
+func newComment*(document: Document, data: string = ""): Comment =
   new(result)
   result.nodeType = COMMENT_NODE
+  result.document = document
+  result.data = data
+  result.rootNode = result
 
-func newHtmlElement*(document: Document, tagType: TagType): HTMLElement =
+func namespace(s: string): Option[Namespace] =
+  for n in Namespace:
+    if s == $n:
+      return some(n)
+
+# note: we do not implement custom elements
+func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = Option[string]): HTMLElement =
   case tagType
   of TAG_INPUT:
     result = new(HTMLInputElement)
@@ -478,10 +542,19 @@ func newHtmlElement*(document: Document, tagType: TagType): HTMLElement =
     result = new(HTMLLIElement)
   of TAG_STYLE:
     result = new(HTMLStyleElement)
+    HTMLStyleElement(result).sheet_invalid = true
   of TAG_LINK:
     result = new(HTMLLinkElement)
   of TAG_FORM:
     result = new(HTMLFormElement)
+  of TAG_TEMPLATE:
+    result = new(HTMLTemplateElement)
+    HTMLTemplateElement(result).content = DocumentFragment(document: document, host: result)
+  of TAG_UNKNOWN:
+    result = new(HTMLUnknownElement)
+  of TAG_SCRIPT:
+    result = new(HTMLScriptElement)
+    HTMLScriptElement(result).forceAsync = true
   else:
     result = new(HTMLElement)
 
@@ -489,26 +562,63 @@ func newHtmlElement*(document: Document, tagType: TagType): HTMLElement =
   result.tagType = tagType
   result.css = rootProperties()
   result.uid = document.all_elements.len
+  result.rootNode = result
+  result.document = document
   document.all_elements.add(result)
+
+func newHTMLElement*(document: Document, localName: string, namespace = "", prefix = none[string](), tagType = tagType(localName)): Element =
+  result = document.newHTMLElement(tagType, namespace(namespace).get(HTML))
+  result.namespacePrefix = prefix
 
 func newDocument*(): Document =
   new(result)
-  result.root = result.newHtmlElement(TAG_HTML)
-  result.head = result.newHtmlElement(TAG_HEAD)
-  result.body = result.newHtmlElement(TAG_BODY)
   result.nodeType = DOCUMENT_NODE
+  result.rootNode = result
+  result.document = result
+
+func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
+  new(result)
+  result.document = document
+  result.name = name
+  result.publicId = publicId
+  result.systemId = systemId
+  result.rootNode = result
 
 func newAttr*(parent: Element, key, value: string): Attr =
   new(result)
+  result.document = parent.document
   result.nodeType = ATTRIBUTE_NODE
   result.ownerElement = parent
   result.name = key
   result.value = value
+  result.rootNode = result
 
+#TODO optimize?
 func getElementById*(document: Document, id: string): Element =
-  if id.len == 0 or id notin document.id_elements:
+  if id.len == 0:
     return nil
-  return document.id_elements[id][0]
+  var stack = document.children
+  while stack.len > 0:
+    let element = stack.pop()
+    if element.id == id:
+      return element
+    for i in countdown(element.childNodes.high, 0):
+      let child = element.childNodes[i]
+      if child.nodeType == ELEMENT_NODE:
+        stack.add(Element(child))
+  return nil
+
+#TODO optimize?
+func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
+  var stack = document.children
+  while stack.len > 0:
+    let element = stack.pop()
+    if element.tagType == tag:
+      result.add(element)
+    for i in countdown(element.childNodes.high, 0):
+      let child = element.childNodes[i]
+      if child.nodeType == ELEMENT_NODE:
+        stack.add(Element(child))
 
 func baseUrl*(document: Document): Url =
   var href = ""
@@ -522,8 +632,139 @@ func baseUrl*(document: Document): Url =
     return document.location
   return url.get
 
-func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
-  return document.type_elements[tag]
+func inHTMLNamespace*(element: Element): bool = element.namespace == Namespace.HTML
+func inMathMLNamespace*(element: Element): bool = element.namespace == Namespace.MATHML
+func inSVGNamespace*(element: Element): bool = element.namespace == Namespace.SVG
+func inXLinkNamespace*(element: Element): bool = element.namespace == Namespace.XLINK
+func inXMLNamespace*(element: Element): bool = element.namespace == Namespace.XML
+func inXMLNSNamespace*(element: Element): bool = element.namespace == Namespace.XMLNS
+
+func isResettable*(element: Element): bool =
+  return element.tagType in {TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA}
+
+func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
+  for parent in b.branch:
+    if parent == a:
+      return true
+  if b.rootNode.nodeType == DOCUMENT_FRAGMENT_NODE and DocumentFragment(b.rootNode).host != nil:
+    for parent in b.rootNode.branch:
+      if parent == a:
+        return true
+  return false
+
+# WARNING the ordering of the arguments in the standard is whack so this doesn't match it
+func preInsertionValidity*(parent, node, before: Node): bool =
+  if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
+    # HierarchyRequestError
+    return false
+  if node.isHostIncludingInclusiveAncestor(parent):
+    # HierarchyRequestError
+    return false
+  if before != nil and before.parentNode != parent:
+    # NotFoundError
+    return false
+  if node.nodeType notin {DOCUMENT_FRAGMENT_NODE, DOCUMENT_TYPE_NODE, ELEMENT_NODE, CDATA_SECTION_NODE}:
+    # HierarchyRequestError
+    return false
+  if (node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE) or
+      (node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE):
+    # HierarchyRequestError
+    return false
+  if parent.nodeType == DOCUMENT_NODE:
+    case node.nodeType
+    of DOCUMENT_FRAGMENT_NODE:
+      let elems = node.countChildren(ELEMENT_NODE)
+      if elems > 1 or node.hasChild(TEXT_NODE):
+        # HierarchyRequestError
+        return false
+      elif elems == 1 and (parent.hasChild(ELEMENT_NODE) or before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or before.hasNextSibling(DOCUMENT_TYPE_NODE))):
+        # HierarchyRequestError
+        return false
+    of ELEMENT_NODE:
+      if parent.hasChild(ELEMENT_NODE) or before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or before.hasNextSibling(DOCUMENT_TYPE_NODE)):
+        # HierarchyRequestError
+        return false
+    of DOCUMENT_TYPE_NODE:
+      if parent.hasChild(DOCUMENT_TYPE_NODE) or before != nil and before.hasPreviousSibling(ELEMENT_NODE) or before == nil and parent.hasChild(ELEMENT_NODE):
+        # HierarchyRequestError
+        return false
+    else: discard
+  return true # no exception reached
+
+proc remove*(node: Node) =
+  let parent = node.parentNode
+  assert parent != nil
+  let index = parent.childNodes.find(node)
+  assert index != -1
+  #TODO live ranges
+  #TODO NodeIterator
+  let oldPreviousSibling = node.previousSibling
+  let oldNextSibling = node.nextSibling
+  parent.childNodes.del(index)
+  if oldPreviousSibling != nil:
+    oldPreviousSibling.nextSibling = oldNextSibling
+  if oldNextSibling != nil:
+    oldNextSibling.previousSibling = oldPreviousSibling
+
+  #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
+  #TODO not surpress observers => queue tree mutation record
+
+proc adopt(document: Document, node: Node) =
+  let oldDocument = node.document
+  if node.parentNode != nil:
+    remove(node)
+
+proc applyChildInsert(parent, child: Node, index: int) =
+  if parent.rootNode != nil:
+    child.rootNode = parent.rootNode
+  else:
+    child.rootNode = parent
+  child.parentNode = parent
+  if parent.nodeType == ELEMENT_NODE:
+    child.parentElement = Element(parent)
+  if index - 1 >= 0:
+    child.previousSibling = parent.childNodes[index - 1]
+    child.previousSibling.nextSibling = child
+  if index + 1 < parent.childNodes.len:
+    child.nextSibling = parent.childNodes[index + 1]
+    child.nextSibling.previousSibling = child
+
+# WARNING ditto
+proc insert*(parent, node, before: Node) =
+  let nodes = if node.nodeType == DOCUMENT_FRAGMENT_NODE: node.childNodes
+  else: @[node]
+  let count = nodes.len
+  if count == 0:
+    return
+  if node.nodeType == DOCUMENT_FRAGMENT_NODE:
+    for child in node.childNodes:
+      child.remove()
+    #TODO tree mutation record
+  if before != nil:
+    #TODO live ranges
+    discard
+  let previousSibling = if before == nil: parent.lastChild
+  else: before.previousSibling
+  for node in nodes:
+    parent.document.adopt(node)
+    if before == nil:
+      parent.childNodes.add(node)
+      parent.applyChildInsert(node, parent.childNodes.high)
+    else:
+      let index = parent.childNodes.find(before)
+      parent.childNodes.insert(node, index)
+      parent.applyChildInsert(node, index)
+    #TODO shadow root
+
+# WARNING ditto
+proc preInsert*(parent, node, before: Node) =
+  if parent.preInsertionValidity(node, before):
+    let referenceChild = if before == node: node.nextSibling
+    else: before
+    parent.insert(node, referenceChild)
+
+proc append*(parent, node: Node) =
+  parent.preInsert(node, nil)
 
 proc applyOrdinal*(elem: HTMLLIElement) =
   let val = elem.attri("value")
@@ -549,8 +790,10 @@ proc applyOrdinal*(elem: HTMLLIElement) =
         inc menu.ordinalcounter
       else: discard
 
-proc reset*(form: HTMLFormElement) =
-  for input in form.inputs:
+proc reset*(element: Element) = 
+  case element.tagType
+  of TAG_INPUT:
+    let input = HTMLInputELement(element)
     case input.inputType
     of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
       input.value = input.attr("value")
@@ -560,3 +803,20 @@ proc reset*(form: HTMLFormElement) =
       input.file = none(Url)
     else: discard
     input.rendered = false
+  else: discard
+
+proc reset*(form: HTMLFormElement) =
+  for input in form.inputs:
+    input.reset()
+    input.rendered = false
+
+proc appendAttribute*(element: Element, k, v: string) =
+  element.attributes[k] = v
+
+proc setForm*(element: Element, form: HTMLFormElement) =
+  case element.tagType
+  of TAG_INPUT:
+    HTMLInputElement(element).form = form
+  of TAG_BUTTON, TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA, TAG_IMG:
+    discard #TODO
+  else: assert false

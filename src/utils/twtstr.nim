@@ -122,6 +122,15 @@ func toAsciiLower*(str: string): string =
   for i in 0..str.high:
     result[i] = str[i].tolower()
 
+func startsWithNoCase*(str, prefix: string): bool =
+  if str.len < prefix.len: return false
+  # prefix.len is always lower
+  var i = 0
+  while true:
+    if i == prefix.len: return true
+    if str[i].tolower() != prefix[i].tolower(): return false
+    inc i
+
 func genHexCharMap(): seq[int] =
   for i in 0..255:
     case chr(i)
@@ -146,7 +155,7 @@ func decValue*(c: char): int =
   return decCharMap[int(c)]
 
 func isAscii*(c: char): bool =
-  return c in Ascii
+  return int(c) < 128
 
 func isAscii*(r: Rune): bool =
   return int(r) < 128

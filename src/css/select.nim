@@ -28,7 +28,7 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of PSEUDO_LAST_CHILD: return elem.parentNode.lastElementChild == elem
   of PSEUDO_ONLY_CHILD: return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
   of PSEUDO_HOVER: return elem.hover
-  of PSEUDO_ROOT: return elem == elem.ownerDocument.root
+  of PSEUDO_ROOT: return elem == elem.document.html
   of PSEUDO_NTH_CHILD: return int64(sel.pseudonum - 1) in elem.parentNode.children.low..elem.parentNode.children.high and elem.parentNode.children[int64(sel.pseudonum - 1)] == elem
 
 func selectorsMatch*(elem: Element, selectors: SelectorList): bool
@@ -109,36 +109,36 @@ func selectorsMatch*(elem: Element, selectors: SelectorList): bool =
       return false
   return true
 
-func selectElems(document: Document, sel: Selector): seq[Element] =
-  case sel.t
-  of TYPE_SELECTOR:
-    return document.type_elements[sel.tag]
-  of ID_SELECTOR:
-    return document.id_elements.getOrDefault(sel.id, newSeq[Element]())
-  of CLASS_SELECTOR:
-    return document.class_elements.getOrDefault(sel.class, newSeq[Element]())
-  of UNIVERSAL_SELECTOR:
-    return document.all_elements
-  of ATTR_SELECTOR:
-    return document.all_elements.filter((elem) => attrSelectorMatches(elem, sel))
-  of PSEUDO_SELECTOR:
-    return document.all_elements.filter((elem) => pseudoSelectorMatches(elem, sel))
-  of PSELEM_SELECTOR:
-    return document.all_elements
-  of FUNC_SELECTOR:
-    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
-  of COMBINATOR_SELECTOR:
-    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
+#func selectElems(document: Document, sel: Selector): seq[Element] =
+#  case sel.t
+#  of TYPE_SELECTOR:
+#    return document.type_elements[sel.tag]
+#  of ID_SELECTOR:
+#    return document.id_elements.getOrDefault(sel.id, newSeq[Element]())
+#  of CLASS_SELECTOR:
+#    return document.class_elements.getOrDefault(sel.class, newSeq[Element]())
+#  of UNIVERSAL_SELECTOR:
+#    return document.all_elements
+#  of ATTR_SELECTOR:
+#    return document.all_elements.filter((elem) => attrSelectorMatches(elem, sel))
+#  of PSEUDO_SELECTOR:
+#    return document.all_elements.filter((elem) => pseudoSelectorMatches(elem, sel))
+#  of PSELEM_SELECTOR:
+#    return document.all_elements
+#  of FUNC_SELECTOR:
+#    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
+#  of COMBINATOR_SELECTOR:
+#    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
 
-func selectElems(document: Document, selectors: SelectorList): seq[Element] =
-  assert(selectors.len > 0)
-  let sellist = optimizeSelectorList(selectors)
-  result = document.selectElems(selectors[0])
-  var i = 1
-
-  while i < sellist.len:
-    result = result.filter((elem) => selectorMatches(elem, sellist[i]))
-    inc i
+#func selectElems(document: Document, selectors: SelectorList): seq[Element] =
+#  assert(selectors.len > 0)
+#  let sellist = optimizeSelectorList(selectors)
+#  result = document.selectElems(selectors[0])
+#  var i = 1
+#
+#  while i < sellist.len:
+#    result = result.filter((elem) => selectorMatches(elem, sellist[i]))
+#    inc i
 
 func selectElems(element: Element, sel: Selector): seq[Element] =
   case sel.t
@@ -177,7 +177,7 @@ proc querySelectorAll*(document: Document, q: string): seq[Element] =
   let selectors = parseSelectors(cvals)
 
   for sel in selectors:
-    result.add(document.selectElems(sel))
+    result.add(document.html.selectElems(sel))
 
 proc querySelector*(document: Document, q: string): Element =
   let elems = document.querySelectorAll(q)
