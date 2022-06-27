@@ -28,23 +28,26 @@ func ansiReset*(str: string): string =
   result &= str
   result &= ansiResetCode
 
+const C0Controls* = {chr(0x00)..chr(0x1F)}
+const Controls* = (C0Controls + {chr(0x7F)})
+const Ascii* = {chr(0x00)..chr(0x7F)}
+const AsciiUpperAlpha* = {'A'..'Z'}
+const AsciiLowerAlpha* = {'a'..'z'}
+const AsciiAlpha* = (AsciiUpperAlpha + AsciiLowerAlpha)
+const AllChars = {chr(0x00)..chr(0xFF)}
+const NonAscii = (AllChars - Ascii)
+const AsciiDigit* = {'0'..'9'}
+const AsciiHexDigit* = (AsciiDigit + {'a'..'f', 'A'..'F'})
+const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
+
 func isWhitespace*(c: char): bool {.inline.} =
-  return c in {' ', '\n', '\r', '\t', '\f'}
+  return c in AsciiWhitespace
 
 func onlyWhitespace*(s: string): bool =
   for c in s:
     if not c.isWhitespace():
       return false
   return true
-
-const C0Controls = {chr(0x00)..chr(0x1F)}
-const Controls = (C0Controls + {chr(0x7F)})
-const Ascii* = {chr(0x00)..chr(0x7F)}
-const Letters = {'A'..'Z', 'a'..'z'}
-const AllChars = {chr(0x00)..chr(0xFF)}
-const NonAscii = (AllChars - Ascii)
-const Digits = {'0'..'9'}
-const HexDigits = (Digits + {'a'..'f', 'A'..'F'})
 
 func isControlChar*(c: char): bool =
   return c in Controls
@@ -403,6 +406,16 @@ func parseFloat64*(s: string): float64 =
       inc i
 
   return float64(sign) * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
+
+func isSurrogate*(r: Rune): bool = int32(r) in 0xD800..0xDFFF
+func isNonCharacter*(r: Rune): bool =
+  let n = int32(r)
+  n in 0xFDD0..0xFDEF or
+  n in [0xFFFE, 0xFFFF, 0x1FFFE, 0x1FFFF, 0x2FFFE, 0x2FFFF, 0x3FFFE, 0x3FFFF,
+        0x4FFFE, 0x4FFFF, 0x5FFFE, 0x5FFFF, 0x6FFFE, 0x6FFFF, 0x7FFFE, 0x7FFFF,
+        0x8FFFE, 0x8FFFF, 0x9FFFE, 0x9FFFF, 0xAFFFE, 0xAFFFF, 0xBFFFE, 0xBFFFF,
+        0xCFFFE, 0xCFFFF, 0xDFFFE, 0xDFFFF, 0xEFFFE, 0xEFFFF, 0xFFFFE, 0xFFFFF,
+        0x10FFFE, 0x10FFFF]
 
 const ControlPercentEncodeSet* = (Controls + NonAscii)
 const FragmentPercentEncodeSet* = (Controls + NonAscii)

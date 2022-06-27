@@ -88,7 +88,7 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
       continue
     var value: uint16 = 0
     var length = 0
-    while length < 4 and has and c in HexDigits:
+    while length < 4 and has and c in AsciiHexDigit:
       value = value * 0x10 + uint16(c.hexValue)
       inc pointer
       inc length

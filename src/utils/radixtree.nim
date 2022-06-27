@@ -139,8 +139,8 @@ proc `[]=`*[T](tree: RadixNode[T], key: string, value: T) =
 func `{}`*[T](node: RadixNode[T], key: string): RadixNode[T] =
   return node.getOrDefault(key, node)
 
-func hasPrefix*[T](tree: RadixNode[T], prefix: string, at: RadixNode[T] = tree): bool =
-  var n = at
+func hasPrefix*[T](node: RadixNode[T], prefix: string): bool =
+  var n = node
   var i = 0
 
   while i < prefix.len:
