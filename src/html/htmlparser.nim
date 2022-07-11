@@ -1172,30 +1172,30 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         anything_else
       )
       "<a>" => (block:
-        var element: Element = nil
+        var anchor: Element = nil
         for i in countdown(parser.activeFormatting.high, 0):
           let format = parser.activeFormatting[i]
           if format[0] == nil:
             break
           if format[0].tagType == TAG_A:
-            element = format[0]
+            anchor = format[0]
             break
-        if element != nil:
+        if anchor != nil:
           parse_error
           if parser.adoptionAgencyAlgorithm(token):
             any_other_end_tag
             return
           for i in 0..parser.activeFormatting.high:
-            if parser.activeFormatting[i][0] == element:
+            if parser.activeFormatting[i][0] == anchor:
               parser.activeFormatting.del(i)
               break
           for i in 0..parser.openElements.high:
-            if parser.openElements[i] == element:
+            if parser.openElements[i] == anchor:
               parser.openElements.del(i)
               break
-          parser.reconstructActiveFormatting()
-          let element = parser.insertHTMLElement(token)
-          parser.pushOntoActiveFormatting(element, token)
+        parser.reconstructActiveFormatting()
+        let element = parser.insertHTMLElement(token)
+        parser.pushOntoActiveFormatting(element, token)
       )
       ("<b>", "<big>", "<code>", "<em>", "<font>", "<i>", "<s>", "<small>",
        "<strike>", "<strong>", "<tt>", "<u>") => (block:

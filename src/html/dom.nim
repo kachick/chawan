@@ -36,14 +36,12 @@ type
   Node* = ref object of EventTarget
     nodeType*: NodeType
     childNodes*: seq[Node]
-    isConnected*: bool
     nextSibling*: Node
     previousSibling*: Node
     parentNode*: Node
     parentElement*: Element
     rootNode: Node
     document*: Document
-    uid*: int # Unique id
 
   Attr* = ref object of Node
     namespaceURI*: string
@@ -55,9 +53,6 @@ type
 
   Document* = ref object of Node
     location*: Url
-    type_elements*: array[TagType, seq[Element]]
-    class_elements*: Table[string, seq[Element]]
-    all_elements*: seq[Element]
     mode*: QuirksMode
 
     parser_cannot_change_the_mode_flag*: bool
@@ -68,7 +63,6 @@ type
     length*: int
 
   Text* = ref object of CharacterData
-    wholeText*: string
 
   Comment* = ref object of CharacterData
 
@@ -111,7 +105,6 @@ type
     form*: HTMLFormElement
 
   HTMLAnchorElement* = ref object of HTMLElement
-    href*: string
 
   HTMLSelectElement* = ref object of HTMLElement
     name*: string
@@ -147,8 +140,7 @@ type
     sheet_invalid*: bool
 
   HTMLLinkElement* = ref object of HTMLElement
-    href*: string
-    rel*: string
+    sheet*: CSSStylesheet
 
   HTMLFormElement* = ref object of HTMLElement
     name*: string
@@ -187,9 +179,23 @@ func `$`*(node: Node): string =
   else:
     "Node of " & $node.nodeType
 
-iterator elements*(document: Document, tag: TagType): Element {.inline.} =
-  for element in document.type_elements[tag]:
-    yield element
+iterator children*(node: Node): Element {.inline.} =
+  for child in node.childNodes:
+    if child.nodeType == ELEMENT_NODE:
+      yield Element(child)
+
+iterator elements*(node: Node, tag: TagType): Element {.inline.} =
+  var stack: seq[Element]
+  for child in node.children:
+    stack.add(child)
+  while stack.len > 0:
+    let element = stack.pop()
+    if element.tagType == tag:
+      yield element
+    for i in countdown(element.childNodes.high, 0):
+      let child = element.childNodes[i]
+      if child.nodeType == ELEMENT_NODE:
+        stack.add(Element(child))
 
 iterator radiogroup(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for input in form.inputs:
@@ -229,11 +235,6 @@ iterator branch*(node: Node): Node {.inline.} =
     yield node
     node = node.parentNode
 
-iterator children*(node: Node): Element {.inline.} =
-  for child in node.childNodes:
-    if child.nodeType == ELEMENT_NODE:
-      yield Element(child)
-
 func qualifiedName*(element: Element): string =
   if element.namespacePrefix.issome: element.namespacePrefix.get & ':' & element.localName
   else: element.localName
@@ -257,7 +258,6 @@ func body*(document: Document): HTMLElement =
       if element.tagType == TAG_BODY:
         return HTMLElement(element)
   return nil
-
 
 func countChildren(node: Node, nodeType: NodeType): int =
   for child in node.childNodes:
@@ -379,6 +379,11 @@ func textContent*(node: Node): string =
       if child.nodeType != COMMENT_NODE:
         result &= child.textContent
 
+func childTextContent*(node: Node): string =
+  for child in node.childNodes:
+    if child.nodeType == TEXT_NODE:
+      result &= Text(child).data
+
 proc sheets*(element: Element): seq[CSSStylesheet] =
   for child in element.children:
     if child.tagType == TAG_STYLE:
@@ -386,6 +391,10 @@ proc sheets*(element: Element): seq[CSSStylesheet] =
       if child.sheet_invalid:
         child.sheet = parseStylesheet(newStringStream(child.textContent))
       result.add(child.sheet)
+    elif child.tagType == TAG_LINK:
+      let child = HTMLLinkElement(child)
+      if child.sheet != nil:
+        result.add(child.sheet)
 
 func inputString*(input: HTMLInputElement): string =
   var text = case input.inputType
@@ -561,10 +570,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
   result.css = rootProperties()
-  result.uid = document.all_elements.len
   result.rootNode = result
   result.document = document
-  document.all_elements.add(result)
 
 func newHTMLElement*(document: Document, localName: string, namespace = "", prefix = none[string](), tagType = tagType(localName)): Element =
   result = document.newHTMLElement(tagType, namespace(namespace).get(HTML))
@@ -593,7 +600,6 @@ func newAttr*(parent: Element, key, value: string): Attr =
   result.value = value
   result.rootNode = result
 
-#TODO optimize?
 func getElementById*(document: Document, id: string): Element =
   if id.len == 0:
     return nil
@@ -608,29 +614,9 @@ func getElementById*(document: Document, id: string): Element =
         stack.add(Element(child))
   return nil
 
-#TODO optimize?
 func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
-  var stack = document.children
-  while stack.len > 0:
-    let element = stack.pop()
-    if element.tagType == tag:
-      result.add(element)
-    for i in countdown(element.childNodes.high, 0):
-      let child = element.childNodes[i]
-      if child.nodeType == ELEMENT_NODE:
-        stack.add(Element(child))
-
-func baseUrl*(document: Document): Url =
-  var href = ""
-  for base in document.elements(TAG_BASE):
-    if base.attr("href") != "":
-      href = base.attr("href")
-  if href == "":
-    return document.location
-  let url = parseUrl(href, document.location.some)
-  if url.isnone:
-    return document.location
-  return url.get
+  for element in document.elements(tag):
+    result.add(element)
 
 func inHTMLNamespace*(element: Element): bool = element.namespace == Namespace.HTML
 func inMathMLNamespace*(element: Element): bool = element.namespace == Namespace.MATHML
@@ -652,7 +638,36 @@ func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
         return true
   return false
 
-# WARNING the ordering of the arguments in the standard is whack so this doesn't match it
+func baseUrl*(document: Document): Url =
+  var href = ""
+  for base in document.elements(TAG_BASE):
+    if base.attrb("href"):
+      href = base.attr("href")
+  if href == "":
+    return document.location
+  let url = parseUrl(href, document.location.some)
+  if url.isnone:
+    return document.location
+  return url.get
+
+func href*(element: Element): string =
+  assert element.tagType in {TAG_A, TAG_LINK, TAG_BASE}
+  if element.attrb("href"):
+    let url = parseUrl(element.attr("href"), some(element.document.location))
+    if url.issome:
+      return $url.get
+  return ""
+
+func rel*(element: Element): string =
+  assert element.tagType in {TAG_A, TAG_LINK, TAG_AREA}
+  return element.attr("rel")
+
+func title*(document: Document): string =
+  for title in document.elements(TAG_TITLE):
+    return title.childTextContent.stripAndCollapse()
+  return ""
+
+# WARNING the ordering of the arguments in the standard is whack so this doesn't match that
 func preInsertionValidity*(parent, node, before: Node): bool =
   if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
     # HierarchyRequestError
@@ -705,6 +720,8 @@ proc remove*(node: Node) =
     oldPreviousSibling.nextSibling = oldNextSibling
   if oldNextSibling != nil:
     oldNextSibling.previousSibling = oldPreviousSibling
+  node.parentNode = nil
+  node.parentElement = nil
 
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
   #TODO not surpress observers => queue tree mutation record
@@ -811,6 +828,14 @@ proc reset*(form: HTMLFormElement) =
     input.rendered = false
 
 proc appendAttribute*(element: Element, k, v: string) =
+  case k
+  of "id": element.id = v
+  of "class":
+    let classes = v.split(' ')
+    for class in classes:
+      if class != "" and class notin element.classList:
+        element.classList.add(class)
+  else: discard
   element.attributes[k] = v
 
 proc setForm*(element: Element, form: HTMLFormElement) =

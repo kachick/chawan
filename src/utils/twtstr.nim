@@ -203,6 +203,23 @@ func substr*(s: seq[Rune], i: int): seq[Rune] =
     return @[]
   return s[min(high(s), i)..high(s)]
 
+func stripAndCollapse*(s: string): string =
+  var i = 0
+  while i < s.len and s[i] in AsciiWhitespace:
+    inc i
+  var space = false
+  while i < s.len:
+    if s[i] notin AsciiWhitespace:
+      if space:
+        result &= ' '
+        space = false
+      result &= s[i]
+    elif not space:
+      space = true
+    else:
+      result &= ' '
+    inc i
+
 func skipBlanks*(buf: string, at: int): int =
   result = at
   while result < buf.len and buf[result].isWhitespace():

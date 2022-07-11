@@ -278,9 +278,8 @@ func hasAnchor*(buffer: Buffer, anchor: string): bool =
 
 func getTitle(buffer: Buffer): string =
   if buffer.document != nil:
-    let titles = buffer.document.getElementsByTag(TAG_TITLE)
-    if titles.len > 0:
-      return titles[0].textContent.strip().clearControls()
+    result = buffer.document.title
+    if result != "": return result
   if buffer.ispipe:
     return "*pipe*"
   return $buffer.location
@@ -718,7 +717,7 @@ proc updateHover(buffer: Buffer) =
 
     let link = thisnode.getLink()
     if link != nil:
-      buffer.hovertext = parseUrl(link.href, buffer.location.some).serialize()
+      buffer.hovertext = link.href
     else:
       buffer.hovertext = ""
 
@@ -748,7 +747,7 @@ proc loadResources(buffer: Buffer, document: Document) =
             let res = buffer.loader.getPage(url.get)
             if res.s != nil and res.contenttype == "text/css":
               let sheet = parseStylesheet(res.s)
-              #elem.parentElement.sheets.add(sheet) #TODO this is broken...
+              elem.sheet = sheet
 
     for i in countdown(elem.children.high, 0):
       let child = elem.children[i]

@@ -109,37 +109,6 @@ func selectorsMatch*(elem: Element, selectors: SelectorList): bool =
       return false
   return true
 
-#func selectElems(document: Document, sel: Selector): seq[Element] =
-#  case sel.t
-#  of TYPE_SELECTOR:
-#    return document.type_elements[sel.tag]
-#  of ID_SELECTOR:
-#    return document.id_elements.getOrDefault(sel.id, newSeq[Element]())
-#  of CLASS_SELECTOR:
-#    return document.class_elements.getOrDefault(sel.class, newSeq[Element]())
-#  of UNIVERSAL_SELECTOR:
-#    return document.all_elements
-#  of ATTR_SELECTOR:
-#    return document.all_elements.filter((elem) => attrSelectorMatches(elem, sel))
-#  of PSEUDO_SELECTOR:
-#    return document.all_elements.filter((elem) => pseudoSelectorMatches(elem, sel))
-#  of PSELEM_SELECTOR:
-#    return document.all_elements
-#  of FUNC_SELECTOR:
-#    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
-#  of COMBINATOR_SELECTOR:
-#    return document.all_elements.filter((elem) => selectorMatches(elem, sel))
-
-#func selectElems(document: Document, selectors: SelectorList): seq[Element] =
-#  assert(selectors.len > 0)
-#  let sellist = optimizeSelectorList(selectors)
-#  result = document.selectElems(selectors[0])
-#  var i = 1
-#
-#  while i < sellist.len:
-#    result = result.filter((elem) => selectorMatches(elem, sellist[i]))
-#    inc i
-
 func selectElems(element: Element, sel: Selector): seq[Element] =
   case sel.t
   of TYPE_SELECTOR:
@@ -176,8 +145,9 @@ proc querySelectorAll*(document: Document, q: string): seq[Element] =
   let cvals = parseListOfComponentValues(ss)
   let selectors = parseSelectors(cvals)
 
-  for sel in selectors:
-    result.add(document.html.selectElems(sel))
+  if document.html != nil:
+    for sel in selectors:
+      result.add(document.html.selectElems(sel))
 
 proc querySelector*(document: Document, q: string): Element =
   let elems = document.querySelectorAll(q)
