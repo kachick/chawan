@@ -801,7 +801,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '=': switch_state BEFORE_ATTRIBUTE_VALUE
       of '>':
         switch_state DATA
-        emit '>'
+        emit_tok
       of eof:
         parse_error eof_in_tag
         emit_eof

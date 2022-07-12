@@ -43,20 +43,20 @@ iterator keys*[T](node: RadixNode[T]): string =
     yield node.children[i].k
     inc i
 
-func contains[T](node: RadixNode[T], k: string): bool =
-  var i = 0
-  while i < node.children.len:
-    if node.children[i].k[0] == k[0]:
-      if k.len != node.children[i].k.len:
-        return false
-      var j = 1
-      while j < k.len:
-        if node.children[i].k[j] != k[j]:
-          return false
-        inc j
-      return true
-    inc i
-  return false
+#func contains[T](node: RadixNode[T], k: string): bool =
+#  var i = 0
+#  while i < node.children.len:
+#    if node.children[i].k[0] == k[0]:
+#      if k.len != node.children[i].k.len:
+#        return false
+#      var j = 1
+#      while j < k.len:
+#        if node.children[i].k[j] != k[j]:
+#          return false
+#        inc j
+#      return true
+#    inc i
+#  return false
 
 # O(1) add procedures for insert
 proc add[T](node: RadixNode[T], k: string, v: T) =

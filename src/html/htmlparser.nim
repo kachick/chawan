@@ -54,7 +54,6 @@ proc resetInsertionMode(parser: var HTML5Parser) =
       node = parser.ctx
     if node.tagType == TAG_SELECT:
       if not last:
-        var ancestor = node
         for j in countdown(parser.openElements.high, 1):
           let ancestor = parser.openElements[j]
           case ancestor.tagType
@@ -525,6 +524,7 @@ macro match(token: Token, body: typed): untyped =
   type OfBranchStore = object
     ofBranches: seq[(seq[NimNode], NimNode)]
     defaultBranch: NimNode
+    painted: bool
 
   # Stores 'of' branches
   var ofBranches: array[TokenType, OfBranchStore]
@@ -552,12 +552,15 @@ macro match(token: Token, body: typed): untyped =
       case pattern.kind
       of nnkSym: # simple symbols; we assume these are the enums
         ofBranches[tokenTypes[pattern.strVal]].defaultBranch = action
+        ofBranches[tokenTypes[pattern.strVal]].painted = true
       of nnkCharLit:
         ofBranches[CHARACTER_ASCII].ofBranches.add((@[pattern], action))
+        ofBranches[CHARACTER_ASCII].painted = true
       of nnkCurly:
         case pattern[0].kind
         of nnkCharLit:
           ofBranches[CHARACTER_ASCII].ofBranches.add((@[pattern], action))
+          ofBranches[CHARACTER_ASCII].painted = true
         else: error fmt"Unsupported curly of kind {pattern[0].kind}"
       of nnkStrLit:
         var tempTokenizer = newTokenizer(newStringStream(pattern.strVal))
@@ -570,9 +573,11 @@ macro match(token: Token, body: typed): untyped =
               if ofBranches[token.t].ofBranches[i][1] == action:
                 found = true
                 ofBranches[token.t].ofBranches[i][0].add((quote do: TagType(`tt`)))
+                ofBranches[token.t].painted = true
                 break
             if not found:
               ofBranches[token.t].ofBranches.add((@[(quote do: TagType(`tt`))], action))
+              ofBranches[token.t].painted = true
           else: error fmt"{pattern.strVal}: Unsupported token {token} of kind {token.t}"
           break
       of nnkDiscardStmt:
@@ -628,7 +633,10 @@ macro match(token: Token, body: typed): untyped =
       else:
         discard
 
-  mainCase.add(newNimNode(nnkElse).add(quote do: discard))
+  for t in TokenType:
+    if not ofBranches[t].painted:
+      mainCase.add(newNimNode(nnkElse).add(quote do: discard))
+      break
 
   var stmts = newStmtList().add(mainCase)
   for stmt in defaultBranch:
@@ -1358,7 +1366,6 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "</script>" => (block:
         #TODO microtask
-        let script = parser.currentNode
         pop_current_node
         parser.insertionMode = parser.oldInsertionMode
         #TODO document.write() ?

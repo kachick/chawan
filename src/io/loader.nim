@@ -3,7 +3,6 @@ import options
 import os
 import osproc
 import streams
-import streamwrapper
 import strutils
 
 import config/config

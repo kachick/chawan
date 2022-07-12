@@ -1,7 +1,6 @@
 import tables
 import options
 import streams
-import strformat
 import strutils
 
 import css/values
@@ -317,7 +316,7 @@ func branch*(node: Node): seq[Node] =
   for node in node.branch:
     result.add(node)
 
-func firstChild(node: Node): Node =
+func firstChild*(node: Node): Node =
   if node.childNodes.len == 0:
     return nil
   return node.childNodes[0]
@@ -727,9 +726,9 @@ proc remove*(node: Node) =
   #TODO not surpress observers => queue tree mutation record
 
 proc adopt(document: Document, node: Node) =
-  let oldDocument = node.document
   if node.parentNode != nil:
     remove(node)
+  #TODO shadow root
 
 proc applyChildInsert(parent, child: Node, index: int) =
   if parent.rootNode != nil:
@@ -760,8 +759,8 @@ proc insert*(parent, node, before: Node) =
   if before != nil:
     #TODO live ranges
     discard
-  let previousSibling = if before == nil: parent.lastChild
-  else: before.previousSibling
+  #let previousSibling = if before == nil: parent.lastChild
+  #else: before.previousSibling
   for node in nodes:
     parent.document.adopt(node)
     if before == nil:
@@ -835,7 +834,21 @@ proc appendAttribute*(element: Element, k, v: string) =
     for class in classes:
       if class != "" and class notin element.classList:
         element.classList.add(class)
-  else: discard
+  if element.tagType == TAG_INPUT:
+    case k
+    of "value": HTMLInputElement(element).value = v
+    of "type": HTMLInputElement(element).inputType = inputType(v)
+    of "size":
+      var i = 20
+      var fail = v.len > 0
+      for c in v:
+        if not c.isDigit:
+          fail = true
+          break
+      if not fail:
+        i = parseInt(v)
+      HTMLInputElement(element).size = i
+    of "checked": HTMLInputElement(element).checked = true
   element.attributes[k] = v
 
 proc setForm*(element: Element, form: HTMLFormElement) =

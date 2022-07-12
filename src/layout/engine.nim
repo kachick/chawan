@@ -110,7 +110,6 @@ proc horizontalAlignRow(ictx: InlineContext, row: InlineRow, computed: CSSComput
       dec spaces
       if spaces > 0:
         let spacingwidth = (ictx.maxwidth - sumwidth) div spaces
-        let oldwidth = row.width
         row.width = 0
         for atom in row.atoms:
           atom.offset.x = row.width
@@ -474,7 +473,7 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
   assert builder.content != nil
   result = parentblock.newInlineBlock(builder)
 
-  let blockbuilder = BlockBoxBuilder(builder.content)
+  let blockbuilder = builder.content
   if blockbuilder.inlinelayout:
     # Builder only contains inline boxes.
     result.bctx.inline = result.bctx.buildInlines(blockbuilder.children)
@@ -519,9 +518,6 @@ proc buildInline(bctx: BlockContext, box: InlineBoxBuilder) =
   let padding_left = box.computed{"padding-left"}.px(bctx.viewport, bctx.compwidth)
   if padding_left > 0:
     box.ictx.thisrow.addSpacing(padding_left, box.ictx.cellheight, paddingformat)
-
-  let originalRow = box.ictx.thisrow
-  let originalWidth = box.ictx.thisrow.width
 
   for text in box.text:
     assert box.children.len == 0
@@ -670,12 +666,6 @@ proc getListItemBox(elem: Element): ListItemBoxBuilder =
 
 func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
   let textbox = parent.getTextBox()
-  textbox.node = input
-  textbox.text.add(input.inputString())
-  return textbox
-
-func getInputBox(computed: CSSComputedValues, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
-  let textbox = computed.getTextBox()
   textbox.node = input
   textbox.text.add(input.inputString())
   return textbox

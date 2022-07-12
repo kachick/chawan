@@ -329,26 +329,6 @@ proc refreshDisplay(buffer: Buffer) =
 
     inc y
 
-proc setCursorXB(buffer: Buffer, byte: int) =
-  var w = 0
-  var b = 0
-  while b < byte:
-    var r: Rune
-    fastRuneAt(buffer.currentLine, b, r)
-    w += r.width()
-
-  let x = w
-  if x - buffer.fromx >= 0 and x - buffer.width < buffer.fromx:
-    buffer.cursorx = x
-  else:
-    if x > buffer.cursorx:
-      buffer.fromx = max(x - buffer.width + 1, 0)
-    elif x < buffer.cursorx:
-      buffer.fromx = min(x, buffer.maxfromx)
-    buffer.cursorx = x
-    buffer.redraw = true
-  buffer.xend = buffer.cursorx
-
 proc setCursorX(buffer: Buffer, x: int, refresh = true, save = true) =
   if (not refresh) or (buffer.fromx <= x and x < buffer.fromx + buffer.width):
     buffer.cursorx = x
@@ -390,10 +370,6 @@ proc setCursorXY*(buffer: Buffer, x, y: int) =
 proc setFromXY*(buffer: Buffer, x, y: int) =
   buffer.fromy = max(min(y, buffer.maxfromy), 0)
   buffer.fromx = max(min(x, buffer.maxfromx), 0)
-
-proc setCursorXBY(buffer: Buffer, x, y: int) =
-  buffer.setCursorY(y)
-  buffer.setCursorXB(x)
 
 proc cursorDown*(buffer: Buffer) =
   if buffer.cursory < buffer.numLines - 1:
@@ -955,11 +931,11 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
     assert formmethod == FORM_METHOD_POST
     HttpPost
 
-  let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
-    submitter.attr("formtarget")
-  else:
-    submitter.target()
-  let noopener = true #TODO
+  #let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
+  #  submitter.attr("formtarget")
+  #else:
+  #  submitter.target()
+  #let noopener = true #TODO
 
   template mutateActionUrl() =
     let query = serializeApplicationXWWFormUrlEncoded(entrylist)
