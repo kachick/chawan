@@ -810,7 +810,7 @@ func is_dwidth_cjk(r: Rune): bool =
 # compute lookup table on startup
 var width_table*: array[0..0x10FFFF, byte]
 
-func makewidthtable*(cjk: bool): array[0..0x10FFFF, byte] =
+func makewidthtable*(cjk: bool): array[0..0x10FFFF, byte] {.noInit.} =
   for r in low(char)..high(char):
     if r.isControlChar():
       result[int(r)] = 0
