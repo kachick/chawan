@@ -156,6 +156,10 @@ proc getPageCurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mi
   else:
     result.contenttype = guessContentType(url.path.serialize())
 
+  if curl_proc.peekExitCode() > 0:
+    result.contenttype = ""
+    result.s = nil
+
 proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartData = nil): LoadResult =
   if url.scheme == "file":
     when defined(windows) or defined(OS2) or defined(DOS):
