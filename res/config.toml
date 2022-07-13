@@ -55,6 +55,7 @@ v = 'TOGGLE_SOURCE'
 D = 'DISCARD_BUFFER'
 ',' = 'PREV_BUFFER'
 '.' = 'NEXT_BUFFER'
+M-c = 'COMMAND'
 
 [line]
 C-m = 'SUBMIT'

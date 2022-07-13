@@ -1,18 +1,20 @@
-import streams
-import terminal
 import options
 import os
+import streams
+import terminal
 
 import css/sheet
 import config/config
 import io/buffer
 import io/lineedit
 import io/loader
+import js/javascript
 import types/url
 import utils/twtstr
 
 type
-  Client* = ref object
+  Client* = ref ClientObj
+  ClientObj = object
     buffer: Buffer
     feednext: bool
     s: string
@@ -20,14 +22,48 @@ type
     errormessage: string
     userstyle: CSSStylesheet
     loader: FileLoader
+    jsrt: JSRuntime
+    jsctx: JSContext
 
   ActionError = object of IOError
   LoadError = object of ActionError
   InterruptError = object of LoadError
 
+proc js_console_log(ctx: JSContext, this: JSValue, argc: int, argv: ptr JSValue): JSValue {.cdecl.} =
+  let opaque = ctx.getOpaque()
+  for i in 0..<argc:
+    let arg = getJSObject(ctx, argv, i)
+    if i != 0:
+      opaque.err &= ' '
+    let str = arg.toString()
+    if str.isnone:
+      return JS_EXCEPTION
+    opaque.err &= str.get
+  opaque.err &= '\n'
+  return JS_UNDEFINED
+
+# Probably never called, but just in case...
+proc `=destroy`(client: var ClientObj) =
+  if client.jsctx != nil:
+    let opaque = client.jsctx.getOpaque()
+    if opaque != nil:
+      dealloc(opaque)
+    free(client.jsctx)
+  if client.jsrt != nil:
+    free(client.jsrt)
+
 proc newClient*(): Client =
   new(result)
   result.loader = newFileLoader()
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  result.jsrt = rt
+  result.jsctx = ctx
+  let global = ctx.getGlobalObject()
+  let console = newJSObject(result.jsctx)
+  console.setFunctionProperty("log", js_console_log)
+  console.setProperty("console", console)
+  free(global)
 
 proc loadError(s: string) =
   raise newException(LoadError, s)
@@ -118,7 +154,6 @@ proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none
             interruptError())
         client.buffer.istream = page.s
         client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
-        client.buffer.streamclosed = false
       else:
         loadError("Couldn't load " & $url)
     except IOError, OSError:
@@ -192,6 +227,41 @@ proc toggleSource*(client: Client) =
       client.buffer.contenttype = "text/html"
     client.setupBuffer()
 
+proc command(client: Client) =
+  var iput: string
+  print(HVP(client.buffer.height + 1, 1))
+  print(EL())
+  let status = readLine("COMMAND: ", iput, client.buffer.width)
+  if status and iput.len > 0:
+    let ret = client.jsctx.eval(iput, "<stdin>", JS_EVAL_TYPE_GLOBAL)
+    let opaque = client.jsctx.getOpaque()
+    if ret.isException():
+      let ex = client.jsctx.getException()
+      let str = ex.toString()
+      if str.issome:
+        opaque.err &= str.get & '\n'
+      let stack = ex.getProperty("stack")
+      if not stack.isUndefined():
+        let str = stack.toString()
+        if str.issome:
+          opaque.err &= str.get & '\n'
+      free(stack)
+      free(ex)
+    else:
+      let str = ret.toString()
+      if str.issome:
+        opaque.err &= str.get & '\n'
+    free(ret)
+    client.addBuffer()
+    g_client = client
+    setControlCHook(proc() {.noconv.} =
+      if g_client.buffer.prev != nil or g_client.buffer.next != nil:
+        g_client.discardBuffer()
+      interruptError())
+    client.buffer.istream = newStringStream(opaque.err)
+    client.buffer.contenttype = "text/plain"
+    client.setupBuffer()
+
 proc quit(client: Client) =
   eraseScreen()
   print(HVP(0, 0))
@@ -248,6 +318,7 @@ proc input(client: Client) =
   of ACTION_PREV_BUFFER: client.prevBuffer()
   of ACTION_NEXT_BUFFER: client.nextBuffer()
   of ACTION_DISCARD_BUFFER: client.discardBuffer()
+  of ACTION_COMMAND: client.command()
   else: discard
 
 proc inputLoop(client: Client) =
