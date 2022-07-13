@@ -22,6 +22,7 @@ type
     NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
 
   Namespace* = enum
+    NO_NAMESPACE,
     HTML = "http://www.w3.org/1999/xhtml",
     MATHML = "http://www.w3.org/1998/Math/MathML",
     SVG = "http://www.w3.org/2000/svg",
@@ -516,13 +517,8 @@ func newComment*(document: Document, data: string = ""): Comment =
   result.data = data
   result.rootNode = result
 
-func namespace(s: string): Option[Namespace] =
-  for n in Namespace:
-    if s == $n:
-      return some(n)
-
 # note: we do not implement custom elements
-func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = Option[string]): HTMLElement =
+func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = none[string]()): HTMLElement =
   case tagType
   of TAG_INPUT:
     result = new(HTMLInputElement)
@@ -569,12 +565,15 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
   result.css = rootProperties()
+  result.namespace = namespace
+  result.namespacePrefix = prefix
   result.rootNode = result
   result.document = document
 
-func newHTMLElement*(document: Document, localName: string, namespace = "", prefix = none[string](), tagType = tagType(localName)): Element =
-  result = document.newHTMLElement(tagType, namespace(namespace).get(HTML))
-  result.namespacePrefix = prefix
+func newHTMLElement*(document: Document, localName: string, namespace = Namespace.HTML, prefix = none[string](), tagType = tagType(localName)): Element =
+  result = document.newHTMLElement(tagType, namespace, prefix)
+  if tagType == TAG_UNKNOWN:
+    result.localName = localName
 
 func newDocument*(): Document =
   new(result)

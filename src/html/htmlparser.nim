@@ -188,7 +188,7 @@ func hasElementInSelectScope(elements: seq[Element], target: TagType): bool =
       return false
   assert false
 
-func createElement(parser: HTML5Parser, token: Token, namespace: string, intendedParent: Node): Element =
+func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, intendedParent: Node): Element =
   #TODO custom elements
   let document = intendedParent.document
   let localName = token.tagname
@@ -208,7 +208,7 @@ func createElement(parser: HTML5Parser, token: Token, namespace: string, intende
 proc insert(location: AdjustedInsertionLocation, node: Node) =
   location.inside.insert(node, location.before)
 
-proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: string): Element =
+proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: Namespace): Element =
   let location = parser.appropriatePlaceForInsert()
   let element = parser.createElement(token, namespace, location.inside)
   if location.inside.preInsertionValidity(element, location.before):
@@ -218,7 +218,75 @@ proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: stri
   return element
 
 proc insertHTMLElement(parser: var HTML5Parser, token: Token): Element =
-  return parser.insertForeignElement(token, $Namespace.HTML)
+  return parser.insertForeignElement(token, Namespace.HTML)
+
+proc adjustSVGAttributes(token: var Token) =
+  const adjusted = {
+    "attributename": "attributeName",
+    "attributetype": "attributeType",
+    "basefrequency": "baseFrequency",
+    "baseprofile": "baseProfile",
+    "calcmode": "calcMode",
+    "clippathunits": "clipPathUnits",
+    "diffuseconstant": "diffuseConstant",
+    "edgemode": "edgeMode",
+    "filterunits": "filterUnits",
+    "glyphref": "glyphRef",
+    "gradienttransform": "gradientTransform",
+    "gradientunits": "gradientUnits",
+    "kernelmatrix": "kernelMatrix",
+    "kernelunitlength": "kernelUnitLength",
+    "keypoints": "keyPoints",
+    "keysplines": "keySplines",
+    "keytimes": "keyTimes",
+    "lengthadjust": "lengthAdjust",
+    "limitingconeangle": "limitingConeAngle",
+    "markerheight": "markerHeight",
+    "markerunits": "markerUnits",
+    "markerwidth": "markerWidth",
+    "maskcontentunits": "maskContentUnits",
+    "maskunits": "maskUnits",
+    "numoctaves": "numOctaves",
+    "pathlength": "pathLength",
+    "patterncontentunits": "patternContentUnits",
+    "patterntransform": "patternTransform",
+    "patternunits": "patternUnits",
+    "pointsatx": "pointsAtX",
+    "pointsaty": "pointsAtY",
+    "pointsatz": "pointsAtZ",
+    "preservealpha": "preserveAlpha",
+    "preserveaspectratio": "preserveAspectRatio",
+    "primitiveunits": "primitiveUnits",
+    "refx": "refX",
+    "refy": "refY",
+    "repeatcount": "repeatCount",
+    "repeatdur": "repeatDur",
+    "requiredextensions": "requiredExtensions",
+    "requiredfeatures": "requiredFeatures",
+    "specularconstant": "specularConstant",
+    "specularexponent": "specularExponent",
+    "spreadmethod": "spreadMethod",
+    "startoffset": "startOffset",
+    "stddeviation": "stdDeviation",
+    "stitchtiles": "stitchTiles",
+    "surfacescale": "surfaceScale",
+    "systemlanguage": "systemLanguage",
+    "tablevalues": "tableValues",
+    "targetx": "targetX",
+    "targety": "targetY",
+    "textlength": "textLength",
+    "viewbox": "viewBox",
+    "viewtarget": "viewTarget",
+    "xchannelselector": "xChannelSelector",
+    "ychannelselector": "yChannelSelector",
+    "zoomandpan": "zoomAndPan",
+  }.toTable()
+  var todo: seq[string]
+  for k in token.attrs.keys:
+    if k in adjusted:
+      todo.add(k)
+  for s in todo:
+    token.attrs[adjusted[s]] = token.attrs[s]
 
 template insert_character_impl(parser: var HTML5Parser, data: typed) =
   let location = parser.appropriatePlaceForInsert()
@@ -407,7 +475,7 @@ proc pushOntoActiveFormatting(parser: var HTML5Parser, element: Element, token: 
     if it[0] == nil: break
     if it[0].tagType != element.tagType: continue
     if it[0].tagType == TAG_UNKNOWN:
-      if it[0].localName != element.localName: continue #TODO local or qualified?
+      if it[0].localName != element.localName: continue
     if it[0].namespace != element.namespace: continue
     var fail = false
     for k, v in it[0].attributes:
@@ -481,7 +549,8 @@ func isHTMLIntegrationPoint(node: Element): bool =
 # * Finally, the whole thing is wrapped in a named block, to implement a
 #   pseudo-goto by breaking out only when the else statement needn't be
 #   executed.
-# So for example the following code:
+#
+# e.g. the following code:
 #
 #   match token:
 #     TokenType.COMMENT => (block: echo "comment")
@@ -686,7 +755,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       TokenType.COMMENT => (block: parser.insertComment(token, last_child_of(parser.document)))
       AsciiWhitespace => (block: discard)
       "<html>" => (block:
-        let element = parser.createElement(token, $Namespace.HTML, parser.document)
+        let element = parser.createElement(token, Namespace.HTML, parser.document)
         parser.document.append(element)
         parser.openElements.add(element)
         parser.insertionMode = BEFORE_HEAD
@@ -694,7 +763,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error)
       _ => (block:
-        let element = parser.document.newHTMLElement(TAG_HTML)
+        let element = parser.document.newHTMLElement(TAG_HTML, Namespace.HTML)
         parser.document.append(element)
         parser.openElements.add(element)
         parser.insertionMode = BEFORE_HEAD
@@ -745,7 +814,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       ("<noframes>", "<style>") => (block: parser.genericRawtextElementParsingAlgorithm(token))
       "<script>" => (block:
         let location = parser.appropriatePlaceForInsert()
-        let element = HTMLScriptElement(parser.createElement(token, $Namespace.HTML, location.inside))
+        let element = HTMLScriptElement(parser.createElement(token, Namespace.HTML, location.inside))
         element.parserDocument = parser.document
         element.forceAsync = false
         if parser.fragment:
@@ -847,7 +916,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       while parser.openElements.pop().tagType != TAG_P: discard
 
     proc adoptionAgencyAlgorithm(parser: var HTML5Parser, token: Token): bool =
-      if parser.currentNode.tagType != TAG_UNKNOWN and parser.currentNode.tagtype == token.tagtype or parser.currentNode.localName == token.tagname: #TODO local or qualified name?
+      if parser.currentNode.tagType != TAG_UNKNOWN and parser.currentNode.tagtype == token.tagtype or parser.currentNode.localName == token.tagname:
         var fail = true
         for it in parser.activeFormatting:
           if it[0] == parser.currentNode:
@@ -919,7 +988,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
             if nodeStackIndex < furthestBlockIndex:
               dec furthestBlockIndex
             continue
-          let element = parser.createElement(parser.activeFormatting[nodeFormattingIndex][1], $Namespace.HTML, commonAncestor)
+          let element = parser.createElement(parser.activeFormatting[nodeFormattingIndex][1], Namespace.HTML, commonAncestor)
           parser.activeFormatting[nodeFormattingIndex] = (element, parser.activeFormatting[nodeFormattingIndex][1])
           parser.openElements[nodeFormattingIndex] = element
           aboveNode = parser.openElements[nodeFormattingIndex - 1]
@@ -931,7 +1000,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         let location = parser.appropriatePlaceForInsert(commonAncestor)
         location.inside.insert(lastNode, location.before)
         let token = parser.activeFormatting[formattingIndex][1]
-        let element = parser.createElement(token, $Namespace.HTML, furthestBlock)
+        let element = parser.createElement(token, Namespace.HTML, furthestBlock)
         for child in furthestBlock.childNodes:
           child.remove()
           element.append(child)
@@ -948,7 +1017,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
     template any_other_end_tag() =
       for i in countdown(parser.openElements.high, 0):
         let node = parser.openElements[i]
-        if node.tagType != TAG_UNKNOWN and node.tagType == token.tagtype or node.localName == token.tagname: #TODO local or qualified name?
+        if node.tagType != TAG_UNKNOWN and node.tagType == token.tagtype or node.localName == token.tagname:
           parser.generateImpliedEndTags(token.tagtype)
           if node != parser.currentNode: parse_error
           while parser.openElements.pop() != node: discard
@@ -1900,7 +1969,6 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       if node.namespace == Namespace.HTML: break
       parser.processInHTMLContent(token)
 
-
   match token:
     '\0' => (block:
       parse_error
@@ -1926,7 +1994,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       #NOTE MathML not implemented
       #TODO SVG
       #TODO adjust foreign attributes
-      let element = parser.insertForeignElement(token, $parser.adjustedCurrentNode.namespace)
+      let element = parser.insertForeignElement(token, parser.adjustedCurrentNode.namespace)
       if token.selfclosing and element.inSVGNamespace():
         script_end_tag
       else:
@@ -1953,9 +2021,7 @@ proc constructTree(parser: var HTML5Parser): Document =
       #NOTE MathML not implemented
       parser.processInHTMLContent(token)
     else:
-      #TODO disabled path because I'm pretty sure it'd just break things
-      #parser.processInForeignContent(token)
-      pop_current_node
+      parser.processInForeignContent(token)
 
   #TODO document.write (?)
   #TODO etc etc...
