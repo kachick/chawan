@@ -733,6 +733,9 @@ proc load*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if not buffer.streamclosed:
+      buffer.source = buffer.istream.readAll()
+      buffer.istream.close()
+      buffer.istream = newStringStream(buffer.source)
       buffer.document = parseHTML5(buffer.istream)
       buffer.streamclosed = true
     else:
