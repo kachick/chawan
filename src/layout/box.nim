@@ -5,13 +5,33 @@ import html/dom
 import io/term
 
 type
+  #LayoutUnit* = distinct int32
+  LayoutUnit* = int
+
   Offset* = object
-    x*: int
-    y*: int
+    x*: LayoutUnit
+    y*: LayoutUnit
+
+  Size* = object
+    width*: LayoutUnit
+    height*: LayoutUnit
+
+  Strut* = object
+    pos*: int
+    neg*: int
+
+  Box* = ref object of RootObj
+
+  BlockBox* = ref object of Box
+    flowRoot*: bool
+
+  FlowRoot* = ref object of BlockBox
+
+  #InlineRoot* = ref object of 
 
   Viewport* = ref object
     term*: TermAttributes
-    root*: BlockBoxBuilder
+    root*: BlockContext
 
   BoxBuilder* = ref object of RootObj
     children*: seq[BoxBuilder]
@@ -26,7 +46,6 @@ type
     newline*: bool
 
   BlockBoxBuilder* = ref object of BoxBuilder
-    bctx*: BlockContext
 
   InlineBlockBoxBuilder* = ref object of BoxBuilder
     content*: BlockBoxBuilder # iblock.bctx is equivalent to box.bctx
@@ -59,9 +78,6 @@ type
     str*: string
     format*: ComputedFormat
 
-  InlineBlock* = ref object of InlineAtom
-    bctx*: BlockContext
-
   InlineRow* = ref object
     atoms*: seq[InlineAtom]
     offset*: Offset
@@ -88,6 +104,7 @@ type
     computed*: CSSComputedValues
     viewport*: Viewport
     offset*: Offset
+
     width*: int
     height*: int
     margin_top*: int
@@ -107,3 +124,27 @@ type
 
   ListItem* = ref object of BlockContext
     marker*: InlineContext
+
+  InlineBlock* = ref object of InlineAtom
+    bctx*: BlockContext
+
+proc append*(a: var Strut, b: int) =
+  if b < 0:
+    a.neg = min(b, a.neg)
+  else:
+    a.pos = max(b, a.pos)
+
+func sum*(a: Strut): int =
+  return a.pos + a.neg
+
+#proc `div`(a, b: LayoutUnit): LayoutUnit {.borrow.}
+#
+#func `+`*(a, b: LayoutUnit): LayoutUnit {.borrow.}
+#func `-`*(a, b: LayoutUnit): LayoutUnit {.borrow.}
+#func `*`*(a, b: LayoutUnit): LayoutUnit {.borrow.}
+#func `/`*(a, b: LayoutUnit): LayoutUnit = a div b
+#
+#proc `+=`*(a: var LayoutUnit, b: LayoutUnit) {.borrow.}
+#proc `-=`*(a: var LayoutUnit, b: LayoutUnit) {.borrow.}
+#proc `*=`*(a: var LayoutUnit, b: LayoutUnit) {.borrow.}
+#proc `/=`*(a: var LayoutUnit, b: LayoutUnit) = a = a div b

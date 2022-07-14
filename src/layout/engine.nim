@@ -9,6 +9,8 @@ import css/values
 import utils/twtstr
 import io/term
 
+# Build phase
+
 # p is what to use for percentage values
 func cells_in(l: CSSLength, state: Viewport, d: int, p: Option[int], o: bool): int =
   return cells(l, d, state.term, p, o)
@@ -24,8 +26,6 @@ func cells_h(l: CSSLength, state: Viewport, p: int): int =
 
 func px(l: CSSLength, state: Viewport, p = 0): int {.inline.} =
   return px(l, state.term, p)
-
-# Build phase
 
 type InlineState = object
   ictx: InlineContext
@@ -280,6 +280,8 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSC
 type PreferredDimensions = object
   compwidth: int
   compheight: Option[int]
+  margin_top: int
+  margin_bottom: int
   margin_left: int
   margin_right: int
   padding_left: int
@@ -294,6 +296,8 @@ proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width:
   else:
     result.compwidth = pwidth.px(viewport, width)
 
+  result.margin_top = computed{"margin-top"}.px(viewport, width)
+  result.margin_bottom = computed{"margin-top"}.px(viewport, width)
   result.margin_left = computed{"margin-left"}.px(viewport, width)
   result.margin_right = computed{"margin-right"}.px(viewport, width)
 
@@ -325,6 +329,8 @@ proc setPreferredDimensions(bctx: BlockContext, width: int, height: Option[int])
   bctx.padding_bottom = preferred.padding_bottom
   bctx.padding_left = preferred.padding_left
   bctx.padding_right = preferred.padding_right
+  bctx.margin_top = preferred.margin_top
+  bctx.margin_bottom = preferred.margin_bottom
   bctx.margin_left = preferred.margin_left
   bctx.margin_right = preferred.margin_right
 
@@ -367,88 +373,12 @@ proc newInlineContext(bctx: BlockContext): InlineContext =
   result.viewport = bctx.viewport
   result.shrink = bctx.shrink
 
-# Blocks' positions do not have to be positiond if buildBlocks is called with
-# children, whence the separate procedure.
-proc positionBlocks(bctx: BlockContext, selfcontained: bool) =
-  var y = 0
-  var x = 0
-  var margin_todo = 0
-
-  y += bctx.padding_top
-  bctx.height += bctx.padding_top
-
-  x += bctx.padding_left
-  if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
-    x += bctx.compwidth div 2
-
-  template apply_child(child: BlockContext) =
-    child.offset.y = y
-    child.offset.x = x + child.margin_left
-    if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
-      child.offset.x -= child.width div 2
-    y += child.height
-    bctx.height += child.height
-    bctx.width = max(bctx.width, child.width)
-    margin_todo = child.margin_bottom
-
-  var i = 0
-  if i < bctx.nested.len:
-    let child = bctx.nested[i]
-
-    bctx.margin_top = child.margin_top
-    let mtop = bctx.computed{"margin-top"}.px(bctx.viewport, bctx.compwidth)
-    if mtop > bctx.margin_top or mtop < 0:
-      bctx.margin_top = mtop - bctx.margin_top
-
-    if selfcontained:
-      margin_todo = bctx.margin_top
-      bctx.height += margin_todo
-      y += margin_todo
-
-    apply_child(child)
-    inc i
-
-  while i < bctx.nested.len:
-    let child = bctx.nested[i]
-
-    if child.margin_top > margin_todo or child.margin_top < 0:
-      margin_todo += child.margin_top - margin_todo
-    y += margin_todo
-    bctx.height += margin_todo
-
-    apply_child(child)
-    inc i
-
-  bctx.margin_bottom = margin_todo
-  let mbot = bctx.computed{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
-  if mbot > bctx.margin_bottom or mbot < 0:
-    bctx.margin_bottom = mbot - bctx.margin_bottom
-
-  if selfcontained:
-    bctx.height += bctx.margin_bottom
-
-  bctx.height += bctx.padding_bottom
-
-  if bctx.compheight.issome:
-    bctx.height = bctx.compheight.get
-
-  bctx.width += bctx.padding_left
-  bctx.width += bctx.padding_right
-
-proc positionInlines(bctx: BlockContext, selfcontained: bool) =
-  bctx.margin_top = bctx.computed{"margin-top"}.px(bctx.viewport, bctx.compwidth)
-  bctx.margin_bottom = bctx.computed{"margin-bottom"}.px(bctx.viewport, bctx.compwidth)
-
+proc positionInlines(bctx: BlockContext) =
   bctx.width += bctx.padding_left
   bctx.inline.offset.x += bctx.padding_left
 
-  if selfcontained:
-    bctx.inline.offset.x += bctx.margin_top
-    bctx.height += bctx.margin_top
-    bctx.height += bctx.margin_bottom
-
   bctx.height += bctx.padding_top
-  bctx.inline.offset.x += bctx.padding_top
+  bctx.inline.offset.y += bctx.padding_top
 
   bctx.height += bctx.padding_bottom
 
@@ -459,7 +389,7 @@ proc positionInlines(bctx: BlockContext, selfcontained: bool) =
   else:
     bctx.width = bctx.compwidth
 
-proc buildBlock(box: BlockBoxBuilder, parent: BlockContext, selfcontained = false): BlockContext
+proc buildBlock(box: BlockBoxBuilder, parent: BlockContext): BlockContext
 proc buildInlines(bctx: BlockContext, inlines: seq[BoxBuilder]): InlineContext
 proc buildBlocks(bctx: BlockContext, blocks: seq[BoxBuilder], node: Node)
 
@@ -469,20 +399,25 @@ proc applyInlineDimensions(bctx: BlockContext) =
     bctx.height = bctx.compheight.get
   bctx.width = max(bctx.width, bctx.inline.maxwidth)
 
+# Builder only contains inline boxes.
+proc buildInlineLayout(bctx: BlockContext, children: seq[BoxBuilder]) =
+  bctx.inline = bctx.buildInlines(children)
+  bctx.applyInlineDimensions()
+  bctx.positionInlines()
+
+proc buildBlockLayout(bctx: BlockContext, children: seq[BoxBuilder], node: Node) =
+  bctx.buildBlocks(children, node)
+
 proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, parentblock: BlockContext): InlineBlock =
   assert builder.content != nil
   result = parentblock.newInlineBlock(builder)
 
   let blockbuilder = builder.content
   if blockbuilder.inlinelayout:
-    # Builder only contains inline boxes.
-    result.bctx.inline = result.bctx.buildInlines(blockbuilder.children)
-    result.bctx.applyInlineDimensions()
-    result.bctx.positionInlines(false)
+    result.bctx.buildInlineLayout(blockbuilder.children)
   else:
     # Builder only contains block boxes.
     result.bctx.buildBlocks(blockbuilder.children, blockbuilder.node)
-    result.bctx.positionBlocks(false)
 
   let preferred = preferredDimensions(builder.computed, parentblock.viewport, parentblock.compwidth, parentblock.compheight)
   let pwidth = builder.computed{"width"}
@@ -533,6 +468,7 @@ proc buildInline(bctx: BlockContext, box: InlineBoxBuilder) =
       let child = InlineBlockBoxBuilder(child)
       let iblock = child.buildInlineBlock(box.ictx, bctx)
       box.ictx.addAtom(iblock, bctx.compwidth, child.computed)
+      box.ictx.whitespacenum = 0
     else:
       assert false, "child.t is " & $child.computed{"display"}
 
@@ -563,57 +499,97 @@ proc buildInlines(bctx: BlockContext, inlines: seq[BoxBuilder]): InlineContext =
 
   return ictx
 
-proc buildListItem(builder: ListItemBoxBuilder, parent: BlockContext, selfcontained = false): ListItem =
+proc buildListItem(builder: ListItemBoxBuilder, parent: BlockContext): ListItem =
   result = parent.newListItem(builder)
-  var tmp: seq[BoxBuilder]
-  tmp.add(builder.marker)
-  result.marker = result.buildInlines(tmp)
+  result.marker = result.buildInlines(@[BoxBuilder(builder.marker)])
   if builder.content.inlinelayout:
-    # Builder only contains inline boxes.
-    result.inline = result.buildInlines(builder.content.children)
-    result.applyInlineDimensions()
-    result.positionInlines(selfcontained)
+    result.buildInlineLayout(builder.content.children)
   else:
-    # Builder only contains block boxes.
-    result.buildBlocks(builder.content.children, builder.content.node)
-    result.positionBlocks(selfcontained)
+    result.buildBlockLayout(builder.content.children, builder.content.node)
+
+# Blocks' positions do not have to be positioned if buildBlocks is called with
+# children, whence the separate procedure.
+proc positionBlocks(bctx: BlockContext) =
+  var y = 0
+  var x = 0
+  var margin_todo: Strut
+
+  y += bctx.padding_top
+  bctx.height += bctx.padding_top
+
+  x += bctx.padding_left
+  if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+    x += bctx.compwidth div 2
+
+  template apply_child(child: BlockContext) =
+    child.offset.y = y
+    child.offset.x = x + child.margin_left
+    if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+      child.offset.x -= child.width div 2
+    y += child.height
+    bctx.height += child.height
+    bctx.width = max(bctx.width, child.width)
+    margin_todo = Strut()
+    margin_todo.append(child.margin_bottom)
+
+  if bctx.nested.len > 0:
+    let child = bctx.nested[0]
+
+    margin_todo.append(bctx.margin_top)
+    margin_todo.append(child.margin_top)
+    bctx.margin_top = margin_todo.sum()
+
+    apply_child(child)
+
+  var i = 1
+  while i < bctx.nested.len:
+    let child = bctx.nested[i]
+
+    margin_todo.append(child.margin_top)
+    y += margin_todo.sum()
+    bctx.height += margin_todo.sum()
+
+    apply_child(child)
+    inc i
+
+  margin_todo.append(bctx.margin_bottom)
+  bctx.margin_bottom = margin_todo.sum()
+
+  bctx.height += bctx.padding_bottom
+
+  if bctx.compheight.issome:
+    bctx.height = bctx.compheight.get
+
+  bctx.width += bctx.padding_left
+  bctx.width += bctx.padding_right
+
 
 proc buildBlocks(bctx: BlockContext, blocks: seq[BoxBuilder], node: Node) =
   for child in blocks:
+    var cblock: BlockContext
     case child.computed{"display"}
-    of DISPLAY_BLOCK:
-      bctx.nested.add(buildBlock(BlockBoxBuilder(child), bctx))
-    of DISPLAY_LIST_ITEM:
-      bctx.nested.add(buildListItem(ListItemBoxBuilder(child), bctx))
-    else:
-      assert false, "child.t is " & $child.computed{"display"}
+    of DISPLAY_BLOCK: cblock = buildBlock(BlockBoxBuilder(child), bctx)
+    of DISPLAY_LIST_ITEM: cblock = buildListItem(ListItemBoxBuilder(child), bctx)
+    else: assert false, "child.t is " & $child.computed{"display"}
+    bctx.nested.add(cblock)
+  bctx.positionBlocks()
 
 # Build a block box inside another block box, based on a builder.
-proc buildBlock(box: BlockBoxBuilder, parent: BlockContext, selfcontained = false): BlockContext =
+proc buildBlock(box: BlockBoxBuilder, parent: BlockContext): BlockContext =
   assert parent != nil
   result = parent.newBlockContext(box)
   if box.inlinelayout:
-    # Builder only contains inline boxes.
-    result.inline = result.buildInlines(box.children)
-    result.applyInlineDimensions()
-    result.positionInlines(selfcontained)
+    result.buildInlineLayout(box.children)
   else:
-    # Builder only contains block boxes.
-    result.buildBlocks(box.children, box.node)
-    result.positionBlocks(selfcontained)
+    result.buildBlockLayout(box.children, box.node)
 
-# Build a block box whose parent is the viewport, based on a builder.
-proc buildBlock(box: BlockBoxBuilder, viewport: Viewport, selfcontained = false): BlockContext =
+# Establish a new flow-root context and build a block box.
+proc buildRootBlock(box: BlockBoxBuilder, viewport: Viewport): BlockContext =
   result = viewport.newBlockContext(box)
   if box.inlinelayout:
-    # Builder only contains inline boxes.
-    result.inline = result.buildInlines(box.children)
-    result.applyInlineDimensions()
-    result.positionInlines(selfcontained)
+    result.buildInlineLayout(box.children)
   else:
-    # Builder only contains block boxes.
     result.buildBlocks(box.children, box.node)
-    result.positionBlocks(selfcontained)
 
 # Generation phase
 
@@ -678,7 +654,7 @@ func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], computed: CSSComput
 
 proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder
 
-template flush_block_group3(computed: CSSComputedValues) =
+template flush_block_group(computed: CSSComputedValues) =
   if blockgroup.len > 0:
     let bbox = getBlockBox(computed.inheritProperties())
     bbox.inlinelayout = true
@@ -702,11 +678,11 @@ proc generateFromElem(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[B
 
   case elem.css{"display"}
   of DISPLAY_BLOCK:
-    flush_block_group3(elem.css)
+    flush_block_group(elem.css)
     let childbox = elem.generateBlockBox(viewport)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
-    flush_block_group3(elem.css)
+    flush_block_group(elem.css)
     let childbox = getListItemBox(elem)
     childbox.content = elem.generateBlockBox(viewport)
     box.children.add(childbox)
@@ -739,18 +715,18 @@ proc generateBlockPseudoBox(computed: CSSComputedValues, viewport: Viewport): Bl
     ibox = getTextBox(computed)
     ibox.text.add($computed{"content"})
     flush_ibox
-    flush_block_group3(computed)
+    flush_block_group(computed)
 
   return box
 
 proc generatePseudo(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, computed: CSSComputedValues) =
   case computed{"display"}
   of DISPLAY_BLOCK:
-    flush_block_group3(elem.css)
+    flush_block_group(elem.css)
     let childbox = generateBlockPseudoBox(computed, viewport)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
-    flush_block_group3(elem.css)
+    flush_block_group(elem.css)
     let childbox = getListItemBox(elem)
     childbox.content = elem.generateBlockBox(viewport)
     box.children.add(childbox)
@@ -831,12 +807,10 @@ proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
       box.children = blockgroup
       box.inlinelayout = true
     else:
-      flush_block_group3(elem.css)
+      flush_block_group(elem.css)
   return box
 
-proc generateBoxBuilders(elem: Element, viewport: Viewport): BlockBoxBuilder =
-  return generateBlockBox(elem, viewport)
 
 proc renderLayout*(viewport: var Viewport, document: Document) =
-  viewport.root = document.html.generateBoxBuilders(viewport)
-  viewport.root.bctx = buildBlock(viewport.root, viewport)
+  let builder = document.html.generateBlockBox(viewport)
+  viewport.root = buildRootBlock(builder, viewport)

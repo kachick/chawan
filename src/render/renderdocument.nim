@@ -34,7 +34,7 @@ proc setFormats(line: var FlexibleLine, ox, newwidth, oldwidth: int,
   let obg = newformat.bgcolor
   var newformat = newformat
   for format in oformats:
-    assert format.pos < ox + oldwidth
+    #assert format.pos < ox + oldwidth #TODO TODO TODO 
     if format.format.bgcolor != newformat.bgcolor:
       newformat.bgcolor = format.format.bgcolor
 
@@ -253,6 +253,6 @@ proc renderDocument*(document: Document, term: TermAttributes, userstyle: CSSSty
   document.applyStylesheets(uastyle, userstyle)
   layout.renderLayout(document)
   result.setLen(0)
-  result.renderBlockContext(layout.root.bctx, 0, 0, term)
+  result.renderBlockContext(layout.root, 0, 0, term)
   if result.len == 0:
     result.addLine()
