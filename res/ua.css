@@ -22,7 +22,6 @@ ol, ul, menu, dir {
 }
 
 :is(ol, ul, menu, dir) :is(ol, ul, menu, dir) {
-	margin-left: 2ch;
 	margin-top: unset;
 	margin-bottom: unset;
 }

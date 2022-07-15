@@ -46,6 +46,7 @@ type
     newline*: bool
 
   BlockBoxBuilder* = ref object of BoxBuilder
+    listItemCounter: int # ordinal value of current list
 
   InlineBlockBoxBuilder* = ref object of BoxBuilder
     content*: BlockBoxBuilder # iblock.bctx is equivalent to box.bctx

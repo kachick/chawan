@@ -620,25 +620,24 @@ proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
   result.inlinelayout = true
   result.computed = computed.inheritProperties()
 
-proc getMarkerBox(elem: Element): MarkerBoxBuilder =
+proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.computed = elem.css.inheritProperties()
+  result.computed = computed
   result.computed.setDisplay(DISPLAY_INLINE)
 
-  if elem.tagType == TAG_LI:
-    result.ordinalvalue = HTMLLIElement(elem).ordinalvalue
+  if result.computed{"display"} == DISPLAY_LIST_ITEM:
+    result.ordinalvalue = listItemCounter
   else:
     result.ordinalvalue = 1
-  if elem.css{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
+  if computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
     result.inside = true
-  result.text.add(elem.css{"list-style-type"}.listMarker(result.ordinalvalue))
+  result.text.add(computed{"list-style-type"}.listMarker(result.ordinalvalue))
 
-proc getListItemBox(elem: Element): ListItemBoxBuilder =
-  assert elem.css{"display"} == DISPLAY_LIST_ITEM
+proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItemBoxBuilder =
   new(result)
-  result.computed = elem.css.copyProperties()
-  result.marker = getMarkerBox(elem)
+  result.computed = computed.copyProperties()
+  result.marker = getMarkerBox(computed, listItemCounter)
 
 func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
   let textbox = parent.getTextBox()
@@ -670,7 +669,7 @@ template flush_ibox() =
 
 proc generateInlineBoxes(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport)
 
-proc generateFromElem(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder) =
+proc generateFromElem(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, listItemCounter: var int) =
   if elem.tagType == TAG_BR:
     ibox = box.getTextBox()
     ibox.newline = true
@@ -683,9 +682,10 @@ proc generateFromElem(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[B
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
     flush_block_group(elem.css)
-    let childbox = getListItemBox(elem)
+    let childbox = getListItemBox(elem.css, listItemCounter)
     childbox.content = elem.generateBlockBox(viewport)
     box.children.add(childbox)
+    inc listItemCounter
   of DISPLAY_INLINE:
     flush_ibox
     box.generateInlineBoxes(elem, blockgroup, viewport)
@@ -727,8 +727,8 @@ proc generatePseudo(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[Box
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
     flush_block_group(elem.css)
-    let childbox = getListItemBox(elem)
-    childbox.content = elem.generateBlockBox(viewport)
+    let childbox = getListItemBox(computed, 1)
+    childbox.content = generateBlockPseudoBox(computed, viewport)
     box.children.add(childbox)
   of DISPLAY_INLINE:
     flush_ibox
@@ -759,11 +759,13 @@ proc generateInlineBoxes(box: BlockBoxBuilder, elem: Element, blockgroup: var se
 
   generateBoxBefore(box, elem, blockgroup, viewport, ibox)
 
+  var listItemCounter = 1 # ordinal value of current list
+
   for child in elem.childNodes:
     case child.nodeType
     of ELEMENT_NODE:
       let child = Element(child)
-      box.generateFromElem(child, blockgroup, viewport, ibox)
+      box.generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
     of TEXT_NODE:
       let child = Text(child)
       if ibox == nil:
@@ -782,13 +784,15 @@ proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
   var ibox: InlineBoxBuilder = nil
 
   generateBoxBefore(box, elem, blockgroup, viewport, ibox)
+
+  var listItemCounter = 1 # ordinal value of current list
   
   for child in elem.childNodes:
     case child.nodeType
     of ELEMENT_NODE:
       flush_ibox
       let child = Element(child)
-      box.generateFromElem(child, blockgroup, viewport, ibox)
+      box.generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
     of TEXT_NODE:
       let child = Text(child)
       if canGenerateAnonymousInline(blockgroup, box.computed, child):
