@@ -191,7 +191,7 @@ proc loadUrl(client: Client, url: string, ctype = "") =
         client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, true, ctype)
 
 proc reloadPage(client: Client) =
-  client.gotoUrl(client.buffer.location, none(ClickAction), none(Url), true, false, client.buffer.contenttype)
+  client.gotoUrl(client.buffer.location, none(ClickAction), none(Url), true, true, client.buffer.contenttype)
 
 proc changeLocation(client: Client) =
   let buffer = client.buffer
