@@ -3,6 +3,7 @@ import unicode
 
 import css/cascade
 import css/sheet
+import css/stylednode
 import css/values
 import html/dom
 import io/cell
@@ -249,10 +250,11 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
-proc renderDocument*(document: Document, term: TermAttributes, userstyle: CSSStylesheet, layout: var Viewport): FlexibleGrid =
-  document.applyStylesheets(uastyle, userstyle)
-  layout.renderLayout(document)
-  result.setLen(0)
-  result.renderBlockContext(layout.root, 0, 0, term)
-  if result.len == 0:
-    result.addLine()
+proc renderDocument*(document: Document, term: TermAttributes, userstyle: CSSStylesheet, layout: var Viewport, previousStyled: StyledNode): (FlexibleGrid, StyledNode) =
+  let styledNode = document.applyStylesheets(uastyle, userstyle, previousStyled)
+  result[1] = styledNode
+  layout.renderLayout(document, styledNode)
+  result[0].setLen(0)
+  result[0].renderBlockContext(layout.root, 0, 0, term)
+  if result[0].len == 0:
+    result[0].addLine()

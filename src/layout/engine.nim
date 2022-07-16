@@ -2,12 +2,13 @@ import math
 import options
 import unicode
 
-import layout/box
+import css/stylednode
+import css/values
 import html/tags
 import html/dom
-import css/values
-import utils/twtstr
 import io/term
+import layout/box
+import utils/twtstr
 
 # Build phase
 
@@ -646,12 +647,12 @@ func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport
   return textbox
 
 # Don't generate empty anonymous inline blocks between block boxes
-func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], computed: CSSComputedValues, text: Text): bool =
+func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], computed: CSSComputedValues, str: string): bool =
   return blockgroup.len > 0 and blockgroup[^1].computed{"display"} == DISPLAY_INLINE or
     computed{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
-    not text.data.onlyWhitespace()
+    not str.onlyWhitespace()
 
-proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder
+proc generateBlockBox(styledNode: StyledNode, viewport: Viewport): BlockBoxBuilder
 
 template flush_block_group(computed: CSSComputedValues) =
   if blockgroup.len > 0:
@@ -667,142 +668,74 @@ template flush_ibox() =
     blockgroup.add(ibox)
     ibox = nil
 
-proc generateInlineBoxes(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport)
+proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport)
 
-proc generateFromElem(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, listItemCounter: var int) =
-  if elem.tagType == TAG_BR:
-    ibox = box.getTextBox()
-    ibox.newline = true
-    flush_ibox
+proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, listItemCounter: var int) =
+  if styledNode.node != nil:
+    let elem = Element(styledNode.node)
+    if elem.tagType == TAG_BR:
+      ibox = box.getTextBox()
+      ibox.newline = true
+      flush_ibox
 
-  case elem.css{"display"}
+  case styledNode.computed{"display"}
   of DISPLAY_BLOCK:
-    flush_block_group(elem.css)
-    let childbox = elem.generateBlockBox(viewport)
+    flush_block_group(styledNode.computed)
+    let childbox = styledNode.generateBlockBox(viewport)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
-    flush_block_group(elem.css)
-    let childbox = getListItemBox(elem.css, listItemCounter)
-    childbox.content = elem.generateBlockBox(viewport)
+    flush_block_group(styledNode.computed)
+    let childbox = getListItemBox(styledNode.computed, listItemCounter)
+    childbox.content = styledNode.generateBlockBox(viewport)
     box.children.add(childbox)
     inc listItemCounter
   of DISPLAY_INLINE:
     flush_ibox
-    box.generateInlineBoxes(elem, blockgroup, viewport)
+    box.generateInlineBoxes(styledNode, blockgroup, viewport)
   of DISPLAY_INLINE_BLOCK:
     flush_ibox
     let childbox = getInlineBlockBox(box.computed)
-    childbox.content = elem.generateBlockBox(viewport)
+    childbox.content = styledNode.generateBlockBox(viewport)
     blockgroup.add(childbox)
   else:
     discard #TODO
 
-proc generateInlinePseudoBox(box: BlockBoxBuilder, computed: CSSComputedValues, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
+proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
   var ibox: InlineBoxBuilder = nil
-
-  if computed{"content"}.len > 0:
-    ibox = getTextBox(computed)
-    ibox.text.add($computed{"content"})
-
-  flush_ibox
-
-proc generateBlockPseudoBox(computed: CSSComputedValues, viewport: Viewport): BlockBoxBuilder =
-  let box = getBlockBox(computed)
-  var blockgroup: seq[BoxBuilder]
-  var ibox: InlineBoxBuilder = nil
-
-  if computed{"content"}.len > 0:
-    ibox = getTextBox(computed)
-    ibox.text.add($computed{"content"})
-    flush_ibox
-    flush_block_group(computed)
-
-  return box
-
-proc generatePseudo(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, computed: CSSComputedValues) =
-  case computed{"display"}
-  of DISPLAY_BLOCK:
-    flush_block_group(elem.css)
-    let childbox = generateBlockPseudoBox(computed, viewport)
-    box.children.add(childbox)
-  of DISPLAY_LIST_ITEM:
-    flush_block_group(elem.css)
-    let childbox = getListItemBox(computed, 1)
-    childbox.content = generateBlockPseudoBox(computed, viewport)
-    box.children.add(childbox)
-  of DISPLAY_INLINE:
-    flush_ibox
-    box.generateInlinePseudoBox(computed, blockgroup, viewport)
-  of DISPLAY_INLINE_BLOCK:
-    flush_ibox
-    let childbox = getInlineBlockBox(box.computed)
-    childbox.content = generateBlockPseudoBox(computed, viewport)
-    blockgroup.add(childbox)
-  else:
-    discard #TODO
-
-proc generateBoxBefore(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder) =
-  if elem.pseudo[PSEUDO_BEFORE] != nil:
-    box.generatePseudo(elem, blockgroup, viewport, ibox, elem.pseudo[PSEUDO_BEFORE])
-
-  if elem.tagType == TAG_INPUT:
-    flush_ibox
-    let input = HTMLInputElement(elem)
-    ibox = box.getInputBox(input, viewport)
-
-proc generateBoxAfter(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder) =
-  if elem.pseudo[PSEUDO_AFTER] != nil:
-    box.generatePseudo(elem, blockgroup, viewport, ibox, elem.pseudo[PSEUDO_AFTER])
-
-proc generateInlineBoxes(box: BlockBoxBuilder, elem: Element, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
-  var ibox: InlineBoxBuilder = nil
-
-  generateBoxBefore(box, elem, blockgroup, viewport, ibox)
 
   var listItemCounter = 1 # ordinal value of current list
 
-  for child in elem.childNodes:
-    case child.nodeType
-    of ELEMENT_NODE:
-      let child = Element(child)
+  for child in styledNode.children:
+    case child.t
+    of STYLED_ELEMENT:
       box.generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
-    of TEXT_NODE:
-      let child = Text(child)
+    of STYLED_TEXT:
       if ibox == nil:
-        ibox = getTextBox(elem.css)
-        ibox.node = elem
-      ibox.text.add(child.data)
-    else: discard
-
-  generateBoxAfter(box, elem, blockgroup, viewport, ibox)
+        ibox = getTextBox(styledNode.computed)
+        ibox.node = child.node
+      ibox.text.add(child.text)
 
   flush_ibox
 
-proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
-  let box = getBlockBox(elem.css)
+proc generateBlockBox(styledNode: StyledNode, viewport: Viewport): BlockBoxBuilder =
+  let elem = Element(styledNode.node)
+  let box = getBlockBox(styledNode.computed)
   var blockgroup: seq[BoxBuilder]
   var ibox: InlineBoxBuilder = nil
-
-  generateBoxBefore(box, elem, blockgroup, viewport, ibox)
 
   var listItemCounter = 1 # ordinal value of current list
   
-  for child in elem.childNodes:
-    case child.nodeType
-    of ELEMENT_NODE:
+  for child in styledNode.children:
+    case child.t
+    of STYLED_ELEMENT:
       flush_ibox
-      let child = Element(child)
       box.generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
-    of TEXT_NODE:
-      let child = Text(child)
-      if canGenerateAnonymousInline(blockgroup, box.computed, child):
+    of STYLED_TEXT:
+      if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
         if ibox == nil:
-          ibox = getTextBox(elem.css)
-          ibox.node = elem
-        ibox.text.add(child.data)
-    else: discard
-
-  generateBoxAfter(box, elem, blockgroup, viewport, ibox)
+          ibox = getTextBox(styledNode.computed)
+          ibox.node = child.node
+        ibox.text.add(child.text)
 
   flush_ibox
   if blockgroup.len > 0:
@@ -811,10 +744,10 @@ proc generateBlockBox(elem: Element, viewport: Viewport): BlockBoxBuilder =
       box.children = blockgroup
       box.inlinelayout = true
     else:
-      flush_block_group(elem.css)
+      flush_block_group(styledNode.computed)
   return box
 
 
-proc renderLayout*(viewport: var Viewport, document: Document) =
-  let builder = document.html.generateBlockBox(viewport)
+proc renderLayout*(viewport: var Viewport, document: Document, root: StyledNode) =
+  let builder = root.generateBlockBox(viewport)
   viewport.root = buildRootBlock(builder, viewport)

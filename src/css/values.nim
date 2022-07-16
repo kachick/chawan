@@ -110,7 +110,7 @@ type
     of VALUE_DISPLAY:
       display*: CSSDisplay
     of VALUE_CONTENT:
-      content*: seq[Rune]
+      content*: string
     of VALUE_WHITESPACE:
       whitespace*: CSSWhitespace
     of VALUE_INTEGER:
@@ -603,12 +603,12 @@ func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
       of "revert": return VALUE_REVERT
   return VALUE_NOGLOBAL
 
-func cssString(d: CSSDeclaration): seq[Rune] =
+func cssString(d: CSSDeclaration): string =
   if isToken(d):
     let tok = getToken(d)
     case tok.tokenType
     of CSS_IDENT_TOKEN, CSS_STRING_TOKEN:
-      return tok.value
+      return $tok.value
     else: return
 
 func cssDisplay(d: CSSDeclaration): CSSDisplay =

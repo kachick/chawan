@@ -8,6 +8,7 @@ import unicode
 
 import css/cascade
 import css/sheet
+import css/stylednode
 import html/dom
 import html/tags
 import html/htmlparser
@@ -40,6 +41,7 @@ type
     attrs*: TermAttributes
     document*: Document
     viewport*: Viewport
+    prevstyled*: StyledNode
     redraw*: bool
     reshape*: bool
     nostatus*: bool
@@ -754,7 +756,9 @@ proc render*(buffer: Buffer) =
   of "text/html":
     if buffer.viewport == nil:
       buffer.viewport = Viewport(term: buffer.attrs)
-    buffer.lines = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport)
+    let ret = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport, buffer.prevstyled)
+    buffer.lines = ret[0]
+    buffer.prevstyled = ret[1]
   else: discard
   buffer.updateCursor()
 

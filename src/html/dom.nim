@@ -122,18 +122,14 @@ type
   HTMLBRElement* = ref object of HTMLElement
 
   HTMLMenuElement* = ref object of HTMLElement
-    ordinalcounter*: int
 
   HTMLUListElement* = ref object of HTMLElement
-    ordinalcounter*: int
 
   HTMLOListElement* = ref object of HTMLElement
     start*: Option[int]
-    ordinalcounter*: int
 
   HTMLLIElement* = ref object of HTMLElement
     value*: Option[int]
-    ordinalvalue*: int
 
   HTMLStyleElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
@@ -508,14 +504,14 @@ func newText*(document: Document, data: string = ""): Text =
   result.nodeType = TEXT_NODE
   result.document = document
   result.data = data
-  result.rootNode = result
+  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 func newComment*(document: Document, data: string = ""): Comment =
   new(result)
   result.nodeType = COMMENT_NODE
   result.document = document
   result.data = data
-  result.rootNode = result
+  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 # note: we do not implement custom elements
 func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = none[string]()): HTMLElement =
@@ -538,10 +534,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     result = new(HTMLOListElement)
   of TAG_UL:
     result = new(HTMLUListElement)
-    HTMLUListElement(result).ordinalcounter = 1
   of TAG_MENU:
     result = new(HTMLMenuElement)
-    HTMLMenuElement(result).ordinalcounter = 1
   of TAG_LI:
     result = new(HTMLLIElement)
   of TAG_STYLE:
@@ -567,7 +561,7 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   result.css = rootProperties()
   result.namespace = namespace
   result.namespacePrefix = prefix
-  result.rootNode = result
+  result.rootNode = result #TODO apparently we shouldn't be doing this
   result.document = document
 
 func newHTMLElement*(document: Document, localName: string, namespace = Namespace.HTML, prefix = none[string](), tagType = tagType(localName)): Element =
@@ -578,7 +572,7 @@ func newHTMLElement*(document: Document, localName: string, namespace = Namespac
 func newDocument*(): Document =
   new(result)
   result.nodeType = DOCUMENT_NODE
-  result.rootNode = result
+  result.rootNode = result #TODO apparently we shouldn't be doing this
   result.document = result
 
 func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
@@ -587,7 +581,7 @@ func newDocumentType*(document: Document, name: string, publicId = "", systemId 
   result.name = name
   result.publicId = publicId
   result.systemId = systemId
-  result.rootNode = result
+  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 func newAttr*(parent: Element, key, value: string): Attr =
   new(result)
@@ -596,7 +590,7 @@ func newAttr*(parent: Element, key, value: string): Attr =
   result.ownerElement = parent
   result.name = key
   result.value = value
-  result.rootNode = result
+  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 func getElementById*(document: Document, id: string): Element =
   if id.len == 0:
@@ -780,30 +774,6 @@ proc preInsert*(parent, node, before: Node) =
 
 proc append*(parent, node: Node) =
   parent.preInsert(node, nil)
-
-proc applyOrdinal*(elem: HTMLLIElement) =
-  let val = elem.attri("value")
-  if val.issome:
-    elem.ordinalvalue = val.get
-  else:
-    let owner = elem.findAncestor({TAG_OL, TAG_UL, TAG_MENU})
-    if owner == nil:
-      elem.ordinalvalue = 1
-    else:
-      case owner.tagType
-      of TAG_OL:
-        let ol = HTMLOListElement(owner)
-        elem.ordinalvalue = ol.ordinalcounter
-        inc ol.ordinalcounter
-      of TAG_UL:
-        let ul = HTMLUListElement(owner)
-        elem.ordinalvalue = ul.ordinalcounter
-        inc ul.ordinalcounter
-      of TAG_MENU:
-        let menu = HTMLMenuElement(owner)
-        elem.ordinalvalue = menu.ordinalcounter
-        inc menu.ordinalcounter
-      else: discard
 
 proc reset*(element: Element) = 
   case element.tagType
