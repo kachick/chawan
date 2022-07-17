@@ -202,9 +202,10 @@ func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, inte
       not parser.openElements.hasElement(TAG_TEMPLATE) and
       (element.tagType notin ListedElements or not element.attrb("form")) and
       intendedParent.inSameTree(parser.form):
-    let element = FormAssociatedElement(element)
-    element.setForm(parser.form)
-    element.parserInserted = true
+    if element.tagType in {TAG_SELECT, TAG_INPUT}: #TODO implement the other ones too
+      let element = FormAssociatedElement(element)
+      element.setForm(parser.form)
+      element.parserInserted = true
   return element
 
 proc insert(location: AdjustedInsertionLocation, node: Node) =
