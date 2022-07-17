@@ -471,14 +471,11 @@ proc consume(state: var CSSParseState): CSSParsedItem =
 proc reconsume(state: var CSSParseState) =
   dec state.at
 
-func has(state: CSSParseState, i: int): bool =
+func has(state: CSSParseState, i: int = 0): bool =
   return state.at + i < state.tokens.len
 
 func curr(state: CSSParseState): CSSParsedItem =
   return state.tokens[state.at]
-
-func has(state: CSSParseState): bool =
-  return state.at < state.tokens.len
 
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue
 

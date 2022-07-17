@@ -640,12 +640,6 @@ proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItem
   result.computed = computed.copyProperties()
   result.marker = getMarkerBox(computed, listItemCounter)
 
-func getInputBox(parent: BoxBuilder, input: HTMLInputElement): InlineBoxBuilder =
-  let textbox = parent.getTextBox()
-  textbox.node = input
-  textbox.text.add(input.inputString())
-  return textbox
-
 # Don't generate empty anonymous inline blocks between block boxes
 func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], computed: CSSComputedValues, str: string): bool =
   return blockgroup.len > 0 and blockgroup[^1].computed{"display"} == DISPLAY_INLINE or
@@ -717,7 +711,6 @@ proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgrou
   flush_ibox
 
 proc generateBlockBox(styledNode: StyledNode, viewport: Viewport): BlockBoxBuilder =
-  let elem = Element(styledNode.node)
   let box = getBlockBox(styledNode.computed)
   var blockgroup: seq[BoxBuilder]
   var ibox: InlineBoxBuilder = nil

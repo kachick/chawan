@@ -222,7 +222,7 @@ proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: Name
 proc insertHTMLElement(parser: var HTML5Parser, token: Token): Element =
   return parser.insertForeignElement(token, Namespace.HTML)
 
-proc adjustSVGAttributes(token: var Token) =
+proc adjustSVGAttributes(token: Token) =
   const adjusted = {
     "attributename": "attributeName",
     "attributetype": "attributeType",
@@ -825,6 +825,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         location.insert(element)
         parser.openElements.add(element)
         parser.tokenizer.state = SCRIPT_DATA
+        parser.oldInsertionMode = parser.insertionMode
         parser.insertionMode = TEXT
       )
       "</head>" => (block:
@@ -1967,6 +1968,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
     pop_current_node
     #TODO document.write (?)
     #TODO SVG
+
   template any_other_end_tag() =
     if parser.currentNode.localName != token.tagname: parse_error
     for i in countdown(parser.openElements.high, 1):
@@ -1976,6 +1978,45 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
         break
       if node.namespace == Namespace.HTML: break
       parser.processInHTMLContent(token)
+  const CaseTable = {
+    "altglyph": "altGlyph",
+    "altglyphdef": "altGlyphDef",
+    "altglyphitem": "altGlyphItem",
+    "animatecolor": "animateColor",
+    "animatemotion": "animateMotion",
+    "animatetransform": "animateTransform",
+    "clippath": "clipPath",
+    "feblend": "feBlend",
+    "fecolormatrix": "feColorMatrix",
+    "fecomponenttransfer": "feComponentTransfer",
+    "fecomposite": "feComposite",
+    "feconvolvematrix": "feConvolveMatrix",
+    "fediffuselighting": "feDiffuseLighting",
+    "fedisplacementmap": "feDisplacementMap",
+    "fedistantlight": "feDistantLight",
+    "fedropshadow": "feDropShadow",
+    "feflood": "feFlood",
+    "fefunca": "feFuncA",
+    "fefuncb": "feFuncB",
+    "fefuncg": "feFuncG",
+    "fefuncr": "feFuncR",
+    "fegaussianblur": "feGaussianBlur",
+    "feimage": "feImage",
+    "femerge": "feMerge",
+    "femergenode": "feMergeNode",
+    "femorphology": "feMorphology",
+    "feoffset": "feOffset",
+    "fepointlight": "fePointLight",
+    "fespecularlighting": "feSpecularLighting",
+    "fespotlight": "feSpotLight",
+    "fetile": "feTile",
+    "feturbulence": "feTurbulence",
+    "foreignobject": "foreignObject",
+    "glyphref": "glyphRef",
+    "lineargradient": "linearGradient",
+    "radialgradient": "radialGradient",
+    "textpath": "textPath",
+  }.toTable()
 
   match token:
     '\0' => (block:
@@ -2000,7 +2041,11 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
     )
     TokenType.START_TAG => (block:
       #NOTE MathML not implemented
-      #TODO SVG
+
+      if parser.adjustedCurrentNode.namespace == Namespace.SVG:
+        if token.tagname in CaseTable:
+          token.tagname = CaseTable[token.tagname]
+        adjustSVGAttributes(token)
       #TODO adjust foreign attributes
       let element = parser.insertForeignElement(token, parser.adjustedCurrentNode.namespace)
       if token.selfclosing and element.inSVGNamespace():
