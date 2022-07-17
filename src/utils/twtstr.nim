@@ -582,6 +582,18 @@ func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitio
       labels.add(label)
   return labels.join('.').some
 
+func isValidNonZeroInt*(str: string): bool =
+  if str.len == 0: return false
+  if str == "0": return false
+  for c in str:
+    if not c.isDigit():
+      return false
+  try:
+    discard parseInt(str)
+  except ValueError:
+    return false
+  true
+
 proc expandPath*(path: string): string =
   if path.len == 0:
     return path

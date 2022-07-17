@@ -189,6 +189,40 @@ dl[compact] dt + br {
 	display: none;
 }
 
+select {
+	display: inline-block;
+}
+
+select {
+	color: red;
+}
+
+select::before {
+	content: '[';
+	color: none;
+}
+
+select::after {
+	content: ']';
+	color: none;
+}
+
+select > option {
+	display: none;
+}
+
+select > optgroup > option {
+	display: none;
+}
+
+select > option:checked {
+	display: inline-block;
+}
+
+select > optgroup > option:checked {
+	display: inline-block;
+}
+
 center {
 	text-align: -moz-center;
 }

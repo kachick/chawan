@@ -1,7 +1,7 @@
-import tables
 import options
 import streams
 import strutils
+import tables
 
 import css/sheet
 import html/tags
@@ -89,7 +89,11 @@ type
 
   HTMLElement* = ref object of Element
 
-  HTMLInputElement* = ref object of HTMLElement
+  FormAssociatedElement* = ref object of HTMLElement
+    form*: HTMLFormElement
+    parserInserted*: bool
+
+  HTMLInputElement* = ref object of FormAssociatedElement
     inputType*: InputType
     autofocus*: bool
     required*: bool
@@ -99,19 +103,16 @@ type
     xcoord*: int
     ycoord*: int
     file*: Option[Url]
-    form*: HTMLFormElement
 
   HTMLAnchorElement* = ref object of HTMLElement
 
-  HTMLSelectElement* = ref object of HTMLElement
-    name*: string
-    value*: string
-    valueSet*: bool
+  HTMLSelectElement* = ref object of FormAssociatedElement
+    size*: int
 
   HTMLSpanElement* = ref object of HTMLElement
 
   HTMLOptionElement* = ref object of HTMLElement
-    value*: string
+    selected*: bool
   
   HTMLHeadingElement* = ref object of HTMLElement
     rank*: uint16
@@ -142,7 +143,7 @@ type
     target*: string
     novalidate*: bool
     constructingentrylist*: bool
-    inputs*: seq[HTMLInputElement]
+    controls*: seq[FormAssociatedElement]
 
   HTMLTemplateElement* = ref object of HTMLElement
     content*: DocumentFragment
@@ -190,6 +191,11 @@ iterator elements*(node: Node, tag: TagType): Element {.inline.} =
       if child.nodeType == ELEMENT_NODE:
         stack.add(Element(child))
 
+iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
+  for control in form.controls:
+    if control.tagType == TAG_INPUT:
+      yield HTMLInputElement(control)
+
 iterator radiogroup(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for input in form.inputs:
     if input.inputType == INPUT_RADIO:
@@ -227,6 +233,22 @@ iterator branch*(node: Node): Node {.inline.} =
   while node != nil:
     yield node
     node = node.parentNode
+
+# Returns the node's descendants
+iterator descendants*(node: Node): Node {.inline.} =
+  var stack: seq[Node]
+  stack.add(node.childNodes)
+  while stack.len > 0:
+    let node = stack.pop()
+    yield node
+    for i in countdown(node.childNodes.high, 0):
+      stack.add(node.childNodes[i])
+  
+iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
+  for child in select.children:
+    if child.tagType == TAG_OPTION:
+      yield HTMLOptionElement(child)
+    #TODO optgroups
 
 func qualifiedName*(element: Element): string =
   if element.namespacePrefix.issome: element.namespacePrefix.get & ':' & element.localName
@@ -279,6 +301,9 @@ func hasPreviousSibling(node: Node, nodeType: NodeType): bool =
 func rootNode*(node: Node): Node =
   if node.root == nil: return node
   return node.root
+
+func connected*(node: Node): bool =
+  return node.rootNode.nodeType == DOCUMENT_NODE #TODO shadow root
 
 func inSameTree*(a, b: Node): bool =
   a.rootNode == b.rootNode
@@ -520,6 +545,7 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     result = new(HTMLAnchorElement)
   of TAG_SELECT:
     result = new(HTMLSelectElement)
+    HTMLSelectElement(result).size = 1
   of TAG_OPTION:
     result = new(HTMLOptionElement)
   of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
@@ -652,6 +678,22 @@ func title*(document: Document): string =
     return title.childTextContent.stripAndCollapse()
   return ""
 
+func disabled*(option: HTMLOptionElement): bool =
+  #TODO optgroup
+  return option.attrb("disabled")
+
+func text*(option: HTMLOptionElement): string =
+  for child in option.descendants:
+    if child.nodeType == TEXT_NODE:
+      let child = Text(child)
+      if child.parentElement.tagType != TAG_SCRIPT: #TODO svg
+        result &= child.data.stripAndCollapse()
+
+func value*(option: HTMLOptionElement): string =
+  if option.attrb("value"):
+    return option.attr("value")
+  return option.childTextContent.stripAndCollapse()
+
 # WARNING the ordering of the arguments in the standard is whack so this doesn't match that
 func preInsertionValidity*(parent, node, before: Node): bool =
   if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
@@ -729,6 +771,97 @@ proc applyChildInsert(parent, child: Node, index: int) =
     child.nextSibling = parent.childNodes[index + 1]
     child.nextSibling.previousSibling = child
 
+proc resetElement*(element: Element) = 
+  case element.tagType
+  of TAG_INPUT:
+    let input = HTMLInputELement(element)
+    case input.inputType
+    of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
+      input.value = input.attr("value")
+    of INPUT_CHECKBOX, INPUT_RADIO:
+      input.checked = input.attrb("checked")
+    of INPUT_FILE:
+      input.file = none(Url)
+    else: discard
+    input.rendered = false
+  of TAG_SELECT:
+    let select = HTMLSelectElement(element)
+    if not select.attrb("multiple"):
+      if select.size == 1:
+        var i = 0
+        var firstOption: HTMLOptionElement
+        for option in select.options:
+          if firstOption == nil:
+            firstOption = option
+          if option.selected:
+            inc i
+        if i == 0 and firstOption != nil:
+          firstOption.selected = true
+        elif i > 2:
+          # Set the selectedness of all but the last selected option element to
+          # false.
+          var j = 0
+          for option in select.options:
+            if j == i: break
+            if option.selected:
+              option.selected = false
+              inc j
+  else: discard
+
+proc setForm*(element: FormAssociatedElement, form: HTMLFormElement) =
+  case element.tagType
+  of TAG_INPUT:
+    let input = HTMLInputElement(element)
+    input.form = form
+    form.controls.add(input)
+  of TAG_SELECT:
+    let select = HTMLSelectElement(element)
+    select.form = form
+    form.controls.add(select)
+  of TAG_BUTTON, TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_TEXTAREA, TAG_IMG:
+    discard #TODO
+  else: assert false
+
+proc resetFormOwner(element: FormAssociatedElement) =
+  element.parserInserted = false
+  if element.form != nil and
+      element.tagType notin ListedElements or not element.attrb("form") and
+      element.findAncestor({TAG_FORM}) == element.form:
+    return
+  element.form = nil
+  if element.tagType in ListedElements and element.attrb("form") and element.connected:
+    let form = element.attr("form")
+    for desc in element.rootNode.descendants:
+      if desc.nodeType == ELEMENT_NODE:
+        let desc = Element(desc)
+        if desc.id == form:
+          if desc.tagType == TAG_FORM:
+            element.setForm(HTMLFormElement(desc))
+
+proc insertionSteps(insertedNode: Node) =
+  if insertedNode.nodeType == ELEMENT_NODE:
+    let element = Element(insertedNode)
+    let tagType = element.tagType
+    case tagType
+    of TAG_OPTION:
+      if element.parentElement != nil:
+        let parent = element.parentElement
+        var select: HTMLSelectElement
+        if parent.tagType == TAG_SELECT:
+          select = HTMLSelectElement(parent)
+        elif parent.tagType == TAG_OPTGROUP and parent.parentElement != nil and parent.parentElement.tagType == TAG_SELECT:
+          select = HTMLSelectElement(parent.parentElement)
+        if select != nil:
+          select.resetElement()
+    else: discard
+    if tagType in FormAssociatedElements:
+      if tagType notin {TAG_SELECT, TAG_INPUT}:
+        return #TODO TODO TODO implement others too
+      let element = FormAssociatedElement(element)
+      if element.parserInserted:
+        return
+      element.resetFormOwner()
+
 # WARNING ditto
 proc insert*(parent, node, before: Node) =
   let nodes = if node.nodeType == DOCUMENT_FRAGMENT_NODE: node.childNodes
@@ -754,7 +887,9 @@ proc insert*(parent, node, before: Node) =
       let index = parent.childNodes.find(before)
       parent.childNodes.insert(node, index)
       parent.applyChildInsert(node, index)
-    #TODO shadow root
+    if node.nodeType == ELEMENT_NODE:
+      #TODO shadow root
+      insertionSteps(node)
 
 # WARNING ditto
 proc preInsert*(parent, node, before: Node) =
@@ -766,25 +901,10 @@ proc preInsert*(parent, node, before: Node) =
 proc append*(parent, node: Node) =
   parent.preInsert(node, nil)
 
-proc reset*(element: Element) = 
-  case element.tagType
-  of TAG_INPUT:
-    let input = HTMLInputELement(element)
-    case input.inputType
-    of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
-      input.value = input.attr("value")
-    of INPUT_CHECKBOX, INPUT_RADIO:
-      input.checked = input.attrb("checked")
-    of INPUT_FILE:
-      input.file = none(Url)
-    else: discard
-    input.rendered = false
-  else: discard
-
 proc reset*(form: HTMLFormElement) =
-  for input in form.inputs:
-    input.reset()
-    input.rendered = false
+  for control in form.controls:
+    control.resetElement()
+    control.rendered = false
 
 proc appendAttribute*(element: Element, k, v: string) =
   case k
@@ -794,31 +914,32 @@ proc appendAttribute*(element: Element, k, v: string) =
     for class in classes:
       if class != "" and class notin element.classList:
         element.classList.add(class)
-  if element.tagType == TAG_INPUT:
-    case k
-    of "value": HTMLInputElement(element).value = v
-    of "type": HTMLInputElement(element).inputType = inputType(v)
-    of "size":
-      var i = 20
-      var fail = v.len == 0
-      for c in v:
-        if not c.isDigit:
-          fail = true
-          break
-      if not fail:
-        i = parseInt(v)
-        if i <= 0:
-          i = 20
-      HTMLInputElement(element).size = i
-    of "checked": HTMLInputElement(element).checked = true
-  element.attributes[k] = v
-
-proc setForm*(element: Element, form: HTMLFormElement) =
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
-    input.form = form
-    form.inputs.add(input)
-  of TAG_BUTTON, TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA, TAG_IMG:
-    discard #TODO
-  else: assert false
+    case k
+    of "value": input.value = v
+    of "type": input.inputType = inputType(v)
+    of "size":
+      if v.isValidNonZeroInt():
+        input.size = parseInt(v)
+      else:
+        input.size = 20
+    of "checked": input.checked = true
+  of TAG_OPTION:
+    let option = HTMLOptionElement(element)
+    if k == "selected":
+      option.selected = true
+  of TAG_SELECT:
+    let select = HTMLSelectElement(element)
+    case k
+    of "multiple":
+      if not select.attributes["size"].isValidNonZeroInt():
+        select.size = 4
+    of "size":
+      if v.isValidNonZeroInt():
+        select.size = parseInt(v)
+      elif "multiple" in select.attributes:
+        select.size = 4
+  else: discard
+  element.attributes[k] = v

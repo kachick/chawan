@@ -196,13 +196,15 @@ func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, inte
   for k, v in token.attrs:
     element.appendAttribute(k, v)
   if element.isResettable():
-    element.reset()
+    element.resetElement()
 
   if element.tagType in FormAssociatedElements and parser.form != nil and
       not parser.openElements.hasElement(TAG_TEMPLATE) and
       (element.tagType notin ListedElements or not element.attrb("form")) and
       intendedParent.inSameTree(parser.form):
+    let element = FormAssociatedElement(element)
     element.setForm(parser.form)
+    element.parserInserted = true
   return element
 
 proc insert(location: AdjustedInsertionLocation, node: Node) =
@@ -1788,6 +1790,12 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         if not parser.openElements.hasElementInSelectScope(TAG_SELECT):
           parse_error
         else:
+          while parser.openElements.pop().tagType != TAG_SELECT: discard
+          parser.resetInsertionMode()
+      )
+      "<select>" => (block:
+        parse_error
+        if parser.openElements.hasElementInSelectScope(TAG_SELECT):
           while parser.openElements.pop().tagType != TAG_SELECT: discard
           parser.resetInsertionMode()
       )

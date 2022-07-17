@@ -825,45 +825,57 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
   form.constructingentrylist = true
 
   var entrylist: Table[string, string]
-  for field in form.inputs:
+  for field in form.controls:
     if field.findAncestor({TAG_DATALIST}) != nil or
         field.attrb("disabled") or
         field.isButton() and Element(field) != submitter:
       continue
 
-    if field.inputType == INPUT_IMAGE:
-      let name = if field.attr("name") != "":
-        field.attr("name") & '.'
-      else:
-        ""
-      entrylist[name & 'x'] = $field.xcoord
-      entrylist[name & 'y'] = $field.ycoord
-      continue
+    if field.tagType == TAG_INPUT:
+      let field = HTMLInputElement(field)
+      if field.inputType == INPUT_IMAGE:
+        let name = if field.attr("name") != "":
+          field.attr("name") & '.'
+        else:
+          ""
+        entrylist[name & 'x'] = $field.xcoord
+        entrylist[name & 'y'] = $field.ycoord
+        continue
 
-    if field.attr("name") == "":
-      continue
+    #TODO custom elements
 
     let name = field.attr("name")
-    #TODO select
-    if field.inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
+
+    if name == "":
+      continue
+
+    if field.tagType == TAG_SELECT:
+      let field = HTMLSelectElement(field)
+      for option in field.options:
+        if option.selected or option.disabled:
+          entrylist[name] = option.value
+    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
       let value = if field.attr("value") != "":
         field.attr("value")
       else:
         "on"
       entrylist[name] = value
-    elif field.inputType == INPUT_FILE:
+    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_FILE:
       #TODO file
       discard
-    elif field.inputType == INPUT_HIDDEN and name.equalsIgnoreCase("_charset_"):
+    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_HIDDEN and name.equalsIgnoreCase("_charset_"):
       let charset = if encoding != "":
         encoding
       else:
         "UTF-8"
       entrylist[name] = charset
     else:
-      entrylist[name] = field.value
+      if field.tagType == TAG_INPUT:
+        entrylist[name] = HTMLInputElement(field).value
+      else:
+        assert false
     if field.tagType == TAG_TEXTAREA or
-        field.tagType == TAG_INPUT and field.inputType in {INPUT_TEXT, INPUT_SEARCH}:
+        field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_TEXT, INPUT_SEARCH}:
       if field.attr("dirname") != "":
         let dirname = field.attr("dirname")
         let dir = "ltr" #TODO bidi
@@ -1003,7 +1015,6 @@ proc click*(buffer: Buffer): Option[ClickAction] =
           input.rendered = false
           buffer.reshape = true
         if input.form != nil:
-          eprint "SEARCH", input.value
           let submitaction = submitForm(input.form, input)
           return submitaction
       of INPUT_TEXT, INPUT_PASSWORD:

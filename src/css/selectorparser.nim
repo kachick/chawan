@@ -21,7 +21,7 @@ type
 
   PseudoClass* = enum
     PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
-    PSEUDO_ROOT, PSEUDO_NTH_CHILD
+    PSEUDO_ROOT, PSEUDO_NTH_CHILD, PSEUDO_CHECKED
 
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
@@ -210,6 +210,8 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
         state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_HOVER))
       of "root":
         state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_ROOT))
+      of "checked":
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_CHECKED))
     of QUERY_PSELEM:
       case $csstoken.value
       of "before":

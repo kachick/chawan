@@ -8,6 +8,7 @@ import streams
 import css/selectorparser
 import css/cssparser
 import html/dom
+import html/tags
 
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel
@@ -30,6 +31,12 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of PSEUDO_HOVER: return elem.hover
   of PSEUDO_ROOT: return elem == elem.document.html
   of PSEUDO_NTH_CHILD: return int64(sel.pseudonum - 1) in elem.parentNode.children.low..elem.parentNode.children.high and elem.parentNode.children[int64(sel.pseudonum - 1)] == elem
+  of PSEUDO_CHECKED:
+    if elem.tagType == TAG_INPUT:
+      return HTMLInputElement(elem).checked
+    elif elem.tagType == TAG_OPTION:
+      return HTMLOptionElement(elem).selected
+    return false
 
 func selectorsMatch*(elem: Element, selectors: SelectorList): bool
 
