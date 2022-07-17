@@ -624,7 +624,7 @@ proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
 proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.computed = computed
+  result.computed = computed.copyProperties()
   result.computed.setDisplay(DISPLAY_INLINE)
 
   if result.computed{"display"} == DISPLAY_LIST_ITEM:
