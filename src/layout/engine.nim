@@ -640,7 +640,7 @@ proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItem
   result.computed = computed.copyProperties()
   result.marker = getMarkerBox(computed, listItemCounter)
 
-func getInputBox(parent: BoxBuilder, input: HTMLInputElement, viewport: Viewport): InlineBoxBuilder =
+func getInputBox(parent: BoxBuilder, input: HTMLInputElement): InlineBoxBuilder =
   let textbox = parent.getTextBox()
   textbox.node = input
   textbox.text.add(input.inputString())
@@ -702,7 +702,6 @@ proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: 
 
 proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
   var ibox: InlineBoxBuilder = nil
-
   var listItemCounter = 1 # ordinal value of current list
 
   for child in styledNode.children:
@@ -712,7 +711,7 @@ proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgrou
     of STYLED_TEXT:
       if ibox == nil:
         ibox = getTextBox(styledNode.computed)
-        ibox.node = child.node
+        ibox.node = styledNode.node
       ibox.text.add(child.text)
 
   flush_ibox
@@ -722,7 +721,6 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport): BlockBoxBuild
   let box = getBlockBox(styledNode.computed)
   var blockgroup: seq[BoxBuilder]
   var ibox: InlineBoxBuilder = nil
-
   var listItemCounter = 1 # ordinal value of current list
   
   for child in styledNode.children:
@@ -734,7 +732,7 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport): BlockBoxBuild
       if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
         if ibox == nil:
           ibox = getTextBox(styledNode.computed)
-          ibox.node = child.node
+          ibox.node = styledNode.node
         ibox.text.add(child.text)
 
   flush_ibox

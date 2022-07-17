@@ -3,7 +3,6 @@ import options
 import streams
 import strutils
 
-import css/values
 import css/sheet
 import html/tags
 import types/url
@@ -40,7 +39,7 @@ type
     previousSibling*: Node
     parentNode*: Node
     parentElement*: Element
-    rootNode: Node
+    root: Node
     document*: Document
 
   Attr* = ref object of Node
@@ -84,8 +83,6 @@ type
     id*: string
     classList*: seq[string]
     attributes*: Table[string, string]
-    css*: CSSComputedValues
-    pseudo*: array[PSEUDO_BEFORE..PSEUDO_AFTER, CSSComputedValues]
     hover*: bool
     cssapplied*: bool
     rendered*: bool
@@ -279,8 +276,12 @@ func hasPreviousSibling(node: Node, nodeType: NodeType): bool =
     node = node.previousSibling
   return false
 
+func rootNode*(node: Node): Node =
+  if node.root == nil: return node
+  return node.root
+
 func inSameTree*(a, b: Node): bool =
-  a.rootNode == b.rootNode and (a.rootNode != nil or b.rootNode != nil)
+  a.rootNode == b.rootNode
 
 func children*(node: Node): seq[Element] =
   for child in node.children:
@@ -398,8 +399,7 @@ func inputString*(input: HTMLInputElement): string =
     if input.checked: "*"
     else: " "
   of INPUT_SEARCH, INPUT_TEXT:
-    if input.size > 0: input.value.padToWidth(input.size)
-    else: input.value
+    input.value.padToWidth(input.size)
   of INPUT_PASSWORD:
     '*'.repeat(input.value.len).padToWidth(input.size)
   of INPUT_RESET:
@@ -411,8 +411,7 @@ func inputString*(input: HTMLInputElement): string =
   of INPUT_FILE:
     if input.file.isnone: "".padToWidth(input.size)
     else: input.file.get.path.serialize_unicode().padToWidth(input.size)
-  else:
-    input.value
+  else: input.value
   return text
 
 func isButton*(element: Element): bool =
@@ -504,20 +503,19 @@ func newText*(document: Document, data: string = ""): Text =
   result.nodeType = TEXT_NODE
   result.document = document
   result.data = data
-  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 func newComment*(document: Document, data: string = ""): Comment =
   new(result)
   result.nodeType = COMMENT_NODE
   result.document = document
   result.data = data
-  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 # note: we do not implement custom elements
 func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = none[string]()): HTMLElement =
   case tagType
   of TAG_INPUT:
     result = new(HTMLInputElement)
+    HTMLInputElement(result).size = 20
   of TAG_A:
     result = new(HTMLAnchorElement)
   of TAG_SELECT:
@@ -558,10 +556,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
 
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
-  result.css = rootProperties()
   result.namespace = namespace
   result.namespacePrefix = prefix
-  result.rootNode = result #TODO apparently we shouldn't be doing this
   result.document = document
 
 func newHTMLElement*(document: Document, localName: string, namespace = Namespace.HTML, prefix = none[string](), tagType = tagType(localName)): Element =
@@ -572,7 +568,6 @@ func newHTMLElement*(document: Document, localName: string, namespace = Namespac
 func newDocument*(): Document =
   new(result)
   result.nodeType = DOCUMENT_NODE
-  result.rootNode = result #TODO apparently we shouldn't be doing this
   result.document = result
 
 func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
@@ -581,7 +576,6 @@ func newDocumentType*(document: Document, name: string, publicId = "", systemId 
   result.name = name
   result.publicId = publicId
   result.systemId = systemId
-  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 func newAttr*(parent: Element, key, value: string): Attr =
   new(result)
@@ -590,7 +584,6 @@ func newAttr*(parent: Element, key, value: string): Attr =
   result.ownerElement = parent
   result.name = key
   result.value = value
-  result.rootNode = result #TODO apparently we shouldn't be doing this
 
 func getElementById*(document: Document, id: string): Element =
   if id.len == 0:
@@ -714,6 +707,7 @@ proc remove*(node: Node) =
     oldNextSibling.previousSibling = oldPreviousSibling
   node.parentNode = nil
   node.parentElement = nil
+  node.root = nil
 
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
   #TODO not surpress observers => queue tree mutation record
@@ -724,10 +718,7 @@ proc adopt(document: Document, node: Node) =
   #TODO shadow root
 
 proc applyChildInsert(parent, child: Node, index: int) =
-  if parent.rootNode != nil:
-    child.rootNode = parent.rootNode
-  else:
-    child.rootNode = parent
+  child.root = parent.rootNode
   child.parentNode = parent
   if parent.nodeType == ELEMENT_NODE:
     child.parentElement = Element(parent)
@@ -809,13 +800,15 @@ proc appendAttribute*(element: Element, k, v: string) =
     of "type": HTMLInputElement(element).inputType = inputType(v)
     of "size":
       var i = 20
-      var fail = v.len > 0
+      var fail = v.len == 0
       for c in v:
         if not c.isDigit:
           fail = true
           break
       if not fail:
         i = parseInt(v)
+        if i <= 0:
+          i = 20
       HTMLInputElement(element).size = i
     of "checked": HTMLInputElement(element).checked = true
   element.attributes[k] = v
@@ -823,7 +816,9 @@ proc appendAttribute*(element: Element, k, v: string) =
 proc setForm*(element: Element, form: HTMLFormElement) =
   case element.tagType
   of TAG_INPUT:
-    HTMLInputElement(element).form = form
+    let input = HTMLInputElement(element)
+    input.form = form
+    form.inputs.add(input)
   of TAG_BUTTON, TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA, TAG_IMG:
     discard #TODO
   else: assert false

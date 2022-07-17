@@ -1003,6 +1003,7 @@ proc click*(buffer: Buffer): Option[ClickAction] =
           input.rendered = false
           buffer.reshape = true
         if input.form != nil:
+          eprint "SEARCH", input.value
           let submitaction = submitForm(input.form, input)
           return submitaction
       of INPUT_TEXT, INPUT_PASSWORD:

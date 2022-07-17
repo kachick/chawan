@@ -201,7 +201,7 @@ func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, inte
   if element.tagType in FormAssociatedElements and parser.form != nil and
       not parser.openElements.hasElement(TAG_TEMPLATE) and
       (element.tagType notin ListedElements or not element.attrb("form")) and
-      element.inSameTree(parser.form):
+      intendedParent.inSameTree(parser.form):
     element.setForm(parser.form)
   return element
 

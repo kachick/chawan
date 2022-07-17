@@ -848,7 +848,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of whitespace: switch_state BEFORE_ATTRIBUTE_NAME
       of '&': switch_state_return CHARACTER_REFERENCE
-      of '>': switch_state DATA
+      of '>':
+        switch_state DATA
+        emit_tok
       of null:
         parse_error unexpected_null_character
         append_to_current_attr_value Rune(0xFFFD)
