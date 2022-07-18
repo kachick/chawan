@@ -299,7 +299,6 @@ template insert_character_impl(parser: var HTML5Parser, data: typed) =
     location.inside.lastChild
   else:
     location.before.previousSibling
-  assert location.before == nil
   if insertNode != nil and insertNode.nodeType == TEXT_NODE:
     dom.Text(insertNode).data &= data
   else:
@@ -1563,7 +1562,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           parse_error
           parser.fosterParenting = true
           parser.reconstructActiveFormatting()
-          parser.insertCharacter(token.c)
+          parser.insertCharacter(parser.pendingTableChars)
           parser.framesetOk = false
           parser.fosterParenting = false
         else:
