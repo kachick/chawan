@@ -627,10 +627,7 @@ proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxB
   result.computed = computed.copyProperties()
   result.computed.setDisplay(DISPLAY_INLINE)
 
-  if result.computed{"display"} == DISPLAY_LIST_ITEM:
-    result.ordinalvalue = listItemCounter
-  else:
-    result.ordinalvalue = 1
+  result.ordinalvalue = listItemCounter
   if computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
     result.inside = true
   result.text.add(computed{"list-style-type"}.listMarker(result.ordinalvalue))
@@ -662,7 +659,7 @@ template flush_ibox() =
     blockgroup.add(ibox)
     ibox = nil
 
-proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport)
+proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, listItemCounter: var int)
 
 proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, listItemCounter: var int) =
   if styledNode.node != nil:
@@ -685,7 +682,7 @@ proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: 
     inc listItemCounter
   of DISPLAY_INLINE:
     flush_ibox
-    box.generateInlineBoxes(styledNode, blockgroup, viewport)
+    box.generateInlineBoxes(styledNode, blockgroup, viewport, listItemCounter)
   of DISPLAY_INLINE_BLOCK:
     flush_ibox
     let childbox = getInlineBlockBox(styledNode.computed)
@@ -694,9 +691,8 @@ proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: 
   else:
     discard #TODO
 
-proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport) =
+proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, listItemCounter: var int) =
   var ibox: InlineBoxBuilder = nil
-  var listItemCounter = 1 # ordinal value of current list
 
   for child in styledNode.children:
     case child.t
