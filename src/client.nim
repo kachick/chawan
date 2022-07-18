@@ -62,7 +62,7 @@ proc newClient*(): Client =
   let global = ctx.getGlobalObject()
   let console = newJSObject(result.jsctx)
   console.setFunctionProperty("log", js_console_log)
-  console.setProperty("console", console)
+  global.setProperty("console", console)
   free(global)
 
 proc loadError(s: string) =
