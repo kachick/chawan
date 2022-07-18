@@ -713,7 +713,7 @@ proc loadResources(buffer: Buffer, document: Document) =
   var stack: seq[Element]
   if document.html != nil:
     stack.add(document.html)
-  while stack.len > 0 and false: #TODO actually implement this
+  while stack.len > 0:
     let elem = stack.pop()
 
     if elem.tagType == TAG_LINK:

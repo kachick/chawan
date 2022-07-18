@@ -163,6 +163,7 @@ type
 
 # For debugging
 func `$`*(node: Node): string =
+  if node == nil: return "nil"
   case node.nodeType
   of ELEMENT_NODE:
     let element = Element(node)
@@ -535,7 +536,7 @@ func newComment*(document: Document, data: string = ""): Comment =
   result.document = document
   result.data = data
 
-# note: we do not implement custom elements
+#TODO custom elements
 func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = none[string]()): HTMLElement =
   case tagType
   of TAG_INPUT:

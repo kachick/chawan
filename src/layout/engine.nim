@@ -688,7 +688,7 @@ proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: 
     box.generateInlineBoxes(styledNode, blockgroup, viewport)
   of DISPLAY_INLINE_BLOCK:
     flush_ibox
-    let childbox = getInlineBlockBox(box.computed)
+    let childbox = getInlineBlockBox(styledNode.computed)
     childbox.content = styledNode.generateBlockBox(viewport)
     blockgroup.add(childbox)
   else:
