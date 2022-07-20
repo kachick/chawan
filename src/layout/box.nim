@@ -64,6 +64,9 @@ type
     width*: int
     height*: int
     vertalign*: CSSVerticalAlign
+    baseline*: int
+    top*: int
+    bottom*: int
 
   ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
@@ -79,18 +82,19 @@ type
     str*: string
     format*: ComputedFormat
 
-  InlineRow* = ref object
+  LineBox* = ref object
     atoms*: seq[InlineAtom]
     offset*: Offset
     width*: int
     height*: int
+    baseline*: int
     lineheight*: int #line-height property
 
   InlineContext* = ref object
     offset*: Offset
     height*: int
-    rows*: seq[InlineRow]
-    thisrow*: InlineRow
+    lines*: seq[LineBox]
+    currentLine*: LineBox
 
     whitespacenum*: int
     maxwidth*: int
@@ -128,6 +132,8 @@ type
 
   InlineBlock* = ref object of InlineAtom
     bctx*: BlockContext
+    margin_top*: int
+    margin_bottom*: int
 
 proc append*(a: var Strut, b: int) =
   if b < 0:

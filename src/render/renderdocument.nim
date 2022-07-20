@@ -206,15 +206,15 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, term: TermAttributes) =
   let x = x + ctx.offset.x
   let y = y + ctx.offset.y
-  for row in ctx.rows:
-    let x = x + row.offset.x
-    let y = y + row.offset.y
+  for line in ctx.lines:
+    let x = x + line.offset.x
+    let y = y + line.offset.y
 
     let r = y div term.ppl
     while grid.len <= r:
       grid.addLine()
 
-    for atom in row.atoms:
+    for atom in line.atoms:
       if atom of InlineBlock:
         let iblock = InlineBlock(atom)
         grid.renderBlockContext(iblock.bctx, x + iblock.offset.x, y + iblock.offset.y, term)
