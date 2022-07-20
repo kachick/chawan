@@ -201,7 +201,7 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
 
     inc y
 
-proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes)
+proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, term: TermAttributes)
 
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, term: TermAttributes) =
   let x = x + ctx.offset.x
@@ -215,8 +215,8 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
       grid.addLine()
 
     for atom in line.atoms:
-      if atom of InlineBlock:
-        let iblock = InlineBlock(atom)
+      if atom of InlineBlockBox:
+        let iblock = InlineBlockBox(atom)
         grid.renderBlockContext(iblock.bctx, x + iblock.offset.x, y + iblock.offset.y, term)
       elif atom of InlineWord:
         let word = InlineWord(atom)
@@ -225,8 +225,8 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
         let spacing = InlineSpacing(atom)
         grid.setSpacing(spacing, x, y, term)
 
-proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, term: TermAttributes) =
-  var stack = newSeqOfCap[(BlockContext, int, int)](100)
+proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, term: TermAttributes) =
+  var stack = newSeqOfCap[(BlockBox, int, int)](100)
   stack.add((ctx, x, y))
 
   while stack.len > 0:
@@ -237,9 +237,10 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockContext, x, y: int, te
     if ctx.computed{"background-color"}.rgba.a != 0: #TODO color blending
       grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
 
-    if ctx of ListItem:
-      let ctx = ListItem(ctx)
-      grid.renderInlineContext(ctx.marker, x - ctx.marker.maxwidth, y, term)
+    if ctx of ListItemBox:
+      let ctx = ListItemBox(ctx)
+      if ctx.marker != nil:
+        grid.renderInlineContext(ctx.marker, x - ctx.marker.maxwidth, y, term)
 
     if ctx.inline != nil:
       assert ctx.nested.len == 0

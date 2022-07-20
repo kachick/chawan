@@ -20,18 +20,9 @@ type
     pos*: int
     neg*: int
 
-  Box* = ref object of RootObj
-
-  BlockBox* = ref object of Box
-    flowRoot*: bool
-
-  FlowRoot* = ref object of BlockBox
-
-  #InlineRoot* = ref object of 
-
   Viewport* = ref object
     term*: TermAttributes
-    root*: BlockContext
+    root*: BlockBox
 
   BoxBuilder* = ref object of RootObj
     children*: seq[BoxBuilder]
@@ -53,7 +44,6 @@ type
 
   MarkerBoxBuilder* = ref object of InlineBoxBuilder
     ordinalvalue*: int
-    inside*: bool
 
   ListItemBoxBuilder* = ref object of BoxBuilder
     marker*: MarkerBoxBuilder
@@ -103,9 +93,9 @@ type
     shrink*: bool
     format*: ComputedFormat
 
-  BlockContext* = ref object of RootObj
+  BlockBox* = ref object of RootObj
     inline*: InlineContext
-    nested*: seq[BlockContext]
+    nested*: seq[BlockBox]
     computed*: CSSComputedValues
     viewport*: Viewport
     offset*: Offset
@@ -127,11 +117,11 @@ type
     compheight*: Option[int]
     shrink*: bool
 
-  ListItem* = ref object of BlockContext
+  ListItemBox* = ref object of BlockBox
     marker*: InlineContext
 
-  InlineBlock* = ref object of InlineAtom
-    bctx*: BlockContext
+  InlineBlockBox* = ref object of InlineAtom
+    bctx*: BlockBox
     margin_top*: int
     margin_bottom*: int
 
