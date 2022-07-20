@@ -235,37 +235,6 @@ macro `{}=`*(vals: CSSComputedValues, s: string, v: typed): untyped =
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
-func px(n: float64, d: int): int {.inline.} =
-  return int(n / float(d))
-
-func cells*(l: CSSLength, d: int, term: TermAttributes, p: Option[int], o: bool): int =
-  let w = term.width_px
-  let h = term.height_px
-  case l.unit
-  of UNIT_EM, UNIT_REM:
-    if o: int(l.num * term.cell_ratio) #horizontal
-    else: int(l.num) #vertical
-  of UNIT_CH:
-    if o: int(l.num) #horizontal
-    else: int(l.num / term.cell_ratio) #vertical
-  of UNIT_IC:
-    if o: int(l.num * term.cell_ratio) #horizontal
-    else: int(l.num) #vertical
-  of UNIT_EX: # x-letter height, we assume it's em/2
-    if o: int(l.num / 2) #horizontal
-    else: int(l.num / term.cell_ratio / 2) #vertical
-  of UNIT_PERC: int(p.get / 100 * l.num)
-  of UNIT_PX: px(l.num, d)
-  of UNIT_CM: px(l.num * 37.8, d)
-  of UNIT_MM: px(l.num * 3.78, d)
-  of UNIT_IN: px(l.num * 96, d)
-  of UNIT_PC: px(l.num * 96 / 6, d)
-  of UNIT_PT: px(l.num * 96 / 72, d)
-  of UNIT_VW: px(w / 100 * l.num, d)
-  of UNIT_VH: px(h / 100 * l.num, d)
-  of UNIT_VMIN: px(min(w, h) / 100 * l.num, d)
-  of UNIT_VMAX: px(max(w, h) / 100 * l.num, d)
-
 func em_to_px(em: float64, term: TermAttributes): int =
   int(em * float64(term.ppl))
 

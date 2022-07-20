@@ -10,22 +10,8 @@ import layout/box
 import utils/twtstr
 
 # Build phase
-
-# p is what to use for percentage values
-func cells_in(l: CSSLength, state: Viewport, d: int, p: Option[int], o: bool): int =
-  return cells(l, d, state.term, p, o)
-
-func cells_w(l: CSSLength, state: Viewport, p: int): int =
-  return l.cells_in(state, state.term.ppc, p.some, true)
-
-func cells_h(l: CSSLength, state: Viewport, p: Option[int]): int =
-  return l.cells_in(state, state.term.ppl, p, false)
-
-func cells_h(l: CSSLength, state: Viewport, p: int): int =
-  return l.cells_in(state, state.term.ppl, p.some, false)
-
-func px(l: CSSLength, state: Viewport, p = 0): int {.inline.} =
-  return px(l, state.term, p)
+func px(l: CSSLength, viewport: Viewport, p = 0): int {.inline.} =
+  return px(l, viewport.term, p)
 
 type InlineState = object
   ictx: InlineContext
@@ -57,7 +43,6 @@ func computeShift(ictx: InlineContext, computed: CSSComputedValues): int =
       let spacing = computed{"word-spacing"}
       if spacing.auto:
         return ictx.cellwidth * ictx.whitespacenum
-      #return spacing.cells_w(ictx.viewport, 0)
       return spacing.px(ictx.viewport) * ictx.whitespacenum
   return 0
 
@@ -363,7 +348,6 @@ proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width:
 
   let pheight = computed{"height"}
   if not pheight.auto:
-    #bctx.compheight = pheight.cells_h(bctx.viewport, height).some
     if pheight.unit != UNIT_PERC:
       result.compheight = pheight.px(viewport).some
     elif height.issome:
