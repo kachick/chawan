@@ -30,7 +30,14 @@ func pseudoSelectorMatches(elem: Element, sel: Selector): bool =
   of PSEUDO_ONLY_CHILD: return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
   of PSEUDO_HOVER: return elem.hover
   of PSEUDO_ROOT: return elem == elem.document.html
-  of PSEUDO_NTH_CHILD: return int64(sel.pseudonum - 1) in elem.parentNode.children.low..elem.parentNode.children.high and elem.parentNode.children[int64(sel.pseudonum - 1)] == elem
+  of PSEUDO_NTH_CHILD:
+    let n = int64(sel.pseudonum - 1)
+    var i = 0
+    for child in elem.parentNode.children:
+      if i == n:
+        return child == elem
+      inc i
+    return false
   of PSEUDO_CHECKED:
     if elem.tagType == TAG_INPUT:
       return HTMLInputElement(elem).checked
@@ -74,18 +81,22 @@ func combinatorSelectorMatches(elem: Element, sel: Selector): bool =
         dec i
         e = e.parentElement
     of NEXT_SIBLING_COMBINATOR:
-      var e = elem.previousElementSibling
-      while e != nil and i >= 0:
-        if not e.selectorsMatch(sel.csels[i]):
-          return false
-        dec i
-        e = e.previousElementSibling
-    of SUBSEQ_SIBLING_COMBINATOR:
-      var e = elem.previousElementSibling
-      while e != nil and i >= 0:
-        if e.selectorsMatch(sel.csels[i]):
+      var found = false
+      for child in elem.parentElement.children_rev:
+        if found:
+          if not child.selectorsMatch(sel.csels[i]):
+            return false
           dec i
-        e = e.previousElementSibling
+        if child == elem:
+          found = true
+    of SUBSEQ_SIBLING_COMBINATOR:
+      var found = false
+      for child in elem.parentElement.children_rev:
+        if found:
+          if child.selectorsMatch(sel.csels[i]):
+            dec i
+        if child == elem:
+          found = true
     return i == -1
   return false
 

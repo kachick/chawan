@@ -727,8 +727,7 @@ proc loadResources(buffer: Buffer, document: Document) =
               let sheet = parseStylesheet(res.s)
               elem.sheet = sheet
 
-    for i in countdown(elem.children.high, 0):
-      let child = elem.children[i]
+    for child in elem.children_rev:
       stack.add(child)
 
 proc load*(buffer: Buffer) =

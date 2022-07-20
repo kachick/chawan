@@ -261,9 +261,10 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       let elem = Element(styledChild.node)
       # Add a nil before the last element (in-stack), so we can remove the
       # stylesheets
-      if elem.sheets.len > 0:
-        author.add(elem.sheets)
-        lenstack.add(elem.sheets.len)
+      let sheets = elem.sheets()
+      if sheets.len > 0:
+        author.add(sheets)
+        lenstack.add(sheets.len)
         styledStack.add((nil, nil, PSEUDO_NONE, nil))
 
       stack_append styledChild, PSEUDO_AFTER

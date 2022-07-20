@@ -179,18 +179,45 @@ iterator children*(node: Node): Element {.inline.} =
     if child.nodeType == ELEMENT_NODE:
       yield Element(child)
 
-iterator elements*(node: Node, tag: TagType): Element {.inline.} =
-  var stack: seq[Element]
-  for child in node.children:
-    stack.add(child)
+iterator children_rev*(node: Node): Element {.inline.} =
+  for i in countdown(node.childNodes.high, 0):
+    let child = node.childNodes[i]
+    if child.nodeType == ELEMENT_NODE:
+      yield Element(child)
+
+# Returns the node's ancestors
+iterator ancestors*(node: Node): Element {.inline.} =
+  var element = node.parentElement
+  while element != nil:
+    yield element
+    element = element.parentElement
+
+# Returns the node itself and its ancestors
+iterator branch*(node: Node): Node {.inline.} =
+  var node = node
+  while node != nil:
+    yield node
+    node = node.parentNode
+
+# Returns the node's descendants
+iterator descendants*(node: Node): Node {.inline.} =
+  var stack: seq[Node]
+  stack.add(node.childNodes)
   while stack.len > 0:
-    let element = stack.pop()
-    if element.tagType == tag:
-      yield element
-    for i in countdown(element.childNodes.high, 0):
-      let child = element.childNodes[i]
-      if child.nodeType == ELEMENT_NODE:
-        stack.add(Element(child))
+    let node = stack.pop()
+    yield node
+    for i in countdown(node.childNodes.high, 0):
+      stack.add(node.childNodes[i])
+
+iterator elements*(node: Node): Element {.inline.} =
+  for child in node.descendants:
+    if child.nodeType == ELEMENT_NODE:
+      yield Element(child)
+
+iterator elements*(node: Node, tag: TagType): Element {.inline.} =
+  for desc in node.elements:
+    if desc.tagType == tag:
+      yield desc
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for control in form.controls:
@@ -220,30 +247,6 @@ iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childNodes:
     if node.nodeType == TEXT_NODE:
       yield Text(node)
-
-# Returns the node's ancestors
-iterator ancestors*(node: Node): Element {.inline.} =
-  var element = node.parentElement
-  while element != nil:
-    yield element
-    element = element.parentElement
-
-# Returns the node itself and its ancestors
-iterator branch*(node: Node): Node {.inline.} =
-  var node = node
-  while node != nil:
-    yield node
-    node = node.parentNode
-
-# Returns the node's descendants
-iterator descendants*(node: Node): Node {.inline.} =
-  var stack: seq[Node]
-  stack.add(node.childNodes)
-  while stack.len > 0:
-    let node = stack.pop()
-    yield node
-    for i in countdown(node.childNodes.high, 0):
-      stack.add(node.childNodes[i])
   
 iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.children:
@@ -309,36 +312,32 @@ func connected*(node: Node): bool =
 func inSameTree*(a, b: Node): bool =
   a.rootNode == b.rootNode
 
-func children*(node: Node): seq[Element] =
-  for child in node.children:
-    result.add(child)
-
 func filterDescendants*(element: Element, predicate: (proc(child: Element): bool)): seq[Element] =
   var stack: seq[Element]
-  stack.add(element.children)
+  for child in element.children_rev:
+    stack.add(child)
   while stack.len > 0:
     let child = stack.pop()
     if predicate(child):
       result.add(child)
-    stack.add(child.children)
+    for child in element.children_rev:
+      stack.add(child)
 
 func all_descendants*(element: Element): seq[Element] =
   var stack: seq[Element]
-  stack.add(element.children)
+  for child in element.children_rev:
+    stack.add(child)
   while stack.len > 0:
     let child = stack.pop()
     result.add(child)
-    stack.add(child.children)
+    for child in element.children_rev:
+      stack.add(child)
 
 # a == b or b in a's ancestors
 func contains*(a, b: Node): bool =
   for node in a.branch:
     if node == b: return true
   return false
-
-func branch*(node: Node): seq[Node] =
-  for node in node.branch:
-    result.add(node)
 
 func firstChild*(node: Node): Node =
   if node.childNodes.len == 0:
@@ -351,29 +350,31 @@ func lastChild*(node: Node): Node =
   return node.childNodes[^1]
 
 func firstElementChild*(node: Node): Element =
-  if node.children.len == 0:
-    return nil
-  return node.children[0]
+  for child in node.children:
+    return child
+  return nil
 
 func lastElementChild*(node: Node): Element =
-  if node.children.len == 0:
-    return nil
-  return node.children[^1]
+  for child in node.children:
+    return child
+  return nil
 
 func previousElementSibling*(elem: Element): Element =
-  var e = elem.previousSibling
-  while e != nil:
-    if e.nodeType == ELEMENT_NODE:
-      return Element(e)
-    e = e.previousSibling
+  var i = elem.parentNode.childNodes.find(elem)
+  dec i
+  while i >= 0:
+    if elem.parentNode.childNodes[i].nodeType == ELEMENT_NODE:
+      return elem
+    dec i
   return nil
 
 func nextElementSibling*(elem: Element): Element =
-  var e = elem.nextSibling
-  while e != nil:
-    if e.nodeType == ELEMENT_NODE:
-      return Element(e)
-    e = e.nextSibling
+  var i = elem.parentNode.childNodes.find(elem)
+  inc i
+  while i < elem.parentNode.childNodes.len:
+    if elem.parentNode.childNodes[i].nodeType == ELEMENT_NODE:
+      return elem
+    inc i
   return nil
 
 func attr*(element: Element, s: string): string =
@@ -615,15 +616,15 @@ func newAttr*(parent: Element, key, value: string): Attr =
 func getElementById*(document: Document, id: string): Element =
   if id.len == 0:
     return nil
-  var stack = document.children
+  var stack: seq[Element]
+  for child in document.children_rev:
+    stack.add(child)
   while stack.len > 0:
     let element = stack.pop()
     if element.id == id:
       return element
-    for i in countdown(element.childNodes.high, 0):
-      let child = element.childNodes[i]
-      if child.nodeType == ELEMENT_NODE:
-        stack.add(Element(child))
+    for child in document.children_rev:
+      stack.add(child)
   return nil
 
 func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
@@ -832,12 +833,9 @@ proc resetFormOwner(element: FormAssociatedElement) =
   element.form = nil
   if element.tagType in ListedElements and element.attrb("form") and element.connected:
     let form = element.attr("form")
-    for desc in element.rootNode.descendants:
-      if desc.nodeType == ELEMENT_NODE:
-        let desc = Element(desc)
-        if desc.id == form:
-          if desc.tagType == TAG_FORM:
-            element.setForm(HTMLFormElement(desc))
+    for desc in element.elements(TAG_FORM):
+      if desc.id == form:
+        element.setForm(HTMLFormElement(desc))
 
 proc insertionSteps(insertedNode: Node) =
   if insertedNode.nodeType == ELEMENT_NODE:
