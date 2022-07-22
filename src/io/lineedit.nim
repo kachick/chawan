@@ -7,8 +7,10 @@ import sugar
 import utils/twtstr
 import config/config
 
-type LineState = object
-  news: seq[Rune]
+type LineState* = object
+  news*: seq[Rune]
+  prompt*: string
+  current: string
   s: string
   feedNext: bool
   escNext: bool
@@ -17,7 +19,8 @@ type LineState = object
   minlen: int
   maxlen: int
   displen: int
-  spaces: seq[string]
+  disallowed: set[char]
+  callback: proc(state: var LineState): bool {.closure.}
 
 func lwidth(r: Rune): int =
   if r.isControlChar():
@@ -69,7 +72,7 @@ proc begin(state: LineState) =
   state.forward(state.minlen)
 
 proc space(state: LineState, i: int) =
-  print(state.spaces[i])
+  print(' '.repeat(i))
 
 proc redraw(state: var LineState) =
   var dispw = state.news.lwidth(state.shift, state.shift + state.displen)
@@ -120,17 +123,10 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune], disallowed: set[char
     state.cursor += cs.len
     state.fullRedraw()
 
-proc readLine*(current: var string, minlen, maxlen: int, disallowed: set[char] = {}): bool =
-  var state: LineState
-  state.news = current.toRunes()
-  state.cursor = state.news.len
-  state.minlen = minlen
-  state.maxlen = maxlen
-  state.displen = state.maxlen - 1
-  #cache strings
-  for i in 0..(maxlen - minlen):
-    state.spaces.add(' '.repeat(i))
-  printesc(current)
+proc readLine(state: var LineState): bool =
+  printesc(state.prompt)
+  printesc(state.current)
+
   while true:
     if not state.feedNext:
       state.s = ""
@@ -147,7 +143,6 @@ proc readLine*(current: var string, minlen, maxlen: int, disallowed: set[char] =
     of ACTION_LINED_CANCEL:
       return false
     of ACTION_LINED_SUBMIT:
-      current = $state.news
       return true
     of ACTION_LINED_BACKSPACE:
       if state.cursor > 0:
@@ -248,7 +243,7 @@ proc readLine*(current: var string, minlen, maxlen: int, disallowed: set[char] =
         state.cursor = 0
     of ACTION_LINED_END:
       if state.cursor < state.news.len:
-        if state.news.lwidth(state.shift, state.news.len) < maxlen:
+        if state.news.lwidth(state.shift, state.news.len) < state.maxlen:
           state.forward(state.news.lwidth(state.cursor, state.news.len))
         else:
           state.fullRedraw()
@@ -257,10 +252,32 @@ proc readLine*(current: var string, minlen, maxlen: int, disallowed: set[char] =
       state.feedNext = true
     elif validateUtf8(state.s) == -1:
       var cs = state.s.toRunes()
-      state.insertCharseq(cs, disallowed)
+      state.insertCharseq(cs, state.disallowed)
+      if state.callback(state):
+        state.fullRedraw()
     else:
       state.feedNext = true
 
-proc readLine*(prompt: string, current: var string, termwidth: int, disallowed: set[char] = {}): bool =
-  printesc(prompt)
-  readLine(current, prompt.lwidth(), termwidth - prompt.len, disallowed)
+proc readLine*(prompt: string, current: var string, termwidth: int,
+               disallowed: set[char],
+               callback: proc(state: var LineState): bool {.closure.}): bool =
+  var state: LineState
+
+  state.prompt = prompt
+  state.current = current
+  state.news = current.toRunes()
+  state.cursor = state.news.len
+  state.minlen = prompt.lwidth()
+  state.maxlen = termwidth - prompt.len
+  state.displen = state.maxlen - 1
+  state.disallowed = disallowed
+  state.callback = callback
+
+  if state.readLine():
+    current = $state.news
+    return true
+  return false
+
+proc readLine*(prompt: string, current: var string, termwidth: int,
+               disallowed: set[char] = {}): bool =
+  readLine(prompt, current, termwidth, disallowed, (proc(state: var LineState): bool = false))

@@ -35,6 +35,9 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   opaque.err = ""
   JS_SetContextOpaque(result, opaque)
 
+proc newJSContextRaw*(rt: JSRuntime): JSContext =
+  result = JS_NewContextRaw(rt)
+
 func getJSObject*(ctx: JSContext, v: JSValue): JSObject =
   result.ctx = ctx
   result.val = v
@@ -94,14 +97,21 @@ proc setFunctionProperty*(obj: JSObject, name: string, fun: JSCFunction) =
   #    return fun(JSObject(ctx: ctx, qjs: obj), invoc)
   #), cstring(name), 1))
 
-proc free*(ctx: JSContext) =
+proc free*(ctx: var JSContext) =
+  eprint "free"
+  let opaque = ctx.getOpaque()
+  if opaque != nil:
+    dealloc(opaque)
   JS_FreeContext(ctx)
+  ctx = nil
 
-proc free*(rt: JSRuntime) =
+proc free*(rt: var JSRuntime) =
   JS_FreeRuntime(rt)
+  rt = nil
 
 proc free*(obj: JSObject) =
   JS_FreeValue(obj.ctx, obj.val)
+  #TODO maybe? obj.val = JS_NULL
 
 proc eval*(ctx: JSContext, s: string, file: string, eval_flags: int): JSObject =
   result.ctx = ctx

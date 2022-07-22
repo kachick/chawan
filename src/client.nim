@@ -2,6 +2,7 @@ import options
 import os
 import streams
 import terminal
+import unicode
 
 import css/sheet
 import config/config
@@ -9,6 +10,7 @@ import io/buffer
 import io/lineedit
 import io/loader
 import js/javascript
+import js/regex
 import types/url
 import utils/twtstr
 
@@ -24,10 +26,16 @@ type
     loader: FileLoader
     jsrt: JSRuntime
     jsctx: JSContext
+    regex: Option[Regex]
+    revsearch: bool
 
   ActionError = object of IOError
   LoadError = object of ActionError
   InterruptError = object of LoadError
+
+proc statusMode(client: Client) =
+  print(HVP(client.buffer.height + 1, 1))
+  print(EL())
 
 proc js_console_log(ctx: JSContext, this: JSValue, argc: int, argv: ptr JSValue): JSValue {.cdecl.} =
   let opaque = ctx.getOpaque()
@@ -42,12 +50,8 @@ proc js_console_log(ctx: JSContext, this: JSValue, argc: int, argv: ptr JSValue)
   opaque.err &= '\n'
   return JS_UNDEFINED
 
-# Probably never called, but just in case...
 proc `=destroy`(client: var ClientObj) =
   if client.jsctx != nil:
-    let opaque = client.jsctx.getOpaque()
-    if opaque != nil:
-      dealloc(opaque)
     free(client.jsctx)
   if client.jsrt != nil:
     free(client.jsrt)
@@ -59,7 +63,7 @@ proc newClient*(): Client =
   let ctx = rt.newJSContext()
   result.jsrt = rt
   result.jsctx = ctx
-  let global = ctx.getGlobalObject()
+  var global = ctx.getGlobalObject()
   let console = newJSObject(result.jsctx)
   console.setFunctionProperty("log", js_console_log)
   global.setProperty("console", console)
@@ -127,6 +131,8 @@ proc readPipe(client: Client, ctype: string) =
   client.buffer.contenttype = if ctype != "": ctype else: "text/plain"
   client.buffer.ispipe = true
   client.buffer.istream = newFileStream(stdin)
+  const url = parseUrl("file://-").get
+  client.buffer.location = url
   client.buffer.load()
   #TODO is this portable at all?
   if reopen(stdin, "/dev/tty", fmReadWrite):
@@ -196,8 +202,7 @@ proc reloadPage(client: Client) =
 proc changeLocation(client: Client) =
   let buffer = client.buffer
   var url = buffer.location.serialize(true)
-  print(HVP(buffer.height + 1, 1))
-  print(EL())
+  client.statusMode()
   let status = readLine("URL: ", url, buffer.width)
   if status:
     client.loadUrl(url)
@@ -229,8 +234,7 @@ proc toggleSource*(client: Client) =
 
 proc command(client: Client) =
   var iput: string
-  print(HVP(client.buffer.height + 1, 1))
-  print(EL())
+  client.statusMode()
   let status = readLine("COMMAND: ", iput, client.buffer.width)
   if status and iput.len > 0:
     let ret = client.jsctx.eval(iput, "<stdin>", JS_EVAL_TYPE_GLOBAL)
@@ -240,7 +244,7 @@ proc command(client: Client) =
       let str = ex.toString()
       if str.issome:
         opaque.err &= str.get & '\n'
-      let stack = ex.getProperty("stack")
+      var stack = ex.getProperty("stack")
       if not stack.isUndefined():
         let str = stack.toString()
         if str.issome:
@@ -261,6 +265,94 @@ proc command(client: Client) =
     client.buffer.istream = newStringStream(opaque.err)
     client.buffer.contenttype = "text/plain"
     client.setupBuffer()
+
+proc searchNext(client: Client) =
+  if client.regex.issome:
+    if not client.revsearch:
+      discard client.buffer.cursorNextMatch(client.regex.get)
+    else:
+      discard client.buffer.cursorPrevMatch(client.regex.get)
+
+proc searchPrev(client: Client) =
+  if client.regex.issome:
+    if not client.revsearch:
+      discard client.buffer.cursorPrevMatch(client.regex.get)
+    else:
+      discard client.buffer.cursorNextMatch(client.regex.get)
+
+proc search(client: Client) =
+  client.statusMode()
+  var iput: string
+  let status = readLine("/", iput, client.buffer.width)
+  if status:
+    if iput.len != 0:
+      client.regex = compileSearchRegex(iput)
+    client.revsearch = false
+    client.searchNext()
+
+proc searchBack(client: Client) =
+  client.statusMode()
+  var iput: string
+  let status = readLine("?", iput, client.buffer.width)
+  if status:
+    if iput.len != 0:
+      client.regex = compileSearchRegex(iput)
+    client.revsearch = true
+    client.searchNext()
+
+proc isearch(client: Client) =
+  client.statusMode()
+  var iput: string
+  let cpos = client.buffer.cpos
+  let status = readLine("/", iput, client.buffer.width, {}, (proc(state: var LineState): bool =
+    client.buffer.marks.setLen(0)
+    let regex = compileSearchRegex($state.news)
+    client.buffer.cpos = cpos
+    if regex.issome:
+      let match = client.buffer.cursorNextMatch(regex.get)
+      if match.success:
+        client.buffer.addMark(match.x, match.y, match.str)
+        let nos = client.buffer.nostatus
+        client.buffer.redraw = true
+        client.buffer.refreshBuffer(true)
+        print(HVP(client.buffer.height + 1, 2))
+      else:
+        client.buffer.marks.setLen(0)
+      return true
+    false
+  ))
+  client.buffer.marks.setLen(0)
+  client.buffer.redraw = true
+  if status:
+    client.regex = compileSearchRegex(iput)
+  else:
+    client.buffer.cpos = cpos
+
+proc isearchBack(client: Client) =
+  client.statusMode()
+  var iput: string
+  let cpos = client.buffer.cpos
+  let status = readLine("?", iput, client.buffer.width, {}, (proc(state: var LineState): bool =
+    client.buffer.marks.setLen(0)
+    let regex = compileSearchRegex($state.news)
+    client.buffer.cpos = cpos
+    if regex.issome:
+      let match = client.buffer.cursorPrevMatch(regex.get)
+      if match.success:
+        client.buffer.addMark(match.x, match.y, match.str)
+        let nos = client.buffer.nostatus
+        client.buffer.redraw = true
+        client.buffer.refreshBuffer(true)
+        print(HVP(client.buffer.height + 1, 2))
+      return true
+    false
+  ))
+  client.buffer.marks.setLen(0)
+  client.buffer.redraw = true
+  if status:
+    client.regex = compileSearchRegex(iput)
+  else:
+    client.buffer.cpos = cpos
 
 proc quit(client: Client) =
   eraseScreen()
@@ -319,6 +411,12 @@ proc input(client: Client) =
   of ACTION_NEXT_BUFFER: client.nextBuffer()
   of ACTION_DISCARD_BUFFER: client.discardBuffer()
   of ACTION_COMMAND: client.command()
+  of ACTION_SEARCH: client.search()
+  of ACTION_SEARCH_BACK: client.searchBack()
+  of ACTION_ISEARCH: client.isearch()
+  of ACTION_ISEARCH_BACK: client.isearchBack()
+  of ACTION_SEARCH_NEXT: client.searchNext()
+  of ACTION_SEARCH_PREV: client.searchPrev()
   else: discard
 
 proc inputLoop(client: Client) =

@@ -96,6 +96,7 @@ proc JS_NewRuntime*(): JSRuntime {.importc: "JS_NewRuntime", header: qjsheader.}
 proc JS_FreeRuntime*(rt: JSRuntime) {.importc: "JS_FreeRuntime", header: qjsheader.}
 
 proc JS_NewContext*(rt: JSRuntime): JSContext {.importc: "JS_NewContext", header: qjsheader.}
+proc JS_NewContextRaw*(rt: JSRuntime): JSContext {.importc: "JS_NewContextRaw", header: qjsheader.}
 proc JS_FreeContext*(ctx: JSContext) {.importc: "JS_FreeContext", header: qjsheader.}
 
 proc JS_GetGlobalObject*(ctx: JSContext): JSValue {.importc: "JS_GetGlobalObject", header: qjsheader.}
@@ -127,3 +128,5 @@ proc JS_GetException*(ctx: JSContext): JSValue {.importc: "JS_GetException", hea
 
 proc JS_SetContextOpaque*(ctx: JSContext, opaque: pointer) {.importc: "JS_SetContextOpaque", header: qjsheader.}
 proc JS_GetContextOpaque*(ctx: JSContext): pointer {.importc: "JS_GetContextOpaque", header: qjsheader.}
+
+proc js_free_rt*(rt: JSRuntime, p: pointer) {.importc: "js_free_rt".}

@@ -56,6 +56,10 @@ D = 'DISCARD_BUFFER'
 ',' = 'PREV_BUFFER'
 '.' = 'NEXT_BUFFER'
 M-c = 'COMMAND'
+'/' = 'ISEARCH'
+'?' = 'ISEARCH_BACK'
+'n' = 'SEARCH_NEXT'
+'N' = 'SEARCH_PREV'
 
 [line]
 C-m = 'SUBMIT'

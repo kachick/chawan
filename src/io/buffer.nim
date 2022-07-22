@@ -16,13 +16,34 @@ import io/cell
 import io/lineedit
 import io/loader
 import io/term
+import js/regex
 import layout/box
 import render/renderdocument
 import render/rendertext
+import types/color
 import types/url
 import utils/twtstr
 
 type
+  CursorPosition* = object
+    cursorx*: int
+    cursory*: int
+    xend*: int
+    fromx*: int
+    fromy*: int
+
+  BufferMatch* = object
+    success*: bool
+    x*: int
+    y*: int
+    str*: string
+
+  Mark* = object
+    x: int
+    y: int
+    format: Format
+    grid: FixedGrid
+
   Buffer* = ref object
     contenttype*: string
     title*: string
@@ -33,11 +54,7 @@ type
     hovertext*: string
     width*: int
     height*: int
-    cursorx*: int
-    cursory*: int
-    xend*: int
-    fromx*: int
-    fromy*: int
+    cpos*: CursorPosition
     attrs*: TermAttributes
     document*: Document
     viewport*: Viewport
@@ -53,9 +70,10 @@ type
     prevnode*: Node
     sourcepair*: Buffer
     prev*: Buffer
-    next* {.cursor.}: Buffer
+    next*: Buffer
     userstyle*: CSSStylesheet
     loader*: FileLoader
+    marks*: seq[Mark]
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -66,6 +84,12 @@ proc newBuffer*(): Buffer =
   result.display = newFixedGrid(result.width, result.height)
   result.prevdisplay = newFixedGrid(result.width, result.height)
   result.statusmsg = newFixedGrid(result.width)
+
+func cursorx*(buffer: Buffer): int {.inline.} = buffer.cpos.cursorx
+func cursory*(buffer: Buffer): int {.inline.} = buffer.cpos.cursory
+func fromx*(buffer: Buffer): int {.inline.} = buffer.cpos.fromx
+func fromy*(buffer: Buffer): int {.inline.} = buffer.cpos.fromy
+func xend*(buffer: Buffer): int {.inline.} = buffer.cpos.xend
 
 func generateFullOutput(buffer: Buffer): string =
   var x = 0
@@ -171,6 +195,14 @@ func generateStatusMessage*(buffer: Buffer): string =
   if w < buffer.width:
     result &= EL()
 
+func generateMark*(buffer: Buffer, mark: Mark): string =
+  var format = newFormat()
+  var w = 0
+  for cell in mark.grid:
+    result &= format.processFormat(cell.format)
+    result &= $cell.runes
+    w += cell.width()
+
 func numLines(buffer: Buffer): int = buffer.lines.len
 
 func lastVisibleLine(buffer: Buffer): int = min(buffer.fromy + buffer.height, buffer.numLines)
@@ -228,16 +260,19 @@ func getCursorClickable(buffer: Buffer): Element =
 func currentLine(buffer: Buffer): string =
   return buffer.lines[buffer.cursory].str
 
-func currentCursorBytes(buffer: Buffer): int =
-  let line = buffer.currentLine
+func cursorBytes(buffer: Buffer, y: int, cc = buffer.fromx + buffer.cursorx): int =
+  assert y < buffer.lines.len
+  let line = buffer.lines[y].str
   var w = 0
   var i = 0
-  let cc = buffer.fromx + buffer.cursorx
   while i < line.len and w < cc:
     var r: Rune
     fastRuneAt(line, i, r)
     w += r.width()
   return i
+
+func currentCursorBytes(buffer: Buffer, cc = buffer.fromx + buffer.cursorx): int =
+  return buffer.cursorBytes(buffer.cursory, cc)
 
 func currentWidth(buffer: Buffer): int =
   let line = buffer.currentLine
@@ -333,20 +368,20 @@ proc refreshDisplay(buffer: Buffer) =
 
 proc setCursorX(buffer: Buffer, x: int, refresh = true, save = true) =
   if (not refresh) or (buffer.fromx <= x and x < buffer.fromx + buffer.width):
-    buffer.cursorx = x
+    buffer.cpos.cursorx = x
   else:
     if refresh and buffer.fromx > buffer.cursorx:
-      buffer.fromx = max(buffer.currentLineWidth() - 1, 0)
-      buffer.cursorx = buffer.fromx
+      buffer.cpos.fromx = max(buffer.currentLineWidth() - 1, 0)
+      buffer.cpos.cursorx = buffer.fromx
     elif x > buffer.cursorx:
-      buffer.fromx = max(x - buffer.width + 1, 0)
-      buffer.cursorx = x
+      buffer.cpos.fromx = max(x - buffer.width + 1, 0)
+      buffer.cpos.cursorx = x
     elif x < buffer.cursorx:
-      buffer.fromx = x
-      buffer.cursorx = x
+      buffer.cpos.fromx = x
+      buffer.cpos.cursorx = x
     buffer.redraw = true
   if save:
-    buffer.xend = buffer.cursorx
+    buffer.cpos.xend = buffer.cursorx
 
 proc restoreCursorX(buffer: Buffer) =
   buffer.setCursorX(max(min(buffer.currentLineWidth() - 1, buffer.xend), 0), false, false)
@@ -355,23 +390,32 @@ proc setCursorY(buffer: Buffer, y: int) =
   if buffer.cursory == y:
     return
   if y - buffer.fromy >= 0 and y - buffer.height < buffer.fromy:
-    buffer.cursory = y
+    buffer.cpos.cursory = y
   else:
     if y > buffer.cursory:
-      buffer.fromy = max(y - buffer.height + 1, 0)
+      buffer.cpos.fromy = max(y - buffer.height + 1, 0)
     else:
-      buffer.fromy = min(y, buffer.maxfromy)
-    buffer.cursory = y
+      buffer.cpos.fromy = min(y, buffer.maxfromy)
+    buffer.cpos.cursory = y
     buffer.redraw = true
   buffer.restoreCursorX()
 
+proc centerLine*(buffer: Buffer) =
+  let ny = max(min(buffer.cursory - buffer.height div 2, buffer.numLines - buffer.height), 0)
+  if ny != buffer.fromy:
+    buffer.cpos.fromy = ny
+    buffer.redraw = true
+
 proc setCursorXY*(buffer: Buffer, x, y: int) =
+  let fy = buffer.fromy
   buffer.setCursorY(max(min(y, buffer.numLines - 1), 0))
   buffer.setCursorX(max(min(buffer.currentLineWidth(), x), 0))
+  if fy != buffer.fromy:
+    buffer.centerLine()
 
 proc setFromXY*(buffer: Buffer, x, y: int) =
-  buffer.fromy = max(min(y, buffer.maxfromy), 0)
-  buffer.fromx = max(min(x, buffer.maxfromx), 0)
+  buffer.cpos.fromy = max(min(y, buffer.maxfromy), 0)
+  buffer.cpos.fromx = max(min(x, buffer.maxfromx), 0)
 
 proc cursorDown*(buffer: Buffer) =
   if buffer.cursory < buffer.numLines - 1:
@@ -563,61 +607,55 @@ proc cursorVertMiddle*(buffer: Buffer) =
 proc cursorRightEdge*(buffer: Buffer) =
   buffer.setCursorX(min(buffer.fromx + buffer.width - 1, buffer.currentLineWidth))
 
-proc centerLine*(buffer: Buffer) =
-  let ny = max(min(buffer.cursory - buffer.height div 2, buffer.numLines - buffer.height), 0)
-  if ny != buffer.fromy:
-    buffer.fromy = ny
-    buffer.redraw = true
-
 proc halfPageUp*(buffer: Buffer) =
-  buffer.cursory = max(buffer.cursory - buffer.height div 2 + 1, 0)
+  buffer.cpos.cursory = max(buffer.cursory - buffer.height div 2 + 1, 0)
   let nfy = max(0, buffer.fromy - buffer.height div 2 + 1)
   if nfy != buffer.fromy:
-    buffer.fromy = nfy
+    buffer.cpos.fromy = nfy
     buffer.redraw = true
   buffer.restoreCursorX()
 
 proc halfPageDown*(buffer: Buffer) =
-  buffer.cursory = min(buffer.cursory + buffer.height div 2 - 1, buffer.numLines - 1)
+  buffer.cpos.cursory = min(buffer.cursory + buffer.height div 2 - 1, buffer.numLines - 1)
   let nfy = min(max(buffer.numLines - buffer.height, 0), buffer.fromy + buffer.height div 2 - 1)
   if nfy != buffer.fromy:
-    buffer.fromy = nfy
+    buffer.cpos.fromy = nfy
     buffer.redraw = true
   buffer.restoreCursorX()
 
 proc pageUp*(buffer: Buffer) =
-  buffer.cursory = max(buffer.cursory - buffer.height, 0)
+  buffer.cpos.cursory = max(buffer.cursory - buffer.height, 0)
   let nfy = max(0, buffer.fromy - buffer.height)
   if nfy != buffer.fromy:
-    buffer.fromy = nfy
+    buffer.cpos.fromy = nfy
     buffer.redraw = true
   buffer.restoreCursorX()
 
 proc pageDown*(buffer: Buffer) =
-  buffer.cursory = min(buffer.cursory + buffer.height, buffer.numLines - 1)
+  buffer.cpos.cursory = min(buffer.cursory + buffer.height, buffer.numLines - 1)
   let nfy = min(buffer.fromy + buffer.height, max(buffer.numLines - buffer.height, 0))
   if nfy != buffer.fromy:
-    buffer.fromy = nfy
+    buffer.cpos.fromy = nfy
     buffer.redraw = true
   buffer.restoreCursorX()
 
 proc pageLeft*(buffer: Buffer) =
-  buffer.cursorx = max(buffer.cursorx - buffer.width, 0)
+  buffer.cpos.cursorx = max(buffer.cursorx - buffer.width, 0)
   let nfx = max(0, buffer.fromx - buffer.width)
   if nfx != buffer.fromx:
-    buffer.fromx = nfx
+    buffer.cpos.fromx = nfx
     buffer.redraw = true
 
 proc pageRight*(buffer: Buffer) =
-  buffer.cursorx = min(buffer.fromx, buffer.currentLineWidth())
+  buffer.cpos.cursorx = min(buffer.fromx, buffer.currentLineWidth())
   let nfx = min(max(buffer.maxScreenWidth() - buffer.width, 0), buffer.fromx + buffer.width)
   if nfx != buffer.fromx:
-    buffer.fromx = nfx
+    buffer.cpos.fromx = nfx
     buffer.redraw = true
 
 proc scrollDown*(buffer: Buffer) =
   if buffer.fromy + buffer.height < buffer.numLines:
-    inc buffer.fromy
+    inc buffer.cpos.fromy
     if buffer.fromy > buffer.cursory:
       buffer.cursorDown()
     buffer.redraw = true
@@ -626,7 +664,7 @@ proc scrollDown*(buffer: Buffer) =
 
 proc scrollUp*(buffer: Buffer) =
   if buffer.fromy > 0:
-    dec buffer.fromy
+    dec buffer.cpos.fromy
     if buffer.fromy + buffer.height <= buffer.cursory:
       buffer.cursorUp()
     buffer.redraw = true
@@ -635,12 +673,12 @@ proc scrollUp*(buffer: Buffer) =
 
 proc scrollRight*(buffer: Buffer) =
   if buffer.fromx + buffer.width < buffer.maxScreenWidth():
-    inc buffer.fromx
+    inc buffer.cpos.fromx
     buffer.redraw = true
 
 proc scrollLeft*(buffer: Buffer) =
   if buffer.fromx > 0:
-    dec buffer.fromx
+    dec buffer.cpos.fromx
     if buffer.cursorx < buffer.fromx:
       buffer.setCursorX(max(buffer.currentLineWidth() - 1, 0))
     buffer.redraw = true
@@ -660,8 +698,78 @@ proc gotoAnchor*(buffer: Buffer) =
         return
       inc i
 
-proc gotoLocation*(buffer: Buffer, s: string) =
-  discard parseUrl(s, buffer.location.some, buffer.location, true)
+proc addMark*(buffer: Buffer, x, y: int, str: string) =
+  assert y < buffer.lines.len
+  var format = newFormat()
+  format.reverse = true
+  #TODO get rid of the string part; marks should only consist of a position and
+  # a length.
+  var grid = newFixedGrid(str.width())
+  var i = 0
+  for r in str.runes:
+    grid[i].runes.add(r)
+    grid[i].format = format
+    i += r.width()
+  buffer.marks.add(Mark(x: x, y: y, format: format, grid: grid))
+
+proc cursorNextMatch(buffer: Buffer, regex: Regex, sy, ey: int, wrap = false): BufferMatch =
+  for y in sy..ey:
+    let s = if y == buffer.cursory and not wrap:
+      buffer.currentCursorBytes(buffer.fromx + buffer.cursorx + 1)
+    else:
+      0
+    let res = regex.exec(buffer.lines[y].str, s)
+    if res.success and res.captures.len > 0:
+      let cap = res.captures[0]
+      buffer.setCursorXY(cap.s, y)
+      result.success = true
+      result.y = y
+      result.x = buffer.cursorBytes(y, cap.s)
+      result.str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+      return
+
+proc cursorNextMatch*(buffer: Buffer, regex: Regex, wrap = true): BufferMatch =
+  let s = buffer.currentCursorBytes(buffer.fromx + buffer.cursorx + 1)
+  var low = buffer.cursory
+  if s == buffer.lines.len:
+    low += 1
+  if low > buffer.lines.high:
+    low = 0
+  let ret = buffer.cursorNextMatch(regex, low, buffer.lines.high)
+  if ret.success:
+    return ret
+  if wrap:
+    return buffer.cursorNextMatch(regex, 0, low, true)
+
+proc cursorPrevMatch*(buffer: Buffer, regex: Regex, sy, ey: int, wrap = false): BufferMatch =
+  for y in countdown(sy, ey):
+    let e = if y == buffer.cursory and not wrap:
+      buffer.currentCursorBytes()
+    else:
+      buffer.lines[y].str.len + 1
+    let res = regex.exec(buffer.lines[y].str)
+    if res.success:
+      for i in countdown(res.captures.high, 0):
+        let cap = res.captures[i]
+        if cap.s < e:
+          buffer.setCursorXY(cap.s, y)
+          result.success = true
+          result.y = y
+          result.x = buffer.cursorBytes(y, cap.s)
+          result.str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+          return
+
+proc cursorPrevMatch*(buffer: Buffer, regex: Regex, wrap = true): BufferMatch =
+  var high = buffer.cursory
+  if buffer.fromx + buffer.cursorx - 1 < 0:
+    high -= 1
+  if high < 0:
+    high = buffer.lines.high
+  let ret = buffer.cursorPrevMatch(regex, high, 0)
+  if ret.success:
+    return ret
+  if wrap:
+    return buffer.cursorPrevMatch(regex, buffer.lines.high, high)
 
 proc refreshTermAttrs*(buffer: Buffer): bool =
   let newAttrs = getTermAttributes()
@@ -674,11 +782,11 @@ proc refreshTermAttrs*(buffer: Buffer): bool =
 
 proc updateCursor(buffer: Buffer) =
   if buffer.fromy > buffer.lastVisibleLine - 1:
-    buffer.fromy = 0
-    buffer.cursory = buffer.lastVisibleLine - 1
+    buffer.cpos.fromy = 0
+    buffer.cpos.cursory = buffer.lastVisibleLine - 1
 
   if buffer.lines.len == 0:
-    buffer.cursory = 0
+    buffer.cpos.cursory = 0
 
 proc updateHover(buffer: Buffer) =
   let thisnode = buffer.currentDisplayCell().node
@@ -1086,7 +1194,7 @@ proc drawBuffer*(buffer: Buffer) =
       print(format.processFormat(newFormat()))
       print('\n')
 
-proc refreshBuffer*(buffer: Buffer) =
+proc refreshBuffer*(buffer: Buffer, peek = false) =
   buffer.title = buffer.getTitle()
   stdout.hideCursor()
 
@@ -1106,10 +1214,18 @@ proc refreshBuffer*(buffer: Buffer) =
     buffer.refreshDisplay()
     buffer.displayBufferSwapOutput()
 
-  if not buffer.nostatus:
-    buffer.statusMsgForBuffer()
-  else:
-    buffer.nostatus = false
-  buffer.displayStatusMessage()
-  buffer.cursorBufferPos()
+  for mark in buffer.marks:
+    if mark.y in buffer.fromy..(buffer.fromy + buffer.height) and mark.x in buffer.fromx..(buffer.fromx + buffer.width):
+      print(HVP(mark.y - buffer.fromy + 1, mark.x - buffer.fromx + 1))
+      print(SGR())
+      print(buffer.generateMark(mark))
+      print(SGR())
+
+  if not peek:
+    if not buffer.nostatus:
+      buffer.statusMsgForBuffer()
+    else:
+      buffer.nostatus = false
+    buffer.displayStatusMessage()
+    buffer.cursorBufferPos()
   stdout.showCursor()
