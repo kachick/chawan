@@ -466,9 +466,12 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
   let pwidth = builder.computed{"width"}
   if pwidth.auto:
     # Half-baked shrink-to-fit
-    result.bctx.width = min(max(result.bctx.width, parent.maxwidth), preferred.compwidth)
+    # Currently the misery that is determining content width is deferred to the
+    # inline layouting algorithm, which doesn't work that great but that's what
+    # we have.
+    result.bctx.width = min(parentWidth, result.bctx.width)
   else:
-    result.bctx.width = preferred.compwidth
+    result.bctx.width = pwidth.px(parent.viewport, parentWidth)
 
   # Apply the block box's properties to the atom itself.
   result.width = result.bctx.width
