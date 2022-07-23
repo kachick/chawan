@@ -1,10 +1,12 @@
 # Interface for QuickJS libregexp.
 
 import options
+import unicode
 
 import bindings/libregexp
 import bindings/quickjs
 import js/javascript
+import strings/charset
 
 export
   LRE_FLAG_GLOBAL,
@@ -36,8 +38,10 @@ proc compileRegex*(buf: string, flags: int): Option[Regex] =
   var error_msg_size = 64
   var error_msg = cast[cstring](alloc0(error_msg_size))
   let bytecode = lre_compile(addr len, error_msg, cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags), dummyContext)
+
   if error_msg != nil:
     #TODO error handling?
+    #eprint "err", error_msg
     dealloc(error_msg)
     error_msg = nil
   if bytecode == nil:
@@ -55,10 +59,9 @@ proc compileSearchRegex*(str: string): Option[Regex] =
   while i >= 0:
     case str[i]
     of '/':
-      if i > 0 and str[i - 1] == '\\': break # escaped
       flagsi = i
       break
-    of 'i', 'm', 's': discard
+    of 'i', 'm', 's', 'u': discard
     else: break # invalid flag
     dec i
 
@@ -73,20 +76,36 @@ proc compileSearchRegex*(str: string): Option[Regex] =
     of 'i': flags = flags or LRE_FLAG_IGNORECASE
     of 'm': flags = flags or LRE_FLAG_MULTILINE
     of 's': flags = flags or LRE_FLAG_DOTALL
+    of 'u': flags = flags or LRE_FLAG_UTF16
     else: assert false
   return compileRegex(str.substr(0, flagsi - 1), flags)
 
 proc exec*(regex: Regex, str: string, start = 0): RegexResult =
   assert 0 <= start and start <= str.len
-  let cstr = cstring(str)
-  let captureCount = lre_get_capture_count(cast[ptr uint8](regex.bytecode))
+
+  let captureCount = lre_get_capture_count(regex.bytecode)
+
   var capture: ptr ptr uint8 = nil
   if captureCount > 0:
     capture = cast[ptr ptr uint8](alloc0(sizeof(ptr uint8) * captureCount * 2))
+
+  var cstr = cstring(str)
+  var ascii = true
+  for c in str:
+    if c > char(0x80):
+      ascii = false
+      break
+  var ustr: string16
+  if not ascii:
+    ustr = toUTF16(str)
+    cstr = cstring(ustr)
+
   let ret = lre_exec(capture, regex.bytecode,
                      cast[ptr uint8](cstr), cint(start),
-                     cint(str.len), cint(0), dummyContext)
+                     cint(str.len), cint(not ascii), dummyContext)
+
   result.success = ret == 1 #TODO error handling? (-1)
+
   if result.success:
     var i = 0
     let cstrAddress = cast[int](cstr)
@@ -99,7 +118,22 @@ proc exec*(regex: Regex, str: string, start = 0): RegexResult =
       let endPointer = cast[ptr ptr uint8](endPointerAddress)
       let startAddress = cast[int](startPointer[])
       let endAddress = cast[int](endPointer[])
-      let s = startAddress - cstrAddress
-      let e = endAddress - cstrAddress
-      result.captures.add((s, e))
+      var s = startAddress - cstrAddress
+      var e = endAddress - cstrAddress
+      if ascii:
+        result.captures.add((s, e))
+      else:
+        var s8 = 0
+        var e8 = 0
+        var i = 0
+        var r: Rune
+        while i < s:
+          fastRuneAt(ustr, i, r)
+          let si = r.size()
+          s8 += si
+          e8 += si
+        while i < e:
+          fastRuneAt(ustr, i, r)
+          e8 += r.size()
+        result.captures.add((s8, e8))
   dealloc(capture)

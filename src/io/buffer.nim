@@ -38,12 +38,6 @@ type
     y*: int
     str*: string
 
-  Mark* = object
-    x: int
-    y: int
-    format: Format
-    grid: FixedGrid
-
   Buffer* = ref object
     contenttype*: string
     title*: string
@@ -73,7 +67,6 @@ type
     next*: Buffer
     userstyle*: CSSStylesheet
     loader*: FileLoader
-    marks*: seq[Mark]
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -194,14 +187,6 @@ func generateStatusMessage*(buffer: Buffer): string =
     w += cell.width()
   if w < buffer.width:
     result &= EL()
-
-func generateMark*(buffer: Buffer, mark: Mark): string =
-  var format = newFormat()
-  var w = 0
-  for cell in mark.grid:
-    result &= format.processFormat(cell.format)
-    result &= $cell.runes
-    w += cell.width()
 
 func numLines(buffer: Buffer): int = buffer.lines.len
 
@@ -332,27 +317,36 @@ proc refreshDisplay(buffer: Buffer) =
 
   for line in buffer.lines[buffer.fromy..
                            buffer.lastVisibleLine - 1]:
-    var w = 0
-    var i = 0
+    var w = 0 # width of the row so far
+    var i = 0 # byte in line.str
+
+    # Skip cells till buffer.fromx.
     while w < buffer.fromx and i < line.str.len:
       fastRuneAt(line.str, i, r)
       w += r.width()
 
-    let dls = y * buffer.width
+    let dls = y * buffer.width # starting position of row in display
+
+    # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
+    # we encountered a double-width character.)
     var k = 0
-    var cf = line.findFormat(w)
-    var nf = line.findNextFormat(w)
     if w > buffer.fromx:
       while k < w - buffer.fromx:
         buffer.display[dls + k].runes.add(Rune(' '))
         inc k
 
+    var cf = line.findFormat(w)
+    var nf = line.findNextFormat(w)
+
+    let startw = w # save this for later
+
+    # Now fill in the visible part of the row.
     while i < line.str.len:
       let pw = w
       fastRuneAt(line.str, i, r)
       w += r.width()
       if w > buffer.fromx + buffer.width:
-        break
+        break # die on exceeding the width limit
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
@@ -363,6 +357,14 @@ proc refreshDisplay(buffer: Buffer) =
       let tk = k + r.width()
       while k < tk and k < buffer.width - 1:
         inc k
+
+    # Then, for each cell that has a mark, override its formatting with that
+    # specified by the mark.
+    let aw = buffer.width - (startw - buffer.fromx) # actual width
+    for mark in line.marks:
+      if mark.x >= startw + aw or mark.x + mark.width < startw: continue
+      for i in max(mark.x, startw)..<min(mark.x + mark.width, startw + aw):
+        buffer.display[dls + i].format = mark.format
 
     inc y
 
@@ -698,19 +700,17 @@ proc gotoAnchor*(buffer: Buffer) =
         return
       inc i
 
-proc addMark*(buffer: Buffer, x, y: int, str: string) =
+proc addMark*(buffer: Buffer, x, y, width: int): Mark =
   assert y < buffer.lines.len
   var format = newFormat()
   format.reverse = true
-  #TODO get rid of the string part; marks should only consist of a position and
-  # a length.
-  var grid = newFixedGrid(str.width())
-  var i = 0
-  for r in str.runes:
-    grid[i].runes.add(r)
-    grid[i].format = format
-    i += r.width()
-  buffer.marks.add(Mark(x: x, y: y, format: format, grid: grid))
+  result = Mark(x: x, width: width, format: format)
+  buffer.lines[y].marks.add(result)
+
+proc removeMark*(buffer: Buffer, y: int, mark: Mark) =
+  let i = buffer.lines[y].marks.find(mark)
+  if i != -1:
+    buffer.lines[y].marks.delete(i)
 
 proc cursorNextMatch(buffer: Buffer, regex: Regex, sy, ey: int, wrap = false): BufferMatch =
   for y in sy..ey:
@@ -721,10 +721,11 @@ proc cursorNextMatch(buffer: Buffer, regex: Regex, sy, ey: int, wrap = false): B
     let res = regex.exec(buffer.lines[y].str, s)
     if res.success and res.captures.len > 0:
       let cap = res.captures[0]
-      buffer.setCursorXY(cap.s, y)
+      let x = buffer.lines[y].str.width(cap.s)
+      buffer.setCursorXY(x, y)
       result.success = true
       result.y = y
-      result.x = buffer.cursorBytes(y, cap.s)
+      result.x = x
       result.str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
       return
 
@@ -752,10 +753,11 @@ proc cursorPrevMatch*(buffer: Buffer, regex: Regex, sy, ey: int, wrap = false): 
       for i in countdown(res.captures.high, 0):
         let cap = res.captures[i]
         if cap.s < e:
-          buffer.setCursorXY(cap.s, y)
+          let x = buffer.lines[y].str.width(cap.s)
+          buffer.setCursorXY(x, y)
           result.success = true
           result.y = y
-          result.x = buffer.cursorBytes(y, cap.s)
+          result.x = x
           result.str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
           return
 
@@ -1213,13 +1215,6 @@ proc refreshBuffer*(buffer: Buffer, peek = false) =
     buffer.reshape = false
     buffer.refreshDisplay()
     buffer.displayBufferSwapOutput()
-
-  for mark in buffer.marks:
-    if mark.y in buffer.fromy..(buffer.fromy + buffer.height) and mark.x in buffer.fromx..(buffer.fromx + buffer.width):
-      print(HVP(mark.y - buffer.fromy + 1, mark.x - buffer.fromx + 1))
-      print(SGR())
-      print(buffer.generateMark(mark))
-      print(SGR())
 
   if not peek:
     if not buffer.nostatus:

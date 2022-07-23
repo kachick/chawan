@@ -7,6 +7,7 @@ import unicode
 import css/sheet
 import config/config
 import io/buffer
+import io/cell
 import io/lineedit
 import io/loader
 import js/javascript
@@ -304,25 +305,32 @@ proc isearch(client: Client) =
   client.statusMode()
   var iput: string
   let cpos = client.buffer.cpos
+  var mark: Mark
+  var my: int
+  template del_mark() =
+    if mark != nil:
+      client.buffer.removeMark(my, mark)
+
   let status = readLine("/", iput, client.buffer.width, {}, (proc(state: var LineState): bool =
-    client.buffer.marks.setLen(0)
+    del_mark
     let regex = compileSearchRegex($state.news)
     client.buffer.cpos = cpos
     if regex.issome:
       let match = client.buffer.cursorNextMatch(regex.get)
       if match.success:
-        client.buffer.addMark(match.x, match.y, match.str)
-        let nos = client.buffer.nostatus
+        mark = client.buffer.addMark(match.x, match.y, match.str.width())
         client.buffer.redraw = true
         client.buffer.refreshBuffer(true)
         print(HVP(client.buffer.height + 1, 2))
       else:
-        client.buffer.marks.setLen(0)
+        del_mark
       return true
     false
   ))
-  client.buffer.marks.setLen(0)
+
+  del_mark
   client.buffer.redraw = true
+  client.buffer.refreshBuffer(true)
   if status:
     client.regex = compileSearchRegex(iput)
   else:
@@ -332,22 +340,29 @@ proc isearchBack(client: Client) =
   client.statusMode()
   var iput: string
   let cpos = client.buffer.cpos
+  var mark: Mark
+  var my: int
+  template del_mark() =
+    if mark != nil:
+      client.buffer.removeMark(my, mark)
   let status = readLine("?", iput, client.buffer.width, {}, (proc(state: var LineState): bool =
-    client.buffer.marks.setLen(0)
+    del_mark
     let regex = compileSearchRegex($state.news)
     client.buffer.cpos = cpos
     if regex.issome:
       let match = client.buffer.cursorPrevMatch(regex.get)
       if match.success:
-        client.buffer.addMark(match.x, match.y, match.str)
-        let nos = client.buffer.nostatus
+        mark = client.buffer.addMark(match.x, match.y, match.str.width())
+        my = match.y
         client.buffer.redraw = true
         client.buffer.refreshBuffer(true)
         print(HVP(client.buffer.height + 1, 2))
+      else:
+        del_mark
       return true
     false
   ))
-  client.buffer.marks.setLen(0)
+  del_mark
   client.buffer.redraw = true
   if status:
     client.regex = compileSearchRegex(iput)

@@ -867,6 +867,15 @@ func width*(s: string): int =
   for r in s.runes():
     result += width(r)
 
+func width*(s: string, len: int): int =
+  var i = 0
+  var m = len
+  if m > s.len: m = s.len
+  while i < m:
+    var r: Rune
+    fastRuneAt(s, i, r)
+    result += width(r)
+
 func width*(s: seq[Rune]): int =
   for r in s:
     result += width(r)

@@ -17,3 +17,5 @@ proc lre_exec*(capture: ptr ptr uint8, bc_buf: ptr uint8, cbuf: ptr uint8,
                opaque: pointer): cint {.importc: "lre_exec", header: lreheader.}
 
 proc lre_get_capture_count*(bc_buf: ptr uint8): cint {.importc: "lre_get_capture_count", header: lreheader.}
+
+proc lre_get_flags*(bc_buf: ptr uint8): cint {.importc: "lre_get_flags", header: lreheader.}

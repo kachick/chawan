@@ -35,6 +35,12 @@ type
   FlexibleLine* = object
     str*: string
     formats*: seq[FormatCell]
+    marks*: seq[Mark]
+
+  Mark* = ref object
+    x*: int
+    width*: int
+    format*: Format
 
   FlexibleGrid* = seq[FlexibleLine]
 
