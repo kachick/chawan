@@ -613,19 +613,12 @@ func newAttr*(parent: Element, key, value: string): Attr =
   result.name = key
   result.value = value
 
-func getElementById*(document: Document, id: string): Element =
+func getElementById*(node: Node, id: string): Element =
   if id.len == 0:
     return nil
-  var stack: seq[Element]
-  for child in document.children_rev:
-    stack.add(child)
-  while stack.len > 0:
-    let element = stack.pop()
-    if element.id == id:
-      return element
-    for child in document.children_rev:
-      stack.add(child)
-  return nil
+  for child in node.elements:
+    if child.id == id:
+      return child
 
 func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
   for element in document.elements(tag):
