@@ -5,6 +5,7 @@ import osproc
 import streams
 import strutils
 
+import bindings/curl
 import config/config
 import types/mime
 import types/url
@@ -22,6 +23,10 @@ type
   CurlStream = ref object of StreamObj
     f: File
     curl: Process
+
+  HeaderResult = ref object
+    statusline: bool
+    headers: HttpHeaders
 
 const DefaultHeaders = {
   "User-Agent": "chawan",
@@ -74,6 +79,109 @@ proc fsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
 
 proc fsReadLine(s: Stream, line: var string): bool =
   result = readLine(CurlStream(s).f, line)
+
+proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: pointer): csize_t {.cdecl.} =
+  var line = newString(nitems)
+  for i in 0..<nitems:
+    line[i] = p[i]
+
+  let headers = cast[HeaderResult](userdata)
+  if not headers.statusline:
+    headers.statusline = true
+    return nitems #TODO handle status line
+
+  let k = line.until(':')
+
+  if k.len == line.len:
+    return nitems # probably empty line, or invalid
+
+  let v = line.substr(k.len + 1).strip()
+  headers.headers.add(k, v)
+  return nitems
+
+proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer): csize_t {.cdecl.} =
+  var s = newString(nmemb)
+  for i in 0..<nmemb:
+    s[i] = p[i]
+  let stream = cast[Stream](userdata)
+  stream.write(s)
+  stream.flush()
+  return nmemb
+
+proc getPageLibcurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartDataClone = nil): LoadResult =
+  let curl = curl_easy_init()
+
+  if curl == nil: return # fail
+
+  let surl = url.serialize()
+  curl_easy_setopt(curl, CURLOPT_URL, cstring(surl))
+
+  var cs = newStringStream()
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, cs)
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteBody)
+
+  let headers = newHttpHeaders(true)
+  let headerres = HeaderResult(headers: headers)
+  curl_easy_setopt(curl, CURLOPT_HEADERDATA, headerres)
+  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curlWriteHeader)
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1)
+
+  var mime: curl_mime = nil
+
+  case smethod
+  of HttpGet: curl_easy_setopt(curl, CURLOPT_HTTPGET, 1)
+  of HttpPost:
+    curl_easy_setopt(curl, CURLOPT_POST, 1)
+    if multipart != nil:
+      mime = curl_mime_init(curl)
+      if mime == nil: return # fail
+      for entry in multipart.content:
+        let part = curl_mime_addpart(mime)
+        if part == nil: return # fail
+        curl_mime_name(part, cstring(entry.name))
+        if entry.isFile:
+          if entry.isStream:
+            curl_mime_filedata(part, cstring(entry.filename))
+          else:
+            let fd = readFile(entry.filename)
+            curl_mime_data(part, cstring(fd), csize_t(fd.len))
+          # may be overridden by curl_mime_filedata, so set it here
+          curl_mime_filename(part, cstring(entry.filename))
+        else:
+          curl_mime_data(part, cstring(entry.content), csize_t(entry.content.len))
+      curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime)
+    elif body != "":
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, cstring(body))
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.len)
+  else: discard
+
+  var requestHeaders = newHttpHeaders(true)
+  requestHeaders.table = loader.headers.table
+  if mimetype != "":
+    requestHeaders["Content-Type"] = mimetype
+  var slist: curl_slist = nil
+  for k, v in requestHeaders:
+    let header = k & ": " & v
+    slist = curl_slist_append(slist, cstring(header))
+  if slist != nil:
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist)
+
+  let res = curl_easy_perform(curl)
+  if res == CURLE_OK: # TODO handle http errors
+    cs.setPosition(0)
+    result.s = cs
+
+    let ct = headers.getOrDefault("Content-Type")
+    if ct != "":
+      result.contenttype = ct.until(';')
+    else:
+      result.contenttype = guessContentType(url.path.serialize())
+
+  curl_easy_cleanup(curl)
+  if mime != nil:
+    curl_mime_free(mime)
+  if slist != nil:
+    curl_slist_free_all(slist)
 
 proc getPageCurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartDataClone = nil): LoadResult =
   var curl_args: seq[string]
@@ -170,7 +278,7 @@ proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimet
     result.s = newFileStream(path, fmRead)
   elif url.scheme == "http" or url.scheme == "https":
     if gconfig.use_curl:
-      return getPageCurl(loader, url, smethod, mimetype, body, cast[MultipartDataClone](multipart))
+      return getPageLibcurl(loader, url, smethod, mimetype, body, cast[MultipartDataClone](multipart))
     var requestHeaders = newHttpHeaders(true)
     requestHeaders.table = loader.headers.table
     if mimetype != "":

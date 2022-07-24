@@ -4,6 +4,7 @@ import streams
 import terminal
 import unicode
 
+import bindings/curl
 import css/sheet
 import config/config
 import io/buffer
@@ -372,6 +373,7 @@ proc isearchBack(client: Client) =
 proc quit(client: Client) =
   eraseScreen()
   print(HVP(0, 0))
+  curl_global_cleanup()
   quit(0)
 
 proc input(client: Client) =
@@ -449,6 +451,9 @@ proc inputLoop(client: Client) =
       client.buffer.setStatusMessage(e.msg)
 
 proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
+  if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
+    eprint "Failed to initialize libcurl."
+    quit(1)
   client.userstyle = gconfig.stylesheet.parseStylesheet()
   if not stdin.isatty:
     client.readPipe(ctype)
@@ -456,7 +461,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool
     for page in pages:
       client.loadUrl(page, ctype)
   except LoadError as e:
-    eprint(e.msg & '\n')
+    eprint e.msg
     quit(1)
 
   if stdout.isatty and not dump: client.inputLoop()

@@ -92,41 +92,44 @@ const
   JS_EVAL_FLAG_STRIP* = (1 shl 4) ##  force 'strip' mode
   JS_EVAL_FLAG_COMPILE_ONLY* = (1 shl 5) ##  internal use
 
-proc JS_NewRuntime*(): JSRuntime {.importc: "JS_NewRuntime", header: qjsheader.}
-proc JS_FreeRuntime*(rt: JSRuntime) {.importc: "JS_FreeRuntime", header: qjsheader.}
+{.push header: qjsheader, cdecl.}
 
-proc JS_NewContext*(rt: JSRuntime): JSContext {.importc: "JS_NewContext", header: qjsheader.}
-proc JS_NewContextRaw*(rt: JSRuntime): JSContext {.importc: "JS_NewContextRaw", header: qjsheader.}
-proc JS_FreeContext*(ctx: JSContext) {.importc: "JS_FreeContext", header: qjsheader.}
+proc JS_NewRuntime*(): JSRuntime {.importc: "JS_NewRuntime".}
+proc JS_FreeRuntime*(rt: JSRuntime) {.importc: "JS_FreeRuntime".}
 
-proc JS_GetGlobalObject*(ctx: JSContext): JSValue {.importc: "JS_GetGlobalObject", header: qjsheader.}
+proc JS_NewContext*(rt: JSRuntime): JSContext {.importc: "JS_NewContext".}
+proc JS_NewContextRaw*(rt: JSRuntime): JSContext {.importc: "JS_NewContextRaw".}
+proc JS_FreeContext*(ctx: JSContext) {.importc: "JS_FreeContext".}
 
-proc JS_NewObject*(ctx: JSContext): JSValue {.importc: "JS_NewObject", header: qjsheader.}
+proc JS_GetGlobalObject*(ctx: JSContext): JSValue {.importc: "JS_GetGlobalObject".}
 
-proc JS_NewCFunction2*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: int, proto: JSCFunctionEnum, magic: int): JSValue {.importc: "JS_NewCFunction2", header: qjsheader.}
-proc JS_NewCFunction*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: int): JSValue  {.importc: "JS_NewCFunction", header: qjsheader.}
+proc JS_NewObject*(ctx: JSContext): JSValue {.importc: "JS_NewObject".}
+
+proc JS_NewCFunction2*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: int, proto: JSCFunctionEnum, magic: int): JSValue {.importc: "JS_NewCFunction2".}
+proc JS_NewCFunction*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: int): JSValue  {.importc: "JS_NewCFunction".}
 
 proc JS_SetPropertyStr*(ctx: JSContext, this_obj: JSValue, prop: cstring, val: JSValue): int 
- {.importc: "JS_SetPropertyStr", header: qjsheader.}
+ {.importc: "JS_SetPropertyStr".}
 proc JS_GetPropertyStr*(ctx: JSContext, this_obj: JSValue, prop: cstring): JSValue
- {.importc: "JS_GetPropertyStr", header: qjsheader.}
+ {.importc: "JS_GetPropertyStr".}
 
-proc JS_FreeValue*(ctx: JSContext, v: JSValue) {.importc: "JS_FreeValue", header: qjsheader.}
+proc JS_FreeValue*(ctx: JSContext, v: JSValue) {.importc: "JS_FreeValue".}
 
 # use toString if possible
-proc JS_ToCStringLen*(ctx: JSContext, plen: ptr int, val1: JSValue): cstring {.importc: "JS_ToCStringLen", header: qjsheader.}
-proc JS_ToCString*(ctx: JSContext, val1: JSValue): cstring {.importc: "JS_ToCString", header: qjsheader.}
-proc JS_FreeCString*(ctx: JSContext, `ptr`: cstring) {.importc: "JS_FreeCString", header: qjsheader.}
+proc JS_ToCStringLen*(ctx: JSContext, plen: ptr int, val1: JSValue): cstring {.importc: "JS_ToCStringLen".}
+proc JS_ToCString*(ctx: JSContext, val1: JSValue): cstring {.importc: "JS_ToCString".}
+proc JS_FreeCString*(ctx: JSContext, `ptr`: cstring) {.importc: "JS_FreeCString".}
 
-proc JS_Eval*(ctx: JSContext, input: cstring, input_len: int, filename: cstring, eval_flags: int): JSValue {.importc: "JS_Eval", header: qjsheader.}
+proc JS_Eval*(ctx: JSContext, input: cstring, input_len: int, filename: cstring, eval_flags: int): JSValue {.importc: "JS_Eval".}
 
-proc JS_IsException*(v: JSValue): bool {.importc: "JS_IsException", header: qjsheader.}
-proc JS_IsError*(v: JSValue): bool {.importc: "JS_IsError", header: qjsheader.}
-proc JS_IsUndefined*(v: JSValue): bool {.importc: "JS_IsUndefined", header: qjsheader.}
+proc JS_IsException*(v: JSValue): bool {.importc: "JS_IsException".}
+proc JS_IsError*(v: JSValue): bool {.importc: "JS_IsError".}
+proc JS_IsUndefined*(v: JSValue): bool {.importc: "JS_IsUndefined".}
 
-proc JS_GetException*(ctx: JSContext): JSValue {.importc: "JS_GetException", header: qjsheader.}
+proc JS_GetException*(ctx: JSContext): JSValue {.importc: "JS_GetException".}
 
-proc JS_SetContextOpaque*(ctx: JSContext, opaque: pointer) {.importc: "JS_SetContextOpaque", header: qjsheader.}
-proc JS_GetContextOpaque*(ctx: JSContext): pointer {.importc: "JS_GetContextOpaque", header: qjsheader.}
+proc JS_SetContextOpaque*(ctx: JSContext, opaque: pointer) {.importc: "JS_SetContextOpaque".}
+proc JS_GetContextOpaque*(ctx: JSContext): pointer {.importc: "JS_GetContextOpaque".}
 
 proc js_free_rt*(rt: JSRuntime, p: pointer) {.importc: "js_free_rt".}
+{.pop.}
