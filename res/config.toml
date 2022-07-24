@@ -1,10 +1,6 @@
 [general]
 double-width-ambiguous = false
 
-[network]
-use-curl = false
-curl-binary = '/usr/bin/curl'
-
 [page]
 q = 'QUIT'
 h = 'CURSOR_LEFT' 

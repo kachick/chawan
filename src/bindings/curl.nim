@@ -35,7 +35,7 @@ type
   curl_mimepart_struct = object
   curl_mimepart* = ptr curl_mimepart_struct
   curl_slist_struct = object
-  curl_slist* = ptr curl_mimepart_struct
+  curl_slist* = ptr curl_slist_struct
 
   CURLoption* {.size: sizeof(cint).} = enum
     # Long
