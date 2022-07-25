@@ -320,9 +320,11 @@ proc isearch(client: Client) =
       let match = client.buffer.cursorNextMatch(regex.get)
       if match.success:
         mark = client.buffer.addMark(match.x, match.y, match.str.width())
+        my = match.y
         client.buffer.redraw = true
         client.buffer.refreshBuffer(true)
         print(HVP(client.buffer.height + 1, 2))
+        print(SGR())
       else:
         del_mark
       return true
@@ -358,6 +360,7 @@ proc isearchBack(client: Client) =
         client.buffer.redraw = true
         client.buffer.refreshBuffer(true)
         print(HVP(client.buffer.height + 1, 2))
+        print(SGR())
       else:
         del_mark
       return true

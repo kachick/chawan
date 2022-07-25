@@ -127,12 +127,12 @@ proc exec*(regex: Regex, str: string, start = 0): RegexResult =
         var e8 = 0
         var i = 0
         var r: Rune
-        while i < s:
+        while i < s and i < ustr.len:
           fastRuneAt(ustr, i, r)
           let si = r.size()
           s8 += si
           e8 += si
-        while i < e:
+        while i < e and i < ustr.len:
           fastRuneAt(ustr, i, r)
           e8 += r.size()
         result.captures.add((s8, e8))

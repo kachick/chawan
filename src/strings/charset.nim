@@ -39,7 +39,7 @@ template fastRuneAt*(s: string16, i: int, r: untyped, doInc = true, be = false) 
     else:
       var c1: uint32 = uint32(s[i]) + (uint32(s[i + 1]) shl 8)
     if c1 >= 0xD800 or c1 < 0xDC00:
-      if i + 3 == s.len:
+      if i + 2 == s.len or i + 3 == s.len:
         when doInc: i += 2
         r = Rune(c1) # unmatched surrogate
       else:

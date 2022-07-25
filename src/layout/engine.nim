@@ -462,7 +462,6 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
   else:
     result.bctx.buildBlockLayout(blockbuilder.children, blockbuilder.node)
 
-  let preferred = preferredDimensions(builder.computed, parent.viewport, parentWidth, parentHeight)
   let pwidth = builder.computed{"width"}
   if pwidth.auto:
     # Half-baked shrink-to-fit
