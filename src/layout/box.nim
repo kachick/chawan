@@ -43,7 +43,6 @@ type
     content*: BlockBoxBuilder # iblock.bctx is equivalent to box.bctx
 
   MarkerBoxBuilder* = ref object of InlineBoxBuilder
-    ordinalvalue*: int
 
   ListItemBoxBuilder* = ref object of BoxBuilder
     marker*: MarkerBoxBuilder

@@ -671,9 +671,7 @@ proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxB
   result.inlinelayout = true
   result.computed = computed.copyProperties()
   result.computed.setDisplay(DISPLAY_INLINE)
-
-  result.ordinalvalue = listItemCounter
-  result.text.add(computed{"list-style-type"}.listMarker(result.ordinalvalue))
+  result.text.add(computed{"list-style-type"}.listMarker(listItemCounter))
 
 proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItemBoxBuilder =
   new(result)
