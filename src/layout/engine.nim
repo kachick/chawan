@@ -481,9 +481,8 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
 
   result.baseline = result.bctx.baseline
 
-  # Essentially a hack to position the atom horizontally.
-  #TODO this should be moved to horizontalAlignLine.
-  result.bctx.offset.x = result.bctx.margin_left
+  # I don't like this, but it works...
+  result.offset.x = result.bctx.margin_left
   result.width += result.bctx.margin_left
   result.width += result.bctx.margin_right
 
@@ -520,8 +519,7 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
 
   let padding_right = box.computed{"padding-right"}.px(viewport, parentWidth)
   if padding_right > 0:
-    # This is a hack.
-    #TODO move this to horizontalAlignLine.
+    # I don't like this, but it works...
     box.ictx.currentLine.addSpacing(padding_right, max(box.ictx.currentLine.height, 1), paddingformat)
 
   let margin_right = box.computed{"margin-right"}.px(viewport, parentWidth)
