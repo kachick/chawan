@@ -110,7 +110,6 @@ proc horizontalAlignLine(ictx: InlineContext, line: LineBox, computed: CSSComput
     discard
 
 # Align atoms (inline boxes, text, etc.) vertically inside the line.
-# This currently assumes inline boxes have no margins. TODO fix this.
 proc verticalAlignLine(ictx: InlineContext) =
   let line = ictx.currentLine
 
