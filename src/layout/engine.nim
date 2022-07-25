@@ -615,6 +615,7 @@ proc buildBlocks(bctx: BlockBox, blocks: seq[BoxBuilder], node: Node) =
     case child.computed{"display"}
     of DISPLAY_BLOCK: cblock = buildBlock(BlockBoxBuilder(child), bctx)
     of DISPLAY_LIST_ITEM: cblock = buildListItem(ListItemBoxBuilder(child), bctx)
+    of DISPLAY_TABLE: cblock = buildBlock(TableBoxBuilder(child).content, bctx)
     else: assert false, "child.t is " & $child.computed{"display"}
     bctx.nested.add(cblock)
   bctx.positionBlocks()
@@ -677,21 +678,32 @@ proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItem
   result.computed = computed.copyProperties()
   result.marker = getMarkerBox(computed, listItemCounter)
 
+proc getTableBox(computed: CSSComputedValues): TableBoxBuilder =
+  new(result)
+  result.computed = computed.copyProperties()
+
+type BlockGroup = object
+  parent: BlockBoxBuilder
+  boxes: seq[BoxBuilder]
+
+proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
+  blockgroup.boxes.add(box)
+
+proc flush(blockgroup: var BlockGroup) {.inline.} =
+  if blockgroup.boxes.len > 0:
+    let bbox = getBlockBox(blockgroup.parent.computed.inheritProperties())
+    bbox.inlinelayout = true
+    bbox.children = blockgroup.boxes
+    blockgroup.parent.children.add(bbox)
+    blockgroup.boxes.setLen(0)
+
 # Don't generate empty anonymous inline blocks between block boxes
-func canGenerateAnonymousInline(blockgroup: seq[BoxBuilder], computed: CSSComputedValues, str: string): bool =
-  return blockgroup.len > 0 and blockgroup[^1].computed{"display"} == DISPLAY_INLINE or
+func canGenerateAnonymousInline(blockgroup: BlockGroup, computed: CSSComputedValues, str: string): bool =
+  return blockgroup.boxes.len > 0 and blockgroup.boxes[^1].computed{"display"} == DISPLAY_INLINE or
     computed{"white-space"} in {WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP} or
     not str.onlyWhitespace()
 
 proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder)): BlockBoxBuilder
-
-template flush_block_group(computed: CSSComputedValues) =
-  if blockgroup.len > 0:
-    let bbox = getBlockBox(computed.inheritProperties())
-    bbox.inlinelayout = true
-    bbox.children = blockgroup
-    box.children.add(bbox)
-    blockgroup.setLen(0)
 
 template flush_ibox() =
   if ibox != nil:
@@ -699,9 +711,13 @@ template flush_ibox() =
     blockgroup.add(ibox)
     ibox = nil
 
-proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, listItemCounter: var int)
+proc newBlockGroup(parent: BlockBoxBuilder): BlockGroup =
+  result.parent = parent
 
-proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, ibox: var InlineBoxBuilder, listItemCounter: var int) =
+proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport, listItemCounter: var int)
+
+proc generateFromElem(styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport, ibox: var InlineBoxBuilder, listItemCounter: var int) =
+  let box = blockgroup.parent
   if styledNode.node != nil:
     let elem = Element(styledNode.node)
     if elem.tagType == TAG_BR:
@@ -711,11 +727,11 @@ proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: 
 
   case styledNode.computed{"display"}
   of DISPLAY_BLOCK:
-    flush_block_group(styledNode.computed)
+    blockgroup.flush()
     let childbox = styledNode.generateBlockBox(viewport)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
-    flush_block_group(styledNode.computed)
+    blockgroup.flush()
     let childbox = getListItemBox(styledNode.computed, listItemCounter)
     if childbox.computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
       childbox.content = styledNode.generateBlockBox(viewport, some(childbox.marker))
@@ -732,16 +748,23 @@ proc generateFromElem(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: 
     let childbox = getInlineBlockBox(styledNode.computed)
     childbox.content = styledNode.generateBlockBox(viewport)
     blockgroup.add(childbox)
+  of DISPLAY_TABLE:
+    blockgroup.flush()
+    let childbox = getTableBox(styledNode.computed)
+    childbox.content = styledNode.generateBlockBox(viewport)
+    box.children.add(childbox)
+  of DISPLAY_TABLE_ROW_GROUP:
+    discard
   else:
     discard #TODO
 
-proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var seq[BoxBuilder], viewport: Viewport, listItemCounter: var int) =
+proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport, listItemCounter: var int) =
   var ibox: InlineBoxBuilder = nil
 
   for child in styledNode.children:
     case child.t
     of STYLED_ELEMENT:
-      box.generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
+      generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
     of STYLED_TEXT:
       if ibox == nil:
         ibox = getTextBox(styledNode.computed)
@@ -752,7 +775,7 @@ proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgrou
 
 proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
   let box = getBlockBox(styledNode.computed)
-  var blockgroup: seq[BoxBuilder]
+  var blockgroup = newBlockGroup(box)
   var ibox: InlineBoxBuilder = nil
   var listItemCounter = 1 # ordinal value of current list
 
@@ -764,7 +787,7 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
     case child.t
     of STYLED_ELEMENT:
       flush_ibox
-      box.generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
+      generateFromElem(child, blockgroup, viewport, ibox, listItemCounter)
     of STYLED_TEXT:
       if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
         if ibox == nil:
@@ -773,13 +796,13 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
         ibox.text.add(child.text)
 
   flush_ibox
-  if blockgroup.len > 0:
+  if blockgroup.boxes.len > 0:
     # Avoid unnecessary anonymous block boxes
     if box.children.len == 0:
-      box.children = blockgroup
+      box.children = blockgroup.boxes
       box.inlinelayout = true
     else:
-      flush_block_group(styledNode.computed)
+      blockgroup.flush()
   return box
 
 

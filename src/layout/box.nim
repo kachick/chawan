@@ -48,6 +48,10 @@ type
     marker*: MarkerBoxBuilder
     content*: BlockBoxBuilder
 
+  TableBoxBuilder* = ref object of BoxBuilder
+    inline*: bool
+    content*: BlockBoxBuilder
+
   InlineAtom* = ref object of RootObj
     offset*: Offset
     width*: int
@@ -118,6 +122,8 @@ type
 
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
+
+  TableBox* = ref object of BlockBox
 
   InlineBlockBox* = ref object of InlineAtom
     bctx*: BlockBox
