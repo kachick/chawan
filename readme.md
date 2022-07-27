@@ -18,18 +18,16 @@ It includes its own parsers, pager, and layout engine.
 
 Currently implemented features are:
 
-* an unicode, double-width capable pager
-* a (basic) CSS-capable layout engine
-* incomplete support for forms
-* incomplete support for remote resources (i.e. css)
+* a unicode, double-width capable pager
+* a CSS-capable layout engine
+* forms
 
 **Planned** features, roughly in order of importance:
 
 * partial re-rendering of page layout
-* full support for forms
 * unicode normalization
 * non-unicode charsets (they currently crash the browser)
-* fast streams (aka pipes; use library?)
+* fast streams (aka pipelines; use library?)
 * standard-compliant support for remote resources
 * incremental page loading (to function as a proper pager)
 * table

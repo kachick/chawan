@@ -6,7 +6,6 @@ import tables
 import terminal
 import unicode
 
-import css/cascade
 import css/sheet
 import css/stylednode
 import html/dom
@@ -61,7 +60,7 @@ type
     istream*: Stream
     streamclosed*: bool
     source*: string
-    prevnode*: Node
+    prevnode*: StyledNode
     sourcepair*: Buffer
     prev*: Buffer
     next*: Buffer
@@ -219,25 +218,27 @@ func currentDisplayCell(buffer: Buffer): FixedCell =
   let row = (buffer.cursory - buffer.fromy) * buffer.width
   return buffer.display[row + buffer.currentCellOrigin()]
 
-func getLink(node: Node): HTMLAnchorElement =
+func getLink(node: StyledNode): HTMLAnchorElement =
   if node == nil:
     return nil
-  if node.nodeType == ELEMENT_NODE and Element(node).tagType == TAG_A:
-    return HTMLAnchorElement(node)
-  return HTMLAnchorElement(node.findAncestor({TAG_A}))
+  if node.t == STYLED_ELEMENT and node.node != nil and Element(node.node).tagType == TAG_A:
+    return HTMLAnchorElement(node.node)
+  if node.node != nil:
+    return HTMLAnchorElement(node.node.findAncestor({TAG_A}))
+  #TODO ::before links?
 
 const ClickableElements = {
   TAG_A, TAG_INPUT
 }
 
-func getClickable(node: Node): Element =
-  if node == nil:
+func getClickable(styledNode: StyledNode): Element =
+  if styledNode == nil or styledNode.node == nil:
     return nil
-  if node.nodeType == ELEMENT_NODE:
-    let element = Element(node)
+  if styledNode.t == STYLED_ELEMENT:
+    let element = Element(styledNode.node)
     if element.tagType in ClickableElements:
       return element
-  return node.findAncestor(ClickableElements)
+  styledNode.node.findAncestor(ClickableElements)
 
 func getCursorClickable(buffer: Buffer): Element =
   return buffer.currentDisplayCell().node.getClickable()
@@ -693,7 +694,7 @@ proc gotoAnchor*(buffer: Buffer) =
     var i = 0
     while i < line.formats.len:
       let format = line.formats[i]
-      if anchor in format.node:
+      if format.node != nil and anchor in format.node.node:
         buffer.setCursorY(y)
         buffer.centerLine()
         buffer.setCursorX(format.pos)
@@ -794,14 +795,13 @@ proc updateHover(buffer: Buffer) =
   let thisnode = buffer.currentDisplayCell().node
   let prevnode = buffer.prevnode
 
-  if thisnode != prevnode:
-    for node in thisnode.branch:
-      if node.nodeType == ELEMENT_NODE:
-        let elem = Element(node)
-        if not elem.hover and node notin prevnode:
+  if thisnode != prevnode and (thisnode == nil or prevnode == nil or thisnode.node != prevnode.node):
+    for styledNode in thisnode.branch:
+      if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
+        let elem = Element(styledNode.node)
+        if not elem.hover:
           elem.hover = true
           buffer.reshape = true
-          elem.refreshStyle()
 
     let link = thisnode.getLink()
     if link != nil:
@@ -809,13 +809,12 @@ proc updateHover(buffer: Buffer) =
     else:
       buffer.hovertext = ""
 
-    for node in prevnode.branch:
-      if node.nodeType == ELEMENT_NODE:
-        let elem = Element(node)
-        if elem.hover and node notin thisnode:
+    for styledNode in prevnode.branch:
+      if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
+        let elem = Element(styledNode.node)
+        if elem.hover:
           elem.hover = false
           buffer.reshape = true
-          elem.refreshStyle()
 
   buffer.prevnode = thisnode
 
@@ -1121,7 +1120,7 @@ proc click*(buffer: Buffer): Option[ClickAction] =
         let status = readLine("SEARCH: ", value, buffer.width, {'\r', '\n'})
         if status:
           input.value = value
-          input.rendered = false
+          input.invalid = true
           buffer.reshape = true
         if input.form != nil:
           let submitaction = submitForm(input.form, input)
@@ -1133,7 +1132,7 @@ proc click*(buffer: Buffer): Option[ClickAction] =
         let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'})
         if status:
           input.value = value
-          input.rendered = false
+          input.invalid = true
           buffer.reshape = true
       of INPUT_FILE:
         var path = if input.file.issome:
@@ -1148,18 +1147,18 @@ proc click*(buffer: Buffer): Option[ClickAction] =
           let path = parseUrl(path, cdir)
           if path.issome:
             input.file = path
-            input.rendered = false
+            input.invalid = true
             buffer.reshape = true
       of INPUT_CHECKBOX:
         input.checked = not input.checked
-        input.rendered = false
+        input.invalid = true
         buffer.reshape = true
       of INPUT_RADIO:
         for radio in input.radiogroup:
           radio.checked = false
-          radio.rendered = false
+          radio.invalid = true
         input.checked = true
-        input.rendered = false
+        input.invalid = true
         buffer.reshape = true
       of INPUT_RESET:
         if input.form != nil:

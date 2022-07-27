@@ -1,5 +1,6 @@
 import options
 
+import css/stylednode
 import css/values
 import html/dom
 import io/term
@@ -28,8 +29,7 @@ type
     children*: seq[BoxBuilder]
     inlinelayout*: bool
     computed*: CSSComputedValues
-    node*: Node
-    element*: Element
+    node*: StyledNode
 
   InlineBoxBuilder* = ref object of BoxBuilder
     text*: seq[string]
@@ -48,9 +48,12 @@ type
     marker*: MarkerBoxBuilder
     content*: BlockBoxBuilder
 
+  TableRowGroupBoxBuilder* = ref object of BoxBuilder
+
+  TableRowBoxBuilder* = ref object of BoxBuilder
+
   TableBoxBuilder* = ref object of BoxBuilder
-    inline*: bool
-    content*: BlockBoxBuilder
+    rowgroups*: seq[TableRowGroupBoxBuilder]
 
   InlineAtom* = ref object of RootObj
     offset*: Offset
@@ -66,7 +69,7 @@ type
     fontweight*: int
     textdecoration*: CSSTextDecoration
     color*: CSSColor
-    node*: Node
+    node*: StyledNode
 
   InlineSpacing* = ref object of InlineAtom
     format*: ComputedFormat

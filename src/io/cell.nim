@@ -4,7 +4,7 @@ import strutils
 import sugar
 import unicode
 
-import html/dom
+import css/stylednode
 import layout/box
 import types/color
 import utils/twtstr
@@ -26,7 +26,7 @@ type
 
   Cell* = object of RootObj
     format*: Format
-    node*: Node
+    node*: StyledNode
 
   FormatCell* = object of Cell
     pos*: int

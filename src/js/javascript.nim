@@ -98,7 +98,6 @@ proc setFunctionProperty*(obj: JSObject, name: string, fun: JSCFunction) =
   #), cstring(name), 1))
 
 proc free*(ctx: var JSContext) =
-  eprint "free"
   let opaque = ctx.getOpaque()
   if opaque != nil:
     dealloc(opaque)

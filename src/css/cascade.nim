@@ -21,9 +21,6 @@ type
 proc applyProperty(styledNode: StyledNode, parent: CSSComputedValues, d: CSSDeclaration) =
   styledNode.computed.applyValue(parent, d)
 
-  if styledNode.node != nil:
-    Element(styledNode.node).cssapplied = true
-
 func applies(mq: MediaQuery): bool =
   case mq.t
   of CONDITION_MEDIA:
@@ -59,16 +56,17 @@ func applies(mqlist: MediaQueryList): bool =
 
 type ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
 
-proc calcRule(tosorts: var ToSorts, elem: Element, rule: CSSRuleDef) =
+proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
   for sel in rule.sels:
-    if elem.selectorsMatch(sel):
+    if styledNode.selectorsMatch(sel):
       let spec = getSpecificity(sel)
       tosorts[sel.pseudo].add((spec,rule.decls))
 
-func calcRules(elem: Element, sheet: CSSStylesheet): DeclarationList =
+func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
+  let elem = Element(styledNode.node)
   for rule in sheet.gen_rules(elem.tagType, elem.id, elem.classList):
-    tosorts.calcRule(elem, rule)
+    tosorts.calcRule(styledNode, rule)
 
   for i in PseudoElem:
     tosorts[i].sort((x, y) => cmp(x[0], y[0]))
@@ -88,8 +86,7 @@ proc applyImportant(ares: var ApplyResult, decls: seq[CSSDeclaration]) =
     if decl.important:
       ares.important.add(decl)
 
-# Always returns a new styled node, with the passed declarations applied.
-proc applyDeclarations(elem: Element, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]): StyledNode =
+proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]) =
   let pseudo = PSEUDO_NONE
   var ares: ApplyResult
 
@@ -101,21 +98,22 @@ proc applyDeclarations(elem: Element, parent: CSSComputedValues, ua, user: Decla
   for rule in author:
     ares.applyImportant(rule[pseudo])
 
-  let style = elem.attr("style")
-  if style.len > 0:
-    let inline_rules = newStringStream(style).parseListOfDeclarations2()
-    ares.applyNormal(inline_rules)
-    ares.applyImportant(inline_rules)
+  if styledNode.node != nil:
+    let style = Element(styledNode.node).attr("style")
+    if style.len > 0:
+      let inline_rules = newStringStream(style).parseListOfDeclarations2()
+      ares.applyNormal(inline_rules)
+      ares.applyImportant(inline_rules)
 
   ares.applyImportant(user[pseudo])
   ares.applyImportant(ua[pseudo])
 
-  result = StyledNode(t: STYLED_ELEMENT, node: elem, computed: parent.inheritProperties())
+  styledNode.computed = parent.inheritProperties()
   for rule in ares.normal:
-    result.applyProperty(parent, rule)
+    styledNode.applyProperty(parent, rule)
 
   for rule in ares.important:
-    result.applyProperty(parent, rule)
+    styledNode.applyProperty(parent, rule)
 
 # Either returns a new styled node or nil.
 proc applyDeclarations(pseudo: PseudoElem, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]): StyledNode =
@@ -146,23 +144,21 @@ func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
     if mq.query.applies():
       result.add(mq.children.applyMediaQuery())
 
-func calcRules(elem: Element, ua, user: CSSStylesheet, author: seq[CSSStylesheet]): tuple[uadecls, userdecls: DeclarationList, authordecls: seq[DeclarationList]] =
-  result.uadecls = calcRules(elem, ua)
-  result.userdecls = calcRules(elem, user)
+func calcRules(styledNode: StyledNode, ua, user: CSSStylesheet, author: seq[CSSStylesheet]): tuple[uadecls, userdecls: DeclarationList, authordecls: seq[DeclarationList]] =
+  result.uadecls = calcRules(styledNode, ua)
+  result.userdecls = calcRules(styledNode, user)
   for rule in author:
-    result.authordecls.add(calcRules(elem, rule))
+    result.authordecls.add(calcRules(styledNode, rule))
 
-proc applyStyle(parent: StyledNode, elem: Element, uadecls, userdecls: DeclarationList, authordecls: seq[DeclarationList]): StyledNode =
+proc applyStyle(parent, styledNode: StyledNode, uadecls, userdecls: DeclarationList, authordecls: seq[DeclarationList]) =
   let parentComputed = if parent != nil:
     parent.computed
   else:
     rootProperties()
 
-  result = elem.applyDeclarations(parentComputed, uadecls, userdecls, authordecls)
-  assert result != nil
+  styledNode.applyDeclarations(parentComputed, uadecls, userdecls, authordecls)
 
 # Builds a StyledNode tree, optionally based on a previously cached version.
-# This was originally a recursive algorithm; it had to be rewritten iteratively
 proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledNode): StyledNode =
   if document.html == nil:
     return
@@ -187,14 +183,17 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       continue
 
     var styledChild: StyledNode
-    if cachedChild != nil and (cachedChild.node == nil or cachedChild.node.nodeType != ELEMENT_NODE or Element(cachedChild.node).cssapplied):
+    if cachedChild != nil and cachedChild.isValid():
       if cachedChild.t == STYLED_ELEMENT:
-        styledChild = StyledNode(t: STYLED_ELEMENT, pseudo: cachedChild.pseudo, computed: cachedChild.computed, node: cachedChild.node)
-        if cachedChild.pseudo != PSEUDO_NONE:
+        if cachedChild.pseudo == PSEUDO_NONE:
+          styledChild = styledParent.newStyledElement(Element(cachedChild.node), cachedChild.computed, cachedChild.depends)
+        else:
+          styledChild = styledParent.newStyledElement(cachedChild.pseudo, cachedChild.computed, cachedChild.depends)
           styledChild.children = cachedChild.children #TODO does this actually refresh pseudo elems when needed?
       else:
         # Text
-        styledChild = StyledNode(t: STYLED_TEXT, text: cachedChild.text, node: cachedChild.node)
+        styledChild = styledParent.newStyledText(cachedChild.text)
+        styledChild.node = cachedChild.node
       if styledParent == nil:
         # Root element
         result = styledChild
@@ -202,7 +201,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
         styledParent.children.add(styledChild)
     else:
       if pseudo != PSEUDO_NONE:
-        let (ua, user, authordecls) = Element(styledParent.node).calcRules(ua, user, author)
+        let (ua, user, authordecls) = styledParent.calcRules(ua, user, author)
         case pseudo
         of PSEUDO_BEFORE, PSEUDO_AFTER:
           let styledPseudo = pseudo.applyDeclarations(styledParent.computed, ua, user, authordecls)
@@ -210,32 +209,34 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
             styledParent.children.add(styledPseudo)
             let content = styledPseudo.computed{"content"}
             if content.len > 0:
-              styledPseudo.children.add(StyledNode(t: STYLED_TEXT, text: content))
+              styledPseudo.children.add(styledPseudo.newStyledText(content))
         of PSEUDO_INPUT_TEXT:
           let content = HTMLInputElement(styledParent.node).inputString()
           if content.len > 0:
-            styledChild = StyledNode(t: STYLED_TEXT, text: content)
+            styledChild = styledParent.newStyledText(content)
             styledParent.children.add(styledChild)
         of PSEUDO_NONE: discard
       else:
         assert child != nil
         if styledParent != nil:
           if child.nodeType == ELEMENT_NODE:
-            let (ua, user, authordecls) = Element(child).calcRules(ua, user, author)
-            styledChild = applyStyle(styledParent, Element(child), ua, user, authordecls)
+            styledChild = styledParent.newStyledElement(Element(child))
+            let (ua, user, authordecls) = styledChild.calcRules(ua, user, author)
+            applyStyle(styledParent, styledChild, ua, user, authordecls)
             styledParent.children.add(styledChild)
           elif child.nodeType == TEXT_NODE:
             let text = Text(child)
-            styledChild = StyledNode(t: STYLED_TEXT, node: child, text: text.data)
+            styledChild = styledParent.newStyledText(text)
             styledParent.children.add(styledChild)
         else:
           # Root element
-          assert result == nil
-          let (ua, user, authordecls) = Element(child).calcRules(ua, user, author)
-          styledChild = applyStyle(styledParent, Element(child), ua, user, authordecls)
+          styledChild = newStyledElement(Element(child))
+          let (ua, user, authordecls) = styledChild.calcRules(ua, user, author)
+          applyStyle(styledParent, styledChild, ua, user, authordecls)
           result = styledChild
 
-    if styledChild != nil and styledChild.node != nil and styledChild.node.nodeType == ELEMENT_NODE:
+    if styledChild != nil and styledChild.t == STYLED_ELEMENT and styledChild.node != nil:
+      styledChild.applyDependValues()
       template stack_append(styledParent: StyledNode, child: Node) =
         if cachedChild != nil:
           var cached: StyledNode
@@ -280,8 +281,3 @@ proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet, previous
   let uass = uass.applyMediaQuery()
   let userss = userss.applyMediaQuery()
   return document.applyRules(uass, userss, previousStyled)
-
-proc refreshStyle*(elem: Element) =
-  elem.cssapplied = false
-  for child in elem.children:
-    child.refreshStyle()

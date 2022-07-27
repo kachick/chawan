@@ -589,7 +589,7 @@ func cssDisplay(d: CSSDeclaration): CSSDisplay =
       of "inline": return DISPLAY_INLINE
       of "list-item": return DISPLAY_LIST_ITEM
       of "inline-block": return DISPLAY_INLINE_BLOCK
-      of "table": return DISPLAY_TABLE
+      #of "table": return DISPLAY_TABLE
       # of "table-row": return DISPLAY_TABLE_ROW
       # of "table-cell": return DISPLAY_TABLE_CELL
       # of "table-column": return DISPLAY_TABLE_COLUMN

@@ -488,18 +488,16 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
         #TODO validation error
         if atsignseen:
           buffer = "%40" & buffer
-          atsignseen = true
-          var i = 0
-          while i < buffer.len:
-            if c == ':' and not passwordtokenseen:
-              passwordtokenseen = true
-              inc i
-              continue
-            if passwordtokenseen:
-              url.password.percentEncode(c, UserInfoPercentEncodeSet)
-            else:
-              url.username.percentEncode(c, UserInfoPercentEncodeSet)
-          buffer = ""
+        atsignseen = true
+        for c in buffer:
+          if c == ':' and not passwordtokenseen:
+            passwordtokenseen = true
+            continue
+          if passwordtokenseen:
+            url.password.percentEncode(c, UserInfoPercentEncodeSet)
+          else:
+            url.username.percentEncode(c, UserInfoPercentEncodeSet)
+        buffer = ""
       elif not has or c in {'/', '?', '#'} or (url.is_special and c == '\\'):
         if atsignseen and buffer == "":
           #TODO validation error

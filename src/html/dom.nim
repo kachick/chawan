@@ -84,8 +84,7 @@ type
     classList*: seq[string]
     attributes*: Table[string, string]
     hover*: bool
-    cssapplied*: bool
-    rendered*: bool
+    invalid*: bool
 
   HTMLElement* = ref object of Element
 
@@ -778,7 +777,7 @@ proc resetElement*(element: Element) =
     of INPUT_FILE:
       input.file = none(Url)
     else: discard
-    input.rendered = false
+    input.invalid = true
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
     if not select.attrb("multiple"):
@@ -896,7 +895,7 @@ proc append*(parent, node: Node) =
 proc reset*(form: HTMLFormElement) =
   for control in form.controls:
     control.resetElement()
-    control.rendered = false
+    control.invalid = true
 
 proc appendAttribute*(element: Element, k, v: string) =
   case k
