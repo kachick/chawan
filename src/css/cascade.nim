@@ -174,7 +174,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
   styledStack.add((nil, document.html, PSEUDO_NONE, cachedTree))
 
   while styledStack.len > 0:
-    let (styledParent, child, pseudo, cachedChild) = styledStack.pop()
+    var (styledParent, child, pseudo, cachedChild) = styledStack.pop()
 
     # Remove stylesheets on nil
     if pseudo == PSEUDO_NONE and child == nil:
@@ -200,6 +200,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       else:
         styledParent.children.add(styledChild)
     else:
+      cachedChild = nil
       if pseudo != PSEUDO_NONE:
         let (ua, user, authordecls) = styledParent.calcRules(ua, user, author)
         case pseudo
@@ -255,7 +256,12 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
             if it.t == STYLED_ELEMENT and it.pseudo == ps:
               cached = it
               break
-          styledStack.add((styledParent, nil, ps, cached))
+          # When calculating pseudo-element rules, their dependencies are added
+          # to their parent's dependency list, which in turn invalidates the
+          # parent and thus recalculates all pseudo-elements.
+          # In other words, we can just do this:
+          if cached != nil:
+            styledStack.add((styledParent, nil, ps, cached))
         else:
           styledStack.add((styledParent, nil, ps, nil))
 
@@ -271,7 +277,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       stack_append styledChild, PSEUDO_AFTER
 
       for i in countdown(elem.childNodes.high, 0):
-        stack_append styledChild, elem.childNodes[i]
+        if elem.childNodes[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
+          stack_append styledChild, elem.childNodes[i]
 
       if elem.tagType == TAG_INPUT:
         stack_append styledChild, PSEUDO_INPUT_TEXT

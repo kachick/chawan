@@ -692,7 +692,7 @@ proc getTableRowBox(computed: CSSComputedValues): TableRowBoxBuilder =
   result.computed = computed.copyProperties()
 
 type BlockGroup = object
-  parent: BlockBoxBuilder
+  parent: BoxBuilder
   boxes: seq[BoxBuilder]
   listItemCounter: int
 
@@ -719,13 +719,13 @@ template flush_ibox() =
     blockgroup.add(ibox)
     ibox = nil
 
-proc newBlockGroup(parent: BlockBoxBuilder): BlockGroup =
+proc newBlockGroup(parent: BoxBuilder): BlockGroup =
   result.parent = parent
   result.listItemCounter = 1
 
 proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder)): BlockBoxBuilder
 
-proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport)
+proc generateInlineBoxes(box: BoxBuilder, styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport)
 
 proc generateFromElem(styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport, ibox: var InlineBoxBuilder) =
   let box = blockgroup.parent
@@ -768,7 +768,7 @@ proc generateFromElem(styledNode: StyledNode, blockgroup: var BlockGroup, viewpo
   else:
     discard #TODO
 
-proc generateInlineBoxes(box: BlockBoxBuilder, styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport) =
+proc generateInlineBoxes(box: BoxBuilder, styledNode: StyledNode, blockgroup: var BlockGroup, viewport: Viewport) =
   var ibox: InlineBoxBuilder = nil
 
   for child in styledNode.children:
@@ -822,34 +822,36 @@ const ProperTableRowParent = {DISPLAY_TABLE} + RowGroupBox #TODO inline-table bo
 const InternalTableBox = {DISPLAY_TABLE_CELL, DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_COLUMN_GROUP} + RowGroupBox
 const TabularContainer = {DISPLAY_TABLE_ROW} + ProperTableRowParent
 
-proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBox =
+proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBoxBuilder =
   discard
-  #let box = getTableBox(styledNode.computed)
-  #var blockgroup = newBlockGroup(box)
-  #var ibox: InlineBoxBuilder = nil
-  #var listItemCounter = 1
 
-  #for child in styledNode.children:
-  #  if child.t == STYLED_ELEMENT:
-  #    generateFromElem(child, blockgroup, viewport, ibox)
-  #  else:
-  #    if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
-  #      if ibox == nil:
-  #        ibox = getTextBox(styledNode.computed)
-  #        ibox.node = styledNode.node
-  #      ibox.text.add(child.text)
+proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder =
+  let box = getTableBox(styledNode.computed)
+  var blockgroup = newBlockGroup(box)
+  var ibox: InlineBoxBuilder = nil
+  var listItemCounter = 1
 
-  #flush_ibox
-  #blockgroup.flush()
+  for child in styledNode.children:
+    if child.t == STYLED_ELEMENT:
+      generateFromElem(child, blockgroup, viewport, ibox)
+    else:
+      if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
+        if ibox == nil:
+          ibox = getTextBox(styledNode.computed)
+          ibox.node = styledNode
+        ibox.text.add(child.text)
 
-  ## Generate missing child wrappers
-  #var anonRow: TableRowBoxBuilder
-  #for child in box.children:
-  #  if child.computed{"display"} notin ProperTableChild:
-  #    if anonRow != nil:
-  #      anonRow = getTableRowBox(box.computed.inheritProperties())
-  #    discard
+  flush_ibox
+  blockgroup.flush()
 
+  # Generate missing child wrappers
+  var anonRow: TableRowBoxBuilder
+  for child in box.children:
+    if child.computed{"display"} notin ProperTableChild:
+      if anonRow != nil:
+        anonRow = getTableRowBox(box.computed.inheritProperties())
+      discard
+  return box
 
 #proc generateFromElemTable(styledNode: StyledNode, viewport: Viewport, table: TableBoxBuilder = nil, parent: BoxBuilder = nil): BlockBox =
 #  case styledNode.computed{"display"}

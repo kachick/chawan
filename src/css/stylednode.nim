@@ -93,7 +93,7 @@ func isValid*(styledNode: StyledNode): bool =
       of DEPEND_CHECKED:
         if child.depends.prev[d] != elem.checked:
           return false
-  return styledNode.parent == nil or styledNode.parent.isValid()
+  return true
 
 proc applyDependValues*(styledNode: StyledNode) =
   let elem = Element(styledNode.node)
@@ -104,9 +104,11 @@ proc applyDependValues*(styledNode: StyledNode) =
 func newStyledElement*(parent: StyledNode, element: Element, computed: CSSComputedValues, reg: sink DependencyInfo): StyledNode =
   result = StyledNode(t: STYLED_ELEMENT, computed: computed, node: element, parent: parent)
   result.depends = reg
+  result.parent = parent
 
 func newStyledElement*(parent: StyledNode, element: Element): StyledNode =
   result = StyledNode(t: STYLED_ELEMENT, node: element, parent: parent)
+  result.parent = parent
 
 # Root
 func newStyledElement*(element: Element): StyledNode =
@@ -118,6 +120,8 @@ func newStyledElement*(parent: StyledNode, pseudo: PseudoElem, computed: CSSComp
 
 func newStyledText*(parent: StyledNode, text: string): StyledNode =
   result = StyledNode(t: STYLED_TEXT, text: text, parent: parent)
+  result.parent = parent
 
 func newStyledText*(parent: StyledNode, text: Text): StyledNode =
   result = StyledNode(t: STYLED_TEXT, text: text.data, node: text, parent: parent)
+  result.parent = parent

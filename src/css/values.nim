@@ -241,7 +241,7 @@ func em_to_px(em: float64, term: TermAttributes): int =
 func ch_to_px(ch: float64, term: TermAttributes): int =
   int(ch * float64(term.ppc))
 
-# 水 width, we assume it's 2 chars (TODO make width() work at comptime)
+# 水 width, we assume it's 2 chars
 func ic_to_px(ic: float64, term: TermAttributes): int =
   int(ic * float64(term.ppc) * 2)
 
