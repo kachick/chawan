@@ -1,6 +1,5 @@
 import streams
 import tables
-import unicode
 
 import css/mediaquery
 import css/cssparser
@@ -172,7 +171,7 @@ proc addRule(stylesheet: var CSSStylesheet, rule: CSSQualifiedRule) =
     stylesheet.add(r)
 
 proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
-  case $atrule.name
+  case atrule.name
   of "media":
     let query = parseMediaQueryList(atrule.prelude)
     let rules = atrule.oblock.value.parseListOfRules()

@@ -191,11 +191,11 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
   of CSS_IDENT_TOKEN:
     case state.query
     of QUERY_CLASS:
-      state.addSelector(Selector(t: CLASS_SELECTOR, class: $csstoken.value))
+      state.addSelector(Selector(t: CLASS_SELECTOR, class: csstoken.value))
     of QUERY_TYPE:
-      state.addSelector(Selector(t: TYPE_SELECTOR, tag: tagType($csstoken.value)))
+      state.addSelector(Selector(t: TYPE_SELECTOR, tag: tagType(csstoken.value)))
     of QUERY_PSEUDO:
-      case $csstoken.value
+      case csstoken.value
       of "before":
         state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
       of "after":
@@ -213,7 +213,7 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
       of "checked":
         state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_CHECKED))
     of QUERY_PSELEM:
-      case $csstoken.value
+      case csstoken.value
       of "before":
         state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
       of "after":
@@ -238,7 +238,7 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
       state.addSelector(Selector(t: UNIVERSAL_SELECTOR))
     else: discard
   of CSS_HASH_TOKEN:
-    state.addSelector(Selector(t: ID_SELECTOR, id: $csstoken.value))
+    state.addSelector(Selector(t: ID_SELECTOR, id: csstoken.value))
   of CSS_COMMA_TOKEN:
     if state.selectors[^1].len > 0:
       state.addSelectorList()
@@ -264,15 +264,15 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
           case state.query
           of QUERY_ATTR:
             state.query = QUERY_DELIM
-            state.addSelector(Selector(t: ATTR_SELECTOR, attr: $csstoken.value, rel: ' '))
+            state.addSelector(Selector(t: ATTR_SELECTOR, attr: csstoken.value, rel: ' '))
           of QUERY_VALUE:
-            state.getLastSel().value = $csstoken.value
+            state.getLastSel().value = csstoken.value
             break
           else: discard
         of CSS_STRING_TOKEN:
           case state.query
           of QUERY_VALUE:
-            state.getLastSel().value = $csstoken.value
+            state.getLastSel().value = csstoken.value
             break
           else: discard
         of CSS_DELIM_TOKEN:
@@ -291,7 +291,7 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
   else: discard
 
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
-  case $cssfunction.name
+  case cssfunction.name
   of "not", "is":
     if state.query != QUERY_PSEUDO:
       return
@@ -309,7 +309,7 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
     state.query = QUERY_TYPE
     return
   else: return
-  var fun = Selector(t: FUNC_SELECTOR, name: $cssfunction.name)
+  var fun = Selector(t: FUNC_SELECTOR, name: cssfunction.name)
   state.addSelector(fun)
 
   let osels = state.selectors

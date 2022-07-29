@@ -1,4 +1,3 @@
-import unicode
 import tables
 import sugar
 import sequtils
@@ -221,13 +220,13 @@ func valueType(prop: CSSPropertyType): CSSValueType =
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
   let t = propertyType($s)
   let vs = $valueType(t)
-  let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
+  let s = vs.split('_')[1..^1].join("_").tolower()
   result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
 macro `{}=`*(vals: CSSComputedValues, s: string, v: typed): untyped =
   let t = propertyType($s)
   let vs = $valueType(t)
-  let s = vs.split(Rune('_'))[1..^1].join("_").tolower()
+  let s = vs.split('_')[1..^1].join("_").tolower()
   let expr = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
   result = quote do:
     `expr` = `v`
@@ -493,8 +492,8 @@ func cssColor(d: CSSDeclaration): CSSColor =
           raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:
         let s = tok.value
-        if $s in Colors:
-          return Colors[$s]
+        if s in Colors:
+          return Colors[s]
         else:
           raise newException(CSSValueError, "Invalid color")
       else:
@@ -502,7 +501,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
     elif d.value[0] of CSSFunction:
       let f = CSSFunction(d.value[0])
       #TODO calc etc (cssnumber function or something)
-      case $f.name
+      case f.name
       of "rgb":
         if f.value.len != 3:
           raise newException(CSSValueError, "Invalid color")
@@ -540,9 +539,9 @@ func cssLength(d: CSSDeclaration): CSSLength =
     of CSS_PERCENTAGE_TOKEN:
       return cssLength(tok.nvalue, "%")
     of CSS_DIMENSION_TOKEN:
-      return cssLength(tok.nvalue, $tok.unit)
+      return cssLength(tok.nvalue, tok.unit)
     of CSS_IDENT_TOKEN:
-      if $tok.value == "auto":
+      if tok.value == "auto":
         return CSSLength(auto: true)
     else: discard
   raise newException(CSSValueError, "Invalid length")
@@ -552,9 +551,9 @@ func cssWordSpacing(d: CSSDeclaration): CSSLength =
     let tok = CSSToken(d.value[0])
     case tok.tokenType
     of CSS_DIMENSION_TOKEN:
-      return cssLength(tok.nvalue, $tok.unit)
+      return cssLength(tok.nvalue, tok.unit)
     of CSS_IDENT_TOKEN:
-      if $tok.value == "normal":
+      if tok.value == "normal":
         return CSSLength(auto: true)
     else: discard
   raise newException(CSSValueError, "Invalid word spacing")
@@ -565,7 +564,7 @@ func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "inherit": return VALUE_INHERIT
       of "initial": return VALUE_INITIAL
       of "unset": return VALUE_UNSET
@@ -577,14 +576,14 @@ func cssString(d: CSSDeclaration): string =
     let tok = getToken(d)
     case tok.tokenType
     of CSS_IDENT_TOKEN, CSS_STRING_TOKEN:
-      return $tok.value
+      return tok.value
     else: return
 
 func cssDisplay(d: CSSDeclaration): CSSDisplay =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "block": return DISPLAY_BLOCK
       of "inline": return DISPLAY_INLINE
       of "list-item": return DISPLAY_LIST_ITEM
@@ -605,7 +604,7 @@ func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "normal": return FONTSTYLE_NORMAL
       of "italic": return FONTSTYLE_ITALIC
       of "oblique": return FONTSTYLE_OBLIQUE
@@ -616,7 +615,7 @@ func cssWhiteSpace(d: CSSDeclaration): CSSWhitespace =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "normal": return WHITESPACE_NORMAL
       of "nowrap": return WHITESPACE_NOWRAP
       of "pre": return WHITESPACE_PRE
@@ -630,7 +629,7 @@ func cssFontWeight(d: CSSDeclaration): int =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "normal": return 400
       of "bold": return 700
       of "lighter": return 400
@@ -645,7 +644,7 @@ func cssTextDecoration(d: CSSDeclaration): CSSTextDecoration =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "none": return TEXT_DECORATION_NONE
       of "underline": return TEXT_DECORATION_UNDERLINE
       of "overline": return TEXT_DECORATION_OVERLINE
@@ -657,7 +656,7 @@ func cssWordBreak(d: CSSDeclaration): CSSWordBreak =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "normal": return WORD_BREAK_NORMAL
       of "break-all": return WORD_BREAK_BREAK_ALL
       of "keep-all": return WORD_BREAK_KEEP_ALL
@@ -667,7 +666,7 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "none": return LIST_STYLE_TYPE_NONE
       of "disc": return LIST_STYLE_TYPE_DISC
       of "circle": return LIST_STYLE_TYPE_CIRCLE
@@ -682,7 +681,7 @@ func cssVerticalAlign(d: CSSDeclaration): CSSVerticalAlign =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      case $tok.value
+      case tok.value
       of "baseline": result.keyword = VERTICAL_ALIGN_BASELINE
       of "sub": result.keyword = VERTICAL_ALIGN_SUB
       of "super": result.keyword = VERTICAL_ALIGN_SUPER
@@ -706,7 +705,7 @@ func cssLineHeight(d: CSSDeclaration): CSSLength =
     of CSS_NUMBER_TOKEN:
       return cssLength(tok.nvalue * 100, "%")
     of CSS_IDENT_TOKEN:
-      if $tok.value == "normal":
+      if tok.value == "normal":
         return CSSLength(auto: true)
     else:
       return cssLength(d)
@@ -716,7 +715,7 @@ func cssTextAlign(d: CSSDeclaration): CSSTextAlign =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      return case $tok.value
+      return case tok.value
       of "start": TEXT_ALIGN_START
       of "end": TEXT_ALIGN_END
       of "left": TEXT_ALIGN_LEFT
@@ -731,7 +730,7 @@ func cssListStylePosition(d: CSSDeclaration): CSSListStylePosition =
   if isToken(d):
     let tok = getToken(d)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      return case $tok.value
+      return case tok.value
       of "outside": LIST_STYLE_POSITION_OUTSIDE
       of "inside": LIST_STYLE_POSITION_INSIDE
       else: raise newException(CSSValueError, "Invalid list style position")
@@ -806,7 +805,7 @@ func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
   return defaultTable[t]
 
 func getComputedValue(d: CSSDeclaration, parent: CSSComputedValues): tuple[a:CSSComputedValue,b:CSSGlobalValueType] =
-  let name = $d.name
+  let name = d.name
   let ptype = propertyType(name)
   let vtype = valueType(ptype)
 

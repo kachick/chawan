@@ -1,5 +1,4 @@
 import tables
-import unicode
 
 import css/cssparser
 
@@ -103,7 +102,7 @@ template expect_bool(b: bool, sfalse: string, strue: string) =
   if not (cval of CSSToken): return nil
   let tok = CSSToken(cval)
   if tok.tokenType != CSS_IDENT_TOKEN: return nil
-  let s = $tok.value
+  let s = tok.value
   case s
   of strue: b = true
   of sfalse: b = false
@@ -155,7 +154,7 @@ proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
     get_tok(tok)
     fparser.skipBlanks()
     if tok.tokenType == CSS_IDENT_TOKEN:
-      let tokval = $tok.value
+      let tokval = tok.value
       case tokval
       of "not":
         return fparser.parseMediaCondition(true)
@@ -187,7 +186,7 @@ proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false
   if not non:
     let cval = parser.consume()
     if cval of CSSToken and CSSToken(cval).tokenType == CSS_IDENT_TOKEN:
-      if $CSSToken(cval).value == "not":
+      if CSSToken(cval).value == "not":
         non = true
     else:
       parser.reconsume()
@@ -211,7 +210,7 @@ proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false
   var tok: CSSToken
   get_idtok(tok)
   parser.skipBlanks()
-  let tokval = $tok.value
+  let tokval = tok.value
   case tokval
   of "and":
     return parser.parseMediaAnd(result)
@@ -231,7 +230,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     if cval of CSSToken:
       let tok = CSSToken(cval)
       if tok.tokenType == CSS_IDENT_TOKEN: 
-        let tokval = $tok.value
+        let tokval = tok.value
         case tokval
         of "not":
           non = true
@@ -256,7 +255,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     if cval of CSSToken:
       let tok = CSSToken(cval)
       if tok.tokenType == CSS_IDENT_TOKEN: 
-        let tokval = $tok.value
+        let tokval = tok.value
         if result == nil:
           if tokval in MediaTypes:
             let mq = MediaQuery(t: CONDITION_MEDIA, media: MediaTypes[tokval])
@@ -287,7 +286,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     if cval of CSSToken:
       let tok = CSSToken(cval)
       if tok.tokenType == CSS_IDENT_TOKEN: 
-        let tokval = $tok.value
+        let tokval = tok.value
         if tokval != "and":
           return nil
       else:

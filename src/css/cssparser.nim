@@ -18,7 +18,8 @@ type
   CSSTokenizerState = object
     at: int
     stream: Stream
-    buf: seq[Rune]
+    buf: string
+    curr: char
 
   CSSParseState = object
     tokens: seq[CSSParsedItem]
@@ -37,14 +38,14 @@ type
     case tokenType*: CSSTokenType
     of CSS_IDENT_TOKEN, CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN,
        CSS_HASH_TOKEN, CSS_STRING_TOKEN, CSS_URL_TOKEN:
-      value*: seq[Rune]
+      value*: string
       tflaga*: tflaga
     of CSS_DELIM_TOKEN:
       rvalue*: Rune
     of CSS_NUMBER_TOKEN, CSS_PERCENTAGE_TOKEN, CSS_DIMENSION_TOKEN:
       nvalue*: float64
       tflagb*: tflagb
-      unit*: seq[Rune]
+      unit*: string
     else: discard
 
   CSSRule* = ref object of CSSParsedItem
@@ -52,17 +53,17 @@ type
     oblock*: CSSSimpleBlock
 
   CSSAtRule* = ref object of CSSRule
-    name*: seq[Rune]
+    name*: string
 
   CSSQualifiedRule* = ref object of CSSRule
 
   CSSDeclaration* = ref object of CSSComponentValue
-    name*: seq[Rune]
+    name*: string
     value*: seq[CSSComponentValue]
     important*: bool
 
   CSSFunction* = ref object of CSSComponentValue
-    name*: seq[Rune]
+    name*: string
     value*: seq[CSSComponentValue]
 
   CSSSimpleBlock* = ref object of CSSComponentValue
@@ -75,23 +76,23 @@ type
   SyntaxError = object of ValueError
 
 # For debugging
-template `$`*(c: CSSParsedItem): string =
+proc `$`*(c: CSSParsedItem): string =
   if c of CSSToken:
     case CSSToken(c).tokenType:
     of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
-      result &= $CSSToken(c).tokenType & $CSSToken(c).value & '\n'
+      result &= $CSSToken(c).tokenType & CSSToken(c).value & '\n'
     of CSS_HASH_TOKEN:
-      result &= '#' & $CSSToken(c).value
+      result &= '#' & CSSToken(c).value
     of CSS_IDENT_TOKEN:
-      result &= $CSSToken(c).value
+      result &= CSSToken(c).value
     of CSS_STRING_TOKEN:
-      result &= ("\"" & $CSSToken(c).value & "\"")
+      result &= ("\"" & CSSToken(c).value & "\"")
     of CSS_DELIM_TOKEN:
-      result &= $CSSToken(c).rvalue
+      result &= CSSToken(c).rvalue
     of CSS_DIMENSION_TOKEN:
-      result &= $CSSToken(c).tokenType & $CSSToken(c).nvalue & "unit" & $CSSToken(c).unit & $CSSToken(c).tflagb
+      result &= $CSSToken(c).tokenType & $CSSToken(c).nvalue & "unit" & CSSToken(c).unit & $CSSToken(c).tflagb
     of CSS_NUMBER_TOKEN:
-      result &= $CSSToken(c).nvalue & $CSSToken(c).unit
+      result &= $CSSToken(c).nvalue & CSSToken(c).unit
     of CSS_PERCENTAGE_TOKEN:
       result &= $CSSToken(c).nvalue & "%"
     of CSS_COLON_TOKEN:
@@ -105,13 +106,13 @@ template `$`*(c: CSSParsedItem): string =
     else:
       result &= $CSSToken(c).tokenType & '\n'
   elif c of CSSDeclaration:
-    result &= $CSSDeclaration(c).name
+    result &= CSSDeclaration(c).name
     result &= ": "
     for s in CSSDeclaration(c).value:
       result &= $s
     result &= ";\n"
   elif c of CSSFunction:
-    result &= $CSSFunction(c).name & "("
+    result &= CSSFunction(c).name & "("
     for s in CSSFunction(c).value:
       result &= $s
     result &= ")"
@@ -130,243 +131,254 @@ template `$`*(c: CSSParsedItem): string =
     else: discard
   elif c of CSSRule:
     if c of CSSAtRule:
-      result &= $CSSAtRule(c).name & " "
+      result &= CSSAtRule(c).name & " "
     result &= $CSSRule(c).prelude & "\n"
     result &= $CSSRule(c).oblock
 
 func `==`*(a: CSSParsedItem, b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).tokenType == b
 
-func isNameStartCodePoint(r: Rune): bool =
-  return not isAscii(r) or r == Rune('_') or isAlphaAscii(r)
+const IdentStart = AsciiAlpha + NonAscii + {'_'} 
+const Ident = IdentStart + AsciiDigit + {'-'}
 
-func isNameCodePoint(r: Rune): bool =
-  return isNameStartCodePoint(r) or isDigitAscii(r) or r == Rune('-')
-
-proc consume(state: var CSSTokenizerState): Rune =
-  result = state.buf[state.at]
+proc consume(state: var CSSTokenizerState): char =
+  state.curr = state.buf[state.at]
   inc state.at
+  return state.curr
+
+proc consumeRune(state: var CSSTokenizerState): Rune =
+  fastRuneAt(state.buf, state.at, result)
 
 proc reconsume(state: var CSSTokenizerState) =
   dec state.at
 
-func peek(state: CSSTokenizerState, i: int): Rune =
+func peek(state: CSSTokenizerState, i: int = 0): char =
   return state.buf[state.at + i]
 
 proc has(state: var CSSTokenizerState, i: int = 0): bool =
   if state.at + i >= state.buf.len and not state.stream.atEnd():
-    state.buf &= state.stream.readLine().toRunes() & Rune('\n')
+    state.buf &= state.stream.readLine() & '\n'
   return state.at + i < state.buf.len
 
-func curr(state: CSSTokenizerState): Rune =
-  return state.buf[state.at]
+proc isValidEscape(a, b: char): bool =
+  return a == '\\' and b != '\n'
 
 proc isValidEscape(state: var CSSTokenizerState): bool =
-  return state.has(1) and state.curr() == Rune('\\') and state.peek(1) != Rune('\n')
+  return state.has() and isValidEscape(state.curr, state.peek())
 
-proc startsWithIdentifier(state: var CSSTokenizerState): bool =
+# current + next + next(1)
+proc startsWithIdentSequence(state: var CSSTokenizerState): bool =
+  case state.curr
+  of '-':
+    return state.has() and state.peek() in IdentStart + {'-'} or state.has(1) and state.isValidEscape()
+  of IdentStart:
+    return true
+  of '\\':
+    return state.isValidEscape()
+  else:
+    return false
+
+# next, next(1), next(2)
+proc next3startsWithIdentSequence(state: var CSSTokenizerState): bool =
   if not state.has():
     return false
 
-  if isNameStartCodePoint(state.curr()):
+  case state.peek()
+  of '-':
+    return state.has(1) and state.peek(1) in IdentStart + {'-'} or state.has(2) and isValidEscape(state.peek(1), state.peek(2)):
+  of IdentStart:
     return true
-  if state.curr() == Rune('-'):
-    if state.has(1) and state.peek(1).isNameStartCodePoint():
-      return true
-    if state.isValidEscape():
-      return true
+  of '\\':
+    return state.has(1) and isValidEscape(state.peek(), state.peek(1))
+  else:
     return false
-  elif state.curr() == Rune('\\'):
-    return state.isValidEscape()
-
-  return false
 
 proc startsWithNumber(state: var CSSTokenizerState): bool =
   if state.has():
-    case state.curr()
-    of Rune('+'), Rune('-'):
+    case state.peek()
+    of '+', '-':
       if state.has(1):
-        if isDigitAscii(state.peek(1)):
+        if state.peek(1) in AsciiDigit:
           return true
-        elif state.peek(1) == Rune('.'):
-          if state.has(2) and isDigitAscii(state.peek(2)):
+        elif state.peek(1) == '.':
+          if state.has(2) and state.peek(2) in AsciiDigit:
             return true
-    of Rune('.'):
-      if isDigitAscii(state.peek(1)):
+    of '.':
+      if state.peek(1) in AsciiDigit:
         return true
-    elif isDigitAscii(state.curr()):
+    elif state.peek() in AsciiDigit:
       return true
     else:
       return false
   return false
 
-proc consumeEscape(state: var CSSTokenizerState): Rune =
-  let r = state.consume()
-  var num = hexValue(r)
-  if num != -1:
+proc consumeEscape(state: var CSSTokenizerState): string =
+  if not state.has():
+    return $Rune(0xFFFD)
+  let c = state.consume()
+  if c in AsciiHexDigit:
+    var num = hexValue(c)
     var i = 0
-    while state.has() and i <= 5:
-      let r = state.consume()
-      if hexValue(r) == -1:
+    while i <= 5 and state.has():
+      let c = state.consume()
+      if hexValue(c) == -1:
         state.reconsume()
         break
       num *= 0x10
-      num += hexValue(r)
+      num += hexValue(c)
       inc i
+    if state.peek().isWhitespace():
+      discard state.consume()
     if num == 0 or num > 0x10FFFF or num in {0xD800..0xDFFF}:
-      return Rune(0xFFFD)
+      return $Rune(0xFFFD)
     else:
-      return Rune(num)
+      return $Rune(num)
   else:
-    return r
+    return $c #NOTE this assumes the caller doesn't care about non-ascii
 
 proc consumeString(state: var CSSTokenizerState): CSSToken =
-  var s: seq[Rune]
-  state.reconsume()
-  let ending = state.consume()
+  var s: string
+  let ending = state.curr
 
   while state.has():
-    let r = state.consume()
-    case r
-    of Rune('\n'):
+    let c = state.consume()
+    case c
+    of '\n':
+      state.reconsume()
       return CSSToken(tokenType: CSS_BAD_STRING_TOKEN)
-    of Rune('\\'):
-      s &= consumeEscape(state)
-    elif r == ending:
+    of '\\':
+      if not state.has():
+        continue
+      elif state.peek() == '\n':
+        discard state.consume()
+      else:
+        s &= consumeEscape(state)
+    elif c == ending:
       break
     else:
-      s &= r
+      s &= c
   return CSSToken(tokenType: CSS_STRING_TOKEN, value: s)
 
-proc consumeName(state: var CSSTokenizerState): seq[Rune] =
+proc consumeIdentSequence(state: var CSSTokenizerState): string =
   while state.has():
-    let r = state.consume()
+    let c = state.consume()
     if state.isValidEscape():
       result &= state.consumeEscape()
-    elif isNameCodePoint(r):
-      result &= r
+    elif c in Ident:
+      result &= c
     else:
       state.reconsume()
       return result
 
-proc consumeNumberSign(state: var CSSTokenizerState): CSSToken =
-  if state.has():
-    let r = state.consume()
-    if isNameCodePoint(r) or state.isValidEscape():
-      result = CSSToken(tokenType: CSS_HASH_TOKEN)
-      if state.startsWithIdentifier():
-        result.tflaga = TFLAGA_ID
-      
-      state.reconsume()
-      result.value = consumeName(state)
-  else:
-    let r = state.consume()
-    result = CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
-
-proc consumeNumber(state: var CSSTokenizerState): tuple[t: tflagb, val: float64] =
+proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
   var t = TFLAGB_INTEGER
-  var repr: seq[Rune]
-  if state.has():
-    if state.curr() == Rune('+') or state.curr() == Rune('-'):
-      repr &= state.consume()
-
-  while state.has() and isDigitAscii(state.curr()):
+  var repr: string
+  if state.has() and state.peek() in {'+', '-'}:
     repr &= state.consume()
 
-  if state.has(1):
-    if state.curr() == Rune('.') and isDigitAscii(state.peek(1)):
+  while state.has() and state.peek() in AsciiDigit:
+    repr &= state.consume()
+
+  if state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
+    repr &= state.consume()
+    repr &= state.consume()
+    t = TFLAGB_NUMBER
+    while state.has() and state.peek() in AsciiDigit:
+      repr &= state.consume()
+
+  if state.has(1) and state.peek() in {'E', 'e'} and state.peek(1) in AsciiDigit or
+      state.has(2) and state.peek() in {'E', 'e'} and state.peek(1) in {'-', '+'} and state.peek(2) in AsciiDigit:
+    repr &= state.consume()
+    if state.peek() in {'-', '+'}:
       repr &= state.consume()
       repr &= state.consume()
-      t = TFLAGB_NUMBER
-      while state.has() and isDigitAscii(state.curr()):
-        repr &= state.consume()
-
-  if state.has(1):
-    if state.curr() == Rune('E') or state.curr() == Rune('e'):
-      var j = 2
-      if state.peek(1) == Rune('-') or state.peek(1) == Rune('+'):
-        inc j
-      if state.has(j) and isDigitAscii(state.peek(j)):
-        while j > 0:
-          repr &= state.consume()
-          dec j
-
-        while state.has() and isDigitAscii(state.curr()):
-          repr &= state.consume()
+    else:
+      repr &= state.consume()
+    t = TFLAGB_NUMBER
+    while state.has() and state.peek() in AsciiDigit:
+      repr &= state.consume()
 
   let val = parseFloat64($repr)
   return (t, val)
 
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =
-  let num = state.consumeNumber()
-  if state.startsWithIdentifier():
-    result = CSSToken(tokenType: CSS_DIMENSION_TOKEN, nvalue: num.val, tflagb: num.t)
-    result.unit = state.consumeName()
-  elif state.has() and state.curr() == Rune('%'):
+  let (t, val) = state.consumeNumber()
+  if state.next3startsWithIdentSequence():
+    result = CSSToken(tokenType: CSS_DIMENSION_TOKEN, nvalue: val, tflagb: t)
+    result.unit = state.consumeIdentSequence()
+  elif state.has() and state.peek() == '%':
     discard state.consume()
-    result = CSSToken(tokenType: CSS_PERCENTAGE_TOKEN, nvalue: num.val)
+    result = CSSToken(tokenType: CSS_PERCENTAGE_TOKEN, nvalue: val)
   else:
-    result = CSSToken(tokenType: CSS_NUMBER_TOKEN, nvalue: num.val, tflagb: num.t)
+    result = CSSToken(tokenType: CSS_NUMBER_TOKEN, nvalue: val, tflagb: t)
 
 proc consumeBadURL(state: var CSSTokenizerState) =
-  while state.has(1):
-    let r = state.consume()
-    case r
-    of Rune(')'):
+  while state.has():
+    let c = state.consume()
+    case c
+    of ')':
       return
     elif state.isValidEscape():
       discard state.consumeEscape()
     else: discard
 
+const NonPrintable = {char(0x00)..char(0x08), char(0x0B), char(0x0E)..char(0x1F), char(0x7F)}
+
 proc consumeURL(state: var CSSTokenizerState): CSSToken =
   result = CSSToken(tokenType: CSS_URL_TOKEN)
-  while state.has(1) and state.peek(1).isWhitespace():
+  while state.has() and state.peek().isWhitespace():
     discard state.consume()
 
-  while state.has(1):
-    let r = state.consume()
-    case r
-    of Rune(')'):
+  while state.has():
+    let c = state.consume()
+    case c
+    of ')':
       return result
-    of Rune('"'), Rune('\''), Rune('('):
+    of '"', '\'', '(', NonPrintable:
       state.consumeBadURL()
       return CSSToken(tokenType: CSS_BAD_URL_TOKEN)
-    of Rune('\\'):
+    of AsciiWhitespace:
+      while state.has() and state.peek().isWhitespace():
+        discard state.consume()
+      if not state.has():
+        return result
+      if state.peek() == ')':
+        discard state.consume()
+        return result
+      state.consumeBadURL()
+      return CSSToken(tokenType: CSS_BAD_URL_TOKEN)
+    of '\\':
       state.reconsume()
       if state.isValidEscape():
         result.value &= state.consumeEscape()
       else:
         state.consumeBadURL()
         return CSSToken(tokenType: CSS_BAD_URL_TOKEN)
-    elif r.isWhitespace():
-      while state.has(1) and state.peek(1).isWhitespace():
-        discard state.consume()
     else:
-      result.value &= r
+      result.value &= c
 
 proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
-  let s = state.consumeName()
-  if s.equalsIgnoreCase("url") and state.has() and state.curr() == Rune('('):
+  let s = state.consumeIdentSequence()
+  if s.equalsIgnoreCase("url") and state.has() and state.peek() == '(':
     discard state.consume()
-    while state.has(1) and state.curr().isWhitespace() and state.peek(1).isWhitespace():
+    while state.has(1) and state.peek().isWhitespace() and state.peek(1).isWhitespace():
       discard state.consume()
-    if state.curr() == Rune('\'') or state.curr() == Rune('"') or state.curr().isWhitespace():
+    if state.has(1) and state.peek() in {'"', '\''} + AsciiWhitespace and state.peek(1) in {'"', '\''}:
       return CSSToken(tokenType: CSS_FUNCTION_TOKEN, value: s)
     else:
       return state.consumeURL()
-  elif state.has() and state.curr() == Rune('('):
+  elif state.has() and state.peek() == '(':
     discard state.consume()
     return CSSToken(tokenType: CSS_FUNCTION_TOKEN, value: s)
 
   return CSSToken(tokenType: CSS_IDENT_TOKEN, value: s)
 
 proc consumeComments(state: var CSSTokenizerState) =
-  if state.has(1) and state.curr() == Rune('/') and state.peek(1) == Rune('*'):
+  if state.has(1) and state.peek() == '/' and state.peek(1) == '*':
     discard state.consume()
     discard state.consume()
-    while state.has(1) and not (state.curr() == Rune('*') and state.peek(1) == Rune('/')):
+    while state.has() and not (state.has(1) and state.peek() == '*' and state.peek(1) == '/'):
       discard state.consume()
-
     if state.has(1):
       discard state.consume()
     if state.has():
@@ -376,87 +388,92 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
   state.consumeComments()
   if not state.has():
     return
-  let r = state.consume()
-  case r
-  of Rune('\n'), Rune('\t'), Rune(' '), Rune('\f'), Rune('\r'):
-    while state.has() and state.curr().isWhitespace():
+  let c = state.consume()
+  case c
+  of AsciiWhitespace:
+    while state.has() and state.peek().isWhitespace():
       discard state.consume()
     return CSSToken(tokenType: CSS_WHITESPACE_TOKEN)
-  of Rune('"'), Rune('\''):
+  of '"', '\'':
     return consumeString(state)
-  of Rune('#'):
-    return consumeNumberSign(state)
-  of Rune('('):
-    return CSSToken(tokenType: CSS_LPAREN_TOKEN)
-  of Rune(')'):
-    return CSSToken(tokenType: CSS_RPAREN_TOKEN)
-  of Rune('['):
-    return CSSToken(tokenType: CSS_LBRACKET_TOKEN)
-  of Rune(']'):
-    return CSSToken(tokenType: CSS_RBRACKET_TOKEN)
-  of Rune('{'):
-    return CSSToken(tokenType: CSS_LBRACE_TOKEN)
-  of Rune('}'):
-    return CSSToken(tokenType: CSS_RBRACE_TOKEN)
-  of Rune(','):
-    return CSSToken(tokenType: CSS_COMMA_TOKEN)
-  of Rune(':'):
-    return CSSToken(tokenType: CSS_COLON_TOKEN)
-  of Rune(';'):
-    return CSSToken(tokenType: CSS_SEMICOLON_TOKEN)
-  of Rune('+'):
+  of '#':
+    if state.has() and state.peek() in Ident or state.isValidEscape():
+      result = CSSToken(tokenType: CSS_HASH_TOKEN)
+      if state.startsWithIdentSequence():
+        result.tflaga = TFLAGA_ID
+      result.value = consumeIdentSequence(state)
+    else:
+      state.reconsume()
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: state.consumeRune())
+  of '(': return CSSToken(tokenType: CSS_LPAREN_TOKEN)
+  of ')': return CSSToken(tokenType: CSS_RPAREN_TOKEN)
+  of '{': return CSSToken(tokenType: CSS_LBRACE_TOKEN)
+  of '}': return CSSToken(tokenType: CSS_RBRACE_TOKEN)
+  of '+':
     if state.startsWithNumber():
       state.reconsume()
       return state.consumeNumericToken()
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
-  of Rune('-'):
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+  of ',': return CSSToken(tokenType: CSS_COMMA_TOKEN)
+  of '-':
     if state.startsWithNumber():
       state.reconsume()
       return state.consumeNumericToken()
     else:
-      if state.has(2) and state.peek(1) == Rune('-') and state.peek(2) == Rune('>'):
+      if state.has(1) and state.peek() == '-' and state.peek(1) == '>':
         discard state.consume()
         discard state.consume()
         return CSSToken(tokenType: CSS_CDC_TOKEN)
-      elif state.startsWithIdentifier():
+      elif state.startsWithIdentSequence():
         state.reconsume()
-        result = state.consumeIdentLikeToken()
+        return state.consumeIdentLikeToken()
       else:
-        return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
-  of Rune('.'):
+        return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+  of '.':
     if state.startsWithNumber():
       state.reconsume()
       return state.consumeNumericToken()
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
-  of Rune('<'):
-    if state.has(3) and state.peek(1) == Rune('!') and state.peek(2) == Rune('-') and state.peek(3) == Rune('-'):
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+  of ':': return CSSToken(tokenType: CSS_COLON_TOKEN)
+  of ';': return CSSToken(tokenType: CSS_SEMICOLON_TOKEN)
+  of '<':
+    if state.has(2) and state.peek() == '!' and state.peek(1) == '-' and state.peek(2) == '-':
       discard state.consume()
       discard state.consume()
       discard state.consume()
       return CSSToken(tokenType: CSS_CDO_TOKEN)
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
-  of Rune('@'):
-    if state.startsWithIdentifier():
-      let name = state.consumeName()
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+  of '@':
+    if state.next3startsWithIdentSequence():
+      let name = state.consumeIdentSequence()
       return CSSToken(tokenType: CSS_AT_KEYWORD_TOKEN, value: name)
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
-  elif isDigitAscii(r):
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+  of '[': return CSSToken(tokenType: CSS_LBRACKET_TOKEN)
+  of '\\':
+    if state.isValidEscape():
+      state.reconsume()
+      return state.consumeIdentLikeToken()
+    else:
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+  of ']': return CSSToken(tokenType: CSS_RBRACKET_TOKEN)
+  of AsciiDigit:
     state.reconsume()
     return state.consumeNumericToken()
-  elif isNameStartCodePoint(r):
+  of IdentStart:
     state.reconsume()
     return state.consumeIdentLikeToken()
   else:
-    return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: r)
+    state.reconsume()
+    return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: state.consumeRune())
 
 proc tokenizeCSS*(inputStream: Stream): seq[CSSParsedItem] =
   var state: CSSTokenizerState
   state.stream = inputStream
-  state.buf = state.stream.readLine().toRunes()
+  state.buf = state.stream.readLine() & '\n'
   while state.has():
     let tok = state.consumeToken()
     if tok != nil:
@@ -474,7 +491,7 @@ proc reconsume(state: var CSSParseState) =
 func has(state: CSSParseState, i: int = 0): bool =
   return state.at + i < state.tokens.len
 
-func curr(state: CSSParseState): CSSParsedItem =
+func peek(state: CSSParseState): CSSParsedItem =
   return state.tokens[state.at]
 
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue
@@ -558,12 +575,12 @@ proc consumeAtRule(state: var CSSParseState): CSSAtRule =
 proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
   let t = CSSToken(state.consume())
   var decl = CSSDeclaration(name: t.value)
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
-  if not state.has() or state.curr() != CSS_COLON_TOKEN:
+  if not state.has() or state.peek() != CSS_COLON_TOKEN:
     return none(CSSDeclaration)
   discard state.consume()
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
 
   while state.has():
@@ -608,7 +625,7 @@ proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
     elif t == CSS_IDENT_TOKEN:
       var tempList: seq[CSSParsedItem]
       tempList.add(CSSToken(t))
-      while state.has() and state.curr() != CSS_SEMICOLON_TOKEN:
+      while state.has() and state.peek() != CSS_SEMICOLON_TOKEN:
         tempList.add(state.consumeComponentValue())
 
       var tempState = CSSParseState(at: 0, tokens: tempList)
@@ -617,7 +634,7 @@ proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
         result.add(decl.get)
     else:
       state.reconsume()
-      if state.curr() != CSS_SEMICOLON_TOKEN:
+      if state.peek() != CSS_SEMICOLON_TOKEN:
         discard state.consumeComponentValue()
 
 proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
@@ -631,7 +648,7 @@ proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
     elif t == CSS_IDENT_TOKEN:
       var tempList: seq[CSSParsedItem]
       tempList.add(CSSToken(t))
-      while state.has() and state.curr() != CSS_SEMICOLON_TOKEN:
+      while state.has() and state.peek() != CSS_SEMICOLON_TOKEN:
         tempList.add(state.consumeComponentValue())
 
       var tempState = CSSParseState(at: 0, tokens: tempList)
@@ -640,7 +657,7 @@ proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
         result.add(decl.get)
     else:
       state.reconsume()
-      if state.curr() != CSS_SEMICOLON_TOKEN:
+      if state.peek() != CSS_SEMICOLON_TOKEN:
         discard state.consumeComponentValue()
 
 proc consumeListOfRules(state: var CSSParseState): seq[CSSRule] =
@@ -686,12 +703,12 @@ proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
   return state.parseListOfRules()
 
 proc parseRule(state: var CSSParseState): CSSRule =
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
     raise newException(SyntaxError, "EOF reached!")
 
-  if state.curr() == CSS_AT_KEYWORD_TOKEN:
+  if state.peek() == CSS_AT_KEYWORD_TOKEN:
     result = state.consumeAtRule()
   else:
     let q = state.consumeQualifiedRule()
@@ -700,7 +717,7 @@ proc parseRule(state: var CSSParseState): CSSRule =
     else:
       raise newException(SyntaxError, "No qualified rule found!")
 
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if state.has():
     raise newException(SyntaxError, "EOF not reached!")
@@ -711,10 +728,10 @@ proc parseRule(inputStream: Stream): CSSRule =
   return state.parseRule()
 
 proc parseDeclaration(state: var CSSParseState): CSSDeclaration =
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
 
-  if not state.has() or state.curr() != CSS_IDENT_TOKEN:
+  if not state.has() or state.peek() != CSS_IDENT_TOKEN:
     raise newException(SyntaxError, "No ident token found!")
 
   let d = state.consumeDeclaration()
@@ -759,14 +776,14 @@ proc parseListOfDeclarations2*(inputStream: Stream): seq[CSSDeclaration] =
   return state.parseListOfDeclarations2()
 
 proc parseComponentValue(state: var CSSParseState): CSSComponentValue =
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
     raise newException(SyntaxError, "EOF reached!")
 
   result = state.consumeComponentValue()
 
-  while state.has() and state.curr() == CSS_WHITESPACE_TOKEN:
+  while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if state.has():
     raise newException(SyntaxError, "EOF not reached!")
