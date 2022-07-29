@@ -122,6 +122,7 @@ proc discardBuffer(client: Client) =
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
   buffer.userstyle = client.userstyle
+  buffer.markcolor = gconfig.markcolor
   buffer.load()
   buffer.render()
   buffer.gotoAnchor()

@@ -97,7 +97,7 @@ func `$`*(tok: Token): string =
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
-const bufSize = 512
+const bufSize = 4096
 const copyBufSize = 16
 proc newTokenizer*(s: Stream): Tokenizer =
   result.sbuf = newString(bufSize)

@@ -66,6 +66,7 @@ type
     next*: Buffer
     userstyle*: CSSStylesheet
     loader*: FileLoader
+    markcolor*: CellColor
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -704,7 +705,7 @@ proc gotoAnchor*(buffer: Buffer) =
 proc addMark*(buffer: Buffer, x, y, width: int): Mark =
   assert y < buffer.lines.len
   var format = newFormat()
-  format.reverse = true
+  format.bgcolor = buffer.markcolor
   result = Mark(x: x, width: width, format: format)
   buffer.lines[y].marks.add(result)
 
