@@ -583,13 +583,13 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
       elif k == 1 and decl.value[i] == CSS_DELIM_TOKEN:
         if CSSToken(decl.value[i]).rvalue == Rune('!'):
           decl.important = true
-          decl.value.del(l)
-          decl.value.del(i)
+          decl.value.delete(l)
+          decl.value.delete(i)
           break
     dec i
 
   while decl.value.len > 0 and decl.value[^1] == CSS_WHITESPACE_TOKEN:
-    decl.value.del(decl.value.len - 1)
+    decl.value.setLen(decl.value.len - 1)
   return some(decl)
 
 #> Note: Despite the name, this actually parses a mixed list of declarations

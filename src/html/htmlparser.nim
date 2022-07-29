@@ -495,7 +495,7 @@ proc pushOntoActiveFormatting(parser: var HTML5Parser, element: Element, token: 
     if fail: continue
     inc count
     if count == 3:
-      parser.activeFormatting.del(i)
+      parser.activeFormatting.delete(i)
       break
   parser.activeFormatting.add((element, token))
 
@@ -901,7 +901,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.processInHTMLContent(token, IN_HEAD)
         for i in countdown(parser.openElements.high, 0):
           if parser.openElements[i] == parser.head:
-            parser.openElements.del(i)
+            parser.openElements.delete(i)
       )
       "</template>" => (block: parser.processInHTMLContent(token, IN_HEAD))
       ("</body>", "</html>", "</br>") => (block: anything_else)
@@ -947,7 +947,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         let stackIndex = parser.openElements.find(formatting)
         if stackIndex < 0:
           parse_error
-          parser.activeFormatting.del(formattingIndex)
+          parser.activeFormatting.delete(formattingIndex)
           return false
         if not parser.openElements.hasElementInScope(formatting):
           parse_error
@@ -964,7 +964,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
             break
         if furthestBlock == nil:
           while parser.openElements.pop() != formatting: discard
-          parser.activeFormatting.del(formattingIndex)
+          parser.activeFormatting.delete(formattingIndex)
           return false
         let commonAncestor = parser.openElements[stackIndex - 1]
         var bookmark = formattingIndex
@@ -982,12 +982,12 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
               nodeFormattingIndex = i
               break
           if j > 3 and nodeFormattingIndex >= 0:
-            parser.activeFormatting.del(nodeFormattingIndex)
+            parser.activeFormatting.delete(nodeFormattingIndex)
             if nodeFormattingIndex < bookmark:
               dec bookmark # a previous node got deleted, so decrease bookmark by one
           let nodeStackIndex = parser.openElements.find(node)
           if nodeFormattingIndex < 0:
-            parser.openElements.del(nodeStackIndex)
+            parser.openElements.delete(nodeStackIndex)
             if nodeStackIndex < furthestBlockIndex:
               dec furthestBlockIndex
             continue
@@ -1009,9 +1009,9 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           element.append(child)
         furthestBlock.append(element)
         parser.activeFormatting.insert((element, token), bookmark)
-        parser.activeFormatting.del(formattingIndex)
+        parser.activeFormatting.delete(formattingIndex)
         parser.openElements.insert(element, furthestBlockIndex)
-        parser.openElements.del(stackIndex)
+        parser.openElements.delete(stackIndex)
 
     template any_other_start_tag() =
       parser.reconstructActiveFormatting()
@@ -1208,7 +1208,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
             return
           parser.generateImpliedEndTags()
           if parser.currentNode != node: parse_error
-          parser.openElements.del(parser.openElements.find(node))
+          parser.openElements.delete(parser.openElements.find(node))
         else:
           if not parser.openElements.hasElementInScope(TAG_FORM):
             parse_error
@@ -1267,11 +1267,11 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
             return
           for i in 0..parser.activeFormatting.high:
             if parser.activeFormatting[i][0] == anchor:
-              parser.activeFormatting.del(i)
+              parser.activeFormatting.delete(i)
               break
           for i in 0..parser.openElements.high:
             if parser.openElements[i] == anchor:
-              parser.openElements.del(i)
+              parser.openElements.delete(i)
               break
         parser.reconstructActiveFormatting()
         let element = parser.insertHTMLElement(token)

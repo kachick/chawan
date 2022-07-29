@@ -736,7 +736,7 @@ proc remove*(node: Node) =
   #TODO NodeIterator
   let oldPreviousSibling = node.previousSibling
   let oldNextSibling = node.nextSibling
-  parent.childNodes.del(index)
+  parent.childNodes.delete(index)
   if oldPreviousSibling != nil:
     oldPreviousSibling.nextSibling = oldNextSibling
   if oldNextSibling != nil:
