@@ -862,6 +862,7 @@ func makewidthtable*(cjk: bool): array[0..0x10FFFF, byte] {.noInit.} =
 func width*(r: Rune): int =
   {.cast(noSideEffect).}:
     return int(width_table[int(r)])
+{.pop.}
 
 func width*(s: string): int =
   for r in s.runes():
