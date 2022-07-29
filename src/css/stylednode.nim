@@ -101,6 +101,10 @@ proc applyDependValues*(styledNode: StyledNode) =
   styledNode.depends.prev[DEPEND_CHECKED] = elem.checked
   elem.invalid = false
 
+proc addDependency*(styledNode, dep: StyledNode, t: DependencyType) =
+  if dep notin styledNode.depends.nodes[t]:
+    styledNode.depends.nodes[t].add(dep)
+
 func newStyledElement*(parent: StyledNode, element: Element, computed: CSSComputedValues, reg: sink DependencyInfo): StyledNode =
   result = StyledNode(t: STYLED_ELEMENT, computed: computed, node: element, parent: parent)
   result.depends = reg

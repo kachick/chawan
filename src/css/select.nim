@@ -29,7 +29,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
   of PSEUDO_LAST_CHILD: return elem.parentNode.lastElementChild == elem
   of PSEUDO_ONLY_CHILD: return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
   of PSEUDO_HOVER:
-    when selem is StyledNode: felem.depends.nodes[DEPEND_HOVER].add(selem)
+    when selem is StyledNode: felem.addDependency(selem, DEPEND_HOVER)
     return elem.hover
   of PSEUDO_ROOT: return elem == elem.document.html
   of PSEUDO_NTH_CHILD:
@@ -41,7 +41,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
       inc i
     return false
   of PSEUDO_CHECKED:
-    when selem is StyledNode: felem.depends.nodes[DEPEND_CHECKED].add(selem)
+    when selem is StyledNode: felem.addDependency(selem, DEPEND_CHECKED)
     if elem.tagType == TAG_INPUT:
       return HTMLInputElement(elem).checked
     elif elem.tagType == TAG_OPTION:
