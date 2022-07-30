@@ -56,6 +56,7 @@ type
 
     parser_cannot_change_the_mode_flag*: bool
     is_iframe_srcdoc*: bool
+    focus*: Element
 
   CharacterData* = ref object of Node
     data*: string
@@ -109,6 +110,8 @@ type
     size*: int
 
   HTMLSpanElement* = ref object of HTMLElement
+
+  HTMLOptGroupElement* = ref object of HTMLElement
 
   HTMLOptionElement* = ref object of HTMLElement
     selected*: bool
@@ -251,7 +254,10 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.children:
     if child.tagType == TAG_OPTION:
       yield HTMLOptionElement(child)
-    #TODO optgroups
+    elif child.tagType == TAG_OPTGROUP:
+      for opt in child.children:
+        if opt.tagType == TAG_OPTION:
+          yield HTMLOptionElement(child)
 
 func qualifiedName*(element: Element): string =
   if element.namespacePrefix.issome: element.namespacePrefix.get & ':' & element.localName
@@ -275,6 +281,12 @@ func body*(document: Document): HTMLElement =
     for element in document.html.children:
       if element.tagType == TAG_BODY:
         return HTMLElement(element)
+  return nil
+
+func select*(option: HTMLOptionElement): HTMLSelectElement =
+  for anc in option.ancestors:
+    if anc.tagType == TAG_SELECT:
+      return HTMLSelectElement(anc)
   return nil
 
 func countChildren(node: Node, nodeType: NodeType): int =
@@ -546,6 +558,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   of TAG_SELECT:
     result = new(HTMLSelectElement)
     HTMLSelectElement(result).size = 1
+  of TAG_OPTGROUP:
+    result = new(HTMLOptGroupElement)
   of TAG_OPTION:
     result = new(HTMLOptionElement)
   of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
@@ -672,7 +686,8 @@ func title*(document: Document): string =
   return ""
 
 func disabled*(option: HTMLOptionElement): bool =
-  #TODO optgroup
+  if option.parentElement.tagType == TAG_OPTGROUP and option.parentElement.attrb("disabled"):
+    return true
   return option.attrb("disabled")
 
 func text*(option: HTMLOptionElement): string =

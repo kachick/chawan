@@ -47,6 +47,9 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     elif elem.tagType == TAG_OPTION:
       return HTMLOptionElement(elem).selected
     return false
+  of PSEUDO_FOCUS:
+    when selem is StyledNode: felem.addDependency(selem, DEPEND_FOCUS)
+    return elem.document.focus == elem
 
 func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool
 

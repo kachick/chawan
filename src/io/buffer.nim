@@ -229,7 +229,7 @@ func getLink(node: StyledNode): HTMLAnchorElement =
   #TODO ::before links?
 
 const ClickableElements = {
-  TAG_A, TAG_INPUT
+  TAG_A, TAG_INPUT, TAG_OPTION
 }
 
 func getClickable(styledNode: StyledNode): Element =
@@ -789,6 +789,9 @@ proc updateCursor(buffer: Buffer) =
     buffer.cpos.fromy = 0
     buffer.cpos.cursory = buffer.lastVisibleLine - 1
 
+  if buffer.cursory >= buffer.lines.len:
+    buffer.cpos.cursory = max(0, buffer.lines.len - 1)
+
   if buffer.lines.len == 0:
     buffer.cpos.cursory = 0
 
@@ -1108,10 +1111,36 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
 proc click*(buffer: Buffer): Option[ClickAction] =
   let clickable = buffer.getCursorClickable()
   if clickable != nil:
+    template set_focus(e: Element) =
+      if buffer.document.focus != e:
+        buffer.document.focus = e
+        buffer.reshape = true
+    template restore_focus =
+      if buffer.document.focus != nil:
+        buffer.document.focus = nil
+        buffer.reshape = true
     case clickable.tagType
+    of TAG_SELECT:
+      set_focus clickable
     of TAG_A:
+      restore_focus
       return ClickAction(url: HTMLAnchorElement(clickable).href, httpmethod: HttpGet).some
+    of TAG_OPTION:
+      let option = HTMLOptionElement(clickable)
+      let select = option.select
+      if select != nil:
+        if buffer.document.focus == select:
+          # select option
+          if not select.attrb("multiple"):
+            for option in select.options:
+              option.selected = false
+          option.selected = true
+          restore_focus
+        else:
+          # focus on select
+          set_focus select
     of TAG_INPUT:
+      restore_focus
       let input = HTMLInputElement(clickable)
       case input.inputType
       of INPUT_SEARCH:
@@ -1170,9 +1199,9 @@ proc click*(buffer: Buffer): Option[ClickAction] =
           let submitaction = submitForm(input.form, input)
           return submitaction
       else:
-        discard
+        restore_focus
     else:
-      discard
+      restore_focus
 
 proc drawBuffer*(buffer: Buffer) =
   var format = newFormat()

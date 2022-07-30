@@ -39,7 +39,7 @@ type
     STYLED_ELEMENT, STYLED_TEXT
 
   DependencyType* = enum
-    DEPEND_HOVER, DEPEND_CHECKED
+    DEPEND_HOVER, DEPEND_CHECKED, DEPEND_FOCUS
 
   DependencyInfo* = object
     # All nodes we depend on, for each dependency type d.
@@ -91,12 +91,18 @@ func isValid*(styledNode: StyledNode): bool =
       of DEPEND_CHECKED:
         if child.depends.prev[d] != elem.checked:
           return false
+      of DEPEND_FOCUS:
+        let focus = elem.document.focus == elem
+        if child.depends.prev[d] != focus:
+          return false
   return true
 
 proc applyDependValues*(styledNode: StyledNode) =
   let elem = Element(styledNode.node)
   styledNode.depends.prev[DEPEND_HOVER] = elem.hover
   styledNode.depends.prev[DEPEND_CHECKED] = elem.checked
+  let focus = elem.document.focus == elem
+  styledNode.depends.prev[DEPEND_FOCUS] = focus
   elem.invalid = false
 
 proc addDependency*(styledNode, dep: StyledNode, t: DependencyType) =

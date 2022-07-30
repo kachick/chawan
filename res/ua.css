@@ -193,34 +193,38 @@ select {
 	display: inline-block;
 }
 
-select {
-	color: red;
-}
-
 select::before {
 	content: '[';
 	color: none;
+	display: inline-block;
 }
 
 select::after {
 	content: ']';
 	color: none;
-}
-
-select > option {
-	display: none;
-}
-
-select > optgroup > option {
-	display: none;
-}
-
-select > option:checked {
 	display: inline-block;
 }
 
-select > optgroup > option:checked {
+select > :is(option, optgroup > option) {
+	display: none;
+}
+
+select > :is(option, optgroup > option):checked {
 	display: inline-block;
+	color: red;
+}
+
+select:focus > :is(option, optgroup > option) {
+	display: list-item;
+	color: white;
+}
+
+select:focus > :is(option, optgroup > option):checked {
+	color: pink;
+}
+
+select:focus > :is(option, optgroup > option):hover {
+	color: red;
 }
 
 center {
