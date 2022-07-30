@@ -66,6 +66,8 @@ while i < params.len:
       gconfig.parseConfig(getCurrentDir(), params[i])
     else:
       help(1)
+  of "-h",  "--help":
+    help(0)
   of "--":
     escape_all = true
   elif param.len > 0:

@@ -16,7 +16,18 @@ Following is a list of general options:
 
 <table>
 <tr><th>**Name**<th>**Value**<th>**Function**
-<tr><td>double-width-ambiguous<td>boolean<td>Assume the terminal displays characters in the East Asian Ambiguous category as double width
+<tr><td>double-width-ambiguous<td>boolean<td>Assume the terminal displays characters in the East Asian Ambiguous category are double width
+</table>
+
+## Display
+
+Display options must be placed in a section called `[display`.
+
+Following is a list of display options:
+
+<table>
+<tr><th>**Name**<th>**Value**<th>**Function**
+<tr><td>mark-color<td>color<td>Set the marker's color. Valid options are "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "terminal".
 </table>
 
 ## Stylesheets
@@ -100,6 +111,12 @@ description of these follows.
 <tr><td>`CURSOR_BOTTOM`<td>Move cursor to the last line of the page
 <tr><td>`CENTER_LINE`<td>Center screen around line
 <tr><td>`LINE_INFO`<td>Display information about line
+<tr><td>`SEARCH`<td>Search for a string in the current buffer.
+<tr><td>`SEARCH_BACK`<td>Search for a string, backwards.
+<tr><td>`ISEARCH`<td>Search for a string and highlight the first result.
+<tr><td>`ISEARCH_BACK`<td>Search and highlight the first result, backwards.
+<tr><td>`SEARCH_NEXT`<td>Jump to the next search result.
+<tr><td>`SEARCH_PREV`<td>Jump to the previous search result.
 </table>
 
 ### Line-editing actions
@@ -122,25 +139,3 @@ description of these follows.
 <tr><td>`END`<td>Move cursor to the previous word by one character
 <tr><td>`ESC`<td>Ignore keybindings for next character
 </table>
-
-## Network
-
-Network options must be placed in a section called `[network]`.
-
-Chawan can use two separate back-ends to fetch remote resources (i.e. websites,
-css, etc.) The default back-end is the nim standard library's HTTP client.  
-As an alternative, curl is supported as well, by invoking an existing curl
-binary on your system.
-
-Following is a list of network options:
-
-<table>
-<tr><th>**Name**<th>**Value**<th>**Function**
-<tr><td>use-curl<td>boolean<td>Enable curl support
-<tr><td>curl-binary<td>string<td>Path to the curl binary (only used if use-curl is set to true)
-</table>
-
-To enable curl support, you must
-
-* set `use-curl` to true
-* and set `curl-binary` to the path of your curl binary.
