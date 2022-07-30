@@ -198,14 +198,13 @@ func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, inte
   if element.isResettable():
     element.resetElement()
 
-  if element.tagType in FormAssociatedElements and parser.form != nil and
+  if element.tagType in SupportedFormAssociatedElements and parser.form != nil and
       not parser.openElements.hasElement(TAG_TEMPLATE) and
       (element.tagType notin ListedElements or not element.attrb("form")) and
       intendedParent.inSameTree(parser.form):
-    if element.tagType in {TAG_SELECT, TAG_INPUT}: #TODO implement the other ones too
-      let element = FormAssociatedElement(element)
-      element.setForm(parser.form)
-      element.parserInserted = true
+    let element = FormAssociatedElement(element)
+    element.setForm(parser.form)
+    element.parserInserted = true
   return element
 
 proc insert(location: AdjustedInsertionLocation, node: Node) =

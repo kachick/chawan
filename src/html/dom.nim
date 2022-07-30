@@ -497,9 +497,8 @@ func formmethod*(element: Element): FormMethod =
       of "dialog": FORM_METHOD_DIALOG
       else: FORM_METHOD_GET
 
-  # has form (TODO not only input should be included)
-  if element.tagType == TAG_INPUT:
-    let element = HTMLInputElement(element)
+  if element.tagType in SupportedFormAssociatedElements:
+    let element = FormAssociatedElement(element)
     if element.form != nil:
       if element.form.attrb("method"):
         return case element.form.attr("method").tolower()
