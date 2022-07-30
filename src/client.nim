@@ -11,6 +11,7 @@ import io/buffer
 import io/cell
 import io/lineedit
 import io/loader
+import io/term
 import js/javascript
 import js/regex
 import types/url
@@ -468,7 +469,10 @@ proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool
     eprint e.msg
     quit(1)
 
-  if stdout.isatty and not dump: client.inputLoop()
+  if stdout.isatty and not dump:
+    when defined(posix):
+      enableRawMode()
+    client.inputLoop()
   else:
     var buffer = client.buffer
     while buffer.next != nil:

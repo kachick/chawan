@@ -93,7 +93,7 @@ func generateFullOutput(buffer: Buffer): string =
   for cell in buffer.display:
     if x >= buffer.width:
       result &= EL()
-      result &= '\n'
+      result &= "\r\n"
       x = 0
       w = 0
 
@@ -104,7 +104,7 @@ func generateFullOutput(buffer: Buffer): string =
     inc x
 
   result &= EL()
-  result &= '\n'
+  result &= "\r\n"
 
 # generate a sequence of instructions to replace the previous frame with the
 # current one. ideally should be used when small changes are made (e.g. hover
@@ -1178,13 +1178,14 @@ proc drawBuffer*(buffer: Buffer) =
   var format = newFormat()
   for line in buffer.lines:
     if line.formats.len == 0:
-      print(line.str & '\n')
+      print(line.str & "\r\n")
     else:
       var x = 0
       var i = 0
       for f in line.formats:
         var outstr = ""
-        assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
+        #TODO TODO TODO renderhtml has broken format outputting
+        #assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
         while x < f.pos:
           var r: Rune
           fastRuneAt(line.str, i, r)
@@ -1194,7 +1195,7 @@ proc drawBuffer*(buffer: Buffer) =
         print(format.processFormat(f.format))
       print(line.str.substr(i))
       print(format.processFormat(newFormat()))
-      print('\n')
+      print("\r\n")
 
 proc refreshBuffer*(buffer: Buffer, peek = false) =
   buffer.title = buffer.getTitle()
