@@ -31,6 +31,8 @@ type
     jsctx: JSContext
     regex: Option[Regex]
     revsearch: bool
+    needsauth: bool
+    redirecturl: Option[Url]
 
   ActionError = object of IOError
   LoadError = object of ActionError
@@ -104,6 +106,18 @@ proc nextBuffer(client: Client) =
     client.buffer = client.buffer.next
     client.buffer.redraw = true
 
+proc discardBuffer(buffer: Buffer) =
+  if buffer.next != nil:
+    if buffer.sourcepair != nil:
+      buffer.sourcepair.sourcepair = nil
+    buffer.next.prev = buffer.prev
+    buffer.redraw = true
+  elif buffer.prev != nil:
+    if buffer.sourcepair != nil:
+      buffer.sourcepair.sourcepair = nil
+    buffer.prev.next = buffer.next
+    buffer.redraw = true
+
 proc discardBuffer(client: Client) =
   if client.buffer.next != nil:
     if client.buffer.sourcepair != nil:
@@ -145,23 +159,29 @@ proc readPipe(client: Client, ctype: string) =
     client.buffer.drawBuffer()
 
 var g_client: Client
-proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none(Url), force = false, newbuf = true, ctype = "") =
+proc getPage(client: Client, url: Url, click = none(ClickAction)): LoadResult =
+  let page = if click.isnone:
+    client.loader.getPage(url)
+  else:
+    client.loader.getPage(url, click.get.httpmethod, click.get.mimetype, click.get.body, click.get.multipart)
+  return page
+
+# Load url in a new buffer.
+proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none(Url), force = false, ctype = "") =
   setControlCHook(proc() {.noconv.} =
     raise newException(InterruptError, "Interrupted"))
   if force or prevurl.issome or not prevurl.get.equals(url, true):
     try:
-      let page = if click.isnone:
-        client.loader.getPage(url)
-      else:
-        client.loader.getPage(url, click.get.httpmethod, click.get.mimetype, click.get.body, click.get.multipart)
+      let page = client.getPage(url, click)
+      client.needsauth = page.status == 401 # Unauthorized
+      client.redirecturl = page.redirect
       if page.s != nil:
-        if newbuf:
-          client.addBuffer()
-          g_client = client
-          setControlCHook(proc() {.noconv.} =
-            if g_client.buffer.prev != nil or g_client.buffer.next != nil:
-              g_client.discardBuffer()
-            interruptError())
+        client.addBuffer()
+        g_client = client
+        setControlCHook(proc() {.noconv.} =
+          if g_client.buffer.prev != nil or g_client.buffer.next != nil:
+            g_client.discardBuffer()
+          interruptError())
         client.buffer.istream = page.s
         client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
       else:
@@ -174,35 +194,46 @@ proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none
   client.buffer.location = url
   client.setupBuffer()
 
-proc gotoUrl(client: Client, url: string, click = none(ClickAction), prevurl = none(Url), force = false, newbuf = true, ctype = "") =
-  var oldurl = prevurl
-  if oldurl.isnone and client.buffer != nil:
-    oldurl = client.buffer.location.some
-  let newurl = parseUrl(url, oldurl)
+# Relative gotoUrl: either to prevurl, or if that's none, client.buffer.url.
+proc gotoUrl(client: Client, url: string, click = none(ClickAction), prevurl = none(Url), force = false, ctype = "") =
+  var prevurl = prevurl
+  if prevurl.isnone and client.buffer != nil:
+    prevurl = client.buffer.location.some
+  let newurl = parseUrl(url, prevurl)
   if newurl.isnone:
     loadError("Invalid URL " & url)
-  client.gotoUrl(newurl.get, click, oldurl, force, newbuf, ctype)
+  client.gotoUrl(newurl.get, click, prevurl, force, ctype)
 
+# When the user has passed a partial URL as an argument, they might've meant
+# several things:
+# * the URL as it is
+# * file://$PWD/<file>
+# * https://<url>
+# So we attempt to visit each of them, in the order described above.
 proc loadUrl(client: Client, url: string, ctype = "") =
   let firstparse = parseUrl(url)
   if firstparse.issome:
-    client.gotoUrl(url, none(ClickAction), none(Url), true, true, ctype)
+    client.gotoUrl(url, none(ClickAction), none(Url), true, ctype)
   else:
     let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
     try:
       # attempt to load local file
-      client.gotoUrl(url, none(ClickAction), cdir, true, true, ctype)
+      client.gotoUrl(url, none(ClickAction), cdir, true, ctype)
     except LoadError:
       try:
         # attempt to load local file (this time percent encoded)
-        client.gotoUrl(percentEncode(url, LocalPathPercentEncodeSet), none(ClickAction), cdir, true, true, ctype)
+        client.gotoUrl(percentEncode(url, LocalPathPercentEncodeSet), none(ClickAction), cdir, true, ctype)
       except LoadError:
         # attempt to load remote page
-        client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, true, ctype)
+        client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, ctype)
 
+# Reload the page in a new buffer, then kill the previous buffer.
 proc reloadPage(client: Client) =
-  client.gotoUrl(client.buffer.location, none(ClickAction), none(Url), true, true, client.buffer.contenttype)
+  let buf = client.buffer
+  client.gotoUrl(client.buffer.location, none(ClickAction), none(Url), true, client.buffer.contenttype)
+  discardBuffer(buf)
 
+# Open a URL prompt and visit the specified URL.
 proc changeLocation(client: Client) =
   let buffer = client.buffer
   var url = buffer.location.serialize(true)
@@ -441,6 +472,34 @@ proc input(client: Client) =
   of ACTION_SEARCH_PREV: client.searchPrev()
   else: discard
 
+proc checkAuth(client: Client) =
+  client.statusMode()
+  var username = ""
+  let ustatus = readLine("Username: ", username, client.buffer.width)
+  if not ustatus:
+    client.needsauth = false
+    return
+  client.statusMode()
+  var password = ""
+  let pstatus = readLine("Password: ", password, client.buffer.width)
+  if not pstatus:
+    client.needsauth = false
+    return
+  var url = client.buffer.location
+  url.username = username
+  url.password = password
+  var buf = client.buffer
+  client.gotoUrl(url, prevurl = some(client.buffer.location))
+  discardBuffer(buf)
+
+proc followRedirect(client: Client) =
+  if client.redirecturl.issome:
+    var buf = client.buffer
+    let redirecturl = client.redirecturl.get
+    client.redirecturl = none(Url)
+    client.gotoUrl(redirecturl, prevurl = some(client.buffer.location))
+    discardBuffer(buf)
+
 proc inputLoop(client: Client) =
   while true:
     g_client = client
@@ -450,6 +509,12 @@ proc inputLoop(client: Client) =
       g_client.buffer.reshape = false
       g_client.inputLoop())
     client.buffer.refreshBuffer()
+    while client.redirecturl.issome:
+      client.followRedirect()
+      client.buffer.refreshBuffer()
+    if client.needsauth: # Unauthorized
+      client.checkAuth()
+      client.buffer.refreshBuffer()
     try:
       client.input()
     except ActionError as e:

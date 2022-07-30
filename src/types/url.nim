@@ -37,8 +37,8 @@ type
   Url* = object
     encoding: int #TODO
     scheme*: string
-    username: string
-    password: string
+    username*: string
+    password*: string
     port: Option[uint16]
     host: Option[Host]
     path*: UrlPath

@@ -16,6 +16,9 @@ type
   LoadResult* = object
     s*: Stream
     contenttype*: string
+    status*: int
+    headers*: HttpHeaders
+    redirect*: Option[Url]
 
   HeaderResult = ref object
     statusline: bool
@@ -82,30 +85,39 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer)
   stream.flush()
   return nmemb
 
+template setopt(curl: CURL, opt: CURLoption, arg: typed) =
+  discard curl_easy_setopt(curl, opt, arg)
+
+template setopt(curl: CURL, opt: CURLoption, arg: string) =
+  discard curl_easy_setopt(curl, opt, cstring(arg))
+
+template getinfo(curl: CURL, info: CURLINFO, arg: typed) =
+  discard curl_easy_getinfo(curl, info, arg)
+
 proc getPageLibcurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimetype = "", body: string = "", multipart: MultipartDataClone = nil): LoadResult =
   let curl = curl_easy_init()
 
   if curl == nil: return # fail
 
   let surl = url.serialize()
-  curl_easy_setopt(curl, CURLOPT_URL, cstring(surl))
+  curl.setopt(CURLOPT_URL, surl)
 
   var cs = newStringStream()
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, cs)
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteBody)
+  curl.setopt(CURLOPT_WRITEDATA, cs)
+  curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
 
   let headers = newHttpHeaders(true)
   let headerres = HeaderResult(headers: headers)
-  curl_easy_setopt(curl, CURLOPT_HEADERDATA, headerres)
-  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curlWriteHeader)
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1)
+  curl.setopt(CURLOPT_HEADERDATA, headerres)
+  curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
+  #curl.setopt(CURLOPT_FOLLOWLOCATION, 1)
 
   var mime: curl_mime = nil
 
   case smethod
-  of HttpGet: curl_easy_setopt(curl, CURLOPT_HTTPGET, 1)
+  of HttpGet: curl.setopt(CURLOPT_HTTPGET, 1)
   of HttpPost:
-    curl_easy_setopt(curl, CURLOPT_POST, 1)
+    curl.setopt(CURLOPT_POST, 1)
     if multipart != nil:
       mime = curl_mime_init(curl)
       if mime == nil: return # fail
@@ -123,10 +135,10 @@ proc getPageLibcurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet,
           curl_mime_filename(part, cstring(entry.filename))
         else:
           curl_mime_data(part, cstring(entry.content), csize_t(entry.content.len))
-      curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime)
+      curl.setopt(CURLOPT_MIMEPOST, mime)
     elif body != "":
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, cstring(body))
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.len)
+      curl.setopt(CURLOPT_POSTFIELDS, cstring(body))
+      curl.setopt(CURLOPT_POSTFIELDSIZE, body.len)
   else: discard
 
   var requestHeaders = newHttpHeaders(true)
@@ -138,10 +150,10 @@ proc getPageLibcurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet,
     let header = k & ": " & v
     slist = curl_slist_append(slist, cstring(header))
   if slist != nil:
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist)
+    curl.setopt(CURLOPT_HTTPHEADER, slist)
 
   let res = curl_easy_perform(curl)
-  if res == CURLE_OK: # TODO handle http errors
+  if res == CURLE_OK: # TODO handle errors
     cs.setPosition(0)
     result.s = cs
 
@@ -150,6 +162,13 @@ proc getPageLibcurl(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet,
       result.contenttype = ct.until(';')
     else:
       result.contenttype = guessContentType(url.path.serialize())
+    discard curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, addr result.status)
+    if result.status in {301, 302, 303}: #TODO 300, 304, 307
+      var urlp: cstring
+      curl.getinfo(CURLINFO_REDIRECT_URL, addr urlp)
+      if urlp != nil:
+        let urls = $urlp
+        result.redirect = parseUrl(urls, some(url))
 
   curl_easy_cleanup(curl)
   if mime != nil:
@@ -165,6 +184,7 @@ proc getPage*(loader: FileLoader, url: Url, smethod: HttpMethod = HttpGet, mimet
       let path = url.path.serialize_unicode()
     result.contenttype = guessContentType(path)
     result.s = newFileStream(path, fmRead)
+    result.status = 200 # doesn't make much sense...
   elif url.scheme == "http" or url.scheme == "https":
     return getPageLibcurl(loader, url, smethod, mimetype, body, cast[MultipartDataClone](multipart))
 

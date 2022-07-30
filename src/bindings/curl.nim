@@ -25,6 +25,17 @@ const
   CURLOPTTYPE_CBPOINT = CURLOPTTYPE_OBJECTPOINT
   CURLOPTTYPE_VALUES = CURLOPTTYPE_LONG
 
+const
+  CURLINFO_STRING = 0x100000
+  CURLINFO_LONG = 0x200000
+  CURLINFO_DOUBLE = 0x300000
+  CURLINFO_SLIST = 0x400000
+  CURLINFO_PTR = 0x400000 # same as SLIST
+  CURLINFO_SOCKET = 0x500000
+  CURLINFO_OFF_T = 0x600000
+  CURLINFO_MASK = 0x0fffff
+  CURLINFO_TYPEMASK = 0xf00000
+
 {.push cdecl, dynlib: curllib.}
 
 type
@@ -68,6 +79,15 @@ type
     CURLOPT_PROXY_SSLCERT_BLOB = CURLOPTTYPE_BLOB + 293
     CURLOPT_PROXY_SSLKEY_BLOB = CURLOPTTYPE_BLOB + 294
     CURLOPT_ISSUECERT_BLOB = CURLOPTTYPE_BLOB + 295
+
+  CURLINFO* {.size: sizeof(cint).} = enum
+    CURLINFO_NONE # first, never use this
+
+    # String
+    CURLINFO_REDIRECT_URL = CURLINFO_STRING + 31
+
+    # Long
+    CURLINFO_RESPONSE_CODE = CURLINFO_LONG + 2
 
   CURLcode* {.size: sizeof(cint).} = enum
     CURLE_OK = 0,
@@ -202,8 +222,9 @@ proc curl_global_cleanup*() {.importc: "curl_global_cleanup".}
 
 proc curl_easy_init*(): CURL {.importc: "curl_easy_init".}
 proc curl_easy_cleanup*(handle: CURL) {.importc: "curl_easy_cleanup".}
-proc curl_easy_setopt*(handle: CURL, option: CURLoption) {.importc: "curl_easy_setopt", varargs.}
+proc curl_easy_setopt*(handle: CURL, option: CURLoption): CURLcode {.importc: "curl_easy_setopt", varargs.}
 proc curl_easy_perform*(handle: CURL): CURLcode {.importc: "curl_easy_perform".}
+proc curl_easy_getinfo*(handle: CURL, info: CURLINFO): CURLcode {.importc: "curl_easy_getinfo", varargs.}
 
 proc curl_mime_init*(handle: CURL): curl_mime {.importc: "curl_mime_init".}
 proc curl_mime_free*(mime: curl_mime) {.importc: "curl_mime_free".}
