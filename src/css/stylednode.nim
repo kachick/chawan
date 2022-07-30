@@ -41,23 +41,21 @@ type
   DependencyType* = enum
     DEPEND_HOVER, DEPEND_CHECKED
 
-  InvalidationRegistry* = set[DependencyType]
-
   DependencyInfo* = object
     # All nodes we depend on, for each dependency type d.
     nodes*: array[DependencyType, seq[StyledNode]]
-    # Previous value. Node is marked invalid when one of these no longer
-    # matches the DOM value.
+    # Previous value. The owner StyledNode is marked as invalid when one of
+    # these no longer matches the DOM value.
     prev: array[DependencyType, bool]
 
   StyledNode* = ref object
     parent*: StyledNode
     node*: Node
+    pseudo*: PseudoElem #TODO this should be in element only
     case t*: StyledType
     of STYLED_TEXT:
       text*: string
     of STYLED_ELEMENT:
-      pseudo*: PseudoElem
       computed*: CSSComputedValues
       children*: seq[StyledNode]
       depends*: DependencyInfo
@@ -121,6 +119,11 @@ func newStyledElement*(element: Element): StyledNode =
 func newStyledElement*(parent: StyledNode, pseudo: PseudoElem, computed: CSSComputedValues, reg: sink DependencyInfo): StyledNode =
   result = StyledNode(t: STYLED_ELEMENT, computed: computed, pseudo: pseudo, parent: parent)
   result.depends = reg
+  result.parent = parent
+
+func newStyledElement*(parent: StyledNode, pseudo: PseudoElem, computed: CSSComputedValues): StyledNode =
+  result = StyledNode(t: STYLED_ELEMENT, computed: computed, pseudo: pseudo, parent: parent)
+  result.parent = parent
 
 func newStyledText*(parent: StyledNode, text: string): StyledNode =
   result = StyledNode(t: STYLED_TEXT, text: text, parent: parent)

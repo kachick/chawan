@@ -1,7 +1,4 @@
 import tables
-import sugar
-import sequtils
-import options
 import macros
 import strutils
 
@@ -129,6 +126,22 @@ type
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
+
+  CSSOrigin* = enum
+    ORIGIN_USER_AGENT
+    ORIGIN_USER
+    ORIGIN_AUTHOR
+
+  CSSComputedValueBuilder = object
+    global: CSSGlobalValueType
+    val: CSSComputedValue
+
+  CSSComputedValueBuilders = seq[CSSComputedValueBuilder]
+
+  CSSComputedValuesBuilder* = object
+    parent: CSSComputedValues
+    normalProperties: array[CSSOrigin, CSSComputedValueBuilders]
+    importantProperties: array[CSSOrigin, CSSComputedValueBuilders]
 
   CSSValueError* = object of ValueError
 
@@ -276,157 +289,6 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
-
-const ColorsRGB = {
-  "aliceblue": 0xf0f8ff,
-  "antiquewhite": 0xfaebd7,
-  "aqua": 0x00ffff,
-  "aquamarine": 0x7fffd4,
-  "azure": 0xf0ffff,
-  "beige": 0xf5f5dc,
-  "bisque": 0xffe4c4,
-  "black": 0x000000,
-  "blanchedalmond": 0xffebcd,
-  "blue": 0x0000ff,
-  "blueviolet": 0x8a2be2,
-  "brown": 0xa52a2a,
-  "burlywood": 0xdeb887,
-  "cadetblue": 0x5f9ea0,
-  "chartreuse": 0x7fff00,
-  "chocolate": 0xd2691e,
-  "coral": 0xff7f50,
-  "cornflowerblue": 0x6495ed,
-  "cornsilk": 0xfff8dc,
-  "crimson": 0xdc143c,
-  "cyan": 0x00ffff,
-  "darkblue": 0x00008b,
-  "darkcyan": 0x008b8b,
-  "darkgoldenrod": 0xb8860b,
-  "darkgray": 0xa9a9a9,
-  "darkgreen": 0x006400,
-  "darkgrey": 0xa9a9a9,
-  "darkkhaki": 0xbdb76b,
-  "darkmagenta": 0x8b008b,
-  "darkolivegreen": 0x556b2f,
-  "darkorange": 0xff8c00,
-  "darkorchid": 0x9932cc,
-  "darkred": 0x8b0000,
-  "darksalmon": 0xe9967a,
-  "darkseagreen": 0x8fbc8f,
-  "darkslateblue": 0x483d8b,
-  "darkslategray": 0x2f4f4f,
-  "darkslategrey": 0x2f4f4f,
-  "darkturquoise": 0x00ced1,
-  "darkviolet": 0x9400d3,
-  "deeppink": 0xff1493,
-  "deepskyblue": 0x00bfff,
-  "dimgray": 0x696969,
-  "dimgrey": 0x696969,
-  "dodgerblue": 0x1e90ff,
-  "firebrick": 0xb22222,
-  "floralwhite": 0xfffaf0,
-  "forestgreen": 0x228b22,
-  "fuchsia": 0xff00ff,
-  "gainsboro": 0xdcdcdc,
-  "ghostwhite": 0xf8f8ff,
-  "gold": 0xffd700,
-  "goldenrod": 0xdaa520,
-  "gray": 0x808080,
-  "green": 0x008000,
-  "greenyellow": 0xadff2f,
-  "grey": 0x808080,
-  "honeydew": 0xf0fff0,
-  "hotpink": 0xff69b4,
-  "indianred": 0xcd5c5c,
-  "indigo": 0x4b0082,
-  "ivory": 0xfffff0,
-  "khaki": 0xf0e68c,
-  "lavender": 0xe6e6fa,
-  "lavenderblush": 0xfff0f5,
-  "lawngreen": 0x7cfc00,
-  "lemonchiffon": 0xfffacd,
-  "lightblue": 0xadd8e6,
-  "lightcoral": 0xf08080,
-  "lightcyan": 0xe0ffff,
-  "lightgoldenrodyellow": 0xfafad2,
-  "lightgray": 0xd3d3d3,
-  "lightgreen": 0x90ee90,
-  "lightgrey": 0xd3d3d3,
-  "lightpink": 0xffb6c1,
-  "lightsalmon": 0xffa07a,
-  "lightseagreen": 0x20b2aa,
-  "lightskyblue": 0x87cefa,
-  "lightslategray": 0x778899,
-  "lightslategrey": 0x778899,
-  "lightsteelblue": 0xb0c4de,
-  "lightyellow": 0xffffe0,
-  "lime": 0x00ff00,
-  "limegreen": 0x32cd32,
-  "linen": 0xfaf0e6,
-  "magenta": 0xff00ff,
-  "maroon": 0x800000,
-  "mediumaquamarine": 0x66cdaa,
-  "mediumblue": 0x0000cd,
-  "mediumorchid": 0xba55d3,
-  "mediumpurple": 0x9370db,
-  "mediumseagreen": 0x3cb371,
-  "mediumslateblue": 0x7b68ee,
-  "mediumspringgreen": 0x00fa9a,
-  "mediumturquoise": 0x48d1cc,
-  "mediumvioletred": 0xc71585,
-  "midnightblue": 0x191970,
-  "mintcream": 0xf5fffa,
-  "mistyrose": 0xffe4e1,
-  "moccasin": 0xffe4b5,
-  "navajowhite": 0xffdead,
-  "navy": 0x000080,
-  "oldlace": 0xfdf5e6,
-  "olive": 0x808000,
-  "olivedrab": 0x6b8e23,
-  "orange": 0xffa500,
-  "orangered": 0xff4500,
-  "orchid": 0xda70d6,
-  "palegoldenrod": 0xeee8aa,
-  "palegreen": 0x98fb98,
-  "paleturquoise": 0xafeeee,
-  "palevioletred": 0xdb7093,
-  "papayawhip": 0xffefd5,
-  "peachpuff": 0xffdab9,
-  "peru": 0xcd853f,
-  "pink": 0xffc0cb,
-  "plum": 0xdda0dd,
-  "powderblue": 0xb0e0e6,
-  "purple": 0x800080,
-  "red": 0xff0000,
-  "rosybrown": 0xbc8f8f,
-  "royalblue": 0x4169e1,
-  "saddlebrown": 0x8b4513,
-  "salmon": 0xfa8072,
-  "sandybrown": 0xf4a460,
-  "seagreen": 0x2e8b57,
-  "seashell": 0xfff5ee,
-  "sienna": 0xa0522d,
-  "silver": 0xc0c0c0,
-  "skyblue": 0x87ceeb,
-  "slateblue": 0x6a5acd,
-  "slategray": 0x708090,
-  "slategrey": 0x708090,
-  "snow": 0xfffafa,
-  "springgreen": 0x00ff7f,
-  "steelblue": 0x4682b4,
-  "tan": 0xd2b48c,
-  "teal": 0x008080,
-  "thistle": 0xd8bfd8,
-  "tomato": 0xff6347,
-  "turquoise": 0x40e0d0,
-  "violet": 0xee82ee,
-  "wheat": 0xf5deb3,
-  "white": 0xffffff,
-  "whitesmoke": 0xf5f5f5,
-  "yellow": 0xffff00,
-  "yellowgreen": 0x9acd32,
-  "rebeccapurple": 0x663399,
-}.map((a) => (a[0], RGBColor(a[1]))).toTable()
 
 const Colors: Table[string, CSSColor] = ((func (): Table[string, CSSColor] =
   for name, rgb in ColorsRGB:
@@ -800,11 +662,10 @@ func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
 
 let defaultTable = getInitialTable()
 
-func getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
-  assert defaultTable[t] != nil
-  return defaultTable[t]
+template getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
+  defaultTable[t]
 
-func getComputedValue(d: CSSDeclaration, parent: CSSComputedValues): tuple[a:CSSComputedValue,b:CSSGlobalValueType] =
+func getComputedValue(d: CSSDeclaration): (CSSComputedValue, CSSGlobalValueType) =
   let name = d.name
   let ptype = propertyType(name)
   let vtype = valueType(ptype)
@@ -839,45 +700,59 @@ func equals*(a, b: CSSComputedValue): bool =
   of VALUE_NONE: return true
   return false
 
-proc applyValue(vals, parent: CSSComputedValues, t: CSSPropertyType, val: CSSComputedValue, global: CSSGlobalValueType) =
-  case global
-  of VALUE_INHERIT, VALUE_UNSET:
-    if inherited(t):
-      if parent[t] != nil:
-        vals[t] = parent[t]
-    vals[t] = getDefault(t)
-  of VALUE_INITIAL:
-    vals[t] = getDefault(t)
-  of VALUE_REVERT:
-    vals[t] = getDefault(t) #TODO
-  of VALUE_NOGLOBAL:
-    vals[t] = val
+proc newComputedValueBuilder*(parent: CSSComputedValues): CSSComputedValuesBuilder =
+  result.parent = parent
 
-proc applyValue*(vals, parent: CSSComputedValues, d: CSSDeclaration) =
-  let vv = getComputedValue(d, parent)
-  let val = vv.a
-  case val.t
-  of PROPERTY_ALL:
-    let global = cssGlobal(d)
-    if global != VALUE_NOGLOBAL:
-      for t in CSSPropertyType:
-        vals.applyValue(parent, t, nil, global)
-  of PROPERTY_MARGIN:
-    let left = CSSComputedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
-    let right = CSSComputedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: val.length)
-    let top = CSSComputedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: val.length)
-    let bottom = CSSComputedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    for val in [left, right, top, bottom]:
-      vals.applyValue(parent, val.t, val, vv.b)
-  of PROPERTY_PADDING:
-    let left = CSSComputedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: val.length)
-    let right = CSSComputedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: val.length)
-    let top = CSSComputedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: val.length)
-    let bottom = CSSComputedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    for val in [left, right, top, bottom]:
-      vals.applyValue(parent, val.t, val, vv.b)
+proc addValuesImportant*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
+  for decl in decls:
+    if decl.important:
+      let (val, global) = getComputedValue(decl)
+      builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+
+proc addValuesNormal*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
+  for decl in decls:
+    if not decl.important:
+      let (val, global) = getComputedValue(decl)
+      builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+
+proc addValues*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
+  for decl in decls:
+    let (val, global) = getComputedValue(decl)
+    if decl.important:
+      builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+    else:
+      builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+
+proc applyValue(vals: CSSComputedValues, prop: CSSPropertyType, val: CSSComputedValue, global: CSSGlobalValueType, parent: CSSComputedValues, previousOrigin: CSSComputedValues) =
+  let parentVal = if parent != nil:
+    parent[prop]
   else:
-    vals.applyValue(parent, val.t, vv.a, vv.b)
+    nil
+  case global
+  of VALUE_INHERIT:
+    if parentVal != nil:
+      vals[prop] = parentVal
+    else:
+      vals[prop] = getDefault(prop)
+  of VALUE_INITIAL:
+    vals[prop] = getDefault(prop)
+  of VALUE_UNSET:
+    if inherited(prop):
+      # inherit
+      if parentVal != nil:
+        vals[prop] = parentVal
+      else:
+        vals[prop] = getDefault(prop)
+    else:
+      # initial
+      vals[prop] = getDefault(prop)
+  of VALUE_REVERT:
+    if previousOrigin != nil:
+      vals[prop] = previousOrigin[prop]
+    else:
+      vals[prop] = getDefault(prop)
+  of VALUE_NOGLOBAL:
+    vals[prop] = val
 
 func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
   new(result)
@@ -896,3 +771,81 @@ func rootProperties*(): CSSComputedValues =
   new(result)
   for prop in CSSPropertyType:
     result[prop] = getDefault(prop)
+
+proc buildComputedValue(vals, parent, previousOrigin: CSSComputedValues, build: CSSComputedValueBuilder) =
+  let global = build.global
+  let val = build.val
+  case val.t
+  of PROPERTY_ALL:
+    if global != VALUE_NOGLOBAL:
+      for t in CSSPropertyType:
+        vals.applyValue(t, nil, global, parent, previousOrigin)
+  of PROPERTY_MARGIN:
+    let left = CSSComputedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
+    let right = CSSComputedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: val.length)
+    let top = CSSComputedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: val.length)
+    let bottom = CSSComputedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: val.length)
+    for val in [left, right, top, bottom]:
+      vals.applyValue(val.t, val, global, parent, previousOrigin)
+  of PROPERTY_PADDING:
+    let left = CSSComputedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: val.length)
+    let right = CSSComputedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: val.length)
+    let top = CSSComputedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: val.length)
+    let bottom = CSSComputedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: val.length)
+    for val in [left, right, top, bottom]:
+      vals.applyValue(val.t, val, global, parent, previousOrigin)
+  else:
+    vals.applyValue(val.t, val, global, parent, previousOrigin)
+
+func hasValues*(builder: CSSComputedValuesBuilder): bool =
+  for origin in CSSOrigin:
+    if builder.normalProperties[origin].len > 0:
+      return true
+    if builder.importantProperties[origin].len > 0:
+      return true
+  return false
+
+func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues =
+  new(result)
+  var previousOrigins: array[CSSOrigin, CSSComputedValues]
+  block:
+    let origin = ORIGIN_USER_AGENT
+    for build in builder.normalProperties[origin]:
+      result.buildComputedValue(builder.parent, nil, build)
+    previousOrigins[origin] = result.copyProperties()
+  block:
+    let origin = ORIGIN_USER
+    let prevOrigin = ORIGIN_USER_AGENT
+    for build in builder.normalProperties[origin]:
+      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+    previousOrigins[origin] = result.copyProperties() # save user origins so author can use them
+  block:
+    let origin = ORIGIN_AUTHOR
+    let prevOrigin = ORIGIN_USER
+    for build in builder.normalProperties[origin]:
+      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+    # no need to save user origins
+  block:
+    let origin = ORIGIN_AUTHOR
+    let prevOrigin = ORIGIN_USER
+    for build in builder.importantProperties[origin]:
+      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+    # important, so no need to save origins
+  block:
+    let origin = ORIGIN_USER
+    let prevOrigin = ORIGIN_USER_AGENT
+    for build in builder.importantProperties[origin]:
+      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+    # important, so no need to save origins
+  block:
+    let origin = ORIGIN_USER_AGENT
+    for build in builder.importantProperties[origin]:
+      result.buildComputedValue(builder.parent, nil, build)
+    # important, so no need to save origins
+  # set defaults
+  for prop in CSSPropertyType:
+    if result[prop] == nil:
+      if inherited(prop) and builder.parent != nil and builder.parent[prop] != nil:
+        result[prop] = builder.parent[prop]
+      else:
+        result[prop] = getDefault(prop)
