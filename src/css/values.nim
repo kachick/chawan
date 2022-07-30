@@ -39,10 +39,10 @@ type
 
   CSSDisplay* = enum
     DISPLAY_NONE, DISPLAY_INLINE, DISPLAY_BLOCK, DISPLAY_LIST_ITEM,
-    DISPLAY_INLINE_BLOCK, DISPLAY_TABLE, DISPLAY_TABLE_ROW_GROUP,
-    DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP,
-    DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN,
-    DISPLAY_TABLE_CELL
+    DISPLAY_INLINE_BLOCK, DISPLAY_TABLE, DISPLAY_INLINE_TABLE,
+    DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
+    DISPLAY_TABLE_FOOTER_GROUP, DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_ROW,
+    DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION
 
   CSSWhitespace* = enum
     WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE, WHITESPACE_PRE_LINE,
@@ -450,14 +450,15 @@ func cssDisplay(d: CSSDeclaration): CSSDisplay =
       of "inline": return DISPLAY_INLINE
       of "list-item": return DISPLAY_LIST_ITEM
       of "inline-block": return DISPLAY_INLINE_BLOCK
-      #of "table": return DISPLAY_TABLE
+      # of "table": return DISPLAY_TABLE
       # of "table-row": return DISPLAY_TABLE_ROW
       # of "table-cell": return DISPLAY_TABLE_CELL
       # of "table-column": return DISPLAY_TABLE_COLUMN
+      # of "table-column-group": return DISPLAY_TABLE_COLUMN_GROUP
+      # of "inline-table": return DISPLAY_INLINE_TABLE
       # of "table-row-group": return DISPLAY_TABLE_ROW_GROUP
       # of "table-header-group": return DISPLAY_TABLE_HEADER_GROUP
       # of "table-footer-group": return DISPLAY_TABLE_FOOTER_GROUP
-      # of "table-column-group": return DISPLAY_TABLE_COLUMN_GROUP
       of "none": return DISPLAY_NONE
       else: return DISPLAY_INLINE
   raise newException(CSSValueError, "Invalid display")

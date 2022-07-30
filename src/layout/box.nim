@@ -52,7 +52,9 @@ type
 
   TableRowBoxBuilder* = ref object of BoxBuilder
 
-  TableBoxBuilder* = ref object of BoxBuilder
+  TableCellBoxBuilder* = ref object of BoxBuilder
+
+  TableBoxBuilder* = ref object of BlockBoxBuilder
     rowgroups*: seq[TableRowGroupBoxBuilder]
 
   InlineAtom* = ref object of RootObj
