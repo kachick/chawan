@@ -1,3 +1,4 @@
+import algorithm
 import httpclient
 import options
 import os
@@ -67,6 +68,7 @@ type
     userstyle*: CSSStylesheet
     loader*: FileLoader
     markcolor*: CellColor
+    marks*: seq[Mark]
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -314,11 +316,11 @@ proc clearDisplay(buffer: Buffer) =
 
 proc refreshDisplay(buffer: Buffer) =
   var r: Rune
-  var y = 0
+  var y = 0 # y position on screen
   buffer.clearDisplay()
 
-  for line in buffer.lines[buffer.fromy..
-                           buffer.lastVisibleLine - 1]:
+  for by in buffer.fromy..buffer.lastVisibleLine - 1:
+    let line = buffer.lines[by] # by: y position in lines
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
 
@@ -362,8 +364,13 @@ proc refreshDisplay(buffer: Buffer) =
 
     # Then, for each cell that has a mark, override its formatting with that
     # specified by the mark.
+    var l = 0
+    while l < buffer.marks.len and buffer.marks[l].y < by:
+      inc l # linear search to find the first applicable mark
     let aw = buffer.width - (startw - buffer.fromx) # actual width
-    for mark in line.marks:
+    while l < buffer.marks.len and buffer.marks[l].y == by:
+      let mark = buffer.marks[l]
+      inc l
       if mark.x >= startw + aw or mark.x + mark.width < startw: continue
       for i in max(mark.x, startw)..<min(mark.x + mark.width, startw + aw):
         buffer.display[dls + i].format = mark.format
@@ -706,13 +713,14 @@ proc addMark*(buffer: Buffer, x, y, width: int): Mark =
   assert y < buffer.lines.len
   var format = newFormat()
   format.bgcolor = buffer.markcolor
-  result = Mark(x: x, width: width, format: format)
-  buffer.lines[y].marks.add(result)
+  result = Mark(x: x, y: y, width: width, format: format)
+  let previ = upperBound(buffer.marks, y, (proc(a: Mark, b: int): int = cmp(a.y, b)))
+  buffer.marks.insert(result, previ)
 
-proc removeMark*(buffer: Buffer, y: int, mark: Mark) =
-  let i = buffer.lines[y].marks.find(mark)
+proc removeMark*(buffer: Buffer, mark: Mark) =
+  let i = buffer.marks.find(mark)
   if i != -1:
-    buffer.lines[y].marks.delete(i)
+    buffer.marks.delete(i)
 
 proc cursorNextMatch(buffer: Buffer, regex: Regex, sy, ey: int, wrap = false): BufferMatch =
   for y in sy..ey:

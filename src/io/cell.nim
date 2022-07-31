@@ -35,10 +35,10 @@ type
   FlexibleLine* = object
     str*: string
     formats*: seq[FormatCell]
-    marks*: seq[Mark]
 
   Mark* = ref object
     x*: int
+    y*: int
     width*: int
     format*: Format
 

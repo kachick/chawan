@@ -340,10 +340,9 @@ proc isearch(client: Client) =
   var iput: string
   let cpos = client.buffer.cpos
   var mark: Mark
-  var my: int
   template del_mark() =
     if mark != nil:
-      client.buffer.removeMark(my, mark)
+      client.buffer.removeMark(mark)
 
   let status = readLine("/", iput, client.buffer.width, {}, false, (proc(state: var LineState): bool =
     del_mark
@@ -353,13 +352,16 @@ proc isearch(client: Client) =
       let match = client.buffer.cursorNextMatch(regex.get)
       if match.success:
         mark = client.buffer.addMark(match.x, match.y, match.str.width())
-        my = match.y
         client.buffer.redraw = true
         client.buffer.refreshBuffer(true)
         print(HVP(client.buffer.height + 1, 2))
         print(SGR())
       else:
         del_mark
+        client.buffer.redraw = true
+        client.buffer.refreshBuffer(true)
+        print(HVP(client.buffer.height + 1, 2))
+        print(SGR())
       return true
     false
   ))
@@ -377,10 +379,9 @@ proc isearchBack(client: Client) =
   var iput: string
   let cpos = client.buffer.cpos
   var mark: Mark
-  var my: int
   template del_mark() =
     if mark != nil:
-      client.buffer.removeMark(my, mark)
+      client.buffer.removeMark(mark)
   let status = readLine("?", iput, client.buffer.width, {}, false, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
@@ -389,13 +390,16 @@ proc isearchBack(client: Client) =
       let match = client.buffer.cursorPrevMatch(regex.get)
       if match.success:
         mark = client.buffer.addMark(match.x, match.y, match.str.width())
-        my = match.y
         client.buffer.redraw = true
         client.buffer.refreshBuffer(true)
         print(HVP(client.buffer.height + 1, 2))
         print(SGR())
       else:
         del_mark
+        client.buffer.redraw = true
+        client.buffer.refreshBuffer(true)
+        print(HVP(client.buffer.height + 1, 2))
+        print(SGR())
       return true
     false
   ))
