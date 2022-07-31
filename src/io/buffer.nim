@@ -1159,7 +1159,7 @@ proc click*(buffer: Buffer): Option[ClickAction] =
         var value = input.value
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'})
+        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'}, input.inputType == INPUT_PASSWORD)
         if status:
           input.value = value
           input.invalid = true
@@ -1215,7 +1215,7 @@ proc drawBuffer*(buffer: Buffer) =
         var outstr = ""
         #TODO TODO TODO renderhtml has broken format outputting
         #assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
-        while x < f.pos:
+        while x < f.pos and i < line.str.len: #TODO x < f.pos should be enough
           var r: Rune
           fastRuneAt(line.str, i, r)
           outstr &= r

@@ -345,7 +345,7 @@ proc isearch(client: Client) =
     if mark != nil:
       client.buffer.removeMark(my, mark)
 
-  let status = readLine("/", iput, client.buffer.width, {}, (proc(state: var LineState): bool =
+  let status = readLine("/", iput, client.buffer.width, {}, false, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
     client.buffer.cpos = cpos
@@ -381,7 +381,7 @@ proc isearchBack(client: Client) =
   template del_mark() =
     if mark != nil:
       client.buffer.removeMark(my, mark)
-  let status = readLine("?", iput, client.buffer.width, {}, (proc(state: var LineState): bool =
+  let status = readLine("?", iput, client.buffer.width, {}, false, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
     client.buffer.cpos = cpos
@@ -481,7 +481,7 @@ proc checkAuth(client: Client) =
     return
   client.statusMode()
   var password = ""
-  let pstatus = readLine("Password: ", password, client.buffer.width)
+  let pstatus = readLine("Password: ", password, client.buffer.width, hide = true)
   if not pstatus:
     client.needsauth = false
     return

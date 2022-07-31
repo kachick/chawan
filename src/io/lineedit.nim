@@ -20,7 +20,8 @@ type LineState* = object
   maxlen: int
   displen: int
   disallowed: set[char]
-  callback: proc(state: var LineState): bool {.closure.}
+  hide: bool
+  callback: proc(state: var LineState): bool
 
 func lwidth(r: Rune): int =
   if r.isControlChar():
@@ -84,7 +85,10 @@ proc redraw(state: var LineState) =
 
   state.begin()
   let os = state.news.substr(state.shift, state.shift + state.displen)
-  printesc($os)
+  if state.hide:
+    printesc('*'.repeat(os.lwidth()))
+  else:
+    printesc($os)
   state.space(max(state.maxlen - state.minlen - os.lwidth(), 0))
 
   state.begin()
@@ -117,7 +121,10 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune], disallowed: set[char
   if state.cursor >= state.news.len and state.news.lwidth(state.shift, state.cursor) + cs.lwidth() < state.displen:
     state.news &= cs
     state.cursor += cs.len
-    printesc($cs)
+    if state.hide:
+      printesc('*'.repeat(cs.lwidth()))
+    else:
+      printesc($cs)
   else:
     state.news.insert(cs, state.cursor)
     state.cursor += cs.len
@@ -125,7 +132,10 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune], disallowed: set[char
 
 proc readLine(state: var LineState): bool =
   printesc(state.prompt)
-  printesc(state.current)
+  if state.hide:
+    printesc('*'.repeat(state.current.lwidth()))
+  else:
+    printesc(state.current)
 
   while true:
     if not state.feedNext:
@@ -259,8 +269,8 @@ proc readLine(state: var LineState): bool =
       state.feedNext = true
 
 proc readLine*(prompt: string, current: var string, termwidth: int,
-               disallowed: set[char],
-               callback: proc(state: var LineState): bool {.closure.}): bool =
+               disallowed: set[char], hide: bool,
+               callback: proc(state: var LineState): bool): bool =
   var state: LineState
 
   state.prompt = prompt
@@ -272,6 +282,7 @@ proc readLine*(prompt: string, current: var string, termwidth: int,
   state.displen = state.maxlen - 1
   state.disallowed = disallowed
   state.callback = callback
+  state.hide = hide
 
   if state.readLine():
     current = $state.news
@@ -279,5 +290,5 @@ proc readLine*(prompt: string, current: var string, termwidth: int,
   return false
 
 proc readLine*(prompt: string, current: var string, termwidth: int,
-               disallowed: set[char] = {}): bool =
-  readLine(prompt, current, termwidth, disallowed, (proc(state: var LineState): bool = false))
+               disallowed: set[char] = {}, hide = false): bool =
+  readLine(prompt, current, termwidth, disallowed, hide, (proc(state: var LineState): bool = false))
