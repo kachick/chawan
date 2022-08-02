@@ -1215,15 +1215,14 @@ proc drawBuffer*(buffer: Buffer) =
   var format = newFormat()
   for line in buffer.lines:
     if line.formats.len == 0:
-      print(line.str & "\r\n")
+      print(line.str & "\n")
     else:
       var x = 0
       var i = 0
       for f in line.formats:
         var outstr = ""
-        #TODO TODO TODO renderhtml has broken format outputting
         #assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
-        while x < f.pos and i < line.str.len: #TODO x < f.pos should be enough
+        while x < f.pos:
           var r: Rune
           fastRuneAt(line.str, i, r)
           outstr &= r
@@ -1232,7 +1231,7 @@ proc drawBuffer*(buffer: Buffer) =
         print(format.processFormat(f.format))
       print(line.str.substr(i))
       print(format.processFormat(newFormat()))
-      print("\r\n")
+      print("\n")
 
 proc refreshBuffer*(buffer: Buffer, peek = false) =
   buffer.title = buffer.getTitle()

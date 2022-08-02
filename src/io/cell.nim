@@ -28,6 +28,8 @@ type
     format*: Format
     node*: StyledNode
 
+  # A FormatCell *starts* a new terminal formatting context.
+  # If no FormatCell exists before a given cell, the default formatting is used.
   FormatCell* = object of Cell
     pos*: int
     computed*: ComputedFormat
@@ -71,7 +73,6 @@ template `strike=`*(f: var Format, b: bool) = flag_template f, b, FLAG_STRIKE
 template `overline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_OVERLINE
 template `blink=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BLINK
 
-#TODO ?????
 func `==`*(a: FixedCell, b: FixedCell): bool =
   return a.format == b.format and
     a.runes == b.runes and
@@ -89,6 +90,7 @@ func width*(cell: FixedCell): int =
 func newFormat*(): Format =
   return Format(fgcolor: defaultColor, bgcolor: defaultColor)
 
+# Get the first format cell after pos, if any.
 func findFormatN*(line: FlexibleLine, pos: int): int =
   var i = 0
   while i < line.formats.len:
@@ -111,46 +113,21 @@ func findNextFormat*(line: FlexibleLine, pos: int): FormatCell =
   else:
     result.pos = -1
 
-func subformats*(formats: seq[FormatCell], pos: int): seq[FormatCell] =
-  var i = 0
-  while i < formats.len:
-    if formats[i].pos >= pos:
-      if result.len == 0 and i > 0:
-        var f = formats[i - 1]
-        f.pos = 0
-        result.add(f)
-      var f = formats[i]
-      f.pos -= pos
-      result.add(f)
-    inc i
-
-  if result.len == 0 and i > 0:
-    var f = formats[i - 1]
-    f.pos = 0
-    result.add(f)
-
-proc setLen*(line: var FlexibleLine, len: int) =
-  for i in 0 ..< line.formats.len:
-    if line.formats[i].pos >= len:
-      line.formats.setLen(i)
-      break
-  line.str.setLen(len)
-  #line.formats = line.formats.filter((x) => x.pos < len)
-
-proc add*(a: var FlexibleLine, b: FlexibleLine) =
-  let l = a.str.len
-  a.formats.add(b.formats.map((x) => FormatCell(format: x.format, node: x.node, pos: l + x.pos)))
-  a.str &= b.str
-
 proc addLine*(grid: var FlexibleGrid) =
   grid.add(FlexibleLine())
 
+proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format, computed: ComputedFormat = nil) =
+  if computed == nil:
+    line.formats.insert(FormatCell(format: format, pos: pos), i)
+  else:
+    line.formats.insert(FormatCell(format: format, computed: computed, node: computed.node, pos: pos), i)
+
 proc addFormat*(line: var FlexibleLine, pos: int, format: Format) =
-  line.formats.add(FormatCell(format: format, pos: line.str.len))
+  line.formats.add(FormatCell(format: format, pos: pos))
 
 proc addFormat*(line: var FlexibleLine, pos: int, format: Format, computed: ComputedFormat) =
-  if computed != nil and line.formats.len > 0 and line.formats[^1].computed == computed and line.formats[^1].format.bgcolor != format.bgcolor:
-    return
+  #if computed != nil and line.formats.len > 0 and line.formats[^1].computed == computed and line.formats[^1].format.bgcolor != format.bgcolor:
+  #  return
   if computed == nil:
     line.formats.add(FormatCell(format: format, pos: pos))
   else:

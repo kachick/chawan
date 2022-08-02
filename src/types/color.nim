@@ -211,3 +211,9 @@ converter toRGBColor*(i: RGBAColor): RGBColor =
 
 converter toRGBAColor*(i: RGBColor): RGBAColor =
   return RGBAColor(uint32(i) or 0xFF000000u32)
+
+func `$`*(color: CellColor): string =
+  if color.rgb:
+    "r" & $color.rgbcolor.r & "g" & $color.rgbcolor.g & "b" & $color.rgbcolor.b
+  else:
+    "tcolor" & $color.color

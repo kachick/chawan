@@ -30,97 +30,128 @@ func formatFromWord(computed: ComputedFormat): Format =
     result.blink = true
   else: discard
 
-proc setFormats(line: var FlexibleLine, ox, newwidth, oldwidth: int,
-                newformat: Format, oformats: seq[FormatCell], computed: ComputedFormat = nil) {.inline.} =
-  let obg = newformat.bgcolor
-  var newformat = newformat
-  for format in oformats:
-    #assert format.pos < ox + oldwidth #TODO TODO TODO 
-    if format.format.bgcolor != newformat.bgcolor:
-      newformat.bgcolor = format.format.bgcolor
-
-      if format.pos < ox:
-        line.addFormat(ox, newformat, computed)
-      else:
-        line.addFormat(format.pos, newformat, computed)
-
-  if ox + oldwidth < ox + newwidth:
-    newformat.bgcolor = obg
-
-    #TODO this is probably a workaround for a bug...
-    if line.formats.len > 0 and line.formats[^1].pos == ox + oldwidth:
-      line.formats[^1].format.bgcolor = obg
-    else:
-      line.addFormat(ox + oldwidth, newformat, computed)
-
-proc setText(lines: var FlexibleGrid, linestr: string, format: ComputedFormat, x, y: int) {.inline.} =
-  var r: Rune
-  var x = x
-  var y = y
+proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, x, y: int) {.inline.} =
   var i = 0
-
+  var r: Rune
+  # make sure we have line y
   while lines.len <= y:
     lines.addLine()
 
-  var cx = 0
+  var cx = 0 # first x of new string (before padding)
   while cx < x and i < lines[y].str.len:
     fastRuneAt(lines[y].str, i, r)
     cx += r.width()
 
   let ostr = lines[y].str.substr(i)
-  let oformats = lines[y].formats.subformats(i)
-  lines[y].setLen(i)
-
-  var nx = cx
-  let oldstrwidth = ostr.width()
-  if nx < x:
-    let spacelength = x - nx
-    var spaceformat = newFormat()
-    let str = ' '.repeat(spacelength)
-    lines[y].setFormats(nx, spacelength, oldstrwidth, spaceformat, oformats)
-
-    lines[y].str &= str
-    i += spacelength
-    nx = x
-
-  var wordformat = format.formatFromWord()
-  let newstrwidth = linestr.width()
-  lines[y].setFormats(nx, newstrwidth, oldstrwidth, wordformat, oformats, format)
-  nx += newstrwidth
+  lines[y].str.setLen(i)
+  var linestrwidth = 0
+  let padwidth = x - cx
+  if padwidth > 0:
+    lines[y].str &= ' '.repeat(padwidth)
+    linestrwidth += padwidth
 
   lines[y].str &= linestr
+  linestrwidth += linestr.width()
 
   i = 0
-  while cx < nx and i < ostr.len:
+  var nx = x # last x of new string
+  while nx < x + linestrwidth and i < ostr.len:
     fastRuneAt(ostr, i, r)
-    cx += r.width()
+    nx += r.width()
 
   if i < ostr.len:
-    let oline = FlexibleLine(str: ostr.substr(i), formats: oformats.subformats(i))
-    lines[y].add(oline)
+    lines[y].str &= ostr.substr(i)
+
+  # Skip unchanged formats before the new string
+  var fi = lines[y].findFormatN(cx) - 1
+
+  if padwidth > 0:
+    # Replace formats for padding
+    var padformat = newFormat()
+    if fi == -1:
+      # No formats
+      inc fi # insert after first format (meaning fi = 0)
+      lines[y].insertFormat(cx, fi, padformat)
+    else:
+      # First format's pos may be == cx here.
+      if lines[y].formats[fi].pos == cx:
+        padformat.bgcolor = lines[y].formats[fi].format.bgcolor
+        lines[y].formats.delete(fi)
+        lines[y].insertFormat(cx, fi, padformat)
+      else:
+        # First format < cx => split it up
+        assert lines[y].formats[fi].pos < cx
+        padformat.bgcolor = lines[y].formats[fi].format.bgcolor
+        inc fi # insert after first format
+        lines[y].insertFormat(cx, fi, padformat)
+    inc fi # skip last format
+    while fi < lines[y].formats.len and lines[y].formats[fi].pos < x:
+      # Other formats must be > cx => replace them
+      padformat.bgcolor = lines[y].formats[fi].format.bgcolor
+      let px = lines[y].formats[fi].pos
+      lines[y].formats.delete(fi)
+      lines[y].insertFormat(px, fi, padformat)
+      inc fi
+    dec fi # go back to previous format, so that pos <= x
+    assert lines[y].formats[fi].pos <= x
+
+  # Now for the text's formats:
+  var format = cformat.formatFromWord()
+  if fi == -1:
+    # No formats => just insert a new format at 0
+    inc fi
+    lines[y].insertFormat(x, fi, format, cformat)
+  else:
+    # First format's pos may be == x here.
+    if lines[y].formats[fi].pos == x:
+      # Replace.
+      format.bgcolor = lines[y].formats[fi].format.bgcolor
+      lines[y].formats.delete(fi)
+      lines[y].insertFormat(x, fi, format, cformat)
+    else:
+      # First format's pos < x => split it up.
+      assert lines[y].formats[fi].pos < x
+      format.bgcolor = lines[y].formats[fi].format.bgcolor
+      inc fi # insert after first format
+      lines[y].insertFormat(x, fi, format, cformat)
+  inc fi # skip last format
+
+  while fi < lines[y].formats.len and lines[y].formats[fi].pos < nx:
+    # Other formats must be > x => replace them
+    format.bgcolor = lines[y].formats[fi].format.bgcolor
+    let px = lines[y].formats[fi].pos
+    lines[y].formats.delete(fi)
+    lines[y].insertFormat(px, fi, format, cformat)
+    inc fi
+
+  dec fi # go back to previous format, so that pos <= nx
+  assert lines[y].formats[fi].pos <= nx
+  # That's it!
 
 proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
   var r: Rune
 
-  var y = (y + word.offset.y) div term.ppl
-  if y < 0: y = 0
+  var y = (y + word.offset.y) div term.ppl # y cell
+  if y < 0: return # y is outside the canvas, no need to draw
 
-  var x = (x + word.offset.x) div term.ppc
+  var x = (x + word.offset.x) div term.ppc # x cell
   var i = 0
   while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
     x += r.width()
+  if x < 0: return # highest x is outside the canvas, no need to draw
   let linestr = word.str.substr(i)
 
   lines.setText(linestr, word.format, x, y)
 
 proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term: TermAttributes) =
-  var y = (y + spacing.offset.y) div term.ppl
-  if y < 0: y = 0
+  var y = (y + spacing.offset.y) div term.ppl # y cell
+  if y < 0: return # y is outside the canvas, no need to draw
 
-  var x = (x + spacing.offset.x) div term.ppc
-  let width = spacing.width div term.ppc
+  var x = (x + spacing.offset.x) div term.ppc # x cell
+  let width = spacing.width div term.ppc # cell width
 
+  if x + width < 0: return # highest x is outside the canvas, no need to draw
   var i = 0
   if x < 0:
     i -= x
@@ -133,32 +164,32 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
   let color = color.cellColor()
 
   var starty = starty div term.ppl
-  if starty < 0: starty = 0
-
   var endy = endy div term.ppl
-  if endy < 0: endy = 0
 
   if starty > endy:
-    let swap = endy
-    endy = starty
-    starty = swap
+    swap(starty, endy)
+
+  if endy <= 0: return # highest y is outside canvas, no need to paint
+  if starty < 0: starty = 0
+  if starty == endy: return # height is 0, no need to paint
 
   var startx = startx div term.ppc
-  if starty < 0: starty = 0
 
   var endx = endx div term.ppc
   if endy < 0: endy = 0
 
   if startx > endx:
-    let swap = endx
-    endx = startx
-    startx = swap
+    swap(startx, endx)
 
+  if endx <= 0: return # highest x is outside the canvas, no need to paint
+  if startx < 0: startx = 0
+  if startx == endx: return # width is 0, no need to paint
+
+  # make sure we have line y
   while lines.len <= endy:
     lines.addLine()
 
-  var y = starty
-  while y < endy:
+  for y in starty..<endy:
     # Make sure line.width() >= endx
     let linewidth = lines[y].width()
     if linewidth < endx:
@@ -171,7 +202,10 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
       lines[y].addFormat(startx, newFormat())
     else:
       let fi = lines[y].findFormatN(startx) - 1
-      if lines[y].formats[fi].pos == startx:
+      if fi == -1:
+        # No format <= startx
+        lines[y].insertFormat(startx, 0, newFormat())
+      elif lines[y].formats[fi].pos == startx:
         # Last format equals startx => next comes after, nothing to be done
         discard
       else:
@@ -183,23 +217,25 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
     # Process formatting around endx
     assert lines[y].formats.len > 0
     let fi = lines[y].findFormatN(endx) - 1
-    if fi == lines[y].formats.len - 1:
-      # Last format => nothing to be done
+    if fi == -1:
+      # Last format > endx -> nothing to be done
       discard
     else:
-      # Format ends before endx => separate format from endx
-      let copy = lines[y].formats[fi]
-      lines[y].formats[fi].pos = endx
-      lines[y].formats.insert(copy, fi + 1)
+      if lines[y].formats[fi].pos != endx:
+        let copy = lines[y].formats[fi]
+        if linewidth != endx:
+          lines[y].formats[fi].pos = endx
+          lines[y].formats.insert(copy, fi)
+        else:
+          lines[y].formats.delete(fi)
+          lines[y].formats.insert(copy, fi)
 
     # Paint format backgrounds between startx and endx
     for fi in 0..lines[y].formats.high:
-      if lines[y].formats[fi].pos > endx:
+      if lines[y].formats[fi].pos >= endx:
         break
       if lines[y].formats[fi].pos >= startx:
         lines[y].formats[fi].format.bgcolor = color
-
-    inc y
 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, term: TermAttributes)
 
