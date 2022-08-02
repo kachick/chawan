@@ -389,6 +389,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
           state = SPECIAL_AUTHORITY_SLASHES_STATE
         elif has(1) and c(1) == '/':
           state = PATH_OR_AUTHORITY_STATE
+          inc pointer
         else:
           url.path = EmptyPath
           state = OPAQUE_PATH_STATE
@@ -554,7 +555,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
             #TODO validation error
             return none(Url)
           let port = cast[uint16](i).some
-          url.port = if url.default_port == port: none(uint16) else: port
+          url.port = if url.is_special and url.default_port == port: none(uint16) else: port
           buffer = ""
         if override:
           return

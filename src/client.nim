@@ -205,11 +205,11 @@ proc gotoUrl(client: Client, url: string, click = none(ClickAction), prevurl = n
   client.gotoUrl(newurl.get, click, prevurl, force, ctype)
 
 # When the user has passed a partial URL as an argument, they might've meant
-# several things:
-# * the URL as it is
+# either:
 # * file://$PWD/<file>
 # * https://<url>
-# So we attempt to visit each of them, in the order described above.
+# So we attempt to load both, and see what works.
+# (TODO: make this optional)
 proc loadUrl(client: Client, url: string, ctype = "") =
   let firstparse = parseUrl(url)
   if firstparse.issome:
@@ -225,7 +225,7 @@ proc loadUrl(client: Client, url: string, ctype = "") =
         client.gotoUrl(percentEncode(url, LocalPathPercentEncodeSet), none(ClickAction), cdir, true, ctype)
       except LoadError:
         # attempt to load remote page
-        client.gotoUrl("http://" & url, none(ClickAction), none(Url), true, ctype)
+        client.gotoUrl("https://" & url, none(ClickAction), none(Url), true, ctype)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reloadPage(client: Client) =
