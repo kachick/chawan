@@ -10,7 +10,6 @@ import utils/twtstr
 
 type
   FileLoader* = ref object
-    http: HttpClient
     headers*: HttpHeaders
 
   LoadResult* = object
@@ -34,7 +33,6 @@ const DefaultHeaders = {
 
 proc newFileLoader*(headers: HttpHeaders): FileLoader =
   new(result)
-  result.http = newHttpClient()
   result.headers = headers
 
 proc newFileLoader*(): FileLoader =

@@ -647,7 +647,8 @@ proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
       discard state.consumeAtRule()
     elif t == CSS_IDENT_TOKEN:
       var tempList: seq[CSSParsedItem]
-      tempList.add(CSSToken(t))
+      let tok = CSSToken(t)
+      tempList.add(tok)
       while state.has() and state.peek() != CSS_SEMICOLON_TOKEN:
         tempList.add(state.consumeComponentValue())
 

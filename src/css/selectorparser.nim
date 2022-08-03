@@ -1,3 +1,4 @@
+import strutils
 import unicode
 
 import css/cssparser
@@ -62,6 +63,60 @@ type
   SelectorList* = ref object
     sels*: seq[Selector]
     pseudo*: PseudoElem
+
+# For debugging
+proc tostr(pclass: PseudoClass): string =
+  return ($pclass).split('_')[1..^1].join("-").tolower()
+
+proc tostr(pselem: PseudoElem): string =
+  return ($pselem).split('_')[1..^1].join("-").tolower()
+
+proc `$`*(sellist: SelectorList): string
+
+proc `$`*(sel: Selector): string =
+  case sel.t
+  of TYPE_SELECTOR:
+    return tagName(sel.tag)
+  of ID_SELECTOR:
+    return '#' & sel.id
+  of ATTR_SELECTOR:
+    return '[' & sel.attr & sel.rel & sel.value & ']'
+  of CLASS_SELECTOR:
+    return '.' & sel.class
+  of UNIVERSAL_SELECTOR:
+    return "*"
+  of PSEUDO_SELECTOR:
+    return ':' & sel.pseudo.tostr()
+  of PSELEM_SELECTOR:
+    return "::" & sel.elem.tostr()
+  of FUNC_SELECTOR:
+    result = ':' & sel.name & '('
+    for fsel in sel.fsels:
+      result &= $fsel
+      if fsel != sel.fsels[^1]:
+        result &= ','
+    result &= ')'
+  of COMBINATOR_SELECTOR:
+    var delim: char
+    case sel.ct
+    of DESCENDANT_COMBINATOR: delim = ' '
+    of CHILD_COMBINATOR: delim = '>'
+    of NEXT_SIBLING_COMBINATOR: delim = '+'
+    of SUBSEQ_SIBLING_COMBINATOR: delim = '~'
+    for slist in sel.csels:
+      result &= $slist
+      if slist != sel.csels[^1]:
+        result &= delim
+
+proc `$`*(sellist: SelectorList): string =
+  for sel in sellist.sels:
+    result &= $sel
+  case sellist.pseudo
+  of PSEUDO_BEFORE:
+    result &= "::before"
+  of PSEUDO_AFTER:
+    result &= "::after"
+  else: discard
 
 proc add(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
 proc add(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
@@ -150,6 +205,11 @@ proc addSelectorList(state: var SelectorParser) =
     state.selectors[^1].add(state.combinator)
     state.combinator = nil
   state.selectors.add(SelectorList())
+
+func getSelectorLists(state: var SelectorParser): seq[SelectorList] =
+  result = state.selectors
+  if state.combinator != nil:
+    result[^1].add(state.combinator)
 
 proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csstoken: CSSToken) =
   if csstoken.tokenType in {CSS_IDENT_TOKEN, CSS_HASH_TOKEN,
@@ -326,7 +386,7 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  fun.fsels = state.selectors
+  fun.fsels = state.getSelectorLists()
   state.selectors = osels
   state.combinator = ocomb
 

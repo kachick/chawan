@@ -62,6 +62,7 @@ func getInputTypeMap(): Table[string, InputType] =
 const tagTypeMap = getTagTypeMap()
 const inputTypeMap = getInputTypeMap()
 
+
 func tagType*(s: string): TagType =
   if tagTypeMap.hasKey(s):
     return tagTypeMap[s]
@@ -73,6 +74,14 @@ func inputType*(s: string): InputType =
     return inputTypeMap[s]
   else:
     return INPUT_UNKNOWN
+
+const tagNameMap = (func(): Table[TagType, string] =
+  for k, v in tagTypeMap:
+    result[v] = k
+)()
+
+func tagName*(t: TagType): string =
+  return tagNameMap[t]
 
 const SelfClosingTagTypes* = {
   TAG_LI, TAG_P

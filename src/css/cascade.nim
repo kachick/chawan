@@ -145,15 +145,17 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
     if cachedChild != nil and cachedChild.isValid():
       if cachedChild.t == STYLED_ELEMENT:
         if cachedChild.pseudo == PSEUDO_NONE:
+          # We can't just copy cachedChild.children from the previous pass, as
+          # any child could be invalid.
           styledChild = styledParent.newStyledElement(Element(cachedChild.node), cachedChild.computed, cachedChild.depends)
         else:
-          styledChild = styledParent.newStyledElement(cachedChild.pseudo, cachedChild.computed, cachedChild.depends)
-          styledChild.children = cachedChild.children #TODO does this actually refresh pseudo elems when needed?
+          # Pseudo elements can't have invalid children.
+          styledChild = cachedChild
+          styledChild.parent = styledParent
       else:
         # Text
-        styledChild = styledParent.newStyledText(cachedChild.text)
-        styledChild.pseudo = cachedChild.pseudo
-        styledChild.node = cachedChild.node
+        styledChild = cachedChild
+        styledChild.parent = styledParent
       if styledParent == nil:
         # Root element
         result = styledChild
@@ -199,10 +201,17 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
     if styledChild != nil and styledChild.t == STYLED_ELEMENT and styledChild.node != nil:
       styledChild.applyDependValues()
+      # i points to the child currently being inspected.
+      var i = if cachedChild != nil:
+        cachedChild.children.len - 1
+      else:
+        -1
       template stack_append(styledParent: StyledNode, child: Node) =
         if cachedChild != nil:
           var cached: StyledNode
-          for it in cachedChild.children:
+          while i >= 0:
+            let it = cachedChild.children[i]
+            dec i
             if it.node == child:
               cached = it
               break
@@ -213,16 +222,22 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       template stack_append(styledParent: StyledNode, ps: PseudoElem) =
         if cachedChild != nil:
           var cached: StyledNode
-          for it in cachedChild.children:
+          let oldi = i
+          while i >= 0:
+            let it = cachedChild.children[i]
+            dec i
             if it.pseudo == ps:
               cached = it
               break
           # When calculating pseudo-element rules, their dependencies are added
-          # to their parent's dependency list, which in turn invalidates the
-          # parent and thus recalculates all pseudo-elements.
+          # to their parent's dependency list; so invalidating a pseudo-element
+          # invalidates its parent too, which in turn automatically rebuilds
+          # the pseudo-element.
           # In other words, we can just do this:
           if cached != nil:
             styledStack.add((styledParent, nil, ps, cached))
+          else:
+            i = oldi # move pointer back to where we started
         else:
           styledStack.add((styledParent, nil, ps, nil))
 
