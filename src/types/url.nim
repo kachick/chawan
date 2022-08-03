@@ -815,13 +815,13 @@ func serialize_unicode_dos*(path: UrlPath): string {.inline.} =
     result &= percentDecode(s)
     inc i
 
-func serialize*(url: Url, excludefragment = false): string =
+func serialize*(url: Url, excludefragment = false, excludepassword = false): string =
   result = url.scheme & ':'
   if url.host.issome:
     result &= "//"
     if url.includes_credentials:
       result &= url.username
-      if url.password != "":
+      if not excludepassword and url.password != "":
         result &= ':' & url.password
       result &= '@'
     result &= url.host.get.serialize

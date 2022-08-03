@@ -308,7 +308,7 @@ func getTitle(buffer: Buffer): string =
     if result != "": return result
   if buffer.ispipe:
     return "*pipe*"
-  return $buffer.location
+  return buffer.location.serialize(excludepassword = true)
 
 proc clearDisplay(buffer: Buffer) =
   buffer.prevdisplay = buffer.display
