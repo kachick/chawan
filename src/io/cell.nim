@@ -2,7 +2,6 @@ import sequtils
 import streams
 import strutils
 import sugar
-import unicode
 
 import css/stylednode
 import layout/box
@@ -47,7 +46,7 @@ type
   FlexibleGrid* = seq[FlexibleLine]
 
   FixedCell* = object of Cell
-    runes*: seq[Rune]
+    str*: string
 
   FixedGrid* = seq[FixedCell]
 
@@ -75,7 +74,7 @@ template `blink=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BLINK
 
 func `==`*(a: FixedCell, b: FixedCell): bool =
   return a.format == b.format and
-    a.runes == b.runes and
+    a.str == b.str and
     a.node == b.node
 
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
@@ -85,7 +84,7 @@ func width*(line: FlexibleLine): int =
   return line.str.width()
 
 func width*(cell: FixedCell): int =
-  return cell.runes.width()
+  return cell.str.width()
 
 func newFormat*(): Format =
   return Format(fgcolor: defaultColor, bgcolor: defaultColor)

@@ -100,7 +100,7 @@ func generateFullOutput(buffer: Buffer): string =
       w = 0
 
     result &= format.processFormat(cell.format)
-    result &= $cell.runes
+    result &= cell.str
 
     w += cell.width()
     inc x
@@ -132,7 +132,7 @@ func generateSwapOutput(buffer: Buffer): string =
       line = ""
     lr = lr or (curr[i] != prev[i])
     line &= format.processFormat(curr[i].format)
-    line &= $curr[i].runes
+    line &= curr[i].str
     inc i
     inc x
   if lr:
@@ -185,7 +185,7 @@ func generateStatusMessage*(buffer: Buffer): string =
   var w = 0
   for cell in buffer.statusmsg:
     result &= format.processFormat(cell.format)
-    result &= $cell.runes
+    result &= cell.str
     w += cell.width()
   if w < buffer.width:
     result &= EL()
@@ -210,7 +210,7 @@ func acursory(buffer: Buffer): int =
 func cellOrigin(buffer: Buffer, x, y: int): int =
   let row = y * buffer.width
   var ox = x
-  while ox > 0 and buffer.display[row + ox].runes.len == 0:
+  while ox > 0 and buffer.display[row + ox].str.len == 0:
     dec ox
   return ox
 
@@ -336,7 +336,7 @@ proc refreshDisplay(buffer: Buffer) =
     var k = 0
     if w > buffer.fromx:
       while k < w - buffer.fromx:
-        buffer.display[dls + k].runes.add(Rune(' '))
+        buffer.display[dls + k].str &= ' '
         inc k
 
     var cf = line.findFormat(w)
@@ -354,7 +354,7 @@ proc refreshDisplay(buffer: Buffer) =
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      buffer.display[dls + k].runes.add(r)
+      buffer.display[dls + k].str &= r
       if cf.pos != -1:
         buffer.display[dls + k].format = cf.format
         buffer.display[dls + k].node = cf.node
@@ -896,10 +896,9 @@ proc writeStatusMessage(buffer: Buffer, str: string, format: Format = Format()) 
   for r in str.runes:
     i += r.width()
     if i >= buffer.statusmsg.len:
-      buffer.statusmsg[^1].runes.setLen(0)
-      buffer.statusmsg[^1].runes.add(Rune('$'))
+      buffer.statusmsg[^1].str = "$"
       break
-    buffer.statusmsg[i].runes.add(r)
+    buffer.statusmsg[i].str &= r
     buffer.statusmsg[i].format = format
 
 proc statusMsgForBuffer(buffer: Buffer) =
