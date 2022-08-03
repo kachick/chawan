@@ -476,33 +476,41 @@ proc input(client: Client) =
   of ACTION_SEARCH_PREV: client.searchPrev()
   else: discard
 
+proc followRedirect(client: Client)
+
 proc checkAuth(client: Client) =
-  client.statusMode()
-  var username = ""
-  let ustatus = readLine("Username: ", username, client.buffer.width)
-  if not ustatus:
-    client.needsauth = false
-    return
-  client.statusMode()
-  var password = ""
-  let pstatus = readLine("Password: ", password, client.buffer.width, hide = true)
-  if not pstatus:
-    client.needsauth = false
-    return
-  var url = client.buffer.location
-  url.username = username
-  url.password = password
-  var buf = client.buffer
-  client.gotoUrl(url, prevurl = some(client.buffer.location))
-  discardBuffer(buf)
+  if client.needsauth:
+    client.buffer.refreshBuffer()
+    client.statusMode()
+    var username = ""
+    let ustatus = readLine("Username: ", username, client.buffer.width)
+    if not ustatus:
+      client.needsauth = false
+      return
+    client.statusMode()
+    var password = ""
+    let pstatus = readLine("Password: ", password, client.buffer.width, hide = true)
+    if not pstatus:
+      client.needsauth = false
+      return
+    var url = client.buffer.location
+    url.username = username
+    url.password = password
+    var buf = client.buffer
+    client.gotoUrl(url, prevurl = some(client.buffer.location))
+    discardBuffer(buf)
+    client.followRedirect()
 
 proc followRedirect(client: Client) =
-  if client.redirecturl.issome:
+  while client.redirecturl.issome:
+    client.buffer.refreshBuffer()
     var buf = client.buffer
     let redirecturl = client.redirecturl.get
     client.redirecturl = none(Url)
     client.gotoUrl(redirecturl, prevurl = some(client.buffer.location))
     discardBuffer(buf)
+    if client.needsauth:
+      client.checkAuth()
 
 proc inputLoop(client: Client) =
   while true:
@@ -512,13 +520,11 @@ proc inputLoop(client: Client) =
       g_client.buffer.redraw = true
       g_client.buffer.reshape = false
       g_client.inputLoop())
+    client.followRedirect()
+    client.checkAuth()
     client.buffer.refreshBuffer()
-    while client.redirecturl.issome:
-      client.followRedirect()
-      client.buffer.refreshBuffer()
     if client.needsauth: # Unauthorized
       client.checkAuth()
-      client.buffer.refreshBuffer()
     try:
       client.input()
     except ActionError as e:

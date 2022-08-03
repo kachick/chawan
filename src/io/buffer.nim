@@ -1245,7 +1245,9 @@ proc refreshBuffer*(buffer: Buffer, peek = false) =
     buffer.displayBuffer()
     buffer.redraw = false
 
-  buffer.updateHover()
+  if not peek:
+    buffer.updateHover()
+
   if buffer.reshape:
     buffer.render()
     buffer.reshape = false
