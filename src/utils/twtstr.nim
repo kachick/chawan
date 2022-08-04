@@ -120,6 +120,14 @@ func toAsciiLower*(str: string): string =
   for i in 0..str.high:
     result[i] = str[i].tolower()
 
+func toHeaderCase*(str: string): string =
+  result = str
+  var flip = true
+  for i in 0..str.high:
+    if flip:
+      result[i] = result[i].toUpperAscii()
+    flip = result[i] == '-'
+
 func startsWithNoCase*(str, prefix: string): bool =
   if str.len < prefix.len: return false
   # prefix.len is always lower

@@ -1,5 +1,4 @@
 import algorithm
-import httpclient
 import options
 import os
 import streams
@@ -935,7 +934,7 @@ type
     httpmethod*: HttpMethod
     mimetype*: string
     body*: string
-    multipart*: MultipartData
+    multipart*: MimeData
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): Table[string, string] =
@@ -1029,7 +1028,7 @@ proc makeCRLF(s: string): string =
       result &= s[i]
     inc i
 
-proc serializeMultipartFormData(kvs: Table[string, string]): MultipartData =
+proc serializeMultipartFormData(kvs: Table[string, string]): MimeData =
   new(result)
   for name, value in kvs:
     let name = makeCRLF(name)
@@ -1064,10 +1063,10 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
     #TODO
     return none(ClickAction)
   let httpmethod = if formmethod == FORM_METHOD_GET:
-    HttpGet
+    HTTP_GET
   else:
     assert formmethod == FORM_METHOD_POST
-    HttpPost
+    HTTP_POST
 
   #let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
   #  submitter.attr("formtarget")
@@ -1083,7 +1082,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
   template submitAsEntityBody() =
     var body: string
     var mimetype: string
-    var multipart: MultipartData
+    var multipart: MimeData
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
       body = serializeApplicationXWWFormUrlEncoded(entrylist)
@@ -1131,7 +1130,7 @@ proc click*(buffer: Buffer): Option[ClickAction] =
       set_focus clickable
     of TAG_A:
       restore_focus
-      return ClickAction(url: HTMLAnchorElement(clickable).href, httpmethod: HttpGet).some
+      return ClickAction(url: HTMLAnchorElement(clickable).href, httpmethod: HTTP_GET).some
     of TAG_OPTION:
       let option = HTMLOptionElement(clickable)
       let select = option.select
