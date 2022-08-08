@@ -933,8 +933,8 @@ type
     url*: string
     httpmethod*: HttpMethod
     mimetype*: string
-    body*: string
-    multipart*: MimeData
+    body*: Option[string]
+    multipart*: Option[MimeData]
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): Table[string, string] =
@@ -1029,7 +1029,6 @@ proc makeCRLF(s: string): string =
     inc i
 
 proc serializeMultipartFormData(kvs: Table[string, string]): MimeData =
-  new(result)
   for name, value in kvs:
     let name = makeCRLF(name)
     let value = makeCRLF(value)
@@ -1080,18 +1079,18 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
     return ClickAction(url: $parsedaction, httpmethod: httpmethod).some
 
   template submitAsEntityBody() =
-    var body: string
     var mimetype: string
-    var multipart: MimeData
+    var body = none(string)
+    var multipart = none(MimeData)
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
-      body = serializeApplicationXWWFormUrlEncoded(entrylist)
+      body = serializeApplicationXWWFormUrlEncoded(entrylist).some
       mimeType = $enctype
     of FORM_ENCODING_TYPE_MULTIPART:
-      multipart = serializeMultipartFormData(entrylist) 
+      multipart = serializeMultipartFormData(entrylist).some
       mimetype = $enctype
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
-      body = serializePlainTextFormData(entrylist)
+      body = serializePlainTextFormData(entrylist).some
       mimetype = $enctype
     return ClickAction(url: $parsedaction, httpmethod: httpmethod, body: body, mimetype: mimetype, multipart: multipart).some
 
