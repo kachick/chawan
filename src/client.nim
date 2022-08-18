@@ -175,33 +175,30 @@ var g_client: Client
 proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = false, ctype = "") =
   setControlCHook(proc() {.noconv.} =
     raise newException(InterruptError, "Interrupted"))
-  if force or prevurl.isnone or not prevurl.get.equals(request.url, true):
-    try:
-      let page = client.loader.getPage(request)
-      client.needsauth = page.status == 401 # Unauthorized
-      client.redirecturl = page.redirect
-      var buf: string
-      page.s.sread(buf)
-      if buf != "": #TODO what about pages with an empty body?
-        client.addBuffer()
-        g_client = client
-        setControlCHook(proc() {.noconv.} =
-          if g_client.buffer.prev != nil or g_client.buffer.next != nil:
-            g_client.discardBuffer()
-          interruptError())
-        client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
-        client.buffer.istream = newStringStream()
-        while true:
-          client.buffer.istream.write(buf)
-          page.s.sread(buf)
-          if buf == "": break
-        client.buffer.istream.setPosition(0)
-        client.buffer.location = request.url
-        client.setupBuffer()
-      else:
-        loadError("Couldn't load " & $request.url)
-    except IOError, OSError:
-      loadError("Couldn't load " & $request.url)
+  if force or prevurl.isnone or not prevurl.get.equals(request.url, true) or
+      prevurl.get.equals(request.url) or request.httpmethod != HTTP_GET:
+    let page = client.loader.doRequest(request)
+    client.needsauth = page.status == 401 # Unauthorized
+    client.redirecturl = page.redirect
+    if page.s != nil:
+      client.addBuffer()
+      g_client = client
+      setControlCHook(proc() {.noconv.} =
+        if g_client.buffer.prev != nil or g_client.buffer.next != nil:
+          g_client.discardBuffer()
+        interruptError())
+      client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
+      client.buffer.istream = newStringStream()
+      while true:
+        var buf: string
+        page.s.sread(buf)
+        if buf == "": break
+        client.buffer.istream.write(buf)
+      client.buffer.istream.setPosition(0)
+      client.buffer.location = request.url
+      client.setupBuffer()
+    else:
+      loadError("Couldn't load " & $request.url & " (" & $page.res & ")")
   elif client.buffer != nil and prevurl.issome and prevurl.get.equals(request.url, true):
     if client.buffer.hasAnchor(request.url.anchor):
       client.dupeBuffer(request.url.some)

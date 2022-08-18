@@ -846,14 +846,15 @@ proc loadResources(buffer: Buffer, document: Document) =
         if url.issome:
           let url = url.get
           if url.scheme == buffer.location.scheme:
-            let fs = buffer.loader.getPage(newRequest(url))
+            let fs = buffer.loader.doRequest(newRequest(url))
             if fs.s != nil and fs.contenttype == "text/css":
               var res = newStringStream()
               while true:
                 var s: string
-                buffer.istream.sread(s)
+                fs.s.sread(s)
                 if s == "": break
                 res.write(s)
+              res.setPosition(0)
               let sheet = parseStylesheet(res)
               elem.sheet = sheet
 

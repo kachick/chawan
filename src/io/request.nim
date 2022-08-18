@@ -26,6 +26,7 @@ type
 
   LoadResult* = object
     s*: Stream
+    res*: int
     contenttype*: string
     status*: int
     headers*: HeaderList

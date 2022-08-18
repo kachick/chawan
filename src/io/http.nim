@@ -1,6 +1,7 @@
 import options
 import streams
 import strutils
+import tables
 
 import bindings/curl
 import io/request
@@ -33,6 +34,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   let headers = cast[HeaderResult](userdata)
   if not headers.statusline:
     headers.statusline = true
+    headers.ostream.swrite(int(CURLE_OK))
     var status: int
     headers.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
     headers.ostream.swrite(status)
@@ -45,8 +47,9 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
     headers.ostream.swrite(headers.headers.getOrDefault("Content-Type").until(';'))
     var urlp: cstring
     headers.curl.getinfo(CURLINFO_REDIRECT_URL, addr urlp)
-    if urlp != nil:
-      headers.ostream.swrite(parseUrl($urlp, some(headers.request.url)))
+    if "Location" in headers.headers.table:
+      let location = headers.headers.table["Location"][0]
+      headers.ostream.swrite(parseUrl(location, some(headers.request.url)))
     else:
       headers.ostream.swrite(none(Url))
     return nitems
@@ -117,10 +120,12 @@ proc loadHttp*(request: Request, ostream: Stream) =
     curl.setopt(CURLOPT_HTTPHEADER, slist)
 
   let res = curl_easy_perform(curl)
-  if res == CURLE_OK: # TODO handle errors
-    discard
-  ostream.swrite("")
-  ostream.flush()
+  if res == CURLE_OK:
+    ostream.swrite("")
+    ostream.flush()
+  else:
+    ostream.swrite(int(res))
+    ostream.flush()
 
   curl_easy_cleanup(curl)
   if mime != nil:

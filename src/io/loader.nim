@@ -41,12 +41,10 @@ proc loadFile(url: Url, ostream: Stream) =
     let path = url.path.serialize_unicode()
   let istream = newFileStream(path, fmRead)
   if istream == nil:
-    ostream.swrite(404) # file not found
-    ostream.swrite("")
-    ostream.swrite(none(Url))
-    ostream.swrite("")
+    ostream.swrite(1)
     ostream.flush()
   else:
+    ostream.swrite(0)
     ostream.swrite(200) # ok
     ostream.swrite(guessContentType(path))
     ostream.swrite(none(Url))
@@ -98,10 +96,12 @@ proc doRequest*(loader: FileLoader, request: Request): LoadResult =
   if loader.istream != nil:
     loader.istream.swrite(request)
     loader.istream.flush()
-    loader.ostream.sread(result.status)
-    loader.ostream.sread(result.contenttype)
-    loader.ostream.sread(result.redirect)
-    result.s = loader.ostream
+    loader.ostream.sread(result.res)
+    if result.res == 0:
+      loader.ostream.sread(result.status)
+      loader.ostream.sread(result.contenttype)
+      loader.ostream.sread(result.redirect)
+      result.s = loader.ostream
   else:
     eprint "Error: no loader process"
     quit(1)
@@ -147,6 +147,3 @@ proc newFileLoader*(defaultHeaders: HeaderList): FileLoader =
 
 proc newFileLoader*(): FileLoader =
   newFileLoader(DefaultHeaders)
-
-proc getPage*(loader: FileLoader, request: Request): LoadResult =
-  loader.doRequest(request)
