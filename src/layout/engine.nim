@@ -385,6 +385,26 @@ proc newBlockBox(parent: BlockBox, box: BlockBoxBuilder): BlockBox =
   result = newBlockBox_common(parent, box)
   result.shrink = result.computed{"width"}.auto and parent.shrink
 
+proc newTableCellBox(parent: BlockBox, box: TableCellBoxBuilder): TableCellBox =
+  new(result)
+  result.newBlockBox_common2(parent, box)
+  result.shrink = result.computed{"width"}.auto and parent.shrink
+
+proc newTableRowGroupBox(parent: BlockBox, box: TableRowGroupBoxBuilder): TableRowGroupBox =
+  new(result)
+  result.newBlockBox_common2(parent, box)
+  result.shrink = result.computed{"width"}.auto and parent.shrink
+
+proc newTableRowBox(parent: BlockBox, box: TableRowBoxBuilder): TableRowBox =
+  new(result)
+  result.newBlockBox_common2(parent, box)
+  result.shrink = result.computed{"width"}.auto and parent.shrink
+
+proc newTableBox(parent: BlockBox, box: TableBoxBuilder): TableBox =
+  new(result)
+  result.newBlockBox_common2(parent, box)
+  result.shrink = result.computed{"width"}.auto and parent.shrink
+
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
   result.newBlockBox_common2(parent, builder.content)
@@ -613,8 +633,34 @@ proc positionBlocks(bctx: BlockBox) =
   bctx.width += bctx.padding_left
   bctx.width += bctx.padding_right
 
+proc buildTableCell(box: TableCellBoxBuilder, parent: TableRowBox): TableCellBox =
+  result = parent.newTableCellBox(box)
+  if box.inlinelayout:
+    result.buildInlineLayout(box.children)
+  else:
+    result.buildBlockLayout(box.children, box.node)
+
+proc buildTableRow(box: TableRowBoxBuilder, parent: TableBox): TableRowBox =
+  result = parent.newTableRowBox(box)
+  for child in box.children:
+    case child.computed{"display"}
+    of DISPLAY_TABLE_CELL:
+      result.nested.add(buildTableCell(TableCellBoxBuilder(child), result))
+    else:
+      discard
+      #TODO assert false
+
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): TableBox =
-  discard
+  result = parent.newTableBox(box)
+  for child in box.children:
+    case child.computed{"display"}
+    of DISPLAY_TABLE_ROW:
+      result.nested.add(buildTableRow(TableRowBoxBuilder(child), result))
+    of DISPLAY_TABLE_ROW_GROUP:
+      discard
+    else:
+      discard
+      #TODO assert false
 
 proc buildBlocks(bctx: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
   for child in blocks:
@@ -682,26 +728,26 @@ proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxB
 
 proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItemBoxBuilder =
   new(result)
-  result.computed = computed.copyProperties()
+  result.computed = computed
   result.marker = getMarkerBox(computed, listItemCounter)
 
 proc getTableBox(computed: CSSComputedValues): TableBoxBuilder =
   new(result)
-  result.computed = computed.copyProperties()
+  result.computed = computed
 
 # Also known as <tbody>.
 proc getTableRowGroupBox(computed: CSSComputedValues): TableRowGroupBoxBuilder =
   new(result)
-  result.computed = computed.copyProperties()
+  result.computed = computed
 
 proc getTableRowBox(computed: CSSComputedValues): TableRowBoxBuilder =
   new(result)
-  result.computed = computed.copyProperties()
+  result.computed = computed
 
 # For <th> and <td>.
 proc getTableCellBox(computed: CSSComputedValues): TableCellBoxBuilder =
   new(result)
-  result.computed = computed.copyProperties()
+  result.computed = computed
 
 type BlockGroup = object
   parent: BoxBuilder
