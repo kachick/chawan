@@ -40,27 +40,30 @@ proc loadFile(url: Url, ostream: Stream) =
   else:
     let path = url.path.serialize_unicode()
   let istream = newFileStream(path, fmRead)
-  ostream.swrite(if istream != nil:
-    200 # ok
-  else:
-    404 # file not found
-  )
-  ostream.swrite(guessContentType(path))
-  ostream.swrite(none(Url))
-  while not istream.atEnd:
-    const bufferSize = 4096
-    var buffer {.noinit.}: array[bufferSize, char]
-    while true:
-      let n = readData(istream, addr buffer[0], bufferSize)
-      if n == 0:
-        break
-      ostream.swrite(n)
-      ostream.writeData(addr buffer[0], n)
-      ostream.flush()
-      if n < bufferSize:
-        break
+  if istream == nil:
+    ostream.swrite(404) # file not found
+    ostream.swrite("")
+    ostream.swrite(none(Url))
     ostream.swrite("")
     ostream.flush()
+  else:
+    ostream.swrite(200) # ok
+    ostream.swrite(guessContentType(path))
+    ostream.swrite(none(Url))
+    while not istream.atEnd:
+      const bufferSize = 4096
+      var buffer {.noinit.}: array[bufferSize, char]
+      while true:
+        let n = readData(istream, addr buffer[0], bufferSize)
+        if n == 0:
+          break
+        ostream.swrite(n)
+        ostream.writeData(addr buffer[0], n)
+        ostream.flush()
+        if n < bufferSize:
+          break
+      ostream.swrite("")
+      ostream.flush()
 
 proc loadResource(loader: FileLoader, request: Request, ostream: Stream) =
   case request.url.scheme
@@ -78,6 +81,9 @@ proc runFileLoader(loader: FileLoader) =
   while true:
     try:
       let request = istream.readRequest()
+      for k, v in loader.defaultHeaders:
+        if k notin request.headers.table:
+          request.headers[k] = v
       loader.loadResource(request, ostream)
     except IOError:
       # End-of-file, quit.

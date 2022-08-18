@@ -696,9 +696,10 @@ proc scrollLeft*(buffer: Buffer) =
     buffer.redraw = true
 
 proc gotoAnchor*(buffer: Buffer) =
+  if buffer.document == nil: return
   let anchor = buffer.document.getElementById(buffer.location.anchor)
   if anchor == nil: return
-  for y in 0..(buffer.numLines - 1):
+  for y in 0..<buffer.numLines:
     let line = buffer.lines[y]
     var i = 0
     while i < line.formats.len:
@@ -863,11 +864,8 @@ proc load*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if not buffer.streamclosed:
-      while true:
-        var s: string
-        buffer.istream.sread(s)
-        if s == "": break
-        buffer.source &= s
+      buffer.source = buffer.istream.readAll()
+      buffer.istream.close()
       buffer.istream = newStringStream(buffer.source)
       buffer.document = parseHTML5(buffer.istream)
       buffer.streamclosed = true
@@ -939,14 +937,6 @@ proc displayStatusMessage*(buffer: Buffer) =
   print(SGR())
   print(buffer.generateStatusMessage())
   print(SGR())
-
-type
-  ClickAction* = object
-    url*: string
-    httpmethod*: HttpMethod
-    mimetype*: string
-    body*: Option[string]
-    multipart*: Option[MimeData]
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): Table[string, string] =
@@ -1054,7 +1044,7 @@ proc serializePlainTextFormData(kvs: Table[string, string]): string =
     result &= '\r'
     result &= '\n'
 
-proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] =
+proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   let entrylist = form.constructEntryList(submitter)
 
   let action = if submitter.action() == "":
@@ -1064,7 +1054,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
 
   let url = parseUrl(action, submitter.document.baseUrl.some)
   if url.isnone:
-    return none(ClickAction)
+    return none(Request)
 
   var parsedaction = url.get
   let scheme = parsedaction.scheme
@@ -1072,7 +1062,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
   let formmethod = submitter.formmethod()
   if formmethod == FORM_METHOD_DIALOG:
     #TODO
-    return none(ClickAction)
+    return none(Request)
   let httpmethod = if formmethod == FORM_METHOD_GET:
     HTTP_GET
   else:
@@ -1088,7 +1078,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
   template mutateActionUrl() =
     let query = serializeApplicationXWWFormUrlEncoded(entrylist)
     parsedaction.query = query.some
-    return ClickAction(url: $parsedaction, httpmethod: httpmethod).some
+    return newRequest(parsedaction, httpmethod).some
 
   template submitAsEntityBody() =
     var mimetype: string
@@ -1104,10 +1094,10 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
       body = serializePlainTextFormData(entrylist).some
       mimetype = $enctype
-    return ClickAction(url: $parsedaction, httpmethod: httpmethod, body: body, mimetype: mimetype, multipart: multipart).some
+    return newRequest(parsedaction, httpmethod, {"Content-Type": mimetype}, body, multipart).some
 
   template getActionUrl() =
-    return ClickAction(url: $parsedaction).some
+    return newRequest(parsedaction).some
 
   case scheme
   of "http", "https":
@@ -1125,7 +1115,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[ClickAction] 
       assert formmethod == FORM_METHOD_POST
       getActionUrl
 
-proc click*(buffer: Buffer): Option[ClickAction] =
+proc click*(buffer: Buffer): Option[Request] =
   let clickable = buffer.getCursorClickable()
   if clickable != nil:
     template set_focus(e: Element) =
@@ -1141,7 +1131,9 @@ proc click*(buffer: Buffer): Option[ClickAction] =
       set_focus clickable
     of TAG_A:
       restore_focus
-      return ClickAction(url: HTMLAnchorElement(clickable).href, httpmethod: HTTP_GET).some
+      let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseUrl.some)
+      if url.issome:
+        return newRequest(url.get, HTTP_GET).some
     of TAG_OPTION:
       let option = HTMLOptionElement(clickable)
       let select = option.select

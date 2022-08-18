@@ -10,6 +10,7 @@ import io/buffer
 import io/cell
 import io/lineedit
 import io/loader
+import io/serialize
 import io/term
 import js/javascript
 import js/regex
@@ -94,6 +95,8 @@ proc addBuffer(client: Client) =
     client.buffer.next.next = oldnext
     client.buffer = client.buffer.next
   client.buffer.loader = client.loader
+  client.buffer.userstyle = client.userstyle
+  client.buffer.markcolor = gconfig.markcolor
 
 proc prevBuffer(client: Client) =
   if client.buffer.prev != nil:
@@ -135,16 +138,26 @@ proc discardBuffer(client: Client) =
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
-  buffer.userstyle = client.userstyle
-  buffer.markcolor = gconfig.markcolor
   buffer.load()
   buffer.render()
   buffer.gotoAnchor()
   buffer.redraw = true
 
+proc dupeBuffer(client: Client, location = none(Url)) =
+  let prev = client.buffer
+  client.addBuffer()
+  client.buffer.contenttype = prev.contenttype
+  client.buffer.ispipe = prev.ispipe
+  client.buffer.istream = newStringStream(prev.source)
+  if location.issome:
+    client.buffer.location = location.get
+  else:
+    client.buffer.location = prev.location
+  client.buffer.document = prev.document
+  client.setupBuffer()
+
 proc readPipe(client: Client, ctype: string) =
-  client.buffer = newBuffer()
-  client.buffer.loader = client.loader
+  client.addBuffer()
   client.buffer.contenttype = if ctype != "": ctype else: "text/plain"
   client.buffer.ispipe = true
   client.buffer.istream = newFileStream(stdin)
@@ -157,51 +170,53 @@ proc readPipe(client: Client, ctype: string) =
   else:
     client.buffer.drawBuffer()
 
+# Load request in a new buffer.
 var g_client: Client
-proc getPage(client: Client, url: Url, click = none(ClickAction)): LoadResult =
-  let page = if click.isnone:
-    client.loader.getPage(newRequest(url))
-  else:
-    client.loader.getPage(newRequest(url, click.get.httpmethod, {"Content-Type": click.get.mimetype}, click.get.body, click.get.multipart))
-  return page
-
-# Load url in a new buffer.
-proc gotoUrl(client: Client, url: Url, click = none(ClickAction), prevurl = none(Url), force = false, ctype = "") =
+proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = false, ctype = "") =
   setControlCHook(proc() {.noconv.} =
     raise newException(InterruptError, "Interrupted"))
-  if force or prevurl.issome or not prevurl.get.equals(url, true):
+  if force or prevurl.isnone or not prevurl.get.equals(request.url, true):
     try:
-      let page = client.getPage(url, click)
+      let page = client.loader.getPage(request)
       client.needsauth = page.status == 401 # Unauthorized
       client.redirecturl = page.redirect
-      if page.s != nil:
+      var buf: string
+      page.s.sread(buf)
+      if buf != "": #TODO what about pages with an empty body?
         client.addBuffer()
         g_client = client
         setControlCHook(proc() {.noconv.} =
           if g_client.buffer.prev != nil or g_client.buffer.next != nil:
             g_client.discardBuffer()
           interruptError())
-        client.buffer.istream = page.s
         client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
+        client.buffer.istream = newStringStream()
+        while true:
+          client.buffer.istream.write(buf)
+          page.s.sread(buf)
+          if buf == "": break
+        client.buffer.istream.setPosition(0)
+        client.buffer.location = request.url
+        client.setupBuffer()
       else:
-        loadError("Couldn't load " & $url)
+        loadError("Couldn't load " & $request.url)
     except IOError, OSError:
-      loadError("Couldn't load " & $url)
-  elif client.buffer != nil and prevurl.isnone or not prevurl.get.equals(url):
-    if not client.buffer.hasAnchor(url.anchor):
-      loadError("Couldn't find anchor " & url.anchor)
-  client.buffer.location = url
-  client.setupBuffer()
+      loadError("Couldn't load " & $request.url)
+  elif client.buffer != nil and prevurl.issome and prevurl.get.equals(request.url, true):
+    if client.buffer.hasAnchor(request.url.anchor):
+      client.dupeBuffer(request.url.some)
+    else:
+      loadError("Couldn't find anchor " & request.url.anchor)
 
 # Relative gotoUrl: either to prevurl, or if that's none, client.buffer.url.
-proc gotoUrl(client: Client, url: string, click = none(ClickAction), prevurl = none(Url), force = false, ctype = "") =
+proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, ctype = "") =
   var prevurl = prevurl
   if prevurl.isnone and client.buffer != nil:
     prevurl = client.buffer.location.some
   let newurl = parseUrl(url, prevurl)
   if newurl.isnone:
     loadError("Invalid URL " & url)
-  client.gotoUrl(newurl.get, click, prevurl, force, ctype)
+  client.gotoUrl(newRequest(newurl.get), prevurl, force, ctype)
 
 # When the user has passed a partial URL as an argument, they might've meant
 # either:
@@ -212,24 +227,24 @@ proc gotoUrl(client: Client, url: string, click = none(ClickAction), prevurl = n
 proc loadUrl(client: Client, url: string, ctype = "") =
   let firstparse = parseUrl(url)
   if firstparse.issome:
-    client.gotoUrl(url, none(ClickAction), none(Url), true, ctype)
+    client.gotoUrl(newRequest(firstparse.get), none(Url), true, ctype)
   else:
     let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
     try:
       # attempt to load local file
-      client.gotoUrl(url, none(ClickAction), cdir, true, ctype)
+      client.gotoUrl(url, cdir, true, ctype)
     except LoadError:
       try:
         # attempt to load local file (this time percent encoded)
-        client.gotoUrl(percentEncode(url, LocalPathPercentEncodeSet), none(ClickAction), cdir, true, ctype)
+        client.gotoUrl(percentEncode(url, LocalPathPercentEncodeSet), cdir, true, ctype)
       except LoadError:
         # attempt to load remote page
-        client.gotoUrl("https://" & url, none(ClickAction), none(Url), true, ctype)
+        client.gotoUrl("https://" & url, none(Url), true, ctype)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reloadPage(client: Client) =
   let buf = client.buffer
-  client.gotoUrl(client.buffer.location, none(ClickAction), none(Url), true, client.buffer.contenttype)
+  client.gotoUrl(newRequest(client.buffer.location), none(Url), true, client.buffer.contenttype)
   discardBuffer(buf)
 
 # Open a URL prompt and visit the specified URL.
@@ -242,9 +257,9 @@ proc changeLocation(client: Client) =
     client.loadUrl(url)
 
 proc click(client: Client) =
-  let s = client.buffer.click()
-  if s.issome and s.get.url != "":
-    client.gotoUrl(s.get.url, s)
+  let req = client.buffer.click()
+  if req.issome:
+    client.gotoUrl(req.get, client.buffer.location.some)
 
 proc toggleSource*(client: Client) =
   let buffer = client.buffer
@@ -456,6 +471,7 @@ proc input(client: Client) =
   of ACTION_SCROLL_RIGHT: buffer.scrollRight()
   of ACTION_CLICK: client.click()
   of ACTION_CHANGE_LOCATION: client.changeLocation()
+  of ACTION_DUPE_BUFFER: client.dupeBuffer()
   of ACTION_LINE_INFO: buffer.lineInfo()
   of ACTION_FEED_NEXT: client.feednext = true
   of ACTION_RELOAD: client.reloadPage()
@@ -495,7 +511,7 @@ proc checkAuth(client: Client) =
     url.username = username
     url.password = password
     var buf = client.buffer
-    client.gotoUrl(url, prevurl = some(client.buffer.location))
+    client.gotoUrl(newRequest(url), prevurl = some(client.buffer.location))
     discardBuffer(buf)
     client.followRedirect()
 
@@ -505,7 +521,7 @@ proc followRedirect(client: Client) =
     var buf = client.buffer
     let redirecturl = client.redirecturl.get
     client.redirecturl = none(Url)
-    client.gotoUrl(redirecturl, prevurl = some(client.buffer.location))
+    client.gotoUrl(newRequest(redirecturl), prevurl = some(client.buffer.location))
     discardBuffer(buf)
     if client.needsauth:
       client.checkAuth()
