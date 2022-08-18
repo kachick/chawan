@@ -16,12 +16,12 @@ Following is a list of general options:
 
 <table>
 <tr><th>**Name**<th>**Value**<th>**Function**
-<tr><td>double-width-ambiguous<td>boolean<td>Assume the terminal displays characters in the East Asian Ambiguous category are double width
+<tr><td>double-width-ambiguous<td>boolean<td>Assume the terminal displays characters in the East Asian Ambiguous category as double-width characters
 </table>
 
 ## Display
 
-Display options must be placed in a section called `[display`.
+Display options must be placed in a section called `[display]`.
 
 Following is a list of display options:
 
@@ -60,7 +60,7 @@ modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
 escape to the keybinding respectively (essentially making `M-` the same as
 `C-[`). Modifiers can be escaped with the `\` sign.
 
-(Note: it is **highly recommended** to use single quotes here; escaping can get
+(Note: it is highly recommended to use single quotes here; escaping can get
 quite ugly with double quotes.)
 
 ```Example:
@@ -100,6 +100,7 @@ description of these follows.
 <tr><td>`SCROLL_RIGHT`<td>Move screen to the right by one line
 <tr><td>`CLICK`<td>Click element currently under cursor
 <tr><td>`CHANGE_LOCATION`<td>Go to URL
+<tr><td>`DUPE_BUFFER`<td>Duplicate the current buffer
 <tr><td>`RELOAD`<td>Reload page
 <tr><td>`RESHAPE`<td>Reshape buffer (=render page anew)
 <tr><td>`REDRAW`<td>Redraw buffer (=redraw screen)
@@ -111,12 +112,12 @@ description of these follows.
 <tr><td>`CURSOR_BOTTOM`<td>Move cursor to the last line of the page
 <tr><td>`CENTER_LINE`<td>Center screen around line
 <tr><td>`LINE_INFO`<td>Display information about line
-<tr><td>`SEARCH`<td>Search for a string in the current buffer.
-<tr><td>`SEARCH_BACK`<td>Search for a string, backwards.
-<tr><td>`ISEARCH`<td>Search for a string and highlight the first result.
-<tr><td>`ISEARCH_BACK`<td>Search and highlight the first result, backwards.
-<tr><td>`SEARCH_NEXT`<td>Jump to the next search result.
-<tr><td>`SEARCH_PREV`<td>Jump to the previous search result.
+<tr><td>`SEARCH`<td>Search for a string in the current buffer
+<tr><td>`SEARCH_BACK`<td>Search for a string, backwards
+<tr><td>`ISEARCH`<td>Search for a string and highlight the first result
+<tr><td>`ISEARCH_BACK`<td>Search and highlight the first result, backwards
+<tr><td>`SEARCH_NEXT`<td>Jump to the next search result
+<tr><td>`SEARCH_PREV`<td>Jump to the previous search result
 </table>
 
 ### Line-editing actions
