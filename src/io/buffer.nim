@@ -14,6 +14,8 @@ import html/htmlparser
 import io/cell
 import io/lineedit
 import io/loader
+import io/request
+import io/serialize
 import io/term
 import js/regex
 import layout/box
@@ -841,10 +843,17 @@ proc loadResources(buffer: Buffer, document: Document) =
       if elem.rel == "stylesheet":
         let url = parseUrl(elem.href, document.location.some)
         if url.issome:
-          if url.get.scheme == buffer.location.scheme:
-            let res = buffer.loader.getPage(url.get)
-            if res.s != nil and res.contenttype == "text/css":
-              let sheet = parseStylesheet(res.s)
+          let url = url.get
+          if url.scheme == buffer.location.scheme:
+            let fs = buffer.loader.getPage(newRequest(url))
+            if fs.s != nil and fs.contenttype == "text/css":
+              var res = newStringStream()
+              while true:
+                var s: string
+                buffer.istream.sread(s)
+                if s == "": break
+                res.write(s)
+              let sheet = parseStylesheet(res)
               elem.sheet = sheet
 
     for child in elem.children_rev:
@@ -854,8 +863,11 @@ proc load*(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if not buffer.streamclosed:
-      buffer.source = buffer.istream.readAll()
-      buffer.istream.close()
+      while true:
+        var s: string
+        buffer.istream.sread(s)
+        if s == "": break
+        buffer.source &= s
       buffer.istream = newStringStream(buffer.source)
       buffer.document = parseHTML5(buffer.istream)
       buffer.streamclosed = true

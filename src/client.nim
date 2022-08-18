@@ -4,7 +4,6 @@ import streams
 import terminal
 import unicode
 
-import bindings/curl
 import css/sheet
 import config/config
 import io/buffer
@@ -161,9 +160,9 @@ proc readPipe(client: Client, ctype: string) =
 var g_client: Client
 proc getPage(client: Client, url: Url, click = none(ClickAction)): LoadResult =
   let page = if click.isnone:
-    client.loader.getPage(url)
+    client.loader.getPage(newRequest(url))
   else:
-    client.loader.getPage(url, click.get.httpmethod, click.get.mimetype, click.get.body, click.get.multipart)
+    client.loader.getPage(newRequest(url, click.get.httpmethod, {"Content-Type": click.get.mimetype}, click.get.body, click.get.multipart))
   return page
 
 # Load url in a new buffer.
@@ -413,7 +412,6 @@ proc isearchBack(client: Client) =
 proc quit(client: Client) =
   eraseScreen()
   print(HVP(0, 0))
-  curl_global_cleanup()
   quit(0)
 
 proc input(client: Client) =
@@ -531,9 +529,6 @@ proc inputLoop(client: Client) =
       client.buffer.setStatusMessage(e.msg)
 
 proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
-  if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
-    eprint "Failed to initialize libcurl."
-    quit(1)
   client.userstyle = gconfig.stylesheet.parseStylesheet()
   if not stdin.isatty:
     client.readPipe(ctype)

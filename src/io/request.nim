@@ -10,7 +10,8 @@ type HttpMethod* = enum
   HTTP_POST, HTTP_PUT, HTTP_TRACE
 
 type
-  Request* = ref object
+  Request* = ref RequestObj
+  RequestObj* = object
     httpmethod*: HttpMethod
     url*: Url
     headers*: HeaderList
@@ -19,6 +20,9 @@ type
 
   FileLoader* = ref object
     defaultHeaders*: HeaderList
+    process*: int
+    istream*: Stream
+    ostream*: Stream
 
   LoadResult* = object
     s*: Stream
@@ -59,21 +63,30 @@ func newHeaderList*(table: Table[string, string]): HeaderList =
     else:
       result.table[k] = @[v]
 
+func newRequest*(url: Url,
+                 httpmethod = HTTP_GET,
+                 headers: openarray[(string, string)] = [],
+                 body = none(string),
+                 multipart = none(MimeData),
+                 defaultHeaders = none(HeaderList)): Request =
+  new(result)
+  result.httpmethod = httpmethod
+  result.url = url
+  if defaultHeaders.issome:
+    result.headers.table = defaultHeaders.get.table
+  for it in headers:
+    if it[1] != "": #TODO not sure if this is a good idea, options would probably work better
+      result.headers.table[it[0]] = @[it[1]]
+  result.body = body
+  result.multipart = multipart
+
 func newRequest*(loader: FileLoader,
                  url: Url,
                  httpmethod = HTTP_GET,
                  headers: openarray[(string, string)] = [],
                  body = none(string),
                  multipart = none(MimeData)): Request =
-  new(result)
-  result.httpmethod = httpmethod
-  result.url = url
-  result.headers.table = loader.defaultHeaders.table
-  for it in headers:
-    if it[1] != "": #TODO not sure if this is a good idea, options would probably work better
-      result.headers.table[it[0]] = @[it[1]]
-  result.body = body
-  result.multipart = multipart
+  newRequest(url, httpmethod, headers, body, multipart, some(loader.defaultHeaders))
 
 proc `[]=`*(multipart: var MimeData, k, v: string) =
   multipart.content.add(MimePart(name: k, content: v))

@@ -3,15 +3,18 @@ import streams
 import strutils
 
 import bindings/curl
-import io/loadertypes
+import io/request
+import io/serialize
 import types/url
-import types/mime
 import utils/twtstr
 
 type
   HeaderResult* = ref object
     statusline: bool
     headers: HeaderList
+    curl: CURL
+    ostream: Stream
+    request: Request
 
 template setopt(curl: CURL, opt: CURLoption, arg: typed) =
   discard curl_easy_setopt(curl, opt, arg)
@@ -30,12 +33,23 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   let headers = cast[HeaderResult](userdata)
   if not headers.statusline:
     headers.statusline = true
-    return nitems #TODO handle status line?
+    var status: int
+    headers.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
+    headers.ostream.swrite(status)
+    return nitems
 
   let k = line.until(':')
 
   if k.len == line.len:
-    return nitems # empty line (last, before body) or invalid (=> error)
+    # empty line (last, before body) or invalid (=> error)
+    headers.ostream.swrite(headers.headers.getOrDefault("Content-Type").until(';'))
+    var urlp: cstring
+    headers.curl.getinfo(CURLINFO_REDIRECT_URL, addr urlp)
+    if urlp != nil:
+      headers.ostream.swrite(parseUrl($urlp, some(headers.request.url)))
+    else:
+      headers.ostream.swrite(none(Url))
+    return nitems
 
   let v = line.substr(k.len + 1).strip()
   headers.headers.add(k, v)
@@ -46,11 +60,12 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer)
   for i in 0..<nmemb:
     s[i] = p[i]
   let stream = cast[Stream](userdata)
-  stream.write(s)
-  stream.flush()
+  if nmemb > 0:
+    stream.swrite(s)
+    stream.flush()
   return nmemb
 
-proc getPageHttp*(request: Request): LoadResult =
+proc loadHttp*(request: Request, ostream: Stream) =
   let curl = curl_easy_init()
 
   if curl == nil: return # fail
@@ -58,11 +73,10 @@ proc getPageHttp*(request: Request): LoadResult =
   let surl = request.url.serialize()
   curl.setopt(CURLOPT_URL, surl)
 
-  var cs = newStringStream()
-  curl.setopt(CURLOPT_WRITEDATA, cs)
+  curl.setopt(CURLOPT_WRITEDATA, ostream)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
 
-  let headerres = HeaderResult(headers: newHeaderList())
+  let headerres = HeaderResult(headers: newHeaderList(), curl: curl, ostream: ostream, request: request)
   curl.setopt(CURLOPT_HEADERDATA, headerres)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
 
@@ -104,21 +118,9 @@ proc getPageHttp*(request: Request): LoadResult =
 
   let res = curl_easy_perform(curl)
   if res == CURLE_OK: # TODO handle errors
-    cs.setPosition(0)
-    result.s = cs
-
-    let ct = headerres.headers.getOrDefault("Content-Type")
-    if ct != "":
-      result.contenttype = ct.until(';')
-    else:
-      result.contenttype = guessContentType(request.url.path.serialize())
-    curl.getinfo(CURLINFO_RESPONSE_CODE, addr result.status)
-    if result.status in {301, 302, 303}: #TODO 300, 304, 307
-      var urlp: cstring
-      curl.getinfo(CURLINFO_REDIRECT_URL, addr urlp)
-      if urlp != nil:
-        let urls = $urlp
-        result.redirect = parseUrl(urls, some(request.url))
+    discard
+  ostream.swrite("")
+  ostream.flush()
 
   curl_easy_cleanup(curl)
   if mime != nil:
