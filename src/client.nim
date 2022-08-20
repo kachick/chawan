@@ -10,6 +10,7 @@ import io/buffer
 import io/cell
 import io/lineedit
 import io/loader
+import io/request
 import io/serialize
 import io/term
 import js/javascript

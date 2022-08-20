@@ -6,12 +6,11 @@ when defined(posix):
 
 import bindings/curl
 import io/http
+import io/process
 import io/request
 import io/serialize
 import types/mime
 import types/url
-
-export request
 
 const DefaultHeaders = {
   "User-Agent": "chawan",
@@ -21,18 +20,11 @@ const DefaultHeaders = {
   "Cache-Control": "no-cache",
 }.toTable().newHeaderList()
 
-proc doFork(): Pid =
-  result = fork()
-  if result == -1:
-    eprint "Failed to fork child process."
-    quit(1)
-  elif result != 0:
-    return result
-  discard setsid()
-  let pid = fork()
-  if pid != 0:
-    quit(0)
-  return 0
+type FileLoader* = ref object
+  defaultHeaders*: HeaderList
+  process*: int
+  istream*: Stream
+  ostream*: Stream
 
 proc loadFile(url: Url, ostream: Stream) =
   when defined(windows) or defined(OS2) or defined(DOS):
@@ -79,9 +71,9 @@ proc runFileLoader(loader: FileLoader) =
   while true:
     try:
       let request = istream.readRequest()
-      for k, v in loader.defaultHeaders:
+      for k, v in loader.defaultHeaders.table:
         if k notin request.headers.table:
-          request.headers[k] = v
+          request.headers.table[k] = v
       loader.loadResource(request, ostream)
     except IOError:
       # End-of-file, quit.

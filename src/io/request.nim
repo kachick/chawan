@@ -18,12 +18,6 @@ type
     body*: Option[string]
     multipart*: Option[MimeData]
 
-  FileLoader* = ref object
-    defaultHeaders*: HeaderList
-    process*: int
-    istream*: Stream
-    ostream*: Stream
-
   LoadResult* = object
     s*: Stream
     res*: int
