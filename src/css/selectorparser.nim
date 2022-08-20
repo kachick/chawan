@@ -28,6 +28,9 @@ type
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
     SUBSEQ_SIBLING_COMBINATOR
 
+  FunctionType* = enum
+    FUNCTION_IS, FUNCTION_NOT, FUNCTION_WHERE
+
   SelectorParser = object
     selectors: seq[SelectorList]
     query: QueryMode
@@ -54,7 +57,7 @@ type
     of PSELEM_SELECTOR:
       elem*: PseudoElem
     of FUNC_SELECTOR:
-      name*: string
+      ftype*: FunctionType
       fsels*: seq[SelectorList]
     of COMBINATOR_SELECTOR:
       ct*: CombinatorType
@@ -65,11 +68,8 @@ type
     pseudo*: PseudoElem
 
 # For debugging
-proc tostr(pclass: PseudoClass): string =
-  return ($pclass).split('_')[1..^1].join("-").tolower()
-
-proc tostr(pselem: PseudoElem): string =
-  return ($pselem).split('_')[1..^1].join("-").tolower()
+proc tostr(ftype: enum): string =
+  return ($ftype).split('_')[1..^1].join("-").tolower()
 
 proc `$`*(sellist: SelectorList): string
 
@@ -90,7 +90,7 @@ proc `$`*(sel: Selector): string =
   of PSELEM_SELECTOR:
     return "::" & sel.elem.tostr()
   of FUNC_SELECTOR:
-    result = ':' & sel.name & '('
+    result = ':' & sel.ftype.tostr() & '('
     for fsel in sel.fsels:
       result &= $fsel
       if fsel != sel.fsels[^1]:
@@ -134,17 +134,14 @@ func getSpecificity(sel: Selector): int =
   of TYPE_SELECTOR, PSELEM_SELECTOR:
     result += 1
   of FUNC_SELECTOR:
-    case sel.name
-    of "is":
+    case sel.ftype
+    of FUNCTION_IS, FUNCTION_NOT:
       var best = 0
       for child in sel.fsels:
         let s = getSpecificity(child)
         if s > best:
           best = s
       result += best
-    of "not":
-      for child in sel.fsels:
-        result += getSpecificity(child)
     else: discard
   of UNIVERSAL_SELECTOR:
     discard
@@ -352,26 +349,29 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
     state.query = QUERY_TYPE
   else: discard
 
+proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction) =
+  if cssfunction.value.len != 1 or not (cssfunction.value[0] of CSSToken):
+    return
+  if CSSToken(cssfunction.value[0]).tokenType != CSS_NUMBER_TOKEN:
+    return
+  let num = CSSToken(cssfunction.value[0]).nvalue
+  if num == float64(int64(num)):
+    state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_NTH_CHILD, pseudonum: num))
+  state.query = QUERY_TYPE
+
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
-  case cssfunction.name
-  of "not", "is":
-    if state.query != QUERY_PSEUDO:
-      return
-    state.query = QUERY_TYPE
+  if state.query != QUERY_PSEUDO:
+    return
+  let ftype = case cssfunction.name
+  of "not": FUNCTION_NOT
+  of "is": FUNCTION_IS
+  of "where": FUNCTION_WHERE
   of "nth-child":
-    if state.query != QUERY_PSEUDO:
-      return
-    if cssfunction.value.len != 1 or not (cssfunction.value[0] of CSSToken):
-      return
-    if CSSToken(cssfunction.value[0]).tokenType != CSS_NUMBER_TOKEN:
-      return
-    let num = CSSToken(cssfunction.value[0]).nvalue
-    if num == float64(int64(num)):
-      state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_NTH_CHILD, pseudonum: num))
-    state.query = QUERY_TYPE
+    state.parseNthChild(cssfunction)
     return
   else: return
-  var fun = Selector(t: FUNC_SELECTOR, name: cssfunction.name)
+  state.query = QUERY_TYPE
+  var fun = Selector(t: FUNC_SELECTOR, ftype: ftype)
   state.addSelector(fun)
 
   let osels = state.selectors

@@ -54,18 +54,17 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
 func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool
 
 func funcSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
-  case sel.name
-  of "not":
+  case sel.ftype
+  of FUNCTION_NOT:
     for slist in sel.fsels:
       if elem.selectorsMatch(slist, felem):
         return false
     return true
-  of "is", "where":
+  of FUNCTION_IS, FUNCTION_WHERE:
     for slist in sel.fsels:
       if elem.selectorsMatch(slist, felem):
         return true
     return false
-  else: discard
 
 func combinatorSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
   let selem = elem

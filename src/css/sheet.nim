@@ -53,7 +53,7 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} 
   of ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, COMBINATOR_SELECTOR:
     discard
   of FUNC_SELECTOR:
-    if sel.name == "is":
+    if sel.ftype == FUNCTION_IS:
       # Basically just hash whatever the selectors have in common:
       #1. get the hashable values of selector 1
       #2. for every other selector x:
