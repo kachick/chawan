@@ -1,5 +1,6 @@
-import tables
+import options
 import strutils
+import tables
 
 import css/cssparser
 import css/selectorparser
@@ -20,11 +21,19 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
+func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool
+
+func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: seq[SelectorList], felem: T = nil): bool =
+  for slist in selectors:
+    if elem.selectorsMatch(slist, felem):
+      return true
+  return false
+
 func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
   let selem = elem
   when elem is StyledNode:
     let elem = Element(elem.node)
-  case sel.pseudo
+  case sel.pseudo.t
   of PSEUDO_FIRST_CHILD: return elem.parentNode.firstElementChild == elem
   of PSEUDO_LAST_CHILD: return elem.parentNode.lastElementChild == elem
   of PSEUDO_ONLY_CHILD: return elem.parentNode.firstElementChild == elem and elem.parentNode.lastElementChild == elem
@@ -33,12 +42,32 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     return elem.hover
   of PSEUDO_ROOT: return elem == elem.document.html
   of PSEUDO_NTH_CHILD:
-    let n = int64(sel.pseudonum - 1)
-    var i = 0
-    for child in elem.parentNode.children:
-      if i == n:
-        return child == elem
-      inc i
+    if sel.pseudo.ofsels.issome and not elem.selectorsMatch(sel.pseudo.ofsels.get):
+      return false
+    let A = sel.pseudo.anb.A # step
+    let B = sel.pseudo.anb.B # start
+    var i = 1
+    let parent = when selem is StyledNode: selem.parent
+    else: selem.parentNode
+    for child in parent.children:
+      if sel.pseudo.ofsels.isnone or child.selectorsMatch(sel.pseudo.ofsels.get):
+        if child == selem:
+          return i == B or i > B and A != 0 and (i - B) mod A == 0
+        inc i
+    return false
+  of PSEUDO_NTH_LAST_CHILD:
+    if sel.pseudo.ofsels.issome and not elem.selectorsMatch(sel.pseudo.ofsels.get):
+      return false
+    let A = sel.pseudo.anb.A # step
+    let B = sel.pseudo.anb.B # start
+    var i = 1
+    let parent = when selem is StyledNode: selem.parent
+    else: selem.parentNode
+    for child in parent.children_rev:
+      if sel.pseudo.ofsels.isnone or child.selectorsMatch(sel.pseudo.ofsels.get):
+        if child == selem:
+          return i == B or i > B and A != 0 and (i - B) mod A == 0
+        inc i
     return false
   of PSEUDO_CHECKED:
     when selem is StyledNode: felem.addDependency(selem, DEPEND_CHECKED)
@@ -50,21 +79,10 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
   of PSEUDO_FOCUS:
     when selem is StyledNode: felem.addDependency(selem, DEPEND_FOCUS)
     return elem.document.focus == elem
-
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool
-
-func funcSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
-  case sel.ftype
-  of FUNCTION_NOT:
-    for slist in sel.fsels:
-      if elem.selectorsMatch(slist, felem):
-        return false
-    return true
-  of FUNCTION_IS, FUNCTION_WHERE:
-    for slist in sel.fsels:
-      if elem.selectorsMatch(slist, felem):
-        return true
-    return false
+  of PSEUDO_NOT:
+    return not selem.selectorsMatch(sel.pseudo.fsels, felem)
+  of PSEUDO_IS, PSEUDO_WHERE:
+    return selem.selectorsMatch(sel.pseudo.fsels, felem)
 
 func combinatorSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
   let selem = elem
@@ -153,8 +171,6 @@ func selectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): b
     return true
   of UNIVERSAL_SELECTOR:
     return true
-  of FUNC_SELECTOR:
-    return funcSelectorMatches(selem, sel, felem)
   of COMBINATOR_SELECTOR:
     return combinatorSelectorMatches(selem, sel, felem)
 
@@ -166,7 +182,7 @@ func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, fe
   else:
     elem
 
-  for sel in selectors.sels:
+  for sel in selectors:
     if not selectorMatches(elem, sel, felem):
       return false
   return true

@@ -24,7 +24,6 @@ type
   CSSParseState = object
     tokens: seq[CSSParsedItem]
     at: int
-    top_level: bool
 
   tflaga* = enum
     TFLAGA_UNRESTRICTED, TFLAGA_ID
@@ -72,6 +71,8 @@ type
 
   CSSRawStylesheet* = object
     value*: seq[CSSRule]
+
+  CSSAnB* = tuple[A, B: int]
 
   SyntaxError = object of ValueError
 
@@ -661,13 +662,13 @@ proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
       if state.peek() != CSS_SEMICOLON_TOKEN:
         discard state.consumeComponentValue()
 
-proc consumeListOfRules(state: var CSSParseState): seq[CSSRule] =
+proc consumeListOfRules(state: var CSSParseState, topLevel = false): seq[CSSRule] =
   while state.at < state.tokens.len:
     let t = state.consume()
     if t == CSS_WHITESPACE_TOKEN:
       continue
     elif t == CSS_CDO_TOKEN or t == CSS_CDC_TOKEN:
-      if state.top_level:
+      if topLevel:
         continue
       else:
         state.reconsume()
@@ -684,8 +685,7 @@ proc consumeListOfRules(state: var CSSParseState): seq[CSSRule] =
         result.add(q.get)
 
 proc parseStylesheet(state: var CSSParseState): CSSRawStylesheet =
-  state.top_level = true
-  result.value.add(state.consumeListOfRules())
+  result.value.add(state.consumeListOfRules(true))
 
 proc parseStylesheet(inputStream: Stream): CSSRawStylesheet =
   var state = CSSParseState()
@@ -825,6 +825,161 @@ proc parseCommaSeparatedListOfComponentValues(inputStream: Stream): seq[seq[CSSC
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseCommaSeparatedListOfComponentValues()
+
+proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
+  template is_eof: bool =
+    not state.has() or not (state.peek() of CSSToken)
+  template fail_eof =
+    if is_eof:
+      return none(CSSAnB)
+  template skip_whitespace =
+    while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
+      discard state.consume()
+  template get_plus: bool =
+    if state.peek() == CSS_DELIM_TOKEN and CSSToken(state.peek()).rvalue == Rune('+'):
+      discard state.consume()
+      true
+    else:
+      false
+  template get_tok: CSSToken =
+    fail_eof
+    skip_whitespace
+    CSSToken(state.consume())
+  template get_tok_nows: CSSToken =
+    fail_eof
+    CSSToken(state.consume())
+  template fail_plus =
+    if is_plus:
+      return none(CSSAnB)
+  template parse_sub_int(sub: string, skip: int): int =
+    let s = sub.substr(skip)
+    for c in s:
+      if c notin AsciiDigit:
+        return none(CSSAnB)
+    parseInt32(s)
+  template fail_non_integer(tok: CSSToken) =
+    if tok.tokenType != CSS_NUMBER_TOKEN:
+      return none(CSSAnB)
+    if tok.tflagb != TFLAGB_INTEGER:
+      return none(CSSAnB)
+    if int64(tok.nvalue) > high(int):
+      return none(CSSAnB)
+  template fail_non_signless_integer(tok: CSSToken) =
+    fail_non_integer tok #TODO check if signless?
+
+  fail_eof
+  skip_whitespace
+  fail_eof
+  let is_plus = get_plus
+  let tok = get_tok_nows
+  case tok.tokenType
+  of CSS_IDENT_TOKEN:
+    case tok.value
+    of "odd":
+      fail_plus
+      return some((2, 1))
+    of "even":
+      fail_plus
+      return some((2, 0))
+    of "n", "N":
+      if is_eof:
+        return some((1, 0))
+      let tok2 = get_tok
+      if tok2.tokenType == CSS_DELIM_TOKEN:
+        let sign = case tok2.rvalue
+        of Rune('+'): 1
+        of Rune('-'): -1
+        else: return none(CSSAnB)
+        let tok3 = get_tok
+        fail_non_signless_integer tok3
+        return some((1, sign * int(tok2.nvalue)))
+      else:
+        fail_non_integer tok2
+        return some((1, int(tok2.nvalue)))
+    of "-n", "-N":
+      fail_plus
+      if is_eof:
+        return some((-1, 0))
+      let tok2 = get_tok
+      if tok2.tokenType == CSS_DELIM_TOKEN:
+        let sign = case tok2.rvalue
+        of Rune('+'): 1
+        of Rune('-'): -1
+        else: return none(CSSAnB)
+        let tok3 = get_tok
+        fail_non_signless_integer tok3
+        return some((-1, sign * int(tok2.nvalue)))
+      else:
+        fail_non_integer tok2
+        return some((-1, int(tok2.nvalue)))
+    of "n-", "N-":
+      let tok2 = get_tok
+      fail_non_signless_integer tok2
+      return some((1, -int(tok2.nvalue)))
+    of "-n-", "-N-":
+      fail_plus
+      let tok2 = get_tok
+      fail_non_signless_integer tok2
+      return some((-1, -int(tok2.nvalue)))
+    elif tok.unit.startsWithNoCase("n-"):
+      return some((1, -parse_sub_int(tok.value, "n-".len)))
+    elif tok.unit.startsWithNoCase("-n-"):
+      return some((-1, -parse_sub_int(tok.value, "n-".len)))
+    else:
+      return none(CSSAnB)
+  of CSS_NUMBER_TOKEN:
+    fail_plus
+    if tok.tflagb != TFLAGB_INTEGER:
+      return none(CSSAnB)
+    if int64(tok.nvalue) > high(int):
+      return none(CSSAnB)
+    # <integer>
+    return some((0, int(tok.nvalue)))
+  of CSS_DIMENSION_TOKEN:
+    fail_plus
+    if int64(tok.nvalue) > high(int):
+      return none(CSSAnB)
+    if tok.tflagb != TFLAGB_INTEGER:
+      return none(CSSAnB)
+    case tok.unit
+    of "n", "N":
+      # <n-dimension>
+      if is_eof:
+        return some((int(tok.nvalue), 0))
+      let tok2 = get_tok
+      if tok2.tokenType == CSS_DELIM_TOKEN:
+        let sign = case tok2.rvalue
+        of Rune('+'): 1
+        of Rune('-'): -1
+        else: return none(CSSAnB)
+        let tok3 = get_tok
+        fail_non_signless_integer tok3
+        return some((int(tok.nvalue), sign * int(tok2.nvalue)))
+      else:
+        fail_non_integer tok2
+        return some((int(tok.nvalue), int(tok2.nvalue)))
+    of "n-", "N-":
+      # <ndash-dimension>
+      let tok2 = get_tok
+      fail_non_signless_integer tok2
+      return some((int(tok.nvalue), -int(tok2.nvalue)))
+    elif tok.unit.startsWithNoCase("n-"):
+      # <ndashdigit-dimension>
+      let tok2 = get_tok
+      fail_non_signless_integer tok2
+      return some((parse_sub_int(tok.unit, "n-".len), int(tok2.nvalue)))
+    else:
+      return none(CSSAnB)
+  else:
+    return none(CSSAnB)
+
+proc parseAnB*(cvals: seq[CSSComponentValue]): (Option[CSSAnB], int) =
+  var state: CSSParseState
+  state.tokens = collect(newSeq):
+    for cval in cvals:
+      CSSParsedItem(cval)
+  let anb = state.parseAnB()
+  return (anb, state.at)
 
 proc parseCSS*(inputStream: Stream): CSSRawStylesheet =
   if inputStream.atEnd():

@@ -50,10 +50,10 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} 
   of ID_SELECTOR:
     hashes.id = sel.id
     return true
-  of ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, COMBINATOR_SELECTOR:
+  of ATTR_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, COMBINATOR_SELECTOR:
     discard
-  of FUNC_SELECTOR:
-    if sel.ftype == FUNCTION_IS:
+  of PSEUDO_SELECTOR:
+    if sel.pseudo.t in {PSEUDO_IS, PSEUDO_WHERE}:
       # Basically just hash whatever the selectors have in common:
       #1. get the hashable values of selector 1
       #2. for every other selector x:
@@ -65,17 +65,17 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} 
       var cancel_id = false
       var cancel_class = false
       var i = 0
-      if i < sel.fsels.len:
-        let list = sel.fsels[i]
-        for sel in list.sels:
+      if i < sel.pseudo.fsels.len:
+        let list = sel.pseudo.fsels[i]
+        for sel in list:
           if hashes.getSelectorIds(sel):
             break
         inc i
 
-      while i < sel.fsels.len:
-        let list = sel.fsels[i]
+      while i < sel.pseudo.fsels.len:
+        let list = sel.pseudo.fsels[i]
         var nhashes: SelectorHashes
-        for sel in list.sels:
+        for sel in list:
           if nhashes.getSelectorIds(sel):
             break
         if hashes.tag == TAG_UNKNOWN:
@@ -123,7 +123,7 @@ iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq
 proc add(sheet: var CSSStylesheet, rule: CSSRuleDef) =
   var hashes: SelectorHashes
   for list in rule.sels:
-    for sel in list.sels:
+    for sel in list:
       if hashes.getSelectorIds(sel):
         break
 

@@ -1,3 +1,4 @@
+import options
 import strutils
 import unicode
 
@@ -7,8 +8,7 @@ import html/tags
 type
   SelectorType* = enum
     TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR,
-    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, FUNC_SELECTOR,
-    COMBINATOR_SELECTOR
+    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR, COMBINATOR_SELECTOR
 
   QueryMode = enum
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
@@ -22,21 +22,18 @@ type
 
   PseudoClass* = enum
     PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
-    PSEUDO_ROOT, PSEUDO_NTH_CHILD, PSEUDO_CHECKED, PSEUDO_FOCUS
+    PSEUDO_ROOT, PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD, PSEUDO_CHECKED,
+    PSEUDO_FOCUS, PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE
 
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
     SUBSEQ_SIBLING_COMBINATOR
-
-  FunctionType* = enum
-    FUNCTION_IS, FUNCTION_NOT, FUNCTION_WHERE
 
   SelectorParser = object
     selectors: seq[SelectorList]
     query: QueryMode
     combinator: Selector
 
-  #TODO combinators
   Selector* = ref object of RootObj
     case t*: SelectorType
     of TYPE_SELECTOR:
@@ -52,20 +49,23 @@ type
     of UNIVERSAL_SELECTOR: #TODO namespaces?
       discard
     of PSEUDO_SELECTOR:
-      pseudo*: PseudoClass
-      pseudonum*: float64
+      pseudo*: PseudoData
     of PSELEM_SELECTOR:
       elem*: PseudoElem
-    of FUNC_SELECTOR:
-      ftype*: FunctionType
-      fsels*: seq[SelectorList]
     of COMBINATOR_SELECTOR:
       ct*: CombinatorType
       csels*: seq[SelectorList]
 
-  SelectorList* = ref object
-    sels*: seq[Selector]
-    pseudo*: PseudoElem
+  PseudoData* = object
+    case t*: PseudoClass
+    of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
+      anb*: CSSAnB
+      ofsels*: Option[seq[SelectorList]]
+    of PSEUDO_IS, PSEUDO_WHERE, PSEUDO_NOT:
+      fsels*: seq[SelectorList]
+    else: discard
+
+  SelectorList* = seq[Selector]
 
 # For debugging
 proc tostr(ftype: enum): string =
@@ -86,16 +86,27 @@ proc `$`*(sel: Selector): string =
   of UNIVERSAL_SELECTOR:
     return "*"
   of PSEUDO_SELECTOR:
-    return ':' & sel.pseudo.tostr()
+    result = ':' & sel.pseudo.t.tostr()
+    case sel.pseudo.t
+    of PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE:
+      result &= '('
+      for fsel in sel.pseudo.fsels:
+        result &= $fsel
+        if fsel != sel.pseudo.fsels[^1]:
+          result &= ','
+      result &= ')'
+    of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
+      result &= '(' & $sel.pseudo.anb.A & 'n' & $sel.pseudo.anb.B
+      if sel.pseudo.ofsels.issome:
+        result &= " of "
+        for fsel in sel.pseudo.ofsels.get:
+          result &= $fsel
+          if fsel != sel.pseudo.ofsels.get[^1]:
+            result &= ','
+      result &= ')'
+    else: discard
   of PSELEM_SELECTOR:
     return "::" & sel.elem.tostr()
-  of FUNC_SELECTOR:
-    result = ':' & sel.ftype.tostr() & '('
-    for fsel in sel.fsels:
-      result &= $fsel
-      if fsel != sel.fsels[^1]:
-        result &= ','
-    result &= ')'
   of COMBINATOR_SELECTOR:
     var delim: char
     case sel.ct
@@ -109,19 +120,8 @@ proc `$`*(sel: Selector): string =
         result &= delim
 
 proc `$`*(sellist: SelectorList): string =
-  for sel in sellist.sels:
+  for sel in sellist:
     result &= $sel
-  case sellist.pseudo
-  of PSEUDO_BEFORE:
-    result &= "::before"
-  of PSEUDO_AFTER:
-    result &= "::after"
-  else: discard
-
-proc add(sellist: SelectorList, sel: Selector) = sellist.sels.add(sel)
-proc add(sellist: SelectorList, sels: SelectorList) = sellist.sels.add(sels.sels)
-proc `[]`*(sellist: SelectorList, i: int): Selector = sellist.sels[i]
-proc len*(sellist: SelectorList): int = sellist.sels.len
 
 func getSpecificity*(sels: SelectorList): int
 
@@ -129,20 +129,30 @@ func getSpecificity(sel: Selector): int =
   case sel.t
   of ID_SELECTOR:
     result += 1000000
-  of CLASS_SELECTOR, ATTR_SELECTOR, PSEUDO_SELECTOR:
+  of CLASS_SELECTOR, ATTR_SELECTOR:
     result += 1000
-  of TYPE_SELECTOR, PSELEM_SELECTOR:
-    result += 1
-  of FUNC_SELECTOR:
-    case sel.ftype
-    of FUNCTION_IS, FUNCTION_NOT:
+  of PSEUDO_SELECTOR:
+    case sel.pseudo.t
+    of PSEUDO_IS, PSEUDO_NOT:
       var best = 0
-      for child in sel.fsels:
+      for child in sel.pseudo.fsels:
         let s = getSpecificity(child)
         if s > best:
           best = s
       result += best
-    else: discard
+    of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
+      if sel.pseudo.ofsels.issome:
+        var best = 0
+        for child in sel.pseudo.ofsels.get:
+          let s = getSpecificity(child)
+          if s > best:
+            best = s
+        result += best
+      result += 1000
+    of PSEUDO_WHERE: discard
+    else: result += 1000
+  of TYPE_SELECTOR, PSELEM_SELECTOR:
+    result += 1
   of UNIVERSAL_SELECTOR:
     discard
   of COMBINATOR_SELECTOR:
@@ -150,23 +160,27 @@ func getSpecificity(sel: Selector): int =
       result += getSpecificity(child)
 
 func getSpecificity*(sels: SelectorList): int =
-  for sel in sels.sels:
+  for sel in sels:
     result += getSpecificity(sel)
 
+func pseudo*(sels: SelectorList): PseudoElem =
+  if sels.len > 0 and sels[^1].t == PSELEM_SELECTOR:
+    return sels[^1].elem
+  return PSEUDO_NONE
+
 func optimizeSelectorList*(selectors: SelectorList): SelectorList =
-  new(result)
   #pass 1: check for invalid sequences
   var i = 1
   while i < selectors.len:
     let sel = selectors[i]
     if sel.t == TYPE_SELECTOR or sel.t == UNIVERSAL_SELECTOR:
-      return SelectorList()
+      return
     inc i
 
   #pass 2: move selectors in combination
   if selectors.len > 1:
     var i = 0
-    var slow = SelectorList()
+    var slow: SelectorList
     if selectors[0].t == UNIVERSAL_SELECTOR:
       inc i
 
@@ -183,25 +197,21 @@ func optimizeSelectorList*(selectors: SelectorList): SelectorList =
 
 proc addSelector(state: var SelectorParser, sel: Selector) =
   if state.combinator != nil:
-    if sel.t == PSELEM_SELECTOR:
-      state.combinator.csels[^1].pseudo = sel.elem
     state.combinator.csels[^1].add(sel)
   else:
-    if sel.t == PSELEM_SELECTOR:
-      state.selectors[^1].pseudo = sel.elem
     state.selectors[^1].add(sel)
 
 proc getLastSel(state: SelectorParser): Selector =
   if state.combinator != nil:
-    return state.combinator.csels[^1].sels[^1]
+    return state.combinator.csels[^1][^1]
   else:
-    return state.selectors[^1].sels[^1]
+    return state.selectors[^1][^1]
 
 proc addSelectorList(state: var SelectorParser) =
   if state.combinator != nil:
     state.selectors[^1].add(state.combinator)
     state.combinator = nil
-  state.selectors.add(SelectorList())
+  state.selectors.add(newSeq[Selector]())
 
 func getSelectorLists(state: var SelectorParser): seq[SelectorList] =
   result = state.selectors
@@ -213,7 +223,7 @@ proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csst
                             CSS_COLON_TOKEN}:
     if state.combinator != nil and state.combinator.ct != ct:
       let nc = Selector(t: COMBINATOR_SELECTOR, ct: ct)
-      nc.csels.add(SelectorList())
+      nc.csels.add(newSeq[Selector]())
       nc.csels[^1].add(state.combinator)
       state.combinator = nc
 
@@ -222,8 +232,8 @@ proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csst
 
     state.combinator.csels.add(state.selectors[^1])
     if state.combinator.csels[^1].len > 0:
-      state.combinator.csels.add(SelectorList())
-    state.selectors[^1] = SelectorList()
+      state.combinator.csels.add(newSeq[Selector]())
+    state.selectors[^1].setLen(0)
     state.query = QUERY_TYPE
 
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
@@ -244,6 +254,8 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     state.parseSelectorCombinator(SUBSEQ_SIBLING_COMBINATOR, csstoken)
   else: discard
 
+  template add_pseudo_element(element: PseudoElem) =
+    state.addSelector(Selector(t: PSELEM_SELECTOR, elem: element))
   case csstoken.tokenType
   of CSS_IDENT_TOKEN:
     case state.query
@@ -252,31 +264,33 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     of QUERY_TYPE:
       state.addSelector(Selector(t: TYPE_SELECTOR, tag: tagType(csstoken.value)))
     of QUERY_PSEUDO:
+      template add_pseudo_class(class: PseudoClass) =
+        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: class)))
       case csstoken.value
       of "before":
-        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
+        add_pseudo_element PSEUDO_BEFORE
       of "after":
-        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_AFTER))
+        add_pseudo_element PSEUDO_AFTER
       of "first-child":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_FIRST_CHILD))
+        add_pseudo_class PSEUDO_FIRST_CHILD
       of "last-child":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_LAST_CHILD))
+        add_pseudo_class PSEUDO_LAST_CHILD
       of "only-child":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_ONLY_CHILD))
+        add_pseudo_class PSEUDO_ONLY_CHILD
       of "hover":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_HOVER))
+        add_pseudo_class PSEUDO_HOVER
       of "root":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_ROOT))
+        add_pseudo_class PSEUDO_ROOT
       of "checked":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_CHECKED))
+        add_pseudo_class PSEUDO_CHECKED
       of "focus":
-        state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_FOCUS))
+        add_pseudo_class PSEUDO_FOCUS
     of QUERY_PSELEM:
       case csstoken.value
       of "before":
-        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_BEFORE))
+        add_pseudo_element PSEUDO_BEFORE
       of "after":
-        state.addSelector(Selector(t: PSELEM_SELECTOR, elem: PSEUDO_AFTER))
+        add_pseudo_element PSEUDO_AFTER
       else: discard
     else: discard
     state.query = QUERY_TYPE
@@ -349,48 +363,78 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
     state.query = QUERY_TYPE
   else: discard
 
-proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction) =
-  if cssfunction.value.len != 1 or not (cssfunction.value[0] of CSSToken):
-    return
-  if CSSToken(cssfunction.value[0]).tokenType != CSS_NUMBER_TOKEN:
-    return
-  let num = CSSToken(cssfunction.value[0]).nvalue
-  if num == float64(int64(num)):
-    state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PSEUDO_NTH_CHILD, pseudonum: num))
-  state.query = QUERY_TYPE
+proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction)
 
-proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
-  if state.query != QUERY_PSEUDO:
-    return
-  let ftype = case cssfunction.name
-  of "not": FUNCTION_NOT
-  of "is": FUNCTION_IS
-  of "where": FUNCTION_WHERE
-  of "nth-child":
-    state.parseNthChild(cssfunction)
-    return
-  else: return
-  state.query = QUERY_TYPE
-  var fun = Selector(t: FUNC_SELECTOR, ftype: ftype)
-  state.addSelector(fun)
-
+proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponentValue]): seq[SelectorList] =
   let osels = state.selectors
   let ocomb = state.combinator
   state.combinator = nil
   state.selectors = newSeq[SelectorList]()
   state.addSelectorList()
-  for cval in cssfunction.value:
+  for cval in body:
     if cval of CSSToken:
       state.parseSelectorToken(CSSToken(cval))
     elif cval of CSSSimpleBlock:
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  fun.fsels = state.getSelectorLists()
+  result = state.getSelectorLists()
   state.selectors = osels
   state.combinator = ocomb
 
-func parseSelectors*(cvals: seq[CSSComponentValue]): seq[SelectorList] =
+proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction) =
+  let (anb, i) = parseAnB(cssfunction.value)
+  if anb.issome:
+    var data = PseudoData(t: PSEUDO_NTH_CHILD, anb: anb.get)
+    if i != cssfunction.value.len:
+      var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
+      state.addSelector(nthchild)
+      if cssfunction.value[i] == CSS_IDENT_TOKEN and CSSToken(cssfunction.value[i]).value == "of":
+        let body = if i + 1 > cssfunction.value.len:
+          cssfunction.value[i+1..^1]
+        else: @[]
+        let val = state.parseSelectorFunctionBody(body)
+        if val.len > 0:
+          nthchild.pseudo.ofsels = some(val)
+  state.query = QUERY_TYPE
+
+proc parseNthLastChild(state: var SelectorParser, cssfunction: CSSFunction) =
+  let (anb, i) = parseAnB(cssfunction.value)
+  if anb.issome:
+    var data = PseudoData(t: PSEUDO_NTH_LAST_CHILD, anb: anb.get)
+    if i != cssfunction.value.len:
+      var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
+      state.addSelector(nthchild)
+      if cssfunction.value[i] == CSS_IDENT_TOKEN and CSSToken(cssfunction.value[i]).value == "of":
+        let body = if i + 1 > cssfunction.value.len:
+          cssfunction.value[i+1..^1]
+        else: @[]
+        let val = state.parseSelectorFunctionBody(body)
+        if val.len > 0:
+          nthchild.pseudo.ofsels = some(val)
+  state.query = QUERY_TYPE
+
+proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
+  if state.query != QUERY_PSEUDO:
+    return
+  let ftype = case cssfunction.name
+  of "not": PSEUDO_NOT
+  of "is": PSEUDO_IS
+  of "where": PSEUDO_WHERE
+  of "nth-child":
+    state.parseNthChild(cssfunction)
+    return
+  of "nth-last-child":
+    state.parseNthLastChild(cssfunction)
+    return
+  else: return
+  state.query = QUERY_TYPE
+  var data = PseudoData(t: ftype)
+  var fun = Selector(t: PSEUDO_SELECTOR, pseudo: data)
+  state.addSelector(fun)
+  fun.pseudo.fsels = state.parseSelectorFunctionBody(cssfunction.value)
+
+func parseSelectors*(cvals: seq[CSSComponentValue]): seq[SelectorList] = {.cast(noSideEffect).}:
   var state = SelectorParser()
   state.addSelectorList()
   for cval in cvals:

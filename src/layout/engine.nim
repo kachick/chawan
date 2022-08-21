@@ -522,8 +522,8 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
   if padding_left > 0:
     box.ictx.currentLine.addSpacing(padding_left, box.ictx.cellheight, paddingformat)
 
+  assert not (box.children.len > 0 and box.text.len > 0)
   for text in box.text:
-    assert box.children.len == 0
     box.ictx.renderText(text, parentWidth, box.computed, box.node)
 
   for child in box.children:
