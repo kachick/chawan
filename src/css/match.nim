@@ -63,7 +63,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
         inc i
     return false
   of PSEUDO_NTH_LAST_CHILD:
-    if sel.pseudo.ofsels.issome and not elem.selectorsMatch(sel.pseudo.ofsels.get):
+    if sel.pseudo.ofsels.issome and not selem.selectorsMatch(sel.pseudo.ofsels.get, felem):
       return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
@@ -72,9 +72,15 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     else: selem.parentNode
     if parent == nil: return false
     for child in parent.children_rev:
+      when selem is StyledNode:
+        if not child.isDomElement: continue
       if child == selem:
-        return i == B or i > B and A != 0 and (i - B) mod A == 0
-      if sel.pseudo.ofsels.isnone or child.selectorsMatch(sel.pseudo.ofsels.get):
+        if A == 0:
+          return i == B
+        if A < 0:
+          return (i - B) <= 0 and (i - B) mod A == 0
+        return (i - B) >= 0 and (i - B) mod A == 0
+      if sel.pseudo.ofsels.isnone or child.selectorsMatch(sel.pseudo.ofsels.get, felem):
         inc i
     return false
   of PSEUDO_CHECKED:
