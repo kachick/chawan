@@ -79,23 +79,28 @@ type
 # For debugging
 proc `$`*(c: CSSParsedItem): string =
   if c of CSSToken:
-    case CSSToken(c).tokenType:
+    let c = CSSToken(c)
+    case c.tokenType:
     of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
-      result &= $CSSToken(c).tokenType & CSSToken(c).value & '\n'
+      result &= $c.tokenType & c.value & '\n'
     of CSS_HASH_TOKEN:
-      result &= '#' & CSSToken(c).value
+      result &= '#' & c.value
     of CSS_IDENT_TOKEN:
-      result &= CSSToken(c).value
+      result &= c.value
     of CSS_STRING_TOKEN:
-      result &= ("\"" & CSSToken(c).value & "\"")
+      result &= ("\"" & c.value & "\"")
     of CSS_DELIM_TOKEN:
-      result &= CSSToken(c).rvalue
+      result &= c.rvalue
     of CSS_DIMENSION_TOKEN:
-      result &= $CSSToken(c).tokenType & $CSSToken(c).nvalue & "unit" & CSSToken(c).unit & $CSSToken(c).tflagb
+      case c.tflagb
+      of TFLAGB_NUMBER:
+        result &= $c.nvalue & c.unit
+      of TFLAGB_INTEGER:
+        result &= $int64(c.nvalue) & c.unit
     of CSS_NUMBER_TOKEN:
-      result &= $CSSToken(c).nvalue & CSSToken(c).unit
+      result &= $c.nvalue & c.unit
     of CSS_PERCENTAGE_TOKEN:
-      result &= $CSSToken(c).nvalue & "%"
+      result &= $c.nvalue & "%"
     of CSS_COLON_TOKEN:
       result &= ":"
     of CSS_WHITESPACE_TOKEN:
@@ -105,7 +110,7 @@ proc `$`*(c: CSSParsedItem): string =
     of CSS_COMMA_TOKEN:
       result &= ","
     else:
-      result &= $CSSToken(c).tokenType & '\n'
+      result &= $c.tokenType & '\n'
   elif c of CSSDeclaration:
     result &= CSSDeclaration(c).name
     result &= ": "
@@ -857,15 +862,18 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       if c notin AsciiDigit:
         return none(CSSAnB)
     parseInt32(s)
-  template fail_non_integer(tok: CSSToken) =
+  template fail_non_integer(tok: CSSToken, res: Option[CSSAnB]) =
     if tok.tokenType != CSS_NUMBER_TOKEN:
-      return none(CSSAnB)
+      state.reconsume()
+      return res
     if tok.tflagb != TFLAGB_INTEGER:
-      return none(CSSAnB)
+      state.reconsume()
+      return res
     if int64(tok.nvalue) > high(int):
-      return none(CSSAnB)
-  template fail_non_signless_integer(tok: CSSToken) =
-    fail_non_integer tok #TODO check if signless?
+      state.reconsume()
+      return res
+  template fail_non_signless_integer(tok: CSSToken, res: Option[CSSAnB]) =
+    fail_non_integer tok, res #TODO check if signless?
 
   fail_eof
   skip_whitespace
@@ -891,10 +899,10 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         of Rune('-'): -1
         else: return none(CSSAnB)
         let tok3 = get_tok
-        fail_non_signless_integer tok3
-        return some((1, sign * int(tok2.nvalue)))
+        fail_non_signless_integer tok3, some((1, 0))
+        return some((1, sign * int(tok3.nvalue)))
       else:
-        fail_non_integer tok2
+        fail_non_integer tok2, some((1, 0))
         return some((1, int(tok2.nvalue)))
     of "-n", "-N":
       fail_plus
@@ -907,23 +915,24 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         of Rune('-'): -1
         else: return none(CSSAnB)
         let tok3 = get_tok
-        fail_non_signless_integer tok3
+        fail_non_signless_integer tok3, some((-1, 0))
         return some((-1, sign * int(tok2.nvalue)))
       else:
-        fail_non_integer tok2
+        fail_non_integer tok2, some((-1, 0))
         return some((-1, int(tok2.nvalue)))
     of "n-", "N-":
       let tok2 = get_tok
-      fail_non_signless_integer tok2
+      fail_non_signless_integer tok2, none(CSSAnB)
       return some((1, -int(tok2.nvalue)))
     of "-n-", "-N-":
       fail_plus
       let tok2 = get_tok
-      fail_non_signless_integer tok2
+      fail_non_signless_integer tok2, none(CSSAnB)
       return some((-1, -int(tok2.nvalue)))
     elif tok.unit.startsWithNoCase("n-"):
       return some((1, -parse_sub_int(tok.value, "n-".len)))
     elif tok.unit.startsWithNoCase("-n-"):
+      fail_plus
       return some((-1, -parse_sub_int(tok.value, "n-".len)))
     else:
       return none(CSSAnB)
@@ -953,21 +962,19 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         of Rune('-'): -1
         else: return none(CSSAnB)
         let tok3 = get_tok
-        fail_non_signless_integer tok3
-        return some((int(tok.nvalue), sign * int(tok2.nvalue)))
+        fail_non_signless_integer tok3, some((int(tok.nvalue), 0))
+        return some((int(tok.nvalue), sign * int(tok3.nvalue)))
       else:
-        fail_non_integer tok2
+        fail_non_integer tok2, some((int(tok.nvalue), 0))
         return some((int(tok.nvalue), int(tok2.nvalue)))
     of "n-", "N-":
       # <ndash-dimension>
       let tok2 = get_tok
-      fail_non_signless_integer tok2
+      fail_non_signless_integer tok2, none(CSSAnB)
       return some((int(tok.nvalue), -int(tok2.nvalue)))
     elif tok.unit.startsWithNoCase("n-"):
       # <ndashdigit-dimension>
-      let tok2 = get_tok
-      fail_non_signless_integer tok2
-      return some((parse_sub_int(tok.unit, "n-".len), int(tok2.nvalue)))
+      return some((int(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
     else:
       return none(CSSAnB)
   else:

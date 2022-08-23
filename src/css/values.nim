@@ -341,7 +341,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
           let c = (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
                   (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
                   (hexValue(s[2]) shl 4) or hexValue(s[2])
-          return CSSColor(rgba: RGBAColor(c))
+          return CSSColor(rgba: RGBColor(c))
         elif s.len == 6:
           for r in s:
             if hexValue(r) == -1:
@@ -349,7 +349,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
           let c = (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
                   (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
                   (hexValue(s[4]) shl 4) or hexValue(s[5])
-          return CSSColor(rgba: RGBAColor(c))
+          return CSSColor(rgba: RGBColor(c))
         else:
           raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:

@@ -164,17 +164,29 @@ type
     #TODO result
 
 # For debugging
+proc tostr(ftype: enum): string =
+  return ($ftype).split('_')[1..^1].join("-").tolower()
+
 func `$`*(node: Node): string =
   if node == nil: return "nil"
   case node.nodeType
   of ELEMENT_NODE:
     let element = Element(node)
-    "Element of " & $element.tagType & ", children: {\n" & $element.childNodes & "\n}"
+    result = "<" & $element.tagType.tostr()
+    for k, v in element.attributes:
+      result &= ' ' & k & (if v != "": "=\"" & v & "\"" else: "")
+    result &= ">\n"
+    for node in element.childNodes:
+      for line in ($node).split('\n'):
+        result &= "\t" & line & "\n"
+    result &= "</" & $element.tagType.tostr() & ">"
   of TEXT_NODE:
     let text = Text(node)
-    "Text: " & text.data
+    result = text.data
+  of COMMENT_NODE:
+    result = "<!-- " & Comment(node).data & "-->"
   else:
-    "Node of " & $node.nodeType
+    result = "Node of " & $node.nodeType
 
 iterator children*(node: Node): Element {.inline.} =
   for child in node.childNodes:

@@ -3,8 +3,8 @@ import streams
 import sugar
 
 import css/cssparser
+import css/match
 import css/mediaquery
-import css/select
 import css/selectorparser
 import css/sheet
 import css/stylednode

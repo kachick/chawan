@@ -70,6 +70,9 @@ iterator children_rev*(node: StyledNode): StyledNode {.inline.} =
   for i in countdown(node.children.high, 0):
     yield node.children[i]
 
+func isDomElement*(styledNode: StyledNode): bool {.inline.} =
+  styledNode.t == STYLED_ELEMENT and styledNode.pseudo == PSEUDO_NONE
+
 func checked(element: Element): bool =
   if element.tagType == TAG_INPUT:
     let input = HTMLInputElement(element)

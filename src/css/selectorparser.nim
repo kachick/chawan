@@ -382,36 +382,25 @@ proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponent
   state.selectors = osels
   state.combinator = ocomb
 
-proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction) =
+proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: PseudoData) =
+  var data = data
   let (anb, i) = parseAnB(cssfunction.value)
   if anb.issome:
-    var data = PseudoData(t: PSEUDO_NTH_CHILD, anb: anb.get)
-    if i != cssfunction.value.len:
-      var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
+    data.anb = anb.get
+    var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
+    var i = i
+    while i < cssfunction.value.len and cssfunction.value[i] == CSS_WHITESPACE_TOKEN:
+      inc i
+    if i >= cssfunction.value.len:
       state.addSelector(nthchild)
+    else:
       if cssfunction.value[i] == CSS_IDENT_TOKEN and CSSToken(cssfunction.value[i]).value == "of":
-        let body = if i + 1 > cssfunction.value.len:
-          cssfunction.value[i+1..^1]
-        else: @[]
-        let val = state.parseSelectorFunctionBody(body)
-        if val.len > 0:
-          nthchild.pseudo.ofsels = some(val)
-  state.query = QUERY_TYPE
-
-proc parseNthLastChild(state: var SelectorParser, cssfunction: CSSFunction) =
-  let (anb, i) = parseAnB(cssfunction.value)
-  if anb.issome:
-    var data = PseudoData(t: PSEUDO_NTH_LAST_CHILD, anb: anb.get)
-    if i != cssfunction.value.len:
-      var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
-      state.addSelector(nthchild)
-      if cssfunction.value[i] == CSS_IDENT_TOKEN and CSSToken(cssfunction.value[i]).value == "of":
-        let body = if i + 1 > cssfunction.value.len:
-          cssfunction.value[i+1..^1]
-        else: @[]
-        let val = state.parseSelectorFunctionBody(body)
-        if val.len > 0:
-          nthchild.pseudo.ofsels = some(val)
+        if i < cssfunction.value.len:
+          let body = cssfunction.value[i..^1]
+          let val = state.parseSelectorFunctionBody(body)
+          if val.len > 0:
+            nthchild.pseudo.ofsels = some(val)
+            state.addSelector(nthchild)
   state.query = QUERY_TYPE
 
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
@@ -422,10 +411,10 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
   of "is": PSEUDO_IS
   of "where": PSEUDO_WHERE
   of "nth-child":
-    state.parseNthChild(cssfunction)
+    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_CHILD))
     return
   of "nth-last-child":
-    state.parseNthLastChild(cssfunction)
+    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
     return
   else: return
   state.query = QUERY_TYPE
