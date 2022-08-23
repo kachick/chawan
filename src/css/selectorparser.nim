@@ -30,11 +30,11 @@ type
     SUBSEQ_SIBLING_COMBINATOR
 
   SelectorParser = object
-    selectors: seq[SelectorList]
+    selectors: seq[ComplexSelector]
     query: QueryMode
     combinator: Selector
 
-  Selector* = ref object of RootObj
+  Selector* = ref object of RootObj # compound selector
     case t*: SelectorType
     of TYPE_SELECTOR:
       tag*: TagType
@@ -54,24 +54,28 @@ type
       elem*: PseudoElem
     of COMBINATOR_SELECTOR:
       ct*: CombinatorType
-      csels*: seq[SelectorList]
+      csels*: SelectorList
 
   PseudoData* = object
     case t*: PseudoClass
     of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
       anb*: CSSAnB
-      ofsels*: Option[seq[SelectorList]]
+      ofsels*: Option[SelectorList]
     of PSEUDO_IS, PSEUDO_WHERE, PSEUDO_NOT:
-      fsels*: seq[SelectorList]
+      fsels*: SelectorList
     else: discard
 
-  SelectorList* = seq[Selector]
+  # Kind of an oversimplification, but the distinction between complex and
+  # compound selectors isn't too significant.
+  ComplexSelector* = seq[Selector]
+
+  SelectorList* = seq[ComplexSelector]
 
 # For debugging
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
 
-proc `$`*(sellist: SelectorList): string
+proc `$`*(sellist: ComplexSelector): string
 
 proc `$`*(sel: Selector): string =
   case sel.t
@@ -119,11 +123,11 @@ proc `$`*(sel: Selector): string =
       if slist != sel.csels[^1]:
         result &= delim
 
-proc `$`*(sellist: SelectorList): string =
+proc `$`*(sellist: ComplexSelector): string =
   for sel in sellist:
     result &= $sel
 
-func getSpecificity*(sels: SelectorList): int
+func getSpecificity*(sels: ComplexSelector): int
 
 func getSpecificity(sel: Selector): int =
   case sel.t
@@ -159,16 +163,16 @@ func getSpecificity(sel: Selector): int =
     for child in sel.csels:
       result += getSpecificity(child)
 
-func getSpecificity*(sels: SelectorList): int =
+func getSpecificity*(sels: ComplexSelector): int =
   for sel in sels:
     result += getSpecificity(sel)
 
-func pseudo*(sels: SelectorList): PseudoElem =
+func pseudo*(sels: ComplexSelector): PseudoElem =
   if sels.len > 0 and sels[^1].t == PSELEM_SELECTOR:
     return sels[^1].elem
   return PSEUDO_NONE
 
-func optimizeSelectorList*(selectors: SelectorList): SelectorList =
+func optimizeComplexSelector*(selectors: ComplexSelector): ComplexSelector =
   #pass 1: check for invalid sequences
   var i = 1
   while i < selectors.len:
@@ -180,7 +184,7 @@ func optimizeSelectorList*(selectors: SelectorList): SelectorList =
   #pass 2: move selectors in combination
   if selectors.len > 1:
     var i = 0
-    var slow: SelectorList
+    var slow: ComplexSelector
     if selectors[0].t == UNIVERSAL_SELECTOR:
       inc i
 
@@ -207,13 +211,13 @@ proc getLastSel(state: SelectorParser): Selector =
   else:
     return state.selectors[^1][^1]
 
-proc addSelectorList(state: var SelectorParser) =
+proc addComplexSelector(state: var SelectorParser) =
   if state.combinator != nil:
     state.selectors[^1].add(state.combinator)
     state.combinator = nil
   state.selectors.add(newSeq[Selector]())
 
-func getSelectorLists(state: var SelectorParser): seq[SelectorList] =
+func getComplexSelectors(state: var SelectorParser): seq[ComplexSelector] =
   result = state.selectors
   if state.combinator != nil:
     result[^1].add(state.combinator)
@@ -223,8 +227,7 @@ proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csst
                             CSS_COLON_TOKEN}:
     if state.combinator != nil and state.combinator.ct != ct:
       let nc = Selector(t: COMBINATOR_SELECTOR, ct: ct)
-      nc.csels.add(newSeq[Selector]())
-      nc.csels[^1].add(state.combinator)
+      nc.csels.add(@[state.combinator])
       state.combinator = nc
 
     if state.combinator == nil:
@@ -314,7 +317,7 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     state.addSelector(Selector(t: ID_SELECTOR, id: csstoken.value))
   of CSS_COMMA_TOKEN:
     if state.selectors[^1].len > 0:
-      state.addSelectorList()
+      state.addComplexSelector()
   of CSS_WHITESPACE_TOKEN:
     if state.selectors[^1].len > 0 or state.combinator != nil:
       state.query = QUERY_DESC_COMBINATOR
@@ -365,12 +368,12 @@ proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBloc
 
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction)
 
-proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponentValue]): seq[SelectorList] =
+proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponentValue]): seq[ComplexSelector] =
   let osels = state.selectors
   let ocomb = state.combinator
   state.combinator = nil
-  state.selectors = newSeq[SelectorList]()
-  state.addSelectorList()
+  state.selectors = newSeq[ComplexSelector]()
+  state.addComplexSelector()
   for cval in body:
     if cval of CSSToken:
       state.parseSelectorToken(CSSToken(cval))
@@ -378,7 +381,7 @@ proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponent
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  result = state.getSelectorLists()
+  result = state.getComplexSelectors()
   state.selectors = osels
   state.combinator = ocomb
 
@@ -423,9 +426,9 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
   state.addSelector(fun)
   fun.pseudo.fsels = state.parseSelectorFunctionBody(cssfunction.value)
 
-func parseSelectors*(cvals: seq[CSSComponentValue]): seq[SelectorList] = {.cast(noSideEffect).}:
+func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.cast(noSideEffect).}:
   var state = SelectorParser()
-  state.addSelectorList()
+  state.addComplexSelector()
   for cval in cvals:
     if cval of CSSToken:
       state.parseSelectorToken(CSSToken(cval))

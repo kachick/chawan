@@ -21,9 +21,9 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool
+func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: ComplexSelector, felem: T = nil): bool
 
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: seq[SelectorList], felem: T = nil): bool =
+func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool =
   for slist in selectors:
     if elem.selectorsMatch(slist, felem):
       return true
@@ -184,7 +184,7 @@ func selectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): b
 
 # WARNING for StyledNode, this has the side effect of modifying depends.
 #TODO make that an explicit flag or something, also get rid of the Element case
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool =
+func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: ComplexSelector, felem: T = nil): bool =
   let felem = if felem != nil:
     felem
   else:

@@ -10,7 +10,7 @@ type
   CSSRuleBase* = ref object of RootObj
 
   CSSRuleDef* = ref object of CSSRuleBase
-    sels*: seq[SelectorList]
+    sels*: SelectorList
     decls*: seq[CSSDeclaration]
 
   CSSConditionalDef* = ref object of CSSRuleBase
@@ -39,7 +39,7 @@ func newStylesheet*(cap: int): CSSStylesheet =
   result.class_table = newTable[string, seq[CSSRuleDef]](bucketsize)
   result.general_list = newSeqOfCap[CSSRuleDef](bucketsize)
 
-proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} =
+proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool =
   case sel.t
   of TYPE_SELECTOR:
     hashes.tag = sel.tag
@@ -50,8 +50,13 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool {.inline.} 
   of ID_SELECTOR:
     hashes.id = sel.id
     return true
-  of ATTR_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, COMBINATOR_SELECTOR:
-    discard
+  of ATTR_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR:
+    return false
+  of COMBINATOR_SELECTOR:
+    for sel in sel.csels[^1]:
+      if hashes.getSelectorIds(sel):
+        return true
+    return false
   of PSEUDO_SELECTOR:
     if sel.pseudo.t in {PSEUDO_IS, PSEUDO_WHERE}:
       # Basically just hash whatever the selectors have in common:
