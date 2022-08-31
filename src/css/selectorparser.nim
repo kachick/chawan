@@ -1,4 +1,5 @@
 import options
+import streams
 import strutils
 import unicode
 
@@ -172,33 +173,6 @@ func pseudo*(sels: ComplexSelector): PseudoElem =
     return sels[^1].elem
   return PSEUDO_NONE
 
-func optimizeComplexSelector*(selectors: ComplexSelector): ComplexSelector =
-  #pass 1: check for invalid sequences
-  var i = 1
-  while i < selectors.len:
-    let sel = selectors[i]
-    if sel.t == TYPE_SELECTOR or sel.t == UNIVERSAL_SELECTOR:
-      return
-    inc i
-
-  #pass 2: move selectors in combination
-  if selectors.len > 1:
-    var i = 0
-    var slow: ComplexSelector
-    if selectors[0].t == UNIVERSAL_SELECTOR:
-      inc i
-
-    while i < selectors.len:
-      if selectors[i].t in {ATTR_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR}:
-        slow.add(selectors[i])
-      else:
-        result.add(selectors[i])
-      inc i
-
-    result.add(slow)
-  else:
-    result.add(selectors[0])
-
 proc addSelector(state: var SelectorParser, sel: Selector) =
   if state.combinator != nil:
     state.combinator.csels[^1].add(sel)
@@ -223,21 +197,22 @@ func getComplexSelectors(state: var SelectorParser): seq[ComplexSelector] =
     result[^1].add(state.combinator)
 
 proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csstoken: CSSToken) =
-  if csstoken.tokenType in {CSS_IDENT_TOKEN, CSS_HASH_TOKEN,
-                            CSS_COLON_TOKEN}:
-    if state.combinator != nil and state.combinator.ct != ct:
-      let nc = Selector(t: COMBINATOR_SELECTOR, ct: ct)
-      nc.csels.add(@[state.combinator])
-      state.combinator = nc
+  if csstoken.tokenType notin {CSS_IDENT_TOKEN, CSS_HASH_TOKEN, CSS_COLON_TOKEN} and
+     (csstoken.tokenType != CSS_DELIM_TOKEN or csstoken.rvalue != Rune('.')):
+    return
+  if state.combinator != nil and state.combinator.ct != ct:
+    let nc = Selector(t: COMBINATOR_SELECTOR, ct: ct)
+    nc.csels.add(@[state.combinator])
+    state.combinator = nc
 
-    if state.combinator == nil:
-      state.combinator = Selector(t: COMBINATOR_SELECTOR, ct: ct)
+  if state.combinator == nil:
+    state.combinator = Selector(t: COMBINATOR_SELECTOR, ct: ct)
 
-    state.combinator.csels.add(state.selectors[^1])
-    if state.combinator.csels[^1].len > 0:
-      state.combinator.csels.add(newSeq[Selector]())
-    state.selectors[^1].setLen(0)
-    state.query = QUERY_TYPE
+  state.combinator.csels.add(state.selectors[^1])
+  if state.combinator.csels[^1].len > 0:
+    state.combinator.csels.add(newSeq[Selector]())
+  state.selectors[^1].setLen(0)
+  state.query = QUERY_TYPE
 
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
   case state.query
@@ -440,3 +415,6 @@ func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.ca
     state.selectors[^1].add(state.combinator)
     state.combinator = nil
   return state.selectors
+
+proc parseSelectors*(stream: Stream): seq[ComplexSelector] =
+  return parseSelectors(parseListOfComponentValues(stream))
