@@ -11,7 +11,6 @@ import io/cell
 import io/lineedit
 import io/loader
 import io/request
-import io/serialize
 import io/term
 import js/javascript
 import js/regex
@@ -181,7 +180,7 @@ proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = fals
     let page = client.loader.doRequest(request)
     client.needsauth = page.status == 401 # Unauthorized
     client.redirecturl = page.redirect
-    if page.s != nil:
+    if page.body != nil:
       client.addBuffer()
       g_client = client
       setControlCHook(proc() {.noconv.} =
@@ -189,13 +188,7 @@ proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = fals
           g_client.discardBuffer()
         interruptError())
       client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
-      client.buffer.istream = newStringStream()
-      while true:
-        var buf: string
-        page.s.sread(buf)
-        if buf == "": break
-        client.buffer.istream.write(buf)
-      client.buffer.istream.setPosition(0)
+      client.buffer.istream = page.body
       client.buffer.location = request.url
       client.setupBuffer()
     else:
@@ -515,7 +508,10 @@ proc checkAuth(client: Client) =
 
 proc followRedirect(client: Client) =
   while client.redirecturl.issome:
-    client.buffer.refreshBuffer()
+    client.statusMode()
+    print("Redirecting to ", $client.redirecturl.get)
+    stdout.flushFile()
+    client.buffer.refreshBuffer(true)
     var buf = client.buffer
     let redirecturl = client.redirecturl.get
     client.redirecturl = none(Url)

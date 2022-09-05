@@ -19,12 +19,17 @@ type
     multipart*: Option[MimeData]
 
   LoadResult* = object
-    s*: Stream
+    body*: ReadableStream
     res*: int
     contenttype*: string
     status*: int
     headers*: HeaderList
     redirect*: Option[Url]
+
+  ReadableStream* = ref object of Stream
+    isource*: Stream
+    buf: string
+    isend: bool
 
   HeaderList* = object
     table*: Table[string, seq[string]]
@@ -46,6 +51,59 @@ iterator pairs*(headers: HeaderList): (string, string) =
   for k, vs in headers.table:
     for v in vs:
       yield (k, v)
+
+proc newReadableStream*(isource: Stream): ReadableStream =
+  new(result)
+  result.isource = isource
+  result.readDataImpl = (proc(s: Stream, buffer: pointer, bufLen: int): int =
+    var s = ReadableStream(s)
+    if s.atEnd:
+      return 0
+    while s.buf.len < bufLen:
+      var len: int
+      s.isource.read(len)
+      if len == 0:
+        result = s.buf.len
+        copyMem(buffer, addr(s.buf[0]), result)
+        s.buf = s.buf.substr(result)
+        s.isend = true
+        return
+      var nbuf: string
+      s.isource.readStr(len, nbuf)
+      s.buf &= nbuf
+    assert s.buf.len >= bufLen
+    result = bufLen
+    copyMem(buffer, addr(s.buf[0]), result)
+    s.buf = s.buf.substr(result)
+    if s.buf.len == 0:
+      var len: int
+      s.isource.read(len)
+      if len == 0:
+        s.isend = true
+      else:
+        s.isource.readStr(len, s.buf)
+  )
+  result.atEndImpl = (proc(s: Stream): bool =
+    return ReadableStream(s).isend
+  )
+  result.closeImpl = (proc(s: Stream) = {.cast(tags: [WriteIOEffect]).}: #TODO TODO TODO ew.
+    var s = ReadableStream(s)
+    if s.isend: return
+    s.buf = ""
+    while true:
+      var len: int
+      s.isource.read(len)
+      if len == 0:
+        s.isend = true
+        break
+      s.isource.setPosition(s.isource.getPosition() + len)
+  )
+  var len: int
+  result.isource.read(len)
+  if len == 0:
+    result.isend = true
+  else:
+    result.isource.readStr(len, result.buf)
 
 func newHeaderList*(): HeaderList =
   discard

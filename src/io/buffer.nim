@@ -15,7 +15,6 @@ import io/cell
 import io/lineedit
 import io/loader
 import io/request
-import io/serialize
 import io/term
 import js/regex
 import layout/box
@@ -847,16 +846,8 @@ proc loadResources(buffer: Buffer, document: Document) =
           let url = url.get
           if url.scheme == buffer.location.scheme:
             let fs = buffer.loader.doRequest(newRequest(url))
-            if fs.s != nil and fs.contenttype == "text/css":
-              var res = newStringStream()
-              while true:
-                var s: string
-                fs.s.sread(s)
-                if s == "": break
-                res.write(s)
-              res.setPosition(0)
-              let sheet = parseStylesheet(res)
-              elem.sheet = sheet
+            if fs.body != nil and fs.contenttype == "text/css":
+              elem.sheet = parseStylesheet(fs.body)
 
     for child in elem.children_rev:
       stack.add(child)

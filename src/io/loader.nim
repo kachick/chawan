@@ -93,10 +93,9 @@ proc doRequest*(loader: FileLoader, request: Request): LoadResult =
       loader.ostream.sread(result.status)
       loader.ostream.sread(result.contenttype)
       loader.ostream.sread(result.redirect)
-      result.s = loader.ostream
+      result.body = newReadableStream(loader.ostream)
   else:
-    eprint "Error: no loader process"
-    quit(1)
+    raise newException(Defect, "Error: no loader process")
 
 proc newFileLoader*(defaultHeaders: HeaderList): FileLoader =
   new(result)
