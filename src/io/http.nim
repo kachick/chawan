@@ -1,7 +1,6 @@
 import options
 import streams
 import strutils
-import tables
 
 import bindings/curl
 import io/request
@@ -10,12 +9,15 @@ import types/url
 import utils/twtstr
 
 type
-  HeaderResult* = ref object
+  HeaderOpaque* = ref object
     statusline: bool
     headers: HeaderList
     curl: CURL
-    ostream: Stream
     request: Request
+    ostream: Stream
+
+func newHeaderOpaque(curl: CURL, request: Request, ostream: Stream): HeaderOpaque =
+  HeaderOpaque(headers: newHeaderList(), curl: curl, ostream: ostream, request: request)
 
 template setopt(curl: CURL, opt: CURLoption, arg: typed) =
   discard curl_easy_setopt(curl, opt, arg)
@@ -31,31 +33,24 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   for i in 0..<nitems:
     line[i] = p[i]
 
-  let headers = cast[HeaderResult](userdata)
-  if not headers.statusline:
-    headers.statusline = true
-    headers.ostream.swrite(int(CURLE_OK))
+  let op = cast[HeaderOpaque](userdata)
+  if not op.statusline:
+    op.statusline = true
+    op.ostream.swrite(int(CURLE_OK))
     var status: int
-    headers.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    headers.ostream.swrite(status)
+    op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
+    op.ostream.swrite(status)
     return nitems
 
   let k = line.until(':')
 
   if k.len == line.len:
     # empty line (last, before body) or invalid (=> error)
-    headers.ostream.swrite(headers.headers.getOrDefault("Content-Type").until(';'))
-    var urlp: cstring
-    headers.curl.getinfo(CURLINFO_REDIRECT_URL, addr urlp)
-    if "Location" in headers.headers.table:
-      let location = headers.headers.table["Location"][0]
-      headers.ostream.swrite(parseUrl(location, some(headers.request.url)))
-    else:
-      headers.ostream.swrite(none(Url))
+    op.ostream.swrite(op.headers)
     return nitems
 
   let v = line.substr(k.len + 1).strip()
-  headers.headers.add(k, v)
+  op.headers.add(k, v)
   return nitems
 
 proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer): csize_t {.cdecl.} =
@@ -64,14 +59,17 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer)
     s[i] = p[i]
   let stream = cast[Stream](userdata)
   if nmemb > 0:
-    stream.swrite(s)
+    stream.write(s)
     stream.flush()
   return nmemb
 
 proc loadHttp*(request: Request, ostream: Stream) =
   let curl = curl_easy_init()
 
-  if curl == nil: return # fail
+  if curl == nil:
+    ostream.swrite(-1)
+    ostream.flush()
+    return # fail
 
   let surl = request.url.serialize()
   curl.setopt(CURLOPT_URL, surl)
@@ -79,7 +77,14 @@ proc loadHttp*(request: Request, ostream: Stream) =
   curl.setopt(CURLOPT_WRITEDATA, ostream)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
 
-  let headerres = HeaderResult(headers: newHeaderList(), curl: curl, ostream: ostream, request: request)
+  let headerres = curl.newHeaderOpaque(request, ostream)
+
+  GC_ref(headerres) # this could get unref'd before writeheader finishes
+  GC_ref(ostream) #TODO not sure about this one, but better safe than sorry
+  defer:
+    GC_unref(headerres)
+    GC_unref(ostream)
+
   curl.setopt(CURLOPT_HEADERDATA, headerres)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
 
@@ -120,10 +125,7 @@ proc loadHttp*(request: Request, ostream: Stream) =
     curl.setopt(CURLOPT_HTTPHEADER, slist)
 
   let res = curl_easy_perform(curl)
-  if res == CURLE_OK:
-    ostream.swrite("")
-    ostream.flush()
-  else:
+  if res != CURLE_OK:
     ostream.swrite(int(res))
     ostream.flush()
 

@@ -18,8 +18,8 @@ type
     body*: Option[string]
     multipart*: Option[MimeData]
 
-  LoadResult* = object
-    body*: ReadableStream
+  Response* = object
+    body*: Stream
     res*: int
     contenttype*: string
     status*: int
@@ -31,7 +31,7 @@ type
     buf: string
     isend: bool
 
-  HeaderList* = object
+  HeaderList* = ref object
     table*: Table[string, seq[string]]
 
 # Originally from the stdlib
@@ -52,52 +52,55 @@ iterator pairs*(headers: HeaderList): (string, string) =
     for v in vs:
       yield (k, v)
 
+proc rsReadData(s: Stream, buffer: pointer, bufLen: int): int =
+  var s = ReadableStream(s)
+  if s.atEnd:
+    return 0
+  while s.buf.len < bufLen:
+    var len: int
+    s.isource.read(len)
+    if len == 0:
+      result = s.buf.len
+      copyMem(buffer, addr(s.buf[0]), result)
+      s.buf = s.buf.substr(result)
+      s.isend = true
+      return
+    var nbuf: string
+    s.isource.readStr(len, nbuf)
+    s.buf &= nbuf
+  assert s.buf.len >= bufLen
+  result = bufLen
+  copyMem(buffer, addr(s.buf[0]), result)
+  s.buf = s.buf.substr(result)
+  if s.buf.len == 0:
+    var len: int
+    s.isource.read(len)
+    if len == 0:
+      s.isend = true
+    else:
+      s.isource.readStr(len, s.buf)
+
+proc rsAtEnd(s: Stream): bool =
+  ReadableStream(s).isend
+
+proc rsClose(s: Stream) = {.cast(tags: [WriteIOEffect]).}: #TODO TODO TODO ew.
+  var s = ReadableStream(s)
+  if s.isend: return
+  s.buf = ""
+  while true:
+    var len: int
+    s.isource.read(len)
+    if len == 0:
+      s.isend = true
+      break
+    s.isource.setPosition(s.isource.getPosition() + len)
+
 proc newReadableStream*(isource: Stream): ReadableStream =
   new(result)
   result.isource = isource
-  result.readDataImpl = (proc(s: Stream, buffer: pointer, bufLen: int): int =
-    var s = ReadableStream(s)
-    if s.atEnd:
-      return 0
-    while s.buf.len < bufLen:
-      var len: int
-      s.isource.read(len)
-      if len == 0:
-        result = s.buf.len
-        copyMem(buffer, addr(s.buf[0]), result)
-        s.buf = s.buf.substr(result)
-        s.isend = true
-        return
-      var nbuf: string
-      s.isource.readStr(len, nbuf)
-      s.buf &= nbuf
-    assert s.buf.len >= bufLen
-    result = bufLen
-    copyMem(buffer, addr(s.buf[0]), result)
-    s.buf = s.buf.substr(result)
-    if s.buf.len == 0:
-      var len: int
-      s.isource.read(len)
-      if len == 0:
-        s.isend = true
-      else:
-        s.isource.readStr(len, s.buf)
-  )
-  result.atEndImpl = (proc(s: Stream): bool =
-    return ReadableStream(s).isend
-  )
-  result.closeImpl = (proc(s: Stream) = {.cast(tags: [WriteIOEffect]).}: #TODO TODO TODO ew.
-    var s = ReadableStream(s)
-    if s.isend: return
-    s.buf = ""
-    while true:
-      var len: int
-      s.isource.read(len)
-      if len == 0:
-        s.isend = true
-        break
-      s.isource.setPosition(s.isource.getPosition() + len)
-  )
+  result.readDataImpl = rsReadData
+  result.atEndImpl = rsAtEnd
+  result.closeImpl = rsClose
   var len: int
   result.isource.read(len)
   if len == 0:
@@ -106,9 +109,10 @@ proc newReadableStream*(isource: Stream): ReadableStream =
     result.isource.readStr(len, result.buf)
 
 func newHeaderList*(): HeaderList =
-  discard
+  new(result)
 
 func newHeaderList*(table: Table[string, string]): HeaderList =
+  new(result)
   for k, v in table:
     let k = k.toHeaderCase()
     if k in result.table:
@@ -124,6 +128,7 @@ func newRequest*(url: Url,
   new(result)
   result.httpmethod = httpmethod
   result.url = url
+  result.headers = newHeaderList()
   for it in headers:
     if it[1] != "": #TODO not sure if this is a good idea, options would probably work better
       result.headers.table[it[0]] = @[it[1]]

@@ -83,6 +83,7 @@ proc sread*(stream: Stream, url: var Url) =
   url = parseUrl(s).get
 
 proc sread*(stream: Stream, headers: var HeaderList) =
+  new(headers)
   var len: int
   stream.sread(len)
   for i in 0..<len:
