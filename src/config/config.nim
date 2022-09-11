@@ -40,8 +40,8 @@ type
     ACTION_LINED_ESC
 
   ActionMap = Table[string, TwtAction]
-  Config = object
-    nmap*: ActionMap
+  Config* = object
+    nmap*: Table[string, string]
     lemap*: ActionMap
     stylesheet*: string
     ambiguous_double*: bool
@@ -107,10 +107,23 @@ func constructActionTable*(origTable: ActionMap): ActionMap =
     newTable[realk] = v
   return newTable
 
-func getAction(s: string): TwtAction =
-  if s == "NULL":
-    return NO_ACTION
-  return parseEnum[TwtAction]("ACTION_" & s)
+func constructActionTable2*(origTable: Table[string, string]): Table[string, string] =
+  var strs: seq[string]
+  for k in origTable.keys:
+    let realk = getRealKey(k)
+    var teststr = ""
+    for c in realk:
+      teststr &= c
+      strs.add(teststr)
+
+  for k, v in origTable:
+    let realk = getRealKey(k)
+    var teststr = ""
+    for c in realk:
+      teststr &= c
+      if strs.contains(teststr):
+        result[teststr] = "client.feedNext()"
+    result[realk] = v
 
 func getLineAction(s: string): TwtAction =
   if s == "NULL":
@@ -138,7 +151,8 @@ proc parseConfig(config: var Config, dir: string, t: TomlValue) =
       config.ambiguous_double = general["double-width-ambiguous"].b
   if "page" in t:
     for k, v in t["page"].pairs:
-      config.nmap[getRealKey(k)] = getAction(v.s)
+      #config.nmap[getRealKey(k)] = getAction(v.s)
+      config.nmap[getRealKey(k)] = v.s
   if "line" in t:
     for k, v in t["line"].pairs:
       config.lemap[getRealKey(k)] = getLineAction(v.s)
@@ -186,10 +200,10 @@ proc readConfig(dir: string) =
   if fs != nil:
     gconfig.parseConfig(dir, fs)
 
-proc getNormalAction*(s: string): TwtAction =
+proc getNormalAction*(s: string): string =
   if gconfig.nmap.hasKey(s):
     return gconfig.nmap[s]
-  return NO_ACTION
+  return ""
 
 proc getLinedAction*(s: string): TwtAction =
   if gconfig.lemap.hasKey(s):

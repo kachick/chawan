@@ -1,37 +1,50 @@
 import net
 import streams
+when defined(posix):
+  import posix
+
+import io/process
 
 type SocketStream* = ref object of Stream
-  isource: Socket
-  osource: Socket
+  source: Socket
   isend: bool
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
-  result = s.isource.recv(buffer, len)
+  result = s.source.recv(buffer, len)
   if result < 0:
     raise newException(Defect, "Failed to read data")
   elif result < len:
     s.isend = true
 
 proc sockWriteData(s: Stream, buffer: pointer, len: int) =
-  discard SocketStream(s).osource.send(buffer, len)
+  discard SocketStream(s).source.send(buffer, len)
 
 proc sockAtEnd(s: Stream): bool =
   SocketStream(s).isend
 
 proc sockClose(s: Stream) = {.cast(tags: []).}: #...sigh
   let s = SocketStream(s)
-  if s.isource != nil:
-    s.isource.close()
-  if s.osource != nil and s.isource != s.osource:
-    s.osource.close()
+  s.source.close()
 
-func newSocketStream*(isource, osource: Socket): SocketStream =
+func newSocketStream*(): SocketStream =
   new(result)
-  result.isource = isource
-  result.osource = osource
   result.readDataImpl = sockReadData
   result.writeDataImpl = sockWriteData
   result.atEndImpl = sockAtEnd
   result.closeImpl = sockClose
+
+proc connectSocketStream*(path: string): SocketStream =
+  result = newSocketStream()
+  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP)
+  connectUnix(sock, path)
+  result.source = sock
+
+proc connectSocketStream*(pid: Pid): SocketStream =
+  connectSocketStream(getSocketPath(pid))
+
+proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
+  result = newSocketStream()
+  var sock: Socket
+  ssock.sock.accept(sock)
+  result.source = sock

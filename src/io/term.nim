@@ -1,7 +1,6 @@
 import terminal
+
 import std/exitprocs
-when defined(posix):
-  import termios
 
 type
   TermAttributes* = object
@@ -14,6 +13,9 @@ type
     height_px*: int
 
 when defined(posix):
+  import posix
+  import termios
+
   # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
   let stdin_fileno = stdin.getFileHandle()
   var orig_termios: Termios
@@ -27,11 +29,27 @@ when defined(posix):
     raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
     raw.c_oflag = raw.c_oflag and not (OPOST)
     raw.c_cflag = raw.c_cflag or CS8
-    # we do not currently set ISIG, so that ctrl+c can be used to
-    # immediately return to the input loop.
-    #TODO set it once we have separated i/o from layout
-    raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or IEXTEN)
+    raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
     discard tcSetAttr(stdin_fileno, TCSAFLUSH, addr raw)
+
+  var orig_flags: cint
+  var stdin_unblocked = false
+  proc unblockStdin*() =
+    orig_flags = fcntl(getFileHandle(stdin), F_GETFL, 0)
+    let flags = orig_flags or O_NONBLOCK
+    discard fcntl(getFileHandle(stdin), F_SETFL, flags)
+    stdin_unblocked = true
+
+  proc restoreStdin*() =
+    if stdin_unblocked:
+      discard fcntl(getFileHandle(stdin), F_SETFL, orig_flags)
+      stdin_unblocked = false
+else:
+  proc unblockStdin*(): cint =
+    discard
+
+  proc restoreStdin*(flags: cint) =
+    discard
 
 proc getTermAttributes*(): TermAttributes =
   if stdin.isatty():

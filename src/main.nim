@@ -4,8 +4,8 @@ import terminal
 when defined(profile):
   import nimprof
 
-import client
 import config/config
+import display/client
 import utils/twtstr
 
 readConfig()
@@ -81,7 +81,7 @@ if pages.len == 0:
   if stdin.isatty:
     help(1)
 
-gconfig.nmap = constructActionTable(gconfig.nmap)
+gconfig.nmap = constructActionTable2(gconfig.nmap)
 gconfig.lemap = constructActionTable(gconfig.lemap)
 
 width_table = makewidthtable(gconfig.ambiguous_double)

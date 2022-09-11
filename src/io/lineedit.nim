@@ -4,8 +4,9 @@ import strutils
 import sequtils
 import sugar
 
-import utils/twtstr
 import config/config
+import io/term
+import utils/twtstr
 
 type LineState* = object
   news*: seq[Rune]
@@ -143,7 +144,8 @@ proc readLine(state: var LineState): bool =
     else:
       state.feedNext = false
 
-    let c = getch()
+    restoreStdin()
+    let c = stdin.readChar()
     state.s &= c
 
     var action = getLinedAction(state.s)

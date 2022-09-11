@@ -5,6 +5,7 @@ import options
 import unicode
 import math
 
+import js/javascript
 import utils/twtstr
 
 type
@@ -34,17 +35,23 @@ type
     ipv6: Option[array[8, uint16]]
     opaquehost: string
 
-  Url* = object
+  URLSearchParams* = ref object
+    list*: seq[tuple[name, value: string]]
+    url: Option[URL]
+
+  URL* = ref URLObj
+  URLObj* = object
     encoding: int #TODO
     scheme*: string
-    username*: string
-    password*: string
+    username* {.jsget.}: string
+    password* {.jsget.}: string
     port: Option[uint16]
     host: Option[Host]
     path*: UrlPath
     query*: Option[string]
     fragment: Option[string]
     blob: Option[BlobUrlEntry]
+    searchParams* {.jsget.}: URLSearchParams
 
 const EmptyPath = UrlPath(opaque: true, s: "")
 const EmptyHost = Host(domain: "").some
@@ -308,7 +315,7 @@ func parseHost(input: string, isnotspecial = false): Option[Host] =
 func isempty(host: Host): bool =
   return host.domain == "" and host.ipv4.isnone and host.ipv6.isnone and host.opaquehost == ""
 
-proc shorten_path(url: var Url) {.inline.} =
+proc shorten_path(url: Url) {.inline.} =
   assert not url.path.opaque
 
   if url.scheme == "file" and url.path.ss.len == 1 and url.path.ss[0][0] in Letters and url.path.ss[0][1] == ':':
@@ -324,9 +331,11 @@ proc append(path: var UrlPath, s: string) =
 
 template includes_credentials(url: Url): bool = url.username != "" or url.password != ""
 template is_windows_drive_letter(s: string): bool = s.len == 2 and s[0] in Letters and (s[1] == ':' or s[1] == '|')
+template canHaveUsernamePasswordPort(url: URL): bool =
+  url.host.issome and url.host.get.serialize() != "" and url.scheme != "file"
 
 #TODO encoding
-proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), override: bool = false): Option[Url] =
+proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOverride = none(UrlState)): Option[Url] =
   #TODO If input contains any leading or trailing C0 control or space, validation error.
   #TODO If input contains any ASCII tab or newline, validation error.
   let input = input.strip(true, false, {chr(0x00)..chr(0x1F), ' '}).strip(true, false, {'\t', '\n'})
@@ -335,7 +344,10 @@ proc basicParseUrl*(input: string, base = none(Url), url: var Url = Url(), overr
   var insidebrackets = false
   var passwordtokenseen = false
   var pointer = 0
+  let override = stateOverride.issome
   var state = SCHEME_START_STATE
+  if override:
+    state = stateOverride.get
 
   template c(i = 0): char = input[pointer + i]
   template has(i = 0): bool = (pointer + i < input.len)
@@ -712,7 +724,7 @@ func anchor*(url: Url): string =
     return url.fragment.get
   return ""
 
-proc parseUrl*(input: string, base = none(Url), url: var Url, override: bool = false): Option[Url] =
+proc parseUrl*(input: string, base = none(Url), url: var Url, override = none(UrlState)): Option[Url] =
   var url = basicParseUrl(input, base, url, override)
   if url.isnone:
     return url
@@ -721,7 +733,7 @@ proc parseUrl*(input: string, base = none(Url), url: var Url, override: bool = f
   url.get.blob = BlobUrlEntry().some
   return url
 
-proc parseUrl*(input: string, base = none(Url), override: bool = false): Option[Url] =
+proc parseUrl*(input: string, base = none(Url), override = none(UrlState)): Option[Url] =
   var url = Url().some
   url = basicParseUrl(input, base, url.get, override)
   if url.isnone:
@@ -843,6 +855,182 @@ func serialize*(url: Option[Url], excludefragment = false): string =
 func equals*(a, b: Url, excludefragment = false): bool =
   return a.serialize(excludefragment) == b.serialize(excludefragment)
 
-func `$`*(url: Url): string {.inline.} = url.serialize()
+func `$`*(url: Url): string {.jsfunc, inline.} = url.serialize()
 
 func `$`*(path: UrlPath): string {.inline.} = path.serialize()
+
+#https://url.spec.whatwg.org/#concept-urlencoded-serializer
+proc parseApplicationXWWWFormUrlEncoded(input: string): seq[(string, string)] =
+  for s in input.split('&'):
+    if s == "":
+      continue
+    var name = ""
+    var value = ""
+    for i in 0..<s.len:
+      if s[i] == '=':
+        name = s.substr(0, i - 1)
+        value = s.substr(i + 1)
+        break
+    if name == "":
+      name = s
+    for i in 0..<name.len:
+      if name[i] == '+':
+        name[i] = ' '
+    for i in 0..<value.len:
+      if value[i] == '+':
+        value[i] = ' '
+    result.add((percentDecode(name), percentDecode(value)))
+
+#https://url.spec.whatwg.org/#concept-urlencoded-serializer
+proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)]): string =
+  for it in kvs:
+    let (name, value) = it
+    if result != "":
+      result &= '&'
+    result.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, true)
+    result &= '='
+    result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, true)
+
+proc initURLSearchParams(params: URLSearchParams, init: string) =
+  params.list = parseApplicationXWWWFormUrlEncoded(init)
+
+proc newURLSearchParams*[T: seq[(string, string)]|Table[string, string]|string](init: T = ""): URLSearchParams {.jsctor.} =
+  new(result)
+  when T is seq[(string, string)]:
+    result.list = init
+  elif T is Table[string, string]:
+    for k, v in init:
+      result.list.add((k, v))
+  elif T is string:
+    let init = if init.len > 0 and init[0] == '?':
+      init.substr(1)
+    else:
+      init
+    result.initURLSearchParams(init)
+
+proc `$`*(params: URLSearchParams): string {.jsfunc.} =
+  return serializeApplicationXWWWFormUrlEncoded(params.list)
+
+#TODO add Option wrapper
+proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jsctor.} =
+  if base.issome:
+    let baseUrl = parseUrl(base.get)
+    if baseUrl.isnone:
+      JS_THROW TypeError, base.get & " is not a valid URL"
+    let url = parseUrl(s, baseUrl)
+    if url.isnone:
+      JS_THROW TypeError, s & " is not a valid URL"
+    return url.get
+  let url = parseUrl(s)
+  if url.isnone:
+    JS_THROW TypeError, s & " is not a valid URL"
+  url.get.searchParams = newURLSearchParams()
+  url.get.searchParams.initURLSearchParams(url.get.query.get(""))
+  return url.get
+
+proc origin*(url: URL): string {.jsget.} =
+  case url.scheme
+  of "blob":
+    if url.blob.issome:
+      #TODO
+      discard
+    let pathURL = parseURL($url.path)
+    if pathURL.isnone:
+      return "null"
+    return pathURL.get.origin
+  of "ftp", "http", "https", "ws", "wss":
+    # return the tuple origin.
+    #TODO split this out
+    result = url.scheme
+    result &= "://"
+    result &= url.host.get.serialize()
+    if url.port.issome:
+      result &= ":"
+      result &= $url.port.get
+  of "file":
+    #???
+    return "null"
+  else:
+    return "null"
+
+proc protocol*(url: URL): string {.jsget.} =
+  return url.scheme & ':'
+
+proc protocol*(url: URL, s: string) {.jsset.} =
+  discard basicParseUrl(s & ':', url = url, stateOverride = some(SCHEME_START_STATE))
+
+proc username*(url: URL, username: string) {.jsset.} =
+  if not url.canHaveUsernamePasswordPort:
+    return
+  url.username = username.percentEncode(UserInfoPercentEncodeSet)
+
+proc password*(url: URL, password: string) {.jsset.} =
+  if not url.canHaveUsernamePasswordPort:
+    return
+  url.password = password.percentEncode(UserInfoPercentEncodeSet)
+
+proc host*(url: URL): string {.jsget.} =
+  if url.host.isnone:
+    return ""
+  if url.port.isnone:
+    return url.host.get.serialize()
+  return url.host.get.serialize() & ':' & $url.port.get
+
+proc host*(url: URL, s: string) {.jsset.} =
+  if url.path.opaque:
+    return
+  discard basicParseUrl(s, url = url, stateOverride = some(HOST_STATE))
+
+proc port*(url: URL): string {.jsget.} =
+  if url.port.issome:
+    return $url.port.get
+
+proc port*(url: URL, s: string) {.jsset.} =
+  if not url.canHaveUsernamePasswordPort:
+    return
+  if s == "":
+    url.port = none(uint16)
+  else:
+    discard basicParseUrl(s, url = url, stateOverride = some(PORT_STATE))
+
+proc pathname*(url: URL): string {.jsget.} =
+  return url.path.serialize()
+
+proc pathname*(url: URL, s: string) {.jsset.} =
+  if url.path.opaque:
+    return
+  url.path.ss.setLen(0)
+  discard basicParseUrl(s, url = url, stateOverride = some(PATH_START_STATE))
+
+proc search*(url: URL): string {.jsget.} =
+  if url.query.get("") == "":
+    return ""
+  return "?" & url.query.get
+
+proc search*(url: URL, s: string) {.jsset.} =
+  if s == "":
+    url.query = none(string)
+    url.searchParams.list.setLen(0)
+    return
+  let s = if s[0] == '?': s.substr(1) else: s
+  url.query = some("")
+  discard basicParseUrl(s, url = url, stateOverride = some(QUERY_STATE))
+  url.searchParams.list = parseApplicationXWWWFormUrlEncoded(s)
+
+proc hash*(url: URL): string {.jsget.} =
+  if url.fragment.get("") == "":
+    return ""
+  return '#' & url.fragment.get
+
+proc hash*(url: URL, s: string) {.jsset.} =
+  if s == "":
+    url.fragment = none(string)
+    return
+  let s = if s[0] == '#': s.substr(1) else: s
+  discard basicParseUrl(s, url = url, stateOverride = some(FRAGMENT_STATE))
+
+proc addUrlModule*(ctx: JSContext) =
+  let global = ctx.getGlobalObject()
+  discard ctx.registerType(URL, addto = some(global))
+  discard ctx.registerType(URLSearchParams, addto = some(global))
+  free(global)

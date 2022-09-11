@@ -19,41 +19,37 @@ import utils/twtstr
 
 type
   Client* = ref ClientObj
-  ClientObj = object
-    buffer: Buffer
+  ClientObj* = object
+    buffer*: Buffer
     feednext: bool
     s: string
     iserror: bool
     errormessage: string
     userstyle: CSSStylesheet
     loader: FileLoader
+    console: Console
     jsrt: JSRuntime
     jsctx: JSContext
     regex: Option[Regex]
     revsearch: bool
     needsauth: bool
     redirecturl: Option[Url]
+    cmdmode: bool
 
-  ActionError = object of IOError
-  LoadError = object of ActionError
-  InterruptError = object of LoadError
+  Console* = ref object
+    err*: Stream
+    lastbuf*: Buffer
+    ibuf: string
 
-proc statusMode(client: Client) =
-  print(HVP(client.buffer.height + 1, 1))
-  print(EL())
+  ActionError* = object of IOError
+  LoadError* = object of ActionError
+  InterruptError* = object of LoadError
 
-proc js_console_log(ctx: JSContext, this: JSValue, argc: int, argv: ptr JSValue): JSValue {.cdecl.} =
-  let opaque = ctx.getOpaque()
-  for i in 0..<argc:
-    let arg = getJSObject(ctx, argv, i)
-    if i != 0:
-      opaque.err &= ' '
-    let str = arg.toString()
-    if str.isnone:
-      return JS_EXCEPTION
-    opaque.err &= str.get
-  opaque.err &= '\n'
-  return JS_UNDEFINED
+proc readChar(console: Console): char =
+  if console.ibuf == "":
+    return stdin.readChar()
+  result = console.ibuf[0]
+  console.ibuf = console.ibuf.substr(1)
 
 proc `=destroy`(client: var ClientObj) =
   if client.jsctx != nil:
@@ -61,27 +57,15 @@ proc `=destroy`(client: var ClientObj) =
   if client.jsrt != nil:
     free(client.jsrt)
 
-proc newClient*(): Client =
-  new(result)
-  result.loader = newFileLoader()
-  let rt = newJSRuntime()
-  let ctx = rt.newJSContext()
-  result.jsrt = rt
-  result.jsctx = ctx
-  var global = ctx.getGlobalObject()
-  let console = newJSObject(result.jsctx)
-  console.setFunctionProperty("log", js_console_log)
-  global.setProperty("console", console)
-  free(global)
+proc statusMode(client: Client) =
+  print(HVP(client.buffer.height + 1, 1))
+  print(EL())
 
 proc loadError(s: string) =
   raise newException(LoadError, s)
 
 proc actionError(s: string) =
   raise newException(ActionError, s)
-
-proc interruptError() =
-  raise newException(InterruptError, "Interrupted")
 
 proc addBuffer(client: Client) =
   if client.buffer == nil:
@@ -98,43 +82,39 @@ proc addBuffer(client: Client) =
   client.buffer.userstyle = client.userstyle
   client.buffer.markcolor = gconfig.markcolor
 
-proc prevBuffer(client: Client) =
+proc prevBuffer(client: Client) {.jsfunc.} =
   if client.buffer.prev != nil:
     client.buffer = client.buffer.prev
     client.buffer.redraw = true
 
-proc nextBuffer(client: Client) =
+proc nextBuffer(client: Client) {.jsfunc.} =
   if client.buffer.next != nil:
     client.buffer = client.buffer.next
     client.buffer.redraw = true
 
 proc discardBuffer(buffer: Buffer) =
+  if buffer.next == nil and buffer.prev == nil:
+    actionError("Cannot discard last buffer!")
+  if buffer.sourcepair != nil:
+    buffer.sourcepair.sourcepair = nil
   if buffer.next != nil:
-    if buffer.sourcepair != nil:
-      buffer.sourcepair.sourcepair = nil
     buffer.next.prev = buffer.prev
-    buffer.redraw = true
-  elif buffer.prev != nil:
-    if buffer.sourcepair != nil:
-      buffer.sourcepair.sourcepair = nil
+  if buffer.prev != nil:
     buffer.prev.next = buffer.next
-    buffer.redraw = true
+  buffer.sourcepair = nil
+  buffer.next = nil
+  buffer.prev = nil
 
-proc discardBuffer(client: Client) =
-  if client.buffer.next != nil:
-    if client.buffer.sourcepair != nil:
-      client.buffer.sourcepair.sourcepair = nil
-    client.buffer.next.prev = client.buffer.prev
-    client.buffer = client.buffer.next
-    client.buffer.redraw = true
-  elif client.buffer.prev != nil:
-    if client.buffer.sourcepair != nil:
-      client.buffer.sourcepair.sourcepair = nil
-    client.buffer.prev.next = client.buffer.next
-    client.buffer = client.buffer.prev
-    client.buffer.redraw = true
+proc discardBuffer(client: Client) {.jsfunc.} =
+  let old = client.buffer
+  if old.next != nil:
+    client.buffer = old.next
+  elif old.prev != nil:
+    client.buffer = old.prev
   else:
-    actionError("Can't discard last buffer!")
+    actionError("Cannot discard last buffer!")
+  discardBuffer(old)
+  client.buffer.redraw = true
 
 proc setupBuffer(client: Client) =
   let buffer = client.buffer
@@ -143,7 +123,7 @@ proc setupBuffer(client: Client) =
   buffer.gotoAnchor()
   buffer.redraw = true
 
-proc dupeBuffer(client: Client, location = none(Url)) =
+proc dupeBuffer(client: Client, location = none(URL)) {.jsfunc.} =
   let prev = client.buffer
   client.addBuffer()
   client.buffer.contenttype = prev.contenttype
@@ -161,8 +141,7 @@ proc readPipe(client: Client, ctype: string) =
   client.buffer.contenttype = if ctype != "": ctype else: "text/plain"
   client.buffer.ispipe = true
   client.buffer.istream = newFileStream(stdin)
-  const url = parseUrl("file://-").get
-  client.buffer.location = url
+  client.buffer.location = newURL("file://-")
   client.buffer.load()
   #TODO is this portable at all?
   if reopen(stdin, "/dev/tty", fmReadWrite):
@@ -172,9 +151,7 @@ proc readPipe(client: Client, ctype: string) =
 
 # Load request in a new buffer.
 var g_client: Client
-proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = false, ctype = "") =
-  setControlCHook(proc() {.noconv.} =
-    raise newException(InterruptError, "Interrupted"))
+proc gotoUrl(client: Client, request: Request, prevurl = none(URL), force = false, ctype = "") =
   if force or prevurl.isnone or not prevurl.get.equals(request.url, true) or
       prevurl.get.equals(request.url) or request.httpmethod != HTTP_GET:
     let page = client.loader.doRequest(request)
@@ -183,10 +160,6 @@ proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = fals
     if page.body != nil:
       client.addBuffer()
       g_client = client
-      setControlCHook(proc() {.noconv.} =
-        if g_client.buffer.prev != nil or g_client.buffer.next != nil:
-          g_client.discardBuffer()
-        interruptError())
       client.buffer.contenttype = if ctype != "": ctype else: page.contenttype
       client.buffer.istream = page.body
       client.buffer.location = request.url
@@ -200,7 +173,7 @@ proc gotoUrl(client: Client, request: Request, prevurl = none(Url), force = fals
       loadError("Couldn't find anchor " & request.url.anchor)
 
 # Relative gotoUrl: either to prevurl, or if that's none, client.buffer.url.
-proc gotoUrl(client: Client, url: string, prevurl = none(Url), force = false, ctype = "") =
+proc gotoUrl(client: Client, url: string, prevurl = none(URL), force = false, ctype = "") =
   var prevurl = prevurl
   if prevurl.isnone and client.buffer != nil:
     prevurl = client.buffer.location.some
@@ -233,13 +206,13 @@ proc loadUrl(client: Client, url: string, ctype = "") =
         client.gotoUrl("https://" & url, none(Url), true, ctype)
 
 # Reload the page in a new buffer, then kill the previous buffer.
-proc reloadPage(client: Client) =
+proc reloadPage(client: Client) {.jsfunc.} =
   let buf = client.buffer
-  client.gotoUrl(newRequest(client.buffer.location), none(Url), true, client.buffer.contenttype)
+  client.gotoUrl(newRequest(client.buffer.location), none(URL), true, client.buffer.contenttype)
   discardBuffer(buf)
 
 # Open a URL prompt and visit the specified URL.
-proc changeLocation(client: Client) =
+proc changeLocation(client: Client) {.jsfunc.} =
   let buffer = client.buffer
   var url = buffer.location.serialize(true)
   client.statusMode()
@@ -247,12 +220,12 @@ proc changeLocation(client: Client) =
   if status:
     client.loadUrl(url)
 
-proc click(client: Client) =
+proc click(client: Client) {.jsfunc.} =
   let req = client.buffer.click()
   if req.issome:
     client.gotoUrl(req.get, client.buffer.location.some)
 
-proc toggleSource*(client: Client) =
+proc toggleSource*(client: Client) {.jsfunc.} =
   let buffer = client.buffer
   if buffer.sourcepair != nil:
     client.buffer = buffer.sourcepair
@@ -272,55 +245,84 @@ proc toggleSource*(client: Client) =
       client.buffer.contenttype = "text/html"
     client.setupBuffer()
 
-proc command(client: Client) =
+proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
+  let client = cast[Client](opaque)
+  try:
+    let c = stdin.readChar()
+    if c == char(3): #C-c
+      client.console.ibuf = ""
+      return 1
+    else:
+      client.console.ibuf &= c
+  except IOError:
+    discard
+  return 0
+
+proc evalJS(client: Client, src, filename: string): JSObject =
+  unblockStdin()
+  return client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
+
+proc command(client: Client, src: string) =
+  restoreStdin()
+  let previ = client.console.err.getPosition()
+  let ret = client.evalJS(src, "<command>")
+  if ret.isException():
+    let ex = client.jsctx.getException()
+    let str = ex.toString()
+    if str.issome:
+      client.console.err.write(str.get & '\n')
+    var stack = ex.getProperty("stack")
+    if not stack.isUndefined():
+      let str = stack.toString()
+      if str.issome:
+        client.console.err.write(str.get)
+    free(stack)
+    free(ex)
+  else:
+    let str = ret.toString()
+    if str.issome:
+      client.console.err.write(str.get & '\n')
+  free(ret)
+  g_client = client
+  client.console.err.setPosition(previ)
+  if client.console.lastbuf == nil or client.console.lastbuf != client.buffer:
+    client.addBuffer()
+    client.buffer.istream = newStringStream(client.console.err.readAll()) #TODO
+    client.buffer.contenttype = "text/plain"
+    client.buffer.location = parseUrl("javascript:void(0);").get
+    client.console.lastbuf = client.buffer
+  else:
+    client.buffer.istream = newStringStream(client.buffer.source & client.console.err.readAll())
+    client.buffer.streamclosed = false
+  client.setupBuffer()
+  client.buffer.cursorLastLine()
+
+proc command(client: Client): bool {.jsfunc.} =
   var iput: string
   client.statusMode()
   let status = readLine("COMMAND: ", iput, client.buffer.width)
-  if status and iput.len > 0:
-    let ret = client.jsctx.eval(iput, "<stdin>", JS_EVAL_TYPE_GLOBAL)
-    let opaque = client.jsctx.getOpaque()
-    if ret.isException():
-      let ex = client.jsctx.getException()
-      let str = ex.toString()
-      if str.issome:
-        opaque.err &= str.get & '\n'
-      var stack = ex.getProperty("stack")
-      if not stack.isUndefined():
-        let str = stack.toString()
-        if str.issome:
-          opaque.err &= str.get & '\n'
-      free(stack)
-      free(ex)
-    else:
-      let str = ret.toString()
-      if str.issome:
-        opaque.err &= str.get & '\n'
-    free(ret)
-    client.addBuffer()
-    g_client = client
-    setControlCHook(proc() {.noconv.} =
-      if g_client.buffer.prev != nil or g_client.buffer.next != nil:
-        g_client.discardBuffer()
-      interruptError())
-    client.buffer.istream = newStringStream(opaque.err)
-    client.buffer.contenttype = "text/plain"
-    client.setupBuffer()
+  if status:
+    client.command(iput)
+  return status
 
-proc searchNext(client: Client) =
+proc commandMode(client: Client) {.jsfunc.} =
+  client.cmdmode = client.command()
+
+proc searchNext(client: Client) {.jsfunc.} =
   if client.regex.issome:
     if not client.revsearch:
       discard client.buffer.cursorNextMatch(client.regex.get)
     else:
       discard client.buffer.cursorPrevMatch(client.regex.get)
 
-proc searchPrev(client: Client) =
+proc searchPrev(client: Client) {.jsfunc.} =
   if client.regex.issome:
     if not client.revsearch:
       discard client.buffer.cursorPrevMatch(client.regex.get)
     else:
       discard client.buffer.cursorNextMatch(client.regex.get)
 
-proc search(client: Client) =
+proc search(client: Client) {.jsfunc.} =
   client.statusMode()
   var iput: string
   let status = readLine("/", iput, client.buffer.width)
@@ -330,7 +332,7 @@ proc search(client: Client) =
     client.revsearch = false
     client.searchNext()
 
-proc searchBack(client: Client) =
+proc searchBack(client: Client) {.jsfunc.} =
   client.statusMode()
   var iput: string
   let status = readLine("?", iput, client.buffer.width)
@@ -340,7 +342,7 @@ proc searchBack(client: Client) =
     client.revsearch = true
     client.searchNext()
 
-proc isearch(client: Client) =
+proc isearch(client: Client) {.jsfunc.} =
   client.statusMode()
   var iput: string
   let cpos = client.buffer.cpos
@@ -379,7 +381,7 @@ proc isearch(client: Client) =
   else:
     client.buffer.cpos = cpos
 
-proc isearchBack(client: Client) =
+proc isearchBack(client: Client) {.jsfunc.} =
   client.statusMode()
   var iput: string
   let cpos = client.buffer.cpos
@@ -415,71 +417,62 @@ proc isearchBack(client: Client) =
   else:
     client.buffer.cpos = cpos
 
-proc quit(client: Client) =
+proc quit(client: Client) {.jsfunc.} =
   eraseScreen()
   print(HVP(0, 0))
   quit(0)
 
+proc feedNext(client: Client) {.jsfunc.} =
+  client.feednext = true
+
+#TODO move this to a pager module or something
+proc cursorLeft(client: Client) {.jsfunc.} = client.buffer.cursorLeft()
+proc cursorDown(client: Client) {.jsfunc.} = client.buffer.cursorDown()
+proc cursorUp(client: Client) {.jsfunc.} = client.buffer.cursorUp()
+proc cursorRight(client: Client) {.jsfunc.} = client.buffer.cursorRight()
+proc cursorLineBegin(client: Client) {.jsfunc.} = client.buffer.cursorLineBegin()
+proc cursorLineEnd(client: Client) {.jsfunc.} = client.buffer.cursorLineEnd()
+proc cursorNextWord(client: Client) {.jsfunc.} = client.buffer.cursorNextWord()
+proc cursorPrevWord(client: Client) {.jsfunc.} = client.buffer.cursorPrevWord()
+proc cursorNextLink(client: Client) {.jsfunc.} = client.buffer.cursorNextLink()
+proc cursorPrevLink(client: Client) {.jsfunc.} = client.buffer.cursorPrevLink()
+proc pageDown(client: Client) {.jsfunc.} = client.buffer.pageDown()
+proc pageUp(client: Client) {.jsfunc.} = client.buffer.pageUp()
+proc pageRight(client: Client) {.jsfunc.} = client.buffer.pageRight()
+proc pageLeft(client: Client) {.jsfunc.} = client.buffer.pageLeft()
+proc halfPageDown(client: Client) {.jsfunc.} = client.buffer.halfPageDown()
+proc halfPageUp(client: Client) {.jsfunc.} = client.buffer.halfPageUp()
+proc cursorFirstLine(client: Client) {.jsfunc.} = client.buffer.cursorFirstLine()
+proc cursorLastLine(client: Client) {.jsfunc.} = client.buffer.cursorLastLine()
+proc cursorTop(client: Client) {.jsfunc.} = client.buffer.cursorTop()
+proc cursorMiddle(client: Client) {.jsfunc.} = client.buffer.cursorMiddle()
+proc cursorBottom(client: Client) {.jsfunc.} = client.buffer.cursorBottom()
+proc cursorLeftEdge(client: Client) {.jsfunc.} = client.buffer.cursorLeftEdge()
+proc cursorVertMiddle(client: Client) {.jsfunc.} = client.buffer.cursorVertMiddle()
+proc cursorRightEdge(client: Client) {.jsfunc.} = client.buffer.cursorRightEdge()
+proc centerLine(client: Client) {.jsfunc.} = client.buffer.centerLine()
+proc scrollDown(client: Client) {.jsfunc.} = client.buffer.scrollDown()
+proc scrollUp(client: Client) {.jsfunc.} = client.buffer.scrollUp()
+proc scrollLeft(client: Client) {.jsfunc.} = client.buffer.scrollLeft()
+proc scrollRight(client: Client) {.jsfunc.} = client.buffer.scrollRight()
+proc lineInfo(client: Client) {.jsfunc.} = client.buffer.lineInfo()
+proc reshape(client: Client) {.jsfunc.} = client.buffer.reshape = true
+proc redraw(client: Client) {.jsfunc.} = client.buffer.redraw = true
+
 proc input(client: Client) =
-  let buffer = client.buffer
+  if client.cmdmode:
+    client.commandMode()
+    return
   if not client.feednext:
     client.s = ""
   else:
     client.feednext = false
-  let c = getch()
+  restoreStdin()
+  let c = client.console.readChar()
   client.s &= c
+
   let action = getNormalAction(client.s)
-  case action
-  of ACTION_QUIT: client.quit()
-  of ACTION_CURSOR_LEFT: buffer.cursorLeft()
-  of ACTION_CURSOR_DOWN: buffer.cursorDown()
-  of ACTION_CURSOR_UP: buffer.cursorUp()
-  of ACTION_CURSOR_RIGHT: buffer.cursorRight()
-  of ACTION_CURSOR_LINEBEGIN: buffer.cursorLineBegin()
-  of ACTION_CURSOR_LINEEND: buffer.cursorLineEnd()
-  of ACTION_CURSOR_NEXT_WORD: buffer.cursorNextWord()
-  of ACTION_CURSOR_PREV_WORD: buffer.cursorPrevWord()
-  of ACTION_CURSOR_NEXT_LINK: buffer.cursorNextLink()
-  of ACTION_CURSOR_PREV_LINK: buffer.cursorPrevLink()
-  of ACTION_PAGE_DOWN: buffer.pageDown()
-  of ACTION_PAGE_UP: buffer.pageUp()
-  of ACTION_PAGE_RIGHT: buffer.pageRight()
-  of ACTION_PAGE_LEFT: buffer.pageLeft()
-  of ACTION_HALF_PAGE_DOWN: buffer.halfPageDown()
-  of ACTION_HALF_PAGE_UP: buffer.halfPageUp()
-  of ACTION_CURSOR_FIRST_LINE: buffer.cursorFirstLine()
-  of ACTION_CURSOR_LAST_LINE: buffer.cursorLastLine()
-  of ACTION_CURSOR_TOP: buffer.cursorTop()
-  of ACTION_CURSOR_MIDDLE: buffer.cursorMiddle()
-  of ACTION_CURSOR_BOTTOM: buffer.cursorBottom()
-  of ACTION_CURSOR_LEFT_EDGE: buffer.cursorLeftEdge()
-  of ACTION_CURSOR_VERT_MIDDLE: buffer.cursorVertMiddle()
-  of ACTION_CURSOR_RIGHT_EDGE: buffer.cursorRightEdge()
-  of ACTION_CENTER_LINE: buffer.centerLine()
-  of ACTION_SCROLL_DOWN: buffer.scrollDown()
-  of ACTION_SCROLL_UP: buffer.scrollUp()
-  of ACTION_SCROLL_LEFT: buffer.scrollLeft()
-  of ACTION_SCROLL_RIGHT: buffer.scrollRight()
-  of ACTION_CLICK: client.click()
-  of ACTION_CHANGE_LOCATION: client.changeLocation()
-  of ACTION_DUPE_BUFFER: client.dupeBuffer()
-  of ACTION_LINE_INFO: buffer.lineInfo()
-  of ACTION_FEED_NEXT: client.feednext = true
-  of ACTION_RELOAD: client.reloadPage()
-  of ACTION_RESHAPE: buffer.reshape = true
-  of ACTION_REDRAW: buffer.redraw = true
-  of ACTION_TOGGLE_SOURCE: client.toggleSource()
-  of ACTION_PREV_BUFFER: client.prevBuffer()
-  of ACTION_NEXT_BUFFER: client.nextBuffer()
-  of ACTION_DISCARD_BUFFER: client.discardBuffer()
-  of ACTION_COMMAND: client.command()
-  of ACTION_SEARCH: client.search()
-  of ACTION_SEARCH_BACK: client.searchBack()
-  of ACTION_ISEARCH: client.isearch()
-  of ACTION_ISEARCH_BACK: client.isearchBack()
-  of ACTION_SEARCH_NEXT: client.searchNext()
-  of ACTION_SEARCH_PREV: client.searchPrev()
-  else: discard
+  discard client.evalJS(action, "<command>")
 
 proc followRedirect(client: Client)
 
@@ -523,11 +516,7 @@ proc followRedirect(client: Client) =
 proc inputLoop(client: Client) =
   while true:
     g_client = client
-    setControlCHook(proc() {.noconv.} =
-      g_client.buffer.setStatusMessage("Interrupted rendering procedure")
-      g_client.buffer.redraw = true
-      g_client.buffer.reshape = false
-      g_client.inputLoop())
+    restoreStdin()
     client.followRedirect()
     client.checkAuth()
     client.buffer.refreshBuffer()
@@ -562,3 +551,41 @@ proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool
     while buffer.prev != nil:
       buffer = buffer.prev
       buffer.drawBuffer()
+
+proc nimGCStats(client: Client): string {.jsfunc.} =
+  return GC_getStatistics()
+
+proc jsGCStats(client: Client): string {.jsfunc.} =
+  return client.jsrt.getMemoryUsage()
+
+func newConsole(): Console =
+  new(result)
+  result.err = newStringStream()
+
+proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
+  for i in 0..<ss.len:
+    console.err.write(ss[i])
+    if i != ss.high:
+      console.err.write(' ')
+  console.err.write('\n')
+
+proc newClient*(): Client =
+  new(result)
+  result.loader = newFileLoader()
+  result.console = newConsole()
+  let rt = newJSRuntime()
+  rt.setInterruptHandler(interruptHandler, cast[pointer](result))
+  let ctx = rt.newJSContext()
+  result.jsrt = rt
+  result.jsctx = ctx
+  var global = ctx.getGlobalObject()
+  discard ctx.registerType(Client, asglobal = true, addto = some(global))
+  global.setOpaque(result)
+  global.setProperty("client", global)
+
+  let consoleClassId = ctx.registerType(Console)
+  let jsConsole = ctx.newJSObject(consoleClassId)
+  jsConsole.setOpaque(result.console)
+  global.setProperty("console", jsConsole)
+
+  ctx.addUrlModule()

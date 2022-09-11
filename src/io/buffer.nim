@@ -931,12 +931,12 @@ proc displayStatusMessage*(buffer: Buffer) =
   print(SGR())
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
-proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): Table[string, string] =
+proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): seq[tuple[name, value: string]] =
   if form.constructingentrylist:
     return
   form.constructingentrylist = true
 
-  var entrylist: Table[string, string]
+  var entrylist: seq[tuple[name, value: string]]
   for field in form.controls:
     if field.findAncestor({TAG_DATALIST}) != nil or
         field.attrb("disabled") or
@@ -950,8 +950,8 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
           field.attr("name") & '.'
         else:
           ""
-        entrylist[name & 'x'] = $field.xcoord
-        entrylist[name & 'y'] = $field.ycoord
+        entrylist.add((name & 'x', $field.xcoord))
+        entrylist.add((name & 'y', $field.ycoord))
         continue
 
     #TODO custom elements
@@ -965,13 +965,13 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
       let field = HTMLSelectElement(field)
       for option in field.options:
         if option.selected or option.disabled:
-          entrylist[name] = option.value
+          entrylist.add((name, option.value))
     elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
       let value = if field.attr("value") != "":
         field.attr("value")
       else:
         "on"
-      entrylist[name] = value
+      entrylist.add((name, value))
     elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_FILE:
       #TODO file
       discard
@@ -980,10 +980,10 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
         encoding
       else:
         "UTF-8"
-      entrylist[name] = charset
+      entrylist.add((name, charset))
     else:
       if field.tagType == TAG_INPUT:
-        entrylist[name] = HTMLInputElement(field).value
+        entrylist.add((name, HTMLInputElement(field).value))
       else:
         assert false
     if field.tagType == TAG_TEXTAREA or
@@ -991,19 +991,10 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
       if field.attr("dirname") != "":
         let dirname = field.attr("dirname")
         let dir = "ltr" #TODO bidi
-        entrylist[dirname] = dir
+        entrylist.add((dirname, dir))
 
   form.constructingentrylist = false
   return entrylist
-
-#https://url.spec.whatwg.org/#concept-urlencoded-serializer
-proc serializeApplicationXWWFormUrlEncoded(kvs: Table[string, string]): string =
-  for name, value in kvs:
-    if result != "":
-      result &= '&'
-    result.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, true)
-    result &= '='
-    result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, true)
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc makeCRLF(s: string): string =
@@ -1022,19 +1013,19 @@ proc makeCRLF(s: string): string =
       result &= s[i]
     inc i
 
-proc serializeMultipartFormData(kvs: Table[string, string]): MimeData =
-  for name, value in kvs:
-    let name = makeCRLF(name)
-    let value = makeCRLF(value)
+proc serializeMultipartFormData(kvs: seq[(string, string)]): MimeData =
+  for it in kvs:
+    let name = makeCRLF(it[0])
+    let value = makeCRLF(it[1])
     result[name] = value
 
-proc serializePlainTextFormData(kvs: Table[string, string]): string =
-  for name, value in kvs:
+proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
+  for it in kvs:
+    let (name, value) = it
     result &= name
     result &= '='
     result &= value
-    result &= '\r'
-    result &= '\n'
+    result &= "\r\n"
 
 proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   let entrylist = form.constructEntryList(submitter)
@@ -1068,7 +1059,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   #let noopener = true #TODO
 
   template mutateActionUrl() =
-    let query = serializeApplicationXWWFormUrlEncoded(entrylist)
+    let query = serializeApplicationXWWWFormUrlEncoded(entrylist)
     parsedaction.query = query.some
     return newRequest(parsedaction, httpmethod).some
 
@@ -1078,7 +1069,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     var multipart = none(MimeData)
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
-      body = serializeApplicationXWWFormUrlEncoded(entrylist).some
+      body = serializeApplicationXWWWFormUrlEncoded(entrylist).some
       mimeType = $enctype
     of FORM_ENCODING_TYPE_MULTIPART:
       multipart = serializeMultipartFormData(entrylist).some
