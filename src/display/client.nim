@@ -1,11 +1,15 @@
 import options
 import os
 import streams
+import strutils
 import terminal
+import times
 import unicode
 
 import css/sheet
 import config/config
+import html/dom
+import html/htmlparser
 import io/buffer
 import io/cell
 import io/lineedit
@@ -149,12 +153,143 @@ proc readPipe(client: Client, ctype: string) =
   else:
     client.buffer.drawBuffer()
 
+type Cookie = ref object of RootObj
+  name {.jsget.}: string
+  value {.jsget.}: string
+  expires {.jsget.}: int64 # unix time
+  maxAge {.jsget.}: int64
+  secure {.jsget.}: bool
+  httponly {.jsget.}: bool
+  samesite {.jsget.}: bool
+  domain {.jsget.}: string
+  path {.jsget.}: string
+
+proc parseCookieDate(val: string): Option[DateTime] =
+  # cookie-date
+  const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
+  const NonDigit = Ascii + NonAscii - Digits
+  var foundTime = false
+  var foundDayOfMonth = false
+  var foundMonth = false
+  var foundYear = false
+  # date-token-list
+  var time: array[3, int]
+  var dayOfMonth: int
+  var month: int
+  var year: int
+  for dateToken in val.split(Delimiters):
+    if dateToken == "": continue # *delimiter
+    if not foundTime:
+      block timeBlock: # test for time
+        let hmsTime = dateToken.until(NonDigit - {':'})
+        var i = 0
+        for timeField in hmsTime.split(':'):
+          if i > 2: break timeBlock # too many time fields
+          # 1*2DIGIT
+          if timeField.len != 1 and timeField.len != 2: break timeBlock
+          var timeFields: array[3, int]
+          for c in timeField:
+            if c notin Digits: break timeBlock
+            timeFields[i] *= 10
+            timeFields[i] += c.decValue
+          time = timeFields
+          inc i
+        if i != 3: break timeBlock
+        foundTime = true
+        continue
+    if not foundDayOfMonth:
+      block dayOfMonthBlock: # test for day-of-month
+        let digits = dateToken.until(NonDigit)
+        if digits.len != 1 and digits.len != 2: break dayOfMonthBlock
+        var n = 0
+        for c in digits:
+          if c notin Digits: break dayOfMonthBlock
+          n *= 10
+          n += c.decValue
+        dayOfMonth = n
+        foundDayOfMonth = true
+        continue
+    if not foundMonth:
+      block monthBlock: # test for month
+        if dateToken.len < 3: break monthBlock
+        case dateToken.substr(0, 2).toLower()
+        of "jan": month = 1
+        of "feb": month = 2
+        of "mar": month = 3
+        of "apr": month = 4
+        of "may": month = 5
+        of "jun": month = 6
+        of "jul": month = 7
+        of "aug": month = 8
+        of "sep": month = 9
+        of "oct": month = 10
+        of "nov": month = 11
+        of "dec": month = 12
+        else: break monthBlock
+        foundMonth = true
+        continue
+    if not foundYear:
+      block yearBlock: # test for year
+        let digits = dateToken.until(NonDigit)
+        if digits.len != 2 and digits.len != 4: break yearBlock
+        var n = 0
+        for c in digits:
+          if c notin Digits: break yearBlock
+          n *= 10
+          n += c.decValue
+        year = n
+        foundYear = true
+        continue
+  if not (foundDayOfMonth and foundMonth and foundYear and foundTime): return none(DateTime)
+  if dayOfMonth notin 0..31: return none(DateTime)
+  if year < 1601: return none(DateTime)
+  if time[0] > 23: return none(DateTime)
+  if time[1] > 59: return none(DateTime)
+  if time[2] > 59: return none(DateTime)
+  var dateTime = dateTime(year, Month(month), MonthdayRange(dayOfMonth), HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
+  return some(dateTime)
+
+proc parseCookie(client: Client, str: string): Cookie {.jsfunc.} =
+  let cookie = new(Cookie)
+  var first = true
+  for part in str.split(';'):
+    if first:
+      cookie.name = part.until('=')
+      cookie.value = part.after('=')
+      first = false
+      continue
+    let part = percentDecode(part).strip(leading = true, trailing = false, AsciiWhitespace)
+    var n = 0
+    for i in 0..part.high:
+      if part[i] == '=':
+        n = i
+        break
+    if n == 0:
+      continue
+    let key = part.substr(0, n - 1)
+    let val = part.substr(n + 1)
+    case key.toLower()
+    of "expires":
+      let date = parseCookieDate(val)
+      if date.issome:
+        cookie.expires = date.get.toTime().toUnix()
+    of "max-age": cookie.maxAge = parseInt64(val)
+    of "secure": cookie.secure = true
+    of "httponly": cookie.httponly = true
+    of "samesite": cookie.samesite = true
+    of "path": cookie.path = val
+    of "domain": cookie.domain = val
+  return cookie
+
+proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
+  client.loader.doRequest(req)
+
 # Load request in a new buffer.
 var g_client: Client
 proc gotoUrl(client: Client, request: Request, prevurl = none(URL), force = false, ctype = "") =
   if force or prevurl.isnone or not prevurl.get.equals(request.url, true) or
       prevurl.get.equals(request.url) or request.httpmethod != HTTP_GET:
-    let page = client.loader.doRequest(request)
+    let page = client.doRequest(request)
     client.needsauth = page.status == 401 # Unauthorized
     client.redirecturl = page.redirect
     if page.body != nil:
@@ -262,10 +397,8 @@ proc evalJS(client: Client, src, filename: string): JSObject =
   unblockStdin()
   return client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
 
-proc command(client: Client, src: string) =
-  restoreStdin()
-  let previ = client.console.err.getPosition()
-  let ret = client.evalJS(src, "<command>")
+proc command0(client: Client, src: string, filename = "<command>") =
+  let ret = client.evalJS(src, filename)
   if ret.isException():
     let ex = client.jsctx.getException()
     let str = ex.toString()
@@ -283,6 +416,11 @@ proc command(client: Client, src: string) =
     if str.issome:
       client.console.err.write(str.get & '\n')
   free(ret)
+
+proc command(client: Client, src: string) =
+  restoreStdin()
+  let previ = client.console.err.getPosition()
+  client.command0(src)
   g_client = client
   client.console.err.setPosition(previ)
   if client.console.lastbuf == nil or client.console.lastbuf != client.buffer:
@@ -418,8 +556,8 @@ proc isearchBack(client: Client) {.jsfunc.} =
     client.buffer.cpos = cpos
 
 proc quit(client: Client) {.jsfunc.} =
-  eraseScreen()
-  print(HVP(0, 0))
+  #eraseScreen()
+  #print(HVP(0, 0))
   quit(0)
 
 proc feedNext(client: Client) {.jsfunc.} =
@@ -527,7 +665,25 @@ proc inputLoop(client: Client) =
     except ActionError as e:
       client.buffer.setStatusMessage(e.msg)
 
+#TODO this is dumb
+proc readFile(client: Client, path: string): string {.jsfunc.} =
+  try:
+    return readFile(path)
+  except IOError:
+    discard
+
+#TODO ditto
+proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
+  writeFile(path, content)
+
 proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
+  if gconfig.startup != "":
+    let s = readFile(gconfig.startup)
+    #client.command(s)
+    client.console.err = newFileStream(stderr)
+    client.command0(s, gconfig.startup)
+    client.console.err = newStringStream()
+    quit()
   client.userstyle = gconfig.stylesheet.parseStylesheet()
   if not stdin.isatty:
     client.readPipe(ctype)
@@ -569,6 +725,9 @@ proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
       console.err.write(' ')
   console.err.write('\n')
 
+proc sleep(client: Client, millis: int) {.jsfunc.} =
+  sleep millis
+
 proc newClient*(): Client =
   new(result)
   result.loader = newFileLoader()
@@ -579,13 +738,18 @@ proc newClient*(): Client =
   result.jsrt = rt
   result.jsctx = ctx
   var global = ctx.getGlobalObject()
-  discard ctx.registerType(Client, asglobal = true, addto = some(global))
+  ctx.registerType(Cookie)
+  ctx.registerType(Client, asglobal = true)
   global.setOpaque(result)
-  global.setProperty("client", global)
+  ctx.setProperty(global.val, "client", global.val)
 
   let consoleClassId = ctx.registerType(Console)
   let jsConsole = ctx.newJSObject(consoleClassId)
   jsConsole.setOpaque(result.console)
-  global.setProperty("console", jsConsole)
+  ctx.setProperty(global.val, "console", jsConsole.val)
+  free(global)
 
   ctx.addUrlModule()
+  ctx.addDOMModule()
+  ctx.addHTMLModule()
+  ctx.addRequestModule()

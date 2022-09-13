@@ -44,6 +44,7 @@ type
     nmap*: Table[string, string]
     lemap*: ActionMap
     stylesheet*: string
+    startup*: string
     ambiguous_double*: bool
     markcolor*: CellColor
 

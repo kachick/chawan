@@ -203,15 +203,17 @@ func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: ComplexSelector,
       return false
   return true
 
-proc querySelectorAll*(document: Document, q: string): seq[Element] =
+proc querySelectorAll(node: Node, q: string): seq[Element] =
   let selectors = parseSelectors(newStringStream(q))
-  for element in document.elements:
+  for element in node.elements:
     if element.selectorsMatch(selectors):
       result.add(element)
+doqsa = (proc(node: Node, q: string): seq[Element] = querySelectorAll(node, q))
 
-proc querySelector*(document: Document, q: string): Element =
+proc querySelector(node: Node, q: string): Element =
   let selectors = parseSelectors(newStringStream(q))
-  for element in document.elements:
+  for element in node.elements:
     if element.selectorsMatch(selectors):
       return element
   return nil
+doqs = (proc(node: Node, q: string): Element = querySelector(node, q))

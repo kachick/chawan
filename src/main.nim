@@ -68,6 +68,12 @@ while i < params.len:
       help(1)
   of "-h",  "--help":
     help(0)
+  of "-r", "--run":
+    inc i
+    if i < params.len:
+      gconfig.startup = params[i]
+    else:
+      help(1)
   of "--":
     escape_all = true
   elif param.len > 0:
@@ -77,7 +83,7 @@ while i < params.len:
       pages.add(param)
   inc i
 
-if pages.len == 0:
+if pages.len == 0 and gconfig.startup == "":
   if stdin.isatty:
     help(1)
 

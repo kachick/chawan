@@ -30,9 +30,12 @@ type
 
   JSContextOpaque* = ref object
     creg: Table[string, JSClassID]
+    typemap: Table[pointer, JSClassID]
+    ctors: Table[JSClassID, JSValue] #TODO TODO TODO free these
     gclaz: string
     sym_iterator: JSAtom
     sym_asyncIterator: JSAtom
+    sym_toStringTag: JSAtom
     done: JSAtom
     next: JSAtom
     value: JSAtom
@@ -76,6 +79,11 @@ proc newJSContext*(rt: JSRuntime): JSContext =
         let ait = JS_GetPropertyStr(ctx, sym, "asyncIterator")
         assert JS_IsSymbol(ait)
         opaque.sym_asyncIterator = JS_ValueToAtom(ctx, ait)
+        JS_FreeValue(ctx, ait)
+      block:
+        let ait = JS_GetPropertyStr(ctx, sym, "toStringTag")
+        assert JS_IsSymbol(ait)
+        opaque.sym_toStringTag = JS_ValueToAtom(ctx, ait)
         JS_FreeValue(ctx, ait)
       block:
         let s = "done"
@@ -131,9 +139,8 @@ func newJSObject*(ctx: JSContext, class: string): JSObject =
   result.ctx = ctx
   result.val = JS_NewObjectClass(ctx, ctx.getClass(class))
 
-func newJSCFunction*(ctx: JSContext, name: string, fun: JSCFunction, argc: int = 0, proto = JS_CFUNC_generic, magic = 0): JSObject =
-  result.ctx = ctx
-  result.val = JS_NewCFunction2(ctx, fun, cstring(name), cint(argc), proto, cint(magic))
+func newJSCFunction*(ctx: JSContext, name: string, fun: JSCFunction, argc: int = 0, proto = JS_CFUNC_generic, magic = 0): JSValue =
+  return JS_NewCFunction2(ctx, fun, cstring(name), cint(argc), proto, cint(magic))
 
 func getGlobalObject*(ctx: JSContext): JSObject =
   result.ctx = ctx
@@ -152,6 +159,7 @@ proc free*(ctx: var JSContext) =
   if opaque != nil:
     JS_FreeAtom(ctx, opaque.sym_iterator)
     JS_FreeAtom(ctx, opaque.sym_asyncIterator)
+    JS_FreeAtom(ctx, opaque.sym_toStringTag)
     JS_FreeAtom(ctx, opaque.done)
     JS_FreeAtom(ctx, opaque.next)
     GC_unref(opaque)
@@ -183,7 +191,6 @@ func isGlobal*(ctx: JSContext, class: string): bool =
   return ctx.getOpaque().gclaz == class
 
 # A hack to retrieve a given val's class id.
-# Used when we can't query ctx's hash table.
 func getClassID*(val: JSValue): JSClassID =
   const index = sizeof(cint) + # gc_ref_count
               sizeof(uint8) + # gc_mark
@@ -199,7 +206,7 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
     let opaque = JS_GetOpaque(global.val, 1) # JS_CLASS_OBJECT
     free(global)
     return opaque
-  return JS_GetOpaque(val, ctx.getClass(class))
+  return JS_GetOpaque(val, val.getClassID())
 
 func getOpaque*(obj: JSObject, class: string): pointer = getOpaque(obj.ctx, obj.val, class)
 
@@ -230,46 +237,59 @@ func isGlobal*(obj: JSObject): bool =
   let global = obj.ctx.getGlobalObject()
   result = JS_VALUE_GET_PTR(global.val) == JS_VALUE_GET_PTR(obj.val)
 
-func isInstanceOf*(obj: JSObject, class: string): bool =
-  return obj.getOpaque(class) != nil
+func isInstanceOf*(ctx: JSContext, obj: JSValue, class: string): bool =
+  let clazz = ctx.getClass(class)
+  if clazz in ctx.getOpaque().ctors:
+    let ctor = ctx.getOpaque().ctors[clazz]
+    if JS_IsInstanceOf(ctx, obj, ctor) == 1:
+      return true
+    return false #TODO handle exception?
+  else:
+    #TODO TODO TODO LegacyNoInterfaceObject has no constructor...
+    return false
 
-proc setProperty*(obj: JSObject, name: string, prop: JSObject) =
-  if JS_SetPropertyStr(obj.ctx, obj.val, cstring(name), prop.val) <= 0:
+proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
+  if JS_SetPropertyStr(ctx, val, cstring(name), prop) <= 0:
     raise newException(Defect, "Failed to set property string: " & name)
 
-proc setProperty*(obj: JSObject, name: string, fun: JSCFunction, argc: int = 0) =
-  obj.setProperty(name, obj.ctx.newJSCFunction(name, fun, argc))
+proc setProperty*(ctx: JSContext, val: JSValue, name: string, fun: JSCFunction, argc: int = 0) =
+  ctx.setProperty(val, name, ctx.newJSCFunction(name, fun, argc))
 
-func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, cctor: JSCFunction, funcs: JSFunctionList, parent: JSClassID = 0, asglobal = false, addto = none(JSObject)): JSClassID =
+func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, cctor: JSCFunction, funcs: JSFunctionList, nimt: pointer, parent: JSClassID, asglobal: bool, nointerface: bool): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
   var rtOpaque = rt.getOpaque()
-  ctxOpaque.creg[$cdef.class_name] = result
   if JS_NewClass(rt, result, cdef) != 0:
     raise newException(Defect, "Failed to allocate JS class: " & $cdef.class_name)
-  var proto: JSObject
+  ctxOpaque.typemap[nimt] = result
+  ctxOpaque.creg[$cdef.class_name] = result
+  var proto: JSValue
   if parent != 0:
-    let parentProto = ctx.getClassProto(parent)
-    proto = ctx.newJSObject(parentProto)
-    free(parentProto)
+    let parentProto = JS_GetClassProto(ctx, parent)
+    proto = JS_NewObjectProtoClass(ctx, parentProto, parent)
+    JS_FreeValue(ctx, parentProto)
   else:
-    proto = ctx.newJSObject()
+    proto = JS_NewObject(ctx)
   if funcs.len > 0:
     rtOpaque.flist.add(funcs.toSeq())
-    JS_SetPropertyFunctionList(ctx, proto.val, addr rtOpaque.flist[^1][0], cint(funcs.len))
-  JS_SetClassProto(ctx, result, proto.val)
+    JS_SetPropertyFunctionList(ctx, proto, addr rtOpaque.flist[^1][0], cint(funcs.len))
+  assert JS_SetProperty(ctx, proto, ctxOpaque.sym_toStringTag, JS_NewString(ctx, cdef.class_name)) == 1
+  JS_SetClassProto(ctx, result, proto)
   if asglobal:
     let global = ctx.getGlobalObject()
     assert ctxOpaque.gclaz == ""
     ctxOpaque.gclaz = $cdef.class_name
-    if JS_SetPrototype(ctx, global.val, proto.val) != 1:
+    if JS_SetPrototype(ctx, global.val, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " & $cdef.class_name)
     free(global)
-  if addto.issome:
+  if not nointerface:
+    let global = JS_GetGlobalObject(ctx)
     let jctor = ctx.newJSCFunction($cdef.class_name, cctor, 0, JS_CFUNC_constructor)
-    JS_SetConstructor(ctx, jctor.val, proto.val)
-    addto.get.setProperty($cdef.class_name, jctor)
+    JS_SetConstructor(ctx, jctor, proto)
+    ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
+    ctx.setProperty(global, $cdef.class_name, jctor)
+    JS_FreeValue(ctx, global)
 
 type FuncParam = tuple[name: string, t: NimNode, val: Option[NimNode], generic: Option[NimNode]]
 
@@ -291,12 +311,12 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Option[T] =
       var ret: int32
       if JS_ToInt32(ctx, addr ret, val) < 0:
         return none(T)
-      return some(ret)
+      return some(int(ret))
     else:
       var ret: int64
       if JS_ToInt64(ctx, addr ret, val) < 0:
         return none(T)
-      return some(ret)
+      return some(int(ret))
   elif T is uint:
     when sizeof(int) <= sizeof(int32):
       var ret: uint32
@@ -367,6 +387,14 @@ macro fromJSTupleBody(a: tuple) =
     )
     if i == len - 1:
       result.add(quote do:
+        let next = JS_Call(ctx, next_method, it, 0, nil)
+        if JS_IsException(next):
+          return none(T)
+        defer: JS_FreeValue(ctx, next)
+        let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+        `done` = fromJS[bool](ctx, doneVal)
+        if `done`.isnone: # exception
+          return none(T)
         var i = `i`
         # we're simulating a sequence, so we must query all remaining parameters too:
         while not `done`.get:
@@ -402,8 +430,8 @@ proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Option[T] =
     return none(T)
   defer: JS_FreeValue(ctx, next_method)
   var x: T
-  result = some(x)
-  fromJSTupleBody(result.get)
+  fromJSTupleBody(x)
+  return some(x)
 
 proc fromJSSeq[T](ctx: JSContext, val: JSValue): Option[seq[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
@@ -444,7 +472,6 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Option[seq[T]] =
 
 proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
   var ptab: ptr JSPropertyEnum
-  #TODO free ptab
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) < -1:
@@ -471,12 +498,14 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
       return none(Table[A, B])
     result.get[kn.get] = vn.get
 
-#TODO handle exceptions in all cases
 proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
   when T is string:
     return toString(ctx, val)
-  elif typeof(result.get) is Option: # unwrap
-    return fromJS[typeof(result.get)](ctx, val)
+  elif typeof(result.unsafeGet) is Option: # unwrap
+    let res = fromJS[typeof(result.get.get)](ctx, val)
+    if res.isnone:
+      return none(T)
+    return some(res)
   elif T is seq:
     return fromJSSeq[typeof(result.get[0])](ctx, val)
   elif T is tuple:
@@ -491,13 +520,30 @@ proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
   elif typeof(result.get) is Table:
     return fromJSTable[typeof(result.get.keys), typeof(result.get.values)](ctx, val)
   elif T is SomeInteger:
-    return fromJSInt[T](obj.ctx, obj.val)
+    return fromJSInt[T](ctx, val)
   elif T is SomeFloat:
     let f64: float64
     if JS_ToFloat64(ctx, addr f64, val) < 0:
       return none(T)
     return some(cast[T](f64))
+  elif T is enum:
+    #TODO implement enum handling...
+    if JS_IsException(val):
+      return none(T)
+    let s = toString(ctx, val)
+    if s.isnone:
+      return none(T)
+    try:
+      return some(parseEnum[T](s.get))
+    except ValueError:
+      JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s", cstring(s.get), $T)
+      return none(T)
+  elif T is object:
+    #TODO TODO TODO dictionary case
+    return none(T)
   else:
+    if JS_IsException(val):
+      return none(T)
     let op = cast[T](getOpaque(ctx, val, $T))
     if op == nil:
       JS_ThrowTypeError(ctx, "Value is not an instance of %s", $T)
@@ -510,7 +556,7 @@ func toJSString(ctx: JSContext, str: string): JSValue =
 func toJSInt(ctx: JSContext, n: SomeInteger): JSValue =
   when n is int:
     when sizeof(int) <= sizeof(int32):
-      return JS_NewInt32(ctx, n)
+      return JS_NewInt32(ctx, int32(n))
     else:
       return JS_NewInt64(ctx, n)
   elif n is uint:
@@ -529,34 +575,62 @@ func toJSInt(ctx: JSContext, n: SomeInteger): JSValue =
 
 func toJSNumber(ctx: JSContext, n: SomeNumber): JSValue =
   when n is SomeInteger:
-    return toJSInt(n)
+    return toJSInt(ctx, n)
   else:
-    return JS_NewFloat64(n)
+    return JS_NewFloat64(ctx, n)
 
 func toJSBool(ctx: JSContext, b: bool): JSValue =
   return JS_NewBool(ctx, b)
 
-func toJSObject[T](ctx: JSContext, obj: T, class: string): JSValue =
-  let claz = ctx.findClass(class)
-  assert claz.issome
+proc getTypePtr[T](x: T): pointer =
+  when T is RootRef:
+    # I'm so sorry.
+    # (This dereferences the object's first member, m_type. Probably.)
+    return cast[ptr pointer](x)[]
+  else:
+    return getTypeInfo(x)
+
+func toJSObject[T](ctx: JSContext, obj: T): JSValue =
   let op = JS_GetRuntime(ctx).getOpaque()
   let p = cast[pointer](obj)
   if p in op.plist:
     # a JSValue already points to this object.
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, op.plist[p]))
-  let jsObj = ctx.newJSObject(claz.get)
+  let clazz = ctx.getOpaque().typemap[getTypePtr(obj)]
+  let jsObj = ctx.newJSObject(clazz)
   jsObj.setOpaque(obj)
   return jsObj.val
 
-proc toJS*[T](ctx: JSContext, obj: T, class = ""): JSValue =
+proc toJS*[T](ctx: JSContext, obj: T): JSValue =
   when T is string:
-    ctx.toJSString(obj)
+    return ctx.toJSString(obj)
   elif T is SomeNumber:
-    ctx.toJSNumber(obj)
+    return ctx.toJSNumber(obj)
   elif T is bool:
-    ctx.toJSBool(obj)
+    return ctx.toJSBool(obj)
+  elif T is Table:
+    result = JS_NewObject(ctx)
+    if not JS_IsException(result):
+      for k, v in obj:
+        setProperty(ctx, result, k, toJS(ctx, v))
+  elif T is Option:
+    if obj.issome:
+      return toJS(ctx, obj.get)
+    return JS_NULL
+  elif T is seq:
+    let a = JS_NewArray(ctx)
+    if not JS_IsException(a):
+      for i in 0..obj.high:
+        let j = toJS(ctx, obj[i])
+        if JS_IsException(j):
+          return j
+        if JS_DefinePropertyValueInt64(ctx, a, int64(i), j, JS_PROP_C_W_E or JS_PROP_THROW) < 0:
+          return JS_EXCEPTION
+    return a
   else:
-    ctx.toJSObject(obj, class)
+    if obj == nil:
+      return JS_NULL
+    return ctx.toJSObject(obj)
 
 type
   JS_Error = object of CatchableError
@@ -642,7 +716,8 @@ proc getParams(fun: NimNode): seq[FuncParam] =
       quote do:
         typeof(`x`)
     let val = if it[2].kind != nnkEmpty:
-      some(it[2])
+      let x = it[2]
+      some(newPar(x))
     else:
       none(NimNode)
     var g = none(NimNode)
@@ -738,16 +813,17 @@ proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, fallback: 
     elif g == string.getType():
       hasString = true
   # 4. If V is null or undefined, then:
-  if tableg.issome:
-    let a = tableg.get[1]
-    let b = tableg.get[2]
-    gen.addUnionParamBranch(quote do: (
-        let val = getJSValue(ctx, argv, `j`)
-        JS_IsNull(val) or JS_IsUndefined(val)
-      ),
-      quote do:
-        let `s` = Table[`a`, `b`](), #TODO is this correct?
-      fallback)
+  #TODO this is wrong. map dictionary to object instead
+  #if tableg.issome:
+  #  let a = tableg.get[1]
+  #  let b = tableg.get[2]
+  #  gen.addUnionParamBranch(quote do: (
+  #      let val = getJSValue(ctx, argv, `j`)
+  #      JS_IsNull(val) or JS_IsUndefined(val)
+  #    ),
+  #    quote do:
+  #      let `s` = Table[`a`, `b`](),
+  #    fallback)
   # 10. If Type(V) is Object, then:
   if tableg.issome or seqg.issome:
     # Sequence:
@@ -860,8 +936,7 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
     )
   if gen.hasthis:
     result.add(quote do:
-      var this = JSObject(ctx: ctx, val: this)
-      if not (this.isUndefined() or ctx.isGlobal(`tt`)) and not this.isInstanceOf(`tt`):
+      if not (JS_IsUndefined(this) or ctx.isGlobal(`tt`)) and not isInstanceOf(ctx, this, `tt`):
         # undefined -> global.
         return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `tt`)
     )
@@ -870,16 +945,13 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
     var tryWrap = newNimNode(nnkTryStmt)
     tryWrap.add(gen.jsCallAndRet)
     for error in js_errors[gen.funcName]:
-      let ename = ident("JS_" & error)
+      let ename = ident(error)
       var exceptBranch = newNimNode(nnkExceptBranch)
       let eid = ident("e")
       exceptBranch.add(newNimNode(nnkInfix).add(ident("as"), ename, eid))
-      let throwName = ident("JS_Throw" & error)
-      exceptBranch.add(newCall(throwName,
-                               ident("ctx"),
-                               newLit("%s"),
-                               newCall(ident("cstring"),
-                                       newDotExpr(eid, ident("msg")))))
+      let throwName = ident("JS_Throw" & error.substr("JS_".len))
+      exceptBranch.add(quote do:
+        return `throwName`(ctx, "%s", cstring(`eid`.msg)))
       tryWrap.add(exceptBranch)
     gen.jsCallAndRet = tryWrap
   result.add(gen.jsCallAndRet)
@@ -890,14 +962,15 @@ proc newJSProc(gen: var JSFuncGenerator, params: openArray[NimNode], isva = true
   result = newProc(ident(gen.newName), params, jsBody, pragmas = jsPragmas)
   gen.res = result
 
+# WARNING: for now, this only works correctly when the .jserr pragma was
+# declared on the parent function.
 # Note: this causes the entire nim function body to be inlined inside the JS
 # interface function.
 #TODO: implement actual inlining (so we can e.g. get rid of JS_Error, use format strings, etc.)
-macro JS_THROW*(a: untyped, b: string) =
-  let es = ident("JS_" & a.strVal)
+macro JS_THROW*(a: typed, b: string) =
   result = quote do:
     block when_js:
-      raise newException(`es`, `b`)
+      raise newException(`a`, `b`)
 
 proc setupGenerator(fun: NimNode, hasthis = true, hasfuncall = true): JSFuncGenerator =
   result.funcName = $fun[0]
@@ -952,7 +1025,7 @@ macro jserr*(fun: untyped) =
   gen.rewriteExceptions()
   var pragma = gen.original.findChild(it.kind == nnkPragma)
   for i in 0..<pragma.len:
-    if pragma[i] == ident("jsctor"):
+    if pragma[i].eqIdent(ident("jsctor")) or pragma[i].eqIdent(ident("jsfunc")) or pragma[i].eqIdent(ident("jsget")) or pragma[i].eqIdent(ident("jsset")):
       pragma.del(i)
   gen.copied.addPragma(quote do: inline)
 
@@ -974,9 +1047,8 @@ macro jsctor*(fun: typed) =
     gen.addOptionalParams()
     gen.finishFunCallList()
     let jfcl = gen.jsFunCallList
-    let tt = gen.thisType
     gen.jsCallAndRet = quote do:
-      return ctx.toJS((`jfcl`), `tt`)
+      return ctx.toJS(`jfcl`)
     discard gen.newJSProc(getJSParams())
     gen.registerFunction()
     result = newStmtList(fun)
@@ -992,9 +1064,8 @@ macro jsget*(fun: typed) =
   gen.addFixParam("this")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let tt = gen.thisType
   gen.jsCallAndRet = quote do:
-    return ctx.toJS(`jfcl`, `tt`)
+    return ctx.toJS(`jfcl`)
   let jsProc = gen.newJSProc(getJSGetterParams(), false)
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
@@ -1033,10 +1104,9 @@ macro jsfunc*(fun: typed) =
   gen.addOptionalParams()
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let tt = gen.thisType
   gen.jsCallAndRet = if gen.returnType.issome:
     quote do:
-      return ctx.toJS(`jfcl`, `tt`)
+      return ctx.toJS(`jfcl`)
   else:
     quote do:
       `jfcl`
@@ -1126,7 +1196,7 @@ template fromJS_or_return*(t, ctx, val: untyped): untyped =
     x.get
   )
 
-macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, addto = none(JSObject)): JSClassID =
+macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, nointerface = false): JSClassID =
   let s = t.strVal
   var sctr = ident("js_illegal_ctor")
   var sfin = ident("js_" & s & "ClassFin")
@@ -1144,44 +1214,64 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
     let fn = $node
     result.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue): JSValue =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not JSObject(ctx: ctx, val: this).isInstanceOf(`s`):
+        if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not ctx.isInstanceOf(this, `s`):
           # undefined -> global.
           return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `s`)
         let arg_0 = fromJS_or_return(`t`, ctx, this)
-        return toJS(ctx, arg_0.`node`, $typeof(arg_0.`node`))
+        return toJS(ctx, arg_0.`node`)
     )
-    RegisteredFunctions[s].add((node, id))
+    if s notin RegisteredFunctions:
+      RegisteredFunctions[s] = @[(node, id)]
+    else:
+      RegisteredFunctions[s].add((node, id))
   for node in pragmas["jsset"]:
     let id = ident("js_set_" & s & "_" & $node)
     let fn = $node
     result.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue, val: JSValue): JSValue =
-        var this = JSObject(ctx: ctx, val: this)
-        if not (this.isUndefined() or ctx.isGlobal(`s`)) and not this.isInstanceOf(`s`):
+        if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not ctx.isInstanceOf(this, `s`):
           # undefined -> global.
           return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `s`)
-        let arg_0 = fromJS[`t`](this)
-        let arg_1 = JSObject(ctx: ctx, val: val)
-        arg_0.`node` = fromJS[typeof(arg_0.`node`)](arg_1)
-        return JS_DupValue(ctx, arg_1.val)
+        let arg_0 = (block:
+          let t = fromJS[`t`](ctx, this)
+          if t.isnone:
+            return JS_EXCEPTION
+          t.get
+        )
+        let arg_1 = val
+        arg_0.`node` = (block:
+          let t = fromJS[typeof(arg_0.`node`)](ctx, arg_1)
+          if t.isnone:
+            return JS_EXCEPTION
+          t.get
+        )
+        return JS_DupValue(ctx, arg_1)
     )
-    RegisteredFunctions[s].add((node, id))
-  let tabList = newNimNode(nnkBracket)
-  for fun in RegisteredFunctions[s]:
-    let f0 = fun[0]
-    let f1 = fun[1]
-    if f1.strVal.startsWith("js_new"):
-      ctorImpl = js_funcs[$f0].res
-      if ctorFun != nil:
-        error("Class " & $s & " has 2+ constructors.")
-      ctorFun = f1
-    elif f1.strVal.startsWith("js_get"):
-      getters[$f0] = f1
-    elif f1.strVal.startsWith("js_set"):
-      setters[$f0] = f1
+    if s notin RegisteredFunctions:
+      RegisteredFunctions[s] = @[(node, id)]
     else:
-      tabList.add(quote do:
-        JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
+      RegisteredFunctions[s].add((node, id))
+  let tabList = newNimNode(nnkBracket)
+  if s in RegisteredFunctions:
+    for fun in RegisteredFunctions[s]:
+      #TODO this is a mess
+      var f0 = fun[0]
+      let f1 = fun[1]
+      let f2 = fun[0]
+      if f0.strVal.endsWith("_exceptions"):
+        f0 = newLit(f0.strVal.substr(0, f0.strVal.high - "_exceptions".len))
+      if f1.strVal.startsWith("js_new"):
+        ctorImpl = js_funcs[$f2].res
+        if ctorFun != nil:
+          error("Class " & $s & " has 2+ constructors.")
+        ctorFun = f1
+      elif f1.strVal.startsWith("js_get"):
+        getters[$f0] = f1
+      elif f1.strVal.startsWith("js_set"):
+        setters[$f0] = f1
+      else:
+        tabList.add(quote do:
+          JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
   for k, v in getters:
     if k in setters:
       let s = setters[k]
@@ -1233,7 +1323,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
       var x: `t`
       new(x, nim_finalize_for_js)
       const classDef = JSClassDef(class_name: `s`, finalizer: `sfin`)
-      `ctx`.newJSClass(JSClassDefConst(unsafeAddr classDef), `sctr`, `tabList`, `parent`, `asglobal`, `addto`)
+      `ctx`.newJSClass(JSClassDefConst(unsafeAddr classDef), `sctr`, `tabList`, getTypePtr(x), `parent`, `asglobal`, `nointerface`)
   )
 
 proc getMemoryUsage*(rt: JSRuntime): string =

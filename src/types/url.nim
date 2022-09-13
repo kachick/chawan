@@ -911,20 +911,57 @@ proc newURLSearchParams*[T: seq[(string, string)]|Table[string, string]|string](
 proc `$`*(params: URLSearchParams): string {.jsfunc.} =
   return serializeApplicationXWWWFormUrlEncoded(params.list)
 
+proc update(params: URLSearchParams) =
+  if params.url.isnone:
+    return
+  let serializedQuery = $params
+  if serializedQuery == "":
+    params.url.get.query = none(string)
+  else:
+    params.url.get.query = some(serializedQuery)
+
+proc append*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
+  params.list.add((name, value))
+  params.update()
+
+proc delete*(params: URLSearchParams, name: string) {.jsfunc.} =
+  for i in countdown(params.list.high, 0):
+    if params.list[i][0] == name:
+      params.list.delete(i)
+
+proc get*(params: URLSearchParams, name: string): Option[string] {.jsfunc.} =
+  for it in params.list:
+    if it[0] == name:
+      return some(it[1])
+
+proc getAll*(params: URLSearchParams, name: string): seq[string] {.jsfunc.} =
+  for it in params.list:
+    if it[0] == name:
+      result.add(it[1])
+
+proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
+  var first = true
+  for i in 0..params.list.high:
+    if params.list[i][0] == name:
+      if first:
+        first = false
+        params.list[i][1] = value
+
 #TODO add Option wrapper
 proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jsctor.} =
   if base.issome:
     let baseUrl = parseUrl(base.get)
     if baseUrl.isnone:
-      JS_THROW TypeError, base.get & " is not a valid URL"
+      JS_THROW JS_TypeError, base.get & " is not a valid URL"
     let url = parseUrl(s, baseUrl)
     if url.isnone:
-      JS_THROW TypeError, s & " is not a valid URL"
+      JS_THROW JS_TypeError, s & " is not a valid URL"
     return url.get
   let url = parseUrl(s)
   if url.isnone:
-    JS_THROW TypeError, s & " is not a valid URL"
+    JS_THROW JS_TypeError, s & " is not a valid URL"
   url.get.searchParams = newURLSearchParams()
+  url.get.searchParams.url = url
   url.get.searchParams.initURLSearchParams(url.get.query.get(""))
   return url.get
 
@@ -1030,7 +1067,5 @@ proc hash*(url: URL, s: string) {.jsset.} =
   discard basicParseUrl(s, url = url, stateOverride = some(FRAGMENT_STATE))
 
 proc addUrlModule*(ctx: JSContext) =
-  let global = ctx.getGlobalObject()
-  discard ctx.registerType(URL, addto = some(global))
-  discard ctx.registerType(URLSearchParams, addto = some(global))
-  free(global)
+  ctx.registerType(URL)
+  ctx.registerType(URLSearchParams)

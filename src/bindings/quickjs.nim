@@ -23,11 +23,43 @@ when hlib != "":
   {.passC: "-I" & hlib.}
 {.passL: "-lquickjs -lm -lpthread".}
 
+const                         ##  all tags with a reference count are negative
+  JS_TAG_FIRST* = -10           ##  first negative tag
+  JS_TAG_BIG_INT* = -10
+  JS_TAG_BIG_FLOAT* = -9
+  JS_TAG_SYMBOL* = -8
+  JS_TAG_STRING* = -7
+  JS_TAG_SHAPE* = -6            ##  used internally during GC
+  JS_TAG_ASYNC_FUNCTION* = -5   ##  used internally during GC
+  JS_TAG_VAR_REF* = -4          ##  used internally during GC
+  JS_TAG_MODULE* = -3           ##  used internally
+  JS_TAG_FUNCTION_BYTECODE* = -2 ##  used internally
+  JS_TAG_OBJECT* = -1
+  JS_TAG_INT* = 0
+  JS_TAG_BOOL* = 1
+  JS_TAG_NULL* = 2
+  JS_TAG_UNDEFINED* = 3
+  JS_TAG_UNINITIALIZED* = 4
+  JS_TAG_CATCH_OFFSET* = 5
+  JS_TAG_EXCEPTION* = 6
+  JS_TAG_FLOAT64* = 7           ##  any larger tag is FLOAT64 if JS_NAN_BOXING
+
 when sizeof(int) < sizeof(int64):
   {.passC: "-DJS_NAN_BOXING".}
   type
     JSValue* {.importc, header: qjsheader.} = uint64
-  # uh this won't compile you're on your own
+
+  template JS_VALUE_GET_TAG*(v: untyped): int32 =
+    cast[int32](v shr 32)
+
+  template JS_VALUE_GET_PTR*(v: untyped): pointer =
+    cast[pointer](v)
+
+  template JS_MKVAL*(t, val: untyped): JSValue =
+    JSValue((uint64(t) shl 32) or uint32(val))
+
+  template JS_MKPTR*(t, p: untyped): JSValue =
+    JSValue((cast[uint64](t) shl 32) or cast[uint](p))
 else:
   type
     JSValueUnion* {.importc, header: qjsheader, union.} = object
@@ -37,6 +69,18 @@ else:
     JSValue* {.importc, header: qjsheader.} = object
       u*: JSValueUnion
       tag*: int64
+
+  template JS_VALUE_GET_TAG*(v: untyped): int32 =
+    cast[int32](v.tag)
+
+  template JS_VALUE_GET_PTR*(v: untyped): pointer =
+    cast[pointer](v.u)
+
+  template JS_MKVAL*(t, val: untyped): JSValue =
+    JSValue(u: JSValueUnion(`int32`: val), tag: t)
+
+  template JS_MKPTR*(t, p: untyped): JSValue =
+    JSValue(u: JSValueUnion(`ptr`: p), tag: t)
 
 type
   JSRuntime* = ptr object
@@ -136,39 +180,6 @@ converter toBool*(js: JS_BOOl): bool {.inline.} =
 converter toJSBool*(b: bool): JS_BOOL {.inline.} =
   cast[JS_BOOL](cint(b))
 
-const                         ##  all tags with a reference count are negative
-  JS_TAG_FIRST* = -10           ##  first negative tag
-  JS_TAG_BIG_INT* = -10
-  JS_TAG_BIG_FLOAT* = -9
-  JS_TAG_SYMBOL* = -8
-  JS_TAG_STRING* = -7
-  JS_TAG_SHAPE* = -6            ##  used internally during GC
-  JS_TAG_ASYNC_FUNCTION* = -5   ##  used internally during GC
-  JS_TAG_VAR_REF* = -4          ##  used internally during GC
-  JS_TAG_MODULE* = -3           ##  used internally
-  JS_TAG_FUNCTION_BYTECODE* = -2 ##  used internally
-  JS_TAG_OBJECT* = -1
-  JS_TAG_INT* = 0
-  JS_TAG_BOOL* = 1
-  JS_TAG_NULL* = 2
-  JS_TAG_UNDEFINED* = 3
-  JS_TAG_UNINITIALIZED* = 4
-  JS_TAG_CATCH_OFFSET* = 5
-  JS_TAG_EXCEPTION* = 6
-  JS_TAG_FLOAT64* = 7           ##  any larger tag is FLOAT64 if JS_NAN_BOXING
-
-template JS_MKVAL*(t, val: untyped): JSValue =
-  JSValue(u: JSValueUnion(`int32`: val), tag: t)
-
-template JS_MKPTR*(t, p: untyped): JSValue =
-  JSValue(u: JSValueUnion(`ptr`: p), tag: t)
-
-template JS_VALUE_GET_TAG*(v: untyped): int =
-  cast[int32](v.tag)
-
-template JS_VALUE_GET_PTR*(v: untyped): pointer =
-  cast[pointer](v.u)
-
 const
   JS_NULL* = JS_MKVAL(JS_TAG_NULL, 0)
   JS_UNDEFINED* = JS_MKVAL(JS_TAG_UNDEFINED, 0)
@@ -211,6 +222,7 @@ const
   JS_PROP_GETSET* = (1 shl 4)
   JS_PROP_VARREF* = (2 shl 4) # used internally
   JS_PROP_AUTOINIT* = (3 shl 4) # used internally
+  JS_PROP_THROW* = (1 shl 14)
 
 const
   JS_GPN_STRING_MASK* = (1 shl 0)
@@ -218,7 +230,6 @@ const
   JS_GPN_PRIVATE_MASK* = (1 shl 2)
   JS_GPN_ENUM_ONLY* = (1 shl 3)
   JS_GPN_SET_ENUM* = (1 shl 4)
-
 
 template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction): JSCFunctionListEntry = 
   JSCFunctionListEntry(name: cstring(n),
@@ -237,6 +248,7 @@ template JS_CGETSET_DEF*(n: string, fgetter, fsetter: untyped): JSCFunctionListE
                          getset: JSCFunctionListEntryGetSet(get: JSCFunctionType(getter: fgetter),
                                                             set: JSCFunctionType(setter: fsetter))))
 
+
 {.push header: qjsheader, importc, cdecl.}
 
 proc JS_NewRuntime*(): JSRuntime
@@ -252,9 +264,11 @@ proc JS_FreeContext*(ctx: JSContext)
 proc JS_GetGlobalObject*(ctx: JSContext): JSValue
 proc JS_IsInstanceOf*(ctx: JSContext, val: JSValue, obj: JSValue): cint
 
+proc JS_NewArray*(ctx: JSContext): JSValue
 proc JS_NewObject*(ctx: JSContext): JSValue
 proc JS_NewObjectClass*(ctx: JSContext, class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext, proto: JSValue): JSValue
+proc JS_NewObjectProtoClass*(ctx: JSContext, proto: JSValue, class_id: JSClassID): JSValue
 proc JS_SetOpaque*(obj: JSValue, opaque: pointer)
 proc JS_GetOpaque*(obj: JSValue, class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext, obj: JSValue, class_id: JSClassID): pointer
@@ -288,6 +302,9 @@ proc JS_NewCFunction*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length:
 
 proc JS_NewString*(ctx: JSContext, str: cstring): JSValue
 
+proc JS_SetProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue): cint
+proc JS_SetPropertyUint32*(ctx: JSContext, this_obj: JSValue, idx: uint32, val: JSValue): cint
+proc JS_SetPropertyInt64*(ctx: JSContext, this_obj: JSValue, idx: int64, val: JSValue): cint
 proc JS_SetPropertyStr*(ctx: JSContext, this_obj: JSValue, prop: cstring, val: JSValue): cint
 proc JS_SetPropertyFunctionList*(ctx: JSContext, obj: JSValue, tab: ptr JSCFunctionListEntry, len: cint)
 proc JS_GetProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom): JSValue
@@ -300,6 +317,7 @@ proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint, argv: ptr
 proc JS_DefineProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue, getter: JSValue, setter: JSValue, flags: cint): cint
 proc JS_DefinePropertyValue*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue, flags: cint): cint
 proc JS_DefinePropertyValueUint32*(ctx: JSContext, this_obj: JSValue, idx: uint32, val: JSValue, flags: cint): cint
+proc JS_DefinePropertyValueInt64*(ctx: JSContext, this_obj: JSValue, idx: int64, val: JSValue, flags: cint): cint
 proc JS_DefinePropertyValueStr*(ctx: JSContext, this_obj: JSValue, prop: cstring, val: JSValue, flags: cint): cint
 proc JS_DefinePropertyValueGetSet*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, getter: JSValue, setter: JSValue, flags: cint): cint
 

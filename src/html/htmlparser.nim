@@ -6,13 +6,16 @@ import strformat
 import tables
 import unicode
 
-import utils/twtstr
+import css/sheet
 import html/dom
 import html/tags
 import html/htmltokenizer
-import css/sheet
+import js/javascript
+import utils/twtstr
 
 type
+  DOMParser = ref object # JS interface
+
   HTML5Parser = object
     case fragment: bool
     of true: ctx: Element
@@ -2085,3 +2088,18 @@ proc parseHTML5*(inputStream: Stream): Document =
   parser.document = newDocument()
   parser.tokenizer = inputStream.newTokenizer()
   return parser.constructTree()
+
+proc newDOMParser*(): DOMParser {.jsctor.} =
+  new(result)
+
+proc parseFromString*(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
+  case t
+  of "text/html":
+    return parseHTML5(newStringStream(str))
+  of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
+    JS_THROW JS_InternalError, "XML parsing is not supported yet"
+  else:
+    JS_THROW JS_TypeError, "Invalid mime type"
+
+proc addHTMLModule*(ctx: JSContext) =
+  ctx.registerType(DOMParser)

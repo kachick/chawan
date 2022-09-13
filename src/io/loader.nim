@@ -100,6 +100,7 @@ proc runFileLoader(loader: FileLoader, loadcb: proc()) =
   quit(0)
 
 proc doRequest*(loader: FileLoader, request: Request): Response =
+  new(result)
   let stream = connectSocketStream(loader.process)
   stream.swrite(request)
   stream.flush()

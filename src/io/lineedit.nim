@@ -167,8 +167,8 @@ proc readLine(state: var LineState): bool =
         else:
           state.fullRedraw()
     of ACTION_LINED_DELETE:
-      if state.cursor > 0 and state.cursor < state.news.len:
-        let w = state.news[state.cursor - 1].lwidth()
+      if state.cursor >= 0 and state.cursor < state.news.len:
+        let w = state.news[state.cursor].lwidth()
         state.news.delete(state.cursor..state.cursor)
         if state.cursor == state.news.len and state.shift == 0:
           state.kill(w)

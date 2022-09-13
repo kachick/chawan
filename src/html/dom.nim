@@ -5,6 +5,7 @@ import tables
 
 import css/sheet
 import html/tags
+import js/javascript
 import types/url
 import utils/twtstr
 
@@ -34,7 +35,7 @@ type
 
   Node* = ref object of EventTarget
     nodeType*: NodeType
-    childNodes*: seq[Node]
+    childNodes* {.jsget.}: seq[Node]
     nextSibling*: Node
     previousSibling*: Node
     parentNode*: Node
@@ -83,7 +84,7 @@ type
 
     id*: string
     classList*: seq[string]
-    attributes*: Table[string, string]
+    attributes* {.jsget, jsset.}: Table[string, string]
     hover*: bool
     invalid*: bool
 
@@ -97,7 +98,7 @@ type
     inputType*: InputType
     autofocus*: bool
     required*: bool
-    value*: string
+    value* {.jsget.}: string
     size*: int
     checked*: bool
     xcoord*: int
@@ -129,7 +130,7 @@ type
     start*: Option[int]
 
   HTMLLIElement* = ref object of HTMLElement
-    value*: Option[int]
+    value* {.jsget.}: Option[int]
 
   HTMLStyleElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
@@ -198,6 +199,11 @@ iterator children_rev*(node: Node): Element {.inline.} =
     let child = node.childNodes[i]
     if child.nodeType == ELEMENT_NODE:
       yield Element(child)
+
+#TODO TODO TODO this should return a live view instead
+proc children*(node: Node): seq[Element] {.jsget.} =
+  for child in node.children:
+    result.add(child)
 
 # Returns the node's ancestors
 iterator ancestors*(node: Node): Element {.inline.} =
@@ -415,7 +421,7 @@ func attrb*(element: Element, s: string): bool =
     return true
   return false
 
-func textContent*(node: Node): string =
+func textContent*(node: Node): string {.jsget.} =
   case node.nodeType
   of DOCUMENT_NODE, DOCUMENT_TYPE_NODE:
     return "" #TODO null
@@ -533,7 +539,7 @@ func formmethod*(element: Element): FormMethod =
 
   return FORM_METHOD_GET
 
-func target*(element: Element): string =
+func target*(element: Element): string {.jsfunc.} =
   if element.attrb("target"):
     return element.attr("target")
   for base in element.document.elements(TAG_BASE):
@@ -547,13 +553,13 @@ func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
       return element
   return nil
 
-func newText*(document: Document, data: string = ""): Text =
+func newText*(document: Document, data: string = ""): Text {.jsctor.} =
   new(result)
   result.nodeType = TEXT_NODE
   result.document = document
   result.data = data
 
-func newComment*(document: Document, data: string = ""): Comment =
+func newComment*(document: Document = nil, data: string = ""): Comment {.jsctor.} =
   new(result)
   result.nodeType = COMMENT_NODE
   result.document = document
@@ -617,12 +623,12 @@ func newHTMLElement*(document: Document, localName: string, namespace = Namespac
   if tagType == TAG_UNKNOWN:
     result.localName = localName
 
-func newDocument*(): Document =
+func newDocument*(): Document {.jsctor.} =
   new(result)
   result.nodeType = DOCUMENT_NODE
   result.document = result
 
-func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
+func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType {.jsctor.} =
   new(result)
   result.document = document
   result.name = name
@@ -637,12 +643,19 @@ func newAttr*(parent: Element, key, value: string): Attr =
   result.name = key
   result.value = value
 
-func getElementById*(node: Node, id: string): Element =
+func getElementById*(node: Node, id: string): Element {.jsfunc.} =
   if id.len == 0:
     return nil
   for child in node.elements:
     if child.id == id:
       return child
+
+func getElementById2*(node: Node, id: string): pointer =
+  if id.len == 0:
+    return nil
+  for child in node.elements:
+    if child.id == id:
+      return cast[pointer](child)
 
 func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
   for element in document.elements(tag):
@@ -709,7 +722,7 @@ func text*(option: HTMLOptionElement): string =
       if child.parentElement.tagType != TAG_SCRIPT: #TODO svg
         result &= child.data.stripAndCollapse()
 
-func value*(option: HTMLOptionElement): string =
+func value*(option: HTMLOptionElement): string {.jsget.} =
   if option.attrb("value"):
     return option.attr("value")
   return option.childTextContent.stripAndCollapse()
@@ -960,3 +973,41 @@ proc appendAttribute*(element: Element, k, v: string) =
         select.size = 4
   else: discard
   element.attributes[k] = v
+
+var doqsa*: proc (node: Node, q: string): seq[Element]
+var doqs*: proc (node: Node, q: string): Element
+
+proc querySelectorAll*(node: Node, q: string): seq[Element] {.jsfunc.} =
+  return doqsa(node, q)
+
+proc querySelector*(node: Node, q: string): Element {.jsfunc.} =
+  return doqs(node, q)
+
+proc addDOMModule*(ctx: JSContext) =
+  let eventTargetCID = ctx.registerType(EventTarget)
+  let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
+  ctx.registerType(Document, parent = nodeCID)
+  let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
+  ctx.registerType(Comment, parent = characterDataCID)
+  ctx.registerType(Text, parent = characterDataCID)
+  ctx.registerType(DocumentType, parent = nodeCID)
+  let elementCID = ctx.registerType(Element, parent = nodeCID)
+  let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
+  ctx.registerType(HTMLInputElement, parent = htmlElementCID)
+  ctx.registerType(HTMLAnchorElement, parent = htmlElementCID)
+  ctx.registerType(HTMLSelectElement, parent = htmlElementCID)
+  ctx.registerType(HTMLSpanElement, parent = htmlElementCID)
+  ctx.registerType(HTMLOptGroupElement, parent = htmlElementCID)
+  ctx.registerType(HTMLOptionElement, parent = htmlElementCID)
+  ctx.registerType(HTMLHeadingElement, parent = htmlElementCID)
+  ctx.registerType(HTMLBRElement, parent = htmlElementCID)
+  ctx.registerType(HTMLMenuElement, parent = htmlElementCID)
+  ctx.registerType(HTMLUListElement, parent = htmlElementCID)
+  ctx.registerType(HTMLOListElement, parent = htmlElementCID)
+  ctx.registerType(HTMLLIElement, parent = htmlElementCID)
+  ctx.registerType(HTMLStyleElement, parent = htmlElementCID)
+  ctx.registerType(HTMLLinkElement, parent = htmlElementCID)
+  ctx.registerType(HTMLFormElement, parent = htmlElementCID)
+  ctx.registerType(HTMLTemplateElement, parent = htmlElementCID)
+  ctx.registerType(HTMLUnknownElement, parent = htmlElementCID)
+  ctx.registerType(HTMLScriptElement, parent = htmlElementCID)

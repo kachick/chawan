@@ -2,12 +2,20 @@ import options
 import streams
 import tables
 
-import utils/twtstr
 import types/url
+import js/javascript
+import utils/twtstr
 
 type HttpMethod* = enum
-  HTTP_CONNECT, HTTP_DELETE, HTTP_GET, HTTP_HEAD, HTTP_OPTIONS, HTTP_PATCH,
-  HTTP_POST, HTTP_PUT, HTTP_TRACE
+  HTTP_CONNECT = "CONNECT"
+  HTTP_DELETE = "DELETE"
+  HTTP_GET = "GET"
+  HTTP_HEAD = "HEAD"
+  HTTP_OPTIONS = "OPTIONS"
+  HTTP_PATCH = "PATCH"
+  HTTP_POST = "POST"
+  HTTP_PUT = "PUT"
+  HTTP_TRACE = "TRACE"
 
 type
   Request* = ref RequestObj
@@ -18,13 +26,13 @@ type
     body*: Option[string]
     multipart*: Option[MimeData]
 
-  Response* = object
+  Response* = ref object
     body*: Stream
-    res*: int
-    contenttype*: string
-    status*: int
-    headers*: HeaderList
-    redirect*: Option[Url]
+    res* {.jsget.}: int
+    contenttype* {.jsget.}: string
+    status* {.jsget.}: int
+    headers* {.jsget.}: HeaderList
+    redirect* {.jsget.}: Option[Url]
 
   ReadableStream* = ref object of Stream
     isource*: Stream
@@ -32,7 +40,7 @@ type
     isend: bool
 
   HeaderList* = ref object
-    table*: Table[string, seq[string]]
+    table* {.jsget.}: Table[string, seq[string]]
 
 # Originally from the stdlib
   MimePart* = object
@@ -122,9 +130,9 @@ func newHeaderList*(table: Table[string, string]): HeaderList =
 
 func newRequest*(url: Url,
                  httpmethod = HTTP_GET,
-                 headers: openarray[(string, string)] = [],
+                 headers: seq[(string, string)] = @[],
                  body = none(string),
-                 multipart = none(MimeData)): Request =
+                 multipart = none(MimeData)): Request {.jsctor.} =
   new(result)
   result.httpmethod = httpmethod
   result.url = url
@@ -134,6 +142,16 @@ func newRequest*(url: Url,
       result.headers.table[it[0]] = @[it[1]]
   result.body = body
   result.multipart = multipart
+
+func newRequest*(url: Url,
+                 httpmethod: HttpMethod,
+                 headers: openarray[(string, string)],
+                 body = none(string),
+                 multipart = none(MimeData)): Request =
+  var s: seq[(string, string)]
+  for it in headers:
+    s.add(it)
+  return newRequest(url, httpmethod, s, body, multipart)
 
 proc `[]=`*(multipart: var MimeData, k, v: string) =
   multipart.content.add(MimePart(name: k, content: v))
@@ -154,3 +172,11 @@ func getOrDefault*(headers: HeaderList, k: string, default = ""): string =
     headers.table[k][0]
   else:
     default
+
+proc readAll*(response: Response): string {.jsfunc.} =
+  return response.body.readAll()
+
+proc addRequestModule*(ctx: JSContext) =
+  ctx.registerType(Request)
+  ctx.registerType(Response)
+  ctx.registerType(HeaderList)

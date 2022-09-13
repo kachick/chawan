@@ -102,18 +102,16 @@ func findChar*(str: string, c: Rune, start: int = 0): int =
     i = n
   return -1
 
-func getLowerChars*(): string =
-  result = ""
+const lowerChars = (func(): array[char, char] =
   for i in 0..255:
-    if chr(i) in 'A'..'Z':
-      result &= chr(i + 32)
+    if char(i) in 'A'..'Z':
+      result[char(i)] = char(i + 32)
     else:
-      result &= chr(i)
-
-const lowerChars = getLowerChars()
+      result[char(i)] = char(i)
+)()
 
 func tolower*(c: char): char =
-  return lowerChars[int(c)]
+  return lowerChars[c]
 
 func toAsciiLower*(str: string): string =
   result = newString(str.len)
@@ -137,44 +135,30 @@ func startsWithNoCase*(str, prefix: string): bool =
     if str[i].tolower() != prefix[i].tolower(): return false
     inc i
 
-func genHexCharMap(): seq[int] =
+const hexCharMap = (func(): array[char, int] =
   for i in 0..255:
     case chr(i)
-    of '0'..'9': result &= i - ord('0')
-    of 'a'..'f': result &= i - ord('a') + 10
-    of 'A'..'F': result &= i - ord('A') + 10
-    else: result &= -1
+    of '0'..'9': result[char(i)] = i - ord('0')
+    of 'a'..'f': result[char(i)] = i - ord('a') + 10
+    of 'A'..'F': result[char(i)] = i - ord('A') + 10
+    else: result[char(i)] = -1
+)()
 
-func genDecCharMap(): seq[int] =
+const decCharMap = (func(): array[char, int] =
   for i in 0..255:
-    case chr(i)
-    of '0'..'9': result &= i - ord('0')
-    else: result &= -1
-
-const hexCharMap = genHexCharMap()
-const decCharMap = genDecCharMap()
+    case char(i)
+    of '0'..'9': result[char(i)] = i - ord('0')
+    else: result[char(i)] = -1
+)()
 
 func hexValue*(c: char): int =
-  return hexCharMap[int(c)]
+  return hexCharMap[c]
 
 func decValue*(c: char): int =
-  return decCharMap[int(c)]
-
-func isAscii*(c: char): bool =
-  return int(c) < 128
+  return decCharMap[c]
 
 func isAscii*(r: Rune): bool =
   return int(r) < 128
-
-func hexValue*(r: Rune): int =
-  if int(r) < 256:
-    return hexValue(char(r))
-  return -1
-
-func decValue*(r: Rune): int =
-  if int(r) < 256:
-    return decValue(char(r))
-  return -1
 
 const HexChars = "0123456789ABCDEF"
 func toHex*(c: char): string =
@@ -231,13 +215,24 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
-func until*(s: string, c: char): string =
+func until*(s: string, c: set[char]): string =
   var i = 0
   while i < s.len:
-    if s[i] == c:
+    if s[i] in c:
       break
     result.add(s[i])
     inc i
+
+func until*(s: string, c: char): string = s.until({c})
+
+func after*(s: string, c: set[char]): string =
+  var i = 0
+  while i < s.len:
+    if s[i] in c:
+      return s.substr(i + 1)
+    inc i
+
+func after*(s: string, c: char): string = s.after({c})
 
 func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, string)]): string =
   if i notin range:
@@ -465,7 +460,7 @@ else:
 
 proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = false) {.inline.} =
   if spaceAsPlus and c == ' ':
-    append &= c
+    append &= '+'
   elif c notin set:
     append &= c
   else:
@@ -474,13 +469,13 @@ proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = f
 
 proc percentEncode*(append: var string, s: string, set: set[char], spaceAsPlus = false) {.inline.} =
   for c in s:
-    append.percentEncode(c, set)
+    append.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(c: char, set: set[char]): string {.inline.} =
-  result.percentEncode(c, set)
+func percentEncode*(c: char, set: set[char], spaceAsPlus = false): string {.inline.} =
+  result.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(s: string, set: set[char]): string =
-  result.percentEncode(s, set)
+func percentEncode*(s: string, set: set[char], spaceAsPlus = false): string =
+  result.percentEncode(s, set, spaceAsPlus)
 
 func percentDecode*(input: string): string =
   var i = 0

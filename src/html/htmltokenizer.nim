@@ -227,7 +227,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template emit_tmp() =
     var i = 0
     while i < tokenizer.tmp.len:
-      if tokenizer.tmp[i].isAscii():
+      if tokenizer.tmp[i] in Ascii:
         emit tokenizer.tmp[i]
         inc i
       else:
