@@ -1,6 +1,5 @@
 import macros
 import options
-import sequtils
 import strformat
 import strutils
 import tables
@@ -272,7 +271,10 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, cctor: JSCFunction, func
   else:
     proto = JS_NewObject(ctx)
   if funcs.len > 0:
-    rtOpaque.flist.add(funcs.toSeq())
+    # We avoid funcs being GC'ed by putting the list in rtOpaque.
+    # (QuickJS uses the pointer later.)
+    #TODO maybe put them in ctxOpaque instead?
+    rtOpaque.flist.add(@funcs)
     JS_SetPropertyFunctionList(ctx, proto, addr rtOpaque.flist[^1][0], cint(funcs.len))
   assert JS_SetProperty(ctx, proto, ctxOpaque.sym_toStringTag, JS_NewString(ctx, cdef.class_name)) == 1
   JS_SetClassProto(ctx, result, proto)

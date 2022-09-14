@@ -1,5 +1,5 @@
 NIMC = nim c
-FLAGS = -d:ssl -o:cha
+FLAGS = -o:cha
 FILES = src/main.nim
 
 debug:

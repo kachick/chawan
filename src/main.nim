@@ -21,7 +21,7 @@ Options:
     -T, --type <type>           Specify content mime type
     -v, --version               Print version information
     -h, --help                  Print this page
-    --                          Interpret all following arguments as URLs/files"""
+    --                          Interpret all following arguments as URLs"""
   if i == 0:
     echo s
   else:

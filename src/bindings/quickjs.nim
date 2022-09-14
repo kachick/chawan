@@ -118,7 +118,7 @@ type
 
   JSClassDefConst* {.importc: "const JSClassDef *", header: qjsheader.} = ptr JSClassDef
 
-  JSCFunctionEnum* {.size: sizeof(cint).} = enum
+  JSCFunctionEnum* {.size: sizeof(uint8).} = enum
     JS_CFUNC_generic, JS_CFUNC_generic_magic, JS_CFUNC_constructor,
     JS_CFUNC_constructor_magic, JS_CFUNC_constructor_or_func,
     JS_CFUNC_constructor_or_func_magic, JS_CFUNC_f_f, JS_CFUNC_f_f_f,

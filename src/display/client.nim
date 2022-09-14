@@ -556,8 +556,7 @@ proc isearchBack(client: Client) {.jsfunc.} =
     client.buffer.cpos = cpos
 
 proc quit(client: Client) {.jsfunc.} =
-  #eraseScreen()
-  #print(HVP(0, 0))
+  print(HVP(getTermAttributes().height, 0))
   quit(0)
 
 proc feedNext(client: Client) {.jsfunc.} =
