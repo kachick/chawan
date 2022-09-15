@@ -1,5 +1,6 @@
 import macros
 import options
+import streams
 import strformat
 import strutils
 import tables
@@ -106,7 +107,7 @@ func getJSObject*(ctx: JSContext, v: JSValue): JSObject =
   result.ctx = ctx
   result.val = v
 
-func getJSValue*(ctx: JSContext, argv: ptr JSValue, i: int): JSValue =
+func getJSValue(ctx: JSContext, argv: ptr JSValue, i: int): JSValue {.inline.} =
   cast[ptr JSValue](cast[int](argv) + i * sizeof(JSValue))[]
 
 func newJSObject*(ctx: JSContext): JSObject =
@@ -222,6 +223,19 @@ func toString*(ctx: JSContext, val: JSValue): Option[string] =
     result = some(ret)
     JS_FreeCString(ctx, outp)
 
+proc writeException*(ctx: JSContext, s: Stream) =
+  let ex = JS_GetException(ctx)
+  let str = toString(ctx, ex)
+  if str.issome:
+    s.write(str.get & '\n')
+  let stack = JS_GetPropertyStr(ctx, ex, cstring("stack"));
+  if not JS_IsUndefined(stack):
+    let str = toString(ctx, stack)
+    if str.issome:
+      s.write(str.get)
+  JS_FreeValue(ctx, stack)
+  JS_FreeValue(ctx, ex)
+
 func toString*(obj: JSObject): Option[string] = toString(obj.ctx, obj.val)
 
 func `$`*(obj: JSObject): string =
@@ -292,6 +306,14 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, cctor: JSCFunction, func
     ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
     ctx.setProperty(global, $cdef.class_name, jctor)
     JS_FreeValue(ctx, global)
+
+proc callFunction*(fun: JSObject): JSObject =
+  result.ctx = fun.ctx
+  result.val = JS_Call(fun.ctx, fun.val, JS_UNDEFINED, 0, nil)
+
+proc callFunction*(fun: JSObject, this: JSObject): JSObject =
+  result.ctx = fun.ctx
+  result.val = JS_Call(fun.ctx, fun.val, this.val, 0, nil)
 
 type FuncParam = tuple[name: string, t: NimNode, val: Option[NimNode], generic: Option[NimNode]]
 
@@ -540,6 +562,8 @@ proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
     except ValueError:
       JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s", cstring(s.get), $T)
       return none(T)
+  elif T is JSObject:
+    return some(JSObject(ctx: ctx, val: val))
   elif T is object:
     #TODO TODO TODO dictionary case
     return none(T)
@@ -807,6 +831,7 @@ proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, fallback: 
   var tableg = none(NimNode)
   var seqg = none(NimNode)
   var hasString = false
+  var hasJSObject = false
   for g in flattened:
     if g.len > 0 and g[0] == Table.getType():
       tableg = some(g)
@@ -814,6 +839,8 @@ proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, fallback: 
       seqg = some(g)
     elif g == string.getType():
       hasString = true
+    elif g == JSObject.getTypeInst():
+      hasJSObject = true
   # 4. If V is null or undefined, then:
   #TODO this is wrong. map dictionary to object instead
   #if tableg.issome:
@@ -827,34 +854,41 @@ proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, fallback: 
   #      let `s` = Table[`a`, `b`](),
   #    fallback)
   # 10. If Type(V) is Object, then:
-  if tableg.issome or seqg.issome:
-    # Sequence:
-    if seqg.issome:
-      let query = quote do:
-        (
-          let o = getJSValue(ctx, argv, `j`)
-          JS_IsObject(o) and (
-            let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_iterator)
-            if JS_IsException(prop):
-              return JS_EXCEPTION
-            let ret = not JS_IsUndefined(prop)
-            JS_FreeValue(ctx, prop)
-            ret
-          )
+  # Sequence:
+  if seqg.issome:
+    let query = quote do:
+      (
+        let o = getJSValue(ctx, argv, `j`)
+        JS_IsObject(o) and (
+          let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_iterator)
+          if JS_IsException(prop):
+            return JS_EXCEPTION
+          let ret = not JS_IsUndefined(prop)
+          JS_FreeValue(ctx, prop)
+          ret
         )
-      let a = seqg.get[1]
-      gen.addUnionParamBranch(query, quote do:
-        let `s` = fromJS_or_return(seq[`a`], ctx, getJSValue(ctx, argv, `j`)),
-        fallback)
-    # Record:
-    if tableg.issome:
-      let a = tableg.get[1]
-      let b = tableg.get[2]
-      let query = quote do:
-        JS_IsObject(getJSValue(ctx, argv, `j`))
-      gen.addUnionParamBranch(query, quote do:
-        let `s` = fromJS_or_return(Table[`a`, `b`], ctx, getJSValue(ctx, argv, `j`)),
-        fallback)
+      )
+    let a = seqg.get[1]
+    gen.addUnionParamBranch(query, quote do:
+      let `s` = fromJS_or_return(seq[`a`], ctx, getJSValue(ctx, argv, `j`)),
+      fallback)
+  # Record:
+  if tableg.issome:
+    let a = tableg.get[1]
+    let b = tableg.get[2]
+    let query = quote do:
+      JS_IsObject(getJSValue(ctx, argv, `j`))
+    gen.addUnionParamBranch(query, quote do:
+      let `s` = fromJS_or_return(Table[`a`, `b`], ctx, getJSValue(ctx, argv, `j`)),
+      fallback)
+  # Object (JSObject variant):
+  #TODO non-JS objects
+  if hasJSObject:
+    let query = quote do:
+      JS_IsObject(getJSValue(ctx, argv, `j`))
+    gen.addUnionParamBranch(query, quote do:
+      let `s` = fromJS_or_return(JSObject, ctx, getJSValue(ctx, argv, `j`)),
+      fallback)
 
   # 14. If types includes a string type, then return the result of converting V
   # to that type.

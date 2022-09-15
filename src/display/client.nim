@@ -2,9 +2,12 @@ import options
 import os
 import streams
 import strutils
+import tables
 import terminal
 import times
 import unicode
+
+import std/monotimes
 
 import css/sheet
 import config/config
@@ -39,6 +42,13 @@ type
     needsauth: bool
     redirecturl: Option[Url]
     cmdmode: bool
+    timeoutid: int
+    timeouts: Table[int, tuple[handler: proc(), time: int64]]
+    added_timeouts: Table[int, tuple[handler: proc(), time: int64]]
+    removed_timeouts: seq[int]
+    intervals: Table[int, tuple[handler: proc(), time: int64, wait: int, del: JSValue]]
+    added_intervals: Table[int, tuple[handler: proc(), time: int64, wait: int, del: JSValue]]
+    removed_intervals: seq[int]
 
   Console* = ref object
     err*: Stream
@@ -397,25 +407,25 @@ proc evalJS(client: Client, src, filename: string): JSObject =
   unblockStdin()
   return client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
 
-proc command0(client: Client, src: string, filename = "<command>") =
+proc evalJSFree(client: Client, src, filename: string) =
+  free(client.evalJS(src, filename))
+
+proc command0(client: Client, src: string, filename = "<command>", silence = false) =
   let ret = client.evalJS(src, filename)
   if ret.isException():
-    let ex = client.jsctx.getException()
-    let str = ex.toString()
-    if str.issome:
-      client.console.err.write(str.get & '\n')
-    var stack = ex.getProperty("stack")
-    if not stack.isUndefined():
-      let str = stack.toString()
-      if str.issome:
-        client.console.err.write(str.get)
-    free(stack)
-    free(ex)
+    client.jsctx.writeException(client.console.err)
   else:
-    let str = ret.toString()
-    if str.issome:
-      client.console.err.write(str.get & '\n')
+    if not silence:
+      let str = ret.toString()
+      if str.issome:
+        client.console.err.write(str.get & '\n')
   free(ret)
+  for k, v in client.added_timeouts:
+    client.timeouts[k] = v
+  client.added_timeouts.clear()
+  for k, v in client.added_intervals:
+    client.intervals = client.added_intervals
+  client.added_intervals.clear()
 
 proc command(client: Client, src: string) =
   restoreStdin()
@@ -609,7 +619,7 @@ proc input(client: Client) =
   client.s &= c
 
   let action = getNormalAction(client.s)
-  discard client.evalJS(action, "<command>")
+  client.evalJSFree(action, "<command>")
 
 proc followRedirect(client: Client)
 
@@ -675,12 +685,94 @@ proc readFile(client: Client, path: string): string {.jsfunc.} =
 proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
   writeFile(path, content)
 
+import bindings/quickjs
+
+proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
+  let id = client.timeoutid
+  inc client.timeoutid
+  when T is string:
+    client.added_timeouts[id] = ((proc() =
+      client.evalJSFree(handler, "setTimeout handler")
+    ), getMonoTime().ticks div 1_000_000 + timeout)
+  else:
+    let fun = JS_DupValue(handler.ctx, handler.val)
+    client.added_timeouts[id] = ((proc() =
+      let ret = JSObject(ctx: handler.ctx, val: fun).callFunction()
+      if ret.isException():
+        ret.ctx.writeException(client.console.err)
+      JS_FreeValue(ret.ctx, ret.val)
+      JS_FreeValue(ret.ctx, fun)
+    ), getMonoTime().ticks div 1_000_000 + timeout)
+  return id
+
+proc setInterval[T: JSObject|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
+  let id = client.timeoutid
+  inc client.timeoutid
+  when T is string:
+    client.added_intervals[id] = ((proc() =
+      client.evalJSFree(handler, "setInterval handler")
+    ), getMonoTime().ticks div 1_000_000 + interval, interval, JS_NULL)
+  else:
+    let fun = JS_DupValue(handler.ctx, handler.val)
+    client.added_intervals[id] = ((proc() =
+      let ret = JSObject(ctx: handler.ctx, val: fun).callFunction()
+      if ret.isException():
+        ret.ctx.writeException(client.console.err)
+      JS_FreeValue(ret.ctx, ret.val)
+    ), getMonoTime().ticks div 1_000_000 + interval, interval, fun)
+  return id
+
+proc clearTimeout(client: Client, id: int) {.jsfunc.} =
+  client.removed_timeouts.add(id)
+
+proc clearInterval(client: Client, id: int) {.jsfunc.} =
+  client.removed_intervals.add(id)
+
+proc jsEventLoop(client: Client) =
+  while client.timeouts.len > 0 or client.intervals.len > 0:
+    var wait = -1
+    let curr = getMonoTime().ticks div 1_000_000
+    for k, v in client.timeouts:
+      if v.time <= curr:
+        v.handler()
+        client.removed_timeouts.add(k)
+    for k, v in client.intervals.mpairs:
+      if v.time <= curr:
+        v.handler()
+        v.time = curr + v.wait
+    for k, v in client.added_timeouts:
+      client.timeouts[k] = v
+    client.added_timeouts.clear()
+    for k, v in client.added_intervals:
+      client.intervals[k] = v
+    client.added_intervals.clear()
+    for k in client.removed_timeouts:
+      client.timeouts.del(k)
+    for k in client.removed_intervals:
+      if k in client.intervals and client.intervals[k].del != JS_NULL:
+        JS_FreeValue(client.jsctx, client.intervals[k].del)
+      client.intervals.del(k)
+    client.removed_timeouts.setLen(0)
+    client.removed_intervals.setLen(0)
+    for k, v in client.timeouts:
+      if wait != -1:
+        wait = min(wait, int(v.time - curr))
+      else:
+        wait = int(v.time - curr)
+    for k, v in client.intervals:
+      if wait != -1:
+        wait = min(wait, int(v.time - curr))
+      else:
+        wait = int(v.time - curr)
+    if wait > 0:
+      sleep(wait)
+
 proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
   if gconfig.startup != "":
     let s = readFile(gconfig.startup)
-    #client.command(s)
     client.console.err = newFileStream(stderr)
-    client.command0(s, gconfig.startup)
+    client.command0(s, gconfig.startup, silence = true)
+    client.jsEventLoop()
     client.console.err = newStringStream()
     quit()
   client.userstyle = gconfig.stylesheet.parseStylesheet()

@@ -38,8 +38,8 @@ type
     childNodes* {.jsget.}: seq[Node]
     nextSibling*: Node
     previousSibling*: Node
-    parentNode*: Node
-    parentElement*: Element
+    parentNode* {.jsget.}: Node
+    parentElement* {.jsget.}: Element
     root: Node
     document*: Document
 
@@ -164,18 +164,41 @@ type
     ctype*: bool
     #TODO result
 
-# For debugging
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
 
+func escapeText(s: string, attribute_mode = false): string =
+  var nbsp_mode = false
+  var nbsp_prev: char
+  for c in s:
+    if nbsp_mode:
+      if c == char(0xA0):
+        result &= "&nbsp;"
+      else:
+        result &= nbsp_prev & c
+      nbsp_mode = false
+    elif c == '&':
+      result &= "&amp;"
+    elif c == char(0xC2):
+      nbsp_mode = true
+      nbsp_prev = c
+    elif attribute_mode and c == '"':
+      result &= "&quot;"
+    elif not attribute_mode and c == '<':
+      result &= "&lt;"
+    elif not attribute_mode and c == '>':
+      result &= "&gt;"
+    else:
+      result &= c
+
 func `$`*(node: Node): string =
-  if node == nil: return "nil"
+  if node == nil: return "nil" #TODO this isn't standard compliant but helps debugging
   case node.nodeType
   of ELEMENT_NODE:
     let element = Element(node)
     result = "<" & $element.tagType.tostr()
     for k, v in element.attributes:
-      result &= ' ' & k & (if v != "": "=\"" & v & "\"" else: "")
+      result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
     result &= ">\n"
     for node in element.childNodes:
       for line in ($node).split('\n'):
@@ -183,9 +206,13 @@ func `$`*(node: Node): string =
     result &= "</" & $element.tagType.tostr() & ">"
   of TEXT_NODE:
     let text = Text(node)
-    result = text.data
+    result = text.data.escapeText()
   of COMMENT_NODE:
     result = "<!-- " & Comment(node).data & "-->"
+  of PROCESSING_INSTRUCTION_NODE:
+    result = "" #TODO
+  of DOCUMENT_TYPE_NODE:
+    result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
   else:
     result = "Node of " & $node.nodeType
 
@@ -222,11 +249,11 @@ iterator branch*(node: Node): Node {.inline.} =
 # Returns the node's descendants
 iterator descendants*(node: Node): Node {.inline.} =
   var stack: seq[Node]
-  stack.add(node.childNodes)
+  stack.add(node)
   while stack.len > 0:
     let node = stack.pop()
-    yield node
     for i in countdown(node.childNodes.high, 0):
+      yield node.childNodes[i]
       stack.add(node.childNodes[i])
 
 iterator elements*(node: Node): Element {.inline.} =
@@ -420,6 +447,13 @@ func attrb*(element: Element, s: string): bool =
   if s in element.attributes:
     return true
   return false
+
+func innerHTML*(element: Element): string {.jsget.} =
+  for child in element.childNodes:
+    result &= $child
+
+func outerHTML*(element: Element): string {.jsget.} =
+  return $element
 
 func textContent*(node: Node): string {.jsget.} =
   case node.nodeType
