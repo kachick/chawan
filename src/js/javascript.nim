@@ -309,7 +309,9 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, cctor: JSCFunction, func
 
 proc callFunction*(fun: JSObject): JSObject =
   result.ctx = fun.ctx
+  let global = JS_GetGlobalObject(fun.ctx)
   result.val = JS_Call(fun.ctx, fun.val, JS_UNDEFINED, 0, nil)
+  JS_FreeValue(fun.ctx, global)
 
 proc callFunction*(fun: JSObject, this: JSObject): JSObject =
   result.ctx = fun.ctx
@@ -1089,7 +1091,7 @@ macro jsctor*(fun: typed) =
     gen.registerFunction()
     result = newStmtList(fun)
 
-macro jsget*(fun: typed) =
+macro jsfget*(fun: typed) =
   var gen = setupGenerator(fun)
   gen.newName = "js_get_" & gen.funcParams[0][0] & '_' & gen.funcName
   gen.thisType = $gen.funcParams[0][1]
@@ -1106,7 +1108,7 @@ macro jsget*(fun: typed) =
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
 
-macro jsset*(fun: typed) =
+macro jsfset*(fun: typed) =
   var gen = setupGenerator(fun)
   gen.newName = "js_set_" & gen.funcParams[0][0] & '_' & gen.funcName
   gen.thisType = $gen.funcParams[0][1]
@@ -1151,8 +1153,8 @@ macro jsfunc*(fun: typed) =
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
 
-#WARNING footgun ahead: for some reason, these must be declared *after* their
-# macro counterparts, or they override the macros.
+# Having the same names for these and the macros leads to weird bugs, so the
+# macros get an additional f.
 template jsget*() {.pragma.}
 template jsset*() {.pragma.}
 

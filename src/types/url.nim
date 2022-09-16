@@ -965,7 +965,7 @@ proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jscto
   url.get.searchParams.initURLSearchParams(url.get.query.get(""))
   return url.get
 
-proc origin*(url: URL): string {.jsget.} =
+proc origin*(url: URL): string {.jsfget.} =
   case url.scheme
   of "blob":
     if url.blob.issome:
@@ -990,39 +990,39 @@ proc origin*(url: URL): string {.jsget.} =
   else:
     return "null"
 
-proc protocol*(url: URL): string {.jsget.} =
+proc protocol*(url: URL): string {.jsfget.} =
   return url.scheme & ':'
 
-proc protocol*(url: URL, s: string) {.jsset.} =
+proc protocol*(url: URL, s: string) {.jsfset.} =
   discard basicParseUrl(s & ':', url = url, stateOverride = some(SCHEME_START_STATE))
 
-proc username*(url: URL, username: string) {.jsset.} =
+proc username*(url: URL, username: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.username = username.percentEncode(UserInfoPercentEncodeSet)
 
-proc password*(url: URL, password: string) {.jsset.} =
+proc password*(url: URL, password: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.password = password.percentEncode(UserInfoPercentEncodeSet)
 
-proc host*(url: URL): string {.jsget.} =
+proc host*(url: URL): string {.jsfget.} =
   if url.host.isnone:
     return ""
   if url.port.isnone:
     return url.host.get.serialize()
   return url.host.get.serialize() & ':' & $url.port.get
 
-proc host*(url: URL, s: string) {.jsset.} =
+proc host*(url: URL, s: string) {.jsfset.} =
   if url.path.opaque:
     return
   discard basicParseUrl(s, url = url, stateOverride = some(HOST_STATE))
 
-proc port*(url: URL): string {.jsget.} =
+proc port*(url: URL): string {.jsfget.} =
   if url.port.issome:
     return $url.port.get
 
-proc port*(url: URL, s: string) {.jsset.} =
+proc port*(url: URL, s: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   if s == "":
@@ -1030,21 +1030,21 @@ proc port*(url: URL, s: string) {.jsset.} =
   else:
     discard basicParseUrl(s, url = url, stateOverride = some(PORT_STATE))
 
-proc pathname*(url: URL): string {.jsget.} =
+proc pathname*(url: URL): string {.jsfget.} =
   return url.path.serialize()
 
-proc pathname*(url: URL, s: string) {.jsset.} =
+proc pathname*(url: URL, s: string) {.jsfset.} =
   if url.path.opaque:
     return
   url.path.ss.setLen(0)
   discard basicParseUrl(s, url = url, stateOverride = some(PATH_START_STATE))
 
-proc search*(url: URL): string {.jsget.} =
+proc search*(url: URL): string {.jsfget.} =
   if url.query.get("") == "":
     return ""
   return "?" & url.query.get
 
-proc search*(url: URL, s: string) {.jsset.} =
+proc search*(url: URL, s: string) {.jsfset.} =
   if s == "":
     url.query = none(string)
     url.searchParams.list.setLen(0)
@@ -1054,12 +1054,12 @@ proc search*(url: URL, s: string) {.jsset.} =
   discard basicParseUrl(s, url = url, stateOverride = some(QUERY_STATE))
   url.searchParams.list = parseApplicationXWWWFormUrlEncoded(s)
 
-proc hash*(url: URL): string {.jsget.} =
+proc hash*(url: URL): string {.jsfget.} =
   if url.fragment.get("") == "":
     return ""
   return '#' & url.fragment.get
 
-proc hash*(url: URL, s: string) {.jsset.} =
+proc hash*(url: URL, s: string) {.jsfset.} =
   if s == "":
     url.fragment = none(string)
     return

@@ -228,7 +228,7 @@ iterator children_rev*(node: Node): Element {.inline.} =
       yield Element(child)
 
 #TODO TODO TODO this should return a live view instead
-proc children*(node: Node): seq[Element] {.jsget.} =
+proc children*(node: Node): seq[Element] {.jsfget.} =
   for child in node.children:
     result.add(child)
 
@@ -448,14 +448,14 @@ func attrb*(element: Element, s: string): bool =
     return true
   return false
 
-func innerHTML*(element: Element): string {.jsget.} =
+func innerHTML*(element: Element): string {.jsfget.} =
   for child in element.childNodes:
     result &= $child
 
-func outerHTML*(element: Element): string {.jsget.} =
+func outerHTML*(element: Element): string {.jsfget.} =
   return $element
 
-func textContent*(node: Node): string {.jsget.} =
+func textContent*(node: Node): string {.jsfget.} =
   case node.nodeType
   of DOCUMENT_NODE, DOCUMENT_TYPE_NODE:
     return "" #TODO null
@@ -756,7 +756,7 @@ func text*(option: HTMLOptionElement): string =
       if child.parentElement.tagType != TAG_SCRIPT: #TODO svg
         result &= child.data.stripAndCollapse()
 
-func value*(option: HTMLOptionElement): string {.jsget.} =
+func value*(option: HTMLOptionElement): string {.jsfget.} =
   if option.attrb("value"):
     return option.attr("value")
   return option.childTextContent.stripAndCollapse()

@@ -56,7 +56,7 @@ when sizeof(int) < sizeof(int64):
     cast[pointer](v)
 
   template JS_MKVAL*(t, val: untyped): JSValue =
-    JSValue((uint64(t) shl 32) or uint32(val))
+    JSValue((cast[uint64](t) shl 32) or cast[uint32](val))
 
   template JS_MKPTR*(t, p: untyped): JSValue =
     JSValue((cast[uint64](t) shl 32) or cast[uint](p))
