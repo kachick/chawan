@@ -174,7 +174,11 @@ func getOrDefault*(headers: HeaderList, k: string, default = ""): string =
     default
 
 proc readAll*(response: Response): string {.jsfunc.} =
-  return response.body.readAll()
+  result = response.body.readAll()
+  response.body.close()
+
+proc close*(response: Response) {.jsfunc.} =
+  response.body.close()
 
 proc addRequestModule*(ctx: JSContext) =
   ctx.registerType(Request)

@@ -611,7 +611,7 @@ func toJSBool(ctx: JSContext, b: bool): JSValue =
   return JS_NewBool(ctx, b)
 
 proc getTypePtr[T](x: T): pointer =
-  when T is RootRef:
+  when T is RootRef or T is pointer:
     # I'm so sorry.
     # (This dereferences the object's first member, m_type. Probably.)
     return cast[ptr pointer](x)[]
@@ -689,7 +689,12 @@ type
     j: int # js parameters accounted for (not including fix ones, e.g. `this')
     res: NimNode
 
-var RegisteredFunctions {.compileTime.}: Table[string, seq[(NimNode, NimNode)]]
+  RegisteredFunction = object
+    name: string
+    id: NimNode
+    magic: uint16
+
+var RegisteredFunctions {.compileTime.}: Table[string, seq[RegisteredFunction]]
 
 proc getGenerics(fun: NimNode): Table[string, seq[NimNode]] =
   var node = fun.findChild(it.kind == nnkBracket)
@@ -949,11 +954,15 @@ proc finishFunCallList(gen: var JSFuncGenerator) =
 
 var js_funcs {.compileTime.}: Table[string, JSFuncGenerator]
 
-proc registerFunction(gen: JSFuncGenerator) =
-  if gen.thisType notin RegisteredFunctions:
-    RegisteredFunctions[gen.thisType] = @[(newStrLitNode(gen.funcName), ident(gen.newName))]
+proc registerFunction(typ: string, name: string, id: NimNode, magic: uint16 = 0) =
+  let nf = RegisteredFunction(name: name, id: id, magic: magic)
+  if typ notin RegisteredFunctions:
+    RegisteredFunctions[typ] = @[nf]
   else:
-    RegisteredFunctions[gen.thisType].add((newStrLitNode(gen.funcName), ident(gen.newName)))
+    RegisteredFunctions[typ].add(nf)
+
+proc registerFunction(gen: JSFuncGenerator) =
+  registerFunction(gen.thisType, gen.funcName, ident(gen.newName))
   js_funcs[gen.funcName] = gen
 
 var js_errors {.compileTime.}: Table[string, seq[string]]
@@ -1158,40 +1167,6 @@ macro jsfunc*(fun: typed) =
 template jsget*() {.pragma.}
 template jsset*() {.pragma.}
 
-proc findPragmas(otab: var Table[string, seq[NimNode]], t: NimNode) =
-  let typ = t.getTypeInst()[1] # The type, as declared.
-  var impl = typ.getTypeImpl() # ref t
-  assert impl.kind == nnkRefTy, "Only ref nodes are supported..."
-  impl = impl[0].getImpl()
-  # stolen from std's macros.customPragmaNode
-  var identDefsStack = newSeq[NimNode](impl[2].len)
-  for i in 0..<identDefsStack.len: identDefsStack[i] = impl[2][i]
-  while identDefsStack.len > 0:
-    var identDefs = identDefsStack.pop()
-
-    case identDefs.kind
-    of nnkRecList:
-      for child in identDefs.children:
-        identDefsStack.add(child)
-    of nnkRecCase:
-      # Add condition definition
-      identDefsStack.add(identDefs[0])
-      # Add branches
-      for i in 1 ..< identDefs.len:
-        identDefsStack.add(identDefs[i].last)
-    else:
-      for i in 0 .. identDefs.len - 3:
-        let varNode = identDefs[i]
-        if varNode.kind == nnkPragmaExpr:
-          var varName = varNode[0]
-          if varName.kind == nnkPostfix:
-            # This is a public field. We are skipping the postfix *
-            varName = varName[1]
-          for pragma in varNode[1]:
-            let pragmaName = ($pragma).tolower()
-            if pragmaName in otab: #TODO this isn't style sensitive...
-              otab[pragmaName].add(varName)
-
 proc nim_finalize_for_js[T](obj: T) =
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
@@ -1234,104 +1209,109 @@ template fromJS_or_return*(t, ctx, val: untyped): untyped =
     x.get
   )
 
+type JSObjectPragmas = object
+  jsget: seq[NimNode]
+  jsset: seq[NimNode]
+
+proc findPragmas(t: NimNode): JSObjectPragmas =
+  let typ = t.getTypeInst()[1] # The type, as declared.
+  var impl = typ.getTypeImpl() # ref t
+  assert impl.kind == nnkRefTy, "Only ref nodes are supported..."
+  impl = impl[0].getImpl()
+  # stolen from std's macros.customPragmaNode
+  var identDefsStack = newSeq[NimNode](impl[2].len)
+  for i in 0..<identDefsStack.len: identDefsStack[i] = impl[2][i]
+  while identDefsStack.len > 0:
+    var identDefs = identDefsStack.pop()
+
+    case identDefs.kind
+    of nnkRecList:
+      for child in identDefs.children:
+        identDefsStack.add(child)
+    of nnkRecCase:
+      # Add condition definition
+      identDefsStack.add(identDefs[0])
+      # Add branches
+      for i in 1 ..< identDefs.len:
+        identDefsStack.add(identDefs[i].last)
+    else:
+      for i in 0 .. identDefs.len - 3:
+        let varNode = identDefs[i]
+        if varNode.kind == nnkPragmaExpr:
+          var varName = varNode[0]
+          if varName.kind == nnkPostfix:
+            # This is a public field. We are skipping the postfix *
+            varName = varName[1]
+          for pragma in varNode[1]:
+            case $pragma
+            of "jsget": result.jsget.add(varName)
+            of "jsset": result.jsset.add(varName)
+
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, nointerface = false): JSClassID =
+  result = newStmtList()
   let s = t.strVal
   var sctr = ident("js_illegal_ctor")
   var sfin = ident("js_" & s & "ClassFin")
   var ctorFun: NimNode
   var ctorImpl: NimNode
   var setters, getters: Table[string, NimNode]
-  var pragmas: Table[string, seq[NimNode]]
-  pragmas["jsget"] = @[]
-  pragmas["jsset"] = @[]
-  pragmas.findPragmas(t)
-  result = newStmtList()
-  #TODO use magic functions instead
-  for node in pragmas["jsget"]:
+  let tabList = newNimNode(nnkBracket)
+  let pragmas = findPragmas(t)
+  for node in pragmas.jsget:
     let id = ident("js_get_" & s & "_" & $node)
     let fn = $node
     result.add(quote do:
-      proc `id`(ctx: JSContext, this: JSValue): JSValue =
+      proc `id`(ctx: JSContext, this: JSValue): JSValue {.cdecl.} =
         if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not ctx.isInstanceOf(this, `s`):
           # undefined -> global.
           return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `s`)
         let arg_0 = fromJS_or_return(`t`, ctx, this)
         return toJS(ctx, arg_0.`node`)
     )
-    if s notin RegisteredFunctions:
-      RegisteredFunctions[s] = @[(node, id)]
-    else:
-      RegisteredFunctions[s].add((node, id))
-  for node in pragmas["jsset"]:
+    registerFunction(s, fn, id)
+  for node in pragmas.jsset:
     let id = ident("js_set_" & s & "_" & $node)
     let fn = $node
     result.add(quote do:
-      proc `id`(ctx: JSContext, this: JSValue, val: JSValue): JSValue =
+      proc `id`(ctx: JSContext, this: JSValue, val: JSValue): JSValue {.cdecl.} =
         if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not ctx.isInstanceOf(this, `s`):
           # undefined -> global.
           return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `s`)
-        let arg_0 = (block:
-          let t = fromJS[`t`](ctx, this)
-          if t.isnone:
-            return JS_EXCEPTION
-          t.get
-        )
+        let arg_0 = fromJS_or_return(`t`, ctx, this)
         let arg_1 = val
-        arg_0.`node` = (block:
-          let t = fromJS[typeof(arg_0.`node`)](ctx, arg_1)
-          if t.isnone:
-            return JS_EXCEPTION
-          t.get
-        )
+        arg_0.`node` = fromJS_or_return(typeof(arg_0.`node`), ctx, arg_1)
         return JS_DupValue(ctx, arg_1)
     )
-    if s notin RegisteredFunctions:
-      RegisteredFunctions[s] = @[(node, id)]
-    else:
-      RegisteredFunctions[s].add((node, id))
-  let tabList = newNimNode(nnkBracket)
+    registerFunction(s, fn, id)
+
   if s in RegisteredFunctions:
-    for fun in RegisteredFunctions[s]:
-      #TODO this is a mess
-      var f0 = fun[0]
-      let f1 = fun[1]
-      let f2 = fun[0]
-      if f0.strVal.endsWith("_exceptions"):
-        f0 = newLit(f0.strVal.substr(0, f0.strVal.high - "_exceptions".len))
+    for fun in RegisteredFunctions[s].mitems:
+      var f0 = fun.name
+      let f1 = fun.id
+      if fun.name.endsWith("_exceptions"):
+        fun.name = fun.name.substr(0, fun.name.high - "_exceptions".len)
       if f1.strVal.startsWith("js_new"):
-        ctorImpl = js_funcs[$f2].res
+        ctorImpl = js_funcs[$f0].res
         if ctorFun != nil:
           error("Class " & $s & " has 2+ constructors.")
         ctorFun = f1
       elif f1.strVal.startsWith("js_get"):
-        getters[$f0] = f1
+        getters[f0] = f1
       elif f1.strVal.startsWith("js_set"):
-        setters[$f0] = f1
+        setters[f0] = f1
       else:
         tabList.add(quote do:
           JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
+
   for k, v in getters:
     if k in setters:
       let s = setters[k]
-      tabList.add(newCall((quote do: JS_CGETSET_DEF),
-                          newLit(k),
-                          newNimNode(nnkCast).add(quote do: JSGetterFunction,
-                                                  v),
-                          newNimNode(nnkCast).add(quote do: JSSetterFunction,
-                                                  s)))
+      tabList.add(quote do: JS_CGETSET_DEF(`k`, `v`, `s`))
     else:
-      tabList.add(newCall((quote do: JS_CGETSET_DEF),
-                          newLit(k),
-                          newNimNode(nnkCast).add(quote do: JSGetterFunction,
-                                                  v),
-                          newNilLit()))
+      tabList.add(quote do: JS_CGETSET_DEF(`k`, `v`, nil))
   for k, v in setters:
     if k notin getters:
-      tabList.add(newCall((quote do: JS_CGETSET_DEF),
-                          newLit(k),
-                          newNilLit(),
-                          newNimNode(nnkCast).add(quote do: JSSetterFunction,
-                                                  v)))
+      tabList.add(quote do: JS_CGETSET_DEF(`k`, nil, `v`))
 
   if ctorFun != nil:
     sctr = ctorFun

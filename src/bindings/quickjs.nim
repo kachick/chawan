@@ -88,6 +88,8 @@ type
   JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: int, argv: ptr JSValue): JSValue {.cdecl.}
   JSGetterFunction* = proc(ctx: JSContext, this_val: JSValue): JSValue {.cdecl.}
   JSSetterFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue): JSValue {.cdecl.}
+  JSGetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, magic: cint): JSValue {.cdecl.}
+  JSSetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue, magic: cint): JSValue {.cdecl.}
   JSInterruptHandler* = proc (rt: JSRuntime, opaque: pointer): int {.cdecl.}
   JSClassID* = uint32
   JSAtom* = uint32
@@ -130,6 +132,8 @@ type
     generic*: JSCFunction
     getter*: JSGetterFunction
     setter*: JSSetterFunction
+    getter_magic*: JSGetterMagicFunction
+    setter_magic*: JSSetterMagicFunction
 
   JSCFunctionListEntryFunc = object
     length*: uint8
@@ -236,17 +240,29 @@ template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction): JSCFunctionLi
                        prop_flags: JS_PROP_WRITABLE or JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CFUNC,
                        u: JSCFunctionListEntryU(
-                         `func`: JSCFunctionListEntryFunc(length: len,
-                                                          cproto: JS_CFUNC_generic,
-                                                          cfunc: JSCFunctionType(generic: func1))))
+                         `func`: JSCFunctionListEntryFunc(
+                           length: len,
+                           cproto: JS_CFUNC_generic,
+                           cfunc: JSCFunctionType(generic: func1))))
 
 template JS_CGETSET_DEF*(n: string, fgetter, fsetter: untyped): JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
                        prop_flags: JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CGETSET,
                        u: JSCFunctionListEntryU(
-                         getset: JSCFunctionListEntryGetSet(get: JSCFunctionType(getter: fgetter),
-                                                            set: JSCFunctionType(setter: fsetter))))
+                         getset: JSCFunctionListEntryGetSet(
+                           get: JSCFunctionType(getter: fgetter),
+                           set: JSCFunctionType(setter: fsetter))))
+
+template JS_CGETSET_MAGIC_DEF*(n: string, fgetter, fsetter: untyped, m: cint): JSCFunctionListEntry =
+  JSCFunctionListEntry(name: cstring(n),
+                       prop_flags: JS_PROP_CONFIGURABLE,
+                       def_type: JS_DEF_CGETSET_MAGIC,
+                       magic: m,
+                       u: JSCFunctionListEntryU(
+                         getset: JSCFunctionListEntryGetSet(
+                           get: JSCFunctionType(getter_magic: fgetter),
+                           set: JSCFunctionType(setter_magic: fsetter))))
 
 
 {.push header: qjsheader, importc, cdecl.}
@@ -289,7 +305,7 @@ proc JS_NewUint32*(ctx: JSContext, val: uint32): JSValue
 proc JS_NewUint64*(ctx: JSContext, val: uint64): JSValue
 proc JS_NewBigInt64*(ctx: JSContext, val: int64): JSValue
 proc JS_NewBigUInt64*(ctx: JSContext, val: uint64): JSValue
-proc JS_NewFloat64*(ctx: JSContext, val: uint64): JSValue
+proc JS_NewFloat64*(ctx: JSContext, val: cdouble): JSValue
 
 proc JS_NewAtomLen*(ctx: JSContext, str: cstring, len: csize_t): JSAtom
 proc JS_ValueToAtom*(ctx: JSContext, val: JSValue): JSAtom

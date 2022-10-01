@@ -33,8 +33,8 @@ const
   CURLINFO_PTR = 0x400000 # same as SLIST
   CURLINFO_SOCKET = 0x500000
   CURLINFO_OFF_T = 0x600000
-  CURLINFO_MASK = 0x0fffff
-  CURLINFO_TYPEMASK = 0xf00000
+  CURLINFO_MASK {.used.} = 0x0fffff
+  CURLINFO_TYPEMASK {.used.} = 0xf00000
 
 {.push cdecl, dynlib: curllib.}
 
@@ -51,6 +51,8 @@ type
   CURLoption* {.size: sizeof(cint).} = enum
     # Long
     CURLOPT_PORT = CURLOPTTYPE_LONG + 3
+    CURLOPT_SSLVERSION = CURLOPTTYPE_VALUES + 32
+    CURLOPT_TIMECONDITION = CURLOPTTYPE_VALUES + 33
     CURLOPT_POST = CURLOPTTYPE_LONG + 47
     CURLOPT_FOLLOWLOCATION = CURLOPTTYPE_LONG + 52
     CURLOPT_POSTFIELDSIZE = CURLOPTTYPE_LONG + 60
@@ -90,8 +92,24 @@ type
     # Long
     CURLINFO_RESPONSE_CODE = CURLINFO_LONG + 2
 
+    # Double
+    CURLINFO_TOTAL_TIME = CURLINFO_DOUBLE + 3
+
+    # S-list
+    CURLINFO_SSL_ENGINES = CURLINFO_SLIST + 27
+    CURLINFO_COOKIELIST = CURLINFO_SLIST + 28
+
+    # Pointer
+    CURLINFO_CERTINFO = CURLINFO_PTR + 34
+    CURLINFO_TLS_SESSION = CURLINFO_PTR + 43
+    CURLINFO_TLS_SSL_PTR = CURLINFO_PTR + 45
+
     # Socket
     CURLINFO_ACTIVESOCKET = CURLINFO_SOCKET + 44
+
+    # Off_t
+    CURLINFO_SIZE_UPLOAD_T = CURLINFO_OFF_T + 7
+    CURLINFO_SIZE_DOWNLOAD_T = CURLINFO_OFF_T + 9
 
   CURLcode* {.size: sizeof(cint).} = enum
     CURLE_OK = 0,
@@ -221,24 +239,27 @@ type
     CURLE_UNRECOVERABLE_POLL,      # 99 - poll/select returned fatal error 
     CURL_LAST # never use! 
 
-proc curl_global_init*(flags: clong): CURLcode {.importc: "curl_global_init".}
-proc curl_global_cleanup*() {.importc: "curl_global_cleanup".}
+{.push importc.}
 
-proc curl_easy_init*(): CURL {.importc: "curl_easy_init".}
-proc curl_easy_cleanup*(handle: CURL) {.importc: "curl_easy_cleanup".}
-proc curl_easy_setopt*(handle: CURL, option: CURLoption): CURLcode {.importc: "curl_easy_setopt", varargs.}
-proc curl_easy_perform*(handle: CURL): CURLcode {.importc: "curl_easy_perform".}
-proc curl_easy_getinfo*(handle: CURL, info: CURLINFO): CURLcode {.importc: "curl_easy_getinfo", varargs.}
+proc curl_global_init*(flags: clong): CURLcode
+proc curl_global_cleanup*()
 
-proc curl_mime_init*(handle: CURL): curl_mime {.importc: "curl_mime_init".}
-proc curl_mime_free*(mime: curl_mime) {.importc: "curl_mime_free".}
-proc curl_mime_addpart*(mime: curl_mime): curl_mimepart {.importc: "curl_mime_addpart".}
-proc curl_mime_name*(part: curl_mimepart, name: cstring) {.importc: "curl_mime_name".}
-proc curl_mime_data*(part: curl_mimepart, data: cstring, datasize: csize_t) {.importc: "curl_mime_name".}
-proc curl_mime_filename*(part: curl_mimepart, name: cstring) {.importc: "curl_mime_filename".}
-proc curl_mime_filedata*(part: curl_mimepart, filename: cstring) {.importc: "curl_mime_filedata".}
+proc curl_easy_init*(): CURL
+proc curl_easy_cleanup*(handle: CURL)
+proc curl_easy_setopt*(handle: CURL, option: CURLoption): CURLcode {.varargs.}
+proc curl_easy_perform*(handle: CURL): CURLcode
+proc curl_easy_getinfo*(handle: CURL, info: CURLINFO): CURLcode {.varargs.}
 
-proc curl_slist_append*(slist: curl_slist, str: cstring): curl_slist {.importc: "curl_slist_append".}
-proc curl_slist_free_all*(slist: curl_slist) {.importc: "curl_slist_free_all".}
+proc curl_mime_init*(handle: CURL): curl_mime
+proc curl_mime_free*(mime: curl_mime)
+proc curl_mime_addpart*(mime: curl_mime): curl_mimepart
+proc curl_mime_name*(part: curl_mimepart, name: cstring)
+proc curl_mime_data*(part: curl_mimepart, data: cstring, datasize: csize_t)
+proc curl_mime_filename*(part: curl_mimepart, name: cstring)
+proc curl_mime_filedata*(part: curl_mimepart, filename: cstring)
+
+proc curl_slist_append*(slist: curl_slist, str: cstring): curl_slist
+proc curl_slist_free_all*(slist: curl_slist)
+{.pop.}
 
 {.pop.}
