@@ -22,6 +22,7 @@ type LineState* = object
   displen: int
   disallowed: set[char]
   hide: bool
+  config: Config #TODO get rid of this
   callback: proc(state: var LineState): bool
 
 func lwidth(r: Rune): int =
@@ -148,7 +149,7 @@ proc readLine(state: var LineState): bool =
     let c = stdin.readChar()
     state.s &= c
 
-    var action = getLinedAction(state.s)
+    var action = getLinedAction(state.config, state.s)
     if state.escNext:
       action = NO_ACTION
     case action
@@ -271,7 +272,7 @@ proc readLine(state: var LineState): bool =
       state.feedNext = true
 
 proc readLine*(prompt: string, current: var string, termwidth: int,
-               disallowed: set[char], hide: bool,
+               disallowed: set[char], hide: bool, config: Config,
                callback: proc(state: var LineState): bool): bool =
   var state: LineState
 
@@ -285,6 +286,7 @@ proc readLine*(prompt: string, current: var string, termwidth: int,
   state.disallowed = disallowed
   state.callback = callback
   state.hide = hide
+  state.config = config
 
   if state.readLine():
     current = $state.news
@@ -292,5 +294,5 @@ proc readLine*(prompt: string, current: var string, termwidth: int,
   return false
 
 proc readLine*(prompt: string, current: var string, termwidth: int,
-               disallowed: set[char] = {}, hide = false): bool =
-  readLine(prompt, current, termwidth, disallowed, hide, (proc(state: var LineState): bool = false))
+               disallowed: set[char] = {}, hide = false, config: Config): bool =
+  readLine(prompt, current, termwidth, disallowed, hide, config, (proc(state: var LineState): bool = false))

@@ -8,6 +8,7 @@ import unicode
 
 import css/sheet
 import css/stylednode
+import config/config
 import html/dom
 import html/tags
 import html/htmlparser
@@ -67,8 +68,8 @@ type
     next*: Buffer
     userstyle*: CSSStylesheet
     loader*: FileLoader
-    markcolor*: CellColor
     marks*: seq[Mark]
+    config*: Config
 
 proc newBuffer*(): Buffer =
   new(result)
@@ -713,7 +714,7 @@ proc gotoAnchor*(buffer: Buffer) =
 proc addMark*(buffer: Buffer, x, y, width: int): Mark =
   assert y < buffer.lines.len
   var format = newFormat()
-  format.bgcolor = buffer.markcolor
+  format.bgcolor = buffer.config.markcolor
   result = Mark(x: x, y: y, width: width, format: format)
   let previ = upperBound(buffer.marks, y, (proc(a: Mark, b: int): int = cmp(a.y, b)))
   buffer.marks.insert(result, previ)
@@ -1139,7 +1140,7 @@ proc click*(buffer: Buffer): Option[Request] =
         var value = input.value
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("SEARCH: ", value, buffer.width, {'\r', '\n'})
+        let status = readLine("SEARCH: ", value, buffer.width, {'\r', '\n'}, config = buffer.config)
         if status:
           input.value = value
           input.invalid = true
@@ -1151,7 +1152,7 @@ proc click*(buffer: Buffer): Option[Request] =
         var value = input.value
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'}, input.inputType == INPUT_PASSWORD)
+        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'}, input.inputType == INPUT_PASSWORD, config = buffer.config)
         if status:
           input.value = value
           input.invalid = true
@@ -1163,7 +1164,7 @@ proc click*(buffer: Buffer): Option[Request] =
           ""
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("Filename: ", path, buffer.width, {'\r', '\n'})
+        let status = readLine("Filename: ", path, buffer.width, {'\r', '\n'}, config = buffer.config)
         if status:
           let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
           let path = parseUrl(path, cdir)

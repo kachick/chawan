@@ -8,11 +8,19 @@ import config/config
 import display/client
 import utils/twtstr
 
-readConfig()
+let conf = readConfig()
 let params = commandLineParams()
 
+proc version(long: static bool = false): string =
+  result = "Chawan browser v0.1 "
+  when defined(debug):
+    result &= "(debug)"
+  else:
+    result &= "(release)"
+
 proc help(i: int) =
-  let s =  """
+  let s = version() & """
+
 Usage: cha [options] [URL(s) or file(s)...]
 Options:
     -d, --dump                  Print page to stdout
@@ -41,8 +49,7 @@ while i < params.len:
     continue
   case param
   of "-v", "--version":
-    echo "Chawan browser v0.1 ",
-         when defined(debug): "(debug)" else: "(release)"
+    echo version(true)
     quit(0)
   of "-T":
     inc i
@@ -57,13 +64,13 @@ while i < params.len:
   of "-c", "--css":
     inc i
     if i < params.len:
-      gconfig.stylesheet &= params[i]
+      conf.stylesheet &= params[i]
     else:
       help(1)
   of "-o", "--opt":
     inc i
     if i < params.len:
-      gconfig.parseConfig(getCurrentDir(), params[i])
+      conf.parseConfig(getCurrentDir(), params[i])
     else:
       help(1)
   of "-h",  "--help":
@@ -71,7 +78,7 @@ while i < params.len:
   of "-r", "--run":
     inc i
     if i < params.len:
-      gconfig.startup = params[i]
+      conf.startup = params[i]
     else:
       help(1)
   of "--":
@@ -83,13 +90,13 @@ while i < params.len:
       pages.add(param)
   inc i
 
-if pages.len == 0 and gconfig.startup == "":
+if pages.len == 0 and conf.startup == "":
   if stdin.isatty:
     help(1)
 
-gconfig.nmap = constructActionTable2(gconfig.nmap)
-gconfig.lemap = constructActionTable(gconfig.lemap)
+conf.nmap = constructActionTable2(conf.nmap)
+conf.lemap = constructActionTable(conf.lemap)
 
-width_table = makewidthtable(gconfig.ambiguous_double)
+width_table = makewidthtable(conf.ambiguous_double)
 
-newClient().launchClient(pages, ctype, dump)
+newClient(conf).launchClient(pages, ctype, dump)

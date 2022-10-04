@@ -11,6 +11,7 @@ import std/monotimes
 
 import css/sheet
 import config/config
+import display/pager
 import html/dom
 import html/htmlparser
 import io/buffer
@@ -34,7 +35,9 @@ type
     errormessage: string
     userstyle: CSSStylesheet
     loader: FileLoader
-    console: Console
+    console {.jsget.}: Console
+    pager {.jsget.}: Pager
+    config: Config
     jsrt: JSRuntime
     jsctx: JSContext
     regex: Option[Regex]
@@ -94,7 +97,6 @@ proc addBuffer(client: Client) =
     client.buffer = client.buffer.next
   client.buffer.loader = client.loader
   client.buffer.userstyle = client.userstyle
-  client.buffer.markcolor = gconfig.markcolor
 
 proc prevBuffer(client: Client) {.jsfunc.} =
   if client.buffer.prev != nil:
@@ -361,7 +363,7 @@ proc changeLocation(client: Client) {.jsfunc.} =
   let buffer = client.buffer
   var url = buffer.location.serialize(true)
   client.statusMode()
-  let status = readLine("URL: ", url, buffer.width)
+  let status = readLine("URL: ", url, buffer.width, config = client.config)
   if status:
     client.loadUrl(url)
 
@@ -448,7 +450,7 @@ proc command(client: Client, src: string) =
 proc command(client: Client): bool {.jsfunc.} =
   var iput: string
   client.statusMode()
-  let status = readLine("COMMAND: ", iput, client.buffer.width)
+  let status = readLine("COMMAND: ", iput, client.buffer.width, config = client.config)
   if status:
     client.command(iput)
   return status
@@ -473,7 +475,7 @@ proc searchPrev(client: Client) {.jsfunc.} =
 proc search(client: Client) {.jsfunc.} =
   client.statusMode()
   var iput: string
-  let status = readLine("/", iput, client.buffer.width)
+  let status = readLine("/", iput, client.buffer.width, config = client.config)
   if status:
     if iput.len != 0:
       client.regex = compileSearchRegex(iput)
@@ -483,7 +485,7 @@ proc search(client: Client) {.jsfunc.} =
 proc searchBack(client: Client) {.jsfunc.} =
   client.statusMode()
   var iput: string
-  let status = readLine("?", iput, client.buffer.width)
+  let status = readLine("?", iput, client.buffer.width, config = client.config)
   if status:
     if iput.len != 0:
       client.regex = compileSearchRegex(iput)
@@ -499,7 +501,7 @@ proc isearch(client: Client) {.jsfunc.} =
     if mark != nil:
       client.buffer.removeMark(mark)
 
-  let status = readLine("/", iput, client.buffer.width, {}, false, (proc(state: var LineState): bool =
+  let status = readLine("/", iput, client.buffer.width, {}, false, client.config, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
     client.buffer.cpos = cpos
@@ -537,7 +539,7 @@ proc isearchBack(client: Client) {.jsfunc.} =
   template del_mark() =
     if mark != nil:
       client.buffer.removeMark(mark)
-  let status = readLine("?", iput, client.buffer.width, {}, false, (proc(state: var LineState): bool =
+  let status = readLine("?", iput, client.buffer.width, {}, false, client.config, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
     client.buffer.cpos = cpos
@@ -567,6 +569,7 @@ proc isearchBack(client: Client) {.jsfunc.} =
 
 proc quit(client: Client) {.jsfunc.} =
   print(HVP(getTermAttributes().height, 0))
+  print(EL())
   quit(0)
 
 proc feedNext(client: Client) {.jsfunc.} =
@@ -618,7 +621,7 @@ proc input(client: Client) =
   let c = client.console.readChar()
   client.s &= c
 
-  let action = getNormalAction(client.s)
+  let action = getNormalAction(client.config, client.s)
   client.evalJSFree(action, "<command>")
 
 proc followRedirect(client: Client)
@@ -628,13 +631,13 @@ proc checkAuth(client: Client) =
     client.buffer.refreshBuffer()
     client.statusMode()
     var username = ""
-    let ustatus = readLine("Username: ", username, client.buffer.width)
+    let ustatus = readLine("Username: ", username, client.buffer.width, config = client.config)
     if not ustatus:
       client.needsauth = false
       return
     client.statusMode()
     var password = ""
-    let pstatus = readLine("Password: ", password, client.buffer.width, hide = true)
+    let pstatus = readLine("Password: ", password, client.buffer.width, hide = true, config = client.config)
     if not pstatus:
       client.needsauth = false
       return
@@ -768,14 +771,14 @@ proc jsEventLoop(client: Client) =
       sleep(wait)
 
 proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
-  if gconfig.startup != "":
-    let s = readFile(gconfig.startup)
+  if client.config.startup != "":
+    let s = readFile(client.config.startup)
     client.console.err = newFileStream(stderr)
-    client.command0(s, gconfig.startup, silence = true)
+    client.command0(s, client.config.startup, silence = true)
     client.jsEventLoop()
     client.console.err = newStringStream()
     quit()
-  client.userstyle = gconfig.stylesheet.parseStylesheet()
+  client.userstyle = client.config.stylesheet.parseStylesheet()
   if not stdin.isatty:
     client.readPipe(ctype)
   try:
@@ -819,8 +822,9 @@ proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
 proc sleep(client: Client, millis: int) {.jsfunc.} =
   sleep millis
 
-proc newClient*(): Client =
+proc newClient*(config: Config): Client =
   new(result)
+  result.config = config
   result.loader = newFileLoader()
   result.console = newConsole()
   let rt = newJSRuntime()
@@ -833,14 +837,12 @@ proc newClient*(): Client =
   ctx.registerType(Client, asglobal = true)
   global.setOpaque(result)
   ctx.setProperty(global.val, "client", global.val)
-
-  let consoleClassId = ctx.registerType(Console)
-  let jsConsole = ctx.newJSObject(consoleClassId)
-  jsConsole.setOpaque(result.console)
-  ctx.setProperty(global.val, "console", jsConsole.val)
   free(global)
+
+  ctx.registerType(Console)
 
   ctx.addUrlModule()
   ctx.addDOMModule()
   ctx.addHTMLModule()
   ctx.addRequestModule()
+  ctx.addPagerModule()

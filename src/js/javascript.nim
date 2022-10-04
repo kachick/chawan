@@ -7,6 +7,8 @@ import tables
 
 import bindings/quickjs
 
+export options
+
 export
   JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TRUE, JS_EXCEPTION, JS_UNINITIALIZED
 

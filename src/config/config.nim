@@ -40,7 +40,8 @@ type
     ACTION_LINED_ESC
 
   ActionMap = Table[string, TwtAction]
-  Config* = object
+  Config* = ref ConfigObj
+  ConfigObj = object
     nmap*: Table[string, string]
     lemap*: ActionMap
     stylesheet*: string
@@ -145,7 +146,7 @@ proc readUserStylesheet(dir, file: string): string =
       result = f.readAll()
       f.close()
 
-proc parseConfig(config: var Config, dir: string, t: TomlValue) =
+proc parseConfig(config: Config, dir: string, t: TomlValue) =
   if "general" in t:
     let general = t["general"]
     if "double-width-ambiguous" in general:
@@ -184,34 +185,37 @@ proc parseConfig(config: var Config, dir: string, t: TomlValue) =
       of "white": config.markcolor = CellColor(rgb: false, color: 47u8)
       of "terminal": config.markcolor = defaultColor
 
-proc parseConfig(config: var Config, dir: string, stream: Stream) =
+proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))
 
-proc parseConfig*(config: var Config, dir: string, s: string) =
+proc parseConfig*(config: Config, dir: string, s: string) =
   config.parseConfig(dir, newStringStream(s))
 
-proc staticReadConfig(): Config =
-  result.parseConfig("res", staticRead"res/config.toml")
+proc staticReadConfig(): ConfigObj =
+  var config = new(Config)
+  config.parseConfig("res", staticRead"res/config.toml")
+  return config[]
 
 const defaultConfig = staticReadConfig()
-var gconfig* = defaultConfig
 
-proc readConfig(dir: string) =
+proc readConfig(config: Config, dir: string) =
   let fs = newFileStream(dir / "config.toml")
   if fs != nil:
-    gconfig.parseConfig(dir, fs)
+    config.parseConfig(dir, fs)
 
-proc getNormalAction*(s: string): string =
-  if gconfig.nmap.hasKey(s):
-    return gconfig.nmap[s]
+proc getNormalAction*(config: Config, s: string): string =
+  if config.nmap.hasKey(s):
+    return config.nmap[s]
   return ""
 
-proc getLinedAction*(s: string): TwtAction =
-  if gconfig.lemap.hasKey(s):
-    return gconfig.lemap[s]
+proc getLinedAction*(config: Config, s: string): TwtAction =
+  if config.lemap.hasKey(s):
+    return config.lemap[s]
   return NO_ACTION
 
-proc readConfig*() =
+proc readConfig*(): Config =
+  new(result)
+  result[] = defaultConfig
   when defined(debug):
-    readConfig(getCurrentDir() / "res")
-  readConfig(getConfigDir() / "chawan")
+    result.readConfig(getCurrentDir() / "res")
+  result.readConfig(getConfigDir() / "chawan")
