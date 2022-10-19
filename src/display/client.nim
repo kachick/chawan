@@ -290,9 +290,13 @@ proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool
     client.pager.loadURL(page, force = true, ctype = ctype)
 
   if stdout.isatty and not dump:
-    when defined(posix):
-      enableRawMode()
-    client.inputLoop()
+    if client.pager.container != nil:
+      when defined(posix):
+        enableRawMode()
+      client.inputLoop()
+    else:
+      for msg in client.pager.status:
+        eprint msg
   else:
     for msg in client.pager.status:
       eprint msg
