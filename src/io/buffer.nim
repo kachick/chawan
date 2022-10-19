@@ -376,7 +376,7 @@ proc refreshDisplay(buffer: Buffer) =
       inc l
       if mark.x >= startw + aw or mark.x + mark.width < startw: continue
       for i in max(mark.x, startw)..<min(mark.x + mark.width, startw + aw):
-        buffer.display[dls + i].format = mark.format
+        buffer.display[dls + i - startw].format = mark.format
 
     inc y
 
