@@ -71,18 +71,19 @@ func getRealKey(key: string): string =
     elif meta == 1:
       realk &= 'M' & c
       meta = 0
-    elif meta == 2:
-      realk &= '\e'
-      realk &= c
-      meta = 0
     elif control == 1:
       realk &= 'C' & c
       control = 0
-    elif control == 2:
-      realk &= getControlChar(c)
-      control = 0
     else:
-      realk &= c
+      if meta == 2:
+        realk &= '\e'
+        realk &= c
+        meta = 0
+      if control == 2:
+        realk &= getControlChar(c)
+        control = 0
+      else
+        realk &= c
   if control == 1:
     realk &= 'C'
   if meta == 1:
