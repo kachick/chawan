@@ -42,7 +42,7 @@ func applies(mq: MediaQuery): bool =
     of FEATURE_PREFERS_COLOR_SCHEME:
       return mq.feature.b
 
-func applies(mqlist: MediaQueryList): bool =
+func applies*(mqlist: MediaQueryList): bool =
   for mq in mqlist:
     if mq.applies():
       return true
@@ -246,7 +246,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       # stylesheets
       let sheets = elem.sheets()
       if sheets.len > 0:
-	for sheet in sheets:
+        for sheet in sheets:
           author.add(sheet.applyMediaQuery())
         lenstack.add(sheets.len)
         styledStack.add((nil, nil, PSEUDO_NONE, nil))

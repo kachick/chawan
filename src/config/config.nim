@@ -82,7 +82,7 @@ func getRealKey(key: string): string =
       if control == 2:
         realk &= getControlChar(c)
         control = 0
-      else
+      else:
         realk &= c
   if control == 1:
     realk &= 'C'

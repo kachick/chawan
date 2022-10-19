@@ -857,7 +857,7 @@ proc loadResources(buffer: Buffer, document: Document) =
     if elem.tagType == TAG_LINK:
       let elem = HTMLLinkElement(elem)
       if elem.rel == "stylesheet":
-	buffer.loadResource(document, elem)
+        buffer.loadResource(document, elem)
 
     for child in elem.children_rev:
       stack.add(child)
