@@ -76,12 +76,18 @@ proc loadResource(loader: FileLoader, request: Request, ostream: Stream) =
     ostream.swrite(-1) # error
     ostream.flush()
 
-proc runFileLoader(loader: FileLoader, loadcb: proc()) =
+proc runFileLoader(loader: FileLoader, fd: cint) =
   if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
     raise newException(Defect, "Failed to initialize libcurl.")
   let ssock = initServerSocket(getpid())
   # The server has been initialized, so the main process can resume execution.
-  loadcb()
+  var writef: File
+  if not open(writef, FileHandle(fd), fmWrite):
+    raise newException(Defect, "Failed to open input handle.")
+  writef.write(char(0u8))
+  writef.flushFile()
+  close(writef)
+  discard close(fd)
   while true:
     let stream = ssock.acceptSocketStream()
     try:
@@ -111,7 +117,7 @@ proc doRequest*(loader: FileLoader, request: Request): Response =
     if "Content-Type" in result.headers.table:
       result.contenttype = result.headers.table["Content-Type"][0].until(';')
     else:
-      result.contenttype = guessContentType($request.url)
+      result.contenttype = guessContentType($request.url.path)
     if "Location" in result.headers.table:
       let location = result.headers.table["Location"][0]
       result.redirect = parseUrl(location, some(request.url))
@@ -131,15 +137,7 @@ proc newFileLoader*(defaultHeaders: HeaderList): FileLoader =
     elif pid == 0:
       # child process
       discard close(pipefd[0]) # close read
-      var writef: File
-      if not open(writef, FileHandle(pipefd[1]), fmWrite):
-        raise newException(Defect, "Failed to open input handle.")
-      result.runFileLoader((proc() =
-        writef.write(char(0u8))
-        writef.flushFile()
-        close(writef)
-        discard close(pipefd[1])
-      ))
+      result.runFileLoader(pipefd[1])
     else:
       result.process = pid
       let readfd = pipefd[0] # get read
@@ -150,7 +148,6 @@ proc newFileLoader*(defaultHeaders: HeaderList): FileLoader =
       assert readf.readChar() == char(0u8)
       close(readf)
       discard close(pipefd[0])
-      
 
 proc newFileLoader*(): FileLoader =
   newFileLoader(DefaultHeaders)

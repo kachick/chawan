@@ -1302,6 +1302,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
       elif f1.strVal.startsWith("js_set"):
         setters[f0] = f1
       else:
+        f0 = fun.name
         tabList.add(quote do:
           JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
 

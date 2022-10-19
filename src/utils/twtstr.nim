@@ -32,7 +32,6 @@ const Ascii* = {chr(0x00)..chr(0x7F)}
 const AsciiUpperAlpha* = {'A'..'Z'}
 const AsciiLowerAlpha* = {'a'..'z'}
 const AsciiAlpha* = (AsciiUpperAlpha + AsciiLowerAlpha)
-const AllChars = {chr(0x00)..chr(0xFF)}
 const NonAscii* = (AllChars - Ascii)
 const AsciiDigit* = {'0'..'9'}
 const AsciiHexDigit* = (AsciiDigit + {'a'..'f', 'A'..'F'})

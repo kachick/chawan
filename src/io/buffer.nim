@@ -63,19 +63,18 @@ type
     streamclosed*: bool
     source*: string
     prevnode*: StyledNode
-    sourcepair*: Buffer
-    prev*: Buffer
-    next*: Buffer
     userstyle*: CSSStylesheet
     loader*: FileLoader
     marks*: seq[Mark]
     config*: Config
 
-proc newBuffer*(): Buffer =
+proc newBuffer*(config: Config, loader: FileLoader): Buffer =
   new(result)
   result.attrs = getTermAttributes()
   result.width = result.attrs.width
   result.height = result.attrs.height - 1
+  result.config = config
+  result.loader = loader
 
   result.display = newFixedGrid(result.width, result.height)
   result.prevdisplay = newFixedGrid(result.width, result.height)
@@ -87,7 +86,7 @@ func fromx*(buffer: Buffer): int {.inline.} = buffer.cpos.fromx
 func fromy*(buffer: Buffer): int {.inline.} = buffer.cpos.fromy
 func xend*(buffer: Buffer): int {.inline.} = buffer.cpos.xend
 
-func generateFullOutput(buffer: Buffer): string =
+func generateFullOutput*(buffer: Buffer): string =
   var x = 0
   var w = 0
   var format = newFormat()
@@ -878,6 +877,8 @@ proc render*(buffer: Buffer) =
   of "text/html":
     if buffer.viewport == nil:
       buffer.viewport = Viewport(term: buffer.attrs)
+    if buffer.userstyle == nil:
+      buffer.userstyle = buffer.config.stylesheet.parseStylesheet()
     let ret = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport, buffer.prevstyled)
     buffer.lines = ret[0]
     buffer.prevstyled = ret[1]
@@ -1196,6 +1197,24 @@ proc click*(buffer: Buffer): Option[Request] =
     else:
       restore_focus
 
+proc setupBuffer*(buffer: Buffer) =
+  buffer.load()
+  buffer.render()
+  buffer.gotoAnchor()
+  buffer.redraw = true
+
+proc dupeBuffer*(buffer: Buffer, location = none(URL)): Buffer =
+  let clone = newBuffer(buffer.config, buffer.loader)
+  clone.contenttype = buffer.contenttype
+  clone.ispipe = buffer.ispipe
+  if location.isSome:
+    clone.location = location.get
+  else:
+    clone.location = buffer.location
+  clone.istream = newStringStream(buffer.source)
+  clone.setupBuffer()
+  return clone
+
 proc drawBuffer*(buffer: Buffer) =
   var format = newFormat()
   for line in buffer.lines:
@@ -1218,8 +1237,11 @@ proc drawBuffer*(buffer: Buffer) =
       print(format.processFormat(newFormat()))
       print("\n")
 
-proc refreshBuffer*(buffer: Buffer, peek = false) =
+proc refreshTitle*(buffer: Buffer) =
   buffer.title = buffer.getTitle()
+
+proc refreshBuffer*(buffer: Buffer, peek = false): bool {.discardable.} =
+  buffer.refreshTitle()
   stdout.hideCursor()
 
   if buffer.refreshTermAttrs():
@@ -1229,6 +1251,7 @@ proc refreshBuffer*(buffer: Buffer, peek = false) =
   if buffer.redraw:
     buffer.refreshDisplay()
     buffer.displayBuffer()
+    #result = true
     buffer.redraw = false
 
   if not peek:
@@ -1239,6 +1262,7 @@ proc refreshBuffer*(buffer: Buffer, peek = false) =
     buffer.reshape = false
     buffer.refreshDisplay()
     buffer.displayBufferSwapOutput()
+    #result = true
 
   if not peek:
     if not buffer.nostatus:
