@@ -6,6 +6,9 @@ import tables
 import terminal
 import unicode
 
+import css/cascade
+import css/cssparser
+import css/mediaquery
 import css/sheet
 import css/stylednode
 import config/config
@@ -831,6 +834,19 @@ proc updateHover(buffer: Buffer) =
 
   buffer.prevnode = thisnode
 
+proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
+  let url = parseUrl(elem.href, document.location.some)
+  if url.isSome:
+    let url = url.get
+    if url.scheme == buffer.location.scheme:
+      let media = elem.media
+      if media != "":
+        let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
+        if not media.applies(): return
+      let fs = buffer.loader.doRequest(newRequest(url))
+      if fs.body != nil and fs.contenttype == "text/css":
+        elem.sheet = parseStylesheet(fs.body)
+
 proc loadResources(buffer: Buffer, document: Document) =
   var stack: seq[Element]
   if document.html != nil:
@@ -841,13 +857,7 @@ proc loadResources(buffer: Buffer, document: Document) =
     if elem.tagType == TAG_LINK:
       let elem = HTMLLinkElement(elem)
       if elem.rel == "stylesheet":
-        let url = parseUrl(elem.href, document.location.some)
-        if url.issome:
-          let url = url.get
-          if url.scheme == buffer.location.scheme:
-            let fs = buffer.loader.doRequest(newRequest(url))
-            if fs.body != nil and fs.contenttype == "text/css":
-              elem.sheet = parseStylesheet(fs.body)
+	buffer.loadResource(document, elem)
 
     for child in elem.children_rev:
       stack.add(child)

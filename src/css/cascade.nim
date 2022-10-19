@@ -126,7 +126,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
   if document.head != nil:
     for sheet in document.head.sheets:
-      author.add(sheet)
+      author.add(sheet.applyMediaQuery())
 
   var lenstack = newSeqOfCap[int](256)
   var styledStack: seq[(StyledNode, Node, PseudoElem, StyledNode)]
@@ -246,7 +246,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       # stylesheets
       let sheets = elem.sheets()
       if sheets.len > 0:
-        author.add(sheets)
+	for sheet in sheets:
+          author.add(sheet.applyMediaQuery())
         lenstack.add(sheets.len)
         styledStack.add((nil, nil, PSEUDO_NONE, nil))
 

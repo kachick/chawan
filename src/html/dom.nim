@@ -164,6 +164,10 @@ type
     ctype*: bool
     #TODO result
 
+  HTMLBaseElement* = ref object of HTMLElement
+
+  HTMLAreaElement* = ref object of HTMLElement
+
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
 
@@ -643,6 +647,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   of TAG_SCRIPT:
     result = new(HTMLScriptElement)
     HTMLScriptElement(result).forceAsync = true
+  of TAG_BASE:
+    result = new(HTMLBaseElement)
   else:
     result = new(HTMLElement)
 
@@ -727,17 +733,18 @@ func baseUrl*(document: Document): Url =
     return document.location
   return url.get
 
-func href*(element: Element): string =
-  assert element.tagType in {TAG_A, TAG_LINK, TAG_BASE}
+func href*[T: HTMLAnchorElement|HTMLLinkElement|HTMLBaseElement](element: T): string =
   if element.attrb("href"):
     let url = parseUrl(element.attr("href"), some(element.document.location))
     if url.issome:
       return $url.get
   return ""
 
-func rel*(element: Element): string =
-  assert element.tagType in {TAG_A, TAG_LINK, TAG_AREA}
+func rel*[T: HTMLAnchorElement|HTMLLinkElement|HTMLAreaElement](element: T): string =
   return element.attr("rel")
+
+func media*[T: HTMLLinkElement|HTMLStyleElement](element: T): string =
+  return element.attr("media")
 
 func title*(document: Document): string =
   for title in document.elements(TAG_TITLE):
