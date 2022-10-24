@@ -69,7 +69,9 @@ proc readPipe(client: Client, ctype: string) =
   let buffer = newBuffer(client.config, client.loader)
   buffer.contenttype = if ctype != "": ctype else: "text/plain"
   buffer.ispipe = true
-  buffer.istream = newFileStream(stdin)
+  let ifs = newFileStream(stdin)
+  buffer.istream = newStringStream(ifs.readAll())
+  ifs.close()
   buffer.location = newURL("file://-")
   client.pager.addBuffer(buffer)
   #TODO is this portable at all?
