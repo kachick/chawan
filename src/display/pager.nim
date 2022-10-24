@@ -34,6 +34,11 @@ type
     regex: Option[Regex]
     reverseSearch: bool
     status*: seq[string]
+    switched*: bool
+
+proc setContainer*(pager: Pager, c: Container) =
+  pager.container = c
+  pager.switched = true
 
 proc cursorLeft(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorLeft()
 proc cursorDown(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorDown()
@@ -108,7 +113,8 @@ proc searchBack(pager: Pager) {.jsfunc.} =
 
 proc displayPage*(pager: Pager) =
   let buffer = pager.container.buffer
-  if buffer.refreshBuffer():
+  if pager.switched or buffer.refreshBuffer():
+    pager.switched = false
     stdout.hideCursor()
     print(buffer.generateFullOutput())
     stdout.showCursor()
@@ -207,7 +213,7 @@ proc addBuffer*(pager: Pager, buffer: Buffer) =
   var ncontainer = newContainer(buffer, pager.container)
   if pager.container != nil:
     pager.container.children.add(ncontainer)
-  pager.container = ncontainer
+  pager.setContainer(ncontainer)
 
 proc dupeBuffer*(pager: Pager, location = none(URL)) {.jsfunc.} =
   var clone: Buffer
@@ -225,9 +231,9 @@ proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
     let child = pager.container.parent.children[i]
     if child == pager.container:
       if i > 0:
-        pager.container = pager.container.parent.children[i - 1]
+        pager.setContainer(pager.container.parent.children[i - 1])
       else:
-        pager.container = pager.container.parent
+        pager.setContainer(pager.container.parent)
       return true
   assert false, "Container not a child of its parent"
 
@@ -235,7 +241,7 @@ proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
   if pager.container == nil:
     return false
   if pager.container.children.len > 0:
-    pager.container = pager.container.children[0]
+    pager.setContainer(pager.container.children[0])
     return true
   if pager.container.parent == nil:
     return false
@@ -243,7 +249,7 @@ proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
     let child = pager.container.parent.children[i]
     if child == pager.container:
       if i < pager.container.parent.children.high:
-        pager.container = pager.container.parent.children[i + 1]
+        pager.setContainer(pager.container.parent.children[i + 1])
         return true
       return false
   assert false, "Container not a child of its parent"
@@ -269,9 +275,9 @@ proc discardBuffer*(pager: Pager) {.jsfunc.} =
         child.parent = pager.container.parent
         parent.children.insert(child, n + 1)
       parent.children.delete(n)
-      pager.container = parent
+      pager.setContainer(parent)
     else:
-      pager.container = pager.container.children[0]
+      pager.setContainer(pager.container.children[0])
       pager.container.parent = nil
 
 proc drawBuffer*(pager: Pager) {.jsfunc.} =
@@ -279,7 +285,7 @@ proc drawBuffer*(pager: Pager) {.jsfunc.} =
 
 proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
-    pager.container = pager.container.sourcepair
+    pager.setContainer(pager.container.sourcepair)
   else:
     let buffer = newBuffer(pager.config, pager.loader)
     buffer.source = pager.container.buffer.source

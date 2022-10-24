@@ -73,7 +73,7 @@ proc readPipe(client: Client, ctype: string) =
   buffer.location = newURL("file://-")
   client.pager.addBuffer(buffer)
   #TODO is this portable at all?
-  if reopen(stdin, "/dev/tty", fmReadWrite):
+  if reopen(stdin, "/dev/tty", fmRead):
     buffer.setupBuffer()
   else:
     buffer.load()
