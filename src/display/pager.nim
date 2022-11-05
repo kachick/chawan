@@ -289,7 +289,7 @@ proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let buffer = newBuffer(pager.config, pager.loader, pager.tty)
+    let buffer = newBuffer(pager.config, pager.tty)
     buffer.source = pager.container.buffer.source
     buffer.streamclosed = true
     buffer.location = pager.container.buffer.location
@@ -316,7 +316,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), force = false
     # feedback on what is actually going to happen when typing a URL; TODO.
     let response = pager.loader.doRequest(request)
     if response.body != nil:
-      let buffer = newBuffer(pager.config, pager.loader, pager.tty)
+      let buffer = newBuffer(pager.config, pager.tty)
       buffer.contenttype = if ctype != "": ctype else: response.contenttype
       buffer.istream = response.body
       buffer.location = request.url

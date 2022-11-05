@@ -70,7 +70,7 @@ proc statusMode(client: Client) =
   print(EL())
 
 proc readPipe(client: Client, ctype: string) =
-  let buffer = newBuffer(client.config, client.loader, client.console.tty)
+  let buffer = newBuffer(client.config, client.console.tty)
   buffer.contenttype = if ctype != "": ctype else: "text/plain"
   buffer.ispipe = true
   buffer.istream = newFileStream(stdin)
@@ -128,7 +128,7 @@ proc command(client: Client, src: string) =
   client.command0(src)
   client.console.err.setPosition(previ)
   if client.console.lastbuf == nil:
-    let buffer = newBuffer(client.config, client.loader, client.console.tty)
+    let buffer = newBuffer(client.config, client.console.tty)
     buffer.istream = newStringStream(client.console.err.readAll()) #TODO
     buffer.contenttype = "text/plain"
     buffer.location = parseUrl("javascript:void(0);").get

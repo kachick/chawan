@@ -72,14 +72,13 @@ type
     config*: Config
     tty: File
 
-proc newBuffer*(config: Config, loader: FileLoader, tty: File): Buffer =
+proc newBuffer*(config: Config, tty: File): Buffer =
   new(result)
   result.attrs = getTermAttributes(stdout)
   result.width = result.attrs.width
   result.height = result.attrs.height - 1
   result.config = config
-  result.loader = loader
-  result.tty = tty
+  result.loader = newFileLoader()
 
   result.display = newFixedGrid(result.width, result.height)
   result.prevdisplay = newFixedGrid(result.width, result.height)
@@ -1216,7 +1215,7 @@ proc setupBuffer*(buffer: Buffer) =
   buffer.redraw = true
 
 proc dupeBuffer*(buffer: Buffer, location = none(URL)): Buffer =
-  let clone = newBuffer(buffer.config, buffer.loader, buffer.tty)
+  let clone = newBuffer(buffer.config, buffer.tty)
   clone.contenttype = buffer.contenttype
   clone.ispipe = buffer.ispipe
   if location.isSome:
