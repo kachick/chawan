@@ -80,7 +80,6 @@ proc readPipe(client: Client, ctype: string) =
     buffer.setupBuffer()
   else:
     buffer.load()
-    buffer.drawBuffer()
 
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
   client.loader.doRequest(req)
@@ -157,6 +156,9 @@ proc quit(client: Client, code = 0) {.jsfunc.} =
     print(EL())
   when defined(posix):
     assert kill(client.loader.process, cint(SIGTERM)) == 0
+    for buffer in client.pager.buffers:
+      if buffer.loader != nil:
+        assert kill(buffer.loader.process, cint(SIGTERM)) == 0
   quit(code)
 
 proc feedNext(client: Client) {.jsfunc.} =
@@ -309,12 +311,8 @@ proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool
   else:
     for msg in client.pager.status:
       eprint msg
-    while client.pager.nextBuffer():
-      discard
-    if client.pager.container != nil:
-      client.pager.container.buffer.drawBuffer()
-    while client.pager.prevBuffer():
-      client.pager.container.buffer.drawBuffer()
+    for buffer in client.pager.buffers:
+      buffer.drawBuffer()
     stdout.close()
   client.quit()
 

@@ -37,6 +37,21 @@ type
     switched*: bool
     tty: File
 
+iterator containers*(pager: Pager): Container =
+  if pager.container != nil:
+    var c = pager.container
+    while c.parent != nil: c = c.parent
+    var stack: seq[Container]
+    stack.add(c)
+    while stack.len > 0:
+      yield stack.pop()
+      for i in countdown(c.children.high, 0):
+        stack.add(c.children[i])
+
+iterator buffers*(pager: Pager): Buffer =
+  for container in pager.containers:
+    yield container.buffer
+
 proc setContainer*(pager: Pager, c: Container) =
   pager.container = c
   pager.switched = true
