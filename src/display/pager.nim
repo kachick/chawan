@@ -35,6 +35,7 @@ type
     reverseSearch: bool
     status*: seq[string]
     switched*: bool
+    tty: File
 
 proc setContainer*(pager: Pager, c: Container) =
   pager.container = c
@@ -94,7 +95,7 @@ proc statusMode(pager: Pager) =
 proc search(pager: Pager) {.jsfunc.} =
   pager.statusMode()
   var iput: string
-  let status = readLine("/", iput, pager.attrs.width, config = pager.config)
+  let status = readLine("/", iput, pager.attrs.width, config = pager.config, tty = pager.tty)
   if status:
     if iput.len != 0:
       pager.regex = compileSearchRegex(iput)
@@ -104,7 +105,7 @@ proc search(pager: Pager) {.jsfunc.} =
 proc searchBack(pager: Pager) {.jsfunc.} =
   pager.statusMode()
   var iput: string
-  let status = readLine("?", iput, pager.attrs.width, config = pager.config)
+  let status = readLine("?", iput, pager.attrs.width, config = pager.config, tty = pager.tty)
   if status:
     if iput.len != 0:
       pager.regex = compileSearchRegex(iput)
@@ -128,7 +129,7 @@ proc isearch(pager: Pager) {.jsfunc.} =
     if mark != nil:
       pager.container.buffer.removeMark(mark)
 
-  let status = readLine("/", iput, pager.attrs.width, {}, false, pager.config, (proc(state: var LineState): bool =
+  let status = readLine("/", iput, pager.attrs.width, {}, false, pager.config, pager.tty, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
     pager.container.buffer.cpos = cpos
@@ -168,7 +169,7 @@ proc isearchBack(pager: Pager) {.jsfunc.} =
   template del_mark() =
     if mark != nil:
       pager.container.buffer.removeMark(mark)
-  let status = readLine("?", iput, pager.container.buffer.width, {}, false, pager.config, (proc(state: var LineState): bool =
+  let status = readLine("?", iput, pager.container.buffer.width, {}, false, pager.config, pager.tty, (proc(state: var LineState): bool =
     del_mark
     let regex = compileSearchRegex($state.news)
     pager.container.buffer.cpos = cpos
@@ -203,11 +204,12 @@ proc newContainer(buffer: Buffer, parent: Container): Container =
   result.buffer = buffer
   result.parent = parent
 
-proc newPager*(config: Config, attrs: TermAttributes, loader: FileLoader): Pager =
+proc newPager*(config: Config, attrs: TermAttributes, loader: FileLoader, tty: File): Pager =
   new(result)
   result.config = config
   result.attrs = attrs
   result.loader = loader
+  result.tty = tty
 
 proc addBuffer*(pager: Pager, buffer: Buffer) =
   var ncontainer = newContainer(buffer, pager.container)
@@ -287,7 +289,7 @@ proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let buffer = newBuffer(pager.config, pager.loader)
+    let buffer = newBuffer(pager.config, pager.loader, pager.tty)
     buffer.source = pager.container.buffer.source
     buffer.streamclosed = true
     buffer.location = pager.container.buffer.location
@@ -314,7 +316,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), force = false
     # feedback on what is actually going to happen when typing a URL; TODO.
     let response = pager.loader.doRequest(request)
     if response.body != nil:
-      let buffer = newBuffer(pager.config, pager.loader)
+      let buffer = newBuffer(pager.config, pager.loader, pager.tty)
       buffer.contenttype = if ctype != "": ctype else: response.contenttype
       buffer.istream = response.body
       buffer.location = request.url
@@ -377,7 +379,7 @@ proc loadURL*(pager: Pager, url: string, force = false, ctype = "") =
 proc changeLocation(pager: Pager) {.jsfunc.} =
   var url = pager.container.buffer.location.serialize()
   pager.statusMode()
-  let status = readLine("URL: ", url, pager.attrs.width, config = pager.config)
+  let status = readLine("URL: ", url, pager.attrs.width, config = pager.config, tty = pager.tty)
   if status:
     pager.loadURL(url)
 
@@ -398,13 +400,13 @@ proc checkAuth*(pager: Pager) =
     pager.container.buffer.refreshBuffer()
     pager.statusMode()
     var username = ""
-    let ustatus = readLine("Username: ", username, pager.attrs.width, config = pager.config)
+    let ustatus = readLine("Username: ", username, pager.attrs.width, config = pager.config, tty = pager.tty)
     if not ustatus:
       pager.container.needsauth = false
       return
     pager.statusMode()
     var password = ""
-    let pstatus = readLine("Password: ", password, pager.attrs.width, hide = true, config = pager.config)
+    let pstatus = readLine("Password: ", password, pager.attrs.width, hide = true, config = pager.config, tty = pager.tty)
     if not pstatus:
       pager.container.needsauth = false
       return

@@ -23,6 +23,7 @@ type LineState* = object
   disallowed: set[char]
   hide: bool
   config: Config #TODO get rid of this
+  tty: File
   callback: proc(state: var LineState): bool
 
 func lwidth(r: Rune): int =
@@ -145,8 +146,8 @@ proc readLine(state: var LineState): bool =
     else:
       state.feedNext = false
 
-    restoreStdin()
-    let c = stdin.readChar()
+    restoreStdin(state.tty.getFileHandle())
+    let c = state.tty.readChar()
     state.s &= c
 
     var action = getLinedAction(state.config, state.s)
@@ -273,7 +274,7 @@ proc readLine(state: var LineState): bool =
 
 proc readLine*(prompt: string, current: var string, termwidth: int,
                disallowed: set[char], hide: bool, config: Config,
-               callback: proc(state: var LineState): bool): bool =
+               tty: File, callback: proc(state: var LineState): bool): bool =
   var state: LineState
 
   state.prompt = prompt
@@ -287,6 +288,7 @@ proc readLine*(prompt: string, current: var string, termwidth: int,
   state.callback = callback
   state.hide = hide
   state.config = config
+  state.tty = tty
 
   if state.readLine():
     current = $state.news
@@ -294,5 +296,6 @@ proc readLine*(prompt: string, current: var string, termwidth: int,
   return false
 
 proc readLine*(prompt: string, current: var string, termwidth: int,
-               disallowed: set[char] = {}, hide = false, config: Config): bool =
-  readLine(prompt, current, termwidth, disallowed, hide, config, (proc(state: var LineState): bool = false))
+               disallowed: set[char] = {}, hide = false, config: Config,
+               tty: File): bool =
+  readLine(prompt, current, termwidth, disallowed, hide, config, tty, (proc(state: var LineState): bool = false))

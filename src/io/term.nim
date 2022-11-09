@@ -17,32 +17,34 @@ when defined(posix):
   import termios
 
   # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
-  let stdin_fileno = stdin.getFileHandle()
   var orig_termios: Termios
+  var stdin_fileno: FileHandle
   proc disableRawMode*() {.noconv.} =
     discard tcSetAttr(stdin_fileno, TCSAFLUSH, addr orig_termios)
 
-  proc enableRawMode*() =
+  proc enableRawMode*(fileno: FileHandle) =
+    eprint "raw mode"
+    stdin_fileno = fileno
     addExitProc(disableRawMode)
-    discard tcGetAttr(stdin_fileno, addr orig_termios)
+    discard tcGetAttr(fileno, addr orig_termios)
     var raw = orig_termios
     raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
     raw.c_oflag = raw.c_oflag and not (OPOST)
     raw.c_cflag = raw.c_cflag or CS8
     raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
-    discard tcSetAttr(stdin_fileno, TCSAFLUSH, addr raw)
+    discard tcSetAttr(fileno, TCSAFLUSH, addr raw)
 
   var orig_flags: cint
   var stdin_unblocked = false
-  proc unblockStdin*() =
-    orig_flags = fcntl(getFileHandle(stdin), F_GETFL, 0)
+  proc unblockStdin*(fileno: FileHandle) =
+    orig_flags = fcntl(fileno, F_GETFL, 0)
     let flags = orig_flags or O_NONBLOCK
-    discard fcntl(getFileHandle(stdin), F_SETFL, flags)
+    discard fcntl(fileno, F_SETFL, flags)
     stdin_unblocked = true
 
-  proc restoreStdin*() =
+  proc restoreStdin*(fileno: FileHandle) =
     if stdin_unblocked:
-      discard fcntl(getFileHandle(stdin), F_SETFL, orig_flags)
+      discard fcntl(fileno, F_SETFL, orig_flags)
       stdin_unblocked = false
 else:
   proc unblockStdin*(): cint =
@@ -51,11 +53,11 @@ else:
   proc restoreStdin*(flags: cint) =
     discard
 
-proc getTermAttributes*(): TermAttributes =
-  if stdin.isatty():
+proc getTermAttributes*(tty: File): TermAttributes =
+  if tty.isatty():
     when defined(posix):
       var win: IOctl_WinSize
-      if ioctl(cint(getOsFileHandle(stdout)), TIOCGWINSZ, addr win) != -1:
+      if ioctl(cint(getOsFileHandle(tty)), TIOCGWINSZ, addr win) != -1:
         result.ppc = int(win.ws_xpixel) div int(win.ws_col)
         result.ppl = int(win.ws_ypixel) div int(win.ws_row)
         # some terminals don't like it when we fill the last cell. #TODO make this optional

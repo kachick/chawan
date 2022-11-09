@@ -70,14 +70,16 @@ type
     loader*: FileLoader
     marks*: seq[Mark]
     config*: Config
+    tty: File
 
-proc newBuffer*(config: Config, loader: FileLoader): Buffer =
+proc newBuffer*(config: Config, loader: FileLoader, tty: File): Buffer =
   new(result)
-  result.attrs = getTermAttributes()
+  result.attrs = getTermAttributes(stdout)
   result.width = result.attrs.width
   result.height = result.attrs.height - 1
   result.config = config
   result.loader = loader
+  result.tty = tty
 
   result.display = newFixedGrid(result.width, result.height)
   result.prevdisplay = newFixedGrid(result.width, result.height)
@@ -788,7 +790,7 @@ proc cursorPrevMatch*(buffer: Buffer, regex: Regex, wrap = true): BufferMatch =
     return buffer.cursorPrevMatch(regex, buffer.lines.high, high)
 
 proc refreshTermAttrs*(buffer: Buffer): bool =
-  let newAttrs = getTermAttributes()
+  let newAttrs = getTermAttributes(stdout)
   if newAttrs != buffer.attrs:
     buffer.attrs = newAttrs
     buffer.width = newAttrs.width
@@ -1151,7 +1153,7 @@ proc click*(buffer: Buffer): Option[Request] =
         var value = input.value
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("SEARCH: ", value, buffer.width, {'\r', '\n'}, config = buffer.config)
+        let status = readLine("SEARCH: ", value, buffer.width, {'\r', '\n'}, config = buffer.config, tty = buffer.tty)
         if status:
           input.value = value
           input.invalid = true
@@ -1163,7 +1165,7 @@ proc click*(buffer: Buffer): Option[Request] =
         var value = input.value
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'}, input.inputType == INPUT_PASSWORD, config = buffer.config)
+        let status = readLine("TEXT: ", value, buffer.width, {'\r', '\n'}, input.inputType == INPUT_PASSWORD, config = buffer.config, tty = buffer.tty)
         if status:
           input.value = value
           input.invalid = true
@@ -1175,7 +1177,7 @@ proc click*(buffer: Buffer): Option[Request] =
           ""
         print(HVP(buffer.height + 1, 1))
         print(EL())
-        let status = readLine("Filename: ", path, buffer.width, {'\r', '\n'}, config = buffer.config)
+        let status = readLine("Filename: ", path, buffer.width, {'\r', '\n'}, config = buffer.config, tty = buffer.tty)
         if status:
           let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
           let path = parseUrl(path, cdir)
@@ -1214,7 +1216,7 @@ proc setupBuffer*(buffer: Buffer) =
   buffer.redraw = true
 
 proc dupeBuffer*(buffer: Buffer, location = none(URL)): Buffer =
-  let clone = newBuffer(buffer.config, buffer.loader)
+  let clone = newBuffer(buffer.config, buffer.loader, buffer.tty)
   clone.contenttype = buffer.contenttype
   clone.ispipe = buffer.ispipe
   if location.isSome:
