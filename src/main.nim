@@ -1,3 +1,4 @@
+import options
 import os
 import terminal
 
@@ -37,7 +38,7 @@ Options:
   quit(i)
 
 var i = 0
-var ctype = ""
+var ctype = none(string)
 var pages: seq[string]
 var dump = false
 var escape_all = false
@@ -54,7 +55,7 @@ while i < params.len:
   of "-T":
     inc i
     if i < params.len:
-      ctype = params[i]
+      ctype = some(params[i])
     else:
       help(1)
   of "-":
@@ -94,7 +95,7 @@ if pages.len == 0 and conf.startup == "":
   if stdin.isatty:
     help(1)
 
-conf.nmap = constructActionTable2(conf.nmap)
+conf.nmap = constructActionTable(conf.nmap)
 conf.lemap = constructActionTable(conf.lemap)
 
 width_table = makewidthtable(conf.ambiguous_double)

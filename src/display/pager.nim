@@ -1,13 +1,17 @@
 import options
 import os
+import streams
+import tables
 import terminal
 import unicode
 
+import std/selectors
+
+import buffer/buffer
+import buffer/cell
+import buffer/container
 import config/config
-import io/buffer
-import io/cell
 import io/lineedit
-import io/loader
 import io/request
 import io/term
 import js/javascript
@@ -16,26 +20,32 @@ import types/url
 import utils/twtstr
 
 type
-  Container = ref object
-    buffer*: Buffer
-    children: seq[Container]
-    pos: CursorPosition
-    parent: Container
-    sourcepair: Container
-    needsauth*: bool #TODO move to buffer?
-    redirecturl: Option[URL]
+  LineMode* = enum
+    NO_LINEMODE, LOCATION, USERNAME, PASSWORD, COMMAND, BUFFER, SEARCH_F,
+    SEARCH_B, ISEARCH_F, ISEARCH_B
 
   Pager* = ref object
     attrs: TermAttributes
     commandMode*: bool
     container*: Container
+    lineedit*: Option[LineEdit]
+    linemode*: LineMode
+    username: string
+    command*: string
     config: Config
-    loader: FileLoader
     regex: Option[Regex]
+    iregex: Option[Regex]
     reverseSearch: bool
     status*: seq[string]
+    statusmsg*: FixedGrid
     switched*: bool
     tty: File
+    selector*: Selector[Container]
+    fdmap*: Table[FileHandle, Container]
+    icpos: CursorPosition
+    display: FixedGrid
+    bheight*: int
+    bwidth*: int
 
 iterator containers*(pager: Pager): Container =
   if pager.container != nil:
@@ -48,194 +58,252 @@ iterator containers*(pager: Pager): Container =
       for i in countdown(c.children.high, 0):
         stack.add(c.children[i])
 
-iterator buffers*(pager: Pager): Buffer =
-  for container in pager.containers:
-    yield container.buffer
-
 proc setContainer*(pager: Pager, c: Container) =
   pager.container = c
   pager.switched = true
 
-proc cursorLeft(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorLeft()
-proc cursorDown(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorDown()
-proc cursorUp(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorUp()
-proc cursorRight(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorRight()
-proc cursorLineBegin(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorLineBegin()
-proc cursorLineEnd(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorLineEnd()
-proc cursorNextWord(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorNextWord()
-proc cursorPrevWord(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorPrevWord()
-proc cursorNextLink(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorNextLink()
-proc cursorPrevLink(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorPrevLink()
-proc pageDown(pager: Pager) {.jsfunc.} = pager.container.buffer.pageDown()
-proc pageUp(pager: Pager) {.jsfunc.} = pager.container.buffer.pageUp()
-proc pageRight(pager: Pager) {.jsfunc.} = pager.container.buffer.pageRight()
-proc pageLeft(pager: Pager) {.jsfunc.} = pager.container.buffer.pageLeft()
-proc halfPageDown(pager: Pager) {.jsfunc.} = pager.container.buffer.halfPageDown()
-proc halfPageUp(pager: Pager) {.jsfunc.} = pager.container.buffer.halfPageUp()
-proc cursorFirstLine(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorFirstLine()
-proc cursorLastLine(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorLastLine()
-proc cursorTop(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorTop()
-proc cursorMiddle(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorMiddle()
-proc cursorBottom(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorBottom()
-proc cursorLeftEdge(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorLeftEdge()
-proc cursorVertMiddle(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorVertMiddle()
-proc cursorRightEdge(pager: Pager) {.jsfunc.} = pager.container.buffer.cursorRightEdge()
-proc centerLine(pager: Pager) {.jsfunc.} = pager.container.buffer.centerLine()
-proc scrollDown(pager: Pager) {.jsfunc.} = pager.container.buffer.scrollDown()
-proc scrollUp(pager: Pager) {.jsfunc.} = pager.container.buffer.scrollUp()
-proc scrollLeft(pager: Pager) {.jsfunc.} = pager.container.buffer.scrollLeft()
-proc scrollRight(pager: Pager) {.jsfunc.} = pager.container.buffer.scrollRight()
-proc lineInfo(pager: Pager) {.jsfunc.} = pager.container.buffer.lineInfo()
-proc reshape(pager: Pager) {.jsfunc.} = pager.container.buffer.reshape = true
-proc redraw(pager: Pager) {.jsfunc.} = pager.container.buffer.redraw = true
+proc cursorDown(pager: Pager) {.jsfunc.} = pager.container.cursorDown()
+proc cursorUp(pager: Pager) {.jsfunc.} = pager.container.cursorUp()
+proc cursorLeft(pager: Pager) {.jsfunc.} = pager.container.cursorLeft()
+proc cursorRight(pager: Pager) {.jsfunc.} = pager.container.cursorRight()
+proc cursorLineBegin(pager: Pager) {.jsfunc.} = pager.container.cursorLineBegin()
+proc cursorLineEnd(pager: Pager) {.jsfunc.} = pager.container.cursorLineEnd()
+proc cursorNextWord(pager: Pager) {.jsfunc.} = pager.container.cursorNextWord()
+proc cursorPrevWord(pager: Pager) {.jsfunc.} = pager.container.cursorPrevWord()
+proc cursorNextLink(pager: Pager) {.jsfunc.} = pager.container.cursorNextLink()
+proc cursorPrevLink(pager: Pager) {.jsfunc.} = pager.container.cursorPrevLink()
+proc pageUp(pager: Pager) {.jsfunc.} = pager.container.pageUp()
+proc pageDown(pager: Pager) {.jsfunc.} = pager.container.pageDown()
+proc pageRight(pager: Pager) {.jsfunc.} = pager.container.pageRight()
+proc pageLeft(pager: Pager) {.jsfunc.} = pager.container.pageLeft()
+proc halfPageDown(pager: Pager) {.jsfunc.} = pager.container.halfPageDown()
+proc halfPageUp(pager: Pager) {.jsfunc.} = pager.container.halfPageUp()
+proc cursorFirstLine(pager: Pager) {.jsfunc.} = pager.container.cursorFirstLine()
+proc cursorLastLine(pager: Pager) {.jsfunc.} = pager.container.cursorLastLine()
+proc cursorTop(pager: Pager) {.jsfunc.} = pager.container.cursorTop()
+proc cursorMiddle(pager: Pager) {.jsfunc.} = pager.container.cursorMiddle()
+proc cursorBottom(pager: Pager) {.jsfunc.} = pager.container.cursorBottom()
+proc cursorLeftEdge(pager: Pager) {.jsfunc.} = pager.container.cursorLeftEdge()
+proc cursorVertMiddle(pager: Pager) {.jsfunc.} = pager.container.cursorVertMiddle()
+proc cursorRightEdge(pager: Pager) {.jsfunc.} = pager.container.cursorRightEdge()
+proc centerLine(pager: Pager) {.jsfunc.} = pager.container.centerLine()
+proc scrollDown(pager: Pager) {.jsfunc.} = pager.container.scrollDown()
+proc scrollUp(pager: Pager) {.jsfunc.} = pager.container.scrollUp()
+proc scrollLeft(pager: Pager) {.jsfunc.} = pager.container.scrollLeft()
+proc scrollRight(pager: Pager) {.jsfunc.} = pager.container.scrollRight()
+proc reshape(pager: Pager) {.jsfunc.} = pager.container.render()
 
 proc searchNext(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
     if not pager.reverseSearch:
-      discard pager.container.buffer.cursorNextMatch(pager.regex.get)
+      pager.container.cursorNextMatch(pager.regex.get, true)
     else:
-      discard pager.container.buffer.cursorPrevMatch(pager.regex.get)
+      pager.container.cursorPrevMatch(pager.regex.get, true)
 
 proc searchPrev(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
     if not pager.reverseSearch:
-      discard pager.container.buffer.cursorPrevMatch(pager.regex.get)
+      pager.container.cursorPrevMatch(pager.regex.get, true)
     else:
-      discard pager.container.buffer.cursorNextMatch(pager.regex.get)
+      pager.container.cursorNextMatch(pager.regex.get, true)
 
 proc statusMode(pager: Pager) =
   print(HVP(pager.attrs.height + 1, 1))
   print(EL())
 
-proc search(pager: Pager) {.jsfunc.} =
+proc setLineEdit(pager: Pager, edit: LineEdit, mode: LineMode) =
   pager.statusMode()
-  var iput: string
-  let status = readLine("/", iput, pager.attrs.width, config = pager.config, tty = pager.tty)
-  if status:
-    if iput.len != 0:
-      pager.regex = compileSearchRegex(iput)
-    pager.reverseSearch = false
-    pager.searchNext()
+  edit.writeStart()
+  stdout.flushFile()
+  pager.lineedit = some(edit)
+  pager.linemode = mode
 
-proc searchBack(pager: Pager) {.jsfunc.} =
-  pager.statusMode()
-  var iput: string
-  let status = readLine("?", iput, pager.attrs.width, config = pager.config, tty = pager.tty)
-  if status:
-    if iput.len != 0:
-      pager.regex = compileSearchRegex(iput)
-    pager.reverseSearch = true
-    pager.searchNext()
+proc clearLineEdit(pager: Pager) =
+  pager.lineedit = none(LineEdit)
 
-proc displayPage*(pager: Pager) =
-  let buffer = pager.container.buffer
-  if pager.switched or buffer.refreshBuffer():
-    pager.switched = false
-    stdout.hideCursor()
-    print(buffer.generateFullOutput())
-    stdout.showCursor()
+proc searchForward(pager: Pager) {.jsfunc.} =
+  pager.setLineEdit(readLine("/", pager.attrs.width, config = pager.config, tty = pager.tty), SEARCH_F)
 
-proc isearch(pager: Pager) {.jsfunc.} =
-  pager.statusMode()
-  var iput: string
-  let cpos = pager.container.buffer.cpos
-  var mark: Mark
-  template del_mark() =
-    if mark != nil:
-      pager.container.buffer.removeMark(mark)
+proc searchBackward(pager: Pager) {.jsfunc.} =
+  pager.setLineEdit(readLine("?", pager.attrs.width, config = pager.config, tty = pager.tty), SEARCH_B)
 
-  let status = readLine("/", iput, pager.attrs.width, {}, false, pager.config, pager.tty, (proc(state: var LineState): bool =
-    del_mark
-    let regex = compileSearchRegex($state.news)
-    pager.container.buffer.cpos = cpos
-    if regex.issome:
-      let match = pager.container.buffer.cursorNextMatch(regex.get)
-      if match.success:
-        mark = pager.container.buffer.addMark(match.x, match.y, match.str.width())
-        pager.container.buffer.redraw = true
-        pager.container.buffer.refreshBuffer(true)
-        pager.displayPage()
-        print(HVP(pager.attrs.height + 1, 2))
-        print(SGR())
-      else:
-        del_mark
-        pager.container.buffer.redraw = true
-        pager.container.buffer.refreshBuffer(true)
-        pager.displayPage()
-        print(HVP(pager.attrs.height + 1, 2))
-        print(SGR())
-      return true
-    false
-  ))
+proc isearchForward(pager: Pager) {.jsfunc.} =
+  pager.container.pushCursorPos()
+  pager.setLineEdit(readLine("/", pager.attrs.width, config = pager.config, tty = pager.tty), ISEARCH_F)
 
-  del_mark
-  pager.container.buffer.redraw = true
-  pager.container.buffer.refreshBuffer(true)
-  if status:
-    pager.regex = compileSearchRegex(iput)
-  else:
-    pager.container.buffer.cpos = cpos
+proc isearchBackward(pager: Pager) {.jsfunc.} =
+  pager.container.pushCursorPos()
+  pager.setLineEdit(readLine("?", pager.attrs.width, config = pager.config, tty = pager.tty), ISEARCH_B)
 
-proc isearchBack(pager: Pager) {.jsfunc.} =
-  pager.statusMode()
-  var iput: string
-  let cpos = pager.container.buffer.cpos
-  var mark: Mark
-  template del_mark() =
-    if mark != nil:
-      pager.container.buffer.removeMark(mark)
-  let status = readLine("?", iput, pager.container.buffer.width, {}, false, pager.config, pager.tty, (proc(state: var LineState): bool =
-    del_mark
-    let regex = compileSearchRegex($state.news)
-    pager.container.buffer.cpos = cpos
-    if regex.issome:
-      let match = pager.container.buffer.cursorPrevMatch(regex.get)
-      if match.success:
-        mark = pager.container.buffer.addMark(match.x, match.y, match.str.width())
-        pager.container.buffer.redraw = true
-        pager.container.buffer.refreshBuffer(true)
-        pager.displayPage()
-        print(HVP(pager.attrs.height + 1, 2))
-        print(SGR())
-      else:
-        del_mark
-        pager.container.buffer.redraw = true
-        pager.container.buffer.refreshBuffer(true)
-        pager.displayPage()
-        print(HVP(pager.attrs.height + 1, 2))
-        print(SGR())
-      return true
-    false
-  ))
-  del_mark
-  pager.container.buffer.redraw = true
-  if status:
-    pager.regex = compileSearchRegex(iput)
-  else:
-    pager.container.buffer.cpos = cpos
-
-proc newContainer(buffer: Buffer, parent: Container): Container =
-  new(result)
-  result.buffer = buffer
-  result.parent = parent
-
-proc newPager*(config: Config, attrs: TermAttributes, loader: FileLoader, tty: File): Pager =
+proc newPager*(config: Config, attrs: TermAttributes, tty: File): Pager =
   new(result)
   result.config = config
   result.attrs = attrs
-  result.loader = loader
   result.tty = tty
+  result.selector = newSelector[Container]()
+  result.bwidth = attrs.width - 1 # writing to the last column is a bad idea it seems
+  result.bheight = attrs.height - 1
+  result.display = newFixedGrid(result.bwidth, result.bheight)
 
-proc addBuffer*(pager: Pager, buffer: Buffer) =
-  var ncontainer = newContainer(buffer, pager.container)
+proc clearDisplay(pager: Pager) =
+  pager.display = newFixedGrid(pager.bwidth, pager.bheight)
+
+proc refreshDisplay*(pager: Pager, container = pager.container) =
+  var r: Rune
+  var by = 0
+  pager.clearDisplay()
+  for line in container.ilines(container.fromy ..< min(container.fromy + pager.bheight, container.numLines)):
+    var w = 0 # width of the row so far
+    var i = 0 # byte in line.str
+    # Skip cells till buffer.fromx.
+    while w < container.fromx and i < line.str.len:
+      fastRuneAt(line.str, i, r)
+      w += r.width()
+    let dls = by * container.width # starting position of row in display
+    # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
+    # we encountered a double-width character.)
+    var k = 0
+    if w > container.fromx:
+      while k < w - container.fromx:
+        pager.display[dls + k].str &= ' '
+        inc k
+    var cf = line.findFormat(w)
+    var nf = line.findNextFormat(w)
+    let startw = w # save this for later
+    # Now fill in the visible part of the row.
+    while i < line.str.len:
+      let pw = w
+      fastRuneAt(line.str, i, r)
+      w += r.width()
+      if w > container.fromx + pager.bwidth:
+        break # die on exceeding the width limit
+      if nf.pos != -1 and nf.pos <= pw:
+        cf = nf
+        nf = line.findNextFormat(pw)
+      pager.display[dls + k].str &= r
+      if cf.pos != -1:
+        pager.display[dls + k].format = cf.format
+      let tk = k + r.width()
+      while k < tk and k < pager.bwidth - 1:
+        inc k
+    # Then, for each cell that has a mark, override its formatting with that
+    # specified by the mark.
+    #TODO honestly this was always broken anyways. not sure about how to re-implement it
+    #var l = 0
+    #while l < pager.marks.len and buffer.marks[l].y < by:
+    #  inc l # linear search to find the first applicable mark
+    #let aw = buffer.width - (startw - buffer.fromx) # actual width
+    #while l < buffer.marks.len and buffer.marks[l].y == by:
+    #  let mark = buffer.marks[l]
+    #  inc l
+    #  if mark.x >= startw + aw or mark.x + mark.width < startw: continue
+    #  for i in max(mark.x, startw)..<min(mark.x + mark.width, startw + aw):
+    #    buffer.display[dls + i - startw].format = mark.format
+    inc by
+
+func generateStatusMessage*(pager: Pager): string =
+  var format = newFormat()
+  var w = 0
+  for cell in pager.statusmsg:
+    result &= format.processFormat(cell.format)
+    result &= cell.str
+    w += cell.width()
+  if w < pager.bwidth:
+    result &= EL()
+
+proc clearStatusMessage(pager: Pager) =
+  pager.statusmsg = newFixedGrid(pager.bwidth)
+
+proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
+  pager.clearStatusMessage()
+  var i = 0
+  for r in str.runes:
+    i += r.width()
+    if i >= pager.statusmsg.len:
+      pager.statusmsg[^1].str = "$"
+      break
+    pager.statusmsg[i].str &= r
+    pager.statusmsg[i].format = format
+
+proc refreshStatusMsg*(pager: Pager) =
+  let container = pager.container
+  if container != nil:
+    var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
+              $container.atPercentOf() & "%) " & "<" & container.getTitle() & ">"
+    if container.hovertext.len > 0:
+      msg &= " " & container.hovertext
+    var format: Format
+    format.reverse = true
+    pager.writeStatusMessage(msg, format)
+
+func generateStatusOutput(pager: Pager): string =
+  if pager.status.len > 0:
+    result = pager.status[0] & EL()
+    pager.status = pager.status[1..^1]
+  else:
+    return pager.generateStatusMessage()
+
+func generateFullOutput(pager: Pager): string =
+  var x = 0
+  var w = 0
+  var format = newFormat()
+  result &= HVP(1, 1)
+  for cell in pager.display:
+    if x >= pager.bwidth:
+      result &= EL()
+      result &= "\r\n"
+      x = 0
+      w = 0
+    result &= format.processFormat(cell.format)
+    result &= cell.str
+    w += cell.width()
+    inc x
+  result &= EL()
+  result &= "\r\n"
+
+proc displayCursor*(pager: Pager) =
+  if pager.container == nil: return
+  print(HVP(pager.container.acursory + 1, pager.container.acursorx + 1))
+  stdout.flushFile()
+
+proc displayStatus*(pager: Pager) =
+  if pager.lineedit.isNone:
+    pager.statusMode()
+    print(pager.generateStatusOutput())
+    stdout.flushFile()
+
+proc displayPage*(pager: Pager) =
+  stdout.hideCursor()
+  print(SGR())
+  print(pager.generateFullOutput())
+  pager.displayStatus()
+  pager.displayCursor()
+  stdout.showCursor()
+  if pager.lineedit.isSome:
+    pager.statusMode()
+    pager.lineedit.get.writePrompt()
+    pager.lineedit.get.fullRedraw()
+  stdout.flushFile()
+
+proc redraw(pager: Pager) {.jsfunc.} =
+  pager.refreshDisplay()
+  pager.refreshStatusMsg()
+  pager.displayPage()
+
+proc addContainer*(pager: Pager, container: Container) =
+  container.parent = pager.container
   if pager.container != nil:
-    pager.container.children.add(ncontainer)
-  pager.setContainer(ncontainer)
+    pager.container.children.add(container)
+  pager.setContainer(container)
+  assert int(container.ifd) != 0
+  pager.fdmap[container.ifd] = container
+  pager.selector.registerHandle(int(container.ifd), {Read}, pager.container)
+
+proc dupeContainer(pager: Pager, container: Container, location: Option[URL]): Container =
+  return container.dupeBuffer(pager.config, location)
 
 proc dupeBuffer*(pager: Pager, location = none(URL)) {.jsfunc.} =
-  var clone: Buffer
-  clone = pager.container.buffer.dupeBuffer(location)
-  pager.addBuffer(clone)
+  pager.addContainer(pager.dupeContainer(pager.container, location))
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
@@ -244,15 +312,13 @@ proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
     return false
   if pager.container.parent == nil:
     return false
-  for i in 0..pager.container.parent.children.high:
-    let child = pager.container.parent.children[i]
-    if child == pager.container:
-      if i > 0:
-        pager.setContainer(pager.container.parent.children[i - 1])
-      else:
-        pager.setContainer(pager.container.parent)
-      return true
-  assert false, "Container not a child of its parent"
+  let n = pager.container.parent.children.find(pager.container)
+  assert n != -1, "Container not a child of its parent"
+  if n > 0:
+    pager.setContainer(pager.container.parent.children[n - 1])
+  else:
+    pager.setContainer(pager.container.parent)
+  return true
 
 proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
   if pager.container == nil:
@@ -262,95 +328,97 @@ proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
     return true
   if pager.container.parent == nil:
     return false
-  for i in countdown(pager.container.parent.children.high, 0):
-    let child = pager.container.parent.children[i]
-    if child == pager.container:
-      if i < pager.container.parent.children.high:
-        pager.setContainer(pager.container.parent.children[i + 1])
-        return true
-      return false
-  assert false, "Container not a child of its parent"
+  let n = pager.container.parent.children.find(pager.container)
+  assert n != -1, "Container not a child of its parent"
+  if n < pager.container.parent.children.high:
+    pager.setContainer(pager.container.parent.children[n + 1])
+    return true
+  return false
 
-#TODO we should have a separate status message stack for all buffers AND the
-# pager.
-proc setStatusMessage(pager: Pager, msg: string) =
-  if pager.container != nil:
-    pager.container.buffer.setStatusMessage(msg)
+proc setStatusMessage*(pager: Pager, msg: string) =
+  pager.status.add(msg)
+  pager.refreshStatusMsg()
+
+proc lineInfo(pager: Pager) {.jsfunc.} =
+  pager.setStatusMessage(pager.container.lineInfo())
+
+proc deleteContainer(pager: Pager, container: Container) =
+  if container.parent == nil and container.children.len == 0 and container != pager.container:
+    return
+  if container.parent != nil:
+    let parent = container.parent
+    let n = parent.children.find(container)
+    assert n != -1, "Container not a child of its parent"
+    for i in countdown(container.children.high, 0):
+      let child = container.children[i]
+      child.parent = container.parent
+      parent.children.insert(child, n + 1)
+    parent.children.delete(n)
+    if container == pager.container:
+      pager.setContainer(parent)
+  elif container.children.len > 0:
+    let parent = container.children[0]
+    parent.parent = nil
+    for i in 1..container.children.high:
+      container.children[i].parent = parent
+      parent.children.add(container.children[i])
+    if container == pager.container:
+      pager.setContainer(parent)
   else:
-    pager.status.add(msg)
+    for child in container.children:
+      child.parent = nil
+    if container == pager.container:
+      pager.setContainer(nil)
+  container.parent = nil
+  container.children.setLen(0)
+  pager.fdmap.del(container.ifd)
+  pager.selector.unregister(int(container.ifd))
+  container.istream.close()
+  container.ostream.close()
 
 proc discardBuffer*(pager: Pager) {.jsfunc.} =
-  if pager.container.parent == nil and pager.container.children.len == 0:
+  if pager.container == nil or pager.container.parent == nil and
+      pager.container.children.len == 0:
     pager.setStatusMessage("Cannot discard last buffer!")
   else:
-    if pager.container.parent != nil:
-      let parent = pager.container.parent
-      let n = parent.children.find(pager.container)
-      assert n != -1, "Container not a child of its parent"
-      for i in countdown(pager.container.children.high, 0):
-        let child = pager.container.children[i]
-        child.parent = pager.container.parent
-        parent.children.insert(child, n + 1)
-      parent.children.delete(n)
-      pager.setContainer(parent)
-    else:
-      pager.setContainer(pager.container.children[0])
-      pager.container.parent = nil
-
-proc drawBuffer*(pager: Pager) {.jsfunc.} =
-  pager.container.buffer.drawBuffer() #TODO move this to pager
+    pager.deleteContainer(pager.container)
 
 proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let buffer = newBuffer(pager.config, pager.tty)
-    buffer.source = pager.container.buffer.source
-    buffer.streamclosed = true
-    buffer.location = pager.container.buffer.location
-    buffer.ispipe = pager.container.buffer.ispipe
-    if pager.container.buffer.contenttype == "text/plain":
-      buffer.contenttype = "text/html"
+    let contenttype = if pager.container.contenttype.get("") == "text/html":
+      some("text/plain")
     else:
-      buffer.contenttype = "text/plain"
-    buffer.setupBuffer()
-    let container = newContainer(buffer, pager.container)
+      some("text/html")
+    let container = pager.container.dupeBuffer(pager.config, contenttype = contenttype)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.container.children.add(container)
 
 # Load request in a new buffer.
-proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), force = false, ctype = "", replace = false): bool {.discardable.} =
-  if force or prevurl.isnone or not prevurl.get.equals(request.url, true) or
+proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(string), replace: Container = nil) =
+  if prevurl.isnone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpmethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
-    # a) force == true
+    # a) we force a reload (by setting prevurl to none)
     # b) or the new URL isn't just the old URL + an anchor
     # I think this makes navigation pretty natural, or at least very close to
     # what other browsers do. Still, it would be nice if we got some visual
     # feedback on what is actually going to happen when typing a URL; TODO.
-    let response = pager.loader.doRequest(request)
-    if response.body != nil:
-      let buffer = newBuffer(pager.config, pager.tty)
-      buffer.contenttype = if ctype != "": ctype else: response.contenttype
-      buffer.istream = response.body
-      buffer.location = request.url
-      buffer.setupBuffer()
-      if replace:
-        pager.discardBuffer()
-      pager.addBuffer(buffer)
-      pager.container.needsauth = response.status == 401 # Unauthorized
-      pager.container.redirecturl = response.redirect
-    else:
-      pager.setStatusMessage("Couldn't load " & $request.url & " (" & $response.res & ")")
-      return false
+    let source = BufferSource(
+      t: LOAD_REQUEST,
+      request: request,
+      contenttype: ctype,
+      location: request.url
+    )
+    let container = newBuffer(pager.config, source, pager.tty.getFileHandle())
+    container.replace = replace
+    pager.addContainer(container)
+    container.load()
   else:
-    if pager.container.buffer.hasAnchor(request.url.anchor):
-      pager.dupeBuffer(request.url.some)
-    else:
-      pager.setStatusMessage("Couldn't find anchor " & request.url.anchor)
-      return false
-  return true
+    pager.container.redirect = some(request.url)
+    pager.container.gotoAnchor(request.url.anchor)
 
 # When the user has passed a partial URL as an argument, they might've meant
 # either:
@@ -358,90 +426,198 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), force = false
 # * https://<url>
 # So we attempt to load both, and see what works.
 # (TODO: make this optional)
-proc loadURL*(pager: Pager, url: string, force = false, ctype = "") =
+proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
   let firstparse = parseURL(url)
   if firstparse.issome:
     let prev = if pager.container != nil:
-      some(pager.container.buffer.location)
+      some(pager.container.source.location)
     else:
       none(URL)
-    pager.gotoURL(newRequest(firstparse.get), prev, force, ctype)
+    pager.gotoURL(newRequest(firstparse.get), prev, ctype)
     return
+  var urls: seq[URL]
+  let pageurl = parseURL("https://" & url)
+  if pageurl.isSome: # attempt to load remote page
+    urls.add(pageurl.get)
   let cdir = parseURL("file://" & getCurrentDir() & DirSep)
-  let newurl = parseURL(url, cdir)
-  if newurl.isSome:
-    # attempt to load local file
-    if pager.gotoURL(newRequest(newurl.get), force = force, ctype = ctype):
-      return
-  block:
-    let purl = percentEncode(url, LocalPathPercentEncodeSet)
-    if purl != url:
-      let newurl = parseURL(purl, cdir)
-      if newurl.isSome:
-        if pager.gotoURL(newRequest(newurl.get), force = force, ctype = ctype):
-          pager.status.setLen(0)
-          return
-  block:
-    let newurl = parseURL("https://" & url)
+  let purl = percentEncode(url, LocalPathPercentEncodeSet)
+  if purl != url:
+    let newurl = parseURL(purl, cdir)
     if newurl.isSome:
-      # attempt to load remote page
-      if pager.gotoURL(newRequest(newurl.get), force = force, ctype = ctype):
-        pager.status.setLen(0)
-        return
-  pager.setStatusMessage("Invalid URL " & url)
+      urls.add(newurl.get)
+  let localurl = parseURL(url, cdir)
+  if localurl.isSome: # attempt to load local file
+    urls.add(localurl.get)
+  if urls.len == 0:
+    pager.setStatusMessage("Invalid URL " & url)
+  else:
+    let prevc = pager.container
+    pager.gotoURL(newRequest(urls.pop()), ctype = ctype)
+    if pager.container != prevc:
+      pager.container.retry = urls
+
+proc readPipe*(pager: Pager, ctype: Option[string]) =
+  let source = BufferSource(
+    t: LOAD_PIPE,
+    fd: stdin.getFileHandle(),
+    contenttype: some(ctype.get("text/plain")),
+    location: parseUrl("file://-").get
+  )
+  let container = newBuffer(pager.config, source, pager.tty.getFileHandle(), ispipe = true)
+  pager.addContainer(container)
+  container.load()
+
+proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
+  let lineedit = pager.lineedit.get
+  case lineedit.state
+  of CANCEL:
+    pager.iregex = none(Regex)
+    pager.container.popCursorPos()
+  of EDIT:
+    let x = $lineedit.news
+    if x != "": pager.iregex = compileSearchRegex(x)
+    pager.container.popCursorPos()
+    if pager.iregex.isSome:
+      if linemode == ISEARCH_F:
+        pager.container.cursorNextMatch(pager.iregex.get, true)
+      else:
+        pager.container.cursorPrevMatch(pager.iregex.get, true)
+    pager.container.pushCursorPos()
+    pager.displayPage()
+    pager.statusMode()
+    pager.lineedit.get.fullRedraw()
+  of FINISH:
+    if pager.iregex.isSome:
+      pager.regex = pager.iregex
+    pager.reverseSearch = linemode == ISEARCH_B
+
+proc updateReadLine*(pager: Pager) =
+  let lineedit = pager.lineedit.get
+  template s: string = $lineedit.news
+  if pager.linemode in {ISEARCH_F, ISEARCH_B}:
+    pager.updateReadLineISearch(pager.linemode)
+  else:
+    case lineedit.state
+    of EDIT: return
+    of FINISH:
+      case pager.linemode
+      of LOCATION: pager.loadURL(s)
+      of USERNAME:
+        pager.username = s
+        pager.setLineEdit(readLine("Password: ", pager.attrs.width, hide = true, config = pager.config, tty = pager.tty), PASSWORD)
+      of PASSWORD:
+        let url = newURL(pager.container.source.location)
+        url.username = pager.username
+        url.password = s
+        pager.username = ""
+        pager.gotoURL(newRequest(url), some(pager.container.source.location), replace = pager.container)
+      of COMMAND: pager.command = s
+      of BUFFER: pager.container.readSuccess(s)
+      of SEARCH_F:
+        let x = s
+        if x != "": pager.regex = compileSearchRegex(x)
+        pager.reverseSearch = false
+        pager.searchNext()
+      of SEARCH_B:
+        let x = s
+        if x != "": pager.regex = compileSearchRegex(x)
+        pager.reverseSearch = true
+        pager.searchPrev()
+      else: discard
+    of CANCEL:
+      case pager.linemode
+      of USERNAME: pager.discardBuffer()
+      of PASSWORD:
+        pager.username = ""
+        pager.discardBuffer()
+      of BUFFER: pager.container.readCanceled()
+      else: discard
+  if lineedit.state in {CANCEL, FINISH}:
+    if pager.lineedit.get == lineedit:
+      pager.clearLineEdit()
+    print('\r')
+    print(EL())
+    pager.displayPage()
 
 # Open a URL prompt and visit the specified URL.
 proc changeLocation(pager: Pager) {.jsfunc.} =
-  var url = pager.container.buffer.location.serialize()
-  pager.statusMode()
-  let status = readLine("URL: ", url, pager.attrs.width, config = pager.config, tty = pager.tty)
-  if status:
-    pager.loadURL(url)
+  var url = pager.container.source.location.serialize()
+  pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, config = pager.config, tty = pager.tty), LOCATION)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reloadPage(pager: Pager) {.jsfunc.} =
-  pager.gotoURL(newRequest(pager.container.buffer.location), none(URL), true, pager.container.buffer.contenttype, true)
+  pager.gotoURL(newRequest(pager.container.source.location), none(URL), pager.container.contenttype, pager.container)
 
 proc click(pager: Pager) {.jsfunc.} =
-  #TODO this conflicts with the planned event loop
-  let req = pager.container.buffer.click()
-  if req.issome:
-    pager.gotoURL(req.get, pager.container.buffer.location.some)
+  pager.container.click()
 
-proc followRedirect*(pager: Pager)
+proc authorize*(pager: Pager) =
+  pager.setLineEdit(readLine("Username: ", pager.attrs.width, config = pager.config, tty = pager.tty), USERNAME)
 
-proc checkAuth*(pager: Pager) =
-  if pager.container != nil and pager.container.needsauth:
-    pager.container.buffer.refreshBuffer()
-    pager.statusMode()
-    var username = ""
-    let ustatus = readLine("Username: ", username, pager.attrs.width, config = pager.config, tty = pager.tty)
-    if not ustatus:
-      pager.container.needsauth = false
-      return
-    pager.statusMode()
-    var password = ""
-    let pstatus = readLine("Password: ", password, pager.attrs.width, hide = true, config = pager.config, tty = pager.tty)
-    if not pstatus:
-      pager.container.needsauth = false
-      return
-    var url = pager.container.buffer.location
-    url.username = username
-    url.password = password
-    pager.gotoURL(newRequest(url), prevurl = some(pager.container.buffer.location), replace = true)
-    pager.followRedirect()
-
-proc followRedirect*(pager: Pager) =
-  while pager.container != nil and pager.container.redirecturl.issome:
-    pager.statusMode()
-    print("Redirecting to ", $pager.container.redirecturl.get)
-    stdout.flushFile()
-    pager.container.buffer.refreshBuffer(true)
-    let redirecturl = pager.container.redirecturl.get
-    pager.container.redirecturl = none(URL)
-    pager.gotoURL(newRequest(redirecturl), prevurl = some(pager.container.buffer.location), replace = true)
-    if pager.container.needsauth:
-      pager.checkAuth()
+proc handleEvent*(pager: Pager, container: Container): bool =
+  let event = container.handleEvent()
+  case event.t
+  of FAIL:
+    pager.deleteContainer(container)
+    if container.retry.len > 0:
+      pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
+    else:
+      pager.setStatusMessage("Couldn't load " & $container.source.location & " (error code " & $container.code & ")")
+      pager.displayStatus()
+      pager.displayCursor()
+    if pager.container == nil:
+      return false
+  of SUCCESS:
+    container.render()
+    if container.replace != nil:
+      container.children.add(container.replace.children)
+      for child in container.children:
+        child.parent = container
+      container.replace.children.setLen(0)
+      if container.replace.parent != nil:
+        container.parent = container.replace.parent
+        let n = container.replace.parent.children.find(container.replace)
+        assert n != -1, "Container not a child of its parent"
+        container.parent.children[n] = container
+      if pager.container == container.replace:
+        pager.setContainer(container)
+  of NEEDS_AUTH:
+    if pager.container == container:
+      pager.authorize()
+  of REDIRECT:
+    let redirect = container.redirect.get
+    pager.setStatusMessage("Redirecting to " & $redirect)
+    pager.displayStatus()
+    pager.displayCursor()
+    pager.gotoURL(newRequest(redirect), some(pager.container.source.location), replace = pager.container)
+  of ANCHOR:
+    pager.addContainer(pager.dupeContainer(container, container.redirect))
+  of NO_ANCHOR:
+    pager.setStatusMessage("Couldn't find anchor " & container.redirect.get.anchor)
+    pager.displayStatus()
+    pager.displayCursor()
+  of UPDATE:
+    if container == pager.container:
+      pager.refreshDisplay()
+      pager.refreshStatusMsg()
+      pager.displayPage()
+  of JUMP:
+    if container == pager.container:
+      pager.refreshStatusMsg()
+      pager.displayStatus()
+      pager.displayCursor()
+  of STATUS:
+    if container == pager.container:
+      pager.refreshStatusMsg()
+      pager.displayStatus()
+      pager.displayCursor()
+  of READ_LINE:
+    if container == pager.container:
+      pager.setLineEdit(readLine(event.prompt, pager.bwidth, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
+  of OPEN:
+    pager.gotoURL(event.request, some(container.source.location))
+  of NO_EVENT: discard
+  return true
 
 proc addPagerModule*(ctx: JSContext) =
   ctx.registerType(Pager)

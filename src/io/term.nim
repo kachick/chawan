@@ -23,7 +23,6 @@ when defined(posix):
     discard tcSetAttr(stdin_fileno, TCSAFLUSH, addr orig_termios)
 
   proc enableRawMode*(fileno: FileHandle) =
-    eprint "raw mode"
     stdin_fileno = fileno
     addExitProc(disableRawMode)
     discard tcGetAttr(fileno, addr orig_termios)

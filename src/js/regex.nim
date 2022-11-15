@@ -19,6 +19,9 @@ export
 type
   Regex* = object
     bytecode*: ptr uint8
+    plen*: cint
+    clone*: bool
+    buf*: string
 
   RegexResult* = object
     success*: bool
@@ -29,19 +32,20 @@ var dummyContext = dummyRuntime.newJSContextRaw()
 
 proc `=destroy`(regex: var Regex) =
   if regex.bytecode != nil:
-    dummyRuntime.js_free_rt(regex.bytecode)
+    if regex.clone:
+      dealloc(regex.bytecode)
+    else:
+      dummyRuntime.js_free_rt(regex.bytecode)
     regex.bytecode = nil
 
 proc compileRegex*(buf: string, flags: int): Option[Regex] =
   var regex: Regex
-  var len: cint
   var error_msg_size = 64
   var error_msg = cast[cstring](alloc0(error_msg_size))
-  let bytecode = lre_compile(addr len, error_msg, cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags), dummyContext)
-
+  let bytecode = lre_compile(addr regex.plen, error_msg, cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags), dummyContext)
+  regex.buf = buf
   if error_msg != nil:
     #TODO error handling?
-    #eprint "err", error_msg
     dealloc(error_msg)
     error_msg = nil
   if bytecode == nil:
@@ -80,8 +84,8 @@ proc compileSearchRegex*(str: string): Option[Regex] =
     else: assert false
   return compileRegex(str.substr(0, flagsi - 1), flags)
 
-proc exec*(regex: Regex, str: string, start = 0): RegexResult =
-  assert 0 <= start and start <= str.len
+proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult =
+  assert 0 <= start and start <= length, "Start: " & $start & ", length: " & $length & " str: " & $str
 
   let captureCount = lre_get_capture_count(regex.bytecode)
 
@@ -97,12 +101,15 @@ proc exec*(regex: Regex, str: string, start = 0): RegexResult =
       break
   var ustr: string16
   if not ascii:
-    ustr = toUTF16(str)
+    if start != 0 or length != str.len:
+      ustr = toUTF16(str.substr(start, length))
+    else:
+      ustr = toUTF16(str)
     cstr = cstring(ustr)
 
   let ret = lre_exec(capture, regex.bytecode,
                      cast[ptr uint8](cstr), cint(start),
-                     cint(str.len), cint(not ascii), dummyContext)
+                     cint(length), cint(not ascii), dummyContext)
 
   result.success = ret == 1 #TODO error handling? (-1)
 

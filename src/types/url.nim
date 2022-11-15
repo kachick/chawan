@@ -947,6 +947,14 @@ proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
         first = false
         params.list[i][1] = value
 
+proc newURL*(url: URL): URL =
+  new(result)
+  result[] = url[]
+  if url.searchParams != nil: #TODO ideally this should never be false
+    result.searchParams = URLSearchParams()
+    result.searchParams[] = url.searchParams[]
+    result.searchParams.url = some(result)
+
 #TODO add Option wrapper
 proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jsctor.} =
   if base.issome:

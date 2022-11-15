@@ -76,10 +76,11 @@ proc loadResource(loader: FileLoader, request: Request, ostream: Stream) =
     ostream.swrite(-1) # error
     ostream.flush()
 
+var ssock: ServerSocket
 proc runFileLoader(loader: FileLoader, fd: cint) =
   if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
     raise newException(Defect, "Failed to initialize libcurl.")
-  let ssock = initServerSocket(getpid())
+  ssock = initServerSocket(getpid())
   # The server has been initialized, so the main process can resume execution.
   var writef: File
   if not open(writef, FileHandle(fd), fmWrite):
@@ -88,6 +89,10 @@ proc runFileLoader(loader: FileLoader, fd: cint) =
   writef.flushFile()
   close(writef)
   discard close(fd)
+  onSignal SIGTERM, SIGINT:
+    curl_global_cleanup()
+    ssock.close()
+    quit(1)
   while true:
     let stream = ssock.acceptSocketStream()
     try:

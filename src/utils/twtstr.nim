@@ -125,6 +125,16 @@ func toHeaderCase*(str: string): string =
       result[i] = result[i].toUpperAscii()
     flip = result[i] == '-'
 
+func toScreamingSnakeCase*(str: string): string = # input is camel case
+  if str.len >= 1: result &= str[0].toUpperAscii()
+  for c in str[1..^1]:
+    if c in AsciiUpperAlpha:
+      result &= '_'
+      result &= c
+    else:
+      result &= c.toUpperAscii()
+
+
 func startsWithNoCase*(str, prefix: string): bool =
   if str.len < prefix.len: return false
   # prefix.len is always lower
@@ -898,6 +908,16 @@ func width*(s: seq[Rune], min: int): int =
 
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
+
+type BoundaryFunction* = proc(x: Rune): Option[bool]
+
+proc breaksWord*(r: Rune, check: Option[BoundaryFunction]): bool =
+  if check.isSome:
+    let f = check.get()
+    let v = f(r)
+    if v.isSome: #TODO report error?
+      return v.get()
+  return r.breaksWord()
 
 func padToWidth*(str: string, size: int, schar = '$'): string =
   if str.width() < size:

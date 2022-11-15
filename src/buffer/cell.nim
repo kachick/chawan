@@ -21,32 +21,35 @@ type
   Format* = object
     fgcolor*: CellColor
     bgcolor*: CellColor
-    flags: set[FormatFlags]
-
-  Cell* = object of RootObj
-    format*: Format
-    node*: StyledNode
+    flags*: set[FormatFlags]
 
   # A FormatCell *starts* a new terminal formatting context.
   # If no FormatCell exists before a given cell, the default formatting is used.
-  FormatCell* = object of Cell
+  FormatCell* = object
+    format*: Format
     pos*: int
     computed*: ComputedFormat
+    node*: StyledNode
+
+  SimpleFormatCell* = object
+    format*: Format
+    pos*: int
 
   FlexibleLine* = object
     str*: string
     formats*: seq[FormatCell]
 
-  Mark* = ref object
-    x*: int
-    y*: int
-    width*: int
-    format*: Format
+  SimpleFlexibleLine* = object
+    str*: string
+    formats*: seq[SimpleFormatCell]
 
   FlexibleGrid* = seq[FlexibleLine]
 
-  FixedCell* = object of Cell
+  SimpleFlexibleGrid* = seq[SimpleFlexibleLine]
+
+  FixedCell* = object
     str*: string
+    format*: Format
 
   FixedGrid* = seq[FixedCell]
 
@@ -74,8 +77,7 @@ template `blink=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BLINK
 
 func `==`*(a: FixedCell, b: FixedCell): bool =
   return a.format == b.format and
-    a.str == b.str and
-    a.node == b.node
+    a.str == b.str
 
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
   return newSeq[FixedCell](w * h)
@@ -90,7 +92,7 @@ func newFormat*(): Format =
   return Format(fgcolor: defaultColor, bgcolor: defaultColor)
 
 # Get the first format cell after pos, if any.
-func findFormatN*(line: FlexibleLine, pos: int): int =
+func findFormatN*(line: FlexibleLine|SimpleFlexibleLine, pos: int): int =
   var i = 0
   while i < line.formats.len:
     if line.formats[i].pos > pos:
@@ -105,7 +107,21 @@ func findFormat*(line: FlexibleLine, pos: int): FormatCell =
   else:
     result.pos = -1
 
+func findFormat*(line: SimpleFlexibleLine, pos: int): SimpleFormatCell =
+  let i = line.findFormatN(pos) - 1
+  if i != -1:
+    result = line.formats[i]
+  else:
+    result.pos = -1
+
 func findNextFormat*(line: FlexibleLine, pos: int): FormatCell =
+  let i = line.findFormatN(pos)
+  if i < line.formats.len:
+    result = line.formats[i]
+  else:
+    result.pos = -1
+
+func findNextFormat*(line: SimpleFlexibleLine, pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos)
   if i < line.formats.len:
     result = line.formats[i]

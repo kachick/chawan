@@ -1,6 +1,5 @@
 import tables
 import os
-import strutils
 import streams
 
 import config/toml
@@ -8,41 +7,10 @@ import types/color
 import utils/twtstr
 
 type
-  TwtAction* =
-    enum
-    NO_ACTION,
-    ACTION_FEED_NEXT,
-    ACTION_QUIT,
-    ACTION_CURSOR_UP, ACTION_CURSOR_DOWN, ACTION_CURSOR_LEFT, ACTION_CURSOR_RIGHT,
-    ACTION_CURSOR_LINEEND, ACTION_CURSOR_LINEBEGIN,
-    ACTION_CURSOR_NEXT_WORD, ACTION_CURSOR_PREV_WORD,
-    ACTION_CURSOR_NEXT_LINK, ACTION_CURSOR_PREV_LINK,
-    ACTION_PAGE_DOWN, ACTION_PAGE_UP, ACTION_PAGE_LEFT, ACTION_PAGE_RIGHT,
-    ACTION_HALF_PAGE_DOWN, ACTION_HALF_PAGE_UP,
-    ACTION_SCROLL_DOWN, ACTION_SCROLL_UP, ACTION_SCROLL_LEFT, ACTION_SCROLL_RIGHT,
-    ACTION_CLICK,
-    ACTION_CHANGE_LOCATION, ACTION_DUPE_BUFFER,
-    ACTION_PREV_BUFFER, ACTION_NEXT_BUFFER, ACTION_DISCARD_BUFFER,
-    ACTION_RELOAD, ACTION_RESHAPE, ACTION_REDRAW, ACTION_TOGGLE_SOURCE,
-    ACTION_CURSOR_FIRST_LINE, ACTION_CURSOR_LAST_LINE,
-    ACTION_CURSOR_TOP, ACTION_CURSOR_MIDDLE, ACTION_CURSOR_BOTTOM,
-    ACTION_CURSOR_RIGHT_EDGE, ACTION_CURSOR_VERT_MIDDLE, ACTION_CURSOR_LEFT_EDGE,
-    ACTION_CENTER_LINE, ACTION_LINE_INFO,
-    ACTION_COMMAND,
-    ACTION_SEARCH, ACTION_SEARCH_BACK, ACTION_ISEARCH, ACTION_ISEARCH_BACK,
-    ACTION_SEARCH_NEXT, ACTION_SEARCH_PREV,
-    ACTION_LINED_SUBMIT, ACTION_LINED_CANCEL,
-    ACTION_LINED_BACKSPACE, ACTION_LINED_DELETE,
-    ACTION_LINED_CLEAR, ACTION_LINED_KILL, ACTION_LINED_KILL_WORD,
-    ACTION_LINED_BACK, ACTION_LINED_FORWARD,
-    ACTION_LINED_PREV_WORD, ACTION_LINED_NEXT_WORD,
-    ACTION_LINED_BEGIN, ACTION_LINED_END,
-    ACTION_LINED_ESC
-
-  ActionMap = Table[string, TwtAction]
+  ActionMap = Table[string, string]
   Config* = ref ConfigObj
   ConfigObj = object
-    nmap*: Table[string, string]
+    nmap*: ActionMap
     lemap*: ActionMap
     stylesheet*: string
     startup*: string
@@ -77,7 +45,6 @@ func getRealKey(key: string): string =
     else:
       if meta == 2:
         realk &= '\e'
-        realk &= c
         meta = 0
       if control == 2:
         realk &= getControlChar(c)
@@ -90,27 +57,7 @@ func getRealKey(key: string): string =
     realk &= 'M'
   return realk
 
-func constructActionTable*(origTable: ActionMap): ActionMap =
-  var newTable: ActionMap
-  var strs: seq[string]
-  for k in origTable.keys:
-    let realk = getRealKey(k)
-    var teststr = ""
-    for c in realk:
-      teststr &= c
-      strs.add(teststr)
-
-  for k, v in origTable:
-    let realk = getRealKey(k)
-    var teststr = ""
-    for c in realk:
-      teststr &= c
-      if strs.contains(teststr):
-        newTable[teststr] = ACTION_FEED_NEXT
-    newTable[realk] = v
-  return newTable
-
-func constructActionTable2*(origTable: Table[string, string]): Table[string, string] =
+func constructActionTable*(origTable: Table[string, string]): Table[string, string] =
   var strs: seq[string]
   for k in origTable.keys:
     let realk = getRealKey(k)
@@ -127,11 +74,6 @@ func constructActionTable2*(origTable: Table[string, string]): Table[string, str
       if strs.contains(teststr):
         result[teststr] = "client.feedNext()"
     result[realk] = v
-
-func getLineAction(s: string): TwtAction =
-  if s == "NULL":
-    return NO_ACTION
-  return parseEnum[TwtAction]("ACTION_LINED_" & s)
 
 proc readUserStylesheet(dir, file: string): string =
   if file.len == 0:
@@ -154,11 +96,10 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
       config.ambiguous_double = general["double-width-ambiguous"].b
   if "page" in t:
     for k, v in t["page"].pairs:
-      #config.nmap[getRealKey(k)] = getAction(v.s)
       config.nmap[getRealKey(k)] = v.s
   if "line" in t:
     for k, v in t["line"].pairs:
-      config.lemap[getRealKey(k)] = getLineAction(v.s)
+      config.lemap[getRealKey(k)] = v.s
   if "css" in t:
     let css = t["css"]
     if "include" in css:
@@ -184,7 +125,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
       of "magenta": config.markcolor = CellColor(rgb: false, color: 45u8)
       of "cyan": config.markcolor = CellColor(rgb: false, color: 46u8)
       of "white": config.markcolor = CellColor(rgb: false, color: 47u8)
-      of "terminal": config.markcolor = defaultColor
+      of "terminal": config.markcolor = CellColor(rgb: false, color: 0)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))
@@ -209,10 +150,10 @@ proc getNormalAction*(config: Config, s: string): string =
     return config.nmap[s]
   return ""
 
-proc getLinedAction*(config: Config, s: string): TwtAction =
+proc getLinedAction*(config: Config, s: string): string =
   if config.lemap.hasKey(s):
     return config.lemap[s]
-  return NO_ACTION
+  return ""
 
 proc readConfig*(): Config =
   new(result)

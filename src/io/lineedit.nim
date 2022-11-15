@@ -4,27 +4,30 @@ import strutils
 import sequtils
 import sugar
 
+import bindings/quickjs
 import config/config
-import io/term
+import js/javascript
 import utils/twtstr
 
-type LineState* = object
-  news*: seq[Rune]
-  prompt*: string
-  current: string
-  s: string
-  feedNext: bool
-  escNext: bool
-  cursor: int
-  shift: int
-  minlen: int
-  maxlen: int
-  displen: int
-  disallowed: set[char]
-  hide: bool
-  config: Config #TODO get rid of this
-  tty: File
-  callback: proc(state: var LineState): bool
+type
+  LineEditState* = enum
+    EDIT, FINISH, CANCEL
+
+  LineEdit* = ref object
+    news*: seq[Rune]
+    prompt*: string
+    current: string
+    state*: LineEditState
+    escNext*: bool
+    cursor: int
+    shift: int
+    minlen: int
+    maxlen: int
+    displen: int
+    disallowed: set[char]
+    hide: bool
+    config: Config #TODO get rid of this
+    tty: File
 
 func lwidth(r: Rune): int =
   if r.isControlChar():
@@ -52,57 +55,55 @@ func lwidth(s: seq[Rune], min: int): int =
     result += lwidth(s[i])
     inc i
 
-template kill(state: LineState, i: int) =
-  state.space(i)
-  state.backward(i)
+template kill0(edit: LineEdit, i: int) =
+  edit.space(i)
+  edit.backward0(i)
 
-template kill(state: LineState) =
-  let w = min(state.news.lwidth(state.cursor), state.displen)
-  state.kill(w)
+template kill0(edit: LineEdit) =
+  let w = min(edit.news.lwidth(edit.cursor), edit.displen)
+  edit.kill0(w)
 
-proc backward(state: LineState, i: int) =
+proc backward0(state: LineEdit, i: int) =
   if i > 0:
     if i == 1:
       print('\b')
     else:
       cursorBackward(i)
 
-proc forward(state: LineState, i: int) =
+proc forward0(state: LineEdit, i: int) =
   if i > 0:
     cursorForward(i)
 
-proc begin(state: LineState) =
+proc begin0(state: LineEdit) =
   print('\r')
-  state.forward(state.minlen)
+  state.forward0(state.minlen)
 
-proc space(state: LineState, i: int) =
+proc space(edit: LineEdit, i: int) =
   print(' '.repeat(i))
 
-proc redraw(state: var LineState) =
+proc redraw(state: LineEdit) =
   var dispw = state.news.lwidth(state.shift, state.shift + state.displen)
   if state.shift + state.displen > state.news.len:
     state.displen = state.news.len - state.shift
   while dispw > state.maxlen - 1:
     dispw -= state.news[state.shift + state.displen - 1].lwidth()
     dec state.displen
-
-  state.begin()
+  state.begin0()
   let os = state.news.substr(state.shift, state.shift + state.displen)
   if state.hide:
     printesc('*'.repeat(os.lwidth()))
   else:
     printesc($os)
   state.space(max(state.maxlen - state.minlen - os.lwidth(), 0))
+  state.begin0()
+  state.forward0(state.news.lwidth(state.shift, state.cursor))
 
-  state.begin()
-  state.forward(state.news.lwidth(state.shift, state.cursor))
-
-proc zeroShiftRedraw(state: var LineState) =
+proc zeroShiftRedraw(state: LineEdit) =
   state.shift = 0
   state.displen = state.maxlen - 1
   state.redraw()
 
-proc fullRedraw(state: var LineState) =
+proc fullRedraw*(state: LineEdit) =
   state.displen = state.maxlen - 1
   if state.cursor > state.shift:
     var shiftw = state.news.lwidth(state.shift, state.cursor)
@@ -111,10 +112,9 @@ proc fullRedraw(state: var LineState) =
       shiftw -= state.news[state.shift].lwidth()
   else:
     state.shift = max(state.cursor - 1, 0)
-
   state.redraw()
 
-proc insertCharseq(state: var LineState, cs: var seq[Rune], disallowed: set[char]) =
+proc insertCharseq(state: LineEdit, cs: var seq[Rune], disallowed: set[char]) =
   let escNext = state.escNext
   cs.keepIf((r) => (escNext or not r.isControlChar) and not (r.isAscii and char(r) in disallowed))
   state.escNext = false
@@ -133,169 +133,165 @@ proc insertCharseq(state: var LineState, cs: var seq[Rune], disallowed: set[char
     state.cursor += cs.len
     state.fullRedraw()
 
-proc readLine(state: var LineState): bool =
-  printesc(state.prompt)
-  if state.hide:
-    printesc('*'.repeat(state.current.lwidth()))
-  else:
-    printesc(state.current)
+proc cancel*(edit: LineEdit) {.jsfunc.} =
+  edit.state = CANCEL
 
-  while true:
-    if not state.feedNext:
-      state.s = ""
+proc submit*(edit: LineEdit) {.jsfunc.} =
+  edit.state = FINISH
+
+proc backspace*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor > 0:
+    let w = edit.news[edit.cursor - 1].lwidth()
+    edit.news.delete(edit.cursor - 1..edit.cursor - 1)
+    dec edit.cursor
+    if edit.cursor == edit.news.len and edit.shift == 0:
+      edit.backward0(w)
+      edit.kill0(w)
     else:
-      state.feedNext = false
+      edit.fullRedraw()
 
-    restoreStdin(state.tty.getFileHandle())
-    let c = state.tty.readChar()
-    state.s &= c
-
-    var action = getLinedAction(state.config, state.s)
-    if state.escNext:
-      action = NO_ACTION
-    case action
-    of ACTION_LINED_CANCEL:
-      return false
-    of ACTION_LINED_SUBMIT:
-      return true
-    of ACTION_LINED_BACKSPACE:
-      if state.cursor > 0:
-        let w = state.news[state.cursor - 1].lwidth()
-        state.news.delete(state.cursor - 1..state.cursor - 1)
-        dec state.cursor
-        if state.cursor == state.news.len and state.shift == 0:
-          state.backward(w)
-          state.kill(w)
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_DELETE:
-      if state.cursor >= 0 and state.cursor < state.news.len:
-        let w = state.news[state.cursor].lwidth()
-        state.news.delete(state.cursor..state.cursor)
-        if state.cursor == state.news.len and state.shift == 0:
-          state.kill(w)
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_ESC:
-      state.escNext = true
-    of ACTION_LINED_CLEAR:
-      if state.cursor > 0:
-        state.news.delete(0..state.cursor - 1)
-        state.cursor = 0
-        state.zeroShiftRedraw()
-    of ACTION_LINED_KILL:
-      if state.cursor < state.news.len:
-        state.kill()
-        state.news.setLen(state.cursor)
-    of ACTION_LINED_BACK:
-      if state.cursor > 0:
-        dec state.cursor
-        if state.cursor > state.shift or state.shift == 0:
-          state.backward(state.news[state.cursor].lwidth())
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_FORWARD:
-      if state.cursor < state.news.len:
-        inc state.cursor
-        if state.news.lwidth(state.shift, state.cursor) < state.displen:
-          var n = 1
-          if state.news.len > state.cursor:
-            n = state.news[state.cursor].lwidth()
-          state.forward(n)
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_PREV_WORD:
-      let oc = state.cursor
-      while state.cursor > 0:
-        dec state.cursor
-        if state.news[state.cursor].breaksWord():
-          break
-      if state.cursor != oc:
-        if state.cursor > state.shift or state.shift == 0:
-          state.backward(state.news.lwidth(state.cursor, oc))
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_NEXT_WORD:
-      let oc = state.cursor
-      while state.cursor < state.news.len:
-        inc state.cursor
-        if state.cursor < state.news.len:
-          if state.news[state.cursor].breaksWord():
-            break
-
-      if state.cursor != oc:
-        let dw = state.news.lwidth(oc, state.cursor)
-        if oc + dw - state.shift < state.displen:
-          state.forward(dw)
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_KILL_WORD:
-      var chars = 0
-      if state.cursor > chars:
-        inc chars
-
-      while state.cursor > chars:
-        inc chars
-        if state.news[state.cursor - chars].breaksWord():
-          dec chars
-          break
-      if chars > 0:
-        let w = state.news.lwidth(state.cursor - chars, state.cursor)
-        state.news.delete(state.cursor - chars..state.cursor - 1)
-        state.cursor -= chars
-        if state.cursor == state.news.len and state.shift == 0:
-          state.backward(w)
-          state.kill(w)
-        else:
-          state.fullRedraw()
-    of ACTION_LINED_BEGIN:
-      if state.cursor > 0:
-        if state.shift == 0:
-          state.backward(state.news.lwidth(0, state.cursor))
-        else:
-          state.fullRedraw()
-        state.cursor = 0
-    of ACTION_LINED_END:
-      if state.cursor < state.news.len:
-        if state.news.lwidth(state.shift, state.news.len) < state.maxlen:
-          state.forward(state.news.lwidth(state.cursor, state.news.len))
-        else:
-          state.fullRedraw()
-        state.cursor = state.news.len
-    of ACTION_FEED_NEXT:
-      state.feedNext = true
-    elif validateUtf8(state.s) == -1:
-      var cs = state.s.toRunes()
-      state.insertCharseq(cs, state.disallowed)
-      if state.callback(state):
-        state.fullRedraw()
-    else:
-      state.feedNext = true
-
-proc readLine*(prompt: string, current: var string, termwidth: int,
-               disallowed: set[char], hide: bool, config: Config,
-               tty: File, callback: proc(state: var LineState): bool): bool =
-  var state: LineState
-
-  state.prompt = prompt
-  state.current = current
-  state.news = current.toRunes()
-  state.cursor = state.news.len
-  state.minlen = prompt.lwidth()
-  state.maxlen = termwidth - prompt.len
-  state.displen = state.maxlen - 1
-  state.disallowed = disallowed
-  state.callback = callback
-  state.hide = hide
-  state.config = config
-  state.tty = tty
-
-  if state.readLine():
-    current = $state.news
+proc write*(edit: LineEdit, s: string): bool {.jsfunc.} =
+  if validateUtf8(s) == -1:
+    var cs = s.toRunes()
+    edit.insertCharseq(cs, edit.disallowed)
     return true
-  return false
 
-proc readLine*(prompt: string, current: var string, termwidth: int,
+proc delete*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor >= 0 and edit.cursor < edit.news.len:
+    let w = edit.news[edit.cursor].lwidth()
+    edit.news.delete(edit.cursor..edit.cursor)
+    if edit.cursor == edit.news.len and edit.shift == 0:
+      edit.kill0(w)
+    else:
+      edit.fullRedraw()
+
+proc escape*(edit: LineEdit) {.jsfunc.} =
+  edit.escNext = true
+
+proc clear*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor > 0:
+    edit.news.delete(0..edit.cursor - 1)
+    edit.cursor = 0
+    edit.zeroShiftRedraw()
+
+proc kill*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor < edit.news.len:
+    edit.kill0()
+    edit.news.setLen(edit.cursor)
+
+proc backward*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor > 0:
+    dec edit.cursor
+    if edit.cursor > edit.shift or edit.shift == 0:
+      edit.backward0(edit.news[edit.cursor].lwidth())
+    else:
+      edit.fullRedraw()
+
+proc forward*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor < edit.news.len:
+    inc edit.cursor
+    if edit.news.lwidth(edit.shift, edit.cursor) < edit.displen:
+      var n = 1
+      if edit.news.len > edit.cursor:
+        n = edit.news[edit.cursor].lwidth()
+      edit.forward0(n)
+    else:
+      edit.fullRedraw()
+
+proc prevWord*(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+  let oc = edit.cursor
+  while edit.cursor > 0:
+    dec edit.cursor
+    if edit.news[edit.cursor].breaksWord(check):
+      break
+  if edit.cursor != oc:
+    if edit.cursor > edit.shift or edit.shift == 0:
+      edit.backward0(edit.news.lwidth(edit.cursor, oc))
+    else:
+      edit.fullRedraw()
+
+proc nextWord*(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+  let oc = edit.cursor
+  while edit.cursor < edit.news.len:
+    inc edit.cursor
+    if edit.cursor < edit.news.len:
+      if edit.news[edit.cursor].breaksWord(check):
+        break
+  if edit.cursor != oc:
+    let dw = edit.news.lwidth(oc, edit.cursor)
+    if oc + dw - edit.shift < edit.displen:
+      edit.forward0(dw)
+    else:
+      edit.fullRedraw()
+
+proc clearWord*(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+  var i = edit.cursor
+  if i > 0:
+    # point to the previous character
+    dec i
+  while i > 0:
+    dec i
+    if edit.news[i].breaksWord(check):
+      inc i
+      break
+  if i != edit.cursor:
+    edit.news.delete(i..<edit.cursor)
+    edit.cursor = i
+    edit.fullRedraw()
+
+proc killWord*(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+  var i = edit.cursor
+  if i < edit.news.len and edit.news[i].breaksWord(check):
+    inc i
+  while i < edit.news.len:
+    if edit.news[i].breaksWord(check):
+      break
+    inc i
+  if i != edit.cursor:
+    edit.news.delete(edit.cursor..<i)
+    edit.fullRedraw()
+
+proc begin*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor > 0:
+    if edit.shift == 0:
+      edit.backward0(edit.news.lwidth(0, edit.cursor))
+    else:
+      edit.fullRedraw()
+    edit.cursor = 0
+
+proc `end`*(edit: LineEdit) {.jsfunc.} =
+  if edit.cursor < edit.news.len:
+    if edit.news.lwidth(edit.shift, edit.news.len) < edit.maxlen:
+      edit.forward0(edit.news.lwidth(edit.cursor, edit.news.len))
+    else:
+      edit.fullRedraw()
+    edit.cursor = edit.news.len
+
+proc writePrompt*(lineedit: LineEdit) =
+  printesc(lineedit.prompt)
+
+proc writeStart*(lineedit: LineEdit) =
+  lineedit.writePrompt()
+  if lineedit.hide:
+    printesc('*'.repeat(lineedit.current.lwidth()))
+  else:
+    printesc(lineedit.current)
+
+proc readLine*(prompt: string, termwidth: int, current = "",
                disallowed: set[char] = {}, hide = false, config: Config,
-               tty: File): bool =
-  readLine(prompt, current, termwidth, disallowed, hide, config, tty, (proc(state: var LineState): bool = false))
+               tty: File): LineEdit =
+  new(result)
+  result.prompt = prompt
+  result.current = current
+  result.news = current.toRunes()
+  result.cursor = result.news.len
+  result.minlen = prompt.lwidth()
+  result.maxlen = termwidth - prompt.len
+  result.displen = result.maxlen - 1
+  result.disallowed = disallowed
+  result.hide = hide
+  result.config = config
+  result.tty = tty
+
+proc addLineEditModule*(ctx: JSContext) =
+  ctx.registerType(LineEdit)

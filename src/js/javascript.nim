@@ -4,6 +4,7 @@ import streams
 import strformat
 import strutils
 import tables
+import unicode
 
 import bindings/quickjs
 
@@ -498,6 +499,44 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Option[seq[T]] =
       return none(seq[T])
     result.get.add(genericRes.get)
 
+proc fromJSSet[T](ctx: JSContext, val: JSValue): Option[set[T]] =
+  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
+  if JS_IsException(itprop):
+    return none(set[T])
+  defer: JS_FreeValue(ctx, itprop)
+  let it = JS_Call(ctx, itprop, val, 0, nil)
+  if JS_IsException(it):
+    return none(set[T])
+  defer: JS_FreeValue(ctx, it)
+  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
+  if JS_IsException(next_method):
+    return none(set[T])
+  defer: JS_FreeValue(ctx, next_method)
+  var s: set[T]
+  result = some(s)
+  while true:
+    let next = JS_Call(ctx, next_method, it, 0, nil)
+    if JS_IsException(next):
+      return none(set[T])
+    defer: JS_FreeValue(ctx, next)
+    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+    if JS_IsException(doneVal):
+      return none(set[T])
+    defer: JS_FreeValue(ctx, doneVal)
+    let done = fromJS[bool](ctx, doneVal)
+    if done.isnone: # exception
+      return none(set[T])
+    if done.get:
+      break
+    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
+    if JS_IsException(valueVal):
+      return none(set[T])
+    defer: JS_FreeValue(ctx, valueVal)
+    let genericRes = fromJS[typeof(result.get.items)](ctx, valueVal)
+    if genericRes.isnone: # exception
+      return none(set[T])
+    result.get.incl(genericRes.get)
+
 proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
   var ptab: ptr JSPropertyEnum
   var plen: uint32
@@ -526,16 +565,67 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
       return none(Table[A, B])
     result.get[kn.get] = vn.get
 
+proc toJS*[T](ctx: JSContext, obj: T): JSValue
+
+# ew....
+proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue): Option[proc(x: U): Option[T]] =
+  return some(proc(x: U): Option[T] =
+    var arg1 = toJS(ctx, x)
+    let ret = JS_Call(ctx, val, JS_UNDEFINED, 1, addr arg1)
+    return fromJS[T](ctx, ret)
+  )
+
+macro unpackReturnType(f: typed) =
+  var x = f.getTypeImpl()
+  while x.kind == nnkBracketExpr and x.len == 2:
+    x = x[1].getTypeImpl()
+  let params = x.findChild(it.kind == nnkFormalParams)
+  let rv = params[0]
+  assert rv[0].strVal == "Option"
+  let rvv = rv[1]
+  result = quote do: `rvv`
+
+macro unpackArg0(f: typed) =
+  var x = f.getTypeImpl()
+  while x.kind == nnkBracketExpr and x.len == 2:
+    x = x[1].getTypeImpl()
+  let params = x.findChild(it.kind == nnkFormalParams)
+  let rv = params[1]
+  assert rv.kind == nnkIdentDefs
+  let rvv = rv[1]
+  result = quote do: `rvv`
+
 proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
   when T is string:
     return toString(ctx, val)
+  elif T is char:
+    let s = toString(ctx, val)
+    if s.isNone:
+      return none(char)
+    if s.get.len > 1:
+      return none(char)
+    return some(s.get[0])
+  elif T is Rune:
+    let s = toString(ctx, val)
+    if s.isNone:
+      return none(Rune)
+    var i = 0
+    var r: Rune
+    fastRuneAt(s.get, i, r)
+    if i < s.get.len:
+      return none(Rune)
+    return some(r)
+  elif T is (proc):
+    return fromJSFunction1[typeof(unpackReturnType(T)), typeof(unpackArg0(T))](ctx, val)
   elif typeof(result.unsafeGet) is Option: # unwrap
     let res = fromJS[typeof(result.get.get)](ctx, val)
     if res.isnone:
       return none(T)
     return some(res)
   elif T is seq:
-    return fromJSSeq[typeof(result.get[0])](ctx, val)
+    return fromJSSeq[typeof(result.get.items)](ctx, val)
+  elif T is set:
+    return fromJSSet[typeof(result.get.items)](ctx, val)
   elif T is tuple:
     return fromJSTuple[T](ctx, val)
   elif T is bool:
@@ -634,6 +724,8 @@ func toJSObject[T](ctx: JSContext, obj: T): JSValue =
 proc toJS*[T](ctx: JSContext, obj: T): JSValue =
   when T is string:
     return ctx.toJSString(obj)
+  elif T is Rune:
+    return ctx.toJSString($obj)
   elif T is SomeNumber:
     return ctx.toJSNumber(obj)
   elif T is bool:

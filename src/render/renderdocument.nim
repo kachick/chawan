@@ -1,12 +1,12 @@
 import strutils
 import unicode
 
+import buffer/cell
 import css/cascade
 import css/sheet
 import css/stylednode
 import css/values
 import html/dom
-import io/cell
 import io/term
 import layout/box
 import layout/engine

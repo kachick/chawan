@@ -4,7 +4,10 @@ import options
 import streams
 import tables
 
+import buffer/cell
 import io/request
+import js/regex
+import types/color
 import types/url
 
 template swrite*[T](stream: Stream, o: T) =
@@ -47,11 +50,9 @@ proc swrite*[T](stream: Stream, s: seq[T]) =
     stream.swrite(m)
 
 proc swrite*[T](stream: Stream, o: Option[T]) =
+  stream.swrite(o.issome)
   if o.issome:
-    stream.swrite(1u8)
     stream.swrite(o.get)
-  else:
-    stream.swrite(0u8)
 
 proc swrite*(stream: Stream, request: Request) =
   stream.swrite(request.httpmethod)
@@ -59,6 +60,39 @@ proc swrite*(stream: Stream, request: Request) =
   stream.swrite(request.headers)
   stream.swrite(request.body)
   stream.swrite(request.multipart)
+
+proc swrite*(stream: Stream, color: CellColor) =
+  stream.swrite(color.rgb)
+  if color.rgb:
+    stream.swrite(color.rgbcolor)
+  else:
+    stream.swrite(color.color)
+
+proc swrite*(stream: Stream, format: Format) =
+  stream.swrite(format.fgcolor)
+  stream.swrite(format.bgcolor)
+  stream.swrite(format.flags)
+
+proc swrite*(stream: Stream, cell: SimpleFormatCell) =
+  stream.swrite(cell.format)
+  stream.swrite(cell.pos)
+
+proc swrite*(stream: Stream, line: SimpleFlexibleLine) =
+  stream.swrite(line.str)
+  stream.swrite(line.formats)
+
+proc swrite*(stream: Stream, cell: FormatCell) =
+  stream.swrite(cell.format)
+  stream.swrite(cell.pos)
+
+proc swrite*(stream: Stream, line: FlexibleLine) =
+  stream.swrite(line.str)
+  stream.swrite(line.formats)
+
+proc swrite*(stream: Stream, regex: Regex) =
+  stream.swrite(regex.plen)
+  stream.writeData(regex.bytecode, regex.plen)
+  stream.swrite(regex.buf)
 
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
@@ -119,13 +153,13 @@ proc sread*[T](stream: Stream, s: var seq[T]) =
     stream.sread(s[i])
 
 proc sread*[T](stream: Stream, o: var Option[T]) =
-  let c = uint8(stream.readChar())
-  if c == 1u8:
+  var x: bool
+  stream.sread(x)
+  if x:
     var m: T
     stream.sread(m)
     o = some(m)
   else:
-    assert c == 0u8
     o = none(T)
 
 proc sread*(stream: Stream, req: var RequestObj) =
@@ -134,6 +168,39 @@ proc sread*(stream: Stream, req: var RequestObj) =
   stream.sread(req.headers)
   stream.sread(req.body)
   stream.sread(req.multipart)
+
+proc sread*(stream: Stream, color: var CellColor) =
+  var rgb: bool
+  stream.sread(rgb)
+  if rgb:
+    color = CellColor(rgb: true)
+    stream.sread(color.rgbcolor)
+  else:
+    color = CellColor(rgb: false)
+    stream.sread(color.color)
+
+proc sread*(stream: Stream, format: var Format) =
+  stream.sread(format.fgcolor)
+  stream.sread(format.bgcolor)
+  stream.sread(format.flags)
+
+proc sread*(stream: Stream, cell: var SimpleFormatCell) =
+  stream.sread(cell.format)
+  stream.sread(cell.pos)
+
+proc sread*(stream: Stream, line: var SimpleFlexibleLine) =
+  stream.sread(line.str)
+  stream.sread(line.formats)
+
+proc sread*(stream: Stream, regex: var Regex) =
+  assert regex.bytecode == nil
+  stream.sread(regex.plen)
+  regex.bytecode = cast[ptr uint8](alloc(regex.plen))
+  regex.clone = true
+  let l = stream.readData(regex.bytecode, regex.plen)
+  stream.sread(regex.buf)
+  if l != regex.plen:
+    `=destroy`(regex)
 
 proc readRequest*(stream: Stream): Request =
   new(result)

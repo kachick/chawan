@@ -9,13 +9,14 @@ when defined(posix):
   import posix
 
 import std/monotimes
+import std/selectors
 
+import buffer/container
 import css/sheet
 import config/config
 import display/pager
 import html/dom
 import html/htmlparser
-import io/buffer
 import io/lineedit
 import io/loader
 import io/request
@@ -36,6 +37,7 @@ type
     loader: FileLoader
     console {.jsget.}: Console
     pager {.jsget.}: Pager
+    line {.jsget.}: LineEdit
     config: Config
     jsrt: JSRuntime
     jsctx: JSContext
@@ -49,7 +51,7 @@ type
 
   Console* = ref object
     err*: Stream
-    lastbuf*: Buffer
+    lastcontainer*: Container
     ibuf: string
     tty: File
 
@@ -69,18 +71,6 @@ proc statusMode(client: Client) =
   print(HVP(client.attrs.height + 1, 1))
   print(EL())
 
-proc readPipe(client: Client, ctype: string) =
-  let buffer = newBuffer(client.config, client.console.tty)
-  buffer.contenttype = if ctype != "": ctype else: "text/plain"
-  buffer.ispipe = true
-  buffer.istream = newFileStream(stdin)
-  buffer.location = newURL("file://-")
-  client.pager.addBuffer(buffer)
-  if client.console.tty != nil:
-    buffer.setupBuffer()
-  else:
-    buffer.load()
-
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
   client.loader.doRequest(req)
 
@@ -99,7 +89,8 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
 
 proc evalJS(client: Client, src, filename: string): JSObject =
   unblockStdin(client.console.tty.getFileHandle())
-  return client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
+  result = client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
+  restoreStdin(client.console.tty.getFileHandle())
 
 proc evalJSFree(client: Client, src, filename: string) =
   free(client.evalJS(src, filename))
@@ -126,69 +117,103 @@ proc command(client: Client, src: string) =
   let previ = client.console.err.getPosition()
   client.command0(src)
   client.console.err.setPosition(previ)
-  if client.console.lastbuf == nil:
-    let buffer = newBuffer(client.config, client.console.tty)
-    buffer.istream = newStringStream(client.console.err.readAll()) #TODO
-    buffer.contenttype = "text/plain"
-    buffer.location = parseUrl("javascript:void(0);").get
-    client.console.lastbuf = buffer
-    client.pager.addBuffer(buffer)
-  else:
-    client.console.lastbuf.istream = newStringStream(client.console.lastbuf.source & client.console.err.readAll())
-    client.console.lastbuf.streamclosed = false
-  client.console.lastbuf.setupBuffer()
-  client.console.lastbuf.cursorLastLine()
+  #TODO yeah this won't work...
+  #if client.console.lastcontainer == nil:
+  #  let source = BufferSource(t: STRING, slocation: parseUrl("javascript:void(0);").get, str: client.console.err.readAll(), contenttype: some("text/plain"))
+  #  let container = newBuffer(client.config, client.console.tty, source)
+  #  client.console.lastcontainer = container
+  #  client.pager.addContainer(container)
+  #else:
+  #  client.console.lastbuf.istream = newStringStream(client.console.lastbuf.source & client.console.err.readAll())
+  #  client.console.lastbuf.streamclosed = false
+  #client.console.lastbuf.setupBuffer()
+  #client.console.lastbuf.cursorLastLine()
 
 proc command(client: Client): bool {.jsfunc.} =
-  var iput: string
   client.statusMode()
-  let status = readLine("COMMAND: ", iput, client.attrs.width, config = client.config, tty = client.console.tty)
-  if status:
-    client.command(iput)
-  return status
+  client.pager.lineedit = some(readLine("COMMAND: ", client.attrs.width, config = client.config, tty = client.console.tty))
 
 proc commandMode(client: Client) {.jsfunc.} =
   client.pager.commandMode = client.command()
 
 proc quit(client: Client, code = 0) {.jsfunc.} =
   if stdout.isatty():
-    print(HVP(getTermAttributes(stdout).height, 0))
+    print(HVP(getTermAttributes(stdout).height, 1))
+    print('\n')
     print(EL())
+    stdout.showCursor()
   when defined(posix):
     assert kill(client.loader.process, cint(SIGTERM)) == 0
-    for buffer in client.pager.buffers:
-      if buffer.loader != nil:
-        assert kill(buffer.loader.process, cint(SIGTERM)) == 0
   quit(code)
 
 proc feedNext(client: Client) {.jsfunc.} =
   client.feednext = true
 
 proc input(client: Client) =
+  restoreStdin(client.console.tty.getFileHandle())
   if client.pager.commandMode:
     client.commandMode()
     return
-  if not client.feednext:
-    client.s = ""
-  else:
-    client.feednext = false
-  restoreStdin(client.console.tty.getFileHandle())
   let c = client.console.readChar()
   client.s &= c
+  if client.pager.lineedit.isSome:
+    let edit = client.pager.lineedit.get
+    client.line = edit
+    if edit.escNext:
+      edit.escNext = false
+      if edit.write(client.s):
+        client.s = ""
+    else:
+      let action = getLinedAction(client.config, client.s)
+      if action == "":
+        if edit.write(client.s):
+          client.s = ""
+        else:
+          client.feedNext = true
+      elif not client.feedNext:
+        client.evalJSFree(action, "<command>")
+      client.pager.updateReadLine()
+      if client.pager.lineedit.isNone:
+        client.line = nil
+  else:
+    let action = getNormalAction(client.config, client.s)
+    client.evalJSFree(action, "<command>")
+  if not client.feedNext:
+    client.s = ""
+  else:
+    client.feedNext = false
+  if client.pager.container != nil:
+    if client.pager.lineedit.isNone:
+      client.pager.refreshStatusMsg()
+      client.pager.displayStatus()
+      client.pager.displayCursor()
 
-  let action = getNormalAction(client.config, client.s)
-  client.evalJSFree(action, "<command>")
+proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
+  importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
 proc inputLoop(client: Client) =
+  discard c_setvbuf(client.console.tty, nil, IONBF, 0) #??? I thought raw mode would take care of this
+  client.pager.selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   while true:
-    restoreStdin(client.console.tty.getFileHandle())
-    client.pager.displayPage()
-    client.pager.followRedirect()
-    if client.pager.container != nil:
-      client.pager.container.buffer.refreshBuffer()
-    if client.pager.container.needsauth: # Unauthorized
-      client.pager.checkAuth()
-    client.input()
+    let events = client.pager.selector.select(-1)
+    for event in events:
+      if event.fd == client.console.tty.getFileHandle():
+        client.input()
+        stdout.flushFile()
+      else:
+        let container = client.pager.fdmap[FileHandle(event.fd)]
+        if not client.pager.handleEvent(container):
+          disableRawMode()
+          for msg in client.pager.status:
+            eprint msg
+          client.quit(1)
+    if client.pager.lineedit.isNone and client.pager.switched:
+      client.pager.refreshDisplay(client.pager.container)
+      client.pager.displayPage()
+      client.pager.switched = false
+    if client.pager.command != "":
+      client.command(client.pager.command)
+      client.pager.command = ""
 
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
@@ -283,7 +308,7 @@ proc jsEventLoop(client: Client) =
     if wait > 0:
       sleep(wait)
 
-proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool) =
+proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
   if client.config.startup != "":
     let s = readFile(client.config.startup)
     client.console.err = newFileStream(stderr)
@@ -293,26 +318,23 @@ proc launchClient*(client: Client, pages: seq[string], ctype: string, dump: bool
     quit()
   client.userstyle = client.config.stylesheet.parseStylesheet()
   if not stdin.isatty:
-    client.readPipe(ctype)
+    client.pager.readPipe(ctype)
   else:
     client.console.tty = stdin
 
   for page in pages:
-    client.pager.loadURL(page, force = true, ctype = ctype)
+    client.pager.loadURL(page, ctype = ctype)
 
   if stdout.isatty and not dump:
-    if client.pager.container != nil:
-      when defined(posix):
-        enableRawMode(client.console.tty.getFileHandle())
-      client.inputLoop()
-    else:
-      for msg in client.pager.status:
-        eprint msg
+    when defined(posix):
+      enableRawMode(client.console.tty.getFileHandle())
+    client.inputLoop()
   else:
     for msg in client.pager.status:
       eprint msg
-    for buffer in client.pager.buffers:
-      buffer.drawBuffer()
+    for container in client.pager.containers:
+      container.render()
+      container.drawBuffer()
     stdout.close()
   client.quit()
 
@@ -339,14 +361,14 @@ proc sleep(client: Client, millis: int) {.jsfunc.} =
 proc newClient*(config: Config): Client =
   new(result)
   result.config = config
-  result.loader = newFileLoader()
   result.console = newConsole()
   if stdin.isatty():
     result.console.tty = stdin
   elif stdout.isatty():
     discard open(result.console.tty, "/dev/tty", fmRead)
   result.attrs = getTermAttributes(stdout)
-  result.pager = newPager(config, result.attrs, result.loader, result.console.tty)
+  result.loader = newFileLoader()
+  result.pager = newPager(config, result.attrs, result.console.tty)
   let rt = newJSRuntime()
   rt.setInterruptHandler(interruptHandler, cast[pointer](result))
   let ctx = rt.newJSContext()
@@ -365,4 +387,5 @@ proc newClient*(config: Config): Client =
   ctx.addDOMModule()
   ctx.addHTMLModule()
   ctx.addRequestModule()
+  ctx.addLineEditModule()
   ctx.addPagerModule()

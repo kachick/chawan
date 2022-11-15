@@ -1,6 +1,6 @@
 import os
 
-const javascriptDirs = ["/usr", "/lib", "/usr/lib", "/usr/local/lib", "/usr/local"]
+const javascriptDirs = ["/usr/local/lib", "/usr/local", "/usr/lib", "/usr", "/lib"]
 const lib = (func(): string =
   when defined(posix):
     for dir in javascriptDirs:

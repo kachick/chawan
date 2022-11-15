@@ -1,6 +1,6 @@
 import streams
 
-import io/cell
+import buffer/cell
 import utils/twtstr
 
 proc renderPlainText*(text: string): FlexibleGrid =
