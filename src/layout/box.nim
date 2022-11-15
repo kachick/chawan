@@ -53,6 +53,7 @@ type
   TableRowBoxBuilder* = ref object of BoxBuilder
 
   TableCellBoxBuilder* = ref object of BoxBuilder
+    colspan*: int
 
   TableBoxBuilder* = ref object of BlockBoxBuilder
     rowgroups*: seq[TableRowGroupBoxBuilder]
@@ -136,6 +137,7 @@ type
   TableRowBox* = ref object of BlockBox
 
   TableBox* = ref object of BlockBox
+    columns*: seq[int] # offset of each column
 
   InlineBlockBox* = ref object of InlineAtom
     bctx*: BlockBox

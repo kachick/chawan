@@ -639,25 +639,47 @@ proc buildTableCell(box: TableCellBoxBuilder, parent: TableRowBox): TableCellBox
     result.buildInlineLayout(box.children)
   else:
     result.buildBlockLayout(box.children, box.node)
+  result.offset.x += parent.width
 
 proc buildTableRow(box: TableRowBoxBuilder, parent: TableBox): TableRowBox =
   result = parent.newTableRowBox(box)
+  var n = 0
   for child in box.children:
     case child.computed{"display"}
     of DISPLAY_TABLE_CELL:
-      result.nested.add(buildTableCell(TableCellBoxBuilder(child), result))
+      let cellbuilder = TableCellBoxBuilder(child)
+      let cell = buildTableCell(cellbuilder, result)
+      result.nested.add(cell)
+      result.height = max(result.height, cell.height)
+      if parent.columns.len <= n:
+        parent.columns.setLen(n + 1)
+      parent.columns[n] = max(cell.width, parent.columns[n])
+      var i = n
+      n += cellbuilder.colspan
+      if parent.columns.len <= n:
+        parent.columns.setLen(n + 1)
+      while i < n:
+        result.width += parent.columns[i]
+        inc i
     else:
-      discard
-      #TODO assert false
+      assert false
+  result.offset.y += parent.height
 
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): TableBox =
   result = parent.newTableBox(box)
   for child in box.children:
     case child.computed{"display"}
     of DISPLAY_TABLE_ROW:
-      result.nested.add(buildTableRow(TableRowBoxBuilder(child), result))
+      let row = buildTableRow(TableRowBoxBuilder(child), result)
+      result.nested.add(row)
+      result.height += row.height
+      result.width = max(row.width, result.width)
     of DISPLAY_TABLE_ROW_GROUP:
-      discard
+      for child in TableRowGroupBoxBuilder(child).children:
+        let row = buildTableRow(TableRowBoxBuilder(child), result)
+        result.nested.add(row)
+        result.height += row.height
+        result.width = max(row.width, result.width)
     else:
       discard
       #TODO assert false
@@ -748,6 +770,7 @@ proc getTableRowBox(computed: CSSComputedValues): TableRowBoxBuilder =
 proc getTableCellBox(computed: CSSComputedValues): TableCellBoxBuilder =
   new(result)
   result.computed = computed
+  result.colspan = 1
 
 type BlockGroup = object
   parent: BoxBuilder
@@ -782,6 +805,7 @@ proc newBlockGroup(parent: BoxBuilder): BlockGroup =
   result.listItemCounter = 1
 
 proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder
+proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport): TableRowGroupBoxBuilder
 proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBoxBuilder
 proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport): TableCellBoxBuilder
 
@@ -829,6 +853,10 @@ proc generateFromElem(styledNode: StyledNode, blockgroup: var BlockGroup, viewpo
   of DISPLAY_TABLE_ROW:
     blockgroup.flush()
     let childbox = styledNode.generateTableRowBox(viewport)
+    box.children.add(childbox)
+  of DISPLAY_TABLE_ROW_GROUP:
+    blockgroup.flush()
+    let childbox = styledNode.generateTableRowGroupBox(viewport)
     box.children.add(childbox)
   of DISPLAY_TABLE_CELL:
     blockgroup.flush()
@@ -909,10 +937,13 @@ func isMisparented(box: BoxBuilder, parent: BoxBuilder): bool =
 
 proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport): TableCellBoxBuilder =
   let box = getTableCellBox(styledNode.computed)
+  if styledNode.node != nil and styledNode.node.nodeType == ELEMENT_NODE:
+    box.colspan = Element(styledNode.node).attri("colspan").get(1)
   var blockgroup = newBlockGroup(box)
   var ibox: InlineBoxBuilder = nil
   for child in styledNode.children:
     if child.t == STYLED_ELEMENT:
+      flush_ibox
       generateFromElem(child, blockgroup, viewport, ibox)
     else:
       if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
@@ -920,7 +951,28 @@ proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport): TableCell
           ibox = getTextBox(styledNode.computed)
           ibox.node = styledNode
         ibox.text.add(child.text)
+  flush_ibox
+  if blockgroup.boxes.len > 0:
+    # Avoid unnecessary anonymous block boxes
+    if box.children.len == 0:
+      box.children = blockgroup.boxes
+      box.inlinelayout = true
+    else:
+      blockgroup.flush()
   return box
+
+proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
+  var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
+  var wrappervals = box.computed.inheritProperties()
+  wrappervals.setDisplay(DISPLAY_TABLE_CELL)
+  for child in box.children:
+    if child.computed{"display"} == DISPLAY_TABLE_CELL:
+      newchildren.add(child)
+    else:
+      let wrapper = getTableCellBox(wrappervals)
+      wrapper.children.add(child)
+      newchildren.add(wrapper)
+  box.children = newchildren
 
 proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBoxBuilder =
   let box = getTableRowBox(styledNode.computed)
@@ -937,12 +989,23 @@ proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBo
         ibox.text.add(child.text)
   return box
 
-proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder =
-  let box = getTableBox(styledNode.computed)
+proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
+  var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
+  var wrappervals = box.computed.inheritProperties()
+  wrappervals.setDisplay(DISPLAY_TABLE_CELL)
+  for child in box.children:
+    if child.computed{"display"} == DISPLAY_TABLE_ROW:
+      newchildren.add(child)
+    else:
+      let wrapper = getTableRowBox(wrappervals)
+      wrapper.children.add(child)
+      newchildren.add(wrapper)
+  box.children = newchildren
+
+proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport): TableRowGroupBoxBuilder =
+  let box = getTableRowGroupBox(styledNode.computed)
   var blockgroup = newBlockGroup(box)
   var ibox: InlineBoxBuilder = nil
-  var listItemCounter = 1
-
   for child in styledNode.children:
     if child.t == STYLED_ELEMENT:
       generateFromElem(child, blockgroup, viewport, ibox)
@@ -952,11 +1015,40 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuild
           ibox = getTextBox(styledNode.computed)
           ibox.node = styledNode
         ibox.text.add(child.text)
+  return box
 
+proc generateTableChildWrappers(box: TableBoxBuilder) =
+  var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
+  var wrappervals = box.computed.inheritProperties()
+  wrappervals.setDisplay(DISPLAY_TABLE_ROW)
+  for child in box.children:
+    if child.computed{"display"} in ProperTableChild:
+      newchildren.add(child)
+    else:
+      let wrapper = getTableRowBox(wrappervals)
+      wrapper.children.add(child)
+      wrapper.generateTableRowChildWrappers()
+      newchildren.add(wrapper)
+  box.children = newchildren
+
+proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder =
+  let box = getTableBox(styledNode.computed)
+  var blockgroup = newBlockGroup(box) #TODO this probably shouldn't exist
+  var ibox: InlineBoxBuilder = nil
+  var listItemCounter = 1
+  for child in styledNode.children:
+    if child.t == STYLED_ELEMENT:
+      generateFromElem(child, blockgroup, viewport, ibox)
+    else:
+      if canGenerateAnonymousInline(blockgroup, box.computed, child.text):
+        if ibox == nil:
+          ibox = getTextBox(styledNode.computed)
+          ibox.node = styledNode
+        ibox.text.add(child.text)
   flush_ibox
   blockgroup.flush()
-
-  #TODO Generate missing child wrappers
+  box.generateTableChildWrappers()
+  #TODO generate missing parents
   return box
 
 proc renderLayout*(viewport: var Viewport, document: Document, root: StyledNode) =

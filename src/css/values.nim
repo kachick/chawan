@@ -450,15 +450,15 @@ func cssDisplay(d: CSSDeclaration): CSSDisplay =
       of "inline": return DISPLAY_INLINE
       of "list-item": return DISPLAY_LIST_ITEM
       of "inline-block": return DISPLAY_INLINE_BLOCK
-      # of "table": return DISPLAY_TABLE
-      # of "table-row": return DISPLAY_TABLE_ROW
-      # of "table-cell": return DISPLAY_TABLE_CELL
-      # of "table-column": return DISPLAY_TABLE_COLUMN
-      # of "table-column-group": return DISPLAY_TABLE_COLUMN_GROUP
-      # of "inline-table": return DISPLAY_INLINE_TABLE
-      # of "table-row-group": return DISPLAY_TABLE_ROW_GROUP
-      # of "table-header-group": return DISPLAY_TABLE_HEADER_GROUP
-      # of "table-footer-group": return DISPLAY_TABLE_FOOTER_GROUP
+      of "table": return DISPLAY_TABLE
+      of "table-row": return DISPLAY_TABLE_ROW
+      of "table-cell": return DISPLAY_TABLE_CELL
+      of "table-column": return DISPLAY_TABLE_COLUMN
+      of "table-column-group": return DISPLAY_TABLE_COLUMN_GROUP
+      of "inline-table": return DISPLAY_INLINE_TABLE
+      of "table-row-group": return DISPLAY_TABLE_ROW_GROUP
+      of "table-header-group": return DISPLAY_TABLE_HEADER_GROUP
+      of "table-footer-group": return DISPLAY_TABLE_FOOTER_GROUP
       of "none": return DISPLAY_NONE
       else: return DISPLAY_INLINE
   raise newException(CSSValueError, "Invalid display")
