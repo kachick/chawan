@@ -439,7 +439,10 @@ proc positionInlines(bctx: BlockBox) =
   bctx.width += bctx.padding_right
 
   if bctx.computed{"width"}.auto:
-    bctx.width = min(bctx.width, bctx.compwidth)
+    if bctx.shrink:
+      bctx.width = min(bctx.width, bctx.compwidth)
+    else:
+      bctx.width = max(bctx.width, bctx.compwidth)
   else:
     bctx.width = bctx.compwidth
 
@@ -707,6 +710,7 @@ proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox =
 # Establish a new flow-root context and build a block box.
 proc buildRootBlock(box: BlockBoxBuilder, viewport: Viewport): BlockBox =
   result = viewport.newBlockBox(box)
+  result.shrink = false
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
