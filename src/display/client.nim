@@ -208,10 +208,11 @@ proc inputLoop(client: Client) =
           for msg in client.pager.status:
             eprint msg
           client.quit(1)
-    if client.pager.lineedit.isNone and client.pager.switched:
+    if client.pager.lineedit.isNone and client.pager.redraw or client.pager.container.redraw:
       client.pager.refreshDisplay(client.pager.container)
       client.pager.displayPage()
-      client.pager.switched = false
+      client.pager.redraw = false
+      client.pager.container.redraw = false
     if client.pager.command != "":
       client.command(client.pager.command)
       client.pager.command = ""

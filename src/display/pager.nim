@@ -38,7 +38,6 @@ type
     reverseSearch: bool
     status*: seq[string]
     statusmsg*: FixedGrid
-    switched*: bool
     tty: File
     selector*: Selector[Container]
     fdmap*: Table[FileHandle, Container]
@@ -46,6 +45,7 @@ type
     display: FixedGrid
     bheight*: int
     bwidth*: int
+    redraw*: bool
 
 iterator containers*(pager: Pager): Container =
   if pager.container != nil:
@@ -60,7 +60,7 @@ iterator containers*(pager: Pager): Container =
 
 proc setContainer*(pager: Pager, c: Container) =
   pager.container = c
-  pager.switched = true
+  pager.redraw = true
 
 proc cursorDown(pager: Pager) {.jsfunc.} = pager.container.cursorDown()
 proc cursorUp(pager: Pager) {.jsfunc.} = pager.container.cursorUp()
@@ -283,6 +283,9 @@ proc displayPage*(pager: Pager) =
   stdout.flushFile()
 
 proc redraw(pager: Pager) {.jsfunc.} =
+  pager.redraw = true
+
+proc draw*(pager: Pager) =
   pager.refreshDisplay()
   pager.refreshStatusMsg()
   pager.displayPage()
@@ -491,7 +494,7 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       pager.regex = pager.iregex
     pager.reverseSearch = linemode == ISEARCH_B
     pager.container.clearSearchHighlights()
-    pager.redraw()
+    pager.redraw = true
 
 proc updateReadLine*(pager: Pager) =
   let lineedit = pager.lineedit.get
@@ -600,9 +603,7 @@ proc handleEvent*(pager: Pager, container: Container): bool =
     pager.displayCursor()
   of UPDATE:
     if container == pager.container:
-      pager.refreshDisplay()
-      pager.refreshStatusMsg()
-      pager.displayPage()
+      pager.redraw = true
   of JUMP:
     if container == pager.container:
       pager.refreshStatusMsg()

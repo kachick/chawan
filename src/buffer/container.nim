@@ -76,6 +76,7 @@ type
     hlon*: bool
     pipeto: Container
     tty: FileHandle
+    redraw*: bool
 
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
@@ -206,13 +207,13 @@ func getTitle*(container: Container): string =
     return "*pipe*"
   return container.source.location.serialize(excludepassword = true)
 
-func currentLineWidth*(container: Container): int =
+func currentLineWidth(container: Container): int =
   if container.numLines == 0: return 0
   return container.currentLine.width()
 
 func maxfromy(container: Container): int = max(container.numLines - container.height, 0)
 
-func maxfromx(container: Container): int = max(container.currentLineWidth() - container.width, 0)
+func maxfromx(container: Container): int = max(container.maxScreenWidth() - container.width, 0)
 
 func atPercentOf*(container: Container): int =
   if container.numLines == 0: return 100
@@ -277,10 +278,15 @@ proc setFromY*(container: Container, y: int) =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.writeCommand(GET_LINES, container.lineWindow)
+    container.redraw = true
 
 proc setFromX*(container: Container, x: int) =
   if container.pos.fromx != x:
     container.pos.fromx = max(min(x, container.maxfromx), 0)
+    if container.pos.fromx > container.cursorx:
+      container.pos.cursorx = min(container.pos.fromx, container.currentLineWidth())
+      container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+    container.redraw = true
 
 proc setFromXY*(container: Container, x, y: int) =
   container.setFromY(y)
@@ -292,19 +298,20 @@ proc setCursorX*(container: Container, x: int, refresh = true, save = true) =
     return
   container.pos.setx = -1
   let cw = container.currentLineWidth()
+  let x2 = x
   let x = max(min(x, cw - 1), 0)
-  if (not refresh) or (container.fromx <= x and x < container.fromx + container.width):
+  if not refresh or container.fromx <= x and x < container.fromx + container.width:
     container.pos.cursorx = x
-  else:
-    if refresh and container.fromx > container.cursorx:
-      container.setFromX(max(cw - 1, 0))
-      container.pos.cursorx = container.fromx
-    elif x > container.cursorx:
-      container.setFromX(max(x - container.width + 1, 0))
-      container.pos.cursorx = x
-    elif x < container.cursorx:
+  elif refresh and container.fromx > x:
+    if x2 < container.cursorx:
       container.setFromX(x)
-      container.pos.cursorx = x
+    container.pos.cursorx = container.fromx
+  elif x > container.cursorx:
+    container.setFromX(max(x - container.width + 1, container.fromx))
+    container.pos.cursorx = x
+  elif x < container.cursorx:
+    container.setFromX(x)
+    container.pos.cursorx = x
   container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
   if save:
     container.pos.xend = container.cursorx
@@ -343,7 +350,10 @@ proc cursorUp*(container: Container) =
   container.setCursorY(container.cursory - 1)
 
 proc cursorLeft*(container: Container) =
-  container.setCursorX(container.cursorx - container.prevWidth())
+  var w = container.prevWidth()
+  if w == 0:
+    w = 1
+  container.setCursorX(container.cursorx - w)
 
 proc cursorRight*(container: Container) =
   container.setCursorX(container.cursorx + container.currentWidth())
@@ -427,11 +437,9 @@ proc pageUp*(container: Container) =
 
 proc pageLeft*(container: Container) =
   container.setFromX(container.fromx - container.width)
-  container.setCursorX(container.cursorx - container.width)
 
 proc pageRight*(container: Container) =
   container.setFromX(container.fromx + container.width)
-  container.setCursorX(container.cursorx + container.width)
 
 proc halfPageUp*(container: Container) =
   container.setFromY(container.fromy - container.height div 2 + 1)
