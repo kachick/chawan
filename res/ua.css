@@ -228,7 +228,7 @@ select:focus > :is(option, optgroup > option):hover {
 }
 
 center {
-	text-align: -moz-center;
+	text-align: -cha-center;
 }
 
 blink {

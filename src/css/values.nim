@@ -75,7 +75,7 @@ type
 
   CSSTextAlign* = enum
     TEXT_ALIGN_START, TEXT_ALIGN_END, TEXT_ALIGN_LEFT, TEXT_ALIGN_RIGHT,
-    TEXT_ALIGN_CENTER, TEXT_ALIGN_JUSTIFY, TEXT_ALIGN_MOZ_CENTER
+    TEXT_ALIGN_CENTER, TEXT_ALIGN_JUSTIFY, TEXT_ALIGN_CHA_CENTER
 
   CSSListStylePosition* = enum
     LIST_STYLE_POSITION_OUTSIDE, LIST_STYLE_POSITION_INSIDE
@@ -585,7 +585,7 @@ func cssTextAlign(d: CSSDeclaration): CSSTextAlign =
       of "right": TEXT_ALIGN_RIGHT
       of "center": TEXT_ALIGN_CENTER
       of "justify": TEXT_ALIGN_JUSTIFY
-      of "-moz-center": TEXT_ALIGN_MOZ_CENTER
+      of "-cha-center": TEXT_ALIGN_CHA_CENTER
       else: raise newException(CSSValueError, "Invalid text align")
   raise newException(CSSValueError, "Invalid text align")
 

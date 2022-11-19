@@ -388,7 +388,7 @@ proc newBlockBox(parent: BlockBox, box: BlockBoxBuilder): BlockBox =
 proc newTableCellBox(parent: BlockBox, box: TableCellBoxBuilder): TableCellBox =
   new(result)
   result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and parent.shrink
+  result.shrink = result.computed{"width"}.auto
 
 proc newTableRowGroupBox(parent: BlockBox, box: TableRowGroupBoxBuilder): TableRowGroupBox =
   new(result)
@@ -409,10 +409,6 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
   result.newBlockBox_common2(parent, builder.content)
   result.shrink = result.computed{"width"}.auto and parent.shrink
-
-proc newTable(parent: BlockBox, builder: TableBoxBuilder): TableBox =
-  new(result)
-  result.newBlockBox_common2(parent, builder)
 
 proc newBlockBox(viewport: Viewport, box: BlockBoxBuilder): BlockBox =
   result = newFlowRootBox(viewport, box, viewport.term.width_px)
@@ -591,13 +587,13 @@ proc positionBlocks(bctx: BlockBox) =
   bctx.height += bctx.padding_top
 
   x += bctx.padding_left
-  if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+  if bctx.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
     x += bctx.compwidth div 2
 
   template apply_child(child: BlockBox) =
     child.offset.y = y
     child.offset.x = x + child.margin_left
-    if bctx.computed{"text-align"} == TEXT_ALIGN_MOZ_CENTER:
+    if bctx.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
       child.offset.x -= child.width div 2
     y += child.height
     bctx.height += child.height
@@ -638,14 +634,16 @@ proc positionBlocks(bctx: BlockBox) =
 
 proc buildTableCell(box: TableCellBoxBuilder, parent: TableRowBox): TableCellBox =
   result = parent.newTableCellBox(box)
+  result.colspan = box.colspan
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
     result.buildBlockLayout(box.children, box.node)
-  result.offset.x += parent.width
 
-proc buildTableRow(box: TableRowBoxBuilder, parent: TableBox): TableRowBox =
+proc buildTableRow(box: TableRowBoxBuilder, parent: TableBox, colwidths: var seq[int]): TableRowBox =
   result = parent.newTableRowBox(box)
+  if colwidths.len < box.children.len:
+    colwidths.setLen(box.children.len)
   var n = 0
   for child in box.children:
     case child.computed{"display"}
@@ -654,38 +652,47 @@ proc buildTableRow(box: TableRowBoxBuilder, parent: TableBox): TableRowBox =
       let cell = buildTableCell(cellbuilder, result)
       result.nested.add(cell)
       result.height = max(result.height, cell.height)
-      if parent.columns.len <= n:
-        parent.columns.setLen(n + 1)
-      parent.columns[n] = max(cell.width, parent.columns[n])
-      var i = n
+      if colwidths.len <= n:
+        colwidths.setLen(n + 1)
+      for i in n ..< n + cellbuilder.colspan:
+        colwidths[i] = max(cell.width div cellbuilder.colspan, colwidths[i])
       n += cellbuilder.colspan
-      if parent.columns.len <= n:
-        parent.columns.setLen(n + 1)
-      while i < n:
-        result.width += parent.columns[i]
-        inc i
+      result.width += cell.width
     else:
       assert false
   result.offset.y += parent.height
 
-proc buildTable(box: TableBoxBuilder, parent: BlockBox): TableBox =
-  result = parent.newTableBox(box)
-  for child in box.children:
+iterator rows(builder: TableBoxBuilder): TableRowBoxBuilder =
+  for child in builder.children:
+    assert child.computed{"display"} in {DISPLAY_TABLE_ROW, DISPLAY_TABLE_ROW_GROUP}
     case child.computed{"display"}
     of DISPLAY_TABLE_ROW:
-      let row = buildTableRow(TableRowBoxBuilder(child), result)
-      result.nested.add(row)
-      result.height += row.height
-      result.width = max(row.width, result.width)
+      yield TableRowBoxBuilder(child)
     of DISPLAY_TABLE_ROW_GROUP:
       for child in TableRowGroupBoxBuilder(child).children:
-        let row = buildTableRow(TableRowBoxBuilder(child), result)
-        result.nested.add(row)
-        result.height += row.height
-        result.width = max(row.width, result.width)
-    else:
-      discard
-      #TODO assert false
+        assert child.computed{"display"} == DISPLAY_TABLE_ROW
+        yield TableRowBoxBuilder(child)
+    else: discard
+
+proc buildTable(box: TableBoxBuilder, parent: BlockBox): TableBox =
+  result = parent.newTableBox(box)
+  var colwidths: seq[int]
+  for row in box.rows:
+    let row = buildTableRow(row, result, colwidths)
+    result.nested.add(row)
+    result.height += row.height
+    result.width = max(row.width, result.width)
+  for row in result.nested:
+    let row = TableRowBox(row)
+    row.width = result.width
+    var n = 0
+    var x = 0
+    for cell in row.nested:
+      let cell = TableCellBox(cell)
+      cell.offset.x += x
+      for i in n ..< n + cell.colspan:
+        x += colwidths[i]
+      n += cell.colspan
 
 proc buildBlocks(bctx: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
   for child in blocks:

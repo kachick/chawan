@@ -109,6 +109,7 @@ proc searchPrev(pager: Pager) {.jsfunc.} =
 
 proc statusMode(pager: Pager) =
   print(HVP(pager.attrs.height + 1, 1))
+  print(SGR())
   print(EL())
 
 proc setLineEdit(pager: Pager, edit: LineEdit, mode: LineMode) =

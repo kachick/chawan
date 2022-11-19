@@ -129,15 +129,14 @@ type
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
 
-
   TableCellBox* = ref object of BlockBox
+    colspan*: int
 
   TableRowGroupBox* = ref object of BlockBox
 
   TableRowBox* = ref object of BlockBox
 
   TableBox* = ref object of BlockBox
-    columns*: seq[int] # offset of each column
 
   InlineBlockBox* = ref object of InlineAtom
     bctx*: BlockBox
