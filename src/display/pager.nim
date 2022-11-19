@@ -1,11 +1,10 @@
 import options
 import os
+import selectors
 import streams
 import tables
 import terminal
 import unicode
-
-import std/selectors
 
 import buffer/buffer
 import buffer/cell
@@ -31,7 +30,7 @@ type
     lineedit*: Option[LineEdit]
     linemode*: LineMode
     username: string
-    command*: string
+    scommand*: string
     config: Config
     regex: Option[Regex]
     iregex: Option[Regex]
@@ -112,7 +111,7 @@ proc statusMode(pager: Pager) =
   print(SGR())
   print(EL())
 
-proc setLineEdit(pager: Pager, edit: LineEdit, mode: LineMode) =
+proc setLineEdit*(pager: Pager, edit: LineEdit, mode: LineMode) =
   pager.statusMode()
   edit.writeStart()
   stdout.flushFile()
@@ -290,14 +289,17 @@ proc draw*(pager: Pager) =
   pager.refreshStatusMsg()
   pager.displayPage()
 
+proc registerContainer*(pager: Pager, container: Container) =
+  pager.fdmap[container.ifd] = container
+  pager.selector.registerHandle(int(container.ifd), {Read}, pager.container)
+
 proc addContainer*(pager: Pager, container: Container) =
   container.parent = pager.container
   if pager.container != nil:
     pager.container.children.add(container)
   pager.setContainer(container)
   assert int(container.ifd) != 0
-  pager.fdmap[container.ifd] = container
-  pager.selector.registerHandle(int(container.ifd), {Read}, pager.container)
+  pager.registerContainer(container)
 
 proc dupeContainer(pager: Pager, container: Container, location: Option[URL]): Container =
   return container.dupeBuffer(pager.config, location)
@@ -456,16 +458,27 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
     if pager.container != prevc:
       pager.container.retry = urls
 
-proc readPipe*(pager: Pager, ctype: Option[string]) =
+proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: Option[URL]): Container =
   let source = BufferSource(
     t: LOAD_PIPE,
-    fd: stdin.getFileHandle(),
+    fd: fd,
     contenttype: some(ctype.get("text/plain")),
-    location: parseUrl("file://-").get
+    location: location.get(newURL("file://-"))
   )
   let container = newBuffer(pager.config, source, pager.tty.getFileHandle(), ispipe = true)
-  pager.addContainer(container)
   container.load()
+  return container
+
+proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
+  let container = pager.readPipe0(ctype, fd, none(URL))
+  pager.addContainer(container)
+
+proc command(pager: Pager) {.jsfunc.} =
+  pager.setLineEdit(readLine("COMMAND: ", pager.attrs.width, config = pager.config, tty = pager.tty), COMMAND)
+
+proc commandMode(pager: Pager) {.jsfunc.} =
+  pager.commandMode = true
+  pager.command()
 
 proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
@@ -516,7 +529,10 @@ proc updateReadLine*(pager: Pager) =
         url.password = s
         pager.username = ""
         pager.gotoURL(newRequest(url), some(pager.container.source.location), replace = pager.container)
-      of COMMAND: pager.command = s
+      of COMMAND:
+        pager.scommand = s
+        if pager.commandmode:
+          pager.command()
       of BUFFER: pager.container.readSuccess(s)
       of SEARCH_F:
         let x = s
@@ -536,13 +552,11 @@ proc updateReadLine*(pager: Pager) =
         pager.username = ""
         pager.discardBuffer()
       of BUFFER: pager.container.readCanceled()
+      of COMMAND: pager.commandmode = false
       else: discard
   if lineedit.state in {CANCEL, FINISH}:
     if pager.lineedit.get == lineedit:
       pager.clearLineEdit()
-    print('\r')
-    print(EL())
-    pager.displayPage()
 
 # Open a URL prompt and visit the specified URL.
 proc changeLocation(pager: Pager) {.jsfunc.} =
@@ -550,7 +564,7 @@ proc changeLocation(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, config = pager.config, tty = pager.tty), LOCATION)
 
 # Reload the page in a new buffer, then kill the previous buffer.
-proc reloadPage(pager: Pager) {.jsfunc.} =
+proc reload(pager: Pager) {.jsfunc.} =
   pager.gotoURL(newRequest(pager.container.source.location), none(URL), pager.container.contenttype, pager.container)
 
 proc click(pager: Pager) {.jsfunc.} =

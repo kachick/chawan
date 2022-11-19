@@ -9,7 +9,7 @@ import utils/twtstr
 type
   ActionMap = Table[string, string]
   Config* = ref ConfigObj
-  ConfigObj = object
+  ConfigObj* = object
     nmap*: ActionMap
     lemap*: ActionMap
     stylesheet*: string

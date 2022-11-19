@@ -1,6 +1,8 @@
 import macros
+import net
 import options
 import os
+import selectors
 import streams
 import tables
 import unicode
@@ -14,7 +16,7 @@ import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/stylednode
-import config/config
+import config/bufferconfig
 import html/dom
 import html/tags
 import html/htmlparser
@@ -78,15 +80,15 @@ type
     reshape: bool
     nostatus: bool
     location: Url
+    selector: Selector[int]
     istream: Stream
     pistream: Stream # for input pipe
     postream: Stream # for output pipe
     streamclosed: bool
     source: string
     prevnode: StyledNode
-    userstyle: CSSStylesheet
     loader: FileLoader
-    config: Config
+    config: BufferConfig
 
 macro writeCommand(buffer: Buffer, cmd: ContainerCommand, args: varargs[typed]) =
   result = newStmtList()
@@ -346,6 +348,18 @@ proc loadResources(buffer: Buffer, document: Document) =
     for child in elem.children_rev:
       stack.add(child)
 
+proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
+  importc: "setvbuf", header: "<stdio.h>", tags: [].}
+
+func getFd(buffer: Buffer): FileHandle =
+  let source = buffer.bsource
+  case source.t
+  of CLONE, LOAD_REQUEST:
+    let istream = SocketStream(buffer.istream)
+    return cast[FileHandle](istream.source.getFd())
+  of LOAD_PIPE:
+    return buffer.bsource.fd
+
 proc setupSource(buffer: Buffer): int =
   let source = buffer.bsource
   let setct = source.contenttype.isNone
@@ -361,6 +375,7 @@ proc setupSource(buffer: Buffer): int =
     var f: File
     if not open(f, source.fd, fmRead):
       return 1
+    discard c_setvbuf(f, nil, IONBF, 0)
     buffer.istream = newFileStream(f)
     if setct:
       buffer.contenttype = "text/plain"
@@ -378,6 +393,7 @@ proc setupSource(buffer: Buffer): int =
       buffer.writeCommand(SET_REDIRECT, response.redirect.get)
   if setct:
     buffer.writeCommand(SET_CONTENT_TYPE, buffer.contenttype)
+  buffer.selector.registerHandle(cast[int](buffer.getFd()), {Read}, 1)
 
 proc load(buffer: Buffer) =
   case buffer.contenttype
@@ -394,25 +410,45 @@ proc load(buffer: Buffer) =
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
   else:
-    if not buffer.streamclosed:
-      buffer.source = buffer.istream.readAll()
-      buffer.istream.close()
-      buffer.streamclosed = true
+    discard
+    #if not buffer.streamclosed:
+    #  if buffer.bsource.t != LOAD_PIPE:
+    #    buffer.source = buffer.istream.readAll()
+    #    buffer.istream.close()
+    #    buffer.streamclosed = true
 
 proc render(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if buffer.viewport == nil:
       buffer.viewport = Viewport(term: buffer.attrs)
-    if buffer.userstyle == nil:
-      buffer.userstyle = buffer.config.stylesheet.parseStylesheet()
-    let ret = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport, buffer.prevstyled)
+    let ret = renderDocument(buffer.document, buffer.attrs, buffer.config.userstyle, buffer.viewport, buffer.prevstyled)
     buffer.lines = ret[0]
     buffer.prevstyled = ret[1]
   else:
-    if not buffer.rendered:
-      buffer.lines = renderPlainText(buffer.source)
-      buffer.rendered = true
+    buffer.lines = renderPlainText(buffer.source)
+
+proc load2(buffer: Buffer) =
+  case buffer.contenttype
+  of "text/html":
+    assert false, "Not implemented yet..."
+  else:
+    # This is incredibly stupid but it works so whatever.
+    # (We're basically recv'ing single bytes, but nim std/net does buffering
+    # for us so we should be ok?)
+    if not buffer.streamclosed:
+      let c = buffer.istream.readChar()
+      buffer.source &= c
+      buffer.reshape = true
+
+proc finishLoad(buffer: Buffer) =
+  if not buffer.streamclosed:
+    if not buffer.istream.atEnd:
+      buffer.source &= buffer.istream.readAll()
+      buffer.reshape = true
+    buffer.selector.unregister(int(buffer.getFd()))
+    buffer.istream.close()
+    buffer.streamclosed = true
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): seq[tuple[name, value: string]] =
@@ -709,113 +745,130 @@ proc drawBuffer(buffer: Buffer, ostream: Stream) =
   ostream.swrite("")
   ostream.flush()
 
-proc runBuffer(buffer: Buffer, istream, ostream: Stream) =
-  buffer.pistream = istream
-  buffer.postream = ostream
-  while true:
-    var cmd: BufferCommand
-    try:
-      istream.sread(cmd)
-      #eprint "cmd", cmd
-      case cmd
-      of LOAD:
-        let code = buffer.setupSource()
-        buffer.load()
-        buffer.writeCommand(LOAD_DONE, code)
-      of GOTO_ANCHOR:
-        var anchor: string
-        istream.sread(anchor)
-        if buffer.document != nil and buffer.document.getElementById(anchor) != nil:
-          buffer.writeCommand(ANCHOR_FOUND)
-        else:
-          buffer.writeCommand(ANCHOR_FAIL)
-      of RENDER:
-        buffer.render()
-        buffer.gotoAnchor()
-      of GET_LINES:
-        var w: Slice[int]
-        istream.sread(w)
-        ostream.swrite(SET_LINES)
-        ostream.swrite(buffer.lines.len)
-        w.b = min(buffer.lines.high, w.b)
-        ostream.swrite(w)
-        for y in w:
-          ostream.swrite(buffer.lines[y])
-          ostream.flush()
-        ostream.flush()
-      of DRAW_BUFFER:
-        buffer.drawBuffer(ostream)
-      of WINDOW_CHANGE:
-        istream.sread(buffer.attrs)
-        buffer.windowChange()
-      of FIND_PREV_LINK:
-        var cx, cy: int
-        istream.sread(cx)
-        istream.sread(cy)
-        let pl = buffer.findPrevLink(cx, cy)
-        buffer.writeCommand(JUMP, pl.x, pl.y)
-      of FIND_NEXT_LINK:
-        var cx, cy: int
-        istream.sread(cx)
-        istream.sread(cy)
-        let nl = buffer.findNextLink(cx, cy)
-        buffer.writeCommand(JUMP, nl.x, nl.y)
-      of FIND_PREV_MATCH:
-        var cx, cy: int
-        var regex: Regex
-        var wrap: bool
-        istream.sread(cx)
-        istream.sread(cy)
-        istream.sread(regex)
-        istream.sread(wrap)
-        let match = buffer.findPrevMatch(regex, cx, cy, wrap)
-        if match.success:
-          buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
-      of FIND_NEXT_MATCH:
-        var cx, cy: int
-        var regex: Regex
-        var wrap: bool
-        istream.sread(cx)
-        istream.sread(cy)
-        istream.sread(regex)
-        istream.sread(wrap)
-        let match = buffer.findNextMatch(regex, cx, cy, wrap)
-        if match.success:
-          buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
-      of READ_SUCCESS:
-        var s: string
-        istream.sread(s)
-        buffer.lineInput(s)
-      of READ_CANCELED:
-        buffer.input = nil
-      of CLICK:
-        var cx, cy: int
-        istream.sread(cx)
-        istream.sread(cy)
-        buffer.click(cx, cy)
-      of MOVE_CURSOR:
-        var cx, cy: int
-        istream.sread(cx)
-        istream.sread(cy)
-        buffer.updateHover(cx, cy)
-      of GET_SOURCE:
-        let ssock = initServerSocket(getpid())
-        buffer.writeCommand(SOURCE_READY)
-        let stream = ssock.acceptSocketStream()
-        if not buffer.streamclosed:
-          buffer.source = buffer.istream.readAll()
-          buffer.streamclosed = true
-        stream.write(buffer.source)
-        stream.close()
-        ssock.close()
+proc readCommand(buffer: Buffer) =
+  let istream = buffer.pistream
+  let ostream = buffer.postream
+  var cmd: BufferCommand
+  istream.sread(cmd)
+  case cmd
+  of LOAD:
+    let code = buffer.setupSource()
+    buffer.load()
+    buffer.writeCommand(LOAD_DONE, code)
+  of GOTO_ANCHOR:
+    var anchor: string
+    istream.sread(anchor)
+    if buffer.document != nil and buffer.document.getElementById(anchor) != nil:
+      buffer.writeCommand(ANCHOR_FOUND)
+    else:
+      buffer.writeCommand(ANCHOR_FAIL)
+  of RENDER:
+    buffer.render()
+    buffer.gotoAnchor()
+  of GET_LINES:
+    var w: Slice[int]
+    istream.sread(w)
+    ostream.swrite(SET_LINES)
+    ostream.swrite(buffer.lines.len)
+    w.b = min(buffer.lines.high, w.b)
+    ostream.swrite(w)
+    for y in w:
+      ostream.swrite(buffer.lines[y])
+      ostream.flush()
+    ostream.flush()
+  of DRAW_BUFFER:
+    buffer.drawBuffer(ostream)
+  of WINDOW_CHANGE:
+    istream.sread(buffer.attrs)
+    buffer.windowChange()
+  of FIND_PREV_LINK:
+    var cx, cy: int
+    istream.sread(cx)
+    istream.sread(cy)
+    let pl = buffer.findPrevLink(cx, cy)
+    buffer.writeCommand(JUMP, pl.x, pl.y, 0)
+  of FIND_NEXT_LINK:
+    var cx, cy: int
+    istream.sread(cx)
+    istream.sread(cy)
+    let nl = buffer.findNextLink(cx, cy)
+    buffer.writeCommand(JUMP, nl.x, nl.y, 0)
+  of FIND_PREV_MATCH:
+    var cx, cy: int
+    var regex: Regex
+    var wrap: bool
+    istream.sread(cx)
+    istream.sread(cy)
+    istream.sread(regex)
+    istream.sread(wrap)
+    let match = buffer.findPrevMatch(regex, cx, cy, wrap)
+    if match.success:
+      buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
+  of FIND_NEXT_MATCH:
+    var cx, cy: int
+    var regex: Regex
+    var wrap: bool
+    istream.sread(cx)
+    istream.sread(cy)
+    istream.sread(regex)
+    istream.sread(wrap)
+    let match = buffer.findNextMatch(regex, cx, cy, wrap)
+    if match.success:
+      buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
+  of READ_SUCCESS:
+    var s: string
+    istream.sread(s)
+    buffer.lineInput(s)
+  of READ_CANCELED:
+    buffer.input = nil
+  of CLICK:
+    var cx, cy: int
+    istream.sread(cx)
+    istream.sread(cy)
+    buffer.click(cx, cy)
+  of MOVE_CURSOR:
+    var cx, cy: int
+    istream.sread(cx)
+    istream.sread(cy)
+    buffer.updateHover(cx, cy)
+  of GET_SOURCE:
+    let ssock = initServerSocket(getpid())
+    buffer.writeCommand(SOURCE_READY)
+    let stream = ssock.acceptSocketStream()
+    if not buffer.streamclosed:
+      buffer.source = buffer.istream.readAll()
+      buffer.streamclosed = true
+    stream.write(buffer.source)
+    stream.close()
+    ssock.close()
+
+proc runBuffer(buffer: Buffer, readf, writef: File) =
+  buffer.pistream = newFileStream(readf)
+  buffer.postream = newFileStream(writef)
+  let rfd = readf.getFileHandle()
+  block loop:
+    while true:
+      let events = buffer.selector.select(-1)
+      for event in events:
+        if Read in event.events:
+          if event.fd == rfd:
+            try:
+              buffer.readCommand()
+            except IOError:
+              break loop
+          else:
+            buffer.load2()
+        if Error in event.events:
+          if event.fd == rfd:
+            break loop
+          elif event.fd == buffer.getFd():
+            buffer.finishLoad()
       if buffer.reshape:
         buffer.reshape = false
         buffer.render()
         buffer.writeCommand(RESHAPE)
-    except IOError:
-      break
-  istream.close()
-  ostream.close()
+  buffer.pistream.close()
+  buffer.postream.close()
   when defined(posix):
     #TODO remove this
     if buffer.loader != nil:
@@ -823,12 +876,14 @@ proc runBuffer(buffer: Buffer, istream, ostream: Stream) =
       buffer.loader = nil
   quit(0)
 
-proc launchBuffer*(config: Config, source: BufferSource, attrs: TermAttributes,
-                   istream, ostream: Stream) =
+proc launchBuffer*(config: BufferConfig, source: BufferSource,
+                   attrs: TermAttributes, readf, writef: File) =
   let buffer = new Buffer
   buffer.attrs = attrs
   buffer.windowChange()
   buffer.config = config
   buffer.loader = newFileLoader()
   buffer.bsource = source
-  buffer.runBuffer(istream, ostream)
+  buffer.selector = newSelector[int]()
+  buffer.selector.registerHandle(int(readf.getFileHandle()), {Read}, 0)
+  buffer.runBuffer(readf, writef)

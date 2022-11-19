@@ -9,6 +9,7 @@ when defined(posix):
 
 import buffer/buffer
 import buffer/cell
+import config/bufferconfig
 import config/config
 import io/request
 import io/serialize
@@ -93,6 +94,7 @@ proc newBuffer*(config: Config, source: BufferSource, tty: FileHandle, ispipe = 
     if pid == -1:
       raise newException(Defect, "Failed to fork buffer process")
     elif pid == 0:
+      let bconfig = config.loadBufferConfig()
       discard close(tty)
       discard close(stdout.getFileHandle())
       # child process
@@ -103,10 +105,8 @@ proc newBuffer*(config: Config, source: BufferSource, tty: FileHandle, ispipe = 
         raise newException(Defect, "Failed to open input handle")
       if not open(writef, pipefd_out[1], fmWrite):
         raise newException(Defect, "Failed to open output handle")
-      discard c_setvbuf(writef, nil, IONBF, 0)
-      let istream = newFileStream(readf)
-      let ostream = newFileStream(writef)
-      launchBuffer(config, source, attrs, istream, ostream)
+      discard c_setvbuf(readf, nil, IONBF, 0)
+      launchBuffer(bconfig, source, attrs, readf, writef)
     else:
       discard close(pipefd_in[0]) # close read
       discard close(pipefd_out[1]) # close write
@@ -228,13 +228,13 @@ func lineWindow(container: Container): Slice[int] =
   let n = (container.height * 5) div 2
   var x = container.fromy - n + container.height div 2
   var y = container.fromy + n + container.height div 2
-  if x < 0:
-    y += -x
-    x = 0
   if y >= container.numLines:
     x -= y - container.numLines
     y = container.numLines
-  return max(x, 0) .. min(y, container.numLines - 1)
+  if x < 0:
+    y += -x
+    x = 0
+  return x .. y
 
 func contains*(hl: Highlight, x, y: int): bool =
   if hl.rect:
@@ -574,9 +574,6 @@ proc render*(container: Container) =
   container.writeCommand(GET_LINES, container.lineWindow)
 
 proc dupeBuffer*(container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
-  var pipefd: array[0..1, cint]
-  if pipe(pipefd) == -1:
-    raise newException(Defect, "Failed to open dupe pipe.")
   let source = BufferSource(
     t: CLONE,
     location: location.get(container.source.location),

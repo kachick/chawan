@@ -1,12 +1,14 @@
+import nativesockets
 import net
 import streams
+
 when defined(posix):
   import posix
 
 import io/process
 
 type SocketStream* = ref object of Stream
-  source: Socket
+  source*: Socket
   isend: bool
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
@@ -29,7 +31,9 @@ proc sockClose(s: Stream) = {.cast(tags: []).}: #...sigh
 
 func newSocketStream*(): SocketStream =
   new(result)
-  result.readDataImpl = sockReadData
+  result.readDataImpl = cast[proc (s: Stream, buffer: pointer, bufLen: int): int
+      {.nimcall, raises: [Defect, IOError, OSError], tags: [ReadIOEffect], gcsafe.}
+  ](sockReadData) # ... ???
   result.writeDataImpl = sockWriteData
   result.atEndImpl = sockAtEnd
   result.closeImpl = sockClose

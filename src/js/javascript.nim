@@ -209,7 +209,9 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
     let opaque = JS_GetOpaque(global.val, 1) # JS_CLASS_OBJECT
     free(global)
     return opaque
-  return JS_GetOpaque(val, val.getClassID())
+  if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
+    return JS_GetOpaque(val, val.getClassID())
+  return nil
 
 func getOpaque*(obj: JSObject, class: string): pointer = getOpaque(obj.ctx, obj.val, class)
 
@@ -236,6 +238,7 @@ proc writeException*(ctx: JSContext, s: Stream) =
     let str = toString(ctx, stack)
     if str.issome:
       s.write(str.get)
+  s.flush()
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 

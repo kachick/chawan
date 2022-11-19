@@ -1,16 +1,14 @@
 import options
 import os
+import selectors
 import streams
 import tables
 import terminal
-import times
 
 when defined(posix):
   import posix
 
-import std/monotimes
-import std/selectors
-
+import bindings/quickjs
 import buffer/container
 import css/sheet
 import config/config
@@ -42,16 +40,16 @@ type
     jsrt: JSRuntime
     jsctx: JSContext
     timeoutid: int
-    timeouts: Table[int, tuple[handler: proc(), time: int64]]
-    added_timeouts: Table[int, tuple[handler: proc(), time: int64]]
-    removed_timeouts: seq[int]
-    intervals: Table[int, tuple[handler: proc(), time: int64, wait: int, del: JSValue]]
-    added_intervals: Table[int, tuple[handler: proc(), time: int64, wait: int, del: JSValue]]
-    removed_intervals: seq[int]
+    timeouts: Table[int, tuple[handler: (proc()), fdi: int]]
+    intervals: Table[int, tuple[handler: (proc()), fdi: int, tofree: JSValue]]
+    timeout_fdis: Table[int, int]
+    interval_fdis: Table[int, int]
 
-  Console* = ref object
-    err*: Stream
-    lastcontainer*: Container
+  Console = ref object
+    err: Stream
+    pager: Pager
+    container: Container
+    prev: Container
     ibuf: string
     tty: File
 
@@ -66,10 +64,6 @@ proc `=destroy`(client: var ClientObj) =
     free(client.jsctx)
   if client.jsrt != nil:
     free(client.jsrt)
-
-proc statusMode(client: Client) =
-  print(HVP(client.attrs.height + 1, 1))
-  print(EL())
 
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
   client.loader.doRequest(req)
@@ -104,37 +98,13 @@ proc command0(client: Client, src: string, filename = "<command>", silence = fal
       let str = ret.toString()
       if str.issome:
         client.console.err.write(str.get & '\n')
+        client.console.err.flush()
   free(ret)
-  for k, v in client.added_timeouts:
-    client.timeouts[k] = v
-  client.added_timeouts.clear()
-  for k, v in client.added_intervals:
-    client.intervals = client.added_intervals
-  client.added_intervals.clear()
 
 proc command(client: Client, src: string) =
   restoreStdin(client.console.tty.getFileHandle())
-  let previ = client.console.err.getPosition()
   client.command0(src)
-  client.console.err.setPosition(previ)
-  #TODO yeah this won't work...
-  #if client.console.lastcontainer == nil:
-  #  let source = BufferSource(t: STRING, slocation: parseUrl("javascript:void(0);").get, str: client.console.err.readAll(), contenttype: some("text/plain"))
-  #  let container = newBuffer(client.config, client.console.tty, source)
-  #  client.console.lastcontainer = container
-  #  client.pager.addContainer(container)
-  #else:
-  #  client.console.lastbuf.istream = newStringStream(client.console.lastbuf.source & client.console.err.readAll())
-  #  client.console.lastbuf.streamclosed = false
-  #client.console.lastbuf.setupBuffer()
-  #client.console.lastbuf.cursorLastLine()
-
-proc command(client: Client): bool {.jsfunc.} =
-  client.statusMode()
-  client.pager.lineedit = some(readLine("COMMAND: ", client.attrs.width, config = client.config, tty = client.console.tty))
-
-proc commandMode(client: Client) {.jsfunc.} =
-  client.pager.commandMode = client.command()
+  client.console.container.cursorLastLine()
 
 proc quit(client: Client, code = 0) {.jsfunc.} =
   if stdout.isatty():
@@ -151,9 +121,6 @@ proc feedNext(client: Client) {.jsfunc.} =
 
 proc input(client: Client) =
   restoreStdin(client.console.tty.getFileHandle())
-  if client.pager.commandMode:
-    client.commandMode()
-    return
   let c = client.console.readChar()
   client.s &= c
   if client.pager.lineedit.isSome:
@@ -189,11 +156,62 @@ proc input(client: Client) =
       client.pager.displayStatus()
       client.pager.displayCursor()
 
-proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
-  importc: "setvbuf", header: "<stdio.h>", tags: [].}
+proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
+  let id = client.timeoutid
+  inc client.timeoutid
+  let fdi = client.pager.selector.registerTimer(timeout, true, nil)
+  client.timeout_fdis[fdi] = id
+  when T is string:
+    client.timeouts[id] = ((proc() =
+      client.evalJSFree(handler, "setTimeout handler")
+    ), fdi)
+  else:
+    let fun = JS_DupValue(handler.ctx, handler.val)
+    client.timeouts[id] = ((proc() =
+      let ret = JSObject(ctx: handler.ctx, val: fun).callFunction()
+      if ret.isException():
+        ret.ctx.writeException(client.console.err)
+      JS_FreeValue(ret.ctx, ret.val)
+      JS_FreeValue(ret.ctx, fun)
+    ), fdi)
+  return id
+
+proc setInterval[T: JSObject|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
+  let id = client.timeoutid
+  inc client.timeoutid
+  let fdi = client.pager.selector.registerTimer(interval, false, nil)
+  client.interval_fdis[fdi] = id
+  when T is string:
+    client.intervals[id] = ((proc() =
+      client.evalJSFree(handler, "setInterval handler")
+    ), fdi, JS_NULL)
+  else:
+    let fun = JS_DupValue(handler.ctx, handler.val)
+    client.intervals[id] = ((proc() =
+      let obj = JSObject(ctx: handler.ctx, val: fun)
+      let ret = obj.callFunction()
+      if ret.isException():
+        ret.ctx.writeException(client.console.err)
+      JS_FreeValue(ret.ctx, ret.val)
+    ), fdi, fun)
+  return id
+
+proc clearTimeout(client: Client, id: int) {.jsfunc.} =
+  if id in client.timeouts:
+    let timeout = client.timeouts[id]
+    client.pager.selector.unregister(timeout.fdi)
+    client.timeout_fdis.del(timeout.fdi)
+    client.timeouts.del(id)
+
+proc clearInterval(client: Client, id: int) {.jsfunc.} =
+  if id in client.intervals:
+    let interval = client.intervals[id]
+    client.pager.selector.unregister(interval.fdi)
+    JS_FreeValue(client.jsctx, interval.tofree)
+    client.interval_fdis.del(interval.fdi)
+    client.intervals.del(id)
 
 proc inputLoop(client: Client) =
-  discard c_setvbuf(client.console.tty, nil, IONBF, 0) #??? I thought raw mode would take care of this
   client.pager.selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   while true:
     let events = client.pager.selector.select(-1)
@@ -201,6 +219,13 @@ proc inputLoop(client: Client) =
       if event.fd == client.console.tty.getFileHandle():
         client.input()
         stdout.flushFile()
+      elif event.fd in client.interval_fdis:
+        client.intervals[client.interval_fdis[event.fd]].handler()
+      elif event.fd in client.timeout_fdis:
+        let id = client.timeout_fdis[event.fd]
+        let timeout = client.timeouts[id]
+        timeout.handler()
+        client.clearTimeout(id)
       else:
         let container = client.pager.fdmap[FileHandle(event.fd)]
         if not client.pager.handleEvent(container):
@@ -208,14 +233,14 @@ proc inputLoop(client: Client) =
           for msg in client.pager.status:
             eprint msg
           client.quit(1)
+    if client.pager.scommand != "":
+      client.command(client.pager.scommand)
+      client.pager.scommand = ""
     if client.pager.lineedit.isNone and client.pager.redraw or client.pager.container.redraw:
       client.pager.refreshDisplay(client.pager.container)
-      client.pager.displayPage()
+      client.pager.draw()
       client.pager.redraw = false
       client.pager.container.redraw = false
-    if client.pager.command != "":
-      client.command(client.pager.command)
-      client.pager.command = ""
 
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
@@ -228,106 +253,25 @@ proc readFile(client: Client, path: string): string {.jsfunc.} =
 proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
   writeFile(path, content)
 
-import bindings/quickjs
-
-proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
-  let id = client.timeoutid
-  inc client.timeoutid
-  when T is string:
-    client.added_timeouts[id] = ((proc() =
-      client.evalJSFree(handler, "setTimeout handler")
-    ), getMonoTime().ticks div 1_000_000 + timeout)
-  else:
-    let fun = JS_DupValue(handler.ctx, handler.val)
-    client.added_timeouts[id] = ((proc() =
-      let ret = JSObject(ctx: handler.ctx, val: fun).callFunction()
-      if ret.isException():
-        ret.ctx.writeException(client.console.err)
-      JS_FreeValue(ret.ctx, ret.val)
-      JS_FreeValue(ret.ctx, fun)
-    ), getMonoTime().ticks div 1_000_000 + timeout)
-  return id
-
-proc setInterval[T: JSObject|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
-  let id = client.timeoutid
-  inc client.timeoutid
-  when T is string:
-    client.added_intervals[id] = ((proc() =
-      client.evalJSFree(handler, "setInterval handler")
-    ), getMonoTime().ticks div 1_000_000 + interval, interval, JS_NULL)
-  else:
-    let fun = JS_DupValue(handler.ctx, handler.val)
-    client.added_intervals[id] = ((proc() =
-      let ret = JSObject(ctx: handler.ctx, val: fun).callFunction()
-      if ret.isException():
-        ret.ctx.writeException(client.console.err)
-      JS_FreeValue(ret.ctx, ret.val)
-    ), getMonoTime().ticks div 1_000_000 + interval, interval, fun)
-  return id
-
-proc clearTimeout(client: Client, id: int) {.jsfunc.} =
-  client.removed_timeouts.add(id)
-
-proc clearInterval(client: Client, id: int) {.jsfunc.} =
-  client.removed_intervals.add(id)
-
-proc jsEventLoop(client: Client) =
-  while client.timeouts.len > 0 or client.intervals.len > 0:
-    var wait = -1
-    let curr = getMonoTime().ticks div 1_000_000
-    for k, v in client.timeouts:
-      if v.time <= curr:
-        v.handler()
-        client.removed_timeouts.add(k)
-    for k, v in client.intervals.mpairs:
-      if v.time <= curr:
-        v.handler()
-        v.time = curr + v.wait
-    for k, v in client.added_timeouts:
-      client.timeouts[k] = v
-    client.added_timeouts.clear()
-    for k, v in client.added_intervals:
-      client.intervals[k] = v
-    client.added_intervals.clear()
-    for k in client.removed_timeouts:
-      client.timeouts.del(k)
-    for k in client.removed_intervals:
-      if k in client.intervals and client.intervals[k].del != JS_NULL:
-        JS_FreeValue(client.jsctx, client.intervals[k].del)
-      client.intervals.del(k)
-    client.removed_timeouts.setLen(0)
-    client.removed_intervals.setLen(0)
-    for k, v in client.timeouts:
-      if wait != -1:
-        wait = min(wait, int(v.time - curr))
-      else:
-        wait = int(v.time - curr)
-    for k, v in client.intervals:
-      if wait != -1:
-        wait = min(wait, int(v.time - curr))
-      else:
-        wait = int(v.time - curr)
-    if wait > 0:
-      sleep(wait)
-
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
   if client.config.startup != "":
     let s = readFile(client.config.startup)
     client.console.err = newFileStream(stderr)
     client.command0(s, client.config.startup, silence = true)
-    client.jsEventLoop()
+    #TODO
     client.console.err = newStringStream()
     quit()
   client.userstyle = client.config.stylesheet.parseStylesheet()
   if not stdin.isatty:
-    client.pager.readPipe(ctype)
+    client.pager.readPipe(ctype, stdin.getFileHandle())
+    stdin.close()
   else:
     client.console.tty = stdin
 
   for page in pages:
     client.pager.loadURL(page, ctype = ctype)
 
-  if stdout.isatty and not dump:
+  if stdout.isatty() and not dump:
     when defined(posix):
       enableRawMode(client.console.tty.getFileHandle())
     client.inputLoop()
@@ -346,9 +290,20 @@ proc nimGCStats(client: Client): string {.jsfunc.} =
 proc jsGCStats(client: Client): string {.jsfunc.} =
   return client.jsrt.getMemoryUsage()
 
-func newConsole(): Console =
+proc newConsole(pager: Pager): Console =
   new(result)
-  result.err = newStringStream()
+  var pipefd: array[0..1, cint]
+  if pipe(pipefd) == -1:
+    raise newException(Defect, "Failed to open console pipe.")
+  let url = newURL("javascript:console.show()")
+  result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url))
+  pager.registerContainer(result.container)
+  discard close(pipefd[0])
+  var f: File
+  if not open(f, pipefd[1], fmWrite):
+    raise newException(Defect, "Failed to open file for console pipe.")
+  result.err = newFileStream(f)
+  result.pager = pager
 
 proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
   for i in 0..<ss.len:
@@ -356,6 +311,16 @@ proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
     if i != ss.high:
       console.err.write(' ')
   console.err.write('\n')
+  console.err.flush()
+
+proc show(console: Console) {.jsfunc.} =
+  if console.pager.container != console.container:
+    console.prev = console.pager.container
+    console.pager.setContainer(console.container)
+
+proc hide(console: Console) {.jsfunc.} =
+  if console.pager.container == console.container:
+    console.pager.setContainer(console.prev)
 
 proc sleep(client: Client, millis: int) {.jsfunc.} =
   sleep millis
@@ -363,14 +328,16 @@ proc sleep(client: Client, millis: int) {.jsfunc.} =
 proc newClient*(config: Config): Client =
   new(result)
   result.config = config
-  result.console = newConsole()
-  if stdin.isatty():
-    result.console.tty = stdin
-  elif stdout.isatty():
-    discard open(result.console.tty, "/dev/tty", fmRead)
   result.attrs = getTermAttributes(stdout)
   result.loader = newFileLoader()
-  result.pager = newPager(config, result.attrs, result.console.tty)
+  var tty: File
+  if stdin.isatty():
+    tty = stdin
+  elif stdout.isatty():
+    discard open(tty, "/dev/tty", fmRead)
+  result.pager = newPager(config, result.attrs, tty)
+  result.console = newConsole(result.pager)
+  result.console.tty = tty
   let rt = newJSRuntime()
   rt.setInterruptHandler(interruptHandler, cast[pointer](result))
   let ctx = rt.newJSContext()
