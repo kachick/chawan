@@ -770,7 +770,7 @@ proc runBuffer(buffer: Buffer, istream, ostream: Stream) =
         istream.sread(wrap)
         let match = buffer.findPrevMatch(regex, cx, cy, wrap)
         if match.success:
-          buffer.writeCommand(JUMP, match.x, match.y)
+          buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
       of FIND_NEXT_MATCH:
         var cx, cy: int
         var regex: Regex
@@ -781,7 +781,7 @@ proc runBuffer(buffer: Buffer, istream, ostream: Stream) =
         istream.sread(wrap)
         let match = buffer.findNextMatch(regex, cx, cy, wrap)
         if match.success:
-          buffer.writeCommand(JUMP, match.x, match.y)
+          buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
       of READ_SUCCESS:
         var s: string
         istream.sread(s)

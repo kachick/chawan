@@ -172,9 +172,10 @@ proc input(client: Client) =
           client.feedNext = true
       elif not client.feedNext:
         client.evalJSFree(action, "<command>")
-      client.pager.updateReadLine()
       if client.pager.lineedit.isNone:
         client.line = nil
+      if not client.feedNext:
+        client.pager.updateReadLine()
   else:
     let action = getNormalAction(client.config, client.s)
     client.evalJSFree(action, "<command>")

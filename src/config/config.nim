@@ -15,7 +15,7 @@ type
     stylesheet*: string
     startup*: string
     ambiguous_double*: bool
-    markcolor*: CellColor
+    hlcolor*: CellColor
 
 func getRealKey(key: string): string =
   var realk: string
@@ -115,17 +115,17 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
       config.stylesheet &= css["inline"].s
   if "display" in t:
     let display = t["display"]
-    if "mark-color" in display:
-      case display["mark-color"].s
-      of "black": config.markcolor = CellColor(rgb: false, color: 40u8)
-      of "red": config.markcolor = CellColor(rgb: false, color: 41u8)
-      of "green": config.markcolor = CellColor(rgb: false, color: 42u8)
-      of "yellow": config.markcolor = CellColor(rgb: false, color: 43u8)
-      of "blue": config.markcolor = CellColor(rgb: false, color: 44u8)
-      of "magenta": config.markcolor = CellColor(rgb: false, color: 45u8)
-      of "cyan": config.markcolor = CellColor(rgb: false, color: 46u8)
-      of "white": config.markcolor = CellColor(rgb: false, color: 47u8)
-      of "terminal": config.markcolor = CellColor(rgb: false, color: 0)
+    if "highlight-color" in display:
+      case display["highlight-color"].s
+      of "black": config.hlcolor = CellColor(rgb: false, color: 40u8)
+      of "red": config.hlcolor = CellColor(rgb: false, color: 41u8)
+      of "green": config.hlcolor = CellColor(rgb: false, color: 42u8)
+      of "yellow": config.hlcolor = CellColor(rgb: false, color: 43u8)
+      of "blue": config.hlcolor = CellColor(rgb: false, color: 44u8)
+      of "magenta": config.hlcolor = CellColor(rgb: false, color: 45u8)
+      of "cyan": config.hlcolor = CellColor(rgb: false, color: 46u8)
+      of "white": config.hlcolor = CellColor(rgb: false, color: 47u8)
+      of "terminal": config.hlcolor = CellColor(rgb: false, color: 0)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))

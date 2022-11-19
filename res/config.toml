@@ -3,7 +3,7 @@ double-width-ambiguous = false
 
 [display]
 # Options: black, red, green, yellow, blue, magenta, cyan, white, terminal
-mark-color = "cyan"
+highlight-color = "cyan"
 
 [page]
 q = 'quit()'

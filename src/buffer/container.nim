@@ -40,6 +40,12 @@ type
       request*: Request
     else: discard
 
+  Highlight* = ref object
+    x*, y*: int
+    endy*, endx*: int
+    rect*: bool
+    clear*: bool
+
   Container* = ref object
     attrs*: TermAttributes
     width*: int
@@ -51,6 +57,7 @@ type
     children*: seq[Container]
     pos: CursorPosition
     bpos: seq[CursorPosition]
+    highlights: seq[Highlight]
     parent*: Container
     sourcepair*: Container
     istream*: Stream
@@ -66,6 +73,7 @@ type
     redirect*: Option[URL]
     ispipe: bool
     jump: bool
+    hlon*: bool
     pipeto: Container
     tty: FileHandle
 
@@ -94,6 +102,7 @@ proc newBuffer*(config: Config, source: BufferSource, tty: FileHandle, ispipe = 
         raise newException(Defect, "Failed to open input handle")
       if not open(writef, pipefd_out[1], fmWrite):
         raise newException(Defect, "Failed to open output handle")
+      discard c_setvbuf(writef, nil, IONBF, 0)
       let istream = newFileStream(readf)
       let ostream = newFileStream(writef)
       launchBuffer(config, source, attrs, istream, ostream)
@@ -225,6 +234,37 @@ func lineWindow(container: Container): Slice[int] =
     x -= y - container.numLines
     y = container.numLines
   return max(x, 0) .. min(y, container.numLines - 1)
+
+func contains*(hl: Highlight, x, y: int): bool =
+  if hl.rect:
+    let rx = hl.x .. hl.endx
+    let ry = hl.y .. hl.endy
+    return x in rx and y in ry
+  else:
+    return (y > hl.y or y == hl.y and x >= hl.x) and
+      (y < hl.endy or y == hl.endy and x <= hl.endx)
+
+func contains*(hl: Highlight, y: int): bool =
+  return y in hl.y .. hl.endy
+
+func colorArea*(hl: Highlight, y: int, limitx: Slice[int]): Slice[int] =
+  if hl.rect:
+    if y in hl.y .. hl.endy:
+      return max(hl.x, limitx.a) .. min(hl.endx, limitx.b)
+  else:
+    if y in hl.y + 1 .. hl.endy - 1:
+      return limitx
+    if y == hl.y and y == hl.endy:
+      return max(hl.x, limitx.a) .. min(hl.endx, limitx.b)
+    if y == hl.y:
+      return max(hl.x, limitx.a) .. limitx.b
+    if y == hl.endy:
+      return limitx.a .. min(hl.endx, limitx.b)
+
+func findHighlights*(container: Container, y: int): seq[Highlight] =
+  for hl in container.highlights:
+    if y in hl:
+      result.add(hl)
 
 macro writeCommand(container: Container, cmd: BufferCommand, args: varargs[typed]) =
   result = newStmtList()
@@ -560,6 +600,11 @@ proc windowChange*(container: Container, attrs: TermAttributes) =
   container.height = attrs.height - 1
   container.writeCommand(WINDOW_CHANGE, attrs)
 
+proc clearSearchHighlights*(container: Container) =
+  for i in countdown(container.highlights.high, 0):
+    if container.highlights[i].clear:
+      container.highlights.del(i)
+
 proc handleEvent*(container: Container): ContainerEvent =
   var cmd: ContainerCommand
   container.istream.sread(cmd)
@@ -610,10 +655,15 @@ proc handleEvent*(container: Container): ContainerEvent =
     container.istream.sread(pwd)
     return ContainerEvent(t: READ_LINE, prompt: prompt, value: str, password: pwd)
   of JUMP:
-    var x, y: int
+    var x, y, ex: int
     container.istream.sread(x)
     container.istream.sread(y)
-    if container.jump and x >= 0 and y >= 0:
+    container.istream.sread(ex)
+    if container.jump:
+      if container.hlon:
+        let hl = Highlight(x: x, y: y, endx: ex, endy: y, clear: true)
+        container.highlights.add(hl)
+        container.hlon = false
       container.setCursorXY(x, y)
       container.jump = false
       return ContainerEvent(t: UPDATE)

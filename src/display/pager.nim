@@ -153,6 +153,8 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
   var r: Rune
   var by = 0
   pager.clearDisplay()
+  var hlformat = newFormat()
+  hlformat.bgcolor = pager.config.hlcolor
   for line in container.ilines(container.fromy ..< min(container.fromy + pager.bheight, container.numLines)):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
@@ -187,19 +189,13 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
       let tk = k + r.width()
       while k < tk and k < pager.bwidth - 1:
         inc k
-    # Then, for each cell that has a mark, override its formatting with that
-    # specified by the mark.
-    #TODO honestly this was always broken anyways. not sure about how to re-implement it
-    #var l = 0
-    #while l < pager.marks.len and buffer.marks[l].y < by:
-    #  inc l # linear search to find the first applicable mark
-    #let aw = buffer.width - (startw - buffer.fromx) # actual width
-    #while l < buffer.marks.len and buffer.marks[l].y == by:
-    #  let mark = buffer.marks[l]
-    #  inc l
-    #  if mark.x >= startw + aw or mark.x + mark.width < startw: continue
-    #  for i in max(mark.x, startw)..<min(mark.x + mark.width, startw + aw):
-    #    buffer.display[dls + i - startw].format = mark.format
+    # Finally, override cell formatting for highlighted cells.
+    let hls = container.findHighlights(by)
+    let aw = container.width - (startw - container.fromx) # actual width
+    for hl in hls:
+      let area = hl.colorArea(by, startw .. startw + aw)
+      for i in area:
+        pager.display[dls + i - startw].format = hlformat
     inc by
 
 func generateStatusMessage*(pager: Pager): string =
@@ -474,15 +470,18 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   of CANCEL:
     pager.iregex = none(Regex)
     pager.container.popCursorPos()
+    pager.container.clearSearchHighlights()
   of EDIT:
     let x = $lineedit.news
     if x != "": pager.iregex = compileSearchRegex(x)
+    pager.container.clearSearchHighlights()
     pager.container.popCursorPos()
     if pager.iregex.isSome:
       if linemode == ISEARCH_F:
         pager.container.cursorNextMatch(pager.iregex.get, true)
       else:
         pager.container.cursorPrevMatch(pager.iregex.get, true)
+      pager.container.hlon = true
     pager.container.pushCursorPos()
     pager.displayPage()
     pager.statusMode()
@@ -491,6 +490,8 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     if pager.iregex.isSome:
       pager.regex = pager.iregex
     pager.reverseSearch = linemode == ISEARCH_B
+    pager.container.clearSearchHighlights()
+    pager.redraw()
 
 proc updateReadLine*(pager: Pager) =
   let lineedit = pager.lineedit.get
