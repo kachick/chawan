@@ -18,6 +18,13 @@ const
   NCOPTION_DRAIN_INPUT* = 0x0100u64
   NCOPTION_SCROLLING* = 0x0200u64
 
+const
+  NCDIRECT_OPTION_INHIBIT_SETLOCALE* = 0x0001u64
+  NCDIRECT_OPTION_INHIBIT_CBREAK* = 0x0002u64
+  NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS* = 0x0008u64
+  NCDIRECT_OPTION_VERBOSE* = 0x0010u64
+  NCDIRECT_OPTION_VERY_VERBOSE* = 0x0020u64
+
 const NCOPTION_CLI_MODE = NCOPTION_NO_ALTERNATE_SCREEN or
   NCOPTION_NO_CLEAR_BITMAPS or
   NCOPTION_PRESERVE_CURSOR or
@@ -48,9 +55,12 @@ type
 
   notcurses* = pointer
 
+  ncdirect* = pointer
+
 {.push importc.}
 
-proc notcurses_core_init*(opts: notcurses_options, fp: File): notcurses
+proc ncdirect_core_init*(termtype: cstring, fp: File, flags: uint64): ncdirect
+proc ncdirect_stop*(nc: ncdirect): cint
 
 {.pop.}
 {.pop.}

@@ -13,7 +13,6 @@ It also functions as a pager, similarly to w3m.
 2. Install the following dependencies:
 	- curl
 	- quickjs
-	- notcurses
 3. Use one of the following:
 	- `make release` - normal release build
 	- `make` - debug build

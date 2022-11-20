@@ -3,7 +3,7 @@ import options
 import css/stylednode
 import css/values
 import html/dom
-import io/term
+import io/window
 
 type
   #LayoutUnit* = distinct int32
@@ -22,7 +22,7 @@ type
     neg*: int
 
   Viewport* = ref object
-    term*: TermAttributes
+    window*: WindowAttributes
     root*: BlockBox
 
   BoxBuilder* = ref object of RootObj

@@ -5,13 +5,13 @@ import css/stylednode
 import css/values
 import html/tags
 import html/dom
-import io/term
+import io/window
 import layout/box
 import utils/twtstr
 
 # Build phase
 func px(l: CSSLength, viewport: Viewport, p = 0): int {.inline.} =
-  return px(l, viewport.term, p)
+  return px(l, viewport.window, p)
 
 type InlineState = object
   ictx: InlineContext
@@ -25,13 +25,13 @@ func whitespacepre(computed: CSSComputedValues): bool {.inline.} =
   computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
 
 func cellwidth(viewport: Viewport): int {.inline.} =
-  viewport.term.ppc
+  viewport.window.ppc
 
 func cellwidth(ictx: InlineContext): int {.inline.} =
   ictx.viewport.cellwidth
 
 func cellheight(viewport: Viewport): int {.inline.} =
-  viewport.term.ppl
+  viewport.window.ppl
 
 func cellheight(ictx: InlineContext): int {.inline.} =
   ictx.viewport.cellheight
@@ -411,7 +411,7 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   result.shrink = result.computed{"width"}.auto and parent.shrink
 
 proc newBlockBox(viewport: Viewport, box: BlockBoxBuilder): BlockBox =
-  result = newFlowRootBox(viewport, box, viewport.term.width_px)
+  result = newFlowRootBox(viewport, box, viewport.window.width_px)
 
 proc newInlineBlock(viewport: Viewport, builder: InlineBlockBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)

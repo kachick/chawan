@@ -7,7 +7,7 @@ import css/sheet
 import css/stylednode
 import css/values
 import html/dom
-import io/term
+import io/window
 import layout/box
 import layout/engine
 import types/color
@@ -128,13 +128,13 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
   assert lines[y].formats[fi].pos <= nx
   # That's it!
 
-proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: TermAttributes) =
+proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, window: WindowAttributes) =
   var r: Rune
 
-  var y = (y + word.offset.y) div term.ppl # y cell
+  var y = (y + word.offset.y) div window.ppl # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
-  var x = (x + word.offset.x) div term.ppc # x cell
+  var x = (x + word.offset.x) div window.ppc # x cell
   var i = 0
   while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
@@ -144,12 +144,12 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, term: Term
 
   lines.setText(linestr, word.format, x, y)
 
-proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term: TermAttributes) =
-  var y = (y + spacing.offset.y) div term.ppl # y cell
+proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, window: WindowAttributes) =
+  var y = (y + spacing.offset.y) div window.ppl # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
-  var x = (x + spacing.offset.x) div term.ppc # x cell
-  let width = spacing.width div term.ppc # cell width
+  var x = (x + spacing.offset.x) div window.ppc # x cell
+  let width = spacing.width div window.ppc # cell width
 
   if x + width < 0: return # highest x is outside the canvas, no need to draw
   var i = 0
@@ -160,11 +160,11 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, term
 
   lines.setText(linestr, spacing.format, x, y)
 
-proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, endx, endy: int, term: TermAttributes) =
+proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, endx, endy: int, window: WindowAttributes) =
   let color = color.cellColor()
 
-  var starty = starty div term.ppl
-  var endy = endy div term.ppl
+  var starty = starty div window.ppl
+  var endy = endy div window.ppl
 
   if starty > endy:
     swap(starty, endy)
@@ -173,9 +173,9 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
   if starty < 0: starty = 0
   if starty == endy: return # height is 0, no need to paint
 
-  var startx = startx div term.ppc
+  var startx = startx div window.ppc
 
-  var endx = endx div term.ppc
+  var endx = endx div window.ppc
   if endy < 0: endy = 0
 
   if startx > endx:
@@ -237,40 +237,40 @@ proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, e
       if lines[y].formats[fi].pos >= startx:
         lines[y].formats[fi].format.bgcolor = color
 
-proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, term: TermAttributes)
+proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes)
 
-proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, term: TermAttributes) =
+proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, window: WindowAttributes) =
   let x = x + ctx.offset.x
   let y = y + ctx.offset.y
   for line in ctx.lines:
     let x = x + line.offset.x
     let y = y + line.offset.y
 
-    let r = y div term.ppl
+    let r = y div window.ppl
     while grid.len <= r:
       grid.addLine()
 
     for atom in line.atoms:
       if atom of InlineBlockBox:
         let iblock = InlineBlockBox(atom)
-        grid.renderBlockContext(iblock.bctx, x + iblock.offset.x, y + iblock.offset.y, term)
+        grid.renderBlockContext(iblock.bctx, x + iblock.offset.x, y + iblock.offset.y, window)
       elif atom of InlineWord:
         let word = InlineWord(atom)
-        grid.setRowWord(word, x, y, term)
+        grid.setRowWord(word, x, y, window)
       elif atom of InlineSpacing:
         let spacing = InlineSpacing(atom)
-        grid.setSpacing(spacing, x, y, term)
+        grid.setSpacing(spacing, x, y, window)
 
-proc renderTable(grid: var FlexibleGrid, ctx: TableBox, x, y: int, term: TermAttributes) =
+proc renderTable(grid: var FlexibleGrid, ctx: TableBox, x, y: int, window: WindowAttributes) =
   for row in ctx.nested:
     assert row.computed{"display"} == DISPLAY_TABLE_ROW
     for cell in row.nested:
       let x = x + row.offset.x
       let y = y + row.offset.y
       assert cell.computed{"display"} == DISPLAY_TABLE_CELL
-      grid.renderBlockContext(cell, x, y, term)
+      grid.renderBlockContext(cell, x, y, window)
 
-proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, term: TermAttributes) =
+proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes) =
   var stack = newSeqOfCap[(BlockBox, int, int)](100)
   stack.add((ctx, x, y))
 
@@ -280,29 +280,29 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, term: 
     y += ctx.offset.y
 
     if ctx.computed{"background-color"}.rgba.a != 0: #TODO color blending
-      grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, term)
+      grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, window)
 
     if ctx of ListItemBox:
       let ctx = ListItemBox(ctx)
       if ctx.marker != nil:
-        grid.renderInlineContext(ctx.marker, x - ctx.marker.maxwidth, y, term)
+        grid.renderInlineContext(ctx.marker, x - ctx.marker.maxwidth, y, window)
 
     if ctx.inline != nil:
       assert ctx.nested.len == 0
-      grid.renderInlineContext(ctx.inline, x, y, term)
+      grid.renderInlineContext(ctx.inline, x, y, window)
     elif ctx.computed{"display"} == DISPLAY_TABLE: #TODO INLINE_TABLE
-      grid.renderTable(TableBox(ctx), x, y, term)
+      grid.renderTable(TableBox(ctx), x, y, window)
     else:
       for i in countdown(ctx.nested.high, 0):
         stack.add((ctx.nested[i], x, y))
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
-proc renderDocument*(document: Document, term: TermAttributes, userstyle: CSSStylesheet, layout: var Viewport, previousStyled: StyledNode): (FlexibleGrid, StyledNode) =
+proc renderDocument*(document: Document, window: WindowAttributes, userstyle: CSSStylesheet, layout: var Viewport, previousStyled: StyledNode): (FlexibleGrid, StyledNode) =
   let styledNode = document.applyStylesheets(uastyle, userstyle, previousStyled)
   result[1] = styledNode
   layout.renderLayout(document, styledNode)
   result[0].setLen(0)
-  result[0].renderBlockContext(layout.root, 0, 0, term)
+  result[0].renderBlockContext(layout.root, 0, 0, window)
   if result[0].len == 0:
     result[0].addLine()

@@ -8,6 +8,8 @@ import terminal
 when defined(posix):
   import posix
 
+import std/exitprocs
+
 import bindings/quickjs
 import buffer/container
 import css/sheet
@@ -19,15 +21,15 @@ import io/lineedit
 import io/loader
 import io/request
 import io/term
+import io/window
 import js/javascript
 import types/cookie
 import types/url
-import utils/twtstr
 
 type
   Client* = ref ClientObj
   ClientObj* = object
-    attrs: TermAttributes
+    attrs: WindowAttributes
     feednext: bool
     s: string
     errormessage: string
@@ -107,11 +109,7 @@ proc command(client: Client, src: string) =
   client.console.container.cursorLastLine()
 
 proc quit(client: Client, code = 0) {.jsfunc.} =
-  if stdout.isatty():
-    print(HVP(getTermAttributes(stdout).height, 1))
-    print('\n')
-    print(EL())
-    stdout.showCursor()
+  client.pager.quit()
   when defined(posix):
     assert kill(client.loader.process, cint(SIGTERM)) == 0
   quit(code)
@@ -150,11 +148,6 @@ proc input(client: Client) =
     client.s = ""
   else:
     client.feedNext = false
-  if client.pager.container != nil:
-    if client.pager.lineedit.isNone:
-      client.pager.refreshStatusMsg()
-      client.pager.displayStatus()
-      client.pager.displayCursor()
 
 proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
   let id = client.timeoutid
@@ -211,8 +204,12 @@ proc clearInterval(client: Client, id: int) {.jsfunc.} =
     client.interval_fdis.del(interval.fdi)
     client.intervals.del(id)
 
+let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
+
 proc inputLoop(client: Client) =
-  client.pager.selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
+  let selector = client.pager.selector
+  selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
+  let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
   while true:
     let events = client.pager.selector.select(-1)
     for event in events:
@@ -226,6 +223,9 @@ proc inputLoop(client: Client) =
         let timeout = client.timeouts[id]
         timeout.handler()
         client.clearTimeout(id)
+      elif event.fd == sigwinch:
+        client.attrs = getWindowAttributes(client.console.tty)
+        client.pager.windowChange(client.attrs)
       else:
         let container = client.pager.fdmap[FileHandle(event.fd)]
         if not client.pager.handleEvent(container):
@@ -236,11 +236,7 @@ proc inputLoop(client: Client) =
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
-    if client.pager.lineedit.isNone and client.pager.redraw or client.pager.container.redraw:
-      client.pager.refreshDisplay(client.pager.container)
-      client.pager.draw()
-      client.pager.redraw = false
-      client.pager.container.redraw = false
+    client.pager.draw()
 
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
@@ -254,6 +250,10 @@ proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
   writeFile(path, content)
 
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
+  let pid = getpid()
+  addExitProc((proc() =
+    if pid == getpid():
+      client.quit()))
   if client.config.startup != "":
     let s = readFile(client.config.startup)
     client.console.err = newFileStream(stderr)
@@ -272,15 +272,14 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
     client.pager.loadURL(page, ctype = ctype)
 
   if stdout.isatty() and not dump:
-    when defined(posix):
-      enableRawMode(client.console.tty.getFileHandle())
     client.inputLoop()
   else:
     for msg in client.pager.status:
       eprint msg
+    let ostream = newFileStream(stdout)
     for container in client.pager.containers:
-      container.render()
-      container.drawBuffer()
+      container.render(true)
+      client.pager.drawBuffer(container, ostream)
     stdout.close()
   client.quit()
 
@@ -328,7 +327,7 @@ proc sleep(client: Client, millis: int) {.jsfunc.} =
 proc newClient*(config: Config): Client =
   new(result)
   result.config = config
-  result.attrs = getTermAttributes(stdout)
+  result.attrs = getWindowAttributes(stdout)
   result.loader = newFileLoader()
   var tty: File
   if stdin.isatty():

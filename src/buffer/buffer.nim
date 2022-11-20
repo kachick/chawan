@@ -25,8 +25,8 @@ import io/process
 import io/request
 import io/serialize
 import io/socketstream
-import io/term
 import js/regex
+import io/window
 import layout/box
 import render/renderdocument
 import render/rendertext
@@ -36,9 +36,9 @@ import utils/twtstr
 
 type
   BufferCommand* = enum
-    LOAD, RENDER, DRAW_BUFFER, WINDOW_CHANGE, GOTO_ANCHOR, READ_SUCCESS,
-    READ_CANCELED, CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH,
-    FIND_PREV_MATCH, GET_SOURCE, GET_LINES, MOVE_CURSOR
+    LOAD, RENDER, WINDOW_CHANGE, GOTO_ANCHOR, READ_SUCCESS, READ_CANCELED,
+    CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
+    GET_SOURCE, GET_LINES, MOVE_CURSOR
 
   ContainerCommand* = enum
     SET_LINES, SET_NEEDS_AUTH, SET_CONTENT_TYPE, SET_REDIRECT, SET_TITLE,
@@ -73,12 +73,11 @@ type
     bsource: BufferSource
     width: int
     height: int
-    attrs: TermAttributes
+    attrs: WindowAttributes
     document: Document
     viewport: Viewport
     prevstyled: StyledNode
     reshape: bool
-    nostatus: bool
     location: Url
     selector: Selector[int]
     istream: Stream
@@ -286,7 +285,7 @@ proc gotoAnchor(buffer: Buffer) =
       inc i
 
 proc windowChange(buffer: Buffer) =
-  buffer.width = buffer.attrs.width - 1
+  buffer.width = buffer.attrs.width
   buffer.height = buffer.attrs.height - 1
   buffer.reshape = true
 
@@ -421,7 +420,7 @@ proc render(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if buffer.viewport == nil:
-      buffer.viewport = Viewport(term: buffer.attrs)
+      buffer.viewport = Viewport(window: buffer.attrs)
     let ret = renderDocument(buffer.document, buffer.attrs, buffer.config.userstyle, buffer.viewport, buffer.prevstyled)
     buffer.lines = ret[0]
     buffer.prevstyled = ret[1]
@@ -720,31 +719,6 @@ proc click(buffer: Buffer, cursorx, cursory: int) =
     else:
       restore_focus
 
-proc drawBuffer(buffer: Buffer, ostream: Stream) =
-  var format = newFormat()
-  for line in buffer.lines:
-    if line.formats.len == 0:
-      ostream.swrite(line.str & "\n")
-    else:
-      var x = 0
-      var i = 0
-      var s = ""
-      for f in line.formats:
-        var outstr = ""
-        #assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
-        while x < f.pos:
-          var r: Rune
-          fastRuneAt(line.str, i, r)
-          outstr &= r
-          x += r.width()
-        s &= outstr
-        s &= format.processFormat(f.format)
-      s &= line.str.substr(i) & format.processFormat(newFormat()) & "\n"
-      ostream.swrite(s)
-    ostream.flush()
-  ostream.swrite("")
-  ostream.flush()
-
 proc readCommand(buffer: Buffer) =
   let istream = buffer.pistream
   let ostream = buffer.postream
@@ -768,16 +742,14 @@ proc readCommand(buffer: Buffer) =
   of GET_LINES:
     var w: Slice[int]
     istream.sread(w)
+    if w.b < 0 or w.b > buffer.lines.high:
+      w.b = buffer.lines.high
     ostream.swrite(SET_LINES)
     ostream.swrite(buffer.lines.len)
-    w.b = min(buffer.lines.high, w.b)
     ostream.swrite(w)
     for y in w:
       ostream.swrite(buffer.lines[y])
-      ostream.flush()
     ostream.flush()
-  of DRAW_BUFFER:
-    buffer.drawBuffer(ostream)
   of WINDOW_CHANGE:
     istream.sread(buffer.attrs)
     buffer.windowChange()
@@ -877,7 +849,7 @@ proc runBuffer(buffer: Buffer, readf, writef: File) =
   quit(0)
 
 proc launchBuffer*(config: BufferConfig, source: BufferSource,
-                   attrs: TermAttributes, readf, writef: File) =
+                   attrs: WindowAttributes, readf, writef: File) =
   let buffer = new Buffer
   buffer.attrs = attrs
   buffer.windowChange()

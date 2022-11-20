@@ -51,9 +51,21 @@ type
     str*: string
     format*: Format
 
-  FixedGrid* = seq[FixedCell]
+  FixedGrid* = object
+    width*, height*: int
+    cells*: seq[FixedCell]
 
-const FormatCodes: array[FormatFlags, tuple[s: int, e: int]] = [
+proc `[]=`*(grid: var FixedGrid, i: int, cell: FixedCell) = grid.cells[i] = cell
+proc `[]=`*(grid: var FixedGrid, i: BackwardsIndex, cell: FixedCell) = grid.cells[i] = cell
+proc `[]`*(grid: var FixedGrid, i: int): var FixedCell = grid.cells[i]
+proc `[]`*(grid: var FixedGrid, i: BackwardsIndex): var FixedCell = grid.cells[i]
+proc `[]`*(grid: FixedGrid, i: int): FixedCell = grid.cells[i]
+proc `[]`*(grid: FixedGrid, i: BackwardsIndex): FixedCell = grid.cells[i]
+iterator items*(grid: FixedGrid): FixedCell {.inline.} =
+  for cell in grid.cells: yield cell
+proc len*(grid: FixedGrid): int = grid.cells.len
+
+const FormatCodes*: array[FormatFlags, tuple[s: int, e: int]] = [
   FLAG_BOLD: (1, 22),
   FLAG_ITALIC: (3, 23),
   FLAG_UNDERLINE: (4, 24),
@@ -80,7 +92,7 @@ func `==`*(a: FixedCell, b: FixedCell): bool =
     a.str == b.str
 
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
-  return newSeq[FixedCell](w * h)
+  return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
 
 func width*(line: FlexibleLine): int =
   return line.str.width()
@@ -286,36 +298,3 @@ proc parseAnsiCode*(format: var Format, stream: Stream) =
   if 0x40 <= int(c) and int(c) <= 0x7E:
     let final = c
     format.handleAnsiCode(final, params)
-
-proc processFormat*(format: var Format, cellf: Format): string =
-  for flag in FormatFlags:
-    if flag in format.flags and flag notin cellf.flags:
-      result &= SGR(FormatCodes[flag].e)
-
-  if cellf.fgcolor != format.fgcolor:
-    var color = cellf.fgcolor
-    if color.rgb:
-      let rgb = color.rgbcolor
-      result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
-    elif color == defaultColor:
-      result &= SGR()
-      format = newFormat()
-    else:
-      result &= SGR(color.color)
-
-  if cellf.bgcolor != format.bgcolor:
-    var color = cellf.bgcolor
-    if color.rgb:
-      let rgb = color.rgbcolor
-      result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
-    elif color == defaultColor:
-      result &= SGR()
-      format = newFormat()
-    else:
-      result &= SGR(color.color)
-
-  for flag in FormatFlags:
-    if flag notin format.flags and flag in cellf.flags:
-      result &= SGR(FormatCodes[flag].s)
-
-  format = cellf

@@ -13,7 +13,7 @@ import config/bufferconfig
 import config/config
 import io/request
 import io/serialize
-import io/term
+import io/window
 import js/regex
 import types/url
 import utils/twtstr
@@ -29,7 +29,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    STATUS, JUMP, READ_LINE, OPEN
+    READ_LINE, OPEN
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -48,7 +48,7 @@ type
     clear*: bool
 
   Container* = ref object
-    attrs*: TermAttributes
+    attrs*: WindowAttributes
     width*: int
     height*: int
     contenttype*: Option[string]
@@ -83,7 +83,7 @@ proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
 proc newBuffer*(config: Config, source: BufferSource, tty: FileHandle, ispipe = false): Container =
-  let attrs = getTermAttributes(stdout)
+  let attrs = getWindowAttributes(stdout)
   when defined(posix):
     var pipefd_in, pipefd_out: array[0..1, cint]
     if pipe(pipefd_in) == -1:
@@ -274,10 +274,13 @@ macro writeCommand(container: Container, cmd: BufferCommand, args: varargs[typed
     result.add(quote do: `container`.ostream.swrite(`arg`))
   result.add(quote do: `container`.ostream.flush())
 
+proc requestLines*(container: Container, w = container.lineWindow) =
+  container.writeCommand(GET_LINES, w)
+
 proc setFromY*(container: Container, y: int) =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
-    container.writeCommand(GET_LINES, container.lineWindow)
+    container.requestLines()
     container.redraw = true
 
 proc setFromX*(container: Container, x: int) =
@@ -515,11 +518,16 @@ proc updateCursor(container: Container) =
 proc pushCursorPos*(container: Container) =
   container.bpos.add(container.pos)
 
-proc popCursorPos*(container: Container) =
+proc sendCursorPosition*(container: Container) =
+  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+  container.requestLines()
+
+proc popCursorPos*(container: Container, nojump = false) =
   container.pos = container.bpos.pop()
   container.updateCursor()
-  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
-  container.writeCommand(GET_LINES, container.lineWindow)
+  if not nojump:
+    container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+    container.requestLines()
 
 macro proxy(fun: typed) =
   let name = fun[0] # sym
@@ -568,10 +576,11 @@ proc gotoAnchor*(container: Container, anchor: string) {.proxy.} = discard
 proc readCanceled*(container: Container) {.proxy.} = discard
 proc readSuccess*(container: Container, s: string) {.proxy.} = discard
 
-proc render*(container: Container) =
+proc render*(container: Container, noreq = false) =
   container.writeCommand(RENDER)
   container.jump = true # may jump to anchor
-  container.writeCommand(GET_LINES, container.lineWindow)
+  if not noreq:
+    container.requestLines()
 
 proc dupeBuffer*(container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
   let source = BufferSource(
@@ -587,21 +596,9 @@ proc dupeBuffer*(container: Container, config: Config, location = none(URL), con
 proc click*(container: Container) =
   container.writeCommand(CLICK, container.cursorx, container.cursory)
 
-proc drawBuffer*(container: Container) =
-  container.writeCommand(DRAW_BUFFER)
-  while true:
-    var s: string
-    container.istream.sread(s)
-    if s == "": break
-    try:
-      stdout.write(s)
-    except IOError: # couldn't write to stdout; it's probably just a broken pipe.
-      quit(1)
-    stdout.flushFile()
-
-proc windowChange*(container: Container, attrs: TermAttributes) =
+proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs
-  container.width = attrs.width - 1
+  container.width = attrs.width
   container.height = attrs.height - 1
   container.writeCommand(WINDOW_CHANGE, attrs)
 
@@ -610,9 +607,7 @@ proc clearSearchHighlights*(container: Container) =
     if container.highlights[i].clear:
       container.highlights.del(i)
 
-proc handleEvent*(container: Container): ContainerEvent =
-  var cmd: ContainerCommand
-  container.istream.sread(cmd)
+proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent =
   case cmd
   of SET_LINES:
     var w: Slice[int]
@@ -639,10 +634,8 @@ proc handleEvent*(container: Container): ContainerEvent =
     return ContainerEvent(t: REDIRECT)
   of SET_TITLE:
     container.istream.sread(container.title)
-    return ContainerEvent(t: STATUS)
   of SET_HOVER:
     container.istream.sread(container.hovertext)
-    return ContainerEvent(t: STATUS)
   of LOAD_DONE:
     container.istream.sread(container.code)
     if container.code != 0:
@@ -664,18 +657,40 @@ proc handleEvent*(container: Container): ContainerEvent =
     container.istream.sread(x)
     container.istream.sread(y)
     container.istream.sread(ex)
-    if container.jump:
+    if x != -1 and y != -1 and container.jump:
       if container.hlon:
+        container.clearSearchHighlights()
         let hl = Highlight(x: x, y: y, endx: ex, endy: y, clear: true)
         container.highlights.add(hl)
         container.hlon = false
       container.setCursorXY(x, y)
       container.jump = false
-      return ContainerEvent(t: UPDATE)
   of OPEN:
     return ContainerEvent(t: OPEN, request: container.istream.readRequest())
   of SOURCE_READY:
     if container.pipeto != nil:
       container.pipeto.load()
   of RESHAPE:
-    container.writeCommand(GET_LINES, container.lineWindow)
+    container.requestLines()
+
+# Synchronously read all lines in the buffer.
+iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
+  var cmd: ContainerCommand
+  container.requestLines(0 .. -1)
+  container.istream.sread(cmd)
+  while cmd != SET_LINES:
+    discard container.handleCommand(cmd)
+    container.istream.sread(cmd)
+  assert cmd == SET_LINES
+  var w: Slice[int]
+  container.istream.sread(container.numLines)
+  container.istream.sread(w)
+  var line: SimpleFlexibleLine
+  for y in 0 ..< w.len:
+    container.istream.sread(line)
+    yield line
+
+proc handleEvent*(container: Container): ContainerEvent =
+  var cmd: ContainerCommand
+  container.istream.sread(cmd)
+  return container.handleCommand(cmd)

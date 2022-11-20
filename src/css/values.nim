@@ -4,7 +4,7 @@ import strutils
 
 import css/cssparser
 import css/selectorparser
-import io/term
+import io/window
 import types/color
 import utils/twtstr
 
@@ -247,26 +247,26 @@ macro `{}=`*(vals: CSSComputedValues, s: string, v: typed): untyped =
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
-func em_to_px(em: float64, term: TermAttributes): int =
-  int(em * float64(term.ppl))
+func em_to_px(em: float64, window: WindowAttributes): int =
+  int(em * float64(window.ppl))
 
-func ch_to_px(ch: float64, term: TermAttributes): int =
-  int(ch * float64(term.ppc))
+func ch_to_px(ch: float64, window: WindowAttributes): int =
+  int(ch * float64(window.ppc))
 
 # 水 width, we assume it's 2 chars
-func ic_to_px(ic: float64, term: TermAttributes): int =
-  int(ic * float64(term.ppc) * 2)
+func ic_to_px(ic: float64, window: WindowAttributes): int =
+  int(ic * float64(window.ppc) * 2)
 
 # x-letter height, we assume it's em/2
-func ex_to_px(ex: float64, term: TermAttributes): int =
-  int(ex * float64(term.ppc) / 2)
+func ex_to_px(ex: float64, window: WindowAttributes): int =
+  int(ex * float64(window.ppc) / 2)
 
-func px*(l: CSSLength, term: TermAttributes, p: int): int {.inline.} =
+func px*(l: CSSLength, window: WindowAttributes, p: int): int {.inline.} =
   case l.unit
-  of UNIT_EM, UNIT_REM: em_to_px(l.num, term)
-  of UNIT_CH: ch_to_px(l.num, term)
-  of UNIT_IC: ic_to_px(l.num, term)
-  of UNIT_EX: ex_to_px(l.num, term)
+  of UNIT_EM, UNIT_REM: em_to_px(l.num, window)
+  of UNIT_CH: ch_to_px(l.num, window)
+  of UNIT_IC: ic_to_px(l.num, window)
+  of UNIT_EX: ex_to_px(l.num, window)
   of UNIT_PERC: int(p / 100 * l.num)
   of UNIT_PX: int(l.num)
   of UNIT_CM: int(l.num * 37.8)
@@ -274,10 +274,10 @@ func px*(l: CSSLength, term: TermAttributes, p: int): int {.inline.} =
   of UNIT_IN: int(l.num * 96)
   of UNIT_PC: int(l.num * 96 / 6)
   of UNIT_PT: int(l.num * 96 / 72)
-  of UNIT_VW: int(term.width_px / 100 * l.num)
-  of UNIT_VH: int(term.height_px / 100 * l.num)
-  of UNIT_VMIN: int(min(term.width_px, term.width_px) / 100 * l.num)
-  of UNIT_VMAX: int(max(term.width_px, term.width_px) / 100 * l.num)
+  of UNIT_VW: int(window.width_px / 100 * l.num)
+  of UNIT_VH: int(window.height_px / 100 * l.num)
+  of UNIT_VMIN: int(min(window.width_px, window.width_px) / 100 * l.num)
+  of UNIT_VMAX: int(max(window.width_px, window.width_px) / 100 * l.num)
 
 func listMarker*(t: CSSListStyleType, i: int): string =
   case t

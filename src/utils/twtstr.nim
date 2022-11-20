@@ -628,25 +628,6 @@ proc expandPath*(path: string): string =
         if p != nil:
           result = $p.pw_dir / path.substr(i)
 
-template CSI*(s: varargs[string, `$`]): string =
-  var r = "\e["
-  var first = true
-  for x in s:
-    if not first:
-      r &= ";"
-    first = false
-    r &= x
-  r
-
-template SGR*(s: varargs[string, `$`]): string =
-  CSI(s) & "m"
-
-template HVP*(s: varargs[string, `$`]): string =
-  CSI(s) & "f"
-
-template EL*(s: varargs[string, `$`]): string =
-  CSI(s) & "K"
-
 iterator split*(s: seq[Rune], sep: Rune): seq[Rune] =
   var i = 0
   var prev = 0
