@@ -23,6 +23,29 @@ func `==`*(color1, color2: CellColor): bool =
 
 const defaultColor* = CellColor(rgb: false, color: 0)
 
+const ANSIFGBlack* = CellColor(rgb: false, color: 38)
+const ColorsANSIFg* = [
+  CellColor(rgb: false, color: 30), # black
+  CellColor(rgb: false, color: 31), # red
+  CellColor(rgb: false, color: 32), # green
+  CellColor(rgb: false, color: 33), # yellow
+  CellColor(rgb: false, color: 34), # blue
+  CellColor(rgb: false, color: 35), # magenta
+  CellColor(rgb: false, color: 36), # cyan
+  CellColor(rgb: false, color: 37), # white
+]
+
+const ColorsANSIBg* = [
+  CellColor(rgb: false, color: 40), # black
+  CellColor(rgb: false, color: 41), # red
+  CellColor(rgb: false, color: 42), # green
+  CellColor(rgb: false, color: 43), # yellow
+  CellColor(rgb: false, color: 44), # blue
+  CellColor(rgb: false, color: 45), # magenta
+  CellColor(rgb: false, color: 46), # cyan
+  CellColor(rgb: false, color: 47), # white
+]
+
 const ColorsRGB* = {
   "aliceblue": 0xf0f8ff,
   "antiquewhite": 0xfaebd7,

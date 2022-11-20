@@ -135,8 +135,6 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(readLine("?", pager.attrs.width, config = pager.config, tty = pager.tty), ISEARCH_B)
 
 func attrs*(pager: Pager): WindowAttributes = pager.term.attrs
-func bwidth(pager: Pager): int = pager.attrs.width
-func bheight(pager: Pager): int = pager.attrs.height - 1
 
 proc newPager*(config: Config, attrs: WindowAttributes, tty: File): Pager =
   new(result)
@@ -144,14 +142,15 @@ proc newPager*(config: Config, attrs: WindowAttributes, tty: File): Pager =
   result.attrs = attrs
   result.tty = tty
   result.selector = newSelector[Container]()
-  result.display = newFixedGrid(result.bwidth, result.bheight)
+  result.display = newFixedGrid(result.attrs.width, result.attrs.height - 1)
+  result.statusmsg = newFixedGrid(result.attrs.width)
   result.term = newTerminal(tty, stdout)
 
 proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
 
 proc clearDisplay(pager: Pager) =
-  pager.display = newFixedGrid(pager.bwidth, pager.bheight)
+  pager.display = newFixedGrid(pager.display.width, pager.display.height)
 
 proc refreshDisplay*(pager: Pager, container = pager.container) =
   var r: Rune
@@ -159,14 +158,14 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
   pager.clearDisplay()
   var hlformat = newFormat()
   hlformat.bgcolor = pager.config.hlcolor
-  for line in container.ilines(container.fromy ..< min(container.fromy + pager.bheight, container.numLines)):
+  for line in container.ilines(container.fromy ..< min(container.fromy + pager.display.height, container.numLines)):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
     # Skip cells till buffer.fromx.
     while w < container.fromx and i < line.str.len:
       fastRuneAt(line.str, i, r)
       w += r.width()
-    let dls = by * container.width # starting position of row in display
+    let dls = by * pager.display.width # starting position of row in display
     # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
     # we encountered a double-width character.)
     var k = 0
@@ -177,6 +176,7 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
     var cf = line.findFormat(w)
     var nf = line.findNextFormat(w)
     let startw = w # save this for later
+    var lan = ""
     # Now fill in the visible part of the row.
     while i < line.str.len:
       let pw = w
@@ -188,11 +188,13 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
         cf = nf
         nf = line.findNextFormat(pw)
       pager.display[dls + k].str &= r
+      lan &= r
       if cf.pos != -1:
         pager.display[dls + k].format = cf.format
       let tk = k + r.width()
       while k < tk and k < pager.display.width - 1:
         inc k
+    eprint "add line", lan, dls
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
     let aw = container.width - (startw - container.fromx) # actual width
@@ -209,11 +211,11 @@ func generateStatusMessage*(pager: Pager): string =
     result &= pager.term.processFormat(format, cell.format)
     result &= cell.str
     w += cell.width()
-  if w < pager.bwidth:
+  if w < pager.statusmsg.width:
     result &= EL()
 
 proc clearStatusMessage(pager: Pager) =
-  pager.statusmsg = newFixedGrid(pager.bwidth)
+  pager.statusmsg = newFixedGrid(pager.statusmsg.width)
 
 proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
   pager.clearStatusMessage()
@@ -621,7 +623,7 @@ proc handleEvent*(pager: Pager, container: Container): bool =
       pager.redraw = true
   of READ_LINE:
     if container == pager.container:
-      pager.setLineEdit(readLine(event.prompt, pager.bwidth, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
+      pager.setLineEdit(readLine(event.prompt, pager.statusmsg.width, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
   of OPEN:
     pager.gotoURL(event.request, some(container.source.location))
   of NO_EVENT: discard

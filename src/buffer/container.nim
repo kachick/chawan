@@ -121,7 +121,7 @@ proc newBuffer*(config: Config, source: BufferSource, tty: FileHandle, ispipe = 
       let ostream = newFileStream(writef)
       result = Container(istream: istream, ostream: ostream, source: source,
                          ifd: pipefd_out[0], process: pid, attrs: attrs,
-                         width: attrs.width - 1, height: attrs.height - 1,
+                         width: attrs.width, height: attrs.height - 1,
                          contenttype: source.contenttype, ispipe: ispipe,
                          tty: tty)
       result.pos.setx = -1

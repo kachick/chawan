@@ -1,6 +1,8 @@
+import math
 import os
 import streams
 import strutils
+import tables
 import terminal
 
 import bindings/notcurses
@@ -76,10 +78,64 @@ template HVP*(s: varargs[string, `$`]): string =
 template EL*(s: varargs[string, `$`]): string =
   CSI(s) & "K"
 
+const ANSIColorMap = [
+  ColorsRGB["black"],
+  ColorsRGB["red"],
+  ColorsRGB["green"],
+  ColorsRGB["yellow"],
+  ColorsRGB["blue"],
+  ColorsRGB["magenta"],
+  ColorsRGB["cyan"],
+  ColorsRGB["white"],
+]
+
+# Use euclidian distance to quantize RGB colors.
+proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
+  var a = 0
+  var n = -1
+  for i in 0 .. ANSIColorMap.high:
+    if i == exclude: continue
+    let color = ANSIColorMap[i]
+    if color == rgb: return i
+    let b = (color.r - rgb.r) ^  2 + (color.g - rgb.b) ^ 2 + (color.g - rgb.g) ^ 2
+    if n == -1 or b < a:
+      n = i
+      a = b
+  return n
+
 proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   for flag in FormatFlags:
     if flag in format.flags and flag notin cellf.flags:
-      result &= SGR(FormatCodes[flag].e)
+      if flag in term.formatmode:
+        result &= SGR(FormatCodes[flag].e)
+
+  var cellf = cellf
+  case term.colormode
+  of ANSI, EIGHT_BIT:
+    if cellf.bgcolor.rgb:
+      let color = approximateANSIColor(cellf.bgcolor.rgbcolor)
+      if color == 0: # black
+        cellf.bgcolor = defaultColor
+      else:
+        cellf.bgcolor = ColorsANSIBg[color]
+    if cellf.fgcolor.rgb:
+      if cellf.bgcolor == defaultColor:
+        var color = approximateANSIColor(cellf.fgcolor.rgbcolor)
+        if color == int(cellf.bgcolor.color) - 40:
+          color = 7 - color
+        if color == 7: # white
+          cellf.fgcolor = defaultColor
+        else:
+          cellf.fgcolor = ColorsANSIFg[color]
+      else:
+        cellf.fgcolor = if int(cellf.bgcolor.color) - 40 < 4:
+          defaultColor
+        else:
+          ColorsANSIFg[0]
+  of MONOCHROME:
+    cellf.fgcolor = defaultColor
+    cellf.bgcolor = defaultColor
+  of TRUE_COLOR: discard
 
   if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor
@@ -132,7 +188,6 @@ proc findTermInfoDirs(termenv: string): seq[string] =
   result.add("/usr/share/terminfo")
 
 proc findFile(dir: string, file: string): string =
-  var stack = dir
   for f in walkDirRec(dir, followFilter = {pcDir, pcLinkToDir}):
     if f == file:
       return f
@@ -175,18 +230,16 @@ proc detectTermAttributes*(term: Terminal) =
   #TODO terminfo/termcap?
 
 func generateFullOutput(term: Terminal, grid: FixedGrid): string =
-  var x = 0
   var format = newFormat()
   result &= HVP(1, 1)
-  for cell in grid.cells:
-    if x >= grid.width - 1:
-      result &= EL()
-      result &= "\r\n"
-      x = 0
-    result &= term.processFormat(format, cell.format)
-    result &= cell.str
-    inc x
-  result &= EL()
+  for y in 0 ..< grid.height:
+    result &= SGR()
+    for x in 0 ..< grid.width:
+      let cell = grid[y * grid.width + x]
+      result &= term.processFormat(format, cell.format)
+      result &= cell.str
+    result &= EL()
+    result &= "\r\n"
 
 func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
@@ -198,8 +251,9 @@ func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
   var line = ""
   var lr = false
   while i < curr.len:
-    if x >= grid.width - 1:
+    if x >= grid.width:
       if lr:
+        result &= SGR()
         result &= HVP(y + 1, 1)
         result &= EL()
         result &= line
@@ -288,7 +342,7 @@ proc quit*(term: Terminal) =
     if term.smcup:
       term.outfile.write(RMCUP())
     else:
-      term.outfile.write(HVP(term.attrs.height, 1) & '\n')
+      term.outfile.write(SGR() & HVP(term.attrs.height - 1, 1) & '\n')
     term.outfile.showCursor()
   term.outfile.flushFile()
 
