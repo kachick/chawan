@@ -1,38 +1,56 @@
 import math
 import options
 import os
-import streams
-import strutils
 import tables
 import terminal
 
-import bindings/notcurses
+import bindings/termcap
 import buffer/cell
 import config/config
 import io/window
 import types/color
 import utils/twtstr
 
+#TODO switch from termcap...
+
 type
+  TermcapCap = enum
+    ce # clear till end of line
+    cd # clear display
+    cm # cursor move
+    ti # terminal init (=smcup)
+    te # terminal end (=rmcup)
+    so # start standout mode
+    md # start bold mode
+    us # start underline mode
+    mr # start reverse mode
+    mb # start blink mode
+    ue # end underline mode
+    se # end standout mode
+    me # end all formatting modes
+
+  Termcap = ref object
+    bp: array[1024, uint8]
+    funcstr: array[256, uint8]
+    caps: array[TermcapCap, cstring]
+
   Terminal* = ref TerminalObj
   TerminalObj = object
     config: Config
     infile: File
     outfile: File
-    nc*: ncdirect
     cleared: bool
     prevgrid: FixedGrid
     attrs*: WindowAttributes
     colormode: ColorMode
     formatmode: FormatMode
     smcup: bool
+    tc: Termcap
+    tname: string
 
-  TermInfo = ref object
-
-proc `=destroy`(term: var TerminalObj) =
-  if term.nc != nil:
-    #discard ncdirect_stop(term.nc)
-    term.nc = nil
+func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
+func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
+func ccap(term: Terminal, c: TermcapCap): cstring = term.tc.caps[c]
 
 template CSI*(s: varargs[string, `$`]): string =
   var r = "\e["
@@ -70,7 +88,7 @@ template RMCUP(): string = DECRST(1049)
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
 
-template HVP*(s: varargs[string, `$`]): string =
+template HVP(s: varargs[string, `$`]): string =
   CSI(s) & "f"
 
 template EL*(s: varargs[string, `$`]): string =
@@ -86,6 +104,63 @@ const ANSIColorMap = [
   ColorsRGB["cyan"],
   ColorsRGB["white"],
 ]
+
+var goutfile: File
+proc putc(c: char): cint {.cdecl.} =
+  goutfile.write(c)
+
+proc write(term: Terminal, s: string) =
+  when termcap_found:
+    discard tputs(cstring(s), cint(s.len), putc)
+  else:
+    term.outfile.write(s)
+
+proc flush*(term: Terminal) =
+  term.outfile.flushFile()
+
+proc cursorGoto(term: Terminal, x, y: int): string =
+  when termcap_found:
+    return $tgoto(term.ccap cm, cint(x), cint(y))
+  else:
+    return HVP(y, x)
+
+proc clearEnd(term: Terminal): string =
+  when termcap_found:
+    return term.cap ce
+  else:
+    return EL()
+
+proc resetFormat(term: Terminal): string =
+  when termcap_found:
+    return term.cap me
+  else:
+    return SGR()
+
+#TODO get rid of this
+proc eraseLine*(term: Terminal) =
+  term.write(term.clearEnd())
+
+#TODO ditto
+proc resetFormat2*(term: Terminal) =
+  term.write(term.resetFormat())
+
+#TODO ditto
+proc setCursor*(term: Terminal, x, y: int) =
+  term.write(term.cursorGoto(x, y))
+
+proc enableAltScreen(term: Terminal): string =
+  when termcap_found:
+    if term.hascap ti:
+      term.write($term.cap ti)
+  else:
+    return SMCUP()
+
+proc disableAltScreen(term: Terminal): string =
+  when termcap_found:
+    if term.hascap te:
+      term.write($term.cap te)
+  else:
+    return RMCUP()
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
@@ -141,7 +216,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       let rgb = color.rgbcolor
       result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
-      result &= SGR()
+      result &= term.resetFormat()
       format = newFormat()
     else:
       result &= SGR(color.color)
@@ -167,45 +242,9 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
 proc updateWindow*(term: Terminal) =
   term.attrs = getWindowAttributes(term.outfile)
 
-proc findTermInfoDirs(termenv: string): seq[string] =
-  let tienv = getEnv("TERMINFO")
-  if tienv != "":
-    if dirExists(tienv):
-      return @[tienv]
-  else:
-    let home = getEnv("HOME")
-    if home != "":
-      result.add(home & '/' & ".terminfo")
-  let tidirsenv = getEnv("TERMINFO_DIRS")
-  if tidirsenv != "":
-    for s in tidirsenv.split({':'}):
-      if s == "":
-        result.add("/usr/share/terminfo")
-      else:
-        result.add(s)
-    return result
-  result.add("/usr/share/terminfo")
-
-proc findFile(dir: string, file: string): string =
-  for f in walkDirRec(dir, followFilter = {pcDir, pcLinkToDir}):
-    if f == file:
-      return f
-
-proc parseTermInfo(s: Stream): TermInfo =
-  let magic = s.readInt16()
-  #TODO do we really want this?
-  s.close()
-
-proc getTermInfo(termenv: string): TermInfo =
-  let tipaths = findTermInfoDirs(termenv)
-  for tipath in tipaths:
-    let f = findFile(tipath, termenv)
-    if f != "":
-      return parseTermInfo(newFileStream(f))
-
 proc getCursorPos(term: Terminal): (int, int) =
-  term.outfile.write(CSI("6n"))
-  term.outfile.flushFile()
+  term.write(CSI("6n"))
+  term.flush()
   var c = term.infile.readChar()
   while true:
     while c != '\e':
@@ -221,26 +260,9 @@ proc getCursorPos(term: Terminal): (int, int) =
     tmp &= c
   result[0] = parseInt32(tmp)
 
-proc detectTermAttributes(term: Terminal) =
-  #TODO terminfo/termcap?
-  if term.config.colormode.isSome:
-    term.colormode = term.config.colormode.get
-  else:
-    term.colormode = ANSI
-    let colorterm = getEnv("COLORTERM")
-    case colorterm
-    of "24bit", "truecolor": term.colormode = TRUE_COLOR
-  if term.config.formatmode.isSome:
-    term.formatmode = term.config.formatmode.get
-  else:
-    term.formatmode = {low(FormatFlags)..high(FormatFlags)}
-  term.smcup = true
-  if term.config.altscreen.isSome:
-    term.smcup = term.config.altscreen.get
-
 func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
-  result &= HVP(1, 1)
+  result &= term.cursorGoto(0, 0)
   result &= SGR()
   for y in 0 ..< grid.height:
     for x in 0 ..< grid.width:
@@ -248,7 +270,7 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
       result &= term.processFormat(format, cell.format)
       result &= cell.str
     result &= SGR()
-    result &= EL()
+    result &= term.clearEnd()
     result &= "\r\n"
 
 func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
@@ -264,8 +286,8 @@ func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
     if x >= grid.width:
       if lr:
         result &= SGR()
-        result &= HVP(y + 1, 1)
-        result &= EL()
+        result &= term.cursorGoto(0, y)
+        result &= term.clearEnd()
         result &= line
         lr = false
       x = 0
@@ -277,7 +299,7 @@ func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
     inc i
     inc x
   if lr:
-    result &= HVP(y + 1, 1)
+    result &= term.cursorGoto(0, y)
     result &= EL()
     result &= line
     lr = false
@@ -288,9 +310,6 @@ proc hideCursor*(term: Terminal) =
 proc showCursor*(term: Terminal) =
   term.outfile.showCursor()
 
-proc flush*(term: Terminal) =
-  term.outfile.flushFile()
-
 proc outputGrid*(term: Terminal, grid: FixedGrid) =
   term.outfile.write(SGR())
   if not term.cleared:
@@ -299,9 +318,6 @@ proc outputGrid*(term: Terminal, grid: FixedGrid) =
   else:
     term.outfile.write(term.generateSwapOutput(grid))
   term.prevgrid = grid
-
-proc setCursor*(term: Terminal, x, y: int) =
-  term.outfile.write(HVP(y + 1, x + 1))
 
 when defined(posix):
   import posix
@@ -350,21 +366,66 @@ proc quit*(term: Terminal) =
     when defined(posix):
       disableRawMode()
     if term.smcup:
-      term.outfile.write(RMCUP())
+      term.write(term.disableAltScreen())
     else:
-      term.outfile.write(HVP(term.attrs.height, 1))
+      term.write(term.cursorGoto(0, term.attrs.height - 1))
     term.outfile.showCursor()
   term.outfile.flushFile()
 
+when termcap_found:
+  proc loadTermcap(term: Terminal) =
+    assert goutfile == nil
+    goutfile = term.outfile
+    let tc = new Termcap
+    if tgetent(cast[cstring](addr tc.bp), cstring(term.tname)) == 1:
+      term.tc = tc
+      for id in TermcapCap:
+        tc.caps[id] = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
+    else:
+      raise newException(Defect, "Failed to load termcap description for terminal " & term.tname)
+
+proc detectTermAttributes(term: Terminal) =
+  term.tname = getEnv("TERM")
+  if term.tname == "":
+    term.tname = "dosansi"
+  when termcap_found:
+    term.loadTermcap()
+    if term.tc != nil:
+      term.smcup = term.hascap(ti)
+    term.formatmode = {FLAG_ITALIC, FLAG_OVERLINE, FLAG_STRIKE}
+    if term.hascap(us):
+      term.formatmode.incl(FLAG_UNDERLINE)
+    if term.hascap(md):
+      term.formatmode.incl(FLAG_BOLD)
+    if term.hascap(mr):
+      term.formatmode.incl(FLAG_REVERSE)
+    if term.hascap(mb):
+      term.formatmode.incl(FLAG_BLINK)
+  else:
+    term.smcup = true
+    term.formatmode = {low(FormatFlags)..high(FormatFlags)}
+  if term.config.colormode.isSome:
+    term.colormode = term.config.colormode.get
+  else:
+    term.colormode = ANSI
+    let colorterm = getEnv("COLORTERM")
+    case colorterm
+    of "24bit", "truecolor": term.colormode = TRUE_COLOR
+  if term.config.formatmode.isSome:
+    term.formatmode = term.config.formatmode.get
+  if term.config.altscreen.isSome:
+    term.smcup = term.config.altscreen.get
+
 proc start*(term: Terminal, infile: File) =
   term.infile = infile
+  assert term.outfile.getFileHandle().setInheritable(false)
   assert term.infile.getFileHandle().setInheritable(false)
   when defined(posix):
     if term.isatty():
       enableRawMode(infile.getFileHandle())
   term.detectTermAttributes()
   if term.smcup:
-    term.outfile.write(SMCUP())
+    term.write(term.enableAltScreen())
 
 proc newTerminal*(outfile: File, config: Config): Terminal =
   let term = new Terminal

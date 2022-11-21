@@ -106,15 +106,17 @@ proc searchPrev(pager: Pager) {.jsfunc.} =
     else:
       pager.container.cursorNextMatch(pager.regex.get, true)
 
+#TODO get rid of this
 proc statusMode(pager: Pager) =
-  print(HVP(pager.attrs.height + 1, 1))
-  print(SGR())
-  print(EL())
+  pager.term.setCursor(0, pager.attrs.height - 1)
+  pager.term.resetFormat2()
+  pager.term.eraseLine()
 
+#TODO ditto
 proc setLineEdit*(pager: Pager, edit: LineEdit, mode: LineMode) =
   pager.statusMode()
   edit.writeStart()
-  stdout.flushFile()
+  pager.term.flush()
   pager.lineedit = some(edit)
   pager.linemode = mode
 
@@ -250,9 +252,11 @@ proc refreshStatusMsg*(pager: Pager) =
     format.reverse = true
     pager.writeStatusMessage(msg, format)
 
+#TODO get rid of this
 func generateStatusOutput(pager: Pager): string =
   return pager.generateStatusMessage()
 
+#TODO ditto
 proc displayStatus*(pager: Pager) =
   if pager.lineedit.isNone:
     pager.statusMode()

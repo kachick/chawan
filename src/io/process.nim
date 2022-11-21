@@ -7,7 +7,7 @@ type ServerSocket* = object
   sock*: Socket
   path*: string
 
-proc doFork*(): Pid =
+proc doubleFork*(): Pid =
   result = fork()
   if result == -1:
     eprint "Failed to fork child process."

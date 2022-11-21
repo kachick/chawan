@@ -264,16 +264,20 @@ proc newConsole(pager: Pager, tty: File): Console =
       raise newException(Defect, "Failed to open file for console pipe.")
     result.err = newFileStream(f)
     result.pager = pager
+    result.tty = tty
   else:
     result.err = newFileStream(stderr)
 
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
   var tty: File
+  var dump = dump
   if not dump:
     if stdin.isatty():
       tty = stdin
     elif stdout.isatty():
       discard open(tty, "/dev/tty", fmRead)
+    else:
+      dump = true
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)
   let pid = getpid()
@@ -296,7 +300,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   for page in pages:
     client.pager.loadURL(page, ctype = ctype)
 
-  if stdout.isatty() and not dump:
+  if not dump:
     client.inputLoop()
   else:
     for msg in client.pager.status:
