@@ -837,21 +837,26 @@ proc getParams(fun: NimNode): seq[FuncParam] =
     returnType = some(formalParams[0])
   for i in 1..<fun.params.len:
     let it = formalParams[i]
-    let name = $it[0]
     let tt = it[1]
-    let t = if it[1].kind != nnkEmpty:
-      `tt`
-    else:
-      let x = it[2]
-      quote do:
+    var t: NimNode
+    if it[^2].kind != nnkEmpty:
+      t = `tt`
+    elif it[^1].kind != nnkEmpty:
+      let x = it[^1]
+      t = quote do:
         typeof(`x`)
-    let val = if it[2].kind != nnkEmpty:
-      let x = it[2]
+    else:
+      eprint treeRepr it
+      assert false
+    let val = if it[^1].kind != nnkEmpty:
+      let x = it[^1]
       some(newPar(x))
     else:
       none(NimNode)
     var g = none(NimNode)
-    funcParams.add((name, t, val, g))
+    for i in 0 ..< it.len - 2:
+      let name = $it[i]
+      funcParams.add((name, t, val, g))
   funcParams
 
 proc getReturn(fun: NimNode): Option[NimNode] =
@@ -1344,45 +1349,45 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             of "jsget": result.jsget.add(varName)
             of "jsset": result.jsset.add(varName)
 
-macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, nointerface = false): JSClassID =
+macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, nointerface = false, name: static string = ""): JSClassID =
   result = newStmtList()
-  let s = t.strVal
+  let name = if name == "": t.strVal else: name
   var sctr = ident("js_illegal_ctor")
-  var sfin = ident("js_" & s & "ClassFin")
+  var sfin = ident("js_" & t.strVal & "ClassFin")
   var ctorFun: NimNode
   var ctorImpl: NimNode
   var setters, getters: Table[string, NimNode]
   let tabList = newNimNode(nnkBracket)
   let pragmas = findPragmas(t)
   for node in pragmas.jsget:
-    let id = ident("js_get_" & s & "_" & $node)
+    let id = ident("js_get_" & t.strVal & "_" & $node)
     let fn = $node
     result.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue): JSValue {.cdecl.} =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not ctx.isInstanceOf(this, `s`):
+        if not (JS_IsUndefined(this) or ctx.isGlobal(`name`)) and not ctx.isInstanceOf(this, `name`):
           # undefined -> global.
-          return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `s`)
+          return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `name`)
         let arg_0 = fromJS_or_return(`t`, ctx, this)
         return toJS(ctx, arg_0.`node`)
     )
-    registerFunction(s, fn, id)
+    registerFunction(t.strVal, fn, id)
   for node in pragmas.jsset:
-    let id = ident("js_set_" & s & "_" & $node)
+    let id = ident("js_set_" & t.strVal & "_" & $node)
     let fn = $node
     result.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue, val: JSValue): JSValue {.cdecl.} =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`s`)) and not ctx.isInstanceOf(this, `s`):
+        if not (JS_IsUndefined(this) or ctx.isGlobal(`name`)) and not ctx.isInstanceOf(this, `name`):
           # undefined -> global.
-          return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `s`)
+          return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `name`)
         let arg_0 = fromJS_or_return(`t`, ctx, this)
         let arg_1 = val
         arg_0.`node` = fromJS_or_return(typeof(arg_0.`node`), ctx, arg_1)
         return JS_DupValue(ctx, arg_1)
     )
-    registerFunction(s, fn, id)
+    registerFunction(t.strVal, fn, id)
 
-  if s in RegisteredFunctions:
-    for fun in RegisteredFunctions[s].mitems:
+  if t.strVal in RegisteredFunctions:
+    for fun in RegisteredFunctions[t.strVal].mitems:
       var f0 = fun.name
       let f1 = fun.id
       if fun.name.endsWith("_exceptions"):
@@ -1390,7 +1395,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
       if f1.strVal.startsWith("js_new"):
         ctorImpl = js_funcs[$f0].res
         if ctorFun != nil:
-          error("Class " & $s & " has 2+ constructors.")
+          error("Class " & t.strVal & " has 2+ constructors.")
         ctorFun = f1
       elif f1.strVal.startsWith("js_get"):
         getters[f0] = f1
@@ -1438,7 +1443,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
       # any associated JS object from all relevant runtimes.
       var x: `t`
       new(x, nim_finalize_for_js)
-      const classDef = JSClassDef(class_name: `s`, finalizer: `sfin`)
+      const classDef = JSClassDef(class_name: `name`, finalizer: `sfin`)
       `ctx`.newJSClass(JSClassDefConst(unsafeAddr classDef), `sctr`, `tabList`, getTypePtr(x), `parent`, `asglobal`, `nointerface`)
   )
 

@@ -1,5 +1,6 @@
 import tables
 import macros
+import options
 import strutils
 
 import css/cssparser
@@ -333,23 +334,9 @@ func cssColor(d: CSSDeclaration): CSSColor =
       let tok = CSSToken(d.value[0])
       case tok.tokenType
       of CSS_HASH_TOKEN:
-        let s = tok.value
-        if s.len == 3:
-          for r in s:
-            if hexValue(r) == -1:
-              raise newException(CSSValueError, "Invalid color")
-          let c = (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
-                  (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
-                  (hexValue(s[2]) shl 4) or hexValue(s[2])
-          return CSSColor(rgba: RGBColor(c))
-        elif s.len == 6:
-          for r in s:
-            if hexValue(r) == -1:
-              raise newException(CSSValueError, "Invalid color")
-          let c = (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
-                  (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
-                  (hexValue(s[4]) shl 4) or hexValue(s[5])
-          return CSSColor(rgba: RGBColor(c))
+        let c = parseHexColor(tok.value)
+        if c.isSome:
+          return CSSColor(rgba: c.get)
         else:
           raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:

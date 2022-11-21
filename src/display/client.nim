@@ -249,18 +249,43 @@ proc readFile(client: Client, path: string): string {.jsfunc.} =
 proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
   writeFile(path, content)
 
+proc newConsole(pager: Pager, tty: File): Console =
+  new(result)
+  if tty != nil:
+    var pipefd: array[0..1, cint]
+    if pipe(pipefd) == -1:
+      raise newException(Defect, "Failed to open console pipe.")
+    let url = newURL("javascript:console.show()")
+    result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url))
+    pager.registerContainer(result.container)
+    discard close(pipefd[0])
+    var f: File
+    if not open(f, pipefd[1], fmWrite):
+      raise newException(Defect, "Failed to open file for console pipe.")
+    result.err = newFileStream(f)
+    result.pager = pager
+  else:
+    result.err = newFileStream(stderr)
+
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
+  var tty: File
+  if not dump:
+    if stdin.isatty():
+      tty = stdin
+    elif stdout.isatty():
+      discard open(tty, "/dev/tty", fmRead)
+  client.pager.launchPager(tty)
+  client.console = newConsole(client.pager, tty)
   let pid = getpid()
   addExitProc((proc() =
     if pid == getpid():
       client.quit()))
   if client.config.startup != "":
-    let s = readFile(client.config.startup)
-    client.console.err = newFileStream(stderr)
+    let s = if fileExists(client.config.startup):
+      readFile(client.config.startup)
+    else:
+      client.config.startup
     client.command0(s, client.config.startup, silence = true)
-    #TODO
-    client.console.err = newStringStream()
-    quit()
   client.userstyle = client.config.stylesheet.parseStylesheet()
   if not stdin.isatty:
     client.pager.readPipe(ctype, stdin.getFileHandle())
@@ -278,7 +303,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
       eprint msg
     let ostream = newFileStream(stdout)
     for container in client.pager.containers:
-      container.render(true)
+      container.reshape(true)
       client.pager.drawBuffer(container, ostream)
     stdout.close()
   client.quit()
@@ -288,21 +313,6 @@ proc nimGCStats(client: Client): string {.jsfunc.} =
 
 proc jsGCStats(client: Client): string {.jsfunc.} =
   return client.jsrt.getMemoryUsage()
-
-proc newConsole(pager: Pager): Console =
-  new(result)
-  var pipefd: array[0..1, cint]
-  if pipe(pipefd) == -1:
-    raise newException(Defect, "Failed to open console pipe.")
-  let url = newURL("javascript:console.show()")
-  result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url))
-  pager.registerContainer(result.container)
-  discard close(pipefd[0])
-  var f: File
-  if not open(f, pipefd[1], fmWrite):
-    raise newException(Defect, "Failed to open file for console pipe.")
-  result.err = newFileStream(f)
-  result.pager = pager
 
 proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
   for i in 0..<ss.len:
@@ -329,14 +339,7 @@ proc newClient*(config: Config): Client =
   result.config = config
   result.attrs = getWindowAttributes(stdout)
   result.loader = newFileLoader()
-  var tty: File
-  if stdin.isatty():
-    tty = stdin
-  elif stdout.isatty():
-    discard open(tty, "/dev/tty", fmRead)
-  result.pager = newPager(config, result.attrs, tty)
-  result.console = newConsole(result.pager)
-  result.console.tty = tty
+  result.pager = newPager(config, result.attrs)
   let rt = newJSRuntime()
   rt.setInterruptHandler(interruptHandler, cast[pointer](result))
   let ctx = rt.newJSContext()
@@ -357,3 +360,4 @@ proc newClient*(config: Config): Client =
   ctx.addRequestModule()
   ctx.addLineEditModule()
   ctx.addPagerModule()
+  ctx.addContainerModule()

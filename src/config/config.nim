@@ -1,12 +1,17 @@
 import tables
+import options
 import os
 import streams
 
+import buffer/cell
 import config/toml
 import types/color
 import utils/twtstr
 
 type
+  ColorMode* = enum
+    MONOCHROME, ANSI, EIGHT_BIT, TRUE_COLOR
+  FormatMode* = set[FormatFlags]
   ActionMap = Table[string, string]
   Config* = ref ConfigObj
   ConfigObj* = object
@@ -15,7 +20,10 @@ type
     stylesheet*: string
     startup*: string
     ambiguous_double*: bool
-    hlcolor*: CellColor
+    hlcolor*: RGBAColor
+    headless*: bool
+    colormode*: Option[ColorMode]
+    formatmode*: Option[FormatMode]
 
 func getRealKey(key: string): string =
   var realk: string
@@ -90,42 +98,58 @@ proc readUserStylesheet(dir, file: string): string =
       f.close()
 
 proc parseConfig(config: Config, dir: string, t: TomlValue) =
-  if "general" in t:
-    let general = t["general"]
-    if "double-width-ambiguous" in general:
-      config.ambiguous_double = general["double-width-ambiguous"].b
-  if "page" in t:
-    for k, v in t["page"].pairs:
-      config.nmap[getRealKey(k)] = v.s
-  if "line" in t:
-    for k, v in t["line"].pairs:
-      config.lemap[getRealKey(k)] = v.s
-  if "css" in t:
-    let css = t["css"]
-    if "include" in css:
-      let val = css["include"]
-      case val.vt
-      of VALUE_STRING:
-        config.stylesheet &= readUserStylesheet(dir, val.s)
-      of VALUE_ARRAY:
-        for child in val.a:
-          config.stylesheet &= readUserStylesheet(dir, child.s)
-      else: discard
-    if "inline" in css:
-      config.stylesheet &= css["inline"].s
-  if "display" in t:
-    let display = t["display"]
-    if "highlight-color" in display:
-      case display["highlight-color"].s
-      of "black": config.hlcolor = CellColor(rgb: false, color: 40u8)
-      of "red": config.hlcolor = CellColor(rgb: false, color: 41u8)
-      of "green": config.hlcolor = CellColor(rgb: false, color: 42u8)
-      of "yellow": config.hlcolor = CellColor(rgb: false, color: 43u8)
-      of "blue": config.hlcolor = CellColor(rgb: false, color: 44u8)
-      of "magenta": config.hlcolor = CellColor(rgb: false, color: 45u8)
-      of "cyan": config.hlcolor = CellColor(rgb: false, color: 46u8)
-      of "white": config.hlcolor = CellColor(rgb: false, color: 47u8)
-      of "terminal": config.hlcolor = CellColor(rgb: false, color: 0)
+  for k, v in t:
+    case k
+    of "headless":
+      config.headless = v.b
+    of "page":
+      for k, v in v:
+        config.nmap[getRealKey(k)] = v.s
+    of "line":
+      for k, v in v:
+        config.lemap[getRealKey(k)] = v.s
+    of "css":
+      for k, v in v:
+        case k
+        of "include":
+          case v.vt
+          of VALUE_STRING:
+            config.stylesheet &= readUserStylesheet(dir, v.s)
+          of VALUE_ARRAY:
+            for child in v.a:
+              config.stylesheet &= readUserStylesheet(dir, v.s)
+          else: discard
+        of "inline":
+          config.stylesheet &= v.s
+    of "display":
+      for k, v in v:
+        case k
+        of "color-mode":
+          case v.s
+          of "auto": config.colormode = none(ColorMode)
+          of "monochrome": config.colormode = some(MONOCHROME)
+          of "ansi": config.colormode = some(ANSI)
+          of "8bit": config.colormode = some(EIGHT_BIT)
+          of "24bit": config.colormode = some(TRUE_COLOR)
+        of "format-mode":
+          if v.vt == VALUE_STRING and v.s == "auto":
+            config.formatmode = none(FormatMode)
+          elif v.vt == VALUE_ARRAY:
+            var mode: FormatMode
+            for v in v.a:
+              case v.s
+              of "bold": mode.incl(FLAG_BOLD)
+              of "italic": mode.incl(FLAG_ITALIC)
+              of "underline": mode.incl(FLAG_UNDERLINE)
+              of "reverse": mode.incl(FLAG_REVERSE)
+              of "strike": mode.incl(FLAG_STRIKE)
+              of "overline": mode.incl(FLAG_OVERLINE)
+              of "blink": mode.incl(FLAG_BLINK)
+            config.formatmode = some(mode)
+        of "highlight-color":
+          config.hlcolor = parseRGBAColor(v.s).get
+        of "double-width-ambiguous":
+          config.ambiguous_double = v.b
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))

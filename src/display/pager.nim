@@ -15,6 +15,7 @@ import io/term
 import io/window
 import js/javascript
 import js/regex
+import types/color
 import types/url
 import utils/twtstr
 
@@ -89,7 +90,7 @@ proc scrollDown(pager: Pager) {.jsfunc.} = pager.container.scrollDown()
 proc scrollUp(pager: Pager) {.jsfunc.} = pager.container.scrollUp()
 proc scrollLeft(pager: Pager) {.jsfunc.} = pager.container.scrollLeft()
 proc scrollRight(pager: Pager) {.jsfunc.} = pager.container.scrollRight()
-proc reshape(pager: Pager) {.jsfunc.} = pager.container.render()
+proc reshape(pager: Pager) {.jsfunc.} = pager.container.reshape()
 
 proc searchNext(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
@@ -136,15 +137,21 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
 
 func attrs*(pager: Pager): WindowAttributes = pager.term.attrs
 
-proc newPager*(config: Config, attrs: WindowAttributes, tty: File): Pager =
-  new(result)
-  result.config = config
-  result.attrs = attrs
-  result.tty = tty
-  result.selector = newSelector[Container]()
-  result.display = newFixedGrid(result.attrs.width, result.attrs.height - 1)
-  result.statusmsg = newFixedGrid(result.attrs.width)
-  result.term = newTerminal(tty, stdout)
+proc newPager*(config: Config, attrs: WindowAttributes): Pager =
+  let pager = Pager(
+    config: config,
+    attrs: attrs,
+    selector: newSelector[Container](),
+    display: newFixedGrid(attrs.width, attrs.height - 1),
+    statusmsg: newFixedGrid(attrs.width),
+    term: newTerminal(stdout, config)
+  )
+  return pager
+
+proc launchPager*(pager: Pager, tty: File) =
+  pager.tty = tty
+  if tty != nil:
+    pager.term.start(tty)
 
 proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
@@ -152,16 +159,18 @@ proc quit*(pager: Pager, code = 0) =
 proc clearDisplay(pager: Pager) =
   pager.display = newFixedGrid(pager.display.width, pager.display.height)
 
+proc buffer(pager: Pager): Container {.jsfget, inline.} = pager.container
+
 proc refreshDisplay*(pager: Pager, container = pager.container) =
   var r: Rune
   var by = 0
   pager.clearDisplay()
   var hlformat = newFormat()
-  hlformat.bgcolor = pager.config.hlcolor
+  hlformat.bgcolor = CellColor(rgb: true, rgbcolor: pager.config.hlcolor)
   for line in container.ilines(container.fromy ..< min(container.fromy + pager.display.height, container.numLines)):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
-    # Skip cells till buffer.fromx.
+    # Skip cells till fromx.
     while w < container.fromx and i < line.str.len:
       fastRuneAt(line.str, i, r)
       w += r.width()
@@ -194,7 +203,6 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
       let tk = k + r.width()
       while k < tk and k < pager.display.width - 1:
         inc k
-    eprint "add line", lan, dls
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
     let aw = container.width - (startw - container.fromx) # actual width
@@ -230,7 +238,10 @@ proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
 
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
-  if container != nil:
+  if pager.status.len > 0:
+    pager.writeStatusMessage(pager.status[0])
+    pager.status.delete(0)
+  elif container != nil:
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
               $container.atPercentOf() & "%) " & "<" & container.getTitle() & ">"
     if container.hovertext.len > 0:
@@ -240,11 +251,7 @@ proc refreshStatusMsg*(pager: Pager) =
     pager.writeStatusMessage(msg, format)
 
 func generateStatusOutput(pager: Pager): string =
-  if pager.status.len > 0:
-    result = pager.status[0] & EL()
-    pager.status = pager.status[1..^1]
-  else:
-    return pager.generateStatusMessage()
+  return pager.generateStatusMessage()
 
 proc displayStatus*(pager: Pager) =
   if pager.lineedit.isNone:
@@ -352,8 +359,13 @@ proc lineInfo(pager: Pager) {.jsfunc.} =
   pager.setStatusMessage(pager.container.lineInfo())
 
 proc deleteContainer(pager: Pager, container: Container) =
-  if container.parent == nil and container.children.len == 0 and container != pager.container:
+  if container.parent == nil and
+      container.children.len == 0 and
+      container != pager.container:
     return
+  if container.sourcepair != nil:
+    container.sourcepair.sourcepair = nil
+    container.sourcepair = nil
   if container.parent != nil:
     let parent = container.parent
     let n = parent.children.find(container)
@@ -403,7 +415,7 @@ proc toggleSource*(pager: Pager) {.jsfunc.} =
     let container = pager.container.dupeBuffer(pager.config, contenttype = contenttype)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
-    pager.container.children.add(container)
+    pager.addContainer(container)
 
 proc windowChange*(pager: Pager, attrs: WindowAttributes) =
   pager.attrs = attrs
@@ -426,7 +438,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
       contenttype: ctype,
       location: request.url
     )
-    let container = newBuffer(pager.config, source, pager.tty.getFileHandle())
+    let container = newBuffer(pager.config, source)
     container.replace = replace
     pager.addContainer(container)
     container.load()
@@ -477,7 +489,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: O
     contenttype: some(ctype.get("text/plain")),
     location: location.get(newURL("file://-"))
   )
-  let container = newBuffer(pager.config, source, pager.tty.getFileHandle(), ispipe = true)
+  let container = newBuffer(pager.config, source, ispipe = true)
   container.load()
   return container
 
@@ -489,7 +501,7 @@ proc command(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(readLine("COMMAND: ", pager.attrs.width, config = pager.config, tty = pager.tty), COMMAND)
 
 proc commandMode(pager: Pager) {.jsfunc.} =
-  pager.commandMode = true
+  pager.commandmode = true
   pager.command()
 
 proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
@@ -509,8 +521,11 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       else:
         pager.container.cursorPrevMatch(pager.iregex.get, true)
       pager.container.hlon = true
+    if not pager.container.redraw:
+      #TODO this is dumb
+      pager.container.requestLines()
     pager.container.pushCursorPos()
-    pager.draw()
+    pager.redraw = true
   of FINISH:
     if pager.iregex.isSome:
       pager.regex = pager.iregex
@@ -594,7 +609,7 @@ proc handleEvent*(pager: Pager, container: Container): bool =
     if pager.container == nil:
       return false
   of SUCCESS:
-    container.render()
+    container.reshape()
     if container.replace != nil:
       container.children.add(container.replace.children)
       for child in container.children:

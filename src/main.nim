@@ -80,6 +80,7 @@ while i < params.len:
     inc i
     if i < params.len:
       conf.startup = params[i]
+      dump = true
     else:
       help(1)
   of "--":

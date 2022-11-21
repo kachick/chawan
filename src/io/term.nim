@@ -1,4 +1,5 @@
 import math
+import options
 import os
 import streams
 import strutils
@@ -7,18 +8,15 @@ import terminal
 
 import bindings/notcurses
 import buffer/cell
+import config/config
 import io/window
 import types/color
 import utils/twtstr
 
 type
-  ColorMode = enum
-    MONOCHROME, ANSI, EIGHT_BIT, TRUE_COLOR
-
-  FormatMode = set[FormatFlags]
-
   Terminal* = ref TerminalObj
   TerminalObj = object
+    config: Config
     infile: File
     outfile: File
     nc*: ncdirect
@@ -28,6 +26,7 @@ type
     colormode: ColorMode
     formatmode: FormatMode
     smcup: bool
+    force_minimal: bool
 
   TermInfo = ref object
 
@@ -105,8 +104,8 @@ proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
 
 proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   for flag in FormatFlags:
-    if flag in format.flags and flag notin cellf.flags:
-      if flag in term.formatmode:
+    if flag in term.formatmode:
+      if flag in format.flags and flag notin cellf.flags:
         result &= SGR(FormatCodes[flag].e)
 
   var cellf = cellf
@@ -160,8 +159,9 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       result &= SGR(color.color)
 
   for flag in FormatFlags:
-    if flag notin format.flags and flag in cellf.flags:
-      result &= SGR(FormatCodes[flag].s)
+    if flag in term.formatmode:
+      if flag notin format.flags and flag in cellf.flags:
+        result &= SGR(FormatCodes[flag].s)
 
   format = cellf
 
@@ -222,22 +222,32 @@ proc getCursorPos(term: Terminal): (int, int) =
     tmp &= c
   result[0] = parseInt32(tmp)
 
-proc detectTermAttributes*(term: Terminal) =
-  term.colormode = ANSI
-  let colorterm = getEnv("COLORTERM")
-  case colorterm
-  of "24bit", "truecolor": term.colormode = TRUE_COLOR
+proc detectTermAttributes(term: Terminal) =
   #TODO terminfo/termcap?
+  if term.config.colormode.isSome:
+    term.colormode = term.config.colormode.get
+  else:
+    term.colormode = ANSI
+    let colorterm = getEnv("COLORTERM")
+    case colorterm
+    of "24bit", "truecolor": term.colormode = TRUE_COLOR
+  if term.config.formatmode.isSome:
+    term.formatmode = term.config.formatmode.get
+  else:
+    term.formatmode = {low(FormatFlags)..high(FormatFlags)}
+  term.smcup = true
+  term.outfile.write(SMCUP())
 
 func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
   result &= HVP(1, 1)
+  result &= SGR()
   for y in 0 ..< grid.height:
-    result &= SGR()
     for x in 0 ..< grid.width:
       let cell = grid[y * grid.width + x]
       result &= term.processFormat(format, cell.format)
       result &= cell.str
+    result &= SGR()
     result &= EL()
     result &= "\r\n"
 
@@ -336,25 +346,24 @@ proc isatty*(term: Terminal): bool =
   term.infile.isatty() and term.outfile.isatty()
 
 proc quit*(term: Terminal) =
-  if term.isatty():
+  if term.infile != nil and term.isatty():
     when defined(posix):
       disableRawMode()
     if term.smcup:
       term.outfile.write(RMCUP())
-    else:
-      term.outfile.write(SGR() & HVP(term.attrs.height - 1, 1) & '\n')
     term.outfile.showCursor()
   term.outfile.flushFile()
 
-proc newTerminal*(infile, outfile: File, force_minimal = false): Terminal =
-  let term = new Terminal
+proc start*(term: Terminal, infile: File) =
   term.infile = infile
-  term.outfile = outfile
+  assert term.infile.getFileHandle().setInheritable(false)
   when defined(posix):
     if term.isatty():
       enableRawMode(infile.getFileHandle())
-  if not force_minimal:
-    term.detectTermAttributes()
-    term.smcup = true
-    term.outfile.write(SMCUP())
+  term.detectTermAttributes()
+
+proc newTerminal*(outfile: File, config: Config): Terminal =
+  let term = new Terminal
+  term.outfile = outfile
+  term.config = config
   return term

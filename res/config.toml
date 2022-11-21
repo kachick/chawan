@@ -2,7 +2,8 @@
 double-width-ambiguous = false
 
 [display]
-# Options: black, red, green, yellow, blue, magenta, cyan, white, terminal
+color-mode = "auto"
+format-mode = "auto"
 highlight-color = "cyan"
 
 [page]
@@ -56,8 +57,8 @@ v = 'pager.toggleSource()'
 D = 'pager.discardBuffer()'
 ',' = 'pager.prevBuffer()'
 '.' = 'pager.nextBuffer()'
-M-c = 'pager.commandMode()'
-C = 'pager.command()'
+M-C = 'pager.command()'
+C = 'pager.commandMode();console.show()'
 '/' = 'pager.isearchForward()'
 '?' = 'pager.isearchBackward()'
 n = 'pager.searchNext()'

@@ -1,6 +1,9 @@
+import options
 import sequtils
 import sugar
 import tables
+
+import utils/twtstr
 
 type
   RGBColor* = distinct uint32
@@ -13,6 +16,12 @@ type
       rgbcolor*: RGBColor
     of false:
       color*: uint8
+
+converter toRGBColor*(i: RGBAColor): RGBColor =
+  return RGBColor(uint32(i) and 0xFFFFFFu32)
+
+converter toRGBAColor*(i: RGBColor): RGBAColor =
+  return RGBAColor(uint32(i) or 0xFF000000u32)
 
 func `==`*(color1, color2: CellColor): bool =
   if color1.rgb != color2.rgb:
@@ -197,6 +206,42 @@ const ColorsRGB* = {
   "rebeccapurple": 0x663399,
 }.map((a) => (a[0], RGBColor(a[1]))).toTable()
 
+func parseHexColor*(s: string): Option[RGBAColor] =
+  for c in s:
+    if hexValue(c) == -1: return none(RGBAColor)
+  case s.len
+  of 6:
+    let c = (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
+            (hexValue(s[1]) shl 12) or (hexValue(s[3]) shl 8) or
+            (hexValue(s[4]) shl 4) or hexValue(s[5])
+    return some(RGBAColor(c))
+  of 8:
+    let c = (hexValue(s[6]) shl 28) or (hexValue(s[7]) shl 24) or
+            (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
+            (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
+            (hexValue(s[4]) shl 4) or hexValue(s[5])
+    return some(RGBAColor(c))
+  of 3:
+    let c = (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
+            (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
+            (hexValue(s[2]) shl 4) or hexValue(s[2])
+    return some(RGBAColor(c))
+  of 4:
+    let c = (hexValue(s[3]) shl 28) or (hexValue(s[3]) shl 24) or
+            (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
+            (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
+            (hexValue(s[2]) shl 4) or hexValue(s[2])
+    return some(RGBAColor(c))
+  else: discard
+
+func parseRGBAColor*(s: string): Option[RGBAColor] =
+  if s in ColorsRGB:
+    return some(RGBAColor(ColorsRGB[s]))
+  if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':
+    return parseHexColor(s[1..^1])
+  if s.len > 2 and s[0] == '0' and s[1] == 'x':
+    return parseHexColor(s[2..^1])
+  return parseHexColor(s)
 
 func r*(c: RGBAColor): int =
   return int(c) shr 16 and 0xff
@@ -228,12 +273,6 @@ func b*(c: RGBColor): int =
 
 func rgba*(r, g, b, a: int): RGBAColor =
   return RGBAColor((a shl 24) or (r shl 16) or (g shl 8) or b)
-
-converter toRGBColor*(i: RGBAColor): RGBColor =
-  return RGBColor(uint32(i) and 0xFFFFFFu32)
-
-converter toRGBAColor*(i: RGBColor): RGBAColor =
-  return RGBAColor(uint32(i) or 0xFF000000u32)
 
 func `$`*(color: CellColor): string =
   if color.rgb:
