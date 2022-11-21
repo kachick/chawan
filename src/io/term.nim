@@ -26,7 +26,6 @@ type
     colormode: ColorMode
     formatmode: FormatMode
     smcup: bool
-    force_minimal: bool
 
   TermInfo = ref object
 
@@ -120,8 +119,8 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
     if cellf.fgcolor.rgb:
       if cellf.bgcolor == defaultColor:
         var color = approximateANSIColor(cellf.fgcolor.rgbcolor)
-        if color == int(cellf.bgcolor.color) - 40:
-          color = 7 - color
+        if color == 0:
+          color = 7
         if color == 7: # white
           cellf.fgcolor = defaultColor
         else:
@@ -130,7 +129,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
         cellf.fgcolor = if int(cellf.bgcolor.color) - 40 < 4:
           defaultColor
         else:
-          ColorsANSIFg[0]
+          ColorsANSIFg[7]
   of MONOCHROME:
     cellf.fgcolor = defaultColor
     cellf.bgcolor = defaultColor
@@ -236,7 +235,8 @@ proc detectTermAttributes(term: Terminal) =
   else:
     term.formatmode = {low(FormatFlags)..high(FormatFlags)}
   term.smcup = true
-  term.outfile.write(SMCUP())
+  if term.config.altscreen.isSome:
+    term.smcup = term.config.altscreen.get
 
 func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
@@ -351,6 +351,8 @@ proc quit*(term: Terminal) =
       disableRawMode()
     if term.smcup:
       term.outfile.write(RMCUP())
+    else:
+      term.outfile.write(HVP(term.attrs.height, 1))
     term.outfile.showCursor()
   term.outfile.flushFile()
 
@@ -361,6 +363,8 @@ proc start*(term: Terminal, infile: File) =
     if term.isatty():
       enableRawMode(infile.getFileHandle())
   term.detectTermAttributes()
+  if term.smcup:
+    term.outfile.write(SMCUP())
 
 proc newTerminal*(outfile: File, config: Config): Terminal =
   let term = new Terminal

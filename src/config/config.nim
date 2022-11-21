@@ -24,6 +24,7 @@ type
     headless*: bool
     colormode*: Option[ColorMode]
     formatmode*: Option[FormatMode]
+    altscreen*: Option[bool]
 
 func getRealKey(key: string): string =
   var realk: string
@@ -124,6 +125,11 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
     of "display":
       for k, v in v:
         case k
+        of "alt-screen":
+          if v.vt == VALUE_BOOLEAN:
+            config.altscreen = some(v.b)
+          elif v.vt == VALUE_STRING and v.s == "auto":
+            config.altscreen = none(bool)
         of "color-mode":
           case v.s
           of "auto": config.colormode = none(ColorMode)

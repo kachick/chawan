@@ -1,10 +1,9 @@
-[general]
-double-width-ambiguous = false
-
 [display]
 color-mode = "auto"
 format-mode = "auto"
+alt-screen = "auto"
 highlight-color = "cyan"
+double-width-ambiguous = false
 
 [page]
 q = 'quit()'
