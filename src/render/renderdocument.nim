@@ -261,15 +261,6 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
         let spacing = InlineSpacing(atom)
         grid.setSpacing(spacing, x, y, window)
 
-proc renderTable(grid: var FlexibleGrid, ctx: TableBox, x, y: int, window: WindowAttributes) =
-  for row in ctx.nested:
-    assert row.computed{"display"} == DISPLAY_TABLE_ROW
-    for cell in row.nested:
-      let x = x + row.offset.x
-      let y = y + row.offset.y
-      assert cell.computed{"display"} == DISPLAY_TABLE_CELL
-      grid.renderBlockContext(cell, x, y, window)
-
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes) =
   var stack = newSeqOfCap[(BlockBox, int, int)](100)
   stack.add((ctx, x, y))
@@ -290,8 +281,6 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
     if ctx.inline != nil:
       assert ctx.nested.len == 0
       grid.renderInlineContext(ctx.inline, x, y, window)
-    elif ctx.computed{"display"} == DISPLAY_TABLE: #TODO INLINE_TABLE
-      grid.renderTable(TableBox(ctx), x, y, window)
     else:
       for i in countdown(ctx.nested.high, 0):
         stack.add((ctx.nested[i], x, y))

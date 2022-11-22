@@ -132,11 +132,18 @@ type
   TableCellBox* = ref object of BlockBox
     colspan*: int
 
-  TableRowGroupBox* = ref object of BlockBox
+  CellWrapper* = object
+    box*: BlockBox
+    colspan*: int
 
-  TableRowBox* = ref object of BlockBox
+  RowContext* = object
+    cells*: seq[CellWrapper]
+    width*: int
+    builder*: TableRowBoxBuilder
 
-  TableBox* = ref object of BlockBox
+  TableContext* = object
+    colwidths*: seq[int]
+    rows*: seq[RowContext]
 
   InlineBlockBox* = ref object of InlineAtom
     bctx*: BlockBox
