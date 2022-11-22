@@ -4,7 +4,7 @@ import strutils
 
 import bindings/curl
 import io/request
-import io/serialize
+import ips/serialize
 import types/url
 import utils/twtstr
 

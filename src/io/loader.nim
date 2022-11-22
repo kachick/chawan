@@ -20,10 +20,10 @@ when defined(posix):
 
 import bindings/curl
 import io/http
-import io/process
 import io/request
-import io/serialize
-import io/socketstream
+import ips/serialize
+import ips/serversocket
+import ips/socketstream
 import types/mime
 import types/url
 import utils/twtstr

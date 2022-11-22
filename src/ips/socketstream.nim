@@ -5,7 +5,7 @@ import streams
 when defined(posix):
   import posix
 
-import io/process
+import ips/serversocket
 
 type SocketStream* = ref object of Stream
   source*: Socket

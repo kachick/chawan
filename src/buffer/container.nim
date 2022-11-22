@@ -12,8 +12,8 @@ import buffer/cell
 import config/bufferconfig
 import config/config
 import io/request
-import io/serialize
 import io/window
+import ips/serialize
 import js/javascript
 import js/regex
 import types/url

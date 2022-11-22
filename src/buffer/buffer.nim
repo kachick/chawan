@@ -21,10 +21,10 @@ import html/dom
 import html/tags
 import html/htmlparser
 import io/loader
-import io/process
 import io/request
-import io/serialize
-import io/socketstream
+import ips/serialize
+import ips/serversocket
+import ips/socketstream
 import js/regex
 import io/window
 import layout/box
