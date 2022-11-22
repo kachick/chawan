@@ -239,8 +239,9 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
 
   format = cellf
 
-proc updateWindow*(term: Terminal) =
-  term.attrs = getWindowAttributes(term.outfile)
+proc windowChange*(term: Terminal, attrs: WindowAttributes) =
+  term.attrs = attrs
+  term.cleared = false
 
 proc getCursorPos(term: Terminal): (int, int) =
   term.write(CSI("6n"))

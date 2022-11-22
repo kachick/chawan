@@ -285,6 +285,7 @@ proc gotoAnchor(buffer: Buffer) =
       inc i
 
 proc windowChange(buffer: Buffer) =
+  buffer.viewport = Viewport(window: buffer.attrs)
   buffer.width = buffer.attrs.width
   buffer.height = buffer.attrs.height - 1
   buffer.reshape = true

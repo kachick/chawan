@@ -366,14 +366,10 @@ proc setPreferredDimensions(bctx: BlockBox, width: int, height: Option[int]) =
   bctx.margin_left = preferred.margin_left
   bctx.margin_right = preferred.margin_right
 
-proc newBlockBox_common2(bctx: BlockBox, parent: BlockBox, box: BoxBuilder) {.inline.} =
-  bctx.viewport = parent.viewport
-  bctx.computed = box.computed
-  bctx.setPreferredDimensions(parent.compwidth, parent.compheight)
-
-proc newBlockBox_common(parent: BlockBox, box: BoxBuilder): BlockBox {.inline.} =
-  new(result)
-  result.newBlockBox_common2(parent, box)
+proc newBlockBox_common2(box: BlockBox, parent: BlockBox, builder: BoxBuilder) {.inline.} =
+  box.viewport = parent.viewport
+  box.computed = builder.computed
+  box.setPreferredDimensions(parent.compwidth, parent.compheight)
 
 proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, parentHeight = none(int)): BlockBox {.inline.} =
   new(result)
@@ -382,32 +378,29 @@ proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, paren
   result.setPreferredDimensions(parentWidth, parentHeight)
   result.shrink = result.computed{"width"}.auto
 
-proc newBlockBox(parent: BlockBox, box: BlockBoxBuilder): BlockBox =
-  result = newBlockBox_common(parent, box)
-  result.shrink = result.computed{"width"}.auto and parent.shrink
+proc newBlockBox(parent: BlockBox, box: BoxBuilder, ignore_parent_shrink = false): BlockBox =
+  new(result)
+  result.newBlockBox_common2(parent, box)
+  result.shrink = result.computed{"width"}.auto and (ignore_parent_shrink or parent.shrink)
 
 proc newTableCellBox(parent: BlockBox, box: TableCellBoxBuilder): BlockBox =
-  new(result)
-  result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto
+  return newBlockBox(parent, box, true)
 
 proc newTableRowBox(parent: BlockBox, box: TableRowBoxBuilder): BlockBox =
-  new(result)
-  result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and parent.shrink
+  return newBlockBox(parent, box)
 
 proc newTableBox(parent: BlockBox, box: TableBoxBuilder): BlockBox =
-  new(result)
-  result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and parent.shrink
+  let table = newBlockBox(parent, box)
+  if box.width.isSome:
+    table.compwidth = box.width.get.px(parent.viewport, parent.compwidth)
+  return table
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
   result.newBlockBox_common2(parent, builder.content)
-  result.shrink = result.computed{"width"}.auto and parent.shrink
 
 proc newBlockBox(viewport: Viewport, box: BlockBoxBuilder): BlockBox =
-  result = newFlowRootBox(viewport, box, viewport.window.width_px)
+  return newFlowRootBox(viewport, box, viewport.window.width_px)
 
 proc newInlineBlock(viewport: Viewport, builder: InlineBlockBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)
@@ -628,8 +621,11 @@ proc positionBlocks(bctx: BlockBox) =
   bctx.width += bctx.padding_left
   bctx.width += bctx.padding_right
 
-proc buildTableCell(box: TableCellBoxBuilder, parent: BlockBox): BlockBox =
+proc buildTableCell(box: TableCellBoxBuilder, parent: BlockBox, cellwidth = none(int)): BlockBox =
   result = parent.newTableCellBox(box)
+  if cellwidth.isSome:
+    result.compwidth = cellwidth.get
+    result.shrink = true
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
@@ -646,11 +642,17 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
     let cell = buildTableCell(cellbuilder, parent)
-    ctx.cells[i] = CellWrapper(box: cell, colspan: cellbuilder.colspan)
+    ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: cellbuilder.colspan)
+    let pwidth = cellbuilder.computed{"width"}
     if pctx.colwidths.len <= n:
       pctx.colwidths.setLen(n + 1)
+    if pctx.colwidths_specified.len <= n:
+      if not pwidth.auto:
+        pctx.colwidths_specified.setLen(n + 1)
     for i in n ..< n + cellbuilder.colspan:
       pctx.colwidths[i] = max(cell.width div cellbuilder.colspan, pctx.colwidths[i])
+      if not pwidth.auto:
+        pctx.colwidths_specified[i] = cell.compwidth
     n += cellbuilder.colspan
     ctx.width += cell.width
     inc i
@@ -661,15 +663,20 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builde
   var n = 0
   let row = newTableRowBox(parent, builder)
   for cellw in ctx.cells:
-    let cell = cellw.box
+    var cell = cellw.box
     cell.offset.x += x
-    let colspan = cellw.colspan
-    for i in n ..< n + colspan:
-      x += pctx.colwidths[i]
-    n += colspan
+    var w = 0
+    for i in n ..< n + cellw.colspan:
+      w += pctx.colwidths[i]
+    x += w
+    if pctx.reflow.len > n:
+      for i in n ..< min(n + cellw.colspan, pctx.reflow.len):
+        if pctx.reflow[i]:
+          cell = buildTableCell(cellw.builder, parent, some(w))
+    n += cellw.colspan
     row.nested.add(cell)
     row.height = max(row.height, cell.height)
-  row.width = ctx.width
+  row.width = x
   return row
 
 iterator rows(builder: TableBoxBuilder): TableRowBoxBuilder =
@@ -687,16 +694,25 @@ iterator rows(builder: TableBoxBuilder): TableRowBoxBuilder =
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newTableBox(box)
   var ctx: TableContext
+  var maxw = 0
   for row in box.rows:
-    ctx.rows.add(ctx.preBuildTableRow(row, table))
+    let rctx = ctx.preBuildTableRow(row, table)
+    ctx.rows.add(rctx)
+    maxw = max(rctx.width, maxw)
+  if maxw > table.compwidth and false: #TODO
+    for n in ctx.colwidths_specified:
+      maxw -= n
+    ctx.reflow.setLen(ctx.colwidths.len)
+    for i in 0 ..< ctx.colwidths.len:
+      if ctx.colwidths[i] != 0:
+        ctx.colwidths[i] -= (maxw - table.compwidth) div ctx.colwidths[i]
+        ctx.reflow[i] = true
   for roww in ctx.rows:
-    var x = 0
-    var n = 0
     let row = ctx.buildTableRow(roww, table, roww.builder)
     row.offset.y += table.height
     table.height += row.height
-    table.width = max(row.width, table.width)
     table.nested.add(row)
+    table.width = max(row.width, table.width)
   return table
 
 proc buildBlocks(bctx: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
@@ -1050,6 +1066,10 @@ proc generateTableChildWrappers(box: TableBoxBuilder) =
 proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder =
   let box = getTableBox(styledNode.computed)
   var blockgroup = newBlockGroup(box) #TODO this probably shouldn't exist
+  if styledNode.node != nil and styledNode.node.nodeType == ELEMENT_NODE:
+    #TODO put this in dom or something
+    let s = Element(styledNode.node).attr("width")
+    box.width = parseDimensionValues(s)
   var ibox: InlineBoxBuilder = nil
   var listItemCounter = 1
   for child in styledNode.children:

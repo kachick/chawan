@@ -322,6 +322,29 @@ func cssLength(val: float64, unit: string): CSSLength =
   else:
     raise newException(CSSValueError, "Invalid unit")
 
+func parseDimensionValues*(s: string): Option[CSSLength] =
+  if s == "": return
+  var i = 0
+  while s[i] in AsciiWhitespace: inc i
+  if i >= s.len or s[i] notin AsciiDigit: return
+  var n: float64
+  while s[i] in AsciiDigit:
+    n *= 10
+    n += float64(decValue(s[i]))
+    inc i
+  if i >= s.len: return some(CSSLength(num: n, unit: UNIT_PX))
+  if s[i] == '.':
+    inc i
+    if i >= s.len: return some(CSSLength(num: n, unit: UNIT_PX))
+    var d = 1
+    while i < s.len and s[i] in AsciiDigit:
+      n += float64(decValue(s[i])) / float64(d)
+      inc d
+      inc i
+  if i >= s.len: return some(CSSLength(num: n, unit: UNIT_PX))
+  if s[i] == '%': return some(CSSLength(num: n, unit: UNIT_PERC))
+  return some(CSSLength(num: n, unit: UNIT_PX))
+
 func color(r, g, b: int): CSSColor =
   return CSSColor(rgba: rgba(r, g, b, 256))
 

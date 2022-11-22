@@ -423,6 +423,9 @@ proc toggleSource*(pager: Pager) {.jsfunc.} =
 
 proc windowChange*(pager: Pager, attrs: WindowAttributes) =
   pager.attrs = attrs
+  pager.display = newFixedGrid(attrs.width, attrs.height - 1)
+  pager.statusmsg = newFixedGrid(attrs.width)
+  pager.term.windowChange(attrs)
   for container in pager.containers:
     container.windowChange(attrs)
 

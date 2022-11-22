@@ -57,6 +57,7 @@ type
 
   TableBoxBuilder* = ref object of BlockBoxBuilder
     rowgroups*: seq[TableRowGroupBoxBuilder]
+    width*: Option[CSSLength] # WIDTH property
 
   InlineAtom* = ref object of RootObj
     offset*: Offset
@@ -129,10 +130,8 @@ type
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
 
-  TableCellBox* = ref object of BlockBox
-    colspan*: int
-
   CellWrapper* = object
+    builder*: TableCellBoxBuilder
     box*: BlockBox
     colspan*: int
 
@@ -143,6 +142,8 @@ type
 
   TableContext* = object
     colwidths*: seq[int]
+    reflow*: seq[bool]
+    colwidths_specified*: seq[int]
     rows*: seq[RowContext]
 
   InlineBlockBox* = ref object of InlineAtom
