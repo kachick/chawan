@@ -39,7 +39,7 @@ type
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, GOTO_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
-    GET_SOURCE, GET_LINES, MOVE_CURSOR
+    GET_SOURCE, GET_LINES, MOVE_CURSOR, PASS_FD
 
   ContainerCommand* = enum
     SET_LINES, SET_NEEDS_AUTH, SET_CONTENT_TYPE, SET_REDIRECT, SET_TITLE,
@@ -68,6 +68,8 @@ type
     location: Url
     selector: Selector[int]
     istream: Stream
+    sstream: Stream
+    available: int
     pistream: Stream # for input pipe
     postream: Stream # for output pipe
     streamclosed: bool
@@ -76,9 +78,17 @@ type
     prevnode: StyledNode
     loader: FileLoader
     config: BufferConfig
+    userstyle: CSSStylesheet
 
 macro writeCommand(buffer: Buffer, cmd: ContainerCommand, args: varargs[typed]) =
   result = newStmtList()
+  let lens = ident("lens")
+  result.add(quote do:
+    var `lens` = slen(`cmd`))
+  for arg in args:
+    result.add(quote do: `lens` += slen(`arg`))
+  result.add(quote do:
+    `buffer`.postream.swrite(`lens`))
   result.add(quote do: `buffer`.postream.swrite(`cmd`))
   for arg in args:
     result.add(quote do: `buffer`.postream.swrite(`arg`))
@@ -413,7 +423,7 @@ proc render(buffer: Buffer) =
   of "text/html":
     if buffer.viewport == nil:
       buffer.viewport = Viewport(window: buffer.attrs)
-    let ret = renderDocument(buffer.document, buffer.attrs, buffer.config.userstyle, buffer.viewport, buffer.prevstyled)
+    let ret = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport, buffer.prevstyled)
     buffer.lines = ret[0]
     buffer.prevstyled = ret[1]
   else:
@@ -428,14 +438,15 @@ proc load2(buffer: Buffer) =
     # (We're basically recv'ing single bytes, but nim std/net does buffering
     # for us so we should be ok?)
     if not buffer.streamclosed:
-      let c = buffer.istream.readChar()
-      buffer.source &= c
+      buffer.source &= buffer.istream.readChar()
       buffer.reshape = true
 
 proc finishLoad(buffer: Buffer) =
   if not buffer.streamclosed:
     if not buffer.istream.atEnd:
-      buffer.source &= buffer.istream.readAll()
+      let a = buffer.istream.readAll()
+      buffer.sstream.write(a)
+      buffer.available += a.len
       buffer.reshape = true
     buffer.selector.unregister(int(buffer.getFd()))
     buffer.istream.close()
@@ -717,6 +728,9 @@ proc readCommand(buffer: Buffer) =
   var cmd: BufferCommand
   istream.sread(cmd)
   case cmd
+  of PASS_FD:
+    let fd = SocketStream(istream).recvFileHandle()
+    buffer.bsource.fd = fd
   of LOAD:
     let code = buffer.setupSource()
     buffer.load()
@@ -736,6 +750,10 @@ proc readCommand(buffer: Buffer) =
     istream.sread(w)
     if w.b < 0 or w.b > buffer.lines.high:
       w.b = buffer.lines.high
+    var lens = sizeof(SET_LINES) + sizeof(buffer.lines.len) + sizeof(w)
+    for y in w:
+      lens += slen(buffer.lines[y])
+    ostream.swrite(lens)
     ostream.swrite(SET_LINES)
     ostream.swrite(buffer.lines.len)
     ostream.swrite(w)
@@ -837,18 +855,19 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
                    attrs: WindowAttributes, loader: FileLoader,
                    mainproc: Pid) =
   let buffer = new Buffer
+  buffer.userstyle = parseStylesheet(config.userstyle)
   buffer.attrs = attrs
   buffer.windowChange()
+  buffer.sstream = newStringStream()
   buffer.config = config
   buffer.loader = loader
   buffer.bsource = source
   buffer.selector = newSelector[int]()
   let sstream = connectSocketStream(mainproc, false)
   sstream.swrite(getpid())
-  sstream.swrite(BUFFER_READY)
-  sstream.flush()
   buffer.pistream = sstream
   buffer.postream = sstream
+  buffer.writeCommand(BUFFER_READY)
   let rfd = int(sstream.source.getFd())
   buffer.selector.registerHandle(rfd, {Read}, 0)
   buffer.runBuffer(rfd)

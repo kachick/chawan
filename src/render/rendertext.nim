@@ -46,32 +46,33 @@ proc renderPlainText*(text: string): FlexibleGrid =
   if result.len > 1 and result[^1].str.len == 0 and result[^1].formats.len == 0:
     discard result.pop()
 
-proc renderStream*(stream: Stream): FlexibleGrid =
+proc renderStream*(grid: var FlexibleGrid, stream: Stream, len: int) =
   var format = newFormat()
   template add_format() =
     if af:
       af = false
-      result[result.high].addFormat(result[^1].str.len, format)
+      grid[grid.high].addFormat(grid[^1].str.len, format)
 
-  result.addLine()
+  if grid.len == 0: grid.addLine()
   const tabwidth = 8
   var spaces = 0
   var af = false
-  while not stream.atEnd():
+  var i = 0
+  while i < len:
     let c = stream.readChar()
     case c
     of '\n':
       add_format
-      result.addLine()
+      grid.addLine()
     of '\r': discard
     of '\t':
       add_format
       for i in 0 ..< tabwidth - spaces:
-        result[^1].str &= ' '
+        grid[^1].str &= ' '
         spaces = 0
     of ' ':
       add_format
-      result[^1].str &= c
+      grid[^1].str &= c
       inc spaces
       if spaces == 8:
         spaces = 0
@@ -80,10 +81,11 @@ proc renderStream*(stream: Stream): FlexibleGrid =
       af = true
     elif c.isControlChar():
       add_format
-      result[^1].str &= '^' & c.getControlLetter()
+      grid[^1].str &= '^' & c.getControlLetter()
     else:
       add_format
-      result[^1].str &= c
+      grid[^1].str &= c
+    inc i
 
-  if result.len > 1 and result[^1].str.len == 0 and result[^1].formats.len == 0:
-    discard result.pop()
+  #if grid.len > 1 and grid[^1].str.len == 0 and grid[^1].formats.len == 0:
+  #  discard grid.pop()

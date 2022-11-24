@@ -1,9 +1,8 @@
 import config/config
 import css/sheet
 
-type BufferConfig* = ref object
-  userstyle*: CSSStylesheet
+type BufferConfig* = object
+  userstyle*: string
 
 proc loadBufferConfig*(config: Config): BufferConfig =
-  new(result)
-  result.userstyle = parseStylesheet(config.stylesheet)
+  result.userstyle = config.stylesheet

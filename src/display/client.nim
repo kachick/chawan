@@ -242,26 +242,31 @@ proc inputLoop(client: Client) =
     client.acceptBuffers()
     let events = client.selector.select(-1)
     for event in events:
-      if event.fd == client.console.tty.getFileHandle():
-        client.input()
-        stdout.flushFile()
-      elif event.fd in client.interval_fdis:
-        client.intervals[client.interval_fdis[event.fd]].handler()
-      elif event.fd in client.timeout_fdis:
-        let id = client.timeout_fdis[event.fd]
-        let timeout = client.timeouts[id]
-        timeout.handler()
-        client.clearTimeout(id)
-      elif event.fd == sigwinch:
-        client.attrs = getWindowAttributes(client.console.tty)
-        client.pager.windowChange(client.attrs)
-      else:
-        let container = client.fdmap[event.fd]
-        if not client.pager.handleEvent(container):
-          disableRawMode()
-          for msg in client.pager.status:
-            eprint msg
-          client.quit(1)
+      if Read in event.events:
+        if event.fd == client.console.tty.getFileHandle():
+          client.input()
+          stdout.flushFile()
+        elif event.fd in client.interval_fdis:
+          client.intervals[client.interval_fdis[event.fd]].handler()
+        elif event.fd in client.timeout_fdis:
+          let id = client.timeout_fdis[event.fd]
+          let timeout = client.timeouts[id]
+          timeout.handler()
+          client.clearTimeout(id)
+        elif event.fd == sigwinch:
+          client.attrs = getWindowAttributes(client.console.tty)
+          client.pager.windowChange(client.attrs)
+        else:
+          let container = client.fdmap[event.fd]
+          if not client.pager.handleEvent(container):
+            disableRawMode()
+            for msg in client.pager.status:
+              eprint msg
+            client.quit(1)
+      elif Error in event.events:
+        eprint "Error", event
+        #TODO handle errors
+      else: assert false
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
@@ -286,7 +291,6 @@ proc newConsole(pager: Pager, tty: File): Console =
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("javascript:console.show()")
     result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url))
-    discard close(pipefd[0])
     var f: File
     if not open(f, pipefd[1], fmWrite):
       raise newException(Defect, "Failed to open file for console pipe.")
@@ -333,7 +337,6 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   client.userstyle = client.config.stylesheet.parseStylesheet()
   if not stdin.isatty:
     client.pager.readPipe(ctype, stdin.getFileHandle())
-    stdin.close()
   else:
     client.console.tty = stdin
 

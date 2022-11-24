@@ -11,10 +11,84 @@ import types/buffersource
 import types/color
 import types/url
 
+proc slen*[T](o: T): int =
+  when T is string:
+    return sizeof(o.len) + o.len
+  elif T is bool:
+    return sizeof(char)
+  elif T is URL:
+    return ($o).slen
+  elif T is seq:
+    result = slen(o.len)
+    for x in o:
+      result += slen(x)
+  elif T is Option:
+    result = slen(o.isSome)
+    if o.isSome:
+      result += slen(o.get)
+  elif T is HeaderList:
+    result += slen(o.table.len)
+    for k, v in o.table:
+      result += slen(k)
+      result += slen(v.len)
+      for s in v:
+        result += slen(s)
+  elif T is MimePart:
+    result += slen(o.isFile)
+    result += slen(o.name)
+    result += slen(o.content)
+    if o.isFile:
+      result += slen(o.filename)
+      result += slen(o.contentType)
+      result += slen(o.fileSize)
+      result += slen(o.isStream)
+  elif T is Request:
+    result += slen(o.httpmethod)
+    result += slen(o.url)
+    result += slen(o.headers)
+    result += slen(o.body)
+    result += slen(o.multipart)
+  elif T is CellColor:
+    result += slen(o.rgb)
+    if o.rgb:
+      result += slen(o.rgbcolor)
+    else:
+      result += slen(o.color)
+  elif T is Format:
+    result += slen(o.fgcolor)
+    result += slen(o.bgcolor)
+    result += slen(o.flags)
+  elif T is SimpleFormatCell:
+    result += slen(o.format)
+    result += slen(o.pos)
+  elif T is SimpleFlexibleLine:
+    result += slen(o.str)
+    result += slen(o.formats)
+  elif T is FormatCell:
+    result += slen(o.format)
+    result += slen(o.pos)
+  elif T is FlexibleLine:
+    result += slen(o.str)
+    result += slen(o.formats)
+  elif T is Regex:
+    result += slen(o.plen)
+    result += o.plen
+    result += slen(o.buf)
+  elif T is BufferSource:
+    result += slen(o.t)
+    case o.t
+    of CLONE: result += slen(o.clonepid)
+    of LOAD_REQUEST: result += slen(o.request)
+    of LOAD_PIPE: result += slen(o.fd)
+    result += slen(o.location)
+    result += slen(o.contenttype)
+  else:
+    result += sizeof(o)
+
 template swrite*[T](stream: Stream, o: T) =
   stream.write(o)
 
-proc swrite*(stream: Stream, s: string) =
+proc swrite*(stream: Stream, s: string, maxlen = 8192) =
   stream.swrite(s.len)
   stream.write(s)
 
@@ -107,9 +181,11 @@ proc swrite*(stream: Stream, source: BufferSource) =
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
 
-proc sread*(stream: Stream, s: var string) =
+proc sread*(stream: Stream, s: var string, maxlen = 8192) =
   var len: int
   stream.sread(len)
+  if maxlen != -1:
+    len = min(maxlen, len)
   stream.readStr(len, s)
 
 proc sread*(stream: Stream, b: var bool) =
@@ -123,8 +199,8 @@ proc sread*(stream: Stream, b: var bool) =
 
 proc sread*(stream: Stream, url: var Url) =
   var s: string
-  stream.sread(s)
-  url = parseUrl(s).get
+  stream.sread(s, 2048)
+  url = newURL(s)
 
 proc sread*(stream: Stream, headers: var HeaderList) =
   new(headers)

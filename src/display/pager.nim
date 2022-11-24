@@ -648,6 +648,10 @@ proc handleEvent*(pager: Pager, container: Container): bool =
       pager.setLineEdit(readLine(event.prompt, pager.statusmsg.width, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
   of OPEN:
     pager.gotoURL(event.request, some(container.source.location))
+  of INVALID_COMMAND:
+    if container == pager.container:
+      if pager.status.len == 0:
+        pager.setStatusMessage("Invalid command from buffer")
   of NO_EVENT: discard
   return true
 

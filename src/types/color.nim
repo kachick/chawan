@@ -212,7 +212,7 @@ func parseHexColor*(s: string): Option[RGBAColor] =
   case s.len
   of 6:
     let c = (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
-            (hexValue(s[1]) shl 12) or (hexValue(s[3]) shl 8) or
+            (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
             (hexValue(s[4]) shl 4) or hexValue(s[5])
     return some(RGBAColor(c))
   of 8:

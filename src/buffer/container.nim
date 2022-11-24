@@ -15,6 +15,7 @@ import io/request
 import io/window
 import ips/forkserver
 import ips/serialize
+import ips/socketstream
 import js/javascript
 import js/regex
 import types/buffersource
@@ -33,7 +34,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, OPEN
+    READ_LINE, OPEN, INVALID_COMMAND
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -76,12 +77,11 @@ type
     retry*: seq[URL]
     redirect*: Option[URL]
     ispipe: bool
-    jump: bool
     hlon*: bool
-    waitfor: bool
     pipeto: Container
     redraw*: bool
     sourceready*: bool
+    cmdvalid: array[ContainerCommand, bool]
 
 proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, ispipe = false, autoload = true): Container =
   let attrs = getWindowAttributes(stdout)
@@ -96,8 +96,9 @@ proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, is
   result = Container(
     source: source, attrs: attrs, width: attrs.width,
     height: attrs.height - 1, contenttype: source.contenttype,
-    ispipe: ispipe, waitfor: true
+    ispipe: ispipe
   )
+  result.cmdvalid[BUFFER_READY] = true
   istream.sread(result.process)
   result.pos.setx = -1
 
@@ -249,11 +250,20 @@ macro writeCommand(container: Container, cmd: BufferCommand, args: varargs[typed
     result.add(quote do: `container`.ostream.swrite(`arg`))
   result.add(quote do: `container`.ostream.flush())
 
+proc expect(container: Container, cmd: ContainerCommand) =
+  container.cmdvalid[cmd] = true
+
 proc requestLines*(container: Container, w = container.lineWindow) =
   container.writeCommand(GET_LINES, w)
+  container.expect(SET_LINES)
 
 proc redraw*(container: Container) {.jsfunc.} =
   container.redraw = true
+
+proc sendCursorPosition*(container: Container) =
+  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+  container.expect(SET_HOVER)
+  container.expect(RESHAPE)
 
 proc setFromY*(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
@@ -266,7 +276,7 @@ proc setFromX*(container: Container, x: int) {.jsfunc.} =
     container.pos.fromx = max(min(x, container.maxfromx), 0)
     if container.pos.fromx > container.cursorx:
       container.pos.cursorx = min(container.pos.fromx, container.currentLineWidth())
-      container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+      container.sendCursorPosition()
     container.redraw = true
 
 proc setFromXY*(container: Container, x, y: int) {.jsfunc.} =
@@ -293,7 +303,7 @@ proc setCursorX*(container: Container, x: int, refresh = true, save = true) {.js
   elif x < container.cursorx:
     container.setFromX(x)
     container.pos.cursorx = x
-  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+  container.sendCursorPosition()
   if save:
     container.pos.xend = container.cursorx
 
@@ -311,7 +321,7 @@ proc setCursorY*(container: Container, y: int) {.jsfunc.} =
     else:
       container.setFromY(y)
     container.pos.cursory = y
-  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+  container.sendCursorPosition()
   container.restoreCursorX()
 
 proc centerLine*(container: Container) {.jsfunc.} =
@@ -496,15 +506,11 @@ proc updateCursor(container: Container) =
 proc pushCursorPos*(container: Container) =
   container.bpos.add(container.pos)
 
-proc sendCursorPosition*(container: Container) =
-  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
-  container.requestLines()
-
 proc popCursorPos*(container: Container, nojump = false) =
   container.pos = container.bpos.pop()
   container.updateCursor()
   if not nojump:
-    container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+    container.sendCursorPosition()
     container.requestLines()
 
 macro proxy(fun: typed) =
@@ -535,28 +541,40 @@ macro proxy(fun: typed) =
 
 proc cursorNextLink*(container: Container) {.jsfunc.} =
   container.writeCommand(FIND_NEXT_LINK, container.cursorx, container.cursory)
-  container.jump = true
+  container.expect(JUMP)
 
 proc cursorPrevLink*(container: Container) {.jsfunc.} =
   container.writeCommand(FIND_PREV_LINK, container.cursorx, container.cursory)
-  container.jump = true
+  container.expect(JUMP)
 
 proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
   container.writeCommand(FIND_NEXT_MATCH, container.cursorx, container.cursory, regex, wrap)
-  container.jump = true
+  container.expect(JUMP)
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
   container.writeCommand(FIND_PREV_MATCH, container.cursorx, container.cursory, regex, wrap)
-  container.jump = true
+  container.expect(JUMP)
 
-proc load*(container: Container) {.proxy.} = discard
-proc gotoAnchor*(container: Container, anchor: string) {.proxy.} = discard
+proc load*(container: Container) =
+  container.writeCommand(LOAD)
+  container.expect(LOAD_DONE)
+  container.expect(SET_NEEDS_AUTH)
+  container.expect(SET_REDIRECT)
+  container.expect(SET_CONTENT_TYPE)
+  container.expect(SET_TITLE)
+
+proc gotoAnchor*(container: Container, anchor: string) =
+  container.writeCommand(GOTO_ANCHOR, anchor)
+  container.expect(ANCHOR_FOUND)
+  container.expect(ANCHOR_FAIL)
+
 proc readCanceled*(container: Container) {.proxy.} = discard
 proc readSuccess*(container: Container, s: string) {.proxy.} = discard
 
 proc reshape*(container: Container, noreq = false) {.jsfunc.} =
   container.writeCommand(RENDER)
-  container.jump = true # may jump to anchor
+  container.expect(RESHAPE)
+  container.expect(JUMP)
   if not noreq:
     container.requestLines()
 
@@ -569,23 +587,35 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
   )
   container.pipeto = dispatcher.newBuffer(config, source, container.ispipe)
   container.writeCommand(GET_SOURCE)
+  container.expect(SOURCE_READY)
   return container.pipeto
 
 proc click*(container: Container) {.jsfunc.} =
   container.writeCommand(CLICK, container.cursorx, container.cursory)
+  container.expect(OPEN)
+  container.expect(READ_LINE)
+  container.expect(RESHAPE)
 
 proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs
   container.width = attrs.width
   container.height = attrs.height - 1
   container.writeCommand(WINDOW_CHANGE, attrs)
+  container.expect(RESHAPE)
 
 proc clearSearchHighlights*(container: Container) =
   for i in countdown(container.highlights.high, 0):
     if container.highlights[i].clear:
       container.highlights.del(i)
 
-proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent =
+proc handleCommand(container: Container, cmd: ContainerCommand, len: int): ContainerEvent =
+  if not container.cmdvalid[cmd]:
+    let len = len - sizeof(cmd)
+    #TODO TODO TODO this is very dumb
+    for i in 0 ..< len:
+      discard container.istream.readChar()
+    return ContainerEvent(t: INVALID_COMMAND)
+  container.cmdvalid[cmd] = false
   case cmd
   of SET_LINES:
     var w: Slice[int]
@@ -603,13 +633,14 @@ proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent 
     return ContainerEvent(t: NEEDS_AUTH)
   of SET_CONTENT_TYPE:
     var ctype: string
-    container.istream.sread(ctype)
+    container.istream.sread(ctype, 128)
     container.contenttype = some(ctype)
   of SET_REDIRECT:
     var redirect: URL
     container.istream.sread(redirect)
-    container.redirect = some(redirect)
-    return ContainerEvent(t: REDIRECT)
+    if redirect != nil:
+      container.redirect = some(redirect)
+      return ContainerEvent(t: REDIRECT)
   of SET_TITLE:
     container.istream.sread(container.title)
   of SET_HOVER:
@@ -621,40 +652,49 @@ proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent 
       return ContainerEvent(t: FAIL)
     return ContainerEvent(t: SUCCESS)
   of ANCHOR_FOUND:
+    container.cmdvalid[ANCHOR_FAIL] = false
     return ContainerEvent(t: ANCHOR)
   of ANCHOR_FAIL:
+    container.cmdvalid[ANCHOR_FOUND] = false
     return ContainerEvent(t: FAIL)
   of READ_LINE:
     var prompt, str: string
     var pwd: bool
-    container.istream.sread(prompt)
-    container.istream.sread(str)
+    container.istream.sread(prompt, 1024)
+    container.istream.sread(str, 1024)
     container.istream.sread(pwd)
+    container.cmdvalid[OPEN] = false
     return ContainerEvent(t: READ_LINE, prompt: prompt, value: str, password: pwd)
   of JUMP:
     var x, y, ex: int
     container.istream.sread(x)
     container.istream.sread(y)
     container.istream.sread(ex)
-    if x != -1 and y != -1 and container.jump:
+    if x != -1 and y != -1:
       if container.hlon:
         container.clearSearchHighlights()
         let hl = Highlight(x: x, y: y, endx: ex, endy: y, clear: true)
         container.highlights.add(hl)
         container.hlon = false
       container.setCursorXY(x, y)
-      container.jump = false
   of OPEN:
     var request: Request
     container.istream.sread(request)
+    container.cmdvalid[READ_LINE] = false
     return ContainerEvent(t: OPEN, request: request)
   of BUFFER_READY:
-    if container.waitfor:
-      container.waitfor = false
-      container.load()
+    if container.source.t == LOAD_PIPE:
+      container.ostream.swrite(PASS_FD)
+      container.ostream.flush()
+      let s = SocketStream(container.ostream)
+      s.sendFileHandle(container.source.fd)
+      discard close(container.source.fd)
+      container.ostream.flush()
+    container.load()
   of SOURCE_READY:
     if container.pipeto != nil:
       container.pipeto.load()
+      container.pipeto = nil
   of RESHAPE:
     container.requestLines()
 
@@ -662,9 +702,12 @@ proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent 
 iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
   var cmd: ContainerCommand
   container.requestLines(0 .. -1)
+  var len: int
+  container.istream.sread(len)
   container.istream.sread(cmd)
   while cmd != SET_LINES:
-    discard container.handleCommand(cmd)
+    discard container.handleCommand(cmd, len)
+    container.istream.sread(len)
     container.istream.sread(cmd)
   assert cmd == SET_LINES
   var w: Slice[int]
@@ -676,9 +719,14 @@ iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
     yield line
 
 proc handleEvent*(container: Container): ContainerEvent =
+  var len: int
+  container.istream.sread(len)
   var cmd: ContainerCommand
   container.istream.sread(cmd)
-  return container.handleCommand(cmd)
+  if cmd > high(ContainerCommand):
+    return ContainerEvent(t: INVALID_COMMAND)
+  else:
+    return container.handleCommand(cmd, len)
 
 proc addContainerModule*(ctx: JSContext) =
   ctx.registerType(Container, name = "Buffer")
