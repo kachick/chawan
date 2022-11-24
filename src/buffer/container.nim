@@ -13,9 +13,12 @@ import config/bufferconfig
 import config/config
 import io/request
 import io/window
+import ips/forkserver
 import ips/serialize
 import js/javascript
 import js/regex
+import types/buffersource
+import types/dispatcher
 import types/url
 import utils/twtstr
 
@@ -64,8 +67,7 @@ type
     sourcepair*: Container
     istream*: Stream
     ostream*: Stream
-    ifd*: FileHandle
-    process: Pid
+    process*: Pid
     lines: SimpleFlexibleGrid
     lineshift: int
     numLines*: int
@@ -76,53 +78,28 @@ type
     ispipe: bool
     jump: bool
     hlon*: bool
+    waitfor: bool
     pipeto: Container
     redraw*: bool
+    sourceready*: bool
 
-proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
-  importc: "setvbuf", header: "<stdio.h>", tags: [].}
-
-proc newBuffer*(config: Config, source: BufferSource, ispipe = false): Container =
+proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, ispipe = false, autoload = true): Container =
   let attrs = getWindowAttributes(stdout)
-  when defined(posix):
-    var pipefd_in, pipefd_out: array[0..1, cint]
-    if pipe(pipefd_in) == -1:
-      raise newException(Defect, "Failed to open input pipe.")
-    if pipe(pipefd_out) == -1:
-      raise newException(Defect, "Failed to open output pipe.")
-    let pid = fork()
-    if pid == -1:
-      raise newException(Defect, "Failed to fork buffer process")
-    elif pid == 0:
-      let bconfig = config.loadBufferConfig()
-      discard close(stdout.getFileHandle())
-      # child process
-      discard close(pipefd_in[1]) # close write
-      discard close(pipefd_out[0]) # close read
-      var readf, writef: File
-      if not open(readf, pipefd_in[0], fmRead):
-        raise newException(Defect, "Failed to open input handle")
-      if not open(writef, pipefd_out[1], fmWrite):
-        raise newException(Defect, "Failed to open output handle")
-      discard c_setvbuf(readf, nil, IONBF, 0)
-      launchBuffer(bconfig, source, attrs, readf, writef)
-    else:
-      discard close(pipefd_in[0]) # close read
-      discard close(pipefd_out[1]) # close write
-      var readf, writef: File
-      if not open(writef, pipefd_in[1], fmWrite):
-        raise newException(Defect, "Failed to open output handle")
-      if not open(readf, pipefd_out[0], fmRead):
-        raise newException(Defect, "Failed to open input handle")
-      let istream = newFileStream(readf)
-      # Disable buffering of the read end so epoll doesn't get stuck
-      discard c_setvbuf(readf, nil, IONBF, 0)
-      let ostream = newFileStream(writef)
-      result = Container(istream: istream, ostream: ostream, source: source,
-                         ifd: pipefd_out[0], process: pid, attrs: attrs,
-                         width: attrs.width, height: attrs.height - 1,
-                         contenttype: source.contenttype, ispipe: ispipe)
-      result.pos.setx = -1
+  let ostream = dispatcher.forkserver.ostream
+  let istream = dispatcher.forkserver.istream
+  ostream.swrite(FORK_BUFFER)
+  ostream.swrite(source)
+  ostream.swrite(config.loadBufferConfig())
+  ostream.swrite(attrs)
+  ostream.swrite(dispatcher.mainproc)
+  ostream.flush()
+  result = Container(
+    source: source, attrs: attrs, width: attrs.width,
+    height: attrs.height - 1, contenttype: source.contenttype,
+    ispipe: ispipe, waitfor: true
+  )
+  istream.sread(result.process)
+  result.pos.setx = -1
 
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
@@ -583,14 +560,14 @@ proc reshape*(container: Container, noreq = false) {.jsfunc.} =
   if not noreq:
     container.requestLines()
 
-proc dupeBuffer*(container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
+proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
   let source = BufferSource(
     t: CLONE,
     location: location.get(container.source.location),
     contenttype: if contenttype.isSome: contenttype else: container.contenttype,
     clonepid: container.process,
   )
-  container.pipeto = newBuffer(config, source, container.ispipe)
+  container.pipeto = dispatcher.newBuffer(config, source, container.ispipe)
   container.writeCommand(GET_SOURCE)
   return container.pipeto
 
@@ -639,6 +616,7 @@ proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent 
     container.istream.sread(container.hovertext)
   of LOAD_DONE:
     container.istream.sread(container.code)
+    if container.code == -2: return
     if container.code != 0:
       return ContainerEvent(t: FAIL)
     return ContainerEvent(t: SUCCESS)
@@ -667,7 +645,13 @@ proc handleCommand(container: Container, cmd: ContainerCommand): ContainerEvent 
       container.setCursorXY(x, y)
       container.jump = false
   of OPEN:
-    return ContainerEvent(t: OPEN, request: container.istream.readRequest())
+    var request: Request
+    container.istream.sread(request)
+    return ContainerEvent(t: OPEN, request: request)
+  of BUFFER_READY:
+    if container.waitfor:
+      container.waitfor = false
+      container.load()
   of SOURCE_READY:
     if container.pipeto != nil:
       container.pipeto.load()

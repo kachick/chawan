@@ -98,6 +98,7 @@ proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode, ua, user: D
     result = styledParent.newStyledElement(pseudo, builder.buildComputedValues())
 
 func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
+  if ss == nil: return nil
   result = ss
   for mq in ss.mq_list:
     if mq.query.applies():
@@ -105,7 +106,8 @@ func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
 
 func calcRules(styledNode: StyledNode, ua, user: CSSStylesheet, author: seq[CSSStylesheet]): tuple[uadecls, userdecls: DeclarationList, authordecls: seq[DeclarationList]] =
   result.uadecls = calcRules(styledNode, ua)
-  result.userdecls = calcRules(styledNode, user)
+  if user != nil:
+    result.userdecls = calcRules(styledNode, user)
   for rule in author:
     result.authordecls.add(calcRules(styledNode, rule))
 

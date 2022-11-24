@@ -1,9 +1,11 @@
 import options
 import os
-import selectors
 import streams
 import tables
 import unicode
+
+when defined(posix):
+  import posix
 
 import buffer/buffer
 import buffer/cell
@@ -13,9 +15,12 @@ import io/lineedit
 import io/request
 import io/term
 import io/window
+import ips/forkserver
 import js/javascript
 import js/regex
+import types/buffersource
 import types/color
+import types/dispatcher
 import types/url
 import utils/twtstr
 
@@ -28,6 +33,7 @@ type
     attrs: WindowAttributes
     commandMode*: bool
     container*: Container
+    dispatcher*: Dispatcher
     lineedit*: Option[LineEdit]
     linemode*: LineMode
     username: string
@@ -39,8 +45,7 @@ type
     status*: seq[string]
     statusmsg*: FixedGrid
     tty: File
-    selector*: Selector[Container]
-    fdmap*: Table[FileHandle, Container]
+    procmap*: Table[Pid, Container]
     icpos: CursorPosition
     display: FixedGrid
     redraw*: bool
@@ -139,11 +144,11 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
 
 func attrs*(pager: Pager): WindowAttributes = pager.term.attrs
 
-proc newPager*(config: Config, attrs: WindowAttributes): Pager =
+proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher): Pager =
   let pager = Pager(
+    dispatcher: dispatcher,
     config: config,
     attrs: attrs,
-    selector: newSelector[Container](),
     display: newFixedGrid(attrs.width, attrs.height - 1),
     statusmsg: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config)
@@ -308,19 +313,17 @@ proc draw*(pager: Pager) =
   pager.container.redraw = false
 
 proc registerContainer*(pager: Pager, container: Container) =
-  pager.fdmap[container.ifd] = container
-  pager.selector.registerHandle(int(container.ifd), {Read}, pager.container)
+  pager.procmap[container.process] = container
 
 proc addContainer*(pager: Pager, container: Container) =
   container.parent = pager.container
   if pager.container != nil:
     pager.container.children.add(container)
-  pager.setContainer(container)
-  assert int(container.ifd) != 0
   pager.registerContainer(container)
+  pager.setContainer(container)
 
 proc dupeContainer(pager: Pager, container: Container, location: Option[URL]): Container =
-  return container.dupeBuffer(pager.config, location)
+  return pager.dispatcher.dupeBuffer(container, pager.config, location)
 
 proc dupeBuffer*(pager: Pager, location = none(URL)) {.jsfunc.} =
   pager.addContainer(pager.dupeContainer(pager.container, location))
@@ -396,10 +399,9 @@ proc deleteContainer(pager: Pager, container: Container) =
       pager.setContainer(nil)
   container.parent = nil
   container.children.setLen(0)
-  pager.fdmap.del(container.ifd)
-  pager.selector.unregister(int(container.ifd))
   container.istream.close()
   container.ostream.close()
+  pager.dispatcher.forkserver.removeChild(container.process)
 
 proc discardBuffer*(pager: Pager) {.jsfunc.} =
   if pager.container == nil or pager.container.parent == nil and
@@ -416,7 +418,7 @@ proc toggleSource*(pager: Pager) {.jsfunc.} =
       some("text/plain")
     else:
       some("text/html")
-    let container = pager.container.dupeBuffer(pager.config, contenttype = contenttype)
+    let container = pager.dispatcher.dupeBuffer(pager.container, pager.config, contenttype = contenttype)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.addContainer(container)
@@ -445,10 +447,9 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
       contenttype: ctype,
       location: request.url
     )
-    let container = newBuffer(pager.config, source)
+    let container = pager.dispatcher.newBuffer(pager.config, source)
     container.replace = replace
     pager.addContainer(container)
-    container.load()
   else:
     pager.container.redirect = some(request.url)
     pager.container.gotoAnchor(request.url.anchor)
@@ -496,8 +497,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: O
     contenttype: some(ctype.get("text/plain")),
     location: location.get(newURL("file://-"))
   )
-  let container = newBuffer(pager.config, source, ispipe = true)
-  container.load()
+  let container = pager.dispatcher.newBuffer(pager.config, source, ispipe = true)
   return container
 
 proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =

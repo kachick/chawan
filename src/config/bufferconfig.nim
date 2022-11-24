@@ -7,4 +7,3 @@ type BufferConfig* = ref object
 proc loadBufferConfig*(config: Config): BufferConfig =
   new(result)
   result.userstyle = parseStylesheet(config.stylesheet)
-  zeroMem(addr config[], sizeof(ConfigObj))

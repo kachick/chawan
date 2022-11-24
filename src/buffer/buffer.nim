@@ -30,6 +30,7 @@ import io/window
 import layout/box
 import render/renderdocument
 import render/rendertext
+import types/buffersource
 import types/color
 import types/url
 import utils/twtstr
@@ -43,21 +44,7 @@ type
   ContainerCommand* = enum
     SET_LINES, SET_NEEDS_AUTH, SET_CONTENT_TYPE, SET_REDIRECT, SET_TITLE,
     SET_HOVER, READ_LINE, LOAD_DONE, ANCHOR_FOUND, ANCHOR_FAIL, JUMP, OPEN,
-    SOURCE_READY, RESHAPE
-
-  BufferSourceType* = enum
-    CLONE, LOAD_REQUEST, LOAD_PIPE
-
-  BufferSource* = object
-    location*: URL
-    contenttype*: Option[string] # override
-    case t*: BufferSourceType
-    of CLONE:
-      clonepid*: Pid
-    of LOAD_REQUEST:
-      request*: Request
-    of LOAD_PIPE:
-      fd*: FileHandle
+    BUFFER_READY, SOURCE_READY, RESHAPE
 
   BufferMatch* = object
     success*: bool
@@ -84,6 +71,7 @@ type
     pistream: Stream # for input pipe
     postream: Stream # for output pipe
     streamclosed: bool
+    loaded: bool
     source: string
     prevnode: StyledNode
     loader: FileLoader
@@ -361,6 +349,7 @@ func getFd(buffer: Buffer): FileHandle =
     return buffer.bsource.fd
 
 proc setupSource(buffer: Buffer): int =
+  if buffer.loaded: return -2
   let source = buffer.bsource
   let setct = source.contenttype.isNone
   if not setct:
@@ -369,6 +358,7 @@ proc setupSource(buffer: Buffer): int =
   case source.t
   of CLONE:
     buffer.istream = connectSocketStream(source.clonepid)
+    if buffer.istream == nil: return -2
     if setct:
       buffer.contenttype = "text/plain"
   of LOAD_PIPE:
@@ -394,6 +384,7 @@ proc setupSource(buffer: Buffer): int =
   if setct:
     buffer.writeCommand(SET_CONTENT_TYPE, buffer.contenttype)
   buffer.selector.registerHandle(cast[int](buffer.getFd()), {Read}, 1)
+  buffer.loaded = true
 
 proc load(buffer: Buffer) =
   case buffer.contenttype
@@ -805,7 +796,7 @@ proc readCommand(buffer: Buffer) =
     istream.sread(cy)
     buffer.updateHover(cx, cy)
   of GET_SOURCE:
-    let ssock = initServerSocket(getpid())
+    let ssock = initServerSocket()
     buffer.writeCommand(SOURCE_READY)
     let stream = ssock.acceptSocketStream()
     if not buffer.streamclosed:
@@ -815,10 +806,7 @@ proc readCommand(buffer: Buffer) =
     stream.close()
     ssock.close()
 
-proc runBuffer(buffer: Buffer, readf, writef: File) =
-  buffer.pistream = newFileStream(readf)
-  buffer.postream = newFileStream(writef)
-  let rfd = readf.getFileHandle()
+proc runBuffer(buffer: Buffer, rfd: int) =
   block loop:
     while true:
       let events = buffer.selector.select(-1)
@@ -842,21 +830,25 @@ proc runBuffer(buffer: Buffer, readf, writef: File) =
         buffer.writeCommand(RESHAPE)
   buffer.pistream.close()
   buffer.postream.close()
-  when defined(posix):
-    #TODO remove this
-    if buffer.loader != nil:
-      assert kill(buffer.loader.process, cint(SIGTERM)) == 0
-      buffer.loader = nil
+  buffer.loader.quit()
   quit(0)
 
 proc launchBuffer*(config: BufferConfig, source: BufferSource,
-                   attrs: WindowAttributes, readf, writef: File) =
+                   attrs: WindowAttributes, loader: FileLoader,
+                   mainproc: Pid) =
   let buffer = new Buffer
   buffer.attrs = attrs
   buffer.windowChange()
   buffer.config = config
-  buffer.loader = newFileLoader()
+  buffer.loader = loader
   buffer.bsource = source
   buffer.selector = newSelector[int]()
-  buffer.selector.registerHandle(int(readf.getFileHandle()), {Read}, 0)
-  buffer.runBuffer(readf, writef)
+  let sstream = connectSocketStream(mainproc, false)
+  sstream.swrite(getpid())
+  sstream.swrite(BUFFER_READY)
+  sstream.flush()
+  buffer.pistream = sstream
+  buffer.postream = sstream
+  let rfd = int(sstream.source.getFd())
+  buffer.selector.registerHandle(rfd, {Read}, 0)
+  buffer.runBuffer(rfd)

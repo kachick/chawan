@@ -7,6 +7,7 @@ import tables
 import buffer/cell
 import io/request
 import js/regex
+import types/buffersource
 import types/color
 import types/url
 
@@ -94,6 +95,15 @@ proc swrite*(stream: Stream, regex: Regex) =
   stream.writeData(regex.bytecode, regex.plen)
   stream.swrite(regex.buf)
 
+proc swrite*(stream: Stream, source: BufferSource) =
+  stream.swrite(source.t)
+  case source.t
+  of CLONE: stream.swrite(source.clonepid)
+  of LOAD_REQUEST: stream.swrite(source.request)
+  of LOAD_PIPE: stream.swrite(source.fd)
+  stream.swrite(source.location)
+  stream.swrite(source.contenttype)
+
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
 
@@ -169,6 +179,10 @@ proc sread*(stream: Stream, req: var RequestObj) =
   stream.sread(req.body)
   stream.sread(req.multipart)
 
+proc read*(stream: Stream, req: var Request) =
+  new(req)
+  stream.sread(req[])
+
 proc sread*(stream: Stream, color: var CellColor) =
   var rgb: bool
   stream.sread(rgb)
@@ -202,6 +216,18 @@ proc sread*(stream: Stream, regex: var Regex) =
   if l != regex.plen:
     `=destroy`(regex)
 
-proc readRequest*(stream: Stream): Request =
-  new(result)
-  stream.sread(result[])
+proc sread*(stream: Stream, source: var BufferSource) =
+  var t: BufferSourceType
+  stream.sread(t)
+  case t
+  of CLONE:
+    source = BufferSource(t: CLONE)
+    stream.sread(source.clonepid)
+  of LOAD_REQUEST:
+    source = BufferSource(t: LOAD_REQUEST)
+    stream.sread(source.request)
+  of LOAD_PIPE:
+    source = BufferSource(t: LOAD_PIPE)
+    stream.sread(source.fd)
+  stream.sread(source.location)
+  stream.sread(source.contenttype)

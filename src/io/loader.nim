@@ -35,11 +35,14 @@ const DefaultHeaders0 = {
   "Pragma": "no-cache",
   "Cache-Control": "no-cache",
 }.toTable()
-let DefaultHeaders = DefaultHeaders0.newHeaderList()
+let DefaultHeaders* = DefaultHeaders0.newHeaderList()
 
-type FileLoader* = ref object
-  defaultHeaders*: HeaderList
-  process*: Pid
+type
+  FileLoader* = object
+    process*: Pid
+
+  LoaderCommand = enum
+    LOAD, QUIT
 
 proc loadFile(url: Url, ostream: Stream) =
   when defined(windows) or defined(OS2) or defined(DOS):
@@ -66,7 +69,7 @@ proc loadFile(url: Url, ostream: Stream) =
         if n < bufferSize:
           break
 
-proc loadResource(loader: FileLoader, request: Request, ostream: Stream) =
+proc loadResource(request: Request, ostream: Stream) =
   case request.url.scheme
   of "file":
     loadFile(request.url, ostream)
@@ -77,10 +80,10 @@ proc loadResource(loader: FileLoader, request: Request, ostream: Stream) =
     ostream.flush()
 
 var ssock: ServerSocket
-proc runFileLoader(loader: FileLoader, fd: cint) =
+proc runFileLoader*(fd: cint, defaultHeaders: HeaderList) =
   if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
     raise newException(Defect, "Failed to initialize libcurl.")
-  ssock = initServerSocket(getpid())
+  ssock = initServerSocket()
   # The server has been initialized, so the main process can resume execution.
   var writef: File
   if not open(writef, FileHandle(fd), fmWrite):
@@ -96,11 +99,18 @@ proc runFileLoader(loader: FileLoader, fd: cint) =
   while true:
     let stream = ssock.acceptSocketStream()
     try:
-      let request = stream.readRequest()
-      for k, v in loader.defaultHeaders.table:
-        if k notin request.headers.table:
-          request.headers.table[k] = v
-      loader.loadResource(request, stream)
+      var cmd: LoaderCommand
+      stream.sread(cmd)
+      case cmd
+      of LOAD:
+        var request: Request
+        stream.read(request)
+        for k, v in defaultHeaders.table:
+          if k notin request.headers.table:
+            request.headers.table[k] = v
+        loadResource(request, stream)
+      of QUIT:
+        break
     except IOError:
       # End-of-file, quit.
       # TODO this should be EOFError
@@ -113,6 +123,7 @@ proc runFileLoader(loader: FileLoader, fd: cint) =
 proc doRequest*(loader: FileLoader, request: Request): Response =
   new(result)
   let stream = connectSocketStream(loader.process)
+  stream.swrite(LOAD)
   stream.swrite(request)
   stream.flush()
   stream.sread(result.res)
@@ -129,30 +140,7 @@ proc doRequest*(loader: FileLoader, request: Request): Response =
     # Only a stream of the response body may arrive after this point.
     result.body = stream
 
-proc newFileLoader*(defaultHeaders: HeaderList): FileLoader =
-  new(result)
-  result.defaultHeaders = defaultHeaders
-  when defined(posix):
-    var pipefd: array[0..1, cint]
-    if pipe(pipefd) == -1:
-      raise newException(Defect, "Failed to open pipe.")
-    let pid = fork()
-    if pid == -1:
-      raise newException(Defect, "Failed to fork network process")
-    elif pid == 0:
-      # child process
-      discard close(pipefd[0]) # close read
-      result.runFileLoader(pipefd[1])
-    else:
-      result.process = pid
-      let readfd = pipefd[0] # get read
-      discard close(pipefd[1]) # close write
-      var readf: File
-      if not open(readf, FileHandle(readfd), fmRead):
-        raise newException(Defect, "Failed to open output handle.")
-      assert readf.readChar() == char(0u8)
-      close(readf)
-      discard close(pipefd[0])
-
-proc newFileLoader*(): FileLoader =
-  newFileLoader(DefaultHeaders)
+proc quit*(loader: FileLoader) =
+  let stream = connectSocketStream(loader.process)
+  if stream != nil:
+    stream.swrite(QUIT)

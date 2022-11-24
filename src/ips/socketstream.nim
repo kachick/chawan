@@ -1,5 +1,6 @@
 import nativesockets
 import net
+import os
 import streams
 
 when defined(posix):
@@ -15,7 +16,7 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
   result = s.source.recv(buffer, len)
   if result < 0:
-    raise newException(Defect, "Failed to read data")
+    raise newException(Defect, "Failed to read data (code " & $osLastError() & ")")
   elif result < len:
     s.isend = true
 
@@ -38,17 +39,20 @@ func newSocketStream*(): SocketStream =
   result.atEndImpl = sockAtEnd
   result.closeImpl = sockClose
 
-proc connectSocketStream*(path: string): SocketStream =
+proc connectSocketStream*(path: string, buffered = true): SocketStream =
   result = newSocketStream()
-  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP)
+  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
   connectUnix(sock, path)
   result.source = sock
 
-proc connectSocketStream*(pid: Pid): SocketStream =
-  connectSocketStream(getSocketPath(pid))
+proc connectSocketStream*(pid: Pid, buffered = true): SocketStream =
+  try:
+    connectSocketStream(getSocketPath(pid), buffered)
+  except OSError:
+    return nil
 
 proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
   result = newSocketStream()
   var sock: Socket
-  ssock.sock.accept(sock)
+  ssock.sock.accept(sock, inheritable = true)
   result.source = sock

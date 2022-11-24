@@ -1,3 +1,15 @@
+import config/config
+import types/dispatcher
+import utils/twtstr
+
+# Inherited memory
+var conf = readConfig()
+width_table = makewidthtable(conf.ambiguous_double)
+# We don't actually want to inherit the entire config, so zero it out here.
+zeroMem(addr conf[], sizeof(conf[]))
+
+let disp = newDispatcher()
+
 import options
 import os
 import terminal
@@ -5,11 +17,9 @@ import terminal
 when defined(profile):
   import nimprof
 
-import config/config
 import display/client
-import utils/twtstr
 
-let conf = readConfig()
+conf = readConfig()
 let params = commandLineParams()
 
 proc version(long: static bool = false): string =
@@ -99,6 +109,4 @@ if pages.len == 0 and conf.startup == "":
 conf.nmap = constructActionTable(conf.nmap)
 conf.lemap = constructActionTable(conf.lemap)
 
-width_table = makewidthtable(conf.ambiguous_double)
-
-newClient(conf).launchClient(pages, ctype, dump)
+newClient(conf, disp).launchClient(pages, ctype, dump)
