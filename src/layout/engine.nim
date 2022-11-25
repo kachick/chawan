@@ -132,8 +132,8 @@ proc verticalAlignLine(ictx: InlineContext) =
       line.baseline = max(line.baseline, atom.baseline)
 
   # Resize the line's height based on atoms' height and baseline.
-  # The line height should be as high than the highest baseline used by an atom
-  # plus that atom's height.
+  # The line height should be at least as high as the highest baseline used by
+  # an atom plus that atom's height.
   for atom in line.atoms:
     # In all cases, the line's height must at least equal the atom's height.
     # (Where the atom is actually placed is irrelevant here.)
