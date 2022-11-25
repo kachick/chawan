@@ -40,7 +40,7 @@ type
     outfile: File
     cleared: bool
     canvas: FixedGrid
-    prevgrid: FixedGrid
+    pcanvas: FixedGrid
     attrs*: WindowAttributes
     mincontrast: float
     colormode: ColorMode
@@ -138,14 +138,6 @@ proc resetFormat(term: Terminal): string =
     return SGR()
 
 #TODO get rid of this
-proc eraseLine*(term: Terminal) =
-  term.write(term.clearEnd())
-
-#TODO ditto
-proc resetFormat2*(term: Terminal) =
-  term.write(term.resetFormat())
-
-#TODO ditto
 proc setCursor*(term: Terminal, x, y: int) =
   term.write(term.cursorGoto(x, y))
 
@@ -285,41 +277,35 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
       let cell = grid[y * grid.width + x]
       result &= term.processFormat(format, cell.format)
       result &= cell.str
-    result &= SGR()
     result &= term.clearEnd()
     if y != grid.height - 1:
       result &= "\r\n"
 
-func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
+func generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): string =
   var format = newFormat()
-  let curr = grid.cells
-  let prev = term.prevgrid.cells
-  var i = 0
   var x = 0
-  var y = 0
   var line = ""
   var lr = false
-  while i < curr.len:
+  for i in 0 ..< grid.cells.len:
     if x >= grid.width:
+      format = newFormat()
       if lr:
-        result &= SGR()
-        result &= term.cursorGoto(0, y)
+        result &= term.cursorGoto(0, i div grid.width - 1)
+        result &= term.resetFormat()
         result &= term.clearEnd()
         result &= line
         lr = false
       x = 0
-      inc y
       line = ""
-    lr = lr or (curr[i] != prev[i])
-    line &= term.processFormat(format, curr[i].format)
-    line &= curr[i].str
-    inc i
+    lr = lr or (grid[i] != prev[i])
+    line &= term.processFormat(format, grid.cells[i].format)
+    line &= grid.cells[i].str
     inc x
   if lr:
-    result &= term.cursorGoto(0, y)
-    result &= EL()
+    result &= term.cursorGoto(0, grid.height - 1)
+    result &= term.resetFormat()
+    result &= term.clearEnd()
     result &= line
-    lr = false
 
 proc hideCursor*(term: Terminal) =
   term.outfile.hideCursor()
@@ -333,13 +319,13 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
       term.canvas[ly * term.canvas.width + lx] = grid[(ly - y) * grid.width + (lx - x)]
 
 proc outputGrid*(term: Terminal) =
-  term.outfile.write(SGR())
+  term.outfile.write(term.resetFormat())
   if not term.cleared:
     term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true
   else:
-    term.outfile.write(term.generateSwapOutput(term.canvas))
-  term.prevgrid = term.canvas
+    term.outfile.write(term.generateSwapOutput(term.canvas, term.pcanvas))
+  term.pcanvas = term.canvas
 
 when defined(posix):
   import posix

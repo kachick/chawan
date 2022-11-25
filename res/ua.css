@@ -26,6 +26,10 @@ ol, ul, menu, dir {
 	margin-bottom: unset;
 }
 
+blockquote {
+	margin: 1em;
+}
+
 table {
 	display: table;
 }
@@ -64,6 +68,11 @@ td {
 	display: table-cell;
 	text-align: unset;
 	vertical-align: inherit;
+}
+
+caption {
+	display: table-caption;
+	text-align: center;
 }
 
 input {

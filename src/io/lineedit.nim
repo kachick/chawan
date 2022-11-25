@@ -94,10 +94,12 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
     for r in os:
       result[x].str = "*"
       x += r.lwidth()
+      if x > result.width: break
   else:
     for r in os:
       result[x].str &= $r
       x += r.lwidth()
+      if x > result.width: break
 
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.news.lwidth(edit.shift, edit.cursor)

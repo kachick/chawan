@@ -1576,7 +1576,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
   of IN_CAPTION:
     match token:
       "</caption>" => (block:
-        if parser.openElements.hasElementInTableScope(TAG_CAPTION):
+        if not parser.openElements.hasElementInTableScope(TAG_CAPTION):
           parse_error
         else:
           parser.generateImpliedEndTags()

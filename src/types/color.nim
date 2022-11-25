@@ -258,24 +258,14 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
         (hexValue(s[1]) * 17 shl 8) or
         (hexValue(s[2]) * 17)
       return some(RGBColor(c))
-  block sane:
-    var c: Option[RGBAColor]
-    for c in s:
-      if hexValue(c) == -1:
-        break sane
-    if s[0] == '#' and s.len == 8:
-      c = parseHexColor(s[1..^1])
-    elif s.len == 8:
-      c = parseHexColor(s)
-    else:
-      break sane
-    if c.isSome:
-      return some(RGBColor(c.get))
   # Seriously, what the hell.
   var s2 = if s[0] == '#':
     s.substr(1)
   else:
     s
+  for i in 0 ..< s2.len:
+    if hexValue(s2[i]) == -1:
+      s2[i] = '0'
   while s2.len == 0 or s2.len mod 3 != 0:
     s2 &= '0'
   var l = s2.len div 3

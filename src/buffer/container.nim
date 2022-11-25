@@ -511,32 +511,6 @@ proc popCursorPos*(container: Container, nojump = false) =
     container.sendCursorPosition()
     container.needslines = true
 
-macro proxy(fun: typed) =
-  let name = fun[0] # sym
-  let params = fun[3] # formalparams
-  let retval = params[0] # sym
-  var body = newStmtList()
-  assert params.len >= 2 # return type, container
-  var x = name.strVal.toScreamingSnakeCase()
-  if x[^1] == '=':
-    x = "SET_" & x[0..^2]
-  let nup = ident(x)
-  let container = params[1][0]
-  body.add(quote do:
-    `container`.ostream.swrite(`nup`))
-  for c in params[2..^1]:
-    let s = c[0] # sym e.g. url
-    body.add(quote do:
-      `container`.ostream.swrite(`s`))
-  body.add(quote do:
-    `container`.ostream.flush())
-  if retval.kind != nnkEmpty:
-    body.add(quote do:
-      `container`.istream.sread(result))
-  var params2: seq[NimNode]
-  for x in params.children: params2.add(x)
-  result = newProc(name, params2, body)
-
 proc cursorNextLink*(container: Container) {.jsfunc.} =
   container.writeCommand(FIND_NEXT_LINK, container.cursorx, container.cursory)
   container.expect(JUMP)
@@ -569,8 +543,13 @@ proc gotoAnchor*(container: Container, anchor: string) =
   container.expect(ANCHOR_FOUND)
   container.expect(ANCHOR_FAIL)
 
-proc readCanceled*(container: Container) {.proxy.} = discard
-proc readSuccess*(container: Container, s: string) {.proxy.} = discard
+proc readCanceled*(container: Container) =
+  container.writeCommand(READ_CANCELED)
+
+proc readSuccess*(container: Container, s: string) =
+  container.writeCommand(READ_SUCCESS, s)
+  container.expect(OPEN)
+  container.expect(RESHAPE)
 
 proc reshape*(container: Container, noreq = false) {.jsfunc.} =
   container.writeCommand(RENDER)

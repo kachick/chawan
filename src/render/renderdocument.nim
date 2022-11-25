@@ -160,7 +160,7 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, wind
 
   lines.setText(linestr, spacing.format, x, y)
 
-proc paintBackground(lines: var FlexibleGrid, color: CSSColor, startx, starty, endx, endy: int, window: WindowAttributes) =
+proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, endx, endy: int, window: WindowAttributes) =
   let color = color.cellColor()
 
   var starty = starty div window.ppl

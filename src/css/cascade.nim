@@ -107,6 +107,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_bgcolor
   of TAG_COL:
     map_width
+  of TAG_BODY:
+    map_bgcolor
   else: discard
  
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]) =

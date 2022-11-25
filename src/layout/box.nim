@@ -4,6 +4,7 @@ import css/stylednode
 import css/values
 import html/dom
 import io/window
+import types/color
 
 type
   #LayoutUnit* = distinct int32
@@ -59,6 +60,8 @@ type
     rowgroups*: seq[TableRowGroupBoxBuilder]
     width*: Option[CSSLength] # WIDTH property
 
+  TableCaptionBoxBuilder* = ref object of BlockBoxBuilder
+
   InlineAtom* = ref object of RootObj
     offset*: Offset
     width*: int
@@ -72,7 +75,7 @@ type
     fontstyle*: CSSFontStyle
     fontweight*: int
     textdecoration*: CSSTextDecoration
-    color*: CSSColor
+    color*: RGBAColor
     node*: StyledNode
 
   InlineSpacing* = ref object of InlineAtom
@@ -141,10 +144,12 @@ type
     builder*: TableRowBoxBuilder
 
   TableContext* = object
+    caption*: TableCaptionBoxBuilder
     colwidths*: seq[int]
     reflow*: seq[bool]
     colwidths_specified*: seq[int]
     rows*: seq[RowContext]
+    maxwidth*: int
 
   InlineBlockBox* = ref object of InlineAtom
     bctx*: BlockBox

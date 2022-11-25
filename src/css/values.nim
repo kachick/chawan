@@ -81,13 +81,22 @@ type
   CSSListStylePosition* = enum
     LIST_STYLE_POSITION_OUTSIDE, LIST_STYLE_POSITION_INSIDE
 
+const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
+                      DISPLAY_TABLE_FOOTER_GROUP}
+const ProperTableChild* = {DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN,
+                           DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_CAPTION} +
+                           RowGroupBox
+const ProperTableRowParent* = {DISPLAY_TABLE, DISPLAY_INLINE_TABLE} + RowGroupBox
+const InternalTableBox* = {DISPLAY_TABLE_CELL, DISPLAY_TABLE_ROW,
+                           DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_COLUMN_GROUP} +
+                           RowGroupBox
+const TabularContainer* = {DISPLAY_TABLE_ROW} + ProperTableRowParent
+
 type
   CSSLength* = object
     num*: float64
     unit*: CSSUnit
     auto*: bool
-
-  CSSColor* = RGBAColor
 
   CSSVerticalAlign* = object
     length*: CSSLength
@@ -97,7 +106,7 @@ type
     t*: CSSPropertyType
     case v*: CSSValueType
     of VALUE_COLOR:
-      color*: CSSColor
+      color*: RGBAColor
     of VALUE_LENGTH:
       length*: CSSLength
     of VALUE_FONT_STYLE:
@@ -290,10 +299,10 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
-const Colors: Table[string, CSSColor] = ((func (): Table[string, CSSColor] =
+const Colors: Table[string, RGBAColor] = ((func (): Table[string, RGBAColor] =
   for name, rgb in ColorsRGB:
-    result[name] = CSSColor(rgb)
-  result["transparent"] = CSSColor(rgba(0x00, 0x00, 0x00, 0x00))
+    result[name] = rgb
+  result["transparent"] = rgba(0x00, 0x00, 0x00, 0x00)
 )())
 
 const Units = {
@@ -344,13 +353,13 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
   if s[i] == '%': return some(CSSLength(num: n, unit: UNIT_PERC))
   return some(CSSLength(num: n, unit: UNIT_PX))
 
-func color(r, g, b: int): CSSColor =
-  return CSSColor(rgba(r, g, b, 256))
+func color(r, g, b: int): RGBAColor =
+  return rgba(r, g, b, 256)
 
-func color(r, g, b, a: int): CSSColor =
-  return CSSColor(rgba(r, g, b, a))
+func color(r, g, b, a: int): RGBAColor =
+  return rgba(r, g, b, a)
 
-func cssColor(d: CSSDeclaration): CSSColor =
+func cssColor(d: CSSDeclaration): RGBAColor =
   if d.value.len > 0:
     if d.value[0] of CSSToken:
       let tok = CSSToken(d.value[0])
@@ -358,7 +367,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
       of CSS_HASH_TOKEN:
         let c = parseHexColor(tok.value)
         if c.isSome:
-          return CSSColor(c.get)
+          return c.get
         else:
           raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:
@@ -398,7 +407,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
 
   raise newException(CSSValueError, "Invalid color")
 
-func cellColor*(color: CSSColor): CellColor =
+func cellColor*(color: RGBAColor): CellColor =
   return CellColor(rgb: true, rgbcolor: RGBColor(color))
 
 func isToken(d: CSSDeclaration): bool {.inline.} = d.value.len > 0 and d.value[0] of CSSToken
@@ -468,6 +477,7 @@ func cssDisplay(d: CSSDeclaration): CSSDisplay =
       of "table-row-group": return DISPLAY_TABLE_ROW_GROUP
       of "table-header-group": return DISPLAY_TABLE_HEADER_GROUP
       of "table-footer-group": return DISPLAY_TABLE_FOOTER_GROUP
+      of "table-caption": return DISPLAY_TABLE_CAPTION
       of "none": return DISPLAY_NONE
       else: return DISPLAY_INLINE
   raise newException(CSSValueError, "Invalid display")
@@ -634,7 +644,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_LIST_STYLE_POSITION: val.liststyleposition = cssListStylePosition(d)
   of VALUE_NONE: discard
 
-func getInitialColor(t: CSSPropertyType): CSSColor =
+func getInitialColor(t: CSSPropertyType): RGBAColor =
   case t
   of PROPERTY_COLOR:
     return Colors["white"]
