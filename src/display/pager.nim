@@ -581,7 +581,11 @@ proc authorize*(pager: Pager) =
   pager.setLineEdit(readLine("Username: ", pager.attrs.width, config = pager.config, tty = pager.tty), USERNAME)
 
 proc handleEvent*(pager: Pager, container: Container): bool =
-  let event = container.handleEvent()
+  var event: ContainerEvent
+  try:
+    event = container.handleEvent()
+  except IOError:
+    return false
   case event.t
   of FAIL:
     pager.deleteContainer(container)
@@ -589,6 +593,7 @@ proc handleEvent*(pager: Pager, container: Container): bool =
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
     else:
       pager.alert("Couldn't load " & $container.source.location & " (error code " & $container.code & ")")
+      pager.refreshStatusMsg()
     if pager.container == nil:
       return false
   of SUCCESS:

@@ -637,18 +637,17 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
     pctx.colwidths.setLen(box.children.len)
   var n = 0
   var i = 0
-  var rctx: RowContext
   for child in box.children:
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
     let cell = buildTableCell(cellbuilder, parent)
     ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: cellbuilder.colspan)
     let pwidth = cellbuilder.computed{"width"}
-    if pctx.colwidths.len <= n:
-      pctx.colwidths.setLen(n + 1)
-    if pctx.colwidths_specified.len <= n:
+    if pctx.colwidths.len <= n + cellbuilder.colspan:
+      pctx.colwidths.setLen(n + cellbuilder.colspan)
+    if pctx.colwidths_specified.len <= n + cellbuilder.colspan:
       if not pwidth.auto:
-        pctx.colwidths_specified.setLen(n + 1)
+        pctx.colwidths_specified.setLen(n + cellbuilder.colspan)
     for i in n ..< n + cellbuilder.colspan:
       pctx.colwidths[i] = max(cell.width div cellbuilder.colspan, pctx.colwidths[i])
       if not pwidth.auto:
@@ -1019,6 +1018,7 @@ proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBo
           ibox = getTextBox(styledNode.computed)
           ibox.node = styledNode
         ibox.text.add(child.text)
+  box.generateTableRowChildWrappers()
   return box
 
 proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
@@ -1047,6 +1047,7 @@ proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport): Table
           ibox = getTextBox(styledNode.computed)
           ibox.node = styledNode
         ibox.text.add(child.text)
+  box.generateTableRowGroupChildWrappers()
   return box
 
 proc generateTableChildWrappers(box: TableBoxBuilder) =
@@ -1071,7 +1072,6 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuild
     let s = Element(styledNode.node).attr("width")
     box.width = parseDimensionValues(s)
   var ibox: InlineBoxBuilder = nil
-  var listItemCounter = 1
   for child in styledNode.children:
     if child.t == STYLED_ELEMENT:
       generateFromElem(child, blockgroup, viewport, ibox)

@@ -873,9 +873,11 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     config: config,
     loader: loader,
     bsource: source,
-    sstream: newStringStream()
+    sstream: newStringStream(),
+    viewport: Viewport(window: attrs),
+    width: attrs.width,
+    height: attrs.height - 1
   )
-  buffer.windowChange()
   buffer.selector = newSelector[int]()
   let sstream = connectSocketStream(mainproc, false)
   sstream.swrite(getpid())
