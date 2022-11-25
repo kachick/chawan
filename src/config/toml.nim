@@ -299,8 +299,8 @@ proc consumeNoState(state: var TomlParser): bool =
     else: state.syntaxError(fmt"invalid character before key: {c}")
   state.syntaxError("unexpected end of file")
 
-proc consumeNumber(state: var TomlParser): TomlValue =
-  var repr: string
+proc consumeNumber(state: var TomlParser, c: char): TomlValue =
+  var repr = $c
   var isfloat = false
   if state.has():
     if state.peek(0) == '+' or state.peek(0) == '-':
@@ -334,6 +334,7 @@ proc consumeNumber(state: var TomlParser): TomlValue =
     let val = parseFloat64(repr)
     return TomlValue(vt: VALUE_FLOAT, f: val)
 
+  eprint repr
   let val = parseInt64(repr)
   return TomlValue(vt: VALUE_INTEGER, i: val)
 
@@ -370,7 +371,7 @@ proc consumeValue(state: var TomlParser): TomlValue =
     of '#':
       state.syntaxError("comment without value")
     of '+', '-', '0'..'9':
-      return state.consumeNumber()
+      return state.consumeNumber(c)
       #TODO date-time
     of '[':
       return state.consumeArray()

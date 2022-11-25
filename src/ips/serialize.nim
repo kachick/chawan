@@ -5,6 +5,7 @@ import streams
 import tables
 
 import buffer/cell
+import config/bufferconfig
 import io/request
 import js/regex
 import types/buffersource
@@ -178,6 +179,9 @@ proc swrite*(stream: Stream, source: BufferSource) =
   stream.swrite(source.location)
   stream.swrite(source.contenttype)
 
+proc swrite*(stream: Stream, bconfig: BufferConfig) =
+  stream.swrite(bconfig.userstyle)
+
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
 
@@ -307,3 +311,6 @@ proc sread*(stream: Stream, source: var BufferSource) =
     stream.sread(source.fd)
   stream.sread(source.location)
   stream.sread(source.contenttype)
+
+proc sread*(stream: Stream, bconfig: var BufferConfig) =
+  stream.sread(bconfig.userstyle)

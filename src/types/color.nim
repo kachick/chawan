@@ -32,7 +32,6 @@ func `==`*(color1, color2: CellColor): bool =
 
 const defaultColor* = CellColor(rgb: false, color: 0)
 
-const ANSIFGBlack* = CellColor(rgb: false, color: 38)
 const ColorsANSIFg* = [
   CellColor(rgb: false, color: 30), # black
   CellColor(rgb: false, color: 31), # red

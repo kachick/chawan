@@ -4,6 +4,7 @@ format-mode = "auto"
 alt-screen = "auto"
 highlight-color = "cyan"
 double-width-ambiguous = false
+minimum-contrast = 100
 
 [page]
 q = 'quit()'

@@ -25,6 +25,7 @@ type
     colormode*: Option[ColorMode]
     formatmode*: Option[FormatMode]
     altscreen*: Option[bool]
+    mincontrast*: float
 
 func getRealKey(key: string): string =
   var realk: string
@@ -156,6 +157,11 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           config.hlcolor = parseRGBAColor(v.s).get
         of "double-width-ambiguous":
           config.ambiguous_double = v.b
+        of "minimum-contrast":
+          if v.vt == VALUE_INTEGER:
+            config.mincontrast = float(v.i)
+          else:
+            config.mincontrast = float(v.f)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))
