@@ -102,6 +102,8 @@ proc readUserStylesheet(dir, file: string): string =
 proc parseConfig(config: Config, dir: string, t: TomlValue) =
   for k, v in t:
     case k
+    of "startup":
+      config.startup = v.s
     of "headless":
       config.headless = v.b
     of "page":

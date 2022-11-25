@@ -33,6 +33,7 @@ proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = Default
 
 proc removeChild*(forkserver: Forkserver, pid: Pid) =
   forkserver.ostream.swrite(REMOVE_CHILD)
+  forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
 proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList): FileLoader =

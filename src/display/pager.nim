@@ -1,3 +1,4 @@
+import net
 import options
 import os
 import streams
@@ -16,6 +17,7 @@ import io/request
 import io/term
 import io/window
 import ips/forkserver
+import ips/socketstream
 import js/javascript
 import js/regex
 import types/buffersource
@@ -30,7 +32,7 @@ type
     SEARCH_B, ISEARCH_F, ISEARCH_B
 
   Pager* = ref object
-    attrs: WindowAttributes
+    alerts: seq[string]
     commandMode*: bool
     container*: Container
     dispatcher*: Dispatcher
@@ -42,10 +44,10 @@ type
     regex: Option[Regex]
     iregex: Option[Regex]
     reverseSearch: bool
-    status*: seq[string]
-    statusmsg*: FixedGrid
+    statusgrid*: FixedGrid
     tty: File
     procmap*: Table[Pid, Container]
+    unreg*: seq[(Pid, SocketStream)]
     icpos: CursorPosition
     display: FixedGrid
     redraw*: bool
@@ -111,22 +113,14 @@ proc searchPrev(pager: Pager) {.jsfunc.} =
     else:
       pager.container.cursorNextMatch(pager.regex.get, true)
 
-#TODO get rid of this
-proc statusMode(pager: Pager) =
-  pager.term.setCursor(0, pager.attrs.height - 1)
-  pager.term.resetFormat2()
-  pager.term.eraseLine()
-
-#TODO ditto
-proc setLineEdit*(pager: Pager, edit: LineEdit, mode: LineMode) =
-  pager.statusMode()
-  edit.writeStart()
-  pager.term.flush()
+proc setLineEdit(pager: Pager, edit: LineEdit, mode: LineMode) =
   pager.lineedit = some(edit)
   pager.linemode = mode
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = none(LineEdit)
+
+func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 
 proc searchForward(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(readLine("/", pager.attrs.width, config = pager.config, tty = pager.tty), SEARCH_F)
@@ -142,16 +136,13 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.setLineEdit(readLine("?", pager.attrs.width, config = pager.config, tty = pager.tty), ISEARCH_B)
 
-func attrs*(pager: Pager): WindowAttributes = pager.term.attrs
-
 proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher): Pager =
   let pager = Pager(
     dispatcher: dispatcher,
     config: config,
-    attrs: attrs,
     display: newFixedGrid(attrs.width, attrs.height - 1),
-    statusmsg: newFixedGrid(attrs.width),
-    term: newTerminal(stdout, config)
+    statusgrid: newFixedGrid(attrs.width),
+    term: newTerminal(stdout, config, attrs)
   )
   return pager
 
@@ -160,15 +151,20 @@ proc launchPager*(pager: Pager, tty: File) =
   if tty != nil:
     pager.term.start(tty)
 
+proc dumpAlerts*(pager: Pager) =
+  for msg in pager.alerts:
+    eprint msg
+
 proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
+  pager.dumpAlerts()
 
 proc clearDisplay(pager: Pager) =
   pager.display = newFixedGrid(pager.display.width, pager.display.height)
 
 proc buffer(pager: Pager): Container {.jsfget, inline.} = pager.container
 
-proc refreshDisplay*(pager: Pager, container = pager.container) =
+proc refreshDisplay(pager: Pager, container = pager.container) =
   var r: Rune
   var by = 0
   pager.clearDisplay()
@@ -219,36 +215,29 @@ proc refreshDisplay*(pager: Pager, container = pager.container) =
         pager.display[dls + i - startw].format = hlformat
     inc by
 
-func generateStatusMessage*(pager: Pager): string =
-  var format = newFormat()
-  var w = 0
-  for cell in pager.statusmsg:
-    result &= pager.term.processFormat(format, cell.format)
-    result &= cell.str
-    w += cell.width()
-  if w < pager.statusmsg.width:
-    result &= EL()
-
 proc clearStatusMessage(pager: Pager) =
-  pager.statusmsg = newFixedGrid(pager.statusmsg.width)
+  pager.statusgrid = newFixedGrid(pager.statusgrid.width)
 
 proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
   pager.clearStatusMessage()
   var i = 0
   for r in str.runes:
     i += r.width()
-    if i >= pager.statusmsg.len:
-      pager.statusmsg[^1].str = "$"
+    if i >= pager.statusgrid.len:
+      pager.statusgrid[^1].str = "$"
       break
-    pager.statusmsg[i].str &= r
-    pager.statusmsg[i].format = format
+    pager.statusgrid[i].str &= r
+    pager.statusgrid[i].format = format
 
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
-  if pager.status.len > 0:
-    pager.writeStatusMessage(pager.status[0])
-    pager.status.delete(0)
-  elif container != nil:
+  if container == nil: return
+  if container.loadinfo != "":
+    pager.writeStatusMessage(container.loadinfo)
+  elif pager.alerts.len > 0:
+    pager.writeStatusMessage(pager.alerts[0])
+    pager.alerts.delete(0)
+  else:
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
               $container.atPercentOf() & "%) " & "<" & container.getTitle() & ">"
     if container.hovertext.len > 0:
@@ -256,17 +245,6 @@ proc refreshStatusMsg*(pager: Pager) =
     var format: Format
     format.reverse = true
     pager.writeStatusMessage(msg, format)
-
-#TODO get rid of this
-func generateStatusOutput(pager: Pager): string =
-  return pager.generateStatusMessage()
-
-#TODO ditto
-proc displayStatus*(pager: Pager) =
-  if pager.lineedit.isNone:
-    pager.statusMode()
-    print(pager.generateStatusOutput())
-    stdout.flushFile()
 
 proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
   var format = newFormat()
@@ -298,14 +276,15 @@ proc draw*(pager: Pager) =
   pager.term.hideCursor()
   if pager.redraw or pager.container != nil and pager.container.redraw:
     pager.refreshDisplay()
-    pager.term.outputGrid(pager.display)
-  pager.refreshStatusMsg()
-  pager.displayStatus()
+    pager.term.writeGrid(pager.display)
   if pager.lineedit.isSome:
-    pager.statusMode()
-    pager.lineedit.get.writePrompt()
-    pager.lineedit.get.fullRedraw()
-  elif pager.container != nil:
+    pager.term.writeGrid(pager.lineedit.get.generateOutput(), 0, pager.attrs.height - 1)
+  else:
+    pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
+  pager.term.outputGrid()
+  if pager.lineedit.isSome:
+    pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.container.attrs.height - 1)
+  else:
     pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
   pager.term.showCursor()
   pager.term.flush()
@@ -358,12 +337,11 @@ proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
     return true
   return false
 
-proc setStatusMessage*(pager: Pager, msg: string) =
-  pager.status.add(msg)
-  pager.refreshStatusMsg()
+proc alert*(pager: Pager, msg: string) {.jsfunc.} =
+  pager.alerts.add(msg)
 
 proc lineInfo(pager: Pager) {.jsfunc.} =
-  pager.setStatusMessage(pager.container.lineInfo())
+  pager.alert(pager.container.lineInfo())
 
 proc deleteContainer(pager: Pager, container: Container) =
   if container.parent == nil and
@@ -399,14 +377,13 @@ proc deleteContainer(pager: Pager, container: Container) =
       pager.setContainer(nil)
   container.parent = nil
   container.children.setLen(0)
-  container.istream.close()
-  container.ostream.close()
+  pager.unreg.add((container.process, SocketStream(container.istream)))
   pager.dispatcher.forkserver.removeChild(container.process)
 
 proc discardBuffer*(pager: Pager) {.jsfunc.} =
   if pager.container == nil or pager.container.parent == nil and
       pager.container.children.len == 0:
-    pager.setStatusMessage("Cannot discard last buffer!")
+    pager.alert("Cannot discard last buffer!")
   else:
     pager.deleteContainer(pager.container)
 
@@ -424,10 +401,9 @@ proc toggleSource*(pager: Pager) {.jsfunc.} =
     pager.addContainer(container)
 
 proc windowChange*(pager: Pager, attrs: WindowAttributes) =
-  pager.attrs = attrs
-  pager.display = newFixedGrid(attrs.width, attrs.height - 1)
-  pager.statusmsg = newFixedGrid(attrs.width)
   pager.term.windowChange(attrs)
+  pager.display = newFixedGrid(attrs.width, attrs.height - 1)
+  pager.statusgrid = newFixedGrid(attrs.width)
   for container in pager.containers:
     container.windowChange(attrs)
 
@@ -483,25 +459,25 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
   if localurl.isSome: # attempt to load local file
     urls.add(localurl.get)
   if urls.len == 0:
-    pager.setStatusMessage("Invalid URL " & url)
+    pager.alert("Invalid URL " & url)
   else:
     let prevc = pager.container
     pager.gotoURL(newRequest(urls.pop()), ctype = ctype)
     if pager.container != prevc:
       pager.container.retry = urls
 
-proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: Option[URL]): Container =
+proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: Option[URL], title: string): Container =
   let source = BufferSource(
     t: LOAD_PIPE,
     fd: fd,
     contenttype: some(ctype.get("text/plain")),
     location: location.get(newURL("file://-"))
   )
-  let container = pager.dispatcher.newBuffer(pager.config, source, ispipe = true)
+  let container = pager.dispatcher.newBuffer(pager.config, source, title)
   return container
 
 proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
-  let container = pager.readPipe0(ctype, fd, none(URL))
+  let container = pager.readPipe0(ctype, fd, none(URL), "*pipe*")
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
@@ -612,11 +588,12 @@ proc handleEvent*(pager: Pager, container: Container): bool =
     if container.retry.len > 0:
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
     else:
-      pager.setStatusMessage("Couldn't load " & $container.source.location & " (error code " & $container.code & ")")
+      pager.alert("Couldn't load " & $container.source.location & " (error code " & $container.code & ")")
     if pager.container == nil:
       return false
   of SUCCESS:
     container.reshape()
+    pager.container.loadinfo = ""
     if container.replace != nil:
       container.children.add(container.replace.children)
       for child in container.children:
@@ -634,24 +611,24 @@ proc handleEvent*(pager: Pager, container: Container): bool =
       pager.authorize()
   of REDIRECT:
     let redirect = container.redirect.get
-    pager.setStatusMessage("Redirecting to " & $redirect)
+    pager.alert("Redirecting to " & $redirect)
     pager.gotoURL(newRequest(redirect), some(pager.container.source.location), replace = pager.container)
   of ANCHOR:
     pager.addContainer(pager.dupeContainer(container, container.redirect))
   of NO_ANCHOR:
-    pager.setStatusMessage("Couldn't find anchor " & container.redirect.get.anchor)
+    pager.alert("Couldn't find anchor " & container.redirect.get.anchor)
   of UPDATE:
     if container == pager.container:
       pager.redraw = true
   of READ_LINE:
     if container == pager.container:
-      pager.setLineEdit(readLine(event.prompt, pager.statusmsg.width, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
+      pager.setLineEdit(readLine(event.prompt, pager.attrs.width, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
   of OPEN:
     pager.gotoURL(event.request, some(container.source.location))
-  of INVALID_COMMAND:
-    if container == pager.container:
-      if pager.status.len == 0:
-        pager.setStatusMessage("Invalid command from buffer")
+  of INVALID_COMMAND: discard
+  of STATUS:
+    if pager.container == container:
+      pager.refreshStatusMsg()
   of NO_EVENT: discard
   return true
 

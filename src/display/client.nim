@@ -36,6 +36,7 @@ import types/url
 type
   Client* = ref ClientObj
   ClientObj* = object
+    alive: bool
     attrs: WindowAttributes
     dispatcher: Dispatcher
     feednext: bool
@@ -120,43 +121,52 @@ proc command(client: Client, src: string) =
   client.console.container.cursorLastLine()
 
 proc quit(client: Client, code = 0) {.jsfunc.} =
-  client.pager.quit()
+  if client.alive:
+    client.alive = false
+    client.pager.quit()
   quit(code)
 
 proc feedNext(client: Client) {.jsfunc.} =
   client.feednext = true
 
+proc alert(client: Client, msg: string) {.jsfunc.} =
+  client.pager.alert(msg)
+
 proc input(client: Client) =
   restoreStdin(client.console.tty.getFileHandle())
-  let c = client.console.readChar()
-  client.s &= c
-  if client.pager.lineedit.isSome:
-    let edit = client.pager.lineedit.get
-    client.line = edit
-    if edit.escNext:
-      edit.escNext = false
-      if edit.write(client.s):
-        client.s = ""
-    else:
-      let action = getLinedAction(client.config, client.s)
-      if action == "":
+  while true:
+    let c = client.console.readChar()
+    client.s &= c
+    if client.pager.lineedit.isSome:
+      let edit = client.pager.lineedit.get
+      client.line = edit
+      if edit.escNext:
+        edit.escNext = false
         if edit.write(client.s):
           client.s = ""
-        else:
-          client.feedNext = true
-      elif not client.feedNext:
-        client.evalJSFree(action, "<command>")
-      if client.pager.lineedit.isNone:
-        client.line = nil
+      else:
+        let action = getLinedAction(client.config, client.s)
+        if action == "":
+          if edit.write(client.s):
+            client.s = ""
+          else:
+            client.feedNext = true
+        elif not client.feedNext:
+          client.evalJSFree(action, "<command>")
+        if client.pager.lineedit.isNone:
+          client.line = nil
+        if not client.feedNext:
+          client.pager.updateReadLine()
+    else:
+      let action = getNormalAction(client.config, client.s)
+      client.evalJSFree(action, "<command>")
       if not client.feedNext:
-        client.pager.updateReadLine()
-  else:
-    let action = getNormalAction(client.config, client.s)
-    client.evalJSFree(action, "<command>")
-  if not client.feedNext:
-    client.s = ""
-  else:
-    client.feedNext = false
+        client.pager.refreshStatusMsg()
+    if not client.feedNext:
+      client.s = ""
+      break
+    else:
+      client.feedNext = false
 
 proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
   let id = client.timeoutid
@@ -216,6 +226,15 @@ proc clearInterval(client: Client, id: int) {.jsfunc.} =
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
 proc acceptBuffers(client: Client) =
+  while client.pager.unreg.len > 0:
+    let (pid, stream) = client.pager.unreg.pop()
+    let fd = stream.source.getFd()
+    if int(fd) in client.fdmap:
+      client.selector.unregister(fd)
+      client.fdmap.del(int(fd))
+    else:
+      client.pager.procmap.del(pid)
+    stream.close()
   var i = 0
   while i < client.pager.procmap.len:
     let stream = client.ssock.acceptSocketStream()
@@ -234,12 +253,20 @@ proc acceptBuffers(client: Client) =
       #TODO print an error?
       stream.close()
 
+proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
+  for i in 0..<ss.len:
+    console.err.write(ss[i])
+    if i != ss.high:
+      console.err.write(' ')
+  console.err.write('\n')
+  console.err.flush()
+
 proc inputLoop(client: Client) =
   let selector = client.selector
   selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
+  client.acceptBuffers()
   while true:
-    client.acceptBuffers()
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
@@ -249,13 +276,11 @@ proc inputLoop(client: Client) =
         else:
           let container = client.fdmap[event.fd]
           if not client.pager.handleEvent(container):
-            disableRawMode()
-            for msg in client.pager.status:
-              eprint msg
             client.quit(1)
       if Error in event.events:
-        eprint "Error", event
         #TODO handle errors
+        client.alert("Error in selected fds, check console")
+        client.console.log($event)
       if Signal in event.events: 
         if event.fd == sigwinch:
           client.attrs = getWindowAttributes(client.console.tty)
@@ -272,7 +297,9 @@ proc inputLoop(client: Client) =
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
+      client.pager.refreshStatusMsg()
     client.pager.draw()
+    client.acceptBuffers()
 
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
@@ -292,11 +319,12 @@ proc newConsole(pager: Pager, tty: File): Console =
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("javascript:console.show()")
-    result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url))
+    result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url), "Browser console")
     var f: File
     if not open(f, pipefd[1], fmWrite):
       raise newException(Defect, "Failed to open file for console pipe.")
     result.err = newFileStream(f)
+    result.err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
     result.pager = pager
     result.tty = tty
     pager.registerContainer(result.container)
@@ -307,12 +335,11 @@ proc dumpBuffers(client: Client) =
   client.acceptBuffers()
   for container in client.pager.containers:
     container.load()
-  for msg in client.pager.status:
-    eprint msg
   let ostream = newFileStream(stdout)
   for container in client.pager.containers:
     container.reshape(true)
     client.pager.drawBuffer(container, ostream)
+  client.pager.dumpAlerts()
   stdout.close()
 
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
@@ -329,6 +356,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   client.selector = newSelector[Container]()
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)
+  client.alive = true
   addExitProc((proc() = client.quit()))
   if client.config.startup != "":
     let s = if fileExists(client.config.startup):
@@ -356,14 +384,6 @@ proc nimGCStats(client: Client): string {.jsfunc.} =
 
 proc jsGCStats(client: Client): string {.jsfunc.} =
   return client.jsrt.getMemoryUsage()
-
-proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
-  for i in 0..<ss.len:
-    console.err.write(ss[i])
-    if i != ss.high:
-      console.err.write(' ')
-  console.err.write('\n')
-  console.err.flush()
 
 proc show(console: Console) {.jsfunc.} =
   if console.pager.container != console.container:

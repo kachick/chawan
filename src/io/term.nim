@@ -9,7 +9,6 @@ import buffer/cell
 import config/config
 import io/window
 import types/color
-import utils/twtstr
 
 #TODO switch from termcap...
 
@@ -40,6 +39,7 @@ type
     infile: File
     outfile: File
     cleared: bool
+    canvas: FixedGrid
     prevgrid: FixedGrid
     attrs*: WindowAttributes
     mincontrast: float
@@ -273,25 +273,8 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
 
 proc windowChange*(term: Terminal, attrs: WindowAttributes) =
   term.attrs = attrs
+  term.canvas = newFixedGrid(attrs.width, attrs.height)
   term.cleared = false
-
-proc getCursorPos(term: Terminal): (int, int) =
-  term.write(CSI("6n"))
-  term.flush()
-  var c = term.infile.readChar()
-  while true:
-    while c != '\e':
-      c = term.infile.readChar()
-    c = term.infile.readChar()
-    if c == '[': break
-  var tmp = ""
-  while (let c = term.infile.readChar(); c != ';'):
-    tmp &= c
-  result[1] = parseInt32(tmp)
-  tmp = ""
-  while (let c = term.infile.readChar(); c != 'R'):
-    tmp &= c
-  result[0] = parseInt32(tmp)
 
 func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
@@ -304,7 +287,8 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
       result &= cell.str
     result &= SGR()
     result &= term.clearEnd()
-    result &= "\r\n"
+    if y != grid.height - 1:
+      result &= "\r\n"
 
 func generateSwapOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
@@ -343,14 +327,19 @@ proc hideCursor*(term: Terminal) =
 proc showCursor*(term: Terminal) =
   term.outfile.showCursor()
 
-proc outputGrid*(term: Terminal, grid: FixedGrid) =
+proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
+  for ly in y ..< y + grid.height:
+    for lx in x ..< x + grid.width:
+      term.canvas[ly * term.canvas.width + lx] = grid[(ly - y) * grid.width + (lx - x)]
+
+proc outputGrid*(term: Terminal) =
   term.outfile.write(SGR())
   if not term.cleared:
-    term.outfile.write(term.generateFullOutput(grid))
+    term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true
   else:
-    term.outfile.write(term.generateSwapOutput(grid))
-  term.prevgrid = grid
+    term.outfile.write(term.generateSwapOutput(term.canvas))
+  term.prevgrid = term.canvas
 
 when defined(posix):
   import posix
@@ -359,10 +348,10 @@ when defined(posix):
   # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
   var orig_termios: Termios
   var stdin_fileno: FileHandle
-  proc disableRawMode*() {.noconv.} =
+  proc disableRawMode() {.noconv.} =
     discard tcSetAttr(stdin_fileno, TCSAFLUSH, addr orig_termios)
 
-  proc enableRawMode*(fileno: FileHandle) =
+  proc enableRawMode(fileno: FileHandle) =
     stdin_fileno = fileno
     discard tcGetAttr(fileno, addr orig_termios)
     var raw = orig_termios
@@ -385,6 +374,12 @@ when defined(posix):
       discard fcntl(fileno, F_SETFL, orig_flags)
       stdin_unblocked = false
 else:
+  proc disableRawMode() =
+    discard
+
+  proc enableRawMode(fileno: FileHandle) =
+    discard
+
   proc unblockStdin*(): cint =
     discard
 
@@ -396,8 +391,7 @@ proc isatty*(term: Terminal): bool =
 
 proc quit*(term: Terminal) =
   if term.infile != nil and term.isatty():
-    when defined(posix):
-      disableRawMode()
+    disableRawMode()
     if term.smcup:
       term.write(term.disableAltScreen())
     else:
@@ -454,15 +448,15 @@ proc start*(term: Terminal, infile: File) =
   term.infile = infile
   assert term.outfile.getFileHandle().setInheritable(false)
   assert term.infile.getFileHandle().setInheritable(false)
-  when defined(posix):
-    if term.isatty():
-      enableRawMode(infile.getFileHandle())
+  if term.isatty():
+    enableRawMode(infile.getFileHandle())
   term.detectTermAttributes()
   if term.smcup:
     term.write(term.enableAltScreen())
 
-proc newTerminal*(outfile: File, config: Config): Terminal =
+proc newTerminal*(outfile: File, config: Config, attrs: WindowAttributes): Terminal =
   let term = new Terminal
   term.outfile = outfile
   term.config = config
+  term.windowChange(attrs)
   return term

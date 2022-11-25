@@ -36,6 +36,9 @@ import types/url
 import utils/twtstr
 
 type
+  LoadInfo* = enum
+    CONNECT, DOWNLOAD, RENDER, DONE
+
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, GOTO_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
@@ -43,8 +46,8 @@ type
 
   ContainerCommand* = enum
     SET_LINES, SET_NEEDS_AUTH, SET_CONTENT_TYPE, SET_REDIRECT, SET_TITLE,
-    SET_HOVER, READ_LINE, LOAD_DONE, ANCHOR_FOUND, ANCHOR_FAIL, JUMP, OPEN,
-    BUFFER_READY, SOURCE_READY, RESHAPE
+    SET_HOVER, SET_LOAD_INFO, SET_NUM_LINES, READ_LINE, LOAD_DONE,
+    ANCHOR_FOUND, ANCHOR_FAIL, JUMP, OPEN, BUFFER_READY, SOURCE_READY, RESHAPE
 
   BufferMatch* = object
     success*: bool
@@ -53,6 +56,7 @@ type
     str*: string
 
   Buffer* = ref object
+    alive: bool
     input: HTMLInputElement
     contenttype: string
     lines: FlexibleGrid
@@ -83,12 +87,14 @@ type
 macro writeCommand(buffer: Buffer, cmd: ContainerCommand, args: varargs[typed]) =
   result = newStmtList()
   let lens = ident("lens")
-  result.add(quote do:
+  let calclens = newStmtList()
+  calclens.add(quote do:
     var `lens` = slen(`cmd`))
   for arg in args:
-    result.add(quote do: `lens` += slen(`arg`))
-  result.add(quote do:
+    calclens.add(quote do: `lens` += slen(`arg`))
+  calclens.add(quote do:
     `buffer`.postream.swrite(`lens`))
+  result.add(newBlockStmt(calclens))
   result.add(quote do: `buffer`.postream.swrite(`cmd`))
   for arg in args:
     result.add(quote do: `buffer`.postream.swrite(`arg`))
@@ -272,15 +278,13 @@ proc gotoAnchor(buffer: Buffer) =
   if buffer.document == nil: return
   let anchor = buffer.document.getElementById(buffer.location.anchor)
   if anchor == nil: return
-  for y in 0..<buffer.lines.len:
+  for y in 0 ..< buffer.lines.len:
     let line = buffer.lines[y]
-    var i = 0
-    while i < line.formats.len:
+    for i in 0 ..< line.formats.len:
       let format = line.formats[i]
       if format.node != nil and anchor in format.node.node:
-        buffer.writeCommand(JUMP, format.pos, y)
+        buffer.writeCommand(JUMP, format.pos, y, 0)
         return
-      inc i
 
 proc windowChange(buffer: Buffer) =
   buffer.viewport = Viewport(window: buffer.attrs)
@@ -732,8 +736,11 @@ proc readCommand(buffer: Buffer) =
     let fd = SocketStream(istream).recvFileHandle()
     buffer.bsource.fd = fd
   of LOAD:
+    buffer.writeCommand(SET_LOAD_INFO, CONNECT)
     let code = buffer.setupSource()
-    buffer.load()
+    if code != -2:
+      buffer.writeCommand(SET_LOAD_INFO, DOWNLOAD)
+      buffer.load()
     buffer.writeCommand(LOAD_DONE, code)
   of GOTO_ANCHOR:
     var anchor: string
@@ -743,7 +750,10 @@ proc readCommand(buffer: Buffer) =
     else:
       buffer.writeCommand(ANCHOR_FAIL)
   of RENDER:
+    buffer.writeCommand(SET_LOAD_INFO, LoadInfo.RENDER)
     buffer.render()
+    buffer.writeCommand(SET_LOAD_INFO, DONE)
+    buffer.writeCommand(SET_NUM_LINES, buffer.lines.len)
     buffer.gotoAnchor()
   of GET_LINES:
     var w: Slice[int]
@@ -826,7 +836,7 @@ proc readCommand(buffer: Buffer) =
 
 proc runBuffer(buffer: Buffer, rfd: int) =
   block loop:
-    while true:
+    while buffer.alive:
       let events = buffer.selector.select(-1)
       for event in events:
         if Read in event.events:
@@ -842,6 +852,8 @@ proc runBuffer(buffer: Buffer, rfd: int) =
             break loop
           elif event.fd == buffer.getFd():
             buffer.finishLoad()
+      if not buffer.alive:
+        break loop
       if buffer.reshape:
         buffer.reshape = false
         buffer.render()
@@ -854,14 +866,16 @@ proc runBuffer(buffer: Buffer, rfd: int) =
 proc launchBuffer*(config: BufferConfig, source: BufferSource,
                    attrs: WindowAttributes, loader: FileLoader,
                    mainproc: Pid) =
-  let buffer = new Buffer
-  buffer.userstyle = parseStylesheet(config.userstyle)
-  buffer.attrs = attrs
+  let buffer = Buffer(
+    alive: true,
+    userstyle: parseStylesheet(config.userstyle),
+    attrs: attrs,
+    config: config,
+    loader: loader,
+    bsource: source,
+    sstream: newStringStream()
+  )
   buffer.windowChange()
-  buffer.sstream = newStringStream()
-  buffer.config = config
-  buffer.loader = loader
-  buffer.bsource = source
   buffer.selector = newSelector[int]()
   let sstream = connectSocketStream(mainproc, false)
   sstream.swrite(getpid())

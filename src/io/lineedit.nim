@@ -5,6 +5,7 @@ import sequtils
 import sugar
 
 import bindings/quickjs
+import buffer/cell
 import config/config
 import js/javascript
 import utils/twtstr
@@ -16,6 +17,7 @@ type
   LineEdit* = ref object
     news*: seq[Rune]
     prompt*: string
+    promptw: int
     current: string
     state*: LineEditState
     escNext*: bool
@@ -80,6 +82,25 @@ proc begin0(state: LineEdit) =
 
 proc space(edit: LineEdit, i: int) =
   print(' '.repeat(i))
+
+proc generateOutput*(edit: LineEdit): FixedGrid =
+  result = newFixedGrid(edit.maxlen)
+  let os = edit.news.substr(edit.shift, edit.shift + edit.displen)
+  var x = 0
+  for r in edit.prompt.runes():
+    result[x].str &= $r
+    x += r.lwidth()
+  if edit.hide:
+    for r in os:
+      result[x].str = "*"
+      x += r.lwidth()
+  else:
+    for r in os:
+      result[x].str &= $r
+      x += r.lwidth()
+
+proc getCursorX*(edit: LineEdit): int =
+  return edit.promptw + edit.news.lwidth(edit.shift, edit.cursor)
 
 proc redraw(state: LineEdit) =
   var dispw = state.news.lwidth(state.shift, state.shift + state.displen)
@@ -282,6 +303,7 @@ proc readLine*(prompt: string, termwidth: int, current = "",
                tty: File): LineEdit =
   new(result)
   result.prompt = prompt
+  result.promptw = prompt.lwidth()
   result.current = current
   result.news = current.toRunes()
   result.cursor = result.news.len

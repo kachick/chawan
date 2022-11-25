@@ -34,7 +34,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, OPEN, INVALID_COMMAND
+    READ_LINE, OPEN, INVALID_COMMAND, STATUS
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -65,10 +65,10 @@ type
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     parent*: Container
-    sourcepair*: Container
     istream*: Stream
     ostream*: Stream
     process*: Pid
+    loadinfo*: string
     lines: SimpleFlexibleGrid
     lineshift: int
     numLines*: int
@@ -76,14 +76,14 @@ type
     code*: int
     retry*: seq[URL]
     redirect*: Option[URL]
-    ispipe: bool
     hlon*: bool
+    sourcepair*: Container
     pipeto: Container
     redraw*: bool
-    sourceready*: bool
     cmdvalid: array[ContainerCommand, bool]
+    needslines*: bool
 
-proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, ispipe = false, autoload = true): Container =
+proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, title = ""): Container =
   let attrs = getWindowAttributes(stdout)
   let ostream = dispatcher.forkserver.ostream
   let istream = dispatcher.forkserver.istream
@@ -96,7 +96,7 @@ proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, is
   result = Container(
     source: source, attrs: attrs, width: attrs.width,
     height: attrs.height - 1, contenttype: source.contenttype,
-    ispipe: ispipe
+    title: title
   )
   result.cmdvalid[BUFFER_READY] = true
   istream.sread(result.process)
@@ -179,8 +179,6 @@ func maxScreenWidth(container: Container): int =
 func getTitle*(container: Container): string =
   if container.title != "":
     return container.title
-  if container.ispipe:
-    return "*pipe*"
   return container.source.location.serialize(excludepassword = true)
 
 func currentLineWidth(container: Container): int =
@@ -268,7 +266,7 @@ proc sendCursorPosition*(container: Container) =
 proc setFromY*(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
-    container.requestLines()
+    container.needslines = true
     container.redraw = true
 
 proc setFromX*(container: Container, x: int) {.jsfunc.} =
@@ -511,7 +509,7 @@ proc popCursorPos*(container: Container, nojump = false) =
   container.updateCursor()
   if not nojump:
     container.sendCursorPosition()
-    container.requestLines()
+    container.needslines = true
 
 macro proxy(fun: typed) =
   let name = fun[0] # sym
@@ -558,10 +556,13 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
 proc load*(container: Container) =
   container.writeCommand(LOAD)
   container.expect(LOAD_DONE)
+  container.expect(SET_LOAD_INFO)
   container.expect(SET_NEEDS_AUTH)
   container.expect(SET_REDIRECT)
   container.expect(SET_CONTENT_TYPE)
   container.expect(SET_TITLE)
+  if container.source.location.anchor != "":
+    container.expect(JUMP)
 
 proc gotoAnchor*(container: Container, anchor: string) =
   container.writeCommand(GOTO_ANCHOR, anchor)
@@ -574,9 +575,10 @@ proc readSuccess*(container: Container, s: string) {.proxy.} = discard
 proc reshape*(container: Container, noreq = false) {.jsfunc.} =
   container.writeCommand(RENDER)
   container.expect(RESHAPE)
+  container.expect(SET_NUM_LINES)
   container.expect(JUMP)
   if not noreq:
-    container.requestLines()
+    container.needslines = true
 
 proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
   let source = BufferSource(
@@ -585,7 +587,7 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
     contenttype: if contenttype.isSome: contenttype else: container.contenttype,
     clonepid: container.process,
   )
-  container.pipeto = dispatcher.newBuffer(config, source, container.ispipe)
+  container.pipeto = dispatcher.newBuffer(config, source, container.title)
   container.writeCommand(GET_SOURCE)
   container.expect(SOURCE_READY)
   return container.pipeto
@@ -611,12 +613,29 @@ proc clearSearchHighlights*(container: Container) =
 proc handleCommand(container: Container, cmd: ContainerCommand, len: int): ContainerEvent =
   if not container.cmdvalid[cmd]:
     let len = len - sizeof(cmd)
-    #TODO TODO TODO this is very dumb
+    #TODO TODO TODO
     for i in 0 ..< len:
       discard container.istream.readChar()
-    return ContainerEvent(t: INVALID_COMMAND)
+    if cmd != RESHAPE:
+      return ContainerEvent(t: INVALID_COMMAND)
   container.cmdvalid[cmd] = false
   case cmd
+  of SET_LOAD_INFO:
+    var li: LoadInfo
+    container.istream.sread(li)
+    case li
+    of CONNECT:
+      container.loadinfo = "Connecting to " & $container.source.location
+      container.expect(SET_LOAD_INFO)
+    of DOWNLOAD:
+      container.loadinfo = "Downloading " & $container.source.location
+      container.expect(SET_LOAD_INFO)
+    of RENDER:
+      container.loadinfo = "Rendering " & $container.source.location
+      container.expect(SET_LOAD_INFO)
+    of DONE:
+      container.loadinfo = ""
+    return ContainerEvent(t: STATUS)
   of SET_LINES:
     var w: Slice[int]
     container.istream.sread(container.numLines)
@@ -629,6 +648,8 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
       return ContainerEvent(t: UPDATE)
+  of SET_NUM_LINES:
+    container.istream.sread(container.numLines)
   of SET_NEEDS_AUTH:
     return ContainerEvent(t: NEEDS_AUTH)
   of SET_CONTENT_TYPE:
@@ -643,8 +664,10 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
       return ContainerEvent(t: REDIRECT)
   of SET_TITLE:
     container.istream.sread(container.title)
+    return ContainerEvent(t: STATUS)
   of SET_HOVER:
     container.istream.sread(container.hovertext)
+    return ContainerEvent(t: STATUS)
   of LOAD_DONE:
     container.istream.sread(container.code)
     if container.code == -2: return
@@ -652,10 +675,8 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
       return ContainerEvent(t: FAIL)
     return ContainerEvent(t: SUCCESS)
   of ANCHOR_FOUND:
-    container.cmdvalid[ANCHOR_FAIL] = false
     return ContainerEvent(t: ANCHOR)
   of ANCHOR_FAIL:
-    container.cmdvalid[ANCHOR_FOUND] = false
     return ContainerEvent(t: FAIL)
   of READ_LINE:
     var prompt, str: string
@@ -696,6 +717,8 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
       container.pipeto.load()
       container.pipeto = nil
   of RESHAPE:
+    container.needslines = true
+  if container.needslines:
     container.requestLines()
 
 # Synchronously read all lines in the buffer.

@@ -334,7 +334,6 @@ proc consumeNumber(state: var TomlParser, c: char): TomlValue =
     let val = parseFloat64(repr)
     return TomlValue(vt: VALUE_FLOAT, f: val)
 
-  eprint repr
   let val = parseInt64(repr)
   return TomlValue(vt: VALUE_INTEGER, i: val)
 

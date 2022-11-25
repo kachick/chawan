@@ -1,5 +1,4 @@
 import config/config
-import css/sheet
 
 type BufferConfig* = object
   userstyle*: string
