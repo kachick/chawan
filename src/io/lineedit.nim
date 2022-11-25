@@ -1,4 +1,3 @@
-import terminal
 import unicode
 import strutils
 import sequtils
@@ -6,8 +5,9 @@ import sugar
 
 import bindings/quickjs
 import buffer/cell
-import config/config
+import io/term
 import js/javascript
+import types/color
 import utils/twtstr
 
 type
@@ -28,8 +28,35 @@ type
     displen: int
     disallowed: set[char]
     hide: bool
-    config: Config #TODO get rid of this
-    tty: File
+    term: Terminal
+
+proc printesc(edit: LineEdit, rs: seq[Rune]) =
+  var s = ""
+  var format = newFormat()
+  var cformat = newFormat()
+  cformat.fgcolor = ColorsANSIFg[4] # blue
+  var dformat = newFormat() # reset
+  for r in rs:
+    if r.isControlChar():
+      s &= edit.term.processFormat(format, cformat)
+    else:
+      s &= edit.term.processFormat(format, dformat)
+    s &= r
+  edit.term.write(s)
+
+proc printesc(edit: LineEdit, s: string) =
+  var s = ""
+  var format = newFormat()
+  var cformat = newFormat()
+  cformat.fgcolor = ColorsANSIFg[4] # blue
+  var dformat = newFormat() # reset
+  for r in s.runes:
+    if r.isControlChar():
+      s &= edit.term.processFormat(format, cformat)
+    else:
+      s &= edit.term.processFormat(format, dformat)
+    s &= r
+  edit.term.write(s)
 
 func lwidth(r: Rune): int =
   if r.isControlChar():
@@ -66,25 +93,20 @@ template kill0(edit: LineEdit) =
   edit.kill0(w)
 
 proc backward0(state: LineEdit, i: int) =
-  if i > 0:
-    if i == 1:
-      print('\b')
-    else:
-      cursorBackward(i)
+  state.term.cursorBackward(i)
 
 proc forward0(state: LineEdit, i: int) =
-  if i > 0:
-    cursorForward(i)
+  state.term.cursorForward(i)
 
-proc begin0(state: LineEdit) =
-  print('\r')
-  state.forward0(state.minlen)
+proc begin0(edit: LineEdit) =
+  edit.term.cursorBegin()
+  edit.forward0(edit.minlen)
 
 proc space(edit: LineEdit, i: int) =
-  print(' '.repeat(i))
+  edit.term.write(' '.repeat(i))
 
 proc generateOutput*(edit: LineEdit): FixedGrid =
-  result = newFixedGrid(edit.maxlen)
+  result = newFixedGrid(edit.promptw + edit.maxlen)
   let os = edit.news.substr(edit.shift, edit.shift + edit.displen)
   var x = 0
   for r in edit.prompt.runes():
@@ -94,12 +116,12 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
     for r in os:
       result[x].str = "*"
       x += r.lwidth()
-      if x > result.width: break
+      if x >= result.width: break
   else:
     for r in os:
       result[x].str &= $r
       x += r.lwidth()
-      if x > result.width: break
+      if x >= result.width: break
 
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.news.lwidth(edit.shift, edit.cursor)
@@ -114,9 +136,9 @@ proc redraw(state: LineEdit) =
   state.begin0()
   let os = state.news.substr(state.shift, state.shift + state.displen)
   if state.hide:
-    printesc('*'.repeat(os.lwidth()))
+    state.printesc('*'.repeat(os.lwidth()))
   else:
-    printesc($os)
+    state.printesc(os)
   state.space(max(state.maxlen - state.minlen - os.lwidth(), 0))
   state.begin0()
   state.forward0(state.news.lwidth(state.shift, state.cursor))
@@ -148,9 +170,9 @@ proc insertCharseq(state: LineEdit, cs: var seq[Rune], disallowed: set[char]) =
     state.news &= cs
     state.cursor += cs.len
     if state.hide:
-      printesc('*'.repeat(cs.lwidth()))
+      state.printesc('*'.repeat(cs.lwidth()))
     else:
-      printesc($cs)
+      state.printesc(cs)
   else:
     state.news.insert(cs, state.cursor)
     state.cursor += cs.len
@@ -290,32 +312,32 @@ proc `end`*(edit: LineEdit) {.jsfunc.} =
       edit.fullRedraw()
     edit.cursor = edit.news.len
 
-proc writePrompt*(lineedit: LineEdit) =
-  printesc(lineedit.prompt)
+proc writePrompt*(edit: LineEdit) =
+  edit.printesc(edit.prompt)
 
-proc writeStart*(lineedit: LineEdit) =
-  lineedit.writePrompt()
-  if lineedit.hide:
-    printesc('*'.repeat(lineedit.current.lwidth()))
+proc writeStart*(edit: LineEdit) =
+  edit.writePrompt()
+  if edit.hide:
+    edit.printesc('*'.repeat(edit.current.lwidth()))
   else:
-    printesc(lineedit.current)
+    edit.printesc(edit.current)
 
 proc readLine*(prompt: string, termwidth: int, current = "",
-               disallowed: set[char] = {}, hide = false, config: Config,
-               tty: File): LineEdit =
-  new(result)
-  result.prompt = prompt
-  result.promptw = prompt.lwidth()
-  result.current = current
-  result.news = current.toRunes()
-  result.cursor = result.news.len
-  result.minlen = prompt.lwidth()
-  result.maxlen = termwidth - prompt.len
+               disallowed: set[char] = {}, hide = false,
+               term: Terminal): LineEdit =
+  result = LineEdit(
+    prompt: prompt,
+    promptw: prompt.lwidth(),
+    current: current,
+    news: current.toRunes(),
+    minlen: prompt.lwidth(),
+    disallowed: disallowed,
+    hide: hide,
+    term: term
+  )
+  result.cursor = result.news.lwidth()
+  result.maxlen = termwidth - result.promptw
   result.displen = result.maxlen - 1
-  result.disallowed = disallowed
-  result.hide = hide
-  result.config = config
-  result.tty = tty
 
 proc addLineEditModule*(ctx: JSContext) =
   ctx.registerType(LineEdit)

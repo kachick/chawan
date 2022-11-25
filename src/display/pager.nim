@@ -123,18 +123,18 @@ proc clearLineEdit(pager: Pager) =
 func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 
 proc searchForward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(readLine("/", pager.attrs.width, config = pager.config, tty = pager.tty), SEARCH_F)
+  pager.setLineEdit(readLine("/", pager.attrs.width, term = pager.term), SEARCH_F)
 
 proc searchBackward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(readLine("?", pager.attrs.width, config = pager.config, tty = pager.tty), SEARCH_B)
+  pager.setLineEdit(readLine("?", pager.attrs.width, term = pager.term), SEARCH_B)
 
 proc isearchForward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
-  pager.setLineEdit(readLine("/", pager.attrs.width, config = pager.config, tty = pager.tty), ISEARCH_F)
+  pager.setLineEdit(readLine("/", pager.attrs.width, term = pager.term), ISEARCH_F)
 
 proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
-  pager.setLineEdit(readLine("?", pager.attrs.width, config = pager.config, tty = pager.tty), ISEARCH_B)
+  pager.setLineEdit(readLine("?", pager.attrs.width, term = pager.term), ISEARCH_B)
 
 proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher): Pager =
   let pager = Pager(
@@ -481,7 +481,7 @@ proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(readLine("COMMAND: ", pager.attrs.width, config = pager.config, tty = pager.tty), COMMAND)
+  pager.setLineEdit(readLine("COMMAND: ", pager.attrs.width, term = pager.term), COMMAND)
 
 proc commandMode(pager: Pager) {.jsfunc.} =
   pager.commandmode = true
@@ -529,7 +529,7 @@ proc updateReadLine*(pager: Pager) =
       of LOCATION: pager.loadURL(s)
       of USERNAME:
         pager.username = s
-        pager.setLineEdit(readLine("Password: ", pager.attrs.width, hide = true, config = pager.config, tty = pager.tty), PASSWORD)
+        pager.setLineEdit(readLine("Password: ", pager.attrs.width, hide = true, term = pager.term), PASSWORD)
       of PASSWORD:
         let url = newURL(pager.container.source.location)
         url.username = pager.username
@@ -568,7 +568,7 @@ proc updateReadLine*(pager: Pager) =
 # Open a URL prompt and visit the specified URL.
 proc changeLocation(pager: Pager) {.jsfunc.} =
   var url = pager.container.source.location.serialize()
-  pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, config = pager.config, tty = pager.tty), LOCATION)
+  pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, term = pager.term), LOCATION)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
@@ -578,7 +578,7 @@ proc click(pager: Pager) {.jsfunc.} =
   pager.container.click()
 
 proc authorize*(pager: Pager) =
-  pager.setLineEdit(readLine("Username: ", pager.attrs.width, config = pager.config, tty = pager.tty), USERNAME)
+  pager.setLineEdit(readLine("Username: ", pager.attrs.width, term = pager.term), USERNAME)
 
 proc handleEvent*(pager: Pager, container: Container): bool =
   var event: ContainerEvent
@@ -627,7 +627,7 @@ proc handleEvent*(pager: Pager, container: Container): bool =
       pager.redraw = true
   of READ_LINE:
     if container == pager.container:
-      pager.setLineEdit(readLine(event.prompt, pager.attrs.width, current = event.value, hide = event.password, config = pager.config, tty = pager.tty), BUFFER)
+      pager.setLineEdit(readLine(event.prompt, pager.attrs.width, current = event.value, hide = event.password, term = pager.term), BUFFER)
   of OPEN:
     pager.gotoURL(event.request, some(container.source.location))
   of INVALID_COMMAND: discard

@@ -27,6 +27,8 @@ type
     ue # end underline mode
     se # end standout mode
     me # end all formatting modes
+    LE # cursor left %1 characters
+    RI # cursor right %1 characters
 
   Termcap = ref object
     bp: array[1024, uint8]
@@ -63,37 +65,34 @@ template CSI*(s: varargs[string, `$`]): string =
     r &= x
   r
 
-template DECSET(s: varargs[string, `$`]): string =
-  var r = "\e[?"
-  var first = true
-  for x in s:
-    if not first:
-      r &= ";"
-    first = false
-    r &= x
-  r & "h"
-
-template DECRST(s: varargs[string, `$`]): string =
-  var r = "\e[?"
-  var first = true
-  for x in s:
-    if not first:
-      r &= ";"
-    first = false
-    r &= x
-  r & "l"
-
-template SMCUP(): string = DECSET(1049)
-template RMCUP(): string = DECRST(1049)
+when not termcap_found:
+  template DECSET(s: varargs[string, `$`]): string =
+    var r = "\e[?"
+    var first = true
+    for x in s:
+      if not first:
+        r &= ";"
+      first = false
+      r &= x
+    r & "h"
+  template DECRST(s: varargs[string, `$`]): string =
+    var r = "\e[?"
+    var first = true
+    for x in s:
+      if not first:
+        r &= ";"
+      first = false
+      r &= x
+    r & "l"
+  template SMCUP(): string = DECSET(1049)
+  template RMCUP(): string = DECRST(1049)
+  template HVP(s: varargs[string, `$`]): string =
+    CSI(s) & "f"
+  template EL(s: varargs[string, `$`]): string =
+    CSI(s) & "K"
 
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
-
-template HVP(s: varargs[string, `$`]): string =
-  CSI(s) & "f"
-
-template EL*(s: varargs[string, `$`]): string =
-  CSI(s) & "K"
 
 const ANSIColorMap = [
   ColorsRGB["black"],
@@ -110,7 +109,7 @@ var goutfile: File
 proc putc(c: char): cint {.cdecl.} =
   goutfile.write(c)
 
-proc write(term: Terminal, s: string) =
+proc write*(term: Terminal, s: string) =
   when termcap_found:
     discard tputs(cstring(s), cint(s.len), putc)
   else:
@@ -137,9 +136,29 @@ proc resetFormat(term: Terminal): string =
   else:
     return SGR()
 
-#TODO get rid of this
+#TODO get rid of these
 proc setCursor*(term: Terminal, x, y: int) =
   term.write(term.cursorGoto(x, y))
+
+proc cursorBackward*(term: Terminal, i: int) =
+  if i > 0:
+    if i == 1:
+      term.write("\b")
+    else:
+      when termcap_found:
+        term.write($tgoto(term.ccap LE, cint(i), 0))
+      else:
+        term.outfile.cursorBackward(i)
+
+proc cursorForward*(term: Terminal, i: int) =
+  if i > 0:
+    when termcap_found:
+      term.write($tgoto(term.ccap RI, cint(i), 0))
+    else:
+      term.outfile.cursorForward(i)
+
+proc cursorBegin*(term: Terminal) =
+  term.write("\r")
 
 proc enableAltScreen(term: Terminal): string =
   when termcap_found:
@@ -251,7 +270,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       let rgb = color.rgbcolor
       result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
-      result &= SGR()
+      result &= term.resetFormat()
       format = newFormat()
     else:
       result &= SGR(color.color)
@@ -271,7 +290,7 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
 func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
   result &= term.cursorGoto(0, 0)
-  result &= SGR()
+  result &= term.resetFormat()
   for y in 0 ..< grid.height:
     for x in 0 ..< grid.width:
       let cell = grid[y * grid.width + x]

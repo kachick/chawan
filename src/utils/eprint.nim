@@ -19,16 +19,3 @@ template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect), cast(tags: [])
         stderr.write(' ')
       stderr.write(x)
     stderr.write('\n')
-
-template print*(s: varargs[string, `$`]) =
-  for x in s:
-    stdout.write(x)
-
-template printesc*(s: string) =
-  for r in s.runes:
-    if r.isControlChar():
-      stdout.write(('^' & $($r)[0].getControlLetter())
-                   .ansiFgColor(fgBlue).ansiStyle(styleBright).ansiReset())
-    else:
-      stdout.write($r)
-
