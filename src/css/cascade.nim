@@ -1,4 +1,5 @@
 import algorithm
+import options
 import streams
 import sugar
 
@@ -11,6 +12,7 @@ import css/stylednode
 import css/values
 import html/dom
 import html/tags
+import types/color
 
 type
   DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]
@@ -68,6 +70,44 @@ func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
       for item in tosorts[i]:
         for dl in item[1]:
           dl
+
+func calcPresentationalHints(element: Element): CSSComputedValues =
+  template set_cv(a, b, c: untyped) =
+    if result == nil:
+      new(result)
+    result[a] = CSSComputedValue(t: a, v: ValueTypes[a], b: c)
+  template map_width =
+    let s = parseDimensionValues(element.attr("width"))
+    if s.isSome:
+      set_cv(PROPERTY_WIDTH, length, s.get)
+  template map_height =
+    let s = parseDimensionValues(element.attr("height"))
+    if s.isSome:
+      set_cv(PROPERTY_HEIGHT, length, s.get)
+  template map_width_nozero =
+    let s = parseDimensionValues(element.attr("width"))
+    if s.isSome and s.get.num != 0:
+      set_cv(PROPERTY_WIDTH, length, s.get)
+  template map_height_nozero =
+    let s = parseDimensionValues(element.attr("height"))
+    if s.isSome and s.get.num != 0:
+      set_cv(PROPERTY_HEIGHT, length, s.get)
+  template map_bgcolor =
+    let c = parseLegacyColor(element.attr("bgcolor"))
+    if c.isSome:
+      set_cv(PROPERTY_BACKGROUND_COLOR, color, c.get)
+
+  case element.tagType
+  of TAG_TABLE, TAG_TD, TAG_TH:
+    map_height_nozero
+    map_width_nozero
+    map_bgcolor
+  of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
+    map_height
+    map_bgcolor
+  of TAG_COL:
+    map_width
+  else: discard
  
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]) =
   let pseudo = PSEUDO_NONE
@@ -78,10 +118,12 @@ proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, us
   for rule in author:
     builder.addValues(rule[pseudo], ORIGIN_AUTHOR)
   if styledNode.node != nil:
-    let style = Element(styledNode.node).attr("style")
+    let element = Element(styledNode.node)
+    let style = element.attr("style")
     if style.len > 0:
       let inline_rules = newStringStream(style).parseListOfDeclarations2()
       builder.addValues(inline_rules, ORIGIN_AUTHOR)
+    builder.preshints = element.calcPresentationalHints()
 
   styledNode.computed = builder.buildComputedValues()
 

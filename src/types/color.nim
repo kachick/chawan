@@ -1,5 +1,6 @@
 import options
 import sequtils
+import strutils
 import sugar
 import tables
 
@@ -241,6 +242,50 @@ func parseRGBAColor*(s: string): Option[RGBAColor] =
   if s.len > 2 and s[0] == '0' and s[1] == 'x':
     return parseHexColor(s[2..^1])
   return parseHexColor(s)
+
+func parseLegacyColor*(s: string): Option[RGBColor] =
+  if s == "": return
+  let s = s.strip(chars = AsciiWhitespace)
+  if s == "transparent": return
+  if s in ColorsRGB:
+    return some(ColorsRGB[s])
+  block hex:
+    if s.len == 4:
+      for c in s:
+        if hexValue(c) == -1:
+          break hex
+      let c = (hexValue(s[0]) * 17 shl 16) or
+        (hexValue(s[1]) * 17 shl 8) or
+        (hexValue(s[2]) * 17)
+      return some(RGBColor(c))
+  block sane:
+    var c: Option[RGBAColor]
+    for c in s:
+      if hexValue(c) == -1:
+        break sane
+    if s[0] == '#' and s.len == 8:
+      c = parseHexColor(s[1..^1])
+    elif s.len == 8:
+      c = parseHexColor(s)
+    else:
+      break sane
+    if c.isSome:
+      return some(RGBColor(c.get))
+  # Seriously, what the hell.
+  var s2 = if s[0] == '#':
+    s.substr(1)
+  else:
+    s
+  while s2.len == 0 or s2.len mod 3 != 0:
+    s2 &= '0'
+  var l = s2.len div 3
+  let c1 = s2[0..<min(l,2)]
+  let c2 = s2[l..<min(l*2,l+2)]
+  let c3 = s2[l*2..<min(l*3,l*2+2)]
+  let c = (hexValue(c1[0]) shl 20) or (hexValue(c1[1]) shl 16) or
+          (hexValue(c2[0]) shl 12) or (hexValue(c2[1]) shl 8) or
+          (hexValue(c3[0]) shl 4) or hexValue(c3[1])
+  return some(RGBColor(c))
 
 func r*(c: RGBAColor): int =
   return int(c) shr 16 and 0xff

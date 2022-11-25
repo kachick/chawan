@@ -46,6 +46,26 @@ colgroup {
 	display: table-column-group;
 }
 
+tr {
+	display: table-row;
+}
+
+col {
+	display: table-column;
+}
+
+th {
+	display: table-cell;
+	font-weight: bold;
+	vertical-align: inherit;
+}
+
+td {
+	display: table-cell;
+	text-align: unset;
+	vertical-align: inherit;
+}
+
 input {
 	margin-right: 1ch;
 	white-space: pre;
@@ -90,18 +110,6 @@ input:is([type="submit"], [type="button"], [type="reset"])::before {
 
 input:is([type="submit"], [type="button"], [type="reset"])::after {
 	color: red;
-}
-
-tr {
-	display: table-row;
-}
-
-col {
-	display: table-column;
-}
-
-th, td {
-	display: table-cell;
 }
 
 li {

@@ -856,10 +856,12 @@ proc generateFromElem(styledNode: StyledNode, blockgroup: var BlockGroup, viewpo
 
   case styledNode.computed{"display"}
   of DISPLAY_BLOCK:
+    flush_ibox
     blockgroup.flush()
     let childbox = styledNode.generateBlockBox(viewport)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
+    flush_ibox
     blockgroup.flush()
     let childbox = getListItemBox(styledNode.computed, blockgroup.listItemCounter)
     if childbox.computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
@@ -878,18 +880,22 @@ proc generateFromElem(styledNode: StyledNode, blockgroup: var BlockGroup, viewpo
     childbox.content = styledNode.generateBlockBox(viewport)
     blockgroup.add(childbox)
   of DISPLAY_TABLE:
+    flush_ibox
     blockgroup.flush()
     let childbox = styledNode.generateTableBox(viewport)
     box.children.add(childbox)
   of DISPLAY_TABLE_ROW:
+    flush_ibox
     blockgroup.flush()
     let childbox = styledNode.generateTableRowBox(viewport)
     box.children.add(childbox)
   of DISPLAY_TABLE_ROW_GROUP:
+    flush_ibox
     blockgroup.flush()
     let childbox = styledNode.generateTableRowGroupBox(viewport)
     box.children.add(childbox)
   of DISPLAY_TABLE_CELL:
+    flush_ibox
     blockgroup.flush()
     let childbox = styledNode.generateTableCellBox(viewport)
     box.children.add(childbox)

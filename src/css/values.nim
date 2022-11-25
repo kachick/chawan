@@ -87,9 +87,7 @@ type
     unit*: CSSUnit
     auto*: bool
 
-  CSSColor* = object
-    rgba*: RGBAColor
-    termcolor: int
+  CSSColor* = RGBAColor
 
   CSSVerticalAlign* = object
     length*: CSSLength
@@ -143,6 +141,7 @@ type
     parent: CSSComputedValues
     normalProperties: array[CSSOrigin, CSSComputedValueBuilders]
     importantProperties: array[CSSOrigin, CSSComputedValueBuilders]
+    preshints*: CSSComputedValues
 
   CSSValueError* = object of ValueError
 
@@ -177,7 +176,7 @@ const PropertyNames = {
   "background-color": PROPERTY_BACKGROUND_COLOR,
 }.toTable()
 
-const ValueTypes = [
+const ValueTypes* = [
   PROPERTY_NONE: VALUE_NONE,
   PROPERTY_ALL: VALUE_NONE,
   PROPERTY_COLOR: VALUE_COLOR,
@@ -293,8 +292,8 @@ func listMarker*(t: CSSListStyleType, i: int): string =
 
 const Colors: Table[string, CSSColor] = ((func (): Table[string, CSSColor] =
   for name, rgb in ColorsRGB:
-    result[name] = CSSColor(rgba: rgb)
-  result["transparent"] = CSSColor(rgba: rgba(0x00, 0x00, 0x00, 0x00))
+    result[name] = CSSColor(rgb)
+  result["transparent"] = CSSColor(rgba(0x00, 0x00, 0x00, 0x00))
 )())
 
 const Units = {
@@ -346,10 +345,10 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
   return some(CSSLength(num: n, unit: UNIT_PX))
 
 func color(r, g, b: int): CSSColor =
-  return CSSColor(rgba: rgba(r, g, b, 256))
+  return CSSColor(rgba(r, g, b, 256))
 
 func color(r, g, b, a: int): CSSColor =
-  return CSSColor(rgba: rgba(r, g, b, a))
+  return CSSColor(rgba(r, g, b, a))
 
 func cssColor(d: CSSDeclaration): CSSColor =
   if d.value.len > 0:
@@ -359,7 +358,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
       of CSS_HASH_TOKEN:
         let c = parseHexColor(tok.value)
         if c.isSome:
-          return CSSColor(rgba: c.get)
+          return CSSColor(c.get)
         else:
           raise newException(CSSValueError, "Invalid color")
       of CSS_IDENT_TOKEN:
@@ -400,7 +399,7 @@ func cssColor(d: CSSDeclaration): CSSColor =
   raise newException(CSSValueError, "Invalid color")
 
 func cellColor*(color: CSSColor): CellColor =
-  return CellColor(rgb: true, rgbcolor: RGBColor(color.rgba))
+  return CellColor(rgb: true, rgbcolor: RGBColor(color))
 
 func isToken(d: CSSDeclaration): bool {.inline.} = d.value.len > 0 and d.value[0] of CSSToken
 
@@ -854,6 +853,10 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
       result.buildComputedValue(builder.parent, nil, build)
     # important, so no need to save origins
   # set defaults
+  if builder.preshints != nil:
+    for prop in CSSPropertyType:
+      if result[prop] == nil:
+        result[prop] = builder.preshints[prop]
   for prop in CSSPropertyType:
     if result[prop] == nil:
       if inherited(prop) and builder.parent != nil and builder.parent[prop] != nil:

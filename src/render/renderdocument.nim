@@ -270,7 +270,7 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
     x += ctx.offset.x
     y += ctx.offset.y
 
-    if ctx.computed{"background-color"}.rgba.a != 0: #TODO color blending
+    if ctx.computed{"background-color"}.a != 0: #TODO color blending
       grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, window)
 
     if ctx of ListItemBox:
@@ -287,7 +287,12 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
+const quirk = css & staticRead"res/quirk.css"
+let quirkstyle = quirk.parseStylesheet()
 proc renderDocument*(document: Document, window: WindowAttributes, userstyle: CSSStylesheet, layout: var Viewport, previousStyled: StyledNode): (FlexibleGrid, StyledNode) =
+  var uastyle = uastyle
+  if document.mode == QUIRKS:
+    uastyle = quirkstyle
   let styledNode = document.applyStylesheets(uastyle, userstyle, previousStyled)
   result[1] = styledNode
   layout.renderLayout(document, styledNode)
