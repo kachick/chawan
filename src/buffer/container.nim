@@ -52,6 +52,7 @@ type
     clear*: bool
 
   Container* = ref object
+    iface: BufferInterface
     attrs*: WindowAttributes
     width*: int
     height*: int
@@ -81,6 +82,7 @@ type
     redraw*: bool
     cmdvalid: array[ContainerCommand, bool]
     needslines*: bool
+    events*: seq[ContainerEvent]
 
 proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, title = ""): Container =
   let attrs = getWindowAttributes(stdout)
@@ -240,20 +242,35 @@ func findHighlights*(container: Container, y: int): seq[Highlight] =
     if y in hl:
       result.add(hl)
 
-proc expect(container: Container, cmd: ContainerCommand) =
-  container.cmdvalid[cmd] = true
+proc triggerEvent(container: Container, event: ContainerEvent) =
+  container.events.add(event)
+
+proc triggerEvent(container: Container, t: ContainerEventType) =
+  container.triggerEvent(ContainerEvent(t: t))
+
+proc updateCursor(container: Container)
 
 proc requestLines*(container: Container, w = container.lineWindow) =
-  container.ostream.getLines(w)
-  container.expect(SET_LINES)
+  container.iface.getLines(w).then(proc(res: seq[SimpleFlexibleLine]) =
+    container.lines.setLen(w.len)
+    container.lineshift = w.a
+    for y in 0 ..< min(res.len, w.len):
+      container.lines[y] = res[y]
+    container.updateCursor()
+    let cw = container.fromy ..< container.fromy + container.height
+    if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
+      container.triggerEvent(UPDATE))
 
 proc redraw*(container: Container) {.jsfunc.} =
   container.redraw = true
 
 proc sendCursorPosition*(container: Container) =
-  container.ostream.moveCursor(container.cursorx, container.cursory)
-  container.expect(SET_HOVER)
-  container.expect(RESHAPE)
+  container.iface.updateHover(container.cursorx, container.cursory).then(proc(res: UpdateHoverResult) =
+    if res.hover.isSome:
+      container.hovertext = res.hover.get
+      container.triggerEvent(STATUS)
+    if res.repaint:
+      container.needslines = true)
 
 proc setFromY*(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
@@ -504,49 +521,100 @@ proc popCursorPos*(container: Container, nojump = false) =
     container.needslines = true
 
 proc cursorNextLink*(container: Container) {.jsfunc.} =
-  container.ostream.findNextLink(container.cursorx, container.cursory)
-  container.expect(JUMP)
+  container.iface
+    .findNextLink(container.cursorx, container.cursory)
+    .then(proc(res: tuple[x, y: int]) =
+      container.setCursorXY(res.x, res.y))
 
 proc cursorPrevLink*(container: Container) {.jsfunc.} =
-  container.ostream.findPrevLink(container.cursorx, container.cursory)
-  container.expect(JUMP)
+  container.iface
+    .findPrevLink(container.cursorx, container.cursory)
+    .then(proc(res: tuple[x, y: int]) =
+      container.setCursorXY(res.x, res.y))
+
+proc clearSearchHighlights*(container: Container) =
+  for i in countdown(container.highlights.high, 0):
+    if container.highlights[i].clear:
+      container.highlights.del(i)
 
 proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
-  container.ostream.findNextMatch(container.cursorx, container.cursory, regex, wrap)
-  container.expect(JUMP)
+  container.iface
+    .findNextMatch(regex, container.cursorx, container.cursory, wrap)
+    .then(proc(res: BufferMatch) =
+      if container.hlon:
+        container.setCursorXY(res.x, res.y)
+        container.clearSearchHighlights()
+        let ex = res.x + res.str.width() - 1
+        let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
+        container.highlights.add(hl)
+        container.hlon = false)
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
-  container.ostream.findPrevMatch(container.cursorx, container.cursory, regex, wrap)
-  container.expect(JUMP)
+  container.iface
+    .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
+    .then(proc(res: BufferMatch) =
+      if container.hlon:
+        container.setCursorXY(res.x, res.y)
+        container.clearSearchHighlights()
+        let ex = res.x + res.str.width() - 1
+        let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
+        container.highlights.add(hl)
+        container.hlon = false)
+
+proc setLoadInfo(container: Container, msg: string) =
+  container.loadinfo = msg
+  container.triggerEvent(STATUS)
 
 proc load*(container: Container) =
-  container.ostream.load()
-  container.expect(LOAD_DONE)
-  container.expect(SET_LOAD_INFO)
-  container.expect(SET_NEEDS_AUTH)
-  container.expect(SET_REDIRECT)
-  container.expect(SET_CONTENT_TYPE)
-  container.expect(SET_TITLE)
-  if container.source.location.anchor != "":
-    container.expect(JUMP)
+  container.loadinfo = "Connecting to " & $container.source.location
+  container.iface.connect().then(proc(res: ConnectResult): auto =
+    container.code = res.code
+    if res.code != -2:
+      if res.code == 0:
+        if res.needsAuth:
+          container.triggerEvent(NEEDS_AUTH)
+        if res.redirect.isSome:
+          container.triggerEvent(REDIRECT)
+        if res.contentType != "":
+          container.contenttype = some(res.contentType)
+        container.setLoadInfo("Downloading " & $container.source.location)
+        return container.iface.load()
+      else:
+        container.triggerEvent(FAIL)
+  ).then(proc(res: tuple[success: bool, title: string]): auto =
+    if res.success:
+      container.title = res.title
+      container.setLoadInfo("Rendering " & $container.source.location)
+      return container.iface.render()
+  ).then(proc(lines: int): auto =
+    container.numLines = lines
+    container.setLoadInfo("")
+    container.needslines = true
+    return container.iface.gotoAnchor()
+  ).then(proc(res: tuple[x, y: int]) =
+    container.setCursorXY(res.x, res.y)
+  )
 
-proc gotoAnchor*(container: Container, anchor: string) =
-  container.ostream.findAnchor(anchor)
-  container.expect(ANCHOR_FOUND)
-  container.expect(ANCHOR_FAIL)
+proc findAnchor*(container: Container, anchor: string) =
+  container.iface.findAnchor(anchor).then(proc(found: bool) =
+    if found:
+      container.triggerEvent(ANCHOR)
+    else:
+      container.triggerEvent(NO_ANCHOR))
 
 proc readCanceled*(container: Container) =
-  container.ostream.readCanceled()
+  container.iface.readCanceled()
 
 proc readSuccess*(container: Container, s: string) =
-  container.ostream.readSuccess(s)
-  container.expect(OPEN)
-  container.expect(RESHAPE)
+  container.iface.readSuccess(s).then(proc(res: ReadSuccessResult) =
+    if res.reshape:
+      container.needslines = true
+    if res.open.isSome:
+      container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get)))
 
 proc reshape*(container: Container, noreq = false) {.jsfunc.} =
-  container.ostream.render()
-  container.expect(SET_NUM_LINES)
-  container.expect(JUMP)
+  container.iface.render().then(proc(lines: int) =
+    container.numLines = lines)
   if not noreq:
     container.needslines = true
 
@@ -558,30 +626,36 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
     clonepid: container.process,
   )
   container.pipeto = dispatcher.newBuffer(config, source, container.title)
-  container.ostream.getSource()
-  container.expect(SOURCE_READY)
+  container.iface.getSource().then(proc() =
+    if container.pipeto != nil:
+      container.pipeto.load()
+      container.pipeto = nil)
   return container.pipeto
 
 proc click*(container: Container) {.jsfunc.} =
-  container.ostream.click(container.cursorx, container.cursory)
-  container.expect(OPEN)
-  container.expect(READ_LINE)
-  container.expect(RESHAPE)
+  container.iface.click(container.cursorx, container.cursory).then(proc(res: ClickResult) =
+    if res.repaint:
+      container.needslines = true
+    if res.open.isSome:
+      container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get))
+    if res.readline.isSome:
+      let rl = res.readline.get
+      container.triggerEvent(
+        ContainerEvent(
+          t: READ_LINE,
+          prompt: rl.prompt,
+          value: rl.value,
+          password: rl.hide)))
 
 proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs
   container.width = attrs.width
   container.height = attrs.height - 1
-  container.ostream.windowChange(attrs)
-  container.expect(RESHAPE)
-
-proc clearSearchHighlights*(container: Container) =
-  for i in countdown(container.highlights.high, 0):
-    if container.highlights[i].clear:
-      container.highlights.del(i)
+  container.iface.windowChange(attrs).then(proc() =
+    container.needslines = true)
 
 proc handleCommand(container: Container, cmd: ContainerCommand, len: int): ContainerEvent =
-  if not container.cmdvalid[cmd] and cmd != SET_LINES:
+  if not container.cmdvalid[cmd] and false or cmd notin {FULFILL_PROMISE, BUFFER_READY}:
     let len = len - sizeof(cmd)
     #TODO TODO TODO
     for i in 0 ..< len:
@@ -590,106 +664,28 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
       return ContainerEvent(t: INVALID_COMMAND)
   container.cmdvalid[cmd] = false
   case cmd
-  of SET_LOAD_INFO:
-    var li: LoadInfo
-    container.istream.sread(li)
-    case li
-    of CONNECT:
-      container.loadinfo = "Connecting to " & $container.source.location
-      container.expect(SET_LOAD_INFO)
-    of DOWNLOAD:
-      container.loadinfo = "Downloading " & $container.source.location
-      container.expect(SET_LOAD_INFO)
-    of RENDER:
-      container.loadinfo = "Rendering " & $container.source.location
-      container.expect(SET_LOAD_INFO)
-    of DONE:
-      container.loadinfo = ""
-    return ContainerEvent(t: STATUS)
-  of SET_LINES:
-    var w: Slice[int]
-    container.istream.sread(container.numLines)
-    container.istream.sread(w)
-    container.lines.setLen(w.len)
-    container.lineshift = w.a
-    for y in 0 ..< w.len:
-      container.istream.sread(container.lines[y])
-    container.updateCursor()
-    let cw = container.fromy ..< container.fromy + container.height
-    if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
-      return ContainerEvent(t: UPDATE)
-  of SET_NUM_LINES:
-    container.istream.sread(container.numLines)
-  of SET_NEEDS_AUTH:
-    return ContainerEvent(t: NEEDS_AUTH)
-  of SET_CONTENT_TYPE:
-    var ctype: string
-    container.istream.sread(ctype, 128)
-    container.contenttype = some(ctype)
-  of SET_REDIRECT:
-    var redirect: URL
-    container.istream.sread(redirect)
-    if redirect != nil:
-      container.redirect = some(redirect)
-      return ContainerEvent(t: REDIRECT)
-  of SET_TITLE:
-    container.istream.sread(container.title)
-    return ContainerEvent(t: STATUS)
-  of SET_HOVER:
-    container.istream.sread(container.hovertext)
-    return ContainerEvent(t: STATUS)
-  of LOAD_DONE:
-    container.istream.sread(container.code)
-    if container.code == -2: return
-    if container.code != 0:
-      return ContainerEvent(t: FAIL)
-    return ContainerEvent(t: SUCCESS)
-  of ANCHOR_FOUND:
-    return ContainerEvent(t: ANCHOR)
-  of ANCHOR_FAIL:
-    return ContainerEvent(t: FAIL)
-  of READ_LINE:
-    var prompt, str: string
-    var pwd: bool
-    container.istream.sread(prompt, 1024)
-    container.istream.sread(str, 1024)
-    container.istream.sread(pwd)
-    container.cmdvalid[OPEN] = false
-    return ContainerEvent(t: READ_LINE, prompt: prompt, value: str, password: pwd)
-  of JUMP:
-    var x, y, ex: int
-    container.istream.sread(x)
-    container.istream.sread(y)
-    container.istream.sread(ex)
-    if x != -1 and y != -1:
-      if container.hlon:
-        container.clearSearchHighlights()
-        let hl = Highlight(x: x, y: y, endx: ex, endy: y, clear: true)
-        container.highlights.add(hl)
-        container.hlon = false
-      container.setCursorXY(x, y)
-  of OPEN:
-    var request: Request
-    container.istream.sread(request)
-    container.cmdvalid[READ_LINE] = false
-    return ContainerEvent(t: OPEN, request: request)
   of BUFFER_READY:
     if container.source.t == LOAD_PIPE:
-      container.ostream.passFd()
+      container.iface.passFd()
       let s = SocketStream(container.ostream)
       s.sendFileHandle(container.source.fd)
       discard close(container.source.fd)
       container.ostream.flush()
     container.load()
-  of SOURCE_READY:
-    if container.pipeto != nil:
-      container.pipeto.load()
-      container.pipeto = nil
   of RESHAPE:
     container.needslines = true
+  of FULFILL_PROMISE:
+    var packetid: int
+    container.istream.sread(packetid)
+    container.iface.fulfill(packetid, len - slen(packetid) - slen(FULFILL_PROMISE))
   if container.needslines:
-    container.expect(SET_LINES)
     container.requestLines()
+    container.needslines = false
+
+proc setStream*(container: Container, stream: Stream) =
+  container.istream = stream
+  container.ostream = stream
+  container.iface = newBufferInterface(stream)
 
 # Synchronously read all lines in the buffer.
 iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
@@ -698,11 +694,12 @@ iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
   var len: int
   container.istream.sread(len)
   container.istream.sread(cmd)
-  while cmd != SET_LINES:
-    discard container.handleCommand(cmd, len)
-    container.istream.sread(len)
-    container.istream.sread(cmd)
-  assert cmd == SET_LINES
+  #TODO TODO TODO
+  #while cmd != SET_LINES:
+  #  discard container.handleCommand(cmd, len)
+  #  container.istream.sread(len)
+  #  container.istream.sread(cmd)
+  #assert cmd == SET_LINES
   var w: Slice[int]
   container.istream.sread(container.numLines)
   container.istream.sread(w)

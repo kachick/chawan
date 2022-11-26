@@ -243,8 +243,7 @@ proc acceptBuffers(client: Client) =
     if pid in client.pager.procmap:
       let container = client.pager.procmap[pid]
       client.pager.procmap.del(pid)
-      container.istream = stream
-      container.ostream = stream
+      container.setStream(stream)
       let fd = stream.source.getFd()
       client.fdmap[int(fd)] = container
       client.selector.registerHandle(fd, {Read}, nil)
@@ -314,7 +313,8 @@ proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
 
 proc newConsole(pager: Pager, tty: File): Console =
   new(result)
-  if tty != nil:
+  result.tty = tty
+  if tty != nil and false:
     var pipefd: array[0..1, cint]
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")

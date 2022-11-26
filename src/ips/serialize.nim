@@ -14,7 +14,7 @@ import types/url
 
 proc slen*[T](o: T): int =
   when T is string:
-    return sizeof(o.len) + o.len
+    return slen(o.len) + o.len
   elif T is bool:
     return sizeof(char)
   elif T is URL:
@@ -83,6 +83,9 @@ proc slen*[T](o: T): int =
     of LOAD_PIPE: result += slen(o.fd)
     result += slen(o.location)
     result += slen(o.contenttype)
+  elif T is tuple:
+    for f in o.fields:
+      result += slen(f)
   else:
     result += sizeof(o)
 
@@ -181,6 +184,14 @@ proc swrite*(stream: Stream, source: BufferSource) =
 
 proc swrite*(stream: Stream, bconfig: BufferConfig) =
   stream.swrite(bconfig.userstyle)
+
+proc swrite*(stream: Stream, tup: tuple) =
+  for f in tup.fields:
+    stream.swrite(f)
+
+proc swrite*(stream: Stream, obj: object) =
+  for f in obj.fields:
+    stream.swrite(f)
 
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
@@ -314,3 +325,11 @@ proc sread*(stream: Stream, source: var BufferSource) =
 
 proc sread*(stream: Stream, bconfig: var BufferConfig) =
   stream.sread(bconfig.userstyle)
+
+proc sread*(stream: Stream, obj: var object) =
+  for f in obj.fields:
+    stream.sread(f)
+
+proc sread*(stream: Stream, tup: var tuple) =
+  for f in tup.fields:
+    stream.sread(f)

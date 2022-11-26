@@ -2,8 +2,8 @@
 
 template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect), cast(tags: []), cast(raises: []).}:
   var a = false
+  var o = ""
   when nimVm:
-    var o = ""
     for x in s:
       if not a:
         a = true
@@ -16,6 +16,7 @@ template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect), cast(tags: [])
       if not a:
         a = true
       else:
-        stderr.write(' ')
-      stderr.write(x)
-    stderr.write('\n')
+        o &= ' '
+      o &= x
+    o &= '\n'
+    stderr.write(o)

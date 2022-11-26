@@ -8,7 +8,6 @@ import unicode
 when defined(posix):
   import posix
 
-import buffer/buffer
 import buffer/cell
 import buffer/container
 import config/config
@@ -428,7 +427,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
     pager.addContainer(container)
   else:
     pager.container.redirect = some(request.url)
-    pager.container.gotoAnchor(request.url.anchor)
+    pager.container.findAnchor(request.url.anchor)
 
 # When the user has passed a partial URL as an argument, they might've meant
 # either:
@@ -580,12 +579,7 @@ proc click(pager: Pager) {.jsfunc.} =
 proc authorize*(pager: Pager) =
   pager.setLineEdit(readLine("Username: ", pager.attrs.width, term = pager.term), USERNAME)
 
-proc handleEvent*(pager: Pager, container: Container): bool =
-  var event: ContainerEvent
-  try:
-    event = container.handleEvent()
-  except IOError:
-    return false
+proc handleEvent0*(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
   of FAIL:
     pager.deleteContainer(container)
@@ -635,6 +629,20 @@ proc handleEvent*(pager: Pager, container: Container): bool =
     if pager.container == container:
       pager.refreshStatusMsg()
   of NO_EVENT: discard
+  return true
+
+proc handleEvent*(pager: Pager, container: Container): bool =
+  var event: ContainerEvent
+  try:
+    event = container.handleEvent()
+  except IOError:
+    return false
+  if not pager.handleEvent0(container, event):
+    return false
+  while container.events.len > 0:
+    let event = container.events.pop()
+    if not pager.handleEvent0(container, event):
+      return false
   return true
 
 proc addPagerModule*(ctx: JSContext) =
