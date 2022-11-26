@@ -1,4 +1,3 @@
-import macros
 import options
 import streams
 import strformat
@@ -241,25 +240,18 @@ func findHighlights*(container: Container, y: int): seq[Highlight] =
     if y in hl:
       result.add(hl)
 
-macro writeCommand(container: Container, cmd: BufferCommand, args: varargs[typed]) =
-  result = newStmtList()
-  result.add(quote do: `container`.ostream.swrite(`cmd`))
-  for arg in args:
-    result.add(quote do: `container`.ostream.swrite(`arg`))
-  result.add(quote do: `container`.ostream.flush())
-
 proc expect(container: Container, cmd: ContainerCommand) =
   container.cmdvalid[cmd] = true
 
 proc requestLines*(container: Container, w = container.lineWindow) =
-  container.writeCommand(GET_LINES, w)
+  container.ostream.getLines(w)
   container.expect(SET_LINES)
 
 proc redraw*(container: Container) {.jsfunc.} =
   container.redraw = true
 
 proc sendCursorPosition*(container: Container) =
-  container.writeCommand(MOVE_CURSOR, container.cursorx, container.cursory)
+  container.ostream.moveCursor(container.cursorx, container.cursory)
   container.expect(SET_HOVER)
   container.expect(RESHAPE)
 
@@ -512,23 +504,23 @@ proc popCursorPos*(container: Container, nojump = false) =
     container.needslines = true
 
 proc cursorNextLink*(container: Container) {.jsfunc.} =
-  container.writeCommand(FIND_NEXT_LINK, container.cursorx, container.cursory)
+  container.ostream.findNextLink(container.cursorx, container.cursory)
   container.expect(JUMP)
 
 proc cursorPrevLink*(container: Container) {.jsfunc.} =
-  container.writeCommand(FIND_PREV_LINK, container.cursorx, container.cursory)
+  container.ostream.findPrevLink(container.cursorx, container.cursory)
   container.expect(JUMP)
 
 proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
-  container.writeCommand(FIND_NEXT_MATCH, container.cursorx, container.cursory, regex, wrap)
+  container.ostream.findNextMatch(container.cursorx, container.cursory, regex, wrap)
   container.expect(JUMP)
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
-  container.writeCommand(FIND_PREV_MATCH, container.cursorx, container.cursory, regex, wrap)
+  container.ostream.findPrevMatch(container.cursorx, container.cursory, regex, wrap)
   container.expect(JUMP)
 
 proc load*(container: Container) =
-  container.writeCommand(LOAD)
+  container.ostream.load()
   container.expect(LOAD_DONE)
   container.expect(SET_LOAD_INFO)
   container.expect(SET_NEEDS_AUTH)
@@ -539,21 +531,20 @@ proc load*(container: Container) =
     container.expect(JUMP)
 
 proc gotoAnchor*(container: Container, anchor: string) =
-  container.writeCommand(GOTO_ANCHOR, anchor)
+  container.ostream.findAnchor(anchor)
   container.expect(ANCHOR_FOUND)
   container.expect(ANCHOR_FAIL)
 
 proc readCanceled*(container: Container) =
-  container.writeCommand(READ_CANCELED)
+  container.ostream.readCanceled()
 
 proc readSuccess*(container: Container, s: string) =
-  container.writeCommand(READ_SUCCESS, s)
+  container.ostream.readSuccess(s)
   container.expect(OPEN)
   container.expect(RESHAPE)
 
 proc reshape*(container: Container, noreq = false) {.jsfunc.} =
-  container.writeCommand(RENDER)
-  container.expect(RESHAPE)
+  container.ostream.render()
   container.expect(SET_NUM_LINES)
   container.expect(JUMP)
   if not noreq:
@@ -567,12 +558,12 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
     clonepid: container.process,
   )
   container.pipeto = dispatcher.newBuffer(config, source, container.title)
-  container.writeCommand(GET_SOURCE)
+  container.ostream.getSource()
   container.expect(SOURCE_READY)
   return container.pipeto
 
 proc click*(container: Container) {.jsfunc.} =
-  container.writeCommand(CLICK, container.cursorx, container.cursory)
+  container.ostream.click(container.cursorx, container.cursory)
   container.expect(OPEN)
   container.expect(READ_LINE)
   container.expect(RESHAPE)
@@ -581,7 +572,7 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs
   container.width = attrs.width
   container.height = attrs.height - 1
-  container.writeCommand(WINDOW_CHANGE, attrs)
+  container.ostream.windowChange(attrs)
   container.expect(RESHAPE)
 
 proc clearSearchHighlights*(container: Container) =
@@ -590,7 +581,7 @@ proc clearSearchHighlights*(container: Container) =
       container.highlights.del(i)
 
 proc handleCommand(container: Container, cmd: ContainerCommand, len: int): ContainerEvent =
-  if not container.cmdvalid[cmd]:
+  if not container.cmdvalid[cmd] and cmd != SET_LINES:
     let len = len - sizeof(cmd)
     #TODO TODO TODO
     for i in 0 ..< len:
@@ -684,8 +675,7 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
     return ContainerEvent(t: OPEN, request: request)
   of BUFFER_READY:
     if container.source.t == LOAD_PIPE:
-      container.ostream.swrite(PASS_FD)
-      container.ostream.flush()
+      container.ostream.passFd()
       let s = SocketStream(container.ostream)
       s.sendFileHandle(container.source.fd)
       discard close(container.source.fd)
@@ -698,6 +688,7 @@ proc handleCommand(container: Container, cmd: ContainerCommand, len: int): Conta
   of RESHAPE:
     container.needslines = true
   if container.needslines:
+    container.expect(SET_LINES)
     container.requestLines()
 
 # Synchronously read all lines in the buffer.

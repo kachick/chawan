@@ -40,7 +40,7 @@ type
     CONNECT, DOWNLOAD, RENDER, DONE
 
   BufferCommand* = enum
-    LOAD, RENDER, WINDOW_CHANGE, GOTO_ANCHOR, READ_SUCCESS, READ_CANCELED,
+    LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
     GET_SOURCE, GET_LINES, MOVE_CURSOR, PASS_FD
 
@@ -85,20 +85,82 @@ type
     userstyle: CSSStylesheet
 
 macro writeCommand(buffer: Buffer, cmd: ContainerCommand, args: varargs[typed]) =
-  result = newStmtList()
+  let cmdblock = newStmtList()
+  var idlist: seq[NimNode]
+  var i = 0
+  for arg in args:
+    let id = ident("arg_" & $i)
+    idlist.add(id)
+    cmdblock.add(quote do:
+      let `id` = `arg`)
+    inc i
   let lens = ident("lens")
-  let calclens = newStmtList()
-  calclens.add(quote do:
+  cmdblock.add(quote do:
     var `lens` = slen(`cmd`))
-  for arg in args:
-    calclens.add(quote do: `lens` += slen(`arg`))
-  calclens.add(quote do:
+  for id in idlist:
+    cmdblock.add(quote do: `lens` += slen(`id`))
+  cmdblock.add(quote do:
     `buffer`.postream.swrite(`lens`))
-  result.add(newBlockStmt(calclens))
-  result.add(quote do: `buffer`.postream.swrite(`cmd`))
-  for arg in args:
-    result.add(quote do: `buffer`.postream.swrite(`arg`))
-  result.add(quote do: `buffer`.postream.flush())
+  cmdblock.add(quote do: `buffer`.postream.swrite(`cmd`))
+  for id in idlist:
+    cmdblock.add(quote do: `buffer`.postream.swrite(`id`))
+  cmdblock.add(quote do: `buffer`.postream.flush())
+  return newBlockStmt(cmdblock)
+
+proc buildInterfaceProc(fun: NimNode): tuple[fun, name: NimNode] =
+  let name = fun[0] # sym
+  let params = fun[3] # formalparams
+  let retval = params[0] # sym
+  var body = newStmtList()
+  assert params.len >= 2 # return type, this value
+  var x = name.strVal.toScreamingSnakeCase()
+  if x[^1] == '=':
+    x = "SET_" & x[0..^2]
+  let nup = ident(x) # add this to enums
+  let this2 = newIdentDefs(ident("stream"), ident("Stream"))
+  let thisval = this2[0]
+  body.add(quote do:
+    `thisval`.swrite(BufferCommand.`nup`))
+  var params2: seq[NimNode]
+  params2.add(retval)
+  params2.add(this2)
+  for i in 2 ..< params.len:
+    let param = params[i]
+    for i in 0 ..< param.len - 2:
+      let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
+      params2.add(id2)
+  for c in params2[2..^1]:
+    let s = c[0] # sym e.g. url
+    body.add(quote do:
+      `thisval`.swrite(`s`))
+  body.add(quote do:
+    `thisval`.flush())
+  if retval.kind != nnkEmpty:
+    body.add(quote do:
+      `thisval`.sread(result))
+  return (newProc(name, params2, body), nup)
+
+type
+  ProxyFunction = object
+    iname: NimNode # internal name
+    ename: NimNode # enum name
+    params: seq[NimNode]
+  ProxyMap = Table[string, ProxyFunction]
+
+# Name -> ProxyFunction
+var ProxyFunctions {.compileTime.}: ProxyMap
+
+macro proxy(fun: typed) =
+  let iproc = buildInterfaceProc(fun)
+  var pfun: ProxyFunction
+  pfun.iname = ident(fun[0].strVal & "_internal")
+  pfun.ename = iproc[1]
+  for x in fun[3]: pfun.params.add(x)
+  ProxyFunctions[fun[0].strVal] = pfun
+  let ifun = newProc(pfun.iname, pfun.params, fun[6])
+  result = newStmtList()
+  result.add(iproc[0])
+  result.add(ifun)
 
 func getLink(node: StyledNode): HTMLAnchorElement =
   if node == nil:
@@ -137,33 +199,7 @@ func cursorBytes(buffer: Buffer, y: int, cc: int): int =
     w += r.width()
   return i
 
-func findNextLink(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] =
-  let line = buffer.lines[cursory]
-  var i = line.findFormatN(cursorx) - 1
-  var link: Element = nil
-  if i >= 0:
-    link = line.formats[i].node.getClickable()
-  inc i
-
-  while i < line.formats.len:
-    let format = line.formats[i]
-    let fl = format.node.getClickable()
-    if fl != nil and fl != link:
-      return (format.pos, cursory)
-    inc i
-
-  for y in (cursory + 1)..(buffer.lines.len - 1):
-    let line = buffer.lines[y]
-    i = 0
-    while i < line.formats.len:
-      let format = line.formats[i]
-      let fl = format.node.getClickable()
-      if fl != nil and fl != link:
-        return (format.pos, y)
-      inc i
-  return (-1, -1)
-
-func findPrevLink(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] =
+func findPrevLink0(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] =
   let line = buffer.lines[cursory]
   var i = line.findFormatN(cursorx) - 1
   var link: Element = nil
@@ -220,34 +256,33 @@ func findPrevLink(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] =
       dec i
   return (-1, -1)
 
-proc findNextMatch(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch =
-  template return_if_match =
-    if res.success and res.captures.len > 0:
-      let cap = res.captures[0]
-      let x = buffer.lines[y].str.width(cap.s)
-      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-      return BufferMatch(success: true, x: x, y: y, str: str)
-  var y = cursory
-  let b = buffer.cursorBytes(y, cursorx)
-  let b2 = if buffer.lines[y].str.len > b: b + buffer.lines[y].str.runeLenAt(b) else: b
-  let res = regex.exec(buffer.lines[y].str, b2, buffer.lines[y].str.len)
-  return_if_match
-  inc y
-  while true:
-    if y > buffer.lines.high:
-      if wrap:
-        y = 0
-      else:
-        break
-    if y == cursory:
-      let res = regex.exec(buffer.lines[y].str, 0, b)
-      return_if_match
-      break
-    let res = regex.exec(buffer.lines[y].str)
-    return_if_match
-    inc y
+func findNextLink0(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] =
+  let line = buffer.lines[cursory]
+  var i = line.findFormatN(cursorx) - 1
+  var link: Element = nil
+  if i >= 0:
+    link = line.formats[i].node.getClickable()
+  inc i
 
-proc findPrevMatch(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch =
+  while i < line.formats.len:
+    let format = line.formats[i]
+    let fl = format.node.getClickable()
+    if fl != nil and fl != link:
+      return (format.pos, cursory)
+    inc i
+
+  for y in (cursory + 1)..(buffer.lines.len - 1):
+    let line = buffer.lines[y]
+    i = 0
+    while i < line.formats.len:
+      let format = line.formats[i]
+      let fl = format.node.getClickable()
+      if fl != nil and fl != link:
+        return (format.pos, y)
+      inc i
+  return (-1, -1)
+
+proc findPrevMatch0(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch =
   template return_if_match =
     if res.success and res.captures.len > 0:
       let cap = res.captures[^1]
@@ -274,6 +309,51 @@ proc findPrevMatch(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bo
     return_if_match
     dec y
 
+proc findNextMatch0(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch =
+  template return_if_match =
+    if res.success and res.captures.len > 0:
+      let cap = res.captures[0]
+      let x = buffer.lines[y].str.width(cap.s)
+      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+      return BufferMatch(success: true, x: x, y: y, str: str)
+  var y = cursory
+  let b = buffer.cursorBytes(y, cursorx)
+  let b2 = if buffer.lines[y].str.len > b: b + buffer.lines[y].str.runeLenAt(b) else: b
+  let res = regex.exec(buffer.lines[y].str, b2, buffer.lines[y].str.len)
+  return_if_match
+  inc y
+  while true:
+    if y > buffer.lines.high:
+      if wrap:
+        y = 0
+      else:
+        break
+    if y == cursory:
+      let res = regex.exec(buffer.lines[y].str, 0, b)
+      return_if_match
+      break
+    let res = regex.exec(buffer.lines[y].str)
+    return_if_match
+    inc y
+
+proc findPrevLink*(buffer: Buffer, cursorx, cursory: int) {.proxy.} =
+  let pl = buffer.findPrevLink0(cursorx, cursory)
+  buffer.writeCommand(JUMP, pl.x, pl.y, 0)
+
+proc findNextLink*(buffer: Buffer, cursorx, cursory: int) {.proxy.} =
+  let pl = buffer.findNextLink0(cursorx, cursory)
+  buffer.writeCommand(JUMP, pl.x, pl.y, 0)
+
+proc findPrevMatch*(buffer: Buffer, cursorx, cursory: int, regex: Regex, wrap: bool) {.proxy.} =
+  let match = buffer.findPrevMatch0(regex, cursorx, cursory, wrap)
+  if match.success:
+    buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
+
+proc findNextMatch*(buffer: Buffer, cursorx, cursory: int, regex: Regex, wrap: bool) {.proxy.} =
+  let match = buffer.findNextMatch0(regex, cursorx, cursory, wrap)
+  if match.success:
+    buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
+
 proc gotoAnchor(buffer: Buffer) =
   if buffer.document == nil: return
   let anchor = buffer.document.getElementById(buffer.location.anchor)
@@ -286,7 +366,8 @@ proc gotoAnchor(buffer: Buffer) =
         buffer.writeCommand(JUMP, format.pos, y, 0)
         return
 
-proc windowChange(buffer: Buffer) =
+proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
+  buffer.attrs = attrs
   buffer.viewport = Viewport(window: buffer.attrs)
   buffer.width = buffer.attrs.width
   buffer.height = buffer.attrs.height - 1
@@ -321,6 +402,9 @@ proc updateHover(buffer: Buffer, cursorx, cursory: int) =
           buffer.reshape = true
 
   buffer.prevnode = thisnode
+
+proc moveCursor*(buffer: Buffer, cursorx, cursory: int) {.proxy.} =
+  buffer.updateHover(cursorx, cursory)
 
 proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
   let url = parseUrl(elem.href, document.location.some)
@@ -400,9 +484,8 @@ proc setupSource(buffer: Buffer): int =
   buffer.selector.registerHandle(cast[int](buffer.getFd()), {Read}, 1)
   buffer.loaded = true
 
-proc load(buffer: Buffer) =
-  case buffer.contenttype
-  of "text/html":
+proc load0(buffer: Buffer) =
+  if buffer.contenttype == "text/html":
     if not buffer.streamclosed:
       buffer.source = buffer.istream.readAll()
       buffer.istream.close()
@@ -414,15 +497,16 @@ proc load(buffer: Buffer) =
     buffer.writeCommand(SET_TITLE, buffer.document.title)
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
-  else:
-    discard
-    #if not buffer.streamclosed:
-    #  if buffer.bsource.t != LOAD_PIPE:
-    #    buffer.source = buffer.istream.readAll()
-    #    buffer.istream.close()
-    #    buffer.streamclosed = true
 
-proc render(buffer: Buffer) =
+proc load*(buffer: Buffer) {.proxy.} =
+  buffer.writeCommand(SET_LOAD_INFO, CONNECT)
+  let code = buffer.setupSource()
+  if code != -2:
+    buffer.writeCommand(SET_LOAD_INFO, DOWNLOAD)
+    buffer.load0()
+  buffer.writeCommand(LOAD_DONE, code)
+
+proc do_reshape(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
     if buffer.viewport == nil:
@@ -433,6 +517,13 @@ proc render(buffer: Buffer) =
   else:
     buffer.lines = renderPlainText(buffer.source)
 
+proc render*(buffer: Buffer) {.proxy.} =
+  buffer.writeCommand(SET_LOAD_INFO, LoadInfo.RENDER)
+  buffer.do_reshape()
+  buffer.writeCommand(SET_LOAD_INFO, DONE)
+  buffer.writeCommand(SET_NUM_LINES, buffer.lines.len)
+  buffer.gotoAnchor()
+
 proc load2(buffer: Buffer) =
   case buffer.contenttype
   of "text/html":
@@ -442,7 +533,8 @@ proc load2(buffer: Buffer) =
     # (We're basically recv'ing single bytes, but nim std/net does buffering
     # for us so we should be ok?)
     if not buffer.streamclosed:
-      buffer.source &= buffer.istream.readChar()
+      let c = buffer.istream.readChar()
+      buffer.source &= c
       buffer.reshape = true
 
 proc finishLoad(buffer: Buffer) =
@@ -634,7 +726,7 @@ template restore_focus =
     buffer.document.focus = nil
     buffer.reshape = true
 
-proc lineInput(buffer: Buffer, s: string) =
+proc readSuccess*(buffer: Buffer, s: string) {.proxy.} =
   if buffer.input != nil:
     let input = buffer.input
     case input.inputType
@@ -660,7 +752,7 @@ proc lineInput(buffer: Buffer, s: string) =
     else: discard
     buffer.input = nil
 
-proc click(buffer: Buffer, cursorx, cursory: int) =
+proc click*(buffer: Buffer, cursorx, cursory: int) {.proxy.} =
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if clickable != nil:
     case clickable.tagType
@@ -726,113 +818,72 @@ proc click(buffer: Buffer, cursorx, cursory: int) =
     else:
       restore_focus
 
+proc readCanceled*(buffer: Buffer) {.proxy.} =
+  buffer.input = nil
+
+proc findAnchor*(buffer: Buffer, anchor: string) {.proxy.} =
+  if buffer.document != nil and buffer.document.getElementById(anchor) != nil:
+    buffer.writeCommand(ANCHOR_FOUND)
+  else:
+    buffer.writeCommand(ANCHOR_FAIL)
+
+proc getLines*(buffer: Buffer, w: Slice[int]) {.proxy.} =
+  var w = w
+  if w.b < 0 or w.b > buffer.lines.high:
+    w.b = buffer.lines.high
+  var lens = sizeof(SET_LINES) + sizeof(buffer.lines.len) + sizeof(w)
+  for y in w:
+    lens += slen(buffer.lines[y])
+  buffer.postream.swrite(lens)
+  buffer.postream.swrite(SET_LINES)
+  buffer.postream.swrite(buffer.lines.len)
+  buffer.postream.swrite(w)
+  for y in w:
+    buffer.postream.swrite(buffer.lines[y])
+  buffer.postream.flush()
+
+proc passFd*(buffer: Buffer) {.proxy.} =
+  let fd = SocketStream(buffer.pistream).recvFileHandle()
+  buffer.bsource.fd = fd
+
+proc getSource*(buffer: Buffer) {.proxy.} =
+  let ssock = initServerSocket()
+  buffer.writeCommand(SOURCE_READY)
+  let stream = ssock.acceptSocketStream()
+  if not buffer.streamclosed:
+    buffer.source = buffer.istream.readAll()
+    buffer.streamclosed = true
+  stream.write(buffer.source)
+  stream.close()
+  ssock.close()
+
+macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand) =
+  let switch = newNimNode(nnkCaseStmt)
+  switch.add(ident("cmd"))
+  for k, v in funs:
+    let ofbranch = newNimNode(nnkOfBranch)
+    ofbranch.add(v.ename)
+    let stmts = newStmtList()
+    let call = newCall(v.iname, buffer)
+    for i in 2 ..< v.params.len:
+      let param = v.params[i]
+      for i in 0 ..< param.len - 2:
+        let id = ident(param[i].strVal)
+        let typ = param[^2]
+        stmts.add(quote do:
+          var `id`: `typ`
+          `buffer`.pistream.sread(`id`))
+        call.add(id)
+    stmts.add(call)
+    ofbranch.add(stmts)
+    switch.add(ofbranch)
+  return switch
+
 proc readCommand(buffer: Buffer) =
   let istream = buffer.pistream
-  let ostream = buffer.postream
   var cmd: BufferCommand
   istream.sread(cmd)
-  case cmd
-  of PASS_FD:
-    let fd = SocketStream(istream).recvFileHandle()
-    buffer.bsource.fd = fd
-  of LOAD:
-    buffer.writeCommand(SET_LOAD_INFO, CONNECT)
-    let code = buffer.setupSource()
-    if code != -2:
-      buffer.writeCommand(SET_LOAD_INFO, DOWNLOAD)
-      buffer.load()
-    buffer.writeCommand(LOAD_DONE, code)
-  of GOTO_ANCHOR:
-    var anchor: string
-    istream.sread(anchor)
-    if buffer.document != nil and buffer.document.getElementById(anchor) != nil:
-      buffer.writeCommand(ANCHOR_FOUND)
-    else:
-      buffer.writeCommand(ANCHOR_FAIL)
-  of RENDER:
-    buffer.writeCommand(SET_LOAD_INFO, LoadInfo.RENDER)
-    buffer.render()
-    buffer.writeCommand(SET_LOAD_INFO, DONE)
-    buffer.writeCommand(SET_NUM_LINES, buffer.lines.len)
-    buffer.gotoAnchor()
-  of GET_LINES:
-    var w: Slice[int]
-    istream.sread(w)
-    if w.b < 0 or w.b > buffer.lines.high:
-      w.b = buffer.lines.high
-    var lens = sizeof(SET_LINES) + sizeof(buffer.lines.len) + sizeof(w)
-    for y in w:
-      lens += slen(buffer.lines[y])
-    ostream.swrite(lens)
-    ostream.swrite(SET_LINES)
-    ostream.swrite(buffer.lines.len)
-    ostream.swrite(w)
-    for y in w:
-      ostream.swrite(buffer.lines[y])
-    ostream.flush()
-  of WINDOW_CHANGE:
-    istream.sread(buffer.attrs)
-    buffer.windowChange()
-  of FIND_PREV_LINK:
-    var cx, cy: int
-    istream.sread(cx)
-    istream.sread(cy)
-    let pl = buffer.findPrevLink(cx, cy)
-    buffer.writeCommand(JUMP, pl.x, pl.y, 0)
-  of FIND_NEXT_LINK:
-    var cx, cy: int
-    istream.sread(cx)
-    istream.sread(cy)
-    let nl = buffer.findNextLink(cx, cy)
-    buffer.writeCommand(JUMP, nl.x, nl.y, 0)
-  of FIND_PREV_MATCH:
-    var cx, cy: int
-    var regex: Regex
-    var wrap: bool
-    istream.sread(cx)
-    istream.sread(cy)
-    istream.sread(regex)
-    istream.sread(wrap)
-    let match = buffer.findPrevMatch(regex, cx, cy, wrap)
-    if match.success:
-      buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
-  of FIND_NEXT_MATCH:
-    var cx, cy: int
-    var regex: Regex
-    var wrap: bool
-    istream.sread(cx)
-    istream.sread(cy)
-    istream.sread(regex)
-    istream.sread(wrap)
-    let match = buffer.findNextMatch(regex, cx, cy, wrap)
-    if match.success:
-      buffer.writeCommand(JUMP, match.x, match.y, match.x + match.str.width() - 1)
-  of READ_SUCCESS:
-    var s: string
-    istream.sread(s)
-    buffer.lineInput(s)
-  of READ_CANCELED:
-    buffer.input = nil
-  of CLICK:
-    var cx, cy: int
-    istream.sread(cx)
-    istream.sread(cy)
-    buffer.click(cx, cy)
-  of MOVE_CURSOR:
-    var cx, cy: int
-    istream.sread(cx)
-    istream.sread(cy)
-    buffer.updateHover(cx, cy)
-  of GET_SOURCE:
-    let ssock = initServerSocket()
-    buffer.writeCommand(SOURCE_READY)
-    let stream = ssock.acceptSocketStream()
-    if not buffer.streamclosed:
-      buffer.source = buffer.istream.readAll()
-      buffer.streamclosed = true
-    stream.write(buffer.source)
-    stream.close()
-    ssock.close()
+  bufferDispatcher(ProxyFunctions, buffer, cmd)
 
 proc runBuffer(buffer: Buffer, rfd: int) =
   block loop:
@@ -856,7 +907,7 @@ proc runBuffer(buffer: Buffer, rfd: int) =
         break loop
       if buffer.reshape:
         buffer.reshape = false
-        buffer.render()
+        buffer.do_reshape()
         buffer.writeCommand(RESHAPE)
   buffer.pistream.close()
   buffer.postream.close()
