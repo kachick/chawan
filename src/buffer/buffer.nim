@@ -595,9 +595,6 @@ proc finishLoad(buffer: Buffer) =
     buffer.document = parseHTML5(buffer.sstream)
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
-    buffer.do_reshape()
-  else:
-    buffer.do_reshape()
   buffer.selector.unregister(int(buffer.getFd()))
   buffer.istream.close()
   buffer.streamclosed = true

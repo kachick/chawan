@@ -977,6 +977,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         while true:
           inc j
           node = aboveNode
+          let nodeStackIndex = parser.openElements.find(node)
           if node == formatting: break
           var nodeFormattingIndex = -1
           for i in countdown(parser.activeFormatting.high, 0):
@@ -987,27 +988,32 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
             parser.activeFormatting.delete(nodeFormattingIndex)
             if nodeFormattingIndex < bookmark:
               dec bookmark # a previous node got deleted, so decrease bookmark by one
-          let nodeStackIndex = parser.openElements.find(node)
           if nodeFormattingIndex < 0:
+            aboveNode = parser.openElements[nodeStackIndex - 1]
             parser.openElements.delete(nodeStackIndex)
             if nodeStackIndex < furthestBlockIndex:
               dec furthestBlockIndex
+              furthestBlock = parser.openElements[furthestBlockIndex]
             continue
           let element = parser.createElement(parser.activeFormatting[nodeFormattingIndex][1], Namespace.HTML, commonAncestor)
           parser.activeFormatting[nodeFormattingIndex] = (element, parser.activeFormatting[nodeFormattingIndex][1])
-          parser.openElements[nodeFormattingIndex] = element
-          aboveNode = parser.openElements[nodeFormattingIndex - 1]
+          parser.openElements[nodeStackIndex] = element
+          aboveNode = parser.openElements[nodeStackIndex - 1]
           node = element
           if lastNode == furthestBlock:
-            bookmark = nodeFormattingIndex
+            bookmark = nodeFormattingIndex + 1
           node.append(lastNode)
           lastNode = node
         let location = parser.appropriatePlaceForInsert(commonAncestor)
         location.inside.insert(lastNode, location.before)
         let token = parser.activeFormatting[formattingIndex][1]
         let element = parser.createElement(token, Namespace.HTML, furthestBlock)
-        for child in furthestBlock.childNodes:
+        var tomove: seq[Node]
+        for j in countdown(furthestBlock.childNodes.high, 0):
+          let child = furthestBlock.childNodes[j]
           child.remove()
+          tomove.add(child)
+        for child in tomove:
           element.append(child)
         furthestBlock.append(element)
         parser.activeFormatting.insert((element, token), bookmark)

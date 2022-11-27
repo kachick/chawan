@@ -564,22 +564,29 @@ proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
   container.triggerEvent(STATUS)
 
+proc setNumLines(container: Container, lines: int) =
+  container.numLines = lines
+  container.updateCursor()
+
 proc load*(container: Container) =
   container.setLoadInfo("Connecting to " & $container.source.location & "...")
   var onload: (proc(res: tuple[atend: bool, lines, bytes: int]))
   onload = (proc(res: tuple[atend: bool, lines, bytes: int]) =
-    if res.bytes == -1:
+    if res.bytes == -1 or res.atend:
       container.setLoadInfo("")
     elif not res.atend:
       container.setLoadInfo(convert_size(res.bytes) & " loaded")
     if res.lines > container.numLines:
-      container.numLines = res.lines
+      container.setNumLines(res.lines)
       container.triggerEvent(STATUS)
       container.requestLines()
     if not res.atend and not container.canceled:
       discard container.iface.load().then(onload)
     elif not container.canceled:
-      container.iface.gotoAnchor().then(proc(res: tuple[x, y: int]) =
+      container.iface.render().then(proc(lines: int): auto =
+        container.setNumLines(lines)
+        return container.iface.gotoAnchor()
+      ).then(proc(res: tuple[x, y: int]) =
         if res.x != -1 and res.y != -1:
           container.setCursorXY(res.x, res.y)
       )
@@ -624,8 +631,7 @@ proc readSuccess*(container: Container, s: string) =
 
 proc reshape*(container: Container, noreq = false) {.jsfunc.} =
   container.iface.render().then(proc(lines: int) =
-    container.numLines = lines
-    container.updateCursor())
+    container.setNumLines(lines))
   if not noreq:
     container.needslines = true
 
