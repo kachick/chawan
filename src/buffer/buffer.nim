@@ -1,4 +1,5 @@
 import macros
+import nativesockets
 import net
 import options
 import os
@@ -42,7 +43,7 @@ type
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
-    GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR
+    GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR, CANCEL
 
   BufferMatch* = object
     success*: bool
@@ -52,6 +53,9 @@ type
 
   Buffer* = ref object
     alive: bool
+    lasttimeout: int
+    timeout: int
+    readbufsize: int
     input: HTMLInputElement
     contenttype: string
     lines: FlexibleGrid
@@ -77,6 +81,7 @@ type
     loader: FileLoader
     config: BufferConfig
     userstyle: CSSStylesheet
+    timeouts: Table[int, (proc())]
 
   # async, but worse
   EmptyPromise = ref object of RootObj
@@ -88,7 +93,7 @@ type
     res: T
 
   BufferInterface* = ref object
-    stream: Stream
+    stream*: Stream
     packetid: int
     promises: Table[int, EmptyPromise]
 
@@ -150,7 +155,6 @@ proc buildInterfaceProc(fun: NimNode): tuple[fun, name: NimNode] =
   let nup = ident(x) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
-  let n = name.strVal
   body.add(quote do:
     `thisval`.stream.swrite(BufferCommand.`nup`)
     `thisval`.stream.swrite(`thisval`.packetid))
@@ -521,12 +525,14 @@ proc setupSource(buffer: Buffer): ConnectResult =
   case source.t
   of CLONE:
     buffer.istream = connectSocketStream(source.clonepid)
+    SocketStream(buffer.istream).source.getFd().setBlocking(false)
     if buffer.istream == nil:
       result.code = -2
       return
     if setct:
       buffer.contenttype = "text/plain"
   of LOAD_PIPE:
+    discard fcntl(source.fd, F_SETFL, fcntl(source.fd, F_GETFL, 0) or O_NONBLOCK)
     var f: File
     if not open(f, source.fd, fmRead):
       result.code = 1
@@ -544,12 +550,11 @@ proc setupSource(buffer: Buffer): ConnectResult =
     if setct:
       buffer.contenttype = response.contenttype
     buffer.istream = response.body
-    SocketStream(buffer.istream).recvw = true
+    SocketStream(buffer.istream).source.getFd().setBlocking(false)
     result.needsAuth = response.status == 401 # Unauthorized
     result.redirect = response.redirect
   if setct:
     result.contentType = buffer.contenttype
-  buffer.selector.registerHandle(cast[int](buffer.getFd()), {Read}, 1)
   buffer.loaded = true
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
@@ -558,36 +563,8 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
 
 const BufferSize = 4096
 
-proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
-  var bytes = -1
-  if buffer.streamclosed: return (true, buffer.lines.len, bytes)
-  let op = buffer.sstream.getPosition()
-  let s = buffer.istream.readStr(BufferSize)
-  buffer.sstream.setPosition(op + buffer.available)
-  buffer.sstream.write(s)
-  buffer.sstream.setPosition(op)
-  buffer.available += s.len
-  case buffer.contenttype
-  of "text/html":
-    bytes = buffer.available
-  else:
-    buffer.do_reshape()
-  return (buffer.istream.atEnd, buffer.lines.len, bytes)
-
-proc render*(buffer: Buffer): int {.proxy.} =
-  buffer.do_reshape()
-  return buffer.lines.len
-
 proc finishLoad(buffer: Buffer) =
   if buffer.streamclosed: return
-  if not buffer.istream.atEnd:
-    let op = buffer.sstream.getPosition()
-    buffer.sstream.setPosition(op + buffer.available)
-    while not buffer.istream.atEnd:
-      let a = buffer.istream.readStr(BufferSize)
-      buffer.sstream.write(a)
-      buffer.available += a.len
-    buffer.sstream.setPosition(op)
   case buffer.contenttype
   of "text/html":
     buffer.sstream.setPosition(0)
@@ -595,9 +572,62 @@ proc finishLoad(buffer: Buffer) =
     buffer.document = parseHTML5(buffer.sstream)
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
-  buffer.selector.unregister(int(buffer.getFd()))
   buffer.istream.close()
   buffer.streamclosed = true
+
+var sequential = 0
+proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
+  var bytes = -1
+  if buffer.streamclosed: return (true, buffer.lines.len, bytes)
+  let op = buffer.sstream.getPosition()
+  inc sequential
+  var s = newString(buffer.readbufsize)
+  try:
+    buffer.istream.readStr(buffer.readbufsize, s)
+    result = (s.len < buffer.readbufsize, buffer.lines.len, bytes)
+    if buffer.readbufsize < BufferSize:
+      buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
+  except IOError:
+    # Presumably EAGAIN, unless the loader process crashed in which case we're screwed.
+    s = s.until('\0')
+    buffer.timeout = buffer.lasttimeout
+    if buffer.readbufsize == 1:
+      if buffer.lasttimeout == 0:
+        buffer.lasttimeout = 32
+      elif buffer.lasttimeout < 1048:
+        buffer.lasttimeout *= 2
+    else:
+      buffer.readbufsize = buffer.readbufsize div 2
+    result = (false, buffer.lines.len, bytes)
+  if s != "":
+    buffer.sstream.setPosition(op + buffer.available)
+    buffer.sstream.write(s)
+    buffer.sstream.setPosition(op)
+    buffer.available += s.len
+    case buffer.contenttype
+    of "text/html":
+      bytes = buffer.available
+    else:
+      buffer.do_reshape()
+  if result.atend:
+    buffer.finishLoad()
+
+proc render*(buffer: Buffer): int {.proxy.} =
+  buffer.do_reshape()
+  return buffer.lines.len
+
+proc cancel*(buffer: Buffer): int {.proxy.} =
+  if buffer.streamclosed: return
+  buffer.istream.close()
+  buffer.streamclosed = true
+  case buffer.contenttype
+  of "text/html":
+    buffer.sstream.setPosition(0)
+    buffer.available = 0
+    buffer.document = parseHTML5(buffer.sstream)
+    buffer.document.location = buffer.location
+    buffer.do_reshape()
+  return buffer.lines.len
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): seq[tuple[name, value: string]] =
@@ -951,6 +981,18 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
       rval = ident("retval")
       stmts.add(quote do:
         let `rval` = `call`)
+    if v.ename.strVal == "LOAD": #TODO TODO TODO this is very ugly
+      stmts.add(quote do:
+        if buffer.timeout > 0:
+          let fdi = buffer.selector.registerTimer(buffer.timeout, true, 0)
+          buffer.timeouts[fdi] = (proc() =
+            let len = slen(`packetid`) + slen(`rval`)
+            buffer.postream.swrite(len)
+            buffer.postream.swrite(`packetid`)
+            buffer.postream.swrite(`rval`)
+            buffer.postream.flush())
+          buffer.timeout = 0
+          return)
     if rval == nil:
       stmts.add(quote do:
         let len = slen(`packetid`)
@@ -986,12 +1028,24 @@ proc runBuffer(buffer: Buffer, rfd: int) =
             try:
               buffer.readCommand()
             except IOError:
+              #eprint "ERROR IN BUFFER", buffer.location
+              #eprint "MESSAGE:", getCurrentExceptionMsg()
+              #eprint getStackTrace(getCurrentException())
               break loop
+          else:
+            assert false
+        if Event.Timer in event.events:
+          buffer.selector.unregister(event.fd)
+          var timeout: proc()
+          if buffer.timeouts.pop(event.fd, timeout):
+            timeout()
+          else:
+            assert false
         if Error in event.events:
           if event.fd == rfd:
             break loop
-          elif event.fd == buffer.getFd():
-            buffer.finishLoad()
+          else:
+            assert false
   buffer.pistream.close()
   buffer.postream.close()
   buffer.loader.quit()
@@ -1012,6 +1066,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     width: attrs.width,
     height: attrs.height - 1
   )
+  buffer.readbufsize = BufferSize
   buffer.selector = newSelector[int]()
   buffer.sstream = newStringStream()
   buffer.srenderer = newStreamRenderer(buffer.sstream)

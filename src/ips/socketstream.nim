@@ -15,13 +15,7 @@ type SocketStream* = ref object of Stream
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
-  try:
-    if s.recvw:
-      result = s.source.recv(buffer, len, 100)
-    else:
-      result = s.source.recv(buffer, len)
-  except TimeoutError:
-    return
+  result = s.source.recv(buffer, len)
   if result < 0:
     raise newException(IOError, "Failed to read data (code " & $osLastError() & ")")
   elif result < len:
@@ -88,15 +82,17 @@ func newSocketStream*(): SocketStream =
   result.atEndImpl = sockAtEnd
   result.closeImpl = sockClose
 
-proc connectSocketStream*(path: string, buffered = true): SocketStream =
+proc connectSocketStream*(path: string, buffered = true, blocking = true): SocketStream =
   result = newSocketStream()
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
+  #if not blocking:
+  #  sock.getFd().setBlocking(false)
   connectUnix(sock, path)
   result.source = sock
 
-proc connectSocketStream*(pid: Pid, buffered = true): SocketStream =
+proc connectSocketStream*(pid: Pid, buffered = true, blocking = true): SocketStream =
   try:
-    connectSocketStream(getSocketPath(pid), buffered)
+    connectSocketStream(getSocketPath(pid), buffered, blocking)
   except OSError:
     return nil
 

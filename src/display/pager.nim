@@ -375,7 +375,7 @@ proc deleteContainer(pager: Pager, container: Container) =
       pager.setContainer(nil)
   container.parent = nil
   container.children.setLen(0)
-  pager.unreg.add((container.process, SocketStream(container.istream)))
+  pager.unreg.add((container.process, SocketStream(container.iface.stream)))
   pager.dispatcher.forkserver.removeChild(container.process)
 
 proc discardBuffer*(pager: Pager) {.jsfunc.} =
@@ -425,7 +425,6 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
     container.replace = replace
     pager.addContainer(container)
   else:
-    pager.container.redirect = some(request.url)
     pager.container.findAnchor(request.url.anchor)
 
 # When the user has passed a partial URL as an argument, they might've meant
@@ -599,8 +598,6 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == nil:
       return false
   of SUCCESS:
-    container.reshape()
-    pager.container.loadinfo = ""
     if container.replace != nil:
       container.children.add(container.replace.children)
       for child in container.children:
@@ -617,13 +614,15 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == container:
       pager.authorize()
   of REDIRECT:
-    let redirect = container.redirect.get
+    let redirect = event.location
     pager.alert("Redirecting to " & $redirect)
     pager.gotoURL(newRequest(redirect), some(pager.container.source.location), replace = pager.container)
   of ANCHOR:
-    pager.addContainer(pager.dupeContainer(container, container.redirect))
+    var url2 = newURL(container.source.location)
+    url2.hash(event.anchor)
+    pager.addContainer(pager.dupeContainer(container, some(url2)))
   of NO_ANCHOR:
-    pager.alert("Couldn't find anchor " & container.redirect.get.anchor)
+    pager.alert("Couldn't find anchor " & event.anchor)
   of UPDATE:
     if container == pager.container:
       pager.redraw = true
@@ -635,6 +634,10 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of INVALID_COMMAND: discard
   of STATUS:
     if pager.container == container:
+      pager.refreshStatusMsg()
+  of ALERT:
+    if pager.container == container:
+      pager.alert(event.msg)
       pager.refreshStatusMsg()
   of NO_EVENT: discard
   return true

@@ -122,7 +122,7 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList) =
 
 proc doRequest*(loader: FileLoader, request: Request): Response =
   new(result)
-  let stream = connectSocketStream(loader.process)
+  let stream = connectSocketStream(loader.process, false, false)
   stream.swrite(LOAD)
   stream.swrite(request)
   stream.flush()

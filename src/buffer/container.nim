@@ -33,7 +33,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, OPEN, INVALID_COMMAND, STATUS
+    READ_LINE, OPEN, INVALID_COMMAND, STATUS, ALERT
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -43,6 +43,12 @@ type
       password*: bool
     of OPEN:
       request*: Request
+    of ANCHOR, NO_ANCHOR:
+      anchor*: string
+    of REDIRECT:
+      location*: URL
+    of ALERT:
+      msg*: string
     else: discard
 
   Highlight* = ref object
@@ -52,7 +58,7 @@ type
     clear*: bool
 
   Container* = ref object
-    iface: BufferInterface
+    iface*: BufferInterface
     attrs*: WindowAttributes
     width*: int
     height*: int
@@ -65,8 +71,6 @@ type
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     parent*: Container
-    istream*: Stream
-    ostream*: Stream
     process*: Pid
     loadinfo*: string
     lines: SimpleFlexibleGrid
@@ -75,7 +79,6 @@ type
     replace*: Container
     code*: int
     retry*: seq[URL]
-    redirect*: Option[URL]
     hlon*: bool
     sourcepair*: Container
     pipeto: Container
@@ -256,6 +259,7 @@ proc requestLines*(container: Container, w = container.lineWindow) =
     for y in 0 ..< min(res.len, w.len):
       container.lines[y] = res[y]
     container.updateCursor()
+    container.redraw = true
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
       container.triggerEvent(UPDATE))
@@ -568,10 +572,18 @@ proc setNumLines(container: Container, lines: int) =
   container.numLines = lines
   container.updateCursor()
 
-proc load*(container: Container) =
-  container.setLoadInfo("Connecting to " & $container.source.location & "...")
-  var onload: (proc(res: tuple[atend: bool, lines, bytes: int]))
-  onload = (proc(res: tuple[atend: bool, lines, bytes: int]) =
+proc alert(container: Container, msg: string) =
+  container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
+
+proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
+  if container.canceled:
+    container.setLoadInfo("")
+    #TODO we wouldn't need the then part if we had incremental rendering of
+    # HTML.
+    container.iface.cancel().then(proc(lines: int) =
+      container.setNumLines(lines)
+      container.needslines = true)
+  else:
     if res.bytes == -1 or res.atend:
       container.setLoadInfo("")
     elif not res.atend:
@@ -579,43 +591,51 @@ proc load*(container: Container) =
     if res.lines > container.numLines:
       container.setNumLines(res.lines)
       container.triggerEvent(STATUS)
-      container.requestLines()
-    if not res.atend and not container.canceled:
-      discard container.iface.load().then(onload)
-    elif not container.canceled:
+      container.needslines = true
+    if not res.atend:
+      discard container.iface.load().then(proc(res: tuple[atend: bool, lines, bytes: int]) =
+        container.onload(res))
+    else:
       container.iface.render().then(proc(lines: int): auto =
         container.setNumLines(lines)
+        container.needslines = true
         return container.iface.gotoAnchor()
       ).then(proc(res: tuple[x, y: int]) =
         if res.x != -1 and res.y != -1:
-          container.setCursorXY(res.x, res.y)
-      )
-  )
+          container.setCursorXY(res.x, res.y))
+
+proc load*(container: Container) =
+  container.setLoadInfo("Connecting to " & $container.source.location & "...")
   container.iface.connect().then(proc(res: ConnectResult): auto =
+    let info = container.loadinfo
     if res.code != -2:
       container.code = res.code
       if res.code == 0:
+        container.triggerEvent(SUCCESS)
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)
         if res.redirect.isSome:
-          container.redirect = res.redirect
-          container.triggerEvent(REDIRECT)
+          container.triggerEvent(ContainerEvent(t: REDIRECT, location: res.redirect.get))
         if res.contentType != "":
           container.contenttype = some(res.contentType)
         return container.iface.load()
       else:
         container.setLoadInfo("")
         container.triggerEvent(FAIL)
-  ).then(onload)
+    else:
+      container.setLoadInfo(info)
+  ).then(proc(res: tuple[atend: bool, lines, bytes: int]) =
+        container.onload(res))
 
-proc cancel*(container: Container) =
+proc cancel*(container: Container) {.jsfunc.} =
   container.canceled = true
+  container.alert("Canceled loading")
 
 proc findAnchor*(container: Container, anchor: string) =
   container.iface.findAnchor(anchor).then(proc(found: bool) =
     if found:
-      container.triggerEvent(ANCHOR)
+      container.triggerEvent(ContainerEvent(t: ANCHOR, anchor: anchor))
     else:
       container.triggerEvent(NO_ANCHOR))
 
@@ -673,20 +693,18 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
 
 proc handleCommand(container: Container) =
   var packetid, len: int
-  container.istream.sread(len)
-  container.istream.sread(packetid)
+  container.iface.stream.sread(len)
+  container.iface.stream.sread(packetid)
   container.iface.fulfill(packetid, len - slen(packetid))
 
 proc setStream*(container: Container, stream: Stream) =
-  container.istream = stream
-  container.ostream = stream
   container.iface = newBufferInterface(stream)
   if container.source.t == LOAD_PIPE:
     container.iface.passFd()
-    let s = SocketStream(container.ostream)
+    let s = SocketStream(stream)
     s.sendFileHandle(container.source.fd)
     discard close(container.source.fd)
-    container.ostream.flush()
+    stream.flush()
   container.load()
 
 # Synchronously read all lines in the buffer.
@@ -698,12 +716,12 @@ iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
     # load succeded
     discard container.iface.getLines(0 .. -1)
     var plen, len, packetid: int
-    container.istream.sread(plen)
-    container.istream.sread(packetid)
-    container.istream.sread(len)
+    container.iface.stream.sread(plen)
+    container.iface.stream.sread(packetid)
+    container.iface.stream.sread(len)
     var line: SimpleFlexibleLine
     for y in 0 ..< len:
-      container.istream.sread(line)
+      container.iface.stream.sread(line)
       yield line
 
 proc handleEvent*(container: Container) =
