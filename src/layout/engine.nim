@@ -83,7 +83,7 @@ proc horizontalAlignLine(ictx: InlineContext, line: LineBox, computed: CSSComput
     let x = max(maxwidth, line.width) - line.width
     for atom in line.atoms:
       atom.offset.x += x
-  of TEXT_ALIGN_CENTER:
+  of TEXT_ALIGN_CENTER, TEXT_ALIGN_CHA_CENTER:
     let x = max((max(maxwidth - line.offset.x, line.width)) div 2 - line.width div 2, 0)
     for atom in line.atoms:
       atom.offset.x += x
@@ -107,8 +107,6 @@ proc horizontalAlignLine(ictx: InlineContext, line: LineBox, computed: CSSComput
             let atom = InlineSpacing(atom)
             atom.width = spacingwidth
           line.width += atom.width
-  else:
-    discard
 
 # Align atoms (inline boxes, text, etc.) vertically inside the line.
 proc verticalAlignLine(ictx: InlineContext) =
@@ -686,7 +684,6 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   var body: seq[TableRowBoxBuilder]
   var footer: seq[TableRowBoxBuilder]
   var caption: TableCaptionBoxBuilder
-  #TODO this should be done 
   for child in builder.children:
     assert child.computed{"display"} in ProperTableChild, $child.computed{"display"}
     case child.computed{"display"}
@@ -708,7 +705,8 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
       if caption == nil:
         caption = TableCaptionBoxBuilder(child)
     else: discard
-  yield caption
+  if caption != nil:
+    yield caption
   for child in header:
     yield child
   for child in body:

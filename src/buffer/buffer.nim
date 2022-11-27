@@ -44,9 +44,6 @@ type
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
     GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR
 
-  ContainerCommand* = enum
-    BUFFER_READY, RESHAPE, FULFILL_PROMISE
-
   BufferMatch* = object
     success*: bool
     x*: int
@@ -59,14 +56,13 @@ type
     contenttype: string
     lines: FlexibleGrid
     rendered: bool
-    bsource: BufferSource
+    source: BufferSource
     width: int
     height: int
     attrs: WindowAttributes
     document: Document
     viewport: Viewport
     prevstyled: StyledNode
-    reshape: bool
     location: Url
     selector: Selector[int]
     istream: Stream
@@ -74,9 +70,9 @@ type
     available: int
     pistream: Stream # for input pipe
     postream: Stream # for output pipe
+    srenderer: StreamRenderer
     streamclosed: bool
     loaded: bool
-    source: string
     prevnode: StyledNode
     loader: FileLoader
     config: BufferConfig
@@ -115,18 +111,24 @@ proc fulfill*(iface: BufferInterface, packetid, len: int) =
         promise.cb()
       promise = promise.next
 
+proc hasPromises*(iface: BufferInterface): bool =
+  return iface.promises.len > 0
+
 proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
+  if promise == nil: return
   promise.cb = cb
   promise.next = EmptyPromise()
   return promise.next
 
 proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable.} =
+  if promise == nil: return
   return promise.then(proc() =
     if promise.stream != nil:
       promise.stream.sread(promise.res)
     cb(promise.res))
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
+  if promise == nil: return
   let next = Promise[U]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -135,30 +137,6 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] 
         next.res = y
         next.cb()))
   return next
-
-macro writeCommand(buffer: Buffer, cmd: ContainerCommand, args: varargs[typed]) =
-  let cmdblock = newStmtList()
-  var idlist: seq[NimNode]
-  var i = 0
-  for arg in args:
-    let id = ident("arg_" & $i)
-    idlist.add(id)
-    cmdblock.add(quote do:
-      let `id` = `arg`)
-    inc i
-  let lens = ident("lens")
-  cmdblock.add(quote do:
-    if `cmd` != BUFFER_READY: return
-    var `lens` = slen(`cmd`))
-  for id in idlist:
-    cmdblock.add(quote do: `lens` += slen(`id`))
-  cmdblock.add(quote do: `buffer`.postream.swrite(`lens`))
-  cmdblock.add(quote do: `buffer`.postream.swrite(`cmd`))
-  for id in idlist:
-    cmdblock.add(quote do:
-      `buffer`.postream.swrite(`id`))
-  cmdblock.add(quote do: `buffer`.postream.flush())
-  return newBlockStmt(cmdblock)
 
 proc buildInterfaceProc(fun: NimNode): tuple[fun, name: NimNode] =
   let name = fun[0] # sym
@@ -172,6 +150,7 @@ proc buildInterfaceProc(fun: NimNode): tuple[fun, name: NimNode] =
   let nup = ident(x) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
+  let n = name.strVal
   body.add(quote do:
     `thisval`.stream.swrite(BufferCommand.`nup`)
     `thisval`.stream.swrite(`thisval`.packetid))
@@ -430,6 +409,7 @@ proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =
       let format = line.formats[i]
       if format.node != nil and anchor in format.node.node:
         return (format.pos, y)
+  return (-1, -1)
 
 proc do_reshape(buffer: Buffer) =
   case buffer.contenttype
@@ -440,7 +420,8 @@ proc do_reshape(buffer: Buffer) =
     buffer.lines = ret[0]
     buffer.prevstyled = ret[1]
   else:
-    buffer.lines = renderPlainText(buffer.source)
+    buffer.lines.renderStream(buffer.srenderer, buffer.available)
+    buffer.available = 0
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -453,6 +434,7 @@ type UpdateHoverResult* = object
   repaint*: bool
 
 proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.proxy.} =
+  if buffer.lines.len == 0: return
   var thisnode: StyledNode
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
@@ -465,7 +447,6 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
         let elem = Element(styledNode.node)
         if not elem.hover:
           elem.hover = true
-          buffer.reshape = true
           result.repaint = true
 
     let link = thisnode.getLink()
@@ -479,8 +460,9 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
         let elem = Element(styledNode.node)
         if elem.hover:
           elem.hover = false
-          buffer.reshape = true
           result.repaint = true
+  if result.repaint:
+    buffer.do_reshape()
 
   buffer.prevnode = thisnode
 
@@ -517,13 +499,13 @@ proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
 
 func getFd(buffer: Buffer): int =
   if buffer.streamclosed: return -1
-  let source = buffer.bsource
+  let source = buffer.source
   case source.t
   of CLONE, LOAD_REQUEST:
     let istream = SocketStream(buffer.istream)
     return cast[FileHandle](istream.source.getFd())
   of LOAD_PIPE:
-    return buffer.bsource.fd
+    return buffer.source.fd
 
 type ConnectResult* = tuple[code: int, needsAuth: bool, redirect: Option[URL], contentType: string] 
 
@@ -531,7 +513,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
   if buffer.loaded:
     result.code = -2
     return
-  let source = buffer.bsource
+  let source = buffer.source
   let setct = source.contenttype.isNone
   if not setct:
     buffer.contenttype = source.contenttype.get
@@ -562,6 +544,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
     if setct:
       buffer.contenttype = response.contenttype
     buffer.istream = response.body
+    SocketStream(buffer.istream).recvw = true
     result.needsAuth = response.status == 401 # Unauthorized
     result.redirect = response.redirect
   if setct:
@@ -569,56 +552,55 @@ proc setupSource(buffer: Buffer): ConnectResult =
   buffer.selector.registerHandle(cast[int](buffer.getFd()), {Read}, 1)
   buffer.loaded = true
 
-proc load0(buffer: Buffer): auto =
-  if buffer.contenttype == "text/html":
-    if not buffer.streamclosed:
-      buffer.source = buffer.istream.readAll()
-      buffer.istream.close()
-      buffer.istream = newStringStream(buffer.source)
-      buffer.document = parseHTML5(buffer.istream)
-      buffer.streamclosed = true
-    else:
-      buffer.document = parseHTML5(newStringStream(buffer.source))
-    buffer.document.location = buffer.location
-    buffer.loadResources(buffer.document)
-    return (true, buffer.document.title)
-  return (false, "")
-
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   let code = buffer.setupSource()
   return code
 
-proc load*(buffer: Buffer): tuple[success: bool, title: string] {.proxy.} =
-  return buffer.load0()
+const BufferSize = 4096
+
+proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
+  var bytes = -1
+  if buffer.streamclosed: return (true, buffer.lines.len, bytes)
+  let op = buffer.sstream.getPosition()
+  let s = buffer.istream.readStr(BufferSize)
+  buffer.sstream.setPosition(op + buffer.available)
+  buffer.sstream.write(s)
+  buffer.sstream.setPosition(op)
+  buffer.available += s.len
+  case buffer.contenttype
+  of "text/html":
+    bytes = buffer.available
+  else:
+    buffer.do_reshape()
+  return (buffer.istream.atEnd, buffer.lines.len, bytes)
 
 proc render*(buffer: Buffer): int {.proxy.} =
   buffer.do_reshape()
   return buffer.lines.len
 
-proc load2(buffer: Buffer) =
-  case buffer.contenttype
-  of "text/html":
-    #assert false, "Not implemented yet..."
-    discard
-  else:
-    # This is incredibly stupid but it works so whatever.
-    # (We're basically recv'ing single bytes, but nim std/net does buffering
-    # for us so we should be ok?)
-    if not buffer.streamclosed:
-      let c = buffer.istream.readChar()
-      buffer.source &= c
-      buffer.do_reshape()
-
 proc finishLoad(buffer: Buffer) =
-  if buffer.contenttype != "text/html" and not buffer.streamclosed:
-    if not buffer.istream.atEnd:
-      let a = buffer.istream.readAll()
+  if buffer.streamclosed: return
+  if not buffer.istream.atEnd:
+    let op = buffer.sstream.getPosition()
+    buffer.sstream.setPosition(op + buffer.available)
+    while not buffer.istream.atEnd:
+      let a = buffer.istream.readStr(BufferSize)
       buffer.sstream.write(a)
       buffer.available += a.len
-      buffer.reshape = true
-    buffer.selector.unregister(int(buffer.getFd()))
-    buffer.istream.close()
-    buffer.streamclosed = true
+    buffer.sstream.setPosition(op)
+  case buffer.contenttype
+  of "text/html":
+    buffer.sstream.setPosition(0)
+    buffer.available = 0
+    buffer.document = parseHTML5(buffer.sstream)
+    buffer.document.location = buffer.location
+    buffer.loadResources(buffer.document)
+    buffer.do_reshape()
+  else:
+    buffer.do_reshape()
+  buffer.selector.unregister(int(buffer.getFd()))
+  buffer.istream.close()
+  buffer.streamclosed = true
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): seq[tuple[name, value: string]] =
@@ -788,17 +770,19 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
       assert formmethod == FORM_METHOD_POST
       getActionUrl
 
-template set_focus(e: Element) =
+template set_focus(buffer: Buffer, e: Element) =
   if buffer.document.focus != e:
     buffer.document.focus = e
-    buffer.reshape = true
+    buffer.do_reshape()
 
-template restore_focus =
+template restore_focus(buffer: Buffer) =
   if buffer.document.focus != nil:
     buffer.document.focus = nil
-    buffer.reshape = true
+    buffer.do_reshape()
 
-type ReadSuccessResult* = tuple[open: Option[Request], reshape: bool]
+type ReadSuccessResult* = object
+  open*: Option[Request]
+  repaint*: bool
 
 proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
   if buffer.input != nil:
@@ -807,8 +791,8 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
     of INPUT_SEARCH:
       input.value = s
       input.invalid = true
-      result.reshape = true
-      buffer.reshape = true
+      buffer.do_reshape()
+      result.repaint = true
       if input.form != nil:
         let submitaction = submitForm(input.form, input)
         if submitaction.isSome:
@@ -816,16 +800,16 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
     of INPUT_TEXT, INPUT_PASSWORD:
       input.value = s
       input.invalid = true
-      result.reshape = true
-      buffer.reshape = true
+      buffer.do_reshape()
+      result.repaint = true
     of INPUT_FILE:
       let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
       let path = parseUrl(s, cdir)
       if path.issome:
         input.file = path
         input.invalid = true
-        result.reshape = true
-        buffer.reshape = true
+        buffer.do_reshape()
+        result.repaint = true
     else: discard
     buffer.input = nil
 
@@ -844,9 +828,9 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if clickable != nil:
     case clickable.tagType
     of TAG_SELECT:
-      set_focus clickable
+      buffer.set_focus clickable
     of TAG_A:
-      restore_focus
+      buffer.restore_focus
       let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseUrl.some)
       if url.issome:
         result.open = some(newRequest(url.get, HTTP_GET))
@@ -860,12 +844,12 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
             for option in select.options:
               option.selected = false
           option.selected = true
-          restore_focus
+          buffer.restore_focus
         else:
           # focus on select
-          set_focus select
+          buffer.set_focus select
     of TAG_INPUT:
-      restore_focus
+      buffer.restore_focus
       let input = HTMLInputElement(clickable)
       case input.inputType
       of INPUT_SEARCH:
@@ -894,7 +878,7 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
         input.checked = not input.checked
         input.invalid = true
         result.repaint = true
-        buffer.reshape = true
+        buffer.do_reshape()
       of INPUT_RADIO:
         for radio in input.radiogroup:
           radio.checked = false
@@ -902,19 +886,19 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
         input.checked = true
         input.invalid = true
         result.repaint = true
-        buffer.reshape = true
+        buffer.do_reshape()
       of INPUT_RESET:
         if input.form != nil:
           input.form.reset()
           result.repaint = true
-          buffer.reshape = true
+          buffer.do_reshape()
       of INPUT_SUBMIT, INPUT_BUTTON:
         if input.form != nil:
           result.open = submitForm(input.form, input)
       else:
-        restore_focus
+        buffer.restore_focus
     else:
-      restore_focus
+      buffer.restore_focus
 
 proc readCanceled*(buffer: Buffer) {.proxy.} =
   buffer.input = nil
@@ -935,15 +919,14 @@ proc getLines*(buffer: Buffer, w: Slice[int]): seq[SimpleFlexibleLine] {.proxy.}
 
 proc passFd*(buffer: Buffer) {.proxy.} =
   let fd = SocketStream(buffer.pistream).recvFileHandle()
-  buffer.bsource.fd = fd
+  buffer.source.fd = fd
 
 proc getSource*(buffer: Buffer) {.proxy.} =
   let ssock = initServerSocket()
   let stream = ssock.acceptSocketStream()
-  if not buffer.streamclosed:
-    buffer.source = buffer.istream.readAll()
-    buffer.streamclosed = true
-  stream.write(buffer.source)
+  buffer.finishLoad()
+  buffer.sstream.setPosition(0)
+  stream.write(buffer.sstream.readAll())
   stream.close()
   ssock.close()
 
@@ -973,16 +956,14 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
         let `rval` = `call`)
     if rval == nil:
       stmts.add(quote do:
-        let len = slen(FULFILL_PROMISE) + slen(`packetid`)
+        let len = slen(`packetid`)
         buffer.postream.swrite(len)
-        buffer.postream.swrite(FULFILL_PROMISE)
         buffer.postream.swrite(`packetid`)
         buffer.postream.flush())
     else:
       stmts.add(quote do:
-        let len = slen(FULFILL_PROMISE) + slen(`packetid`) + slen(`rval`)
+        let len = slen(`packetid`) + slen(`rval`)
         buffer.postream.swrite(len)
-        buffer.postream.swrite(FULFILL_PROMISE)
         buffer.postream.swrite(`packetid`)
         buffer.postream.swrite(`rval`)
         buffer.postream.flush())
@@ -1009,18 +990,11 @@ proc runBuffer(buffer: Buffer, rfd: int) =
               buffer.readCommand()
             except IOError:
               break loop
-          else:
-            buffer.load2()
         if Error in event.events:
           if event.fd == rfd:
             break loop
           elif event.fd == buffer.getFd():
             buffer.finishLoad()
-      if not buffer.alive:
-        break loop
-      if buffer.reshape and buffer.document != nil: #TODO null check shouldn't be needed?
-        buffer.reshape = false
-        buffer.do_reshape()
   buffer.pistream.close()
   buffer.postream.close()
   buffer.loader.quit()
@@ -1035,18 +1009,19 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     attrs: attrs,
     config: config,
     loader: loader,
-    bsource: source,
+    source: source,
     sstream: newStringStream(),
     viewport: Viewport(window: attrs),
     width: attrs.width,
     height: attrs.height - 1
   )
   buffer.selector = newSelector[int]()
+  buffer.sstream = newStringStream()
+  buffer.srenderer = newStreamRenderer(buffer.sstream)
   let sstream = connectSocketStream(mainproc, false)
   sstream.swrite(getpid())
   buffer.pistream = sstream
   buffer.postream = sstream
-  buffer.writeCommand(BUFFER_READY)
   let rfd = int(sstream.source.getFd())
   buffer.selector.registerHandle(rfd, {Read}, 0)
   buffer.runBuffer(rfd)

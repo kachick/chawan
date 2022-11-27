@@ -59,7 +59,8 @@ iterator containers*(pager: Pager): Container =
     var stack: seq[Container]
     stack.add(c)
     while stack.len > 0:
-      yield stack.pop()
+      c = stack.pop()
+      yield c
       for i in countdown(c.children.high, 0):
         stack.add(c.children[i])
 
@@ -152,7 +153,7 @@ proc launchPager*(pager: Pager, tty: File) =
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
-    eprint msg
+    eprint "cha: " & msg
 
 proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
@@ -231,6 +232,7 @@ proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
   if container == nil: return
+  if pager.tty == nil: return
   if container.loadinfo != "":
     pager.writeStatusMessage(container.loadinfo)
   elif pager.alerts.len > 0:
@@ -343,10 +345,7 @@ proc lineInfo(pager: Pager) {.jsfunc.} =
   pager.alert(pager.container.lineInfo())
 
 proc deleteContainer(pager: Pager, container: Container) =
-  if container.parent == nil and
-      container.children.len == 0 and
-      container != pager.container:
-    return
+  container.cancel()
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
@@ -565,13 +564,22 @@ proc updateReadLine*(pager: Pager) =
       pager.clearLineEdit()
 
 # Open a URL prompt and visit the specified URL.
-proc changeLocation(pager: Pager) {.jsfunc.} =
-  var url = pager.container.source.location.serialize()
-  pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, term = pager.term), LOCATION)
+proc load(pager: Pager, s = "") {.jsfunc.} =
+  if s.len > 0 and s[^1] == '\n':
+    pager.loadURL(s)
+  else:
+    var url = s
+    if url == "":
+      url = pager.container.source.location.serialize()
+    pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, term = pager.term), LOCATION)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
   pager.gotoURL(newRequest(pager.container.source.location), none(URL), pager.container.contenttype, pager.container)
+
+# Cancel loading current page (if exists).
+proc cancel(pager: Pager) {.jsfunc.} =
+  pager.container.cancel()
 
 proc click(pager: Pager) {.jsfunc.} =
   pager.container.click()
@@ -579,14 +587,14 @@ proc click(pager: Pager) {.jsfunc.} =
 proc authorize*(pager: Pager) =
   pager.setLineEdit(readLine("Username: ", pager.attrs.width, term = pager.term), USERNAME)
 
-proc handleEvent0*(pager: Pager, container: Container, event: ContainerEvent): bool =
+proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
   of FAIL:
     pager.deleteContainer(container)
     if container.retry.len > 0:
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
     else:
-      pager.alert("Couldn't load " & $container.source.location & " (error code " & $container.code & ")")
+      pager.alert("Can't load " & $container.source.location & " (error code " & $container.code & ")")
       pager.refreshStatusMsg()
     if pager.container == nil:
       return false
@@ -631,19 +639,19 @@ proc handleEvent0*(pager: Pager, container: Container, event: ContainerEvent): b
   of NO_EVENT: discard
   return true
 
-proc handleEvent*(pager: Pager, container: Container): bool =
-  var event: ContainerEvent
-  try:
-    event = container.handleEvent()
-  except IOError:
-    return false
-  if not pager.handleEvent0(container, event):
-    return false
+proc handleEvents*(pager: Pager, container: Container): bool =
   while container.events.len > 0:
     let event = container.events.pop()
     if not pager.handleEvent0(container, event):
       return false
   return true
+
+proc handleEvent*(pager: Pager, container: Container): bool =
+  try:
+    container.handleEvent()
+  except IOError:
+    return false
+  return pager.handleEvents(container)
 
 proc addPagerModule*(ctx: JSContext) =
   ctx.registerType(Pager)

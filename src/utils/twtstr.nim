@@ -224,6 +224,19 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
+# From w3m
+const SizeUnit = [
+  "b", "kb", "Mb", "Gb", "Tb", "Pb", "Eb", "Zb", "Bb", "Yb"
+]
+func convert_size*(len: int): string =
+  var sizepos = 0
+  var csize = float(len)
+  while csize >= 999.495 and sizepos < SizeUnit.len:
+    csize = csize / 1024.0
+    inc sizepos
+  result = $(floor(csize * 100 + 0.5) / 100)
+  result &= SizeUnit[sizepos]
+
 func until*(s: string, c: set[char]): string =
   var i = 0
   while i < s.len:

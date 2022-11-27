@@ -10,11 +10,18 @@ import ips/serversocket
 
 type SocketStream* = ref object of Stream
   source*: Socket
+  recvw*: bool
   isend: bool
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
-  result = s.source.recv(buffer, len)
+  try:
+    if s.recvw:
+      result = s.source.recv(buffer, len, 100)
+    else:
+      result = s.source.recv(buffer, len)
+  except TimeoutError:
+    return
   if result < 0:
     raise newException(IOError, "Failed to read data (code " & $osLastError() & ")")
   elif result < len:

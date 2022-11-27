@@ -47,6 +47,7 @@ type
     console {.jsget.}: Console
     pager {.jsget.}: Pager
     line {.jsget.}: LineEdit
+    sevent: seq[Container]
     config: Config
     jsrt: JSRuntime
     jsctx: JSContext
@@ -84,6 +85,7 @@ proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   let client = cast[Client](opaque)
+  if client.console.tty == nil: return
   try:
     let c = client.console.tty.readChar()
     if c == char(3): #C-c
@@ -96,9 +98,11 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   return 0
 
 proc evalJS(client: Client, src, filename: string): JSObject =
-  unblockStdin(client.console.tty.getFileHandle())
+  if client.console.tty != nil:
+    unblockStdin(client.console.tty.getFileHandle())
   result = client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
-  restoreStdin(client.console.tty.getFileHandle())
+  if client.console.tty != nil:
+    restoreStdin(client.console.tty.getFileHandle())
 
 proc evalJSFree(client: Client, src, filename: string) =
   free(client.evalJS(src, filename))
@@ -235,8 +239,7 @@ proc acceptBuffers(client: Client) =
     else:
       client.pager.procmap.del(pid)
     stream.close()
-  var i = 0
-  while i < client.pager.procmap.len:
+  while client.pager.procmap.len > 0:
     let stream = client.ssock.acceptSocketStream()
     var pid: Pid
     stream.sread(pid)
@@ -247,9 +250,10 @@ proc acceptBuffers(client: Client) =
       let fd = stream.source.getFd()
       client.fdmap[int(fd)] = container
       client.selector.registerHandle(fd, {Read}, nil)
-      inc i
+      client.sevent.add(container)
     else:
-      #TODO print an error?
+      #TODO uh what?
+      eprint "???"
       stream.close()
 
 proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
@@ -264,7 +268,7 @@ proc inputLoop(client: Client) =
   let selector = client.selector
   selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
-  client.acceptBuffers()
+  let redrawtimer = client.selector.registerTimer(1000, false, nil)
   while true:
     let events = client.selector.select(-1)
     for event in events:
@@ -286,9 +290,12 @@ proc inputLoop(client: Client) =
           client.pager.windowChange(client.attrs)
         else: assert false
       if Event.Timer in event.events:
-        if event.fd in client.interval_fdis:
+        if event.fd == redrawtimer:
+          if client.pager.container != nil:
+            client.pager.container.requestLines()
+        elif event.fd in client.interval_fdis:
           client.intervals[client.interval_fdis[event.fd]].handler()
-        if event.fd in client.timeout_fdis:
+        elif event.fd in client.timeout_fdis:
           let id = client.timeout_fdis[event.fd]
           let timeout = client.timeouts[id]
           timeout.handler()
@@ -313,8 +320,7 @@ proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
 
 proc newConsole(pager: Pager, tty: File): Console =
   new(result)
-  result.tty = tty
-  if tty != nil and false:
+  if tty != nil:
     var pipefd: array[0..1, cint]
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
@@ -332,14 +338,10 @@ proc newConsole(pager: Pager, tty: File): Console =
     result.err = newFileStream(stderr)
 
 proc dumpBuffers(client: Client) =
-  client.acceptBuffers()
-  for container in client.pager.containers:
-    container.load()
   let ostream = newFileStream(stdout)
   for container in client.pager.containers:
-    container.reshape(true)
     client.pager.drawBuffer(container, ostream)
-  client.pager.dumpAlerts()
+    discard client.pager.handleEvents(container)
   stdout.close()
 
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
@@ -372,7 +374,8 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
 
   for page in pages:
     client.pager.loadURL(page, ctype = ctype)
-
+  client.acceptBuffers()
+  client.pager.refreshStatusMsg()
   if not dump:
     client.inputLoop()
   else:

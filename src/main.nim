@@ -40,6 +40,7 @@ Options:
     -T, --type <type>           Specify content mime type
     -v, --version               Print version information
     -h, --help                  Print this page
+    -r, --run <script/file>     Run passed script or file
     --                          Interpret all following arguments as URLs"""
   if i == 0:
     echo s
@@ -90,6 +91,7 @@ while i < params.len:
     inc i
     if i < params.len:
       conf.startup = params[i]
+      conf.headless = true
       dump = true
     else:
       help(1)
@@ -102,7 +104,7 @@ while i < params.len:
       pages.add(param)
   inc i
 
-if pages.len == 0 and conf.startup == "":
+if pages.len == 0 and not conf.headless:
   if stdin.isatty:
     help(1)
 

@@ -3,6 +3,7 @@ import streams
 import buffer/cell
 import utils/twtstr
 
+const tabwidth = 8
 proc renderPlainText*(text: string): FlexibleGrid =
   var format = newFormat()
   template add_format() =
@@ -11,7 +12,6 @@ proc renderPlainText*(text: string): FlexibleGrid =
       result[result.high].addFormat(result[^1].str.len, format)
 
   result.addLine()
-  const tabwidth = 8
   var spaces = 0
   var i = 0
   var af = false
@@ -46,20 +46,34 @@ proc renderPlainText*(text: string): FlexibleGrid =
   if result.len > 1 and result[^1].str.len == 0 and result[^1].formats.len == 0:
     discard result.pop()
 
-proc renderStream*(grid: var FlexibleGrid, stream: Stream, len: int) =
-  var format = newFormat()
+type StreamRenderer* = object
+  spaces: int
+  stream*: Stream
+  ansiparser: AnsiCodeParser
+  format: Format
+  af: bool
+
+proc newStreamRenderer*(stream: Stream): StreamRenderer =
+  result.format = newFormat()
+  result.ansiparser.state = PARSE_DONE
+  result.stream = stream
+
+proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: int) =
   template add_format() =
-    if af:
-      af = false
-      grid[grid.high].addFormat(grid[^1].str.len, format)
+    if renderer.af:
+      renderer.af = false
+      grid[grid.high].addFormat(grid[^1].str.len, renderer.format)
 
   if grid.len == 0: grid.addLine()
-  const tabwidth = 8
-  var spaces = 0
-  var af = false
   var i = 0
-  while i < len:
-    let c = stream.readChar()
+  while i < len and not renderer.stream.atEnd:
+    let c = renderer.stream.readChar()
+    if renderer.ansiparser.state != PARSE_DONE:
+      let cancel = renderer.ansiparser.parseAnsiCode(renderer.format, c)
+      if not cancel:
+        if renderer.ansiparser.state == PARSE_DONE:
+          renderer.af = true
+        continue
     case c
     of '\n':
       add_format
@@ -67,18 +81,17 @@ proc renderStream*(grid: var FlexibleGrid, stream: Stream, len: int) =
     of '\r': discard
     of '\t':
       add_format
-      for i in 0 ..< tabwidth - spaces:
+      for i in 0 ..< tabwidth - renderer.spaces:
         grid[^1].str &= ' '
-        spaces = 0
+        renderer.spaces = 0
     of ' ':
       add_format
       grid[^1].str &= c
-      inc spaces
-      if spaces == 8:
-        spaces = 0
+      inc renderer.spaces
+      if renderer.spaces == 8:
+        renderer.spaces = 0
     of '\e':
-      format.parseAnsiCode(stream)
-      af = true
+      renderer.ansiparser.reset()
     elif c.isControlChar():
       add_format
       grid[^1].str &= '^' & c.getControlLetter()
@@ -86,6 +99,3 @@ proc renderStream*(grid: var FlexibleGrid, stream: Stream, len: int) =
       add_format
       grid[^1].str &= c
     inc i
-
-  #if grid.len > 1 and grid[^1].str.len == 0 and grid[^1].formats.len == 0:
-  #  discard grid.pop()

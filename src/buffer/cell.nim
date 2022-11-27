@@ -270,6 +270,50 @@ proc parseAnsiCode*(format: var Format, buf: string, fi: int): int =
 
   return i
 
+type
+  AnsiCodeParseState* = enum
+    PARSE_START, PARSE_PARAMS, PARSE_INTERM, PARSE_FINAL, PARSE_DONE
+
+  AnsiCodeParser* = object
+    state*: AnsiCodeParseState
+    params: string
+
+proc reset*(parser: var AnsiCodeParser) =
+  parser.state = PARSE_START
+  parser.params = ""
+
+proc parseAnsiCode*(parser: var AnsiCodeParser, format: var Format, c: char): bool =
+  case parser.state
+  of PARSE_START:
+    if 0x40 <= int(c) and int(c) <= 0x5F:
+      if c != '[':
+        #C1, TODO?
+        parser.state = PARSE_DONE
+      else:
+        parser.state = PARSE_PARAMS
+    else:
+      parser.state = PARSE_DONE
+      return true
+  of PARSE_PARAMS:
+    if 0x30 <= int(c) and int(c) <= 0x3F:
+      parser.params &= c
+    else:
+      parser.state = PARSE_INTERM
+      return parser.parseAnsiCode(format, c)
+  of PARSE_INTERM:
+    if 0x20 <= int(c) and int(c) <= 0x2F:
+      discard
+    else:
+      parser.state = PARSE_FINAL
+      return parser.parseAnsiCode(format, c)
+  of PARSE_FINAL:
+    parser.state = PARSE_DONE
+    if 0x40 <= int(c) and int(c) <= 0x7E:
+      format.handleAnsiCode(c, parser.params)
+    else:
+      return true
+  of PARSE_DONE: discard
+
 proc parseAnsiCode*(format: var Format, stream: Stream) =
   if stream.atEnd(): return
   var c = stream.readChar()
