@@ -168,6 +168,10 @@ type
 
   HTMLAreaElement* = ref object of HTMLElement
 
+  HTMLButtonElement* = ref object of FormAssociatedElement
+    ctype*: ButtonType
+    value*: string
+
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
 
@@ -649,6 +653,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     HTMLScriptElement(result).forceAsync = true
   of TAG_BASE:
     result = new(HTMLBaseElement)
+  of TAG_BUTTON:
+    result = new(HTMLButtonElement)
   else:
     result = new(HTMLElement)
 
@@ -892,7 +898,11 @@ proc setForm*(element: FormAssociatedElement, form: HTMLFormElement) =
     let select = HTMLSelectElement(element)
     select.form = form
     form.controls.add(select)
-  of TAG_BUTTON, TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_TEXTAREA, TAG_IMG:
+  of TAG_BUTTON:
+    let button = HTMLButtonElement(element)
+    button.form = form
+    form.controls.add(button)
+  of TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_TEXTAREA, TAG_IMG:
     discard #TODO
   else: assert false
 
@@ -926,7 +936,7 @@ proc insertionSteps(insertedNode: Node) =
           select.resetElement()
     else: discard
     if tagType in FormAssociatedElements:
-      if tagType notin {TAG_SELECT, TAG_INPUT}:
+      if tagType notin SupportedFormAssociatedElements:
         return #TODO TODO TODO implement others too
       let element = FormAssociatedElement(element)
       if element.parserInserted:
@@ -1012,9 +1022,19 @@ proc appendAttribute*(element: Element, k, v: string) =
         select.size = parseInt(v)
       elif "multiple" in select.attributes:
         select.size = 4
+  of TAG_BUTTON:
+    let button = HTMLButtonElement(element)
+    if k == "type":
+      case v
+      of "submit": button.ctype = BUTTON_SUBMIT
+      of "reset": button.ctype = BUTTON_RESET
+      of "button": button.ctype = BUTTON_BUTTON
+    elif k == "value":
+      button.value = v
   else: discard
   element.attributes[k] = v
 
+# Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node, q: string): seq[Element]
 var doqs*: proc (node: Node, q: string): Element
 
@@ -1052,3 +1072,4 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(HTMLTemplateElement, parent = htmlElementCID)
   ctx.registerType(HTMLUnknownElement, parent = htmlElementCID)
   ctx.registerType(HTMLScriptElement, parent = htmlElementCID)
+  ctx.registerType(HTMLButtonElement, parent = htmlElementCID)

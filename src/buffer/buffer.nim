@@ -239,7 +239,7 @@ func getLink(node: StyledNode): HTMLAnchorElement =
   #TODO ::before links?
 
 const ClickableElements = {
-  TAG_A, TAG_INPUT, TAG_OPTION
+  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON
 }
 
 func getClickable(styledNode: StyledNode): Element =
@@ -501,16 +501,6 @@ proc loadResources(buffer: Buffer, document: Document) =
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
-func getFd(buffer: Buffer): int =
-  if buffer.streamclosed: return -1
-  let source = buffer.source
-  case source.t
-  of CLONE, LOAD_REQUEST:
-    let istream = SocketStream(buffer.istream)
-    return cast[FileHandle](istream.source.getFd())
-  of LOAD_PIPE:
-    return buffer.source.fd
-
 type ConnectResult* = tuple[code: int, needsAuth: bool, redirect: Option[URL], contentType: string] 
 
 proc setupSource(buffer: Buffer): ConnectResult =
@@ -683,6 +673,8 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
     else:
       if field.tagType == TAG_INPUT:
         entrylist.add((name, HTMLInputElement(field).value))
+      elif field.tagType == TAG_BUTTON:
+        entrylist.add((name, HTMLButtonElement(field).value))
       else:
         assert false
     if field.tagType == TAG_TEXTAREA or
@@ -875,6 +867,16 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
         else:
           # focus on select
           buffer.set_focus select
+    of TAG_BUTTON:
+      let button = HTMLButtonElement(clickable)
+      if button.form != nil:
+        case button.ctype
+        of BUTTON_SUBMIT: result.open = submitForm(button.form, button)
+        of BUTTON_RESET:
+          button.form.reset()
+          result.repaint = true
+          buffer.do_reshape()
+        of BUTTON_BUTTON: discard
     of TAG_INPUT:
       buffer.restore_focus
       let input = HTMLInputElement(clickable)

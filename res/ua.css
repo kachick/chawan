@@ -121,6 +121,10 @@ input:is([type="submit"], [type="button"], [type="reset"])::after {
 	color: red;
 }
 
+button {
+	color: red;
+}
+
 li {
 	display: list-item;
 }
