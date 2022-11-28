@@ -299,7 +299,7 @@ proc registerContainer*(pager: Pager, container: Container) =
 proc addContainer*(pager: Pager, container: Container) =
   container.parent = pager.container
   if pager.container != nil:
-    pager.container.children.add(container)
+    pager.container.children.insert(container, 0)
   pager.registerContainer(container)
   pager.setContainer(container)
 
