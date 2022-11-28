@@ -429,6 +429,9 @@ func cssLength(d: CSSDeclaration): CSSLength =
   if isToken(d):
     let tok = CSSToken(d.value[0])
     case tok.tokenType
+    of CSS_NUMBER_TOKEN:
+      if tok.nvalue == 0:
+        return CSSLength(num: 0, unit: UNIT_PX)
     of CSS_PERCENTAGE_TOKEN:
       return cssLength(tok.nvalue, "%")
     of CSS_DIMENSION_TOKEN:
@@ -682,7 +685,9 @@ func getInitialColor(t: CSSPropertyType): RGBAColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT:
+  of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING,
+     PROPERTY_LINE_HEIGHT, PROPERTY_LEFT, PROPERTY_RIGHT, PROPERTY_TOP,
+     PROPERTY_BOTTOM:
     return CSSLength(auto: true)
   else:
     return CSSLength()
