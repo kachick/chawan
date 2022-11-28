@@ -1011,6 +1011,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
 
   case styledNode.computed{"display"}
   of DISPLAY_BLOCK:
+    ctx.iflush()
     ctx.flush()
     let childbox = styledNode.generateBlockBox(ctx.viewport)
     box.children.add(childbox)

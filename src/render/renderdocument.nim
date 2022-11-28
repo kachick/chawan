@@ -237,14 +237,26 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, 
       if lines[y].formats[fi].pos >= startx:
         lines[y].formats[fi].format.bgcolor = color
 
+func calculateErrorY(ctx: InlineContext, window: WindowAttributes): int =
+  if ctx.lines.len <= 1: return 0
+  var error = 0
+  for i in 0 ..< ctx.lines.len:
+    if i < ctx.lines.high:
+      let dy = ctx.lines[i + 1].offset.y - ctx.lines[i].offset.y
+      error += dy - (dy div window.ppl) * window.ppl
+  return error div (ctx.lines.len - 1)
+
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes)
 
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, window: WindowAttributes) =
   let x = x + ctx.offset.x
   let y = y + ctx.offset.y
+  let erry = ctx.calculateErrorY(window)
+  var i = 0
   for line in ctx.lines:
     let x = x + line.offset.x
-    let y = y + line.offset.y
+    let y0 = y + line.offset.y
+    let y = y0 - erry * i + erry * ctx.lines.len div 2
 
     let r = y div window.ppl
     while grid.len <= r:
@@ -260,6 +272,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
       elif atom of InlineSpacing:
         let spacing = InlineSpacing(atom)
         grid.setSpacing(spacing, x, y, window)
+    inc i
 
 proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes) =
   var stack = newSeqOfCap[(BlockBox, int, int)](100)
