@@ -218,15 +218,19 @@ proc finish(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int) =
   for line in ictx.lines:
     ictx.horizontalAlignLine(line, computed, maxwidth, line == ictx.lines[^1])
 
-proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, computed: CSSComputedValues) =
-  var shift = ictx.computeShift(computed)
+# pcomputed: computed values of parent, for white-space: pre, line-height
+# computed: computed values of child, for vertical-align
+# (TODO: surely there's a better way to do this? like storing pcomputed in ictx
+# or something...)
+proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed, computed: CSSComputedValues) =
+  var shift = ictx.computeShift(pcomputed)
   ictx.whitespacenum = 0
   # Line wrapping
-  if not computed.whitespacepre:
+  if not pcomputed.whitespacepre:
     if ictx.currentLine.width + atom.width + shift > maxwidth:
-      ictx.finishLine(computed, maxwidth, false)
+      ictx.finishLine(pcomputed, maxwidth, false)
       # Recompute on newline
-      shift = ictx.computeShift(computed)
+      shift = ictx.computeShift(pcomputed)
 
   if atom.width > 0 and atom.height > 0:
     atom.vertalign = computed{"vertical-align"}
@@ -235,7 +239,7 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, computed: CSS
       ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format)
 
     atom.offset.x += ictx.currentLine.width
-    applyLineHeight(ictx.viewport, ictx.currentLine, computed)
+    applyLineHeight(ictx.viewport, ictx.currentLine, pcomputed)
     ictx.currentLine.width += atom.width
     if atom of InlineWord:
       ictx.format = InlineWord(atom).format
@@ -248,7 +252,7 @@ proc addWord(state: var InlineState) =
     var word = state.word
     word.height = state.ictx.cellheight
     word.baseline = word.height
-    state.ictx.addAtom(word, state.maxwidth, state.computed)
+    state.ictx.addAtom(word, state.maxwidth, state.computed, state.computed)
     state.newWord()
 
 # Start a new line, even if the previous one is empty
@@ -351,18 +355,18 @@ proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width:
     elif height.issome:
       result.compheight = pheight.px(viewport, height.get).some
 
-proc setPreferredDimensions(bctx: BlockBox, width: int, height: Option[int]) =
-  let preferred = preferredDimensions(bctx.computed, bctx.viewport, width, height)
-  bctx.compwidth = preferred.compwidth
-  bctx.compheight = preferred.compheight
-  bctx.padding_top = preferred.padding_top
-  bctx.padding_bottom = preferred.padding_bottom
-  bctx.padding_left = preferred.padding_left
-  bctx.padding_right = preferred.padding_right
-  bctx.margin_top = preferred.margin_top
-  bctx.margin_bottom = preferred.margin_bottom
-  bctx.margin_left = preferred.margin_left
-  bctx.margin_right = preferred.margin_right
+proc setPreferredDimensions(box: BlockBox, width: int, height: Option[int]) =
+  let preferred = preferredDimensions(box.computed, box.viewport, width, height)
+  box.compwidth = preferred.compwidth
+  box.compheight = preferred.compheight
+  box.padding_top = preferred.padding_top
+  box.padding_bottom = preferred.padding_bottom
+  box.padding_left = preferred.padding_left
+  box.padding_right = preferred.padding_right
+  box.margin_top = preferred.margin_top
+  box.margin_bottom = preferred.margin_bottom
+  box.margin_left = preferred.margin_left
+  box.margin_right = preferred.margin_right
 
 proc newBlockBox_common2(box: BlockBox, parent: BlockBox, builder: BoxBuilder) {.inline.} =
   box.viewport = parent.viewport
@@ -405,52 +409,56 @@ proc newBlockBox(viewport: Viewport, box: BlockBoxBuilder): BlockBox =
 
 proc newInlineBlock(viewport: Viewport, builder: InlineBlockBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)
-  result.bctx = newFlowRootBox(viewport, builder.content, parentWidth, parentHeight)
+  result.innerbox = newFlowRootBox(viewport, builder.content, parentWidth, parentHeight)
 
-proc newInlineContext(bctx: BlockBox): InlineContext =
+proc newInlineContext(parent: BlockBox): InlineContext =
   new(result)
   result.currentLine = LineBox()
-  result.viewport = bctx.viewport
-  result.shrink = bctx.shrink
+  result.viewport = parent.viewport
+  result.shrink = parent.shrink
 
-proc positionInlines(bctx: BlockBox) =
-  bctx.width += bctx.padding_left
-  bctx.inline.offset.x += bctx.padding_left
+proc positionInlines(parent: BlockBox) =
+  parent.width += parent.padding_left
+  parent.inline.offset.x += parent.padding_left
 
-  bctx.height += bctx.padding_top
-  bctx.inline.offset.y += bctx.padding_top
+  parent.height += parent.padding_top
+  parent.inline.offset.y += parent.padding_top
 
-  bctx.height += bctx.padding_bottom
+  parent.height += parent.padding_bottom
 
-  bctx.width += bctx.padding_right
+  parent.width += parent.padding_right
 
-  if bctx.computed{"width"}.auto:
-    if bctx.shrink:
-      bctx.width = min(bctx.width, bctx.compwidth)
+  if parent.computed{"width"}.auto:
+    if parent.shrink:
+      parent.width = min(parent.width, parent.compwidth)
     else:
-      bctx.width = max(bctx.width, bctx.compwidth)
+      parent.width = max(parent.width, parent.compwidth)
   else:
-    bctx.width = bctx.compwidth
+    parent.width = parent.compwidth
 
 proc buildBlock(box: BlockBoxBuilder, parent: BlockBox, maxwidth = none(int)): BlockBox
-proc buildInlines(bctx: BlockBox, inlines: seq[BoxBuilder]): InlineContext
-proc buildBlocks(bctx: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
+proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
+proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
 
-proc applyInlineDimensions(bctx: BlockBox) =
-  bctx.height += bctx.inline.height
-  if bctx.compheight.issome:
-    bctx.height = bctx.compheight.get
-  bctx.width = max(bctx.width, bctx.inline.maxwidth)
+proc applyInlineDimensions(parent: BlockBox) =
+  parent.height += parent.inline.height
+  if parent.compheight.issome:
+    parent.height = parent.compheight.get
+  parent.width = max(parent.width, parent.inline.maxwidth)
 
 # Builder only contains inline boxes.
-proc buildInlineLayout(bctx: BlockBox, children: seq[BoxBuilder]) =
-  bctx.inline = bctx.buildInlines(children)
-  bctx.applyInlineDimensions()
-  bctx.positionInlines()
+proc buildInlineLayout(parent: BlockBox, children: seq[BoxBuilder]) =
+  parent.inline = parent.buildInlines(children)
+  parent.applyInlineDimensions()
+  parent.positionInlines()
 
 # Builder only contains block boxes.
-proc buildBlockLayout(bctx: BlockBox, children: seq[BoxBuilder], node: StyledNode) =
-  bctx.buildBlocks(children, node)
+proc buildBlockLayout(parent: BlockBox, children: seq[BoxBuilder], node: StyledNode) =
+  if parent.computed{"position"} == POSITION_ABSOLUTE:
+    parent.viewport.absolutes.add(parent)
+  parent.buildBlocks(children, node)
+  if parent.computed{"position"} == POSITION_ABSOLUTE:
+    discard parent.viewport.absolutes.pop()
 
 func baseline(bctx: BlockBox): int =
   if bctx.inline != nil:
@@ -470,9 +478,9 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
 
   let blockbuilder = builder.content
   if blockbuilder.inlinelayout:
-    result.bctx.buildInlineLayout(blockbuilder.children)
+    result.innerbox.buildInlineLayout(blockbuilder.children)
   else:
-    result.bctx.buildBlockLayout(blockbuilder.children, blockbuilder.node)
+    result.innerbox.buildBlockLayout(blockbuilder.children, blockbuilder.node)
 
   let pwidth = builder.computed{"width"}
   if pwidth.auto:
@@ -480,23 +488,23 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
     # Currently the misery that is determining content width is deferred to the
     # inline layouting algorithm, which doesn't work that great but that's what
     # we have.
-    result.bctx.width = min(parentWidth, result.bctx.width)
+    result.innerbox.width = min(parentWidth, result.innerbox.width)
   else:
-    result.bctx.width = pwidth.px(parent.viewport, parentWidth)
+    result.innerbox.width = pwidth.px(parent.viewport, parentWidth)
 
   # Apply the block box's properties to the atom itself.
-  result.width = result.bctx.width
-  result.height = result.bctx.height
+  result.width = result.innerbox.width
+  result.height = result.innerbox.height
 
-  result.margin_top = result.bctx.margin_top
-  result.margin_bottom = result.bctx.margin_bottom
+  result.margin_top = result.innerbox.margin_top
+  result.margin_bottom = result.innerbox.margin_bottom
 
-  result.baseline = result.bctx.baseline
+  result.baseline = result.innerbox.baseline
 
   # I don't like this, but it works...
-  result.offset.x = result.bctx.margin_left
-  result.width += result.bctx.margin_left
-  result.width += result.bctx.margin_right
+  result.offset.x = result.innerbox.margin_left
+  result.width += result.innerbox.margin_left
+  result.width += result.innerbox.margin_right
 
 proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, parentHeight = none(int)) =
   assert box.ictx != nil
@@ -524,7 +532,7 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
     of DISPLAY_INLINE_BLOCK:
       let child = InlineBlockBoxBuilder(child)
       let iblock = child.buildInlineBlock(box.ictx, parentWidth, parentHeight)
-      box.ictx.addAtom(iblock, parentWidth, child.computed)
+      box.ictx.addAtom(iblock, parentWidth, box.computed, child.computed)
       box.ictx.whitespacenum = 0
     else:
       assert false, "child.t is " & $child.computed{"display"}
@@ -537,23 +545,23 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
   let margin_right = box.computed{"margin-right"}.px(viewport, parentWidth)
   box.ictx.currentLine.width += margin_right
 
-proc buildInlines(bctx: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
-  let ictx = bctx.newInlineContext()
+proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
+  let ictx = parent.newInlineContext()
   if inlines.len > 0:
     for child in inlines:
       case child.computed{"display"}
       of DISPLAY_INLINE:
         let child = InlineBoxBuilder(child)
         child.ictx = ictx
-        buildInline(bctx.viewport, child, bctx.compwidth, bctx.compheight)
+        buildInline(parent.viewport, child, parent.compwidth, parent.compheight)
       of DISPLAY_INLINE_BLOCK:
         let child = InlineBlockBoxBuilder(child)
-        let iblock = child.buildInlineBlock(ictx, bctx.compwidth)
-        ictx.addAtom(iblock, bctx.compwidth, child.computed)
+        let iblock = child.buildInlineBlock(ictx, parent.compwidth)
+        ictx.addAtom(iblock, parent.compwidth, parent.computed, child.computed)
         ictx.whitespacenum = 0
       else:
         assert false, "child.t is " & $child.computed{"display"}
-    ictx.finish(bctx.computed, bctx.compwidth)
+    ictx.finish(parent.computed, parent.compwidth)
 
   return ictx
 
@@ -568,59 +576,130 @@ proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
   else:
     result.buildBlockLayout(builder.content.children, builder.content.node)
 
-proc positionBlocks(bctx: BlockBox) =
+proc positionFixed(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
+  #TODO for now this is a good approximation, but fixed actually means
+  # something completely different...
+  box.offset.x += last.offset.x
+  box.offset.y += last.offset.y
+  #TODO TODO TODO subtract these from width/height
+  let left = box.computed{"left"}
+  let right = box.computed{"right"}
+  let top = box.computed{"top"}
+  let bottom = box.computed{"bottom"}
+  if not left.auto:
+    box.offset.x += left.px(box.viewport, last.compwidth)
+    box.offset.x += box.margin_left
+  elif not right.auto:
+    box.offset.x += last.width - right.px(box.viewport, box.compwidth) - box.width
+    box.offset.x -= box.margin_right
+  if not top.auto:
+    box.offset.y += top.px(box.viewport, box.compheight.get(0))
+    box.offset.y += box.margin_top
+  elif not bottom.auto:
+    box.offset.y += last.height - bottom.px(box.viewport, box.compheight.get(0)) - box.height
+    box.offset.y -= box.margin_bottom
+  box.viewport.root.add(box)
+
+proc positionAbsolute(box: BlockBox) =
+  let last = if box.viewport.absolutes.len > 0:
+    box.viewport.absolutes[^1]
+  else:
+    box.viewport.root[0]
+  box.positionFixed(last)
+
+proc positionRelative(parent, box: BlockBox) =
+  let left = box.computed{"left"}
+  let right = box.computed{"right"}
+  let top = box.computed{"top"}
+  let bottom = box.computed{"bottom"}
+  if not left.auto:
+    box.offset.x += right.px(parent.viewport)
+  elif not right.auto:
+    box.offset.x += parent.width - right.px(parent.viewport) - box.width
+  if not top.auto:
+    box.offset.y += top.px(parent.viewport)
+  elif not top.auto:
+    box.offset.y -= parent.height - bottom.px(parent.viewport) - box.height
+
+proc positionBlocks(box: BlockBox) =
   var y = 0
   var x = 0
   var margin_todo: Strut
 
-  y += bctx.padding_top
-  bctx.height += bctx.padding_top
+  y += box.padding_top
+  box.height += box.padding_top
 
-  x += bctx.padding_left
-  if bctx.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
-    x += bctx.compwidth div 2
+  x += box.padding_left
+  if box.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
+    x += box.compwidth div 2
 
   template apply_child(child: BlockBox) =
     child.offset.y = y
     child.offset.x = x + child.margin_left
-    if bctx.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
+    if box.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
       child.offset.x -= child.width div 2
+    if box.computed{"position"} == POSITION_RELATIVE:
+      box.positionRelative(child)
     y += child.height
-    bctx.height += child.height
-    bctx.width = max(bctx.width, child.width)
+    box.height += child.height
+    box.width = max(box.width, child.width)
     margin_todo = Strut()
     margin_todo.append(child.margin_bottom)
 
-  if bctx.nested.len > 0:
-    let child = bctx.nested[0]
+  var i = 0
 
-    margin_todo.append(bctx.margin_top)
+  template position_out_of_flow() =
+    # Skip absolute, fixed, sticky
+    while i < box.nested.len:
+      case box.nested[i].computed{"position"}
+      of POSITION_STATIC, POSITION_RELATIVE:
+        break
+      of POSITION_ABSOLUTE:
+        positionAbsolute(box.nested[i])
+      of POSITION_FIXED:
+        box.positionFixed(box.nested[i])
+      of POSITION_STICKY:
+        #TODO implement this once relayouting every scroll isn't too expensive
+        break
+      box.nested.delete(i)
+
+  position_out_of_flow
+
+  if i < box.nested.len:
+    let child = box.nested[i]
+
+    margin_todo.append(box.margin_top)
     margin_todo.append(child.margin_top)
-    bctx.margin_top = margin_todo.sum()
-
-    apply_child(child)
-
-  var i = 1
-  while i < bctx.nested.len:
-    let child = bctx.nested[i]
-
-    margin_todo.append(child.margin_top)
-    y += margin_todo.sum()
-    bctx.height += margin_todo.sum()
+    box.margin_top = margin_todo.sum()
 
     apply_child(child)
     inc i
 
-  margin_todo.append(bctx.margin_bottom)
-  bctx.margin_bottom = margin_todo.sum()
+  while true:
+    position_out_of_flow
 
-  bctx.height += bctx.padding_bottom
+    if i >= box.nested.len:
+      break
 
-  if bctx.compheight.issome:
-    bctx.height = bctx.compheight.get
+    let child = box.nested[i]
 
-  bctx.width += bctx.padding_left
-  bctx.width += bctx.padding_right
+    margin_todo.append(child.margin_top)
+    y += margin_todo.sum()
+    box.height += margin_todo.sum()
+
+    apply_child(child)
+    inc i
+
+  margin_todo.append(box.margin_bottom)
+  box.margin_bottom = margin_todo.sum()
+
+  box.height += box.padding_bottom
+
+  if box.compheight.issome:
+    box.height = box.compheight.get
+
+  box.width += box.padding_left
+  box.width += box.padding_right
 
 proc buildTableCell(box: TableCellBoxBuilder, parent: BlockBox, cellwidth = none(int)): BlockBox =
   result = parent.newTableCellBox(box)
@@ -746,16 +825,16 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
     table.width = max(row.width, table.width)
   return table
 
-proc buildBlocks(bctx: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
+proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
   for child in blocks:
     var cblock: BlockBox
     case child.computed{"display"}
-    of DISPLAY_BLOCK: cblock = buildBlock(BlockBoxBuilder(child), bctx)
-    of DISPLAY_LIST_ITEM: cblock = buildListItem(ListItemBoxBuilder(child), bctx)
-    of DISPLAY_TABLE: cblock = buildTable(TableBoxBuilder(child), bctx)
+    of DISPLAY_BLOCK: cblock = buildBlock(BlockBoxBuilder(child), parent)
+    of DISPLAY_LIST_ITEM: cblock = buildListItem(ListItemBoxBuilder(child), parent)
+    of DISPLAY_TABLE: cblock = buildTable(TableBoxBuilder(child), parent)
     else: assert false, "child.t is " & $child.computed{"display"}
-    bctx.nested.add(cblock)
-  bctx.positionBlocks()
+    parent.nested.add(cblock)
+  parent.positionBlocks()
 
 # Build a block box inside another block box, based on a builder.
 proc buildBlock(box: BlockBoxBuilder, parent: BlockBox, maxwidth = none(int)): BlockBox =
@@ -767,13 +846,14 @@ proc buildBlock(box: BlockBoxBuilder, parent: BlockBox, maxwidth = none(int)): B
     result.buildBlockLayout(box.children, box.node)
 
 # Establish a new flow-root context and build a block box.
-proc buildRootBlock(box: BlockBoxBuilder, viewport: Viewport): BlockBox =
-  result = viewport.newBlockBox(box)
-  result.shrink = false
-  if box.inlinelayout:
-    result.buildInlineLayout(box.children)
+proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
+  let box = viewport.newBlockBox(builder)
+  box.shrink = false
+  viewport.root.add(box)
+  if builder.inlinelayout:
+    box.buildInlineLayout(builder.children)
   else:
-    result.buildBlockLayout(box.children, box.node)
+    box.buildBlockLayout(builder.children, builder.node)
 
 # Generation phase
 
@@ -1153,4 +1233,4 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuild
 
 proc renderLayout*(viewport: var Viewport, document: Document, root: StyledNode) =
   let builder = root.generateBlockBox(viewport)
-  viewport.root = buildRootBlock(builder, viewport)
+  viewport.buildRootBlock(builder)

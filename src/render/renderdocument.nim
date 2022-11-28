@@ -253,7 +253,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
     for atom in line.atoms:
       if atom of InlineBlockBox:
         let iblock = InlineBlockBox(atom)
-        grid.renderBlockContext(iblock.bctx, x + iblock.offset.x, y + iblock.offset.y, window)
+        grid.renderBlockContext(iblock.innerbox, x + iblock.offset.x, y + iblock.offset.y, window)
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x, y, window)
@@ -297,6 +297,7 @@ proc renderDocument*(document: Document, window: WindowAttributes, userstyle: CS
   result[1] = styledNode
   layout.renderLayout(document, styledNode)
   result[0].setLen(0)
-  result[0].renderBlockContext(layout.root, 0, 0, window)
+  for root in layout.root:
+    result[0].renderBlockContext(root, 0, 0, window)
   if result[0].len == 0:
     result[0].addLine()

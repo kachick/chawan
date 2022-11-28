@@ -24,7 +24,8 @@ type
 
   Viewport* = ref object
     window*: WindowAttributes
-    root*: BlockBox
+    root*: seq[BlockBox]
+    absolutes*: seq[BlockBox]
 
   BoxBuilder* = ref object of RootObj
     children*: seq[BoxBuilder]
@@ -152,7 +153,7 @@ type
     maxwidth*: int
 
   InlineBlockBox* = ref object of InlineAtom
-    bctx*: BlockBox
+    innerbox*: BlockBox
     margin_top*: int
     margin_bottom*: int
 
