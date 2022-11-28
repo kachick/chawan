@@ -125,6 +125,11 @@ button {
 	color: red;
 }
 
+textarea {
+	color: red;
+	white-space: pre;
+}
+
 li {
 	display: list-item;
 }

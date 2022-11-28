@@ -8,7 +8,6 @@ when defined(posix):
 
 import buffer/buffer
 import buffer/cell
-import config/bufferconfig
 import config/config
 import io/request
 import io/window
@@ -33,7 +32,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, OPEN, INVALID_COMMAND, STATUS, ALERT
+    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -41,6 +40,8 @@ type
       prompt*: string
       value*: string
       password*: bool
+    of READ_AREA:
+      tvalue*: string
     of OPEN:
       request*: Request
     of ANCHOR, NO_ANCHOR:
@@ -71,7 +72,7 @@ type
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     parent*: Container
-    process*: Pid
+    process* {.jsget.}: Pid
     loadinfo*: string
     lines: SimpleFlexibleGrid
     lineshift: int
@@ -93,7 +94,7 @@ proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, ti
   let istream = dispatcher.forkserver.istream
   ostream.swrite(FORK_BUFFER)
   ostream.swrite(source)
-  ostream.swrite(config.loadBufferConfig())
+  ostream.swrite(config.getBufferConfig())
   ostream.swrite(attrs)
   ostream.swrite(dispatcher.mainproc)
   ostream.flush()
@@ -252,13 +253,17 @@ proc triggerEvent(container: Container, t: ContainerEventType) =
 
 proc updateCursor(container: Container)
 
+proc setNumLines(container: Container, lines: int) =
+  container.numLines = lines
+  container.updateCursor()
+
 proc requestLines*(container: Container, w = container.lineWindow) =
-  container.iface.getLines(w).then(proc(res: seq[SimpleFlexibleLine]) =
+  container.iface.getLines(w).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
     container.lines.setLen(w.len)
     container.lineshift = w.a
-    for y in 0 ..< min(res.len, w.len):
-      container.lines[y] = res[y]
-    container.updateCursor()
+    for y in 0 ..< min(res.lines.len, w.len):
+      container.lines[y] = res.lines[y]
+    container.setNumLines(res.numLines)
     container.redraw = true
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
@@ -544,8 +549,8 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
   container.iface
     .findNextMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
+      container.setCursorXY(res.x, res.y)
       if container.hlon:
-        container.setCursorXY(res.x, res.y)
         container.clearSearchHighlights()
         let ex = res.x + res.str.width() - 1
         let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
@@ -556,8 +561,8 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
   container.iface
     .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
+      container.setCursorXY(res.x, res.y)
       if container.hlon:
-        container.setCursorXY(res.x, res.y)
         container.clearSearchHighlights()
         let ex = res.x + res.str.width() - 1
         let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
@@ -567,10 +572,6 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
   container.triggerEvent(STATUS)
-
-proc setNumLines(container: Container, lines: int) =
-  container.numLines = lines
-  container.updateCursor()
 
 proc alert(container: Container, msg: string) =
   container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
@@ -677,12 +678,20 @@ proc click*(container: Container) {.jsfunc.} =
       container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get))
     if res.readline.isSome:
       let rl = res.readline.get
-      container.triggerEvent(
-        ContainerEvent(
-          t: READ_LINE,
-          prompt: rl.prompt,
-          value: rl.value,
-          password: rl.hide)))
+      if rl.area:
+        container.triggerEvent(
+          ContainerEvent(
+            t: READ_AREA,
+            tvalue: rl.value
+          ))
+      else:
+        container.triggerEvent(
+          ContainerEvent(
+            t: READ_LINE,
+            prompt: rl.prompt,
+            value: rl.value,
+            password: rl.hide
+          )))
 
 proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs

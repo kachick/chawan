@@ -7,10 +7,10 @@ type ServerSocket* = object
   sock*: Socket
   path*: string
 
-const SocketDirectory = "/tmp/cha/"
-const SocketPathPrefix = SocketDirectory & "cha_sock_"
-func getSocketPath*(pid: Pid): string =
-  SocketPathPrefix & $pid
+var SocketDirectory* = "/tmp/cha"
+const SocketPathPrefix = "cha_sock_"
+proc getSocketPath*(pid: Pid): string =
+  SocketDirectory / SocketPathPrefix & $pid
 
 proc initServerSocket*(buffered = true): ServerSocket =
   createDir(SocketDirectory)

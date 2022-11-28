@@ -401,8 +401,9 @@ proc quit*(term: Terminal) =
       term.write(term.disableAltScreen())
     else:
       term.write(term.cursorGoto(0, term.attrs.height - 1))
-    term.outfile.showCursor()
-  term.outfile.flushFile()
+    term.showCursor()
+    term.cleared = false
+  term.flush()
 
 when termcap_found:
   proc loadTermcap(term: Terminal) =
@@ -451,11 +452,15 @@ proc detectTermAttributes(term: Terminal) =
 
 proc start*(term: Terminal, infile: File) =
   term.infile = infile
-  assert term.outfile.getFileHandle().setInheritable(false)
-  assert term.infile.getFileHandle().setInheritable(false)
   if term.isatty():
     enableRawMode(infile.getFileHandle())
   term.detectTermAttributes()
+  if term.smcup:
+    term.write(term.enableAltScreen())
+
+proc restart*(term: Terminal) =
+  if term.isatty():
+    enableRawMode(term.infile.getFileHandle())
   if term.smcup:
     term.write(term.enableAltScreen())
 

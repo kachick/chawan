@@ -18,7 +18,7 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   result = s.source.recv(buffer, len)
   if result < 0:
     raise newException(IOError, "Failed to read data (code " & $osLastError() & ")")
-  elif result < len:
+  elif result == 0:
     s.isend = true
 
 proc sockWriteData(s: Stream, buffer: pointer, len: int) =

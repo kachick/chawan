@@ -118,7 +118,7 @@ const FormAssociatedElements* = {
 
 #TODO support all the other ones
 const SupportedFormAssociatedElements* = {
-  TAG_SELECT, TAG_INPUT, TAG_BUTTON
+  TAG_BUTTON, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA
 }
 
 const ListedElements* = {

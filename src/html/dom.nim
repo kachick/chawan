@@ -1,3 +1,4 @@
+import macros
 import options
 import streams
 import strutils
@@ -91,10 +92,10 @@ type
   HTMLElement* = ref object of Element
 
   FormAssociatedElement* = ref object of HTMLElement
-    form*: HTMLFormElement
     parserInserted*: bool
 
   HTMLInputElement* = ref object of FormAssociatedElement
+    form* {.jsget.}: HTMLFormElement
     inputType*: InputType
     autofocus*: bool
     required*: bool
@@ -108,6 +109,7 @@ type
   HTMLAnchorElement* = ref object of HTMLElement
 
   HTMLSelectElement* = ref object of FormAssociatedElement
+    form* {.jsget.}: HTMLFormElement
     size*: int
 
   HTMLSpanElement* = ref object of HTMLElement
@@ -169,8 +171,15 @@ type
   HTMLAreaElement* = ref object of HTMLElement
 
   HTMLButtonElement* = ref object of FormAssociatedElement
+    form* {.jsget.}: HTMLFormElement
     ctype*: ButtonType
-    value*: string
+    value* {.jsget, jsset.}: string
+
+  HTMLTextAreaElement* = ref object of FormAssociatedElement
+    form* {.jsget.}: HTMLFormElement
+    rows*: int
+    cols*: int
+    value* {.jsget.}: string
 
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
@@ -312,6 +321,39 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
         if opt.tagType == TAG_OPTION:
           yield HTMLOptionElement(child)
 
+func form*(element: FormAssociatedElement): HTMLFormElement =
+  case element.tagType
+  of TAG_INPUT: return HTMLInputElement(element).form
+  of TAG_SELECT: return HTMLSelectElement(element).form
+  of TAG_BUTTON: return HTMLButtonElement(element).form
+  of TAG_TEXTAREA: return HTMLTextAreaElement(element).form
+  else: assert false
+
+func `form=`*(element: FormAssociatedElement, form: HTMLFormElement) =
+  case element.tagType
+  of TAG_INPUT: HTMLInputElement(element).form = form
+  of TAG_SELECT:  HTMLSelectElement(element).form = form
+  of TAG_BUTTON: HTMLButtonElement(element).form = form
+  of TAG_TEXTAREA: HTMLTextAreaElement(element).form = form
+  else: assert false
+
+func canSubmitImplicitly*(form: HTMLFormElement): bool =
+  const BlocksImplicitSubmission = {
+    INPUT_TEXT, INPUT_SEARCH, INPUT_URL, INPUT_TEL, INPUT_EMAIL, INPUT_PASSWORD,
+    INPUT_DATE, INPUT_MONTH, INPUT_WEEK, INPUT_TIME, INPUT_DATETIME_LOCAL,
+    INPUT_NUMBER
+  }
+  var found = false
+  for control in form.controls:
+    if control.tagType == TAG_INPUT:
+      let input = HTMLInputElement(control)
+      if input.inputType in BlocksImplicitSubmission:
+        if found:
+          return false
+        else:
+          found = true
+  return true
+
 func qualifiedName*(element: Element): string =
   if element.namespacePrefix.issome: element.namespacePrefix.get & ':' & element.localName
   else: element.localName
@@ -441,7 +483,7 @@ func nextElementSibling*(elem: Element): Element =
     inc i
   return nil
 
-func attr*(element: Element, s: string): string =
+func attr*(element: Element, s: string): string {.inline.} =
   return element.attributes.getOrDefault(s, "")
 
 func attri*(element: Element, s: string): Option[int] =
@@ -492,7 +534,7 @@ proc sheets*(element: Element): seq[CSSStylesheet] =
         result.add(child.sheet)
 
 func inputString*(input: HTMLInputElement): string =
-  var text = case input.inputType
+  case input.inputType
   of INPUT_CHECKBOX, INPUT_RADIO:
     if input.checked: "*"
     else: " "
@@ -510,7 +552,17 @@ func inputString*(input: HTMLInputElement): string =
     if input.file.isnone: "".padToWidth(input.size)
     else: input.file.get.path.serialize_unicode().padToWidth(input.size)
   else: input.value
-  return text
+
+func textAreaString*(textarea: HTMLTextAreaElement): string =
+  let split = textarea.value.split('\n')
+  for i in 0 ..< textarea.rows:
+    if textarea.cols > 2:
+      if i < split.len:
+        result &= '[' & split[i].padToWidth(textarea.cols - 2) & "]\n"
+      else:
+        result &= '[' & ' '.repeat(textarea.cols - 2) & "]\n"
+    else:
+      result &= "[]\n"
 
 func isButton*(element: Element): bool =
   if element.tagType == TAG_BUTTON:
@@ -537,6 +589,8 @@ func action*(element: Element): string =
     if element.form != nil:
       if element.form.attrb("action"):
         return element.form.attr("action")
+  if element.tagType == TAG_FORM:
+    return element.attr("action")
   return ""
 
 func enctype*(element: Element): FormEncodingType =
@@ -655,6 +709,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     result = new(HTMLBaseElement)
   of TAG_BUTTON:
     result = new(HTMLButtonElement)
+  of TAG_TEXTAREA:
+    result = new(HTMLTextAreaElement)
   else:
     result = new(HTMLElement)
 
@@ -886,6 +942,10 @@ proc resetElement*(element: Element) =
             if option.selected:
               option.selected = false
               inc j
+  of TAG_TEXTAREA:
+    let textarea = HTMLTextAreaElement(element)
+    textarea.value = textarea.childTextContent()
+    textarea.invalid = true
   else: discard
 
 proc setForm*(element: FormAssociatedElement, form: HTMLFormElement) =
@@ -902,7 +962,11 @@ proc setForm*(element: FormAssociatedElement, form: HTMLFormElement) =
     let button = HTMLButtonElement(element)
     button.form = form
     form.controls.add(button)
-  of TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_TEXTAREA, TAG_IMG:
+  of TAG_TEXTAREA:
+    let textarea = HTMLTextAreaElement(element)
+    textarea.form = form
+    form.controls.add(textarea)
+  of TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_IMG:
     discard #TODO
   else: assert false
 
@@ -935,9 +999,7 @@ proc insertionSteps(insertedNode: Node) =
         if select != nil:
           select.resetElement()
     else: discard
-    if tagType in FormAssociatedElements:
-      if tagType notin SupportedFormAssociatedElements:
-        return #TODO TODO TODO implement others too
+    if tagType in SupportedFormAssociatedElements:
       let element = FormAssociatedElement(element)
       if element.parserInserted:
         return
@@ -987,52 +1049,57 @@ proc reset*(form: HTMLFormElement) =
     control.resetElement()
     control.invalid = true
 
-proc appendAttribute*(element: Element, k, v: string) =
-  case k
-  of "id": element.id = v
-  of "class":
-    let classes = v.split(' ')
-    for class in classes:
-      if class != "" and class notin element.classList:
-        element.classList.add(class)
+proc appendAttributes*(element: Element, attrs: Table[string, string]) =
+  for k, v in attrs:
+    element.attributes[k] = v
+  template reflect_str(element: Element, name: static string, val: untyped) =
+    element.attributes.withValue(name, val):
+      element.val = val[]
+  template reflect_str(element: Element, name: static string, val, fun: untyped) =
+    element.attributes.withValue(name, val):
+      element.val = fun(val[])
+  template reflect_nonzero_int(element: Element, name: static string, val: untyped, default: int) =
+    element.attributes.withValue(name, val):
+      if val[].isValidNonZeroInt():
+        element.val = parseInt(val[])
+      else:
+        element.val = default
+    do:
+      element.val = default
+  template reflect_bool(element: Element, name: static string, val: untyped) =
+    if name in element.attributes:
+      element.val = true
+  element.reflect_str "id", id
+  element.attributes.withValue("class", val):
+    let classList = val[].split(' ')
+    for x in classList:
+      if x != "" and x notin element.classList:
+        element.classList.add(x)
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
-    case k
-    of "value": input.value = v
-    of "type": input.inputType = inputType(v)
-    of "size":
-      if v.isValidNonZeroInt():
-        input.size = parseInt(v)
-      else:
-        input.size = 20
-    of "checked": input.checked = true
+    input.reflect_str "value", value
+    input.reflect_str "type", inputType, inputType
+    input.reflect_nonzero_int "size", size, 20
+    input.reflect_bool "checked", checked
   of TAG_OPTION:
     let option = HTMLOptionElement(element)
-    if k == "selected":
-      option.selected = true
+    option.reflect_bool "selected", selected
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
-    case k
-    of "multiple":
-      if not select.attributes["size"].isValidNonZeroInt():
-        select.size = 4
-    of "size":
-      if v.isValidNonZeroInt():
-        select.size = parseInt(v)
-      elif "multiple" in select.attributes:
-        select.size = 4
+    select.reflect_nonzero_int "size", size, (if "multiple" in element.attributes: 4 else: 1)
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
-    if k == "type":
-      case v
-      of "submit": button.ctype = BUTTON_SUBMIT
-      of "reset": button.ctype = BUTTON_RESET
-      of "button": button.ctype = BUTTON_BUTTON
-    elif k == "value":
-      button.value = v
+    button.reflect_str "type", ctype, (func(s: string): ButtonType =
+      case s
+      of "submit": return BUTTON_SUBMIT
+      of "reset": return BUTTON_RESET
+      of "button": return BUTTON_BUTTON)
+  of TAG_TEXTAREA:
+    let textarea = HTMLTextAreaElement(element)
+    textarea.reflect_nonzero_int "cols", cols, 20
+    textarea.reflect_nonzero_int "rows", rows, 1
   else: discard
-  element.attributes[k] = v
 
 # Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node, q: string): seq[Element]

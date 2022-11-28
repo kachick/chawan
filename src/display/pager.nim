@@ -11,10 +11,11 @@ when defined(posix):
 import buffer/cell
 import buffer/container
 import config/config
+import display/term
 import io/lineedit
 import io/request
-import io/term
 import io/window
+import ips/editor
 import ips/forkserver
 import ips/socketstream
 import js/javascript
@@ -629,6 +630,14 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of READ_LINE:
     if container == pager.container:
       pager.setLineEdit(readLine(event.prompt, pager.attrs.width, current = event.value, hide = event.password, term = pager.term), BUFFER)
+  of READ_AREA:
+    if container == pager.container:
+      var s = event.tvalue
+      if openInEditor(pager.term, pager.config, s):
+        pager.container.readSuccess(s)
+      else:
+        pager.container.readCanceled()
+      pager.redraw = true
   of OPEN:
     pager.gotoURL(event.request, some(container.source.location))
   of INVALID_COMMAND: discard

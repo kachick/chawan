@@ -5,7 +5,6 @@ import streams
 import tables
 
 import buffer/cell
-import config/bufferconfig
 import io/request
 import js/regex
 import types/buffersource
@@ -92,7 +91,7 @@ proc slen*[T](o: T): int =
 template swrite*[T](stream: Stream, o: T) =
   stream.write(o)
 
-proc swrite*(stream: Stream, s: string, maxlen = 8192) =
+proc swrite*(stream: Stream, s: string) =
   stream.swrite(s.len)
   stream.write(s)
 
@@ -182,9 +181,6 @@ proc swrite*(stream: Stream, source: BufferSource) =
   stream.swrite(source.location)
   stream.swrite(source.contenttype)
 
-proc swrite*(stream: Stream, bconfig: BufferConfig) =
-  stream.swrite(bconfig.userstyle)
-
 proc swrite*(stream: Stream, tup: tuple) =
   for f in tup.fields:
     stream.swrite(f)
@@ -196,11 +192,11 @@ proc swrite*(stream: Stream, obj: object) =
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
 
-proc sread*(stream: Stream, s: var string, maxlen = 8192) =
+proc sread*(stream: Stream, s: var string) =
   var len: int
   stream.sread(len)
-  if maxlen != -1:
-    len = min(maxlen, len)
+  #if maxlen != -1:
+  #  len = min(maxlen, len)
   stream.readStr(len, s)
 
 proc sread*(stream: Stream, b: var bool) =
@@ -214,7 +210,7 @@ proc sread*(stream: Stream, b: var bool) =
 
 proc sread*(stream: Stream, url: var Url) =
   var s: string
-  stream.sread(s, 2048)
+  stream.sread(s)
   url = newURL(s)
 
 proc sread*(stream: Stream, headers: var HeaderList) =
@@ -322,9 +318,6 @@ proc sread*(stream: Stream, source: var BufferSource) =
     stream.sread(source.fd)
   stream.sread(source.location)
   stream.sread(source.contenttype)
-
-proc sread*(stream: Stream, bconfig: var BufferConfig) =
-  stream.sread(bconfig.userstyle)
 
 proc sread*(stream: Stream, obj: var object) =
   for f in obj.fields:

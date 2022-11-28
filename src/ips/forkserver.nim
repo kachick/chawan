@@ -4,16 +4,18 @@ when defined(posix):
   import posix
 
 import buffer/buffer
-import config/bufferconfig
+import config/config
 import io/loader
 import io/request
 import io/window
 import ips/serialize
+import ips/serversocket
 import types/buffersource
+import utils/twtstr
 
 type
   ForkCommand* = enum
-    FORK_BUFFER, FORK_LOADER, REMOVE_CHILD
+    FORK_BUFFER, FORK_LOADER, REMOVE_CHILD, LOAD_CONFIG
 
   ForkServer* = ref object
     process*: Pid
@@ -30,6 +32,11 @@ proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = Default
   forkserver.ostream.swrite(defaultHeaders)
   forkserver.ostream.flush()
   forkserver.istream.sread(result)
+
+proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
+  forkserver.ostream.swrite(LOAD_CONFIG)
+  forkserver.ostream.swrite(config.getForkServerConfig())
+  forkserver.ostream.flush()
 
 proc removeChild*(forkserver: Forkserver, pid: Pid) =
   forkserver.ostream.swrite(REMOVE_CHILD)
@@ -103,6 +110,11 @@ proc runForkServer() =
         let loader = ctx.forkLoader(defaultHeaders)
         ctx.ostream.swrite(loader)
         ctx.children.add((loader.process, Pid(-1)))
+      of LOAD_CONFIG:
+        var config: ForkServerConfig
+        ctx.istream.sread(config)
+        width_table = makewidthtable(config.ambiguous_double)
+        SocketDirectory = config.tmpdir
       ctx.ostream.flush()
     except IOError:
       # EOF

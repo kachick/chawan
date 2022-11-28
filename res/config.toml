@@ -1,3 +1,7 @@
+[external]
+tmpdir = "/tmp/cha"
+editor = "vi %s +%d"
+
 [display]
 color-mode = "auto"
 format-mode = "auto"

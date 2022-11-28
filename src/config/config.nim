@@ -11,8 +11,11 @@ import utils/twtstr
 type
   ColorMode* = enum
     MONOCHROME, ANSI, EIGHT_BIT, TRUE_COLOR
+
   FormatMode* = set[FormatFlags]
+
   ActionMap = Table[string, string]
+
   Config* = ref ConfigObj
   ConfigObj* = object
     nmap*: ActionMap
@@ -26,6 +29,24 @@ type
     formatmode*: Option[FormatMode]
     altscreen*: Option[bool]
     mincontrast*: float
+    editor*: string
+    tmpdir*: string
+
+  BufferConfig* = object
+    userstyle*: string
+
+  ForkServerConfig* = object
+    tmpdir*: string
+    ambiguous_double*: bool
+
+func getForkServerConfig*(config: Config): ForkServerConfig =
+  return ForkServerConfig(
+    tmpdir: config.tmpdir,
+    ambiguous_double: config.ambiguous_double
+  )
+
+func getBufferConfig*(config: Config): BufferConfig =
+  result.userstyle = config.stylesheet
 
 func getRealKey(key: string): string =
   var realk: string
@@ -164,6 +185,11 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
             config.mincontrast = float(v.i)
           else:
             config.mincontrast = float(v.f)
+    of "external":
+      for k, v in v:
+        case k
+        of "editor": config.editor = v.s
+        of "tmpdir": config.tmpdir = v.s
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))

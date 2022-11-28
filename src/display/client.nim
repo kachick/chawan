@@ -17,12 +17,12 @@ import buffer/container
 import css/sheet
 import config/config
 import display/pager
+import display/term
 import html/dom
 import html/htmlparser
 import io/lineedit
 import io/loader
 import io/request
-import io/term
 import io/window
 import ips/forkserver
 import ips/serialize

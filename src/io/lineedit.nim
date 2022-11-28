@@ -5,7 +5,7 @@ import sugar
 
 import bindings/quickjs
 import buffer/cell
-import io/term
+import display/term
 import js/javascript
 import types/color
 import utils/twtstr

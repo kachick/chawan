@@ -109,6 +109,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_width
   of TAG_BODY:
     map_bgcolor
+  of TAG_TEXTAREA:
+    let textarea = HTMLTextAreaElement(element)
+    set_cv(PROPERTY_WIDTH, length, CSSLength(unit: UNIT_CH, num: float64(textarea.cols)))
+    set_cv(PROPERTY_HEIGHT, length, CSSLength(unit: UNIT_EM, num: float64(textarea.rows)))
   else: discard
  
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]) =
@@ -225,6 +229,12 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
             let styledText = styledParent.newStyledText(content)
             styledText.pseudo = pseudo
             styledParent.children.add(styledText)
+        of PSEUDO_TEXTAREA_TEXT:
+          let content = HTMLTextAreaElement(styledParent.node).textAreaString()
+          if content.len > 0:
+            let styledText = styledParent.newStyledText(content)
+            styledText.pseudo = pseudo
+            styledParent.children.add(styledText)
         of PSEUDO_NONE: discard
       else:
         assert child != nil
@@ -299,12 +309,15 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
       stack_append styledChild, PSEUDO_AFTER
 
-      for i in countdown(elem.childNodes.high, 0):
-        if elem.childNodes[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
-          stack_append styledChild, elem.childNodes[i]
+      if elem.tagType != TAG_TEXTAREA:
+        for i in countdown(elem.childNodes.high, 0):
+          if elem.childNodes[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
+            stack_append styledChild, elem.childNodes[i]
+        if elem.tagType == TAG_INPUT:
+          stack_append styledChild, PSEUDO_INPUT_TEXT
+      else:
+        stack_append styledChild, PSEUDO_TEXTAREA_TEXT
 
-      if elem.tagType == TAG_INPUT:
-        stack_append styledChild, PSEUDO_INPUT_TEXT
       stack_append styledChild, PSEUDO_BEFORE
 
 proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet, previousStyled: StyledNode): StyledNode =

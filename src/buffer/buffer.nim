@@ -17,7 +17,7 @@ import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/stylednode
-import config/bufferconfig
+import config/config
 import html/dom
 import html/tags
 import html/htmlparser
@@ -56,7 +56,6 @@ type
     lasttimeout: int
     timeout: int
     readbufsize: int
-    input: HTMLInputElement
     contenttype: string
     lines: FlexibleGrid
     rendered: bool
@@ -239,7 +238,7 @@ func getLink(node: StyledNode): HTMLAnchorElement =
   #TODO ::before links?
 
 const ClickableElements = {
-  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON
+  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA
 }
 
 func getClickable(styledNode: StyledNode): Element =
@@ -267,6 +266,7 @@ func cursorBytes(buffer: Buffer, y: int, cc: int): int =
   return i
 
 proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
+  if cursory >= buffer.lines.len: return (-1, -1)
   let line = buffer.lines[cursory]
   var i = line.findFormatN(cursorx) - 1
   var link: Element = nil
@@ -324,6 +324,7 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
   return (-1, -1)
 
 proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
+  if cursory >= buffer.lines.len: return (-1, -1)
   let line = buffer.lines[cursory]
   var i = line.findFormatN(cursorx) - 1
   var link: Element = nil
@@ -350,6 +351,7 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
   return (-1, -1)
 
 proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch {.proxy.} =
+  if cursory >= buffer.lines.len: return
   template return_if_match =
     if res.success and res.captures.len > 0:
       let cap = res.captures[^1]
@@ -377,6 +379,7 @@ proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
     dec y
 
 proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch {.proxy.} =
+  if cursory >= buffer.lines.len: return
   template return_if_match =
     if res.success and res.captures.len > 0:
       let cap = res.captures[0]
@@ -471,6 +474,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
   buffer.prevnode = thisnode
 
 proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
+  if elem.href == "": return
   let url = parseUrl(elem.href, document.location.some)
   if url.isSome:
     let url = url.get
@@ -514,8 +518,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
   buffer.location = source.location
   case source.t
   of CLONE:
-    buffer.istream = connectSocketStream(source.clonepid)
-    SocketStream(buffer.istream).source.getFd().setBlocking(false)
+    buffer.istream = connectSocketStream(source.clonepid, blocking = false)
     if buffer.istream == nil:
       result.code = -2
       return
@@ -574,7 +577,7 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
   var s = newString(buffer.readbufsize)
   try:
     buffer.istream.readStr(buffer.readbufsize, s)
-    result = (s.len < buffer.readbufsize, buffer.lines.len, bytes)
+    result = (s.len == 0, buffer.lines.len, bytes)
     if buffer.readbufsize < BufferSize:
       buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
   except IOError:
@@ -671,12 +674,14 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
         "UTF-8"
       entrylist.add((name, charset))
     else:
-      if field.tagType == TAG_INPUT:
+      case field.tagType
+      of TAG_INPUT:
         entrylist.add((name, HTMLInputElement(field).value))
-      elif field.tagType == TAG_BUTTON:
+      of TAG_BUTTON:
         entrylist.add((name, HTMLButtonElement(field).value))
-      else:
-        assert false
+      of TAG_TEXTAREA:
+        entrylist.add((name, HTMLTextAreaElement(field).value))
+      else: assert false, "Tag type " & $field.tagType & " not accounted for in constructEntryList"
     if field.tagType == TAG_TEXTAREA or
         field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_TEXT, INPUT_SEARCH}:
       if field.attr("dirname") != "":
@@ -803,39 +808,46 @@ type ReadSuccessResult* = object
   open*: Option[Request]
   repaint*: bool
 
+proc implicitSubmit(buffer: Buffer, input: HTMLInputElement): Option[Request] =
+  if input.form != nil and input.form.canSubmitImplicitly():
+    return submitForm(input.form, input.form)
+
 proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
-  if buffer.input != nil:
-    let input = buffer.input
-    case input.inputType
-    of INPUT_SEARCH:
-      input.value = s
-      input.invalid = true
-      buffer.do_reshape()
-      result.repaint = true
-      if input.form != nil:
-        let submitaction = submitForm(input.form, input)
-        if submitaction.isSome:
-          result.open = submitaction
-    of INPUT_TEXT, INPUT_PASSWORD:
-      input.value = s
-      input.invalid = true
-      buffer.do_reshape()
-      result.repaint = true
-    of INPUT_FILE:
-      let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
-      let path = parseUrl(s, cdir)
-      if path.issome:
-        input.file = path
+  if buffer.document.focus != nil:
+    case buffer.document.focus.tagType
+    of TAG_INPUT:
+      let input = HTMLInputElement(buffer.document.focus)
+      case input.inputType
+      of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
+        input.value = s
         input.invalid = true
         buffer.do_reshape()
         result.repaint = true
+        result.open = buffer.implicitSubmit(input)
+      of INPUT_FILE:
+        let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
+        let path = parseUrl(s, cdir)
+        if path.issome:
+          input.file = path
+          input.invalid = true
+          buffer.do_reshape()
+          result.repaint = true
+          result.open = buffer.implicitSubmit(input)
+      else: discard
+    of TAG_TEXTAREA:
+      let textarea = HTMLTextAreaElement(buffer.document.focus)
+      textarea.value = s
+      textarea.invalid = true
+      buffer.do_reshape()
+      result.repaint = true
     else: discard
-    buffer.input = nil
+    buffer.restore_focus
 
 type ReadLineResult* = object
   prompt*: string
   value*: string
   hide*: bool
+  area*: bool
 
 type ClickResult* = object
   open*: Option[Request]
@@ -848,6 +860,7 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
     case clickable.tagType
     of TAG_SELECT:
       buffer.set_focus clickable
+      result.repaint = true
     of TAG_A:
       buffer.restore_focus
       let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseUrl.some)
@@ -877,24 +890,32 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
           result.repaint = true
           buffer.do_reshape()
         of BUTTON_BUTTON: discard
+    of TAG_TEXTAREA:
+      buffer.set_focus clickable
+      let textarea = HTMLTextAreaElement(clickable)
+      result.readline = some(ReadLineResult(
+        value: textarea.value,
+        area: true
+      ))
     of TAG_INPUT:
       buffer.restore_focus
       let input = HTMLInputElement(clickable)
       case input.inputType
       of INPUT_SEARCH:
-        buffer.input = input
+        buffer.set_focus input
         result.readline = some(ReadLineResult(
           prompt: "SEARCH: ",
           value: input.value
         ))
       of INPUT_TEXT, INPUT_PASSWORD:
-        buffer.input = input
+        buffer.set_focus input
         result.readline = some(ReadLineResult(
           prompt: "TEXT: ",
           value: input.value,
           hide: input.inputType == INPUT_PASSWORD
         ))
       of INPUT_FILE:
+        buffer.set_focus input
         var path = if input.file.issome:
           input.file.get.path.serialize_unicode()
         else:
@@ -930,12 +951,12 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
       buffer.restore_focus
 
 proc readCanceled*(buffer: Buffer) {.proxy.} =
-  buffer.input = nil
+  buffer.restore_focus
 
 proc findAnchor*(buffer: Buffer, anchor: string): bool {.proxy.} =
   return buffer.document != nil and buffer.document.getElementById(anchor) != nil
 
-proc getLines*(buffer: Buffer, w: Slice[int]): seq[SimpleFlexibleLine] {.proxy.} =
+proc getLines*(buffer: Buffer, w: Slice[int]): tuple[numLines: int, lines: seq[SimpleFlexibleLine]] {.proxy.} =
   var w = w
   if w.b < 0 or w.b > buffer.lines.high:
     w.b = buffer.lines.high
@@ -944,7 +965,8 @@ proc getLines*(buffer: Buffer, w: Slice[int]): seq[SimpleFlexibleLine] {.proxy.}
     var line = SimpleFlexibleLine(str: buffer.lines[y].str)
     for f in buffer.lines[y].formats:
       line.formats.add(SimpleFormatCell(format: f.format, pos: f.pos))
-    result.add(line)
+    result.lines.add(line)
+  result.numLines = buffer.lines.len
 
 proc passFd*(buffer: Buffer) {.proxy.} =
   let fd = SocketStream(buffer.pistream).recvFileHandle()

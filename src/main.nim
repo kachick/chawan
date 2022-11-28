@@ -1,13 +1,4 @@
-import config/config
 import types/dispatcher
-import utils/twtstr
-
-# Inherited memory
-var conf = readConfig()
-width_table = makewidthtable(conf.ambiguous_double)
-# We don't actually want to inherit the entire config, so zero it out here.
-zeroMem(addr conf[], sizeof(conf[]))
-
 let disp = newDispatcher()
 
 import options
@@ -17,9 +8,14 @@ import terminal
 when defined(profile):
   import nimprof
 
+import config/config
 import display/client
+import ips/forkserver
+import utils/twtstr
 
-conf = readConfig()
+let conf = readConfig()
+widthtable = makewidthtable(conf.ambiguous_double)
+disp.forkserver.loadForkServerConfig(conf)
 let params = commandLineParams()
 
 proc version(long: static bool = false): string =
@@ -34,14 +30,14 @@ proc help(i: int) =
 
 Usage: cha [options] [URL(s) or file(s)...]
 Options:
+    --                          Interpret all following arguments as URLs
     -d, --dump                  Print page to stdout
     -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
     -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
     -T, --type <type>           Specify content mime type
-    -v, --version               Print version information
-    -h, --help                  Print this page
     -r, --run <script/file>     Run passed script or file
-    --                          Interpret all following arguments as URLs"""
+    -h, --help                  Print this usage message
+    -v, --version               Print version information"""
   if i == 0:
     echo s
   else:
@@ -71,7 +67,7 @@ while i < params.len:
       help(1)
   of "-":
     discard # emulate programs that accept - as stdin
-  of "-d", "--dump":
+  of "-d", "-dump", "--dump":
     dump = true
   of "-c", "--css":
     inc i
