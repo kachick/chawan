@@ -87,6 +87,8 @@ type
     needslines*: bool
     canceled: bool
     events*: seq[ContainerEvent]
+    startpos: Option[CursorPosition]
+    hasstart: bool
 
 proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, title = ""): Container =
   let attrs = getWindowAttributes(stdout)
@@ -253,8 +255,11 @@ proc triggerEvent(container: Container, t: ContainerEventType) =
 
 proc updateCursor(container: Container)
 
-proc setNumLines(container: Container, lines: int) =
+proc setNumLines(container: Container, lines: int, finish = false) =
   container.numLines = lines
+  if container.startpos.isSome and finish:
+    container.pos = container.startpos.get
+    container.startpos = none(CursorPosition)
   container.updateCursor()
 
 proc requestLines*(container: Container, w = container.lineWindow) =
@@ -263,7 +268,8 @@ proc requestLines*(container: Container, w = container.lineWindow) =
     container.lineshift = w.a
     for y in 0 ..< min(res.lines.len, w.len):
       container.lines[y] = res.lines[y]
-    container.setNumLines(res.numLines)
+    if res.numLines != container.numLines:
+      container.setNumLines(res.numLines, true)
     container.redraw = true
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
@@ -507,16 +513,17 @@ proc scrollLeft*(container: Container) {.jsfunc.} =
     if container.cursorx < container.fromx:
       container.setCursorX(container.currentLineWidth() - 1)
 
+proc alert(container: Container, msg: string) =
+  container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
+
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
     container.setCursorX(container.pos.setx)
-  if container.fromy > container.lastVisibleLine:
-    container.setFromY(0)
-    container.setCursorY(container.lastVisibleLine)
+  if container.fromy > container.maxfromy:
+    container.setFromY(container.maxfromy)
   if container.cursory >= container.numLines:
-    container.pos.cursory = max(0, container.numLines - 1)
-  if container.numLines == 0:
-    container.pos.cursory = 0
+    container.setCursorY(container.lastVisibleLine)
+    container.alert("Last line is #" & $container.numLines)
 
 proc pushCursorPos*(container: Container) =
   container.bpos.add(container.pos)
@@ -528,17 +535,23 @@ proc popCursorPos*(container: Container, nojump = false) =
     container.sendCursorPosition()
     container.needslines = true
 
+proc copyCursorPos*(container, c2: Container) =
+  container.startpos = some(c2.pos)
+  container.hasstart = true
+
 proc cursorNextLink*(container: Container) {.jsfunc.} =
   container.iface
     .findNextLink(container.cursorx, container.cursory)
     .then(proc(res: tuple[x, y: int]) =
-      container.setCursorXY(res.x, res.y))
+      if res.x > -1 and res.y != -1:
+        container.setCursorXY(res.x, res.y))
 
 proc cursorPrevLink*(container: Container) {.jsfunc.} =
   container.iface
     .findPrevLink(container.cursorx, container.cursory)
     .then(proc(res: tuple[x, y: int]) =
-      container.setCursorXY(res.x, res.y))
+      if res.x > -1 and res.y != -1:
+        container.setCursorXY(res.x, res.y))
 
 proc clearSearchHighlights*(container: Container) =
   for i in countdown(container.highlights.high, 0):
@@ -549,32 +562,31 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
   container.iface
     .findNextMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
-      container.setCursorXY(res.x, res.y)
-      if container.hlon:
-        container.clearSearchHighlights()
-        let ex = res.x + res.str.width() - 1
-        let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
-        container.highlights.add(hl)
-        container.hlon = false)
+      if res.success:
+        container.setCursorXY(res.x, res.y)
+        if container.hlon:
+          container.clearSearchHighlights()
+          let ex = res.x + res.str.width() - 1
+          let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
+          container.highlights.add(hl)
+          container.hlon = false)
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
   container.iface
     .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
-      container.setCursorXY(res.x, res.y)
-      if container.hlon:
-        container.clearSearchHighlights()
-        let ex = res.x + res.str.width() - 1
-        let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
-        container.highlights.add(hl)
-        container.hlon = false)
+      if res.success:
+        container.setCursorXY(res.x, res.y)
+        if container.hlon:
+          container.clearSearchHighlights()
+          let ex = res.x + res.str.width() - 1
+          let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
+          container.highlights.add(hl)
+          container.hlon = false)
 
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
   container.triggerEvent(STATUS)
-
-proc alert(container: Container, msg: string) =
-  container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
 
 proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
   if container.canceled:
@@ -598,9 +610,10 @@ proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
         container.onload(res))
     else:
       container.iface.render().then(proc(lines: int): auto =
-        container.setNumLines(lines)
+        container.setNumLines(lines, true)
         container.needslines = true
-        return container.iface.gotoAnchor()
+        if not container.hasstart and container.source.location.anchor != "":
+          return container.iface.gotoAnchor()
       ).then(proc(res: tuple[x, y: int]) =
         if res.x != -1 and res.y != -1:
           container.setCursorXY(res.x, res.y))

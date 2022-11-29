@@ -317,7 +317,7 @@ proc dupeBuffer*(pager: Pager, location = none(URL)) {.jsfunc.} =
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
-proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
+proc prevBuffer(pager: Pager): bool {.jsfunc.} =
   if pager.container == nil:
     return false
   if pager.container.parent == nil:
@@ -330,7 +330,7 @@ proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
     pager.setContainer(pager.container.parent)
   return true
 
-proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
+proc nextBuffer(pager: Pager): bool {.jsfunc.} =
   if pager.container == nil:
     return false
   if pager.container.children.len > 0:
@@ -385,7 +385,7 @@ proc deleteContainer(pager: Pager, container: Container) =
   pager.unreg.add((container.process, SocketStream(container.iface.stream)))
   pager.dispatcher.forkserver.removeChild(container.process)
 
-proc discardBuffer*(pager: Pager) {.jsfunc.} =
+proc discardBuffer(pager: Pager) {.jsfunc.} =
   if pager.container == nil or pager.container.parent == nil and
       pager.container.children.len == 0:
     pager.alert("Cannot discard last buffer!")
@@ -429,7 +429,9 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
       location: request.url
     )
     let container = pager.dispatcher.newBuffer(pager.config, source)
-    container.replace = replace
+    if replace != nil:
+      container.replace = replace
+      container.copyCursorPos(container.replace)
     pager.addContainer(container)
   else:
     pager.container.findAnchor(request.url.anchor)

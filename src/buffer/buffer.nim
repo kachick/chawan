@@ -407,7 +407,7 @@ proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
     inc y
 
 proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =
-  if buffer.document == nil: return
+  if buffer.document == nil: return (-1, -1)
   let anchor = buffer.document.getElementById(buffer.location.anchor)
   if anchor == nil: return
   for y in 0 ..< buffer.lines.len:
