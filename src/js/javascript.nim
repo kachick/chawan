@@ -673,6 +673,9 @@ proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
       return none(T)
     return some(op)
 
+proc getJSFunction*[T, U](ctx: JSContext, val: JSValue): Option[(proc(x: T): Option[U])] =
+  return fromJS[(proc(x: T): Option[U])](ctx, val)
+
 func toJSString(ctx: JSContext, str: string): JSValue =
   return JS_NewString(ctx, cstring(str))
 

@@ -10,6 +10,10 @@ highlight-color = "cyan"
 double-width-ambiguous = false
 minimum-contrast = 100
 
+[[siteconf]]
+url = '^ddg:'
+substitute_url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
+
 [page]
 q = 'quit()'
 h = 'pager.cursorLeft()' 
@@ -50,6 +54,7 @@ C-m = 'pager.click()'
 C-j = 'pager.click()'
 M-u = 'pager.dupeBuffer()'
 C-l = 'pager.load()'
+C-k = 'pager.load("ddg:")'
 U = 'pager.reload()'
 r = 'pager.redraw()'
 R = 'pager.reshape()'

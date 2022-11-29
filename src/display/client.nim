@@ -85,7 +85,7 @@ proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   let client = cast[Client](opaque)
-  if client.console.tty == nil: return
+  if client.console == nil or client.console.tty == nil: return
   try:
     let c = client.console.tty.readChar()
     if c == char(3): #C-c
@@ -410,11 +410,11 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.dispatcher = dispatcher
   result.attrs = getWindowAttributes(stdout)
   result.loader = dispatcher.forkserver.newFileLoader()
-  result.pager = newPager(config, result.attrs, dispatcher)
   result.jsrt = newJSRuntime()
   result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
   let ctx = result.jsrt.newJSContext()
   result.jsctx = ctx
+  result.pager = newPager(config, result.attrs, dispatcher, result.config.getSiteConfig(ctx))
   var global = ctx.getGlobalObject()
   ctx.registerType(Client, asglobal = true)
   global.setOpaque(result)

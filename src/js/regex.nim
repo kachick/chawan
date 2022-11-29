@@ -7,6 +7,7 @@ import bindings/libregexp
 import bindings/quickjs
 import js/javascript
 import strings/charset
+import utils/twtstr
 
 export
   LRE_FLAG_GLOBAL,
@@ -27,6 +28,11 @@ type
     success*: bool
     captures*: seq[tuple[s, e: int]] # start, end
 
+  RegexReplace* = object
+    regex: Regex
+    rule: string
+    global: bool
+
 var dummyRuntime = newJSRuntime()
 var dummyContext = dummyRuntime.newJSContextRaw()
 
@@ -37,6 +43,16 @@ proc `=destroy`(regex: var Regex) =
     else:
       dummyRuntime.js_free_rt(regex.bytecode)
     regex.bytecode = nil
+
+proc `=copy`(dest: var Regex, source: Regex) =
+  if dest.bytecode != source.bytecode:
+    `=destroy`(dest)
+    wasMoved(dest)
+    dest.bytecode = cast[ptr uint8](alloc(source.plen))
+    copyMem(dest.bytecode, source.bytecode, source.plen)
+    dest.clone = true
+    dest.buf = source.buf
+    dest.plen = source.plen
 
 proc compileRegex*(buf: string, flags: int): Option[Regex] =
   var regex: Regex
@@ -144,3 +160,32 @@ proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult 
           e8 += r.size()
         result.captures.add((s8, e8))
   dealloc(capture)
+
+#TODO do something with this?
+proc replace(str: string, replace: RegexReplace): string =
+  let res = replace.regex.exec(str)
+  if res.success:
+    var repl = newStringOfCap(replace.rule.len)
+    for i in 0 ..< replace.rule.high:
+      if replace.rule[i] == '\\':
+        var j = i + 1
+        var ds = ""
+        while j < replace.rule.len and replace.rule[j] in AsciiDigit:
+          ds &= replace.rule[j]
+          inc j
+        let n = parseInt32(ds)
+        if n < res.captures.len:
+          repl &= str[res.captures[i].s..res.captures[i].e]
+          continue
+      repl &= replace.rule[i]
+    if replace.rule.len > 0:
+      repl &= replace.rule[replace.rule.high]
+    var i = 0
+    for j in 0 ..< res.captures.len:
+      result &= str.substr(i, res.captures[j].s)
+      i = res.captures[j].e
+      if not replace.global: break
+    if i < str.len:
+      result &= str.substr(i, str.len)
+  else:
+    return str

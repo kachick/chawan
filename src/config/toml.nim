@@ -9,8 +9,14 @@ import utils/twtstr
 
 type
   ValueType* = enum
-    VALUE_STRING, VALUE_INTEGER, VALUE_FLOAT, VALUE_BOOLEAN, VALUE_DATE_TIME,
-    VALUE_TABLE, VALUE_ARRAY VALUE_TABLE_ARRAY
+    VALUE_STRING = "string"
+    VALUE_INTEGER = "integer"
+    VALUE_FLOAT = "float"
+    VALUE_BOOLEAN = "boolean"
+    VALUE_DATE_TIME = "datetime"
+    VALUE_TABLE = "table"
+    VALUE_ARRAY = "array"
+    VALUE_TABLE_ARRAY = "tablearray"
 
   SyntaxError = object of ValueError
 
@@ -22,6 +28,7 @@ type
     root: TomlTable
     node: TomlNode
     currkey: seq[string]
+    tarray: bool
 
   TomlValue* = ref object
     case vt*: ValueType
@@ -57,9 +64,17 @@ type
 func `[]`*(val: TomlValue, key: string): TomlValue =
   return val.t.map[key]
 
-iterator pairs*(val: TomlValue): (string, TomlValue) =
-  for k, v in val.t.map.pairs:
+iterator pairs*(val: TomlTable): (string, TomlValue) {.inline.} =
+  for k, v in val.map.pairs:
     yield (k, v)
+
+iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
+  for k, v in val.t:
+    yield (k, v)
+
+iterator items*(val: TomlValue): TomlTable {.inline.} =
+  for v in val.ta:
+    yield v
 
 func contains*(val: TomlValue, key: string): bool =
   return key in val.t.map
@@ -196,11 +211,14 @@ proc flushLine(state: var TomlParser) =
       while i < keys.len - 1:
         if keys[i] in table.map:
           let node = table.map[keys[i]]
-          if node.vt != VALUE_TABLE:
+          if node.vt == VALUE_TABLE:
+            table = node.t
+          elif node.vt == VALUE_TABLE_ARRAY:
+            assert state.tarray
+            table = node.ta[^1]
+          else:
             let s = keys.join(".")
             state.valueError(fmt"re-definition of node {s}")
-          else:
-            table = node.t
         else:
           let node = TomlTable()
           table.map[keys[i]] = TomlValue(vt: VALUE_TABLE, t: node)
@@ -268,9 +286,15 @@ proc consumeTable(state: var TomlParser): TomlTable =
     of ' ', '\t': discard
     of '\n':
       return result
+    of ']':
+      if state.tarray:
+        discard state.consume()
+        return result
+      else:
+        state.syntaxError("redundant ] character after key")
     of '[':
-      #TODO table array
-      state.syntaxError("arrays of tables are not supported yet")
+      state.tarray = true
+      discard state.consume()
     of '"', '\'':
       result.key = state.consumeKey()
     elif c.isBare():
@@ -287,7 +311,26 @@ proc consumeNoState(state: var TomlParser): bool =
     of ' ', '\t': discard
     of '[':
       discard state.consume()
+      state.tarray = false
       let table = state.consumeTable()
+      if state.tarray:
+        var node = state.root
+        for i in 0 ..< table.key.high:
+          if table.key[i] in node.map:
+            node = node.map[table.key[i]].t
+          else:
+            let t2 = TomlTable()
+            node.map[table.key[i]] = TomlValue(vt: VALUE_TABLE, t: t2)
+            node = t2
+        if table.key[^1] in node.map:
+          let last = node.map[table.key[^1]]
+          if last.vt != VALUE_TABLE_ARRAY:
+            let key = table.key.join('.')
+            state.valueError(fmt"re-definition of node {key} as table array (was {last.vt})")
+          last.ta.add(table)
+        else:
+          let last = TomlValue(vt: VALUE_TABLE_ARRAY, ta: @[table])
+          node.map[table.key[^1]] = last
       state.currkey = table.key
       state.node = table
       return false

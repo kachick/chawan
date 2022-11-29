@@ -115,22 +115,24 @@ proc space(edit: LineEdit, i: int) =
 
 proc generateOutput*(edit: LineEdit): FixedGrid =
   result = newFixedGrid(edit.promptw + edit.maxwidth)
-  let os = edit.news.substr(edit.shift, edit.shift + edit.displen)
   var x = 0
   for r in edit.prompt.runes():
     result[x].str &= $r
     x += r.lwidth()
   if edit.hide:
-    for r in os:
+    for r in edit.news:
       let w = r.lwidth()
       result[x].str = '*'.repeat(w)
       x += w
       if x >= result.width: break
   else:
-    for r in os:
+    for r in edit.news:
       result[x].str &= $r
       x += r.lwidth()
       if x >= result.width: break
+  var s = ""
+  for c in result:
+    s &= c.str
 
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.news.lwidth(edit.shift, edit.cursor)

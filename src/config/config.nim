@@ -5,6 +5,8 @@ import streams
 
 import buffer/cell
 import config/toml
+import js/javascript
+import js/regex
 import types/color
 import utils/twtstr
 
@@ -15,6 +17,14 @@ type
   FormatMode* = set[FormatFlags]
 
   ActionMap = Table[string, string]
+
+  StaticSiteConfig = object
+    url: string
+    subst: Option[string]
+
+  SiteConfig* = object
+    url*: Regex
+    subst*: (proc(s: string): Option[string])
 
   Config* = ref ConfigObj
   ConfigObj* = object
@@ -31,6 +41,7 @@ type
     mincontrast*: float
     editor*: string
     tmpdir*: string
+    siteconf: seq[StaticSiteConfig]
 
   BufferConfig* = object
     userstyle*: string
@@ -47,6 +58,17 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
 
 func getBufferConfig*(config: Config): BufferConfig =
   result.userstyle = config.stylesheet
+
+proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
+  for sc in config.siteconf:
+    if sc.subst.isSome:
+      let re = compileRegex(sc.url, 0)
+      let fun = jsctx.eval(sc.subst.get, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
+      let f = getJSFunction[string, string](jsctx, fun.val)
+      result.add(SiteConfig(
+        url: re.get,
+        subst: f.get
+      ))
 
 func getRealKey(key: string): string =
   var realk: string
@@ -190,6 +212,15 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         case k
         of "editor": config.editor = v.s
         of "tmpdir": config.tmpdir = v.s
+    of "siteconf":
+      for v in v:
+        var conf = StaticSiteConfig()
+        for k, v in v:
+          case k
+          of "url": conf.url = v.s
+          of "substitute_url": conf.subst = some(v.s)
+        if conf.url != "":
+          config.siteconf.add(conf)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))

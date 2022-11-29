@@ -53,6 +53,9 @@ type
     redraw*: bool
     term*: Terminal
     linehist: array[LineMode, LineHistory]
+    siteconf: seq[SiteConfig]
+
+func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 
 iterator containers*(pager: Pager): Container =
   if pager.container != nil:
@@ -115,8 +118,6 @@ proc searchPrev(pager: Pager) {.jsfunc.} =
     else:
       pager.container.cursorNextMatch(pager.regex.get, true)
 
-func attrs(pager: Pager): WindowAttributes = pager.term.attrs
-
 proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
     pager.linehist[mode] = newLineHistory()
@@ -143,14 +144,18 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.setLineEdit("?", ISEARCH_B)
 
-proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher): Pager =
+proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, siteconf: seq[SiteConfig]): Pager =
   let pager = Pager(
     dispatcher: dispatcher,
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
     statusgrid: newFixedGrid(attrs.width),
-    term: newTerminal(stdout, config, attrs)
+    term: newTerminal(stdout, config, attrs),
   )
+  for sc in siteconf:
+    # not sure why but normal copies don't seem to work here...
+    pager.siteconf.add(sc)
+    pager.siteconf[^1].subst = sc.subst
   return pager
 
 proc launchPager*(pager: Pager, tty: File) =
@@ -412,8 +417,21 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
   for container in pager.containers:
     container.windowChange(attrs)
 
+# ugh...
+proc substituteUrl(pager: Pager, request: Request) =
+  let surl = $request.url
+  for sc in pager.siteconf:
+    if sc.url.exec(surl).success:
+      let s = sc.subst(surl)
+      if s.isSome:
+        let nurl = parseURL(s.get)
+        if nurl.isSome:
+          request.url = nurl.get
+      break
+
 # Load request in a new buffer.
 proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(string), replace: Container = nil) =
+  pager.substituteUrl(request)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpmethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
