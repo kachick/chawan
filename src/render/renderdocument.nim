@@ -39,8 +39,15 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
 
   var cx = 0 # first x of new string (before padding)
   while cx < x and i < lines[y].str.len:
+    let pi = i
     fastRuneAt(lines[y].str, i, r)
-    cx += r.width()
+    let w = r.width()
+    # we must ensure x is max(cx, x), otherwise our assumption of cx <= x
+    # breaks down
+    if cx + w > x:
+      i = pi
+      break
+    cx += w
 
   let ostr = lines[y].str.substr(i)
   lines[y].str.setLen(i)
