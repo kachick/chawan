@@ -52,6 +52,7 @@ type
     display: FixedGrid
     redraw*: bool
     term*: Terminal
+    linehist: array[LineMode, LineHistory]
 
 iterator containers*(pager: Pager): Container =
   if pager.container != nil:
@@ -114,28 +115,33 @@ proc searchPrev(pager: Pager) {.jsfunc.} =
     else:
       pager.container.cursorNextMatch(pager.regex.get, true)
 
-proc setLineEdit(pager: Pager, edit: LineEdit, mode: LineMode) =
-  pager.lineedit = some(edit)
+func attrs(pager: Pager): WindowAttributes = pager.term.attrs
+
+proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
+  if pager.linehist[mode] == nil:
+    pager.linehist[mode] = newLineHistory()
+  return pager.linehist[mode]
+
+proc setLineEdit(pager: Pager, prompt: string, mode: LineMode, current = "", hide = false) =
+  pager.lineedit = some(readLine(prompt, pager.attrs.width, current = current, term = pager.term, hide = hide, hist = pager.getLineHist(mode)))
   pager.linemode = mode
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = none(LineEdit)
 
-func attrs(pager: Pager): WindowAttributes = pager.term.attrs
-
 proc searchForward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(readLine("/", pager.attrs.width, term = pager.term), SEARCH_F)
+  pager.setLineEdit("/", SEARCH_F)
 
 proc searchBackward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(readLine("?", pager.attrs.width, term = pager.term), SEARCH_B)
+  pager.setLineEdit("?", SEARCH_B)
 
 proc isearchForward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
-  pager.setLineEdit(readLine("/", pager.attrs.width, term = pager.term), ISEARCH_F)
+  pager.setLineEdit("/", ISEARCH_F)
 
 proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
-  pager.setLineEdit(readLine("?", pager.attrs.width, term = pager.term), ISEARCH_B)
+  pager.setLineEdit("?", ISEARCH_B)
 
 proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher): Pager =
   let pager = Pager(
@@ -479,7 +485,7 @@ proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(readLine("COMMAND: ", pager.attrs.width, term = pager.term), COMMAND)
+  pager.setLineEdit("COMMAND: ", COMMAND)
 
 proc commandMode(pager: Pager) {.jsfunc.} =
   pager.commandmode = true
@@ -527,7 +533,7 @@ proc updateReadLine*(pager: Pager) =
       of LOCATION: pager.loadURL(s)
       of USERNAME:
         pager.username = s
-        pager.setLineEdit(readLine("Password: ", pager.attrs.width, hide = true, term = pager.term), PASSWORD)
+        pager.setLineEdit("Password: ", PASSWORD, hide = true)
       of PASSWORD:
         let url = newURL(pager.container.source.location)
         url.username = pager.username
@@ -571,7 +577,7 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
     var url = s
     if url == "":
       url = pager.container.source.location.serialize()
-    pager.setLineEdit(readLine("URL: ", pager.attrs.width, current = url, term = pager.term), LOCATION)
+    pager.setLineEdit("URL: ", LOCATION, url)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
@@ -585,7 +591,7 @@ proc click(pager: Pager) {.jsfunc.} =
   pager.container.click()
 
 proc authorize*(pager: Pager) =
-  pager.setLineEdit(readLine("Username: ", pager.attrs.width, term = pager.term), USERNAME)
+  pager.setLineEdit("Username: ", USERNAME)
 
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
@@ -629,7 +635,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.redraw = true
   of READ_LINE:
     if container == pager.container:
-      pager.setLineEdit(readLine(event.prompt, pager.attrs.width, current = event.value, hide = event.password, term = pager.term), BUFFER)
+      pager.setLineEdit("(BUFFER) " & event.prompt, BUFFER, event.value, hide = event.password)
   of READ_AREA:
     if container == pager.container:
       var s = event.tvalue

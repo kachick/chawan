@@ -264,8 +264,12 @@ proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
   console.err.write('\n')
   console.err.flush()
 
+proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
+  importc: "setvbuf", header: "<stdio.h>", tags: [].}
+
 proc inputLoop(client: Client) =
   let selector = client.selector
+  discard c_setvbuf(client.console.tty, nil, IONBF, 0)
   selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
   let redrawtimer = client.selector.registerTimer(1000, false, nil)
