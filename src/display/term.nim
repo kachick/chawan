@@ -146,14 +146,14 @@ proc cursorBackward*(term: Terminal, i: int) =
       term.write("\b")
     else:
       when termcap_found:
-        term.write($tgoto(term.ccap LE, cint(i), 0))
+        term.write($tgoto(term.ccap LE, 0, cint(i)))
       else:
         term.outfile.cursorBackward(i)
 
 proc cursorForward*(term: Terminal, i: int) =
   if i > 0:
     when termcap_found:
-      term.write($tgoto(term.ccap RI, cint(i), 0))
+      term.write($tgoto(term.ccap RI, 0, cint(i)))
     else:
       term.outfile.cursorForward(i)
 
