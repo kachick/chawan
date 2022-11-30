@@ -888,7 +888,7 @@ proc remove*(node: Node) =
   node.root = nil
 
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
-  #TODO not surpress observers => queue tree mutation record
+  #TODO not suppress observers => queue tree mutation record
 
 proc adopt(document: Document, node: Node) =
   if node.parentNode != nil:
