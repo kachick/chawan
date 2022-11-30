@@ -100,6 +100,13 @@ while i < params.len:
       pages.add(param)
   inc i
 
+if pages.len == 0:
+  let http = getEnv("HTTP_HOME")
+  if http != "": pages.add(http)
+  else:
+    let www = getEnv("WWW_HOME")
+    if www != "": pages.add(www)
+
 if pages.len == 0 and not conf.headless:
   if stdin.isatty:
     help(1)
