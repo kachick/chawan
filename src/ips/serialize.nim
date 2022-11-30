@@ -26,13 +26,6 @@ proc slen*[T](o: T): int =
     result = slen(o.isSome)
     if o.isSome:
       result += slen(o.get)
-  elif T is HeaderList:
-    result += slen(o.table.len)
-    for k, v in o.table:
-      result += slen(k)
-      result += slen(v.len)
-      for s in v:
-        result += slen(s)
   elif T is MimePart:
     result += slen(o.isFile)
     result += slen(o.name)
@@ -54,22 +47,6 @@ proc slen*[T](o: T): int =
       result += slen(o.rgbcolor)
     else:
       result += slen(o.color)
-  elif T is Format:
-    result += slen(o.fgcolor)
-    result += slen(o.bgcolor)
-    result += slen(o.flags)
-  elif T is SimpleFormatCell:
-    result += slen(o.format)
-    result += slen(o.pos)
-  elif T is SimpleFlexibleLine:
-    result += slen(o.str)
-    result += slen(o.formats)
-  elif T is FormatCell:
-    result += slen(o.format)
-    result += slen(o.pos)
-  elif T is FlexibleLine:
-    result += slen(o.str)
-    result += slen(o.formats)
   elif T is Regex:
     result += slen(o.plen)
     result += o.plen
@@ -85,6 +62,11 @@ proc slen*[T](o: T): int =
   elif T is tuple:
     for f in o.fields:
       result += slen(f)
+  elif T is object:
+    for f in o.fields:
+      result += slen(f)
+  elif T is ref object:
+    result += slen(o[])
   else:
     result += sizeof(o)
 
@@ -108,17 +90,23 @@ proc swrite*(stream: Stream, tup: tuple) =
   for f in tup.fields:
     stream.swrite(f)
 
+proc swrite*[T](stream: Stream, s: seq[T]) =
+  stream.swrite(s.len)
+  for m in s:
+    stream.swrite(m)
+
+proc swrite*[U, V](stream: Stream, t: Table[U, V]) =
+  stream.swrite(t.len)
+  for k, v in t:
+    stream.swrite(k)
+    stream.swrite(v)
+
 proc swrite*(stream: Stream, obj: object) =
   for f in obj.fields:
     stream.swrite(f)
 
-proc swrite*(stream: Stream, headers: HeaderList) =
-  stream.swrite(headers.table.len)
-  for k, v in headers.table:
-    stream.swrite(k)
-    stream.swrite(v.len)
-    for s in v:
-      stream.swrite(s)
+proc swrite*(stream: Stream, obj: ref object) =
+  stream.swrite(obj[])
 
 proc swrite*(stream: Stream, part: MimePart) =
   stream.swrite(part.isFile)
@@ -130,22 +118,13 @@ proc swrite*(stream: Stream, part: MimePart) =
     stream.swrite(part.fileSize)
     stream.swrite(part.isStream)
 
-proc swrite*[T](stream: Stream, s: seq[T]) =
-  stream.swrite(s.len)
-  for m in s:
-    stream.swrite(m)
-
 proc swrite*[T](stream: Stream, o: Option[T]) =
   stream.swrite(o.issome)
   if o.issome:
     stream.swrite(o.get)
 
 proc swrite*(stream: Stream, request: Request) =
-  stream.swrite(request.httpmethod)
-  stream.swrite(request.url)
-  stream.swrite(request.headers)
-  stream.swrite(request.body)
-  stream.swrite(request.multipart)
+  stream.swrite(request[])
 
 proc swrite*(stream: Stream, color: CellColor) =
   stream.swrite(color.rgb)
@@ -153,14 +132,6 @@ proc swrite*(stream: Stream, color: CellColor) =
     stream.swrite(color.rgbcolor)
   else:
     stream.swrite(color.color)
-
-proc swrite*(stream: Stream, cell: FormatCell) =
-  stream.swrite(cell.format)
-  stream.swrite(cell.pos)
-
-proc swrite*(stream: Stream, line: FlexibleLine) =
-  stream.swrite(line.str)
-  stream.swrite(line.formats)
 
 proc swrite*(stream: Stream, regex: Regex) =
   stream.swrite(regex.plen)
@@ -193,48 +164,6 @@ proc sread*(stream: Stream, b: var bool) =
     assert n == 0u8
     b = false
 
-proc sread*(stream: Stream, url: var Url) =
-  var s: string
-  stream.sread(s)
-  url = newURL(s)
-
-proc sread*(stream: Stream, obj: var object) =
-  for f in obj.fields:
-    stream.sread(f)
-
-proc sread*(stream: Stream, tup: var tuple) =
-  for f in tup.fields:
-    stream.sread(f)
-
-proc sread*(stream: Stream, headers: var HeaderList) =
-  new(headers)
-  var len: int
-  stream.sread(len)
-  for i in 0..<len:
-    var k: string
-    stream.sread(k)
-    var n: int
-    stream.sread(n)
-    for j in 0..<n:
-      var v: string
-      stream.sread(v)
-      headers.add(k, v)
-
-proc sread*(stream: Stream, part: var MimePart) =
-  var isFile: bool
-  stream.sread(isFile)
-  if isFile:
-    part = MimePart(isFile: true)
-  else:
-    part = MimePart(isFile: false)
-  stream.sread(part.name)
-  stream.sread(part.content)
-  if part.isFile:
-    stream.sread(part.filename)
-    stream.sread(part.contentType)
-    stream.sread(part.fileSize)
-    stream.sread(part.isStream)
-
 proc sread*[T](stream: Stream, s: var seq[T]) =
   var len: int
   stream.sread(len)
@@ -252,9 +181,47 @@ proc sread*[T](stream: Stream, o: var Option[T]) =
   else:
     o = none(T)
 
-proc read*(stream: Stream, req: var Request) =
-  new(req)
-  stream.sread(req[])
+proc sread*[U, V](stream: Stream, t: var Table[U, V]) =
+  var len: int
+  stream.sread(len)
+  for i in 0..<len:
+    var k: U
+    stream.sread(k)
+    var v: V
+    stream.sread(v)
+    t[k] = v
+
+proc sread*(stream: Stream, obj: var object) =
+  for f in obj.fields:
+    stream.sread(f)
+
+proc sread*(stream: Stream, tup: var tuple) =
+  for f in tup.fields:
+    stream.sread(f)
+
+proc read*(stream: Stream, obj: var ref object) =
+  new(obj)
+  stream.sread(obj[])
+
+proc sread*(stream: Stream, url: var Url) =
+  var s: string
+  stream.sread(s)
+  url = newURL(s)
+
+proc sread*(stream: Stream, part: var MimePart) =
+  var isFile: bool
+  stream.sread(isFile)
+  if isFile:
+    part = MimePart(isFile: true)
+  else:
+    part = MimePart(isFile: false)
+  stream.sread(part.name)
+  stream.sread(part.content)
+  if part.isFile:
+    stream.sread(part.filename)
+    stream.sread(part.contentType)
+    stream.sread(part.fileSize)
+    stream.sread(part.isStream)
 
 proc sread*(stream: Stream, color: var CellColor) =
   var rgb: bool
