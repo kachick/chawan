@@ -104,6 +104,14 @@ proc swrite*(stream: Stream, b: bool) =
 proc swrite*(stream: Stream, url: Url) =
   stream.swrite(url.serialize())
 
+proc swrite*(stream: Stream, tup: tuple) =
+  for f in tup.fields:
+    stream.swrite(f)
+
+proc swrite*(stream: Stream, obj: object) =
+  for f in obj.fields:
+    stream.swrite(f)
+
 proc swrite*(stream: Stream, headers: HeaderList) =
   stream.swrite(headers.table.len)
   for k, v in headers.table:
@@ -146,19 +154,6 @@ proc swrite*(stream: Stream, color: CellColor) =
   else:
     stream.swrite(color.color)
 
-proc swrite*(stream: Stream, format: Format) =
-  stream.swrite(format.fgcolor)
-  stream.swrite(format.bgcolor)
-  stream.swrite(format.flags)
-
-proc swrite*(stream: Stream, cell: SimpleFormatCell) =
-  stream.swrite(cell.format)
-  stream.swrite(cell.pos)
-
-proc swrite*(stream: Stream, line: SimpleFlexibleLine) =
-  stream.swrite(line.str)
-  stream.swrite(line.formats)
-
 proc swrite*(stream: Stream, cell: FormatCell) =
   stream.swrite(cell.format)
   stream.swrite(cell.pos)
@@ -181,22 +176,12 @@ proc swrite*(stream: Stream, source: BufferSource) =
   stream.swrite(source.location)
   stream.swrite(source.contenttype)
 
-proc swrite*(stream: Stream, tup: tuple) =
-  for f in tup.fields:
-    stream.swrite(f)
-
-proc swrite*(stream: Stream, obj: object) =
-  for f in obj.fields:
-    stream.swrite(f)
-
 template sread*[T](stream: Stream, o: T) =
   stream.read(o)
 
 proc sread*(stream: Stream, s: var string) =
   var len: int
   stream.sread(len)
-  #if maxlen != -1:
-  #  len = min(maxlen, len)
   stream.readStr(len, s)
 
 proc sread*(stream: Stream, b: var bool) =
@@ -212,6 +197,14 @@ proc sread*(stream: Stream, url: var Url) =
   var s: string
   stream.sread(s)
   url = newURL(s)
+
+proc sread*(stream: Stream, obj: var object) =
+  for f in obj.fields:
+    stream.sread(f)
+
+proc sread*(stream: Stream, tup: var tuple) =
+  for f in tup.fields:
+    stream.sread(f)
 
 proc sread*(stream: Stream, headers: var HeaderList) =
   new(headers)
@@ -259,13 +252,6 @@ proc sread*[T](stream: Stream, o: var Option[T]) =
   else:
     o = none(T)
 
-proc sread*(stream: Stream, req: var RequestObj) =
-  stream.sread(req.httpmethod)
-  stream.sread(req.url)
-  stream.sread(req.headers)
-  stream.sread(req.body)
-  stream.sread(req.multipart)
-
 proc read*(stream: Stream, req: var Request) =
   new(req)
   stream.sread(req[])
@@ -279,19 +265,6 @@ proc sread*(stream: Stream, color: var CellColor) =
   else:
     color = CellColor(rgb: false)
     stream.sread(color.color)
-
-proc sread*(stream: Stream, format: var Format) =
-  stream.sread(format.fgcolor)
-  stream.sread(format.bgcolor)
-  stream.sread(format.flags)
-
-proc sread*(stream: Stream, cell: var SimpleFormatCell) =
-  stream.sread(cell.format)
-  stream.sread(cell.pos)
-
-proc sread*(stream: Stream, line: var SimpleFlexibleLine) =
-  stream.sread(line.str)
-  stream.sread(line.formats)
 
 proc sread*(stream: Stream, regex: var Regex) =
   assert regex.bytecode == nil
@@ -318,11 +291,3 @@ proc sread*(stream: Stream, source: var BufferSource) =
     stream.sread(source.fd)
   stream.sread(source.location)
   stream.sread(source.contenttype)
-
-proc sread*(stream: Stream, obj: var object) =
-  for f in obj.fields:
-    stream.sread(f)
-
-proc sread*(stream: Stream, tup: var tuple) =
-  for f in tup.fields:
-    stream.sread(f)
