@@ -263,7 +263,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
   for line in ctx.lines:
     let x = x + line.offset.x
     let y0 = y + line.offset.y
-    let y = y0 - erry * i + erry * ctx.lines.len div 2
+    let y = y0 - erry * i
 
     let r = y div window.ppl
     while grid.len <= r:
