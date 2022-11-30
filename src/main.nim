@@ -99,7 +99,7 @@ while i < params.len:
       pages.add(param)
   inc i
 
-if pages.len == 0:
+if pages.len == 0 and not stdin.isatty():
   let http = getEnv("HTTP_HOME")
   if http != "": pages.add(http)
   else:
