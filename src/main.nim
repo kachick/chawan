@@ -15,7 +15,6 @@ import utils/twtstr
 
 let conf = readConfig()
 widthtable = makewidthtable(conf.ambiguous_double)
-disp.forkserver.loadForkServerConfig(conf)
 let params = commandLineParams()
 
 proc version(long: static bool = false): string =
@@ -113,5 +112,6 @@ if pages.len == 0 and not conf.headless:
 
 conf.nmap = constructActionTable(conf.nmap)
 conf.lemap = constructActionTable(conf.lemap)
+disp.forkserver.loadForkServerConfig(conf)
 
 newClient(conf, disp).launchClient(pages, ctype, dump)
