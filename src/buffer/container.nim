@@ -50,6 +50,8 @@ type
       location*: URL
     of ALERT:
       msg*: string
+    of UPDATE:
+      force*: bool
     else: discard
 
   Highlight* = ref object
@@ -275,7 +277,7 @@ proc requestLines*(container: Container, w = container.lineWindow) =
       container.triggerEvent(UPDATE))
 
 proc redraw*(container: Container) {.jsfunc.} =
-  container.triggerEvent(UPDATE)
+  container.triggerEvent(ContainerEvent(t: UPDATE, force: true))
 
 proc sendCursorPosition*(container: Container) =
   container.iface.updateHover(container.cursorx, container.cursory).then(proc(res: UpdateHoverResult) =

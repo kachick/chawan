@@ -346,6 +346,9 @@ proc outputGrid*(term: Terminal) =
     term.outfile.write(term.generateSwapOutput(term.canvas, term.pcanvas))
   term.pcanvas = term.canvas
 
+proc clearCanvas*(term: Terminal) =
+  term.cleared = false
+
 when defined(posix):
   import posix
   import termios

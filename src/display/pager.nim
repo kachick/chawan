@@ -284,6 +284,7 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
 
 proc redraw(pager: Pager) {.jsfunc.} =
   pager.redraw = true
+  pager.term.clearCanvas()
 
 proc draw*(pager: Pager) =
   pager.term.hideCursor()
@@ -648,6 +649,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of UPDATE:
     if container == pager.container:
       pager.redraw = true
+      if event.force: pager.term.clearCanvas()
   of READ_LINE:
     if container == pager.container:
       pager.setLineEdit("(BUFFER) " & event.prompt, BUFFER, event.value, hide = event.password)
