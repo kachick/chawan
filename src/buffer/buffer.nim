@@ -794,15 +794,17 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
       assert formmethod == FORM_METHOD_POST
       getActionUrl
 
-template set_focus(buffer: Buffer, e: Element) =
+proc setFocus(buffer: Buffer, e: Element): bool =
   if buffer.document.focus != e:
     buffer.document.focus = e
     buffer.do_reshape()
+    return true
 
-template restore_focus(buffer: Buffer) =
+proc restoreFocus(buffer: Buffer): bool =
   if buffer.document.focus != nil:
     buffer.document.focus = nil
     buffer.do_reshape()
+    return true
 
 type ReadSuccessResult* = object
   open*: Option[Request]
@@ -841,7 +843,9 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
       buffer.do_reshape()
       result.repaint = true
     else: discard
-    buffer.restore_focus
+    let r = buffer.restoreFocus()
+    if not result.repaint:
+      result.repaint = r
 
 type ReadLineResult* = object
   prompt*: string
@@ -859,10 +863,9 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if clickable != nil:
     case clickable.tagType
     of TAG_SELECT:
-      buffer.set_focus clickable
-      result.repaint = true
+      result.repaint = buffer.setFocus(clickable)
     of TAG_A:
-      buffer.restore_focus
+      result.repaint = buffer.restoreFocus()
       let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseUrl.some)
       if url.issome:
         result.open = some(newRequest(url.get, HTTP_GET))
@@ -876,10 +879,10 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
             for option in select.options:
               option.selected = false
           option.selected = true
-          buffer.restore_focus
+          result.repaint = buffer.restoreFocus()
         else:
           # focus on select
-          buffer.set_focus select
+          result.repaint = buffer.setFocus(select)
     of TAG_BUTTON:
       let button = HTMLButtonElement(clickable)
       if button.form != nil:
@@ -891,31 +894,31 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
           buffer.do_reshape()
         of BUTTON_BUTTON: discard
     of TAG_TEXTAREA:
-      buffer.set_focus clickable
+      result.repaint = buffer.setFocus(clickable)
       let textarea = HTMLTextAreaElement(clickable)
       result.readline = some(ReadLineResult(
         value: textarea.value,
         area: true
       ))
     of TAG_INPUT:
-      buffer.restore_focus
+      result.repaint = buffer.restoreFocus()
       let input = HTMLInputElement(clickable)
       case input.inputType
       of INPUT_SEARCH:
-        buffer.set_focus input
+        result.repaint = buffer.setFocus(input)
         result.readline = some(ReadLineResult(
           prompt: "SEARCH: ",
           value: input.value
         ))
       of INPUT_TEXT, INPUT_PASSWORD:
-        buffer.set_focus input
+        result.repaint = buffer.setFocus(input)
         result.readline = some(ReadLineResult(
           prompt: "TEXT: ",
           value: input.value,
           hide: input.inputType == INPUT_PASSWORD
         ))
       of INPUT_FILE:
-        buffer.set_focus input
+        result.repaint = buffer.setFocus(input)
         var path = if input.file.issome:
           input.file.get.path.serialize_unicode()
         else:
@@ -946,12 +949,12 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
         if input.form != nil:
           result.open = submitForm(input.form, input)
       else:
-        buffer.restore_focus
+        result.repaint = buffer.restoreFocus()
     else:
-      buffer.restore_focus
+      result.repaint = buffer.restoreFocus()
 
-proc readCanceled*(buffer: Buffer) {.proxy.} =
-  buffer.restore_focus
+proc readCanceled*(buffer: Buffer): bool {.proxy.} =
+  return buffer.restoreFocus()
 
 proc findAnchor*(buffer: Buffer, anchor: string): bool {.proxy.} =
   return buffer.document != nil and buffer.document.getElementById(anchor) != nil

@@ -270,13 +270,12 @@ proc requestLines*(container: Container, w = container.lineWindow) =
       container.lines[y] = res.lines[y]
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
-    container.redraw = true
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
       container.triggerEvent(UPDATE))
 
 proc redraw*(container: Container) {.jsfunc.} =
-  container.redraw = true
+  container.triggerEvent(UPDATE)
 
 proc sendCursorPosition*(container: Container) =
   container.iface.updateHover(container.cursorx, container.cursory).then(proc(res: UpdateHoverResult) =
@@ -290,7 +289,7 @@ proc setFromY*(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.needslines = true
-    container.redraw = true
+    container.triggerEvent(UPDATE)
 
 proc setFromX*(container: Container, x: int) {.jsfunc.} =
   if container.pos.fromx != x:
@@ -298,7 +297,7 @@ proc setFromX*(container: Container, x: int) {.jsfunc.} =
     if container.pos.fromx > container.cursorx:
       container.pos.cursorx = min(container.pos.fromx, container.currentLineWidth())
       container.sendCursorPosition()
-    container.redraw = true
+    container.triggerEvent(UPDATE)
 
 proc setFromXY*(container: Container, x, y: int) {.jsfunc.} =
   container.setFromY(y)
@@ -530,8 +529,8 @@ proc pushCursorPos*(container: Container) =
 
 proc popCursorPos*(container: Container, nojump = false) =
   container.pos = container.bpos.pop()
-  container.updateCursor()
   if not nojump:
+    container.updateCursor()
     container.sendCursorPosition()
     container.needslines = true
 
@@ -569,7 +568,13 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
           let ex = res.x + res.str.width() - 1
           let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
           container.highlights.add(hl)
-          container.hlon = false)
+          container.triggerEvent(UPDATE)
+          container.hlon = false
+      elif container.hlon:
+        container.clearSearchHighlights()
+        container.triggerEvent(UPDATE)
+        container.needslines = true
+        container.hlon = false)
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
   container.iface
@@ -654,7 +659,9 @@ proc findAnchor*(container: Container, anchor: string) =
       container.triggerEvent(NO_ANCHOR))
 
 proc readCanceled*(container: Container) =
-  container.iface.readCanceled()
+  container.iface.readCanceled().then(proc(repaint: bool) =
+    if repaint:
+      container.needslines = true)
 
 proc readSuccess*(container: Container, s: string) =
   container.iface.readSuccess(s).then(proc(res: ReadSuccessResult) =

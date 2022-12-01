@@ -272,7 +272,6 @@ proc inputLoop(client: Client) =
   discard c_setvbuf(client.console.tty, nil, IONBF, 0)
   selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
-  let redrawtimer = client.selector.registerTimer(1000, false, nil)
   while true:
     let events = client.selector.select(-1)
     for event in events:
@@ -294,10 +293,7 @@ proc inputLoop(client: Client) =
           client.pager.windowChange(client.attrs)
         else: assert false
       if Event.Timer in event.events:
-        if event.fd == redrawtimer:
-          if client.pager.container != nil:
-            client.pager.container.requestLines()
-        elif event.fd in client.interval_fdis:
+        if event.fd in client.interval_fdis:
           client.intervals[client.interval_fdis[event.fd]].handler()
         elif event.fd in client.timeout_fdis:
           let id = client.timeout_fdis[event.fd]

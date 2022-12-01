@@ -287,7 +287,7 @@ proc redraw(pager: Pager) {.jsfunc.} =
 
 proc draw*(pager: Pager) =
   pager.term.hideCursor()
-  if pager.redraw or pager.container != nil and pager.container.redraw:
+  if pager.redraw:
     pager.refreshDisplay()
     pager.term.writeGrid(pager.display)
   if pager.lineedit.isSome:
@@ -302,7 +302,6 @@ proc draw*(pager: Pager) =
   pager.term.showCursor()
   pager.term.flush()
   pager.redraw = false
-  pager.container.redraw = false
 
 proc registerContainer*(pager: Pager, container: Container) =
   pager.procmap[container.process] = container
@@ -528,11 +527,7 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       else:
         pager.container.cursorPrevMatch(pager.iregex.get, true)
       pager.container.hlon = true
-    if not pager.container.redraw:
-      #TODO this is dumb
-      pager.container.requestLines()
     pager.container.pushCursorPos()
-    pager.redraw = true
   of FINISH:
     if pager.iregex.isSome:
       pager.regex = pager.iregex
