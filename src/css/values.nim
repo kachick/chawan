@@ -353,7 +353,7 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
     n *= 10
     n += float64(decValue(s[i]))
     inc i
-  if i >= s.len: return some(CSSLength(num: n, unit: UNIT_PX))
+    if i >= s.len: return some(CSSLength(num: n, unit: UNIT_PX))
   if s[i] == '.':
     inc i
     if i >= s.len: return some(CSSLength(num: n, unit: UNIT_PX))
