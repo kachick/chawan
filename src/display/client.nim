@@ -307,6 +307,28 @@ proc inputLoop(client: Client) =
     client.pager.draw()
     client.acceptBuffers()
 
+proc headlessLoop(client: Client) =
+  while client.timeouts.len + client.intervals.len != 0:
+    let events = client.selector.select(-1)
+    for event in events:
+      if Read in event.events:
+        let container = client.fdmap[event.fd]
+        if not client.pager.handleEvent(container):
+          client.quit(1)
+      if Error in event.events:
+        #TODO handle errors
+        client.alert("Error in selected fds, check console")
+        client.console.log($event)
+      if Event.Timer in event.events:
+        if event.fd in client.interval_fdis:
+          client.intervals[client.interval_fdis[event.fd]].handler()
+        elif event.fd in client.timeout_fdis:
+          let id = client.timeout_fdis[event.fd]
+          let timeout = client.timeouts[id]
+          timeout.handler()
+          client.clearTimeout(id)
+    client.acceptBuffers()
+
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
   try:
@@ -380,6 +402,8 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
     client.inputLoop()
   else:
     client.dumpBuffers()
+  if client.config.headless:
+    client.headlessLoop()
   client.quit()
 
 proc nimGCStats(client: Client): string {.jsfunc.} =
