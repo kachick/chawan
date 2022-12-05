@@ -19,6 +19,7 @@ when defined(posix):
   import posix
 
 import bindings/curl
+import io/about
 import io/http
 import io/request
 import ips/serialize
@@ -75,6 +76,8 @@ proc loadResource(request: Request, ostream: Stream) =
     loadFile(request.url, ostream)
   of "http", "https":
     loadHttp(request, ostream)
+  of "about":
+    loadAbout(request, ostream)
   else:
     ostream.swrite(-1) # error
     ostream.flush()

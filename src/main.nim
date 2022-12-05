@@ -34,6 +34,8 @@ Options:
     -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
     -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
     -T, --type <type>           Specify content mime type
+    -M, --monochrome            Alias of -o color-mode='monochrome'
+    -V, --visual                Visual startup mode
     -r, --run <script/file>     Run passed script or file
     -h, --help                  Print this usage message
     -v, --version               Print version information"""
@@ -47,6 +49,7 @@ var i = 0
 var ctype = none(string)
 var pages: seq[string]
 var dump = false
+var visual = false
 var escape_all = false
 while i < params.len:
   let param = params[i]
@@ -58,6 +61,10 @@ while i < params.len:
   of "-v", "--version":
     echo version(true)
     quit(0)
+  of "-M", "--monochrome":
+    conf.colormode = some(MONOCHROME)
+  of "-V", "--visual":
+    visual = true
   of "-T":
     inc i
     if i < params.len:
@@ -100,11 +107,14 @@ while i < params.len:
   inc i
 
 if pages.len == 0 and stdin.isatty():
-  let http = getEnv("HTTP_HOME")
-  if http != "": pages.add(http)
+  if visual:
+    pages.add("about:cha")
   else:
-    let www = getEnv("WWW_HOME")
-    if www != "": pages.add(www)
+    let http = getEnv("HTTP_HOME")
+    if http != "": pages.add(http)
+    else:
+      let www = getEnv("WWW_HOME")
+      if www != "": pages.add(www)
 
 if pages.len == 0 and not conf.headless:
   if stdin.isatty:
