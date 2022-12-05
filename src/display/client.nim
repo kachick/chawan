@@ -278,6 +278,9 @@ proc inputLoop(client: Client) =
       if Read in event.events:
         if event.fd == client.console.tty.getFileHandle():
           client.input()
+          let container = client.pager.container
+          if container != nil and not client.pager.handleEvents(container):
+            client.quit(1)
           stdout.flushFile()
         else:
           let container = client.fdmap[event.fd]
