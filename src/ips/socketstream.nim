@@ -44,7 +44,8 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   hdr.msg_iovlen = 1
   hdr.msg_control = cmsgbuf
   # ...this is stupid.
-  cast[ptr uint16](hdr.msg_controllen)[] = cast[ptr uint16](CMSG_LEN(csize_t(sizeof(FileHandle))))[]
+  var xl = CMSG_LEN(csize_t(sizeof(FileHandle)))
+  cast[ptr uint16](addr hdr.msg_controllen)[] = cast[ptr uint16](addr xl)[]
   let cmsg = CMSG_FIRSTHDR(addr hdr)
   cmsg.cmsg_len = CMSG_LEN(csize_t(sizeof(FileHandle)))
   cmsg.cmsg_level = SOL_SOCKET
