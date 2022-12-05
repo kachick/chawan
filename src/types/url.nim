@@ -702,7 +702,6 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
       #TODO encoding
       if not has or (not override and c == '#'):
         let querypercentencodeset = if url.is_special: SpecialQueryPercentEncodeSet else: QueryPercentEncodeSet
-        if url.query.isNone: url.query = some("")
         url.query.get.percentEncode(buffer, querypercentencodeset)
         buffer = ""
         if has and c == '#':
@@ -716,7 +715,6 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
       if has:
         #TODO If c is not a URL code point and not U+0025 (%), validation error.
         #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
-        if url.fragment.isNone: url.fragment = some("")
         url.fragment.get.percentEncode(c, FragmentPercentEncodeSet)
     inc pointer
   return url.some
@@ -1074,6 +1072,7 @@ proc hash*(url: URL, s: string) {.jsfset.} =
     url.fragment = none(string)
     return
   let s = if s[0] == '#': s.substr(1) else: s
+  url.fragment = some("")
   discard basicParseUrl(s, url = url, stateOverride = some(FRAGMENT_STATE))
 
 proc addUrlModule*(ctx: JSContext) =
