@@ -46,9 +46,6 @@ func onlyWhitespace*(s: string): bool =
       return false
   return true
 
-func isControlChar*(c: char): bool =
-  return c in Controls
-
 func isControlChar*(r: Rune): bool =
   case r
   of Rune(0x00)..Rune(0x1F): return true
@@ -82,25 +79,6 @@ const controlLetterMap = genControlLetterMap()
 func getControlLetter*(c: char): char =
   return controlLetterMap[int(c)]
 
-func findChar*(str: string, c: char, start: int = 0): int =
-  var i = start
-  while i < str.len:
-    if str[i] == c:
-      return i
-    inc i
-  return -1
-
-func findChar*(str: string, c: Rune, start: int = 0): int =
-  var i = start
-  var n = i
-  while i < str.runeLen():
-    var r: Rune
-    fastRuneAt(str, n, r)
-    if r == c:
-      return i
-    i = n
-  return -1
-
 const lowerChars = (func(): array[char, char] =
   for i in 0..255:
     if char(i) in 'A'..'Z':
@@ -111,11 +89,6 @@ const lowerChars = (func(): array[char, char] =
 
 func tolower*(c: char): char =
   return lowerChars[c]
-
-func toAsciiLower*(str: string): string =
-  result = newString(str.len)
-  for i in 0..str.high:
-    result[i] = str[i].tolower()
 
 func toHeaderCase*(str: string): string =
   result = str
@@ -828,7 +801,7 @@ var width_table*: array[0..0x10FFFF, byte]
 
 func makewidthtable*(cjk: bool): array[0..0x10FFFF, byte] {.noInit.} =
   for r in low(char)..high(char):
-    if r.isControlChar():
+    if r in Controls:
       result[int(r)] = 0
     else:
       result[int(r)] = 1

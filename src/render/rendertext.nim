@@ -35,7 +35,7 @@ proc renderPlainText*(text: string): FlexibleGrid =
     of '\e':
       i = format.parseAnsiCode(text, i)
       af = true
-    elif text[i].isControlChar():
+    elif text[i] in Controls:
       add_format
       result[^1].str &= '^' & text[i].getControlLetter()
     else:
@@ -92,7 +92,7 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
         renderer.spaces = 0
     of '\e':
       renderer.ansiparser.reset()
-    elif c.isControlChar():
+    elif c in Controls:
       add_format
       grid[^1].str &= '^' & c.getControlLetter()
     else:
