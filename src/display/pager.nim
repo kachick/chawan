@@ -103,6 +103,8 @@ proc scrollUp(pager: Pager) {.jsfunc.} = pager.container.scrollUp()
 proc scrollLeft(pager: Pager) {.jsfunc.} = pager.container.scrollLeft()
 proc scrollRight(pager: Pager) {.jsfunc.} = pager.container.scrollRight()
 proc reshape(pager: Pager) {.jsfunc.} = pager.container.reshape()
+proc peek(pager: Pager) {.jsfunc.} = pager.container.peek()
+proc peekCursor(pager: Pager) {.jsfunc.} = pager.container.peekCursor()
 
 proc searchNext(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
@@ -238,7 +240,11 @@ proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
     if i >= pager.statusgrid.len:
       pager.statusgrid[^1].str = "$"
       break
-    pager.statusgrid[i].str &= r
+    if r.isControlChar() or r == Rune('\n'):
+      pager.statusgrid[i].str &= "^"
+      pager.statusgrid[i].str &= getControlLetter(char(r))
+    else:
+      pager.statusgrid[i].str &= r
     pager.statusgrid[i].format = format
 
 proc refreshStatusMsg*(pager: Pager) =

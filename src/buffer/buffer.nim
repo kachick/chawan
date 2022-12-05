@@ -81,6 +81,7 @@ type
     config: BufferConfig
     userstyle: CSSStylesheet
     timeouts: Table[int, (proc())]
+    hovertext: string
 
   # async, but worse
   EmptyPromise = ref object of RootObj
@@ -227,6 +228,20 @@ macro proxy(fun: typed) =
   quote do:
     proxy0(`fun`)
     proxy1(`fun`)
+
+func getTitle(node: StyledNode): string =
+  if node == nil:
+    return ""
+  if node.t == STYLED_ELEMENT and node.node != nil:
+    let element = Element(node.node)
+    if element.attrb("title"):
+      return element.attr("title")
+  if node.node != nil:
+    var node = node.node
+    for element in node.ancestors:
+      if element.attrb("title"):
+        return element.attr("title")
+  #TODO pseudo-elements
 
 func getLink(node: StyledNode): HTMLAnchorElement =
   if node == nil:
@@ -447,6 +462,11 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
   if i >= 0:
     thisnode = buffer.lines[cursory].formats[i].node
   let prevnode = buffer.prevnode
+  let title = thisnode.getTitle()
+  if title != "":
+    result.hover = some(title)
+  elif buffer.hovertext != "":
+    result.hover = some(buffer.hovertext)
 
   if thisnode != prevnode and (thisnode == nil or prevnode == nil or thisnode.node != prevnode.node):
     for styledNode in thisnode.branch:
@@ -458,9 +478,10 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
     let link = thisnode.getLink()
     if link != nil:
+      buffer.hovertext = link.href
       result.hover = some(link.href)
     else:
-      result.hover = some("")
+      buffer.hovertext = ""
 
     for styledNode in prevnode.branch:
       if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:

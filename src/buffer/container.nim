@@ -284,6 +284,9 @@ proc sendCursorPosition*(container: Container) =
     if res.hover.isSome:
       container.hovertext = res.hover.get
       container.triggerEvent(STATUS)
+    elif container.hovertext != "":
+      container.hovertext = ""
+      container.triggerEvent(STATUS)
     if res.repaint:
       container.needslines = true)
 
@@ -721,6 +724,13 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.height = attrs.height - 1
   container.iface.windowChange(attrs).then(proc() =
     container.needslines = true)
+
+proc peek*(container: Container) {.jsfunc.} =
+  container.alert($container.source.location)
+
+proc peekCursor*(container: Container) {.jsfunc.} =
+  if container.hovertext != "":
+    container.alert(container.hovertext)
 
 proc handleCommand(container: Container) =
   var packetid, len: int

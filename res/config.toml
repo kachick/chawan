@@ -73,6 +73,8 @@ C = 'pager.commandMode();console.show()'
 '?' = 'pager.isearchBackward()'
 n = 'pager.searchNext()'
 N = 'pager.searchPrev()'
+c = 'pager.peek()'
+u = 'pager.peekCursor()'
 
 [line]
 C-m = 'line.submit()'
