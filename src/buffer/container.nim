@@ -258,11 +258,13 @@ proc triggerEvent(container: Container, t: ContainerEventType) =
 proc updateCursor(container: Container)
 
 proc setNumLines(container: Container, lines: int, finish = false) =
-  container.numLines = lines
-  if container.startpos.isSome and finish:
-    container.pos = container.startpos.get
-    container.startpos = none(CursorPosition)
-  container.updateCursor()
+  if container.numLines != lines:
+    container.numLines = lines
+    if container.startpos.isSome and finish:
+      container.pos = container.startpos.get
+      container.startpos = none(CursorPosition)
+    container.updateCursor()
+    container.triggerEvent(STATUS)
 
 proc requestLines*(container: Container, w = container.lineWindow) =
   container.iface.getLines(w).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
