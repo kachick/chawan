@@ -411,6 +411,10 @@ proc newInlineBlock(viewport: Viewport, builder: InlineBlockBoxBuilder, parentWi
   new(result)
   result.innerbox = newFlowRootBox(viewport, builder.content, parentWidth, parentHeight)
 
+proc newInlineTable(viewport: Viewport, builder: TableBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
+  new(result)
+  result.innerbox = newFlowRootBox(viewport, builder, parentWidth, parentHeight)
+
 proc newInlineContext(parent: BlockBox): InlineContext =
   new(result)
   result.currentLine = LineBox()
@@ -439,6 +443,7 @@ proc positionInlines(parent: BlockBox) =
 proc buildBlock(box: BlockBoxBuilder, parent: BlockBox, maxwidth = none(int)): BlockBox
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
+proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox
 
 proc applyInlineDimensions(parent: BlockBox) =
   parent.height += parent.inline.height
@@ -506,6 +511,35 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
   result.width += result.innerbox.margin_left
   result.width += result.innerbox.margin_right
 
+proc buildInlineTableBox(builder: TableBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
+  result = newInlineTable(parent.viewport, builder, parentWidth)
+
+  result.innerbox.nested.add(buildTable(builder, result.innerbox))
+
+  let pwidth = builder.computed{"width"}
+  if pwidth.auto:
+    # Half-baked shrink-to-fit
+    # Currently the misery that is determining content width is deferred to the
+    # inline layouting algorithm, which doesn't work that great but that's what
+    # we have.
+    result.innerbox.width = min(parentWidth, result.innerbox.width)
+  else:
+    result.innerbox.width = pwidth.px(parent.viewport, parentWidth)
+
+  # Apply the block box's properties to the atom itself.
+  result.width = result.innerbox.width
+  result.height = result.innerbox.height
+
+  result.margin_top = result.innerbox.margin_top
+  result.margin_bottom = result.innerbox.margin_bottom
+
+  result.baseline = result.innerbox.baseline
+
+  # I don't like this, but it works...
+  result.offset.x = result.innerbox.margin_left
+  result.width += result.innerbox.margin_left
+  result.width += result.innerbox.margin_right
+
 proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, parentHeight = none(int)) =
   assert box.ictx != nil
   if box.newline:
@@ -534,6 +568,11 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
       let iblock = child.buildInlineBlock(box.ictx, parentWidth, parentHeight)
       box.ictx.addAtom(iblock, parentWidth, box.computed, child.computed)
       box.ictx.whitespacenum = 0
+    of DISPLAY_INLINE_TABLE:
+      let child = TableBoxBuilder(child)
+      let iblock = child.buildInlineTableBox(box.ictx, parentWidth, parentHeight)
+      box.ictx.addAtom(iblock, parentWidth, box.computed, child.computed)
+      box.ictx.whitespacenum = 0
     else:
       assert false, "child.t is " & $child.computed{"display"}
 
@@ -559,10 +598,14 @@ proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
         let iblock = child.buildInlineBlock(ictx, parent.compwidth)
         ictx.addAtom(iblock, parent.compwidth, parent.computed, child.computed)
         ictx.whitespacenum = 0
+      of DISPLAY_INLINE_TABLE:
+        let child = TableBoxBuilder(child)
+        let iblock = child.buildInlineTableBox(ictx, parent.compwidth)
+        ictx.addAtom(iblock, parent.compwidth, parent.computed, child.computed)
+        ictx.whitespacenum = 0
       else:
         assert false, "child.t is " & $child.computed{"display"}
     ictx.finish(parent.computed, parent.compwidth)
-
   return ictx
 
 proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
@@ -933,7 +976,7 @@ type InnerBlockContext = object
   anonTable: TableBoxBuilder
 
 proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
-  assert box.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
+  assert box.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
   blockgroup.boxes.add(box)
 
 proc flush(blockgroup: var BlockGroup) {.inline.} =
