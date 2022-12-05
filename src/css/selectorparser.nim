@@ -412,7 +412,12 @@ func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.ca
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
   if state.combinator != nil:
-    state.selectors[^1].add(state.combinator)
+    if state.combinator.csels.len == 1:
+      if state.combinator.ct == DESCENDANT_COMBINATOR:
+        # otherwise it's an invalid combinator
+        state.selectors[^1].add(state.combinator.csels[0])
+    else:
+      state.selectors[^1].add(state.combinator)
     state.combinator = nil
   return state.selectors
 
