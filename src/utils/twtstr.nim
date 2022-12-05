@@ -528,7 +528,7 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners, transitiona
     var s = label
     if label.startsWith("xn--"):
       try:
-        s = punycode.decode(label)
+        s = punycode.decode(label.substr("xn--".len))
       except PunyError:
         return none(string) #error
     #TODO check normalization
