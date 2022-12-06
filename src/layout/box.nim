@@ -59,7 +59,6 @@ type
 
   TableBoxBuilder* = ref object of BlockBoxBuilder
     rowgroups*: seq[TableRowGroupBoxBuilder]
-    width*: Option[CSSLength] # WIDTH property
 
   TableCaptionBoxBuilder* = ref object of BlockBoxBuilder
 

@@ -380,24 +380,23 @@ proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, paren
   result.setPreferredDimensions(parentWidth, parentHeight)
   result.shrink = result.computed{"width"}.auto
 
-proc newBlockBox(parent: BlockBox, box: BoxBuilder, ignore_parent_shrink = false, maxwidth = none(int)): BlockBox =
+proc newBlockBox(parent: BlockBox, box: BoxBuilder, shrink_always = false, maxwidth = none(int)): BlockBox =
   new(result)
   result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and (ignore_parent_shrink or parent.shrink)
+  result.shrink = result.computed{"width"}.auto and (shrink_always or parent.shrink)
   if maxwidth.isSome:
     #TODO TODO TODO this is ugly
     result.setPreferredDimensions(maxwidth.get, parent.compheight)
 
-proc newTableCellBox(parent: BlockBox, box: TableCellBoxBuilder): BlockBox =
-  return newBlockBox(parent, box, true)
+proc newTableCellBox(parent: BlockBox, box: TableCellBoxBuilder, maxwidth: Option[int]): BlockBox =
+  let cell = newBlockBox(parent, box, true, maxwidth)
+  return cell
 
 proc newTableRowBox(parent: BlockBox, box: TableRowBoxBuilder): BlockBox =
   return newBlockBox(parent, box)
 
 proc newTableBox(parent: BlockBox, box: TableBoxBuilder): BlockBox =
   let table = newBlockBox(parent, box)
-  if box.width.isSome:
-    table.compwidth = box.width.get.px(parent.viewport, parent.compwidth)
   return table
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
@@ -744,11 +743,10 @@ proc positionBlocks(box: BlockBox) =
   box.width += box.padding_left
   box.width += box.padding_right
 
-proc buildTableCell(box: TableCellBoxBuilder, parent: BlockBox, cellwidth = none(int)): BlockBox =
-  result = parent.newTableCellBox(box)
-  if cellwidth.isSome:
-    result.compwidth = cellwidth.get
-    result.shrink = true
+proc buildTableCell(box: TableCellBoxBuilder, parent: BlockBox, maxwidth = none(int), compwidth = none(int)): BlockBox =
+  result = parent.newTableCellBox(box, maxwidth)
+  if compwidth.isSome:
+    result.compwidth = compwidth.get
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
@@ -771,8 +769,13 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
     if pctx.colwidths_specified.len <= n + cellbuilder.colspan:
       if not pwidth.auto:
         pctx.colwidths_specified.setLen(n + cellbuilder.colspan)
+    let w = cell.width div cellbuilder.colspan
     for i in n ..< n + cellbuilder.colspan:
-      pctx.colwidths[i] = max(cell.width div cellbuilder.colspan, pctx.colwidths[i])
+      if pctx.colwidths[i] < w:
+        pctx.colwidths[i] = w
+        if pctx.reflow.len <= n + cellbuilder.colspan:
+          pctx.reflow.setLen(n + cellbuilder.colspan)
+        pctx.reflow[i] = true
       if not pwidth.auto:
         pctx.colwidths_specified[i] = cell.compwidth
     n += cellbuilder.colspan
@@ -786,15 +789,21 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builde
   let row = newTableRowBox(parent, builder)
   for cellw in ctx.cells:
     var cell = cellw.box
-    cell.offset.x += x
     var w = 0
     for i in n ..< n + cellw.colspan:
       w += pctx.colwidths[i]
-    x += w
     if pctx.reflow.len > n:
+      var reflow = false
       for i in n ..< min(n + cellw.colspan, pctx.reflow.len):
         if pctx.reflow[i]:
-          cell = buildTableCell(cellw.builder, parent, some(w))
+          reflow = true
+          break
+      if reflow:
+        let pw = cell.width
+        cell = buildTableCell(cellw.builder, parent, some(pctx.maxwidth), some(w))
+        w = max(w, cell.width)
+    cell.offset.x += x
+    x += w
     n += cellw.colspan
     row.nested.add(cell)
     row.height = max(row.height, cell.height)
@@ -847,6 +856,7 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       let rctx = ctx.preBuildTableRow(row, table)
       ctx.rows.add(rctx)
       ctx.maxwidth = max(rctx.width, ctx.maxwidth)
+  table.width = max(table.compwidth, ctx.maxwidth)
   #TODO implement a better table layout
   #if ctx.maxwidth > table.compwidth:
   #  for n in ctx.colwidths_specified:
