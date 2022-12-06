@@ -281,13 +281,10 @@ proc requestLines*(container: Container, w = container.lineWindow) =
 proc redraw*(container: Container) {.jsfunc.} =
   container.triggerEvent(ContainerEvent(t: UPDATE, force: true))
 
-proc sendCursorPosition*(container: Container) =
+proc sendCursorPosition(container: Container) =
   container.iface.updateHover(container.cursorx, container.cursory).then(proc(res: UpdateHoverResult) =
     if res.hover.isSome:
       container.hovertext = res.hover.get
-      container.triggerEvent(STATUS)
-    elif container.hovertext != "":
-      container.hovertext = ""
       container.triggerEvent(STATUS)
     if res.repaint:
       container.needslines = true)
@@ -298,12 +295,13 @@ proc setFromY*(container: Container, y: int) {.jsfunc.} =
     container.needslines = true
     container.triggerEvent(UPDATE)
 
-proc setFromX*(container: Container, x: int) {.jsfunc.} =
+proc setFromX*(container: Container, x: int, refresh = true) {.jsfunc.} =
   if container.pos.fromx != x:
     container.pos.fromx = max(min(x, container.maxfromx), 0)
     if container.pos.fromx > container.cursorx:
       container.pos.cursorx = min(container.pos.fromx, container.currentLineWidth())
-      container.sendCursorPosition()
+      if refresh:
+        container.sendCursorPosition()
     container.triggerEvent(UPDATE)
 
 proc setFromXY*(container: Container, x, y: int) {.jsfunc.} =
@@ -322,15 +320,16 @@ proc setCursorX*(container: Container, x: int, refresh = true, save = true) {.js
     container.pos.cursorx = x
   elif refresh and container.fromx > x:
     if x2 < container.cursorx:
-      container.setFromX(x)
+      container.setFromX(x, false)
     container.pos.cursorx = container.fromx
   elif x > container.cursorx:
-    container.setFromX(max(x - container.width + 1, container.fromx))
+    container.setFromX(max(x - container.width + 1, container.fromx), false)
     container.pos.cursorx = x
   elif x < container.cursorx:
-    container.setFromX(x)
+    container.setFromX(x, false)
     container.pos.cursorx = x
-  container.sendCursorPosition()
+  if refresh:
+    container.sendCursorPosition()
   if save:
     container.pos.xend = container.cursorx
 

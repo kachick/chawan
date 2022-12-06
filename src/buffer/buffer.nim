@@ -462,11 +462,6 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
   if i >= 0:
     thisnode = buffer.lines[cursory].formats[i].node
   let prevnode = buffer.prevnode
-  let title = thisnode.getTitle()
-  if title != "":
-    result.hover = some(title)
-  elif buffer.hovertext != "":
-    result.hover = some(buffer.hovertext)
 
   if thisnode != prevnode and (thisnode == nil or prevnode == nil or thisnode.node != prevnode.node):
     for styledNode in thisnode.branch:
@@ -476,12 +471,19 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
           elem.hover = true
           result.repaint = true
 
-    let link = thisnode.getLink()
-    if link != nil:
+    var upd = false
+    let title = thisnode.getTitle()
+    if title != "":
+      upd = true
+      buffer.hovertext = title
+    elif (let link = thisnode.getLink(); link != nil):
+      upd = true
       buffer.hovertext = link.href
-      result.hover = some(link.href)
     else:
+      upd = buffer.hovertext != ""
       buffer.hovertext = ""
+    if upd:
+      result.hover = some(buffer.hovertext)
 
     for styledNode in prevnode.branch:
       if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
@@ -603,7 +605,7 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
       buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
   except IOError:
     # Presumably EAGAIN, unless the loader process crashed in which case we're screwed.
-    s = s.until('\0')
+    s = s.until('\0') #TODO this shouldn't be needed here...
     buffer.timeout = buffer.lasttimeout
     if buffer.readbufsize == 1:
       if buffer.lasttimeout == 0:
@@ -880,6 +882,7 @@ type ClickResult* = object
   repaint*: bool
 
 proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
+  if buffer.lines.len <= cursory: return
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if clickable != nil:
     case clickable.tagType

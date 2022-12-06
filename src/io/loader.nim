@@ -112,7 +112,9 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList) =
           if k notin request.headers.table:
             request.headers.table[k] = v
         loadResource(request, stream)
+        stream.close()
       of QUIT:
+        stream.close()
         break
     except IOError:
       # End-of-file, quit.
