@@ -392,10 +392,9 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
       client.config.startup
     client.command0(s, client.config.startup, silence = true)
   client.userstyle = client.config.stylesheet.parseStylesheet()
-  if not stdin.isatty:
+
+  if not stdin.isatty():
     client.pager.readPipe(ctype, stdin.getFileHandle())
-  else:
-    client.console.tty = stdin
 
   for page in pages:
     client.pager.loadURL(page, ctype = ctype)
