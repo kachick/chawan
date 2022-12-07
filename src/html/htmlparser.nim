@@ -1757,6 +1757,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           parse_error
         else:
           close_cell
+          reprocess token
       )
       ("</body>", "</caption>", "</col>", "</colgroup>",
        "</html>") => (block: parse_error)
