@@ -125,7 +125,6 @@ type
     padding_right*: int
 
     compwidth*: int
-    nocenter*: bool
     compheight*: Option[int]
     shrink*: bool
 
