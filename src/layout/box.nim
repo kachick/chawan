@@ -74,7 +74,7 @@ type
   ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
     fontweight*: int
-    textdecoration*: CSSTextDecoration
+    textdecoration*: set[CSSTextDecoration]
     color*: RGBAColor
     node*: StyledNode
 

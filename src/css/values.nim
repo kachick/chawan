@@ -121,7 +121,7 @@ type
     of VALUE_INTEGER:
       integer*: int
     of VALUE_TEXT_DECORATION:
-      textdecoration*: CSSTextDecoration
+      textdecoration*: set[CSSTextDecoration]
     of VALUE_WORD_BREAK:
       wordbreak*: CSSWordBreak
     of VALUE_LIST_STYLE_TYPE:
@@ -538,17 +538,17 @@ func cssFontWeight(d: CSSDeclaration): int =
 
   raise newException(CSSValueError, "Invalid font weight")
 
-func cssTextDecoration(d: CSSDeclaration): CSSTextDecoration =
-  if isToken(d):
-    let tok = getToken(d)
-    if tok.tokenType == CSS_IDENT_TOKEN:
-      case tok.value
-      of "none": return TEXT_DECORATION_NONE
-      of "underline": return TEXT_DECORATION_UNDERLINE
-      of "overline": return TEXT_DECORATION_OVERLINE
-      of "line-through": return TEXT_DECORATION_LINE_THROUGH
-      of "blink": return TEXT_DECORATION_BLINK
-  raise newException(CSSValueError, "Invalid text decoration")
+func cssTextDecoration(d: CSSDeclaration): set[CSSTextDecoration] =
+  for tok in d.value:
+    if tok of CSSToken:
+      let tok = CSSToken(tok)
+      if tok.tokenType == CSS_IDENT_TOKEN:
+        case tok.value
+        of "none": result.incl(TEXT_DECORATION_NONE)
+        of "underline": result.incl(TEXT_DECORATION_UNDERLINE)
+        of "overline": result.incl(TEXT_DECORATION_OVERLINE)
+        of "line-through": result.incl(TEXT_DECORATION_LINE_THROUGH)
+        of "blink": result.incl(TEXT_DECORATION_BLINK)
 
 func cssWordBreak(d: CSSDeclaration): CSSWordBreak =
   if isToken(d):

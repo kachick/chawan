@@ -19,14 +19,13 @@ func formatFromWord(computed: ComputedFormat): Format =
     result.italic = true
   if computed.fontweight > 500:
     result.bold = true
-  case computed.textdecoration
-  of TEXT_DECORATION_UNDERLINE:
+  if TEXT_DECORATION_UNDERLINE in computed.textdecoration:
     result.underline = true
-  of TEXT_DECORATION_OVERLINE:
+  if TEXT_DECORATION_OVERLINE in computed.textdecoration:
     result.overline = true
-  of TEXT_DECORATION_LINE_THROUGH:
+  if TEXT_DECORATION_LINE_THROUGH in computed.textdecoration:
     result.strike = true
-  of TEXT_DECORATION_BLINK:
+  if TEXT_DECORATION_BLINK in computed.textdecoration:
     result.blink = true
   else: discard
 

@@ -332,10 +332,27 @@ proc hideCursor*(term: Terminal) =
 proc showCursor*(term: Terminal) =
   term.outfile.showCursor()
 
+func emulateOverline(term: Terminal): bool =
+  term.config.emulateoverline and FLAG_OVERLINE notin term.formatmode and
+  FLAG_UNDERLINE in term.formatmode
+
 proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
   for ly in y ..< y + grid.height:
     for lx in x ..< x + grid.width:
-      term.canvas[ly * term.canvas.width + lx] = grid[(ly - y) * grid.width + (lx - x)]
+      let i = ly * term.canvas.width + lx
+      term.canvas[i] = grid[(ly - y) * grid.width + (lx - x)]
+      if i >= term.canvas.width and FLAG_OVERLINE in term.canvas[i].format.flags and term.emulateOverline:
+        let w = grid[(ly - y) * grid.width + (lx - x)].width()
+        let s = i - term.canvas.width
+        var j = s
+        while j < term.canvas.len and j < s + w:
+          let cell = addr term.canvas[j]
+          cell.format.flags.incl(FLAG_UNDERLINE)
+          if cell.str == "":
+            cell.str = " "
+          if cell.str == " ":
+            cell.format.fgcolor = grid[(ly - y) * grid.width + (lx - x)].format.fgcolor
+          j += cell[].width()
 
 proc outputGrid*(term: Terminal) =
   term.outfile.write(term.resetFormat())
@@ -449,6 +466,9 @@ proc detectTermAttributes(term: Terminal) =
     of "24bit", "truecolor": term.colormode = TRUE_COLOR
   if term.config.formatmode.isSome:
     term.formatmode = term.config.formatmode.get
+  for fm in FormatFlags:
+    if fm in term.config.noformatmode:
+      term.formatmode.excl(fm)
   if term.config.altscreen.isSome:
     term.smcup = term.config.altscreen.get
   term.mincontrast = term.config.mincontrast

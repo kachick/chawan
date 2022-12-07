@@ -37,12 +37,14 @@ type
     headless*: bool
     colormode*: Option[ColorMode]
     formatmode*: Option[FormatMode]
+    noformatmode*: FormatMode
     altscreen*: Option[bool]
     mincontrast*: float
     editor*: string
     tmpdir*: string
     siteconf: seq[StaticSiteConfig]
     forceclear*: bool
+    emulateoverline*: bool
 
   BufferConfig* = object
     userstyle*: string
@@ -170,6 +172,18 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         of "inline":
           config.stylesheet &= v.s
     of "display":
+      template get_format_mode(v: TomlValue): FormatMode =
+        var mode: FormatMode
+        for vv in v.a:
+          case vv.s
+          of "bold": mode.incl(FLAG_BOLD)
+          of "italic": mode.incl(FLAG_ITALIC)
+          of "underline": mode.incl(FLAG_UNDERLINE)
+          of "reverse": mode.incl(FLAG_REVERSE)
+          of "strike": mode.incl(FLAG_STRIKE)
+          of "overline": mode.incl(FLAG_OVERLINE)
+          of "blink": mode.incl(FLAG_BLINK)
+        mode
       for k, v in v:
         case k
         of "alt-screen":
@@ -188,17 +202,9 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           if v.vt == VALUE_STRING and v.s == "auto":
             config.formatmode = none(FormatMode)
           elif v.vt == VALUE_ARRAY:
-            var mode: FormatMode
-            for v in v.a:
-              case v.s
-              of "bold": mode.incl(FLAG_BOLD)
-              of "italic": mode.incl(FLAG_ITALIC)
-              of "underline": mode.incl(FLAG_UNDERLINE)
-              of "reverse": mode.incl(FLAG_REVERSE)
-              of "strike": mode.incl(FLAG_STRIKE)
-              of "overline": mode.incl(FLAG_OVERLINE)
-              of "blink": mode.incl(FLAG_BLINK)
-            config.formatmode = some(mode)
+            config.formatmode = some(get_format_mode v)
+        of "no-format-mode":
+          config.noformatmode = get_format_mode v
         of "highlight-color":
           config.hlcolor = parseRGBAColor(v.s).get
         of "double-width-ambiguous":
@@ -209,6 +215,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           else:
             config.mincontrast = float(v.f)
         of "force-clear": config.forceclear = v.b
+        of "emulate-overline": config.emulateoverline = v.b
     of "external":
       for k, v in v:
         case k

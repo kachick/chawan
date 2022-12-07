@@ -5,6 +5,8 @@ editor = "vi %s +%d"
 [display]
 color-mode = "auto"
 format-mode = "auto"
+no-format-mode = ["overline"]
+emulate-overline = true
 alt-screen = "auto"
 highlight-color = "cyan"
 double-width-ambiguous = false
