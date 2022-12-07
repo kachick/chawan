@@ -822,6 +822,8 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   for child in footer:
     yield child
 
+# Very basic table layout. TODO: this doesn't make sure cells actually fill
+# the rows, so e.g. text-align: left is broken.
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(box)
   var ctx: TableContext
@@ -987,7 +989,7 @@ func canGenerateAnonymousInline(blockgroup: BlockGroup, computed: CSSComputedVal
 
 proc iflush(blockgroup: var BlockGroup, ibox: var InlineBoxBuilder) =
   if ibox != nil:
-    assert ibox.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK}
+    assert ibox.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE}
     blockgroup.add(ibox)
     ibox = nil
 
