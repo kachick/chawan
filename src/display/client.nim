@@ -70,7 +70,10 @@ type
 
 proc readChar(console: Console): char =
   if console.ibuf == "":
-    return console.tty.readChar()
+    try:
+      return console.tty.readChar()
+    except EOFError:
+      quit(1)
   result = console.ibuf[0]
   console.ibuf = console.ibuf.substr(1)
 
