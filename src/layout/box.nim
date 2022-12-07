@@ -125,7 +125,6 @@ type
     padding_right*: int
 
     compwidth*: int
-    maxwidth*: int
     nocenter*: bool
     compheight*: Option[int]
     shrink*: bool
@@ -137,19 +136,22 @@ type
     builder*: TableCellBoxBuilder
     box*: BlockBox
     colspan*: int
+    reflow*: bool
 
   RowContext* = object
     cells*: seq[CellWrapper]
+    reflow*: seq[bool]
     width*: int
     builder*: TableRowBoxBuilder
+    ncols*: int
 
   TableContext* = object
     caption*: TableCaptionBoxBuilder
     colwidths*: seq[int]
-    reflow*: seq[bool]
     colwidths_specified*: seq[int]
     rows*: seq[RowContext]
     maxwidth*: int
+    ncols*: int
 
   InlineBlockBox* = ref object of InlineAtom
     innerbox*: BlockBox

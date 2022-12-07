@@ -373,31 +373,17 @@ proc newBlockBox_common2(box: BlockBox, parent: BlockBox, builder: BoxBuilder) {
   box.computed = builder.computed
   box.setPreferredDimensions(parent.compwidth, parent.compheight)
 
-proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, parentHeight = none(int)): BlockBox {.inline.} =
+proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, parentHeight = none(int), shrink = true): BlockBox {.inline.} =
   new(result)
   result.viewport = viewport
   result.computed = box.computed
   result.setPreferredDimensions(parentWidth, parentHeight)
-  result.shrink = result.computed{"width"}.auto
+  result.shrink = result.computed{"width"}.auto and shrink
 
-proc newBlockBox(parent: BlockBox, box: BoxBuilder, shrink_always = false, maxwidth = none(int)): BlockBox =
+proc newBlockBox(parent: BlockBox, box: BoxBuilder): BlockBox =
   new(result)
   result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and (shrink_always or parent.shrink)
-  if maxwidth.isSome:
-    #TODO TODO TODO this is ugly
-    result.setPreferredDimensions(maxwidth.get, parent.compheight)
-
-proc newTableCellBox(parent: BlockBox, box: TableCellBoxBuilder, maxwidth: Option[int]): BlockBox =
-  let cell = newBlockBox(parent, box, true, maxwidth)
-  return cell
-
-proc newTableRowBox(parent: BlockBox, box: TableRowBoxBuilder): BlockBox =
-  return newBlockBox(parent, box)
-
-proc newTableBox(parent: BlockBox, box: TableBoxBuilder): BlockBox =
-  let table = newBlockBox(parent, box)
-  return table
+  result.shrink = result.computed{"width"}.auto and parent.shrink
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
@@ -439,7 +425,7 @@ proc positionInlines(parent: BlockBox) =
   else:
     parent.width = parent.compwidth
 
-proc buildBlock(box: BlockBoxBuilder, parent: BlockBox, maxwidth = none(int)): BlockBox
+proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox
@@ -743,10 +729,8 @@ proc positionBlocks(box: BlockBox) =
   box.width += box.padding_left
   box.width += box.padding_right
 
-proc buildTableCell(box: TableCellBoxBuilder, parent: BlockBox, maxwidth = none(int), compwidth = none(int)): BlockBox =
-  result = parent.newTableCellBox(box, maxwidth)
-  if compwidth.isSome:
-    result.compwidth = compwidth.get
+proc buildTableCell(viewport: Viewport, box: TableCellBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = true): BlockBox =
+  result = viewport.newFlowRootBox(box, maxwidth, maxheight, shrink)
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
@@ -761,7 +745,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
   for child in box.children:
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
-    let cell = buildTableCell(cellbuilder, parent)
+    let cell = parent.viewport.buildTableCell(cellbuilder, parent.compwidth, parent.compheight)
     ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: cellbuilder.colspan)
     let pwidth = cellbuilder.computed{"width"}
     if pctx.colwidths.len <= n + cellbuilder.colspan:
@@ -773,35 +757,28 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
     for i in n ..< n + cellbuilder.colspan:
       if pctx.colwidths[i] < w:
         pctx.colwidths[i] = w
-        if pctx.reflow.len <= n + cellbuilder.colspan:
-          pctx.reflow.setLen(n + cellbuilder.colspan)
-        pctx.reflow[i] = true
+        if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
+        ctx.reflow[i] = true
+      ctx.width += pctx.colwidths[i]
       if not pwidth.auto:
         pctx.colwidths_specified[i] = cell.compwidth
     n += cellbuilder.colspan
-    ctx.width += cell.width
     inc i
+  ctx.ncols = n
   return ctx
 
 proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builder: TableRowBoxBuilder): BlockBox =
   var x = 0
   var n = 0
-  let row = newTableRowBox(parent, builder)
+  let row = newBlockBox(parent, builder)
   for cellw in ctx.cells:
     var cell = cellw.box
     var w = 0
     for i in n ..< n + cellw.colspan:
       w += pctx.colwidths[i]
-    if pctx.reflow.len > n:
-      var reflow = false
-      for i in n ..< min(n + cellw.colspan, pctx.reflow.len):
-        if pctx.reflow[i]:
-          reflow = true
-          break
-      if reflow:
-        let pw = cell.width
-        cell = buildTableCell(cellw.builder, parent, some(pctx.maxwidth), some(w))
-        w = max(w, cell.width)
+    if cellw.reflow:
+      cell = parent.viewport.buildTableCell(cellw.builder, w, none(int), false) #TODO height?
+      w = max(w, cell.width)
     cell.offset.x += x
     x += w
     n += cellw.colspan
@@ -846,7 +823,7 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
     yield child
 
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
-  let table = parent.newTableBox(box)
+  let table = parent.newBlockBox(box)
   var ctx: TableContext
   for row in box.rows:
     if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
@@ -856,18 +833,22 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       let rctx = ctx.preBuildTableRow(row, table)
       ctx.rows.add(rctx)
       ctx.maxwidth = max(rctx.width, ctx.maxwidth)
+      ctx.ncols = max(rctx.ncols, ctx.ncols)
+  var reflow = newSeq[bool](ctx.ncols)
+  for i in countdown(ctx.rows.high, 0):
+    var row = addr ctx.rows[i]
+    var n = ctx.ncols - 1
+    for j in countdown(row.cells.high, 0):
+      let m = n - row.cells[j].colspan
+      while n > m:
+        if reflow[n]:
+          row.cells[j].reflow = true
+        if n < row.reflow.len and row.reflow[n]:
+          reflow[n] = true
+        dec n
   table.width = max(table.compwidth, ctx.maxwidth)
-  #TODO implement a better table layout
-  #if ctx.maxwidth > table.compwidth:
-  #  for n in ctx.colwidths_specified:
-  #    ctx.maxwidth -= n
-  #  ctx.reflow.setLen(ctx.colwidths.len)
-  #  for i in 0 ..< ctx.colwidths.len:
-  #    if ctx.colwidths[i] != 0 and (ctx.colwidths_specified.len <= i or ctx.colwidths_specified[i] == 0):
-  #      ctx.colwidths[i] -= (ctx.maxwidth - table.compwidth) div ctx.colwidths[i]
-  #      ctx.reflow[i] = true
   if ctx.caption != nil:
-    let caption = buildBlock(ctx.caption, table, some(ctx.maxwidth))
+    let caption = buildBlock(ctx.caption, table)
     table.nested.add(caption)
     table.height += caption.height
   for roww in ctx.rows:
@@ -890,9 +871,9 @@ proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
   parent.positionBlocks()
 
 # Build a block box inside another block box, based on a builder.
-proc buildBlock(box: BlockBoxBuilder, parent: BlockBox, maxwidth = none(int)): BlockBox =
+proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox =
   assert parent != nil
-  result = parent.newBlockBox(box, maxwidth = maxwidth)
+  result = parent.newBlockBox(box)
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
