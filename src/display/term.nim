@@ -292,10 +292,15 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
   for y in 0 ..< grid.height:
+    var w = 0
     for x in 0 ..< grid.width:
+      while w < x:
+        result &= " "
+        inc w
       let cell = grid[y * grid.width + x]
       result &= term.processFormat(format, cell.format)
       result &= cell.str
+      w += cell.width()
     result &= term.clearEnd()
     if y != grid.height - 1:
       result &= "\r\n"
@@ -303,9 +308,13 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
 func generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): string =
   var format = newFormat()
   var x = 0
+  var w = 0
   var line = ""
   var lr = false
   for i in 0 ..< grid.cells.len:
+    while w < x:
+      line &= " "
+      inc w
     if x >= grid.width:
       format = newFormat()
       if lr:
@@ -315,10 +324,12 @@ func generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): strin
         result &= line
         lr = false
       x = 0
+      w = 0
       line = ""
     lr = lr or (grid[i] != prev[i])
     line &= term.processFormat(format, grid.cells[i].format)
     line &= grid.cells[i].str
+    w += grid.cells[i].width()
     inc x
   if lr:
     result &= term.cursorGoto(0, grid.height - 1)
