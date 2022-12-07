@@ -339,7 +339,7 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
 
 proc outputGrid*(term: Terminal) =
   term.outfile.write(term.resetFormat())
-  if not term.cleared:
+  if term.config.forceclear or not term.cleared:
     term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true
   else:

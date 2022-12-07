@@ -9,6 +9,7 @@ alt-screen = "auto"
 highlight-color = "cyan"
 double-width-ambiguous = false
 minimum-contrast = 100
+force-clear = false
 
 [[siteconf]]
 url = '^ddg:'

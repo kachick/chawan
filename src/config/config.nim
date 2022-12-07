@@ -42,6 +42,7 @@ type
     editor*: string
     tmpdir*: string
     siteconf: seq[StaticSiteConfig]
+    forceclear*: bool
 
   BufferConfig* = object
     userstyle*: string
@@ -207,6 +208,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
             config.mincontrast = float(v.i)
           else:
             config.mincontrast = float(v.f)
+        of "force-clear": config.forceclear = v.b
     of "external":
       for k, v in v:
         case k
