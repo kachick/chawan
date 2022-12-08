@@ -7,9 +7,9 @@ import tables
 import utils/twtstr
 
 type
-  RGBColor* = distinct uint32
+  RGBColor* = distinct int32
 
-  RGBAColor* = distinct uint32
+  RGBAColor* = distinct int32
 
   CellColor* = object
     case rgb*: bool
@@ -19,10 +19,10 @@ type
       color*: uint8
 
 converter toRGBColor*(i: RGBAColor): RGBColor =
-  return RGBColor(uint32(i) and 0xFFFFFFu32)
+  return RGBColor(int32(i) and 0xFFFFFFi32)
 
 converter toRGBAColor*(i: RGBColor): RGBAColor =
-  return RGBAColor(uint32(i) or 0xFF000000u32)
+  return RGBAColor(int32(i) or 0xFF000000i32)
 
 func `==`*(color1, color2: CellColor): bool =
   if color1.rgb != color2.rgb:
@@ -278,35 +278,35 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
   return some(RGBColor(c))
 
 func r*(c: RGBAColor): int =
-  return int(c) shr 16 and 0xff
+  return int(int32(c) shr 16 and 0xff)
 
 func g*(c: RGBAColor): int =
-  return int(c) shr 8 and 0xff
+  return int(int32(c) shr 8 and 0xff)
 
 func b*(c: RGBAColor): int =
-  return int(c) and 0xff
+  return int(int32(c) and 0xff)
 
 func a*(c: RGBAColor): int =
-  return int(c) shr 24 and 0xff
+  return int(int32(c) shr 24 and 0xff)
 
 func rgb*(r, g, b: int): RGBColor =
   return RGBColor((r shl 16) or (g shl 8) or b)
 
 func `==`*(a, b: RGBAColor): bool =
-  return int(a) == int(b)
+  return int32(a) == int32(b)
 
 
 func r*(c: RGBColor): int =
-  return int(c) shr 16 and 0xff
+  return int(int32(c) shr 16 and 0xff)
 
 func g*(c: RGBColor): int =
-  return int(c) shr 8 and 0xff
+  return int(int32(c) shr 8 and 0xff)
 
 func b*(c: RGBColor): int =
-  return int(c) and 0xff
+  return int(int32(c) and 0xff)
 
 func rgba*(r, g, b, a: int): RGBAColor =
-  return RGBAColor((a shl 24) or (r shl 16) or (g shl 8) or b)
+  return RGBAColor((int32(a) shl 24) or (int32(r) shl 16) or (int32(g) shl 8) or int32(b))
 
 func `$`*(color: CellColor): string =
   if color.rgb:
