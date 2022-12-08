@@ -12,18 +12,21 @@ import utils/twtstr
 export selectorparser.PseudoElem
 
 type
+  CSSShorthandType = enum
+    SHORTHAND_NONE, SHORTHAND_ALL, SHORTHAND_MARGIN, SHORTHAND_PADDING,
+    SHORTHAND_BACKGROUND
+
   CSSUnit* = enum
     UNIT_CM, UNIT_MM, UNIT_IN, UNIT_PX, UNIT_PT, UNIT_PC,
     UNIT_EM, UNIT_EX, UNIT_CH, UNIT_REM, UNIT_VW, UNIT_VH, UNIT_VMIN,
     UNIT_VMAX, UNIT_PERC, UNIT_IC
 
   CSSPropertyType* = enum
-    PROPERTY_NONE, PROPERTY_ALL, PROPERTY_COLOR, PROPERTY_MARGIN,
-    PROPERTY_MARGIN_TOP, PROPERTY_MARGIN_LEFT, PROPERTY_MARGIN_RIGHT,
-    PROPERTY_MARGIN_BOTTOM, PROPERTY_FONT_STYLE, PROPERTY_DISPLAY,
-    PROPERTY_CONTENT, PROPERTY_WHITE_SPACE, PROPERTY_FONT_WEIGHT,
-    PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK, PROPERTY_WIDTH,
-    PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE, PROPERTY_PADDING,
+    PROPERTY_NONE, PROPERTY_COLOR, PROPERTY_MARGIN_TOP, PROPERTY_MARGIN_LEFT,
+    PROPERTY_MARGIN_RIGHT, PROPERTY_MARGIN_BOTTOM, PROPERTY_FONT_STYLE,
+    PROPERTY_DISPLAY, PROPERTY_CONTENT, PROPERTY_WHITE_SPACE,
+    PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
+    PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE,
     PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
     PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
     PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION,
@@ -157,10 +160,15 @@ type
 
   CSSValueError* = object of ValueError
 
+const ShorthandNames = {
+  "all": SHORTHAND_ALL,
+  "margin": SHORTHAND_MARGIN,
+  "padding": SHORTHAND_PADDING,
+  "background": SHORTHAND_BACKGROUND
+}.toTable()
+
 const PropertyNames = {
-  "all": PROPERTY_ALL,
   "color": PROPERTY_COLOR,
-  "margin": PROPERTY_MARGIN,
   "margin-top": PROPERTY_MARGIN_TOP,
   "margin-bottom": PROPERTY_MARGIN_BOTTOM,
   "margin-left": PROPERTY_MARGIN_LEFT,
@@ -175,7 +183,6 @@ const PropertyNames = {
   "width": PROPERTY_WIDTH,
   "height": PROPERTY_HEIGHT,
   "list-style-type": PROPERTY_LIST_STYLE_TYPE,
-  "padding": PROPERTY_PADDING,
   "padding-top": PROPERTY_PADDING_TOP,
   "padding-bottom": PROPERTY_PADDING_BOTTOM,
   "padding-left": PROPERTY_PADDING_LEFT,
@@ -195,9 +202,7 @@ const PropertyNames = {
 
 const ValueTypes* = [
   PROPERTY_NONE: VALUE_NONE,
-  PROPERTY_ALL: VALUE_NONE,
   PROPERTY_COLOR: VALUE_COLOR,
-  PROPERTY_MARGIN: VALUE_LENGTH,
   PROPERTY_MARGIN_TOP: VALUE_LENGTH,
   PROPERTY_MARGIN_LEFT: VALUE_LENGTH,
   PROPERTY_MARGIN_RIGHT: VALUE_LENGTH,
@@ -212,7 +217,6 @@ const ValueTypes* = [
   PROPERTY_WIDTH: VALUE_LENGTH,
   PROPERTY_HEIGHT: VALUE_LENGTH,
   PROPERTY_LIST_STYLE_TYPE: VALUE_LIST_STYLE_TYPE,
-  PROPERTY_PADDING: VALUE_LENGTH,
   PROPERTY_PADDING_TOP: VALUE_LENGTH,
   PROPERTY_PADDING_LEFT: VALUE_LENGTH,
   PROPERTY_PADDING_RIGHT: VALUE_LENGTH,
@@ -245,6 +249,9 @@ func getPropInheritedArray(): array[CSSPropertyType, bool] =
       result[prop] = false
 
 const InheritedArray = getPropInheritedArray()
+
+func shorthandType(s: string): CSSShorthandType =
+  return ShorthandNames.getOrDefault(s, SHORTHAND_NONE)
 
 func propertyType(s: string): CSSPropertyType =
   return PropertyNames.getOrDefault(s, PROPERTY_NONE)
@@ -372,52 +379,45 @@ func color(r, g, b: int): RGBAColor =
 func color(r, g, b, a: int): RGBAColor =
   return rgba(r, g, b, a)
 
-func cssColor(d: CSSDeclaration): RGBAColor =
-  if d.value.len > 0:
-    if d.value[0] of CSSToken:
-      let tok = CSSToken(d.value[0])
-      case tok.tokenType
-      of CSS_HASH_TOKEN:
-        let c = parseHexColor(tok.value)
-        if c.isSome:
-          return c.get
-        else:
-          raise newException(CSSValueError, "Invalid color")
-      of CSS_IDENT_TOKEN:
-        let s = tok.value
-        if s in Colors:
-          return Colors[s]
-        else:
-          raise newException(CSSValueError, "Invalid color")
-      else:
+func cssColor(val: CSSComponentValue): RGBAColor =
+  if val of CSSToken:
+    let tok = CSSToken(val)
+    case tok.tokenType
+    of CSS_HASH_TOKEN:
+      let c = parseHexColor(tok.value)
+      if c.isSome:
+        return c.get
+    of CSS_IDENT_TOKEN:
+      let s = tok.value
+      if s in Colors:
+        return Colors[s]
+    else: discard
+  elif val of CSSFunction:
+    let f = CSSFunction(val)
+    #TODO calc etc (cssnumber function or something)
+    case f.name
+    of "rgb":
+      if f.value.len != 3:
         raise newException(CSSValueError, "Invalid color")
-    elif d.value[0] of CSSFunction:
-      let f = CSSFunction(d.value[0])
-      #TODO calc etc (cssnumber function or something)
-      case f.name
-      of "rgb":
-        if f.value.len != 3:
+      for c in f.value:
+        if c != CSS_NUMBER_TOKEN:
           raise newException(CSSValueError, "Invalid color")
-        for c in f.value:
-          if c != CSS_NUMBER_TOKEN:
-            raise newException(CSSValueError, "Invalid color")
-        let r = CSSToken(f.value[0]).nvalue
-        let g = CSSToken(f.value[1]).nvalue
-        let b = CSSToken(f.value[2]).nvalue
-        return color(int(r), int(g), int(b))
-      of "rgba":
-        if f.value.len != 4:
+      let r = CSSToken(f.value[0]).nvalue
+      let g = CSSToken(f.value[1]).nvalue
+      let b = CSSToken(f.value[2]).nvalue
+      return color(int(r), int(g), int(b))
+    of "rgba":
+      if f.value.len != 4:
+        raise newException(CSSValueError, "Invalid color")
+      for c in f.value:
+        if c != CSS_NUMBER_TOKEN:
           raise newException(CSSValueError, "Invalid color")
-        for c in f.value:
-          if c != CSS_NUMBER_TOKEN:
-            raise newException(CSSValueError, "Invalid color")
-        let r = CSSToken(f.value[0]).nvalue
-        let g = CSSToken(f.value[1]).nvalue
-        let b = CSSToken(f.value[2]).nvalue
-        let a = CSSToken(f.value[3]).nvalue
-        return color(int(r), int(g), int(b), int(a))
-      else: discard
-
+      let r = CSSToken(f.value[0]).nvalue
+      let g = CSSToken(f.value[1]).nvalue
+      let b = CSSToken(f.value[2]).nvalue
+      let a = CSSToken(f.value[3]).nvalue
+      return color(int(r), int(g), int(b), int(a))
+    else: discard
   raise newException(CSSValueError, "Invalid color")
 
 func cellColor*(color: RGBAColor): CellColor =
@@ -649,7 +649,9 @@ func cssPosition(d: CSSDeclaration): CSSPosition =
 
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   case vtype
-  of VALUE_COLOR: val.color = cssColor(d)
+  of VALUE_COLOR:
+    if d.value.len > 0:
+      val.color = cssColor(d.value[0])
   of VALUE_LENGTH:
     case ptype
     of PROPERTY_WORD_SPACING:
@@ -717,11 +719,7 @@ let defaultTable = getInitialTable()
 template getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
   defaultTable[t]
 
-func getComputedValue(d: CSSDeclaration): (CSSComputedValue, CSSGlobalValueType) =
-  let name = d.name
-  let ptype = propertyType(name)
-  let vtype = valueType(ptype)
-
+func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType, vtype: CSSValueType): (CSSComputedValue, CSSGlobalValueType) =
   var val = CSSComputedValue(t: ptype, v: vtype)
   try:
     val.getValueFromDecl(d, vtype, ptype)
@@ -729,6 +727,46 @@ func getComputedValue(d: CSSDeclaration): (CSSComputedValue, CSSGlobalValueType)
     val = getDefault(ptype)
 
   return (val, cssGlobal(d))
+
+func getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValueType)] =
+  let name = d.name
+  case shorthandType(name)
+  of SHORTHAND_NONE:
+    let ptype = propertyType(name)
+    let vtype = valueType(ptype)
+    result.add(getComputedValue(d, ptype, vtype))
+  of SHORTHAND_ALL:
+    let global = cssGlobal(d)
+    if global != VALUE_NOGLOBAL:
+      for ptype in CSSPropertyType:
+        let vtype = valueType(ptype)
+        let val = CSSComputedValue(t: ptype, v: vtype)
+        result.add((val, global))
+  of SHORTHAND_MARGIN:
+    for ptype in [PROPERTY_MARGIN_TOP, PROPERTY_MARGIN_LEFT,
+                  PROPERTY_MARGIN_RIGHT, PROPERTY_MARGIN_BOTTOM]:
+      let vtype = valueType(ptype)
+      result.add(getComputedValue(d, ptype, vtype))
+  of SHORTHAND_PADDING:
+    for ptype in [PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT,
+                  PROPERTY_PADDING_RIGHT, PROPERTY_PADDING_BOTTOM]:
+      let vtype = valueType(ptype)
+      result.add(getComputedValue(d, ptype, vtype))
+  of SHORTHAND_BACKGROUND:
+    let global = cssGlobal(d)
+    let bgcolorptype = PROPERTY_BACKGROUND_COLOR
+    let bgcolorvtype = valueType(bgcolorptype)
+    let bgcolorval = CSSComputedValue(t: bgcolorptype, v: bgcolorvtype)
+    if global == VALUE_NOGLOBAL:
+      for tok in d.value:
+        try:
+          bgcolorval.color = cssColor(tok)
+          result.add((bgcolorval, global))
+          break
+        except CSSValueError:
+          discard
+    else:
+      result.add((bgcolorval, global))
 
 func equals*(a, b: CSSComputedValue): bool =
   if a == b:
@@ -759,24 +797,31 @@ proc newComputedValueBuilder*(parent: CSSComputedValues): CSSComputedValuesBuild
 proc addValuesImportant*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
   for decl in decls:
     if decl.important:
-      let (val, global) = getComputedValue(decl)
-      builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+      let vals = getComputedValues(decl)
+      for vg in vals:
+        let (val, global) = vg
+        builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
 
 proc addValuesNormal*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
   for decl in decls:
     if not decl.important:
-      let (val, global) = getComputedValue(decl)
-      builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+      let vals = getComputedValues(decl)
+      for vg in vals:
+        let (val, global) = vg
+        builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
 
 proc addValues*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
   for decl in decls:
-    let (val, global) = getComputedValue(decl)
-    if decl.important:
-      builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
-    else:
-      builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+    let vals = getComputedValues(decl)
+    for vg in vals:
+      let (val, global) = vg
+      if decl.important:
+        builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+      else:
+        builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
 
-proc applyValue(vals: CSSComputedValues, prop: CSSPropertyType, val: CSSComputedValue, global: CSSGlobalValueType, parent: CSSComputedValues, previousOrigin: CSSComputedValues) =
+proc applyValue(vals: CSSComputedValues, val: CSSComputedValue, global: CSSGlobalValueType, parent: CSSComputedValues, previousOrigin: CSSComputedValues) =
+  let prop = val.t
   let parentVal = if parent != nil:
     parent[prop]
   else:
@@ -825,31 +870,6 @@ func rootProperties*(): CSSComputedValues =
   for prop in CSSPropertyType:
     result[prop] = getDefault(prop)
 
-proc buildComputedValue(vals, parent, previousOrigin: CSSComputedValues, build: CSSComputedValueBuilder) =
-  let global = build.global
-  let val = build.val
-  case val.t
-  of PROPERTY_ALL:
-    if global != VALUE_NOGLOBAL:
-      for t in CSSPropertyType:
-        vals.applyValue(t, nil, global, parent, previousOrigin)
-  of PROPERTY_MARGIN:
-    let left = CSSComputedValue(t: PROPERTY_MARGIN_LEFT, v: VALUE_LENGTH, length: val.length)
-    let right = CSSComputedValue(t: PROPERTY_MARGIN_RIGHT, v: VALUE_LENGTH, length: val.length)
-    let top = CSSComputedValue(t: PROPERTY_MARGIN_TOP, v: VALUE_LENGTH, length: val.length)
-    let bottom = CSSComputedValue(t: PROPERTY_MARGIN_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    for val in [left, right, top, bottom]:
-      vals.applyValue(val.t, val, global, parent, previousOrigin)
-  of PROPERTY_PADDING:
-    let left = CSSComputedValue(t: PROPERTY_PADDING_LEFT, v: VALUE_LENGTH, length: val.length)
-    let right = CSSComputedValue(t: PROPERTY_PADDING_RIGHT, v: VALUE_LENGTH, length: val.length)
-    let top = CSSComputedValue(t: PROPERTY_PADDING_TOP, v: VALUE_LENGTH, length: val.length)
-    let bottom = CSSComputedValue(t: PROPERTY_PADDING_BOTTOM, v: VALUE_LENGTH, length: val.length)
-    for val in [left, right, top, bottom]:
-      vals.applyValue(val.t, val, global, parent, previousOrigin)
-  else:
-    vals.applyValue(val.t, val, global, parent, previousOrigin)
-
 func hasValues*(builder: CSSComputedValuesBuilder): bool =
   for origin in CSSOrigin:
     if builder.normalProperties[origin].len > 0:
@@ -864,36 +884,36 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
   block:
     let origin = ORIGIN_USER_AGENT
     for build in builder.normalProperties[origin]:
-      result.buildComputedValue(builder.parent, nil, build)
+      result.applyValue(build.val, build.global, builder.parent, nil)
     previousOrigins[origin] = result.copyProperties()
   block:
     let origin = ORIGIN_USER
     let prevOrigin = ORIGIN_USER_AGENT
     for build in builder.normalProperties[origin]:
-      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
     previousOrigins[origin] = result.copyProperties() # save user origins so author can use them
   block:
     let origin = ORIGIN_AUTHOR
     let prevOrigin = ORIGIN_USER
     for build in builder.normalProperties[origin]:
-      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
     # no need to save user origins
   block:
     let origin = ORIGIN_AUTHOR
     let prevOrigin = ORIGIN_USER
     for build in builder.importantProperties[origin]:
-      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
     # important, so no need to save origins
   block:
     let origin = ORIGIN_USER
     let prevOrigin = ORIGIN_USER_AGENT
     for build in builder.importantProperties[origin]:
-      result.buildComputedValue(builder.parent, previousOrigins[prevOrigin], build)
+      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
     # important, so no need to save origins
   block:
     let origin = ORIGIN_USER_AGENT
     for build in builder.importantProperties[origin]:
-      result.buildComputedValue(builder.parent, nil, build)
+      result.applyValue(build.val, build.global, builder.parent, nil)
     # important, so no need to save origins
   # set defaults
   if builder.preshints != nil:
