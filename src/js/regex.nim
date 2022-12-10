@@ -6,7 +6,6 @@ import unicode
 import bindings/libregexp
 import bindings/quickjs
 import js/javascript
-import utils/twtstr
 
 export
   LRE_FLAG_GLOBAL,
@@ -36,7 +35,7 @@ type string16 = distinct string
 
 # Convert a UTF-8 string to UTF-16.
 # Note: this doesn't check for (invalid) UTF-8 containing surrogates.
-proc toUTF16*(s: string): string16 =
+proc toUTF16(s: string): string16 =
   var res = ""
   var i = 0
   template put16(c: uint16) =
@@ -88,17 +87,6 @@ template fastRuneAt(s: string16, i: int, r: untyped, doInc = true, be = false) =
     else:
       r = Rune(c1) # ucs-2
       when doInc: i += 2
-
-iterator runes(s: string16): Rune =
-  var i = 0
-  var r: Rune
-  while i < s.len:
-    fastRuneAt(s, i, r)
-    yield r
-
-proc fromUTF16(s: string16): string =
-  for r in s.runes:
-    result &= r
 
 var dummyRuntime = newJSRuntime()
 var dummyContext = dummyRuntime.newJSContextRaw()
@@ -227,32 +215,3 @@ proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult 
           e8 += r.size()
         result.captures.add((s8, e8))
   dealloc(capture)
-
-#TODO do something with this?
-proc replace(str: string, replace: RegexReplace): string =
-  let res = replace.regex.exec(str)
-  if res.success:
-    var repl = newStringOfCap(replace.rule.len)
-    for i in 0 ..< replace.rule.high:
-      if replace.rule[i] == '\\':
-        var j = i + 1
-        var ds = ""
-        while j < replace.rule.len and replace.rule[j] in AsciiDigit:
-          ds &= replace.rule[j]
-          inc j
-        let n = parseInt32(ds)
-        if n < res.captures.len:
-          repl &= str[res.captures[i].s..res.captures[i].e]
-          continue
-      repl &= replace.rule[i]
-    if replace.rule.len > 0:
-      repl &= replace.rule[replace.rule.high]
-    var i = 0
-    for j in 0 ..< res.captures.len:
-      result &= str.substr(i, res.captures[j].s)
-      i = res.captures[j].e
-      if not replace.global: break
-    if i < str.len:
-      result &= str.substr(i, str.len)
-  else:
-    return str
