@@ -6,6 +6,7 @@ import streams
 when defined(posix):
   import posix
 
+import io/posixstream
 import ips/serversocket
 
 type SocketStream* = ref object of Stream
@@ -17,7 +18,14 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
   result = s.source.recv(buffer, len)
   if result < 0:
-    raise newException(IOError, "Failed to read data (code " & $osLastError() & ")")
+    if errno == EAGAIN:
+      raise newException(ErrorAgain, "")
+    case errno
+    of EWOULDBLOCK: raise newException(ErrorWouldBlock, "")
+    of EBADF: raise newException(ErrorBadFD, "")
+    of EFAULT: raise newException(ErrorFault, "")
+    of EINVAL: raise newException(ErrorInvalid, "")
+    else: raise newException(IOError, $strerror(errno))
   elif result == 0:
     s.isend = true
 

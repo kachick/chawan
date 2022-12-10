@@ -17,12 +17,15 @@ import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/stylednode
+import data/charset
 import config/config
 import html/dom
 import html/tags
 import html/htmlparser
 import io/loader
 import io/request
+import io/posixstream
+import io/teestream
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
@@ -53,6 +56,7 @@ type
 
   Buffer* = ref object
     alive: bool
+    cs: Charset
     lasttimeout: int
     timeout: int
     readbufsize: int
@@ -525,9 +529,6 @@ proc loadResources(buffer: Buffer, document: Document) =
     for child in elem.children_rev:
       stack.add(child)
 
-proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
-  importc: "setvbuf", header: "<stdio.h>", tags: [].}
-
 type ConnectResult* = tuple[code: int, needsAuth: bool, redirect: Option[URL], contentType: string] 
 
 proc setupSource(buffer: Buffer): ConnectResult =
@@ -549,12 +550,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
       buffer.contenttype = "text/plain"
   of LOAD_PIPE:
     discard fcntl(source.fd, F_SETFL, fcntl(source.fd, F_GETFL, 0) or O_NONBLOCK)
-    var f: File
-    if not open(f, source.fd, fmRead):
-      result.code = 1
-      return
-    discard c_setvbuf(f, nil, IONBF, 0)
-    buffer.istream = newFileStream(f)
+    buffer.istream = newPosixStream(source.fd)
     if setct:
       buffer.contenttype = "text/plain"
   of LOAD_REQUEST:
@@ -569,6 +565,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
     SocketStream(buffer.istream).source.getFd().setBlocking(false)
     result.needsAuth = response.status == 401 # Unauthorized
     result.redirect = response.redirect
+  buffer.istream = newTeeStream(buffer.istream, buffer.sstream, closedest = false)
   if setct:
     result.contentType = buffer.contenttype
   buffer.loaded = true
@@ -585,27 +582,39 @@ proc finishLoad(buffer: Buffer) =
   of "text/html":
     buffer.sstream.setPosition(0)
     buffer.available = 0
-    buffer.document = parseHTML5(buffer.sstream)
+    let (doc, cs) = parseHTML5(buffer.sstream, fallbackcs = buffer.cs)
+    buffer.document = doc
+    if buffer.document == nil: # needsreinterpret
+      buffer.sstream.setPosition(0)
+      let (doc, _) = parseHTML5(buffer.sstream, cs = some(cs))
+      buffer.document = doc
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
   buffer.istream.close()
   buffer.streamclosed = true
 
-var sequential = 0
 proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
   var bytes = -1
   if buffer.streamclosed: return (true, buffer.lines.len, bytes)
   let op = buffer.sstream.getPosition()
-  inc sequential
   var s = newString(buffer.readbufsize)
   try:
-    buffer.istream.readStr(buffer.readbufsize, s)
-    result = (s.len == 0, buffer.lines.len, bytes)
+    buffer.sstream.setPosition(op + buffer.available)
+    let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
+    s.setLen(n)
+    result = (n == 0, buffer.lines.len, bytes)
+    buffer.sstream.setPosition(op)
     if buffer.readbufsize < BufferSize:
       buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
-  except IOError:
-    # Presumably EAGAIN, unless the loader process crashed in which case we're screwed.
-    s = s.until('\0') #TODO this shouldn't be needed here...
+    buffer.available += s.len
+    case buffer.contenttype
+    of "text/html":
+      bytes = buffer.available
+    else:
+      buffer.do_reshape()
+    if result.atend:
+      buffer.finishLoad()
+  except ErrorAgain, ErrorWouldBlock:
     buffer.timeout = buffer.lasttimeout
     if buffer.readbufsize == 1:
       if buffer.lasttimeout == 0:
@@ -615,18 +624,6 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
     else:
       buffer.readbufsize = buffer.readbufsize div 2
     result = (false, buffer.lines.len, bytes)
-  if s != "":
-    buffer.sstream.setPosition(op + buffer.available)
-    buffer.sstream.write(s)
-    buffer.sstream.setPosition(op)
-    buffer.available += s.len
-    case buffer.contenttype
-    of "text/html":
-      bytes = buffer.available
-    else:
-      buffer.do_reshape()
-  if result.atend:
-    buffer.finishLoad()
 
 proc render*(buffer: Buffer): int {.proxy.} =
   buffer.do_reshape()
@@ -640,7 +637,8 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   of "text/html":
     buffer.sstream.setPosition(0)
     buffer.available = 0
-    buffer.document = parseHTML5(buffer.sstream)
+    let (doc, _) = parseHTML5(buffer.sstream, cs = some(buffer.cs)) # confidence: certain
+    buffer.document = doc
     buffer.document.location = buffer.location
     buffer.do_reshape()
   return buffer.lines.len
@@ -1107,6 +1105,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
                    mainproc: Pid) =
   let buffer = Buffer(
     alive: true,
+    cs: CHARSET_UTF_8,
     userstyle: parseStylesheet(config.userstyle),
     attrs: attrs,
     config: config,
@@ -1119,12 +1118,11 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   )
   buffer.readbufsize = BufferSize
   buffer.selector = newSelector[int]()
-  buffer.sstream = newStringStream()
   buffer.srenderer = newStreamRenderer(buffer.sstream)
-  let sstream = connectSocketStream(mainproc, false)
-  sstream.swrite(getpid())
-  buffer.pistream = sstream
-  buffer.postream = sstream
-  let rfd = int(sstream.source.getFd())
+  let socks = connectSocketStream(mainproc, false)
+  socks.swrite(getpid())
+  buffer.pistream = socks
+  buffer.postream = socks
+  let rfd = int(socks.source.getFd())
   buffer.selector.registerHandle(rfd, {Read}, 0)
   buffer.runBuffer(rfd)

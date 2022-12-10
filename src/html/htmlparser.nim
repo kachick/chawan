@@ -3,17 +3,23 @@ import options
 import sequtils
 import streams
 import strformat
+import strutils
 import tables
 import unicode
 
 import css/sheet
+import data/charset
 import html/dom
 import html/tags
 import html/htmltokenizer
 import js/javascript
+import strings/decoderstream
 import utils/twtstr
 
 type
+  CharsetConfidence = enum
+    CONFIDENCE_TENTATIVE, CONFIDENCE_CERTAIN, CONFIDENCE_IRRELEVANT
+
   DOMParser = ref object # JS interface
 
   OpenElements = seq[Element]
@@ -22,6 +28,9 @@ type
     case fragment: bool
     of true: ctx: Element
     else: discard
+    needsreinterpret: bool
+    charset: Charset
+    confidence: CharsetConfidence
     openElements: OpenElements
     insertionMode: InsertionMode
     oldInsertionMode: InsertionMode
@@ -548,6 +557,54 @@ template pop_current_node = discard parser.popElement()
 func isHTMLIntegrationPoint(node: Element): bool =
   return false #TODO SVG (NOTE MathML not implemented)
 
+func extractEncFromMeta(s: string): Charset =
+  var i = 0
+  while true: # Loop:
+    var j = 0
+    while i < s.len:
+      template check(c: static char) =
+        if s[i] in {c, c.toUpperAscii()}: inc j
+        else: j = 0
+      case j
+      of 0: check 'c'
+      of 1: check 'h'
+      of 2: check 'a'
+      of 3: check 'r'
+      of 4: check 's'
+      of 5: check 'e'
+      of 6: check 't'
+      of 7:
+        inc i
+        break
+      else: discard
+      inc i
+    if j < 7: return CHARSET_UNKNOWN
+    j = 0
+    while i < s.len and s[i] in AsciiWhitespace: inc i
+    if i >= s.len or s[i] != '=': continue
+    while i < s.len and s[i] in AsciiWhitespace: inc i
+    break
+  if i >= s.len: return CHARSET_UNKNOWN
+  if s[i] in {'"', '\''}:
+    let s2 = s.substr(i).until(s[i])
+    if s2.len == 0 or s2[^1] != s[i]:
+      return CHARSET_UNKNOWN
+    return getCharset(s2)
+  return getCharset(s.substr(i - 1).until({';', ' '}))
+
+proc changeEncoding(parser: var HTML5Parser, cs: Charset) =
+  if parser.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
+    parser.confidence = CONFIDENCE_CERTAIN
+    return
+  parser.confidence = CONFIDENCE_CERTAIN
+  if cs == parser.charset:
+    return
+  if cs == CHARSET_X_USER_DEFINED:
+    parser.charset = CHARSET_WINDOWS_1252
+  else:
+    parser.charset = cs
+  parser.needsreinterpret = true
+
 # Following is an implementation of the state (?) machine defined in
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhtml
 # It uses the ad-hoc pattern matching macro `match' to apply the following
@@ -562,7 +619,7 @@ func isHTMLIntegrationPoint(node: Element): bool =
 #   pseudo-goto by breaking out only when the else statement needn't be
 #   executed.
 #
-# e.g. the following code:
+# For example, the following code:
 #
 #   match token:
 #     TokenType.COMMENT => (block: echo "comment")
@@ -644,7 +701,7 @@ macro match(token: Token, body: typed): untyped =
           ofBranches[CHARACTER_ASCII].painted = true
         else: error fmt"Unsupported curly of kind {pattern[0].kind}"
       of nnkStrLit:
-        var tempTokenizer = newTokenizer(newStringStream(pattern.strVal))
+        var tempTokenizer = newTokenizer(pattern.strVal)
         for token in tempTokenizer.tokenize:
           let tt = int(token.tagtype)
           case token.t
@@ -811,9 +868,16 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         pop_current_node
       )
       "<meta>" => (block:
-        discard parser.insertHTMLElement(token)
+        let element = parser.insertHTMLElement(token)
         pop_current_node
-        #TODO encodings
+        if parser.confidence == CONFIDENCE_TENTATIVE:
+          let cs = getCharset(element.attr("charset"))
+          if cs != CHARSET_UNKNOWN:
+            parser.changeEncoding(cs)
+          elif element.attr("http-equiv").equalsIgnoreCase("Content-Type"):
+            let cs = extractEncFromMeta(element.attr("content"))
+            if cs != CHARSET_UNKNOWN:
+              parser.changeEncoding(cs)
       )
       "<title>" => (block: parser.genericRCDATAElementParsingAlgorithm(token))
       "<noscript>" => (block:
@@ -2092,17 +2156,48 @@ proc constructTree(parser: var HTML5Parser): Document =
       parser.processInHTMLContent(token)
     else:
       parser.processInForeignContent(token)
+    if parser.needsreinterpret:
+      return nil
 
   #TODO document.write (?)
   #TODO etc etc...
 
   return parser.document
 
-proc parseHTML5*(inputStream: Stream): Document =
+proc parseHTML5*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_UTF_8): (Document, Charset) =
   var parser: HTML5Parser
+  var bom: string
+  if cs.isSome:
+    parser.charset = cs.get
+    parser.confidence = CONFIDENCE_CERTAIN
+  else:
+    # bom sniff
+    const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
+    const bebom = char(0xFE) & char(0xFF)
+    const lebom = char(0xFF) & char(0xFE)
+    bom = inputStream.readStr(2)
+    if bom == bebom:
+      parser.charset = CHARSET_UTF_16_BE
+      parser.confidence = CONFIDENCE_CERTAIN
+      bom = ""
+    elif bom == lebom:
+      parser.charset = CHARSET_UTF_16_LE
+      parser.confidence = CONFIDENCE_CERTAIN
+      bom = ""
+    else:
+      bom &= inputStream.readChar()
+      if bom == u8bom:
+        parser.charset = CHARSET_UTF_8
+        parser.confidence = CONFIDENCE_CERTAIN
+        bom = ""
+      else:
+        parser.charset = fallbackcs
+  let decoder = newDecoderStream(inputStream, parser.charset)
+  for c in bom:
+    decoder.prepend(cast[uint32](c))
   parser.document = newDocument()
-  parser.tokenizer = inputStream.newTokenizer()
-  return parser.constructTree()
+  parser.tokenizer = newTokenizer(decoder)
+  return (parser.constructTree(), parser.charset)
 
 proc newDOMParser*(): DOMParser {.jsctor.} =
   new(result)
@@ -2110,7 +2205,8 @@ proc newDOMParser*(): DOMParser {.jsctor.} =
 proc parseFromString*(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
   case t
   of "text/html":
-    return parseHTML5(newStringStream(str))
+    let (res, _) = parseHTML5(newStringStream(str))
+    return res
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
     JS_THROW JS_InternalError, "XML parsing is not supported yet"
   else:

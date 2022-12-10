@@ -140,7 +140,7 @@ func decValue*(c: char): int =
   return decCharMap[c]
 
 func isAscii*(r: Rune): bool =
-  return int(r) < 128
+  return int32(r) < 128
 
 const HexChars = "0123456789ABCDEF"
 func toHex*(c: char): string =

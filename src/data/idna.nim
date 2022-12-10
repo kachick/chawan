@@ -15,7 +15,7 @@ type
   FullRangeList = (seq[(uint16, uint16)], seq[(uint32, uint32)])
   FullSet = (set[uint16], HashSet[uint32])
 
-const IdnaMappingTable = staticRead"res/IdnaMappingTable.txt"
+const IdnaMappingTable = staticRead"res/map/IdnaMappingTable.txt"
 
 func loadStuff(s: string): (FullMap[cstring], # Map
                             FullRangeList, # Disallowed Ranges

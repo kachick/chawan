@@ -272,9 +272,14 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
   let c1 = s2[0..<min(l,2)]
   let c2 = s2[l..<min(l*2,l+2)]
   let c3 = s2[l*2..<min(l*3,l*2+2)]
-  let c = (hexValue(c1[0]) shl 20) or (hexValue(c1[1]) shl 16) or
-          (hexValue(c2[0]) shl 12) or (hexValue(c2[1]) shl 8) or
-          (hexValue(c3[0]) shl 4) or hexValue(c3[1])
+  let c = if l == 1:
+    (hexValue(c1[0]) shl 20) or (hexValue(c1[0]) shl 16) or
+    (hexValue(c2[0]) shl 12) or (hexValue(c2[0]) shl 8) or
+    (hexValue(c3[0]) shl 4) or hexValue(c3[0])
+  else:
+    (hexValue(c1[0]) shl 20) or (hexValue(c1[1]) shl 16) or
+    (hexValue(c2[0]) shl 12) or (hexValue(c2[1]) shl 8) or
+    (hexValue(c3[0]) shl 4) or hexValue(c3[1])
   return some(RGBColor(c))
 
 func r*(c: RGBAColor): int =

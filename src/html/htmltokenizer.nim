@@ -1,5 +1,4 @@
 import options
-import streams
 import strformat
 import strutils
 import macros
@@ -8,6 +7,7 @@ import unicode
 
 import html/entity
 import html/tags
+import strings/decoderstream
 import utils/radixtree
 import utils/twtstr
 
@@ -16,7 +16,6 @@ type
   Tokenizer* = object
     state*: TokenizerState
     rstate: TokenizerState
-    curr: Rune
     tmp: string
     code: int
     tok: Token
@@ -25,10 +24,9 @@ type
     attrv: string
     attr: bool
 
-    istream: Stream
-    sbuf: string
+    decoder: DecoderStream
+    sbuf: seq[Rune]
     sbuf_i: int
-    sbuf_ip: int
     eof_i: int
 
   TokenType* = enum
@@ -97,65 +95,67 @@ func `$`*(tok: Token): string =
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
-const bufSize = 4096
-const copyBufSize = 16
-proc newTokenizer*(s: Stream): Tokenizer =
-  result.sbuf = newString(bufSize)
-  result.istream = s
-  result.eof_i = -1
-  if result.istream.atEnd:
-    result.eof_i = 0
-  else:
-    let n = s.readDataStr(result.sbuf, 0..bufSize-1)
-    if n != bufSize:
-      result.eof_i = n
+const bufLen = 1024 # * 4096 bytes
+const copyBufLen = 16 # * 64 bytes
+
+proc readn(t: var Tokenizer) =
+  let l = t.sbuf.len
+  t.sbuf.setLen(bufLen)
+  let n = t.decoder.readData(addr t.sbuf[l], (bufLen - l) * sizeof(Rune))
+  t.sbuf.setLen(l + n div sizeof(Rune))
+  if t.decoder.atEnd:
+    t.eof_i = t.sbuf.len
+
+proc newTokenizer*(s: DecoderStream): Tokenizer =
+  var t = Tokenizer(
+    decoder: s,
+    sbuf: newSeqOfCap[Rune](bufLen),
+    eof_i: -1,
+    sbuf_i: 0
+  )
+  t.readn()
+  return t
+
+proc newTokenizer*(s: string): Tokenizer =
+  let rs = s.toRunes()
+  var t = Tokenizer(
+    sbuf: rs,
+    eof_i: rs.len,
+    sbuf_i: 0
+  )
+  return t
 
 func atEof(t: Tokenizer): bool =
   t.eof_i != -1 and t.sbuf_i >= t.eof_i
 
-proc consume(t: var Tokenizer): char {.inline.} =
-  if t.eof_i == -1 and t.sbuf_i >= bufSize-copyBufSize:
-    # Workaround to swap buffer without breaking fastRuneAt.
-    var sbuf2 = newString(copyBufSize)
-    var i = 0
-    while t.sbuf_i + i < bufSize:
-      sbuf2[i] = t.sbuf[t.sbuf_i + i]
-      inc i
-    let n = t.istream.readDataStr(t.sbuf, i..bufSize-1)
-    if n != bufSize - i:
-      t.eof_i = i + n
+proc consume(t: var Tokenizer): Rune =
+  if t.sbuf_i >= min(bufLen - copyBufLen, t.sbuf.len):
+    for i in t.sbuf_i ..< t.sbuf.len:
+      t.sbuf[i - t.sbuf_i] = t.sbuf[i]
+    t.sbuf.setLen(t.sbuf.len - t.sbuf_i)
     t.sbuf_i = 0
-
-    var j = 0
-    while j < i:
-      t.sbuf[j] = sbuf2[j]
-      inc j
-
-  assert t.eof_i == -1 or t.sbuf_i < t.eof_i # not consuming eof...
-  t.sbuf_ip = t.sbuf_i # save previous pointer for potential reconsume
-
-  # Normalize newlines (\r\n -> \n, single \r -> \n)
-  if t.sbuf[t.sbuf_i] == '\r':
+    if t.sbuf.len < bufLen:
+      t.readn()
+  ## Normalize newlines (\r\n -> \n, single \r -> \n)
+  if t.sbuf[t.sbuf_i] == Rune('\r'):
     inc t.sbuf_i
-    if t.sbuf[t.sbuf_i] != '\n':
+    if t.sbuf[t.sbuf_i] != Rune('\n'):
       # \r
-      result = '\n'
-      t.curr = Rune('\n')
+      result = Rune('\n')
       return
     # else, \r\n so just return the \n
-
   result = t.sbuf[t.sbuf_i]
-  fastRuneAt(t.sbuf, t.sbuf_i, t.curr)
+  inc t.sbuf_i
 
 proc reconsume(t: var Tokenizer) =
-  t.sbuf_i = t.sbuf_ip
+  dec t.sbuf_i
 
 iterator tokenize*(tokenizer: var Tokenizer): Token =
   template emit(tok: Token) =
     if tok.t == START_TAG:
       tokenizer.laststart = tok
     if tok.t in {START_TAG, END_TAG}:
-      tok.tagtype = tagType(tok.tagName)
+      tok.tagtype = tagType(tok.tagname)
     yield tok
   template emit(tok: TokenType) = emit Token(t: tok)
   template emit(rn: Rune) = emit Token(t: CHARACTER, r: rn)
@@ -173,7 +173,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     elif c in Ascii:
       emit c
     else:
-      emit tokenizer.curr
+      emit r
   template emit_replacement = emit Rune(0xFFFD)
   template switch_state(s: TokenizerState) =
     tokenizer.state = s
@@ -199,23 +199,40 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     if tokenizer.attr:
       tokenizer.attrv &= c
   template peek_str(s: string): bool =
-    # WARNING: will break on strings with copyBufSize + 4 bytes
-    assert s.len < copyBufSize - 4 and s.len > 0
-    if tokenizer.sbuf_i + s.len > tokenizer.eof_i:
+    # WARNING: will break on strings with copyBufLen + 4 bytes
+    # WARNING: only works with ascii
+    assert s.len < copyBufLen - 4 and s.len > 0
+    if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
       false
     else:
-      let slice = tokenizer.sbuf[tokenizer.sbuf_i..tokenizer.sbuf_i+s.high]
-      s == slice
+      var b = true
+      for i in 0 ..< s.len:
+        let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
+        if not c.isAscii() or cast[char](c) != s[i]:
+          b = false
+          break
+      b
+
   template peek_str_nocase(s: string): bool =
-    # WARNING: will break on strings with copyBufSize + 4 bytes
+    # WARNING: will break on strings with copyBufLen + 4 bytes
     # WARNING: only works with UPPER CASE ascii
-    assert s.len < copyBufSize - 4 and s.len > 0
-    if tokenizer.sbuf_i + s.len > tokenizer.eof_i:
+    assert s.len < copyBufLen - 4 and s.len > 0
+    if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
       false
     else:
-      let slice = tokenizer.sbuf[tokenizer.sbuf_i..tokenizer.sbuf_i+s.high]
-      s == slice.toUpperAscii()
-  template peek_char(): char = tokenizer.sbuf[tokenizer.sbuf_i]
+      var b = true
+      for i in 0 ..< s.len:
+        let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
+        if not c.isAscii() or cast[char](c).toUpperAscii() != s[i]:
+          b = false
+          break
+      b
+  template peek_char(): char =
+    let r = tokenizer.sbuf[tokenizer.sbuf_i]
+    if r.isAscii():
+      cast[char](r)
+    else:
+      char(128)
   template has_adjusted_current_node(): bool = false #TODO implement this
   template consume_and_discard(n: int) = #TODO optimize
     var i = 0
@@ -298,17 +315,17 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template has_anything_else = discard # does nothing
 
   const null = char(0)
-  const whitespace = {'\t', '\n', '\f', ' '}
 
   while true:
     {.computedGoto.}
     #eprint tokenizer.state #debug
     let is_eof = tokenizer.atEof # set eof here, otherwise we would exit at the last character
-    let c = if not is_eof:
+    let r = if not is_eof:
       tokenizer.consume()
     else:
       # avoid consuming eof...
-      null
+      Rune(null)
+    let c = if r.isAscii(): cast[char](r) else: char(128)
     stateMachine: # => case tokenizer.state
     of DATA:
       case c
@@ -394,19 +411,19 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of TAG_NAME:
       case c
-      of whitespace: switch_state BEFORE_ATTRIBUTE_NAME
+      of AsciiWhitespace: switch_state BEFORE_ATTRIBUTE_NAME
       of '/': switch_state SELF_CLOSING_START_TAG
       of '>':
         switch_state DATA
         emit_tok
-      of AsciiUpperAlpha: tokenizer.tok.tagname &= char(tokenizer.curr).tolower()
+      of AsciiUpperAlpha: tokenizer.tok.tagname &= c.tolower()
       of null:
         parse_error unexpected_null_character
         tokenizer.tok.tagname &= Rune(0xFFFD)
       of eof:
         parse_error eof_in_tag
         emit_eof
-      else: tokenizer.tok.tagname &= tokenizer.curr
+      else: tokenizer.tok.tagname &= r
 
     of RCDATA_LESS_THAN_SIGN:
       case c
@@ -430,7 +447,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of RCDATA_END_TAG_NAME:
       has_anything_else
       case c
-      of whitespace:
+      of AsciiWhitespace:
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
@@ -447,8 +464,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= char(tokenizer.curr).tolower()
-        tokenizer.tmp &= tokenizer.curr
+        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tmp &= c
       else:
         new_token nil #TODO
         emit '<'
@@ -478,7 +495,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of RAWTEXT_END_TAG_NAME:
       has_anything_else
       case c
-      of whitespace:
+      of AsciiWhitespace:
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
@@ -495,8 +512,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= char(tokenizer.curr).tolower()
-        tokenizer.tmp &= tokenizer.curr
+        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tmp &= c
       else:
         new_token nil #TODO
         emit '<'
@@ -531,7 +548,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of SCRIPT_DATA_END_TAG_NAME:
       has_anything_else
       case c
-      of whitespace:
+      of AsciiWhitespace:
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
@@ -548,8 +565,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= char(tokenizer.curr).tolower()
-        tokenizer.tmp &= tokenizer.curr
+        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tmp &= c
       else:
         emit '<'
         emit '/'
@@ -650,7 +667,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
       has_anything_else
       case c
-      of whitespace:
+      of AsciiWhitespace:
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
@@ -666,8 +683,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha:
-        tokenizer.tok.tagname &= char(tokenizer.curr).tolower()
-        tokenizer.tmp &= tokenizer.curr
+        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tmp &= c
       else:
         emit '<'
         emit '/'
@@ -676,7 +693,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of SCRIPT_DATA_DOUBLE_ESCAPE_START:
       case c
-      of whitespace, '/', '>':
+      of AsciiWhitespace, '/', '>':
         if tokenizer.tmp == "script":
           switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         else:
@@ -750,7 +767,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of SCRIPT_DATA_DOUBLE_ESCAPE_END:
       case c
-      of whitespace, '/', '>':
+      of AsciiWhitespace, '/', '>':
         if tokenizer.tmp == "script":
           switch_state SCRIPT_DATA_ESCAPED
         else:
@@ -764,7 +781,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of BEFORE_ATTRIBUTE_NAME:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '/', '>', eof: reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
         parse_error unexpected_equals_sign_before_attribute_name
@@ -777,7 +794,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of ATTRIBUTE_NAME:
       has_anything_else
       case c
-      of whitespace, '/', '>', eof:
+      of AsciiWhitespace, '/', '>', eof:
         leave_attribute_name_state
         reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
@@ -792,11 +809,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error unexpected_character_in_attribute_name
         anything_else
       else:
-        tokenizer.attrn &= tokenizer.curr
+        tokenizer.attrn &= r
 
     of AFTER_ATTRIBUTE_NAME:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '/': switch_state SELF_CLOSING_START_TAG
       of '=': switch_state BEFORE_ATTRIBUTE_VALUE
       of '>':
@@ -811,7 +828,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of BEFORE_ATTRIBUTE_VALUE:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '"': switch_state ATTRIBUTE_VALUE_DOUBLE_QUOTED
       of '\'': switch_state ATTRIBUTE_VALUE_SINGLE_QUOTED
       of '>':
@@ -830,7 +847,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error eof_in_tag
         emit_eof
-      else: append_to_current_attr_value tokenizer.curr
+      else: append_to_current_attr_value r
 
     of ATTRIBUTE_VALUE_SINGLE_QUOTED:
       case c
@@ -842,11 +859,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error eof_in_tag
         emit_eof
-      else: append_to_current_attr_value tokenizer.curr
+      else: append_to_current_attr_value r
 
     of ATTRIBUTE_VALUE_UNQUOTED:
       case c
-      of whitespace: switch_state BEFORE_ATTRIBUTE_NAME
+      of AsciiWhitespace: switch_state BEFORE_ATTRIBUTE_NAME
       of '&': switch_state_return CHARACTER_REFERENCE
       of '>':
         switch_state DATA
@@ -860,11 +877,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error eof_in_tag
         emit_eof
-      else: append_to_current_attr_value tokenizer.curr
+      else: append_to_current_attr_value r
 
     of AFTER_ATTRIBUTE_VALUE_QUOTED:
       case c
-      of whitespace:
+      of AsciiWhitespace:
         switch_state BEFORE_ATTRIBUTE_NAME
       of '/':
         switch_state SELF_CLOSING_START_TAG
@@ -874,7 +891,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error eof_in_tag
         emit_eof
-      else: append_to_current_attr_value tokenizer.curr
+      else: append_to_current_attr_value r
 
     of SELF_CLOSING_START_TAG:
       case c
@@ -899,7 +916,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       of null: parse_error unexpected_null_character
-      else: tokenizer.tok.data &= tokenizer.curr
+      else: tokenizer.tok.data &= r
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
       has_anything_else
@@ -967,7 +984,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error eof_in_comment
         emit_tok
         emit_eof
-      else: tokenizer.tok.data &= tokenizer.curr
+      else: tokenizer.tok.data &= r
 
     of COMMENT_LESS_THAN_SIGN:
       case c
@@ -1037,7 +1054,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of DOCTYPE:
       case c
-      of whitespace: switch_state BEFORE_DOCTYPE_NAME
+      of AsciiWhitespace: switch_state BEFORE_DOCTYPE_NAME
       of '>': reconsume_in BEFORE_DOCTYPE_NAME
       of eof:
         parse_error eof_in_doctype
@@ -1050,7 +1067,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of BEFORE_DOCTYPE_NAME:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of AsciiUpperAlpha:
         new_token Token(t: DOCTYPE, name: some($c.tolower()))
         switch_state DOCTYPE_NAME
@@ -1068,12 +1085,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        new_token Token(t: DOCTYPE, name: some($tokenizer.curr))
+        new_token Token(t: DOCTYPE, name: some($r))
         switch_state DOCTYPE_NAME
 
     of DOCTYPE_NAME:
       case c
-      of whitespace: switch_state AFTER_DOCTYPE_NAME
+      of AsciiWhitespace: switch_state AFTER_DOCTYPE_NAME
       of '>':
         switch_state DATA
         emit_tok
@@ -1088,12 +1105,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.name.get &= tokenizer.curr
+        tokenizer.tok.name.get &= r
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
       has_anything_else
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '>':
         switch_state DATA
         emit_tok
@@ -1121,7 +1138,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of AFTER_DOCTYPE_PUBLIC_KEYWORD:
       case c
-      of whitespace: switch_state BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
+      of AsciiWhitespace: switch_state BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
       of '"':
         parse_error missing_whitespace_after_doctype_public_keyword
         tokenizer.tok.pubid = some("")
@@ -1143,7 +1160,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of BEFORE_DOCTYPE_PUBLIC_IDENTIFIER:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '"':
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
@@ -1182,7 +1199,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.pubid.get &= tokenizer.curr
+        tokenizer.tok.pubid.get &= r
 
     of DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
       case c
@@ -1201,11 +1218,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.pubid.get &= tokenizer.curr
+        tokenizer.tok.pubid.get &= r
 
     of AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
       case c
-      of whitespace: switch_state BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
+      of AsciiWhitespace: switch_state BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
       of '>':
         switch_state DATA
         emit_tok
@@ -1229,7 +1246,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '>':
         switch_state DATA
         emit_tok
@@ -1251,7 +1268,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of AFTER_DOCTYPE_SYSTEM_KEYWORD:
       case c
-      of whitespace: switch_state BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
+      of AsciiWhitespace: switch_state BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
       of '"':
         parse_error missing_whitespace_after_doctype_system_keyword
         tokenizer.tok.sysid = some("")
@@ -1277,7 +1294,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of BEFORE_DOCTYPE_SYSTEM_IDENTIFIER:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '"':
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
@@ -1316,7 +1333,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.sysid.get &= tokenizer.curr
+        tokenizer.tok.sysid.get &= r
 
     of DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
       case c
@@ -1335,11 +1352,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.sysid.get &= tokenizer.curr
+        tokenizer.tok.sysid.get &= r
 
     of AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
       case c
-      of whitespace: discard
+      of AsciiWhitespace: discard
       of '>':
         switch_state DATA
         emit_tok
@@ -1403,7 +1420,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of NAMED_CHARACTER_REFERENCE:
       ignore_eof # we check for eof ourselves
       tokenizer.reconsume()
-      when nimVm:
+      when nimvm:
         eprint "Cannot evaluate character references at compile time"
       else:
         var buf = ""
@@ -1412,8 +1429,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         #TODO interfacing with RadixNode is suffering
         # plus this doesn't look very efficient either
         while not tokenizer.atEof:
-          let c = tokenizer.consume()
-          buf &= c
+          let r = tokenizer.consume()
+          buf &= r
           if not node.hasPrefix(buf):
             tokenizer.reconsume()
             break
@@ -1423,7 +1440,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
             buf = ""
             if node.value.issome:
               value = node.value
-          tokenizer.tmp &= tokenizer.curr
+          tokenizer.tmp &= r
         if value.issome:
           if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and peek_char in {'='} + AsciiAlpha:
             flush_code_points_consumed_as_a_character_reference
