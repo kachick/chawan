@@ -663,9 +663,25 @@ proc positionBlocks(box: BlockBox) =
 
   template apply_child(child: BlockBox) =
     child.offset.y = y
-    child.offset.x = x + child.margin_left
+    child.offset.x = x
     if box.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
       child.offset.x -= child.width div 2
+    elif not child.computed{"width"}.auto and child.compwidth < box.compwidth:
+      let margin_left = child.computed{"margin-left"}
+      let margin_right = child.computed{"margin-right"}
+      if margin_left.auto and margin_right.auto:
+        child.margin_left += box.compwidth div 2
+        child.margin_left -= child.compwidth div 2
+        child.margin_right += box.compwidth div 2
+        child.margin_right -= child.compwidth div 2
+      elif margin_left.auto:
+        child.margin_left += box.compwidth
+        child.margin_left -= child.compwidth
+      elif margin_right.auto:
+        child.margin_right += box.compwidth
+        child.margin_right -= child.compwidth
+    child.offset.x += child.margin_left
+
     if box.computed{"position"} == POSITION_RELATIVE:
       box.positionRelative(child)
     y += child.height

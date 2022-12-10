@@ -422,9 +422,9 @@ func cssColor(val: CSSComponentValue): RGBAColor =
 
 func isToken(d: CSSDeclaration): bool {.inline.} = d.value.len > 0 and d.value[0] of CSSToken
 
-func cssLength(d: CSSDeclaration): CSSLength =
-  if isToken(d):
-    let tok = CSSToken(d.value[0])
+func cssLength(val: CSSComponentValue): CSSLength =
+  if val of CSSToken:
+    let tok = CSSToken(val)
     case tok.tokenType
     of CSS_NUMBER_TOKEN:
       if tok.nvalue == 0:
@@ -589,7 +589,7 @@ func cssVerticalAlign(d: CSSDeclaration): CSSVerticalAlign =
       return result
     else:
       result.keyword = VERTICAL_ALIGN_BASELINE
-      result.length = cssLength(d)
+      result.length = cssLength(tok)
       return result
   raise newException(CSSValueError, "Invalid vertical align")
 
@@ -603,7 +603,7 @@ func cssLineHeight(d: CSSDeclaration): CSSLength =
       if tok.value == "normal":
         return CSSLength(auto: true)
     else:
-      return cssLength(d)
+      return cssLength(tok)
   raise newException(CSSValueError, "Invalid line height")
 
 func cssTextAlign(d: CSSDeclaration): CSSTextAlign =
@@ -649,6 +649,8 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_COLOR:
     if d.value.len > 0:
       val.color = cssColor(d.value[0])
+    else:
+      raise newException(CSSValueError, "Empty value")
   of VALUE_LENGTH:
     case ptype
     of PROPERTY_WORD_SPACING:
@@ -656,7 +658,10 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
     of PROPERTY_LINE_HEIGHT:
       val.length = cssLineHeight(d)
     else:
-      val.length = cssLength(d)
+      if d.value.len > 0:
+        val.length = cssLength(d.value[0])
+      else:
+        raise newException(CSSValueError, "Empty value")
   of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(d)
   of VALUE_DISPLAY: val.display = cssDisplay(d)
   of VALUE_CONTENT: val.content = cssString(d)
@@ -689,7 +694,7 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
      PROPERTY_BOTTOM:
     return CSSLength(auto: true)
   else:
-    return CSSLength()
+    return CSSLength(auto: false, unit: UNIT_PX, num: 0)
 
 func calcInitial(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
@@ -725,7 +730,56 @@ func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType, vtype: CSSValue
 
   return (val, cssGlobal(d))
 
-func getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValueType)] =
+func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]): seq[(CSSComputedValue, CSSGlobalValueType)] =
+  var i = 0
+  var cvals: seq[CSSComponentValue]
+  while i < d.value.len:
+    if d.value[i] != CSS_WHITESPACE_TOKEN:
+      cvals.add(d.value[i])
+    inc i
+  case cvals.len
+  of 1:
+    try:
+      for ptype in props:
+        let vtype = valueType(ptype)
+        let val = CSSComputedValue(t: ptype, v: vtype)
+        val.getValueFromDecl(d, vtype, ptype)
+        result.add((val, cssGlobal(d)))
+    except CSSValueError: discard
+  of 2:
+    try:
+      for i in 0 ..< props.len:
+        let ptype = props[i]
+        let vtype = valueType(ptype)
+        let val = CSSComputedValue(t: ptype, v: vtype)
+        val.length = cssLength(cvals[i div 2])
+        result.add((val, cssGlobal(d)))
+    except CSSValueError:
+      discard
+  of 3:
+    try:
+      for i in 0 ..< props.len:
+        let ptype = props[i]
+        let vtype = valueType(ptype)
+        let val = CSSComputedValue(t: ptype, v: vtype)
+        let j = if i == 0: 0 elif i == 3: 2 else: 1
+        val.length = cssLength(cvals[j])
+        result.add((val, cssGlobal(d)))
+    except CSSValueError:
+      discard
+  of 4:
+    try:
+      for i in 0 ..< props.len:
+        let ptype = props[i]
+        let vtype = valueType(ptype)
+        let val = CSSComputedValue(t: ptype, v: vtype)
+        val.length = cssLength(cvals[i])
+        result.add((val, cssGlobal(d)))
+    except CSSValueError:
+      discard
+  else: discard
+
+proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValueType)] =
   let name = d.name
   case shorthandType(name)
   of SHORTHAND_NONE:
@@ -740,15 +794,15 @@ func getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
         let val = CSSComputedValue(t: ptype, v: vtype)
         result.add((val, global))
   of SHORTHAND_MARGIN:
-    for ptype in [PROPERTY_MARGIN_TOP, PROPERTY_MARGIN_LEFT,
-                  PROPERTY_MARGIN_RIGHT, PROPERTY_MARGIN_BOTTOM]:
-      let vtype = valueType(ptype)
-      result.add(getComputedValue(d, ptype, vtype))
+    result.add(lengthShorthand(d, [PROPERTY_MARGIN_TOP,
+                                   PROPERTY_MARGIN_BOTTOM,
+                                   PROPERTY_MARGIN_LEFT,
+                                   PROPERTY_MARGIN_RIGHT]))
   of SHORTHAND_PADDING:
-    for ptype in [PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT,
-                  PROPERTY_PADDING_RIGHT, PROPERTY_PADDING_BOTTOM]:
-      let vtype = valueType(ptype)
-      result.add(getComputedValue(d, ptype, vtype))
+    result.add(lengthShorthand(d, [PROPERTY_PADDING_TOP,
+                                   PROPERTY_PADDING_BOTTOM,
+                                   PROPERTY_PADDING_LEFT,
+                                   PROPERTY_PADDING_RIGHT]))
   of SHORTHAND_BACKGROUND:
     let global = cssGlobal(d)
     let bgcolorptype = PROPERTY_BACKGROUND_COLOR
