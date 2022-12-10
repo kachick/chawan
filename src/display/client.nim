@@ -313,6 +313,32 @@ proc inputLoop(client: Client) =
     client.pager.draw()
     client.acceptBuffers()
 
+proc dumpLoop(client: Client) =
+  while client.pager.numload > 0:
+    let events = client.selector.select(-1)
+    for event in events:
+      if Read in event.events:
+        let container = client.fdmap[event.fd]
+        if not client.pager.handleEvent(container):
+          client.quit(1)
+      if Error in event.events:
+        #TODO handle errors
+        client.alert("Error in selected fds, check console")
+        client.console.log($event)
+      if Event.Timer in event.events:
+        if event.fd in client.interval_fdis:
+          client.intervals[client.interval_fdis[event.fd]].handler()
+        elif event.fd in client.timeout_fdis:
+          let id = client.timeout_fdis[event.fd]
+          let timeout = client.timeouts[id]
+          timeout.handler()
+          client.clearTimeout(id)
+    if client.pager.scommand != "":
+      client.command(client.pager.scommand)
+      client.pager.scommand = ""
+      client.pager.refreshStatusMsg()
+    client.acceptBuffers()
+
 proc headlessLoop(client: Client) =
   while client.timeouts.len + client.intervals.len != 0:
     let events = client.selector.select(-1)
@@ -366,6 +392,7 @@ proc newConsole(pager: Pager, tty: File): Console =
     result.err = newFileStream(stderr)
 
 proc dumpBuffers(client: Client) =
+  client.dumpLoop()
   let ostream = newFileStream(stdout)
   for container in client.pager.containers:
     client.pager.drawBuffer(container, ostream)

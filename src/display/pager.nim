@@ -32,6 +32,7 @@ type
     SEARCH_B, ISEARCH_F, ISEARCH_B
 
   Pager* = ref object
+    numload*: int
     alerts: seq[string]
     commandMode*: bool
     container*: Container
@@ -162,8 +163,7 @@ proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, 
 
 proc launchPager*(pager: Pager, tty: File) =
   pager.tty = tty
-  if tty != nil:
-    pager.term.start(tty)
+  pager.term.start(tty)
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
@@ -267,6 +267,7 @@ proc refreshStatusMsg*(pager: Pager) =
 
 proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
   var format = newFormat()
+  var i = 0
   for line in container.readLines:
     if line.formats.len == 0:
       ostream.write(line.str & "\n")
@@ -276,7 +277,6 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
       var s = ""
       for f in line.formats:
         var outstr = ""
-        #assert f.pos < line.str.width(), "fpos " & $f.pos & "\nstr" & line.str & "\n"
         while x < f.pos:
           var r: Rune
           fastRuneAt(line.str, i, r)
@@ -286,6 +286,7 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
         s &= pager.term.processFormat(format, f.format)
       s &= line.str.substr(i) & pager.term.processFormat(format, newFormat()) & "\n"
       ostream.write(s)
+    inc i
   ostream.flush()
 
 proc redraw(pager: Pager) {.jsfunc.} =
@@ -457,6 +458,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
       container.replace = replace
       container.copyCursorPos(container.replace)
     pager.addContainer(container)
+    inc pager.numload
   else:
     pager.container.findAnchor(request.url.anchor)
 
@@ -618,6 +620,7 @@ proc authorize*(pager: Pager) =
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
   of FAIL:
+    dec pager.numload
     pager.deleteContainer(container)
     if container.retry.len > 0:
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
@@ -639,6 +642,8 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
         container.parent.children[n] = container
       if pager.container == container.replace:
         pager.setContainer(container)
+  of LOADED:
+    dec pager.numload
   of NEEDS_AUTH:
     if pager.container == container:
       pager.authorize()

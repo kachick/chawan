@@ -32,7 +32,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT
+    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -623,6 +623,7 @@ proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
       container.iface.render().then(proc(lines: int): auto =
         container.setNumLines(lines, true)
         container.needslines = true
+        container.triggerEvent(LOADED)
         if not container.hasstart and container.source.location.anchor != "":
           return container.iface.gotoAnchor()
       ).then(proc(res: tuple[x, y: int]) =
@@ -751,19 +752,15 @@ proc setStream*(container: Container, stream: Stream) =
 
 # Synchronously read all lines in the buffer.
 iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
-  while container.iface.hasPromises:
-    # Spin event loop till container has been loaded
-    container.handleCommand()
   if container.code == 0:
     # load succeded
-    discard container.iface.getLines(0 .. -1)
-    var plen, len, packetid: int
-    container.iface.stream.sread(plen)
-    container.iface.stream.sread(packetid)
-    container.iface.stream.sread(len)
-    var line: SimpleFlexibleLine
-    for y in 0 ..< len:
-      container.iface.stream.sread(line)
+    container.iface.getLines(0 .. -1).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
+      container.lines = res.lines
+      container.setNumLines(res.numLines, true))
+    while container.iface.hasPromises:
+      # receive all lines
+      container.handleCommand()
+    for line in container.lines:
       yield line
 
 proc handleEvent*(container: Container) =

@@ -130,11 +130,33 @@ proc clearEnd(term: Terminal): string =
   else:
     return EL()
 
+proc isatty(term: Terminal): bool =
+  term.infile != nil and term.infile.isatty() and term.outfile.isatty()
+
 proc resetFormat(term: Terminal): string =
   when termcap_found:
-    return term.cap me
+    if term.isatty():
+      return term.cap me
+    return SGR()
   else:
     return SGR()
+
+proc startFormat(term: Terminal, flag: FormatFlags): string =
+  when termcap_found:
+    if term.isatty():
+      case flag
+      of FLAG_BOLD: return term.cap md
+      of FLAG_UNDERLINE: return term.cap us
+      of FLAG_REVERSE: return term.cap mr
+      of FLAG_BLINK: return term.cap mb
+      else: discard
+  return SGR(FormatCodes[flag].s)
+
+proc endFormat(term: Terminal, flag: FormatFlags): string =
+  when termcap_found:
+    if flag == FLAG_UNDERLINE and term.isatty():
+      return term.cap ue
+  return SGR(FormatCodes[flag].e)
 
 #TODO get rid of these
 proc setCursor*(term: Terminal, x, y: int) =
@@ -218,7 +240,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   for flag in FormatFlags:
     if flag in term.formatmode:
       if flag in format.flags and flag notin cellf.flags:
-        result &= SGR(FormatCodes[flag].e)
+        result &= term.endFormat(flag)
 
   var cellf = cellf
   if term.mincontrast >= 0 and distance(cellf.bgcolor, cellf.fgcolor) <= term.mincontrast:
@@ -278,7 +300,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   for flag in FormatFlags:
     if flag in term.formatmode:
       if flag notin format.flags and flag in cellf.flags:
-        result &= SGR(FormatCodes[flag].s)
+        result &= term.startFormat(flag)
 
   format = cellf
 
@@ -422,11 +444,8 @@ else:
   proc restoreStdin*(flags: cint) =
     discard
 
-proc isatty*(term: Terminal): bool =
-  term.infile.isatty() and term.outfile.isatty()
-
 proc quit*(term: Terminal) =
-  if term.infile != nil and term.isatty():
+  if term.isatty():
     disableRawMode()
     if term.smcup:
       term.write(term.disableAltScreen())
@@ -453,24 +472,26 @@ proc detectTermAttributes(term: Terminal) =
   if term.tname == "":
     term.tname = "dosansi"
   when termcap_found:
-    term.loadTermcap()
-    if term.tc != nil:
-      term.smcup = term.hascap(ti)
-    term.formatmode = {FLAG_ITALIC, FLAG_OVERLINE, FLAG_STRIKE}
-    if term.hascap(us):
-      term.formatmode.incl(FLAG_UNDERLINE)
-    if term.hascap(md):
-      term.formatmode.incl(FLAG_BOLD)
-    if term.hascap(mr):
-      term.formatmode.incl(FLAG_REVERSE)
-    if term.hascap(mb):
-      term.formatmode.incl(FLAG_BLINK)
+    if term.isatty():
+      term.loadTermcap()
+      if term.tc != nil:
+        term.smcup = term.hascap(ti)
+      term.formatmode = {FLAG_ITALIC, FLAG_OVERLINE, FLAG_STRIKE}
+      if term.hascap(us):
+        term.formatmode.incl(FLAG_UNDERLINE)
+      if term.hascap(md):
+        term.formatmode.incl(FLAG_BOLD)
+      if term.hascap(mr):
+        term.formatmode.incl(FLAG_REVERSE)
+      if term.hascap(mb):
+        term.formatmode.incl(FLAG_BLINK)
   else:
-    term.smcup = true
-    term.formatmode = {low(FormatFlags)..high(FormatFlags)}
+    if term.isatty():
+      term.smcup = true
+      term.formatmode = {low(FormatFlags)..high(FormatFlags)}
   if term.config.colormode.isSome:
     term.colormode = term.config.colormode.get
-  else:
+  elif term.isatty():
     term.colormode = ANSI
     let colorterm = getEnv("COLORTERM")
     case colorterm
@@ -480,7 +501,7 @@ proc detectTermAttributes(term: Terminal) =
   for fm in FormatFlags:
     if fm in term.config.noformatmode:
       term.formatmode.excl(fm)
-  if term.config.altscreen.isSome:
+  if term.isatty() and term.config.altscreen.isSome:
     term.smcup = term.config.altscreen.get
   term.mincontrast = term.config.mincontrast
 
