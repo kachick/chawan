@@ -131,7 +131,7 @@ proc decodeUTF8(stream: DecoderStream, iq: var seq[uint8], oq: ptr UncheckedArra
         bounds.b = 0x8F
         needed = 3
         c = cast[uint32](b) and 0x7
-      of 0xF1u8 .. 0xF3u8, 0xF5u8 .. 0xF7u8:
+      of 0xF1u8 .. 0xF3u8:
         needed = 3
         c = cast[uint32](b) and 0x7
       else:
@@ -158,6 +158,7 @@ proc decodeUTF8(stream: DecoderStream, iq: var seq[uint8], oq: ptr UncheckedArra
     inc i
   stream.c = c
   stream.u8bounds = bounds
+  stream.u8seen = seen
   stream.u8needed = needed
 
 proc gb18RangesCodepoint(p: uint32): uint32 =
@@ -527,7 +528,7 @@ proc decodeShiftJIS(stream: DecoderStream, iq: var seq[uint8],
     elif cast[char](b) in Ascii or b == 0x80:
       stream.append_codepoint b, oq, olen, n
     elif b in 0xA1u8..0xDFu8:
-      stream.append_codepoint 0xFF61u16 - 0xA1 + b, oq, olen, n
+      stream.append_codepoint 0xFF61u16 - 0xA1 + uint16(b), oq, olen, n
     elif b in {0x81..0x9F} + {0xE0..0xFC}:
       lead = b
     else:
@@ -826,8 +827,7 @@ proc atEnd*(stream: DecoderStream): bool =
   return stream.isend
 
 proc newDecoderStream*(source: Stream, cs = CHARSET_UTF_8, buflen = 1024,
-                       errormode = DECODER_ERROR_MODE_REPLACEMENT):
-  DecoderStream =
+                       errormode = DECODER_ERROR_MODE_REPLACEMENT): DecoderStream =
   result = DecoderStream(
     source: source,
     charset: cs,

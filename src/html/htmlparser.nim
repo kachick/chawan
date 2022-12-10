@@ -12,8 +12,8 @@ import data/charset
 import html/dom
 import html/tags
 import html/htmltokenizer
+import encoding/decoderstream
 import js/javascript
-import strings/decoderstream
 import utils/twtstr
 
 type
@@ -574,23 +574,23 @@ func extractEncFromMeta(s: string): Charset =
       of 5: check 'e'
       of 6: check 't'
       of 7:
-        inc i
+        inc j
         break
       else: discard
       inc i
     if j < 7: return CHARSET_UNKNOWN
-    j = 0
     while i < s.len and s[i] in AsciiWhitespace: inc i
     if i >= s.len or s[i] != '=': continue
     while i < s.len and s[i] in AsciiWhitespace: inc i
     break
+  inc i
   if i >= s.len: return CHARSET_UNKNOWN
   if s[i] in {'"', '\''}:
-    let s2 = s.substr(i).until(s[i])
+    let s2 = s.substr(i + 1).until(s[i])
     if s2.len == 0 or s2[^1] != s[i]:
       return CHARSET_UNKNOWN
     return getCharset(s2)
-  return getCharset(s.substr(i - 1).until({';', ' '}))
+  return getCharset(s.substr(i).until({';', ' '}))
 
 proc changeEncoding(parser: var HTML5Parser, cs: Charset) =
   if parser.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:

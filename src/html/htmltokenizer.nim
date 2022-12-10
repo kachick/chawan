@@ -7,7 +7,7 @@ import unicode
 
 import html/entity
 import html/tags
-import strings/decoderstream
+import encoding/decoderstream
 import utils/radixtree
 import utils/twtstr
 

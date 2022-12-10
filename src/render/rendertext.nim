@@ -3,7 +3,7 @@ import unicode
 
 import buffer/cell
 import data/charset
-import strings/decoderstream
+import encoding/decoderstream
 import utils/twtstr
 
 const tabwidth = 8
