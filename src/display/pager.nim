@@ -183,7 +183,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
   var by = 0
   pager.clearDisplay()
   var hlformat = newFormat()
-  hlformat.bgcolor = CellColor(rgb: true, rgbcolor: pager.config.hlcolor)
+  hlformat.bgcolor = pager.config.hlcolor.cellColor()
   for line in container.ilines(container.fromy ..< min(container.fromy + pager.display.height, container.numLines)):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str

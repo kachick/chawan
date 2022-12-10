@@ -11,12 +11,16 @@ import ips/serversocket
 
 type SocketStream* = ref object of Stream
   source*: Socket
-  recvw*: bool
+  blk*: bool
   isend: bool
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
-  result = s.source.recv(buffer, len)
+  if s.blk:
+    while result < len:
+      result += s.source.recv(cast[pointer](cast[int](buffer) + result), len - result)
+  else:
+    result = s.source.recv(buffer, len)
   if result < 0:
     if errno == EAGAIN:
       raise newException(ErrorAgain, "")
@@ -30,7 +34,10 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
     s.isend = true
 
 proc sockWriteData(s: Stream, buffer: pointer, len: int) =
-  discard SocketStream(s).source.send(buffer, len)
+  #TODO maybe don't block if blk is false?
+  var i = 0
+  while i < len:
+    i += SocketStream(s).source.send(cast[pointer](cast[int](buffer) + i), len - i)
 
 proc sockAtEnd(s: Stream): bool =
   SocketStream(s).isend
@@ -94,6 +101,7 @@ func newSocketStream*(): SocketStream =
 
 proc connectSocketStream*(path: string, buffered = true, blocking = true): SocketStream =
   result = newSocketStream()
+  result.blk = blocking
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
   #if not blocking:
   #  sock.getFd().setBlocking(false)
@@ -106,8 +114,9 @@ proc connectSocketStream*(pid: Pid, buffered = true, blocking = true): SocketStr
   except OSError:
     return nil
 
-proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
+proc acceptSocketStream*(ssock: ServerSocket, blocking = true): SocketStream =
   result = newSocketStream()
+  result.blk = blocking
   var sock: Socket
   ssock.sock.accept(sock, inheritable = true)
   result.source = sock

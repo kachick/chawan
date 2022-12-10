@@ -190,7 +190,7 @@ proc handleAnsiCode(format: var Format, final: char, params: string) =
           of 25: format.blink = false
           of 27: format.reverse = false
           of 29: format.strike = false
-          of 30..37: format.fgcolor = CellColor(rgb: false, color: uint8(ip[pi]))
+          of 30..37: format.fgcolor = uint8(ip[pi]).cellColor()
           of 38:
             inc pi
             if pi < ip.len:
@@ -202,7 +202,7 @@ proc handleAnsiCode(format: var Format, final: char, params: string) =
                   let g = ip[pi]
                   inc pi
                   let b = ip[pi]
-                  format.fgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
+                  format.fgcolor = rgb(r, g, b).cellColor()
               else:
                 #TODO
                 inc pi
@@ -212,7 +212,7 @@ proc handleAnsiCode(format: var Format, final: char, params: string) =
           of 39:
             format.fgcolor = defaultColor
           of 40..47:
-            format.bgcolor = CellColor(rgb: false, color: uint8(ip[0]))
+            format.bgcolor = uint8(ip[0]).cellColor()
           of 48:
             inc pi
             if pi < ip.len:
@@ -224,7 +224,7 @@ proc handleAnsiCode(format: var Format, final: char, params: string) =
                   let g = ip[pi]
                   inc pi
                   let b = ip[pi]
-                  format.bgcolor = CellColor(rgb: true, rgbcolor: rgb(r, g, b))
+                  format.bgcolor = rgb(r, g, b).cellColor()
               else:
                 #TODO
                 inc pi

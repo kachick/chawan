@@ -107,7 +107,7 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList) =
       case cmd
       of LOAD:
         var request: Request
-        stream.read(request)
+        stream.sread(request)
         for k, v in defaultHeaders.table:
           if k notin request.headers.table:
             request.headers.table[k] = v

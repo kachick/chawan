@@ -420,9 +420,6 @@ func cssColor(val: CSSComponentValue): RGBAColor =
     else: discard
   raise newException(CSSValueError, "Invalid color")
 
-func cellColor*(color: RGBAColor): CellColor =
-  return CellColor(rgb: true, rgbcolor: RGBColor(color))
-
 func isToken(d: CSSDeclaration): bool {.inline.} = d.value.len > 0 and d.value[0] of CSSToken
 
 func cssLength(d: CSSDeclaration): CSSLength =

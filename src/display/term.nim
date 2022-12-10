@@ -192,13 +192,13 @@ proc distance(a, b: CellColor): float =
 proc invert(color: CellColor, bg: bool): CellColor =
   if color == defaultColor:
     if bg:
-      return CellColor(rgb: true, rgbcolor: ColorsRGB["white"])
+      return ColorsRGB["white"].cellColor()
     else:
-      return CellColor(rgb: true, rgbcolor: ColorsRGB["black"])
+      return ColorsRGB["black"].cellColor()
   elif color.rgb:
-    return CellColor(rgb: true, rgbcolor: RGBColor(0xFFFFFF - uint32(color.rgbcolor)))
+    return RGBColor(0xFFFFFF - cast[uint32](color.rgbcolor)).cellColor()
   else:
-    return CellColor(rgb: true, rgbcolor: RGBColor(0xFFFFFF - uint32(ANSIColorMap[color.color mod 10])))
+    return RGBColor(0xFFFFFF - uint32(ANSIColorMap[color.color mod 10])).cellColor()
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =

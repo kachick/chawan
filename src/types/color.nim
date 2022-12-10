@@ -7,52 +7,54 @@ import tables
 import utils/twtstr
 
 type
-  RGBColor* = distinct int32
+  RGBColor* = distinct uint32
 
-  RGBAColor* = distinct int32
+  RGBAColor* = distinct uint32
 
   CellColor* = object
-    case rgb*: bool
-    of true:
-      rgbcolor*: RGBColor
-    of false:
-      color*: uint8
+    rgb*: bool
+    n: uint32
 
 converter toRGBColor*(i: RGBAColor): RGBColor =
-  return RGBColor(int32(i) and 0xFFFFFFi32)
+  return RGBColor(uint32(i) and 0xFFFFFFu32)
 
 converter toRGBAColor*(i: RGBColor): RGBAColor =
-  return RGBAColor(int32(i) or 0xFF000000i32)
+  return RGBAColor(uint32(i) or 0xFF000000u32)
 
-func `==`*(color1, color2: CellColor): bool =
-  if color1.rgb != color2.rgb:
-    return false
-  if color1.rgb:
-    return int(color1.rgbcolor) == int(color2.rgbcolor)
-  return color1.color == color2.color
+func rgbcolor*(color: CellColor): RGBColor =
+  cast[RGBColor](color.n)
 
-const defaultColor* = CellColor(rgb: false, color: 0)
+func color*(color: CellColor): uint8 =
+  cast[uint8](color.n)
+
+func cellColor*(rgb: RGBColor): CellColor =
+  return CellColor(rgb: true, n: uint32(rgb))
+
+func cellColor*(c: uint8): CellColor =
+  return CellColor(rgb: true, n: uint32(c))
+
+const defaultColor* = CellColor(rgb: false, n: 0)
 
 const ColorsANSIFg* = [
-  CellColor(rgb: false, color: 30), # black
-  CellColor(rgb: false, color: 31), # red
-  CellColor(rgb: false, color: 32), # green
-  CellColor(rgb: false, color: 33), # yellow
-  CellColor(rgb: false, color: 34), # blue
-  CellColor(rgb: false, color: 35), # magenta
-  CellColor(rgb: false, color: 36), # cyan
-  CellColor(rgb: false, color: 37), # white
+  CellColor(rgb: false, n: 30), # black
+  CellColor(rgb: false, n: 31), # red
+  CellColor(rgb: false, n: 32), # green
+  CellColor(rgb: false, n: 33), # yellow
+  CellColor(rgb: false, n: 34), # blue
+  CellColor(rgb: false, n: 35), # magenta
+  CellColor(rgb: false, n: 36), # cyan
+  CellColor(rgb: false, n: 37), # white
 ]
 
 const ColorsANSIBg* = [
-  CellColor(rgb: false, color: 40), # black
-  CellColor(rgb: false, color: 41), # red
-  CellColor(rgb: false, color: 42), # green
-  CellColor(rgb: false, color: 43), # yellow
-  CellColor(rgb: false, color: 44), # blue
-  CellColor(rgb: false, color: 45), # magenta
-  CellColor(rgb: false, color: 46), # cyan
-  CellColor(rgb: false, color: 47), # white
+  CellColor(rgb: false, n: 40), # black
+  CellColor(rgb: false, n: 41), # red
+  CellColor(rgb: false, n: 42), # green
+  CellColor(rgb: false, n: 43), # yellow
+  CellColor(rgb: false, n: 44), # blue
+  CellColor(rgb: false, n: 45), # magenta
+  CellColor(rgb: false, n: 46), # cyan
+  CellColor(rgb: false, n: 47), # white
 ]
 
 const ColorsRGB* = {
@@ -283,37 +285,35 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
   return some(RGBColor(c))
 
 func r*(c: RGBAColor): int =
-  return int(int32(c) shr 16 and 0xff)
+  return int(uint32(c) shr 16 and 0xff)
 
 func g*(c: RGBAColor): int =
-  return int(int32(c) shr 8 and 0xff)
+  return int(uint32(c) shr 8 and 0xff)
 
 func b*(c: RGBAColor): int =
-  return int(int32(c) and 0xff)
+  return int(uint32(c) and 0xff)
 
 func a*(c: RGBAColor): int =
-  return int(int32(c) shr 24 and 0xff)
+  return int(uint32(c) shr 24 and 0xff)
 
 func rgb*(r, g, b: int): RGBColor =
   return RGBColor((r shl 16) or (g shl 8) or b)
 
-func `==`*(a, b: RGBAColor): bool =
-  return int32(a) == int32(b)
-
+func `==`*(a, b: RGBAColor): bool {.borrow.}
 
 func r*(c: RGBColor): int =
-  return int(int32(c) shr 16 and 0xff)
+  return int(uint32(c) shr 16 and 0xff)
 
 func g*(c: RGBColor): int =
-  return int(int32(c) shr 8 and 0xff)
+  return int(uint32(c) shr 8 and 0xff)
 
 func b*(c: RGBColor): int =
-  return int(int32(c) and 0xff)
+  return int(uint32(c) and 0xff)
 
 func rgba*(r, g, b, a: int): RGBAColor =
-  return RGBAColor((int32(a) shl 24) or (int32(r) shl 16) or (int32(g) shl 8) or int32(b))
+  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
 
-func `$`*(color: CellColor): string =
+template `$`*(color: CellColor): string =
   if color.rgb:
     "r" & $color.rgbcolor.r & "g" & $color.rgbcolor.g & "b" & $color.rgbcolor.b
   else:
