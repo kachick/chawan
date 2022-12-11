@@ -666,6 +666,10 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       return false
   of SUCCESS:
     if container.replace != nil:
+      let n = container.replace.children.find(container)
+      if n != -1:
+        container.replace.children.delete(n)
+        container.parent = nil
       container.children.add(container.replace.children)
       for child in container.children:
         child.parent = container
@@ -675,8 +679,11 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
         let n = container.replace.parent.children.find(container.replace)
         assert n != -1, "Container not a child of its parent"
         container.parent.children[n] = container
+        container.replace.parent = nil
       if pager.container == container.replace:
         pager.setContainer(container)
+      pager.deleteContainer(container.replace)
+      container.replace = nil
   of LOADED:
     dec pager.numload
   of NEEDS_AUTH:
