@@ -77,9 +77,9 @@ proc horizontalAlignLine(ictx: InlineContext, line: LineBox, computed: CSSComput
     maxwidth
   # we don't support directions for now so left = start and right = end
   case computed{"text-align"}
-  of TEXT_ALIGN_START, TEXT_ALIGN_LEFT:
+  of TEXT_ALIGN_START, TEXT_ALIGN_LEFT, TEXT_ALIGN_CHA_LEFT:
     discard
-  of TEXT_ALIGN_END, TEXT_ALIGN_RIGHT:
+  of TEXT_ALIGN_END, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CHA_RIGHT:
     # move everything
     let x = max(maxwidth, line.width) - line.width
     for atom in line.atoms:
@@ -397,9 +397,6 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
   result.newBlockBox_common2(parent, builder.content)
 
-proc newBlockBox(viewport: Viewport, box: BlockBoxBuilder): BlockBox =
-  return newFlowRootBox(viewport, box, viewport.window.width_px)
-
 proc newInlineBlock(viewport: Viewport, builder: InlineBlockBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)
   result.innerbox = newFlowRootBox(viewport, builder.content, parentWidth, parentHeight)
@@ -680,14 +677,25 @@ proc positionBlocks(box: BlockBox) =
   box.height += box.padding_top
 
   x += box.padding_left
-  if box.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
+  case box.computed{"text-align"}
+  of TEXT_ALIGN_CHA_CENTER:
     x += box.compwidth div 2
+  of TEXT_ALIGN_CHA_LEFT: discard
+  of TEXT_ALIGN_CHA_RIGHT:
+    eprint "cha-right"
+    x += box.compwidth
+  else: discard
 
   template apply_child(child: BlockBox) =
     child.offset.y = y
     child.offset.x = x
-    if box.computed{"text-align"} == TEXT_ALIGN_CHA_CENTER:
+    case
+    box.computed{"text-align"}
+    of TEXT_ALIGN_CHA_CENTER:
       child.offset.x -= child.width div 2
+    of TEXT_ALIGN_CHA_LEFT: discard
+    of TEXT_ALIGN_CHA_RIGHT:
+      child.offset.x -= child.width
     elif not child.computed{"width"}.auto and child.compwidth < box.compwidth:
       let margin_left = child.computed{"margin-left"}
       let margin_right = child.computed{"margin-right"}
@@ -947,7 +955,7 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       let x = int(unit * ctx.cols[j].weight)
       ctx.cols[j].width += x
       reflow[j] = true
-  elif table.compwidth < ctx.maxwidth and (table.shrink or forceresize):
+  elif table.compwidth < ctx.maxwidth:
     var dw = (ctx.maxwidth - table.compwidth)
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(dw, weight)
@@ -1039,7 +1047,8 @@ proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox =
 
 # Establish a new flow-root context and build a block box.
 proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
-  let box = viewport.newBlockBox(builder)
+  let box = viewport.newFlowRootBox(builder, viewport.window.width_px)
+  #box.shrink = false
   viewport.root.add(box)
   if builder.inlinelayout:
     box.buildInlineLayout(builder.children)

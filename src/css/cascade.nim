@@ -103,8 +103,15 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     of "middle": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_MIDDLE))
     of "bottom": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_BOTTOM))
     of "baseline": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_BASELINE))
+  template map_align =
+    case element.attr("align").toLowerAscii()
+    of "center", "middle": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_CENTER)
+    of "left": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_LEFT)
+    of "right": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_RIGHT)
 
   case element.tagType
+  of TAG_DIV:
+    map_align
   of TAG_TABLE:
     map_height_nozero
     map_width_nozero
@@ -114,10 +121,12 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_width_nozero
     map_bgcolor
     map_valign
+    map_align
   of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
     map_height
     map_bgcolor
     map_valign
+    map_align
   of TAG_COL:
     map_width
   of TAG_BODY:
