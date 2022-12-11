@@ -100,6 +100,7 @@ type
     currentLine*: LineBox
 
     whitespacenum*: int
+    minwidth*: int
     maxwidth*: int
     viewport*: Viewport
     node*: Node
@@ -115,6 +116,7 @@ type
 
     width*: int
     height*: int
+    minwidth*: int
     margin_top*: int
     margin_bottom*: int
     margin_left*: int
@@ -144,13 +146,18 @@ type
     builder*: TableRowBoxBuilder
     ncols*: int
 
+  ColumnContext* = object
+    minwidth*: int
+    maxwidth*: int
+    width*: int
+    wspecified*: bool
+    rel*: float64
+
   TableContext* = object
     caption*: TableCaptionBoxBuilder
-    colwidths*: seq[int]
-    colwidths_specified*: seq[bool]
     rows*: seq[RowContext]
+    cols*: seq[ColumnContext]
     maxwidth*: int
-    ncols*: int
 
   InlineBlockBox* = ref object of InlineAtom
     innerbox*: BlockBox

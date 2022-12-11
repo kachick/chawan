@@ -1,3 +1,4 @@
+import math
 import options
 import tables
 import unicode
@@ -204,6 +205,7 @@ proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues) =
 
 proc finishLine(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int, force = false) =
   if ictx.currentLine.atoms.len != 0 or force:
+    ictx.whitespacenum = 0
     ictx.flushWhitespace(computed)
     ictx.verticalAlignLine()
 
@@ -217,6 +219,11 @@ proc finish(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int) =
   ictx.finishLine(computed, maxwidth)
   for line in ictx.lines:
     ictx.horizontalAlignLine(line, computed, maxwidth, line == ictx.lines[^1])
+
+func minwidth(atom: InlineAtom): int =
+  if atom of InlineBlockBox:
+    return cast[InlineBlockBox](atom).innerbox.minwidth
+  return atom.width
 
 # pcomputed: computed values of parent, for white-space: pre, line-height
 # computed: computed values of child, for vertical-align
@@ -239,6 +246,7 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed, co
       ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format)
 
     atom.offset.x += ictx.currentLine.width
+    ictx.minwidth = max(ictx.minwidth, atom.minwidth)
     applyLineHeight(ictx.viewport, ictx.currentLine, pcomputed)
     ictx.currentLine.width += atom.width
     if atom of InlineWord:
@@ -416,6 +424,8 @@ proc positionInlines(parent: BlockBox) =
   parent.height += parent.padding_bottom
 
   parent.width += parent.padding_right
+
+  parent.minwidth = max(parent.minwidth, parent.inline.minwidth)
 
   if parent.computed{"width"}.auto:
     if parent.shrink:
@@ -688,6 +698,7 @@ proc positionBlocks(box: BlockBox) =
     y += child.height
     box.height += child.height
     box.width = max(box.width, child.width)
+    box.minwidth = max(box.minwidth, child.minwidth)
     margin_todo = Strut()
     margin_todo.append(child.margin_bottom)
 
@@ -762,8 +773,6 @@ proc buildTableCell(viewport: Viewport, box: TableCellBoxBuilder, maxwidth: int,
 
 proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: BlockBox): RowContext =
   var ctx = RowContext(builder: box, cells: newSeq[CellWrapper](box.children.len))
-  if pctx.colwidths.len < box.children.len:
-    pctx.colwidths.setLen(box.children.len)
   var n = 0
   var i = 0
   for child in box.children:
@@ -772,30 +781,36 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
     let cell = parent.viewport.buildTableCell(cellbuilder, parent.compwidth, parent.compheight)
     ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: cellbuilder.colspan)
     let pwidth = cellbuilder.computed{"width"}
-    if pctx.colwidths.len <= n + cellbuilder.colspan:
-      pctx.colwidths.setLen(n + cellbuilder.colspan)
-    if pctx.colwidths_specified.len <= n + cellbuilder.colspan:
-      if not pwidth.auto:
-        pctx.colwidths_specified.setLen(n + cellbuilder.colspan)
+    if pctx.cols.len < n + cellbuilder.colspan:
+      pctx.cols.setLen(n + cellbuilder.colspan)
+    if ctx.reflow.len < n + cellbuilder.colspan:
+      ctx.reflow.setLen(n + cellbuilder.colspan)
+    let minw = cell.minwidth div cellbuilder.colspan
     let w = cell.width div cellbuilder.colspan
     for i in n ..< n + cellbuilder.colspan:
-      if pctx.colwidths[i] < w:
-        pctx.colwidths[i] = w
+      pctx.cols[i].maxwidth = w
+      if pctx.cols[i].width < w:
+        pctx.cols[i].width = w
         if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
         ctx.reflow[i] = true
       if not pwidth.auto:
         let ww = pwidth.px(parent.viewport, parent.compwidth)
-        if pctx.colwidths_specified[i]:
+        if pctx.cols[i].wspecified:
           # A specified column already exists; we take the larger width.
-          pctx.colwidths[i] = max(ww, pctx.colwidths[i])
+          if ww > pctx.cols[i].width:
+            pctx.cols[i].width = ww
+            ctx.reflow[i] = true
         else:
           # This is the first specified column. Replace colwidth with whatever
           # we have.
-          pctx.colwidths_specified[i] = true
-          #TODO: this should be something like max(ww, pctx.min_colwidths[i]).
-          # We don't have min-width though...
-          pctx.colwidths[i] = ww
-      ctx.width += pctx.colwidths[i]
+          pctx.cols[i].wspecified = true
+          pctx.cols[i].width = ww
+      if pctx.cols[i].minwidth < minw:
+        pctx.cols[i].minwidth = minw
+        if pctx.cols[i].width < minw:
+          pctx.cols[i].width = minw
+          ctx.reflow[i] = true
+      ctx.width += pctx.cols[i].width
     n += cellbuilder.colspan
     inc i
   ctx.ncols = n
@@ -809,7 +824,7 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builde
     var cell = cellw.box
     var w = 0
     for i in n ..< n + cellw.colspan:
-      w += pctx.colwidths[i]
+      w += pctx.cols[i].width
     if cellw.reflow:
       cell = parent.viewport.buildTableCell(cellw.builder, w, none(int), false) #TODO height?
       w = max(w, cell.width)
@@ -856,6 +871,35 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   for child in footer:
     yield child
 
+proc calcUnspecifiedColIndices(ctx: var TableContext, dw: var int, rel: var float64): seq[int] =
+  var avail = newSeqUninitialized[int](ctx.cols.len)
+  var i = 0
+  var j = 0
+  while i < ctx.cols.len:
+    if not ctx.cols[i].wspecified:
+      avail[j] = i
+      let r = ln(float64(ctx.cols[i].width))
+      ctx.cols[i].rel = r
+      rel += r
+      inc j
+    else:
+      avail.del(j)
+    inc i
+  return avail
+
+# Table layout. We try to emulate w3m's behavior here:
+# 1. Calculate minimum and preferred width of each column
+# 2. If column width is not auto, set width to max(min_col_width, specified)
+# 3. Calculate the maximum preferred row width. If this is
+# a) less than the specified table width:
+#      distribute (max_row_width - table_width) among cells with an unspecified
+#      width.
+# b) greater than the specified table width:
+#      distribute -(table_width - max_row_width) among cells with an unspecified
+#      width. If this would give any cell a width < min_width, distribute the
+#      difference too.
+# Distribution happens in proportion to the natural logarithm of each column's
+# width (as in w3m).
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(box)
   var ctx: TableContext
@@ -867,18 +911,47 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       let rctx = ctx.preBuildTableRow(row, table)
       ctx.rows.add(rctx)
       ctx.maxwidth = max(rctx.width, ctx.maxwidth)
-      ctx.ncols = max(rctx.ncols, ctx.ncols)
+  var forceresize = false
+  if not table.computed{"width"}.auto:
+    forceresize = true
+  var reflow = newSeq[bool](ctx.cols.len)
+  if table.compwidth > ctx.maxwidth and (not table.shrink or forceresize):
+    var dw = (table.compwidth - ctx.maxwidth)
+    var rel: float64
+    var avail = ctx.calcUnspecifiedColIndices(dw, rel)
+    let unit = float64(dw) / rel
+    for i in countdown(avail.high, 0):
+      let j = avail[i]
+      let x = int(unit * ctx.cols[j].rel)
+      ctx.cols[j].width += x
+      ctx.maxwidth += x
+      reflow[j] = true
+  elif table.compwidth < ctx.maxwidth and (table.shrink or forceresize):
+    var dw = (ctx.maxwidth - table.compwidth)
+    var rel: float64
+    var avail = ctx.calcUnspecifiedColIndices(dw, rel)
+    while avail.len > 0 and dw != 0:
+      # divide delta width by sum of ln(width) for all elem in avail
+      let unit = float64(dw) / rel
+      dw = 0
+      rel = 0
+      for i in countdown(avail.high, 0):
+        let j = avail[i]
+        let x = int(unit * ctx.cols[j].rel)
+        ctx.cols[j].width -= x
+        ctx.maxwidth -= x
+        if ctx.cols[j].minwidth > ctx.cols[j].width:
+          let d = ctx.cols[j].minwidth - ctx.cols[j].width
+          dw += d
+          ctx.cols[j].width = ctx.cols[j].minwidth
+          avail.del(i)
+        else:
+          rel += ctx.cols[j].rel
+        reflow[j] = true
   table.width = max(table.compwidth, ctx.maxwidth)
-  var reflow = newSeq[bool](ctx.ncols)
-  if table.compwidth > ctx.maxwidth:
-    let x = (table.compwidth - ctx.maxwidth) div ctx.ncols
-    for i in 0 ..< ctx.ncols:
-      ctx.colwidths[i] += x
-      reflow[i] = true
-  #TODO if table.compwidth < ctx.compwidth... shrink cells
   for i in countdown(ctx.rows.high, 0):
     var row = addr ctx.rows[i]
-    var n = ctx.ncols - 1
+    var n = ctx.cols.len - 1
     for j in countdown(row.cells.high, 0):
       let m = n - row.cells[j].colspan
       while n > m:
@@ -922,7 +995,6 @@ proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox =
 # Establish a new flow-root context and build a block box.
 proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
   let box = viewport.newBlockBox(builder)
-  box.shrink = false
   viewport.root.add(box)
   if builder.inlinelayout:
     box.buildInlineLayout(builder.children)
