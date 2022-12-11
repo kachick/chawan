@@ -1,3 +1,8 @@
+[start]
+visual-home = "about:cha"
+run-script = ""
+headless = false
+
 [external]
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"

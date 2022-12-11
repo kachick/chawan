@@ -108,7 +108,7 @@ while i < params.len:
 
 if pages.len == 0 and stdin.isatty():
   if visual:
-    pages.add("about:cha")
+    pages.add(conf.visualhome)
   else:
     let http = getEnv("HTTP_HOME")
     if http != "": pages.add(http)

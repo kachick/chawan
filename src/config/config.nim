@@ -45,6 +45,7 @@ type
     siteconf: seq[StaticSiteConfig]
     forceclear*: bool
     emulateoverline*: bool
+    visualhome*: string
 
   BufferConfig* = object
     userstyle*: string
@@ -148,10 +149,15 @@ proc readUserStylesheet(dir, file: string): string =
 proc parseConfig(config: Config, dir: string, t: TomlValue) =
   for k, v in t:
     case k
-    of "startup":
-      config.startup = v.s
-    of "headless":
-      config.headless = v.b
+    of "start":
+      for k, v in v:
+        case k
+        of "visual-home":
+          config.visualhome = v.s
+        of "run-script":
+          config.startup = v.s
+        of "headless":
+          config.headless = v.b
     of "page":
       for k, v in v:
         config.nmap[getRealKey(k)] = v.s
