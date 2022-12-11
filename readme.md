@@ -21,7 +21,7 @@ It also functions as a pager, similarly to w3m.
 
 Currently implemented features are:
 
-* a unicode, double-width capable pager
+* a multi-charset, double-width capable pager
 * a CSS-capable layout engine
 * forms, tables
 * incremental loading of plain text streams
@@ -29,20 +29,16 @@ Currently implemented features are:
 
 **Planned** features, roughly in order of importance:
 
+* cookies
 * JavaScript in html documents
-* non-unicode charsets (they currently crash the browser)
 * partial re-rendering of page layout
 * unicode normalization
-* fast streams (aka pipelines; use library?)
 * standard-compliant support for remote resources
 * iframe
 * ruby
-* cookies
 * external viewers (for audio, video, image, etc)
 * image (sixel & kitty?)
 * markdown (built-in parser)
-* color contrast correction
-* terminal color mode
 * config editor
 * user stylesheet editor
 * SOCKS proxy
