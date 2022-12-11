@@ -347,8 +347,8 @@ proc setCursorY*(container: Container, y: int) {.jsfunc.} =
     else:
       container.setFromY(y)
     container.pos.cursory = y
-  container.sendCursorPosition()
   container.restoreCursorX()
+  container.sendCursorPosition()
 
 proc centerLine*(container: Container) {.jsfunc.} =
   container.setFromY(container.cursory - container.height div 2)

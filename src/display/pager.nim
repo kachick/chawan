@@ -236,7 +236,6 @@ proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
   pager.clearStatusMessage()
   var i = 0
   for r in str.runes:
-    i += r.width()
     if i >= pager.statusgrid.len:
       pager.statusgrid[^1].str = "$"
       break
@@ -246,6 +245,7 @@ proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
     else:
       pager.statusgrid[i].str &= r
     pager.statusgrid[i].format = format
+    i += r.width()
 
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
@@ -357,13 +357,45 @@ proc nextBuffer(pager: Pager): bool {.jsfunc.} =
     return true
   return false
 
+proc parentBuffer(pager: Pager): bool {.jsfunc.} =
+  if pager.container == nil:
+    return false
+  if pager.container.parent == nil:
+    return false
+  pager.setContainer(pager.container.parent)
+  return true
+
+proc prevSiblingBuffer(pager: Pager): bool {.jsfunc.} =
+  if pager.container == nil:
+    return false
+  if pager.container.parent == nil:
+    return false
+  var n = pager.container.parent.children.find(pager.container)
+  assert n != -1, "Container not a child of its parent"
+  if n == 0:
+    n = pager.container.parent.children.len
+  pager.setContainer(pager.container.parent.children[n - 1])
+  return true
+
+proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
+  if pager.container == nil:
+    return false
+  if pager.container.parent == nil:
+    return false
+  var n = pager.container.parent.children.find(pager.container)
+  assert n != -1, "Container not a child of its parent"
+  if n == pager.container.parent.children.high:
+    n = -1
+  pager.setContainer(pager.container.parent.children[n + 1])
+  return true
+
 proc alert*(pager: Pager, msg: string) {.jsfunc.} =
   pager.alerts.add(msg)
 
 proc lineInfo(pager: Pager) {.jsfunc.} =
   pager.alert(pager.container.lineInfo())
 
-proc deleteContainer(pager: Pager, container: Container) =
+proc deleteContainer(pager: Pager, container: Container, prevlevel = false) =
   container.cancel()
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
@@ -378,7 +410,10 @@ proc deleteContainer(pager: Pager, container: Container) =
       parent.children.insert(child, n + 1)
     parent.children.delete(n)
     if container == pager.container:
-      pager.setContainer(parent)
+      if prevlevel or n == 0:
+        pager.setContainer(parent)
+      else:
+        pager.setContainer(parent.children[n - 1])
   elif container.children.len > 0:
     let parent = container.children[0]
     parent.parent = nil
@@ -397,12 +432,12 @@ proc deleteContainer(pager: Pager, container: Container) =
   pager.unreg.add((container.process, SocketStream(container.iface.stream)))
   pager.dispatcher.forkserver.removeChild(container.process)
 
-proc discardBuffer(pager: Pager) {.jsfunc.} =
+proc discardBuffer(pager: Pager, prevlevel = false) {.jsfunc.} =
   if pager.container == nil or pager.container.parent == nil and
       pager.container.children.len == 0:
     pager.alert("Cannot discard last buffer!")
   else:
-    pager.deleteContainer(pager.container)
+    pager.deleteContainer(pager.container, prevlevel)
 
 proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:

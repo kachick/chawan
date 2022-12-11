@@ -75,8 +75,7 @@ type
     istream: Stream
     sstream: Stream
     available: int
-    pistream: Stream # for input pipe
-    postream: Stream # for output pipe
+    pstream: Stream # pipe stream
     srenderer: StreamRenderer
     streamclosed: bool
     loaded: bool
@@ -994,7 +993,7 @@ proc getLines*(buffer: Buffer, w: Slice[int]): tuple[numLines: int, lines: seq[S
   result.numLines = buffer.lines.len
 
 proc passFd*(buffer: Buffer) {.proxy.} =
-  let fd = SocketStream(buffer.pistream).recvFileHandle()
+  let fd = SocketStream(buffer.pstream).recvFileHandle()
   buffer.source.fd = fd
 
 proc getSource*(buffer: Buffer) {.proxy.} =
@@ -1021,7 +1020,7 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
         let typ = param[^2]
         stmts.add(quote do:
           var `id`: `typ`
-          `buffer`.pistream.sread(`id`))
+          `buffer`.pstream.sread(`id`))
         call.add(id)
     var rval: NimNode
     if v.params[0].kind == nnkEmpty:
@@ -1036,35 +1035,34 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
           let fdi = buffer.selector.registerTimer(buffer.timeout, true, 0)
           buffer.timeouts[fdi] = (proc() =
             let len = slen(`packetid`) + slen(`rval`)
-            buffer.postream.swrite(len)
-            buffer.postream.swrite(`packetid`)
-            buffer.postream.swrite(`rval`)
-            buffer.postream.flush())
+            buffer.pstream.swrite(len)
+            buffer.pstream.swrite(`packetid`)
+            buffer.pstream.swrite(`rval`)
+            buffer.pstream.flush())
           buffer.timeout = 0
           return)
     if rval == nil:
       stmts.add(quote do:
         let len = slen(`packetid`)
-        buffer.postream.swrite(len)
-        buffer.postream.swrite(`packetid`)
-        buffer.postream.flush())
+        buffer.pstream.swrite(len)
+        buffer.pstream.swrite(`packetid`)
+        buffer.pstream.flush())
     else:
       stmts.add(quote do:
         let len = slen(`packetid`) + slen(`rval`)
-        buffer.postream.swrite(len)
-        buffer.postream.swrite(`packetid`)
-        buffer.postream.swrite(`rval`)
-        buffer.postream.flush())
+        buffer.pstream.swrite(len)
+        buffer.pstream.swrite(`packetid`)
+        buffer.pstream.swrite(`rval`)
+        buffer.pstream.flush())
     ofbranch.add(stmts)
     switch.add(ofbranch)
   return switch
 
 proc readCommand(buffer: Buffer) =
-  let istream = buffer.pistream
   var cmd: BufferCommand
-  istream.sread(cmd)
+  buffer.pstream.sread(cmd)
   var packetid: int
-  istream.sread(packetid)
+  buffer.pstream.sread(packetid)
   bufferDispatcher(ProxyFunctions, buffer, cmd, packetid)
 
 proc runBuffer(buffer: Buffer, rfd: int) =
@@ -1095,8 +1093,7 @@ proc runBuffer(buffer: Buffer, rfd: int) =
             break loop
           else:
             assert false
-  buffer.pistream.close()
-  buffer.postream.close()
+  buffer.pstream.close()
   buffer.loader.quit()
   quit(0)
 
@@ -1121,8 +1118,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.srenderer = newStreamRenderer(buffer.sstream)
   let socks = connectSocketStream(mainproc, false)
   socks.swrite(getpid())
-  buffer.pistream = socks
-  buffer.postream = socks
+  buffer.pstream = socks
   let rfd = int(socks.source.getFd())
   buffer.selector.registerHandle(rfd, {Read}, 0)
   buffer.runBuffer(rfd)

@@ -18,7 +18,13 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   let s = SocketStream(s)
   if s.blk:
     while result < len:
-      result += s.source.recv(cast[pointer](cast[int](buffer) + result), len - result)
+      let n = s.source.recv(cast[pointer](cast[int](buffer) + result), len - result)
+      result += n
+      if n == 0:
+        raise newException(EOFError, "")
+      if n < 0:
+        result = n
+        break
   else:
     result = s.source.recv(buffer, len)
   if result < 0:
@@ -37,7 +43,10 @@ proc sockWriteData(s: Stream, buffer: pointer, len: int) =
   #TODO maybe don't block if blk is false?
   var i = 0
   while i < len:
-    i += SocketStream(s).source.send(cast[pointer](cast[int](buffer) + i), len - i)
+    let n = SocketStream(s).source.send(cast[pointer](cast[int](buffer) + i), len - i)
+    if n < 0:
+      raise newException(IOError, $strerror(errno))
+    i += n
 
 proc sockAtEnd(s: Stream): bool =
   SocketStream(s).isend
