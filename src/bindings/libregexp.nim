@@ -1,5 +1,3 @@
-const lreheader = "bindings/libregexp.h"
-
 const
   LRE_FLAG_GLOBAL* = 1 shl 0
   LRE_FLAG_IGNORECASE* = 1 shl 1
@@ -10,12 +8,12 @@ const
 
 proc lre_compile*(plen: ptr cint, error_msg: cstring, error_msg_size: cint,
                   buf: cstring, buf_len: csize_t, re_flags: cint,
-                  opaque: pointer): ptr uint8 {.importc: "lre_compile", header: lreheader.}
+                  opaque: pointer): ptr uint8 {.importc: "lre_compile".}
 
 proc lre_exec*(capture: ptr ptr uint8, bc_buf: ptr uint8, cbuf: ptr uint8,
                cindex: cint, clen: cint, cbuf_type: cint,
-               opaque: pointer): cint {.importc: "lre_exec", header: lreheader.}
+               opaque: pointer): cint {.importc: "lre_exec".}
 
-proc lre_get_capture_count*(bc_buf: ptr uint8): cint {.importc: "lre_get_capture_count", header: lreheader.}
+proc lre_get_capture_count*(bc_buf: ptr uint8): cint {.importc: "lre_get_capture_count".}
 
-proc lre_get_flags*(bc_buf: ptr uint8): cint {.importc: "lre_get_flags", header: lreheader.}
+proc lre_get_flags*(bc_buf: ptr uint8): cint {.importc: "lre_get_flags".}
