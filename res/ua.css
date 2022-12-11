@@ -36,6 +36,7 @@ table {
 
 tbody {
 	display: table-row-group;
+	vertical-align: middle;
 }
 
 thead {
@@ -52,6 +53,7 @@ colgroup {
 
 tr {
 	display: table-row;
+	vertical-align: inherit;
 }
 
 col {

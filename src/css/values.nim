@@ -464,9 +464,9 @@ func cssWordSpacing(cval: CSSComponentValue): CSSLength =
 
 func getToken(cval: CSSComponentValue): CSSToken = (CSSToken)cval
 
-func cssGlobal*(cval: CSSComponentValue): CSSGlobalValueType =
-  if isToken(cval):
-    let tok = getToken(cval)
+func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
+  if d.value.len > 0 and isToken(d.value[0]):
+    let tok = getToken(d.value[0])
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "inherit": return VALUE_INHERIT

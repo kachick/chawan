@@ -1,6 +1,7 @@
 import algorithm
 import options
 import streams
+import strutils
 import sugar
 
 import css/cssparser
@@ -96,15 +97,27 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let c = parseLegacyColor(element.attr("bgcolor"))
     if c.isSome:
       set_cv(PROPERTY_BACKGROUND_COLOR, color, c.get)
+  template map_valign =
+    case element.attr("valign").toLowerAscii()
+    of "top": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_TOP))
+    of "middle": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_MIDDLE))
+    of "bottom": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_BOTTOM))
+    of "baseline": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_BASELINE))
 
   case element.tagType
-  of TAG_TABLE, TAG_TD, TAG_TH:
+  of TAG_TABLE:
     map_height_nozero
     map_width_nozero
     map_bgcolor
+  of TAG_TD, TAG_TH:
+    map_height_nozero
+    map_width_nozero
+    map_bgcolor
+    map_valign
   of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
     map_height
     map_bgcolor
+    map_valign
   of TAG_COL:
     map_width
   of TAG_BODY:

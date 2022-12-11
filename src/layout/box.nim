@@ -151,7 +151,7 @@ type
     maxwidth*: int
     width*: int
     wspecified*: bool
-    rel*: float64
+    weight*: float64
 
   TableContext* = object
     caption*: TableCaptionBoxBuilder

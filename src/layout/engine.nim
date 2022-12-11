@@ -460,6 +460,17 @@ proc buildBlockLayout(parent: BlockBox, children: seq[BoxBuilder], node: StyledN
   if parent.computed{"position"} == POSITION_ABSOLUTE:
     discard parent.viewport.absolutes.pop()
 
+#TODO this is horribly inefficient
+func firstBaseline(bctx: BlockBox): int =
+  if bctx.inline != nil:
+    if bctx.inline.lines.len > 0:
+      return bctx.offset.y + bctx.inline.lines[0].baseline
+    return bctx.offset.y
+  if bctx.nested.len > 0:
+    return bctx.offset.y + bctx.nested[^1].firstBaseline
+  bctx.offset.y
+
+#TODO ditto
 func baseline(bctx: BlockBox): int =
   if bctx.inline != nil:
     var y = 0
@@ -506,7 +517,7 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
   result.width += result.innerbox.margin_left
   result.width += result.innerbox.margin_right
 
-# Copy-pasted wholesale from above. TODO somehow generalize this
+# Copy-pasted wholesale from above. TODO generalize this somehow
 proc buildInlineTableBox(builder: TableBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineTable(parent.viewport, builder, parentWidth)
 
@@ -820,6 +831,7 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builde
   var x = 0
   var n = 0
   let row = newBlockBox(parent, builder)
+  var baseline = 0
   for cellw in ctx.cells:
     var cell = cellw.box
     var w = 0
@@ -831,8 +843,20 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builde
     cell.offset.x += x
     x += w
     n += cellw.colspan
+    if cell.computed{"vertical-align"}.keyword notin {VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_MIDDLE, VERTICAL_ALIGN_BOTTOM}: # baseline
+      baseline = max(cell.firstBaseline, baseline)
     row.nested.add(cell)
     row.height = max(row.height, cell.height)
+  for cell in row.nested:
+    case cell.computed{"vertical-align"}.keyword
+    of VERTICAL_ALIGN_TOP:
+      cell.offset.y = 0
+    of VERTICAL_ALIGN_MIDDLE:
+      cell.offset.y = row.height div 2 - cell.height div 2
+    of VERTICAL_ALIGN_BOTTOM:
+      cell.offset.y = row.height - cell.height
+    else:
+      cell.offset.y = baseline - cell.firstBaseline
   row.width = x
   return row
 
@@ -871,16 +895,16 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   for child in footer:
     yield child
 
-proc calcUnspecifiedColIndices(ctx: var TableContext, dw: var int, rel: var float64): seq[int] =
+proc calcUnspecifiedColIndices(ctx: var TableContext, dw: var int, weight: var float64): seq[int] =
   var avail = newSeqUninitialized[int](ctx.cols.len)
   var i = 0
   var j = 0
   while i < ctx.cols.len:
     if not ctx.cols[i].wspecified:
       avail[j] = i
-      let r = ln(float64(ctx.cols[i].width))
-      ctx.cols[i].rel = r
-      rel += r
+      let w = sqrt(float64(ctx.cols[i].width) / float64(dw)) * float64(dw)
+      ctx.cols[i].weight = w
+      weight += w
       inc j
     else:
       avail.del(j)
@@ -898,8 +922,6 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, dw: var int, rel: var floa
 #      distribute -(table_width - max_row_width) among cells with an unspecified
 #      width. If this would give any cell a width < min_width, distribute the
 #      difference too.
-# Distribution happens in proportion to the natural logarithm of each column's
-# width (as in w3m).
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(box)
   var ctx: TableContext
@@ -917,26 +939,26 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   var reflow = newSeq[bool](ctx.cols.len)
   if table.compwidth > ctx.maxwidth and (not table.shrink or forceresize):
     var dw = (table.compwidth - ctx.maxwidth)
-    var rel: float64
-    var avail = ctx.calcUnspecifiedColIndices(dw, rel)
-    let unit = float64(dw) / rel
+    var weight: float64
+    var avail = ctx.calcUnspecifiedColIndices(dw, weight)
+    let unit = float64(dw) / weight
     for i in countdown(avail.high, 0):
       let j = avail[i]
-      let x = int(unit * ctx.cols[j].rel)
+      let x = int(unit * ctx.cols[j].weight)
       ctx.cols[j].width += x
       reflow[j] = true
   elif table.compwidth < ctx.maxwidth and (table.shrink or forceresize):
     var dw = (ctx.maxwidth - table.compwidth)
-    var rel: float64
-    var avail = ctx.calcUnspecifiedColIndices(dw, rel)
+    var weight: float64
+    var avail = ctx.calcUnspecifiedColIndices(dw, weight)
     while avail.len > 0 and dw != 0:
-      # divide delta width by sum of ln(width) for all elem in avail
-      let unit = float64(dw) / rel
+      # divide delta width by sum of sqrt(width) for all elem in avail
+      let unit = float64(dw) / weight
       dw = 0
-      rel = 0
+      weight = 0
       for i in countdown(avail.high, 0):
         let j = avail[i]
-        let x = int(unit * ctx.cols[j].rel)
+        let x = int(unit * ctx.cols[j].weight)
         ctx.cols[j].width -= x
         if ctx.cols[j].minwidth > ctx.cols[j].width:
           let d = ctx.cols[j].minwidth - ctx.cols[j].width
@@ -944,7 +966,7 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
           ctx.cols[j].width = ctx.cols[j].minwidth
           avail.del(i)
         else:
-          rel += ctx.cols[j].rel
+          weight += ctx.cols[j].weight
         reflow[j] = true
   for col in ctx.cols:
     table.width += col.width
