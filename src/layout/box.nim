@@ -158,6 +158,9 @@ type
     rows*: seq[RowContext]
     cols*: seq[ColumnContext]
     maxwidth*: int
+    blockspacing*: int
+    inlinespacing*: int
+    collapse*: bool
 
   InlineBlockBox* = ref object of InlineAtom
     innerbox*: BlockBox

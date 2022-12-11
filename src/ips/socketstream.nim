@@ -69,9 +69,10 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   hdr.msg_control = cmsgbuf
   hdr.msg_controllen = CMSG_LEN(csize_t(sizeof(FileHandle)))
   let cmsg = CMSG_FIRSTHDR(addr hdr)
-  # ...this is stupid.
-  var xl = CMSG_LEN(csize_t(sizeof(FileHandle)))
-  cast[ptr uint16](addr cmsg.cmsg_len)[] = cast[ptr uint16](addr xl)[]
+  # ...sigh
+  {.emit: [
+  cmsg.cmsg_len, """ = CMSG_LEN(sizeof(int));"""
+  ].}
   cmsg.cmsg_level = SOL_SOCKET
   cmsg.cmsg_type = SCM_RIGHTS
   cast[ptr FileHandle](CMSG_DATA(cmsg))[] = fd

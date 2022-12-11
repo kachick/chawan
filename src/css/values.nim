@@ -31,14 +31,15 @@ type
     PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
     PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION,
     PROPERTY_BACKGROUND_COLOR, PROPERTY_POSITION, PROPERTY_LEFT,
-    PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE
+    PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE,
+    PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
     VALUE_FONT_STYLE, VALUE_WHITE_SPACE, VALUE_INTEGER, VALUE_TEXT_DECORATION,
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
-    VALUE_CAPTION_SIDE
+    VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -91,6 +92,9 @@ type
     CAPTION_SIDE_TOP, CAPTION_SIDE_BOTTOM, CAPTION_SIDE_LEFT,
     CAPTION_SIDE_RIGHT, CAPTION_SIDE_BLOCK_START, CAPTION_SIDE_BLOCK_END,
     CAPTION_SIDE_INLINE_START, CAPTION_SIDE_INLINE_END
+
+  CSSBorderCollapse* = enum
+    BORDER_COLLAPSE_SEPARATE, BORDER_COLLAPSE_COLLAPSE
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -146,6 +150,10 @@ type
       position*: CSSPosition
     of VALUE_CAPTION_SIDE:
       captionside*: CSSCaptionSide
+    of VALUE_LENGTH2:
+      length2*: tuple[a, b: CSSLength]
+    of VALUE_BORDER_COLLAPSE:
+      bordercollapse*: CSSBorderCollapse
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -207,7 +215,9 @@ const PropertyNames = {
   "right": PROPERTY_RIGHT,
   "top": PROPERTY_TOP,
   "bottom": PROPERTY_BOTTOM,
-  "caption-side": PROPERTY_CAPTION_SIDE
+  "caption-side": PROPERTY_CAPTION_SIDE,
+  "border-spacing": PROPERTY_BORDER_SPACING,
+  "border-collapse": PROPERTY_BORDER_COLLAPSE
 }.toTable()
 
 const ValueTypes* = [
@@ -242,7 +252,9 @@ const ValueTypes* = [
   PROPERTY_RIGHT: VALUE_LENGTH,
   PROPERTY_TOP: VALUE_LENGTH,
   PROPERTY_BOTTOM: VALUE_LENGTH,
-  PROPERTY_CAPTION_SIDE: VALUE_CAPTION_SIDE
+  PROPERTY_CAPTION_SIDE: VALUE_CAPTION_SIDE,
+  PROPERTY_BORDER_SPACING: VALUE_LENGTH2,
+  PROPERTY_BORDER_COLLAPSE: VALUE_BORDER_COLLAPSE
 ]
 
 const InheritedProperties = {
@@ -250,7 +262,7 @@ const InheritedProperties = {
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
   PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_BACKGROUND_COLOR,
-  PROPERTY_CAPTION_SIDE
+  PROPERTY_CAPTION_SIDE, PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -448,6 +460,19 @@ func cssLength(val: CSSComponentValue): CSSLength =
     of CSS_IDENT_TOKEN:
       if tok.value == "auto":
         return CSSLength(auto: true)
+    else: discard
+  raise newException(CSSValueError, "Invalid length")
+
+func cssAbsoluteLength(val: CSSComponentValue): CSSLength =
+  if val of CSSToken:
+    let tok = CSSToken(val)
+    case tok.tokenType
+    of CSS_NUMBER_TOKEN:
+      if tok.nvalue == 0:
+        return CSSLength(num: 0, unit: UNIT_PX)
+    of CSS_DIMENSION_TOKEN:
+      if tok.nvalue >= 0:
+        return cssLength(tok.nvalue, tok.unit)
     else: discard
   raise newException(CSSValueError, "Invalid length")
 
@@ -666,14 +691,26 @@ func cssCaptionSide(cval: CSSComponentValue): CSSCaptionSide =
       of "inline-end": return CAPTION_SIDE_INLINE_END
   raise newException(CSSValueError, "Invalid caption side")
 
+func cssBorderCollapse(cval: CSSComponentValue): CSSBorderCollapse =
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case tok.value
+      of "collapse": return BORDER_COLLAPSE_COLLAPSE
+      of "separate": return BORDER_COLLAPSE_SEPARATE
+  raise newException(CSSValueError, "Invalid border collapse")
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
+  template skip_whitespace =
+    while i < d.value.len:
+      if d.value[i] != CSS_WHITESPACE_TOKEN: break
+      inc i
   var i = 0
-  while i < d.value.len:
-    if d.value[i] != CSS_WHITESPACE_TOKEN: break
-    inc i
+  skip_whitespace
   if i >= d.value.len: 
     raise newException(CSSValueError, "Empty value")
   let cval = d.value[i]
+  inc i
   case vtype
   of VALUE_COLOR:
     val.color = cssColor(cval)
@@ -700,6 +737,15 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_LIST_STYLE_POSITION: val.liststyleposition = cssListStylePosition(cval)
   of VALUE_POSITION: val.position = cssPosition(cval)
   of VALUE_CAPTION_SIDE: val.captionside = cssCaptionSide(cval)
+  of VALUE_BORDER_COLLAPSE: val.bordercollapse = cssBorderCollapse(cval)
+  of VALUE_LENGTH2:
+    val.length2.a = cssAbsoluteLength(cval)
+    skip_whitespace
+    if i >= d.value.len:
+      val.length2.b = val.length2.a
+    else:
+      let cval = d.value[i]
+      val.length2.b = cssAbsoluteLength(cval)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -848,7 +894,9 @@ func equals*(a, b: CSSComputedValue): bool =
     return true
   if a == nil or b == nil:
     return false
-  case valueType(a.t)
+  if a.v != b.v:
+    return false
+  case a.v
   of VALUE_COLOR: return a.color == b.color
   of VALUE_LENGTH: return a.length == b.length
   of VALUE_FONT_STYLE: return a.fontstyle == b.fontstyle
@@ -864,6 +912,8 @@ func equals*(a, b: CSSComputedValue): bool =
   of VALUE_LIST_STYLE_POSITION: return a.liststyleposition == b.liststyleposition
   of VALUE_POSITION: return a.position == b.position
   of VALUE_CAPTION_SIDE: return a.captionside == b.captionside
+  of VALUE_LENGTH2: return a.length2 == b.length2
+  of VALUE_BORDER_COLLAPSE: return a.bordercollapse == b.bordercollapse
   of VALUE_NONE: return true
   return false
 

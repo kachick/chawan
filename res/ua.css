@@ -32,6 +32,9 @@ blockquote {
 
 table {
 	display: table;
+	border-spacing: 0.5ch 0;
+	padding-left: 0.5ch;
+	padding-right: 0.5ch;
 }
 
 tbody {

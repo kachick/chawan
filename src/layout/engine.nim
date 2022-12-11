@@ -682,7 +682,6 @@ proc positionBlocks(box: BlockBox) =
     x += box.compwidth div 2
   of TEXT_ALIGN_CHA_LEFT: discard
   of TEXT_ALIGN_CHA_RIGHT:
-    eprint "cha-right"
     x += box.compwidth
   else: discard
 
@@ -807,6 +806,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
     let minw = cell.minwidth div cellbuilder.colspan
     let w = cell.width div cellbuilder.colspan
     for i in n ..< n + cellbuilder.colspan:
+      ctx.width += pctx.inlinespacing
       pctx.cols[i].maxwidth = w
       if pctx.cols[i].width < w:
         pctx.cols[i].width = w
@@ -830,6 +830,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
           pctx.cols[i].width = minw
           ctx.reflow[i] = true
       ctx.width += pctx.cols[i].width
+      ctx.width += pctx.inlinespacing
     n += cellbuilder.colspan
     inc i
   ctx.ncols = n
@@ -846,15 +847,19 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox, builde
     for i in n ..< n + cellw.colspan:
       w += pctx.cols[i].width
     if cellw.reflow:
-      cell = parent.viewport.buildTableCell(cellw.builder, w, none(int), false) #TODO height?
+      cell = parent.viewport.buildTableCell(cellw.builder, w, none(int), false)
       w = max(w, cell.width)
+    x += pctx.inlinespacing
     cell.offset.x += x
+    x += pctx.inlinespacing
     x += w
     n += cellw.colspan
     if cell.computed{"vertical-align"}.keyword notin {VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_MIDDLE, VERTICAL_ALIGN_BOTTOM}: # baseline
       baseline = max(cell.firstBaseline, baseline)
     row.nested.add(cell)
     row.height = max(row.height, cell.height)
+  for cell in row.nested:
+    cell.height = max(cell.height, row.height)
   for cell in row.nested:
     case cell.computed{"vertical-align"}.keyword
     of VERTICAL_ALIGN_TOP:
@@ -903,7 +908,7 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   for child in footer:
     yield child
 
-proc calcUnspecifiedColIndices(ctx: var TableContext, dw: var int, weight: var float64): seq[int] =
+proc calcUnspecifiedColIndices(ctx: var TableContext, dw: int, weight: var float64): seq[int] =
   var avail = newSeqUninitialized[int](ctx.cols.len)
   var i = 0
   var j = 0
@@ -932,7 +937,12 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, dw: var int, weight: var f
 #      difference too.
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(box)
-  var ctx: TableContext
+  var ctx = TableContext(
+    collapse: table.computed{"border-collapse"} == BORDER_COLLAPSE_COLLAPSE
+  )
+  if not ctx.collapse:
+    ctx.inlinespacing = table.computed{"border-spacing"}.a.px(parent.viewport)
+    ctx.blockspacing = table.computed{"border-spacing"}.b.px(parent.viewport)
   for row in box.rows:
     if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
       ctx.caption = TableCaptionBoxBuilder(row)
@@ -946,7 +956,7 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
     forceresize = true
   var reflow = newSeq[bool](ctx.cols.len)
   if table.compwidth > ctx.maxwidth and (not table.shrink or forceresize):
-    var dw = (table.compwidth - ctx.maxwidth)
+    let dw = (table.compwidth - ctx.maxwidth)
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(dw, weight)
     let unit = float64(dw) / weight
@@ -989,12 +999,19 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
         if n < row.reflow.len and row.reflow[n]:
           reflow[n] = true
         dec n
+  var y = 0
   for roww in ctx.rows:
+    y += ctx.blockspacing
     let row = ctx.buildTableRow(roww, table, roww.builder)
-    row.offset.y += table.height
-    table.height += row.height
+    row.offset.y += y
+    row.offset.x += table.padding_left
+    row.width += table.padding_left
+    row.width += table.padding_right
+    y += ctx.blockspacing
+    y += row.height
     table.nested.add(row)
     table.width = max(row.width, table.width)
+  table.height = table.compheight.get(y)
   if ctx.caption != nil:
     case ctx.caption.computed{"caption-side"}
     of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
