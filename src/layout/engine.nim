@@ -496,6 +496,7 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
   result.width += result.innerbox.margin_left
   result.width += result.innerbox.margin_right
 
+# Copy-pasted wholesale from above. TODO somehow generalize this
 proc buildInlineTableBox(builder: TableBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineTable(parent.viewport, builder, parentWidth)
 
@@ -745,6 +746,13 @@ proc positionBlocks(box: BlockBox) =
   box.width += box.padding_left
   box.width += box.padding_right
 
+proc buildTableCaption(viewport: Viewport, box: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int]): BlockBox =
+  result = viewport.newFlowRootBox(box, maxwidth, maxheight, true)
+  if box.inlinelayout:
+    result.buildInlineLayout(box.children)
+  else:
+    result.buildBlockLayout(box.children, box.node)
+
 proc buildTableCell(viewport: Viewport, box: TableCellBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = true): BlockBox =
   result = viewport.newFlowRootBox(box, maxwidth, maxheight, shrink)
   if box.inlinelayout:
@@ -775,9 +783,19 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
         pctx.colwidths[i] = w
         if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
         ctx.reflow[i] = true
-      ctx.width += pctx.colwidths[i]
       if not pwidth.auto:
-        pctx.colwidths_specified[i] = cell.compwidth
+        let ww = pwidth.px(parent.viewport, parent.compwidth)
+        if pctx.colwidths_specified[i]:
+          # A specified column already exists; we take the larger width.
+          pctx.colwidths[i] = max(ww, pctx.colwidths[i])
+        else:
+          # This is the first specified column. Replace colwidth with whatever
+          # we have.
+          pctx.colwidths_specified[i] = true
+          #TODO: this should be something like max(ww, pctx.min_colwidths[i]).
+          # We don't have min-width though...
+          pctx.colwidths[i] = ww
+      ctx.width += pctx.colwidths[i]
     n += cellbuilder.colspan
     inc i
   ctx.ncols = n
@@ -838,8 +856,6 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   for child in footer:
     yield child
 
-# Very basic table layout. TODO: this doesn't make sure cells actually fill
-# the rows, so e.g. text-align: left is broken.
 proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(box)
   var ctx: TableContext
@@ -852,7 +868,14 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       ctx.rows.add(rctx)
       ctx.maxwidth = max(rctx.width, ctx.maxwidth)
       ctx.ncols = max(rctx.ncols, ctx.ncols)
+  table.width = max(table.compwidth, ctx.maxwidth)
   var reflow = newSeq[bool](ctx.ncols)
+  if table.compwidth > ctx.maxwidth:
+    let x = (table.compwidth - ctx.maxwidth) div ctx.ncols
+    for i in 0 ..< ctx.ncols:
+      ctx.colwidths[i] += x
+      reflow[i] = true
+  #TODO if table.compwidth < ctx.compwidth... shrink cells
   for i in countdown(ctx.rows.high, 0):
     var row = addr ctx.rows[i]
     var n = ctx.ncols - 1
@@ -864,9 +887,8 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
         if n < row.reflow.len and row.reflow[n]:
           reflow[n] = true
         dec n
-  table.width = max(table.compwidth, ctx.maxwidth)
   if ctx.caption != nil:
-    let caption = buildBlock(ctx.caption, table)
+    let caption = table.viewport.buildTableCaption(ctx.caption, ctx.maxwidth, none(int))
     table.nested.add(caption)
     table.height += caption.height
   for roww in ctx.rows:

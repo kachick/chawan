@@ -147,7 +147,7 @@ type
   TableContext* = object
     caption*: TableCaptionBoxBuilder
     colwidths*: seq[int]
-    colwidths_specified*: seq[int]
+    colwidths_specified*: seq[bool]
     rows*: seq[RowContext]
     maxwidth*: int
     ncols*: int
