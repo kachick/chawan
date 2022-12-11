@@ -22,6 +22,7 @@ import bindings/curl
 import io/about
 import io/http
 import io/request
+import io/urlfilter
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
@@ -83,7 +84,7 @@ proc loadResource(request: Request, ostream: Stream) =
     ostream.flush()
 
 var ssock: ServerSocket
-proc runFileLoader*(fd: cint, defaultHeaders: HeaderList) =
+proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter) =
   if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
     raise newException(Defect, "Failed to initialize libcurl.")
   ssock = initServerSocket()
@@ -108,10 +109,14 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList) =
       of LOAD:
         var request: Request
         stream.sread(request)
-        for k, v in defaultHeaders.table:
-          if k notin request.headers.table:
-            request.headers.table[k] = v
-        loadResource(request, stream)
+        if not filter.match(request.url):
+          stream.swrite(-1) # error
+          stream.flush()
+        else:
+          for k, v in defaultHeaders.table:
+            if k notin request.headers.table:
+              request.headers.table[k] = v
+          loadResource(request, stream)
         stream.close()
       of QUIT:
         stream.close()

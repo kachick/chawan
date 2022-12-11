@@ -7,6 +7,7 @@ import buffer/buffer
 import config/config
 import io/loader
 import io/request
+import io/urlfilter
 import io/window
 import ips/serialize
 import ips/serversocket
@@ -27,9 +28,10 @@ type
     ostream: Stream
     children: seq[(Pid, Pid)]
 
-proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = DefaultHeaders): FileLoader =
+proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = DefaultHeaders, filter = newURLFilter()): FileLoader =
   forkserver.ostream.swrite(FORK_LOADER)
   forkserver.ostream.swrite(defaultHeaders)
+  forkserver.ostream.swrite(filter)
   forkserver.ostream.flush()
   forkserver.istream.sread(result)
 
@@ -43,7 +45,7 @@ proc removeChild*(forkserver: Forkserver, pid: Pid) =
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
-proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList): FileLoader =
+proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList, filter: URLFilter): FileLoader =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -54,7 +56,7 @@ proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList): FileLoa
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
-    runFileLoader(pipefd[1], defaultHeaders)
+    runFileLoader(pipefd[1], defaultHeaders, filter)
     assert false
   let readfd = pipefd[0] # get read
   discard close(pipefd[1]) # close write
@@ -75,7 +77,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
   ctx.istream.sread(mainproc)
-  let loader = ctx.forkLoader(DefaultHeaders) #TODO make this configurable
+  let loader = ctx.forkLoader(DefaultHeaders, config.filter) #TODO make this configurable
   let pid = fork()
   if pid == 0:
     for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
@@ -106,8 +108,10 @@ proc runForkServer() =
         ctx.ostream.swrite(ctx.forkBuffer())
       of FORK_LOADER:
         var defaultHeaders: HeaderList
+        var filter: URLFilter
         ctx.istream.sread(defaultHeaders)
-        let loader = ctx.forkLoader(defaultHeaders)
+        ctx.istream.sread(filter)
+        let loader = ctx.forkLoader(defaultHeaders, filter)
         ctx.ostream.swrite(loader)
         ctx.children.add((loader.process, Pid(-1)))
       of LOAD_CONFIG:

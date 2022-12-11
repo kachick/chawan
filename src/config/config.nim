@@ -5,9 +5,11 @@ import streams
 
 import buffer/cell
 import config/toml
+import io/urlfilter
 import js/javascript
 import js/regex
 import types/color
+import types/url
 import utils/twtstr
 
 type
@@ -49,6 +51,7 @@ type
 
   BufferConfig* = object
     userstyle*: string
+    filter*: URLFilter
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -60,8 +63,9 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
     ambiguous_double: config.ambiguous_double
   )
 
-func getBufferConfig*(config: Config): BufferConfig =
+func getBufferConfig*(config: Config, location: URL): BufferConfig =
   result.userstyle = config.stylesheet
+  result.filter = newURLFilter(scheme = some(location.scheme))
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:

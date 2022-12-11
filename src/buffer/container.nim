@@ -98,7 +98,7 @@ proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, ti
   let istream = dispatcher.forkserver.istream
   ostream.swrite(FORK_BUFFER)
   ostream.swrite(source)
-  ostream.swrite(config.getBufferConfig())
+  ostream.swrite(config.getBufferConfig(source.location))
   ostream.swrite(attrs)
   ostream.swrite(dispatcher.mainproc)
   ostream.flush()
