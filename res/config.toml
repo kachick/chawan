@@ -22,6 +22,10 @@ force-clear = false
 url = '^ddg:'
 substitute_url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
 
+[[siteconf]]
+url = '^wk:'
+substitute_url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + x.substring(4)'
+
 [page]
 q = 'quit()'
 h = 'pager.cursorLeft()' 
@@ -63,6 +67,7 @@ C-j = 'pager.click()'
 M-u = 'pager.dupeBuffer()'
 C-l = 'pager.load()'
 C-k = 'pager.load("ddg:")'
+M-b = 'pager.load("~/.w3m/bookmark.html\n")'
 U = 'pager.reload()'
 r = 'pager.redraw()'
 R = 'pager.reshape()'

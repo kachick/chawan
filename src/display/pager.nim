@@ -513,10 +513,12 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
     pager.gotoURL(newRequest(firstparse.get), prev, ctype)
     return
   var urls: seq[URL]
-  let pageurl = parseURL("https://" & url)
-  if pageurl.isSome: # attempt to load remote page
-    urls.add(pageurl.get)
+  if url[0] != '/':
+    let pageurl = parseURL("https://" & url)
+    if pageurl.isSome: # attempt to load remote page
+      urls.add(pageurl.get)
   let cdir = parseURL("file://" & getCurrentDir() & DirSep)
+  let url = if url[0] == '~': expandPath(url) else: url
   let purl = percentEncode(url, LocalPathPercentEncodeSet)
   if purl != url:
     let newurl = parseURL(purl, cdir)
@@ -631,7 +633,7 @@ proc updateReadLine*(pager: Pager) =
 # Open a URL prompt and visit the specified URL.
 proc load(pager: Pager, s = "") {.jsfunc.} =
   if s.len > 0 and s[^1] == '\n':
-    pager.loadURL(s)
+    pager.loadURL(s[0..^2])
   else:
     var url = s
     if url == "":
