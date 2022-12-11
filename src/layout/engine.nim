@@ -24,7 +24,7 @@ type InlineState = object
   computed: CSSComputedValues
 
 func whitespacepre(computed: CSSComputedValues): bool {.inline.} =
-  computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_WRAP}
+  computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_LINE}
 
 func cellwidth(viewport: Viewport): int {.inline.} =
   viewport.window.ppc
