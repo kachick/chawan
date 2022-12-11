@@ -757,8 +757,8 @@ proc positionBlocks(box: BlockBox) =
   box.width += box.padding_left
   box.width += box.padding_right
 
-proc buildTableCaption(viewport: Viewport, box: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int]): BlockBox =
-  result = viewport.newFlowRootBox(box, maxwidth, maxheight, true)
+proc buildTableCaption(viewport: Viewport, box: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = false): BlockBox =
+  result = viewport.newFlowRootBox(box, maxwidth, maxheight, shrink)
   if box.inlinelayout:
     result.buildInlineLayout(box.children)
   else:
@@ -924,7 +924,6 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       let j = avail[i]
       let x = int(unit * ctx.cols[j].rel)
       ctx.cols[j].width += x
-      ctx.maxwidth += x
       reflow[j] = true
   elif table.compwidth < ctx.maxwidth and (table.shrink or forceresize):
     var dw = (ctx.maxwidth - table.compwidth)
@@ -939,7 +938,6 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
         let j = avail[i]
         let x = int(unit * ctx.cols[j].rel)
         ctx.cols[j].width -= x
-        ctx.maxwidth -= x
         if ctx.cols[j].minwidth > ctx.cols[j].width:
           let d = ctx.cols[j].minwidth - ctx.cols[j].width
           dw += d
@@ -948,7 +946,8 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
         else:
           rel += ctx.cols[j].rel
         reflow[j] = true
-  table.width = max(table.compwidth, ctx.maxwidth)
+  for col in ctx.cols:
+    table.width += col.width
   for i in countdown(ctx.rows.high, 0):
     var row = addr ctx.rows[i]
     var n = ctx.cols.len - 1
@@ -960,16 +959,40 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
         if n < row.reflow.len and row.reflow[n]:
           reflow[n] = true
         dec n
-  if ctx.caption != nil:
-    let caption = table.viewport.buildTableCaption(ctx.caption, ctx.maxwidth, none(int))
-    table.nested.add(caption)
-    table.height += caption.height
   for roww in ctx.rows:
     let row = ctx.buildTableRow(roww, table, roww.builder)
     row.offset.y += table.height
     table.height += row.height
     table.nested.add(row)
     table.width = max(row.width, table.width)
+  if ctx.caption != nil:
+    case ctx.caption.computed{"caption-side"}
+    of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
+      let caption = table.viewport.buildTableCaption(ctx.caption, table.width, none(int), false)
+      for r in table.nested:
+        r.offset.y += caption.height
+      table.nested.insert(caption, 0)
+      table.height += caption.height
+      table.width = max(table.width, caption.width)
+    of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
+      let caption = table.viewport.buildTableCaption(ctx.caption, table.width, none(int), false)
+      caption.offset.y += table.width
+      table.nested.add(caption)
+      table.height += caption.height
+      table.width = max(table.width, caption.width)
+    of CAPTION_SIDE_LEFT, CAPTION_SIDE_INLINE_START:
+      let caption = table.viewport.buildTableCaption(ctx.caption, table.compwidth, some(table.height), true)
+      for r in table.nested:
+        r.offset.x += caption.width
+      table.nested.insert(caption, 0)
+      table.width += caption.width
+      table.height = max(table.height, caption.height)
+    of CAPTION_SIDE_RIGHT, CAPTION_SIDE_INLINE_END:
+      let caption = table.viewport.buildTableCaption(ctx.caption, table.compwidth, some(table.height), true)
+      caption.offset.x += table.width
+      table.nested.add(caption)
+      table.width += caption.width
+      table.height = max(table.height, caption.height)
   return table
 
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =

@@ -75,6 +75,22 @@ caption {
 	text-align: center;
 }
 
+caption[align=top] {
+	caption-side: top;
+}
+
+caption[align=bottom] {
+	caption-side: bottom;
+}
+
+caption[align=left] {
+	caption-side: left;
+}
+
+caption[align=right] {
+	caption-side: right;
+}
+
 input {
 	margin-right: 1ch;
 	white-space: pre;

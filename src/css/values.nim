@@ -31,13 +31,14 @@ type
     PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
     PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION,
     PROPERTY_BACKGROUND_COLOR, PROPERTY_POSITION, PROPERTY_LEFT,
-    PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM
+    PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
     VALUE_FONT_STYLE, VALUE_WHITE_SPACE, VALUE_INTEGER, VALUE_TEXT_DECORATION,
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
-    VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION
+    VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
+    VALUE_CAPTION_SIDE
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -84,6 +85,11 @@ type
 
   CSSListStylePosition* = enum
     LIST_STYLE_POSITION_OUTSIDE, LIST_STYLE_POSITION_INSIDE
+
+  CSSCaptionSide* = enum
+    CAPTION_SIDE_TOP, CAPTION_SIDE_BOTTOM, CAPTION_SIDE_LEFT,
+    CAPTION_SIDE_RIGHT, CAPTION_SIDE_BLOCK_START, CAPTION_SIDE_BLOCK_END,
+    CAPTION_SIDE_INLINE_START, CAPTION_SIDE_INLINE_END
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -137,6 +143,8 @@ type
       liststyleposition*: CSSListStylePosition
     of VALUE_POSITION:
       position*: CSSPosition
+    of VALUE_CAPTION_SIDE:
+      captionside*: CSSCaptionSide
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -197,7 +205,8 @@ const PropertyNames = {
   "left": PROPERTY_LEFT,
   "right": PROPERTY_RIGHT,
   "top": PROPERTY_TOP,
-  "bottom": PROPERTY_BOTTOM
+  "bottom": PROPERTY_BOTTOM,
+  "caption-side": PROPERTY_CAPTION_SIDE
 }.toTable()
 
 const ValueTypes* = [
@@ -231,14 +240,16 @@ const ValueTypes* = [
   PROPERTY_LEFT: VALUE_LENGTH,
   PROPERTY_RIGHT: VALUE_LENGTH,
   PROPERTY_TOP: VALUE_LENGTH,
-  PROPERTY_BOTTOM: VALUE_LENGTH
+  PROPERTY_BOTTOM: VALUE_LENGTH,
+  PROPERTY_CAPTION_SIDE: VALUE_CAPTION_SIDE
 ]
 
 const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
-  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_BACKGROUND_COLOR
+  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_BACKGROUND_COLOR,
+  PROPERTY_CAPTION_SIDE
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -420,7 +431,7 @@ func cssColor(val: CSSComponentValue): RGBAColor =
     else: discard
   raise newException(CSSValueError, "Invalid color")
 
-func isToken(d: CSSDeclaration): bool {.inline.} = d.value.len > 0 and d.value[0] of CSSToken
+func isToken(cval: CSSComponentValue): bool {.inline.} = cval of CSSToken
 
 func cssLength(val: CSSComponentValue): CSSLength =
   if val of CSSToken:
@@ -439,9 +450,9 @@ func cssLength(val: CSSComponentValue): CSSLength =
     else: discard
   raise newException(CSSValueError, "Invalid length")
 
-func cssWordSpacing(d: CSSDeclaration): CSSLength =
-  if isToken(d):
-    let tok = CSSToken(d.value[0])
+func cssWordSpacing(cval: CSSComponentValue): CSSLength =
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
     case tok.tokenType
     of CSS_DIMENSION_TOKEN:
       return cssLength(tok.nvalue, tok.unit)
@@ -451,11 +462,11 @@ func cssWordSpacing(d: CSSDeclaration): CSSLength =
     else: discard
   raise newException(CSSValueError, "Invalid word spacing")
 
-func getToken(d: CSSDeclaration): CSSToken = (CSSToken)d.value[0]
+func getToken(cval: CSSComponentValue): CSSToken = (CSSToken)cval
 
-func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
-  if isToken(d):
-    let tok = getToken(d)
+func cssGlobal*(cval: CSSComponentValue): CSSGlobalValueType =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "inherit": return VALUE_INHERIT
@@ -464,17 +475,17 @@ func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
       of "revert": return VALUE_REVERT
   return VALUE_NOGLOBAL
 
-func cssString(d: CSSDeclaration): string =
-  if isToken(d):
-    let tok = getToken(d)
+func cssString(cval: CSSComponentValue): string =
+  if isToken(cval):
+    let tok = getToken(cval)
     case tok.tokenType
     of CSS_IDENT_TOKEN, CSS_STRING_TOKEN:
       return tok.value
     else: return
 
-func cssDisplay(d: CSSDeclaration): CSSDisplay =
-  if isToken(d):
-    let tok = getToken(d)
+func cssDisplay(cval: CSSComponentValue): CSSDisplay =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "block": return DISPLAY_BLOCK
@@ -495,9 +506,9 @@ func cssDisplay(d: CSSDeclaration): CSSDisplay =
       else: return DISPLAY_INLINE
   raise newException(CSSValueError, "Invalid display")
 
-func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
-  if isToken(d):
-    let tok = getToken(d)
+func cssFontStyle(cval: CSSComponentValue): CSSFontStyle =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "normal": return FONTSTYLE_NORMAL
@@ -506,9 +517,9 @@ func cssFontStyle(d: CSSDeclaration): CSSFontStyle =
       else: raise newException(CSSValueError, "Invalid font style")
   raise newException(CSSValueError, "Invalid font style")
 
-func cssWhiteSpace(d: CSSDeclaration): CSSWhitespace =
-  if isToken(d):
-    let tok = getToken(d)
+func cssWhiteSpace(cval: CSSComponentValue): CSSWhitespace =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "normal": return WHITESPACE_NORMAL
@@ -519,26 +530,23 @@ func cssWhiteSpace(d: CSSDeclaration): CSSWhitespace =
       else: return WHITESPACE_NORMAL
   raise newException(CSSValueError, "Invalid whitespace")
 
-#TODO
-func cssFontWeight(d: CSSDeclaration): int =
-  if isToken(d):
-    let tok = getToken(d)
+func cssFontWeight(cval: CSSComponentValue): int =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "normal": return 400
       of "bold": return 700
       of "lighter": return 400
       of "bolder": return 700
-
     elif tok.tokenType == CSS_NUMBER_TOKEN:
       return int(tok.nvalue)
-
   raise newException(CSSValueError, "Invalid font weight")
 
 func cssTextDecoration(d: CSSDeclaration): set[CSSTextDecoration] =
-  for tok in d.value:
-    if tok of CSSToken:
-      let tok = CSSToken(tok)
+  for cval in d.value:
+    if isToken(cval):
+      let tok = getToken(cval)
       if tok.tokenType == CSS_IDENT_TOKEN:
         case tok.value
         of "none": result.incl(TEXT_DECORATION_NONE)
@@ -547,9 +555,9 @@ func cssTextDecoration(d: CSSDeclaration): set[CSSTextDecoration] =
         of "line-through": result.incl(TEXT_DECORATION_LINE_THROUGH)
         of "blink": result.incl(TEXT_DECORATION_BLINK)
 
-func cssWordBreak(d: CSSDeclaration): CSSWordBreak =
-  if isToken(d):
-    let tok = getToken(d)
+func cssWordBreak(cval: CSSComponentValue): CSSWordBreak =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "normal": return WORD_BREAK_NORMAL
@@ -557,9 +565,9 @@ func cssWordBreak(d: CSSDeclaration): CSSWordBreak =
       of "keep-all": return WORD_BREAK_KEEP_ALL
   raise newException(CSSValueError, "Invalid text decoration")
 
-func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
-  if isToken(d):
-    let tok = getToken(d)
+func cssListStyleType(cval: CSSComponentValue): CSSListStyleType =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "none": return LIST_STYLE_TYPE_NONE
@@ -572,9 +580,9 @@ func cssListStyleType(d: CSSDeclaration): CSSListStyleType =
       of "japanese-informal": return LIST_STYLE_TYPE_JAPANESE_INFORMAL
   raise newException(CSSValueError, "Invalid list style")
 
-func cssVerticalAlign(d: CSSDeclaration): CSSVerticalAlign =
-  if isToken(d):
-    let tok = getToken(d)
+func cssVerticalAlign(cval: CSSComponentValue): CSSVerticalAlign =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "baseline": result.keyword = VERTICAL_ALIGN_BASELINE
@@ -593,9 +601,9 @@ func cssVerticalAlign(d: CSSDeclaration): CSSVerticalAlign =
       return result
   raise newException(CSSValueError, "Invalid vertical align")
 
-func cssLineHeight(d: CSSDeclaration): CSSLength =
-  if isToken(d):
-    let tok = CSSToken(d.value[0])
+func cssLineHeight(cval: CSSComponentValue): CSSLength =
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
     case tok.tokenType
     of CSS_NUMBER_TOKEN:
       return cssLength(tok.nvalue * 100, "%")
@@ -606,76 +614,91 @@ func cssLineHeight(d: CSSDeclaration): CSSLength =
       return cssLength(tok)
   raise newException(CSSValueError, "Invalid line height")
 
-func cssTextAlign(d: CSSDeclaration): CSSTextAlign =
-  if isToken(d):
-    let tok = getToken(d)
+func cssTextAlign(cval: CSSComponentValue): CSSTextAlign =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      return case tok.value
-      of "start": TEXT_ALIGN_START
-      of "end": TEXT_ALIGN_END
-      of "left": TEXT_ALIGN_LEFT
-      of "right": TEXT_ALIGN_RIGHT
-      of "center": TEXT_ALIGN_CENTER
-      of "justify": TEXT_ALIGN_JUSTIFY
-      of "-cha-center": TEXT_ALIGN_CHA_CENTER
-      else: raise newException(CSSValueError, "Invalid text align")
+      case tok.value
+      of "start": return TEXT_ALIGN_START
+      of "end": return TEXT_ALIGN_END
+      of "left": return TEXT_ALIGN_LEFT
+      of "right": return TEXT_ALIGN_RIGHT
+      of "center": return TEXT_ALIGN_CENTER
+      of "justify": return TEXT_ALIGN_JUSTIFY
+      of "-cha-center": return TEXT_ALIGN_CHA_CENTER
   raise newException(CSSValueError, "Invalid text align")
 
-func cssListStylePosition(d: CSSDeclaration): CSSListStylePosition =
-  if isToken(d):
-    let tok = getToken(d)
+func cssListStylePosition(cval: CSSComponentValue): CSSListStylePosition =
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      return case tok.value
-      of "outside": LIST_STYLE_POSITION_OUTSIDE
-      of "inside": LIST_STYLE_POSITION_INSIDE
+      case tok.value
+      of "outside": return LIST_STYLE_POSITION_OUTSIDE
+      of "inside": return LIST_STYLE_POSITION_INSIDE
+  raise newException(CSSValueError, "Invalid list style position")
+
+func cssPosition(cval: CSSComponentValue): CSSPosition =
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case tok.value
+      of "static": return POSITION_STATIC
+      of "relative": return POSITION_RELATIVE
+      of "absolute": return POSITION_ABSOLUTE
+      of "fixed": return POSITION_FIXED
+      of "sticky": return POSITION_STICKY
       else: raise newException(CSSValueError, "Invalid list style position")
   raise newException(CSSValueError, "Invalid list style position")
 
-func cssPosition(d: CSSDeclaration): CSSPosition =
-  if isToken(d):
-    let tok = getToken(d)
+func cssCaptionSide(cval: CSSComponentValue): CSSCaptionSide =
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
-      return case tok.value
-      of "static": POSITION_STATIC
-      of "relative": POSITION_RELATIVE
-      of "absolute": POSITION_ABSOLUTE
-      of "fixed": POSITION_FIXED
-      of "sticky": POSITION_STICKY
-      else: raise newException(CSSValueError, "Invalid list style position")
-  raise newException(CSSValueError, "Invalid list style position")
+      case tok.value
+      of "top": return CAPTION_SIDE_TOP
+      of "bottom": return CAPTION_SIDE_BOTTOM
+      of "left": return CAPTION_SIDE_LEFT
+      of "right": return CAPTION_SIDE_RIGHT
+      of "block-start": return CAPTION_SIDE_BLOCK_START
+      of "block-end": return CAPTION_SIDE_BLOCK_END
+      of "inline-start": return CAPTION_SIDE_INLINE_START
+      of "inline-end": return CAPTION_SIDE_INLINE_END
+  raise newException(CSSValueError, "Invalid caption side")
 
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
+  var i = 0
+  while i < d.value.len:
+    if d.value[i] != CSS_WHITESPACE_TOKEN: break
+    inc i
+  if i >= d.value.len: 
+    raise newException(CSSValueError, "Empty value")
+  let cval = d.value[i]
   case vtype
   of VALUE_COLOR:
-    if d.value.len > 0:
-      val.color = cssColor(d.value[0])
-    else:
-      raise newException(CSSValueError, "Empty value")
+    val.color = cssColor(cval)
   of VALUE_LENGTH:
     case ptype
     of PROPERTY_WORD_SPACING:
-      val.length = cssWordSpacing(d)
+      val.length = cssWordSpacing(cval)
     of PROPERTY_LINE_HEIGHT:
-      val.length = cssLineHeight(d)
+      val.length = cssLineHeight(cval)
     else:
-      if d.value.len > 0:
-        val.length = cssLength(d.value[0])
-      else:
-        raise newException(CSSValueError, "Empty value")
-  of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(d)
-  of VALUE_DISPLAY: val.display = cssDisplay(d)
-  of VALUE_CONTENT: val.content = cssString(d)
-  of VALUE_WHITE_SPACE: val.whitespace = cssWhiteSpace(d)
+      val.length = cssLength(cval)
+  of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(cval)
+  of VALUE_DISPLAY: val.display = cssDisplay(cval)
+  of VALUE_CONTENT: val.content = cssString(cval)
+  of VALUE_WHITE_SPACE: val.whitespace = cssWhiteSpace(cval)
   of VALUE_INTEGER:
     if ptype == PROPERTY_FONT_WEIGHT:
-      val.integer = cssFontWeight(d)
+      val.integer = cssFontWeight(cval)
   of VALUE_TEXT_DECORATION: val.textdecoration = cssTextDecoration(d)
-  of VALUE_WORD_BREAK: val.wordbreak = cssWordBreak(d)
-  of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(d)
-  of VALUE_VERTICAL_ALIGN: val.verticalalign = cssVerticalAlign(d)
-  of VALUE_TEXT_ALIGN: val.textalign = cssTextAlign(d)
-  of VALUE_LIST_STYLE_POSITION: val.liststyleposition = cssListStylePosition(d)
-  of VALUE_POSITION: val.position = cssPosition(d)
+  of VALUE_WORD_BREAK: val.wordbreak = cssWordBreak(cval)
+  of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(cval)
+  of VALUE_VERTICAL_ALIGN: val.verticalalign = cssVerticalAlign(cval)
+  of VALUE_TEXT_ALIGN: val.textalign = cssTextAlign(cval)
+  of VALUE_LIST_STYLE_POSITION: val.liststyleposition = cssListStylePosition(cval)
+  of VALUE_POSITION: val.position = cssPosition(cval)
+  of VALUE_CAPTION_SIDE: val.captionside = cssCaptionSide(cval)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -839,6 +862,7 @@ func equals*(a, b: CSSComputedValue): bool =
   of VALUE_TEXT_ALIGN: return a.textalign == b.textalign
   of VALUE_LIST_STYLE_POSITION: return a.liststyleposition == b.liststyleposition
   of VALUE_POSITION: return a.position == b.position
+  of VALUE_CAPTION_SIDE: return a.captionside == b.captionside
   of VALUE_NONE: return true
   return false
 
