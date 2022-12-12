@@ -36,6 +36,7 @@ import render/renderdocument
 import render/rendertext
 import types/buffersource
 import types/color
+import types/cookie
 import types/url
 import utils/twtstr
 
@@ -528,7 +529,7 @@ proc loadResources(buffer: Buffer, document: Document) =
     for child in elem.children_rev:
       stack.add(child)
 
-type ConnectResult* = tuple[code: int, needsAuth: bool, redirect: Option[URL], contentType: string] 
+type ConnectResult* = tuple[code: int, needsAuth: bool, redirect: Option[URL], contentType: string, cookies: seq[Cookie]] 
 
 proc setupSource(buffer: Buffer): ConnectResult =
   if buffer.loaded:
@@ -564,6 +565,11 @@ proc setupSource(buffer: Buffer): ConnectResult =
     SocketStream(buffer.istream).source.getFd().setBlocking(false)
     result.needsAuth = response.status == 401 # Unauthorized
     result.redirect = response.redirect
+    if "Set-Cookie" in response.headers.table:
+      for s in response.headers.table["Set-Cookie"]:
+        let cookie = newCookie(s)
+        if cookie != nil:
+          result.cookies.add(cookie)
   buffer.istream = newTeeStream(buffer.istream, buffer.sstream, closedest = false)
   if setct:
     result.contentType = buffer.contenttype

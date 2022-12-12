@@ -139,7 +139,10 @@ func slen*(b: bool): int =
   return sizeof(uint8)
 
 proc swrite*(stream: Stream, url: Url) =
-  stream.swrite(url.serialize())
+  if url != nil:
+    stream.swrite(url.serialize())
+  else:
+    stream.swrite("")
 
 proc sread*(stream: Stream, url: var Url) =
   var s: string
@@ -215,14 +218,21 @@ func slen*(obj: object): int =
     result += slen(f)
 
 proc swrite*(stream: Stream, obj: ref object) =
-  stream.swrite(obj[])
+  stream.swrite(obj != nil)
+  if obj != nil:
+    stream.swrite(obj[])
 
 proc sread*(stream: Stream, obj: var ref object) =
-  new(obj)
-  stream.sread(obj[])
+  var n: bool
+  stream.sread(n)
+  if n:
+    new(obj)
+    stream.sread(obj[])
 
 func slen*(obj: ref object): int =
-  slen(obj[])
+  result = slen(obj != nil)
+  if obj != nil:
+    result += slen(obj[])
 
 proc swrite*(stream: Stream, part: MimePart) =
   stream.swrite(part.isFile)

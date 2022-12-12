@@ -3,18 +3,24 @@ import strutils
 import times
 
 import js/javascript
+import types/url
 import utils/twtstr
 
-type Cookie = ref object of RootObj
-  name {.jsget.}: string
-  value {.jsget.}: string
-  expires {.jsget.}: int64 # unix time
-  maxAge {.jsget.}: int64
-  secure {.jsget.}: bool
-  httponly {.jsget.}: bool
-  samesite {.jsget.}: bool
-  domain {.jsget.}: string
-  path {.jsget.}: string
+type
+  Cookie* = ref object
+    name {.jsget.}: string
+    value {.jsget.}: string
+    expires {.jsget.}: int64 # unix time
+    maxAge {.jsget.}: int64
+    secure {.jsget.}: bool
+    httponly {.jsget.}: bool
+    samesite {.jsget.}: bool
+    domain {.jsget.}: string
+    path {.jsget.}: string
+
+  CookieJar* = ref object
+    location*: URL
+    cookies*: seq[Cookie]
 
 proc parseCookieDate(val: string): Option[DateTime] =
   # cookie-date
@@ -101,7 +107,19 @@ proc parseCookieDate(val: string): Option[DateTime] =
   var dateTime = dateTime(year, Month(month), MonthdayRange(dayOfMonth), HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
   return some(dateTime)
 
-proc newCookie(str: string): Cookie {.jsctor.} =
+proc `$`*(cookiejar: CookieJar): string =
+  let t = now().toTime().toUnix()
+  for i in countdown(cookiejar.cookies.high, 0):
+    let cookie = cookiejar.cookies[i]
+    if cookie.expires <= t:
+      cookiejar.cookies.delete(i)
+    else:
+      result.percentEncode(cookie.name, UserInfoPercentEncodeSet)
+      result &= "="
+      result.percentEncode(cookie.value, UserInfoPercentEncodeSet)
+      result &= ";"
+
+proc newCookie*(str: string): Cookie {.jsctor.} =
   let cookie = new(Cookie)
   var first = true
   for part in str.split(';'):
@@ -125,13 +143,19 @@ proc newCookie(str: string): Cookie {.jsctor.} =
       let date = parseCookieDate(val)
       if date.issome:
         cookie.expires = date.get.toTime().toUnix()
-    of "max-age": cookie.maxAge = parseInt64(val)
+    of "max-age":
+      cookie.expires = now().toTime().toUnix() + parseInt64(val)
     of "secure": cookie.secure = true
     of "httponly": cookie.httponly = true
     of "samesite": cookie.samesite = true
     of "path": cookie.path = val
     of "domain": cookie.domain = val
   return cookie
+
+proc newCookieJar*(location: URL): CookieJar =
+  return CookieJar(
+    location: location
+  )
 
 proc addCookieModule*(ctx: JSContext) =
   ctx.registerType(Cookie)

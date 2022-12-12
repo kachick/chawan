@@ -447,5 +447,6 @@ proc parseToml*(inputStream: Stream): TomlValue =
         state.consumeComment()
       of '\t', ' ': discard
       else: state.syntaxError(fmt"invalid character after value: {c}")
+  inputStream.close()
 
   return TomlValue(vt: VALUE_TABLE, t: state.root)

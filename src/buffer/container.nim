@@ -1,3 +1,4 @@
+import deques
 import options
 import streams
 import strformat
@@ -17,6 +18,7 @@ import ips/socketstream
 import js/javascript
 import js/regex
 import types/buffersource
+import types/cookie
 import types/dispatcher
 import types/url
 import utils/twtstr
@@ -32,7 +34,8 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED
+    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED,
+    SET_COOKIE
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -52,6 +55,8 @@ type
       msg*: string
     of UPDATE:
       force*: bool
+    of SET_COOKIE:
+      cookies*: seq[Cookie]
     else: discard
 
   Highlight* = ref object
@@ -61,8 +66,9 @@ type
     clear*: bool
 
   Container* = ref object
+    config: BufferConfig
     iface*: BufferInterface
-    attrs*: WindowAttributes
+    attrs: WindowAttributes
     width*: int
     height*: int
     contenttype*: Option[string]
@@ -88,24 +94,25 @@ type
     redraw*: bool
     needslines*: bool
     canceled: bool
-    events*: seq[ContainerEvent]
+    events*: Deque[ContainerEvent]
     startpos: Option[CursorPosition]
     hasstart: bool
 
-proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, title = ""): Container =
+proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, cookiejar: CookieJar, title = ""): Container =
   let attrs = getWindowAttributes(stdout)
+  let config = config.getBufferConfig(source.location, cookiejar)
   let ostream = dispatcher.forkserver.ostream
   let istream = dispatcher.forkserver.istream
   ostream.swrite(FORK_BUFFER)
   ostream.swrite(source)
-  ostream.swrite(config.getBufferConfig(source.location))
+  ostream.swrite(config)
   ostream.swrite(attrs)
   ostream.swrite(dispatcher.mainproc)
   ostream.flush()
   result = Container(
     source: source, attrs: attrs, width: attrs.width,
     height: attrs.height - 1, contenttype: source.contenttype,
-    title: title
+    title: title, config: config
   )
   istream.sread(result.process)
   result.pos.setx = -1
@@ -250,7 +257,7 @@ func findHighlights*(container: Container, y: int): seq[Highlight] =
       result.add(hl)
 
 proc triggerEvent(container: Container, event: ContainerEvent) =
-  container.events.add(event)
+  container.events.addLast(event)
 
 proc triggerEvent(container: Container, t: ContainerEventType) =
   container.triggerEvent(ContainerEvent(t: t))
@@ -638,6 +645,8 @@ proc load*(container: Container) =
       container.code = res.code
       if res.code == 0:
         container.triggerEvent(SUCCESS)
+        if res.cookies.len > 0 and container.config.cookiejar != nil: # accept cookies
+          container.triggerEvent(ContainerEvent(t: SET_COOKIE, cookies: res.cookies))
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)
@@ -690,7 +699,7 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
     contenttype: if contenttype.isSome: contenttype else: container.contenttype,
     clonepid: container.process,
   )
-  container.pipeto = dispatcher.newBuffer(config, source, container.title)
+  container.pipeto = dispatcher.newBuffer(config, source, container.config.cookiejar, container.title)
   container.iface.getSource().then(proc() =
     if container.pipeto != nil:
       container.pipeto.load()

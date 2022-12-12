@@ -386,7 +386,26 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
             cell.format.fgcolor = grid[(ly - y) * grid.width + (lx - x)].format.fgcolor
           j += cell[].width()
 
+proc applyConfig(term: Terminal) =
+  if term.config.colormode.isSome:
+    term.colormode = term.config.colormode.get
+  elif term.isatty():
+    term.colormode = ANSI
+    let colorterm = getEnv("COLORTERM")
+    case colorterm
+    of "24bit", "truecolor": term.colormode = TRUE_COLOR
+  if term.config.formatmode.isSome:
+    term.formatmode = term.config.formatmode.get
+  for fm in FormatFlags:
+    if fm in term.config.noformatmode:
+      term.formatmode.excl(fm)
+  if term.isatty() and term.config.altscreen.isSome:
+    term.smcup = term.config.altscreen.get
+  term.mincontrast = term.config.mincontrast
+
 proc outputGrid*(term: Terminal) =
+  if term.config.termreload:
+    term.applyConfig()
   term.outfile.write(term.resetFormat())
   if term.config.forceclear or not term.cleared:
     term.outfile.write(term.generateFullOutput(term.canvas))
@@ -488,21 +507,7 @@ proc detectTermAttributes(term: Terminal) =
     if term.isatty():
       term.smcup = true
       term.formatmode = {low(FormatFlags)..high(FormatFlags)}
-  if term.config.colormode.isSome:
-    term.colormode = term.config.colormode.get
-  elif term.isatty():
-    term.colormode = ANSI
-    let colorterm = getEnv("COLORTERM")
-    case colorterm
-    of "24bit", "truecolor": term.colormode = TRUE_COLOR
-  if term.config.formatmode.isSome:
-    term.formatmode = term.config.formatmode.get
-  for fm in FormatFlags:
-    if fm in term.config.noformatmode:
-      term.formatmode.excl(fm)
-  if term.isatty() and term.config.altscreen.isSome:
-    term.smcup = term.config.altscreen.get
-  term.mincontrast = term.config.mincontrast
+  term.applyConfig()
 
 proc start*(term: Terminal, infile: File) =
   term.infile = infile

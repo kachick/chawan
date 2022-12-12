@@ -128,30 +128,29 @@ func newHeaderList*(table: Table[string, string]): HeaderList =
     else:
       result.table[k] = @[v]
 
-func newRequest*(url: Url,
-                 httpmethod = HTTP_GET,
-                 headers: seq[(string, string)] = @[],
-                 body = none(string),
-                 multipart = none(MimeData)): Request {.jsctor.} =
-  new(result)
-  result.httpmethod = httpmethod
-  result.url = url
-  result.headers = newHeaderList()
-  for it in headers:
-    if it[1] != "": #TODO not sure if this is a good idea, options would probably work better
-      result.headers.table[it[0]] = @[it[1]]
-  result.body = body
-  result.multipart = multipart
+func newRequest*(url: Url, httpmethod: HttpMethod, headers: HeaderList,
+                 body = none(string), multipart = none(MimeData)): Request =
+  return Request(
+    url: url,
+    httpmethod: httpmethod,
+    headers: headers,
+    body: body,
+    multipart: multipart
+  )
 
-func newRequest*(url: Url,
-                 httpmethod: HttpMethod,
-                 headers: openarray[(string, string)],
-                 body = none(string),
+func newRequest*(url: Url, httpmethod = HTTP_GET,
+                 headers: seq[(string, string)] = @[], body = none(string),
+                 multipart = none(MimeData)): Request {.jsctor.} =
+  let hl = newHeaderList()
+  for pair in headers:
+    let (k, v) = pair
+    hl.table[k] = @[v]
+  return newRequest(url, httpmethod, hl, body, multipart)
+
+func newRequest*(url: Url, httpmethod: HttpMethod,
+                 headers: openarray[(string, string)], body = none(string),
                  multipart = none(MimeData)): Request =
-  var s: seq[(string, string)]
-  for it in headers:
-    s.add(it)
-  return newRequest(url, httpmethod, s, body, multipart)
+  return newRequest(url, httpmethod, @headers, body, multipart)
 
 proc `[]=`*(multipart: var MimeData, k, v: string) =
   multipart.content.add(MimePart(name: k, content: v))

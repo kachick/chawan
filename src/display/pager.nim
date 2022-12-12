@@ -1,3 +1,4 @@
+import deques
 import net
 import options
 import os
@@ -22,6 +23,7 @@ import js/javascript
 import js/regex
 import types/buffersource
 import types/color
+import types/cookie
 import types/dispatcher
 import types/url
 import utils/twtstr
@@ -55,6 +57,8 @@ type
     term*: Terminal
     linehist: array[LineMode, LineHistory]
     siteconf: seq[SiteConfig]
+    omnirules: seq[OmniRule]
+    cookiejars: Table[string, CookieJar]
 
 func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 
@@ -147,7 +151,7 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.setLineEdit("?", ISEARCH_B)
 
-proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, siteconf: seq[SiteConfig]): Pager =
+proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, siteconf: seq[SiteConfig], omnirules: seq[OmniRule]): Pager =
   let pager = Pager(
     dispatcher: dispatcher,
     config: config,
@@ -156,9 +160,13 @@ proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, 
     term: newTerminal(stdout, config, attrs),
   )
   for sc in siteconf:
-    # not sure why but normal copies don't seem to work here...
+    # not sure why but normal copies don't seem to work here... probably
+    # something weird going on with lambdas
     pager.siteconf.add(sc)
     pager.siteconf[^1].subst = sc.subst
+  for rule in omnirules:
+    pager.omnirules.add(rule)
+    pager.omnirules[^1].subst = rule.subst
   return pager
 
 proc launchPager*(pager: Pager, tty: File) =
@@ -304,7 +312,7 @@ proc draw*(pager: Pager) =
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
   pager.term.outputGrid()
   if pager.lineedit.isSome:
-    pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.container.attrs.height - 1)
+    pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
   else:
     pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
   pager.term.showCursor()
@@ -459,21 +467,24 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
   for container in pager.containers:
     container.windowChange(attrs)
 
-# ugh...
-proc substituteUrl(pager: Pager, request: Request) =
-  let surl = $request.url
+proc applySiteconf(pager: Pager, request: Request) =
+  let url = $request.url
+  let host = $request.url.host
   for sc in pager.siteconf:
-    if sc.url.exec(surl).success:
-      let s = sc.subst(surl)
-      if s.isSome:
-        let nurl = parseURL(s.get)
-        if nurl.isSome:
-          request.url = nurl.get
-      break
+    if sc.url.isSome and not sc.url.get.exec(url).success:
+      continue
+    elif sc.host.isSome and not sc.host.get.exec(host).success:
+      continue
+    if sc.subst != nil:
+      let s = sc.subst(request.url)
+      if s.isSome and s.get != nil:
+        request.url = s.get
+    if sc.cookie and request.url.host notin pager.cookiejars:
+      pager.cookiejars[request.url.host] = newCookieJar(request.url)
 
 # Load request in a new buffer.
 proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(string), replace: Container = nil) =
-  pager.substituteUrl(request)
+  pager.applySiteconf(request)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpmethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
@@ -488,7 +499,8 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
       contenttype: ctype,
       location: request.url
     )
-    let container = pager.dispatcher.newBuffer(pager.config, source)
+    let cookiejar = pager.cookiejars.getOrDefault(request.url.host)
+    let container = pager.dispatcher.newBuffer(pager.config, source, cookiejar)
     if replace != nil:
       container.replace = replace
       container.copyCursorPos(container.replace)
@@ -497,6 +509,12 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
   else:
     pager.container.findAnchor(request.url.anchor)
 
+proc omniRewrite(pager: Pager, s: string): string =
+  for rule in pager.omnirules:
+    if rule.match.exec(s).success:
+      return rule.subst(s).get
+  return s
+
 # When the user has passed a partial URL as an argument, they might've meant
 # either:
 # * file://$PWD/<file>
@@ -504,6 +522,8 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
 # So we attempt to load both, and see what works.
 # (TODO: make this optional)
 proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
+  let url0 = pager.omniRewrite(url)
+  let url = if url[0] == '~': expandPath(url0) else: url0
   let firstparse = parseURL(url)
   if firstparse.issome:
     let prev = if pager.container != nil:
@@ -518,7 +538,6 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
   let cdir = parseURL("file://" & getCurrentDir() & DirSep)
-  let url = if url[0] == '~': expandPath(url) else: url
   let purl = percentEncode(url, LocalPathPercentEncodeSet)
   if purl != url:
     let newurl = parseURL(purl, cdir)
@@ -542,7 +561,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: O
     contenttype: some(ctype.get("text/plain")),
     location: location.get(newURL("file://-"))
   )
-  let container = pager.dispatcher.newBuffer(pager.config, source, title)
+  let container = pager.dispatcher.newBuffer(pager.config, source, nil, title)
   return container
 
 proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
@@ -726,12 +745,16 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == container:
       pager.alert(event.msg)
       pager.refreshStatusMsg()
+  of SET_COOKIE:
+    let host = container.source.location.host
+    if host in pager.cookiejars:
+      pager.cookiejars[host].cookies.add(event.cookies)
   of NO_EVENT: discard
   return true
 
 proc handleEvents*(pager: Pager, container: Container): bool =
   while container.events.len > 0:
-    let event = container.events.pop()
+    let event = container.events.popFirst()
     if not pager.handleEvent0(container, event):
       return false
   return true

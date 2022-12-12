@@ -5,10 +5,12 @@ import streams
 
 import buffer/cell
 import config/toml
+import io/request
 import io/urlfilter
 import js/javascript
 import js/regex
 import types/color
+import types/cookie
 import types/url
 import utils/twtstr
 
@@ -21,15 +23,28 @@ type
   ActionMap = Table[string, string]
 
   StaticSiteConfig = object
-    url: string
+    url: Option[string]
+    host: Option[string]
     subst: Option[string]
+    cookie: bool
+
+  StaticOmniRule = object
+    match: string
+    subst: string
 
   SiteConfig* = object
-    url*: Regex
+    url*: Option[Regex]
+    host*: Option[Regex]
+    subst*: (proc(s: URL): Option[URL])
+    cookie*: bool
+
+  OmniRule* = object
+    match*: Regex
     subst*: (proc(s: string): Option[string])
 
   Config* = ref ConfigObj
   ConfigObj* = object
+    termreload*: bool
     nmap*: ActionMap
     lemap*: ActionMap
     stylesheet*: string
@@ -45,6 +60,7 @@ type
     editor*: string
     tmpdir*: string
     siteconf: seq[StaticSiteConfig]
+    omnirules: seq[StaticOmniRule]
     forceclear*: bool
     emulateoverline*: bool
     visualhome*: string
@@ -52,6 +68,8 @@ type
   BufferConfig* = object
     userstyle*: string
     filter*: URLFilter
+    cookiejar*: CookieJar
+    headers*: HeaderList
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -63,20 +81,36 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
     ambiguous_double: config.ambiguous_double
   )
 
-func getBufferConfig*(config: Config, location: URL): BufferConfig =
+func getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar): BufferConfig =
   result.userstyle = config.stylesheet
   result.filter = newURLFilter(scheme = some(location.scheme))
+  result.cookiejar = cookiejar
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:
+    var conf = SiteConfig(
+      cookie: sc.cookie,
+    )
+    if sc.url.isSome:
+      conf.url = compileRegex(sc.url.get, 0)
+    elif sc.host.isSome:
+      conf.host = compileRegex(sc.host.get, 0)
     if sc.subst.isSome:
-      let re = compileRegex(sc.url, 0)
       let fun = jsctx.eval(sc.subst.get, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
-      let f = getJSFunction[string, string](jsctx, fun.val)
-      result.add(SiteConfig(
-        url: re.get,
-        subst: f.get
-      ))
+      let f = getJSFunction[URL, URL](jsctx, fun.val)
+      conf.subst = f.get
+    result.add(conf)
+
+proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
+  for rule in config.omnirules:
+    let re = compileRegex(rule.match, 0)
+    var conf = OmniRule(
+      match: re.get
+    )
+    let fun = jsctx.eval(rule.subst, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
+    let f = getJSFunction[string, string](jsctx, fun.val)
+    conf.subst = f.get
+    result.add(conf)
 
 func getRealKey(key: string): string =
   var realk: string
@@ -150,9 +184,50 @@ proc readUserStylesheet(dir, file: string): string =
       result = f.readAll()
       f.close()
 
+proc parseConfig(config: Config, dir: string, stream: Stream)
+proc parseConfig*(config: Config, dir: string, s: string)
+
+proc loadConfig*(config: Config, s: string) {.jsfunc.} =
+  let s = if s.len > 0 and s[0] == '/':
+    s
+  else:
+    getCurrentDir() / s
+  if not fileExists(s): return
+  config.parseConfig(parentDir(s), newFileStream(s))
+
+proc bindPagerKey*(config: Config, key, action: string) {.jsfunc.} =
+  let k = getRealKey(key)
+  config.nmap[k] = action
+  var teststr = ""
+  for c in k:
+    teststr &= c
+    if teststr notin config.nmap:
+      config.nmap[teststr] = "client.feedNext()"
+
+proc bindLineKey*(config: Config, key, action: string) {.jsfunc.} =
+  let k = getRealKey(key)
+  config.lemap[k] = action
+  var teststr = ""
+  for c in k:
+    teststr &= c
+    if teststr notin config.nmap:
+      config.lemap[teststr] = "client.feedNext()"
+
 proc parseConfig(config: Config, dir: string, t: TomlValue) =
   for k, v in t:
     case k
+    of "include":
+      if v.vt == VALUE_STRING:
+        when nimvm:
+          config.loadConfig(v.s)
+        else:
+          config.loadConfig(v.s)
+      elif t.vt == VALUE_ARRAY:
+        for v in t.a:
+          when nimvm:
+            config.parseConfig(parentDir(v.s), staticRead(v.s))
+          else:
+            config.parseConfig(parentDir(v.s), newFileStream(v.s))
     of "start":
       for k, v in v:
         case k
@@ -233,10 +308,21 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         var conf = StaticSiteConfig()
         for k, v in v:
           case k
-          of "url": conf.url = v.s
-          of "substitute_url": conf.subst = some(v.s)
-        if conf.url != "":
-          config.siteconf.add(conf)
+          of "url": conf.url = some(v.s)
+          of "host": conf.host = some(v.s)
+          of "rewrite-url": conf.subst = some(v.s)
+          of "cookie": conf.cookie = v.b
+        assert conf.url.isSome != conf.host.isSome
+        config.siteconf.add(conf)
+    of "omnirule":
+      for v in v:
+        var rule = StaticOmniRule()
+        for k, v in v:
+          case k
+          of "match": rule.match = v.s
+          of "substitute-url": rule.subst = v.s
+        if rule.match != "":
+          config.omnirules.add(rule)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))
@@ -272,3 +358,6 @@ proc readConfig*(): Config =
   when defined(debug):
     result.readConfig(getCurrentDir() / "res")
   result.readConfig(getConfigDir() / "chawan")
+
+proc addConfigModule*(ctx: JSContext) =
+  ctx.registerType(Config)

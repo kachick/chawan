@@ -26,6 +26,7 @@ import io/urlfilter
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import types/cookie
 import types/mime
 import types/url
 import utils/twtstr
@@ -84,7 +85,7 @@ proc loadResource(request: Request, ostream: Stream) =
     ostream.flush()
 
 var ssock: ServerSocket
-proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter) =
+proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter, cookiejar: CookieJar) =
   if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
     raise newException(Defect, "Failed to initialize libcurl.")
   ssock = initServerSocket()
@@ -116,6 +117,10 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter) =
           for k, v in defaultHeaders.table:
             if k notin request.headers.table:
               request.headers.table[k] = v
+          if cookiejar != nil and cookiejar.cookies.len > 0:
+            if request.url.host == cookiejar.location.host:
+              if "Cookie" notin request.headers.table:
+                request.headers["Cookie"] = $cookiejar
           loadResource(request, stream)
         stream.close()
       of QUIT:

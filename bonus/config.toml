@@ -1,0 +1,15 @@
+[[omnirule]]
+match = '^ddg:'
+substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
+
+[[omnirule]]
+match = '^wk:'
+substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + x.substring(4)'
+
+[[siteconf]]
+url = '/^https?:\/\/(www\.)?npr\.org/'
+rewrite-url = '(x) => x.pathname = x.pathname.replace(/(.*)\/.*/, "$1").replace(/.*\//, "")'
+
+[[siteconf]]
+url = "^https://news.ycombinator.com.*"
+cookie = true

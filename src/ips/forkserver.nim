@@ -12,6 +12,7 @@ import io/window
 import ips/serialize
 import ips/serversocket
 import types/buffersource
+import types/cookie
 import utils/twtstr
 
 type
@@ -28,10 +29,11 @@ type
     ostream: Stream
     children: seq[(Pid, Pid)]
 
-proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = DefaultHeaders, filter = newURLFilter()): FileLoader =
+proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = DefaultHeaders, filter = newURLFilter(), cookiejar: CookieJar = nil): FileLoader =
   forkserver.ostream.swrite(FORK_LOADER)
   forkserver.ostream.swrite(defaultHeaders)
   forkserver.ostream.swrite(filter)
+  forkserver.ostream.swrite(cookiejar)
   forkserver.ostream.flush()
   forkserver.istream.sread(result)
 
@@ -45,7 +47,7 @@ proc removeChild*(forkserver: Forkserver, pid: Pid) =
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
-proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList, filter: URLFilter): FileLoader =
+proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList, filter: URLFilter, cookiejar: CookieJar): FileLoader =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -56,7 +58,7 @@ proc forkLoader(ctx: var ForkServerContext, defaultHeaders: HeaderList, filter: 
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
-    runFileLoader(pipefd[1], defaultHeaders, filter)
+    runFileLoader(pipefd[1], defaultHeaders, filter, cookiejar)
     assert false
   let readfd = pipefd[0] # get read
   discard close(pipefd[1]) # close write
@@ -77,7 +79,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
   ctx.istream.sread(mainproc)
-  let loader = ctx.forkLoader(DefaultHeaders, config.filter) #TODO make this configurable
+  let loader = ctx.forkLoader(DefaultHeaders, config.filter, config.cookiejar) #TODO make this configurable
   let pid = fork()
   if pid == 0:
     for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
@@ -109,9 +111,11 @@ proc runForkServer() =
       of FORK_LOADER:
         var defaultHeaders: HeaderList
         var filter: URLFilter
+        var cookiejar: CookieJar
         ctx.istream.sread(defaultHeaders)
         ctx.istream.sread(filter)
-        let loader = ctx.forkLoader(defaultHeaders, filter)
+        ctx.istream.sread(cookiejar)
+        let loader = ctx.forkLoader(defaultHeaders, filter, cookiejar)
         ctx.ostream.swrite(loader)
         ctx.children.add((loader.process, Pid(-1)))
       of LOAD_CONFIG:

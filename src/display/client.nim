@@ -48,7 +48,7 @@ type
     pager {.jsget.}: Pager
     line {.jsget.}: LineEdit
     sevent: seq[Container]
-    config: Config
+    config {.jsget.}: Config
     jsrt: JSRuntime
     jsctx: JSContext
     timeoutid: int
@@ -466,7 +466,9 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
   let ctx = result.jsrt.newJSContext()
   result.jsctx = ctx
-  result.pager = newPager(config, result.attrs, dispatcher, result.config.getSiteConfig(ctx))
+  result.pager = newPager(config, result.attrs, dispatcher,
+                          result.config.getSiteConfig(ctx),
+                          result.config.getOmniRules(ctx))
   var global = ctx.getGlobalObject()
   ctx.registerType(Client, asglobal = true)
   global.setOpaque(result)
@@ -481,5 +483,7 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addHTMLModule()
   ctx.addRequestModule()
   ctx.addLineEditModule()
+  ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
+  ctx.addConfigModule()
