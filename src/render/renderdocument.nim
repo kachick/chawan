@@ -132,9 +132,11 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
     lines[y].insertFormat(px, fi, format, cformat)
     inc fi
 
-  if i < ostr.len:
-    # nx < ostr.width, so insert the continuation of the last format we
-    # replaced after our string. (default format when the last didn't exist.)
+  if i < ostr.len and (fi >= lines[y].formats.len or lines[y].formats[fi].pos > nx):
+    # nx < ostr.width, but we have removed all formatting in the range of our
+    # string, and no formatting comes directly after it. So we insert the
+    # continuation of the last format we replaced after our string.
+    # (Default format when we haven't replaced anything.)
     lines[y].insertFormat(nx, fi, lformat)
 
   dec fi # go back to previous format, so that pos <= nx
