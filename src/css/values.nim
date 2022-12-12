@@ -32,14 +32,16 @@ type
     PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION,
     PROPERTY_BACKGROUND_COLOR, PROPERTY_POSITION, PROPERTY_LEFT,
     PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE,
-    PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE
+    PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
+    PROPERTY_COUNTER_RESET
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
     VALUE_FONT_STYLE, VALUE_WHITE_SPACE, VALUE_INTEGER, VALUE_TEXT_DECORATION,
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
-    VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE
+    VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
+    VALUE_COUNTER_RESET
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -96,6 +98,10 @@ type
   CSSBorderCollapse* = enum
     BORDER_COLLAPSE_SEPARATE, BORDER_COLLAPSE_COLLAPSE
 
+  CSSContentType* = enum
+    CONTENT_STRING, CONTENT_OPEN_QUOTE, CONTENT_CLOSE_QUOTE,
+    CONTENT_NO_OPEN_QUOTE, CONTENT_NO_CLOSE_QUOTE
+
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
 const ProperTableChild* = {DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN,
@@ -116,6 +122,18 @@ type
   CSSVerticalAlign* = object
     length*: CSSLength
     keyword*: CSSVerticalAlign2
+
+  CSSContent* = object
+    t*: CSSContentType
+    s*: string
+
+  CSSQuotes* = object
+    auto*: bool
+    qs*: seq[tuple[s, e: string]]
+
+  CSSCounterReset* = object
+    name*: string
+    num*: int
   
   CSSComputedValue* = ref object
     t*: CSSPropertyType
@@ -129,7 +147,9 @@ type
     of VALUE_DISPLAY:
       display*: CSSDisplay
     of VALUE_CONTENT:
-      content*: string
+      content*: seq[CSSContent]
+    of VALUE_QUOTES:
+      quotes*: CSSQuotes
     of VALUE_WHITESPACE:
       whitespace*: CSSWhitespace
     of VALUE_INTEGER:
@@ -154,6 +174,8 @@ type
       length2*: tuple[a, b: CSSLength]
     of VALUE_BORDER_COLLAPSE:
       bordercollapse*: CSSBorderCollapse
+    of VALUE_COUNTER_RESET:
+      counterreset*: seq[CSSCounterReset]
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -217,7 +239,9 @@ const PropertyNames = {
   "bottom": PROPERTY_BOTTOM,
   "caption-side": PROPERTY_CAPTION_SIDE,
   "border-spacing": PROPERTY_BORDER_SPACING,
-  "border-collapse": PROPERTY_BORDER_COLLAPSE
+  "border-collapse": PROPERTY_BORDER_COLLAPSE,
+  "quotes": PROPERTY_QUOTES,
+  "counter-reset": PROPERTY_COUNTER_RESET
 }.toTable()
 
 const ValueTypes* = [
@@ -254,7 +278,9 @@ const ValueTypes* = [
   PROPERTY_BOTTOM: VALUE_LENGTH,
   PROPERTY_CAPTION_SIDE: VALUE_CAPTION_SIDE,
   PROPERTY_BORDER_SPACING: VALUE_LENGTH2,
-  PROPERTY_BORDER_COLLAPSE: VALUE_BORDER_COLLAPSE
+  PROPERTY_BORDER_COLLAPSE: VALUE_BORDER_COLLAPSE,
+  PROPERTY_QUOTES: VALUE_QUOTES,
+  PROPERTY_COUNTER_RESET: VALUE_COUNTER_RESET
 ]
 
 const InheritedProperties = {
@@ -262,7 +288,8 @@ const InheritedProperties = {
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
   PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_BACKGROUND_COLOR,
-  PROPERTY_CAPTION_SIDE, PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE
+  PROPERTY_CAPTION_SIDE, PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE,
+  PROPERTY_QUOTES
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -342,6 +369,17 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
+
+#TODO this should change by language
+func quoteStart*(level: int): string =
+  if level == 0:
+    return "“"
+  return "‘"
+
+func quoteEnd*(level: int): string =
+  if level == 0:
+    return "“"
+  return "‘"
 
 const Colors: Table[string, RGBAColor] = ((func (): Table[string, RGBAColor] =
   for name, rgb in ColorsRGB:
@@ -501,13 +539,48 @@ func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
       of "revert": return VALUE_REVERT
   return VALUE_NOGLOBAL
 
-func cssString(cval: CSSComponentValue): string =
-  if isToken(cval):
-    let tok = getToken(cval)
-    case tok.tokenType
-    of CSS_IDENT_TOKEN, CSS_STRING_TOKEN:
-      return tok.value
-    else: return
+func cssQuotes(d: CSSDeclaration): Option[CSSQuotes] =
+  var res: CSSQuotes
+  var sa = false
+  var pair: tuple[s, e: string]
+  for cval in d.value:
+    if res.auto: return none(CSSQuotes)
+    if isToken(cval):
+      let tok = getToken(cval)
+      case tok.tokenType
+      of CSS_IDENT_TOKEN:
+        if res.qs.len > 0: return none(CSSQuotes)
+        case tok.value
+        of "auto": res.auto = true
+        of "none": return none(CSSQuotes)
+      of CSS_STRING_TOKEN:
+        if sa:
+          pair.e = tok.value
+          res.qs.add(pair)
+          sa = false
+        else:
+          pair.s = tok.value
+          sa = true
+      of CSS_WHITESPACE_TOKEN: discard
+      else: return none(CSSQuotes)
+  if not sa:
+    return some(res)
+
+func cssContent(d: CSSDeclaration): seq[CSSContent] =
+  for cval in d.value:
+    if isToken(cval):
+      let tok = getToken(cval)
+      case tok.tokenType
+      of CSS_IDENT_TOKEN:
+        case tok.value
+        of "/": break
+        of "open-quote": result.add(CSSContent(t: CONTENT_OPEN_QUOTE))
+        of "no-open-quote": result.add(CSSContent(t: CONTENT_NO_OPEN_QUOTE))
+        of "close-quote": result.add(CSSContent(t: CONTENT_CLOSE_QUOTE))
+        of "no-close-quote": result.add(CSSContent(t: CONTENT_NO_CLOSE_QUOTE))
+      of CSS_STRING_TOKEN:
+        result.add(CSSContent(t: CONTENT_STRING, s: tok.value))
+      else: return
 
 func cssDisplay(cval: CSSComponentValue): CSSDisplay =
   if isToken(cval):
@@ -664,8 +737,8 @@ func cssListStylePosition(cval: CSSComponentValue): CSSListStylePosition =
   raise newException(CSSValueError, "Invalid list style position")
 
 func cssPosition(cval: CSSComponentValue): CSSPosition =
-  if cval of CSSToken:
-    let tok = CSSToken(cval)
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "static": return POSITION_STATIC
@@ -677,8 +750,8 @@ func cssPosition(cval: CSSComponentValue): CSSPosition =
   raise newException(CSSValueError, "Invalid list style position")
 
 func cssCaptionSide(cval: CSSComponentValue): CSSCaptionSide =
-  if cval of CSSToken:
-    let tok = CSSToken(cval)
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "top": return CAPTION_SIDE_TOP
@@ -692,13 +765,34 @@ func cssCaptionSide(cval: CSSComponentValue): CSSCaptionSide =
   raise newException(CSSValueError, "Invalid caption side")
 
 func cssBorderCollapse(cval: CSSComponentValue): CSSBorderCollapse =
-  if cval of CSSToken:
-    let tok = CSSToken(cval)
+  if isToken(cval):
+    let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
       case tok.value
       of "collapse": return BORDER_COLLAPSE_COLLAPSE
       of "separate": return BORDER_COLLAPSE_SEPARATE
   raise newException(CSSValueError, "Invalid border collapse")
+
+func cssCounterReset(d: CSSDeclaration): Option[seq[CSSCounterReset]] =
+  var res: seq[CSSCounterReset]
+  var r: CSSCounterReset
+  var s = false
+  for cval in d.value:
+    if isToken(cval):
+      let tok = getToken(cval)
+      case tok.tokenType
+      of CSS_WHITESPACE_TOKEN: discard
+      of CSS_IDENT_TOKEN:
+        if s: return
+        r.name = tok.value
+        s = true
+      of CSS_NUMBER_TOKEN:
+        if not s: return
+        r.num = int(tok.nvalue)
+        res.add(r)
+        s = false
+      else: return
+  return some(res)
 
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   template skip_whitespace =
@@ -724,7 +818,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
       val.length = cssLength(cval)
   of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(cval)
   of VALUE_DISPLAY: val.display = cssDisplay(cval)
-  of VALUE_CONTENT: val.content = cssString(cval)
+  of VALUE_CONTENT: val.content = cssContent(d)
   of VALUE_WHITE_SPACE: val.whitespace = cssWhiteSpace(cval)
   of VALUE_INTEGER:
     if ptype == PROPERTY_FONT_WEIGHT:
@@ -746,6 +840,18 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
     else:
       let cval = d.value[i]
       val.length2.b = cssAbsoluteLength(cval)
+  of VALUE_QUOTES:
+    let qs = cssQuotes(d)
+    if qs.isSome:
+      val.quotes = qs.get
+    else:
+      raise newException(CSSValueError, "Invalid quotes")
+  of VALUE_COUNTER_RESET:
+    let res = cssCounterReset(d)
+    if res.isSome:
+      val.counterreset = res.get
+    else:
+      raise newException(CSSValueError, "Invalid counter reset")
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -778,6 +884,8 @@ func calcInitial(t: CSSPropertyType): CSSComputedValue =
     nv = CSSComputedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
   of VALUE_LENGTH:
     nv = CSSComputedValue(t: t, v: v, length: getInitialLength(t))
+  of VALUE_QUOTES:
+    nv = CSSComputedValue(t: t, v: v, quotes: CSSQuotes(auto: true))
   else:
     nv = CSSComputedValue(t: t, v: v)
   return nv
@@ -796,6 +904,8 @@ func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType, vtype: CSSValue
   try:
     val.getValueFromDecl(d, vtype, ptype)
   except CSSValueError:
+    #TODO we should probably just do nothing instead
+    #TODO also get rid of these ugly exceptions
     val = getDefault(ptype)
 
   return (val, cssGlobal(d))
@@ -914,6 +1024,8 @@ func equals*(a, b: CSSComputedValue): bool =
   of VALUE_CAPTION_SIDE: return a.captionside == b.captionside
   of VALUE_LENGTH2: return a.length2 == b.length2
   of VALUE_BORDER_COLLAPSE: return a.bordercollapse == b.bordercollapse
+  of VALUE_QUOTES: return a.quotes == b.quotes
+  of VALUE_COUNTER_RESET: return a.counterreset == b.counterreset
   of VALUE_NONE: return true
   return false
 

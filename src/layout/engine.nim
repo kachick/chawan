@@ -1139,7 +1139,6 @@ proc getTableCaptionBox(computed: CSSComputedValues): TableCaptionBoxBuilder =
 type BlockGroup = object
   parent: BoxBuilder
   boxes: seq[BoxBuilder]
-  listItemCounter: int
 
 type InnerBlockContext = object
   styledNode: StyledNode
@@ -1148,6 +1147,10 @@ type InnerBlockContext = object
   ibox: InlineBoxBuilder
   anonRow: TableRowBoxBuilder
   anonTable: TableBoxBuilder
+  quoteLevel: int
+  listItemCounter: int
+  listItemReset: bool
+  parent: ptr InnerBlockContext
 
 proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
   assert box.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
@@ -1177,16 +1180,17 @@ proc iflush(blockgroup: var BlockGroup, ibox: var InlineBoxBuilder) =
 proc newBlockGroup(parent: BoxBuilder): BlockGroup =
   assert parent.computed{"display"} != DISPLAY_INLINE
   result.parent = parent
-  result.listItemCounter = 1
 
-proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder
-proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport): TableRowGroupBoxBuilder
-proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBoxBuilder
-proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport): TableCellBoxBuilder
-proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport): TableCaptionBoxBuilder
-proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder)): BlockBoxBuilder
+proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableBoxBuilder
+proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowGroupBoxBuilder
+proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowBoxBuilder
+proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCellBoxBuilder
+proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCaptionBoxBuilder
+proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil): BlockBoxBuilder
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode)
 
+proc generateBlockBox(pctx: var InnerBlockContext, styledNode: StyledNode, marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
+  return generateBlockBox(styledNode, pctx.viewport, marker, addr pctx)
 
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
@@ -1212,10 +1216,17 @@ proc bflush(ctx: var InnerBlockContext) =
   ctx.iflush()
   ctx.blockgroup.flush()
 
+proc flushInherit(ctx: var InnerBlockContext) =
+  if ctx.parent != nil:
+    if not ctx.listItemReset:
+      ctx.parent.listItemCounter = ctx.listItemCounter
+    ctx.parent.quoteLevel = ctx.quoteLevel
+
 proc flush(ctx: var InnerBlockContext) =
   ctx.blockgroup.flush()
   ctx.flushTableRow()
   ctx.flushTable()
+  ctx.flushInherit()
 
 proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   let box = ctx.blockgroup.parent
@@ -1230,34 +1241,34 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   of DISPLAY_BLOCK:
     ctx.iflush()
     ctx.flush()
-    let childbox = styledNode.generateBlockBox(ctx.viewport)
+    let childbox = ctx.generateBlockBox(styledNode)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
     ctx.flush()
-    let childbox = getListItemBox(styledNode.computed, ctx.blockgroup.listItemCounter)
+    inc ctx.listItemCounter
+    let childbox = getListItemBox(styledNode.computed, ctx.listItemCounter)
     if childbox.computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
-      childbox.content = styledNode.generateBlockBox(ctx.viewport, some(childbox.marker))
+      childbox.content = ctx.generateBlockBox(styledNode, some(childbox.marker))
       childbox.marker = nil
     else:
-      childbox.content = styledNode.generateBlockBox(ctx.viewport)
+      childbox.content = ctx.generateBlockBox(styledNode)
     box.children.add(childbox)
-    inc ctx.blockgroup.listItemCounter
   of DISPLAY_INLINE:
     ctx.iflush()
     ctx.generateInlineBoxes(styledNode)
   of DISPLAY_INLINE_BLOCK:
     ctx.iflush()
     let childbox = getInlineBlockBox(styledNode.computed)
-    childbox.content = styledNode.generateBlockBox(ctx.viewport)
+    childbox.content = ctx.generateBlockBox(styledNode)
     ctx.blockgroup.add(childbox)
   of DISPLAY_TABLE:
     ctx.flush()
-    let childbox = styledNode.generateTableBox(ctx.viewport)
+    let childbox = styledNode.generateTableBox(ctx.viewport, ctx)
     box.children.add(childbox)
   of DISPLAY_TABLE_ROW:
     ctx.bflush()
     ctx.flushTableRow()
-    let childbox = styledNode.generateTableRowBox(ctx.viewport)
+    let childbox = styledNode.generateTableRowBox(ctx.viewport, ctx)
     if box.computed{"display"} in ProperTableRowParent:
       box.children.add(childbox)
     else:
@@ -1270,7 +1281,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   of DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP:
     ctx.bflush()
     ctx.flushTableRow()
-    let childbox = styledNode.generateTableRowGroupBox(ctx.viewport)
+    let childbox = styledNode.generateTableRowGroupBox(ctx.viewport, ctx)
     if box.computed{"display"} in {DISPLAY_TABLE, DISPLAY_INLINE_TABLE}:
       box.children.add(childbox)
     else:
@@ -1281,7 +1292,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         ctx.anonTable = getTableBox(wrappervals)
   of DISPLAY_TABLE_CELL:
     ctx.bflush()
-    let childbox = styledNode.generateTableCellBox(ctx.viewport)
+    let childbox = styledNode.generateTableCellBox(ctx.viewport, ctx)
     if box.computed{"display"} == DISPLAY_TABLE_ROW:
       box.children.add(childbox)
     else:
@@ -1292,12 +1303,12 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       ctx.anonRow.children.add(childbox)
   of DISPLAY_INLINE_TABLE:
     ctx.iflush()
-    let childbox = styledNode.generateTableBox(ctx.viewport)
+    let childbox = styledNode.generateTableBox(ctx.viewport, ctx)
     ctx.blockgroup.add(childbox)
   of DISPLAY_TABLE_CAPTION:
     ctx.bflush()
     ctx.flushTableRow()
-    let childbox = styledNode.generateTableCaptionBox(ctx.viewport)
+    let childbox = styledNode.generateTableCaptionBox(ctx.viewport, ctx)
     if box.computed{"display"} in {DISPLAY_TABLE, DISPLAY_INLINE_TABLE}:
       box.children.add(childbox)
     else:
@@ -1312,24 +1323,67 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     discard #TODO
   of DISPLAY_NONE: discard
 
+proc generateInlineText(ctx: var InnerBlockContext, text: string, styledNode: StyledNode) =
+  if ctx.ibox == nil:
+    ctx.ibox = getTextBox(styledNode.computed)
+    ctx.ibox.node = styledNode
+  ctx.ibox.text.add(text)
+
+proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) =
+  case child.content.t
+  of CONTENT_OPEN_QUOTE:
+    let quotes = parent.computed{"quotes"}
+    var text: string
+    if quotes.qs.len > 0:
+      text = quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].s
+    elif quotes.auto:
+      text = quoteStart(ctx.quoteLevel)
+    else: return
+    ctx.generateInlineText(text, parent)
+    inc ctx.quoteLevel
+  of CONTENT_CLOSE_QUOTE:
+    if ctx.quoteLevel > 0: dec ctx.quoteLevel
+    let quotes = parent.computed{"quotes"}
+    var text: string
+    if quotes.qs.len > 0:
+      text = quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e
+    elif quotes.auto:
+      text = quoteEnd(ctx.quoteLevel)
+    else: return
+    ctx.generateInlineText(text, parent)
+  of CONTENT_NO_OPEN_QUOTE:
+    inc ctx.quoteLevel
+  of CONTENT_NO_CLOSE_QUOTE:
+    if ctx.quoteLevel > 0: dec ctx.quoteLevel
+  of CONTENT_STRING:
+    #TODO canGenerateAnonymousInline?
+    ctx.generateInlineText(child.content.s, parent)
+
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   for child in styledNode.children:
     case child.t
     of STYLED_ELEMENT:
       ctx.generateFromElem(child)
     of STYLED_TEXT:
-      if ctx.ibox == nil:
-        ctx.ibox = getTextBox(styledNode.computed)
-        ctx.ibox.node = styledNode
-      ctx.ibox.text.add(child.text)
+      ctx.generateInlineText(child.text, styledNode)
+    of STYLED_REPLACEMENT:
+      ctx.generateReplacement(child, styledNode)
   ctx.iflush()
 
-proc newInnerBlockContext(styledNode: StyledNode, blockgroup: BlockGroup, viewport: Viewport): InnerBlockContext =
-  return InnerBlockContext(
+proc newInnerBlockContext(styledNode: StyledNode, box: BoxBuilder, viewport: Viewport, parent: ptr InnerBlockContext): InnerBlockContext =
+  result = InnerBlockContext(
     styledNode: styledNode,
-    blockgroup: blockgroup,
-    viewport: viewport
+    blockgroup: newBlockGroup(box),
+    viewport: viewport,
+    parent: parent
   )
+  if parent != nil:
+    result.listItemCounter = parent[].listItemCounter
+    result.quoteLevel = parent[].quoteLevel
+  for reset in styledNode.computed{"counter-reset"}:
+    if reset.name == "list-item":
+      result.listItemCounter = reset.num
+      result.listItemReset = true
 
 proc generateInnerBlockBox(ctx: var InnerBlockContext) =
   let box = ctx.blockgroup.parent
@@ -1341,15 +1395,14 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
       ctx.generateFromElem(child)
     of STYLED_TEXT:
       if canGenerateAnonymousInline(ctx.blockgroup, box.computed, child.text):
-        if ctx.ibox == nil:
-          ctx.ibox = getTextBox(ctx.styledNode.computed)
-          ctx.ibox.node = ctx.styledNode
-        ctx.ibox.text.add(child.text)
+        ctx.generateInlineText(child.text, ctx.styledNode)
+    of STYLED_REPLACEMENT:
+      ctx.generateReplacement(child, ctx.styledNode)
   ctx.iflush()
 
-proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
+proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil): BlockBoxBuilder =
   let box = getBlockBox(styledNode.computed)
-  var ctx = newInnerBlockContext(styledNode, newBlockGroup(box), viewport)
+  var ctx = newInnerBlockContext(styledNode, box, viewport, parent)
 
   if marker.issome:
     ctx.ibox = marker.get
@@ -1362,17 +1415,15 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
     if box.children.len == 0:
       box.children = ctx.blockgroup.boxes
       box.inlinelayout = true
-    else:
-      ctx.blockgroup.flush()
-  ctx.flushTableRow()
-  ctx.flushTable()
+      ctx.blockgroup.boxes.setLen(0)
+  ctx.flush()
   return box
 
-proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport): TableCellBoxBuilder =
+proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCellBoxBuilder =
   let box = getTableCellBox(styledNode.computed)
   if styledNode.node != nil and styledNode.node.nodeType == ELEMENT_NODE:
     box.colspan = Element(styledNode.node).attri("colspan").get(1)
-  var ctx = newInnerBlockContext(styledNode, newBlockGroup(box), viewport)
+  var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   return box
@@ -1390,9 +1441,9 @@ proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport): TableRowBoxBuilder =
+proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowBoxBuilder =
   let box = getTableRowBox(styledNode.computed)
-  var ctx = newInnerBlockContext(styledNode, newBlockGroup(box), viewport)
+  var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   box.generateTableRowChildWrappers()
@@ -1412,17 +1463,17 @@ proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport): TableRowGroupBoxBuilder =
+proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowGroupBoxBuilder =
   let box = getTableRowGroupBox(styledNode.computed)
-  var ctx = newInnerBlockContext(styledNode, newBlockGroup(box), viewport)
+  var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   box.generateTableRowGroupChildWrappers()
   return box
 
-proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport): TableCaptionBoxBuilder =
+proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCaptionBoxBuilder =
   let box = getTableCaptionBox(styledNode.computed)
-  var ctx = newInnerBlockContext(styledNode, newBlockGroup(box), viewport)
+  var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   return box
@@ -1441,9 +1492,9 @@ proc generateTableChildWrappers(box: TableBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableBox(styledNode: StyledNode, viewport: Viewport): TableBoxBuilder =
+proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableBoxBuilder =
   let box = getTableBox(styledNode.computed)
-  var ctx = newInnerBlockContext(styledNode, newBlockGroup(box), viewport)
+  var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   box.generateTableChildWrappers()

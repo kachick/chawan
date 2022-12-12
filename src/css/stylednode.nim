@@ -36,7 +36,7 @@ import html/tags
 
 type
   StyledType* = enum
-    STYLED_ELEMENT, STYLED_TEXT
+    STYLED_ELEMENT, STYLED_TEXT, STYLED_REPLACEMENT
 
   DependencyType* = enum
     DEPEND_HOVER, DEPEND_CHECKED, DEPEND_FOCUS
@@ -59,6 +59,8 @@ type
       computed*: CSSComputedValues
       children*: seq[StyledNode]
       depends*: DependencyInfo
+    of STYLED_REPLACEMENT: # replaced elements: quotes, or (TODO) markers, images
+      content*: CSSContent
 
 iterator branch*(node: StyledNode): StyledNode {.inline.} =
   var node = node
@@ -141,3 +143,10 @@ func newStyledText*(parent: StyledNode, text: string): StyledNode =
 func newStyledText*(parent: StyledNode, text: Text): StyledNode =
   result = StyledNode(t: STYLED_TEXT, text: text.data, node: text, parent: parent)
   result.parent = parent
+
+func newStyledReplacement*(parent: StyledNode, content: CSSContent): StyledNode =
+  return StyledNode(
+    t: STYLED_REPLACEMENT,
+    parent: parent,
+    content: content
+  )

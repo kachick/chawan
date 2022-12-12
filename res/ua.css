@@ -30,6 +30,14 @@ blockquote {
 	margin: 1em;
 }
 
+q::before {
+	content: open-quote;
+}
+
+q::after {
+	content: close-quote;
+}
+
 table {
 	display: table;
 	border-spacing: 0.5ch 0;
@@ -202,6 +210,7 @@ sub::before {
 
 ol {
 	list-style-type: decimal;
+	counter-reset: list-item 0;
 }
 
 ul {

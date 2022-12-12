@@ -55,6 +55,7 @@ type ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
 
 proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
   for sel in rule.sels:
+    #TODO we shouldn't need backtracking for this...
     if styledNode.selectorsMatch(sel):
       let spec = getSpecificity(sel)
       tosorts[sel.pseudo].add((spec,rule.decls))
@@ -189,6 +190,13 @@ proc applyStyle(parent, styledNode: StyledNode, uadecls, userdecls: DeclarationL
 
   styledNode.applyDeclarations(parentComputed, uadecls, userdecls, authordecls)
 
+type CascadeLevel = tuple[
+  styledParent: StyledNode,
+  child: Node,
+  pseudo: PseudoElem,
+  cachedChild: StyledNode
+]
+
 # Builds a StyledNode tree, optionally based on a previously cached version.
 proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledNode): StyledNode =
   if document.html == nil:
@@ -201,7 +209,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       author.add(sheet.applyMediaQuery())
 
   var lenstack = newSeqOfCap[int](256)
-  var styledStack: seq[(StyledNode, Node, PseudoElem, StyledNode)]
+  var styledStack: seq[CascadeLevel]
   styledStack.add((nil, document.html, PSEUDO_NONE, cachedTree))
 
   while styledStack.len > 0:
@@ -242,9 +250,9 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
           let styledPseudo = pseudo.applyDeclarations(styledParent, ua, user, authordecls)
           if styledPseudo != nil:
             styledParent.children.add(styledPseudo)
-            let content = styledPseudo.computed{"content"}
-            if content.len > 0:
-              styledPseudo.children.add(styledPseudo.newStyledText(content))
+            let contents = styledPseudo.computed{"content"}
+            for content in contents:
+              styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
         of PSEUDO_INPUT_TEXT:
           let content = HTMLInputElement(styledParent.node).inputString()
           if content.len > 0:
