@@ -916,7 +916,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         else: return none(CSSAnB)
         let tok3 = get_tok
         fail_non_signless_integer tok3, some((-1, 0))
-        return some((-1, sign * int(tok2.nvalue)))
+        return some((-1, sign * int(tok3.nvalue)))
       else:
         fail_non_integer tok2, some((-1, 0))
         return some((-1, int(tok2.nvalue)))
