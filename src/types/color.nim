@@ -208,6 +208,60 @@ const ColorsRGB* = {
   "rebeccapurple": 0x663399,
 }.map((a) => (a[0], RGBColor(a[1]))).toTable()
 
+func r*(c: RGBAColor): int =
+  return int(uint32(c) shr 16 and 0xff)
+
+func g*(c: RGBAColor): int =
+  return int(uint32(c) shr 8 and 0xff)
+
+func b*(c: RGBAColor): int =
+  return int(uint32(c) and 0xff)
+
+func a*(c: RGBAColor): int =
+  return int(uint32(c) shr 24 and 0xff)
+
+func rgb*(r, g, b: int): RGBColor =
+  return RGBColor((r shl 16) or (g shl 8) or b)
+
+func `==`*(a, b: RGBAColor): bool {.borrow.}
+
+func r*(c: RGBColor): int =
+  return int(uint32(c) shr 16 and 0xff)
+
+func g*(c: RGBColor): int =
+  return int(uint32(c) shr 8 and 0xff)
+
+func b*(c: RGBColor): int =
+  return int(uint32(c) and 0xff)
+
+# see https://learn.microsoft.com/en-us/previous-versions/windows/embedded/ms893078(v=msdn.10)
+func Y*(c: RGBColor): int =
+  return ((66 * c.r + 129 * c.g + 25 * c.b + 128) shr 8) + 16
+
+func U*(c: RGBColor): int =
+  return ((-38 * c.r - 74 * c.g + 112 * c.b + 128) shr 8) + 128
+
+func V*(c: RGBColor): int =
+  return ((112 * c.r - 94 * c.g - 18 * c.b + 128) shr 8) + 128
+
+func YUV*(Y, U, V: int): RGBColor =
+  let C = Y - 16
+  let D = U - 128
+  let E = V - 128
+  let r = max(min((298 * C + 409 * E + 128) shr 8, 255), 0)
+  let g = max(min((298 * C - 100 * D - 208 * E + 128) shr 8, 255), 0)
+  let b = max(min((298 * C + 516 * D + 128) shr 8, 255), 0)
+  return rgb(r, g, b)
+
+func rgba*(r, g, b, a: int): RGBAColor =
+  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
+
+template `$`*(color: CellColor): string =
+  if color.rgb:
+    "r" & $color.rgbcolor.r & "g" & $color.rgbcolor.g & "b" & $color.rgbcolor.b
+  else:
+    "tcolor" & $color.n
+
 func parseHexColor*(s: string): Option[RGBAColor] =
   for c in s:
     if hexValue(c) == -1: return none(RGBAColor)
@@ -283,38 +337,3 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
     (hexValue(c2[0]) shl 12) or (hexValue(c2[1]) shl 8) or
     (hexValue(c3[0]) shl 4) or hexValue(c3[1])
   return some(RGBColor(c))
-
-func r*(c: RGBAColor): int =
-  return int(uint32(c) shr 16 and 0xff)
-
-func g*(c: RGBAColor): int =
-  return int(uint32(c) shr 8 and 0xff)
-
-func b*(c: RGBAColor): int =
-  return int(uint32(c) and 0xff)
-
-func a*(c: RGBAColor): int =
-  return int(uint32(c) shr 24 and 0xff)
-
-func rgb*(r, g, b: int): RGBColor =
-  return RGBColor((r shl 16) or (g shl 8) or b)
-
-func `==`*(a, b: RGBAColor): bool {.borrow.}
-
-func r*(c: RGBColor): int =
-  return int(uint32(c) shr 16 and 0xff)
-
-func g*(c: RGBColor): int =
-  return int(uint32(c) shr 8 and 0xff)
-
-func b*(c: RGBColor): int =
-  return int(uint32(c) and 0xff)
-
-func rgba*(r, g, b, a: int): RGBAColor =
-  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
-
-template `$`*(color: CellColor): string =
-  if color.rgb:
-    "r" & $color.rgbcolor.r & "g" & $color.rgbcolor.g & "b" & $color.rgbcolor.b
-  else:
-    "tcolor" & $color.color

@@ -44,7 +44,7 @@ type
     canvas: FixedGrid
     pcanvas: FixedGrid
     attrs*: WindowAttributes
-    mincontrast: float
+    mincontrast: int
     colormode: ColorMode
     formatmode: FormatMode
     smcup: bool
@@ -196,31 +196,15 @@ proc disableAltScreen(term: Terminal): string =
   else:
     return RMCUP()
 
-proc distance(a, b: CellColor): float =
-  let a = if a.rgb:
-    a.rgbcolor
+proc getRGB(a: CellColor, bg: bool): RGBColor =
+  if a.rgb:
+    return a.rgbcolor
   elif a == defaultColor:
-    ColorsRGB["black"]
-  else:
-    ANSIColorMap[a.color mod 10]
-  let b = if b.rgb:
-    b.rgbcolor
-  elif b == defaultColor:
-    ColorsRGB["white"]
-  else:
-    ANSIColorMap[b.color mod 10]
-  sqrt(float((a.r - b.r) ^  2 + (a.g - b.b) ^ 2 + (a.g - b.g) ^ 2))
-
-proc invert(color: CellColor, bg: bool): CellColor =
-  if color == defaultColor:
     if bg:
-      return ColorsRGB["white"].cellColor()
+      return ColorsRGB["black"]
     else:
-      return ColorsRGB["black"].cellColor()
-  elif color.rgb:
-    return RGBColor(0xFFFFFF - cast[uint32](color.rgbcolor)).cellColor()
-  else:
-    return RGBColor(0xFFFFFF - uint32(ANSIColorMap[color.color mod 10])).cellColor()
+      return ColorsRGB["white"]
+  return ANSIColorMap[a.color mod 10]
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
@@ -236,6 +220,24 @@ proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
       a = b
   return n
 
+# Return a fgcolor contrasted to the background by contrast.
+proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int): CellColor =
+  let cfgcolor = fgcolor
+  let bgcolor = getRGB(bgcolor, true)
+  let fgcolor = getRGB(fgcolor, false)
+  let bgY = bgcolor.Y
+  let fgY = fgcolor.Y
+  let diff = abs(bgY - fgY)
+  if diff < contrast:
+    let newrgb = if bgY > contrast:
+      YUV(bgY - contrast, fgcolor.U, fgcolor.V)
+    else:
+      YUV(bgY + contrast, fgcolor.U, fgcolor.V)
+    if cfgcolor.rgb:
+      return newrgb.cellColor()
+    return ColorsANSIFg[approximateANSIColor(newrgb)]
+  return cfgcolor
+
 proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   for flag in FormatFlags:
     if flag in term.formatmode:
@@ -243,11 +245,6 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
         result &= term.endFormat(flag)
 
   var cellf = cellf
-  if term.mincontrast >= 0 and distance(cellf.bgcolor, cellf.fgcolor) <= term.mincontrast:
-    cellf.fgcolor = invert(cellf.fgcolor, false)
-    if distance(cellf.bgcolor, cellf.fgcolor) <= term.mincontrast:
-      cellf.fgcolor = defaultColor
-      cellf.bgcolor = defaultColor
   case term.colormode
   of ANSI, EIGHT_BIT:
     if cellf.bgcolor.rgb:
@@ -274,6 +271,8 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
     cellf.fgcolor = defaultColor
     cellf.bgcolor = defaultColor
   of TRUE_COLOR: discard
+
+  cellf.fgcolor = correctContrast(cellf.bgcolor, cellf.fgcolor, term.mincontrast)
 
   if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor

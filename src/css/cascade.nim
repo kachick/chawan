@@ -109,6 +109,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     of "center", "middle": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_CENTER)
     of "left": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_LEFT)
     of "right": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_RIGHT)
+  template map_text =
+    let c = parseLegacyColor(element.attr("text"))
+    if c.isSome:
+      set_cv(PROPERTY_COLOR, color, c.get)
 
   case element.tagType
   of TAG_DIV:
@@ -132,6 +136,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_width
   of TAG_BODY:
     map_bgcolor
+    map_text
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
     set_cv(PROPERTY_WIDTH, length, CSSLength(unit: UNIT_CH, num: float64(textarea.cols)))

@@ -41,7 +41,7 @@ type
     formatmode*: Option[FormatMode]
     noformatmode*: FormatMode
     altscreen*: Option[bool]
-    mincontrast*: float
+    mincontrast*: int
     editor*: string
     tmpdir*: string
     siteconf: seq[StaticSiteConfig]
@@ -220,10 +220,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         of "double-width-ambiguous":
           config.ambiguous_double = v.b
         of "minimum-contrast":
-          if v.vt == VALUE_INTEGER:
-            config.mincontrast = float(v.i)
-          else:
-            config.mincontrast = float(v.f)
+          config.mincontrast = int(v.i)
         of "force-clear": config.forceclear = v.b
         of "emulate-overline": config.emulateoverline = v.b
     of "external":
