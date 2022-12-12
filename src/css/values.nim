@@ -287,9 +287,8 @@ const InheritedProperties = {
   PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
-  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_BACKGROUND_COLOR,
-  PROPERTY_CAPTION_SIDE, PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE,
-  PROPERTY_QUOTES
+  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_CAPTION_SIDE,
+  PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -316,13 +315,15 @@ macro `{}`*(vals: CSSComputedValues, s: string): untyped =
   let s = vs.split('_')[1..^1].join("_").tolower()
   result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
-macro `{}=`*(vals: CSSComputedValues, s: string, v: typed): untyped =
+macro `{}=`*(vals: CSSComputedValues, s: string, val: typed) =
   let t = propertyType($s)
-  let vs = $valueType(t)
+  let v = valueType(t)
+  let vs = $v
   let s = vs.split('_')[1..^1].join("_").tolower()
-  let expr = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
+  let id = ident(s)
+  let expr = newTree(nnkBracketExpr, vals, newLit(t))
   result = quote do:
-    `expr` = `v`
+    `expr` = CSSComputedValue(t: CSSPropertyType(`t`), v: CSSValueType(`v`), `id`: `val`)
 
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]

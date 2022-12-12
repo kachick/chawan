@@ -1074,22 +1074,16 @@ proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
 
 # Generation phase
 
-#WARNING yes there is a {}= macro but that modifies the computed value
-# reference itself and those are copied across arrays...
-#TODO figure out something here
-proc setDisplay(computed: var CSSComputedValues, display: CSSDisplay) =
-  computed[PROPERTY_DISPLAY] = CSSComputedValue(t: PROPERTY_DISPLAY, v: VALUE_DISPLAY, display: display)
-
 # Returns a block box, disregarding the computed value of display
 proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
   new(result)
   result.computed = computed.copyProperties()
-  result.computed.setDisplay(DISPLAY_BLOCK)
+  result.computed{"display"} = DISPLAY_BLOCK
 
 proc getInlineBlockBox(computed: CSSComputedValues): InlineBlockBoxBuilder =
   new(result)
   result.computed = computed.copyProperties()
-  result.computed.setDisplay(DISPLAY_INLINE_BLOCK)
+  result.computed{"display"} = DISPLAY_INLINE_BLOCK
 
 proc getTextBox(box: BoxBuilder): InlineBoxBuilder =
   new(result)
@@ -1105,7 +1099,7 @@ proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxB
   new(result)
   result.inlinelayout = true
   result.computed = computed.copyProperties()
-  result.computed.setDisplay(DISPLAY_INLINE)
+  result.computed{"display"} = DISPLAY_INLINE
   result.text.add(computed{"list-style-type"}.listMarker(listItemCounter))
 
 proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItemBoxBuilder =
@@ -1198,7 +1192,7 @@ proc flushTableRow(ctx: var InnerBlockContext) =
       ctx.blockgroup.parent.children.add(ctx.anonRow)
     else:
       var wrappervals = ctx.styledNode.computed.inheritProperties()
-      wrappervals.setDisplay(DISPLAY_TABLE)
+      wrappervals{"display"} = DISPLAY_TABLE
       if ctx.anonTable == nil:
         ctx.anonTable = getTableBox(wrappervals)
       ctx.anonTable.children.add(ctx.anonRow)
@@ -1275,7 +1269,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       if ctx.anonTable == nil:
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
-        wrappervals.setDisplay(DISPLAY_TABLE)
+        wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
       ctx.anonTable.children.add(childbox)
   of DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP:
@@ -1288,7 +1282,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       if ctx.anonTable == nil:
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
-        wrappervals.setDisplay(DISPLAY_TABLE)
+        wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
   of DISPLAY_TABLE_CELL:
     ctx.bflush()
@@ -1298,7 +1292,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     else:
       if ctx.anonRow == nil:
         var wrappervals = box.computed.inheritProperties()
-        wrappervals.setDisplay(DISPLAY_TABLE_ROW)
+        wrappervals{"display"} = DISPLAY_TABLE_ROW
         ctx.anonRow = getTableRowBox(wrappervals)
       ctx.anonRow.children.add(childbox)
   of DISPLAY_INLINE_TABLE:
@@ -1315,7 +1309,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       if ctx.anonTable == nil:
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
-        wrappervals.setDisplay(DISPLAY_TABLE)
+        wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
   of DISPLAY_TABLE_COLUMN:
     discard #TODO
@@ -1431,7 +1425,7 @@ proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: va
 proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
-  wrappervals.setDisplay(DISPLAY_TABLE_CELL)
+  wrappervals{"display"} = DISPLAY_TABLE_CELL
   for child in box.children:
     if child.computed{"display"} == DISPLAY_TABLE_CELL:
       newchildren.add(child)
@@ -1452,7 +1446,7 @@ proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport, parent: var
 proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
-  wrappervals.setDisplay(DISPLAY_TABLE_ROW)
+  wrappervals{"display"} = DISPLAY_TABLE_ROW
   for child in box.children:
     if child.computed{"display"} == DISPLAY_TABLE_ROW:
       newchildren.add(child)
@@ -1481,7 +1475,7 @@ proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport, parent:
 proc generateTableChildWrappers(box: TableBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
-  wrappervals.setDisplay(DISPLAY_TABLE_ROW)
+  wrappervals{"display"} = DISPLAY_TABLE_ROW
   for child in box.children:
     if child.computed{"display"} in ProperTableChild:
       newchildren.add(child)
