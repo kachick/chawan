@@ -50,14 +50,12 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
 
   let ostr = lines[y].str.substr(i)
   lines[y].str.setLen(i)
-  var linestrwidth = 0
   let padwidth = x - cx
   if padwidth > 0:
     lines[y].str &= ' '.repeat(padwidth)
-    linestrwidth += padwidth
 
   lines[y].str &= linestr
-  linestrwidth += linestr.width()
+  let linestrwidth = linestr.width()
 
   i = 0
   var nx = x # last x of new string
@@ -103,12 +101,15 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
 
   # Now for the text's formats:
   var format = cformat.formatFromWord()
+  var lformat: Format
   if fi == -1:
     # No formats => just insert a new format at 0
     inc fi
     lines[y].insertFormat(x, fi, format, cformat)
+    lformat = newFormat()
   else:
     # First format's pos may be == x here.
+    lformat = lines[y].formats[fi].format # save for later use
     if lines[y].formats[fi].pos == x:
       # Replace.
       format.bgcolor = lines[y].formats[fi].format.bgcolor
@@ -126,9 +127,15 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
     # Other formats must be > x => replace them
     format.bgcolor = lines[y].formats[fi].format.bgcolor
     let px = lines[y].formats[fi].pos
+    lformat = lines[y].formats[fi].format # save for later use
     lines[y].formats.delete(fi)
     lines[y].insertFormat(px, fi, format, cformat)
     inc fi
+
+  if i < ostr.len:
+    # nx < ostr.width, so insert the continuation of the last format we
+    # replaced after our string. (default format when the last didn't exist.)
+    lines[y].insertFormat(nx, fi, lformat)
 
   dec fi # go back to previous format, so that pos <= nx
   assert lines[y].formats[fi].pos <= nx
