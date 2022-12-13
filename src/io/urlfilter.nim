@@ -7,11 +7,11 @@ import types/url
 type URLFilter* = object
   scheme: Option[string]
   allowhost*: Option[string]
-  allowhosts: Option[seq[Regex]]
+  allowhosts: seq[Regex]
   default: bool
 
 proc newURLFilter*(scheme = none(string), allowhost = none(string),
-                   allowhosts = none(seq[Regex]), default = false): URLFilter =
+                   allowhosts: seq[Regex] = @[], default = false): URLFilter =
   return URLFilter(
     scheme: scheme,
     allowhost: allowhost,
@@ -29,8 +29,7 @@ proc match*(filter: URLFilter, url: URL): bool =
   let host = url.host
   if filter.allowhost.isSome and filter.allowhost.get == host:
     return true
-  if filter.allowhosts.isSome:
-    for regex in filter.allowhosts.get:
-      if regex.match(host):
-        return true
+  for regex in filter.allowhosts:
+    if regex.match(host):
+      return true
   return filter.default

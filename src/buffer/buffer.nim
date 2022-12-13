@@ -37,6 +37,7 @@ import render/rendertext
 import types/buffersource
 import types/color
 import types/cookie
+import types/referer
 import types/url
 import utils/twtstr
 
@@ -136,6 +137,17 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable
     if promise.stream != nil:
       promise.stream.sread(promise.res)
     cb(promise.res))
+
+proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.discardable.} =
+  if promise == nil: return
+  let next = Promise[T]()
+  promise.then(proc() =
+    let p2 = cb()
+    if p2 != nil:
+      p2.then(proc(x: T) =
+        next.res = x
+        next.cb()))
+  return next
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
   if promise == nil: return
@@ -530,7 +542,13 @@ proc loadResources(buffer: Buffer, document: Document) =
     for child in elem.children_rev:
       stack.add(child)
 
-type ConnectResult* = tuple[code: int, needsAuth: bool, redirect: Option[URL], contentType: string, cookies: seq[Cookie]] 
+type ConnectResult* = object
+  code*: int
+  needsAuth*: bool
+  redirect*: Option[URL]
+  contentType*: string
+  cookies*: seq[Cookie]
+  referrerpolicy*: Option[ReferrerPolicy]
 
 proc setupSource(buffer: Buffer): ConnectResult =
   if buffer.loaded:
@@ -571,6 +589,8 @@ proc setupSource(buffer: Buffer): ConnectResult =
         let cookie = newCookie(s)
         if cookie != nil:
           result.cookies.add(cookie)
+    if "Referrer-Policy" in response.headers.table:
+      result.referrerpolicy = getReferrerPolicy(response.headers.table["Referrer-Policy"][0])
   buffer.istream = newTeeStream(buffer.istream, buffer.sstream, closedest = false)
   if setct:
     result.contentType = buffer.contenttype

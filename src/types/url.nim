@@ -53,6 +53,13 @@ type
     blob: Option[BlobUrlEntry]
     searchParams* {.jsget.}: URLSearchParams
 
+  Origin* = Option[tuple[
+    scheme: string,
+    host: Host,
+    port: Option[uint16],
+    domain: Option[string]
+  ]]
+
 const EmptyPath = UrlPath(opaque: true, s: "")
 const EmptyHost = Host(domain: "").some
 
@@ -973,7 +980,7 @@ proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jscto
   url.get.searchParams.initURLSearchParams(url.get.query.get(""))
   return url.get
 
-proc origin*(url: URL): string {.jsfget.} =
+proc origin0*(url: URL): Origin =
   case url.scheme
   of "blob":
     if url.blob.issome:
@@ -981,22 +988,33 @@ proc origin*(url: URL): string {.jsfget.} =
       discard
     let pathURL = parseURL($url.path)
     if pathURL.isnone:
-      return "null"
-    return pathURL.get.origin
+      return # opaque
+    return pathURL.get.origin0
   of "ftp", "http", "https", "ws", "wss":
-    # return the tuple origin.
-    #TODO split this out
-    result = url.scheme
-    result &= "://"
-    result &= url.host.get.serialize()
-    if url.port.issome:
-      result &= ":"
-      result &= $url.port.get
+    return some((url.scheme, url.host.get, url.port, none(string)))
   of "file":
     #???
-    return "null"
+    return # opaque
   else:
+    return # opaque
+
+proc `==`*(a, b: Origin): bool =
+  if a.isNone or b.isNone: return false
+  return a.get == b.get
+
+proc `$`*(origin: Origin): string =
+  if origin.isNone:
     return "null"
+  let origin = origin.get
+  result = origin.scheme
+  result &= "://"
+  result &= origin.host.serialize()
+  if origin.port.isSome:
+    result &= ':'
+    result &= $origin.port.get
+
+proc origin*(url: URL): string {.jsfget.} =
+  return $url.origin0
 
 proc protocol*(url: URL): string {.jsfget.} =
   return url.scheme & ':'

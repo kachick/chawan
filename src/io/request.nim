@@ -25,6 +25,7 @@ type
     headers*: HeaderList
     body*: Option[string]
     multipart*: Option[MimeData]
+    referer*: URL
 
   Response* = ref object
     body*: Stream

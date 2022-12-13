@@ -28,17 +28,9 @@ import ips/serversocket
 import ips/socketstream
 import types/cookie
 import types/mime
+import types/referer
 import types/url
 import utils/twtstr
-
-const DefaultHeaders0 = {
-  "User-Agent": "chawan",
-  "Accept": "text/html,text/*;q=0.5",
-  "Accept-Language": "en;q=1.0",
-  "Pragma": "no-cache",
-  "Cache-Control": "no-cache",
-}.toTable()
-let DefaultHeaders* = DefaultHeaders0.newHeaderList()
 
 type
   FileLoader* = object
@@ -46,6 +38,12 @@ type
 
   LoaderCommand = enum
     LOAD, QUIT
+
+  LoaderConfig* = object
+    defaultheaders*: HeaderList
+    filter*: URLFilter
+    cookiejar*: CookieJar
+    referrerpolicy*: ReferrerPolicy
 
 proc loadFile(url: Url, ostream: Stream) =
   when defined(windows) or defined(OS2) or defined(DOS):
@@ -85,7 +83,7 @@ proc loadResource(request: Request, ostream: Stream) =
     ostream.flush()
 
 var ssock: ServerSocket
-proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter, cookiejar: CookieJar) =
+proc runFileLoader*(fd: cint, config: LoaderConfig) =
   if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
     raise newException(Defect, "Failed to initialize libcurl.")
   ssock = initServerSocket()
@@ -110,18 +108,22 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter, coo
       of LOAD:
         var request: Request
         stream.sread(request)
-        if not filter.match(request.url):
+        if not config.filter.match(request.url):
           stream.swrite(-1) # error
           stream.flush()
         else:
-          for k, v in defaultHeaders.table:
+          for k, v in config.defaultHeaders.table:
             if k notin request.headers.table:
               request.headers.table[k] = v
-          if cookiejar != nil and cookiejar.cookies.len > 0:
+          if config.cookiejar != nil and config.cookiejar.cookies.len > 0:
             if "Cookie" notin request.headers.table:
-              let cookie = cookiejar.serialize(request.url)
+              let cookie = config.cookiejar.serialize(request.url)
               if cookie != "":
                 request.headers["Cookie"] = cookie
+          if request.referer != nil and "Referer" notin request.headers.table:
+            let r = getReferer(request.referer, request.url, config.referrerpolicy)
+            if r != "":
+              request.headers["Referer"] = r
           loadResource(request, stream)
         stream.close()
       of QUIT:

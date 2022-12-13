@@ -326,6 +326,18 @@ this only works for buffers which share the same cookie jar.</td>
 subdomains.</td>
 </tr>
 
+<tr>
+<td>referer-from</td>
+<td>boolean</td>
+<td>Whether or not we should send a Referer header when opening requests
+originating from this domain. Simplified example: if you click a link on a.com
+that refers to b.com, and referer-from is true, b.com is sent "a.com" as the
+Referer header.  
+Defaults to false.
+</td>
+</tr>
+
+
 </table>
 
 ## Stylesheets

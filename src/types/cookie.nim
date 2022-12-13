@@ -123,7 +123,7 @@ proc serialize*(cookiejar: CookieJar, location: URL): string =
   let t = now().toTime().toUnix()
   for i in countdown(cookiejar.cookies.high, 0):
     let cookie = cookiejar.cookies[i]
-    if cookie.expires <= t:
+    if cookie.expires != -1 and cookie.expires <= t:
       cookiejar.cookies.delete(i)
     elif cookie.domain == "" or location.host.endsWith(cookie.domain):
       result.percentEncode(cookie.name, UserInfoPercentEncodeSet)
@@ -133,6 +133,7 @@ proc serialize*(cookiejar: CookieJar, location: URL): string =
 
 proc newCookie*(str: string): Cookie {.jsctor.} =
   let cookie = new(Cookie)
+  cookie.expires = -1
   var first = true
   for part in str.split(';'):
     if first:
@@ -169,7 +170,7 @@ proc newCookieJar*(location: URL, allowhosts: seq[Regex]): CookieJar =
     filter: newURLFilter(
       scheme = some(location.scheme),
       allowhost = some(location.host),
-      allowhosts = some(allowhosts)
+      allowhosts = allowhosts
     )
   )
 

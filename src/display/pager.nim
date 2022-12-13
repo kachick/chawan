@@ -467,30 +467,43 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
   pager.statusgrid = newFixedGrid(attrs.width)
   for container in pager.containers:
     container.windowChange(attrs)
+  pager.refreshStatusMsg()
 
-proc applySiteconf(pager: Pager, request: Request) =
+proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   let url = $request.url
   let host = request.url.host
+  var refererfrom: bool
+  var cookiejar: CookieJar
+  var headers: HeaderList
   for sc in pager.siteconf:
-    if sc.url.isSome and not sc.url.get.exec(url).success:
+    if sc.url.isSome and not sc.url.get.match(url):
       continue
-    elif sc.host.isSome and not sc.host.get.exec(host).success:
+    elif sc.host.isSome and not sc.host.get.match(host):
       continue
     if sc.subst != nil:
       let s = sc.subst(request.url)
       if s.isSome and s.get != nil:
         request.url = s.get
-    if sc.cookie:
-      # host/url might have changed by now
-      let jarid = sc.sharecookiejar.get(request.url.host)
-      if jarid notin pager.cookiejars:
-        pager.cookiejars[jarid] = newCookieJar(request.url, sc.thirdpartycookie)
+    if sc.cookie.isSome:
+      if sc.cookie.get:
+        # host/url might have changed by now
+        let jarid = sc.sharecookiejar.get(request.url.host)
+        if jarid notin pager.cookiejars:
+          pager.cookiejars[jarid] = newCookieJar(request.url, sc.thirdpartycookie)
+        cookiejar = pager.cookiejars[jarid]
+      else:
+        cookiejar = nil # override
+    if sc.refererfrom.isSome:
+      refererfrom = sc.refererfrom.get
+  return pager.config.getBufferConfig(request.url, cookiejar, headers, refererfrom)
 
 # Load request in a new buffer.
 proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
               ctype = none(string), replace: Container = nil,
-              redirectdepth = 0) =
-  pager.applySiteconf(request)
+              redirectdepth = 0, referrer: Container = nil) =
+  if referrer != nil and referrer.config.refererfrom:
+    request.referer = referrer.source.location
+  var bufferconfig = pager.applySiteconf(request)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpmethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
@@ -505,8 +518,9 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
       contenttype: ctype,
       location: request.url
     )
-    let cookiejar = pager.cookiejars.getOrDefault(request.url.host)
-    let container = pager.dispatcher.newBuffer(pager.config, source, cookiejar, redirectdepth = redirectdepth)
+    if referrer != nil:
+      bufferconfig.referrerpolicy = referrer.config.referrerpolicy
+    let container = pager.dispatcher.newBuffer(bufferconfig, source, redirectdepth = redirectdepth)
     if replace != nil:
       container.replace = replace
       container.copyCursorPos(container.replace)
@@ -517,7 +531,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
 
 proc omniRewrite(pager: Pager, s: string): string =
   for rule in pager.omnirules:
-    if rule.match.exec(s).success:
+    if rule.match.match(s):
       return rule.subst(s).get
   return s
 
@@ -562,8 +576,8 @@ proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: O
     contenttype: some(ctype.get("text/plain")),
     location: location.get(newURL("file://-"))
   )
-  let container = pager.dispatcher.newBuffer(pager.config, source, nil, title)
-  return container
+  let bufferconfig = pager.config.getBufferConfig(source.location)
+  return pager.dispatcher.newBuffer(bufferconfig, source, title = title)
 
 proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
   let container = pager.readPipe0(ctype, fd, none(URL), "*pipe*")
@@ -620,7 +634,7 @@ proc updateReadLine*(pager: Pager) =
         url.username = pager.username
         url.password = s
         pager.username = ""
-        pager.gotoURL(newRequest(url), some(pager.container.source.location), replace = pager.container)
+        pager.gotoURL(newRequest(url), some(pager.container.source.location), replace = pager.container, referrer = pager.container)
       of COMMAND:
         pager.scommand = s
         if pager.commandmode:
@@ -715,7 +729,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if container.redirectdepth < pager.config.maxredirect:
       let redirect = event.location
       pager.alert("Redirecting to " & $redirect)
-      pager.gotoURL(newRequest(redirect), some(container.source.location), replace = container, redirectdepth = container.redirectdepth + 1)
+      pager.gotoURL(newRequest(redirect), some(container.source.location), replace = container, redirectdepth = container.redirectdepth + 1, referrer = pager.container)
     else:
       pager.alert("Error: maximum redirection depth reached")
       pager.deleteContainer(container)
@@ -743,7 +757,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
         pager.container.readCanceled()
       pager.redraw = true
   of OPEN:
-    pager.gotoURL(event.request, some(container.source.location))
+    pager.gotoURL(event.request, some(container.source.location), referrer = pager.container)
   of INVALID_COMMAND: discard
   of STATUS:
     if pager.container == container:

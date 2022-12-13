@@ -11,6 +11,7 @@ import js/javascript
 import js/regex
 import types/color
 import types/cookie
+import types/referer
 import types/url
 import utils/twtstr
 
@@ -26,9 +27,10 @@ type
     url: Option[string]
     host: Option[string]
     subst: Option[string]
-    cookie: bool
+    cookie: Option[bool]
     thirdpartycookie: seq[string]
     sharecookiejar: Option[string]
+    refererfrom*: Option[bool]
 
   StaticOmniRule = object
     match: string
@@ -38,9 +40,10 @@ type
     url*: Option[Regex]
     host*: Option[Regex]
     subst*: (proc(s: URL): Option[URL])
-    cookie*: bool
+    cookie*: Option[bool]
     thirdpartycookie*: seq[Regex]
     sharecookiejar*: Option[string]
+    refererfrom*: Option[bool]
 
   OmniRule* = object
     match*: Regex
@@ -76,10 +79,20 @@ type
     filter*: URLFilter
     cookiejar*: CookieJar
     headers*: HeaderList
+    refererfrom*: bool
+    referrerpolicy*: ReferrerPolicy
 
   ForkServerConfig* = object
     tmpdir*: string
     ambiguous_double*: bool
+
+const DefaultHeaders* = {
+  "User-Agent": "chawan",
+  "Accept": "text/html,text/*;q=0.5",
+  "Accept-Language": "en;q=1.0",
+  "Pragma": "no-cache",
+  "Cache-Control": "no-cache",
+}.toTable().newHeaderList()[]
 
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
@@ -87,16 +100,24 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
     ambiguous_double: config.ambiguous_double
   )
 
-func getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar): BufferConfig =
-  result.userstyle = config.stylesheet
-  result.filter = newURLFilter(scheme = some(location.scheme), default = true)
-  result.cookiejar = cookiejar
+proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
+                      headers: HeaderList = nil, refererfrom = false): BufferConfig =
+  result = BufferConfig(
+    userstyle: config.stylesheet,
+    filter: newURLFilter(scheme = some(location.scheme), default = true),
+    cookiejar: cookiejar,
+    headers: headers,
+    refererfrom: refererfrom
+  )
+  new(result.headers)
+  result.headers[] = DefaultHeaders
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:
     var conf = SiteConfig(
       cookie: sc.cookie,
-      sharecookiejar: sc.sharecookiejar
+      sharecookiejar: sc.sharecookiejar,
+      refererfrom: sc.refererfrom
     )
     if sc.url.isSome:
       conf.url = compileRegex(sc.url.get, 0)
@@ -327,7 +348,8 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           of "url": conf.url = some(v.s)
           of "host": conf.host = some(v.s)
           of "rewrite-url": conf.subst = some(v.s)
-          of "cookie": conf.cookie = v.b
+          of "referer-from": conf.refererfrom = some(v.b)
+          of "cookie": conf.cookie = some(v.b)
           of "third-party-cookie":
             if v.vt == VALUE_STRING:
               conf.thirdpartycookie = @[v.s]

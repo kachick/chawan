@@ -142,19 +142,24 @@ proc sread*(stream: Stream, b: var bool) =
 func slen*(b: bool): int =
   return sizeof(uint8)
 
-proc swrite*(stream: Stream, url: Url) =
+proc swrite*(stream: Stream, url: URL) =
   if url != nil:
     stream.swrite(url.serialize())
   else:
     stream.swrite("")
 
-proc sread*(stream: Stream, url: var Url) =
+proc sread*(stream: Stream, url: var URL) =
   var s: string
   stream.sread(s)
-  url = newURL(s)
+  if s == "":
+    url = nil
+  else:
+    url = newURL(s)
 
-func slen*(url: Url): int =
-  slen(url.serialize())
+func slen*(url: URL): int =
+  if url == nil:
+    return slen("")
+  return slen(url.serialize())
 
 proc swrite*(stream: Stream, tup: tuple) =
   for f in tup.fields:

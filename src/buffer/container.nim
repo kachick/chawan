@@ -63,7 +63,7 @@ type
     clear*: bool
 
   Container* = ref object
-    config: BufferConfig
+    config*: BufferConfig
     iface*: BufferInterface
     attrs: WindowAttributes
     width*: int
@@ -96,11 +96,9 @@ type
     hasstart: bool
     redirectdepth*: int
 
-proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource,
-                cookiejar: CookieJar, title = "",
-                redirectdepth = 0): Container =
+proc newBuffer*(dispatcher: Dispatcher, config: BufferConfig,
+                source: BufferSource, title = "", redirectdepth = 0): Container =
   let attrs = getWindowAttributes(stdout)
-  let config = config.getBufferConfig(source.location, cookiejar)
   let ostream = dispatcher.forkserver.ostream
   let istream = dispatcher.forkserver.istream
   ostream.swrite(FORK_BUFFER)
@@ -652,6 +650,8 @@ proc load*(container: Container) =
         container.triggerEvent(SUCCESS)
         if res.cookies.len > 0 and container.config.cookiejar != nil: # accept cookies
           container.config.cookiejar.cookies.add(res.cookies)
+        if res.referrerpolicy.isSome and container.config.refererfrom:
+          container.config.referrerpolicy = res.referrerpolicy.get
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)
@@ -704,7 +704,7 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
     contenttype: if contenttype.isSome: contenttype else: container.contenttype,
     clonepid: container.process,
   )
-  container.pipeto = dispatcher.newBuffer(config, source, container.config.cookiejar, container.title)
+  container.pipeto = dispatcher.newBuffer(container.config, source, container.title)
   container.iface.getSource().then(proc() =
     if container.pipeto != nil:
       container.pipeto.load()
@@ -736,10 +736,16 @@ proc click*(container: Container) {.jsfunc.} =
 
 proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs
-  container.width = attrs.width
-  container.height = attrs.height - 1
-  container.iface.windowChange(attrs).then(proc() =
-    container.needslines = true)
+  if attrs.width != container.width or attrs.height - 1 != container.height:
+    container.width = attrs.width
+    container.height = attrs.height - 1
+    container.iface.windowChange(attrs).then(proc(): auto =
+      container.needslines = true
+      return container.iface.render()
+    ).then(proc(lines: int) =
+      if lines != container.numLines:
+        container.setNumLines(lines, true)
+      container.needslines = true)
 
 proc peek*(container: Container) {.jsfunc.} =
   container.alert($container.source.location)

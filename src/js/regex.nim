@@ -91,7 +91,7 @@ template fastRuneAt(s: string16, i: int, r: untyped, doInc = true, be = false) =
 var dummyRuntime = newJSRuntime()
 var dummyContext = dummyRuntime.newJSContextRaw()
 
-proc `=destroy`(regex: var Regex) =
+proc `=destroy`*(regex: var Regex) =
   if regex.bytecode != nil:
     if regex.clone:
       dealloc(regex.bytecode)
@@ -99,7 +99,7 @@ proc `=destroy`(regex: var Regex) =
       dummyRuntime.js_free_rt(regex.bytecode)
     regex.bytecode = nil
 
-proc `=copy`(dest: var Regex, source: Regex) =
+proc `=copy`*(dest: var Regex, source: Regex) =
   if dest.bytecode != source.bytecode:
     `=destroy`(dest)
     wasMoved(dest)
