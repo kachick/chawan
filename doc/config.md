@@ -259,7 +259,7 @@ Examples:
 ```
 # Enable cookies on the orange website for log-in.
 [[siteconf]]
-url = "^https://news.ycombinator.com/.*"
+url = '^https://news\.ycombinator\.com/.*'
 cookie = true
 
 # Redirect npr.org to text.npr.org.

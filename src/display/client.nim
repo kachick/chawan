@@ -403,7 +403,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   var tty: File
   var dump = dump
   if not dump:
-    if not stdin.isatty():
+    if stdin.isatty():
       tty = stdin
     elif stdout.isatty():
       discard open(tty, "/dev/tty", fmRead)

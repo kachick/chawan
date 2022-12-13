@@ -127,9 +127,8 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter, coo
       of QUIT:
         stream.close()
         break
-    except IOError:
+    except EOFError:
       # End-of-file, quit.
-      # TODO this should be EOFError
       break
     stream.close()
   curl_global_cleanup()

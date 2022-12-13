@@ -54,12 +54,9 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   return nitems
 
 proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer): csize_t {.cdecl.} =
-  var s = newString(nmemb)
-  for i in 0..<nmemb:
-    s[i] = p[i]
   let stream = cast[Stream](userdata)
   if nmemb > 0:
-    stream.write(s)
+    stream.writeData(p, int(nmemb))
     stream.flush()
   return nmemb
 

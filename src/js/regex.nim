@@ -109,6 +109,9 @@ proc `=copy`(dest: var Regex, source: Regex) =
     dest.buf = source.buf
     dest.plen = source.plen
 
+func `$`*(regex: Regex): string =
+  regex.buf
+
 proc compileRegex*(buf: string, flags: int): Option[Regex] =
   var regex: Regex
   var error_msg_size = 64

@@ -627,7 +627,12 @@ proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
       discard container.iface.load().then(proc(res: tuple[atend: bool, lines, bytes: int]) =
         container.onload(res))
     else:
-      container.iface.render().then(proc(lines: int): auto =
+      container.iface.getTitle().then(proc(title: string): auto =
+        if title != "":
+          container.title = title
+          container.triggerEvent(STATUS)
+        return container.iface.render()
+      ).then(proc(lines: int): auto =
         container.setNumLines(lines, true)
         container.needslines = true
         container.triggerEvent(LOADED)

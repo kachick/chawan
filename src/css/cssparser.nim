@@ -163,7 +163,10 @@ func peek(state: CSSTokenizerState, i: int = 0): char =
 
 proc has(state: var CSSTokenizerState, i: int = 0): bool =
   if state.at + i >= state.buf.len and not state.stream.atEnd():
-    state.buf &= state.stream.readLine() & '\n'
+    try:
+      state.buf &= state.stream.readStr(256)
+    except EOFError:
+      return false
   return state.at + i < state.buf.len
 
 proc isValidEscape(a, b: char): bool =
@@ -210,7 +213,7 @@ proc startsWithNumber(state: var CSSTokenizerState): bool =
           if state.has(2) and state.peek(2) in AsciiDigit:
             return true
     of '.':
-      if state.peek(1) in AsciiDigit:
+      if state.has(1) and state.peek(1) in AsciiDigit:
         return true
     elif state.peek() in AsciiDigit:
       return true

@@ -47,7 +47,8 @@ type
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
-    GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR, CANCEL
+    GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR, CANCEL,
+    GET_TITLE
 
   BufferMatch* = object
     success*: bool
@@ -233,7 +234,7 @@ macro proxy(fun: typed) =
     proxy0(`fun`)
     proxy1(`fun`)
 
-func getTitle(node: StyledNode): string =
+func getTitleAttr(node: StyledNode): string =
   if node == nil:
     return ""
   if node.t == STYLED_ELEMENT and node.node != nil:
@@ -476,7 +477,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
           result.repaint = true
 
     var upd = false
-    let title = thisnode.getTitle()
+    let title = thisnode.getTitleAttr()
     if title != "":
       upd = true
       buffer.hovertext = title
@@ -606,8 +607,9 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
   try:
     buffer.sstream.setPosition(op + buffer.available)
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
+    assert n != 0
     s.setLen(n)
-    result = (n == 0, buffer.lines.len, bytes)
+    result = (false, buffer.lines.len, n)
     buffer.sstream.setPosition(op)
     if buffer.readbufsize < BufferSize:
       buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
@@ -617,8 +619,9 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
       bytes = buffer.available
     else:
       buffer.do_reshape()
-    if result.atend:
-      buffer.finishLoad()
+  except EOFError:
+    result = (true, buffer.lines.len, 0)
+    buffer.finishLoad()
   except ErrorAgain, ErrorWouldBlock:
     buffer.timeout = buffer.lasttimeout
     if buffer.readbufsize == 1:
@@ -629,6 +632,10 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
     else:
       buffer.readbufsize = buffer.readbufsize div 2
     result = (false, buffer.lines.len, bytes)
+
+proc getTitle*(buffer: Buffer): string {.proxy.} =
+  if buffer.document != nil:
+    return buffer.document.title
 
 proc render*(buffer: Buffer): int {.proxy.} =
   buffer.do_reshape()
@@ -1081,9 +1088,9 @@ proc runBuffer(buffer: Buffer, rfd: int) =
             try:
               buffer.readCommand()
             except IOError:
-              #eprint "ERROR IN BUFFER", buffer.location
-              #eprint "MESSAGE:", getCurrentExceptionMsg()
-              #eprint getStackTrace(getCurrentException())
+              #eprint "ERROR IN BUFFER", $buffer.location & "\nMESSAGE:",
+              #       getCurrentExceptionMsg() & "\n",
+              #       getStackTrace(getCurrentException())
               break loop
           else:
             assert false

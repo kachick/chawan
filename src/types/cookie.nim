@@ -21,7 +21,7 @@ type
     path {.jsget.}: string
 
   CookieJar* = ref object
-    filter: URLFilter
+    filter*: URLFilter
     cookies*: seq[Cookie]
 
 proc parseCookieDate(val: string): Option[DateTime] =
@@ -108,6 +108,14 @@ proc parseCookieDate(val: string): Option[DateTime] =
   if time[2] > 59: return none(DateTime)
   var dateTime = dateTime(year, Month(month), MonthdayRange(dayOfMonth), HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
   return some(dateTime)
+
+# For debugging
+proc `$`*(cookiejar: CookieJar): string =
+  result &= $cookiejar.filter
+  result &= "\n"
+  for cookie in cookiejar.cookies:
+    result &= "Cookie "
+    result &= $cookie[]
 
 proc serialize*(cookiejar: CookieJar, location: URL): string =
   if not cookiejar.filter.match(location):

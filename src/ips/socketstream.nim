@@ -15,26 +15,32 @@ type SocketStream* = ref object of Stream
   isend: bool
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
+  assert len != 0
   let s = SocketStream(s)
   if s.blk:
     while result < len:
       let n = s.source.recv(cast[pointer](cast[int](buffer) + result), len - result)
-      result += n
-      if n == 0:
-        raise newException(EOFError, "")
       if n < 0:
-        result = n
+        if result == 0:
+          result = n
         break
+      elif n == 0:
+        s.isend = true
+        break
+      result += n
   else:
     result = s.source.recv(buffer, len)
+  if result == 0:
+    s.isend = true
+    raise newException(EOFError, "eof")
   if result < 0:
     if errno == EAGAIN:
-      raise newException(ErrorAgain, "")
+      raise newException(ErrorAgain, "eagain")
     case errno
-    of EWOULDBLOCK: raise newException(ErrorWouldBlock, "")
-    of EBADF: raise newException(ErrorBadFD, "")
-    of EFAULT: raise newException(ErrorFault, "")
-    of EINVAL: raise newException(ErrorInvalid, "")
+    of EWOULDBLOCK: raise newException(ErrorWouldBlock, "would block")
+    of EBADF: raise newException(ErrorBadFD, "bad fd")
+    of EFAULT: raise newException(ErrorFault, "fault")
+    of EINVAL: raise newException(ErrorInvalid, "invalid")
     else: raise newException(IOError, $strerror(errno))
   elif result == 0:
     s.isend = true

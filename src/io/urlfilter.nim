@@ -6,7 +6,7 @@ import types/url
 #TODO add denyhost/s for blocklists
 type URLFilter* = object
   scheme: Option[string]
-  allowhost: Option[string]
+  allowhost*: Option[string]
   allowhosts: Option[seq[Regex]]
   default: bool
 

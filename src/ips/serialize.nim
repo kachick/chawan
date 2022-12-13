@@ -116,7 +116,11 @@ proc swrite*(stream: Stream, s: string) =
 proc sread*(stream: Stream, s: var string) =
   var len: int
   stream.sread(len)
-  stream.readStr(len, s)
+  if len > 0:
+    stream.readStr(len, s)
+  else:
+    s = ""
+
 func slen*(s: string): int =
   slen(s.len) + s.len
 

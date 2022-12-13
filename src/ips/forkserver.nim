@@ -6,6 +6,7 @@ when defined(posix):
 import buffer/buffer
 import config/config
 import io/loader
+import io/posixstream
 import io/request
 import io/urlfilter
 import io/window
@@ -92,8 +93,8 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
 
 proc runForkServer() =
   var ctx: ForkServerContext
-  ctx.istream = newFileStream(stdin)
-  ctx.ostream = newFileStream(stdout)
+  ctx.istream = newPosixStream(stdin.getFileHandle())
+  ctx.ostream = newPosixStream(stdout.getFileHandle())
   while true:
     try:
       var cmd: ForkCommand
@@ -124,7 +125,7 @@ proc runForkServer() =
         width_table = makewidthtable(config.ambiguous_double)
         SocketDirectory = config.tmpdir
       ctx.ostream.flush()
-    except IOError:
+    except EOFError:
       # EOF
       break
   ctx.istream.close()
