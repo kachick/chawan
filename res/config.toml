@@ -7,6 +7,10 @@ headless = false
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
 
+[network]
+max-redirect = 10
+prepend-https = true
+
 [display]
 color-mode = "auto"
 format-mode = "auto"

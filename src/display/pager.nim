@@ -302,6 +302,7 @@ proc redraw(pager: Pager) {.jsfunc.} =
   pager.term.clearCanvas()
 
 proc draw*(pager: Pager) =
+  if pager.container == nil: return
   pager.term.hideCursor()
   if pager.redraw:
     pager.refreshDisplay()
@@ -522,7 +523,6 @@ proc omniRewrite(pager: Pager, s: string): string =
 # * file://$PWD/<file>
 # * https://<url>
 # So we attempt to load both, and see what works.
-# (TODO: make this optional)
 proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
   let url0 = pager.omniRewrite(url)
   let url = if url[0] == '~': expandPath(url0) else: url0
@@ -535,19 +535,15 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
     pager.gotoURL(newRequest(firstparse.get), prev, ctype)
     return
   var urls: seq[URL]
-  if url[0] != '/':
+  if pager.config.prependhttps and url[0] != '/':
     let pageurl = parseURL("https://" & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
-  let cdir = parseURL("file://" & getCurrentDir() & DirSep)
-  let purl = percentEncode(url, LocalPathPercentEncodeSet)
-  if purl != url:
-    let newurl = parseURL(purl, cdir)
-    if newurl.isSome:
-      urls.add(newurl.get)
-  let localurl = parseURL(url, cdir)
-  if localurl.isSome: # attempt to load local file
-    urls.add(localurl.get)
+  let cdir = parseURL("file://" & percentEncode(getCurrentDir(), LocalPathPercentEncodeSet) & DirSep)
+  let localurl = percentEncode(url, LocalPathPercentEncodeSet)
+  let newurl = parseURL(localurl, cdir)
+  if newurl.isSome:
+    urls.add(newurl.get) # attempt to load local file
   if urls.len == 0:
     pager.alert("Invalid URL " & url)
   else:
@@ -713,12 +709,15 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == container:
       pager.authorize()
   of REDIRECT:
-    if container.redirectdepth < 10:
+    if container.redirectdepth < pager.config.maxredirect:
       let redirect = event.location
       pager.alert("Redirecting to " & $redirect)
       pager.gotoURL(newRequest(redirect), some(container.source.location), replace = container, redirectdepth = container.redirectdepth + 1)
     else:
       pager.alert("Error: maximum redirection depth reached")
+      pager.deleteContainer(container)
+      if pager.container == nil:
+        return false
   of ANCHOR:
     var url2 = newURL(container.source.location)
     url2.hash(event.anchor)

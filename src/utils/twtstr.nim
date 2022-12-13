@@ -449,9 +449,9 @@ const ComponentPercentEncodeSet* = (UserInfoPercentEncodeSet + {'$'..'&', '+', '
 const ApplicationXWWWFormUrlEncodedSet* = (ComponentPercentEncodeSet + {'!', '\''..')', '~'})
 # used by client
 when defined(windows) or defined(OS2) or defined(DOS):
-  const LocalPathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', ':'})
+  const LocalPathPercentEncodeSet* = (Ascii - AsciiAlpha - AsciiDigit - {'\\', '/'})
 else:
-  const LocalPathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', ':', '\\'})
+  const LocalPathPercentEncodeSet* = (Ascii - AsciiAlpha - AsciiDigit -  {'/'})
 
 proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = false) {.inline.} =
   if spaceAsPlus and c == ' ':

@@ -44,6 +44,8 @@ type
 
   Config* = ref ConfigObj
   ConfigObj* = object
+    maxredirect*: int
+    prependhttps*: bool
     termreload*: bool
     nmap*: ActionMap
     lemap*: ActionMap
@@ -237,6 +239,13 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           config.startup = v.s
         of "headless":
           config.headless = v.b
+    of "network":
+      for k, v in v:
+        case k
+        of "max-redirects":
+          config.maxredirect = int(v.i)
+        of "prepend-https":
+          config.prependhttps = v.b
     of "page":
       for k, v in v:
         config.nmap[getRealKey(k)] = v.s

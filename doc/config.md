@@ -22,6 +22,7 @@ configuration.
 
 * [start](Start)
 * [external](External)
+* [network](Network)
 * [display](Display)
 * [omnirule](Omnirule)
 * [siteconf](Siteconf)
@@ -32,7 +33,7 @@ configuration.
 
 ## Start
 
-Start-up options are to be placed in the section `[start]`.
+Start-up options are to be placed in the `[start]` section.
 
 Following is a list of start-up options:
 
@@ -69,7 +70,7 @@ called with -r.</td>
 
 ## External
 
-External options are to be placed in the section `[external]`.
+External options are to be placed in the `[external]` section.
 
 Following is a list of external options:
 
@@ -96,9 +97,38 @@ the line number.</td>
 
 </table>
 
+## Network
+
+Network options are to be placed in the `[network]` section.
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Value**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>max-redirect</td>
+<td>number</td>
+<td>Set the color mode. "auto" for automatic detection, "monochrome"
+for black on white, "ansi" for ansi colors, "24bit" for true colors. "8bit"
+is currently unimplemented (and falls back to ansi).</td>
+</tr>
+
+<tr>
+<td>prepend-https</td>
+<td>boolean</td>
+<td>Whether or not cha should attempt loading "raw" URLs without a scheme as
+https (e.g. wikipedia.org as https://wikipedia.org.)</td>
+</tr>
+
+</table>
+
 ## Display
 
-Display options are to be placed in the section `[display]`.
+Display options are to be placed in the `[display]` section.
 
 Following is a list of display options:
 
@@ -164,9 +194,9 @@ cells.</td>
 <tr>
 <td>minimum-contrast</td>
 <td>number</td>
-<td>Specify the minimum number of euclidian distance of the background and
-foreground colors on the RGB plane. -1 disables this function (i.e. allows
-black letters on black background, etc).</td>
+<td>Specify the minimum difference between the luminance (Y) of the background
+and the foreground. -1 disables this function (i.e. allows black letters on
+black background, etc).</td>
 </tr>
 
 <tr>
@@ -288,7 +318,7 @@ added in the future.</td>
 
 ## Stylesheets
 
-User stylesheets must be placed in a section called `[css]`.
+User stylesheets are to be placed in the `[css]` section.
 
 There are two ways to import user stylesheets:
 
