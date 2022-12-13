@@ -113,7 +113,7 @@ proc `$`*(cookiejar: CookieJar): string =
     let cookie = cookiejar.cookies[i]
     if cookie.expires <= t:
       cookiejar.cookies.delete(i)
-    else:
+    elif cookie.domain == "" or cookiejar.location.host.endsWith(cookie.domain):
       result.percentEncode(cookie.name, UserInfoPercentEncodeSet)
       result &= "="
       result.percentEncode(cookie.value, UserInfoPercentEncodeSet)
