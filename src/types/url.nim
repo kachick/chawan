@@ -325,7 +325,7 @@ func isempty(host: Host): bool =
 proc shorten_path(url: Url) {.inline.} =
   assert not url.path.opaque
 
-  if url.scheme == "file" and url.path.ss.len == 1 and url.path.ss[0][0] in Letters and url.path.ss[0][1] == ':':
+  if url.scheme == "file" and url.path.ss.len == 1 and url.path.ss[0].len == 2 and url.path.ss[0][0] in Letters and url.path.ss[0][1] == ':':
     return
   if url.path.ss.len > 0:
     discard url.path.ss.pop()

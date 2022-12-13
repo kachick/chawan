@@ -21,16 +21,16 @@ configuration.
 
 **Table of contents**
 
-* [start](Start)
-* [external](External)
-* [network](Network)
-* [display](Display)
-* [omnirule](Omnirule)
-* [siteconf](Siteconf)
-* [stylesheets](Stylesheets)
-* [keybindings](Keybindings)
-   * [pager-actions](Pager actions)
-   * [line-editing-actions](Line-editing actions)
+* [Start](#start)
+* [External](#external)
+* [Network](#network)
+* [Display](#display)
+* [Omnirule](#omnirule)
+* [Siteconf](#siteconf)
+* [Stylesheets](#stylesheets)
+* [Keybindings](#keybindings)
+   * [Pager actions](#pager-actions)
+   * [Line-editing actions](#line-editing-actions)
 
 ## Start
 
