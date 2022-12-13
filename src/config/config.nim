@@ -315,14 +315,17 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         assert conf.url.isSome != conf.host.isSome
         config.siteconf.add(conf)
     of "omnirule":
-      for v in v:
-        var rule = StaticOmniRule()
-        for k, v in v:
-          case k
-          of "match": rule.match = v.s
-          of "substitute-url": rule.subst = v.s
-        if rule.match != "":
-          config.omnirules.add(rule)
+      if v.vt == VALUE_ARRAY and v.a.len == 0:
+        config.omnirules.setLen(0)
+      else:
+        for v in v:
+          var rule = StaticOmniRule()
+          for k, v in v:
+            case k
+            of "match": rule.match = v.s
+            of "substitute": rule.subst = v.s
+          if rule.match != "":
+            config.omnirules.add(rule)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =
   config.parseConfig(dir, parseToml(stream))

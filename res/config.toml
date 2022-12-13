@@ -18,13 +18,9 @@ double-width-ambiguous = false
 minimum-contrast = 100
 force-clear = false
 
-[[siteconf]]
-url = '^ddg:'
-substitute_url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
-
-[[siteconf]]
-url = '^wk:'
-substitute_url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + x.substring(4)'
+[[omnirule]]
+match = '^ddg:'
+substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
 
 [page]
 q = 'quit()'

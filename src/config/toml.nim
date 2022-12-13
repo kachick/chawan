@@ -323,7 +323,10 @@ proc consumeNoState(state: var TomlParser): bool =
             node.map[table.key[i]] = TomlValue(vt: VALUE_TABLE, t: t2)
             node = t2
         if table.key[^1] in node.map:
-          let last = node.map[table.key[^1]]
+          var last = node.map[table.key[^1]]
+          if last.vt == VALUE_ARRAY and last.a.len == 0:
+            last = TomlValue(vt: VALUE_TABLE_ARRAY)
+            node.map[table.key[^1]] = last
           if last.vt != VALUE_TABLE_ARRAY:
             let key = table.key.join('.')
             state.valueError(fmt"re-definition of node {key} as table array (was {last.vt})")
@@ -396,10 +399,58 @@ proc consumeArray(state: var TomlParser): TomlValue =
     of ',':
       if val == nil:
         state.syntaxError("comma without element")
-      result.a.add(val)
+      if val.vt == VALUE_TABLE:
+        # inline table array
+        result = TomlValue(vt: VALUE_TABLE_ARRAY)
+        result.ta.add(val.t)
+      else:
+        result.a.add(val)
     else:
+      if val != nil:
+        state.syntaxError("missing comma")
       state.reconsume()
       val = state.consumeValue()
+
+proc consumeInlineTable(state: var TomlParser): TomlValue =
+  result = TomlValue(vt: VALUE_TABLE, t: TomlTable())
+  var key: seq[string]
+  var haskey: bool
+  var val: TomlValue
+  while state.has():
+    let c = state.consume()
+    case c
+    of ' ', '\t', '\n': discard
+    of '}':
+      if val != nil:
+        result.a.add(val)
+      break
+    of ',':
+      if key.len == 0:
+        state.syntaxError("missing key")
+      if val == nil:
+        state.syntaxError("comma without element")
+      var table = result.t
+      for i in 0 ..< key.high:
+        let k = key[i]
+        if k in table.map:
+          state.syntaxError(fmt"invalid re-definition of key {k}")
+        else:
+          let node = TomlTable()
+          table.map[k] = TomlValue(vt: VALUE_TABLE, t: node)
+          table = node
+      let k = key[^1]
+      if k in table.map:
+        state.syntaxError(fmt"invalid re-definition of key {k}")
+      table.map[k] = val
+    else:
+      if val != nil:
+        state.syntaxError("missing comma")
+      if not haskey:
+        key = state.consumeKey()
+        haskey = true
+      else:
+        state.reconsume()
+        val = state.consumeValue()
 
 proc consumeValue(state: var TomlParser): TomlValue =
   while state.has():
@@ -417,6 +468,8 @@ proc consumeValue(state: var TomlParser): TomlValue =
       #TODO date-time
     of '[':
       return state.consumeArray()
+    of '{':
+      return state.consumeInlineTable()
     elif c.isBare():
       let s = state.consumeBare(c)
       case s

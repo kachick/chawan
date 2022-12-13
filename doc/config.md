@@ -1,17 +1,75 @@
 # Configuration
 
-Chawan supports custom keybindings and user stylesheets, defined in a toml
-configuration file.
+Chawan supports custom keybindings and user stylesheets. The configuration
+format is similar to the toml format, with the following exceptions:
+
+* Table arrays can be cleared like this:
+```
+omnirule = []
+
+[[omnirule]] # this is accepted
+```
+This allows users to disable default array rules.
+
+* Inline tables may span across multiple lines. Rationale: the toml specified
+  behavior is counter-intuitive.
 
 Chawan will look for a config file in the ~/.config/chawan/ directory called
 `config.toml`. See the default configuration in the res/ folder for the default
 configuration.
 
-A list of configurable options follows.
+**Table of contents**
+
+* [start](Start)
+* [external](External)
+* [display](Display)
+* [omnirule](Omnirule)
+* [siteconf](Siteconf)
+* [stylesheets](Stylesheets)
+* [keybindings](Keybindings)
+   * [pager-actions](Pager actions)
+   * [line-editing-actions](Line-editing actions)
+
+## Start
+
+Start-up options are to be placed in the section `[start]`.
+
+Following is a list of start-up options:
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Value**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>visual-home</td>
+<td>url</td>
+<td>Page opened when cha is called with the -V option (and no other pages are
+passed as arguments.)</td>
+</tr>
+
+<tr>
+<td>run-script</td>
+<td>JavaScript code</td>
+<td>Script cha runs on start. Pages will not be loaded until this function
+exits. (setTimeout & friends do not block loading, though.)</td>
+</tr>
+
+<tr>
+<td>headless</td>
+<td>boolean</td>
+<td>Whether cha should always start in headless mode. Enabled when cha is
+called with -r.</td>
+</tr>
+
+</table>
 
 ## External
 
-External options must be placed in a section called `[external]`.
+External options are to be placed in the section `[external]`.
 
 Following is a list of external options:
 
@@ -40,7 +98,7 @@ the line number.</td>
 
 ## Display
 
-Display options must be placed in a section called `[display]`.
+Display options are to be placed in the section `[display]`.
 
 Following is a list of display options:
 
@@ -119,10 +177,75 @@ black letters on black background, etc).</td>
 
 </table>
 
+## Omnirule
+
+The omni-bar (by default opened with C-l) can be used to perform searches using
+omni-rules. These are to be placed in the table array `[[omnirule]]`.
+
+Examples:
+```
+# Search using DuckDuckGo Lite. (Bound to C-k by default.)
+[[omnirule]]
+match = '^ddg:'
+substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
+
+# Search using wikipedia, Firefox-style.
+[[omnirule]]
+match = '^@wikipedia'
+substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + x.replace(/@wikipedia/, "")'
+```
+
+Omnirule options:
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Value**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>match</td>
+<td>regex</td>
+<td>Regular expression used to match the input string. Note that websites
+passed as arguments are matched as well.</td>
+</tr>
+
+<tr>
+<td>substitute</td>
+<td>JavaScript function</td>
+<td>A JavaScript function cha will pass the input string to. If a new string is
+returned, it will be parsed instead of the old one.</td>
+</tr>
+
+</table>
+
 ## Siteconf
 
-Configuration options can be specified for individual sites. Each entry must
-be in the table array `[[siteconf]]`.
+Configuration options can be specified for individual sites. Entries are to be
+placed in the table array `[[siteconf]]`.
+
+Examples:
+```
+# Enable cookies on the orange website, to make log-in work.
+[[siteconf]]
+url = "^https://news.ycombinator.com/.*"
+cookie = true
+
+# Redirect npr.org to text.npr.org.
+[[siteconf]]
+host = '^(www\.)?npr\.org$'
+rewrite-url = '''
+(x) => {
+	x.host = "text.npr.org";
+	x.pathname = x.pathname.replace(/(.*)\/.*/, "$1").replace(/.*\//, "");
+	/* No need to return; URL objects are passed by reference. */
+}
+'''
+```
+
+Siteconf options:
 
 <table>
 
@@ -135,13 +258,30 @@ be in the table array `[[siteconf]]`.
 <tr>
 <td>url</td>
 <td>regex</td>
-<td>Regular expression used to match the URL.</td>
+<td>Regular expression used to match the URL. Either this or the `host` option
+must be specified.</td>
 </tr>
 
 <tr>
-<td>substitute_url</td>
-<td>JS function</td>
-<td>A JavaScript function returning the substituted url.</td>
+<td>host</td>
+<td>regex</td>
+<td>Regular expression used to match the host part of the URL (i.e. domain
+name/ip address.) Either this or the `url` option must be specified.</td>
+</tr>
+
+<tr>
+<td>rewrite-url</td>
+<td>JavaScript function</td>
+<td>A JavaScript function cha will pass the URL to. If a new URL is returned,
+it will replace the old one.</td>
+</tr>
+
+<tr>
+<td>cookie</td>
+<td>boolean</td>
+<td>Whether loading cookies should be allowed for this domain. Note: for now,
+third-party cookies are always blocked. A third-party cookie setting may be
+added in the future.</td>
 </tr>
 
 </table>
@@ -162,7 +302,7 @@ There are two ways to import user stylesheets:
 
 ## Keybindings
 
-Keybindings must be placed in these sections:
+Keybindings are to be placed in these sections:
 
 * for pager interaction: `[page]`
 * for line editing: `[line]`
@@ -256,8 +396,8 @@ is typed in. A list of built-in pager functions can be found below.
 </table>
 
 Some entries have an optional `bounds` parameter. If passed, this must be a
-JavaScript function with one parameter (the current unicode character), and
-must return true if the passed character should count as a word boundary.
+JavaScript function that expects one parameter (the current unicode character),
+and returns true if the passed character should count as a word boundary.
 
 ```Examples:
 # Control+A moves the cursor to the beginning of the line.

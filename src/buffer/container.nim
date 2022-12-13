@@ -97,8 +97,11 @@ type
     events*: Deque[ContainerEvent]
     startpos: Option[CursorPosition]
     hasstart: bool
+    redirectdepth*: int
 
-proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, cookiejar: CookieJar, title = ""): Container =
+proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource,
+                cookiejar: CookieJar, title = "",
+                redirectdepth = 0): Container =
   let attrs = getWindowAttributes(stdout)
   let config = config.getBufferConfig(source.location, cookiejar)
   let ostream = dispatcher.forkserver.ostream
@@ -112,7 +115,7 @@ proc newBuffer*(dispatcher: Dispatcher, config: Config, source: BufferSource, co
   result = Container(
     source: source, attrs: attrs, width: attrs.width,
     height: attrs.height - 1, contenttype: source.contenttype,
-    title: title, config: config
+    title: title, config: config, redirectdepth: redirectdepth
   )
   istream.sread(result.process)
   result.pos.setx = -1

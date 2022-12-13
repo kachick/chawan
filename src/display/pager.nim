@@ -483,7 +483,9 @@ proc applySiteconf(pager: Pager, request: Request) =
       pager.cookiejars[request.url.host] = newCookieJar(request.url)
 
 # Load request in a new buffer.
-proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(string), replace: Container = nil) =
+proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
+              ctype = none(string), replace: Container = nil,
+              redirectdepth = 0) =
   pager.applySiteconf(request)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpmethod != HTTP_GET:
@@ -500,7 +502,7 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL), ctype = none(
       location: request.url
     )
     let cookiejar = pager.cookiejars.getOrDefault(request.url.host)
-    let container = pager.dispatcher.newBuffer(pager.config, source, cookiejar)
+    let container = pager.dispatcher.newBuffer(pager.config, source, cookiejar, redirectdepth = redirectdepth)
     if replace != nil:
       container.replace = replace
       container.copyCursorPos(container.replace)
@@ -711,9 +713,12 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == container:
       pager.authorize()
   of REDIRECT:
-    let redirect = event.location
-    pager.alert("Redirecting to " & $redirect)
-    pager.gotoURL(newRequest(redirect), some(pager.container.source.location), replace = pager.container)
+    if container.redirectdepth < 10:
+      let redirect = event.location
+      pager.alert("Redirecting to " & $redirect)
+      pager.gotoURL(newRequest(redirect), some(container.source.location), replace = container, redirectdepth = container.redirectdepth + 1)
+    else:
+      pager.alert("Error: maximum redirection depth reached")
   of ANCHOR:
     var url2 = newURL(container.source.location)
     url2.hash(event.anchor)
