@@ -2,7 +2,9 @@ import options
 import strutils
 import times
 
+import io/urlfilter
 import js/javascript
+import js/regex
 import types/url
 import utils/twtstr
 
@@ -19,7 +21,7 @@ type
     path {.jsget.}: string
 
   CookieJar* = ref object
-    location*: URL
+    filter: URLFilter
     cookies*: seq[Cookie]
 
 proc parseCookieDate(val: string): Option[DateTime] =
@@ -107,13 +109,15 @@ proc parseCookieDate(val: string): Option[DateTime] =
   var dateTime = dateTime(year, Month(month), MonthdayRange(dayOfMonth), HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
   return some(dateTime)
 
-proc `$`*(cookiejar: CookieJar): string =
+proc serialize*(cookiejar: CookieJar, location: URL): string =
+  if not cookiejar.filter.match(location):
+    return "" # fail
   let t = now().toTime().toUnix()
   for i in countdown(cookiejar.cookies.high, 0):
     let cookie = cookiejar.cookies[i]
     if cookie.expires <= t:
       cookiejar.cookies.delete(i)
-    elif cookie.domain == "" or cookiejar.location.host.endsWith(cookie.domain):
+    elif cookie.domain == "" or location.host.endsWith(cookie.domain):
       result.percentEncode(cookie.name, UserInfoPercentEncodeSet)
       result &= "="
       result.percentEncode(cookie.value, UserInfoPercentEncodeSet)
@@ -152,9 +156,13 @@ proc newCookie*(str: string): Cookie {.jsctor.} =
     of "domain": cookie.domain = val
   return cookie
 
-proc newCookieJar*(location: URL): CookieJar =
+proc newCookieJar*(location: URL, allowhosts: seq[Regex]): CookieJar =
   return CookieJar(
-    location: location
+    filter: newURLFilter(
+      scheme = some(location.scheme),
+      allowhost = some(location.host),
+      allowhosts = some(allowhosts)
+    )
   )
 
 proc addCookieModule*(ctx: JSContext) =

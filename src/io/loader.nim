@@ -118,9 +118,10 @@ proc runFileLoader*(fd: cint, defaultHeaders: HeaderList, filter: URLFilter, coo
             if k notin request.headers.table:
               request.headers.table[k] = v
           if cookiejar != nil and cookiejar.cookies.len > 0:
-            if request.url.host == cookiejar.location.host:
-              if "Cookie" notin request.headers.table:
-                request.headers["Cookie"] = $cookiejar
+            if "Cookie" notin request.headers.table:
+              let cookie = cookiejar.serialize(request.url)
+              if cookie != "":
+                request.headers["Cookie"] = cookie
           loadResource(request, stream)
         stream.close()
       of QUIT:

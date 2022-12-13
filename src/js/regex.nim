@@ -215,3 +215,6 @@ proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult 
           e8 += r.size()
         result.captures.add((s8, e8))
   dealloc(capture)
+
+proc match*(regex: Regex, str: string, start = 0, length = str.len): bool =
+  return regex.exec(str, start, length).success

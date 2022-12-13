@@ -470,7 +470,7 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
 
 proc applySiteconf(pager: Pager, request: Request) =
   let url = $request.url
-  let host = $request.url.host
+  let host = request.url.host
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.exec(url).success:
       continue
@@ -480,8 +480,11 @@ proc applySiteconf(pager: Pager, request: Request) =
       let s = sc.subst(request.url)
       if s.isSome and s.get != nil:
         request.url = s.get
-    if sc.cookie and request.url.host notin pager.cookiejars:
-      pager.cookiejars[request.url.host] = newCookieJar(request.url)
+    if sc.cookie:
+      # host/url might have changed by now
+      let jarid = sc.sharecookiejar.get(request.url.host)
+      if jarid notin pager.cookiejars:
+        pager.cookiejars[jarid] = newCookieJar(request.url, sc.thirdpartycookie)
 
 # Load request in a new buffer.
 proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
@@ -749,10 +752,6 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == container:
       pager.alert(event.msg)
       pager.refreshStatusMsg()
-  of SET_COOKIE:
-    let host = container.source.location.host
-    if host in pager.cookiejars:
-      pager.cookiejars[host].cookies.add(event.cookies)
   of NO_EVENT: discard
   return true
 

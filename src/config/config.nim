@@ -27,6 +27,8 @@ type
     host: Option[string]
     subst: Option[string]
     cookie: bool
+    thirdpartycookie: seq[string]
+    sharecookiejar: Option[string]
 
   StaticOmniRule = object
     match: string
@@ -37,6 +39,8 @@ type
     host*: Option[Regex]
     subst*: (proc(s: URL): Option[URL])
     cookie*: bool
+    thirdpartycookie*: seq[Regex]
+    sharecookiejar*: Option[string]
 
   OmniRule* = object
     match*: Regex
@@ -85,18 +89,21 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
 
 func getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar): BufferConfig =
   result.userstyle = config.stylesheet
-  result.filter = newURLFilter(scheme = some(location.scheme))
+  result.filter = newURLFilter(scheme = some(location.scheme), default = true)
   result.cookiejar = cookiejar
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:
     var conf = SiteConfig(
       cookie: sc.cookie,
+      sharecookiejar: sc.sharecookiejar
     )
     if sc.url.isSome:
       conf.url = compileRegex(sc.url.get, 0)
     elif sc.host.isSome:
       conf.host = compileRegex(sc.host.get, 0)
+    for rule in sc.thirdpartycookie:
+      conf.thirdpartycookie.add(compileRegex(rule, 0).get)
     if sc.subst.isSome:
       let fun = jsctx.eval(sc.subst.get, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
       let f = getJSFunction[URL, URL](jsctx, fun.val)
@@ -242,7 +249,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
     of "network":
       for k, v in v:
         case k
-        of "max-redirects":
+        of "max-redirect":
           config.maxredirect = int(v.i)
         of "prepend-https":
           config.prependhttps = v.b
@@ -321,6 +328,13 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           of "host": conf.host = some(v.s)
           of "rewrite-url": conf.subst = some(v.s)
           of "cookie": conf.cookie = v.b
+          of "third-party-cookie":
+            if v.vt == VALUE_STRING:
+              conf.thirdpartycookie = @[v.s]
+            else:
+              for v in v.a:
+                conf.thirdpartycookie.add(v.s)
+          of "share-cookie-jar": conf.sharecookiejar = some(v.s)
         assert conf.url.isSome != conf.host.isSome
         config.siteconf.add(conf)
     of "omnirule":

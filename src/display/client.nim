@@ -403,11 +403,11 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   var tty: File
   var dump = dump
   if not dump:
-    if stdin.isatty():
+    if not stdin.isatty():
       tty = stdin
     elif stdout.isatty():
       discard open(tty, "/dev/tty", fmRead)
-    else:
+    if tty == nil:
       dump = true
   client.ssock = initServerSocket(false)
   client.selector = newSelector[Container]()

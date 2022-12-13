@@ -34,8 +34,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED,
-    SET_COOKIE
+    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -55,8 +54,6 @@ type
       msg*: string
     of UPDATE:
       force*: bool
-    of SET_COOKIE:
-      cookies*: seq[Cookie]
     else: discard
 
   Highlight* = ref object
@@ -649,7 +646,7 @@ proc load*(container: Container) =
       if res.code == 0:
         container.triggerEvent(SUCCESS)
         if res.cookies.len > 0 and container.config.cookiejar != nil: # accept cookies
-          container.triggerEvent(ContainerEvent(t: SET_COOKIE, cookies: res.cookies))
+          container.config.cookiejar.cookies.add(res.cookies)
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)

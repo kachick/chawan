@@ -1,20 +1,36 @@
 import options
 
+import js/regex
 import types/url
 
+#TODO add denyhost/s for blocklists
 type URLFilter* = object
   scheme: Option[string]
-  host: Option[string]
+  allowhost: Option[string]
+  allowhosts: Option[seq[Regex]]
+  default: bool
 
-proc newURLFilter*(scheme = none(string), host = none(string)): URLFilter =
+proc newURLFilter*(scheme = none(string), allowhost = none(string),
+                   allowhosts = none(seq[Regex]), default = false): URLFilter =
   return URLFilter(
     scheme: scheme,
-    host: host
+    allowhost: allowhost,
+    allowhosts: allowhosts,
+    default: default
   )
 
-func match*(filter: URLFilter, url: URL): bool =
+# Filters as follows:
+# If scheme is given, only URLs with the same scheme are matched.
+# Then, allowhost and allowhosts are checked; if none of these match the host,
+# the function returns the value of `default'.
+proc match*(filter: URLFilter, url: URL): bool =
   if filter.scheme.isSome and filter.scheme.get != url.scheme:
     return false
-  if filter.host.isSome and filter.host.get != url.host:
-    return false
-  return true
+  let host = url.host
+  if filter.allowhost.isSome and filter.allowhost.get == host:
+    return true
+  if filter.allowhosts.isSome:
+    for regex in filter.allowhosts.get:
+      if regex.match(host):
+        return true
+  return filter.default

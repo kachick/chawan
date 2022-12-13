@@ -1,7 +1,7 @@
 # Configuration
 
 Chawan supports custom keybindings and user stylesheets. The configuration
-format is similar to the toml format, with the following exceptions:
+format is very similar to the toml format, with the following exceptions:
 
 * Table arrays can be cleared like this:
 ```
@@ -9,7 +9,8 @@ omnirule = []
 
 [[omnirule]] # this is accepted
 ```
-This allows users to disable default array rules.
+This allows users to disable default table array rules. Note that these
+declarations must be placed at the beginning of the file.
 
 * Inline tables may span across multiple lines. Rationale: the toml specified
   behavior is counter-intuitive.
@@ -112,9 +113,7 @@ Network options are to be placed in the `[network]` section.
 <tr>
 <td>max-redirect</td>
 <td>number</td>
-<td>Set the color mode. "auto" for automatic detection, "monochrome"
-for black on white, "ansi" for ansi colors, "24bit" for true colors. "8bit"
-is currently unimplemented (and falls back to ansi).</td>
+<td>Maximum number of redirections to follow.</td>
 </tr>
 
 <tr>
@@ -258,7 +257,7 @@ placed in the table array `[[siteconf]]`.
 
 Examples:
 ```
-# Enable cookies on the orange website, to make log-in work.
+# Enable cookies on the orange website for log-in.
 [[siteconf]]
 url = "^https://news.ycombinator.com/.*"
 cookie = true
@@ -309,9 +308,22 @@ it will replace the old one.</td>
 <tr>
 <td>cookie</td>
 <td>boolean</td>
-<td>Whether loading cookies should be allowed for this domain. Note: for now,
-third-party cookies are always blocked. A third-party cookie setting may be
-added in the future.</td>
+<td>Whether loading cookies should be allowed for this URL. By default, this is
+false for all websites.</td>
+</tr>
+
+<tr>
+<td>third-party-cookie</td>
+<td>regex/array of regexes</td>
+<td>Domains for which third-party cookies are allowed on this domain. Note:
+this only works for buffers which share the same cookie jar.</td>
+</tr>
+
+<tr>
+<td>share-cookie-jar</td>
+<td>host</td>
+<td>Cookie jar to use for this domain. Useful for e.g. sharing cookies with
+subdomains.</td>
 </tr>
 
 </table>
@@ -412,12 +424,12 @@ is typed in. A list of built-in pager functions can be found below.
 <tr><td>`line.delete()`<td>Delete character after cursor
 <tr><td>`line.clear()`<td>Clear text before cursor
 <tr><td>`line.kill()`<td>Clear text after cursor
-<tr><td>`line.clearWord(bounds)`<td>Delete word before cursor[^a]
-<tr><td>`line.killWord(bounds)`<td>Delete word after cursor[^a]
+<tr><td>`line.clearWord(bounds)`<td>Delete word before cursor
+<tr><td>`line.killWord(bounds)`<td>Delete word after cursor
 <tr><td>`line.backward()`<td>Move cursor back by one character
 <tr><td>`line.forward()`<td>Move cursor forward by one character
-<tr><td>`line.prevWord(bounds)`<td>Move cursor to the previous word by one character[^a]
-<tr><td>`line.nextWord(bounds)`<td>Move cursor to the previous word by one character[^a]
+<tr><td>`line.prevWord(bounds)`<td>Move cursor to the previous word by one character
+<tr><td>`line.nextWord(bounds)`<td>Move cursor to the previous word by one character
 <tr><td>`line.begin()`<td>Move cursor to the previous word by one character
 <tr><td>`line.end()`<td>Move cursor to the previous word by one character
 <tr><td>`line.escape()`<td>Ignore keybindings for next character
