@@ -368,8 +368,9 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
           for k, v in v:
             case k
             of "match": rule.match = v.s
-            of "substitute": rule.subst = v.s
+            of "substitute-url": rule.subst = v.s
           if rule.match != "":
+            assert rule.subst != "", "Unspecified substitution for rule " & rule.match
             config.omnirules.add(rule)
 
 proc parseConfig(config: Config, dir: string, stream: Stream) =

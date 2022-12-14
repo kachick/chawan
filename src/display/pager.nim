@@ -532,7 +532,11 @@ proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
 proc omniRewrite(pager: Pager, s: string): string =
   for rule in pager.omnirules:
     if rule.match.match(s):
-      return rule.subst(s).get
+      let sub = rule.subst(s)
+      if sub.isSome:
+        return sub.get
+      else:
+        pager.alert("Error in substitution of rule " & rule.match.buf & " for " & s)
   return s
 
 # When the user has passed a partial URL as an argument, they might've meant
