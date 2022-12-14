@@ -482,7 +482,10 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
 proc tokenizeCSS*(inputStream: Stream): seq[CSSParsedItem] =
   var state: CSSTokenizerState
   state.stream = inputStream
-  state.buf = state.stream.readLine() & '\n'
+  try:
+    state.buf = state.stream.readStr(256)
+  except EOFError:
+    discard
   while state.has():
     let tok = state.consumeToken()
     if tok != nil:

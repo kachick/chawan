@@ -1107,8 +1107,8 @@ proc runBuffer(buffer: Buffer, rfd: int) =
           if event.fd == rfd:
             try:
               buffer.readCommand()
-            except IOError:
-              #eprint "ERROR IN BUFFER", $buffer.location & "\nMESSAGE:",
+            except EOFError:
+              #eprint "EOF error", $buffer.location & "\nMESSAGE:",
               #       getCurrentExceptionMsg() & "\n",
               #       getStackTrace(getCurrentException())
               break loop
