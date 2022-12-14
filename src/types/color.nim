@@ -31,7 +31,7 @@ func cellColor*(rgb: RGBColor): CellColor =
   return CellColor(rgb: true, n: uint32(rgb))
 
 func cellColor*(c: uint8): CellColor =
-  return CellColor(rgb: true, n: uint32(c))
+  return CellColor(rgb: false, n: uint32(c))
 
 const defaultColor* = CellColor(rgb: false, n: 0)
 
