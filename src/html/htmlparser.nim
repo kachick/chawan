@@ -231,7 +231,7 @@ proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: Name
   if location.inside.preInsertionValidity(element, location.before):
     #TODO custom elements
     location.insert(element)
-  parser.openElements.add(element)
+  parser.pushElement(element)
   return element
 
 proc insertHTMLElement(parser: var HTML5Parser, token: Token): Element =
@@ -462,10 +462,16 @@ proc genericRCDATAElementParsingAlgorithm(parser: var HTML5Parser, token: Token)
   parser.oldInsertionMode = parser.insertionMode
   parser.insertionMode = TEXT
 
+proc pushElement(parser: var HTML5Parser, node: Element) =
+  parser.openElements.add(node)
+  parser.tokenizer.hasnonhtml = not node.inHTMLNamespace()
+
 proc popElement(parser: var HTML5Parser): Element =
   result = parser.openElements.pop()
   if result.tagType == TAG_TEXTAREA:
     result.resetElement()
+  if parser.openElements.len == 0:
+    parser.tokenizer.hasnonhtml = false
 
 # 13.2.6.3
 proc generateImpliedEndTags(parser: var HTML5Parser) =
@@ -826,7 +832,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       "<html>" => (block:
         let element = parser.createElement(token, Namespace.HTML, parser.document)
         parser.document.append(element)
-        parser.openElements.add(element)
+        parser.pushElement(element)
         parser.insertionMode = BEFORE_HEAD
       )
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
@@ -834,7 +840,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       _ => (block:
         let element = parser.document.newHTMLElement(TAG_HTML, Namespace.HTML)
         parser.document.append(element)
-        parser.openElements.add(element)
+        parser.pushElement(element)
         parser.insertionMode = BEFORE_HEAD
         reprocess token
       )
@@ -897,7 +903,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           element.alreadyStarted = true
         #TODO document.write (?)
         location.insert(element)
-        parser.openElements.add(element)
+        parser.pushElement(element)
         parser.tokenizer.state = SCRIPT_DATA
         parser.oldInsertionMode = parser.insertionMode
         parser.insertionMode = TEXT
@@ -971,7 +977,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>", "<script>", "<style>", "<template>", "<title>") => (block:
         parse_error
-        parser.openElements.add(parser.head)
+        parser.pushElement(parser.head)
         parser.processInHTMLContent(token, IN_HEAD)
         for i in countdown(parser.openElements.high, 0):
           if parser.openElements[i] == parser.head:
