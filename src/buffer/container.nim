@@ -63,6 +63,8 @@ type
     clear*: bool
 
   Container* = ref object
+    parent* {.jsget.}: Container
+    children* {.jsget.}: seq[Container]
     config*: BufferConfig
     iface*: BufferInterface
     attrs: WindowAttributes
@@ -72,11 +74,9 @@ type
     title*: string
     hovertext*: string
     source*: BufferSource
-    children*: seq[Container]
     pos: CursorPosition
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
-    parent*: Container
     process* {.jsget.}: Pid
     loadinfo*: string
     lines: SimpleFlexibleGrid

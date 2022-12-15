@@ -371,7 +371,7 @@ escape to the keybinding respectively (essentially making `M-` the same as
 `C-[`). Modifiers can be escaped with the `\` sign.
 
 ```Examples:
-'C-M-j' = 'pager.changeLocation()' # change URL when Control, Escape and j are pressed
+'C-M-j' = 'pager.load()' # change URL when Control, Escape and j are pressed
 'gg' = 'pager.cursorFirstLine()' # go to the first line of the page when g is pressed twice
 ```
 An action is a JavaScript function called by chawan every time the keybinding
@@ -380,78 +380,341 @@ is typed in. A list of built-in pager functions can be found below.
 ### Pager actions
 
 <table>
-<tr><th>**Name**<th>**Function**
-<tr><td>`pager.quit()`<td>Exit the browser
-<tr><td>`pager.cursorUp()`<td>Move the cursor to the previous line
-<tr><td>`pager.cursorDown()`<td>Move cursor to the next line
-<tr><td>`pager.cursorLeft()`<td>Move cursor to the previous cell
-<tr><td>`pager.cursorRight()`<td>Move cursor to the next cell
-<tr><td>`pager.cursorLineBegin()`<td>Move cursor to the first cell of the line
-<tr><td>`pager.cursorLineEnd()`<td>Move cursor to the last cell of the line
-<tr><td>`pager.cursorNextWord()`<td>Move cursor to the beginning of the next word
-<tr><td>`pager.cursorPrevWord()`<td>Move cursor to the end of the previous word
-<tr><td>`pager.cursorNextLink()`<td>Move cursor to the beginning of the next clickable element
-<tr><td>`pager.cursorPrevLink()`<td>Move cursor to the beginning of the previous clickable element
-<tr><td>`pager.pageDown()`<td>Move screen down by one page
-<tr><td>`pager.pageUp()`<td>Move screen up by one page
-<tr><td>`pager.pageLeft()`<td>Move screen to the left by one page
-<tr><td>`pager.pageRight()`<td>Move screen to the right by one page
-<tr><td>`pager.halfPageDown()`<td>Move screen down by half a page
-<tr><td>`pager.halfPageUp()`<td>Move screen up by half a page
-<tr><td>`pager.scrollDown()`<td>Move screen down by one line
-<tr><td>`pager.scrollUp()`<td>Move screen up by one line
-<tr><td>`pager.scrollLeft()`<td>Move screen to the left by one line
-<tr><td>`pager.scrollRight()`<td>Move screen to the right by one line
-<tr><td>`pager.click()`<td>Click element currently under cursor
-<tr><td>`pager.changeLocation()`<td>Go to URL
-<tr><td>`pager.dupeBuffer()`<td>Duplicate the current buffer
-<tr><td>`pager.reload()`<td>Reload page
-<tr><td>`pager.reshape()`<td>Reshape buffer (=render page anew)
-<tr><td>`pager.redraw()`<td>Redraw buffer (=redraw screen)
-<tr><td>`pager.toggleSource()`<td>Source view
-<tr><td>`pager.cursorFirstLine()`<td>Move cursor to the first line of the buffer
-<tr><td>`pager.cursorLastLine()`<td>Move cursor to the last line of the buffer
-<tr><td>`pager.cursorTop()`<td>Move cursor to the first line of the page
-<tr><td>`pager.cursorMiddle()`<td>Move cursor to the middle of the page
-<tr><td>`pager.cursorBottom()`<td>Move cursor to the last line of the page
-<tr><td>`pager.centerLine()`<td>Center screen around line
-<tr><td>`pager.lineInfo()`<td>Display information about line
-<tr><td>`pager.searchForward()`<td>Search for a string in the current buffer
-<tr><td>`pager.searchBackward()`<td>Search for a string, backwards
-<tr><td>`pager.isearchForward()`<td>Search for a string and highlight the first result
-<tr><td>`pager.isearchBackward()`<td>Search and highlight the first result, backwards
-<tr><td>`pager.searchPrev()`<td>Jump to the next search result
-<tr><td>`pager.searchNext()`<td>Jump to the previous search result
-<tr><td>`pager.peek()`<td>Display an alert of the current URL
-<tr><td>`pager.peekCursor()`<td>Display an alert of the URL under the cursor
+
+<tr>
+<th>**Name**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>`pager.quit()`</td>
+<td>Exit the browser.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorUp()`</td>
+<td>Move the cursor to the previous line.</td>
+</tr>
+<tr>
+<td>`pager.cursorDown()`</td>
+<td>Move cursor to the next line.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorLeft()`</td>
+<td>Move the cursor to the previous cell.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorRight()`</td>
+<td>Move the cursor to the next cell.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorLineBegin()`</td>
+<td>Move the cursor to the first cell of the line.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorLineEnd()`</td>
+<td>Move the cursor to the last cell of the line.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorNextWord()`</td>
+<td>Move the cursor to the beginning of the next word.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorPrevWord()`</td>
+<td>Move the cursor to the end of the previous word.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorNextLink()`</td>
+<td>Move the cursor to the beginning of the next clickable element.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorPrevLink()`</td>
+<td>Move the cursor to the beginning of the previous clickable element.</td>
+</tr>
+
+<tr>
+<td>`pager.pageDown()`</td>
+<td>Scroll down by one page.</td>
+</tr>
+
+<tr>
+<td>`pager.pageUp()`</td>
+<td>Scroll up by one page.</td>
+</tr>
+
+<tr>
+<td>`pager.pageLeft()`</td>
+<td>Scroll to the left by one page.</td>
+</tr>
+
+<tr>
+<td>`pager.pageRight()`</td>
+<td>Scroll to the right by one page.</td>
+</tr>
+
+<tr>
+<td>`pager.halfPageDown()`</td>
+<td>Scroll forwards by half a page.</td>
+</tr>
+
+<tr>
+<td>`pager.halfPageUp()`</td>
+<td>Scroll backwards by half a page.</td>
+</tr>
+
+<tr>
+<td>`pager.scrollDown()`</td>
+<td>Scroll forwards by one line.</td>
+</tr>
+
+<tr>
+<td>`pager.scrollUp()`</td>
+<td>Scroll backwards by one line.</td>
+</tr>
+
+<tr>
+<td>`pager.scrollLeft()`</td>
+<td>Scroll to the left by one column.</td>
+</tr>
+
+<tr>
+<td>`pager.scrollRight()`</td>
+<td>Scroll to the right by one column.</td>
+</tr>
+
+<tr>
+<td>`pager.click()`</td>
+<td>Click the HTML element currently under the cursor.</td>
+</tr>
+
+<tr>
+<td>`pager.load(url)`</td>
+<td>Go to the specified URL. Opens a prompt with the current URL when no
+parameters are specified; otherwise, the string passed is displayed in
+the prompt. If this string ends with a newline
+(e.g. `pager.load("about:cha\n")`), the URL is loaded directly.</td>
+</tr>
+
+<tr>
+<td>`pager.dupeBuffer()`</td>
+<td>Duplicate the current buffer by loading its source to a new buffer.</td>
+</tr>
+
+<tr>
+<td>`pager.discardBuffer()`</td>
+<td>Discard the current buffer, and move back to its parent. If the current
+buffer is a root buffer (i.e. it has no parent), move to the first child
+buffer instead.</td>
+</tr>
+
+<tr>
+<td>`pager.reload()`</td>
+<td>Open a new buffer with the current buffer's URL, replacing the current
+buffer.</td>
+</tr>
+
+<tr>
+<td>`pager.reshape()`</td>
+<td>Reshape the current buffer (=render the current page anew.)</td>
+</tr>
+
+<tr>
+<td>`pager.redraw()`</td>
+<td>Redraw screen contents. Useful if something messed up the display.</td>
+</tr>
+
+<tr>
+<td>`pager.toggleSource()`</td>
+<td>If viewing a HTML buffer, open a new buffer with its source. Otherwise,
+open the current buffer's contents as HTML.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorFirstLine()`</td>
+<td>Move to the beginning in the buffer.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorLastLine()`</td>
+<td>Move to the last line in the buffer.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorTop()`</td>
+<td>Move to the first line on the screen. (Equivalent to H in vi.)</td>
+</tr>
+
+<tr>
+<td>`pager.cursorMiddle()`</td>
+<td>Move to the middle of the screen. (Equivalent to M in vi.)</td>
+</tr>
+
+<tr>
+<td>`pager.cursorBottom()`</td>
+<td>Move to the last line on the screen. (Equivalent to L in vi.)</td>
+</tr>
+
+<tr>
+<td>`pager.centerLine()`</td>
+<td>Center screen around the current line.</td>
+</tr>
+
+<tr>
+<td>`pager.lineInfo()`</td>
+<td>Display information about the current line.</td>
+</tr>
+
+<tr>
+<td>`pager.searchForward()`</td>
+<td>Search for a string in the current buffer.</td>
+</tr>
+
+<tr>
+<td>`pager.searchBackward()`</td>
+<td>Search for a string, backwards.</td>
+</tr>
+
+<tr>
+<td>`pager.isearchForward()`</td>
+<td>Incremental-search for a string, highlighting the first result.</td>
+</tr>
+
+<tr>
+<td>`pager.isearchBackward()`</td>
+<td>Incremental-search and highlight the first result, backwards.</td>
+</tr>
+
+<tr>
+<td>`pager.searchNext()`</td>
+<td>Jump to the next search result.</td>
+</tr>
+
+<tr>
+<td>`pager.searchPrev()`</td>
+<td>Jump to the previous search result.</td>
+</tr>
+
+<tr>
+<td>`pager.peek()`</td>
+<td>Display an alert message of the current URL.</td>
+</tr>
+
+<tr>
+<td>`pager.peekCursor()`</td>
+<td>Display an alert message of the URL under the cursor.</td>
+</tr>
+
 </table>
+
 
 ### Line-editing actions
 
 <table>
-<tr><th>**Name**<th>**Function**
-<tr><td>`line.submit()`<td>Submit line
-<tr><td>`line.cancel()`<td>Cancel operation
-<tr><td>`line.backspace()`<td>Delete character before cursor
-<tr><td>`line.delete()`<td>Delete character after cursor
-<tr><td>`line.clear()`<td>Clear text before cursor
-<tr><td>`line.kill()`<td>Clear text after cursor
-<tr><td>`line.clearWord(bounds)`<td>Delete word before cursor
-<tr><td>`line.killWord(bounds)`<td>Delete word after cursor
-<tr><td>`line.backward()`<td>Move cursor back by one character
-<tr><td>`line.forward()`<td>Move cursor forward by one character
-<tr><td>`line.prevWord(bounds)`<td>Move cursor to the previous word by one character
-<tr><td>`line.nextWord(bounds)`<td>Move cursor to the previous word by one character
-<tr><td>`line.begin()`<td>Move cursor to the previous word by one character
-<tr><td>`line.end()`<td>Move cursor to the previous word by one character
-<tr><td>`line.escape()`<td>Ignore keybindings for next character
-<tr><td>`line.prevHist()`<td>Jump to the previous history entry
-<tr><td>`line.nextHist()`<td>Jump to the next history entry
+
+<tr>
+<th>**Name**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>`line.submit()`</td>
+<td>Submit line</td>
+</tr>
+
+<tr>
+<td>`line.cancel()`</td>
+<td>Cancel operation</td>
+</tr>
+
+<tr>
+<td>`line.backspace()`</td>
+<td>Delete character before cursor</td>
+</tr>
+
+<tr>
+<td>`line.delete()`</td>
+<td>Delete character after cursor</td>
+</tr>
+
+<tr>
+<td>`line.clear()`</td>
+<td>Clear text before cursor</td>
+</tr>
+
+<tr>
+<td>`line.kill()`</td>
+<td>Clear text after cursor</td>
+</tr>
+
+<tr>
+<td>`line.clearWord(bounds)`</td>
+<td>Delete word before cursor</td>
+</tr>
+
+<tr>
+<td>`line.killWord(bounds)`</td>
+<td>Delete word after cursor</td>
+</tr>
+
+<tr>
+<td>`line.backward()`</td>
+<td>Move cursor back by one character</td>
+</tr>
+
+<tr>
+<td>`line.forward()`</td>
+<td>Move cursor forward by one character</td>
+</tr>
+
+<tr>
+<td>`line.prevWord(bounds)`</td>
+<td>Move cursor to the previous word by one character</td>
+</tr>
+
+<tr>
+<td>`line.nextWord(bounds)`</td>
+<td>Move cursor to the previous word by one character</td>
+</tr>
+
+<tr>
+<td>`line.begin()`</td>
+<td>Move cursor to the previous word by one character</td>
+</tr>
+
+<tr>
+<td>`line.end()`</td>
+<td>Move cursor to the previous word by one character</td>
+</tr>
+
+<tr>
+<td>`line.escape()`</td>
+<td>Ignore keybindings for next character</td>
+</tr>
+
+<tr>
+<td>`line.prevHist()`</td>
+<td>Jump to the previous history entry</td>
+</tr>
+
+<tr>
+<td>`line.nextHist()`</td>
+<td>Jump to the next history entry</td>
+</tr>
+
 </table>
 
-Some entries have an optional `bounds` parameter. If passed, this must be a
-JavaScript function that expects one parameter (the current unicode character),
-and returns true if the passed character should count as a word boundary.
+Some of these entries have an optional `bounds` parameter. If passed, this
+must be a JavaScript function that expects one parameter (the current
+unicode character), and returns true if the passed character should count
+as a word boundary.
 
 ```Examples:
 # Control+A moves the cursor to the beginning of the line.

@@ -62,19 +62,28 @@ type
 
 func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 
-iterator containers*(pager: Pager): Container =
-  if pager.container != nil:
-    var c = pager.container
-    while c.parent != nil: c = c.parent
-    var stack: seq[Container]
-    stack.add(c)
-    while stack.len > 0:
-      c = stack.pop()
-      yield c
-      for i in countdown(c.children.high, 0):
-        stack.add(c.children[i])
+func getRoot(container: Container): Container =
+  var c = container
+  while c.parent != nil: c = c.parent
 
-proc setContainer*(pager: Pager, c: Container) =
+iterator all_children(parent: Container): Container {.inline.} =
+  var stack = newSeqOfCap[Container](parent.children.len)
+  for i in countdown(parent.children.high, 0):
+    stack.add(parent.children[i])
+  while stack.len > 0:
+    let c = stack.pop()
+    yield c
+    for i in countdown(c.children.high, 0):
+      stack.add(c.children[i])
+
+iterator containers*(pager: Pager): Container {.inline.} =
+  if pager.container != nil:
+    let root = getRoot(pager.container)
+    yield root
+    for c in root.all_children:
+      yield c
+
+proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
   pager.container = c
   pager.redraw = true
 
@@ -404,7 +413,7 @@ proc alert*(pager: Pager, msg: string) {.jsfunc.} =
 proc lineInfo(pager: Pager) {.jsfunc.} =
   pager.alert(pager.container.lineInfo())
 
-proc deleteContainer(pager: Pager, container: Container, prevlevel = false) =
+proc deleteContainer(pager: Pager, container: Container) =
   container.cancel()
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
@@ -419,10 +428,7 @@ proc deleteContainer(pager: Pager, container: Container, prevlevel = false) =
       parent.children.insert(child, n + 1)
     parent.children.delete(n)
     if container == pager.container:
-      if prevlevel or n == 0:
-        pager.setContainer(parent)
-      else:
-        pager.setContainer(parent.children[n - 1])
+      pager.setContainer(parent)
   elif container.children.len > 0:
     let parent = container.children[0]
     parent.parent = nil
@@ -441,12 +447,21 @@ proc deleteContainer(pager: Pager, container: Container, prevlevel = false) =
   pager.unreg.add((container.process, SocketStream(container.iface.stream)))
   pager.dispatcher.forkserver.removeChild(container.process)
 
-proc discardBuffer(pager: Pager, prevlevel = false) {.jsfunc.} =
-  if pager.container == nil or pager.container.parent == nil and
-      pager.container.children.len == 0:
+proc discardBuffer(pager: Pager, container = none(Container)) {.jsfunc.} =
+  let c = container.get(pager.container)
+  if c == nil or c.parent == nil and c.children.len == 0:
     pager.alert("Cannot discard last buffer!")
   else:
-    pager.deleteContainer(pager.container, prevlevel)
+    pager.deleteContainer(c)
+
+proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
+  let container = container.get(pager.container)
+  if container != nil:
+    for c in container.all_children:
+      pager.deleteContainer(c)
+    pager.discardBuffer(some(container))
+  else:
+    pager.alert("Cannot discard last buffer!")
 
 proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
