@@ -1146,8 +1146,11 @@ proc runBuffer(buffer: Buffer, rfd: int) =
     while buffer.alive:
       let events = buffer.selector.select(-1)
       for event in events:
-        if Read in event.events:
-          if event.fd == rfd:
+        if event.fd == rfd:
+          if Error in event.events:
+            # Connection reset by peer, probably. Close the buffer.
+            break loop
+          elif Read in event.events:
             try:
               buffer.readCommand()
             except EOFError:
@@ -1155,24 +1158,25 @@ proc runBuffer(buffer: Buffer, rfd: int) =
               #       getCurrentExceptionMsg() & "\n",
               #       getStackTrace(getCurrentException())
               break loop
-          elif event.fd == buffer.fd:
+          else:
+            assert false
+        elif event.fd == buffer.fd:
+          if Read in event.events or Error in event.events:
             buffer.onload()
           else:
             assert false
-        if Event.Timer in event.events:
-          buffer.selector.unregister(event.fd)
-          var timeout: proc()
-          if buffer.timeouts.pop(event.fd, timeout):
-            timeout()
+        elif event.fd in buffer.timeouts:
+          if Event.Timer in event.events:
+            buffer.selector.unregister(event.fd)
+            var timeout: proc()
+            if buffer.timeouts.pop(event.fd, timeout):
+              timeout()
+            else:
+              assert false
           else:
             assert false
-        if Error in event.events:
-          if event.fd == rfd:
-            break loop
-          elif event.fd == buffer.fd:
-            buffer.finishLoad()
-          else:
-            assert false
+        else:
+          assert false
   buffer.pstream.close()
   buffer.loader.quit()
   quit(0)
