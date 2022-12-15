@@ -128,7 +128,7 @@ proc newTokenizer*(s: string): Tokenizer =
 func atEof(t: Tokenizer): bool =
   t.eof_i != -1 and t.sbuf_i >= t.eof_i
 
-proc consume(t: var Tokenizer): Rune =
+proc checkBufLen(t: var Tokenizer) =
   if t.sbuf_i >= min(bufLen - copyBufLen, t.sbuf.len):
     for i in t.sbuf_i ..< t.sbuf.len:
       t.sbuf[i - t.sbuf_i] = t.sbuf[i]
@@ -136,10 +136,14 @@ proc consume(t: var Tokenizer): Rune =
     t.sbuf_i = 0
     if t.sbuf.len < bufLen:
       t.readn()
+
+proc consume(t: var Tokenizer): Rune =
+  t.checkBufLen()
   ## Normalize newlines (\r\n -> \n, single \r -> \n)
   if t.sbuf[t.sbuf_i] == Rune('\r'):
     inc t.sbuf_i
-    if t.sbuf[t.sbuf_i] != Rune('\n'):
+    t.checkBufLen()
+    if t.atEof or t.sbuf[t.sbuf_i] != Rune('\n'):
       # \r
       result = Rune('\n')
       return
