@@ -21,34 +21,14 @@ It also functions as a pager, similarly to w3m.
 
 Currently implemented features are:
 
-* a multi-charset, double-width capable pager
+* a multi-charset, double-width capable, multi-processing pager
 * a CSS-capable layout engine
 * forms, tables
 * incremental loading of plain text streams
-* JavaScript based navigation
-
-**Planned** features, roughly in order of importance:
-
+* JavaScript based navigation (note: no JS support in documents yet)
 * cookies
-* JavaScript in html documents
-* partial re-rendering of page layout
-* unicode normalization
-* standard-compliant support for remote resources
-* iframe
-* ruby
-* external viewers (for audio, video, image, etc)
-* image (sixel & kitty?)
-* markdown (built-in parser)
-* config editor
-* user stylesheet editor
-* SOCKS proxy
-* HTTP proxy
-* firefox request imitation (might avoid being classified as a bot)
-* adblock (use uBO?)
-* html-only renderer?
-* extension API? (or just cgi like in w3m?)
-* gopher?
-* gemini??
+
+...and a lot more planned.
 
 ## Configuration
 
