@@ -23,6 +23,7 @@ type
     attrn: string
     attrv: string
     attr: bool
+    hasnonhtml*: bool
 
     decoder: DecoderStream
     sbuf: seq[Rune]
@@ -237,7 +238,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       cast[char](r)
     else:
       char(128)
-  template has_adjusted_current_node(): bool = false #TODO implement this
   template consume_and_discard(n: int) = #TODO optimize
     var i = 0
     while i < n:
@@ -939,7 +939,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '[':
         if peek_str("CDATA["):
           consume_and_discard "CDATA[".len
-          if has_adjusted_current_node: #TODO and it is not an element in the HTML namespace
+          if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
             parse_error cdata_in_html_content
