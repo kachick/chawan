@@ -292,6 +292,8 @@ proc processWhitespace(state: var InlineState, c: char) =
   of WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     if c == '\n':
       state.ictx.flushLine(state.computed, state.maxwidth)
+    elif c == '\t':
+      state.ictx.whitespacenum = (state.ictx.whitespacenum div 8 + 1) * 8
     else:
       inc state.ictx.whitespacenum
 
