@@ -7,48 +7,6 @@ import encoding/decoderstream
 import utils/twtstr
 
 const tabwidth = 8
-proc renderPlainText*(text: string): FlexibleGrid =
-  var format = newFormat()
-  template add_format() =
-    if af:
-      af = false
-      result[result.high].addFormat(result[^1].str.len, format)
-
-  result.addLine()
-  var spaces = 0
-  var i = 0
-  var af = false
-  while i < text.len:
-    case text[i]
-    of '\n':
-      add_format
-      result.addLine()
-    of '\r': discard
-    of '\t':
-      add_format
-      for i in 0 ..< tabwidth:
-        result[^1].str &= ' '
-        spaces = 0
-    of ' ':
-      add_format
-      result[^1].str &= ' '
-      inc spaces
-      if spaces == 8:
-        spaces = 0
-    of '\e':
-      i = format.parseAnsiCode(text, i)
-      af = true
-    elif text[i] in Controls:
-      add_format
-      result[^1].str &= '^' & text[i].getControlLetter()
-    else:
-      add_format
-      result[^1].str &= text[i]
-    inc i
-
-  if result.len > 1 and result[^1].str.len == 0 and result[^1].formats.len == 0:
-    discard result.pop()
-
 type StreamRenderer* = object
   spaces: int
   ansiparser: AnsiCodeParser
