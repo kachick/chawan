@@ -88,8 +88,10 @@ when not termcap_found:
   template RMCUP(): string = DECRST(1049)
   template HVP(s: varargs[string, `$`]): string =
     CSI(s) & "f"
-  template EL(s: varargs[string, `$`]): string =
-    CSI(s) & "K"
+  template EL(): string =
+    CSI() & "K"
+  template ED(): string =
+    CSI() & "J"
 
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
@@ -129,6 +131,12 @@ proc clearEnd(term: Terminal): string =
     return term.cap ce
   else:
     return EL()
+
+proc clearDisplay(term: Terminal): string =
+  when termcap_found:
+    return term.cap cd
+  else:
+    return ED()
 
 proc isatty(term: Terminal): bool =
   term.infile != nil and term.infile.isatty() and term.outfile.isatty()
@@ -312,6 +320,7 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
   result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
+  result &= term.clearDisplay()
   for y in 0 ..< grid.height:
     var w = 0
     for x in 0 ..< grid.width:
@@ -322,7 +331,6 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
       result &= term.processFormat(format, cell.format)
       result &= cell.str
       w += cell.width()
-    result &= term.clearEnd()
     if y != grid.height - 1:
       result &= "\r\n"
 
@@ -341,8 +349,8 @@ func generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): strin
       if lr:
         result &= term.cursorGoto(0, i div grid.width - 1)
         result &= term.resetFormat()
-        result &= term.clearEnd()
         result &= line
+        result &= term.clearEnd()
         lr = false
       x = 0
       w = 0
