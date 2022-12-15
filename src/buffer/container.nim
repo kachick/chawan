@@ -604,7 +604,8 @@ proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
   container.triggerEvent(STATUS)
 
-proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
+#TODO TODO TODO this should be called with a timeout.
+proc onload(container: Container, res: LoadResult) =
   if container.canceled:
     container.setLoadInfo("")
     #TODO we wouldn't need the then part if we had incremental rendering of
@@ -622,7 +623,7 @@ proc onload(container: Container, res: tuple[atend: bool, lines, bytes: int]) =
       container.triggerEvent(STATUS)
       container.needslines = true
     if not res.atend:
-      discard container.iface.load().then(proc(res: tuple[atend: bool, lines, bytes: int]) =
+      discard container.iface.load().then(proc(res: LoadResult) =
         container.onload(res))
     else:
       container.iface.getTitle().then(proc(title: string): auto =

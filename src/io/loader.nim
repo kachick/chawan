@@ -11,6 +11,7 @@
 #
 # The body is passed to the stream as-is, so effectively nothing can follow it.
 
+import nativesockets
 import options
 import streams
 import tables
@@ -137,9 +138,10 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
   ssock.close()
   quit(0)
 
-proc doRequest*(loader: FileLoader, request: Request): Response =
+#TODO async requests...
+proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response =
   new(result)
-  let stream = connectSocketStream(loader.process, false, false)
+  let stream = connectSocketStream(loader.process, false, blocking = true)
   stream.swrite(LOAD)
   stream.swrite(request)
   stream.flush()
@@ -156,6 +158,8 @@ proc doRequest*(loader: FileLoader, request: Request): Response =
       result.redirect = parseUrl(location, some(request.url))
     # Only a stream of the response body may arrive after this point.
     result.body = stream
+    if not blocking:
+      stream.source.getFd().setBlocking(blocking)
 
 proc quit*(loader: FileLoader) =
   let stream = connectSocketStream(loader.process)

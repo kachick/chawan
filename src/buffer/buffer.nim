@@ -58,10 +58,9 @@ type
     str*: string
 
   Buffer* = ref object
+    fd: int
     alive: bool
     cs: Charset
-    lasttimeout: int
-    timeout: int
     readbufsize: int
     contenttype: string
     lines: FlexibleGrid
@@ -80,13 +79,15 @@ type
     available: int
     pstream: Stream # pipe stream
     srenderer: StreamRenderer
-    streamclosed: bool
-    loaded: bool
+    connected: bool
+    loaded: bool # istream is closed
     prevnode: StyledNode
     loader: FileLoader
     config: BufferConfig
     userstyle: CSSStylesheet
     timeouts: Table[int, (proc())]
+    tasks: array[BufferCommand, int] #TODO this should have arguments
+    savetask: bool
     hovertext: string
 
   # async, but worse
@@ -105,7 +106,8 @@ type
 
 proc newBufferInterface*(ostream: Stream): BufferInterface =
   result = BufferInterface(
-    stream: ostream
+    stream: ostream,
+    packetid: 1 # ids below 1 are invalid
   )
 
 proc fulfill*(iface: BufferInterface, packetid, len: int) =
@@ -160,16 +162,20 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] 
         next.cb()))
   return next
 
-proc buildInterfaceProc(fun: NimNode): tuple[fun, name: NimNode] =
+# get enum identifier of proxy function
+func getFunId(fun: NimNode): string =
+  let name = fun[0] # sym
+  result = name.strVal.toScreamingSnakeCase()
+  if result[^1] == '=':
+    result = "SET_" & result[0..^2]
+
+proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] =
   let name = fun[0] # sym
   let params = fun[3] # formalparams
   let retval = params[0] # sym
   var body = newStmtList()
   assert params.len >= 2 # return type, this value
-  var x = name.strVal.toScreamingSnakeCase()
-  if x[^1] == '=':
-    x = "SET_" & x[0..^2]
-  let nup = ident(x) # add this to enums
+  let nup = ident(funid) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
   body.add(quote do:
@@ -211,22 +217,29 @@ proc buildInterfaceProc(fun: NimNode): tuple[fun, name: NimNode] =
   return (newProc(name, params2, body, pragmas = pragmas), nup)
 
 type
-  ProxyFunction = object
+  ProxyFunction = ref object
     iname: NimNode # internal name
     ename: NimNode # enum name
     params: seq[NimNode]
+    istask: bool
   ProxyMap = Table[string, ProxyFunction]
 
 # Name -> ProxyFunction
 var ProxyFunctions {.compileTime.}: ProxyMap
+
+proc getProxyFunction(funid: string): ProxyFunction =
+  if funid notin ProxyFunctions:
+    ProxyFunctions[funid] = ProxyFunction()
+  return ProxyFunctions[funid]
 
 macro proxy0(fun: untyped) =
   fun[0] = ident(fun[0].strVal & "_internal")
   return fun
 
 macro proxy1(fun: typed) =
-  let iproc = buildInterfaceProc(fun)
-  var pfun: ProxyFunction
+  let funid = getFunId(fun)
+  let iproc = buildInterfaceProc(fun, funid)
+  let pfun = getProxyFunction(funid)
   pfun.iname = ident(fun[0].strVal & "_internal")
   pfun.ename = iproc[1]
   pfun.params.add(fun[3][0])
@@ -238,13 +251,19 @@ macro proxy1(fun: typed) =
     for i in 0 ..< param.len - 2:
       let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
       params2.add(id2)
-  ProxyFunctions[fun[0].strVal] = pfun
+  ProxyFunctions[funid] = pfun
   return iproc[0]
 
 macro proxy(fun: typed) =
   quote do:
     proxy0(`fun`)
     proxy1(`fun`)
+
+macro task(fun: typed) =
+  let funid = getFunId(fun) 
+  let pfun = getProxyFunction(funid)
+  pfun.istask = true
+  fun
 
 func getTitleAttr(node: StyledNode): string =
   if node == nil:
@@ -551,7 +570,7 @@ type ConnectResult* = object
   referrerpolicy*: Option[ReferrerPolicy]
 
 proc setupSource(buffer: Buffer): ConnectResult =
-  if buffer.loaded:
+  if buffer.connected:
     result.code = -2
     return
   let source = buffer.source
@@ -561,7 +580,9 @@ proc setupSource(buffer: Buffer): ConnectResult =
   buffer.location = source.location
   case source.t
   of CLONE:
-    buffer.istream = connectSocketStream(source.clonepid, blocking = false)
+    let s = connectSocketStream(source.clonepid, blocking = false)
+    buffer.istream = s
+    buffer.fd = cast[int](s.source.getFd())
     if buffer.istream == nil:
       result.code = -2
       return
@@ -570,18 +591,20 @@ proc setupSource(buffer: Buffer): ConnectResult =
   of LOAD_PIPE:
     discard fcntl(source.fd, F_SETFL, fcntl(source.fd, F_GETFL, 0) or O_NONBLOCK)
     buffer.istream = newPosixStream(source.fd)
+    buffer.fd = source.fd
     if setct:
       buffer.contenttype = "text/plain"
   of LOAD_REQUEST:
     let request = source.request
-    let response = buffer.loader.doRequest(request)
+    let response = buffer.loader.doRequest(request, blocking = false)
     if response.body == nil:
       result.code = response.res
       return
     if setct:
       buffer.contenttype = response.contenttype
     buffer.istream = response.body
-    SocketStream(buffer.istream).source.getFd().setBlocking(false)
+    let fd = SocketStream(response.body).source.getFd()
+    buffer.fd = cast[int](fd)
     result.needsAuth = response.status == 401 # Unauthorized
     result.redirect = response.redirect
     if "Set-Cookie" in response.headers.table:
@@ -592,9 +615,10 @@ proc setupSource(buffer: Buffer): ConnectResult =
     if "Referrer-Policy" in response.headers.table:
       result.referrerpolicy = getReferrerPolicy(response.headers.table["Referrer-Policy"][0])
   buffer.istream = newTeeStream(buffer.istream, buffer.sstream, closedest = false)
+  buffer.selector.registerHandle(buffer.fd, {Read}, 0)
   if setct:
     result.contentType = buffer.contenttype
-  buffer.loaded = true
+  buffer.connected = true
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   let code = buffer.setupSource()
@@ -603,7 +627,7 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
 const BufferSize = 4096
 
 proc finishLoad(buffer: Buffer) =
-  if buffer.streamclosed: return
+  if buffer.loaded: return
   case buffer.contenttype
   of "text/html":
     buffer.sstream.setPosition(0)
@@ -616,12 +640,38 @@ proc finishLoad(buffer: Buffer) =
       buffer.document = doc
     buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
+  buffer.selector.unregister(buffer.fd)
   buffer.istream.close()
-  buffer.streamclosed = true
+  buffer.loaded = true
 
-proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
-  var bytes = -1
-  if buffer.streamclosed: return (true, buffer.lines.len, bytes)
+type LoadResult* = tuple[
+  atend: bool,
+  lines: int,
+  bytes: int
+]
+
+proc load*(buffer: Buffer): LoadResult {.proxy, task.} =
+  if buffer.loaded:
+    return (true, buffer.lines.len, -1)
+  else:
+    buffer.savetask = true
+
+proc fulfillTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
+  let packetid = buffer.tasks[cmd]
+  if packetid == 0:
+    return # no task to fulfill (TODO this is kind of inefficient)
+  let len = slen(buffer.tasks[cmd]) + slen(res)
+  buffer.pstream.swrite(len)
+  buffer.pstream.swrite(packetid)
+  buffer.tasks[cmd] = 0
+  buffer.pstream.swrite(res)
+  buffer.pstream.flush()
+
+proc onload(buffer: Buffer) =
+  var res: LoadResult = (false, buffer.lines.len, -1)
+  if buffer.loaded:
+    buffer.fulfillTask(LOAD, res)
+    return
   let op = buffer.sstream.getPosition()
   var s = newString(buffer.readbufsize)
   try:
@@ -629,29 +679,23 @@ proc load*(buffer: Buffer): tuple[atend: bool, lines, bytes: int] {.proxy.} =
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
     assert n != 0
     s.setLen(n)
-    result = (false, buffer.lines.len, n)
     buffer.sstream.setPosition(op)
     if buffer.readbufsize < BufferSize:
       buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
     buffer.available += s.len
     case buffer.contenttype
     of "text/html":
-      bytes = buffer.available
+      res.bytes = buffer.available
     else:
       buffer.do_reshape()
+    buffer.fulfillTask(LOAD, res)
   except EOFError:
-    result = (true, buffer.lines.len, 0)
+    res.atend = true
     buffer.finishLoad()
+    buffer.fulfillTask(LOAD, res)
   except ErrorAgain, ErrorWouldBlock:
-    buffer.timeout = buffer.lasttimeout
-    if buffer.readbufsize == 1:
-      if buffer.lasttimeout == 0:
-        buffer.lasttimeout = 32
-      elif buffer.lasttimeout < 1048:
-        buffer.lasttimeout *= 2
-    else:
+    if buffer.readbufsize > 1:
       buffer.readbufsize = buffer.readbufsize div 2
-    result = (false, buffer.lines.len, bytes)
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:
@@ -662,9 +706,9 @@ proc render*(buffer: Buffer): int {.proxy.} =
   return buffer.lines.len
 
 proc cancel*(buffer: Buffer): int {.proxy.} =
-  if buffer.streamclosed: return
+  if buffer.loaded: return
   buffer.istream.close()
-  buffer.streamclosed = true
+  buffer.loaded = true
   case buffer.contenttype
   of "text/html":
     buffer.sstream.setPosition(0)
@@ -1062,31 +1106,30 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
       rval = ident("retval")
       stmts.add(quote do:
         let `rval` = `call`)
-    if v.ename.strVal == "LOAD": #TODO TODO TODO this is very ugly
-      stmts.add(quote do:
-        if buffer.timeout > 0:
-          let fdi = buffer.selector.registerTimer(buffer.timeout, true, 0)
-          buffer.timeouts[fdi] = (proc() =
-            let len = slen(`packetid`) + slen(`rval`)
-            buffer.pstream.swrite(len)
-            buffer.pstream.swrite(`packetid`)
-            buffer.pstream.swrite(`rval`)
-            buffer.pstream.flush())
-          buffer.timeout = 0
-          return)
+    var fulfill = newStmtList()
     if rval == nil:
-      stmts.add(quote do:
+      fulfill.add(quote do:
         let len = slen(`packetid`)
         buffer.pstream.swrite(len)
         buffer.pstream.swrite(`packetid`)
         buffer.pstream.flush())
     else:
-      stmts.add(quote do:
+      fulfill.add(quote do:
         let len = slen(`packetid`) + slen(`rval`)
         buffer.pstream.swrite(len)
         buffer.pstream.swrite(`packetid`)
         buffer.pstream.swrite(`rval`)
         buffer.pstream.flush())
+    if v.istask:
+      let en = v.ename
+      stmts.add(quote do:
+        if buffer.savetask:
+          buffer.savetask = false
+          buffer.tasks[BufferCommand.`en`] = `packetid`
+        else:
+          `fulfill`)
+    else:
+      stmts.add(fulfill)
     ofbranch.add(stmts)
     switch.add(ofbranch)
   return switch
@@ -1112,6 +1155,8 @@ proc runBuffer(buffer: Buffer, rfd: int) =
               #       getCurrentExceptionMsg() & "\n",
               #       getStackTrace(getCurrentException())
               break loop
+          elif event.fd == buffer.fd:
+            buffer.onload()
           else:
             assert false
         if Event.Timer in event.events:
@@ -1124,6 +1169,8 @@ proc runBuffer(buffer: Buffer, rfd: int) =
         if Error in event.events:
           if event.fd == rfd:
             break loop
+          elif event.fd == buffer.fd:
+            buffer.finishLoad()
           else:
             assert false
   buffer.pstream.close()

@@ -119,8 +119,8 @@ proc connectSocketStream*(path: string, buffered = true, blocking = true): Socke
   result = newSocketStream()
   result.blk = blocking
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
-  #if not blocking:
-  #  sock.getFd().setBlocking(false)
+  if not blocking:
+    sock.getFd().setBlocking(false)
   connectUnix(sock, path)
   result.source = sock
 
