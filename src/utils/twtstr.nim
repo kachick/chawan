@@ -902,3 +902,26 @@ func padToWidth*(str: string, size: int, schar = '$'): string =
         result &= r
         w += r.width
     result &= schar
+
+#https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
+proc makeCRLF*(s: string): string =
+  result = newStringOfCap(s.len)
+  var i = 0
+  while i < s.len - 1:
+    if s[i] == '\r' and s[i + 1] != '\n':
+      result &= '\r'
+      result &= '\n'
+    elif s[i] != '\r' and s[i + 1] == '\n':
+      result &= s[i]
+      result &= '\r'
+      result &= '\n'
+      inc i
+    else:
+      result &= s[i]
+    inc i
+  if i < s.len:
+    if s[i] == '\r':
+      result &= '\r'
+      result &= '\n'
+    else:
+      result &= s[i]

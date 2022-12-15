@@ -790,22 +790,6 @@ proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encodin
   return entrylist
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
-proc makeCRLF(s: string): string =
-  result = newStringOfCap(s.len)
-  var i = 0
-  while i < s.len - 1:
-    if s[i] == '\r' and s[i + 1] != '\n':
-      result &= '\r'
-      result &= '\n'
-    elif s[i] != '\r' and s[i + 1] == '\n':
-      result &= s[i]
-      result &= '\r'
-      result &= '\n'
-      inc i
-    else:
-      result &= s[i]
-    inc i
-
 proc serializeMultipartFormData(kvs: seq[(string, string)]): MimeData =
   for it in kvs:
     let name = makeCRLF(it[0])
