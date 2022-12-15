@@ -285,8 +285,7 @@ proc refreshStatusMsg*(pager: Pager) =
 
 proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
   var format = newFormat()
-  var i = 0
-  for line in container.readLines:
+  container.readLines(proc(line: SimpleFlexibleLine) =
     if line.formats.len == 0:
       ostream.write(line.str & "\n")
     else:
@@ -303,8 +302,7 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
         s &= outstr
         s &= pager.term.processFormat(format, f.format)
       s &= line.str.substr(i) & pager.term.processFormat(format, newFormat()) & "\n"
-      ostream.write(s)
-    inc i
+      ostream.write(s))
   ostream.flush()
 
 proc redraw(pager: Pager) {.jsfunc.} =

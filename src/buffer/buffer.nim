@@ -140,7 +140,8 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable
       promise.stream.sread(promise.res)
     cb(promise.res))
 
-proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.discardable.} =
+# Warning: we assume these aren't discarded.
+proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] =
   if promise == nil: return
   let next = Promise[T]()
   promise.then(proc() =
@@ -151,7 +152,7 @@ proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.dis
         next.cb()))
   return next
 
-proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
+proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] =
   if promise == nil: return
   let next = Promise[U]()
   promise.then(proc(x: T) =
@@ -1041,7 +1042,12 @@ proc readCanceled*(buffer: Buffer): bool {.proxy.} =
 proc findAnchor*(buffer: Buffer, anchor: string): bool {.proxy.} =
   return buffer.document != nil and buffer.document.getElementById(anchor) != nil
 
-proc getLines*(buffer: Buffer, w: Slice[int]): tuple[numLines: int, lines: seq[SimpleFlexibleLine]] {.proxy.} =
+type GetLinesResult* = tuple[
+  numLines: int,
+  lines: seq[SimpleFlexibleLine]
+]
+
+proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
   var w = w
   if w.b < 0 or w.b > buffer.lines.high:
     w.b = buffer.lines.high

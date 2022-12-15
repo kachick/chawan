@@ -774,18 +774,28 @@ proc setStream*(container: Container, stream: Stream) =
     stream.flush()
   container.load()
 
+proc onreadline(container: Container, w: Slice[int], handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =
+  for line in res.lines:
+    handle(line)
+  if res.numLines > w.b + 1:
+    var w = w
+    w.a = w.b
+    w.b += 24
+    container.iface.getLines(w).then(proc(res: GetLinesResult) =
+      container.onreadline(w, handle, res))
+  else:
+    container.setNumLines(res.numLines, true)
+
 # Synchronously read all lines in the buffer.
-iterator readLines*(container: Container): SimpleFlexibleLine {.inline.} =
+proc readLines*(container: Container, handle: (proc(line: SimpleFlexibleLine))) =
   if container.code == 0:
     # load succeded
-    container.iface.getLines(0 .. -1).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
-      container.lines = res.lines
-      container.setNumLines(res.numLines, true))
+    let w = 0 .. 24
+    container.iface.getLines(w).then(proc(res: GetLinesResult) =
+      container.onreadline(w, handle, res))
     while container.iface.hasPromises:
-      # receive all lines
+      # fulfill all promises
       container.handleCommand()
-    for line in container.lines:
-      yield line
 
 proc handleEvent*(container: Container) =
   container.handleCommand()
