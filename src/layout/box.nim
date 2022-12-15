@@ -116,7 +116,11 @@ type
 
     width*: int
     height*: int
-    minwidth*: int
+    max_width*: Option[int]
+    max_height*: Option[int]
+    min_width*: Option[int]
+    min_height*: Option[int]
+    xminwidth*: int
     margin_top*: int
     margin_bottom*: int
     margin_left*: int

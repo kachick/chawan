@@ -33,7 +33,8 @@ type
     PROPERTY_BACKGROUND_COLOR, PROPERTY_POSITION, PROPERTY_LEFT,
     PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE,
     PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
-    PROPERTY_COUNTER_RESET
+    PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
+    PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -241,7 +242,11 @@ const PropertyNames = {
   "border-spacing": PROPERTY_BORDER_SPACING,
   "border-collapse": PROPERTY_BORDER_COLLAPSE,
   "quotes": PROPERTY_QUOTES,
-  "counter-reset": PROPERTY_COUNTER_RESET
+  "counter-reset": PROPERTY_COUNTER_RESET,
+  "max-width": PROPERTY_MAX_WIDTH,
+  "max-height": PROPERTY_MAX_HEIGHT,
+  "min-width": PROPERTY_MIN_WIDTH,
+  "min-height": PROPERTY_MIN_HEIGHT
 }.toTable()
 
 const ValueTypes* = [
@@ -280,7 +285,11 @@ const ValueTypes* = [
   PROPERTY_BORDER_SPACING: VALUE_LENGTH2,
   PROPERTY_BORDER_COLLAPSE: VALUE_BORDER_COLLAPSE,
   PROPERTY_QUOTES: VALUE_QUOTES,
-  PROPERTY_COUNTER_RESET: VALUE_COUNTER_RESET
+  PROPERTY_COUNTER_RESET: VALUE_COUNTER_RESET,
+  PROPERTY_MAX_WIDTH: VALUE_LENGTH,
+  PROPERTY_MAX_HEIGHT: VALUE_LENGTH,
+  PROPERTY_MIN_WIDTH: VALUE_LENGTH,
+  PROPERTY_MIN_HEIGHT: VALUE_LENGTH,
 ]
 
 const InheritedProperties = {
@@ -795,6 +804,17 @@ func cssCounterReset(d: CSSDeclaration): Option[seq[CSSCounterReset]] =
       else: return
   return some(res)
 
+func cssMaxMinSize(cval: CSSComponentValue): Option[CSSLength] =
+  if isToken(cval):
+    let tok = getToken(cval)
+    case tok.tokenType
+    of CSS_IDENT_TOKEN:
+      if tok.value == "none":
+        return some(CSSLength(auto: true))
+    of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN:
+      return some(cssLength(tok))
+    else: discard
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   template skip_whitespace =
     while i < d.value.len:
@@ -815,6 +835,13 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
       val.length = cssWordSpacing(cval)
     of PROPERTY_LINE_HEIGHT:
       val.length = cssLineHeight(cval)
+    of PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT, PROPERTY_MIN_WIDTH,
+       PROPERTY_MIN_HEIGHT:
+      let res = cssMaxMinSize(cval)
+      if res.isSome:
+        val.length = res.get
+      else:
+        raise newException(CSSValueError, "Invalid length")
     else:
       val.length = cssLength(cval)
   of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(cval)
@@ -868,7 +895,8 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
   of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING,
      PROPERTY_LINE_HEIGHT, PROPERTY_LEFT, PROPERTY_RIGHT, PROPERTY_TOP,
-     PROPERTY_BOTTOM:
+     PROPERTY_BOTTOM, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
+     PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT:
     return CSSLength(auto: true)
   else:
     return CSSLength(auto: false, unit: UNIT_PX, num: 0)

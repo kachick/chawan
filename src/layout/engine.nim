@@ -222,7 +222,7 @@ proc finish(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int) =
 
 func minwidth(atom: InlineAtom): int =
   if atom of InlineBlockBox:
-    return cast[InlineBlockBox](atom).innerbox.minwidth
+    return cast[InlineBlockBox](atom).innerbox.xminwidth
   return atom.width
 
 # pcomputed: computed values of parent, for white-space: pre, line-height
@@ -333,6 +333,10 @@ type PreferredDimensions = object
   padding_right: int
   padding_top: int
   padding_bottom: int
+  max_width: Option[int]
+  max_height: Option[int]
+  min_width: Option[int]
+  min_height: Option[int]
 
 proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width: int, height: Option[int]): PreferredDimensions =
   let pwidth = computed{"width"}
@@ -340,6 +344,22 @@ proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width:
     result.compwidth = width
   else:
     result.compwidth = pwidth.px(viewport, width)
+
+  if not computed{"max-width"}.auto:
+    result.max_width = some(computed{"max-width"}.px(viewport, width))
+  if not computed{"max-height"}.auto:
+    if computed{"max-height"}.unit != UNIT_PERC:
+      result.max_height = computed{"max-height"}.px(viewport).some
+    elif height.issome:
+      result.max_height = computed{"max-height"}.px(viewport, height.get).some
+
+  if not computed{"min-width"}.auto:
+    result.min_width = some(computed{"min-width"}.px(viewport, width))
+  if not computed{"min-height"}.auto:
+    if computed{"min-height"}.unit != UNIT_PERC:
+      result.compheight = computed{"min-height"}.px(viewport).some
+    elif height.issome:
+      result.compheight = computed{"min-height"}.px(viewport, height.get).some
 
   result.margin_top = computed{"margin-top"}.px(viewport, width)
   result.margin_bottom = computed{"margin-top"}.px(viewport, width)
@@ -377,6 +397,10 @@ proc setPreferredDimensions(box: BlockBox, width: int, height: Option[int]) =
   box.margin_bottom = preferred.margin_bottom
   box.margin_left = preferred.margin_left
   box.margin_right = preferred.margin_right
+  box.max_width = preferred.max_width
+  box.max_height = preferred.max_height
+  box.min_width = preferred.min_width
+  box.min_height = preferred.min_height
 
 proc newBlockBox_common2(box: BlockBox, parent: BlockBox, builder: BoxBuilder) {.inline.} =
   box.viewport = parent.viewport
@@ -388,12 +412,12 @@ proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, paren
   result.viewport = viewport
   result.computed = box.computed
   result.setPreferredDimensions(parentWidth, parentHeight)
-  result.shrink = result.computed{"width"}.auto and shrink
+  result.shrink = result.computed{"width"}.auto and shrink or result.computed{"position"} == POSITION_ABSOLUTE
 
 proc newBlockBox(parent: BlockBox, box: BoxBuilder): BlockBox =
   new(result)
   result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and parent.shrink
+  result.shrink = result.computed{"width"}.auto and parent.shrink or result.computed{"position"} == POSITION_ABSOLUTE
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
@@ -424,7 +448,7 @@ proc positionInlines(parent: BlockBox) =
 
   parent.width += parent.padding_right
 
-  parent.minwidth = max(parent.minwidth, parent.inline.minwidth)
+  parent.xminwidth = max(parent.xminwidth, parent.inline.minwidth)
 
   if parent.computed{"width"}.auto:
     if parent.shrink:
@@ -433,6 +457,14 @@ proc positionInlines(parent: BlockBox) =
       parent.width = max(parent.width, parent.compwidth)
   else:
     parent.width = parent.compwidth
+  if parent.max_width.isSome and parent.max_width.get < parent.width:
+    parent.width = parent.max_width.get
+  if parent.min_width.isSome and parent.width < parent.min_width.get:
+    parent.width = parent.min_width.get
+  if parent.max_height.isSome and parent.max_height.get < parent.height:
+    parent.height = parent.max_height.get
+  if parent.min_height.isSome and parent.height < parent.min_height.get:
+    parent.height = parent.min_height.get
 
 proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
@@ -639,13 +671,13 @@ proc positionFixed(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
     box.offset.x += left.px(box.viewport, last.compwidth)
     box.offset.x += box.margin_left
   elif not right.auto:
-    box.offset.x += last.width - right.px(box.viewport, box.compwidth) - box.width
+    box.offset.x += last.compwidth - right.px(box.viewport, box.compwidth) - box.width
     box.offset.x -= box.margin_right
   if not top.auto:
     box.offset.y += top.px(box.viewport, box.compheight.get(0))
     box.offset.y += box.margin_top
   elif not bottom.auto:
-    box.offset.y += last.height - bottom.px(box.viewport, box.compheight.get(0)) - box.height
+    box.offset.y += last.compheight.get(box.viewport.window.height_px) - bottom.px(box.viewport, box.compheight.get(0)) - box.height
     box.offset.y -= box.margin_bottom
   box.viewport.root.add(box)
 
@@ -718,7 +750,7 @@ proc positionBlocks(box: BlockBox) =
     y += child.height
     box.height += child.height
     box.width = max(box.width, child.width)
-    box.minwidth = max(box.minwidth, child.minwidth)
+    box.xminwidth = max(box.xminwidth, child.xminwidth)
     margin_todo = Strut()
     margin_todo.append(child.margin_bottom)
 
@@ -776,6 +808,14 @@ proc positionBlocks(box: BlockBox) =
 
   box.width += box.padding_left
   box.width += box.padding_right
+  if box.max_width.isSome and box.max_width.get < box.width:
+    box.width = box.max_width.get
+  if box.min_width.isSome and box.width < box.min_width.get:
+    box.width = box.min_width.get
+  if box.max_height.isSome and box.max_height.get < box.height:
+    box.height = box.max_height.get
+  if box.min_height.isSome and box.height < box.min_height.get:
+    box.height = box.min_height.get
 
 proc buildTableCaption(viewport: Viewport, box: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = false): BlockBox =
   result = viewport.newFlowRootBox(box, maxwidth, maxheight, shrink)
@@ -805,7 +845,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
       pctx.cols.setLen(n + cellbuilder.colspan)
     if ctx.reflow.len < n + cellbuilder.colspan:
       ctx.reflow.setLen(n + cellbuilder.colspan)
-    let minw = cell.minwidth div cellbuilder.colspan
+    let minw = cell.xminwidth div cellbuilder.colspan
     let w = cell.width div cellbuilder.colspan
     for i in n ..< n + cellbuilder.colspan:
       ctx.width += pctx.inlinespacing
@@ -1066,8 +1106,7 @@ proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox =
 
 # Establish a new flow-root context and build a block box.
 proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
-  let box = viewport.newFlowRootBox(builder, viewport.window.width_px)
-  #box.shrink = false
+  let box = viewport.newFlowRootBox(builder, viewport.window.width_px, shrink = false)
   viewport.root.add(box)
   if builder.inlinelayout:
     box.buildInlineLayout(builder.children)
@@ -1229,6 +1268,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   if styledNode.node != nil:
     let elem = Element(styledNode.node)
     if elem.tagType == TAG_BR:
+      ctx.iflush()
       ctx.ibox = box.getTextBox()
       ctx.ibox.newline = true
       ctx.iflush()
