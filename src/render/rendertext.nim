@@ -55,6 +55,7 @@ type StreamRenderer* = object
   format: Format
   af: bool
   decoder: DecoderStream
+  newline: bool
 
 proc newStreamRenderer*(stream: Stream): StreamRenderer =
   result.format = newFormat()
@@ -73,6 +74,10 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
   var buf = newSeq[Rune](len * 4)
   let n = renderer.decoder.readData(addr buf[0], buf.len * sizeof(buf[0]))
   while i < n div sizeof(buf[0]):
+    if renderer.newline:
+      # avoid newline at end of stream
+      grid.addLine()
+      renderer.newline = false
     let r = buf[i]
     if r.isAscii():
       let c = cast[char](r)
@@ -86,7 +91,7 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       case c
       of '\n':
         add_format
-        grid.addLine()
+        renderer.newline = true
       of '\r': discard
       of '\t':
         add_format

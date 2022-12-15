@@ -13,6 +13,7 @@ when defined(posix):
 import std/exitprocs
 
 import bindings/quickjs
+import buffer/buffer
 import buffer/container
 import css/sheet
 import config/config
@@ -123,9 +124,9 @@ proc command0(client: Client, src: string, filename = "<command>", silence = fal
   free(ret)
 
 proc command(client: Client, src: string) =
-  restoreStdin(client.console.tty.getFileHandle())
   client.command0(src)
-  client.console.container.cursorLastLine()
+  client.console.container.requestLines().then(proc() =
+    client.console.container.cursorLastLine())
 
 proc quit(client: Client, code = 0) {.jsfunc.} =
   if client.alive:
@@ -385,6 +386,7 @@ proc newConsole(pager: Pager, tty: File): Console =
       raise newException(Defect, "Failed to open file for console pipe.")
     result.err = newFileStream(f)
     result.err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
+    result.err.flush()
     result.pager = pager
     result.tty = tty
     pager.registerContainer(result.container)
@@ -448,6 +450,7 @@ proc show(console: Console) {.jsfunc.} =
   if console.pager.container != console.container:
     console.prev = console.pager.container
     console.pager.setContainer(console.container)
+    console.container.requestLines()
 
 proc hide(console: Console) {.jsfunc.} =
   if console.pager.container == console.container:

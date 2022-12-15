@@ -115,6 +115,9 @@ proc newBuffer*(dispatcher: Dispatcher, config: BufferConfig,
   istream.sread(result.process)
   result.pos.setx = -1
 
+func location*(container: Container): URL {.jsfunc.} =
+  container.source.location
+
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
 
@@ -271,7 +274,7 @@ proc setNumLines(container: Container, lines: int, finish = false) =
     container.updateCursor()
     container.triggerEvent(STATUS)
 
-proc requestLines*(container: Container, w = container.lineWindow) =
+proc requestLines*(container: Container, w = container.lineWindow): auto {.discardable.} =
   container.iface.getLines(w).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
     container.lines.setLen(w.len)
     container.lineshift = w.a
