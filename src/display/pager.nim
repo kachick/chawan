@@ -65,6 +65,7 @@ func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 func getRoot(container: Container): Container =
   var c = container
   while c.parent != nil: c = c.parent
+  return c
 
 iterator all_children(parent: Container): Container {.inline.} =
   var stack = newSeqOfCap[Container](parent.children.len)
