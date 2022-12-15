@@ -472,17 +472,6 @@ proc genericRCDATAElementParsingAlgorithm(parser: var HTML5Parser, token: Token)
   parser.oldInsertionMode = parser.insertionMode
   parser.insertionMode = TEXT
 
-proc pushElement(parser: var HTML5Parser, node: Element) =
-  parser.openElements.add(node)
-  parser.tokenizer.hasnonhtml = not node.inHTMLNamespace()
-
-proc popElement(parser: var HTML5Parser): Element =
-  result = parser.openElements.pop()
-  if result.tagType == TAG_TEXTAREA:
-    result.resetElement()
-  if parser.openElements.len == 0:
-    parser.tokenizer.hasnonhtml = false
-
 # 13.2.6.3
 proc generateImpliedEndTags(parser: var HTML5Parser) =
   const tags = {TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P,
