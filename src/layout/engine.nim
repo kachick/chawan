@@ -323,6 +323,8 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSC
   state.addWord()
 
 type PreferredDimensions = object
+  # warning: this is actually the available space, not the computed width.
+  # TODO rename this
   compwidth: int
   compheight: Option[int]
   margin_top: int
@@ -357,9 +359,9 @@ proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width:
     result.min_width = some(computed{"min-width"}.px(viewport, width))
   if not computed{"min-height"}.auto:
     if computed{"min-height"}.unit != UNIT_PERC:
-      result.compheight = computed{"min-height"}.px(viewport).some
+      result.max_height = computed{"min-height"}.px(viewport).some
     elif height.issome:
-      result.compheight = computed{"min-height"}.px(viewport, height.get).some
+      result.max_height = computed{"min-height"}.px(viewport, height.get).some
 
   result.margin_top = computed{"margin-top"}.px(viewport, width)
   result.margin_bottom = computed{"margin-top"}.px(viewport, width)
@@ -439,11 +441,12 @@ func isShrink(box: BlockBox, parent: BlockBox = nil, override = false): bool =
       return parent.shrink and no_specified_width
   else: discard
 
-proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, parentHeight = none(int), shrink = true): BlockBox {.inline.} =
+proc newFlowRootBox(viewport: Viewport, builder: BoxBuilder, parentWidth: int, parentHeight = none(int), shrink = true): BlockBox {.inline.} =
   new(result)
   result.viewport = viewport
-  result.computed = box.computed
+  result.computed = builder.computed
   result.setPreferredDimensions(parentWidth, parentHeight)
+  result.node = builder.node
   result.shrink = result.isShrink(nil, shrink)
 
 proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
@@ -451,6 +454,7 @@ proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
   result.viewport = parent.viewport
   result.computed = builder.computed
   result.setPreferredDimensions(parent.compwidth, parent.compheight)
+  result.node = builder.node
   result.shrink = result.isShrink(parent)
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
@@ -458,6 +462,7 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   result.viewport = parent.viewport
   result.computed = builder.content.computed
   result.setPreferredDimensions(parent.compwidth, parent.compheight)
+  result.node = builder.node
   result.shrink = result.isShrink(parent)
 
 proc newInlineBlock(viewport: Viewport, builder: BoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
@@ -470,6 +475,18 @@ proc newInlineContext(parent: BlockBox): InlineContext =
   result.viewport = parent.viewport
   result.shrink = parent.shrink
 
+proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox
+proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
+proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
+proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox
+
+proc applyInlineDimensions(parent: BlockBox) =
+  parent.height += parent.inline.height
+  if parent.compheight.issome:
+    parent.height = parent.compheight.get
+  parent.width = max(parent.width, parent.inline.maxwidth)
+  parent.xminwidth = max(parent.xminwidth, parent.inline.minwidth)
+
 proc positionInlines(parent: BlockBox) =
   parent.width += parent.padding_left
   parent.inline.offset.x += parent.padding_left
@@ -480,8 +497,6 @@ proc positionInlines(parent: BlockBox) =
   parent.height += parent.padding_bottom
 
   parent.width += parent.padding_right
-
-  parent.xminwidth = max(parent.xminwidth, parent.inline.minwidth)
 
   if parent.computed{"width"}.auto:
     if parent.shrink:
@@ -499,17 +514,6 @@ proc positionInlines(parent: BlockBox) =
   if parent.min_height.isSome and parent.height < parent.min_height.get:
     parent.height = parent.min_height.get
 
-proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox
-proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
-proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
-proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox
-
-proc applyInlineDimensions(parent: BlockBox) =
-  parent.height += parent.inline.height
-  if parent.compheight.issome:
-    parent.height = parent.compheight.get
-  parent.width = max(parent.width, parent.inline.maxwidth)
-
 # Builder only contains inline boxes.
 proc buildInlineLayout(parent: BlockBox, children: seq[BoxBuilder]) =
   parent.inline = parent.buildInlines(children)
@@ -525,27 +529,27 @@ proc buildBlockLayout(parent: BlockBox, children: seq[BoxBuilder], node: StyledN
     discard parent.viewport.absolutes.pop()
 
 #TODO this is horribly inefficient
-func firstBaseline(bctx: BlockBox): int =
-  if bctx.inline != nil:
-    if bctx.inline.lines.len > 0:
-      return bctx.offset.y + bctx.inline.lines[0].baseline
-    return bctx.offset.y
-  if bctx.nested.len > 0:
-    return bctx.offset.y + bctx.nested[^1].firstBaseline
-  bctx.offset.y
+func firstBaseline(box: BlockBox): int =
+  if box.inline != nil:
+    if box.inline.lines.len > 0:
+      return box.offset.y + box.inline.lines[0].baseline
+    return box.offset.y
+  if box.nested.len > 0:
+    return box.offset.y + box.nested[^1].firstBaseline
+  box.offset.y
 
 #TODO ditto
-func baseline(bctx: BlockBox): int =
-  if bctx.inline != nil:
+func baseline(box: BlockBox): int =
+  if box.inline != nil:
     var y = 0
-    for line in bctx.inline.lines:
-      if line == bctx.inline.lines[^1]:
-        return bctx.offset.y + y + line.baseline
+    for line in box.inline.lines:
+      if line == box.inline.lines[^1]:
+        return box.offset.y + y + line.baseline
       y += line.height
-    return bctx.offset.y
-  if bctx.nested.len > 0:
-    return bctx.offset.y + bctx.nested[^1].baseline
-  bctx.offset.y
+    return box.offset.y + box.height
+  if box.nested.len > 0:
+    return box.offset.y + box.nested[^1].baseline
+  box.offset.y
 
 proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineBlock(parent.viewport, builder, parentWidth)
@@ -1382,6 +1386,9 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
   of CONTENT_STRING:
     #TODO canGenerateAnonymousInline?
     ctx.generateInlineText(child.content.s, parent)
+  of CONTENT_IMAGE:
+    #TODO idk
+    ctx.generateInlineText(child.content.s, parent)
 
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   for child in styledNode.children:
@@ -1426,6 +1433,7 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
 
 proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil): BlockBoxBuilder =
   let box = getBlockBox(styledNode.computed)
+  box.node = styledNode
   var ctx = newInnerBlockContext(styledNode, box, viewport, parent)
 
   if marker.issome:
@@ -1434,12 +1442,12 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
 
   ctx.generateInnerBlockBox()
 
-  if ctx.blockgroup.boxes.len > 0:
-    # Avoid unnecessary anonymous block boxes
-    if box.children.len == 0:
-      box.children = ctx.blockgroup.boxes
-      box.inlinelayout = true
-      ctx.blockgroup.boxes.setLen(0)
+  # Avoid unnecessary anonymous block boxes. This also helps set our layout to
+  # inline even if no inner anonymous block was generated.
+  if box.children.len == 0:
+    box.children = ctx.blockgroup.boxes
+    box.inlinelayout = true
+    ctx.blockgroup.boxes.setLen(0)
   ctx.flush()
   return box
 

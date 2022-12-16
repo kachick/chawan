@@ -2,7 +2,6 @@ import options
 
 import css/stylednode
 import css/values
-import html/dom
 import io/window
 import types/color
 
@@ -99,12 +98,12 @@ type
     minwidth*: int
     maxwidth*: int
     viewport*: Viewport
-    node*: Node
     shrink*: bool
     format*: ComputedFormat
 
   BlockBox* = ref object of RootObj
     inline*: InlineContext
+    node*: StyledNode
     nested*: seq[BlockBox]
     computed*: CSSComputedValues
     viewport*: Viewport

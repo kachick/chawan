@@ -300,6 +300,18 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
 
     if ctx.computed{"background-color"}.a != 0: #TODO color blending
       grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, window)
+    if ctx.computed{"background-image"}.t == CONTENT_IMAGE:
+      # ugly hack for background-image display... TODO actually implement images
+      let s = ctx.computed{"background-image"}.s # [img]
+      let w = s.len * window.ppc
+      var x = x
+      if ctx.width < w:
+        # text is larger than image; center it to minimize error
+        x -= w div 2
+        x += ctx.width div 2
+      x = x div window.ppc
+      y = y div window.ppl
+      grid.setText(s, ComputedFormat(node: ctx.node), x, y)
 
     if ctx of ListItemBox:
       let ctx = ListItemBox(ctx)

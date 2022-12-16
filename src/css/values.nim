@@ -34,7 +34,7 @@ type
     PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE,
     PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
     PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
-    PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT
+    PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -42,7 +42,7 @@ type
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
     VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
-    VALUE_COUNTER_RESET
+    VALUE_COUNTER_RESET, VALUE_IMAGE
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -101,7 +101,7 @@ type
 
   CSSContentType* = enum
     CONTENT_STRING, CONTENT_OPEN_QUOTE, CONTENT_CLOSE_QUOTE,
-    CONTENT_NO_OPEN_QUOTE, CONTENT_NO_CLOSE_QUOTE
+    CONTENT_NO_OPEN_QUOTE, CONTENT_NO_CLOSE_QUOTE, CONTENT_IMAGE
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -177,6 +177,8 @@ type
       bordercollapse*: CSSBorderCollapse
     of VALUE_COUNTER_RESET:
       counterreset*: seq[CSSCounterReset]
+    of VALUE_IMAGE:
+      image*: CSSContent
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -246,7 +248,8 @@ const PropertyNames = {
   "max-width": PROPERTY_MAX_WIDTH,
   "max-height": PROPERTY_MAX_HEIGHT,
   "min-width": PROPERTY_MIN_WIDTH,
-  "min-height": PROPERTY_MIN_HEIGHT
+  "min-height": PROPERTY_MIN_HEIGHT,
+  "background-image": PROPERTY_BACKGROUND_IMAGE
 }.toTable()
 
 const ValueTypes* = [
@@ -290,6 +293,7 @@ const ValueTypes* = [
   PROPERTY_MAX_HEIGHT: VALUE_LENGTH,
   PROPERTY_MIN_WIDTH: VALUE_LENGTH,
   PROPERTY_MIN_HEIGHT: VALUE_LENGTH,
+  PROPERTY_BACKGROUND_IMAGE: VALUE_IMAGE
 ]
 
 const InheritedProperties = {
@@ -815,6 +819,13 @@ func cssMaxMinSize(cval: CSSComponentValue): Option[CSSLength] =
       return some(cssLength(tok))
     else: discard
 
+#TODO this should be a separate type
+func cssImage(cval: CSSComponentValue): Option[CSSContent] =
+  if isToken(cval):
+    let tok = getToken(cval)
+    if tok.tokenType == CSS_URL_TOKEN or tok.tokenType == CSS_BAD_URL_TOKEN:
+      return some(CSSContent(t: CONTENT_IMAGE, s: "[img]"))
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   template skip_whitespace =
     while i < d.value.len:
@@ -880,6 +891,12 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
       val.counterreset = res.get
     else:
       raise newException(CSSValueError, "Invalid counter reset")
+  of VALUE_IMAGE:
+    let res = cssImage(d)
+    if res.isSome:
+      val.image = res.get
+    else:
+      raise newException(CSSValueError, "Invalid image")
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -1015,16 +1032,22 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
   of SHORTHAND_BACKGROUND:
     let global = cssGlobal(d)
     let bgcolorptype = PROPERTY_BACKGROUND_COLOR
-    let bgcolorvtype = valueType(bgcolorptype)
-    let bgcolorval = CSSComputedValue(t: bgcolorptype, v: bgcolorvtype)
+    let bgcolorval = CSSComputedValue(t: bgcolorptype, v: valueType(bgcolorptype))
+    let bgimageptype = PROPERTY_BACKGROUND_IMAGE
+    let bgimageval = CSSComputedValue(t: bgimageptype, v: valueType(bgimageptype))
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
-        try:
-          bgcolorval.color = cssColor(tok)
-          result.add((bgcolorval, global))
-          break
-        except CSSValueError:
-          discard
+        let img = cssImage(tok)
+        if img.isSome:
+          bgimageval.image = img.get
+          result.add((bgimageval, global))
+        else:
+          try:
+            bgcolorval.color = cssColor(tok)
+            result.add((bgcolorval, global))
+            break
+          except CSSValueError:
+            discard
     else:
       result.add((bgcolorval, global))
 
@@ -1055,6 +1078,7 @@ func equals*(a, b: CSSComputedValue): bool =
   of VALUE_BORDER_COLLAPSE: return a.bordercollapse == b.bordercollapse
   of VALUE_QUOTES: return a.quotes == b.quotes
   of VALUE_COUNTER_RESET: return a.counterreset == b.counterreset
+  of VALUE_IMAGE: return a.image == b.image
   of VALUE_NONE: return true
   return false
 

@@ -51,7 +51,7 @@ type
   StyledNode* = ref object
     parent*: StyledNode
     node*: Node
-    pseudo*: PseudoElem #TODO this should be in element only
+    pseudo*: PseudoElem
     case t*: StyledType
     of STYLED_TEXT:
       text*: string
@@ -82,6 +82,8 @@ func checked(element: Element): bool =
 
 func isValid*(styledNode: StyledNode): bool =
   if styledNode.t == STYLED_TEXT:
+    return true
+  if styledNode.t == STYLED_REPLACEMENT:
     return true
   if styledNode.node != nil and Element(styledNode.node).invalid:
     return false

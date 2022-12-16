@@ -134,6 +134,9 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_align
   of TAG_COL:
     map_width
+  of TAG_IMG:
+    map_width
+    map_height
   of TAG_BODY:
     map_bgcolor
     map_text
@@ -262,6 +265,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
           let content = HTMLInputElement(styledParent.node).inputString()
           if content.len > 0:
             let styledText = styledParent.newStyledText(content)
+            # Note: some pseudo-elements (like input text) generate text nodes
+            # directly, so we have to cache them like this.
             styledText.pseudo = pseudo
             styledParent.children.add(styledText)
         of PSEUDO_TEXTAREA_TEXT:
@@ -270,6 +275,11 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
             let styledText = styledParent.newStyledText(content)
             styledText.pseudo = pseudo
             styledParent.children.add(styledText)
+        of PSEUDO_IMAGE:
+          let content = CSSContent(t: CONTENT_IMAGE, s: "[img]")
+          let styledText = styledParent.newStyledReplacement(content)
+          styledText.pseudo = pseudo
+          styledParent.children.add(styledText)
         of PSEUDO_NONE: discard
       else:
         assert child != nil
@@ -344,14 +354,16 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
       stack_append styledChild, PSEUDO_AFTER
 
-      if elem.tagType != TAG_TEXTAREA:
+      if elem.tagType == TAG_TEXTAREA:
+        stack_append styledChild, PSEUDO_TEXTAREA_TEXT
+      elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
+        stack_append styledChild, PSEUDO_IMAGE
+      else:
         for i in countdown(elem.childNodes.high, 0):
           if elem.childNodes[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
             stack_append styledChild, elem.childNodes[i]
         if elem.tagType == TAG_INPUT:
           stack_append styledChild, PSEUDO_INPUT_TEXT
-      else:
-        stack_append styledChild, PSEUDO_TEXTAREA_TEXT
 
       stack_append styledChild, PSEUDO_BEFORE
 
