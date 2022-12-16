@@ -402,32 +402,65 @@ proc setPreferredDimensions(box: BlockBox, width: int, height: Option[int]) =
   box.min_width = preferred.min_width
   box.min_height = preferred.min_height
 
-proc newBlockBox_common2(box: BlockBox, parent: BlockBox, builder: BoxBuilder) {.inline.} =
-  box.viewport = parent.viewport
-  box.computed = builder.computed
-  box.setPreferredDimensions(parent.compwidth, parent.compheight)
+# The shrink variable specifies whether a block's inner layout should use all
+# available space or not. When shrink is set to false, (currently) the
+# following two things happen:
+# * The horizontal line alignment algorithm uses the specified width instead
+#   of the available width. Obviously, if this is zero, it does nothing.
+# * Block boxes use up at most as much space as their contents do.
+func isShrink(box: BlockBox, parent: BlockBox = nil, override = false): bool =
+  if box.computed{"position"} == POSITION_ABSOLUTE:
+    # Absolutely positioned elements take up as much space as their contents.
+    return true
+  template no_specified_width: bool =
+    # We check if our used width has already been specified.
+    box.computed{"width"}.auto and box.max_width.isNone and box.min_width.isNone
+  case box.computed{"display"}
+  of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
+    # Inline blocks/tables always take up as much space as their contents.
+    return no_specified_width
+  of DISPLAY_TABLE:
+    # Always shrink tables.
+    return true
+  of DISPLAY_BLOCK, DISPLAY_TABLE_CELL, DISPLAY_TABLE_ROW,
+     DISPLAY_TABLE_CAPTION, DISPLAY_LIST_ITEM:
+    if parent == nil:
+      # We're in a new block formatting context; we can take up all available
+      # space we want.
+      # ...except in the second pass of table cell generation, where the first
+      # pass is used to determine the maximum width of cells, and the second
+      # pass is what we actually end up using.
+      return override
+    else:
+      # Basically, check if our block formatting context has infinite width.
+      # If yes, there's no need to shrink anyways; we can take up all available
+      # space.
+      # If not, and no width was specified, we have to enable shrink.
+      return parent.shrink and no_specified_width
+  else: discard
 
 proc newFlowRootBox(viewport: Viewport, box: BoxBuilder, parentWidth: int, parentHeight = none(int), shrink = true): BlockBox {.inline.} =
   new(result)
   result.viewport = viewport
   result.computed = box.computed
   result.setPreferredDimensions(parentWidth, parentHeight)
-  result.shrink = result.computed{"width"}.auto and shrink or result.computed{"position"} == POSITION_ABSOLUTE
+  result.shrink = result.isShrink(nil, shrink)
 
-proc newBlockBox(parent: BlockBox, box: BoxBuilder): BlockBox =
+proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
   new(result)
-  result.newBlockBox_common2(parent, box)
-  result.shrink = result.computed{"width"}.auto and parent.shrink or result.computed{"position"} == POSITION_ABSOLUTE
+  result.viewport = parent.viewport
+  result.computed = builder.computed
+  result.setPreferredDimensions(parent.compwidth, parent.compheight)
+  result.shrink = result.isShrink(parent)
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
-  result.newBlockBox_common2(parent, builder.content)
+  result.viewport = parent.viewport
+  result.computed = builder.content.computed
+  result.setPreferredDimensions(parent.compwidth, parent.compheight)
+  result.shrink = result.isShrink(parent)
 
-proc newInlineBlock(viewport: Viewport, builder: InlineBlockBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
-  new(result)
-  result.innerbox = newFlowRootBox(viewport, builder.content, parentWidth, parentHeight)
-
-proc newInlineTable(viewport: Viewport, builder: TableBoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
+proc newInlineBlock(viewport: Viewport, builder: BoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)
   result.innerbox = newFlowRootBox(viewport, builder, parentWidth, parentHeight)
 
@@ -514,22 +547,17 @@ func baseline(bctx: BlockBox): int =
     return bctx.offset.y + bctx.nested[^1].baseline
   bctx.offset.y
 
-proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
-  assert builder.content != nil
+proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineBlock(parent.viewport, builder, parentWidth)
 
-  let blockbuilder = builder.content
-  if blockbuilder.inlinelayout:
-    result.innerbox.buildInlineLayout(blockbuilder.children)
+  if builder.inlinelayout:
+    result.innerbox.buildInlineLayout(builder.children)
   else:
-    result.innerbox.buildBlockLayout(blockbuilder.children, blockbuilder.node)
+    result.innerbox.buildBlockLayout(builder.children, builder.node)
 
   let pwidth = builder.computed{"width"}
   if pwidth.auto:
-    # Half-baked shrink-to-fit
-    # Currently the misery that is determining content width is deferred to the
-    # inline layouting algorithm, which doesn't work that great but that's what
-    # we have.
+    # shrink-to-fit
     result.innerbox.width = min(parentWidth, result.innerbox.width)
   else:
     result.innerbox.width = pwidth.px(parent.viewport, parentWidth)
@@ -550,16 +578,13 @@ proc buildInlineBlock(builder: InlineBlockBoxBuilder, parent: InlineContext, par
 
 # Copy-pasted wholesale from above. TODO generalize this somehow
 proc buildInlineTableBox(builder: TableBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
-  result = newInlineTable(parent.viewport, builder, parentWidth)
+  result = newInlineBlock(parent.viewport, builder, parentWidth)
 
   result.innerbox.nested.add(buildTable(builder, result.innerbox))
 
   let pwidth = builder.computed{"width"}
   if pwidth.auto:
-    # Half-baked shrink-to-fit
-    # Currently the misery that is determining content width is deferred to the
-    # inline layouting algorithm, which doesn't work that great but that's what
-    # we have.
+    # shrink-to-fit
     result.innerbox.width = min(parentWidth, result.innerbox.width)
   else:
     result.innerbox.width = pwidth.px(parent.viewport, parentWidth)
@@ -601,14 +626,9 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
       let child = InlineBoxBuilder(child)
       child.ictx = box.ictx
       buildInline(viewport, child, parentWidth)
-    of DISPLAY_INLINE_BLOCK:
-      let child = InlineBlockBoxBuilder(child)
+    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
+      let child = BlockBoxBuilder(child)
       let iblock = child.buildInlineBlock(box.ictx, parentWidth, parentHeight)
-      box.ictx.addAtom(iblock, parentWidth, box.computed, child.computed)
-      box.ictx.whitespacenum = 0
-    of DISPLAY_INLINE_TABLE:
-      let child = TableBoxBuilder(child)
-      let iblock = child.buildInlineTableBox(box.ictx, parentWidth, parentHeight)
       box.ictx.addAtom(iblock, parentWidth, box.computed, child.computed)
       box.ictx.whitespacenum = 0
     else:
@@ -624,26 +644,26 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
 
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
   let ictx = parent.newInlineContext()
+  var usedwidth = parent.compwidth
+  if parent.max_width.isSome and parent.max_width.get > usedwidth:
+    usedwidth = parent.max_width.get
+  if parent.min_width.isSome and parent.min_width.get < usedwidth:
+    usedwidth = parent.min_width.get
   if inlines.len > 0:
     for child in inlines:
       case child.computed{"display"}
       of DISPLAY_INLINE:
         let child = InlineBoxBuilder(child)
         child.ictx = ictx
-        buildInline(parent.viewport, child, parent.compwidth, parent.compheight)
-      of DISPLAY_INLINE_BLOCK:
-        let child = InlineBlockBoxBuilder(child)
-        let iblock = child.buildInlineBlock(ictx, parent.compwidth)
-        ictx.addAtom(iblock, parent.compwidth, parent.computed, child.computed)
-        ictx.whitespacenum = 0
-      of DISPLAY_INLINE_TABLE:
-        let child = TableBoxBuilder(child)
-        let iblock = child.buildInlineTableBox(ictx, parent.compwidth)
-        ictx.addAtom(iblock, parent.compwidth, parent.computed, child.computed)
+        buildInline(parent.viewport, child, usedwidth, parent.compheight)
+      of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
+        let child = BlockBoxBuilder(child)
+        let iblock = child.buildInlineBlock(ictx, usedwidth)
+        ictx.addAtom(iblock, usedwidth, parent.computed, child.computed)
         ictx.whitespacenum = 0
       else:
         assert false, "child.t is " & $child.computed{"display"}
-    ictx.finish(parent.computed, parent.compwidth)
+    ictx.finish(parent.computed, usedwidth)
   return ictx
 
 proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
@@ -1121,11 +1141,6 @@ proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
   result.computed = computed.copyProperties()
   result.computed{"display"} = DISPLAY_BLOCK
 
-proc getInlineBlockBox(computed: CSSComputedValues): InlineBlockBoxBuilder =
-  new(result)
-  result.computed = computed.copyProperties()
-  result.computed{"display"} = DISPLAY_INLINE_BLOCK
-
 proc getTextBox(box: BoxBuilder): InlineBoxBuilder =
   new(result)
   result.inlinelayout = true
@@ -1294,8 +1309,8 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     ctx.generateInlineBoxes(styledNode)
   of DISPLAY_INLINE_BLOCK:
     ctx.iflush()
-    let childbox = getInlineBlockBox(styledNode.computed)
-    childbox.content = ctx.generateBlockBox(styledNode)
+    let childbox = ctx.generateBlockBox(styledNode)
+    childbox.computed{"display"} = DISPLAY_INLINE_BLOCK
     ctx.blockgroup.add(childbox)
   of DISPLAY_TABLE:
     ctx.flush()
