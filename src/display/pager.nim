@@ -250,7 +250,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
 proc clearStatusMessage(pager: Pager) =
   pager.statusgrid = newFixedGrid(pager.statusgrid.width)
 
-proc writeStatusMessage(pager: Pager, str: string, format: Format = Format()) =
+proc writeStatusMessage(pager: Pager, str: string, format: Format = newFormat()) =
   pager.clearStatusMessage()
   var i = 0
   for r in str.runes:
@@ -275,11 +275,13 @@ proc refreshStatusMsg*(pager: Pager) =
     pager.writeStatusMessage(pager.alerts[0])
     pager.alerts.delete(0)
   else:
+    container.clearHover()
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
               $container.atPercentOf() & "%) " & "<" & container.getTitle() & ">"
-    if container.hovertext.len > 0:
-      msg &= " " & container.hovertext
-    var format: Format
+    let h = container.getHoverText()
+    if h != "":
+      msg &= " " & h
+    var format = newFormat()
     format.reverse = true
     pager.writeStatusMessage(msg, format)
 
@@ -717,7 +719,6 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
     else:
       pager.alert("Can't load " & $container.source.location & " (error code " & $container.code & ")")
-      pager.refreshStatusMsg()
     if pager.container == nil:
       return false
   of SUCCESS:
@@ -785,7 +786,6 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of ALERT:
     if pager.container == container:
       pager.alert(event.msg)
-      pager.refreshStatusMsg()
   of NO_EVENT: discard
   return true
 

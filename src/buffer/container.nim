@@ -72,7 +72,8 @@ type
     height*: int
     contenttype*: Option[string]
     title*: string
-    hovertext*: string
+    hovertext*: array[HoverType, string]
+    lastpeek: HoverType
     source*: BufferSource
     pos: CursorPosition
     bpos: seq[CursorPosition]
@@ -257,6 +258,11 @@ func findHighlights*(container: Container, y: int): seq[Highlight] =
     if y in hl:
       result.add(hl)
 
+func getHoverText*(container: Container): string =
+  for t in HoverType:
+    if container.hovertext[t] != "":
+      return container.hovertext[t]
+
 proc triggerEvent(container: Container, event: ContainerEvent) =
   container.events.addLast(event)
 
@@ -291,8 +297,11 @@ proc redraw*(container: Container) {.jsfunc.} =
 
 proc sendCursorPosition(container: Container) =
   container.iface.updateHover(container.cursorx, container.cursory).then(proc(res: UpdateHoverResult) =
-    if res.hover.isSome:
-      container.hovertext = res.hover.get
+    if res.link.isSome:
+      container.hovertext[HOVER_LINK] = res.link.get
+    if res.title.isSome:
+      container.hovertext[HOVER_TITLE] = res.title.get
+    if res.link.isSome or res.title.isSome:
       container.triggerEvent(STATUS)
     if res.repaint:
       container.needslines = true)
@@ -754,9 +763,24 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
 proc peek*(container: Container) {.jsfunc.} =
   container.alert($container.source.location)
 
+proc clearHover*(container: Container) =
+  container.lastpeek = low(HoverType)
+
 proc peekCursor*(container: Container) {.jsfunc.} =
-  if container.hovertext != "":
-    container.alert(container.hovertext)
+  var p = container.lastpeek
+  while true:
+    if container.hovertext[p] != "":
+      container.alert($p & ": " & container.hovertext[p])
+      break
+    if p < high(HoverType):
+      inc p
+    else:
+      p = low(HoverType)
+    if p == container.lastpeek: break
+  if container.lastpeek < high(HoverType):
+    inc container.lastpeek
+  else:
+    container.lastpeek = low(HoverType)
 
 proc handleCommand(container: Container) =
   var packetid, len: int

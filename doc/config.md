@@ -614,7 +614,9 @@ open the current buffer's contents as HTML.</td>
 
 <tr>
 <td>`pager.peekCursor()`</td>
-<td>Display an alert message of the URL under the cursor.</td>
+<td>Display an alert message of the URL or title under the cursor. Multiple
+calls allow cycling through the two. (i.e. by default, press u once -> title,
+press again -> URL)</td>
 </tr>
 
 </table>

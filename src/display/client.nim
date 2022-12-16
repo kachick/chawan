@@ -140,6 +140,11 @@ proc feedNext(client: Client) {.jsfunc.} =
 proc alert(client: Client, msg: string) {.jsfunc.} =
   client.pager.alert(msg)
 
+proc handlePagerEvents(client: Client) =
+  let container = client.pager.container
+  if container != nil and not client.pager.handleEvents(container):
+    client.quit(1)
+
 proc input(client: Client) =
   restoreStdin(client.console.tty.getFileHandle())
   while true:
@@ -169,6 +174,7 @@ proc input(client: Client) =
       let action = getNormalAction(client.config, client.s)
       client.evalJSFree(action, "<command>")
       if not client.feedNext:
+        client.handlePagerEvents()
         client.pager.refreshStatusMsg()
     if not client.feedNext:
       client.s = ""
@@ -282,10 +288,7 @@ proc inputLoop(client: Client) =
       if Read in event.events:
         if event.fd == client.console.tty.getFileHandle():
           client.input()
-          let container = client.pager.container
-          if container != nil and not client.pager.handleEvents(container):
-            client.quit(1)
-          stdout.flushFile()
+          client.handlePagerEvents()
         else:
           let container = client.fdmap[event.fd]
           if not client.pager.handleEvent(container):
@@ -310,7 +313,7 @@ proc inputLoop(client: Client) =
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
-      client.pager.refreshStatusMsg()
+      client.handlePagerEvents()
     client.pager.draw()
     client.acceptBuffers()
 
@@ -334,10 +337,6 @@ proc dumpLoop(client: Client) =
           let timeout = client.timeouts[id]
           timeout.handler()
           client.clearTimeout(id)
-    if client.pager.scommand != "":
-      client.command(client.pager.scommand)
-      client.pager.scommand = ""
-      client.pager.refreshStatusMsg()
     client.acceptBuffers()
 
 proc headlessLoop(client: Client) =

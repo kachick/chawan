@@ -51,6 +51,10 @@ type
     GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR, CANCEL,
     GET_TITLE
 
+  HoverType* = enum
+    HOVER_TITLE = "TITLE"
+    HOVER_LINK = "URL"
+
   BufferMatch* = object
     success*: bool
     x*: int
@@ -88,7 +92,7 @@ type
     timeouts: Table[int, (proc())]
     tasks: array[BufferCommand, int] #TODO this should have arguments
     savetask: bool
-    hovertext: string
+    hovertext: array[HoverType, string]
 
   # async, but worse
   EmptyPromise = ref object of RootObj
@@ -280,15 +284,6 @@ func getTitleAttr(node: StyledNode): string =
         return element.attr("title")
   #TODO pseudo-elements
 
-func getLink(node: StyledNode): HTMLAnchorElement =
-  if node == nil:
-    return nil
-  if node.t == STYLED_ELEMENT and node.node != nil and Element(node.node).tagType == TAG_A:
-    return HTMLAnchorElement(node.node)
-  if node.node != nil:
-    return HTMLAnchorElement(node.node.findAncestor({TAG_A}))
-  #TODO ::before links?
-
 const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA
 }
@@ -301,6 +296,22 @@ func getClickable(styledNode: StyledNode): Element =
     if element.tagType in ClickableElements:
       return element
   styledNode.node.findAncestor(ClickableElements)
+
+func getClickHover(styledNode: StyledNode): string =
+  let clickable = styledNode.getClickable()
+  if clickable != nil:
+    case clickable.tagType
+    of TAG_A:
+      return HTMLAnchorElement(clickable).href
+    of TAG_INPUT:
+      return "<input>"
+    of TAG_OPTION:
+      return "<option>"
+    of TAG_BUTTON:
+      return "<button>"
+    of TAG_TEXTAREA:
+      return "<textarea>"
+    else: discard
 
 func getCursorClickable(buffer: Buffer, cursorx, cursory: int): Element =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
@@ -489,7 +500,8 @@ proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.height = buffer.attrs.height - 1
 
 type UpdateHoverResult* = object
-  hover*: Option[string]
+  link*: Option[string]
+  title*: Option[string]
   repaint*: bool
 
 proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.proxy.} =
@@ -508,19 +520,14 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
           elem.hover = true
           result.repaint = true
 
-    var upd = false
     let title = thisnode.getTitleAttr()
-    if title != "":
-      upd = true
-      buffer.hovertext = title
-    elif (let link = thisnode.getLink(); link != nil):
-      upd = true
-      buffer.hovertext = link.href
-    else:
-      upd = buffer.hovertext != ""
-      buffer.hovertext = ""
-    if upd:
-      result.hover = some(buffer.hovertext)
+    if buffer.hovertext[HOVER_TITLE] != title:
+      result.title = some(title)
+      buffer.hovertext[HOVER_TITLE] = title
+    let click = thisnode.getClickHover()
+    if buffer.hovertext[HOVER_LINK] != click:
+      result.link = some(click)
+      buffer.hovertext[HOVER_LINK] = click
 
     for styledNode in prevnode.branch:
       if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
