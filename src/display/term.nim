@@ -281,6 +281,10 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   of TRUE_COLOR: discard
 
   cellf.fgcolor = correctContrast(cellf.bgcolor, cellf.fgcolor, term.mincontrast)
+  if cellf.fgcolor != format.fgcolor and cellf.fgcolor == defaultColor or
+      cellf.bgcolor != format.bgcolor and cellf.bgcolor == defaultColor:
+    result &= term.resetFormat()
+    format = newFormat()
 
   if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor
@@ -288,8 +292,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       let rgb = color.rgbcolor
       result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
-      result &= term.resetFormat()
-      format = newFormat()
+      discard
     else:
       result &= SGR(color.color)
 
@@ -299,8 +302,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       let rgb = color.rgbcolor
       result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
-      result &= term.resetFormat()
-      format = newFormat()
+      discard
     else:
       result &= SGR(color.color)
 

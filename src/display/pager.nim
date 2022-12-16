@@ -200,8 +200,6 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
   var r: Rune
   var by = 0
   pager.clearDisplay()
-  var hlformat = newFormat()
-  hlformat.bgcolor = pager.config.hlcolor.cellColor()
   for line in container.ilines(container.fromy ..< min(container.fromy + pager.display.height, container.numLines)):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
@@ -244,6 +242,8 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     for hl in hls:
       let area = hl.colorArea(container.fromy + by, startw .. startw + aw)
       for i in area:
+        var hlformat = pager.display[dls + i - startw].format
+        hlformat.bgcolor = pager.config.hlcolor.cellColor()
         pager.display[dls + i - startw].format = hlformat
     inc by
 
