@@ -516,6 +516,11 @@ or if that doesn't exist, to its parent. If the current buffer is a root buffer
 </tr>
 
 <tr>
+<td>`pager.discardTree()`</td>
+<td>Discard all child buffers of the current buffer.</td>
+</tr>
+
+<tr>
 <td>`pager.reload()`</td>
 <td>Open a new buffer with the current buffer's URL, replacing the current
 buffer.</td>
