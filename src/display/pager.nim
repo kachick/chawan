@@ -427,7 +427,10 @@ proc deleteContainer(pager: Pager, container: Container) =
       parent.children.insert(child, n + 1)
     parent.children.delete(n)
     if container == pager.container:
-      pager.setContainer(parent)
+      if n == 0:
+        pager.setContainer(parent)
+      else:
+        pager.setContainer(parent.children[n - 1])
   elif container.children.len > 0:
     let parent = container.children[0]
     parent.parent = nil
@@ -458,9 +461,8 @@ proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
   if container != nil:
     for c in container.all_children:
       pager.deleteContainer(c)
-    pager.discardBuffer(some(container))
   else:
-    pager.alert("Cannot discard last buffer!")
+    pager.alert("Buffer has no children!")
 
 proc toggleSource*(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
