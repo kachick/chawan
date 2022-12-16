@@ -895,7 +895,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error eof_in_tag
         emit_eof
-      else: append_to_current_attr_value r
+      else:
+        parse_error missing_whitespace_between_attributes
+        reconsume_in BEFORE_ATTRIBUTE_NAME
 
     of SELF_CLOSING_START_TAG:
       case c
