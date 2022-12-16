@@ -576,33 +576,6 @@ proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext, parentWid
   result.width += result.innerbox.margin_left
   result.width += result.innerbox.margin_right
 
-# Copy-pasted wholesale from above. TODO generalize this somehow
-proc buildInlineTableBox(builder: TableBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
-  result = newInlineBlock(parent.viewport, builder, parentWidth)
-
-  result.innerbox.nested.add(buildTable(builder, result.innerbox))
-
-  let pwidth = builder.computed{"width"}
-  if pwidth.auto:
-    # shrink-to-fit
-    result.innerbox.width = min(parentWidth, result.innerbox.width)
-  else:
-    result.innerbox.width = pwidth.px(parent.viewport, parentWidth)
-
-  # Apply the block box's properties to the atom itself.
-  result.width = result.innerbox.width
-  result.height = result.innerbox.height
-
-  result.margin_top = result.innerbox.margin_top
-  result.margin_bottom = result.innerbox.margin_bottom
-
-  result.baseline = result.innerbox.baseline
-
-  # I don't like this, but it works...
-  result.offset.x = result.innerbox.margin_left
-  result.width += result.innerbox.margin_left
-  result.width += result.innerbox.margin_right
-
 proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, parentHeight = none(int)) =
   assert box.ictx != nil
   if box.newline:
