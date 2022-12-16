@@ -49,21 +49,21 @@ Following is a list of start-up options:
 <tr>
 <td>visual-home</td>
 <td>url</td>
-<td>Page opened when cha is called with the -V option (and no other pages are
+<td>Page opened when Chawan is called with the -V option (and no other pages are
 passed as arguments.)</td>
 </tr>
 
 <tr>
 <td>run-script</td>
 <td>JavaScript code</td>
-<td>Script cha runs on start. Pages will not be loaded until this function
+<td>Script Chawan runs on start. Pages will not be loaded until this function
 exits. (setTimeout & friends do not block loading, though.)</td>
 </tr>
 
 <tr>
 <td>headless</td>
 <td>boolean</td>
-<td>Whether cha should always start in headless mode. Enabled when cha is
+<td>Whether Chawan should always start in headless mode. Enabled when Chawan is
 called with -r.</td>
 </tr>
 
@@ -119,7 +119,7 @@ Network options are to be placed in the `[network]` section.
 <tr>
 <td>prepend-https</td>
 <td>boolean</td>
-<td>Whether or not cha should attempt loading "raw" URLs without a scheme as
+<td>Whether or not Chawan should attempt loading "raw" URLs without a scheme as
 https (e.g. wikipedia.org as https://wikipedia.org.)</td>
 </tr>
 
@@ -244,7 +244,7 @@ passed as arguments are matched as well.</td>
 <tr>
 <td>substitute</td>
 <td>JavaScript function</td>
-<td>A JavaScript function cha will pass the input string to. If a new string is
+<td>A JavaScript function Chawan will pass the input string to. If a new string is
 returned, it will be parsed instead of the old one.</td>
 </tr>
 
@@ -301,8 +301,8 @@ name/ip address.) Either this or the `url` option must be specified.</td>
 <tr>
 <td>rewrite-url</td>
 <td>JavaScript function</td>
-<td>A JavaScript function cha will pass the URL to. If a new URL is returned,
-it will replace the old one.</td>
+<td>A JavaScript function Chawan will pass the URL to. If a new URL is
+returned, it will replace the old one.</td>
 </tr>
 
 <tr>
@@ -500,7 +500,7 @@ is typed in. A list of built-in pager functions can be found below.
 <td>Go to the specified URL. Opens a prompt with the current URL when no
 parameters are specified; otherwise, the string passed is displayed in
 the prompt. If this string ends with a newline
-(e.g. `pager.load("about:cha\n")`), the URL is loaded directly.</td>
+(e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.</td>
 </tr>
 
 <tr>
