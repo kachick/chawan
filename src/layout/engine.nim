@@ -998,17 +998,19 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
     let dw = (table.compwidth - ctx.maxwidth)
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(dw, weight)
-    let unit = float64(dw) / weight
-    for i in countdown(avail.high, 0):
-      let j = avail[i]
-      let x = int(unit * ctx.cols[j].weight)
-      ctx.cols[j].width += x
-      reflow[j] = true
+    if weight != 0:
+      let unit = float64(dw) / weight
+      for i in countdown(avail.high, 0):
+        let j = avail[i]
+        let x = int(unit * ctx.cols[j].weight)
+        ctx.cols[j].width += x
+        reflow[j] = true
   elif table.compwidth < ctx.maxwidth:
     var dw = (ctx.maxwidth - table.compwidth)
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(dw, weight)
     while avail.len > 0 and dw != 0:
+      if weight == 0: break # zero weight; nothing to distribute
       # divide delta width by sum of sqrt(width) for all elem in avail
       let unit = float64(dw) / weight
       dw = 0
