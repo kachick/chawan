@@ -21,6 +21,7 @@ when defined(posix):
 
 import bindings/curl
 import io/about
+import io/file
 import io/http
 import io/request
 import io/urlfilter
@@ -45,31 +46,6 @@ type
     filter*: URLFilter
     cookiejar*: CookieJar
     referrerpolicy*: ReferrerPolicy
-
-proc loadFile(url: Url, ostream: Stream) =
-  when defined(windows) or defined(OS2) or defined(DOS):
-    let path = url.path.serialize_unicode_dos()
-  else:
-    let path = url.path.serialize_unicode()
-  let istream = newFileStream(path, fmRead)
-  if istream == nil:
-    ostream.swrite(-1) # error
-    ostream.flush()
-  else:
-    ostream.swrite(0)
-    ostream.swrite(200) # ok
-    ostream.swrite(newHeaderList())
-    while not istream.atEnd:
-      const bufferSize = 4096
-      var buffer {.noinit.}: array[bufferSize, char]
-      while true:
-        let n = readData(istream, addr buffer[0], bufferSize)
-        if n == 0:
-          break
-        ostream.writeData(addr buffer[0], n)
-        ostream.flush()
-        if n < bufferSize:
-          break
 
 proc loadResource(request: Request, ostream: Stream) =
   case request.url.scheme
