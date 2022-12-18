@@ -6,16 +6,31 @@ import types/url
 import js/javascript
 import utils/twtstr
 
-type HttpMethod* = enum
-  HTTP_CONNECT = "CONNECT"
-  HTTP_DELETE = "DELETE"
-  HTTP_GET = "GET"
-  HTTP_HEAD = "HEAD"
-  HTTP_OPTIONS = "OPTIONS"
-  HTTP_PATCH = "PATCH"
-  HTTP_POST = "POST"
-  HTTP_PUT = "PUT"
-  HTTP_TRACE = "TRACE"
+type
+  HttpMethod* = enum
+    HTTP_CONNECT = "CONNECT"
+    HTTP_DELETE = "DELETE"
+    HTTP_GET = "GET"
+    HTTP_HEAD = "HEAD"
+    HTTP_OPTIONS = "OPTIONS"
+    HTTP_PATCH = "PATCH"
+    HTTP_POST = "POST"
+    HTTP_PUT = "PUT"
+    HTTP_TRACE = "TRACE"
+
+  RequestMode* = enum
+    NO_CORS, SAME_ORIGIN, CORS, NAVIGATE, WEBSOCKET
+
+  RequestDestination* = enum
+    NO_DESTINATION, AUDIO, AUDIOWORKLET, DOCUMENT, EMBED, FONT, FRAME, IFRAME,
+    IMAGE, MANIFEST, OBJECT, PAINTWORKLET, REPORT, SCRIPT, SERVICEWORKER,
+    SHAREDWORKER, STYLE, TRACK, WORKER, XSLT
+
+  CredentialsMode* = enum
+    SAME_ORIGIN, OMIT, INCLUDE
+
+  CORSAttribute* = enum
+    NO_CORS, ANONYMOUS, USE_CREDENTIALS
 
 type
   Request* = ref RequestObj
@@ -26,6 +41,9 @@ type
     body*: Option[string]
     multipart*: Option[MimeData]
     referer*: URL
+    mode*: RequestMode
+    destination*: RequestDestination
+    credentialsMode*: CredentialsMode
 
   Response* = ref object
     body*: Stream
@@ -34,7 +52,7 @@ type
     status* {.jsget.}: int
     headers* {.jsget.}: HeaderList
     redirect* {.jsget.}: Option[Url]
-
+ 
   ReadableStream* = ref object of Stream
     isource*: Stream
     buf: string
@@ -129,29 +147,41 @@ func newHeaderList*(table: Table[string, string]): HeaderList =
     else:
       result.table[k] = @[v]
 
-func newRequest*(url: Url, httpmethod: HttpMethod, headers: HeaderList,
-                 body = none(string), multipart = none(MimeData)): Request =
+func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
+                 body = none(string), multipart = none(MimeData),
+                 mode = RequestMode.NO_CORS,
+                 credentialsMode = CredentialsMode.SAME_ORIGIN,
+                 destination = RequestDestination.NO_DESTINATION): Request =
   return Request(
     url: url,
     httpmethod: httpmethod,
     headers: headers,
     body: body,
-    multipart: multipart
+    multipart: multipart,
+    mode: mode,
+    credentialsMode: credentialsMode,
+    destination: destination
   )
 
-func newRequest*(url: Url, httpmethod = HTTP_GET,
-                 headers: seq[(string, string)] = @[], body = none(string),
-                 multipart = none(MimeData)): Request {.jsctor.} =
+func newRequest*(url: URL, httpmethod = HTTP_GET, headers: openarray[(string, string)] = [],
+                 body = none(string), multipart = none(MimeData), mode = RequestMode.NO_CORS): Request =
   let hl = newHeaderList()
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
-  return newRequest(url, httpmethod, hl, body, multipart)
+  return newRequest(url, httpmethod, hl, body, multipart, mode)
 
-func newRequest*(url: Url, httpmethod: HttpMethod,
-                 headers: openarray[(string, string)], body = none(string),
-                 multipart = none(MimeData)): Request =
-  return newRequest(url, httpmethod, @headers, body, multipart)
+func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors: CORSAttribute, fallbackFlag = false): Request =
+  var mode = if cors == NO_CORS:
+    RequestMode.NO_CORS
+  else:
+    RequestMode.CORS
+  if fallbackFlag and mode == NO_CORS:
+    mode = SAME_ORIGIN
+  let credentialsMode = if cors == ANONYMOUS:
+    CredentialsMode.SAME_ORIGIN
+  else: CredentialsMode.INCLUDE
+  return newRequest(url, destination = destination, mode = mode, credentialsMode = credentialsMode)
 
 proc `[]=`*(multipart: var MimeData, k, v: string) =
   multipart.content.add(MimePart(name: k, content: v))
@@ -179,6 +209,13 @@ proc readAll*(response: Response): string {.jsfunc.} =
 
 proc close*(response: Response) {.jsfunc.} =
   response.body.close()
+
+func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
+  case attribute
+  of NO_CORS, ANONYMOUS:
+    return SAME_ORIGIN
+  of USE_CREDENTIALS:
+    return INCLUDE
 
 proc addRequestModule*(ctx: JSContext) =
   ctx.registerType(Request)

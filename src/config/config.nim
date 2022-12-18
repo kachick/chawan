@@ -31,6 +31,7 @@ type
     thirdpartycookie: seq[string]
     sharecookiejar: Option[string]
     refererfrom*: Option[bool]
+    scripting: Option[bool]
 
   StaticOmniRule = object
     match: string
@@ -44,6 +45,7 @@ type
     thirdpartycookie*: seq[Regex]
     sharecookiejar*: Option[string]
     refererfrom*: Option[bool]
+    scripting*: Option[bool]
 
   OmniRule* = object
     match*: Regex
@@ -81,6 +83,7 @@ type
     headers*: HeaderList
     refererfrom*: bool
     referrerpolicy*: ReferrerPolicy
+    scripting*: bool
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -101,13 +104,14 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
   )
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
-                      headers: HeaderList = nil, refererfrom = false): BufferConfig =
+                      headers: HeaderList = nil, refererfrom = false, scripting = false): BufferConfig =
   result = BufferConfig(
     userstyle: config.stylesheet,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
     cookiejar: cookiejar,
     headers: headers,
-    refererfrom: refererfrom
+    refererfrom: refererfrom,
+    scripting: scripting
   )
   new(result.headers)
   result.headers[] = DefaultHeaders
@@ -116,6 +120,7 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:
     var conf = SiteConfig(
       cookie: sc.cookie,
+      scripting: sc.scripting,
       sharecookiejar: sc.sharecookiejar,
       refererfrom: sc.refererfrom
     )
@@ -127,7 +132,7 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       conf.thirdpartycookie.add(compileRegex(rule, 0).get)
     if sc.subst.isSome:
       let fun = jsctx.eval(sc.subst.get, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
-      let f = getJSFunction[URL, URL](jsctx, fun.val)
+      let f = getJSFunction[URL, URL](jsctx, fun)
       conf.subst = f.get
     result.add(conf)
 
@@ -138,7 +143,7 @@ proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
       match: re.get
     )
     let fun = jsctx.eval(rule.subst, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
-    let f = getJSFunction[string, string](jsctx, fun.val)
+    let f = getJSFunction[string, string](jsctx, fun)
     conf.subst = f.get
     result.add(conf)
 
@@ -357,6 +362,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
               for v in v.a:
                 conf.thirdpartycookie.add(v.s)
           of "share-cookie-jar": conf.sharecookiejar = some(v.s)
+          of "scripting": conf.scripting = some(v.b)
         assert conf.url.isSome != conf.host.isSome
         config.siteconf.add(conf)
     of "omnirule":

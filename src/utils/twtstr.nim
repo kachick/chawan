@@ -90,6 +90,33 @@ const lowerChars = (func(): array[char, char] =
 func tolower*(c: char): char =
   return lowerChars[c]
 
+func toLowerAscii2*(str: string): string =
+  var i = 0
+  block noconv:
+    while i < str.len:
+      let c = str[i]
+      if c in AsciiUpperAlpha:
+        break noconv
+      inc i
+    return str
+  result = newString(str.len)
+  prepareMutation(result)
+  copyMem(addr result[0], unsafeAddr str[0], i)
+  while i < str.len:
+    result[i] = str[i].tolower()
+
+proc toLowerAsciiIp*(str: var string) =
+  var i = 0
+  block noconv:
+    while i < str.len:
+      let c = str[i]
+      if c in AsciiUpperAlpha:
+        break noconv
+      inc i
+    return
+  while i < str.len:
+    str[i] = str[i].tolower()
+
 func toHeaderCase*(str: string): string =
   result = str
   var flip = true
@@ -580,6 +607,7 @@ func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitio
       labels.add(label)
   return labels.join('.').some
 
+#TODO this is stupid
 func isValidNonZeroInt*(str: string): bool =
   if str.len == 0: return false
   if str == "0": return false

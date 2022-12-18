@@ -1,3 +1,4 @@
+import deques
 import macros
 import options
 import sequtils
@@ -9,11 +10,12 @@ import unicode
 
 import css/sheet
 import data/charset
+import encoding/decoderstream
 import html/dom
 import html/tags
 import html/htmltokenizer
-import encoding/decoderstream
 import js/javascript
+import types/url
 import utils/twtstr
 
 type
@@ -205,8 +207,6 @@ func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, inte
   let localName = token.tagname
   let element = document.newHTMLElement(localName, namespace, tagType = token.tagtype)
   element.appendAttributes(token.attrs)
-  #for k, v in token.attrs:
-  #  element.appendAttribute(k, v)
   if element.isResettable():
     element.resetElement()
 
@@ -231,6 +231,8 @@ proc popElement(parser: var HTML5Parser): Element =
     parser.tokenizer.hasnonhtml = false
   else:
     parser.tokenizer.hasnonhtml = not parser.adjustedCurrentNode().inHTMLNamespace()
+
+template pop_current_node = discard parser.popElement()
 
 proc insert(location: AdjustedInsertionLocation, node: Node) =
   location.inside.insert(node, location.before)
@@ -504,16 +506,16 @@ proc pushOntoActiveFormatting(parser: var HTML5Parser, element: Element, token: 
       if it[0].localName != element.localName: continue
     if it[0].namespace != element.namespace: continue
     var fail = false
-    for k, v in it[0].attributes:
-      if k notin element.attributes:
+    for k, v in it[0].attrs:
+      if k notin element.attrs:
         fail = true
         break
-      if v != element.attributes[k]:
+      if v != element.attrs[k]:
         fail = true
         break
     if fail: continue
-    for k, v in element.attributes:
-      if k notin it[0].attributes:
+    for k, v in element.attrs:
+      if k notin it[0].attrs:
         fail = true
         break
     if fail: continue
@@ -556,8 +558,6 @@ proc reconstructActiveFormatting(parser: var HTML5Parser) =
 
 proc clearActiveFormattingTillMarker(parser: var HTML5Parser) =
   while parser.activeFormatting.len > 0 and parser.activeFormatting.pop()[0] != nil: discard
-
-template pop_current_node = discard parser.popElement()
 
 func isHTMLIntegrationPoint(node: Element): bool =
   return false #TODO SVG (NOTE MathML not implemented)
@@ -1138,8 +1138,8 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           discard
         else:
           for k, v in token.attrs:
-            if k notin parser.openElements[0].attributes:
-              parser.openElements[0].attributes[k] = v
+            if k notin parser.openElements[0].attrs:
+              parser.openElements[0].attrs[k] = v
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>", "<script>", "<style>", "<template>", "<title>",
        "</template>") => (block: parser.processInHTMLContent(token, IN_HEAD))
@@ -1150,8 +1150,8 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         else:
           parser.framesetOk = false
           for k, v in token.attrs:
-            if k notin parser.openElements[1].attributes:
-              parser.openElements[1].attributes[k] = v
+            if k notin parser.openElements[1].attrs:
+              parser.openElements[1].attrs[k] = v
       )
       "<frameset>" => (block:
         parse_error
@@ -1523,11 +1523,15 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "</script>" => (block:
         #TODO microtask
-        pop_current_node
+        let script = HTMLScriptElement(parser.popElement())
         parser.insertionMode = parser.oldInsertionMode
-        #TODO document.write() ?
-        #TODO prepare script element
-        #TODO uh implement scripting or something
+        #TODO document.write() (?)
+        script.prepare()
+        while parser.document.parserBlockingScript != nil:
+          let script = parser.document.parserBlockingScript
+          parser.document.parserBlockingScript = nil
+          #TODO style sheet
+          script.execute()
       )
       TokenType.END_TAG => (block:
         pop_current_node
@@ -2164,12 +2168,18 @@ proc constructTree(parser: var HTML5Parser): Document =
     if parser.needsreinterpret:
       return nil
 
-  #TODO document.write (?)
-  #TODO etc etc...
-
   return parser.document
 
-proc parseHTML5*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_UTF_8): (Document, Charset) =
+proc finishParsing(parser: var HTML5Parser) =
+  while parser.openElements.len > 0:
+    pop_current_node
+  while parser.document.scriptsToExecOnLoad.len > 0:
+    #TODO spin event loop
+    let script = parser.document.scriptsToExecOnLoad.popFirst()
+    script.execute()
+  #TODO events
+
+proc parseHTML*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_UTF_8, window: Window = nil, url: URL = nil): (Document, Charset) =
   var parser: HTML5Parser
   var bom: string
   if cs.isSome:
@@ -2201,8 +2211,14 @@ proc parseHTML5*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_U
   for c in bom:
     decoder.prepend(cast[uint32](c))
   parser.document = newDocument()
+  if window != nil:
+    parser.document.window = window
+    window.document = parser.document
+  parser.document.url = url
   parser.tokenizer = newTokenizer(decoder)
-  return (parser.constructTree(), parser.charset)
+  let document = parser.constructTree()
+  parser.finishParsing()
+  return (document, parser.charset)
 
 proc newDOMParser*(): DOMParser {.jsctor.} =
   new(result)
@@ -2210,12 +2226,12 @@ proc newDOMParser*(): DOMParser {.jsctor.} =
 proc parseFromString*(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
   case t
   of "text/html":
-    let (res, _) = parseHTML5(newStringStream(str))
+    let (res, _) = parseHTML(newStringStream(str))
     return res
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-    JS_THROW JS_InternalError, "XML parsing is not supported yet"
+    JS_ERR JS_InternalError, "XML parsing is not supported yet"
   else:
-    JS_THROW JS_TypeError, "Invalid mime type"
+    JS_ERR JS_TypeError, "Invalid mime type"
 
 proc addHTMLModule*(ctx: JSContext) =
   ctx.registerType(DOMParser)

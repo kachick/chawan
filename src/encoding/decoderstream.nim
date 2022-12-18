@@ -826,6 +826,16 @@ proc readRunes*(stream: DecoderStream, olen: int): seq[Rune] =
 proc atEnd*(stream: DecoderStream): bool =
   return stream.isend
 
+# Read all and convert to UTF-8.
+# Probably not very efficient. Oh well.
+proc readAll*(stream: DecoderStream): string =
+  var buf = newSeqUninitialized[uint32](stream.buflen)
+  while not stream.atEnd:
+    let n = stream.readData(addr buf, buf.len * sizeof(buf[0]))
+    for i in 0 ..< n div 4:
+      let r = cast[Rune](buf[i])
+      result &= $r
+
 proc newDecoderStream*(source: Stream, cs = CHARSET_UTF_8, buflen = 1024,
                        errormode = DECODER_ERROR_MODE_REPLACEMENT): DecoderStream =
   result = DecoderStream(

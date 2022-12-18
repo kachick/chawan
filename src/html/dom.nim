@@ -1,12 +1,20 @@
+import deques
 import macros
 import options
+import sets
 import streams
 import strutils
 import tables
 
 import css/sheet
+import data/charset
+import encoding/decoderstream
 import html/tags
+import io/loader
+import io/request
 import js/javascript
+import types/mime
+import types/referer
 import types/url
 import utils/twtstr
 
@@ -31,7 +39,62 @@ type
     XML = "http://www.w3.org/XML/1998/namespace",
     XMLNS = "http://www.w3.org/2000/xmlns/"
 
+  ScriptType = enum
+    NO_SCRIPTTYPE, CLASSIC, MODULE, IMPORTMAP
+
+  ParserMetadata = enum
+    PARSER_INSERTED, NOT_PARSER_INSERTED
+
+  ScriptResultType = enum
+    RESULT_NULL, RESULT_UNINITIALIZED, RESULT_SCRIPT, RESULT_IMPORT_MAP_PARSE
+
 type
+  Script = object
+    #TODO setings
+    baseURL: URL
+    options: ScriptOptions
+    mutedErrors: bool
+    #TODO parse error/error to rethrow
+    record: string #TODO should be a record...
+
+  ScriptOptions = object
+    nonce: string
+    integrity: string
+    parserMetadata: ParserMetadata
+    credentialsMode: CredentialsMode
+    referrerPolicy: Option[ReferrerPolicy]
+    renderBlocking: bool
+
+  ScriptResult = object
+    case t: ScriptResultType
+    of RESULT_NULL, RESULT_UNINITIALIZED:
+      discard
+    of RESULT_SCRIPT:
+      script: Script
+    of RESULT_IMPORT_MAP_PARSE:
+      discard #TODO
+
+type
+  Window* = ref object
+    settings*: EnvironmentSettings
+    loader*: Option[FileLoader]
+    jsrt*: JSRuntime
+    jsctx*: JSContext
+    document* {.jsget.}: Document
+    console* {.jsget.}: Console
+
+  Console* = ref object
+    err: Stream
+
+  NamedNodeMap* = ref object
+    element: Element
+    attrlist: seq[string]
+    attrs: Table[string, Attr]
+    nsattrs: Table[Namespace, Table[string, Attr]]
+
+  EnvironmentSettings* = object
+    scripting*: bool
+
   EventTarget* = ref object of RootObj
 
   Node* = ref object of EventTarget
@@ -45,20 +108,32 @@ type
     document*: Document
 
   Attr* = ref object of Node
-    namespaceURI*: string
-    prefix*: string
-    localName*: string
-    name*: string
-    value*: string
-    ownerElement*: Element
+    namespaceURI* {.jsget.}: string
+    prefix* {.jsget.}: string
+    localName* {.jsget.}: string
+    value* {.jsget.}: string
+    ownerElement* {.jsget.}: Element
 
   Document* = ref object of Node
-    location*: Url
+    charset*: Charset
+    window*: Window
+    url*: URL #TODO expose as URL (capitalized)
+    location {.jsget.}: URL #TODO should be location
     mode*: QuirksMode
+    currentScript: HTMLScriptElement
+    isxml*: bool
+
+    scriptsToExecSoon*: seq[HTMLScriptElement]
+    scriptsToExecInOrder*: Deque[HTMLScriptElement]
+    scriptsToExecOnLoad*: Deque[HTMLScriptElement]
+    parserBlockingScript*: HTMLScriptElement
 
     parser_cannot_change_the_mode_flag*: bool
     is_iframe_srcdoc*: bool
     focus*: Element
+    contentType*: string
+
+    renderBlockingElements: seq[Element]
 
   CharacterData* = ref object of Node
     data*: string
@@ -78,14 +153,17 @@ type
 
   Element* = ref object of Node
     namespace*: Namespace
-    namespacePrefix*: Option[string] #TODO namespaces
+    namespacePrefix*: Option[string]
     prefix*: string
     localName*: string
     tagType*: TagType
 
     id*: string
     classList*: seq[string]
-    attributes* {.jsget, jsset.}: Table[string, string]
+    # attrs and nsattrs both store qualified names.
+    attrs*: Table[string, string] # namespace = null
+    nsattrs: Table[Namespace, Table[string, string]]
+    attrsmap: NamedNodeMap
     hover*: bool
     invalid*: bool
 
@@ -160,11 +238,13 @@ type
     preparationTimeDocument*: Document
     forceAsync*: bool
     fromAnExternalFile*: bool
-    readyToBeParser*: bool
+    readyForParserExec*: bool
     alreadyStarted*: bool
-    delayingTheLoadEvent*: bool
-    ctype*: bool
-    #TODO result
+    delayingTheLoadEvent: bool
+    ctype: ScriptType
+    internalNonce: string
+    scriptResult*: ScriptResult
+    onReady: (proc())
 
   HTMLBaseElement* = ref object of HTMLElement
 
@@ -214,7 +294,7 @@ func `$`*(node: Node): string =
   of ELEMENT_NODE:
     let element = Element(node)
     result = "<" & $element.tagType.tostr()
-    for k, v in element.attributes:
+    for k, v in element.attrs:
       result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
     result &= ">\n"
     for node in element.childNodes:
@@ -320,6 +400,163 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
       for opt in child.children:
         if opt.tagType == TAG_OPTION:
           yield HTMLOptionElement(child)
+
+func newAttr(parent: Element, qualifiedName, value: string): Attr =
+  new(result)
+  result.document = parent.document
+  result.nodeType = ATTRIBUTE_NODE
+  result.ownerElement = parent
+  if parent.namespace == Namespace.HTML:
+    result.localName = qualifiedName
+  else:
+    #TODO ???
+    let s = qualifiedName.until(':')
+    if s.len == qualifiedName.len:
+      result.localName = qualifiedName
+    else:
+      result.prefix = s
+      result.localName = qualifiedName.substr(s.len)
+  result.value = value
+
+func name(attr: Attr): string {.jsfget.} =
+  if attr.prefix == "":
+    return attr.localName
+  return attr.prefix & attr.localName
+
+#TODO TODO TODO all of this is dumb, we should just have an array of attrs, that's all
+func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
+  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
+    qualifiedName.toLowerAscii2()
+  else:
+    qualifiedName
+  if qualifiedName in element.attrs:
+    return true
+  for ns, t in element.nsattrs:
+    if qualifiedName in t:
+      return true
+
+func hasAttributeNS(element: Element, namespace, localName: string): bool {.jsfunc.} =
+  if namespace == "":
+    return localName in element.attrs
+  for ns, t in element.nsattrs:
+    if $ns == namespace and localName in t:
+      return true
+
+func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsfunc.} =
+  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
+    qualifiedName.toLowerAscii2()
+  else:
+    qualifiedName
+  element.attrs.withValue(qualifiedName, val):
+    return some(val[])
+  for ns, t in element.nsattrs.mpairs:
+    t.withValue(qualifiedName, val):
+      return some(val[])
+
+func getAttributeNS(element: Element, namespace, localName: string): Option[string] {.jsfunc.} =
+  if namespace == "":
+    return element.getAttribute(localName)
+  if namespace == $Namespace.HTML:
+    return element.getAttribute(localName)
+  try:
+    #TODO TODO TODO parseEnum is style insensitive
+    let ns = parseEnum[Namespace](namespace)
+    element.nsattrs.withValue(ns, t):
+      t[].withValue(localName, val):
+        # Not a qualified name...
+        return some(val[])
+      for k, v in t[]:
+        let s = k.until(':')
+        if s.len != k.len and localName == s:
+          return some(v)
+  except ValueError:
+    discard
+
+#TODO this is simply wrong
+func getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr] {.jsfunc.} =
+  let v = map.element.getAttribute(qualifiedName)
+  if v.isSome:
+    if qualifiedName notin map.attrs:
+      map.attrs[qualifiedName] = map.element.newAttr(qualifiedName, v.get)
+    return some(map.attrs[qualifiedName])
+
+func getNamedItemNS(map: NamedNodeMap, namespace, localName: string): Option[Attr] {.jsfunc.} =
+  if namespace == "":
+    return map.getNamedItem(localName)
+  if namespace == $Namespace.HTML:
+    return map.getNamedItem(localName)
+  try:
+    #TODO TODO TODO parseEnum is style insensitive
+    let ns = parseEnum[Namespace](namespace)
+    var qn: string
+    if ns notin map.nsattrs:
+      map.nsattrs[ns] = Table[string, Attr]()
+    map.element.nsattrs.withValue(ns, t):
+      t[].withValue(localName, val):
+        # Not a qualified name...
+        if localName notin map.nsattrs[ns]:
+          map.nsattrs[ns][localName] = map.element.newAttr(localName, val[])
+        qn = localName
+      for k, v in t[]:
+        let s = k.until(':')
+        if localName == s:
+          if localName notin map.nsattrs[ns]:
+            map.nsattrs[ns][localName] = map.element.newAttr(localName, v)
+          qn = k
+    if qn != "":
+      return some(map.nsattrs[ns][qn])
+  except ValueError:
+    discard
+
+func attributes(element: Element): NamedNodeMap {.jsfget.} =
+  if element.attrsmap == nil:
+    element.attrsmap = NamedNodeMap(element: element)
+  return element.attrsmap
+
+func length(map: NamedNodeMap): int {.jsfget.} =
+  return map.element.attrs.len
+
+proc setNamedItem*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
+  if attr.ownerElement != nil and attr.ownerElement != map.element:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InUseAttributeError"
+  if attr.name in map.element.attrs:
+    return some(attr)
+  let oldAttr = getNamedItem(map, attr.name)
+  map.element.attrs[attr.name] = attr.value
+  return oldAttr
+
+proc setNamedItemNS*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jsfunc.} =
+  map.setNamedItem(attr)
+
+#TODO TODO TODO this is extremely inefficient...
+func item(map: NamedNodeMap, i: int): Option[Attr] {.jsfunc.} =
+  var found: HashSet[string]
+  for j in countdown(map.attrlist.high, 0):
+    let k = map.attrlist[j]
+    if k in map.element.attrs:
+      found.incl(k)
+    else:
+      map.attrlist.delete(j)
+  if map.attrlist.len < map.element.attrs.len:
+    for k in map.element.attrs.keys:
+      if k notin found:
+        map.attrlist.add(k)
+  if i < map.attrlist.len:
+    return map.getNamedItem(map.attrlist[i])
+
+func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} =
+  when T is int:
+    return map.item(i)
+  else:
+    return map.getNamedItem(i)
+
+func scriptingEnabled*(element: Element): bool =
+  if element.document == nil:
+    return false
+  if element.document.window == nil:
+    return false
+  return element.document.window.settings.scripting
 
 func form*(element: FormAssociatedElement): HTMLFormElement =
   case element.tagType
@@ -484,7 +721,7 @@ func nextElementSibling*(elem: Element): Element =
   return nil
 
 func attr*(element: Element, s: string): string {.inline.} =
-  return element.attributes.getOrDefault(s, "")
+  return element.attrs.getOrDefault(s, "")
 
 func attri*(element: Element, s: string): Option[int] =
   let a = element.attr(s)
@@ -494,7 +731,7 @@ func attri*(element: Element, s: string): Option[int] =
     return none(int)
 
 func attrb*(element: Element, s: string): bool =
-  if s in element.attributes:
+  if s in element.attrs:
     return true
   return false
 
@@ -520,6 +757,19 @@ func childTextContent*(node: Node): string =
   for child in node.childNodes:
     if child.nodeType == TEXT_NODE:
       result &= Text(child).data
+
+func crossorigin(element: HTMLScriptElement): CORSAttribute =
+  if not element.attrb("crossorigin"):
+    return NO_CORS
+  case element.attr("crossorigin")
+  of "anonymous", "":
+    return ANONYMOUS
+  of "use-credentials":
+    return USE_CREDENTIALS
+  return ANONYMOUS
+
+func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
+  getReferrerPolicy(element.attr("referrerpolicy"))
 
 proc sheets*(element: Element): seq[CSSStylesheet] =
   for child in element.children:
@@ -655,6 +905,10 @@ func newText*(document: Document, data: string = ""): Text {.jsctor.} =
   result.document = document
   result.data = data
 
+func textContent*(node: Node, data: string) {.jsfset.} =
+  node.childNodes.setLen(0)
+  node.childNodes.add(node.document.newText(data))
+
 func newComment*(document: Document = nil, data: string = ""): Comment {.jsctor.} =
   new(result)
   result.nodeType = COMMENT_NODE
@@ -729,6 +983,7 @@ func newDocument*(): Document {.jsctor.} =
   new(result)
   result.nodeType = DOCUMENT_NODE
   result.document = result
+  result.contentType = "text/html"
 
 func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType {.jsctor.} =
   new(result)
@@ -736,14 +991,6 @@ func newDocumentType*(document: Document, name: string, publicId = "", systemId 
   result.name = name
   result.publicId = publicId
   result.systemId = systemId
-
-func newAttr*(parent: Element, key, value: string): Attr =
-  new(result)
-  result.document = parent.document
-  result.nodeType = ATTRIBUTE_NODE
-  result.ownerElement = parent
-  result.name = key
-  result.value = value
 
 func getElementById*(node: Node, id: string): Element {.jsfunc.} =
   if id.len == 0:
@@ -783,21 +1030,28 @@ func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
         return true
   return false
 
-func baseUrl*(document: Document): Url =
+func baseURL*(document: Document): Url =
+  #TODO frozen base url...
   var href = ""
   for base in document.elements(TAG_BASE):
     if base.attrb("href"):
       href = base.attr("href")
   if href == "":
-    return document.location
-  let url = parseUrl(href, document.location.some)
-  if url.isnone:
-    return document.location
+    return document.url
+  if document.url == nil:
+    return newURL("about:blank") #TODO ???
+  let url = parseURL(href, some(document.url))
+  if url.isNone:
+    return document.url
   return url.get
+
+func parseURL*(document: Document, s: string): Option[URL] =
+  #TODO encodings
+  return parseURL(s, some(document.baseURL))
 
 func href*[T: HTMLAnchorElement|HTMLLinkElement|HTMLBaseElement](element: T): string =
   if element.attrb("href"):
-    let url = parseUrl(element.attr("href"), some(element.document.location))
+    let url = parseUrl(element.attr("href"), some(element.document.url))
     if url.issome:
       return $url.get
   return ""
@@ -1051,15 +1305,15 @@ proc reset*(form: HTMLFormElement) =
 
 proc appendAttributes*(element: Element, attrs: Table[string, string]) =
   for k, v in attrs:
-    element.attributes[k] = v
+    element.attrs[k] = v
   template reflect_str(element: Element, name: static string, val: untyped) =
-    element.attributes.withValue(name, val):
+    element.attrs.withValue(name, val):
       element.val = val[]
   template reflect_str(element: Element, name: static string, val, fun: untyped) =
-    element.attributes.withValue(name, val):
+    element.attrs.withValue(name, val):
       element.val = fun(val[])
   template reflect_nonzero_int(element: Element, name: static string, val: untyped, default: int) =
-    element.attributes.withValue(name, val):
+    element.attrs.withValue(name, val):
       if val[].isValidNonZeroInt():
         element.val = parseInt(val[])
       else:
@@ -1067,14 +1321,13 @@ proc appendAttributes*(element: Element, attrs: Table[string, string]) =
     do:
       element.val = default
   template reflect_bool(element: Element, name: static string, val: untyped) =
-    if name in element.attributes:
+    if name in element.attrs:
       element.val = true
   element.reflect_str "id", id
-  element.attributes.withValue("class", val):
-    let classList = val[].split(' ')
-    for x in classList:
-      if x != "" and x notin element.classList:
-        element.classList.add(x)
+  let classList = element.attr("class").split(' ')
+  for x in classList:
+    if x != "" and x notin element.classList:
+      element.classList.add(x)
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
@@ -1087,7 +1340,7 @@ proc appendAttributes*(element: Element, attrs: Table[string, string]) =
     option.reflect_bool "selected", selected
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
-    select.reflect_nonzero_int "size", size, (if "multiple" in element.attributes: 4 else: 1)
+    select.reflect_nonzero_int "size", size, (if "multiple" in element.attrs: 4 else: 1)
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
     button.reflect_str "type", ctype, (func(s: string): ButtonType =
@@ -1099,7 +1352,214 @@ proc appendAttributes*(element: Element, attrs: Table[string, string]) =
     let textarea = HTMLTextAreaElement(element)
     textarea.reflect_nonzero_int "cols", cols, 20
     textarea.reflect_nonzero_int "rows", rows, 1
+  of TAG_SCRIPT:
+    let element = HTMLScriptElement(element)
+    element.reflect_str "nonce", internalNonce
   else: discard
+
+proc renderBlocking*(element: Element): bool =
+  if "render" in element.attr("blocking").split(AsciiWhitespace):
+    return true
+  case element.tagType
+  of TAG_SCRIPT:
+    let element = HTMLScriptElement(element)
+    if element.ctype == CLASSIC and element.parserDocument != nil and
+        not element.attrb("async") and not element.attrb("defer"):
+      return true
+  else: discard
+  return false
+
+proc blockRendering*(element: Element) =
+  let document = element.document
+  if document != nil and document.contentType == "text/html" and document.body == nil:
+    element.document.renderBlockingElements.add(element)
+
+proc markAsReady(element: HTMLScriptElement, res: ScriptResult) =
+  element.scriptResult = res
+  if element.onReady != nil:
+    element.onReady()
+    element.onReady = nil
+  element.delayingTheLoadEvent = false
+
+proc createClassicScript(source: string, baseURL: URL, options: ScriptOptions, mutedErrors = false): Script =
+  return Script(
+    record: source,
+    baseURL: baseURL,
+    options: options,
+    mutedErrors: mutedErrors
+  )
+
+#TODO settings object
+proc fetchClassicScript(element: HTMLScriptElement, url: URL,
+                        options: ScriptOptions, cors: CORSAttribute,
+                        cs: Charset, onComplete: (proc(element: HTMLScriptElement,
+                                                       res: ScriptResult))) =
+  if not element.scriptingEnabled:
+      element.onComplete(ScriptResult(t: RESULT_NULL))
+  else:
+    let loader = element.document.window.loader
+    if loader.isSome:
+      let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
+      #TODO this should be async...
+      let r = loader.get.doRequest(request)
+      if r.res != 0 or r.body == nil:
+        element.onComplete(ScriptResult(t: RESULT_NULL))
+      else:
+        #TODO use charset from content-type
+        let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
+        let source = newDecoderStream(r.body, cs = cs).readAll()
+        #TODO use response url
+        let script = createClassicScript(source, url, options, false)
+        element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
+
+proc execute*(element: HTMLScriptElement) =
+  let document = element.document
+  if document != element.preparationTimeDocument:
+    return
+  let i = document.renderBlockingElements.find(element)
+  if i != -1:
+    document.renderBlockingElements.delete(i)
+  if element.scriptResult.t == RESULT_NULL:
+    #TODO fire error event
+    return
+  case element.ctype
+  of CLASSIC:
+    let oldCurrentScript = document.currentScript
+    #TODO not if shadow root
+    document.currentScript = element
+    if document.window != nil and document.window.jsctx != nil:
+      let ret = document.window.jsctx.eval(element.scriptResult.script.record, "<script>", JS_EVAL_TYPE_GLOBAL)
+      if JS_IsException(ret):
+        let ss = newStringStream()
+        document.window.jsctx.writeException(ss)
+        ss.setPosition(0)
+        eprint "Exception in document", document.url, ss.readAll()
+    document.currentScript = oldCurrentScript
+  else: discard #TODO
+
+# https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+proc prepare*(element: HTMLScriptElement) =
+  if element.alreadyStarted:
+    return
+  let parserDocument = element.parserDocument
+  element.parserDocument = nil
+  if parserDocument != nil and not element.attrb("async"):
+    element.forceAsync = true
+  let sourceText = element.childTextContent
+  if not element.attrb("src") and sourceText == "":
+    return
+  if not element.connected:
+    return
+  let typeString = if element.attr("type") != "":
+    element.attr("type").strip(chars = AsciiWhitespace).toLowerAscii()
+  elif element.attr("language") != "":
+    "text/" & element.attr("language").toLowerAscii()
+  else:
+    "text/javascript"
+  if typeString.isJavaScriptType():
+    element.ctype = CLASSIC
+  elif typeString == "module":
+    element.ctype = MODULE
+  elif typeString == "importmap":
+    element.ctype = IMPORTMAP
+  else:
+    return
+  if parserDocument != nil:
+    element.parserDocument = parserDocument
+    element.forceAsync = false
+  element.alreadyStarted = true
+  element.preparationTimeDocument = element.document
+  if parserDocument != nil and parserDocument != element.preparationTimeDocument:
+    return
+  if not element.scriptingEnabled:
+    return
+  if element.attrb("nomodule") and element.ctype == CLASSIC:
+    return
+  #TODO content security policy
+  if element.ctype == CLASSIC and element.attrb("event") and element.attrb("for"):
+    let f = element.attr("for").strip(chars = AsciiWhitespace)
+    let event = element.attr("event").strip(chars = AsciiWhitespace)
+    if not f.equalsIgnoreCase("window"):
+      return
+    if not event.equalsIgnoreCase("onload") and not event.equalsIgnoreCase("onload()"):
+      return
+  let cs = getCharset(element.attr("charset"))
+  let encoding = if cs != CHARSET_UNKNOWN: cs else: element.document.charset
+  let classicCORS = element.crossorigin
+  var options = ScriptOptions(
+    nonce: element.internalNonce,
+    integrity: element.attr("integrity"),
+    parserMetadata: if element.parserDocument != nil: PARSER_INSERTED else: NOT_PARSER_INSERTED,
+    referrerpolicy: element.referrerpolicy
+  )
+  #TODO settings object
+  if element.attrb("src"):
+    if element.ctype == IMPORTMAP:
+      #TODO fire error event
+      return
+    let src = element.attr("src")
+    if src == "":
+      #TODO fire error event
+      return
+    element.fromAnExternalFile = true
+    let url = element.document.parseURL(src)
+    if url.isNone:
+      #TODO fire error event
+      return
+    if element.renderBlocking:
+      element.blockRendering()
+    element.delayingTheLoadEvent = true
+    if element in element.document.renderBlockingElements:
+      options.renderBlocking = true
+    if element.ctype == CLASSIC:
+      element.fetchClassicScript(url.get, options, classicCORS, encoding, markAsReady)
+    else:
+      #TODO MODULE
+      element.markAsReady(ScriptResult(t: RESULT_NULL))
+  else:
+    let baseURL = element.document.baseURL
+    if element.ctype == CLASSIC:
+      let script = createClassicScript(sourceText, baseURL, options)
+      element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
+    else:
+      #TODO MODULE, IMPORTMAP
+      element.markAsReady(ScriptResult(t: RESULT_NULL))
+  if element.ctype == CLASSIC and element.attrb("src") or element.ctype == MODULE:
+    let prepdoc = element.preparationTimeDocument 
+    if element.attrb("async"):
+      prepdoc.scriptsToExecSoon.add(element)
+      element.onReady = (proc() =
+        element.execute()
+        let i = prepdoc.scriptsToExecSoon.find(element)
+        element.preparationTimeDocument.scriptsToExecSoon.delete(i)
+      )
+    elif element.parserDocument == nil:
+      prepdoc.scriptsToExecInOrder.addFirst(element)
+      element.onReady = (proc() =
+        if prepdoc.scriptsToExecInOrder.len > 0 and prepdoc.scriptsToExecInOrder[0] != element:
+          while prepdoc.scriptsToExecInOrder.len > 0:
+            let script = prepdoc.scriptsToExecInOrder[0]
+            if script.scriptResult.t == RESULT_UNINITIALIZED:
+              break
+            script.execute()
+            prepdoc.scriptsToExecInOrder.shrink(1)
+      )
+    elif element.ctype == MODULE or element.attrb("defer"):
+      element.parserDocument.scriptsToExecOnLoad.addFirst(element)
+      element.onReady = (proc() =
+        element.readyForParserExec = true
+      )
+    else:
+      element.parserDocument.parserBlockingScript = element
+      element.blockRendering()
+      element.onReady = (proc() =
+        element.readyForParserExec = true
+      )
+  else:
+    #TODO if CLASSIC, parserDocument != nil, parserDocument has a style sheet
+    # that is blocking scripts, either the parser is an XML parser or a HTML
+    # parser with a script level <= 1
+    element.execute()
 
 # Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node, q: string): seq[Element]
@@ -1120,6 +1580,8 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(Text, parent = characterDataCID)
   ctx.registerType(DocumentType, parent = nodeCID)
   let elementCID = ctx.registerType(Element, parent = nodeCID)
+  ctx.registerType(Attr)
+  ctx.registerType(NamedNodeMap)
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
   ctx.registerType(HTMLInputElement, parent = htmlElementCID)
   ctx.registerType(HTMLAnchorElement, parent = htmlElementCID)

@@ -493,6 +493,7 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   var refererfrom: bool
   var cookiejar: CookieJar
   var headers: HeaderList
+  var scripting: bool
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match(url):
       continue
@@ -511,9 +512,11 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
         cookiejar = pager.cookiejars[jarid]
       else:
         cookiejar = nil # override
+    if sc.scripting.isSome:
+      scripting = sc.scripting.get
     if sc.refererfrom.isSome:
       refererfrom = sc.refererfrom.get
-  return pager.config.getBufferConfig(request.url, cookiejar, headers, refererfrom)
+  return pager.config.getBufferConfig(request.url, cookiejar, headers, refererfrom, scripting)
 
 # Load request in a new buffer.
 proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),

@@ -101,7 +101,7 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
     discard
   return 0
 
-proc evalJS(client: Client, src, filename: string): JSObject =
+proc evalJS(client: Client, src, filename: string): JSValue =
   if client.console.tty != nil:
     unblockStdin(client.console.tty.getFileHandle())
   result = client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
@@ -109,19 +109,19 @@ proc evalJS(client: Client, src, filename: string): JSObject =
     restoreStdin(client.console.tty.getFileHandle())
 
 proc evalJSFree(client: Client, src, filename: string) =
-  free(client.evalJS(src, filename))
+  JS_FreeValue(client.jsctx, client.evalJS(src, filename))
 
 proc command0(client: Client, src: string, filename = "<command>", silence = false) =
   let ret = client.evalJS(src, filename)
-  if ret.isException():
+  if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
   else:
     if not silence:
-      let str = ret.toString()
+      let str = toString(client.jsctx, ret)
       if str.issome:
         client.console.err.write(str.get & '\n')
         client.console.err.flush()
-  free(ret)
+  JS_FreeValue(client.jsctx, ret)
 
 proc command(client: Client, src: string) =
   client.command0(src)
@@ -182,7 +182,7 @@ proc input(client: Client) =
     else:
       client.feedNext = false
 
-proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
+proc setTimeout[T: JSValue|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
   let id = client.timeoutid
   inc client.timeoutid
   let fdi = client.selector.registerTimer(timeout, true, nil)
@@ -192,17 +192,17 @@ proc setTimeout[T: JSObject|string](client: Client, handler: T, timeout = 0): in
       client.evalJSFree(handler, "setTimeout handler")
     ), fdi)
   else:
-    let fun = JS_DupValue(handler.ctx, handler.val)
+    let fun = JS_DupValue(client.jsctx, handler)
     client.timeouts[id] = ((proc() =
-      let ret = JSObject(ctx: handler.ctx, val: fun).callFunction()
-      if ret.isException():
-        ret.ctx.writeException(client.console.err)
-      JS_FreeValue(ret.ctx, ret.val)
-      JS_FreeValue(ret.ctx, fun)
+      let ret = callFunction(client.jsctx, fun)
+      if JS_IsException(ret):
+        client.jsctx.writeException(client.console.err)
+      JS_FreeValue(client.jsctx, ret)
+      JS_FreeValue(client.jsctx, fun)
     ), fdi)
   return id
 
-proc setInterval[T: JSObject|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
+proc setInterval[T: JSValue|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
   let id = client.timeoutid
   inc client.timeoutid
   let fdi = client.selector.registerTimer(interval, false, nil)
@@ -212,13 +212,12 @@ proc setInterval[T: JSObject|string](client: Client, handler: T, interval = 0): 
       client.evalJSFree(handler, "setInterval handler")
     ), fdi, JS_NULL)
   else:
-    let fun = JS_DupValue(handler.ctx, handler.val)
+    let fun = JS_DupValue(client.jsctx, handler)
     client.intervals[id] = ((proc() =
-      let obj = JSObject(ctx: handler.ctx, val: fun)
-      let ret = obj.callFunction()
-      if ret.isException():
-        ret.ctx.writeException(client.console.err)
-      JS_FreeValue(ret.ctx, ret.val)
+      let ret = callFunction(client.jsctx, handler)
+      if JS_IsException(ret):
+        client.jsctx.writeException(client.console.err)
+      JS_FreeValue(client.jsctx, ret)
     ), fdi, fun)
   return id
 
@@ -471,16 +470,16 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.pager = newPager(config, result.attrs, dispatcher,
                           result.config.getSiteConfig(ctx),
                           result.config.getOmniRules(ctx))
-  var global = ctx.getGlobalObject()
+  var global = JS_GetGlobalObject(ctx)
   ctx.registerType(Client, asglobal = true)
-  global.setOpaque(result)
-  ctx.setProperty(global.val, "client", global.val)
-  free(global)
+  setOpaque(ctx, global, result)
+  ctx.setProperty(global, "client", global)
+  JS_FreeValue(ctx, global)
 
   ctx.registerType(Console)
 
   ctx.addCookieModule()
-  ctx.addUrlModule()
+  ctx.addURLModule()
   ctx.addDOMModule()
   ctx.addHTMLModule()
   ctx.addRequestModule()
@@ -488,4 +487,3 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
-  ctx.addConfigModule()

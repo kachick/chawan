@@ -11,7 +11,7 @@ import html/tags
 
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel
-  of ' ': return sel.attr in elem.attributes
+  of ' ': return elem.attrb(sel.attr)
   of '=': return elem.attr(sel.attr) == sel.value
   of '~': return sel.value in elem.attr(sel.attr).split(Whitespace)
   of '|':

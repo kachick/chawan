@@ -20,8 +20,9 @@ import css/stylednode
 import data/charset
 import config/config
 import html/dom
-import html/tags
+import html/env
 import html/htmlparser
+import html/tags
 import io/loader
 import io/request
 import io/posixstream
@@ -73,10 +74,11 @@ type
     width: int
     height: int
     attrs: WindowAttributes
+    window: Window
     document: Document
     viewport: Viewport
     prevstyled: StyledNode
-    location: Url
+    url: URL
     selector: Selector[int]
     istream: Stream
     sstream: Stream
@@ -471,7 +473,7 @@ proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
 
 proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =
   if buffer.document == nil: return (-1, -1)
-  let anchor = buffer.document.getElementById(buffer.location.anchor)
+  let anchor = buffer.document.getElementById(buffer.url.anchor)
   if anchor == nil: return
   for y in 0 ..< buffer.lines.len:
     let line = buffer.lines[y]
@@ -542,10 +544,10 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
 proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
   if elem.href == "": return
-  let url = parseUrl(elem.href, document.location.some)
+  let url = parseUrl(elem.href, document.url.some)
   if url.isSome:
     let url = url.get
-    if url.scheme == buffer.location.scheme:
+    if url.scheme == buffer.url.scheme:
       let media = elem.media
       if media != "":
         let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
@@ -585,7 +587,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
   let setct = source.contenttype.isNone
   if not setct:
     buffer.contenttype = source.contenttype.get
-  buffer.location = source.location
+  buffer.url = source.location
   case source.t
   of CLONE:
     let s = connectSocketStream(source.clonepid, blocking = false)
@@ -640,13 +642,14 @@ proc finishLoad(buffer: Buffer) =
   of "text/html":
     buffer.sstream.setPosition(0)
     buffer.available = 0
-    let (doc, cs) = parseHTML5(buffer.sstream, fallbackcs = buffer.cs)
+    if buffer.window == nil:
+      buffer.window = newWindow(buffer.config.scripting)
+    let (doc, cs) = parseHTML(buffer.sstream, fallbackcs = buffer.cs, window = buffer.window, url = buffer.url)
     buffer.document = doc
     if buffer.document == nil: # needsreinterpret
       buffer.sstream.setPosition(0)
-      let (doc, _) = parseHTML5(buffer.sstream, cs = some(cs))
+      let (doc, _) = parseHTML(buffer.sstream, cs = some(cs), window = buffer.window, url = buffer.url)
       buffer.document = doc
-    buffer.document.location = buffer.location
     buffer.loadResources(buffer.document)
   buffer.selector.unregister(buffer.fd)
   buffer.istream.close()
@@ -721,9 +724,10 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   of "text/html":
     buffer.sstream.setPosition(0)
     buffer.available = 0
-    let (doc, _) = parseHTML5(buffer.sstream, cs = some(buffer.cs)) # confidence: certain
+    if buffer.window == nil:
+      buffer.window = newWindow(buffer.config.scripting)
+    let (doc, _) = parseHTML(buffer.sstream, cs = some(buffer.cs), window = buffer.window, url = buffer.url) # confidence: certain
     buffer.document = doc
-    buffer.document.location = buffer.location
     buffer.do_reshape()
   return buffer.lines.len
 
@@ -816,11 +820,11 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   let entrylist = form.constructEntryList(submitter)
 
   let action = if submitter.action() == "":
-    $form.document.location
+    $form.document.url
   else:
     submitter.action()
 
-  let url = parseUrl(action, submitter.document.baseUrl.some)
+  let url = submitter.document.parseURL(action)
   if url.isnone:
     return none(Request)
 
@@ -956,7 +960,7 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
       result.repaint = buffer.setFocus(clickable)
     of TAG_A:
       result.repaint = buffer.restoreFocus()
-      let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseUrl.some)
+      let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseURL.some)
       if url.issome:
         result.open = some(newRequest(url.get, HTTP_GET))
     of TAG_OPTION:
@@ -1151,7 +1155,7 @@ proc runBuffer(buffer: Buffer, rfd: int) =
             try:
               buffer.readCommand()
             except EOFError:
-              #eprint "EOF error", $buffer.location & "\nMESSAGE:",
+              #eprint "EOF error", $buffer.url & "\nMESSAGE:",
               #       getCurrentExceptionMsg() & "\n",
               #       getStackTrace(getCurrentException())
               break loop
@@ -1197,6 +1201,8 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.readbufsize = BufferSize
   buffer.selector = newSelector[int]()
   buffer.srenderer = newStreamRenderer(buffer.sstream)
+  if buffer.config.scripting:
+    buffer.window = newWindow(buffer.config.scripting, some(buffer.loader))
   let socks = connectSocketStream(mainproc, false)
   socks.swrite(getpid())
   buffer.pstream = socks

@@ -967,14 +967,14 @@ proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jscto
   if base.issome:
     let baseUrl = parseUrl(base.get)
     if baseUrl.isnone:
-      JS_THROW JS_TypeError, base.get & " is not a valid URL"
+      JS_ERR JS_TypeError, base.get & " is not a valid URL"
     let url = parseUrl(s, baseUrl)
     if url.isnone:
-      JS_THROW JS_TypeError, s & " is not a valid URL"
+      JS_ERR JS_TypeError, s & " is not a valid URL"
     return url.get
   let url = parseUrl(s)
   if url.isnone:
-    JS_THROW JS_TypeError, s & " is not a valid URL"
+    JS_ERR JS_TypeError, s & " is not a valid URL"
   url.get.searchParams = newURLSearchParams()
   url.get.searchParams.url = url
   url.get.searchParams.initURLSearchParams(url.get.query.get(""))
@@ -1093,6 +1093,6 @@ proc hash*(url: URL, s: string) {.jsfset.} =
   url.fragment = some("")
   discard basicParseUrl(s, url = url, stateOverride = some(FRAGMENT_STATE))
 
-proc addUrlModule*(ctx: JSContext) =
+proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)
   ctx.registerType(URLSearchParams)

@@ -5,7 +5,6 @@ import sets
 import streams
 import tables
 
-import buffer/cell
 import io/request
 import js/regex
 import types/buffersource

@@ -97,12 +97,40 @@ type
   JSClassGCMark* = proc (rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
   JS_MarkFunc* = proc (rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
+
+  JSPropertyDescriptor* {.importc, header: qjsheader.} = object
+    flags*: cint
+    value*: JSValue
+    getter*: JSValue
+    setter*: JSValue
+
+  JSClassExoticMethods* {.importc, header: qjsheader.} =  object
+    get_own_property*: proc (ctx: JSContext, desc: ptr JSPropertyDescriptor,
+                             obj: JSValue, prop: JSAtom): cint {.cdecl.}
+    get_own_property_names*: proc (ctx: JSContext,
+                                   ptab: ptr ptr JSPropertyEnum,
+                                   plen: ptr uint32, obj: JSValue): cint {.cdecl.}
+    delete_property*: proc (ctx: JSContext, obj: JSValue, prop: JSAtom): cint {.cdecl.}
+    define_own_property*: proc (ctx: JSContext, this_obj: JSValue,
+                                prop: JSAtom, val, getter, setter: JSValue,
+                                flags: cint): cint {.cdecl.}
+    has_property*: proc (ctx: JSContext, obj: JSValue, atom: JSAtom): cint {.cdecl.}
+    get_property*: proc (ctx: JSContext, obj: JSValue, atom: JSAtom,
+                         receiver: JSValue, flags: cint): JSValue {.cdecl.}
+    set_property*: proc (ctx: JSContext, obj: JSValue, atom: JSAtom,
+                         value, receiver: JSValue, flags: cint): cint {.cdecl.}
+
+  JSClassExoticMethodsConst* {.importc: "const JSClassExoticMethods *", header: qjsheader.} = ptr JSClassExoticMethods
+
   JSClassDef* {.importc, header: qjsheader.} = object
     class_name*: cstring
     finalizer*: JSClassFinalizer
     gc_mark*: JSClassGCMark
     call*: pointer
-    exotic*: pointer
+    exotic*: JSClassExoticMethodsConst
+
+  JSClassDefConst* {.importc: "const JSClassDef *", header: qjsheader.} = ptr JSClassDef
+
   JSMemoryUsage*  = object
     malloc_size*, malloc_limit*, memory_used_size*: int64
     malloc_count*: int64
@@ -118,8 +146,6 @@ type
     fast_array_count*, fast_array_elements*: int64
     binary_object_count*, binary_object_size*: int64
 
-  JSClassDefConst* {.importc: "const JSClassDef *", header: qjsheader.} = ptr JSClassDef
-
   JSCFunctionEnum* {.size: sizeof(uint8).} = enum
     JS_CFUNC_generic, JS_CFUNC_generic_magic, JS_CFUNC_constructor,
     JS_CFUNC_constructor_magic, JS_CFUNC_constructor_or_func,
@@ -127,7 +153,6 @@ type
     JS_CFUNC_getter, JS_CFUNC_setter, JS_CFUNC_getter_magic,
     JS_CFUNC_setter_magic, JS_CFUNC_iterator_next
 
-type
   JSCFunctionType* {.importc, union.} = object
     generic*: JSCFunction
     getter*: JSGetterFunction
@@ -328,6 +353,7 @@ proc JS_GetPropertyStr*(ctx: JSContext, this_obj: JSValue, prop: cstring): JSVal
 proc JS_GetPropertyUint32*(ctx: JSContext, this_obj: JSValue, idx: uint32): JSValue
 proc JS_GetOwnPropertyNames*(ctx: JSContext, ptab: ptr ptr JSPropertyEnum, plen: ptr uint32, obj: JSValue, flags: cint): int
 
+proc JS_GetOwnProperty*(ctx: JSContext, desc: ptr JSPropertyDescriptor, obj: JSValue, prop: JSAtom): cint
 proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint, argv: ptr JSValue): JSValue
 
 proc JS_DefineProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue, getter: JSValue, setter: JSValue, flags: cint): cint
@@ -380,6 +406,7 @@ proc JS_IsArray*(ctx: JSContext, v: JSValue): cint
 proc JS_Throw*(ctx: JSContext, obj: JSValue): JSValue
 proc JS_GetException*(ctx: JSContext): JSValue
 proc JS_IsError*(ctx: JSContext, v: JSValue): JS_BOOL
+proc JS_NewError*(ctx: JSContext): JSValue
 proc JS_ThrowSyntaxError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
 proc JS_ThrowTypeError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
 proc JS_ThrowReferenceError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
