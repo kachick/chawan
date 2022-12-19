@@ -51,7 +51,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     let parent = when selem is StyledNode: selem.parent
     else: selem.parentNode
     if parent == nil: return false
-    for child in parent.children:
+    for child in parent.elementList:
       when selem is StyledNode:
         if not child.isDomElement: continue
       if child == selem:
@@ -72,7 +72,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     let parent = when selem is StyledNode: selem.parent
     else: selem.parentNode
     if parent == nil: return false
-    for child in parent.children_rev:
+    for child in parent.elementList_rev:
       when selem is StyledNode:
         if not child.isDomElement: continue
       if child == selem:
@@ -138,7 +138,7 @@ func combinatorSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, fe
       let parent = when elem is StyledNode: elem.parent
       else: elem.parentElement
       if parent == nil: return false
-      for child in parent.children_rev:
+      for child in parent.elementList_rev:
         when elem is StyledNode:
           if not child.isDomElement: continue
         if found:
@@ -154,7 +154,7 @@ func combinatorSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, fe
       let parent = when selem is StyledNode: selem.parent
       else: elem.parentElement
       if parent == nil: return false
-      for child in parent.children_rev:
+      for child in parent.elementList_rev:
         when selem is StyledNode:
           if not child.isDomElement: continue
         if child == selem:

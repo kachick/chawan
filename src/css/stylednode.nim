@@ -68,7 +68,11 @@ iterator branch*(node: StyledNode): StyledNode {.inline.} =
     yield node
     node = node.parent
 
-iterator children_rev*(node: StyledNode): StyledNode {.inline.} =
+iterator elementList*(node: StyledNode): StyledNode {.inline.} =
+  for child in node.children:
+    yield child
+
+iterator elementList_rev*(node: StyledNode): StyledNode {.inline.} =
   for i in countdown(node.children.high, 0):
     yield node.children[i]
 

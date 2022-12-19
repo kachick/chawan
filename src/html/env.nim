@@ -6,6 +6,7 @@ import types/url
 
 proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
   result = Window(
+    console: console(),
     loader: loader,
     settings: EnvironmentSettings(
       scripting: scripting
@@ -21,6 +22,7 @@ proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
     ctx.setOpaque(global, result)
     ctx.setProperty(global, "window", global)
     JS_FreeValue(ctx, global)
+    ctx.addconsoleModule()
     ctx.addDOMModule()
     ctx.addURLModule()
     ctx.addHTMLModule()

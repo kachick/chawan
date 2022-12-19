@@ -205,8 +205,7 @@ func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, inte
   #TODO custom elements
   let document = intendedParent.document
   let localName = token.tagname
-  let element = document.newHTMLElement(localName, namespace, tagType = token.tagtype)
-  element.appendAttributes(token.attrs)
+  let element = document.newHTMLElement(localName, namespace, tagType = token.tagtype, attrs = token.attrs)
   if element.isResettable():
     element.resetElement()
 
@@ -1086,10 +1085,12 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         let token = parser.activeFormatting[formattingIndex][1]
         let element = parser.createElement(token, Namespace.HTML, furthestBlock)
         var tomove: seq[Node]
-        for j in countdown(furthestBlock.childNodes.high, 0):
-          let child = furthestBlock.childNodes[j]
-          child.remove()
+        j = furthestBlock.childList.high
+        while j >= 0:
+          let child = furthestBlock.childList[j]
+          child.remove(j, true)
           tomove.add(child)
+          dec j
         for child in tomove:
           element.append(child)
         furthestBlock.append(element)
@@ -1139,7 +1140,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         else:
           for k, v in token.attrs:
             if k notin parser.openElements[0].attrs:
-              parser.openElements[0].attrs[k] = v
+              parser.openElements[0].attr(k, v)
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>", "<script>", "<style>", "<template>", "<title>",
        "</template>") => (block: parser.processInHTMLContent(token, IN_HEAD))
@@ -1151,7 +1152,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           parser.framesetOk = false
           for k, v in token.attrs:
             if k notin parser.openElements[1].attrs:
-              parser.openElements[1].attrs[k] = v
+              parser.openElements[1].attr(k, v)
       )
       "<frameset>" => (block:
         parse_error

@@ -105,6 +105,10 @@ func toLowerAscii2*(str: string): string =
   for i in i ..< str.len:
     result[i] = str[i].tolower()
 
+proc toLowerAsciiInPlace*(str: var string) =
+  for i in 0 ..< str.len:
+    str[i] = str[i].tolower()
+
 func toHeaderCase*(str: string): string =
   result = str
   var flip = true

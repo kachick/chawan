@@ -557,19 +557,11 @@ proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
         elem.sheet = parseStylesheet(fs.body)
 
 proc loadResources(buffer: Buffer, document: Document) =
-  var stack: seq[Element]
   if document.html != nil:
-    stack.add(document.html)
-  while stack.len > 0:
-    let elem = stack.pop()
-
-    if elem.tagType == TAG_LINK:
+    for elem in document.html.elements(TAG_LINK):
       let elem = HTMLLinkElement(elem)
       if elem.rel == "stylesheet":
         buffer.loadResource(document, elem)
-
-    for child in elem.children_rev:
-      stack.add(child)
 
 type ConnectResult* = object
   code*: int

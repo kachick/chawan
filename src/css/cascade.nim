@@ -359,9 +359,9 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
         stack_append styledChild, PSEUDO_IMAGE
       else:
-        for i in countdown(elem.childNodes.high, 0):
-          if elem.childNodes[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
-            stack_append styledChild, elem.childNodes[i]
+        for i in countdown(elem.childList.high, 0):
+          if elem.childList[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
+            stack_append styledChild, elem.childList[i]
         if elem.tagType == TAG_INPUT:
           stack_append styledChild, PSEUDO_INPUT_TEXT
 

@@ -21,6 +21,7 @@
 #   nothing. The key should probably be either a string or an integer.
 import macros
 import options
+import sets
 import streams
 import strformat
 import strutils
@@ -61,6 +62,7 @@ type
     done: JSAtom
     next: JSAtom
     value: JSAtom
+    Array_prototype_values: JSValue
 
   JSRuntimeOpaque* = ref object
     plist: Table[pointer, pointer]
@@ -88,7 +90,7 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   var opaque = new(JSContextOpaque)
   GC_ref(opaque)
 
-  block:
+  block: # get well-known symbols and other functions
     let global = JS_GetGlobalObject(ctx)
     block:
       let sym = JS_GetPropertyStr(ctx, global, "Symbol")
@@ -116,6 +118,11 @@ proc newJSContext*(rt: JSRuntime): JSContext =
       block:
         let s = "next"
         opaque.next = JS_NewAtomLen(ctx, cstring(s), csize_t(s.len))
+      block:
+        # 2 - JS_CLASS_ARRAY
+        let arrproto = JS_GetClassProto(ctx, 2)
+        opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto, "values")
+        JS_FreeValue(ctx, arrproto)
       JS_FreeValue(ctx, sym)
     JS_FreeValue(ctx, global)
 
@@ -149,6 +156,7 @@ proc free*(ctx: var JSContext) =
     JS_FreeAtom(ctx, opaque.sym_toStringTag)
     JS_FreeAtom(ctx, opaque.done)
     JS_FreeAtom(ctx, opaque.next)
+    JS_FreeValue(ctx, opaque.Array_prototype_values)
     GC_unref(opaque)
   JS_FreeContext(ctx)
   ctx = nil
@@ -260,6 +268,10 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, ctor: JSCFunction, funcs
     #TODO maybe put them in ctxOpaque instead?
     rtOpaque.flist.add(@funcs)
     JS_SetPropertyFunctionList(ctx, proto, addr rtOpaque.flist[^1][0], cint(funcs.len))
+  #TODO check if this is an indexed property getter
+  if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
+    let val = JS_DupValue(ctx, ctxOpaque.Array_prototype_values)
+    assert JS_SetProperty(ctx, proto, ctxOpaque.sym_iterator, val) == 1
   assert JS_SetProperty(ctx, proto, ctxOpaque.sym_toStringTag, JS_NewString(ctx, cdef.class_name)) == 1
   JS_SetClassProto(ctx, result, proto)
   if asglobal:
@@ -269,11 +281,11 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, ctor: JSCFunction, funcs
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " & $cdef.class_name)
     JS_FreeValue(ctx, global)
+  let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0, JS_CFUNC_constructor)
+  JS_SetConstructor(ctx, jctor, proto)
+  ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     let global = JS_GetGlobalObject(ctx)
-    let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0, JS_CFUNC_constructor)
-    JS_SetConstructor(ctx, jctor, proto)
-    ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
     ctx.setProperty(global, $cdef.class_name, jctor)
     JS_FreeValue(ctx, global)
 
@@ -387,7 +399,7 @@ macro fromJSTupleBody(a: tuple) =
         if `done`.isnone: # exception
           return none(T)
         var i = `i`
-        # we're simulating a sequence, so we must query all remaining parameters too:
+        # we're emulating a sequence, so we must query all remaining parameters too:
         while not `done`.get:
           inc i
           let next = JS_Call(ctx, next_method, it, 0, nil)
@@ -600,12 +612,14 @@ proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
   elif typeof(result.get) is Table:
     return fromJSTable[typeof(result.get.keys), typeof(result.get.values)](ctx, val)
   elif T is SomeInteger:
-    return fromJSInt[T](ctx, val)
+    if JS_IsNumber(val):
+      return fromJSInt[T](ctx, val)
   elif T is SomeFloat:
-    let f64: float64
-    if JS_ToFloat64(ctx, addr f64, val) < 0:
-      return none(T)
-    return some(cast[T](f64))
+    if JS_IsNumber(val):
+      let f64: float64
+      if JS_ToFloat64(ctx, addr f64, val) < 0:
+        return none(T)
+      return some(cast[T](f64))
   elif T is enum:
     #TODO implement enum handling...
     if JS_IsException(val):
@@ -633,9 +647,18 @@ proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
       return none(T)
     return some(op)
 
+const JS_ATOM_TAG_INT = cuint(1u32 shl 31)
+
+func JS_IsNumber(v: JSAtom): JS_BOOL =
+  return (cast[cuint](v) and JS_ATOM_TAG_INT) != 0
+
 func fromJS[T: string|uint32](ctx: JSContext, atom: JSAtom): Option[T] =
-  let val = JS_AtomToValue(ctx, atom)
-  return fromJS[T](ctx, val)
+  when T is SomeNumber:
+    if JS_IsNumber(atom):
+      return some(T(cast[uint32](atom) and (not JS_ATOM_TAG_INT)))
+  else:
+    let val = JS_AtomToValue(ctx, atom)
+    return fromJS[T](ctx, val)
 
 proc getJSFunction*[T, U](ctx: JSContext, val: JSValue): Option[(proc(x: T): Option[U])] =
   return fromJS[(proc(x: T): Option[U])](ctx, val)
@@ -900,13 +923,10 @@ template fromJS_or_return*(t, ctx, val: untyped): untyped =
   )
 
 template fromJS_or_die*(t, ctx, val, ev, dl: untyped): untyped =
-  let valval = when typeof(val) is JSAtom:
-    JS_AtomToValue(ctx, val)
-  else:
-    val
-  if JS_IsException(valval):
-    return ev
-  let x = fromJS[t](ctx, valval)
+  when not (typeof(val) is JSAtom):
+    if JS_IsException(val):
+      return ev
+  let x = fromJS[t](ctx, val)
   if x.isnone:
     break dl
   x.get
@@ -940,11 +960,6 @@ proc addUnionParamBranch(gen: var JSFuncGenerator, query, newBranch: NimNode, fa
     gen.jsFunCallLists[i].add(ifstmt)
     gen.jsFunCallLists[i] = oldBranch
   gen.newBranchList.add(newBranch)
-
-const JS_ATOM_TAG_INT = cuint(1u32 shl 31)
-
-proc JS_IsNumber(v: JSAtom): JS_BOOL =
-  return (cast[cuint](v) and JS_ATOM_TAG_INT) != 0
 
 proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimNode, fallback: NimNode = nil) =
   # Union types.
@@ -1111,6 +1126,7 @@ proc finishFunCallList(gen: var JSFuncGenerator) =
     branch.add(gen.jsFunCall)
 
 var js_funcs {.compileTime.}: Table[string, JSFuncGenerator]
+var existing_funcs {.compileTime.}: HashSet[string]
 
 proc registerFunction(typ: string, t: BoundFunctionType, name: string, id: NimNode, magic: uint16 = 0) =
   let nf = BoundFunction(t: t, name: name, id: id, magic: magic)
@@ -1118,10 +1134,14 @@ proc registerFunction(typ: string, t: BoundFunctionType, name: string, id: NimNo
     BoundFunctions[typ] = @[nf]
   else:
     BoundFunctions[typ].add(nf)
+  existing_funcs.incl(id.strVal)
+
+proc registerConstructor(gen: JSFuncGenerator) =
+  registerFunction(gen.thisType, gen.t, gen.funcName, ident(gen.newName))
+  js_funcs[gen.funcName] = gen
 
 proc registerFunction(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, gen.t, gen.funcName, ident(gen.newName))
-  js_funcs[gen.funcName] = gen
 
 var js_errors {.compileTime.}: Table[string, seq[string]]
 
@@ -1258,73 +1278,73 @@ macro jserr*(fun: untyped) =
 
 macro jsctor*(fun: typed) =
   var gen = setupGenerator(fun, CONSTRUCTOR, thisname = none(string))
-  if gen.funcName in js_funcs:
+  if gen.newName in existing_funcs:
     #TODO TODO TODO implement function overloading
     error("Function overloading hasn't been implemented yet...")
-  else:
-    gen.addRequiredParams()
-    gen.addOptionalParams()
-    gen.finishFunCallList()
-    let jfcl = gen.jsFunCallList
-    let dl = gen.dielabel
-    gen.jsCallAndRet = quote do:
-      block `dl`:
-        return ctx.toJS(`jfcl`)
-      return JS_UNDEFINED
-    discard gen.newJSProc(getJSParams())
-    gen.registerFunction()
-    result = newStmtList(fun)
+  gen.addRequiredParams()
+  gen.addOptionalParams()
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      return ctx.toJS(`jfcl`)
+    return JS_UNDEFINED
+  discard gen.newJSProc(getJSParams())
+  gen.registerConstructor()
+  result = newStmtList(fun)
 
 macro jshasprop*(fun: typed) =
   var gen = setupGenerator(fun, PROPERTY_HAS, thisname = some("obj"))
-  if gen.funcName in js_funcs:
+  if gen.newName in existing_funcs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
-  else:
-    gen.addFixParam("obj")
-    gen.addFixParam("atom")
-    gen.finishFunCallList()
-    let jfcl = gen.jsFunCallList
-    let dl = gen.dielabel
-    gen.jsCallAndRet = quote do:
-      block `dl`:
-        let retv = `jfcl`
-        return cint(retv)
-    let jsProc = gen.newJSProc(getJSHasPropParams(), false)
-    gen.registerFunction()
-    result = newStmtList(fun, jsProc)
+  gen.addFixParam("obj")
+  gen.addFixParam("atom")
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      let retv = `jfcl`
+      return cint(retv)
+  let jsProc = gen.newJSProc(getJSHasPropParams(), false)
+  gen.registerFunction()
+  result = newStmtList(fun, jsProc)
 
 macro jsgetprop*(fun: typed) =
   var gen = setupGenerator(fun, PROPERTY_GET, thisname = some("obj"))
-  if gen.funcName in js_funcs:
+  if gen.newName in existing_funcs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
-  else:
-    gen.addFixParam("obj")
-    gen.addFixParam("prop")
-    gen.finishFunCallList()
-    let jfcl = gen.jsFunCallList
-    let dl = gen.dielabel
-    gen.jsCallAndRet = quote do:
-      block `dl`:
-        let retv = ctx.toJS(`jfcl`)
-        if retv != JS_NULL:
-          desc[].setter = JS_UNDEFINED
-          desc[].getter = JS_UNDEFINED
-          desc[].value = retv
-          desc[].flags = 0
-          return cint(1)
-      return cint(0)
-    let jsProc = gen.newJSProc(getJSGetPropParams(), false)
-    gen.registerFunction()
-    result = newStmtList(fun, jsProc)
+  gen.addFixParam("obj")
+  gen.addFixParam("prop")
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      let retv = ctx.toJS(`jfcl`)
+      if retv != JS_NULL:
+        desc[].setter = JS_UNDEFINED
+        desc[].getter = JS_UNDEFINED
+        desc[].value = retv
+        desc[].flags = 0
+        return cint(1)
+    return cint(0)
+  let jsProc = gen.newJSProc(getJSGetPropParams(), false)
+  gen.registerFunction()
+  result = newStmtList(fun, jsProc)
 
 macro jsfget*(fun: typed) =
   var gen = setupGenerator(fun, GETTER)
   if gen.minArgs != 1 or gen.funcParams.len != gen.minArgs:
-    error("jsfget functions must one parameters")
+    error("jsfget functions must only have one parameter.")
   if gen.returnType.isnone:
-    error("jsfget functions must have a return type")
+    error("jsfget functions must have a return type.")
+  if gen.newName in existing_funcs:
+    #TODO TODO TODO ditto
+    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("this")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList

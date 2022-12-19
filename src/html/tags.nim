@@ -142,6 +142,10 @@ const LabelableElements* = {
   TAG_BUTTON, TAG_INPUT, TAG_METER, TAG_OUTPUT, TAG_PROGRESS, TAG_SELECT, TAG_TEXTAREA
 }
 
+const CharacterDataNodes* = {
+  TEXT_NODE, CDATA_SECTION_NODE, PROCESSING_INSTRUCTION_NODE, COMMENT_NODE
+}
+
 #https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
 #NOTE MathML not implemented
 #TODO SVG foreignObject, SVG desc, SVG title
