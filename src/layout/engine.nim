@@ -1542,5 +1542,6 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var In
 
 proc renderLayout*(viewport: var Viewport, document: Document, root: StyledNode) =
   viewport.root.setLen(0)
+  viewport.absolutes.setLen(0)
   let builder = root.generateBlockBox(viewport)
   viewport.buildRootBlock(builder)
