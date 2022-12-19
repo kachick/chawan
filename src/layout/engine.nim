@@ -258,6 +258,7 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed, co
 proc addWord(state: var InlineState) =
   if state.word.str != "":
     var word = state.word
+    word.str.mnormalize() #TODO this may break on EOL.
     word.height = state.ictx.cellheight
     word.baseline = word.height
     state.ictx.addAtom(word, state.maxwidth, state.computed, state.computed)
@@ -273,16 +274,21 @@ proc checkWrap(state: var InlineState, r: Rune) =
     return
   let shift = state.ictx.computeShift(state.computed)
   case state.computed{"word-break"}
+  of WORD_BREAK_NORMAL:
+    if r.width() == 2: # break cjk
+      if state.ictx.currentLine.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
+        state.addWord()
+        state.ictx.finishLine(state.computed, state.maxwidth)
+        state.ictx.whitespacenum = 0
   of WORD_BREAK_BREAK_ALL:
     if state.ictx.currentLine.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
       state.addWord()
-      state.ictx.finishLine(state.computed, state.maxwidth, false)
+      state.ictx.finishLine(state.computed, state.maxwidth)
       state.ictx.whitespacenum = 0
   of WORD_BREAK_KEEP_ALL:
     if state.ictx.currentLine.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
-      state.ictx.finishLine(state.computed, state.maxwidth, false)
+      state.ictx.finishLine(state.computed, state.maxwidth)
       state.ictx.whitespacenum = 0
-  else: discard
 
 proc processWhitespace(state: var InlineState, c: char) =
   state.addWord()

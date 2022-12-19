@@ -9,6 +9,7 @@ import sequtils
 import options
 import punycode
 
+import bindings/libunicode
 import data/idna
 
 when defined(posix):
@@ -105,7 +106,7 @@ func toLowerAscii2*(str: string): string =
   for i in i ..< str.len:
     result[i] = str[i].tolower()
 
-proc toLowerAsciiInPlace*(str: var string) =
+proc mtoLowerAscii*(str: var string) =
   for i in 0 ..< str.len:
     str[i] = str[i].tolower()
 
@@ -525,8 +526,50 @@ func clearControls*(s: string): string =
     if c notin Controls:
       result &= c
 
+proc passRealloc(opaque: pointer, p: pointer, size: csize_t): pointer {.cdecl.} =
+  return realloc(p, size)
+
+proc mnormalize*(rs: var seq[Rune], form = UNICODE_NFC) = {.cast(noSideEffect).}:
+  if rs.len == 0: return
+  var outbuf: ptr uint32
+  let out_len = unicode_normalize(addr outbuf,
+                                  cast[ptr uint32](unsafeAddr rs[0]),
+                                  cint(rs.len), form, nil, passRealloc)
+  if out_len < 0:
+    raise newException(Defect, "Unicode normalization failed")
+  if out_len == 0:
+    return
+  rs = cast[seq[Rune]](newSeqUninitialized[uint32](out_len))
+  copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
+  dealloc(outbuf)
+
+#TODO maybe a utf8 normalization procedure?
+proc mnormalize*(s: var string) =
+  block do_nothing:
+    for c in s:
+      if c notin Ascii:
+        break do_nothing
+    return # no need to normalize ascii
+  var rs = s.toRunes()
+  rs.mnormalize()
+  s = $rs
+
+func normalize*(rs: seq[Rune], form = UNICODE_NFC): seq[Rune] = {.cast(noSideEffect).}:
+  if rs.len == 0: return
+  var outbuf: ptr uint32
+  let out_len = unicode_normalize(addr outbuf,
+                                  cast[ptr uint32](unsafeAddr rs[0]),
+                                  cint(rs.len), form, nil, passRealloc)
+  if out_len < 0:
+    raise newException(Defect, "Unicode normalization failed")
+  if out_len == 0:
+    return
+  result = cast[seq[Rune]](newSeqUninitialized[uint32](out_len))
+  copyMem(addr result[0], outbuf, out_len * sizeof(uint32))
+  dealloc(outbuf)
+
 func processIdna(str: string, checkhyphens, checkbidi, checkjoiners, transitionalprocessing: bool): Option[string] =
-  var mapped = ""
+  var mapped: seq[Rune]
   var i = 0
   while i < str.len:
     var r: Rune
@@ -535,34 +578,48 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners, transitiona
     case status
     of IDNA_DISALLOWED: return none(string) #error
     of IDNA_IGNORED: discard
-    of IDNA_MAPPED: mapped &= getIdnaMapped(r)
+    of IDNA_MAPPED: mapped &= getIdnaMapped(r).toRunes()
     of IDNA_DEVIATION:
-      if transitionalprocessing: mapped &= getDeviationMapped(r)
-      else: mapped &= r
+      if transitionalprocessing:
+        mapped &= getDeviationMapped(r).toRunes()
+      else:
+        mapped &= r
     of IDNA_VALID: mapped &= r
-  
-  #TODO normalize
+  if mapped.len == 0: return
+  mapped.mnormalize()
+  var cr: CharRange
+  {.cast(noSideEffect).}:
+    cr_init(addr cr, nil, passRealloc)
+    assert unicode_general_category(addr cr, "Mark") == 0
   var labels: seq[string]
-  for label in str.split('.'):
+  for label in ($mapped).split('.'):
     var s = label
     if label.startsWith("xn--"):
       try:
         s = punycode.decode(label.substr("xn--".len))
       except PunyError:
         return none(string) #error
-    #TODO check normalization
+    let x0 = s.toRunes()
+    block:
+      let x1 = normalize(x0)
+      if x0 == x1:
+        return none(string) #error
     if checkhyphens:
       if s.len >= 4 and s[2] == '-' and s[3] == '-':
         return none(string) #error
       if s.len > 0 and s[0] == '-' and s[^1] == '-':
         return none(string) #error
-    var i = 0
-    while i < s.len:
-      if s[i] == '.':
+    if x0.len > 0:
+      let r = x0[0]
+      for i in 0 ..< cr.len div 2:
+        #TODO bisearch instead
+        var a = cast[ptr uint32](cast[int](cr.points) + i * sizeof(uint32) * 2)[]
+        var b = cast[ptr uint32](cast[int](cr.points) + i * sizeof(uint32) * 2 + 1)[]
+        if cast[uint32](r) in a .. b:
+          return none(string) #error
+    for r in x0:
+      if r == Rune('.'):
         return none(string) #error
-      var r: Rune
-      fastRuneAt(str, i, r)
-      #TODO check general category mark
       let status = getIdnaTableStatus(r)
       case status
       of IDNA_DISALLOWED, IDNA_IGNORED, IDNA_MAPPED:
@@ -574,6 +631,7 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners, transitiona
       #TODO check joiners
       #TODO check bidi
     labels.add(s)
+  cr_free(addr cr)
   return labels.join('.').some
 
 func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitionalprocessing, verifydnslength: bool): Option[string] =
@@ -819,10 +877,11 @@ func is_dwidth_cjk(r: Rune): bool =
 # compute lookup table on startup
 var width_table*: array[0..0x10FFFF, byte]
 
+# Note: control chars return a width of 2, as we display them as ^{letter}.
 func makewidthtable*(cjk: bool): array[0..0x10FFFF, byte] {.noInit.} =
   for r in low(char)..high(char):
     if r in Controls:
-      result[int(r)] = 0
+      result[int(r)] = 2
     else:
       result[int(r)] = 1
 

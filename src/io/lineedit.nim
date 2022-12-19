@@ -39,32 +39,6 @@ type
 func newLineHistory*(): LineHistory =
   return LineHistory()
 
-func lwidth(r: Rune): int =
-  if r.isControlChar():
-    return 2
-  return r.width()
-
-func lwidth(s: string): int =
-  for r in s.runes():
-    result += lwidth(r)
-
-func lwidth(s: seq[Rune]): int =
-  for r in s:
-    result += lwidth(r)
-
-func lwidth(s: seq[Rune], min, max: int): int =
-  var i = min
-  var mi = min(max, s.len)
-  while i < mi:
-    result += lwidth(s[i])
-    inc i
-
-func lwidth(s: seq[Rune], min: int): int =
-  var i = min
-  while i < s.len:
-    result += lwidth(s[i])
-    inc i
-
 const colorFormat = (func(): Format =
   result = newFormat()
   result.fgcolor = ColorsANSIFg[4] # blue
@@ -97,7 +71,7 @@ template kill0(edit: LineEdit, i: int) =
   edit.backward0(i)
 
 template kill0(edit: LineEdit) =
-  let w = min(edit.news.lwidth(edit.cursor), edit.displen)
+  let w = min(edit.news.width(edit.cursor), edit.displen)
   edit.kill0(w)
 
 proc backward0(state: LineEdit, i: int) =
@@ -118,41 +92,41 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
   var x = 0
   for r in edit.prompt.runes():
     result[x].str &= $r
-    x += r.lwidth()
+    x += r.width()
   if edit.hide:
     for r in edit.news:
-      let w = r.lwidth()
+      let w = r.width()
       result[x].str = '*'.repeat(w)
       x += w
       if x >= result.width: break
   else:
     for r in edit.news:
       result[x].str &= $r
-      x += r.lwidth()
+      x += r.width()
       if x >= result.width: break
   var s = ""
   for c in result:
     s &= c.str
 
 proc getCursorX*(edit: LineEdit): int =
-  return edit.promptw + edit.news.lwidth(edit.shift, edit.cursor)
+  return edit.promptw + edit.news.width(edit.shift, edit.cursor)
 
 proc redraw(state: LineEdit) =
   if state.shift + state.displen > state.news.len:
     state.displen = state.news.len - state.shift
-  var dispw = state.news.lwidth(state.shift, state.shift + state.displen)
+  var dispw = state.news.width(state.shift, state.shift + state.displen)
   while dispw > state.maxwidth - 1:
-    dispw -= state.news[state.shift + state.displen - 1].lwidth()
+    dispw -= state.news[state.shift + state.displen - 1].width()
     dec state.displen
   state.begin0()
   let os = state.news.substr(state.shift, state.shift + state.displen)
   if state.hide:
-    state.printesc('*'.repeat(os.lwidth()))
+    state.printesc('*'.repeat(os.width()))
   else:
     state.printesc(os)
-  state.space(max(state.maxwidth - state.minlen - os.lwidth(), 0))
+  state.space(max(state.maxwidth - state.minlen - os.width(), 0))
   state.begin0()
-  state.forward0(state.news.lwidth(state.shift, state.cursor))
+  state.forward0(state.news.width(state.shift, state.cursor))
 
 proc zeroShiftRedraw(state: LineEdit) =
   state.shift = 0
@@ -162,10 +136,10 @@ proc zeroShiftRedraw(state: LineEdit) =
 proc fullRedraw(state: LineEdit) =
   state.displen = state.news.len
   if state.cursor > state.shift:
-    var shiftw = state.news.lwidth(state.shift, state.cursor)
+    var shiftw = state.news.width(state.shift, state.cursor)
     while shiftw > state.maxwidth - 1:
       inc state.shift
-      shiftw -= state.news[state.shift].lwidth()
+      shiftw -= state.news[state.shift].width()
   else:
     state.shift = max(state.cursor - 1, 0)
   state.redraw()
@@ -177,11 +151,11 @@ proc insertCharseq(edit: LineEdit, cs: var seq[Rune]) =
   if cs.len == 0:
     return
 
-  if edit.cursor >= edit.news.len and edit.news.lwidth(edit.shift, edit.cursor) + cs.lwidth() < edit.maxwidth:
+  if edit.cursor >= edit.news.len and edit.news.width(edit.shift, edit.cursor) + cs.width() < edit.maxwidth:
     edit.news &= cs
     edit.cursor += cs.len
     if edit.hide:
-      edit.printesc('*'.repeat(cs.lwidth()))
+      edit.printesc('*'.repeat(cs.width()))
     else:
       edit.printesc(cs)
   else:
@@ -200,7 +174,7 @@ proc submit(edit: LineEdit) {.jsfunc.} =
 
 proc backspace(edit: LineEdit) {.jsfunc.} =
   if edit.cursor > 0:
-    let w = edit.news[edit.cursor - 1].lwidth()
+    let w = edit.news[edit.cursor - 1].width()
     edit.news.delete(edit.cursor - 1..edit.cursor - 1)
     dec edit.cursor
     if edit.cursor == edit.news.len and edit.shift == 0:
@@ -217,7 +191,7 @@ proc write*(edit: LineEdit, s: string): bool {.jsfunc.} =
 
 proc delete(edit: LineEdit) {.jsfunc.} =
   if edit.cursor >= 0 and edit.cursor < edit.news.len:
-    let w = edit.news[edit.cursor].lwidth()
+    let w = edit.news[edit.cursor].width()
     edit.news.delete(edit.cursor..edit.cursor)
     if edit.cursor == edit.news.len and edit.shift == 0:
       edit.kill0(w)
@@ -242,17 +216,17 @@ proc backward(edit: LineEdit) {.jsfunc.} =
   if edit.cursor > 0:
     dec edit.cursor
     if edit.cursor > edit.shift or edit.shift == 0:
-      edit.backward0(edit.news[edit.cursor].lwidth())
+      edit.backward0(edit.news[edit.cursor].width())
     else:
       edit.fullRedraw()
 
 proc forward(edit: LineEdit) {.jsfunc.} =
   if edit.cursor < edit.news.len:
     inc edit.cursor
-    if edit.news.lwidth(edit.shift, edit.cursor) < edit.maxwidth:
+    if edit.news.width(edit.shift, edit.cursor) < edit.maxwidth:
       var n = 1
       if edit.news.len > edit.cursor:
-        n = edit.news[edit.cursor].lwidth()
+        n = edit.news[edit.cursor].width()
       edit.forward0(n)
     else:
       edit.fullRedraw()
@@ -265,20 +239,20 @@ proc prevWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
       break
   if edit.cursor != oc:
     if edit.cursor > edit.shift or edit.shift == 0:
-      edit.backward0(edit.news.lwidth(edit.cursor, oc))
+      edit.backward0(edit.news.width(edit.cursor, oc))
     else:
       edit.fullRedraw()
 
 proc nextWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
   let oc = edit.cursor
-  let ow = edit.news.lwidth(edit.shift, edit.cursor)
+  let ow = edit.news.width(edit.shift, edit.cursor)
   while edit.cursor < edit.news.len:
     inc edit.cursor
     if edit.cursor < edit.news.len:
       if edit.news[edit.cursor].breaksWord(check):
         break
   if edit.cursor != oc:
-    let dw = edit.news.lwidth(oc, edit.cursor)
+    let dw = edit.news.width(oc, edit.cursor)
     if ow + dw < edit.maxwidth:
       edit.forward0(dw)
     else:
@@ -314,7 +288,7 @@ proc killWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
 proc begin(edit: LineEdit) {.jsfunc.} =
   if edit.cursor > 0:
     if edit.shift == 0:
-      edit.backward0(edit.news.lwidth(0, edit.cursor))
+      edit.backward0(edit.news.width(0, edit.cursor))
       edit.cursor = 0
     else:
       edit.cursor = 0
@@ -322,8 +296,8 @@ proc begin(edit: LineEdit) {.jsfunc.} =
 
 proc `end`(edit: LineEdit) {.jsfunc.} =
   if edit.cursor < edit.news.len:
-    if edit.news.lwidth(edit.shift, edit.news.len) < edit.maxwidth:
-      edit.forward0(edit.news.lwidth(edit.cursor, edit.news.len))
+    if edit.news.width(edit.shift, edit.news.len) < edit.maxwidth:
+      edit.forward0(edit.news.width(edit.cursor, edit.news.len))
       edit.cursor = edit.news.len
     else:
       edit.cursor = edit.news.len
@@ -359,15 +333,15 @@ proc readLine*(prompt: string, termwidth: int, current = "",
                term: Terminal, hist: LineHistory): LineEdit =
   result = LineEdit(
     prompt: prompt,
-    promptw: prompt.lwidth(),
+    promptw: prompt.width(),
     current: current,
     news: current.toRunes(),
-    minlen: prompt.lwidth(),
+    minlen: prompt.width(),
     disallowed: disallowed,
     hide: hide,
     term: term
   )
-  result.cursor = result.news.lwidth()
+  result.cursor = result.news.width()
   result.maxwidth = termwidth - result.promptw
   result.displen = result.cursor
   result.hist = hist

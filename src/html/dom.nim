@@ -774,14 +774,14 @@ func getElementsByClassName(node: Node, classNames: string): HTMLCollection {.js
   let isquirks = node.document.mode == QUIRKS
   if isquirks:
     for i in 0 .. classes.high:
-      classes[i].toLowerAsciiInPlace()
+      classes[i].mtoLowerAscii()
   return newCollection[HTMLCollection](node,
     func(node: Node): bool =
       if node.nodeType == ELEMENT_NODE:
         if isquirks:
           var cl = Element(node).classList
           for i in 0 .. cl.high:
-            cl[i].toLowerAsciiInPlace()
+            cl[i].mtoLowerAscii()
           for class in classes:
             if class notin cl:
               return false

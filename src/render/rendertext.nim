@@ -64,9 +64,6 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
           renderer.spaces = 0
       of '\e':
         renderer.ansiparser.reset()
-      elif c in Controls:
-        add_format
-        grid[^1].str &= '^' & c.getControlLetter()
       else:
         add_format
         grid[^1].str &= c

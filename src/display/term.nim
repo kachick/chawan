@@ -3,11 +3,13 @@ import options
 import os
 import tables
 import terminal
+import unicode
 
 import bindings/termcap
 import buffer/cell
 import config/config
 import io/window
+import utils/twtstr
 import types/color
 
 #TODO switch from termcap...
@@ -318,7 +320,16 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
   term.canvas = newFixedGrid(attrs.width, attrs.height)
   term.cleared = false
 
-func generateFullOutput(term: Terminal, grid: FixedGrid): string =
+proc processOutputString(term: Terminal, str: string): string =
+  if str.validateUtf8() != -1:
+    return "?"
+  for r in str.runes():
+    if r.isControlChar():
+      result &= "^" & getControlLetter(char(r))
+    elif r.width() != 0:
+      result &= r
+
+proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
   result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
@@ -331,18 +342,19 @@ func generateFullOutput(term: Terminal, grid: FixedGrid): string =
         inc w
       let cell = grid[y * grid.width + x]
       result &= term.processFormat(format, cell.format)
-      result &= cell.str
+      result &= term.processOutputString(cell.str)
       w += cell.width()
     if y != grid.height - 1:
       result &= "\r\n"
 
-func generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): string =
+proc generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): string =
   var format = newFormat()
   var x = 0
   var w = 0
   var line = ""
   var lr = false
   for i in 0 ..< grid.cells.len:
+    let cell = grid.cells[i]
     while w < x:
       line &= " "
       inc w
@@ -358,9 +370,9 @@ func generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): strin
       w = 0
       line = ""
     lr = lr or (grid[i] != prev[i])
-    line &= term.processFormat(format, grid.cells[i].format)
-    line &= grid.cells[i].str
-    w += grid.cells[i].width()
+    line &= term.processFormat(format, cell.format)
+    line &= term.processOutputString(cell.str)
+    w += cell.width()
     inc x
   if lr:
     result &= term.cursorGoto(0, grid.height - 1)

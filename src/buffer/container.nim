@@ -286,6 +286,7 @@ proc requestLines*(container: Container, w = container.lineWindow): auto {.disca
     container.lineshift = w.a
     for y in 0 ..< min(res.lines.len, w.len):
       container.lines[y] = res.lines[y]
+      container.lines[y].str.mnormalize()
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
     let cw = container.fromy ..< container.fromy + container.height
