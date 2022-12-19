@@ -31,7 +31,7 @@ type
     NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
 
   Namespace* = enum
-    NO_NAMESPACE,
+    NO_NAMESPACE = "",
     HTML = "http://www.w3.org/1999/xhtml",
     MATHML = "http://www.w3.org/1998/Math/MathML",
     SVG = "http://www.w3.org/2000/svg",
@@ -86,11 +86,9 @@ type
   Console* = ref object
     err: Stream
 
-  NamedNodeMap* = ref object
+  NamedNodeMap = ref object
     element: Element
-    attrlist: seq[string]
-    attrs: Table[string, Attr]
-    nsattrs: Table[Namespace, Table[string, Attr]]
+    attrlist: seq[Attr]
 
   EnvironmentSettings* = object
     scripting*: bool
@@ -98,7 +96,7 @@ type
   EventTarget* = ref object of RootObj
 
   Node* = ref object of EventTarget
-    nodeType*: NodeType
+    nodeType* {.jsget.}: NodeType
     childNodes* {.jsget.}: seq[Node]
     nextSibling*: Node
     previousSibling*: Node
@@ -108,7 +106,7 @@ type
     document*: Document
 
   Attr* = ref object of Node
-    namespaceURI* {.jsget.}: string
+    namespace: Namespace
     prefix* {.jsget.}: string
     localName* {.jsget.}: string
     value* {.jsget.}: string
@@ -160,10 +158,8 @@ type
 
     id*: string
     classList*: seq[string]
-    # attrs and nsattrs both store qualified names.
-    attrs*: Table[string, string] # namespace = null
-    nsattrs: Table[Namespace, Table[string, string]]
-    attrsmap: NamedNodeMap
+    attrs*: Table[string, string]
+    attributes* {.jsget.}: NamedNodeMap
     hover*: bool
     invalid*: bool
 
@@ -260,6 +256,11 @@ type
     rows*: int
     cols*: int
     value* {.jsget.}: string
+
+const NamespaceMap = (func(): Table[string, Namespace] =
+  for ns in Namespace:
+    result[$ns] = ns
+)()
 
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
@@ -401,29 +402,29 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
         if opt.tagType == TAG_OPTION:
           yield HTMLOptionElement(child)
 
-func newAttr(parent: Element, qualifiedName, value: string): Attr =
-  new(result)
-  result.document = parent.document
-  result.nodeType = ATTRIBUTE_NODE
-  result.ownerElement = parent
-  if parent.namespace == Namespace.HTML:
-    result.localName = qualifiedName
-  else:
-    #TODO ???
-    let s = qualifiedName.until(':')
-    if s.len == qualifiedName.len:
-      result.localName = qualifiedName
-    else:
-      result.prefix = s
-      result.localName = qualifiedName.substr(s.len)
-  result.value = value
+iterator items(attributes: NamedNodeMap): Attr {.inline.} =
+  for attr in attributes.attrlist:
+    yield attr
+
+func newAttr(parent: Element, localName, value: string, prefix = "", namespace = NO_NAMESPACE): Attr =
+  return Attr(
+    nodeType: ATTRIBUTE_NODE,
+    document: parent.document,
+    namespace: namespace,
+    ownerElement: parent,
+    localName: localName,
+    prefix: prefix,
+    value: value
+  )
 
 func name(attr: Attr): string {.jsfget.} =
   if attr.prefix == "":
     return attr.localName
-  return attr.prefix & attr.localName
+  return attr.prefix & ':' & attr.localName
 
-#TODO TODO TODO all of this is dumb, we should just have an array of attrs, that's all
+func namespaceURI(attr: Attr): string {.jsfget.} =
+  return $attr.namespace
+
 func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
     qualifiedName.toLowerAscii2()
@@ -431,15 +432,15 @@ func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
     qualifiedName
   if qualifiedName in element.attrs:
     return true
-  for ns, t in element.nsattrs:
-    if qualifiedName in t:
-      return true
 
 func hasAttributeNS(element: Element, namespace, localName: string): bool {.jsfunc.} =
   if namespace == "":
     return localName in element.attrs
-  for ns, t in element.nsattrs:
-    if $ns == namespace and localName in t:
+  if namespace notin NamespaceMap:
+    return false
+  let ns = NamespaceMap[namespace]
+  for attr in element.attributes:
+    if attr.namespace == ns and attr.localName == localName:
       return true
 
 func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsfunc.} =
@@ -449,101 +450,51 @@ func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsf
     qualifiedName
   element.attrs.withValue(qualifiedName, val):
     return some(val[])
-  for ns, t in element.nsattrs.mpairs:
-    t.withValue(qualifiedName, val):
-      return some(val[])
 
 func getAttributeNS(element: Element, namespace, localName: string): Option[string] {.jsfunc.} =
   if namespace == "":
     return element.getAttribute(localName)
   if namespace == $Namespace.HTML:
     return element.getAttribute(localName)
-  try:
-    #TODO TODO TODO parseEnum is style insensitive
-    let ns = parseEnum[Namespace](namespace)
-    element.nsattrs.withValue(ns, t):
-      t[].withValue(localName, val):
-        # Not a qualified name...
-        return some(val[])
-      for k, v in t[]:
-        let s = k.until(':')
-        if s.len != k.len and localName == s:
-          return some(v)
-  except ValueError:
-    discard
+  if namespace notin NamespaceMap:
+    return
+  let ns = NamespaceMap[namespace]
+  for attr in element.attributes:
+    if attr.namespace == ns and attr.localName == localName:
+      return some(attr.value)
 
-#TODO this is simply wrong
+func findAttr(map: NamedNodeMap, name: string): int =
+  for i in 0 ..< map.attrlist.len:
+    if map.attrlist[i].name == name:
+      return i
+  return -1
+
 func getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr] {.jsfunc.} =
-  let v = map.element.getAttribute(qualifiedName)
-  if v.isSome:
-    if qualifiedName notin map.attrs:
-      map.attrs[qualifiedName] = map.element.newAttr(qualifiedName, v.get)
-    return some(map.attrs[qualifiedName])
+  if map.element.hasAttribute(qualifiedName):
+    let i = map.findAttr(qualifiedName)
+    if i != -1:
+      return some(map.attrlist[i])
 
 func getNamedItemNS(map: NamedNodeMap, namespace, localName: string): Option[Attr] {.jsfunc.} =
-  if namespace == "":
-    return map.getNamedItem(localName)
-  if namespace == $Namespace.HTML:
-    return map.getNamedItem(localName)
-  try:
-    #TODO TODO TODO parseEnum is style insensitive
-    let ns = parseEnum[Namespace](namespace)
-    var qn: string
-    if ns notin map.nsattrs:
-      map.nsattrs[ns] = Table[string, Attr]()
-    map.element.nsattrs.withValue(ns, t):
-      t[].withValue(localName, val):
-        # Not a qualified name...
-        if localName notin map.nsattrs[ns]:
-          map.nsattrs[ns][localName] = map.element.newAttr(localName, val[])
-        qn = localName
-      for k, v in t[]:
-        let s = k.until(':')
-        if localName == s:
-          if localName notin map.nsattrs[ns]:
-            map.nsattrs[ns][localName] = map.element.newAttr(localName, v)
-          qn = k
-    if qn != "":
-      return some(map.nsattrs[ns][qn])
-  except ValueError:
-    discard
-
-func attributes(element: Element): NamedNodeMap {.jsfget.} =
-  if element.attrsmap == nil:
-    element.attrsmap = NamedNodeMap(element: element)
-  return element.attrsmap
+  if map.element.hasAttributeNS(namespace, localName):
+    if namespace in NamespaceMap:
+      let ns = NamespaceMap[namespace]
+      for attr in map:
+        if attr.namespace == ns and attr.localName == localName:
+          return some(attr)
 
 func length(map: NamedNodeMap): int {.jsfget.} =
   return map.element.attrs.len
 
-proc setNamedItem*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
-  if attr.ownerElement != nil and attr.ownerElement != map.element:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InUseAttributeError"
-  if attr.name in map.element.attrs:
-    return some(attr)
-  let oldAttr = getNamedItem(map, attr.name)
-  map.element.attrs[attr.name] = attr.value
-  return oldAttr
-
-proc setNamedItemNS*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jsfunc.} =
-  map.setNamedItem(attr)
-
-#TODO TODO TODO this is extremely inefficient...
 func item(map: NamedNodeMap, i: int): Option[Attr] {.jsfunc.} =
-  var found: HashSet[string]
-  for j in countdown(map.attrlist.high, 0):
-    let k = map.attrlist[j]
-    if k in map.element.attrs:
-      found.incl(k)
-    else:
-      map.attrlist.delete(j)
-  if map.attrlist.len < map.element.attrs.len:
-    for k in map.element.attrs.keys:
-      if k notin found:
-        map.attrlist.add(k)
   if i < map.attrlist.len:
-    return map.getNamedItem(map.attrlist[i])
+    return some(map.attrlist[i])
+
+func hasprop[T: int|string](map: NamedNodeMap, i: T): bool {.jshasprop.} =
+  when T is int:
+    return i < map.attrlist.len
+  else:
+    return map.getNamedItem(i).isSome
 
 func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} =
   when T is int:
@@ -596,24 +547,20 @@ func qualifiedName*(element: Element): string =
   else: element.localName
 
 func html*(document: Document): HTMLElement =
-  for element in document.children:
-    if element.tagType == TAG_HTML:
-      return HTMLElement(element)
-  return nil
+  for element in document.elements(TAG_HTML):
+    return HTMLElement(element)
 
 func head*(document: Document): HTMLElement =
-  if document.html != nil:
-    for element in document.html.children:
-      if element.tagType == TAG_HEAD:
-        return HTMLElement(element)
-  return nil
+  let html = document.html
+  if html != nil:
+    for element in html.elements(TAG_HEAD):
+      return HTMLElement(element)
 
 func body*(document: Document): HTMLElement =
-  if document.html != nil:
-    for element in document.html.children:
-      if element.tagType == TAG_BODY:
-        return HTMLElement(element)
-  return nil
+  let html = document.html
+  if html != nil:
+    for element in html.elements(TAG_BODY):
+      return HTMLElement(element)
 
 func select*(option: HTMLOptionElement): HTMLSelectElement =
   for anc in option.ancestors:
@@ -682,27 +629,28 @@ func contains*(a, b: Node): bool =
     if node == b: return true
   return false
 
-func firstChild*(node: Node): Node =
+func firstChild*(node: Node): Node {.jsfget.} =
   if node.childNodes.len == 0:
     return nil
   return node.childNodes[0]
 
-func lastChild*(node: Node): Node =
+func lastChild*(node: Node): Node {.jsfget.} =
   if node.childNodes.len == 0:
     return nil
   return node.childNodes[^1]
 
-func firstElementChild*(node: Node): Element =
+func firstElementChild*(node: Node): Element {.jsfget.} =
   for child in node.children:
     return child
   return nil
 
-func lastElementChild*(node: Node): Element =
+func lastElementChild*(node: Node): Element {.jsfget.} =
   for child in node.children:
     return child
   return nil
 
-func previousElementSibling*(elem: Element): Element =
+func previousElementSibling*(elem: Element): Element {.jsfget.} =
+  if elem.parentNode == nil: return nil
   var i = elem.parentNode.childNodes.find(elem)
   dec i
   while i >= 0:
@@ -711,7 +659,8 @@ func previousElementSibling*(elem: Element): Element =
     dec i
   return nil
 
-func nextElementSibling*(elem: Element): Element =
+func nextElementSibling*(elem: Element): Element {.jsfget.} =
+  if elem.parentNode == nil: return nil
   var i = elem.parentNode.childNodes.find(elem)
   inc i
   while i < elem.parentNode.childNodes.len:
@@ -719,6 +668,9 @@ func nextElementSibling*(elem: Element): Element =
       return elem
     inc i
   return nil
+
+func documentElement(document: Document): Element {.jsfget.} =
+  document.firstElementChild()
 
 func attr*(element: Element, s: string): string {.inline.} =
   return element.attrs.getOrDefault(s, "")
@@ -973,6 +925,7 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   result.namespace = namespace
   result.namespacePrefix = prefix
   result.document = document
+  result.attributes = NamedNodeMap(element: result)
 
 func newHTMLElement*(document: Document, localName: string, namespace = Namespace.HTML, prefix = none[string](), tagType = tagType(localName)): Element =
   result = document.newHTMLElement(tagType, namespace, prefix)
@@ -999,16 +952,19 @@ func getElementById*(node: Node, id: string): Element {.jsfunc.} =
     if child.id == id:
       return child
 
-func getElementById2*(node: Node, id: string): pointer =
-  if id.len == 0:
-    return nil
-  for child in node.elements:
-    if child.id == id:
-      return cast[pointer](child)
-
-func getElementsByTag*(document: Document, tag: TagType): seq[Element] =
-  for element in document.elements(tag):
+func getElementsByTag*(node: Node, tag: TagType): seq[Element] =
+  for element in node.elements(tag):
     result.add(element)
+
+func getElementsByTagName(node: Node, tagName: string): seq[Element] {.jsfunc.} =
+  let tagName = tagType(tagName)
+  if tagName != TAG_UNKNOWN:
+    return node.getElementsByTag(tagName)
+
+func getElementsByClassName(node: Node, class: string): seq[Element] {.jsfunc.} =
+  for element in node.elements:
+    if class in element.classList:
+      result.add(element)
 
 func inHTMLNamespace*(element: Element): bool = element.namespace == Namespace.HTML
 func inMathMLNamespace*(element: Element): bool = element.namespace == Namespace.MATHML
@@ -1122,6 +1078,36 @@ func preInsertionValidity*(parent, node, before: Node): bool =
         return false
     else: discard
   return true # no exception reached
+
+proc delAttr(element: Element, name: string) =
+  let i = element.attributes.findAttr(name)
+  if i != -1:
+    element.attributes.attrlist.delete(i)
+
+proc attr(element: Element, name, value: string) =
+  if name in element.attrs:
+    element.delAttr(name)
+  element.attrs[name] = value
+  element.attributes.attrlist.add(element.newAttr(name, value))
+
+proc setAttribute(element: Element, qualifiedName, value: string) {.jsfunc.} =
+  element.attr(qualifiedName, value)
+
+proc setNamedItem*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
+  if attr.ownerElement != nil and attr.ownerElement != map.element:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InUseAttributeError"
+  if attr.name in map.element.attrs:
+    return some(attr)
+  let i = map.findAttr(attr.name)
+  if i != -1:
+    result = some(map.attrlist[i])
+    map.attrlist.delete(i)
+  map.element.attrs[attr.name] = attr.value
+  map.attrlist.add(attr)
+
+proc setNamedItemNS*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jsfunc.} =
+  map.setNamedItem(attr)
 
 proc remove*(node: Node) =
   let parent = node.parentNode
@@ -1305,7 +1291,7 @@ proc reset*(form: HTMLFormElement) =
 
 proc appendAttributes*(element: Element, attrs: Table[string, string]) =
   for k, v in attrs:
-    element.attrs[k] = v
+    element.attr(k, v)
   template reflect_str(element: Element, name: static string, val: untyped) =
     element.attrs.withValue(name, val):
       element.val = val[]

@@ -342,6 +342,7 @@ proc JS_NewCFunction2*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length
 proc JS_NewCFunction*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: cint): JSValue
 
 proc JS_NewString*(ctx: JSContext, str: cstring): JSValue
+proc JS_NewStringLen*(ctx: JSContext, str: cstring, len1: csize_t): JSValue
 
 proc JS_SetProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue): cint
 proc JS_SetPropertyUint32*(ctx: JSContext, this_obj: JSValue, idx: uint32, val: JSValue): cint

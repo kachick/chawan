@@ -102,20 +102,8 @@ func toLowerAscii2*(str: string): string =
   result = newString(str.len)
   prepareMutation(result)
   copyMem(addr result[0], unsafeAddr str[0], i)
-  while i < str.len:
+  for i in i ..< str.len:
     result[i] = str[i].tolower()
-
-proc toLowerAsciiIp*(str: var string) =
-  var i = 0
-  block noconv:
-    while i < str.len:
-      let c = str[i]
-      if c in AsciiUpperAlpha:
-        break noconv
-      inc i
-    return
-  while i < str.len:
-    str[i] = str[i].tolower()
 
 func toHeaderCase*(str: string): string =
   result = str
