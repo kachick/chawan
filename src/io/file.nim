@@ -1,3 +1,4 @@
+import algorithm
 import os
 import streams
 import tables
@@ -20,7 +21,11 @@ proc loadDir(url: URL, path: string, ostream: Stream) =
 <H1>Directory list of """ & path & """</H1>
 [DIR]&nbsp; <A HREF="../">../</A></br>
 """)
+  var fs: seq[(PathComponent, string)]
   for pc, file in walkDir(path, relative = true):
+    fs.add((pc, file))
+  fs.sort(cmp = proc(a, b: (PathComponent, string)): int = cmp(a[1], b[1]))
+  for (pc, file) in fs:
     case pc
     of pcDir:
       ostream.write("[DIR]&nbsp; ")
@@ -41,7 +46,21 @@ proc loadDir(url: URL, path: string, ostream: Stream) =
   ostream.flush()
 
 proc loadSymlink(path: string, ostream: Stream) =
-  discard
+  ostream.swrite(0)
+  ostream.swrite(200) # ok
+  ostream.swrite(newHeaderList({"Content-Type": "text/html"}.toTable()))
+  let sl = expandSymlink(path)
+  ostream.write("""
+<HTML>
+<HEAD>
+<TITLE>Symlink view<TITLE>
+</HEAD>
+<BODY>
+Symbolic link to <A HREF="""" & sl & """">""" & sl & """</A></br>
+</BODY>
+</HTML>""")
+  ostream.flush()
+
 
 proc loadFile*(url: URL, ostream: Stream) =
   when defined(windows) or defined(OS2) or defined(DOS):
