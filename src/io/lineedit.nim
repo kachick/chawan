@@ -335,6 +335,7 @@ proc prevHist(edit: LineEdit) {.jsfunc.} =
       edit.histtmp = $edit.news
     dec edit.histindex
     edit.news = edit.hist.lines[edit.histindex].toRunes()
+    edit.begin()
     edit.end()
     edit.fullRedraw()
 
@@ -342,11 +343,13 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
   if edit.histindex + 1 < edit.hist.lines.len:
     inc edit.histindex
     edit.news = edit.hist.lines[edit.histindex].toRunes()
+    edit.begin()
     edit.end()
     edit.fullRedraw()
   elif edit.histindex < edit.hist.lines.len:
     inc edit.histindex
     edit.news = edit.histtmp.toRunes()
+    edit.begin()
     edit.end()
     edit.fullRedraw()
     edit.histtmp = ""
