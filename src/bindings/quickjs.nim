@@ -352,7 +352,7 @@ proc JS_SetPropertyFunctionList*(ctx: JSContext, obj: JSValue, tab: ptr JSCFunct
 proc JS_GetProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom): JSValue
 proc JS_GetPropertyStr*(ctx: JSContext, this_obj: JSValue, prop: cstring): JSValue
 proc JS_GetPropertyUint32*(ctx: JSContext, this_obj: JSValue, idx: uint32): JSValue
-proc JS_GetOwnPropertyNames*(ctx: JSContext, ptab: ptr ptr JSPropertyEnum, plen: ptr uint32, obj: JSValue, flags: cint): int
+proc JS_GetOwnPropertyNames*(ctx: JSContext, ptab: ptr ptr JSPropertyEnum, plen: ptr uint32, obj: JSValue, flags: cint): cint
 
 proc JS_GetOwnProperty*(ctx: JSContext, desc: ptr JSPropertyDescriptor, obj: JSValue, prop: JSAtom): cint
 proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint, argv: ptr JSValue): JSValue

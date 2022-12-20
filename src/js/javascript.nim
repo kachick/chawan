@@ -515,7 +515,7 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
   var ptab: ptr JSPropertyEnum
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
-  if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) < -1:
+  if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return none(Table[A, B])
   defer:
@@ -744,6 +744,8 @@ proc toJS*[T](ctx: JSContext, obj: T): JSValue =
     return a
   elif T is enum:
     return toJS(ctx, int(obj))
+  elif T is JSValue:
+    return obj
   else:
     if obj == nil:
       return JS_NULL
