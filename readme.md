@@ -24,7 +24,7 @@ Currently implemented features are:
 * a multi-charset, double-width capable, multi-processing pager
 * a CSS-capable layout engine (with forms, tables...)
 * incremental loading of plain text streams
-* JavaScript based navigation, basic JS support in documents
+* JavaScript based navigation, (very) basic JS support in documents
 * cookies
 
 ...and a lot more planned.
@@ -34,13 +34,12 @@ Currently implemented features are:
 Chawan is still very much an experimental browser engine with some serious
 limitations:
 
-* Chawan uses its own browser engine, implemented from scratch (and the whatwg
-  standards...) Expect bugs and missing features.
+* Chawan uses uses its own browser engine, implemented from scratch. Expect
+  bugs and missing features.
 * Chawan has no incremental layouting capabilities yet, so the entire layout
   needs to be recomputed every time an element is invalidated. This makes
   Chawan unusable on large websites with a complicated layout. (I plan to fix
-  this as soon as possible, but it will involve quite a few changes to the
-  layout engine.)
+  this as soon as possible.)
 * While buffers run as separate processes, Chawan does not have any actual
   sandboxing. I would strongly advise against enabling scripting until this
   problem is resolved.
@@ -54,26 +53,19 @@ See [doc/config.md](doc/config.md).
 Many other text-based web browsers exist. Here's some recommendations if you
 want to try more established ones:
 
-* w3m – I'm partial to w3m. Infinitely extensible with local-cgi and some
-  creativity. Also has inline image support. Heavily inspired Chawan.
-* elinks – Probably the one with the most "modern" features. Has CSS and
-  JavaScript support, and incremental rendering (it's pretty fast.)
-* lynx – "THE text-based web browser." What more to say.
-* browsh – Firefox in your terminal. Probably the most practical out of the
-  ones I listed.
+* w3m - Infinitely extensible with local-cgi and some creativity. Also
+  has inline image support. Heavily inspired Chawan.
+* elinks - Has CSS and JavaScript support, and incremental rendering
+  (it's pretty fast.)
+* lynx - "THE text-based web browser."
+* edbrowse - This one looks more like `ed` than `less` or `vi`. Mainly
+  designed for blind users.
+* browsh - Firefox in your terminal.
 
-## FAQ
+## Why write another web browser?
 
-### Why did you write this?
+I've found other text-based web browsers insufficient for my needs, so
+I thought it'd be a fun excercise to write one by myself, for myself.
 
-I've found other terminal web browsers insufficient for my needs, so I thought
-it'd be a fun excercise to write one by myself, for myself.
-
-The end result will of course not support nearly as many websites as Firefox or
-Chromium, but I'd like it to be at least somewhat more functional on the
-"modern" web than w3m or lynx.
-
-In one way this is supposed to be a spiritual successor of w3m, with a roughly
-similar set of features but on a completely different architecture. Meaning
-this browser should be able to function as a replacement of w3m, just "better"
-(YMMV).
+Generally, I'm happy if Chawan works on websites I use frequently. If it
+also works on other websites, that's a bonus.
