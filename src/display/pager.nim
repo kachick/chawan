@@ -31,9 +31,10 @@ import utils/twtstr
 type
   LineMode* = enum
     NO_LINEMODE, LOCATION, USERNAME, PASSWORD, COMMAND, BUFFER, SEARCH_F,
-    SEARCH_B, ISEARCH_F, ISEARCH_B
+    SEARCH_B, ISEARCH_F, ISEARCH_B, GOTO_LINE
 
   Pager* = ref object
+    jsctx: JSContext
     numload*: int
     alerts: seq[string]
     commandMode*: bool
@@ -88,52 +89,43 @@ proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
   pager.container = c
   pager.redraw = true
 
-proc cursorDown(pager: Pager) {.jsfunc.} = pager.container.cursorDown()
-proc cursorUp(pager: Pager) {.jsfunc.} = pager.container.cursorUp()
-proc cursorLeft(pager: Pager) {.jsfunc.} = pager.container.cursorLeft()
-proc cursorRight(pager: Pager) {.jsfunc.} = pager.container.cursorRight()
-proc cursorLineBegin(pager: Pager) {.jsfunc.} = pager.container.cursorLineBegin()
-proc cursorLineEnd(pager: Pager) {.jsfunc.} = pager.container.cursorLineEnd()
-proc cursorNextWord(pager: Pager) {.jsfunc.} = pager.container.cursorNextWord()
-proc cursorPrevWord(pager: Pager) {.jsfunc.} = pager.container.cursorPrevWord()
-proc cursorNextLink(pager: Pager) {.jsfunc.} = pager.container.cursorNextLink()
-proc cursorPrevLink(pager: Pager) {.jsfunc.} = pager.container.cursorPrevLink()
-proc pageUp(pager: Pager) {.jsfunc.} = pager.container.pageUp()
-proc pageDown(pager: Pager) {.jsfunc.} = pager.container.pageDown()
-proc pageRight(pager: Pager) {.jsfunc.} = pager.container.pageRight()
-proc pageLeft(pager: Pager) {.jsfunc.} = pager.container.pageLeft()
-proc halfPageDown(pager: Pager) {.jsfunc.} = pager.container.halfPageDown()
-proc halfPageUp(pager: Pager) {.jsfunc.} = pager.container.halfPageUp()
-proc cursorFirstLine(pager: Pager) {.jsfunc.} = pager.container.cursorFirstLine()
-proc cursorLastLine(pager: Pager) {.jsfunc.} = pager.container.cursorLastLine()
-proc cursorTop(pager: Pager) {.jsfunc.} = pager.container.cursorTop()
-proc cursorMiddle(pager: Pager) {.jsfunc.} = pager.container.cursorMiddle()
-proc cursorBottom(pager: Pager) {.jsfunc.} = pager.container.cursorBottom()
-proc cursorLeftEdge(pager: Pager) {.jsfunc.} = pager.container.cursorLeftEdge()
-proc cursorVertMiddle(pager: Pager) {.jsfunc.} = pager.container.cursorVertMiddle()
-proc cursorRightEdge(pager: Pager) {.jsfunc.} = pager.container.cursorRightEdge()
-proc centerLine(pager: Pager) {.jsfunc.} = pager.container.centerLine()
-proc scrollDown(pager: Pager) {.jsfunc.} = pager.container.scrollDown()
-proc scrollUp(pager: Pager) {.jsfunc.} = pager.container.scrollUp()
-proc scrollLeft(pager: Pager) {.jsfunc.} = pager.container.scrollLeft()
-proc scrollRight(pager: Pager) {.jsfunc.} = pager.container.scrollRight()
-proc reshape(pager: Pager) {.jsfunc.} = pager.container.reshape()
-proc peek(pager: Pager) {.jsfunc.} = pager.container.peek()
-proc peekCursor(pager: Pager) {.jsfunc.} = pager.container.peekCursor()
+proc hasprop(pager: Pager, s: string): bool {.jshasprop.} =
+  if pager.container != nil:
+    let cval = toJS(pager.jsctx, pager.container)
+    let val = JS_GetPropertyStr(pager.jsctx, cval, s)
+    if val != JS_UNDEFINED:
+      result = true
+    JS_FreeValue(pager.jsctx, val)
+
+proc reflect(ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue,
+             magic: cint, func_data: ptr JSValue): JSValue {.cdecl.} =
+  let fun = cast[ptr JSValue](cast[int](func_data) + sizeof(JSValue))[]
+  return JS_Call(ctx, fun, func_data[], argc, argv)
+
+proc getter(pager: Pager, s: string): Option[JSValue] {.jsgetprop.} =
+  if pager.container != nil:
+    let cval = toJS(pager.jsctx, pager.container)
+    let val = JS_GetPropertyStr(pager.jsctx, cval, s)
+    if val != JS_UNDEFINED:
+      if JS_IsFunction(pager.jsctx, val):
+        var func_data = @[cval, val]
+        let fun = JS_NewCFunctionData(pager.jsctx, reflect, 1, 0, 2, addr func_data[0])
+        return some(fun)
+      return some(val)
 
 proc searchNext(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
     if not pager.reverseSearch:
-      pager.container.cursorNextMatch(pager.regex.get, true)
+      pager.container.cursorNextMatch(pager.regex.get, pager.config.searchwrap)
     else:
-      pager.container.cursorPrevMatch(pager.regex.get, true)
+      pager.container.cursorPrevMatch(pager.regex.get, pager.config.searchwrap)
 
 proc searchPrev(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
     if not pager.reverseSearch:
-      pager.container.cursorPrevMatch(pager.regex.get, true)
+      pager.container.cursorPrevMatch(pager.regex.get, pager.config.searchwrap)
     else:
-      pager.container.cursorNextMatch(pager.regex.get, true)
+      pager.container.cursorNextMatch(pager.regex.get, pager.config.searchwrap)
 
 proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
@@ -161,22 +153,24 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.setLineEdit("?", ISEARCH_B)
 
-proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, siteconf: seq[SiteConfig], omnirules: seq[OmniRule]): Pager =
+proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
+  when s is string:
+    if s == "":
+      pager.setLineEdit("Goto line: ", GOTO_LINE)
+      return
+  pager.container.gotoLine(s)
+
+proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, ctx: JSContext): Pager =
   let pager = Pager(
     dispatcher: dispatcher,
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
+    jsctx: ctx,
+    siteconf: config.getSiteConfig(ctx),
+    omnirules: config.getOmniRules(ctx)
   )
-  for sc in siteconf:
-    # not sure why but normal copies don't seem to work here... probably
-    # something weird going on with lambdas
-    pager.siteconf.add(sc)
-    pager.siteconf[^1].subst = sc.subst
-  for rule in omnirules:
-    pager.omnirules.add(rule)
-    pager.omnirules[^1].subst = rule.subst
   return pager
 
 proc launchPager*(pager: Pager, tty: File) =
@@ -411,9 +405,6 @@ proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
 proc alert*(pager: Pager, msg: string) {.jsfunc.} =
   pager.alerts.add(msg)
 
-proc lineInfo(pager: Pager) {.jsfunc.} =
-  pager.alert(pager.container.lineInfo())
-
 proc deleteContainer(pager: Pager, container: Container) =
   container.cancel()
   if container.sourcepair != nil:
@@ -466,7 +457,7 @@ proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
   else:
     pager.alert("Buffer has no children!")
 
-proc toggleSource*(pager: Pager) {.jsfunc.} =
+proc toggleSource(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
@@ -519,7 +510,7 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   return pager.config.getBufferConfig(request.url, cookiejar, headers, refererfrom, scripting)
 
 # Load request in a new buffer.
-proc gotoURL*(pager: Pager, request: Request, prevurl = none(URL),
+proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
               ctype = none(string), replace: Container = nil,
               redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.refererfrom:
@@ -628,9 +619,9 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     pager.container.popCursorPos(true)
     if pager.iregex.isSome:
       if linemode == ISEARCH_F:
-        pager.container.cursorNextMatch(pager.iregex.get, true)
+        pager.container.cursorNextMatch(pager.iregex.get, pager.config.searchwrap)
       else:
-        pager.container.cursorPrevMatch(pager.iregex.get, true)
+        pager.container.cursorPrevMatch(pager.iregex.get, pager.config.searchwrap)
       pager.container.hlon = true
     pager.container.pushCursorPos()
   of FINISH:
@@ -674,7 +665,9 @@ proc updateReadLine*(pager: Pager) =
         let x = s
         if x != "": pager.regex = compileSearchRegex(x)
         pager.reverseSearch = true
-        pager.searchPrev()
+        pager.searchNext()
+      of GOTO_LINE:
+        pager.container.gotoLine(s)
       else: discard
     of CANCEL:
       case pager.linemode
@@ -703,14 +696,7 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
 proc reload(pager: Pager) {.jsfunc.} =
   pager.gotoURL(newRequest(pager.container.source.location), none(URL), pager.container.contenttype, pager.container)
 
-# Cancel loading current page (if exists).
-proc cancel(pager: Pager) {.jsfunc.} =
-  pager.container.cancel()
-
-proc click(pager: Pager) {.jsfunc.} =
-  pager.container.click()
-
-proc authorize*(pager: Pager) =
+proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)
 
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =

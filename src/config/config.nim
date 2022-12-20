@@ -53,12 +53,13 @@ type
 
   Config* = ref ConfigObj
   ConfigObj* = object
+    searchwrap* {.jsget, jsset.}: bool
     maxredirect*: int
-    prependhttps*: bool
+    prependhttps* {.jsget, jsset.}: bool
     termreload*: bool
     nmap*: ActionMap
     lemap*: ActionMap
-    stylesheet*: string
+    stylesheet* {.jsget, jsset.}: string
     startup*: string
     ambiguous_double*: bool
     hlcolor*: RGBAColor
@@ -254,15 +255,20 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
     of "include":
       if v.vt == VALUE_STRING:
         when nimvm:
-          config.loadConfig(v.s)
+          config.parseConfig(dir, staticRead(dir / v.s))
         else:
-          config.loadConfig(v.s)
+          config.parseConfig(dir, newFileStream(dir / v.s))
       elif t.vt == VALUE_ARRAY:
         for v in t.a:
           when nimvm:
-            config.parseConfig(parentDir(v.s), staticRead(v.s))
+            config.parseConfig(dir, staticRead(dir / v.s))
           else:
-            config.parseConfig(parentDir(v.s), newFileStream(v.s))
+            config.parseConfig(dir, newFileStream(dir / v.s))
+    of "search":
+      for k, v in v:
+        case k
+        of "wrap":
+          config.searchwrap = v.b
     of "start":
       for k, v in v:
         case k

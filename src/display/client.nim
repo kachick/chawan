@@ -194,7 +194,7 @@ proc setTimeout[T: JSValue|string](client: Client, handler: T, timeout = 0): int
   else:
     let fun = JS_DupValue(client.jsctx, handler)
     client.timeouts[id] = ((proc() =
-      let ret = callFunction(client.jsctx, fun)
+      let ret = JS_Call(client.jsctx, fun, JS_UNDEFINED, 0, nil)
       if JS_IsException(ret):
         client.jsctx.writeException(client.console.err)
       JS_FreeValue(client.jsctx, ret)
@@ -214,7 +214,7 @@ proc setInterval[T: JSValue|string](client: Client, handler: T, interval = 0): i
   else:
     let fun = JS_DupValue(client.jsctx, handler)
     client.intervals[id] = ((proc() =
-      let ret = callFunction(client.jsctx, handler)
+      let ret = JS_Call(client.jsctx, handler, JS_UNDEFINED, 0, nil)
       if JS_IsException(ret):
         client.jsctx.writeException(client.console.err)
       JS_FreeValue(client.jsctx, ret)
@@ -405,9 +405,10 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   if not dump:
     if stdin.isatty():
       tty = stdin
-    elif stdout.isatty():
-      discard open(tty, "/dev/tty", fmRead)
-    if tty == nil:
+    if stdout.isatty():
+      if tty == nil:
+        dump = not open(tty, "/dev/tty", fmRead)
+    else:
       dump = true
   client.ssock = initServerSocket(false)
   client.selector = newSelector[Container]()
@@ -467,9 +468,7 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
   let ctx = result.jsrt.newJSContext()
   result.jsctx = ctx
-  result.pager = newPager(config, result.attrs, dispatcher,
-                          result.config.getSiteConfig(ctx),
-                          result.config.getOmniRules(ctx))
+  result.pager = newPager(config, result.attrs, dispatcher, ctx)
   var global = JS_GetGlobalObject(ctx)
   ctx.registerType(Client, asglobal = true)
   setOpaque(ctx, global, result)

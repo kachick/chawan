@@ -1,10 +1,10 @@
 # JavaScript binding generator. Horrifying, I know. But it works!
-# Note 1: Function overloading is currently not implemented. Though there is a
+# Warning: Function overloading is currently not implemented. Though there is a
 # block dielabel:
 #   ...
 # around each bound function call, so it shouldn't be too difficult to get it
 # working. (This would involve generating JS functions in registerType.)
-# Note 2: Now, for the pragmas:
+# Now for the pragmas:
 # {.jsctr.} for constructors. These need no `this' value, and are bound as
 #   regular constructors in JS. They must return a ref object, which will have
 #   a JS counterpart too. (Other functions can return ref objects too, which
@@ -19,6 +19,8 @@
 #   keyword, unfortunately that didn't work out.)
 #{.jsgetprop.} for property getters. Called when GetOwnProperty would return
 #   nothing. The key should probably be either a string or an integer.
+#{.jshasprop.} for overriding has_property. Must return a boolean.
+
 import macros
 import options
 import sets
@@ -48,7 +50,9 @@ export
 
 export JSRuntime, JSContext, JSValue
 
-export JS_GetGlobalObject, JS_FreeValue, JS_IsException
+export
+  JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
+  JS_IsFunction, JS_NewCFunctionData, JS_Call
 
 type
   JSContextOpaque* = ref object
@@ -246,7 +250,7 @@ proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
 proc setProperty*(ctx: JSContext, val: JSValue, name: string, fun: JSCFunction, argc: int = 0) =
   ctx.setProperty(val, name, ctx.newJSCFunction(name, fun, argc))
 
-func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer, parent: JSClassID, asglobal: bool, nointerface: bool): JSClassID {.discardable.} =
+func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string, ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer, parent: JSClassID, asglobal: bool, nointerface: bool): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
@@ -254,7 +258,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, ctor: JSCFunction, funcs
   if JS_NewClass(rt, result, cdef) != 0:
     raise newException(Defect, "Failed to allocate JS class: " & $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
-  ctxOpaque.creg[$cdef.class_name] = result
+  ctxOpaque.creg[tname] = result
   var proto: JSValue
   if parent != 0:
     let parentProto = JS_GetClassProto(ctx, parent)
@@ -277,7 +281,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, ctor: JSCFunction, funcs
   if asglobal:
     let global = JS_GetGlobalObject(ctx)
     assert ctxOpaque.gclaz == ""
-    ctxOpaque.gclaz = $cdef.class_name
+    ctxOpaque.gclaz = tname
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " & $cdef.class_name)
     JS_FreeValue(ctx, global)
@@ -288,11 +292,6 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, ctor: JSCFunction, funcs
     let global = JS_GetGlobalObject(ctx)
     ctx.setProperty(global, $cdef.class_name, jctor)
     JS_FreeValue(ctx, global)
-
-proc callFunction*(ctx: JSContext, fun: JSValue): JSValue =
-  let global = JS_GetGlobalObject(ctx)
-  result = JS_Call(ctx, fun, JS_UNDEFINED, 0, nil)
-  JS_FreeValue(ctx, global)
 
 type FuncParam = tuple[name: string, t: NimNode, val: Option[NimNode], generic: Option[NimNode]]
 
@@ -790,7 +789,7 @@ type
     magic: uint16
 
   BoundFunctionType = enum
-    FUNCTION = "js_"
+    FUNCTION = "js_func"
     CONSTRUCTOR = "js_ctor"
     GETTER = "js_get"
     SETTER = "js_set"
@@ -877,7 +876,7 @@ template getJSParams(): untyped =
     (quote do: JSValue),
     newIdentDefs(ident("ctx"), quote do: JSContext),
     newIdentDefs(ident("this"), quote do: JSValue),
-    newIdentDefs(ident("argc"), quote do: int),
+    newIdentDefs(ident("argc"), quote do: cint),
     newIdentDefs(ident("argv"), quote do: ptr JSValue)
   ]
 
@@ -1439,7 +1438,7 @@ proc nim_finalize_for_js[T](obj: T) =
       # trigger the JS finalizer and free the JS value.
       JS_FreeValueRT(rt, val)
 
-proc js_illegal_ctor*(ctx: JSContext, this: JSValue, argc: int, argv: ptr JSValue): JSValue {.cdecl.} =
+proc js_illegal_ctor*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
 type JSObjectPragmas = object
@@ -1482,7 +1481,8 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
 
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, nointerface = false, name: static string = ""): JSClassID =
   result = newStmtList()
-  let name = if name == "": t.strVal else: name
+  let tname = t.strVal # the nim type's name.
+  let name = if name == "": tname else: name # possibly a different name, e.g. Buffer for Container
   var sctr = ident("js_illegal_ctor")
   var sfin = ident("js_" & t.strVal & "ClassFin")
   # constructor
@@ -1500,7 +1500,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
     let fn = $node
     result.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue): JSValue {.cdecl.} =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`name`)) and not ctx.isInstanceOf(this, `name`):
+        if not (JS_IsUndefined(this) or ctx.isGlobal(`tname`)) and not ctx.isInstanceOf(this, `tname`):
           # undefined -> global.
           return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `name`)
         let arg_0 = fromJS_or_return(`t`, ctx, this)
@@ -1512,7 +1512,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
     let fn = $node
     result.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue, val: JSValue): JSValue {.cdecl.} =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`name`)) and not ctx.isInstanceOf(this, `name`):
+        if not (JS_IsUndefined(this) or ctx.isGlobal(`tname`)) and not ctx.isInstanceOf(this, `tname`):
           # undefined -> global.
           return JS_ThrowTypeError(ctx, "'%s' called on an object that is not an instance of %s", `fn`, `name`)
         let arg_0 = fromJS_or_return(`t`, ctx, this)
@@ -1610,7 +1610,7 @@ static JSClassDef """, `cdname`, """ = {
     # any associated JS object from all relevant runtimes.
     var x: `t`
     new(x, nim_finalize_for_js)
-    `ctx`.newJSClass(`classDef`, `sctr`, `tabList`, getTypePtr(x), `parent`, `asglobal`, `nointerface`)
+    `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x), `parent`, `asglobal`, `nointerface`)
   )
   result.add(newBlockStmt(endstmts))
 

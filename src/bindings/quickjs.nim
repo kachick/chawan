@@ -85,7 +85,8 @@ else:
 type
   JSRuntime* = ptr object
   JSContext* = ptr object
-  JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: int, argv: ptr JSValue): JSValue {.cdecl.}
+  JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
+  JSCFunctionData* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.}
   JSGetterFunction* = proc(ctx: JSContext, this_val: JSValue): JSValue {.cdecl.}
   JSSetterFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue): JSValue {.cdecl.}
   JSGetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, magic: cint): JSValue {.cdecl.}
@@ -339,6 +340,7 @@ proc JS_FreeAtom*(ctx: JSContext, atom: JSAtom)
 proc JS_FreeAtomRT*(rt: JSRuntime, atom: JSAtom)
 
 proc JS_NewCFunction2*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: cint, proto: JSCFunctionEnum, magic: cint): JSValue
+proc JS_NewCFunctionData*(ctx: JSContext, cfunc: JSCFunctionData, length: cint, magic: cint, data_len: cint, data: ptr JSValue): JSValue
 proc JS_NewCFunction*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length: cint): JSValue
 
 proc JS_NewString*(ctx: JSContext, str: cstring): JSValue

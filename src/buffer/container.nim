@@ -2,6 +2,7 @@ import deques
 import options
 import streams
 import strformat
+import strutils
 import unicode
 
 when defined(posix):
@@ -68,11 +69,11 @@ type
     config*: BufferConfig
     iface*: BufferInterface
     attrs: WindowAttributes
-    width*: int
-    height*: int
-    contenttype*: Option[string]
-    title*: string
-    hovertext*: array[HoverType, string]
+    width* {.jsget.}: int
+    height* {.jsget.}: int
+    contenttype* {.jsget.}: Option[string]
+    title: string
+    hovertext: array[HoverType, string]
     lastpeek: HoverType
     source*: BufferSource
     pos: CursorPosition
@@ -134,8 +135,8 @@ func cursorx*(container: Container): int {.inline.} = container.pos.cursorx
 func cursory*(container: Container): int {.inline.} = container.pos.cursory
 func fromx*(container: Container): int {.inline.} = container.pos.fromx
 func fromy*(container: Container): int {.inline.} = container.pos.fromy
-func xend*(container: Container): int {.inline.} = container.pos.xend
-func lastVisibleLine*(container: Container): int = min(container.fromy + container.height, container.numLines) - 1
+func xend(container: Container): int {.inline.} = container.pos.xend
+func lastVisibleLine(container: Container): int = min(container.fromy + container.height, container.numLines) - 1
 
 func acursorx*(container: Container): int =
   max(0, container.cursorx - container.fromx)
@@ -143,7 +144,7 @@ func acursorx*(container: Container): int =
 func acursory*(container: Container): int =
   container.cursory - container.fromy
 
-func currentLine*(container: Container): string =
+func currentLine(container: Container): string =
   return container.getLine(container.cursory).str
 
 func cursorBytes(container: Container, y: int, cc = container.cursorx): int =
@@ -159,7 +160,7 @@ func cursorBytes(container: Container, y: int, cc = container.cursorx): int =
 func currentCursorBytes(container: Container, cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
 
-func prevWidth*(container: Container): int =
+func prevWidth(container: Container): int =
   if container.numLines == 0: return 0
   let line = container.currentLine
   if line.len == 0: return 0
@@ -175,7 +176,7 @@ func prevWidth*(container: Container): int =
     w += r.width()
   return pr.width()
 
-func currentWidth*(container: Container): int =
+func currentWidth(container: Container): int =
   if container.numLines == 0: return 0
   let line = container.currentLine
   if line.len == 0: return 0
@@ -193,7 +194,7 @@ func maxScreenWidth(container: Container): int =
   for line in container.ilines(container.fromy..container.lastVisibleLine):
     result = max(line.str.width(), result)
 
-func getTitle*(container: Container): string =
+func getTitle*(container: Container): string {.jsfunc.} =
   if container.title != "":
     return container.title
   return container.source.location.serialize(excludepassword = true)
@@ -209,9 +210,6 @@ func maxfromx(container: Container): int = max(container.maxScreenWidth() - cont
 func atPercentOf*(container: Container): int =
   if container.numLines == 0: return 100
   return (100 * (container.cursory + 1)) div container.numLines
-
-func lineInfo*(container: Container): string =
-  fmt"line {container.cursory + 1}/{container.numLines} ({container.atPercentOf}%) col {container.cursorx + 1}/{container.currentLineWidth} (byte {container.currentCursorBytes})"
 
 func lineWindow(container: Container): Slice[int] =
   if container.numLines == 0: # not loaded
@@ -293,7 +291,7 @@ proc requestLines*(container: Container, w = container.lineWindow): auto {.disca
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
       container.triggerEvent(UPDATE))
 
-proc redraw*(container: Container) {.jsfunc.} =
+proc redraw(container: Container) {.jsfunc.} =
   container.triggerEvent(ContainerEvent(t: UPDATE, force: true))
 
 proc sendCursorPosition(container: Container) =
@@ -307,13 +305,13 @@ proc sendCursorPosition(container: Container) =
     if res.repaint:
       container.needslines = true)
 
-proc setFromY*(container: Container, y: int) {.jsfunc.} =
+proc setFromY(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.needslines = true
     container.triggerEvent(UPDATE)
 
-proc setFromX*(container: Container, x: int, refresh = true) {.jsfunc.} =
+proc setFromX(container: Container, x: int, refresh = true) {.jsfunc.} =
   if container.pos.fromx != x:
     container.pos.fromx = max(min(x, container.maxfromx), 0)
     if container.pos.fromx > container.cursorx:
@@ -322,11 +320,11 @@ proc setFromX*(container: Container, x: int, refresh = true) {.jsfunc.} =
         container.sendCursorPosition()
     container.triggerEvent(UPDATE)
 
-proc setFromXY*(container: Container, x, y: int) {.jsfunc.} =
+proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
   container.setFromY(y)
   container.setFromX(x)
 
-proc setCursorX*(container: Container, x: int, refresh = true, save = true) {.jsfunc.} =
+proc setCursorX(container: Container, x: int, refresh = true, save = true) {.jsfunc.} =
   if not container.lineLoaded(container.cursory):
     container.pos.setx = x
     return
@@ -354,7 +352,7 @@ proc setCursorX*(container: Container, x: int, refresh = true, save = true) {.js
 proc restoreCursorX(container: Container) {.jsfunc.} =
   container.setCursorX(max(min(container.currentLineWidth() - 1, container.xend), 0), false, false)
 
-proc setCursorY*(container: Container, y: int) {.jsfunc.} =
+proc setCursorY(container: Container, y: int) {.jsfunc.} =
   let y = max(min(y, container.numLines - 1), 0)
   if container.cursory == y: return
   if y - container.fromy >= 0 and y - container.height < container.fromy:
@@ -368,38 +366,41 @@ proc setCursorY*(container: Container, y: int) {.jsfunc.} =
   container.restoreCursorX()
   container.sendCursorPosition()
 
-proc centerLine*(container: Container) {.jsfunc.} =
+proc centerLine(container: Container) {.jsfunc.} =
   container.setFromY(container.cursory - container.height div 2)
 
-proc setCursorXY*(container: Container, x, y: int) {.jsfunc.} =
+proc centerColumn(container: Container) {.jsfunc.} =
+  container.setFromX(container.cursorx - container.width div 2)
+
+proc setCursorXY(container: Container, x, y: int) {.jsfunc.} =
   let fy = container.fromy
   container.setCursorY(y)
   container.setCursorX(x)
   if fy != container.fromy:
     container.centerLine()
 
-proc cursorDown*(container: Container) {.jsfunc.} =
+proc cursorDown(container: Container) {.jsfunc.} =
   container.setCursorY(container.cursory + 1)
 
-proc cursorUp*(container: Container) {.jsfunc.} =
+proc cursorUp(container: Container) {.jsfunc.} =
   container.setCursorY(container.cursory - 1)
 
-proc cursorLeft*(container: Container) {.jsfunc.} =
+proc cursorLeft(container: Container) {.jsfunc.} =
   var w = container.prevWidth()
   if w == 0:
     w = 1
   container.setCursorX(container.cursorx - w)
 
-proc cursorRight*(container: Container) {.jsfunc.} =
+proc cursorRight(container: Container) {.jsfunc.} =
   container.setCursorX(container.cursorx + container.currentWidth())
 
-proc cursorLineBegin*(container: Container) {.jsfunc.} =
+proc cursorLineBegin(container: Container) {.jsfunc.} =
   container.setCursorX(0)
 
-proc cursorLineEnd*(container: Container) {.jsfunc.} =
+proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
 
-proc cursorNextWord*(container: Container) {.jsfunc.} =
+proc cursorNextWord(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
   var r: Rune
   var b = container.currentCursorBytes()
@@ -429,7 +430,7 @@ proc cursorNextWord*(container: Container) {.jsfunc.} =
     else:
       container.cursorLineEnd()
 
-proc cursorPrevWord*(container: Container) {.jsfunc.} =
+proc cursorPrevWord(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
   var b = container.currentCursorBytes()
   var x = container.cursorx
@@ -460,57 +461,57 @@ proc cursorPrevWord*(container: Container) {.jsfunc.} =
     else:
       container.cursorLineBegin()
 
-proc pageDown*(container: Container) {.jsfunc.} =
+proc pageDown(container: Container) {.jsfunc.} =
   container.setFromY(container.fromy + container.height)
   container.setCursorY(container.cursory + container.height)
   container.restoreCursorX()
 
-proc pageUp*(container: Container) {.jsfunc.} =
+proc pageUp(container: Container) {.jsfunc.} =
   container.setFromY(container.fromy - container.height)
   container.setCursorY(container.cursory - container.height)
   container.restoreCursorX()
 
-proc pageLeft*(container: Container) {.jsfunc.} =
+proc pageLeft(container: Container) {.jsfunc.} =
   container.setFromX(container.fromx - container.width)
 
-proc pageRight*(container: Container) {.jsfunc.} =
+proc pageRight(container: Container) {.jsfunc.} =
   container.setFromX(container.fromx + container.width)
 
-proc halfPageUp*(container: Container) {.jsfunc.} =
+proc halfPageUp(container: Container) {.jsfunc.} =
   container.setFromY(container.fromy - container.height div 2 + 1)
   container.setCursorY(container.cursory - container.height div 2 + 1)
   container.restoreCursorX()
 
-proc halfPageDown*(container: Container) {.jsfunc.} =
+proc halfPageDown(container: Container) {.jsfunc.} =
   container.setFromY(container.fromy + container.height div 2 - 1)
   container.setCursorY(container.cursory + container.height div 2 - 1)
   container.restoreCursorX()
 
-proc cursorFirstLine*(container: Container) {.jsfunc.} =
+proc cursorFirstLine(container: Container) {.jsfunc.} =
   container.setCursorY(0)
 
 proc cursorLastLine*(container: Container) {.jsfunc.} =
   container.setCursorY(container.numLines - 1)
 
-proc cursorTop*(container: Container) {.jsfunc.} =
+proc cursorTop(container: Container) {.jsfunc.} =
   container.setCursorY(container.fromy)
 
-proc cursorMiddle*(container: Container) {.jsfunc.} =
+proc cursorMiddle(container: Container) {.jsfunc.} =
   container.setCursorY(container.fromy + (container.height - 2) div 2)
 
-proc cursorBottom*(container: Container) {.jsfunc.} =
+proc cursorBottom(container: Container) {.jsfunc.} =
   container.setCursorY(container.fromy + container.height - 1)
 
-proc cursorLeftEdge*(container: Container) {.jsfunc.} =
+proc cursorLeftEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx)
 
-proc cursorVertMiddle*(container: Container) {.jsfunc.} =
+proc cursorMiddleColumn(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx + (container.width - 2) div 2)
 
-proc cursorRightEdge*(container: Container) {.jsfunc.} =
+proc cursorRightEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx + container.width - 1)
 
-proc scrollDown*(container: Container) {.jsfunc.} =
+proc scrollDown(container: Container) {.jsfunc.} =
   if container.fromy + container.height < container.numLines:
     container.setFromY(container.fromy + 1)
     if container.fromy > container.cursory:
@@ -518,7 +519,7 @@ proc scrollDown*(container: Container) {.jsfunc.} =
   else:
     container.cursorDown()
 
-proc scrollUp*(container: Container) {.jsfunc.} =
+proc scrollUp(container: Container) {.jsfunc.} =
   if container.fromy > 0:
     container.setFromY(container.fromy - 1)
     if container.fromy + container.height <= container.cursory:
@@ -526,11 +527,11 @@ proc scrollUp*(container: Container) {.jsfunc.} =
   else:
     container.cursorUp()
 
-proc scrollRight*(container: Container) {.jsfunc.} =
+proc scrollRight(container: Container) {.jsfunc.} =
   if container.fromx + container.width < container.maxScreenWidth():
     container.setFromX(container.fromx + 1)
 
-proc scrollLeft*(container: Container) {.jsfunc.} =
+proc scrollLeft(container: Container) {.jsfunc.} =
   if container.fromx > 0:
     container.setFromX(container.fromx - 1)
     if container.cursorx < container.fromx:
@@ -538,6 +539,9 @@ proc scrollLeft*(container: Container) {.jsfunc.} =
 
 proc alert(container: Container, msg: string) =
   container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
+
+proc lineInfo(container: Container) {.jsfunc.} =
+  container.alert(fmt"line {container.cursory + 1}/{container.numLines} ({container.atPercentOf}%) col {container.cursorx + 1}/{container.currentLineWidth} (byte {container.currentCursorBytes})")
 
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
@@ -547,6 +551,23 @@ proc updateCursor(container: Container) =
   if container.cursory >= container.numLines:
     container.setCursorY(container.lastVisibleLine)
     container.alert("Last line is #" & $container.numLines)
+
+proc gotoLine*[T: string|int](container: Container, s: T) =
+  when s is string:
+    if s == "":
+      redraw(container)
+    elif s[0] == '^':
+      container.cursorFirstLine()
+    elif s[0] == '$':
+      container.cursorLastLine()
+    else:
+      try:
+        let i = parseInt(s)
+        container.setCursorY(i)
+      except ValueError:
+        container.alert("First line is #1") # :)
+  else:
+    container.setCursorY(s)
 
 proc pushCursorPos*(container: Container) =
   container.bpos.add(container.pos)
@@ -654,7 +675,7 @@ proc onload(container: Container, res: LoadResult) =
         if res.x != -1 and res.y != -1:
           container.setCursorXY(res.x, res.y))
 
-proc load*(container: Container) =
+proc load(container: Container) =
   container.setLoadInfo("Connecting to " & $container.source.location & "...")
   container.iface.connect().then(proc(res: ConnectResult): auto =
     let info = container.loadinfo
@@ -705,7 +726,7 @@ proc readSuccess*(container: Container, s: string) =
     if res.open.isSome:
       container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get)))
 
-proc reshape*(container: Container, noreq = false) {.jsfunc.} =
+proc reshape(container: Container, noreq = false) {.jsfunc.} =
   container.iface.render().then(proc(lines: int) =
     container.setNumLines(lines))
   if not noreq:
@@ -725,7 +746,7 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
       container.pipeto = nil)
   return container.pipeto
 
-proc click*(container: Container) {.jsfunc.} =
+proc click(container: Container) {.jsfunc.} =
   container.iface.click(container.cursorx, container.cursory).then(proc(res: ClickResult) =
     if res.repaint:
       container.needslines = true
@@ -761,13 +782,13 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
         container.setNumLines(lines, true)
       container.needslines = true)
 
-proc peek*(container: Container) {.jsfunc.} =
+proc peek(container: Container) {.jsfunc.} =
   container.alert($container.source.location)
 
 proc clearHover*(container: Container) =
   container.lastpeek = low(HoverType)
 
-proc peekCursor*(container: Container) {.jsfunc.} =
+proc peekCursor(container: Container) {.jsfunc.} =
   var p = container.lastpeek
   while true:
     if container.hovertext[p] != "":

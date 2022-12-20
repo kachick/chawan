@@ -559,7 +559,7 @@ open the current buffer's contents as HTML.</td>
 
 <tr>
 <td>`pager.cursorMiddle()`</td>
-<td>Move to the middle of the screen. (Equivalent to M in vi.)</td>
+<td>Move to the line in the middle of the screen. (Equivalent to M in vi.)</td>
 </tr>
 
 <tr>
@@ -570,6 +570,26 @@ open the current buffer's contents as HTML.</td>
 <tr>
 <td>`pager.centerLine()`</td>
 <td>Center screen around the current line.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorLeftEdge()`</td>
+<td>Move to the first column on the screen.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorMiddleColumn()`</td>
+<td>Move to the column in the middle of the screen.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorRightEdge()`</td>
+<td>Move to the last column on the screen.</td>
+</tr>
+
+<tr>
+<td>`pager.centerColumn()`</td>
+<td>Center screen around the current column.</td>
 </tr>
 
 <tr>

@@ -3,6 +3,9 @@ visual-home = "about:chawan"
 run-script = ""
 headless = false
 
+[search]
+wrap = true
+
 [external]
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
@@ -46,7 +49,7 @@ H = 'pager.cursorTop()'
 M = 'pager.cursorMiddle()'
 L = 'pager.cursorBottom()'
 ';' = 'pager.cursorLeftEdge()'
-'+' = 'pager.cursorVertMiddle()'
+'+' = 'pager.cursorMiddleColumn()'
 '@' = 'pager.cursorRightEdge()'
 C-d = 'pager.halfPageDown()'
 C-u = 'pager.halfPageUp()'
@@ -93,6 +96,7 @@ n = 'pager.searchNext()'
 N = 'pager.searchPrev()'
 c = 'pager.peek()'
 u = 'pager.peekCursor()'
+C-w = 'config.searchwrap = !config.searchwrap; pager.alert("Wrap search " + (config.searchwrap ? "on" : "off"))'
 
 [line]
 C-m = 'line.submit()'

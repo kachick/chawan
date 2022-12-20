@@ -1,0 +1,77 @@
+# w3m-like keybindings for Chawan.
+# Copy-paste this into your config file, or just include it (place it in
+# ~/.config/chawan/w3m.toml, then at the beginning of
+# ~/.config/chawan/chawan.toml, include = "w3m.toml".)
+
+[page]
+# Page/cursor movement
+' ' = 'pager.pageDown()'
+C-v = 'pager.pageDown()'
+b = 'pager.pageUp()'
+M-v = 'pager.pageUp()'
+l = 'pager.cursorRight()'
+h = 'pager.cursorLeft()'
+j = 'pager.cursorDown()'
+k = 'pager.cursorUp()'
+C-f = 'pager.cursorRight()'
+C-b = 'pager.cursorLeft()'
+C-n = 'pager.cursorDown()'
+C-p = 'pager.cursorUp()'
+J = 'pager.scrollUp()'
+K = 'pager.scrollDown()'
+'^' = 'pager.cursorLineBegin()'
+C-a = 'pager.cursorLineBegin()'
+'$' = 'pager.cursorLineEnd()'
+C-e = 'pager.cursorLineEnd()'
+w = 'pager.cursorNextWord()'
+W = 'pager.cursorPrevWord()'
+'<' = 'pager.pageLeft()'
+'>' = 'pager.pageRight()'
+'.' = 'pager.scrollLeft()'
+',' = 'pager.scrollRight()'
+g = 'pager.cursorFirstLine()'
+'M-<' = 'pager.cursorFirstLine()'
+G = 'pager.cursorLastLine()'
+'M->' = 'pager.cursorLastLine()'
+M-g = 'pager.gotoLine()'
+Z = 'pager.centerColumn()'
+z = 'pager.centerLine()'
+C-i = 'pager.cursorNextLink()'
+C-u = 'pager.cursorPrevLink()'
+M-C-i = 'pager.cursorPrevLink()'
+'[' = 'pager.cursorFirstLine();pager.cursorLineBegin();pager.cursorNextLink()'
+']' = 'pager.cursorLastLine();pager.cursorLineEnd();pager.cursorPrevLink()'
+# Hyperlink selection
+C-j = 'pager.click()'
+C-m = 'pager.click()'
+c = 'pager.peek()'
+u = 'pager.peekCursor()'
+#TODO download, etc
+# File and URL-related actions
+U = 'pager.load()'
+V = 'pager.load()' #TODO file only
+#TODO exec shell
+# Buffer operations
+B = 'pager.discardBuffer()'
+v = 'pager.toggleSource()'
+#TODO edit
+C-l = 'pager.redraw()'
+R = 'pager.reload()'
+#TODO save, save source, view in editor
+#TODO buffer selection mode
+#TODO mark
+# Search
+'/' = 'pager.searchForward()'
+C-s = 'pager.searchForward()'
+'?' = 'pager.searchBackward()'
+C-r = 'pager.searchBackward()'
+n = 'pager.searchNext()'
+N = 'pager.searchPrev()'
+C-w = 'config.searchwrap = !config.searchwrap; pager.alert("Wrap search " + (config.searchwrap ? "on" : "off"))'
+# Misc
+#TODO shell out, help file, options, cookies
+C-c = 'pager.cancel()'
+q = 'pager.quit()' #TODO confirm
+Q = 'pager.quit()'
+
+# w3m line editing is equivalent to Chawan's defaults.
