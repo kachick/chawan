@@ -498,21 +498,29 @@ func cssColor(val: CSSComponentValue): RGBAColor =
 
 func isToken(cval: CSSComponentValue): bool {.inline.} = cval of CSSToken
 
-func cssLength(val: CSSComponentValue): CSSLength =
-  if val of CSSToken:
-    let tok = CSSToken(val)
-    case tok.tokenType
-    of CSS_NUMBER_TOKEN:
-      if tok.nvalue == 0:
-        return CSSLength(num: 0, unit: UNIT_PX)
-    of CSS_PERCENTAGE_TOKEN:
-      return cssLength(tok.nvalue, "%")
-    of CSS_DIMENSION_TOKEN:
-      return cssLength(tok.nvalue, tok.unit)
-    of CSS_IDENT_TOKEN:
-      if tok.value == "auto":
-        return CSSLength(auto: true)
-    else: discard
+func cssLength(val: CSSComponentValue, has_auto: static bool = true, allow_negative: static bool = true): CSSLength =
+  block nofail:
+    if val of CSSToken:
+      let tok = CSSToken(val)
+      case tok.tokenType
+      of CSS_NUMBER_TOKEN:
+        if tok.nvalue == 0:
+          return CSSLength(num: 0, unit: UNIT_PX)
+      of CSS_PERCENTAGE_TOKEN:
+        when not allow_negative:
+          if tok.nvalue < 0:
+            break nofail
+        return cssLength(tok.nvalue, "%")
+      of CSS_DIMENSION_TOKEN:
+        when not allow_negative:
+          if tok.nvalue < 0:
+            break nofail
+        return cssLength(tok.nvalue, tok.unit)
+      of CSS_IDENT_TOKEN:
+        when has_auto:
+          if tok.value == "auto":
+            return CSSLength(auto: true)
+      else: discard
   raise newException(CSSValueError, "Invalid length")
 
 func cssAbsoluteLength(val: CSSComponentValue): CSSLength =
@@ -710,7 +718,7 @@ func cssVerticalAlign(cval: CSSComponentValue): CSSVerticalAlign =
       return result
     else:
       result.keyword = VERTICAL_ALIGN_BASELINE
-      result.length = cssLength(tok)
+      result.length = cssLength(tok, has_auto = false)
       return result
   raise newException(CSSValueError, "Invalid vertical align")
 
@@ -724,7 +732,7 @@ func cssLineHeight(cval: CSSComponentValue): CSSLength =
       if tok.value == "normal":
         return CSSLength(auto: true)
     else:
-      return cssLength(tok)
+      return cssLength(tok, has_auto = false)
   raise newException(CSSValueError, "Invalid line height")
 
 func cssTextAlign(cval: CSSComponentValue): CSSTextAlign =
@@ -816,7 +824,7 @@ func cssMaxMinSize(cval: CSSComponentValue): Option[CSSLength] =
       if tok.value == "none":
         return some(CSSLength(auto: true))
     of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN:
-      return some(cssLength(tok))
+      return some(cssLength(tok, allow_negative = false))
     else: discard
 
 #TODO this should be a separate type
@@ -853,6 +861,9 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
         val.length = res.get
       else:
         raise newException(CSSValueError, "Invalid length")
+    of PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT, PROPERTY_PADDING_TOP,
+       PROPERTY_PADDING_BOTTOM:
+      val.length = cssLength(cval, has_auto = false)
     else:
       val.length = cssLength(cval)
   of VALUE_FONT_STYLE: val.fontstyle = cssFontStyle(cval)
