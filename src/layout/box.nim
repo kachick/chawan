@@ -45,11 +45,11 @@ type
     marker*: MarkerBoxBuilder
     content*: BlockBoxBuilder
 
-  TableRowGroupBoxBuilder* = ref object of BoxBuilder
+  TableRowGroupBoxBuilder* = ref object of BlockBoxBuilder
 
-  TableRowBoxBuilder* = ref object of BoxBuilder
+  TableRowBoxBuilder* = ref object of BlockBoxBuilder
 
-  TableCellBoxBuilder* = ref object of BoxBuilder
+  TableCellBoxBuilder* = ref object of BlockBoxBuilder
     colspan*: int
 
   TableBoxBuilder* = ref object of BlockBoxBuilder

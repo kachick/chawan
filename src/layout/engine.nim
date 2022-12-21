@@ -481,10 +481,10 @@ proc newInlineContext(parent: BlockBox): InlineContext =
   result.viewport = parent.viewport
   result.shrink = parent.shrink
 
-proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox
+proc buildBlock(builder: BlockBoxBuilder, parent: BlockBox): BlockBox
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
-proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox
+proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox
 
 proc applyInlineDimensions(parent: BlockBox) =
   parent.height += parent.inline.height
@@ -557,13 +557,16 @@ func baseline(box: BlockBox): int =
     return box.offset.y + box.nested[^1].baseline
   box.offset.y
 
+proc buildLayout(box: BlockBox, builder: BlockBoxBuilder) =
+  if builder.inlinelayout:
+    box.buildInlineLayout(builder.children)
+  else:
+    box.buildBlockLayout(builder.children, builder.node)
+
 proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineBlock(parent.viewport, builder, parentWidth)
 
-  if builder.inlinelayout:
-    result.innerbox.buildInlineLayout(builder.children)
-  else:
-    result.innerbox.buildBlockLayout(builder.children, builder.node)
+  result.innerbox.buildLayout(builder)
 
   let pwidth = builder.computed{"width"}
   if pwidth.auto:
@@ -655,10 +658,7 @@ proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
   if builder.marker != nil:
     result.marker = result.buildInlines(@[BoxBuilder(builder.marker)])
 
-  if builder.content.inlinelayout:
-    result.buildInlineLayout(builder.content.children)
-  else:
-    result.buildBlockLayout(builder.content.children, builder.content.node)
+  result.buildLayout(builder.content)
 
 proc positionFixed(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
   #TODO for now this is a good approximation, but fixed actually means
@@ -820,19 +820,13 @@ proc positionBlocks(box: BlockBox) =
   if box.min_height.isSome and box.height < box.min_height.get:
     box.height = box.min_height.get
 
-proc buildTableCaption(viewport: Viewport, box: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = false): BlockBox =
-  result = viewport.newFlowRootBox(box, maxwidth, maxheight, shrink)
-  if box.inlinelayout:
-    result.buildInlineLayout(box.children)
-  else:
-    result.buildBlockLayout(box.children, box.node)
+proc buildTableCaption(viewport: Viewport, builder: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = false): BlockBox =
+  result = viewport.newFlowRootBox(builder, maxwidth, maxheight, shrink)
+  result.buildLayout(builder)
 
-proc buildTableCell(viewport: Viewport, box: TableCellBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = true): BlockBox =
-  result = viewport.newFlowRootBox(box, maxwidth, maxheight, shrink)
-  if box.inlinelayout:
-    result.buildInlineLayout(box.children)
-  else:
-    result.buildBlockLayout(box.children, box.node)
+proc buildTableCell(viewport: Viewport, builder: TableCellBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = true): BlockBox =
+  result = viewport.newFlowRootBox(builder, maxwidth, maxheight, shrink)
+  result.buildLayout(builder)
 
 proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: BlockBox): RowContext =
   var ctx = RowContext(builder: box, cells: newSeq[CellWrapper](box.children.len))
@@ -980,15 +974,14 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, dw: int, weight: var float
 #      distribute -(table_width - max_row_width) among cells with an unspecified
 #      width. If this would give any cell a width < min_width, distribute the
 #      difference too.
-proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
-  let table = parent.newBlockBox(box)
+proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBox) =
   var ctx = TableContext(
     collapse: table.computed{"border-collapse"} == BORDER_COLLAPSE_COLLAPSE
   )
   if not ctx.collapse:
     ctx.inlinespacing = table.computed{"border-spacing"}.a.px(parent.viewport)
     ctx.blockspacing = table.computed{"border-spacing"}.b.px(parent.viewport)
-  for row in box.rows:
+  for row in builder.rows:
     if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
       ctx.caption = TableCaptionBoxBuilder(row)
     else:
@@ -1087,6 +1080,10 @@ proc buildTable(box: TableBoxBuilder, parent: BlockBox): BlockBox =
       table.nested.add(caption)
       table.width += caption.width
       table.height = max(table.height, caption.height)
+
+proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox =
+  let table = parent.newBlockBox(builder)
+  table.buildTableLayout(builder, parent)
   return table
 
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
@@ -1101,22 +1098,16 @@ proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
   parent.positionBlocks()
 
 # Build a block box inside another block box, based on a builder.
-proc buildBlock(box: BlockBoxBuilder, parent: BlockBox): BlockBox =
+proc buildBlock(builder: BlockBoxBuilder, parent: BlockBox): BlockBox =
   assert parent != nil
-  result = parent.newBlockBox(box)
-  if box.inlinelayout:
-    result.buildInlineLayout(box.children)
-  else:
-    result.buildBlockLayout(box.children, box.node)
+  result = parent.newBlockBox(builder)
+  result.buildLayout(builder)
 
 # Establish a new flow-root context and build a block box.
 proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
   let box = viewport.newFlowRootBox(builder, viewport.window.width_px, shrink = false)
   viewport.root.add(box)
-  if builder.inlinelayout:
-    box.buildInlineLayout(builder.children)
-  else:
-    box.buildBlockLayout(builder.children, builder.node)
+  box.buildLayout(builder)
 
 # Generation phase
 
