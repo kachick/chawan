@@ -854,6 +854,15 @@ func attrigz*(element: Element, s: string): Option[int] =
   except ValueError:
     discard
 
+func attrigez*(element: Element, s: string): Option[int] =
+  let a = element.attr(s)
+  try:
+    let i = parseInt(a)
+    if i >= 0:
+      return some(i)
+  except ValueError:
+    discard
+
 func attrb*(element: Element, s: string): bool =
   if s in element.attrs:
     return true
@@ -863,12 +872,15 @@ func attrb*(element: Element, s: string): bool =
 func className(element: Element): string {.jsfget.} =
   element.attr("class")
 
-#TODO implement JS union types for ref object...
 func size*(element: HTMLInputElement): int {.jsfget.} =
   element.attrigz("size").get(20)
 
+#> For historical reasons, the default value of the size IDL attribute does
+#> not return the actual size used, which, in the absence of the size content
+#> attribute, is either 1 or 4 depending on the presence of the multiple
+#> attribute.
 func size*(element: HTMLSelectElement): int {.jsfget.} =
-  element.attrigz("size").get(20)
+  element.attrigz("size").get(0)
 
 func cols*(element: HTMLTextAreaElement): int {.jsfget.} =
   element.attrigz("cols").get(20)
@@ -1413,7 +1425,7 @@ proc resetElement*(element: Element) =
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
     if not select.attrb("multiple"):
-      if select.size == 1:
+      if select.attrigez("size").get(1) == 1:
         var i = 0
         var firstOption: HTMLOptionElement
         for option in select.options:
