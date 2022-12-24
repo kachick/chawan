@@ -328,87 +328,81 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSC
 
   state.addWord()
 
-type PreferredDimensions = object
-  # warning: this is actually the available space, not the computed width.
-  # TODO rename this
-  compwidth: int
-  compheight: Option[int]
-  margin_top: int
-  margin_bottom: int
-  margin_left: int
-  margin_right: int
-  padding_left: int
-  padding_right: int
-  padding_top: int
-  padding_bottom: int
-  max_width: Option[int]
-  max_height: Option[int]
-  min_width: Option[int]
-  min_height: Option[int]
+# ...something like this? (I'm pretty sure this is incorrect, TODO.)
+proc resolveContentWidth(box: BlockBox, availableWidth: int) =
+  if box.contentWidth >= availableWidth:
+    box.contentWidth -= box.margin_left
+    box.contentWidth -= box.margin_right
+    box.contentWidth -= box.padding_left
+    box.contentWidth -= box.padding_right
+    if box.contentWidth < 0:
+      box.contentWidth = 0
 
-proc preferredDimensions(computed: CSSComputedValues, viewport: Viewport, width: int, height: Option[int]): PreferredDimensions =
-  let pwidth = computed{"width"}
-  if pwidth.auto:
-    result.compwidth = width
+# Resolve percentage-based dimensions.
+# availableWidth: width of the containing box. availableHeight: ditto, but with height.
+proc resolveDimensions(box: BlockBox, availableWidth: int, availableHeight: Option[int]) =
+  let viewport = box.viewport
+  let computed = box.computed
+
+  # Note: we use availableWidth for percentage resolution intentionally.
+  box.margin_top = computed{"margin-top"}.px(viewport, availableWidth)
+  box.margin_bottom = computed{"margin-top"}.px(viewport, availableWidth)
+  box.margin_left = computed{"margin-left"}.px(viewport, availableWidth)
+  box.margin_right = computed{"margin-right"}.px(viewport, availableWidth)
+
+  box.padding_top = computed{"padding-top"}.px(viewport, availableWidth)
+  box.padding_bottom = computed{"padding-bottom"}.px(viewport, availableWidth)
+  box.padding_left = computed{"padding-left"}.px(viewport, availableWidth)
+  box.padding_right = computed{"padding-right"}.px(viewport, availableWidth)
+
+  # Width
+  if computed{"width"}.auto:
+    box.contentWidth = availableWidth
   else:
-    result.compwidth = pwidth.px(viewport, width)
-
+    box.contentWidth = computed{"width"}.px(viewport, availableWidth)
+  box.resolveContentWidth(availableWidth)
+  # this looks wrong too, TODO...
   if not computed{"max-width"}.auto:
-    result.max_width = some(computed{"max-width"}.px(viewport, width))
-  if not computed{"max-height"}.auto:
-    if computed{"max-height"}.unit != UNIT_PERC:
-      result.max_height = computed{"max-height"}.px(viewport).some
-    elif height.issome:
-      result.max_height = computed{"max-height"}.px(viewport, height.get).some
-
+    let maxWidth = computed{"max-width"}.px(viewport, availableWidth)
+    if maxWidth < box.contentWidth:
+      box.contentWidth = maxWidth
+      box.resolveContentWidth(availableWidth)
   if not computed{"min-width"}.auto:
-    result.min_width = some(computed{"min-width"}.px(viewport, width))
-  if not computed{"min-height"}.auto:
-    if computed{"min-height"}.unit != UNIT_PERC:
-      result.max_height = computed{"min-height"}.px(viewport).some
-    elif height.issome:
-      result.max_height = computed{"min-height"}.px(viewport, height.get).some
+    let minWidth = computed{"min-width"}.px(viewport, availableWidth)
+    if minWidth < box.contentWidth:
+      box.contentWidth = minWidth
+      box.resolveContentWidth(availableWidth)
 
-  result.margin_top = computed{"margin-top"}.px(viewport, width)
-  result.margin_bottom = computed{"margin-top"}.px(viewport, width)
-  result.margin_left = computed{"margin-left"}.px(viewport, width)
-  result.margin_right = computed{"margin-right"}.px(viewport, width)
-
-  result.padding_top = computed{"padding-top"}.px(viewport, width)
-  result.padding_bottom = computed{"padding-bottom"}.px(viewport, width)
-  result.padding_left = computed{"padding-left"}.px(viewport, width)
-  result.padding_right = computed{"padding-right"}.px(viewport, width)
-
-  if result.compwidth >= width:
-    result.compwidth -= result.margin_left
-    result.compwidth -= result.margin_right
-
-    result.compwidth -= result.padding_left
-    result.compwidth -= result.padding_right
-
+  # Height
   let pheight = computed{"height"}
   if not pheight.auto:
     if pheight.unit != UNIT_PERC:
-      result.compheight = pheight.px(viewport).some
-    elif height.issome:
-      result.compheight = pheight.px(viewport, height.get).some
+      box.contentHeight = some(pheight.px(viewport))
+    elif availableHeight.issome:
+      box.contentHeight = some(pheight.px(viewport, availableHeight.get))
+  if not computed{"max-height"}.auto:
+    if computed{"max-height"}.unit != UNIT_PERC:
+      let maxHeight = computed{"max-height"}.px(viewport)
+      if box.contentHeight.isNone or maxHeight > box.contentHeight.get:
+        box.contentHeight = some(maxHeight)
+    elif availableHeight.isSome:
+      let maxHeight = computed{"max-height"}.px(viewport, availableHeight.get)
+      if box.contentHeight.isNone or maxHeight > box.contentHeight.get:
+        box.contentHeight = some(maxHeight)
+  if not computed{"min-height"}.auto:
+    if computed{"min-height"}.unit != UNIT_PERC:
+      let minHeight = computed{"min-height"}.px(viewport)
+      if minHeight < box.contentHeight.get(0):
+        box.contentHeight = some(minHeight)
+    elif availableHeight.issome:
+      let minHeight = computed{"min-height"}.px(viewport, availableHeight.get)
+      if minHeight < box.contentHeight.get(0):
+        box.contentHeight = some(minHeight)
 
-proc setPreferredDimensions(box: BlockBox, width: int, height: Option[int]) =
-  let preferred = preferredDimensions(box.computed, box.viewport, width, height)
-  box.compwidth = preferred.compwidth
-  box.compheight = preferred.compheight
-  box.padding_top = preferred.padding_top
-  box.padding_bottom = preferred.padding_bottom
-  box.padding_left = preferred.padding_left
-  box.padding_right = preferred.padding_right
-  box.margin_top = preferred.margin_top
-  box.margin_bottom = preferred.margin_bottom
-  box.margin_left = preferred.margin_left
-  box.margin_right = preferred.margin_right
-  box.max_width = preferred.max_width
-  box.max_height = preferred.max_height
-  box.min_width = preferred.min_width
-  box.min_height = preferred.min_height
+# Whether a width was specified on this block box.
+func isWidthSpecified(box: BlockBox): bool =
+  not (box.computed{"width"}.auto and box.computed{"max-width"}.auto and
+       box.computed{"min-width"}.auto)
 
 # The shrink variable specifies whether a block's inner layout should use all
 # available space or not. When shrink is set to false, (currently) the
@@ -420,13 +414,10 @@ func isShrink(box: BlockBox, parent: BlockBox = nil, override = false): bool =
   if box.computed{"position"} == POSITION_ABSOLUTE:
     # Absolutely positioned elements take up as much space as their contents.
     return true
-  template no_specified_width: bool =
-    # We check if our used width has already been specified.
-    box.computed{"width"}.auto and box.max_width.isNone and box.min_width.isNone
   case box.computed{"display"}
   of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
     # Inline blocks/tables always take up as much space as their contents.
-    return no_specified_width
+    return not box.isWidthSpecified()
   of DISPLAY_TABLE:
     # Always shrink tables.
     return true
@@ -442,16 +433,16 @@ func isShrink(box: BlockBox, parent: BlockBox = nil, override = false): bool =
     else:
       # Basically, check if our block formatting context has infinite width.
       # If yes, there's no need to shrink anyways; we can take up all available
-      # space.
+      # space we want.
       # If not, and no width was specified, we have to enable shrink.
-      return parent.shrink and no_specified_width
+      return parent.shrink and not box.isWidthSpecified()
   else: discard
 
 proc newFlowRootBox(viewport: Viewport, builder: BoxBuilder, parentWidth: int, parentHeight = none(int), shrink = true): BlockBox {.inline.} =
   new(result)
   result.viewport = viewport
   result.computed = builder.computed
-  result.setPreferredDimensions(parentWidth, parentHeight)
+  result.resolveDimensions(parentWidth, parentHeight)
   result.node = builder.node
   result.shrink = result.isShrink(nil, shrink)
 
@@ -459,7 +450,7 @@ proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
   new(result)
   result.viewport = parent.viewport
   result.computed = builder.computed
-  result.setPreferredDimensions(parent.compwidth, parent.compheight)
+  result.resolveDimensions(parent.contentWidth, parent.contentHeight)
   result.node = builder.node
   result.shrink = result.isShrink(parent)
 
@@ -467,7 +458,7 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
   result.viewport = parent.viewport
   result.computed = builder.content.computed
-  result.setPreferredDimensions(parent.compwidth, parent.compheight)
+  result.resolveDimensions(parent.contentWidth, parent.contentHeight)
   result.node = builder.node
   result.shrink = result.isShrink(parent)
 
@@ -488,37 +479,30 @@ proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox
 
 proc applyInlineDimensions(parent: BlockBox) =
   parent.height += parent.inline.height
-  if parent.compheight.issome:
-    parent.height = parent.compheight.get
+  if parent.contentHeight.issome:
+    parent.height = parent.contentHeight.get
   parent.width = max(parent.width, parent.inline.maxwidth)
   parent.xminwidth = max(parent.xminwidth, parent.inline.minwidth)
 
-proc positionInlines(parent: BlockBox) =
-  parent.width += parent.padding_left
-  parent.inline.offset.x += parent.padding_left
+proc positionInlines(box: BlockBox) =
+  box.width += box.padding_left
+  box.inline.offset.x += box.padding_left
 
-  parent.height += parent.padding_top
-  parent.inline.offset.y += parent.padding_top
+  box.height += box.padding_top
+  box.inline.offset.y += box.padding_top
 
-  parent.height += parent.padding_bottom
+  box.height += box.padding_bottom
 
-  parent.width += parent.padding_right
+  box.width += box.padding_right
 
-  if parent.computed{"width"}.auto:
-    if parent.shrink:
-      parent.width = min(parent.width, parent.compwidth)
+  if not box.isWidthSpecified():
+    # We can make the box as small/large as the content's width.
+    if box.shrink:
+      box.width = min(box.width, box.contentWidth)
     else:
-      parent.width = max(parent.width, parent.compwidth)
+      box.width = max(box.width, box.contentWidth)
   else:
-    parent.width = parent.compwidth
-  if parent.max_width.isSome and parent.max_width.get < parent.width:
-    parent.width = parent.max_width.get
-  if parent.min_width.isSome and parent.width < parent.min_width.get:
-    parent.width = parent.min_width.get
-  if parent.max_height.isSome and parent.max_height.get < parent.height:
-    parent.height = parent.max_height.get
-  if parent.min_height.isSome and parent.height < parent.min_height.get:
-    parent.height = parent.min_height.get
+    box.width = box.contentWidth
 
 # Builder only contains inline boxes.
 proc buildInlineLayout(parent: BlockBox, children: seq[BoxBuilder]) =
@@ -534,7 +518,7 @@ proc buildBlockLayout(parent: BlockBox, children: seq[BoxBuilder], node: StyledN
   if parent.computed{"position"} == POSITION_ABSOLUTE:
     discard parent.viewport.absolutes.pop()
 
-#TODO this is horribly inefficient
+#TODO this is horribly inefficient, and should be inherited like xminwidth
 func firstBaseline(box: BlockBox): int =
   if box.inline != nil:
     if box.inline.lines.len > 0:
@@ -563,17 +547,15 @@ proc buildLayout(box: BlockBox, builder: BlockBoxBuilder) =
   else:
     box.buildBlockLayout(builder.children, builder.node)
 
+# parentWidth, parentHeight: width/height of the containing block.
 proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineBlock(parent.viewport, builder, parentWidth)
 
   result.innerbox.buildLayout(builder)
 
-  let pwidth = builder.computed{"width"}
-  if pwidth.auto:
+  if not result.innerbox.isWidthSpecified():
     # shrink-to-fit
     result.innerbox.width = min(parentWidth, result.innerbox.width)
-  else:
-    result.innerbox.width = pwidth.px(parent.viewport, parentWidth)
 
   # Apply the block box's properties to the atom itself.
   result.width = result.innerbox.width
@@ -630,26 +612,21 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
 
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
   let ictx = parent.newInlineContext()
-  var usedwidth = parent.compwidth
-  if parent.max_width.isSome and parent.max_width.get > usedwidth:
-    usedwidth = parent.max_width.get
-  if parent.min_width.isSome and parent.min_width.get < usedwidth:
-    usedwidth = parent.min_width.get
   if inlines.len > 0:
     for child in inlines:
       case child.computed{"display"}
       of DISPLAY_INLINE:
         let child = InlineBoxBuilder(child)
         child.ictx = ictx
-        buildInline(parent.viewport, child, usedwidth, parent.compheight)
+        buildInline(parent.viewport, child, parent.contentWidth, parent.contentHeight)
       of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
         let child = BlockBoxBuilder(child)
-        let iblock = child.buildInlineBlock(ictx, usedwidth)
-        ictx.addAtom(iblock, usedwidth, parent.computed, child.computed)
+        let iblock = child.buildInlineBlock(ictx, parent.contentWidth)
+        ictx.addAtom(iblock, parent.contentWidth, parent.computed, child.computed)
         ictx.whitespacenum = 0
       else:
         assert false, "child.t is " & $child.computed{"display"}
-    ictx.finish(parent.computed, usedwidth)
+    ictx.finish(parent.computed, parent.contentWidth)
   return ictx
 
 proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
@@ -671,16 +648,16 @@ proc positionFixed(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
   let top = box.computed{"top"}
   let bottom = box.computed{"bottom"}
   if not left.auto:
-    box.offset.x += left.px(box.viewport, last.compwidth)
+    box.offset.x += left.px(box.viewport, last.contentWidth)
     box.offset.x += box.margin_left
   elif not right.auto:
-    box.offset.x += last.compwidth - right.px(box.viewport, box.compwidth) - box.width
+    box.offset.x += last.contentWidth - right.px(box.viewport, box.contentWidth) - box.width
     box.offset.x -= box.margin_right
   if not top.auto:
-    box.offset.y += top.px(box.viewport, box.compheight.get(0))
+    box.offset.y += top.px(box.viewport, box.contentHeight.get(0))
     box.offset.y += box.margin_top
   elif not bottom.auto:
-    box.offset.y += last.compheight.get(box.viewport.window.height_px) - bottom.px(box.viewport, box.compheight.get(0)) - box.height
+    box.offset.y += last.contentHeight.get(box.viewport.window.height_px) - bottom.px(box.viewport, box.contentHeight.get(0)) - box.height
     box.offset.y -= box.margin_bottom
   box.viewport.root.add(box)
 
@@ -710,16 +687,23 @@ proc positionBlocks(box: BlockBox) =
   var x = 0
   var margin_todo: Strut
 
+  # If content width has been specified, use it.
+  # Otherwise, contentWidth is just the maximum width we can take up, so
+  # set width to min(maxContentWidth, box.contentWidth)
+  let spec = box.isWidthSpecified()
+  if spec:
+    box.width = box.contentWidth
+
   y += box.padding_top
   box.height += box.padding_top
 
   x += box.padding_left
   case box.computed{"text-align"}
   of TEXT_ALIGN_CHA_CENTER:
-    x += box.compwidth div 2
+    x += box.contentWidth div 2
   of TEXT_ALIGN_CHA_LEFT: discard
   of TEXT_ALIGN_CHA_RIGHT:
-    x += box.compwidth
+    x += box.contentWidth
   else: discard
 
   template apply_child(child: BlockBox) =
@@ -732,27 +716,28 @@ proc positionBlocks(box: BlockBox) =
     of TEXT_ALIGN_CHA_LEFT: discard
     of TEXT_ALIGN_CHA_RIGHT:
       child.offset.x -= child.width
-    elif not child.computed{"width"}.auto and child.compwidth < box.compwidth:
+    elif not child.computed{"width"}.auto and child.contentWidth < box.contentWidth:
       let margin_left = child.computed{"margin-left"}
       let margin_right = child.computed{"margin-right"}
       if margin_left.auto and margin_right.auto:
-        child.margin_left += box.compwidth div 2
-        child.margin_left -= child.compwidth div 2
-        child.margin_right += box.compwidth div 2
-        child.margin_right -= child.compwidth div 2
+        child.margin_left += box.contentWidth div 2
+        child.margin_left -= child.contentWidth div 2
+        child.margin_right += box.contentWidth div 2
+        child.margin_right -= child.contentWidth div 2
       elif margin_left.auto:
-        child.margin_left += box.compwidth
-        child.margin_left -= child.compwidth
+        child.margin_left += box.contentWidth
+        child.margin_left -= child.contentWidth
       elif margin_right.auto:
-        child.margin_right += box.compwidth
-        child.margin_right -= child.compwidth
+        child.margin_right += box.contentWidth
+        child.margin_right -= child.contentWidth
     child.offset.x += child.margin_left
 
     if box.computed{"position"} == POSITION_RELATIVE:
       box.positionRelative(child)
     y += child.height
     box.height += child.height
-    box.width = max(box.width, child.width)
+    if not spec:
+      box.width = min(box.contentWidth, max(child.width, box.width))
     box.xminwidth = max(box.xminwidth, child.xminwidth)
     margin_todo = Strut()
     margin_todo.append(child.margin_bottom)
@@ -806,19 +791,11 @@ proc positionBlocks(box: BlockBox) =
 
   box.height += box.padding_bottom
 
-  if box.compheight.issome:
-    box.height = box.compheight.get
+  if box.contentHeight.issome:
+    box.height = box.contentHeight.get
 
   box.width += box.padding_left
   box.width += box.padding_right
-  if box.max_width.isSome and box.max_width.get < box.width:
-    box.width = box.max_width.get
-  if box.min_width.isSome and box.width < box.min_width.get:
-    box.width = box.min_width.get
-  if box.max_height.isSome and box.max_height.get < box.height:
-    box.height = box.max_height.get
-  if box.min_height.isSome and box.height < box.min_height.get:
-    box.height = box.min_height.get
 
 proc buildTableCaption(viewport: Viewport, builder: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = false): BlockBox =
   result = viewport.newFlowRootBox(builder, maxwidth, maxheight, shrink)
@@ -835,9 +812,8 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
   for child in box.children:
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
-    let cell = parent.viewport.buildTableCell(cellbuilder, parent.compwidth, parent.compheight)
+    let cell = parent.viewport.buildTableCell(cellbuilder, parent.contentWidth, parent.contentHeight)
     ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: cellbuilder.colspan)
-    let pwidth = cellbuilder.computed{"width"}
     if pctx.cols.len < n + cellbuilder.colspan:
       pctx.cols.setLen(n + cellbuilder.colspan)
     if ctx.reflow.len < n + cellbuilder.colspan:
@@ -851,8 +827,8 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
         pctx.cols[i].width = w
         if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
         ctx.reflow[i] = true
-      if not pwidth.auto:
-        let ww = pwidth.px(parent.viewport, parent.compwidth)
+      if not cellbuilder.computed{"width"}.auto:
+        let ww = cellbuilder.computed{"width"}.px(parent.viewport, parent.contentWidth)
         if pctx.cols[i].wspecified:
           # A specified column already exists; we take the larger width.
           if ww > pctx.cols[i].width:
@@ -993,8 +969,8 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBo
   if not table.computed{"width"}.auto:
     forceresize = true
   var reflow = newSeq[bool](ctx.cols.len)
-  if table.compwidth > ctx.maxwidth and (not table.shrink or forceresize):
-    let dw = (table.compwidth - ctx.maxwidth)
+  if table.contentWidth > ctx.maxwidth and (not table.shrink or forceresize):
+    let dw = (table.contentWidth - ctx.maxwidth)
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(dw, weight)
     if weight != 0:
@@ -1004,8 +980,8 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBo
         let x = int(unit * ctx.cols[j].weight)
         ctx.cols[j].width += x
         reflow[j] = true
-  elif table.compwidth < ctx.maxwidth:
-    var dw = (ctx.maxwidth - table.compwidth)
+  elif table.contentWidth < ctx.maxwidth:
+    var dw = (ctx.maxwidth - table.contentWidth)
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(dw, weight)
     while avail.len > 0 and dw != 0:
@@ -1051,7 +1027,7 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBo
     y += row.height
     table.nested.add(row)
     table.width = max(row.width, table.width)
-  table.height = table.compheight.get(y)
+  table.height = table.contentHeight.get(y)
   if ctx.caption != nil:
     case ctx.caption.computed{"caption-side"}
     of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
@@ -1068,14 +1044,14 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBo
       table.height += caption.height
       table.width = max(table.width, caption.width)
     of CAPTION_SIDE_LEFT, CAPTION_SIDE_INLINE_START:
-      let caption = table.viewport.buildTableCaption(ctx.caption, table.compwidth, some(table.height), true)
+      let caption = table.viewport.buildTableCaption(ctx.caption, table.contentWidth, some(table.height), true)
       for r in table.nested:
         r.offset.x += caption.width
       table.nested.insert(caption, 0)
       table.width += caption.width
       table.height = max(table.height, caption.height)
     of CAPTION_SIDE_RIGHT, CAPTION_SIDE_INLINE_END:
-      let caption = table.viewport.buildTableCaption(ctx.caption, table.compwidth, some(table.height), true)
+      let caption = table.viewport.buildTableCaption(ctx.caption, table.contentWidth, some(table.height), true)
       caption.offset.x += table.width
       table.nested.add(caption)
       table.width += caption.width

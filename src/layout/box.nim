@@ -109,13 +109,9 @@ type
     viewport*: Viewport
     offset*: Offset
 
+    # This is the padding width/height.
     width*: int
     height*: int
-    max_width*: Option[int]
-    max_height*: Option[int]
-    min_width*: Option[int]
-    min_height*: Option[int]
-    xminwidth*: int
     margin_top*: int
     margin_bottom*: int
     margin_left*: int
@@ -125,9 +121,16 @@ type
     padding_left*: int
     padding_right*: int
 
-    compwidth*: int
-    compheight*: Option[int]
+    # This is the (specified) content width/height. Actual dimensions may
+    # differ (i.e. overflow)
+    contentWidth*: int
+    contentHeight*: Option[int]
     shrink*: bool
+
+    # very bad name. basically the minimum content width after the contents
+    # have been positioned (usually the width of the shortest word.) used
+    # in table cells.
+    xminwidth*: int
 
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
