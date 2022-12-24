@@ -8,7 +8,7 @@ import utils/twtstr
 
 const tabwidth = 8
 type StreamRenderer* = object
-  spaces: int
+  w: int
   ansiparser: AnsiCodeParser
   format: Format
   af: bool
@@ -28,14 +28,14 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       grid[grid.high].addFormat(grid[^1].str.len, renderer.format)
 
   if grid.len == 0: grid.addLine()
-  var i = 0
   var buf = newSeq[Rune](len * 4)
   let n = renderer.decoder.readData(addr buf[0], buf.len * sizeof(buf[0]))
-  while i < n div sizeof(buf[0]):
+  for i in 0 ..< n div sizeof(buf[0]):
     if renderer.newline:
       # avoid newline at end of stream
       grid.addLine()
       renderer.newline = false
+      renderer.w = 0
     let r = buf[i]
     if r.isAscii():
       let c = cast[char](r)
@@ -44,7 +44,6 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
         if not cancel:
           if renderer.ansiparser.state == PARSE_DONE:
             renderer.af = true
-          inc i
           continue
       case c
       of '\n':
@@ -53,15 +52,12 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       of '\r': discard
       of '\t':
         add_format
-        for i in 0 ..< tabwidth - renderer.spaces:
+        for i in 0 ..< tabwidth - renderer.w:
           grid[^1].str &= ' '
-          renderer.spaces = 0
+          renderer.w = 0
       of ' ':
         add_format
         grid[^1].str &= c
-        inc renderer.spaces
-        if renderer.spaces == 8:
-          renderer.spaces = 0
       of '\e':
         renderer.ansiparser.reset()
       else:
@@ -70,4 +66,6 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
     else:
       add_format
       grid[^1].str &= r
-    inc i
+    renderer.w += r.width()
+    while renderer.w >= 8:
+      renderer.w -= 8
