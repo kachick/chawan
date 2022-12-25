@@ -37,6 +37,7 @@ type
     jsctx: JSContext
     numload*: int
     alerts: seq[string]
+    alerton: bool
     commandMode*: bool
     container*: Container
     dispatcher*: Dispatcher
@@ -264,20 +265,49 @@ proc refreshStatusMsg*(pager: Pager) =
   if container == nil: return
   if pager.tty == nil: return
   if container.loadinfo != "":
+    pager.alerton = true
     pager.writeStatusMessage(container.loadinfo)
   elif pager.alerts.len > 0:
+    pager.alerton = true
     pager.writeStatusMessage(pager.alerts[0])
     pager.alerts.delete(0)
   else:
+    pager.alerton = false
     container.clearHover()
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
-              $container.atPercentOf() & "%) " & "<" & container.getTitle() & ">"
-    let h = container.getHoverText()
-    if h != "":
-      msg &= " " & h
+              $container.atPercentOf() & "%)"
+    let mw = msg.width()
+    let t = container.getTitle()
+    let tt = " <" & t & ">"
+    let tw = tt.width()
+    let ht = container.getHoverText()
+    if ht.len == 0: # hover text is empty.
+      msg &= tt
+    else:
+      let h = " " & ht
+      let hw = h.width()
+      if mw + tw + hw < pager.statusgrid.width:
+        msg &= tt
+      elif mw + hw + 3 < pager.statusgrid.width:
+        # squeezing the title would mean we still have some space for it.
+        var t2 = " <"
+        var w = mw + hw + 2 # t2 has a width of 2
+        for r in t.runes:
+          if w >= pager.statusgrid.width - 1: # ends with another >
+            t2 &= ">"
+            break
+          t2 &= r
+          w += r.width()
+        msg &= t2
+      msg &= h
     var format = newFormat()
     format.reverse = true
     pager.writeStatusMessage(msg, format)
+
+# Call refreshStatusMsg if no alert is being displayed on the screen.
+proc showAlerts*(pager: Pager) =
+  if not pager.alerton:
+    pager.refreshStatusMsg()
 
 proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
   var format = newFormat()

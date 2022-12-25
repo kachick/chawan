@@ -313,6 +313,7 @@ proc inputLoop(client: Client) =
       client.command(client.pager.scommand)
       client.pager.scommand = ""
       client.handlePagerEvents()
+    client.pager.showAlerts()
     client.pager.draw()
     client.acceptBuffers()
 
