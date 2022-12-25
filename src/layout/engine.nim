@@ -1444,13 +1444,19 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
 
   ctx.generateInnerBlockBox()
 
+  # Flush anonymous tables here, to avoid setting inline layout with tables.
+  ctx.flushTableRow()
+  ctx.flushTable()
+  # (flush here, because why not)
+  ctx.flushInherit()
+
   # Avoid unnecessary anonymous block boxes. This also helps set our layout to
   # inline even if no inner anonymous block was generated.
   if box.children.len == 0:
     box.children = ctx.blockgroup.boxes
     box.inlinelayout = true
     ctx.blockgroup.boxes.setLen(0)
-  ctx.flush()
+  ctx.blockgroup.flush()
   return box
 
 proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCellBoxBuilder =
