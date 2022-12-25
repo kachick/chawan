@@ -31,7 +31,7 @@ func formatEditorName(editor, file: string, line: int): string =
       result &= ' '
     result &= file
 
-proc openEditor*(term: Terminal, config: Config, file: string, line = 0): bool =
+proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
   var editor = config.editor
   if editor == "":
     editor = getEnv("EDITOR")
