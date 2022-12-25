@@ -709,14 +709,13 @@ proc positionBlocks(box: BlockBox) =
   template apply_child(child: BlockBox) =
     child.offset.y = y
     child.offset.x = x
-    case
-    box.computed{"text-align"}
+    case box.computed{"text-align"}
     of TEXT_ALIGN_CHA_CENTER:
       child.offset.x -= child.width div 2
     of TEXT_ALIGN_CHA_LEFT: discard
     of TEXT_ALIGN_CHA_RIGHT:
       child.offset.x -= child.width
-    elif not child.computed{"width"}.auto and child.contentWidth < box.contentWidth:
+    elif spec and child.contentWidth < box.contentWidth:
       let margin_left = child.computed{"margin-left"}
       let margin_right = child.computed{"margin-right"}
       if margin_left.auto and margin_right.auto:
