@@ -256,9 +256,15 @@ func YUV*(Y, U, V: int): RGBColor =
 func rgba*(r, g, b, a: int): RGBAColor =
   return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
 
+template `$`*(rgbcolor: RGBColor): string =
+  "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"
+
+template `$`*(rgbacolor: RGBAColor): string =
+  "rgba(" & $rgbacolor.r & ", " & $rgbacolor.g & ", " & $rgbacolor.b & ", " & $rgbacolor.a & ")"
+
 template `$`*(color: CellColor): string =
   if color.rgb:
-    "r" & $color.rgbcolor.r & "g" & $color.rgbcolor.g & "b" & $color.rgbcolor.b
+    $color.rgbcolor
   else:
     "tcolor" & $color.n
 

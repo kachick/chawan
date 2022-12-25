@@ -2,6 +2,7 @@ import tables
 import macros
 import options
 import strutils
+import unicode
 
 import css/cssparser
 import css/selectorparser
@@ -449,11 +450,11 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
   if s[i] == '%': return some(CSSLength(num: n, unit: UNIT_PERC))
   return some(CSSLength(num: n, unit: UNIT_PX))
 
-func color(r, g, b: int): RGBAColor =
-  return rgba(r, g, b, 256)
-
-func color(r, g, b, a: int): RGBAColor =
-  return rgba(r, g, b, a)
+func skipWhitespace(vals: seq[CSSComponentValue], i: var int) =
+  while i < vals.len:
+    if vals[i] != CSS_WHITESPACE_TOKEN:
+      break
+    inc i
 
 func cssColor(val: CSSComponentValue): RGBAColor =
   if val of CSSToken:
@@ -470,29 +471,50 @@ func cssColor(val: CSSComponentValue): RGBAColor =
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
-    #TODO calc etc (cssnumber function or something)
+    var i = 0
+    var commaMode = false
+    template check_err =
+      #TODO calc, percentages, etc (cssnumber function or something)
+      if i >= f.value.len or f.value[i] != CSS_NUMBER_TOKEN:
+        raise newException(CSSValueError, "Invalid color")
+    template next_value(first = false, slash = false) =
+      inc i
+      f.value.skipWhitespace(i)
+      if i < f.value.len:
+        if f.value[i] == CSS_COMMA_TOKEN and (commaMode or first):
+          # legacy compatibility
+          inc i
+          f.value.skipWhitespace(i)
+          commaMode = true
+        elif commaMode:
+          raise newException(CSSValueError, "Invalid color")
+        if slash:
+          if f.value[i] != CSS_DELIM_TOKEN or CSSToken(f.value[i]).rvalue != Rune('/'):
+            raise newException(CSSValueError, "Invalid color")
+          inc i
+          f.value.skipWhitespace(i)
+      check_err
     case f.name
     of "rgb":
-      if f.value.len != 3:
-        raise newException(CSSValueError, "Invalid color")
-      for c in f.value:
-        if c != CSS_NUMBER_TOKEN:
-          raise newException(CSSValueError, "Invalid color")
-      let r = CSSToken(f.value[0]).nvalue
-      let g = CSSToken(f.value[1]).nvalue
-      let b = CSSToken(f.value[2]).nvalue
-      return color(int(r), int(g), int(b))
+      f.value.skipWhitespace(i)
+      check_err
+      let r = CSSToken(f.value[i]).nvalue
+      next_value true
+      let g = CSSToken(f.value[i]).nvalue
+      next_value
+      let b = CSSToken(f.value[i]).nvalue
+      return rgba(int(r), int(g), int(b), 255)
     of "rgba":
-      if f.value.len != 4:
-        raise newException(CSSValueError, "Invalid color")
-      for c in f.value:
-        if c != CSS_NUMBER_TOKEN:
-          raise newException(CSSValueError, "Invalid color")
-      let r = CSSToken(f.value[0]).nvalue
-      let g = CSSToken(f.value[1]).nvalue
-      let b = CSSToken(f.value[2]).nvalue
-      let a = CSSToken(f.value[3]).nvalue
-      return color(int(r), int(g), int(b), int(a))
+      f.value.skipWhitespace(i)
+      check_err
+      let r = CSSToken(f.value[i]).nvalue
+      next_value true
+      let g = CSSToken(f.value[i]).nvalue
+      next_value
+      let b = CSSToken(f.value[i]).nvalue
+      next_value false, true
+      let a = CSSToken(f.value[i]).nvalue
+      return rgba(int(r), int(g), int(b), int(a))
     else: discard
   raise newException(CSSValueError, "Invalid color")
 
@@ -835,12 +857,8 @@ func cssImage(cval: CSSComponentValue): Option[CSSContent] =
       return some(CSSContent(t: CONTENT_IMAGE, s: "[img]"))
 
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
-  template skip_whitespace =
-    while i < d.value.len:
-      if d.value[i] != CSS_WHITESPACE_TOKEN: break
-      inc i
   var i = 0
-  skip_whitespace
+  d.value.skipWhitespace(i)
   if i >= d.value.len: 
     raise newException(CSSValueError, "Empty value")
   let cval = d.value[i]
@@ -884,7 +902,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_BORDER_COLLAPSE: val.bordercollapse = cssBorderCollapse(cval)
   of VALUE_LENGTH2:
     val.length2.a = cssAbsoluteLength(cval)
-    skip_whitespace
+    d.value.skipWhitespace(i)
     if i >= d.value.len:
       val.length2.b = val.length2.a
     else:
