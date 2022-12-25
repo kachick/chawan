@@ -113,6 +113,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let c = parseLegacyColor(element.attr("text"))
     if c.isSome:
       set_cv(PROPERTY_COLOR, color, c.get)
+  template map_color =
+    let c = parseLegacyColor(element.attr("color"))
+    if c.isSome:
+      set_cv(PROPERTY_COLOR, color, c.get)
 
   case element.tagType
   of TAG_DIV:
@@ -144,6 +148,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let textarea = HTMLTextAreaElement(element)
     set_cv(PROPERTY_WIDTH, length, CSSLength(unit: UNIT_CH, num: float64(textarea.cols)))
     set_cv(PROPERTY_HEIGHT, length, CSSLength(unit: UNIT_EM, num: float64(textarea.rows)))
+  of TAG_FONT:
+    map_color
   else: discard
  
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]) =
