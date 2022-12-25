@@ -67,6 +67,7 @@ proc newWord(state: var InlineState) =
   format.textdecoration = computed{"text-decoration"}
   format.node = state.node
   word.format = format
+  word.vertalign = computed{"vertical-align"}
   state.ictx.format = format
   state.word = word
 
@@ -225,11 +226,10 @@ func minwidth(atom: InlineAtom): int =
     return cast[InlineBlockBox](atom).innerbox.xminwidth
   return atom.width
 
-# pcomputed: computed values of parent, for white-space: pre, line-height
-# computed: computed values of child, for vertical-align
-# (TODO: surely there's a better way to do this? like storing pcomputed in ictx
-# or something...)
-proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed, computed: CSSComputedValues) =
+# pcomputed: computed values of parent, for white-space: pre, line-height.
+# This isn't necessary the computed of ictx (e.g. they may differ for nested
+# inline boxes.)
+proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed: CSSComputedValues) =
   var shift = ictx.computeShift(pcomputed)
   ictx.whitespacenum = 0
   # Line wrapping
@@ -240,8 +240,6 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed, co
       shift = ictx.computeShift(pcomputed)
 
   if atom.width > 0 and atom.height > 0:
-    atom.vertalign = computed{"vertical-align"}
-
     if shift > 0:
       ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format)
 
@@ -261,7 +259,7 @@ proc addWord(state: var InlineState) =
     word.str.mnormalize() #TODO this may break on EOL.
     word.height = state.ictx.cellheight
     word.baseline = word.height
-    state.ictx.addAtom(word, state.maxwidth, state.computed, state.computed)
+    state.ictx.addAtom(word, state.maxwidth, state.computed)
     state.newWord()
 
 # Start a new line, even if the previous one is empty
@@ -465,6 +463,7 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
 proc newInlineBlock(viewport: Viewport, builder: BoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)
   result.innerbox = newFlowRootBox(viewport, builder, parentWidth, parentHeight)
+  result.vertalign = builder.computed{"vertical-align"}
 
 proc newInlineContext(parent: BlockBox): InlineContext =
   new(result)
@@ -597,7 +596,7 @@ proc buildInline(viewport: Viewport, box: InlineBoxBuilder, parentWidth: int, pa
     of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
       let child = BlockBoxBuilder(child)
       let iblock = child.buildInlineBlock(box.ictx, parentWidth, parentHeight)
-      box.ictx.addAtom(iblock, parentWidth, box.computed, child.computed)
+      box.ictx.addAtom(iblock, parentWidth, box.computed)
       box.ictx.whitespacenum = 0
     else:
       assert false, "child.t is " & $child.computed{"display"}
@@ -622,7 +621,7 @@ proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
       of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
         let child = BlockBoxBuilder(child)
         let iblock = child.buildInlineBlock(ictx, parent.contentWidth)
-        ictx.addAtom(iblock, parent.contentWidth, parent.computed, child.computed)
+        ictx.addAtom(iblock, parent.contentWidth, parent.computed)
         ictx.whitespacenum = 0
       else:
         assert false, "child.t is " & $child.computed{"display"}
