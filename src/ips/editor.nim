@@ -24,8 +24,6 @@ func formatEditorName(editor, file: string, line: int): string =
         continue
     result &= editor[i]
     inc i
-  if editor.len == 0:
-    result = "vi"
   if not filefound:
     if result[^1] != ' ':
       result &= ' '
@@ -48,12 +46,19 @@ proc openInEditor*(term: Terminal, config: Config, input: var string): bool =
     let tmpdir = config.tmpdir
     if not dirExists(tmpdir):
       createDir(tmpdir)
-    let tmpf = tmpdir / "chatmp" & $tmpf_seq
+    var tmpf = tmpdir / "chatmp" & $tmpf_seq
+    while fileExists(tmpf):
+      inc tmpf_seq
+      tmpf = tmpdir / "chatmp" & $tmpf_seq
     inc tmpf_seq
-    writeFile(tmpf, input)
+    if input != "":
+      writeFile(tmpf, input)
     if openEditor(term, config, tmpf):
-      input = readFile(tmpf)
-      removeFile(tmpf)
-      return true
+      if fileExists(tmpf):
+        input = readFile(tmpf)
+        removeFile(tmpf)
+        return true
+      else:
+        return false
   except IOError:
     discard
