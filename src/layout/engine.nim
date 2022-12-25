@@ -1,5 +1,6 @@
 import math
 import options
+import strutils
 import tables
 import unicode
 
@@ -20,6 +21,8 @@ type InlineState = object
   skip: bool
   node: StyledNode
   word: InlineWord
+  wrappos: int # position of last wrapping opportunity, or -1
+  hasshy: bool
   maxwidth: int
   computed: CSSComputedValues
 
@@ -70,6 +73,8 @@ proc newWord(state: var InlineState) =
   word.vertalign = computed{"vertical-align"}
   state.ictx.format = format
   state.word = word
+  state.wrappos = -1
+  state.hasshy = false
 
 proc horizontalAlignLine(ictx: InlineContext, line: LineBox, computed: CSSComputedValues, maxwidth: int, last = false) =
   let maxwidth = if ictx.shrink:
@@ -262,6 +267,20 @@ proc addWord(state: var InlineState) =
     state.ictx.addAtom(word, state.maxwidth, state.computed)
     state.newWord()
 
+proc addWordEOL(state: var InlineState) =
+  if state.word.str != "":
+    if state.wrappos != -1:
+      let leftstr = state.word.str.substr(state.wrappos)
+      state.word.str = state.word.str.substr(0, state.wrappos - 1)
+      if state.hasshy:
+        state.word.str &= $Rune(0xAD) # soft hyphen
+        state.hasshy = false
+      state.addWord()
+      state.word.str = leftstr
+      state.word.width = leftstr.width() * state.ictx.cellwidth
+    else:
+      state.addWord()
+
 # Start a new line, even if the previous one is empty
 proc flushLine(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int) =
   applyLineHeight(ictx.viewport, ictx.currentLine, computed)
@@ -271,20 +290,25 @@ proc checkWrap(state: var InlineState, r: Rune) =
   if state.computed{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
     return
   let shift = state.ictx.computeShift(state.computed)
+  let rw = r.width()
   case state.computed{"word-break"}
   of WORD_BREAK_NORMAL:
-    if r.width() == 2: # break cjk
-      if state.ictx.currentLine.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
-        state.addWord()
+    if rw == 2 or state.wrappos != -1: # break on cjk and wrap opportunities
+      if state.ictx.currentLine.width + state.word.width + shift + rw * state.ictx.cellwidth > state.maxwidth:
+        let l = state.ictx.currentLine
+        state.addWordEOL()
+        if l == state.ictx.currentLine: # no line wrapping occured in addAtom
+          state.ictx.finishLine(state.computed, state.maxwidth)
+          state.ictx.whitespacenum = 0
+  of WORD_BREAK_BREAK_ALL:
+    if state.ictx.currentLine.width + state.word.width + shift + rw * state.ictx.cellwidth > state.maxwidth:
+      let l = state.ictx.currentLine
+      state.addWordEOL()
+      if l == state.ictx.currentLine: # no line wrapping occured in addAtom
         state.ictx.finishLine(state.computed, state.maxwidth)
         state.ictx.whitespacenum = 0
-  of WORD_BREAK_BREAK_ALL:
-    if state.ictx.currentLine.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
-      state.addWord()
-      state.ictx.finishLine(state.computed, state.maxwidth)
-      state.ictx.whitespacenum = 0
   of WORD_BREAK_KEEP_ALL:
-    if state.ictx.currentLine.width + state.word.width + shift + r.width() * state.ictx.cellwidth > state.maxwidth:
+    if state.ictx.currentLine.width + state.word.width + shift + rw * state.ictx.cellwidth > state.maxwidth:
       state.ictx.finishLine(state.computed, state.maxwidth)
       state.ictx.whitespacenum = 0
 
@@ -310,8 +334,6 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSC
   state.ictx.flushWhitespace(state.computed)
   state.newWord()
 
-  #if str.strip().len > 0:
-    #eprint "start", str.strip()
   var i = 0
   while i < str.len:
     if str[i].isWhitespace():
@@ -321,8 +343,15 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSC
       var r: Rune
       fastRuneAt(str, i, r)
       state.checkWrap(r)
-      state.word.str &= r
-      state.word.width += r.width() * state.ictx.cellwidth
+      if r == Rune(0xAD): # soft hyphen
+        state.wrappos = state.word.str.len
+        state.hasshy = true
+      else:
+        state.word.str &= r
+        state.word.width += r.width() * state.ictx.cellwidth
+        if r == Rune('-'): # ascii dash
+          state.wrappos = state.word.str.len
+          state.hasshy = false
 
   state.addWord()
 
