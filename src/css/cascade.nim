@@ -63,7 +63,7 @@ proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
 func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
   let elem = Element(styledNode.node)
-  for rule in sheet.gen_rules(elem.tagType, elem.id, elem.classList):
+  for rule in sheet.gen_rules(elem.tagType, elem.id, elem.classList.toks):
     tosorts.calcRule(styledNode, rule)
 
   for i in PseudoElem:

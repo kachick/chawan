@@ -124,6 +124,11 @@ type
 
   HTMLCollection = ref object of Collection
 
+  DOMTokenList = ref object
+    toks*: seq[string]
+    element: Element
+    localName: string
+
   Node* = ref object of EventTarget
     nodeType* {.jsget.}: NodeType
     childList*: seq[Node]
@@ -199,7 +204,7 @@ type
     tagType*: TagType
 
     id* {.jsget.}: string
-    classList* {.jsget.}: seq[string] #TODO should be DomTokenList
+    classList* {.jsget.}: DOMTokenList
     attrs*: Table[string, string]
     attributes* {.jsget.}: NamedNodeMap
     hover*: bool
@@ -303,6 +308,10 @@ proc `=destroy`(collection: var CollectionObj) =
       break
   assert i != -1
   collection.root.liveCollections.del(i)
+
+# Forward declarations
+func attrb*(element: Element, s: string): bool
+proc attr*(element: Element, name, value: string)
 
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
@@ -488,25 +497,129 @@ func children*(node: Node): HTMLCollection {.jsfget.} =
 func childNodes(node: Node): NodeList {.jsfget.} =
   return newCollection[NodeList](node, nil, true)
 
+# DOMTokenList
+func length(tokenList: DOMTokenList): int {.jsfget.} =
+  return tokenList.toks.len
+
+func item(tokenList: DOMTokenList, i: int): Option[string] {.jsfunc.} =
+  if i < tokenList.toks.len:
+    return some(tokenList.toks[i])
+
+func contains*(tokenList: DOMTokenList, s: string): bool {.jsfunc.} =
+  return s in tokenList.toks
+
+proc update(tokenList: DOMTokenList) =
+  if not tokenList.element.attrb(tokenList.localName) and tokenList.toks.len == 0:
+    return
+  tokenList.element.attr(tokenList.localName, tokenList.toks.join(' '))
+
+proc add(tokenList: DOMTokenList, tokens: varargs[string]) {.jserr, jsfunc.} =
+  for tok in tokens:
+    if tok == "":
+      #TODO should be DOMException
+      JS_ERR JS_TypeError, "SyntaxError"
+    if AsciiWhitespace in tok:
+      #TODO should be DOMException
+      JS_ERR JS_TypeError, "InvalidCharacterError"
+  for tok in tokens:
+    tokenList.toks.add(tok)
+  tokenList.update()
+
+proc remove(tokenList: DOMTokenList, tokens: varargs[string]) {.jserr, jsfunc.} =
+  for tok in tokens:
+    if tok == "":
+      #TODO should be DOMException
+      JS_ERR JS_TypeError, "SyntaxError"
+    if AsciiWhitespace in tok:
+      #TODO should be DOMException
+      JS_ERR JS_TypeError, "InvalidCharacterError"
+  for tok in tokens:
+    let i = tokenList.toks.find(tok)
+    if i != -1:
+      tokenList.toks.delete(i)
+  tokenList.update()
+
+proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)): bool {.jserr, jsfunc.} =
+  if token == "":
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "SyntaxError"
+  if AsciiWhitespace in token:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  let i = tokenList.toks.find(token)
+  if i != -1:
+    if not force.get(false):
+      tokenList.toks.delete(i)
+      tokenList.update()
+      return false
+    return true
+  if force.get(true):
+    tokenList.toks.add(token)
+    tokenList.update()
+    return true
+  return false
+
+proc replace(tokenList: DOMTokenList, token, newToken: string): bool {.jserr, jsfunc.} =
+  if token == "" or newToken == "":
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "SyntaxError"
+  if AsciiWhitespace in token or AsciiWhitespace in newToken:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  let i = tokenList.toks.find(token)
+  if i == -1:
+    return false
+  tokenList.toks[i] = newToken
+  tokenList.update()
+  return true
+
+const SupportedTokensMap = {
+  "abcd": @["adsf"] #TODO
+}.toTable()
+
+func supports(tokenList: DOMTokenList, token: string): bool {.jserr, jsfunc.} =
+  if tokenList.localName in SupportedTokensMap:
+    let lowercase = token.toLowerAscii()
+    return lowercase in SupportedTokensMap[tokenList.localName]
+  else:
+    JS_ERR JS_TypeError, "No supported tokens defined for attribute " & tokenList.localName
+
+func `$`(tokenList: DOMTokenList): string {.jsfunc.} =
+  return tokenList.toks.join(' ')
+
+func value(tokenList: DOMTokenList): string {.jsfget.} =
+  return $tokenList
+
+func getter(tokenList: DOMTokenList, i: int): Option[string] {.jsgetprop.} =
+  return tokenList.item(i)
+
+# NodeList
 func length(nodeList: NodeList): int {.jsfget.} =
   return nodeList.len
 
 func hasprop(nodeList: NodeList, i: int): bool {.jshasprop.} =
   return i < nodeList.len
 
-func getter(nodeList: NodeList, i: int): Option[Node] {.jsgetprop.} =
+func item(nodeList: NodeList, i: int): Node {.jsfunc.} =
   if i < nodeList.len:
-    return some(nodeList.snapshot[i])
+    return nodeList.snapshot[i]
 
+func getter(nodeList: NodeList, i: int): Option[Node] {.jsgetprop.} =
+  return option(nodeList.item(i))
+
+# HTMLCollection
 func length(collection: HTMLCollection): int {.jsfget.} =
   return collection.len
 
 func hasprop(collection: HTMLCollection, i: int): bool {.jshasprop.} =
   return i < collection.len
 
-func getter(collection: HTMLCollection, i: int): Option[Element] {.jsgetprop.} =
+func item(collection: HTMLCollection, i: int): Element {.jsfunc.} =
   if i < collection.len:
-    return some(Element(collection.snapshot[i]))
+    return Element(collection.snapshot[i])
+
+func getter(collection: HTMLCollection, i: int): Option[Element] {.jsgetprop.} =
+  return option(collection.item(i))
 
 func newAttr(parent: Element, localName, value: string, prefix = "", namespaceURI = ""): Attr =
   return Attr(
@@ -784,8 +897,8 @@ func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
       if node.nodeType == ELEMENT_NODE:
         if isquirks:
           var cl = Element(node).classList
-          for i in 0 .. cl.high:
-            cl[i].mtoLowerAscii()
+          for i in 0 .. cl.toks.high:
+            cl.toks[i].mtoLowerAscii()
           for class in classes:
             if class notin cl:
               return false
@@ -800,27 +913,6 @@ func getElementsByClassName(document: Document, classNames: string): HTMLCollect
 
 func getElementsByClassName(element: Element, classNames: string): HTMLCollection {.jsfunc.} =
   return element.getElementsByClassName0(classNames)
-
-func filterDescendants(element: Element, predicate: (proc(child: Element): bool)): seq[Element] =
-  var stack: seq[Element]
-  for child in element.elementList_rev:
-    stack.add(child)
-  while stack.len > 0:
-    let child = stack.pop()
-    if predicate(child):
-      result.add(child)
-    for child in element.elementList_rev:
-      stack.add(child)
-
-func all_descendants(element: Element): seq[Element] =
-  var stack: seq[Element]
-  for child in element.elementList_rev:
-    stack.add(child)
-  while stack.len > 0:
-    let child = stack.pop()
-    result.add(child)
-    for child in element.elementList_rev:
-      stack.add(child)
 
 func previousElementSibling*(elem: Element): Element {.jsfget.} =
   if elem.parentNode == nil: return nil
@@ -1084,8 +1176,6 @@ func newComment(document: Document, data: string): Comment =
 func newComment(window: Window, data: string = ""): Comment {.jsgctor.} =
   return window.document.newComment(data)
 
-proc attr*(element: Element, name, value: string)
-
 #TODO custom elements
 func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = none[string](), attrs = Table[string, string]()): HTMLElement =
   case tagType
@@ -1142,6 +1232,7 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   result.namespacePrefix = prefix
   result.document = document
   result.attributes = NamedNodeMap(element: result)
+  result.classList = DOMTokenList(localName: "classList")
   {.cast(noSideEffect).}:
     for k, v in attrs:
       result.attr(k, v)
@@ -1278,11 +1369,10 @@ proc reflectAttrs(element: Element, name, value: string) =
       element.val = true
   element.reflect_str "id", id
   if name == "class":
-    element.classList.setLen(0)
-    let classList = value.split(AsciiWhitespace)
-    for x in classList:
+    element.classList.toks.setLen(0)
+    for x in value.split(AsciiWhitespace):
       if x != "" and x notin element.classList:
-        element.classList.add(x)
+        element.classList.toks.add(x)
     return
   case element.tagType
   of TAG_INPUT:
@@ -2010,6 +2100,7 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(HTMLCollection)
   ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(DOMImplementation)
+  ctx.registerType(DOMTokenList)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
   ctx.registerType(Comment, parent = characterDataCID)
   ctx.registerType(CDATASection, parent = characterDataCID)
