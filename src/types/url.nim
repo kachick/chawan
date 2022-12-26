@@ -731,7 +731,7 @@ func anchor*(url: Url): string =
     return url.fragment.get
   return ""
 
-proc parseUrl*(input: string, base = none(Url), url: var Url, override = none(UrlState)): Option[Url] =
+proc parseURL*(input: string, base = none(Url), url: var Url, override = none(UrlState)): Option[Url] =
   var url = basicParseUrl(input, base, url, override)
   if url.isnone:
     return url
@@ -740,7 +740,7 @@ proc parseUrl*(input: string, base = none(Url), url: var Url, override = none(Ur
   url.get.blob = BlobUrlEntry().some
   return url
 
-proc parseUrl*(input: string, base = none(Url), override = none(UrlState)): Option[Url] =
+proc parseURL*(input: string, base = none(Url), override = none(UrlState)): Option[Url] =
   var url = Url().some
   url = basicParseUrl(input, base, url.get, override)
   if url.isnone:
@@ -901,7 +901,7 @@ proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)]): string
 proc initURLSearchParams(params: URLSearchParams, init: string) =
   params.list = parseApplicationXWWWFormUrlEncoded(init)
 
-proc newURLSearchParams*[T: seq[(string, string)]|Table[string, string]|string](init: T = ""): URLSearchParams {.jsctor.} =
+proc newURLSearchParams[T: seq[(string, string)]|Table[string, string]|string](init: T = ""): URLSearchParams {.jsctor.} =
   new(result)
   when T is seq[(string, string)]:
     result.list = init
@@ -965,14 +965,14 @@ proc newURL*(url: URL): URL =
 #TODO add Option wrapper
 proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jsctor.} =
   if base.issome:
-    let baseUrl = parseUrl(base.get)
+    let baseUrl = parseURL(base.get)
     if baseUrl.isnone:
       JS_ERR JS_TypeError, base.get & " is not a valid URL"
-    let url = parseUrl(s, baseUrl)
+    let url = parseURL(s, baseUrl)
     if url.isnone:
       JS_ERR JS_TypeError, s & " is not a valid URL"
     return url.get
-  let url = parseUrl(s)
+  let url = parseURL(s)
   if url.isnone:
     JS_ERR JS_TypeError, s & " is not a valid URL"
   url.get.searchParams = newURLSearchParams()

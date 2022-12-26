@@ -544,7 +544,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
 proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
   if elem.href == "": return
-  let url = parseUrl(elem.href, document.url.some)
+  let url = parseURL(elem.href, document.url.some)
   if url.isSome:
     let url = url.get
     if url.scheme == buffer.url.scheme:
@@ -912,8 +912,8 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
         result.repaint = true
         result.open = buffer.implicitSubmit(input)
       of INPUT_FILE:
-        let cdir = parseUrl("file://" & getCurrentDir() & DirSep)
-        let path = parseUrl(s, cdir)
+        let cdir = parseURL("file://" & getCurrentDir() & DirSep)
+        let path = parseURL(s, cdir)
         if path.issome:
           input.file = path
           input.invalid = true
@@ -952,7 +952,7 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
       result.repaint = buffer.setFocus(clickable)
     of TAG_A:
       result.repaint = buffer.restoreFocus()
-      let url = parseUrl(HTMLAnchorElement(clickable).href, clickable.document.baseURL.some)
+      let url = parseURL(HTMLAnchorElement(clickable).href, clickable.document.baseURL.some)
       if url.issome:
         result.open = some(newRequest(url.get, HTTP_GET))
     of TAG_OPTION:
