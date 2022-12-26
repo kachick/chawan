@@ -139,7 +139,7 @@ type
     liveCollections: seq[Collection]
 
   Attr* = ref object of Node
-    namespace: Namespace
+    namespaceURI* {.jsget.}: string
     prefix* {.jsget.}: string
     localName* {.jsget.}: string
     value* {.jsget.}: string
@@ -304,11 +304,6 @@ proc `=destroy`(collection: var CollectionObj) =
   assert i != -1
   collection.root.liveCollections.del(i)
 
-const NamespaceMap = (func(): Table[string, Namespace] =
-  for ns in Namespace:
-    result[$ns] = ns
-)()
-
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
 
@@ -444,10 +439,6 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
         if opt.tagType == TAG_OPTION:
           yield HTMLOptionElement(child)
 
-iterator items(attributes: NamedNodeMap): Attr {.inline.} =
-  for attr in attributes.attrlist:
-    yield attr
-
 proc populateCollection(collection: Collection) =
   if collection.childonly:
     for child in collection.root.childList:
@@ -517,11 +508,11 @@ func getter(collection: HTMLCollection, i: int): Option[Element] {.jsgetprop.} =
   if i < collection.len:
     return some(Element(collection.snapshot[i]))
 
-func newAttr(parent: Element, localName, value: string, prefix = "", namespace = NO_NAMESPACE): Attr =
+func newAttr(parent: Element, localName, value: string, prefix = "", namespaceURI = ""): Attr =
   return Attr(
     nodeType: ATTRIBUTE_NODE,
     document: parent.document,
-    namespace: namespace,
+    namespaceURI: namespaceURI,
     ownerElement: parent,
     localName: localName,
     prefix: prefix,
@@ -533,8 +524,17 @@ func name(attr: Attr): string {.jsfget.} =
     return attr.localName
   return attr.prefix & ':' & attr.localName
 
-func namespaceURI(attr: Attr): string {.jsfget.} =
-  return $attr.namespace
+func findAttr(map: NamedNodeMap, name: string): int =
+  for i in 0 ..< map.attrlist.len:
+    if map.attrlist[i].name == name:
+      return i
+  return -1
+
+func findAttrNS(map: NamedNodeMap, namespace, localName: string): int =
+  for i in 0 ..< map.attrlist.len:
+    if map.attrlist[i].namespaceURI == namespace and map.attrlist[i].localName == localName:
+      return i
+  return -1
 
 func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
@@ -545,14 +545,7 @@ func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
     return true
 
 func hasAttributeNS(element: Element, namespace, localName: string): bool {.jsfunc.} =
-  if namespace == "":
-    return localName in element.attrs
-  if namespace notin NamespaceMap:
-    return false
-  let ns = NamespaceMap[namespace]
-  for attr in element.attributes:
-    if attr.namespace == ns and attr.localName == localName:
-      return true
+  return element.attributes.findAttrNS(namespace, localName) != -1
 
 func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsfunc.} =
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
@@ -563,22 +556,9 @@ func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsf
     return some(val[])
 
 func getAttributeNS(element: Element, namespace, localName: string): Option[string] {.jsfunc.} =
-  if namespace == "":
-    return element.getAttribute(localName)
-  if namespace == $Namespace.HTML:
-    return element.getAttribute(localName)
-  if namespace notin NamespaceMap:
-    return
-  let ns = NamespaceMap[namespace]
-  for attr in element.attributes:
-    if attr.namespace == ns and attr.localName == localName:
-      return some(attr.value)
-
-func findAttr(map: NamedNodeMap, name: string): int =
-  for i in 0 ..< map.attrlist.len:
-    if map.attrlist[i].name == name:
-      return i
-  return -1
+  let i = element.attributes.findAttrNS(namespace, localName)
+  if i != -1:
+    return some(element.attributes.attrlist[i].value)
 
 func getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr] {.jsfunc.} =
   if map.element.hasAttribute(qualifiedName):
@@ -587,12 +567,9 @@ func getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr] {.jsfu
       return some(map.attrlist[i])
 
 func getNamedItemNS(map: NamedNodeMap, namespace, localName: string): Option[Attr] {.jsfunc.} =
-  if map.element.hasAttributeNS(namespace, localName):
-    if namespace in NamespaceMap:
-      let ns = NamespaceMap[namespace]
-      for attr in map:
-        if attr.namespace == ns and attr.localName == localName:
-          return some(attr)
+  let i = map.findAttrNS(namespace, localName)
+  if i != -1:
+    return some(map.attrlist[i])
 
 func length(map: NamedNodeMap): int {.jsfget.} =
   return map.element.attrs.len
@@ -1280,9 +1257,7 @@ proc delAttr(element: Element, i: int) =
 proc delAttr(element: Element, name: string) =
   let i = element.attributes.findAttr(name)
   if i != -1:
-    element.attributes.attrlist.delete(i)
-    element.invalidateCollections()
-    element.invalid = true
+    element.delAttr(i)
 
 proc reflectAttrs(element: Element, name, value: string) =
   template reflect_str(element: Element, n: static string, val: untyped) =
@@ -1352,29 +1327,27 @@ proc setAttribute(element: Element, qualifiedName, value: string) {.jserr, jsfun
     qualifiedName
   element.attr(qualifiedName, value)
 
-proc setAttributeNS(element: Element, namespace, qualifiedName, value: string) {.jsfunc.} =
-  if namespace == "" or namespace == $Namespace.HTML:
-    element.attr(qualifiedName, value)
-    return
-  if namespace notin NamespaceMap:
-    return
-  #TODO validate and extract
-  element.attr0(qualifiedName, value)
-  let ns = NamespaceMap[namespace]
-  let i = element.attributes.findAttr(qualifiedName)
-  if i == -1:
-    let s = qualifiedName.until(':')
-    if s.len < qualifiedName.len:
-      element.attributes.attrlist.add(element.newAttr(qualifiedName.substr(s.len), value, s, ns))
-    else:
-      element.attributes.attrlist.add(element.newAttr(qualifiedName, value, "", ns))
-  else:
-    element.attributes.attrlist[i].value = value
-
-proc removeAttribute(element: Element, qualifiedName: string) {.jserr, jsfunc.} =
-  if not qualifiedName.matchNameProduction():
-    #TODO should be DOMException
+proc setAttributeNS(element: Element, namespace, qualifiedName, value: string) {.jserr, jsfunc.} =
+  if not qualifiedName.matchQNameProduction():
+    #TODO this should be a DOMException
     JS_ERR JS_TypeError, "InvalidCharacterError"
+  let ps = qualifiedName.until(':')
+  let prefix = if ps.len < qualifiedName.len: ps else: ""
+  let localName = qualifiedName.substr(prefix.len)
+  if prefix != "" and namespace == "" or
+      prefix == "xml" and namespace != $Namespace.XML or
+      (qualifiedName == "xmlns" or prefix == "xmlns") and namespace != $Namespace.XMLNS or
+      namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and prefix != "xmlns":
+    #TODO this should be a DOMException
+    JS_ERR JS_TypeError, "NamespaceError"
+  element.attr0(qualifiedName, value)
+  let i = element.attributes.findAttrNS(namespace, localName)
+  if i != -1:
+    element.attributes.attrlist[i].value = value
+  else:
+    element.attributes.attrlist.add(element.newAttr(localName, value, prefix, namespace))
+
+proc removeAttribute(element: Element, qualifiedName: string) {.jsfunc.} =
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
     qualifiedName.toLowerAscii2()
   else:
@@ -1382,8 +1355,9 @@ proc removeAttribute(element: Element, qualifiedName: string) {.jserr, jsfunc.} 
   element.delAttr(qualifiedName)
 
 proc removeAttributeNS(element: Element, namespace, localName: string) {.jsfunc.} =
-  #TODO use namespace
-  element.delAttr(localName)
+  let i = element.attributes.findAttrNS(namespace, localName)
+  if i != -1:
+    element.delAttr(i)
 
 proc toggleAttribute(element: Element, qualifiedName: string, force = none(bool)): bool {.jserr, jsfunc.} =
   if not qualifiedName.matchNameProduction():
@@ -1424,7 +1398,7 @@ proc cols(element: HTMLTextAreaElement, n: int) {.jsfset.} =
 proc rows(element: HTMLTextAreaElement, n: int) {.jsfset.} =
   element.attrigz("rows", n)
 
-proc setNamedItem*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
+proc setNamedItem(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
   if attr.ownerElement != nil and attr.ownerElement != map.element:
     #TODO should be DOMException
     JS_ERR JS_TypeError, "InUseAttributeError"
@@ -1437,10 +1411,10 @@ proc setNamedItem*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.
   map.element.attrs[attr.name] = attr.value
   map.attrlist.add(attr)
 
-proc setNamedItemNS*(map: NamedNodeMap, attr: Attr): Option[Attr] {.jsfunc.} =
+proc setNamedItemNS(map: NamedNodeMap, attr: Attr): Option[Attr] {.jsfunc.} =
   map.setNamedItem(attr)
 
-proc removeNamedItem*(map: NamedNodeMap, qualifiedName: string): Attr {.jserr, jsfunc.} =
+proc removeNamedItem(map: NamedNodeMap, qualifiedName: string): Attr {.jserr, jsfunc.} =
   let i = map.findAttr(qualifiedName)
   if i != -1:
     let attr = map.attrlist[i]
@@ -1449,9 +1423,14 @@ proc removeNamedItem*(map: NamedNodeMap, qualifiedName: string): Attr {.jserr, j
   #TODO should be DOMException
   JS_ERR JS_TypeError, "Not found"
 
-proc removeNamedItemNS*(map: NamedNodeMap, namespace, localName: string): Attr =
-  #TODO TODO TODO
-  map.removeNamedItem(localName)
+proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string): Attr {.jserr, jsfunc.} =
+  let i = map.findAttrNS(namespace, localName)
+  if i != -1:
+    let attr = map.attrlist[i]
+    map.element.delAttr(i)
+    return attr
+  #TODO should be DOMException
+  JS_ERR JS_TypeError, "Not found"
 
 proc id(element: Element, id: string) {.jsfset.} =
   element.id = id

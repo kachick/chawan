@@ -694,7 +694,7 @@ const NameStartCharAscii = {':', '_'} + AsciiAlpha
 const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
 func matchNameProduction*(str: string): bool =
   if str.len == 0:
-    return true
+    return false
   # NameStartChar
   var i = 0
   var r: Rune
@@ -720,9 +720,15 @@ func matchNameProduction*(str: string): bool =
   return true
 
 func matchQNameProduction*(s: string): bool =
+  if s.len == 0:
+    return false
+  if s[0] == ':':
+    return false
+  if s[^1] == ':':
+    return false
   var colon = false
-  for c in s:
-    if c == ':':
+  for i in 1 ..< s.len - 1:
+    if s[i] == ':':
       if colon:
         return false
       colon = true

@@ -1276,6 +1276,7 @@ macro jserr*(fun: untyped) =
   for i in 0..<pragma.len:
     if pragma[i].eqIdent(ident("jsctor")) or pragma[i].eqIdent(ident("jsfunc")) or pragma[i].eqIdent(ident("jsget")) or pragma[i].eqIdent(ident("jsset")):
       pragma.del(i)
+  gen.original.addPragma(quote do: used) # may be unused, but we have to keep it
   gen.copied.addPragma(quote do: inline)
 
   #TODO mark original as used or something

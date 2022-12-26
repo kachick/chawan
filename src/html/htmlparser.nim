@@ -2225,7 +2225,7 @@ proc parseHTML*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_UT
 proc newDOMParser*(): DOMParser {.jsctor.} =
   new(result)
 
-proc parseFromString*(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
+proc parseFromString(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
   case t
   of "text/html":
     let (res, _) = parseHTML(newStringStream(str))
