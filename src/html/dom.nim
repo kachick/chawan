@@ -773,7 +773,7 @@ func getElementsByTagName(document: Document, tagName: string): HTMLCollection {
 func getElementsByTagName(element: Element, tagName: string): HTMLCollection {.jsfunc.} =
   return element.getElementsByTagName0(tagName)
 
-func getElementsByClassName(node: Node, classNames: string): HTMLCollection {.jsfunc.} =
+func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
   var classes = classNames.split(AsciiWhitespace)
   let isquirks = node.document.mode == QUIRKS
   if isquirks:
@@ -795,7 +795,13 @@ func getElementsByClassName(node: Node, classNames: string): HTMLCollection {.js
               return false
         return true, true)
 
-func filterDescendants*(element: Element, predicate: (proc(child: Element): bool)): seq[Element] =
+func getElementsByClassName(document: Document, classNames: string): HTMLCollection {.jsfunc.} =
+  return document.getElementsByClassName0(classNames)
+
+func getElementsByClassName(element: Element, classNames: string): HTMLCollection {.jsfunc.} =
+  return element.getElementsByClassName0(classNames)
+
+func filterDescendants(element: Element, predicate: (proc(child: Element): bool)): seq[Element] =
   var stack: seq[Element]
   for child in element.elementList_rev:
     stack.add(child)
@@ -806,7 +812,7 @@ func filterDescendants*(element: Element, predicate: (proc(child: Element): bool
     for child in element.elementList_rev:
       stack.add(child)
 
-func all_descendants*(element: Element): seq[Element] =
+func all_descendants(element: Element): seq[Element] =
   var stack: seq[Element]
   for child in element.elementList_rev:
     stack.add(child)
