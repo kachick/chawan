@@ -76,12 +76,21 @@ type
 
 type
   Window* = ref object
+    console* {.jsget.}: console
+    navigator* {.jsget.}: Navigator
     settings*: EnvironmentSettings
     loader*: Option[FileLoader]
     jsrt*: JSRuntime
     jsctx*: JSContext
     document* {.jsget.}: Document
-    console* {.jsget.}: console
+
+  # Navigator stuff
+  Navigator* = ref object
+    plugins: PluginArray
+
+  PluginArray* = ref object
+
+  MimeTypeArray* = ref object
 
   # "For historical reasons, console is lowercased."
   # Also, for a more practical reason: so the javascript macros don't confuse
@@ -1710,7 +1719,8 @@ proc execute*(element: HTMLScriptElement) =
     #TODO not if shadow root
     document.currentScript = element
     if document.window != nil and document.window.jsctx != nil:
-      let ret = document.window.jsctx.eval(element.scriptResult.script.record, "<script>", JS_EVAL_TYPE_GLOBAL)
+      let script = element.scriptResult.script
+      let ret = document.window.jsctx.eval(script.record, $script.baseURL, JS_EVAL_TYPE_GLOBAL)
       if JS_IsException(ret):
         let ss = newStringStream()
         document.window.jsctx.writeException(ss)
