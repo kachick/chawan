@@ -1299,6 +1299,25 @@ macro jsctor*(fun: typed) =
   gen.registerConstructor()
   result = newStmtList(fun)
 
+macro jsgctor*(fun: typed) =
+  var gen = setupGenerator(fun, CONSTRUCTOR, thisname = none(string))
+  if gen.newName in existing_funcs:
+    #TODO TODO TODO implement function overloading
+    error("Function overloading hasn't been implemented yet...")
+  gen.addFixParam("this")
+  gen.addRequiredParams()
+  gen.addOptionalParams()
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      return ctx.toJS(`jfcl`)
+    return JS_UNDEFINED
+  discard gen.newJSProc(getJSParams())
+  gen.registerConstructor()
+  result = newStmtList(fun)
+
 macro jshasprop*(fun: typed) =
   var gen = setupGenerator(fun, PROPERTY_HAS, thisname = some("obj"))
   if gen.newName in existing_funcs:

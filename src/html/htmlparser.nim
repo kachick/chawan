@@ -327,7 +327,7 @@ template insert_character_impl(parser: var HTML5Parser, data: typed) =
   if insertNode != nil and insertNode.nodeType == TEXT_NODE:
     dom.Text(insertNode).data &= data
   else:
-    let text = location.inside.document.newText($data)
+    let text = location.inside.document.createTextNode($data)
     location.insert(text)
 
   if location.inside.nodeType == ELEMENT_NODE:
@@ -346,11 +346,11 @@ proc insertCharacter(parser: var HTML5Parser, data: Rune) =
   insert_character_impl(parser, data)
 
 proc insertComment(parser: var HTML5Parser, token: Token, position: AdjustedInsertionLocation) =
-  position.insert(position.inside.document.newComment(token.data))
+  position.insert(position.inside.document.createComment(token.data))
 
 proc insertComment(parser: var HTML5Parser, token: Token) =
   let position = parser.appropriatePlaceForInsert()
-  position.insert(position.inside.document.newComment(token.data))
+  position.insert(position.inside.document.createComment(token.data))
 
 const PublicIdentifierEquals = [
   "-//W3O//DTD W3 HTML Strict 3.0//EN//",
@@ -2212,6 +2212,7 @@ proc parseHTML*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_UT
   for c in bom:
     decoder.prepend(cast[uint32](c))
   parser.document = newDocument()
+  parser.document.contentType = "text/html"
   if window != nil:
     parser.document.window = window
     window.document = parser.document

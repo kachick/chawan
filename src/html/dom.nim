@@ -145,6 +145,9 @@ type
     value* {.jsget.}: string
     ownerElement* {.jsget.}: Element
 
+  DOMImplementation = ref object
+    document: Document
+
   Document* = ref object of Node
     charset*: Charset
     window*: Window
@@ -153,6 +156,8 @@ type
     mode*: QuirksMode
     currentScript: HTMLScriptElement
     isxml*: bool
+    implementation {.jsget.}: DOMImplementation
+    origin: Origin
 
     scriptsToExecSoon*: seq[HTMLScriptElement]
     scriptsToExecInOrder*: Deque[HTMLScriptElement]
@@ -162,7 +167,7 @@ type
     parser_cannot_change_the_mode_flag*: bool
     is_iframe_srcdoc*: bool
     focus*: Element
-    contentType*: string
+    contentType* {.jsget.}: string
 
     renderBlockingElements: seq[Element]
 
@@ -176,7 +181,7 @@ type
   CDATASection = ref object of CharacterData
 
   ProcessingInstruction = ref object of CharacterData
-    target: string
+    target {.jsget.}: string
 
   DocumentFragment* = ref object of Node
     host*: Element
@@ -1052,38 +1057,49 @@ func target*(element: Element): string {.jsfunc.} =
       return base.attr("target")
   return ""
 
-#TODO we shouldn't have to pass document in DOM (so first arg should be window)
-func newText*(document: Document, data: string = ""): Text {.jsctor.} =
-  new(result)
-  result.nodeType = TEXT_NODE
-  result.document = document
-  result.data = data
+func newText(document: Document, data: string): Text =
+  return Text(
+    nodeType: TEXT_NODE,
+    document: document,
+    data: data
+  )
+
+func newText(window: Window, data: string = ""): Text {.jsgctor.} =
+  return window.document.newText(data)
 
 func newCDATASection(document: Document, data: string): CDATASection =
-  new(result)
-  result.nodeType = CDATA_SECTION_NODE
-  result.document = document
-  result.data = data
+  return CDATASection(
+    nodeType: CDATA_SECTION_NODE,
+    document: document,
+    data: data
+  )
 
 func newProcessingInstruction(document: Document, target, data: string): ProcessingInstruction =
-  new(result)
-  result.nodeType = PROCESSING_INSTRUCTION_NODE
-  result.document = document
-  result.target = target
-  result.data = data
+  return ProcessingInstruction(
+    nodeType: PROCESSING_INSTRUCTION_NODE,
+    document: document,
+    target: target,
+    data: data
+  )
 
-#TODO ditto
-func newDocumentFragment*(document: Document): DocumentFragment {.jsctor.} =
-  new(result)
-  result.nodeType = DOCUMENT_FRAGMENT_NODE
-  result.document = document
+func newDocumentFragment(document: Document): DocumentFragment =
+  return DocumentFragment(
+    nodeType: DOCUMENT_FRAGMENT_NODE,
+    document: document
+  )
 
-#TODO ditto
-func newComment*(document: Document = nil, data: string = ""): Comment {.jsctor.} =
-  new(result)
-  result.nodeType = COMMENT_NODE
-  result.document = document
-  result.data = data
+func newDocumentFragment(window: Window): DocumentFragment {.jsgctor.} =
+  return window.document.newDocumentFragment()
+
+func newComment(document: Document, data: string): Comment =
+  return Comment(
+    nodeType: COMMENT_NODE,
+    document: document,
+    data: data
+  )
+
+func newComment(window: Window, data: string = ""): Comment {.jsgctor.} =
+  return window.document.newComment(data)
 
 proc attr*(element: Element, name, value: string)
 
@@ -1155,18 +1171,21 @@ func newHTMLElement*(document: Document, localName: string, namespace = Namespac
     result.localName = localName
 
 func newDocument*(): Document {.jsctor.} =
-  new(result)
-  result.nodeType = DOCUMENT_NODE
+  result = Document(
+    nodeType: DOCUMENT_NODE
+  )
   result.document = result
-  result.contentType = "text/html"
+  result.implementation = DOMImplementation(document: result)
+  result.contentType = "application/xml"
 
-func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType {.jsctor.} =
-  new(result)
-  result.nodeType = DOCUMENT_TYPE_NODE
-  result.document = document
-  result.name = name
-  result.publicId = publicId
-  result.systemId = systemId
+func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
+  return DocumentType(
+    nodeType: DOCUMENT_TYPE_NODE,
+    document: document,
+    name: name,
+    publicId: publicId,
+    systemId: systemId
+  )
 
 func inHTMLNamespace*(element: Element): bool = element.namespace == Namespace.HTML
 func inMathMLNamespace*(element: Element): bool = element.namespace == Namespace.MATHML
@@ -1687,11 +1706,14 @@ proc replaceAll(parent, node: Node) =
       parent.append(node)
   #TODO tree mutation record
 
+proc createTextNode*(document: Document, data: string): Text {.jsfunc.} =
+  return newText(document, data)
+
 proc textContent*(node: Node, data: Option[string]) {.jsfset.} =
   case node.nodeType
   of DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE:
     let x = if data.isSome:
-      node.document.newText(data.get)
+      node.document.createTextNode(data.get)
     else:
       nil
     node.replaceAll(x)
@@ -1942,8 +1964,27 @@ proc createElement(document: Document, localName: string): Element {.jserr, jsfu
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createTextNode(document: Document, data: string): Text {.jsfunc.} =
-  return newText(document, data)
+proc createDocumentType(implementation: DOMImplementation, qualifiedName, publicId, systemId: string): DocumentType {.jserr, jsfunc.} =
+  if not qualifiedName.matchQNameProduction():
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  return implementation.document.newDocumentType(qualifiedName, publicId, systemId)
+
+proc createHTMLDocument(implementation: DOMImplementation, title = none(string)): Document {.jsfunc.} =
+  let doc = newDocument()
+  doc.contentType = "text/html"
+  doc.append(doc.newDocumentType("html"))
+  let html = doc.newHTMLElement(TAG_HTML, Namespace.HTML)
+  doc.append(html)
+  let head = doc.newHTMLElement(TAG_HEAD, Namespace.HTML)
+  html.append(head)
+  if title.isSome:
+    let titleElement = doc.newHTMLElement(TAG_TITLE, Namespace.HTML)
+    titleElement.append(doc.newText(title.get))
+    head.append(titleElement)
+  html.append(doc.newHTMLElement(TAG_BODY, Namespace.HTML))
+  #TODO set origin
+  return doc
 
 proc createCDATASection(document: Document, data: string): CDATASection {.jserr, jsfunc.} =
   if not document.isxml:
@@ -1954,7 +1995,7 @@ proc createCDATASection(document: Document, data: string): CDATASection {.jserr,
     JS_ERR JS_TypeError, "InvalidCharacterError"
   return newCDATASection(document, data)
 
-proc createComment(document: Document, data: string): Comment {.jsfunc.} =
+proc createComment*(document: Document, data: string): Comment {.jsfunc.} =
   return newComment(document, data)
 
 proc createProcessingInstruction(document: Document, target, data: string): ProcessingInstruction {.jsfunc.} =
@@ -1983,6 +2024,7 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(NodeList)
   ctx.registerType(HTMLCollection)
   ctx.registerType(Document, parent = nodeCID)
+  ctx.registerType(DOMImplementation)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
   ctx.registerType(Comment, parent = characterDataCID)
   ctx.registerType(CDATASection, parent = characterDataCID)

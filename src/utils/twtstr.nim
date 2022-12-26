@@ -719,6 +719,15 @@ func matchNameProduction*(str: string): bool =
           return false
   return true
 
+func matchQNameProduction*(s: string): bool =
+  var colon = false
+  for c in s:
+    if c == ':':
+      if colon:
+        return false
+      colon = true
+  return s.matchNameProduction()
+
 func utf16Len*(s: string): int =
   for r in s.runes:
     if cast[uint32](r) < 0x10000: # ucs-2
