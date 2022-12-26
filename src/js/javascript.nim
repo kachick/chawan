@@ -1240,9 +1240,13 @@ proc rewriteExceptions(gen: var JSFuncGenerator, errors: var seq[string], node: 
     if c.kind == nnkCommand and c[0].eqIdent ident("JS_ERR"):
       if gen.copied == nil:
         gen.copied = copy(gen.original)
-      node[i] = quote do:
-        zeroMem(addr result, sizeof(result))
-        return
+      if gen.returnType.isSome:
+        node[i] = quote do:
+          zeroMem(addr result, sizeof(result))
+          return
+      else:
+        node[i] = quote do:
+          return
       if c[1].strVal notin errors:
         errors.add(c[1].strVal)
     elif c.len > 0:

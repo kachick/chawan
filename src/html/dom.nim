@@ -167,12 +167,16 @@ type
     renderBlockingElements: seq[Element]
 
   CharacterData* = ref object of Node
-    data*: string
-    length*: int
+    data* {.jsget.}: string
 
   Text* = ref object of CharacterData
 
   Comment* = ref object of CharacterData
+
+  CDATASection = ref object of CharacterData
+
+  ProcessingInstruction = ref object of CharacterData
+    target: string
 
   DocumentFragment* = ref object of Node
     host*: Element
@@ -604,6 +608,9 @@ func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} 
   else:
     return map.getNamedItem(i)
 
+func length(characterData: CharacterData): int {.jsfget.} =
+  return characterData.data.utf16Len
+
 func scriptingEnabled*(element: Element): bool =
   if element.document == nil:
     return false
@@ -771,12 +778,18 @@ func getElementsByTag*(node: Node, tag: TagType): seq[Element] =
   for element in node.elements(tag):
     result.add(element)
 
-func getElementsByTagName(node: Node, tagName: string): HTMLCollection {.jsfunc.} =
+func getElementsByTagName0(root: Node, tagName: string): HTMLCollection =
   if tagName == "*":
-    return newCollection[HTMLCollection](node, func(node: Node): bool = node.isElement, true)
+    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement, true)
   let t = tagType(tagName)
   if t != TAG_UNKNOWN:
-    return newCollection[HTMLCollection](node, func(node: Node): bool = node.isElement and Element(node).tagType == t, true)
+    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement and Element(node).tagType == t, true)
+
+func getElementsByTagName(document: Document, tagName: string): HTMLCollection {.jsfunc.} =
+  return document.getElementsByTagName0(tagName)
+
+func getElementsByTagName(element: Element, tagName: string): HTMLCollection {.jsfunc.} =
+  return element.getElementsByTagName0(tagName)
 
 func getElementsByClassName(node: Node, classNames: string): HTMLCollection {.jsfunc.} =
   var classes = classNames.split(AsciiWhitespace)
@@ -1039,12 +1052,33 @@ func target*(element: Element): string {.jsfunc.} =
       return base.attr("target")
   return ""
 
+#TODO we shouldn't have to pass document in DOM (so first arg should be window)
 func newText*(document: Document, data: string = ""): Text {.jsctor.} =
   new(result)
   result.nodeType = TEXT_NODE
   result.document = document
   result.data = data
 
+func newCDATASection(document: Document, data: string): CDATASection =
+  new(result)
+  result.nodeType = CDATA_SECTION_NODE
+  result.document = document
+  result.data = data
+
+func newProcessingInstruction(document: Document, target, data: string): ProcessingInstruction =
+  new(result)
+  result.nodeType = PROCESSING_INSTRUCTION_NODE
+  result.document = document
+  result.target = target
+  result.data = data
+
+#TODO ditto
+func newDocumentFragment*(document: Document): DocumentFragment {.jsctor.} =
+  new(result)
+  result.nodeType = DOCUMENT_FRAGMENT_NODE
+  result.document = document
+
+#TODO ditto
 func newComment*(document: Document = nil, data: string = ""): Comment {.jsctor.} =
   new(result)
   result.nodeType = COMMENT_NODE
@@ -1289,12 +1323,20 @@ proc attrigz(element: Element, name: string, value: int) =
   if value > 0:
     element.attr(name, $value)
 
-proc setAttribute(element: Element, qualifiedName, value: string) {.jsfunc.} =
+proc setAttribute(element: Element, qualifiedName, value: string) {.jserr, jsfunc.} =
+  if not qualifiedName.matchNameProduction():
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
+    qualifiedName.toLowerAscii2()
+  else:
+    qualifiedName
   element.attr(qualifiedName, value)
 
 proc setAttributeNS(element: Element, namespace, qualifiedName, value: string) {.jsfunc.} =
   if namespace == "" or namespace == $Namespace.HTML:
     element.attr(qualifiedName, value)
+    return
   if namespace notin NamespaceMap:
     return
   #TODO validate and extract
@@ -1310,12 +1352,37 @@ proc setAttributeNS(element: Element, namespace, qualifiedName, value: string) {
   else:
     element.attributes.attrlist[i].value = value
 
-proc removeAttribute(element: Element, qualifiedName: string) {.jsfunc.} =
+proc removeAttribute(element: Element, qualifiedName: string) {.jserr, jsfunc.} =
+  if not qualifiedName.matchNameProduction():
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
+    qualifiedName.toLowerAscii2()
+  else:
+    qualifiedName
   element.delAttr(qualifiedName)
 
 proc removeAttributeNS(element: Element, namespace, localName: string) {.jsfunc.} =
   #TODO use namespace
   element.delAttr(localName)
+
+proc toggleAttribute(element: Element, qualifiedName: string, force = none(bool)): bool {.jserr, jsfunc.} =
+  if not qualifiedName.matchNameProduction():
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
+    qualifiedName.toLowerAscii2()
+  else:
+    qualifiedName
+  if not element.attrb(qualifiedName):
+    if force.get(true):
+      element.attr(qualifiedName, "")
+      return true
+    return false
+  if not force.get(false):
+    element.delAttr(qualifiedName)
+    return false
+  return true
 
 proc value(attr: Attr, s: string) {.jsfset.} =
   attr.value = s
@@ -1569,6 +1636,8 @@ proc insert*(parent, node, before: Node) =
   if before != nil:
     #TODO live ranges
     discard
+  if parent.nodeType == ELEMENT_NODE:
+    Element(parent).invalid = true
   for node in nodes:
     parent.document.adopt(node)
     if before == nil:
@@ -1853,6 +1922,47 @@ proc prepare*(element: HTMLScriptElement) =
     # parser with a script level <= 1
     element.execute()
 
+#TODO options/custom elements
+proc createElement(document: Document, localName: string): Element {.jserr, jsfunc.} =
+  if not localName.matchNameProduction():
+    #TODO DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  let localName = if not document.isxml:
+    localName.toLowerAscii2()
+  else:
+    localName
+  let namespace = if not document.isxml: #TODO or content type is application/xhtml+xml
+    Namespace.HTML
+  else:
+    NO_NAMESPACE
+  return document.newHTMLElement(localName, namespace)
+
+#TODO createElementNS
+
+proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
+  return newDocumentFragment(document)
+
+proc createTextNode(document: Document, data: string): Text {.jsfunc.} =
+  return newText(document, data)
+
+proc createCDATASection(document: Document, data: string): CDATASection {.jserr, jsfunc.} =
+  if not document.isxml:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "NotSupportedError"
+  if "]]>" in data:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  return newCDATASection(document, data)
+
+proc createComment(document: Document, data: string): Comment {.jsfunc.} =
+  return newComment(document, data)
+
+proc createProcessingInstruction(document: Document, target, data: string): ProcessingInstruction {.jsfunc.} =
+  if not target.matchNameProduction() or "?>" in data:
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "InvalidCharacterError"
+  return newProcessingInstruction(document, target, data)
+
 # Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node, q: string): seq[Element]
 var doqs*: proc (node: Node, q: string): Element
@@ -1875,10 +1985,13 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(Document, parent = nodeCID)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
   ctx.registerType(Comment, parent = characterDataCID)
+  ctx.registerType(CDATASection, parent = characterDataCID)
+  ctx.registerType(DocumentFragment, parent = nodeCID)
+  ctx.registerType(ProcessingInstruction, parent = characterDataCID)
   ctx.registerType(Text, parent = characterDataCID)
   ctx.registerType(DocumentType, parent = nodeCID)
   let elementCID = ctx.registerType(Element, parent = nodeCID)
-  ctx.registerType(Attr)
+  ctx.registerType(Attr, parent = nodeCID)
   ctx.registerType(NamedNodeMap)
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
   ctx.registerType(HTMLInputElement, parent = htmlElementCID)

@@ -670,6 +670,62 @@ func isValidNonZeroInt*(str: string): bool =
     return false
   true
 
+# https://www.w3.org/TR/xml/#NT-Name
+const NameStartCharRanges = [
+  (0xC0, 0xD6),
+  (0xD8, 0xF6),
+  (0xF8, 0x2FF),
+  (0x370, 0x37D),
+  (0x37F, 0x1FFF),
+  (0x200C, 0x200D),
+  (0x2070, 0x218F),
+  (0x2C00, 0x2FEF),
+  (0x3001, 0xD7FF),
+  (0xF900, 0xFDCF),
+  (0xFDF0, 0xFFFD),
+  (0x10000, 0xEFFFF)
+]
+const NameCharRanges = [ # + NameStartCharRanges
+  (0xB7, 0xB7),
+  (0x0300, 0x036F),
+  (0x203F, 0x2040)
+]
+const NameStartCharAscii = {':', '_'} + AsciiAlpha
+const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
+func matchNameProduction*(str: string): bool =
+  if str.len == 0:
+    return true
+  # NameStartChar
+  var i = 0
+  var r: Rune
+  if str[i] in Ascii:
+    if str[i] notin NameStartCharAscii:
+      return false
+    inc i
+  else:
+    fastRuneAt(str, i, r)
+    if binarySearch(NameStartCharRanges, int32(r), (x, y) => cmp(x[0], y)) == -1:
+      return false
+  # NameChar
+  while i < str.len:
+    if str[i] in Ascii:
+      if str[i] notin NameCharAscii:
+        return false
+      inc i
+    else:
+      fastRuneAt(str, i, r)
+      if binarySearch(NameStartCharRanges, int32(r), (x, y) => cmp(x[0], y)) == -1:
+        if binarySearch(NameCharRanges, int32(r), (x, y) => cmp(x[0], y)) == -1:
+          return false
+  return true
+
+func utf16Len*(s: string): int =
+  for r in s.runes:
+    if cast[uint32](r) < 0x10000: # ucs-2
+      result += 1
+    else: # surrogate
+      result += 2
+
 proc expandPath*(path: string): string =
   if path.len == 0:
     return path

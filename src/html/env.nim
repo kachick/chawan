@@ -48,6 +48,9 @@ proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
 
+#func `$`(window: Window): string {.jsfunc.} =
+#  "[object Window]"
+
 proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
   result = Window(
     console: console(),
