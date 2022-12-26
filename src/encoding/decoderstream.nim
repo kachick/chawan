@@ -766,9 +766,11 @@ proc readData*(stream: DecoderStream, buffer: pointer, olen: int): int =
   let oq = cast[ptr UncheckedArray[uint32]](buffer)
   result = stream.copyBuffers(oq, olen)
   let olen = olen - result
-  if olen == 0:
+  if olen == 0 or stream.source.atEnd:
+    # either output filled with buffered data; nothing to decode
+    # or we're at the end of the source stream
     stream.checkEnd(oq, olen, result)
-    return result # output filled with buffered data; nothing to decode.
+    return result
   var iq = newSeqUninitialized[uint8](ReadSize)
   let ilen = stream.source.readData(cast[pointer](addr iq[0]), ReadSize)
   case stream.charset
@@ -814,6 +816,10 @@ proc readData*(stream: DecoderStream, buffer: pointer, olen: int): int =
   of CHARSET_UNKNOWN: assert false, "Somebody forgot to set the character set here"
   stream.checkEnd(oq, olen, result)
 
+# Returns the number of bytes read.
+proc readData*(stream: DecoderStream, buf: var seq[uint32]): int =
+  return stream.readData(addr buf[0], buf.len * sizeof(buf[0]))
+
 proc readRunes*(stream: DecoderStream, olen: int): seq[Rune] =
   when nimvm:
     let s = stream.source.readStr(olen)
@@ -831,7 +837,7 @@ proc atEnd*(stream: DecoderStream): bool =
 proc readAll*(stream: DecoderStream): string =
   var buf = newSeqUninitialized[uint32](stream.buflen)
   while not stream.atEnd:
-    let n = stream.readData(addr buf, buf.len * sizeof(buf[0]))
+    let n = stream.readData(buf)
     for i in 0 ..< n div 4:
       let r = cast[Rune](buf[i])
       result &= $r
