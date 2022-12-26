@@ -1226,9 +1226,9 @@ proc flushTableRow(ctx: var InnerBlockContext) =
     if ctx.blockgroup.parent.computed{"display"} == DISPLAY_TABLE_ROW:
       ctx.blockgroup.parent.children.add(ctx.anonRow)
     else:
-      var wrappervals = ctx.styledNode.computed.inheritProperties()
-      wrappervals{"display"} = DISPLAY_TABLE
       if ctx.anonTable == nil:
+        var wrappervals = ctx.styledNode.computed.inheritProperties()
+        wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
       ctx.anonTable.children.add(ctx.anonRow)
     ctx.anonRow = nil
