@@ -608,7 +608,7 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
         container.setCursorXY(res.x, res.y)
         if container.hlon:
           container.clearSearchHighlights()
-          let ex = res.x + res.str.twidth(res.x) - 1
+          let ex = res.str.twidth(res.x) - 1
           let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
           container.highlights.add(hl)
           container.triggerEvent(UPDATE)
@@ -627,7 +627,7 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
         container.setCursorXY(res.x, res.y)
         if container.hlon:
           container.clearSearchHighlights()
-          let ex = res.x + res.str.twidth(res.x) - 1
+          let ex = res.str.twidth(res.x) - 1
           let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
           container.highlights.add(hl)
           container.hlon = false)
