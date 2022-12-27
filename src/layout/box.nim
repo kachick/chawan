@@ -50,7 +50,6 @@ type
   TableRowBoxBuilder* = ref object of BlockBoxBuilder
 
   TableCellBoxBuilder* = ref object of BlockBoxBuilder
-    colspan*: int
 
   TableBoxBuilder* = ref object of BlockBoxBuilder
     rowgroups*: seq[TableRowGroupBoxBuilder]

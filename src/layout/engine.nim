@@ -6,8 +6,6 @@ import unicode
 
 import css/stylednode
 import css/values
-import html/tags
-import html/dom
 import io/window
 import layout/box
 import utils/twtstr
@@ -844,15 +842,16 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
   for child in box.children:
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
+    let colspan = cellbuilder.computed{"-cha-colspan"}
     let cell = parent.viewport.buildTableCell(cellbuilder, parent.contentWidth, parent.contentHeight)
-    ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: cellbuilder.colspan)
-    if pctx.cols.len < n + cellbuilder.colspan:
-      pctx.cols.setLen(n + cellbuilder.colspan)
-    if ctx.reflow.len < n + cellbuilder.colspan:
-      ctx.reflow.setLen(n + cellbuilder.colspan)
-    let minw = cell.xminwidth div cellbuilder.colspan
-    let w = cell.width div cellbuilder.colspan
-    for i in n ..< n + cellbuilder.colspan:
+    ctx.cells[i] = CellWrapper(box: cell, builder: cellbuilder, colspan: colspan)
+    if pctx.cols.len < n + colspan:
+      pctx.cols.setLen(n + colspan)
+    if ctx.reflow.len < n + colspan:
+      ctx.reflow.setLen(n + colspan)
+    let minw = cell.xminwidth div colspan
+    let w = cell.width div colspan
+    for i in n ..< n + colspan:
       ctx.width += pctx.inlinespacing
       pctx.cols[i].maxwidth = w
       if pctx.cols[i].width < w:
@@ -878,7 +877,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder, parent: B
           ctx.reflow[i] = true
       ctx.width += pctx.cols[i].width
       ctx.width += pctx.inlinespacing
-    n += cellbuilder.colspan
+    n += colspan
     inc i
   ctx.ncols = n
   return ctx
@@ -1122,13 +1121,7 @@ proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder) =
 # Returns a block box, disregarding the computed value of display
 proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
   new(result)
-  result.computed = computed.copyProperties()
-  result.computed{"display"} = DISPLAY_BLOCK
-
-proc getTextBox(box: BoxBuilder): InlineBoxBuilder =
-  new(result)
-  result.inlinelayout = true
-  result.computed = box.computed.inheritProperties()
+  result.computed = computed
 
 proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
   new(result)
@@ -1164,7 +1157,6 @@ proc getTableRowBox(computed: CSSComputedValues): TableRowBoxBuilder =
 proc getTableCellBox(computed: CSSComputedValues): TableCellBoxBuilder =
   new(result)
   result.computed = computed
-  result.colspan = 1
 
 proc getTableCaptionBox(computed: CSSComputedValues): TableCaptionBoxBuilder =
   new(result)
@@ -1193,7 +1185,9 @@ proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
 proc flush(blockgroup: var BlockGroup) {.inline.} =
   if blockgroup.boxes.len > 0:
     assert blockgroup.parent.computed{"display"} != DISPLAY_INLINE
-    let bbox = getBlockBox(blockgroup.parent.computed.inheritProperties())
+    let computed = blockgroup.parent.computed.inheritProperties()
+    computed{"display"} = DISPLAY_BLOCK
+    let bbox = getBlockBox(computed)
     bbox.inlinelayout = true
     bbox.children = blockgroup.boxes
     blockgroup.parent.children.add(bbox)
@@ -1264,13 +1258,6 @@ proc flush(ctx: var InnerBlockContext) =
 
 proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   let box = ctx.blockgroup.parent
-  if styledNode.node != nil:
-    let elem = Element(styledNode.node)
-    if elem.tagType == TAG_BR:
-      ctx.iflush()
-      ctx.ibox = box.getTextBox()
-      ctx.ibox.newline = true
-      ctx.iflush()
 
   case styledNode.computed{"display"}
   of DISPLAY_BLOCK:
@@ -1287,6 +1274,8 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       childbox.marker = nil
     else:
       childbox.content = ctx.generateBlockBox(styledNode)
+    childbox.content.computed = childbox.content.computed.copyProperties()
+    childbox.content.computed{"display"} = DISPLAY_BLOCK
     box.children.add(childbox)
   of DISPLAY_INLINE:
     ctx.iflush()
@@ -1294,7 +1283,6 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   of DISPLAY_INLINE_BLOCK:
     ctx.iflush()
     let childbox = ctx.generateBlockBox(styledNode)
-    childbox.computed{"display"} = DISPLAY_INLINE_BLOCK
     ctx.blockgroup.add(childbox)
   of DISPLAY_TABLE:
     ctx.flush()
@@ -1396,6 +1384,11 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
   of CONTENT_IMAGE:
     #TODO idk
     ctx.generateInlineText(child.content.s, parent)
+  of CONTENT_NEWLINE:
+    ctx.iflush()
+    ctx.ibox = parent.computed.getTextBox()
+    ctx.ibox.newline = true
+    ctx.iflush()
 
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   for child in styledNode.children:
@@ -1466,8 +1459,6 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
 
 proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCellBoxBuilder =
   let box = getTableCellBox(styledNode.computed)
-  if styledNode.node != nil and styledNode.node.nodeType == ELEMENT_NODE:
-    box.colspan = Element(styledNode.node).attri("colspan").get(1)
   var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
@@ -1545,7 +1536,7 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var In
   box.generateTableChildWrappers()
   return box
 
-proc renderLayout*(viewport: var Viewport, document: Document, root: StyledNode) =
+proc renderLayout*(viewport: var Viewport, root: StyledNode) =
   viewport.root.setLen(0)
   viewport.absolutes.setLen(0)
   let builder = root.generateBlockBox(viewport)

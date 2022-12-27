@@ -335,7 +335,7 @@ proc renderDocument*(document: Document, window: WindowAttributes, userstyle: CS
     uastyle = quirkstyle
   let styledNode = document.applyStylesheets(uastyle, userstyle, previousStyled)
   result[1] = styledNode
-  layout.renderLayout(document, styledNode)
+  layout.renderLayout(styledNode)
   result[0].setLen(0)
   for root in layout.root:
     result[0].renderBlockContext(root, 0, 0, window)

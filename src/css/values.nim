@@ -35,7 +35,8 @@ type
     PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE,
     PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
     PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
-    PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE
+    PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE,
+    PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -102,7 +103,8 @@ type
 
   CSSContentType* = enum
     CONTENT_STRING, CONTENT_OPEN_QUOTE, CONTENT_CLOSE_QUOTE,
-    CONTENT_NO_OPEN_QUOTE, CONTENT_NO_CLOSE_QUOTE, CONTENT_IMAGE
+    CONTENT_NO_OPEN_QUOTE, CONTENT_NO_CLOSE_QUOTE, CONTENT_IMAGE,
+    CONTENT_NEWLINE
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -250,7 +252,9 @@ const PropertyNames = {
   "max-height": PROPERTY_MAX_HEIGHT,
   "min-width": PROPERTY_MIN_WIDTH,
   "min-height": PROPERTY_MIN_HEIGHT,
-  "background-image": PROPERTY_BACKGROUND_IMAGE
+  "background-image": PROPERTY_BACKGROUND_IMAGE,
+  "-cha-colspan": PROPERTY_CHA_COLSPAN,
+  "-cha-rowspan": PROPERTY_CHA_ROWSPAN
 }.toTable()
 
 const ValueTypes* = [
@@ -294,7 +298,9 @@ const ValueTypes* = [
   PROPERTY_MAX_HEIGHT: VALUE_LENGTH,
   PROPERTY_MIN_WIDTH: VALUE_LENGTH,
   PROPERTY_MIN_HEIGHT: VALUE_LENGTH,
-  PROPERTY_BACKGROUND_IMAGE: VALUE_IMAGE
+  PROPERTY_BACKGROUND_IMAGE: VALUE_IMAGE,
+  PROPERTY_CHA_COLSPAN: VALUE_INTEGER,
+  PROPERTY_CHA_ROWSPAN: VALUE_INTEGER
 ]
 
 const InheritedProperties = {
@@ -856,6 +862,15 @@ func cssImage(cval: CSSComponentValue): Option[CSSContent] =
     if tok.tokenType == CSS_URL_TOKEN or tok.tokenType == CSS_BAD_URL_TOKEN:
       return some(CSSContent(t: CONTENT_IMAGE, s: "[img]"))
 
+func cssInteger(cval: CSSComponentValue, range: Slice[int]): int =
+  if isToken(cval):
+    let tok = getToken(cval)
+    if tok.tokenType == CSS_NUMBER_TOKEN:
+      let i = int(tok.nvalue)
+      if float64(i) == tok.nvalue and i in range:
+        return i
+  raise newException(CSSValueError, "Invalid integer")
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   var i = 0
   d.value.skipWhitespace(i)
@@ -891,6 +906,10 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_INTEGER:
     if ptype == PROPERTY_FONT_WEIGHT:
       val.integer = cssFontWeight(cval)
+    elif ptype == PROPERTY_CHA_COLSPAN:
+      val.integer = cssInteger(cval, 1 .. 1000)
+    elif ptype == PROPERTY_CHA_ROWSPAN:
+      val.integer = cssInteger(cval, 0 .. 65534)
   of VALUE_TEXT_DECORATION: val.textdecoration = cssTextDecoration(d)
   of VALUE_WORD_BREAK: val.wordbreak = cssWordBreak(cval)
   of VALUE_LIST_STYLE_TYPE: val.liststyletype = cssListStyleType(cval)
@@ -947,6 +966,14 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
   else:
     return CSSLength(auto: false, unit: UNIT_PX, num: 0)
 
+func getInitialInteger(t: CSSPropertyType): int =
+  case t
+  of PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN:
+    return 1
+  of PROPERTY_FONT_WEIGHT:
+    return 400 # normal
+  else: discard
+
 func calcInitial(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
   var nv: CSSComputedValue
@@ -959,6 +986,8 @@ func calcInitial(t: CSSPropertyType): CSSComputedValue =
     nv = CSSComputedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
   of VALUE_LENGTH:
     nv = CSSComputedValue(t: t, v: v, length: getInitialLength(t))
+  of VALUE_INTEGER:
+    nv = CSSComputedValue(t: t, v: v, integer: getInitialInteger(t))
   of VALUE_QUOTES:
     nv = CSSComputedValue(t: t, v: v, quotes: CSSQuotes(auto: true))
   else:

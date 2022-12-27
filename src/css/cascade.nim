@@ -74,49 +74,61 @@ func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
           dl
 
 func calcPresentationalHints(element: Element): CSSComputedValues =
-  template set_cv(a, b, c: untyped) =
+  template set_cv(a, b: untyped) =
     if result == nil:
       new(result)
-    result[a] = CSSComputedValue(t: a, v: ValueTypes[a], b: c)
+    result{a} = b
   template map_width =
     let s = parseDimensionValues(element.attr("width"))
     if s.isSome:
-      set_cv(PROPERTY_WIDTH, length, s.get)
+      set_cv "width", s.get
   template map_height =
     let s = parseDimensionValues(element.attr("height"))
     if s.isSome:
-      set_cv(PROPERTY_HEIGHT, length, s.get)
+      set_cv "height", s.get
   template map_width_nozero =
     let s = parseDimensionValues(element.attr("width"))
     if s.isSome and s.get.num != 0:
-      set_cv(PROPERTY_WIDTH, length, s.get)
+      set_cv "width", s.get
   template map_height_nozero =
     let s = parseDimensionValues(element.attr("height"))
     if s.isSome and s.get.num != 0:
-      set_cv(PROPERTY_HEIGHT, length, s.get)
+      set_cv "height", s.get
   template map_bgcolor =
     let c = parseLegacyColor(element.attr("bgcolor"))
     if c.isSome:
-      set_cv(PROPERTY_BACKGROUND_COLOR, color, c.get)
+      set_cv "background-color", c.get
   template map_valign =
     case element.attr("valign").toLowerAscii()
-    of "top": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_TOP))
-    of "middle": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_MIDDLE))
-    of "bottom": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_BOTTOM))
-    of "baseline": set_cv(PROPERTY_VERTICAL_ALIGN, verticalalign, CSSVerticalAlign(keyword: VERTICAL_ALIGN_BASELINE))
+    of "top": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_TOP)
+    of "middle": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_MIDDLE)
+    of "bottom": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_BOTTOM)
+    of "baseline": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_BASELINE)
   template map_align =
     case element.attr("align").toLowerAscii()
-    of "center", "middle": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_CENTER)
-    of "left": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_LEFT)
-    of "right": set_cv(PROPERTY_TEXT_ALIGN, textalign, TEXT_ALIGN_CHA_RIGHT)
+    of "center", "middle": set_cv "text-align", TEXT_ALIGN_CHA_CENTER
+    of "left": set_cv "text-align", TEXT_ALIGN_CHA_LEFT
+    of "right": set_cv "text-align", TEXT_ALIGN_CHA_RIGHT
   template map_text =
     let c = parseLegacyColor(element.attr("text"))
     if c.isSome:
-      set_cv(PROPERTY_COLOR, color, c.get)
+      set_cv "color", c.get
   template map_color =
     let c = parseLegacyColor(element.attr("color"))
     if c.isSome:
-      set_cv(PROPERTY_COLOR, color, c.get)
+      set_cv "color", c.get
+  template map_colspan =
+    let colspan = element.attrigz("colspan")
+    if colspan.isSome:
+      let i = colspan.get
+      if i <= 1000:
+        set_cv "-cha-colspan", i
+  template map_rowspan =
+    let rowspan = element.attrigez("rowspan")
+    if rowspan.isSome:
+      let i = rowspan.get
+      if i <= 65534:
+        set_cv "-cha-rowspan", i
 
   case element.tagType
   of TAG_DIV:
@@ -131,6 +143,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_bgcolor
     map_valign
     map_align
+    map_colspan
+    map_rowspan
   of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
     map_height
     map_bgcolor
@@ -146,8 +160,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_text
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
-    set_cv(PROPERTY_WIDTH, length, CSSLength(unit: UNIT_CH, num: float64(textarea.cols)))
-    set_cv(PROPERTY_HEIGHT, length, CSSLength(unit: UNIT_EM, num: float64(textarea.rows)))
+    set_cv "width", CSSLength(unit: UNIT_CH, num: float64(textarea.cols))
+    set_cv "height", CSSLength(unit: UNIT_EM, num: float64(textarea.rows))
   of TAG_FONT:
     map_color
   else: discard
@@ -286,6 +300,11 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
           let styledText = styledParent.newStyledReplacement(content)
           styledText.pseudo = pseudo
           styledParent.children.add(styledText)
+        of PSEUDO_NEWLINE:
+          let content = CSSContent(t: CONTENT_NEWLINE)
+          let styledText = styledParent.newStyledReplacement(content)
+          styledText.pseudo = pseudo
+          styledParent.children.add(styledText)
         of PSEUDO_NONE: discard
       else:
         assert child != nil
@@ -364,6 +383,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
         stack_append styledChild, PSEUDO_TEXTAREA_TEXT
       elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
         stack_append styledChild, PSEUDO_IMAGE
+      elif elem.tagType == TAG_BR:
+        stack_append styledChild, PSEUDO_NEWLINE
       else:
         for i in countdown(elem.childList.high, 0):
           if elem.childList[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
