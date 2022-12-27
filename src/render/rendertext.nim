@@ -49,17 +49,18 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       of '\n':
         add_format
         renderer.newline = true
-      of '\r': discard
+        continue
+      of '\r': continue
       of '\t':
         add_format
-        for i in 0 ..< tabwidth - renderer.w:
+        let w = ((renderer.w div tabwidth) + 1) * tabwidth
+        while renderer.w < w:
           grid[^1].str &= ' '
-          renderer.w = 0
-      of ' ':
-        add_format
-        grid[^1].str &= c
+          inc renderer.w
+        continue
       of '\e':
         renderer.ansiparser.reset()
+        continue
       else:
         add_format
         grid[^1].str &= c
@@ -67,5 +68,3 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       add_format
       grid[^1].str &= r
     renderer.w += r.width()
-    while renderer.w >= 8:
-      renderer.w -= 8
