@@ -41,6 +41,7 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
         if not cancel:
           if renderer.ansiparser.state == PARSE_DONE:
             renderer.af = true
+          continue
       case c
       of '\n':
         add_format
