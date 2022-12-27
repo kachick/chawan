@@ -446,6 +446,12 @@ proc nimGCStats(client: Client): string {.jsfunc.} =
 proc jsGCStats(client: Client): string {.jsfunc.} =
   return client.jsrt.getMemoryUsage()
 
+proc nimCollect(client: Client) {.jsfunc.} =
+  GC_fullCollect()
+
+proc jsCollect(client: Client) {.jsfunc.} =
+  JS_RunGC(client.jsrt)
+
 proc show(console: Console) {.jsfunc.} =
   if console.pager.container != console.container:
     console.prev = console.pager.container

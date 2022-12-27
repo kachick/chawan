@@ -298,6 +298,7 @@ proc JS_FreeRuntime*(rt: JSRuntime)
 proc JS_GetRuntime*(ctx: JSContext): JSRuntime
 
 proc JS_ComputeMemoryUsage*(rt: JSRuntime, s: ptr JSMemoryUsage)
+proc JS_RunGC*(rt: JSRuntime)
 
 proc JS_NewContext*(rt: JSRuntime): JSContext
 proc JS_NewContextRaw*(rt: JSRuntime): JSContext

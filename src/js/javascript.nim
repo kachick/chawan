@@ -14,12 +14,12 @@
 #   following pragmas. As mentioned before, overloading doesn't work but OR
 #   generics do. Bare objects (returned by value) can't be passed either, for
 #   now. Otherwise, most types should work.
-#{.jsfget.} and {.jsfset.} for getters/setters. Note the `f'; bare jsget/jsset
+# {.jsfget.} and {.jsfset.} for getters/setters. Note the `f'; bare jsget/jsset
 #   can only be used on object fields. (I initially wanted to use the same
 #   keyword, unfortunately that didn't work out.)
-#{.jsgetprop.} for property getters. Called when GetOwnProperty would return
+# {.jsgetprop.} for property getters. Called when GetOwnProperty would return
 #   nothing. The key should probably be either a string or an integer.
-#{.jshasprop.} for overriding has_property. Must return a boolean.
+# {.jshasprop.} for overriding has_property. Must return a boolean.
 
 import macros
 import options
@@ -71,6 +71,7 @@ type
   JSRuntimeOpaque* = ref object
     plist: Table[pointer, pointer]
     flist: seq[seq[JSCFunctionListEntry]]
+    fins: Table[JSClassID, proc(val: JSValue)]
 
   JSFunctionList* = openArray[JSCFunctionListEntry]
 
@@ -250,7 +251,10 @@ proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
 proc setProperty*(ctx: JSContext, val: JSValue, name: string, fun: JSCFunction, argc: int = 0) =
   ctx.setProperty(val, name, ctx.newJSCFunction(name, fun, argc))
 
-func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string, ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer, parent: JSClassID, asglobal: bool, nointerface: bool): JSClassID {.discardable.} =
+func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
+                 ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer,
+                 parent: JSClassID, asglobal: bool, nointerface: bool,
+                 finalizer: proc(val: JSValue)): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
@@ -259,6 +263,8 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string, ctor: JSC
     raise newException(Defect, "Failed to allocate JS class: " & $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
+  if finalizer != nil:
+    rtOpaque.fins[result] = finalizer
   var proto: JSValue
   if parent != 0:
     let parentProto = JS_GetClassProto(ctx, parent)
@@ -795,6 +801,7 @@ type
     SETTER = "js_set"
     PROPERTY_GET = "js_prop_get"
     PROPERTY_HAS = "js_prop_has"
+    FINALIZER = "js_fin"
 
 var BoundFunctions {.compileTime.}: Table[string, seq[BoundFunction]]
 
@@ -1426,6 +1433,11 @@ macro jsfunc*(fun: typed) =
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
 
+macro jsfin*(fun: typed) =
+  var gen = setupGenerator(fun, FINALIZER, thisname = some("fin"))
+  registerFunction(gen.thisType, FINALIZER, gen.funcName, ident(gen.newName))
+  fun
+
 # Having the same names for these and the macros leads to weird bugs, so the
 # macros get an additional f.
 template jsget*() {.pragma.}
@@ -1434,8 +1446,8 @@ template jsset*() {.pragma.}
 proc nim_finalize_for_js[T](obj: T) =
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
-    if tables.hasKey(rtOpaque.plist, cast[pointer](obj)):
-      let p = rtOpaque.plist[cast[pointer](obj)]
+    rtOpaque.plist.withValue(cast[pointer](obj), v):
+      let p = v[]
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
       let header = cast[ptr JSRefCountHeader](p)
       if header.ref_count > 1:
@@ -1445,8 +1457,8 @@ proc nim_finalize_for_js[T](obj: T) =
         # * set the new value as the new opaque
         # * add the new value to the pointer table
         # Now it's on JS to decrement the new object's refcount.
-        # (Yeah, kind of an ugly hack. But it starts to look better when
-        # the alternative is writing a cycle collector...)
+        # (Yeah, it's an ugly hack, but I couldn't come up with anything
+        # better.)
         let newop = new(T)
         newop[] = obj[]
         GC_ref(newop)
@@ -1455,7 +1467,10 @@ proc nim_finalize_for_js[T](obj: T) =
         rtOpaque.plist[np] = p
       else:
         # This was the last reference to the JS value.
-        # Clear val's opaque so our refcount isn't decreased again.
+        # First, trigger the custom finalizer (if there is one.)
+        rtOpaque.fins.withValue(val.getClassID(), fin):
+          fin[](val)
+        # Then clear val's opaque, so that our refcount isn't decreased again.
         JS_SetOpaque(val, nil)
       tables.del(rtOpaque.plist, cast[pointer](obj))
       # Decrement jsvalue's refcount. This is needed in both cases to
@@ -1512,6 +1527,9 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
   # constructor
   var ctorFun: NimNode
   var ctorImpl: NimNode
+  # custom finalizer
+  var finName = newNilLit()
+  var finFun = newNilLit()
   # generic property getter (e.g. attribute["id"])
   var propGetFun = newNilLit()
   var propHasFun = newNilLit()
@@ -1570,6 +1588,10 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
         propGetFun = f1
       of PROPERTY_HAS:
         propHasFun = f1
+      of FINALIZER:
+        f0 = fun.name
+        finFun = ident(f0)
+        finName = f1
 
   for k, v in getters:
     if k in setters:
@@ -1585,13 +1607,26 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
     sctr = ctorFun
     result.add(ctorImpl)
 
+  let val = ident("val")
+  var finStmt = newStmtList()
+  if finFun.kind != nnkNilLit:
+    finStmt = quote do:
+      let opaque = JS_GetOpaque(`val`, `val`.getClassID())
+      if opaque != nil:
+        `finFun`(cast[`t`](opaque))
+    result.add(quote do:
+      proc `finName`(`val`: JSValue) =
+        `finStmt`
+    )
+
   result.add(quote do:
-    proc `sfin`(rt: JSRuntime, val: JSValue) {.cdecl.} =
-      let opaque = JS_GetOpaque(val, val.getClassID())
+    proc `sfin`(rt: JSRuntime, `val`: JSValue) {.cdecl.} =
+      let opaque = JS_GetOpaque(`val`, `val`.getClassID())
       if opaque != nil:
         # This means the nim value is no longer referenced by anything but this
         # JSValue. Meaning we can just unref and remove it from the pointer
         # table.
+        `finStmt` # run custom finalizer, if any
         GC_unref(cast[`t`](opaque))
         let rtOpaque = rt.getOpaque()
         rtOpaque.plist.del(opaque)
@@ -1602,11 +1637,11 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
   let classDef = ident("classDef")
   if propGetFun.kind != nnkNilLit or propHasFun.kind != nnkNilLit:
     endstmts.add(quote do:
-      # YES! IT COMPILES! AHAHAHAHAHAHA
+      # No clue how to do this in pure nim.
       {.emit: ["""
 static JSClassExoticMethods exotic = {
-        .get_own_property = """, `propGetFun`, """,
-        .has_property = """, `propHasFun`, """
+	.get_own_property = """, `propGetFun`, """,
+	.has_property = """, `propHasFun`, """
 };
 static JSClassDef """, `cdname`, """ = {
 	""", "\"", `name`, "\"", """,
@@ -1634,7 +1669,7 @@ static JSClassDef """, `cdname`, """ = {
     # any associated JS object from all relevant runtimes.
     var x: `t`
     new(x, nim_finalize_for_js)
-    `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x), `parent`, `asglobal`, `nointerface`)
+    `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x), `parent`, `asglobal`, `nointerface`, `finName`)
   )
   result.add(newBlockStmt(endstmts))
 

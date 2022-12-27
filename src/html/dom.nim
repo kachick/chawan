@@ -108,17 +108,15 @@ type
 
   EventTarget* = ref object of RootObj
 
-  #TODO this has caching, but invalidation is pretty expensive... not sure if
-  # it's worth the trouble at all...
   Collection = ref CollectionObj
   CollectionObj = object of RootObj
     islive: bool
-    invalid: bool
     childonly: bool
     root: Node
     match: proc(node: Node): bool {.noSideEffect.}
     snapshot: seq[Node]
     livelen: int
+    id: int
 
   NodeList = ref object of Collection
 
@@ -138,10 +136,12 @@ type
     parentElement* {.jsget.}: Element
     root: Node
     document*: Document
-    # Live collection cache: if parentHasCollections is true, recursively
-    # invalidate all of them on insert.
-    parentHasCollections: bool
-    liveCollections: seq[Collection]
+    # Live collection cache: ids of live collections are saved in all
+    # nodes they refer to. These are removed when the collection is destroyed,
+    # and invalidated when the owner node's children or attributes change.
+    # (We can't just store pointers, because those may be invalidated by
+    # the JavaScript finalizers.)
+    liveCollections: HashSet[int]
 
   Attr* = ref object of Node
     namespaceURI* {.jsget.}: string
@@ -175,6 +175,9 @@ type
     contentType* {.jsget.}: string
 
     renderBlockingElements: seq[Element]
+
+    invalidCollections: HashSet[int] # collection ids
+    colln: int
 
   CharacterData* = ref object of Node
     data* {.jsget.}: string
@@ -299,15 +302,6 @@ type
   HTMLTextAreaElement* = ref object of FormAssociatedElement
     form* {.jsget.}: HTMLFormElement
     value* {.jsget.}: string
-
-proc `=destroy`(collection: var CollectionObj) =
-  var i = -1
-  for j in 0 ..< collection.root.liveCollections.len:
-    if cast[pointer](collection.root.liveCollections[j]) == addr collection:
-      i = j
-      break
-  assert i != -1
-  collection.root.liveCollections.del(i)
 
 # Forward declarations
 func attrb*(element: Element, s: string): bool
@@ -457,12 +451,32 @@ proc populateCollection(collection: Collection) =
     for desc in collection.root.descendants:
       if collection.match == nil or collection.match(desc):
         collection.snapshot.add(desc)
+  if collection.islive:
+    for child in collection.snapshot:
+      child.liveCollections.incl(collection.id)
 
 proc refreshCollection(collection: Collection) =
-  if collection.invalid:
+  let document = collection.root.document
+  if collection.id in document.invalidCollections:
+    for child in collection.snapshot:
+      assert collection.id in child.liveCollections
+      child.liveCollections.excl(collection.id)
     collection.snapshot.setLen(0)
     collection.populateCollection()
-    collection.invalid = false
+    document.invalidCollections.excl(collection.id)
+
+proc finalize0(collection: Collection) =
+  if collection.islive:
+    for child in collection.snapshot:
+      assert collection.id in child.liveCollections
+      child.liveCollections.excl(collection.id)
+    collection.root.document.invalidCollections.excl(collection.id)
+
+proc finalize(collection: HTMLCollection) {.jsfin.} =
+  collection.finalize0()
+
+proc finalize(collection: NodeList) {.jsfin.} =
+  collection.finalize0()
 
 func ownerDocument(node: Node): Document {.jsfget.} =
   if node.nodeType == DOCUMENT_NODE:
@@ -480,13 +494,11 @@ func newCollection[T: Collection](root: Node, match: proc(node: Node): bool {.no
   result = T(
     islive: islive,
     match: match,
-    root: root
+    root: root,
+    id: root.document.colln
   )
+  inc root.document.colln
   result.populateCollection()
-  if islive:
-    root.liveCollections.add(result)
-    for desc in root.descendants:
-      desc.parentHasCollections = true
 
 func isElement(node: Node): bool =
   return node.nodeType == ELEMENT_NODE
@@ -608,7 +620,7 @@ func getter(nodeList: NodeList, i: int): Option[Node] {.jsgetprop.} =
   return option(nodeList.item(i))
 
 # HTMLCollection
-func length(collection: HTMLCollection): int {.jsfget.} =
+proc length(collection: HTMLCollection): int {.jsfget.} =
   return collection.len
 
 func hasprop(collection: HTMLCollection, i: int): bool {.jshasprop.} =
@@ -1335,13 +1347,9 @@ func value*(option: HTMLOptionElement): string {.jsfget.} =
     return option.attr("value")
   return option.childTextContent.stripAndCollapse()
 
-proc invalidateCollections(node: Node): bool {.discardable.} =
-  for collection in node.liveCollections:
-    collection.invalid = true
-  if node.parentHasCollections:
-    if not node.parentNode.invalidateCollections():
-      node.parentHasCollections = false
-  return node.liveCollections.len != 0 or node.parentHasCollections
+proc invalidateCollections(node: Node) =
+  for id in node.liveCollections:
+    node.document.invalidCollections.incl(id)
 
 proc delAttr(element: Element, i: int) =
   if i != -1:
@@ -1532,7 +1540,7 @@ proc id(element: Element, id: string) {.jsfset.} =
   element.id = id
   element.attr("id", id)
 
-# Pass an index to avoid searching for it.
+# Pass an index to avoid searching for the node in parent's child list.
 proc remove*(node: Node, index: int, suppressObservers: bool) =
   let parent = node.parentNode
   assert parent != nil
@@ -1546,8 +1554,7 @@ proc remove*(node: Node, index: int, suppressObservers: bool) =
     oldPreviousSibling.nextSibling = oldNextSibling
   if oldNextSibling != nil:
     oldNextSibling.previousSibling = oldPreviousSibling
-  discard node.parentNode.invalidateCollections()
-  node.parentHasCollections = false
+  node.parentNode.invalidateCollections()
   node.parentNode = nil
   node.parentElement = nil
   node.root = nil
@@ -1560,9 +1567,18 @@ proc remove*(node: Node, suppressObservers = false) =
   node.remove(index, suppressObservers)
 
 proc adopt(document: Document, node: Node) =
+  let oldDocument = node.document
   if node.parentNode != nil:
     remove(node)
-  #TODO shadow root
+  if oldDocument != document:
+    #TODO shadow root
+    for desc in node.descendants:
+      desc.document = document
+      if desc.nodeType == ELEMENT_NODE:
+        for attr in Element(desc).attributes.attrlist:
+          attr.document = document
+    #TODO custom elements
+    #..adopting steps
 
 proc applyChildInsert(parent, child: Node, index: int) =
   child.root = parent.rootNode
@@ -1575,8 +1591,6 @@ proc applyChildInsert(parent, child: Node, index: int) =
   if index + 1 < parent.childList.len:
     child.nextSibling = parent.childList[index + 1]
     child.nextSibling.previousSibling = child
-  child.invalidateCollections()
-  child.parentHasCollections = parent.liveCollections.len > 0 or parent.parentHasCollections
   child.invalidateCollections()
 
 proc resetElement*(element: Element) = 
