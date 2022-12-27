@@ -93,6 +93,7 @@ type
     height*: int
     lines*: seq[LineBox]
     currentLine*: LineBox
+    charwidth*: int
 
     whitespacenum*: int
     minwidth*: int

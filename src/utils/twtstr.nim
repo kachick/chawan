@@ -993,10 +993,6 @@ func width*(r: Rune): int =
     return int(width_table[int(r)])
 {.pop.}
 
-func width*(s: string): int =
-  for r in s.runes():
-    result += width(r)
-
 func width*(s: string, len: int): int =
   var i = 0
   var m = len
@@ -1022,6 +1018,22 @@ func width*(s: seq[Rune], min: int): int =
   while i < s.len:
     result += width(s[i])
     inc i
+
+# Width, but also works with tabs.
+# Needs the column width of the text so far.
+func twidth*(r: Rune, w: int): int =
+  if r != Rune('\t'):
+    return r.width()
+  return ((w div 8) + 1) * 8 - w
+
+func width*(s: string): int =
+  for r in s.runes():
+    result += twidth(r, result)
+
+func twidth*(s: string, w: int): int =
+  result = w
+  for r in s.runes():
+    result += twidth(r, result)
 
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())

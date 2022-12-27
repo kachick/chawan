@@ -201,7 +201,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     # Skip cells till fromx.
     while w < container.fromx and i < line.str.len:
       fastRuneAt(line.str, i, r)
-      w += r.width()
+      w += r.twidth(w)
     let dls = by * pager.display.width # starting position of row in display
     # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
     # we encountered a double-width character.)
@@ -218,7 +218,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     while i < line.str.len:
       let pw = w
       fastRuneAt(line.str, i, r)
-      w += r.width()
+      w += r.twidth(w)
       if w > container.fromx + pager.display.width:
         break # die on exceeding the width limit
       if nf.pos != -1 and nf.pos <= pw:
@@ -228,7 +228,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
       lan &= r
       if cf.pos != -1:
         pager.display[dls + k].format = cf.format
-      let tk = k + r.width()
+      let tk = k + r.twidth(k)
       while k < tk and k < pager.display.width - 1:
         inc k
     # Finally, override cell formatting for highlighted cells.
@@ -258,7 +258,7 @@ proc writeStatusMessage(pager: Pager, str: string, format: Format = newFormat())
     else:
       pager.statusgrid[i].str &= r
     pager.statusgrid[i].format = format
-    i += r.width()
+    i += r.twidth(i)
 
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container

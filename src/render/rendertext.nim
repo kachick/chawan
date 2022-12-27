@@ -6,9 +6,7 @@ import data/charset
 import encoding/decoderstream
 import utils/twtstr
 
-const tabwidth = 8
 type StreamRenderer* = object
-  w: int
   ansiparser: AnsiCodeParser
   format: Format
   af: bool
@@ -35,7 +33,6 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       # avoid newline at end of stream
       grid.addLine()
       renderer.newline = false
-      renderer.w = 0
     let r = buf[i]
     if r.isAscii():
       let c = cast[char](r)
@@ -44,27 +41,16 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
         if not cancel:
           if renderer.ansiparser.state == PARSE_DONE:
             renderer.af = true
-          continue
       case c
       of '\n':
         add_format
         renderer.newline = true
-        continue
-      of '\r': continue
-      of '\t':
-        add_format
-        let w = ((renderer.w div tabwidth) + 1) * tabwidth
-        while renderer.w < w:
-          grid[^1].str &= ' '
-          inc renderer.w
-        continue
+      of '\r': discard
       of '\e':
         renderer.ansiparser.reset()
-        continue
       else:
         add_format
         grid[^1].str &= c
     else:
       add_format
       grid[^1].str &= r
-    renderer.w += r.width()

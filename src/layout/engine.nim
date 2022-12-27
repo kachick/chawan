@@ -212,6 +212,7 @@ proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues) =
 proc finishLine(ictx: InlineContext, computed: CSSComputedValues, maxwidth: int, force = false) =
   if ictx.currentLine.atoms.len != 0 or force:
     ictx.whitespacenum = 0
+    ictx.charwidth = 0
     ictx.flushWhitespace(computed)
     ictx.verticalAlignLine()
 
@@ -255,6 +256,7 @@ proc addAtom(ictx: InlineContext, atom: InlineAtom, maxwidth: int, pcomputed: CS
     if atom of InlineWord:
       ictx.format = InlineWord(atom).format
     else:
+      ictx.charwidth = 0
       ictx.format = nil
     ictx.currentLine.atoms.add(atom)
 
@@ -315,13 +317,14 @@ proc checkWrap(state: var InlineState, r: Rune) =
 proc processWhitespace(state: var InlineState, c: char) =
   state.addWord()
   case state.computed{"white-space"}
-  of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
+  of WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE_LINE:
     state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
-  of WHITESPACE_PRE_LINE, WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
+  of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     if c == '\n':
       state.ictx.flushLine(state.computed, state.maxwidth)
     elif c == '\t':
-      state.ictx.whitespacenum = (state.ictx.whitespacenum div 8 + 1) * 8
+      state.ictx.charwidth = ((state.ictx.charwidth div 8) + 1) * 8
+      state.word.str &= c
     else:
       inc state.ictx.whitespacenum
 
@@ -348,7 +351,9 @@ proc renderText*(ictx: InlineContext, str: string, maxwidth: int, computed: CSSC
         state.hasshy = true
       else:
         state.word.str &= r
-        state.word.width += r.width() * state.ictx.cellwidth
+        let w = r.width()
+        state.word.width += w * state.ictx.cellwidth
+        state.ictx.charwidth += w
         if r == Rune('-'): # ascii dash
           state.wrappos = state.word.str.len
           state.hasshy = false

@@ -320,14 +320,20 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
   term.canvas = newFixedGrid(attrs.width, attrs.height)
   term.cleared = false
 
-proc processOutputString(term: Terminal, str: string): string =
+proc processOutputString(term: Terminal, str: string, w: var int): string =
   if str.validateUtf8() != -1:
     return "?"
   for r in str.runes():
-    if r.isControlChar():
+    let tw = r.twidth(w)
+    if r == Rune('\t'):
+      # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
+      for i in 0 ..< tw:
+        result &= ' '
+    elif r.isControlChar():
       result &= "^" & getControlLetter(char(r))
-    elif r.width() != 0:
+    elif tw != 0:
       result &= r
+    w += tw
 
 proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
@@ -342,8 +348,7 @@ proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
         inc w
       let cell = grid[y * grid.width + x]
       result &= term.processFormat(format, cell.format)
-      result &= term.processOutputString(cell.str)
-      w += cell.width()
+      result &= term.processOutputString(cell.str, w)
     if y != grid.height - 1:
       result &= "\r\n"
 
@@ -371,8 +376,7 @@ proc generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): strin
       line = ""
     lr = lr or (grid[i] != prev[i])
     line &= term.processFormat(format, cell.format)
-    line &= term.processOutputString(cell.str)
-    w += cell.width()
+    line &= term.processOutputString(cell.str, w)
     inc x
   if lr:
     result &= term.cursorGoto(0, grid.height - 1)

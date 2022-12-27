@@ -40,7 +40,7 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
   while cx < x and i < lines[y].str.len:
     let pi = i
     fastRuneAt(lines[y].str, i, r)
-    let w = r.width()
+    let w = r.twidth(cx)
     # we must ensure x is max(cx, x), otherwise our assumption of cx <= x
     # breaks down
     if cx + w > x:
@@ -55,13 +55,13 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
     lines[y].str &= ' '.repeat(padwidth)
 
   lines[y].str &= linestr
-  let linestrwidth = linestr.width()
+  let linestrwidth = linestr.twidth(x) - x
 
   i = 0
   var nx = x # last x of new string
   while nx < x + linestrwidth and i < ostr.len:
     fastRuneAt(ostr, i, r)
-    nx += r.width()
+    nx += r.twidth(nx)
 
   if i < ostr.len:
     lines[y].str &= ostr.substr(i)
@@ -153,7 +153,7 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, window: Wi
   var i = 0
   while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
-    x += r.width()
+    x += r.twidth(x)
   if x < 0: return # highest x is outside the canvas, no need to draw
   let linestr = word.str.substr(i)
 

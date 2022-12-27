@@ -138,12 +138,6 @@ func fromy*(container: Container): int {.inline.} = container.pos.fromy
 func xend(container: Container): int {.inline.} = container.pos.xend
 func lastVisibleLine(container: Container): int = min(container.fromy + container.height, container.numLines) - 1
 
-func acursorx*(container: Container): int =
-  max(0, container.cursorx - container.fromx)
-
-func acursory*(container: Container): int =
-  container.cursory - container.fromy
-
 func currentLine(container: Container): string =
   return container.getLine(container.cursory).str
 
@@ -154,41 +148,47 @@ func cursorBytes(container: Container, y: int, cc = container.cursorx): int =
   while i < line.len and w < cc:
     var r: Rune
     fastRuneAt(line, i, r)
-    w += r.width()
+    w += r.twidth(w)
   return i
 
 func currentCursorBytes(container: Container, cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
 
-func prevWidth(container: Container): int =
+# Returns the X position of the first cell occupied by the character the cursor
+# currently points to.
+func cursorFirstX(container: Container): int =
   if container.numLines == 0: return 0
   let line = container.currentLine
-  if line.len == 0: return 0
   var w = 0
   var i = 0
-  let cc = container.pos.fromx + container.pos.cursorx
-  var pr: Rune
   var r: Rune
-  fastRuneAt(line, i, r)
-  while i < line.len and w < cc:
-    pr = r
-    fastRuneAt(line, i, r)
-    w += r.width()
-  return pr.width()
-
-func currentWidth(container: Container): int =
-  if container.numLines == 0: return 0
-  let line = container.currentLine
-  if line.len == 0: return 0
-  var w = 0
-  var i = 0
   let cc = container.cursorx
-  var r: Rune
-  fastRuneAt(line, i, r)
-  while i < line.len and w < cc:
+  while i < line.len:
     fastRuneAt(line, i, r)
-    w += r.width()
-  return r.width()
+    let tw = r.twidth(w)
+    if w + tw > cc:
+      return w
+    w += tw
+
+# Returns the X position of the last cell occupied by the character the cursor
+# currently points to.
+func cursorLastX(container: Container): int =
+  if container.numLines == 0: return 0
+  let line = container.currentLine
+  var w = 0
+  var i = 0
+  var r: Rune
+  let cc = container.cursorx
+  while i < line.len and w <= cc:
+    fastRuneAt(line, i, r)
+    w += r.twidth(w)
+  return max(w - 1, 0)
+
+func acursorx*(container: Container): int =
+  max(0, container.cursorLastX() - container.fromx)
+
+func acursory*(container: Container): int =
+  container.cursory - container.fromy
 
 func maxScreenWidth(container: Container): int =
   for line in container.ilines(container.fromy..container.lastVisibleLine):
@@ -387,13 +387,10 @@ proc cursorUp(container: Container) {.jsfunc.} =
   container.setCursorY(container.cursory - 1)
 
 proc cursorLeft(container: Container) {.jsfunc.} =
-  var w = container.prevWidth()
-  if w == 0:
-    w = 1
-  container.setCursorX(container.cursorx - w)
+  container.setCursorX(container.cursorFirstX() - 1)
 
 proc cursorRight(container: Container) {.jsfunc.} =
-  container.setCursorX(container.cursorx + container.currentWidth())
+  container.setCursorX(container.cursorLastX() + 1)
 
 proc cursorLineBegin(container: Container) {.jsfunc.} =
   container.setCursorX(0)
@@ -412,7 +409,7 @@ proc cursorNextWord(container: Container) {.jsfunc.} =
     if r.breaksWord():
       b = pb
       break
-    x += r.width()
+    x += r.twidth(x)
 
   while b < container.currentLine.len:
     let pb = b
@@ -420,7 +417,7 @@ proc cursorNextWord(container: Container) {.jsfunc.} =
     if not r.breaksWord():
       b = pb
       break
-    x += r.width()
+    x += r.twidth(x)
 
   if b < container.currentLine.len:
     container.setCursorX(x)
@@ -442,14 +439,14 @@ proc cursorPrevWord(container: Container) {.jsfunc.} =
       if r.breaksWord():
         break
       b -= o
-      x -= r.width()
+      x -= r.twidth(x)
 
     while b >= 0:
       let (r, o) = lastRune(container.currentLine, b)
       if not r.breaksWord():
         break
       b -= o
-      x -= r.width()
+      x -= r.twidth(x)
   else:
     b = -1
 
@@ -611,7 +608,7 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
         container.setCursorXY(res.x, res.y)
         if container.hlon:
           container.clearSearchHighlights()
-          let ex = res.x + res.str.width() - 1
+          let ex = res.x + res.str.twidth(res.x) - 1
           let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
           container.highlights.add(hl)
           container.triggerEvent(UPDATE)
@@ -630,7 +627,7 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.}
         container.setCursorXY(res.x, res.y)
         if container.hlon:
           container.clearSearchHighlights()
-          let ex = res.x + res.str.width() - 1
+          let ex = res.x + res.str.twidth(res.x) - 1
           let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
           container.highlights.add(hl)
           container.hlon = false)
