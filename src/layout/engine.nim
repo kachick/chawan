@@ -198,23 +198,31 @@ proc verticalAlignLine(ictx: InlineContext) =
   line.height += margin_top
   line.height += margin_bottom
 
-proc addSpacing(line: LineBox, width, height: int, format: ComputedFormat) {.inline.} =
+proc addSpacing(line: LineBox, width, height: int, format: ComputedFormat, hang = false) =
   let spacing = InlineSpacing(width: width, height: height, baseline: height, format: format)
   spacing.offset.x = line.width
-  line.width += spacing.width
+  if not hang:
+    # In some cases, whitespace may "hang" at the end of the line. This means
+    # it is written, but is not actually counted in the box's width.
+    line.width += spacing.width
   line.atoms.add(spacing)
 
-proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues) =
+proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues, hang = false) =
   let shift = ictx.computeShift(computed)
   ictx.whitespacenum = 0
   if shift > 0:
-    ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format)
+    ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format, hang)
 
 proc finishLine(ictx: InlineContext, computed: CSSComputedValues, force = false) =
   if ictx.currentLine.atoms.len != 0 or force:
-    ictx.whitespacenum = 0
     ictx.charwidth = 0
-    ictx.flushWhitespace(computed)
+    let whitespace = computed{"white-space"}
+    if whitespace == WHITESPACE_PRE:
+      ictx.flushWhitespace(computed)
+    elif whitespace == WHITESPACE_PRE_WRAP:
+      ictx.flushWhitespace(computed, hang = true)
+    else:
+      ictx.whitespacenum = 0
     ictx.verticalAlignLine()
 
     let line = ictx.currentLine
@@ -704,7 +712,7 @@ proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
         ictx.buildInline(child)
       of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
         let child = BlockBoxBuilder(child)
-        let iblock = child.buildInlineBlock(ictx, parent.contentWidth, parent.contentHeight)
+        let iblock = child.buildInlineBlock(ictx, ictx.contentWidth, ictx.contentHeight)
         ictx.addAtom(iblock, parent.computed)
         ictx.whitespacenum = 0
       else:
@@ -712,12 +720,17 @@ proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
     ictx.finish(parent.computed)
   return ictx
 
+proc buildMarker(builder: MarkerBoxBuilder, parent: BlockBox): InlineContext =
+  let ictx = parent.newInlineContext()
+  ictx.shrink = true
+  ictx.buildInline(builder)
+  ictx.finish(builder.computed)
+  return ictx
+
 proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
   result = parent.newListItem(builder)
-
   if builder.marker != nil:
-    result.marker = result.buildInlines(@[BoxBuilder(builder.marker)])
-
+    result.marker = buildMarker(builder.marker, result)
   result.buildLayout(builder.content)
 
 proc positionFixed(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
@@ -1197,6 +1210,8 @@ proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxB
   result.inlinelayout = true
   result.computed = computed.copyProperties()
   result.computed{"display"} = DISPLAY_INLINE
+  # Use pre, so the space at the end of the default markers isn't ignored.
+  result.computed{"white-space"} = WHITESPACE_PRE
   result.text.add(computed{"list-style-type"}.listMarker(listItemCounter))
 
 proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItemBoxBuilder =
