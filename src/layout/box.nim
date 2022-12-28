@@ -92,11 +92,15 @@ type
     height*: int
     lines*: seq[LineBox]
     currentLine*: LineBox
-    charwidth*: int
+    width*: int
+    contentWidth*: int
+    contentHeight*: Option[int]
+    maxContentWidth*: int
 
+    charwidth*: int
     whitespacenum*: int
+    # this is actually xminwidth.
     minwidth*: int
-    maxwidth*: int
     viewport*: Viewport
     shrink*: bool
     format*: ComputedFormat
@@ -126,6 +130,14 @@ type
     contentWidth*: int
     contentHeight*: Option[int]
     shrink*: bool
+    # The sole purpose of maxContentWidth is to stretch children of table
+    # cells to infinity in its maximum width calculation pass.
+    # For blocks with a specified width, maxContentWidth does nothing.
+    # This should never be used for anything other than setting width to
+    # min(maxContentWidth, width)! Failure to do so will almost certainly
+    # result in overflow errors (because maxContentWidth may be set to
+    # high(int).)
+    maxContentWidth*: int
 
     # very bad name. basically the minimum content width after the contents
     # have been positioned (usually the width of the shortest word.) used
@@ -135,11 +147,15 @@ type
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
 
-  CellWrapper* = object
+  CellWrapper* = ref object
     builder*: TableCellBoxBuilder
     box*: BlockBox
+    rowi*: int
+    coli*: int
     colspan*: int
+    rowspan*: int
     reflow*: bool
+    grown*: int # number of remaining rows
 
   RowContext* = object
     cells*: seq[CellWrapper]
@@ -159,6 +175,7 @@ type
     caption*: TableCaptionBoxBuilder
     rows*: seq[RowContext]
     cols*: seq[ColumnContext]
+    growing*: seq[CellWrapper]
     maxwidth*: int
     blockspacing*: int
     inlinespacing*: int

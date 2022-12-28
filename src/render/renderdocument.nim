@@ -316,7 +316,7 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
     if ctx of ListItemBox:
       let ctx = ListItemBox(ctx)
       if ctx.marker != nil:
-        grid.renderInlineContext(ctx.marker, x - ctx.marker.maxwidth, y, window)
+        grid.renderInlineContext(ctx.marker, x - ctx.marker.width, y, window)
 
     if ctx.inline != nil:
       assert ctx.nested.len == 0
