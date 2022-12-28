@@ -169,8 +169,11 @@ func getSpecificity*(sels: ComplexSelector): int =
     result += getSpecificity(sel)
 
 func pseudo*(sels: ComplexSelector): PseudoElem =
-  if sels.len > 0 and sels[^1].t == PSELEM_SELECTOR:
-    return sels[^1].elem
+  var sel = sels[^1]
+  while sel.t == COMBINATOR_SELECTOR:
+    sel = sel.csels[^1][^1]
+  if sel.t == PSELEM_SELECTOR:
+    return sel.elem
   return PSEUDO_NONE
 
 proc addSelector(state: var SelectorParser, sel: Selector) =
