@@ -1022,7 +1022,7 @@ func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]): seq[(
       cvals.add(d.value[i])
     inc i
   case cvals.len
-  of 1:
+  of 1: # top, bottom, left, right
     try:
       for ptype in props:
         let vtype = valueType(ptype)
@@ -1030,28 +1030,33 @@ func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]): seq[(
         val.getValueFromDecl(d, vtype, ptype)
         result.add((val, cssGlobal(d)))
     except CSSValueError: discard
-  of 2:
+  of 2: # top, bottom | left, right
     try:
       for i in 0 ..< props.len:
         let ptype = props[i]
         let vtype = valueType(ptype)
         let val = CSSComputedValue(t: ptype, v: vtype)
-        val.length = cssLength(cvals[i div 2])
+        val.length = cssLength(cvals[i mod 2])
         result.add((val, cssGlobal(d)))
     except CSSValueError:
       discard
-  of 3:
+  of 3: # top | left, right | bottom
     try:
       for i in 0 ..< props.len:
         let ptype = props[i]
         let vtype = valueType(ptype)
         let val = CSSComputedValue(t: ptype, v: vtype)
-        let j = if i == 0: 0 elif i == 3: 2 else: 1
+        let j = if i == 0:
+          0 # top
+        elif i == 3:
+          2 # bottom
+        else:
+          1 # left, right
         val.length = cssLength(cvals[j])
         result.add((val, cssGlobal(d)))
     except CSSValueError:
       discard
-  of 4:
+  of 4: # top | right | bottom | left
     try:
       for i in 0 ..< props.len:
         let ptype = props[i]
@@ -1079,14 +1084,14 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
         result.add((val, global))
   of SHORTHAND_MARGIN:
     result.add(lengthShorthand(d, [PROPERTY_MARGIN_TOP,
+                                   PROPERTY_MARGIN_RIGHT,
                                    PROPERTY_MARGIN_BOTTOM,
-                                   PROPERTY_MARGIN_LEFT,
-                                   PROPERTY_MARGIN_RIGHT]))
+                                   PROPERTY_MARGIN_LEFT]))
   of SHORTHAND_PADDING:
     result.add(lengthShorthand(d, [PROPERTY_PADDING_TOP,
+                                   PROPERTY_PADDING_RIGHT,
                                    PROPERTY_PADDING_BOTTOM,
-                                   PROPERTY_PADDING_LEFT,
-                                   PROPERTY_PADDING_RIGHT]))
+                                   PROPERTY_PADDING_LEFT]))
   of SHORTHAND_BACKGROUND:
     let global = cssGlobal(d)
     let bgcolorptype = PROPERTY_BACKGROUND_COLOR
