@@ -36,10 +36,8 @@ limitations:
 
 * Chawan uses uses its own browser engine, implemented from scratch. Expect
   bugs and missing features.
-* Chawan has no incremental layouting capabilities yet, so the entire layout
-  needs to be recomputed every time an element is invalidated. This makes
-  Chawan unusable on large websites with a complicated layout. (I plan to fix
-  this as soon as possible.)
+* Chawan has no incremental layouting capabilities yet, so it may be
+  rather slow on large websites with complicated layout.
 * While buffers run as separate processes, Chawan does not have any actual
   sandboxing. I would strongly advise against enabling scripting until this
   problem is resolved.
