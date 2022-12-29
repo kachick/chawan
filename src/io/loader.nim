@@ -130,8 +130,9 @@ proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response
     else:
       result.contenttype = guessContentType($request.url.path)
     if "Location" in result.headers.table:
-      let location = result.headers.table["Location"][0]
-      result.redirect = parseUrl(location, some(request.url))
+      if result.status in [201, 301, 302, 303, 307, 308]:
+        let location = result.headers.table["Location"][0]
+        result.redirect = parseUrl(location, some(request.url))
     # Only a stream of the response body may arrive after this point.
     result.body = stream
     if not blocking:
