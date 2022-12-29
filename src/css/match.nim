@@ -98,6 +98,8 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     return not selem.selectorsMatch(sel.pseudo.fsels, felem)
   of PSEUDO_IS, PSEUDO_WHERE:
     return selem.selectorsMatch(sel.pseudo.fsels, felem)
+  of PSEUDO_LANG:
+    return sel.pseudo.s == "en" #TODO languages?
 
 func combinatorSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
   let selem = elem

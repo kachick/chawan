@@ -24,7 +24,7 @@ type
   PseudoClass* = enum
     PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
     PSEUDO_ROOT, PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD, PSEUDO_CHECKED,
-    PSEUDO_FOCUS, PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE
+    PSEUDO_FOCUS, PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE, PSEUDO_LANG
 
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
@@ -64,6 +64,8 @@ type
       ofsels*: Option[SelectorList]
     of PSEUDO_IS, PSEUDO_WHERE, PSEUDO_NOT:
       fsels*: SelectorList
+    of PSEUDO_LANG:
+      s*: string
     else: discard
 
   # Kind of an oversimplification, but the distinction between complex and
@@ -396,6 +398,17 @@ proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) 
     return
   of "nth-last-child":
     state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
+    return
+  of "lang":
+    if cssfunction.value.len == 0: return
+    var i = 0
+    template tok: CSSComponentValue = cssfunction.value[i]
+    while i < cssfunction.value.len:
+      if tok != CSS_WHITESPACE_TOKEN: break
+      inc i
+    if i >= cssfunction.value.len: return
+    if tok != CSS_IDENT_TOKEN: return
+    state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: PSEUDO_LANG, s: CSSToken(tok).value)))
     return
   else: return
   state.query = QUERY_TYPE

@@ -555,7 +555,7 @@ proc consumeQualifiedRule(state: var CSSParseState): Option[CSSQualifiedRule] =
   var r = CSSQualifiedRule()
   while state.has():
     let t = state.consume()
-    if t of CSSSimpleBlock:
+    if t of CSSSimpleBlock and CSSSimpleBlock(t).token == CSS_LBRACE_TOKEN:
       r.oblock = CSSSimpleBlock(t)
       return some(r)
     elif t == CSS_LBRACE_TOKEN:

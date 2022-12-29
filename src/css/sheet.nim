@@ -171,7 +171,7 @@ proc getDeclarations(rule: CSSQualifiedRule): seq[CSSDeclaration] {.inline.} =
 
 proc addRule(stylesheet: var CSSStylesheet, rule: CSSQualifiedRule) =
   let sels = parseSelectors(rule.prelude)
-  if sels.len > 1 or sels[^1].len > 0:
+  if sels.len > 0 and sels[^1].len > 0:
     let r = CSSRuleDef(sels: sels, decls: rule.getDeclarations())
     stylesheet.add(r)
 

@@ -232,10 +232,6 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
   var author: seq[CSSStylesheet]
 
-  if document.head != nil:
-    for sheet in document.head.sheets:
-      author.add(sheet.applyMediaQuery())
-
   var lenstack = newSeqOfCap[int](256)
   var styledStack: seq[CascadeLevel]
   styledStack.add((nil, document.html, PSEUDO_NONE, cachedTree))
@@ -368,13 +364,28 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
           styledStack.add((styledParent, nil, ps, nil))
 
       let elem = Element(styledChild.node)
-      # Add a nil before the last element (in-stack), so we can remove the
-      # stylesheets
-      let sheets = elem.sheets()
-      if sheets.len > 0:
-        for sheet in sheets:
-          author.add(sheet.applyMediaQuery())
-        lenstack.add(sheets.len)
+      if cachedChild != nil and result != styledChild:
+        styledChild.sheets = cachedChild.sheets
+      else:
+        if unlikely(result == styledChild):
+          #TODO this is ugly. we should cache head sheets separately.
+          let head = document.head
+          if head != nil:
+            if head.invalid or cachedChild == nil:
+              let sheets = head.sheets()
+              for sheet in sheets:
+                styledChild.sheets.add(sheet.applyMediaQuery())
+        else:
+          let sheets = elem.sheets()
+          if sheets.len > 0:
+            for sheet in sheets:
+              styledChild.sheets.add(sheet.applyMediaQuery())
+      if styledChild.sheets.len > 0:
+        for sheet in styledChild.sheets:
+          author.add(sheet)
+        lenstack.add(styledChild.sheets.len)
+        # Add a nil before the last element (in-stack), so we know when to
+        # remove inline author sheets.
         styledStack.add((nil, nil, PSEUDO_NONE, nil))
 
       stack_append styledChild, PSEUDO_AFTER

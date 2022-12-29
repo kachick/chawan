@@ -1,4 +1,5 @@
 import css/selectorparser
+import css/sheet
 import css/values
 import html/dom
 import html/tags
@@ -59,6 +60,7 @@ type
       computed*: CSSComputedValues
       children*: seq[StyledNode]
       depends*: DependencyInfo
+      sheets*: seq[CSSStylesheet]
     of STYLED_REPLACEMENT: # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
@@ -75,6 +77,20 @@ iterator elementList*(node: StyledNode): StyledNode {.inline.} =
 iterator elementList_rev*(node: StyledNode): StyledNode {.inline.} =
   for i in countdown(node.children.high, 0):
     yield node.children[i]
+
+func findElement*(root: StyledNode, elem: Element): StyledNode =
+  var stack: seq[StyledNode]
+  for child in root.elementList_rev:
+    if child.t == STYLED_ELEMENT and child.pseudo == PSEUDO_NONE:
+      stack.add(child)
+  let en = Node(elem)
+  while stack.len > 0:
+    let node = stack.pop()
+    if node.node == en:
+      return node
+    for child in node.elementList_rev:
+      if child.t == STYLED_ELEMENT and child.pseudo == PSEUDO_NONE:
+        stack.add(child)
 
 func isDomElement*(styledNode: StyledNode): bool {.inline.} =
   styledNode.t == STYLED_ELEMENT and styledNode.pseudo == PSEUDO_NONE
@@ -120,7 +136,7 @@ proc addDependency*(styledNode, dep: StyledNode, t: DependencyType) =
   if dep notin styledNode.depends.nodes[t]:
     styledNode.depends.nodes[t].add(dep)
 
-func newStyledElement*(parent: StyledNode, element: Element, computed: CSSComputedValues, reg: sink DependencyInfo): StyledNode =
+func newStyledElement*(parent: StyledNode, element: Element, computed: CSSComputedValues, reg: DependencyInfo): StyledNode =
   result = StyledNode(t: STYLED_ELEMENT, computed: computed, node: element, parent: parent)
   result.depends = reg
   result.parent = parent

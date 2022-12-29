@@ -15,7 +15,7 @@ export selectorparser.PseudoElem
 type
   CSSShorthandType = enum
     SHORTHAND_NONE, SHORTHAND_ALL, SHORTHAND_MARGIN, SHORTHAND_PADDING,
-    SHORTHAND_BACKGROUND
+    SHORTHAND_BACKGROUND, SHORTHAND_LIST_STYLE
 
   CSSUnit* = enum
     UNIT_CM, UNIT_MM, UNIT_IN, UNIT_PX, UNIT_PT, UNIT_PC,
@@ -209,7 +209,8 @@ const ShorthandNames = {
   "all": SHORTHAND_ALL,
   "margin": SHORTHAND_MARGIN,
   "padding": SHORTHAND_PADDING,
-  "background": SHORTHAND_BACKGROUND
+  "background": SHORTHAND_BACKGROUND,
+  "list-style": SHORTHAND_LIST_STYLE
 }.toTable()
 
 const PropertyNames = {
@@ -1108,11 +1109,28 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
           try:
             bgcolorval.color = cssColor(tok)
             result.add((bgcolorval, global))
-            break
           except CSSValueError:
             discard
     else:
       result.add((bgcolorval, global))
+  of SHORTHAND_LIST_STYLE:
+    let global = cssGlobal(d)
+    let positionptype = PROPERTY_LIST_STYLE_POSITION
+    let positionval = CSSComputedValue(t: positionptype, v: valueType(positionptype))
+    let typeptype = PROPERTY_LIST_STYLE_TYPE
+    let typeval = CSSComputedValue(t: typeptype, v: valueType(typeptype))
+    if global == VALUE_NOGLOBAL:
+      for tok in d.value:
+        try:
+          positionval.liststyleposition = cssListStylePosition(tok)
+          result.add((positionval, global))
+        except CSSValueError:
+          try:
+            typeval.liststyletype = cssListStyleType(tok)
+            result.add((typeval, global))
+          except CSSValueError:
+            #TODO list-style-image
+            discard
 
 func equals*(a, b: CSSComputedValue): bool =
   if a == b:
