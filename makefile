@@ -6,6 +6,8 @@ debug:
 	$(NIMC) $(FLAGS) -d:debug $(FILES)
 release:
 	$(NIMC) $(FLAGS) -d:release -d:strip -d:lto $(FILES)
+release0:
+	$(NIMC) $(FLAGS) -d:release $(FILES)
 profile:
 	$(NIMC) $(FLAGS) --profiler:on --stacktrace:on -d:profile $(FILES)
 install:
