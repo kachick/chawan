@@ -11,7 +11,12 @@ const Headers = {
 }.toTable()
 
 proc loadAbout*(request: Request, ostream: Stream) =
-  if request.url.pathname == "chawan":
+  if request.url.pathname == "blank":
+    ostream.swrite(0)
+    ostream.swrite(200) # ok
+    let headers = newHeaderList(Headers)
+    ostream.swrite(headers)
+  elif request.url.pathname == "chawan":
     ostream.swrite(0)
     ostream.swrite(200) # ok
     let headers = newHeaderList(Headers)
