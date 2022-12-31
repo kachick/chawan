@@ -331,7 +331,6 @@ proc JS_NewInt32*(ctx: JSContext, val: int32): JSValue
 proc JS_NewCatchOffset*(ctx: JSContext, val: int32): JSValue
 proc JS_NewInt64*(ctx: JSContext, val: int64): JSValue
 proc JS_NewUint32*(ctx: JSContext, val: uint32): JSValue
-proc JS_NewUint64*(ctx: JSContext, val: uint64): JSValue
 proc JS_NewBigInt64*(ctx: JSContext, val: int64): JSValue
 proc JS_NewBigUInt64*(ctx: JSContext, val: uint64): JSValue
 proc JS_NewFloat64*(ctx: JSContext, val: cdouble): JSValue

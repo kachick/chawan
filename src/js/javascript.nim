@@ -679,19 +679,16 @@ func toJSInt(ctx: JSContext, n: SomeInteger): JSValue =
       return JS_NewInt32(ctx, int32(n))
     else:
       return JS_NewInt64(ctx, n)
-  elif n is uint:
-    when sizeof(uint) <= sizeof(uint32):
-      return JS_NewUint32(ctx, n)
-    else:
-      return JS_NewUint64(ctx, n)
+  elif n is uint32:
+    return JS_NewUint32(ctx, n)
   elif n is int32:
     return JS_NewInt32(ctx, n)
   elif n is int64:
     return JS_NewInt64(ctx, n)
   elif n is uint32:
     return JS_NewUint32(ctx, n)
-  elif n is uint64:
-    return JS_NewUint64(ctx, n)
+  else:
+    error("Unsupported numeric type")
 
 func toJSNumber(ctx: JSContext, n: SomeNumber): JSValue =
   when n is SomeInteger:
