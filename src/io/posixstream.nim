@@ -34,7 +34,7 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = cast[PosixStream](s)
   while result < len:
-    let n = read(s.fd, buffer, len)
+    let n = read(s.fd, cast[pointer](cast[int](buffer) + result), len)
     if n < 0:
       if result == 0:
         result = n
