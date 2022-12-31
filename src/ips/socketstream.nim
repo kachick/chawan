@@ -58,8 +58,11 @@ proc sockClose(s: Stream) = {.cast(tags: []).}: #...sigh
 proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   var hdr: Tmsghdr
   var iov: IOVec
-  let space = CMSG_SPACE(csize_t(sizeof(FileHandle)))
-  var cmsgbuf = alloc(space)
+  var space: csize_t
+  {.emit: [
+  space, """ = CMSG_SPACE(sizeof(int));""",
+  ].}
+  var cmsgbuf = alloc(cast[int](space))
   var buf = char(0)
   iov.iov_base = addr buf
   iov.iov_len = csize_t(1)
@@ -67,13 +70,15 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   hdr.msg_iov = addr iov
   hdr.msg_iovlen = 1
   hdr.msg_control = cmsgbuf
-  let cmsg = CMSG_FIRSTHDR(addr hdr)
   # ...sigh
+  {.emit: [
+  hdr.msg_controllen, """ = CMSG_LEN(sizeof(int));""",
+  ].}
+  let cmsg = CMSG_FIRSTHDR(addr hdr)
   # FileHandle is cint, so sizeof(FileHandle) in c is sizeof(int).
   when sizeof(FileHandle) != sizeof(cint):
     error("Or not...")
   {.emit: [
-  hdr.msg_controllen, """ = CMSG_LEN(sizeof(int));""",
   cmsg.cmsg_len, """ = CMSG_LEN(sizeof(int));"""
   ].}
   cmsg.cmsg_level = SOL_SOCKET
