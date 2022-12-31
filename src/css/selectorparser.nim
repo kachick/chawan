@@ -87,7 +87,14 @@ proc `$`*(sel: Selector): string =
   of ID_SELECTOR:
     return '#' & sel.id
   of ATTR_SELECTOR:
-    return '[' & sel.attr & sel.rel & sel.value & ']'
+    var rel = ""
+    if sel.rel == '=':
+      rel = "="
+    elif sel.rel == ' ':
+      discard
+    else:
+      rel = sel.rel & '='
+    return '[' & sel.attr & rel & sel.value & ']'
   of CLASS_SELECTOR:
     return '.' & sel.class
   of UNIVERSAL_SELECTOR:
@@ -432,9 +439,14 @@ func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.ca
       if state.combinator.ct == DESCENDANT_COMBINATOR:
         # otherwise it's an invalid combinator
         state.selectors[^1].add(state.combinator.csels[0])
-    else:
+      else:
+        state.selectors.setLen(0)
+    elif state.combinator.csels[^1].len != 0:
       state.selectors[^1].add(state.combinator)
     state.combinator = nil
+  if state.selectors.len > 0 and state.selectors[^1].len == 0:
+    # invalid selector
+    state.selectors.setLen(0)
   return state.selectors
 
 proc parseSelectors*(stream: Stream): seq[ComplexSelector] =
