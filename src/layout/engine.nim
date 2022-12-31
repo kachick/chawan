@@ -697,7 +697,7 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
   let padding_right = box.computed{"padding-right"}.px(ictx.viewport, ictx.contentWidth)
   if padding_right > 0:
     # I don't like this, but it works...
-    box.ictx.currentLine.addSpacing(padding_right, max(ictx.currentLine.height, 1), paddingformat)
+    ictx.currentLine.addSpacing(padding_right, max(ictx.currentLine.height, 1), paddingformat)
 
   let margin_right = box.computed{"margin-right"}.px(ictx.viewport, ictx.contentWidth)
   ictx.currentLine.width += margin_right

@@ -34,7 +34,6 @@ type
 
   InlineBoxBuilder* = ref object of BoxBuilder
     text*: seq[string]
-    ictx*: InlineContext
     newline*: bool
 
   BlockBoxBuilder* = ref object of BoxBuilder
