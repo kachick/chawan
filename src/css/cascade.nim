@@ -367,7 +367,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       if cachedChild != nil and result != styledChild:
         styledChild.sheets = cachedChild.sheets
       else:
-        if unlikely(result == styledChild):
+        if result == styledChild:
           #TODO this is ugly. we should cache head sheets separately.
           let head = document.head
           if head != nil:
@@ -375,6 +375,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
               let sheets = head.sheets()
               for sheet in sheets:
                 styledChild.sheets.add(sheet.applyMediaQuery())
+            else:
+              styledChild.sheets = cachedChild.sheets
         else:
           let sheets = elem.sheets()
           if sheets.len > 0:
