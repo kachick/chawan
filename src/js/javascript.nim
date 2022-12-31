@@ -30,6 +30,8 @@ import strutils
 import tables
 import unicode
 
+import io/promise
+
 import bindings/quickjs
 
 export options
@@ -719,6 +721,33 @@ func toJSObject[T](ctx: JSContext, obj: T): JSValue =
   setOpaque(ctx, jsObj, obj)
   return jsObj
 
+func toJSPromise(ctx: JSContext, promise: EmptyPromise): JSValue =
+  var resolving_funcs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
+  if JS_IsException(jsPromise):
+    return JS_EXCEPTION
+  promise.then(proc() =
+    var x = JS_UNDEFINED
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, addr x)
+    JS_FreeValue(ctx, res)
+    JS_FreeValue(ctx, resolving_funcs[0])
+    JS_FreeValue(ctx, resolving_funcs[1]))
+  return jsPromise
+
+func toJSPromise[T](ctx: JSContext, promise: Promise[T]): JSValue =
+  var resolving_funcs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
+  if JS_IsException(jsPromise):
+    return JS_EXCEPTION
+  promise.then(proc(x: T) =
+    var x = toJS(ctx, x)
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, addr x)
+    JS_FreeValue(ctx, res)
+    JS_FreeValue(ctx, x)
+    JS_FreeValue(ctx, resolving_funcs[0])
+    JS_FreeValue(ctx, resolving_funcs[1]))
+  return jsPromise
+
 proc toJS*[T](ctx: JSContext, obj: T): JSValue =
   when T is string:
     return ctx.toJSString(obj)
@@ -751,6 +780,10 @@ proc toJS*[T](ctx: JSContext, obj: T): JSValue =
     return toJS(ctx, int(obj))
   elif T is JSValue:
     return obj
+  elif T is Promise:
+    return toJSPromise(ctx, obj)
+  elif T is EmptyPromise:
+    return toJSPromise(ctx, obj)
   else:
     if obj == nil:
       return JS_NULL

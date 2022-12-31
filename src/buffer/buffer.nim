@@ -26,6 +26,7 @@ import html/tags
 import io/loader
 import io/request
 import io/posixstream
+import io/promise
 import io/teestream
 import ips/serialize
 import ips/serversocket
@@ -96,78 +97,36 @@ type
     savetask: bool
     hovertext: array[HoverType, string]
 
-  # async, but worse
-  EmptyPromise = ref object of RootObj
-    cb: (proc())
-    next: EmptyPromise
+  InterfaceOpaque = ref object
     stream: Stream
-
-  Promise*[T] = ref object of EmptyPromise
-    res: T
+    len: int
 
   BufferInterface* = ref object
-    stream*: Stream
+    map: PromiseMap
     packetid: int
-    promises: Table[int, EmptyPromise]
+    opaque: InterfaceOpaque
+    stream*: Stream
 
-proc newBufferInterface*(ostream: Stream): BufferInterface =
+proc getFromOpaque[T](opaque: pointer, res: var T) =
+  let opaque = cast[InterfaceOpaque](opaque)
+  if opaque.len != 0:
+    opaque.stream.sread(res)
+
+proc newBufferInterface*(stream: Stream): BufferInterface =
+  let opaque = InterfaceOpaque(stream: stream)
   result = BufferInterface(
-    stream: ostream,
-    packetid: 1 # ids below 1 are invalid
+    map: newPromiseMap(cast[pointer](opaque)),
+    packetid: 1, # ids below 1 are invalid
+    opaque: opaque,
+    stream: stream
   )
 
-proc fulfill*(iface: BufferInterface, packetid, len: int) =
-  var promise: EmptyPromise
-  if iface.promises.pop(packetid, promise):
-    if promise.stream != nil and promise.cb == nil and len != 0:
-      var abc = alloc(len)
-      var x = 0
-      while x < len:
-        x += promise.stream.readData(abc, len)
-      dealloc(abc)
-    while promise != nil:
-      if promise.cb != nil:
-        promise.cb()
-      promise = promise.next
+proc resolve*(iface: BufferInterface, packetid, len: int) =
+  iface.opaque.len = len
+  iface.map.resolve(packetid)
 
 proc hasPromises*(iface: BufferInterface): bool =
-  return iface.promises.len > 0
-
-proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
-  if promise == nil: return
-  promise.cb = cb
-  promise.next = EmptyPromise()
-  return promise.next
-
-proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable.} =
-  if promise == nil: return
-  return promise.then(proc() =
-    if promise.stream != nil:
-      promise.stream.sread(promise.res)
-    cb(promise.res))
-
-# Warning: we assume these aren't discarded.
-proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] =
-  if promise == nil: return
-  let next = Promise[T]()
-  promise.then(proc() =
-    let p2 = cb()
-    if p2 != nil:
-      p2.then(proc(x: T) =
-        next.res = x
-        next.cb()))
-  return next
-
-proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] =
-  if promise == nil: return
-  let next = Promise[U]()
-  promise.then(proc(x: T) =
-    let p2 = cb(x)
-    if p2 != nil:
-      p2.then(proc(y: U) =
-        next.res = y
-        next.cb()))
-  return next
+  return not iface.map.empty()
 
 # get enum identifier of proxy function
 func getFunId(fun: NimNode): string =
@@ -190,9 +149,14 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
     `thisval`.stream.swrite(`thisval`.packetid))
   var params2: seq[NimNode]
   var retval2: NimNode
+  var addfun: NimNode
   if retval.kind == nnkEmpty:
+    addfun = quote do:
+      `thisval`.map.addEmptyPromise(`thisval`.packetid)
     retval2 = ident("EmptyPromise")
   else:
+    addfun = quote do:
+      addPromise[`retval`](`thisval`.map, `thisval`.packetid, getFromOpaque[`retval`])
     retval2 = newNimNode(nnkBracketExpr).add(
       ident("Promise"),
       retval)
@@ -210,16 +174,13 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
   body.add(quote do:
     `thisval`.stream.flush())
   body.add(quote do:
-    `thisval`.promises[`thisval`.packetid] = `retval2`(stream: `thisval`.stream)
-    inc `thisval`.packetid)
+    let promise = `addfun`
+    inc `thisval`.packetid
+    return promise)
   var pragmas: NimNode
   if retval.kind == nnkEmpty:
-    body.add(quote do:
-      return `thisval`.promises[`thisval`.packetid - 1])
     pragmas = newNimNode(nnkPragma).add(ident("discardable"))
   else:
-    body.add(quote do:
-      return `retval2`(`thisval`.promises[`thisval`.packetid - 1]))
     pragmas = newEmptyNode()
   return (newProc(name, params2, body, pragmas = pragmas), nup)
 
@@ -659,10 +620,10 @@ proc load*(buffer: Buffer): LoadResult {.proxy, task.} =
   else:
     buffer.savetask = true
 
-proc fulfillTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
+proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
   let packetid = buffer.tasks[cmd]
   if packetid == 0:
-    return # no task to fulfill (TODO this is kind of inefficient)
+    return # no task to resolve (TODO this is kind of inefficient)
   let len = slen(buffer.tasks[cmd]) + slen(res)
   buffer.pstream.swrite(len)
   buffer.pstream.swrite(packetid)
@@ -673,7 +634,7 @@ proc fulfillTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
 proc onload(buffer: Buffer) =
   var res: LoadResult = (false, buffer.lines.len, -1)
   if buffer.loaded:
-    buffer.fulfillTask(LOAD, res)
+    buffer.resolveTask(LOAD, res)
     return
   let op = buffer.sstream.getPosition()
   var s = newString(buffer.readbufsize)
@@ -691,11 +652,11 @@ proc onload(buffer: Buffer) =
       res.bytes = buffer.available
     else:
       buffer.do_reshape()
-    buffer.fulfillTask(LOAD, res)
+    buffer.resolveTask(LOAD, res)
   except EOFError:
     res.atend = true
     buffer.finishLoad()
-    buffer.fulfillTask(LOAD, res)
+    buffer.resolveTask(LOAD, res)
   except ErrorAgain, ErrorWouldBlock:
     if buffer.readbufsize > 1:
       buffer.readbufsize = buffer.readbufsize div 2
@@ -858,7 +819,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
       body = serializePlainTextFormData(entrylist).some
       mimetype = $enctype
-    return newRequest(parsedaction, httpmethod, {"Content-Type": mimetype}, body, multipart).some
+    return newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype}, body, multipart).some
 
   template getActionUrl() =
     return newRequest(parsedaction).some
@@ -1099,15 +1060,15 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
       rval = ident("retval")
       stmts.add(quote do:
         let `rval` = `call`)
-    var fulfill = newStmtList()
+    var resolve = newStmtList()
     if rval == nil:
-      fulfill.add(quote do:
+      resolve.add(quote do:
         let len = slen(`packetid`)
         buffer.pstream.swrite(len)
         buffer.pstream.swrite(`packetid`)
         buffer.pstream.flush())
     else:
-      fulfill.add(quote do:
+      resolve.add(quote do:
         let len = slen(`packetid`) + slen(`rval`)
         buffer.pstream.swrite(len)
         buffer.pstream.swrite(`packetid`)
@@ -1120,9 +1081,9 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer, cmd: BufferCommand
           buffer.savetask = false
           buffer.tasks[BufferCommand.`en`] = `packetid`
         else:
-          `fulfill`)
+          `resolve`)
     else:
-      stmts.add(fulfill)
+      stmts.add(resolve)
     ofbranch.add(stmts)
     switch.add(ofbranch)
   return switch

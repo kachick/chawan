@@ -97,6 +97,7 @@ type
   JSClassFinalizer* = proc (rt: JSRuntime, val: JSValue) {.cdecl.}
   JSClassGCMark* = proc (rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
   JS_MarkFunc* = proc (rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
+  JSJobFunc* = proc (ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
 
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
@@ -312,6 +313,7 @@ proc JS_NewObject*(ctx: JSContext): JSValue
 proc JS_NewObjectClass*(ctx: JSContext, class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext, proto: JSValue): JSValue
 proc JS_NewObjectProtoClass*(ctx: JSContext, proto: JSValue, class_id: JSClassID): JSValue
+proc JS_NewPromiseCapability*(ctx: JSContext, resolving_funcs: ptr JSValue): JSValue
 proc JS_SetOpaque*(obj: JSValue, opaque: pointer)
 proc JS_GetOpaque*(obj: JSValue, class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext, obj: JSValue, class_id: JSClassID): pointer
@@ -415,6 +417,10 @@ proc JS_ThrowTypeError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discar
 proc JS_ThrowReferenceError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
 proc JS_ThrowRangeError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
 proc JS_ThrowInternalError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
+
+proc JS_EnqueueJob*(ctx: JSContext, job_func: JSJobFunc, argc: cint, argv: ptr JSValue): cint
+proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
+proc JS_ExecutePendingJob*(rt: JSRuntime, pctx: ptr JSContext): cint
 
 proc JS_GetRuntimeOpaque*(rt: JSRuntime): pointer
 proc JS_SetRuntimeOpaque*(rt: JSRuntime, p: pointer)

@@ -163,8 +163,8 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
     destination: destination
   )
 
-func newRequest*(url: URL, httpmethod = HTTP_GET, headers: openarray[(string, string)] = [],
-                 body = none(string), multipart = none(MimeData), mode = RequestMode.NO_CORS): Request =
+func newRequest*(url: URL, httpmethod = HTTP_GET, headers: seq[(string, string)] = @[],
+                 body = none(string), multipart = none(MimeData), mode = RequestMode.NO_CORS): Request {.jsctor.} =
   let hl = newHeaderList()
   for pair in headers:
     let (k, v) = pair

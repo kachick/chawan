@@ -13,7 +13,6 @@ when defined(posix):
 import std/exitprocs
 
 import bindings/quickjs
-import buffer/buffer
 import buffer/container
 import css/sheet
 import config/config
@@ -23,6 +22,7 @@ import html/dom
 import html/htmlparser
 import io/lineedit
 import io/loader
+import io/promise
 import io/request
 import io/window
 import ips/forkserver
@@ -101,10 +101,18 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
     discard
   return 0
 
+proc runJSJobs(client: Client) =
+  while JS_IsJobPending(client.jsrt):
+    var ctx: JSContext
+    let r = JS_ExecutePendingJob(client.jsrt, addr ctx)
+    if r == -1:
+      ctx.writeException(client.console.err)
+
 proc evalJS(client: Client, src, filename: string): JSValue =
   if client.console.tty != nil:
     unblockStdin(client.console.tty.getFileHandle())
   result = client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
+  client.runJSJobs()
   if client.console.tty != nil:
     restoreStdin(client.console.tty.getFileHandle())
 

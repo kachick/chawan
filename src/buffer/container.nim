@@ -11,6 +11,7 @@ when defined(posix):
 import buffer/buffer
 import buffer/cell
 import config/config
+import io/promise
 import io/request
 import io/window
 import ips/forkserver
@@ -279,7 +280,7 @@ proc setNumLines(container: Container, lines: int, finish = false) =
     container.triggerEvent(STATUS)
 
 proc requestLines*(container: Container, w = container.lineWindow): auto {.discardable.} =
-  container.iface.getLines(w).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
+  return container.iface.getLines(w).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
     container.lines.setLen(w.len)
     container.lineshift = w.a
     for y in 0 ..< min(res.lines.len, w.len):
@@ -724,11 +725,10 @@ proc readSuccess*(container: Container, s: string) =
     if res.open.isSome:
       container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get)))
 
-proc reshape(container: Container, noreq = false) {.jsfunc.} =
-  container.iface.render().then(proc(lines: int) =
-    container.setNumLines(lines))
-  if not noreq:
-    container.needslines = true
+proc reshape(container: Container): EmptyPromise {.discardable, jsfunc.} =
+  return container.iface.render().then(proc(lines: int): auto =
+    container.setNumLines(lines)
+    return container.requestLines())
 
 proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
   let source = BufferSource(
@@ -806,7 +806,7 @@ proc handleCommand(container: Container) =
   var packetid, len: int
   container.iface.stream.sread(len)
   container.iface.stream.sread(packetid)
-  container.iface.fulfill(packetid, len - slen(packetid))
+  container.iface.resolve(packetid, len - slen(packetid))
 
 proc setStream*(container: Container, stream: Stream) =
   container.iface = newBufferInterface(stream)
