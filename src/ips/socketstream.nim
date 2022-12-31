@@ -58,7 +58,8 @@ proc sockClose(s: Stream) = {.cast(tags: []).}: #...sigh
 proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   var hdr: Tmsghdr
   var iov: IOVec
-  var cmsgbuf = alloc(CMSG_SPACE(csize_t(sizeof(FileHandle))))
+  let space = CMSG_SPACE(csize_t(sizeof(FileHandle)))
+  var cmsgbuf = alloc(space)
   var buf = char(0)
   iov.iov_base = addr buf
   iov.iov_len = csize_t(1)
