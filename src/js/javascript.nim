@@ -688,7 +688,7 @@ func toJSInt(ctx: JSContext, n: SomeInteger): JSValue =
   elif n is uint32:
     return JS_NewUint32(ctx, n)
   else:
-    error("Unsupported numeric type")
+    assert false, "Unsupported numeric type"
 
 func toJSNumber(ctx: JSContext, n: SomeNumber): JSValue =
   when n is SomeInteger:
