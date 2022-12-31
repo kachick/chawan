@@ -34,14 +34,7 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
     s.isend = true
     raise newException(EOFError, "eof")
   if result < 0:
-    if errno == EAGAIN:
-      raise newException(ErrorAgain, "eagain")
-    case errno
-    of EWOULDBLOCK: raise newException(ErrorWouldBlock, "would block")
-    of EBADF: raise newException(ErrorBadFD, "bad fd")
-    of EFAULT: raise newException(ErrorFault, "fault")
-    of EINVAL: raise newException(ErrorInvalid, "invalid")
-    else: raise newException(IOError, $strerror(errno))
+    raisePosixIOError()
   elif result == 0:
     s.isend = true
 
@@ -73,10 +66,13 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   hdr.msg_iov = addr iov
   hdr.msg_iovlen = 1
   hdr.msg_control = cmsgbuf
-  hdr.msg_controllen = CMSG_LEN(csize_t(sizeof(FileHandle)))
   let cmsg = CMSG_FIRSTHDR(addr hdr)
   # ...sigh
+  # FileHandle is cint, so sizeof(FileHandle) in c is sizeof(int).
+  when sizeof(FileHandle) != sizeof(cint):
+    error("Or not...")
   {.emit: [
+  hdr.msg_controllen, """ = CMSG_LEN(sizeof(int));""",
   cmsg.cmsg_len, """ = CMSG_LEN(sizeof(int));"""
   ].}
   cmsg.cmsg_level = SOL_SOCKET
@@ -89,16 +85,17 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
 proc recvFileHandle*(s: SocketStream): FileHandle =
   var iov: IOVec
   var hdr: Tmsghdr
-  let space = CMSG_SPACE(csize_t(sizeof(FileHandle)))
   var buf: char
-  var cmsgbuf = alloc(space)
+  var cmsgbuf = alloc(CMSG_SPACE(csize_t(sizeof(FileHandle))))
   iov.iov_base = addr buf
   iov.iov_len = 1
   zeroMem(addr hdr, sizeof(hdr))
   hdr.msg_iov = addr iov
   hdr.msg_iovlen = 1
   hdr.msg_control = cmsgbuf
-  hdr.msg_controllen = space
+  {.emit: [
+  hdr.msg_controllen, """ = CMSG_SPACE(sizeof(int));"""
+  ].}
   let n = recvmsg(s.source.getFd(), addr hdr, 0)
   assert n != 0, "Unexpected EOF" #TODO remove this
   assert n > 0, "Failed to receive message " & $osLastError() #TODO remove this

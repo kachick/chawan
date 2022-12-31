@@ -14,6 +14,22 @@ type
   ErrorInterrupted* = object of IOError
   ErrorInvalid* = object of IOError
 
+proc raisePosixIOError*() =
+  # In the nim stdlib, these are only constants on linux amd64, so we
+  # can't use a switch.
+  if errno == EAGAIN:
+    raise newException(ErrorAgain, "eagain")
+  elif errno == EWOULDBLOCK:
+    raise newException(ErrorWouldBlock, "would block")
+  elif errno == EBADF:
+    raise newException(ErrorBadFD, "bad fd")
+  elif errno == EFAULT:
+    raise newException(ErrorFault, "fault")
+  elif errno == EINVAL:
+    raise newException(ErrorInvalid, "invalid")
+  else:
+    raise newException(IOError, $strerror(errno))
+
 proc psReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = cast[PosixStream](s)
@@ -30,14 +46,7 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
   if result == 0:
     raise newException(EOFError, "eof")
   if result == -1:
-    if errno == EAGAIN:
-      raise newException(ErrorAgain, "eagain")
-    case errno
-    of EWOULDBLOCK: raise newException(ErrorWouldBlock, "would block")
-    of EBADF: raise newException(ErrorBadFD, "bad fd")
-    of EFAULT: raise newException(ErrorFault, "fault")
-    of EINVAL: raise newException(ErrorInvalid, "invalid")
-    else: raise newException(IOError, $strerror(errno) & " (" & $errno & ")")
+    raisePosixIOError()
 
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
   let s = cast[PosixStream](s)
