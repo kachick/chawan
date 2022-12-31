@@ -673,28 +673,23 @@ proc getJSFunction*[T, U](ctx: JSContext, val: JSValue): Option[(proc(x: T): Opt
 func toJSString(ctx: JSContext, str: string): JSValue =
   return JS_NewString(ctx, cstring(str))
 
-func toJSInt(ctx: JSContext, n: SomeInteger): JSValue =
-  when n is int:
-    when sizeof(int) <= sizeof(int32):
-      return JS_NewInt32(ctx, int32(n))
-    else:
-      return JS_NewInt64(ctx, n)
-  elif n is uint32:
-    return JS_NewUint32(ctx, n)
-  elif n is int32:
-    return JS_NewInt32(ctx, n)
-  elif n is int64:
+func toJSNumber(ctx: JSContext, n: int): JSValue =
+  when sizeof(int) <= sizeof(int32):
+    return JS_NewInt32(ctx, int32(n))
+  else:
     return JS_NewInt64(ctx, n)
-  elif n is uint32:
-    return JS_NewUint32(ctx, n)
-  else:
-    assert false, "Unsupported numeric type"
 
-func toJSNumber(ctx: JSContext, n: SomeNumber): JSValue =
-  when n is SomeInteger:
-    return toJSInt(ctx, n)
-  else:
-    return JS_NewFloat64(ctx, n)
+func toJSNumber(ctx: JSContext, n: int32): JSValue =
+  return JS_NewInt32(ctx, n)
+
+func toJSNumber(ctx: JSContext, n: int64): JSValue =
+  return JS_NewInt64(ctx, n)
+
+func toJSNumber(ctx: JSContext, n: uint32): JSValue =
+  return JS_NewUint32(ctx, n)
+
+func toJSNumber[T: float|float32|float64](ctx: JSContext, n: T): JSValue =
+  return JS_NewFloat64(ctx, n)
 
 func toJSBool(ctx: JSContext, b: bool): JSValue =
   return JS_NewBool(ctx, b)
