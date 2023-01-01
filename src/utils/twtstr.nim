@@ -223,19 +223,6 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
-# From w3m
-const SizeUnit = [
-  "b", "kb", "Mb", "Gb", "Tb", "Pb", "Eb", "Zb", "Bb", "Yb"
-]
-func convert_size*(len: int): string =
-  var sizepos = 0
-  var csize = float(len)
-  while csize >= 999.495 and sizepos < SizeUnit.len:
-    csize = csize / 1024.0
-    inc sizepos
-  result = $(floor(csize * 100 + 0.5) / 100)
-  result &= SizeUnit[sizepos]
-
 func until*(s: string, c: set[char]): string =
   var i = 0
   while i < s.len:
@@ -254,6 +241,24 @@ func after*(s: string, c: set[char]): string =
     inc i
 
 func after*(s: string, c: char): string = s.after({c})
+
+proc c_sprintf(buf, fm: cstring): cint {.header: "<stdio.h>", importc: "sprintf", varargs}
+
+# From w3m
+const SizeUnit = [
+  cstring"b", cstring"kb", cstring"Mb", cstring"Gb", cstring"Tb", cstring"Pb",
+  cstring"Eb", cstring"Zb", cstring"Bb", cstring"Yb"
+]
+func convert_size*(size: int): string =
+  var sizepos = 0
+  var csize = float32(size)
+  while csize >= 999.495 and sizepos < SizeUnit.len:
+    csize = csize / 1024.0
+    inc sizepos
+  result = newString(10)
+  let f = floor(csize * 100 + 0.5) / 100
+  discard c_sprintf(cstring(result), cstring("%.3g%s"), f, SizeUnit[sizepos])
+  result.setLen(cstring(result).len)
 
 func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, string)]): string =
   if i notin range:
