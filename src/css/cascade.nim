@@ -246,7 +246,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       continue
 
     var styledChild: StyledNode
-    if cachedChild != nil and cachedChild.isValid():
+    let valid = cachedChild != nil and cachedChild.isValid()
+    if valid:
       if cachedChild.t == STYLED_ELEMENT:
         if cachedChild.pseudo == PSEUDO_NONE:
           # We can't just copy cachedChild.children from the previous pass, as
@@ -266,6 +267,10 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       else:
         styledParent.children.add(styledChild)
     else:
+      # From here on, computed values of this node's children are invalid
+      # (because of inheritance).
+      # That said, we could do this way more efficiently... TODO.
+      # (For example, we could replace the parent's computed values in-place.)
       cachedChild = nil
       if pseudo != PSEUDO_NONE:
         let (ua, user, authordecls) = styledParent.calcRules(ua, user, author)
@@ -364,7 +369,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
           styledStack.add((styledParent, nil, ps, nil))
 
       let elem = Element(styledChild.node)
-      if cachedChild != nil and result != styledChild:
+      if valid and result != styledChild:
         styledChild.sheets = cachedChild.sheets
       else:
         if result == styledChild:
