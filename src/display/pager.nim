@@ -218,7 +218,8 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     while i < line.str.len:
       let pw = w
       fastRuneAt(line.str, i, r)
-      w += r.twidth(w)
+      let rw = r.twidth(w)
+      w += rw
       if w > container.fromx + pager.display.width:
         break # die on exceeding the width limit
       if nf.pos != -1 and nf.pos <= pw:
@@ -228,7 +229,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
       lan &= r
       if cf.pos != -1:
         pager.display[dls + k].format = cf.format
-      let tk = k + r.twidth(k)
+      let tk = k + rw
       while k < tk and k < pager.display.width - 1:
         inc k
     # Finally, override cell formatting for highlighted cells.
