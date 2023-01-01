@@ -48,7 +48,6 @@ type
     console {.jsget.}: Console
     pager {.jsget.}: Pager
     line {.jsget.}: LineEdit
-    sevent: seq[Container]
     config {.jsget.}: Config
     jsrt: JSRuntime
     jsctx: JSContext
@@ -267,7 +266,11 @@ proc acceptBuffers(client: Client) =
       let fd = stream.source.getFd()
       client.fdmap[int(fd)] = container
       client.selector.registerHandle(fd, {Read}, nil)
-      client.sevent.add(container)
+      if not client.pager.handleEvents(container):
+        client.quit(1)
+      if container == client.pager.container:
+        client.pager.showAlerts()
+        client.pager.draw()
     else:
       #TODO uh what?
       eprint "???"

@@ -266,7 +266,7 @@ proc refreshStatusMsg*(pager: Pager) =
   if container == nil: return
   if pager.tty == nil: return
   if container.loadinfo != "":
-    pager.alerton = true
+    pager.alerton = false
     pager.writeStatusMessage(container.loadinfo)
   elif pager.alerts.len > 0:
     pager.alerton = true

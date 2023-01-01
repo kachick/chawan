@@ -669,7 +669,7 @@ proc onload(container: Container, res: LoadResult) =
           container.setCursorXY(res.x, res.y))
 
 proc load(container: Container) =
-  container.setLoadInfo("Connecting to " & $container.source.location & "...")
+  container.setLoadInfo("Connecting to " & $container.source.location)
   container.iface.connect().then(proc(res: ConnectResult): auto =
     let info = container.loadinfo
     if res.code != -2:
