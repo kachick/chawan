@@ -185,7 +185,8 @@ proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, us
   styledNode.computed = builder.buildComputedValues()
 
 # Either returns a new styled node or nil.
-proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode, ua, user: DeclarationList, author: seq[DeclarationList]): StyledNode =
+proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode, ua,
+                       user: DeclarationList, author: seq[DeclarationList]): StyledNode =
   var builder = newComputedValueBuilder(styledParent.computed)
 
   builder.addValues(ua[pseudo], ORIGIN_USER_AGENT)
@@ -268,9 +269,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
         styledParent.children.add(styledChild)
     else:
       # From here on, computed values of this node's children are invalid
-      # (because of inheritance).
-      # That said, we could do this way more efficiently... TODO.
-      # (For example, we could replace the parent's computed values in-place.)
+      # because of property inheritance.
       cachedChild = nil
       if pseudo != PSEUDO_NONE:
         let (ua, user, authordecls) = styledParent.calcRules(ua, user, author)

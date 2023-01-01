@@ -24,7 +24,8 @@ type
   PseudoClass* = enum
     PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
     PSEUDO_ROOT, PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD, PSEUDO_CHECKED,
-    PSEUDO_FOCUS, PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE, PSEUDO_LANG
+    PSEUDO_FOCUS, PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE, PSEUDO_LANG,
+    PSEUDO_LINK, PSEUDO_VISITED
 
   CombinatorType* = enum
     DESCENDANT_COMBINATOR, CHILD_COMBINATOR, NEXT_SIBLING_COMBINATOR,
@@ -275,6 +276,10 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
         add_pseudo_class PSEUDO_CHECKED
       of "focus":
         add_pseudo_class PSEUDO_FOCUS
+      of "link":
+        add_pseudo_class PSEUDO_LINK
+      of "visited":
+        add_pseudo_class PSEUDO_VISITED
     of QUERY_PSELEM:
       case csstoken.value
       of "before":

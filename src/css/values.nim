@@ -330,6 +330,13 @@ func propertyType(s: string): CSSPropertyType =
 func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
+func `$`*(val: CSSComputedValue): string =
+  result = ($val.t).toLowerAscii().split('_')[1..^1].join('-') & ": "
+  case val.v
+  of VALUE_COLOR:
+    result &= $val.color
+  else: discard
+
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
   let t = propertyType($s)
   let vs = $valueType(t)
@@ -1232,10 +1239,10 @@ func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
     else:
       result[prop] = getDefault(prop)
 
-func copyProperties*(parent: CSSComputedValues): CSSComputedValues =
+func copyProperties*(props: CSSComputedValues): CSSComputedValues =
   new(result)
   for prop in CSSPropertyType:
-    result[prop] = parent[prop]
+    result[prop] = props[prop]
 
 func rootProperties*(): CSSComputedValues =
   new(result)
