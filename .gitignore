@@ -4,3 +4,4 @@ cha.exe
 test/
 profile_results.txt
 todo
+.obj/
