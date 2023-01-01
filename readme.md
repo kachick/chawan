@@ -36,7 +36,7 @@ limitations:
 
 * Chawan uses uses its own browser engine, implemented from scratch. Expect
   bugs and missing features.
-* Chawan has no incremental layouting capabilities yet, so it may be
+* Chawan has no incremental layouting capabilities yet, so it may is
   rather slow on large websites with complicated layout.
 * While buffers run as separate processes, Chawan does not have any actual
   sandboxing. I would strongly advise against enabling scripting until this
@@ -51,8 +51,9 @@ See [doc/config.md](doc/config.md).
 Many other text-based web browsers exist. Here's some recommendations if you
 want to try more established ones:
 
-* w3m - Infinitely extensible with local-cgi and some creativity. Also
-  has inline image support. Heavily inspired Chawan.
+* w3m - A text-mode browser, very much extensible using local-cgi. Also
+  has inline image support and possibly the best table implementation among
+  all browsers. Heavily inspired Chawan.
 * elinks - Has CSS and JavaScript support, and incremental rendering
   (it's pretty fast.)
 * lynx - "THE text-based web browser."
