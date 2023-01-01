@@ -1258,6 +1258,11 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
     for build in builder.normalProperties[origin]:
       result.applyValue(build.val, build.global, builder.parent, nil)
     previousOrigins[origin] = result.copyProperties()
+  # Presentational hints override user agent style, but respect user/author style.
+  if builder.preshints != nil:
+    for prop in CSSPropertyType:
+      if builder.preshints[prop] != nil:
+        result[prop] = builder.preshints[prop]
   block:
     let origin = ORIGIN_USER
     let prevOrigin = ORIGIN_USER_AGENT
@@ -1288,10 +1293,6 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
       result.applyValue(build.val, build.global, builder.parent, nil)
     # important, so no need to save origins
   # set defaults
-  if builder.preshints != nil:
-    for prop in CSSPropertyType:
-      if result[prop] == nil:
-        result[prop] = builder.preshints[prop]
   for prop in CSSPropertyType:
     if result[prop] == nil:
       if inherited(prop) and builder.parent != nil and builder.parent[prop] != nil:
