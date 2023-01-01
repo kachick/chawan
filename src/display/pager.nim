@@ -649,11 +649,11 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     if x != "": pager.iregex = compileSearchRegex(x)
     pager.container.popCursorPos(true)
     if pager.iregex.isSome:
+      pager.container.hlon = true
       if linemode == ISEARCH_F:
         pager.container.cursorNextMatch(pager.iregex.get, pager.config.searchwrap)
       else:
         pager.container.cursorPrevMatch(pager.iregex.get, pager.config.searchwrap)
-      pager.container.hlon = true
     pager.container.pushCursorPos()
   of FINISH:
     if pager.iregex.isSome:

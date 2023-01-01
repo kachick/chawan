@@ -288,7 +288,7 @@ func cursorBytes(buffer: Buffer, y: int, cc: int): int =
   while i < line.len and w < cc:
     var r: Rune
     fastRuneAt(line, i, r)
-    w += r.width()
+    w += r.twidth(w)
   return i
 
 proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
@@ -378,17 +378,14 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
 
 proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch {.proxy.} =
   if cursory >= buffer.lines.len: return
-  template return_if_match =
-    if res.success and res.captures.len > 0:
-      let cap = res.captures[^1]
-      let x = buffer.lines[y].str.width(cap.s)
-      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-      return BufferMatch(success: true, x: x, y: y, str: str)
   var y = cursory
   let b = buffer.cursorBytes(y, cursorx)
-  let b2 = if b > 0: b - buffer.lines[y].str.lastRune(b)[1] else: 0
-  let res = regex.exec(buffer.lines[y].str, 0, b2)
-  return_if_match
+  let res = regex.exec(buffer.lines[y].str, 0, b)
+  if res.success and res.captures.len > 0:
+    let cap = res.captures[^1]
+    let x = buffer.lines[y].str.width(0, cap.s)
+    let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+    return BufferMatch(success: true, x: x, y: y, str: str)
   dec y
   while true:
     if y < 0:
@@ -396,27 +393,26 @@ proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
         y = buffer.lines.high
       else:
         break
-    if y == cursory:
-      let res = regex.exec(buffer.lines[y].str, b, buffer.lines[y].str.len)
-      return_if_match
-      break
     let res = regex.exec(buffer.lines[y].str)
-    return_if_match
+    if res.success and res.captures.len > 0:
+      let cap = res.captures[^1]
+      let x = buffer.lines[y].str.width(0, cap.s)
+      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+      return BufferMatch(success: true, x: x, y: y, str: str)
+    if y == cursory:
+      break
     dec y
 
 proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch {.proxy.} =
   if cursory >= buffer.lines.len: return
-  template return_if_match =
-    if res.success and res.captures.len > 0:
-      let cap = res.captures[0]
-      let x = buffer.lines[y].str.width(cap.s)
-      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-      return BufferMatch(success: true, x: x, y: y, str: str)
   var y = cursory
-  let b = buffer.cursorBytes(y, cursorx)
-  let b2 = if buffer.lines[y].str.len > b: b + buffer.lines[y].str.runeLenAt(b) else: b
-  let res = regex.exec(buffer.lines[y].str, b2, buffer.lines[y].str.len)
-  return_if_match
+  let b = buffer.cursorBytes(y, cursorx + 1)
+  let res = regex.exec(buffer.lines[y].str, b, buffer.lines[y].str.len)
+  if res.success and res.captures.len > 0:
+    let cap = res.captures[0]
+    let x = buffer.lines[y].str.width(0, cap.s)
+    let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+    return BufferMatch(success: true, x: x, y: y, str: str)
   inc y
   while true:
     if y > buffer.lines.high:
@@ -424,12 +420,14 @@ proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
         y = 0
       else:
         break
-    if y == cursory:
-      let res = regex.exec(buffer.lines[y].str, 0, b)
-      return_if_match
-      break
     let res = regex.exec(buffer.lines[y].str)
-    return_if_match
+    if res.success and res.captures.len > 0:
+      let cap = res.captures[0]
+      let x = buffer.lines[y].str.width(0, cap.s)
+      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+      return BufferMatch(success: true, x: x, y: y, str: str)
+    if y == cursory:
+      break
     inc y
 
 proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =

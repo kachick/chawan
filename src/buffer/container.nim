@@ -601,37 +601,33 @@ proc clearSearchHighlights*(container: Container) =
     if container.highlights[i].clear:
       container.highlights.del(i)
 
+proc onMatch(container: Container, res: BufferMatch) =
+  if res.success:
+    container.setCursorXY(res.x, res.y)
+    if container.hlon:
+      container.clearSearchHighlights()
+      let ex = res.str.twidth(res.x) - 1
+      let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
+      container.highlights.add(hl)
+      container.triggerEvent(UPDATE)
+      container.hlon = false
+  elif container.hlon:
+    container.clearSearchHighlights()
+    container.triggerEvent(UPDATE)
+    container.needslines = true
+    container.hlon = false
+
 proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
   container.iface
     .findNextMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
-      if res.success:
-        container.setCursorXY(res.x, res.y)
-        if container.hlon:
-          container.clearSearchHighlights()
-          let ex = res.str.twidth(res.x) - 1
-          let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
-          container.highlights.add(hl)
-          container.triggerEvent(UPDATE)
-          container.hlon = false
-      elif container.hlon:
-        container.clearSearchHighlights()
-        container.triggerEvent(UPDATE)
-        container.needslines = true
-        container.hlon = false)
+      container.onMatch(res))
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
   container.iface
     .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
-      if res.success:
-        container.setCursorXY(res.x, res.y)
-        if container.hlon:
-          container.clearSearchHighlights()
-          let ex = res.str.twidth(res.x) - 1
-          let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
-          container.highlights.add(hl)
-          container.hlon = false)
+      container.onMatch(res))
 
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg

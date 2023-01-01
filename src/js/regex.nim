@@ -6,6 +6,7 @@ import unicode
 import bindings/libregexp
 import bindings/quickjs
 import js/javascript
+import utils/twtstr
 
 export
   LRE_FLAG_GLOBAL,
@@ -158,21 +159,19 @@ proc compileSearchRegex*(str: string): Option[Regex] =
     else: assert false
   return compileRegex(str.substr(0, flagsi - 1), flags)
 
-proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult =
+proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): RegexResult =
+  let length = if length == -1:
+    str.len
+  else:
+    length
   assert 0 <= start and start <= length, "Start: " & $start & ", length: " & $length & " str: " & $str
 
   let captureCount = lre_get_capture_count(regex.bytecode)
-
   var capture: ptr ptr uint8 = nil
   if captureCount > 0:
     capture = cast[ptr ptr uint8](alloc0(sizeof(ptr uint8) * captureCount * 2))
-
   var cstr = cstring(str)
-  var ascii = true
-  for c in str:
-    if c > char(0x80):
-      ascii = false
-      break
+  let ascii = str.isAscii()
   var ustr: string16
   if not ascii:
     if start != 0 or length != str.len:
@@ -180,27 +179,25 @@ proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult 
     else:
       ustr = toUTF16(str)
     cstr = cstring(ustr)
-
-  let ret = lre_exec(capture, regex.bytecode,
-                     cast[ptr uint8](cstr), cint(start),
-                     cint(length), cint(not ascii), dummyContext)
-
-  result.success = ret == 1 #TODO error handling? (-1)
-
-  if result.success:
-    var i = 0
+  let flags = lre_get_flags(regex.bytecode)
+  var start = start
+  while true:
+    let ret = lre_exec(capture, regex.bytecode,
+                       cast[ptr uint8](cstr), cint(start),
+                       cint(length), cint(not ascii), dummyContext)
+    if ret != 1: #TODO error handling? (-1)
+      break
+    result.success = true
+    if captureCount == 0 or nocaps:
+      break
     let cstrAddress = cast[int](cstr)
+    start = cast[ptr int](cast[int](capture) + sizeof(ptr uint8))[] - cstrAddress
+    var i = 0
     while i < captureCount * sizeof(ptr uint8):
-      let startPointerAddress = cast[int](capture) + i
+      let s = cast[ptr int](cast[int](capture) + i)[] - cstrAddress
       i += sizeof(ptr uint8)
-      let endPointerAddress = cast[int](capture) + i
+      let e = cast[ptr int](cast[int](capture) + i)[] - cstrAddress
       i += sizeof(ptr uint8)
-      let startPointer = cast[ptr ptr uint8](startPointerAddress)
-      let endPointer = cast[ptr ptr uint8](endPointerAddress)
-      let startAddress = cast[int](startPointer[])
-      let endAddress = cast[int](endPointer[])
-      var s = startAddress - cstrAddress
-      var e = endAddress - cstrAddress
       if ascii:
         result.captures.add((s, e))
       else:
@@ -217,7 +214,10 @@ proc exec*(regex: Regex, str: string, start = 0, length = str.len): RegexResult 
           fastRuneAt(ustr, i, r)
           e8 += r.size()
         result.captures.add((s8, e8))
-  dealloc(capture)
+    if (flags and LRE_FLAG_GLOBAL) != 1:
+      break
+  if captureCount > 0:
+    dealloc(capture)
 
 proc match*(regex: Regex, str: string, start = 0, length = str.len): bool =
-  return regex.exec(str, start, length).success
+  return regex.exec(str, start, length, nocaps = true).success

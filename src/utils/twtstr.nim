@@ -162,6 +162,12 @@ func decValue*(c: char): int =
 func isAscii*(r: Rune): bool =
   return int32(r) < 128
 
+func isAscii*(s: string): bool =
+  for c in s:
+    if c > char(0x80):
+      return false
+  return true
+
 const HexChars = "0123456789ABCDEF"
 func toHex*(c: char): string =
   result = newString(2)
@@ -993,32 +999,6 @@ func width*(r: Rune): int =
     return int(width_table[int(r)])
 {.pop.}
 
-func width*(s: string, len: int): int =
-  var i = 0
-  var m = len
-  if m > s.len: m = s.len
-  while i < m:
-    var r: Rune
-    fastRuneAt(s, i, r)
-    result += width(r)
-
-func width*(s: seq[Rune]): int =
-  for r in s:
-    result += width(r)
-
-func width*(s: seq[Rune], min, max: int): int =
-  var i = min
-  var mi = min(max, s.len)
-  while i < mi:
-    result += width(s[i])
-    inc i
-
-func width*(s: seq[Rune], min: int): int =
-  var i = min
-  while i < s.len:
-    result += width(s[i])
-    inc i
-
 # Width, but also works with tabs.
 # Needs the column width of the text so far.
 func twidth*(r: Rune, w: int): int =
@@ -1028,12 +1008,38 @@ func twidth*(r: Rune, w: int): int =
 
 func width*(s: string): int =
   for r in s.runes():
-    result += twidth(r, result)
+    result += r.twidth(result)
+
+func width*(s: string, start, len: int): int =
+  var i = start
+  var m = len
+  if m > s.len: m = s.len
+  while i < m:
+    var r: Rune
+    fastRuneAt(s, i, r)
+    result += r.twidth(result)
+
+func width*(s: seq[Rune]): int =
+  for r in s:
+    result += r.twidth(result)
+
+func width*(s: seq[Rune], min, max: int): int =
+  var i = min
+  var mi = min(max, s.len)
+  while i < mi:
+    result += s[i].twidth(result)
+    inc i
+
+func width*(s: seq[Rune], min: int): int =
+  var i = min
+  while i < s.len:
+    result += s[i].twidth(result)
+    inc i
 
 func twidth*(s: string, w: int): int =
   result = w
   for r in s.runes():
-    result += twidth(r, result)
+    result += r.twidth(result)
 
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
