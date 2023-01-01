@@ -794,24 +794,12 @@ proc positionBlocks(box: BlockBox) =
   box.height += box.padding_top
 
   x += box.padding_left
-  case box.computed{"text-align"}
-  of TEXT_ALIGN_CHA_CENTER:
-    x += box.contentWidth div 2
-  of TEXT_ALIGN_CHA_LEFT: discard
-  of TEXT_ALIGN_CHA_RIGHT:
-    x += box.contentWidth
-  else: discard
+  let needsMove = box.computed{"text-align"} in {TEXT_ALIGN_CHA_LEFT, TEXT_ALIGN_CHA_CENTER, TEXT_ALIGN_CHA_RIGHT}
 
   template apply_child(child: BlockBox) =
     child.offset.y = y
     child.offset.x = x
-    case box.computed{"text-align"}
-    of TEXT_ALIGN_CHA_CENTER:
-      child.offset.x -= child.width div 2
-    of TEXT_ALIGN_CHA_LEFT: discard
-    of TEXT_ALIGN_CHA_RIGHT:
-      child.offset.x -= child.width
-    elif spec and child.contentWidth < box.contentWidth:
+    if not needsMove and spec and child.contentWidth < box.contentWidth:
       let margin_left = child.computed{"margin-left"}
       let margin_right = child.computed{"margin-right"}
       if margin_left.auto and margin_right.auto:
@@ -826,7 +814,6 @@ proc positionBlocks(box: BlockBox) =
         child.margin_right += box.contentWidth
         child.margin_right -= child.contentWidth
     child.offset.x += child.margin_left
-
     if box.computed{"position"} == POSITION_RELATIVE:
       box.positionRelative(child)
     y += child.height
@@ -883,6 +870,26 @@ proc positionBlocks(box: BlockBox) =
 
   margin_todo.append(box.margin_bottom)
   box.margin_bottom = margin_todo.sum()
+
+  if needsMove:
+    # Re-position the children.
+    # The x offset for values in shrink mode depends on the parent box's
+    # width, so we can not just do this in the first pass.
+    let width = if box.shrink:
+      min(box.width, box.contentWidth)
+    else:
+      max(box.width, box.contentWidth)
+    case box.computed{"text-align"}
+    of TEXT_ALIGN_CHA_CENTER:
+      for child in box.nested:
+        child.offset.x += width div 2
+        child.offset.x -= child.width div 2
+    of TEXT_ALIGN_CHA_LEFT: discard
+    of TEXT_ALIGN_CHA_RIGHT:
+      for child in box.nested:
+        child.offset.x += width
+        child.offset.x -= child.width
+    else: discard
 
   box.height += box.padding_bottom
 
