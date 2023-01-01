@@ -46,12 +46,10 @@ type
       password*: bool
     of READ_AREA:
       tvalue*: string
-    of OPEN:
+    of OPEN, REDIRECT:
       request*: Request
     of ANCHOR, NO_ANCHOR:
       anchor*: string
-    of REDIRECT:
-      location*: URL
     of ALERT:
       msg*: string
     of UPDATE:
@@ -685,8 +683,8 @@ proc load(container: Container) =
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)
-        if res.redirect.isSome:
-          container.triggerEvent(ContainerEvent(t: REDIRECT, location: res.redirect.get))
+        if res.redirect != nil:
+          container.triggerEvent(ContainerEvent(t: REDIRECT, request: res.redirect))
         if res.contentType != "":
           container.contenttype = some(res.contentType)
         return container.iface.load()

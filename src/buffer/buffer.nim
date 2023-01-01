@@ -525,7 +525,7 @@ proc loadResources(buffer: Buffer, document: Document) =
 type ConnectResult* = object
   code*: int
   needsAuth*: bool
-  redirect*: Option[URL]
+  redirect*: Request
   contentType*: string
   cookies*: seq[Cookie]
   referrerpolicy*: Option[ReferrerPolicy]

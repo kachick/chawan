@@ -51,7 +51,7 @@ type
     contenttype* {.jsget.}: string
     status* {.jsget.}: int
     headers* {.jsget.}: HeaderList
-    redirect* {.jsget.}: Option[Url]
+    redirect*: Request
  
   ReadableStream* = ref object of Stream
     isource*: Stream

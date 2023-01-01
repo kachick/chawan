@@ -768,9 +768,10 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.authorize()
   of REDIRECT:
     if container.redirectdepth < pager.config.maxredirect:
-      let redirect = event.location
-      pager.alert("Redirecting to " & $redirect)
-      pager.gotoURL(newRequest(redirect), some(container.source.location), replace = container, redirectdepth = container.redirectdepth + 1, referrer = pager.container)
+      pager.alert("Redirecting to " & $event.request.url)
+      pager.gotoURL(event.request, some(container.source.location),
+        replace = container, redirectdepth = container.redirectdepth + 1,
+        referrer = pager.container)
     else:
       pager.alert("Error: maximum redirection depth reached")
       pager.deleteContainer(container)
