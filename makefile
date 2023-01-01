@@ -1,23 +1,25 @@
 NIMC = nim c
 OBJDIR = .obj
-FLAGS = --nimcache:$(OBJDIR) -o:cha
+FLAGS = -o:cha
 FILES = src/main.nim
 prefix = /usr/local
 
 $(OBJDIR):
-	mkdir -p $(OBJDIR)
+	mkdir -p $(OBJDIR)/debug
+	mkdir -p $(OBJDIR)/release
+	mkdir -p $(OBJDIR)/profile
 
 debug: $(OBJDIR)
-	$(NIMC) $(FLAGS) -d:debug $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/debug -d:debug $(FILES)
 
 release: $(OBJDIR)
-	$(NIMC) $(FLAGS) -d:release -d:strip -d:lto $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release -d:strip -d:lto $(FILES)
 
 release0: $(OBJDIR)
-	$(NIMC) $(FLAGS) -d:release $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release $(FILES)
 
 profile: $(OBJDIR)
-	$(NIMC) $(FLAGS) --profiler:on --stacktrace:on -d:profile $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/profile --profiler:on --stacktrace:on -d:profile $(FILES)
 
 clean:
 	rm -f cha
@@ -26,3 +28,6 @@ clean:
 install:
 	mkdir -p "$(DESTDIR)$(prefix)/bin"
 	install -m755 cha "$(DESTDIR)$(prefix)/bin"
+
+uninstall:
+	rm -f "$(DESTDIR)$(prefix)/bin/cha"
