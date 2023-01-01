@@ -12,6 +12,7 @@ type StreamRenderer* = object
   af: bool
   decoder: DecoderStream
   newline: bool
+  w: int
 
 proc newStreamRenderer*(stream: Stream): StreamRenderer =
   result.format = newFormat()
@@ -23,7 +24,7 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
   template add_format() =
     if renderer.af:
       renderer.af = false
-      grid[grid.high].addFormat(grid[^1].str.len, renderer.format)
+      grid[grid.high].addFormat(renderer.w, renderer.format)
 
   if grid.len == 0: grid.addLine()
   var buf = newSeq[Rune](len * 4)
@@ -33,6 +34,7 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       # avoid newline at end of stream
       grid.addLine()
       renderer.newline = false
+      renderer.w = 0
     let r = buf[i]
     if r.isAscii():
       let c = cast[char](r)
@@ -49,9 +51,11 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
       of '\r': discard
       of '\e':
         renderer.ansiparser.reset()
+        continue
       else:
         add_format
         grid[^1].str &= c
     else:
       add_format
       grid[^1].str &= r
+    renderer.w += r.twidth(renderer.w)
