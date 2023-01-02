@@ -1152,6 +1152,13 @@ func target0*(element: Element): string =
       return base.attr("target")
   return ""
 
+# HTMLHyperlinkElementUtils (for <a> and <area>)
+func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
+  if element.attrb("href"):
+    let url = parseUrl(element.attr("href"), some(element.document.url))
+    if url.issome:
+      return $url.get
+
 # <base>
 func target(base: HTMLBaseElement): string {.jsfget.} =
   base.attr("target")
@@ -1159,12 +1166,51 @@ func target(base: HTMLBaseElement): string {.jsfget.} =
 proc target(base: HTMLBaseElement, target: string) {.jsfset.} =
   base.attr("target", target)
 
-# <anchor>
+func href(base: HTMLBaseElement): string {.jsfget.} =
+  if base.attrb("href"):
+    #TODO with fallback base url
+    let url = parseUrl(base.attr("href"))
+    if url.isSome:
+      return $url.get
+
+# <a>
 func target(anchor: HTMLAnchorElement): string {.jsfget.} =
   anchor.attr("target")
 
 proc target(anchor: HTMLAnchorElement, target: string) {.jsfset.} =
   anchor.attr("target", target)
+
+func href*(anchor: HTMLAnchorElement): string {.jsfget.} =
+  anchor.href0
+
+proc href(anchor: HTMLAnchorElement, href: string) {.jsfset.} =
+  anchor.attr("href", href)
+
+func `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
+  anchor.href
+
+# <area>
+func href(area: HTMLAreaElement): string {.jsfget.} =
+  area.href0
+
+proc href(area: HTMLAreaElement, href: string) {.jsfset.} =
+  area.attr("href", href)
+
+func `$`(area: HTMLAreaElement): string {.jsfunc.} =
+  area.href
+
+# <link>
+func href*(link: HTMLLinkElement): string {.jsfget.} =
+  link.attr("href")
+
+proc href*(link: HTMLLinkElement, href: string) {.jsfset.} =
+  link.attr("href", href)
+
+func target(link: HTMLLinkElement): string {.jsfget.} =
+  link.attr("target")
+
+proc target(link: HTMLLinkElement, target: string) {.jsfset.} =
+  link.attr("target", target)
 
 # <label>
 func htmlFor(label: HTMLLabelElement): string {.jsfget.} =
@@ -1360,13 +1406,6 @@ func baseURL*(document: Document): Url =
 func parseURL*(document: Document, s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
-
-func href*[T: HTMLAnchorElement|HTMLLinkElement|HTMLBaseElement](element: T): string =
-  if element.attrb("href"):
-    let url = parseUrl(element.attr("href"), some(element.document.url))
-    if url.issome:
-      return $url.get
-  return ""
 
 func rel*[T: HTMLAnchorElement|HTMLLinkElement|HTMLAreaElement](element: T): string =
   return element.attr("rel")
