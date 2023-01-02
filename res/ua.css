@@ -192,11 +192,11 @@ p {
 	margin-bottom: 1em;
 }
 
-a {
+a[href] {
 	color: yellow;
 }
 
-a:hover {
+a[href]:hover {
 	text-decoration: underline;
 }
 
