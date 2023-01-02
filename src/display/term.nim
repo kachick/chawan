@@ -433,12 +433,18 @@ proc outputGrid*(term: Terminal) =
   if term.config.termreload:
     term.applyConfig()
   term.outfile.write(term.resetFormat())
-  if term.config.forceclear or not term.cleared:
+  let samesize = term.canvas.width == term.pcanvas.width and term.canvas.height == term.pcanvas.height
+  if term.config.forceclear or not term.cleared or not samesize:
     term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true
   else:
     term.outfile.write(term.generateSwapOutput(term.canvas, term.pcanvas))
-  term.pcanvas = term.canvas
+  if not samesize:
+    term.pcanvas.width = term.canvas.width
+    term.pcanvas.height = term.canvas.height
+    term.pcanvas.cells.setLen(term.canvas.cells.len)
+  for i in 0 ..< term.canvas.cells.len:
+    term.pcanvas[i] = term.canvas[i]
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
