@@ -724,11 +724,11 @@ proc reshape(container: Container): EmptyPromise {.discardable, jsfunc.} =
     container.setNumLines(lines)
     return container.requestLines())
 
-proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, location = none(URL), contenttype = none(string)): Container =
+proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, location: URL, contenttype: string): Container =
   let source = BufferSource(
     t: CLONE,
-    location: location.get(container.source.location),
-    contenttype: if contenttype.isSome: contenttype else: container.contenttype,
+    location: if location != nil: location else: container.source.location,
+    contenttype: if contenttype != "": some(contenttype) else: container.contenttype,
     clonepid: container.process,
   )
   container.pipeto = dispatcher.newBuffer(container.config, source, container.title)

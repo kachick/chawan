@@ -365,10 +365,10 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.registerContainer(container)
   pager.setContainer(container)
 
-proc dupeContainer(pager: Pager, container: Container, location: Option[URL]): Container =
-  return pager.dispatcher.dupeBuffer(container, pager.config, location)
+proc dupeContainer(pager: Pager, container: Container, location: URL): Container =
+  return pager.dispatcher.dupeBuffer(container, pager.config, location, "")
 
-proc dupeBuffer*(pager: Pager, location = none(URL)) {.jsfunc.} =
+proc dupeBuffer*(pager: Pager, location: URL = nil) {.jsfunc.} =
   pager.addContainer(pager.dupeContainer(pager.container, location))
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
@@ -493,10 +493,10 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
     pager.setContainer(pager.container.sourcepair)
   else:
     let contenttype = if pager.container.contenttype.get("") == "text/html":
-      some("text/plain")
+      "text/plain"
     else:
-      some("text/html")
-    let container = pager.dispatcher.dupeBuffer(pager.container, pager.config, contenttype = contenttype)
+      "text/html"
+    let container = pager.dispatcher.dupeBuffer(pager.container, pager.config, nil, contenttype)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.addContainer(container)
@@ -780,7 +780,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of ANCHOR:
     var url2 = newURL(container.source.location)
     url2.hash(event.anchor)
-    pager.addContainer(pager.dupeContainer(container, some(url2)))
+    pager.addContainer(pager.dupeContainer(container, url2))
   of NO_ANCHOR:
     pager.alert("Couldn't find anchor " & event.anchor)
   of UPDATE:
