@@ -50,11 +50,11 @@ export
   JS_EVAL_FLAG_STRIP,
   JS_EVAL_FLAG_COMPILE_ONLY
 
-export JSRuntime, JSContext, JSValue
+export JSRuntime, JSContext, JSValue, JSClassID
 
 export
   JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
-  JS_IsFunction, JS_NewCFunctionData, JS_Call
+  JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue
 
 type
   JSContextOpaque* = ref object
@@ -195,6 +195,11 @@ func getClassID*(val: JSValue): JSClassID =
               sizeof(uint8) # bit field
   return cast[ptr uint16](cast[int](JS_VALUE_GET_PTR(val)) + index)[]
 
+# getOpaque, but doesn't work for global objects.
+func getOpaque0*(val: JSValue): pointer =
+  if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
+    return JS_GetOpaque(val, val.getClassID())
+
 func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
   # Unfortunately, we can't change the global object's class.
   #TODO: or maybe we can, but I'm afraid of breaking something.
@@ -204,9 +209,7 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
     let opaque = JS_GetOpaque(global, 1) # JS_CLASS_OBJECT
     JS_FreeValue(ctx, global)
     return opaque
-  if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
-    return JS_GetOpaque(val, val.getClassID())
-  return nil
+  return getOpaque0(val)
 
 proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
   JS_SetInterruptHandler(rt, cb, opaque)
@@ -359,7 +362,7 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Option[T] =
       return none(T)
     return some(cast[uint64](ret))
 
-proc fromJS[T](ctx: JSContext, val: JSValue): Option[T]
+proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T]
 
 macro len(t: type tuple): int =
   let i = t.getType()[1].len - 1 # - tuple
@@ -576,7 +579,7 @@ macro unpackArg0(f: typed) =
   let rvv = rv[1]
   result = quote do: `rvv`
 
-proc fromJS[T](ctx: JSContext, val: JSValue): Option[T] =
+proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
   when T is string:
     return toString(ctx, val)
   elif T is char:
@@ -1543,7 +1546,15 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             of "jsget": result.jsget.add(varName)
             of "jsset": result.jsset.add(varName)
 
-macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = false, nointerface = false, name: static string = ""): JSClassID =
+type TabGetSet* = object
+  name*: string
+  get*: JSGetterMagicFunction
+  set*: JSSetterMagicFunction
+  magic*: uint16
+
+macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal =
+                   false, nointerface = false, name: static string = "",
+                   extra_getset: static openarray[TabGetSet] = []): JSClassID =
   result = newStmtList()
   let tname = t.strVal # the nim type's name.
   let name = if name == "": tname else: name # possibly a different name, e.g. Buffer for Container
@@ -1627,6 +1638,17 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal = fals
   for k, v in setters:
     if k notin getters:
       tabList.add(quote do: JS_CGETSET_DEF(`k`, nil, `v`))
+
+  for x in extra_getset:
+    #TODO TODO TODO what the hell is this...
+    # For some reason, extra_getset gets weird contents when nothing is
+    # passed to it.
+    if repr(x) != "" and repr(x) != "[]":
+      let k = x.name
+      let g = x.get
+      let s = x.set
+      let m = x.magic
+      tabList.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
 
   if ctorFun != nil:
     sctr = ctorFun

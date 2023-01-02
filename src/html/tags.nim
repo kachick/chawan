@@ -83,6 +83,11 @@ const tagNameMap = (func(): Table[TagType, string] =
     result[v] = k
 )()
 
+const AllTagTypes* = (func(): set[TagType] =
+  for tag in TagType:
+    result.incl(tag)
+)()
+
 func tagName*(t: TagType): string =
   return tagNameMap[t]
 

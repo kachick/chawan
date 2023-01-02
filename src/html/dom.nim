@@ -221,8 +221,6 @@ type
   HTMLInputElement* = ref object of FormAssociatedElement
     form* {.jsget.}: HTMLFormElement
     inputType*: InputType
-    autofocus*: bool
-    required*: bool
     value* {.jsget.}: string
     checked*: bool
     xcoord*: int
@@ -267,7 +265,6 @@ type
     name*: string
     smethod*: string
     enctype*: string
-    target*: string
     novalidate*: bool
     constructingentrylist*: bool
     controls*: seq[FormAssociatedElement]
@@ -304,6 +301,71 @@ type
     value* {.jsget.}: string
 
   HTMLLabelElement* = ref object of HTMLElement
+
+# Reflected attributes.
+type
+  ReflectType = enum
+    REFLECT_STR, REFLECT_BOOL, REFLECT_INT, REFLECT_INT_GREATER_ZERO,
+    REFLECT_INT_GREATER_EQUAL_ZERO
+
+  ReflectEntry = tuple[
+    attrname: string,
+    funcname: string,
+    t: ReflectType,
+    tags: set[TagType],
+    i: int
+  ]
+
+template toset(ts: openarray[TagType]): set[TagType] =
+  var tags: set[TagType]
+  for tag in ts:
+    tags.incl(tag)
+  tags
+
+template makes(name: string, ts: set[TagType]): ReflectEntry =
+  (name, name, REFLECT_STR, ts, 0)
+
+template makes(attrname: string, funcname: string, ts: set[TagType]): ReflectEntry =
+  (attrname, funcname, REFLECT_STR, ts, 0)
+
+template makes(name: string, ts: varargs[TagType]): ReflectEntry =
+  makes(name, toset(ts))
+
+template makes(attrname: string, funcname: string, ts: varargs[TagType]): ReflectEntry =
+  makes(attrname, funcname, toset(ts))
+
+template makeb(name: string, ts: varargs[TagType]): ReflectEntry =
+  (name, name, REFLECT_BOOL, toset(ts), 0)
+
+template makei(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
+  (name, name, REFLECT_INT, toset(ts), default)
+
+template makeigz(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
+  (name, name, REFLECT_INT_GREATER_ZERO, toset(ts), default)
+
+template makeigez(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
+  (name, name, REFLECT_INT_GREATER_EQUAL_ZERO, toset(ts), default)
+
+const ReflectTable0 = [
+  # non-global attributes
+  makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
+  makes("href", TAG_LINK),
+  makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
+  makes("rel", "relList", TAG_A, TAG_LINK, TAG_LABEL),
+  makes("for", "htmlFor", TAG_LABEL),
+  makeigz("cols", TAG_TEXTAREA, 20),
+  makeigz("rows", TAG_TEXTAREA, 1),
+# <SELECT>:
+#> For historical reasons, the default value of the size IDL attribute does
+#> not return the actual size used, which, in the absence of the size content
+#> attribute, is either 1 or 4 depending on the presence of the multiple
+#> attribute.
+  makeigz("size", TAG_SELECT, 0),
+  makeigz("size", TAG_INPUT, 20),
+  # "super-global" attributes
+  makes("slot", AllTagTypes),
+  makes("class", "className", AllTagTypes)
+]
 
 # Forward declarations
 func attrb*(element: Element, s: string): bool
@@ -990,25 +1052,6 @@ func attrb*(element: Element, s: string): bool =
   return false
 
 # Element attribute reflection (getters)
-func className(element: Element): string {.jsfget.} =
-  element.attr("class")
-
-func size*(element: HTMLInputElement): int {.jsfget.} =
-  element.attrigz("size").get(20)
-
-#> For historical reasons, the default value of the size IDL attribute does
-#> not return the actual size used, which, in the absence of the size content
-#> attribute, is either 1 or 4 depending on the presence of the multiple
-#> attribute.
-func size*(element: HTMLSelectElement): int {.jsfget.} =
-  element.attrigz("size").get(0)
-
-func cols*(element: HTMLTextAreaElement): int {.jsfget.} =
-  element.attrigz("cols").get(20)
-
-func rows*(element: HTMLTextAreaElement): int {.jsfget.} =
-  element.attrigz("rows").get(1)
-
 func innerHTML*(element: Element): string {.jsfget.} =
   for child in element.childList:
     result &= $child
@@ -1047,9 +1090,9 @@ func inputString*(input: HTMLInputElement): string =
     if input.checked: "*"
     else: " "
   of INPUT_SEARCH, INPUT_TEXT:
-    input.value.padToWidth(input.size)
+    input.value.padToWidth(input.attri("size").get(20))
   of INPUT_PASSWORD:
-    '*'.repeat(input.value.len).padToWidth(input.size)
+    '*'.repeat(input.value.len).padToWidth(input.attri("size").get(20))
   of INPUT_RESET:
     if input.value != "": input.value
     else: "RESET"
@@ -1057,18 +1100,22 @@ func inputString*(input: HTMLInputElement): string =
     if input.value != "": input.value
     else: "SUBMIT"
   of INPUT_FILE:
-    if input.file.isnone: "".padToWidth(input.size)
-    else: input.file.get.path.serialize_unicode().padToWidth(input.size)
+    if input.file.isnone:
+      "".padToWidth(input.attri("size").get(20))
+    else:
+      input.file.get.path.serialize_unicode().padToWidth(input.attri("size").get(20))
   else: input.value
 
 func textAreaString*(textarea: HTMLTextAreaElement): string =
   let split = textarea.value.split('\n')
-  for i in 0 ..< textarea.rows:
-    if textarea.cols > 2:
+  let rows = textarea.attri("rows").get(1)
+  for i in 0 ..< rows:
+    let cols = textarea.attri("cols").get(20)
+    if cols > 2:
       if i < split.len:
-        result &= '[' & split[i].padToWidth(textarea.cols - 2) & "]\n"
+        result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
       else:
-        result &= '[' & ' '.repeat(textarea.cols - 2) & "]\n"
+        result &= '[' & ' '.repeat(cols - 2) & "]\n"
     else:
       result &= "[]\n"
 
@@ -1160,12 +1207,6 @@ func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
       return $url.get
 
 # <base>
-func target(base: HTMLBaseElement): string {.jsfget.} =
-  base.attr("target")
-
-proc target(base: HTMLBaseElement, target: string) {.jsfset.} =
-  base.attr("target", target)
-
 func href(base: HTMLBaseElement): string {.jsfget.} =
   if base.attrb("href"):
     #TODO with fallback base url
@@ -1174,12 +1215,6 @@ func href(base: HTMLBaseElement): string {.jsfget.} =
       return $url.get
 
 # <a>
-func target(anchor: HTMLAnchorElement): string {.jsfget.} =
-  anchor.attr("target")
-
-proc target(anchor: HTMLAnchorElement, target: string) {.jsfset.} =
-  anchor.attr("target", target)
-
 func href*(anchor: HTMLAnchorElement): string {.jsfget.} =
   anchor.href0
 
@@ -1199,28 +1234,9 @@ proc href(area: HTMLAreaElement, href: string) {.jsfset.} =
 func `$`(area: HTMLAreaElement): string {.jsfunc.} =
   area.href
 
-# <link>
-func href*(link: HTMLLinkElement): string {.jsfget.} =
-  link.attr("href")
-
-proc href*(link: HTMLLinkElement, href: string) {.jsfset.} =
-  link.attr("href", href)
-
-func target(link: HTMLLinkElement): string {.jsfget.} =
-  link.attr("target")
-
-proc target(link: HTMLLinkElement, target: string) {.jsfset.} =
-  link.attr("target", target)
-
 # <label>
-func htmlFor(label: HTMLLabelElement): string {.jsfget.} =
-  label.attr("for")
-
-proc htmlFor(label: HTMLLabelElement, htmlFor: string) {.jsfset.} =
-  label.attr("for", htmlFor)
-
 func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
-  let f = label.htmlFor
+  let f = label.attr("for")
   if f != "":
     let elem = label.document.getElementById(f)
     #TODO the supported check shouldn't be needed, just labelable
@@ -1505,9 +1521,16 @@ proc attr*(element: Element, name, value: string) =
     element.attributes.attrlist.add(element.newAttr(name, value))
   element.attr0(name, value)
 
+proc attri(element: Element, name: string, value: int) =
+  element.attr(name, $value)
+
 proc attrigz(element: Element, name: string, value: int) =
   if value > 0:
-    element.attr(name, $value)
+    element.attri(name, value)
+
+proc attrigez(element: Element, name: string, value: int) =
+  if value >= 0:
+    element.attri(name, value)
 
 proc setAttribute(element: Element, qualifiedName, value: string) {.jserr, jsfunc.} =
   if not qualifiedName.matchNameProduction():
@@ -1573,22 +1596,6 @@ proc value(attr: Attr, s: string) {.jsfset.} =
   attr.value = s
   if attr.ownerElement != nil:
     attr.ownerElement.attr0(attr.name, s)
-
-# Element attribute reflection (setters)
-proc className(element: Element, s: string) {.jsfset.} =
-  element.attr("class", s)
-
-proc size(element: HTMLInputElement, n: int) {.jsfset.} =
-  element.attrigz("size", n)
-
-proc size(element: HTMLSelectElement, n: int) {.jsfset.} =
-  element.attrigz("size", n)
-
-proc cols(element: HTMLTextAreaElement, n: int) {.jsfset.} =
-  element.attrigz("cols", n)
-
-proc rows(element: HTMLTextAreaElement, n: int) {.jsfset.} =
-  element.attrigz("rows", n)
 
 proc setNamedItem(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
   if attr.ownerElement != nil and attr.ownerElement != map.element:
@@ -2191,9 +2198,144 @@ proc querySelectorAll*(node: Node, q: string): seq[Element] {.jsfunc.} =
 proc querySelector*(node: Node, q: string): Element {.jsfunc.} =
   return doqs(node, q)
 
+const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
+    seq[ReflectEntry],
+    Table[TagType, seq[uint16]],
+    uint16) =
+  var i: uint16 = 0
+  while i < ReflectTable0.len:
+    let x = ReflectTable0[i]
+    result[0].add(x)
+    if x.tags == AllTagTypes:
+      break
+    for tag in result[0][i].tags:
+      if tag notin result[1]:
+        result[1][tag] = newSeq[uint16]()
+      result[1][tag].add(i)
+    assert result[0][i].tags.len != 0
+    inc i
+  result[2] = i
+  while i < ReflectTable0.len:
+    let x = ReflectTable0[i]
+    assert x.tags == AllTagTypes
+    result[0].add(x)
+    inc i
+)()
+
+proc jsReflectGet(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
+  let entry = ReflectTable[uint16(magic)]
+  let op = getOpaque0(this)
+  if unlikely(not ctx.isInstanceOf(this, "Element") or op == nil):
+    return JS_ThrowTypeError(ctx, "Reflected getter called on a value that is not an element")
+  let element = cast[Element](op)
+  if element.tagType notin entry.tags:
+    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
+  case entry.t
+  of REFLECT_STR:
+    let x = toJS(ctx, element.attr(entry.attrname))
+    return x
+  of REFLECT_BOOl:
+    return toJS(ctx, element.attrb(entry.attrname))
+  of REFLECT_INT:
+    return toJS(ctx, element.attri(entry.attrname).get(entry.i))
+  of REFLECT_INT_GREATER_ZERO:
+    return toJS(ctx, element.attrigz(entry.attrname).get(entry.i))
+  of REFLECT_INT_GREATER_EQUAL_ZERO:
+    return toJS(ctx, element.attrigez(entry.attrname).get(entry.i))
+
+proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cdecl.} =
+  if unlikely(not ctx.isInstanceOf(this, "Element")):
+    return JS_ThrowTypeError(ctx, "Reflected getter called on a value that is not an element")
+  let entry = ReflectTable[uint16(magic)]
+  let op = getOpaque0(this)
+  assert op != nil
+  let element = cast[Element](op)
+  if element.tagType notin entry.tags:
+    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
+  case entry.t
+  of REFLECT_STR:
+    let x = toString(ctx, val)
+    if x.isSome:
+      element.attr(entry.attrname, x.get)
+  of REFLECT_BOOL:
+    let x = fromJS[bool](ctx, val)
+    if x.isSome:
+      if x.get:
+        element.attr(entry.attrname, "")
+      else:
+        element.delAttr(entry.attrname)
+  of REFLECT_INT:
+    let x = fromJS[int](ctx, val)
+    if x.isSome:
+      element.attri(entry.attrname, x.get)
+  of REFLECT_INT_GREATER_ZERO:
+    let x = fromJS[int](ctx, val)
+    if x.isSome:
+      element.attrigz(entry.attrname, x.get)
+  of REFLECT_INT_GREATER_EQUAL_ZERO:
+    let x = fromJS[int](ctx, val)
+    if x.isSome:
+      element.attrigez(entry.attrname, x.get)
+  return JS_DupValue(ctx, val)
+
 proc addconsoleModule*(ctx: JSContext) =
   #TODO console should not have a prototype
   ctx.registerType(console, nointerface = true)
+
+func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
+  for tag in tags:
+    if tag in TagReflectMap:
+      for i in TagReflectMap[tag]:
+        result.add(TabGetSet(
+          name: ReflectTable[i].funcname,
+          get: jsReflectGet,
+          set: jsReflectSet,
+          magic: i
+        ))
+  return result
+
+func getElementReflectFunctions(): seq[TabGetSet] =
+  var i: uint16 = ReflectAllStartIndex
+  while i < ReflectTable.len:
+    let entry = ReflectTable[i]
+    assert entry.tags == AllTagTypes
+    result.add(TabGetSet(name: ReflectTable[i].funcname, get: jsReflectGet, set: jsReflectSet, magic: i))
+    inc i
+
+proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
+  let elementCID = ctx.registerType(Element, parent = nodeCID)
+  const extra_getset = getElementReflectFunctions()
+  let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID,
+    extra_getset = extra_getset)
+  template register(t: typed, tags: set[TagType]) =
+    const extra_getset = getReflectFunctions(tags)
+    ctx.registerType(t, parent = htmlElementCID,
+      extra_getset = extra_getset)
+  template register(t: typed, tag: TagType) =
+    register(t, {tag})
+  register(HTMLInputElement, TAG_INPUT)
+  register(HTMLAnchorElement, TAG_A)
+  register(HTMLSelectElement, TAG_SELECT)
+  register(HTMLSpanElement, TAG_SPAN)
+  register(HTMLOptGroupElement, TAG_OPTGROUP)
+  register(HTMLOptionElement, TAG_OPTION)
+  register(HTMLHeadingElement, {TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6})
+  register(HTMLBRElement, TAG_BR)
+  register(HTMLMenuElement, TAG_MENU)
+  register(HTMLUListElement, TAG_UL)
+  register(HTMLOListElement, TAG_OL)
+  register(HTMLLIElement, TAG_LI)
+  register(HTMLStyleElement, TAG_STYLE)
+  register(HTMLLinkElement, TAG_LINK)
+  register(HTMLFormElement, TAG_FORM)
+  register(HTMLTemplateElement, TAG_TEMPLATE)
+  register(HTMLUnknownElement, TAG_UNKNOWN)
+  register(HTMLScriptElement, TAG_SCRIPT)
+  register(HTMLBaseElement, TAG_BASE)
+  register(HTMLAreaElement, TAG_AREA)
+  register(HTMLButtonElement, TAG_BUTTON)
+  register(HTMLTextAreaElement, TAG_TEXTAREA)
+  register(HTMLLabelElement, TAG_LABEL)
 
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.registerType(EventTarget)
@@ -2210,30 +2352,6 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(ProcessingInstruction, parent = characterDataCID)
   ctx.registerType(Text, parent = characterDataCID)
   ctx.registerType(DocumentType, parent = nodeCID)
-  let elementCID = ctx.registerType(Element, parent = nodeCID)
   ctx.registerType(Attr, parent = nodeCID)
   ctx.registerType(NamedNodeMap)
-  let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
-  ctx.registerType(HTMLInputElement, parent = htmlElementCID)
-  ctx.registerType(HTMLAnchorElement, parent = htmlElementCID)
-  ctx.registerType(HTMLSelectElement, parent = htmlElementCID)
-  ctx.registerType(HTMLSpanElement, parent = htmlElementCID)
-  ctx.registerType(HTMLOptGroupElement, parent = htmlElementCID)
-  ctx.registerType(HTMLOptionElement, parent = htmlElementCID)
-  ctx.registerType(HTMLHeadingElement, parent = htmlElementCID)
-  ctx.registerType(HTMLBRElement, parent = htmlElementCID)
-  ctx.registerType(HTMLMenuElement, parent = htmlElementCID)
-  ctx.registerType(HTMLUListElement, parent = htmlElementCID)
-  ctx.registerType(HTMLOListElement, parent = htmlElementCID)
-  ctx.registerType(HTMLLIElement, parent = htmlElementCID)
-  ctx.registerType(HTMLStyleElement, parent = htmlElementCID)
-  ctx.registerType(HTMLLinkElement, parent = htmlElementCID)
-  ctx.registerType(HTMLFormElement, parent = htmlElementCID)
-  ctx.registerType(HTMLTemplateElement, parent = htmlElementCID)
-  ctx.registerType(HTMLUnknownElement, parent = htmlElementCID)
-  ctx.registerType(HTMLScriptElement, parent = htmlElementCID)
-  ctx.registerType(HTMLBaseElement, parent = htmlElementCID)
-  ctx.registerType(HTMLAreaElement, parent = htmlElementCID)
-  ctx.registerType(HTMLButtonElement, parent = htmlElementCID)
-  ctx.registerType(HTMLTextAreaElement, parent = htmlElementCID)
-  ctx.registerType(HTMLLabelElement, parent = htmlElementCID)
+  ctx.registerElements(nodeCID)

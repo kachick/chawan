@@ -512,8 +512,9 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
   buffer.prevnode = thisnode
 
 proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
-  if elem.href == "": return
-  let url = parseURL(elem.href, document.url.some)
+  let href = elem.attr("href")
+  if href == "": return
+  let url = parseURL(href, document.url.some)
   if url.isSome:
     let url = url.get
     if url.scheme == buffer.url.scheme:

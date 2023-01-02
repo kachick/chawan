@@ -22,13 +22,14 @@ proc language(navigator: Navigator): string {.jsfget.} = "en-US"
 proc languages(navigator: Navigator): seq[string] {.jsfget.} = @["en-US"] #TODO frozen array?
 
 # NavigatorOnline
-proc onLine(navigator: Navigator): bool {.jsfget.} = true # none of your business :)
+proc onLine(navigator: Navigator): bool {.jsfget.} =
+  true # at the very least, the terminal is on-line :)
 
 #TODO NavigatorContentUtils
 
 # NavigatorCookies
 # "this website needs cookies to be enabled to function correctly"
-# I'll take your incorrectly functioning website over the tracking any day.
+# It's probably better to lie here.
 proc cookieEnabled(navigator: Navigator): bool {.jsfget.} = true
 
 # NavigatorPlugins
@@ -47,9 +48,6 @@ proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(Navigator)
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
-
-#func `$`(window: Window): string {.jsfunc.} =
-#  "[object Window]"
 
 proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
   result = Window(

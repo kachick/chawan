@@ -160,8 +160,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_text
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
-    set_cv "width", CSSLength(unit: UNIT_CH, num: float64(textarea.cols))
-    set_cv "height", CSSLength(unit: UNIT_EM, num: float64(textarea.rows))
+    let cols = textarea.attri("cols").get(20)
+    let rows = textarea.attri("rows").get(1)
+    set_cv "width", CSSLength(unit: UNIT_CH, num: float64(cols))
+    set_cv "height", CSSLength(unit: UNIT_EM, num: float64(rows))
   of TAG_FONT:
     map_color
   else: discard
