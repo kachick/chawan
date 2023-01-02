@@ -303,6 +303,8 @@ type
     form* {.jsget.}: HTMLFormElement
     value* {.jsget.}: string
 
+  HTMLLabelElement* = ref object of HTMLElement
+
 # Forward declarations
 func attrb*(element: Element, s: string): bool
 proc attr*(element: Element, name, value: string)
@@ -402,6 +404,11 @@ iterator elements*(node: Node): Element {.inline.} =
 iterator elements*(node: Node, tag: TagType): Element {.inline.} =
   for desc in node.elements:
     if desc.tagType == tag:
+      yield desc
+
+iterator elements*(node: Node, tag: set[TagType]): Element {.inline.} =
+  for desc in node.elements:
+    if desc.tagType in tag:
       yield desc
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
@@ -1136,13 +1143,53 @@ func formmethod*(element: Element): FormMethod =
 
   return FORM_METHOD_GET
 
-func target*(element: Element): string {.jsfunc.} =
+#TODO ??
+func target0*(element: Element): string =
   if element.attrb("target"):
     return element.attr("target")
   for base in element.document.elements(TAG_BASE):
     if base.attrb("target"):
       return base.attr("target")
   return ""
+
+# <base>
+func target(base: HTMLBaseElement): string {.jsfget.} =
+  base.attr("target")
+
+proc target(base: HTMLBaseElement, target: string) {.jsfset.} =
+  base.attr("target", target)
+
+# <anchor>
+func target(anchor: HTMLAnchorElement): string {.jsfget.} =
+  anchor.attr("target")
+
+proc target(anchor: HTMLAnchorElement, target: string) {.jsfset.} =
+  anchor.attr("target", target)
+
+# <label>
+func htmlFor(label: HTMLLabelElement): string {.jsfget.} =
+  label.attr("for")
+
+proc htmlFor(label: HTMLLabelElement, htmlFor: string) {.jsfset.} =
+  label.attr("for", htmlFor)
+
+func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
+  let f = label.htmlFor
+  if f != "":
+    let elem = label.document.getElementById(f)
+    #TODO the supported check shouldn't be needed, just labelable
+    if elem.tagType in SupportedFormAssociatedElements and elem.tagType in LabelableElements:
+      return FormAssociatedElement(elem)
+    return nil
+  for elem in label.elements(LabelableElements):
+    if elem.tagType in SupportedFormAssociatedElements: #TODO remove this
+      return FormAssociatedElement(elem)
+    return nil
+
+func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
+  let control = label.control
+  if control != nil:
+    return control.form
 
 func newText(document: Document, data: string): Text =
   return Text(
@@ -1236,6 +1283,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     result = new(HTMLButtonElement)
   of TAG_TEXTAREA:
     result = new(HTMLTextAreaElement)
+  of TAG_LABEL:
+    result = new(HTMLLabelElement)
   else:
     result = new(HTMLElement)
   result.nodeType = ELEMENT_NODE
@@ -2144,5 +2193,8 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(HTMLTemplateElement, parent = htmlElementCID)
   ctx.registerType(HTMLUnknownElement, parent = htmlElementCID)
   ctx.registerType(HTMLScriptElement, parent = htmlElementCID)
+  ctx.registerType(HTMLBaseElement, parent = htmlElementCID)
+  ctx.registerType(HTMLAreaElement, parent = htmlElementCID)
   ctx.registerType(HTMLButtonElement, parent = htmlElementCID)
   ctx.registerType(HTMLTextAreaElement, parent = htmlElementCID)
+  ctx.registerType(HTMLLabelElement, parent = htmlElementCID)

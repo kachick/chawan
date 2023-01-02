@@ -248,17 +248,27 @@ func getTitleAttr(node: StyledNode): string =
   #TODO pseudo-elements
 
 const ClickableElements = {
-  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA
+  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL
 }
 
 func getClickable(styledNode: StyledNode): Element =
-  if styledNode == nil or styledNode.node == nil:
+  if styledNode == nil:
     return nil
+  var styledNode = styledNode
+  while styledNode.node == nil:
+    styledNode = styledNode.parent
+    if styledNode == nil:
+      return nil
   if styledNode.t == STYLED_ELEMENT:
     let element = Element(styledNode.node)
-    if element.tagType in ClickableElements:
+    if element.tagType in ClickableElements and (element.tagType != TAG_A or HTMLAnchorElement(element).href != ""):
       return element
-  styledNode.node.findAncestor(ClickableElements)
+  while true:
+    result = styledNode.node.findAncestor(ClickableElements)
+    if result == nil:
+      break
+    if result.tagType != TAG_A or HTMLAnchorElement(result).href != "":
+      break
 
 func getClickHover(styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
@@ -902,101 +912,109 @@ type ClickResult* = object
   readline*: Option[ReadLineResult]
   repaint*: bool
 
+proc click(buffer: Buffer, clickable: Element): ClickResult =
+  case clickable.tagType
+  of TAG_LABEL:
+    let label = HTMLLabelElement(clickable)
+    let control = label.control
+    if control != nil:
+      return buffer.click(control)
+  of TAG_SELECT:
+    result.repaint = buffer.setFocus(clickable)
+  of TAG_A:
+    result.repaint = buffer.restoreFocus()
+    let url = parseURL(HTMLAnchorElement(clickable).href, clickable.document.baseURL.some)
+    if url.issome:
+      result.open = some(newRequest(url.get, HTTP_GET))
+  of TAG_OPTION:
+    let option = HTMLOptionElement(clickable)
+    let select = option.select
+    if select != nil:
+      if buffer.document.focus == select:
+        # select option
+        if not select.attrb("multiple"):
+          for option in select.options:
+            option.selected = false
+        option.selected = true
+        result.repaint = buffer.restoreFocus()
+      else:
+        # focus on select
+        result.repaint = buffer.setFocus(select)
+  of TAG_BUTTON:
+    let button = HTMLButtonElement(clickable)
+    if button.form != nil:
+      case button.ctype
+      of BUTTON_SUBMIT: result.open = submitForm(button.form, button)
+      of BUTTON_RESET:
+        button.form.reset()
+        result.repaint = true
+        buffer.do_reshape()
+      of BUTTON_BUTTON: discard
+  of TAG_TEXTAREA:
+    result.repaint = buffer.setFocus(clickable)
+    let textarea = HTMLTextAreaElement(clickable)
+    result.readline = some(ReadLineResult(
+      value: textarea.value,
+      area: true
+    ))
+  of TAG_INPUT:
+    result.repaint = buffer.restoreFocus()
+    let input = HTMLInputElement(clickable)
+    case input.inputType
+    of INPUT_SEARCH:
+      result.repaint = buffer.setFocus(input)
+      result.readline = some(ReadLineResult(
+        prompt: "SEARCH: ",
+        value: input.value
+      ))
+    of INPUT_TEXT, INPUT_PASSWORD:
+      result.repaint = buffer.setFocus(input)
+      result.readline = some(ReadLineResult(
+        prompt: "TEXT: ",
+        value: input.value,
+        hide: input.inputType == INPUT_PASSWORD
+      ))
+    of INPUT_FILE:
+      result.repaint = buffer.setFocus(input)
+      var path = if input.file.issome:
+        input.file.get.path.serialize_unicode()
+      else:
+        ""
+      result.readline = some(ReadLineResult(
+        prompt: "Filename: ",
+        value: path
+      ))
+    of INPUT_CHECKBOX:
+      input.checked = not input.checked
+      input.invalid = true
+      result.repaint = true
+      buffer.do_reshape()
+    of INPUT_RADIO:
+      for radio in input.radiogroup:
+        radio.checked = false
+        radio.invalid = true
+      input.checked = true
+      input.invalid = true
+      result.repaint = true
+      buffer.do_reshape()
+    of INPUT_RESET:
+      if input.form != nil:
+        input.form.reset()
+        result.repaint = true
+        buffer.do_reshape()
+    of INPUT_SUBMIT, INPUT_BUTTON:
+      if input.form != nil:
+        result.open = submitForm(input.form, input)
+    else:
+      result.repaint = buffer.restoreFocus()
+  else:
+    result.repaint = buffer.restoreFocus()
+
 proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if clickable != nil:
-    case clickable.tagType
-    of TAG_SELECT:
-      result.repaint = buffer.setFocus(clickable)
-    of TAG_A:
-      result.repaint = buffer.restoreFocus()
-      let url = parseURL(HTMLAnchorElement(clickable).href, clickable.document.baseURL.some)
-      if url.issome:
-        result.open = some(newRequest(url.get, HTTP_GET))
-    of TAG_OPTION:
-      let option = HTMLOptionElement(clickable)
-      let select = option.select
-      if select != nil:
-        if buffer.document.focus == select:
-          # select option
-          if not select.attrb("multiple"):
-            for option in select.options:
-              option.selected = false
-          option.selected = true
-          result.repaint = buffer.restoreFocus()
-        else:
-          # focus on select
-          result.repaint = buffer.setFocus(select)
-    of TAG_BUTTON:
-      let button = HTMLButtonElement(clickable)
-      if button.form != nil:
-        case button.ctype
-        of BUTTON_SUBMIT: result.open = submitForm(button.form, button)
-        of BUTTON_RESET:
-          button.form.reset()
-          result.repaint = true
-          buffer.do_reshape()
-        of BUTTON_BUTTON: discard
-    of TAG_TEXTAREA:
-      result.repaint = buffer.setFocus(clickable)
-      let textarea = HTMLTextAreaElement(clickable)
-      result.readline = some(ReadLineResult(
-        value: textarea.value,
-        area: true
-      ))
-    of TAG_INPUT:
-      result.repaint = buffer.restoreFocus()
-      let input = HTMLInputElement(clickable)
-      case input.inputType
-      of INPUT_SEARCH:
-        result.repaint = buffer.setFocus(input)
-        result.readline = some(ReadLineResult(
-          prompt: "SEARCH: ",
-          value: input.value
-        ))
-      of INPUT_TEXT, INPUT_PASSWORD:
-        result.repaint = buffer.setFocus(input)
-        result.readline = some(ReadLineResult(
-          prompt: "TEXT: ",
-          value: input.value,
-          hide: input.inputType == INPUT_PASSWORD
-        ))
-      of INPUT_FILE:
-        result.repaint = buffer.setFocus(input)
-        var path = if input.file.issome:
-          input.file.get.path.serialize_unicode()
-        else:
-          ""
-        result.readline = some(ReadLineResult(
-          prompt: "Filename: ",
-          value: path
-        ))
-      of INPUT_CHECKBOX:
-        input.checked = not input.checked
-        input.invalid = true
-        result.repaint = true
-        buffer.do_reshape()
-      of INPUT_RADIO:
-        for radio in input.radiogroup:
-          radio.checked = false
-          radio.invalid = true
-        input.checked = true
-        input.invalid = true
-        result.repaint = true
-        buffer.do_reshape()
-      of INPUT_RESET:
-        if input.form != nil:
-          input.form.reset()
-          result.repaint = true
-          buffer.do_reshape()
-      of INPUT_SUBMIT, INPUT_BUTTON:
-        if input.form != nil:
-          result.open = submitForm(input.form, input)
-      else:
-        result.repaint = buffer.restoreFocus()
-    else:
-      result.repaint = buffer.restoreFocus()
+    return buffer.click(clickable)
 
 proc readCanceled*(buffer: Buffer): bool {.proxy.} =
   return buffer.restoreFocus()
