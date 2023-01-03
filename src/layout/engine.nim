@@ -570,6 +570,7 @@ proc buildBlock(builder: BlockBoxBuilder, parent: BlockBox): BlockBox
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
 proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox
+proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder)
 
 proc applyInlineDimensions(box: BlockBox) =
   box.height += box.inline.height
@@ -645,7 +646,13 @@ proc buildLayout(box: BlockBox, builder: BlockBoxBuilder) =
 proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   result = newInlineBlock(parent.viewport, builder, parentWidth)
 
-  result.innerbox.buildLayout(builder)
+  case builder.computed{"display"}
+  of DISPLAY_INLINE_BLOCK:
+    result.innerbox.buildLayout(builder)
+  of DISPLAY_INLINE_TABLE:
+    result.innerbox.buildTableLayout(TableBoxBuilder(builder))
+  else:
+    assert false, $builder.computed{"display"}
 
   if not result.innerbox.isWidthSpecified():
     # shrink-to-fit
@@ -1062,20 +1069,18 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, W: var int, weight: var fl
 # 1. Calculate minimum and preferred width of each column
 # 2. If column width is not auto, set width to max(min_col_width, specified)
 # 3. Calculate the maximum preferred row width. If this is
-# a) less than the specified table width:
-#      distribute (max_row_width - table_width) among cells with an unspecified
-#      width.
-# b) greater than the specified table width:
-#      distribute -(table_width - max_row_width) among cells with an unspecified
-#      width. If this would give any cell a width < min_width, distribute the
-#      difference too.
-proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBox) =
+# a) less than the specified table width, or
+# b) greater than the table's content width:
+#      Distribute the table's content width among cells with an unspecified
+#      width. If this would give any cell a width < min_width, set that
+#      cell's width to min_width, then re-do the distribution.
+proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder) =
   var ctx = TableContext(
     collapse: table.computed{"border-collapse"} == BORDER_COLLAPSE_COLLAPSE
   )
   if not ctx.collapse:
-    ctx.inlinespacing = table.computed{"border-spacing"}.a.px(parent.viewport)
-    ctx.blockspacing = table.computed{"border-spacing"}.b.px(parent.viewport)
+    ctx.inlinespacing = table.computed{"border-spacing"}.a.px(table.viewport)
+    ctx.blockspacing = table.computed{"border-spacing"}.b.px(table.viewport)
   var i = 0
   for row in builder.rows:
     if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
@@ -1086,11 +1091,9 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBo
       ctx.rows.add(rctx)
       ctx.maxwidth = max(rctx.width, ctx.maxwidth)
       inc i
-  var forceresize = false
-  if not table.computed{"width"}.auto:
-    forceresize = true
+  let spec = table.computed{"width"}.auto
   var reflow = newSeq[bool](ctx.cols.len)
-  if (table.contentWidth > ctx.maxwidth and (not table.shrink or forceresize)) or
+  if (table.contentWidth > ctx.maxwidth and (not table.shrink or not spec)) or
       table.contentWidth < ctx.maxwidth:
     var W = table.contentWidth
     var weight: float64
@@ -1174,7 +1177,7 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder, parent: BlockBo
 
 proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(builder)
-  table.buildTableLayout(builder, parent)
+  table.buildTableLayout(builder)
   return table
 
 proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode) =
