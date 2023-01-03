@@ -1,21 +1,23 @@
-# chawan - a web browser in your terminal
+# Chawan - a web browser for your terminal
 
 ## What is this?
 
-A terminal web browser. It displays websites in your terminal and allows you to
-navigate on them.
+A text-mode web browser. It displays websites in your terminal and allows
+you to navigate on them.
 
 It also functions as a pager, similarly to w3m.
 
 ## Compiling
 
-1. Install the nim compiler.
+1. Install the nim compiler: <https://nim-lang.org/install.html>
+	* Please use 1.6.10, older versions will probably not work. (You
+	  can check your nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
-	- curl
-	- quickjs
+	* libcurl: <https://curl.se/libcurl/>
+	* quickjs: <https://bellard.org/quickjs/>
 3. Use one of the following:
-	- `make release` - normal release build
-	- `make` - debug build
+	* `make release` - optimized release build
+	* `make` - debug build (slow, for development)
 
 ## Features
 
@@ -27,18 +29,17 @@ Currently implemented features are:
 * JavaScript based navigation, (very) basic JS support in documents
 * cookies
 
-...and a lot more planned.
+...with a lot more planned.
 
 ## Caveats
 
-Chawan is still very much an experimental browser engine with some serious
-limitations:
+Chawan is still an experimental web browser with some serious limitations:
 
-* Chawan uses uses its own browser engine, implemented from scratch. Expect
-  bugs and missing features.
-* Chawan has no incremental layouting capabilities yet, so it may is
-  rather slow on large websites with complicated layout.
-* While buffers run as separate processes, Chawan does not have any actual
+* Chawan uses uses its own browser engine, mostly implemented from
+  scratch. Expect bugs and missing features.
+* Chawan has no incremental layouting capabilities yet, so it is rather slow
+  on large websites with complicated layout.
+* While buffers run as separate processes, Chawan does not do any actual
   sandboxing. I would strongly advise against enabling scripting until this
   problem is resolved.
 
@@ -51,9 +52,8 @@ See [doc/config.md](doc/config.md).
 Many other text-based web browsers exist. Here's some recommendations if you
 want to try more established ones:
 
-* w3m - A text-mode browser, very much extensible using local-cgi. Also
-  has inline image support and possibly the best table implementation among
-  all browsers. Heavily inspired Chawan.
+* w3m - A text-mode browser, extensible using local-cgi. Also has inline
+  image display and very good table support. Heavily inspired Chawan.
 * elinks - Has CSS and JavaScript support, and incremental rendering
   (it's pretty fast.)
 * lynx - "THE text-based web browser."
@@ -68,3 +68,11 @@ I thought it'd be a fun excercise to write one by myself, for myself.
 
 Generally, I'm happy if Chawan works on websites I use frequently. If it
 also works on other websites, that's a bonus.
+
+## Where are the w3m keybindings?
+
+At [bonus/w3m.toml](bonus/w3m.toml). Note that not every w3m feature is
+implemented yet, so it's not 100% equivalent.
+
+I use vi for editing text, and I prefer my pager to function similarly to
+my editor. Hence the default vi-like keybindings.
