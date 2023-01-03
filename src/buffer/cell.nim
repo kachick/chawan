@@ -4,7 +4,6 @@ import strutils
 import sugar
 
 import css/stylednode
-import layout/box
 import types/color
 import utils/twtstr
 
@@ -28,7 +27,6 @@ type
   FormatCell* = object
     format*: Format
     pos*: int
-    computed*: ComputedFormat
     node*: StyledNode
 
   SimpleFormatCell* = object
@@ -143,22 +141,11 @@ func findNextFormat*(line: SimpleFlexibleLine, pos: int): SimpleFormatCell =
 proc addLine*(grid: var FlexibleGrid) =
   grid.add(FlexibleLine())
 
-proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format, computed: ComputedFormat = nil) =
-  if computed == nil:
-    line.formats.insert(FormatCell(format: format, pos: pos), i)
-  else:
-    line.formats.insert(FormatCell(format: format, computed: computed, node: computed.node, pos: pos), i)
+proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format, node: StyledNode = nil) =
+  line.formats.insert(FormatCell(format: format, node: node, pos: pos), i)
 
-proc addFormat*(line: var FlexibleLine, pos: int, format: Format) =
-  line.formats.add(FormatCell(format: format, pos: pos))
-
-proc addFormat*(line: var FlexibleLine, pos: int, format: Format, computed: ComputedFormat) =
-  #if computed != nil and line.formats.len > 0 and line.formats[^1].computed == computed and line.formats[^1].format.bgcolor != format.bgcolor:
-  #  return
-  if computed == nil:
-    line.formats.add(FormatCell(format: format, pos: pos))
-  else:
-    line.formats.add(FormatCell(format: format, computed: computed, node: computed.node, pos: pos))
+proc addFormat*(line: var FlexibleLine, pos: int, format: Format, node: StyledNode = nil) =
+  line.formats.add(FormatCell(format: format, node: node, pos: pos))
 
 template inc_check(i: int) =
   inc i

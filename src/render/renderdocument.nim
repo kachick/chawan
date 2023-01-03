@@ -80,21 +80,24 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
       # First format's pos may be == cx here.
       if lines[y].formats[fi].pos == cx:
         padformat.bgcolor = lines[y].formats[fi].format.bgcolor
+        let node = lines[y].formats[fi].node
         lines[y].formats.delete(fi)
-        lines[y].insertFormat(cx, fi, padformat)
+        lines[y].insertFormat(cx, fi, padformat, node)
       else:
         # First format < cx => split it up
         assert lines[y].formats[fi].pos < cx
         padformat.bgcolor = lines[y].formats[fi].format.bgcolor
+        let node = lines[y].formats[fi].node
         inc fi # insert after first format
-        lines[y].insertFormat(cx, fi, padformat)
+        lines[y].insertFormat(cx, fi, padformat, node)
     inc fi # skip last format
     while fi < lines[y].formats.len and lines[y].formats[fi].pos < x:
       # Other formats must be > cx => replace them
       padformat.bgcolor = lines[y].formats[fi].format.bgcolor
+      let node = lines[y].formats[fi].node
       let px = lines[y].formats[fi].pos
       lines[y].formats.delete(fi)
-      lines[y].insertFormat(px, fi, padformat)
+      lines[y].insertFormat(px, fi, padformat, node)
       inc fi
     dec fi # go back to previous format, so that pos <= x
     assert lines[y].formats[fi].pos <= x
@@ -102,25 +105,27 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
   # Now for the text's formats:
   var format = cformat.formatFromWord()
   var lformat: Format
+  var lnode: StyledNode
   if fi == -1:
     # No formats => just insert a new format at 0
     inc fi
-    lines[y].insertFormat(x, fi, format, cformat)
+    lines[y].insertFormat(x, fi, format, cformat.node)
     lformat = newFormat()
   else:
     # First format's pos may be == x here.
     lformat = lines[y].formats[fi].format # save for later use
+    lnode = lines[y].formats[fi].node
     if lines[y].formats[fi].pos == x:
       # Replace.
       format.bgcolor = lines[y].formats[fi].format.bgcolor
       lines[y].formats.delete(fi)
-      lines[y].insertFormat(x, fi, format, cformat)
+      lines[y].insertFormat(x, fi, format, cformat.node)
     else:
       # First format's pos < x => split it up.
       assert lines[y].formats[fi].pos < x
       format.bgcolor = lines[y].formats[fi].format.bgcolor
       inc fi # insert after first format
-      lines[y].insertFormat(x, fi, format, cformat)
+      lines[y].insertFormat(x, fi, format, cformat.node)
   inc fi # skip last format
 
   while fi < lines[y].formats.len and lines[y].formats[fi].pos < nx:
@@ -128,8 +133,9 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
     format.bgcolor = lines[y].formats[fi].format.bgcolor
     let px = lines[y].formats[fi].pos
     lformat = lines[y].formats[fi].format # save for later use
+    lnode = lines[y].formats[fi].node
     lines[y].formats.delete(fi)
-    lines[y].insertFormat(px, fi, format, cformat)
+    lines[y].insertFormat(px, fi, format, cformat.node)
     inc fi
 
   if i < ostr.len and (fi >= lines[y].formats.len or lines[y].formats[fi].pos > nx):
@@ -137,7 +143,7 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
     # string, and no formatting comes directly after it. So we insert the
     # continuation of the last format we replaced after our string.
     # (Default format when we haven't replaced anything.)
-    lines[y].insertFormat(nx, fi, lformat)
+    lines[y].insertFormat(nx, fi, lformat, lnode)
 
   dec fi # go back to previous format, so that pos <= nx
   assert lines[y].formats[fi].pos <= nx
@@ -175,7 +181,7 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, wind
 
   lines.setText(linestr, spacing.format, x, y)
 
-proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, endx, endy: int, window: WindowAttributes) =
+proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, endx, endy: int, node: StyledNode, window: WindowAttributes) =
   let color = color.cellColor()
 
   var starty = starty div window.ppl
@@ -251,6 +257,7 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, 
         break
       if lines[y].formats[fi].pos >= startx:
         lines[y].formats[fi].format.bgcolor = color
+        lines[y].formats[fi].node = node
 
 func calculateErrorY(ctx: InlineContext, window: WindowAttributes): int =
   if ctx.lines.len <= 1: return 0
@@ -299,7 +306,7 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
     y += ctx.offset.y
 
     if ctx.computed{"background-color"}.a != 0: #TODO color blending
-      grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, window)
+      grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, ctx.node, window)
     if ctx.computed{"background-image"}.t == CONTENT_IMAGE:
       # ugly hack for background-image display... TODO actually implement images
       let s = ctx.computed{"background-image"}.s # [img]
