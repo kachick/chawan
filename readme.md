@@ -72,7 +72,7 @@ also works on other websites, that's a bonus.
 ## Where are the w3m keybindings?
 
 At [bonus/w3m.toml](bonus/w3m.toml). Note that not every w3m feature is
-implemented yet, so it's not 100% equivalent.
+implemented yet, so it's not 100% compatible.
 
 I use vi for editing text, and I prefer my pager to function similarly to
 my editor. Hence the default vi-like keybindings.
