@@ -1017,7 +1017,6 @@ func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType, vtype: CSSValue
     val.getValueFromDecl(d, vtype, ptype)
   except CSSValueError:
     #TODO we should probably just do nothing instead
-    #TODO also get rid of these ugly exceptions
     val = getDefault(ptype)
 
   return (val, cssGlobal(d))
