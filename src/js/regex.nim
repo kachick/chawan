@@ -191,7 +191,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
     if captureCount == 0 or nocaps:
       break
     let cstrAddress = cast[int](cstr)
-    start = cast[ptr int](cast[int](capture) + sizeof(ptr uint8))[] - cstrAddress
+    start = (cast[ptr int](cast[int](capture) + sizeof(ptr uint8))[] - cstrAddress) shr cint(not ascii)
     var i = 0
     while i < captureCount * sizeof(ptr uint8):
       let s = cast[ptr int](cast[int](capture) + i)[] - cstrAddress
