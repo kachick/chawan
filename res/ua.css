@@ -215,6 +215,7 @@ ol {
 
 ul {
 	list-style-type: disc;
+	counter-reset: list-item 0;
 }
 
 :is(ol, ul, menu, dir) ul {
