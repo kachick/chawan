@@ -597,20 +597,23 @@ func cssGlobal*(d: CSSDeclaration): CSSGlobalValueType =
       of "revert": return VALUE_REVERT
   return VALUE_NOGLOBAL
 
-func cssQuotes(d: CSSDeclaration): Option[CSSQuotes] =
+func cssQuotes(d: CSSDeclaration): CSSQuotes =
+  template die =
+    raise newException(CSSValueError, "Invalid quotes")
   var res: CSSQuotes
   var sa = false
   var pair: tuple[s, e: string]
   for cval in d.value:
-    if res.auto: return none(CSSQuotes)
+    if res.auto: die
     if isToken(cval):
       let tok = getToken(cval)
       case tok.tokenType
       of CSS_IDENT_TOKEN:
-        if res.qs.len > 0: return none(CSSQuotes)
+        if res.qs.len > 0: die
         case tok.value
         of "auto": res.auto = true
-        of "none": return none(CSSQuotes)
+        of "none":
+          die
       of CSS_STRING_TOKEN:
         if sa:
           pair.e = tok.value
@@ -620,9 +623,10 @@ func cssQuotes(d: CSSDeclaration): Option[CSSQuotes] =
           pair.s = tok.value
           sa = true
       of CSS_WHITESPACE_TOKEN: discard
-      else: return none(CSSQuotes)
-  if not sa:
-    return some(res)
+      else: die
+  if sa:
+    die
+  return res
 
 func cssContent(d: CSSDeclaration): seq[CSSContent] =
   for cval in d.value:
@@ -660,7 +664,6 @@ func cssDisplay(cval: CSSComponentValue): CSSDisplay =
       of "table-footer-group": return DISPLAY_TABLE_FOOTER_GROUP
       of "table-caption": return DISPLAY_TABLE_CAPTION
       of "none": return DISPLAY_NONE
-      else: return DISPLAY_INLINE
   raise newException(CSSValueError, "Invalid display")
 
 func cssFontStyle(cval: CSSComponentValue): CSSFontStyle =
@@ -671,7 +674,6 @@ func cssFontStyle(cval: CSSComponentValue): CSSFontStyle =
       of "normal": return FONTSTYLE_NORMAL
       of "italic": return FONTSTYLE_ITALIC
       of "oblique": return FONTSTYLE_OBLIQUE
-      else: raise newException(CSSValueError, "Invalid font style")
   raise newException(CSSValueError, "Invalid font style")
 
 func cssWhiteSpace(cval: CSSComponentValue): CSSWhitespace =
@@ -684,7 +686,6 @@ func cssWhiteSpace(cval: CSSComponentValue): CSSWhitespace =
       of "pre": return WHITESPACE_PRE
       of "pre-line": return WHITESPACE_PRE_LINE
       of "pre-wrap": return WHITESPACE_PRE_WRAP
-      else: return WHITESPACE_NORMAL
   raise newException(CSSValueError, "Invalid whitespace")
 
 func cssFontWeight(cval: CSSComponentValue): int =
@@ -831,8 +832,9 @@ func cssBorderCollapse(cval: CSSComponentValue): CSSBorderCollapse =
       of "separate": return BORDER_COLLAPSE_SEPARATE
   raise newException(CSSValueError, "Invalid border collapse")
 
-func cssCounterReset(d: CSSDeclaration): Option[seq[CSSCounterReset]] =
-  var res: seq[CSSCounterReset]
+func cssCounterReset(d: CSSDeclaration): seq[CSSCounterReset] =
+  template die =
+    raise newException(CSSValueError, "Invalid counter-reset")
   var r: CSSCounterReset
   var s = false
   for cval in d.value:
@@ -841,34 +843,38 @@ func cssCounterReset(d: CSSDeclaration): Option[seq[CSSCounterReset]] =
       case tok.tokenType
       of CSS_WHITESPACE_TOKEN: discard
       of CSS_IDENT_TOKEN:
-        if s: return
+        if s:
+          die
         r.name = tok.value
         s = true
       of CSS_NUMBER_TOKEN:
-        if not s: return
+        if not s:
+          die
         r.num = int(tok.nvalue)
-        res.add(r)
+        result.add(r)
         s = false
-      else: return
-  return some(res)
+      else:
+        die
 
-func cssMaxMinSize(cval: CSSComponentValue): Option[CSSLength] =
+func cssMaxMinSize(cval: CSSComponentValue): CSSLength =
   if isToken(cval):
     let tok = getToken(cval)
     case tok.tokenType
     of CSS_IDENT_TOKEN:
       if tok.value == "none":
-        return some(CSSLength(auto: true))
+        return CSSLength(auto: true)
     of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN:
-      return some(cssLength(tok, allow_negative = false))
+      return cssLength(tok, allow_negative = false)
     else: discard
+  raise newException(CSSValueError, "Invalid min/max-size")
 
 #TODO this should be a separate type
-func cssImage(cval: CSSComponentValue): Option[CSSContent] =
+func cssImage(cval: CSSComponentValue): CSSContent =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_URL_TOKEN or tok.tokenType == CSS_BAD_URL_TOKEN:
-      return some(CSSContent(t: CONTENT_IMAGE, s: "[img]"))
+      return CSSContent(t: CONTENT_IMAGE, s: "[img]")
+  raise newException(CSSValueError, "Invalid image")
 
 func cssInteger(cval: CSSComponentValue, range: Slice[int]): int =
   if isToken(cval):
@@ -897,11 +903,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
       val.length = cssLineHeight(cval)
     of PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT, PROPERTY_MIN_WIDTH,
        PROPERTY_MIN_HEIGHT:
-      let res = cssMaxMinSize(cval)
-      if res.isSome:
-        val.length = res.get
-      else:
-        raise newException(CSSValueError, "Invalid length")
+      val.length = cssMaxMinSize(cval)
     of PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT, PROPERTY_PADDING_TOP,
        PROPERTY_PADDING_BOTTOM:
       val.length = cssLength(cval, has_auto = false)
@@ -935,24 +937,9 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
     else:
       let cval = d.value[i]
       val.length2.b = cssAbsoluteLength(cval)
-  of VALUE_QUOTES:
-    let qs = cssQuotes(d)
-    if qs.isSome:
-      val.quotes = qs.get
-    else:
-      raise newException(CSSValueError, "Invalid quotes")
-  of VALUE_COUNTER_RESET:
-    let res = cssCounterReset(d)
-    if res.isSome:
-      val.counterreset = res.get
-    else:
-      raise newException(CSSValueError, "Invalid counter reset")
-  of VALUE_IMAGE:
-    let res = cssImage(d)
-    if res.isSome:
-      val.image = res.get
-    else:
-      raise newException(CSSValueError, "Invalid image")
+  of VALUE_QUOTES: val.quotes = cssQuotes(d)
+  of VALUE_COUNTER_RESET: val.counterreset = cssCounterReset(d)
+  of VALUE_IMAGE: val.image = cssImage(d)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -1011,14 +998,10 @@ let defaultTable = getInitialTable()
 template getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
   defaultTable[t]
 
+# WARNING: may raise an exception.
 func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType, vtype: CSSValueType): (CSSComputedValue, CSSGlobalValueType) =
   var val = CSSComputedValue(t: ptype, v: vtype)
-  try:
-    val.getValueFromDecl(d, vtype, ptype)
-  except CSSValueError:
-    #TODO we should probably just do nothing instead
-    val = getDefault(ptype)
-
+  val.getValueFromDecl(d, vtype, ptype)
   return (val, cssGlobal(d))
 
 func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]): seq[(CSSComputedValue, CSSGlobalValueType)] =
@@ -1081,7 +1064,10 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
   of SHORTHAND_NONE:
     let ptype = propertyType(name)
     let vtype = valueType(ptype)
-    result.add(getComputedValue(d, ptype, vtype))
+    try:
+      result.add(getComputedValue(d, ptype, vtype))
+    except CSSValueError:
+      discard
   of SHORTHAND_ALL:
     let global = cssGlobal(d)
     if global != VALUE_NOGLOBAL:
@@ -1107,11 +1093,10 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
     let bgimageval = CSSComputedValue(t: bgimageptype, v: valueType(bgimageptype))
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
-        let img = cssImage(tok)
-        if img.isSome:
-          bgimageval.image = img.get
+        try:
+          bgimageval.image = cssImage(tok)
           result.add((bgimageval, global))
-        else:
+        except CSSValueError:
           try:
             bgcolorval.color = cssColor(tok)
             result.add((bgcolorval, global))
