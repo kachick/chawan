@@ -263,13 +263,14 @@ func getClickable(styledNode: StyledNode): Element =
     let element = Element(styledNode.node)
     if element.tagType in ClickableElements and (element.tagType != TAG_A or HTMLAnchorElement(element).href != ""):
       return element
-  result = styledNode.node
+  var node = styledNode.node
   while true:
-    result = result.findAncestor(ClickableElements)
+    result = node.findAncestor(ClickableElements)
     if result == nil:
       break
     if result.tagType != TAG_A or HTMLAnchorElement(result).href != "":
       break
+    node = result
 
 func getClickHover(styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
