@@ -311,7 +311,8 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
         x += ctx.width div 2
       x = x div window.ppc
       y = y div window.ppl
-      grid.setText(s, ComputedFormat(node: ctx.node), x, y)
+      if y >= 0 and x + w >= 0:
+        grid.setText(s, ComputedFormat(node: ctx.node), x, y)
 
     if ctx of ListItemBox:
       let ctx = ListItemBox(ctx)
