@@ -1,14 +1,10 @@
 import tables
 
 type
-  PromiseState = enum
-    PROMISE_PENDING, PROMISE_FULFILLED, PROMISE_REJECTED
-
   EmptyPromise* = ref object of RootObj
     cb: (proc())
     next: EmptyPromise
     opaque: pointer
-    state: PromiseState
 
   Promise*[T] = ref object of EmptyPromise
     res: T
@@ -26,24 +22,25 @@ proc newPromiseMap*(opaque: pointer): PromiseMap =
   )
 
 proc addPromise*[T](map: var PromiseMap, id: int, get: GetValueProc[T]): Promise[T] =
-  let promise = Promise[T](state: PROMISE_PENDING, get: get, opaque: map.opaque)
+  let promise = Promise[T](get: get, opaque: map.opaque)
   map.tab[id] = promise
   return promise
 
 proc addEmptyPromise*(map: var PromiseMap, id: int): EmptyPromise =
-  let promise = EmptyPromise(state: PROMISE_PENDING, opaque: map.opaque)
+  let promise = EmptyPromise(opaque: map.opaque)
   map.tab[id] = promise
   return promise
 
 proc resolve*(promise: EmptyPromise) =
   var promise = promise
   while true:
-    promise.state = PROMISE_FULFILLED
     if promise.cb != nil:
       promise.cb()
+    promise.cb = nil
     promise = promise.next
     if promise == nil:
       break
+    promise.next = nil
 
 proc resolve*[T](promise: Promise[T], res: T) =
   if promise.cb != nil:
@@ -72,6 +69,7 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable
   return promise.then(proc() =
     if promise.get != nil:
       promise.get(promise.opaque, promise.res)
+      promise.get = nil
     cb(promise.res))
 
 proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.discardable.} =
