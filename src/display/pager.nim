@@ -381,7 +381,10 @@ proc prevBuffer(pager: Pager): bool {.jsfunc.} =
   let n = pager.container.parent.children.find(pager.container)
   assert n != -1, "Container not a child of its parent"
   if n > 0:
-    pager.setContainer(pager.container.parent.children[n - 1])
+    var container = pager.container.parent.children[n - 1]
+    while container.children.len > 0:
+      container = container.children[^1]
+    pager.setContainer(container)
   else:
     pager.setContainer(pager.container.parent)
   return true
@@ -392,13 +395,14 @@ proc nextBuffer(pager: Pager): bool {.jsfunc.} =
   if pager.container.children.len > 0:
     pager.setContainer(pager.container.children[0])
     return true
-  if pager.container.parent == nil:
-    return false
-  let n = pager.container.parent.children.find(pager.container)
-  assert n != -1, "Container not a child of its parent"
-  if n < pager.container.parent.children.high:
-    pager.setContainer(pager.container.parent.children[n + 1])
-    return true
+  var container = pager.container
+  while container.parent != nil:
+    let n = container.parent.children.find(container)
+    assert n != -1, "Container not a child of its parent"
+    if n < container.parent.children.high:
+      pager.setContainer(container.parent.children[n + 1])
+      return true
+    container = container.parent
   return false
 
 proc parentBuffer(pager: Pager): bool {.jsfunc.} =
@@ -746,6 +750,10 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       if n != -1:
         container.replace.children.delete(n)
         container.parent = nil
+      let n2 = container.children.find(container.replace)
+      if n2 != -1:
+        container.children.delete(n2)
+        container.replace.parent = nil
       container.children.add(container.replace.children)
       for child in container.children:
         child.parent = container
