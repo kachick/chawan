@@ -156,8 +156,15 @@ proc input(client: Client) =
   restoreStdin(client.console.tty.getFileHandle())
   while true:
     let c = client.console.readChar()
-    client.s &= c
-    if client.pager.lineedit.isSome:
+    if client.pager.askpromise != nil:
+      if c == 'y':
+        client.pager.fulfillAsk(true)
+        client.runJSJobs()
+      elif c == 'n':
+        client.pager.fulfillAsk(false)
+        client.runJSJobs()
+    elif client.pager.lineedit.isSome:
+      client.s &= c
       let edit = client.pager.lineedit.get
       client.line = edit
       if edit.escNext:
@@ -171,23 +178,25 @@ proc input(client: Client) =
             client.s = ""
           else:
             client.feedNext = true
-        elif not client.feedNext:
+        elif not client.feednext:
           client.evalJSFree(action, "<command>")
         if client.pager.lineedit.isNone:
           client.line = nil
         if not client.feedNext:
           client.pager.updateReadLine()
     else:
+      client.s &= c
       let action = getNormalAction(client.config, client.s)
       client.evalJSFree(action, "<command>")
       if not client.feedNext:
         client.handlePagerEvents()
         client.pager.refreshStatusMsg()
-    if not client.feedNext:
+    if not client.feednext:
       client.s = ""
       break
     else:
-      client.feedNext = false
+      client.feednext = false
+  client.s = ""
 
 proc setTimeout[T: JSValue|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
   let id = client.timeoutid

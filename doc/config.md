@@ -218,7 +218,7 @@ Examples:
 match = '^ddg:'
 substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
 
-# Search using wikipedia, Firefox-style.
+# Search using Wikipedia, Firefox-style.
 [[omnirule]]
 match = '^@wikipedia'
 substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + x.replace(/@wikipedia/, "")'
@@ -374,7 +374,7 @@ escape to the keybinding respectively (essentially making `M-` the same as
 'C-M-j' = 'pager.load()' # change URL when Control, Escape and j are pressed
 'gg' = 'pager.cursorFirstLine()' # go to the first line of the page when g is pressed twice
 ```
-An action is a JavaScript function called by chawan every time the keybinding
+An action is a JavaScript function called by Chawan every time the keybinding
 is typed in. A list of built-in pager functions can be found below.
 
 ### Pager actions
@@ -637,6 +637,15 @@ open the current buffer's contents as HTML.</td>
 <td>Display an alert message of the URL or title under the cursor. Multiple
 calls allow cycling through the two. (i.e. by default, press u once -> title,
 press again -> URL)</td>
+</tr>
+
+<tr>
+<td>`pager.ask(prompt)`</td>
+<td>Ask the user for confirmation. Useful for e.g. an exit prompt:
+```
+q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
+```
+</td>
 </tr>
 
 </table>

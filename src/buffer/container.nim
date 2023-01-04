@@ -260,6 +260,9 @@ func getHoverText*(container: Container): string =
     if container.hovertext[t] != "":
       return container.hovertext[t]
 
+func isHoverURL*(container: Container, url: URL): bool =
+  return $url == container.hovertext[HOVER_LINK]
+
 proc triggerEvent(container: Container, event: ContainerEvent) =
   container.events.addLast(event)
 

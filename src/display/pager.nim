@@ -14,6 +14,7 @@ import buffer/container
 import config/config
 import display/term
 import io/lineedit
+import io/promise
 import io/request
 import io/window
 import ips/editor
@@ -34,6 +35,9 @@ type
     SEARCH_B, ISEARCH_F, ISEARCH_B, GOTO_LINE
 
   Pager* = ref object
+    askpromise*: Promise[bool]
+    askprompt: string
+    askcursor: int
     jsctx: JSContext
     numload*: int
     alerts: seq[string]
@@ -53,7 +57,6 @@ type
     tty: File
     procmap*: Table[Pid, Container]
     unreg*: seq[(Pid, SocketStream)]
-    icpos: CursorPosition
     display: FixedGrid
     redraw*: bool
     term*: Terminal
@@ -243,28 +246,35 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
         pager.display[dls + i - startw].format = hlformat
     inc by
 
-proc clearStatusMessage(pager: Pager) =
-  pager.statusgrid = newFixedGrid(pager.statusgrid.width)
-
-proc writeStatusMessage(pager: Pager, str: string, format: Format = newFormat()) =
-  pager.clearStatusMessage()
-  var i = 0
+proc writeStatusMessage(pager: Pager, str: string,
+                        format: Format = newFormat(), start = 0,
+                        maxwidth = -1, clip = '$'): int {.discardable.} =
+  var maxwidth = maxwidth
+  if maxwidth == -1:
+    maxwidth = pager.statusgrid.len
+  var i = start
   for r in str.runes:
-    if i >= pager.statusgrid.len:
-      pager.statusgrid[^1].str = "$"
+    if i >= maxwidth:
+      pager.statusgrid[^1].str = $clip
       break
-    if r.isControlChar() or r == Rune('\n'):
-      pager.statusgrid[i].str &= "^"
-      pager.statusgrid[i].str &= getControlLetter(char(r))
+    if r.isControlChar():
+      pager.statusgrid[i].str = "^" & getControlLetter(char(r))
     else:
-      pager.statusgrid[i].str &= r
+      pager.statusgrid[i].str = $r
     pager.statusgrid[i].format = format
     i += r.twidth(i)
+  result = i
+  var def = newFormat()
+  while i < maxwidth:
+    pager.statusgrid[i].str = ""
+    pager.statusgrid[i].format = def
+    inc i
 
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
   if container == nil: return
   if pager.tty == nil: return
+  if pager.askpromise != nil: return
   if container.loadinfo != "":
     pager.alerton = false
     pager.writeStatusMessage(container.loadinfo)
@@ -273,37 +283,22 @@ proc refreshStatusMsg*(pager: Pager) =
     pager.writeStatusMessage(pager.alerts[0])
     pager.alerts.delete(0)
   else:
+    var format = newFormat()
+    format.reverse = true
     pager.alerton = false
     container.clearHover()
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
               $container.atPercentOf() & "%)"
-    let mw = msg.width()
-    let t = container.getTitle()
-    let tt = " <" & t & ">"
-    let tw = tt.width()
-    let ht = container.getHoverText()
-    if ht.len == 0: # hover text is empty.
-      msg &= tt
+    let mw = pager.writeStatusMessage(msg, format)
+    let title = " <" & container.getTitle() & ">"
+    let hover = container.getHoverText()
+    if hover.len == 0:
+      pager.writeStatusMessage(title, format, mw)
     else:
-      let h = " " & ht
-      let hw = h.width()
-      if mw + tw + hw < pager.statusgrid.width:
-        msg &= tt
-      elif mw + hw + 3 < pager.statusgrid.width:
-        # squeezing the title would mean we still have some space for it.
-        var t2 = " <"
-        var w = mw + hw + 2 # t2 has a width of 2
-        for r in t.runes:
-          if w >= pager.statusgrid.width - 1: # ends with another >
-            t2 &= ">"
-            break
-          t2 &= r
-          w += r.width()
-        msg &= t2
-      msg &= h
-    var format = newFormat()
-    format.reverse = true
-    pager.writeStatusMessage(msg, format)
+      let hover2 = " " & hover
+      let maxwidth = pager.statusgrid.width - mw - hover2.width()
+      let tw = pager.writeStatusMessage(title, format, mw, maxwidth, '>')
+      pager.writeStatusMessage(hover2, format, tw)
 
 # Call refreshStatusMsg if no alert is being displayed on the screen.
 proc showAlerts*(pager: Pager) =
@@ -342,18 +337,40 @@ proc draw*(pager: Pager) =
   if pager.redraw:
     pager.refreshDisplay()
     pager.term.writeGrid(pager.display)
-  if pager.lineedit.isSome:
+  if pager.askpromise != nil:
+    discard
+  elif pager.lineedit.isSome:
     pager.term.writeGrid(pager.lineedit.get.generateOutput(), 0, pager.attrs.height - 1)
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
   pager.term.outputGrid()
-  if pager.lineedit.isSome:
+  if pager.askpromise != nil:
+    pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
+  elif pager.lineedit.isSome:
     pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
   else:
     pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
   pager.term.showCursor()
   pager.term.flush()
   pager.redraw = false
+
+proc writeAskPrompt(pager: Pager) =
+  let yn = " (y/n)"
+  let maxwidth = pager.statusgrid.width - yn.len
+  let i = pager.writeStatusMessage(pager.askprompt, maxwidth = maxwidth)
+  pager.askcursor = pager.writeStatusMessage(yn, start = i)
+  pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
+
+proc ask(pager: Pager, prompt: string): Promise[bool] {.jsfunc.} =
+  pager.askprompt = prompt
+  pager.writeAskPrompt()
+  pager.askpromise = Promise[bool]()
+  return pager.askpromise
+
+proc fulfillAsk*(pager: Pager, y: bool) =
+  pager.askpromise.resolve(y)
+  pager.askpromise = nil
+  pager.askprompt = ""
 
 proc registerContainer*(pager: Pager, container: Container) =
   pager.procmap[container.process] = container
@@ -511,6 +528,8 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
   pager.statusgrid = newFixedGrid(attrs.width)
   for container in pager.containers:
     container.windowChange(attrs)
+  if pager.askprompt != "":
+    pager.writeAskPrompt()
   pager.refreshStatusMsg()
 
 proc applySiteconf(pager: Pager, request: Request): BufferConfig =
@@ -805,7 +824,12 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
         pager.container.readCanceled()
       pager.redraw = true
   of OPEN:
-    pager.gotoURL(event.request, some(container.source.location), referrer = pager.container)
+    if pager.container == nil or not pager.container.isHoverURL(event.request.url):
+      pager.ask("Open pop-up? " & $event.request.url).then(proc(x: bool) =
+        if x:
+          pager.gotoURL(event.request, some(container.source.location), referrer = pager.container))
+    else:
+      pager.gotoURL(event.request, some(container.source.location), referrer = pager.container)
   of INVALID_COMMAND: discard
   of STATUS:
     if pager.container == container:

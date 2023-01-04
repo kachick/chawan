@@ -71,7 +71,7 @@ C-w = 'config.searchwrap = !config.searchwrap; pager.alert("Wrap search " + (con
 # Misc
 #TODO shell out, help file, options, cookies
 C-c = 'pager.cancel()'
-q = 'pager.quit()' #TODO confirm
+q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
 Q = 'pager.quit()'
 
 # w3m line editing is equivalent to Chawan's defaults.
