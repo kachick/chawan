@@ -149,8 +149,8 @@ proc alert(client: Client, msg: string) {.jsfunc.} =
 
 proc handlePagerEvents(client: Client) =
   let container = client.pager.container
-  if container != nil and not client.pager.handleEvents(container):
-    client.quit(1)
+  if container != nil:
+    client.pager.handleEvents(container)
 
 proc input(client: Client) =
   restoreStdin(client.console.tty.getFileHandle())
@@ -245,6 +245,24 @@ proc clearInterval(client: Client, id: int) {.jsfunc.} =
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
+proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
+  for i in 0..<ss.len:
+    console.err.write(ss[i])
+    if i != ss.high:
+      console.err.write(' ')
+  console.err.write('\n')
+  console.err.flush()
+
+proc show(console: Console) {.jsfunc.} =
+  if console.pager.container != console.container:
+    console.prev = console.pager.container
+    console.pager.setContainer(console.container)
+    console.container.requestLines()
+
+proc hide(console: Console) {.jsfunc.} =
+  if console.pager.container == console.container:
+    console.pager.setContainer(console.prev)
+
 proc acceptBuffers(client: Client) =
   while client.pager.unreg.len > 0:
     let (pid, stream) = client.pager.unreg.pop()
@@ -266,26 +284,58 @@ proc acceptBuffers(client: Client) =
       let fd = stream.source.getFd()
       client.fdmap[int(fd)] = container
       client.selector.registerHandle(fd, {Read}, nil)
-      if not client.pager.handleEvents(container):
-        client.quit(1)
-      if container == client.pager.container:
-        client.pager.showAlerts()
-        client.pager.draw()
+      client.pager.handleEvents(container)
     else:
       #TODO uh what?
-      eprint "???"
+      client.console.log("???")
       stream.close()
-
-proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
-  for i in 0..<ss.len:
-    console.err.write(ss[i])
-    if i != ss.high:
-      console.err.write(' ')
-  console.err.write('\n')
-  console.err.flush()
 
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
+
+proc handleRead(client: Client, fd: int) =
+  if client.console.tty != nil and fd == client.console.tty.getFileHandle():
+    client.input()
+    client.handlePagerEvents()
+  elif fd == client.dispatcher.forkserver.estream.fd:
+    var nl = true
+    while true:
+      try:
+        let c = client.dispatcher.forkserver.estream.readChar()
+        if nl:
+          client.console.err.write("STDERR: ")
+          nl = false
+        client.console.err.write(c)
+        nl = c == '\n'
+      except IOError:
+        break
+    client.console.err.flush()
+  else:
+    let container = client.fdmap[fd]
+    client.pager.handleEvent(container)
+
+proc handleError(client: Client, fd: int) =
+  if client.console.tty != nil and fd == client.console.tty.getFileHandle():
+    #TODO do something here...
+    stderr.write("Error in tty\n")
+    quit(1)
+  elif fd == client.dispatcher.forkserver.estream.fd:
+    #TODO do something here...
+    stderr.write("Fork server crashed :(\n")
+    quit(1)
+  else:
+    if fd in client.fdmap:
+      let container = client.fdmap[fd]
+      if container != client.console.container:
+        client.console.log("Error in buffer", $container.location)
+      else:
+        client.console.container = nil
+      client.selector.unregister(fd)
+      client.fdmap.del(fd)
+    if client.console.container != nil:
+      client.console.show()
+    else:
+      quit(1)
 
 proc inputLoop(client: Client) =
   let selector = client.selector
@@ -296,22 +346,13 @@ proc inputLoop(client: Client) =
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
-        if event.fd == client.console.tty.getFileHandle():
-          client.input()
-          client.handlePagerEvents()
-        else:
-          let container = client.fdmap[event.fd]
-          if not client.pager.handleEvent(container):
-            client.quit(1)
+        client.handleRead(event.fd)
       if Error in event.events:
-        #TODO handle errors
-        client.alert("Error in selected fds, check console")
-        client.console.log($event)
+        client.handleError(event.fd)
       if Signal in event.events: 
-        if event.fd == sigwinch:
-          client.attrs = getWindowAttributes(client.console.tty)
-          client.pager.windowChange(client.attrs)
-        else: assert false
+        assert event.fd == sigwinch
+        client.attrs = getWindowAttributes(client.console.tty)
+        client.pager.windowChange(client.attrs)
       if Event.Timer in event.events:
         if event.fd in client.interval_fdis:
           client.intervals[client.interval_fdis[event.fd]].handler()
@@ -324,44 +365,18 @@ proc inputLoop(client: Client) =
       client.command(client.pager.scommand)
       client.pager.scommand = ""
       client.handlePagerEvents()
+    client.acceptBuffers()
     client.pager.showAlerts()
     client.pager.draw()
-    client.acceptBuffers()
-
-proc dumpLoop(client: Client) =
-  while client.pager.numload > 0:
-    let events = client.selector.select(-1)
-    for event in events:
-      if Read in event.events:
-        let container = client.fdmap[event.fd]
-        if not client.pager.handleEvent(container):
-          client.quit(1)
-      if Error in event.events:
-        #TODO handle errors
-        client.alert("Error in selected fds, check console")
-        client.console.log($event)
-      if Event.Timer in event.events:
-        if event.fd in client.interval_fdis:
-          client.intervals[client.interval_fdis[event.fd]].handler()
-        elif event.fd in client.timeout_fdis:
-          let id = client.timeout_fdis[event.fd]
-          let timeout = client.timeouts[id]
-          timeout.handler()
-          client.clearTimeout(id)
-    client.acceptBuffers()
 
 proc headlessLoop(client: Client) =
-  while client.timeouts.len + client.intervals.len != 0:
+  while client.timeouts.len + client.intervals.len != 0 or client.pager.numload > 0:
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
-        let container = client.fdmap[event.fd]
-        if not client.pager.handleEvent(container):
-          client.quit(1)
+        client.handleRead(event.fd)
       if Error in event.events:
-        #TODO handle errors
-        client.alert("Error in selected fds, check console")
-        client.console.log($event)
+        client.handleError(event.fd)
       if Event.Timer in event.events:
         if event.fd in client.interval_fdis:
           client.intervals[client.interval_fdis[event.fd]].handler()
@@ -404,11 +419,17 @@ proc newConsole(pager: Pager, tty: File): Console =
     result.err = newFileStream(stderr)
 
 proc dumpBuffers(client: Client) =
-  client.dumpLoop()
+  client.headlessLoop()
   let ostream = newFileStream(stdout)
   for container in client.pager.containers:
-    client.pager.drawBuffer(container, ostream)
-    discard client.pager.handleEvents(container)
+    try:
+      client.pager.drawBuffer(container, ostream)
+      client.pager.handleEvents(container)
+    except IOError:
+      client.console.log("Error in buffer", $container.location)
+      # check for errors
+      client.handleRead(client.dispatcher.forkserver.estream.fd)
+      quit(1)
   stdout.close()
 
 proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
@@ -424,6 +445,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
       dump = true
   client.ssock = initServerSocket(false)
   client.selector = newSelector[Container]()
+  client.selector.registerHandle(int(client.dispatcher.forkserver.estream.fd), {Read}, nil)
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)
   client.alive = true
@@ -462,16 +484,6 @@ proc nimCollect(client: Client) {.jsfunc.} =
 
 proc jsCollect(client: Client) {.jsfunc.} =
   JS_RunGC(client.jsrt)
-
-proc show(console: Console) {.jsfunc.} =
-  if console.pager.container != console.container:
-    console.prev = console.pager.container
-    console.pager.setContainer(console.container)
-    console.container.requestLines()
-
-proc hide(console: Console) {.jsfunc.} =
-  if console.pager.container == console.container:
-    console.pager.setContainer(console.prev)
 
 proc sleep(client: Client, millis: int) {.jsfunc.} =
   sleep millis

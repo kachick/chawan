@@ -97,7 +97,7 @@ type
   # this and the Client console.
   # TODO: merge those two
   console* = ref object
-    err: Stream
+    err*: Stream
 
   NamedNodeMap = ref object
     element: Element
@@ -1965,18 +1965,16 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
         let script = createClassicScript(source, url, options, false)
         element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
 
-#TODO TODO TODO do something with this (redirect stderr?)
 proc log*(console: console, ss: varargs[string]) {.jsfunc.} =
   var s = ""
   for i in 0..<ss.len:
     s &= ss[i]
-    #console.err.write(ss[i])
+    console.err.write(ss[i])
     if i != ss.high:
       s &= ' '
-      #console.err.write(' ')
-  eprint s
-  #console.err.write('\n')
-  #console.err.flush()
+      console.err.write(' ')
+  console.err.write('\n')
+  console.err.flush()
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document

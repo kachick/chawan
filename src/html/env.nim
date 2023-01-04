@@ -1,3 +1,5 @@
+import streams
+
 import html/dom
 import html/htmlparser
 import io/loader
@@ -51,7 +53,7 @@ proc addNavigatorModule(ctx: JSContext) =
 
 proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
   result = Window(
-    console: console(),
+    console: console(err: newFileStream(stderr)),
     navigator: Navigator(),
     loader: loader,
     settings: EnvironmentSettings(

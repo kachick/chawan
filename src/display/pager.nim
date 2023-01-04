@@ -739,8 +739,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
     else:
       pager.alert("Can't load " & $container.source.location & " (error code " & $container.code & ")")
-    if pager.container == nil:
-      return false
+    return false
   of SUCCESS:
     if container.replace != nil:
       let n = container.replace.children.find(container)
@@ -775,8 +774,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     else:
       pager.alert("Error: maximum redirection depth reached")
       pager.deleteContainer(container)
-      if pager.container == nil:
-        return false
+      return false
   of ANCHOR:
     var url2 = newURL(container.source.location)
     url2.hash(event.anchor)
@@ -810,19 +808,18 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of NO_EVENT: discard
   return true
 
-proc handleEvents*(pager: Pager, container: Container): bool =
+proc handleEvents*(pager: Pager, container: Container) =
   while container.events.len > 0:
     let event = container.events.popFirst()
     if not pager.handleEvent0(container, event):
-      return false
-  return true
+      break
 
-proc handleEvent*(pager: Pager, container: Container): bool =
+proc handleEvent*(pager: Pager, container: Container) =
   try:
     container.handleEvent()
+    pager.handleEvents(container)
   except IOError:
-    return false
-  return pager.handleEvents(container)
+    discard
 
 proc addPagerModule*(ctx: JSContext) =
   ctx.registerType(Pager)

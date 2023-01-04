@@ -25,6 +25,7 @@ type
     process*: Pid
     istream*: Stream
     ostream*: Stream
+    estream*: PosixStream
 
   ForkServerContext = object
     istream: Stream
@@ -97,10 +98,14 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     )
   )
   let pid = fork()
+  #if pid == -1:
+  #  raise newException(Defect, "Failed to fork process.")
   if pid == 0:
     for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
+    discard close(stdin.getFileHandle())
+    discard close(stdout.getFileHandle())
     launchBuffer(config, source, attrs, loader, mainproc)
     assert false
   ctx.children.add((pid, loader.process))
@@ -152,34 +157,45 @@ proc runForkServer() =
 
 proc newForkServer*(): ForkServer =
   new(result)
-  var pipefd_in: array[2, cint]
-  var pipefd_out: array[2, cint]
+  var pipefd_in: array[2, cint] # stdin in forkserver
+  var pipefd_out: array[2, cint] # stdout in forkserver
+  var pipefd_err: array[2, cint] # stderr in forkserver
   if pipe(pipefd_in) == -1:
     raise newException(Defect, "Failed to open input pipe.")
   if pipe(pipefd_out) == -1:
     raise newException(Defect, "Failed to open output pipe.")
+  if pipe(pipefd_err) == -1:
+    raise newException(Defect, "Failed to open error pipe.")
   let pid = fork()
   if pid == -1:
     raise newException(Defect, "Failed to fork the fork process.")
   elif pid == 0:
     # child process
-    let readfd = pipefd_in[0]
     discard close(pipefd_in[1]) # close write
-    let writefd = pipefd_out[1]
     discard close(pipefd_out[0]) # close read
+    discard close(pipefd_err[0]) # close read
+    let readfd = pipefd_in[0]
+    let writefd = pipefd_out[1]
+    let errfd = pipefd_err[1]
     discard dup2(readfd, stdin.getFileHandle())
     discard dup2(writefd, stdout.getFileHandle())
+    discard dup2(errfd, stderr.getFileHandle())
+    stderr.flushFile()
     discard close(pipefd_in[0])
     discard close(pipefd_out[1])
+    discard close(pipefd_err[1])
     runForkServer()
     assert false
   else:
     discard close(pipefd_in[0]) # close read
     discard close(pipefd_out[1]) # close write
-    var readf, writef: File
+    discard close(pipefd_err[1]) # close write
+    var writef, readf: File
     if not open(writef, pipefd_in[1], fmWrite):
       raise newException(Defect, "Failed to open output handle")
     if not open(readf, pipefd_out[0], fmRead):
       raise newException(Defect, "Failed to open input handle")
     result.ostream = newFileStream(writef)
     result.istream = newFileStream(readf)
+    result.estream = newPosixStream(pipefd_err[0])
+    discard fcntl(pipefd_err[0], F_SETFL, fcntl(pipefd_err[0], F_GETFL, 0) or O_NONBLOCK)
