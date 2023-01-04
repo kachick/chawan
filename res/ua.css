@@ -117,25 +117,25 @@ input[type="hidden"] {
 input::before {
 	content: '[';
 	text-decoration: none;
-	color: none;
+	color: initial;
 }
 
 input::after {
 	content: ']';
 	text-decoration: none;
-	color: none;
+	color: initial;
 }
 
 input[type="radio"]::before {
 	content: '(';
 	text-decoration: none;
-	color: none;
+	color: initial;
 }
 
 input[type="radio"]::after {
 	content: ')';
 	text-decoration: none;
-	color: none;
+	color: initial;
 }
 
 input:is([type="text"], [type="password"], [type="search"], [type="file"]) {
@@ -252,13 +252,13 @@ select {
 
 select::before {
 	content: '[';
-	color: none;
+	color: initial;
 	display: inline-block;
 }
 
 select::after {
 	content: ']';
-	color: none;
+	color: initial;
 	display: inline-block;
 }
 

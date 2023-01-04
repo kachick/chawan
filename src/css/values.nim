@@ -1001,7 +1001,14 @@ template getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect)
 # WARNING: may raise an exception.
 func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType, vtype: CSSValueType): (CSSComputedValue, CSSGlobalValueType) =
   var val = CSSComputedValue(t: ptype, v: vtype)
-  val.getValueFromDecl(d, vtype, ptype)
+  try:
+    val.getValueFromDecl(d, vtype, ptype)
+  except CSSValueError:
+    let global = cssGlobal(d)
+    if global != VALUE_NOGLOBAL:
+      return (val, cssGlobal(d))
+    else:
+      raise
   return (val, cssGlobal(d))
 
 func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]): seq[(CSSComputedValue, CSSGlobalValueType)] =
