@@ -39,7 +39,6 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
     s.isend = true
 
 proc sockWriteData(s: Stream, buffer: pointer, len: int) =
-  #TODO maybe don't block if blk is false?
   var i = 0
   while i < len:
     let n = SocketStream(s).source.send(cast[pointer](cast[int](buffer) + i), len - i)
