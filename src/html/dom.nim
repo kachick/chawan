@@ -509,7 +509,7 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
     elif child.tagType == TAG_OPTGROUP:
       for opt in child.elementList:
         if opt.tagType == TAG_OPTION:
-          yield HTMLOptionElement(child)
+          yield HTMLOptionElement(opt)
 
 proc populateCollection(collection: Collection) =
   if collection.childonly:
