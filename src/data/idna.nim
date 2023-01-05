@@ -135,14 +135,7 @@ func loadStuff(s: string): (FullMap[cstring], # Map
     of "ignored":
       add(firstcol, add_ignore)
 
-when defined(release) or defined(small):
-  const (MappedMap,
-         DisallowedRanges,
-         Disallowed,
-         Ignored,
-         Deviation) = loadStuff(IdnaMappingTable)
-else:
-  let (MappedMap,
+const (MappedMap,
        DisallowedRanges,
        Disallowed,
        Ignored,
