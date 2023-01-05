@@ -320,27 +320,17 @@ func getMinArgs(params: seq[FuncParam]): int =
 
 func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Option[T] =
   when T is int:
-    when sizeof(int) <= sizeof(int32):
-      var ret: int32
-      if JS_ToInt32(ctx, addr ret, val) < 0:
-        return none(T)
-      return some(int(ret))
-    else:
-      var ret: int64
-      if JS_ToInt64(ctx, addr ret, val) < 0:
-        return none(T)
-      return some(int(ret))
+    # Always int32, so we don't risk 32-bit only breakage.
+    # If int64 is needed, specify it explicitly.
+    var ret: int32
+    if JS_ToInt32(ctx, addr ret, val) < 0:
+      return none(T)
+    return some(int(ret))
   elif T is uint:
-    when sizeof(int) <= sizeof(int32):
-      var ret: uint32
-      if JS_ToUint32(ctx, addr ret, val) < 0:
-        return none(T)
-      return some(ret)
-    else:
-      var ret: uint32
-      if JS_ToUint32(ctx, addr ret, val) < 0:
-        return none(T)
-      return some(cast[uint](ret))
+    var ret: uint32
+    if JS_ToUint32(ctx, addr ret, val) < 0:
+      return none(T)
+    return some(uint(ret))
   elif T is int32:
     var ret: int32
     if JS_ToInt32(ctx, addr ret, val) < 0:
@@ -549,7 +539,22 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
       return none(Table[A, B])
     result.get[kn.get] = vn.get
 
-proc toJS*[T](ctx: JSContext, obj: T): JSValue
+proc toJS*(ctx: JSContext, s: string): JSValue
+proc toJS(ctx: JSContext, r: Rune): JSValue
+proc toJS(ctx: JSContext, n: int64): JSValue
+proc toJS(ctx: JSContext, n: int32): JSValue
+proc toJS*(ctx: JSContext, n: int): JSValue
+proc toJS(ctx: JSContext, n: uint32): JSValue
+proc toJS(ctx: JSContext, n: SomeFloat): JSValue
+proc toJS*(ctx: JSContext, b: bool): JSValue
+proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue
+proc toJS(ctx: JSContext, opt: Option): JSValue
+proc toJS(ctx: JSContext, s: seq): JSValue
+proc toJS(ctx: JSContext, e: enum): JSValue
+proc toJS(ctx: JSContext, j: JSValue): JSValue
+proc toJS[T](ctx: JSContext, promise: Promise[T]): JSValue
+proc toJS(ctx: JSContext, promise: EmptyPromise): JSValue
+proc toJS*(ctx: JSContext, obj: ref object): JSValue
 
 # ew....
 proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue): Option[proc(x: U): Option[T]] =
@@ -673,29 +678,53 @@ func fromJS[T: string|uint32](ctx: JSContext, atom: JSAtom): Option[T] =
 proc getJSFunction*[T, U](ctx: JSContext, val: JSValue): Option[(proc(x: T): Option[U])] =
   return fromJS[(proc(x: T): Option[U])](ctx, val)
 
-func toJSString(ctx: JSContext, str: string): JSValue =
-  return JS_NewString(ctx, cstring(str))
+proc toJS*(ctx: JSContext, s: string): JSValue =
+  return JS_NewString(ctx, cstring(s))
 
-func toJSNumber(ctx: JSContext, n: int): JSValue =
-  when sizeof(int) <= sizeof(int32):
-    return JS_NewInt32(ctx, int32(n))
-  else:
-    return JS_NewInt64(ctx, n)
+proc toJS(ctx: JSContext, r: Rune): JSValue =
+  return toJS(ctx, $r)
 
-func toJSNumber(ctx: JSContext, n: int32): JSValue =
+proc toJS(ctx: JSContext, n: int32): JSValue =
   return JS_NewInt32(ctx, n)
 
-func toJSNumber(ctx: JSContext, n: int64): JSValue =
+proc toJS(ctx: JSContext, n: int64): JSValue =
   return JS_NewInt64(ctx, n)
 
-func toJSNumber(ctx: JSContext, n: uint32): JSValue =
+# Always int32, so we don't risk 32-bit only breakage.
+proc toJS*(ctx: JSContext, n: int): JSValue =
+  return toJS(ctx, int32(n))
+
+proc toJS(ctx: JSContext, n: uint32): JSValue =
   return JS_NewUint32(ctx, n)
 
-func toJSNumber[T: float|float32|float64](ctx: JSContext, n: T): JSValue =
-  return JS_NewFloat64(ctx, n)
+proc toJS(ctx: JSContext, n: SomeFloat): JSValue =
+  return JS_NewFloat64(ctx, float64(n))
 
-func toJSBool(ctx: JSContext, b: bool): JSValue =
+proc toJS*(ctx: JSContext, b: bool): JSValue =
   return JS_NewBool(ctx, b)
+
+proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue =
+  let obj = JS_NewObject(ctx)
+  if not JS_IsException(obj):
+    for k, v in t:
+      setProperty(ctx, obj, k, toJS(ctx, v))
+  return obj
+
+proc toJS(ctx: JSContext, opt: Option): JSValue =
+  if opt.isSome:
+    return toJS(ctx, opt.get)
+  return JS_NULL
+
+proc toJS(ctx: JSContext, s: seq): JSValue =
+  let a = JS_NewArray(ctx)
+  if not JS_IsException(a):
+    for i in 0..s.high:
+      let j = toJS(ctx, s[i])
+      if JS_IsException(j):
+        return j
+      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j, JS_PROP_C_W_E or JS_PROP_THROW) < 0:
+        return JS_EXCEPTION
+  return a
 
 proc getTypePtr[T](x: T): pointer =
   when T is RootRef or T is pointer:
@@ -705,7 +734,9 @@ proc getTypePtr[T](x: T): pointer =
   else:
     return getTypeInfo(x)
 
-func toJSObject[T](ctx: JSContext, obj: T): JSValue =
+proc toJS*(ctx: JSContext, obj: ref object): JSValue =
+  if obj == nil:
+    return JS_NULL
   let op = JS_GetRuntime(ctx).getOpaque()
   let p = cast[pointer](obj)
   if p in op.plist:
@@ -716,7 +747,13 @@ func toJSObject[T](ctx: JSContext, obj: T): JSValue =
   setOpaque(ctx, jsObj, obj)
   return jsObj
 
-func toJSPromise(ctx: JSContext, promise: EmptyPromise): JSValue =
+proc toJS(ctx: JSContext, e: enum): JSValue =
+  return toJS(ctx, int(e))
+
+proc toJS(ctx: JSContext, j: JSValue): JSValue =
+  return j
+
+proc toJS(ctx: JSContext, promise: EmptyPromise): JSValue =
   var resolving_funcs: array[2, JSValue]
   let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
   if JS_IsException(jsPromise):
@@ -729,7 +766,7 @@ func toJSPromise(ctx: JSContext, promise: EmptyPromise): JSValue =
     JS_FreeValue(ctx, resolving_funcs[1]))
   return jsPromise
 
-func toJSPromise[T](ctx: JSContext, promise: Promise[T]): JSValue =
+proc toJS[T](ctx: JSContext, promise: Promise[T]): JSValue =
   var resolving_funcs: array[2, JSValue]
   let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
   if JS_IsException(jsPromise):
@@ -742,47 +779,6 @@ func toJSPromise[T](ctx: JSContext, promise: Promise[T]): JSValue =
     JS_FreeValue(ctx, resolving_funcs[0])
     JS_FreeValue(ctx, resolving_funcs[1]))
   return jsPromise
-
-proc toJS*[T](ctx: JSContext, obj: T): JSValue =
-  when T is string:
-    return ctx.toJSString(obj)
-  elif T is Rune:
-    return ctx.toJSString($obj)
-  elif T is SomeNumber:
-    return ctx.toJSNumber(obj)
-  elif T is bool:
-    return ctx.toJSBool(obj)
-  elif T is Table:
-    result = JS_NewObject(ctx)
-    if not JS_IsException(result):
-      for k, v in obj:
-        setProperty(ctx, result, k, toJS(ctx, v))
-  elif T is Option:
-    if obj.issome:
-      return toJS(ctx, obj.get)
-    return JS_NULL
-  elif T is seq:
-    let a = JS_NewArray(ctx)
-    if not JS_IsException(a):
-      for i in 0..obj.high:
-        let j = toJS(ctx, obj[i])
-        if JS_IsException(j):
-          return j
-        if JS_DefinePropertyValueInt64(ctx, a, int64(i), j, JS_PROP_C_W_E or JS_PROP_THROW) < 0:
-          return JS_EXCEPTION
-    return a
-  elif T is enum:
-    return toJS(ctx, int(obj))
-  elif T is JSValue:
-    return obj
-  elif T is Promise:
-    return toJSPromise(ctx, obj)
-  elif T is EmptyPromise:
-    return toJSPromise(ctx, obj)
-  else:
-    if obj == nil:
-      return JS_NULL
-    return ctx.toJSObject(obj)
 
 type
   JS_Error = object of CatchableError
