@@ -669,13 +669,8 @@ func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitio
       let rl = labels[^1].runeLen()
       if rl notin 1..63:
         return none(string)
-  if verifydnslength:
-    var all = 0
-    for label in labels:
-      let rl = label.runeLen()
-      if rl notin 0..63:
-        return none(string) #error
       all += rl
+  if verifydnslength:
     if all notin 1..253:
       return none(string) #error
   return some(labels.join('.'))
