@@ -40,9 +40,9 @@ Options:
     -h, --help                  Print this usage message
     -v, --version               Print version information"""
   if i == 0:
-    echo s
+    stdout.write(s & '\n')
   else:
-    eprint s
+    stderr.write(s & '\n')
   quit(i)
 
 var i = 0

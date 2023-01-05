@@ -183,7 +183,7 @@ proc launchPager*(pager: Pager, tty: File) =
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
-    eprint "cha: " & msg
+    stderr.write("cha: " & msg & '\n')
 
 proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
