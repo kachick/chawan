@@ -375,6 +375,9 @@ proc inputLoop(client: Client) =
       client.pager.scommand = ""
       client.handlePagerEvents()
     client.acceptBuffers()
+    if client.pager.container == nil:
+      # No buffer to display.
+      quit(1)
     client.pager.showAlerts()
     client.pager.draw()
 
