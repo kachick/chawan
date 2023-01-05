@@ -326,8 +326,13 @@ proc checkWrap(state: var InlineState, r: Rune) =
 proc processWhitespace(state: var InlineState, c: char) =
   state.addWord()
   case state.computed{"white-space"}
-  of WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE_LINE:
+  of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
     state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
+  of WHITESPACE_PRE_LINE:
+    if c == '\n':
+      state.ictx.flushLine(state.computed)
+    else:
+      state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
   of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     if c == '\n':
       state.ictx.flushLine(state.computed)
