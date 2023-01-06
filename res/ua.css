@@ -1,5 +1,6 @@
-area, base, source, track, link, meta, param, wbr, head, style, script {
-	display: none !important;
+area, base, basefont, datalist, head, link, meta, noembed,
+noframes, param, rp, script, style, template, title {
+	display: none;
 }
 
 :root {
