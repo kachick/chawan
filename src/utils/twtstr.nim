@@ -555,10 +555,7 @@ proc mnormalize*(rs: var seq[Rune], form = UNICODE_NFC) = {.cast(noSideEffect).}
 
 #TODO maybe a utf8 normalization procedure?
 proc mnormalize*(s: var string) =
-  block do_nothing:
-    for c in s:
-      if c notin Ascii:
-        break do_nothing
+  if s.isAscii():
     return # no need to normalize ascii
   var rs = s.toRunes()
   rs.mnormalize()
