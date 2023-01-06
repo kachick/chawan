@@ -1227,7 +1227,7 @@ proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
 proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.computed = computed.copyProperties()
+  result.computed = computed.inheritProperties()
   result.computed{"display"} = DISPLAY_INLINE
   # Use pre, so the space at the end of the default markers isn't ignored.
   result.computed{"white-space"} = WHITESPACE_PRE
