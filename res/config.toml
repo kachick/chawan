@@ -89,7 +89,6 @@ M-d = 'pager.discardTree()'
 'M-.' = 'pager.nextSiblingBuffer()'
 'M-/' = 'pager.parentBuffer()'
 M-c = 'pager.command()'
-C = 'pager.commandMode();console.show()'
 '/' = 'pager.isearchForward()'
 '?' = 'pager.isearchBackward()'
 n = 'pager.searchNext()'
@@ -122,3 +121,10 @@ C-e = 'line.end()'
 C-v = 'line.escape()'
 C-p = 'line.prevHist()'
 C-n = 'line.nextHist()'
+M-c = '''
+pager.commandMode = !(console.buffer == pager.buffer);
+if (pager.commandMode)
+	console.hide();
+else
+	console.show();
+'''

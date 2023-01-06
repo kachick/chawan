@@ -42,7 +42,7 @@ type
     numload*: int
     alerts: seq[string]
     alerton: bool
-    commandMode*: bool
+    commandMode* {.jsget.}: bool
     container*: Container
     dispatcher*: Dispatcher
     lineedit*: Option[LineEdit]
@@ -656,9 +656,10 @@ proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
 proc command(pager: Pager) {.jsfunc.} =
   pager.setLineEdit("COMMAND: ", COMMAND)
 
-proc commandMode(pager: Pager) {.jsfunc.} =
-  pager.commandmode = true
-  pager.command()
+proc commandMode(pager: Pager, val: bool) {.jsfset.} =
+  pager.commandMode = val
+  if val:
+    pager.command()
 
 proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
@@ -707,7 +708,7 @@ proc updateReadLine*(pager: Pager) =
         pager.gotoURL(newRequest(url), some(pager.container.source.location), replace = pager.container, referrer = pager.container)
       of COMMAND:
         pager.scommand = s
-        if pager.commandmode:
+        if pager.commandMode:
           pager.command()
       of BUFFER: pager.container.readSuccess(s)
       of SEARCH_F:
@@ -730,7 +731,7 @@ proc updateReadLine*(pager: Pager) =
         pager.username = ""
         pager.discardBuffer()
       of BUFFER: pager.container.readCanceled()
-      of COMMAND: pager.commandmode = false
+      of COMMAND: pager.commandMode = false
       else: discard
   if lineedit.state in {CANCEL, FINISH}:
     if pager.lineedit.get == lineedit:

@@ -272,6 +272,9 @@ proc hide(console: Console) {.jsfunc.} =
   if console.pager.container == console.container:
     console.pager.setContainer(console.prev)
 
+proc buffer(console: Console): Container {.jsfget.} =
+  return console.container
+
 proc acceptBuffers(client: Client) =
   while client.pager.unreg.len > 0:
     let (pid, stream) = client.pager.unreg.pop()
@@ -307,17 +310,22 @@ proc handleRead(client: Client, fd: int) =
     client.input()
     client.handlePagerEvents()
   elif fd == client.dispatcher.forkserver.estream.fd:
-    var nl = true
+    var nl = false
+    const prefix = "STDERR: "
+    var s = prefix
     while true:
       try:
         let c = client.dispatcher.forkserver.estream.readChar()
-        if nl:
-          client.console.err.write("STDERR: ")
+        if nl and s.len > prefix.len:
+          client.console.err.write(s)
+          s = prefix
           nl = false
-        client.console.err.write(c)
+        s &= c
         nl = c == '\n'
       except IOError:
         break
+    if s.len > prefix.len:
+      client.console.err.write(s)
     client.console.err.flush()
   else:
     let container = client.fdmap[fd]
