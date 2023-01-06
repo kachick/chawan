@@ -15,6 +15,8 @@ import utils/twtstr
 
 func formatFromWord(computed: ComputedFormat): Format =
   result.fgcolor = computed.color.cellColor()
+  if computed.bgcolor.a != 0:
+    result.bgcolor = computed.bgcolor.cellColor()
   if computed.fontstyle in { FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE }:
     result.italic = true
   if computed.fontweight > 500:
@@ -117,20 +119,28 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
     lnode = lines[y].formats[fi].node
     if lines[y].formats[fi].pos == x:
       # Replace.
-      format.bgcolor = lines[y].formats[fi].format.bgcolor
+      if cformat.bgcolor.a == 0: #TODO alpha blending
+        # We must check if the old string's last x position is greater than
+        # the new string's first x position. If not, we cannot inherit
+        # its bgcolor (which is supposed to end before the new string started.)
+        if nx > cx:
+          format.bgcolor = lines[y].formats[fi].format.bgcolor
       lines[y].formats.delete(fi)
       lines[y].insertFormat(x, fi, format, cformat.node)
     else:
       # First format's pos < x => split it up.
       assert lines[y].formats[fi].pos < x
-      format.bgcolor = lines[y].formats[fi].format.bgcolor
+      if cformat.bgcolor.a == 0: #TODO alpha blending
+        if nx > cx: # see above
+          format.bgcolor = lines[y].formats[fi].format.bgcolor
       inc fi # insert after first format
       lines[y].insertFormat(x, fi, format, cformat.node)
   inc fi # skip last format
 
   while fi < lines[y].formats.len and lines[y].formats[fi].pos < nx:
     # Other formats must be > x => replace them
-    format.bgcolor = lines[y].formats[fi].format.bgcolor
+    if cformat.bgcolor.a == 0: #TODO alpha blending
+      format.bgcolor = lines[y].formats[fi].format.bgcolor
     let px = lines[y].formats[fi].pos
     lformat = lines[y].formats[fi].format # save for later use
     lnode = lines[y].formats[fi].node
@@ -308,7 +318,7 @@ proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window
     if ctx.computed{"background-color"}.a != 0: #TODO color blending
       grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, ctx.node, window)
     if ctx.computed{"background-image"}.t == CONTENT_IMAGE:
-      # ugly hack for background-image display... TODO actually implement images
+      # ugly hack for background-image display... TODO actually display images
       let s = ctx.computed{"background-image"}.s # [img]
       let w = s.len * window.ppc
       var x = x

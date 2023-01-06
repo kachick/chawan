@@ -8,6 +8,7 @@ import css/stylednode
 import css/values
 import io/window
 import layout/box
+import types/color
 import utils/twtstr
 
 # Build phase
@@ -60,18 +61,21 @@ proc applyLineHeight(viewport: Viewport, line: LineBox, computed: CSSComputedVal
     computed{"line-height"}.px(viewport, viewport.cellheight)
   line.lineheight = max(lineheight, line.lineheight)
 
+func getComputedFormat(computed: CSSComputedValues, node: StyledNode): ComputedFormat =
+  return ComputedFormat(
+    color: computed{"color"},
+    fontstyle: computed{"font-style"},
+    fontweight: computed{"font-weight"},
+    textdecoration: computed{"text-decoration"},
+    bgcolor: computed{"background-color"},
+    node: node
+  )
+
 proc newWord(state: var InlineState) =
   let word = InlineWord()
-  let format = ComputedFormat()
-  let computed = state.computed
-  format.color = computed{"color"}
-  format.fontstyle = computed{"font-style"}
-  format.fontweight = computed{"font-weight"}
-  format.textdecoration = computed{"text-decoration"}
-  format.node = state.node
-  word.format = format
-  word.vertalign = computed{"vertical-align"}
-  state.ictx.format = format
+  word.format = getComputedFormat(state.computed, state.node)
+  word.vertalign = state.computed{"vertical-align"}
+  state.ictx.format = word.format
   state.word = word
   state.wrappos = -1
   state.hasshy = false
@@ -342,7 +346,7 @@ proc processWhitespace(state: var InlineState, c: char) =
     else:
       inc state.ictx.whitespacenum
 
-proc renderText*(ictx: InlineContext, str: string, computed: CSSComputedValues, node: StyledNode) =
+proc layoutText(ictx: InlineContext, str: string, computed: CSSComputedValues, node: StyledNode) =
   var state: InlineState
   state.computed = computed
   state.ictx = ictx
@@ -681,17 +685,18 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
   if box.newline:
     ictx.flushLine(box.computed)
 
-  let margin_left = box.computed{"margin-left"}.px(ictx.viewport, ictx.contentWidth)
-  ictx.currentLine.width += margin_left
+  let paddingformat = getComputedFormat(box.computed, box.node)
+  if box.splitstart:
+    let margin_left = box.computed{"margin-left"}.px(ictx.viewport, ictx.contentWidth)
+    ictx.currentLine.width += margin_left
 
-  let paddingformat = ComputedFormat(node: box.node)
-  let padding_left = box.computed{"padding-left"}.px(ictx.viewport, ictx.contentWidth)
-  if padding_left > 0:
-    ictx.currentLine.addSpacing(padding_left, ictx.cellheight, paddingformat)
+    let padding_left = box.computed{"padding-left"}.px(ictx.viewport, ictx.contentWidth)
+    if padding_left > 0:
+      ictx.currentLine.addSpacing(padding_left, ictx.cellheight, paddingformat)
 
   assert not (box.children.len > 0 and box.text.len > 0)
   for text in box.text:
-    ictx.renderText(text, box.computed, box.node)
+    ictx.layoutText(text, box.computed, box.node)
 
   for child in box.children:
     case child.computed{"display"}
@@ -706,13 +711,12 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
     else:
       assert false, "child.t is " & $child.computed{"display"}
 
-  let padding_right = box.computed{"padding-right"}.px(ictx.viewport, ictx.contentWidth)
-  if padding_right > 0:
-    # I don't like this, but it works...
-    ictx.currentLine.addSpacing(padding_right, max(ictx.currentLine.height, 1), paddingformat)
-
-  let margin_right = box.computed{"margin-right"}.px(ictx.viewport, ictx.contentWidth)
-  ictx.currentLine.width += margin_right
+  if box.splitend:
+    let padding_right = box.computed{"padding-right"}.px(ictx.viewport, ictx.contentWidth)
+    if padding_right > 0:
+      ictx.currentLine.addSpacing(padding_right, max(ictx.currentLine.height, 1), paddingformat)
+    let margin_right = box.computed{"margin-right"}.px(ictx.viewport, ictx.contentWidth)
+    ictx.currentLine.width += margin_right
 
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
   let ictx = parent.newInlineContext()
@@ -1218,7 +1222,7 @@ proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
 proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
   new(result)
   result.inlinelayout = true
-  result.computed = computed.inheritProperties()
+  result.computed = computed
 
 proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxBuilder =
   new(result)
@@ -1371,7 +1375,6 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     childbox.content.computed{"display"} = DISPLAY_BLOCK
     box.children.add(childbox)
   of DISPLAY_INLINE:
-    ctx.iflush()
     ctx.generateInlineBoxes(styledNode)
   of DISPLAY_INLINE_BLOCK:
     ctx.iflush()
@@ -1439,9 +1442,9 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     discard #TODO
   of DISPLAY_NONE: discard
 
-proc generateInlineText(ctx: var InnerBlockContext, text: string, styledNode: StyledNode) =
+proc generateAnonymousInlineText(ctx: var InnerBlockContext, text: string, styledNode: StyledNode) =
   if ctx.ibox == nil:
-    ctx.ibox = getTextBox(styledNode.computed)
+    ctx.ibox = getTextBox(styledNode.computed.inheritProperties())
     ctx.ibox.node = styledNode
   ctx.ibox.text.add(text)
 
@@ -1455,7 +1458,7 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
     elif quotes.auto:
       text = quoteStart(ctx.quoteLevel)
     else: return
-    ctx.generateInlineText(text, parent)
+    ctx.generateAnonymousInlineText(text, parent)
     inc ctx.quoteLevel
   of CONTENT_CLOSE_QUOTE:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
@@ -1466,32 +1469,48 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
     elif quotes.auto:
       text = quoteEnd(ctx.quoteLevel)
     else: return
-    ctx.generateInlineText(text, parent)
+    ctx.generateAnonymousInlineText(text, parent)
   of CONTENT_NO_OPEN_QUOTE:
     inc ctx.quoteLevel
   of CONTENT_NO_CLOSE_QUOTE:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
   of CONTENT_STRING:
     #TODO canGenerateAnonymousInline?
-    ctx.generateInlineText(child.content.s, parent)
+    ctx.generateAnonymousInlineText(child.content.s, parent)
   of CONTENT_IMAGE:
     #TODO idk
-    ctx.generateInlineText(child.content.s, parent)
+    ctx.generateAnonymousInlineText(child.content.s, parent)
   of CONTENT_NEWLINE:
     ctx.iflush()
-    ctx.ibox = parent.computed.getTextBox()
+    ctx.ibox = getTextBox(parent.computed.inheritProperties())
     ctx.ibox.newline = true
     ctx.iflush()
 
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
+  ctx.iflush()
+  var lbox = getTextBox(styledNode.computed)
+  lbox.node = styledNode
+  lbox.splitstart = true
+  ctx.ibox = lbox
   for child in styledNode.children:
     case child.t
     of STYLED_ELEMENT:
       ctx.generateFromElem(child)
     of STYLED_TEXT:
-      ctx.generateInlineText(child.text, styledNode)
+      if ctx.ibox != lbox:
+        ctx.iflush()
+        lbox = getTextBox(styledNode.computed)
+        lbox.node = styledNode
+        ctx.ibox = lbox
+      lbox.text.add(child.text)
     of STYLED_REPLACEMENT:
       ctx.generateReplacement(child, styledNode)
+  if ctx.ibox != lbox:
+    ctx.iflush()
+    lbox = getTextBox(styledNode.computed)
+    lbox.node = styledNode
+    ctx.ibox = lbox
+  lbox.splitend = true
   ctx.iflush()
 
 proc newInnerBlockContext(styledNode: StyledNode, box: BoxBuilder, viewport: Viewport, parent: ptr InnerBlockContext): InnerBlockContext =
@@ -1519,7 +1538,7 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
       ctx.generateFromElem(child)
     of STYLED_TEXT:
       if canGenerateAnonymousInline(ctx.blockgroup, box.computed, child.text):
-        ctx.generateInlineText(child.text, ctx.styledNode)
+        ctx.generateAnonymousInlineText(child.text, ctx.styledNode)
     of STYLED_REPLACEMENT:
       ctx.generateReplacement(child, ctx.styledNode)
   ctx.iflush()

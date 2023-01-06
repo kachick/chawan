@@ -35,6 +35,8 @@ type
   InlineBoxBuilder* = ref object of BoxBuilder
     text*: seq[string]
     newline*: bool
+    splitstart*: bool
+    splitend*: bool
 
   BlockBoxBuilder* = ref object of BoxBuilder
 
@@ -70,6 +72,10 @@ type
     textdecoration*: set[CSSTextDecoration]
     color*: RGBAColor
     node*: StyledNode
+    #TODO: background color should not be stored in inline words. Instead,
+    # inline box fragments should be passed on to the renderer, which could
+    # then properly blend them.
+    bgcolor*: RGBAColor
 
   InlineSpacing* = ref object of InlineAtom
     format*: ComputedFormat
