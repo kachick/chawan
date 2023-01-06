@@ -81,8 +81,10 @@ proc `$`*(c: CSSParsedItem): string =
   if c of CSSToken:
     let c = CSSToken(c)
     case c.tokenType:
-    of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN, CSS_URL_TOKEN:
+    of CSS_FUNCTION_TOKEN, CSS_AT_KEYWORD_TOKEN:
       result &= $c.tokenType & c.value & '\n'
+    of CSS_URL_TOKEN:
+      result &= "url(" & c.value & ")"
     of CSS_HASH_TOKEN:
       result &= '#' & c.value
     of CSS_IDENT_TOKEN:
@@ -372,7 +374,8 @@ proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
     discard state.consume()
     while state.has(1) and state.peek().isWhitespace() and state.peek(1).isWhitespace():
       discard state.consume()
-    if state.has(1) and state.peek() in {'"', '\''} + AsciiWhitespace and state.peek(1) in {'"', '\''}:
+    if state.has() and state.peek() in {'"', '\''} or
+        state.has(1) and state.peek() in {'"', '\''} + AsciiWhitespace and state.peek(1) in {'"', '\''}:
       return CSSToken(tokenType: CSS_FUNCTION_TOKEN, value: s)
     else:
       return state.consumeURL()

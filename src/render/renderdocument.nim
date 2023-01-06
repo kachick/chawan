@@ -278,7 +278,7 @@ func calculateErrorY(ctx: InlineContext, window: WindowAttributes): int =
       error += dy - (dy div window.ppl) * window.ppl
   return error div (ctx.lines.len - 1)
 
-proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes)
+proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes)
 
 proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, window: WindowAttributes) =
   let x = x + ctx.offset.x
@@ -297,7 +297,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
     for atom in line.atoms:
       if atom of InlineBlockBox:
         let iblock = InlineBlockBox(atom)
-        grid.renderBlockContext(iblock.innerbox, x + iblock.offset.x, y + iblock.offset.y, window)
+        grid.renderBlockBox(iblock.innerbox, x + iblock.offset.x, y + iblock.offset.y, window)
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x, y, window)
@@ -306,42 +306,42 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
         grid.setSpacing(spacing, x, y, window)
     inc i
 
-proc renderBlockContext(grid: var FlexibleGrid, ctx: BlockBox, x, y: int, window: WindowAttributes) =
+proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes) =
   var stack = newSeqOfCap[(BlockBox, int, int)](100)
-  stack.add((ctx, x, y))
+  stack.add((box, x, y))
 
   while stack.len > 0:
-    var (ctx, x, y) = stack.pop()
-    x += ctx.offset.x
-    y += ctx.offset.y
+    var (box, x, y) = stack.pop()
+    x += box.offset.x
+    y += box.offset.y
 
-    if ctx.computed{"background-color"}.a != 0: #TODO color blending
-      grid.paintBackground(ctx.computed{"background-color"}, x, y, x + ctx.width, y + ctx.height, ctx.node, window)
-    if ctx.computed{"background-image"}.t == CONTENT_IMAGE:
+    if box.computed{"background-color"}.a != 0: #TODO color blending
+      grid.paintBackground(box.computed{"background-color"}, x, y, x + box.width, y + box.height, box.node, window)
+    if box.computed{"background-image"}.t == CONTENT_IMAGE and box.computed{"background-image"}.s != "":
       # ugly hack for background-image display... TODO actually display images
-      let s = ctx.computed{"background-image"}.s # [img]
+      let s = "[img]"
       let w = s.len * window.ppc
       var x = x
-      if ctx.width < w:
+      if box.width < w:
         # text is larger than image; center it to minimize error
         x -= w div 2
-        x += ctx.width div 2
+        x += box.width div 2
       x = x div window.ppc
       y = y div window.ppl
       if y >= 0 and x + w >= 0:
-        grid.setText(s, ComputedFormat(node: ctx.node), x, y)
+        grid.setText(s, ComputedFormat(node: box.node), x, y)
 
-    if ctx of ListItemBox:
-      let ctx = ListItemBox(ctx)
-      if ctx.marker != nil:
-        grid.renderInlineContext(ctx.marker, x - ctx.marker.width, y, window)
+    if box of ListItemBox:
+      let box = ListItemBox(box)
+      if box.marker != nil:
+        grid.renderInlineContext(box.marker, x - box.marker.width, y, window)
 
-    if ctx.inline != nil:
-      assert ctx.nested.len == 0
-      grid.renderInlineContext(ctx.inline, x, y, window)
+    if box.inline != nil:
+      assert box.nested.len == 0
+      grid.renderInlineContext(box.inline, x, y, window)
     else:
-      for i in countdown(ctx.nested.high, 0):
-        stack.add((ctx.nested[i], x, y))
+      for i in countdown(box.nested.high, 0):
+        stack.add((box.nested[i], x, y))
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
@@ -356,6 +356,6 @@ proc renderDocument*(document: Document, window: WindowAttributes, userstyle: CS
   layout.renderLayout(styledNode)
   result[0].setLen(0)
   for root in layout.root:
-    result[0].renderBlockContext(root, 0, 0, window)
+    result[0].renderBlockBox(root, 0, 0, window)
   if result[0].len == 0:
     result[0].addLine()

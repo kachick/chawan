@@ -335,6 +335,11 @@ func `$`*(val: CSSComputedValue): string =
   case val.v
   of VALUE_COLOR:
     result &= $val.color
+  of VALUE_IMAGE:
+    if val.image.s != "":
+      result &= "url(" & val.image.s & ")"
+    else:
+      result &= "none"
   else: discard
 
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
@@ -868,12 +873,36 @@ func cssMaxMinSize(cval: CSSComponentValue): CSSLength =
     else: discard
   raise newException(CSSValueError, "Invalid min/max-size")
 
-#TODO this should be a separate type
-func cssImage(cval: CSSComponentValue): CSSContent =
+#TODO should be URL (parsed with baseurl of document...)
+func cssURL(cval: CSSComponentValue): Option[string] =
   if isToken(cval):
     let tok = getToken(cval)
-    if tok.tokenType == CSS_URL_TOKEN or tok.tokenType == CSS_BAD_URL_TOKEN:
-      return CSSContent(t: CONTENT_IMAGE, s: "[img]")
+    if tok == CSS_URL_TOKEN:
+      return some(tok.value)
+  elif cval of CSSFunction:
+    let fun = CSSFunction(cval)
+    if fun.name == "url" or fun.name == "src":
+      for x in fun.value:
+        if not isToken(x):
+          break
+        let x = getToken(x)
+        if x == CSS_WHITESPACE_TOKEN:
+          discard
+        elif x == CSS_STRING_TOKEN:
+          return some(x.value)
+        else:
+          break
+
+#TODO this should be bg-image, add gradient, etc etc
+func cssImage(cval: CSSComponentValue): CSSContent =
+  if isToken(cval):
+    #TODO bg-image only
+    let tok = getToken(cval)
+    if tok.tokenType == CSS_IDENT_TOKEN and tok.value == "none":
+      return CSSContent(t: CONTENT_IMAGE, s: "")
+  let url = cssURL(cval)
+  if url.isSome:
+    return CSSContent(t: CONTENT_IMAGE, s: url.get)
   raise newException(CSSValueError, "Invalid image")
 
 func cssInteger(cval: CSSComponentValue, range: Slice[int]): int =
@@ -939,7 +968,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
       val.length2.b = cssAbsoluteLength(cval)
   of VALUE_QUOTES: val.quotes = cssQuotes(d)
   of VALUE_COUNTER_RESET: val.counterreset = cssCounterReset(d)
-  of VALUE_IMAGE: val.image = cssImage(d)
+  of VALUE_IMAGE: val.image = cssImage(cval)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -1100,12 +1129,16 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
     let bgimageval = CSSComputedValue(t: bgimageptype, v: valueType(bgimageptype))
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
+        if tok == CSS_WHITESPACE_TOKEN:
+          continue
         try:
-          bgimageval.image = cssImage(tok)
+          let img = cssImage(tok)
+          bgimageval.image = img
           result.add((bgimageval, global))
         except CSSValueError:
           try:
-            bgcolorval.color = cssColor(tok)
+            let color = cssColor(tok)
+            bgcolorval.color = color
             result.add((bgcolorval, global))
           except CSSValueError:
             discard
