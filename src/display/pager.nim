@@ -253,9 +253,11 @@ proc writeStatusMessage(pager: Pager, str: string,
   if maxwidth == -1:
     maxwidth = pager.statusgrid.len
   var i = start
+  let e = min(start + maxwidth, pager.statusgrid.width)
   for r in str.runes:
-    if i >= maxwidth:
-      pager.statusgrid[^1].str = $clip
+    if i >= e:
+      if e > start:
+        pager.statusgrid[e - 1].str = $clip
       break
     if r.isControlChar():
       pager.statusgrid[i].str = "^" & getControlLetter(char(r))
@@ -265,7 +267,7 @@ proc writeStatusMessage(pager: Pager, str: string,
     i += r.twidth(i)
   result = i
   var def = newFormat()
-  while i < maxwidth:
+  while i < e:
     pager.statusgrid[i].str = ""
     pager.statusgrid[i].format = def
     inc i
@@ -296,7 +298,7 @@ proc refreshStatusMsg*(pager: Pager) =
       pager.writeStatusMessage(title, format, mw)
     else:
       let hover2 = " " & hover
-      let maxwidth = pager.statusgrid.width - mw - hover2.width()
+      let maxwidth = pager.statusgrid.width - hover2.width() - mw
       let tw = pager.writeStatusMessage(title, format, mw, maxwidth, '>')
       pager.writeStatusMessage(hover2, format, tw)
 
