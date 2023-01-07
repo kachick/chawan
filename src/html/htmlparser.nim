@@ -330,12 +330,6 @@ template insert_character_impl(parser: var HTML5Parser, data: typed) =
     let text = location.inside.document.createTextNode($data)
     location.insert(text)
 
-  if location.inside.nodeType == ELEMENT_NODE:
-    let parent = Element(location.inside)
-    if parent.tagType == TAG_STYLE:
-      let parent = HTMLStyleElement(parent)
-      parent.sheet_invalid = true
-
 proc insertCharacter(parser: var HTML5Parser, data: string) =
   insert_character_impl(parser, data)
 

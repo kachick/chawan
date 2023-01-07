@@ -179,6 +179,9 @@ type
     invalidCollections: HashSet[int] # collection ids
     colln: int
 
+    cachedSheets: seq[CSSStylesheet]
+    cachedSheetsInvalid: bool
+
   CharacterData* = ref object of Node
     data* {.jsget.}: string
 
@@ -256,7 +259,6 @@ type
 
   HTMLStyleElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
-    sheet_invalid*: bool
 
   HTMLLinkElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
@@ -1072,17 +1074,23 @@ func crossorigin(element: HTMLScriptElement): CORSAttribute =
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
   getReferrerPolicy(element.attr("referrerpolicy"))
 
-proc sheets*(element: Element): seq[CSSStylesheet] =
-  for child in element.elementList:
-    if child.tagType == TAG_STYLE:
-      let child = HTMLStyleElement(child)
-      if child.sheet_invalid:
-        child.sheet = parseStylesheet(newStringStream(child.textContent))
-      result.add(child.sheet)
-    elif child.tagType == TAG_LINK:
-      let child = HTMLLinkElement(child)
-      if child.sheet != nil:
-        result.add(child.sheet)
+proc sheets*(document: Document): seq[CSSStylesheet] =
+  if document.cachedSheetsInvalid:
+    document.cachedSheets.setLen(0)
+    for elem in document.html.elements({TAG_STYLE, TAG_LINK}):
+      case elem.tagType
+      of TAG_STYLE:
+        let style = HTMLStyleElement(elem)
+        style.sheet = parseStylesheet(newStringStream(style.textContent))
+        if style.sheet != nil:
+          document.cachedSheets.add(style.sheet)
+      of TAG_LINK:
+        let link = HTMLLinkElement(elem)
+        if link.sheet != nil:
+          document.cachedSheets.add(link.sheet)
+      else: discard
+    document.cachedSheetsInvalid = false
+  return document.cachedSheets
 
 func inputString*(input: HTMLInputElement): string =
   case input.inputType
@@ -1326,7 +1334,6 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     result = new(HTMLLIElement)
   of TAG_STYLE:
     result = new(HTMLStyleElement)
-    HTMLStyleElement(result).sheet_invalid = true
   of TAG_LINK:
     result = new(HTMLLinkElement)
   of TAG_FORM:
@@ -1653,6 +1660,9 @@ proc remove*(node: Node, index: int, suppressObservers: bool) =
   node.parentNode = nil
   node.parentElement = nil
   node.root = nil
+  if node.nodeType == ELEMENT_NODE:
+    if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
+      node.document.cachedSheetsInvalid = true
 
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
   #TODO not suppress observers => queue tree mutation record
@@ -1687,6 +1697,9 @@ proc applyChildInsert(parent, child: Node, index: int) =
     child.nextSibling = parent.childList[index + 1]
     child.nextSibling.previousSibling = child
   child.invalidateCollections()
+  if child.nodeType == ELEMENT_NODE:
+    if Element(child).tagType in {TAG_STYLE, TAG_LINK} and child.document != nil:
+      child.document.cachedSheetsInvalid = true
 
 proc resetElement*(element: Element) = 
   case element.tagType

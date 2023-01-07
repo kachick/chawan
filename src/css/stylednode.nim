@@ -1,5 +1,4 @@
 import css/selectorparser
-import css/sheet
 import css/values
 import html/dom
 import html/tags
@@ -60,7 +59,6 @@ type
       computed*: CSSComputedValues
       children*: seq[StyledNode]
       depends*: DependencyInfo
-      sheets*: seq[CSSStylesheet]
     of STYLED_REPLACEMENT: # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
