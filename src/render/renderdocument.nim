@@ -68,6 +68,14 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
   if i < ostr.len:
     lines[y].str &= ostr.substr(i)
 
+  # Negative x values make no sense from here on, as text with negative x
+  # coordinates can not be formatted.
+  let x = max(0, x)
+  if cx < 0:
+    cx = 0
+  if nx < 0:
+    nx = 0
+
   # Skip unchanged formats before the new string
   var fi = lines[y].findFormatN(cx) - 1
 
