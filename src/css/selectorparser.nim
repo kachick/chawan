@@ -14,7 +14,8 @@ type
   QueryMode = enum
     QUERY_TYPE, QUERY_CLASS, QUERY_ATTR, QUERY_DELIM, QUERY_VALUE,
     QUERY_PSEUDO, QUERY_PSELEM, QUERY_DESC_COMBINATOR, QUERY_CHILD_COMBINATOR,
-    QUERY_NEXT_SIBLING_COMBINATOR, QUERY_SUBSEQ_SIBLING_COMBINATOR
+    QUERY_NEXT_SIBLING_COMBINATOR, QUERY_SUBSEQ_SIBLING_COMBINATOR,
+    QUERY_FAILED
 
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER,
@@ -280,14 +281,21 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
         add_pseudo_class PSEUDO_LINK
       of "visited":
         add_pseudo_class PSEUDO_VISITED
+      else:
+        state.query = QUERY_FAILED
+        return
     of QUERY_PSELEM:
       case csstoken.value
       of "before":
         add_pseudo_element PSEUDO_BEFORE
       of "after":
         add_pseudo_element PSEUDO_AFTER
-      else: discard
-    else: discard
+      else:
+        state.query = QUERY_FAILED
+        return
+    else:
+      state.query = QUERY_FAILED
+      return
     state.query = QUERY_TYPE
   of CSS_DELIM_TOKEN:
     case csstoken.rvalue
@@ -304,7 +312,9 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
         state.query = QUERY_SUBSEQ_SIBLING_COMBINATOR
     of Rune('*'):
       state.addSelector(Selector(t: UNIVERSAL_SELECTOR))
-    else: discard
+    else:
+      state.query = QUERY_FAILED
+      return
   of CSS_HASH_TOKEN:
     state.addSelector(Selector(t: ID_SELECTOR, id: csstoken.value))
   of CSS_COMMA_TOKEN:
@@ -318,7 +328,9 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
       state.query = QUERY_PSELEM
     else:
       state.query = QUERY_PSEUDO
-  else: discard
+  else:
+    state.query = QUERY_FAILED
+    return
 
 proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBlock) =
   case cssblock.token.tokenType
@@ -367,15 +379,21 @@ proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponent
   state.selectors = newSeq[ComplexSelector]()
   state.addComplexSelector()
   for cval in body:
+    if state.query == QUERY_FAILED:
+      break
     if cval of CSSToken:
       state.parseSelectorToken(CSSToken(cval))
     elif cval of CSSSimpleBlock:
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  result = state.getComplexSelectors()
-  state.selectors = osels
-  state.combinator = ocomb
+  if state.query == QUERY_FAILED:
+    state.selectors = @[]
+    state.combinator = nil
+  else:
+    result = state.getComplexSelectors()
+    state.selectors = osels
+    state.combinator = ocomb
 
 proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: PseudoData) =
   var data = data
@@ -398,61 +416,77 @@ proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: Ps
             state.addSelector(nthchild)
   state.query = QUERY_TYPE
 
-proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
-  if state.query != QUERY_PSEUDO:
+proc parseLang(state: var SelectorParser, body: seq[CSSComponentValue]) =
+  if body.len == 0:
+    state.query = QUERY_FAILED
     return
-  let ftype = case cssfunction.name
-  of "not": PSEUDO_NOT
-  of "is": PSEUDO_IS
-  of "where": PSEUDO_WHERE
-  of "nth-child":
-    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_CHILD))
+  var i = 0
+  template tok: CSSComponentValue = body[i]
+  while i < body.len:
+    if tok != CSS_WHITESPACE_TOKEN: break
+    inc i
+  if i >= body.len:
+    state.query = QUERY_FAILED
     return
-  of "nth-last-child":
-    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
-    return
-  of "lang":
-    if cssfunction.value.len == 0: return
-    var i = 0
-    template tok: CSSComponentValue = cssfunction.value[i]
-    while i < cssfunction.value.len:
-      if tok != CSS_WHITESPACE_TOKEN: break
-      inc i
-    if i >= cssfunction.value.len: return
-    if tok != CSS_IDENT_TOKEN: return
-    state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: PSEUDO_LANG, s: CSSToken(tok).value)))
-    return
-  else: return
+  if tok != CSS_IDENT_TOKEN: return
+  state.addSelector(Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: PSEUDO_LANG, s: CSSToken(tok).value)))
+
+# Functions that may contain other selectors, functions, etc.
+proc parseRecursiveSelectorFunction(state: var SelectorParser, class: PseudoClass, body: seq[CSSComponentValue]) =
   state.query = QUERY_TYPE
-  var data = PseudoData(t: ftype)
+  var data = PseudoData(t: class)
   var fun = Selector(t: PSEUDO_SELECTOR, pseudo: data)
   state.addSelector(fun)
-  fun.pseudo.fsels = state.parseSelectorFunctionBody(cssfunction.value)
+  fun.pseudo.fsels = state.parseSelectorFunctionBody(body)
+
+proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction) =
+  if state.query != QUERY_PSEUDO:
+    state.query = QUERY_FAILED
+    return
+  case cssfunction.name
+  of "not":
+    state.parseRecursiveSelectorFunction(PSEUDO_NOT, cssfunction.value)
+  of "is":
+    state.parseRecursiveSelectorFunction(PSEUDO_IS, cssfunction.value)
+  of "where":
+    state.parseRecursiveSelectorFunction(PSEUDO_WHERE, cssfunction.value)
+  of "nth-child":
+    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_CHILD))
+  of "nth-last-child":
+    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
+  of "lang":
+    state.parseLang(cssfunction.value)
+  else:
+    state.query = QUERY_FAILED
 
 func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.cast(noSideEffect).}:
   var state = SelectorParser()
   state.addComplexSelector()
   for cval in cvals:
+    if state.query == QUERY_FAILED:
+      break
     if cval of CSSToken:
       state.parseSelectorToken(CSSToken(cval))
     elif cval of CSSSimpleBlock:
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  if state.combinator != nil:
-    if state.combinator.csels.len == 1:
-      if state.combinator.ct == DESCENDANT_COMBINATOR:
-        # otherwise it's an invalid combinator
-        state.selectors[^1].add(state.combinator.csels[0])
-      else:
-        state.selectors.setLen(0)
-    elif state.combinator.csels[^1].len != 0:
-      state.selectors[^1].add(state.combinator)
-    state.combinator = nil
-  if state.selectors.len > 0 and state.selectors[^1].len == 0:
-    # invalid selector
-    state.selectors.setLen(0)
-  return state.selectors
+  if state.query != QUERY_FAILED:
+    if state.combinator != nil:
+      if state.combinator.csels.len == 1:
+        if state.combinator.ct == DESCENDANT_COMBINATOR:
+          # otherwise it's an invalid combinator
+          state.selectors[^1].add(state.combinator.csels[0])
+        else:
+          state.selectors.setLen(0)
+      elif state.combinator.csels[^1].len != 0:
+        state.selectors[^1].add(state.combinator)
+      state.combinator = nil
+    if state.selectors.len > 0 and state.selectors[^1].len == 0:
+      # invalid selector
+      state.selectors.setLen(0)
+    return state.selectors
+  return @[]
 
 proc parseSelectors*(stream: Stream): seq[ComplexSelector] =
   return parseSelectors(parseListOfComponentValues(stream))
