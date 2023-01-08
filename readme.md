@@ -35,10 +35,11 @@ Currently implemented features are:
 
 Chawan is still an experimental web browser with some serious limitations:
 
-* Chawan uses uses its own browser engine, mostly implemented from
-  scratch. Expect bugs and missing features.
+* Chawan suffers heavily from the NIH syndrome. The browser engine is still
+  missing many features, both in JavaScript and CSS. In particular, events
+  haven't been implemented yet, and the layout engine can't handle CSS floats.
 * Chawan has no incremental layouting capabilities yet, so it is rather slow
-  on large websites with complicated layout.
+  on large websites with a complicated layout.
 * While buffers run as separate processes, Chawan does not do any actual
   sandboxing. I would strongly advise against enabling scripting until this
   problem is resolved.
@@ -61,7 +62,9 @@ want to try more established ones:
   designed for blind users.
 * browsh - Firefox in your terminal.
 
-## Why write another web browser?
+## FAQ
+
+### Why write another web browser?
 
 I've found other text-based web browsers insufficient for my needs, so
 I thought it'd be a fun excercise to write one by myself, for myself.
@@ -69,10 +72,29 @@ I thought it'd be a fun excercise to write one by myself, for myself.
 Generally, I'm happy if Chawan works on websites I use frequently. If it
 also works on other websites, that's a bonus.
 
-## Where are the w3m keybindings?
+### Where are the w3m keybindings?
 
 At [bonus/w3m.toml](bonus/w3m.toml). Note that not every w3m feature is
 implemented yet, so it's not 100% compatible.
 
 I use vi for editing text, and I prefer my pager to function similarly to
 my editor. Hence the default vi-like keybindings.
+
+### Why does *website X* look awful in Chawan?
+
+As mentioned above, the layout engine is still very much a work in progress. At
+this point, it's more interesting if a website works as intended in Chawan
+than if it doesn't.
+
+### Where are the tabs?
+
+Chawan does not (and will never) have browser tabs. Instead, each website
+is opened in a new buffer, which is added to the buffer tree. By the way,
+this is very similar to how w3m handles buffers, except a) source files are
+stored in memory, not on the disk, and b) instead of a linked list of
+buffers, they are stored in a tree. (And, of course c) there are no tabs.)
+
+This model has the advantage of allowing the user being able to instantly
+view the previous page in all cases. It also opens up many interesting
+possibilities concering buffer organization; unfortunately, not much of that
+is implemented yet (except for basic tree traversal commands.)
