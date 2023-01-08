@@ -36,7 +36,7 @@ type
     PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
     PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
     PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE,
-    PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN
+    PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN, PROPERTY_FLOAT
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -44,7 +44,7 @@ type
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
     VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
-    VALUE_COUNTER_RESET, VALUE_IMAGE
+    VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -105,6 +105,9 @@ type
     CONTENT_STRING, CONTENT_OPEN_QUOTE, CONTENT_CLOSE_QUOTE,
     CONTENT_NO_OPEN_QUOTE, CONTENT_NO_CLOSE_QUOTE, CONTENT_IMAGE,
     CONTENT_NEWLINE
+
+  CSSFloat* = enum
+    FLOAT_NONE, FLOAT_LEFT, FLOAT_RIGHT
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -182,6 +185,8 @@ type
       counterreset*: seq[CSSCounterReset]
     of VALUE_IMAGE:
       image*: CSSContent
+    of VALUE_FLOAT:
+      float*: CSSFloat
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -255,7 +260,8 @@ const PropertyNames = {
   "min-height": PROPERTY_MIN_HEIGHT,
   "background-image": PROPERTY_BACKGROUND_IMAGE,
   "-cha-colspan": PROPERTY_CHA_COLSPAN,
-  "-cha-rowspan": PROPERTY_CHA_ROWSPAN
+  "-cha-rowspan": PROPERTY_CHA_ROWSPAN,
+  "float": PROPERTY_FLOAT
 }.toTable()
 
 const ValueTypes* = [
@@ -301,7 +307,8 @@ const ValueTypes* = [
   PROPERTY_MIN_HEIGHT: VALUE_LENGTH,
   PROPERTY_BACKGROUND_IMAGE: VALUE_IMAGE,
   PROPERTY_CHA_COLSPAN: VALUE_INTEGER,
-  PROPERTY_CHA_ROWSPAN: VALUE_INTEGER
+  PROPERTY_CHA_ROWSPAN: VALUE_INTEGER,
+  PROPERTY_FLOAT: VALUE_FLOAT
 ]
 
 const InheritedProperties = {
@@ -916,6 +923,16 @@ func cssInteger(cval: CSSComponentValue, range: Slice[int]): int =
         return i
   raise newException(CSSValueError, "Invalid integer")
 
+func cssFloat(cval: CSSComponentValue): CSSFloat =
+  if isToken(cval):
+    let tok = getToken(cval)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case tok.value
+      of "none": return FLOAT_NONE
+      of "left": return FLOAT_LEFT
+      of "right": return FLOAT_RIGHT
+  raise newException(CSSValueError, "Invalid float")
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   var i = 0
   d.value.skipWhitespace(i)
@@ -971,6 +988,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_QUOTES: val.quotes = cssQuotes(d)
   of VALUE_COUNTER_RESET: val.counterreset = cssCounterReset(d)
   of VALUE_IMAGE: val.image = cssImage(cval)
+  of VALUE_FLOAT: val.float = cssFloat(cval)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =
@@ -1193,6 +1211,7 @@ func equals*(a, b: CSSComputedValue): bool =
   of VALUE_QUOTES: return a.quotes == b.quotes
   of VALUE_COUNTER_RESET: return a.counterreset == b.counterreset
   of VALUE_IMAGE: return a.image == b.image
+  of VALUE_FLOAT: return a.float == b.float
   of VALUE_NONE: return true
   return false
 
