@@ -1183,38 +1183,6 @@ proc getComputedValues(d: CSSDeclaration): seq[(CSSComputedValue, CSSGlobalValue
             #TODO list-style-image
             discard
 
-func equals*(a, b: CSSComputedValue): bool =
-  if a == b:
-    return true
-  if a == nil or b == nil:
-    return false
-  if a.v != b.v:
-    return false
-  case a.v
-  of VALUE_COLOR: return a.color == b.color
-  of VALUE_LENGTH: return a.length == b.length
-  of VALUE_FONT_STYLE: return a.fontstyle == b.fontstyle
-  of VALUE_DISPLAY: return a.display == b.display
-  of VALUE_CONTENT: return a.content == b.content
-  of VALUE_WHITESPACE: return a.whitespace == b.whitespace
-  of VALUE_INTEGER: return a.integer == a.integer
-  of VALUE_TEXT_DECORATION: return a.textdecoration == b.textdecoration
-  of VALUE_WORD_BREAK: return a.wordbreak == b.wordbreak
-  of VALUE_LIST_STYLE_TYPE: return a.liststyletype == b.liststyletype
-  of VALUE_VERTICAL_ALIGN: return a.verticalalign == b.verticalalign
-  of VALUE_TEXT_ALIGN: return a.textalign == b.textalign
-  of VALUE_LIST_STYLE_POSITION: return a.liststyleposition == b.liststyleposition
-  of VALUE_POSITION: return a.position == b.position
-  of VALUE_CAPTION_SIDE: return a.captionside == b.captionside
-  of VALUE_LENGTH2: return a.length2 == b.length2
-  of VALUE_BORDER_COLLAPSE: return a.bordercollapse == b.bordercollapse
-  of VALUE_QUOTES: return a.quotes == b.quotes
-  of VALUE_COUNTER_RESET: return a.counterreset == b.counterreset
-  of VALUE_IMAGE: return a.image == b.image
-  of VALUE_FLOAT: return a.float == b.float
-  of VALUE_NONE: return true
-  return false
-
 proc newComputedValueBuilder*(parent: CSSComputedValues): CSSComputedValuesBuilder =
   result.parent = parent
 
