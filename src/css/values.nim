@@ -446,6 +446,8 @@ func cssLength(val: float64, unit: string): CSSLength =
   else:
     raise newException(CSSValueError, "Invalid unit")
 
+const CSSLengthAuto* = CSSLength(auto: true)
+
 func parseDimensionValues*(s: string): Option[CSSLength] =
   if s == "": return
   var i = 0
@@ -560,7 +562,7 @@ func cssLength(val: CSSComponentValue, has_auto: static bool = true, allow_negat
       of CSS_IDENT_TOKEN:
         when has_auto:
           if tok.value == "auto":
-            return CSSLength(auto: true)
+            return CSSLengthAuto
       else: discard
   raise newException(CSSValueError, "Invalid length")
 
@@ -585,7 +587,7 @@ func cssWordSpacing(cval: CSSComponentValue): CSSLength =
       return cssLength(tok.nvalue, tok.unit)
     of CSS_IDENT_TOKEN:
       if tok.value == "normal":
-        return CSSLength(auto: true)
+        return CSSLengthAuto
     else: discard
   raise newException(CSSValueError, "Invalid word spacing")
 
@@ -772,7 +774,7 @@ func cssLineHeight(cval: CSSComponentValue): CSSLength =
       return cssLength(tok.nvalue * 100, "%")
     of CSS_IDENT_TOKEN:
       if tok.value == "normal":
-        return CSSLength(auto: true)
+        return CSSLengthAuto
     else:
       return cssLength(tok, has_auto = false)
   raise newException(CSSValueError, "Invalid line height")
@@ -867,7 +869,7 @@ func cssMaxMinSize(cval: CSSComponentValue): CSSLength =
     case tok.tokenType
     of CSS_IDENT_TOKEN:
       if tok.value == "none":
-        return CSSLength(auto: true)
+        return CSSLengthAuto
     of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN:
       return cssLength(tok, allow_negative = false)
     else: discard
@@ -986,7 +988,7 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
      PROPERTY_LINE_HEIGHT, PROPERTY_LEFT, PROPERTY_RIGHT, PROPERTY_TOP,
      PROPERTY_BOTTOM, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
      PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT:
-    return CSSLength(auto: true)
+    return CSSLengthAuto
   else:
     return CSSLength(auto: false, unit: UNIT_PX, num: 0)
 

@@ -109,6 +109,15 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     of "center", "middle": set_cv "text-align", TEXT_ALIGN_CHA_CENTER
     of "left": set_cv "text-align", TEXT_ALIGN_CHA_LEFT
     of "right": set_cv "text-align", TEXT_ALIGN_CHA_RIGHT
+  template map_table_align =
+    case element.attr("align").toLowerAscii()
+    of "left":
+     set_cv "margin-right", CSSLengthAuto #TODO should be float: left
+    of "right":
+      set_cv "margin-left", CSSLengthAuto #TODO should be float: right
+    of "center":
+      set_cv "margin-left", CSSLengthAuto #TODO should be inline-start
+      set_cv "margin-right", CSSLengthAuto #TODO should be inline-end
   template map_text =
     let c = parseLegacyColor(element.attr("text"))
     if c.isSome:
@@ -137,6 +146,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_height_nozero
     map_width_nozero
     map_bgcolor
+    map_table_align
   of TAG_TD, TAG_TH:
     map_height_nozero
     map_width_nozero
