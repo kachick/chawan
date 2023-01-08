@@ -15,8 +15,8 @@ type
     height_px*: int
 
 proc getWindowAttributes*(tty: File): WindowAttributes =
-  if tty.isatty():
-    when defined(posix):
+  when defined(posix):
+    if tty.isatty():
       var win: IOctl_WinSize
       if ioctl(cint(getOsFileHandle(tty)), TIOCGWINSZ, addr win) != -1:
         var cols = win.ws_col
@@ -25,8 +25,10 @@ proc getWindowAttributes*(tty: File): WindowAttributes =
           cols = 80
         if rows == 0:
           rows = 24
-        # some terminals don't like it when we fill the last cell. #TODO make this optional
-        result.width = int(cols) - 1
+        # Filling the last row without raw mode breaks things. However,
+        # not supporting Windows means we can always have raw mode, so we can
+        # use all available columns.
+        result.width = int(cols)
         result.height = int(rows)
         result.ppc = int(win.ws_xpixel) div result.width
         result.ppl = int(win.ws_ypixel) div result.height
@@ -40,7 +42,7 @@ proc getWindowAttributes*(tty: File): WindowAttributes =
         result.height_px = result.height * result.ppl
         result.cell_ratio = result.ppl / result.ppc
         return
-  #fail
+  # for Windows. unused.
   result.width = terminalWidth() - 1
   result.height = terminalHeight()
   if result.height == 0:
