@@ -1,23 +1,23 @@
 # Configuration
 
-Chawan supports custom keybindings and user stylesheets. The configuration
-format is very similar to the toml format, with the following exceptions:
+Chawan supports configuration of various options like keybindings, user
+stylesheets, site preferences, etc. The configuration format is very similar
+to toml, with the following exceptions:
 
-* Table arrays can be cleared like this:
+* Inline tables may span across multiple lines.
+* Table arrays can be cleared by setting a variable by the same to the
+  empty array. This allows users to disable default table array rules.
+
+Example:
 ```
-omnirule = []
+omnirule = [] # note: this must be placed at the beginning of the file.
 
-[[omnirule]] # this is accepted
+[[omnirule]] # this is legal. all default omni-rules are now disabled.
 ```
-This allows users to disable default table array rules. Note that these
-declarations must be placed at the beginning of the file.
-
-* Inline tables may span across multiple lines. Rationale: the toml specified
-  behavior is counter-intuitive.
 
 Chawan will look for a config file in the ~/.config/chawan/ directory called
-`config.toml`. See the default configuration in the res/ folder for the default
-configuration.
+`config.toml`. See the default configuration file in the res/ folder, and
+bonus configuration files in the bonus/ folder for further examples.
 
 **Table of contents**
 
@@ -216,12 +216,12 @@ Examples:
 # Search using DuckDuckGo Lite. (Bound to C-k by default.)
 [[omnirule]]
 match = '^ddg:'
-substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + x.substring(4)'
+substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
 # Search using Wikipedia, Firefox-style.
 [[omnirule]]
 match = '^@wikipedia'
-substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + x.replace(/@wikipedia/, "")'
+substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + encodeURIComponent(x.replace(/@wikipedia/, ""))'
 ```
 
 Omnirule options:
