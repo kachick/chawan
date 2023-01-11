@@ -183,8 +183,29 @@ func cursorLastX(container: Container): int =
     w += r.twidth(w)
   return max(w - 1, 0)
 
+# Last cell for tab, first cell for everything else (e.g. double width.)
+# This is needed because moving the cursor to the 2nd cell of a double
+# width character clears it on some terminals.
+func cursorDispX(container: Container): int =
+  if container.numLines == 0: return 0
+  let line = container.currentLine
+  if line.len == 0: return 0
+  var w = 0
+  var pw = 0
+  var i = 0
+  var r: Rune
+  let cc = container.cursorx
+  while i < line.len and w <= cc:
+    fastRuneAt(line, i, r)
+    pw = w
+    w += r.twidth(w)
+  if r == Rune('\t'):
+    return max(w - 1, 0)
+  else:
+    return pw
+
 func acursorx*(container: Container): int =
-  max(0, container.cursorLastX() - container.fromx)
+  max(0, container.cursorDispX() - container.fromx)
 
 func acursory*(container: Container): int =
   container.cursory - container.fromy
