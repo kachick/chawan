@@ -324,12 +324,10 @@ proc processOutputString(term: Terminal, str: string, w: var int): string =
   if str.validateUtf8() != -1:
     return "?"
   for r in str.runes():
-    let tw = r.twidth(w)
-    if r == Rune('\t'):
-      # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
-      for i in 0 ..< tw:
-        result &= ' '
-    elif r.isControlChar():
+    # twidth wouldn't work here, the view may start at the nth character.
+    # pager must ensure tabs are converted beforehand.
+    let tw = r.width()
+    if r.isControlChar():
       result &= "^" & getControlLetter(char(r))
     elif tw != 0:
       result &= r
@@ -369,7 +367,8 @@ proc generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): strin
         result &= term.cursorGoto(0, i div grid.width - 1)
         result &= term.resetFormat()
         result &= line
-        result &= term.clearEnd()
+        if w != grid.width:
+          result &= term.clearEnd()
         lr = false
       x = 0
       w = 0

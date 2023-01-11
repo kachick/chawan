@@ -216,7 +216,6 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     var cf = line.findFormat(w)
     var nf = line.findNextFormat(w)
     let startw = w # save this for later
-    var lan = ""
     # Now fill in the visible part of the row.
     while i < line.str.len:
       let pw = w
@@ -228,13 +227,17 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      pager.display[dls + k].str &= r
-      lan &= r
       if cf.pos != -1:
         pager.display[dls + k].format = cf.format
-      let tk = k + rw
-      while k < tk and k < pager.display.width - 1:
-        inc k
+      if r == Rune('\t'):
+        # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
+        let tk = k + rw
+        while k < tk:
+          pager.display[dls + k].str &= ' '
+          inc k
+      else:
+        pager.display[dls + k].str &= r
+        k += rw
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
     let aw = container.width - (startw - container.fromx) # actual width
