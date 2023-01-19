@@ -337,11 +337,14 @@ proc processWhitespace(state: var InlineState, c: char) =
     else:
       state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
   of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
+    #TODO whitespace type should be preserved here. (it isn't, because
+    # it would break tabs in the current buffer model.)
     if c == '\n':
       state.ictx.flushLine(state.computed)
     elif c == '\t':
+      let prev = state.ictx.charwidth
       state.ictx.charwidth = ((state.ictx.charwidth div 8) + 1) * 8
-      state.word.str &= c
+      state.ictx.whitespacenum += state.ictx.charwidth - prev
     else:
       inc state.ictx.whitespacenum
 
