@@ -37,7 +37,7 @@ type
     query: QueryMode
     combinator: Selector
 
-  Selector* = ref object of RootObj # compound selector
+  Selector* = ref object # compound selector
     case t*: SelectorType
     of TYPE_SELECTOR:
       tag*: TagType
@@ -77,12 +77,12 @@ type
   SelectorList* = seq[ComplexSelector]
 
 # For debugging
-proc tostr(ftype: enum): string =
+func tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
 
-proc `$`*(sellist: ComplexSelector): string
+func `$`*(sellist: ComplexSelector): string
 
-proc `$`*(sel: Selector): string =
+func `$`*(sel: Selector): string =
   case sel.t
   of TYPE_SELECTOR:
     return tagName(sel.tag)
@@ -113,7 +113,7 @@ proc `$`*(sel: Selector): string =
       result &= ')'
     of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
       result &= '(' & $sel.pseudo.anb.A & 'n' & $sel.pseudo.anb.B
-      if sel.pseudo.ofsels.issome:
+      if sel.pseudo.ofsels.isSome:
         result &= " of "
         for fsel in sel.pseudo.ofsels.get:
           result &= $fsel
@@ -130,12 +130,12 @@ proc `$`*(sel: Selector): string =
     of CHILD_COMBINATOR: delim = '>'
     of NEXT_SIBLING_COMBINATOR: delim = '+'
     of SUBSEQ_SIBLING_COMBINATOR: delim = '~'
-    for slist in sel.csels:
-      result &= $slist
-      if slist != sel.csels[^1]:
+    for i in 0 ..< sel.csels.len:
+      result &= $sel.csels[i]
+      if i == 0 or i != sel.csels.high:
         result &= delim
 
-proc `$`*(sellist: ComplexSelector): string =
+func `$`*(sellist: ComplexSelector): string =
   for sel in sellist:
     result &= $sel
 
@@ -157,7 +157,7 @@ func getSpecificity(sel: Selector): int =
           best = s
       result += best
     of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
-      if sel.pseudo.ofsels.issome:
+      if sel.pseudo.ofsels.isSome:
         var best = 0
         for child in sel.pseudo.ofsels.get:
           let s = getSpecificity(child)
@@ -187,6 +187,20 @@ func pseudo*(sels: ComplexSelector): PseudoElem =
     return sel.elem
   return PSEUDO_NONE
 
+proc flushCombinator(state: var SelectorParser) =
+  if state.combinator != nil:
+    if state.combinator.csels.len == 1:
+      if state.combinator.ct == DESCENDANT_COMBINATOR:
+        # otherwise it's an invalid combinator
+        state.selectors[^1].add(state.combinator.csels[0])
+      else:
+        state.query = QUERY_FAILED
+    elif state.combinator.csels[^1].len != 0:
+      state.selectors[^1].add(state.combinator)
+    else:
+      state.query = QUERY_FAILED
+    state.combinator = nil
+
 proc addSelector(state: var SelectorParser, sel: Selector) =
   if state.combinator != nil:
     state.combinator.csels[^1].add(sel)
@@ -200,19 +214,16 @@ proc getLastSel(state: SelectorParser): Selector =
     return state.selectors[^1][^1]
 
 proc addComplexSelector(state: var SelectorParser) =
-  if state.combinator != nil:
-    state.selectors[^1].add(state.combinator)
-    state.combinator = nil
+  state.flushCombinator()
   state.selectors.add(newSeq[Selector]())
 
 func getComplexSelectors(state: var SelectorParser): seq[ComplexSelector] =
-  result = state.selectors
-  if state.combinator != nil:
-    result[^1].add(state.combinator)
+  state.flushCombinator()
+  return state.selectors
 
 proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csstoken: CSSToken) =
   if csstoken.tokenType notin {CSS_IDENT_TOKEN, CSS_HASH_TOKEN, CSS_COLON_TOKEN} and
-     (csstoken.tokenType != CSS_DELIM_TOKEN or csstoken.rvalue != Rune('.')):
+     (csstoken.tokenType != CSS_DELIM_TOKEN or (csstoken.rvalue != Rune('.') and csstoken.rvalue != Rune('*'))):
     return
   if state.combinator != nil and state.combinator.ct != ct:
     let nc = Selector(t: COMBINATOR_SELECTOR, ct: ct)
@@ -229,20 +240,21 @@ proc parseSelectorCombinator(state: var SelectorParser, ct: CombinatorType, csst
   state.query = QUERY_TYPE
 
 proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
+  if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
+    # do not interpret whitespace before/after a combinator selector token
+    if state.query in {QUERY_CHILD_COMBINATOR, QUERY_NEXT_SIBLING_COMBINATOR,
+        QUERY_SUBSEQ_SIBLING_COMBINATOR}:
+      return
+    elif state.combinator != nil and state.combinator.csels[^1].len <= 1:
+      return
   case state.query
   of QUERY_DESC_COMBINATOR:
     state.parseSelectorCombinator(DESCENDANT_COMBINATOR, csstoken)
   of QUERY_CHILD_COMBINATOR:
-    if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
-      return
     state.parseSelectorCombinator(CHILD_COMBINATOR, csstoken)
   of QUERY_NEXT_SIBLING_COMBINATOR:
-    if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
-      return
     state.parseSelectorCombinator(NEXT_SIBLING_COMBINATOR, csstoken)
   of QUERY_SUBSEQ_SIBLING_COMBINATOR:
-    if csstoken.tokenType == CSS_WHITESPACE_TOKEN:
-      return
     state.parseSelectorCombinator(SUBSEQ_SIBLING_COMBINATOR, csstoken)
   else: discard
 
@@ -318,13 +330,11 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
   of CSS_HASH_TOKEN:
     state.addSelector(Selector(t: ID_SELECTOR, id: csstoken.value))
   of CSS_COMMA_TOKEN:
-    if state.combinator != nil:
-      state.selectors[^1].add(state.combinator)
-      state.combinator = nil
+    state.flushCombinator()
     if state.selectors[^1].len > 0:
       state.addComplexSelector()
   of CSS_WHITESPACE_TOKEN:
-    if state.selectors[^1].len > 0 or state.combinator != nil:
+    if state.selectors[^1].len > 0 or state.combinator != nil and state.combinator.csels[^1].len > 0:
       state.query = QUERY_DESC_COMBINATOR
   of CSS_COLON_TOKEN:
     if state.query == QUERY_PSEUDO:
@@ -336,42 +346,42 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
     return
 
 proc parseSelectorSimpleBlock(state: var SelectorParser, cssblock: CSSSimpleBlock) =
-  case cssblock.token.tokenType
-  of CSS_LBRACKET_TOKEN:
-    state.query = QUERY_ATTR
-    for cval in cssblock.value:
-      if cval of CSSToken:
-        let csstoken = (CSSToken)cval
-        case csstoken.tokenType
-        of CSS_IDENT_TOKEN:
-          case state.query
-          of QUERY_ATTR:
-            state.query = QUERY_DELIM
-            state.addSelector(Selector(t: ATTR_SELECTOR, attr: csstoken.value, rel: ' '))
-          of QUERY_VALUE:
-            state.getLastSel().value = csstoken.value
-            break
-          else: discard
-        of CSS_STRING_TOKEN:
-          case state.query
-          of QUERY_VALUE:
-            state.getLastSel().value = csstoken.value
-            break
-          else: discard
-        of CSS_DELIM_TOKEN:
-          case csstoken.rvalue
-          of Rune('~'), Rune('|'), Rune('^'), Rune('$'), Rune('*'):
-            if state.query == QUERY_DELIM:
-              state.getLastSel().rel = char(csstoken.rvalue)
-          of Rune('='):
-            if state.query == QUERY_DELIM:
-              if state.getLastSel().rel == ' ':
-                state.getLastSel().rel = '='
-              state.query = QUERY_VALUE
-          else: discard
+  if cssblock.token.tokenType != CSS_LBRACKET_TOKEN:
+    state.query = QUERY_FAILED
+    return
+  state.query = QUERY_ATTR
+  for cval in cssblock.value:
+    if cval of CSSToken:
+      let csstoken = (CSSToken)cval
+      case csstoken.tokenType
+      of CSS_IDENT_TOKEN:
+        case state.query
+        of QUERY_ATTR:
+          state.query = QUERY_DELIM
+          state.addSelector(Selector(t: ATTR_SELECTOR, attr: csstoken.value, rel: ' '))
+        of QUERY_VALUE:
+          state.getLastSel().value = csstoken.value
+          break
         else: discard
-    state.query = QUERY_TYPE
-  else: discard
+      of CSS_STRING_TOKEN:
+        case state.query
+        of QUERY_VALUE:
+          state.getLastSel().value = csstoken.value
+          break
+        else: discard
+      of CSS_DELIM_TOKEN:
+        case csstoken.rvalue
+        of Rune('~'), Rune('|'), Rune('^'), Rune('$'), Rune('*'):
+          if state.query == QUERY_DELIM:
+            state.getLastSel().rel = char(csstoken.rvalue)
+        of Rune('='):
+          if state.query == QUERY_DELIM:
+            if state.getLastSel().rel == ' ':
+              state.getLastSel().rel = '='
+            state.query = QUERY_VALUE
+        else: discard
+      else: discard
+  state.query = QUERY_TYPE
 
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction)
 
@@ -401,7 +411,7 @@ proc parseSelectorFunctionBody(state: var SelectorParser, body: seq[CSSComponent
 proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: PseudoData) =
   var data = data
   let (anb, i) = parseAnB(cssfunction.value)
-  if anb.issome:
+  if anb.isSome:
     data.anb = anb.get
     var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
     var i = i
@@ -474,22 +484,12 @@ func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.ca
       state.parseSelectorSimpleBlock(CSSSimpleBlock(cval))
     elif cval of CSSFunction:
       state.parseSelectorFunction(CSSFunction(cval))
-  if state.query != QUERY_FAILED:
-    if state.combinator != nil:
-      if state.combinator.csels.len == 1:
-        if state.combinator.ct == DESCENDANT_COMBINATOR:
-          # otherwise it's an invalid combinator
-          state.selectors[^1].add(state.combinator.csels[0])
-        else:
-          state.selectors.setLen(0)
-      elif state.combinator.csels[^1].len != 0:
-        state.selectors[^1].add(state.combinator)
-      state.combinator = nil
-    if state.selectors.len > 0 and state.selectors[^1].len == 0:
-      # invalid selector
-      state.selectors.setLen(0)
-    return state.selectors
-  return @[]
+  state.flushCombinator()
+  if state.selectors.len > 0 and state.selectors[^1].len == 0:
+    state.query = QUERY_FAILED
+  if state.query == QUERY_FAILED:
+    return @[]
+  return state.selectors
 
 proc parseSelectors*(stream: Stream): seq[ComplexSelector] =
   return parseSelectors(parseListOfComponentValues(stream))
