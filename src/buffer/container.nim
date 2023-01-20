@@ -555,8 +555,6 @@ proc scrollRight(container: Container) {.jsfunc.} =
 proc scrollLeft(container: Container) {.jsfunc.} =
   if container.fromx > 0:
     container.setFromX(container.fromx - 1)
-    if container.cursorx < container.fromx:
-      container.setCursorX(container.currentLineWidth() - 1)
 
 proc alert(container: Container, msg: string) =
   container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
