@@ -24,7 +24,7 @@ type
   Viewport* = ref object
     window*: WindowAttributes
     root*: seq[BlockBox]
-    absolutes*: seq[BlockBox]
+    positioned*: seq[BlockBox]
 
   BoxBuilder* = ref object of RootObj
     children*: seq[BoxBuilder]

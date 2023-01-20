@@ -618,11 +618,12 @@ proc buildInlineLayout(parent: BlockBox, children: seq[BoxBuilder]) =
 
 # Builder only contains block boxes.
 proc buildBlockLayout(parent: BlockBox, children: seq[BoxBuilder], node: StyledNode) =
-  if parent.computed{"position"} == POSITION_ABSOLUTE:
-    parent.viewport.absolutes.add(parent)
+  let positioned = parent.computed{"position"} != POSITION_STATIC
+  if positioned:
+    parent.viewport.positioned.add(parent)
   parent.buildBlocks(children, node)
-  if parent.computed{"position"} == POSITION_ABSOLUTE:
-    discard parent.viewport.absolutes.pop()
+  if positioned:
+    discard parent.viewport.positioned.pop()
 
 #TODO this is horribly inefficient, and should be inherited like xminwidth
 func firstBaseline(box: BlockBox): int =
@@ -751,36 +752,42 @@ proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
     result.marker = buildMarker(builder.marker, result)
   result.buildLayout(builder.content)
 
-proc positionFixed(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
-  #TODO for now this is a good approximation, but fixed actually means
-  # something completely different...
+proc positionAbsolute(box: BlockBox, last: BlockBox = box.viewport.root[0]) =
+  # we use the viewport's dimensions if not parentPositioned.
+  let parentPositioned = box.viewport.positioned.len > 0
+  let last = if parentPositioned:
+    box.viewport.positioned[^1]
+  else:
+    box.viewport.root[0]
   box.offset.x += last.offset.x
   box.offset.y += last.offset.y
-  #TODO TODO TODO subtract these from width/height
   let left = box.computed{"left"}
   let right = box.computed{"right"}
   let top = box.computed{"top"}
   let bottom = box.computed{"bottom"}
+  let parentHeight = if parentPositioned:
+    last.height
+  else:
+    box.viewport.window.height_px
+  let parentWidth = if parentPositioned:
+    last.width
+  else:
+    box.viewport.window.width_px
+  #TODO TODO TODO we should use parentWidth/parentHeight for size calculations
+  # too
   if not left.auto:
-    box.offset.x += left.px(box.viewport, last.contentWidth)
+    box.offset.x += left.px(box.viewport, parentWidth)
     box.offset.x += box.margin_left
   elif not right.auto:
-    box.offset.x += last.contentWidth - right.px(box.viewport, box.contentWidth) - box.width
+    box.offset.x += parentWidth - right.px(box.viewport, parentWidth) - box.width
     box.offset.x -= box.margin_right
   if not top.auto:
-    box.offset.y += top.px(box.viewport, box.contentHeight.get(0))
+    box.offset.y += top.px(box.viewport, parentHeight)
     box.offset.y += box.margin_top
   elif not bottom.auto:
-    box.offset.y += last.contentHeight.get(box.viewport.window.height_px) - bottom.px(box.viewport, box.contentHeight.get(0)) - box.height
+    box.offset.y += parentHeight - bottom.px(box.viewport, parentHeight) - box.height
     box.offset.y -= box.margin_bottom
-  box.viewport.root.add(box)
-
-proc positionAbsolute(box: BlockBox) =
-  let last = if box.viewport.absolutes.len > 0:
-    box.viewport.absolutes[^1]
-  else:
-    box.viewport.root[0]
-  box.positionFixed(last)
+  last.nested.add(box)
 
 proc positionRelative(parent, box: BlockBox) =
   let left = box.computed{"left"}
@@ -800,6 +807,7 @@ proc positionBlocks(box: BlockBox) =
   var y = 0
   var x = 0
   var margin_todo: Strut
+  var deferred: seq[BlockBox] # out of flow
 
   # If content width has been specified, use it.
   # Otherwise, contentWidth is just the maximum width we can take up, so
@@ -826,22 +834,21 @@ proc positionBlocks(box: BlockBox) =
 
   var i = 0
 
-  template position_out_of_flow() =
+  template defer_out_of_flow() =
     # Skip absolute, fixed, sticky
     while i < box.nested.len:
       case box.nested[i].computed{"position"}
       of POSITION_STATIC, POSITION_RELATIVE:
         break
-      of POSITION_ABSOLUTE:
-        positionAbsolute(box.nested[i])
-      of POSITION_FIXED:
-        box.positionFixed(box.nested[i])
-      of POSITION_STICKY:
-        #TODO implement this once relayouting every scroll isn't too expensive
+      of POSITION_STICKY, POSITION_FIXED:
+        #TODO implement sticky and fixed once relayouting every scroll isn't
+        # too expensive
         break
+      of POSITION_ABSOLUTE:
+        deferred.add(box.nested[i])
       box.nested.delete(i)
 
-  position_out_of_flow
+  defer_out_of_flow
 
   if i < box.nested.len:
     let child = box.nested[i]
@@ -854,7 +861,7 @@ proc positionBlocks(box: BlockBox) =
     inc i
 
   while true:
-    position_out_of_flow
+    defer_out_of_flow
 
     if i >= box.nested.len:
       break
@@ -915,6 +922,13 @@ proc positionBlocks(box: BlockBox) =
 
   box.width += box.padding_left
   box.width += box.padding_right
+
+  for child in deferred:
+    case child.computed{"position"}
+    of POSITION_ABSOLUTE:
+      positionAbsolute(child)
+    else: #TODO fixed, sticky
+      assert false
 
 proc buildTableCaption(viewport: Viewport, builder: TableCaptionBoxBuilder, maxwidth: int, maxheight: Option[int], shrink = false): BlockBox =
   result = viewport.newFlowRootBox(builder, maxwidth, maxheight, shrink)
@@ -1651,6 +1665,6 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var In
 
 proc renderLayout*(viewport: var Viewport, root: StyledNode) =
   viewport.root.setLen(0)
-  viewport.absolutes.setLen(0)
+  viewport.positioned.setLen(0)
   let builder = root.generateBlockBox(viewport)
   viewport.buildRootBlock(builder)
