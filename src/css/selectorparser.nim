@@ -318,6 +318,9 @@ proc parseSelectorToken(state: var SelectorParser, csstoken: CSSToken) =
   of CSS_HASH_TOKEN:
     state.addSelector(Selector(t: ID_SELECTOR, id: csstoken.value))
   of CSS_COMMA_TOKEN:
+    if state.combinator != nil:
+      state.selectors[^1].add(state.combinator)
+      state.combinator = nil
     if state.selectors[^1].len > 0:
       state.addComplexSelector()
   of CSS_WHITESPACE_TOKEN:
