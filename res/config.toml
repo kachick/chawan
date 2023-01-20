@@ -123,8 +123,5 @@ C-p = 'line.prevHist()'
 C-n = 'line.nextHist()'
 M-c = '''
 pager.commandMode = !(console.buffer == pager.buffer);
-if (pager.commandMode)
-	console.hide();
-else
-	console.show();
+console[pager.commandMode ? "show" : "hide"]();
 '''
