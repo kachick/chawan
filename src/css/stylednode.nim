@@ -93,6 +93,10 @@ func findElement*(root: StyledNode, elem: Element): StyledNode =
 func isDomElement*(styledNode: StyledNode): bool {.inline.} =
   styledNode.t == STYLED_ELEMENT and styledNode.pseudo == PSEUDO_NONE
 
+# DOM-style getters, for Element interoperability...
+func parentElement*(node: StyledNode): StyledNode {.inline.} =
+  node.parent
+
 func checked(element: Element): bool =
   if element.tagType == TAG_INPUT:
     let input = HTMLInputElement(element)

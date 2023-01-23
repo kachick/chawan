@@ -39,6 +39,19 @@ func newStylesheet*(cap: int): CSSStylesheet =
   result.class_table = newTable[string, seq[CSSRuleDef]](bucketsize)
   result.general_list = newSeqOfCap[CSSRuleDef](bucketsize)
 
+proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool
+
+proc getSelectorIds(hashes: var SelectorHashes, sels: CompoundSelector) =
+  for sel in sels:
+    if hashes.getSelectorIds(sel):
+      break
+
+# For now, we match elements against the *last* selector.
+#TODO this is inefficient, so we should eventually get rid of this
+# function
+proc getSelectorIds(hashes: var SelectorHashes, cxsel: ComplexSelector) =
+  hashes.getSelectorIds(cxsel[^1])
+
 proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool =
   case sel.t
   of TYPE_SELECTOR:
@@ -51,11 +64,6 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool =
     hashes.id = sel.id
     return true
   of ATTR_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR:
-    return false
-  of COMBINATOR_SELECTOR:
-    for sel in sel.csels[^1]:
-      if hashes.getSelectorIds(sel):
-        return true
     return false
   of PSEUDO_SELECTOR:
     if sel.pseudo.t in {PSEUDO_IS, PSEUDO_WHERE}:
@@ -71,18 +79,12 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool =
       var cancel_class = false
       var i = 0
       if i < sel.pseudo.fsels.len:
-        let list = sel.pseudo.fsels[i]
-        for sel in list:
-          if hashes.getSelectorIds(sel):
-            break
+        hashes.getSelectorIds(sel.pseudo.fsels[i])
         inc i
 
       while i < sel.pseudo.fsels.len:
-        let list = sel.pseudo.fsels[i]
         var nhashes: SelectorHashes
-        for sel in list:
-          if nhashes.getSelectorIds(sel):
-            break
+        nhashes.getSelectorIds(sel.pseudo.fsels[i])
         if hashes.tag == TAG_UNKNOWN:
           hashes.tag = nhashes.tag
         elif not cancel_tag and nhashes.tag != TAG_UNKNOWN and nhashes.tag != hashes.tag:
@@ -127,11 +129,8 @@ iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq
 
 proc add(sheet: var CSSStylesheet, rule: CSSRuleDef) =
   var hashes: SelectorHashes
-  for list in rule.sels:
-    for sel in list:
-      if hashes.getSelectorIds(sel):
-        break
-
+  for cxsel in rule.sels:
+    hashes.getSelectorIds(cxsel)
     if hashes.tag != TAG_UNKNOWN:
       sheet.tag_table[hashes.tag].add(rule)
     elif hashes.id != "":
@@ -171,7 +170,7 @@ proc getDeclarations(rule: CSSQualifiedRule): seq[CSSDeclaration] {.inline.} =
 
 proc addRule(stylesheet: var CSSStylesheet, rule: CSSQualifiedRule) =
   let sels = parseSelectors(rule.prelude)
-  if sels.len > 0 and sels[^1].len > 0:
+  if sels.len > 0:
     let r = CSSRuleDef(sels: sels, decls: rule.getDeclarations())
     stylesheet.add(r)
 

@@ -22,11 +22,11 @@ func attrSelectorMatches(elem: Element, sel: Selector): bool =
   of '*': return elem.attr(sel.attr).contains(sel.value)
   else: return false
 
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: ComplexSelector, felem: T = nil): bool
+func selectorsMatch*[T: Element|StyledNode](elem: T, cxsel: ComplexSelector, felem: T = nil): bool
 
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: SelectorList, felem: T = nil): bool =
-  for slist in selectors:
-    if elem.selectorsMatch(slist, felem):
+func selectorsMatch*[T: Element|StyledNode](elem: T, slist: SelectorList, felem: T = nil): bool =
+  for cxsel in slist:
+    if elem.selectorsMatch(cxsel, felem):
       return true
   return false
 
@@ -43,7 +43,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
     return elem.hover
   of PSEUDO_ROOT: return elem == elem.document.html
   of PSEUDO_NTH_CHILD:
-    if sel.pseudo.ofsels.issome and not selem.selectorsMatch(sel.pseudo.ofsels.get, felem):
+    if sel.pseudo.ofsels.len != 0 and not selem.selectorsMatch(sel.pseudo.ofsels, felem):
       return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
@@ -60,11 +60,11 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
         if A < 0:
           return (i - B) <= 0 and (i - B) mod A == 0
         return (i - B) >= 0 and (i - B) mod A == 0
-      if sel.pseudo.ofsels.isnone or child.selectorsMatch(sel.pseudo.ofsels.get, felem):
+      if sel.pseudo.ofsels.len == 0 or child.selectorsMatch(sel.pseudo.ofsels, felem):
         inc i
     return false
   of PSEUDO_NTH_LAST_CHILD:
-    if sel.pseudo.ofsels.issome and not selem.selectorsMatch(sel.pseudo.ofsels.get, felem):
+    if sel.pseudo.ofsels.len == 0 and not selem.selectorsMatch(sel.pseudo.ofsels, felem):
       return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
@@ -81,7 +81,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
         if A < 0:
           return (i - B) <= 0 and (i - B) mod A == 0
         return (i - B) >= 0 and (i - B) mod A == 0
-      if sel.pseudo.ofsels.isnone or child.selectorsMatch(sel.pseudo.ofsels.get, felem):
+      if sel.pseudo.ofsels.len != 0 or child.selectorsMatch(sel.pseudo.ofsels, felem):
         inc i
     return false
   of PSEUDO_CHECKED:
@@ -105,75 +105,6 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
   of PSEUDO_VISITED:
     return false
 
-func combinatorSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T): bool =
-  let selem = elem
-  # combinator without at least two members makes no sense
-  # actually, combinators with more than two elements are a pretty bad idea
-  # too. TODO getting rid of them would simplify this function greatly
-  assert sel.csels.len > 1
-  if selem.selectorsMatch(sel.csels[^1], felem):
-    var i = sel.csels.len - 2
-    case sel.ct
-    of DESCENDANT_COMBINATOR:
-      when selem is StyledNode:
-        var e = elem.parent
-      else:
-        var e = elem.parentElement
-      while e != nil and i >= 0:
-        if e.selectorsMatch(sel.csels[i], felem):
-          dec i
-        when elem is StyledNode:
-          e = e.parent
-        else:
-          e = e.parentElement
-    of CHILD_COMBINATOR:
-      when elem is StyledNode:
-        var e = elem.parent
-      else:
-        var e = elem.parentElement
-      while e != nil and i >= 0:
-        if not e.selectorsMatch(sel.csels[i], felem):
-          return false
-        dec i
-        when elem is StyledNode:
-          e = e.parent
-        else:
-          e = e.parentElement
-    of NEXT_SIBLING_COMBINATOR:
-      var found = false
-      let parent = when elem is StyledNode: elem.parent
-      else: elem.parentElement
-      if parent == nil: return false
-      for child in parent.elementList_rev:
-        when elem is StyledNode:
-          if not child.isDomElement: continue
-        if found:
-          if not child.selectorsMatch(sel.csels[i], felem):
-            return false
-          dec i
-          if i < 0:
-            return true
-        if child == elem:
-          found = true
-    of SUBSEQ_SIBLING_COMBINATOR:
-      var found = false
-      let parent = when selem is StyledNode: selem.parent
-      else: elem.parentElement
-      if parent == nil: return false
-      for child in parent.elementList_rev:
-        when selem is StyledNode:
-          if not child.isDomElement: continue
-        if child == selem:
-          found = true
-          continue
-        if not found: continue
-        if child.selectorsMatch(sel.csels[i], felem):
-          dec i
-        if i < 0:
-          return true
-    return i == -1
-  return false
-
 func selectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T = nil): bool =
   let selem = elem
   when elem is StyledNode:
@@ -193,21 +124,73 @@ func selectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T = n
     return true
   of UNIVERSAL_SELECTOR:
     return true
-  of COMBINATOR_SELECTOR:
-    return combinatorSelectorMatches(selem, sel, felem)
 
-# WARNING for StyledNode, this has the side effect of modifying depends.
-#TODO make that an explicit flag or something, also get rid of the Element case
-func selectorsMatch*[T: Element|StyledNode](elem: T, selectors: ComplexSelector, felem: T = nil): bool =
-  let felem = if felem != nil:
-    felem
-  else:
-    elem
-
-  for sel in selectors:
+func selectorsMatch[T: Element|StyledNode](elem: T, sels: CompoundSelector, felem: T): bool =
+  for sel in sels:
     if not selectorMatches(elem, sel, felem):
       return false
   return true
+
+func complexSelectorMatches[T: Element|StyledNode](elem: T, cxsel: ComplexSelector, felem: T = nil): bool =
+  var e = elem
+  for i in countdown(cxsel.high, 0):
+    let sels = cxsel[i]
+    if e == nil:
+      return false
+    var match = false
+    case sels.ct
+    of NO_COMBINATOR:
+      match = e.selectorsMatch(sels, felem):
+    of DESCENDANT_COMBINATOR:
+      e = e.parentElement
+      while e != nil:
+        if e.selectorsMatch(sels, felem):
+          match = true
+          break
+        e = e.parentElement
+    of CHILD_COMBINATOR:
+      e = e.parentElement
+      if e != nil:
+        match = e.selectorsMatch(sels, felem)
+    of NEXT_SIBLING_COMBINATOR:
+      if e.parentElement == nil: return false
+      var found = false
+      for child in e.parentElement.elementList_rev:
+        when elem is StyledNode:
+          if not child.isDomElement: continue
+        if e == child:
+          found = true
+          continue
+        if found:
+          e = child
+          if not e.selectorsMatch(sels, felem):
+            return false
+    of SUBSEQ_SIBLING_COMBINATOR:
+      var found = false
+      if e.parentElement == nil: return false
+      for child in e.parentElement.elementList_rev:
+        when elem is StyledNode:
+          if not child.isDomElement: continue
+        if child == elem:
+          found = true
+          continue
+        if not found: continue
+        if child.selectorsMatch(sels, felem):
+          e = child
+          match = true
+          break
+    if not match:
+      return false
+  return true
+
+# WARNING for StyledNode, this has the side effect of modifying depends.
+#TODO make that an explicit flag or something, also get rid of the Element case
+func selectorsMatch*[T: Element|StyledNode](elem: T, cxsel: ComplexSelector, felem: T = nil): bool =
+  var felem = if felem != nil:
+    felem
+  else:
+    elem
+  return elem.complexSelectorMatches(cxsel, felem)
 
 proc querySelectorAll(node: Node, q: string): seq[Element] =
   let selectors = parseSelectors(newStringStream(q))
