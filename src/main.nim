@@ -14,7 +14,7 @@ import ips/forkserver
 import utils/twtstr
 
 let conf = readConfig()
-widthtable = makewidthtable(conf.ambiguous_double)
+set_cjk_ambiguous(conf.ambiguous_double)
 let params = commandLineParams()
 
 proc version(long: static bool = false): string =

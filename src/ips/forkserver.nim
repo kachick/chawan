@@ -138,7 +138,7 @@ proc runForkServer() =
       of LOAD_CONFIG:
         var config: ForkServerConfig
         ctx.istream.sread(config)
-        width_table = makewidthtable(config.ambiguous_double)
+        set_cjk_ambiguous(config.ambiguous_double)
         SocketDirectory = config.tmpdir
       ctx.ostream.flush()
     except EOFError:
