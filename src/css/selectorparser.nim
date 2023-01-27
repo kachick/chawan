@@ -392,7 +392,6 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     if not state.has():
       break # finish
     let tok = get_tok state.consume()
-    var cxsel: ComplexSelector
     case tok.tokenType
     of CSS_DELIM_TOKEN:
       case tok.rvalue
