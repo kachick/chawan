@@ -1,6 +1,6 @@
 {.used.}
 
-template eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect), cast(tags: []), cast(raises: []).}:
+func eprint*(s: varargs[string, `$`]) = {.cast(noSideEffect), cast(tags: []), cast(raises: []).}:
   var a = false
   var o = ""
   when nimVm:
