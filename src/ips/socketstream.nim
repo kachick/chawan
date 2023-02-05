@@ -17,6 +17,7 @@ type SocketStream* = ref object of Stream
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = SocketStream(s)
+  let wasend = s.isend
   if s.blk:
     while result < len:
       let n = s.source.recv(cast[pointer](cast[int](buffer) + result), len - result)
@@ -31,8 +32,9 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   else:
     result = s.source.recv(buffer, len)
   if result == 0:
+    if wasend:
+      raise newException(EOFError, "eof")
     s.isend = true
-    raise newException(EOFError, "eof")
   if result < 0:
     raisePosixIOError()
   elif result == 0:

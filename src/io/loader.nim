@@ -106,10 +106,9 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
       of QUIT:
         stream.close()
         break
-    except EOFError:
-      # End-of-file, quit.
-      break
-    stream.close()
+    except IOError:
+      # End-of-file, broken pipe, or something.
+      stream.close()
   curl_global_cleanup()
   ssock.close()
   quit(0)

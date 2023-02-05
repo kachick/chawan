@@ -33,6 +33,7 @@ proc raisePosixIOError*() =
 proc psReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = cast[PosixStream](s)
+  let wasend = s.isend
   while result < len:
     let n = read(s.fd, cast[pointer](cast[int](buffer) + result), len)
     if n < 0:
@@ -44,7 +45,9 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
       break
     result += n
   if result == 0:
-    raise newException(EOFError, "eof")
+    if wasend:
+      raise newException(EOFError, "eof")
+    s.isend = true
   if result == -1:
     raisePosixIOError()
 

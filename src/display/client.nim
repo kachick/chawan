@@ -84,7 +84,7 @@ proc `=destroy`(client: var ClientObj) =
     free(client.jsrt)
 
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
-  client.loader.doRequest(req)
+  return client.loader.doRequest(req)
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   let client = cast[Client](opaque)
