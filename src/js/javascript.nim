@@ -56,6 +56,9 @@ export
   JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
   JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue
 
+when sizeof(int) < sizeof(int64):
+  export quickjs.`==`
+
 type
   JSContextOpaque* = ref object
     creg: Table[string, JSClassID]

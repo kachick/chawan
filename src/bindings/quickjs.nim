@@ -47,10 +47,10 @@ const                         ##  all tags with a reference count are negative
 when sizeof(int) < sizeof(int64):
   {.passC: "-DJS_NAN_BOXING".}
   type
-    JSValue* {.importc, header: qjsheader.} = uint64
+    JSValue* {.importc, header: qjsheader.} = distinct uint64
 
   template JS_VALUE_GET_TAG*(v: untyped): int32 =
-    cast[int32](v shr 32)
+    cast[int32](cast[uint64](v) shr 32)
 
   template JS_VALUE_GET_PTR*(v: untyped): pointer =
     cast[pointer](v)
@@ -60,6 +60,8 @@ when sizeof(int) < sizeof(int64):
 
   template JS_MKPTR*(t, p: untyped): JSValue =
     JSValue((cast[uint64](t) shl 32) or cast[uint](p))
+
+  proc `==`*(a, b: JSValue): bool {.borrow.}
 else:
   type
     JSValueUnion* {.importc, header: qjsheader, union.} = object
