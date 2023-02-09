@@ -201,7 +201,7 @@ proc input(client: Client) =
 proc setTimeout[T: JSValue|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
   let id = client.timeoutid
   inc client.timeoutid
-  let fdi = client.selector.registerTimer(timeout, true, nil)
+  let fdi = client.selector.registerTimer(max(timeout, 1), true, nil)
   client.timeout_fdis[fdi] = id
   when T is string:
     client.timeouts[id] = ((proc() =
@@ -221,7 +221,7 @@ proc setTimeout[T: JSValue|string](client: Client, handler: T, timeout = 0): int
 proc setInterval[T: JSValue|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
   let id = client.timeoutid
   inc client.timeoutid
-  let fdi = client.selector.registerTimer(interval, false, nil)
+  let fdi = client.selector.registerTimer(max(interval, 1), false, nil)
   client.interval_fdis[fdi] = id
   when T is string:
     client.intervals[id] = ((proc() =
