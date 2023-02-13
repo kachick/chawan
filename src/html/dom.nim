@@ -1667,9 +1667,12 @@ proc remove*(node: Node, index: int, suppressObservers: bool) =
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
   #TODO not suppress observers => queue tree mutation record
 
-proc remove*(node: Node, suppressObservers = false) =
+proc remove0(node: Node, suppressObservers = false) =
   let index = node.parentNode.childList.find(node)
   node.remove(index, suppressObservers)
+
+proc remove*(node: Node) {.jsfunc.} =
+  node.remove0()
 
 proc adopt(document: Document, node: Node) =
   let oldDocument = node.document
