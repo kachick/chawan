@@ -163,8 +163,8 @@ func complexSelectorMatches[T: Element|StyledNode](elem: T, cxsel: ComplexSelect
           continue
         if found:
           e = child
-          if not e.selectorsMatch(sels, felem):
-            return false
+          match = e.selectorsMatch(sels, felem)
+          break
     of SUBSEQ_SIBLING_COMBINATOR:
       var found = false
       if e.parentElement == nil: return false
