@@ -652,21 +652,20 @@ proc onload(buffer: Buffer) =
   try:
     buffer.sstream.setPosition(op + buffer.available)
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
-    assert n != 0
-    s.setLen(n)
-    buffer.sstream.setPosition(op)
-    if buffer.readbufsize < BufferSize:
-      buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
-    buffer.available += s.len
-    case buffer.contenttype
-    of "text/html":
-      res.bytes = buffer.available
-    else:
-      buffer.do_reshape()
-    buffer.resolveTask(LOAD, res)
-  except EOFError:
-    res.atend = true
-    buffer.finishLoad()
+    if n != 0: # n can be 0 if we get EOF. (in which case we shouldn't reshape unnecessarily.)
+      s.setLen(n)
+      buffer.sstream.setPosition(op)
+      if buffer.readbufsize < BufferSize:
+        buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
+      buffer.available += s.len
+      case buffer.contenttype
+      of "text/html":
+        res.bytes = buffer.available
+      else:
+        buffer.do_reshape()
+    if buffer.istream.atEnd():
+      res.atend = true
+      buffer.finishLoad()
     buffer.resolveTask(LOAD, res)
   except ErrorAgain, ErrorWouldBlock:
     if buffer.readbufsize > 1:
