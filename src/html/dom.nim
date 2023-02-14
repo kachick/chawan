@@ -561,9 +561,10 @@ func len(collection: Collection): int =
   collection.refreshCollection()
   return collection.snapshot.len
 
-func newCollection[T: Collection](root: Node, match: proc(node: Node): bool {.noSideEffect.}, islive: bool): T =
+func newCollection[T: Collection](root: Node, match: proc(node: Node): bool {.noSideEffect.}, islive, childonly: bool): T =
   result = T(
     islive: islive,
+    childonly: childonly,
     match: match,
     root: root,
     id: root.document.colln
@@ -575,10 +576,10 @@ func isElement(node: Node): bool =
   return node.nodeType == ELEMENT_NODE
 
 func children*(node: Node): HTMLCollection {.jsfget.} =
-  return newCollection[HTMLCollection](node, isElement, true)
+  return newCollection[HTMLCollection](node, isElement, true, true)
 
 func childNodes(node: Node): NodeList {.jsfget.} =
-  return newCollection[NodeList](node, nil, true)
+  return newCollection[NodeList](node, nil, true, true)
 
 # DOMTokenList
 func length(tokenList: DOMTokenList): int {.jsfget.} =
@@ -958,10 +959,10 @@ func getElementsByTag*(node: Node, tag: TagType): seq[Element] =
 
 func getElementsByTagName0(root: Node, tagName: string): HTMLCollection =
   if tagName == "*":
-    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement, true)
+    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement, true, false)
   let t = tagType(tagName)
   if t != TAG_UNKNOWN:
-    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement and Element(node).tagType == t, true)
+    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement and Element(node).tagType == t, true, false)
 
 func getElementsByTagName(document: Document, tagName: string): HTMLCollection {.jsfunc.} =
   return document.getElementsByTagName0(tagName)
@@ -989,7 +990,7 @@ func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
           for class in classes:
             if class notin Element(node).classList:
               return false
-        return true, true)
+        return true, true, false)
 
 func getElementsByClassName(document: Document, classNames: string): HTMLCollection {.jsfunc.} =
   return document.getElementsByClassName0(classNames)
