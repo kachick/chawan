@@ -212,13 +212,13 @@ proc addSpacing(line: LineBox, width, height: int, format: ComputedFormat, hang 
 
 proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues, hang = false) =
   let shift = ictx.computeShift(computed)
+  ictx.charwidth += ictx.whitespacenum
   ictx.whitespacenum = 0
   if shift > 0:
     ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format, hang)
 
 proc finishLine(ictx: InlineContext, computed: CSSComputedValues, force = false) =
   if ictx.currentLine.atoms.len != 0 or force:
-    ictx.charwidth = 0
     let whitespace = computed{"white-space"}
     if whitespace == WHITESPACE_PRE:
       ictx.flushWhitespace(computed)
@@ -233,6 +233,7 @@ proc finishLine(ictx: InlineContext, computed: CSSComputedValues, force = false)
     ictx.height += line.height
     ictx.width = max(ictx.width, line.width)
     ictx.currentLine = LineBox(offset: Offset(y: line.offset.y + line.height))
+    ictx.charwidth = 0
 
 proc finish(ictx: InlineContext, computed: CSSComputedValues) =
   ictx.finishLine(computed)
@@ -343,7 +344,8 @@ proc processWhitespace(state: var InlineState, c: char) =
       state.ictx.flushLine(state.computed)
     elif c == '\t':
       let prev = state.ictx.charwidth
-      state.ictx.charwidth = ((state.ictx.charwidth div 8) + 1) * 8
+      state.ictx.charwidth = ((state.ictx.charwidth +
+        state.ictx.whitespacenum div 8) + 1) * 8 - state.ictx.whitespacenum
       state.ictx.whitespacenum += state.ictx.charwidth - prev
     else:
       inc state.ictx.whitespacenum
