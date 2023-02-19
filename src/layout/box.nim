@@ -118,6 +118,9 @@ type
     viewport*: Viewport
     offset*: Offset
 
+    #TODO this should not be needed.
+    was_positioned*: bool
+
     # This is the padding width/height.
     width*: int
     height*: int

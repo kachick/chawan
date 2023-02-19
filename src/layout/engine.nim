@@ -839,6 +839,12 @@ proc positionBlocks(box: BlockBox) =
   template defer_out_of_flow() =
     # Skip absolute, fixed, sticky
     while i < box.nested.len:
+      if box.nested[i].was_positioned: # already positioned, ignore.
+        #TODO: this is actually an ugly hack to avoid absolute boxes being
+        # positioned twice. A proper fix would be to appropriately place
+        # them in the tree *before* positioning (i.e. in buildBlock.)
+        inc i
+        continue
       case box.nested[i].computed{"position"}
       of POSITION_STATIC, POSITION_RELATIVE:
         break
@@ -916,6 +922,7 @@ proc positionBlocks(box: BlockBox) =
     child.offset.x += child.margin_left
     if box.computed{"position"} == POSITION_RELATIVE:
       box.positionRelative(child)
+    child.was_positioned = true #TODO see above
 
   box.height += box.padding_bottom
 
@@ -926,6 +933,7 @@ proc positionBlocks(box: BlockBox) =
   box.width += box.padding_right
 
   for child in deferred:
+    child.was_positioned = true #TODO see above
     case child.computed{"position"}
     of POSITION_ABSOLUTE:
       positionAbsolute(child)
