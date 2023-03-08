@@ -1377,7 +1377,8 @@ func newHTMLElement*(document: Document, localName: string, namespace = Namespac
 
 func newDocument*(): Document {.jsctor.} =
   result = Document(
-    nodeType: DOCUMENT_NODE
+    nodeType: DOCUMENT_NODE,
+    url: newURL("about:blank")
   )
   result.document = result
   result.implementation = DOMImplementation(document: result)
