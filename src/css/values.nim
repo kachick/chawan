@@ -337,16 +337,25 @@ func propertyType(s: string): CSSPropertyType =
 func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
+func `$`*(length: CSSLength): string =
+  if length.auto:
+    return "auto"
+  return $length.num & ($length.unit).split('_')[1..^1].join("_").tolower()
+
+func `$`*(content: CSSContent): string =
+  if content.s != "":
+    return "url(" & content.s & ")"
+  return "none"
+
 func `$`*(val: CSSComputedValue): string =
   result = ($val.t).toLowerAscii().split('_')[1..^1].join('-') & ": "
   case val.v
   of VALUE_COLOR:
     result &= $val.color
   of VALUE_IMAGE:
-    if val.image.s != "":
-      result &= "url(" & val.image.s & ")"
-    else:
-      result &= "none"
+    result &= $val.image
+  of VALUE_LENGTH:
+    result &= $val.length
   else: discard
 
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
