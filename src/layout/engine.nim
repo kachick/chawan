@@ -422,7 +422,7 @@ proc resolveDimensions(box: BlockBox, availableWidth: int, availableHeight: Opti
       box.resolveContentWidth(availableWidth)
   if not computed{"min-width"}.auto:
     let minWidth = computed{"min-width"}.px(viewport, availableWidth)
-    if minWidth < box.contentWidth:
+    if minWidth > box.contentWidth:
       box.contentWidth = minWidth
       box.resolveContentWidth(availableWidth)
 
@@ -536,8 +536,8 @@ proc newFlowRootBox(viewport: Viewport, builder: BoxBuilder, parentWidth: int, p
   new(result)
   result.viewport = viewport
   result.computed = builder.computed
-  result.resolveDimensions(parentWidth, parentHeight, maxContentWidth)
   result.node = builder.node
+  result.resolveDimensions(parentWidth, parentHeight, maxContentWidth)
   result.shrink = result.isShrink(nil, shrink)
 
 proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
@@ -549,8 +549,8 @@ proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
     some(parent.maxContentWidth)
   else:
     none(int)
-  result.resolveDimensions(parent.contentWidth, parent.contentHeight, maxContentWidth)
   result.node = builder.node
+  result.resolveDimensions(parent.contentWidth, parent.contentHeight, maxContentWidth)
 
 proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
   new(result)
@@ -561,8 +561,8 @@ proc newListItem(parent: BlockBox, builder: ListItemBoxBuilder): ListItemBox =
     some(parent.maxContentWidth)
   else:
     none(int)
-  result.resolveDimensions(parent.contentWidth, parent.contentHeight, maxContentWidth)
   result.node = builder.node
+  result.resolveDimensions(parent.contentWidth, parent.contentHeight, maxContentWidth)
 
 proc newInlineBlock(viewport: Viewport, builder: BoxBuilder, parentWidth: int, parentHeight = none(int)): InlineBlockBox =
   new(result)
