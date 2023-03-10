@@ -130,12 +130,11 @@ type
   Node* = ref object of EventTarget
     nodeType* {.jsget.}: NodeType
     childList*: seq[Node]
-    nextSibling* {.jsget.}: Node
-    previousSibling* {.jsget.}: Node
     parentNode* {.jsget.}: Node
     parentElement* {.jsget.}: Element
     root: Node
     document*: Document
+    index*: int # Index in parents children. -1 for nodes without a parent.
     # Live collection cache: ids of live collections are saved in all
     # nodes they refer to. These are removed when the collection is destroyed,
     # and invalidated when the owner node's children or attributes change.
@@ -713,7 +712,8 @@ func newAttr(parent: Element, localName, value: string, prefix = "", namespaceUR
     ownerElement: parent,
     localName: localName,
     prefix: prefix,
-    value: value
+    value: value,
+    index: -1
   )
 
 func name(attr: Attr): string {.jsfget.} =
@@ -866,6 +866,18 @@ func hasChild(node: Node, nodeType: NodeType): bool =
     if child.nodeType == nodeType:
       return false
 
+func previousSibling*(node: Node): Node {.jsfget.} =
+  let i = node.index - 1
+  if node.parentNode == nil or i < 0:
+    return nil
+  return node.parentNode.childList[i]
+
+func nextSibling*(node: Node): Node {.jsfget.} =
+  let i = node.index + 1
+  if node.parentNode == nil or i >= node.parentNode.childList.len:
+    return nil
+  return node.parentNode.childList[i]
+
 func hasNextSibling(node: Node, nodeType: NodeType): bool =
   var node = node.nextSibling
   while node != nil:
@@ -1000,8 +1012,7 @@ func getElementsByClassName(element: Element, classNames: string): HTMLCollectio
 
 func previousElementSibling*(elem: Element): Element {.jsfget.} =
   if elem.parentNode == nil: return nil
-  var i = elem.parentNode.childList.find(elem)
-  dec i
+  var i = elem.index - 1
   while i >= 0:
     if elem.parentNode.childList[i].nodeType == ELEMENT_NODE:
       return elem
@@ -1010,8 +1021,7 @@ func previousElementSibling*(elem: Element): Element {.jsfget.} =
 
 func nextElementSibling*(elem: Element): Element {.jsfget.} =
   if elem.parentNode == nil: return nil
-  var i = elem.parentNode.childList.find(elem)
-  inc i
+  var i = elem.index + 1
   while i < elem.parentNode.childList.len:
     if elem.parentNode.childList[i].nodeType == ELEMENT_NODE:
       return elem
@@ -1266,7 +1276,8 @@ func newText(document: Document, data: string): Text =
   return Text(
     nodeType: TEXT_NODE,
     document: document,
-    data: data
+    data: data,
+    index: -1
   )
 
 func newText(window: Window, data: string = ""): Text {.jsgctor.} =
@@ -1276,7 +1287,8 @@ func newCDATASection(document: Document, data: string): CDATASection =
   return CDATASection(
     nodeType: CDATA_SECTION_NODE,
     document: document,
-    data: data
+    data: data,
+    index: -1
   )
 
 func newProcessingInstruction(document: Document, target, data: string): ProcessingInstruction =
@@ -1284,13 +1296,15 @@ func newProcessingInstruction(document: Document, target, data: string): Process
     nodeType: PROCESSING_INSTRUCTION_NODE,
     document: document,
     target: target,
-    data: data
+    data: data,
+    index: -1
   )
 
 func newDocumentFragment(document: Document): DocumentFragment =
   return DocumentFragment(
     nodeType: DOCUMENT_FRAGMENT_NODE,
-    document: document
+    document: document,
+    index: -1
   )
 
 func newDocumentFragment(window: Window): DocumentFragment {.jsgctor.} =
@@ -1300,7 +1314,8 @@ func newComment(document: Document, data: string): Comment =
   return Comment(
     nodeType: COMMENT_NODE,
     document: document,
-    data: data
+    data: data,
+    index: -1
   )
 
 func newComment(window: Window, data: string = ""): Comment {.jsgctor.} =
@@ -1364,6 +1379,7 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   result.document = document
   result.attributes = NamedNodeMap(element: result)
   result.classList = DOMTokenList(localName: "classList")
+  result.index = -1
   {.cast(noSideEffect).}:
     for k, v in attrs:
       result.attr(k, v)
@@ -1378,7 +1394,8 @@ func newHTMLElement*(document: Document, localName: string, namespace = Namespac
 func newDocument*(): Document {.jsctor.} =
   result = Document(
     nodeType: DOCUMENT_NODE,
-    url: newURL("about:blank")
+    url: newURL("about:blank"),
+    index: -1
   )
   result.document = result
   result.implementation = DOMImplementation(document: result)
@@ -1390,7 +1407,8 @@ func newDocumentType*(document: Document, name: string, publicId = "", systemId 
     document: document,
     name: name,
     publicId: publicId,
-    systemId: systemId
+    systemId: systemId,
+    index: -1
   )
 
 func inHTMLNamespace*(element: Element): bool = element.namespace == Namespace.HTML
@@ -1645,23 +1663,21 @@ proc id(element: Element, id: string) {.jsfset.} =
   element.attr("id", id)
 
 # Pass an index to avoid searching for the node in parent's child list.
-proc remove*(node: Node, index: int, suppressObservers: bool) =
+proc remove*(node: Node, suppressObservers: bool) =
   let parent = node.parentNode
   assert parent != nil
-  assert index != -1
+  assert node.index != -1
   #TODO live ranges
   #TODO NodeIterator
-  let oldPreviousSibling = node.previousSibling
-  let oldNextSibling = node.nextSibling
-  parent.childList.delete(index)
-  if oldPreviousSibling != nil:
-    oldPreviousSibling.nextSibling = oldNextSibling
-  if oldNextSibling != nil:
-    oldNextSibling.previousSibling = oldPreviousSibling
+  for i in node.index ..< parent.childList.len - 1:
+    parent.childList[i] = parent.childList[i + 1]
+    parent.childList[i].index = i
+  parent.childList.setLen(parent.childList.len - 1)
   node.parentNode.invalidateCollections()
   node.parentNode = nil
   node.parentElement = nil
   node.root = nil
+  node.index = -1
   if node.nodeType == ELEMENT_NODE:
     if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
       node.document.cachedSheetsInvalid = true
@@ -1669,12 +1685,8 @@ proc remove*(node: Node, index: int, suppressObservers: bool) =
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
   #TODO not suppress observers => queue tree mutation record
 
-proc remove0(node: Node, suppressObservers = false) =
-  let index = node.parentNode.childList.find(node)
-  node.remove(index, suppressObservers)
-
 proc remove*(node: Node) {.jsfunc.} =
-  node.remove0()
+  node.remove(suppressObservers = false)
 
 proc adopt(document: Document, node: Node) =
   let oldDocument = node.document
@@ -1689,22 +1701,6 @@ proc adopt(document: Document, node: Node) =
           attr.document = document
     #TODO custom elements
     #..adopting steps
-
-proc applyChildInsert(parent, child: Node, index: int) =
-  child.root = parent.rootNode
-  child.parentNode = parent
-  if parent.nodeType == ELEMENT_NODE:
-    child.parentElement = Element(parent)
-  if index - 1 >= 0:
-    child.previousSibling = parent.childList[index - 1]
-    child.previousSibling.nextSibling = child
-  if index + 1 < parent.childList.len:
-    child.nextSibling = parent.childList[index + 1]
-    child.nextSibling.previousSibling = child
-  child.invalidateCollections()
-  if child.nodeType == ELEMENT_NODE:
-    if Element(child).tagType in {TAG_STYLE, TAG_LINK} and child.document != nil:
-      child.document.cachedSheetsInvalid = true
 
 proc resetElement*(element: Element) = 
   case element.tagType
@@ -1843,6 +1839,30 @@ func preInsertionValidity*(parent, node, before: Node): bool =
     else: discard
   return true # no exception reached
 
+proc insertNode(parent, node, before: Node) =
+  parent.document.adopt(node)
+  parent.childList.setLen(parent.childList.len + 1)
+  if before == nil:
+    node.index = parent.childList.high
+  else:
+    node.index = before.index
+    eprint "index", node.index
+    for i in before.index ..< parent.childList.len - 2:
+      parent.childList[i + 1] = parent.childList[i]
+      parent.childList[i + 1].index = i + 1
+  parent.childList[node.index] = node
+  node.root = parent.rootNode
+  node.parentNode = parent
+  if parent.nodeType == ELEMENT_NODE:
+    node.parentElement = Element(parent)
+  node.invalidateCollections()
+  if node.nodeType == ELEMENT_NODE:
+    if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
+      node.document.cachedSheetsInvalid = true
+  if node.nodeType == ELEMENT_NODE:
+    #TODO shadow root
+    insertionSteps(node)
+
 # WARNING ditto
 proc insert*(parent, node, before: Node) =
   let nodes = if node.nodeType == DOCUMENT_FRAGMENT_NODE: node.childList
@@ -1852,7 +1872,7 @@ proc insert*(parent, node, before: Node) =
     return
   if node.nodeType == DOCUMENT_FRAGMENT_NODE:
     for i in countdown(node.childList.high, 0):
-      node.childList[i].remove(i, true)
+      node.childList[i].remove(true)
     #TODO tree mutation record
   if before != nil:
     #TODO live ranges
@@ -1860,17 +1880,7 @@ proc insert*(parent, node, before: Node) =
   if parent.nodeType == ELEMENT_NODE:
     Element(parent).invalid = true
   for node in nodes:
-    parent.document.adopt(node)
-    if before == nil:
-      parent.childList.add(node)
-      parent.applyChildInsert(node, parent.childList.high)
-    else:
-      let index = parent.childList.find(before)
-      parent.childList.insert(node, index)
-      parent.applyChildInsert(node, index)
-    if node.nodeType == ELEMENT_NODE:
-      #TODO shadow root
-      insertionSteps(node)
+    insertNode(parent, node, before)
 
 proc insertBefore(parent, node, before: Node): Node {.jserr, jsfunc.} =
   if parent.preInsertionValidity(node, before):
@@ -1899,7 +1909,7 @@ proc removeChild(parent, node: Node): Node {.jsfunc.} =
 
 proc replaceAll(parent, node: Node) =
   for i in countdown(parent.childList.high, 0):
-    parent.childList[i].remove(i, true)
+    parent.childList[i].remove(true)
   if node != nil:
     if node.nodeType == DOCUMENT_FRAGMENT_NODE:
       for child in node.childList:

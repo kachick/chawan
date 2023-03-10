@@ -1082,7 +1082,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         j = furthestBlock.childList.high
         while j >= 0:
           let child = furthestBlock.childList[j]
-          child.remove(j, true)
+          child.remove(true)
           tomove.add(child)
           dec j
         for child in tomove:
