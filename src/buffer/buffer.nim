@@ -272,6 +272,8 @@ func getClickable(styledNode: StyledNode): Element =
       break
     node = result
 
+func submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
+
 func getClickHover(styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
   if clickable != nil:
@@ -279,6 +281,13 @@ func getClickHover(styledNode: StyledNode): string =
     of TAG_A:
       return HTMLAnchorElement(clickable).href
     of TAG_INPUT:
+      #TODO this is inefficient and also quite stupid
+      if clickable.tagType in FormAssociatedElements:
+        let fae = FormAssociatedElement(clickable)
+        if fae.form != nil and fae.form.canSubmitImplicitly():
+          let req = fae.form.submitForm(fae)
+          if req.isSome:
+            return $req.get.url
       return "<input>"
     of TAG_OPTION:
       return "<option>"
@@ -779,7 +788,7 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= value
     result &= "\r\n"
 
-proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
+func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   let entrylist = form.constructEntryList(submitter)
 
   let action = if submitter.action() == "":
@@ -866,7 +875,7 @@ type ReadSuccessResult* = object
   open*: Option[Request]
   repaint*: bool
 
-proc implicitSubmit(buffer: Buffer, input: HTMLInputElement): Option[Request] =
+func implicitSubmit(input: HTMLInputElement): Option[Request] =
   if input.form != nil and input.form.canSubmitImplicitly():
     return submitForm(input.form, input.form)
 
@@ -881,7 +890,7 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
         input.invalid = true
         buffer.do_reshape()
         result.repaint = true
-        result.open = buffer.implicitSubmit(input)
+        result.open = implicitSubmit(input)
       of INPUT_FILE:
         let cdir = parseURL("file://" & getCurrentDir() & DirSep)
         let path = parseURL(s, cdir)
@@ -890,7 +899,7 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
           input.invalid = true
           buffer.do_reshape()
           result.repaint = true
-          result.open = buffer.implicitSubmit(input)
+          result.open = implicitSubmit(input)
       else: discard
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)

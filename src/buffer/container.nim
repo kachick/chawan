@@ -282,7 +282,8 @@ func getHoverText*(container: Container): string =
       return container.hovertext[t]
 
 func isHoverURL*(container: Container, url: URL): bool =
-  return $url == container.hovertext[HOVER_LINK]
+  let hoverurl = parseURL(container.hovertext[HOVER_LINK])
+  return hoverurl.isSome and url.host == hoverurl.get.host
 
 proc triggerEvent(container: Container, event: ContainerEvent) =
   container.events.addLast(event)
