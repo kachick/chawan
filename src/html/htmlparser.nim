@@ -1574,6 +1574,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         clear_the_stack_back_to_a_table_context
         discard parser.insertHTMLElement(Token(t: START_TAG, tagtype: TAG_TBODY))
         parser.insertionMode = IN_TABLE_BODY
+        reprocess token
       )
       "<table>" => (block:
         parse_error
