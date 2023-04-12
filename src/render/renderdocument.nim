@@ -329,13 +329,13 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: Wi
       # ugly hack for background-image display... TODO actually display images
       let s = "[img]"
       let w = s.len * window.ppc
-      var x = x
+      var ix = x
       if box.width < w:
         # text is larger than image; center it to minimize error
-        x -= w div 2
-        x += box.width div 2
-      x = x div window.ppc
-      y = y div window.ppl
+        ix -= w div 2
+        ix += box.width div 2
+      let x = ix div window.ppc
+      let y = y div window.ppl
       if y >= 0 and x + w >= 0:
         grid.setText(s, ComputedFormat(node: box.node), x, y)
 
