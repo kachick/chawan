@@ -318,7 +318,7 @@ type
   ]
 
 template toset(ts: openarray[TagType]): set[TagType] =
-  var tags: set[TagType]
+  var tags: system.set[TagType]
   for tag in ts:
     tags.incl(tag)
   tags
