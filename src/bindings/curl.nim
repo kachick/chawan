@@ -36,10 +36,16 @@ const
   CURLINFO_MASK {.used.} = 0x0fffff
   CURLINFO_TYPEMASK {.used.} = 0xf00000
 
+const
+  CURL_WAIT_POLLIN* = 0x0001
+  CURL_WAIT_POLLPRI* = 0x0002
+  CURL_WAIT_POLLOUT* = 0x0004
+
 {.push cdecl, dynlib: curllib.}
 
 type
-  CURL* = pointer
+  CURL* = distinct pointer
+  CURLM* = distinct pointer
 
   curl_mime_struct = object
   curl_mime* = ptr curl_mime_struct
@@ -47,6 +53,19 @@ type
   curl_mimepart* = ptr curl_mimepart_struct
   curl_slist_struct = object
   curl_slist* = ptr curl_slist_struct
+  curl_socket_t = cint
+  curl_waitfd* = object
+    fd*: curl_socket_t
+    events*: cshort
+    revents*: cshort # this is, in fact, supported.
+  CURLMsg_data {.union.} = object
+    whatever: pointer
+    result*: CURLcode
+  CURLMsg_struct = object
+    msg*: CURLMSG_E
+    easy_handle*: CURL
+    data*: CURLMsg_data
+  CURLMsg* = ptr CURLMsg_struct
 
   CURLoption* {.size: sizeof(cint).} = enum
     # Long
@@ -239,6 +258,35 @@ type
     CURLE_UNRECOVERABLE_POLL,      # 99 - poll/select returned fatal error 
     CURL_LAST # never use! 
 
+  CURLMcode* {.size: sizeof(cint).} = enum
+    CURLM_CALL_MULTI_PERFORM = -1, # please call curl_multi_perform() or
+                                   #   curl_multi_socket*() soon
+    CURLM_OK,
+    CURLM_BAD_HANDLE,      # the passed-in handle is not a valid CURLM handle
+    CURLM_BAD_EASY_HANDLE, # an easy handle was not good/valid
+    CURLM_OUT_OF_MEMORY,   # if you ever get this, you're in deep sh*t
+    CURLM_INTERNAL_ERROR,  # this is a libcurl bug
+    CURLM_BAD_SOCKET,      # the passed in socket argument did not match
+    CURLM_UNKNOWN_OPTION,  # curl_multi_setopt() with unsupported option
+    CURLM_ADDED_ALREADY,   # an easy handle already added to a multi handle was
+                           #   attempted to get added - again
+    CURLM_RECURSIVE_API_CALL, # an api function was called from inside a
+                              #   callback
+    CURLM_WAKEUP_FAILURE,  # wakeup is unavailable or failed
+    CURLM_BAD_FUNCTION_ARGUMENT, # function called with a bad parameter
+    CURLM_ABORTED_BY_CALLBACK,
+    CURLM_UNRECOVERABLE_POLL,
+    CURLM_LAST
+
+  CURLMSG_E* {.size: sizeof(cint).} = enum
+    CURLMSG_NONE # first, not used
+    CURLMSG_DONE # This easy handle has completed. 'result' contains
+                 # the CURLcode of the transfer
+    CURLMSG_LAST # last, not used
+
+proc `==`*(a: CURL, b: CURL): bool {.borrow.}
+proc `==`*(a: CURLM, b: CURLM): bool {.borrow.}
+
 {.push importc.}
 
 proc curl_global_init*(flags: clong): CURLcode
@@ -260,6 +308,18 @@ proc curl_mime_filedata*(part: curl_mimepart, filename: cstring)
 
 proc curl_slist_append*(slist: curl_slist, str: cstring): curl_slist
 proc curl_slist_free_all*(slist: curl_slist)
+
+proc curl_multi_init*(): CURLM
+proc curl_multi_add_handle*(multi_handle: CURLM, curl_handle: CURL): CURLMcode
+proc curl_multi_remove_handle*(multi_handle: CURLM, curl_handle: CURL): CURLMcode
+proc curl_multi_fdset*(multi_handle: CURLM, read_fd_set, write_fd_set, exc_fd_set: pointer, max_fd: ptr cint): CURLMcode
+proc curl_multi_wait*(multi_handle: CURLM, extra_fds: ptr curl_waitfd, extra_nfds: cuint, timeout_ns: cint, ret: ptr cint): CURLMcode
+proc curl_multi_poll*(multi_handle: CURLM, extra_fds: ptr curl_waitfd, extra_nfds: cuint, timeout_ns: cint, ret: ptr cint): CURLMcode
+proc curl_multi_wakeup*(multi_handle: CURLM): CURLMcode
+proc curl_multi_perform*(multi_handle: CURLM, running_handles: ptr cint): CURLMcode
+proc curl_multi_cleanup*(multi_handle: CURLM): CURLMcode
+proc curl_multi_info_read*(multi_handle: CURLM, msgs_in_queue: ptr cint): CURLMsg
+proc curl_multi_strerror*(code: CURLMcode): cstring
 {.pop.}
 
 {.pop.}

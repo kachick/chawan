@@ -9,15 +9,31 @@ import types/url
 import utils/twtstr
 
 type
-  HeaderOpaque* = ref object
+  HandleData* = ref HandleDataObj
+  HandleDataObj = object
+    curl*: CURL
     statusline: bool
     headers: HeaderList
-    curl: CURL
     request: Request
-    ostream: Stream
+    ostream*: Stream
+    mime: curl_mime
+    slist: curl_slist
 
-func newHeaderOpaque(curl: CURL, request: Request, ostream: Stream): HeaderOpaque =
-  HeaderOpaque(headers: newHeaderList(), curl: curl, ostream: ostream, request: request)
+func newHandleData(curl: CURL, request: Request, ostream: Stream): HandleData =
+  let handleData = HandleData(
+    headers: newHeaderList(),
+    curl: curl,
+    ostream: ostream,
+    request: request
+  )
+  return handleData
+
+proc cleanup*(handleData: HandleData) =
+  if handleData.mime != nil:
+    curl_mime_free(handleData.mime)
+  if handleData.slist != nil:
+    curl_slist_free_all(handleData.slist)
+  curl_easy_cleanup(handleData.curl)
 
 template setopt(curl: CURL, opt: CURLoption, arg: typed) =
   discard curl_easy_setopt(curl, opt, arg)
@@ -33,7 +49,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   for i in 0..<nitems:
     line[i] = p[i]
 
-  let op = cast[HeaderOpaque](userdata)
+  let op = cast[HandleData](userdata)
   if not op.statusline:
     op.statusline = true
     op.ostream.swrite(int(CURLE_OK))
@@ -54,80 +70,72 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   return nitems
 
 proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer): csize_t {.cdecl.} =
-  let stream = cast[Stream](userdata)
+  let handleData = cast[HandleData](userdata)
   if nmemb > 0:
-    stream.writeData(p, int(nmemb))
-    stream.flush()
+    handleData.ostream.writeData(p, int(nmemb))
+    handleData.ostream.flush()
   return nmemb
 
-proc loadHttp*(request: Request, ostream: Stream) =
-  let curl = curl_easy_init()
+proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =
+  if request.multipart.issome:
+    handleData.mime = curl_mime_init(curl)
+    if handleData.mime == nil:
+      # fail (TODO: raise?)
+      handleData.ostream.swrite(-1)
+      handleData.ostream.flush()
+      return
+    for entry in request.multipart.get.content:
+      let part = curl_mime_addpart(handleData.mime)
+      if part == nil:
+        # fail (TODO: raise?)
+        handleData.ostream.swrite(-1)
+        handleData.ostream.flush()
+        return
+      curl_mime_name(part, cstring(entry.name))
+      if entry.isFile:
+        if entry.isStream:
+          curl_mime_filedata(part, cstring(entry.filename))
+        else:
+          let fd = readFile(entry.filename)
+          curl_mime_data(part, cstring(fd), csize_t(fd.len))
+        # may be overridden by curl_mime_filedata, so set it here
+        curl_mime_filename(part, cstring(entry.filename))
+      else:
+        curl_mime_data(part, cstring(entry.content), csize_t(entry.content.len))
+    curl.setopt(CURLOPT_MIMEPOST, handleData.mime)
+  elif request.body.issome:
+    curl.setopt(CURLOPT_POSTFIELDS, cstring(request.body.get))
+    curl.setopt(CURLOPT_POSTFIELDSIZE, request.body.get.len)
 
+proc loadHttp*(curlm: CURLM, request: Request, ostream: Stream): HandleData =
+  let curl = curl_easy_init()
   if curl == nil:
     ostream.swrite(-1)
     ostream.flush()
     return # fail
-
   let surl = request.url.serialize()
   curl.setopt(CURLOPT_URL, surl)
-
-  curl.setopt(CURLOPT_WRITEDATA, ostream)
+  let handleData = curl.newHandleData(request, ostream)
+  curl.setopt(CURLOPT_WRITEDATA, handleData)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
-
-  let headerres = curl.newHeaderOpaque(request, ostream)
-
-  GC_ref(headerres) # this could get unref'd before writeheader finishes
-  GC_ref(ostream) #TODO not sure about this one, but better safe than sorry
-  defer:
-    GC_unref(headerres)
-    GC_unref(ostream)
-
-  curl.setopt(CURLOPT_HEADERDATA, headerres)
+  curl.setopt(CURLOPT_HEADERDATA, handleData)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
-
-  var mime: curl_mime = nil
-
   case request.httpmethod
-  of HTTP_GET: curl.setopt(CURLOPT_HTTPGET, 1)
+  of HTTP_GET:
+    curl.setopt(CURLOPT_HTTPGET, 1)
   of HTTP_POST:
     curl.setopt(CURLOPT_POST, 1)
-    if request.multipart.issome:
-      mime = curl_mime_init(curl)
-      if mime == nil: return # fail
-      for entry in request.multipart.get.content:
-        let part = curl_mime_addpart(mime)
-        if part == nil: return # fail
-        curl_mime_name(part, cstring(entry.name))
-        if entry.isFile:
-          if entry.isStream:
-            curl_mime_filedata(part, cstring(entry.filename))
-          else:
-            let fd = readFile(entry.filename)
-            curl_mime_data(part, cstring(fd), csize_t(fd.len))
-          # may be overridden by curl_mime_filedata, so set it here
-          curl_mime_filename(part, cstring(entry.filename))
-        else:
-          curl_mime_data(part, cstring(entry.content), csize_t(entry.content.len))
-      curl.setopt(CURLOPT_MIMEPOST, mime)
-    elif request.body.issome:
-      curl.setopt(CURLOPT_POSTFIELDS, cstring(request.body.get))
-      curl.setopt(CURLOPT_POSTFIELDSIZE, request.body.get.len)
+    curl.applyPostBody(request, handleData)
   else: discard #TODO
-
-  var slist: curl_slist = nil
   for k, v in request.headers:
     let header = k & ": " & v
-    slist = curl_slist_append(slist, cstring(header))
-  if slist != nil:
-    curl.setopt(CURLOPT_HTTPHEADER, slist)
-
-  let res = curl_easy_perform(curl)
-  if res != CURLE_OK:
+    handleData.slist = curl_slist_append(handleData.slist, cstring(header))
+  if handleData.slist != nil:
+    curl.setopt(CURLOPT_HTTPHEADER, handleData.slist)
+  let res = curl_multi_add_handle(curlm, curl)
+  if res != CURLM_OK:
     ostream.swrite(int(res))
     ostream.flush()
-
-  curl_easy_cleanup(curl)
-  if mime != nil:
-    curl_mime_free(mime)
-  if slist != nil:
-    curl_slist_free_all(slist)
+    #TODO: raise here?
+    return
+  return handleData
