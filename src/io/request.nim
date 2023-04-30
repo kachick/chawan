@@ -216,7 +216,8 @@ proc text*(response: Response): string {.jsfunc.} =
   result = response.body.readAll()
   response.body.close()
   response.bodyUsed = true
-  response.unregisterFun()
+  if response.unregisterFun != nil:
+    response.unregisterFun()
 
 #TODO: get rid of this
 proc readAll*(response: Response): string {.jsfunc.} =
@@ -235,7 +236,8 @@ proc close*(response: Response) {.jsfunc.} =
   #TODO: this looks pretty unsafe
   response.body.close()
   response.bodyUsed = true
-  response.unregisterFun()
+  if response.unregisterFun != nil:
+    response.unregisterFun()
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute
