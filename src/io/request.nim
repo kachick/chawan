@@ -177,7 +177,7 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers: seq[(string, string)]
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
-  return newRequest(url, httpmethod, hl, body, mode)
+  return newRequest(url, httpmethod, hl, body, mode, proxy = proxy)
 
 func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors: CORSAttribute, fallbackFlag = false): Request =
   var mode = if cors == NO_CORS:
