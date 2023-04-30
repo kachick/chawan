@@ -153,7 +153,7 @@ func newHeaderList*(table: Table[string, string]): HeaderList =
       result.table[k] = @[v]
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
-                 body = none(string), multipart = none(MimeData),
+                 body = none(string), # multipart = none(MimeData),
                  mode = RequestMode.NO_CORS,
                  credentialsMode = CredentialsMode.SAME_ORIGIN,
                  destination = RequestDestination.NO_DESTINATION,
@@ -163,7 +163,7 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
     httpmethod: httpmethod,
     headers: headers,
     body: body,
-    multipart: multipart,
+    #multipart: multipart,
     mode: mode,
     credentialsMode: credentialsMode,
     destination: destination,
@@ -171,13 +171,13 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
   )
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers: seq[(string, string)] = @[],
-                 body = none(string), multipart = none(MimeData),
+                 body = none(string), # multipart = none(MimeData), TODO TODO TODO multipart
                  mode = RequestMode.NO_CORS, proxy: URL = nil): Request {.jsctor.} =
   let hl = newHeaderList()
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
-  return newRequest(url, httpmethod, hl, body, multipart, mode)
+  return newRequest(url, httpmethod, hl, body, mode)
 
 func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors: CORSAttribute, fallbackFlag = false): Request =
   var mode = if cors == NO_CORS:

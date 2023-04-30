@@ -838,7 +838,7 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
       body = serializePlainTextFormData(entrylist).some
       mimetype = $enctype
-    return newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype}, body, multipart).some
+    return newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype}, body).some #TODO multipart
 
   template getActionUrl() =
     return newRequest(parsedaction).some
