@@ -1846,8 +1846,7 @@ proc insertNode(parent, node, before: Node) =
     node.index = parent.childList.high
   else:
     node.index = before.index
-    eprint "index", node.index
-    for i in before.index ..< parent.childList.len - 2:
+    for i in before.index ..< parent.childList.len - 1:
       parent.childList[i + 1] = parent.childList[i]
       parent.childList[i + 1].index = i + 1
   parent.childList[node.index] = node
