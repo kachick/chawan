@@ -23,6 +23,7 @@ import bindings/curl
 import io/about
 import io/file
 import io/http
+import io/promise
 import io/request
 import io/urlfilter
 import js/javascript
