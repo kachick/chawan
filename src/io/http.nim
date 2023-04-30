@@ -120,6 +120,9 @@ proc loadHttp*(curlm: CURLM, request: Request, ostream: Stream): HandleData =
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_HEADERDATA, handleData)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
+  if request.proxy != nil:
+    let purl = request.proxy.serialize()
+    curl.setopt(CURLOPT_PROXY, purl)
   case request.httpmethod
   of HTTP_GET:
     curl.setopt(CURLOPT_HTTPGET, 1)

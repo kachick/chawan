@@ -44,6 +44,7 @@ type
     mode*: RequestMode
     destination*: RequestDestination
     credentialsMode*: CredentialsMode
+    proxy*: URL #TODO: this should definitely be a different API.
 
   Response* = ref object
     body*: Stream
@@ -151,7 +152,8 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
                  body = none(string), multipart = none(MimeData),
                  mode = RequestMode.NO_CORS,
                  credentialsMode = CredentialsMode.SAME_ORIGIN,
-                 destination = RequestDestination.NO_DESTINATION): Request =
+                 destination = RequestDestination.NO_DESTINATION,
+                 proxy: URL = nil): Request =
   return Request(
     url: url,
     httpmethod: httpmethod,
@@ -160,11 +162,13 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
     multipart: multipart,
     mode: mode,
     credentialsMode: credentialsMode,
-    destination: destination
+    destination: destination,
+    proxy: proxy
   )
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers: seq[(string, string)] = @[],
-                 body = none(string), multipart = none(MimeData), mode = RequestMode.NO_CORS): Request {.jsctor.} =
+                 body = none(string), multipart = none(MimeData),
+                 mode = RequestMode.NO_CORS, proxy: URL = nil): Request {.jsctor.} =
   let hl = newHeaderList()
   for pair in headers:
     let (k, v) = pair
