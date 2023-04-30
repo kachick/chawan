@@ -2,6 +2,7 @@ import options
 import streams
 import tables
 
+import bindings/quickjs
 import types/url
 import js/javascript
 import utils/twtstr
@@ -48,11 +49,14 @@ type
 
   Response* = ref object
     body*: Stream
+    bodyUsed* {.jsget.}: bool
     res* {.jsget.}: int
     contenttype* {.jsget.}: string
     status* {.jsget.}: int
     headers* {.jsget.}: HeaderList
     redirect*: Request
+    url*: URL #TODO should be urllist?
+    unregisterFun*: proc()
  
   ReadableStream* = ref object of Stream
     isource*: Stream
@@ -207,12 +211,31 @@ func getOrDefault*(headers: HeaderList, k: string, default = ""): string =
   else:
     default
 
-proc readAll*(response: Response): string {.jsfunc.} =
+proc text*(response: Response): string {.jsfunc.} =
+  #TODO: this looks pretty unsafe.
   result = response.body.readAll()
   response.body.close()
+  response.bodyUsed = true
+  response.unregisterFun()
 
+#TODO: get rid of this
+proc readAll*(response: Response): string {.jsfunc.} =
+  return response.text()
+
+proc Response_json*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
+  let op = getOpaque0(this)
+  if unlikely(not ctx.isInstanceOf(this, "Response") or op == nil):
+    return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Response")
+  let response = cast[Response](op)
+  var s = response.text()
+  return JS_ParseJSON(ctx, addr s[0], cast[csize_t](s.len), cstring"<input>")
+
+#TODO: this should be a property of body
 proc close*(response: Response) {.jsfunc.} =
+  #TODO: this looks pretty unsafe
   response.body.close()
+  response.bodyUsed = true
+  response.unregisterFun()
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute
@@ -223,5 +246,5 @@ func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
 
 proc addRequestModule*(ctx: JSContext) =
   ctx.registerType(Request)
-  ctx.registerType(Response)
+  ctx.registerType(Response, extra_funcs = [TabFunc(name: "json", fun: Response_json)])
   ctx.registerType(HeaderList)

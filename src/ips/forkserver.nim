@@ -33,6 +33,7 @@ type
     children: seq[(Pid, Pid)]
 
 proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = nil, filter = newURLFilter(default = true), cookiejar: CookieJar = nil): FileLoader =
+  new(result)
   forkserver.ostream.swrite(FORK_LOADER)
   var defaultHeaders = defaultHeaders
   if defaultHeaders == nil:
@@ -45,7 +46,7 @@ proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = nil, fi
   )
   forkserver.ostream.swrite(config)
   forkserver.ostream.flush()
-  forkserver.istream.sread(result)
+  forkserver.istream.sread(result.process)
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
   forkserver.ostream.swrite(LOAD_CONFIG)
@@ -57,7 +58,7 @@ proc removeChild*(forkserver: Forkserver, pid: Pid) =
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
-proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): FileLoader =
+proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -78,7 +79,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): FileLoader =
   assert readf.readChar() == char(0u8)
   close(readf)
   discard close(pipefd[0])
-  return FileLoader(process: pid)
+  return pid
 
 proc forkBuffer(ctx: var ForkServerContext): Pid =
   var source: BufferSource
@@ -89,7 +90,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
   ctx.istream.sread(mainproc)
-  let loader = ctx.forkLoader(
+  let loaderPid = ctx.forkLoader(
     LoaderConfig(
       defaultHeaders: config.headers,
       filter: config.filter,
@@ -106,9 +107,10 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     zeroMem(addr ctx, sizeof(ctx))
     discard close(stdin.getFileHandle())
     discard close(stdout.getFileHandle())
+    let loader = FileLoader(process: loaderPid)
     launchBuffer(config, source, attrs, loader, mainproc)
     assert false
-  ctx.children.add((pid, loader.process))
+  ctx.children.add((pid, loaderPid))
   return pid
 
 proc runForkServer() =
@@ -132,9 +134,9 @@ proc runForkServer() =
       of FORK_LOADER:
         var config: LoaderConfig
         ctx.istream.sread(config)
-        let loader = ctx.forkLoader(config)
-        ctx.ostream.swrite(loader)
-        ctx.children.add((loader.process, Pid(-1)))
+        let pid = ctx.forkLoader(config)
+        ctx.ostream.swrite(pid)
+        ctx.children.add((pid, Pid(-1)))
       of LOAD_CONFIG:
         var config: ForkServerConfig
         ctx.istream.sread(config)
