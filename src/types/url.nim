@@ -369,6 +369,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
   template is_empty(path: UrlPath): bool = path.ss.len == 0
 
   while pointer <= input.len:
+    eprint "state", state
     case state
     of SCHEME_START_STATE:
       if has and c.isAlphaAscii():
@@ -381,7 +382,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
         #TODO validation error
         return none(Url)
     of SCHEME_STATE:
-      if has and c in Letters + {'+', '-', '.'}:
+      if has and c in AsciiAlpha + {'+', '-', '.'}:
         buffer &= c.tolower()
       elif has and c == ':':
         if override:
