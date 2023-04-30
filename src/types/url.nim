@@ -381,7 +381,7 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
         #TODO validation error
         return none(Url)
     of SCHEME_STATE:
-      if has and c in AsciiAlpha + {'+', '-', '.'}:
+      if has and c in AsciiAlphaNumeric + {'+', '-', '.'}:
         buffer &= c.tolower()
       elif has and c == ':':
         if override:

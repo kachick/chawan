@@ -23,6 +23,7 @@ const AsciiLowerAlpha* = {'a'..'z'}
 const AsciiAlpha* = (AsciiUpperAlpha + AsciiLowerAlpha)
 const NonAscii* = (AllChars - Ascii)
 const AsciiDigit* = {'0'..'9'}
+const AsciiAlphaNumeric* = AsciiAlpha + AsciiDigit
 const AsciiHexDigit* = (AsciiDigit + {'a'..'f', 'A'..'F'})
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 
