@@ -26,6 +26,7 @@ import io/http
 import io/promise
 import io/request
 import io/urlfilter
+import js/javascript
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
@@ -36,8 +37,17 @@ import types/url
 import utils/twtstr
 
 type
-  FileLoader* = object
+  FileLoader* = ref object
     process*: Pid
+    connecting*: Table[int, ConnectData]
+    ongoing*: Table[int, Response]
+    registerFun*: proc(fd: int)
+    unregisterFun*: proc(fd: int)
+
+  ConnectData = object
+    promise: Promise[Response]
+    stream: Stream
+    request: Request
 
   LoaderCommand = enum
     LOAD, QUIT
@@ -192,9 +202,72 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
         ctx.handleList.del(idx)
   ctx.exitLoader()
 
-#TODO async requests...
+proc applyHeaders(request: Request, response: Response) =
+  if "Content-Type" in response.headers.table:
+    response.contenttype = response.headers.table["Content-Type"][0].until(';')
+  else:
+    response.contenttype = guessContentType($response.url.path)
+  if "Location" in response.headers.table:
+    if response.status in 301..303 or response.status in 307..308:
+      let location = response.headers.table["Location"][0]
+      let url = parseUrl(location, option(request.url))
+      if url.isSome:
+        if (response.status == 303 and
+            request.httpmethod notin {HTTP_GET, HTTP_HEAD}) or
+            (response.status == 301 or response.status == 302 and
+            request.httpmethod == HTTP_POST):
+          response.redirect = newRequest(url.get, HTTP_GET,
+            mode = request.mode, credentialsMode = request.credentialsMode,
+            destination = request.destination)
+        else:
+          response.redirect = newRequest(url.get, request.httpmethod,
+            body = request.body, multipart = request.multipart,
+            mode = request.mode, credentialsMode = request.credentialsMode,
+            destination = request.destination)
+
+#TODO: add init
+proc fetch*(loader: FileLoader, input: Request): Promise[Response] =
+  let stream = connectSocketStream(loader.process, false, blocking = true)
+  stream.swrite(LOAD)
+  stream.swrite(input)
+  stream.flush()
+  let fd = int(stream.source.getFd())
+  loader.registerFun(fd)
+  let promise = Promise[Response]()
+  loader.connecting[fd] = ConnectData(promise: promise, request: input)
+
+proc newResponse(res: int, request: Request, stream: Stream = nil): Response =
+  return Response(
+    res: res,
+    url: request.url,
+    body: stream
+  )
+
+proc onConnected*(loader: FileLoader, fd: int) =
+  let connectData = loader.connecting[fd]
+  let stream = connectData.stream
+  let promise = connectData.promise
+  let request = connectData.request
+  var res: int
+  stream.sread(res)
+  if res == 0:
+    let response = newResponse(res, request, stream)
+    response.unregisterFun = proc() = loader.unregisterFun(fd)
+    stream.sread(response.status)
+    stream.sread(response.headers)
+    applyHeaders(request, response)
+    response.body = stream
+    loader.ongoing[fd] = response
+    promise.resolve(response)
+  else:
+    #TODO: reject promise instead.
+    let response = newResponse(res, request)
+    promise.resolve(response)
+  loader.connecting.del(fd)
+
 proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response =
   new(result)
+  result.url = request.url
   let stream = connectSocketStream(loader.process, false, blocking = true)
   stream.swrite(LOAD)
   stream.swrite(request)
@@ -203,27 +276,7 @@ proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response
   if result.res == 0:
     stream.sread(result.status)
     stream.sread(result.headers)
-    if "Content-Type" in result.headers.table:
-      result.contenttype = result.headers.table["Content-Type"][0].until(';')
-    else:
-      result.contenttype = guessContentType($request.url.path)
-    if "Location" in result.headers.table:
-      if result.status in 301..303 or result.status in 307..308:
-        let location = result.headers.table["Location"][0]
-        let url = parseUrl(location, some(request.url))
-        if url.isSome:
-          if (result.status == 303 and
-              request.httpmethod notin {HTTP_GET, HTTP_HEAD}) or
-              (result.status == 301 or result.status == 302 and
-              request.httpmethod == HTTP_POST):
-            result.redirect = newRequest(url.get, HTTP_GET,
-              mode = request.mode, credentialsMode = request.credentialsMode,
-              destination = request.destination)
-          else:
-            result.redirect = newRequest(url.get, request.httpmethod,
-              body = request.body, multipart = request.multipart,
-              mode = request.mode, credentialsMode = request.credentialsMode,
-              destination = request.destination)
+    applyHeaders(request, result)
     # Only a stream of the response body may arrive after this point.
     result.body = stream
     if not blocking:

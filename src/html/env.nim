@@ -3,6 +3,8 @@ import streams
 import html/dom
 import html/htmlparser
 import io/loader
+import io/promise
+import io/request
 import js/javascript
 import types/url
 
@@ -50,6 +52,10 @@ proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(Navigator)
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
+
+proc fetch(window: Window, req: Request): Promise[Response] {.jsfunc.} =
+  if window.loader.isSome:
+    return window.loader.get.fetch(req)
 
 proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
   result = Window(

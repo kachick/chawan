@@ -1545,15 +1545,21 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             of "jsget": result.jsget.add(varName)
             of "jsset": result.jsset.add(varName)
 
-type TabGetSet* = object
-  name*: string
-  get*: JSGetterMagicFunction
-  set*: JSSetterMagicFunction
-  magic*: uint16
+type
+  TabGetSet* = object
+    name*: string
+    get*: JSGetterMagicFunction
+    set*: JSSetterMagicFunction
+    magic*: uint16
+
+  TabFunc* = object
+    name*: string
+    fun*: JSCFunction
 
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal =
                    false, nointerface = false, name: static string = "",
-                   extra_getset: static openarray[TabGetSet] = []): JSClassID =
+                   extra_getset: static openarray[TabGetSet] = [],
+                   extra_funcs: static openarray[TabFunc] = []): JSClassID =
   result = newStmtList()
   let tname = t.strVal # the nim type's name.
   let name = if name == "": tname else: name # possibly a different name, e.g. Buffer for Container
@@ -1648,6 +1654,14 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal =
       let s = x.set
       let m = x.magic
       tabList.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
+
+  for x in extra_funcs:
+    #TODO TODO TODO ditto. wtf
+    if repr(x) != "" and repr(x) != "[]":
+      let name = x.name
+      let fun = x.fun
+      tabList.add(quote do:
+        JS_CFUNC_DEF(`name`, 0, (`fun`)))
 
   if ctorFun != nil:
     sctr = ctorFun

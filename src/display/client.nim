@@ -86,6 +86,9 @@ proc `=destroy`(client: var ClientObj) =
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
   return client.loader.doRequest(req)
 
+proc fetch(client: Client, req: Request): Promise[Response] {.jsfunc.} =
+  return client.loader.fetch(req)
+
 proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   let client = cast[Client](opaque)
   if client.console == nil or client.console.tty == nil: return
@@ -465,6 +468,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
       dump = true
   client.ssock = initServerSocket(false)
   client.selector = newSelector[Container]()
+  client.loader.registerFun = proc(fd: int) = client.selector.registerHandle(fd, {Read}, nil)
   client.selector.registerHandle(int(client.dispatcher.forkserver.estream.fd), {Read}, nil)
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)

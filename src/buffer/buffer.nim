@@ -1146,6 +1146,15 @@ proc runBuffer(buffer: Buffer, rfd: int) =
             buffer.onload()
           else:
             assert false
+        elif event.fd in buffer.loader.connecting:
+          if Event.Read in event.events:
+            buffer.loader.onConnected(event.fd)
+          else:
+            # probably shouldn't happen. TODO: maybe with Error?
+            assert false
+        elif event.fd in buffer.loader.ongoing:
+          #TODO something with readablestream?
+          discard
         elif event.fd in buffer.timeouts:
           if Event.Timer in event.events:
             buffer.selector.unregister(event.fd)
@@ -1180,6 +1189,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   )
   buffer.readbufsize = BufferSize
   buffer.selector = newSelector[int]()
+  loader.registerFun = proc(fd: int) = buffer.selector.registerHandle(fd, {Read}, 0)
   buffer.srenderer = newStreamRenderer(buffer.sstream)
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, some(buffer.loader))
