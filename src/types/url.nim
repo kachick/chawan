@@ -369,7 +369,6 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
   template is_empty(path: UrlPath): bool = path.ss.len == 0
 
   while pointer <= input.len:
-    eprint "state", state
     case state
     of SCHEME_START_STATE:
       if has and c.isAlphaAscii():
