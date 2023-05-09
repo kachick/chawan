@@ -94,6 +94,7 @@ proc onLoad(ctx: LoaderContext, stream: Stream) =
   if not ctx.config.filter.match(request.url):
     stream.swrite(-1) # error
     stream.flush()
+    stream.close()
   else:
     for k, v in ctx.config.defaultHeaders.table:
       if k notin request.headers.table:
@@ -131,8 +132,11 @@ proc acceptConnection(ctx: LoaderContext) =
 
 proc finishCurlTransfer(ctx: LoaderContext, handleData: HandleData, res: int) =
   if res != int(CURLE_OK):
-    handleData.ostream.swrite(int(res))
-    handleData.ostream.flush()
+    try:
+      handleData.ostream.swrite(int(res))
+      handleData.ostream.flush()
+    except IOError: # Broken pipe
+      discard
   discard curl_multi_remove_handle(ctx.curlm, handleData.curl)
   handleData.ostream.close()
   handleData.cleanup()
@@ -234,7 +238,11 @@ proc fetch*(loader: FileLoader, input: Request): Promise[Response] =
   let fd = int(stream.source.getFd())
   loader.registerFun(fd)
   let promise = Promise[Response]()
-  loader.connecting[fd] = ConnectData(promise: promise, request: input)
+  loader.connecting[fd] = ConnectData(
+    promise: promise,
+    request: input,
+    stream: stream
+  )
 
 proc newResponse(res: int, request: Request, stream: Stream = nil): Response =
   return Response(

@@ -72,8 +72,10 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
 proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer): csize_t {.cdecl.} =
   let handleData = cast[HandleData](userdata)
   if nmemb > 0:
-    handleData.ostream.writeData(p, int(nmemb))
-    handleData.ostream.flush()
+    try:
+      handleData.ostream.writeData(p, int(nmemb))
+    except IOError: # Broken pipe
+      return 0
   return nmemb
 
 proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =

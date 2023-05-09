@@ -330,9 +330,18 @@ proc handleRead(client: Client, fd: int) =
     if s.len > prefix.len:
       client.console.err.write(s)
     client.console.err.flush()
+  elif fd in client.loader.connecting:
+    client.loader.onConnected(fd)
+    client.runJSJobs()
+  elif fd in client.loader.ongoing:
+    #TODO something with readablestream?
+    discard
   else:
     let container = client.fdmap[fd]
     client.pager.handleEvent(container)
+
+proc flushConsole*(client: Client) {.jsfunc.} =
+  client.handleRead(client.dispatcher.forkserver.estream.fd)
 
 proc handleError(client: Client, fd: int) =
   if client.console.tty != nil and fd == client.console.tty.getFileHandle():
@@ -343,6 +352,12 @@ proc handleError(client: Client, fd: int) =
     #TODO do something here...
     stderr.write("Fork server crashed :(\n")
     quit(1)
+  elif fd in client.loader.connecting:
+    #TODO handle error?
+    discard
+  elif fd in client.loader.ongoing:
+    #TODO something with readablestream?
+    discard
   else:
     if fd in client.fdmap:
       let container = client.fdmap[fd]
@@ -392,8 +407,15 @@ proc inputLoop(client: Client) =
     client.pager.showAlerts()
     client.pager.draw()
 
+func hasSelectFds(client: Client): bool =
+  return client.timeouts.len > 0 or
+    client.intervals.len > 0 or
+    client.pager.numload > 0 or
+    client.loader.connecting.len > 0 or
+    client.loader.ongoing.len > 0
+
 proc headlessLoop(client: Client) =
-  while client.timeouts.len + client.intervals.len != 0 or client.pager.numload > 0:
+  while client.hasSelectFds():
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:

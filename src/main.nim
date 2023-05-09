@@ -124,4 +124,9 @@ conf.nmap = constructActionTable(conf.nmap)
 conf.lemap = constructActionTable(conf.lemap)
 disp.forkserver.loadForkServerConfig(conf)
 
-newClient(conf, disp).launchClient(pages, ctype, dump)
+let c = newClient(conf, disp)
+try:
+  c.launchClient(pages, ctype, dump)
+except CatchableError:
+  c.flushConsole()
+  raise
