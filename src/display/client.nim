@@ -490,7 +490,10 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
       dump = true
   client.ssock = initServerSocket(false)
   client.selector = newSelector[Container]()
-  client.loader.registerFun = proc(fd: int) = client.selector.registerHandle(fd, {Read}, nil)
+  client.loader.registerFun = proc(fd: int) =
+    client.selector.registerHandle(fd, {Read}, nil)
+  client.loader.unregisterFun = proc(fd: int) =
+    client.selector.unregister(fd)
   client.selector.registerHandle(int(client.dispatcher.forkserver.estream.fd), {Read}, nil)
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)

@@ -1190,6 +1190,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.readbufsize = BufferSize
   buffer.selector = newSelector[int]()
   loader.registerFun = proc(fd: int) = buffer.selector.registerHandle(fd, {Read}, 0)
+  loader.unregisterFun = proc(fd: int) = buffer.selector.unregister(fd)
   buffer.srenderer = newStreamRenderer(buffer.sstream)
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, some(buffer.loader))

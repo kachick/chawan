@@ -211,13 +211,19 @@ func getOrDefault*(headers: HeaderList, k: string, default = ""): string =
   else:
     default
 
-proc text*(response: Response): string {.jsfunc.} =
-  #TODO: this looks pretty unsafe.
-  result = response.body.readAll()
-  response.body.close()
+#TODO: this should be a property of body
+proc close*(response: Response) {.jsfunc.} =
   response.bodyUsed = true
   if response.unregisterFun != nil:
     response.unregisterFun()
+  if response.body != nil:
+    response.body.close()
+
+proc text*(response: Response): string {.jsfunc.} =
+  if response.body == nil:
+    return ""
+  result = response.body.readAll()
+  response.close()
 
 #TODO: get rid of this
 proc readAll*(response: Response): string {.jsfunc.} =
@@ -230,14 +236,6 @@ proc Response_json*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue
   let response = cast[Response](op)
   var s = response.text()
   return JS_ParseJSON(ctx, addr s[0], cast[csize_t](s.len), cstring"<input>")
-
-#TODO: this should be a property of body
-proc close*(response: Response) {.jsfunc.} =
-  #TODO: this looks pretty unsafe
-  response.body.close()
-  response.bodyUsed = true
-  if response.unregisterFun != nil:
-    response.unregisterFun()
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute

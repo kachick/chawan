@@ -243,6 +243,7 @@ proc fetch*(loader: FileLoader, input: Request): Promise[Response] =
     request: input,
     stream: stream
   )
+  return promise
 
 proc newResponse(res: int, request: Request, stream: Stream = nil): Response =
   return Response(
@@ -260,7 +261,10 @@ proc onConnected*(loader: FileLoader, fd: int) =
   stream.sread(res)
   if res == 0:
     let response = newResponse(res, request, stream)
-    response.unregisterFun = proc() = loader.unregisterFun(fd)
+    assert loader.unregisterFun != nil
+    response.unregisterFun = proc() =
+      loader.ongoing.del(fd)
+      loader.unregisterFun(fd)
     stream.sread(response.status)
     stream.sread(response.headers)
     applyHeaders(request, response)
