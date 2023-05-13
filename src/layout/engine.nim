@@ -393,7 +393,7 @@ proc resolveContentWidth(box: BlockBox, widthpx, availableWidth: int, isauto = f
         box.contentWidth = underflow
       else:
         box.margin_right += underflow
-    else:
+    elif underflow > 0:
       if not computed{"margin-left"}.auto and not computed{"margin-right"}.auto:
         box.margin_right += underflow
       elif not computed{"margin-left"}.auto and computed{"margin-right"}.auto:
@@ -429,6 +429,7 @@ proc resolveDimensions(box: BlockBox, availableWidth: int, availableHeight: Opti
     box.contentWidth = widthpx
     box.max_width = some(widthpx)
     box.min_width = some(widthpx)
+  eprint "resolve", computed{"width"}
   box.resolveContentWidth(widthpx, availableWidth, computed{"width"}.auto)
   if not computed{"max-width"}.auto:
     let max_width = computed{"max-width"}.px(viewport, availableWidth)
