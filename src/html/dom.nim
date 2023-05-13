@@ -338,14 +338,8 @@ template makes(attrname: string, funcname: string, ts: varargs[TagType]): Reflec
 template makeb(name: string, ts: varargs[TagType]): ReflectEntry =
   (name, name, REFLECT_BOOL, toset(ts), 0)
 
-template makei(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
-  (name, name, REFLECT_INT, toset(ts), default)
-
 template makeigz(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
   (name, name, REFLECT_INT_GREATER_ZERO, toset(ts), default)
-
-template makeigez(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
-  (name, name, REFLECT_INT_GREATER_EQUAL_ZERO, toset(ts), default)
 
 const ReflectTable0 = [
   # non-global attributes
