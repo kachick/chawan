@@ -118,9 +118,6 @@ type
     viewport*: Viewport
     offset*: Offset
 
-    #TODO this should not be needed.
-    was_positioned*: bool
-
     # This is the padding width/height.
     width*: int
     height*: int
@@ -132,6 +129,8 @@ type
     padding_bottom*: int
     padding_left*: int
     padding_right*: int
+    min_width*: Option[int]
+    max_width*: Option[int]
 
     # This is the (specified) content width/height. Actual dimensions may
     # differ (i.e. overflow)
@@ -146,6 +145,10 @@ type
     # result in overflow errors (because maxContentWidth may be set to
     # high(int).)
     maxContentWidth*: int
+
+    positioned*: bool
+    x_positioned*: bool
+    y_positioned*: bool
 
     # very bad name. basically the minimum content width after the contents
     # have been positioned (usually the width of the shortest word.) used

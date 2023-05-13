@@ -286,9 +286,9 @@ func calculateErrorY(ctx: InlineContext, window: WindowAttributes): int =
       error += dy - (dy div window.ppl) * window.ppl
   return error div (ctx.lines.len - 1)
 
-proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes)
+proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes, posx = 0, posy = 0)
 
-proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, window: WindowAttributes) =
+proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, window: WindowAttributes, posx = 0, posy = 0) =
   let x = x + ctx.offset.x
   let y = y + ctx.offset.y
   let erry = ctx.calculateErrorY(window)
@@ -305,7 +305,9 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
     for atom in line.atoms:
       if atom of InlineBlockBox:
         let iblock = InlineBlockBox(atom)
-        grid.renderBlockBox(iblock.innerbox, x + iblock.offset.x, y + iblock.offset.y, window)
+        let x = x + iblock.offset.x
+        let y = y + iblock.offset.y
+        grid.renderBlockBox(iblock.innerbox, x, y, window, posx, posy)
       elif atom of InlineWord:
         let word = InlineWord(atom)
         grid.setRowWord(word, x, y, window)
@@ -314,14 +316,21 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
         grid.setSpacing(spacing, x, y, window)
     inc i
 
-proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes) =
-  var stack = newSeqOfCap[(BlockBox, int, int)](100)
-  stack.add((box, x, y))
+proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes, posx = 0, posy = 0) =
+  var stack = newSeqOfCap[(BlockBox, int, int, int, int)](100)
+  stack.add((box, x, y, posx, posy))
 
   while stack.len > 0:
-    var (box, x, y) = stack.pop()
+    var (box, x, y, posx, posy) = stack.pop()
+    if box.x_positioned:
+      x = posx
+    if box.y_positioned:
+      y = posy
     x += box.offset.x
     y += box.offset.y
+    if box.positioned:
+      posx = x
+      posy = y
 
     if box.computed{"background-color"}.a != 0: #TODO color blending
       grid.paintBackground(box.computed{"background-color"}, x, y, x + box.width, y + box.height, box.node, window)
@@ -349,7 +358,7 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: Wi
       grid.renderInlineContext(box.inline, x, y, window)
     else:
       for i in countdown(box.nested.high, 0):
-        stack.add((box.nested[i], x, y))
+        stack.add((box.nested[i], x, y, posx, posy))
 
 const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
