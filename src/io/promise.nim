@@ -1,10 +1,14 @@
 import tables
 
 type
+  PromiseState = enum
+    PROMISE_PENDING, PROMISE_FULFILLED, PROMISE_REJECTED
+
   EmptyPromise* = ref object of RootObj
     cb: (proc())
     next: EmptyPromise
     opaque: pointer
+    state: PromiseState
 
   Promise*[T] = ref object of EmptyPromise
     res: T
@@ -37,6 +41,7 @@ proc resolve*(promise: EmptyPromise) =
     if promise.cb != nil:
       promise.cb()
     promise.cb = nil
+    promise.state = PROMISE_FULFILLED
     promise = promise.next
     if promise == nil:
       break
@@ -62,6 +67,8 @@ proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
   if promise == nil: return
   promise.cb = cb
   promise.next = EmptyPromise()
+  if promise.state == PROMISE_FULFILLED:
+    promise.resolve()
   return promise.next
 
 proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable.} =
@@ -103,3 +110,15 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] 
         next.res = y
         next.resolve()))
   return next
+
+proc all*(promises: seq[EmptyPromise]): EmptyPromise =
+  let res = EmptyPromise()
+  var i = 0
+  for promise in promises:
+    promise.then(proc() =
+      inc i
+      if i == promises.len:
+        res.resolve())
+  if promises.len == 0:
+    res.resolve()
+  return res

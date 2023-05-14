@@ -52,7 +52,10 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
   let op = cast[HandleData](userdata)
   if not op.statusline:
     op.statusline = true
-    op.ostream.swrite(int(CURLE_OK))
+    try:
+      op.ostream.swrite(int(CURLE_OK))
+    except IOError: # Broken pipe
+      return 0
     var status: int
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
     op.ostream.swrite(status)

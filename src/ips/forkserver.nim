@@ -69,8 +69,15 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
-    runFileLoader(pipefd[1], config)
-    assert false
+    try:
+      runFileLoader(pipefd[1], config)
+    except CatchableError:
+      let e = getCurrentException()
+      # taken from system/excpt.nim
+      let msg = e.getStackTrace() & "Error: unhandled exception: " & e.msg &
+        " [" & $e.name & "]"
+      eprint(msg)
+    doAssert false
   let readfd = pipefd[0] # get read
   discard close(pipefd[1]) # close write
   var readf: File
@@ -108,8 +115,15 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     discard close(stdin.getFileHandle())
     discard close(stdout.getFileHandle())
     let loader = FileLoader(process: loaderPid)
-    launchBuffer(config, source, attrs, loader, mainproc)
-    assert false
+    try:
+      launchBuffer(config, source, attrs, loader, mainproc)
+    except CatchableError:
+      let e = getCurrentException()
+      # taken from system/excpt.nim
+      let msg = e.getStackTrace() & "Error: unhandled exception: " & e.msg &
+        " [" & $e.name & "]"
+      eprint(msg)
+    doAssert false
   ctx.children.add((pid, loaderPid))
   return pid
 
@@ -187,7 +201,7 @@ proc newForkServer*(): ForkServer =
     discard close(pipefd_out[1])
     discard close(pipefd_err[1])
     runForkServer()
-    assert false
+    doAssert false
   else:
     discard close(pipefd_in[0]) # close read
     discard close(pipefd_out[1]) # close write

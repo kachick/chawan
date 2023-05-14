@@ -53,6 +53,12 @@ type
     GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, GOTO_ANCHOR, CANCEL,
     GET_TITLE
 
+  # LOADING_PAGE: istream open
+  # LOADING_RESOURCES: istream closed, resources open
+  # LOADED: istream closed, resources closed
+  BufferState* = enum
+    LOADING_PAGE, LOADING_RESOURCES, LOADED
+
   HoverType* = enum
     HOVER_TITLE = "TITLE"
     HOVER_LINK = "URL"
@@ -87,7 +93,7 @@ type
     pstream: Stream # pipe stream
     srenderer: StreamRenderer
     connected: bool
-    loaded: bool # istream is closed
+    state: BufferState
     prevnode: StyledNode
     loader: FileLoader
     config: BufferConfig
@@ -274,6 +280,19 @@ func getClickable(styledNode: StyledNode): Element =
 
 func submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
 
+func canSubmitOnClick(fae: FormAssociatedElement): bool =
+  if fae.form == nil:
+    return false
+  if fae.form.canSubmitImplicitly():
+    return true
+  if fae.tagType == TAG_BUTTON:
+    if HTMLButtonElement(fae).ctype == BUTTON_SUBMIT:
+      return true
+  if fae.tagType == TAG_INPUT:
+    if HTMLInputElement(fae).inputType in {INPUT_SUBMIT, INPUT_BUTTON}:
+      return true
+  return false
+
 func getClickHover(styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
   if clickable != nil:
@@ -284,7 +303,7 @@ func getClickHover(styledNode: StyledNode): string =
       #TODO this is inefficient and also quite stupid
       if clickable.tagType in FormAssociatedElements:
         let fae = FormAssociatedElement(clickable)
-        if fae.form != nil and fae.form.canSubmitImplicitly():
+        if fae.canSubmitOnClick():
           let req = fae.form.submitForm(fae)
           if req.isSome:
             return $req.get.url
@@ -522,7 +541,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
   buffer.prevnode = thisnode
 
-proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
+proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement): EmptyPromise =
   let href = elem.attr("href")
   if href == "": return
   let url = parseURL(href, document.url.some)
@@ -533,16 +552,20 @@ proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement) =
       if media != "":
         let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
         if not media.applies(): return
-      let fs = buffer.loader.doRequest(newRequest(url))
-      if fs.body != nil and fs.contenttype == "text/css":
-        elem.sheet = parseStylesheet(fs.body)
+      return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
+        if res.contenttype == "text/css":
+          elem.sheet = parseStylesheet(res.body))
 
-proc loadResources(buffer: Buffer, document: Document) =
+proc loadResources(buffer: Buffer, document: Document): EmptyPromise =
+  var promises: seq[EmptyPromise]
   if document.html != nil:
     for elem in document.html.elements(TAG_LINK):
       let elem = HTMLLinkElement(elem)
       if elem.rel == "stylesheet":
-        buffer.loadResource(document, elem)
+        let p = buffer.loadResource(document, elem)
+        if p != nil:
+          promises.add(p)
+  return all(promises)
 
 type ConnectResult* = object
   code*: int
@@ -609,8 +632,12 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
 
 const BufferSize = 4096
 
-proc finishLoad(buffer: Buffer) =
-  if buffer.loaded: return
+proc finishLoad(buffer: Buffer): EmptyPromise =
+  if buffer.state != LOADING_PAGE:
+    let p = EmptyPromise()
+    p.resolve()
+    return p
+  var p: EmptyPromise
   case buffer.contenttype
   of "text/html":
     buffer.sstream.setPosition(0)
@@ -623,10 +650,16 @@ proc finishLoad(buffer: Buffer) =
       buffer.sstream.setPosition(0)
       let (doc, _) = parseHTML(buffer.sstream, cs = some(cs), window = buffer.window, url = buffer.url)
       buffer.document = doc
-    buffer.loadResources(buffer.document)
+    p = buffer.loadResources(buffer.document)
+    buffer.state = LOADING_RESOURCES
+  else:
+    p = EmptyPromise()
+    p.resolve()
+    buffer.state = LOADED
   buffer.selector.unregister(buffer.fd)
+  buffer.fd = -1
   buffer.istream.close()
-  buffer.loaded = true
+  return p
 
 type LoadResult* = tuple[
   atend: bool,
@@ -635,7 +668,7 @@ type LoadResult* = tuple[
 ]
 
 proc load*(buffer: Buffer): LoadResult {.proxy, task.} =
-  if buffer.loaded:
+  if buffer.state == LOADED:
     return (true, buffer.lines.len, -1)
   else:
     buffer.savetask = true
@@ -653,9 +686,14 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
 
 proc onload(buffer: Buffer) =
   var res: LoadResult = (false, buffer.lines.len, -1)
-  if buffer.loaded:
+  case buffer.state
+  of LOADING_RESOURCES:
+    assert false
+  of LOADED:
     buffer.resolveTask(LOAD, res)
     return
+  of LOADING_PAGE:
+    discard
   let op = buffer.sstream.getPosition()
   var s = newString(buffer.readbufsize)
   try:
@@ -674,7 +712,9 @@ proc onload(buffer: Buffer) =
         buffer.do_reshape()
     if buffer.istream.atEnd():
       res.atend = true
-      buffer.finishLoad()
+      buffer.finishLoad().then(proc() =
+        buffer.resolveTask(LOAD, res))
+      return
     buffer.resolveTask(LOAD, res)
   except ErrorAgain, ErrorWouldBlock:
     if buffer.readbufsize > 1:
@@ -689,9 +729,10 @@ proc render*(buffer: Buffer): int {.proxy.} =
   return buffer.lines.len
 
 proc cancel*(buffer: Buffer): int {.proxy.} =
-  if buffer.loaded: return
+  #TODO TODO TODO cancel resource loading too
+  if buffer.state != LOADING_PAGE: return
   buffer.istream.close()
-  buffer.loaded = true
+  buffer.state = LOADED
   case buffer.contenttype
   of "text/html":
     buffer.sstream.setPosition(0)
@@ -1057,9 +1098,10 @@ proc passFd*(buffer: Buffer) {.proxy.} =
 proc getSource*(buffer: Buffer) {.proxy.} =
   let ssock = initServerSocket()
   let stream = ssock.acceptSocketStream()
-  buffer.finishLoad()
+  let op = buffer.sstream.getPosition()
   buffer.sstream.setPosition(0)
   stream.write(buffer.sstream.readAll())
+  buffer.sstream.setPosition(op)
   stream.close()
   ssock.close()
 
