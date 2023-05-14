@@ -453,20 +453,20 @@ proc resolveDimensions(box: BlockBox, availableWidth: int, availableHeight: Opti
   if not computed{"max-height"}.auto:
     if computed{"max-height"}.unit != UNIT_PERC:
       let maxHeight = computed{"max-height"}.px(viewport)
-      if box.contentHeight.isNone or maxHeight > box.contentHeight.get:
+      if box.contentHeight.isSome and maxHeight < box.contentHeight.get:
         box.contentHeight = some(maxHeight)
     elif availableHeight.isSome:
       let maxHeight = computed{"max-height"}.px(viewport, availableHeight.get)
-      if box.contentHeight.isNone or maxHeight > box.contentHeight.get:
+      if box.contentHeight.isSome and maxHeight < box.contentHeight.get:
         box.contentHeight = some(maxHeight)
   if not computed{"min-height"}.auto:
     if computed{"min-height"}.unit != UNIT_PERC:
       let minHeight = computed{"min-height"}.px(viewport)
-      if minHeight < box.contentHeight.get(0):
+      if minHeight > box.contentHeight.get(0):
         box.contentHeight = some(minHeight)
     elif availableHeight.isSome:
       let minHeight = computed{"min-height"}.px(viewport, availableHeight.get)
-      if minHeight < box.contentHeight.get(0):
+      if minHeight > box.contentHeight.get(0):
         box.contentHeight = some(minHeight)
   # if no max content width is supplied, just use regular content width.
   box.maxContentWidth = maxContentWidth.get(box.contentWidth)
