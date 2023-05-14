@@ -652,12 +652,11 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
       buffer.sstream.setPosition(0)
       let (doc, _) = parseHTML(buffer.sstream, cs = some(cs), window = buffer.window, url = buffer.url)
       buffer.document = doc
-    p = buffer.loadResources(buffer.document)
     buffer.state = LOADING_RESOURCES
+    p = buffer.loadResources(buffer.document)
   else:
     p = EmptyPromise()
     p.resolve()
-    buffer.state = LOADED
   buffer.selector.unregister(buffer.fd)
   buffer.fd = -1
   buffer.istream.close()
@@ -715,6 +714,7 @@ proc onload(buffer: Buffer) =
     if buffer.istream.atEnd():
       res.atend = true
       buffer.finishLoad().then(proc() =
+        buffer.state = LOADED
         buffer.resolveTask(LOAD, res))
       return
     buffer.resolveTask(LOAD, res)
