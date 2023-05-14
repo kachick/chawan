@@ -49,6 +49,12 @@ type
     stream: Stream
     request: Request
 
+  ConnectErrorCode* = enum
+    ERROR_SOURCE_NOT_FOUND = (-4, "clone source could not be found"),
+    ERROR_LOADER_KILLED = (-3, "loader killed during transfer"),
+    ERROR_DISALLOWED_URL = (-2, "url not allowed by filter"),
+    ERROR_UNKNOWN_SCHEME = (-1, "unknown scheme")
+
   LoaderCommand = enum
     LOAD, QUIT
 
@@ -65,6 +71,9 @@ type
     filter*: URLFilter
     cookiejar*: CookieJar
     referrerpolicy*: ReferrerPolicy
+
+converter toInt*(code: ConnectErrorCode): int =
+  return int(code)
 
 proc addFd(ctx: LoaderContext, fd: int, flags: int) =
   ctx.extra_fds.add(curl_waitfd(
@@ -85,14 +94,14 @@ proc loadResource(ctx: LoaderContext, request: Request, ostream: Stream) =
     loadAbout(request, ostream)
     ostream.close()
   else:
-    ostream.swrite(-1) # error
+    ostream.swrite(ERROR_UNKNOWN_SCHEME) # error
     ostream.close()
 
 proc onLoad(ctx: LoaderContext, stream: Stream) =
   var request: Request
   stream.sread(request)
   if not ctx.config.filter.match(request.url):
-    stream.swrite(-1) # error
+    stream.swrite(ERROR_DISALLOWED_URL) # error
     stream.flush()
     stream.close()
   else:
@@ -143,8 +152,7 @@ proc finishCurlTransfer(ctx: LoaderContext, handleData: HandleData, res: int) =
 
 proc exitLoader(ctx: LoaderContext) =
   for handleData in ctx.handleList:
-    #TODO: -1, -2, -3, ... results should be named.
-    ctx.finishCurlTransfer(handleData, -3)
+    ctx.finishCurlTransfer(handleData, ERROR_LOADER_KILLED)
   discard curl_multi_cleanup(ctx.curlm)
   curl_global_cleanup()
   ctx.ssock.close()

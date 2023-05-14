@@ -568,6 +568,7 @@ proc loadResources(buffer: Buffer, document: Document): EmptyPromise =
   return all(promises)
 
 type ConnectResult* = object
+  invalid*: bool
   code*: int
   needsAuth*: bool
   redirect*: Request
@@ -577,7 +578,7 @@ type ConnectResult* = object
 
 proc setupSource(buffer: Buffer): ConnectResult =
   if buffer.connected:
-    result.code = -2
+    result.invalid = true
     return
   let source = buffer.source
   let setct = source.contenttype.isNone
@@ -586,11 +587,12 @@ proc setupSource(buffer: Buffer): ConnectResult =
   buffer.url = source.location
   case source.t
   of CLONE:
+    #TODO clone should probably just fork() the buffer instead.
     let s = connectSocketStream(source.clonepid, blocking = false)
     buffer.istream = s
     buffer.fd = cast[int](s.source.getFd())
     if buffer.istream == nil:
-      result.code = -2
+      result.code = ERROR_SOURCE_NOT_FOUND
       return
     if setct:
       buffer.contenttype = "text/plain"

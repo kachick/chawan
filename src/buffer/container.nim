@@ -695,7 +695,7 @@ proc load(container: Container) =
   container.setLoadInfo("Connecting to " & container.location.host & "...")
   container.iface.connect().then(proc(res: ConnectResult): auto =
     let info = container.loadinfo
-    if res.code != -2:
+    if not res.invalid:
       container.code = res.code
       if res.code == 0:
         container.triggerEvent(SUCCESS)
