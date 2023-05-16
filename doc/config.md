@@ -22,6 +22,8 @@ bonus configuration files in the bonus/ folder for further examples.
 **Table of contents**
 
 * [Start](#start)
+* [Search](#search)
+* [Encoding](#encoding)
 * [External](#external)
 * [Network](#network)
 * [Display](#display)
@@ -49,22 +51,79 @@ Following is a list of start-up options:
 <tr>
 <td>visual-home</td>
 <td>url</td>
-<td>Page opened when Chawan is called with the -V option (and no other pages are
-passed as arguments.)</td>
+<td>Page opened when Chawan is called with the -V option (and no other
+pages are passed as arguments.)</td>
 </tr>
 
 <tr>
-<td>run-script</td>
+<td>startup-script</td>
 <td>JavaScript code</td>
-<td>Script Chawan runs on start. Pages will not be loaded until this function
-exits. (setTimeout & friends do not block loading, though.)</td>
+<td>Script Chawan runs on start-up. Pages will not be loaded until this
+function exits. (Note however that asynchronous functions like setTimeout
+do not block loading.)</td>
 </tr>
 
 <tr>
 <td>headless</td>
 <td>boolean</td>
-<td>Whether Chawan should always start in headless mode. Enabled when Chawan is
-called with -r.</td>
+<td>Whether Chawan should always start in headless mode. Automatically
+enabled when Chawan is called with -r.</td>
+</tr>
+
+</table>
+
+## Search
+
+Search options are to be placed in the `[search]` section.
+
+Following is a list of search options:
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Value**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>wrap</td>
+<td>boolean</td>
+<td>When set to true, searchNext/searchPrev wraps around the document.</td>
+</tr>
+
+</table>
+
+## Encoding
+
+Encoding options are to be placed in the `[encoding]` section.
+
+Following is a list of encoding options:
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Value**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>fallback-charset</td>
+<td>string/array</td>
+<td>Default character set for loading documents.<br>
+For text
+documents, all listed character sets are enumerated until the document has been
+decoded without errors.</td>
+</tr>
+
+<tr>
+<td>document-charset</td>
+<td>string/array</td>
+<td>List of forced character sets for loading documents.<br>
+All listed character sets are enumerated until the document has been decoded
+without errors.<br>
+Overrides fallback-charset.</td>
 </tr>
 
 </table>
@@ -641,7 +700,9 @@ press again -> URL)</td>
 
 <tr>
 <td>`pager.ask(prompt)`</td>
-<td>Ask the user for confirmation. Useful for e.g. an exit prompt:
+<td>Ask the user for confirmation. Returns a promise which resolves to a
+boolean value indicating whether the user responded with yes.<br>
+Can be used to implement an exit prompt like this:
 ```
 q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
 ```

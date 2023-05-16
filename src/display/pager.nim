@@ -12,6 +12,7 @@ when defined(posix):
 import buffer/cell
 import buffer/container
 import config/config
+import data/charset
 import display/term
 import io/lineedit
 import io/promise
@@ -120,16 +121,16 @@ proc getter(pager: Pager, s: string): Option[JSValue] {.jsgetprop.} =
 proc searchNext(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
     if not pager.reverseSearch:
-      pager.container.cursorNextMatch(pager.regex.get, pager.config.searchwrap)
+      pager.container.cursorNextMatch(pager.regex.get, pager.config.search.wrap)
     else:
-      pager.container.cursorPrevMatch(pager.regex.get, pager.config.searchwrap)
+      pager.container.cursorPrevMatch(pager.regex.get, pager.config.search.wrap)
 
 proc searchPrev(pager: Pager) {.jsfunc.} =
   if pager.regex.issome:
     if not pager.reverseSearch:
-      pager.container.cursorPrevMatch(pager.regex.get, pager.config.searchwrap)
+      pager.container.cursorPrevMatch(pager.regex.get, pager.config.search.wrap)
     else:
-      pager.container.cursorNextMatch(pager.regex.get, pager.config.searchwrap)
+      pager.container.cursorNextMatch(pager.regex.get, pager.config.search.wrap)
 
 proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
@@ -245,7 +246,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
       let area = hl.colorArea(container.fromy + by, startw .. startw + aw)
       for i in area:
         var hlformat = pager.display[dls + i - startw].format
-        hlformat.bgcolor = pager.config.hlcolor.cellColor()
+        hlformat.bgcolor = pager.config.display.highlight_color.cellColor()
         pager.display[dls + i - startw].format = hlformat
     inc by
 
@@ -544,6 +545,7 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   var cookiejar: CookieJar
   var headers: HeaderList
   var scripting: bool
+  var charsets = pager.config.encoding.document_charset
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match(url):
       continue
@@ -566,12 +568,15 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
       scripting = sc.scripting.get
     if sc.refererfrom.isSome:
       refererfrom = sc.refererfrom.get
-  return pager.config.getBufferConfig(request.url, cookiejar, headers, refererfrom, scripting)
+    if sc.document_charset.len > 0:
+      charsets = sc.document_charset
+  return pager.config.getBufferConfig(request.url, cookiejar, headers,
+    refererfrom, scripting, charsets)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
-              ctype = none(string), replace: Container = nil,
-              redirectdepth = 0, referrer: Container = nil) =
+    ctype = none(string), cs = none(Charset), replace: Container = nil,
+    redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.refererfrom:
     request.referer = referrer.source.location
   var bufferconfig = pager.applySiteconf(request)
@@ -587,6 +592,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
       t: LOAD_REQUEST,
       request: request,
       contenttype: ctype,
+      charset: cs,
       location: request.url
     )
     if referrer != nil:
@@ -615,7 +621,8 @@ proc omniRewrite(pager: Pager, s: string): string =
 # * file://$PWD/<file>
 # * https://<url>
 # So we attempt to load both, and see what works.
-proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
+proc loadURL*(pager: Pager, url: string, ctype = none(string),
+    cs = none(Charset)) =
   let url0 = pager.omniRewrite(url)
   let url = if url[0] == '~': expandPath(url0) else: url0
   let firstparse = parseURL(url)
@@ -624,10 +631,10 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
       some(pager.container.source.location)
     else:
       none(URL)
-    pager.gotoURL(newRequest(firstparse.get), prev, ctype)
+    pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
     return
   var urls: seq[URL]
-  if pager.config.prependhttps and url[0] != '/':
+  if pager.config.network.prepend_https and url[0] != '/':
     let pageurl = parseURL("https://" & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
@@ -640,22 +647,25 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string)) =
     pager.alert("Invalid URL " & url)
   else:
     let prevc = pager.container
-    pager.gotoURL(newRequest(urls.pop()), ctype = ctype)
+    pager.gotoURL(newRequest(urls.pop()), ctype = ctype, cs = cs)
     if pager.container != prevc:
       pager.container.retry = urls
 
-proc readPipe0*(pager: Pager, ctype: Option[string], fd: FileHandle, location: Option[URL], title: string): Container =
+proc readPipe0*(pager: Pager, ctype: Option[string], cs: Option[Charset],
+    fd: FileHandle, location: Option[URL], title: string): Container =
   let source = BufferSource(
     t: LOAD_PIPE,
     fd: fd,
     contenttype: some(ctype.get("text/plain")),
+    charset: cs,
     location: location.get(newURL("file://-"))
   )
   let bufferconfig = pager.config.getBufferConfig(source.location)
   return pager.dispatcher.newBuffer(bufferconfig, source, title = title)
 
-proc readPipe*(pager: Pager, ctype: Option[string], fd: FileHandle) =
-  let container = pager.readPipe0(ctype, fd, none(URL), "*pipe*")
+proc readPipe*(pager: Pager, ctype: Option[string], cs: Option[Charset],
+    fd: FileHandle) =
+  let container = pager.readPipe0(ctype, cs, fd, none(URL), "*pipe*")
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
@@ -680,9 +690,9 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     if pager.iregex.isSome:
       pager.container.hlon = true
       if linemode == ISEARCH_F:
-        pager.container.cursorNextMatch(pager.iregex.get, pager.config.searchwrap)
+        pager.container.cursorNextMatch(pager.iregex.get, pager.config.search.wrap)
       else:
-        pager.container.cursorPrevMatch(pager.iregex.get, pager.config.searchwrap)
+        pager.container.cursorPrevMatch(pager.iregex.get, pager.config.search.wrap)
     pager.container.pushCursorPos()
   of FINISH:
     if pager.iregex.isSome:
@@ -754,7 +764,8 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
-  pager.gotoURL(newRequest(pager.container.source.location), none(URL), pager.container.contenttype, pager.container)
+  pager.gotoURL(newRequest(pager.container.source.location), none(URL),
+    pager.container.contenttype, replace = pager.container)
 
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)
@@ -799,7 +810,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if pager.container == container:
       pager.authorize()
   of REDIRECT:
-    if container.redirectdepth < pager.config.maxredirect:
+    if container.redirectdepth < pager.config.network.max_redirect:
       pager.alert("Redirecting to " & $event.request.url)
       pager.gotoURL(event.request, some(container.source.location),
         replace = container, redirectdepth = container.redirectdepth + 1,

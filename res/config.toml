@@ -1,10 +1,15 @@
 [start]
 visual-home = "about:chawan"
-run-script = ""
+startup-script = ""
 headless = false
 
 [search]
 wrap = true
+
+[encoding]
+document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
+#display-charset = "auto" #TODO
+#system-charset = "auto" #TODO
 
 [external]
 tmpdir = "/tmp/cha"

@@ -16,6 +16,7 @@ import bindings/quickjs
 import buffer/container
 import css/sheet
 import config/config
+import data/charset
 import display/pager
 import display/term
 import html/dom
@@ -450,7 +451,8 @@ proc newConsole(pager: Pager, tty: File): Console =
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("javascript:console.show()")
-    result.container = pager.readPipe0(some("text/plain"), pipefd[0], option(url), "Browser console")
+    result.container = pager.readPipe0(some("text/plain"), none(Charset),
+      pipefd[0], option(url), "Browser console")
     var f: File
     if not open(f, pipefd[1], fmWrite):
       raise newException(Defect, "Failed to open file for console pipe.")
@@ -477,7 +479,8 @@ proc dumpBuffers(client: Client) =
       quit(1)
   stdout.close()
 
-proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], dump: bool) =
+proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
+    cs: Option[Charset], dump: bool) =
   var tty: File
   var dump = dump
   if not dump:
@@ -499,26 +502,26 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string], du
   client.console = newConsole(client.pager, tty)
   client.alive = true
   addExitProc((proc() = client.quit()))
-  if client.config.startup != "":
-    let s = if fileExists(client.config.startup):
-      readFile(client.config.startup)
+  if client.config.start.startup_script != "":
+    let s = if fileExists(client.config.start.startup_script):
+      readFile(client.config.start.startup_script)
     else:
-      client.config.startup
-    client.command0(s, client.config.startup, silence = true)
-  client.userstyle = client.config.stylesheet.parseStylesheet()
+      client.config.start.startup_script
+    client.command0(s, client.config.start.startup_script, silence = true)
+  client.userstyle = client.config.css.stylesheet.parseStylesheet()
 
   if not stdin.isatty():
-    client.pager.readPipe(ctype, stdin.getFileHandle())
+    client.pager.readPipe(ctype, cs, stdin.getFileHandle())
 
   for page in pages:
-    client.pager.loadURL(page, ctype = ctype)
+    client.pager.loadURL(page, ctype = ctype, cs = cs)
   client.acceptBuffers()
   client.pager.refreshStatusMsg()
   if not dump:
     client.inputLoop()
   else:
     client.dumpBuffers()
-  if client.config.headless:
+  if client.config.start.headless:
     client.headlessLoop()
   client.quit()
 

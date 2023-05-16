@@ -2162,8 +2162,7 @@ proc constructTree(parser: var HTML5Parser): Document =
     else:
       parser.processInForeignContent(token)
     if parser.needsreinterpret:
-      return nil
-
+      break
   return parser.document
 
 proc finishParsing(parser: var HTML5Parser) =
@@ -2175,47 +2174,68 @@ proc finishParsing(parser: var HTML5Parser) =
     script.execute()
   #TODO events
 
-proc parseHTML*(inputStream: Stream, cs = none(Charset), fallbackcs = CHARSET_UTF_8, window: Window = nil, url: URL = nil): (Document, Charset) =
-  var parser: HTML5Parser
-  var bom: string
-  if cs.isSome:
-    parser.charset = cs.get
-    parser.confidence = CONFIDENCE_CERTAIN
-  else:
-    # bom sniff
-    const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
-    const bebom = char(0xFE) & char(0xFF)
-    const lebom = char(0xFF) & char(0xFE)
-    bom = inputStream.readStr(2)
-    if bom == bebom:
-      parser.charset = CHARSET_UTF_16_BE
-      parser.confidence = CONFIDENCE_CERTAIN
-      bom = ""
-    elif bom == lebom:
-      parser.charset = CHARSET_UTF_16_LE
-      parser.confidence = CONFIDENCE_CERTAIN
-      bom = ""
+proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
+    fallbackcs = CHARSET_UTF_8, window: Window = nil,
+    url: URL = nil, canReinterpret = true): Document =
+  var charsetStack: seq[Charset]
+  for i in countdown(charsets.high, 0):
+    charsetStack.add(charsets[i])
+  var canReinterpret = canReinterpret
+  while true:
+    var parser: HTML5Parser
+    var bom: string
+    let islastcs = charsetStack.len == 0
+    if not islastcs:
+      parser.charset = charsetStack.pop()
+      if not canReinterpret:
+        parser.confidence = CONFIDENCE_CERTAIN
     else:
-      bom &= inputStream.readChar()
-      if bom == u8bom:
-        parser.charset = CHARSET_UTF_8
+      # bom sniff
+      const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
+      const bebom = char(0xFE) & char(0xFF)
+      const lebom = char(0xFF) & char(0xFE)
+      bom = inputStream.readStr(2)
+      if bom == bebom:
+        parser.charset = CHARSET_UTF_16_BE
+        parser.confidence = CONFIDENCE_CERTAIN
+        bom = ""
+      elif bom == lebom:
+        parser.charset = CHARSET_UTF_16_LE
         parser.confidence = CONFIDENCE_CERTAIN
         bom = ""
       else:
-        parser.charset = fallbackcs
-  let decoder = newDecoderStream(inputStream, parser.charset)
-  for c in bom:
-    decoder.prepend(cast[uint32](c))
-  parser.document = newDocument()
-  parser.document.contentType = "text/html"
-  if window != nil:
-    parser.document.window = window
-    window.document = parser.document
-  parser.document.url = url
-  parser.tokenizer = newTokenizer(decoder)
-  let document = parser.constructTree()
-  parser.finishParsing()
-  return (document, parser.charset)
+        bom &= inputStream.readChar()
+        if bom == u8bom:
+          parser.charset = CHARSET_UTF_8
+          parser.confidence = CONFIDENCE_CERTAIN
+          bom = ""
+        else:
+          parser.charset = fallbackcs
+    let em = if islastcs or not canReinterpret:
+      DECODER_ERROR_MODE_REPLACEMENT
+    else:
+      DECODER_ERROR_MODE_FATAL
+    let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
+    for c in bom:
+      decoder.prepend(cast[uint32](c))
+    parser.document = newDocument()
+    parser.document.contentType = "text/html"
+    if window != nil:
+      parser.document.window = window
+      window.document = parser.document
+    parser.document.url = url
+    parser.tokenizer = newTokenizer(decoder)
+    let document = parser.constructTree()
+    if parser.needsreinterpret and canReinterpret:
+      inputStream.setPosition(0)
+      charsetStack.add(parser.charset)
+      canReinterpret = false
+      continue
+    if decoder.failed and canReinterpret:
+      inputStream.setPosition(0)
+      continue
+    parser.finishParsing()
+    return document
 
 proc newDOMParser*(): DOMParser {.jsctor.} =
   new(result)
@@ -2223,7 +2243,7 @@ proc newDOMParser*(): DOMParser {.jsctor.} =
 proc parseFromString(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
   case t
   of "text/html":
-    let (res, _) = parseHTML(newStringStream(str))
+    let res = parseHTML(newStringStream(str))
     return res
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
     JS_ERR JS_InternalError, "XML parsing is not supported yet"

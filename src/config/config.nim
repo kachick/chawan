@@ -5,6 +5,7 @@ import streams
 
 import buffer/cell
 import config/toml
+import data/charset
 import io/request
 import io/urlfilter
 import js/javascript
@@ -13,6 +14,7 @@ import types/color
 import types/cookie
 import types/referer
 import types/url
+import utils/opt
 import utils/twtstr
 
 type
@@ -32,6 +34,7 @@ type
     sharecookiejar: Option[string]
     refererfrom*: Option[bool]
     scripting: Option[bool]
+    document_charset: seq[Charset]
 
   StaticOmniRule = object
     match: string
@@ -46,36 +49,60 @@ type
     sharecookiejar*: Option[string]
     refererfrom*: Option[bool]
     scripting*: Option[bool]
+    document_charset*: seq[Charset]
 
   OmniRule* = object
     match*: Regex
     subst*: (proc(s: string): Option[string])
 
+  StartConfig = object
+    visual_home*: string
+    startup_script*: string
+    headless*: bool
+
+  CSSConfig = object
+    stylesheet*: string
+
+  SearchConfig = object
+    wrap*: bool
+
+  EncodingConfig = object
+    document_charset*: seq[Charset]
+
+  ExternalConfig = object
+    tmpdir*: string
+    editor*: string
+
+  NetworkConfig = object
+    max_redirect*: int32
+    prepend_https*: bool
+
+  DisplayConfig = object
+    color_mode*: Option[ColorMode]
+    format_mode*: Option[FormatMode]
+    no_format_mode*: FormatMode
+    emulate_overline*: bool
+    alt_screen*: Option[bool]
+    highlight_color*: RGBAColor
+    double_width_ambiguous*: bool
+    minimum_contrast*: int32
+    force_clear*: bool
+
+  #TODO: add JS wrappers for objects
   Config* = ref ConfigObj
   ConfigObj* = object
-    searchwrap* {.jsget, jsset.}: bool
-    maxredirect*: int
-    prependhttps* {.jsget, jsset.}: bool
-    termreload*: bool
-    nmap*: ActionMap
-    lemap*: ActionMap
-    stylesheet* {.jsget, jsset.}: string
-    startup*: string
-    ambiguous_double*: bool
-    hlcolor*: RGBAColor
-    headless*: bool
-    colormode*: Option[ColorMode]
-    formatmode*: Option[FormatMode]
-    noformatmode*: FormatMode
-    altscreen*: Option[bool]
-    mincontrast*: int
-    editor*: string
-    tmpdir*: string
+    includes: seq[string]
+    start*: StartConfig
+    search*: SearchConfig
+    css*: CSSConfig
+    encoding*: EncodingConfig
+    external*: ExternalConfig
+    network*: NetworkConfig
+    display*: DisplayConfig
     siteconf: seq[StaticSiteConfig]
     omnirules: seq[StaticOmniRule]
-    forceclear*: bool
-    emulateoverline*: bool
-    visualhome*: string
+    page*: ActionMap
+    line*: ActionMap
 
   BufferConfig* = object
     userstyle*: string
@@ -85,6 +112,7 @@ type
     refererfrom*: bool
     referrerpolicy*: ReferrerPolicy
     scripting*: bool
+    charsets*: seq[Charset]
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -100,19 +128,21 @@ const DefaultHeaders* = {
 
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
-    tmpdir: config.tmpdir,
-    ambiguous_double: config.ambiguous_double
+    tmpdir: config.external.tmpdir,
+    ambiguous_double: config.display.double_width_ambiguous
   )
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
-                      headers: HeaderList = nil, refererfrom = false, scripting = false): BufferConfig =
+      headers: HeaderList = nil, refererfrom = false, scripting = false,
+      charsets = config.encoding.document_charset): BufferConfig =
   result = BufferConfig(
-    userstyle: config.stylesheet,
+    userstyle: config.css.stylesheet,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
     cookiejar: cookiejar,
     headers: headers,
     refererfrom: refererfrom,
-    scripting: scripting
+    scripting: scripting,
+    charsets: charsets
   )
   new(result.headers)
   result.headers[] = DefaultHeaders
@@ -123,7 +153,8 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       cookie: sc.cookie,
       scripting: sc.scripting,
       sharecookiejar: sc.sharecookiejar,
-      refererfrom: sc.refererfrom
+      refererfrom: sc.refererfrom,
+      charsets: sc.document_charset
     )
     if sc.url.isSome:
       conf.url = compileRegex(sc.url.get, 0)
@@ -220,8 +251,8 @@ proc readUserStylesheet(dir, file: string): string =
       result = f.readAll()
       f.close()
 
-proc parseConfig(config: Config, dir: string, stream: Stream)
-proc parseConfig*(config: Config, dir: string, s: string)
+proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>")
+proc parseConfig*(config: Config, dir: string, s: string, name = "<input>")
 
 proc loadConfig*(config: Config, s: string) {.jsfunc.} =
   let s = if s.len > 0 and s[0] == '/':
@@ -233,167 +264,231 @@ proc loadConfig*(config: Config, s: string) {.jsfunc.} =
 
 proc bindPagerKey*(config: Config, key, action: string) {.jsfunc.} =
   let k = getRealKey(key)
-  config.nmap[k] = action
+  config.page[k] = action
   var teststr = ""
   for c in k:
     teststr &= c
-    if teststr notin config.nmap:
-      config.nmap[teststr] = "client.feedNext()"
+    if teststr notin config.page:
+      config.page[teststr] = "client.feedNext()"
 
 proc bindLineKey*(config: Config, key, action: string) {.jsfunc.} =
   let k = getRealKey(key)
-  config.lemap[k] = action
+  config.line[k] = action
   var teststr = ""
   for c in k:
     teststr &= c
-    if teststr notin config.nmap:
-      config.lemap[teststr] = "client.feedNext()"
+    if teststr notin config.line:
+      config.line[teststr] = "client.feedNext()"
+
+proc parseConfigValue(x: var object, v: TomlValue, k: string)
+proc parseConfigValue(x: var bool, v: TomlValue, k: string)
+proc parseConfigValue(x: var string, v: TomlValue, k: string)
+proc parseConfigValue(x: var seq[object], v: TomlValue, k: string)
+proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string)
+proc parseConfigValue(x: var Charset, v: TomlValue, k: string)
+proc parseConfigValue(x: var int32, v: TomlValue, k: string)
+proc parseConfigValue(x: var int64, v: TomlValue, k: string)
+proc parseConfigValue(x: var Option[ColorMode], v: TomlValue, k: string)
+proc parseConfigValue(x: var Option[FormatMode], v: TomlValue, k: string)
+proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string)
+proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string)
+proc parseConfigValue(x: var Option[bool], v: TomlValue, k: string)
+proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string)
+proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
+proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
+
+proc typeCheck(v: TomlValue, vt: ValueType, k: string) =
+  if v.vt != vt:
+    raise newException(ValueError, "invalid type for key " & k &
+      " (got " & $v.vt & ", expected " & $vt & ")")
+
+proc typeCheck(v: TomlValue, vt: set[ValueType], k: string) =
+  if v.vt notin vt:
+    raise newException(ValueError, "invalid type for key " & k &
+      " (got " & $v.vt & ", expected " & $vt & ")")
+
+proc parseConfigValue(x: var object, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_TABLE, k)
+  for fk, fv in x.fieldPairs:
+    let kebabk = snakeToKebabCase(fk)
+    if kebabk in v:
+      let kkk = if k != "":
+        k & "." & fk
+      else:
+        fk
+      parseConfigValue(fv, v[kebabk], kkk)
+
+proc parseConfigValue(x: var bool, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_BOOLEAN, k)
+  x = v.b
+
+proc parseConfigValue(x: var string, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  x = v.s
+
+proc parseConfigValue(x: var seq[object], v: TomlValue, k: string) =
+  typeCheck(v, {VALUE_TABLE_ARRAY, VALUE_ARRAY}, k)
+  if v.vt == VALUE_ARRAY:
+    #TODO if array and size != 0
+    # actually, arrays and table arrays should be the same data type
+    assert v.a.len == 0
+    x.setLen(0)
+  else:
+    for i in 0 ..< v.ta.len:
+      var y: typeof(x[0])
+      let tab = TomlValue(vt: VALUE_TABLE, t: v.ta[i])
+      parseConfigValue(y, tab, k & "[" & $i & "]")
+      x.add(y)
+
+proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string) =
+  typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
+  if v.vt != VALUE_ARRAY:
+    var y: T
+    parseConfigValue(y, v, k)
+    x.add(y)
+  else:
+    for i in 0 ..< v.a.len:
+      var y: T
+      parseConfigValue(y, v.a[i], k & "[" & $i & "]")
+      x.add(y)
+
+proc parseConfigValue(x: var Charset, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  x = getCharset(v.s)
+  if x == CHARSET_UNKNOWN:
+    raise newException(ValueError, "unknown charset '" & v.s & "' for key " &
+      k)
+
+proc parseConfigValue(x: var int32, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_INTEGER, k)
+  x = int32(v.i)
+
+proc parseConfigValue(x: var int64, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_INTEGER, k)
+  x = v.i
+
+proc parseConfigValue(x: var Option[ColorMode], v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  case v.s
+  of "auto": x = none(ColorMode)
+  of "monochrome": x = some(MONOCHROME)
+  of "ansi": x = some(ANSI)
+  of "8bit": x = some(EIGHT_BIT)
+  of "24bit": x = some(TRUE_COLOR)
+  else:
+    raise newException(ValueError, "unknown color mode '" & v.s &
+      "' for key " & k)
+
+proc parseConfigValue(x: var Option[FormatMode], v: TomlValue, k: string) =
+  typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
+  if v.vt == VALUE_STRING and v.s == "auto":
+    x = none(FormatMode)
+  else:
+    var y: FormatMode
+    parseConfigValue(y, v, k)
+    x = some(y)
+
+proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_ARRAY, k)
+  for i in 0 ..< v.a.len:
+    let s = v.a[i].s
+    let kk = k & "[" & $i & "]"
+    case s
+    of "bold": x.incl(FLAG_BOLD)
+    of "italic": x.incl(FLAG_ITALIC)
+    of "underline": x.incl(FLAG_UNDERLINE)
+    of "reverse": x.incl(FLAG_REVERSE)
+    of "strike": x.incl(FLAG_STRIKE)
+    of "overline": x.incl(FLAG_OVERLINE)
+    of "blink": x.incl(FLAG_BLINK)
+    else:
+      raise newException(ValueError, "unknown format mode '" & s &
+        "' for key " & kk)
+
+proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let c = parseRGBAColor(v.s)
+  if c.isNone:
+      raise newException(ValueError, "invalid color '" & v.s &
+        "' for key " & k)
+  x = c.get
+
+proc parseConfigValue(x: var Option[bool], v: TomlValue, k: string) =
+  typeCheck(v, {VALUE_STRING, VALUE_BOOLEAN}, k)
+  if v.vt == VALUE_STRING:
+    if v.s == "auto":
+      x = none(bool)
+    else:
+      raise newException(ValueError, "invalid value '" & v.s &
+        "' for key " & k)
+  else:
+    var y: bool
+    parseConfigValue(y, v, k)
+    x = some(y)
+
+proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string) =
+  var y: T
+  parseConfigValue(y, v, k)
+  x = some(y)
+
+proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_TABLE, k)
+  for kk, vv in v:
+    typeCheck(vv, VALUE_STRING, k & "[" & kk & "]")
+    x[getRealKey(kk)] = vv.s
+
+var gdir {.compileTime.}: string
+proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_TABLE, k)
+  let dir = gdir
+  for kk, vv in v:
+    let kkk = if k != "":
+      k & "." & kk
+    else:
+      kk
+    case kk
+    of "include":
+      typeCheck(vv, {VALUE_STRING, VALUE_ARRAY}, kkk)
+      case vv.vt
+      of VALUE_STRING:
+        x.stylesheet &= readUserStylesheet(dir, vv.s)
+      of VALUE_ARRAY:
+        for child in vv.a:
+          x.stylesheet &= readUserStylesheet(dir, vv.s)
+      else: discard
+    of "inline":
+      typeCheck(vv, VALUE_STRING, kkk)
+      x.stylesheet &= vv.s
 
 proc parseConfig(config: Config, dir: string, t: TomlValue) =
-  for k, v in t:
-    case k
-    of "include":
-      if v.vt == VALUE_STRING:
-        when nimvm:
-          config.parseConfig(dir, staticRead(dir / v.s))
-        else:
-          config.parseConfig(dir, newFileStream(dir / v.s))
-      elif t.vt == VALUE_ARRAY:
-        for v in t.a:
-          when nimvm:
-            config.parseConfig(dir, staticRead(dir / v.s))
-          else:
-            config.parseConfig(dir, newFileStream(dir / v.s))
-    of "search":
-      for k, v in v:
-        case k
-        of "wrap":
-          config.searchwrap = v.b
-    of "start":
-      for k, v in v:
-        case k
-        of "visual-home":
-          config.visualhome = v.s
-        of "run-script":
-          config.startup = v.s
-        of "headless":
-          config.headless = v.b
-    of "network":
-      for k, v in v:
-        case k
-        of "max-redirect":
-          config.maxredirect = int(v.i)
-        of "prepend-https":
-          config.prependhttps = v.b
-    of "page":
-      for k, v in v:
-        config.nmap[getRealKey(k)] = v.s
-    of "line":
-      for k, v in v:
-        config.lemap[getRealKey(k)] = v.s
-    of "css":
-      for k, v in v:
-        case k
-        of "include":
-          case v.vt
-          of VALUE_STRING:
-            config.stylesheet &= readUserStylesheet(dir, v.s)
-          of VALUE_ARRAY:
-            for child in v.a:
-              config.stylesheet &= readUserStylesheet(dir, v.s)
-          else: discard
-        of "inline":
-          config.stylesheet &= v.s
-    of "display":
-      template get_format_mode(v: TomlValue): FormatMode =
-        var mode: FormatMode
-        for vv in v.a:
-          case vv.s
-          of "bold": mode.incl(FLAG_BOLD)
-          of "italic": mode.incl(FLAG_ITALIC)
-          of "underline": mode.incl(FLAG_UNDERLINE)
-          of "reverse": mode.incl(FLAG_REVERSE)
-          of "strike": mode.incl(FLAG_STRIKE)
-          of "overline": mode.incl(FLAG_OVERLINE)
-          of "blink": mode.incl(FLAG_BLINK)
-        mode
-      for k, v in v:
-        case k
-        of "alt-screen":
-          if v.vt == VALUE_BOOLEAN:
-            config.altscreen = some(v.b)
-          elif v.vt == VALUE_STRING and v.s == "auto":
-            config.altscreen = none(bool)
-        of "color-mode":
-          case v.s
-          of "auto": config.colormode = none(ColorMode)
-          of "monochrome": config.colormode = some(MONOCHROME)
-          of "ansi": config.colormode = some(ANSI)
-          of "8bit": config.colormode = some(EIGHT_BIT)
-          of "24bit": config.colormode = some(TRUE_COLOR)
-        of "format-mode":
-          if v.vt == VALUE_STRING and v.s == "auto":
-            config.formatmode = none(FormatMode)
-          elif v.vt == VALUE_ARRAY:
-            config.formatmode = some(get_format_mode v)
-        of "no-format-mode":
-          config.noformatmode = get_format_mode v
-        of "highlight-color":
-          config.hlcolor = parseRGBAColor(v.s).get
-        of "double-width-ambiguous":
-          config.ambiguous_double = v.b
-        of "minimum-contrast":
-          config.mincontrast = int(v.i)
-        of "force-clear": config.forceclear = v.b
-        of "emulate-overline": config.emulateoverline = v.b
-    of "external":
-      for k, v in v:
-        case k
-        of "editor": config.editor = v.s
-        of "tmpdir": config.tmpdir = v.s
-    of "siteconf":
-      for v in v:
-        var conf = StaticSiteConfig()
-        for k, v in v:
-          case k
-          of "url": conf.url = some(v.s)
-          of "host": conf.host = some(v.s)
-          of "rewrite-url": conf.subst = some(v.s)
-          of "referer-from": conf.refererfrom = some(v.b)
-          of "cookie": conf.cookie = some(v.b)
-          of "third-party-cookie":
-            if v.vt == VALUE_STRING:
-              conf.thirdpartycookie = @[v.s]
-            else:
-              for v in v.a:
-                conf.thirdpartycookie.add(v.s)
-          of "share-cookie-jar": conf.sharecookiejar = some(v.s)
-          of "scripting": conf.scripting = some(v.b)
-        assert conf.url.isSome != conf.host.isSome
-        config.siteconf.add(conf)
-    of "omnirule":
-      if v.vt == VALUE_ARRAY and v.a.len == 0:
-        config.omnirules.setLen(0)
+  gdir = dir
+  parseConfigValue(config[], t, "")
+  while config.includes.len > 0:
+    #TODO: warn about recursive includes
+    let includes = config.includes
+    config.includes.setLen(0)
+    for s in includes:
+      when nimvm:
+        config.parseConfig(dir, staticRead(dir / s))
       else:
-        for v in v:
-          var rule = StaticOmniRule()
-          for k, v in v:
-            case k
-            of "match": rule.match = v.s
-            of "substitute-url": rule.subst = v.s
-          if rule.match != "":
-            assert rule.subst != "", "Unspecified substitution for rule " & rule.match
-            config.omnirules.add(rule)
+        config.parseConfig(dir, newFileStream(dir / s))
+  #TODO: for omnirules/siteconf, check if substitution rules are specified?
 
-proc parseConfig(config: Config, dir: string, stream: Stream) =
-  config.parseConfig(dir, parseToml(stream))
+proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>") =
+  let toml = parseToml(stream, dir / name)
+  if toml.isOk:
+    config.parseConfig(dir, toml.get)
+  else:
+    eprint("Fatal error: Failed to parse config\n")
+    eprint(toml.error & "\n")
+    quit(1)
 
-proc parseConfig*(config: Config, dir: string, s: string) =
-  config.parseConfig(dir, newStringStream(s))
+proc parseConfig*(config: Config, dir: string, s: string, name = "<input>") =
+  config.parseConfig(dir, newStringStream(s), name)
 
 proc staticReadConfig(): ConfigObj =
   var config = new(Config)
-  config.parseConfig("res", staticRead"res/config.toml")
+  config.parseConfig("res", staticRead"res/config.toml", "config.toml")
   return config[]
 
 const defaultConfig = staticReadConfig()
@@ -404,13 +499,13 @@ proc readConfig(config: Config, dir: string) =
     config.parseConfig(dir, fs)
 
 proc getNormalAction*(config: Config, s: string): string =
-  if config.nmap.hasKey(s):
-    return config.nmap[s]
+  if config.page.hasKey(s):
+    return config.page[s]
   return ""
 
 proc getLinedAction*(config: Config, s: string): string =
-  if config.lemap.hasKey(s):
-    return config.lemap[s]
+  if config.line.hasKey(s):
+    return config.line[s]
   return ""
 
 proc readConfig*(): Config =

@@ -17,8 +17,8 @@ import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/stylednode
-import data/charset
 import config/config
+import data/charset
 import html/dom
 import html/env
 import html/htmlparser
@@ -72,7 +72,6 @@ type
   Buffer* = ref object
     fd: int
     alive: bool
-    cs: Charset
     readbufsize: int
     contenttype: string
     lines: FlexibleGrid
@@ -238,6 +237,11 @@ macro task(fun: typed) =
   let pfun = getProxyFunction(funid)
   pfun.istask = true
   fun
+
+func charsets(buffer: Buffer): seq[Charset] =
+  if buffer.source.charset.isSome:
+    return @[buffer.source.charset.get]
+  return buffer.config.charsets
 
 func getTitleAttr(node: StyledNode): string =
   if node == nil:
@@ -646,12 +650,9 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     buffer.available = 0
     if buffer.window == nil:
       buffer.window = newWindow(buffer.config.scripting)
-    let (doc, cs) = parseHTML(buffer.sstream, fallbackcs = buffer.cs, window = buffer.window, url = buffer.url)
+    let doc = parseHTML(buffer.sstream, charsets = buffer.charsets,
+      window = buffer.window, url = buffer.url)
     buffer.document = doc
-    if buffer.document == nil: # needsreinterpret
-      buffer.sstream.setPosition(0)
-      let (doc, _) = parseHTML(buffer.sstream, cs = some(cs), window = buffer.window, url = buffer.url)
-      buffer.document = doc
     buffer.state = LOADING_RESOURCES
     p = buffer.loadResources(buffer.document)
   else:
@@ -741,8 +742,9 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
     buffer.available = 0
     if buffer.window == nil:
       buffer.window = newWindow(buffer.config.scripting)
-    let (doc, _) = parseHTML(buffer.sstream, cs = some(buffer.cs), window = buffer.window, url = buffer.url) # confidence: certain
-    buffer.document = doc
+    buffer.document = parseHTML(buffer.sstream,
+      charsets = buffer.charsets, window = buffer.window,
+      url = buffer.url, canReinterpret = false)
     buffer.do_reshape()
   return buffer.lines.len
 
@@ -1220,7 +1222,6 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
                    mainproc: Pid) =
   let buffer = Buffer(
     alive: true,
-    cs: CHARSET_UTF_8,
     userstyle: parseStylesheet(config.userstyle),
     attrs: attrs,
     config: config,
@@ -1235,7 +1236,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.selector = newSelector[int]()
   loader.registerFun = proc(fd: int) = buffer.selector.registerHandle(fd, {Read}, 0)
   loader.unregisterFun = proc(fd: int) = buffer.selector.unregister(fd)
-  buffer.srenderer = newStreamRenderer(buffer.sstream)
+  buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, some(buffer.loader))
   let socks = connectSocketStream(mainproc, false)

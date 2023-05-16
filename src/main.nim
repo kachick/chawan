@@ -9,12 +9,13 @@ when defined(profile):
   import nimprof
 
 import config/config
+import data/charset
 import display/client
 import ips/forkserver
 import utils/twtstr
 
 let conf = readConfig()
-set_cjk_ambiguous(conf.ambiguous_double)
+set_cjk_ambiguous(conf.display.double_width_ambiguous)
 let params = commandLineParams()
 
 proc version(long: static bool = false): string =
@@ -34,7 +35,8 @@ Options:
     -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
     -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
     -T, --type <type>           Specify content mime type
-    -M, --monochrome            Alias of -o color-mode='monochrome'
+    -I, --input-charset <name>  Specify document charset
+    -M, --monochrome            Set color-mode to 'monochrome'
     -V, --visual                Visual startup mode
     -r, --run <script/file>     Run passed script or file
     -h, --help                  Print this usage message
@@ -47,6 +49,7 @@ Options:
 
 var i = 0
 var ctype = none(string)
+var cs = none(Charset)
 var pages: seq[string]
 var dump = false
 var visual = false
@@ -62,13 +65,23 @@ while i < params.len:
     echo version(true)
     quit(0)
   of "-M", "--monochrome":
-    conf.colormode = some(MONOCHROME)
+    conf.display.colormode = some(MONOCHROME)
   of "-V", "--visual":
     visual = true
-  of "-T":
+  of "-T", "--type":
     inc i
     if i < params.len:
       ctype = some(params[i])
+    else:
+      help(1)
+  of "-I", "--input-charset":
+    inc i
+    if i < params.len:
+      let c = getCharset(params[i])
+      if c == CHARSET_UNKNOWN:
+        stderr.write("Unknown charset " & params[i] & "\n")
+        quit(1)
+      cs = some(c)
     else:
       help(1)
   of "-":
@@ -78,7 +91,7 @@ while i < params.len:
   of "-c", "--css":
     inc i
     if i < params.len:
-      conf.stylesheet &= params[i]
+      conf.css.stylesheet &= params[i]
     else:
       help(1)
   of "-o", "--opt":
@@ -92,8 +105,8 @@ while i < params.len:
   of "-r", "--run":
     inc i
     if i < params.len:
-      conf.startup = params[i]
-      conf.headless = true
+      conf.start.startup_script = params[i]
+      conf.start.headless = true
       dump = true
     else:
       help(1)
@@ -108,7 +121,7 @@ while i < params.len:
 
 if pages.len == 0 and stdin.isatty():
   if visual:
-    pages.add(conf.visualhome)
+    pages.add(conf.start.visual_home)
   else:
     let http = getEnv("HTTP_HOME")
     if http != "": pages.add(http)
@@ -116,17 +129,17 @@ if pages.len == 0 and stdin.isatty():
       let www = getEnv("WWW_HOME")
       if www != "": pages.add(www)
 
-if pages.len == 0 and not conf.headless:
+if pages.len == 0 and not conf.start.headless:
   if stdin.isatty:
     help(1)
 
-conf.nmap = constructActionTable(conf.nmap)
-conf.lemap = constructActionTable(conf.lemap)
+conf.page = constructActionTable(conf.page)
+conf.line = constructActionTable(conf.line)
 disp.forkserver.loadForkServerConfig(conf)
 
 let c = newClient(conf, disp)
 try:
-  c.launchClient(pages, ctype, dump)
+  c.launchClient(pages, ctype, cs, dump)
 except CatchableError:
   c.flushConsole()
   raise

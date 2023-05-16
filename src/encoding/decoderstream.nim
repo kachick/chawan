@@ -505,26 +505,26 @@ proc decodeShiftJIS(stream: DecoderStream, iq: var seq[uint8],
   while i < ilen:
     let b = iq[i]
     if lead != 0:
-      let l = lead
-      lead = 0
+      var ptrisnull = true;
+      var p = 0u16
       let offset = if b < 0x7Fu8: 0x40u16 else: 0x41u16
-      let leadoffset = if l < 0xA0: 0x81u16 else: 0xC1u16
+      let leadoffset = if lead < 0xA0: 0x81u16 else: 0xC1u16
       if b in 0x40u8..0x7Eu8 or b in 0x80u8..0xFCu8:
-        let p = (uint16(l) - leadoffset) * 188 + uint16(b) - offset
-        if p in 8836u16..10715u16:
-          stream.append_codepoint 0xE000u16 - 8836 + p, oq, olen, n
-          inc i
-          continue
-        if p < Jis0208Decode.len and Jis0208Decode[p] != 0:
-          let c = Jis0208Decode[p]
-          stream.append_codepoint c, oq, olen, n
-          inc i
-          continue
-      if cast[char](b) in Ascii:
-        continue # prepend (no inc i)
+        p = (uint16(lead) - leadoffset) * 188 + uint16(b) - offset
+        ptrisnull = false
+      lead = 0
+      if not ptrisnull and p in 8836u16..10715u16:
+        stream.append_codepoint 0xE000u16 - 8836 + p, oq, olen, n
+        inc i
+        continue
+      elif not ptrisnull and p < Jis0208Decode.len and Jis0208Decode[p] != 0:
+        let c = Jis0208Decode[p]
+        stream.append_codepoint c, oq, olen, n
       else:
         stream.handleError(oq, olen, n)
         if stream.isend: break
+        if cast[char](b) in Ascii:
+          continue # prepend (no inc i)
     elif cast[char](b) in Ascii or b == 0x80:
       stream.append_codepoint b, oq, olen, n
     elif b in 0xA1u8..0xDFu8:
@@ -640,11 +640,11 @@ proc decodeSingleByte(stream: DecoderStream, iq: var seq[uint8],
     if c in Ascii:
       stream.append_codepoint c, oq, olen, n
     else:
-      let p = map[c]
+      let p = map[cast[char](iq[i] - 0x80)]
       if p == 0u16:
         stream.handleError(oq, olen, n)
       else:
-        stream.append_codepoint cast[uint32](oq), oq, olen, n
+        stream.append_codepoint cast[uint32](p), oq, olen, n
 
 proc decodeReplacement(stream: DecoderStream, oq: ptr UncheckedArray[uint32], olen: int, n: var int) =
   if not stream.replreported:

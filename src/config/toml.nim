@@ -5,6 +5,7 @@ import strutils
 import strformat
 import unicode
 
+import utils/opt
 import utils/twtstr
 
 type
@@ -21,6 +22,7 @@ type
   SyntaxError = object of ValueError
 
   TomlParser = object
+    filename: string
     at: int
     line: int
     stream: Stream
@@ -89,10 +91,10 @@ func peek(state: TomlParser, i: int, len: int): string =
   return state.buf.substr(state.at + i, state.at + i + len)
 
 proc syntaxError(state: TomlParser, msg: string) =
-  raise newException(SyntaxError, fmt"on line {state.line}: {msg}")
+  raise newException(SyntaxError, fmt"{state.filename}({state.line}): {msg}")
 
 proc valueError(state: TomlParser, msg: string) =
-  raise newException(ValueError, fmt"on line {state.line}: {msg}")
+  raise newException(ValueError, fmt"{state.filename}({state.line}): {msg}")
 
 proc consume(state: var TomlParser): char =
   result = state.buf[state.at]
@@ -405,6 +407,7 @@ proc consumeArray(state: var TomlParser): TomlValue =
         result.ta.add(val.t)
       else:
         result.a.add(val)
+      val = nil
     else:
       if val != nil:
         state.syntaxError("missing comma")
@@ -479,27 +482,28 @@ proc consumeValue(state: var TomlParser): TomlValue =
     else:
       state.syntaxError(fmt"invalid character in value: {c}")
 
-proc parseToml*(inputStream: Stream): TomlValue =
+proc parseToml*(inputStream: Stream, filename = "<input>"): Result[TomlValue, string] =
   var state: TomlParser
   state.stream = inputStream
   state.line = 1
   state.root = TomlTable()
-
-  while state.has():
-    if state.consumeNoState():
-      let kvpair = TomlKVPair(state.node)
-      kvpair.value = state.consumeValue()
-
+  state.filename = filename
+  try:
     while state.has():
-      let c = state.consume()
-      case c
-      of '\n':
-        state.flushLine()
-        break
-      of '#':
-        state.consumeComment()
-      of '\t', ' ': discard
-      else: state.syntaxError(fmt"invalid character after value: {c}")
-  inputStream.close()
-
-  return TomlValue(vt: VALUE_TABLE, t: state.root)
+      if state.consumeNoState():
+        let kvpair = TomlKVPair(state.node)
+        kvpair.value = state.consumeValue()
+      while state.has():
+        let c = state.consume()
+        case c
+        of '\n':
+          state.flushLine()
+          break
+        of '#':
+          state.consumeComment()
+        of '\t', ' ': discard
+        else: state.syntaxError(fmt"invalid character after value: {c}")
+    inputStream.close()
+    return ok(TomlValue(vt: VALUE_TABLE, t: state.root))
+  except SyntaxError, ValueError:
+    return err(getCurrentExceptionMsg())

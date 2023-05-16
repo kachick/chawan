@@ -390,8 +390,8 @@ proc showCursor*(term: Terminal) =
   term.outfile.showCursor()
 
 func emulateOverline(term: Terminal): bool =
-  term.config.emulateoverline and FLAG_OVERLINE notin term.formatmode and
-  FLAG_UNDERLINE in term.formatmode
+  term.config.display.emulate_overline and
+    FLAG_OVERLINE notin term.formatmode and FLAG_UNDERLINE in term.formatmode
 
 proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -412,28 +412,28 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
           j += cell[].width()
 
 proc applyConfig(term: Terminal) =
-  if term.config.colormode.isSome:
-    term.colormode = term.config.colormode.get
+  if term.config.display.color_mode.isSome:
+    term.colormode = term.config.display.color_mode.get
   elif term.isatty():
     term.colormode = ANSI
     let colorterm = getEnv("COLORTERM")
     case colorterm
     of "24bit", "truecolor": term.colormode = TRUE_COLOR
-  if term.config.formatmode.isSome:
-    term.formatmode = term.config.formatmode.get
+  if term.config.display.format_mode.isSome:
+    term.formatmode = term.config.display.format_mode.get
   for fm in FormatFlags:
-    if fm in term.config.noformatmode:
+    if fm in term.config.display.no_format_mode:
       term.formatmode.excl(fm)
-  if term.isatty() and term.config.altscreen.isSome:
-    term.smcup = term.config.altscreen.get
-  term.mincontrast = term.config.mincontrast
+  if term.isatty() and term.config.display.alt_screen.isSome:
+    term.smcup = term.config.display.alt_screen.get
+  term.mincontrast = term.config.display.minimum_contrast
 
 proc outputGrid*(term: Terminal) =
-  if term.config.termreload:
+  if term.config.display.force_clear:
     term.applyConfig()
   term.outfile.write(term.resetFormat())
   let samesize = term.canvas.width == term.pcanvas.width and term.canvas.height == term.pcanvas.height
-  if term.config.forceclear or not term.cleared or not samesize:
+  if term.config.display.force_clear or not term.cleared or not samesize:
     term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true
   else:

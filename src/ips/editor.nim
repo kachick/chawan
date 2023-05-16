@@ -30,7 +30,7 @@ func formatEditorName(editor, file: string, line: int): string =
     result &= file
 
 proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
-  var editor = config.editor
+  var editor = config.external.editor
   if editor == "":
     editor = getEnv("EDITOR")
     if editor == "":
@@ -43,7 +43,7 @@ proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
 var tmpf_seq: int
 proc openInEditor*(term: Terminal, config: Config, input: var string): bool =
   try:
-    let tmpdir = config.tmpdir
+    let tmpdir = config.external.tmpdir
     if not dirExists(tmpdir):
       createDir(tmpdir)
     var tmpf = tmpdir / "chatmp" & $tmpf_seq

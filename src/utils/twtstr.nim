@@ -116,6 +116,12 @@ func toScreamingSnakeCase*(str: string): string = # input is camel case
     else:
       result &= c.toUpperAscii()
 
+func snakeToKebabCase*(str: string): string =
+  result = str
+  for c in result.mitems:
+    if c == '_':
+      c = '-'
+
 func isAscii*(r: Rune): bool =
   return cast[uint32](r) < 128
 
