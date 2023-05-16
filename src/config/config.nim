@@ -154,7 +154,7 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       scripting: sc.scripting,
       sharecookiejar: sc.sharecookiejar,
       refererfrom: sc.refererfrom,
-      charsets: sc.document_charset
+      document_charset: sc.document_charset
     )
     if sc.url.isSome:
       conf.url = compileRegex(sc.url.get, 0)
