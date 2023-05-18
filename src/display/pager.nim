@@ -318,6 +318,7 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
       ostream.write(line.str & "\n")
     else:
       var x = 0
+      var w = 0
       var i = 0
       var s = ""
       for f in line.formats:
@@ -327,9 +328,10 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
           fastRuneAt(line.str, i, r)
           outstr &= r
           x += r.width()
-        s &= outstr
+        s &= pager.term.processOutputString(outstr, w)
         s &= pager.term.processFormat(format, f.format)
-      s &= line.str.substr(i) & pager.term.processFormat(format, newFormat()) & "\n"
+      s &= pager.term.processOutputString(line.str.substr(i), w)
+      s &= pager.term.processFormat(format, newFormat()) & "\n"
       ostream.write(s))
   ostream.flush()
 

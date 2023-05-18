@@ -3,6 +3,8 @@ import os
 import strutils
 import tables
 
+import utils/twtstr
+
 type Charset* = enum
   CHARSET_UNKNOWN
   CHARSET_UTF_8 = "UTF-8"
@@ -314,8 +316,31 @@ const CharsetMap = {
   "x-user-defined": CHARSET_X_USER_DEFINED
 }.toTable()
 
+func normalizeLocale(s: string): string =
+  for i in 0 ..< s.len:
+    if cast[uint8](s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
+      result &= s[i].toLowerAscii()
+
+const NormalizedCharsetMap = (func(): Table[string, Charset] =
+  for k, v in CharsetMap:
+    result[k.normalizeLocale()] = v)()
+
+const DefaultCharset* = CHARSET_UTF_8
+
 proc getCharset*(s: string): Charset =
   return CharsetMap.getOrDefault(s.strip().toLower(), CHARSET_UNKNOWN)
+
+proc getLocaleCharset*(s: string): Charset =
+  let ss = s.after('.')
+  if ss != "":
+    return NormalizedCharsetMap.getOrDefault(ss.normalizeLocale(),
+      CHARSET_UNKNOWN)
+  # We could try to guess the charset based on the language here, like w3m
+  # does.
+  # However, these days it is more likely for any system to be using UTF-8
+  # than any other charset, irrespective of the language. So we just assume
+  # UTF-8.
+  return DefaultCharset
 
 iterator mappairs(path: string): tuple[a, b: int] =
   let s = staticRead(path)
@@ -372,23 +397,21 @@ func loadGb18030Ranges(path: string): tuple[
     result.encode.add((uint16(n), uint16(index)))
   result.encode.sort()
 
+type UCS16x16* = tuple[ucs, p: uint16]
+
 func loadCharsetMap16(path: string, len: static uint16): tuple[
         decode: array[len, uint16],
-        encode: seq[
-          tuple[
-            ucs: uint16,
-            p: uint16 ]]] =
+        encode: seq[UCS16x16]] =
   for index, n in mappairs("res/map" / path):
     result.decode[uint16(index)] = uint16(n)
     result.encode.add((uint16(n), uint16(index)))
   result.encode.sort()
 
+type UCS32x16* = tuple[ucs: uint32, p: uint16]
+
 func loadBig5Map(path: string, offset: static uint16): tuple[
         decode: array[19782u16 - offset, uint32], # ouch (+75KB...)
-        encode: seq[
-          tuple[
-            ucs: uint32,
-            p: uint16 ]]] =
+        encode: seq[UCS32x16]] =
   for index, n in mappairs("res/map" / path):
     result.decode[uint16(index) - offset] = uint32(n)
     result.encode.add((uint32(n), uint16(index)))

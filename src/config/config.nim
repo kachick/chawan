@@ -67,6 +67,7 @@ type
     wrap*: bool
 
   EncodingConfig = object
+    display_charset*: Option[Charset]
     document_charset*: seq[Charset]
 
   ExternalConfig = object
@@ -292,7 +293,6 @@ proc parseConfigValue(x: var Option[ColorMode], v: TomlValue, k: string)
 proc parseConfigValue(x: var Option[FormatMode], v: TomlValue, k: string)
 proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string)
 proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string)
-proc parseConfigValue(x: var Option[bool], v: TomlValue, k: string)
 proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
@@ -413,23 +413,13 @@ proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
         "' for key " & k)
   x = c.get
 
-proc parseConfigValue(x: var Option[bool], v: TomlValue, k: string) =
-  typeCheck(v, {VALUE_STRING, VALUE_BOOLEAN}, k)
-  if v.vt == VALUE_STRING:
-    if v.s == "auto":
-      x = none(bool)
-    else:
-      raise newException(ValueError, "invalid value '" & v.s &
-        "' for key " & k)
+proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string) =
+  if v.vt == VALUE_STRING and v.s == "auto":
+    x = none(T)
   else:
-    var y: bool
+    var y: T
     parseConfigValue(y, v, k)
     x = some(y)
-
-proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string) =
-  var y: T
-  parseConfigValue(y, v, k)
-  x = some(y)
 
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
   typeCheck(v, VALUE_TABLE, k)

@@ -8,8 +8,7 @@ import utils/twtstr
 # DecoderStream decodes any encoding to valid utf-32.
 type
   DecoderErrorMode* = enum
-    DECODER_ERROR_MODE_FATAL, DECODER_ERROR_MODE_REPLACEMENT,
-    DECODER_ERROR_MODE_HTML
+    DECODER_ERROR_MODE_FATAL, DECODER_ERROR_MODE_REPLACEMENT
 
   ISO2022JPState = enum
     STATE_ASCII, STATE_ROMAN, STATE_KATAKANA, STATE_LEAD_BYTE,
@@ -27,6 +26,7 @@ type
     c: uint32
     case charset: Charset
     of CHARSET_UTF_8:
+      u8c: uint32
       u8needed: int
       u8seen: int
       u8bounds: Slice[uint8]
@@ -83,22 +83,11 @@ proc handleError(stream: DecoderStream, oq: ptr UncheckedArray[uint32], olen: in
   of DECODER_ERROR_MODE_FATAL:
     stream.isend = true
     stream.failed = true
-  of DECODER_ERROR_MODE_HTML:
-    if stream.charset == CHARSET_UTF_8:
-      # "html" mode is handled as "replacement" for utf-8.
-      stream.append_codepoint 0xFFFD, oq, olen, n
-    else:
-      stream.append_codepoint '&', oq, olen, n
-      stream.append_codepoint '#', oq, olen, n
-      while stream.c > 0:
-        stream.append_codepoint cast[char](0x30 + stream.c mod 10), oq, olen, n
-        stream.c = stream.c div 10
-      stream.append_codepoint ';', oq, olen, n
   of DECODER_ERROR_MODE_REPLACEMENT:
     stream.append_codepoint 0xFFFD, oq, olen, n
 
 proc decodeUTF8(stream: DecoderStream, iq: var seq[uint8], oq: ptr UncheckedArray[uint32], ilen, olen: int, n: var int) =
-  var c = stream.c
+  var c = stream.u8c
   var needed = stream.u8needed
   var seen = stream.u8seen
   var bounds = stream.u8bounds
@@ -156,7 +145,7 @@ proc decodeUTF8(stream: DecoderStream, iq: var seq[uint8], oq: ptr UncheckedArra
       needed = 0
       seen = 0
     inc i
-  stream.c = c
+  stream.u8c = c
   stream.u8bounds = bounds
   stream.u8seen = seen
   stream.u8needed = needed

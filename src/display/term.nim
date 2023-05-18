@@ -1,6 +1,7 @@
 import math
 import options
 import os
+import streams
 import tables
 import terminal
 import unicode
@@ -8,6 +9,8 @@ import unicode
 import bindings/termcap
 import buffer/cell
 import config/config
+import data/charset
+import encoding/encoderstream
 import io/window
 import utils/twtstr
 import types/color
@@ -39,6 +42,7 @@ type
 
   Terminal* = ref TerminalObj
   TerminalObj = object
+    cs: Charset
     config: Config
     infile: File
     outfile: File
@@ -320,18 +324,37 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
   term.canvas = newFixedGrid(attrs.width, attrs.height)
   term.cleared = false
 
-proc processOutputString(term: Terminal, str: string, w: var int): string =
+proc processOutputString*(term: Terminal, str: string, w: var int): string =
   if str.validateUtf8() != -1:
     return "?"
-  for r in str.runes():
-    # twidth wouldn't work here, the view may start at the nth character.
-    # pager must ensure tabs are converted beforehand.
-    let tw = r.width()
-    if r.isControlChar():
-      result &= "^" & getControlLetter(char(r))
-    elif tw != 0:
-      result &= r
-    w += tw
+  if term.cs != CHARSET_UTF_8:
+    #TODO: This is incredibly inefficient.
+    var u32buf = ""
+    for r in str.runes():
+      let tw = r.width()
+      if r.isControlChar():
+        u32buf &= char(0) & char(0) & char(0) & "^" &
+          char(0) & char(0) & char(0) & getControlLetter(char(r))
+      elif tw != 0:
+        let ol = u32buf.len
+        u32buf.setLen(ol + sizeof(uint32))
+        var u32 = cast[uint32](r)
+        copyMem(addr u32buf[ol], addr u32, sizeof(u32))
+      w += tw
+    let ss = newStringStream(u32buf)
+    let encoder = newEncoderStream(ss, cs = term.cs,
+      errormode = ENCODER_ERROR_MODE_FATAL)
+    result &= encoder.readAll()
+  else:
+    for r in str.runes():
+      # twidth wouldn't work here, the view may start at the nth character.
+      # pager must ensure tabs are converted beforehand.
+      let tw = r.width()
+      if r.isControlChar():
+        result &= "^" & getControlLetter(char(r))
+      elif tw != 0:
+        result &= r
+      w += tw
 
 proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()
@@ -427,6 +450,18 @@ proc applyConfig(term: Terminal) =
   if term.isatty() and term.config.display.alt_screen.isSome:
     term.smcup = term.config.display.alt_screen.get
   term.mincontrast = term.config.display.minimum_contrast
+  if term.config.encoding.display_charset.isSome:
+    term.cs = term.config.encoding.display_charset.get
+  else:
+    term.cs = DefaultCharset
+    for s in ["LC_ALL", "LC_CTYPE", "LANG"]:
+      let env = getEnv(s)
+      if env == "":
+        continue
+      let cs = getLocaleCharset(env)
+      if cs != CHARSET_UNKNOWN:
+        term.cs = cs
+        break
 
 proc outputGrid*(term: Terminal) =
   if term.config.display.force_clear:

@@ -2174,50 +2174,49 @@ proc finishParsing(parser: var HTML5Parser) =
     script.execute()
   #TODO events
 
+proc bomSniff(inputStream: Stream): Charset =
+  # bom sniff
+  const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
+  const bebom = char(0xFE) & char(0xFF)
+  const lebom = char(0xFF) & char(0xFE)
+  var bom = inputStream.readStr(2)
+  if bom == bebom:
+    return CHARSET_UTF_16_BE
+  elif bom == lebom:
+    return CHARSET_UTF_16_LE
+  else:
+    bom &= inputStream.readChar()
+    if bom == u8bom:
+      return CHARSET_UTF_8
+    else:
+      inputStream.setPosition(0)
+
 proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
-    fallbackcs = CHARSET_UTF_8, window: Window = nil,
-    url: URL = nil, canReinterpret = true): Document =
+    fallbackcs = DefaultCharset, window: Window = nil, url: URL = nil,
+    canReinterpret = true): Document =
   var charsetStack: seq[Charset]
   for i in countdown(charsets.high, 0):
     charsetStack.add(charsets[i])
   var canReinterpret = canReinterpret
+  var confidence: CharsetConfidence
+  let scs = inputStream.bomSniff()
+  if scs != CHARSET_UNKNOWN:
+    charsetStack.add(scs)
+    confidence = CONFIDENCE_CERTAIN
+  elif charsetStack.len == 0:
+    charsetStack.add(fallbackcs)
   while true:
     var parser: HTML5Parser
-    var bom: string
-    let islastcs = charsetStack.len == 0
-    if not islastcs:
-      parser.charset = charsetStack.pop()
-      if not canReinterpret:
-        parser.confidence = CONFIDENCE_CERTAIN
-    else:
-      # bom sniff
-      const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
-      const bebom = char(0xFE) & char(0xFF)
-      const lebom = char(0xFF) & char(0xFE)
-      bom = inputStream.readStr(2)
-      if bom == bebom:
-        parser.charset = CHARSET_UTF_16_BE
-        parser.confidence = CONFIDENCE_CERTAIN
-        bom = ""
-      elif bom == lebom:
-        parser.charset = CHARSET_UTF_16_LE
-        parser.confidence = CONFIDENCE_CERTAIN
-        bom = ""
-      else:
-        bom &= inputStream.readChar()
-        if bom == u8bom:
-          parser.charset = CHARSET_UTF_8
-          parser.confidence = CONFIDENCE_CERTAIN
-          bom = ""
-        else:
-          parser.charset = fallbackcs
-    let em = if islastcs or not canReinterpret:
+    parser.confidence = confidence
+    confidence = CONFIDENCE_TENTATIVE
+    parser.charset = charsetStack.pop()
+    if not canReinterpret:
+      parser.confidence = CONFIDENCE_CERTAIN
+    let em = if charsetStack.len == 0 or not canReinterpret:
       DECODER_ERROR_MODE_REPLACEMENT
     else:
       DECODER_ERROR_MODE_FATAL
     let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
-    for c in bom:
-      decoder.prepend(cast[uint32](c))
     parser.document = newDocument()
     parser.document.contentType = "text/html"
     if window != nil:

@@ -35,7 +35,8 @@ Options:
     -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
     -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
     -T, --type <type>           Specify content mime type
-    -I, --input-charset <name>  Specify document charset
+    -I, --input-charset <enc>   Specify document charset
+    -O, --display-charset <enc> Specify display charset
     -M, --monochrome            Set color-mode to 'monochrome'
     -V, --visual                Visual startup mode
     -r, --run <script/file>     Run passed script or file
@@ -82,6 +83,16 @@ while i < params.len:
         stderr.write("Unknown charset " & params[i] & "\n")
         quit(1)
       cs = some(c)
+    else:
+      help(1)
+  of "-O", "--output-charset":
+    inc i
+    if i < params.len:
+      let c = getCharset(params[i])
+      if c == CHARSET_UNKNOWN:
+        stderr.write("Unknown charset " & params[i] & "\n")
+        quit(1)
+      conf.encoding.display_charset = some(c)
     else:
       help(1)
   of "-":

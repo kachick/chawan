@@ -21,6 +21,8 @@ proc newStreamRenderer*(stream: Stream, charsets: seq[Charset]): StreamRenderer 
   result.ansiparser.state = PARSE_DONE
   for i in countdown(charsets.high, 0):
     result.charsets.add(charsets[i])
+  if charsets.len == 0:
+    result.charsets = @[DefaultCharset]
   let cs = result.charsets.pop()
   let em = if charsets.len > 0:
     DECODER_ERROR_MODE_FATAL
