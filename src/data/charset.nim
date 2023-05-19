@@ -407,6 +407,12 @@ func loadCharsetMap16(path: string, len: static uint16): tuple[
     result.encode.add((uint16(n), uint16(index)))
   result.encode.sort()
 
+func loadCharsetMapSJIS(path: string): seq[UCS16x16] =
+  for index, n in mappairs("res/map" / path):
+    if n notin 8272..8835:
+      result.add((uint16(n), uint16(index)))
+  result.sort()
+
 type UCS32x16* = tuple[ucs: uint32, p: uint16]
 
 func loadBig5Map(path: string, offset: static uint16): tuple[
@@ -451,6 +457,7 @@ const (Gb18030Decode*, Gb18030Encode*) = loadCharsetMap16("index-gb18030.txt", l
 const Big5DecodeOffset* = 942
 const (Big5Decode*, Big5Encode*) = loadBig5Map("index-big5.txt", offset = Big5DecodeOffset)
 const (Jis0208Decode*, Jis0208Encode*) = loadCharsetMap16("index-jis0208.txt", len = 11104)
+const ShiftJISEncode* = loadCharsetMapSJIS("index-jis0208.txt")
 const (Jis0212Decode*, Jis0212Encode*) = loadCharsetMap16("index-jis0212.txt", len = 7211)
 const ISO2022JPKatakanaEncode* = loadCharsetMap8Encode("index-iso-2022-jp-katakana.txt")
 const (EUCKRDecode*, EUCKREncode*) = loadCharsetMap16("index-euc-kr.txt", len = 23750)

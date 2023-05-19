@@ -24,7 +24,10 @@ type
     bi: int
     buflen: int
     errc: uint32
-    charset: Charset
+    case charset: Charset
+    of CHARSET_ISO_2022_JP:
+      iso2022jpstate: ISO2022JPState
+    else: discard
 
 template append_byte_buf(stream: EncoderStream, c: uint8) =
   if stream.bi >= stream.buflen:
@@ -52,6 +55,14 @@ template append_byte(stream: EncoderStream, c: uint32,
 template append_byte(stream: EncoderStream, c: int,
     oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
   stream.append_byte cast[uint8](c), oq, olen, n
+
+func findPair[U, V](map: seq[(U, V)], c: uint32): int =
+  when not (typeof(c) is U):
+    if c > cast[typeof(c)](high(U)):
+      return -1
+  return binarySearch(map, cast[U](c),
+    proc(a: tuple[ucs: U, val: V], b: U): int =
+      cmp(a.ucs, b))
 
 proc handleError(stream: EncoderStream, oq: ptr UncheckedArray[uint8],
     olen: int, n: var int, c: uint32) =
@@ -130,14 +141,11 @@ proc encodeSingleByte(stream: EncoderStream, iq: var seq[uint32],
     if c < 0x80:
       stream.append_byte cast[uint8](c), oq, olen, n
       continue
-    if c <= 0xFFFF:
-      let j = binarySearch(map, cast[uint16](c),
-        proc(a: tuple[ucs: uint16, val: char], b: uint16): int =
-          cmp(a.ucs, b))
-      if j != -1:
-        stream.append_byte cast[uint8](map[j].val) + 0x80, oq, olen, n
-        continue
-    stream.handleError(oq, olen, n, c)
+    let j = findPair(map, c)
+    if j != -1:
+      stream.append_byte cast[uint8](map[j].val) + 0x80, oq, olen, n
+    else:
+      stream.handleError(oq, olen, n, c)
 
 proc encodeXUserDefined(stream: EncoderStream, iq: var seq[uint32],
     oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
@@ -159,9 +167,7 @@ proc encodeGb18030(stream: EncoderStream, iq: var seq[uint32],
     if isGBK and c == 0x20AC:
       stream.append_byte 0x80, oq, olen, n
       continue
-    let i = if c > 0xFFFF: -1 else: binarySearch(Gb18030Encode, cast[uint16](c),
-      proc(a: UCS16x16, b: uint16): int =
-        cmp(a.ucs, b))
+    let i = if c > 0xFFFF: -1 else: findPair(Gb18030Encode, c)
     if i != -1:
       let p = Gb18030Encode[i].p
       let lead = p div 190 + 0x81
@@ -191,9 +197,7 @@ proc encodeBig5(stream: EncoderStream, iq: var seq[uint32],
     if c < 0x80:
       stream.append_byte c, oq, olen, n
       continue
-    let i = binarySearch(Big5Encode, cast[uint16](c),
-      proc(a: UCS32x16, b: uint16): int =
-        cmp(a.ucs, b))
+    let i = findPair(Big5Encode, c)
     if i == -1:
       stream.handleError(oq, olen, n, c)
       continue
@@ -221,13 +225,116 @@ proc encodeEUCJP(stream: EncoderStream, iq: var seq[uint32],
         0xFF0Du32
       else:
         c
-      let i = binarySearch(Jis0208Encode, cast[uint16](c),
-        proc(a: UCS16x16, b: uint16): int =
-          cmp(a.ucs, b))
+      let i = findPair(Jis0208Encode, c)
       if i != -1:
         let p = Jis0208Encode[i].p
         let lead = p div 94 + 0xA1
         let trail = p mod 94 + 0xA1
+        stream.append_byte lead, oq, olen, n
+        stream.append_byte trail, oq, olen, n
+      else:
+        stream.handleError(oq, olen, n, c)
+
+proc encodeISO2022JP(stream: EncoderStream, iq: var seq[uint32],
+    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+  var state = stream.iso2022jpstate
+  var i = 0
+  while i < ilen:
+    let c = iq[i]
+    if state in {STATE_ASCII, STATE_ROMAN} and
+        c in [0x0Eu32, 0x0Fu32, 0x1Bu32]:
+      stream.handleError(oq, olen, n, 0xFFFD)
+    elif state == STATE_ASCII and c < 0x80 and c notin [0x5Cu32, 0x7Eu32] or
+        c == 0xA5 or c == 0x203E:
+      if c < 0x80:
+        stream.append_byte c, oq, olen, n
+      elif c == 0xA5:
+        stream.append_byte 0xA5, oq, olen, n
+      elif c == 0x203E:
+        stream.append_byte 0x7E, oq, olen, n
+    elif c < 0x80 and state != STATE_ASCII:
+      state = STATE_ASCII
+      stream.append_byte 0x1B, oq, olen, n
+      stream.append_byte 0x28, oq, olen, n
+      stream.append_byte 0x42, oq, olen, n
+      # prepend
+      continue
+    elif c == 0xA5 or c == 0x203E and state != STATE_ROMAN:
+      state = STATE_ROMAN
+      stream.append_byte 0x1B, oq, olen, n
+      stream.append_byte 0x28, oq, olen, n
+      stream.append_byte 0x4A, oq, olen, n
+      # prepend
+      continue
+    else:
+      var c = c
+      if c == 0x2212:
+        c = 0xFF0D
+      if c in 0xFF61u32..0xFF9Fu32:
+        let j = findPair(ISO2022JPKatakanaEncode, c - 0xFF61)
+        c = ISO2022JPKatakanaEncode[j].ucs
+      let j = findPair(Jis0208Encode, c)
+      if j == -1:
+        if state == STATE_JIS0208:
+          state = STATE_ASCII
+          stream.append_byte 0x1B, oq, olen, n
+          stream.append_byte 0x28, oq, olen, n
+          stream.append_byte 0x42, oq, olen, n
+          # prepend
+          continue
+        stream.handleError(oq, olen, n, c)
+      else:
+        let p = Jis0208Encode[j].p
+        if state != STATE_JIS0208:
+          state = STATE_JIS0208
+          stream.append_byte 0x1B, oq, olen, n
+          stream.append_byte 0x24, oq, olen, n
+          stream.append_byte 0x42, oq, olen, n
+          # prepend
+          continue
+        let lead = p div 94 + 0x21
+        let trail = p mod 94 + 0x21
+        stream.append_byte lead, oq, olen, n
+        stream.append_byte trail, oq, olen, n
+    inc i
+  stream.iso2022jpstate = state
+
+proc encodeShiftJIS(stream: EncoderStream, iq: var seq[uint32],
+    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+  for c in iq:
+    if c <= 0x80:
+      stream.append_byte c, oq, olen, n
+    elif c == 0xA5:
+      stream.append_byte 0x5C, oq, olen, n
+    elif c == 0x203E:
+      stream.append_byte 0x7E, oq, olen, n
+    elif c in 0xFF61u32..0xFF9Fu32:
+      stream.append_byte c - 0xFF61 + 0xA1, oq, olen, n
+    else:
+      let c = if c == 0x2212: 0xFF0Du32 else: c
+      let j = findPair(ShiftJISEncode, c)
+      if j == -1:
+        stream.handleError(oq, olen, n, c)
+      else:
+        let p = ShiftJISEncode[j].p
+        let lead = p div 188
+        let lead_offset = if lead < 0x1F: 0x81u16 else: 0xC1u16
+        let trail = p mod 188
+        let offset = if trail < 0x3F: 0x40u16 else: 0x41u16
+        stream.append_byte lead + lead_offset, oq, olen, n
+        stream.append_byte trail + offset, oq, olen, n
+
+proc encodeEUCKR(stream: EncoderStream, iq: var seq[uint32],
+    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+  for c in iq:
+    if c < 0x80:
+      stream.append_byte c, oq, olen, n
+    else:
+      let i = findPair(Jis0208Encode, c)
+      if i != -1:
+        let p = Jis0208Encode[i].p
+        let lead = p div 190 + 0x81
+        let trail = p mod 190 + 0x41
         stream.append_byte lead, oq, olen, n
         stream.append_byte trail, oq, olen, n
       else:
@@ -297,6 +404,11 @@ proc checkEnd(stream: EncoderStream, oq: ptr UncheckedArray[uint8], olen: int,
   if not stream.isend and stream.bufs.len == 1 and
       stream.bs >= stream.bi and stream.source.atEnd:
     stream.isend = true
+    if stream.charset == CHARSET_ISO_2022_JP:
+      if stream.iso2022jpstate != STATE_ASCII:
+        stream.append_byte 0x1B, oq, olen, n
+        stream.append_byte 0x28, oq, olen, n
+        stream.append_byte 0x42, oq, olen, n
 
 const ReadSize = 4096
 proc readData*(stream: EncoderStream, buffer: pointer, olen: int): int =
@@ -313,6 +425,7 @@ proc readData*(stream: EncoderStream, buffer: pointer, olen: int): int =
   let ilen0 = stream.source.readData(cast[pointer](addr iq[0]), ReadSize)
   assert ilen0 mod sizeof(uint32) == 0 #TODO what to do if false?
   let ilen = ilen0 div sizeof(uint32)
+  iq.setLen(ilen)
   case stream.charset
   of CHARSET_UTF_8: stream.encodeUTF8(iq, oq, ilen, olen, result)
   of CHARSET_IBM866: stream.encodeSingleByte(iq, oq, ilen, olen, result, IBM866Encode)
@@ -347,15 +460,12 @@ proc readData*(stream: EncoderStream, buffer: pointer, olen: int): int =
   of CHARSET_GB18030: stream.encodeGb18030(iq, oq, ilen, olen, result)
   of CHARSET_BIG5: stream.encodeBig5(iq, oq, ilen, olen, result)
   of CHARSET_EUC_JP: stream.encodeEUCJP(iq, oq, ilen, olen, result)
-#  of CHARSET_ISO_2022_JP: stream.decodeISO2022JP(iq, oq, ilen, olen, result)
-#  of CHARSET_SHIFT_JIS: stream.decodeShiftJIS(iq, oq, ilen, olen, result)
-#  of CHARSET_EUC_KR: stream.decodeEUCKR(iq, oq, ilen, olen, result)
-#  of CHARSET_REPLACEMENT: stream.decodeReplacement(oq, olen, result)
-#  of CHARSET_UTF_16_LE: stream.decodeUTF16LE(iq, oq, ilen, olen, result)
-#  of CHARSET_UTF_16_BE: stream.decodeUTF16BE(iq, oq, ilen, olen, result)
+  of CHARSET_ISO_2022_JP: stream.encodeISO2022JP(iq, oq, ilen, olen, result)
+  of CHARSET_SHIFT_JIS: stream.encodeShiftJIS(iq, oq, ilen, olen, result)
+  of CHARSET_EUC_KR: stream.encodeEUCKR(iq, oq, ilen, olen, result)
   of CHARSET_X_USER_DEFINED: stream.encodeXUserDefined(iq, oq, ilen, olen, result)
   of CHARSET_UNKNOWN: assert false, "Somebody forgot to set the character set here"
-  else: assert false, "TODO"
+  else: discard
   stream.checkEnd(oq, olen, result)
 
 # Returns the number of bytes read.
@@ -383,6 +493,7 @@ proc newEncoderStream*(source: Stream, cs = CHARSET_UTF_8, buflen = 4096,
     buflen: buflen,
     errormode: errormode
   )
+  doAssert cs notin {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE, CHARSET_REPLACEMENT}
   when nimvm:
     result.bufs = @[newSeq[uint8](buflen)]
   else:
