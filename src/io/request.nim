@@ -79,6 +79,13 @@ type
   MimeData* = object
     content*: seq[MimePart]
 
+proc Request_url(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
+  let op = getOpaque0(this)
+  if unlikely(not ctx.isInstanceOf(this, "Request") or op == nil):
+    return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Request")
+  let request = cast[Request](op)
+  return toJS(ctx, $request.url)
+
 iterator pairs*(headers: HeaderList): (string, string) =
   for k, vs in headers.table:
     for v in vs:
@@ -229,7 +236,7 @@ proc text*(response: Response): string {.jsfunc.} =
 proc readAll*(response: Response): string {.jsfunc.} =
   return response.text()
 
-proc Response_json*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
+proc Response_json(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
   let op = getOpaque0(this)
   if unlikely(not ctx.isInstanceOf(this, "Response") or op == nil):
     return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Response")
@@ -245,6 +252,6 @@ func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
     return INCLUDE
 
 proc addRequestModule*(ctx: JSContext) =
-  ctx.registerType(Request)
+  ctx.registerType(Request, extra_getset = [TabGetSet(name: "url", get: Request_url)])
   ctx.registerType(Response, extra_funcs = [TabFunc(name: "json", fun: Response_json)])
   ctx.registerType(HeaderList)
