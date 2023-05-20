@@ -16,7 +16,7 @@ release: $(OBJDIR)
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release -d:strip -d:lto $(FILES)
 
 release0: $(OBJDIR)
-	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release --stacktrace:on $(FILES)
 
 profile: $(OBJDIR)
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/profile --profiler:on --stacktrace:on -d:profile $(FILES)
