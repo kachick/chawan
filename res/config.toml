@@ -8,7 +8,7 @@ wrap = true
 
 [encoding]
 document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
-#display-charset = "auto" #TODO
+display-charset = "auto"
 #system-charset = "auto" #TODO
 
 [external]
