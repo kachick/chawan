@@ -32,7 +32,9 @@ type
     ostream: Stream
     children: seq[(Pid, Pid)]
 
-proc newFileLoader*(forkserver: ForkServer, defaultHeaders: HeaderList = nil, filter = newURLFilter(default = true), cookiejar: CookieJar = nil): FileLoader =
+proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers = nil,
+    filter = newURLFilter(default = true),
+    cookiejar: CookieJar = nil): FileLoader =
   new(result)
   forkserver.ostream.swrite(FORK_LOADER)
   var defaultHeaders = defaultHeaders

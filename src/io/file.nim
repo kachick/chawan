@@ -10,7 +10,7 @@ import types/url
 proc loadDir(url: URL, path: string, ostream: Stream) =
   ostream.swrite(0)
   ostream.swrite(200) # ok
-  ostream.swrite(newHeaderList({"Content-Type": "text/html"}.toTable()))
+  ostream.swrite(newHeaders({"Content-Type": "text/html"}.toTable()))
   ostream.write("""
 <HTML>
 <HEAD>
@@ -48,7 +48,7 @@ proc loadDir(url: URL, path: string, ostream: Stream) =
 proc loadSymlink(path: string, ostream: Stream) =
   ostream.swrite(0)
   ostream.swrite(200) # ok
-  ostream.swrite(newHeaderList({"Content-Type": "text/html"}.toTable()))
+  ostream.swrite(newHeaders({"Content-Type": "text/html"}.toTable()))
   let sl = expandSymlink(path)
   ostream.write("""
 <HTML>
@@ -79,7 +79,7 @@ proc loadFile*(url: URL, ostream: Stream) =
   else:
     ostream.swrite(0)
     ostream.swrite(200) # ok
-    ostream.swrite(newHeaderList())
+    ostream.swrite(newHeaders())
     while not istream.atEnd:
       const bufferSize = 4096
       var buffer {.noinit.}: array[bufferSize, char]

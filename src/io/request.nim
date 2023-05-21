@@ -1,5 +1,6 @@
 import options
 import streams
+import strutils
 import tables
 
 import bindings/quickjs
@@ -20,32 +21,57 @@ type
     HTTP_TRACE = "TRACE"
 
   RequestMode* = enum
-    NO_CORS, SAME_ORIGIN, CORS, NAVIGATE, WEBSOCKET
+    NO_CORS = "no-cors"
+    SAME_ORIGIN = "same-origin"
+    CORS = "cors"
+    NAVIGATE = "navigate"
+    WEBSOCKET = "websocket"
 
   RequestDestination* = enum
-    NO_DESTINATION, AUDIO, AUDIOWORKLET, DOCUMENT, EMBED, FONT, FRAME, IFRAME,
-    IMAGE, MANIFEST, OBJECT, PAINTWORKLET, REPORT, SCRIPT, SERVICEWORKER,
-    SHAREDWORKER, STYLE, TRACK, WORKER, XSLT
+    NO_DESTINATION = ""
+    AUDIO = "audio"
+    AUDIOWORKLET = "audioworklet"
+    DOCUMENT = "document"
+    EMBED = "embed"
+    FONT = "font"
+    FRAME = "frame"
+    IFRAME = "iframe"
+    IMAGE = "image"
+    MANIFEST = "manifest"
+    OBJECT = "object"
+    PAINTWORKLET = "paintworklet"
+    REPORT = "report"
+    SCRIPT = "script"
+    SERVICEWORKER = "serviceworker"
+    SHAREDWORKER = "sharedworker"
+    STYLE = "style"
+    TRACK = "track"
+    WORKER = "worker"
+    XSLT = "xslt"
 
   CredentialsMode* = enum
-    SAME_ORIGIN, OMIT, INCLUDE
+    SAME_ORIGIN = "same-origin"
+    OMIT = "omit"
+    INCLUDE = "include"
 
   CORSAttribute* = enum
-    NO_CORS, ANONYMOUS, USE_CREDENTIALS
+    NO_CORS = "no-cors"
+    ANONYMOUS = "anonymous"
+    USE_CREDENTIALS = "use-credentials"
 
 type
   Request* = ref RequestObj
   RequestObj* = object
     httpmethod*: HttpMethod
     url*: Url
-    headers*: HeaderList
+    headers* {.jsget.}: Headers
     body*: Option[string]
     multipart*: Option[MimeData]
     referer*: URL
-    mode*: RequestMode
-    destination*: RequestDestination
-    credentialsMode*: CredentialsMode
-    proxy*: URL #TODO: this should definitely be a different API.
+    mode* {.jsget.}: RequestMode
+    destination* {.jsget.}: RequestDestination
+    credentialsMode* {.jsget.}: CredentialsMode
+    proxy*: URL #TODO do something with this
 
   Response* = ref object
     body*: Stream
@@ -53,7 +79,7 @@ type
     res* {.jsget.}: int
     contenttype* {.jsget.}: string
     status* {.jsget.}: int
-    headers* {.jsget.}: HeaderList
+    headers* {.jsget.}: Headers
     redirect*: Request
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
@@ -63,7 +89,7 @@ type
     buf: string
     isend: bool
 
-  HeaderList* = ref object
+  Headers* = ref object
     table* {.jsget.}: Table[string, seq[string]]
 
 # Originally from the stdlib
@@ -86,7 +112,14 @@ proc Request_url(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} 
   let request = cast[Request](op)
   return toJS(ctx, $request.url)
 
-iterator pairs*(headers: HeaderList): (string, string) =
+proc Request_referrer(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
+  let op = getOpaque0(this)
+  if unlikely(not ctx.isInstanceOf(this, "Request") or op == nil):
+    return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Request")
+  let request = cast[Request](op)
+  return toJS(ctx, $request.referer)
+
+iterator pairs*(headers: Headers): (string, string) =
   for k, vs in headers.table:
     for v in vs:
       yield (k, v)
@@ -147,10 +180,30 @@ proc newReadableStream*(isource: Stream): ReadableStream =
   else:
     result.isource.readStr(len, result.buf)
 
-func newHeaderList*(): HeaderList =
-  new(result)
+proc fill(headers: Headers, ctx: JSContext, val: JSValue) =
+  if isSequence(ctx, val):
+    let x = fromJS[seq[(string, string)]](ctx, val)
+    if x.isSome:
+      for (k, v) in x.get:
+        if k in headers.table:
+          headers.table[k].add(v)
+        else:
+          headers.table[k] = @[v]
+  else:
+    let x = fromJS[Table[string, string]](ctx, val)
+    if x.isSome:
+      for k, v in x.get:
+        if k in headers.table:
+          headers.table[k].add(v)
+        else:
+          headers.table[k] = @[v]
 
-func newHeaderList*(table: Table[string, string]): HeaderList =
+func newHeaders*(obj = none(JSObject)): Headers {.jsctor.} =
+  new(result)
+  if obj.isSome:
+    result.fill(obj.get.ctx, obj.get.val)
+
+func newHeaders*(table: Table[string, string]): Headers =
   new(result)
   for k, v in table:
     let k = k.toHeaderCase()
@@ -159,7 +212,7 @@ func newHeaderList*(table: Table[string, string]): HeaderList =
     else:
       result.table[k] = @[v]
 
-func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
+func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
                  body = none(string), # multipart = none(MimeData),
                  mode = RequestMode.NO_CORS,
                  credentialsMode = CredentialsMode.SAME_ORIGIN,
@@ -179,8 +232,8 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaderList(),
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers: seq[(string, string)] = @[],
                  body = none(string), # multipart = none(MimeData), TODO TODO TODO multipart
-                 mode = RequestMode.NO_CORS, proxy: URL = nil): Request {.jsctor.} =
-  let hl = newHeaderList()
+                 mode = RequestMode.NO_CORS, proxy: URL = nil): Request =
+  let hl = newHeaders()
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
@@ -198,20 +251,47 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
   else: CredentialsMode.INCLUDE
   return newRequest(url, destination = destination, mode = mode, credentialsMode = credentialsMode)
 
+#TODO resource as Request
+#TODO also, I'm not sure what to do with init. For now I've re-introduced
+# JSObject to make this work, but I really wish we had a better solution.
+func newRequest*(resource: string, init: JSObject): Request {.jserr, jsctor.} =
+  let x = parseURL(resource)
+  if x.isNone:
+    JS_ERR JS_TypeError, resource & " is not a valid URL"
+  if x.get.username != "" or x.get.password != "":
+    JS_ERR JS_TypeError, resource & " is not a valid URL"
+  let url = x.get
+  let ctx = init.ctx
+  let fallbackMode = some(RequestMode.CORS) #TODO none if resource is request
+  #TODO fallback mode, origin, window, request mode, ...
+  let httpMethod = fromJS[HttpMethod](ctx,
+    JS_GetPropertyStr(ctx, init.val, "method")).get(HTTP_GET)
+  let body = fromJS[string](ctx, JS_GetPropertyStr(ctx, init.val, "body"))
+  let jheaders = JS_GetPropertyStr(ctx, init.val, "headers")
+  let hl = newHeaders()
+  hl.fill(ctx, jheaders)
+  let credentials = fromJS[CredentialsMode](ctx, JS_GetPropertyStr(ctx, init.val, "credentials"))
+    .get(CredentialsMode.SAME_ORIGIN)
+  let mode = fromJS[RequestMode](ctx, JS_GetPropertyStr(ctx, init.val, "mode"))
+    .get(fallbackMode.get(RequestMode.NO_CORS))
+  #TODO find a standard compatible way to implement this
+  let proxyUrl = fromJS[URL](ctx, JS_GetPropertyStr(ctx, init.val, "proxyUrl"))
+  return newRequest(url, httpMethod, hl, body, mode, credentials, proxy = proxyUrl.get(nil))
+
 proc `[]=`*(multipart: var MimeData, k, v: string) =
   multipart.content.add(MimePart(name: k, content: v))
 
-proc add*(headers: var HeaderList, k, v: string) =
+proc add*(headers: var Headers, k, v: string) =
   let k = k.toHeaderCase()
   if k notin headers.table:
     headers.table[k] = @[v]
   else:
     headers.table[k].add(v)
 
-proc `[]=`*(headers: var HeaderList, k, v: string) =
+proc `[]=`*(headers: var Headers, k, v: string) =
   headers.table[k.toHeaderCase()] = @[v]
 
-func getOrDefault*(headers: HeaderList, k: string, default = ""): string =
+func getOrDefault*(headers: Headers, k: string, default = ""): string =
   let k = k.toHeaderCase()
   if k in headers.table:
     headers.table[k][0]
@@ -252,6 +332,9 @@ func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
     return INCLUDE
 
 proc addRequestModule*(ctx: JSContext) =
-  ctx.registerType(Request, extra_getset = [TabGetSet(name: "url", get: Request_url)])
+  ctx.registerType(Request, extra_getset = [
+    TabGetSet(name: "url", get: Request_url),
+    TabGetSet(name: "referrer", get: Request_referrer)
+  ])
   ctx.registerType(Response, extra_funcs = [TabFunc(name: "json", fun: Response_json)])
-  ctx.registerType(HeaderList)
+  ctx.registerType(Headers)

@@ -80,6 +80,10 @@ type
 
   JSFunctionList* = openArray[JSCFunctionListEntry]
 
+  JSObject* = object
+    ctx*: JSContext
+    val*: JSValue
+
 func getOpaque*(ctx: JSContext): JSContextOpaque =
   return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
 
@@ -652,6 +656,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
       return none(T)
   elif T is JSValue:
     return some(val)
+  elif T is JSObject:
+    return some(JSObject(ctx: ctx, val: val))
   elif T is object:
     doAssert false, "Dictionary case has not been implemented yet!"
     #TODO TODO TODO implement dictionary case
@@ -751,7 +757,7 @@ proc toJS*(ctx: JSContext, obj: ref object): JSValue =
   return jsObj
 
 proc toJS(ctx: JSContext, e: enum): JSValue =
-  return toJS(ctx, int(e))
+  return toJS(ctx, $e)
 
 proc toJS(ctx: JSContext, j: JSValue): JSValue =
   return j
@@ -996,6 +1002,14 @@ proc addUnionParamBranch(gen: var JSFuncGenerator, query, newBranch: NimNode, fa
     gen.jsFunCallLists[i] = oldBranch
   gen.newBranchList.add(newBranch)
 
+func isSequence*(ctx: JSContext, o: JSValue): bool =
+  if not JS_IsObject(o):
+    return false
+  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_iterator)
+  # prop can't be exception (throws_ref_error is 0 and tag is object)
+  result = not JS_IsUndefined(prop)
+  JS_FreeValue(ctx, prop)
+
 proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimNode, fallback: NimNode = nil) =
   # Union types.
   #TODO quite a few types are still missing.
@@ -1028,16 +1042,7 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
   # Sequence:
   if seqg.issome:
     let query = quote do:
-      (
-        let o = `val`
-        JS_IsObject(o) and (
-          let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_iterator)
-          # prop can't be exception (throws_ref_error is 0 and tag is object)
-          let ret = not JS_IsUndefined(prop)
-          JS_FreeValue(ctx, prop)
-          ret
-        )
-      )
+      isSequence(ctx, `val`)
     let a = seqg.get[1]
     gen.addUnionParamBranch(query, quote do:
       let `s` = fromJS_or_die(seq[`a`], ctx, `val`, `ev`, `dl`),

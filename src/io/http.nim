@@ -13,7 +13,7 @@ type
   HandleDataObj = object
     curl*: CURL
     statusline: bool
-    headers: HeaderList
+    headers: Headers
     request: Request
     ostream*: Stream
     mime: curl_mime
@@ -21,7 +21,7 @@ type
 
 func newHandleData(curl: CURL, request: Request, ostream: Stream): HandleData =
   let handleData = HandleData(
-    headers: newHeaderList(),
+    headers: newHeaders(),
     curl: curl,
     ostream: ostream,
     request: request

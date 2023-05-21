@@ -545,7 +545,7 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   let host = request.url.host
   var refererfrom: bool
   var cookiejar: CookieJar
-  var headers: HeaderList
+  var headers: Headers
   var scripting: bool
   var charsets = pager.config.encoding.document_charset
   for sc in pager.siteconf:

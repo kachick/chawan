@@ -109,7 +109,7 @@ type
     userstyle*: string
     filter*: URLFilter
     cookiejar*: CookieJar
-    headers*: HeaderList
+    headers*: Headers
     refererfrom*: bool
     referrerpolicy*: ReferrerPolicy
     scripting*: bool
@@ -125,7 +125,7 @@ const DefaultHeaders* = {
   "Accept-Language": "en;q=1.0",
   "Pragma": "no-cache",
   "Cache-Control": "no-cache",
-}.toTable().newHeaderList()[]
+}.toTable().newHeaders()[]
 
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
@@ -134,7 +134,7 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
   )
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
-      headers: HeaderList = nil, refererfrom = false, scripting = false,
+      headers: Headers = nil, refererfrom = false, scripting = false,
       charsets = config.encoding.document_charset): BufferConfig =
   result = BufferConfig(
     userstyle: config.css.stylesheet,

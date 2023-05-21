@@ -67,7 +67,7 @@ type
     handleList: seq[HandleData]
 
   LoaderConfig* = object
-    defaultheaders*: HeaderList
+    defaultheaders*: Headers
     filter*: URLFilter
     cookiejar*: CookieJar
     referrerpolicy*: ReferrerPolicy

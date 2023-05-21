@@ -128,7 +128,7 @@ type
     localName: string
 
   Node* = ref object of EventTarget
-    nodeType* {.jsget.}: NodeType
+    nodeType*: NodeType
     childList*: seq[Node]
     parentNode* {.jsget.}: Node
     parentElement* {.jsget.}: Element
@@ -564,6 +564,9 @@ func newCollection[T: Collection](root: Node, match: proc(node: Node): bool {.no
   )
   inc root.document.colln
   result.populateCollection()
+
+func nodeType(node: Node): uint16 {.jsfget.} =
+  return uint16(node.nodeType)
 
 func isElement(node: Node): bool =
   return node.nodeType == ELEMENT_NODE
