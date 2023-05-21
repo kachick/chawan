@@ -428,11 +428,13 @@ proc headlessLoop(client: Client) =
       if Event.Timer in event.events:
         if event.fd in client.interval_fdis:
           client.intervals[client.interval_fdis[event.fd]].handler()
+          client.runJSJobs()
         elif event.fd in client.timeout_fdis:
           let id = client.timeout_fdis[event.fd]
           let timeout = client.timeouts[id]
           timeout.handler()
           client.clearTimeout(id)
+          client.runJSJobs()
     client.acceptBuffers()
 
 #TODO this is dumb
