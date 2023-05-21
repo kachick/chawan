@@ -392,11 +392,13 @@ proc inputLoop(client: Client) =
       if Event.Timer in event.events:
         if event.fd in client.interval_fdis:
           client.intervals[client.interval_fdis[event.fd]].handler()
+          client.runJSJobs()
         elif event.fd in client.timeout_fdis:
           let id = client.timeout_fdis[event.fd]
           let timeout = client.timeouts[id]
           timeout.handler()
           client.clearTimeout(id)
+          client.runJSJobs()
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
