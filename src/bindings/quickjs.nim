@@ -87,6 +87,7 @@ else:
 type
   JSRuntime* = ptr object
   JSContext* = ptr object
+  JSModuleDef* = ptr object
   JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
   JSCFunctionData* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.}
   JSGetterFunction* = proc(ctx: JSContext, this_val: JSValue): JSValue {.cdecl.}
@@ -99,7 +100,11 @@ type
   JSClassFinalizer* = proc (rt: JSRuntime, val: JSValue) {.cdecl.}
   JSClassGCMark* = proc (rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
   JS_MarkFunc* = proc (rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
-  JSJobFunc* = proc (ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue
+  JSModuleNormalizeFunc* = proc(ctx: JSContext, module_base_name,
+    module_name: cstring, opaque: pointer): cstring {.cdecl.}
+  JSModuleLoaderFunc* = proc(ctx: JSContext, module_name: cstring,
+    opaque: pointer): JSModuleDef {.cdecl.}
+  JSJobFunc* = proc (ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
 
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
@@ -423,6 +428,10 @@ proc JS_ThrowTypeError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discar
 proc JS_ThrowReferenceError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
 proc JS_ThrowRangeError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
 proc JS_ThrowInternalError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, discardable.}
+
+proc JS_SetModuleLoaderFunc*(rt: JSRuntime,
+  module_normalize: JSModuleNormalizeFunc, module_loader: JSModuleLoaderFunc,
+  opaque: pointer)
 
 proc JS_EnqueueJob*(ctx: JSContext, job_func: JSJobFunc, argc: cint, argv: ptr JSValue): cint
 proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
