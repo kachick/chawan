@@ -2002,6 +2002,23 @@ proc log*(console: console, ss: varargs[string]) {.jsfunc.} =
   console.err.write('\n')
   console.err.flush()
 
+proc clear*(console: console) {.jsfunc.} =
+  # Do nothing. By design, we do not allow buffers to clear the console.
+  discard
+
+# For now, these are the same as log().
+proc debug*(console: console, ss: varargs[string]) {.jsfunc.} =
+  console.log(ss)
+
+proc error*(console: console, ss: varargs[string]) {.jsfunc.} =
+  console.log(ss)
+
+proc info*(console: console, ss: varargs[string]) {.jsfunc.} =
+  console.log(ss)
+
+proc warn*(console: console, ss: varargs[string]) {.jsfunc.} =
+  console.log(ss)
+
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
   if document != element.preparationTimeDocument:
