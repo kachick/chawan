@@ -218,6 +218,9 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
     return opaque
   return getOpaque0(val)
 
+func getOpaque*[T](ctx: JSContext, val: JSValue): pointer =
+  getOpaque(ctx, val, $T)
+
 proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
   JS_SetInterruptHandler(rt, cb, opaque)
 
@@ -270,6 +273,23 @@ proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
 proc setProperty*(ctx: JSContext, val: JSValue, name: string, fun: JSCFunction, argc: int = 0) =
   ctx.setProperty(val, name, ctx.newJSCFunction(name, fun, argc))
 
+proc defineProperty*[T](ctx: JSContext, this: JSValue, name: string,
+    prop: T) =
+  when T is JSValue:
+    if JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, cint(0)) <= 0:
+      raise newException(Defect, "Failed to define property string: " & name)
+  else:
+    defineProperty(ctx, this, name, toJS(ctx, prop))
+
+proc definePropertyCWE*[T](ctx: JSContext, this: JSValue, name: string,
+    prop: T) =
+  when T is JSValue:
+    if JS_DefinePropertyValueStr(ctx, this, cstring(name), prop,
+        JS_PROP_C_W_E) <= 0:
+      raise newException(Defect, "Failed to define property string: " & name)
+  else:
+    definePropertyCWE(ctx, this, name, toJS(ctx, prop))
+
 func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
                  ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer,
                  parent: JSClassID, asglobal: bool, nointerface: bool,
@@ -315,7 +335,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     let global = JS_GetGlobalObject(ctx)
-    ctx.setProperty(global, $cdef.class_name, jctor)
+    ctx.defineProperty(global, $cdef.class_name, jctor)
     JS_FreeValue(ctx, global)
 
 type FuncParam = tuple[name: string, t: NimNode, val: Option[NimNode], generic: Option[NimNode]]
@@ -553,6 +573,7 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
       return none(Table[A, B])
     result.get[kn.get] = vn.get
 
+proc toJS*(ctx: JSContext, s: cstring): JSValue
 proc toJS*(ctx: JSContext, s: string): JSValue
 proc toJS(ctx: JSContext, r: Rune): JSValue
 proc toJS(ctx: JSContext, n: int64): JSValue
@@ -694,8 +715,11 @@ func fromJS[T: string|uint32](ctx: JSContext, atom: JSAtom): Option[T] =
 proc getJSFunction*[T, U](ctx: JSContext, val: JSValue): Option[(proc(x: T): Option[U])] =
   return fromJS[(proc(x: T): Option[U])](ctx, val)
 
+proc toJS*(ctx: JSContext, s: cstring): JSValue =
+  return JS_NewString(ctx, s)
+
 proc toJS*(ctx: JSContext, s: string): JSValue =
-  return JS_NewString(ctx, cstring(s))
+  return toJS(ctx, cstring(s))
 
 proc toJS(ctx: JSContext, r: Rune): JSValue =
   return toJS(ctx, $r)
@@ -1765,3 +1789,7 @@ binary objects: {m.binary_object_count} {m.binary_object_size}"""
 
 proc eval*(ctx: JSContext, s: string, file: string, eval_flags: int): JSValue =
   return JS_Eval(ctx, cstring(s), cint(s.len), cstring(file), cint(eval_flags))
+
+proc compileModule*(ctx: JSContext, s: string, file: cstring): JSValue =
+  return JS_Eval(ctx, cstring(s), cint(s.len), file,
+    cint(JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY))

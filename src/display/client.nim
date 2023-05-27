@@ -4,6 +4,7 @@ import options
 import os
 import selectors
 import streams
+import cstrutils
 import tables
 import terminal
 
@@ -31,6 +32,7 @@ import ips/serialize
 import ips/serversocket
 import ips/socketstream
 import js/javascript
+import js/module
 import js/timeout
 import types/cookie
 import types/dispatcher
@@ -377,6 +379,27 @@ proc headlessLoop(client: Client) =
         client.runJSJobs()
     client.acceptBuffers()
 
+proc clientLoadJSModule(ctx: JSContext, module_name: cstring,
+    opaque: pointer): JSModuleDef {.cdecl.} =
+  let global = JS_GetGlobalObject(ctx)
+  JS_FreeValue(ctx, global)
+  var x: Option[URL]
+  if module_name.startsWith("/") or module_name.startsWith("./") or
+      module_name.startsWith("../"):
+    let cur = getCurrentDir()
+    x = parseURL($module_name, parseURL("file://" & cur))
+  else:
+    x = parseURL($module_name)
+  if x.isNone or x.get.scheme != "file":
+    JS_ThrowTypeError(ctx, "Invalid URL: %s", module_name)
+    return nil
+  try:
+    let f = readFile($x.get.path)
+    return finishLoadModule(ctx, f, module_name)
+  except IOError:
+    JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
+    return nil
+
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
   try:
@@ -496,6 +519,7 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.loader = dispatcher.forkserver.newFileLoader()
   result.jsrt = newJSRuntime()
   result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
+  JS_SetModuleLoaderFunc(result.jsrt, nil, clientLoadJSModule, nil)
   let ctx = result.jsrt.newJSContext()
   result.jsctx = ctx
   result.pager = newPager(config, result.attrs, dispatcher, ctx)

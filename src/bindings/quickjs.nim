@@ -350,6 +350,7 @@ proc JS_NewFloat64*(ctx: JSContext, val: cdouble): JSValue
 proc JS_NewAtomLen*(ctx: JSContext, str: cstring, len: csize_t): JSAtom
 proc JS_ValueToAtom*(ctx: JSContext, val: JSValue): JSAtom
 proc JS_AtomToValue*(ctx: JSContext, atom: JSAtom): JSValue
+proc JS_AtomToCString*(ctx: JSContext, atom: JSAtom): cstring
 proc JS_FreeAtom*(ctx: JSContext, atom: JSAtom)
 proc JS_FreeAtomRT*(rt: JSRuntime, atom: JSAtom)
 
@@ -432,6 +433,8 @@ proc JS_ThrowInternalError*(ctx: JSContext, fmt: cstring): JSValue {.varargs, di
 proc JS_SetModuleLoaderFunc*(rt: JSRuntime,
   module_normalize: JSModuleNormalizeFunc, module_loader: JSModuleLoaderFunc,
   opaque: pointer)
+proc JS_GetImportMeta*(ctx: JSContext, m: JSModuleDef): JSValue
+proc JS_GetModuleName*(ctx: JSContext, m: JSModuleDef): JSAtom
 
 proc JS_EnqueueJob*(ctx: JSContext, job_func: JSJobFunc, argc: cint, argv: ptr JSValue): cint
 proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
