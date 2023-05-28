@@ -28,32 +28,32 @@ type
   StaticSiteConfig = object
     url: Option[string]
     host: Option[string]
-    subst: Option[string]
+    rewrite_url: Option[string]
     cookie: Option[bool]
-    thirdpartycookie: seq[string]
-    sharecookiejar: Option[string]
-    refererfrom*: Option[bool]
+    third_party_cookie: seq[string]
+    share_cookie_jar: Option[string]
+    referer_from*: Option[bool]
     scripting: Option[bool]
     document_charset: seq[Charset]
 
   StaticOmniRule = object
     match: string
-    subst: string
+    substitute_url: string
 
   SiteConfig* = object
     url*: Option[Regex]
     host*: Option[Regex]
-    subst*: (proc(s: URL): Option[URL])
+    rewrite_url*: (proc(s: URL): Option[URL])
     cookie*: Option[bool]
-    thirdpartycookie*: seq[Regex]
-    sharecookiejar*: Option[string]
-    refererfrom*: Option[bool]
+    third_party_cookie*: seq[Regex]
+    share_cookie_jar*: Option[string]
+    referer_from*: Option[bool]
     scripting*: Option[bool]
     document_charset*: seq[Charset]
 
   OmniRule* = object
     match*: Regex
-    subst*: (proc(s: string): Option[string])
+    substitute_url*: (proc(s: string): Option[string])
 
   StartConfig = object
     visual_home*: string
@@ -110,7 +110,7 @@ type
     filter*: URLFilter
     cookiejar*: CookieJar
     headers*: Headers
-    refererfrom*: bool
+    referer_from*: bool
     referrerpolicy*: ReferrerPolicy
     scripting*: bool
     charsets*: seq[Charset]
@@ -134,14 +134,14 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
   )
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
-      headers: Headers = nil, refererfrom = false, scripting = false,
+      headers: Headers = nil, referer_from = false, scripting = false,
       charsets = config.encoding.document_charset): BufferConfig =
   result = BufferConfig(
     userstyle: config.css.stylesheet,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
     cookiejar: cookiejar,
     headers: headers,
-    refererfrom: refererfrom,
+    referer_from: referer_from,
     scripting: scripting,
     charsets: charsets
   )
@@ -153,20 +153,21 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
     var conf = SiteConfig(
       cookie: sc.cookie,
       scripting: sc.scripting,
-      sharecookiejar: sc.sharecookiejar,
-      refererfrom: sc.refererfrom,
+      share_cookie_jar: sc.share_cookie_jar,
+      referer_from: sc.referer_from,
       document_charset: sc.document_charset
     )
     if sc.url.isSome:
       conf.url = compileRegex(sc.url.get, 0)
     elif sc.host.isSome:
       conf.host = compileRegex(sc.host.get, 0)
-    for rule in sc.thirdpartycookie:
-      conf.thirdpartycookie.add(compileRegex(rule, 0).get)
-    if sc.subst.isSome:
-      let fun = jsctx.eval(sc.subst.get, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
+    for rule in sc.third_party_cookie:
+      conf.third_party_cookie.add(compileRegex(rule, 0).get)
+    if sc.rewrite_url.isSome:
+      let fun = jsctx.eval(sc.rewrite_url.get, "<siteconf>",
+        JS_EVAL_TYPE_GLOBAL)
       let f = getJSFunction[URL, URL](jsctx, fun)
-      conf.subst = f.get
+      conf.rewrite_url = f.get
     result.add(conf)
 
 proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
@@ -175,9 +176,9 @@ proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
     var conf = OmniRule(
       match: re.get
     )
-    let fun = jsctx.eval(rule.subst, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
+    let fun = jsctx.eval(rule.substitute_url, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
     let f = getJSFunction[string, string](jsctx, fun)
-    conf.subst = f.get
+    conf.substitute_url = f.get
     result.add(conf)
 
 func getRealKey(key: string): string =

@@ -701,7 +701,7 @@ proc load(container: Container) =
         container.triggerEvent(SUCCESS)
         if res.cookies.len > 0 and container.config.cookiejar != nil: # accept cookies
           container.config.cookiejar.cookies.add(res.cookies)
-        if res.referrerpolicy.isSome and container.config.refererfrom:
+        if res.referrerpolicy.isSome and container.config.referer_from:
           container.config.referrerpolicy = res.referrerpolicy.get
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
         if res.needsAuth:

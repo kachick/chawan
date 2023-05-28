@@ -301,7 +301,7 @@ passed as arguments are matched as well.</td>
 </tr>
 
 <tr>
-<td>substitute</td>
+<td>substitute-url</td>
 <td>JavaScript function</td>
 <td>A JavaScript function Chawan will pass the input string to. If a new string is
 returned, it will be parsed instead of the old one.</td>
@@ -396,6 +396,18 @@ Defaults to false.
 </td>
 </tr>
 
+<tr>
+<td>scripting</td>
+<td>boolean</td>
+<td>Enable/disable JavaScript execution on this site.</td>
+</tr>
+
+<tr>
+<td>document-charset</td>
+<td>boolean</td>
+<td>Specify the default encoding for this site. Overrides document-charset
+in [encoding].</td>
+</tr>
 
 </table>
 

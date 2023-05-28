@@ -543,7 +543,7 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
 proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   let url = $request.url
   let host = request.url.host
-  var refererfrom: bool
+  var referer_from: bool
   var cookiejar: CookieJar
   var headers: Headers
   var scripting: bool
@@ -553,33 +553,34 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
       continue
-    if sc.subst != nil:
-      let s = sc.subst(request.url)
+    if sc.rewrite_url != nil:
+      let s = sc.rewrite_url(request.url)
       if s.isSome and s.get != nil:
         request.url = s.get
     if sc.cookie.isSome:
       if sc.cookie.get:
         # host/url might have changed by now
-        let jarid = sc.sharecookiejar.get(request.url.host)
+        let jarid = sc.share_cookiejar.get(request.url.host)
         if jarid notin pager.cookiejars:
-          pager.cookiejars[jarid] = newCookieJar(request.url, sc.thirdpartycookie)
+          pager.cookiejars[jarid] = newCookieJar(request.url,
+            sc.third_party_cookie)
         cookiejar = pager.cookiejars[jarid]
       else:
         cookiejar = nil # override
     if sc.scripting.isSome:
       scripting = sc.scripting.get
-    if sc.refererfrom.isSome:
-      refererfrom = sc.refererfrom.get
+    if sc.referer_from.isSome:
+      referer_from = sc.referer_from.get
     if sc.document_charset.len > 0:
       charsets = sc.document_charset
   return pager.config.getBufferConfig(request.url, cookiejar, headers,
-    refererfrom, scripting, charsets)
+    referer_from, scripting, charsets)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     ctype = none(string), cs = none(Charset), replace: Container = nil,
     redirectdepth = 0, referrer: Container = nil) =
-  if referrer != nil and referrer.config.refererfrom:
+  if referrer != nil and referrer.config.referer_from:
     request.referer = referrer.source.location
   var bufferconfig = pager.applySiteconf(request)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
@@ -611,7 +612,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
 proc omniRewrite(pager: Pager, s: string): string =
   for rule in pager.omnirules:
     if rule.match.match(s):
-      let sub = rule.subst(s)
+      let sub = rule.substitute_url(s)
       if sub.isSome:
         return sub.get
       else:
