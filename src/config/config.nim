@@ -101,7 +101,7 @@ type
     network*: NetworkConfig
     display*: DisplayConfig
     siteconf: seq[StaticSiteConfig]
-    omnirules: seq[StaticOmniRule]
+    omnirule: seq[StaticOmniRule]
     page*: ActionMap
     line*: ActionMap
 
@@ -170,7 +170,7 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
     result.add(conf)
 
 proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
-  for rule in config.omnirules:
+  for rule in config.omnirule:
     let re = compileRegex(rule.match, 0)
     var conf = OmniRule(
       match: re.get
@@ -462,7 +462,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         config.parseConfig(dir, staticRead(dir / s))
       else:
         config.parseConfig(dir, newFileStream(dir / s))
-  #TODO: for omnirules/siteconf, check if substitution rules are specified?
+  #TODO: for omnirule/siteconf, check if substitution rules are specified?
 
 proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>") =
   let toml = parseToml(stream, dir / name)
