@@ -79,6 +79,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
       let msg = e.getStackTrace() & "Error: unhandled exception: " & e.msg &
         " [" & $e.name & "]\n"
       stderr.write(msg)
+      quit(1)
     doAssert false
   let readfd = pipefd[0] # get read
   discard close(pipefd[1]) # close write
@@ -125,6 +126,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
       let msg = e.getStackTrace() & "Error: unhandled exception: " & e.msg &
         " [" & $e.name & "]\n"
       stderr.write(msg)
+      quit(1)
     doAssert false
   ctx.children.add((pid, loaderPid))
   return pid

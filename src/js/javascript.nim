@@ -245,6 +245,13 @@ proc writeException*(ctx: JSContext, s: Stream) =
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 
+proc runJSJobs*(rt: JSRuntime, err: Stream) =
+  while JS_IsJobPending(rt):
+    var ctx: JSContext
+    let r = JS_ExecutePendingJob(rt, addr ctx)
+    if r == -1:
+      ctx.writeException(err)
+
 func isInstanceOf*(ctx: JSContext, obj: JSValue, class: string): bool =
   let clazz = ctx.getClass(class)
   if clazz in ctx.getOpaque().ctors:

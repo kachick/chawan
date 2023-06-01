@@ -31,6 +31,7 @@ import ips/serialize
 import ips/serversocket
 import ips/socketstream
 import js/javascript
+import js/timeout
 import types/cookie
 import types/dispatcher
 import types/url
@@ -52,12 +53,8 @@ type
     config {.jsget.}: Config
     jsrt: JSRuntime
     jsctx: JSContext
-    timeoutid: int
-    timeouts: Table[int, tuple[handler: (proc()), fdi: int]]
-    intervals: Table[int, tuple[handler: (proc()), fdi: int, tofree: JSValue]]
-    timeout_fdis: Table[int, int]
-    interval_fdis: Table[int, int]
     fdmap: Table[int, Container]
+    timeouts: TimeoutState[Container]
     ssock: ServerSocket
     selector: Selector[Container]
 
@@ -105,11 +102,7 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   return 0
 
 proc runJSJobs(client: Client) =
-  while JS_IsJobPending(client.jsrt):
-    var ctx: JSContext
-    let r = JS_ExecutePendingJob(client.jsrt, addr ctx)
-    if r == -1:
-      ctx.writeException(client.console.err)
+  client.jsrt.runJSJobs(client.console.err)
 
 proc evalJS(client: Client, src, filename: string): JSValue =
   if client.console.tty != nil:
@@ -202,59 +195,19 @@ proc input(client: Client) =
       client.feednext = false
   client.s = ""
 
-proc setTimeout[T: JSValue|string](client: Client, handler: T, timeout = 0): int {.jsfunc.} =
-  let id = client.timeoutid
-  inc client.timeoutid
-  let fdi = client.selector.registerTimer(max(timeout, 1), true, nil)
-  client.timeout_fdis[fdi] = id
-  when T is string:
-    client.timeouts[id] = ((proc() =
-      client.evalJSFree(handler, "setTimeout handler")
-    ), fdi)
-  else:
-    let fun = JS_DupValue(client.jsctx, handler)
-    client.timeouts[id] = ((proc() =
-      let ret = JS_Call(client.jsctx, fun, JS_UNDEFINED, 0, nil)
-      if JS_IsException(ret):
-        client.jsctx.writeException(client.console.err)
-      JS_FreeValue(client.jsctx, ret)
-      JS_FreeValue(client.jsctx, fun)
-    ), fdi)
-  return id
+proc setTimeout[T: JSValue|string](client: Client, handler: T,
+    timeout = 0i32): int32 {.jsfunc.} =
+  return client.timeouts.setTimeout(handler, timeout)
 
-proc setInterval[T: JSValue|string](client: Client, handler: T, interval = 0): int {.jsfunc.} =
-  let id = client.timeoutid
-  inc client.timeoutid
-  let fdi = client.selector.registerTimer(max(interval, 1), false, nil)
-  client.interval_fdis[fdi] = id
-  when T is string:
-    client.intervals[id] = ((proc() =
-      client.evalJSFree(handler, "setInterval handler")
-    ), fdi, JS_NULL)
-  else:
-    let fun = JS_DupValue(client.jsctx, handler)
-    client.intervals[id] = ((proc() =
-      let ret = JS_Call(client.jsctx, handler, JS_UNDEFINED, 0, nil)
-      if JS_IsException(ret):
-        client.jsctx.writeException(client.console.err)
-      JS_FreeValue(client.jsctx, ret)
-    ), fdi, fun)
-  return id
+proc setInterval[T: JSValue|string](client: Client, handler: T,
+    interval = 0i32): int32 {.jsfunc.} =
+  return client.timeouts.setInterval(handler, interval)
 
-proc clearTimeout(client: Client, id: int) {.jsfunc.} =
-  if id in client.timeouts:
-    let timeout = client.timeouts[id]
-    client.selector.unregister(timeout.fdi)
-    client.timeout_fdis.del(timeout.fdi)
-    client.timeouts.del(id)
+proc clearTimeout(client: Client, id: int32) {.jsfunc.} =
+  client.timeouts.clearTimeout(id)
 
-proc clearInterval(client: Client, id: int) {.jsfunc.} =
-  if id in client.intervals:
-    let interval = client.intervals[id]
-    client.selector.unregister(interval.fdi)
-    JS_FreeValue(client.jsctx, interval.tofree)
-    client.interval_fdis.del(interval.fdi)
-    client.intervals.del(id)
+proc clearInterval(client: Client, id: int32) {.jsfunc.} =
+  client.timeouts.clearInterval(id)
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
@@ -390,15 +343,10 @@ proc inputLoop(client: Client) =
         client.attrs = getWindowAttributes(client.console.tty)
         client.pager.windowChange(client.attrs)
       if Event.Timer in event.events:
-        if event.fd in client.interval_fdis:
-          client.intervals[client.interval_fdis[event.fd]].handler()
-          client.runJSJobs()
-        elif event.fd in client.timeout_fdis:
-          let id = client.timeout_fdis[event.fd]
-          let timeout = client.timeouts[id]
-          timeout.handler()
-          client.clearTimeout(id)
-          client.runJSJobs()
+        assert client.timeouts.runTimeoutFd(event.fd)
+        client.runJSJobs()
+        client.console.container.requestLines().then(proc() =
+          client.console.container.cursorLastLine())
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
@@ -411,8 +359,7 @@ proc inputLoop(client: Client) =
     client.pager.draw()
 
 func hasSelectFds(client: Client): bool =
-  return client.timeouts.len > 0 or
-    client.intervals.len > 0 or
+  return not client.timeouts.empty or
     client.pager.numload > 0 or
     client.loader.connecting.len > 0 or
     client.loader.ongoing.len > 0
@@ -426,15 +373,8 @@ proc headlessLoop(client: Client) =
       if Error in event.events:
         client.handleError(event.fd)
       if Event.Timer in event.events:
-        if event.fd in client.interval_fdis:
-          client.intervals[client.interval_fdis[event.fd]].handler()
-          client.runJSJobs()
-        elif event.fd in client.timeout_fdis:
-          let id = client.timeout_fdis[event.fd]
-          let timeout = client.timeouts[id]
-          timeout.handler()
-          client.clearTimeout(id)
-          client.runJSJobs()
+        assert client.timeouts.runTimeoutFd(event.fd)
+        client.runJSJobs()
     client.acceptBuffers()
 
 #TODO this is dumb
@@ -504,6 +444,10 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
   client.selector.registerHandle(int(client.dispatcher.forkserver.estream.fd), {Read}, nil)
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)
+  #TODO passing console.err here makes it impossible to change it later. maybe
+  # better associate it with jsctx
+  client.timeouts = newTimeoutState(client.selector, client.jsctx,
+    client.console.err, proc(src, file: string) = client.evalJSFree(src, file))
   client.alive = true
   addExitProc((proc() = client.quit()))
   if client.config.start.startup_script != "":

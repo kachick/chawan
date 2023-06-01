@@ -32,6 +32,7 @@ import ips/serialize
 import ips/serversocket
 import ips/socketstream
 import js/regex
+import js/timeout
 import io/window
 import layout/box
 import render/renderdocument
@@ -70,7 +71,9 @@ type
     str*: string
 
   Buffer* = ref object
-    fd: int
+    rfd: int # file descriptor of command pipe
+    fd: int # file descriptor of buffer source
+    oldfd: int # fd after being unregistered
     alive: bool
     readbufsize: int
     contenttype: string
@@ -97,7 +100,6 @@ type
     loader: FileLoader
     config: BufferConfig
     userstyle: CSSStylesheet
-    timeouts: Table[int, (proc())]
     tasks: array[BufferCommand, int] #TODO this should have arguments
     savetask: bool
     hovertext: array[HoverType, string]
@@ -649,7 +651,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     buffer.sstream.setPosition(0)
     buffer.available = 0
     if buffer.window == nil:
-      buffer.window = newWindow(buffer.config.scripting)
+      buffer.window = newWindow(buffer.config.scripting, buffer.selector)
     let doc = parseHTML(buffer.sstream, charsets = buffer.charsets,
       window = buffer.window, url = buffer.url)
     buffer.document = doc
@@ -659,6 +661,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     p = EmptyPromise()
     p.resolve()
   buffer.selector.unregister(buffer.fd)
+  buffer.oldfd = buffer.fd
   buffer.fd = -1
   buffer.istream.close()
   return p
@@ -741,7 +744,7 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
     buffer.sstream.setPosition(0)
     buffer.available = 0
     if buffer.window == nil:
-      buffer.window = newWindow(buffer.config.scripting)
+      buffer.window = newWindow(buffer.config.scripting, buffer.selector)
     buffer.document = parseHTML(buffer.sstream,
       charsets = buffer.charsets, window = buffer.window,
       url = buffer.url, canReinterpret = false)
@@ -1168,51 +1171,58 @@ proc readCommand(buffer: Buffer) =
   buffer.pstream.sread(packetid)
   bufferDispatcher(ProxyFunctions, buffer, cmd, packetid)
 
+proc handleRead(buffer: Buffer, fd: int) =
+  if fd == buffer.rfd:
+    try:
+      buffer.readCommand()
+    except EOFError:
+      #eprint "EOF error", $buffer.url & "\nMESSAGE:",
+      #       getCurrentExceptionMsg() & "\n",
+      #       getStackTrace(getCurrentException())
+      buffer.alive = false
+  elif fd == buffer.fd:
+    buffer.onload()
+  elif fd in buffer.loader.connecting:
+    buffer.loader.onConnected(fd)
+  elif fd in buffer.loader.ongoing:
+    #TODO something with readablestream?
+    discard
+  elif buffer.fd == -1 and buffer.oldfd == fd:
+    discard #TODO hack
+  else: assert false
+
+proc handleError(buffer: Buffer, fd: int) =
+  if fd == buffer.rfd:
+    # Connection reset by peer, probably. Close the buffer.
+    buffer.alive = false
+  elif fd == buffer.fd:
+    buffer.onload()
+  elif fd in buffer.loader.connecting:
+    # probably shouldn't happen. TODO
+    assert false
+  elif fd in buffer.loader.ongoing:
+    #TODO something with readablestream?
+    discard
+  elif buffer.fd == -1 and fd == buffer.oldfd:
+    discard #TODO hack
+  else:
+    assert false
+
 proc runBuffer(buffer: Buffer, rfd: int) =
-  block loop:
-    while buffer.alive:
-      let events = buffer.selector.select(-1)
-      for event in events:
-        if event.fd == rfd:
-          if Error in event.events:
-            # Connection reset by peer, probably. Close the buffer.
-            break loop
-          elif Read in event.events:
-            try:
-              buffer.readCommand()
-            except EOFError:
-              #eprint "EOF error", $buffer.url & "\nMESSAGE:",
-              #       getCurrentExceptionMsg() & "\n",
-              #       getStackTrace(getCurrentException())
-              break loop
-          else:
-            assert false
-        elif event.fd == buffer.fd:
-          if Read in event.events or Error in event.events:
-            buffer.onload()
-          else:
-            assert false
-        elif event.fd in buffer.loader.connecting:
-          if Event.Read in event.events:
-            buffer.loader.onConnected(event.fd)
-          else:
-            # probably shouldn't happen. TODO: maybe with Error?
-            assert false
-        elif event.fd in buffer.loader.ongoing:
-          #TODO something with readablestream?
-          discard
-        elif event.fd in buffer.timeouts:
-          if Event.Timer in event.events:
-            buffer.selector.unregister(event.fd)
-            var timeout: proc()
-            if buffer.timeouts.pop(event.fd, timeout):
-              timeout()
-            else:
-              assert false
-          else:
-            assert false
-        else:
-          assert false
+  buffer.rfd = rfd
+  while buffer.alive:
+    let events = buffer.selector.select(-1)
+    for event in events:
+      if Error in event.events:
+        buffer.handleError(event.fd)
+      if not buffer.alive:
+        break
+      if Read in event.events:
+        buffer.handleRead(event.fd)
+      if Event.Timer in event.events:
+        assert buffer.window != nil
+        assert buffer.window.timeouts.runTimeoutFd(event.fd)
+        buffer.window.runJSJobs()
   buffer.pstream.close()
   buffer.loader.quit()
   quit(0)
@@ -1238,7 +1248,8 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   loader.unregisterFun = proc(fd: int) = buffer.selector.unregister(fd)
   buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
   if buffer.config.scripting:
-    buffer.window = newWindow(buffer.config.scripting, some(buffer.loader))
+    buffer.window = newWindow(buffer.config.scripting, buffer.selector,
+      some(buffer.loader))
   let socks = connectSocketStream(mainproc, false)
   socks.swrite(getpid())
   buffer.pstream = socks

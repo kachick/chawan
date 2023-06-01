@@ -1,3 +1,4 @@
+import selectors
 import streams
 
 import html/dom
@@ -6,6 +7,7 @@ import io/loader
 import io/promise
 import io/request
 import js/javascript
+import js/timeout
 import types/url
 
 # NavigatorID
@@ -57,8 +59,56 @@ proc fetch(window: Window, req: Request): Promise[Response] {.jsfunc.} =
   if window.loader.isSome:
     return window.loader.get.fetch(req)
 
-proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
-  result = Window(
+proc setTimeout[T: JSValue|string](window: Window, handler: T,
+    timeout = 0i32): int32 {.jsfunc.} =
+  return window.timeouts.setTimeout(handler, timeout)
+
+proc setInterval[T: JSValue|string](window: Window, handler: T,
+    interval = 0i32): int32 {.jsfunc.} =
+  return window.timeouts.setInterval(handler, interval)
+
+proc clearTimeout(window: Window, id: int32) {.jsfunc.} =
+  window.timeouts.clearTimeout(id)
+
+proc clearInterval(window: Window, id: int32) {.jsfunc.} =
+  window.timeouts.clearInterval(id)
+
+proc addScripting*(window: Window, selector: Selector[int]) =
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  window.jsrt = rt
+  window.jsctx = ctx
+  window.timeouts = newTimeoutState(
+    selector = selector,
+    jsctx = ctx,
+    err = window.console.err,
+    evalJSFree = (proc(src, file: string) =
+      let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
+      if JS_IsException(ret):
+        let ss = newStringStream()
+        window.jsctx.writeException(ss)
+        ss.setPosition(0)
+        window.console.log("Exception in document", $window.document.url,
+          ss.readAll())
+    )
+  )
+  var global = JS_GetGlobalObject(ctx)
+  ctx.registerType(Window, asglobal = true)
+  ctx.setOpaque(global, window)
+  ctx.setProperty(global, "window", global)
+  JS_FreeValue(ctx, global)
+  ctx.addconsoleModule()
+  ctx.addNavigatorModule()
+  ctx.addDOMModule()
+  ctx.addURLModule()
+  ctx.addHTMLModule()
+
+proc runJSJobs*(window: Window) =
+  window.jsrt.runJSJobs(window.console.err)
+
+proc newWindow*(scripting: bool, selector: Selector[int],
+    loader = none(FileLoader)): Window =
+  let window = Window(
     console: console(err: newFileStream(stderr)),
     navigator: Navigator(),
     loader: loader,
@@ -67,17 +117,5 @@ proc newWindow*(scripting: bool, loader = none(FileLoader)): Window =
     )
   )
   if scripting:
-    let rt = newJSRuntime()
-    let ctx = rt.newJSContext()
-    result.jsrt = rt
-    result.jsctx = ctx
-    var global = JS_GetGlobalObject(ctx)
-    ctx.registerType(Window, asglobal = true)
-    ctx.setOpaque(global, result)
-    ctx.setProperty(global, "window", global)
-    JS_FreeValue(ctx, global)
-    ctx.addconsoleModule()
-    ctx.addNavigatorModule()
-    ctx.addDOMModule()
-    ctx.addURLModule()
-    ctx.addHTMLModule()
+    window.addScripting(selector)
+  return window

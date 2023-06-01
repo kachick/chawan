@@ -13,6 +13,7 @@ import html/tags
 import io/loader
 import io/request
 import js/javascript
+import js/timeout
 import types/mime
 import types/referer
 import types/url
@@ -83,6 +84,7 @@ type
     jsrt*: JSRuntime
     jsctx*: JSContext
     document* {.jsget.}: Document
+    timeouts*: TimeoutState[int]
 
   # Navigator stuff
   Navigator* = ref object
