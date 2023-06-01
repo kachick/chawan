@@ -122,6 +122,11 @@ func snakeToKebabCase*(str: string): string =
     if c == '_':
       c = '-'
 
+func normalizeLocale*(s: string): string =
+  for i in 0 ..< s.len:
+    if cast[uint8](s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
+      result &= s[i].toLowerAscii()
+
 func isAscii*(r: Rune): bool =
   return cast[uint32](r) < 128
 
@@ -167,6 +172,9 @@ func toHex*(c: char): string =
   result = newString(2)
   result[0] = HexChars[(uint8(c) shr 4)]
   result[1] = HexChars[(uint8(c) and 0xF)]
+
+func toHex*(i: uint8): string =
+  return toHex(cast[char](i))
 
 func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
   var i = 0
@@ -235,6 +243,17 @@ func after*(s: string, c: set[char]): string =
     inc i
 
 func after*(s: string, c: char): string = s.after({c})
+
+func afterLast*(s: string, c: set[char], n = 1): string =
+  var j = 0
+  for i in countdown(s.high, 0):
+    if s[i] in c:
+      inc j
+      if j == n:
+        return s.substr(i + 1)
+  return s
+
+func afterLast*(s: string, c: char, n = 1): string = s.afterLast({c}, n)
 
 proc c_sprintf(buf, fm: cstring): cint {.header: "<stdio.h>", importc: "sprintf", varargs}
 
@@ -345,72 +364,59 @@ func japaneseNumber*(i: int): string =
     result &= ss[n]
     dec n
 
-func parseInt32*(s: string): int =
-  var sign = 1
-  var t = 1
-  var integer: int = 0
-  var e: int = 0
-
+# Implements https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#signed-integers
+#TODO TODO TODO handle overflow defects
+func parseInt32*(s: string): Option[int32] =
+  var sign: int32 = 1
   var i = 0
   if i < s.len and s[i] == '-':
     sign = -1
     inc i
   elif i < s.len and s[i] == '+':
     inc i
-
+  if i == s.len or s[i] notin AsciiDigit:
+    return none(int32)
+  var integer = int32(decValue(s[i]))
+  inc i
   while i < s.len and isDigit(s[i]):
     integer *= 10
-    integer += decValue(s[i])
+    integer += int32(decValue(s[i]))
     inc i
+  return some(sign * integer)
 
-  if i < s.len and (s[i] == 'e' or s[i] == 'E'):
-    inc i
-    if i < s.len and s[i] == '-':
-      t = -1
-      inc i
-    elif i < s.len and s[i] == '+':
-      inc i
-
-    while i < s.len and isDigit(s[i]):
-      e *= 10
-      e += decValue(s[i])
-      inc i
-
-  return sign * integer * 10 ^ (t * e)
-
-func parseInt64*(s: string): int64 =
-  var sign = 1
-  var t = 1
-  var integer: int64 = 0
-  var e: int64 = 0
-
+func parseInt64*(s: string): Option[int64] =
+  var sign: int64 = 1
   var i = 0
   if i < s.len and s[i] == '-':
     sign = -1
     inc i
   elif i < s.len and s[i] == '+':
     inc i
-
+  if i == s.len or s[i] notin AsciiDigit:
+    return none(int64)
+  var integer = int64(decValue(s[i]))
+  inc i
   while i < s.len and isDigit(s[i]):
     integer *= 10
-    integer += decValue(s[i])
+    integer += int64(decValue(s[i]))
     inc i
+  return some(sign * integer)
 
-  if i < s.len and (s[i] == 'e' or s[i] == 'E'):
+func parseUInt32*(s: string): Option[uint32] =
+  var i = 0
+  if i < s.len and s[i] == '+':
     inc i
-    if i < s.len and s[i] == '-':
-      t = -1
-      inc i
-    elif i < s.len and s[i] == '+':
-      inc i
+  if i == s.len or s[i] notin AsciiDigit:
+    return none(uint32)
+  var integer = uint32(decValue(s[i]))
+  inc i
+  while i < s.len and isDigit(s[i]):
+    integer *= 10
+    integer += uint32(decValue(s[i]))
+    inc i
+  return some(integer)
 
-    while i < s.len and isDigit(s[i]):
-      e *= 10
-      e += decValue(s[i])
-      inc i
-
-  return sign * integer * 10 ^ (t * e)
-
+#TODO not sure where this algorithm is from...
 func parseFloat64*(s: string): float64 =
   var sign = 1
   var t = 1

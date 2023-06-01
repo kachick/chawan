@@ -303,7 +303,7 @@ proc curl_mime_init*(handle: CURL): curl_mime
 proc curl_mime_free*(mime: curl_mime)
 proc curl_mime_addpart*(mime: curl_mime): curl_mimepart
 proc curl_mime_name*(part: curl_mimepart, name: cstring)
-proc curl_mime_data*(part: curl_mimepart, data: cstring, datasize: csize_t)
+proc curl_mime_data*(part: curl_mimepart, data: pointer, datasize: csize_t)
 proc curl_mime_filename*(part: curl_mimepart, name: cstring)
 proc curl_mime_filedata*(part: curl_mimepart, filename: cstring)
 

@@ -6,9 +6,12 @@ import html/htmlparser
 import io/loader
 import io/promise
 import io/request
+import js/intl
 import js/javascript
 import js/timeout
+import types/blob
 import types/url
+import xhr/formdata as formdata_impl
 
 # NavigatorID
 proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
@@ -73,6 +76,16 @@ proc clearTimeout(window: Window, id: int32) {.jsfunc.} =
 proc clearInterval(window: Window, id: int32) {.jsfunc.} =
   window.timeouts.clearInterval(id)
 
+proc screenX(window: Window): int64 {.jsfget.} = 0
+proc screenY(window: Window): int64 {.jsfget.} = 0
+proc screenLeft(window: Window): int64 {.jsfget.} = 0
+proc screenTop(window: Window): int64 {.jsfget.} = 0
+#TODO outerWidth, outerHeight
+proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
+
+func location(window: Window): URL {.jsfget.} =
+  window.document.location
+
 proc addScripting*(window: Window, selector: Selector[int]) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -102,6 +115,10 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.addDOMModule()
   ctx.addURLModule()
   ctx.addHTMLModule()
+  ctx.addIntlModule()
+  ctx.addBlobModule()
+  ctx.addFormDataModule()
+  ctx.addRequestModule()
 
 proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)

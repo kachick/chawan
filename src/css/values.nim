@@ -493,7 +493,7 @@ func skipWhitespace(vals: seq[CSSComponentValue], i: var int) =
       break
     inc i
 
-func cssColor(val: CSSComponentValue): RGBAColor =
+func cssColor*(val: CSSComponentValue): RGBAColor =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.tokenType
@@ -525,23 +525,15 @@ func cssColor(val: CSSComponentValue): RGBAColor =
           commaMode = true
         elif commaMode:
           raise newException(CSSValueError, "Invalid color")
-        if slash:
+        elif slash:
           if f.value[i] != CSS_DELIM_TOKEN or CSSToken(f.value[i]).rvalue != Rune('/'):
             raise newException(CSSValueError, "Invalid color")
           inc i
           f.value.skipWhitespace(i)
-      check_err
+      if not slash:
+        check_err
     case f.name
-    of "rgb":
-      f.value.skipWhitespace(i)
-      check_err
-      let r = CSSToken(f.value[i]).nvalue
-      next_value true
-      let g = CSSToken(f.value[i]).nvalue
-      next_value
-      let b = CSSToken(f.value[i]).nvalue
-      return rgba(int(r), int(g), int(b), 255)
-    of "rgba":
+    of "rgb", "rgba":
       f.value.skipWhitespace(i)
       check_err
       let r = CSSToken(f.value[i]).nvalue
@@ -550,8 +542,11 @@ func cssColor(val: CSSComponentValue): RGBAColor =
       next_value
       let b = CSSToken(f.value[i]).nvalue
       next_value false, true
-      let a = CSSToken(f.value[i]).nvalue
-      return rgba(int(r), int(g), int(b), int(a))
+      let a = if i < f.value.len:
+        CSSToken(f.value[i]).nvalue
+      else:
+        1
+      return rgba(int(r), int(g), int(b), int(a * 255))
     else: discard
   raise newException(CSSValueError, "Invalid color")
 

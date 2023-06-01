@@ -127,17 +127,17 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     if c.isSome:
       set_cv "color", c.get
   template map_colspan =
-    let colspan = element.attrigz("colspan")
+    let colspan = element.attrulgz("colspan")
     if colspan.isSome:
       let i = colspan.get
       if i <= 1000:
-        set_cv "-cha-colspan", i
+        set_cv "-cha-colspan", int(i)
   template map_rowspan =
-    let rowspan = element.attrigez("rowspan")
+    let rowspan = element.attrul("rowspan")
     if rowspan.isSome:
       let i = rowspan.get
       if i <= 65534:
-        set_cv "-cha-rowspan", i
+        set_cv "-cha-rowspan", int(i)
 
   case element.tagType
   of TAG_DIV:
@@ -170,8 +170,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_text
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
-    let cols = textarea.attri("cols").get(20)
-    let rows = textarea.attri("rows").get(1)
+    let cols = textarea.attrul("cols").get(20)
+    let rows = textarea.attrul("rows").get(1)
     set_cv "width", CSSLength(unit: UNIT_CH, num: float64(cols))
     set_cv "height", CSSLength(unit: UNIT_EM, num: float64(rows))
   of TAG_FONT:

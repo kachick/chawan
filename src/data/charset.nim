@@ -316,11 +316,6 @@ const CharsetMap = {
   "x-user-defined": CHARSET_X_USER_DEFINED
 }.toTable()
 
-func normalizeLocale(s: string): string =
-  for i in 0 ..< s.len:
-    if cast[uint8](s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
-      result &= s[i].toLowerAscii()
-
 const NormalizedCharsetMap = (func(): Table[string, Charset] =
   for k, v in CharsetMap:
     result[k.normalizeLocale()] = v)()

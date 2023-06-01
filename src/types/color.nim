@@ -1,3 +1,4 @@
+import math
 import options
 import sequtils
 import strutils
@@ -20,6 +21,8 @@ converter toRGBColor*(i: RGBAColor): RGBColor =
 
 converter toRGBAColor*(i: RGBColor): RGBAColor =
   return RGBAColor(uint32(i) or 0xFF000000u32)
+
+func `==`*(a, b: RGBAColor): bool {.borrow.}
 
 func rgbcolor*(color: CellColor): RGBColor =
   cast[RGBColor](color.n)
@@ -220,10 +223,99 @@ func b*(c: RGBAColor): int =
 func a*(c: RGBAColor): int =
   return int(uint32(c) shr 24 and 0xff)
 
+# https://html.spec.whatwg.org/#serialisation-of-a-color
+func serialize*(color: RGBAColor): string =
+  if color.a == 255:
+    let r = toHex(cast[uint8](color.r))
+    let g = toHex(cast[uint8](color.g))
+    let b = toHex(cast[uint8](color.b))
+    return "#" & r & g & b
+  let a = float64(color.a) / 255
+  return "rgba(" & $color.r & ", " & $color.g & ", " & $color.b & ", " & $a &
+    ")"
+
+func `$`*(rgbacolor: RGBAColor): string =
+  return rgbacolor.serialize()
+
+# https://arxiv.org/pdf/2202.02864.pdf
+func fastmul(c, ca: uint32): uint32 =
+  let u = c or 0xFF000000u32
+  var rb = u and 0x00FF00FFu32
+  rb *= ca
+  rb += 0x00800080
+  rb += (rb shr 8) and 0x00FF00FFu32
+  rb = rb and 0xFF00FF00u32
+  var ga = (u shr 8) and 0x00FF00FFu32
+  ga *= ca
+  ga += 0x00800080
+  ga += (ga shr 8) and 0x00FF00FFu32
+  ga = ga and 0xFF00FF00u32
+  return ga or (rb shr 8)
+
+# fastmul, but preserves alpha
+func fastmul1(c, ca: uint32): uint32 =
+  let u = c
+  var rb = u and 0x00FF00FFu32
+  rb *= ca
+  rb += 0x00800080
+  rb += (rb shr 8) and 0x00FF00FFu32
+  rb = rb and 0xFF00FF00u32
+  var ga = (u shr 8) and 0x00FF00FFu32
+  ga *= ca
+  ga += 0x00800080
+  ga += (ga shr 8) and 0x00FF00FFu32
+  ga = ga and 0xFF00FF00u32
+  return ga or (rb shr 8)
+
+func fastmul(c: RGBAColor, ca: uint32): uint32 =
+  return fastmul(uint32(c), ca)
+
+func fastmul1(c: RGBAColor, ca: uint32): uint32 =
+  return fastmul1(uint32(c), ca)
+
+func rgba*(r, g, b, a: int): RGBAColor
+
+func premul(c: RGBAColor): RGBAColor =
+  return RGBAColor(fastmul(c, uint32(c.a)))
+
+const straightAlphaTable = (func(): auto =
+  var table: array[256, array[256, uint8]]
+  for a in 0 ..< 256:
+    let multiplier = if a > 0: (255 / a.float32) else: 0
+    for c in 0 ..< 256:
+      table[a][c] = min(round((c.float32 * multiplier)), 255).uint8
+  return table)()
+
+proc straight*(c: RGBAColor): RGBAColor =
+  let r = straightAlphaTable[c.a][c.r]
+  let g = straightAlphaTable[c.a][c.g]
+  let b = straightAlphaTable[c.a][c.b]
+  return rgba(int(r), int(g), int(b), int(c.a))
+
+func blend*(c0, c1: RGBAColor): RGBAColor =
+  let pc0 = c0.premul()
+  let pc1 = c1.premul()
+  let k = 255 - pc1.a
+  let mc = RGBAColor(fastmul1(pc0, uint32(k)))
+  let rr = pc1.r + mc.r
+  let rg = pc1.g + mc.g
+  let rb = pc1.b + mc.b
+  let ra = pc1.a + mc.a
+  let pres = rgba(rr, rg, rb, ra)
+  let res = straight(pres)
+  return res
+
+#func blend*(c0, c1: RGBAColor): RGBAColor =
+#  const norm = 1f64 / 255f64
+#  let c0a = float64(c0.a) * norm
+#  let c1a = float64(c1.a) * norm
+#  let a0 = c0a + c1a * (1 - c0a)
+
 func rgb*(r, g, b: int): RGBColor =
   return RGBColor((r shl 16) or (g shl 8) or b)
 
-func `==`*(a, b: RGBAColor): bool {.borrow.}
+func rgb*(r, g, b: uint8): RGBColor {.inline.} =
+  return rgb(int(r), int(g), int(b))
 
 func r*(c: RGBColor): int =
   return int(uint32(c) shr 16 and 0xff)
@@ -256,11 +348,14 @@ func YUV*(Y, U, V: int): RGBColor =
 func rgba*(r, g, b, a: int): RGBAColor =
   return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
 
+func gray*(n: int): RGBColor =
+  return rgb(n, n, n) #TODO use yuv instead?
+
+func gray*(n: uint8): RGBColor =
+  return gray(int(n))
+
 template `$`*(rgbcolor: RGBColor): string =
   "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"
-
-template `$`*(rgbacolor: RGBAColor): string =
-  "rgba(" & $rgbacolor.r & ", " & $rgbacolor.g & ", " & $rgbacolor.b & ", " & $rgbacolor.a & ")"
 
 template `$`*(color: CellColor): string =
   if color.rgb:

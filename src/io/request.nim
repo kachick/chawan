@@ -4,6 +4,7 @@ import strutils
 import tables
 
 import bindings/quickjs
+import types/formdata
 import types/url
 import js/javascript
 import utils/twtstr
@@ -66,7 +67,7 @@ type
     url*: Url
     headers* {.jsget.}: Headers
     body*: Option[string]
-    multipart*: Option[MimeData]
+    multipart*: Option[FormData]
     referer*: URL
     mode* {.jsget.}: RequestMode
     destination* {.jsget.}: RequestDestination
@@ -91,19 +92,6 @@ type
 
   Headers* = ref object
     table* {.jsget.}: Table[string, seq[string]]
-
-# Originally from the stdlib
-  MimePart* = object
-    name*, content*: string
-    case isFile*: bool
-    of true:
-      filename*, contentType*: string
-      fileSize*: int64
-      isStream*: bool
-    else: discard
-
-  MimeData* = object
-    content*: seq[MimePart]
 
 proc Request_url(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
   let op = getOpaque0(this)
@@ -213,31 +201,30 @@ func newHeaders*(table: Table[string, string]): Headers =
       result.table[k] = @[v]
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
-                 body = none(string), # multipart = none(MimeData),
-                 mode = RequestMode.NO_CORS,
-                 credentialsMode = CredentialsMode.SAME_ORIGIN,
-                 destination = RequestDestination.NO_DESTINATION,
-                 proxy: URL = nil): Request =
+    body = none(string), multipart = none(FormData), mode = RequestMode.NO_CORS,
+    credentialsMode = CredentialsMode.SAME_ORIGIN,
+    destination = RequestDestination.NO_DESTINATION, proxy: URL = nil): Request =
   return Request(
     url: url,
     httpmethod: httpmethod,
     headers: headers,
     body: body,
-    #multipart: multipart,
+    multipart: multipart,
     mode: mode,
     credentialsMode: credentialsMode,
     destination: destination,
     proxy: proxy
   )
 
-func newRequest*(url: URL, httpmethod = HTTP_GET, headers: seq[(string, string)] = @[],
-                 body = none(string), # multipart = none(MimeData), TODO TODO TODO multipart
-                 mode = RequestMode.NO_CORS, proxy: URL = nil): Request =
+func newRequest*(url: URL, httpmethod = HTTP_GET,
+    headers: seq[(string, string)] = @[], body = none(string),
+    multipart = none(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil):
+    Request =
   let hl = newHeaders()
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
-  return newRequest(url, httpmethod, hl, body, mode, proxy = proxy)
+  return newRequest(url, httpmethod, hl, body, multipart, mode, proxy = proxy)
 
 func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors: CORSAttribute, fallbackFlag = false): Request =
   var mode = if cors == NO_CORS:
@@ -257,16 +244,23 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
 func newRequest*(resource: string, init: JSObject): Request {.jserr, jsctor.} =
   let x = parseURL(resource)
   if x.isNone:
-    JS_ERR JS_TypeError, resource & " is not a valid URL"
+    JS_ERR JS_TypeError, resource & " is not a valid URL."
   if x.get.username != "" or x.get.password != "":
-    JS_ERR JS_TypeError, resource & " is not a valid URL"
+    JS_ERR JS_TypeError, resource & " is not a valid URL."
   let url = x.get
   let ctx = init.ctx
   let fallbackMode = some(RequestMode.CORS) #TODO none if resource is request
   #TODO fallback mode, origin, window, request mode, ...
   let httpMethod = fromJS[HttpMethod](ctx,
     JS_GetPropertyStr(ctx, init.val, "method")).get(HTTP_GET)
-  let body = fromJS[string](ctx, JS_GetPropertyStr(ctx, init.val, "body"))
+  let bodyProp = JS_GetPropertyStr(ctx, init.val, "body")
+  let multipart = fromJS[FormData](ctx, bodyProp)
+  var body: Option[string]
+  if multipart.isNone:
+    body = fromJS[string](ctx, bodyProp)
+  #TODO inputbody
+  if (multipart.isSome or body.isSome) and httpMethod in {HTTP_GET, HTTP_HEAD}:
+    JS_ERR JS_TypeError, "HEAD or GET Request cannot have a body."
   let jheaders = JS_GetPropertyStr(ctx, init.val, "headers")
   let hl = newHeaders()
   hl.fill(ctx, jheaders)
@@ -276,10 +270,7 @@ func newRequest*(resource: string, init: JSObject): Request {.jserr, jsctor.} =
     .get(fallbackMode.get(RequestMode.NO_CORS))
   #TODO find a standard compatible way to implement this
   let proxyUrl = fromJS[URL](ctx, JS_GetPropertyStr(ctx, init.val, "proxyUrl"))
-  return newRequest(url, httpMethod, hl, body, mode, credentials, proxy = proxyUrl.get(nil))
-
-proc `[]=`*(multipart: var MimeData, k, v: string) =
-  multipart.content.add(MimePart(name: k, content: v))
+  return newRequest(url, httpMethod, hl, body, multipart, mode, credentials, proxy = proxyUrl.get(nil))
 
 proc add*(headers: var Headers, k, v: string) =
   let k = k.toHeaderCase()

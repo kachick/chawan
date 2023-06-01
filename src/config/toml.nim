@@ -1,5 +1,6 @@
 import streams
 import tables
+import options
 import times
 import strutils
 import strformat
@@ -367,6 +368,7 @@ proc consumeNumber(state: var TomlParser, c: char): TomlValue =
 
   if state.has(1):
     if state.peek(0) == 'E' or state.peek(0) == 'e':
+      isfloat = true
       var j = 2
       if state.peek(1) == '-' or state.peek(1) == '+':
         inc j
@@ -383,7 +385,7 @@ proc consumeNumber(state: var TomlParser, c: char): TomlValue =
     return TomlValue(vt: VALUE_FLOAT, f: val)
 
   let val = parseInt64(repr)
-  return TomlValue(vt: VALUE_INTEGER, i: val)
+  return TomlValue(vt: VALUE_INTEGER, i: val.get)
 
 proc consumeValue(state: var TomlParser): TomlValue
 

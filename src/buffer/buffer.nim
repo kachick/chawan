@@ -40,9 +40,11 @@ import render/rendertext
 import types/buffersource
 import types/color
 import types/cookie
+import types/formdata
 import types/referer
 import types/url
 import utils/twtstr
+import xhr/formdata as formdata_impl
 
 type
   LoadInfo* = enum
@@ -751,82 +753,19 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
     buffer.do_reshape()
   return buffer.lines.len
 
-# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
-proc constructEntryList(form: HTMLFormElement, submitter: Element = nil, encoding: string = ""): seq[tuple[name, value: string]] =
-  if form.constructingentrylist:
-    return
-  form.constructingentrylist = true
-
-  var entrylist: seq[tuple[name, value: string]]
-  for field in form.controls:
-    if field.findAncestor({TAG_DATALIST}) != nil or
-        field.attrb("disabled") or
-        field.isButton() and Element(field) != submitter:
-      continue
-
-    if field.tagType == TAG_INPUT:
-      let field = HTMLInputElement(field)
-      if field.inputType == INPUT_IMAGE:
-        let name = if field.attr("name") != "":
-          field.attr("name") & '.'
-        else:
-          ""
-        entrylist.add((name & 'x', $field.xcoord))
-        entrylist.add((name & 'y', $field.ycoord))
-        continue
-
-    #TODO custom elements
-
-    let name = field.attr("name")
-
-    if name == "":
-      continue
-
-    if field.tagType == TAG_SELECT:
-      let field = HTMLSelectElement(field)
-      for option in field.options:
-        if option.selected or option.disabled:
-          entrylist.add((name, option.value))
-    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
-      let value = if field.attr("value") != "":
-        field.attr("value")
-      else:
-        "on"
-      entrylist.add((name, value))
-    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_FILE:
-      #TODO file
-      discard
-    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_HIDDEN and name.equalsIgnoreCase("_charset_"):
-      let charset = if encoding != "":
-        encoding
-      else:
-        "UTF-8"
-      entrylist.add((name, charset))
-    else:
-      case field.tagType
-      of TAG_INPUT:
-        entrylist.add((name, HTMLInputElement(field).value))
-      of TAG_BUTTON:
-        entrylist.add((name, HTMLButtonElement(field).value))
-      of TAG_TEXTAREA:
-        entrylist.add((name, HTMLTextAreaElement(field).value))
-      else: assert false, "Tag type " & $field.tagType & " not accounted for in constructEntryList"
-    if field.tagType == TAG_TEXTAREA or
-        field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_TEXT, INPUT_SEARCH}:
-      if field.attr("dirname") != "":
-        let dirname = field.attr("dirname")
-        let dir = "ltr" #TODO bidi
-        entrylist.add((dirname, dir))
-
-  form.constructingentrylist = false
-  return entrylist
-
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
-proc serializeMultipartFormData(kvs: seq[(string, string)]): MimeData =
-  for it in kvs:
-    let name = makeCRLF(it[0])
-    let value = makeCRLF(it[1])
-    result[name] = value
+proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =
+  {.cast(noSideEffect).}:
+    # This is correct, because newFormData with no params has no side effects.
+    let formData = newFormData()
+    for entry in entries:
+      let name = makeCRLF(entry.name)
+      if entry.isstr:
+        let value = makeCRLF(entry.svalue)
+        formData.append(name, value)
+      else:
+        formData.append(name, entry.value, entry.filename)
+    return formData
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
   for it in kvs:
@@ -837,7 +776,9 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= "\r\n"
 
 func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
-  let entrylist = form.constructEntryList(submitter)
+  if form.constructingEntryList:
+    return
+  let entrylist = form.constructEntryList(submitter).get(@[])
 
   let action = if submitter.action() == "":
     $form.document.url
@@ -868,25 +809,30 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   #let noopener = true #TODO
 
   template mutateActionUrl() =
-    let query = serializeApplicationXWWWFormUrlEncoded(entrylist)
+    let kvlist = entrylist.toNameValuePairs()
+    let query = serializeApplicationXWWWFormUrlEncoded(kvlist)
     parsedaction.query = query.some
     return newRequest(parsedaction, httpmethod).some
 
   template submitAsEntityBody() =
     var mimetype: string
     var body = none(string)
-    var multipart = none(MimeData)
+    var multipart = none(FormData)
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
-      body = serializeApplicationXWWWFormUrlEncoded(entrylist).some
+      let kvlist = entrylist.toNameValuePairs()
+      body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
       mimeType = $enctype
     of FORM_ENCODING_TYPE_MULTIPART:
-      multipart = serializeMultipartFormData(entrylist).some
+      multipart = some(serializeMultipartFormData(entrylist))
       mimetype = $enctype
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
-      body = serializePlainTextFormData(entrylist).some
+      let kvlist = entrylist.toNameValuePairs()
+      body = some(serializePlainTextFormData(kvlist))
       mimetype = $enctype
-    return newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype}, body).some #TODO multipart
+    let req = newRequest(parsedaction, httpmethod,
+      @{"Content-Type": mimetype}, body)
+    return some(req) #TODO multipart
 
   template getActionUrl() =
     return newRequest(parsedaction).some

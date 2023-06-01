@@ -1,22 +1,31 @@
 import deques
 import macros
+import math
 import options
 import sets
 import streams
 import strutils
 import tables
 
+import css/cssparser
 import css/sheet
+import css/values
 import data/charset
 import encoding/decoderstream
 import html/tags
+import img/bitmap
+import img/path
 import io/loader
 import io/request
 import js/javascript
 import js/timeout
+import types/blob
+import types/color
+import types/matrix
 import types/mime
 import types/referer
 import types/url
+import types/vector
 import utils/twtstr
 
 type
@@ -158,7 +167,7 @@ type
     charset*: Charset
     window*: Window
     url*: URL #TODO expose as URL (capitalized)
-    location {.jsget.}: URL #TODO should be location
+    location* {.jsget.}: URL #TODO should be location
     mode*: QuirksMode
     currentScript: HTMLScriptElement
     isxml*: bool
@@ -305,19 +314,343 @@ type
 
   HTMLLabelElement* = ref object of HTMLElement
 
+  HTMLCanvasElement* = ref object of HTMLElement
+    ctx2d: CanvasRenderingContext2D
+    bitmap: Bitmap
+
+  DrawingState = object
+    # CanvasTransform
+    transformMatrix: Matrix
+    # CanvasFillStrokeStyles
+    fillStyle: RGBAColor
+    strokeStyle: RGBAColor
+    # CanvasPathDrawingStyles
+    lineWidth: float64
+    # CanvasTextDrawingStyles
+    textAlign: CSSTextAlign
+    # CanvasPath
+    path: Path
+
+  RenderingContext = ref object of RootObj
+
+  CanvasRenderingContext2D = ref object of RenderingContext
+    canvas {.jsget.}: HTMLCanvasElement
+    bitmap: Bitmap
+    state: DrawingState
+    stateStack: seq[DrawingState]
+
+  TextMetrics = ref object
+    # x-direction
+    width {.jsget.}: float64
+    actualBoundingBoxLeft {.jsget.}: float64
+    actualBoundingBoxRight {.jsget.}: float64
+    # y-direction
+    fontBoundingBoxAscent {.jsget.}: float64
+    fontBoundingBoxDescent {.jsget.}: float64
+    actualBoundingBoxAscent {.jsget.}: float64
+    actualBoundingBoxDescent {.jsget.}: float64
+    emHeightAscent {.jsget.}: float64
+    emHeightDescent {.jsget.}: float64
+    hangingBaseline {.jsget.}: float64
+    alphabeticBaseline {.jsget.}: float64
+    ideographicBaseline {.jsget.}: float64
+
+proc parseColor(element: Element, s: string): RGBAColor
+
+proc resetTransform(state: var DrawingState) =
+  state.transformMatrix = newIdentityMatrix(3)
+
+proc resetState(state: var DrawingState) =
+  state.resetTransform()
+  state.fillStyle = rgba(0, 0, 0, 255)
+  state.strokeStyle = rgba(0, 0, 0, 255)
+  state.path = newPath()
+
+proc create2DContext*(target: HTMLCanvasElement, options: Option[JSObject]):
+    CanvasRenderingContext2D =
+  let ctx = CanvasRenderingContext2D(
+    bitmap: target.bitmap,
+    canvas: target
+  )
+  ctx.state.resetState()
+  return ctx
+
+# CanvasState
+proc save(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+  ctx.stateStack.add(ctx.state)
+
+proc restore(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+  if ctx.stateStack.len > 0:
+    ctx.state = ctx.stateStack.pop()
+
+proc reset(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+  ctx.bitmap.clear()
+  #TODO empty list of subpaths
+  ctx.stateStack.setLen(0)
+  ctx.state.resetState()
+
+# CanvasTransform
+#TODO scale
+proc rotate(ctx: CanvasRenderingContext2D, angle: float64) {.jsfunc.} =
+  if classify(angle) in {fcInf, fcNegInf, fcNan}:
+    return
+  ctx.state.transformMatrix *= newMatrix(
+    me = @[
+      cos(angle), -sin(angle), 0,
+      sin(angle), cos(angle), 0,
+      0, 0, 1
+    ],
+    w = 3,
+    h = 3
+  )
+
+proc translate(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
+  for v in [x, y]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  ctx.state.transformMatrix *= newMatrix(
+    me = @[
+      1f64, 0, x,
+      0, 1, y,
+      0, 0, 1
+    ],
+    w = 3,
+    h = 3
+  )
+
+proc transform(ctx: CanvasRenderingContext2D, a, b, c, d, e, f: float64)
+    {.jsfunc.} =
+  for v in [a, b, c, d, e, f]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  ctx.state.transformMatrix *= newMatrix(
+    me = @[
+      a, c, e,
+      b, d, f,
+      0, 0, 1
+    ],
+    w = 3,
+    h = 3
+  )
+
+#TODO getTransform, setTransform with DOMMatrix (i.e. we're missing DOMMatrix)
+proc setTransform(ctx: CanvasRenderingContext2D, a, b, c, d, e, f: float64)
+    {.jsfunc.} =
+  for v in [a, b, c, d, e, f]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  ctx.state.resetTransform()
+  ctx.transform(a, b, c, d, e, f)
+
+proc resetTransform(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+  ctx.state.resetTransform()
+
+func transform(ctx: CanvasRenderingContext2D, v: Vector2D): Vector2D =
+  let mul = ctx.state.transformMatrix * newMatrix(@[v.x, v.y, 1], 1, 3)
+  return Vector2D(x: mul.me[0], y: mul.me[1])
+
+# CanvasFillStrokeStyles
+proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+  return ctx.state.fillStyle.serialize()
+
+proc fillStyle(ctx: CanvasRenderingContext2D, s: string) {.jsfset.} =
+  #TODO gradient, pattern
+  ctx.state.fillStyle = ctx.canvas.parseColor(s)
+
+proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+  return ctx.state.strokeStyle.serialize()
+
+proc strokeStyle(ctx: CanvasRenderingContext2D, s: string) {.jsfset.} =
+  #TODO gradient, pattern
+  ctx.state.strokeStyle = ctx.canvas.parseColor(s)
+
+# CanvasRect
+proc clearRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+  for v in [x, y, w, h]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  #TODO clipping regions (right now we just clip to default)
+  let bw = float64(ctx.bitmap.width)
+  let bh = float64(ctx.bitmap.height)
+  let x0 = uint64(min(max(x, 0), bw))
+  let x1 = uint64(min(max(x + w, 0), bw))
+  let y0 = uint64(min(max(y, 0), bh))
+  let y1 = uint64(min(max(y + h, 0), bh))
+  ctx.bitmap.clearRect(x0, x1, y0, y1)
+
+proc fillRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+  for v in [x, y, w, h]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  #TODO do we have to clip here?
+  if w == 0 or h == 0:
+    return
+  let bw = float64(ctx.bitmap.width)
+  let bh = float64(ctx.bitmap.height)
+  let x0 = uint64(min(max(x, 0), bw))
+  let x1 = uint64(min(max(x + w, 0), bw))
+  let y0 = uint64(min(max(y, 0), bh))
+  let y1 = uint64(min(max(y + h, 0), bh))
+  ctx.bitmap.fillRect(x0, x1, y0, y1, ctx.state.fillStyle)
+
+proc strokeRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+  for v in [x, y, w, h]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  #TODO do we have to clip here?
+  if w == 0 or h == 0:
+    return
+  let bw = float64(ctx.bitmap.width)
+  let bh = float64(ctx.bitmap.height)
+  let x0 = uint64(min(max(x, 0), bw))
+  let x1 = uint64(min(max(x + w, 0), bw))
+  let y0 = uint64(min(max(y, 0), bh))
+  let y1 = uint64(min(max(y + h, 0), bh))
+  ctx.bitmap.strokeRect(x0, x1, y0, y1, ctx.state.strokeStyle)
+
+# CanvasDrawPath
+proc beginPath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+  ctx.state.path.beginPath()
+
+proc fill(ctx: CanvasRenderingContext2D,
+    fillRule = CanvasFillRule.NON_ZERO) {.jsfunc.} = #TODO path
+  ctx.state.path.tempClosePath()
+  ctx.bitmap.fillPath(ctx.state.path, ctx.state.fillStyle, fillRule)
+  ctx.state.path.tempOpenPath()
+
+proc stroke(ctx: CanvasRenderingContext2D) {.jsfunc.} = #TODO path
+  ctx.bitmap.strokePath(ctx.state.path, ctx.state.strokeStyle)
+
+proc clip(ctx: CanvasRenderingContext2D,
+    fillRule = CanvasFillRule.NON_ZERO) {.jsfunc.} = #TODO path
+  #TODO implement
+  discard
+
+#TODO clip, ...
+
+# CanvasUserInterface
+
+# CanvasText
+#TODO maxwidth
+proc fillText(ctx: CanvasRenderingContext2D, text: string, x, y: float64) {.jsfunc.} =
+  for v in [x, y]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  let vec = ctx.transform(Vector2D(x: x, y: y))
+  ctx.bitmap.fillText(text, vec.x, vec.y, ctx.state.fillStyle, ctx.state.textAlign)
+
+#TODO maxwidth
+proc strokeText(ctx: CanvasRenderingContext2D, text: string, x, y: float64) {.jsfunc.} =
+  for v in [x, y]:
+    if classify(v) in {fcInf, fcNegInf, fcNan}:
+      return
+  let vec = ctx.transform(Vector2D(x: x, y: y))
+  ctx.bitmap.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle, ctx.state.textAlign)
+
+proc measureText(ctx: CanvasRenderingContext2D, text: string): TextMetrics
+    {.jsfunc.} =
+  let tw = text.width()
+  return TextMetrics(
+    width: 8 * float64(tw),
+    actualBoundingBoxLeft: 0,
+    actualBoundingBoxRight: 8 * float64(tw),
+    #TODO and the rest...
+  )
+
+# CanvasDrawImage
+
+# CanvasImageData
+
+# CanvasPathDrawingStyles
+proc lineWidth(ctx: CanvasRenderingContext2D): float64 {.jsfget.} =
+  return ctx.state.lineWidth
+
+proc lineWidth(ctx: CanvasRenderingContext2D, f: float64) {.jsfset.} =
+  if classify(f) in {fcZero, fcNegZero, fcInf, fcNegInf, fcNan}:
+    return
+  ctx.state.lineWidth = f
+
+proc setLineDash(ctx: CanvasRenderingContext2D, segments: seq[float64])
+    {.jsfunc.} =
+  discard #TODO implement
+
+proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
+  discard #TODO implement
+
+# CanvasTextDrawingStyles
+proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+  case ctx.state.textAlign
+  of TEXT_ALIGN_START: return "start"
+  of TEXT_ALIGN_END: return "end"
+  of TEXT_ALIGN_LEFT: return "left"
+  of TEXT_ALIGN_RIGHT: return "right"
+  of TEXT_ALIGN_CENTER: return "center"
+  else: doAssert false
+
+proc textAlign(ctx: CanvasRenderingContext2D, s: string) {.jsfset.} =
+  ctx.state.textAlign = case s
+  of "start": TEXT_ALIGN_START
+  of "end": TEXT_ALIGN_END
+  of "left": TEXT_ALIGN_LEFT
+  of "right": TEXT_ALIGN_RIGHT
+  of "center": TEXT_ALIGN_CENTER
+  else: ctx.state.textAlign
+
+# CanvasPath
+proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+  ctx.state.path.closePath()
+
+proc moveTo(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
+  ctx.state.path.moveTo(x, y)
+
+proc lineTo(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
+  ctx.state.path.lineTo(x, y)
+
+proc quadraticCurveTo(ctx: CanvasRenderingContext2D, cpx, cpy, x,
+    y: float64) {.jsfunc.} =
+  ctx.state.path.quadraticCurveTo(cpx, cpy, x, y)
+
+proc arcTo(ctx: CanvasRenderingContext2D, x1, y1, x2, y2, radius: float64)
+    {.jsfunc.} =
+  if not ctx.state.path.arcTo(x1, y1, x2, y2, radius):
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "IndexSizeError"
+
+proc arc(ctx: CanvasRenderingContext2D, x, y, radius, startAngle,
+    endAngle: float64, counterclockwise = false) {.jsfunc.} =
+  if not ctx.state.path.arc(x, y, radius, startAngle, endAngle,
+      counterclockwise):
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "IndexSizeError"
+
+proc ellipse(ctx: CanvasRenderingContext2D, x, y, radiusX, radiusY, rotation,
+    startAngle, endAngle: float64, counterclockwise = false) {.jsfunc.} =
+  if not ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle,
+      endAngle, counterclockwise):
+    #TODO should be DOMException
+    JS_ERR JS_TypeError, "IndexSizeError"
+
+proc rect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+  ctx.state.path.rect(x, y, w, h)
+
+proc roundRect(ctx: CanvasRenderingContext2D, x, y, w, h, radii: float64) {.jsfunc.} =
+  ctx.state.path.roundRect(x, y, w, h, radii)
+
 # Reflected attributes.
 type
   ReflectType = enum
-    REFLECT_STR, REFLECT_BOOL, REFLECT_INT, REFLECT_INT_GREATER_ZERO,
-    REFLECT_INT_GREATER_EQUAL_ZERO
+    REFLECT_STR, REFLECT_BOOL, REFLECT_LONG, REFLECT_ULONG_GZ, REFLECT_ULONG
 
-  ReflectEntry = tuple[
-    attrname: string,
-    funcname: string,
-    t: ReflectType,
-    tags: set[TagType],
-    i: int
-  ]
+  ReflectEntry = object
+    attrname: string
+    funcname: string
+    tags: set[TagType]
+    case t: ReflectType
+    of REFLECT_LONG:
+      i: int32
+    of REFLECT_ULONG, REFLECT_ULONG_GZ:
+      u: uint32
+    else: discard
 
 template toset(ts: openarray[TagType]): set[TagType] =
   var tags: system.set[TagType]
@@ -325,23 +658,53 @@ template toset(ts: openarray[TagType]): set[TagType] =
     tags.incl(tag)
   tags
 
-template makes(name: string, ts: set[TagType]): ReflectEntry =
-  (name, name, REFLECT_STR, ts, 0)
+func makes(name: string, ts: set[TagType]): ReflectEntry =
+  ReflectEntry(
+    attrname: name,
+    funcname: name,
+    t: REFLECT_STR,
+    tags: ts
+  )
 
-template makes(attrname: string, funcname: string, ts: set[TagType]): ReflectEntry =
-  (attrname, funcname, REFLECT_STR, ts, 0)
+func makes(attrname: string, funcname: string, ts: set[TagType]): ReflectEntry =
+  ReflectEntry(
+    attrname: attrname,
+    funcname: funcname,
+    t: REFLECT_STR,
+    tags: ts
+  )
 
-template makes(name: string, ts: varargs[TagType]): ReflectEntry =
+func makes(name: string, ts: varargs[TagType]): ReflectEntry =
   makes(name, toset(ts))
 
-template makes(attrname: string, funcname: string, ts: varargs[TagType]): ReflectEntry =
+func makes(attrname, funcname: string, ts: varargs[TagType]): ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
 template makeb(name: string, ts: varargs[TagType]): ReflectEntry =
-  (name, name, REFLECT_BOOL, toset(ts), 0)
+  ReflectEntry(
+    attrname: name,
+    funcname: name,
+    t: REFLECT_BOOL,
+    tags: toset(ts)
+  )
 
-template makeigz(name: string, ts: varargs[TagType], default = 0): ReflectEntry =
-  (name, name, REFLECT_INT_GREATER_ZERO, toset(ts), default)
+template makeul(name: string, ts: varargs[TagType], default = 0u32): ReflectEntry =
+  ReflectEntry(
+    attrname: name,
+    funcname: name,
+    t: REFLECT_ULONG,
+    tags: toset(ts),
+    u: default
+  )
+
+template makeulgz(name: string, ts: varargs[TagType], default = 0u32): ReflectEntry =
+  ReflectEntry(
+    attrname: name,
+    funcname: name,
+    t: REFLECT_ULONG_GZ,
+    tags: toset(ts),
+    u: default
+  )
 
 const ReflectTable0 = [
   # non-global attributes
@@ -350,15 +713,17 @@ const ReflectTable0 = [
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makes("rel", "relList", TAG_A, TAG_LINK, TAG_LABEL),
   makes("for", "htmlFor", TAG_LABEL),
-  makeigz("cols", TAG_TEXTAREA, 20),
-  makeigz("rows", TAG_TEXTAREA, 1),
+  makeul("cols", TAG_TEXTAREA, 20u32),
+  makeul("rows", TAG_TEXTAREA, 1u32),
 # <SELECT>:
 #> For historical reasons, the default value of the size IDL attribute does
 #> not return the actual size used, which, in the absence of the size content
 #> attribute, is either 1 or 4 depending on the presence of the multiple
 #> attribute.
-  makeigz("size", TAG_SELECT, 0),
-  makeigz("size", TAG_INPUT, 20),
+  makeulgz("size", TAG_SELECT, 0u32),
+  makeulgz("size", TAG_INPUT, 20u32),
+  makeul("width", TAG_CANVAS, 300u32),
+  makeul("height", TAG_CANVAS, 150u32),
   # "super-global" attributes
   makes("slot", AllTagTypes),
   makes("class", "className", AllTagTypes)
@@ -1033,30 +1398,18 @@ func documentElement(document: Document): Element {.jsfget.} =
 func attr*(element: Element, s: string): string {.inline.} =
   return element.attrs.getOrDefault(s, "")
 
-func attri*(element: Element, s: string): Option[int] =
-  let a = element.attr(s)
-  try:
-    return some(parseInt(a))
-  except ValueError:
-    return none(int)
+func attrl*(element: Element, s: string): Option[int32] =
+  return parseInt32(element.attr(s))
 
-func attrigz*(element: Element, s: string): Option[int] =
-  let a = element.attr(s)
-  try:
-    let i = parseInt(a)
-    if i > 0:
-      return some(i)
-  except ValueError:
-    discard
+func attrulgz*(element: Element, s: string): Option[uint32] =
+  let x = parseUInt32(element.attr(s))
+  if x.isSome and x.get > 0:
+    return x
 
-func attrigez*(element: Element, s: string): Option[int] =
-  let a = element.attr(s)
-  try:
-    let i = parseInt(a)
-    if i >= 0:
-      return some(i)
-  except ValueError:
-    discard
+func attrul*(element: Element, s: string): Option[uint32] =
+  let x = parseUInt32(element.attr(s))
+  if x.isSome and x.get >= 0:
+    return x
 
 func attrb*(element: Element, s: string): bool =
   if s in element.attrs:
@@ -1108,9 +1461,9 @@ func inputString*(input: HTMLInputElement): string =
     if input.checked: "*"
     else: " "
   of INPUT_SEARCH, INPUT_TEXT:
-    input.value.padToWidth(input.attri("size").get(20))
+    input.value.padToWidth(int(input.attrulgz("size").get(20)))
   of INPUT_PASSWORD:
-    '*'.repeat(input.value.len).padToWidth(input.attri("size").get(20))
+    '*'.repeat(input.value.len).padToWidth(int(input.attrulgz("size").get(20)))
   of INPUT_RESET:
     if input.value != "": input.value
     else: "RESET"
@@ -1119,16 +1472,16 @@ func inputString*(input: HTMLInputElement): string =
     else: "SUBMIT"
   of INPUT_FILE:
     if input.file.isnone:
-      "".padToWidth(input.attri("size").get(20))
+      "".padToWidth(int(input.attrulgz("size").get(20)))
     else:
-      input.file.get.path.serialize_unicode().padToWidth(input.attri("size").get(20))
+      input.file.get.path.serialize_unicode().padToWidth(int(input.attrulgz("size").get(20)))
   else: input.value
 
 func textAreaString*(textarea: HTMLTextAreaElement): string =
   let split = textarea.value.split('\n')
-  let rows = textarea.attri("rows").get(1)
+  let rows = int(textarea.attrul("rows").get(1))
   for i in 0 ..< rows:
-    let cols = textarea.attri("cols").get(20)
+    let cols = int(textarea.attrul("cols").get(20))
     if cols > 2:
       if i < split.len:
         result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
@@ -1207,6 +1560,14 @@ func formmethod*(element: Element): FormMethod =
         else: FORM_METHOD_GET
 
   return FORM_METHOD_GET
+
+proc parseColor(element: Element, s: string): RGBAColor =
+  try:
+    return cssColor(parseComponentValue(newStringStream(s)))
+  except CSSValueError:
+    #TODO TODO TODO return element style
+    # For now we just use white.
+    return rgb(255, 255, 255)
 
 #TODO ??
 func target0*(element: Element): string =
@@ -1321,7 +1682,9 @@ func newComment(window: Window, data: string = ""): Comment {.jsgctor.} =
   return window.document.newComment(data)
 
 #TODO custom elements
-func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace.HTML, prefix = none[string](), attrs = Table[string, string]()): HTMLElement =
+func newHTMLElement*(document: Document, tagType: TagType,
+    namespace = Namespace.HTML, prefix = none[string](),
+    attrs = Table[string, string]()): HTMLElement =
   case tagType
   of TAG_INPUT:
     result = new(HTMLInputElement)
@@ -1369,6 +1732,8 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
     result = new(HTMLTextAreaElement)
   of TAG_LABEL:
     result = new(HTMLLabelElement)
+  of TAG_CANVAS:
+    result = new(HTMLCanvasElement)
   else:
     result = new(HTMLElement)
   result.nodeType = ELEMENT_NODE
@@ -1382,10 +1747,19 @@ func newHTMLElement*(document: Document, tagType: TagType, namespace = Namespace
   {.cast(noSideEffect).}:
     for k, v in attrs:
       result.attr(k, v)
-  if tagType == TAG_SCRIPT:
+  case tagType
+  of TAG_SCRIPT:
     HTMLScriptElement(result).internalNonce = result.attr("nonce")
+  of TAG_CANVAS:
+    HTMLCanvasElement(result).bitmap = newBitmap(
+      width = result.attrul("width").get(300),
+      height = result.attrul("height").get(150)
+    )
+  else: discard
 
-func newHTMLElement*(document: Document, localName: string, namespace = Namespace.HTML, prefix = none[string](), tagType = tagType(localName), attrs = Table[string, string]()): Element =
+func newHTMLElement*(document: Document, localName: string,
+    namespace = Namespace.HTML, prefix = none[string](),
+    tagType = tagType(localName), attrs = Table[string, string]()): Element =
   result = document.newHTMLElement(tagType, namespace, prefix, attrs)
   if tagType == TAG_UNKNOWN:
     result.localName = localName
@@ -1547,16 +1921,15 @@ proc attr*(element: Element, name, value: string) =
     element.attributes.attrlist.add(element.newAttr(name, value))
   element.attr0(name, value)
 
-proc attri(element: Element, name: string, value: int) =
+proc attrl(element: Element, name: string, value: int32) =
   element.attr(name, $value)
 
-proc attrigz(element: Element, name: string, value: int) =
-  if value > 0:
-    element.attri(name, value)
+proc attrul(element: Element, name: string, value: uint32) =
+  element.attr(name, $value)
 
-proc attrigez(element: Element, name: string, value: int) =
-  if value >= 0:
-    element.attri(name, value)
+proc attrulgz(element: Element, name: string, value: uint32) =
+  if value > 0:
+    element.attrul(name, value)
 
 proc setAttribute(element: Element, qualifiedName, value: string) {.jserr, jsfunc.} =
   if not qualifiedName.matchNameProduction():
@@ -1717,7 +2090,7 @@ proc resetElement*(element: Element) =
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
     if not select.attrb("multiple"):
-      if select.attrigez("size").get(1) == 1:
+      if select.attrul("size").get(1) == 1:
         var i = 0
         var firstOption: HTMLOptionElement
         for option in select.options:
@@ -2277,12 +2650,12 @@ proc jsReflectGet(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.}
     return x
   of REFLECT_BOOl:
     return toJS(ctx, element.attrb(entry.attrname))
-  of REFLECT_INT:
-    return toJS(ctx, element.attri(entry.attrname).get(entry.i))
-  of REFLECT_INT_GREATER_ZERO:
-    return toJS(ctx, element.attrigz(entry.attrname).get(entry.i))
-  of REFLECT_INT_GREATER_EQUAL_ZERO:
-    return toJS(ctx, element.attrigez(entry.attrname).get(entry.i))
+  of REFLECT_LONG:
+    return toJS(ctx, element.attrl(entry.attrname).get(entry.i))
+  of REFLECT_ULONG:
+    return toJS(ctx, element.attrul(entry.attrname).get(entry.u))
+  of REFLECT_ULONG_GZ:
+    return toJS(ctx, element.attrulgz(entry.attrname).get(entry.u))
 
 proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cdecl.} =
   if unlikely(not ctx.isInstanceOf(this, "Element")):
@@ -2305,18 +2678,18 @@ proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cd
         element.attr(entry.attrname, "")
       else:
         element.delAttr(entry.attrname)
-  of REFLECT_INT:
-    let x = fromJS[int](ctx, val)
+  of REFLECT_LONG:
+    let x = fromJS[int32](ctx, val)
     if x.isSome:
-      element.attri(entry.attrname, x.get)
-  of REFLECT_INT_GREATER_ZERO:
-    let x = fromJS[int](ctx, val)
+      element.attrl(entry.attrname, x.get)
+  of REFLECT_ULONG:
+    let x = fromJS[uint32](ctx, val)
     if x.isSome:
-      element.attrigz(entry.attrname, x.get)
-  of REFLECT_INT_GREATER_EQUAL_ZERO:
-    let x = fromJS[int](ctx, val)
+      element.attrul(entry.attrname, x.get)
+  of REFLECT_ULONG_GZ:
+    let x = fromJS[uint32](ctx, val)
     if x.isSome:
-      element.attrigez(entry.attrname, x.get)
+      element.attrulgz(entry.attrname, x.get)
   return JS_DupValue(ctx, val)
 
 proc addconsoleModule*(ctx: JSContext) =
@@ -2337,11 +2710,34 @@ func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
 
 func getElementReflectFunctions(): seq[TabGetSet] =
   var i: uint16 = ReflectAllStartIndex
-  while i < ReflectTable.len:
+  while i < uint16(ReflectTable.len):
     let entry = ReflectTable[i]
     assert entry.tags == AllTagTypes
     result.add(TabGetSet(name: ReflectTable[i].funcname, get: jsReflectGet, set: jsReflectSet, magic: i))
     inc i
+
+proc getContext*(this: HTMLCanvasElement, contextId: string,
+    options = none(JSObject)): RenderingContext {.jsfunc.} =
+  if contextId == "2d":
+    if this.ctx2d != nil:
+      return this.ctx2d
+    return create2DContext(this, options)
+  return nil
+
+#TODO quality should be `any'
+proc toBlob(this: HTMLCanvasElement, callback: JSObject,
+    s = "image/png", quality: float64 = 1): JSValue {.jsfunc.} =
+  let ctx = callback.ctx
+  var outlen: int
+  let buf = this.bitmap.toPNG(outlen)
+  let blob = newBlob(buf, outlen, "image/png", dealloc)
+  var jsBlob = toJS(ctx, blob)
+  let res = JS_Call(ctx, callback.val, JS_UNDEFINED, 1, addr jsBlob)
+  # Hack. TODO: implement JSValue to callback
+  if res == JS_EXCEPTION:
+    return JS_EXCEPTION
+  JS_FreeValue(ctx, res)
+  return JS_UNDEFINED
 
 proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
@@ -2377,6 +2773,7 @@ proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   register(HTMLButtonElement, TAG_BUTTON)
   register(HTMLTextAreaElement, TAG_TEXTAREA)
   register(HTMLLabelElement, TAG_LABEL)
+  register(HTMLCanvasElement, TAG_CANVAS)
 
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.registerType(EventTarget)
@@ -2395,4 +2792,6 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(DocumentType, parent = nodeCID)
   ctx.registerType(Attr, parent = nodeCID)
   ctx.registerType(NamedNodeMap)
+  ctx.registerType(CanvasRenderingContext2D)
+  ctx.registerType(TextMetrics)
   ctx.registerElements(nodeCID)

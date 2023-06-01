@@ -6,6 +6,7 @@ import unicode
 import math
 
 import js/javascript
+import types/blob
 import utils/twtstr
 
 type
@@ -17,10 +18,8 @@ type
     RELATIVE_SLASH_STATE, QUERY_STATE, HOST_STATE, HOSTNAME_STATE,
     FILE_HOST_STATE, PORT_STATE, PATH_START_STATE, FILE_SLASH_STATE
 
-  Blob* = object
-
   BlobUrlEntry* = object
-    obj: Blob #TODO
+    obj: Blob #TODO blob urls
 
   UrlPath* = object
     case opaque*: bool
@@ -570,10 +569,11 @@ proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOver
         (url.is_special and c == '\\') or override:
         if buffer != "":
           let i = parseInt32(buffer)
-          if i notin 0..65535:
+          if i.isNone or i.get notin 0..65535:
+            eprint "validation error???", i
             #TODO validation error
             return none(Url)
-          let port = cast[uint16](i).some
+          let port = cast[uint16](i.get).some
           url.port = if url.is_special and url.default_port == port: none(uint16) else: port
           buffer = ""
         if override:

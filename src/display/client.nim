@@ -31,12 +31,15 @@ import ips/forkserver
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/intl
 import js/javascript
 import js/module
 import js/timeout
+import types/blob
 import types/cookie
 import types/dispatcher
 import types/url
+import xhr/formdata as formdata_impl
 
 type
   Client* = ref ClientObj
@@ -535,6 +538,9 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addURLModule()
   ctx.addDOMModule()
   ctx.addHTMLModule()
+  ctx.addIntlModule()
+  ctx.addBlobModule()
+  ctx.addFormDataModule()
   ctx.addRequestModule()
   ctx.addLineEditModule()
   ctx.addConfigModule()

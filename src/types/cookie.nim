@@ -157,7 +157,9 @@ proc newCookie*(str: string): Cookie {.jsctor.} =
       if date.issome:
         cookie.expires = date.get.toTime().toUnix()
     of "max-age":
-      cookie.expires = now().toTime().toUnix() + parseInt64(val)
+      let x = parseInt64(val)
+      if x.isSome:
+        cookie.expires = now().toTime().toUnix() + x.get
     of "secure": cookie.secure = true
     of "httponly": cookie.httponly = true
     of "samesite": cookie.samesite = true

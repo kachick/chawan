@@ -12,12 +12,12 @@ const DefaultGuess = [
   ("", "text/plain")
 ].toTable()
 
-proc guessContentType*(path: string): string =
+proc guessContentType*(path: string, def = DefaultGuess[""]): string =
   var i = path.len - 1
   var n = 0
   while i > 0:
     if path[i] == '/':
-      return DefaultGuess[""]
+      return def
     if path[i] == '.':
       n = i
       break
@@ -26,7 +26,7 @@ proc guessContentType*(path: string): string =
     let ext = path.substr(n + 1)
     if ext in DefaultGuess:
       return DefaultGuess[ext]
-  return DefaultGuess[""]
+  return def
 
 const JavaScriptTypes = [
   "application/ecmascript",

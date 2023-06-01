@@ -7,7 +7,9 @@ import tables
 
 import io/request
 import js/regex
+import types/blob
 import types/buffersource
+import types/formdata
 import types/url
 
 proc swrite*(stream: Stream, n: SomeNumber)
@@ -54,9 +56,13 @@ proc swrite*(stream: Stream, obj: ref object)
 proc sread*(stream: Stream, obj: var ref object)
 func slen*(obj: ref object): int
 
-proc swrite*(stream: Stream, part: MimePart)
-proc sread*(stream: Stream, part: var MimePart)
-func slen*(part: MimePart): int
+proc swrite*(stream: Stream, part: FormDataEntry)
+proc sread*(stream: Stream, part: var FormDataEntry)
+func slen*(part: FormDataEntry): int
+
+proc swrite*(stream: Stream, blob: Blob)
+proc sread*(stream: Stream, blob: var Blob)
+func slen*(blob: Blob): int
 
 proc swrite*[T](stream: Stream, o: Option[T])
 proc sread*[T](stream: Stream, o: var Option[T])
@@ -242,40 +248,57 @@ func slen*(obj: ref object): int =
   if obj != nil:
     result += slen(obj[])
 
-proc swrite*(stream: Stream, part: MimePart) =
-  stream.swrite(part.isFile)
+proc swrite*(stream: Stream, part: FormDataEntry) =
+  stream.swrite(part.isstr)
   stream.swrite(part.name)
-  stream.swrite(part.content)
-  if part.isFile:
-    stream.swrite(part.filename)
-    stream.swrite(part.contentType)
-    stream.swrite(part.fileSize)
-    stream.swrite(part.isStream)
-
-proc sread*(stream: Stream, part: var MimePart) =
-  var isFile: bool
-  stream.sread(isFile)
-  if isFile:
-    part = MimePart(isFile: true)
+  stream.swrite(part.filename)
+  if part.isstr:
+    stream.swrite(part.svalue)
   else:
-    part = MimePart(isFile: false)
-  stream.sread(part.name)
-  stream.sread(part.content)
-  if part.isFile:
-    stream.sread(part.filename)
-    stream.sread(part.contentType)
-    stream.sread(part.fileSize)
-    stream.sread(part.isStream)
+    stream.swrite(part.value)
 
-func slen*(part: MimePart): int =
-  result += slen(part.isFile)
+proc sread*(stream: Stream, part: var FormDataEntry) =
+  var isstr: bool
+  stream.sread(isstr)
+  if isstr:
+    part = FormDataEntry(isstr: true)
+  else:
+    part = FormDataEntry(isstr: false)
+  stream.sread(part.name)
+  stream.sread(part.filename)
+  if part.isstr:
+    stream.sread(part.svalue)
+  else:
+    stream.sread(part.value)
+
+func slen*(part: FormDataEntry): int =
+  result += slen(part.isstr)
   result += slen(part.name)
-  result += slen(part.content)
-  if part.isFile:
-    result += slen(part.filename)
-    result += slen(part.contentType)
-    result += slen(part.fileSize)
-    result += slen(part.isStream)
+  result += slen(part.filename)
+  if part.isstr:
+    result += slen(part.svalue)
+  else:
+    result += slen(part.value)
+
+proc swrite*(stream: Stream, blob: Blob) =
+  stream.swrite(blob.ctype)
+  stream.swrite(blob.size)
+  #TODO ??
+  stream.writeData(blob.buffer, int(blob.size))
+
+proc sread*(stream: Stream, blob: var Blob) =
+  new(blob)
+  stream.sread(blob.ctype)
+  stream.sread(blob.size)
+  blob.buffer = alloc(blob.size)
+  blob.deallocFun = dealloc
+  #TODO ??
+  assert stream.readData(blob.buffer, int(blob.size)) == int(blob.size)
+
+func slen*(blob: Blob): int =
+  result += slen(blob.ctype)
+  result += slen(blob.size)
+  result += int(blob.size) #TODO ??
 
 proc swrite*[T](stream: Stream, o: Option[T]) =
   stream.swrite(o.issome)

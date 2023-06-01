@@ -867,10 +867,10 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       return none(CSSAnB)
   template parse_sub_int(sub: string, skip: int): int =
     let s = sub.substr(skip)
-    for c in s:
-      if c notin AsciiDigit:
-        return none(CSSAnB)
-    parseInt32(s)
+    let x = parseInt32(s)
+    if x.isNone:
+      return none(CSSAnB)
+    x.get
   template fail_non_integer(tok: CSSToken, res: Option[CSSAnB]) =
     if tok.tokenType != CSS_NUMBER_TOKEN:
       state.reconsume()

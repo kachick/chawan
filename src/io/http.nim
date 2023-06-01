@@ -5,6 +5,8 @@ import strutils
 import bindings/curl
 import io/request
 import ips/serialize
+import types/blob
+import types/formdata
 import types/url
 import utils/twtstr
 
@@ -89,7 +91,7 @@ proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =
       handleData.ostream.swrite(-1)
       handleData.ostream.flush()
       return
-    for entry in request.multipart.get.content:
+    for entry in request.multipart.get:
       let part = curl_mime_addpart(handleData.mime)
       if part == nil:
         # fail (TODO: raise?)
@@ -97,16 +99,16 @@ proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =
         handleData.ostream.flush()
         return
       curl_mime_name(part, cstring(entry.name))
-      if entry.isFile:
-        if entry.isStream:
-          curl_mime_filedata(part, cstring(entry.filename))
+      if entry.isstr:
+        curl_mime_data(part, cstring(entry.svalue), csize_t(entry.svalue.len))
+      else:
+        let blob = entry.value
+        if blob.isfile: #TODO ?
+          curl_mime_filedata(part, cstring(WebFile(blob).path))
         else:
-          let fd = readFile(entry.filename)
-          curl_mime_data(part, cstring(fd), csize_t(fd.len))
+          curl_mime_data(part, blob.buffer, csize_t(blob.size))
         # may be overridden by curl_mime_filedata, so set it here
         curl_mime_filename(part, cstring(entry.filename))
-      else:
-        curl_mime_data(part, cstring(entry.content), csize_t(entry.content.len))
     curl.setopt(CURLOPT_MIMEPOST, handleData.mime)
   elif request.body.issome:
     curl.setopt(CURLOPT_POSTFIELDS, cstring(request.body.get))
