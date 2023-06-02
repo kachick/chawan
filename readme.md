@@ -94,7 +94,7 @@ this is very similar to how w3m handles buffers, except a) source files are
 stored in memory, not on the disk, and b) instead of a linked list of
 buffers, they are stored in a tree. (And, of course c) there are no tabs.)
 
-This model has the advantage of allowing the user being able to instantly
-view the previous page in all cases. It also opens up many interesting
-possibilities concering buffer organization; unfortunately, not much of that
-is implemented yet (except for basic tree traversal commands.)
+This model has the advantage of allowing the user to instantly view the
+previous page in all cases. It also opens up many interesting possibilities
+concering buffer organization; unfortunately, not much of that is implemented
+yet (except for basic tree traversal commands.)
