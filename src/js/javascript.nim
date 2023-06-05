@@ -227,9 +227,11 @@ proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer
 func toString*(ctx: JSContext, val: JSValue): Option[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
-  if outp != nil and plen != 0:
+  if outp != nil:
     var ret = newString(plen)
-    copyMem(addr ret[0], outp, plen)
+    if plen != 0:
+      prepareMutation(ret)
+      copyMem(addr ret[0], outp, plen)
     result = some(ret)
     JS_FreeCString(ctx, outp)
 
@@ -1413,7 +1415,7 @@ macro jsctor*(fun: typed) =
   gen.jsCallAndRet = quote do:
     block `dl`:
       return ctx.toJS(`jfcl`)
-    return JS_UNDEFINED
+    return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
   discard gen.newJSProc(getJSParams())
   gen.registerConstructor()
   result = newStmtList(fun)
