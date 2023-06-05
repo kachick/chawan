@@ -436,7 +436,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       of 2: ((u shr (6 - j)) and 3) * 85
       of 4: ((u shr (6 - j)) and 15) * 17
       of 8: u
-      of 16: u div 2
+      of 16: u # we ignore the lower 8 bits.
       else: 0
       j += int(reader.bitDepth)
       i += j div 8
