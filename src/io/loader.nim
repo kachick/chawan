@@ -233,7 +233,7 @@ proc applyHeaders(request: Request, response: Response) =
             destination = request.destination)
         else:
           response.redirect = newRequest(url.get, request.httpmethod,
-            body = request.body, # multipart = request.multipart, TODO TODO TODO
+            body = request.body, multipart = request.multipart,
             mode = request.mode, credentialsMode = request.credentialsMode,
             destination = request.destination)
 

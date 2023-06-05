@@ -1137,7 +1137,7 @@ proc handleRead(buffer: Buffer, fd: int) =
     discard #TODO hack
   else: assert false
 
-proc handleError(buffer: Buffer, fd: int) =
+proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
   if fd == buffer.rfd:
     # Connection reset by peer, probably. Close the buffer.
     buffer.alive = false
@@ -1145,26 +1145,26 @@ proc handleError(buffer: Buffer, fd: int) =
     buffer.onload()
   elif fd in buffer.loader.connecting:
     # probably shouldn't happen. TODO
-    assert false
+    assert false, $fd & ": " & $err
   elif fd in buffer.loader.ongoing:
     #TODO something with readablestream?
     discard
   elif buffer.fd == -1 and fd == buffer.oldfd:
     discard #TODO hack
   else:
-    assert false
+    assert false, $fd & ": " & $err
 
 proc runBuffer(buffer: Buffer, rfd: int) =
   buffer.rfd = rfd
   while buffer.alive:
     let events = buffer.selector.select(-1)
     for event in events:
-      if Error in event.events:
-        buffer.handleError(event.fd)
-      if not buffer.alive:
-        break
       if Read in event.events:
         buffer.handleRead(event.fd)
+      if Error in event.events:
+        buffer.handleError(event.fd, event.errorCode)
+      if not buffer.alive:
+        break
       if Event.Timer in event.events:
         assert buffer.window != nil
         assert buffer.window.timeouts.runTimeoutFd(event.fd)
