@@ -227,7 +227,7 @@ proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer
 func toString*(ctx: JSContext, val: JSValue): Option[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
-  if outp != nil:
+  if outp != nil and plen != 0:
     var ret = newString(plen)
     copyMem(addr ret[0], outp, plen)
     result = some(ret)
