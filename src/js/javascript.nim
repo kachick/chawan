@@ -74,7 +74,12 @@ type
     Array_prototype_values: JSValue
 
   JSRuntimeOpaque* = ref object
-    plist: Table[pointer, pointer]
+    plist: Table[pointer, pointer] # Nim, JS
+    # Allocations in a finalizers lead to serious problems, so we pre-allocate
+    # alternative objects we can copy ours into when a JS object outlives its
+    # nim counterpart.
+    # In other words, it's an ugly hack on top of an ugly hack.
+    altplist: Table[pointer, pointer] # JS, Nim
     flist: seq[seq[JSCFunctionListEntry]]
     fins: Table[JSClassID, proc(val: JSValue)]
 
@@ -189,7 +194,11 @@ proc setOpaque*[T](ctx: JSContext, val: JSValue, opaque: T) =
   let header = cast[ptr JSRefCountHeader](p)
   inc header.ref_count # add jsvalue reference
   rtOpaque.plist[cast[pointer](opaque)] = p
+  let alt = new(T)
+  GC_ref(alt)
+  rtOpaque.altplist[p] = cast[pointer](alt)
   JS_SetOpaque(val, cast[pointer](opaque))
+  GC_ref(opaque)
 
 func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
@@ -1599,12 +1608,12 @@ proc nim_finalize_for_js[T](obj: T) =
         # Now it's on JS to decrement the new object's refcount.
         # (Yeah, it's an ugly hack, but I couldn't come up with anything
         # better.)
-        let newop = new(T)
+        let newop = cast[T](rtOpaque.altplist[p])
         newop[] = obj[]
-        GC_ref(newop)
         let np = cast[pointer](newop)
         JS_SetOpaque(val, np)
         rtOpaque.plist[np] = p
+        rtOpaque.altplist.del(p)
       else:
         # This was the last reference to the JS value.
         # First, trigger the custom finalizer (if there is one.)
