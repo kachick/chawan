@@ -241,36 +241,47 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
 #TODO resource as Request
 #TODO also, I'm not sure what to do with init. For now I've re-introduced
 # JSObject to make this work, but I really wish we had a better solution.
-func newRequest*(resource: string, init: JSObject): Request {.jserr, jsctor.} =
+func newRequest*(ctx: JSContext, resource: string,
+    init = none(JSValue)): Request {.jserr, jsctor.} =
   let x = parseURL(resource)
   if x.isNone:
     JS_ERR JS_TypeError, resource & " is not a valid URL."
   if x.get.username != "" or x.get.password != "":
     JS_ERR JS_TypeError, resource & " is not a valid URL."
   let url = x.get
-  let ctx = init.ctx
   let fallbackMode = some(RequestMode.CORS) #TODO none if resource is request
-  #TODO fallback mode, origin, window, request mode, ...
-  let httpMethod = fromJS[HttpMethod](ctx,
-    JS_GetPropertyStr(ctx, init.val, "method")).get(HTTP_GET)
-  let bodyProp = JS_GetPropertyStr(ctx, init.val, "body")
-  let multipart = fromJS[FormData](ctx, bodyProp)
-  var body: Option[string]
-  if multipart.isNone:
-    body = fromJS[string](ctx, bodyProp)
-  #TODO inputbody
-  if (multipart.isSome or body.isSome) and httpMethod in {HTTP_GET, HTTP_HEAD}:
-    JS_ERR JS_TypeError, "HEAD or GET Request cannot have a body."
-  let jheaders = JS_GetPropertyStr(ctx, init.val, "headers")
+  var httpMethod = HTTP_GET
+  var body = none(string)
+  var credentials = CredentialsMode.SAME_ORIGIN
+  var mode = fallbackMode.get(RequestMode.NO_CORS)
   let hl = newHeaders()
-  hl.fill(ctx, jheaders)
-  let credentials = fromJS[CredentialsMode](ctx, JS_GetPropertyStr(ctx, init.val, "credentials"))
-    .get(CredentialsMode.SAME_ORIGIN)
-  let mode = fromJS[RequestMode](ctx, JS_GetPropertyStr(ctx, init.val, "mode"))
-    .get(fallbackMode.get(RequestMode.NO_CORS))
-  #TODO find a standard compatible way to implement this
-  let proxyUrl = fromJS[URL](ctx, JS_GetPropertyStr(ctx, init.val, "proxyUrl"))
-  return newRequest(url, httpMethod, hl, body, multipart, mode, credentials, proxy = proxyUrl.get(nil))
+  var proxyUrl = none(URL)
+  var multipart = none(FormData)
+  #TODO fallback mode, origin, window, request mode, ...
+  if init.isSome:
+    let init = init.get
+    httpMethod = fromJS[HttpMethod](ctx,
+      JS_GetPropertyStr(ctx, init, "method")).get(HTTP_GET)
+    let bodyProp = JS_GetPropertyStr(ctx, init, "body")
+    if not JS_IsNull(bodyProp) and not JS_IsUndefined(bodyProp):
+      # ????
+      multipart = fromJS[FormData](ctx, bodyProp)
+      if multipart.isNone:
+        body = fromJS[string](ctx, bodyProp)
+    #TODO inputbody
+    if (multipart.isSome or body.isSome) and
+        httpMethod in {HTTP_GET, HTTP_HEAD}:
+      JS_ERR JS_TypeError, "HEAD or GET Request cannot have a body."
+    let jheaders = JS_GetPropertyStr(ctx, init, "headers")
+    hl.fill(ctx, jheaders)
+    credentials = fromJS[CredentialsMode](ctx, JS_GetPropertyStr(ctx, init,
+      "credentials")).get(credentials)
+    mode = fromJS[RequestMode](ctx, JS_GetPropertyStr(ctx, init, "mode"))
+      .get(mode)
+    #TODO find a standard compatible way to implement this
+    proxyUrl = fromJS[URL](ctx, JS_GetPropertyStr(ctx, init, "proxyUrl"))
+  return newRequest(url, httpMethod, hl, body, multipart, mode, credentials,
+    proxy = proxyUrl.get(nil))
 
 proc add*(headers: var Headers, k, v: string) =
   let k = k.toHeaderCase()

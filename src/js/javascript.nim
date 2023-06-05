@@ -229,8 +229,7 @@ func toString*(ctx: JSContext, val: JSValue): Option[string] =
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
   if outp != nil:
     var ret = newString(plen)
-    for i in 0..<plen:
-      ret[i] = outp[i]
+    copyMem(addr ret[0], outp, plen)
     result = some(ret)
     JS_FreeCString(ctx, outp)
 
@@ -335,7 +334,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   JS_SetConstructor(ctx, jctor, proto)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
-    if namespace == JS_NULL:
+    if JS_IsNull(namespace):
       let global = JS_GetGlobalObject(ctx)
       ctx.defineProperty(global, $cdef.class_name, jctor)
       JS_FreeValue(ctx, global)
@@ -648,8 +647,11 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
   elif T is (proc):
     return fromJSFunction1[typeof(unpackReturnType(T)), typeof(unpackArg0(T))](ctx, val)
   elif typeof(result.unsafeGet) is Option: # unwrap
+    if JS_IsUndefined(val):
+      #TODO what about null?
+      return none(T)
     let res = fromJS[typeof(result.get.get)](ctx, val)
-    if res.isnone:
+    if res.isNone:
       return none(T)
     return some(res)
   elif T is seq:
@@ -1243,13 +1245,13 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
     ma -= 1
   if gen.passCtx:
     ma -= 1
-  let pctx = gen.passCtx
   assert ma >= 0
   result = newStmtList()
   if isva:
     result.add(quote do: 
       if argc < `ma`:
-        return JS_ThrowTypeError(ctx, "At least %d arguments required, but only %d passed %d", `ma`, argc, `pctx`)
+        return JS_ThrowTypeError(ctx, "At least %d arguments required, " &
+          "but only %d passed", `ma`, argc)
     )
   if gen.thisname.isSome:
     let tn = ident(gen.thisname.get)
