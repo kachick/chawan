@@ -346,7 +346,12 @@ func YUV*(Y, U, V: int): RGBColor =
   return rgb(r, g, b)
 
 func rgba*(r, g, b, a: int): RGBAColor =
-  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
+  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or
+    (uint32(g) shl 8) or uint32(b))
+
+func rgba*(r, g, b, a: uint8): RGBAColor =
+  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or
+    (uint32(g) shl 8) or uint32(b))
 
 func gray*(n: int): RGBColor =
   return rgb(n, n, n) #TODO use yuv instead?

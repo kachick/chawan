@@ -14,6 +14,8 @@ import data/charset
 import encoding/decoderstream
 import html/tags
 import img/bitmap
+import img/painter
+import img/png
 import img/path
 import io/loader
 import io/request
