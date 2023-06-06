@@ -317,6 +317,8 @@ proc handleError(client: Client, fd: int) =
   elif fd in client.loader.ongoing:
     #TODO something with readablestream?
     discard
+  elif fd in client.loader.unregistered:
+    discard # already unregistered...
   else:
     if fd in client.fdmap:
       let container = client.fdmap[fd]
@@ -329,7 +331,7 @@ proc handleError(client: Client, fd: int) =
     if client.console.container != nil:
       client.console.show()
     else:
-      quit(1)
+      doAssert false
 
 proc inputLoop(client: Client) =
   let selector = client.selector
@@ -352,6 +354,7 @@ proc inputLoop(client: Client) =
         client.runJSJobs()
         client.console.container.requestLines().then(proc() =
           client.console.container.cursorLastLine())
+    client.loader.unregistered.setLen(0)
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
@@ -379,7 +382,8 @@ proc headlessLoop(client: Client) =
         client.handleError(event.fd)
       if Event.Timer in event.events:
         assert client.timeouts.runTimeoutFd(event.fd)
-        client.runJSJobs()
+    client.runJSJobs()
+    client.loader.unregistered.setLen(0)
     client.acceptBuffers()
 
 proc clientLoadJSModule(ctx: JSContext, module_name: cstring,

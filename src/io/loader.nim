@@ -41,6 +41,7 @@ type
     process*: Pid
     connecting*: Table[int, ConnectData]
     ongoing*: Table[int, Response]
+    unregistered*: seq[int]
     registerFun*: proc(fd: int)
     unregisterFun*: proc(fd: int)
 
@@ -272,6 +273,7 @@ proc onConnected*(loader: FileLoader, fd: int) =
     assert loader.unregisterFun != nil
     response.unregisterFun = proc() =
       loader.ongoing.del(fd)
+      loader.unregistered.add(fd)
       loader.unregisterFun(fd)
     stream.sread(response.status)
     stream.sread(response.headers)
