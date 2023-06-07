@@ -19,6 +19,7 @@ import img/png
 import img/path
 import io/loader
 import io/request
+import io/window
 import js/javascript
 import js/timeout
 import types/blob
@@ -88,6 +89,7 @@ type
 
 type
   Window* = ref object
+    attrs*: WindowAttributes
     console* {.jsget.}: console
     navigator* {.jsget.}: Navigator
     settings*: EnvironmentSettings

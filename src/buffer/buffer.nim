@@ -558,7 +558,7 @@ proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement): Em
       let media = elem.media
       if media != "":
         let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
-        if not media.applies(): return
+        if not media.applies(document.window): return
       return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
         if res.contenttype == "text/css":
           elem.sheet = parseStylesheet(res.body))
@@ -652,7 +652,8 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     buffer.sstream.setPosition(0)
     buffer.available = 0
     if buffer.window == nil:
-      buffer.window = newWindow(buffer.config.scripting, buffer.selector)
+      buffer.window = newWindow(buffer.config.scripting, buffer.selector,
+        buffer.attrs)
     let doc = parseHTML(buffer.sstream, charsets = buffer.charsets,
       window = buffer.window, url = buffer.url)
     buffer.document = doc
@@ -745,7 +746,8 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
     buffer.sstream.setPosition(0)
     buffer.available = 0
     if buffer.window == nil:
-      buffer.window = newWindow(buffer.config.scripting, buffer.selector)
+      buffer.window = newWindow(buffer.config.scripting, buffer.selector,
+        buffer.attrs)
     buffer.document = parseHTML(buffer.sstream,
       charsets = buffer.charsets, window = buffer.window,
       url = buffer.url, canReinterpret = false)
@@ -1195,7 +1197,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, buffer.selector,
-      some(buffer.loader))
+      buffer.attrs, some(buffer.loader))
   let socks = connectSocketStream(mainproc, false)
   socks.swrite(getpid())
   buffer.pstream = socks

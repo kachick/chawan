@@ -130,6 +130,9 @@ func normalizeLocale*(s: string): string =
 func isAscii*(r: Rune): bool =
   return cast[uint32](r) < 128
 
+func `==`*(r: Rune, c: char): bool {.inline.} =
+  return Rune(c) == r
+
 func startsWithNoCase*(str, prefix: string): bool =
   if str.len < prefix.len: return false
   # prefix.len is always lower

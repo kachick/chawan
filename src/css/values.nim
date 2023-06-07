@@ -552,7 +552,8 @@ func cssColor*(val: CSSComponentValue): RGBAColor =
 
 func isToken(cval: CSSComponentValue): bool {.inline.} = cval of CSSToken
 
-func cssLength(val: CSSComponentValue, has_auto: static bool = true, allow_negative: static bool = true): CSSLength =
+func cssLength*(val: CSSComponentValue, has_auto: static bool = true,
+    allow_negative: static bool = true): CSSLength =
   block nofail:
     if val of CSSToken:
       let tok = CSSToken(val)

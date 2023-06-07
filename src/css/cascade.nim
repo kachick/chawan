@@ -18,7 +18,26 @@ import types/color
 type
   DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]
 
-func applies(mq: MediaQuery): bool =
+func applies(feature: MediaFeature, window: Window): bool =
+  case feature.t
+  of FEATURE_COLOR:
+    return 8 in feature.range
+  of FEATURE_GRID:
+    return feature.b
+  of FEATURE_HOVER:
+    return feature.b
+  of FEATURE_PREFERS_COLOR_SCHEME:
+    return feature.b
+  of FEATURE_WIDTH:
+    let a = px(feature.lengthrange.a, window.attrs, 0)
+    let b = px(feature.lengthrange.b, window.attrs, 0)
+    return window.attrs.ppc * window.attrs.width in a .. b
+  of FEATURE_HEIGHT:
+    let a = px(feature.lengthrange.a, window.attrs, 0)
+    let b = px(feature.lengthrange.b, window.attrs, 0)
+    return window.attrs.ppl * window.attrs.height in a .. b
+
+func applies(mq: MediaQuery, window: Window): bool =
   case mq.t
   of CONDITION_MEDIA:
     case mq.media
@@ -29,25 +48,17 @@ func applies(mq: MediaQuery): bool =
     of MEDIA_TYPE_TTY: return true
     of MEDIA_TYPE_UNKNOWN: return false
   of CONDITION_NOT:
-    return not mq.n.applies()
+    return not mq.n.applies(window)
   of CONDITION_AND:
-    return mq.anda.applies() and mq.andb.applies()
+    return mq.anda.applies(window) and mq.andb.applies(window)
   of CONDITION_OR:
-    return mq.ora.applies() or mq.orb.applies()
+    return mq.ora.applies(window) or mq.orb.applies(window)
   of CONDITION_FEATURE:
-    case mq.feature.t
-    of FEATURE_COLOR:
-      return true #TODO
-    of FEATURE_GRID:
-      return mq.feature.b
-    of FEATURE_HOVER:
-      return mq.feature.b
-    of FEATURE_PREFERS_COLOR_SCHEME:
-      return mq.feature.b
+    return mq.feature.applies(window)
 
-func applies*(mqlist: MediaQueryList): bool =
+func applies*(mqlist: MediaQueryList, window: Window): bool =
   for mq in mqlist:
-    if mq.applies():
+    if mq.applies(window):
       return true
   return false
 
@@ -209,12 +220,12 @@ proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode, ua,
   if builder.hasValues():
     result = styledParent.newStyledElement(pseudo, builder.buildComputedValues())
 
-func applyMediaQuery(ss: CSSStylesheet): CSSStylesheet =
+func applyMediaQuery(ss: CSSStylesheet, window: Window): CSSStylesheet =
   if ss == nil: return nil
   result = ss
   for mq in ss.mq_list:
-    if mq.query.applies():
-      result.add(mq.children.applyMediaQuery())
+    if mq.query.applies(window):
+      result.add(mq.children.applyMediaQuery(window))
 
 func calcRules(styledNode: StyledNode, ua, user: CSSStylesheet, author: seq[CSSStylesheet]): tuple[uadecls, userdecls: DeclarationList, authordecls: seq[DeclarationList]] =
   result.uadecls = calcRules(styledNode, ua)
@@ -245,7 +256,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
   var author: seq[CSSStylesheet]
   for sheet in document.sheets():
-    author.add(sheet.applyMediaQuery())
+    author.add(sheet.applyMediaQuery(document.window))
 
   var styledStack: seq[CascadeLevel]
   styledStack.add((nil, document.html, PSEUDO_NONE, cachedTree))
@@ -393,7 +404,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
 
       stack_append styledChild, PSEUDO_BEFORE
 
-proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet, previousStyled: StyledNode): StyledNode =
-  let uass = uass.applyMediaQuery()
-  let userss = userss.applyMediaQuery()
+proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet,
+    previousStyled: StyledNode): StyledNode =
+  let uass = uass.applyMediaQuery(document.window)
+  let userss = userss.applyMediaQuery(document.window)
   return document.applyRules(uass, userss, previousStyled)

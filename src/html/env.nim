@@ -6,6 +6,7 @@ import html/htmlparser
 import io/loader
 import io/promise
 import io/request
+import io/window
 import js/intl
 import js/javascript
 import js/timeout
@@ -124,8 +125,9 @@ proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)
 
 proc newWindow*(scripting: bool, selector: Selector[int],
-    loader = none(FileLoader)): Window =
+    attrs: WindowAttributes, loader = none(FileLoader)): Window =
   let window = Window(
+    attrs: attrs,
     console: console(err: newFileStream(stderr)),
     navigator: Navigator(),
     loader: loader,
