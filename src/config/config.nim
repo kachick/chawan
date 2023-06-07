@@ -88,6 +88,7 @@ type
     double_width_ambiguous*: bool
     minimum_contrast*: int32
     force_clear*: bool
+    set_title*: bool
 
   #TODO: add JS wrappers for objects
   Config* = ref ConfigObj

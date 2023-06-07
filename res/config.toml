@@ -29,6 +29,7 @@ highlight-color = "cyan"
 double-width-ambiguous = false
 minimum-contrast = 100
 force-clear = false
+set-title = true
 
 [[omnirule]]
 match = '^ddg:'

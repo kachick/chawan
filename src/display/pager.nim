@@ -93,6 +93,7 @@ iterator containers*(pager: Pager): Container {.inline.} =
 proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
   pager.container = c
   pager.redraw = true
+  pager.term.setTitle(c.getTitle())
 
 proc hasprop(pager: Pager, s: string): bool {.jshasprop.} =
   if pager.container != nil:
@@ -854,6 +855,10 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of STATUS:
     if pager.container == container:
       pager.refreshStatusMsg()
+  of TITLE:
+    if pager.container == container:
+      pager.refreshStatusMsg()
+      pager.term.setTitle(container.getTitle())
   of ALERT:
     if pager.container == container:
       pager.alert(event.msg)

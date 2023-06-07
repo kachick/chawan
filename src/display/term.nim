@@ -61,35 +61,24 @@ func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
 func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
 func ccap(term: Terminal, c: TermcapCap): cstring = term.tc.caps[c]
 
-template CSI*(s: varargs[string, `$`]): string =
-  var r = "\e["
-  var first = true
-  for x in s:
-    if not first:
-      r &= ";"
-    first = false
-    r &= x
-  r
+# control sequence introducer
+template CSI(s: varargs[string, `$`]): string =
+  "\e[" & s.join(';')
+
+# OS command
+template OSC(s: varargs[string, `$`]): string =
+  "\e]" & s.join(';') & '\a'
+
+template XTERM_TITLE(s: string): string =
+  OSC(0, s)
 
 when not termcap_found:
+  # DEC set
   template DECSET(s: varargs[string, `$`]): string =
-    var r = "\e[?"
-    var first = true
-    for x in s:
-      if not first:
-        r &= ";"
-      first = false
-      r &= x
-    r & "h"
+    "\e[?" & s.join(';') & 'h'
+  # DEC reset
   template DECRST(s: varargs[string, `$`]): string =
-    var r = "\e[?"
-    var first = true
-    for x in s:
-      if not first:
-        r &= ";"
-      first = false
-      r &= x
-    r & "l"
+    "\e[?" & s.join(';') & 'l'
   template SMCUP(): string = DECSET(1049)
   template RMCUP(): string = DECRST(1049)
   template HVP(s: varargs[string, `$`]): string =
@@ -324,6 +313,10 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
   term.canvas = newFixedGrid(attrs.width, attrs.height)
   term.cleared = false
 
+proc setTitle*(term: Terminal, title: string) =
+  if term.config.display.set_title:
+    term.outfile.write(XTERM_TITLE(title))
+
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
   if str.validateUtf8() != -1:
     return "?"
@@ -447,8 +440,9 @@ proc applyConfig(term: Terminal) =
   for fm in FormatFlags:
     if fm in term.config.display.no_format_mode:
       term.formatmode.excl(fm)
-  if term.isatty() and term.config.display.alt_screen.isSome:
-    term.smcup = term.config.display.alt_screen.get
+  if term.isatty():
+    if term.config.display.alt_screen.isSome:
+      term.smcup = term.config.display.alt_screen.get
   term.mincontrast = term.config.display.minimum_contrast
   if term.config.encoding.display_charset.isSome:
     term.cs = term.config.encoding.display_charset.get

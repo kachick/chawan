@@ -15,9 +15,11 @@ omnirule = [] # note: this must be placed at the beginning of the file.
 [[omnirule]] # this is legal. all default omni-rules are now disabled.
 ```
 
-Chawan will look for a config file in the ~/.config/chawan/ directory called
-`config.toml`. See the default configuration file in the res/ folder, and
-bonus configuration files in the bonus/ folder for further examples.
+Chawan will look for a config file in the $XDG_CONFIG_HOME/chawan/ (or
+directory called `config.toml`. (Chawan defaults to ~/.config if the
+XDG_CONFIG_HOME environment variable is not set.) See the default configuration
+file in the res/ folder, and bonus configuration files in the bonus/ folder
+for further examples.
 
 **Table of contents**
 
@@ -261,6 +263,12 @@ black background, etc).</td>
 <td>force-clear</td>
 <td>boolean</td>
 <td>Force the screen to be completely cleared every time it is redrawn.</td>
+</tr>
+
+<tr>
+<td>set-title</td>
+<td>boolean</td>
+<td>Set the terminal emulator's window title to that of the current page.</td>
 </tr>
 
 </table>

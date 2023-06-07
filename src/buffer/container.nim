@@ -36,7 +36,7 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED
+    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED, TITLE
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -679,7 +679,7 @@ proc onload(container: Container, res: LoadResult) =
       container.iface.getTitle().then(proc(title: string): auto =
         if title != "":
           container.title = title
-          container.triggerEvent(STATUS)
+          container.triggerEvent(TITLE)
         return container.iface.render()
       ).then(proc(lines: int): auto =
         container.setNumLines(lines, true)
