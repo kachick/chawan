@@ -332,30 +332,32 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: Wi
       posx = x
       posy = y
 
-    if box.computed{"background-color"}.a != 0: #TODO color blending
-      grid.paintBackground(box.computed{"background-color"}, x, y, x + box.width, y + box.height, box.node, window)
-    if box.computed{"background-image"}.t == CONTENT_IMAGE and box.computed{"background-image"}.s != "":
-      # ugly hack for background-image display... TODO actually display images
-      let s = "[img]"
-      let w = s.len * window.ppc
-      var ix = x
-      if box.width < w:
-        # text is larger than image; center it to minimize error
-        ix -= w div 2
-        ix += box.width div 2
-      let x = ix div window.ppc
-      let y = y div window.ppl
-      if y >= 0 and x + w >= 0:
-        grid.setText(s, ComputedFormat(node: box.node), x, y)
+    if box.computed{"visibility"} == VISIBILITY_VISIBLE:
+      if box.computed{"background-color"}.a != 0: #TODO color blending
+        grid.paintBackground(box.computed{"background-color"}, x, y, x + box.width, y + box.height, box.node, window)
+      if box.computed{"background-image"}.t == CONTENT_IMAGE and box.computed{"background-image"}.s != "":
+        # ugly hack for background-image display... TODO actually display images
+        let s = "[img]"
+        let w = s.len * window.ppc
+        var ix = x
+        if box.width < w:
+          # text is larger than image; center it to minimize error
+          ix -= w div 2
+          ix += box.width div 2
+        let x = ix div window.ppc
+        let y = y div window.ppl
+        if y >= 0 and x + w >= 0:
+          grid.setText(s, ComputedFormat(node: box.node), x, y)
 
-    if box of ListItemBox:
-      let box = ListItemBox(box)
-      if box.marker != nil:
-        grid.renderInlineContext(box.marker, x - box.marker.width, y, window)
+      if box of ListItemBox:
+        let box = ListItemBox(box)
+        if box.marker != nil:
+          grid.renderInlineContext(box.marker, x - box.marker.width, y, window)
 
     if box.inline != nil:
       assert box.nested.len == 0
-      grid.renderInlineContext(box.inline, x, y, window)
+      if box.computed{"visibility"} == VISIBILITY_VISIBLE:
+        grid.renderInlineContext(box.inline, x, y, window)
     else:
       for i in countdown(box.nested.high, 0):
         stack.add((box.nested[i], x, y, posx, posy))

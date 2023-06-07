@@ -36,7 +36,8 @@ type
     PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
     PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
     PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE,
-    PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN, PROPERTY_FLOAT
+    PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN, PROPERTY_FLOAT,
+    PROPERTY_VISIBILITY
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -44,7 +45,7 @@ type
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
     VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
-    VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT
+    VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT, VALUE_VISIBILITY
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -108,6 +109,9 @@ type
 
   CSSFloat* = enum
     FLOAT_NONE, FLOAT_LEFT, FLOAT_RIGHT
+
+  CSSVisibility* = enum
+    VISIBILITY_VISIBLE, VISIBILITY_HIDDEN, VISIBILITY_COLLAPSE
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -187,6 +191,8 @@ type
       image*: CSSContent
     of VALUE_FLOAT:
       float*: CSSFloat
+    of VALUE_VISIBILITY:
+      visibility*: CSSVisibility
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -261,7 +267,8 @@ const PropertyNames = {
   "background-image": PROPERTY_BACKGROUND_IMAGE,
   "-cha-colspan": PROPERTY_CHA_COLSPAN,
   "-cha-rowspan": PROPERTY_CHA_ROWSPAN,
-  "float": PROPERTY_FLOAT
+  "float": PROPERTY_FLOAT,
+  "visibility": PROPERTY_VISIBILITY
 }.toTable()
 
 const ValueTypes* = [
@@ -308,7 +315,8 @@ const ValueTypes* = [
   PROPERTY_BACKGROUND_IMAGE: VALUE_IMAGE,
   PROPERTY_CHA_COLSPAN: VALUE_INTEGER,
   PROPERTY_CHA_ROWSPAN: VALUE_INTEGER,
-  PROPERTY_FLOAT: VALUE_FLOAT
+  PROPERTY_FLOAT: VALUE_FLOAT,
+  PROPERTY_VISIBILITY: VALUE_VISIBILITY
 ]
 
 const InheritedProperties = {
@@ -316,7 +324,8 @@ const InheritedProperties = {
   PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
   PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_CAPTION_SIDE,
-  PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES
+  PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
+  PROPERTY_VISIBILITY
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -938,6 +947,16 @@ func cssFloat(cval: CSSComponentValue): CSSFloat =
       of "right": return FLOAT_RIGHT
   raise newException(CSSValueError, "Invalid float")
 
+func cssVisibility(cval: CSSComponentValue): CSSVisibility =
+  if isToken(cval):
+    let tok = getToken(cval)
+    if tok.tokenType == CSS_IDENT_TOKEN:
+      case tok.value
+      of "visible": return VISIBILITY_VISIBLE
+      of "hidden": return VISIBILITY_HIDDEN
+      of "collapse": return VISIBILITY_COLLAPSE
+  raise newException(CSSValueError, "Invalid visibility")
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueType, ptype: CSSPropertyType) =
   var i = 0
   d.value.skipWhitespace(i)
@@ -994,6 +1013,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration, vtype: CSSValueT
   of VALUE_COUNTER_RESET: val.counterreset = cssCounterReset(d)
   of VALUE_IMAGE: val.image = cssImage(cval)
   of VALUE_FLOAT: val.float = cssFloat(cval)
+  of VALUE_VISIBILITY: val.visibility = cssVisibility(cval)
   of VALUE_NONE: discard
 
 func getInitialColor(t: CSSPropertyType): RGBAColor =

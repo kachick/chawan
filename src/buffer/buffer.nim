@@ -17,6 +17,7 @@ import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/stylednode
+import css/values
 import config/config
 import data/charset
 import html/dom
@@ -264,26 +265,22 @@ const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL
 }
 
+func isClickable(styledNode: StyledNode): bool =
+  if styledNode.t != STYLED_ELEMENT or styledNode.node == nil:
+    return false
+  if styledNode.computed{"visibility"} != VISIBILITY_VISIBLE:
+    return false
+  let element = Element(styledNode.node)
+  if element.tagType == TAG_A:
+    return HTMLAnchorElement(element).href != ""
+  return element.tagType in ClickableElements
+
 func getClickable(styledNode: StyledNode): Element =
-  if styledNode == nil:
-    return nil
   var styledNode = styledNode
-  while styledNode.node == nil:
-    styledNode = styledNode.parent
-    if styledNode == nil:
-      return nil
-  if styledNode.t == STYLED_ELEMENT:
-    let element = Element(styledNode.node)
-    if element.tagType in ClickableElements and (element.tagType != TAG_A or HTMLAnchorElement(element).href != ""):
-      return element
-  var node = styledNode.node
-  while true:
-    result = node.findAncestor(ClickableElements)
-    if result == nil:
-      break
-    if result.tagType != TAG_A or HTMLAnchorElement(result).href != "":
-      break
-    node = result
+  while styledNode != nil:
+    if styledNode.isClickable():
+      return Element(styledNode.node)
+    styledNode = stylednode.parent
 
 func submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
 

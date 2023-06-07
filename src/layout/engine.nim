@@ -1148,6 +1148,8 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder) =
         dec n
   var y = 0
   for roww in ctx.rows:
+    if roww.builder.computed{"visibility"} == VISIBILITY_COLLAPSE:
+      continue
     y += ctx.blockspacing
     let row = ctx.buildTableRow(roww, table, roww.builder)
     row.offset.y += y
