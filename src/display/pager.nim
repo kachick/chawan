@@ -93,7 +93,8 @@ iterator containers*(pager: Pager): Container {.inline.} =
 proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
   pager.container = c
   pager.redraw = true
-  pager.term.setTitle(c.getTitle())
+  if c != nil:
+    pager.term.setTitle(c.getTitle())
 
 proc hasprop(pager: Pager, s: string): bool {.jshasprop.} =
   if pager.container != nil:
