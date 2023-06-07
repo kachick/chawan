@@ -12,6 +12,11 @@ import utils/twtstr
 func px(l: CSSLength, viewport: Viewport, p = 0): int {.inline.} =
   return px(l, viewport.window, p)
 
+func px(l: CSSLength, viewport: Viewport, p: Option[int]): Option[int] {.inline.} =
+  if l.unit == UNIT_PERC and p.isNone:
+    return none(int)
+  return some(px(l, viewport.window, p.get(0)))
+
 type InlineState = object
   ictx: InlineContext
   skip: bool
@@ -446,28 +451,19 @@ proc resolveDimensions(box: BlockBox, availableWidth: int, availableHeight: Opti
   # Height
   let pheight = computed{"height"}
   if not pheight.auto:
-    if pheight.unit != UNIT_PERC:
-      box.contentHeight = some(pheight.px(viewport))
-    elif availableHeight.isSome:
-      box.contentHeight = some(pheight.px(viewport, availableHeight.get))
+    box.contentHeight = pheight.px(viewport, availableHeight)
   if not computed{"max-height"}.auto:
-    if computed{"max-height"}.unit != UNIT_PERC:
-      let maxHeight = computed{"max-height"}.px(viewport)
-      if box.contentHeight.isSome and maxHeight < box.contentHeight.get:
-        box.contentHeight = some(maxHeight)
-    elif availableHeight.isSome:
-      let maxHeight = computed{"max-height"}.px(viewport, availableHeight.get)
-      if box.contentHeight.isSome and maxHeight < box.contentHeight.get:
-        box.contentHeight = some(maxHeight)
+    let max_height = computed{"max-height"}.px(viewport, availableHeight)
+    box.max_height = max_height
+    if max_height.isSome and box.contentHeight.isSome and
+        max_height.get < box.contentHeight.get:
+      box.contentHeight = max_height
   if not computed{"min-height"}.auto:
-    if computed{"min-height"}.unit != UNIT_PERC:
-      let minHeight = computed{"min-height"}.px(viewport)
-      if minHeight > box.contentHeight.get(0):
-        box.contentHeight = some(minHeight)
-    elif availableHeight.isSome:
-      let minHeight = computed{"min-height"}.px(viewport, availableHeight.get)
-      if minHeight > box.contentHeight.get(0):
-        box.contentHeight = some(minHeight)
+    let min_height = computed{"min-height"}.px(viewport, availableHeight)
+    box.min_height = min_height
+    if min_height.isSome and box.contentHeight.isSome and
+        min_height.get > box.contentHeight.get:
+      box.contentHeight = min_height
   # if no max content width is supplied, just use regular content width.
   box.maxContentWidth = maxContentWidth.get(box.contentWidth)
 
@@ -910,6 +906,10 @@ proc positionBlocks(box: BlockBox) =
 
   if box.contentHeight.isSome:
     box.height = box.contentHeight.get
+  if box.max_height.isSome and box.height > box.max_height.get:
+    box.height = box.max_height.get
+  if box.min_height.isSome and box.height < box.min_height.get:
+    box.height = box.min_height.get
 
   box.width += box.padding_left
   box.width += box.padding_right

@@ -131,6 +131,8 @@ type
     padding_right*: int
     min_width*: Option[int]
     max_width*: Option[int]
+    min_height*: Option[int]
+    max_height*: Option[int]
 
     # This is the (specified) content width/height. Actual dimensions may
     # differ (i.e. overflow)
