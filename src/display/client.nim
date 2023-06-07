@@ -295,6 +295,8 @@ proc handleRead(client: Client, fd: int) =
   elif fd in client.loader.ongoing:
     #TODO something with readablestream?
     discard
+  elif fd in client.loader.unregistered:
+    discard # ignore
   else:
     let container = client.fdmap[fd]
     client.pager.handleEvent(container)

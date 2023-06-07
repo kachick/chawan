@@ -75,7 +75,6 @@ type
   Buffer* = ref object
     rfd: int # file descriptor of command pipe
     fd: int # file descriptor of buffer source
-    oldfd: int # fd after being unregistered
     alive: bool
     readbufsize: int
     contenttype: string
@@ -663,7 +662,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     p = EmptyPromise()
     p.resolve()
   buffer.selector.unregister(buffer.fd)
-  buffer.oldfd = buffer.fd
+  buffer.loader.unregistered.add(buffer.fd)
   buffer.fd = -1
   buffer.istream.close()
   return p
@@ -1133,8 +1132,8 @@ proc handleRead(buffer: Buffer, fd: int) =
   elif fd in buffer.loader.ongoing:
     #TODO something with readablestream?
     discard
-  elif buffer.fd == -1 and buffer.oldfd == fd:
-    discard #TODO hack
+  elif fd in buffer.loader.unregistered:
+    discard # ignore
   else: assert false
 
 proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
@@ -1149,8 +1148,8 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
   elif fd in buffer.loader.ongoing:
     #TODO something with readablestream?
     discard
-  elif buffer.fd == -1 and fd == buffer.oldfd:
-    discard #TODO hack
+  elif fd in buffer.loader.unregistered:
+    discard # ignore
   else:
     assert false, $fd & ": " & $err
 
@@ -1169,6 +1168,7 @@ proc runBuffer(buffer: Buffer, rfd: int) =
         assert buffer.window != nil
         assert buffer.window.timeouts.runTimeoutFd(event.fd)
         buffer.window.runJSJobs()
+    buffer.loader.unregistered.setLen(0)
   buffer.pstream.close()
   buffer.loader.quit()
   quit(0)

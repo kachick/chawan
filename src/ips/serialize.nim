@@ -80,7 +80,8 @@ proc swrite*(stream: Stream, n: SomeNumber) =
   stream.write(n)
 
 proc sread*(stream: Stream, n: var SomeNumber) =
-  stream.read(n)
+  if stream.readData(addr n, sizeof(n)) < sizeof(n):
+    raise newException(EOFError, "eof")
 
 func slen*(n: SomeNumber): int =
   return sizeof(n)
@@ -122,7 +123,9 @@ proc sread*(stream: Stream, s: var string) =
   var len: int
   stream.sread(len)
   if len > 0:
-    stream.readStr(len, s)
+    s = newString(len)
+    if stream.readData(addr s[0], len) < len:
+      raise newException(EOFError, "eof")
   else:
     s = ""
 
