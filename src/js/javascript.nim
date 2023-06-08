@@ -85,10 +85,6 @@ type
 
   JSFunctionList* = openArray[JSCFunctionListEntry]
 
-  JSObject* = object
-    ctx*: JSContext
-    val*: JSValue
-
 func getOpaque*(ctx: JSContext): JSContextOpaque =
   return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
 
@@ -703,8 +699,6 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
       return none(T)
   elif T is JSValue:
     return some(val)
-  elif T is JSObject:
-    return some(JSObject(ctx: ctx, val: val))
   elif T is object:
     doAssert false, "Dictionary case has not been implemented yet!"
     #TODO TODO TODO implement dictionary case

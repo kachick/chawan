@@ -40,13 +40,19 @@ proc append*(this: FormData, name: string, value: Blob,
   ))
 
 #TODO hack
-proc append(this: FormData, name: string, value: JSObject,
+proc append(ctx: JSContext, this: FormData, name: string, value: JSValue,
     filename = none(string)) {.jsfunc.} =
-  let blob = fromJS[Blob](value.ctx, value.val)
+  let blob = fromJS[Blob](ctx, value)
   if blob.isSome:
-    this.append(name, blob.get, filename.get("blob"))
+    let filename = if filename.isSome:
+      filename.get
+    elif blob.get of WebFile:
+      WebFile(blob.get).name
+    else:
+      "blob"
+    this.append(name, blob.get, filename)
   else:
-    let s = fromJS[string](value.ctx, value.val)
+    let s = fromJS[string](ctx, value)
     # toString should never fail (?)
     this.append(name, s.get, filename.get(""))
 

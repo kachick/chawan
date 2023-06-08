@@ -186,10 +186,13 @@ proc fill(headers: Headers, ctx: JSContext, val: JSValue) =
         else:
           headers.table[k] = @[v]
 
-func newHeaders*(obj = none(JSObject)): Headers {.jsctor.} =
+func newHeaders*(): Headers =
+  new(result)
+
+func newHeaders*(ctx: JSContext, obj = none(JSValue)): Headers {.jsctor.} =
   new(result)
   if obj.isSome:
-    result.fill(obj.get.ctx, obj.get.val)
+    result.fill(ctx, obj.get)
 
 func newHeaders*(table: Table[string, string]): Headers =
   new(result)
@@ -239,8 +242,7 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
   return newRequest(url, destination = destination, mode = mode, credentialsMode = credentialsMode)
 
 #TODO resource as Request
-#TODO also, I'm not sure what to do with init. For now I've re-introduced
-# JSObject to make this work, but I really wish we had a better solution.
+#TODO init as an actual dictionary
 func newRequest*(ctx: JSContext, resource: string,
     init = none(JSValue)): Request {.jserr, jsctor.} =
   let x = parseURL(resource)

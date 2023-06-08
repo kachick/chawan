@@ -370,7 +370,8 @@ proc resetState(state: var DrawingState) =
   state.strokeStyle = rgba(0, 0, 0, 255)
   state.path = newPath()
 
-proc create2DContext*(target: HTMLCanvasElement, options: Option[JSObject]):
+proc create2DContext*(jctx: JSContext, target: HTMLCanvasElement,
+    options: Option[JSValue]):
     CanvasRenderingContext2D =
   let ctx = CanvasRenderingContext2D(
     bitmap: target.bitmap,
@@ -2720,23 +2721,22 @@ func getElementReflectFunctions(): seq[TabGetSet] =
     result.add(TabGetSet(name: ReflectTable[i].funcname, get: jsReflectGet, set: jsReflectSet, magic: i))
     inc i
 
-proc getContext*(this: HTMLCanvasElement, contextId: string,
-    options = none(JSObject)): RenderingContext {.jsfunc.} =
+proc getContext*(jctx: JSContext, this: HTMLCanvasElement, contextId: string,
+    options = none(JSValue)): RenderingContext {.jsfunc.} =
   if contextId == "2d":
     if this.ctx2d != nil:
       return this.ctx2d
-    return create2DContext(this, options)
+    return create2DContext(jctx, this, options)
   return nil
 
 #TODO quality should be `any'
-proc toBlob(this: HTMLCanvasElement, callback: JSObject,
+proc toBlob(ctx: JSContext, this: HTMLCanvasElement, callback: JSValue,
     s = "image/png", quality: float64 = 1): JSValue {.jsfunc.} =
-  let ctx = callback.ctx
   var outlen: int
   let buf = this.bitmap.toPNG(outlen)
   let blob = newBlob(buf, outlen, "image/png", dealloc)
   var jsBlob = toJS(ctx, blob)
-  let res = JS_Call(ctx, callback.val, JS_UNDEFINED, 1, addr jsBlob)
+  let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, addr jsBlob)
   # Hack. TODO: implement JSValue to callback
   if res == JS_EXCEPTION:
     return JS_EXCEPTION

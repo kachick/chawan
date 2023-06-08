@@ -8,7 +8,7 @@ type
 
 #TODO ...yeah
 proc newNumberFormat(name: string = "en-US",
-    options = none(JSObject)): NumberFormat {.jsctor.} =
+    options = none(JSValue)): NumberFormat {.jsctor.} =
   return NumberFormat()
 
 #TODO: this should accept string/BigInt too
