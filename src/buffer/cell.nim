@@ -1,7 +1,5 @@
-import sequtils
-import streams
-import strutils
-import sugar
+import options
+import tables
 
 import css/stylednode
 import types/color
@@ -64,15 +62,22 @@ iterator items*(grid: FixedGrid): FixedCell {.inline.} =
 proc len*(grid: FixedGrid): int = grid.cells.len
 proc high*(grid: FixedGrid): int = grid.cells.high
 
-const FormatCodes*: array[FormatFlags, tuple[s: int, e: int]] = [
-  FLAG_BOLD: (1, 22),
-  FLAG_ITALIC: (3, 23),
-  FLAG_UNDERLINE: (4, 24),
-  FLAG_REVERSE: (7, 27),
-  FLAG_STRIKE: (9, 29),
-  FLAG_OVERLINE: (53, 55),
-  FLAG_BLINK: (5, 25),
+const FormatCodes*: array[FormatFlags, tuple[s, e: uint8]] = [
+  FLAG_BOLD: (1u8, 22u8),
+  FLAG_ITALIC: (3u8, 23u8),
+  FLAG_UNDERLINE: (4u8, 24u8),
+  FLAG_REVERSE: (7u8, 27u8),
+  FLAG_STRIKE: (9u8, 29u8),
+  FLAG_OVERLINE: (53u8, 55u8),
+  FLAG_BLINK: (5u8, 25u8),
 ]
+
+const FormatCodeMap = block:
+  var res: Table[uint8, tuple[flag: FormatFlags, reverse: bool]]
+  for x in FormatFlags:
+    res[FormatCodes[x][0]] = (x, false)
+    res[FormatCodes[x][1]] = (x, true)
+  res
 
 template flag_template(format: Format, val: bool, flag: FormatFlags) =
   if val: format.flags.incl(flag)
@@ -148,116 +153,7 @@ proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format, node: St
 proc addFormat*(line: var FlexibleLine, pos: int, format: Format, node: StyledNode = nil) =
   line.formats.add(FormatCell(format: format, node: node, pos: pos))
 
-template inc_check(i: int) =
-  inc i
-  if i >= buf.len:
-    return i
-
-proc handleAnsiCode(format: var Format, final: char, params: string) =
-  case final
-  of 'm':
-    if params.len == 0:
-      format = newFormat()
-    else:
-      let sparams = params.split(';')
-      try:
-        let ip = sparams.map((x) => parseInt(x))
-        var pi = 0
-        while pi < ip.len:
-          case ip[pi]
-          of 0:
-            format = newFormat()
-          of 1: format.bold = true
-          of 3: format.italic = true
-          of 4: format.underline = true
-          of 5: format.blink = true
-          of 7: format.reverse = true
-          of 9: format.strike = true
-          of 22: format.bold = false
-          of 23: format.italic = false
-          of 25: format.blink = false
-          of 27: format.reverse = false
-          of 29: format.strike = false
-          of 30..37: format.fgcolor = uint8(ip[pi]).cellColor()
-          of 38:
-            inc pi
-            if pi < ip.len:
-              if ip[pi] == 2:
-                inc pi
-                if pi + 2 < ip.len:
-                  let r = ip[pi]
-                  inc pi
-                  let g = ip[pi]
-                  inc pi
-                  let b = ip[pi]
-                  format.fgcolor = rgb(r, g, b).cellColor()
-              else:
-                #TODO
-                inc pi
-                continue
-            else:
-              break
-          of 39:
-            format.fgcolor = defaultColor
-          of 40..47:
-            format.bgcolor = uint8(ip[0]).cellColor()
-          of 48:
-            inc pi
-            if pi < ip.len:
-              if ip[pi] == 2:
-                inc pi
-                if pi + 2 < ip.len:
-                  let r = ip[pi]
-                  inc pi
-                  let g = ip[pi]
-                  inc pi
-                  let b = ip[pi]
-                  format.bgcolor = rgb(r, g, b).cellColor()
-              else:
-                #TODO
-                inc pi
-                continue
-            else:
-              break
-          of 49: format.bgcolor = defaultColor
-          of 53: format.overline = true
-          of 55: format.overline = false
-          else: discard
-          inc pi
-      except ValueError: discard
-  else: discard
-
-proc parseAnsiCode*(format: var Format, buf: string, fi: int): int =
-  var i = fi
-  if buf[i] != '\e':
-    return i
-
-  inc_check i
-  if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x5F:
-    if buf[i] != '[':
-      #C1, TODO?
-      return
-    inc_check i
-
-  let sp = i
-  #parameter bytes
-  while 0x30 <= int(buf[i]) and int(buf[i]) <= 0x3F:
-    inc_check i
-  let params = buf.substr(sp, i - 1)
-
-  #let si = i
-  #intermediate bytes
-  while 0x20 <= int(buf[i]) and int(buf[i]) <= 0x2F:
-    inc_check i
-  #let interm = buf.substr(si, i)
-
-  let final = buf[i]
-  #final byte
-  if 0x40 <= int(buf[i]) and int(buf[i]) <= 0x7E:
-    format.handleAnsiCode(final, params)
-
-  return i
-
+# https://www.ecma-international.org/wp-content/uploads/ECMA-48_5th_edition_june_1991.pdf
 type
   AnsiCodeParseState* = enum
     PARSE_START, PARSE_PARAMS, PARSE_INTERM, PARSE_FINAL, PARSE_DONE
@@ -266,11 +162,122 @@ type
     state*: AnsiCodeParseState
     params: string
 
+proc getParam(parser: AnsiCodeParser, i: var int, colon = false): string =
+  while i < parser.params.len and
+      not (parser.params[i] == ';' or colon and parser.params[i] == ':'):
+    result &= parser.params[i]
+    inc i
+  if i < parser.params.len:
+    inc i
+
+template getParamU8(parser: AnsiCodeParser, i: var int,
+    colon = false): uint8 =
+  if i < parser.params.len:
+    return false
+  let u = parseUInt8(parser.getParam(i))
+  if u.isNone:
+    return false
+  u.get
+
+proc parseSGRDefColor(parser: AnsiCodeParser, format: var Format,
+    i: var int, isfg: bool): bool =
+  let u = parser.getParamU8(i, colon = true)
+  if u == 2:
+    let param0 = parser.getParamU8(i, colon = true)
+    if i < parser.params.len:
+      let r = param0
+      let g = parser.getParamU8(i, colon = true)
+      let b = parser.getParamU8(i, colon = true)
+      if isfg:
+        format.fgcolor = cellColor(rgb(r, g, b))
+      else:
+        format.bgcolor = cellColor(rgb(r, g, b))
+    else:
+      let n = param0
+      if isfg:
+        format.fgcolor = cellColor(rgb(n, n, n))
+      else:
+        format.bgcolor = cellColor(rgb(n, n, n))
+  else:
+    if u in 0u8..7u8:
+      if isfg:
+        format.fgcolor = cellColor(u + 30)
+      else:
+        format.bgcolor = cellColor(u + 40)
+    elif u in 8u8..15u8:
+      format.bold = true
+      if isfg:
+        format.fgcolor = cellColor(u + 22)
+      else:
+        format.bgcolor = cellColor(u + 22)
+    elif u in 16u8..231u8:
+      #16 + 36 × r + 6 × g + b
+      discard
+    else:
+      discard
+
+proc parseSGRColor(parser: AnsiCodeParser, format: var Format,
+    i: var int, u: uint8): bool =
+  if u in 30u8..37u8:
+    format.fgcolor = u.cellColor()
+  elif u == 38:
+    return parser.parseSGRDefColor(format, i, isfg = true)
+  elif u == 39:
+    format.fgcolor = defaultColor
+  elif u in 40u8..47u8:
+    format.bgcolor = u.cellColor()
+  elif u == 48:
+    return parser.parseSGRDefColor(format, i, isfg = false)
+  elif u == 49:
+    format.bgcolor = defaultColor
+  elif u in 90u8..97u8:
+    format.fgcolor = cellColor(u - 60u8)
+    format.bold = true
+  elif u in 100u8..107u8:
+    format.bgcolor = cellColor(u - 60u8)
+    format.bold = true
+  else:
+    return false
+  return true
+
+proc parseSGRAspect(parser: AnsiCodeParser, format: var Format,
+    i: var int): bool =
+  let u = parser.getParamU8(i)
+  if u in FormatCodeMap:
+    let entry = FormatCodeMap[u]
+    if entry.reverse:
+      format.flags.excl(entry.flag)
+    else:
+      format.flags.incl(entry.flag)
+    return true
+  elif u == 0:
+    format = newFormat()
+  else:
+    return parser.parseSGRColor(format, i, u)
+
+proc parseSGR(parser: AnsiCodeParser, format: var Format) =
+  if parser.params.len == 0:
+    format = newFormat()
+  else:
+    var i = 0
+    while i < parser.params.len:
+      if not parser.parseSGRAspect(format, i):
+        break
+      inc i
+
+proc parseControlFunction(parser: var AnsiCodeParser, format: var Format,
+    f: char) =
+  case f
+  of 'm':
+    parser.parseSGR(format)
+  else: discard # unknown
+
 proc reset*(parser: var AnsiCodeParser) =
   parser.state = PARSE_START
   parser.params = ""
 
-proc parseAnsiCode*(parser: var AnsiCodeParser, format: var Format, c: char): bool =
+proc parseAnsiCode*(parser: var AnsiCodeParser, format: var Format,
+    c: char): bool =
   case parser.state
   of PARSE_START:
     if 0x40 <= int(c) and int(c) <= 0x5F:
@@ -297,36 +304,7 @@ proc parseAnsiCode*(parser: var AnsiCodeParser, format: var Format, c: char): bo
   of PARSE_FINAL:
     parser.state = PARSE_DONE
     if 0x40 <= int(c) and int(c) <= 0x7E:
-      format.handleAnsiCode(c, parser.params)
+      parser.parseControlFunction(format, c)
     else:
       return true
   of PARSE_DONE: discard
-
-proc parseAnsiCode*(format: var Format, stream: Stream) =
-  if stream.atEnd(): return
-  var c = stream.readChar()
-  if 0x40 <= int(c) and int(c) <= 0x5F:
-    if c != '[':
-      #C1, TODO?
-      return
-    if stream.atEnd(): return
-    c = stream.readChar()
-
-  var params = $c
-  #parameter bytes
-  while 0x30 <= int(c) and int(c) <= 0x3F:
-    params &= c
-    if stream.atEnd(): return
-    c = stream.readChar()
-
-  #intermediate bytes
-  #var interm = $c
-  while 0x20 <= int(c) and int(c) <= 0x2F:
-    #interm &= c
-    if stream.atEnd(): return
-    c = stream.readChar()
-
-  #final byte
-  if 0x40 <= int(c) and int(c) <= 0x7E:
-    let final = c
-    format.handleAnsiCode(final, params)

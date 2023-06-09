@@ -211,17 +211,17 @@ const ColorsRGB* = {
   "rebeccapurple": 0x663399,
 }.map((a) => (a[0], RGBColor(a[1]))).toTable()
 
-func r*(c: RGBAColor): int =
-  return int((uint32(c) shr 16) and 0xff)
+func r*(c: RGBAColor): uint8 =
+  return cast[uint8]((uint32(c) shr 16) and 0xff)
 
-func g*(c: RGBAColor): int =
-  return int((uint32(c) shr 8) and 0xff)
+func g*(c: RGBAColor): uint8 =
+  return cast[uint8]((uint32(c) shr 8) and 0xff)
 
-func b*(c: RGBAColor): int =
-  return int(uint32(c) and 0xff)
+func b*(c: RGBAColor): uint8 =
+  return cast[uint8](uint32(c) and 0xff)
 
-func a*(c: RGBAColor): int =
-  return int((uint32(c) shr 24) and 0xff)
+func a*(c: RGBAColor): uint8 =
+  return cast[uint8]((uint32(c) shr 24) and 0xff)
 
 proc `r=`*(c: var RGBAColor, r: uint8) =
   c = RGBAColor(uint32(c) or (uint32(r) shl 16))
@@ -285,7 +285,7 @@ func fastmul(c: RGBAColor, ca: uint32): uint32 =
 func fastmul1(c: RGBAColor, ca: uint32): uint32 =
   return fastmul1(uint32(c), ca)
 
-func rgba*(r, g, b, a: int): RGBAColor
+func rgba*(r, g, b, a: uint8): RGBAColor
 
 func premul(c: RGBAColor): RGBAColor =
   return RGBAColor(fastmul(c, uint32(c.a)))
@@ -302,17 +302,17 @@ proc straight*(c: RGBAColor): RGBAColor =
   let r = straightAlphaTable[c.a][c.r]
   let g = straightAlphaTable[c.a][c.g]
   let b = straightAlphaTable[c.a][c.b]
-  return rgba(int(r), int(g), int(b), int(c.a))
+  return rgba(r, g, b, c.a)
 
 func blend*(c0, c1: RGBAColor): RGBAColor =
   let pc0 = c0.premul()
   let pc1 = c1.premul()
   let k = 255 - pc1.a
   let mc = RGBAColor(fastmul1(pc0, uint32(k)))
-  let rr = pc1.r + mc.r
-  let rg = pc1.g + mc.g
-  let rb = pc1.b + mc.b
-  let ra = pc1.a + mc.a
+  let rr = cast[uint8](uint16(pc1.r) + uint16(mc.r))
+  let rg = cast[uint8](uint16(pc1.g) + uint16(mc.g))
+  let rb = cast[uint8](uint16(pc1.b) + uint16(mc.b))
+  let ra = cast[uint8](uint16(pc1.a) + uint16(mc.a))
   let pres = rgba(rr, rg, rb, ra)
   let res = straight(pres)
   return res
@@ -323,53 +323,55 @@ func blend*(c0, c1: RGBAColor): RGBAColor =
 #  let c1a = float64(c1.a) * norm
 #  let a0 = c0a + c1a * (1 - c0a)
 
-func rgb*(r, g, b: int): RGBColor =
-  return RGBColor((r shl 16) or (g shl 8) or b)
+func rgb*(r, g, b: uint8): RGBColor =
+  return RGBColor((uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
 
-func rgb*(r, g, b: uint8): RGBColor {.inline.} =
-  return rgb(int(r), int(g), int(b))
+func r*(c: RGBColor): uint8 =
+  return cast[uint8]((uint32(c) shr 16) and 0xff)
 
-func r*(c: RGBColor): int =
-  return int(uint32(c) shr 16 and 0xff)
+func g*(c: RGBColor): uint8 =
+  return cast[uint8]((uint32(c) shr 8) and 0xff)
 
-func g*(c: RGBColor): int =
-  return int(uint32(c) shr 8 and 0xff)
-
-func b*(c: RGBColor): int =
-  return int(uint32(c) and 0xff)
+func b*(c: RGBColor): uint8 =
+  return cast[uint8](uint32(c) and 0xff)
 
 # see https://learn.microsoft.com/en-us/previous-versions/windows/embedded/ms893078(v=msdn.10)
-func Y*(c: RGBColor): int =
-  return ((66 * c.r + 129 * c.g + 25 * c.b + 128) shr 8) + 16
+func Y*(c: RGBColor): uint8 =
+  let rmul = uint16(c.r) * 66u16
+  let gmul = uint16(c.g) * 129u16
+  let bmul = uint16(c.b) * 25u16
+  return cast[uint8](((rmul + gmul + bmul + 128) shr 8) + 16)
 
-func U*(c: RGBColor): int =
-  return ((-38 * c.r - 74 * c.g + 112 * c.b + 128) shr 8) + 128
+func U*(c: RGBColor): uint8 =
+  let rmul = uint16(c.r) * 38u16
+  let gmul = uint16(c.g) * 74u16
+  let bmul = uint16(c.b) * 112u16
+  return cast[uint8](((128 + gmul - rmul - bmul) shr 8) + 128)
 
-func V*(c: RGBColor): int =
-  return ((112 * c.r - 94 * c.g - 18 * c.b + 128) shr 8) + 128
+func V*(c: RGBColor): uint8 =
+  let rmul = uint16(c.r) * 112u16
+  let gmul = uint16(c.g) * 94u16
+  let bmul = uint16(c.b) * 18u16
+  return cast[uint8](((128 + rmul - gmul - bmul) shr 8) + 128)
 
-func YUV*(Y, U, V: int): RGBColor =
-  let C = Y - 16
-  let D = U - 128
-  let E = V - 128
+func YUV*(Y, U, V: uint8): RGBColor =
+  let C = uint16(Y) - 16
+  let D = uint16(U) - 128
+  let E = uint16(V) - 128
   let r = max(min((298 * C + 409 * E + 128) shr 8, 255), 0)
   let g = max(min((298 * C - 100 * D - 208 * E + 128) shr 8, 255), 0)
   let b = max(min((298 * C + 516 * D + 128) shr 8, 255), 0)
-  return rgb(r, g, b)
-
-func rgba*(r, g, b, a: int): RGBAColor =
-  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or
-    (uint32(g) shl 8) or uint32(b))
+  return rgb(cast[uint8](r), cast[uint8](g), cast[uint8](b))
 
 func rgba*(r, g, b, a: uint8): RGBAColor =
   return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or
     (uint32(g) shl 8) or uint32(b))
 
-func gray*(n: int): RGBColor =
-  return rgb(n, n, n) #TODO use yuv instead?
+func rgba*(r, g, b, a: int): RGBAColor =
+  return rgba(uint8(r), uint8(g), uint8(b), uint8(a))
 
 func gray*(n: uint8): RGBColor =
-  return gray(int(n))
+  return rgb(n, n, n) #TODO use yuv instead?
 
 template `$`*(rgbcolor: RGBColor): string =
   "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"

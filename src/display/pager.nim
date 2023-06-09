@@ -263,7 +263,7 @@ proc writeStatusMessage(pager: Pager, str: string,
   var i = start
   let e = min(start + maxwidth, pager.statusgrid.width)
   if i >= e:
-    return e
+    return i
   for r in str.runes:
     let pi = i
     i += r.twidth(i)

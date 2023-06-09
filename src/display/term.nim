@@ -211,13 +211,16 @@ proc getRGB(a: CellColor, bg: bool): RGBColor =
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
-  var a = 0
+  var a = 0u16
   var n = -1
   for i in 0 .. ANSIColorMap.high:
     if i == exclude: continue
     let color = ANSIColorMap[i]
     if color == rgb: return i
-    let b = (color.r - rgb.r) ^  2 + (color.g - rgb.b) ^ 2 + (color.g - rgb.g) ^ 2
+    let x = uint16(color.r - rgb.r) ^ 2
+    let y = uint16(color.g - rgb.b) ^ 2
+    let z = uint16(color.g - rgb.g) ^ 2
+    let b = x + y + z
     if n == -1 or b < a:
       n = i
       a = b
@@ -228,14 +231,14 @@ proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int): CellColor =
   let cfgcolor = fgcolor
   let bgcolor = getRGB(bgcolor, true)
   let fgcolor = getRGB(fgcolor, false)
-  let bgY = bgcolor.Y
-  let fgY = fgcolor.Y
+  let bgY = int(bgcolor.Y)
+  let fgY = int(fgcolor.Y)
   let diff = abs(bgY - fgY)
   if diff < contrast:
-    let newrgb = if bgY > contrast:
-      YUV(bgY - contrast, fgcolor.U, fgcolor.V)
-    else:
-      YUV(bgY + contrast, fgcolor.U, fgcolor.V)
+    let neg = max(bgY - contrast, 0)
+    let pos = min(bgY + contrast, 255)
+    let condiff = if abs(bgY - neg) < abs(bgY - pos): pos else: neg
+    let newrgb = YUV(cast[uint8](condiff), fgcolor.U, fgcolor.V)
     if cfgcolor.rgb:
       return newrgb.cellColor()
     return ColorsANSIFg[approximateANSIColor(newrgb)]

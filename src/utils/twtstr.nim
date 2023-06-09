@@ -368,7 +368,6 @@ func japaneseNumber*(i: int): string =
     dec n
 
 # Implements https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#signed-integers
-#TODO TODO TODO handle overflow defects
 func parseInt32*(s: string): Option[int32] =
   var sign: int32 = 1
   var i = 0
@@ -382,8 +381,13 @@ func parseInt32*(s: string): Option[int32] =
   var integer = int32(decValue(s[i]))
   inc i
   while i < s.len and isDigit(s[i]):
+    if unlikely(integer != 0 and high(int32) div 10 < integer):
+      return none(int32) # overflow
     integer *= 10
-    integer += int32(decValue(s[i]))
+    let c = int32(decValue(s[i]))
+    if unlikely(high(int32) - c < integer):
+      return none(int32) # overflow
+    integer += c
     inc i
   return some(sign * integer)
 
@@ -400,10 +404,34 @@ func parseInt64*(s: string): Option[int64] =
   var integer = int64(decValue(s[i]))
   inc i
   while i < s.len and isDigit(s[i]):
+    if unlikely(integer != 0 and high(int64) div 10 < integer):
+      return none(int64) # overflow
     integer *= 10
-    integer += int64(decValue(s[i]))
+    let c = int64(decValue(s[i]))
+    if unlikely(high(int64) - c < integer):
+      return none(int64) # overflow
+    integer += c
     inc i
   return some(sign * integer)
+
+func parseUInt8*(s: string): Option[uint8] =
+  var i = 0
+  if i < s.len and s[i] == '+':
+    inc i
+  if i == s.len or s[i] notin AsciiDigit:
+    return none(uint8)
+  var integer = uint8(decValue(s[i]))
+  inc i
+  while i < s.len and isDigit(s[i]):
+    if unlikely(integer != 0 and high(uint8) div 10 < integer):
+      return none(uint8) # overflow
+    integer *= 10
+    let c = uint8(decValue(s[i]))
+    if unlikely(high(uint8) - c < integer):
+      return none(uint8) # overflow
+    integer += uint8(c)
+    inc i
+  return some(integer)
 
 func parseUInt32*(s: string): Option[uint32] =
   var i = 0
@@ -414,8 +442,13 @@ func parseUInt32*(s: string): Option[uint32] =
   var integer = uint32(decValue(s[i]))
   inc i
   while i < s.len and isDigit(s[i]):
+    if unlikely(integer != 0 and high(uint32) div 10 < integer):
+      return none(uint32) # overflow
     integer *= 10
-    integer += uint32(decValue(s[i]))
+    let c = uint32(decValue(s[i]))
+    if unlikely(high(uint32) - c < integer):
+      return none(uint32) # overflow
+    integer += c
     inc i
   return some(integer)
 
