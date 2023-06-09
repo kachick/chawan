@@ -12,6 +12,7 @@ import config/config
 import data/charset
 import encoding/encoderstream
 import io/window
+import utils/chamath
 import utils/twtstr
 import types/color
 
@@ -217,9 +218,9 @@ proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
     if i == exclude: continue
     let color = ANSIColorMap[i]
     if color == rgb: return i
-    let x = uint16(color.r - rgb.r) ^ 2
-    let y = uint16(color.g - rgb.b) ^ 2
-    let z = uint16(color.g - rgb.g) ^ 2
+    let x = uint16(absSub(color.r, rgb.r)) ^ 2
+    let y = uint16(absSub(color.g, rgb.b)) ^ 2
+    let z = uint16(absSub(color.g, rgb.g)) ^ 2
     let b = x + y + z
     if n == -1 or b < a:
       n = i
