@@ -3,8 +3,7 @@ import math
 import bindings/zlib
 import img/bitmap
 import types/color
-
-import lib/endians2
+import utils/endians
 
 type PNGWriter = object
   buf: pointer
@@ -50,24 +49,21 @@ type PNGColorType {.size: sizeof(uint8).} = enum
   GRAYSCALE_WITH_ALPHA = 4
   TRUECOLOR_WITH_ALPHA = 6
 
-func u8toc(x: openArray[uint8]): string =
-  #TODO ew
-  var s = newString(x.len)
-  copyMem(addr s[0], unsafeAddr x[0], x.len)
-  return s
-
 const PNGSignature = "\x89PNG\r\n\x1A\n"
 proc writeIHDR(writer: var PNGWriter, width, height: uint32,
     bitDepth: uint8, colorType: PNGColorType,
     compressionMethod, filterMethod, interlaceMethod: uint8) =
   writer.writeStr(PNGSignature)
-  let ihdr = u8toc(pngInt(width)) &
-    u8toc(pngInt(height)) &
-    char(bitDepth) &
-    char(uint8(colorType)) &
-    char(compressionMethod) &
-    char(filterMethod) &
-    char(interlaceMethod)
+  var ihdr {.noInit.}: array[13, uint8]
+  var pw = pngInt(width)
+  var ph = pngInt(height)
+  copyMem(addr ihdr[0], addr pw[0], 4)
+  copyMem(addr ihdr[4], addr ph[0], 4)
+  ihdr[8] = bitDepth
+  ihdr[9] = uint8(colorType)
+  ihdr[10] = compressionMethod
+  ihdr[11] = filterMethod
+  ihdr[12] = interlaceMethod
   writer.writeChunk("IHDR", ihdr)
 
 proc writeIDAT(writer: var PNGWriter, bmp: Bitmap) =
@@ -121,6 +117,9 @@ type PNGReader = object
   strm: z_stream
   strmend: bool
   atline: int
+  plteseen: bool
+  palette: seq[RGBAColor]
+  trns: RGBAColor
 
 func width(reader: PNGReader): int {.inline.} = int(reader.bmp.width)
 
@@ -165,7 +164,7 @@ template readU8(reader: var PNGReader): uint8 =
 template readU32(reader: var PNGReader): uint32 =
   if reader.i + 4 > reader.limit:
     reader.err "too short"
-  let x = fromBytesBE(uint32, toOpenArray(reader.iq, reader.i, reader.i + 3))
+  let x = fromBytesBEu32(toOpenArray(reader.iq, reader.i, reader.i + 3))
   reader.i += 4
   x
 
@@ -222,10 +221,11 @@ proc readIHDR(reader: var PNGReader) =
 proc readbKGD(reader: var PNGReader) =
   case reader.colorType
   of GRAYSCALE, GRAYSCALE_WITH_ALPHA:
-    discard reader.readU8() #TODO bit depth > 8
+    # We can't really use bit depth > 8
+    discard reader.readU8()
     reader.background = gray(reader.readU8())
   of TRUECOLOR, TRUECOLOR_WITH_ALPHA:
-    discard reader.readU8() #TODO bit depth > 8
+    discard reader.readU8()
     let r = reader.readU8()
     discard reader.readU8()
     let g = reader.readU8()
@@ -233,7 +233,30 @@ proc readbKGD(reader: var PNGReader) =
     let b = reader.readU8()
     reader.background = rgb(r, g, b)
   of INDEXED_COLOR:
-    discard #TODO
+    let i = int(reader.readU8())
+    if i >= reader.palette.len:
+      reader.err "invalid palette index"
+    reader.background = reader.palette[i]
+
+proc readtRNS(reader: var PNGReader) =
+  case reader.colorType
+  of GRAYSCALE, GRAYSCALE_WITH_ALPHA:
+    # We can't really use bit depth > 8
+    discard reader.readU8()
+    reader.trns = gray(reader.readU8())
+  of TRUECOLOR, TRUECOLOR_WITH_ALPHA:
+    discard reader.readU8()
+    let r = reader.readU8()
+    discard reader.readU8()
+    let g = reader.readU8()
+    discard reader.readU8()
+    let b = reader.readU8()
+    reader.trns = rgb(r, g, b)
+  of INDEXED_COLOR:
+    if reader.limit - reader.i > reader.palette.len:
+      reader.err "too many trns values"
+    for i in 0 ..< reader.palette.len:
+      reader.palette[i].a = reader.readU8()
 
 proc unfilter(reader: var PNGReader, irow: openArray[uint8], bpp: int) =
   # none, sub, up -> replace uprow directly
@@ -290,7 +313,12 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       let b = reader.uprow[i]
       i += step
       crow[x] = rgba(r, g, b, 255u8)
-  of INDEXED_COLOR: discard #TODO
+  of INDEXED_COLOR:
+    for x in 0 ..< crow.len:
+      let i = int(reader.uprow[x])
+      if unlikely(i >= reader.palette.len):
+        reader.err "invalid palette index"
+      crow[x] = reader.palette[i]
   of GRAYSCALE_WITH_ALPHA:
     let step = int(reader.bitDepth) div 8
     var i = 0
@@ -309,11 +337,32 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       let a = reader.uprow[(x + 3) * step]
       crow[x] = rgba(r, g, b, a)
 
+proc readPLTE(reader: var PNGReader) =
+  # For non-indexed-color, palette is just a suggestion for quantization.
+  #TODO support this in term
+  const CanHavePLTE = {TRUECOLOR, INDEXED_COLOR, TRUECOLOR_WITH_ALPHA}
+  if reader.plteseen:
+    reader.err "too many PLTE chunks"
+  if reader.colorType notin CanHavePLTE:
+    reader.err "unexpected PLTE chunk for color type"
+  let len = reader.limit - reader.i
+  if len mod 3 != 0:
+    reader.err "palette length not divisible by 3"
+  reader.palette = newSeq[RGBAColor](len)
+  for i in 0 ..< len div 3:
+    let r = reader.readU8()
+    let g = reader.readU8()
+    let b = reader.readU8()
+    reader.palette[i] = rgba(r, g, b, 255)
+  reader.plteseen = true
+
 proc readIDAT(reader: var PNGReader) =
   if reader.idatAt == reader.idatBuf.len:
     reader.err "idat buffer already filled"
   if reader.strmend:
     reader.err "stream already ended"
+  if reader.colorType == INDEXED_COLOR and not reader.plteseen:
+    reader.err "palette expected for indexed color"
   reader.strm.avail_in = cuint(reader.limit - reader.i)
   reader.strm.next_in = addr reader.iq[reader.i]
   let olen = reader.idatBuf.len - reader.idatAt
@@ -386,8 +435,6 @@ proc fromPNG*(iq: openArray[uint8]): Bitmap =
   if reader.bmp == nil: return
   if reader.width == 0 or reader.height == 0:
     reader.err "invalid zero sized png"
-  if reader.colorType == INDEXED_COLOR:
-    reader.err "indexed color not implemented yet"
   reader.initZStream()
   while reader.i < iq.len and not reader.isend:
     let len = int(reader.readPNGInt())
@@ -398,9 +445,11 @@ proc fromPNG*(iq: openArray[uint8]): Bitmap =
     reader.limit = reader.i + len
     case t
     of "IHDR": reader.err "IHDR expected to be first chunk"
+    of "PLTE": reader.readPLTE()
     of "IDAT": reader.readIDAT()
     of "IEND": reader.readIEND()
     of "bKGD": reader.readbKGD()
+    of "tRNS": reader.readtRNS()
     else: reader.readUnknown(t)
     if reader.bmp == nil: return
     let crc = crc32(0, unsafeAddr iq[j], cuint(len + 4))

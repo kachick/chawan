@@ -317,7 +317,7 @@ proc text*(response: Response): string {.jsfunc.} =
   result = response.body.readAll()
   response.close()
 
-proc json(response: Response, ctx: JSContext): JSValue =
+proc json(response: Response, ctx: JSContext): JSValue {.jsfunc.} =
   var s = response.text()
   return JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len), cstring"<input>")
 

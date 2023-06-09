@@ -212,16 +212,28 @@ const ColorsRGB* = {
 }.map((a) => (a[0], RGBColor(a[1]))).toTable()
 
 func r*(c: RGBAColor): int =
-  return int(uint32(c) shr 16 and 0xff)
+  return int((uint32(c) shr 16) and 0xff)
 
 func g*(c: RGBAColor): int =
-  return int(uint32(c) shr 8 and 0xff)
+  return int((uint32(c) shr 8) and 0xff)
 
 func b*(c: RGBAColor): int =
   return int(uint32(c) and 0xff)
 
 func a*(c: RGBAColor): int =
-  return int(uint32(c) shr 24 and 0xff)
+  return int((uint32(c) shr 24) and 0xff)
+
+proc `r=`*(c: var RGBAColor, r: uint8) =
+  c = RGBAColor(uint32(c) or (uint32(r) shl 16))
+
+proc `g=`*(c: var RGBAColor, g: uint8) =
+  c = RGBAColor(uint32(c) or (uint32(g) shl 8))
+
+proc `b=`*(c: var RGBAColor, b: uint8) =
+  c = RGBAColor(uint32(c) or uint32(b))
+
+proc `a=`*(c: var RGBAColor, a: uint8) =
+  c = RGBAColor(uint32(c) or (uint32(a) shl 24))
 
 # https://html.spec.whatwg.org/#serialisation-of-a-color
 func serialize*(color: RGBAColor): string =
