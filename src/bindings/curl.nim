@@ -298,6 +298,7 @@ proc curl_easy_cleanup*(handle: CURL)
 proc curl_easy_setopt*(handle: CURL, option: CURLoption): CURLcode {.varargs.}
 proc curl_easy_perform*(handle: CURL): CURLcode
 proc curl_easy_getinfo*(handle: CURL, info: CURLINFO): CURLcode {.varargs.}
+proc curl_easy_strerror*(errornum: CURLcode): cstring
 
 proc curl_mime_init*(handle: CURL): curl_mime
 proc curl_mime_free*(mime: curl_mime)

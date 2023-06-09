@@ -326,6 +326,8 @@ proc Response_json(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue)
     return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Response")
   let response = cast[Response](op)
   var s = response.text()
+  if s == "":
+    return JS_ThrowSyntaxError("unexpected end of input")
   return JS_ParseJSON(ctx, addr s[0], cast[csize_t](s.len), cstring"<input>")
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =

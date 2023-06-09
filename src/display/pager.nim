@@ -15,6 +15,7 @@ import config/config
 import data/charset
 import display/term
 import io/lineedit
+import io/loader
 import io/promise
 import io/request
 import io/window
@@ -790,7 +791,9 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     if container.retry.len > 0:
       pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
     else:
-      pager.alert("Can't load " & $container.source.location & " (error code " & $container.code & ")")
+      let errorMessage = getLoaderErrorMessage(container.code)
+      pager.alert("Can't load " & $container.source.location & " (" &
+        errorMessage & ")")
     return false
   of SUCCESS:
     if container.replace != nil:

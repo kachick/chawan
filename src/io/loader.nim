@@ -282,6 +282,8 @@ proc onConnected*(loader: FileLoader, fd: int) =
     loader.ongoing[fd] = response
     promise.resolve(response)
   else:
+    loader.unregisterFun(fd)
+    loader.unregistered.add(fd)
     #TODO: reject promise instead.
     let response = newResponse(res, request)
     promise.resolve(response)
@@ -308,3 +310,8 @@ proc quit*(loader: FileLoader) =
   let stream = connectSocketStream(loader.process)
   if stream != nil:
     stream.swrite(QUIT)
+
+func getLoaderErrorMessage*(code: int): string =
+  if code < 0:
+    return $ConnectErrorCode(code)
+  return $curl_easy_strerror(CURLcode(cint(code)))
