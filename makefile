@@ -18,6 +18,9 @@ release: $(OBJDIR)
 release0: $(OBJDIR)
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release --stacktrace:on $(FILES)
 
+release1: $(OBJDIR)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release --passC:"-pg" --passL:"-pg" $(FILES)
+
 profile: $(OBJDIR)
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/profile --profiler:on --stacktrace:on -d:profile $(FILES)
 
