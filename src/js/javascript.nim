@@ -1698,7 +1698,6 @@ type
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal =
                    false, nointerface = false, name: static string = "",
                    extra_getset: static openarray[TabGetSet] = [],
-                   extra_funcs: static openarray[TabFunc] = [],
                    namespace: JSValue = JS_NULL): JSClassID =
   result = newStmtList()
   let tname = t.strVal # the nim type's name.
@@ -1796,14 +1795,6 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal =
       let s = x.set
       let m = x.magic
       tabList.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
-
-  for x in extra_funcs:
-    #TODO TODO TODO ditto. wtf
-    if repr(x) != "" and repr(x) != "[]":
-      let name = x.name
-      let fun = x.fun
-      tabList.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, (`fun`)))
 
   if ctorFun != nil:
     sctr = ctorFun

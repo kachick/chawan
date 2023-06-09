@@ -310,25 +310,16 @@ proc close*(response: Response) {.jsfunc.} =
   if response.body != nil:
     response.body.close()
 
+#TODO text, json should return promises, not blocking reads
 proc text*(response: Response): string {.jsfunc.} =
   if response.body == nil:
     return ""
   result = response.body.readAll()
   response.close()
 
-#TODO: get rid of this
-proc readAll*(response: Response): string {.jsfunc.} =
-  return response.text()
-
-proc Response_json(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
-  let op = getOpaque0(this)
-  if unlikely(not ctx.isInstanceOf(this, "Response") or op == nil):
-    return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Response")
-  let response = cast[Response](op)
+proc json(response: Response, ctx: JSContext): JSValue =
   var s = response.text()
-  if s == "":
-    return JS_ThrowSyntaxError("unexpected end of input")
-  return JS_ParseJSON(ctx, addr s[0], cast[csize_t](s.len), cstring"<input>")
+  return JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len), cstring"<input>")
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute
@@ -342,5 +333,5 @@ proc addRequestModule*(ctx: JSContext) =
     TabGetSet(name: "url", get: Request_url),
     TabGetSet(name: "referrer", get: Request_referrer)
   ])
-  ctx.registerType(Response, extra_funcs = [TabFunc(name: "json", fun: Response_json)])
+  ctx.registerType(Response)
   ctx.registerType(Headers)
