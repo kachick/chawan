@@ -10,11 +10,12 @@ It also functions as a pager, similarly to w3m.
 ## Compiling
 
 1. Install the nim compiler: <https://nim-lang.org/install.html>
-	* Please use 1.6.10, older versions will probably not work. (You
+	* Please use 1.6+, older versions will probably not work. (You
 	  can check your nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
 	* quickjs: <https://bellard.org/quickjs/>
+	* zlib: <http://zlib.net/>
 3. Use one of the following:
 	* `make release` - optimized release build
 	* `make` - debug build (slow, for development)
@@ -35,9 +36,9 @@ Currently implemented features are:
 
 Chawan is still an experimental web browser with some serious limitations:
 
-* Chawan suffers heavily from the NIH syndrome. The browser engine is still
-  missing many features, both in JavaScript and CSS. In particular, events
-  haven't been implemented yet, and the layout engine can't handle CSS floats.
+* The browser engine is still missing many features, both in JavaScript and
+  CSS. In particular, events haven't been implemented yet, and the layout
+  engine can't handle CSS floats.
 * Chawan has no incremental layouting capabilities yet, so it is rather slow
   on large websites with a complicated layout.
 * While buffers run as separate processes, Chawan does not do any actual
@@ -53,14 +54,15 @@ See [doc/config.md](doc/config.md).
 Many other text-based web browsers exist. Here's some recommendations if you
 want to try more established ones:
 
-* w3m - A text-mode browser, extensible using local-cgi. Also has inline
-  image display and very good table support. Heavily inspired Chawan.
-* elinks - Has CSS and JavaScript support, and incremental rendering
-  (it's pretty fast.)
-* lynx - "THE text-based web browser."
-* edbrowse - This one looks more like `ed` than `less` or `vi`. Mainly
-  designed for blind users.
-* browsh - Firefox in your terminal.
+* [w3m](https://github.com/tats/w3m) - A text-mode browser, extensible using
+  local-cgi. Also has inline image display and very good table support. Heavily
+  inspired Chawan.
+* [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
+  and incremental rendering (it's pretty fast.)
+* [lynx](https://lynx.invisible-island.net/) - "THE text-based web browser."
+* [edbrowse](http://edbrowse.org/) - This one looks more like `ed` than
+  `less` or `vi`. Mainly designed for blind users.
+* [browsh](https://www.brow.sh/) - Firefox in your terminal.
 
 ## FAQ
 
@@ -88,13 +90,14 @@ than if it doesn't.
 
 ### Where are the tabs?
 
-Chawan does not (and will never) have browser tabs. Instead, each website
-is opened in a new buffer, which is added to the buffer tree. By the way,
-this is very similar to how w3m handles buffers, except a) source files are
-stored in memory, not on the disk, and b) instead of a linked list of
-buffers, they are stored in a tree. (And, of course c) there are no tabs.)
+Chawan does not have browser tabs. Instead, each website is opened in a new
+buffer, which is added to the buffer tree. This is very similar to how w3m
+handles buffers, except a) source files are stored in memory, not on the disk,
+and b) instead of a linked list of buffers, they are stored in a tree. (And
+of course, c) there are no tabs.)
 
 This model has the advantage of allowing the user to instantly view the
-previous page in all cases. It also opens up many interesting possibilities
-concering buffer organization; unfortunately, not much of that is implemented
-yet (except for basic tree traversal commands.)
+previous page in all cases, without any complicated caching mechanism. It
+also opens up many interesting possibilities concering buffer organization;
+unfortunately, not much of that is implemented yet (except for basic tree
+traversal commands.)
