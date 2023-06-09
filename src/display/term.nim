@@ -355,6 +355,8 @@ proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   result &= term.resetFormat()
   result &= term.clearDisplay()
   for y in 0 ..< grid.height:
+    if y != 0:
+      result &= "\r\n"
     var w = 0
     for x in 0 ..< grid.width:
       while w < x:
@@ -363,41 +365,34 @@ proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
       let cell = grid[y * grid.width + x]
       result &= term.processFormat(format, cell.format)
       result &= term.processOutputString(cell.str, w)
-    if y != grid.height - 1:
-      result &= "\r\n"
 
-proc generateSwapOutput(term: Terminal, grid: FixedGrid, prev: FixedGrid): string =
-  var format = newFormat()
-  var x = 0
-  var w = 0
-  var line = ""
-  var lr = false
-  for i in 0 ..< grid.cells.len:
-    let cell = grid.cells[i]
-    while w < x:
-      line &= " "
-      inc w
-    if x >= grid.width:
-      format = newFormat()
-      if lr:
-        result &= term.cursorGoto(0, i div grid.width - 1)
-        result &= term.resetFormat()
-        result &= line
-        if w != grid.width:
-          result &= term.clearEnd()
-        lr = false
-      x = 0
-      w = 0
-      line = ""
-    lr = lr or (grid[i] != prev[i])
-    line &= term.processFormat(format, cell.format)
-    line &= term.processOutputString(cell.str, w)
-    inc x
-  if lr:
-    result &= term.cursorGoto(0, grid.height - 1)
-    result &= term.resetFormat()
-    result &= term.clearEnd()
-    result &= line
+proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
+  var vy = -1
+  for y in 0 ..< grid.height:
+    var w = 0
+    var change = false
+    # scan for changes, and set cx to x of the first change
+    var cx = 0
+    for x in 0 ..< grid.width:
+      if grid[y * grid.width + x] != prev[y * grid.width + x]:
+        change = true
+        cx = x
+        break
+    if change:
+      if cx == 0 and vy != -1:
+        while vy < y:
+          result &= "\r\n"
+          inc vy
+      else:
+        result &= term.cursorGoto(cx, y)
+        vy = y
+      result &= term.resetFormat()
+      var format = newFormat()
+      for x in cx ..< grid.width:
+        let cell = grid[y * grid.width + x]
+        result &= term.processFormat(format, cell.format)
+        result &= term.processOutputString(cell.str, w)
+      result &= term.clearEnd()
 
 proc hideCursor*(term: Terminal) =
   term.outfile.hideCursor()

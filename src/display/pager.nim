@@ -252,6 +252,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
         pager.display[dls + i - startw].format = hlformat
     inc by
 
+# Note: this function doesn't work if start < i of last written char
 proc writeStatusMessage(pager: Pager, str: string,
                         format: Format = newFormat(), start = 0,
                         maxwidth = -1, clip = '$'): int {.discardable.} =
@@ -260,17 +261,23 @@ proc writeStatusMessage(pager: Pager, str: string,
     maxwidth = pager.statusgrid.len
   var i = start
   let e = min(start + maxwidth, pager.statusgrid.width)
+  if i >= e:
+    return e
   for r in str.runes:
+    let pi = i
+    i += r.twidth(i)
     if i >= e:
-      if e > start:
-        pager.statusgrid[e - 1].str = $clip
+      if i >= pager.statusgrid.width:
+        i = pi
+      pager.statusgrid[i].format = format
+      pager.statusgrid[i].str = $clip
+      inc i
       break
     if r.isControlChar():
-      pager.statusgrid[i].str = "^" & getControlLetter(char(r))
+      pager.statusgrid[pi].str = "^" & getControlLetter(char(r))
     else:
-      pager.statusgrid[i].str = $r
-    pager.statusgrid[i].format = format
-    i += r.twidth(i)
+      pager.statusgrid[pi].str = $r
+    pager.statusgrid[pi].format = format
   result = i
   var def = newFormat()
   while i < e:

@@ -36,7 +36,7 @@ const (
         status &= line[i]
       inc i
     case status
-    of "W": add(firstcol, result[0])
+    of "W", "F": add(firstcol, result[0])
     of "A": add(firstcol, result[1])
     of "H": add(firstcol, result[2])
 )()

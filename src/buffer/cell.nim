@@ -62,6 +62,7 @@ proc `[]`*(grid: FixedGrid, i: BackwardsIndex): FixedCell = grid.cells[i]
 iterator items*(grid: FixedGrid): FixedCell {.inline.} =
   for cell in grid.cells: yield cell
 proc len*(grid: FixedGrid): int = grid.cells.len
+proc high*(grid: FixedGrid): int = grid.cells.high
 
 const FormatCodes*: array[FormatFlags, tuple[s: int, e: int]] = [
   FLAG_BOLD: (1, 22),
