@@ -173,7 +173,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_align
   of TAG_COL:
     map_width
-  of TAG_IMG:
+  of TAG_IMG, TAG_CANVAS:
     map_width
     map_height
   of TAG_BODY:
