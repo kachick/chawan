@@ -27,7 +27,7 @@ emulate-overline = true
 alt-screen = "auto"
 highlight-color = "cyan"
 double-width-ambiguous = false
-minimum-contrast = 75
+minimum-contrast = 100
 force-clear = false
 set-title = true
 

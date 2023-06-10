@@ -233,13 +233,22 @@ proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int): CellColor =
   let bgcolor = getRGB(bgcolor, true)
   let fgcolor = getRGB(fgcolor, false)
   let bgY = int(bgcolor.Y)
-  let fgY = int(fgcolor.Y)
+  var fgY = int(fgcolor.Y)
   let diff = abs(bgY - fgY)
   if diff < contrast:
-    let neg = max(bgY - contrast, 0)
-    let pos = min(bgY + contrast, 255)
-    let condiff = if abs(bgY - neg) < abs(bgY - pos): pos else: neg
-    let newrgb = YUV(cast[uint8](condiff), fgcolor.U, fgcolor.V)
+    if bgY > fgY:
+      fgY = bgY - contrast
+      if fgY < 0:
+        fgY = bgY + contrast
+        if fgY > 255:
+          fgY = 0
+    else:
+      fgY = bgY + contrast
+      if fgY > 255:
+        fgY = bgY - contrast
+        if fgY < 0:
+          fgY = 255
+    let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
     if cfgcolor.rgb:
       return newrgb.cellColor()
     return ColorsANSIFg[approximateANSIColor(newrgb)]

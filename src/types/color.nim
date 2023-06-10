@@ -346,7 +346,7 @@ func U*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 38u16
   let gmul = uint16(c.g) * 74u16
   let bmul = uint16(c.b) * 112u16
-  return cast[uint8](((128 + gmul - rmul - bmul) shr 8) + 128)
+  return cast[uint8](((128 + bmul - rmul - gmul) shr 8) + 128)
 
 func V*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 112u16
@@ -355,9 +355,9 @@ func V*(c: RGBColor): uint8 =
   return cast[uint8](((128 + rmul - gmul - bmul) shr 8) + 128)
 
 func YUV*(Y, U, V: uint8): RGBColor =
-  let C = uint16(Y) - 16
-  let D = uint16(U) - 128
-  let E = uint16(V) - 128
+  let C = int(Y) - 16
+  let D = int(U) - 128
+  let E = int(V) - 128
   let r = max(min((298 * C + 409 * E + 128) shr 8, 255), 0)
   let g = max(min((298 * C - 100 * D - 208 * E + 128) shr 8, 255), 0)
   let b = max(min((298 * C + 516 * D + 128) shr 8, 255), 0)
