@@ -832,12 +832,10 @@ proc applyChildPosition(parent, child: BlockBox, spec: bool, x, y: var int, marg
 proc postAlignChild(box, child: BlockBox, width: int, spec: bool) =
   case box.computed{"text-align"}
   of TEXT_ALIGN_CHA_CENTER:
-    child.offset.x += width div 2
-    child.offset.x -= child.width div 2
+    child.offset.x += max(width div 2 - child.width div 2, 0)
   of TEXT_ALIGN_CHA_LEFT: discard
   of TEXT_ALIGN_CHA_RIGHT:
-    child.offset.x += width
-    child.offset.x -= child.width
+    child.offset.x += max(width - child.width, 0)
   else:
     child.offset.x += child.margin_left
 
