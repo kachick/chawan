@@ -34,7 +34,8 @@ proc finalize(blob: Blob) {.jsfin.} =
 
 proc newWebFile*(path: string, webkitRelativePath = ""): WebFile =
   var file: File
-  doAssert open(file, path, fmRead) #TODO bleh
+  if not open(file, path, fmRead):
+    raise newException(IOError, "Failed to open file")
   return WebFile(
     isfile: true,
     path: path,

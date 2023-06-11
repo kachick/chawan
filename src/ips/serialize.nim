@@ -283,25 +283,41 @@ func slen*(part: FormDataEntry): int =
   else:
     result += slen(part.value)
 
+#TODO clean up this mess
 proc swrite*(stream: Stream, blob: Blob) =
-  stream.swrite(blob.ctype)
-  stream.swrite(blob.size)
-  #TODO ??
-  stream.writeData(blob.buffer, int(blob.size))
+  stream.swrite(blob.isfile)
+  if blob.isfile:
+    stream.swrite(WebFile(blob).path)
+  else:
+    stream.swrite(blob.ctype)
+    stream.swrite(blob.size)
+    stream.writeData(blob.buffer, int(blob.size))
 
 proc sread*(stream: Stream, blob: var Blob) =
-  new(blob)
-  stream.sread(blob.ctype)
-  stream.sread(blob.size)
-  blob.buffer = alloc(blob.size)
-  blob.deallocFun = dealloc
-  #TODO ??
-  assert stream.readData(blob.buffer, int(blob.size)) == int(blob.size)
+  var isfile: bool
+  stream.sread(isfile)
+  if isfile:
+    var file = new WebFile
+    file.isfile = true
+    stream.sread(file.path)
+    blob = file
+  else:
+    new(blob)
+    stream.sread(blob.ctype)
+    stream.sread(blob.size)
+    blob.buffer = alloc(blob.size)
+    blob.deallocFun = dealloc
+    if blob.size > 0:
+      assert stream.readData(blob.buffer, int(blob.size)) == int(blob.size)
 
 func slen*(blob: Blob): int =
-  result += slen(blob.ctype)
-  result += slen(blob.size)
-  result += int(blob.size) #TODO ??
+  result += slen(blob.isfile)
+  if blob.isfile:
+    result = slen(WebFile(blob).path)
+  else:
+    result += slen(blob.ctype)
+    result += slen(blob.size)
+    result += int(blob.size) #TODO ??
 
 proc swrite*[T](stream: Stream, o: Option[T]) =
   stream.swrite(o.issome)

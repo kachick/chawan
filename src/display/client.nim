@@ -15,8 +15,8 @@ import std/exitprocs
 
 import bindings/quickjs
 import buffer/container
-import css/sheet
 import config/config
+import css/sheet
 import data/charset
 import display/pager
 import display/term
@@ -408,6 +408,12 @@ proc clientLoadJSModule(ctx: JSContext, module_name: cstring,
   except IOError:
     JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
     return nil
+
+proc readBlob(client: Client, path: string): Option[WebFile] {.jsfunc.} =
+  try:
+    return some(newWebFile(path))
+  except IOError:
+    discard
 
 #TODO this is dumb
 proc readFile(client: Client, path: string): string {.jsfunc.} =
