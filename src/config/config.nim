@@ -35,6 +35,7 @@ type
     referer_from*: Option[bool]
     scripting: Option[bool]
     document_charset: seq[Charset]
+    images: Option[bool]
 
   StaticOmniRule = object
     match: string
@@ -50,6 +51,7 @@ type
     referer_from*: Option[bool]
     scripting*: Option[bool]
     document_charset*: seq[Charset]
+    images*: Option[bool]
 
   OmniRule* = object
     match*: Regex
@@ -115,6 +117,7 @@ type
     referrerpolicy*: ReferrerPolicy
     scripting*: bool
     charsets*: seq[Charset]
+    images*: bool
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -136,7 +139,8 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
       headers: Headers = nil, referer_from = false, scripting = false,
-      charsets = config.encoding.document_charset): BufferConfig =
+      charsets = config.encoding.document_charset,
+      images = false): BufferConfig =
   result = BufferConfig(
     userstyle: config.css.stylesheet,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
@@ -144,7 +148,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
     headers: headers,
     referer_from: referer_from,
     scripting: scripting,
-    charsets: charsets
+    charsets: charsets,
+    images: images
   )
   new(result.headers)
   result.headers[] = DefaultHeaders
@@ -156,7 +161,8 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       scripting: sc.scripting,
       share_cookie_jar: sc.share_cookie_jar,
       referer_from: sc.referer_from,
-      document_charset: sc.document_charset
+      document_charset: sc.document_charset,
+      images: sc.images
     )
     if sc.url.isSome:
       conf.url = compileRegex(sc.url.get, 0)

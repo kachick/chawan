@@ -314,7 +314,8 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
             styledText.pseudo = pseudo
             styledParent.children.add(styledText)
         of PSEUDO_IMAGE:
-          let content = CSSContent(t: CONTENT_IMAGE, s: "[img]")
+          let src = Element(styledParent.node).attr("src")
+          let content = CSSContent(t: CONTENT_IMAGE, s: src)
           let styledText = styledParent.newStyledReplacement(content)
           styledText.pseudo = pseudo
           styledParent.children.add(styledText)

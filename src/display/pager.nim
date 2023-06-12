@@ -557,6 +557,7 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
   var cookiejar: CookieJar
   var headers: Headers
   var scripting: bool
+  var images: bool
   var charsets = pager.config.encoding.document_charset
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match(url):
@@ -583,6 +584,8 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
       referer_from = sc.referer_from.get
     if sc.document_charset.len > 0:
       charsets = sc.document_charset
+    if sc.images.isSome:
+      images = sc.images.get
   return pager.config.getBufferConfig(request.url, cookiejar, headers,
     referer_from, scripting, charsets)
 

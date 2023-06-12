@@ -359,6 +359,9 @@ type
     alphabeticBaseline {.jsget.}: float64
     ideographicBaseline {.jsget.}: float64
 
+  HTMLImageElement* = ref object of HTMLElement
+    bitmap*: Bitmap
+
 proc parseColor(element: Element, s: string): RGBAColor
 
 proc resetTransform(state: var DrawingState) =
@@ -671,7 +674,8 @@ func makes(name: string, ts: set[TagType]): ReflectEntry =
     tags: ts
   )
 
-func makes(attrname: string, funcname: string, ts: set[TagType]): ReflectEntry =
+func makes(attrname: string, funcname: string, ts: set[TagType]):
+    ReflectEntry =
   ReflectEntry(
     attrname: attrname,
     funcname: funcname,
@@ -685,13 +689,17 @@ func makes(name: string, ts: varargs[TagType]): ReflectEntry =
 func makes(attrname, funcname: string, ts: varargs[TagType]): ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
-template makeb(name: string, ts: varargs[TagType]): ReflectEntry =
+func makeb(attrname, funcname: string, ts: varargs[TagType]):
+    ReflectEntry =
   ReflectEntry(
-    attrname: name,
-    funcname: name,
+    attrname: attrname,
+    funcname: funcname,
     t: REFLECT_BOOL,
     tags: toset(ts)
   )
+
+func makeb(name: string, ts: varargs[TagType]): ReflectEntry =
+  makeb(name, name, ts)
 
 template makeul(name: string, ts: varargs[TagType], default = 0u32): ReflectEntry =
   ReflectEntry(
@@ -729,6 +737,13 @@ const ReflectTable0 = [
   makeulgz("size", TAG_INPUT, 20u32),
   makeul("width", TAG_CANVAS, 300u32),
   makeul("height", TAG_CANVAS, 150u32),
+  makes("alt", TAG_IMG),
+  makes("src", TAG_IMG, TAG_SCRIPT),
+  makes("srcset", TAG_IMG),
+  makes("sizes", TAG_IMG),
+  #TODO can we add crossOrigin here?
+  makes("usemap", "useMap", TAG_IMG),
+  makeb("ismap", "isMap", TAG_IMG),
   # "super-global" attributes
   makes("slot", AllTagTypes),
   makes("class", "className", AllTagTypes)
@@ -1429,7 +1444,7 @@ func innerHTML*(element: Element): string {.jsfget.} =
 func outerHTML*(element: Element): string {.jsfget.} =
   return $element
 
-func crossorigin(element: HTMLScriptElement): CORSAttribute =
+func crossOrigin0(element: HTMLElement): CORSAttribute =
   if not element.attrb("crossorigin"):
     return NO_CORS
   case element.attr("crossorigin")
@@ -1438,6 +1453,12 @@ func crossorigin(element: HTMLScriptElement): CORSAttribute =
   of "use-credentials":
     return USE_CREDENTIALS
   return ANONYMOUS
+
+func crossOrigin(element: HTMLScriptElement): CORSAttribute {.jsfget.} =
+  return element.crossOrigin0
+
+func crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
+  return element.crossOrigin0
 
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
   getReferrerPolicy(element.attr("referrerpolicy"))
@@ -1739,6 +1760,8 @@ func newHTMLElement*(document: Document, tagType: TagType,
     result = new(HTMLLabelElement)
   of TAG_CANVAS:
     result = new(HTMLCanvasElement)
+  of TAG_IMG:
+    result = new(HTMLImageElement)
   else:
     result = new(HTMLElement)
   result.nodeType = ELEMENT_NODE
@@ -2778,6 +2801,7 @@ proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   register(HTMLTextAreaElement, TAG_TEXTAREA)
   register(HTMLLabelElement, TAG_LABEL)
   register(HTMLCanvasElement, TAG_CANVAS)
+  register(HTMLImageElement, TAG_IMG)
 
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.registerType(EventTarget)

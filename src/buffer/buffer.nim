@@ -12,29 +12,30 @@ when defined(posix):
   import posix
 
 import buffer/cell
+import config/config
 import css/cascade
 import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/stylednode
 import css/values
-import config/config
 import data/charset
 import html/dom
 import html/env
 import html/htmlparser
 import html/tags
+import img/png
 import io/loader
-import io/request
 import io/posixstream
 import io/promise
+import io/request
 import io/teestream
+import io/window
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
 import js/regex
 import js/timeout
-import io/window
 import layout/box
 import render/renderdocument
 import render/rendertext
@@ -491,9 +492,10 @@ proc do_reshape(buffer: Buffer) =
   of "text/html":
     if buffer.viewport == nil:
       buffer.viewport = Viewport(window: buffer.attrs)
-    let ret = renderDocument(buffer.document, buffer.attrs, buffer.userstyle, buffer.viewport, buffer.prevstyled)
-    buffer.lines = ret[0]
-    buffer.prevstyled = ret[1]
+    let ret = renderDocument(buffer.document, buffer.userstyle,
+      buffer.viewport, buffer.prevstyled)
+    buffer.lines = ret.grid
+    buffer.prevstyled = ret.styledRoot
   else:
     buffer.lines.renderStream(buffer.srenderer, buffer.available)
     buffer.available = 0
@@ -545,30 +547,50 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
   buffer.prevnode = thisnode
 
-proc loadResource(buffer: Buffer, document: Document, elem: HTMLLinkElement): EmptyPromise =
+proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
+  let document = buffer.document
   let href = elem.attr("href")
   if href == "": return
   let url = parseURL(href, document.url.some)
   if url.isSome:
     let url = url.get
-    if url.scheme == buffer.url.scheme:
-      let media = elem.media
-      if media != "":
-        let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
-        if not media.applies(document.window): return
-      return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
-        if res.contenttype == "text/css":
-          elem.sheet = parseStylesheet(res.body))
+    let media = elem.media
+    if media != "":
+      let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
+      if not media.applies(document.window): return
+    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
+      if res.contenttype == "text/css":
+        elem.sheet = parseStylesheet(res.body))
 
-proc loadResources(buffer: Buffer, document: Document): EmptyPromise =
+proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
+  let document = buffer.document
+  let src = elem.attr("src")
+  if src == "": return
+  let url = parseURL(src, document.url.some)
+  if url.isSome:
+    let url = url.get
+    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
+      if res.contenttype == "image/png":
+        let pngData = res.body.readAll()
+        elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
+
+proc loadResources(buffer: Buffer): EmptyPromise =
+  let document = buffer.document
   var promises: seq[EmptyPromise]
   if document.html != nil:
-    for elem in document.html.elements(TAG_LINK):
-      let elem = HTMLLinkElement(elem)
-      if elem.rel == "stylesheet":
-        let p = buffer.loadResource(document, elem)
-        if p != nil:
-          promises.add(p)
+    for elem in document.html.elements({TAG_LINK, TAG_IMG}):
+      var p: EmptyPromise = nil
+      case elem.tagType
+      of TAG_LINK:
+        let elem = HTMLLinkElement(elem)
+        if elem.rel == "stylesheet":
+          p = buffer.loadResource(elem)
+      of TAG_IMG:
+        let elem = HTMLImageElement(elem)
+        p = buffer.loadResource(elem)
+      else: discard
+      if p != nil:
+        promises.add(p)
   return all(promises)
 
 type ConnectResult* = object
@@ -655,7 +677,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
       window = buffer.window, url = buffer.url)
     buffer.document = doc
     buffer.state = LOADING_RESOURCES
-    p = buffer.loadResources(buffer.document)
+    p = buffer.loadResources()
   else:
     p = EmptyPromise()
     p.resolve()

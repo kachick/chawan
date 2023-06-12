@@ -9,6 +9,7 @@ const DefaultGuess = [
   ("xht", "application/xhtml+xml"),
   ("txt", "text/plain"),
   ("css", "text/css"),
+  ("png", "image/png"),
   ("", "text/plain")
 ].toTable()
 

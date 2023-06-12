@@ -138,6 +138,7 @@ func scanlen(reader: PNGReader): int {.inline.} =
   return (w * reader.spp * int(reader.bitDepth) + 7) div 8
 
 proc handleError(reader: var PNGReader, msg: string) =
+  eprint msg
   reader.bmp = nil
   if reader.hasstrm:
     discard inflateEnd(addr reader.strm)
@@ -281,7 +282,6 @@ proc unfilter(reader: var PNGReader, irow: openArray[uint8], bpp: int) =
   of 4u8: # paeth
     reader.err "paeth not implemented yet"
   else:
-    eprint fil
     reader.err "got invalid filter"
 
 proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
@@ -414,8 +414,8 @@ proc zlibFree(opaque: pointer, address: pointer) {.cdecl.} =
 
 proc initZStream(reader: var PNGReader) =
   let bps = max(int(reader.bitDepth) div 8, 1)
-  reader.idatBuf = newSeq[uint8](reader.scanlen * reader.height * bps)
-  reader.uprow = newSeq[uint8](reader.width * bps)
+  reader.idatBuf = newSeq[uint8](reader.scanlen * reader.height)
+  reader.uprow = newSeq[uint8](reader.scanlen)
   reader.strm = z_stream(
     zalloc: zlibAlloc,
     zfree: zlibFree

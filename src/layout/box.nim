@@ -23,7 +23,6 @@ type
 
   Viewport* = ref object
     window*: WindowAttributes
-    root*: seq[BlockBox]
     positioned*: seq[BlockBox]
 
   BoxBuilder* = ref object of RootObj
@@ -100,7 +99,7 @@ type
     width*: int
     contentWidth*: int
     contentHeight*: Option[int]
-    maxContentWidth*: int
+    contentWidthInfinite*: bool
 
     charwidth*: int
     whitespacenum*: int
@@ -139,14 +138,8 @@ type
     contentWidth*: int
     contentHeight*: Option[int]
     shrink*: bool
-    # The sole purpose of maxContentWidth is to stretch children of table
-    # cells to infinity in its maximum width calculation pass.
-    # For blocks with a specified width, maxContentWidth does nothing.
-    # This should never be used for anything other than setting width to
-    # min(maxContentWidth, width)! Failure to do so will almost certainly
-    # result in overflow errors (because maxContentWidth may be set to
-    # high(int).)
-    maxContentWidth*: int
+    # Whether to stretch content to infinity.
+    contentWidthInfinite*: bool
 
     positioned*: bool
     x_positioned*: bool

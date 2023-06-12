@@ -366,15 +366,23 @@ const css = staticRead"res/ua.css"
 let uastyle = css.parseStylesheet()
 const quirk = css & staticRead"res/quirk.css"
 let quirkstyle = quirk.parseStylesheet()
-proc renderDocument*(document: Document, window: WindowAttributes, userstyle: CSSStylesheet, layout: var Viewport, previousStyled: StyledNode): (FlexibleGrid, StyledNode) =
+type RenderedDocument* = object
+  grid*: FlexibleGrid
+  styledRoot*: StyledNode
+  images*: seq[StyledNode]
+
+proc renderDocument*(document: Document, userstyle: CSSStylesheet,
+    layout: var Viewport, previousStyled: StyledNode): RenderedDocument =
+  var grid: FlexibleGrid
   var uastyle = uastyle
   if document.mode == QUIRKS:
     uastyle = quirkstyle
-  let styledNode = document.applyStylesheets(uastyle, userstyle, previousStyled)
-  result[1] = styledNode
-  layout.renderLayout(styledNode)
-  result[0].setLen(0)
-  for root in layout.root:
-    result[0].renderBlockBox(root, 0, 0, window)
-  if result[0].len == 0:
-    result[0].addLine()
+  let styledRoot = document.applyStylesheets(uastyle, userstyle, previousStyled)
+  let rootBox = layout.renderLayout(styledRoot)
+  grid.renderBlockBox(rootBox, 0, 0, document.window.attrs)
+  if grid.len == 0:
+    grid.addLine()
+  return RenderedDocument(
+    grid: grid,
+    styledRoot: styledRoot
+  )

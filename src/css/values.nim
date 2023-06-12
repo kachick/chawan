@@ -6,6 +6,7 @@ import unicode
 
 import css/cssparser
 import css/selectorparser
+import img/bitmap
 import io/window
 import types/color
 import utils/twtstr
@@ -137,6 +138,7 @@ type
   CSSContent* = object
     t*: CSSContentType
     s*: string
+    bmp*: Bitmap
 
   CSSQuotes* = object
     auto*: bool
@@ -519,9 +521,10 @@ func cssColor*(val: CSSComponentValue): RGBAColor =
     let f = CSSFunction(val)
     var i = 0
     var commaMode = false
-    template check_err =
+    template check_err(slash: bool) =
       #TODO calc, percentages, etc (cssnumber function or something)
-      if i >= f.value.len or f.value[i] != CSS_NUMBER_TOKEN:
+      if not slash and i >= f.value.len or i < f.value.len and
+          f.value[i] != CSS_NUMBER_TOKEN:
         raise newException(CSSValueError, "Invalid color")
     template next_value(first = false, slash = false) =
       inc i
@@ -539,12 +542,11 @@ func cssColor*(val: CSSComponentValue): RGBAColor =
             raise newException(CSSValueError, "Invalid color")
           inc i
           f.value.skipWhitespace(i)
-      if not slash:
-        check_err
+      check_err slash
     case f.name
     of "rgb", "rgba":
       f.value.skipWhitespace(i)
-      check_err
+      check_err false
       let r = CSSToken(f.value[i]).nvalue
       next_value true
       let g = CSSToken(f.value[i]).nvalue
