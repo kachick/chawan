@@ -413,7 +413,6 @@ proc zlibFree(opaque: pointer, address: pointer) {.cdecl.} =
   dealloc(address)
 
 proc initZStream(reader: var PNGReader) =
-  let bps = max(int(reader.bitDepth) div 8, 1)
   reader.idatBuf = newSeq[uint8](reader.scanlen * reader.height)
   reader.uprow = newSeq[uint8](reader.scanlen)
   reader.strm = z_stream(

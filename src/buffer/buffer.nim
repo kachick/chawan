@@ -1151,8 +1151,7 @@ proc handleRead(buffer: Buffer, fd: int) =
   elif fd in buffer.loader.connecting:
     buffer.loader.onConnected(fd)
   elif fd in buffer.loader.ongoing:
-    #TODO something with readablestream?
-    discard
+    buffer.loader.onRead(fd)
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else: assert false
@@ -1167,8 +1166,7 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
     # probably shouldn't happen. TODO
     assert false, $fd & ": " & $err
   elif fd in buffer.loader.ongoing:
-    #TODO something with readablestream?
-    discard
+    buffer.loader.onError(fd)
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else:

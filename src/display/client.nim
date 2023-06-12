@@ -293,8 +293,7 @@ proc handleRead(client: Client, fd: int) =
     client.loader.onConnected(fd)
     client.runJSJobs()
   elif fd in client.loader.ongoing:
-    #TODO something with readablestream?
-    discard
+    client.loader.onRead(fd)
   elif fd in client.loader.unregistered:
     discard # ignore
   else:
@@ -317,8 +316,7 @@ proc handleError(client: Client, fd: int) =
     #TODO handle error?
     discard
   elif fd in client.loader.ongoing:
-    #TODO something with readablestream?
-    discard
+    client.loader.onError(fd)
   elif fd in client.loader.unregistered:
     discard # already unregistered...
   else:

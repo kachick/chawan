@@ -4,9 +4,10 @@ import strutils
 import tables
 
 import bindings/quickjs
+import io/promise
+import js/javascript
 import types/formdata
 import types/url
-import js/javascript
 import utils/twtstr
 
 type
@@ -84,6 +85,7 @@ type
     redirect*: Request
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
+    bodyRead*: Promise[string]
  
   ReadableStream* = ref object of Stream
     isource*: Stream
@@ -310,16 +312,13 @@ proc close*(response: Response) {.jsfunc.} =
   if response.body != nil:
     response.body.close()
 
-#TODO text, json should return promises, not blocking reads
-proc text*(response: Response): string {.jsfunc.} =
-  if response.body == nil:
-    return ""
-  result = response.body.readAll()
-  response.close()
+proc text*(response: Response): Promise[string] {.jsfunc.} =
+  return response.bodyRead
 
-proc json(response: Response, ctx: JSContext): JSValue {.jsfunc.} =
-  var s = response.text()
-  return JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len), cstring"<input>")
+proc json(ctx: JSContext, this: Response): Promise[JSValue] {.jsfunc.} =
+  return this.text().then(proc(s: string): JSValue =
+    return JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
+      cstring"<input>"))
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute

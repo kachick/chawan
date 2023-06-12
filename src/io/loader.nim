@@ -23,13 +23,14 @@ import bindings/curl
 import io/about
 import io/file
 import io/http
+import io/posixstream
 import io/promise
 import io/request
 import io/urlfilter
-import js/javascript
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/javascript
 import types/cookie
 import types/mime
 import types/referer
@@ -40,7 +41,7 @@ type
   FileLoader* = ref object
     process*: Pid
     connecting*: Table[int, ConnectData]
-    ongoing*: Table[int, Response]
+    ongoing*: Table[int, OngoingData]
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
     unregisterFun*: proc(fd: int)
@@ -49,6 +50,11 @@ type
     promise: Promise[Response]
     stream: Stream
     request: Request
+
+  OngoingData = object
+    buf: string
+    readbufsize: int
+    response: Response
 
   ConnectErrorCode* = enum
     ERROR_SOURCE_NOT_FOUND = (-4, "clone source could not be found"),
@@ -258,8 +264,11 @@ proc newResponse(res: int, request: Request, stream: Stream = nil): Response =
   return Response(
     res: res,
     url: request.url,
-    body: stream
+    body: stream,
+    bodyRead: Promise[string]()
   )
+
+const BufferSize = 4096
 
 proc onConnected*(loader: FileLoader, fd: int) =
   let connectData = loader.connecting[fd]
@@ -279,7 +288,10 @@ proc onConnected*(loader: FileLoader, fd: int) =
     stream.sread(response.headers)
     applyHeaders(request, response)
     response.body = stream
-    loader.ongoing[fd] = response
+    loader.ongoing[fd] = OngoingData(
+      response: response,
+      readbufsize: BufferSize,
+    )
     promise.resolve(response)
   else:
     loader.unregisterFun(fd)
@@ -288,6 +300,33 @@ proc onConnected*(loader: FileLoader, fd: int) =
     let response = newResponse(res, request)
     promise.resolve(response)
   loader.connecting.del(fd)
+
+proc onRead*(loader: FileLoader, fd: int) =
+  loader.ongoing.withValue(fd, buffer):
+    let response = buffer[].response
+    while true:
+      let olen = buffer[].buf.len
+      buffer[].buf.setLen(olen + buffer.readbufsize)
+      try:
+        let n = response.body.readData(addr buffer[].buf[olen],
+          buffer.readbufsize)
+        if n != 0:
+          if buffer[].readbufsize < BufferSize:
+            buffer[].readbufsize = min(BufferSize, buffer[].readbufsize * 2)
+        buffer[].buf.setLen(olen + n)
+        if response.body.atEnd():
+          response.bodyRead.resolve(buffer[].buf)
+          loader.unregisterFun(fd)
+          loader.ongoing.del(fd)
+          loader.unregistered.add(fd)
+          response.body.close()
+        break
+      except ErrorAgain, ErrorWouldBlock:
+        assert buffer.readbufsize > 1
+        buffer.readbufsize = buffer.readbufsize div 2
+
+proc onError*(loader: FileLoader, fd: int) =
+  loader.onRead(fd)
 
 proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response =
   new(result)

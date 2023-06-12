@@ -1,14 +1,14 @@
 import tables
 
 type
-  PromiseState = enum
+  PromiseState* = enum
     PROMISE_PENDING, PROMISE_FULFILLED, PROMISE_REJECTED
 
   EmptyPromise* = ref object of RootObj
     cb: (proc())
     next: EmptyPromise
     opaque: pointer
-    state: PromiseState
+    state*: PromiseState
 
   Promise*[T] = ref object of EmptyPromise
     res: T
@@ -98,6 +98,14 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T): EmptyPromise)): EmptyPromise
     if p2 != nil:
       p2.then(proc() =
         next.resolve()))
+  return next
+
+proc then*[T, U](promise: Promise[T], cb: (proc(x: T): U)): Promise[U] {.discardable.} =
+  if promise == nil: return
+  let next = Promise[U]()
+  promise.then(proc(x: T) =
+    next.res = cb(x)
+    next.resolve())
   return next
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
