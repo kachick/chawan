@@ -27,17 +27,11 @@ func `==`*(a, b: RGBAColor): bool {.borrow.}
 func rgbcolor*(color: CellColor): RGBColor =
   cast[RGBColor](color.n)
 
-func rgbacolor*(color: CellColor): RGBColor =
-  cast[RGBColor](color.n)
-
 func color*(color: CellColor): uint8 =
   cast[uint8](color.n)
 
 func cellColor*(rgb: RGBColor): CellColor =
   return CellColor(rgb: true, n: uint32(rgb))
-
-func cellColor*(rgba: RGBAColor): CellColor =
-  return CellColor(rgb: true, n: uint32(rgba))
 
 func cellColor*(c: uint8): CellColor =
   return CellColor(rgb: false, n: uint32(c))
@@ -311,10 +305,6 @@ proc straight*(c: RGBAColor): RGBAColor =
   return rgba(r, g, b, c.a)
 
 func blend*(c0, c1: RGBAColor): RGBAColor =
-  if c0.a == 0:
-    return c1
-  if c1.a == 0:
-    return c0
   let pc0 = c0.premul()
   let pc1 = c1.premul()
   let k = 255 - pc1.a
@@ -327,9 +317,11 @@ func blend*(c0, c1: RGBAColor): RGBAColor =
   let res = straight(pres)
   return res
 
-# Kind of a hack, as we don't actually check if CellColor is rgbacolor.
-func blend*(c0, c1: CellColor): CellColor =
-  return cellColor(c0.rgbacolor.blend(c1.rgbacolor))
+#func blend*(c0, c1: RGBAColor): RGBAColor =
+#  const norm = 1f64 / 255f64
+#  let c0a = float64(c0.a) * norm
+#  let c1a = float64(c1.a) * norm
+#  let a0 = c0a + c1a * (1 - c0a)
 
 func rgb*(r, g, b: uint8): RGBColor =
   return RGBColor((uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
