@@ -552,6 +552,7 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addBlobModule()
   ctx.addFormDataModule()
   ctx.addRequestModule()
+  ctx.addResponseModule()
   ctx.addLineEditModule()
   ctx.addConfigModule()
   ctx.addPagerModule()

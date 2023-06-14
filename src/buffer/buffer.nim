@@ -28,7 +28,6 @@ import img/png
 import io/loader
 import io/posixstream
 import io/promise
-import io/request
 import io/teestream
 import io/window
 import ips/serialize
@@ -559,8 +558,14 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
       let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
       if not media.applies(document.window): return
     return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
-      if res.contenttype == "text/css":
-        elem.sheet = parseStylesheet(res.body))
+      if res.res == 0: #TODO remove res
+        #TODO we should use ReadableStreams for this (which would allow us to
+        # parse CSS asynchronously)
+        # yet another hack: needed because closing a stream before
+        # unregistering breaks
+        if res.contenttype == "text/css":
+          elem.sheet = parseStylesheet(res.body)
+        res.unregisterFun())
 
 proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let document = buffer.document
@@ -569,10 +574,12 @@ proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let url = parseURL(src, document.url.some)
   if url.isSome:
     let url = url.get
-    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
+    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response): Promise[string] =
       if res.contenttype == "image/png":
-        let pngData = res.body.readAll()
-        elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
+        #TODO using text() for PNG is wrong
+        return res.text()
+    ).then(proc(pngData: string) =
+      elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
 
 proc loadResources(buffer: Buffer): EmptyPromise =
   let document = buffer.document

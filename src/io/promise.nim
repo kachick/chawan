@@ -64,7 +64,9 @@ func empty*(map: PromiseMap): bool =
   map.tab.len == 0
 
 proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
-  if promise == nil: return
+  if promise == nil:
+    doAssert false
+    return
   promise.cb = cb
   promise.next = EmptyPromise()
   if promise.state == PROMISE_FULFILLED:
@@ -72,7 +74,7 @@ proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
   return promise.next
 
 proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable.} =
-  if promise == nil: return
+  doAssert promise != nil
   return promise.then(proc() =
     if promise.get != nil:
       promise.get(promise.opaque, promise.res)
@@ -80,28 +82,32 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable
     cb(promise.res))
 
 proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.discardable.} =
-  if promise == nil: return
+  doAssert promise != nil
   let next = Promise[T]()
   promise.then(proc() =
-    let p2 = cb()
+    var p2 = cb()
     if p2 != nil:
       p2.then(proc(x: T) =
         next.res = x
-        next.resolve()))
+        next.resolve())
+    else:
+      next.resolve())
   return next
 
 proc then*[T](promise: Promise[T], cb: (proc(x: T): EmptyPromise)): EmptyPromise {.discardable.} =
-  if promise == nil: return
+  doAssert promise != nil
   let next = EmptyPromise()
   promise.then(proc(x: T) =
     let p2 = cb(x)
     if p2 != nil:
       p2.then(proc() =
-        next.resolve()))
+        next.resolve())
+    else:
+      next.resolve())
   return next
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): U)): Promise[U] {.discardable.} =
-  if promise == nil: return
+  doAssert promise != nil
   let next = Promise[U]()
   promise.then(proc(x: T) =
     next.res = cb(x)
@@ -109,14 +115,16 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): U)): Promise[U] {.discard
   return next
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
-  if promise == nil: return
+  doAssert promise != nil
   let next = Promise[U]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
     if p2 != nil:
       p2.then(proc(y: U) =
         next.res = y
-        next.resolve()))
+        next.resolve())
+    else:
+      next.resolve())
   return next
 
 proc all*(promises: seq[EmptyPromise]): EmptyPromise =

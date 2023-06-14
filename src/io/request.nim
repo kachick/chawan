@@ -4,7 +4,6 @@ import strutils
 import tables
 
 import bindings/quickjs
-import io/promise
 import js/javascript
 import types/formdata
 import types/url
@@ -74,18 +73,6 @@ type
     destination* {.jsget.}: RequestDestination
     credentialsMode* {.jsget.}: CredentialsMode
     proxy*: URL #TODO do something with this
-
-  Response* = ref object
-    body*: Stream
-    bodyUsed* {.jsget.}: bool
-    res* {.jsget.}: int
-    contenttype* {.jsget.}: string
-    status* {.jsget.}: int
-    headers* {.jsget.}: Headers
-    redirect*: Request
-    url*: URL #TODO should be urllist?
-    unregisterFun*: proc()
-    bodyRead*: Promise[string]
  
   ReadableStream* = ref object of Stream
     isource*: Stream
@@ -95,19 +82,11 @@ type
   Headers* = ref object
     table* {.jsget.}: Table[string, seq[string]]
 
-proc Request_url(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
-  let op = getOpaque0(this)
-  if unlikely(not ctx.isInstanceOf(this, "Request") or op == nil):
-    return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Request")
-  let request = cast[Request](op)
-  return toJS(ctx, $request.url)
+proc js_url(this: Request): string {.jsfget: "url".} =
+  return $this.url
 
-proc Request_referrer(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
-  let op = getOpaque0(this)
-  if unlikely(not ctx.isInstanceOf(this, "Request") or op == nil):
-    return JS_ThrowTypeError(ctx, "Value is not an instance of %s", "Request")
-  let request = cast[Request](op)
-  return toJS(ctx, $request.referer)
+proc js_referrer(this: Request): string {.jsfget: "referrer".} =
+  return $this.referer
 
 iterator pairs*(headers: Headers): (string, string) =
   for k, vs in headers.table:
@@ -304,22 +283,6 @@ func getOrDefault*(headers: Headers, k: string, default = ""): string =
   else:
     default
 
-#TODO: this should be a property of body
-proc close*(response: Response) {.jsfunc.} =
-  response.bodyUsed = true
-  if response.unregisterFun != nil:
-    response.unregisterFun()
-  if response.body != nil:
-    response.body.close()
-
-proc text*(response: Response): Promise[string] {.jsfunc.} =
-  return response.bodyRead
-
-proc json(ctx: JSContext, this: Response): Promise[JSValue] {.jsfunc.} =
-  return this.text().then(proc(s: string): JSValue =
-    return JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
-      cstring"<input>"))
-
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute
   of NO_CORS, ANONYMOUS:
@@ -328,9 +291,5 @@ func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
     return INCLUDE
 
 proc addRequestModule*(ctx: JSContext) =
-  ctx.registerType(Request, extra_getset = [
-    TabGetSet(name: "url", get: Request_url),
-    TabGetSet(name: "referrer", get: Request_referrer)
-  ])
-  ctx.registerType(Response)
+  ctx.registerType(Request)
   ctx.registerType(Headers)

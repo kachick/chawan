@@ -6,6 +6,7 @@ import html/htmlparser
 import io/loader
 import io/promise
 import io/request
+import io/response
 import io/window
 import js/intl
 import js/javascript
@@ -120,6 +121,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.addBlobModule()
   ctx.addFormDataModule()
   ctx.addRequestModule()
+  ctx.addResponseModule()
 
 proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)

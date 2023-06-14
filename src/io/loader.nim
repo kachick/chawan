@@ -26,6 +26,7 @@ import io/http
 import io/posixstream
 import io/promise
 import io/request
+import io/response
 import io/urlfilter
 import ips/serialize
 import ips/serversocket
@@ -36,6 +37,9 @@ import types/mime
 import types/referer
 import types/url
 import utils/twtstr
+
+export request
+export response
 
 type
   FileLoader* = ref object
@@ -260,14 +264,6 @@ proc fetch*(loader: FileLoader, input: Request): Promise[Response] =
   )
   return promise
 
-proc newResponse(res: int, request: Request, stream: Stream = nil): Response =
-  return Response(
-    res: res,
-    url: request.url,
-    body: stream,
-    bodyRead: Promise[string]()
-  )
-
 const BufferSize = 4096
 
 proc onConnected*(loader: FileLoader, fd: int) =
@@ -278,12 +274,15 @@ proc onConnected*(loader: FileLoader, fd: int) =
   var res: int
   stream.sread(res)
   if res == 0:
-    let response = newResponse(res, request, stream)
+    let response = newResponse(res, request, fd, stream)
     assert loader.unregisterFun != nil
+    let realCloseImpl = stream.closeImpl
+    stream.closeImpl = nil
     response.unregisterFun = proc() =
       loader.ongoing.del(fd)
       loader.unregistered.add(fd)
       loader.unregisterFun(fd)
+      realCloseImpl(stream)
     stream.sread(response.status)
     stream.sread(response.headers)
     applyHeaders(request, response)
@@ -292,6 +291,7 @@ proc onConnected*(loader: FileLoader, fd: int) =
       response: response,
       readbufsize: BufferSize,
     )
+    SocketStream(stream).source.getFd().setBlocking(false)
     promise.resolve(response)
   else:
     loader.unregisterFun(fd)
@@ -316,10 +316,7 @@ proc onRead*(loader: FileLoader, fd: int) =
         buffer[].buf.setLen(olen + n)
         if response.body.atEnd():
           response.bodyRead.resolve(buffer[].buf)
-          loader.unregisterFun(fd)
-          loader.ongoing.del(fd)
-          loader.unregistered.add(fd)
-          response.body.close()
+          response.unregisterFun()
         break
       except ErrorAgain, ErrorWouldBlock:
         assert buffer.readbufsize > 1

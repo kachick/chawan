@@ -15,9 +15,10 @@ import encoding/decoderstream
 import html/tags
 import img/bitmap
 import img/painter
-import img/png
 import img/path
+import img/png
 import io/loader
+import io/promise
 import io/request
 import io/window
 import js/javascript
@@ -2371,26 +2372,30 @@ proc createClassicScript(source: string, baseURL: URL, options: ScriptOptions, m
 
 #TODO settings object
 proc fetchClassicScript(element: HTMLScriptElement, url: URL,
-                        options: ScriptOptions, cors: CORSAttribute,
-                        cs: Charset, onComplete: (proc(element: HTMLScriptElement,
-                                                       res: ScriptResult))) =
+    options: ScriptOptions, cors: CORSAttribute,
+    cs: Charset, onComplete: (proc(element: HTMLScriptElement,
+                                   res: ScriptResult))) =
   if not element.scriptingEnabled:
       element.onComplete(ScriptResult(t: RESULT_NULL))
   else:
     let loader = element.document.window.loader
     if loader.isSome:
       let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-      #TODO this should be async...
-      let r = loader.get.doRequest(request)
-      if r.res != 0 or r.body == nil:
-        element.onComplete(ScriptResult(t: RESULT_NULL))
-      else:
-        #TODO use charset from content-type
+      loader.get.fetch(request).then(proc(r: Response): auto =
+        if r.res != 0 or r.body == nil:
+          #TODO remove res
+          element.onComplete(ScriptResult(t: RESULT_NULL))
+        else:
+          #TODO use charset from content-type
+          #TODO text() should decode
+          return r.text()
+      ).then(proc(s: string) =
+        let ss = newStringStream(s) #TODO unnecessary copy
         let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
-        let source = newDecoderStream(r.body, cs = cs).readAll()
+        let source = newDecoderStream(ss, cs = cs).readAll()
         #TODO use response url
         let script = createClassicScript(source, url, options, false)
-        element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
+        element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script)))
 
 proc log*(console: console, ss: varargs[string]) {.jsfunc.} =
   var s = ""

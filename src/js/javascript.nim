@@ -869,6 +869,7 @@ type
     jsFunCall: NimNode
     jsCallAndRet: NimNode
     minArgs: int
+    actualMinArgs: int # minArgs without JSContext
     i: int # nim parameters accounted for
     j: int # js parameters accounted for (not including fix ones, e.g. `this')
     res: NimNode
@@ -1171,8 +1172,7 @@ proc addFixParam(gen: var JSFuncGenerator, name: string) =
   inc gen.i
 
 proc addRequiredParams(gen: var JSFuncGenerator) =
-  let minArgs = gen.funcParams.getMinArgs()
-  while gen.i < minArgs:
+  while gen.i < gen.minArgs:
     let s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i][1]
     if tt.typeKind == ntyGenericParam:
@@ -1245,12 +1245,7 @@ export JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
 proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
   let tt = gen.thisType
   let fn = gen.funcName
-  var ma = gen.minArgs
-  if gen.thisname.isSome:
-    ma -= 1
-  if gen.passCtx:
-    ma -= 1
-  assert ma >= 0
+  var ma = gen.actualMinArgs
   result = newStmtList()
   if isva:
     result.add(quote do: 
@@ -1331,6 +1326,15 @@ proc addThisName(gen: var JSFuncGenerator, thisname: Option[string]) =
       gen.thisType = gen.returnType.get.strVal
     gen.newName = ident($gen.t & "_" & gen.funcName)
 
+func getActualMinArgs(gen: var JSFuncGenerator): int =
+  var ma = gen.minArgs
+  if gen.thisname.isSome:
+    dec ma
+  if gen.passCtx:
+    dec ma
+  assert ma >= 0
+  return ma
+
 proc setupGenerator(fun: NimNode, t: BoundFunctionType,
     thisname = some("this"), jsname: string = ""): JSFuncGenerator =
   let jsFunCallList = newStmtList()
@@ -1351,6 +1355,7 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
     jsFunCall: newCall(fun[0])
   )
   gen.addJSContext()
+  gen.actualMinArgs = gen.getActualMinArgs() # must come after passctx is set
   gen.addThisName(thisname)
   return gen
 
@@ -1486,8 +1491,8 @@ macro jsgetprop*(fun: typed) =
 
 macro jsfgetn(jsname: static string, fun: typed) =
   var gen = setupGenerator(fun, GETTER, jsname = jsname)
-  if gen.minArgs != 1 or gen.funcParams.len != gen.minArgs:
-    error("jsfget functions must only have one parameter.")
+  if gen.actualMinArgs != 0 or gen.funcParams.len != gen.minArgs:
+    error("jsfget functions must only accept one parameter.")
   if gen.returnType.isnone:
     error("jsfget functions must have a return type.")
   if gen.newName.strVal in existing_funcs:
@@ -1515,7 +1520,7 @@ macro jsfget*(jsname: static string, fun: typed) =
 
 macro jsfsetn(jsname: static string, fun: typed) =
   var gen = setupGenerator(fun, SETTER, jsname = jsname)
-  if gen.minArgs != 2 or gen.funcParams.len != gen.minArgs:
+  if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
   if gen.returnType.issome:
     error("jsfset functions must not have a return type")
