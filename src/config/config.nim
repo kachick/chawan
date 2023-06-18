@@ -292,7 +292,6 @@ proc bindLineKey*(config: Config, key, action: string) {.jsfunc.} =
 proc parseConfigValue(x: var object, v: TomlValue, k: string)
 proc parseConfigValue(x: var bool, v: TomlValue, k: string)
 proc parseConfigValue(x: var string, v: TomlValue, k: string)
-proc parseConfigValue(x: var seq[object], v: TomlValue, k: string)
 proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var Charset, v: TomlValue, k: string)
 proc parseConfigValue(x: var int32, v: TomlValue, k: string)
@@ -334,20 +333,6 @@ proc parseConfigValue(x: var string, v: TomlValue, k: string) =
   typeCheck(v, VALUE_STRING, k)
   x = v.s
 
-proc parseConfigValue(x: var seq[object], v: TomlValue, k: string) =
-  typeCheck(v, {VALUE_TABLE_ARRAY, VALUE_ARRAY}, k)
-  if v.vt == VALUE_ARRAY:
-    #TODO if array and size != 0
-    # actually, arrays and table arrays should be the same data type
-    assert v.a.len == 0
-    x.setLen(0)
-  else:
-    for i in 0 ..< v.ta.len:
-      var y: typeof(x[0])
-      let tab = TomlValue(vt: VALUE_TABLE, t: v.ta[i])
-      parseConfigValue(y, tab, k & "[" & $i & "]")
-      x.add(y)
-
 proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt != VALUE_ARRAY:
@@ -355,6 +340,8 @@ proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string) =
     parseConfigValue(y, v, k)
     x.add(y)
   else:
+    if not v.ad:
+      x.setLen(0)
     for i in 0 ..< v.a.len:
       var y: T
       parseConfigValue(y, v.a[i], k & "[" & $i & "]")

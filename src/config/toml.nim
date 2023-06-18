@@ -1,6 +1,5 @@
 import streams
 import tables
-import options
 import times
 import strutils
 import strformat
@@ -18,9 +17,10 @@ type
     VALUE_DATE_TIME = "datetime"
     VALUE_TABLE = "table"
     VALUE_ARRAY = "array"
-    VALUE_TABLE_ARRAY = "tablearray"
 
-  SyntaxError = object of ValueError
+  TomlError = string
+
+  TomlResult = Result[TomlValue, TomlError]
 
   TomlParser = object
     filename: string
@@ -49,8 +49,7 @@ type
       dt*: DateTime
     of VALUE_ARRAY:
       a*: seq[TomlValue]
-    of VALUE_TABLE_ARRAY:
-      ta*: seq[TomlTable]
+      ad*: bool
 
   TomlNode = ref object of RootObj
     comment: string
@@ -75,8 +74,8 @@ iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
   for k, v in val.t:
     yield (k, v)
 
-iterator items*(val: TomlValue): TomlTable {.inline.} =
-  for v in val.ta:
+iterator items*(val: TomlValue): TomlValue {.inline.} =
+  for v in val.a:
     yield v
 
 func contains*(val: TomlValue, key: string): bool =
@@ -91,11 +90,8 @@ func peek(state: TomlParser, i: int): char =
 func peek(state: TomlParser, i: int, len: int): string =
   return state.buf.substr(state.at + i, state.at + i + len)
 
-proc syntaxError(state: TomlParser, msg: string) =
-  raise newException(SyntaxError, fmt"{state.filename}({state.line}): {msg}")
-
-proc valueError(state: TomlParser, msg: string) =
-  raise newException(ValueError, fmt"{state.filename}({state.line}): {msg}")
+template err(state: TomlParser, msg: string): untyped =
+  err(state.filename & "(" & $state.line & "):" & msg)
 
 proc consume(state: var TomlParser): char =
   result = state.buf[state.at]
@@ -109,7 +105,7 @@ proc has(state: var TomlParser, i: int = 0): bool =
     state.buf &= state.stream.readLine() & '\n'
   return state.at + i < state.buf.len
 
-proc consumeEscape(state: var TomlParser, c: char): Rune =
+proc consumeEscape(state: var TomlParser, c: char): Result[Rune, TomlError] =
   var len = 4
   if c == 'U':
     len = 8
@@ -126,15 +122,17 @@ proc consumeEscape(state: var TomlParser, c: char): Rune =
       num += hexValue(c)
       inc i
     if i != len - 1:
-      state.syntaxError(fmt"invalid escaped length ({i}, needs {len})")
+      return state.err("invalid escaped length (" & $i & ", needs " & $len &
+        ")")
     if num > 0x10FFFF or num in {0xD800..0xDFFF}:
-      state.syntaxError(fmt"invalid escaped codepoint {num}")
+      return state.err("invalid escaped codepoint: " & $num)
     else:
-      return Rune(num)
+      return ok(cast[Rune](num))
   else:
-    state.syntaxError(fmt"invalid escaped codepoint {c}")
+    return state.err("invalid escaped codepoint: " & $c)
 
-proc consumeString(state: var TomlParser, first: char): string =
+proc consumeString(state: var TomlParser, first: char):
+    Result[string, string] =
   var multiline = false
 
   if first == '"':
@@ -155,10 +153,11 @@ proc consumeString(state: var TomlParser, first: char): string =
 
   var escape = false
   var ml_trim = false
+  var res = ""
   while state.has():
     let c = state.consume()
     if c == '\n' and not multiline:
-      state.syntaxError(fmt"newline in string")
+      return state.err("newline in string")
     elif c == first:
       if multiline and state.has(1):
         let c2 = state.peek(0)
@@ -173,26 +172,27 @@ proc consumeString(state: var TomlParser, first: char): string =
       escape = true
     elif escape:
       case c
-      of 'b': result &= '\b'
-      of 't': result &= '\t'
-      of 'n': result &= '\n'
-      of 'f': result &= '\f'
-      of 'r': result &= '\r'
-      of '"': result &= '"'
-      of '\\': result &= '\\'
-      of 'u', 'U': result &= state.consumeEscape(c)
+      of 'b': res &= '\b'
+      of 't': res &= '\t'
+      of 'n': res &= '\n'
+      of 'f': res &= '\f'
+      of 'r': res &= '\r'
+      of '"': res &= '"'
+      of '\\': res &= '\\'
+      of 'u', 'U': res &= ?state.consumeEscape(c)
       of '\n': ml_trim = true
-      else: state.syntaxError(fmt"invalid escape sequence \{c}")
+      else: return state.err("invalid escape sequence \\" & c)
       escape = false
     elif ml_trim:
       if not (c in {'\n', ' ', '\t'}):
-        result &= c
+        res &= c
         ml_trim = false
     else:
-      result &= c
+      res &= c
+  return ok(res)
 
-proc consumeBare(state: var TomlParser, c: char): string =
-  result &= c
+proc consumeBare(state: var TomlParser, c: char): Result[string, TomlError] =
+  var res = $c
   while state.has():
     let c = state.consume()
     case c
@@ -201,11 +201,12 @@ proc consumeBare(state: var TomlParser, c: char): string =
       state.reconsume()
       break
     elif c.isBare():
-      result &= c
+      res &= c
     else:
-      state.syntaxError(fmt"invalid value in token: {c}")
+      return state.err("invalid value in token: " & c)
+  return ok(res)
 
-proc flushLine(state: var TomlParser) =
+proc flushLine(state: var TomlParser): Err[TomlError] =
   if state.node != nil:
     if state.node of TomlKVPair:
       var i = 0
@@ -216,12 +217,12 @@ proc flushLine(state: var TomlParser) =
           let node = table.map[keys[i]]
           if node.vt == VALUE_TABLE:
             table = node.t
-          elif node.vt == VALUE_TABLE_ARRAY:
+          elif node.vt == VALUE_ARRAY:
             assert state.tarray
-            table = node.ta[^1]
+            table = node.a[^1].t
           else:
             let s = keys.join(".")
-            state.valueError(fmt"re-definition of node {s}")
+            return state.err("re-definition of node " & s)
         else:
           let node = TomlTable()
           table.map[keys[i]] = TomlValue(vt: VALUE_TABLE, t: node)
@@ -230,12 +231,13 @@ proc flushLine(state: var TomlParser) =
 
       if keys[i] in table.map:
         let s = keys.join(".")
-        state.valueError(fmt"re-definition of node {s}")
+        return state.err("re-definition of node " & s)
 
       table.map[keys[i]] = TomlKVPair(state.node).value
       table.nodes.add(state.node)
     state.node = nil
   inc state.line
+  return ok()
 
 proc consumeComment(state: var TomlParser) =
   state.node = TomlNode()
@@ -247,75 +249,74 @@ proc consumeComment(state: var TomlParser) =
     else:
       state.node.comment &= c
 
-proc consumeKey(state: var TomlParser): seq[string] =
+proc consumeKey(state: var TomlParser): Result[seq[string], TomlError] =
+  var res: seq[string]
   var str = ""
   while state.has():
     let c = state.consume()
     case c
     of '"', '\'':
       if str.len > 0:
-        state.syntaxError("multiple strings without dot")
-      str = state.consumeString(c)
+        return state.err("multiple strings without dot")
+      str = ?state.consumeString(c)
     of '=', ']':
       if str.len != 0:
-        result.add(str)
+        res.add(str)
         str = ""
-      return result
+      return ok(res)
     of '.':
       if str.len == 0: #TODO empty strings are allowed, only empty keys aren't
-        state.syntaxError("redundant dot")
+        return state.err("redundant dot")
       else:
-        result.add(str)
+        res.add(str)
         str = ""
     of ' ', '\t': discard
     of '\n':
       if state.node != nil:
-        state.syntaxError("newline without value")
+        return state.err("newline without value")
       else:
-        state.flushLine()
+        ?state.flushLine()
     elif c.isBare():
       if str.len > 0:
-        state.syntaxError(fmt"multiple strings without dot: {str}")
-      str = state.consumeBare(c)
-    else: state.syntaxError(fmt"invalid character in key: {c}")
+        return state.err("multiple strings without dot: " & str)
+      str = ?state.consumeBare(c)
+    else: return state.err("invalid character in key: " & c)
+  return state.err("key without value")
 
-  state.syntaxError("key without value")
-
-proc consumeTable(state: var TomlParser): TomlTable =
-  new(result)
+proc consumeTable(state: var TomlParser): Result[TomlTable, TomlError] =
+  let res = TomlTable()
   while state.has():
     let c = state.peek(0)
     case c
-    of ' ', '\t': discard
-    of '\n':
-      return result
+    of ' ', '\t': discard state.consume()
+    of '\n': return ok(res)
     of ']':
       if state.tarray:
         discard state.consume()
-        return result
+        return ok(res)
       else:
-        state.syntaxError("redundant ] character after key")
+        return state.err("redundant ] character after key")
     of '[':
       state.tarray = true
       discard state.consume()
     of '"', '\'':
-      result.key = state.consumeKey()
+      res.key = ?state.consumeKey()
     elif c.isBare():
-      result.key = state.consumeKey()
-    else: state.syntaxError(fmt"invalid character before key: {c}")
-  state.syntaxError("unexpected end of file")
+      res.key = ?state.consumeKey()
+    else: return state.err("invalid character before key: " & c)
+  return state.err("unexpected end of file")
 
-proc consumeNoState(state: var TomlParser): bool =
+proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
   while state.has():
     let c = state.peek(0)
     case c
     of '#', '\n':
-      return false
+      return ok(false)
     of ' ', '\t': discard
     of '[':
       discard state.consume()
       state.tarray = false
-      let table = state.consumeTable()
+      let table = ?state.consumeTable()
       if state.tarray:
         var node = state.root
         for i in 0 ..< table.key.high:
@@ -327,33 +328,37 @@ proc consumeNoState(state: var TomlParser): bool =
             node = t2
         if table.key[^1] in node.map:
           var last = node.map[table.key[^1]]
-          if last.vt == VALUE_ARRAY and last.a.len == 0:
-            last = TomlValue(vt: VALUE_TABLE_ARRAY)
-            node.map[table.key[^1]] = last
-          if last.vt != VALUE_TABLE_ARRAY:
+          if last.vt != VALUE_ARRAY:
             let key = table.key.join('.')
-            state.valueError(fmt"re-definition of node {key} as table array (was {last.vt})")
-          last.ta.add(table)
+            return state.err("re-definition of node " & key &
+              " as table array (was " & $last.vt & ")")
+          last.ad = true
+          let val = TomlValue(vt: VALUE_TABLE, t: table)
+          last.a.add(val)
         else:
-          let last = TomlValue(vt: VALUE_TABLE_ARRAY, ta: @[table])
+          let val = TomlValue(vt: VALUE_TABLE, t: table)
+          let last = TomlValue(vt: VALUE_ARRAY, a: @[val])
           node.map[table.key[^1]] = last
       state.currkey = table.key
       state.node = table
-      return false
+      return ok(false)
     elif c == '"' or c == '\'' or c.isBare():
       let kvpair = TomlKVPair()
-      kvpair.key = state.consumeKey()
+      kvpair.key = ?state.consumeKey()
       state.node = kvpair
-      return true
-    else: state.syntaxError(fmt"invalid character before key: {c}")
-  state.syntaxError("unexpected end of file")
+      return ok(true)
+    else: return state.err("invalid character before key: " & c)
+  return state.err("unexpected end of file")
 
-proc consumeNumber(state: var TomlParser, c: char): TomlValue =
+proc consumeNumber(state: var TomlParser, c: char): TomlResult =
   var repr = $c
   var isfloat = false
   if state.has():
     if state.peek(0) == '+' or state.peek(0) == '-':
       repr &= state.consume()
+
+  if not state.has() or not isDigit(state.peek(0)):
+    return state.err("invalid number")
 
   while state.has() and isDigit(state.peek(0)):
     repr &= state.consume()
@@ -382,15 +387,15 @@ proc consumeNumber(state: var TomlParser, c: char): TomlValue =
 
   if isfloat:
     let val = parseFloat64(repr)
-    return TomlValue(vt: VALUE_FLOAT, f: val)
+    return ok(TomlValue(vt: VALUE_FLOAT, f: val))
 
   let val = parseInt64(repr)
-  return TomlValue(vt: VALUE_INTEGER, i: val.get)
+  return ok(TomlValue(vt: VALUE_INTEGER, i: val.get))
 
-proc consumeValue(state: var TomlParser): TomlValue
+proc consumeValue(state: var TomlParser): TomlResult
 
-proc consumeArray(state: var TomlParser): TomlValue =
-  result = TomlValue(vt: VALUE_ARRAY)
+proc consumeArray(state: var TomlParser): TomlResult =
+  var res = TomlValue(vt: VALUE_ARRAY)
   var val: TomlValue
   while state.has():
     let c = state.consume()
@@ -398,26 +403,22 @@ proc consumeArray(state: var TomlParser): TomlValue =
     of ' ', '\t', '\n': discard
     of ']':
       if val != nil:
-        result.a.add(val)
+        res.a.add(val)
       break
     of ',':
       if val == nil:
-        state.syntaxError("comma without element")
-      if val.vt == VALUE_TABLE:
-        # inline table array
-        result = TomlValue(vt: VALUE_TABLE_ARRAY)
-        result.ta.add(val.t)
-      else:
-        result.a.add(val)
+        return state.err("comma without element")
+      res.a.add(val)
       val = nil
     else:
       if val != nil:
-        state.syntaxError("missing comma")
+        return state.err("missing comma")
       state.reconsume()
-      val = state.consumeValue()
+      val = ?state.consumeValue()
+  return ok(res)
 
-proc consumeInlineTable(state: var TomlParser): TomlValue =
-  result = TomlValue(vt: VALUE_TABLE, t: TomlTable())
+proc consumeInlineTable(state: var TomlParser): TomlResult =
+  let res = TomlValue(vt: VALUE_TABLE, t: TomlTable())
   var key: seq[string]
   var haskey: bool
   var val: TomlValue
@@ -427,47 +428,49 @@ proc consumeInlineTable(state: var TomlParser): TomlValue =
     of ' ', '\t', '\n': discard
     of '}':
       if val != nil:
-        result.a.add(val)
+        res.a.add(val)
       break
     of ',':
       if key.len == 0:
-        state.syntaxError("missing key")
+        return state.err("missing key")
       if val == nil:
-        state.syntaxError("comma without element")
-      var table = result.t
+        return state.err("comma without element")
+      var table = res.t
       for i in 0 ..< key.high:
         let k = key[i]
         if k in table.map:
-          state.syntaxError(fmt"invalid re-definition of key {k}")
+          return state.err("invalid re-definition of key " & k)
         else:
           let node = TomlTable()
           table.map[k] = TomlValue(vt: VALUE_TABLE, t: node)
           table = node
       let k = key[^1]
       if k in table.map:
-        state.syntaxError(fmt"invalid re-definition of key {k}")
+        return state.err("invalid re-definition of key " & k)
       table.map[k] = val
     else:
       if val != nil:
-        state.syntaxError("missing comma")
+        return state.err("missing comma")
       if not haskey:
-        key = state.consumeKey()
+        key = ?state.consumeKey()
         haskey = true
       else:
         state.reconsume()
-        val = state.consumeValue()
+        val = ?state.consumeValue()
+  return ok(res)
 
-proc consumeValue(state: var TomlParser): TomlValue =
+proc consumeValue(state: var TomlParser): TomlResult =
   while state.has():
     let c = state.consume()
     case c
     of '"', '\'':
-      return TomlValue(vt: VALUE_STRING, s: state.consumeString(c))
+      let s = ?state.consumeString(c)
+      return ok(TomlValue(vt: VALUE_STRING, s: s))
     of ' ', '\t': discard
     of '\n':
-      state.syntaxError("newline without value")
+      return state.err("newline without value")
     of '#':
-      state.syntaxError("comment without value")
+      return state.err("comment without value")
     of '+', '-', '0'..'9':
       return state.consumeNumber(c)
       #TODO date-time
@@ -476,36 +479,36 @@ proc consumeValue(state: var TomlParser): TomlValue =
     of '{':
       return state.consumeInlineTable()
     elif c.isBare():
-      let s = state.consumeBare(c)
-      case s
-      of "true": return TomlValue(vt: VALUE_BOOLEAN, b: true)
-      of "false": return TomlValue(vt: VALUE_BOOLEAN, b: false)
-      else: state.syntaxError(fmt"invalid token {s}")
+      let s = ?state.consumeBare(c)
+      if s == "true":
+        return ok(TomlValue(vt: VALUE_BOOLEAN, b: true))
+      elif s == "false":
+        return ok(TomlValue(vt: VALUE_BOOLEAN, b: false))
+      else:
+        return state.err("invalid token: " & s)
     else:
-      state.syntaxError(fmt"invalid character in value: {c}")
+      return state.err("invalid character in value: " & c)
 
-proc parseToml*(inputStream: Stream, filename = "<input>"): Result[TomlValue, string] =
+proc parseToml*(inputStream: Stream, filename = "<input>"): TomlResult =
   var state: TomlParser
   state.stream = inputStream
   state.line = 1
   state.root = TomlTable()
   state.filename = filename
-  try:
+  while state.has():
+    if ?state.consumeNoState():
+      #TODO what is this for?
+      let kvpair = TomlKVPair(state.node)
+      kvpair.value = ?state.consumeValue()
     while state.has():
-      if state.consumeNoState():
-        let kvpair = TomlKVPair(state.node)
-        kvpair.value = state.consumeValue()
-      while state.has():
-        let c = state.consume()
-        case c
-        of '\n':
-          state.flushLine()
-          break
-        of '#':
-          state.consumeComment()
-        of '\t', ' ': discard
-        else: state.syntaxError(fmt"invalid character after value: {c}")
-    inputStream.close()
-    return ok(TomlValue(vt: VALUE_TABLE, t: state.root))
-  except SyntaxError, ValueError:
-    return err(getCurrentExceptionMsg())
+      let c = state.consume()
+      case c
+      of '\n':
+        ?state.flushLine()
+        break
+      of '#':
+        state.consumeComment()
+      of '\t', ' ': discard
+      else: return state.err("invalid character after value: " & c)
+  inputStream.close()
+  return ok(TomlValue(vt: VALUE_TABLE, t: state.root))

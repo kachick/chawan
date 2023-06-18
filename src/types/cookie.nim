@@ -1,4 +1,3 @@
-import options
 import strutils
 import times
 
@@ -6,6 +5,7 @@ import io/urlfilter
 import js/javascript
 import js/regex
 import types/url
+import utils/opt
 import utils/twtstr
 
 type

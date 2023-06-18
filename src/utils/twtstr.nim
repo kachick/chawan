@@ -11,6 +11,7 @@ import punycode
 import bindings/libunicode
 import data/idna
 import data/charwidth
+import utils/opt
 
 when defined(posix):
   import posix
@@ -391,7 +392,7 @@ func parseInt32*(s: string): Option[int32] =
     inc i
   return some(sign * integer)
 
-func parseInt64*(s: string): Option[int64] =
+func parseInt64*(s: string): Opt[int64] =
   var sign: int64 = 1
   var i = 0
   if i < s.len and s[i] == '-':
@@ -400,19 +401,19 @@ func parseInt64*(s: string): Option[int64] =
   elif i < s.len and s[i] == '+':
     inc i
   if i == s.len or s[i] notin AsciiDigit:
-    return none(int64)
+    return err()
   var integer = int64(decValue(s[i]))
   inc i
   while i < s.len and isDigit(s[i]):
     if unlikely(integer != 0 and high(int64) div 10 < integer):
-      return none(int64) # overflow
+      return err() # overflow
     integer *= 10
     let c = int64(decValue(s[i]))
     if unlikely(high(int64) - c < integer):
-      return none(int64) # overflow
+      return err() # overflow
     integer += c
     inc i
-  return some(sign * integer)
+  return ok(sign * integer)
 
 func parseUInt8*(s: string): Option[uint8] =
   var i = 0
