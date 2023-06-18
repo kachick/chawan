@@ -1442,7 +1442,7 @@ macro jsgctor*(fun: typed) =
   gen.jsCallAndRet = quote do:
     block `dl`:
       return ctx.toJS(`jfcl`)
-    return JS_UNDEFINED
+    return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
   discard gen.newJSProc(getJSParams())
   gen.registerConstructor()
   result = newStmtList(fun)
