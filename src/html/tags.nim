@@ -151,6 +151,10 @@ const CharacterDataNodes* = {
   TEXT_NODE, CDATA_SECTION_NODE, PROCESSING_INSTRUCTION_NODE, COMMENT_NODE
 }
 
+const InputTypeWithSize* = {
+  INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_PASSWORD, INPUT_URL, INPUT_TEL
+}
+
 #https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
 #NOTE MathML not implemented
 #TODO SVG foreignObject, SVG desc, SVG title

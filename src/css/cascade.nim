@@ -109,6 +109,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let c = parseLegacyColor(element.attr("bgcolor"))
     if c.isSome:
       set_cv "background-color", c.get
+  template map_size =
+    let s = element.attrul("size")
+    if s.isSome:
+      set_cv "width", CSSLength(num: float64(s.get), unit: UNIT_CH)
   template map_valign =
     case element.attr("valign").toLowerAscii()
     of "top": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_TOP)
@@ -187,6 +191,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     set_cv "height", CSSLength(unit: UNIT_EM, num: float64(rows))
   of TAG_FONT:
     map_color
+  of TAG_INPUT:
+    let input = HTMLInputElement(element)
+    if input.inputType in InputTypeWithSize:
+      map_size
   else: discard
  
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues, ua, user: DeclarationList, author: seq[DeclarationList]) =
