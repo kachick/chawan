@@ -37,6 +37,7 @@ import bindings/quickjs
 
 export opt
 export options
+export tables
 
 export
   JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TRUE, JS_EXCEPTION, JS_UNINITIALIZED
@@ -1722,7 +1723,7 @@ proc nim_finalize_for_js[T](obj: T) =
           fin[](val)
         # Then clear val's opaque, so that our refcount isn't decreased again.
         JS_SetOpaque(val, nil)
-      tables.del(rtOpaque.plist, cast[pointer](obj))
+      rtOpaque.plist.del(cast[pointer](obj))
       # Decrement jsvalue's refcount. This is needed in both cases to
       # trigger the JS finalizer and free the JS value.
       JS_FreeValueRT(rt, val)
@@ -1930,6 +1931,10 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
         GC_unref(cast[`t`](opaque))
         let rtOpaque = rt.getOpaque()
         rtOpaque.plist.del(opaque)
+        let p = JS_VALUE_GET_PTR(`val`)
+        if p in rtOpaque.altplist:
+          GC_unref(cast[`t`](rtOpaque.altplist[p]))
+          rtOpaque.altplist.del(p)
   )
 
   let endstmts = newStmtList()
