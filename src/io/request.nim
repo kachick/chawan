@@ -66,8 +66,8 @@ type
     httpmethod*: HttpMethod
     url*: Url
     headers* {.jsget.}: Headers
-    body*: Option[string]
-    multipart*: Option[FormData]
+    body*: Opt[string]
+    multipart*: Opt[FormData]
     referer*: URL
     mode* {.jsget.}: RequestMode
     destination* {.jsget.}: RequestDestination
@@ -185,7 +185,7 @@ func newHeaders*(table: Table[string, string]): Headers =
       result.table[k] = @[v]
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
-    body = none(string), multipart = none(FormData), mode = RequestMode.NO_CORS,
+    body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,
     credentialsMode = CredentialsMode.SAME_ORIGIN,
     destination = RequestDestination.NO_DESTINATION, proxy: URL = nil): Request =
   return Request(
@@ -201,8 +201,8 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
   )
 
 func newRequest*(url: URL, httpmethod = HTTP_GET,
-    headers: seq[(string, string)] = @[], body = none(string),
-    multipart = none(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil):
+    headers: seq[(string, string)] = @[], body = opt(string),
+    multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil):
     Request =
   let hl = newHeaders()
   for pair in headers:
@@ -234,12 +234,12 @@ func newRequest*(ctx: JSContext, resource: string,
   let url = x.get
   let fallbackMode = some(RequestMode.CORS) #TODO none if resource is request
   var httpMethod = HTTP_GET
-  var body = none(string)
+  var body = opt(string)
   var credentials = CredentialsMode.SAME_ORIGIN
   var mode = fallbackMode.get(RequestMode.NO_CORS)
   let hl = newHeaders()
-  var proxyUrl = none(URL)
-  var multipart = none(FormData)
+  var proxyUrl: Opt[URL]
+  var multipart: Opt[FormData]
   #TODO fallback mode, origin, window, request mode, ...
   if init.isSome:
     let init = init.get

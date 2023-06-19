@@ -8,6 +8,7 @@ import ips/serialize
 import types/blob
 import types/formdata
 import types/url
+import utils/opt
 import utils/twtstr
 
 type
@@ -84,7 +85,7 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer)
   return nmemb
 
 proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =
-  if request.multipart.issome:
+  if request.multipart.isOk:
     handleData.mime = curl_mime_init(curl)
     if handleData.mime == nil:
       # fail (TODO: raise?)

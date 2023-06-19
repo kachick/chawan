@@ -31,9 +31,11 @@ import tables
 import unicode
 
 import io/promise
+import utils/opt
 
 import bindings/quickjs
 
+export opt
 export options
 
 export
@@ -60,6 +62,19 @@ when sizeof(int) < sizeof(int64):
   export quickjs.`==`
 
 type
+  JSErrorEnum* = enum
+    # QuickJS internal errors
+    JS_EVAL_ERROR0 = "EvalError"
+    JS_RANGE_ERROR0 = "RangeError"
+    JS_REFERENCE_ERROR0 = "ReferenceError"
+    JS_SYNTAX_ERROR0 = "SyntaxError"
+    JS_TYPE_ERROR0 = "TypeError"
+    JS_URI_ERROR0 = "URIError"
+    JS_INTERNAL_ERROR0 = "InternalError"
+    JS_AGGREGATE_ERROR0 = "AggregateError"
+    # Chawan errors
+    JS_DOM_EXCEPTION = "DOMException"
+
   JSContextOpaque* = ref object
     creg: Table[string, JSClassID]
     typemap: Table[pointer, JSClassID]
@@ -72,6 +87,7 @@ type
     next: JSAtom
     value: JSAtom
     Array_prototype_values: JSValue
+    err_ctors: array[JSErrorEnum, JSValue]
 
   JSRuntimeOpaque* = ref object
     plist: Table[pointer, pointer] # Nim, JS
@@ -84,6 +100,30 @@ type
     fins: Table[JSClassID, proc(val: JSValue)]
 
   JSFunctionList* = openArray[JSCFunctionListEntry]
+
+  JSError* = ref object of RootObj
+    e*: JSErrorEnum
+    message*: string
+
+  LegacyJSError* = object of CatchableError
+
+  #TODO remove these
+  JS_SyntaxError* = object of LegacyJSError
+  JS_TypeError* = object of LegacyJSError
+  JS_ReferenceError* = object of LegacyJSError
+  JS_RangeError* = object of LegacyJSError
+  JS_InternalError* = object of LegacyJSError
+
+const QuickJSErrors = [
+  JS_EVAL_ERROR0,
+  JS_RANGE_ERROR0,
+  JS_REFERENCE_ERROR0,
+  JS_SYNTAX_ERROR0,
+  JS_TYPE_ERROR0,
+  JS_URI_ERROR0,
+  JS_INTERNAL_ERROR0,
+  JS_AGGREGATE_ERROR0
+]
 
 func getOpaque*(ctx: JSContext): JSContextOpaque =
   return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
@@ -134,11 +174,15 @@ proc newJSContext*(rt: JSRuntime): JSContext =
         let s = "next"
         opaque.next = JS_NewAtomLen(ctx, cstring(s), csize_t(s.len))
       block:
-        # 2 - JS_CLASS_ARRAY
-        let arrproto = JS_GetClassProto(ctx, 2)
-        opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto, "values")
+        let arrproto = JS_GetClassProto(ctx, JS_CLASS_ARRAY)
+        opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto,
+          "values")
         JS_FreeValue(ctx, arrproto)
       JS_FreeValue(ctx, sym)
+    for e in JSErrorEnum:
+      let s = $e
+      let err = JS_GetPropertyStr(ctx, global, cstring(s))
+      opaque.err_ctors[e] = err
     JS_FreeValue(ctx, global)
 
   JS_SetContextOpaque(ctx, cast[pointer](opaque))
@@ -172,6 +216,8 @@ proc free*(ctx: var JSContext) =
     JS_FreeAtom(ctx, opaque.done)
     JS_FreeAtom(ctx, opaque.next)
     JS_FreeValue(ctx, opaque.Array_prototype_values)
+    for v in opaque.err_ctors:
+      JS_FreeValue(ctx, v)
     GC_unref(opaque)
   JS_FreeContext(ctx)
   ctx = nil
@@ -218,7 +264,7 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
   # This needs further investigation.
   if ctx.isGlobal(class):
     let global = JS_GetGlobalObject(ctx)
-    let opaque = JS_GetOpaque(global, 1) # JS_CLASS_OBJECT
+    let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
     JS_FreeValue(ctx, global)
     return opaque
   return getOpaque0(val)
@@ -229,7 +275,7 @@ func getOpaque*[T](ctx: JSContext, val: JSValue): pointer =
 proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
   JS_SetInterruptHandler(rt, cb, opaque)
 
-func toString*(ctx: JSContext, val: JSValue): Option[string] =
+func toString*(ctx: JSContext, val: JSValue): Opt[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
   if outp != nil:
@@ -237,7 +283,7 @@ func toString*(ctx: JSContext, val: JSValue): Option[string] =
     if plen != 0:
       prepareMutation(ret)
       copyMem(addr ret[0], outp, plen)
-    result = some(ret)
+    result = ok(ret)
     JS_FreeCString(ctx, outp)
 
 proc writeException*(ctx: JSContext, s: Stream) =
@@ -297,10 +343,9 @@ proc definePropertyCWE*[T](ctx: JSContext, this: JSValue, name: string,
     definePropertyCWE(ctx, this, name, toJS(ctx, prop))
 
 func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
-                 ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer,
-                 parent: JSClassID, asglobal: bool, nointerface: bool,
-                 finalizer: proc(val: JSValue),
-                 namespace: JSValue): JSClassID {.discardable.} =
+    ctor: JSCFunction, funcs: JSFunctionList, nimt: pointer, parent: JSClassID,
+    asglobal: bool, nointerface: bool, finalizer: proc(val: JSValue),
+    namespace: JSValue, errid: Opt[JSErrorEnum]): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
@@ -339,6 +384,8 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     JS_FreeValue(ctx, global)
   let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0, JS_CFUNC_constructor)
   JS_SetConstructor(ctx, jctor, proto)
+  if errid.isSome:
+    ctx.getOpaque().err_ctors[errid.get] = JS_DupValue(ctx, jctor)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     if JS_IsNull(namespace):
@@ -362,41 +409,41 @@ func getMinArgs(params: seq[FuncParam]): int =
         return i
   return params.len
 
-func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Option[T] =
+func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Opt[T] =
   when T is int:
     # Always int32, so we don't risk 32-bit only breakage.
     # If int64 is needed, specify it explicitly.
     var ret: int32
     if JS_ToInt32(ctx, addr ret, val) < 0:
-      return none(T)
-    return some(int(ret))
+      return err()
+    return ok(int(ret))
   elif T is uint:
     var ret: uint32
     if JS_ToUint32(ctx, addr ret, val) < 0:
-      return none(T)
-    return some(uint(ret))
+      return err()
+    return ok(uint(ret))
   elif T is int32:
     var ret: int32
     if JS_ToInt32(ctx, addr ret, val) < 0:
-      return none(T)
-    return some(ret)
+      return err()
+    return ok(ret)
   elif T is int64:
     var ret: int64
     if JS_ToInt64(ctx, addr ret, val) < 0:
-      return none(T)
-    return some(ret)
+      return err()
+    return ok(ret)
   elif T is uint32:
     var ret: uint32
     if JS_ToUint32(ctx, addr ret, val) < 0:
-      return none(T)
-    return some(ret)
+      return err()
+    return ok(ret)
   elif T is uint64:
     var ret: uint32
     if JS_ToUint32(ctx, addr ret, val) < 0:
-      return none(T)
-    return some(cast[uint64](ret))
+      return err()
+    return ok(cast[uint64](ret))
 
-proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T]
+proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T]
 
 macro len(t: type tuple): int =
   let i = t.getType()[1].len - 1 # - tuple
@@ -406,182 +453,183 @@ macro fromJSTupleBody(a: tuple) =
   let len = a.getType().len - 1
   let done = ident("done")
   result = newStmtList(quote do:
-    var `done`: Option[bool])
+    var `done`: Opt[bool])
   for i in 0..<len:
     result.add(quote do:
       let next = JS_Call(ctx, next_method, it, 0, nil)
       if JS_IsException(next):
-        return none(T)
+        return err()
       defer: JS_FreeValue(ctx, next)
       let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
       if JS_IsException(doneVal):
-        return none(T)
+        return err()
       defer: JS_FreeValue(ctx, doneVal)
       `done` = fromJS[bool](ctx, doneVal)
       if `done`.isnone: # exception
-        return none(T)
+        return err()
       if `done`.get:
         JS_ThrowTypeError(ctx, "Too few arguments in sequence (got %d, expected %d)", `i`, `len`)
-        return none(T)
+        return err()
       let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
       if JS_IsException(valueVal):
-        return none(T)
+        return err()
       defer: JS_FreeValue(ctx, valueVal)
       let genericRes = fromJS[typeof(result.get[`i`])](ctx, valueVal)
-      if genericRes.isnone: # exception
-        return none(T)
+      if genericRes.isErr: # exception
+        return err()
       `a`[`i`] = genericRes.get
     )
     if i == len - 1:
       result.add(quote do:
         let next = JS_Call(ctx, next_method, it, 0, nil)
         if JS_IsException(next):
-          return none(T)
+          return err()
         defer: JS_FreeValue(ctx, next)
         let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
         `done` = fromJS[bool](ctx, doneVal)
         if `done`.isnone: # exception
-          return none(T)
+          return err()
         var i = `i`
         # we're emulating a sequence, so we must query all remaining parameters too:
         while not `done`.get:
           inc i
           let next = JS_Call(ctx, next_method, it, 0, nil)
           if JS_IsException(next):
-            return none(T)
+            return err()
           defer: JS_FreeValue(ctx, next)
           let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
           if JS_IsException(doneVal):
-            return none(T)
+            return err()
           defer: JS_FreeValue(ctx, doneVal)
           `done` = fromJS[bool](ctx, doneVal)
           if `done`.isnone: # exception
-            return none(T)
+            return err()
           if `done`.get:
             JS_ThrowTypeError(ctx, "Too many arguments in sequence (got %d, expected %d)", i, `len`)
-            return none(T)
+            return err()
           JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctx.getOpaque().value))
       )
 
-proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Option[T] =
+proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Opt[T] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
   if JS_IsException(itprop):
-    return none(T)
+    return err()
   defer: JS_FreeValue(ctx, itprop)
   let it = JS_Call(ctx, itprop, val, 0, nil)
   if JS_IsException(it):
-    return none(T)
+    return err()
   defer: JS_FreeValue(ctx, it)
   let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
   if JS_IsException(next_method):
-    return none(T)
+    return err()
   defer: JS_FreeValue(ctx, next_method)
   var x: T
   fromJSTupleBody(x)
-  return some(x)
+  return ok(x)
 
-proc fromJSSeq[T](ctx: JSContext, val: JSValue): Option[seq[T]] =
+proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
   if JS_IsException(itprop):
-    return none(seq[T])
+    return err()
   defer: JS_FreeValue(ctx, itprop)
   let it = JS_Call(ctx, itprop, val, 0, nil)
   if JS_IsException(it):
-    return none(seq[T])
+    return err()
   defer: JS_FreeValue(ctx, it)
   let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
   if JS_IsException(next_method):
-    return none(seq[T])
+    return err()
   defer: JS_FreeValue(ctx, next_method)
-  result = some(newSeq[T]())
+  result = ok(newSeq[T]())
   while true:
     let next = JS_Call(ctx, next_method, it, 0, nil)
     if JS_IsException(next):
-      return none(seq[T])
+      return err()
     defer: JS_FreeValue(ctx, next)
     let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
     if JS_IsException(doneVal):
-      return none(seq[T])
+      return err()
     defer: JS_FreeValue(ctx, doneVal)
     let done = fromJS[bool](ctx, doneVal)
     if done.isnone: # exception
-      return none(seq[T])
+      return err()
     if done.get:
       break
     let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
     if JS_IsException(valueVal):
-      return none(seq[T])
+      return err()
     defer: JS_FreeValue(ctx, valueVal)
     let genericRes = fromJS[typeof(result.get[0])](ctx, valueVal)
     if genericRes.isnone: # exception
-      return none(seq[T])
+      return err()
     result.get.add(genericRes.get)
 
-proc fromJSSet[T](ctx: JSContext, val: JSValue): Option[set[T]] =
+proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
   if JS_IsException(itprop):
-    return none(set[T])
+    return err()
   defer: JS_FreeValue(ctx, itprop)
   let it = JS_Call(ctx, itprop, val, 0, nil)
   if JS_IsException(it):
-    return none(set[T])
+    return err()
   defer: JS_FreeValue(ctx, it)
   let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
   if JS_IsException(next_method):
-    return none(set[T])
+    return err()
   defer: JS_FreeValue(ctx, next_method)
   var s: set[T]
   result = some(s)
   while true:
     let next = JS_Call(ctx, next_method, it, 0, nil)
     if JS_IsException(next):
-      return none(set[T])
+      return err()
     defer: JS_FreeValue(ctx, next)
     let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
     if JS_IsException(doneVal):
-      return none(set[T])
+      return err()
     defer: JS_FreeValue(ctx, doneVal)
     let done = fromJS[bool](ctx, doneVal)
     if done.isnone: # exception
-      return none(set[T])
+      return err()
     if done.get:
       break
     let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
     if JS_IsException(valueVal):
-      return none(set[T])
+      return err()
     defer: JS_FreeValue(ctx, valueVal)
     let genericRes = fromJS[typeof(result.get.items)](ctx, valueVal)
     if genericRes.isnone: # exception
-      return none(set[T])
+      return err()
     result.get.incl(genericRes.get)
 
-proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Option[Table[A, B]] =
+proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Opt[Table[A, B]] =
   var ptab: ptr JSPropertyEnum
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
-    return none(Table[A, B])
+    return err()
   defer:
     for i in 0..<plen:
       let prop = cast[ptr JSPropertyEnum](cast[int](ptab) + sizeof(ptab[]) * int(i))
       JS_FreeAtom(ctx, prop.atom)
     js_free(ctx, ptab)
-  result = some(Table[A, B]())
+  var res = Table[A, B]()
   for i in 0..<plen:
     let prop = cast[ptr JSPropertyEnum](cast[int](ptab) + sizeof(ptab[]) * int(i))
     let atom = prop.atom
     let k = JS_AtomToValue(ctx, atom)
     defer: JS_FreeValue(ctx, k)
     let kn = fromJS[A](ctx, k)
-    if kn.isnone: # exception
-      return none(Table[A, B])
+    if kn.isErr: # exception
+      return err()
     let v = JS_GetProperty(ctx, val, atom)
     defer: JS_FreeValue(ctx, v)
     let vn = fromJS[B](ctx, v)
-    if vn.isnone: # exception
-      return none(Table[A, B])
+    if vn.isErr: # exception
+      return err()
     result.get[kn.get] = vn.get
+  return ok(res)
 
 proc toJS*(ctx: JSContext, s: cstring): JSValue
 proc toJS*(ctx: JSContext, s: string): JSValue
@@ -595,17 +643,21 @@ proc toJS*(ctx: JSContext, n: uint64): JSValue
 proc toJS(ctx: JSContext, n: SomeFloat): JSValue
 proc toJS*(ctx: JSContext, b: bool): JSValue
 proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue
-proc toJS(ctx: JSContext, opt: Option): JSValue
+proc toJS*(ctx: JSContext, opt: Option): JSValue
+proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue
 proc toJS(ctx: JSContext, s: seq): JSValue
 proc toJS(ctx: JSContext, e: enum): JSValue
 proc toJS(ctx: JSContext, j: JSValue): JSValue
 proc toJS[T](ctx: JSContext, promise: Promise[T]): JSValue
+proc toJS[T, E](ctx: JSContext, promise: Promise[Result[T, E]]): JSValue
 proc toJS(ctx: JSContext, promise: EmptyPromise): JSValue
+proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, obj: ref object): JSValue
+proc toJS*(ctx: JSContext, err: JSError): JSValue
 
 # ew....
-proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue): Option[proc(x: U): Option[T]] =
-  return some(proc(x: U): Option[T] =
+proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue): Opt[proc(x: U): Opt[T]] =
+  return ok(proc(x: U): Opt[T] =
     var arg1 = toJS(ctx, x)
     let ret = JS_Call(ctx, val, JS_UNDEFINED, 1, addr arg1)
     return fromJS[T](ctx, ret)
@@ -617,7 +669,7 @@ macro unpackReturnType(f: typed) =
     x = x[1].getTypeImpl()
   let params = x.findChild(it.kind == nnkFormalParams)
   let rv = params[0]
-  assert rv[0].strVal == "Option"
+  doAssert rv[0].strVal == "Opt"
   let rvv = rv[1]
   result = quote do: `rvv`
 
@@ -631,7 +683,7 @@ macro unpackArg0(f: typed) =
   let rvv = rv[1]
   result = quote do: `rvv`
 
-proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
+proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T] =
   when T is string:
     return toString(ctx, val)
   elif T is char:
@@ -653,14 +705,22 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
     return some(r)
   elif T is (proc):
     return fromJSFunction1[typeof(unpackReturnType(T)), typeof(unpackArg0(T))](ctx, val)
-  elif typeof(result.unsafeGet) is Option: # unwrap
+  elif T is Option: # convert
     if JS_IsUndefined(val):
       #TODO what about null?
-      return none(T)
+      return err()
     let res = fromJS[typeof(result.get.get)](ctx, val)
     if res.isNone:
-      return none(T)
-    return some(res)
+      return err()
+    return ok(some(res.get))
+  elif typeof(result).valType is Opt: # unwrap
+    if JS_IsUndefined(val):
+      #TODO what about null?
+      return err()
+    let res = fromJS[typeof(result.get.get)](ctx, val)
+    if res.isNone:
+      return err()
+    return ok(res)
   elif T is seq:
     return fromJSSeq[typeof(result.get.items)](ctx, val)
   elif T is set:
@@ -670,11 +730,11 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
   elif T is bool:
     let ret = JS_ToBool(ctx, val)
     if ret == -1: # exception
-      return none(T)
+      return err()
     if ret == 0:
-      return some(false)
-    return some(true)
-  elif typeof(result.get) is Table:
+      return ok(false)
+    return ok(true)
+  elif typeof(result).valType is Table:
     return fromJSTable[typeof(result.get.keys), typeof(result.get.values)](ctx, val)
   elif T is SomeInteger:
     if JS_IsNumber(val):
@@ -683,50 +743,50 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Option[T] =
     if JS_IsNumber(val):
       var f64: float64
       if JS_ToFloat64(ctx, addr f64, val) < 0:
-        return none(T)
-      return some(cast[T](f64))
+        return err()
+      return ok(cast[T](f64))
   elif T is enum:
     #TODO implement enum handling...
     if JS_IsException(val):
-      return none(T)
+      return err()
     let s = toString(ctx, val)
-    if s.isnone:
-      return none(T)
+    if s.isErr:
+      return err()
     try:
-      return some(parseEnum[T](s.get))
+      return ok(parseEnum[T](s.get))
     except ValueError:
       JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s", cstring(s.get), $T)
-      return none(T)
+      return err()
   elif T is JSValue:
-    return some(val)
-  elif T is object:
-    doAssert false, "Dictionary case has not been implemented yet!"
-    #TODO TODO TODO implement dictionary case
-    return none(T)
-  else:
+    return ok(val)
+  elif T is ref object:
     if JS_IsException(val):
-      return none(T)
+      return err()
     let op = cast[T](getOpaque(ctx, val, $T))
     if op == nil:
       JS_ThrowTypeError(ctx, "Value is not an instance of %s", $T)
-      return none(T)
-    return some(op)
+      return err()
+    return ok(op)
+  else:
+    static:
+      doAssert false
 
 const JS_ATOM_TAG_INT = cuint(1u32 shl 31)
 
 func JS_IsNumber(v: JSAtom): JS_BOOL =
   return (cast[cuint](v) and JS_ATOM_TAG_INT) != 0
 
-func fromJS[T: string|uint32](ctx: JSContext, atom: JSAtom): Option[T] =
+func fromJS[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
   when T is SomeNumber:
     if JS_IsNumber(atom):
-      return some(T(cast[uint32](atom) and (not JS_ATOM_TAG_INT)))
+      return ok(T(cast[uint32](atom) and (not JS_ATOM_TAG_INT)))
   else:
     let val = JS_AtomToValue(ctx, atom)
     return fromJS[T](ctx, val)
 
-proc getJSFunction*[T, U](ctx: JSContext, val: JSValue): Option[(proc(x: T): Option[U])] =
-  return fromJS[(proc(x: T): Option[U])](ctx, val)
+proc getJSFunction*[T, U](ctx: JSContext, val: JSValue):
+    Opt[(proc(x: T): Opt[U])] =
+  return fromJS[(proc(x: T): Opt[U])](ctx, val)
 
 proc toJS*(ctx: JSContext, s: cstring): JSValue =
   return JS_NewString(ctx, s)
@@ -770,10 +830,22 @@ proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue =
       setProperty(ctx, obj, k, toJS(ctx, v))
   return obj
 
-proc toJS(ctx: JSContext, opt: Option): JSValue =
+proc toJS*(ctx: JSContext, opt: Option): JSValue =
   if opt.isSome:
     return toJS(ctx, opt.get)
   return JS_NULL
+
+proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue =
+  if opt.isSome:
+    when not (T is void):
+      return toJS(ctx, opt.get)
+    return JS_UNDEFINED
+  else:
+    when not (E is void):
+      let res = toJS(ctx, opt.error)
+      if not JS_IsNull(res):
+        return JS_Throw(ctx, res)
+    return JS_NULL
 
 proc toJS(ctx: JSContext, s: seq): JSValue =
   let a = JS_NewArray(ctx)
@@ -794,7 +866,7 @@ proc getTypePtr[T](x: T): pointer =
   else:
     return getTypeInfo(x)
 
-proc toJS*(ctx: JSContext, obj: ref object): JSValue =
+proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =
   if obj == nil:
     return JS_NULL
   let op = JS_GetRuntime(ctx).getOpaque()
@@ -806,6 +878,9 @@ proc toJS*(ctx: JSContext, obj: ref object): JSValue =
   let jsObj = JS_NewObjectClass(ctx, clazz)
   setOpaque(ctx, jsObj, obj)
   return jsObj
+
+proc toJS*(ctx: JSContext, obj: ref object): JSValue =
+  return toJSRefObj(ctx, obj)
 
 proc toJS(ctx: JSContext, e: enum): JSValue =
   return toJS(ctx, $e)
@@ -840,15 +915,42 @@ proc toJS[T](ctx: JSContext, promise: Promise[T]): JSValue =
     JS_FreeValue(ctx, resolving_funcs[1]))
   return jsPromise
 
+proc toJS[T, E](ctx: JSContext, promise: Promise[Result[T, E]]): JSValue =
+  var resolving_funcs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
+  if JS_IsException(jsPromise):
+    return JS_EXCEPTION
+  promise.then(proc(x: Result[T, E]) =
+    if x.isOk:
+      let x = when T is void:
+        JS_UNDEFINED
+      else:
+        toJS(ctx, x.get)
+      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, unsafeAddr x)
+      JS_FreeValue(ctx, res)
+      JS_FreeValue(ctx, x)
+    else: # err
+      let x = when E is void:
+        JS_UNDEFINED
+      else:
+        toJS(ctx, x.get)
+      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1, unsafeAddr x)
+      JS_FreeValue(ctx, res)
+      JS_FreeValue(ctx, x)
+    JS_FreeValue(ctx, resolving_funcs[0])
+    JS_FreeValue(ctx, resolving_funcs[1]))
+  return jsPromise
+
+proc toJS*(ctx: JSContext, err: JSError): JSValue =
+  if err.e notin QuickJSErrors:
+    return toJSRefObj(ctx, err)
+  var msg = toJS(ctx, err.message)
+  if JS_IsException(msg):
+    return msg
+  let ctor = ctx.getOpaque().err_ctors[err.e]
+  return JS_CallConstructor(ctx, ctor, 1, addr msg)
+
 type
-  JS_Error = object of CatchableError
-
-  JS_SyntaxError* = object of JS_Error
-  JS_TypeError* = object of JS_Error
-  JS_ReferenceError* = object of JS_Error
-  JS_RangeError* = object of JS_Error
-  JS_InternalError* = object of JS_Error
-
   JSFuncGenerator = object
     t: BoundFunctionType
     original: NimNode
@@ -1020,7 +1122,7 @@ template fromJS_or_die*(t, ctx, val, ev, dl: untyped): untyped =
     if JS_IsException(val):
       return ev
   let x = fromJS[t](ctx, val)
-  if x.isnone:
+  if x.isNone:
     break dl
   x.get
 
@@ -1248,7 +1350,7 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
   var ma = gen.actualMinArgs
   result = newStmtList()
   if isva:
-    result.add(quote do: 
+    result.add(quote do:
       if argc < `ma`:
         return JS_ThrowTypeError(ctx, "At least %d arguments required, " &
           "but only %d passed", `ma`, argc)
@@ -1288,7 +1390,7 @@ proc newJSProc(gen: var JSFuncGenerator, params: openArray[NimNode], isva = true
 # declared on the parent function.
 # Note: this causes the entire nim function body to be inlined inside the JS
 # interface function.
-#TODO: implement actual inlining (so we can e.g. get rid of JS_Error, use format strings, etc.)
+#TODO: remove this.
 macro JS_ERR*(a: typed, b: string) =
   result = quote do:
     block when_js:
@@ -1379,7 +1481,7 @@ proc rewriteExceptions(gen: var JSFuncGenerator, errors: var seq[string], node: 
         errors.add(c[1].strVal)
     elif c.len > 0:
       gen.rewriteExceptions(errors, c)
-  
+
 proc rewriteExceptions(gen: var JSFuncGenerator) =
   let ostmts = gen.original.findChild(it.kind == nnkStmtList)
   var errors: seq[string]
@@ -1700,10 +1802,10 @@ type
     name*: string
     fun*: JSCFunction
 
-macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0, asglobal =
-                   false, nointerface = false, name: static string = "",
-                   extra_getset: static openarray[TabGetSet] = [],
-                   namespace: JSValue = JS_NULL): JSClassID =
+macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
+    asglobal = false, nointerface = false, name: static string = "",
+    extra_getset: static openarray[TabGetSet] = [],
+    namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum)): JSClassID =
   result = newStmtList()
   let tname = t.strVal # the nim type's name.
   let name = if name == "": tname else: name # possibly a different name, e.g. Buffer for Container
@@ -1868,7 +1970,7 @@ static JSClassDef """, `cdname`, """ = {
     var x: `t`
     new(x, nim_finalize_for_js)
     `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x),
-      `parent`, `asglobal`, `nointerface`, `finName`, `namespace`)
+      `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`)
   )
   result.add(newBlockStmt(endstmts))
 

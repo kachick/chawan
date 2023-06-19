@@ -11,6 +11,7 @@ import types/blob
 import types/buffersource
 import types/formdata
 import types/url
+import utils/opt
 
 proc swrite*(stream: Stream, n: SomeNumber)
 proc sread*(stream: Stream, n: var SomeNumber)
@@ -67,6 +68,10 @@ func slen*(blob: Blob): int
 proc swrite*[T](stream: Stream, o: Option[T])
 proc sread*[T](stream: Stream, o: var Option[T])
 func slen*[T](o: Option[T]): int
+
+proc swrite*[T, E](stream: Stream, o: Result[T, E])
+proc sread*[T, E](stream: Stream, o: var Result[T, E])
+func slen*[T, E](o: Result[T, E]): int
 
 proc swrite*(stream: Stream, regex: Regex)
 proc sread*(stream: Stream, regex: var Regex)
@@ -338,6 +343,42 @@ func slen*[T](o: Option[T]): int =
   result = slen(o.isSome)
   if o.isSome:
     result += slen(o.get)
+
+proc swrite*[T, E](stream: Stream, o: Result[T, E]) =
+  stream.swrite(o.isOk)
+  if o.isOk:
+    when not (T is void):
+      stream.swrite(o.get)
+  else:
+    when not (E is void):
+      stream.swrite(o.error)
+
+proc sread*[T, E](stream: Stream, o: var Result[T, E]) =
+  var x: bool
+  stream.sread(x)
+  if x:
+    when not (T is void):
+      var m: T
+      stream.sread(m)
+      o.ok(m)
+    else:
+      o.ok()
+  else:
+    when not (E is void):
+      var e: E
+      stream.sread(e)
+      o.err(e)
+    else:
+      o.err()
+
+func slen*[T, E](o: Result[T, E]): int =
+  result = slen(o.isSome)
+  if o.isSome:
+    when not (T is void):
+      result += slen(o.get)
+  else:
+    when not (E is void):
+      result += slen(o.error)
 
 proc swrite*(stream: Stream, regex: Regex) =
   stream.swrite(regex.plen)

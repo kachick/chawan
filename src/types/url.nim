@@ -862,7 +862,7 @@ func serialize*(url: Option[Url], excludefragment = false): string =
 func equals*(a, b: Url, excludefragment = false): bool =
   return a.serialize(excludefragment) == b.serialize(excludefragment)
 
-func `$`*(url: Url): string {.jsfunc, inline.} = url.serialize()
+func `$`*(url: URL): string {.jsfunc.} = url.serialize()
 
 func `$`*(path: UrlPath): string {.inline.} = path.serialize()
 

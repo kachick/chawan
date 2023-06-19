@@ -44,7 +44,7 @@ type
   SiteConfig* = object
     url*: Option[Regex]
     host*: Option[Regex]
-    rewrite_url*: (proc(s: URL): Option[URL])
+    rewrite_url*: (proc(s: URL): Opt[URL])
     cookie*: Option[bool]
     third_party_cookie*: seq[Regex]
     share_cookie_jar*: Option[string]
@@ -55,7 +55,7 @@ type
 
   OmniRule* = object
     match*: Regex
-    substitute_url*: (proc(s: string): Option[string])
+    substitute_url*: (proc(s: string): Opt[string])
 
   StartConfig = object
     visual_home*: string

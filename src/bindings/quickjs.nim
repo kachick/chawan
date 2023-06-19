@@ -212,11 +212,19 @@ type
     is_enumerable*: JS_BOOL
     atom*: JSAtom
 
+  JSClassEnum* {.size: sizeof(uint32).} = enum
+    JS_CLASS_OBJECT = 1
+    JS_CLASS_ARRAY
+    JS_CLASS_ERROR
+
 converter toBool*(js: JS_BOOl): bool {.inline.} =
   cast[cint](js) != 0
 
 converter toJSBool*(b: bool): JS_BOOL {.inline.} =
   cast[JS_BOOL](cint(b))
+
+converter toJSClassID*(e: JSClassEnum): JSClassID {.inline.} =
+  JSClassID(e)
 
 const
   JS_NULL* = JS_MKVAL(JS_TAG_NULL, 0)
@@ -338,6 +346,7 @@ proc JS_SetClassProto*(ctx: JSContext, class_id: JSClassID, obj: JSValue)
 proc JS_GetClassProto*(ctx: JSContext, class_id: JSClassID): JSValue
 proc JS_SetConstructor*(ctx: JSContext, func_obj: JSValue, proto: JSValue)
 proc JS_SetPrototype*(ctx: JSContext, obj: JSValue, proto_val: JSValue): cint
+proc JS_GetPrototype*(ctx: JSContext, val: JSValue): JSValue
 
 proc JS_NewBool*(ctx: JSContext, val: JS_BOOL): JSValue
 proc JS_NewInt32*(ctx: JSContext, val: int32): JSValue
@@ -374,6 +383,8 @@ proc JS_GetOwnPropertyNames*(ctx: JSContext, ptab: ptr ptr JSPropertyEnum, plen:
 
 proc JS_GetOwnProperty*(ctx: JSContext, desc: ptr JSPropertyDescriptor, obj: JSValue, prop: JSAtom): cint
 proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint, argv: ptr JSValue): JSValue
+proc JS_CallConstructor*(ctx: JSContext, func_obj: JSValue, argc: cint,
+  argv: ptr JSValue): JSValue
 
 proc JS_DefineProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue, getter: JSValue, setter: JSValue, flags: cint): cint
 proc JS_DefinePropertyValue*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue, flags: cint): cint

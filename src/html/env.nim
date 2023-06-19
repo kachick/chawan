@@ -8,6 +8,7 @@ import io/promise
 import io/request
 import io/response
 import io/window
+import js/exception
 import js/intl
 import js/javascript
 import js/timeout
@@ -112,6 +113,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.setOpaque(global, window)
   ctx.defineProperty(global, "window", global)
   JS_FreeValue(ctx, global)
+  ctx.addDOMExceptionModule()
   ctx.addconsoleModule()
   ctx.addNavigatorModule()
   ctx.addDOMModule()

@@ -2,18 +2,26 @@
 
 type
   Result*[T, E] = object
-    when (T is void) and (E is void):
-      has: bool
-    else:
-      case has: bool
+    when E is void and T is void: # weirdness
+      has*: bool
+    elif E is void and not (T is void): # opt
+      case has*: bool
       of true:
-        when not (T is void):
-          val: T
+        val*: T
       else:
-        when not (E is void):
-          ex: E
-        else:
-          discard
+        discard
+    elif not (E is void) and T is void: # err
+      case has*: bool
+      of true:
+        discard
+      else:
+        ex*: E
+    else: # result
+      case has*: bool
+      of true:
+        val*: T
+      else:
+        ex*: E
 
   Opt*[T] = Result[T, void]
 
@@ -31,8 +39,11 @@ template ok*[T](x: T): auto =
 template ok*(): auto =
   ok(typeof(result))
 
-template ok*[T, E](res: var Result[T, E], x: T): Result[T, E] =
+template ok*[T, E](res: var Result[T, E], x: T) =
   res = Result[T, E](has: true, val: x)
+
+template ok*[E](res: var Result[void, E]) =
+  res = Result[void, E](has: true)
 
 template err*[T, E](t: type Result[T, E], e: E): Result[T, E] =
   Result[T, E](has: false, ex: e)
@@ -44,22 +55,39 @@ template err*(): auto =
   err(typeof(result))
 
 template err*[T, E](res: var Result[T, E], e: E) =
-  res.ex = e
+  res = Result[T, E](has: false, ex: e)
+
+template err*[T, E](res: var Result[T, E]) =
+  res = Result[T, E](has: false)
 
 template err*[E](e: E): auto =
   err(typeof(result), e)
+
+template opt*[T](v: T): auto =
+  ok(Opt[T], v)
+
+template opt*(t: typedesc): auto =
+  err(Result[t, void])
 
 template isOk*(res: Result): bool = res.has
 template isErr*(res: Result): bool = not res.has
 template isSome*(res: Result): bool = res.isOk
 template isNone*(res: Result): bool = res.isErr
-template get*[T, E](res: Result[T, E]): T = res.val
-template error*[T, E](res: Result[T, E]): E = res.ex
+func get*[T, E](res: Result[T, E]): T {.inline.} = res.val
+func get*[T, E](res: var Result[T, E]): var T = res.val
+func get*[T, E](res: Result[T, E], v: T): T =
+  if res.has:
+    res.val
+  else:
+    v
+func error*[T, E](res: Result[T, E]): E {.inline.} = res.ex
+template valType*[T, E](res: type Result[T, E]): auto = T
+template errType*[T, E](res: type Result[T, E]): auto = E
 
 func isSameErr[T, E, F](a: type Result[T, E], b: type F): bool =
   return E is F
 
-template `?`*[T, E](res: Result[T, E]): T =
+template `?`*[T, E](res: Result[T, E]): auto =
   let x = res # for when res is a funcall
   if x.has:
     when not (T is void):
@@ -68,16 +96,6 @@ template `?`*[T, E](res: Result[T, E]): T =
       discard
   else:
     when typeof(result) is Result[T, E]:
-      return x
-    elif isSameErr(typeof(result), E):
-      return err(x.error)
-    else:
-      return err()
-
-template `?`*[E](res: Err[E]) =
-  let x = res # for when res is a funcall
-  if not x.has:
-    when typeof(result) is Err[E]:
       return x
     elif isSameErr(typeof(result), E):
       return err(x.error)

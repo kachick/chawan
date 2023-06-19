@@ -8,6 +8,7 @@ import buffer/cell
 import display/term
 import js/javascript
 import types/color
+import utils/opt
 import utils/twtstr
 
 type
@@ -231,7 +232,7 @@ proc forward(edit: LineEdit) {.jsfunc.} =
     else:
       edit.fullRedraw()
 
-proc prevWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+proc prevWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
   let oc = edit.cursor
   while edit.cursor > 0:
     dec edit.cursor
@@ -243,7 +244,7 @@ proc prevWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
     else:
       edit.fullRedraw()
 
-proc nextWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+proc nextWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
   let oc = edit.cursor
   let ow = edit.news.width(edit.shift, edit.cursor)
   while edit.cursor < edit.news.len:
@@ -258,7 +259,7 @@ proc nextWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
     else:
       edit.fullRedraw()
 
-proc clearWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+proc clearWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
   var i = edit.cursor
   if i > 0:
     # point to the previous character
@@ -273,7 +274,7 @@ proc clearWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
     edit.cursor = i
     edit.fullRedraw()
 
-proc killWord(edit: LineEdit, check = none(BoundaryFunction)) {.jsfunc.} =
+proc killWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
   var i = edit.cursor
   if i < edit.news.len and edit.news[i].breaksWord(check):
     inc i

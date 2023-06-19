@@ -20,6 +20,7 @@ import css/sheet
 import css/stylednode
 import css/values
 import data/charset
+import encoding/decoderstream
 import html/dom
 import html/env
 import html/htmlparser
@@ -44,6 +45,7 @@ import types/cookie
 import types/formdata
 import types/referer
 import types/url
+import utils/opt
 import utils/twtstr
 import xhr/formdata as formdata_impl
 
@@ -555,17 +557,26 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
     let url = url.get
     let media = elem.media
     if media != "":
-      let media = parseMediaQueryList(parseListOfComponentValues(newStringStream(media)))
+      let cvals = parseListOfComponentValues(newStringStream(media))
+      let media = parseMediaQueryList(cvals)
       if not media.applies(document.window): return
-    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response) =
+    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response):
+        Opt[Promise[string]] =
       if res.res == 0: #TODO remove res
         #TODO we should use ReadableStreams for this (which would allow us to
         # parse CSS asynchronously)
-        # yet another hack: needed because closing a stream before
-        # unregistering breaks
         if res.contenttype == "text/css":
-          elem.sheet = parseStylesheet(res.body)
-        res.unregisterFun())
+          return ok(res.text())
+        res.unregisterFun()
+      ).then(proc(s: Opt[string]) =
+        if s.isOk:
+          #TODO this is extremely inefficient, and text() should return
+          # utf8 anyways
+          let ss = newStringStream(s.get)
+          #TODO non-utf-8 css
+          let source = newDecoderStream(ss, cs = CHARSET_UTF_8).readAll()
+          let ss2 = newStringStream(source)
+          elem.sheet = parseStylesheet(ss2))
 
 proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let document = buffer.document
@@ -843,22 +854,22 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
 
   template submitAsEntityBody() =
     var mimetype: string
-    var body = none(string)
-    var multipart = none(FormData)
+    var body: Opt[string]
+    var multipart: Opt[FormData]
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
       let kvlist = entrylist.toNameValuePairs()
-      body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
+      body.ok(serializeApplicationXWWWFormUrlEncoded(kvlist))
       mimeType = $enctype
     of FORM_ENCODING_TYPE_MULTIPART:
-      multipart = some(serializeMultipartFormData(entrylist))
+      multipart.ok(serializeMultipartFormData(entrylist))
       mimetype = $enctype
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
       let kvlist = entrylist.toNameValuePairs()
-      body = some(serializePlainTextFormData(kvlist))
+      body.ok(serializePlainTextFormData(kvlist))
       mimetype = $enctype
-    let req = newRequest(parsedaction, httpmethod,
-      @{"Content-Type": mimetype}, body)
+    let req = newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype},
+      body)
     return some(req) #TODO multipart
 
   template getActionUrl() =

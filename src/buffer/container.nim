@@ -638,13 +638,13 @@ proc onMatch(container: Container, res: BufferMatch) =
     container.needslines = true
     container.hlon = false
 
-proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
+proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) =
   container.iface
     .findNextMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =
       container.onMatch(res))
 
-proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) {.jsfunc.} =
+proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) =
   container.iface
     .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
     .then(proc(res: BufferMatch) =

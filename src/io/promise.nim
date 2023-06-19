@@ -1,5 +1,7 @@
 import tables
 
+import utils/opt
+
 type
   PromiseState* = enum
     PROMISE_PENDING, PROMISE_FULFILLED, PROMISE_REJECTED
@@ -122,6 +124,20 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] 
     if p2 != nil:
       p2.then(proc(y: U) =
         next.res = y
+        next.resolve())
+    else:
+      next.resolve())
+  return next
+
+proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Opt[Promise[U]])):
+    Promise[Opt[U]] {.discardable.} =
+  doAssert promise != nil
+  let next = Promise[Opt[U]]()
+  promise.then(proc(x: T) =
+    let p2 = cb(x)
+    if p2.isOk:
+      p2.get.then(proc(y: U) =
+        next.res = opt(y)
         next.resolve())
     else:
       next.resolve())

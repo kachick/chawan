@@ -1074,9 +1074,9 @@ func twidth*(s: string, w: int): int =
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
-type BoundaryFunction* = proc(x: Rune): Option[bool]
+type BoundaryFunction* = proc(x: Rune): Opt[bool]
 
-proc breaksWord*(r: Rune, check: Option[BoundaryFunction]): bool =
+proc breaksWord*(r: Rune, check: Opt[BoundaryFunction]): bool =
   if check.isSome:
     let f = check.get()
     let v = f(r)
