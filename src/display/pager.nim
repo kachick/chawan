@@ -674,7 +674,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Option[Charset],
     fd: fd,
     contenttype: some(ctype.get("text/plain")),
     charset: cs,
-    location: location.get(newURL("file://-"))
+    location: location.get(newURL("file://-").get)
   )
   let bufferconfig = pager.config.getBufferConfig(source.location)
   return pager.dispatcher.newBuffer(bufferconfig, source, title = title)

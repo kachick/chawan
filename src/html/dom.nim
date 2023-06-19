@@ -21,6 +21,7 @@ import io/loader
 import io/promise
 import io/request
 import io/window
+import js/exception
 import js/javascript
 import js/timeout
 import types/blob
@@ -619,25 +620,21 @@ proc quadraticCurveTo(ctx: CanvasRenderingContext2D, cpx, cpy, x,
     y: float64) {.jsfunc.} =
   ctx.state.path.quadraticCurveTo(cpx, cpy, x, y)
 
-proc arcTo(ctx: CanvasRenderingContext2D, x1, y1, x2, y2, radius: float64)
-    {.jsfunc.} =
-  if not ctx.state.path.arcTo(x1, y1, x2, y2, radius):
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "IndexSizeError"
+proc arcTo(ctx: CanvasRenderingContext2D, x1, y1, x2, y2, radius: float64):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.state.path.arcTo(x1, y1, x2, y2, radius)
 
 proc arc(ctx: CanvasRenderingContext2D, x, y, radius, startAngle,
-    endAngle: float64, counterclockwise = false) {.jsfunc.} =
-  if not ctx.state.path.arc(x, y, radius, startAngle, endAngle,
-      counterclockwise):
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "IndexSizeError"
+    endAngle: float64, counterclockwise = false): Err[DOMException]
+    {.jsfunc.} =
+  return ctx.state.path.arc(x, y, radius, startAngle, endAngle,
+    counterclockwise)
 
 proc ellipse(ctx: CanvasRenderingContext2D, x, y, radiusX, radiusY, rotation,
-    startAngle, endAngle: float64, counterclockwise = false) {.jsfunc.} =
-  if not ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle,
-      endAngle, counterclockwise):
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "IndexSizeError"
+    startAngle, endAngle: float64, counterclockwise = false): Err[DOMException]
+    {.jsfunc.} =
+  return ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle,
+    endAngle, counterclockwise)
 
 proc rect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
   ctx.state.path.rect(x, y, w, h)
@@ -981,76 +978,71 @@ proc update(tokenList: DOMTokenList) =
     return
   tokenList.element.attr(tokenList.localName, tokenList.toks.join(' '))
 
-proc add(tokenList: DOMTokenList, tokens: varargs[string]) {.jserr, jsfunc.} =
+func validateDOMToken(tok: string): Err[DOMException] =
+  if tok == "":
+    return err(newDOMException("Got an empty string", "SyntaxError"))
+  if AsciiWhitespace in tok:
+    return err(newDOMException("Got a string containing whitespace",
+      "InvalidCharacterError"))
+
+proc add(tokenList: DOMTokenList, tokens: varargs[string]): Err[DOMException]
+    {.jsfunc.} =
   for tok in tokens:
-    if tok == "":
-      #TODO should be DOMException
-      JS_ERR JS_TypeError, "SyntaxError"
-    if AsciiWhitespace in tok:
-      #TODO should be DOMException
-      JS_ERR JS_TypeError, "InvalidCharacterError"
+    ?validateDOMToken(tok)
   for tok in tokens:
     tokenList.toks.add(tok)
   tokenList.update()
+  return ok()
 
-proc remove(tokenList: DOMTokenList, tokens: varargs[string]) {.jserr, jsfunc.} =
+proc remove(tokenList: DOMTokenList, tokens: varargs[string]):
+    Err[DOMException] {.jsfunc.} =
   for tok in tokens:
-    if tok == "":
-      #TODO should be DOMException
-      JS_ERR JS_TypeError, "SyntaxError"
-    if AsciiWhitespace in tok:
-      #TODO should be DOMException
-      JS_ERR JS_TypeError, "InvalidCharacterError"
+    ?validateDOMToken(tok)
   for tok in tokens:
     let i = tokenList.toks.find(tok)
     if i != -1:
       tokenList.toks.delete(i)
   tokenList.update()
+  return ok()
 
-proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)): bool {.jserr, jsfunc.} =
-  if token == "":
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "SyntaxError"
-  if AsciiWhitespace in token:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
+proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)):
+    Result[bool, DOMException] {.jsfunc.} =
+  ?validateDOMToken(token)
   let i = tokenList.toks.find(token)
   if i != -1:
     if not force.get(false):
       tokenList.toks.delete(i)
       tokenList.update()
-      return false
-    return true
+      return ok(false)
+    return ok(true)
   if force.get(true):
     tokenList.toks.add(token)
     tokenList.update()
-    return true
-  return false
+    return ok(true)
+  return ok(false)
 
-proc replace(tokenList: DOMTokenList, token, newToken: string): bool {.jserr, jsfunc.} =
-  if token == "" or newToken == "":
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "SyntaxError"
-  if AsciiWhitespace in token or AsciiWhitespace in newToken:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
+proc replace(tokenList: DOMTokenList, token, newToken: string):
+    Result[bool, DOMException] {.jsfunc.} =
+  ?validateDOMToken(token)
+  ?validateDOMToken(newToken)
   let i = tokenList.toks.find(token)
   if i == -1:
-    return false
+    return ok(false)
   tokenList.toks[i] = newToken
   tokenList.update()
-  return true
+  return ok(true)
 
 const SupportedTokensMap = {
   "abcd": @["adsf"] #TODO
 }.toTable()
 
-func supports(tokenList: DOMTokenList, token: string): bool {.jserr, jsfunc.} =
+func supports(tokenList: DOMTokenList, token: string):
+    Result[bool, JSError] {.jsfunc.} =
   if tokenList.localName in SupportedTokensMap:
     let lowercase = token.toLowerAscii()
-    return lowercase in SupportedTokensMap[tokenList.localName]
-  else:
-    JS_ERR JS_TypeError, "No supported tokens defined for attribute " & tokenList.localName
+    return ok(lowercase in SupportedTokensMap[tokenList.localName])
+  return err(newTypeError("No supported tokens defined for attribute " &
+    tokenList.localName))
 
 func `$`(tokenList: DOMTokenList): string {.jsfunc.} =
   return tokenList.toks.join(' ')
@@ -1796,7 +1788,7 @@ func newHTMLElement*(document: Document, localName: string,
 func newDocument*(): Document {.jsctor.} =
   result = Document(
     nodeType: DOCUMENT_NODE,
-    url: newURL("about:blank"),
+    url: newURL("about:blank").get,
     index: -1
   )
   result.document = result
@@ -1842,7 +1834,7 @@ func baseURL*(document: Document): Url =
   if href == "":
     return document.url
   if document.url == nil:
-    return newURL("about:blank") #TODO ???
+    return newURL("about:blank").get #TODO ???
   let url = parseURL(href, some(document.url))
   if url.isNone:
     return document.url
@@ -1960,20 +1952,30 @@ proc attrulgz(element: Element, name: string, value: uint32) =
   if value > 0:
     element.attrul(name, value)
 
-proc setAttribute(element: Element, qualifiedName, value: string) {.jserr, jsfunc.} =
-  if not qualifiedName.matchNameProduction():
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
+func validateAttributeName(name: string, isq: static bool = false):
+    Err[DOMException] =
+  when isq:
+    if name.matchNameProduction():
+      return ok()
+  else:
+    if name.matchQNameProduction():
+      return ok()
+  return err(newDOMException("Invalid character in attribute name",
+    "InvalidCharacterError"))
+
+proc setAttribute(element: Element, qualifiedName, value: string):
+    Err[DOMException] {.jsfunc.} =
+  ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
     qualifiedName.toLowerAscii2()
   else:
     qualifiedName
   element.attr(qualifiedName, value)
+  return ok()
 
-proc setAttributeNS(element: Element, namespace, qualifiedName, value: string) {.jserr, jsfunc.} =
-  if not qualifiedName.matchQNameProduction():
-    #TODO this should be a DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
+proc setAttributeNS(element: Element, namespace, qualifiedName,
+    value: string): Err[DOMException] {.jsfunc.} =
+  ?validateAttributeName(qualifiedName, isq = true)
   let ps = qualifiedName.until(':')
   let prefix = if ps.len < qualifiedName.len: ps else: ""
   let localName = qualifiedName.substr(prefix.len)
@@ -1981,14 +1983,14 @@ proc setAttributeNS(element: Element, namespace, qualifiedName, value: string) {
       prefix == "xml" and namespace != $Namespace.XML or
       (qualifiedName == "xmlns" or prefix == "xmlns") and namespace != $Namespace.XMLNS or
       namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and prefix != "xmlns":
-    #TODO this should be a DOMException
-    JS_ERR JS_TypeError, "NamespaceError"
+    return err(newDOMException("Unexpected namespace", "NamespaceError"))
   element.attr0(qualifiedName, value)
   let i = element.attributes.findAttrNS(namespace, localName)
   if i != -1:
     element.attributes.attrlist[i].value = value
   else:
     element.attributes.attrlist.add(element.newAttr(localName, value, prefix, namespace))
+  return ok()
 
 proc removeAttribute(element: Element, qualifiedName: string) {.jsfunc.} =
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
@@ -2002,10 +2004,9 @@ proc removeAttributeNS(element: Element, namespace, localName: string) {.jsfunc.
   if i != -1:
     element.delAttr(i)
 
-proc toggleAttribute(element: Element, qualifiedName: string, force = none(bool)): bool {.jserr, jsfunc.} =
-  if not qualifiedName.matchNameProduction():
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
+proc toggleAttribute(element: Element, qualifiedName: string,
+    force = none(bool)): Result[bool, DOMException] {.jsfunc.} =
+  ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
     qualifiedName.toLowerAscii2()
   else:
@@ -2013,51 +2014,55 @@ proc toggleAttribute(element: Element, qualifiedName: string, force = none(bool)
   if not element.attrb(qualifiedName):
     if force.get(true):
       element.attr(qualifiedName, "")
-      return true
-    return false
+      return ok(true)
+    return ok(false)
   if not force.get(false):
     element.delAttr(qualifiedName)
-    return false
-  return true
+    return ok(false)
+  return ok(true)
 
 proc value(attr: Attr, s: string) {.jsfset.} =
   attr.value = s
   if attr.ownerElement != nil:
     attr.ownerElement.attr0(attr.name, s)
 
-proc setNamedItem(map: NamedNodeMap, attr: Attr): Option[Attr] {.jserr, jsfunc.} =
+proc setNamedItem(map: NamedNodeMap, attr: Attr): Result[Attr, DOMException]
+    {.jsfunc.} =
   if attr.ownerElement != nil and attr.ownerElement != map.element:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InUseAttributeError"
+    return err(newDOMException("Attribute is currently in use",
+      "InUseAttributeError"))
   if attr.name in map.element.attrs:
-    return some(attr)
+    return ok(attr)
   let i = map.findAttr(attr.name)
   if i != -1:
-    result = some(map.attrlist[i])
+    result = ok(map.attrlist[i])
     map.attrlist.delete(i)
+  else:
+    result = ok(nil)
   map.element.attrs[attr.name] = attr.value
   map.attrlist.add(attr)
 
-proc setNamedItemNS(map: NamedNodeMap, attr: Attr): Option[Attr] {.jsfunc.} =
-  map.setNamedItem(attr)
+proc setNamedItemNS(map: NamedNodeMap, attr: Attr): Result[Attr, DOMException]
+    {.jsfunc.} =
+  return map.setNamedItem(attr)
 
-proc removeNamedItem(map: NamedNodeMap, qualifiedName: string): Attr {.jserr, jsfunc.} =
+proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
+    Result[Attr, DOMException] {.jsfunc.} =
   let i = map.findAttr(qualifiedName)
   if i != -1:
     let attr = map.attrlist[i]
     map.element.delAttr(i)
-    return attr
-  #TODO should be DOMException
-  JS_ERR JS_TypeError, "Not found"
+    return ok(attr)
+  return err(newDOMException("Item not found", "NotFoundError"))
 
-proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string): Attr {.jserr, jsfunc.} =
+proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
+    Result[Attr, DOMException] {.jsfunc.} =
   let i = map.findAttrNS(namespace, localName)
   if i != -1:
     let attr = map.attrlist[i]
     map.element.delAttr(i)
-    return attr
-  #TODO should be DOMException
-  JS_ERR JS_TypeError, "Not found"
+    return ok(attr)
+  return err(newDOMException("Item not found", "NotFoundError"))
 
 proc id(element: Element, id: string) {.jsfset.} =
   element.id = id
@@ -2202,43 +2207,53 @@ proc insertionSteps(insertedNode: Node) =
       element.resetFormOwner()
 
 # WARNING the ordering of the arguments in the standard is whack so this doesn't match that
-func preInsertionValidity*(parent, node, before: Node): bool =
+func preInsertionValidity*(parent, node, before: Node): Err[DOMException] =
   if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
-    # HierarchyRequestError
-    return false
+    return err(newDOMException("Parent must be a document, document fragment, " &
+      "or element", "HierarchyRequestError"))
   if node.isHostIncludingInclusiveAncestor(parent):
-    # HierarchyRequestError
-    return false
+    return err(newDOMException("Parent must be an ancestor", "HierarchyRequestError"))
   if before != nil and before.parentNode != parent:
-    # NotFoundError
-    return false
-  if node.nodeType notin {DOCUMENT_FRAGMENT_NODE, DOCUMENT_TYPE_NODE, ELEMENT_NODE} + CharacterDataNodes:
-    # HierarchyRequestError
-    return false
-  if (node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE) or
-      (node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE):
-    # HierarchyRequestError
-    return false
+    return err(newDOMException("Reference node is not a child of parent",
+      "NotFoundError"))
+  if node.nodeType notin {DOCUMENT_FRAGMENT_NODE, DOCUMENT_TYPE_NODE,
+      ELEMENT_NODE} + CharacterDataNodes:
+    return err(newDOMException("Cannot insert node type",
+      "HierarchyRequestError"))
+  if node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE:
+    return err(newDOMException("Cannot insert text into document",
+      "HierarchyRequestError"))
+  if node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE:
+    return err(newDOMException("Document type can only be inserted into " &
+      "document", "HierarchyRequestError"))
   if parent.nodeType == DOCUMENT_NODE:
     case node.nodeType
     of DOCUMENT_FRAGMENT_NODE:
       let elems = node.countChildren(ELEMENT_NODE)
       if elems > 1 or node.hasChild(TEXT_NODE):
-        # HierarchyRequestError
-        return false
-      elif elems == 1 and (parent.hasChild(ELEMENT_NODE) or before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or before.hasNextSibling(DOCUMENT_TYPE_NODE))):
-        # HierarchyRequestError
-        return false
+        return err(newDOMException("Document fragment has invalid children",
+          "HierarchyRequestError"))
+      elif elems == 1 and (parent.hasChild(ELEMENT_NODE) or
+          before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
+          before.hasNextSibling(DOCUMENT_TYPE_NODE))):
+        return err(newDOMException("Document fragment has invalid children",
+          "HierarchyRequestError"))
     of ELEMENT_NODE:
-      if parent.hasChild(ELEMENT_NODE) or before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or before.hasNextSibling(DOCUMENT_TYPE_NODE)):
-        # HierarchyRequestError
-        return false
+      if parent.hasChild(ELEMENT_NODE):
+        return err(newDOMException("Document already has an element child",
+          "HierarchyRequestError"))
+      elif before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
+            before.hasNextSibling(DOCUMENT_TYPE_NODE)):
+        return err(newDOMException("Cannot insert element before document " &
+          "type", "HierarchyRequestError"))
     of DOCUMENT_TYPE_NODE:
-      if parent.hasChild(DOCUMENT_TYPE_NODE) or before != nil and before.hasPreviousSibling(ELEMENT_NODE) or before == nil and parent.hasChild(ELEMENT_NODE):
-        # HierarchyRequestError
-        return false
+      if parent.hasChild(DOCUMENT_TYPE_NODE) or
+          before != nil and before.hasPreviousSibling(ELEMENT_NODE) or
+          before == nil and parent.hasChild(ELEMENT_NODE):
+        return err(newDOMException("Cannot insert document type before " &
+          "an element node", "HierarchyRequestError"))
     else: discard
-  return true # no exception reached
+  return ok() # no exception reached
 
 proc insertNode(parent, node, before: Node) =
   parent.document.adopt(node)
@@ -2282,18 +2297,17 @@ proc insert*(parent, node, before: Node) =
   for node in nodes:
     insertNode(parent, node, before)
 
-proc insertBefore(parent, node, before: Node): Node {.jserr, jsfunc.} =
-  if parent.preInsertionValidity(node, before):
-    let referenceChild = if before == node:
-      node.nextSibling
-    else:
-      before
-    parent.insert(node, referenceChild)
-    return node
-  #TODO use preInsertionValidity result
-  JS_ERR JS_TypeError, "Pre-insertion validity violated"
+proc insertBefore(parent, node, before: Node): Result[Node, DOMException]
+    {.jsfunc.} =
+  ?parent.preInsertionValidity(node, before)
+  let referenceChild = if before == node:
+    node.nextSibling
+  else:
+    before
+  parent.insert(node, referenceChild)
+  return ok(node)
 
-proc appendChild(parent, node: Node): Node {.jsfunc.} =
+proc appendChild(parent, node: Node): Result[Node, DOMException] {.jsfunc.} =
   return parent.insertBefore(node, nil)
 
 proc append*(parent, node: Node) =
@@ -2301,11 +2315,12 @@ proc append*(parent, node: Node) =
 
 #TODO replaceChild
 
-proc removeChild(parent, node: Node): Node {.jsfunc.} =
-  #TODO should be DOMException
+proc removeChild(parent, node: Node): Result[Node, DOMException] {.jsfunc.} =
   if node.parentNode != parent:
-    JS_ERR JS_TypeError, "NotFoundError"
+    return err(newDOMException("Node is not a child of parent",
+      "NotFoundError"))
   node.remove()
+  return ok(node)
 
 proc replaceAll(parent, node: Node) =
   for i in countdown(parent.childList.high, 0):
@@ -2576,10 +2591,11 @@ proc prepare*(element: HTMLScriptElement) =
     element.execute()
 
 #TODO options/custom elements
-proc createElement(document: Document, localName: string): Element {.jserr, jsfunc.} =
+proc createElement(document: Document, localName: string):
+    Result[Element, DOMException] {.jsfunc.} =
   if not localName.matchNameProduction():
-    #TODO DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
+    return err(newDOMException("Invalid character in element name",
+      "InvalidCharacterError"))
   let localName = if not document.isxml:
     localName.toLowerAscii2()
   else:
@@ -2588,20 +2604,23 @@ proc createElement(document: Document, localName: string): Element {.jserr, jsfu
     Namespace.HTML
   else:
     NO_NAMESPACE
-  return document.newHTMLElement(localName, namespace)
+  return ok(document.newHTMLElement(localName, namespace))
 
 #TODO createElementNS
 
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createDocumentType(implementation: DOMImplementation, qualifiedName, publicId, systemId: string): DocumentType {.jserr, jsfunc.} =
+proc createDocumentType(implementation: DOMImplementation, qualifiedName,
+    publicId, systemId: string): Result[DocumentType, DOMException] {.jsfunc.} =
   if not qualifiedName.matchQNameProduction():
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
-  return implementation.document.newDocumentType(qualifiedName, publicId, systemId)
+    return err(newDOMException("Invalid character in document type name",
+      "InvalidCharacterError"))
+  return ok(implementation.document.newDocumentType(qualifiedName, publicId,
+    systemId))
 
-proc createHTMLDocument(implementation: DOMImplementation, title = none(string)): Document {.jsfunc.} =
+proc createHTMLDocument(implementation: DOMImplementation, title =
+    none(string)): Document {.jsfunc.} =
   let doc = newDocument()
   doc.contentType = "text/html"
   doc.append(doc.newDocumentType("html"))
@@ -2617,23 +2636,24 @@ proc createHTMLDocument(implementation: DOMImplementation, title = none(string))
   #TODO set origin
   return doc
 
-proc createCDATASection(document: Document, data: string): CDATASection {.jserr, jsfunc.} =
+proc createCDATASection(document: Document, data: string): Result[CDATASection, DOMException] {.jsfunc.} =
   if not document.isxml:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "NotSupportedError"
+    return err(newDOMException("CDATA sections are not supported in HTML",
+      "NotSupportedError"))
   if "]]>" in data:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
-  return newCDATASection(document, data)
+    return err(newDOMException("CDATA sections may not contain the string ]]>",
+      "InvalidCharacterError"))
+  return ok(newCDATASection(document, data))
 
 proc createComment*(document: Document, data: string): Comment {.jsfunc.} =
   return newComment(document, data)
 
-proc createProcessingInstruction(document: Document, target, data: string): ProcessingInstruction {.jsfunc.} =
+proc createProcessingInstruction(document: Document, target, data: string):
+    Result[ProcessingInstruction, DOMException] {.jsfunc.} =
   if not target.matchNameProduction() or "?>" in data:
-    #TODO should be DOMException
-    JS_ERR JS_TypeError, "InvalidCharacterError"
-  return newProcessingInstruction(document, target, data)
+    return err(newDOMException("Invalid data for processing instruction",
+      "InvalidCharacterError"))
+  return ok(newProcessingInstruction(document, target, data))
 
 # Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node, q: string): seq[Element]

@@ -793,17 +793,15 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =
-  {.cast(noSideEffect).}:
-    # This is correct, because newFormData with no params has no side effects.
-    let formData = newFormData()
-    for entry in entries:
-      let name = makeCRLF(entry.name)
-      if entry.isstr:
-        let value = makeCRLF(entry.svalue)
-        formData.append(name, value)
-      else:
-        formData.append(name, entry.value, entry.filename)
-    return formData
+  let formData = newFormData0()
+  for entry in entries:
+    let name = makeCRLF(entry.name)
+    if entry.isstr:
+      let value = makeCRLF(entry.svalue)
+      formData.append(name, value)
+    else:
+      formData.append(name, entry.value, entry.filename)
+  return formData
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
   for it in kvs:

@@ -4,6 +4,7 @@ import strutils
 import tables
 
 import bindings/quickjs
+import js/exception
 import js/javascript
 import types/formdata
 import types/url
@@ -225,13 +226,10 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
 #TODO resource as Request
 #TODO init as an actual dictionary
 func newRequest*(ctx: JSContext, resource: string,
-    init = none(JSValue)): Request {.jserr, jsctor.} =
-  let x = parseURL(resource)
-  if x.isNone:
-    JS_ERR JS_TypeError, resource & " is not a valid URL."
-  if x.get.username != "" or x.get.password != "":
-    JS_ERR JS_TypeError, resource & " is not a valid URL."
-  let url = x.get
+    init = none(JSValue)): Result[Request, JSError] {.jsctor.} =
+  let url = ?newURL(resource)
+  if url.username != "" or url.password != "":
+    return err(newTypeError("Input URL contains a username or password"))
   let fallbackMode = some(RequestMode.CORS) #TODO none if resource is request
   var httpMethod = HTTP_GET
   var body = opt(string)
@@ -254,7 +252,7 @@ func newRequest*(ctx: JSContext, resource: string,
     #TODO inputbody
     if (multipart.isSome or body.isSome) and
         httpMethod in {HTTP_GET, HTTP_HEAD}:
-      JS_ERR JS_TypeError, "HEAD or GET Request cannot have a body."
+      return err(newTypeError("HEAD or GET Request cannot have a body."))
     let jheaders = JS_GetPropertyStr(ctx, init, "headers")
     hl.fill(ctx, jheaders)
     credentials = fromJS[CredentialsMode](ctx, JS_GetPropertyStr(ctx, init,
@@ -263,8 +261,8 @@ func newRequest*(ctx: JSContext, resource: string,
       .get(mode)
     #TODO find a standard compatible way to implement this
     proxyUrl = fromJS[URL](ctx, JS_GetPropertyStr(ctx, init, "proxyUrl"))
-  return newRequest(url, httpMethod, hl, body, multipart, mode, credentials,
-    proxy = proxyUrl.get(nil))
+  return ok(newRequest(url, httpMethod, hl, body, multipart, mode, credentials,
+    proxy = proxyUrl.get(nil)))
 
 proc add*(headers: var Headers, k, v: string) =
   let k = k.toHeaderCase()

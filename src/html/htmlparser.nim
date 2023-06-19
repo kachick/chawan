@@ -14,6 +14,7 @@ import encoding/decoderstream
 import html/dom
 import html/tags
 import html/htmltokenizer
+import js/exception
 import js/javascript
 import types/url
 import utils/twtstr
@@ -239,7 +240,7 @@ proc insert(location: AdjustedInsertionLocation, node: Node) =
 proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: Namespace): Element =
   let location = parser.appropriatePlaceForInsert()
   let element = parser.createElement(token, namespace, location.inside)
-  if location.inside.preInsertionValidity(element, location.before):
+  if location.inside.preInsertionValidity(element, location.before).isOk:
     #TODO custom elements
     location.insert(element)
   parser.pushElement(element)
@@ -2239,15 +2240,16 @@ proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
 proc newDOMParser*(): DOMParser {.jsctor.} =
   new(result)
 
-proc parseFromString(parser: DOMParser, str: string, t: string): Document {.jserr, jsfunc.} =
+proc parseFromString(parser: DOMParser, str: string, t: string):
+    Result[Document, JSError] {.jsfunc.} =
   case t
   of "text/html":
     let res = parseHTML(newStringStream(str))
-    return res
+    return ok(res)
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-    JS_ERR JS_InternalError, "XML parsing is not supported yet"
+    return err(newInternalError("XML parsing is not supported yet"))
   else:
-    JS_ERR JS_TypeError, "Invalid mime type"
+    return err(newTypeError("Invalid mime type"))
 
 proc addHTMLModule*(ctx: JSContext) =
   ctx.registerType(DOMParser)

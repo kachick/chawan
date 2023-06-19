@@ -167,7 +167,11 @@ proc sread*(stream: Stream, url: var URL) =
   if s == "":
     url = nil
   else:
-    url = newURL(s)
+    let x = newURL(s)
+    if x.isSome:
+      url = x.get
+    else:
+      url = nil
 
 func slen*(url: URL): int =
   if url == nil:

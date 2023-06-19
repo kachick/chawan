@@ -84,9 +84,6 @@ func error*[T, E](res: Result[T, E]): E {.inline.} = res.ex
 template valType*[T, E](res: type Result[T, E]): auto = T
 template errType*[T, E](res: type Result[T, E]): auto = E
 
-func isSameErr[T, E, F](a: type Result[T, E], b: type F): bool =
-  return E is F
-
 template `?`*[T, E](res: Result[T, E]): auto =
   let x = res # for when res is a funcall
   if x.has:
@@ -97,7 +94,7 @@ template `?`*[T, E](res: Result[T, E]): auto =
   else:
     when typeof(result) is Result[T, E]:
       return x
-    elif isSameErr(typeof(result), E):
+    elif typeof(result).errType is E:
       return err(x.error)
     else:
       return err()

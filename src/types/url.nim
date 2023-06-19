@@ -5,6 +5,7 @@ import options
 import unicode
 import math
 
+import js/exception
 import js/javascript
 import types/blob
 import utils/twtstr
@@ -962,23 +963,23 @@ proc newURL*(url: URL): URL =
     result.searchParams[] = url.searchParams[]
     result.searchParams.url = some(result)
 
-#TODO add Option wrapper
-proc newURL*(s: string, base: Option[string] = none(string)): URL {.jserr, jsctor.} =
+proc newURL*(s: string, base: Option[string] = none(string)):
+    Result[URL, JSError] {.jsctor.} =
   if base.issome:
     let baseUrl = parseURL(base.get)
-    if baseUrl.isnone:
-      JS_ERR JS_TypeError, base.get & " is not a valid URL"
+    if baseUrl.isNone:
+      return err(newTypeError(base.get & " is not a valid URL"))
     let url = parseURL(s, baseUrl)
-    if url.isnone:
-      JS_ERR JS_TypeError, s & " is not a valid URL"
-    return url.get
+    if url.isNone:
+      return err(newTypeError(s & " is not a valid URL"))
+    return ok(url.get)
   let url = parseURL(s)
-  if url.isnone:
-    JS_ERR JS_TypeError, s & " is not a valid URL"
+  if url.isNone:
+    return err(newTypeError(s & " is not a valid URL"))
   url.get.searchParams = newURLSearchParams()
   url.get.searchParams.url = url
   url.get.searchParams.initURLSearchParams(url.get.query.get(""))
-  return url.get
+  return ok(url.get)
 
 proc origin0*(url: URL): Origin =
   case url.scheme

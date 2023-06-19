@@ -4,6 +4,8 @@ import math
 
 import types/line
 import types/vector
+import js/exception
+import utils/opt
 
 type
   Path* = ref object
@@ -324,12 +326,13 @@ proc bezierCurveTo*(path: Path, cp0x, cp0y, cp1x, cp1y, x, y: float64) =
   let p = Vector2D(x: x, y: y)
   path.addBezierSegment(cp0, cp1, p)
 
-proc arcTo*(path: Path, x1, y1, x2, y2, radius: float64): bool =
+proc arcTo*(path: Path, x1, y1, x2, y2, radius: float64): Err[DOMException] =
   for v in [x1, y1, x2, y2, radius]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
+      return ok()
   if radius < 0:
-    return false
+    return err(newDOMException("Expected positive radius, but got negative",
+      "IndexSizeError"))
   path.ensureSubpath(x1, y1)
   #TODO this should be transformed by the inverse of the transformation matrix
   let v0 = path.subpaths[^1].points[^1]
@@ -353,7 +356,7 @@ proc arcTo*(path: Path, x1, y1, x2, y2, radius: float64): bool =
     )
     path.addStraightSegment(tv0)
     path.addArcSegment(origin, tv2, radius, true) #TODO always inner?
-  return true
+  return ok()
 
 func resolveEllipsePoint(o: Vector2D, angle, radiusX, radiusY,
     rotation: float64): Vector2D =
@@ -370,12 +373,13 @@ func resolveEllipsePoint(o: Vector2D, angle, radiusX, radiusY,
   return Vector2D(x: relx, y: rely).rotate(rotation) + o
 
 proc arc*(path: Path, x, y, radius, startAngle, endAngle: float64,
-    counterclockwise: bool): bool =
+    counterclockwise: bool): Err[DOMException] =
   for v in [x, y, radius, startAngle, endAngle]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
+      return ok()
   if radius < 0:
-    return false
+    return err(newDOMException("Expected positive radius, but got negative",
+      "IndexSizeError"))
   let o = Vector2D(x: x, y: y)
   var s = resolveEllipsePoint(o, startAngle, radius, radius, 0)
   var e = resolveEllipsePoint(o, endAngle, radius, radius, 0)
@@ -388,15 +392,16 @@ proc arc*(path: Path, x, y, radius, startAngle, endAngle: float64,
   else:
     path.moveTo(s)
   path.addArcSegment(o, e, radius, abs(startAngle - endAngle) < PI)
-  return true
+  return ok()
 
 proc ellipse*(path: Path, x, y, radiusX, radiusY, rotation, startAngle,
-    endAngle: float64, counterclockwise: bool): bool =
+    endAngle: float64, counterclockwise: bool): Err[DOMException] =
   for v in [x, y, radiusX, radiusY, rotation, startAngle, endAngle]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
+      return ok()
   if radiusX < 0 or radiusY < 0:
-    return false
+    return err(newDOMException("Expected positive radius, but got negative",
+      "IndexSizeError"))
   let o = Vector2D(x: x, y: y)
   var s = resolveEllipsePoint(o, startAngle, radiusX, radiusY, rotation)
   var e = resolveEllipsePoint(o, endAngle, radiusX, radiusY, rotation)
@@ -409,7 +414,7 @@ proc ellipse*(path: Path, x, y, radiusX, radiusY, rotation, startAngle,
   else:
     path.moveTo(s)
   path.addEllipseSegment(o, e, radiusX, radiusY)
-  return true
+  return ok()
 
 proc rect*(path: Path, x, y, w, h: float64) =
   for v in [x, y, w, h]:

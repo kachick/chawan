@@ -1,5 +1,6 @@
 import html/dom
 import html/tags
+import js/exception
 import js/javascript
 import types/blob
 import types/formdata
@@ -8,18 +9,22 @@ import utils/twtstr
 proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     encoding: string = ""): Option[seq[FormDataEntry]]
 
+proc newFormData0*(): FormData =
+  return FormData()
+
 proc newFormData*(form: HTMLFormElement = nil,
-    submitter: HTMLElement = nil): FormData {.jserr, jsctor.} =
+    submitter: HTMLElement = nil): Result[FormData, JSError] {.jsctor.} =
   let this = FormData()
   if form != nil:
     if submitter != nil:
       if not submitter.isSubmitButton():
-        JS_ERR JS_TypeError, "Submitter must be a submit button"
+        return err(newDOMException("Submitter must be a submit button",
+          "InvalidStateError"))
       if FormAssociatedElement(submitter).form != form:
-        #TODO should be DOMException
-        JS_ERR JS_TypeError, "InvalidStateError"
+        return err(newDOMException("Submitter's form owner is not form",
+          "InvalidStateError"))
     this.entries = constructEntryList(form, submitter).get(@[])
-  return this
+  return ok(this)
 
 #TODO as jsfunc
 proc append*(this: FormData, name: string, svalue: string, filename = "") =

@@ -109,11 +109,7 @@ type
   LegacyJSError* = object of CatchableError
 
   #TODO remove these
-  JS_SyntaxError* = object of LegacyJSError
   JS_TypeError* = object of LegacyJSError
-  JS_ReferenceError* = object of LegacyJSError
-  JS_RangeError* = object of LegacyJSError
-  JS_InternalError* = object of LegacyJSError
 
 const QuickJSErrors = [
   JS_EVAL_ERROR0,
@@ -840,13 +836,15 @@ proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue =
   if opt.isSome:
     when not (T is void):
       return toJS(ctx, opt.get)
-    return JS_UNDEFINED
+    else:
+      return JS_UNDEFINED
   else:
     when not (E is void):
       let res = toJS(ctx, opt.error)
       if not JS_IsNull(res):
         return JS_Throw(ctx, res)
-    return JS_NULL
+    else:
+      return JS_NULL
 
 proc toJS(ctx: JSContext, s: seq): JSValue =
   let a = JS_NewArray(ctx)
@@ -1387,16 +1385,6 @@ proc newJSProc(gen: var JSFuncGenerator, params: openArray[NimNode], isva = true
   result = newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
   gen.res = result
 
-# WARNING: for now, this only works correctly when the .jserr pragma was
-# declared on the parent function.
-# Note: this causes the entire nim function body to be inlined inside the JS
-# interface function.
-#TODO: remove this.
-macro JS_ERR*(a: typed, b: string) =
-  result = quote do:
-    block when_js:
-      raise newException(`a`, `b`)
-
 func getFuncName(fun: NimNode, jsname: string): string =
   if jsname != "":
     return jsname
@@ -1423,10 +1411,14 @@ proc addThisName(gen: var JSFuncGenerator, thisname: Option[string]) =
     gen.thisType = $gen.funcParams[gen.i][1]
     gen.newName = ident($gen.t & "_" & gen.thisType & "_" & gen.funcName)
   else:
-    if gen.returnType.get.kind == nnkRefTy:
-      gen.thisType = gen.returnType.get[0].strVal
+    let rt = gen.returnType.get
+    if rt.kind == nnkRefTy:
+      gen.thisType = rt[0].strVal
     else:
-      gen.thisType = gen.returnType.get.strVal
+      if rt.kind == nnkBracketExpr:
+        gen.thisType = rt[1].strVal
+      else:
+        gen.thisType = rt.strVal
     gen.newName = ident($gen.t & "_" & gen.funcName)
 
 func getActualMinArgs(gen: var JSFuncGenerator): int =
@@ -1461,57 +1453,6 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
   gen.actualMinArgs = gen.getActualMinArgs() # must come after passctx is set
   gen.addThisName(thisname)
   return gen
-
-# this might be pretty slow...
-#TODO ideally we wouldn't need separate functions at all. Not sure how that
-# could be achieved, maybe using options?
-proc rewriteExceptions(gen: var JSFuncGenerator, errors: var seq[string], node: NimNode) =
-  for i in countdown(node.len - 1, 0):
-    let c = node[i]
-    if c.kind == nnkCommand and c[0].eqIdent ident("JS_ERR"):
-      if gen.copied == nil:
-        gen.copied = copy(gen.original)
-      if gen.returnType.isSome:
-        node[i] = quote do:
-          zeroMem(addr result, sizeof(result))
-          return
-      else:
-        node[i] = quote do:
-          return
-      if c[1].strVal notin errors:
-        errors.add(c[1].strVal)
-    elif c.len > 0:
-      gen.rewriteExceptions(errors, c)
-
-proc rewriteExceptions(gen: var JSFuncGenerator) =
-  let ostmts = gen.original.findChild(it.kind == nnkStmtList)
-  var errors: seq[string]
-  gen.rewriteExceptions(errors, ostmts)
-  assert gen.copied != nil
-  var name: string
-  if gen.copied[0].kind == nnkIdent:
-    name = gen.copied[0].strVal
-  elif gen.copied[0].kind == nnkPostfix:
-    name = gen.copied[0][1].strVal
-  else:
-    error("No JS_ERR statement found in proc with jserr pragma.")
-  name &= "_exceptions"
-  gen.copied[0] = ident(name)
-  js_errors[name] = errors
-
-macro jserr*(fun: untyped) =
-  var gen: JSFuncGenerator
-  gen.original = fun
-  gen.rewriteExceptions()
-  var pragma = gen.original.findChild(it.kind == nnkPragma)
-  for i in 0..<pragma.len:
-    if pragma[i].eqIdent(ident("jsctor")) or pragma[i].eqIdent(ident("jsfunc")) or pragma[i].eqIdent(ident("jsget")) or pragma[i].eqIdent(ident("jsset")):
-      pragma.del(i)
-  gen.original.addPragma(quote do: used) # may be unused, but we have to keep it
-  gen.copied.addPragma(quote do: inline)
-
-  #TODO mark original as used or something
-  result = newStmtList(gen.original, gen.copied)
 
 macro jsctor*(fun: typed) =
   var gen = setupGenerator(fun, CONSTRUCTOR, thisname = none(string))
