@@ -3,6 +3,7 @@ import streams
 import bindings/quickjs
 import io/promise
 import io/request
+import js/exception
 import js/javascript
 import types/url
 
@@ -44,13 +45,25 @@ proc close*(response: Response) {.jsfunc.} =
   if response.body != nil:
     response.body.close()
 
-proc text*(response: Response): Promise[string] {.jsfunc.} =
-  return response.bodyRead
+proc text*(response: Response): Promise[Result[string, JSError]] {.jsfunc.} =
+  if response.bodyRead == nil:
+    let p = Promise[Result[string, JSError]]()
+    let err = Result[string, JSError]
+      .err(newTypeError("Body has already been consumed"))
+    p.resolve(err)
+    return p
+  let bodyRead = response.bodyRead
+  response.bodyRead = nil
+  return bodyRead.then(proc(s: string): Result[string, JSError] =
+    ok(s))
 
-proc json(ctx: JSContext, this: Response): Promise[JSValue] {.jsfunc.} =
-  return this.text().then(proc(s: string): JSValue =
-    return JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
-      cstring"<input>"))
+proc json(ctx: JSContext, this: Response): Promise[Result[JSValue, JSError]]
+    {.jsfunc.} =
+  return this.text().then(proc(s: Result[string, JSError]):
+      Result[JSValue, JSError] =
+    let s = ?s
+    return ok(JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
+      cstring"<input>")))
 
 proc addResponseModule*(ctx: JSContext) =
   ctx.registerType(Response)

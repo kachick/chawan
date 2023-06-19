@@ -31,6 +31,11 @@ const NamesTable = {
 type DOMException* = ref object of JSError
   name* {.jsget.}: string
 
+type
+  JSResult*[T] = Result[T, JSError]
+
+  DOMResult*[T] = Result[T, DOMException]
+
 proc newDOMException*(message = "", name = "Error"): DOMException {.jsctor.} =
   return DOMException(
     e: JS_DOM_EXCEPTION,

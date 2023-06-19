@@ -2403,8 +2403,10 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
           #TODO use charset from content-type
           #TODO text() should decode
           return r.get.text()
-      ).then(proc(s: string) =
-        let ss = newStringStream(s) #TODO unnecessary copy
+      ).then(proc(s: JSResult[string]) =
+        if s.isErr:
+          return
+        let ss = newStringStream(s.get) #TODO unnecessary copy
         let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
         let source = newDecoderStream(ss, cs = cs).readAll()
         #TODO use response url

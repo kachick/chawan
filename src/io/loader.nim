@@ -60,6 +60,7 @@ type
     buf: string
     readbufsize: int
     response: Response
+    bodyRead: Promise[string]
 
   ConnectErrorCode* = enum
     ERROR_SOURCE_NOT_FOUND = (-4, "clone source could not be found"),
@@ -295,6 +296,7 @@ proc onConnected*(loader: FileLoader, fd: int) =
     loader.ongoing[fd] = OngoingData(
       response: response,
       readbufsize: BufferSize,
+      bodyRead: response.bodyRead
     )
     SocketStream(stream).source.getFd().setBlocking(false)
     promise.resolve(Result[Response, JSError].ok(response))
@@ -319,7 +321,9 @@ proc onRead*(loader: FileLoader, fd: int) =
             buffer[].readbufsize = min(BufferSize, buffer[].readbufsize * 2)
         buffer[].buf.setLen(olen + n)
         if response.body.atEnd():
-          response.bodyRead.resolve(buffer[].buf)
+          buffer[].bodyRead.resolve(buffer[].buf)
+          buffer[].bodyRead = nil
+          buffer[].buf = ""
           response.unregisterFun()
         break
       except ErrorAgain, ErrorWouldBlock:

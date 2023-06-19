@@ -3,13 +3,11 @@ import nativesockets
 import net
 import options
 import os
+import posix
 import selectors
 import streams
 import tables
 import unicode
-
-when defined(posix):
-  import posix
 
 import buffer/cell
 import config/config
@@ -34,6 +32,7 @@ import io/window
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/exception
 import js/javascript
 import js/regex
 import js/timeout
@@ -562,15 +561,15 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
       let media = parseMediaQueryList(cvals)
       if not media.applies(document.window): return
     return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: Result[Response, JSError]): Opt[Promise[string]] =
+      .then(proc(res: Result[Response, JSError]): Promise[JSResult[string]] =
         if res.isOk:
           let res = res.get
           #TODO we should use ReadableStreams for this (which would allow us to
           # parse CSS asynchronously)
           if res.contenttype == "text/css":
-            return ok(res.text())
+            return res.text()
           res.unregisterFun()
-      ).then(proc(s: Opt[string]) =
+      ).then(proc(s: JSResult[string]) =
         if s.isOk:
           #TODO this is extremely inefficient, and text() should return
           # utf8 anyways
@@ -588,14 +587,18 @@ proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   if url.isSome:
     let url = url.get
     return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: Result[Response, JSError]): Promise[string] =
-        if res.isOk:
-          let res = res.get
-          if res.contenttype == "image/png":
-            #TODO using text() for PNG is wrong
-            return res.text()
-    ).then(proc(pngData: string) =
-      elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
+      .then(proc(res: Result[Response, JSError]): Promise[JSResult[string]] =
+        if res.isErr:
+          return
+        let res = res.get
+        if res.contenttype == "image/png":
+          #TODO using text() for PNG is wrong
+          return res.text()
+      ).then(proc(pngData: JSResult[string]) =
+        if pngData.isErr:
+          return
+        let pngData = pngData.get
+        elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
 
 proc loadResources(buffer: Buffer): EmptyPromise =
   let document = buffer.document
