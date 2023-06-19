@@ -932,7 +932,7 @@ proc toJS[T, E](ctx: JSContext, promise: Promise[Result[T, E]]): JSValue =
       let x = when E is void:
         JS_UNDEFINED
       else:
-        toJS(ctx, x.get)
+        toJS(ctx, x.error)
       let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1, unsafeAddr x)
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)

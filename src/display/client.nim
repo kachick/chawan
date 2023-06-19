@@ -91,7 +91,7 @@ proc `=destroy`(client: var ClientObj) =
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
   return client.loader.doRequest(req)
 
-proc fetch(client: Client, req: Request): Promise[Response] {.jsfunc.} =
+proc fetch(client: Client, req: Request): FetchPromise {.jsfunc.} =
   return client.loader.fetch(req)
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =

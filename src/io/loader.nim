@@ -31,6 +31,7 @@ import io/urlfilter
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/exception
 import js/javascript
 import types/cookie
 import types/mime
@@ -51,7 +52,7 @@ type
     unregisterFun*: proc(fd: int)
 
   ConnectData = object
-    promise: Promise[Response]
+    promise: Promise[Result[Response, JSError]]
     stream: Stream
     request: Request
 
@@ -82,6 +83,8 @@ type
     filter*: URLFilter
     cookiejar*: CookieJar
     referrerpolicy*: ReferrerPolicy
+
+  FetchPromise* = Promise[Result[Response, JSError]]
 
 converter toInt*(code: ConnectErrorCode): int =
   return int(code)
@@ -249,14 +252,14 @@ proc applyHeaders(request: Request, response: Response) =
             destination = request.destination)
 
 #TODO: add init
-proc fetch*(loader: FileLoader, input: Request): Promise[Response] =
+proc fetch*(loader: FileLoader, input: Request): FetchPromise =
   let stream = connectSocketStream(loader.process, false, blocking = true)
   stream.swrite(LOAD)
   stream.swrite(input)
   stream.flush()
   let fd = int(stream.source.getFd())
   loader.registerFun(fd)
-  let promise = Promise[Response]()
+  let promise = FetchPromise()
   loader.connecting[fd] = ConnectData(
     promise: promise,
     request: input,
@@ -292,13 +295,12 @@ proc onConnected*(loader: FileLoader, fd: int) =
       readbufsize: BufferSize,
     )
     SocketStream(stream).source.getFd().setBlocking(false)
-    promise.resolve(response)
+    promise.resolve(Result[Response, JSError].ok(response))
   else:
     loader.unregisterFun(fd)
     loader.unregistered.add(fd)
-    #TODO: reject promise instead.
-    let response = newResponse(res, request)
-    promise.resolve(response)
+    let err = newTypeError("NetworkError when attempting to fetch resource")
+    promise.resolve(Result[Response, JSError].err(err))
   loader.connecting.del(fd)
 
 proc onRead*(loader: FileLoader, fd: int) =

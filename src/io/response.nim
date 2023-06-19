@@ -11,7 +11,7 @@ type
     fd*: int
     body*: Stream
     bodyUsed* {.jsget.}: bool
-    res* {.jsget.}: int
+    res*: int
     contenttype* {.jsget.}: string
     status* {.jsget.}: int
     headers* {.jsget.}: Headers

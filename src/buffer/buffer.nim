@@ -34,6 +34,7 @@ import io/window
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/javascript
 import js/regex
 import js/timeout
 import layout/box
@@ -560,14 +561,15 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
       let cvals = parseListOfComponentValues(newStringStream(media))
       let media = parseMediaQueryList(cvals)
       if not media.applies(document.window): return
-    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response):
-        Opt[Promise[string]] =
-      if res.res == 0: #TODO remove res
-        #TODO we should use ReadableStreams for this (which would allow us to
-        # parse CSS asynchronously)
-        if res.contenttype == "text/css":
-          return ok(res.text())
-        res.unregisterFun()
+    return buffer.loader.fetch(newRequest(url))
+      .then(proc(res: Result[Response, JSError]): Opt[Promise[string]] =
+        if res.isOk:
+          let res = res.get
+          #TODO we should use ReadableStreams for this (which would allow us to
+          # parse CSS asynchronously)
+          if res.contenttype == "text/css":
+            return ok(res.text())
+          res.unregisterFun()
       ).then(proc(s: Opt[string]) =
         if s.isOk:
           #TODO this is extremely inefficient, and text() should return
@@ -585,10 +587,13 @@ proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let url = parseURL(src, document.url.some)
   if url.isSome:
     let url = url.get
-    return buffer.loader.fetch(newRequest(url)).then(proc(res: Response): Promise[string] =
-      if res.contenttype == "image/png":
-        #TODO using text() for PNG is wrong
-        return res.text()
+    return buffer.loader.fetch(newRequest(url))
+      .then(proc(res: Result[Response, JSError]): Promise[string] =
+        if res.isOk:
+          let res = res.get
+          if res.contenttype == "image/png":
+            #TODO using text() for PNG is wrong
+            return res.text()
     ).then(proc(pngData: string) =
       elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
 

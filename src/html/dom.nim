@@ -2396,14 +2396,13 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
     let loader = element.document.window.loader
     if loader.isSome:
       let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-      loader.get.fetch(request).then(proc(r: Response): auto =
-        if r.res != 0 or r.body == nil:
-          #TODO remove res
+      loader.get.fetch(request).then(proc(r: Result[Response, JSError]): auto =
+        if r.isErr or r.get.body == nil:
           element.onComplete(ScriptResult(t: RESULT_NULL))
         else:
           #TODO use charset from content-type
           #TODO text() should decode
-          return r.text()
+          return r.get.text()
       ).then(proc(s: string) =
         let ss = newStringStream(s) #TODO unnecessary copy
         let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
