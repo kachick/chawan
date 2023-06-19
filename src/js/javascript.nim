@@ -188,8 +188,8 @@ proc newJSContext*(rt: JSRuntime): JSContext =
 proc newJSContextRaw*(rt: JSRuntime): JSContext =
   result = JS_NewContextRaw(rt)
 
-func getJSValue(ctx: JSContext, argv: ptr JSValue, i: int): JSValue {.inline.} =
-  cast[ptr JSValue](cast[int](argv) + i * sizeof(JSValue))[]
+func getJSValue(argv: ptr JSValue, i: int): JSValue {.inline.} =
+  cast[ptr UncheckedArray[JSValue]](argv)[i]
 
 func getClass*(ctx: JSContext, class: string): JSClassID =
   # This function *should* never fail.
@@ -1141,7 +1141,7 @@ proc addParam2(gen: var JSFuncGenerator, s, t, val: NimNode, fallback: NimNode =
 
 proc addValueParam(gen: var JSFuncGenerator, s, t: NimNode, fallback: NimNode = nil) =
   let j = gen.j
-  gen.addParam2(s, t, quote do: getJSValue(ctx, argv, `j`), fallback)
+  gen.addParam2(s, t, quote do: getJSValue(argv, `j`), fallback)
 
 proc addUnionParamBranch(gen: var JSFuncGenerator, query, newBranch: NimNode, fallback: NimNode = nil) =
   let i = gen.i
@@ -1259,7 +1259,7 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
 
 proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, fallback: NimNode = nil) =
   let j = gen.j
-  gen.addUnionParam0(tt, s, quote do: getJSValue(ctx, argv, `j`), fallback)
+  gen.addUnionParam0(tt, s, quote do: getJSValue(argv, `j`), fallback)
 
 proc addFixParam(gen: var JSFuncGenerator, name: string) =
   let s = ident("arg_" & $gen.i)
@@ -1298,7 +1298,7 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
           (
             var valist: seq[`vt`]
             for i in `j`..<argc:
-              let it = fromJS_or_return(`vt`, ctx, getJSValue(ctx, argv, i))
+              let it = fromJS_or_return(`vt`, ctx, getJSValue(argv, i))
               valist.add(it)
             valist
           )
