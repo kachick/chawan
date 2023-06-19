@@ -7,6 +7,8 @@ prefix = /usr/local
 $(OBJDIR):
 	mkdir -p $(OBJDIR)/debug
 	mkdir -p $(OBJDIR)/release
+	mkdir -p $(OBJDIR)/release0
+	mkdir -p $(OBJDIR)/release1
 	mkdir -p $(OBJDIR)/profile
 
 debug: $(OBJDIR)
@@ -16,10 +18,10 @@ release: $(OBJDIR)
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release -d:strip -d:lto $(FILES)
 
 release0: $(OBJDIR)
-	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release --stacktrace:on $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release0 -d:release --stacktrace:on $(FILES)
 
 release1: $(OBJDIR)
-	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release --passC:"-pg" --passL:"-pg" $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release1 -d:release --passC:"-pg" --passL:"-pg" $(FILES)
 
 profile: $(OBJDIR)
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/profile --profiler:on --stacktrace:on -d:profile $(FILES)
