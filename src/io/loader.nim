@@ -234,7 +234,7 @@ proc applyHeaders(request: Request, response: Response) =
   else:
     response.contenttype = guessContentType($response.url.path)
   if "Location" in response.headers.table:
-    if response.status in 301..303 or response.status in 307..308:
+    if response.status in 301u16..303u16 or response.status in 307u16..308u16:
       let location = response.headers.table["Location"][0]
       let url = parseUrl(location, option(request.url))
       if url.isSome:
@@ -286,7 +286,9 @@ proc onConnected*(loader: FileLoader, fd: int) =
       loader.unregistered.add(fd)
       loader.unregisterFun(fd)
       realCloseImpl(stream)
-    stream.sread(response.status)
+    var status: int
+    stream.sread(status)
+    response.status = cast[uint16](status)
     stream.sread(response.headers)
     applyHeaders(request, response)
     response.body = stream
@@ -336,7 +338,9 @@ proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response
   stream.flush()
   stream.sread(result.res)
   if result.res == 0:
-    stream.sread(result.status)
+    var status: int
+    stream.sread(status)
+    result.status = cast[uint16](status)
     stream.sread(result.headers)
     applyHeaders(request, result)
     # Only a stream of the response body may arrive after this point.

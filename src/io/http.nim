@@ -59,9 +59,9 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: point
       op.ostream.swrite(int(CURLE_OK))
     except IOError: # Broken pipe
       return 0
-    var status: int
+    var status: clong
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    op.ostream.swrite(status)
+    op.ostream.swrite(cast[int](status))
     return nitems
 
   let k = line.until(':')

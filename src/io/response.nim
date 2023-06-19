@@ -8,12 +8,12 @@ import types/url
 
 type
   Response* = ref object
+    res*: int
     fd*: int
     body*: Stream
     bodyUsed* {.jsget.}: bool
-    res*: int
     contenttype* {.jsget.}: string
-    status* {.jsget.}: int
+    status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
     redirect*: Request
     url*: URL #TODO should be urllist?
@@ -29,6 +29,12 @@ proc newResponse*(res: int, request: Request, fd = -1, stream: Stream = nil):
     bodyRead: Promise[string](),
     fd: fd
   )
+
+func sok(response: Response): bool {.jsfget: "ok".} =
+  return response.status in 200u16 .. 299u16
+
+func surl(response: Response): string {.jsfget: "url".} =
+  return $response.url
 
 #TODO: this should be a property of body
 proc close*(response: Response) {.jsfunc.} =
