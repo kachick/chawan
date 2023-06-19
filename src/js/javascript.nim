@@ -471,7 +471,7 @@ macro fromJSTupleBody(a: tuple) =
       if JS_IsException(valueVal):
         return err()
       defer: JS_FreeValue(ctx, valueVal)
-      let genericRes = fromJS[typeof(result.get[`i`])](ctx, valueVal)
+      let genericRes = fromJS[typeof(`a`[`i`])](ctx, valueVal)
       if genericRes.isErr: # exception
         return err()
       `a`[`i`] = genericRes.get
@@ -537,7 +537,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
   if JS_IsException(next_method):
     return err()
   defer: JS_FreeValue(ctx, next_method)
-  result = ok(newSeq[T]())
+  var s = newSeq[T]()
   while true:
     let next = JS_Call(ctx, next_method, it, 0, nil)
     if JS_IsException(next):
@@ -556,10 +556,11 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
     if JS_IsException(valueVal):
       return err()
     defer: JS_FreeValue(ctx, valueVal)
-    let genericRes = fromJS[typeof(result.get[0])](ctx, valueVal)
+    let genericRes = fromJS[typeof(s[0])](ctx, valueVal)
     if genericRes.isnone: # exception
       return err()
-    result.get.add(genericRes.get)
+    s.add(genericRes.get)
+  return ok(s)
 
 proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
@@ -575,7 +576,6 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
     return err()
   defer: JS_FreeValue(ctx, next_method)
   var s: set[T]
-  result = some(s)
   while true:
     let next = JS_Call(ctx, next_method, it, 0, nil)
     if JS_IsException(next):
@@ -594,10 +594,11 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
     if JS_IsException(valueVal):
       return err()
     defer: JS_FreeValue(ctx, valueVal)
-    let genericRes = fromJS[typeof(result.get.items)](ctx, valueVal)
+    let genericRes = fromJS[typeof(s.items)](ctx, valueVal)
     if genericRes.isnone: # exception
       return err()
-    result.get.incl(genericRes.get)
+    s.incl(genericRes.get)
+  return ok(s)
 
 proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Opt[Table[A, B]] =
   var ptab: ptr JSPropertyEnum
@@ -625,7 +626,7 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): Opt[Table[A, B]] =
     let vn = fromJS[B](ctx, v)
     if vn.isErr: # exception
       return err()
-    result.get[kn.get] = vn.get
+    res[kn.get] = vn.get
   return ok(res)
 
 proc toJS*(ctx: JSContext, s: cstring): JSValue
@@ -714,7 +715,7 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T] =
     if JS_IsUndefined(val):
       #TODO what about null?
       return err()
-    let res = fromJS[typeof(result.get.get)](ctx, val)
+    let res = fromJS[typeof(T.valType)](ctx, val)
     if res.isNone:
       return err()
     return ok(res)
