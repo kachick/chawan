@@ -92,11 +92,6 @@ type
 
   JSRuntimeOpaque* = ref object
     plist: Table[pointer, pointer] # Nim, JS
-    # Allocations in a finalizers lead to serious problems, so we pre-allocate
-    # alternative objects we can copy ours into when a JS object outlives its
-    # nim counterpart.
-    # In other words, it's an ugly hack on top of an ugly hack.
-    altplist: Table[pointer, pointer] # JS, Nim
     flist: seq[seq[JSCFunctionListEntry]]
     fins: Table[JSClassID, proc(val: JSValue)]
 
@@ -233,10 +228,8 @@ proc setOpaque*[T](ctx: JSContext, val: JSValue, opaque: T) =
   let header = cast[ptr JSRefCountHeader](p)
   inc header.ref_count # add jsvalue reference
   rtOpaque.plist[cast[pointer](opaque)] = p
-  let alt = new(T)
-  GC_ref(alt)
-  rtOpaque.altplist[p] = cast[pointer](alt)
   JS_SetOpaque(val, cast[pointer](opaque))
+  GC_ref(opaque)
 
 func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
@@ -296,12 +289,32 @@ proc writeException*(ctx: JSContext, s: Stream) =
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 
+# Detect cases where both a js object's and the corresponding nim
+# object's refcount is one.
+# TODO TODO TODO this still leaks memory in case the ref count of either object
+# cannot reach 1 because of cycles. Not sure how to fix this, maybe a hack
+# with gc_mark could work?
+proc collectInteropCycles*(rt: JSRuntime) =
+  let rtOpaque = rt.getOpaque()
+  var rem: seq[pointer]
+  for nimp, jsp in rtOpaque.plist:
+    let nimRefCount = cast[ptr UncheckedArray[int]](nimp)[-2] shr 3
+    let jsRefCount = cast[ptr JSRefCountHeader](jsp).ref_count
+    if nimRefCount == 1 and jsRefCount == 1:
+      # This triggers the JS finalizer, which in turn frees the nim object.
+      let val = JS_MKPTR(JS_TAG_OBJECT, jsp)
+      JS_FreeValueRT(rt, val)
+      rem.add(nimp)
+  for p in rem:
+    rtOpaque.plist.del(p)
+
 proc runJSJobs*(rt: JSRuntime, err: Stream) =
   while JS_IsJobPending(rt):
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, addr ctx)
     if r == -1:
       ctx.writeException(err)
+  rt.collectInteropCycles()
 
 func isInstanceOf*(ctx: JSContext, obj: JSValue, class: string): bool =
   let clazz = ctx.getClass(class)
@@ -1635,40 +1648,6 @@ template jsget*(name: string) {.pragma.}
 template jsset*() {.pragma.}
 template jsset*(name: string) {.pragma.}
 
-proc nim_finalize_for_js[T](obj: T) =
-  for rt in runtimes:
-    let rtOpaque = rt.getOpaque()
-    rtOpaque.plist.withValue(cast[pointer](obj), v):
-      let p = v[]
-      let val = JS_MKPTR(JS_TAG_OBJECT, p)
-      let header = cast[ptr JSRefCountHeader](p)
-      if header.ref_count > 1:
-        # References to this value still exist in JS, so we
-        # * copy the opaque's value
-        # * increase the new value's refcount by 1
-        # * set the new value as the new opaque
-        # * add the new value to the pointer table
-        # Now it's on JS to decrement the new object's refcount.
-        # (Yeah, it's an ugly hack, but I couldn't come up with anything
-        # better.)
-        let newop = cast[T](rtOpaque.altplist[p])
-        newop[] = obj[]
-        let np = cast[pointer](newop)
-        JS_SetOpaque(val, np)
-        rtOpaque.plist[np] = p
-        rtOpaque.altplist.del(p)
-      else:
-        # This was the last reference to the JS value.
-        # First, trigger the custom finalizer (if there is one.)
-        rtOpaque.fins.withValue(val.getClassID(), fin):
-          fin[](val)
-        # Then clear val's opaque, so that our refcount isn't decreased again.
-        JS_SetOpaque(val, nil)
-      rtOpaque.plist.del(cast[pointer](obj))
-      # Decrement jsvalue's refcount. This is needed in both cases to
-      # trigger the JS finalizer and free the JS value.
-      JS_FreeValueRT(rt, val)
-
 proc js_illegal_ctor*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
@@ -1866,16 +1845,9 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
       let opaque = JS_GetOpaque(`val`, `val`.getClassID())
       if opaque != nil:
         # This means the nim value is no longer referenced by anything but this
-        # JSValue. Meaning we can just unref and remove it from the pointer
-        # table.
+        # JSValue. Meaning we can just unref it.
         `finStmt` # run custom finalizer, if any
         GC_unref(cast[`t`](opaque))
-        let rtOpaque = rt.getOpaque()
-        rtOpaque.plist.del(opaque)
-        let p = JS_VALUE_GET_PTR(`val`)
-        if p in rtOpaque.altplist:
-          GC_unref(cast[`t`](rtOpaque.altplist[p]))
-          rtOpaque.altplist.del(p)
   )
 
   let endstmts = newStmtList()
@@ -1914,7 +1886,7 @@ static JSClassDef """, `cdname`, """ = {
     # We exploit this by setting a finalizer here, which can then unregister
     # any associated JS object from all relevant runtimes.
     var x: `t`
-    new(x, nim_finalize_for_js)
+    new(x)
     `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x),
       `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`)
   )
