@@ -237,7 +237,6 @@ proc setOpaque*[T](ctx: JSContext, val: JSValue, opaque: T) =
   GC_ref(alt)
   rtOpaque.altplist[p] = cast[pointer](alt)
   JS_SetOpaque(val, cast[pointer](opaque))
-  GC_ref(opaque)
 
 func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
