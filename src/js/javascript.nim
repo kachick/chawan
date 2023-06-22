@@ -76,19 +76,26 @@ type
     # Chawan errors
     JS_DOM_EXCEPTION = "DOMException"
 
+  JSSymbolRefs = enum
+    ITERATOR = "iterator"
+    ASYNC_ITERATOR = "asyncIterator"
+    TO_STRING_TAG = "toStringTag"
+
+  JSStrRefs = enum
+    DONE = "done"
+    VALUE = "value"
+    NEXT = "next"
+
   JSContextOpaque* = ref object
     creg: Table[string, JSClassID]
     typemap: Table[pointer, JSClassID]
     ctors: Table[JSClassID, JSValue] #TODO TODO TODO free these
     gclaz: string
-    sym_iterator: JSAtom
-    sym_asyncIterator: JSAtom
-    sym_toStringTag: JSAtom
-    done: JSAtom
-    next: JSAtom
-    value: JSAtom
+    sym_refs: array[JSSymbolRefs, JSAtom]
+    str_refs: array[JSStrRefs, JSAtom]
     Array_prototype_values: JSValue
     err_ctors: array[JSErrorEnum, JSValue]
+    dummy_ref_proto: JSValue
 
   JSRuntimeOpaque* = ref object
     plist: Table[pointer, pointer] # Nim, JS
@@ -100,11 +107,6 @@ type
   JSError* = ref object of RootObj
     e*: JSErrorEnum
     message*: string
-
-  LegacyJSError* = object of CatchableError
-
-  #TODO remove these
-  JS_TypeError* = object of LegacyJSError
 
 const QuickJSErrors = [
   JS_EVAL_ERROR0,
@@ -141,36 +143,21 @@ proc newJSContext*(rt: JSRuntime): JSContext =
     let global = JS_GetGlobalObject(ctx)
     block:
       let sym = JS_GetPropertyStr(ctx, global, "Symbol")
-      block:
-        let it = JS_GetPropertyStr(ctx, sym, "iterator")
-        assert JS_IsSymbol(it)
-        opaque.sym_iterator = JS_ValueToAtom(ctx, it)
-        JS_FreeValue(ctx, it)
-      block:
-        let ait = JS_GetPropertyStr(ctx, sym, "asyncIterator")
-        assert JS_IsSymbol(ait)
-        opaque.sym_asyncIterator = JS_ValueToAtom(ctx, ait)
-        JS_FreeValue(ctx, ait)
-      block:
-        let ait = JS_GetPropertyStr(ctx, sym, "toStringTag")
-        assert JS_IsSymbol(ait)
-        opaque.sym_toStringTag = JS_ValueToAtom(ctx, ait)
-        JS_FreeValue(ctx, ait)
-      block:
-        let s = "done"
-        opaque.done = JS_NewAtomLen(ctx, cstring(s), csize_t(s.len))
-      block:
-        let s = "value"
-        opaque.value = JS_NewAtomLen(ctx, cstring(s), csize_t(s.len))
-      block:
-        let s = "next"
-        opaque.next = JS_NewAtomLen(ctx, cstring(s), csize_t(s.len))
+      for s in JSSymbolRefs:
+        let name = $s
+        let val = JS_GetPropertyStr(ctx, sym, cstring(name))
+        assert JS_IsSymbol(val)
+        opaque.sym_refs[s] = JS_ValueToAtom(ctx, val)
+        JS_FreeValue(ctx, val)
+      JS_FreeValue(ctx, sym)
+      for s in JSStrRefs:
+        let ss = $s
+        opaque.str_refs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
       block:
         let arrproto = JS_GetClassProto(ctx, JS_CLASS_ARRAY)
         opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto,
           "values")
         JS_FreeValue(ctx, arrproto)
-      JS_FreeValue(ctx, sym)
     for e in JSErrorEnum:
       let s = $e
       let err = JS_GetPropertyStr(ctx, global, cstring(s))
@@ -202,11 +189,10 @@ func newJSCFunction*(ctx: JSContext, name: string, fun: JSCFunction, argc: int =
 proc free*(ctx: var JSContext) =
   var opaque = ctx.getOpaque()
   if opaque != nil:
-    JS_FreeAtom(ctx, opaque.sym_iterator)
-    JS_FreeAtom(ctx, opaque.sym_asyncIterator)
-    JS_FreeAtom(ctx, opaque.sym_toStringTag)
-    JS_FreeAtom(ctx, opaque.done)
-    JS_FreeAtom(ctx, opaque.next)
+    for a in opaque.sym_refs:
+      JS_FreeAtom(ctx, a)
+    for a in opaque.str_refs:
+      JS_FreeAtom(ctx, a)
     JS_FreeValue(ctx, opaque.Array_prototype_values)
     for v in opaque.err_ctors:
       JS_FreeValue(ctx, v)
@@ -381,8 +367,10 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   #TODO check if this is an indexed property getter
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
     let val = JS_DupValue(ctx, ctxOpaque.Array_prototype_values)
-    assert JS_SetProperty(ctx, proto, ctxOpaque.sym_iterator, val) == 1
-  assert JS_SetProperty(ctx, proto, ctxOpaque.sym_toStringTag, JS_NewString(ctx, cdef.class_name)) == 1
+    doAssert JS_SetProperty(ctx, proto, ctxOpaque.sym_refs[ITERATOR], val) == 1
+  let toStringTag = ctxOpaque.sym_refs[TO_STRING_TAG]
+  let news = JS_NewString(ctx, cdef.class_name)
+  doAssert JS_SetProperty(ctx, proto, toStringTag, news) == 1
   JS_SetClassProto(ctx, result, proto)
   if asglobal:
     let global = JS_GetGlobalObject(ctx)
@@ -469,7 +457,7 @@ macro fromJSTupleBody(a: tuple) =
       if JS_IsException(next):
         return err()
       defer: JS_FreeValue(ctx, next)
-      let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+      let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
       if JS_IsException(doneVal):
         return err()
       defer: JS_FreeValue(ctx, doneVal)
@@ -479,7 +467,7 @@ macro fromJSTupleBody(a: tuple) =
       if `done`.get:
         JS_ThrowTypeError(ctx, "Too few arguments in sequence (got %d, expected %d)", `i`, `len`)
         return err()
-      let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
+      let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE])
       if JS_IsException(valueVal):
         return err()
       defer: JS_FreeValue(ctx, valueVal)
@@ -494,7 +482,7 @@ macro fromJSTupleBody(a: tuple) =
         if JS_IsException(next):
           return err()
         defer: JS_FreeValue(ctx, next)
-        let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+        let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
         `done` = fromJS[bool](ctx, doneVal)
         if `done`.isnone: # exception
           return err()
@@ -506,7 +494,7 @@ macro fromJSTupleBody(a: tuple) =
           if JS_IsException(next):
             return err()
           defer: JS_FreeValue(ctx, next)
-          let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+          let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
           if JS_IsException(doneVal):
             return err()
           defer: JS_FreeValue(ctx, doneVal)
@@ -516,11 +504,11 @@ macro fromJSTupleBody(a: tuple) =
           if `done`.get:
             JS_ThrowTypeError(ctx, "Too many arguments in sequence (got %d, expected %d)", i, `len`)
             return err()
-          JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctx.getOpaque().value))
+          JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE]))
       )
 
 proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Opt[T] =
-  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
+  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
   defer: JS_FreeValue(ctx, itprop)
@@ -528,7 +516,7 @@ proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Opt[T] =
   if JS_IsException(it):
     return err()
   defer: JS_FreeValue(ctx, it)
-  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
+  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().str_refs[NEXT])
   if JS_IsException(next_method):
     return err()
   defer: JS_FreeValue(ctx, next_method)
@@ -537,7 +525,7 @@ proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Opt[T] =
   return ok(x)
 
 proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
-  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
+  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
   defer: JS_FreeValue(ctx, itprop)
@@ -545,7 +533,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
   if JS_IsException(it):
     return err()
   defer: JS_FreeValue(ctx, it)
-  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
+  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().str_refs[NEXT])
   if JS_IsException(next_method):
     return err()
   defer: JS_FreeValue(ctx, next_method)
@@ -555,7 +543,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
     if JS_IsException(next):
       return err()
     defer: JS_FreeValue(ctx, next)
-    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
     if JS_IsException(doneVal):
       return err()
     defer: JS_FreeValue(ctx, doneVal)
@@ -564,7 +552,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
       return err()
     if done.get:
       break
-    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
+    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE])
     if JS_IsException(valueVal):
       return err()
     defer: JS_FreeValue(ctx, valueVal)
@@ -575,7 +563,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): Opt[seq[T]] =
   return ok(s)
 
 proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
-  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_iterator)
+  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
   defer: JS_FreeValue(ctx, itprop)
@@ -583,7 +571,7 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
   if JS_IsException(it):
     return err()
   defer: JS_FreeValue(ctx, it)
-  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().next)
+  let next_method = JS_GetProperty(ctx, it, ctx.getOpaque().str_refs[NEXT])
   if JS_IsException(next_method):
     return err()
   defer: JS_FreeValue(ctx, next_method)
@@ -1171,7 +1159,7 @@ proc addUnionParamBranch(gen: var JSFuncGenerator, query, newBranch: NimNode, fa
 func isSequence*(ctx: JSContext, o: JSValue): bool =
   if not JS_IsObject(o):
     return false
-  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_iterator)
+  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_refs[ITERATOR])
   # prop can't be exception (throws_ref_error is 0 and tag is object)
   result = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
