@@ -21,3 +21,7 @@ proc finishLoadModule*(ctx: JSContext, f: string, name: cstring): JSModuleDef =
   # idk how this works, so for now let's just do what qjs does
   result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   JS_FreeValue(ctx, funcVal)
+
+proc normalizeModuleName*(ctx: JSContext, base_name: cstring, name: cstring,
+    opaque: pointer): cstring {.cdecl.} =
+  return js_strdup(ctx, name)

@@ -1,10 +1,11 @@
+import cstrutils
 import nativesockets
 import net
 import options
 import os
 import selectors
 import streams
-import cstrutils
+import strutils
 import tables
 import terminal
 
@@ -111,10 +112,14 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
 proc runJSJobs(client: Client) =
   client.jsrt.runJSJobs(client.console.err)
 
-proc evalJS(client: Client, src, filename: string): JSValue =
+proc evalJS(client: Client, src, filename: string, module = false): JSValue =
   if client.console.tty != nil:
     unblockStdin(client.console.tty.getFileHandle())
-  result = client.jsctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
+  let flags = if module:
+    JS_EVAL_TYPE_MODULE
+  else:
+    JS_EVAL_TYPE_GLOBAL
+  result = client.jsctx.eval(src, filename, flags)
   client.runJSJobs()
   if client.console.tty != nil:
     restoreStdin(client.console.tty.getFileHandle())
@@ -122,8 +127,9 @@ proc evalJS(client: Client, src, filename: string): JSValue =
 proc evalJSFree(client: Client, src, filename: string) =
   JS_FreeValue(client.jsctx, client.evalJS(src, filename))
 
-proc command0(client: Client, src: string, filename = "<command>", silence = false) =
-  let ret = client.evalJS(src, filename)
+proc command0(client: Client, src: string, filename = "<command>",
+    silence = false, module = false) =
+  let ret = client.evalJS(src, filename, module = module)
   if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
   else:
@@ -396,7 +402,7 @@ proc clientLoadJSModule(ctx: JSContext, module_name: cstring,
   if module_name.startsWith("/") or module_name.startsWith("./") or
       module_name.startsWith("../"):
     let cur = getCurrentDir()
-    x = parseURL($module_name, parseURL("file://" & cur))
+    x = parseURL($module_name, parseURL("file://" & cur & "/"))
   else:
     x = parseURL($module_name)
   if x.isNone or x.get.scheme != "file":
@@ -493,7 +499,9 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
       readFile(client.config.start.startup_script)
     else:
       client.config.start.startup_script
-    client.command0(s, client.config.start.startup_script, silence = true)
+    let ismodule = client.config.start.startup_script.endsWith(".mjs")
+    client.command0(s, client.config.start.startup_script, silence = true,
+      module = ismodule)
   client.userstyle = client.config.css.stylesheet.parseStylesheet()
 
   if not stdin.isatty():
@@ -534,7 +542,8 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.loader = dispatcher.forkserver.newFileLoader()
   result.jsrt = newJSRuntime()
   result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
-  JS_SetModuleLoaderFunc(result.jsrt, nil, clientLoadJSModule, nil)
+  JS_SetModuleLoaderFunc(result.jsrt, normalizeModuleName, clientLoadJSModule,
+    nil)
   let ctx = result.jsrt.newJSContext()
   result.jsctx = ctx
   result.pager = newPager(config, result.attrs, dispatcher, ctx)

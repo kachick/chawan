@@ -445,4 +445,6 @@ proc JS_GetContextOpaque*(ctx: JSContext): pointer
 
 proc js_free_rt*(rt: JSRuntime, p: pointer)
 proc js_free*(ctx: JSContext, p: pointer)
+
+proc js_strdup*(ctx: JSContext, str: cstring): cstring
 {.pop.}
