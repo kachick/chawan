@@ -390,6 +390,7 @@ proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
       if grid[y * grid.width + x] != prev[y * grid.width + x]:
         change = true
         cx = x
+        w = x
         break
     if change:
       if cx == 0 and vy != -1:
@@ -405,7 +406,8 @@ proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
         let cell = grid[y * grid.width + x]
         result &= term.processFormat(format, cell.format)
         result &= term.processOutputString(cell.str, w)
-      result &= term.clearEnd()
+      if w < grid.width:
+        result &= term.clearEnd()
 
 proc hideCursor*(term: Terminal) =
   term.outfile.hideCursor()
