@@ -14,8 +14,8 @@ It also functions as a pager, similarly to w3m.
 	  can check your nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
-	* quickjs: <https://bellard.org/quickjs/>
 	* zlib: <http://zlib.net/>
+	* (QuickJS is included in the repository.)
 3. Use one of the following:
 	* `make release` - optimized release build
 	* `make` - debug build (slow, for development)

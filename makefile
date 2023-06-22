@@ -3,32 +3,43 @@ OBJDIR = .obj
 FLAGS = -o:cha
 FILES = src/main.nim
 prefix = /usr/local
+QJSOBJ = $(OBJDIR)/quickjs
+CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 
-$(OBJDIR):
-	mkdir -p $(OBJDIR)/debug
-	mkdir -p $(OBJDIR)/release
-	mkdir -p $(OBJDIR)/release0
-	mkdir -p $(OBJDIR)/release1
-	mkdir -p $(OBJDIR)/profile
-
-debug: $(OBJDIR)
+.PHONY: debug
+debug: lib/libquickjs.a $(OBJDIR)/debug
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/debug -d:debug $(FILES)
 
-release: $(OBJDIR)
+.PHONY: release
+release: lib/libquickjs.a $(OBJDIR)/release
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release -d:strip -d:lto $(FILES)
 
-release0: $(OBJDIR)
+.PHONY: release0
+release0: lib/libquickjs.a $(OBJDIR)/release0
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release0 -d:release --stacktrace:on $(FILES)
 
-release1: $(OBJDIR)
+.PHONY: release1
+release1: lib/libquickjs.a $(OBJDIR)/release1
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release1 -d:release --passC:"-pg" --passL:"-pg" $(FILES)
 
-profile: $(OBJDIR)
+.PHONY: profile
+profile: lib/libquickjs.a $(OBJDIR)/profile
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/profile --profiler:on --stacktrace:on -d:profile $(FILES)
+
+$(OBJDIR)/%:
+	mkdir -p $@
+
+$(QJSOBJ)/%.o: lib/quickjs/%.c
+	echo $@
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o $(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o | $(QJSOBJ)
+	$(AR) rcs $@ $^
 
 clean:
 	rm -f cha
 	rm -rf $(OBJDIR)
+	rm -f lib/libquickjs.a
 
 install:
 	mkdir -p "$(DESTDIR)$(prefix)/bin"

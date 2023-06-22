@@ -1,20 +1,5 @@
-import os
-
-const javascriptDirs = ["/usr/local/lib", "/usr/local", "/usr/lib", "/usr", "/lib"]
-const lib = (func(): string =
-  when defined(posix):
-    for dir in javascriptDirs:
-      for dir in @[dir, dir / "quickjs"]:
-        if fileExists(dir / "libquickjs.a"):
-          return dir
-)()
-const hlib = (func(): string =
-  when defined(posix):
-    for dir in javascriptDirs:
-      for dir in @[dir / "include", dir / "include" / "quickjs"]:
-        if fileExists(dir / "quickjs.h"):
-          return dir
-)()
+const lib = "lib/"
+const hlib = "lib/"
 const qjsheader = "<quickjs/quickjs.h>"
 
 when lib != "":
