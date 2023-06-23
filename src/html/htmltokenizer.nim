@@ -8,6 +8,7 @@ import unicode
 import html/entity
 import html/tags
 import encoding/decoderstream
+import utils/opt
 import utils/radixtree
 import utils/twtstr
 
@@ -1429,25 +1430,20 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       when nimvm:
         eprint "Cannot evaluate character references at compile time"
       else:
-        var buf = ""
-        var node = entityMap
-        var value = none(string) # last value
-        #TODO interfacing with RadixNode is suffering
-        # plus this doesn't look very efficient either
-        while not tokenizer.atEof:
-          let r = tokenizer.consume()
-          buf &= r
-          if not node.hasPrefix(buf):
-            tokenizer.reconsume()
-            break
-          let prevnode = node
-          node = node{buf}
-          if node != prevnode:
-            buf = ""
-            if node.value.issome:
-              value = node.value
-          tokenizer.tmp &= r
-        if value.issome:
+        var tokenizerp = addr tokenizer
+        var lasti = 0
+        let value = entityMap.find(proc(s: var string): bool =
+          if tokenizerp[].atEof:
+            return false
+          let rs = $tokenizerp[].consume()
+          lasti = tokenizerp[].tmp.len
+          tokenizerp[].tmp &= rs
+          s &= rs
+          return true
+        )
+        tokenizer.reconsume()
+        tokenizer.tmp.setLen(lasti)
+        if value.isOk:
           if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and peek_char in {'='} + AsciiAlpha:
             flush_code_points_consumed_as_a_character_reference
             switch_state tokenizer.rstate

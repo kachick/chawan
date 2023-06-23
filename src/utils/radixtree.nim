@@ -1,16 +1,15 @@
-# Radix tree implementation. It isn't that much faster than a hash table,
-# however it *is* faster.
+# Radix tree implementation.
 
-import json
-import options
 import tables
+
+import utils/opt
 
 type
   RadixPair[T] = tuple[k: string, v: RadixNode[T]]
 
   RadixNode*[T] = ref object
     children*: seq[RadixPair[T]]
-    value*: Option[T]
+    value*: Opt[T]
 
 func newRadixTree*[T](): RadixNode[T] =
   new(result)
@@ -60,7 +59,7 @@ iterator keys*[T](node: RadixNode[T]): string =
 
 # O(1) add procedures for insert
 proc add[T](node: RadixNode[T], k: string, v: T) =
-  node.children.add((k, RadixNode[T](value: v.some)))
+  node.children.add((k, RadixNode[T](value: opt(v))))
 
 proc add[T](node: RadixNode[T], k: string) =
   node.children.add((k, RadixNode[T]()))
@@ -123,7 +122,7 @@ proc `[]=`*[T](tree: RadixNode[T], key: string, value: T) =
     p.children.del(k)
   elif key.len == t.len:
     # new matches a node, so replace
-    p.children[k].v = RadixNode[T](value: value.some, children: n.children)
+    p.children[k].v = RadixNode[T](value: opt(value), children: n.children)
   elif key.len > t.len:
     # new is longer than the old, so add child to old
     n.add(key.substr(i), value)
@@ -161,3 +160,36 @@ func hasPrefix*[T](node: RadixNode[T], prefix: string): bool =
       return false
 
   return true
+
+proc find*[T](root: RadixNode[T], get: proc(s: var string): bool): Opt[T] =
+  var n = root
+  var buf = ""
+  var i = 0
+  var nexti = -1
+  var val = n.value
+  while get(buf):
+    if nexti == -1:
+      for j in 0 ..< n.children.len:
+        if n.children[j].k[0] == buf[0]:
+          nexti = j
+          break
+    if nexti == -1:
+      break # not found
+    # check if newly added characters match the next node
+    var k = i
+    while k < buf.len:
+      if n.children[nexti].k[k] != buf[k]:
+        break
+      inc k
+    if k == n.children[nexti].k.len: # buf.len >= next.len
+      n = n.children[nexti].v
+      nexti = -1
+      if n.value.isSome:
+        val = n.value
+      for l in k ..< buf.len:
+        buf[l - k] = buf[l]
+      buf.setLen(buf.len - k)
+      i = 0
+    elif k != buf.len:
+      break
+  return val
