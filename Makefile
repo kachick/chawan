@@ -30,7 +30,6 @@ $(OBJDIR)/%:
 	mkdir -p $@
 
 $(QJSOBJ)/%.o: lib/quickjs/%.c | $(QJSOBJ)
-	echo $@
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o $(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o | $(QJSOBJ)
