@@ -29,7 +29,7 @@ profile: lib/libquickjs.a $(OBJDIR)/profile
 $(OBJDIR)/%:
 	mkdir -p $@
 
-$(QJSOBJ)/%.o: lib/quickjs/%.c
+$(QJSOBJ)/%.o: lib/quickjs/%.c | $(QJSOBJ)
 	echo $@
 	$(CC) $(CFLAGS) -c -o $@ $<
 
