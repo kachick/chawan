@@ -69,6 +69,12 @@ template opt*[T](v: T): auto =
 template opt*(t: typedesc): auto =
   err(Result[t, void])
 
+template opt*[T, E: not void](r: Result[T, E]): Opt[T] =
+  if r.isOk:
+    Opt[T].ok(r.get)
+  else:
+    Opt[T].err()
+
 template isOk*(res: Result): bool = res.has
 template isErr*(res: Result): bool = not res.has
 template isSome*(res: Result): bool = res.isOk

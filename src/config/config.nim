@@ -26,32 +26,32 @@ type
   ActionMap = Table[string, string]
 
   StaticSiteConfig = object
-    url: Option[string]
-    host: Option[string]
-    rewrite_url: Option[string]
-    cookie: Option[bool]
+    url: Opt[string]
+    host: Opt[string]
+    rewrite_url: Opt[string]
+    cookie: Opt[bool]
     third_party_cookie: seq[string]
-    share_cookie_jar: Option[string]
-    referer_from*: Option[bool]
-    scripting: Option[bool]
+    share_cookie_jar: Opt[string]
+    referer_from*: Opt[bool]
+    scripting: Opt[bool]
     document_charset: seq[Charset]
-    images: Option[bool]
+    images: Opt[bool]
 
   StaticOmniRule = object
     match: string
     substitute_url: string
 
   SiteConfig* = object
-    url*: Option[Regex]
-    host*: Option[Regex]
+    url*: Opt[Regex]
+    host*: Opt[Regex]
     rewrite_url*: (proc(s: URL): Opt[URL])
-    cookie*: Option[bool]
+    cookie*: Opt[bool]
     third_party_cookie*: seq[Regex]
-    share_cookie_jar*: Option[string]
-    referer_from*: Option[bool]
-    scripting*: Option[bool]
+    share_cookie_jar*: Opt[string]
+    referer_from*: Opt[bool]
+    scripting*: Opt[bool]
     document_charset*: seq[Charset]
-    images*: Option[bool]
+    images*: Opt[bool]
 
   OmniRule* = object
     match*: Regex
@@ -69,7 +69,7 @@ type
     wrap*: bool
 
   EncodingConfig = object
-    display_charset*: Option[Charset]
+    display_charset*: Opt[Charset]
     document_charset*: seq[Charset]
 
   ExternalConfig = object
@@ -81,11 +81,11 @@ type
     prepend_https*: bool
 
   DisplayConfig = object
-    color_mode*: Option[ColorMode]
-    format_mode*: Option[FormatMode]
+    color_mode*: Opt[ColorMode]
+    format_mode*: Opt[FormatMode]
     no_format_mode*: FormatMode
     emulate_overline*: bool
-    alt_screen*: Option[bool]
+    alt_screen*: Opt[bool]
     highlight_color*: RGBAColor
     double_width_ambiguous*: bool
     minimum_contrast*: int32
@@ -165,9 +165,9 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       images: sc.images
     )
     if sc.url.isSome:
-      conf.url = compileRegex(sc.url.get, 0)
+      conf.url = opt(compileRegex(sc.url.get, 0))
     elif sc.host.isSome:
-      conf.host = compileRegex(sc.host.get, 0)
+      conf.host = opt(compileRegex(sc.host.get, 0))
     for rule in sc.third_party_cookie:
       conf.third_party_cookie.add(compileRegex(rule, 0).get)
     if sc.rewrite_url.isSome:
@@ -296,11 +296,11 @@ proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var Charset, v: TomlValue, k: string)
 proc parseConfigValue(x: var int32, v: TomlValue, k: string)
 proc parseConfigValue(x: var int64, v: TomlValue, k: string)
-proc parseConfigValue(x: var Option[ColorMode], v: TomlValue, k: string)
-proc parseConfigValue(x: var Option[FormatMode], v: TomlValue, k: string)
+proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string)
+proc parseConfigValue(x: var Opt[FormatMode], v: TomlValue, k: string)
 proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string)
 proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string)
-proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string)
+proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
 
@@ -362,26 +362,26 @@ proc parseConfigValue(x: var int64, v: TomlValue, k: string) =
   typeCheck(v, VALUE_INTEGER, k)
   x = v.i
 
-proc parseConfigValue(x: var Option[ColorMode], v: TomlValue, k: string) =
+proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string) =
   typeCheck(v, VALUE_STRING, k)
   case v.s
-  of "auto": x = none(ColorMode)
-  of "monochrome": x = some(MONOCHROME)
-  of "ansi": x = some(ANSI)
-  of "8bit": x = some(EIGHT_BIT)
-  of "24bit": x = some(TRUE_COLOR)
+  of "auto": x.err()
+  of "monochrome": x.ok(MONOCHROME)
+  of "ansi": x.ok(ANSI)
+  of "8bit": x.ok(EIGHT_BIT)
+  of "24bit": x.ok(TRUE_COLOR)
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
       "' for key " & k)
 
-proc parseConfigValue(x: var Option[FormatMode], v: TomlValue, k: string) =
+proc parseConfigValue(x: var Opt[FormatMode], v: TomlValue, k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt == VALUE_STRING and v.s == "auto":
-    x = none(FormatMode)
+    x.err()
   else:
     var y: FormatMode
     parseConfigValue(y, v, k)
-    x = some(y)
+    x.ok(y)
 
 proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
   typeCheck(v, VALUE_ARRAY, k)
@@ -408,13 +408,13 @@ proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
         "' for key " & k)
   x = c.get
 
-proc parseConfigValue[T](x: var Option[T], v: TomlValue, k: string) =
+proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string) =
   if v.vt == VALUE_STRING and v.s == "auto":
-    x = none(T)
+    x.err()
   else:
     var y: T
     parseConfigValue(y, v, k)
-    x = some(y)
+    x.ok(y)
 
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
   typeCheck(v, VALUE_TABLE, k)

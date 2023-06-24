@@ -12,6 +12,7 @@ import config/config
 import data/charset
 import display/client
 import ips/forkserver
+import utils/opt
 import utils/twtstr
 
 let conf = readConfig()
@@ -66,7 +67,7 @@ while i < params.len:
     echo version(true)
     quit(0)
   of "-M", "--monochrome":
-    conf.display.colormode = some(MONOCHROME)
+    conf.display.colormode.ok(MONOCHROME)
   of "-V", "--visual":
     visual = true
   of "-T", "--type":
@@ -92,7 +93,7 @@ while i < params.len:
       if c == CHARSET_UNKNOWN:
         stderr.write("Unknown charset " & params[i] & "\n")
         quit(1)
-      conf.encoding.display_charset = some(c)
+      conf.encoding.display_charset.ok(c)
     else:
       help(1)
   of "-":

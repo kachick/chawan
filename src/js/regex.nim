@@ -6,6 +6,7 @@ import unicode
 import bindings/libregexp
 import bindings/quickjs
 import js/javascript
+import utils/opt
 import utils/twtstr
 
 export
@@ -113,22 +114,21 @@ proc `=copy`*(dest: var Regex, source: Regex) =
 func `$`*(regex: Regex): string =
   regex.buf
 
-proc compileRegex*(buf: string, flags: int): Option[Regex] =
+proc compileRegex*(buf: string, flags: int): Result[Regex, string] =
   var regex: Regex
   var error_msg_size = 64
-  var error_msg = cast[cstring](alloc0(error_msg_size))
-  let bytecode = lre_compile(addr regex.plen, error_msg, cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags), dummyContext)
-  regex.buf = buf
-  if error_msg != nil:
-    #TODO error handling?
-    dealloc(error_msg)
-    error_msg = nil
+  var error_msg = newString(error_msg_size)
+  prepareMutation(error_msg)
+  let bytecode = lre_compile(addr regex.plen, cstring(error_msg),
+    cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags),
+    dummyContext)
   if bytecode == nil:
-    return none(Regex) # Failed to compile.
+    return err(error_msg.until('\0')) # Failed to compile.
+  regex.buf = buf
   regex.bytecode = bytecode
-  return some(regex)
+  return ok(regex)
 
-proc compileSearchRegex*(str: string): Option[Regex] =
+proc compileSearchRegex*(str: string): Result[Regex, string] =
   # Parse any applicable flags in regex/<flags>. The last forward slash is
   # dropped when <flags> is empty, and interpreted as a character when the
   # flags are is invalid.

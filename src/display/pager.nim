@@ -29,6 +29,7 @@ import types/color
 import types/cookie
 import types/dispatcher
 import types/url
+import utils/opt
 import utils/twtstr
 
 type
@@ -52,8 +53,8 @@ type
     username: string
     scommand*: string
     config: Config
-    regex: Option[Regex]
-    iregex: Option[Regex]
+    regex: Opt[Regex]
+    iregex: Opt[Regex]
     reverseSearch: bool
     statusgrid*: FixedGrid
     tty: File
@@ -696,12 +697,12 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
   case lineedit.state
   of CANCEL:
-    pager.iregex = none(Regex)
+    pager.iregex.err()
     pager.container.popCursorPos()
     pager.container.clearSearchHighlights()
   of EDIT:
     let x = $lineedit.news
-    if x != "": pager.iregex = compileSearchRegex(x)
+    if x != "": pager.iregex = opt(compileSearchRegex(x))
     pager.container.popCursorPos(true)
     if pager.iregex.isSome:
       pager.container.hlon = true
@@ -744,12 +745,12 @@ proc updateReadLine*(pager: Pager) =
       of BUFFER: pager.container.readSuccess(s)
       of SEARCH_F:
         let x = s
-        if x != "": pager.regex = compileSearchRegex(x)
+        if x != "": pager.regex = opt(compileSearchRegex(x))
         pager.reverseSearch = false
         pager.searchNext()
       of SEARCH_B:
         let x = s
-        if x != "": pager.regex = compileSearchRegex(x)
+        if x != "": pager.regex = opt(compileSearchRegex(x))
         pager.reverseSearch = true
         pager.searchNext()
       of GOTO_LINE:
