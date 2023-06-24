@@ -207,15 +207,20 @@ proc free*(rt: var JSRuntime) =
   runtimes.del(runtimes.find(rt))
   rt = nil
 
-proc setOpaque*[T](ctx: JSContext, val: JSValue, opaque: T) =
+proc setOpaque[T](ctx: JSContext, val: JSValue, opaque: T) =
   let rt = JS_GetRuntime(ctx)
   let rtOpaque = rt.getOpaque()
   let p = JS_VALUE_GET_PTR(val)
-  let header = cast[ptr JSRefCountHeader](p)
-  inc header.ref_count # add jsvalue reference
   rtOpaque.plist[cast[pointer](opaque)] = p
   JS_SetOpaque(val, cast[pointer](opaque))
   GC_ref(opaque)
+
+proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
+  # Add JSValue reference.
+  let p = JS_VALUE_GET_PTR(global)
+  let header = cast[ptr JSRefCountHeader](p)
+  inc header.ref_count
+  ctx.setOpaque(global, obj)
 
 func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
@@ -233,6 +238,15 @@ func getOpaque0*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, val.getClassID())
 
+func getGlobalOpaque[T](ctx: JSContext, val: JSValue): Opt[T] =
+  let global = JS_GetGlobalObject(ctx)
+  if JS_IsUndefined(val) or val == global:
+    let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
+    JS_FreeValue(ctx, global)
+    return ok(cast[T](opaque))
+  JS_FreeValue(ctx, global)
+  return err()
+
 func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
   # Unfortunately, we can't change the global object's class.
   #TODO: or maybe we can, but I'm afraid of breaking something.
@@ -244,8 +258,8 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
     return opaque
   return getOpaque0(val)
 
-func getOpaque*[T](ctx: JSContext, val: JSValue): pointer =
-  getOpaque(ctx, val, $T)
+func getOpaque*[T: ref object](ctx: JSContext, val: JSValue): T =
+  cast[T](getOpaque(ctx, val, $T))
 
 proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
   JS_SetInterruptHandler(rt, cb, opaque)
@@ -281,18 +295,7 @@ proc writeException*(ctx: JSContext, s: Stream) =
 # cannot reach 1 because of cycles. Not sure how to fix this, maybe a hack
 # with gc_mark could work?
 proc collectInteropCycles*(rt: JSRuntime) =
-  let rtOpaque = rt.getOpaque()
-  var rem: seq[pointer]
-  for nimp, jsp in rtOpaque.plist:
-    let nimRefCount = cast[ptr UncheckedArray[int]](nimp)[-2] shr 3
-    let jsRefCount = cast[ptr JSRefCountHeader](jsp).ref_count
-    if nimRefCount == 1 and jsRefCount == 1:
-      # This triggers the JS finalizer, which in turn frees the nim object.
-      let val = JS_MKPTR(JS_TAG_OBJECT, jsp)
-      JS_FreeValueRT(rt, val)
-      rem.add(nimp)
-  for p in rem:
-    rtOpaque.plist.del(p)
+  return
 
 proc runJSJobs*(rt: JSRuntime, err: Stream) =
   while JS_IsJobPending(rt):
@@ -350,6 +353,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
   if finalizer != nil:
+    #TODO this is wrong, classids are allocated per ctx, not rt
     rtOpaque.fins[result] = finalizer
   var proto: JSValue
   if parent != 0:
@@ -760,11 +764,15 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T] =
   elif T is ref object:
     if JS_IsException(val):
       return err()
-    let op = cast[T](getOpaque(ctx, val, $T))
-    if op == nil:
-      JS_ThrowTypeError(ctx, "Value is not an instance of %s", $T)
+    if JS_IsNull(val):
+      return ok(T(nil))
+    if ctx.isGlobal($T):
+      return getGlobalOpaque[T](ctx, val)
+    if not JS_IsObject(val):
+      JS_ThrowTypeError(ctx, "Value is not an object")
       return err()
-    return ok(op)
+    let op = getOpaque0(val)
+    return ok(cast[T](op))
   else:
     static:
       doAssert false
@@ -1606,12 +1614,13 @@ macro jsfuncn*(jsname: static string, fun: typed) =
     quote do:
       block `dl`:
         return ctx.toJS(`jfcl`)
-      return JS_UNDEFINED
+      return JS_ThrowTypeError(ctx, "Invalid parameters passed to function")
   else:
     quote do:
       block `dl`:
         `jfcl`
-      return JS_UNDEFINED
+        return JS_UNDEFINED
+      return JS_ThrowTypeError(ctx, "Invalid parameters passed to function")
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
@@ -1700,6 +1709,19 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             of "jsset": result.jsset.add(op)
             of "jsinclude": result.jsinclude.add(op)
 
+proc nim_finalize_for_js[T](obj: T) =
+  for rt in runtimes:
+    let rtOpaque = rt.getOpaque()
+    rtOpaque.plist.withValue(cast[pointer](obj), v):
+      let p = v[]
+      let val = JS_MKPTR(JS_TAG_OBJECT, p)
+      let classid = val.getClassID()
+      if classid in rtOpaque.fins:
+        rtOpaque.fins[classid](val)
+      JS_SetOpaque(val, nil)
+      rtOpaque.plist.del(cast[pointer](obj))
+      JS_FreeValueRT(rt, val)
+
 type
   TabGetSet* = object
     name*: string
@@ -1719,7 +1741,6 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
   let tname = t.strVal # the nim type's name.
   let name = if name == "": tname else: name # possibly a different name, e.g. Buffer for Container
   var sctr = ident("js_illegal_ctor")
-  var sfin = ident("js_" & tname & "ClassFin")
   # constructor
   var ctorFun: NimNode
   var ctorImpl: NimNode
@@ -1816,26 +1837,34 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     sctr = ctorFun
     result.add(ctorImpl)
 
-  let val = ident("val")
-  var finStmt = newStmtList()
   if finFun.kind != nnkNilLit:
-    finStmt = quote do:
-      let opaque = JS_GetOpaque(`val`, `val`.getClassID())
-      if opaque != nil:
-        `finFun`(cast[`t`](opaque))
     result.add(quote do:
-      proc `finName`(`val`: JSValue) =
-        `finStmt`
+      proc `finName`(val: JSValue) =
+        let opaque = JS_GetOpaque(val, val.getClassID())
+        if opaque != nil:
+          `finFun`(cast[`t`](opaque))
     )
 
+  let dfin = ident("js_" & tname & "ClassCheckDestroy")
   result.add(quote do:
-    proc `sfin`(rt: JSRuntime, `val`: JSValue) {.cdecl.} =
-      let opaque = JS_GetOpaque(`val`, `val`.getClassID())
+    proc `dfin`(rt: JSRuntime, val: JSValue): JS_BOOL {.cdecl.} =
+      let opaque = JS_GetOpaque(val, val.getClassID())
       if opaque != nil:
-        # This means the nim value is no longer referenced by anything but this
-        # JSValue. Meaning we can just unref it.
-        `finStmt` # run custom finalizer, if any
+        # Before this function is called, the ownership model is
+        # JSObject -> Nim object.
+        # Here we change it to Nim object -> JSObject.
+        # As a result, Nim object's reference count can now reach zero (it is
+        # no longer "referenced" by the JS object).
+        # nim_finalize_for_js will be invoked by the Nim GC when the Nim
+        # refcount reaches zero. Then, the JS object's opaque will be set
+        # to nil, and its refcount decreased again, so next time this function
+        # will return true.
         GC_unref(cast[`t`](opaque))
+        # Returning false from this function signals to the QJS GC that it
+        # should not be collected yet. Accordingly, the JSObject's refcount
+        # will be set to one again.
+        return false
+      return true
   )
 
   let endstmts = newStmtList()
@@ -1851,7 +1880,7 @@ static JSClassExoticMethods exotic = {
 };
 static JSClassDef """, `cdname`, """ = {
 	""", "\"", `name`, "\"", """,
-	.finalizer = """, `sfin`, """,
+        .can_destroy = """, `dfin`, """,
 	.exotic = &exotic
 };"""
       ].}
@@ -1862,7 +1891,10 @@ static JSClassDef """, `cdname`, """ = {
     )
   else:
     endstmts.add(quote do:
-      const cd = JSClassDef(class_name: `name`, finalizer: `sfin`)
+      const cd = JSClassDef(
+        class_name: `name`,
+        can_destroy: `dfin`
+      )
       let `classDef` = JSClassDefConst(unsafeAddr cd))
 
   endStmts.add(quote do:
@@ -1874,7 +1906,7 @@ static JSClassDef """, `cdname`, """ = {
     # We exploit this by setting a finalizer here, which can then unregister
     # any associated JS object from all relevant runtimes.
     var x: `t`
-    new(x)
+    new(x, nim_finalize_for_js)
     `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x),
       `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`)
   )

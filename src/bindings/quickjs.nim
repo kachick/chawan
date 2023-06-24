@@ -83,6 +83,7 @@ type
   JSClassID* = uint32
   JSAtom* = uint32
   JSClassFinalizer* = proc (rt: JSRuntime, val: JSValue) {.cdecl.}
+  JSClassCheckDestroy* = proc (rt: JSRuntime, val: JSValue): JS_BOOL {.cdecl.}
   JSClassGCMark* = proc (rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
   JS_MarkFunc* = proc (rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
   JSModuleNormalizeFunc* = proc(ctx: JSContext, module_base_name,
@@ -122,6 +123,7 @@ type
     gc_mark*: JSClassGCMark
     call*: pointer
     exotic*: JSClassExoticMethodsConst
+    can_destroy*: JSClassCheckDestroy
 
   JSClassDefConst* {.importc: "const JSClassDef *", header: qjsheader.} = ptr JSClassDef
 

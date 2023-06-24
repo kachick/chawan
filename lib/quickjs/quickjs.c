@@ -317,6 +317,8 @@ struct JSClass {
     JSClassCall *call;
     /* pointers for exotic behavior, can be NULL if none are present */
     const JSClassExoticMethods *exotic;
+    /* called before object would be destroyed */
+    JSClassCanDestroy *can_destroy;
 };
 
 #define JS_MODE_STRICT (1 << 0)
@@ -1266,6 +1268,10 @@ static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
 static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
                                                JSAtom atom, void *opaque);
 void JS_SetUncatchableError(JSContext *ctx, JSValueConst val, BOOL flag);
+
+static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
+                          JS_MarkFunc *mark_func);
+static void gc_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p);
 
 static const JSClassExoticMethods js_arguments_exotic_methods;
 static const JSClassExoticMethods js_string_exotic_methods;
@@ -3452,6 +3458,7 @@ static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
     cl->gc_mark = class_def->gc_mark;
     cl->call = class_def->call;
     cl->exotic = class_def->exotic;
+    cl->can_destroy = class_def->can_destroy;
     return 0;
 }
 
@@ -5469,6 +5476,23 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
     }
 }
 
+/* User-defined override for object destruction. */
+static int gc_can_destroy(JSRuntime *rt, JSGCObjectHeader *p)
+{
+    JSClassCanDestroy *can_destroy;
+    JSObject *obj;
+
+    if (p->gc_obj_type != JS_GC_OBJ_TYPE_JS_OBJECT)
+        return 1;
+    obj = (JSObject *)p;
+    can_destroy = rt->class_array[obj->class_id].can_destroy;
+    if (!can_destroy)
+        return 1;
+    if (!((*can_destroy)(rt, JS_MKPTR(JS_TAG_OBJECT, obj))))
+        return 0;
+    return 1;
+}
+
 static void free_zero_refcount(JSRuntime *rt)
 {
     struct list_head *el;
@@ -5522,6 +5546,10 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
         {
             JSGCObjectHeader *p = JS_VALUE_GET_PTR(v);
             if (rt->gc_phase != JS_GC_PHASE_REMOVE_CYCLES) {
+                if (!gc_can_destroy(rt, p)) {
+                    p->ref_count++;
+                    break;
+                }
                 list_del(&p->link);
                 list_add(&p->link, &rt->gc_zero_ref_count_list);
                 if (rt->gc_phase == JS_GC_PHASE_NONE) {
@@ -5742,8 +5770,9 @@ static void gc_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
 
 static void gc_scan(JSRuntime *rt)
 {
-    struct list_head *el;
+    struct list_head *el, *gc_head, *tmp_head, *gc_tail;
     JSGCObjectHeader *p;
+    int redo;
 
     /* keep the objects with a refcount > 0 and their children. */
     list_for_each(el, &rt->gc_obj_list) {
@@ -5752,7 +5781,34 @@ static void gc_scan(JSRuntime *rt)
         p->mark = 0; /* reset the mark for the next GC call */
         mark_children(rt, p, gc_scan_incref_child);
     }
-    
+
+    /* keep objects that cannot be destroyed yet */
+    /* TODO this is rather inefficient */
+    gc_head = &rt->gc_obj_list;
+    gc_tail = gc_head->prev;
+    tmp_head = &rt->tmp_obj_list;
+    do {
+        redo = 0;
+        for (el = tmp_head->next; el != tmp_head;) {
+            p = list_entry(el, JSGCObjectHeader, link);
+            el = el->next;
+            if (!gc_can_destroy(rt, p)) {
+                gc_scan_incref_child(rt, p);
+                redo = 1;
+                break;
+            }
+        }
+
+        /* keep children of newly appended objects */
+        for (el = gc_tail->next; el != gc_head; el = el->next) {
+            p = list_entry(el, JSGCObjectHeader, link);
+            assert(p->ref_count > 0);
+            p->mark = 0; /* reset the mark for the next GC call */
+            mark_children(rt, p, gc_scan_incref_child);
+        }
+        gc_tail = gc_head->prev;
+    } while(redo);
+
     /* restore the refcount of the objects to be deleted. */
     list_for_each(el, &rt->tmp_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);

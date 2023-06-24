@@ -59,6 +59,7 @@ type
     pager {.jsget.}: Pager
     line {.jsget.}: LineEdit
     config {.jsget.}: Config
+    store {.jsget, jsset.}: URL
     jsrt: JSRuntime
     jsctx: JSContext
     fdmap: Table[int, Container]
@@ -549,7 +550,7 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.pager = newPager(config, result.attrs, dispatcher, ctx)
   var global = JS_GetGlobalObject(ctx)
   ctx.registerType(Client, asglobal = true)
-  setOpaque(ctx, global, result)
+  setGlobal(ctx, global, result)
   ctx.setProperty(global, "client", global)
   JS_FreeValue(ctx, global)
 

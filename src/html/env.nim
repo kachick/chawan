@@ -110,7 +110,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   )
   var global = JS_GetGlobalObject(ctx)
   ctx.registerType(Window, asglobal = true)
-  ctx.setOpaque(global, window)
+  ctx.setGlobal(global, window)
   ctx.defineProperty(global, "window", global)
   JS_FreeValue(ctx, global)
   ctx.addDOMExceptionModule()
