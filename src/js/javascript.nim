@@ -128,11 +128,14 @@ func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
 var runtimes {.threadVar.}: seq[JSRuntime]
 
 proc newJSRuntime*(): JSRuntime =
-  result = JS_NewRuntime()
-  runtimes.add(result)
-  var opaque = new(JSRuntimeOpaque)
+  let rt = JS_NewRuntime()
+  let opaque = new(JSRuntimeOpaque)
   GC_ref(opaque)
-  JS_SetRuntimeOpaque(result, cast[pointer](opaque))
+  JS_SetRuntimeOpaque(rt, cast[pointer](opaque))
+  # Must be added after opaque is set, or there is a chance of
+  # nim_finalize_for_js dereferencing it (at the new call).
+  runtimes.add(rt)
+  return rt
 
 proc newJSContext*(rt: JSRuntime): JSContext =
   let ctx = JS_NewContext(rt)
