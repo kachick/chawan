@@ -101,3 +101,7 @@ previous page in all cases, without any complicated caching mechanism. It
 also opens up many interesting possibilities concering buffer organization;
 unfortunately, not much of that is implemented yet (except for basic tree
 traversal commands.)
+
+## License
+
+Chawan is dedicated to the public domain. See the UNLICENSE file for details.
