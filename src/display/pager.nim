@@ -54,7 +54,7 @@ type
     scommand*: string
     config: Config
     regex: Opt[Regex]
-    iregex: Opt[Regex]
+    iregex: Result[Regex, string]
     reverseSearch: bool
     statusgrid*: FixedGrid
     tty: File
@@ -693,6 +693,12 @@ proc commandMode(pager: Pager, val: bool) {.jsfset.} =
   if val:
     pager.command()
 
+proc checkRegex(pager: Pager, regex: Result[Regex, string]): Opt[Regex] =
+  if regex.isErr:
+    pager.alert("Invalid regex: " & regex.error)
+    return err()
+  return ok(regex.get)
+
 proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
   case lineedit.state
@@ -702,7 +708,7 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     pager.container.clearSearchHighlights()
   of EDIT:
     let x = $lineedit.news
-    if x != "": pager.iregex = opt(compileSearchRegex(x))
+    if x != "": pager.iregex = compileSearchRegex(x)
     pager.container.popCursorPos(true)
     if pager.iregex.isSome:
       pager.container.hlon = true
@@ -712,8 +718,7 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
         pager.container.cursorPrevMatch(pager.iregex.get, pager.config.search.wrap)
     pager.container.pushCursorPos()
   of FINISH:
-    if pager.iregex.isSome:
-      pager.regex = pager.iregex
+    pager.regex = pager.checkRegex(pager.iregex)
     pager.reverseSearch = linemode == ISEARCH_B
     pager.container.clearSearchHighlights()
     pager.redraw = true
@@ -743,15 +748,11 @@ proc updateReadLine*(pager: Pager) =
         if pager.commandMode:
           pager.command()
       of BUFFER: pager.container.readSuccess(s)
-      of SEARCH_F:
+      of SEARCH_F, SEARCH_B:
         let x = s
-        if x != "": pager.regex = opt(compileSearchRegex(x))
-        pager.reverseSearch = false
-        pager.searchNext()
-      of SEARCH_B:
-        let x = s
-        if x != "": pager.regex = opt(compileSearchRegex(x))
-        pager.reverseSearch = true
+        if x != "":
+          pager.regex = pager.checkRegex(compileSearchRegex(x))
+        pager.reverseSearch = pager.linemode == SEARCH_B
         pager.searchNext()
       of GOTO_LINE:
         pager.container.gotoLine(s)
