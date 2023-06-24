@@ -12,9 +12,10 @@ import config/config
 import data/charset
 import encoding/encoderstream
 import io/window
-import utils/chamath
-import utils/twtstr
 import types/color
+import utils/chamath
+import utils/opt
+import utils/twtstr
 
 #TODO switch from termcap...
 
@@ -57,6 +58,7 @@ type
     smcup: bool
     tc: Termcap
     tname: string
+    set_title: bool
 
 func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
 func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
@@ -327,7 +329,7 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
   term.cleared = false
 
 proc setTitle*(term: Terminal, title: string) =
-  if term.config.display.set_title:
+  if term.set_title:
     term.outfile.write(XTERM_TITLE(title))
 
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
@@ -453,6 +455,7 @@ proc applyConfig(term: Terminal) =
   if term.isatty():
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
+    term.set_title = term.config.display.set_title
   term.mincontrast = term.config.display.minimum_contrast
   if term.config.encoding.display_charset.isSome:
     term.cs = term.config.encoding.display_charset.get
