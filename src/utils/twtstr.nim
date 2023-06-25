@@ -721,19 +721,6 @@ func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitio
       return none(string) #error
   return some(labels.join('.'))
 
-#TODO this is stupid
-func isValidNonZeroInt*(str: string): bool =
-  if str.len == 0: return false
-  if str == "0": return false
-  for c in str:
-    if not c.isDigit():
-      return false
-  try:
-    discard parseInt(str)
-  except ValueError:
-    return false
-  true
-
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
   (0xC0, 0xD6),
