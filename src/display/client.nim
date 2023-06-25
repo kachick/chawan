@@ -537,6 +537,7 @@ proc sleep(client: Client, millis: int) {.jsfunc.} =
 
 proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   new(result)
+  setControlCHook(proc() {.noconv.} = quit(1))
   result.config = config
   result.dispatcher = dispatcher
   result.attrs = getWindowAttributes(stdout)

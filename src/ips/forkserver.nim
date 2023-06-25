@@ -60,6 +60,13 @@ proc removeChild*(forkserver: Forkserver, pid: Pid) =
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
+proc trapSIGINT() =
+  # trap SIGINT, so e.g. an external editor receiving an interrupt in the
+  # same process group can't just kill the process
+  # Note that the main process normally quits on interrupt (thus terminating
+  # all child processes as well).
+  setControlCHook(proc() {.noconv.} = discard)
+
 proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
@@ -67,6 +74,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   let pid = fork()
   if pid == 0:
     # child process
+    trapSIGINT()
     for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
@@ -109,9 +117,11 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     )
   )
   let pid = fork()
-  #if pid == -1:
-  #  raise newException(Defect, "Failed to fork process.")
+  if pid == -1:
+    raise newException(Defect, "Failed to fork process.")
   if pid == 0:
+    # child process
+    trapSIGINT()
     for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
@@ -191,6 +201,7 @@ proc newForkServer*(): ForkServer =
     raise newException(Defect, "Failed to fork the fork process.")
   elif pid == 0:
     # child process
+    trapSIGINT()
     discard close(pipefd_in[1]) # close write
     discard close(pipefd_out[0]) # close read
     discard close(pipefd_err[0]) # close read

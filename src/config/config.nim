@@ -75,6 +75,7 @@ type
   ExternalConfig = object
     tmpdir*: string
     editor*: string
+    editor_accept_sigint*: bool
 
   NetworkConfig = object
     max_redirect*: int32

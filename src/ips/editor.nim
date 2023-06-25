@@ -1,4 +1,5 @@
 import os
+import posix
 
 import config/config
 import display/term
@@ -29,6 +30,9 @@ func formatEditorName(editor, file: string, line: int): string =
       result &= ' '
     result &= file
 
+proc c_system(cmd: cstring): cint {.
+  importc: "system", header: "<stdlib.h>".}
+
 proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
   var editor = config.external.editor
   if editor == "":
@@ -37,7 +41,15 @@ proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
       editor = "vi %s +%d"
   let cmd = formatEditorName(editor, file, line)
   term.quit()
-  result = execShellCmd(cmd) == 0
+  let wstatus = c_system(cstring(cmd))
+  result = WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0
+  if not result:
+    # Hack.
+    #TODO this is a very bad idea, e.g. say the editor is writing into the
+    # file, then receives SIGINT, now the file is corrupted but Chawan will
+    # happily read it as if nothing happened.
+    # We should find a proper solution for this.
+    result = WIFSIGNALED(wstatus) and WTERMSIG(wstatus) == SIGINT
   term.restart()
 
 var tmpf_seq: int
