@@ -1581,12 +1581,10 @@ func formmethod*(element: Element): FormMethod =
   return FORM_METHOD_GET
 
 proc parseColor(element: Element, s: string): RGBAColor =
-  try:
-    return cssColor(parseComponentValue(newStringStream(s)))
-  except CSSValueError:
+  return cssColor(parseComponentValue(newStringStream(s)))
     #TODO TODO TODO return element style
     # For now we just use white.
-    return rgb(255, 255, 255)
+    .get(rgb(255, 255, 255))
 
 #TODO ??
 func target0*(element: Element): string =

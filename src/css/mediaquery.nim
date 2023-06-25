@@ -3,6 +3,7 @@ import tables
 
 import css/cssparser
 import css/values
+import utils/opt
 import utils/twtstr
 
 type
@@ -199,10 +200,10 @@ template expect_int_range(range: var Slice[int], ismin, ismax: bool) =
 
 template expect_length(length: var CSSLength) =
   let cval = parser.consume()
-  try:
-    length = cssLength(cval)
-  except CSSValueError:
+  let r = cssLength(cval)
+  if r.isErr:
     return nil
+  length = r.get
 
 template expect_length_range(range: var Slice[CSSLength], lengthaeq, lengthbeq:
     var bool, ismin, ismax: bool) =
