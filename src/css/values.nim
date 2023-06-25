@@ -571,8 +571,6 @@ func cssIdent[T](map: static Table[string, T], cval: CSSComponentValue):
       let val = tok.value
       if val in map:
         return ok(map[val])
-  when T is CSSDisplay:
-    eprint "invalid", cval
   return err("Invalid ident")
 
 func cssLength*(val: CSSComponentValue, has_auto: static bool = true,
