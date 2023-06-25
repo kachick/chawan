@@ -867,6 +867,12 @@ func `$`*(url: URL): string {.jsfunc.} = url.serialize()
 
 func `$`*(path: UrlPath): string {.inline.} = path.serialize()
 
+func isIP*(url: URL): bool =
+  if url.host.isNone:
+    return false
+  let host = url.host.get
+  return host.ipv4.isSome or host.ipv6.isSome
+
 #https://url.spec.whatwg.org/#concept-urlencoded-serializer
 proc parseApplicationXWWWFormUrlEncoded(input: string): seq[(string, string)] =
   for s in input.split('&'):

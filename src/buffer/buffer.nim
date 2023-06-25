@@ -669,7 +669,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
     result.redirect = response.redirect
     if "Set-Cookie" in response.headers.table:
       for s in response.headers.table["Set-Cookie"]:
-        let cookie = newCookie(s)
+        let cookie = newCookie(s, response.url)
         if cookie != nil:
           result.cookies.add(cookie)
     if "Referrer-Policy" in response.headers.table:
@@ -875,7 +875,7 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
       body.ok(serializePlainTextFormData(kvlist))
       mimetype = $enctype
     let req = newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype},
-      body)
+      body, multipart)
     return some(req) #TODO multipart
 
   template getActionUrl() =

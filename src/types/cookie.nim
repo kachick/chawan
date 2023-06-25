@@ -10,10 +10,10 @@ import utils/twtstr
 
 type
   Cookie* = ref object
+    created: int64 # unix time
     name {.jsget.}: string
     value {.jsget.}: string
     expires {.jsget.}: int64 # unix time
-    maxAge {.jsget.}: int64
     secure {.jsget.}: bool
     httponly {.jsget.}: bool
     samesite {.jsget.}: bool
@@ -116,32 +116,106 @@ proc `$`*(cookiejar: CookieJar): string =
   for cookie in cookiejar.cookies:
     result &= "Cookie "
     result &= $cookie[]
+    result &= "\n"
 
-proc serialize*(cookiejar: CookieJar, location: URL): string =
-  if not cookiejar.filter.match(location):
+# https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
+func defaultCookiePath(url: URL): string =
+  let path = ($url.path).beforeLast('/')
+  if path == "" or path[0] != '/':
+    return "/"
+  return path
+
+func cookiePathMatches(cookiePath, requestPath: string): bool =
+  if requestPath.startsWith(cookiePath):
+    if requestPath.len == cookiePath.len:
+      return true
+    if cookiePath[^1] == '/':
+      return true
+    if requestPath.len > cookiePath.len and requestPath[cookiePath.len] == '/':
+      return true
+  return false
+
+# I have no clue if this is actually compliant, because the spec is worded
+# so badly.
+# Either way, this implementation is needed for compatibility.
+# (Here is this part of the spec in its full glory:
+#   A string domain-matches a given domain string if at least one of the
+#   following conditions hold:
+#   o  The domain string and the string are identical.  (Note that both
+#      the domain string and the string will have been canonicalized to
+#      lower case at this point.)
+#   o  All of the following conditions hold:
+#      *  The domain string is a suffix of the string.
+#      *  The last character of the string that is not included in the
+#         domain string is a %x2E (".") character. (???)
+#      *  The string is a host name (i.e., not an IP address).)
+func cookieDomainMatches(cookieDomain: string, url: URL): bool =
+  let host = url.host
+  if host == cookieDomain:
+    return true
+  if url.isIP():
+    return false
+  let cookieDomain = if cookieDomain.len > 0 and cookieDomain[0] == '.':
+    cookieDomain.substr(1)
+  else:
+    cookieDomain
+  return host.endsWith(cookieDomain)
+
+proc add*(cookiejar: CookieJar, cookie: Cookie) =
+  var i = -1
+  for j in 0 ..< cookieJar.cookies.len:
+    let old = cookieJar.cookies[j]
+    if old.name == cookie.name and old.domain == cookie.domain and
+        old.path == cookie.path:
+      i = j
+      break
+  if i != -1:
+    let old = cookieJar.cookies[i]
+    cookie.created = old.created
+    cookieJar.cookies.del(i)
+  cookieJar.cookies.add(cookie)
+
+proc add*(cookiejar: CookieJar, cookies: seq[Cookie]) =
+  for cookie in cookies:
+    cookiejar.add(cookie)
+
+# https://www.rfc-editor.org/rfc/rfc6265#section-5.4
+proc serialize*(cookiejar: CookieJar, url: URL): string =
+  if not cookiejar.filter.match(url):
     return "" # fail
   let t = now().toTime().toUnix()
+  #TODO sort
   for i in countdown(cookiejar.cookies.high, 0):
     let cookie = cookiejar.cookies[i]
     if cookie.expires != -1 and cookie.expires <= t:
       cookiejar.cookies.delete(i)
-    elif cookie.domain == "" or location.host.endsWith(cookie.domain):
-      result.percentEncode(cookie.name, UserInfoPercentEncodeSet)
-      result &= "="
-      result.percentEncode(cookie.value, UserInfoPercentEncodeSet)
-      result &= ";"
+      continue
+    if cookie.secure and url.scheme != "https":
+      continue
+    if not cookiePathMatches(cookie.path, $url.path):
+      continue
+    if not cookieDomainMatches(cookie.domain, url):
+      continue
+    if result != "":
+      result &= "; "
+    result &= cookie.name
+    result &= "="
+    result &= cookie.value
 
-proc newCookie*(str: string): Cookie {.jsctor.} =
+proc newCookie*(str: string, url: URL = nil): Cookie {.jsctor.} =
   let cookie = new(Cookie)
   cookie.expires = -1
+  cookie.created = now().toTime().toUnix()
   var first = true
+  var haspath = false
+  var hasdomain = false
   for part in str.split(';'):
     if first:
       cookie.name = part.until('=')
       cookie.value = part.after('=')
       first = false
       continue
-    let part = percentDecode(part).strip(leading = true, trailing = false, AsciiWhitespace)
+    let part = part.strip(leading = true, trailing = false, AsciiWhitespace)
     var n = 0
     for i in 0..part.high:
       if part[i] == '=':
@@ -159,12 +233,29 @@ proc newCookie*(str: string): Cookie {.jsctor.} =
     of "max-age":
       let x = parseInt64(val)
       if x.isSome:
-        cookie.expires = now().toTime().toUnix() + x.get
+        cookie.expires = cookie.created + x.get
     of "secure": cookie.secure = true
     of "httponly": cookie.httponly = true
     of "samesite": cookie.samesite = true
-    of "path": cookie.path = val
-    of "domain": cookie.domain = val
+    of "path":
+      if val != "" and val[0] == '/':
+        haspath = true
+        cookie.path = val
+    of "domain":
+      if url == nil or cookieDomainMatches(val, url):
+        cookie.domain = val
+        hasdomain = true
+      else:
+        #TODO error, abort
+        hasdomain = false
+  if not hasdomain:
+    if url != nil:
+      cookie.domain = url.host
+  if not haspath:
+    if url == nil:
+      cookie.path = "/"
+    else:
+      cookie.path = defaultCookiePath(url)
   return cookie
 
 proc newCookieJar*(location: URL, allowhosts: seq[Regex]): CookieJar =
