@@ -292,9 +292,9 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
     for x in 0 ..< crow.len:
       let u = reader.uprow[i]
       let n = case reader.bitDepth
-      of 1: ((u shr (7 - j)) and 1) * 255
-      of 2: ((u shr (6 - j)) and 3) * 85
-      of 4: ((u shr (6 - j)) and 15) * 17
+      of 1: ((u shr (7 - j)) and 0x11) * 255
+      of 2: ((u shr (6 - j)) and 0x3) * 85
+      of 4: ((u shr (4 - j)) and 0xF) * 17
       of 8: u
       of 16: u # we ignore the lower 8 bits.
       else: 0
@@ -314,11 +314,22 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       i += step
       crow[x] = rgba(r, g, b, 255u8)
   of INDEXED_COLOR:
+    var i = 0
+    var j = 0
     for x in 0 ..< crow.len:
-      let i = int(reader.uprow[x])
-      if unlikely(i >= reader.palette.len):
+      let u = reader.uprow[i]
+      let n = case reader.bitDepth
+      of 1: ((u shr (7 - j)) and 0x1)
+      of 2: ((u shr (6 - j)) and 0x3)
+      of 4: ((u shr (4 - j)) and 0xF)
+      of 8: u
+      else: 0
+      j += int(reader.bitDepth)
+      i += j div 8
+      j = j mod 8
+      if unlikely(int(n) >= reader.palette.len):
         reader.err "invalid palette index"
-      crow[x] = reader.palette[i]
+      crow[x] = reader.palette[n]
   of GRAYSCALE_WITH_ALPHA:
     let step = int(reader.bitDepth) div 8
     var i = 0
