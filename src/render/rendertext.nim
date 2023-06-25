@@ -54,7 +54,7 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, len: in
   var n: int
   while true:
     n = renderer.decoder.readData(addr buf[0], buf.len * sizeof(buf[0]))
-    if renderer.decoder.failed:
+    if renderer.decoder.failed and renderer.charsets.len > 0:
       renderer.rewind()
       continue
     break
