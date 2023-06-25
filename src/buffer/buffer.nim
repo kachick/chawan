@@ -604,7 +604,10 @@ proc loadResources(buffer: Buffer): EmptyPromise =
   let document = buffer.document
   var promises: seq[EmptyPromise]
   if document.html != nil:
-    for elem in document.html.elements({TAG_LINK, TAG_IMG}):
+    var searchElems = {TAG_LINK}
+    if buffer.config.images:
+      searchElems.incl(TAG_IMG)
+    for elem in document.html.elements(searchElems):
       var p: EmptyPromise = nil
       case elem.tagType
       of TAG_LINK:
