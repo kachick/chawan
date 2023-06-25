@@ -19,6 +19,7 @@ type
     lines: seq[string]
 
   LineEdit* = ref object
+    isnew*: bool #TODO hack
     news*: seq[Rune]
     prompt*: string
     promptw: int
@@ -88,6 +89,8 @@ proc begin0(edit: LineEdit) =
 proc space(edit: LineEdit, i: int) =
   edit.term.write(' '.repeat(i))
 
+#TODO this is broken (e.g. it doesn't account for shift, but for other
+# reasons too)
 proc generateOutput*(edit: LineEdit): FixedGrid =
   result = newFixedGrid(edit.promptw + edit.maxwidth)
   var x = 0
@@ -134,7 +137,7 @@ proc zeroShiftRedraw(state: LineEdit) =
   state.displen = state.news.len
   state.redraw()
 
-proc fullRedraw(state: LineEdit) =
+proc fullRedraw*(state: LineEdit) =
   state.displen = state.news.len
   if state.cursor > state.shift:
     var shiftw = state.news.width(state.shift, state.cursor)
@@ -144,6 +147,9 @@ proc fullRedraw(state: LineEdit) =
   else:
     state.shift = max(state.cursor - 1, 0)
   state.redraw()
+
+proc drawPrompt*(edit: LineEdit) =
+  edit.term.write(edit.prompt)
 
 proc insertCharseq(edit: LineEdit, cs: var seq[Rune]) =
   let escNext = edit.escNext
@@ -340,7 +346,8 @@ proc readLine*(prompt: string, termwidth: int, current = "",
     minlen: prompt.width(),
     disallowed: disallowed,
     hide: hide,
-    term: term
+    term: term,
+    isnew: true
   )
   result.cursor = result.news.width()
   result.maxwidth = termwidth - result.promptw

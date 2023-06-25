@@ -359,13 +359,24 @@ proc draw*(pager: Pager) =
   if pager.askpromise != nil:
     discard
   elif pager.lineedit.isSome:
-    pager.term.writeGrid(pager.lineedit.get.generateOutput(), 0, pager.attrs.height - 1)
+    if pager.lineedit.get.isnew:
+      #TODO hack
+      # make term notice that it must redraw when status is restored
+      let x = newFixedGrid(pager.attrs.width)
+      pager.term.writeGrid(x, 0, pager.attrs.height - 1)
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
   pager.term.outputGrid()
   if pager.askpromise != nil:
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit.isSome:
+    if pager.lineedit.get.isnew:
+      #TODO hack
+      pager.term.setCursor(0, pager.attrs.height - 1)
+      pager.lineedit.get.drawPrompt()
+      pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
+      pager.lineedit.get.fullRedraw()
+      pager.lineedit.get.isnew = false
     pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
   else:
     pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
