@@ -670,8 +670,8 @@ proc setupSource(buffer: Buffer): ConnectResult =
     if "Set-Cookie" in response.headers.table:
       for s in response.headers.table["Set-Cookie"]:
         let cookie = newCookie(s, response.url)
-        if cookie != nil:
-          result.cookies.add(cookie)
+        if cookie.isOk:
+          result.cookies.add(cookie.get)
     if "Referrer-Policy" in response.headers.table:
       result.referrerpolicy = getReferrerPolicy(response.headers.table["Referrer-Policy"][0])
   buffer.istream = newTeeStream(buffer.istream, buffer.sstream, closedest = false)

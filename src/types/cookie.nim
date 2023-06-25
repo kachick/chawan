@@ -2,6 +2,7 @@ import strutils
 import times
 
 import io/urlfilter
+import js/exception
 import js/javascript
 import js/regex
 import types/url
@@ -202,7 +203,8 @@ proc serialize*(cookiejar: CookieJar, url: URL): string =
     result &= "="
     result &= cookie.value
 
-proc newCookie*(str: string, url: URL = nil): Cookie {.jsctor.} =
+proc newCookie*(str: string, url: URL = nil): Result[Cookie, JSError]
+    {.jsctor.} =
   let cookie = new(Cookie)
   cookie.expires = -1
   cookie.created = now().toTime().toUnix()
@@ -246,8 +248,7 @@ proc newCookie*(str: string, url: URL = nil): Cookie {.jsctor.} =
         cookie.domain = val
         hasdomain = true
       else:
-        #TODO error, abort
-        hasdomain = false
+        return err(newTypeError("Domains do not match"))
   if not hasdomain:
     if url != nil:
       cookie.domain = url.host
@@ -256,7 +257,7 @@ proc newCookie*(str: string, url: URL = nil): Cookie {.jsctor.} =
       cookie.path = "/"
     else:
       cookie.path = defaultCookiePath(url)
-  return cookie
+  return ok(cookie)
 
 proc newCookieJar*(location: URL, allowhosts: seq[Regex]): CookieJar =
   return CookieJar(
