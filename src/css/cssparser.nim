@@ -3,6 +3,8 @@ import streams
 import sugar
 import unicode
 
+import js/exception
+import utils/opt
 import utils/twtstr
 
 type
@@ -73,8 +75,6 @@ type
     value*: seq[CSSRule]
 
   CSSAnB* = tuple[A, B: int]
-
-  SyntaxError = object of ValueError
 
 # For debugging
 proc `$`*(c: CSSParsedItem): string =
@@ -519,7 +519,7 @@ proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
   of CSS_LBRACE_TOKEN: ending = CSS_RBRACE_TOKEN
   of CSS_LPAREN_TOKEN: ending = CSS_RPAREN_TOKEN
   of CSS_LBRACKET_TOKEN: ending = CSS_RBRACKET_TOKEN
-  else: raise newException(Exception, "Parse error!")
+  else: doAssert false
   
   result = CSSSimpleBlock(token: t)
   while state.at < state.tokens.len:
@@ -717,45 +717,49 @@ proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
       CSSParsedItem(cval)
   return state.parseListOfRules()
 
-proc parseRule(state: var CSSParseState): CSSRule =
+proc parseRule(state: var CSSParseState): Result[CSSRule, DOMException] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
-    raise newException(SyntaxError, "EOF reached!")
+    return err(newDOMException("Unexpected EOF", "SyntaxError"))
 
+  var res: CSSRule
   if state.peek() == CSS_AT_KEYWORD_TOKEN:
-    result = state.consumeAtRule()
+    res = state.consumeAtRule()
   else:
     let q = state.consumeQualifiedRule()
     if q.isSome:
-      result = q.get
+      res = q.get
     else:
-      raise newException(SyntaxError, "No qualified rule found!")
+      return err(newDOMException("No qualified rule found!", "SyntaxError"))
 
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if state.has():
-    raise newException(SyntaxError, "EOF not reached!")
+    return err(newDOMException("EOF not reached", "SyntaxError"))
+  return ok(res)
 
-proc parseRule(inputStream: Stream): CSSRule =
+proc parseRule*(inputStream: Stream): Result[CSSRule, DOMException] =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseRule()
 
-proc parseDeclaration(state: var CSSParseState): CSSDeclaration =
+proc parseDeclaration(state: var CSSParseState):
+    Result[CSSDeclaration, DOMException] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
 
   if not state.has() or state.peek() != CSS_IDENT_TOKEN:
-    raise newException(SyntaxError, "No ident token found!")
+    return err(newDOMException("No ident token found", "SyntaxError"))
 
   let d = state.consumeDeclaration()
   if d.isSome:
-    return d.get
+    return ok(d.get)
 
-  raise newException(SyntaxError, "No declaration found!")
+  return err(newDOMException("No declaration found", "SyntaxError"))
 
-proc parseDeclaration*(inputStream: Stream): CSSDeclaration =
+proc parseDeclaration*(inputStream: Stream):
+    Result[CSSDeclaration, DOMException] =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseDeclaration()
@@ -790,20 +794,23 @@ proc parseListOfDeclarations2*(inputStream: Stream): seq[CSSDeclaration] =
   state.tokens = tokenizeCSS(inputStream)
   return state.parseListOfDeclarations2()
 
-proc parseComponentValue(state: var CSSParseState): CSSComponentValue =
+proc parseComponentValue(state: var CSSParseState):
+    Result[CSSComponentValue, DOMException] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
-    raise newException(SyntaxError, "EOF reached!")
+    return err(newDOMException("Unexpected EOF", "SyntaxError"))
 
-  result = state.consumeComponentValue()
+  let res = state.consumeComponentValue()
 
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if state.has():
-    raise newException(SyntaxError, "EOF not reached!")
+    return err(newDOMException("EOF not reached", "SyntaxError"))
+  return ok(res)
 
-proc parseComponentValue*(inputStream: Stream): CSSComponentValue =
+proc parseComponentValue*(inputStream: Stream):
+    Result[CSSComponentValue, DOMException] =
   var state: CSSParseState
   state.tokens = tokenizeCSS(inputStream)
   return state.parseComponentValue()
