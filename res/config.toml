@@ -14,7 +14,6 @@ display-charset = "auto"
 [external]
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
-editor-accept-sigint = false
 
 [network]
 max-redirect = 10
