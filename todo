@@ -1,0 +1,109 @@
+compilation:
+- reduce binary size (gzip data/*?)
+- improve compilation times (it's sloooow... we could probably speed up the js
+  macros somehow, also the html parser/tokenizer?)
+charsets:
+- set up some fuzzer
+- use appropriate charsets in forms, urls, etc.
+- JS TextEncoder interface
+docs:
+- manpage
+display:
+- important: add a virtual cursor (in some terminals, the real cursor is
+  often obscured by white background color)
+- important: buffer list
+	* either a buffer list buffer, or a buffer list popup menu. ideally
+	  both.
+- configurable default background color
+- dark mode (basically max Y)
+config:
+- important: config editor
+- working js interface
+buffer:
+- important: incremental html parsing
+	* also, do not needlessly copy in onload
+- important: validate returned values
+	* do not block container when receiving buffer data; if invalid, kill
+	  buffer
+	* this also includes not crashing when the buffer dies while
+	  container is reading...
+- important: add sandboxing
+	* also, other security stuff:
+		- configurable/better url filtering in loader
+		- make peekCursor show the entire url
+- buffer cloning: fork buffer process instead of piping source
+- disable "reinterpret as html" for the log buffer
+- when the log buffer crashes, print its contents to stderr
+	* make console.err a TeeStream, and tee it to a StringStream that
+	  buffers up to 4KB
+- add highlighting, copy
+- add buffer groups
+- add option to write source to a file, instead of keeping it in memory
+- hex viewer
+- xhtml
+- better horizontal line handling: allow viewing content positioned before page
+  start, handle long lines, etc
+- do not prompt when submitting forms (it's annoying)
+	* this is mostly fixed, but not completely
+network:
+- implement readablestream
+- implement XHR
+- ftp/sftp
+- gopher
+- gemini? (not a fan, but quite a bit of interesting content is on gemini)
+- uBO integration? (or at least implement filter lists)
+- socks/http proxies (just settings needed...)
+- websockets (curl supports ws)
+- integrate curl-impersonate (LD_PRELOAD works, but still...)
+- non-curl http? (could at least do 1.1)
+external:
+- something like EXTERN
+- mime type handling and external viewers (e.g. open sound with mpv...)
+- local cgi, external filters (e.g. rdrview, pandoc convert, ...)
+- history, bookmarks (w3m format)
+- save buffer (source, output)
+- edit buffer (local file, or whatever we downloaded)
+javascript:
+- important: check where to use defineProperty and setProperty
+- important: callbacks leak memory, I think. fix this (e.g. have a ref
+  JSCallback or something)
+- add support for JS mixins
+- distinguish double from unrestricted double
+- "javascript:" urls
+- better dom support, events
+	* more concretely: get jQuery and basic click events to work
+- XMLHttpRequest, ideally also fetch
+- make document accessible from client console? (maybe a bad idea
+  security-wise, but it would sure be convenient...)
+	* alternative idea: 
+- implement JS access to non-ref object members (with a ptr opaque + GC_ref
+  on parent object or something)
+layout engine:
+- important: floats (way too many websites look very ugly without them)
+- make background-color a property of inline boxes, not words. (this would
+  require implementing actual inline boxes)
+- table rowspan
+	* there's already a `growing' list in table context, just use that...
+- overflow
+- incremental layout & layout caching
+	* first for tree generation, then for layout.
+- LayoutUnit (for greater precision)
+- more replaced elements: iframe, select
+	* for select we should have a built-in dropdown list, like w3m. then
+	  we could use that for buffer selection too
+- writing-mode, flexbox, grid, ruby, ... (i.e. cool new stuff)
+images:
+- sixel encoding (eventually also kitty)
+- more formats (apng, gif: write own decoders, jpeg: use libjpeg, webp: ?)
+- incremental decoding (maybe implement streams first?)
+- separate image decoder process? or just run on a different thread?
+- or just do it like w3m? (counterpoint: w3m's image handling is dumb and
+  often doesn't even work/is very slow)
+etc:
+- important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
+- tests (including aforementioned fuzzer)
+- orc support:
+	* go through copyMem & c library calls and add prepareMutation
+	  where necessary (for orc)
+	* use =destroy hooks instead of nim_finalize_for_js
+- maybe windows support? (blocker: needs a windows machine)
