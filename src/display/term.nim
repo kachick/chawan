@@ -210,16 +210,18 @@ proc getRGB(a: CellColor, bg: bool): RGBColor =
       return ColorsRGB["black"]
     else:
       return ColorsRGB["white"]
+  elif a.color >= 16:
+    return eightBitToRGB(EightBitColor(a.color))
   return ANSIColorMap[a.color mod 10]
 
 # Use euclidian distance to quantize RGB colors.
-proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
+proc approximateANSIColor(rgb: RGBColor): ANSIColor =
   var a = 0u16
   var n = -1
   for i in 0 .. ANSIColorMap.high:
-    if i == exclude: continue
     let color = ANSIColorMap[i]
-    if color == rgb: return i
+    if color == rgb:
+      return ANSIColor(i)
     let x = uint16(absSub(color.r, rgb.r)) ^ 2
     let y = uint16(absSub(color.g, rgb.b)) ^ 2
     let z = uint16(absSub(color.g, rgb.g)) ^ 2
@@ -227,10 +229,11 @@ proc approximateANSIColor(rgb: RGBColor, exclude = -1): int =
     if n == -1 or b < a:
       n = i
       a = b
-  return n
+  return ANSIColor(n)
 
 # Return a fgcolor contrasted to the background by contrast.
-proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int): CellColor =
+proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int,
+    colormode: ColorMode): CellColor =
   let cfgcolor = fgcolor
   let bgcolor = getRGB(bgcolor, true)
   let fgcolor = getRGB(fgcolor, false)
@@ -251,9 +254,15 @@ proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int): CellColor =
         if fgY < 0:
           fgY = 255
     let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
-    if cfgcolor.rgb:
-      return newrgb.cellColor()
-    return ColorsANSIFg[approximateANSIColor(newrgb)]
+    case colormode
+    of TRUECOLOR:
+      return cellColor(newrgb)
+    of ANSI:
+      return cellColor(approximateANSIColor(newrgb))
+    of EIGHT_BIT:
+      return cellColor(rgbToEightBit(newrgb))
+    of MONOCHROME:
+      doAssert false
   return cfgcolor
 
 proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
@@ -264,33 +273,40 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
 
   var cellf = cellf
   case term.colormode
-  of ANSI, EIGHT_BIT:
+  of ANSI:
     if cellf.bgcolor.rgb:
       let color = approximateANSIColor(cellf.bgcolor.rgbcolor)
-      if color == 0: # black
+      if color == ANSI_BLACK:
         cellf.bgcolor = defaultColor
       else:
-        cellf.bgcolor = ColorsANSIBg[color]
+        cellf.bgcolor = cellColor(color)
     if cellf.fgcolor.rgb:
       if cellf.bgcolor == defaultColor:
         var color = approximateANSIColor(cellf.fgcolor.rgbcolor)
-        if color == 0:
-          color = 7
-        if color == 7: # white
+        if color == ANSI_BLACK:
+          color = ANSI_WHITE
+        if color == ANSI_WHITE:
           cellf.fgcolor = defaultColor
         else:
-          cellf.fgcolor = ColorsANSIFg[color]
+          cellf.fgcolor = cellColor(color)
       else:
-        cellf.fgcolor = if int(cellf.bgcolor.color) - 40 < 4:
+        cellf.fgcolor = if cellf.bgcolor.color < 4:
           defaultColor
         else:
-          ColorsANSIFg[7]
+          cellColor(ANSI_WHITE) # white
+  of EIGHT_BIT:
+    if cellf.bgcolor.rgb:
+      cellf.bgcolor = cellColor(rgbToEightBit(cellf.bgcolor.rgbcolor))
+    if cellf.fgcolor.rgb:
+      cellf.fgcolor = cellColor(rgbToEightBit(cellf.fgcolor.rgbcolor))
   of MONOCHROME:
     cellf.fgcolor = defaultColor
     cellf.bgcolor = defaultColor
   of TRUE_COLOR: discard
 
-  cellf.fgcolor = correctContrast(cellf.bgcolor, cellf.fgcolor, term.mincontrast)
+  if term.colormode != MONOCHROME:
+    cellf.fgcolor = correctContrast(cellf.bgcolor, cellf.fgcolor,
+      term.mincontrast, term.colormode)
   if cellf.fgcolor != format.fgcolor and cellf.fgcolor == defaultColor or
       cellf.bgcolor != format.bgcolor and cellf.bgcolor == defaultColor:
     result &= term.resetFormat()
@@ -299,22 +315,34 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor
     if color.rgb:
+      assert term.colormode == TRUECOLOR
       let rgb = color.rgbcolor
       result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
       discard
     else:
-      result &= SGR(color.color)
+      let n = color.color
+      if n < 8:
+        result &= SGR(30 + n)
+      else:
+        assert term.colormode in {TRUECOLOR, EIGHT_BIT}
+        result &= SGR(38, 5, n)
 
   if cellf.bgcolor != format.bgcolor:
     var color = cellf.bgcolor
     if color.rgb:
+      assert term.colormode == TRUECOLOR
       let rgb = color.rgbcolor
       result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
       discard
     else:
-      result &= SGR(color.color)
+      let n = color.color
+      if n < 8:
+        result &= SGR(40 + n)
+      else:
+        assert term.colormode in {TRUECOLOR, EIGHT_BIT}
+        result &= SGR(48, 5, n)
 
   for flag in FormatFlags:
     if flag in term.formatmode:

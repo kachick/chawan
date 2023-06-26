@@ -12,6 +12,10 @@ type
 
   RGBAColor* = distinct uint32
 
+  ANSIColor* = distinct uint8
+
+  EightBitColor* = distinct uint8
+
   CellColor* = object
     rgb*: bool
     n: uint32
@@ -24,6 +28,8 @@ converter toRGBAColor*(i: RGBColor): RGBAColor =
 
 func `==`*(a, b: RGBAColor): bool {.borrow.}
 
+func `==`*(a, b: ANSIColor): bool {.borrow.}
+
 func rgbcolor*(color: CellColor): RGBColor =
   cast[RGBColor](color.n)
 
@@ -33,32 +39,25 @@ func color*(color: CellColor): uint8 =
 func cellColor*(rgb: RGBColor): CellColor =
   return CellColor(rgb: true, n: uint32(rgb))
 
-func cellColor*(c: uint8): CellColor =
+func cellColor*(c: ANSIColor): CellColor =
+  return CellColor(rgb: false, n: uint32(c) mod 10)
+
+#TODO maybe bright ANSI colors? (8..15)
+
+func cellColor*(c: EightBitColor): CellColor =
   return CellColor(rgb: false, n: uint32(c))
 
 const defaultColor* = CellColor(rgb: false, n: 0)
 
-const ColorsANSIFg* = [
-  CellColor(rgb: false, n: 30), # black
-  CellColor(rgb: false, n: 31), # red
-  CellColor(rgb: false, n: 32), # green
-  CellColor(rgb: false, n: 33), # yellow
-  CellColor(rgb: false, n: 34), # blue
-  CellColor(rgb: false, n: 35), # magenta
-  CellColor(rgb: false, n: 36), # cyan
-  CellColor(rgb: false, n: 37), # white
-]
-
-const ColorsANSIBg* = [
-  CellColor(rgb: false, n: 40), # black
-  CellColor(rgb: false, n: 41), # red
-  CellColor(rgb: false, n: 42), # green
-  CellColor(rgb: false, n: 43), # yellow
-  CellColor(rgb: false, n: 44), # blue
-  CellColor(rgb: false, n: 45), # magenta
-  CellColor(rgb: false, n: 46), # cyan
-  CellColor(rgb: false, n: 47), # white
-]
+const
+  ANSI_BLACK* = ANSIColor(0u8)
+  ANSI_RED* = ANSIColor(1u8)
+  ANSI_GREEN* = ANSIColor(2u8)
+  ANSI_YELLOW* = ANSIColor(3u8)
+  ANSI_BLUE* = ANSIColor(4u8)
+  ANSI_MAGENTA* = ANSIColor(5u8)
+  ANSI_CYAN* = ANSIColor(6u8)
+  ANSI_WHITE* = ANSIColor(7u8)
 
 const ColorsRGB* = {
   "aliceblue": 0xf0f8ff,
@@ -372,6 +371,39 @@ func rgba*(r, g, b, a: int): RGBAColor =
 
 func gray*(n: uint8): RGBColor =
   return rgb(n, n, n) #TODO use yuv instead?
+
+# NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
+func eightBitToRGB*(param0: EightBitColor): RGBColor =
+  doAssert uint8(param0) notin 0u8..15u8
+  let u = uint8(param0)
+  if u in 16u8..231u8:
+    #16 + 36 * r + 6 * g + b
+    let n = u - 16
+    let r = cast[uint8](int(n div 36) * 255 div 5)
+    let m = int(n mod 36)
+    let g = cast[uint8](((m div 6) * 255) div 5)
+    let b = cast[uint8](((m mod 6) * 255) div 5)
+    return rgb(r, g, b)
+  else: # 232..255
+    let n = (u - 232) * 10 + 8
+    return gray(n)
+
+func rgbToEightBit*(rgb: RGBColor): EightBitColor =
+  let r = int(rgb.r)
+  let g = int(rgb.g)
+  let b = int(rgb.b)
+  # Idea from here: https://github.com/Qix-/color-convert/pull/75
+  # This seems to work about as well as checking for
+  # abs(U - 128) < 5 & abs(V - 128 < 5), but is definitely faster.
+  if r shr 4 == g shr 4 and g shr 4 == b shr 4:
+    if r < 8:
+      return EightBitColor(16)
+    if r > 248:
+      return EightBitColor(231)
+    return EightBitColor(cast[uint8](((r - 8 * 24) div 247) + 232))
+  #16 + 36 * r + 6 * g + b
+  return EightBitColor(cast[uint8](16 + 36 * (r * 5 div 255) +
+    6 * (g * 5 div 255) + (b * 5 div 255)))
 
 template `$`*(rgbcolor: RGBColor): string =
   "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"

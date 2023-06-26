@@ -43,7 +43,7 @@ func newLineHistory*(): LineHistory =
 
 const colorFormat = (func(): Format =
   result = newFormat()
-  result.fgcolor = ColorsANSIFg[4] # blue
+  result.fgcolor = cellColor(ANSI_BLUE)
 )()
 const defaultFormat = newFormat()
 proc printesc(edit: LineEdit, rs: seq[Rune]) =
