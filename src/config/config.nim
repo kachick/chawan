@@ -36,6 +36,7 @@ type
     scripting: Opt[bool]
     document_charset: seq[Charset]
     images: Opt[bool]
+    stylesheet: Opt[string]
 
   StaticOmniRule = object
     match: string
@@ -52,6 +53,7 @@ type
     scripting*: Opt[bool]
     document_charset*: seq[Charset]
     images*: Opt[bool]
+    stylesheet*: Opt[string]
 
   OmniRule* = object
     match*: Regex
@@ -137,12 +139,11 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
     ambiguous_double: config.display.double_width_ambiguous
   )
 
-proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar = nil,
-      headers: Headers = nil, referer_from = false, scripting = false,
-      charsets = config.encoding.document_charset,
-      images = false): BufferConfig =
+proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
+    headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
+    images: bool, userstyle: string): BufferConfig =
   result = BufferConfig(
-    userstyle: config.css.stylesheet,
+    userstyle: userstyle,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
     cookiejar: cookiejar,
     headers: headers,

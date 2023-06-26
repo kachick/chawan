@@ -417,6 +417,16 @@ Defaults to false.
 in [encoding].</td>
 </tr>
 
+<tr>
+<td>stylesheet</td>
+<td>CSS stylesheet</td>
+<td>Specify an additional user-stylesheet for this site.  
+Note: other user-stylesheets (specified under [css] or additional matching
+siteconfs) are not overridden. (In other words, they will be concatenated
+with this stylesheet to get the final user stylesheet.)</td>
+</tr>
+
+
 </table>
 
 ## Stylesheets

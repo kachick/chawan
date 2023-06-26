@@ -562,30 +562,32 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
     pager.writeAskPrompt()
   pager.refreshStatusMsg()
 
-proc applySiteconf(pager: Pager, request: Request): BufferConfig =
-  let url = $request.url
-  let host = request.url.host
+# Apply siteconf settings to a request.
+# Note that this may modify the URL passed.
+proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
+  let host = url.host
   var referer_from: bool
   var cookiejar: CookieJar
   var headers: Headers
   var scripting: bool
   var images: bool
   var charsets = pager.config.encoding.document_charset
+  var userstyle = pager.config.css.stylesheet
   for sc in pager.siteconf:
-    if sc.url.isSome and not sc.url.get.match(url):
+    if sc.url.isSome and not sc.url.get.match($url):
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
       continue
     if sc.rewrite_url != nil:
-      let s = sc.rewrite_url(request.url)
+      let s = sc.rewrite_url(url)
       if s.isSome and s.get != nil:
-        request.url = s.get
+        url = s.get
     if sc.cookie.isSome:
       if sc.cookie.get:
         # host/url might have changed by now
-        let jarid = sc.share_cookiejar.get(request.url.host)
+        let jarid = sc.share_cookiejar.get(url.host)
         if jarid notin pager.cookiejars:
-          pager.cookiejars[jarid] = newCookieJar(request.url,
+          pager.cookiejars[jarid] = newCookieJar(url,
             sc.third_party_cookie)
         cookiejar = pager.cookiejars[jarid]
       else:
@@ -598,8 +600,11 @@ proc applySiteconf(pager: Pager, request: Request): BufferConfig =
       charsets = sc.document_charset
     if sc.images.isSome:
       images = sc.images.get
-  return pager.config.getBufferConfig(request.url, cookiejar, headers,
-    referer_from, scripting, charsets)
+    if sc.stylesheet.isSome:
+      userstyle &= "\n"
+      userstyle &= sc.stylesheet.get
+  return pager.config.getBufferConfig(url, cookiejar, headers,
+    referer_from, scripting, charsets, images, userstyle)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
@@ -607,7 +612,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.referer_from:
     request.referer = referrer.source.location
-  var bufferconfig = pager.applySiteconf(request)
+  var bufferconfig = pager.applySiteconf(request.url)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpmethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
@@ -681,14 +686,15 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
 
 proc readPipe0*(pager: Pager, ctype: Option[string], cs: Option[Charset],
     fd: FileHandle, location: Option[URL], title: string): Container =
+  var location = location.get(newURL("file://-").get)
+  let bufferconfig = pager.applySiteconf(location)
   let source = BufferSource(
     t: LOAD_PIPE,
     fd: fd,
     contenttype: some(ctype.get("text/plain")),
     charset: cs,
-    location: location.get(newURL("file://-").get)
+    location: location
   )
-  let bufferconfig = pager.config.getBufferConfig(source.location)
   return pager.dispatcher.newBuffer(bufferconfig, source, title = title)
 
 proc readPipe*(pager: Pager, ctype: Option[string], cs: Option[Charset],
