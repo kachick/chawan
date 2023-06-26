@@ -339,6 +339,13 @@ rewrite-url = '''
 	/* No need to return; URL objects are passed by reference. */
 }
 '''
+
+# Allow cookie sharing on *sr.ht domains.
+[[siteconf]]
+host = '^.*sr\.ht$'
+cookie = true
+share-cookie-jar = 'sr.ht'
+third-party-cookie = '^.*\.sr.ht$'
 ```
 
 Siteconf options:
