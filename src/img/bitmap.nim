@@ -1,10 +1,6 @@
 import types/color
 
 type
-  CanvasFillRule* = enum
-    NON_ZERO = "nonzero"
-    EVEN_ODD = "evenodd"
-
   Bitmap* = ref object of RootObj
     px*: seq[RGBAColor]
     width*: uint64

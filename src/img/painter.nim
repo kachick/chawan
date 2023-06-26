@@ -9,6 +9,10 @@ import types/color
 import types/line
 import types/vector
 
+type CanvasFillRule* = enum
+  NON_ZERO = "nonzero"
+  EVEN_ODD = "evenodd"
+
 # https://en.wikipedia.org/wiki/Bresenham's_line_algorithm#All_cases
 proc plotLineLow(bmp: Bitmap, x0, y0, x1, y1: int64, color: RGBAColor) =
   var dx = x1 - x0
