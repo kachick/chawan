@@ -1,5 +1,5 @@
 compilation:
-- reduce binary size (gzip data/*?)
+- reduce binary size (maybe gzip data/*?)
 - improve compilation times (it's sloooow... we could probably speed up the js
   macros somehow, also the html parser/tokenizer?)
 charsets:
@@ -75,7 +75,7 @@ javascript:
 - XMLHttpRequest, ideally also fetch
 - make document accessible from client console? (maybe a bad idea
   security-wise, but it would sure be convenient...)
-	* alternative idea: 
+	* alternative idea: separate console for each buffer
 - implement JS access to non-ref object members (with a ptr opaque + GC_ref
   on parent object or something)
 layout engine:
