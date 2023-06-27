@@ -287,21 +287,12 @@ proc writeException*(ctx: JSContext, s: Stream) =
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 
-# Detect cases where both a js object's and the corresponding nim
-# object's refcount is one.
-# TODO TODO TODO this still leaks memory in case the ref count of either object
-# cannot reach 1 because of cycles. Not sure how to fix this, maybe a hack
-# with gc_mark could work?
-proc collectInteropCycles*(rt: JSRuntime) =
-  return
-
 proc runJSJobs*(rt: JSRuntime, err: Stream) =
   while JS_IsJobPending(rt):
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, addr ctx)
     if r == -1:
       ctx.writeException(err)
-  rt.collectInteropCycles()
 
 func isInstanceOf*(ctx: JSContext, obj: JSValue, class: string): bool =
   let clazz = ctx.getClass(class)
@@ -351,7 +342,6 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
   if finalizer != nil:
-    #TODO this is wrong, classids are allocated per ctx, not rt
     rtOpaque.fins[result] = finalizer
   var proto: JSValue
   if parent != 0:
