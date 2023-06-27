@@ -322,6 +322,7 @@ proc JS_NewPromiseCapability*(ctx: JSContext, resolving_funcs: ptr JSValue): JSV
 proc JS_SetOpaque*(obj: JSValue, opaque: pointer)
 proc JS_GetOpaque*(obj: JSValue, class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext, obj: JSValue, class_id: JSClassID): pointer
+proc JS_GetClassID*(obj: JSValue): JSClassID
 proc JS_ParseJSON*(ctx: JSContext, buf: cstring, buf_len: csize_t, filename: cstring): JSValue
 proc JS_ParseJSON2*(ctx: JSContext, buf: cstring, buf_len: csize_t,
   filename: cstring, flags: cint): JSValue

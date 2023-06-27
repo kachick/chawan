@@ -231,17 +231,10 @@ func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
   return ctx.getOpaque().gclaz == class
 
-# A hack to retrieve a given val's class id.
-func getClassID*(val: JSValue): JSClassID =
-  const index = sizeof(cint) + # gc_ref_count
-              sizeof(uint8) + # gc_mark
-              sizeof(uint8) # bit field
-  return cast[ptr uint16](cast[int](JS_VALUE_GET_PTR(val)) + index)[]
-
 # getOpaque, but doesn't work for global objects.
 func getOpaque0*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
-    return JS_GetOpaque(val, val.getClassID())
+    return JS_GetOpaque(val, JS_GetClassID(val))
 
 func getGlobalOpaque[T](ctx: JSContext, val: JSValue): Opt[T] =
   let global = JS_GetGlobalObject(ctx)
@@ -1720,7 +1713,7 @@ proc nim_finalize_for_js[T](obj: T) =
     rtOpaque.plist.withValue(cast[pointer](obj), v):
       let p = v[]
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
-      let classid = val.getClassID()
+      let classid = JS_GetClassID(val)
       if classid in rtOpaque.fins:
         rtOpaque.fins[classid](val)
       JS_SetOpaque(val, nil)
@@ -1845,7 +1838,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
   if finFun.kind != nnkNilLit:
     result.add(quote do:
       proc `finName`(val: JSValue) =
-        let opaque = JS_GetOpaque(val, val.getClassID())
+        let opaque = JS_GetOpaque(val, JS_GetClassID(val))
         if opaque != nil:
           `finFun`(cast[`t`](opaque))
     )
@@ -1853,7 +1846,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
   let dfin = ident("js_" & tname & "ClassCheckDestroy")
   result.add(quote do:
     proc `dfin`(rt: JSRuntime, val: JSValue): JS_BOOL {.cdecl.} =
-      let opaque = JS_GetOpaque(val, val.getClassID())
+      let opaque = JS_GetOpaque(val, JS_GetClassID(val))
       if opaque != nil:
         # Before this function is called, the ownership model is
         # JSObject -> Nim object.
