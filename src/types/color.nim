@@ -36,6 +36,9 @@ func rgbcolor*(color: CellColor): RGBColor =
 func color*(color: CellColor): uint8 =
   cast[uint8](color.n)
 
+func eightbit*(color: CellColor): EightBitColor =
+  EightBitColor(color.color)
+
 func cellColor*(rgb: RGBColor): CellColor =
   return CellColor(rgb: true, n: uint32(rgb))
 

@@ -274,6 +274,12 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   var cellf = cellf
   case term.colormode
   of ANSI:
+    if not cellf.bgcolor.rgb and cellf.bgcolor.color > 15:
+      let color = cellf.bgcolor.eightbit
+      cellf.bgcolor = cellColor(eightBitToRGB(color))
+    if not cellf.fgcolor.rgb and cellf.fgcolor.color > 15:
+      let color = cellf.fgcolor.eightbit
+      cellf.fgcolor = cellColor(eightBitToRGB(color))
     if cellf.bgcolor.rgb:
       let color = approximateANSIColor(cellf.bgcolor.rgbcolor)
       if color == ANSI_BLACK:
