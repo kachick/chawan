@@ -89,7 +89,7 @@ type
   JSContextOpaque* = ref object
     creg: Table[string, JSClassID]
     typemap: Table[pointer, JSClassID]
-    ctors: Table[JSClassID, JSValue] #TODO TODO TODO free these
+    ctors: Table[JSClassID, JSValue]
     gclaz: string
     sym_refs: array[JSSymbolRefs, JSAtom]
     str_refs: array[JSStrRefs, JSAtom]
@@ -196,6 +196,8 @@ proc free*(ctx: var JSContext) =
       JS_FreeAtom(ctx, a)
     for a in opaque.str_refs:
       JS_FreeAtom(ctx, a)
+    for classid, v in opaque.ctors:
+      JS_FreeValue(ctx, v)
     JS_FreeValue(ctx, opaque.Array_prototype_values)
     for v in opaque.err_ctors:
       JS_FreeValue(ctx, v)

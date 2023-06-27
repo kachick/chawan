@@ -59,7 +59,7 @@ type
     pager {.jsget.}: Pager
     line {.jsget.}: LineEdit
     config {.jsget.}: Config
-    store {.jsget, jsset.}: URL
+    store {.jsget, jsset.}: Document
     jsrt: JSRuntime
     jsctx: JSContext
     fdmap: Table[int, Container]
@@ -150,6 +150,13 @@ proc quit(client: Client, code = 0) {.jsfunc.} =
   if client.alive:
     client.alive = false
     client.pager.quit()
+    let ctx = client.jsctx
+    var global = JS_GetGlobalObject(ctx)
+    JS_FreeValue(ctx, global)
+    if client.jsctx != nil:
+      free(client.jsctx)
+    if client.jsrt != nil:
+      free(client.jsrt)
   quit(code)
 
 proc feedNext(client: Client) {.jsfunc.} =
