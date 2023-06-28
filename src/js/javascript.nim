@@ -399,6 +399,8 @@ func getMinArgs(params: seq[FuncParam]): int =
   return params.len
 
 func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Opt[T] =
+  if not JS_IsNumber(val):
+    return err()
   when T is int:
     # Always int32, so we don't risk 32-bit only breakage.
     # If int64 is needed, specify it explicitly.
@@ -431,6 +433,14 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue): Opt[T] =
     if JS_ToUint32(ctx, addr ret, val) < 0:
       return err()
     return ok(cast[uint64](ret))
+
+proc fromJSFloat[T: SomeFloat](ctx: JSContext, val: JSValue): Opt[T] =
+  if not JS_IsNumber(val):
+    return err()
+  var f64: float64
+  if JS_ToFloat64(ctx, addr f64, val) < 0:
+    return err()
+  return ok(cast[T](f64))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T]
 
@@ -673,44 +683,85 @@ macro unpackArg0(f: typed) =
   let rvv = rv[1]
   result = quote do: `rvv`
 
+proc fromJSChar(ctx: JSContext, val: JSValue): Opt[char] =
+  let s = ?toString(ctx, val)
+  if s.len > 1:
+    return err()
+  return ok(s[0])
+
+proc fromJSRune(ctx: JSContext, val: JSValue): Opt[Rune] =
+  let s = ?toString(ctx, val)
+  var i = 0
+  var r: Rune
+  fastRuneAt(s, i, r)
+  if i < s.len:
+    return err()
+  return ok(r)
+
+template optionType[T](o: type Option[T]): auto =
+  T
+
+# wrap
+proc fromJSOption[T](ctx: JSContext, val: JSValue): Opt[Option[T]] =
+  if JS_IsUndefined(val):
+    #TODO what about null?
+    return err()
+  let res = ?fromJS[T](ctx, val)
+  return ok(some(res))
+
+# unwrap
+proc fromJSOpt[T](ctx: JSContext, val: JSValue): Opt[T] =
+  if JS_IsUndefined(val):
+    #TODO what about null?
+    return err()
+  let res = ?fromJS[T](ctx, val)
+  return ok(res)
+
+proc fromJSBool(ctx: JSContext, val: JSValue): Opt[bool] =
+  let ret = JS_ToBool(ctx, val)
+  if ret == -1: # exception
+    return err()
+  if ret == 0:
+    return ok(false)
+  return ok(true)
+
+proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): Opt[T] =
+  if JS_IsException(val):
+    return err()
+  let s = ?toString(ctx, val)
+  try:
+    return ok(parseEnum[T](s))
+  except ValueError:
+    JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s",
+      cstring(s), $T)
+    return err()
+
+proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Opt[T] =
+  if JS_IsException(val):
+    return err()
+  if JS_IsNull(val):
+    return ok(T(nil))
+  if ctx.isGlobal($T):
+    return getGlobalOpaque[T](ctx, val)
+  if not JS_IsObject(val):
+    JS_ThrowTypeError(ctx, "Value is not an object")
+    return err()
+  let op = getOpaque0(val)
+  return ok(cast[T](op))
+
 proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T] =
   when T is string:
     return toString(ctx, val)
   elif T is char:
-    let s = toString(ctx, val)
-    if s.isNone:
-      return none(char)
-    if s.get.len > 1:
-      return none(char)
-    return some(s.get[0])
+    return fromJSChar(ctx, val)
   elif T is Rune:
-    let s = toString(ctx, val)
-    if s.isNone:
-      return none(Rune)
-    var i = 0
-    var r: Rune
-    fastRuneAt(s.get, i, r)
-    if i < s.get.len:
-      return none(Rune)
-    return some(r)
+    return fromJSRune(ctx, val)
   elif T is (proc):
     return fromJSFunction1[typeof(unpackReturnType(T)), typeof(unpackArg0(T))](ctx, val)
-  elif T is Option: # convert
-    if JS_IsUndefined(val):
-      #TODO what about null?
-      return err()
-    let res = fromJS[typeof(result.get.get)](ctx, val)
-    if res.isNone:
-      return err()
-    return ok(some(res.get))
-  elif typeof(result).valType is Opt: # unwrap
-    if JS_IsUndefined(val):
-      #TODO what about null?
-      return err()
-    let res = fromJS[typeof(T.valType)](ctx, val)
-    if res.isNone:
-      return err()
-    return ok(res)
+  elif T is Option:
+    return fromJSOption[optionType(T)](ctx, val)
+  elif T is Opt: # unwrap
+    return fromJSOpt[T](ctx, val)
   elif T is seq:
     return fromJSSeq[typeof(result.get.items)](ctx, val)
   elif T is set:
@@ -718,49 +769,19 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T] =
   elif T is tuple:
     return fromJSTuple[T](ctx, val)
   elif T is bool:
-    let ret = JS_ToBool(ctx, val)
-    if ret == -1: # exception
-      return err()
-    if ret == 0:
-      return ok(false)
-    return ok(true)
+    return fromJSBool(ctx, val)
   elif typeof(result).valType is Table:
     return fromJSTable[typeof(result.get.keys), typeof(result.get.values)](ctx, val)
   elif T is SomeInteger:
-    if JS_IsNumber(val):
-      return fromJSInt[T](ctx, val)
+    return fromJSInt[T](ctx, val)
   elif T is SomeFloat:
-    if JS_IsNumber(val):
-      var f64: float64
-      if JS_ToFloat64(ctx, addr f64, val) < 0:
-        return err()
-      return ok(cast[T](f64))
+    return fromJSFloat[T](ctx, val)
   elif T is enum:
-    #TODO implement enum handling...
-    if JS_IsException(val):
-      return err()
-    let s = toString(ctx, val)
-    if s.isErr:
-      return err()
-    try:
-      return ok(parseEnum[T](s.get))
-    except ValueError:
-      JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s", cstring(s.get), $T)
-      return err()
+    return fromJSEnum[T](ctx, val)
   elif T is JSValue:
     return ok(val)
   elif T is ref object:
-    if JS_IsException(val):
-      return err()
-    if JS_IsNull(val):
-      return ok(T(nil))
-    if ctx.isGlobal($T):
-      return getGlobalOpaque[T](ctx, val)
-    if not JS_IsObject(val):
-      JS_ThrowTypeError(ctx, "Value is not an object")
-      return err()
-    let op = getOpaque0(val)
-    return ok(cast[T](op))
+    return fromJSObject[T](ctx, val)
   else:
     static:
       doAssert false

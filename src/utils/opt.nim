@@ -101,6 +101,9 @@ template `?`*[T, E](res: Result[T, E]): auto =
     when typeof(result) is Result[T, E]:
       return x
     elif typeof(result).errType is E:
-      return err(x.error)
+      when E is void:
+        return err()
+      else:
+        return err(x.error)
     else:
       return err()
