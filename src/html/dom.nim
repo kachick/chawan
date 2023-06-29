@@ -1660,7 +1660,8 @@ func newText(document: Document, data: string): Text =
     index: -1
   )
 
-func newText(window: Window, data: string = ""): Text {.jsgctor.} =
+func newText(ctx: JSContext, data = ""): Text {.jsctor.} =
+  let window = ctx.getGlobalOpaque(Window).get
   return window.document.newText(data)
 
 func newCDATASection(document: Document, data: string): CDATASection =
@@ -1687,7 +1688,8 @@ func newDocumentFragment(document: Document): DocumentFragment =
     index: -1
   )
 
-func newDocumentFragment(window: Window): DocumentFragment {.jsgctor.} =
+func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
+  let window = ctx.getGlobalOpaque(Window).get
   return window.document.newDocumentFragment()
 
 func newComment(document: Document, data: string): Comment =
@@ -1698,7 +1700,8 @@ func newComment(document: Document, data: string): Comment =
     index: -1
   )
 
-func newComment(window: Window, data: string = ""): Comment {.jsgctor.} =
+func newComment(ctx: JSContext, data: string = ""): Comment {.jsctor.} =
+  let window = ctx.getGlobalOpaque(Window).get
   return window.document.newComment(data)
 
 #TODO custom elements

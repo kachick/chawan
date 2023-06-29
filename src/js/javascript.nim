@@ -236,7 +236,7 @@ func getOpaque0*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
 
-func getGlobalOpaque[T](ctx: JSContext, val: JSValue): Opt[T] =
+func getGlobalOpaque*(ctx: JSContext, T: typedesc, val: JSValue = JS_UNDEFINED): Opt[T] =
   let global = JS_GetGlobalObject(ctx)
   if JS_IsUndefined(val) or val == global:
     let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
@@ -742,7 +742,7 @@ proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Opt[T] =
   if JS_IsNull(val):
     return ok(T(nil))
   if ctx.isGlobal($T):
-    return getGlobalOpaque[T](ctx, val)
+    return getGlobalOpaque(ctx, T, val)
   if not JS_IsObject(val):
     JS_ThrowTypeError(ctx, "Value is not an object")
     return err()
@@ -1477,25 +1477,6 @@ macro jsctor*(fun: typed) =
   if gen.newName.strVal in existing_funcs:
     #TODO TODO TODO implement function overloading
     error("Function overloading hasn't been implemented yet...")
-  gen.addRequiredParams()
-  gen.addOptionalParams()
-  gen.finishFunCallList()
-  let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      return ctx.toJS(`jfcl`)
-    return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
-  discard gen.newJSProc(getJSParams())
-  gen.registerConstructor()
-  result = newStmtList(fun)
-
-macro jsgctor*(fun: typed) =
-  var gen = setupGenerator(fun, CONSTRUCTOR, thisname = none(string))
-  if gen.newName.strVal in existing_funcs:
-    #TODO TODO TODO implement function overloading
-    error("Function overloading hasn't been implemented yet...")
-  gen.addFixParam("this")
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
