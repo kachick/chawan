@@ -155,8 +155,8 @@ proc quit(client: Client, code = 0) {.jsfunc.} =
     JS_FreeValue(ctx, global)
     if client.jsctx != nil:
       free(client.jsctx)
-    if client.jsrt != nil:
-      free(client.jsrt)
+    #if client.jsrt != nil:
+    #  free(client.jsrt)
   quit(code)
 
 proc feedNext(client: Client) {.jsfunc.} =
