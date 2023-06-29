@@ -858,7 +858,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       return false
   of ANCHOR:
     var url2 = newURL(container.source.location)
-    url2.hash(event.anchor)
+    url2.setHash(event.anchor)
     pager.addContainer(pager.dupeContainer(container, url2))
   of NO_ANCHOR:
     pager.alert("Couldn't find anchor " & event.anchor)

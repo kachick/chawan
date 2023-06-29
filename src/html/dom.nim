@@ -90,16 +90,21 @@ type
       discard #TODO
 
 type
+  Location = ref object
+    window: Window
+
   Window* = ref object
     attrs*: WindowAttributes
     console* {.jsget.}: console
     navigator* {.jsget.}: Navigator
     settings*: EnvironmentSettings
     loader*: Option[FileLoader]
+    location* {.jsget.}: Location
     jsrt*: JSRuntime
     jsctx*: JSContext
     document* {.jsget.}: Document
     timeouts*: TimeoutState[int]
+    navigate*: proc(url: URL)
 
   # Navigator stuff
   Navigator* = ref object
@@ -172,8 +177,7 @@ type
   Document* = ref object of Node
     charset*: Charset
     window*: Window
-    url*: URL #TODO expose as URL (capitalized)
-    location* {.jsget.}: URL #TODO should be location
+    url* {.jsget: "URL".}: URL
     mode*: QuirksMode
     currentScript: HTMLScriptElement
     isxml*: bool
@@ -1080,6 +1084,131 @@ func item(collection: HTMLCollection, i: int): Element {.jsfunc.} =
 
 func getter(collection: HTMLCollection, i: int): Option[Element] {.jsgetprop.} =
   return option(collection.item(i))
+
+proc newLocation*(window: Window): Location =
+  let location = Location(window: window)
+  let ctx = window.jsctx
+  if ctx != nil:
+    let val = toJS(ctx, location)
+    let valueOf = ctx.getOpaque().Object_prototype_valueOf
+    defineProperty(ctx, val, "valueOf", valueOf)
+    defineProperty(ctx, val, "toPrimitive", JS_UNDEFINED)
+    #TODO [[DefaultProperties]]
+    JS_FreeValue(ctx, val)
+  return location
+
+func location(document: Document): Location {.jsfget.} =
+  return document.window.location
+
+func document(location: Location): Document =
+  return location.window.document
+
+func url(location: Location): URL =
+  let document = location.document
+  if document != nil:
+    return document.url
+  return newURL("about:blank").get
+
+proc setLocation*(document: Document, s: string): Err[DOMException]
+    {.jsfset: "location".} =
+  let url = parseURL(s)
+  if url.isNone:
+    return err(newDOMException("Invalid URL", "SyntaxError"))
+  document.window.navigate(url.get)
+  return ok()
+
+# Note: we do not implement security checks (as documents are in separate
+# windows anyway).
+func href(location: Location): string {.jsfget.} =
+  return location.url.serialize()
+
+proc href(location: Location, s: string): Err[DOMException] {.jsfset.} =
+  if location.document == nil:
+    return ok()
+  return location.document.setLocation(s)
+
+func origin(location: Location): string {.jsfget.} =
+  return location.url.origin
+
+func protocol(location: Location): string {.jsfget.} =
+  return location.url.protocol
+
+proc protocol(location: Location, s: string): Err[DOMException] {.jsfset.} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setProtocol(s)
+  if copyURL.scheme != "http" and copyURL.scheme != "https":
+    return err(newDOMException("Invalid URL", "SyntaxError"))
+  document.window.navigate(copyURL)
+  return ok()
+
+func host(location: Location): string {.jsfget.} =
+  return location.url.host
+
+proc setHost(location: Location, s: string) {.jsfset: "host".} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setHost(s)
+  document.window.navigate(copyURL)
+
+proc hostname(location: Location): string {.jsfget.} =
+  return location.url.hostname
+
+proc setHostname(location: Location, s: string) {.jsfset: "hostname".} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setHostname(s)
+  document.window.navigate(copyURL)
+
+proc port(location: Location): string {.jsfget.} =
+  return location.url.port
+
+proc setPort(location: Location, s: string) {.jsfset: "port".} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setPort(s)
+  document.window.navigate(copyURL)
+
+proc pathname(location: Location): string {.jsfget.} =
+  return location.url.pathname
+
+proc setPathname(location: Location, s: string) {.jsfset: "pathname".} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setPathname(s)
+  document.window.navigate(copyURL)
+
+proc search(location: Location): string {.jsfget.} =
+  return location.url.search
+
+proc setSearch(location: Location, s: string) {.jsfset: "search".} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setSearch(s)
+  document.window.navigate(copyURL)
+
+proc hash(location: Location): string {.jsfget.} =
+  return location.url.hash
+
+proc setHash(location: Location, s: string) {.jsfset: "hash".} =
+  let document = location.document
+  if document == nil:
+    return
+  let copyURL = newURL(location.url)
+  copyURL.setHash(s)
+  document.window.navigate(copyURL)
 
 func newAttr(parent: Element, localName, value: string, prefix = "", namespaceURI = ""): Attr =
   return Attr(
@@ -2838,6 +2967,7 @@ proc addDOMModule*(ctx: JSContext) =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
   ctx.registerType(NodeList)
   ctx.registerType(HTMLCollection)
+  ctx.registerType(Location)
   ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(DOMImplementation)
   ctx.registerType(DOMTokenList)

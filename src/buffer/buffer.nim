@@ -337,6 +337,10 @@ func cursorBytes(buffer: Buffer, y: int, cc: int): int =
     w += r.twidth(w)
   return i
 
+proc navigate(buffer: Buffer, url: URL) =
+  #TODO how?
+  eprint "navigate to", url
+
 proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
   if cursory >= buffer.lines.len: return (-1, -1)
   let line = buffer.lines[cursory]
@@ -1241,7 +1245,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, buffer.selector,
-      buffer.attrs, some(buffer.loader))
+      buffer.attrs, proc(url: URL) = buffer.navigate(url), some(buffer.loader))
   let socks = connectSocketStream(mainproc, false)
   socks.swrite(getpid())
   buffer.pstream = socks

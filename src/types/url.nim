@@ -11,7 +11,7 @@ import types/blob
 import utils/twtstr
 
 type
-  UrlState = enum
+  URLState = enum
     SCHEME_START_STATE, SCHEME_STATE, NO_SCHEME_STATE, FILE_STATE,
     SPECIAL_RELATIVE_OR_AUTHORITY_STATE, SPECIAL_AUTHORITY_SLASHES_STATE,
     PATH_OR_AUTHORITY_STATE, OPAQUE_PATH_STATE, FRAGMENT_STATE, RELATIVE_STATE,
@@ -342,7 +342,8 @@ template canHaveUsernamePasswordPort(url: URL): bool =
   url.host.issome and url.host.get.serialize() != "" and url.scheme != "file"
 
 #TODO encoding
-proc basicParseUrl*(input: string, base = none(Url), url: Url = Url(), stateOverride = none(UrlState)): Option[Url] =
+proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
+    stateOverride = none(URLState)): Option[Url] =
   #TODO If input contains any leading or trailing C0 control or space, validation error.
   #TODO If input contains any ASCII tab or newline, validation error.
   let input = input.strip(true, false, {chr(0x00)..chr(0x1F), ' '}).strip(true, false, {'\t', '\n'})
@@ -732,7 +733,8 @@ func anchor*(url: Url): string =
     return url.fragment.get
   return ""
 
-proc parseURL*(input: string, base = none(Url), url: var Url, override = none(UrlState)): Option[Url] =
+proc parseURL*(input: string, base = none(Url), url: var URL,
+    override = none(URLState)): Option[URL] =
   var url = basicParseUrl(input, base, url, override)
   if url.isnone:
     return url
@@ -741,7 +743,7 @@ proc parseURL*(input: string, base = none(Url), url: var Url, override = none(Ur
   url.get.blob = BlobUrlEntry().some
   return url
 
-proc parseURL*(input: string, base = none(Url), override = none(UrlState)): Option[Url] =
+proc parseURL*(input: string, base = none(Url), override = none(URLState)): Option[Url] =
   var url = Url().some
   url = basicParseUrl(input, base, url.get, override)
   if url.isnone:
@@ -867,6 +869,30 @@ func `$`*(url: URL): string {.jsfunc.} = url.serialize()
 
 func `$`*(path: UrlPath): string {.inline.} = path.serialize()
 
+func href(url: URL): string {.jsfget.} =
+  return $url
+
+func toJSON(url: URL): string {.jsfget.} =
+  return $url
+
+# from a to b
+proc cloneInto(a, b: URL) =
+  b[] = a[]
+  if a.searchParams != nil: #TODO ideally this would never be false
+    b.searchParams = URLSearchParams()
+    b.searchParams[] = a.searchParams[]
+    b.searchParams.url = some(b)
+
+proc newURL*(url: URL): URL =
+  new(result)
+  url.cloneInto(result)
+
+proc setHref(url: URL, s: string): Err[JSError] {.jsfset: "href".} =
+  let purl = basicParseUrl(s)
+  if purl.isNone:
+    return err(newTypeError(s & " is not a valid URL"))
+  purl.get.cloneInto(url)
+
 func isIP*(url: URL): bool =
   if url.host.isNone:
     return false
@@ -961,14 +987,6 @@ proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
         first = false
         params.list[i][1] = value
 
-proc newURL*(url: URL): URL =
-  new(result)
-  result[] = url[]
-  if url.searchParams != nil: #TODO ideally this would never be false
-    result.searchParams = URLSearchParams()
-    result.searchParams[] = url.searchParams[]
-    result.searchParams.url = some(result)
-
 proc newURL*(s: string, base: Option[string] = none(string)):
     Result[URL, JSError] {.jsctor.} =
   if base.issome:
@@ -1026,15 +1044,16 @@ proc origin*(url: URL): string {.jsfget.} =
 proc protocol*(url: URL): string {.jsfget.} =
   return url.scheme & ':'
 
-proc protocol*(url: URL, s: string) {.jsfset.} =
-  discard basicParseUrl(s & ':', url = url, stateOverride = some(SCHEME_START_STATE))
+proc setProtocol*(url: URL, s: string) {.jsfset: "protocol".} =
+  discard basicParseUrl(s & ':', url = url,
+    stateOverride = some(SCHEME_START_STATE))
 
-proc username*(url: URL, username: string) {.jsfset.} =
+proc username(url: URL, username: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.username = username.percentEncode(UserInfoPercentEncodeSet)
 
-proc password*(url: URL, password: string) {.jsfset.} =
+proc password(url: URL, password: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.password = password.percentEncode(UserInfoPercentEncodeSet)
@@ -1046,16 +1065,26 @@ proc host*(url: URL): string {.jsfget.} =
     return url.host.get.serialize()
   return url.host.get.serialize() & ':' & $url.port.get
 
-proc host*(url: URL, s: string) {.jsfset.} =
+proc setHost*(url: URL, s: string) {.jsfset: "host".} =
   if url.path.opaque:
     return
   discard basicParseUrl(s, url = url, stateOverride = some(HOST_STATE))
+
+proc hostname*(url: URL): string {.jsfget.} =
+  if url.host.isNone:
+    return ""
+  return url.host.get.serialize()
+
+proc setHostname*(url: URL, s: string) {.jsfset: "hostname".} =
+  if url.path.opaque:
+    return
+  discard basicParseUrl(s, url = url, stateOverride = some(HOSTNAME_STATE))
 
 proc port*(url: URL): string {.jsfget.} =
   if url.port.issome:
     return $url.port.get
 
-proc port*(url: URL, s: string) {.jsfset.} =
+proc setPort*(url: URL, s: string) {.jsfset: "port".} =
   if not url.canHaveUsernamePasswordPort:
     return
   if s == "":
@@ -1066,7 +1095,7 @@ proc port*(url: URL, s: string) {.jsfset.} =
 proc pathname*(url: URL): string {.jsfget.} =
   return url.path.serialize()
 
-proc pathname*(url: URL, s: string) {.jsfset.} =
+proc setPathname*(url: URL, s: string) {.jsfset: "pathname".} =
   if url.path.opaque:
     return
   url.path.ss.setLen(0)
@@ -1077,7 +1106,7 @@ proc search*(url: URL): string {.jsfget.} =
     return ""
   return "?" & url.query.get
 
-proc search*(url: URL, s: string) {.jsfset.} =
+proc setSearch*(url: URL, s: string) {.jsfset: "search".} =
   if s == "":
     url.query = none(string)
     url.searchParams.list.setLen(0)
@@ -1092,7 +1121,7 @@ proc hash*(url: URL): string {.jsfget.} =
     return ""
   return '#' & url.fragment.get
 
-proc hash*(url: URL, s: string) {.jsfset.} =
+proc setHash*(url: URL, s: string) {.jsfset: "hash".} =
   if s == "":
     url.fragment = none(string)
     return

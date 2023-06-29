@@ -94,6 +94,7 @@ type
     sym_refs: array[JSSymbolRefs, JSAtom]
     str_refs: array[JSStrRefs, JSAtom]
     Array_prototype_values: JSValue
+    Object_prototype_valueOf*: JSValue
     err_ctors: array[JSErrorEnum, JSValue]
     dummy_ref_proto: JSValue
 
@@ -156,11 +157,15 @@ proc newJSContext*(rt: JSRuntime): JSContext =
       for s in JSStrRefs:
         let ss = $s
         opaque.str_refs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
-      block:
-        let arrproto = JS_GetClassProto(ctx, JS_CLASS_ARRAY)
-        opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto,
-          "values")
-        JS_FreeValue(ctx, arrproto)
+    block:
+      let arrproto = JS_GetClassProto(ctx, JS_CLASS_ARRAY)
+      opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto,
+        "values")
+      JS_FreeValue(ctx, arrproto)
+    block:
+      let objproto = JS_GetClassProto(ctx, JS_CLASS_OBJECT)
+      opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto, "valueOf")
+      JS_FreeValue(ctx, objproto)
     for e in JSErrorEnum:
       let s = $e
       let err = JS_GetPropertyStr(ctx, global, cstring(s))
@@ -199,6 +204,7 @@ proc free*(ctx: var JSContext) =
     for classid, v in opaque.ctors:
       JS_FreeValue(ctx, v)
     JS_FreeValue(ctx, opaque.Array_prototype_values)
+    JS_FreeValue(ctx, opaque.Object_prototype_valueOf)
     for v in opaque.err_ctors:
       JS_FreeValue(ctx, v)
     GC_unref(opaque)
@@ -1472,6 +1478,21 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
   gen.addThisName(thisname)
   return gen
 
+proc makeJSCallAndRet(gen: var JSFuncGenerator, okstmt, errstmt: NimNode) =
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = if gen.returnType.issome:
+    quote do:
+      block `dl`:
+        return ctx.toJS(`jfcl`)
+      `errstmt`
+  else:
+    quote do:
+      block `dl`:
+        `jfcl`
+        `okstmt`
+      `errstmt`
+
 macro jsctor*(fun: typed) =
   var gen = setupGenerator(fun, CONSTRUCTOR, thisname = none(string))
   if gen.newName.strVal in existing_funcs:
@@ -1480,12 +1501,10 @@ macro jsctor*(fun: typed) =
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
-  let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      return ctx.toJS(`jfcl`)
+  let errstmt = quote do:
     return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
+  # no okstmt
+  gen.makeJSCallAndRet(nil, errstmt)
   discard gen.newJSProc(getJSParams())
   gen.registerConstructor()
   result = newStmtList(fun)
@@ -1504,6 +1523,7 @@ macro jshasprop*(fun: typed) =
     block `dl`:
       let retv = `jfcl`
       return cint(retv)
+    doAssert false # TODO?
   let jsProc = gen.newJSProc(getJSHasPropParams(), false)
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
@@ -1543,11 +1563,7 @@ macro jsfgetn(jsname: static string, fun: typed) =
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("this")
   gen.finishFunCallList()
-  let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel #TODO this is redundant, getters have no arguments
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      return ctx.toJS(`jfcl`)
+  gen.makeJSCallAndRet(nil, quote do: discard)
   let jsProc = gen.newJSProc(getJSGetterParams(), false)
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
@@ -1561,23 +1577,26 @@ macro jsfget*(jsname: static string, fun: typed) =
   quote do:
     jsfgetn(`jsname`, `fun`)
 
+# Ideally we could simulate JS setters using nim setters, but nim setters
+# won't accept types that don't match their reflected field's type.
 macro jsfsetn(jsname: static string, fun: typed) =
   var gen = setupGenerator(fun, SETTER, jsname = jsname)
   if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
-  if gen.returnType.issome:
-    error("jsfset functions must not have a return type")
+  if gen.returnType.isSome:
+    let rt = gen.returnType.get
+    #TODO ??
+    let rtType = rt[0]
+    let errType = getTypeInst(Err)
+    if not errType.sameType(rtType) and not rtType.sameType(errType):
+      error("jsfset functions must not have a return type")
   gen.addFixParam("this")
   gen.addFixParam("val")
   gen.finishFunCallList()
-  let jfcl = gen.jsFunCallList
-  # Ideally we could simulate JS setters using nim setters, but nim setters
-  # won't accept types that don't match their reflected field's type.
-  let dl = gen.dielabel #TODO probably redundant too, setter overloading makes no sense
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      `jfcl`
-    return JS_DupValue(ctx, val)
+  # return param anyway
+  let okstmt = quote do: discard
+  let errstmt = quote do: return JS_DupValue(ctx, val)
+  gen.makeJSCallAndRet(okstmt, errstmt)
   let jsProc = gen.newJSProc(getJSSetterParams(), false)
   gen.registerFunction()
   result = newStmtList(fun, jsProc)
@@ -1598,19 +1617,11 @@ macro jsfuncn*(jsname: static string, fun: typed) =
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
-  let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
-  gen.jsCallAndRet = if gen.returnType.issome:
-    quote do:
-      block `dl`:
-        return ctx.toJS(`jfcl`)
-      return JS_ThrowTypeError(ctx, "Invalid parameters passed to function")
-  else:
-    quote do:
-      block `dl`:
-        `jfcl`
-        return JS_UNDEFINED
-      return JS_ThrowTypeError(ctx, "Invalid parameters passed to function")
+  let okstmt = quote do:
+    return JS_UNDEFINED
+  let errstmt = quote do:
+    return JS_ThrowTypeError(ctx, "Invalid parameters passed to function")
+  gen.makeJSCallAndRet(okstmt, errstmt)
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
   result = newStmtList(fun, jsProc)

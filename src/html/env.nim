@@ -86,8 +86,9 @@ proc screenTop(window: Window): int64 {.jsfget.} = 0
 #TODO outerWidth, outerHeight
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
-func location(window: Window): URL {.jsfget.} =
-  window.document.location
+proc setLocation(window: Window, s: string): Err[DOMException]
+    {.jsfset: "location".} =
+  window.document.setLocation(s)
 
 proc addScripting*(window: Window, selector: Selector[int]) =
   let rt = newJSRuntime()
@@ -129,7 +130,8 @@ proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)
 
 proc newWindow*(scripting: bool, selector: Selector[int],
-    attrs: WindowAttributes, loader = none(FileLoader)): Window =
+    attrs: WindowAttributes, navigate: proc(url: URL) = nil,
+    loader = none(FileLoader)): Window =
   let window = Window(
     attrs: attrs,
     console: console(err: newFileStream(stderr)),
@@ -137,8 +139,10 @@ proc newWindow*(scripting: bool, selector: Selector[int],
     loader: loader,
     settings: EnvironmentSettings(
       scripting: scripting
-    )
+    ),
+    navigate: navigate
   )
+  window.location = window.newLocation()
   if scripting:
     window.addScripting(selector)
   return window
