@@ -18,7 +18,6 @@ import img/painter
 import img/path
 import img/png
 import io/loader
-import io/promise
 import io/request
 import io/window
 import js/exception
@@ -2540,23 +2539,20 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
   else:
     let loader = element.document.window.loader
     if loader.isSome:
+      let loader = loader.get
       let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-      loader.get.fetch(request).then(proc(r: Result[Response, JSError]): auto =
-        if r.isErr or r.get.body == nil:
-          element.onComplete(ScriptResult(t: RESULT_NULL))
-        else:
-          #TODO use charset from content-type
-          #TODO text() should decode
-          return r.get.text()
-      ).then(proc(s: JSResult[string]) =
-        if s.isErr:
-          return
-        let ss = newStringStream(s.get) #TODO unnecessary copy
-        let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
-        let source = newDecoderStream(ss, cs = cs).readAll()
-        #TODO use response url
-        let script = createClassicScript(source, url, options, false)
-        element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script)))
+      let response = loader.doRequest(request)
+      if response.res != 0:
+        element.onComplete(ScriptResult(t: RESULT_NULL))
+        return
+      let cs = if cs == CHARSET_UNKNOWN:
+        CHARSET_UTF_8
+      else:
+        cs
+      let decoder = newDecoderStream(response.body, cs = cs)
+      let source = decoder.readAll()
+      let script = createClassicScript(source, url, options, false)
+      element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
 
 proc log*(console: console, ss: varargs[string]) {.jsfunc.} =
   var s = ""
