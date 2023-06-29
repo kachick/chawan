@@ -292,7 +292,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
     for x in 0 ..< crow.len:
       let u = reader.uprow[i]
       let n = case reader.bitDepth
-      of 1: ((u shr (7 - j)) and 0x11) * 255
+      of 1: ((u shr (7 - j)) and 0x1) * 255
       of 2: ((u shr (6 - j)) and 0x3) * 85
       of 4: ((u shr (4 - j)) and 0xF) * 17
       of 8: u
