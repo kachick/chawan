@@ -1,6 +1,5 @@
 import options
 import streams
-import sugar
 import unicode
 
 import js/exception
@@ -712,9 +711,7 @@ proc parseListOfRules(state: var CSSParseState): seq[CSSRule] =
 
 proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
   var state = CSSParseState()
-  state.tokens = collect(newSeq):
-    for cval in cvals:
-      CSSParsedItem(cval)
+  state.tokens = cast[seq[CSSParsedItem]](cvals)
   return state.parseListOfRules()
 
 proc parseRule(state: var CSSParseState): Result[CSSRule, DOMException] =
@@ -769,9 +766,7 @@ proc parseListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
 
 proc parseListOfDeclarations*(cvals: seq[CSSComponentValue]): seq[CSSParsedItem] =
   var state: CSSParseState
-  state.tokens = collect(newSeq):
-    for cval in cvals:
-      CSSParsedItem(cval)
+  state.tokens = cast[seq[CSSParsedItem]](cvals)
   return state.consumeListOfDeclarations()
 
 proc parseListOfDeclarations*(inputStream: Stream): seq[CSSParsedItem] =
@@ -784,9 +779,7 @@ proc parseListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
 
 proc parseListOfDeclarations2*(cvals: seq[CSSComponentValue]): seq[CSSDeclaration] =
   var state: CSSParseState
-  state.tokens = collect(newSeq):
-    for cval in cvals:
-      CSSParsedItem(cval)
+  state.tokens = cast[seq[CSSParsedItem]](cvals)
   return state.consumeListOfDeclarations2()
 
 proc parseListOfDeclarations2*(inputStream: Stream): seq[CSSDeclaration] =
@@ -837,14 +830,7 @@ proc parseCommaSeparatedListOfComponentValues(state: var CSSParseState): seq[seq
 
 proc parseCommaSeparatedListOfComponentValues*(cvals: seq[CSSComponentValue]): seq[seq[CSSComponentValue]] =
   var state: CSSParseState
-  state.tokens = collect(newSeq):
-    for cval in cvals:
-      CSSParsedItem(cval)
-  return state.parseCommaSeparatedListOfComponentValues()
-
-proc parseCommaSeparatedListOfComponentValues(inputStream: Stream): seq[seq[CSSComponentValue]] =
-  var state = CSSParseState()
-  state.tokens = tokenizeCSS(inputStream)
+  state.tokens = cast[seq[CSSParsedItem]](cvals)
   return state.parseCommaSeparatedListOfComponentValues()
 
 proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
@@ -998,9 +984,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
 
 proc parseAnB*(cvals: seq[CSSComponentValue]): (Option[CSSAnB], int) =
   var state: CSSParseState
-  state.tokens = collect(newSeq):
-    for cval in cvals:
-      CSSParsedItem(cval)
+  state.tokens = cast[seq[CSSParsedItem]](cvals)
   let anb = state.parseAnB()
   return (anb, state.at)
 
