@@ -1122,10 +1122,22 @@ proc setLocation*(document: Document, s: string): Err[DOMException]
 func href(location: Location): string {.jsfget.} =
   return location.url.serialize()
 
-proc href(location: Location, s: string): Err[DOMException] {.jsfset.} =
+proc setHref(location: Location, s: string): Err[DOMException]
+    {.jsfset: "href".} =
   if location.document == nil:
     return ok()
   return location.document.setLocation(s)
+
+proc assign(location: Location, s: string): Err[DOMException] {.jsfunc.} =
+  location.setHref(s)
+
+proc replace(location: Location, s: string): Err[DOMException] {.jsfunc.} =
+  location.setHref(s)
+
+proc reload(location: Location) {.jsfunc.} =
+  if location.document == nil:
+    return
+  location.document.window.navigate(location.url)
 
 func origin(location: Location): string {.jsfget.} =
   return location.url.origin
