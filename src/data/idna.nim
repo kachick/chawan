@@ -2,8 +2,9 @@ import algorithm
 import unicode
 import sets
 import tables
-import sugar
 import strutils
+
+import utils/map
 
 type
   IDNATableStatus* = enum
@@ -140,15 +141,6 @@ const (MappedMap,
        Disallowed,
        Ignored,
        Deviation) = loadStuff(IdnaMappingTable)
-
-func searchInMap[U, T](a: openarray[(U, T)], u: U): int =
-  binarySearch(a, u, (x, y) => cmp(x[0], y))
-
-func isInMap[U, T](a: openarray[(U, T)], u: U): bool =
-  a.searchInMap(u) != -1
-
-func isInRange[U](a: openarray[(U, U)], u: U): bool =
-  binarySearch(a, u, (x, y) => (if x[0] < y: -1 elif x[1] > y: 1 else: 0)) != -1
 
 func getIdnaTableStatus*(r: Rune): IDNATableStatus =
   let i = uint32(r)

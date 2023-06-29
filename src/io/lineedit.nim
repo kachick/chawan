@@ -1,7 +1,6 @@
 import unicode
 import strutils
 import sequtils
-import sugar
 
 import bindings/quickjs
 import buffer/cell
@@ -153,7 +152,16 @@ proc drawPrompt*(edit: LineEdit) =
 
 proc insertCharseq(edit: LineEdit, cs: var seq[Rune]) =
   let escNext = edit.escNext
-  cs.keepIf((r) => (escNext or not r.isControlChar) and not (r.isAscii and char(r) in edit.disallowed))
+  var i = 0
+  for j in 0 ..< cs.len:
+    if cs[i].isAscii():
+      let c = cast[char](cs[i])
+      if not escNext and c in Controls or c in edit.disallowed:
+        continue
+    if i != j:
+      cs[i] = cs[j]
+    inc i
+
   edit.escNext = false
   if cs.len == 0:
     return

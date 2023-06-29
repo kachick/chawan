@@ -5,6 +5,7 @@ import streams
 import unicode
 
 import data/charset
+import utils/map
 
 # EncoderStream encodes utf-32 to the specified encoding.
 type
@@ -57,12 +58,7 @@ template append_byte(stream: EncoderStream, c: int,
   stream.append_byte cast[uint8](c), oq, olen, n
 
 func findPair[U, V](map: seq[(U, V)], c: uint32): int =
-  when not (typeof(c) is U):
-    if c > cast[typeof(c)](high(U)):
-      return -1
-  return binarySearch(map, cast[U](c),
-    proc(a: tuple[ucs: U, val: V], b: U): int =
-      cmp(a.ucs, b))
+  return searchInMap(map, cast[U](c))
 
 proc handleError(stream: EncoderStream, oq: ptr UncheckedArray[uint8],
     olen: int, n: var int, c: uint32) =

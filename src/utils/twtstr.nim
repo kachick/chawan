@@ -3,7 +3,6 @@ import strutils
 import unicode
 import os
 import math
-import sugar
 import sequtils
 import options
 import punycode
@@ -12,6 +11,7 @@ import bindings/libunicode
 import data/idna
 import data/charwidth
 import utils/opt
+import utils/map
 
 when defined(posix):
   import posix
@@ -308,7 +308,8 @@ const romanNumbers = [
   (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
 ]
 
-const romanNumbers_lower = romanNumbers.map((x) => (x[0], x[1].tolower()))
+const romanNumbers_lower = romanNumbers.map(proc(x: auto): auto =
+  (x[0], x[1].tolower()))
 
 func romanNumber*(i: int): string =
   return number_additive(i, 1..3999, romanNumbers)
@@ -721,6 +722,7 @@ func unicodeToAscii*(s: string, checkhyphens, checkbidi, checkjoiners, transitio
       return none(string) #error
   return some(labels.join('.'))
 
+
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
   (0xC0, 0xD6),
@@ -755,7 +757,7 @@ func matchNameProduction*(str: string): bool =
     inc i
   else:
     fastRuneAt(str, i, r)
-    if binarySearch(NameStartCharRanges, int32(r), (x, y) => cmp(x[0], y)) == -1:
+    if not isInRange(NameStartCharRanges, int32(r)):
       return false
   # NameChar
   while i < str.len:
@@ -765,9 +767,9 @@ func matchNameProduction*(str: string): bool =
       inc i
     else:
       fastRuneAt(str, i, r)
-      if binarySearch(NameStartCharRanges, int32(r), (x, y) => cmp(x[0], y)) == -1:
-        if binarySearch(NameCharRanges, int32(r), (x, y) => cmp(x[0], y)) == -1:
-          return false
+      if not isInRange(NameStartCharRanges, int32(r)) and
+          not isInMap(NameCharRanges, int32(r)):
+        return false
   return true
 
 func matchQNameProduction*(s: string): bool =
