@@ -25,6 +25,7 @@ import html/dom
 import html/htmlparser
 import io/lineedit
 import io/loader
+import io/posixstream
 import io/promise
 import io/request
 import io/window
@@ -49,23 +50,24 @@ type
   ClientObj* = object
     alive: bool
     attrs: WindowAttributes
-    dispatcher: Dispatcher
-    feednext: bool
-    s: string
-    errormessage: string
-    userstyle: CSSStylesheet
-    loader: FileLoader
-    console {.jsget.}: Console
-    pager {.jsget.}: Pager
-    line {.jsget.}: LineEdit
     config {.jsget.}: Config
-    store {.jsget, jsset.}: Document
-    jsrt: JSRuntime
-    jsctx: JSContext
+    console {.jsget.}: Console
+    dispatcher: Dispatcher
+    errormessage: string
+    fd: int
     fdmap: Table[int, Container]
-    timeouts: TimeoutState[Container]
-    ssock: ServerSocket
+    feednext: bool
+    jsctx: JSContext
+    jsrt: JSRuntime
+    line {.jsget.}: LineEdit
+    loader: FileLoader
+    pager {.jsget.}: Pager
+    s: string
     selector: Selector[Container]
+    ssock: ServerSocket
+    store {.jsget, jsset.}: Document
+    timeouts: TimeoutState[Container]
+    userstyle: CSSStylesheet
 
   Console = ref object
     err: Stream
@@ -155,6 +157,7 @@ proc quit(client: Client, code = 0) {.jsfunc.} =
     JS_FreeValue(ctx, global)
     if client.jsctx != nil:
       free(client.jsctx)
+    #TODO
     #if client.jsrt != nil:
     #  free(client.jsrt)
   quit(code)
@@ -264,21 +267,25 @@ proc acceptBuffers(client: Client) =
       client.pager.procmap.del(pid)
     stream.close()
   while client.pager.procmap.len > 0:
-    let stream = client.ssock.acceptSocketStream()
-    var pid: Pid
-    stream.sread(pid)
-    if pid in client.pager.procmap:
-      let container = client.pager.procmap[pid]
-      client.pager.procmap.del(pid)
-      container.setStream(stream)
-      let fd = stream.source.getFd()
-      client.fdmap[int(fd)] = container
-      client.selector.registerHandle(fd, {Read}, nil)
-      client.pager.handleEvents(container)
-    else:
-      #TODO uh what?
-      client.console.log("???")
-      stream.close()
+    try:
+      let stream = client.ssock.acceptSocketStream()
+      var pid: Pid
+      #TODO if this returns EAGAIN then we're stuck
+      stream.sread(pid)
+      if pid in client.pager.procmap:
+        let container = client.pager.procmap[pid]
+        client.pager.procmap.del(pid)
+        container.setStream(stream)
+        let fd = stream.source.getFd()
+        client.fdmap[int(fd)] = container
+        client.selector.registerHandle(fd, {Read}, nil)
+        client.pager.handleEvents(container)
+      else:
+        #TODO uh what?
+        client.console.log("???")
+        stream.close()
+    except OSError: # EAGAIN, probably. TODO
+      break
 
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
@@ -312,6 +319,8 @@ proc handleRead(client: Client, fd: int) =
     client.loader.onRead(fd)
   elif fd in client.loader.unregistered:
     discard # ignore
+  elif fd == client.fd:
+    client.acceptBuffers()
   else:
     let container = client.fdmap[fd]
     client.pager.handleEvent(container)
@@ -375,7 +384,6 @@ proc inputLoop(client: Client) =
       client.command(client.pager.scommand)
       client.pager.scommand = ""
       client.handlePagerEvents()
-    client.acceptBuffers()
     if client.pager.container == nil:
       # No buffer to display.
       quit(1)
@@ -386,7 +394,8 @@ func hasSelectFds(client: Client): bool =
   return not client.timeouts.empty or
     client.pager.numload > 0 or
     client.loader.connecting.len > 0 or
-    client.loader.ongoing.len > 0
+    client.loader.ongoing.len > 0 or
+    client.pager.procmap.len > 0
 
 proc headlessLoop(client: Client) =
   while client.hasSelectFds():
@@ -487,13 +496,17 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
         dump = not open(tty, "/dev/tty", fmRead)
     else:
       dump = true
-  client.ssock = initServerSocket(false)
-  client.selector = newSelector[Container]()
+  client.ssock = initServerSocket(false, false)
+  client.fd = cast[int](client.ssock.sock.getFd())
+  let selector = newSelector[Container]()
+  selector.registerHandle(client.fd, {Read}, nil)
+  let efd = int(client.dispatcher.forkserver.estream.fd)
+  selector.registerHandle(efd, {Read}, nil)
   client.loader.registerFun = proc(fd: int) =
-    client.selector.registerHandle(fd, {Read}, nil)
+    selector.registerHandle(fd, {Read}, nil)
   client.loader.unregisterFun = proc(fd: int) =
-    client.selector.unregister(fd)
-  client.selector.registerHandle(int(client.dispatcher.forkserver.estream.fd), {Read}, nil)
+    selector.unregister(fd)
+  client.selector = selector
   client.pager.launchPager(tty)
   client.console = newConsole(client.pager, tty)
   #TODO passing console.err here makes it impossible to change it later. maybe
@@ -517,7 +530,6 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
 
   for page in pages:
     client.pager.loadURL(page, ctype = ctype, cs = cs)
-  client.acceptBuffers()
   client.pager.refreshStatusMsg()
   if not dump:
     client.inputLoop()
