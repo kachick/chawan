@@ -3,6 +3,7 @@ import streams
 import strutils
 
 import bindings/curl
+import io/headers
 import io/request
 import ips/serialize
 import types/blob

@@ -1,6 +1,7 @@
 import streams
 
 import bindings/quickjs
+import io/headers
 import io/promise
 import io/request
 import js/exception

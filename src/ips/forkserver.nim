@@ -6,9 +6,9 @@ when defined(posix):
 
 import buffer/buffer
 import config/config
+import io/headers
 import io/loader
 import io/posixstream
-import io/request
 import io/urlfilter
 import io/window
 import ips/serialize

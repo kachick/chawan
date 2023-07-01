@@ -3,7 +3,7 @@ import os
 import streams
 import tables
 
-import io/request
+import io/headers
 import ips/serialize
 import types/url
 

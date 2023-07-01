@@ -3,6 +3,7 @@ import streams
 
 import html/dom
 import html/htmlparser
+import io/headers
 import io/loader
 import io/promise
 import io/request
@@ -123,6 +124,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.addIntlModule()
   ctx.addBlobModule()
   ctx.addFormDataModule()
+  ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()
 

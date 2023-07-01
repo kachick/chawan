@@ -1,6 +1,7 @@
 import streams
 import tables
 
+import io/headers
 import io/request
 import ips/serialize
 import types/url

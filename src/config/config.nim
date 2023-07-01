@@ -6,7 +6,7 @@ import streams
 import buffer/cell
 import config/toml
 import data/charset
-import io/request
+import io/headers
 import io/urlfilter
 import js/javascript
 import js/regex

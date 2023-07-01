@@ -14,6 +14,7 @@ import buffer/container
 import config/config
 import data/charset
 import display/term
+import io/headers
 import io/lineedit
 import io/loader
 import io/promise

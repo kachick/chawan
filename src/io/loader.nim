@@ -22,6 +22,7 @@ when defined(posix):
 import bindings/curl
 import io/about
 import io/file
+import io/headers
 import io/http
 import io/posixstream
 import io/promise

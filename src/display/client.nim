@@ -23,6 +23,7 @@ import display/pager
 import display/term
 import html/dom
 import html/htmlparser
+import io/headers
 import io/lineedit
 import io/loader
 import io/posixstream
@@ -587,6 +588,7 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addIntlModule()
   ctx.addBlobModule()
   ctx.addFormDataModule()
+  ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()
   ctx.addLineEditModule()
