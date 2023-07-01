@@ -90,6 +90,7 @@ type
     creg: Table[string, JSClassID]
     typemap: Table[pointer, JSClassID]
     ctors: Table[JSClassID, JSValue]
+    parents: Table[JSClassID, JSClassID]
     gclaz: string
     sym_refs: array[JSSymbolRefs, JSAtom]
     str_refs: array[JSStrRefs, JSAtom]
@@ -300,16 +301,19 @@ proc runJSJobs*(rt: JSRuntime, err: Stream) =
     if r == -1:
       ctx.writeException(err)
 
-func isInstanceOf*(ctx: JSContext, obj: JSValue, class: string): bool =
-  let clazz = ctx.getClass(class)
-  if clazz in ctx.getOpaque().ctors:
-    let ctor = ctx.getOpaque().ctors[clazz]
-    if JS_IsInstanceOf(ctx, obj, ctor) == 1:
-      return true
-    return false #TODO handle exception?
-  else:
-    #TODO TODO TODO LegacyNoInterfaceObject has no constructor...
-    return false
+func isInstanceOf*(ctx: JSContext, val: JSValue, class: static string): bool =
+  let ctxOpaque = ctx.getOpaque()
+  var classid = JS_GetClassID(val)
+  let tclassid = ctxOpaque.creg[class]
+  var found = false
+  while true:
+    if classid == tclassid:
+      found = true
+      break
+    classid = ctxOpaque.parents[classid]
+    if classid == 0:
+      break
+  return found
 
 proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
   if JS_SetPropertyStr(ctx, val, cstring(name), prop) <= 0:
@@ -347,6 +351,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     raise newException(Defect, "Failed to allocate JS class: " & $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
+  ctxOpaque.parents[result] = parent
   if finalizer != nil:
     rtOpaque.fins[result] = finalizer
   var proto: JSValue
@@ -747,12 +752,19 @@ proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Opt[T] =
     return err()
   if JS_IsNull(val):
     return ok(T(nil))
-  if ctx.isGlobal($T):
+  const t = $T
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque.gclaz == t:
     return getGlobalOpaque(ctx, T, val)
   if not JS_IsObject(val):
     JS_ThrowTypeError(ctx, "Value is not an object")
     return err()
-  let op = getOpaque0(val)
+  if not isInstanceOf(ctx, val, t):
+    const errmsg = t & " expected"
+    JS_ThrowTypeError(ctx, errmsg)
+    return err()
+  let classid = JS_GetClassID(val)
+  let op = cast[T](JS_GetOpaque(val, classid))
   return ok(cast[T](op))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): Opt[T] =
