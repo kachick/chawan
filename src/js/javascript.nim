@@ -1743,6 +1743,7 @@ template jsDestructor*[U](T: typedesc[ref U]) =
 
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     asglobal = false, nointerface = false, name: static string = "",
+    has_extra_getset: static bool = false,
     extra_getset: static openarray[TabGetSet] = [],
     namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum)): JSClassID =
   result = newStmtList()
@@ -1832,11 +1833,10 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     if k notin getters:
       tabList.add(quote do: JS_CGETSET_DEF(`k`, nil, `v`))
 
-  for x in extra_getset:
-    #TODO TODO TODO what the hell is this...
-    # For some reason, extra_getset gets weird contents when nothing is
+  if has_extra_getset:
+    #HACK: for some reason, extra_getset gets weird contents when nothing is
     # passed to it.
-    if repr(x) != "" and repr(x) != "[]":
+    for x in extra_getset:
       let k = x.name
       let g = x.get
       let s = x.set

@@ -2990,11 +2990,11 @@ proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
   const extra_getset = getElementReflectFunctions()
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID,
-    extra_getset = extra_getset)
+    has_extra_getset = true, extra_getset = extra_getset)
   template register(t: typed, tags: set[TagType]) =
     const extra_getset = getReflectFunctions(tags)
     ctx.registerType(t, parent = htmlElementCID,
-      extra_getset = extra_getset)
+      has_extra_getset = true, extra_getset = extra_getset)
   template register(t: typed, tag: TagType) =
     register(t, {tag})
   register(HTMLInputElement, TAG_INPUT)
