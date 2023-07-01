@@ -162,6 +162,8 @@ type
     # (We can't just store pointers, because those may be invalidated by
     # the JavaScript finalizers.)
     liveCollections: HashSet[int]
+    children_cached: HTMLCollection
+    childNodes_cached: NodeList
 
   Attr* = ref object of Node
     namespaceURI* {.jsget.}: string
@@ -995,7 +997,10 @@ func len(collection: Collection): int =
   collection.refreshCollection()
   return collection.snapshot.len
 
-func newCollection[T: Collection](root: Node, match: proc(node: Node): bool {.noSideEffect.}, islive, childonly: bool): T =
+type CollectionMatchFun = proc(node: Node): bool {.noSideEffect.}
+
+func newCollection[T: Collection](root: Node, match: CollectionMatchFun,
+    islive, childonly: bool): T =
   result = T(
     islive: islive,
     childonly: childonly,
@@ -1012,11 +1017,25 @@ func nodeType(node: Node): uint16 {.jsfget.} =
 func isElement(node: Node): bool =
   return node.nodeType == ELEMENT_NODE
 
-func children*(node: Node): HTMLCollection {.jsfget.} =
-  return newCollection[HTMLCollection](node, isElement, true, true)
+func children(node: Node): HTMLCollection {.jsfget.} =
+  if node.children_cached == nil:
+    node.children_cached = newCollection[HTMLCollection](
+      root = node,
+      match = isElement,
+      islive = true,
+      childonly = true
+    )
+  return node.children_cached
 
 func childNodes(node: Node): NodeList {.jsfget.} =
-  return newCollection[NodeList](node, nil, true, true)
+  if node.childNodes_cached == nil:
+    node.childNodes_cached = newCollection[NodeList](
+      root = node,
+      match = nil,
+      islive = true,
+      childonly = true
+    )
+  return node.childNodes_cached
 
 # DOMTokenList
 func length(tokenList: DOMTokenList): int {.jsfget.} =
