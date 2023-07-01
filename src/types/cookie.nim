@@ -25,6 +25,8 @@ type
     filter*: URLFilter
     cookies*: seq[Cookie]
 
+jsDestructor(Cookie)
+
 proc parseCookieDate(val: string): Option[DateTime] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}

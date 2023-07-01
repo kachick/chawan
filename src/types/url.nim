@@ -60,6 +60,9 @@ type
     domain: Option[string]
   ]]
 
+jsDestructor(URL)
+jsDestructor(URLSearchParams)
+
 const EmptyPath = UrlPath(opaque: true, s: "")
 const EmptyHost = Host(domain: "").some
 

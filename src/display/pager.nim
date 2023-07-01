@@ -68,6 +68,8 @@ type
     omnirules: seq[OmniRule]
     cookiejars: Table[string, CookieJar]
 
+jsDestructor(Pager)
+
 func attrs(pager: Pager): WindowAttributes = pager.term.attrs
 
 func getRoot(container: Container): Container =

@@ -19,6 +19,9 @@ type
     path*: string
     file: File #TODO maybe use fd?
 
+jsDestructor(Blob)
+jsDestructor(WebFile)
+
 proc newBlob*(buffer: pointer, size: int, ctype: string,
     deallocFun: DeallocFun): Blob =
   return Blob(

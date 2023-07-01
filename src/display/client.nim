@@ -77,6 +77,9 @@ type
     ibuf: string
     tty: File
 
+jsDestructor(Client)
+jsDestructor(Console)
+
 proc readChar(console: Console): char =
   if console.ibuf == "":
     try:
@@ -86,7 +89,7 @@ proc readChar(console: Console): char =
   result = console.ibuf[0]
   console.ibuf = console.ibuf.substr(1)
 
-proc `=destroy`(client: var ClientObj) =
+proc finalize(client: Client) {.jsfin.} =
   if client.jsctx != nil:
     free(client.jsctx)
   if client.jsrt != nil:

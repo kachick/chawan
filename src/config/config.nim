@@ -125,6 +125,8 @@ type
     tmpdir*: string
     ambiguous_double*: bool
 
+jsDestructor(Config)
+
 const DefaultHeaders* = {
   "User-Agent": "chawan",
   "Accept": "text/html,text/*;q=0.5",

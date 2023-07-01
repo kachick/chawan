@@ -1346,6 +1346,7 @@ proc finishFunCallList(gen: var JSFuncGenerator) =
 
 var js_funcs {.compileTime.}: Table[string, JSFuncGenerator]
 var existing_funcs {.compileTime.}: HashSet[string]
+var js_dtors {.compileTime.}: HashSet[string]
 
 proc registerFunction(typ: string, t: BoundFunctionType, name: string, id: NimNode, magic: uint16 = 0) =
   let nf = BoundFunction(t: t, name: name, id: id, magic: magic)
@@ -1710,7 +1711,7 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             of "jsset": result.jsset.add(op)
             of "jsinclude": result.jsinclude.add(op)
 
-proc nim_finalize_for_js[T](obj: T) =
+proc nim_finalize_for_js*[T](obj: ptr T) =
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
     rtOpaque.plist.withValue(cast[pointer](obj), v):
@@ -1734,12 +1735,20 @@ type
     name*: string
     fun*: JSCFunction
 
+template jsDestructor*[U](T: typedesc[ref U]) =
+  static:
+    js_dtors.incl($T)
+  proc `=destroy`(obj: var U) =
+    nim_finalize_for_js(addr obj)
+
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     asglobal = false, nointerface = false, name: static string = "",
     extra_getset: static openarray[TabGetSet] = [],
     namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum)): JSClassID =
   result = newStmtList()
   let tname = t.strVal # the nim type's name.
+  if tname notin js_dtors:
+    warning("No destructor has been defined for type " & tname)
   let name = if name == "": tname else: name # possibly a different name, e.g. Buffer for Container
   var sctr = ident("js_illegal_ctor")
   # constructor
@@ -1907,7 +1916,7 @@ static JSClassDef """, `cdname`, """ = {
     # We exploit this by setting a finalizer here, which can then unregister
     # any associated JS object from all relevant runtimes.
     var x: `t`
-    new(x, nim_finalize_for_js)
+    new(x)
     `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x),
       `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`)
   )

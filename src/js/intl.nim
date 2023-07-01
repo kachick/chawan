@@ -6,6 +6,8 @@ import js/javascript
 type
   NumberFormat = ref object
 
+jsDestructor(NumberFormat)
+
 #TODO ...yeah
 proc newNumberFormat(name: string = "en-US",
     options = none(JSValue)): NumberFormat {.jsctor.} =

@@ -60,6 +60,8 @@ type
     AFTER_BODY, IN_FRAMESET, AFTER_FRAMESET, AFTER_AFTER_BODY,
     AFTER_AFTER_FRAMESET
 
+jsDestructor(DOMParser)
+
 proc resetInsertionMode(parser: var HTML5Parser) =
   template switch_insertion_mode_and_return(mode: InsertionMode) =
     parser.insertionMode = mode

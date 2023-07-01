@@ -83,6 +83,9 @@ type
   Headers* = ref object
     table* {.jsget.}: Table[string, seq[string]]
 
+jsDestructor(Request)
+jsDestructor(Headers)
+
 proc js_url(this: Request): string {.jsfget: "url".} =
   return $this.url
 

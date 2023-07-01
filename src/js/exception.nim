@@ -31,6 +31,8 @@ const NamesTable = {
 type DOMException* = ref object of JSError
   name* {.jsget.}: string
 
+jsDestructor(DOMException)
+
 type
   JSResult*[T] = Result[T, JSError]
 

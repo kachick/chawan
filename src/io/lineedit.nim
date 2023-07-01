@@ -37,6 +37,8 @@ type
     histindex: int
     histtmp: string
 
+jsDestructor(LineEdit)
+
 func newLineHistory*(): LineHistory =
   return LineHistory()
 

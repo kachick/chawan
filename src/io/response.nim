@@ -21,6 +21,8 @@ type
     unregisterFun*: proc()
     bodyRead*: Promise[string]
 
+jsDestructor(Response)
+
 proc newResponse*(res: int, request: Request, fd = -1, stream: Stream = nil):
     Response =
   return Response(

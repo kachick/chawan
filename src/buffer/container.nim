@@ -97,6 +97,8 @@ type
     hasstart: bool
     redirectdepth*: int
 
+jsDestructor(Container)
+
 proc newBuffer*(dispatcher: Dispatcher, config: BufferConfig,
                 source: BufferSource, title = "", redirectdepth = 0): Container =
   let attrs = getWindowAttributes(stdout)
