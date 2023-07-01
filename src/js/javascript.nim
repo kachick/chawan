@@ -1908,13 +1908,6 @@ static JSClassDef """, `cdname`, """ = {
       let `classDef` = JSClassDefConst(unsafeAddr cd))
 
   endStmts.add(quote do:
-    # See the definition of `new':
-    # > **Note**:
-    # > The `finalizer` refers to the type `T`, not to the object!
-    # > This means that for each object of type `T` the finalizer will be
-    # > called!
-    # We exploit this by setting a finalizer here, which can then unregister
-    # any associated JS object from all relevant runtimes.
     var x: `t`
     new(x)
     `ctx`.newJSClass(`classDef`, `tname`, `sctr`, `tabList`, getTypePtr(x),
