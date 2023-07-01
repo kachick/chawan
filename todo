@@ -105,5 +105,4 @@ etc:
 - orc support:
 	* go through copyMem & c library calls and add prepareMutation
 	  where necessary (for orc)
-	* use =destroy hooks instead of nim_finalize_for_js
 - maybe windows support? (blocker: needs a windows machine)
