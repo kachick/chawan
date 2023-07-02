@@ -22,6 +22,7 @@ import data/charset
 import display/pager
 import display/term
 import html/dom
+import html/event
 import html/htmlparser
 import io/headers
 import io/lineedit
@@ -44,7 +45,8 @@ import types/cookie
 import types/dispatcher
 import types/url
 import utils/opt
-import xhr/formdata as formdata_impl
+import xhr/formdata
+import xhr/xmlhttprequest
 
 type
   Client* = ref ClientObj
@@ -378,7 +380,7 @@ proc inputLoop(client: Client) =
         assert event.fd == sigwinch
         client.attrs = getWindowAttributes(client.console.tty)
         client.pager.windowChange(client.attrs)
-      if Event.Timer in event.events:
+      if selectors.Event.Timer in event.events:
         assert client.timeouts.runTimeoutFd(event.fd)
         client.runJSJobs()
         client.console.container.requestLines().then(proc() =
@@ -409,7 +411,7 @@ proc headlessLoop(client: Client) =
         client.handleRead(event.fd)
       if Error in event.events:
         client.handleError(event.fd)
-      if Event.Timer in event.events:
+      if selectors.Event.Timer in event.events:
         assert client.timeouts.runTimeoutFd(event.fd)
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
@@ -583,11 +585,13 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addDOMExceptionModule()
   ctx.addCookieModule()
   ctx.addURLModule()
+  ctx.addEventModule()
   ctx.addDOMModule()
   ctx.addHTMLModule()
   ctx.addIntlModule()
   ctx.addBlobModule()
   ctx.addFormDataModule()
+  ctx.addXMLHttpRequestModule()
   ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()

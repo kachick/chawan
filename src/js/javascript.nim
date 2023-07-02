@@ -1724,6 +1724,8 @@ template jsget*() {.pragma.}
 template jsget*(name: string) {.pragma.}
 template jsset*() {.pragma.}
 template jsset*(name: string) {.pragma.}
+template jsgetset*() {.pragma.}
+template jsgetset*(name: string) {.pragma.}
 
 proc js_illegal_ctor*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
@@ -1787,6 +1789,9 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             case pragmaName
             of "jsget": result.jsget.add(op)
             of "jsset": result.jsset.add(op)
+            of "jsgetset":
+              result.jsget.add(op)
+              result.jsset.add(op)
             of "jsinclude": result.jsinclude.add(op)
 
 proc nim_finalize_for_js*[T](obj: ptr T) =

@@ -2,6 +2,7 @@ import selectors
 import streams
 
 import html/dom
+import html/event
 import html/htmlparser
 import io/headers
 import io/loader
@@ -15,7 +16,8 @@ import js/javascript
 import js/timeout
 import types/blob
 import types/url
-import xhr/formdata as formdata_impl
+import xhr/formdata
+import xhr/xmlhttprequest
 
 # NavigatorID
 proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
@@ -118,12 +120,14 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.addDOMExceptionModule()
   ctx.addconsoleModule()
   ctx.addNavigatorModule()
+  ctx.addEventModule()
   ctx.addDOMModule()
   ctx.addURLModule()
   ctx.addHTMLModule()
   ctx.addIntlModule()
   ctx.addBlobModule()
   ctx.addFormDataModule()
+  ctx.addXMLHttpRequestModule()
   ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()

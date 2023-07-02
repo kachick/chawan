@@ -12,6 +12,7 @@ import css/sheet
 import css/values
 import data/charset
 import encoding/decoderstream
+import html/event
 import html/tags
 import img/bitmap
 import img/painter
@@ -126,8 +127,6 @@ type
 
   EnvironmentSettings* = object
     scripting*: bool
-
-  EventTarget* = ref object of RootObj
 
   Collection = ref CollectionObj
   CollectionObj = object of RootObj
@@ -402,7 +401,6 @@ jsDestructor(HTMLTextAreaElement)
 jsDestructor(HTMLLabelElement)
 jsDestructor(HTMLCanvasElement)
 jsDestructor(HTMLImageElement)
-jsDestructor(EventTarget)
 jsDestructor(Node)
 jsDestructor(NodeList)
 jsDestructor(HTMLCollection)
@@ -3043,7 +3041,7 @@ proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   register(HTMLImageElement, TAG_IMG)
 
 proc addDOMModule*(ctx: JSContext) =
-  let eventTargetCID = ctx.registerType(EventTarget)
+  let eventTargetCID = ctx.getClass("EventTarget")
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
   ctx.registerType(NodeList)
   ctx.registerType(HTMLCollection)
