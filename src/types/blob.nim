@@ -34,6 +34,12 @@ proc newBlob*(buffer: pointer, size: int, ctype: string,
 proc finalize(blob: Blob) {.jsfin.} =
   if blob.deallocFun != nil and blob.buffer != nil:
     blob.deallocFun(blob.buffer)
+    blob.buffer = nil
+
+proc finalize(file: WebFile) {.jsfin.} =
+  if file.deallocFun != nil and file.buffer != nil:
+    file.deallocFun(file.buffer)
+    file.buffer = nil
 
 proc newWebFile*(path: string, webkitRelativePath = ""): WebFile =
   var file: File
