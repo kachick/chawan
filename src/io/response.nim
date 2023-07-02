@@ -4,7 +4,6 @@ import bindings/quickjs
 import io/headers
 import io/promise
 import io/request
-import js/exception
 import js/javascript
 import types/url
 

@@ -2,7 +2,6 @@ import strutils
 import times
 
 import io/urlfilter
-import js/exception
 import js/javascript
 import js/regex
 import types/url

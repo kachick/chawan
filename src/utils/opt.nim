@@ -48,6 +48,9 @@ template ok*[E](res: var Result[void, E]) =
 template err*[T, E](t: type Result[T, E], e: E): Result[T, E] =
   Result[T, E](has: false, ex: e)
 
+template err*[T](t: type Result[T, ref object]): auto =
+  t(has: false, ex: nil)
+
 template err*[T](t: type Result[T, void]): Result[T, void] =
   Result[T, void](has: false)
 

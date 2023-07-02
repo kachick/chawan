@@ -32,7 +32,6 @@ import io/urlfilter
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
-import js/exception
 import js/javascript
 import types/cookie
 import types/mime

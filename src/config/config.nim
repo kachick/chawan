@@ -45,7 +45,7 @@ type
   SiteConfig* = object
     url*: Opt[Regex]
     host*: Opt[Regex]
-    rewrite_url*: (proc(s: URL): Opt[URL])
+    rewrite_url*: (proc(s: URL): Result[URL, JSError])
     cookie*: Opt[bool]
     third_party_cookie*: seq[Regex]
     share_cookie_jar*: Opt[string]
@@ -57,7 +57,7 @@ type
 
   OmniRule* = object
     match*: Regex
-    substitute_url*: (proc(s: string): Opt[string])
+    substitute_url*: (proc(s: string): Result[string, JSError])
 
   StartConfig = object
     visual_home*: string
@@ -176,8 +176,7 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
     if sc.rewrite_url.isSome:
       let fun = jsctx.eval(sc.rewrite_url.get, "<siteconf>",
         JS_EVAL_TYPE_GLOBAL)
-      let f = getJSFunction[URL, URL](jsctx, fun)
-      conf.rewrite_url = f.get
+      conf.rewrite_url = getJSFunction[URL, URL](jsctx, fun)
     result.add(conf)
 
 proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
@@ -187,8 +186,7 @@ proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
       match: re.get
     )
     let fun = jsctx.eval(rule.substitute_url, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
-    let f = getJSFunction[string, string](jsctx, fun)
-    conf.substitute_url = f.get
+    conf.substitute_url = getJSFunction[string, string](jsctx, fun)
     result.add(conf)
 
 func getRealKey(key: string): string =

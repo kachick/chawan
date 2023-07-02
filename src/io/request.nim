@@ -5,7 +5,6 @@ import tables
 
 import bindings/quickjs
 import io/headers
-import js/exception
 import js/javascript
 import types/formdata
 import types/url
@@ -200,7 +199,7 @@ func newRequest*(ctx: JSContext, resource: string,
   var credentials = CredentialsMode.SAME_ORIGIN
   var mode = fallbackMode.get(RequestMode.NO_CORS)
   let hl = newHeaders()
-  var proxyUrl: Opt[URL]
+  var proxyUrl: URL
   var multipart: Opt[FormData]
   #TODO fallback mode, origin, window, request mode, ...
   if init.isSome:
@@ -210,9 +209,9 @@ func newRequest*(ctx: JSContext, resource: string,
     let bodyProp = JS_GetPropertyStr(ctx, init, "body")
     if not JS_IsNull(bodyProp) and not JS_IsUndefined(bodyProp):
       # ????
-      multipart = fromJS[FormData](ctx, bodyProp)
+      multipart = opt(fromJS[FormData](ctx, bodyProp))
       if multipart.isNone:
-        body = fromJS[string](ctx, bodyProp)
+        body = opt(fromJS[string](ctx, bodyProp))
     #TODO inputbody
     if (multipart.isSome or body.isSome) and
         httpMethod in {HTTP_GET, HTTP_HEAD}:
@@ -224,9 +223,10 @@ func newRequest*(ctx: JSContext, resource: string,
     mode = fromJS[RequestMode](ctx, JS_GetPropertyStr(ctx, init, "mode"))
       .get(mode)
     #TODO find a standard compatible way to implement this
-    proxyUrl = fromJS[URL](ctx, JS_GetPropertyStr(ctx, init, "proxyUrl"))
+    let proxyUrlProp = JS_GetPropertyStr(ctx, init, "proxyUrl")
+    proxyUrl = fromJS[URL](ctx, proxyUrlProp).get(nil)
   return ok(newRequest(url, httpMethod, hl, body, multipart, mode, credentials,
-    proxy = proxyUrl.get(nil)))
+    proxy = proxyUrl))
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute

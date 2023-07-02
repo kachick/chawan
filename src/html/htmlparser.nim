@@ -14,7 +14,6 @@ import encoding/decoderstream
 import html/dom
 import html/tags
 import html/htmltokenizer
-import js/exception
 import js/javascript
 import types/url
 import utils/twtstr
