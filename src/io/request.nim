@@ -84,8 +84,11 @@ jsDestructor(Request)
 proc js_url(this: Request): string {.jsfget: "url".} =
   return $this.url
 
+#TODO pretty sure this is incorrect
 proc js_referrer(this: Request): string {.jsfget: "referrer".} =
-  return $this.referer
+  if this.referer != nil:
+    return $this.referer
+  return ""
 
 iterator pairs*(headers: Headers): (string, string) =
   for k, vs in headers.table:
@@ -186,22 +189,35 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
   else: CredentialsMode.INCLUDE
   return newRequest(url, destination = destination, mode = mode, credentialsMode = credentialsMode)
 
-#TODO resource as Request
 #TODO init as an actual dictionary
-func newRequest*(ctx: JSContext, resource: string,
+func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     init = none(JSValue)): Result[Request, JSError] {.jsctor.} =
-  let url = ?newURL(resource)
-  if url.username != "" or url.password != "":
-    return err(newTypeError("Input URL contains a username or password"))
-  let fallbackMode = some(RequestMode.CORS) #TODO none if resource is request
-  var httpMethod = HTTP_GET
-  var body = opt(string)
-  var credentials = CredentialsMode.SAME_ORIGIN
+  when T is string:
+    let url = ?newURL(resource)
+    if url.username != "" or url.password != "":
+      return err(newTypeError("Input URL contains a username or password"))
+    var httpMethod = HTTP_GET
+    var headers = newHeaders()
+    let referer: URL = nil
+    var credentials = CredentialsMode.SAME_ORIGIN
+    var body: Opt[string]
+    var multipart: Opt[FormData]
+    var proxyUrl: URL #TODO?
+    let fallbackMode = opt(RequestMode.CORS)
+  else:
+    let url = resource.url
+    var httpMethod = resource.httpMethod
+    var headers = resource.headers.clone()
+    let referer = resource.referer
+    var credentials = resource.credentialsMode
+    var body = resource.body
+    var multipart = resource.multipart
+    var proxyUrl = resource.proxy #TODO?
+    let fallbackMode = opt(RequestMode)
+    #TODO window
   var mode = fallbackMode.get(RequestMode.NO_CORS)
-  let hl = newHeaders()
-  var proxyUrl: URL
-  var multipart: Opt[FormData]
-  #TODO fallback mode, origin, window, request mode, ...
+  let destination = NO_DESTINATION
+  #TODO origin, window
   if init.isSome:
     let init = init.get
     httpMethod = fromJS[HttpMethod](ctx,
@@ -217,7 +233,7 @@ func newRequest*(ctx: JSContext, resource: string,
         httpMethod in {HTTP_GET, HTTP_HEAD}:
       return err(newTypeError("HEAD or GET Request cannot have a body."))
     let jheaders = JS_GetPropertyStr(ctx, init, "headers")
-    hl.fill(ctx, jheaders)
+    headers.fill(ctx, jheaders)
     credentials = fromJS[CredentialsMode](ctx, JS_GetPropertyStr(ctx, init,
       "credentials")).get(credentials)
     mode = fromJS[RequestMode](ctx, JS_GetPropertyStr(ctx, init, "mode"))
@@ -225,8 +241,18 @@ func newRequest*(ctx: JSContext, resource: string,
     #TODO find a standard compatible way to implement this
     let proxyUrlProp = JS_GetPropertyStr(ctx, init, "proxyUrl")
     proxyUrl = fromJS[URL](ctx, proxyUrlProp).get(nil)
-  return ok(newRequest(url, httpMethod, hl, body, multipart, mode, credentials,
-    proxy = proxyUrl))
+  return ok(Request(
+    url: url,
+    httpmethod: httpmethod,
+    headers: headers,
+    body: body,
+    multipart: multipart,
+    mode: mode,
+    credentialsMode: credentials,
+    destination: destination,
+    proxy: proxyUrl,
+    referer: referer
+  ))
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute

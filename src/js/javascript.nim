@@ -315,6 +315,10 @@ func isInstanceOf*(ctx: JSContext, val: JSValue, class: static string): bool =
       break
   return found
 
+func isPlatformObject(ctx: JSContext, val: JSValue): bool =
+  let classid = JS_GetClassID(val)
+  return classid in ctx.getOpaque().parents
+
 proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
   if JS_SetPropertyStr(ctx, val, cstring(name), prop) <= 0:
     raise newException(Defect, "Failed to set property string: " & name)
@@ -1256,8 +1260,9 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
   var tableg = none(NimNode)
   var seqg = none(NimNode)
   var numg = none(NimNode)
+  var objg = none(NimNode)
   var hasString = false
-  var hasJSObject = false
+  var hasJSValue = false
   var hasBoolean = false
   let ev = gen.errval
   let dl = gen.dielabel
@@ -1269,14 +1274,25 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
     elif g == string.getTypeInst():
       hasString = true
     elif g == JSValue.getTypeInst():
-      hasJSObject = true
+      hasJSValue = true
     elif g == bool.getTypeInst():
       hasBoolean = true
     elif g == int.getTypeInst(): #TODO should be SomeNumber
       numg = some(g)
+    elif g.getTypeInst().getTypeImpl().kind == nnkRefTy:
+      # Assume it's ref object.
+      objg = some(g)
     else:
       error("Type not supported yet")
 
+  # 5. If V is a platform object, then:
+  if objg.isSome:
+    let query = quote do:
+      isPlatformObject(ctx, `val`)
+    let t = objg.get
+    gen.addUnionParamBranch(query, quote do:
+      let `s` = fromJS_or_die(`t`, ctx, `val`, `ev`, `dl`),
+      fallback)
   # 10. If Type(V) is Object, then:
   # Sequence:
   if seqg.issome:
@@ -1297,7 +1313,7 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
       fallback)
   # Object (JSObject variant):
   #TODO non-JS objects (i.e. ref object)
-  if hasJSObject:
+  if hasJSValue:
     let query = quote do:
       JS_IsObject(`val`)
     gen.addUnionParamBranch(query, quote do:

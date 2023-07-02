@@ -43,6 +43,11 @@ func newHeaders*(table: Table[string, string]): Headers =
     else:
       result.table[k] = @[v]
 
+func clone*(headers: Headers): Headers =
+  return Headers(
+    table: headers.table
+  )
+
 proc add*(headers: var Headers, k, v: string) =
   let k = k.toHeaderCase()
   if k notin headers.table:
