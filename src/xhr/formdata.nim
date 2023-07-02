@@ -26,40 +26,18 @@ proc newFormData*(form: HTMLFormElement = nil,
     this.entries = constructEntryList(form, submitter).get(@[])
   return ok(this)
 
-#TODO as jsfunc
-proc append*(this: FormData, name: string, svalue: string, filename = "") =
-  this.entries.add(FormDataEntry(
-    name: name,
-    isstr: true,
-    svalue: svalue,
-    filename: filename
-  ))
-
-proc append*(this: FormData, name: string, value: Blob,
-    filename = "blob") =
-  this.entries.add(FormDataEntry(
-    name: name,
-    isstr: false,
-    value: value,
-    filename: filename
-  ))
-
-#TODO hack
-proc append(ctx: JSContext, this: FormData, name: string, value: JSValue,
-    filename = none(string)) {.jsfunc.} =
-  let blob = fromJS[Blob](ctx, value)
-  if blob.isSome:
+proc append[T: string|Blob](ctx: JSContext, this: FormData, name: string,
+    value: T, filename = opt(string)) {.jsfunc.} =
+  when T is Blob:
     let filename = if filename.isSome:
       filename.get
-    elif blob.get of WebFile:
-      WebFile(blob.get).name
+    elif value of WebFile:
+      WebFile(value).name
     else:
       "blob"
-    this.append(name, blob.get, filename)
-  else:
-    let s = fromJS[string](ctx, value)
-    # toString should never fail (?)
-    this.append(name, s.get, filename.get(""))
+    this.append(name, value, filename)
+  else: # string
+    this.append(name, value, filename.get(""))
 
 proc delete(this: FormData, name: string) {.jsfunc.} =
   for i in countdown(this.entries.high, 0):
