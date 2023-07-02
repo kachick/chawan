@@ -26,8 +26,10 @@ proc newFormData*(form: HTMLFormElement = nil,
     this.entries = constructEntryList(form, submitter).get(@[])
   return ok(this)
 
-proc append[T: string|Blob](ctx: JSContext, this: FormData, name: string,
-    value: T, filename = opt(string)) {.jsfunc.} =
+#TODO filename should not be allowed for string entries
+# in other words, this should be an overloaded function, not just an or type
+proc append*[T: string|Blob](this: FormData, name: string, value: T,
+    filename = opt(string)) {.jsfunc.} =
   when T is Blob:
     let filename = if filename.isSome:
       filename.get
@@ -35,9 +37,18 @@ proc append[T: string|Blob](ctx: JSContext, this: FormData, name: string,
       WebFile(value).name
     else:
       "blob"
-    this.append(name, value, filename)
+    this.entries.add(FormDataEntry(
+      name: name,
+      isstr: false,
+      value: value,
+      filename: filename
+    ))
   else: # string
-    this.append(name, value, filename.get(""))
+    this.entries.add(FormDataEntry(
+      name: name,
+      isstr: true,
+      svalue: value
+    ))
 
 proc delete(this: FormData, name: string) {.jsfunc.} =
   for i in countdown(this.entries.high, 0):
@@ -53,10 +64,14 @@ proc get(ctx: JSContext, this: FormData, name: string): JSValue {.jsfunc.} =
         return toJS(ctx, entry.value)
   return JS_NULL
 
-proc getAll(this: FormData, name: string): seq[Blob] {.jsfunc.} =
+proc getAll(ctx: JSContext, this: FormData, name: string): seq[JSValue]
+    {.jsfunc.} =
   for entry in this.entries:
     if entry.name == name:
-      result.add(entry.value) # may be null
+      if entry.isstr:
+        result.add(toJS(ctx, entry.svalue))
+      else:
+        result.add(toJS(ctx, entry.value))
 
 proc add(list: var seq[FormDataEntry], entry: tuple[name, value: string]) =
   list.add(FormDataEntry(

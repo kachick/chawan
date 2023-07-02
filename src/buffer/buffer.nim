@@ -815,7 +815,7 @@ proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =
       let value = makeCRLF(entry.svalue)
       formData.append(name, value)
     else:
-      formData.append(name, entry.value, entry.filename)
+      formData.append(name, entry.value, opt(entry.filename))
   return formData
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
