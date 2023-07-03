@@ -42,7 +42,6 @@ type
     askpromise*: Promise[bool]
     askprompt: string
     askcursor: int
-    jsctx: JSContext
     numload*: int
     alerts: seq[string]
     alerton: bool
@@ -101,27 +100,28 @@ proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
   if c != nil:
     pager.term.setTitle(c.getTitle())
 
-proc hasprop(pager: Pager, s: string): bool {.jshasprop.} =
+proc hasprop(ctx: JSContext, pager: Pager, s: string): bool {.jshasprop.} =
   if pager.container != nil:
-    let cval = toJS(pager.jsctx, pager.container)
-    let val = JS_GetPropertyStr(pager.jsctx, cval, s)
+    let cval = toJS(ctx, pager.container)
+    let val = JS_GetPropertyStr(ctx, cval, s)
     if val != JS_UNDEFINED:
       result = true
-    JS_FreeValue(pager.jsctx, val)
+    JS_FreeValue(ctx, val)
 
 proc reflect(ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue,
              magic: cint, func_data: ptr JSValue): JSValue {.cdecl.} =
   let fun = cast[ptr JSValue](cast[int](func_data) + sizeof(JSValue))[]
   return JS_Call(ctx, fun, func_data[], argc, argv)
 
-proc getter(pager: Pager, s: string): Option[JSValue] {.jsgetprop.} =
+proc getter(ctx: JSContext, pager: Pager, s: string): Option[JSValue]
+    {.jsgetprop.} =
   if pager.container != nil:
-    let cval = toJS(pager.jsctx, pager.container)
-    let val = JS_GetPropertyStr(pager.jsctx, cval, s)
+    let cval = toJS(ctx, pager.container)
+    let val = JS_GetPropertyStr(ctx, cval, s)
     if val != JS_UNDEFINED:
-      if JS_IsFunction(pager.jsctx, val):
+      if JS_IsFunction(ctx, val):
         var func_data = @[cval, val]
-        let fun = JS_NewCFunctionData(pager.jsctx, reflect, 1, 0, 2, addr func_data[0])
+        let fun = JS_NewCFunctionData(ctx, reflect, 1, 0, 2, addr func_data[0])
         return some(fun)
       return some(val)
 
@@ -172,14 +172,14 @@ proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
       return
   pager.container.gotoLine(s)
 
-proc newPager*(config: Config, attrs: WindowAttributes, dispatcher: Dispatcher, ctx: JSContext): Pager =
+proc newPager*(config: Config, attrs: WindowAttributes,
+    dispatcher: Dispatcher, ctx: JSContext): Pager =
   let pager = Pager(
     dispatcher: dispatcher,
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
-    jsctx: ctx,
     siteconf: config.getSiteConfig(ctx),
     omnirules: config.getOmniRules(ctx)
   )
