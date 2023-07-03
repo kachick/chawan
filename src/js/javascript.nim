@@ -1801,8 +1801,8 @@ proc nim_finalize_for_js*[T](obj: ptr T) =
       let p = v[]
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
       let classid = JS_GetClassID(val)
-      if classid in rtOpaque.fins:
-        rtOpaque.fins[classid](val)
+      rtOpaque.fins.withValue(classid, fin):
+        fin[](val)
       JS_SetOpaque(val, nil)
       rtOpaque.plist.del(cast[pointer](obj))
       JS_FreeValueRT(rt, val)
