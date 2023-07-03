@@ -285,10 +285,10 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
 func calculateErrorY(ctx: InlineContext, window: WindowAttributes):
     LayoutUnit =
   if ctx.lines.len <= 1: return 0
-  var error: LayoutUnit = 0
+  var error = 0
   for i in 0 ..< ctx.lines.len:
     if i < ctx.lines.high:
-      let dy = ctx.lines[i + 1].offset.y - ctx.lines[i].offset.y
+      let dy = toInt(ctx.lines[i + 1].offset.y - ctx.lines[i].offset.y)
       error += dy - (dy div window.ppl) * window.ppl
   return error div (ctx.lines.len - 1)
 
