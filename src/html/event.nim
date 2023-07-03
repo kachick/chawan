@@ -5,7 +5,8 @@ type
 
   EventTarget* = ref object of RootObj
 
-  EventHandler* = proc(event: Event): JSValue
+  #EventHandler* = proc(event: Event): JSValue #TODO ?
+  EventHandler* = JSValue
 
 jsDestructor(Event)
 jsDestructor(EventTarget)
