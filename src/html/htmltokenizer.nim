@@ -168,6 +168,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template emit(ch: char) = emit Token(t: CHARACTER_ASCII, c: ch)
   template emit_eof =
     emit EOF
+    break
   template emit_tok =
     if tokenizer.attr:
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
@@ -303,8 +304,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           eofstmts = elsestmts
         let fake_eof = quote do:
           if is_eof:
+            {.warning[UnreachableCode]:off.}
             `eofstmts`
             continue
+            {.warning[UnreachableCode]:on.}
         mainstmtlist.insert(0, fake_eof)
         if hasanythingelse:
           let fake_anything_else = quote do:
