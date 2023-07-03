@@ -8,6 +8,7 @@ import css/cssparser
 import css/selectorparser
 import img/bitmap
 import io/window
+import layout/layoutunit
 import types/color
 import utils/opt
 import utils/twtstr
@@ -387,37 +388,39 @@ macro `{}=`*(vals: CSSComputedValues, s: string, val: typed) =
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
-func em_to_px(em: float64, window: WindowAttributes): int =
-  int(em * float64(window.ppl))
+func em_to_px(em: float64, window: WindowAttributes): LayoutUnit =
+  em * toLayoutUnit(window.ppl)
 
-func ch_to_px(ch: float64, window: WindowAttributes): int =
-  int(ch * float64(window.ppc))
+func ch_to_px(ch: float64, window: WindowAttributes): LayoutUnit =
+  ch * toLayoutUnit(window.ppc)
 
 # 水 width, we assume it's 2 chars
-func ic_to_px(ic: float64, window: WindowAttributes): int =
-  int(ic * float64(window.ppc) * 2)
+func ic_to_px(ic: float64, window: WindowAttributes): LayoutUnit =
+  ic * toLayoutUnit(window.ppc) * 2
 
 # x-letter height, we assume it's em/2
-func ex_to_px(ex: float64, window: WindowAttributes): int =
-  int(ex * float64(window.ppc) / 2)
+func ex_to_px(ex: float64, window: WindowAttributes): LayoutUnit =
+  ex * toLayoutUnit(window.ppc) / 2
 
-func px*(l: CSSLength, window: WindowAttributes, p: int): int {.inline.} =
+func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit {.inline.} =
   case l.unit
   of UNIT_EM, UNIT_REM: em_to_px(l.num, window)
   of UNIT_CH: ch_to_px(l.num, window)
   of UNIT_IC: ic_to_px(l.num, window)
   of UNIT_EX: ex_to_px(l.num, window)
-  of UNIT_PERC: int(p / 100 * l.num)
-  of UNIT_PX: int(l.num)
-  of UNIT_CM: int(l.num * 37.8)
-  of UNIT_MM: int(l.num * 3.78)
-  of UNIT_IN: int(l.num * 96)
-  of UNIT_PC: int(l.num * 96 / 6)
-  of UNIT_PT: int(l.num * 96 / 72)
-  of UNIT_VW: int(window.width_px / 100 * l.num)
-  of UNIT_VH: int(window.height_px / 100 * l.num)
-  of UNIT_VMIN: int(min(window.width_px, window.width_px) / 100 * l.num)
-  of UNIT_VMAX: int(max(window.width_px, window.width_px) / 100 * l.num)
+  of UNIT_PERC: p * l.num / 100
+  of UNIT_PX: toLayoutUnit(l.num)
+  of UNIT_CM: toLayoutUnit(l.num * 37.8)
+  of UNIT_MM: toLayoutUnit(l.num * 3.78)
+  of UNIT_IN: toLayoutUnit(l.num * 96)
+  of UNIT_PC: toLayoutUnit(l.num * 16)
+  of UNIT_PT: toLayoutUnit(l.num * 4 / 3)
+  of UNIT_VW: toLayoutUnit(float64(window.width_px) * l.num / 100)
+  of UNIT_VH: toLayoutUnit(float64(window.height_px) * l.num / 100)
+  of UNIT_VMIN:
+    toLayoutUnit(min(window.width_px, window.width_px) / 100 * l.num)
+  of UNIT_VMAX:
+    toLayoutUnit(max(window.width_px, window.width_px) / 100 * l.num)
 
 func listMarker*(t: CSSListStyleType, i: int): string =
   case t

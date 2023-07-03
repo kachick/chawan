@@ -10,6 +10,7 @@ import html/dom
 import io/window
 import layout/box
 import layout/engine
+import layout/layoutunit
 import types/color
 import utils/twtstr
 
@@ -31,7 +32,8 @@ func formatFromWord(computed: ComputedFormat): Format =
     result.blink = true
   else: discard
 
-proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, x, y: int) {.inline.} =
+proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
+    x, y: int) {.inline.} =
   var i = 0
   var r: Rune
   # make sure we have line y
@@ -167,13 +169,14 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat, 
   assert lines[y].formats[fi].pos <= nx
   # That's it!
 
-proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, window: WindowAttributes) =
+proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: LayoutUnit,
+    window: WindowAttributes) =
   var r: Rune
 
-  var y = (y + word.offset.y) div window.ppl # y cell
+  var y = toInt((y + word.offset.y) div window.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
-  var x = (x + word.offset.x) div window.ppc # x cell
+  var x = toInt((x + word.offset.x) div window.ppc) # x cell
   var i = 0
   while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
@@ -183,12 +186,13 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: int, window: Wi
 
   lines.setText(linestr, word.format, x, y)
 
-proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, window: WindowAttributes) =
-  var y = (y + spacing.offset.y) div window.ppl # y cell
+proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: LayoutUnit,
+    window: WindowAttributes) =
+  var y = toInt((y + spacing.offset.y) div window.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
-  var x = (x + spacing.offset.x) div window.ppc # x cell
-  let width = spacing.width div window.ppc # cell width
+  var x = toInt((x + spacing.offset.x) div window.ppc) # x cell
+  let width = toInt(spacing.width div window.ppc) # cell width
 
   if x + width < 0: return # highest x is outside the canvas, no need to draw
   var i = 0
@@ -199,7 +203,8 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: int, wind
 
   lines.setText(linestr, spacing.format, x, y)
 
-proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, endx, endy: int, node: StyledNode, window: WindowAttributes) =
+proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
+    starty, endx, endy: int, node: StyledNode, window: WindowAttributes) =
   let color = color.cellColor()
 
   var starty = starty div window.ppl
@@ -277,18 +282,22 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx, starty, 
         lines[y].formats[fi].format.bgcolor = color
         lines[y].formats[fi].node = node
 
-func calculateErrorY(ctx: InlineContext, window: WindowAttributes): int =
+func calculateErrorY(ctx: InlineContext, window: WindowAttributes):
+    LayoutUnit =
   if ctx.lines.len <= 1: return 0
-  var error = 0
+  var error: LayoutUnit = 0
   for i in 0 ..< ctx.lines.len:
     if i < ctx.lines.high:
       let dy = ctx.lines[i + 1].offset.y - ctx.lines[i].offset.y
       error += dy - (dy div window.ppl) * window.ppl
   return error div (ctx.lines.len - 1)
 
-proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes, posx = 0, posy = 0)
+proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
+  window: WindowAttributes, posx: LayoutUnit = 0, posy: LayoutUnit = 0)
 
-proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, window: WindowAttributes, posx = 0, posy = 0) =
+proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext,
+    x, y: LayoutUnit, window: WindowAttributes, posx: LayoutUnit = 0,
+    posy: LayoutUnit = 0) =
   let x = x + ctx.offset.x
   let y = y + ctx.offset.y
   let erry = ctx.calculateErrorY(window)
@@ -316,8 +325,12 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext, x, y: int, 
         grid.setSpacing(spacing, x, y, window)
     inc i
 
-proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: WindowAttributes, posx = 0, posy = 0) =
-  var stack = newSeqOfCap[(BlockBox, int, int, int, int)](100)
+proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
+    window: WindowAttributes, posx: LayoutUnit = 0, posy: LayoutUnit = 0) =
+  var stack = newSeqOfCap[tuple[
+    box: BlockBox,
+    x, y, posx, posy: LayoutUnit
+  ]](100)
   stack.add((box, x, y, posx, posy))
 
   while stack.len > 0:
@@ -334,7 +347,12 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: Wi
 
     if box.computed{"visibility"} == VISIBILITY_VISIBLE:
       if box.computed{"background-color"}.a != 0: #TODO color blending
-        grid.paintBackground(box.computed{"background-color"}, x, y, x + box.width, y + box.height, box.node, window)
+        let ix = toInt(x)
+        let iy = toInt(y)
+        let iex = toInt(x + box.width)
+        let iey = toInt(y + box.height)
+        grid.paintBackground(box.computed{"background-color"}, ix, iy, iex,
+          iey, box.node, window)
       if box.computed{"background-image"}.t == CONTENT_IMAGE and box.computed{"background-image"}.s != "":
         # ugly hack for background-image display... TODO actually display images
         let s = "[img]"
@@ -344,8 +362,8 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: int, window: Wi
           # text is larger than image; center it to minimize error
           ix -= w div 2
           ix += box.width div 2
-        let x = ix div window.ppc
-        let y = y div window.ppl
+        let x = toInt(ix div window.ppc)
+        let y = toInt(y div window.ppl)
         if y >= 0 and x + w >= 0:
           grid.setText(s, ComputedFormat(node: box.node), x, y)
 

@@ -3,12 +3,10 @@ import options
 import css/stylednode
 import css/values
 import io/window
+import layout/layoutunit
 import types/color
 
 type
-  #LayoutUnit* = distinct int32
-  LayoutUnit* = int
-
   Offset* = object
     x*: LayoutUnit
     y*: LayoutUnit
@@ -18,8 +16,8 @@ type
     height*: LayoutUnit
 
   Strut* = object
-    pos*: int
-    neg*: int
+    pos*: LayoutUnit
+    neg*: LayoutUnit
 
   Viewport* = ref object
     window*: WindowAttributes
@@ -58,12 +56,12 @@ type
 
   InlineAtom* = ref object of RootObj
     offset*: Offset
-    width*: int
-    height*: int
+    width*: LayoutUnit
+    height*: LayoutUnit
     vertalign*: CSSVerticalAlign
-    baseline*: int
-    top*: int
-    bottom*: int
+    baseline*: LayoutUnit
+    top*: LayoutUnit
+    bottom*: LayoutUnit
 
   ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
@@ -86,25 +84,25 @@ type
   LineBox* = ref object
     atoms*: seq[InlineAtom]
     offset*: Offset
-    width*: int
-    height*: int
-    baseline*: int
-    lineheight*: int #line-height property
+    width*: LayoutUnit
+    height*: LayoutUnit
+    baseline*: LayoutUnit
+    lineheight*: LayoutUnit #line-height property
 
   InlineContext* = ref object
     offset*: Offset
-    height*: int
+    height*: LayoutUnit
     lines*: seq[LineBox]
     currentLine*: LineBox
-    width*: int
-    contentWidth*: int
-    contentHeight*: Option[int]
+    width*: LayoutUnit
+    contentWidth*: LayoutUnit
+    contentHeight*: Option[LayoutUnit]
     contentWidthInfinite*: bool
 
     charwidth*: int
     whitespacenum*: int
     # this is actually xminwidth.
-    minwidth*: int
+    minwidth*: LayoutUnit
     viewport*: Viewport
     shrink*: bool
     format*: ComputedFormat
@@ -118,25 +116,25 @@ type
     offset*: Offset
 
     # This is the padding width/height.
-    width*: int
-    height*: int
-    margin_top*: int
-    margin_bottom*: int
-    margin_left*: int
-    margin_right*: int
-    padding_top*: int
-    padding_bottom*: int
-    padding_left*: int
-    padding_right*: int
-    min_width*: Option[int]
-    max_width*: Option[int]
-    min_height*: Option[int]
-    max_height*: Option[int]
+    width*: LayoutUnit
+    height*: LayoutUnit
+    margin_top*: LayoutUnit
+    margin_bottom*: LayoutUnit
+    margin_left*: LayoutUnit
+    margin_right*: LayoutUnit
+    padding_top*: LayoutUnit
+    padding_bottom*: LayoutUnit
+    padding_left*: LayoutUnit
+    padding_right*: LayoutUnit
+    min_width*: Option[LayoutUnit]
+    max_width*: Option[LayoutUnit]
+    min_height*: Option[LayoutUnit]
+    max_height*: Option[LayoutUnit]
 
     # This is the (specified) content width/height. Actual dimensions may
     # differ (i.e. overflow)
-    contentWidth*: int
-    contentHeight*: Option[int]
+    contentWidth*: LayoutUnit
+    contentHeight*: Option[LayoutUnit]
     shrink*: bool
     # Whether to stretch content to infinity.
     contentWidthInfinite*: bool
@@ -148,7 +146,7 @@ type
     # very bad name. basically the minimum content width after the contents
     # have been positioned (usually the width of the shortest word.) used
     # in table cells.
-    xminwidth*: int
+    xminwidth*: LayoutUnit
 
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
@@ -166,14 +164,14 @@ type
   RowContext* = object
     cells*: seq[CellWrapper]
     reflow*: seq[bool]
-    width*: int
+    width*: LayoutUnit
     builder*: TableRowBoxBuilder
     ncols*: int
 
   ColumnContext* = object
-    minwidth*: int
-    maxwidth*: int
-    width*: int
+    minwidth*: LayoutUnit
+    maxwidth*: LayoutUnit
+    width*: LayoutUnit
     wspecified*: bool
     weight*: float64
 
@@ -182,33 +180,21 @@ type
     rows*: seq[RowContext]
     cols*: seq[ColumnContext]
     growing*: seq[CellWrapper]
-    maxwidth*: int
-    blockspacing*: int
-    inlinespacing*: int
+    maxwidth*: LayoutUnit
+    blockspacing*: LayoutUnit
+    inlinespacing*: LayoutUnit
     collapse*: bool
 
   InlineBlockBox* = ref object of InlineAtom
     innerbox*: BlockBox
-    margin_top*: int
-    margin_bottom*: int
+    margin_top*: LayoutUnit
+    margin_bottom*: LayoutUnit
 
-proc append*(a: var Strut, b: int) =
+proc append*(a: var Strut, b: LayoutUnit) =
   if b < 0:
     a.neg = min(b, a.neg)
   else:
     a.pos = max(b, a.pos)
 
-func sum*(a: Strut): int =
+func sum*(a: Strut): LayoutUnit =
   return a.pos + a.neg
-
-#proc `div`(a, b: LayoutUnit): LayoutUnit {.borrow.}
-#
-#func `+`*(a, b: LayoutUnit): LayoutUnit {.borrow.}
-#func `-`*(a, b: LayoutUnit): LayoutUnit {.borrow.}
-#func `*`*(a, b: LayoutUnit): LayoutUnit {.borrow.}
-#func `/`*(a, b: LayoutUnit): LayoutUnit = a div b
-#
-#proc `+=`*(a: var LayoutUnit, b: LayoutUnit) {.borrow.}
-#proc `-=`*(a: var LayoutUnit, b: LayoutUnit) {.borrow.}
-#proc `*=`*(a: var LayoutUnit, b: LayoutUnit) {.borrow.}
-#proc `/=`*(a: var LayoutUnit, b: LayoutUnit) = a = a div b

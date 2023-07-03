@@ -12,6 +12,7 @@ import css/stylednode
 import css/values
 import html/dom
 import html/tags
+import layout/layoutunit
 import types/color
 
 type
@@ -33,12 +34,12 @@ func applies(feature: MediaFeature, window: Window): bool =
   of FEATURE_PREFERS_COLOR_SCHEME:
     return feature.b
   of FEATURE_WIDTH:
-    let a = px(feature.lengthrange.a, window.attrs, 0)
-    let b = px(feature.lengthrange.b, window.attrs, 0)
+    let a = toInt(px(feature.lengthrange.a, window.attrs, 0))
+    let b = toInt(px(feature.lengthrange.b, window.attrs, 0))
     return window.attrs.ppc * window.attrs.width in a .. b
   of FEATURE_HEIGHT:
-    let a = px(feature.lengthrange.a, window.attrs, 0)
-    let b = px(feature.lengthrange.b, window.attrs, 0)
+    let a = toInt(px(feature.lengthrange.a, window.attrs, 0))
+    let b = toInt(px(feature.lengthrange.b, window.attrs, 0))
     return window.attrs.ppl * window.attrs.height in a .. b
 
 func applies(mq: MediaQuery, window: Window): bool =
