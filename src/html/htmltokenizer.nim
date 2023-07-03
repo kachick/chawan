@@ -168,7 +168,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template emit(ch: char) = emit Token(t: CHARACTER_ASCII, c: ch)
   template emit_eof =
     emit EOF
-    break
   template emit_tok =
     if tokenizer.attr:
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
