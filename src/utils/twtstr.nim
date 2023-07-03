@@ -8,10 +8,11 @@ import options
 import punycode
 
 import bindings/libunicode
-import data/idna
 import data/charwidth
-import utils/opt
+import data/idna
+import js/javascript
 import utils/map
+import utils/opt
 
 when defined(posix):
   import posix
@@ -1074,7 +1075,7 @@ func twidth*(s: string, w: int): int =
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
-type BoundaryFunction* = proc(x: Rune): Opt[bool]
+type BoundaryFunction* = proc(x: Rune): Result[bool, JSError]
 
 proc breaksWord*(r: Rune, check: Opt[BoundaryFunction]): bool =
   if check.isSome:

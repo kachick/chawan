@@ -370,9 +370,12 @@ proc inputLoop(client: Client) =
   selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
   while true:
-    {.warning[CastSizes]:off.} # not our bug. TODO remove when fixed
-    let events = client.selector.select(-1)
-    {.warning[CastSizes]:on.}
+    when defined(CastSizes):
+      {.warning[CastSizes]:off.} # not our bug. TODO remove when fixed
+      let events = client.selector.select(-1)
+      {.warning[CastSizes]:on.}
+    else:
+      let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
         client.handleRead(event.fd)

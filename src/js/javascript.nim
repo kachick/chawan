@@ -732,7 +732,7 @@ macro unpackReturnType(f: typed) =
     x = x[1].getTypeImpl()
   let params = x.findChild(it.kind == nnkFormalParams)
   let rv = params[0]
-  doAssert rv[0].strVal == "Opt"
+  doAssert rv[0].strVal == "Result"
   let rvv = rv[1]
   result = quote do: `rvv`
 
@@ -772,13 +772,15 @@ proc fromJSOption[T](ctx: JSContext, val: JSValue): Result[Option[T], JSError] =
   let res = ?fromJS[T](ctx, val)
   return ok(some(res))
 
-# unwrap
+# wrap
 proc fromJSOpt[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
   if JS_IsUndefined(val):
     #TODO what about null?
     return err()
-  let res = ?fromJS[T](ctx, val)
-  return ok(res)
+  let res = fromJS[T.valType](ctx, val)
+  if res.isErr:
+    return ok(opt(T.valType))
+  return ok(opt(res.get))
 
 proc fromJSBool(ctx: JSContext, val: JSValue): Result[bool, JSError] =
   let ret = JS_ToBool(ctx, val)
@@ -1287,11 +1289,13 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
 
   # 5. If V is a platform object, then:
   if objg.isSome:
-    let query = quote do:
-      isPlatformObject(ctx, `val`)
     let t = objg.get
+    let x = ident("x")
+    let query = quote do:
+      let `x` = fromJS[`t`](ctx, `val`)
+      `x`.isOk
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(`t`, ctx, `val`, `ev`, `dl`),
+      let `s` = `x`.get,
       fallback)
   # 10. If Type(V) is Object, then:
   # Sequence:
