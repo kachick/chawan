@@ -1206,12 +1206,7 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
 proc runBuffer(buffer: Buffer, rfd: int) =
   buffer.rfd = rfd
   while buffer.alive:
-    when defined(CastSizes):
-      {.warning[CastSizes]:off.} # not our bug. TODO remove when fixed
-      let events = buffer.selector.select(-1)
-      {.warning[CastSizes]:on.}
-    else:
-      let events = buffer.selector.select(-1)
+    let events = buffer.selector.select(-1)
     for event in events:
       if Read in event.events:
         buffer.handleRead(event.fd)
