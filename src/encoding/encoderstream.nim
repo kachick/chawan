@@ -98,7 +98,7 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     # is found.
     # We want the last that is <=, so decrease index by one.
     let i = upperBound(Gb18030RangesEncode, c, func(a: tuple[ucs, p: uint16], b: uint32): int =
-      cmp(cast[uint32](a.ucs), b))
+      cmp(uint32(a.ucs), b))
     let elem = Gb18030RangesEncode[i - 1]
     offset = elem.ucs
     p = elem.p

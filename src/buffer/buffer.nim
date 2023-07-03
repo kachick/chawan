@@ -649,7 +649,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
     #TODO clone should probably just fork() the buffer instead.
     let s = connectSocketStream(source.clonepid, blocking = false)
     buffer.istream = s
-    buffer.fd = cast[int](s.source.getFd())
+    buffer.fd = int(s.source.getFd())
     if buffer.istream == nil:
       result.code = ERROR_SOURCE_NOT_FOUND
       return
@@ -671,7 +671,7 @@ proc setupSource(buffer: Buffer): ConnectResult =
       buffer.contenttype = response.contenttype
     buffer.istream = response.body
     let fd = SocketStream(response.body).source.getFd()
-    buffer.fd = cast[int](fd)
+    buffer.fd = int(fd)
     result.needsAuth = response.status == 401 # Unauthorized
     result.redirect = response.redirect
     if "Set-Cookie" in response.headers.table:
@@ -1206,7 +1206,9 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
 proc runBuffer(buffer: Buffer, rfd: int) =
   buffer.rfd = rfd
   while buffer.alive:
+    {.warning[CastSizes]:off.} # not our bug. TODO remove when fixed
     let events = buffer.selector.select(-1)
+    {.warning[CastSizes]:on.}
     for event in events:
       if Read in event.events:
         buffer.handleRead(event.fd)

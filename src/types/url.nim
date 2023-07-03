@@ -798,7 +798,11 @@ func serializeip(ipv6: array[8, uint16]): string =
         result &= ':'
       ignore0 = true
       continue
-    result &= toHex(ipv6[i])
+    const HexChars = "0123456789abcdef"
+    var x = ipv6[i]
+    while x != 0:
+      result &= HexChars[x mod 0x10]
+      x = x div 0x10
     if i != high(ipv6):
       result &= ':'
 

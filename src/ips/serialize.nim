@@ -92,7 +92,9 @@ func slen*(n: SomeNumber): int =
   return sizeof(n)
 
 proc swrite*[T: enum](stream: Stream, x: T) =
-  stream.swrite(cast[int](x))
+  static:
+    doAssert sizeof(int) >= sizeof(T)
+  stream.swrite(int(x))
 
 proc sread*[T: enum](stream: Stream, x: var T) =
   var i: int

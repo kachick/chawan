@@ -370,7 +370,9 @@ proc inputLoop(client: Client) =
   selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
   let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
   while true:
+    {.warning[CastSizes]:off.} # not our bug. TODO remove when fixed
     let events = client.selector.select(-1)
+    {.warning[CastSizes]:on.}
     for event in events:
       if Read in event.events:
         client.handleRead(event.fd)
@@ -503,7 +505,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
     else:
       dump = true
   client.ssock = initServerSocket(false, false)
-  client.fd = cast[int](client.ssock.sock.getFd())
+  client.fd = int(client.ssock.sock.getFd())
   let selector = newSelector[Container]()
   selector.registerHandle(client.fd, {Read}, nil)
   let efd = int(client.dispatcher.forkserver.estream.fd)

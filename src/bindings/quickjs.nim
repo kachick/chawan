@@ -41,10 +41,10 @@ when sizeof(int) < sizeof(int64):
     cast[pointer](v)
 
   template JS_MKVAL*(t, val: untyped): JSValue =
-    JSValue((cast[uint64](t) shl 32) or cast[uint32](val))
+    JSValue((cast[uint64](int64(t)) shl 32) or uint32(val))
 
   template JS_MKPTR*(t, p: untyped): JSValue =
-    JSValue((cast[uint64](t) shl 32) or cast[uint](p))
+    JSValue((cast[uint64](int64(t)) shl 32) or cast[uint](p))
 
   proc `==`*(a, b: JSValue): bool {.borrow.}
 else:

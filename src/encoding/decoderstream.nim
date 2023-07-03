@@ -76,7 +76,7 @@ template append_codepoint(stream: DecoderStream, c: uint32, oq: ptr UncheckedArr
     append_codepoint_buf stream, c
 
 template append_codepoint(stream: DecoderStream, c: char, oq: ptr UncheckedArray[uint32], olen: int, n: var int) =
-  stream.append_codepoint cast[uint32](c), oq, olen, n
+  stream.append_codepoint uint32(c), oq, olen, n
 
 proc handleError(stream: DecoderStream, oq: ptr UncheckedArray[uint32], olen: int, n: var int) =
   case stream.errormode
@@ -100,29 +100,29 @@ proc decodeUTF8(stream: DecoderStream, iq: var seq[uint8], oq: ptr UncheckedArra
         stream.append_codepoint uint32(b), oq, olen, n
       of 0xC2u8 .. 0xDFu8:
         needed = 1
-        c = cast[uint32](b) and 0x1F
+        c = uint32(b) and 0x1F
       of 0xE0u8:
         bounds.a = 0xA0
         needed = 2
-        c = cast[uint32](b) and 0xF
+        c = uint32(b) and 0xF
       of 0xEDu8:
         bounds.b = 0x9F
         needed = 2
-        c = cast[uint32](b) and 0xF
+        c = uint32(b) and 0xF
       of 0xE1u8 .. 0xECu8, 0xEEu8 .. 0xEFu8:
         needed = 2
-        c = cast[uint32](b) and 0xF
+        c = uint32(b) and 0xF
       of 0xF0u8:
         bounds.a = 0x90
         needed = 3
-        c = cast[uint32](b) and 0x7
+        c = uint32(b) and 0x7
       of 0xF4u8:
         bounds.b = 0x8F
         needed = 3
-        c = cast[uint32](b) and 0x7
+        c = uint32(b) and 0x7
       of 0xF1u8 .. 0xF3u8:
         needed = 3
-        c = cast[uint32](b) and 0x7
+        c = uint32(b) and 0x7
       else:
         stream.handleError(oq, olen, n)
         if stream.isend: # fatal error
@@ -173,7 +173,7 @@ proc gb18RangesCodepoint(p: uint32): uint32 =
     # is found.
     # We want the last that is <=, so decrease index by one.
     let i = upperBound(Gb18030RangesDecode, p, func(a: tuple[p, ucs: uint16], b: uint32): int =
-      cmp(cast[uint32](a.p), b))
+      cmp(uint32(a.p), b))
     let elem = Gb18030RangesDecode[i - 1]
     offset = elem.p
     c = elem.ucs
@@ -618,7 +618,7 @@ proc decodeXUserDefined(stream: DecoderStream, iq: var seq[uint8],
     if c in Ascii:
       stream.append_codepoint c, oq, olen, n
     else:
-      let c = 0xF780 + cast[uint32](c) - 0x80
+      let c = 0xF780 + uint32(c) - 0x80
       stream.append_codepoint c, oq, olen, n
 
 proc decodeSingleByte(stream: DecoderStream, iq: var seq[uint8],
@@ -633,7 +633,7 @@ proc decodeSingleByte(stream: DecoderStream, iq: var seq[uint8],
       if p == 0u16:
         stream.handleError(oq, olen, n)
       else:
-        stream.append_codepoint cast[uint32](p), oq, olen, n
+        stream.append_codepoint uint32(p), oq, olen, n
 
 proc decodeReplacement(stream: DecoderStream, oq: ptr UncheckedArray[uint32], olen: int, n: var int) =
   if not stream.replreported:

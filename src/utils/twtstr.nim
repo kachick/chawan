@@ -967,8 +967,8 @@ const DoubleWidthTable = (func(): PropertyTable =
   var ptab = makePropertyTable(DoubleWidthRanges, Combining)
   # Control chars return a width of 2, and are displayed as ^{letter}.
   for c in Controls:
-    let i = cast[uint16](c) div 8
-    case cast[uint16](c) mod 8
+    let i = uint16(c) div 8
+    case uint16(c) mod 8
     of 0: ptab[i] = ptab[i] or 0x01
     of 1: ptab[i] = ptab[i] or 0x02
     of 2: ptab[i] = ptab[i] or 0x04
