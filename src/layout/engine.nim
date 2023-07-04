@@ -985,6 +985,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
     let minw = box.xminwidth div colspan
     let w = box.width div colspan
     for i in n ..< n + colspan:
+      # Add spacing.
       ctx.width += pctx.inlinespacing
       pctx.cols[i].maxwidth = w
       if pctx.cols[i].width < w:
@@ -1009,6 +1010,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
           pctx.cols[i].width = minw
           ctx.reflow[i] = true
       ctx.width += pctx.cols[i].width
+      # Add spacing to the right side.
       ctx.width += pctx.inlinespacing
     n += colspan
     inc i
@@ -1026,6 +1028,8 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     var w: LayoutUnit = 0
     for i in n ..< n + cellw.colspan:
       w += pctx.cols[i].width
+    # Add inline spacing for merged columns.
+    w += pctx.inlinespacing * (cellw.colspan - 1) * 2
     if cellw.reflow:
       #TODO TODO TODO this is a hack, and it doesn't even work properly
       let ocomputed = cellw.builder.computed
@@ -1102,6 +1106,7 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
 
 proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     weight: var float64): seq[int] =
+  # Spacing for each column:
   var avail = newSeqUninitialized[int](ctx.cols.len)
   var i = 0
   var j = 0
@@ -1153,6 +1158,8 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder) =
   if (table.contentWidth > ctx.maxwidth and (not table.shrink or not spec)) or
       table.contentWidth < ctx.maxwidth:
     var W = table.contentWidth
+    # Remove inline spacing from distributable width.
+    W -= ctx.cols.len * ctx.inlinespacing * 2
     var weight: float64
     var avail = ctx.calcUnspecifiedColIndices(W, weight)
     var redo = true
