@@ -152,8 +152,8 @@ proc getCharBmp(u: uint32): Bitmap =
     if cu == u:
       return bmp
   # Unifont glyphs start at x: 32, y: 64, and are of 8x16/16x16 size
-  let gx = uint64(32 + 16 * (u mod 0xFF))
-  let gy = uint64(64 + 16 * (u div 0xFF))
+  let gx = uint64(32 + 16 * (u mod 0x100))
+  let gy = uint64(64 + 16 * (u div 0x100))
   var fullwidth = false
   const white = rgba(255, 255, 255, 255)
   block loop:
