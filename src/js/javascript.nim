@@ -192,7 +192,8 @@ func findClass*(ctx: JSContext, class: string): Option[JSClassID] =
     return some(opaque.creg[class])
   return none(JSClassID)
 
-func newJSCFunction*(ctx: JSContext, name: string, fun: JSCFunction, argc: int = 0, proto = JS_CFUNC_generic, magic = 0): JSValue =
+func newJSCFunction*(ctx: JSContext, name: string, fun: JSCFunction,
+    argc: int = 0, proto = JS_CFUNC_generic, magic = 0): JSValue =
   return JS_NewCFunction2(ctx, fun, cstring(name), cint(argc), proto, cint(magic))
 
 proc free*(ctx: var JSContext) =
@@ -717,6 +718,7 @@ proc toJS(ctx: JSContext, promise: EmptyPromise): JSValue
 proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, err: JSError): JSValue
+proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
 
 #TODO varargs
 proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue):
@@ -1038,6 +1040,21 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
     return msg
   let ctor = ctx.getOpaque().err_ctors[err.e]
   return JS_CallConstructor(ctx, ctor, 1, addr msg)
+
+proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
+  return ctx.newJSCFunction("", f)
+
+proc defineConsts*[T](ctx: JSContext, classid: JSClassID,
+    consts: static openarray[(string, T)]) =
+  let proto = ctx.getOpaque().ctors[classid]
+  for (k, v) in consts:
+    ctx.defineProperty(proto, k, v)
+
+proc defineConsts*(ctx: JSContext, classid: JSClassID,
+    consts: typedesc[enum], astype: typedesc) =
+  let proto = ctx.getOpaque().ctors[classid]
+  for e in consts:
+    ctx.defineProperty(proto, $e, astype(e))
 
 type
   JSFuncGenerator = object
