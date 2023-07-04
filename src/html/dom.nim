@@ -2387,10 +2387,12 @@ proc setForm*(element: FormAssociatedElement, form: HTMLFormElement) =
 
 proc resetFormOwner(element: FormAssociatedElement) =
   element.parserInserted = false
-  if element.form != nil and
-      element.tagType notin ListedElements or not element.attrb("form") and
-      element.findAncestor({TAG_FORM}) == element.form:
-    return
+  if element.form != nil:
+    if element.tagType notin ListedElements:
+      return
+    let lastForm = element.findAncestor({TAG_FORM}) 
+    if not element.attrb("form") and lastForm == element.form:
+      return
   element.form = nil
   if element.tagType in ListedElements and element.attrb("form") and element.isConnected:
     let form = element.attr("form")
