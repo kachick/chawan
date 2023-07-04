@@ -1,8 +1,5 @@
 # Interface for QuickJS libregexp.
 
-import options
-import unicode
-
 import bindings/libregexp
 import bindings/quickjs
 import js/javascript
@@ -32,63 +29,6 @@ type
     regex: Regex
     rule: string
     global: bool
-
-type string16 = distinct string
-
-# Convert a UTF-8 string to UTF-16.
-# Note: this doesn't check for (invalid) UTF-8 containing surrogates.
-proc toUTF16(s: string): string16 =
-  var res = ""
-  var i = 0
-  template put16(c: uint16) =
-    res.setLen(res.len + 2)
-    res[i] = cast[char](c)
-    inc i
-    res[i] = cast[char](c shr 8)
-    inc i
-  for r in s.runes:
-    var c = uint32(r)
-    if c < 0x10000: # ucs-2
-      put16 uint16(c)
-    elif c <= 0x10FFFF: # surrogate
-      c -= 0x10000
-      put16 uint16((c shr 10) + 0xD800)
-      put16 uint16((c and 0x3FF) + 0xDC00)
-    else: # invalid
-      put16 uint16(0xFFFD)
-  result = string16(res)
-
-func len(s: string16): int {.borrow.}
-func `[]`(s: string16, i: int): char = string(s)[i]
-func `[]`(s: string16, i: BackwardsIndex): char = string(s)[i]
-
-template fastRuneAt(s: string16, i: int, r: untyped, doInc = true, be = false) =
-  if i + 1 == s.len: # unmatched byte
-    when doInc: inc i
-    r = Rune(0xFFFD)
-  else:
-    when be:
-      var c1: uint32 = (uint32(s[i]) shl 8) + uint32(s[i + 1])
-    else:
-      var c1: uint32 = uint32(s[i]) + (uint32(s[i + 1]) shl 8)
-    if c1 >= 0xD800 or c1 < 0xDC00:
-      if i + 2 == s.len or i + 3 == s.len:
-        when doInc: i += 2
-        r = Rune(c1) # unmatched surrogate
-      else:
-        when be:
-          var c2: uint32 = (uint32(s[i + 2]) shl 8) + uint32(s[i + 3])
-        else:
-          var c2: uint32 = uint32(s[i + 2]) + (uint32(s[i + 3]) shl 8)
-        if c2 >= 0xDC00 and c2 < 0xE000:
-          r = Rune((((c1 and 0x3FF) shl 10) or (c2 and 0x3FF)) + 0x10000)
-          when doInc: i += 4
-        else:
-          r = Rune(c1) # unmatched surrogate
-          when doInc: i += 2
-    else:
-      r = Rune(c1) # ucs-2
-      when doInc: i += 2
 
 var dummyRuntime = newJSRuntime()
 var dummyContext = dummyRuntime.newJSContextRaw()
@@ -167,53 +107,27 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
   assert 0 <= start and start <= length, "Start: " & $start & ", length: " & $length & " str: " & $str
 
   let captureCount = lre_get_capture_count(regex.bytecode)
-  var capture: ptr ptr uint8 = nil
+  var capture: ptr UncheckedArray[int]= nil
   if captureCount > 0:
-    capture = cast[ptr ptr uint8](alloc0(sizeof(ptr uint8) * captureCount * 2))
+    let size = sizeof(ptr uint8) * captureCount * 2
+    capture = cast[ptr UncheckedArray[int]](alloc0(size))
   var cstr = cstring(str)
-  let ascii = str.isAscii()
-  var ustr: string16
-  if not ascii:
-    if start != 0 or length != str.len:
-      ustr = toUTF16(str.substr(start, length))
-    else:
-      ustr = toUTF16(str)
-    cstr = cstring(ustr)
   let flags = lre_get_flags(regex.bytecode)
   var start = start
   while true:
-    let ret = lre_exec(capture, regex.bytecode,
-                       cast[ptr uint8](cstr), cint(start),
-                       cint(length), cint(not ascii), dummyContext)
+    let ret = lre_exec(cast[ptr ptr uint8](capture), regex.bytecode,
+      cast[ptr uint8](cstr), cint(start), cint(length), cint(0), dummyContext)
     if ret != 1: #TODO error handling? (-1)
       break
     result.success = true
     if captureCount == 0 or nocaps:
       break
     let cstrAddress = cast[int](cstr)
-    start = (cast[ptr int](cast[int](capture) + sizeof(ptr uint8))[] - cstrAddress) shr cint(not ascii)
-    var i = 0
-    while i < captureCount * sizeof(ptr uint8):
-      let s = cast[ptr int](cast[int](capture) + i)[] - cstrAddress
-      i += sizeof(ptr uint8)
-      let e = cast[ptr int](cast[int](capture) + i)[] - cstrAddress
-      i += sizeof(ptr uint8)
-      if ascii:
-        result.captures.add((s, e))
-      else:
-        var s8 = 0
-        var e8 = 0
-        var i = 0
-        var r: Rune
-        while i < s and i < ustr.len:
-          fastRuneAt(ustr, i, r)
-          let si = r.size()
-          s8 += si
-          e8 += si
-        while i < e and i < ustr.len:
-          fastRuneAt(ustr, i, r)
-          e8 += r.size()
-        result.captures.add((s8, e8))
+    start = capture[1] - cstrAddress
+    for i in 0 ..< captureCount:
+      let s = capture[i * 2] - cstrAddress
+      let e = capture[i * 2 + 1] - cstrAddress
+      result.captures.add((s, e))
     if (flags and LRE_FLAG_GLOBAL) != 1:
       break
   if captureCount > 0:

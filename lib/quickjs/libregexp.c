@@ -1924,7 +1924,7 @@ static BOOL is_word_char(uint32_t c)
 #define GET_CHAR(c, cptr, cbuf_end)                                     \
     do {                                                                \
         if (cbuf_type == 0) {                                           \
-            c = *cptr++;                                                \
+            c = unicode_from_utf8(cptr, cbuf_end - cptr, &cptr);        \
         } else {                                                        \
             uint32_t __c1;                                              \
             c = *(uint16_t *)cptr;                                      \
@@ -1943,7 +1943,8 @@ static BOOL is_word_char(uint32_t c)
 #define PEEK_CHAR(c, cptr, cbuf_end)             \
     do {                                         \
         if (cbuf_type == 0) {                    \
-            c = cptr[0];                         \
+            const uint8_t *__cpt2;                                      \
+            c = unicode_from_utf8(cptr, cbuf_end - cptr, &__cpt2);      \
         } else {                                 \
             uint32_t __c1;                                              \
             c = ((uint16_t *)cptr)[0];                                  \
@@ -1960,7 +1961,11 @@ static BOOL is_word_char(uint32_t c)
 #define PEEK_PREV_CHAR(c, cptr, cbuf_start)                 \
     do {                                         \
         if (cbuf_type == 0) {                    \
-            c = cptr[-1];                        \
+            const uint8_t *__cpt2 = cptr;                               \
+            int __i = 0;                                                \
+            while (__cpt2 > cbuf_start && ((*__cpt2-- >> 6) & 2))       \
+                __i++;                                                  \
+            c = unicode_from_utf8(__cpt2, __i, &__cpt2);                \
         } else {                                 \
             uint32_t __c1;                                              \
             c = ((uint16_t *)cptr)[-1];                                 \
@@ -1977,8 +1982,11 @@ static BOOL is_word_char(uint32_t c)
 #define GET_PREV_CHAR(c, cptr, cbuf_start)       \
     do {                                         \
         if (cbuf_type == 0) {                    \
-            cptr--;                              \
-            c = cptr[0];                         \
+            const uint8_t *__cpt2;                                      \
+            int __i = 0;                                                \
+            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2))           \
+                __i++;                                                  \
+            c = unicode_from_utf8(cptr, __i, &__cpt2);                  \
         } else {                                 \
             uint32_t __c1;                                              \
             cptr -= 2;                                                  \
@@ -1997,7 +2005,7 @@ static BOOL is_word_char(uint32_t c)
 #define PREV_CHAR(cptr, cbuf_start)       \
     do {                                  \
         if (cbuf_type == 0) {             \
-            cptr--;                       \
+            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2));          \
         } else {                          \
             cptr -= 2;                          \
             if (cbuf_type == 2) {                                       \
