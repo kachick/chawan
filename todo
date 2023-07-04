@@ -46,8 +46,6 @@ buffer:
 - do not prompt when submitting forms (it's annoying)
 	* this is mostly fixed, but not completely
 network:
-- implement readablestream
-- implement XHR
 - ftp/sftp
 - gopher
 - gemini? (not a fan, but quite a bit of interesting content is on gemini)
@@ -55,7 +53,6 @@ network:
 - socks/http proxies (just settings needed...)
 - websockets (curl supports ws)
 - integrate curl-impersonate (LD_PRELOAD works, but still...)
-- non-curl http? (could at least do 1.1)
 external:
 - something like EXTERN
 - mime type handling and external viewers (e.g. open sound with mpv...)
@@ -72,7 +69,7 @@ javascript:
 - "javascript:" urls
 - better dom support, events
 	* more concretely: get jQuery and basic click events to work
-- XMLHttpRequest, ideally also fetch
+- implement ReadableStream, XHR
 - make document accessible from client console? (maybe a bad idea
   security-wise, but it would sure be convenient...)
 	* alternative idea: separate console for each buffer
@@ -87,7 +84,6 @@ layout engine:
 - overflow
 - incremental layout & layout caching
 	* first for tree generation, then for layout.
-- LayoutUnit (for greater precision)
 - more replaced elements: iframe, select
 	* for select we should have a built-in dropdown list, like w3m. then
 	  we could use that for buffer selection too
@@ -97,8 +93,6 @@ images:
 - more formats (apng, gif: write own decoders, jpeg: use libjpeg, webp: ?)
 - incremental decoding (maybe implement streams first?)
 - separate image decoder process? or just run on a different thread?
-- or just do it like w3m? (counterpoint: w3m's image handling is dumb and
-  often doesn't even work/is very slow)
 etc:
 - important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
 - tests (including aforementioned fuzzer)
