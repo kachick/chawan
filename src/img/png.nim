@@ -380,7 +380,11 @@ proc readIDAT(reader: var PNGReader) =
   reader.strm.avail_out = cuint(olen)
   reader.strm.next_out = addr reader.idatBuf[reader.idatAt]
   let res = inflate(addr reader.strm, Z_NO_FLUSH)
-  doAssert res != Z_STREAM_ERROR
+  if res == Z_STREAM_ERROR:
+    if reader.strm.msg != nil:
+      reader.err "zstream error: " & $reader.strm.msg
+    else:
+      reader.err "unknown zstream error"
   case res
   of Z_NEED_DICT, Z_DATA_ERROR, Z_MEM_ERROR, Z_BUF_ERROR:
     # Z_BUF_ERROR is fatal here, as outlen is at least as large as idat.
