@@ -23,6 +23,20 @@ type
     user: DeclarationList
     author: seq[DeclarationList]
 
+func appliesLR(feature: MediaFeature, window: Window,
+    n: LayoutUnit): bool =
+  let a = px(feature.lengthrange.a, window.attrs, 0)
+  let b = px(feature.lengthrange.b, window.attrs, 0)
+  if not feature.lengthaeq and a == n:
+    return false
+  if a > n:
+    return false
+  if not feature.lengthbeq and b == n:
+    return false
+  if b < n:
+    return false
+  return true
+
 func applies(feature: MediaFeature, window: Window): bool =
   case feature.t
   of FEATURE_COLOR:
@@ -34,13 +48,9 @@ func applies(feature: MediaFeature, window: Window): bool =
   of FEATURE_PREFERS_COLOR_SCHEME:
     return feature.b
   of FEATURE_WIDTH:
-    let a = toInt(px(feature.lengthrange.a, window.attrs, 0))
-    let b = toInt(px(feature.lengthrange.b, window.attrs, 0))
-    return window.attrs.ppc * window.attrs.width in a .. b
+    return feature.appliesLR(window, toLayoutUnit(window.attrs.width_px))
   of FEATURE_HEIGHT:
-    let a = toInt(px(feature.lengthrange.a, window.attrs, 0))
-    let b = toInt(px(feature.lengthrange.b, window.attrs, 0))
-    return window.attrs.ppl * window.attrs.height in a .. b
+    return feature.appliesLR(window, toLayoutUnit(window.attrs.height_px))
 
 func applies(mq: MediaQuery, window: Window): bool =
   case mq.t

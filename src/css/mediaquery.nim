@@ -12,8 +12,12 @@ type
     cvals: seq[CSSComponentValue]
 
   MediaType* = enum
-    MEDIA_TYPE_UNKNOWN, MEDIA_TYPE_ALL, MEDIA_TYPE_PRINT, MEDIA_TYPE_SCREEN,
-    MEDIA_TYPE_SPEECH, MEDIA_TYPE_TTY
+    MEDIA_TYPE_UNKNOWN = "unknown"
+    MEDIA_TYPE_ALL = "all"
+    MEDIA_TYPE_PRINT = "print"
+    MEDIA_TYPE_SCREEN = "screen"
+    MEDIA_TYPE_SPEECH = "speech"
+    MEDIA_TYPE_TTY = "tty"
 
   MediaConditionType* = enum
     CONDITION_NOT, CONDITION_AND, CONDITION_OR, CONDITION_FEATURE,
@@ -53,6 +57,15 @@ type
 
   MediaQueryComparison = enum
     COMPARISON_EQ, COMPARISON_GT, COMPARISON_LT, COMPARISON_GE, COMPARISON_LE
+
+# for debugging
+func `$`*(mq: MediaQuery): string =
+  case mq.t
+  of CONDITION_MEDIA: return $mq.media
+  of CONDITION_FEATURE: return $mq.feature
+  of CONDITION_NOT: return "not " & $mq.n
+  of CONDITION_OR: return $mq.ora & " or " & $mq.orb
+  of CONDITION_AND: return $mq.anda & " or " & $mq.andb
 
 const MediaTypes = {
   "all": MEDIA_TYPE_ALL,
@@ -353,6 +366,7 @@ proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false
     else:
       parser.reconsume()
 
+  parser.skipBlanks()
   if not parser.has():
     return nil
 

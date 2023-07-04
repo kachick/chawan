@@ -389,18 +389,18 @@ func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
 func em_to_px(em: float64, window: WindowAttributes): LayoutUnit =
-  em * toLayoutUnit(window.ppl)
+  em * float64(window.ppl)
 
 func ch_to_px(ch: float64, window: WindowAttributes): LayoutUnit =
-  ch * toLayoutUnit(window.ppc)
+  ch * float64(window.ppc)
 
 # 水 width, we assume it's 2 chars
 func ic_to_px(ic: float64, window: WindowAttributes): LayoutUnit =
-  ic * toLayoutUnit(window.ppc) * 2
+  ic * float64(window.ppc) * 2
 
 # x-letter height, we assume it's em/2
 func ex_to_px(ex: float64, window: WindowAttributes): LayoutUnit =
-  ex * toLayoutUnit(window.ppc) / 2
+  ex * float64(window.ppc) / 2
 
 func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit {.inline.} =
   case l.unit
