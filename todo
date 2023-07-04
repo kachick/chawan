@@ -50,7 +50,6 @@ network:
 - gopher
 - gemini? (not a fan, but quite a bit of interesting content is on gemini)
 - uBO integration? (or at least implement filter lists)
-- socks/http proxies (just settings needed...)
 - websockets (curl supports ws)
 - integrate curl-impersonate (LD_PRELOAD works, but still...)
 external:

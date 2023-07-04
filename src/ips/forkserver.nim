@@ -15,6 +15,7 @@ import ips/serialize
 import ips/serversocket
 import types/buffersource
 import types/cookie
+import types/url
 import utils/twtstr
 
 type
@@ -33,8 +34,8 @@ type
     children: seq[(Pid, Pid)]
 
 proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers = nil,
-    filter = newURLFilter(default = true),
-    cookiejar: CookieJar = nil): FileLoader =
+    filter = newURLFilter(default = true), cookiejar: CookieJar = nil,
+    proxy: URL = nil, acceptProxy = false): FileLoader =
   new(result)
   forkserver.ostream.swrite(FORK_LOADER)
   var defaultHeaders = defaultHeaders
@@ -44,7 +45,9 @@ proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers = nil,
   let config = LoaderConfig(
     defaultHeaders: defaultHeaders,
     filter: filter,
-    cookiejar: cookiejar
+    cookiejar: cookiejar,
+    proxy: proxy,
+    acceptProxy: acceptProxy
   )
   forkserver.ostream.swrite(config)
   forkserver.ostream.flush()
@@ -113,7 +116,8 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
       defaultHeaders: config.headers,
       filter: config.filter,
       cookiejar: config.cookiejar,
-      referrerpolicy: config.referrerpolicy
+      referrerpolicy: config.referrerpolicy,
+      proxy: config.proxy
     )
   )
   let pid = fork()

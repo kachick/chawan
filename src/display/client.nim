@@ -566,7 +566,11 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   result.config = config
   result.dispatcher = dispatcher
   result.attrs = getWindowAttributes(stdout)
-  result.loader = dispatcher.forkserver.newFileLoader()
+  let forkserver = dispatcher.forkserver
+  result.loader = forkserver.newFileLoader(
+    proxy = config.getProxy(),
+    acceptProxy = true
+  )
   result.jsrt = newJSRuntime()
   result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
   JS_SetModuleLoaderFunc(result.jsrt, normalizeModuleName, clientLoadJSModule,

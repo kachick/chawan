@@ -37,6 +37,7 @@ type
     document_charset: seq[Charset]
     images: Opt[bool]
     stylesheet: Opt[string]
+    proxy: Opt[string]
 
   StaticOmniRule = object
     match: string
@@ -54,6 +55,7 @@ type
     document_charset*: seq[Charset]
     images*: Opt[bool]
     stylesheet*: Opt[string]
+    proxy*: Opt[URL]
 
   OmniRule* = object
     match*: Regex
@@ -81,6 +83,7 @@ type
   NetworkConfig = object
     max_redirect*: int32
     prepend_https*: bool
+    proxy*: Opt[string]
 
   DisplayConfig = object
     color_mode*: Opt[ColorMode]
@@ -120,6 +123,7 @@ type
     scripting*: bool
     charsets*: seq[Charset]
     images*: bool
+    proxy*: URL
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -141,9 +145,19 @@ func getForkServerConfig*(config: Config): ForkServerConfig =
     ambiguous_double: config.display.double_width_ambiguous
   )
 
+func getProxy*(config: Config): URL =
+  if config.network.proxy.isSome:
+    let s = config.network.proxy.get
+    let x = parseURL(s)
+    if x.isSome:
+      return x.get
+    else:
+      raise newException(Defect, "Invalid proxy URL: " & s)
+  return nil
+
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
-    images: bool, userstyle: string): BufferConfig =
+    images: bool, userstyle: string, proxy: URL): BufferConfig =
   result = BufferConfig(
     userstyle: userstyle,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
@@ -152,7 +166,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     referer_from: referer_from,
     scripting: scripting,
     charsets: charsets,
-    images: images
+    images: images,
+    proxy: proxy
   )
   new(result.headers)
   result.headers[] = DefaultHeaders
@@ -177,6 +192,11 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       let fun = jsctx.eval(sc.rewrite_url.get, "<siteconf>",
         JS_EVAL_TYPE_GLOBAL)
       conf.rewrite_url = getJSFunction[URL, URL](jsctx, fun)
+    if sc.proxy.isSome:
+      let x = parseURL(sc.proxy.get)
+      if x.isNone:
+        raise newException(Defect, "invalid URL: " & sc.proxy.get)
+      conf.proxy = opt(x.get)
     result.add(conf)
 
 proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =

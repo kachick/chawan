@@ -39,34 +39,35 @@ type
     SEARCH_B, ISEARCH_F, ISEARCH_B, GOTO_LINE
 
   Pager* = ref object
+    alerton: bool
+    alerts: seq[string]
+    askcursor: int
     askpromise*: Promise[bool]
     askprompt: string
-    askcursor: int
-    numload*: int
-    alerts: seq[string]
-    alerton: bool
     commandMode* {.jsget.}: bool
-    container*: Container
-    dispatcher*: Dispatcher
-    lineedit*: Option[LineEdit]
-    linemode*: LineMode
-    username: string
-    scommand*: string
     config: Config
-    regex: Opt[Regex]
-    iregex: Result[Regex, string]
-    reverseSearch: bool
-    statusgrid*: FixedGrid
-    tty: File
-    procmap*: Table[Pid, Container]
-    unreg*: seq[(Pid, SocketStream)]
-    display: FixedGrid
-    redraw*: bool
-    term*: Terminal
-    linehist: array[LineMode, LineHistory]
-    siteconf: seq[SiteConfig]
-    omnirules: seq[OmniRule]
+    container*: Container
     cookiejars: Table[string, CookieJar]
+    dispatcher*: Dispatcher
+    display: FixedGrid
+    iregex: Result[Regex, string]
+    lineedit*: Option[LineEdit]
+    linehist: array[LineMode, LineHistory]
+    linemode*: LineMode
+    numload*: int
+    omnirules: seq[OmniRule]
+    procmap*: Table[Pid, Container]
+    proxy: URL
+    redraw*: bool
+    regex: Opt[Regex]
+    reverseSearch: bool
+    scommand*: string
+    siteconf: seq[SiteConfig]
+    statusgrid*: FixedGrid
+    term*: Terminal
+    tty: File
+    unreg*: seq[(Pid, SocketStream)]
+    username: string
 
 jsDestructor(Pager)
 
@@ -181,7 +182,8 @@ proc newPager*(config: Config, attrs: WindowAttributes,
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
     siteconf: config.getSiteConfig(ctx),
-    omnirules: config.getOmniRules(ctx)
+    omnirules: config.getOmniRules(ctx),
+    proxy: config.getProxy()
   )
   return pager
 
@@ -576,6 +578,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
   var images: bool
   var charsets = pager.config.encoding.document_charset
   var userstyle = pager.config.css.stylesheet
+  var proxy = pager.proxy
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -606,8 +609,10 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
     if sc.stylesheet.isSome:
       userstyle &= "\n"
       userstyle &= sc.stylesheet.get
+    if sc.proxy.isSome:
+      proxy = sc.proxy.get
   return pager.config.getBufferConfig(url, cookiejar, headers,
-    referer_from, scripting, charsets, images, userstyle)
+    referer_from, scripting, charsets, images, userstyle, proxy)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),

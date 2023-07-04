@@ -184,6 +184,13 @@ Network options are to be placed in the `[network]` section.
 https (e.g. wikipedia.org as https://wikipedia.org.)</td>
 </tr>
 
+<tr>
+<td>proxy</td>
+<td>URL</td>
+<td>Specify a proxy for all network requests Chawan makes. All proxies
+supported by cURL may be used. Can be overridden by siteconf.</td>
+</tr>
+
 </table>
 
 ## Display
@@ -431,6 +438,12 @@ in [encoding].</td>
 Note: other user-stylesheets (specified under [css] or additional matching
 siteconfs) are not overridden. (In other words, they will be concatenated
 with this stylesheet to get the final user stylesheet.)</td>
+</tr>
+
+<tr>
+<td>proxy</td>
+<td>URL</td>
+<td>Specify a proxy for network requests fetching contents of this buffer.</td>
 </tr>
 
 

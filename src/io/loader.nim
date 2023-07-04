@@ -84,6 +84,10 @@ type
     filter*: URLFilter
     cookiejar*: CookieJar
     referrerpolicy*: ReferrerPolicy
+    proxy*: URL
+    # When set to false, requests with a proxy URL are overridden by the
+    # loader proxy.
+    acceptProxy*: bool
 
   FetchPromise* = Promise[Result[Response, JSError]]
 
@@ -132,6 +136,8 @@ proc onLoad(ctx: LoaderContext, stream: Stream) =
       let r = getReferer(request.referer, request.url, ctx.config.referrerpolicy)
       if r != "":
         request.headers["Referer"] = r
+    if request.proxy == nil or not ctx.config.acceptProxy:
+      request.proxy = ctx.config.proxy
     ctx.loadResource(request, stream)
 
 proc acceptConnection(ctx: LoaderContext) =
