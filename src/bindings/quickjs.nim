@@ -1,12 +1,7 @@
-const lib = "lib/"
-const hlib = "lib/"
-const qjsheader = "<quickjs/quickjs.h>"
+const qjsheader = "quickjs/quickjs.h"
 
-when lib != "":
-  {.passL: "-L" & lib.}
-when hlib != "":
-  {.passC: "-I" & hlib.}
-{.passL: "-lquickjs -lm -lpthread".}
+{.passC: "-Ilib/".}
+{.passL: "-Llib/ -lquickjs -lm -lpthread".}
 
 const                         ##  all tags with a reference count are negative
   JS_TAG_FIRST* = -10           ##  first negative tag
