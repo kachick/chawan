@@ -74,6 +74,7 @@ javascript:
 	* alternative idea: separate console for each buffer
 - implement JS access to non-ref object members (with a ptr opaque + GC_ref
   on parent object or something)
+- buffer selection
 layout engine:
 - important: floats (way too many websites look very ugly without them)
 - make background-color a property of inline boxes, not words. (this would
@@ -83,9 +84,7 @@ layout engine:
 - overflow
 - incremental layout & layout caching
 	* first for tree generation, then for layout.
-- more replaced elements: iframe, select
-	* for select we should have a built-in dropdown list, like w3m. then
-	  we could use that for buffer selection too
+- iframe
 - writing-mode, flexbox, grid, ruby, ... (i.e. cool new stuff)
 images:
 - sixel encoding (eventually also kitty)

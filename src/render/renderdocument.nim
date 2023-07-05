@@ -59,7 +59,7 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
     lines[y].str &= ' '.repeat(padwidth)
 
   lines[y].str &= linestr
-  let linestrwidth = linestr.twidth(x) - x
+  let linestrwidth = linestr.twidth(x)
 
   i = 0
   var nx = x # last x of new string

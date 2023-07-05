@@ -251,6 +251,10 @@ select {
 	display: inline-block;
 }
 
+select:focus {
+	visibility: hidden;
+}
+
 select::before {
 	content: '[';
 	color: initial;
@@ -272,17 +276,16 @@ select > :is(option, optgroup > option):checked {
 	color: red;
 }
 
-select:focus > :is(option, optgroup > option) {
-	display: list-item;
-	color: white;
+select[multiple] > :is(option, optgroup > option):first-child {
+	display: inline-block;
 }
 
-select:focus > :is(option, optgroup > option):checked {
-	color: pink;
+select[multiple] > :is(option, optgroup > option):not(:checked):first-child::after {
+	content: '(...)';
 }
 
-select:focus > :is(option, optgroup > option):hover {
-	color: red;
+select[multiple] > :is(option, optgroup > option):not(:first-child):checked::before {
+	content: ',';
 }
 
 center {

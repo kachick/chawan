@@ -10,6 +10,7 @@ when defined(posix):
 
 import buffer/buffer
 import buffer/cell
+import buffer/select
 import config/config
 import io/promise
 import io/request
@@ -20,6 +21,7 @@ import ips/socketstream
 import js/javascript
 import js/regex
 import types/buffersource
+import types/color
 import types/cookie
 import types/dispatcher
 import types/url
@@ -96,6 +98,7 @@ type
     startpos: Option[CursorPosition]
     hasstart: bool
     redirectdepth*: int
+    select*: Select
 
 jsDestructor(Container)
 
@@ -407,16 +410,28 @@ proc setCursorXY(container: Container, x, y: int) {.jsfunc.} =
     container.centerLine()
 
 proc cursorDown(container: Container) {.jsfunc.} =
-  container.setCursorY(container.cursory + 1)
+  if container.select.open:
+    container.select.cursorDown()
+  else:
+    container.setCursorY(container.cursory + 1)
 
 proc cursorUp(container: Container) {.jsfunc.} =
-  container.setCursorY(container.cursory - 1)
+  if container.select.open:
+    container.select.cursorUp()
+  else:
+    container.setCursorY(container.cursory - 1)
 
 proc cursorLeft(container: Container) {.jsfunc.} =
-  container.setCursorX(container.cursorFirstX() - 1)
+  if container.select.open:
+    container.select.cursorLeft()
+  else:
+    container.setCursorX(container.cursorFirstX() - 1)
 
 proc cursorRight(container: Container) {.jsfunc.} =
-  container.setCursorX(container.cursorLastX() + 1)
+  if container.select.open:
+    container.select.cursorRight()
+  else:
+    container.setCursorX(container.cursorLastX() + 1)
 
 proc cursorLineBegin(container: Container) {.jsfunc.} =
   container.setCursorX(0)
@@ -512,10 +527,16 @@ proc halfPageDown(container: Container) {.jsfunc.} =
   container.restoreCursorX()
 
 proc cursorFirstLine(container: Container) {.jsfunc.} =
-  container.setCursorY(0)
+  if container.select.open:
+    container.select.cursorFirstLine()
+  else:
+    container.setCursorY(0)
 
 proc cursorLastLine*(container: Container) {.jsfunc.} =
-  container.setCursorY(container.numLines - 1)
+  if container.select.open:
+    container.select.cursorLastLine()
+  else:
+    container.setCursorY(container.numLines - 1)
 
 proc cursorTop(container: Container) {.jsfunc.} =
   container.setCursorY(container.fromy)
@@ -592,14 +613,20 @@ proc gotoLine*[T: string|int](container: Container, s: T) =
     container.setCursorY(s)
 
 proc pushCursorPos*(container: Container) =
-  container.bpos.add(container.pos)
+  if container.select.open:
+    container.select.pushCursorPos()
+  else:
+    container.bpos.add(container.pos)
 
 proc popCursorPos*(container: Container, nojump = false) =
-  container.pos = container.bpos.pop()
-  if not nojump:
-    container.updateCursor()
-    container.sendCursorPosition()
-    container.needslines = true
+  if container.select.open:
+    container.select.popCursorPos(nojump)
+  else:
+    container.pos = container.bpos.pop()
+    if not nojump:
+      container.updateCursor()
+      container.sendCursorPosition()
+      container.needslines = true
 
 proc copyCursorPos*(container, c2: Container) =
   container.startpos = some(c2.pos)
@@ -629,7 +656,7 @@ proc onMatch(container: Container, res: BufferMatch) =
     container.setCursorXY(res.x, res.y)
     if container.hlon:
       container.clearSearchHighlights()
-      let ex = res.str.twidth(res.x) - 1
+      let ex = res.x + res.str.twidth(res.x) - 1
       let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
       container.highlights.add(hl)
       container.triggerEvent(UPDATE)
@@ -641,16 +668,22 @@ proc onMatch(container: Container, res: BufferMatch) =
     container.hlon = false
 
 proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) =
-  container.iface
-    .findNextMatch(regex, container.cursorx, container.cursory, wrap)
-    .then(proc(res: BufferMatch) =
-      container.onMatch(res))
+  if container.select.open:
+    container.select.cursorNextMatch(regex, wrap)
+  else:
+    container.iface
+      .findNextMatch(regex, container.cursorx, container.cursory, wrap)
+      .then(proc(res: BufferMatch) =
+        container.onMatch(res))
 
 proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) =
-  container.iface
-    .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
-    .then(proc(res: BufferMatch) =
-      container.onMatch(res))
+  if container.select.open:
+    container.select.cursorPrevMatch(regex, wrap)
+  else:
+    container.iface
+      .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
+      .then(proc(res: BufferMatch) =
+        container.onMatch(res))
 
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
@@ -723,8 +756,11 @@ proc load(container: Container) =
         container.onload(res))
 
 proc cancel*(container: Container) {.jsfunc.} =
-  container.canceled = true
-  container.alert("Canceled loading")
+  if container.select.open:
+    container.select.cancel()
+  else:
+    container.canceled = true
+    container.alert("Canceled loading")
 
 proc findAnchor*(container: Container, anchor: string) =
   container.iface.findAnchor(anchor).then(proc(found: bool) =
@@ -764,28 +800,45 @@ proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, l
       container.pipeto = nil)
   return container.pipeto
 
+proc onclick(container: Container, res: ClickResult)
+
+proc displaySelect(container: Container, selectResult: SelectResult) =
+  let submitSelect = proc(selected: seq[int]) =
+    container.iface.select(selected).then(proc(res: ClickResult) =
+      container.onclick(res))
+  container.select.initSelect(selectResult, container.acursorx,
+    container.acursory, container.height, submitSelect)
+  container.triggerEvent(UPDATE)
+
+proc onclick(container: Container, res: ClickResult) =
+  if res.repaint:
+    container.needslines = true
+  if res.open.isSome:
+    container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get))
+  if res.select.isSome:
+    container.displaySelect(res.select.get)
+  if res.readline.isSome:
+    let rl = res.readline.get
+    let event = if rl.area:
+      ContainerEvent(
+        t: READ_AREA,
+        tvalue: rl.value
+      )
+    else:
+      ContainerEvent(
+        t: READ_LINE,
+        prompt: rl.prompt,
+        value: rl.value,
+        password: rl.hide
+      )
+    container.triggerEvent(event)
+
 proc click(container: Container) {.jsfunc.} =
-  container.iface.click(container.cursorx, container.cursory).then(proc(res: ClickResult) =
-    if res.repaint:
-      container.needslines = true
-    if res.open.isSome:
-      container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get))
-    if res.readline.isSome:
-      let rl = res.readline.get
-      if rl.area:
-        container.triggerEvent(
-          ContainerEvent(
-            t: READ_AREA,
-            tvalue: rl.value
-          ))
-      else:
-        container.triggerEvent(
-          ContainerEvent(
-            t: READ_LINE,
-            prompt: rl.prompt,
-            value: rl.value,
-            password: rl.hide
-          )))
+  if container.select.open:
+    container.select.click()
+  else:
+    container.iface.click(container.cursorx, container.cursory)
+      .then(proc(res: ClickResult) = container.onclick(res))
 
 proc windowChange*(container: Container, attrs: WindowAttributes) =
   container.attrs = attrs
@@ -860,6 +913,62 @@ proc readLines*(container: Container, handle: (proc(line: SimpleFlexibleLine))) 
     while container.iface.hasPromises:
       # fulfill all promises
       container.handleCommand()
+
+proc drawLines*(container: Container, display: var FixedGrid,
+    hlcolor: CellColor) =
+  var r: Rune
+  var by = 0
+  let endy = min(container.fromy + display.height, container.numLines)
+  for line in container.ilines(container.fromy ..< endy):
+    var w = 0 # width of the row so far
+    var i = 0 # byte in line.str
+    # Skip cells till fromx.
+    while w < container.fromx and i < line.str.len:
+      fastRuneAt(line.str, i, r)
+      w += r.twidth(w)
+    let dls = by * display.width # starting position of row in display
+    # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
+    # we encountered a double-width character.)
+    var k = 0
+    if w > container.fromx:
+      while k < w - container.fromx:
+        display[dls + k].str &= ' '
+        inc k
+    var cf = line.findFormat(w)
+    var nf = line.findNextFormat(w)
+    let startw = w # save this for later
+    # Now fill in the visible part of the row.
+    while i < line.str.len:
+      let pw = w
+      fastRuneAt(line.str, i, r)
+      let rw = r.twidth(w)
+      w += rw
+      if w > container.fromx + display.width:
+        break # die on exceeding the width limit
+      if nf.pos != -1 and nf.pos <= pw:
+        cf = nf
+        nf = line.findNextFormat(pw)
+      if cf.pos != -1:
+        display[dls + k].format = cf.format
+      if r == Rune('\t'):
+        # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
+        let tk = k + rw
+        while k < tk:
+          display[dls + k].str &= ' '
+          inc k
+      else:
+        display[dls + k].str &= r
+        k += rw
+    # Finally, override cell formatting for highlighted cells.
+    let hls = container.findHighlights(container.fromy + by)
+    let aw = container.width - (startw - container.fromx) # actual width
+    for hl in hls:
+      let area = hl.colorArea(container.fromy + by, startw .. startw + aw)
+      for i in area:
+        var hlformat = display[dls + i - startw].format
+        hlformat.bgcolor = hlcolor
+        display[dls + i - startw].format = hlformat
+    inc by
 
 proc handleEvent*(container: Container) =
   container.handleCommand()

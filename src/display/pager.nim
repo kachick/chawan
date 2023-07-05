@@ -11,6 +11,7 @@ when defined(posix):
 
 import buffer/cell
 import buffer/container
+import buffer/select
 import config/config
 import data/charset
 import display/term
@@ -205,59 +206,9 @@ proc clearDisplay(pager: Pager) =
 proc buffer(pager: Pager): Container {.jsfget, inline.} = pager.container
 
 proc refreshDisplay(pager: Pager, container = pager.container) =
-  var r: Rune
-  var by = 0
   pager.clearDisplay()
-  for line in container.ilines(container.fromy ..< min(container.fromy + pager.display.height, container.numLines)):
-    var w = 0 # width of the row so far
-    var i = 0 # byte in line.str
-    # Skip cells till fromx.
-    while w < container.fromx and i < line.str.len:
-      fastRuneAt(line.str, i, r)
-      w += r.twidth(w)
-    let dls = by * pager.display.width # starting position of row in display
-    # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
-    # we encountered a double-width character.)
-    var k = 0
-    if w > container.fromx:
-      while k < w - container.fromx:
-        pager.display[dls + k].str &= ' '
-        inc k
-    var cf = line.findFormat(w)
-    var nf = line.findNextFormat(w)
-    let startw = w # save this for later
-    # Now fill in the visible part of the row.
-    while i < line.str.len:
-      let pw = w
-      fastRuneAt(line.str, i, r)
-      let rw = r.twidth(w)
-      w += rw
-      if w > container.fromx + pager.display.width:
-        break # die on exceeding the width limit
-      if nf.pos != -1 and nf.pos <= pw:
-        cf = nf
-        nf = line.findNextFormat(pw)
-      if cf.pos != -1:
-        pager.display[dls + k].format = cf.format
-      if r == Rune('\t'):
-        # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
-        let tk = k + rw
-        while k < tk:
-          pager.display[dls + k].str &= ' '
-          inc k
-      else:
-        pager.display[dls + k].str &= r
-        k += rw
-    # Finally, override cell formatting for highlighted cells.
-    let hls = container.findHighlights(container.fromy + by)
-    let aw = container.width - (startw - container.fromx) # actual width
-    for hl in hls:
-      let area = hl.colorArea(container.fromy + by, startw .. startw + aw)
-      for i in area:
-        var hlformat = pager.display[dls + i - startw].format
-        hlformat.bgcolor = pager.config.display.highlight_color.cellColor()
-        pager.display[dls + i - startw].format = hlformat
-    inc by
+  container.drawLines(pager.display,
+    cellColor(pager.config.display.highlight_color))
 
 # Note: this function doesn't work if start < i of last written char
 proc writeStatusMessage(pager: Pager, str: string,
@@ -356,10 +307,14 @@ proc redraw(pager: Pager) {.jsfunc.} =
   pager.term.clearCanvas()
 
 proc draw*(pager: Pager) =
-  if pager.container == nil: return
+  let container = pager.container
+  if container == nil: return
   pager.term.hideCursor()
   if pager.redraw:
     pager.refreshDisplay()
+    pager.term.writeGrid(pager.display)
+  if container.select.open and container.select.redraw:
+    container.select.drawSelect(pager.display)
     pager.term.writeGrid(pager.display)
   if pager.askpromise != nil:
     discard
@@ -383,6 +338,9 @@ proc draw*(pager: Pager) =
       pager.lineedit.get.fullRedraw()
       pager.lineedit.get.isnew = false
     pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
+  elif container.select.open:
+    pager.term.setCursor(container.select.getCursorX(),
+      container.select.getCursorY())
   else:
     pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
   pager.term.showCursor()
@@ -735,13 +693,13 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     let x = $lineedit.news
     if x != "": pager.iregex = compileSearchRegex(x)
     pager.container.popCursorPos(true)
+    pager.container.pushCursorPos()
     if pager.iregex.isSome:
       pager.container.hlon = true
       if linemode == ISEARCH_F:
         pager.container.cursorNextMatch(pager.iregex.get, pager.config.search.wrap)
       else:
         pager.container.cursorPrevMatch(pager.iregex.get, pager.config.search.wrap)
-    pager.container.pushCursorPos()
   of FINISH:
     pager.regex = pager.checkRegex(pager.iregex)
     pager.reverseSearch = linemode == ISEARCH_B
