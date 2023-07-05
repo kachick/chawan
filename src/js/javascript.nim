@@ -316,10 +316,6 @@ func isInstanceOf*(ctx: JSContext, val: JSValue, class: static string): bool =
       break
   return found
 
-func isPlatformObject(ctx: JSContext, val: JSValue): bool =
-  let classid = JS_GetClassID(val)
-  return classid in ctx.getOpaque().parents
-
 proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
   if JS_SetPropertyStr(ctx, val, cstring(name), prop) <= 0:
     raise newException(Defect, "Failed to set property string: " & name)
