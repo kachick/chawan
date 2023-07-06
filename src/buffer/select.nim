@@ -195,9 +195,7 @@ proc pushCursorPos*(select: var Select) =
   select.bpos.add(select.hover)
 
 proc popCursorPos*(select: var Select, nojump = false) =
-  let was = select.hover
-  let got = select.bpos.pop()
-  select.hover = got
+  select.hover = select.bpos.pop()
   if not nojump:
     select.redraw = true
 
