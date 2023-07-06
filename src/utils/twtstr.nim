@@ -1068,10 +1068,10 @@ func width*(s: seq[Rune], min: int): int =
     inc i
 
 func twidth*(s: string, w: int): int =
-  var i = 0
+  var i = w
   for r in s.runes():
-    i += r.twidth(result)
-  return i
+    i += r.twidth(w)
+  return i - w
 
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
