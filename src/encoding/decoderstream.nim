@@ -273,8 +273,8 @@ proc decodeBig5(stream: DecoderStream, iq: var seq[uint8],
     if stream.big5lead != 0:
       let lead = uint32(stream.big5lead)
       stream.big5lead = 0
-      let offset = if iq[i] < 0x7F: 0x40u16 else: 0x7E
-      if iq[i] in {0x40u8 .. 0x7Eu8, 0xA1 .. 0xFEu8}:
+      let offset = if iq[i] < 0x7F: 0x40u16 else: 0x62u16
+      if iq[i] in {0x40u8 .. 0x7Eu8, 0xA1u8 .. 0xFEu8}:
         let p = (lead - 0x81) * 157 + uint16(iq[i]) - offset
         template output_two(a, b: uint32) =
           stream.append_codepoint a, oq, olen, n
@@ -288,7 +288,7 @@ proc decodeBig5(stream: DecoderStream, iq: var seq[uint8],
           else: break no_continue
           inc i
           continue
-        if p < Big5Decode.len - Big5DecodeOffset:
+        if p < Big5Decode.len + Big5DecodeOffset:
           let c = Big5Decode[p - Big5DecodeOffset]
           if c != 0:
             stream.append_codepoint c, oq, olen, n
@@ -301,7 +301,7 @@ proc decodeBig5(stream: DecoderStream, iq: var seq[uint8],
         if stream.isend: break
     elif cast[char](iq[i]) in Ascii:
       stream.append_codepoint iq[i], oq, olen, n
-    elif iq[i] in 0x00u8 .. 0xFEu8:
+    elif iq[i] in 0x81u8 .. 0xFEu8:
       stream.big5lead = iq[i]
     else:
       stream.handleError(oq, olen, n)
