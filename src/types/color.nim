@@ -1,4 +1,3 @@
-import math
 import options
 import strutils
 import tables
@@ -295,19 +294,17 @@ func rgba*(r, g, b, a: uint8): RGBAColor
 func premul(c: RGBAColor): RGBAColor =
   return RGBAColor(fastmul(c, uint32(c.a)))
 
-const straightAlphaTable = (func(): auto =
-  var table: array[256, array[256, uint8]]
-  for a in 0 ..< 256:
-    let multiplier = if a > 0: (255 / a.float32) else: 0
-    for c in 0 ..< 256:
-      table[a][c] = min(round((c.float32 * multiplier)), 255).uint8
-  return table)()
-
-proc straight*(c: RGBAColor): RGBAColor =
-  let r = straightAlphaTable[c.a][c.r]
-  let g = straightAlphaTable[c.a][c.g]
-  let b = straightAlphaTable[c.a][c.b]
-  return rgba(r, g, b, c.a)
+# This is somewhat faster than floats or a lookup table, and is correct for
+# all inputs.
+proc straight(c: RGBAColor): RGBAColor =
+  let a8 = c.a
+  if a8 == 0:
+    return RGBAColor(0)
+  let a = uint32(a8)
+  let r = (uint32(c.r) * 0xFF00 div a + 0x80) shr 8
+  let g = (uint32(c.g) * 0xFF00 div a + 0x80) shr 8
+  let b = (uint32(c.b) * 0xFF00 div a + 0x80) shr 8
+  return RGBAColor((a shl 24) or (r shl 16) or (g shl 8) or b)
 
 func blend*(c0, c1: RGBAColor): RGBAColor =
   let pc0 = c0.premul()
