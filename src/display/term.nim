@@ -1,4 +1,3 @@
-import math
 import options
 import os
 import streams
@@ -13,7 +12,6 @@ import data/charset
 import encoding/encoderstream
 import io/window
 import types/color
-import utils/chamath
 import utils/opt
 import utils/twtstr
 
@@ -216,16 +214,19 @@ proc getRGB(a: CellColor, bg: bool): RGBColor =
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(rgb: RGBColor): ANSIColor =
-  var a = 0u16
+  var a = 0i32
   var n = -1
   for i in 0 .. ANSIColorMap.high:
     let color = ANSIColorMap[i]
     if color == rgb:
       return ANSIColor(i)
-    let x = uint16(absSub(color.r, rgb.r)) ^ 2
-    let y = uint16(absSub(color.g, rgb.b)) ^ 2
-    let z = uint16(absSub(color.g, rgb.g)) ^ 2
-    let b = x + y + z
+    let x = int32(color.r) - int32(rgb.r)
+    let y = int32(color.g) - int32(rgb.g)
+    let z = int32(color.b) - int32(rgb.b)
+    let xx = x * x
+    let yy = y * y
+    let zz = z * z
+    let b = xx + yy + zz
     if n == -1 or b < a:
       n = i
       a = b
