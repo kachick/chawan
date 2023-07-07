@@ -174,10 +174,9 @@ func isAscii*(s: string): bool =
 
 const HexCharsUpper = "0123456789ABCDEF"
 const HexCharsLower = "0123456789abcdef"
-func toHex*(c: char): string =
-  result = newString(2)
-  result[0] = HexCharsUpper[(uint8(c) shr 4)]
-  result[1] = HexCharsLower[(uint8(c) and 0xF)]
+func pushHex*(buf: var string, c: char) =
+  buf &= HexCharsUpper[(uint8(c) shr 4)]
+  buf &= HexCharsUpper[(uint8(c) and 0xF)]
 
 func toHexLower*(u: uint16): string =
   var x = u
@@ -195,8 +194,8 @@ func toHexLower*(u: uint16): string =
     x = x shr 4
   return s
 
-func toHex*(i: uint8): string =
-  return toHex(cast[char](i))
+func pushHex*(buf: var string, i: uint8) =
+  buf.pushHex(cast[char](i))
 
 func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
   var i = 0
@@ -558,7 +557,7 @@ proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = f
     append &= c
   else:
     append &= '%'
-    append &= c.toHex()
+    append.pushHex(c)
 
 proc percentEncode*(append: var string, s: string, set: set[char], spaceAsPlus = false) {.inline.} =
   for c in s:

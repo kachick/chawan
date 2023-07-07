@@ -251,10 +251,11 @@ func a*(c: RGBAColorPremul): uint8 {.borrow.}
 # https://html.spec.whatwg.org/#serialisation-of-a-color
 func serialize*(color: RGBAColor): string =
   if color.a == 255:
-    let r = toHex(cast[uint8](color.r))
-    let g = toHex(cast[uint8](color.g))
-    let b = toHex(cast[uint8](color.b))
-    return "#" & r & g & b
+    var res = "#"
+    res.pushHex(color.r)
+    res.pushHex(color.g)
+    res.pushHex(color.b)
+    return res
   let a = float64(color.a) / 255
   return "rgba(" & $color.r & ", " & $color.g & ", " & $color.b & ", " & $a &
     ")"
