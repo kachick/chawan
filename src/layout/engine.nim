@@ -1104,6 +1104,19 @@ iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
   for child in footer:
     yield child
 
+proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
+    table: BlockBox) =
+  var i = 0
+  for row in builder.rows:
+    if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
+      ctx.caption = TableCaptionBoxBuilder(row)
+    else:
+      let row = TableRowBoxBuilder(row)
+      let rctx = ctx.preBuildTableRow(row, table, i)
+      ctx.rows.add(rctx)
+      ctx.maxwidth = max(rctx.width, ctx.maxwidth)
+      inc i
+
 proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     weight: var float64): seq[int] =
   # Spacing for each column:
@@ -1127,6 +1140,98 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     inc i
   return avail
 
+proc redistributeWidth(ctx: var TableContext, table: BlockBox) =
+  var W = table.contentWidth
+  # Remove inline spacing from distributable width.
+  W -= ctx.cols.len * ctx.inlinespacing * 2
+  var weight: float64
+  var avail = ctx.calcUnspecifiedColIndices(W, weight)
+  var redo = true
+  while redo and avail.len > 0 and weight != 0:
+    if weight == 0: break # zero weight; nothing to distribute
+    if W < 0:
+      W = 0
+    redo = false
+    # divide delta width by sum of sqrt(width) for all elem in avail
+    let unit = toFloat64(W) / weight
+    weight = 0
+    for i in countdown(avail.high, 0):
+      let j = avail[i]
+      let x = unit * ctx.cols[j].weight
+      let mw = ctx.cols[j].minwidth
+      ctx.cols[j].width = x
+      if mw > x:
+        W -= mw
+        ctx.cols[j].width = mw
+        avail.del(i)
+        redo = true
+      else:
+        weight += ctx.cols[j].weight
+      ctx.reflow[j] = true
+
+proc reflowTableCells(ctx: var TableContext) =
+  for i in countdown(ctx.rows.high, 0):
+    var row = addr ctx.rows[i]
+    var n = ctx.cols.len - 1
+    for j in countdown(row.cells.high, 0):
+      let m = n - row.cells[j].colspan
+      while n > m:
+        if ctx.reflow[n]:
+          row.cells[j].reflow = true
+        if n < row.reflow.len and row.reflow[n]:
+          ctx.reflow[n] = true
+        dec n
+
+proc buildTableRows(ctx: TableContext, table: BlockBox) =
+  var y: LayoutUnit = 0
+  for roww in ctx.rows:
+    if roww.builder.computed{"visibility"} == VISIBILITY_COLLAPSE:
+      continue
+    y += ctx.blockspacing
+    let row = ctx.buildTableRow(roww, table, roww.builder)
+    row.offset.y += y
+    row.offset.x += table.padding_left
+    row.width += table.padding_left
+    row.width += table.padding_right
+    y += ctx.blockspacing
+    y += row.height
+    table.nested.add(row)
+    table.width = max(row.width, table.width)
+  table.height = table.contentHeight.get(y)
+
+proc addTableCaption(ctx: TableContext, table: BlockBox) =
+  case ctx.caption.computed{"caption-side"}
+  of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
+    let caption = table.viewport.buildTableCaption(ctx.caption, table.width,
+      none(LayoutUnit), false)
+    for r in table.nested:
+      r.offset.y += caption.height
+    table.nested.insert(caption, 0)
+    table.height += caption.height
+    table.width = max(table.width, caption.width)
+  of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
+    let caption = table.viewport.buildTableCaption(ctx.caption, table.width,
+      none(LayoutUnit), false)
+    caption.offset.y += table.width
+    table.nested.add(caption)
+    table.height += caption.height
+    table.width = max(table.width, caption.width)
+  of CAPTION_SIDE_LEFT, CAPTION_SIDE_INLINE_START:
+    let caption = table.viewport.buildTableCaption(ctx.caption,
+      table.contentWidth, some(table.height), true)
+    for r in table.nested:
+      r.offset.x += caption.width
+    table.nested.insert(caption, 0)
+    table.width += caption.width
+    table.height = max(table.height, caption.height)
+  of CAPTION_SIDE_RIGHT, CAPTION_SIDE_INLINE_END:
+    let caption = table.viewport.buildTableCaption(ctx.caption,
+      table.contentWidth, some(table.height), true)
+    caption.offset.x += table.width
+    table.nested.add(caption)
+    table.width += caption.width
+    table.height = max(table.height, caption.height)
+
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
 # 2. If column width is not auto, set width to max(min_col_width, specified)
@@ -1143,107 +1248,18 @@ proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder) =
   if not ctx.collapse:
     ctx.inlinespacing = table.computed{"border-spacing"}.a.px(table.viewport)
     ctx.blockspacing = table.computed{"border-spacing"}.b.px(table.viewport)
-  var i = 0
-  for row in builder.rows:
-    if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
-      ctx.caption = TableCaptionBoxBuilder(row)
-    else:
-      let row = TableRowBoxBuilder(row)
-      let rctx = ctx.preBuildTableRow(row, table, i)
-      ctx.rows.add(rctx)
-      ctx.maxwidth = max(rctx.width, ctx.maxwidth)
-      inc i
+  ctx.preBuildTableRows(builder, table)
   let spec = table.computed{"width"}.auto
-  var reflow = newSeq[bool](ctx.cols.len)
+  ctx.reflow = newSeq[bool](ctx.cols.len)
   if (table.contentWidth > ctx.maxwidth and (not table.shrink or not spec)) or
       table.contentWidth < ctx.maxwidth:
-    var W = table.contentWidth
-    # Remove inline spacing from distributable width.
-    W -= ctx.cols.len * ctx.inlinespacing * 2
-    var weight: float64
-    var avail = ctx.calcUnspecifiedColIndices(W, weight)
-    var redo = true
-    while redo and avail.len > 0 and weight != 0:
-      if weight == 0: break # zero weight; nothing to distribute
-      if W < 0:
-        W = 0
-      redo = false
-      # divide delta width by sum of sqrt(width) for all elem in avail
-      let unit = toFloat64(W) / weight
-      weight = 0
-      for i in countdown(avail.high, 0):
-        let j = avail[i]
-        let x = unit * ctx.cols[j].weight
-        let mw = ctx.cols[j].minwidth
-        ctx.cols[j].width = x
-        if mw > x:
-          W -= mw
-          ctx.cols[j].width = mw
-          avail.del(i)
-          redo = true
-        else:
-          weight += ctx.cols[j].weight
-        reflow[j] = true
+    ctx.redistributeWidth(table)
   for col in ctx.cols:
     table.width += col.width
-  for i in countdown(ctx.rows.high, 0):
-    var row = addr ctx.rows[i]
-    var n = ctx.cols.len - 1
-    for j in countdown(row.cells.high, 0):
-      let m = n - row.cells[j].colspan
-      while n > m:
-        if reflow[n]:
-          row.cells[j].reflow = true
-        if n < row.reflow.len and row.reflow[n]:
-          reflow[n] = true
-        dec n
-  var y: LayoutUnit = 0
-  for roww in ctx.rows:
-    if roww.builder.computed{"visibility"} == VISIBILITY_COLLAPSE:
-      continue
-    y += ctx.blockspacing
-    let row = ctx.buildTableRow(roww, table, roww.builder)
-    row.offset.y += y
-    row.offset.x += table.padding_left
-    row.width += table.padding_left
-    row.width += table.padding_right
-    y += ctx.blockspacing
-    y += row.height
-    table.nested.add(row)
-    table.width = max(row.width, table.width)
-  table.height = table.contentHeight.get(y)
+  ctx.reflowTableCells()
+  ctx.buildTableRows(table)
   if ctx.caption != nil:
-    case ctx.caption.computed{"caption-side"}
-    of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
-      let caption = table.viewport.buildTableCaption(ctx.caption, table.width,
-        none(LayoutUnit), false)
-      for r in table.nested:
-        r.offset.y += caption.height
-      table.nested.insert(caption, 0)
-      table.height += caption.height
-      table.width = max(table.width, caption.width)
-    of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
-      let caption = table.viewport.buildTableCaption(ctx.caption, table.width,
-        none(LayoutUnit), false)
-      caption.offset.y += table.width
-      table.nested.add(caption)
-      table.height += caption.height
-      table.width = max(table.width, caption.width)
-    of CAPTION_SIDE_LEFT, CAPTION_SIDE_INLINE_START:
-      let caption = table.viewport.buildTableCaption(ctx.caption,
-        table.contentWidth, some(table.height), true)
-      for r in table.nested:
-        r.offset.x += caption.width
-      table.nested.insert(caption, 0)
-      table.width += caption.width
-      table.height = max(table.height, caption.height)
-    of CAPTION_SIDE_RIGHT, CAPTION_SIDE_INLINE_END:
-      let caption = table.viewport.buildTableCaption(ctx.caption,
-        table.contentWidth, some(table.height), true)
-      caption.offset.x += table.width
-      table.nested.add(caption)
-      table.width += caption.width
-      table.height = max(table.height, caption.height)
+    ctx.addTableCaption(table)
 
 proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox =
   let table = parent.newBlockBox(builder)

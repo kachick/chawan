@@ -184,6 +184,7 @@ type
     blockspacing*: LayoutUnit
     inlinespacing*: LayoutUnit
     collapse*: bool
+    reflow*: seq[bool]
 
   InlineBlockBox* = ref object of InlineAtom
     innerbox*: BlockBox
