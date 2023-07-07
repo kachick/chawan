@@ -172,11 +172,28 @@ func isAscii*(s: string): bool =
       return false
   return true
 
-const HexChars = "0123456789ABCDEF"
+const HexCharsUpper = "0123456789ABCDEF"
+const HexCharsLower = "0123456789abcdef"
 func toHex*(c: char): string =
   result = newString(2)
-  result[0] = HexChars[(uint8(c) shr 4)]
-  result[1] = HexChars[(uint8(c) and 0xF)]
+  result[0] = HexCharsUpper[(uint8(c) shr 4)]
+  result[1] = HexCharsLower[(uint8(c) and 0xF)]
+
+func toHexLower*(u: uint16): string =
+  var x = u
+  let len = if (u and 0xF000) != 0:
+    4
+  elif (u and 0x0F00) != 0:
+    3
+  elif (u and 0xF0) != 0:
+    2
+  else:
+    1
+  var s = newString(len)
+  for i in countdown(len - 1, 0):
+    s[i] = HexCharsLower[x and 0xF]
+    x = x shr 4
+  return s
 
 func toHex*(i: uint8): string =
   return toHex(cast[char](i))

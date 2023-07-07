@@ -148,13 +148,17 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
         #TODO validation error
         return failure
       break
-    elif has and c == ':':
-      inc pointer
-      if not has:
+    elif has:
+      if c == ':':
+        inc pointer
+        if not has:
+          #TODO validation error
+          return failure
+      else:
         #TODO validation error
         return failure
-      address[pieceindex] = value
-      inc pieceindex
+    address[pieceindex] = value
+    inc pieceindex
   if compress != -1:
     var swaps = pieceindex - compress
     pieceindex = 7
@@ -574,7 +578,6 @@ proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
         if buffer != "":
           let i = parseInt32(buffer)
           if i.isNone or i.get notin 0..65535:
-            eprint "validation error???", i
             #TODO validation error
             return none(Url)
           let port = cast[uint16](i.get).some
@@ -798,11 +801,7 @@ func serializeip(ipv6: array[8, uint16]): string =
         result &= ':'
       ignore0 = true
       continue
-    const HexChars = "0123456789abcdef"
-    var x = ipv6[i]
-    while x != 0:
-      result &= HexChars[x mod 0x10]
-      x = x div 0x10
+    result &= toHexLower(ipv6[i])
     if i != high(ipv6):
       result &= ':'
 
