@@ -62,6 +62,20 @@ type
     of STYLED_REPLACEMENT: # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
+# For debugging
+func `$`*(node: StyledNode): string =
+  if node == nil:
+    return "nil"
+  case node.t
+  of STYLED_TEXT:
+    return "#text " & node.text
+  of STYLED_ELEMENT:
+    if node.node != nil:
+      return $node.node
+    return $node.pseudo
+  of STYLED_REPLACEMENT:
+    return "#replacement"
+
 iterator branch*(node: StyledNode): StyledNode {.inline.} =
   var node = node
   while node != nil:
