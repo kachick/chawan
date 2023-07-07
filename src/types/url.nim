@@ -504,7 +504,7 @@ proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
         state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
         dec pointer
     of SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE:
-      if has and c notin {'/', '\\'}:
+      if not has or c notin {'/', '\\'}:
         state = AUTHORITY_STATE
         dec pointer
       else:
