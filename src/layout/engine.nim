@@ -1545,7 +1545,7 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
     ctx.generateAnonymousInlineText(child.content.s, parent)
   of CONTENT_IMAGE:
     #TODO idk
-    ctx.generateAnonymousInlineText(child.content.s, parent)
+    ctx.generateAnonymousInlineText("[img]", parent)
   of CONTENT_NEWLINE:
     ctx.iflush()
     ctx.ibox = getTextBox(parent.computed.inheritProperties())
