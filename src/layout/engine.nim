@@ -442,6 +442,7 @@ proc resolveDimensions(box: BlockBox, availableWidth: LayoutUnit,
   let widthpx = computed{"width"}.px(viewport, availableWidth)
   if computed{"width"}.auto:
     box.contentWidth = availableWidth
+    box.contentWidthInfinite = false
   else:
     box.contentWidth = widthpx
     box.max_width = some(widthpx)
@@ -453,6 +454,7 @@ proc resolveDimensions(box: BlockBox, availableWidth: LayoutUnit,
     if max_width < box.contentWidth:
       box.contentWidth = max_width
       box.resolveContentWidth(max_width, availableWidth)
+    box.contentWidthInfinite = false
   if not computed{"min-width"}.auto:
     let min_width = computed{"min-width"}.px(viewport, availableWidth)
     box.min_width = some(min_width)
@@ -632,6 +634,24 @@ proc buildBlocks(parent: BlockBox, blocks: seq[BoxBuilder], node: StyledNode)
 proc buildTable(builder: TableBoxBuilder, parent: BlockBox): BlockBox
 proc buildTableLayout(table: BlockBox, builder: TableBoxBuilder)
 
+proc applyWidth(box: BlockBox, maxChildWidth: LayoutUnit) =
+  box.width = if box.computed{"width"}.auto:
+    # Make the box as small/large as the content's width.
+    if box.shrink:
+      if box.contentWidthInfinite:
+        maxChildWidth
+      else:
+        min(maxChildWidth, box.contentWidth)
+    else:
+      box.contentWidth
+  else:
+    # Not much choice is left here.
+    box.contentWidth
+  # Add padding.
+  # Then, clamp it to min_width and max_width (if applicable).
+  box.width = clamp(box.width, box.min_width.get(0),
+    box.max_width.get(high(LayoutUnit)))
+
 proc applyInlineDimensions(box: BlockBox) =
   box.xminwidth = max(box.xminwidth, box.inline.minwidth)
   box.width = box.inline.width + box.padding_left + box.padding_right
@@ -642,17 +662,9 @@ proc applyInlineDimensions(box: BlockBox) =
   box.height += box.padding_top + box.padding_bottom
   box.inline.offset.x += box.padding_left
   box.inline.offset.y += box.padding_top
-  box.width = if not box.isWidthSpecified():
-    # We can make the box as small/large as the content's width.
-    if box.shrink:
-      if box.contentWidthInfinite:
-        box.width
-      else:
-        min(box.width, box.contentWidth)
-    else:
-      max(box.width, box.contentWidth)
-  else:
-    min(max(box.width, box.min_width.get(0)), box.max_width.get(high(int)))
+  box.applyWidth(box.inline.width)
+  box.width += box.padding_left
+  box.width += box.padding_right
 
 # Builder only contains inline boxes.
 proc buildInlineLayout(parent: BlockBox, children: seq[BoxBuilder]) =
@@ -834,7 +846,8 @@ proc positionRelative(parent, box: BlockBox) =
     box.offset.y -= parent.height - bottom.px(parent.viewport) - box.height
 
 proc applyChildPosition(parent, child: BlockBox, spec: bool,
-    x, y: var LayoutUnit, margin_todo: var Strut) =
+    x, y: var LayoutUnit, margin_todo: var Strut,
+    maxChildWidth: var LayoutUnit) =
   if child.computed{"position"} == POSITION_ABSOLUTE: #TODO sticky, fixed
     if child.computed{"left"}.auto and child.computed{"right"}.auto:
       child.offset.x = x
@@ -846,11 +859,7 @@ proc applyChildPosition(parent, child: BlockBox, spec: bool,
     child.offset.x = x
     y += child.height
     parent.height += child.height
-    if not spec:
-      parent.width = if parent.contentWidthInfinite:
-        max(child.width, parent.width)
-      else:
-        min(parent.contentWidth, max(child.width, parent.width))
+    maxChildWidth = max(maxChildWidth, child.width)
     parent.xminwidth = max(parent.xminwidth, child.xminwidth)
     margin_todo = Strut()
     margin_todo.append(child.margin_bottom)
@@ -868,14 +877,8 @@ proc postAlignChild(box, child: BlockBox, width: LayoutUnit, spec: bool) =
 proc positionBlocks(box: BlockBox) =
   var y: LayoutUnit = 0
   var x: LayoutUnit = 0
+  var maxChildWidth: LayoutUnit
   var margin_todo: Strut
-
-  # If content width has been specified, use it.
-  # Otherwise, contentWidth is just the maximum width we can take up, so
-  # set width to box.contentWidth
-  let spec = box.isWidthSpecified()
-  if spec:
-    box.width = box.contentWidth
 
   y += box.padding_top
   box.height += box.padding_top
@@ -886,7 +889,7 @@ proc positionBlocks(box: BlockBox) =
     let child = box.nested[i]
     if child.computed{"position"} != POSITION_ABSOLUTE:
       break
-    applyChildPosition(box, child, spec, x, y, margin_todo)
+    applyChildPosition(box, child, spec, x, y, margin_todo, maxChildWidth)
     inc i
 
   if i < box.nested.len:
@@ -894,7 +897,7 @@ proc positionBlocks(box: BlockBox) =
     margin_todo.append(box.margin_top)
     margin_todo.append(child.margin_top)
     box.margin_top = margin_todo.sum()
-    applyChildPosition(box, child, spec, x, y, margin_todo)
+    applyChildPosition(box, child, spec, x, y, margin_todo, maxChildWidth)
     inc i
 
   while i < box.nested.len:
@@ -903,19 +906,18 @@ proc positionBlocks(box: BlockBox) =
       margin_todo.append(child.margin_top)
       y += margin_todo.sum()
       box.height += margin_todo.sum()
-    applyChildPosition(box, child, spec, x, y, margin_todo)
+    applyChildPosition(box, child, spec, x, y, margin_todo, maxChildWidth)
     inc i
 
   margin_todo.append(box.margin_bottom)
   box.margin_bottom = margin_todo.sum()
 
+  box.applyWidth(maxChildWidth)
+
   # Re-position the children.
   # The x offset for values in shrink mode depends on the parent box's
   # width, so we cannot do this in the first pass.
-  let width = if box.shrink:
-    min(box.width, box.contentWidth)
-  else:
-    max(box.width, box.contentWidth)
+  let width = box.width
   for child in box.nested:
     if child.computed{"position"} != POSITION_ABSOLUTE:
       box.postAlignChild(child, width, spec)
@@ -926,6 +928,11 @@ proc positionBlocks(box: BlockBox) =
       positionAbsolute(child)
     else: discard #TODO
 
+  # Finally, add padding. (We cannot do this further up without influencing
+  # positioning.)
+  box.width += box.padding_left
+  box.width += box.padding_right
+
   box.height += box.padding_bottom
 
   if box.contentHeight.isSome:
@@ -934,9 +941,6 @@ proc positionBlocks(box: BlockBox) =
     box.height = box.max_height.get
   if box.min_height.isSome and box.height < box.min_height.get:
     box.height = box.min_height.get
-
-  box.width += box.padding_left
-  box.width += box.padding_right
 
 proc buildTableCaption(viewport: Viewport, builder: TableCaptionBoxBuilder,
     maxwidth: LayoutUnit, maxheight: Option[LayoutUnit], shrink = false):
