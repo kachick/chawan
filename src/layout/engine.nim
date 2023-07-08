@@ -845,9 +845,8 @@ proc positionRelative(parent, box: BlockBox) =
   elif not top.auto:
     box.offset.y -= parent.height - bottom.px(parent.viewport) - box.height
 
-proc applyChildPosition(parent, child: BlockBox, spec: bool,
-    x, y: var LayoutUnit, margin_todo: var Strut,
-    maxChildWidth: var LayoutUnit) =
+proc applyChildPosition(parent, child: BlockBox, x, y: var LayoutUnit,
+    margin_todo: var Strut, maxChildWidth: var LayoutUnit) =
   if child.computed{"position"} == POSITION_ABSOLUTE: #TODO sticky, fixed
     if child.computed{"left"}.auto and child.computed{"right"}.auto:
       child.offset.x = x
@@ -864,7 +863,7 @@ proc applyChildPosition(parent, child: BlockBox, spec: bool,
     margin_todo = Strut()
     margin_todo.append(child.margin_bottom)
 
-proc postAlignChild(box, child: BlockBox, width: LayoutUnit, spec: bool) =
+proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
   case box.computed{"text-align"}
   of TEXT_ALIGN_CHA_CENTER:
     child.offset.x += max(width div 2 - child.width div 2, 0)
@@ -889,7 +888,7 @@ proc positionBlocks(box: BlockBox) =
     let child = box.nested[i]
     if child.computed{"position"} != POSITION_ABSOLUTE:
       break
-    applyChildPosition(box, child, spec, x, y, margin_todo, maxChildWidth)
+    applyChildPosition(box, child, x, y, margin_todo, maxChildWidth)
     inc i
 
   if i < box.nested.len:
@@ -897,7 +896,7 @@ proc positionBlocks(box: BlockBox) =
     margin_todo.append(box.margin_top)
     margin_todo.append(child.margin_top)
     box.margin_top = margin_todo.sum()
-    applyChildPosition(box, child, spec, x, y, margin_todo, maxChildWidth)
+    applyChildPosition(box, child, x, y, margin_todo, maxChildWidth)
     inc i
 
   while i < box.nested.len:
@@ -906,7 +905,7 @@ proc positionBlocks(box: BlockBox) =
       margin_todo.append(child.margin_top)
       y += margin_todo.sum()
       box.height += margin_todo.sum()
-    applyChildPosition(box, child, spec, x, y, margin_todo, maxChildWidth)
+    applyChildPosition(box, child, x, y, margin_todo, maxChildWidth)
     inc i
 
   margin_todo.append(box.margin_bottom)
@@ -920,7 +919,7 @@ proc positionBlocks(box: BlockBox) =
   let width = box.width
   for child in box.nested:
     if child.computed{"position"} != POSITION_ABSOLUTE:
-      box.postAlignChild(child, width, spec)
+      box.postAlignChild(child, width)
     case child.computed{"position"}
     of POSITION_RELATIVE:
       box.positionRelative(child)
