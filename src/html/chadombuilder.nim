@@ -50,6 +50,9 @@ proc getTemplateContent(builder: DOMBuilder[Node], handle: Node): Node =
 proc getTagType(builder: DOMBuilder[Node], handle: Node): TagType =
   return Element(handle).tagType
 
+proc getParentNode(builder: DOMBuilder[Node], handle: Node): Node =
+  return handle.parentNode
+
 proc getLocalName(builder: DOMBuilder[Node], handle: Node): string =
   return Element(handle).localName
 
@@ -100,9 +103,8 @@ proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
     let text = builder.getDocument().createTextNode(text)
     discard parent.insertBefore(text, before)
 
-proc reparent(builder: DOMBuilder[Node], child, newParent: Node) =
+proc remove(builder: DOMBuilder[Node], child: Node) =
   child.remove(true)
-  newParent.append(child)
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
     attrs: Table[string, string]) =
@@ -155,6 +157,7 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
     elementPopped: elementPopped,
     getTemplateContent: getTemplateContent,
     getTagType: getTagType,
+    getParentNode: getParentNode,
     getLocalName: getLocalName,
     getNamespace: getNamespace,
     createElement: createElement,
@@ -162,7 +165,7 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
     createDocumentType: createDocumentType,
     insertBefore: insertBefore,
     insertText: insertText,
-    reparent: reparent,
+    remove: remove,
     addAttrsIfMissing: addAttrsIfMissing,
     setScriptAlreadyStarted: setScriptAlreadyStarted,
     associateWithForm: associateWithForm,

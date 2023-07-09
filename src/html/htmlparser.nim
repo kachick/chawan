@@ -31,6 +31,8 @@ type
     ## May be nil.
     getTemplateContent*: DOMBuilderGetTemplateContent[Handle]
     ## Must never be nil.
+    getParentNode*: DOMBuilderGetParentNode[Handle]
+    ## Must never be nil.
     getLocalName*: DOMBuilderGetLocalName[Handle]
     ## Must never be nil.
     getTagType*: DOMBuilderGetTagType[Handle]
@@ -47,7 +49,7 @@ type
     ## Must never be nil.
     insertText*: DOMBuilderInsertText[Handle]
     ## Must never be nil.
-    reparent*: DOMBuilderReparent[Handle]
+    remove*: DOMBuilderRemove[Handle]
     ## Must never be nil.
     addAttrsIfMissing*: DOMBuilderAddAttrsIfMissing[Handle]
     ## May be nil. (If nil, some attributes may not be added to the HTML or
@@ -135,6 +137,10 @@ type
       ## Retrieve a handle to the template element's contents.
       ## Note: this function must never return nil.
 
+  DOMBuilderGetParentNode*[Handle] =
+    proc(builder: DOMBuilder[Handle], handle: Handle): Handle {.nimcall.}
+      ## Retrieve a handle to the parent node.
+
   DOMBuilderGetTagType*[Handle] =
     proc(builder: DOMBuilder[Handle], handle: Handle): TagType {.nimcall.}
       ## Retrieve the tag type of element.
@@ -192,6 +198,11 @@ type
       ## text node (and thus never has to be merged).
       ##
       ## Note: parent may either be an Element or a Document node.
+
+  DOMBuilderRemove*[Handle] =
+    proc(builder: DOMBuilder[Handle], child: Handle) {.nimcall.}
+      ## Remove `child` from its parent node, and do nothing if `child`
+      ## has no parent node.
 
   DOMBuilderReparent*[Handle] =
     proc(builder: DOMBuilder[Handle], child, newParent: Handle) {.nimcall.}
@@ -281,7 +292,13 @@ func document[Handle](parser: HTML5Parser[Handle]): Handle {.inline.} =
 
 func getTemplateContent[Handle](parser: HTML5Parser[Handle],
     handle: Handle): Handle =
-  return parser.dombuilder.getTemplateContent(parser.dombuilder, handle)
+  let dombuilder = parser.dombuilder
+  return dombuilder.getTemplateContent(dombuilder, handle)
+
+func getParentNode[Handle](parser: HTML5Parser[Handle],
+    handle: Handle): Handle =
+  let dombuilder = parser.dombuilder
+  return dombuilder.getParentNode(dombuilder, handle)
 
 func getLocalName[Handle](parser: HTML5Parser[Handle], handle: Handle):
     string =
@@ -328,9 +345,9 @@ proc insertText[Handle](parser: HTML5Parser[Handle], parent: Handle,
   let dombuilder = parser.dombuilder
   dombuilder.insertText(dombuilder, parent, text, before)
 
-proc reparent[Handle](parser: HTML5Parser[Handle], child, parent: Handle) =
+proc remove[Handle](parser: HTML5Parser[Handle], child: Handle) =
   let dombuilder = parser.dombuilder
-  dombuilder.reparent(dombuilder, child, parent)
+  dombuilder.remove(dombuilder, child)
 
 proc addAttrsIfMissing[Handle](parser: HTML5Parser, element: Handle,
     attrs: Table[string, string]) =
@@ -453,8 +470,9 @@ func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
       return last_child_of(content)
     if lastTable.element == nil:
       return last_child_of(parser.openElements[0])
-    if lastTable.element.parentNode != nil:
-      return (lastTable.element.parentNode, lastTable.element)
+    let parentNode = parser.getParentNode(lastTable.element)
+    if parentNode != nil:
+      return (parentNode, lastTable.element)
     let previousElement = parser.openElements[lastTable.pos - 1]
     result = last_child_of(previousElement)
   else:
@@ -1058,9 +1076,10 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     while j >= 0:
       let child = furthestBlock.childList[j]
       tomove.add(child)
+      parser.remove(child)
       dec j
     for child in tomove:
-      parser.reparent(child, element)
+      parser.append(element, child)
     parser.append(furthestBlock, element)
     parser.activeFormatting.insert((element, token), bookmark)
     parser.activeFormatting.delete(formattingIndex)
@@ -1521,9 +1540,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
             not parser.framesetOk:
           discard
         else:
-          if parser.openElements[1].parentNode != nil:
-            parser.openElements[1].remove()
-            pop_all_nodes
+          parser.remove(parser.openElements[1])
+          pop_all_nodes
       )
       TokenType.EOF => (block:
         if parser.templateModes.len > 0:
