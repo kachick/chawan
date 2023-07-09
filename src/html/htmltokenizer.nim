@@ -157,18 +157,21 @@ proc reconsume(t: var Tokenizer) =
   dec t.sbuf_i
 
 iterator tokenize*(tokenizer: var Tokenizer): Token =
+  var tokqueue: seq[Token]
+  var running = true
+
   template emit(tok: Token) =
     if tok.t == START_TAG:
       tokenizer.laststart = tok
     if tok.t in {START_TAG, END_TAG}:
       tok.tagtype = tagType(tok.tagname)
-    yield tok
+    tokqueue.add(tok)
   template emit(tok: TokenType) = emit Token(t: tok)
   template emit(rn: Rune) = emit Token(t: CHARACTER, r: rn)
   template emit(ch: char) = emit Token(t: CHARACTER_ASCII, c: ch)
   template emit_eof =
     emit EOF
-    break
+    running = false
   template emit_tok =
     if tokenizer.attr:
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
@@ -272,7 +275,13 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     var maincase = newNimNode(nnkCaseStmt).add(quote do: tokenizer.state)
     for state in states:
       if state.kind == nnkOfBranch:
-        let mainstmtlist = findChild(state, it.kind == nnkStmtList)
+        var mainstmtlist: NimNode
+        var mainstmtlist_i = -1
+        for i in 0 ..< state.len:
+          if state[i].kind == nnkStmtList:
+            mainstmtlist = state[i]
+            mainstmtlist_i = i
+            break
         if mainstmtlist[0].kind == nnkIdent and mainstmtlist[0].strVal == "ignore_eof":
           maincase.add(state)
           continue
@@ -302,18 +311,17 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
         if not haseof:
           eofstmts = elsestmts
-        let fake_eof = quote do:
-          if is_eof:
-            {.warning[UnreachableCode]:off.}
-            `eofstmts`
-            continue
-            {.warning[UnreachableCode]:on.}
-        mainstmtlist.insert(0, fake_eof)
         if hasanythingelse:
           let fake_anything_else = quote do:
             template anything_else =
               `elsestmts`
           mainstmtlist.insert(0, fake_anything_else)
+        let eofstmtlist = quote do:
+          if is_eof:
+            `eofstmts`
+          else:
+            `mainstmtlist`
+        state[mainstmtlist_i] = eofstmtlist
       maincase.add(state)
     result = newNimNode(nnkStmtList)
     result.add(maincase)
@@ -323,8 +331,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
   const null = char(0)
 
-  while true:
-    {.computedGoto.}
+  while running:
     #eprint tokenizer.state #debug
     let is_eof = tokenizer.atEof # set eof here, otherwise we would exit at the last character
     let r = if not is_eof:
@@ -1546,3 +1553,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       flush_code_points_consumed_as_a_character_reference #TODO optimize so we flush directly
       reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
 
+    for tok in tokqueue:
+      yield tok
+    tokqueue.setLen(0)
