@@ -237,8 +237,7 @@ type
     quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle]
     opts: HTML5ParserOpts[Handle]
-    fragment: bool
-    ctx: Handle
+    ctx: Option[Handle]
     needsreinterpret: bool
     charset: Charset
     confidence: CharsetConfidence
@@ -246,7 +245,7 @@ type
     insertionMode: InsertionMode
     oldInsertionMode: InsertionMode
     templateModes: seq[InsertionMode]
-    head: Handle
+    head: Option[Handle]
     tokenizer: Tokenizer
     form: Handle
     fosterParenting: bool
@@ -371,6 +370,9 @@ func tagNameEquals[Handle](parser: HTML5Parser, a, b: Handle): bool =
     return tagType == parser.getTagType(b)
   return parser.getLocalName(a) == parser.getLocalName(b)
 
+func fragment(parser: HTML5Parser): bool =
+  return parser.ctx.isSome
+
 # https://html.spec.whatwg.org/multipage/parsing.html#reset-the-insertion-mode-appropriately
 proc resetInsertionMode(parser: var HTML5Parser) =
   template switch_insertion_mode_and_return(mode: InsertionMode) =
@@ -380,7 +382,7 @@ proc resetInsertionMode(parser: var HTML5Parser) =
     var node = parser.openElements[i]
     let last = i == 0
     if parser.fragment:
-      node = parser.ctx
+      node = parser.ctx.get
     let tagType = parser.getTagType(node)
     if tagType == TAG_SELECT:
       if not last:
@@ -407,7 +409,7 @@ proc resetInsertionMode(parser: var HTML5Parser) =
     of TAG_BODY: switch_insertion_mode_and_return IN_BODY
     of TAG_FRAMESET: switch_insertion_mode_and_return IN_FRAMESET
     of TAG_HTML:
-      if parser.head != nil:
+      if parser.head.isNone:
         switch_insertion_mode_and_return BEFORE_HEAD
       else:
         switch_insertion_mode_and_return AFTER_HEAD
@@ -419,8 +421,10 @@ func currentNode[Handle](parser: HTML5Parser[Handle]): Handle =
   return parser.openElements[^1]
 
 func adjustedCurrentNode[Handle](parser: HTML5Parser[Handle]): Handle =
-  if parser.fragment: parser.ctx
-  else: parser.currentNode
+  if parser.fragment:
+    parser.ctx.get
+  else:
+    parser.currentNode
 
 template parse_error() = discard
 
@@ -1316,7 +1320,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       TokenType.DOCTYPE => (block: parse_error)
       "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
       "<head>" => (block:
-        parser.head = parser.insertHTMLElement(token)
+        parser.head = some(parser.insertHTMLElement(token))
         parser.insertionMode = IN_HEAD
       )
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
@@ -2585,6 +2589,7 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     if scs != CHARSET_UNKNOWN:
       charsetStack.add(scs)
       confidence = CONFIDENCE_CERTAIN
+      canReinterpret = false
   if charsetStack.len == 0:
     charsetStack.add(DefaultCharset) # UTF-8
   while true:
