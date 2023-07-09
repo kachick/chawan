@@ -247,7 +247,7 @@ type
     templateModes: seq[InsertionMode]
     head: Option[Handle]
     tokenizer: Tokenizer
-    form: Handle
+    form: Option[Handle]
     fosterParenting: bool
     # Handle is an element. nil => marker
     activeFormatting: seq[(Handle, Token)]
@@ -439,8 +439,8 @@ template last_child_of[Handle](n: Handle): AdjustedInsertionLocation[Handle] =
   (n, nil)
 
 # https://html.spec.whatwg.org/multipage/#appropriate-place-for-inserting-a-node
-func appropriatePlaceForInsert[Handle](parser: HTML5Parser, target: Handle):
-    AdjustedInsertionLocation[Handle] =
+func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
+    target: Handle): AdjustedInsertionLocation[Handle] =
   assert parser.getTagType(parser.openElements[0]) == TAG_HTML
   let targetTagType = parser.getTagType(target)
   const FosterTagTypes = {TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR}
@@ -554,13 +554,13 @@ func createElement[Handle](parser: HTML5Parser[Handle], token: Token,
   let localName = token.tagname
   let element = parser.createElement(localName, namespace, token.tagtype,
     token.attrs)
-  if token.tagtype in FormAssociatedElements and parser.form != nil and
+  if token.tagtype in FormAssociatedElements and parser.form.isSome and
       not parser.hasElement(TAG_TEMPLATE) and
       (token.tagtype notin ListedElements or "form" notin token.attrs):
-    parser.associateWithForm(element, parser.form)
+    parser.associateWithForm(element, parser.form.get)
   return element
 
-proc pushElement[Handle](parser: var HTML5Parser, node: Handle) =
+proc pushElement[Handle](parser: var HTML5Parser[Handle], node: Handle) =
   parser.openElements.add(node)
   let node = parser.adjustedCurrentNode()
   parser.tokenizer.hasnonhtml = parser.getNamespace(node) != Namespace.HTML
@@ -1326,7 +1326,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error)
       _ => (block:
-        parser.head = parser.insertHTMLElement(Token(t: START_TAG, tagtype: TAG_HEAD))
+        let token = Token(t: START_TAG, tagtype: TAG_HEAD)
+        parser.head = some(parser.insertHTMLElement(token))
         parser.insertionMode = IN_HEAD
         reprocess token
       )
@@ -1441,12 +1442,13 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         discard parser.insertHTMLElement(token)
         parser.insertionMode = IN_FRAMESET
       )
-      ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>", "<script>", "<style>", "<template>", "<title>") => (block:
+      ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
+      "<script>", "<style>", "<template>", "<title>") => (block:
         parse_error
-        parser.pushElement(parser.head)
+        parser.pushElement(parser.head.get)
         parser.processInHTMLContent(token, IN_HEAD)
         for i in countdown(parser.openElements.high, 0):
-          if parser.openElements[i] == parser.head:
+          if parser.openElements[i] == parser.head.get:
             parser.openElements.delete(i)
       )
       "</template>" => (block: parser.processInHTMLContent(token, IN_HEAD))
@@ -1570,14 +1572,14 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       "<form>" => (block:
         let hasTemplate = parser.hasElement(TAG_TEMPLATE)
-        if parser.form != nil and not hasTemplate:
+        if parser.form.isSome and not hasTemplate:
           parse_error
         else:
           if parser.hasElementInButtonScope(TAG_P):
             parser.closeP()
           let element = parser.insertHTMLElement(token)
           if not hasTemplate:
-            parser.form = HTMLFormElement(element)
+            parser.form = some(element)
       )
       "<li>" => (block:
         parser.framesetOk = false
@@ -1653,12 +1655,13 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       "</form>" => (block:
         if not parser.hasElement(TAG_TEMPLATE):
-          let node = parser.form
-          parser.form = nil
-          if node == nil or
-              not parser.hasElementInScope(parser.getTagType(node)):
+          let form = parser.form
+          parser.form = none(Handle)
+          if form.isNone or
+              not parser.hasElementInScope(parser.getTagType(form.get)):
             parse_error
             return
+          let node = form.get
           parser.generateImpliedEndTags()
           if parser.currentNode != node:
             parse_error
@@ -1985,10 +1988,10 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       "<form>" => (block:
         parse_error
-        if parser.form != nil or parser.hasElement(TAG_TEMPLATE):
+        if parser.form.isSome or parser.hasElement(TAG_TEMPLATE):
           discard
         else:
-          parser.form = HTMLFormElement(parser.insertHTMLElement(token))
+          parser.form = some(parser.insertHTMLElement(token))
           pop_current_node
       )
       TokenType.EOF => (block:
