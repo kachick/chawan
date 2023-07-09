@@ -49,6 +49,18 @@ type
     TAG_DIR, TAG_FONT, TAG_FRAME, TAG_NOFRAMES, TAG_FRAMESET, TAG_STRIKE,
     TAG_TT, TAG_TEMPLATE, TAG_SARCASM
 
+  QuirksMode* = enum
+    NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
+
+  Namespace* = enum
+    NO_NAMESPACE = "",
+    HTML = "http://www.w3.org/1999/xhtml",
+    MATHML = "http://www.w3.org/1998/Math/MathML",
+    SVG = "http://www.w3.org/2000/svg",
+    XLINK = "http://www.w3.org/1999/xlink",
+    XML = "http://www.w3.org/XML/1998/namespace",
+    XMLNS = "http://www.w3.org/2000/xmlns/"
+
 func getTagTypeMap(): Table[string, TagType] =
   for i in TagType:
     let enumname = $TagType(i)

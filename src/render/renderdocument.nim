@@ -7,6 +7,7 @@ import css/sheet
 import css/stylednode
 import css/values
 import html/dom
+import html/tags
 import io/window
 import layout/box
 import layout/engine

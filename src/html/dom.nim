@@ -42,18 +42,6 @@ type
     FORM_ENCODING_TYPE_MULTIPART = "multipart/form-data",
     FORM_ENCODING_TYPE_TEXT_PLAIN = "text/plain"
 
-  QuirksMode* = enum
-    NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
-
-  Namespace* = enum
-    NO_NAMESPACE = "",
-    HTML = "http://www.w3.org/1999/xhtml",
-    MATHML = "http://www.w3.org/1998/Math/MathML",
-    SVG = "http://www.w3.org/2000/svg",
-    XLINK = "http://www.w3.org/1999/xlink",
-    XML = "http://www.w3.org/XML/1998/namespace",
-    XMLNS = "http://www.w3.org/2000/xmlns/"
-
   ScriptType = enum
     NO_SCRIPTTYPE, CLASSIC, MODULE, IMPORTMAP
 
@@ -231,7 +219,7 @@ type
 
     id* {.jsget.}: string
     classList* {.jsget.}: DOMTokenList
-    attrs*: Table[string, string]
+    attrs: Table[string, string]
     attributes* {.jsget.}: NamedNodeMap
     hover*: bool
     invalid*: bool
@@ -1377,12 +1365,15 @@ func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} 
 func length(characterData: CharacterData): int {.jsfget.} =
   return characterData.data.utf16Len
 
+func scriptingEnabled*(document: Document): bool =
+  if document.window == nil:
+    return false
+  return document.window.settings.scripting
+
 func scriptingEnabled*(element: Element): bool =
   if element.document == nil:
     return false
-  if element.document.window == nil:
-    return false
-  return element.document.window.settings.scripting
+  return element.document.scriptingEnabled
 
 func form*(element: FormAssociatedElement): HTMLFormElement =
   case element.tagType
@@ -2513,7 +2504,7 @@ proc insert*(parent, node, before: Node) =
   for node in nodes:
     insertNode(parent, node, before)
 
-proc insertBefore(parent, node, before: Node): Result[Node, DOMException]
+proc insertBefore*(parent, node, before: Node): Result[Node, DOMException]
     {.jsfunc.} =
   ?parent.preInsertionValidity(node, before)
   let referenceChild = if before == node:

@@ -1,55 +1,263 @@
-import deques
 import macros
 import options
 import sequtils
 import streams
-import strformat
 import strutils
 import tables
 import unicode
 
-import css/sheet
 import data/charset
 import encoding/decoderstream
-import html/dom
 import html/tags
 import html/htmltokenizer
-import js/javascript
-import types/url
 import utils/twtstr
+
+export macros, unicode
+
+# Heavily inspired by html5ever's TreeSink design.
+type
+  DOMBuilder*[Handle] = ref object of RootObj
+    document*: Handle
+    ## Must never be nil.
+    finish*: DOMBuilderFinish[Handle]
+    ## May be nil.
+    parseError*: DOMBuilderParseError[Handle]
+    ## May be nil.
+    setQuirksMode*: DOMBuilderSetQuirksMode[Handle]
+    ## May be nil.
+    setCharacterSet*: DOMBuilderSetCharacterSet[Handle]
+    ## May be nil.
+    elementPopped*: DOMBuilderElementPopped[Handle]
+    ## May be nil.
+    getTemplateContent*: DOMBuilderGetTemplateContent[Handle]
+    ## Must never be nil.
+    getLocalName*: DOMBuilderGetLocalName[Handle]
+    ## Must never be nil.
+    getTagType*: DOMBuilderGetTagType[Handle]
+    ## May be nil. (If nil, the parser falls back to getLocalName.)
+    getNamespace*: DOMBuilderGetNamespace[Handle]
+    ## May be nil. (If nil, the parser always uses the HTML namespace.)
+    createElement*: DOMBuilderCreateElement[Handle]
+    ## Must never be nil.
+    createComment*: DOMBuilderCreateComment[Handle]
+    ## Must never be nil.
+    createDocumentType*: DOMBuilderCreateDocumentType[Handle]
+    ## Must never be nil.
+    insertBefore*: DOMBuilderInsertBefore[Handle]
+    ## Must never be nil.
+    insertText*: DOMBuilderInsertText[Handle]
+    ## Must never be nil.
+    reparent*: DOMBuilderReparent[Handle]
+    ## Must never be nil.
+    addAttrsIfMissing*: DOMBuilderAddAttrsIfMissing[Handle]
+    ## May be nil. (If nil, some attributes may not be added to the HTML or
+    ## BODY element if more than one of their respecting opening tags exist.)
+    setScriptAlreadyStarted*: DOMBuilderSetScriptAlreadyStarted[Handle]
+    ## May be nil.
+    associateWithForm*: DOMBuilderAssociateWithForm[Handle]
+    ## May be nil.
+    isSVGIntegrationPoint*: DOMBuilderIsSVGIntegrationPoint[Handle]
+    ## May be nil. (If nil, the parser considers no Handle an SVG integration
+    ## point.)
+
+  HTML5ParserOpts*[Handle] = object
+    isIframeSrcdoc*: bool
+    ## Is the document an iframe srcdoc?
+    scripting*: bool
+    ## Is scripting enabled for this document?
+    canReinterpret*: bool
+    ## Can we try to parse the document again with a different character set?
+    ##
+    ## Note: this only works if inputStream is seekable, i.e.
+    ## inputStream.setPosition(0) must work correctly.
+    ##
+    ## Note 2: when this canReinterpret is false, confidence is set to
+    ## certain, no BOM sniffing is performed and meta charset tags are
+    ## disregarded. Expect this to change in the future.
+    charsets*: seq[Charset]
+    ## Fallback charsets. If empty, UTF-8 is used. In most cases, an empty
+    ## sequence or a single-element sequence consisting of a character set
+    ## chosen based on the user's locale will suffice.
+    ##
+    ## The parser goes through fallback charsets in the following order:
+    ## * A charset stack is initialized to `charsets`, reversed. This
+    ##   means that the first charset specified in `charsets` is on top of
+    ##   the stack. (e.g. say `charsets = @[CHARSET_UTF_16_LE, CHARSET_UTF_8]`,
+    ##   then utf-16-le is tried before utf-8.)
+    ## * BOM sniffing is attempted. If successful, confidence is set to
+    ##   certain and the resulting charset is pushed on top of the charset
+    ##   stack. (Continuing the previous example: if BOM sniffing determines
+    ##   the character encoding to be UTF-8, then utf-8 will be tried before
+    ##   utf-16-le.)
+    ## * If the charset stack is empty, UTF-8 is pushed on top.
+    ## * Attempt to parse the document with the first charset on top of
+    ##   the stack.
+    ## * If BOM sniffing was unsuccessful, and a <meta charset=...> tag
+    ##   is encountered, parsing is restarted with the specified charset.
+    ##   No further attempts are be made to detect the encoding, and decoder
+    ##   errors are signaled by U+FFFD replacement characters.
+    ## * Otherwise, each charset on the charset stack is tried until either no
+    ##   decoding errors are encountered, or only one charset is left. For
+    ##   the last charset, decoder errors are signaled by U+FFFD replacement
+    ##   characters.
+    ## TODO: changing the charset after a successful BOM sniffing probably
+    ## makes no sense whatsoever, as almost all supported encodings are
+    ## ASCII-compatible (and would thus error out on leading high bytes
+    ## anyways).
+    ctx*: Option[Handle]
+    ## Context element for fragment parsing. When set to some Handle,
+    ## the fragment case is used while parsing.
+
+  DOMBuilderFinish*[Handle] =
+    proc(builder: DOMBuilder[Handle]) {.nimcall.}
+      ## Parsing has finished.
+
+  DOMBuilderParseError*[Handle] =
+    proc(builder: DOMBuilder[Handle], message: string) {.nimcall.}
+      ## Parse error.
+
+  DOMBuilderSetQuirksMode*[Handle] =
+    proc(builder: DOMBuilder[Handle], quirksMode: QuirksMode) {.nimcall.}
+      ## Set quirks mode to either QUIRKS or LIMITED_QUIRKS. NO_QUIRKS
+      ## is the default and is therefore never used here.
+
+  DOMBuilderSetCharacterSet*[Handle] =
+    proc(builder: DOMBuilder[Handle], charset: Charset) {.nimcall.}
+      ## Set the recognized charset, if it differs from the initial input.
+
+  DOMBuilderElementPopped*[Handle] =
+    proc(builder: DOMBuilder[Handle], element: Handle) {.nimcall.}
+      ## Called when an element is popped from the stack of open elements
+      ## (i.e. when it has been closed.)
+
+  DOMBuilderGetTemplateContent*[Handle] =
+    proc(builder: DOMBuilder[Handle], handle: Handle): Handle {.nimcall.}
+      ## Retrieve a handle to the template element's contents.
+      ## Note: this function must never return nil.
+
+  DOMBuilderGetTagType*[Handle] =
+    proc(builder: DOMBuilder[Handle], handle: Handle): TagType {.nimcall.}
+      ## Retrieve the tag type of element.
+
+  DOMBuilderGetLocalName*[Handle] =
+    proc(builder: DOMBuilder[Handle], handle: Handle): string {.nimcall.}
+      ## Retrieve the local name of element. (This is tagName(getTagType),
+      ## unless the tag is unknown.
+
+  DOMBuilderGetNamespace*[Handle] =
+    proc(builder: DOMBuilder[Handle], handle: Handle): Namespace {.nimcall.}
+      ## Retrieve the namespace of element.
+
+  DOMBuilderCreateElement*[Handle] =
+    proc(builder: DOMBuilder[Handle], localName: string, namespace: Namespace,
+        tagType: TagType, attrs: Table[string, string]): Handle {.nimcall.}
+      ## Create a new element node.
+      ##
+      ## localName is the tag name of the token.
+      ##
+      ## namespace is the namespace passed to the function. (For HTML elements,
+      ## it's HTML.)
+      ## tagType is set based on localName. (This saves the consumer from
+      ## having to interpret localName again.)
+      ##
+      ## attrs is a table of the token's attributes.
+
+  DOMBuilderCreateComment*[Handle] =
+    proc(builder: DOMBuilder[Handle], text: string): Handle {.nimcall.}
+      ## Create a new comment node.
+
+  DOMBuilderInsertText*[Handle] =
+    proc(builder: DOMBuilder[Handle], parent: Handle, text: string,
+        before: Handle) {.nimcall.}
+      ## Insert a text node at the specified location with contents
+      ## `text`. If the specified location has a previous sibling that is
+      ## a text node, no new text node should be created, but instead `text`
+      ## should be appended to the previous sibling's character data.
+
+  DOMBuilderCreateDocumentType*[Handle] =
+    proc(builder: DOMBuilder[Handle], name, publicId, systemId: string): Handle
+        {.nimcall.}
+    ## Create a new document type node.
+
+  DOMBuilderInsertBefore*[Handle] =
+    proc(builder: DOMBuilder[Handle], parent, child, before: Handle)
+        {.nimcall.}
+      ## Insert node `child` before the node called `before`.
+      ##
+      ## If `before` is nil, `child` is expected to be appended to `parent`'s
+      ## node list.
+      ##
+      ## If `child` is a text, and its previous sibling after insertion is a
+      ## text as well, then they should be merged. `before` is never a
+      ## text node (and thus never has to be merged).
+      ##
+      ## Note: parent may either be an Element or a Document node.
+
+  DOMBuilderReparent*[Handle] =
+    proc(builder: DOMBuilder[Handle], child, newParent: Handle) {.nimcall.}
+      ## Remove `child` from its parent node, and append it to `newParent`.
+      ## In terms of DOM operations, this should be equivalent to calling
+      ## `child.remove()`, followed by `newParent.append(child)`.
+
+  DOMBuilderAddAttrsIfMissing*[Handle] =
+    proc(builder: DOMBuilder[Handle], element: Handle,
+        attrs: Table[string, string]) {.nimcall.}
+      ## Add the attributes in `attrs` to the element node `element`.
+      ## At the time of writing, called for HTML and BODY only. (This may
+      ## change in the future.)
+      ## An example implementation:
+      ## ```nim
+      ## for k, v in attrs:
+      ##   if k notin element.attrs:
+      ##     element.attrs[k] = v
+      ## ```
+
+  DOMBuilderSetScriptAlreadyStarted*[Handle] =
+    proc(builder: DOMBuilder[Handle], script: Handle) {.nimcall.}
+      ## Set the "already started" flag for the script element.
+      ##
+      ## Note: this flag is not togglable, so this callback should just set it
+      ## to true.
+
+  DOMBuilderAssociateWithForm*[Handle] =
+    proc(builder: DOMBuilder[Handle], element, form: Handle) {.nimcall.}
+      ## Called after createElement. Attempts to set form for form-associated
+      ## elements. Note: the DOM builder is responsible for checking whether
+      ## the two nodes are in the same tree.
+
+  DOMBuilderIsSVGIntegrationPoint*[Handle] =
+    proc(builder: DOMBuilder[Handle], element: Handle): bool {.nimcall.}
+      ## Check if element is an SVG integration point.
 
 type
   CharsetConfidence = enum
     CONFIDENCE_TENTATIVE, CONFIDENCE_CERTAIN, CONFIDENCE_IRRELEVANT
 
-  DOMParser = ref object # JS interface
-
-  OpenElements = seq[Element]
-
-  HTML5Parser = object
-    case fragment: bool
-    of true: ctx: Element
-    else: discard
+  HTML5Parser[Handle] = object
+    quirksMode: QuirksMode
+    dombuilder: DOMBuilder[Handle]
+    opts: HTML5ParserOpts[Handle]
+    fragment: bool
+    ctx: Handle
     needsreinterpret: bool
     charset: Charset
     confidence: CharsetConfidence
-    openElements: OpenElements
+    openElements: seq[Handle]
     insertionMode: InsertionMode
     oldInsertionMode: InsertionMode
     templateModes: seq[InsertionMode]
-    head: Element
+    head: Handle
     tokenizer: Tokenizer
-    document: Document
-    form: HTMLFormElement
+    form: Handle
     fosterParenting: bool
-    scripting: bool
-    activeFormatting: seq[(Element, Token)] # nil => marker
+    # Handle is an element. nil => marker
+    activeFormatting: seq[(Handle, Token)]
     framesetok: bool
     ignoreLF: bool
     pendingTableChars: string
     pendingTableCharsWhitespace: bool
 
-  AdjustedInsertionLocation = tuple[inside: Node, before: Node]
+  AdjustedInsertionLocation[Handle] = tuple[inside, before: Handle]
 
 # 13.2.4.1
   InsertionMode = enum
@@ -59,8 +267,111 @@ type
     AFTER_BODY, IN_FRAMESET, AFTER_FRAMESET, AFTER_AFTER_BODY,
     AFTER_AFTER_FRAMESET
 
-jsDestructor(DOMParser)
+# DOMBuilder interface functions
+proc finish[Handle](parser: HTML5Parser[Handle]) =
+  if parser.dombuilder.finish != nil:
+    parser.dombuilder.finish(parser.dombuilder)
 
+proc setQuirksMode[Handle](parser: var HTML5Parser[Handle], mode: QuirksMode) =
+  parser.quirksMode = mode
+  if parser.dombuilder.setQuirksMode != nil:
+    parser.dombuilder.setQuirksMode(parser.dombuilder, mode)
+
+func document[Handle](parser: HTML5Parser[Handle]): Handle {.inline.} =
+  return parser.dombuilder.document
+
+func getTemplateContent[Handle](parser: HTML5Parser[Handle],
+    handle: Handle): Handle =
+  return parser.dombuilder.getTemplateContent(parser.dombuilder, handle)
+
+func getLocalName[Handle](parser: HTML5Parser[Handle], handle: Handle):
+    string =
+  return parser.dombuilder.getLocalName(parser.dombuilder, handle)
+
+func getTagType[Handle](parser: HTML5Parser[Handle], handle: Handle): TagType =
+  if parser.dombuilder.getTagType != nil:
+    return parser.dombuilder.getTagType(parser.dombuilder, handle)
+  return tagType(parser.getLocalName(handle))
+
+func getNamespace[Handle](parser: HTML5Parser[Handle], handle: Handle):
+    Namespace =
+  if parser.dombuilder.getNamespace != nil:
+    return parser.dombuilder.getNamespace(parser.dombuilder, handle)
+  return Namespace.HTML
+
+func createElement[Handle](parser: HTML5Parser[Handle], localName: string,
+    namespace: Namespace, tagType: TagType, attrs: Table[string, string]):
+    Handle =
+  return parser.dombuilder.createElement(parser.dombuilder, localName,
+    namespace, tagType, attrs)
+
+func createElement[Handle](parser: HTML5Parser[Handle], tagType: TagType,
+    namespace: Namespace): Handle =
+  return parser.createElement(tagName(tagType), namespace, tagType,
+    Table[string, string]())
+
+func createComment[Handle](parser: HTML5Parser[Handle], text: string): Handle =
+  let dombuilder = parser.dombuilder
+  return dombuilder.createComment(dombuilder, text)
+
+proc createDocumentType[Handle](parser: HTML5Parser[Handle], name, publicId,
+    systemId: string): Handle =
+  let dombuilder = parser.dombuilder
+  return dombuilder.createDocumentType(dombuilder, name, publicId, systemId)
+
+proc insertBefore[Handle](parser: HTML5Parser[Handle],
+    parent, node, before: Handle) =
+  let dombuilder = parser.dombuilder
+  dombuilder.insertBefore(dombuilder, parent, node, before)
+
+proc insertText[Handle](parser: HTML5Parser[Handle], parent: Handle,
+    text: string, before: Handle) =
+  let dombuilder = parser.dombuilder
+  dombuilder.insertText(dombuilder, parent, text, before)
+
+proc reparent[Handle](parser: HTML5Parser[Handle], child, parent: Handle) =
+  let dombuilder = parser.dombuilder
+  dombuilder.reparent(dombuilder, child, parent)
+
+proc addAttrsIfMissing[Handle](parser: HTML5Parser, element: Handle,
+    attrs: Table[string, string]) =
+  let dombuilder = parser.dombuilder
+  if dombuilder.addAttrsIfMissing != nil:
+    dombuilder.addAttrsIfMissing(dombuilder, element, attrs)
+
+proc setScriptAlreadyStarted[Handle](parser: HTML5Parser, script: Handle) =
+  let dombuilder = parser.dombuilder
+  if dombuilder.setScriptAlreadyStarted != nil:
+    dombuilder.setScriptAlreadyStarted(dombuilder, script)
+
+proc associateWithForm[Handle](parser: HTML5Parser, element, form: Handle) =
+  let dombuilder = parser.dombuilder
+  if dombuilder.associateWithForm != nil:
+    dombuilder.associateWithForm(dombuilder, element, form)
+
+func isSVGIntegrationPoint[Handle](parser: HTML5Parser,
+    element: Handle): bool =
+  let dombuilder = parser.dombuilder
+  if dombuilder.isSVGIntegrationPoint != nil:
+    return dombuilder.isSVGIntegrationPoint(dombuilder, element)
+  return false
+
+# Parser
+func tagNameEquals[Handle](parser: HTML5Parser, handle: Handle,
+    token: Token): bool =
+  let tagType = parser.getTagType(handle)
+  if tagType != TAG_UNKNOWN:
+    return tagType == token.tagtype
+  let localName = parser.getLocalName(handle)
+  return localName == token.tagname
+
+func tagNameEquals[Handle](parser: HTML5Parser, a, b: Handle): bool =
+  let tagType = parser.getTagType(a)
+  if tagType != TAG_UNKNOWN:
+    return tagType == parser.getTagType(b)
+  return parser.getLocalName(a) == parser.getLocalName(b)
+
+# https://html.spec.whatwg.org/multipage/parsing.html#reset-the-insertion-mode-appropriately
 proc resetInsertionMode(parser: var HTML5Parser) =
   template switch_insertion_mode_and_return(mode: InsertionMode) =
     parser.insertionMode = mode
@@ -70,21 +381,23 @@ proc resetInsertionMode(parser: var HTML5Parser) =
     let last = i == 0
     if parser.fragment:
       node = parser.ctx
-    if node.tagType == TAG_SELECT:
+    let tagType = parser.getTagType(node)
+    if tagType == TAG_SELECT:
       if not last:
         for j in countdown(parser.openElements.high, 1):
           let ancestor = parser.openElements[j]
-          case ancestor.tagType
+          case parser.getTagType(ancestor)
           of TAG_TEMPLATE: break
           of TAG_TABLE: switch_insertion_mode_and_return IN_SELECT_IN_TABLE
           else: discard
       switch_insertion_mode_and_return IN_SELECT
-    case node.tagType
+    case tagType
     of TAG_TD, TAG_TH:
       if not last:
         switch_insertion_mode_and_return IN_CELL
     of TAG_TR: switch_insertion_mode_and_return IN_ROW
-    of TAG_TBODY, TAG_THEAD, TAG_TFOOT: switch_insertion_mode_and_return IN_CAPTION
+    of TAG_TBODY, TAG_THEAD, TAG_TFOOT:
+      switch_insertion_mode_and_return IN_CAPTION
     of TAG_COLGROUP: switch_insertion_mode_and_return IN_COLUMN_GROUP
     of TAG_TABLE: switch_insertion_mode_and_return IN_TABLE
     of TAG_TEMPLATE: switch_insertion_mode_and_return parser.templateModes[^1]
@@ -102,32 +415,38 @@ proc resetInsertionMode(parser: var HTML5Parser) =
     if last:
       switch_insertion_mode_and_return IN_BODY
 
-func currentNode(parser: HTML5Parser): Element =
+func currentNode[Handle](parser: HTML5Parser[Handle]): Handle =
   return parser.openElements[^1]
 
-func adjustedCurrentNode(parser: HTML5Parser): Element =
+func adjustedCurrentNode[Handle](parser: HTML5Parser[Handle]): Handle =
   if parser.fragment: parser.ctx
   else: parser.currentNode
 
 template parse_error() = discard
 
-func lastElementOfTag(parser: HTML5Parser, tagType: TagType): tuple[element: Element, pos: int] =
+func lastElementOfTag[Handle](parser: HTML5Parser[Handle],
+    tagType: TagType): tuple[element: Handle, pos: int] =
   for i in countdown(parser.openElements.high, 0):
-    if parser.openElements[i].tagType == tagType:
+    if parser.getTagType(parser.openElements[i]) == tagType:
       return (parser.openElements[i], i)
   return (nil, -1)
 
-template last_child_of(n: Node): AdjustedInsertionLocation =
+template last_child_of[Handle](n: Handle): AdjustedInsertionLocation[Handle] =
   (n, nil)
 
-# 13.2.6.1
-func appropriatePlaceForInsert(parser: HTML5Parser, target: Element): AdjustedInsertionLocation =
-  assert parser.openElements[0].tagType == TAG_HTML
-  if parser.fosterParenting and target.tagType in {TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR}:
+# https://html.spec.whatwg.org/multipage/#appropriate-place-for-inserting-a-node
+func appropriatePlaceForInsert[Handle](parser: HTML5Parser, target: Handle):
+    AdjustedInsertionLocation[Handle] =
+  assert parser.getTagType(parser.openElements[0]) == TAG_HTML
+  let targetTagType = parser.getTagType(target)
+  const FosterTagTypes = {TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR}
+  if parser.fosterParenting and targetTagType in FosterTagTypes:
     let lastTemplate = parser.lastElementOfTag(TAG_TEMPLATE)
     let lastTable = parser.lastElementOfTag(TAG_TABLE)
-    if lastTemplate.element != nil and (lastTable.element == nil or lastTable.pos < lastTemplate.pos):
-      return last_child_of(HTMLTemplateElement(lastTemplate.element).content)
+    if lastTemplate.element != nil and
+        (lastTable.element == nil or lastTable.pos < lastTemplate.pos):
+      let content = parser.getTemplateContent(lastTemplate.element)
+      return last_child_of(content)
     if lastTable.element == nil:
       return last_child_of(parser.openElements[0])
     if lastTable.element.parentNode != nil:
@@ -136,118 +455,142 @@ func appropriatePlaceForInsert(parser: HTML5Parser, target: Element): AdjustedIn
     result = last_child_of(previousElement)
   else:
     result = last_child_of(target)
-  if result.inside.nodeType == ELEMENT_NODE and Element(result.inside).tagType == TAG_TEMPLATE:
-    result = (HTMLTemplateElement(result.inside).content, nil)
+  if parser.getTagType(result.inside) == TAG_TEMPLATE:
+    result = (parser.getTemplateContent(result.inside), nil)
 
-func appropriatePlaceForInsert(parser: HTML5Parser): AdjustedInsertionLocation =
+func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle]):
+    AdjustedInsertionLocation[Handle] =
   parser.appropriatePlaceForInsert(parser.currentNode)
 
-func hasElement(elements: seq[Element], tag: TagType): bool =
-  for element in elements:
-    if element.tagType == tag:
+func hasElement[Handle](parser: HTML5Parser[Handle], tag: TagType): bool =
+  for element in parser.openElements:
+    if parser.getTagType(element) == tag:
       return true
   return false
 
-func hasElementInSpecificScope(elements: seq[Element], target: Element, list: set[TagType]): bool =
-  for i in countdown(elements.high, 0):
-    if elements[i] == target:
+func hasElementInSpecificScope[Handle](parser: HTML5Parser[Handle],
+    target: Handle, list: set[TagType]): bool =
+  for i in countdown(parser.openElements.high, 0):
+    if parser.openElements[i] == target:
       return true
-    if elements[i].tagType in list:
+    if parser.getTagType(parser.openElements[i]) in list:
       return false
   assert false
 
-func hasElementInSpecificScope(elements: seq[Element], target: TagType, list: set[TagType]): bool =
-  for i in countdown(elements.high, 0):
-    if elements[i].tagType == target:
+func hasElementInSpecificScope[Handle](parser: HTML5Parser[Handle],
+    target: TagType, list: set[TagType]): bool =
+  for i in countdown(parser.openElements.high, 0):
+    let tagType = parser.getTagType(parser.openElements[i])
+    if tagType == target:
       return true
-    if elements[i].tagType in list:
+    if tagType in list:
       return false
   assert false
 
-func hasElementInSpecificScope(elements: seq[Element], target: set[TagType], list: set[TagType]): bool =
-  for i in countdown(elements.high, 0):
-    if elements[i].tagType in target:
+func hasElementInSpecificScope[Handle](parser: HTML5Parser[Handle],
+    target: set[TagType], list: set[TagType]): bool =
+  for i in countdown(parser.openElements.high, 0):
+    let tagType = parser.getTagType(parser.openElements[i])
+    if tagType in target:
       return true
-    if elements[i].tagType in list:
+    if tagType in list:
       return false
   assert false
 
-const Scope = {TAG_APPLET, TAG_CAPTION, TAG_HTML, TAG_TABLE, TAG_TD, TAG_TH,
-               TAG_MARQUEE, TAG_OBJECT, TAG_TEMPLATE} #TODO SVG (NOTE MathML not implemented)
-func hasElementInScope(elements: seq[Element], target: TagType): bool =
-  return elements.hasElementInSpecificScope(target, Scope)
+const Scope = {
+  TAG_APPLET, TAG_CAPTION, TAG_HTML, TAG_TABLE, TAG_TD, TAG_TH, TAG_MARQUEE,
+  TAG_OBJECT, TAG_TEMPLATE #TODO SVG
+  # Note: MathML is not implemented
+}
 
-func hasElementInScope(elements: seq[Element], target: set[TagType]): bool =
-  return elements.hasElementInSpecificScope(target, Scope)
+func hasElementInScope[Handle](parser: HTML5Parser[Handle],
+    target: TagType): bool =
+  return parser.hasElementInSpecificScope(target, Scope)
 
-func hasElementInScope(elements: seq[Element], target: Element): bool =
-  return elements.hasElementInSpecificScope(target, Scope)
+func hasElementInScope[Handle](parser: HTML5Parser[Handle],
+    target: set[TagType]): bool =
+  return parser.hasElementInSpecificScope(target, Scope)
 
-func hasElementInListItemScope(elements: seq[Element], target: TagType): bool =
-  return elements.hasElementInSpecificScope(target, Scope + {TAG_OL, TAG_UL})
+func hasElementInScope[Handle](parser: HTML5Parser[Handle],
+    target: Handle): bool =
+  return parser.hasElementInSpecificScope(target, Scope)
 
-func hasElementInButtonScope(elements: seq[Element], target: TagType): bool =
-  return elements.hasElementInSpecificScope(target, Scope + {TAG_BUTTON})
+func hasElementInListItemScope[Handle](parser: HTML5Parser[Handle],
+    target: TagType): bool =
+  const ListItemScope = Scope + {TAG_OL, TAG_UL}
+  return parser.hasElementInSpecificScope(target, ListItemScope)
 
-func hasElementInTableScope(elements: seq[Element], target: TagType): bool =
-  return elements.hasElementInSpecificScope(target, {TAG_HTML, TAG_TABLE, TAG_TEMPLATE})
+func hasElementInButtonScope[Handle](parser: HTML5Parser[Handle],
+    target: TagType): bool =
+  const ButtonScope = Scope + {TAG_BUTTON}
+  return parser.hasElementInSpecificScope(target, ButtonScope)
 
-func hasElementInTableScope(elements: seq[Element], target: set[TagType]): bool =
-  return elements.hasElementInSpecificScope(target, {TAG_HTML, TAG_TABLE, TAG_TEMPLATE})
+const TableScope = {TAG_HTML, TAG_TABLE, TAG_TEMPLATE}
+func hasElementInTableScope[Handle](parser: HTML5Parser[Handle],
+    target: TagType): bool =
+  return parser.hasElementInSpecificScope(target, TableScope)
 
-func hasElementInSelectScope(elements: seq[Element], target: TagType): bool =
-  for i in countdown(elements.high, 0):
-    if elements[i].tagType == target:
+func hasElementInTableScope[Handle](parser: HTML5Parser[Handle],
+    target: set[TagType]): bool =
+  return parser.hasElementInSpecificScope(target, TableScope)
+
+func hasElementInSelectScope[Handle](parser: HTML5Parser[Handle],
+    target: TagType): bool =
+  for i in countdown(parser.openElements.high, 0):
+    let tagType = parser.getTagType(parser.openElements[i])
+    if tagType == target:
       return true
-    if elements[i].tagType notin {TAG_OPTION, TAG_OPTGROUP}:
+    if tagType notin {TAG_OPTION, TAG_OPTGROUP}:
       return false
   assert false
 
-func createElement(parser: HTML5Parser, token: Token, namespace: Namespace, intendedParent: Node): Element =
+func createElement[Handle](parser: HTML5Parser[Handle], token: Token,
+    namespace: Namespace, intendedParent: Handle): Handle =
   #TODO custom elements
-  let document = intendedParent.document
   let localName = token.tagname
-  let element = document.newHTMLElement(localName, namespace, tagType = token.tagtype, attrs = token.attrs)
-  if element.isResettable():
-    element.resetElement()
-
-  if element.tagType in SupportedFormAssociatedElements and parser.form != nil and
-      not parser.openElements.hasElement(TAG_TEMPLATE) and
-      (element.tagType notin ListedElements or not element.attrb("form")) and
-      intendedParent.inSameTree(parser.form):
-    let element = FormAssociatedElement(element)
-    element.setForm(parser.form)
-    element.parserInserted = true
+  let element = parser.createElement(localName, namespace, token.tagtype,
+    token.attrs)
+  if token.tagtype in FormAssociatedElements and parser.form != nil and
+      not parser.hasElement(TAG_TEMPLATE) and
+      (token.tagtype notin ListedElements or "form" notin token.attrs):
+    parser.associateWithForm(element, parser.form)
   return element
 
-proc pushElement(parser: var HTML5Parser, node: Element) =
+proc pushElement[Handle](parser: var HTML5Parser, node: Handle) =
   parser.openElements.add(node)
-  parser.tokenizer.hasnonhtml = not parser.adjustedCurrentNode().inHTMLNamespace()
+  let node = parser.adjustedCurrentNode()
+  parser.tokenizer.hasnonhtml = parser.getNamespace(node) != Namespace.HTML
 
-proc popElement(parser: var HTML5Parser): Element =
+proc popElement[Handle](parser: var HTML5Parser[Handle]): Handle =
   result = parser.openElements.pop()
-  if result.tagType == TAG_TEXTAREA:
-    result.resetElement()
+  if parser.dombuilder.elementPopped != nil:
+    parser.dombuilder.elementPopped(parser.dombuilder, result)
   if parser.openElements.len == 0:
     parser.tokenizer.hasnonhtml = false
   else:
-    parser.tokenizer.hasnonhtml = not parser.adjustedCurrentNode().inHTMLNamespace()
+    let node = parser.adjustedCurrentNode()
+    parser.tokenizer.hasnonhtml = parser.getNamespace(node) != Namespace.HTML
 
 template pop_current_node = discard parser.popElement()
 
-proc insert(location: AdjustedInsertionLocation, node: Node) =
-  location.inside.insert(node, location.before)
+proc insert[Handle](parser: HTML5Parser[Handle],
+    location: AdjustedInsertionLocation[Handle], node: Handle) =
+  parser.insertBefore(location.inside, node, location.before)
 
-proc insertForeignElement(parser: var HTML5Parser, token: Token, namespace: Namespace): Element =
+proc append[Handle](parser: HTML5Parser[Handle], parent, node: Handle) =
+  parser.insertBefore(parent, node, nil)
+
+proc insertForeignElement[Handle](parser: var HTML5Parser[Handle], token: Token,
+    namespace: Namespace): Handle =
   let location = parser.appropriatePlaceForInsert()
   let element = parser.createElement(token, namespace, location.inside)
-  if location.inside.preInsertionValidity(element, location.before).isOk:
-    #TODO custom elements
-    location.insert(element)
+  #TODO custom elements
+  parser.insert(location, element)
   parser.pushElement(element)
   return element
 
-proc insertHTMLElement(parser: var HTML5Parser, token: Token): Element =
+proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle],
+    token: Token): Handle =
   return parser.insertForeignElement(token, Namespace.HTML)
 
 proc adjustSVGAttributes(token: Token) =
@@ -322,15 +665,7 @@ template insert_character_impl(parser: var HTML5Parser, data: typed) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside.nodeType == DOCUMENT_NODE:
     return
-  let insertNode = if location.before == nil:
-    location.inside.lastChild
-  else:
-    location.before.previousSibling
-  if insertNode != nil and insertNode.nodeType == TEXT_NODE:
-    dom.Text(insertNode).data &= data
-  else:
-    let text = location.inside.document.createTextNode($data)
-    location.insert(text)
+  insertText(parser, location.inside, $data, location.before)
 
 proc insertCharacter(parser: var HTML5Parser, data: string) =
   insert_character_impl(parser, data)
@@ -341,17 +676,19 @@ proc insertCharacter(parser: var HTML5Parser, data: char) =
 proc insertCharacter(parser: var HTML5Parser, data: Rune) =
   insert_character_impl(parser, data)
 
-proc insertComment(parser: var HTML5Parser, token: Token, position: AdjustedInsertionLocation) =
-  position.insert(position.inside.document.createComment(token.data))
+proc insertComment[Handle](parser: var HTML5Parser[Handle], token: Token,
+    position: AdjustedInsertionLocation[Handle]) =
+  let comment = parser.createComment(token.data)
+  parser.insert(position, comment)
 
 proc insertComment(parser: var HTML5Parser, token: Token) =
   let position = parser.appropriatePlaceForInsert()
-  position.insert(position.inside.document.createComment(token.data))
+  parser.insertComment(token, position)
 
 const PublicIdentifierEquals = [
   "-//W3O//DTD W3 HTML Strict 3.0//EN//",
   "-/W3C/DTD HTML 4.0 Transitional/EN",
-  "HTML" 
+  "HTML"
 ]
 
 const PublicIdentifierStartsWith = [
@@ -409,7 +746,7 @@ const PublicIdentifierStartsWith = [
   "-//W3C//DTD W3 HTML//",
   "-//W3O//DTD W3 HTML 3.0//",
   "-//WebTechs//DTD Mozilla HTML 2.0//",
-  "-//WebTechs//DTD Mozilla HTML//", 
+  "-//WebTechs//DTD Mozilla HTML//",
 ]
 
 const SystemIdentifierMissingAndPublicIdentifierStartsWith = [
@@ -469,17 +806,28 @@ proc genericRCDATAElementParsingAlgorithm(parser: var HTML5Parser, token: Token)
   parser.oldInsertionMode = parser.insertionMode
   parser.insertionMode = TEXT
 
-# 13.2.6.3
+# Pop all elements, including the specified tag.
+proc popElementsIncl(parser: var HTML5Parser, tag: TagType) =
+  while parser.getTagType(parser.popElement()) != tag:
+    discard
+
+proc popElementsIncl(parser: var HTML5Parser, tags: set[TagType]) =
+  while parser.getTagType(parser.popElement()) notin tags:
+    discard
+
+# https://html.spec.whatwg.org/multipage/parsing.html#closing-elements-that-have-implied-end-tags
 proc generateImpliedEndTags(parser: var HTML5Parser) =
   const tags = {TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P,
                 TAG_RB, TAG_RP, TAG_RT, TAG_RTC}
-  while parser.currentNode.tagType in tags:
+  while parser.getTagType(parser.currentNode) in tags:
     discard parser.popElement()
 
 proc generateImpliedEndTags(parser: var HTML5Parser, exclude: TagType) =
-  let tags = {TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P,
-                TAG_RB, TAG_RP, TAG_RT, TAG_RTC} - {exclude}
-  while parser.currentNode.tagType in tags:
+  let tags = {
+    TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P, TAG_RB, TAG_RP,
+    TAG_RT, TAG_RTC
+  } - {exclude}
+  while parser.getTagType(parser.currentNode) in tags:
     discard parser.popElement()
 
 proc generateImpliedEndTagsThoroughly(parser: var HTML5Parser) =
@@ -487,30 +835,31 @@ proc generateImpliedEndTagsThoroughly(parser: var HTML5Parser) =
                 TAG_OPTGROUP, TAG_OPTION, TAG_P, TAG_RB, TAG_RP, TAG_RT,
                 TAG_RTC, TAG_TBODY, TAG_TD, TAG_TFOOT, TAG_TH, TAG_THEAD,
                 TAG_TR}
-  while parser.currentNode.tagType in tags:
+  while parser.getTagType(parser.currentNode) in tags:
     discard parser.popElement()
 
-# 13.2.4.3
-proc pushOntoActiveFormatting(parser: var HTML5Parser, element: Element, token: Token) =
+# https://html.spec.whatwg.org/multipage/parsing.html#push-onto-the-list-of-active-formatting-elements
+proc pushOntoActiveFormatting[Handle](parser: var HTML5Parser[Handle],
+    element: Handle, token: Token) =
   var count = 0
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i]
     if it[0] == nil: break
-    if it[0].tagType != element.tagType: continue
-    if it[0].tagType == TAG_UNKNOWN:
-      if it[0].localName != element.localName: continue
-    if it[0].namespace != element.namespace: continue
+    if not parser.tagNameEquals(it[0], element):
+      continue
+    if parser.getNamespace(it[0]) != parser.getNamespace(element):
+      continue
     var fail = false
-    for k, v in it[0].attrs:
-      if k notin element.attrs:
+    for k, v in it[1].attrs:
+      if k notin token.attrs:
         fail = true
         break
-      if v != element.attrs[k]:
+      if v != token.attrs[k]:
         fail = true
         break
     if fail: continue
-    for k, v in element.attrs:
-      if k notin it[0].attrs:
+    for k, v in token.attrs:
+      if k notin it[1].attrs:
         fail = true
         break
     if fail: continue
@@ -520,15 +869,18 @@ proc pushOntoActiveFormatting(parser: var HTML5Parser, element: Element, token: 
       break
   parser.activeFormatting.add((element, token))
 
-proc reconstructActiveFormatting(parser: var HTML5Parser) =
+proc reconstructActiveFormatting[Handle](parser: var HTML5Parser[Handle]) =
   type State = enum
     REWIND, ADVANCE, CREATE
   if parser.activeFormatting.len == 0:
     return
-  if parser.activeFormatting[^1][0] == nil or parser.openElements.hasElement(parser.activeFormatting[^1][0].tagType):
+  if parser.activeFormatting[^1][0] == nil:
+    return
+  let tagType = parser.getTagType(parser.activeFormatting[^1][0])
+  if parser.hasElement(tagType):
     return
   var i = parser.activeFormatting.high
-  template entry: Element = (parser.activeFormatting[i][0])
+  template entry: Handle = (parser.activeFormatting[i][0])
   var state = REWIND
   while true:
     {.computedGoto.}
@@ -538,8 +890,10 @@ proc reconstructActiveFormatting(parser: var HTML5Parser) =
         state = CREATE
         continue
       dec i
-      if entry != nil and not parser.openElements.hasElement(entry.tagType):
-        continue
+      if entry != nil:
+        let tagType = parser.getTagType(entry)
+        if not parser.hasElement(tagType):
+          continue
       state = ADVANCE
     of ADVANCE:
       inc i
@@ -554,8 +908,9 @@ proc reconstructActiveFormatting(parser: var HTML5Parser) =
 proc clearActiveFormattingTillMarker(parser: var HTML5Parser) =
   while parser.activeFormatting.len > 0 and parser.activeFormatting.pop()[0] != nil: discard
 
-func isHTMLIntegrationPoint(node: Element): bool =
-  return false #TODO SVG (NOTE MathML not implemented)
+func isHTMLIntegrationPoint[Handle](parser: HTML5Parser[Handle],
+    element: Handle): bool =
+  return parser.isSVGIntegrationPoint(element) # (NOTE MathML not implemented)
 
 func extractEncFromMeta(s: string): Charset =
   var i = 0
@@ -604,6 +959,116 @@ proc changeEncoding(parser: var HTML5Parser, cs: Charset) =
   else:
     parser.charset = cs
   parser.needsreinterpret = true
+
+proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
+    token: Token): bool =
+  if parser.tagNameEquals(parser.currentNode, token):
+    var fail = true
+    for it in parser.activeFormatting:
+      if it[0] == parser.currentNode:
+        fail = false
+    if fail:
+      pop_current_node
+      return false
+  var i = 0
+  while true:
+    if i >= 8: return false
+    inc i
+    if parser.activeFormatting.len == 0: return true
+    var formatting: Handle
+    var formattingIndex: int
+    for j in countdown(parser.activeFormatting.high, 0):
+      let element = parser.activeFormatting[j][0]
+      if element == nil:
+        return true
+      if parser.tagNameEquals(parser.currentNode, token):
+        formatting = element
+        formattingIndex = j
+        break
+      if j == 0:
+        return true
+    let stackIndex = parser.openElements.find(formatting)
+    if stackIndex < 0:
+      parse_error
+      parser.activeFormatting.delete(formattingIndex)
+      return false
+    if not parser.hasElementInScope(formatting):
+      parse_error
+      return false
+    if formatting != parser.currentNode: parse_error
+    var furthestBlock: Handle = nil
+    var furthestBlockIndex: int
+    for j in countdown(parser.openElements.high, 0):
+      if parser.openElements[j] == formatting:
+        break
+      if parser.getTagType(parser.openElements[j]) in SpecialElements:
+        furthestBlock = parser.openElements[j]
+        furthestBlockIndex = j
+        break
+    if furthestBlock == nil:
+      while parser.popElement() != formatting: discard
+      parser.activeFormatting.delete(formattingIndex)
+      return false
+    let commonAncestor = parser.openElements[stackIndex - 1]
+    var bookmark = formattingIndex
+    var node = furthestBlock
+    var aboveNode = parser.openElements[furthestBlockIndex - 1]
+    var lastNode = furthestBlock
+    var j = 0
+    while true:
+      inc j
+      node = aboveNode
+      let nodeStackIndex = parser.openElements.find(node)
+      if node == formatting: break
+      var nodeFormattingIndex = -1
+      for i in countdown(parser.activeFormatting.high, 0):
+        if parser.activeFormatting[i][0] == node:
+          nodeFormattingIndex = i
+          break
+      if j > 3 and nodeFormattingIndex >= 0:
+        parser.activeFormatting.delete(nodeFormattingIndex)
+        if nodeFormattingIndex < bookmark:
+          dec bookmark # a previous node got deleted, so decrease bookmark by one
+      if nodeFormattingIndex < 0:
+        aboveNode = parser.openElements[nodeStackIndex - 1]
+        parser.openElements.delete(nodeStackIndex)
+        if nodeStackIndex < furthestBlockIndex:
+          dec furthestBlockIndex
+          furthestBlock = parser.openElements[furthestBlockIndex]
+        continue
+      let element = parser.createElement(parser.activeFormatting[nodeFormattingIndex][1], Namespace.HTML, commonAncestor)
+      parser.activeFormatting[nodeFormattingIndex] = (element, parser.activeFormatting[nodeFormattingIndex][1])
+      parser.openElements[nodeStackIndex] = element
+      aboveNode = parser.openElements[nodeStackIndex - 1]
+      node = element
+      if lastNode == furthestBlock:
+        bookmark = nodeFormattingIndex + 1
+      parser.append(node, lastNode)
+      lastNode = node
+    let location = parser.appropriatePlaceForInsert(commonAncestor)
+    location.inside.insert(lastNode, location.before)
+    let token = parser.activeFormatting[formattingIndex][1]
+    let element = parser.createElement(token, Namespace.HTML, furthestBlock)
+    var tomove: seq[Handle]
+    j = furthestBlock.childList.high
+    while j >= 0:
+      let child = furthestBlock.childList[j]
+      tomove.add(child)
+      dec j
+    for child in tomove:
+      parser.reparent(child, element)
+    parser.append(furthestBlock, element)
+    parser.activeFormatting.insert((element, token), bookmark)
+    parser.activeFormatting.delete(formattingIndex)
+    parser.openElements.insert(element, furthestBlockIndex)
+    parser.openElements.delete(stackIndex)
+
+proc closeP(parser: var HTML5Parser) =
+  parser.generateImpliedEndTags(TAG_P)
+  if parser.getTagType(parser.currentNode) != TAG_P:
+    parse_error
+  while parser.getTagType(parser.popElement()) != TAG_P:
+    discard
 
 # Following is an implementation of the state (?) machine defined in
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhtml
@@ -699,7 +1164,7 @@ macro match(token: Token, body: typed): untyped =
         of nnkCharLit:
           ofBranches[CHARACTER_ASCII].ofBranches.add((@[pattern], action))
           ofBranches[CHARACTER_ASCII].painted = true
-        else: error fmt"Unsupported curly of kind {pattern[0].kind}"
+        else: error "Unsupported curly of kind " & $pattern[0].kind
       of nnkStrLit:
         var tempTokenizer = newTokenizer(pattern.strVal)
         for token in tempTokenizer.tokenize:
@@ -716,14 +1181,17 @@ macro match(token: Token, body: typed): untyped =
             if not found:
               ofBranches[token.t].ofBranches.add((@[(quote do: TagType(`tt`))], action))
               ofBranches[token.t].painted = true
-          else: error fmt"{pattern.strVal}: Unsupported token {token} of kind {token.t}"
+          else:
+            error pattern.strVal & ": Unsupported token " & $token &
+              " of kind " & $token.t
           break
       of nnkDiscardStmt:
         defaultBranch = action
       of nnkTupleConstr:
         for child in pattern:
           patterns.add(child)
-      else: error fmt"{pattern}: Unsupported pattern of kind {pattern.kind}"
+      else:
+        error pattern.strVal & ": Unsupported pattern of kind " & $pattern.kind
 
   func tokenBranchOn(tok: TokenType): NimNode =
     case tok
@@ -733,7 +1201,8 @@ macro match(token: Token, body: typed): untyped =
       return quote do: token.r
     of CHARACTER_ASCII:
       return quote do: token.c
-    else: error fmt"Unsupported branching of token {tok}"
+    else:
+      error "Unsupported branching of token " & $tok
 
   template add_to_case(branch: typed) =
     if branch[0].len == 1:
@@ -781,7 +1250,8 @@ macro match(token: Token, body: typed): untyped =
     stmts.add(stmt)
   result = newBlockStmt(ident("inside_not_else"), stmts)
 
-proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode = parser.insertionMode) =
+proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
+    token: Token, insertionMode: InsertionMode) =
   template pop_all_nodes =
     while parser.openElements.len > 1: pop_current_node
   template anything_else = discard "anything_else"
@@ -790,7 +1260,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       discard (`v`, proc() = `body`)
   template _ = discard
   template reprocess(tok: Token) =
-    parser.processInHTMLContent(tok)
+    parser.processInHTMLContent(tok, parser.insertionMode)
 
   case insertionMode
   of INITIAL:
@@ -800,20 +1270,20 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       TokenType.DOCTYPE => (block:
         if token.name.isnone or token.name.get != "html" or token.pubid.issome or (token.sysid.issome and token.sysid.get != "about:legacy-compat"):
           parse_error
-        let doctype = parser.document.newDocumentType(token.name.get(""), token.pubid.get(""), token.sysid.get(""))
-        parser.document.append(doctype)
-        if not parser.document.is_iframe_srcdoc and not parser.document.parser_cannot_change_the_mode_flag:
+        let doctype = parser.createDocumentType(token.name.get(""),
+          token.pubid.get(""), token.sysid.get(""))
+        parser.append(parser.document, doctype)
+        if not parser.opts.isIframeSrcdoc:
           if quirksConditions(token):
-            parser.document.mode = QUIRKS
+            parser.setQuirksMode(QUIRKS)
           elif limitedQuirksConditions(token):
-            parser.document.mode = LIMITED_QUIRKS
+            parser.setQuirksMode(LIMITED_QUIRKS)
         parser.insertionMode = BEFORE_HTML
       )
       _ => (block:
-        if not parser.document.is_iframe_srcdoc:
+        if not parser.opts.isIframeSrcdoc:
           parse_error
-        if not parser.document.parser_cannot_change_the_mode_flag:
-          parser.document.mode = QUIRKS
+        parser.setQuirksMode(QUIRKS)
         parser.insertionMode = BEFORE_HTML
         reprocess token
       )
@@ -825,15 +1295,15 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       AsciiWhitespace => (block: discard)
       "<html>" => (block:
         let element = parser.createElement(token, Namespace.HTML, parser.document)
-        parser.document.append(element)
+        parser.append(parser.document, element)
         parser.pushElement(element)
         parser.insertionMode = BEFORE_HEAD
       )
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error)
       _ => (block:
-        let element = parser.document.newHTMLElement(TAG_HTML, Namespace.HTML)
-        parser.document.append(element)
+        let element = parser.createElement(TAG_HTML, Namespace.HTML)
+        parser.append(parser.document, element)
         parser.pushElement(element)
         parser.insertionMode = BEFORE_HEAD
         reprocess token
@@ -868,20 +1338,22 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         pop_current_node
       )
       "<meta>" => (block:
-        let element = parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement(token)
         pop_current_node
         if parser.confidence == CONFIDENCE_TENTATIVE:
-          let cs = getCharset(element.attr("charset"))
+          let cs = getCharset(token.attrs.getOrDefault("charset", ""))
           if cs != CHARSET_UNKNOWN:
             parser.changeEncoding(cs)
-          elif element.attr("http-equiv").equalsIgnoreCase("Content-Type"):
-            let cs = extractEncFromMeta(element.attr("content"))
-            if cs != CHARSET_UNKNOWN:
-              parser.changeEncoding(cs)
+          elif "http-equiv" in token.attrs:
+            if token.attrs["http-equiv"].equalsIgnoreCase("Content-Type") and
+                "content" in token.attrs:
+              let cs = extractEncFromMeta(token.attrs["content"])
+              if cs != CHARSET_UNKNOWN:
+                parser.changeEncoding(cs)
       )
       "<title>" => (block: parser.genericRCDATAElementParsingAlgorithm(token))
       "<noscript>" => (block:
-        if not parser.scripting:
+        if not parser.opts.scripting:
           discard parser.insertHTMLElement(token)
           parser.insertionMode = IN_HEAD_NOSCRIPT
         else:
@@ -890,13 +1362,9 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       ("<noframes>", "<style>") => (block: parser.genericRawtextElementParsingAlgorithm(token))
       "<script>" => (block:
         let location = parser.appropriatePlaceForInsert()
-        let element = HTMLScriptElement(parser.createElement(token, Namespace.HTML, location.inside))
-        element.parserDocument = parser.document
-        element.forceAsync = false
-        if parser.fragment:
-          element.alreadyStarted = true
+        let element = parser.createElement(token, Namespace.HTML, location.inside)
         #TODO document.write (?)
-        location.insert(element)
+        parser.insert(location, element)
         parser.pushElement(element)
         parser.tokenizer.state = SCRIPT_DATA
         parser.oldInsertionMode = parser.insertionMode
@@ -915,13 +1383,13 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.templateModes.add(IN_TEMPLATE)
       )
       "</template>" => (block:
-        if not parser.openElements.hasElement(TAG_TEMPLATE):
+        if not parser.hasElement(TAG_TEMPLATE):
           parse_error
         else:
           parser.generateImpliedEndTagsThoroughly()
-          if parser.currentNode.tagType != TAG_TEMPLATE:
+          if parser.getTagType(parser.currentNode) != TAG_TEMPLATE:
             parse_error
-          while parser.popElement().tagType != TAG_TEMPLATE: discard
+          parser.popElementsIncl(TAG_TEMPLATE)
           parser.clearActiveFormattingTillMarker()
           discard parser.templateModes.pop()
           parser.resetInsertionMode()
@@ -987,114 +1455,6 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
 
   of IN_BODY:
-    proc closeP(parser: var HTML5Parser) =
-      parser.generateImpliedEndTags(TAG_P)
-      if parser.currentNode.tagType != TAG_P: parse_error
-      while parser.popElement().tagType != TAG_P: discard
-
-    proc adoptionAgencyAlgorithm(parser: var HTML5Parser, token: Token): bool =
-      if parser.currentNode.tagType != TAG_UNKNOWN and parser.currentNode.tagtype == token.tagtype or parser.currentNode.localName == token.tagname:
-        var fail = true
-        for it in parser.activeFormatting:
-          if it[0] == parser.currentNode:
-            fail = false
-        if fail:
-          pop_current_node
-          return false
-      var i = 0
-      while true:
-        if i >= 8: return false
-        inc i
-        if parser.activeFormatting.len == 0: return true
-        var formatting: Element
-        var formattingIndex: int
-        for j in countdown(parser.activeFormatting.high, 0):
-          let element = parser.activeFormatting[j][0]
-          if element == nil:
-            return true
-          if element.tagType != TAG_UNKNOWN and element.tagtype == token.tagtype or element.qualifiedName == token.tagname:
-            formatting = element
-            formattingIndex = j
-            break
-          if j == 0:
-            return true
-        let stackIndex = parser.openElements.find(formatting)
-        if stackIndex < 0:
-          parse_error
-          parser.activeFormatting.delete(formattingIndex)
-          return false
-        if not parser.openElements.hasElementInScope(formatting):
-          parse_error
-          return false
-        if formatting != parser.currentNode: parse_error
-        var furthestBlock: Element = nil
-        var furthestBlockIndex: int
-        for j in countdown(parser.openElements.high, 0):
-          if parser.openElements[j] == formatting:
-            break
-          if parser.openElements[j].tagType in SpecialElements:
-            furthestBlock = parser.openElements[j]
-            furthestBlockIndex = j
-            break
-        if furthestBlock == nil:
-          while parser.popElement() != formatting: discard
-          parser.activeFormatting.delete(formattingIndex)
-          return false
-        let commonAncestor = parser.openElements[stackIndex - 1]
-        var bookmark = formattingIndex
-        var node = furthestBlock
-        var aboveNode = parser.openElements[furthestBlockIndex - 1]
-        var lastNode = furthestBlock
-        var j = 0
-        while true:
-          inc j
-          node = aboveNode
-          let nodeStackIndex = parser.openElements.find(node)
-          if node == formatting: break
-          var nodeFormattingIndex = -1
-          for i in countdown(parser.activeFormatting.high, 0):
-            if parser.activeFormatting[i][0] == node:
-              nodeFormattingIndex = i
-              break
-          if j > 3 and nodeFormattingIndex >= 0:
-            parser.activeFormatting.delete(nodeFormattingIndex)
-            if nodeFormattingIndex < bookmark:
-              dec bookmark # a previous node got deleted, so decrease bookmark by one
-          if nodeFormattingIndex < 0:
-            aboveNode = parser.openElements[nodeStackIndex - 1]
-            parser.openElements.delete(nodeStackIndex)
-            if nodeStackIndex < furthestBlockIndex:
-              dec furthestBlockIndex
-              furthestBlock = parser.openElements[furthestBlockIndex]
-            continue
-          let element = parser.createElement(parser.activeFormatting[nodeFormattingIndex][1], Namespace.HTML, commonAncestor)
-          parser.activeFormatting[nodeFormattingIndex] = (element, parser.activeFormatting[nodeFormattingIndex][1])
-          parser.openElements[nodeStackIndex] = element
-          aboveNode = parser.openElements[nodeStackIndex - 1]
-          node = element
-          if lastNode == furthestBlock:
-            bookmark = nodeFormattingIndex + 1
-          node.append(lastNode)
-          lastNode = node
-        let location = parser.appropriatePlaceForInsert(commonAncestor)
-        location.inside.insert(lastNode, location.before)
-        let token = parser.activeFormatting[formattingIndex][1]
-        let element = parser.createElement(token, Namespace.HTML, furthestBlock)
-        var tomove: seq[Node]
-        j = furthestBlock.childList.high
-        while j >= 0:
-          let child = furthestBlock.childList[j]
-          child.remove(true)
-          tomove.add(child)
-          dec j
-        for child in tomove:
-          element.append(child)
-        furthestBlock.append(element)
-        parser.activeFormatting.insert((element, token), bookmark)
-        parser.activeFormatting.delete(formattingIndex)
-        parser.openElements.insert(element, furthestBlockIndex)
-        parser.openElements.delete(stackIndex)
-
     template any_other_start_tag() =
       parser.reconstructActiveFormatting()
       discard parser.insertHTMLElement(token)
@@ -1102,15 +1462,15 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
     template any_other_end_tag() =
       for i in countdown(parser.openElements.high, 0):
         let node = parser.openElements[i]
-        if node.tagType != TAG_UNKNOWN and node.tagType == token.tagtype or node.localName == token.tagname:
+        if parser.tagNameEquals(node, token):
           parser.generateImpliedEndTags(token.tagtype)
           if node != parser.currentNode: parse_error
           while parser.popElement() != node: discard
           break
-        elif node.tagType in SpecialElements:
+        elif parser.getTagType(node) in SpecialElements:
           parse_error
           return
-    
+
     match token:
       '\0' => (block: parse_error)
       AsciiWhitespace => (block:
@@ -1131,28 +1491,28 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       TokenType.DOCTYPE => (block: parse_error)
       "<html>" => (block:
         parse_error
-        if parser.openElements.hasElement(TAG_TEMPLATE):
+        if parser.hasElement(TAG_TEMPLATE):
           discard
         else:
-          for k, v in token.attrs:
-            if k notin parser.openElements[0].attrs:
-              parser.openElements[0].attr(k, v)
+          parser.addAttrsIfMissing(parser.openElements[0], token.attrs)
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>", "<script>", "<style>", "<template>", "<title>",
        "</template>") => (block: parser.processInHTMLContent(token, IN_HEAD))
       "<body>" => (block:
         parse_error
-        if parser.openElements.len == 1 or parser.openElements[1].tagType != TAG_BODY or parser.openElements.hasElement(TAG_TEMPLATE):
+        if parser.openElements.len == 1 or
+            parser.getTagType(parser.openElements[1]) != TAG_BODY or
+            parser.hasElement(TAG_TEMPLATE):
           discard
         else:
           parser.framesetOk = false
-          for k, v in token.attrs:
-            if k notin parser.openElements[1].attrs:
-              parser.openElements[1].attr(k, v)
+          parser.addAttrsIfMissing(parser.openElements[1], token.attrs)
       )
       "<frameset>" => (block:
         parse_error
-        if parser.openElements.len == 1 or parser.openElements[1].tagType != TAG_BODY or not parser.framesetOk:
+        if parser.openElements.len == 1 or
+            parser.getTagType(parser.openElements[1]) != TAG_BODY or
+            not parser.framesetOk:
           discard
         else:
           if parser.openElements[1].parentNode != nil:
@@ -1167,14 +1527,14 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           discard # stop
       )
       "</body>" => (block:
-        if not parser.openElements.hasElementInScope(TAG_BODY):
+        if not parser.hasElementInScope(TAG_BODY):
           parse_error
         else:
           #NOTE parse error omitted
           parser.insertionMode = AFTER_BODY
       )
       "</html>" => (block:
-        if not parser.openElements.hasElementInScope(TAG_BODY):
+        if not parser.hasElementInScope(TAG_BODY):
           parse_error
         else:
           #NOTE parse error omitted
@@ -1185,31 +1545,31 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       "<details>", "<dialog>", "<dir>", "<div>", "<dl>", "<fieldset>",
       "<figcaption>", "<figure>", "<footer>", "<header>", "<hgroup>", "<main>",
       "<menu>", "<nav>", "<ol>", "<p>", "<section>", "<summary>", "<ul>") => (block:
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
       )
       ("<h1>", "<h2>", "<h3>", "<h4>", "<h5>", "<h6>") => (block:
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
-        if parser.currentNode.tagType in HTagTypes:
+        if parser.getTagType(parser.currentNode) in HTagTypes:
           parse_error
           pop_current_node
         discard parser.insertHTMLElement(token)
       )
       ("<pre>", "<listing>") => (block:
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
         parser.ignoreLF = true
         parser.framesetOk = false
       )
       "<form>" => (block:
-        let hasTemplate = parser.openElements.hasElement(TAG_TEMPLATE)
+        let hasTemplate = parser.hasElement(TAG_TEMPLATE)
         if parser.form != nil and not hasTemplate:
           parse_error
         else:
-          if parser.openElements.hasElementInButtonScope(TAG_P):
+          if parser.hasElementInButtonScope(TAG_P):
             parser.closeP()
           let element = parser.insertHTMLElement(token)
           if not hasTemplate:
@@ -1219,16 +1579,18 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.framesetOk = false
         for i in countdown(parser.openElements.high, 0):
           let node = parser.openElements[i]
-          case node.tagType
+          let tagType = parser.getTagType(node)
+          case tagType
           of TAG_LI:
             parser.generateImpliedEndTags(TAG_LI)
-            if parser.currentNode.tagType != TAG_LI: parse_error
-            while parser.popElement().tagType != TAG_LI: discard
+            if parser.getTagType(parser.currentNode) != TAG_LI:
+              parse_error
+            parser.popElementsIncl(TAG_LI)
             break
           of SpecialElements - {TAG_ADDRESS, TAG_DIV, TAG_P, TAG_LI}:
             break
           else: discard
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
       )
@@ -1236,35 +1598,38 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.framesetOk = false
         for i in countdown(parser.openElements.high, 0):
           let node = parser.openElements[i]
-          case node.tagType
+          let tagType = parser.getTagType(node)
+          case tagType
           of TAG_DD:
             parser.generateImpliedEndTags(TAG_DD)
-            if parser.currentNode.tagType != TAG_DD: parse_error
-            while parser.popElement().tagType != TAG_DD: discard
+            if parser.getTagType(parser.currentNode) != TAG_DD:
+              parse_error
+            parser.popElementsIncl(TAG_DD)
             break
           of TAG_DT:
             parser.generateImpliedEndTags(TAG_DT)
-            if parser.currentNode.tagType != TAG_DT: parse_error
-            while parser.popElement().tagType != TAG_DT: discard
+            if parser.getTagType(parser.currentNode) != TAG_DT:
+              parse_error
+            parser.popElementsIncl(TAG_DT)
             break
           of SpecialElements - {TAG_ADDRESS, TAG_DIV, TAG_P, TAG_DD, TAG_DT}:
             break
           else: discard
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
       )
       "<plaintext>" => (block:
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
         parser.tokenizer.state = PLAINTEXT
       )
       "<button>" => (block:
-        if parser.openElements.hasElementInScope(TAG_BUTTON):
+        if parser.hasElementInScope(TAG_BUTTON):
           parse_error
           parser.generateImpliedEndTags()
-          while parser.popElement().tagType != TAG_BUTTON: discard
+          parser.popElementsIncl(TAG_BUTTON)
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement(token)
         parser.framesetOk = false
@@ -1274,72 +1639,79 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
        "</fieldset>", "</figcaption>", "</figure>", "</footer>", "</header>",
        "</hgroup>", "</listing>", "</main>", "</menu>", "</nav>", "</ol>",
        "</pre>", "</section>", "</summary>", "</ul>") => (block:
-        if not parser.openElements.hasElementInScope(token.tagtype):
+        if not parser.hasElementInScope(token.tagtype):
           parse_error
         else:
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != token.tagtype: parse_error
-          while parser.popElement().tagType != token.tagtype: discard
+          if parser.getTagType(parser.currentNode) != token.tagtype:
+            parse_error
+          parser.popElementsIncl(token.tagtype)
       )
       "</form>" => (block:
-        if not parser.openElements.hasElement(TAG_TEMPLATE):
+        if not parser.hasElement(TAG_TEMPLATE):
           let node = parser.form
           parser.form = nil
-          if node == nil or not parser.openElements.hasElementInScope(node.tagType):
+          if node == nil or
+              not parser.hasElementInScope(parser.getTagType(node)):
             parse_error
             return
           parser.generateImpliedEndTags()
-          if parser.currentNode != node: parse_error
+          if parser.currentNode != node:
+            parse_error
           parser.openElements.delete(parser.openElements.find(node))
         else:
-          if not parser.openElements.hasElementInScope(TAG_FORM):
+          if not parser.hasElementInScope(TAG_FORM):
             parse_error
             return
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != TAG_FORM: parse_error
-          while parser.popElement().tagType != TAG_FORM: discard
+          if parser.getTagType(parser.currentNode) != TAG_FORM:
+            parse_error
+          parser.popElementsIncl(TAG_FORM)
       )
       "</p>" => (block:
-        if not parser.openElements.hasElementInButtonScope(TAG_P):
+        if not parser.hasElementInButtonScope(TAG_P):
           parse_error
           discard parser.insertHTMLElement(Token(t: START_TAG, tagtype: TAG_P))
         parser.closeP()
       )
       "</li>" => (block:
-        if not parser.openElements.hasElementInListItemScope(TAG_LI):
+        if not parser.hasElementInListItemScope(TAG_LI):
           parse_error
         else:
           parser.generateImpliedEndTags(TAG_LI)
-          if parser.currentNode.tagType != TAG_LI: parse_error
-          while parser.popElement().tagType != TAG_LI: discard
+          if parser.getTagType(parser.currentNode) != TAG_LI:
+            parse_error
+          parser.popElementsIncl(TAG_LI)
       )
       ("</dd>", "</dt>") => (block:
-        if not parser.openElements.hasElementInScope(token.tagtype):
+        if not parser.hasElementInScope(token.tagtype):
           parse_error
         else:
           parser.generateImpliedEndTags(token.tagtype)
-          if parser.currentNode.tagType != token.tagtype: parse_error
-          while parser.popElement().tagType != token.tagtype: discard
+          if parser.getTagType(parser.currentNode) != token.tagtype:
+            parse_error
+          parser.popElementsIncl(token.tagtype)
       )
       ("</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>") => (block:
-        if not parser.openElements.hasElementInScope(HTagTypes):
+        if not parser.hasElementInScope(HTagTypes):
           parse_error
         else:
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != token.tagtype: parse_error
-          while parser.popElement().tagType notin HTagTypes: discard
+          if parser.getTagType(parser.currentNode) != token.tagtype:
+            parse_error
+          parser.popElementsIncl(HTagTypes)
       )
       "</sarcasm>" => (block:
         #*deep breath*
         anything_else
       )
       "<a>" => (block:
-        var anchor: Element = nil
+        var anchor: Handle = nil
         for i in countdown(parser.activeFormatting.high, 0):
           let format = parser.activeFormatting[i]
           if format[0] == nil:
             break
-          if format[0].tagType == TAG_A:
+          if parser.getTagType(format[0]) == TAG_A:
             anchor = format[0]
             break
         if anchor != nil:
@@ -1367,7 +1739,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "<nobr>" => (block:
         parser.reconstructActiveFormatting()
-        if parser.openElements.hasElementInScope(TAG_NOBR):
+        if parser.hasElementInScope(TAG_NOBR):
           parse_error
           if parser.adoptionAgencyAlgorithm(token):
             any_other_end_tag
@@ -1390,17 +1762,18 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.framesetOk = false
       )
       ("</applet>", "</marquee>", "</object>") => (block:
-        if not parser.openElements.hasElementInScope(token.tagtype):
+        if not parser.hasElementInScope(token.tagtype):
           parse_error
         else:
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != token.tagtype: parse_error
-          while parser.popElement().tagType != token.tagtype: discard
+          if parser.getTagType(parser.currentNode) != token.tagtype:
+            parse_error
+          while parser.getTagType(parser.popElement()) != token.tagtype: discard
           parser.clearActiveFormattingTillMarker()
       )
       "<table>" => (block:
-        if parser.document.mode != QUIRKS:
-          if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.quirksMode != QUIRKS:
+          if parser.hasElementInButtonScope(TAG_P):
             parser.closeP()
         discard parser.insertHTMLElement(token)
         parser.framesetOk = false
@@ -1408,7 +1781,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "</br>" => (block:
         parse_error
-        parser.processInHTMLContent(Token(t: START_TAG, tagtype: TAG_BR))
+        reprocess Token(t: START_TAG, tagtype: TAG_BR)
       )
       ("<area>", "<br>", "<embed>", "<img>", "<keygen>", "<wbr>") => (block:
         parser.reconstructActiveFormatting()
@@ -1428,7 +1801,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         pop_current_node
       )
       "<hr>" => (block:
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
         pop_current_node
@@ -1448,7 +1821,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.insertionMode = TEXT
       )
       "<xmp>" => (block:
-        if parser.openElements.hasElementInButtonScope(TAG_P):
+        if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         parser.reconstructActiveFormatting()
         parser.framesetOk = false
@@ -1462,7 +1835,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.genericRawtextElementParsingAlgorithm(token)
       )
       "<noscript>" => (block:
-        if parser.scripting:
+        if parser.opts.scripting:
           parser.genericRawtextElementParsingAlgorithm(token)
         else:
           any_other_start_tag
@@ -1477,21 +1850,21 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           parser.insertionMode = IN_SELECT
       )
       ("<optgroup>", "<option>") => (block:
-        if parser.currentNode.tagType == TAG_OPTION:
+        if parser.getTagType(parser.currentNode) == TAG_OPTION:
           pop_current_node
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement(token)
       )
       ("<rb>", "<rtc>") => (block:
-        if parser.openElements.hasElementInScope(TAG_RUBY):
+        if parser.hasElementInScope(TAG_RUBY):
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != TAG_RUBY: parse_error
+          if parser.getTagType(parser.currentNode) != TAG_RUBY: parse_error
         discard parser.insertHTMLElement(token)
       )
       ("<rp>", "<rt>") => (block:
-        if parser.openElements.hasElementInScope(TAG_RUBY):
+        if parser.hasElementInScope(TAG_RUBY):
           parser.generateImpliedEndTags(TAG_RTC)
-          if parser.currentNode.tagType notin {TAG_RUBY, TAG_RTC}: parse_error
+          if parser.getTagType(parser.currentNode) notin {TAG_RUBY, TAG_RTC}: parse_error
         discard parser.insertHTMLElement(token)
       )
       #NOTE <math> (not implemented)
@@ -1512,23 +1885,16 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       TokenType.EOF => (block:
         parse_error
-        if parser.currentNode.tagType == TAG_SCRIPT:
-          HTMLScriptElement(parser.currentNode).alreadyStarted = true
+        if parser.getTagType(parser.currentNode) == TAG_SCRIPT:
+          parser.setScriptAlreadyStarted(parser.currentNode)
         pop_current_node
         parser.insertionMode = parser.oldInsertionMode
         reprocess token
       )
       "</script>" => (block:
-        #TODO microtask
-        let script = HTMLScriptElement(parser.popElement())
+        #TODO microtask (?)
+        pop_current_node
         parser.insertionMode = parser.oldInsertionMode
-        #TODO document.write() (?)
-        script.prepare()
-        while parser.document.parserBlockingScript != nil:
-          let script = parser.document.parserBlockingScript
-          parser.document.parserBlockingScript = nil
-          #TODO style sheet
-          script.execute()
       )
       TokenType.END_TAG => (block:
         pop_current_node
@@ -1537,12 +1903,12 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
 
   of IN_TABLE:
     template clear_the_stack_back_to_a_table_context() =
-      while parser.currentNode.tagType notin {TAG_TABLE, TAG_TEMPLATE, TAG_HTML}:
+      while parser.getTagType(parser.currentNode) notin {TAG_TABLE, TAG_TEMPLATE, TAG_HTML}:
         pop_current_node
 
     match token:
       (TokenType.CHARACTER_ASCII, TokenType.CHARACTER) => (block:
-        if parser.currentNode.tagType in {TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR}:
+        if parser.getTagType(parser.currentNode) in {TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR}:
           parser.pendingTableChars = ""
           parser.pendingTableCharsWhitespace = true
           parser.oldInsertionMode = parser.insertionMode
@@ -1556,7 +1922,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error)
-      "<caption>" => (block: 
+      "<caption>" => (block:
         clear_the_stack_back_to_a_table_context
         parser.activeFormatting.add((nil, nil))
         discard parser.insertHTMLElement(token)
@@ -1580,18 +1946,18 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "<table>" => (block:
         parse_error
-        if not parser.openElements.hasElementInScope(TAG_TABLE):
+        if not parser.hasElementInScope(TAG_TABLE):
           discard
         else:
-          while parser.popElement().tagType != TAG_TABLE: discard
+          while parser.getTagType(parser.popElement()) != TAG_TABLE: discard
           parser.resetInsertionMode()
           reprocess token
       )
       "</table>" => (block:
-        if not parser.openElements.hasElementInScope(TAG_TABLE):
+        if not parser.hasElementInScope(TAG_TABLE):
           parse_error
         else:
-          while parser.popElement().tagType != TAG_TABLE: discard
+          while parser.getTagType(parser.popElement()) != TAG_TABLE: discard
           parser.resetInsertionMode()
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</tbody>",
@@ -1615,7 +1981,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "<form>" => (block:
         parse_error
-        if parser.form != nil or parser.openElements.hasElement(TAG_TEMPLATE):
+        if parser.form != nil or parser.hasElement(TAG_TEMPLATE):
           discard
         else:
           parser.form = HTMLFormElement(parser.insertHTMLElement(token))
@@ -1661,22 +2027,22 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
   of IN_CAPTION:
     match token:
       "</caption>" => (block:
-        if not parser.openElements.hasElementInTableScope(TAG_CAPTION):
+        if not parser.hasElementInTableScope(TAG_CAPTION):
           parse_error
         else:
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != TAG_CAPTION: parse_error
-          while parser.popElement().tagType != TAG_CAPTION: discard
+          if parser.getTagType(parser.currentNode) != TAG_CAPTION: parse_error
+          while parser.getTagType(parser.popElement()) != TAG_CAPTION: discard
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_TABLE
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<td>", "<tfoot>",
        "<th>", "<thead>", "<tr>", "</table>") => (block:
-        if not parser.openElements.hasElementInTableScope(TAG_CAPTION):
+        if not parser.hasElementInTableScope(TAG_CAPTION):
           parse_error
         else:
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != TAG_CAPTION: parse_error
+          if parser.getTagType(parser.currentNode) != TAG_CAPTION: parse_error
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_TABLE
           reprocess token
@@ -1696,7 +2062,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         pop_current_node
       )
       "</colgroup>" => (block:
-        if parser.currentNode.tagType != TAG_COLGROUP:
+        if parser.getTagType(parser.currentNode) != TAG_COLGROUP:
           parse_error
         else:
           pop_current_node
@@ -1708,7 +2074,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       TokenType.EOF => (block: parser.processInHTMLContent(token, IN_BODY))
       _ => (block:
-        if parser.currentNode.tagType != TAG_COLGROUP:
+        if parser.getTagType(parser.currentNode) != TAG_COLGROUP:
           parse_error
         else:
           pop_current_node
@@ -1718,7 +2084,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
 
   of IN_TABLE_BODY:
     template clear_the_stack_back_to_a_table_body_context() =
-      while parser.currentNode.tagType notin {TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TEMPLATE, TAG_HTML}:
+      while parser.getTagType(parser.currentNode) notin {TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TEMPLATE, TAG_HTML}:
         pop_current_node
 
     match token:
@@ -1735,7 +2101,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         reprocess token
       )
       ("</tbody>", "</tfoot>", "</thead>") => (block:
-        if not parser.openElements.hasElementInTableScope(token.tagtype):
+        if not parser.hasElementInTableScope(token.tagtype):
           parse_error
         else:
           clear_the_stack_back_to_a_table_body_context
@@ -1744,7 +2110,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<tfoot>", "<thead>",
        "</table>") => (block:
-        if not parser.openElements.hasElementInTableScope({TAG_TBODY, TAG_THEAD, TAG_TFOOT}):
+        if not parser.hasElementInTableScope({TAG_TBODY, TAG_THEAD, TAG_TFOOT}):
           parse_error
         else:
           clear_the_stack_back_to_a_table_body_context
@@ -1760,7 +2126,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
 
   of IN_ROW:
     template clear_the_stack_back_to_a_table_row_context() =
-      while parser.currentNode.tagType notin {TAG_TR, TAG_TEMPLATE, TAG_HTML}:
+      while parser.getTagType(parser.currentNode) notin {TAG_TR, TAG_TEMPLATE, TAG_HTML}:
         pop_current_node
 
     match token:
@@ -1771,7 +2137,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
         parser.activeFormatting.add((nil, nil))
       )
       "</tr>" => (block:
-        if not parser.openElements.hasElementInTableScope(TAG_TR):
+        if not parser.hasElementInTableScope(TAG_TR):
           parse_error
         else:
           clear_the_stack_back_to_a_table_row_context
@@ -1780,7 +2146,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<tfoot>", "<thead>",
        "<tr>", "</table>") => (block:
-        if not parser.openElements.hasElementInTableScope(TAG_TR):
+        if not parser.hasElementInTableScope(TAG_TR):
           parse_error
         else:
           clear_the_stack_back_to_a_table_row_context
@@ -1789,9 +2155,9 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
           reprocess token
       )
       ("</tbody>", "</tfoot>", "</thead>") => (block:
-        if not parser.openElements.hasElementInTableScope(token.tagtype):
+        if not parser.hasElementInTableScope(token.tagtype):
           parse_error
-        elif not parser.openElements.hasElementInTableScope(TAG_TR):
+        elif not parser.hasElementInTableScope(TAG_TR):
           discard
         else:
           clear_the_stack_back_to_a_table_row_context
@@ -1806,25 +2172,26 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
   of IN_CELL:
     template close_cell() =
       parser.generateImpliedEndTags()
-      if parser.currentNode.tagType notin {TAG_TD, TAG_TH}: parse_error
-      while parser.popElement().tagType notin {TAG_TD, TAG_TH}: discard
+      if parser.getTagType(parser.currentNode) notin {TAG_TD, TAG_TH}: parse_error
+      while parser.getTagType(parser.popElement()) notin {TAG_TD, TAG_TH}: discard
       parser.clearActiveFormattingTillMarker()
       parser.insertionMode = IN_ROW
 
     match token:
       ("</td>", "</th>") => (block:
-        if not parser.openElements.hasElementInTableScope(token.tagtype):
+        if not parser.hasElementInTableScope(token.tagtype):
           parse_error
         else:
           parser.generateImpliedEndTags()
-          if parser.currentNode.tagType != token.tagtype: parse_error
-          while parser.popElement().tagType != token.tagtype: discard
+          if parser.getTagType(parser.currentNode) != token.tagtype:
+            parse_error
+          while parser.getTagType(parser.popElement()) != token.tagtype: discard
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_ROW
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<td>", "<tfoot>",
        "<thead>", "<tr>") => (block:
-        if not parser.openElements.hasElementInTableScope({TAG_TD, TAG_TH}):
+        if not parser.hasElementInTableScope({TAG_TD, TAG_TH}):
           parse_error
         else:
           close_cell
@@ -1833,7 +2200,7 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       ("</body>", "</caption>", "</col>", "</colgroup>",
        "</html>") => (block: parse_error)
       ("</table>", "</tbody>", "</tfoot>", "</thead>", "</tr>") => (block:
-        if not parser.openElements.hasElementInTableScope(token.tagtype):
+        if not parser.hasElementInTableScope(token.tagtype):
           parse_error
         else:
           close_cell
@@ -1849,51 +2216,51 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       TokenType.DOCTYPE => (block: parse_error)
       "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
       "<option>" => (block:
-        if parser.currentNode.tagType == TAG_OPTION:
+        if parser.getTagType(parser.currentNode) == TAG_OPTION:
           pop_current_node
         discard parser.insertHTMLElement(token)
       )
       "<optgroup>" => (block:
-        if parser.currentNode.tagType == TAG_OPTION:
+        if parser.getTagType(parser.currentNode) == TAG_OPTION:
           pop_current_node
-        if parser.currentNode.tagType == TAG_OPTGROUP:
+        if parser.getTagType(parser.currentNode) == TAG_OPTGROUP:
           pop_current_node
         discard parser.insertHTMLElement(token)
       )
       "</optgroup>" => (block:
-        if parser.currentNode.tagType == TAG_OPTION:
-          if parser.openElements.len > 1 and parser.openElements[^2].tagType == TAG_OPTGROUP:
+        if parser.getTagType(parser.currentNode) == TAG_OPTION:
+          if parser.openElements.len > 1 and parser.getTagType(parser.openElements[^2]) == TAG_OPTGROUP:
             pop_current_node
-        if parser.currentNode.tagType == TAG_OPTGROUP:
+        if parser.getTagType(parser.currentNode) == TAG_OPTGROUP:
           pop_current_node
         else:
           parse_error
       )
       "</option>" => (block:
-        if parser.currentNode.tagType == TAG_OPTION:
+        if parser.getTagType(parser.currentNode) == TAG_OPTION:
           pop_current_node
         else:
           parse_error
       )
       "</select>" => (block:
-        if not parser.openElements.hasElementInSelectScope(TAG_SELECT):
+        if not parser.hasElementInSelectScope(TAG_SELECT):
           parse_error
         else:
-          while parser.popElement().tagType != TAG_SELECT: discard
+          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
           parser.resetInsertionMode()
       )
       "<select>" => (block:
         parse_error
-        if parser.openElements.hasElementInSelectScope(TAG_SELECT):
-          while parser.popElement().tagType != TAG_SELECT: discard
+        if parser.hasElementInSelectScope(TAG_SELECT):
+          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
           parser.resetInsertionMode()
       )
       ("<input>", "<keygen>", "<textarea>") => (block:
         parse_error
-        if not parser.openElements.hasElementInSelectScope(TAG_SELECT):
+        if not parser.hasElementInSelectScope(TAG_SELECT):
           discard
         else:
-          while parser.popElement().tagType != TAG_SELECT: discard
+          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
           parser.resetInsertionMode()
           reprocess token
       )
@@ -1906,17 +2273,17 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       ("<caption>", "<table>", "<tbody>", "<tfoot>", "<thead>", "<tr>", "<td>",
        "<th>") => (block:
         parse_error
-        while parser.popElement().tagType != TAG_SELECT: discard
+        while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
         parser.resetInsertionMode()
         reprocess token
       )
       ("</caption>", "</table>", "</tbody>", "</tfoot>", "</thead>", "</tr>",
        "</td>", "</th>") => (block:
         parse_error
-        if not parser.openElements.hasElementInTableScope(token.tagtype):
+        if not parser.hasElementInTableScope(token.tagtype):
           discard
         else:
-          while parser.popElement().tagType != TAG_SELECT: discard
+          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
           parser.resetInsertionMode()
           reprocess token
       )
@@ -1963,11 +2330,11 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       TokenType.END_TAG => (block: parse_error)
       TokenType.EOF => (block:
-        if not parser.openElements.hasElement(TAG_TEMPLATE):
+        if not parser.hasElement(TAG_TEMPLATE):
           discard # stop
         else:
           parse_error
-          while parser.popElement().tagType != TAG_TEMPLATE: discard
+          parser.popElementsIncl(TAG_TEMPLATE)
           parser.clearActiveFormattingTillMarker()
           discard parser.templateModes.pop()
           parser.resetInsertionMode()
@@ -2000,11 +2367,12 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       TokenType.DOCTYPE => (block: parse_error)
       "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
       "<frameset>" => (block:
-        if parser.currentNode == parser.document.html:
+        if parser.getTagType(parser.currentNode) == TAG_HTML:
           parse_error
         else:
           pop_current_node
-        if not parser.fragment and parser.currentNode.tagType != TAG_FRAMESET:
+        if not parser.fragment and
+            parser.getTagType(parser.currentNode) != TAG_FRAMESET:
           parser.insertionMode = AFTER_FRAMESET
       )
       "<frame>" => (block:
@@ -2013,7 +2381,8 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       )
       "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
       TokenType.EOF => (block:
-        if parser.currentNode != parser.document.html: parse_error
+        if parser.getTagType(parser.currentNode) != TAG_HTML:
+          parse_error
         # stop
       )
       _ => (block: parse_error)
@@ -2031,8 +2400,12 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
 
   of AFTER_AFTER_BODY:
     match token:
-      TokenType.COMMENT => (block: parser.insertComment(token, last_child_of(parser.document)))
-      (TokenType.DOCTYPE, AsciiWhitespace, "<html>") => (block: parser.processInHTMLContent(token, IN_BODY))
+      TokenType.COMMENT => (block:
+        parser.insertComment(token, last_child_of(parser.document))
+      )
+      (TokenType.DOCTYPE, AsciiWhitespace, "<html>") => (block:
+        parser.processInHTMLContent(token, IN_BODY)
+      )
       TokenType.EOF => (block: discard) # stop
       _ => (block:
         parse_error
@@ -2048,6 +2421,46 @@ proc processInHTMLContent(parser: var HTML5Parser, token: Token, insertionMode =
       "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
       _ => (block: parse_error)
 
+const CaseTable = {
+  "altglyph": "altGlyph",
+  "altglyphdef": "altGlyphDef",
+  "altglyphitem": "altGlyphItem",
+  "animatecolor": "animateColor",
+  "animatemotion": "animateMotion",
+  "animatetransform": "animateTransform",
+  "clippath": "clipPath",
+  "feblend": "feBlend",
+  "fecolormatrix": "feColorMatrix",
+  "fecomponenttransfer": "feComponentTransfer",
+  "fecomposite": "feComposite",
+  "feconvolvematrix": "feConvolveMatrix",
+  "fediffuselighting": "feDiffuseLighting",
+  "fedisplacementmap": "feDisplacementMap",
+  "fedistantlight": "feDistantLight",
+  "fedropshadow": "feDropShadow",
+  "feflood": "feFlood",
+  "fefunca": "feFuncA",
+  "fefuncb": "feFuncB",
+  "fefuncg": "feFuncG",
+  "fefuncr": "feFuncR",
+  "fegaussianblur": "feGaussianBlur",
+  "feimage": "feImage",
+  "femerge": "feMerge",
+  "femergenode": "feMergeNode",
+  "femorphology": "feMorphology",
+  "feoffset": "feOffset",
+  "fepointlight": "fePointLight",
+  "fespecularlighting": "feSpecularLighting",
+  "fespotlight": "feSpotLight",
+  "fetile": "feTile",
+  "feturbulence": "feTurbulence",
+  "foreignobject": "foreignObject",
+  "glyphref": "glyphRef",
+  "lineargradient": "linearGradient",
+  "radialgradient": "radialGradient",
+  "textpath": "textPath",
+}.toTable()
+
 proc processInForeignContent(parser: var HTML5Parser, token: Token) =
   macro `=>`(v: typed, body: untyped): untyped =
     quote do:
@@ -2058,53 +2471,17 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
     #TODO SVG
 
   template any_other_end_tag() =
-    if parser.currentNode.localName != token.tagname: parse_error
+    if parser.getLocalName(parser.currentNode) != token.tagname:
+      parse_error
     for i in countdown(parser.openElements.high, 1):
       let node = parser.openElements[i]
-      if node.localName == token.tagname:
-        while parser.popElement() != node: discard
+      if parser.getLocalName(parser.currentNode) == token.tagname:
+        while parser.popElement() != node:
+          discard
         break
-      if node.namespace == Namespace.HTML: break
-      parser.processInHTMLContent(token)
-  const CaseTable = {
-    "altglyph": "altGlyph",
-    "altglyphdef": "altGlyphDef",
-    "altglyphitem": "altGlyphItem",
-    "animatecolor": "animateColor",
-    "animatemotion": "animateMotion",
-    "animatetransform": "animateTransform",
-    "clippath": "clipPath",
-    "feblend": "feBlend",
-    "fecolormatrix": "feColorMatrix",
-    "fecomponenttransfer": "feComponentTransfer",
-    "fecomposite": "feComposite",
-    "feconvolvematrix": "feConvolveMatrix",
-    "fediffuselighting": "feDiffuseLighting",
-    "fedisplacementmap": "feDisplacementMap",
-    "fedistantlight": "feDistantLight",
-    "fedropshadow": "feDropShadow",
-    "feflood": "feFlood",
-    "fefunca": "feFuncA",
-    "fefuncb": "feFuncB",
-    "fefuncg": "feFuncG",
-    "fefuncr": "feFuncR",
-    "fegaussianblur": "feGaussianBlur",
-    "feimage": "feImage",
-    "femerge": "feMerge",
-    "femergenode": "feMergeNode",
-    "femorphology": "feMorphology",
-    "feoffset": "feOffset",
-    "fepointlight": "fePointLight",
-    "fespecularlighting": "feSpecularLighting",
-    "fespotlight": "feSpotLight",
-    "fetile": "feTile",
-    "feturbulence": "feTurbulence",
-    "foreignobject": "foreignObject",
-    "glyphref": "glyphRef",
-    "lineargradient": "linearGradient",
-    "radialgradient": "radialGradient",
-    "textpath": "textPath",
-  }.toTable()
+      if parser.getNamespace(node) == Namespace.HTML:
+        break
+      parser.processInHTMLContent(token, parser.insertionMode)
 
   match token:
     '\0' => (block:
@@ -2116,65 +2493,66 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
     TokenType.CHARACTER => (block: parser.insertCharacter(token.r))
     TokenType.DOCTYPE => (block: parse_error)
     ("<b>", "<big>", "<blockquote>", "<body>", "<br>", "<center>", "<code>",
-     "<dd>", "<div>", "<dl>", "<dt>", "<em>", "<embed>", "<h1>", "<h2>", "<h3>",
-     "<h4>", "<h5>", "<h6>", "<head>", "<hr>", "<i>", "<img>", "<li>",
+     "<dd>", "<div>", "<dl>", "<dt>", "<em>", "<embed>", "<h1>", "<h2>",
+     "<h3>", "<h4>", "<h5>", "<h6>", "<head>", "<hr>", "<i>", "<img>", "<li>",
      "<listing>", "<menu>", "<meta>", "<nobr>", "<ol>", "<p>", "<pre>",
      "<ruby>", "<s>", "<small>", "<span>", "<strong>", "<strike>", "<sub>",
      "<sup>", "<table>", "<tt>", "<u>", "<ul>", "<var>") => (block:
       parse_error
       #NOTE MathML not implemented
-      while not (parser.currentNode.isHTMLIntegrationPoint() or parser.currentNode.inHTMLNamespace()):
+      while not parser.isHTMLIntegrationPoint(parser.currentNode) and
+          parser.getNamespace(parser.currentNode) != Namespace.HTML:
         pop_current_node
-      parser.processInHTMLContent(token)
+      parser.processInHTMLContent(token, parser.insertionMode)
     )
     TokenType.START_TAG => (block:
       #NOTE MathML not implemented
-
-      if parser.adjustedCurrentNode.namespace == Namespace.SVG:
+      let namespace = parser.getNamespace(parser.adjustedCurrentNode)
+      if namespace == Namespace.SVG:
         if token.tagname in CaseTable:
           token.tagname = CaseTable[token.tagname]
         adjustSVGAttributes(token)
       #TODO adjust foreign attributes
-      let element = parser.insertForeignElement(token, parser.adjustedCurrentNode.namespace)
-      if token.selfclosing and element.inSVGNamespace():
+      discard parser.insertForeignElement(token, namespace)
+      if token.selfclosing and namespace == Namespace.SVG:
         script_end_tag
       else:
         pop_current_node
     )
     "</script>" => (block:
-      if parser.currentNode.namespace == Namespace.SVG and parser.currentNode.localName == "script": #TODO SVG
+      let namespace = parser.getNamespace(parser.currentNode)
+      let localName = parser.getLocalName(parser.currentNode)
+      if namespace == Namespace.SVG and localName == "script": #TODO SVG
         script_end_tag
       else:
         any_other_end_tag
     )
     TokenType.END_TAG => (block: any_other_end_tag)
 
-proc constructTree(parser: var HTML5Parser): Document =
+proc constructTree[Handle](parser: var HTML5Parser[Handle]) =
   for token in parser.tokenizer.tokenize:
     if parser.ignoreLF:
       parser.ignoreLF = false
       if token.t == CHARACTER_ASCII and token.c == '\n':
         continue
+    let isTokenHTML = token.t in {START_TAG, CHARACTER, CHARACTER_ASCII}
     if parser.openElements.len == 0 or
-       parser.adjustedCurrentNode.inHTMLNamespace() or
-       parser.adjustedCurrentNode.isHTMLIntegrationPoint() and token.t in {START_TAG, CHARACTER, CHARACTER_ASCII} or
+       parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML or
+       parser.isHTMLIntegrationPoint(parser.adjustedCurrentNode) and
+        isTokenHTML or
        token.t == EOF:
       #NOTE MathML not implemented
-      parser.processInHTMLContent(token)
+      parser.processInHTMLContent(token, parser.insertionMode)
     else:
       parser.processInForeignContent(token)
     if parser.needsreinterpret:
       break
-  return parser.document
 
 proc finishParsing(parser: var HTML5Parser) =
   while parser.openElements.len > 0:
     pop_current_node
-  while parser.document.scriptsToExecOnLoad.len > 0:
-    #TODO spin event loop
-    let script = parser.document.scriptsToExecOnLoad.popFirst()
-    script.execute()
-  #TODO events
+  if parser.dombuilder.finish != nil:
+    parser.dombuilder.finish(parser.dombuilder)
 
 proc bomSniff(inputStream: Stream): Charset =
   # bom sniff
@@ -2193,25 +2571,31 @@ proc bomSniff(inputStream: Stream): Charset =
     else:
       inputStream.setPosition(0)
 
-proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
-    fallbackcs = DefaultCharset, window: Window = nil, url: URL = nil,
-    canReinterpret = true): Document =
+proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
+    opts: HTML5ParserOpts[Handle]) =
+  ## Parse an HTML document, using the DOMBuilder object `dombuilder`, and
+  ## parser options `opts`.
   var charsetStack: seq[Charset]
-  for i in countdown(charsets.high, 0):
-    charsetStack.add(charsets[i])
-  var canReinterpret = canReinterpret
+  for i in countdown(opts.charsets.high, 0):
+    charsetStack.add(opts.charsets[i])
+  var canReinterpret = opts.canReinterpret
   var confidence: CharsetConfidence
-  let scs = inputStream.bomSniff()
-  if scs != CHARSET_UNKNOWN:
-    charsetStack.add(scs)
-    confidence = CONFIDENCE_CERTAIN
-  elif charsetStack.len == 0:
-    charsetStack.add(fallbackcs)
+  if canReinterpret:
+    let scs = inputStream.bomSniff()
+    if scs != CHARSET_UNKNOWN:
+      charsetStack.add(scs)
+      confidence = CONFIDENCE_CERTAIN
+  if charsetStack.len == 0:
+    charsetStack.add(DefaultCharset) # UTF-8
   while true:
-    var parser: HTML5Parser
-    parser.confidence = confidence
-    confidence = CONFIDENCE_TENTATIVE
-    parser.charset = charsetStack.pop()
+    let charset = charsetStack.pop()
+    var parser = HTML5Parser[Handle](
+      dombuilder: dombuilder,
+      confidence: confidence,
+      charset: charset,
+      opts: opts
+    )
+    confidence = CONFIDENCE_TENTATIVE # used in the next iteration
     if not canReinterpret:
       parser.confidence = CONFIDENCE_CERTAIN
     let em = if charsetStack.len == 0 or not canReinterpret:
@@ -2219,14 +2603,8 @@ proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
     else:
       DECODER_ERROR_MODE_FATAL
     let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
-    parser.document = newDocument()
-    parser.document.contentType = "text/html"
-    if window != nil:
-      parser.document.window = window
-      window.document = parser.document
-    parser.document.url = url
     parser.tokenizer = newTokenizer(decoder)
-    let document = parser.constructTree()
+    parser.constructTree()
     if parser.needsreinterpret and canReinterpret:
       inputStream.setPosition(0)
       charsetStack.add(parser.charset)
@@ -2236,21 +2614,4 @@ proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
       inputStream.setPosition(0)
       continue
     parser.finishParsing()
-    return document
-
-proc newDOMParser*(): DOMParser {.jsctor.} =
-  new(result)
-
-proc parseFromString(parser: DOMParser, str: string, t: string):
-    Result[Document, JSError] {.jsfunc.} =
-  case t
-  of "text/html":
-    let res = parseHTML(newStringStream(str))
-    return ok(res)
-  of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-    return err(newInternalError("XML parsing is not supported yet"))
-  else:
-    return err(newTypeError("Invalid mime type"))
-
-proc addHTMLModule*(ctx: JSContext) =
-  ctx.registerType(DOMParser)
+    break

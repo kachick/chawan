@@ -21,9 +21,9 @@ import css/sheet
 import data/charset
 import display/pager
 import display/term
+import html/chadombuilder
 import html/dom
 import html/event
-import html/htmlparser
 import io/headers
 import io/lineedit
 import io/loader

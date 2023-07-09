@@ -1,9 +1,9 @@
 import selectors
 import streams
 
+import html/chadombuilder
 import html/dom
 import html/event
-import html/htmlparser
 import io/headers
 import io/loader
 import io/promise

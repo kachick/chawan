@@ -19,9 +19,9 @@ import css/stylednode
 import css/values
 import data/charset
 import encoding/decoderstream
+import html/chadombuilder
 import html/dom
 import html/env
-import html/htmlparser
 import html/tags
 import img/png
 import io/loader
