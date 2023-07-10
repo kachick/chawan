@@ -1031,11 +1031,15 @@ proc click(buffer: Buffer, button: HTMLButtonElement): ClickResult =
     result.repaint = buffer.setFocus(button)
 
 proc click(buffer: Buffer, textarea: HTMLTextAreaElement): ClickResult =
+  let repaint = buffer.setFocus(textarea)
   let readline = ReadLineResult(
     value: textarea.value,
-    area: true
+    area: true,
   )
-  return ClickResult(readline: some(readline))
+  return ClickResult(
+    readline: some(readline),
+    repaint: repaint
+  )
 
 proc click(buffer: Buffer, input: HTMLInputElement): ClickResult =
   result.repaint = buffer.restoreFocus()
