@@ -120,7 +120,7 @@ proc cursorGoto(term: Terminal, x, y: int): string =
   when termcap_found:
     return $tgoto(term.ccap cm, cint(x), cint(y))
   else:
-    return HVP(y, x)
+    return HVP(y + 1, x + 1)
 
 proc clearEnd(term: Terminal): string =
   when termcap_found:
