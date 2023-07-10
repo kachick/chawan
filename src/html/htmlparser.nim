@@ -231,10 +231,13 @@ type
       ## to true.
 
   DOMBuilderAssociateWithForm*[Handle] =
-    proc(builder: DOMBuilder[Handle], element, form: Handle) {.nimcall.}
+    proc(builder: DOMBuilder[Handle], element, form, intendedParent: Handle)
+        {.nimcall.}
       ## Called after createElement. Attempts to set form for form-associated
-      ## elements. Note: the DOM builder is responsible for checking whether
-      ## the two nodes are in the same tree.
+      ## elements.
+      ##
+      ## Note: the DOM builder is responsible for checking whether the
+      ## intended parent and the form element are in the same tree.
 
   DOMBuilderIsSVGIntegrationPoint*[Handle] =
     proc(builder: DOMBuilder[Handle], element: Handle): bool {.nimcall.}
@@ -360,10 +363,11 @@ proc setScriptAlreadyStarted[Handle](parser: HTML5Parser, script: Handle) =
   if dombuilder.setScriptAlreadyStarted != nil:
     dombuilder.setScriptAlreadyStarted(dombuilder, script)
 
-proc associateWithForm[Handle](parser: HTML5Parser, element, form: Handle) =
+proc associateWithForm[Handle](parser: HTML5Parser, element, form,
+    intendedParent: Handle) =
   let dombuilder = parser.dombuilder
   if dombuilder.associateWithForm != nil:
-    dombuilder.associateWithForm(dombuilder, element, form)
+    dombuilder.associateWithForm(dombuilder, element, form, intendedParent)
 
 func isSVGIntegrationPoint[Handle](parser: HTML5Parser,
     element: Handle): bool =
@@ -575,7 +579,7 @@ func createElement[Handle](parser: HTML5Parser[Handle], token: Token,
   if token.tagtype in FormAssociatedElements and parser.form.isSome and
       not parser.hasElement(TAG_TEMPLATE) and
       (token.tagtype notin ListedElements or "form" notin token.attrs):
-    parser.associateWithForm(element, parser.form.get)
+    parser.associateWithForm(element, parser.form.get, intendedParent)
   return element
 
 proc pushElement[Handle](parser: var HTML5Parser[Handle], node: Handle) =

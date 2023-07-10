@@ -116,8 +116,9 @@ proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
 proc setScriptAlreadyStarted(builder: DOMBuilder[Node], script: Node) =
   HTMLScriptElement(script).alreadyStarted = true
 
-proc associateWithForm(builder: DOMBuilder[Node], element, form: Node) =
-  if form.inSameTree(element):
+proc associateWithForm(builder: DOMBuilder[Node], element, form,
+    intendedParent: Node) =
+  if form.inSameTree(intendedParent):
     #TODO remove following test eventually
     if Element(element).tagType in SupportedFormAssociatedElements:
       let element = FormAssociatedElement(element)
