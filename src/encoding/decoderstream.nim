@@ -809,15 +809,6 @@ proc readData*(stream: DecoderStream, buffer: pointer, olen: int): int =
 proc readData*(stream: DecoderStream, buf: var seq[uint32]): int =
   return stream.readData(addr buf[0], buf.len * sizeof(buf[0]))
 
-proc readRunes*(stream: DecoderStream, olen: int): seq[Rune] =
-  when nimvm:
-    let s = stream.source.readStr(olen)
-    result = s.toRunes()
-    if stream.source.atEnd:
-      stream.isend = true
-  else:
-    assert false
-
 proc atEnd*(stream: DecoderStream): bool =
   return stream.isend
 
