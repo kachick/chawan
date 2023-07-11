@@ -35,6 +35,7 @@ type
     fromx*: int
     fromy*: int
     setx: int
+    setxrefresh: bool
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
@@ -324,8 +325,9 @@ proc requestLines*(container: Container, w = container.lineWindow): auto {.disca
 proc redraw(container: Container) {.jsfunc.} =
   container.triggerEvent(ContainerEvent(t: UPDATE, force: true))
 
-proc sendCursorPosition(container: Container) =
-  container.iface.updateHover(container.cursorx, container.cursory).then(proc(res: UpdateHoverResult) =
+proc sendCursorPosition*(container: Container) =
+  container.iface.updateHover(container.cursorx, container.cursory)
+      .then(proc(res: UpdateHoverResult) =
     if res.link.isSome:
       container.hovertext[HOVER_LINK] = res.link.get
     if res.title.isSome:
@@ -357,6 +359,7 @@ proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
 proc setCursorX(container: Container, x: int, refresh = true, save = true) {.jsfunc.} =
   if not container.lineLoaded(container.cursory):
     container.pos.setx = x
+    container.pos.setxrefresh = refresh
     return
   container.pos.setx = -1
   let cw = container.currentLineWidth()
@@ -380,9 +383,10 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true) {.jsf
     container.pos.xend = container.cursorx
 
 proc restoreCursorX(container: Container) {.jsfunc.} =
-  container.setCursorX(max(min(container.currentLineWidth() - 1, container.xend), 0), false, false)
+  let x = clamp(container.currentLineWidth() - 1, 0, container.xend)
+  container.setCursorX(x, false, false)
 
-proc setCursorY(container: Container, y: int) {.jsfunc.} =
+proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
   let y = max(min(y, container.numLines - 1), 0)
   if container.cursory == y: return
   if y - container.fromy >= 0 and y - container.height < container.fromy:
@@ -394,7 +398,8 @@ proc setCursorY(container: Container, y: int) {.jsfunc.} =
       container.setFromY(y)
     container.pos.cursory = y
   container.restoreCursorX()
-  container.sendCursorPosition()
+  if refresh:
+    container.sendCursorPosition()
 
 proc centerLine(container: Container) {.jsfunc.} =
   container.setFromY(container.cursory - container.height div 2)
@@ -402,10 +407,10 @@ proc centerLine(container: Container) {.jsfunc.} =
 proc centerColumn(container: Container) {.jsfunc.} =
   container.setFromX(container.cursorx - container.width div 2)
 
-proc setCursorXY(container: Container, x, y: int) {.jsfunc.} =
+proc setCursorXY(container: Container, x, y: int, refresh = true) {.jsfunc.} =
   let fy = container.fromy
-  container.setCursorY(y)
-  container.setCursorX(x)
+  container.setCursorY(y, refresh)
+  container.setCursorX(x, refresh)
   if fy != container.fromy:
     container.centerLine()
 
@@ -588,7 +593,7 @@ proc lineInfo(container: Container) {.jsfunc.} =
 
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
-    container.setCursorX(container.pos.setx)
+    container.setCursorX(container.pos.setx, container.pos.setxrefresh)
   if container.fromy > container.maxfromy:
     container.setFromY(container.maxfromy)
   if container.cursory >= container.numLines:
@@ -651,9 +656,9 @@ proc clearSearchHighlights*(container: Container) =
     if container.highlights[i].clear:
       container.highlights.del(i)
 
-proc onMatch(container: Container, res: BufferMatch) =
+proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
   if res.success:
-    container.setCursorXY(res.x, res.y)
+    container.setCursorXY(res.x, res.y, refresh)
     if container.hlon:
       container.clearSearchHighlights()
       let ex = res.x + res.str.twidth(res.x) - 1
@@ -667,23 +672,27 @@ proc onMatch(container: Container, res: BufferMatch) =
     container.needslines = true
     container.hlon = false
 
-proc cursorNextMatch*(container: Container, regex: Regex, wrap: bool) =
+proc cursorNextMatch*(container: Container, regex: Regex, wrap, refresh: bool):
+    EmptyPromise {.discardable.} =
   if container.select.open:
     container.select.cursorNextMatch(regex, wrap)
+    return newResolvedPromise()
   else:
-    container.iface
+    return container.iface
       .findNextMatch(regex, container.cursorx, container.cursory, wrap)
       .then(proc(res: BufferMatch) =
-        container.onMatch(res))
+        container.onMatch(res, refresh))
 
-proc cursorPrevMatch*(container: Container, regex: Regex, wrap: bool) =
+proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool):
+    EmptyPromise {.discardable.} =
   if container.select.open:
     container.select.cursorPrevMatch(regex, wrap)
+    return newResolvedPromise()
   else:
-    container.iface
+    return container.iface
       .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
       .then(proc(res: BufferMatch) =
-        container.onMatch(res))
+        container.onMatch(res, refresh))
 
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg

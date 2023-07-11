@@ -52,6 +52,7 @@ type
     dispatcher*: Dispatcher
     display: FixedGrid
     iregex: Result[Regex, string]
+    isearchpromise: EmptyPromise
     lineedit*: Option[LineEdit]
     linehist: array[LineMode, LineHistory]
     linemode*: LineMode
@@ -128,18 +129,20 @@ proc getter(ctx: JSContext, pager: Pager, s: string): Option[JSValue]
       return some(val)
 
 proc searchNext(pager: Pager) {.jsfunc.} =
-  if pager.regex.issome:
+  if pager.regex.isSome:
+    let wrap = pager.config.search.wrap
     if not pager.reverseSearch:
-      pager.container.cursorNextMatch(pager.regex.get, pager.config.search.wrap)
+      pager.container.cursorNextMatch(pager.regex.get, wrap, true)
     else:
-      pager.container.cursorPrevMatch(pager.regex.get, pager.config.search.wrap)
+      pager.container.cursorPrevMatch(pager.regex.get, wrap, true)
 
 proc searchPrev(pager: Pager) {.jsfunc.} =
-  if pager.regex.issome:
+  if pager.regex.isSome:
+    let wrap = pager.config.search.wrap
     if not pager.reverseSearch:
-      pager.container.cursorPrevMatch(pager.regex.get, pager.config.search.wrap)
+      pager.container.cursorPrevMatch(pager.regex.get, wrap, true)
     else:
-      pager.container.cursorNextMatch(pager.regex.get, pager.config.search.wrap)
+      pager.container.cursorNextMatch(pager.regex.get, wrap, true)
 
 proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
@@ -161,10 +164,12 @@ proc searchBackward(pager: Pager) {.jsfunc.} =
 
 proc isearchForward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
+  pager.isearchpromise = newResolvedPromise()
   pager.setLineEdit("/", ISEARCH_F)
 
 proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
+  pager.isearchpromise = newResolvedPromise()
   pager.setLineEdit("?", ISEARCH_B)
 
 proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
@@ -684,27 +689,34 @@ proc checkRegex(pager: Pager, regex: Result[Regex, string]): Opt[Regex] =
 
 proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
-  case lineedit.state
-  of CANCEL:
-    pager.iregex.err()
-    pager.container.popCursorPos()
-    pager.container.clearSearchHighlights()
-  of EDIT:
-    let x = $lineedit.news
-    if x != "": pager.iregex = compileSearchRegex(x)
-    pager.container.popCursorPos(true)
-    pager.container.pushCursorPos()
-    if pager.iregex.isSome:
-      pager.container.hlon = true
-      if linemode == ISEARCH_F:
-        pager.container.cursorNextMatch(pager.iregex.get, pager.config.search.wrap)
-      else:
-        pager.container.cursorPrevMatch(pager.iregex.get, pager.config.search.wrap)
-  of FINISH:
-    pager.regex = pager.checkRegex(pager.iregex)
-    pager.reverseSearch = linemode == ISEARCH_B
-    pager.container.clearSearchHighlights()
-    pager.redraw = true
+  pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
+    case lineedit.state
+    of CANCEL:
+      pager.iregex.err()
+      pager.container.popCursorPos()
+      pager.container.clearSearchHighlights()
+      pager.redraw = true
+      pager.isearchpromise = nil
+    of EDIT:
+      let x = $lineedit.news
+      if x != "": pager.iregex = compileSearchRegex(x)
+      pager.container.popCursorPos(true)
+      pager.container.pushCursorPos()
+      if pager.iregex.isSome:
+        pager.container.hlon = true
+        let wrap = pager.config.search.wrap
+        return if linemode == ISEARCH_F:
+          pager.container.cursorNextMatch(pager.iregex.get, wrap, false)
+        else:
+          pager.container.cursorPrevMatch(pager.iregex.get, wrap, false)
+    of FINISH:
+      pager.regex = pager.checkRegex(pager.iregex)
+      pager.reverseSearch = linemode == ISEARCH_B
+      pager.container.clearSearchHighlights()
+      pager.container.sendCursorPosition()
+      pager.redraw = true
+      pager.isearchpromise = nil
+  )
 
 proc updateReadLine*(pager: Pager) =
   let lineedit = pager.lineedit.get

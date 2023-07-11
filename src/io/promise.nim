@@ -62,21 +62,34 @@ proc resolve*(map: var PromiseMap, promiseid: int) =
   if map.tab.pop(promiseid, promise):
     promise.resolve()
 
+proc newResolvedPromise*(): EmptyPromise =
+  let res = EmptyPromise()
+  res.resolve()
+  return res
+
 func empty*(map: PromiseMap): bool =
   map.tab.len == 0
 
 proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
-  if promise == nil:
-    doAssert false
-    return
   promise.cb = cb
   promise.next = EmptyPromise()
   if promise.state == PROMISE_FULFILLED:
     promise.resolve()
   return promise.next
 
+proc then*(promise: EmptyPromise, cb: (proc(): EmptyPromise)): EmptyPromise
+    {.discardable.} =
+  let next = EmptyPromise()
+  promise.then(proc() =
+    var p2 = cb()
+    if p2 != nil:
+      p2.then(proc() =
+        next.resolve())
+    else:
+      next.resolve())
+  return next
+
 proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable.} =
-  doAssert promise != nil
   return promise.then(proc() =
     if promise.get != nil:
       promise.get(promise.opaque, promise.res)
@@ -84,7 +97,6 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable
     cb(promise.res))
 
 proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.discardable.} =
-  doAssert promise != nil
   let next = Promise[T]()
   promise.then(proc() =
     var p2 = cb()
@@ -97,7 +109,6 @@ proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.dis
   return next
 
 proc then*[T](promise: Promise[T], cb: (proc(x: T): EmptyPromise)): EmptyPromise {.discardable.} =
-  doAssert promise != nil
   let next = EmptyPromise()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -109,7 +120,6 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T): EmptyPromise)): EmptyPromise
   return next
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): U)): Promise[U] {.discardable.} =
-  doAssert promise != nil
   let next = Promise[U]()
   promise.then(proc(x: T) =
     next.res = cb(x)
@@ -117,7 +127,6 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): U)): Promise[U] {.discard
   return next
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
-  doAssert promise != nil
   let next = Promise[U]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -131,7 +140,6 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] 
 
 proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Opt[Promise[U]])):
     Promise[Opt[U]] {.discardable.} =
-  doAssert promise != nil
   let next = Promise[Opt[U]]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
