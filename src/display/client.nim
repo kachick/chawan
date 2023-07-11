@@ -196,12 +196,12 @@ proc input(client: Client) =
       client.line = edit
       if edit.escNext:
         edit.escNext = false
-        if edit.write(client.s):
+        if edit.write(client.s, client.pager.term.cs):
           client.s = ""
       else:
         let action = getLinedAction(client.config, client.s)
         if action == "":
-          if edit.write(client.s):
+          if edit.write(client.s, client.pager.term.cs):
             client.s = ""
           else:
             client.feedNext = true

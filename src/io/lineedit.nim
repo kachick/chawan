@@ -1,10 +1,14 @@
-import unicode
-import strutils
 import sequtils
+import streams
+import strutils
+import unicode
 
 import bindings/quickjs
 import buffer/cell
+import data/charset
 import display/term
+import encoding/decoderstream
+import encoding/encoderstream
 import js/javascript
 import types/color
 import utils/opt
@@ -42,32 +46,13 @@ jsDestructor(LineEdit)
 func newLineHistory*(): LineHistory =
   return LineHistory()
 
-const colorFormat = (func(): Format =
-  result = newFormat()
-  result.fgcolor = cellColor(ANSI_BLUE)
-)()
-const defaultFormat = newFormat()
 proc printesc(edit: LineEdit, rs: seq[Rune]) =
-  var s = ""
-  var format = newFormat()
-  for r in rs:
-    if r.isControlChar():
-      s &= edit.term.processFormat(format, colorFormat)
-    else:
-      s &= edit.term.processFormat(format, defaultFormat)
-    s &= r
-  edit.term.write(s)
+  var dummy = 0
+  edit.term.write(edit.term.processOutputString0(rs.items, true, dummy))
 
-proc printesc(edit: LineEdit, s: string) =
-  var s = ""
-  var format = newFormat()
-  for r in s.runes:
-    if r.isControlChar():
-      s &= edit.term.processFormat(format, colorFormat)
-    else:
-      s &= edit.term.processFormat(format, defaultFormat)
-    s &= r
-  edit.term.write(s)
+proc print(edit: LineEdit, s: string) =
+  var dummy = 0
+  edit.term.write(edit.term.processOutputString(s, dummy))
 
 template kill0(edit: LineEdit, i: int) =
   edit.space(i)
@@ -126,7 +111,7 @@ proc redraw(state: LineEdit) =
   state.begin0()
   let os = state.news.substr(state.shift, state.shift + state.displen)
   if state.hide:
-    state.printesc('*'.repeat(os.width()))
+    state.print('*'.repeat(os.width()))
   else:
     state.printesc(os)
   state.space(max(state.maxwidth - state.minlen - os.width(), 0))
@@ -172,7 +157,7 @@ proc insertCharseq(edit: LineEdit, cs: var seq[Rune]) =
     edit.news &= cs
     edit.cursor += cs.len
     if edit.hide:
-      edit.printesc('*'.repeat(cs.width()))
+      edit.print('*'.repeat(cs.width()))
     else:
       edit.printesc(cs)
   else:
@@ -200,11 +185,25 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     else:
       edit.fullRedraw()
 
-proc write*(edit: LineEdit, s: string): bool {.jsfunc.} =
-  if validateUtf8(s) == -1:
-    var cs = s.toRunes()
-    edit.insertCharseq(cs)
-    return true
+const buflen = 128
+var buf {.threadVar.}: array[buflen, uint32]
+proc write*(edit: LineEdit, s: string, cs: Charset): bool =
+  let ss = newStringStream(s)
+  let ds = newDecoderStream(ss, cs = cs, buflen = buflen,
+    errormode = DECODER_ERROR_MODE_FATAL)
+  var cseq: seq[Rune]
+  while not ds.atEnd:
+    let n = ds.readData(buf)
+    for i in 0 ..< n div 4:
+      let r = cast[Rune](buf[i])
+      cseq.add(r)
+  if ds.failed:
+    return false
+  edit.insertCharseq(cseq)
+  return true
+
+proc write(edit: LineEdit, s: string): bool {.jsfunc.} =
+  edit.write(s, CHARSET_UTF_8)
 
 proc delete(edit: LineEdit) {.jsfunc.} =
   if edit.cursor >= 0 and edit.cursor < edit.news.len:

@@ -10,6 +10,7 @@ import buffer/cell
 import config/config
 import data/charset
 import encoding/encoderstream
+import io/runestream
 import io/window
 import types/color
 import utils/opt
@@ -42,7 +43,7 @@ type
 
   Terminal* = ref TerminalObj
   TerminalObj = object
-    cs: Charset
+    cs*: Charset
     config: Config
     infile: File
     outfile: File
@@ -367,37 +368,65 @@ proc setTitle*(term: Terminal, title: string) =
   if term.set_title:
     term.outfile.write(XTERM_TITLE(title))
 
+const colorFormat = block:
+  var format = newFormat()
+  format.fgcolor = cellColor(ANSI_BLUE)
+  format
+
+const defaultFormat = newFormat()
+
+template processOutputString0*(term: Terminal, str: iterable[Rune],
+    colorctrl: static bool, w: var int): string =
+  var rs0: seq[Rune]
+  var ctrl = false
+  var format = newFormat()
+  discard ctrl
+  discard format
+  for r in str:
+    if r.isControlChar():
+      when colorctrl:
+        if not ctrl:
+          rs0 &= term.processFormat(format, colorFormat).toRunes()
+      rs0 &= Rune('^')
+      rs0 &= Rune(cast[char](r).getControlLetter())
+    else:
+      when colorctrl:
+        if ctrl:
+          rs0 &= term.processFormat(format, defaultFormat).toRunes()
+      rs0 &= r
+    ctrl = r.isControlChar()
+    # twidth wouldn't work here, the view may start at the nth character.
+    # pager must ensure tabs are converted beforehand.
+    w += r.width()
+  let ss = newRuneStream(toOpenArray(cast[seq[uint32]](rs0), 0, rs0.high))
+  let es = newEncoderStream(ss, term.cs, errormode = ENCODER_ERROR_MODE_FATAL)
+  es.readAll()
+
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
   if str.validateUtf8() != -1:
     return "?"
-  if term.cs != CHARSET_UTF_8:
-    #TODO: This is incredibly inefficient.
-    var u32buf = ""
-    for r in str.runes():
-      let tw = r.width()
-      if r.isControlChar():
-        u32buf &= char(0) & char(0) & char(0) & "^" &
-          char(0) & char(0) & char(0) & getControlLetter(char(r))
-      elif tw != 0:
-        let ol = u32buf.len
-        u32buf.setLen(ol + sizeof(uint32))
-        var u32 = cast[uint32](r)
-        copyMem(addr u32buf[ol], addr u32, sizeof(u32))
-      w += tw
-    let ss = newStringStream(u32buf)
-    let encoder = newEncoderStream(ss, cs = term.cs,
-      errormode = ENCODER_ERROR_MODE_FATAL)
-    result &= encoder.readAll()
-  else:
-    for r in str.runes():
-      # twidth wouldn't work here, the view may start at the nth character.
-      # pager must ensure tabs are converted beforehand.
-      let tw = r.width()
-      if r.isControlChar():
-        result &= "^" & getControlLetter(char(r))
-      elif tw != 0:
-        result &= r
-      w += tw
+  if term.cs == CHARSET_UTF_8:
+    # optimized common case
+    block notfound:
+      for c in str:
+        if c in Controls:
+          break notfound
+      # No control characters, and the output encoding matches the internal
+      # representation.
+      w += str.width()
+      return str
+    var s = ""
+    for c in str:
+      if c in Controls:
+        s &= '^'
+        s &= c.getControlLetter()
+      else:
+        s &= c
+      # no twidth, see above
+      w += Rune(c).width()
+    return s
+  # Output is not utf-8, so we must convert back to utf-32 and then encode.
+  return term.processOutputString0(str.runes, false, w)
 
 proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()

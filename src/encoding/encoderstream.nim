@@ -104,36 +104,36 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     p = elem.p
   return p + c - offset
 
-proc encodeUTF8(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
-  var i = 0
-  while i < ilen:
-    let c = iq[i]
-    var count: int
-    var offset: uint8
-    case c
-    of 0x0080..0x07FF:
-      count = 1
-      offset = 0xC0
-    of 0x0800..0xFFFF:
-      count = 2
-      offset = 0xE0
-    of 0x10000..0x10FFFF:
-      count = 3
-      offset = 0xF0
+proc encodeUTF8(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
+  for c in iq:
+    if c < 0x80:
+      stream.append_byte c, oq, olen, n
     else:
-      assert false
-    stream.append_byte (c shr (6 * count)) + offset, oq, olen, n
-    while count > 0:
-      let tmp = c shr (6 * (count - 1))
-      stream.append_byte 0x80 or (tmp and 0x3F), oq, olen, n
-      dec count
+      var count: int
+      var offset: uint8
+      case c
+      of 0x80..0x7FF:
+        count = 1
+        offset = 0xC0
+      of 0x800..0xFFFF:
+        count = 2
+        offset = 0xE0
+      of 0x10000..0x10FFFF:
+        count = 3
+        offset = 0xF0
+      else:
+        assert false
+        {.linearScanEnd.}
+      stream.append_byte (c shr (6 * count)) + offset, oq, olen, n
+      for j in countdown(count - 1, 0):
+        let tmp = c shr (6 * j)
+        stream.append_byte 0x80 or (tmp and 0x3F), oq, olen, n
 
-proc encodeSingleByte(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int,
+proc encodeSingleByte(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int,
     map: seq[tuple[ucs: uint16, val: char]]) =
-  for i in 0 ..< ilen:
-    let c = iq[i]
+  for c in iq:
     if c < 0x80:
       stream.append_byte cast[uint8](c), oq, olen, n
       continue
@@ -143,10 +143,9 @@ proc encodeSingleByte(stream: EncoderStream, iq: var seq[uint32],
     else:
       stream.handleError(oq, olen, n, c)
 
-proc encodeXUserDefined(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
-  for i in 0 ..< ilen:
-    let c = iq[i]
+proc encodeXUserDefined(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
+  for c in iq:
     if c < 0x80:
       stream.append_byte cast[uint8](c), oq, olen, n
       continue
@@ -156,9 +155,8 @@ proc encodeXUserDefined(stream: EncoderStream, iq: var seq[uint32],
       continue
     stream.handleError(oq, olen, n, c)
 
-proc encodeGb18030(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int,
-    isGBK = false) =
+proc encodeGb18030(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int, isGBK = false) =
   for c in iq:
     if isGBK and c == 0x20AC:
       stream.append_byte 0x80, oq, olen, n
@@ -187,8 +185,8 @@ proc encodeGb18030(stream: EncoderStream, iq: var seq[uint32],
     stream.append_byte b3, oq, olen, n
     stream.append_byte b4, oq, olen, n
 
-proc encodeBig5(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+proc encodeBig5(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
   for c in iq:
     if c < 0x80:
       stream.append_byte c, oq, olen, n
@@ -204,8 +202,8 @@ proc encodeBig5(stream: EncoderStream, iq: var seq[uint32],
     stream.append_byte lead, oq, olen, n
     stream.append_byte cast[uint8](trail) + offset, oq, olen, n
 
-proc encodeEUCJP(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+proc encodeEUCJP(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
   for c in iq:
     if c < 0x80:
       stream.append_byte c, oq, olen, n
@@ -231,11 +229,11 @@ proc encodeEUCJP(stream: EncoderStream, iq: var seq[uint32],
       else:
         stream.handleError(oq, olen, n, c)
 
-proc encodeISO2022JP(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+proc encodeISO2022JP(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
   var state = stream.iso2022jpstate
   var i = 0
-  while i < ilen:
+  while i < iq.len:
     let c = iq[i]
     if state in {STATE_ASCII, STATE_ROMAN} and
         c in [0x0Eu32, 0x0Fu32, 0x1Bu32]:
@@ -295,8 +293,8 @@ proc encodeISO2022JP(stream: EncoderStream, iq: var seq[uint32],
     inc i
   stream.iso2022jpstate = state
 
-proc encodeShiftJIS(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+proc encodeShiftJIS(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
   for c in iq:
     if c <= 0x80:
       stream.append_byte c, oq, olen, n
@@ -320,8 +318,8 @@ proc encodeShiftJIS(stream: EncoderStream, iq: var seq[uint32],
         stream.append_byte lead + lead_offset, oq, olen, n
         stream.append_byte trail + offset, oq, olen, n
 
-proc encodeEUCKR(stream: EncoderStream, iq: var seq[uint32],
-    oq: ptr UncheckedArray[uint8], ilen, olen: int, n: var int) =
+proc encodeEUCKR(stream: EncoderStream, iq: openArray[uint32],
+    oq: ptr UncheckedArray[uint8], olen: int, n: var int) =
   for c in iq:
     if c < 0x80:
       stream.append_byte c, oq, olen, n
@@ -407,6 +405,7 @@ proc checkEnd(stream: EncoderStream, oq: ptr UncheckedArray[uint8], olen: int,
         stream.append_byte 0x42, oq, olen, n
 
 const ReadSize = 4096
+var iq {.threadVar.}: array[ReadSize div sizeof(uint32), uint32]
 proc readData*(stream: EncoderStream, buffer: pointer, olen: int): int =
   if olen == 0: return
   let oq = cast[ptr UncheckedArray[uint8]](buffer)
@@ -417,50 +416,88 @@ proc readData*(stream: EncoderStream, buffer: pointer, olen: int): int =
     # or we're at the end of the source stream
     stream.checkEnd(oq, olen, result)
     return result
-  var iq = newSeqUninitialized[uint32](ReadSize div sizeof(uint32))
   let ilen0 = stream.source.readData(cast[pointer](addr iq[0]), ReadSize)
+  #TODO what if ilen0 is 0?
+  assert ilen0 != 0
   assert ilen0 mod sizeof(uint32) == 0 #TODO what to do if false?
   let ilen = ilen0 div sizeof(uint32)
-  iq.setLen(ilen)
+  template iqoa: openArray[uint32] =
+    toOpenArray(iq, 0, ilen - 1)
   case stream.charset
-  of CHARSET_UTF_8: stream.encodeUTF8(iq, oq, ilen, olen, result)
-  of CHARSET_IBM866: stream.encodeSingleByte(iq, oq, ilen, olen, result, IBM866Encode)
-  of CHARSET_ISO_8859_2: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88592Encode)
-  of CHARSET_ISO_8859_3: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88593Encode)
-  of CHARSET_ISO_8859_4: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88594Encode)
-  of CHARSET_ISO_8859_5: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88595Encode)
-  of CHARSET_ISO_8859_6: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88596Encode)
-  of CHARSET_ISO_8859_7: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88597Encode)
-  of CHARSET_ISO_8859_8,
-     CHARSET_ISO_8859_8_I: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO88598Encode)
-  of CHARSET_ISO_8859_10: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO885910Encode)
-  of CHARSET_ISO_8859_13: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO885913Encode)
-  of CHARSET_ISO_8859_14: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO885914Encode)
-  of CHARSET_ISO_8859_15: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO885915Encode)
-  of CHARSET_ISO_8859_16: stream.encodeSingleByte(iq, oq, ilen, olen, result, ISO885916Encode)
-  of CHARSET_KOI8_R: stream.encodeSingleByte(iq, oq, ilen, olen, result, KOI8REncode)
-  of CHARSET_KOI8_U: stream.encodeSingleByte(iq, oq, ilen, olen, result, KOI8UEncode)
-  of CHARSET_MACINTOSH: stream.encodeSingleByte(iq, oq, ilen, olen, result, MacintoshEncode)
-  of CHARSET_WINDOWS_874: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows874Encode)
-  of CHARSET_WINDOWS_1250: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1250Encode)
-  of CHARSET_WINDOWS_1251: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1251Encode)
-  of CHARSET_WINDOWS_1252: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1252Encode)
-  of CHARSET_WINDOWS_1253: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1253Encode)
-  of CHARSET_WINDOWS_1254: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1254Encode)
-  of CHARSET_WINDOWS_1255: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1255Encode)
-  of CHARSET_WINDOWS_1256: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1256Encode)
-  of CHARSET_WINDOWS_1257: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1257Encode)
-  of CHARSET_WINDOWS_1258: stream.encodeSingleByte(iq, oq, ilen, olen, result, Windows1258Encode)
-  of CHARSET_X_MAC_CYRILLIC: stream.encodeSingleByte(iq, oq, ilen, olen, result, XMacCyrillicEncode)
-  of CHARSET_GBK: stream.encodeGb18030(iq, oq, ilen, olen, result, true)
-  of CHARSET_GB18030: stream.encodeGb18030(iq, oq, ilen, olen, result)
-  of CHARSET_BIG5: stream.encodeBig5(iq, oq, ilen, olen, result)
-  of CHARSET_EUC_JP: stream.encodeEUCJP(iq, oq, ilen, olen, result)
-  of CHARSET_ISO_2022_JP: stream.encodeISO2022JP(iq, oq, ilen, olen, result)
-  of CHARSET_SHIFT_JIS: stream.encodeShiftJIS(iq, oq, ilen, olen, result)
-  of CHARSET_EUC_KR: stream.encodeEUCKR(iq, oq, ilen, olen, result)
-  of CHARSET_X_USER_DEFINED: stream.encodeXUserDefined(iq, oq, ilen, olen, result)
-  of CHARSET_UNKNOWN: assert false, "Somebody forgot to set the character set here"
+  of CHARSET_UTF_8:
+    stream.encodeUTF8(iqoa, oq, olen, result)
+  of CHARSET_IBM866:
+    stream.encodeSingleByte(iqoa, oq, olen, result, IBM866Encode)
+  of CHARSET_ISO_8859_2:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88592Encode)
+  of CHARSET_ISO_8859_3:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88593Encode)
+  of CHARSET_ISO_8859_4:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88594Encode)
+  of CHARSET_ISO_8859_5:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88595Encode)
+  of CHARSET_ISO_8859_6:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88596Encode)
+  of CHARSET_ISO_8859_7:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88597Encode)
+  of CHARSET_ISO_8859_8, CHARSET_ISO_8859_8_I:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO88598Encode)
+  of CHARSET_ISO_8859_10:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO885910Encode)
+  of CHARSET_ISO_8859_13:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO885913Encode)
+  of CHARSET_ISO_8859_14:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO885914Encode)
+  of CHARSET_ISO_8859_15:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO885915Encode)
+  of CHARSET_ISO_8859_16:
+    stream.encodeSingleByte(iqoa, oq, olen, result, ISO885916Encode)
+  of CHARSET_KOI8_R:
+    stream.encodeSingleByte(iqoa, oq, olen, result, KOI8REncode)
+  of CHARSET_KOI8_U:
+    stream.encodeSingleByte(iqoa, oq, olen, result, KOI8UEncode)
+  of CHARSET_MACINTOSH:
+    stream.encodeSingleByte(iqoa, oq, olen, result, MacintoshEncode)
+  of CHARSET_WINDOWS_874:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows874Encode)
+  of CHARSET_WINDOWS_1250:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1250Encode)
+  of CHARSET_WINDOWS_1251:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1251Encode)
+  of CHARSET_WINDOWS_1252:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1252Encode)
+  of CHARSET_WINDOWS_1253:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1253Encode)
+  of CHARSET_WINDOWS_1254:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1254Encode)
+  of CHARSET_WINDOWS_1255:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1255Encode)
+  of CHARSET_WINDOWS_1256:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1256Encode)
+  of CHARSET_WINDOWS_1257:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1257Encode)
+  of CHARSET_WINDOWS_1258:
+    stream.encodeSingleByte(iqoa, oq, olen, result, Windows1258Encode)
+  of CHARSET_X_MAC_CYRILLIC:
+    stream.encodeSingleByte(iqoa, oq, olen, result, XMacCyrillicEncode)
+  of CHARSET_GBK:
+    stream.encodeGb18030(iqoa, oq, olen, result, true)
+  of CHARSET_GB18030:
+    stream.encodeGb18030(iqoa, oq, olen, result)
+  of CHARSET_BIG5:
+    stream.encodeBig5(iqoa, oq, olen, result)
+  of CHARSET_EUC_JP:
+    stream.encodeEUCJP(iqoa, oq, olen, result)
+  of CHARSET_ISO_2022_JP:
+    stream.encodeISO2022JP(iqoa, oq, olen, result)
+  of CHARSET_SHIFT_JIS:
+    stream.encodeShiftJIS(iqoa, oq, olen, result)
+  of CHARSET_EUC_KR:
+    stream.encodeEUCKR(iqoa, oq, olen, result)
+  of CHARSET_X_USER_DEFINED:
+    stream.encodeXUserDefined(iqoa, oq, olen, result)
+  of CHARSET_UNKNOWN:
+    doAssert false, "Somebody forgot to set the character set here"
   else: discard
   stream.checkEnd(oq, olen, result)
 

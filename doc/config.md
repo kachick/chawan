@@ -111,21 +111,23 @@ Following is a list of encoding options:
 </tr>
 
 <tr>
-<td>fallback-charset</td>
+<td>document-charset</td>
 <td>string/array</td>
-<td>Default character set for loading documents.<br>
-For text
-documents, all listed character sets are enumerated until the document has been
-decoded without errors.</td>
+<td>List of character sets for loading documents.<br>
+All listed character sets are enumerated until the document has been decoded
+without errors. In HTML, meta tags and the BOM may override this with a
+different charset, so long as the specified charset can decode the document
+correctly.
+</td>
 </tr>
 
 <tr>
-<td>document-charset</td>
-<td>string/array</td>
-<td>List of forced character sets for loading documents.<br>
-All listed character sets are enumerated until the document has been decoded
-without errors.<br>
-Overrides fallback-charset.</td>
+<td>display-charset</td>
+<td>string</td>
+<td>Character set for keyboard input and displaying documents.<br>
+Used in dump mode as well.<br>
+(This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is equivalent to `iconv
+-f EUC-JP -t UTF-8.)</td>
 </tr>
 
 </table>

@@ -806,7 +806,7 @@ proc readData*(stream: DecoderStream, buffer: pointer, olen: int): int =
   stream.checkEnd(oq, olen, result)
 
 # Returns the number of bytes read.
-proc readData*(stream: DecoderStream, buf: var seq[uint32]): int =
+proc readData*(stream: DecoderStream, buf: var openarray[uint32]): int =
   return stream.readData(addr buf[0], buf.len * sizeof(buf[0]))
 
 proc atEnd*(stream: DecoderStream): bool =
