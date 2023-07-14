@@ -87,25 +87,19 @@ type
     ##   the stack. (e.g. say `charsets = @[CHARSET_UTF_16_LE, CHARSET_UTF_8]`,
     ##   then utf-16-le is tried before utf-8.)
     ## * BOM sniffing is attempted. If successful, confidence is set to
-    ##   certain and the resulting charset is pushed on top of the charset
-    ##   stack. (Continuing the previous example: if BOM sniffing determines
-    ##   the character encoding to be UTF-8, then utf-8 will be tried before
-    ##   utf-16-le.)
+    ##   certain and the resulting charset is used (i.e. other character
+    ##   sets will not be tried for decoding this document.)
     ## * If the charset stack is empty, UTF-8 is pushed on top.
     ## * Attempt to parse the document with the first charset on top of
     ##   the stack.
     ## * If BOM sniffing was unsuccessful, and a <meta charset=...> tag
     ##   is encountered, parsing is restarted with the specified charset.
-    ##   No further attempts are be made to detect the encoding, and decoder
+    ##   No further attempts are made to detect the encoding, and decoder
     ##   errors are signaled by U+FFFD replacement characters.
     ## * Otherwise, each charset on the charset stack is tried until either no
     ##   decoding errors are encountered, or only one charset is left. For
     ##   the last charset, decoder errors are signaled by U+FFFD replacement
     ##   characters.
-    ## TODO: changing the charset after a successful BOM sniffing probably
-    ## makes no sense whatsoever, as almost all supported encodings are
-    ## ASCII-compatible (and would thus error out on leading high bytes
-    ## anyways).
     ctx*: Option[Handle]
     ## Context element for fragment parsing. When set to some Handle,
     ## the fragment case is used while parsing.
