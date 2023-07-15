@@ -11,6 +11,10 @@ type
   UnicodeNormalizationEnum* {.size: sizeof(cint).} = enum
     UNICODE_NFC, UNICODE_NFD, UNICODE_NKFC, UNICODE_NKFD
 
+{.passC: "-Ilib/".}
+
+{.push header: "quickjs/libunicode.h", importc.}
+
 proc cr_init*(cr: ptr CharRange, mem_opaque: pointer,
               realloc_func: DynBufReallocFunc) {.importc.}
 
@@ -21,3 +25,4 @@ proc unicode_normalize*(pdst: ptr ptr uint32, src: ptr uint32, src_len: cint,
                         realloc_func: DynBufReallocFunc): cint {.importc.}
 
 proc unicode_general_category*(cr: ptr CharRange, gc_name: cstring): cint {.importc.}
+{.pop.}
