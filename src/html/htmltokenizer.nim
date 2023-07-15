@@ -5,9 +5,10 @@ import macros
 import tables
 import unicode
 
-import html/entity
-import html/tags
 import encoding/decoderstream
+import html/entity
+import html/parseerror
+import html/tags
 import utils/opt
 import utils/radixtree
 import utils/twtstr
@@ -25,6 +26,7 @@ type
     attrv: string
     attr: bool
     hasnonhtml*: bool
+    onParseError: proc(e: ParseError)
 
     decoder: DecoderStream
     sbuf: seq[Rune]
@@ -108,12 +110,13 @@ proc readn(t: var Tokenizer) =
   if t.decoder.atEnd:
     t.eof_i = t.sbuf.len
 
-proc newTokenizer*(s: DecoderStream): Tokenizer =
+proc newTokenizer*(s: DecoderStream, onParseError: proc(e: ParseError)): Tokenizer =
   var t = Tokenizer(
     decoder: s,
     sbuf: newSeqOfCap[Rune](bufLen),
     eof_i: -1,
-    sbuf_i: 0
+    sbuf_i: 0,
+    onParseError: onParseError
   )
   t.readn()
   return t
@@ -192,7 +195,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template reconsume_in(s: TokenizerState) =
     tokenizer.reconsume()
     switch_state s
-  template parse_error(error: untyped) = discard # does nothing for now... TODO?
+  template parse_error(error: untyped) =
+    if tokenizer.onParseError != nil:
+      tokenizer.onParseError(error)
   template is_appropriate_end_tag_token(): bool =
     tokenizer.laststart != nil and tokenizer.laststart.tagname == tokenizer.tok.tagname
   template start_new_attribute =
@@ -346,7 +351,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state TAG_OPEN
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         emit_current
       of eof: emit_eof
       else: emit_current
@@ -355,7 +360,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state RCDATA_LESS_THAN_SIGN
-      of null: parse_error unexpected_null_character
+      of null: parse_error UNEXPECTED_NULL_CHARACTER
       of eof: emit_eof
       else: emit_current
 
@@ -363,7 +368,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '<': switch_state RAWTEXT_LESS_THAN_SIGN
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       of eof: emit_eof
       else: emit_current
@@ -372,7 +377,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '<': switch_state SCRIPT_DATA_LESS_THAN_SIGN
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       of eof: emit_eof
       else: emit_current
@@ -380,7 +385,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of PLAINTEXT:
       case c
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       of eof: emit_eof
       else: emit_current
@@ -393,15 +398,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: START_TAG)
         reconsume_in TAG_NAME
       of '?':
-        parse_error unexpected_question_mark_instead_of_tag_name
+        parse_error UNEXPECTED_QUESTION_MARK_INSTEAD_OF_TAG_NAME
         new_token Token(t: COMMENT)
         reconsume_in BOGUS_COMMENT
       of eof:
-        parse_error eof_before_tag_name
+        parse_error EOF_BEFORE_TAG_NAME
         emit '<'
         emit_eof
       else:
-        parse_error invalid_first_character_of_tag_name
+        parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         emit '<'
         reconsume_in DATA
 
@@ -411,15 +416,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: END_TAG)
         reconsume_in TAG_NAME
       of '>':
-        parse_error missing_end_tag_name
+        parse_error MISSING_END_TAG_NAME
         switch_state DATA
       of eof:
-        parse_error eof_before_tag_name
+        parse_error EOF_BEFORE_TAG_NAME
         emit '<'
         emit '/'
         emit_eof
       else:
-        parse_error invalid_first_character_of_tag_name
+        parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         new_token Token(t: COMMENT)
         reconsume_in BOGUS_COMMENT
 
@@ -432,10 +437,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
       of AsciiUpperAlpha: tokenizer.tok.tagname &= c.tolower()
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.tagname &= Rune(0xFFFD)
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else: tokenizer.tok.tagname &= r
 
@@ -611,10 +616,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '<':
         switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       of eof:
-        parse_error eof_in_script_html_comment_like_text
+        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
       else:
         emit_current
@@ -627,10 +632,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '<':
         switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
       of eof:
-        parse_error eof_in_script_html_comment_like_text
+        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
       else:
         switch_state SCRIPT_DATA_ESCAPED
@@ -646,10 +651,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state SCRIPT_DATA
         emit '>'
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
       of eof:
-        parse_error eof_in_script_html_comment_like_text
+        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
       else:
         switch_state SCRIPT_DATA_ESCAPED
@@ -727,10 +732,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN
         emit '<'
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       of eof:
-        parse_error eof_in_script_html_comment_like_text
+        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
       else: emit_current
 
@@ -743,11 +748,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN
         emit '<'
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
       of eof:
-        parse_error eof_in_script_html_comment_like_text
+        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
       else:
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
@@ -763,11 +768,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state SCRIPT_DATA
         emit '>'
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
       of eof:
-        parse_error eof_in_script_html_comment_like_text
+        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
       else: switch_state SCRIPT_DATA_DOUBLE_ESCAPED
 
@@ -798,7 +803,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of AsciiWhitespace: discard
       of '/', '>', eof: reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
-        parse_error unexpected_equals_sign_before_attribute_name
+        parse_error UNEXPECTED_EQUALS_SIGN_BEFORE_ATTRIBUTE_NAME
         start_new_attribute
         switch_state ATTRIBUTE_NAME
       else:
@@ -817,10 +822,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of AsciiUpperAlpha:
         tokenizer.attrn &= c.tolower()
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.attrn &= Rune(0xFFFD)
       of '"', '\'', '<':
-        parse_error unexpected_character_in_attribute_name
+        parse_error UNEXPECTED_CHARACTER_IN_ATTRIBUTE_NAME
         anything_else
       else:
         tokenizer.attrn &= r
@@ -834,7 +839,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else:
         start_new_attribute
@@ -846,7 +851,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '"': switch_state ATTRIBUTE_VALUE_DOUBLE_QUOTED
       of '\'': switch_state ATTRIBUTE_VALUE_SINGLE_QUOTED
       of '>':
-        parse_error missing_attribute_value
+        parse_error MISSING_ATTRIBUTE_VALUE
         switch_state DATA
         emit '>'
       else: reconsume_in ATTRIBUTE_VALUE_UNQUOTED
@@ -856,10 +861,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '"': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         append_to_current_attr_value Rune(0xFFFD)
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else: append_to_current_attr_value r
 
@@ -868,10 +873,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '\'': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         append_to_current_attr_value Rune(0xFFFD)
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else: append_to_current_attr_value r
 
@@ -883,13 +888,13 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         append_to_current_attr_value Rune(0xFFFD)
       of '"', '\'', '<', '=', '`':
-        parse_error unexpected_character_in_unquoted_attribute_value
+        parse_error UNEXPECTED_CHARACTER_IN_UNQUOTED_ATTRIBUTE_VALUE
         append_to_current_attr_value c
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else: append_to_current_attr_value r
 
@@ -903,10 +908,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else:
-        parse_error missing_whitespace_between_attributes
+        parse_error MISSING_WHITESPACE_BETWEEN_ATTRIBUTES
         reconsume_in BEFORE_ATTRIBUTE_NAME
 
     of SELF_CLOSING_START_TAG:
@@ -916,10 +921,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_tag
+        parse_error EOF_IN_TAG
         emit_eof
       else:
-        parse_error unexpected_solidus_in_tag
+        parse_error UNEXPECTED_SOLIDUS_IN_TAG
         reconsume_in BEFORE_ATTRIBUTE_NAME
 
     of BOGUS_COMMENT:
@@ -931,7 +936,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         emit_tok
         emit_eof
-      of null: parse_error unexpected_null_character
+      of null: parse_error UNEXPECTED_NULL_CHARACTER
       else: tokenizer.tok.data &= r
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
@@ -954,12 +959,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
-            parse_error cdata_in_html_content
+            parse_error CDATA_IN_HTML_CONTENT
             new_token Token(t: COMMENT, data: "[CDATA[")
             switch_state BOGUS_COMMENT
         else: anything_else
       else:
-        parse_error incorrectly_opened_comment
+        parse_error INCORRECTLY_OPENED_COMMENT
         new_token Token(t: COMMENT)
         reconsume_in BOGUS_COMMENT
 
@@ -967,7 +972,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '-': switch_state COMMENT_START_DASH
       of '>':
-        parse_error abrupt_closing_of_empty_comment
+        parse_error ABRUPT_CLOSING_OF_EMPTY_COMMENT
         switch_state DATA
         emit_tok
       else: reconsume_in COMMENT
@@ -976,11 +981,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '-': switch_state COMMENT_END
       of '>':
-        parse_error abrupt_closing_of_empty_comment
+        parse_error ABRUPT_CLOSING_OF_EMPTY_COMMENT
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_comment
+        parse_error EOF_IN_COMMENT
         emit_tok
         emit_eof
       else:
@@ -994,10 +999,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state COMMENT_LESS_THAN_SIGN
       of '-': switch_state COMMENT_END_DASH
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.data &= Rune(0xFFFD)
       of eof:
-        parse_error eof_in_comment
+        parse_error EOF_IN_COMMENT
         emit_tok
         emit_eof
       else: tokenizer.tok.data &= r
@@ -1024,14 +1029,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '>', eof: reconsume_in COMMENT_END
       else:
-        parse_error nested_comment
+        parse_error NESTED_COMMENT
         reconsume_in COMMENT_END
 
     of COMMENT_END_DASH:
       case c
       of '-': switch_state COMMENT_END
       of eof:
-        parse_error eof_in_comment
+        parse_error EOF_IN_COMMENT
         emit_tok
         emit_eof
       else:
@@ -1044,7 +1049,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '!': switch_state COMMENT_END_BANG
       of '-': tokenizer.tok.data &= '-'
       of eof:
-        parse_error eof_in_comment
+        parse_error EOF_IN_COMMENT
         emit_tok
         emit_eof
       else:
@@ -1057,11 +1062,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.data &= "--!"
         switch_state COMMENT_END_DASH
       of '>':
-        parse_error incorrectly_closed_comment
+        parse_error INCORRECTLY_CLOSED_COMMENT
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_comment
+        parse_error EOF_IN_COMMENT
         emit_tok
         emit_eof
       else:
@@ -1073,12 +1078,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_NAME
       of '>': reconsume_in BEFORE_DOCTYPE_NAME
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         new_token Token(t: DOCTYPE, quirks: true)
         emit_tok
         emit_eof
       else:
-        parse_error missing_whitespace_before_doctype_name
+        parse_error MISSING_WHITESPACE_BEFORE_DOCTYPE_NAME
         reconsume_in BEFORE_DOCTYPE_NAME
 
     of BEFORE_DOCTYPE_NAME:
@@ -1088,15 +1093,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: DOCTYPE, name: some($c.tolower()))
         switch_state DOCTYPE_NAME
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         new_token Token(t: DOCTYPE, name: some($Rune(0xFFFD)))
       of '>':
-        parse_error missing_doctype_name
+        parse_error MISSING_DOCTYPE_NAME
         new_token Token(t: DOCTYPE, quirks: true)
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         new_token Token(t: DOCTYPE, quirks: true)
         emit_tok
         emit_eof
@@ -1113,10 +1118,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of AsciiUpperAlpha:
         tokenizer.tok.name.get &= c.tolower()
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.name.get &= Rune(0xFFFD)
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
@@ -1131,7 +1136,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
@@ -1148,7 +1153,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       else:
-        parse_error invalid_character_sequence_after_doctype_name
+        parse_error INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1156,21 +1161,21 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
       of '"':
-        parse_error missing_whitespace_after_doctype_public_keyword
+        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_PUBLIC_KEYWORD
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
       of '>':
-        parse_error missing_doctype_public_identifier
+        parse_error MISSING_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error missing_quote_before_doctype_public_identifier
+        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1184,17 +1189,17 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error missing_doctype_public_identifier
+        parse_error MISSING_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error missing_quote_before_doctype_public_identifier
+        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1202,15 +1207,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '"': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.pubid.get &= Rune(0xFFFD)
       of '>':
-        parse_error abrupt_doctype_public_identifier
+        parse_error ABRUPT_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
@@ -1221,15 +1226,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '\'': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.pubid.get &= Rune(0xFFFD)
       of '>':
-        parse_error abrupt_doctype_public_identifier
+        parse_error ABRUPT_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
@@ -1243,20 +1248,20 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of '"':
-        parse_error missing_whitespace_between_doctype_public_and_system_identifiers
+        parse_error MISSING_WHITESPACE_BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        parse_error missing_whitespace_between_doctype_public_and_system_identifiers
+        parse_error MISSING_WHITESPACE_BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error missing_quote_before_doctype_system_identifier
+        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1273,12 +1278,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error missing_quote_before_doctype_system_identifier
+        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1286,25 +1291,25 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
       of '"':
-        parse_error missing_whitespace_after_doctype_system_keyword
+        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_SYSTEM_KEYWORD
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        parse_error missing_whitespace_after_doctype_system_keyword
+        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_SYSTEM_KEYWORD
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error missing_doctype_system_identifier
+        parse_error MISSING_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error missing_quote_before_doctype_system_identifier
+        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1318,17 +1323,17 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error missing_doctype_system_identifier
+        parse_error MISSING_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error missing_quote_before_doctype_system_identifier
+        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1336,15 +1341,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '"': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.sysid.get &= Rune(0xFFFD)
       of '>':
-        parse_error abrupt_doctype_system_identifier
+        parse_error ABRUPT_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
@@ -1355,15 +1360,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '\'': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
       of null:
-        parse_error unexpected_null_character
+        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.sysid.get &= Rune(0xFFFD)
       of '>':
-        parse_error abrupt_doctype_system_identifier
+        parse_error ABRUPT_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
@@ -1377,12 +1382,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-        parse_error eof_in_doctype
+        parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        parse_error unexpected_character_after_doctype_system_identifier
+        parse_error UNEXPECTED_CHARACTER_AFTER_DOCTYPE_SYSTEM_IDENTIFIER
         reconsume_in BOGUS_DOCTYPE
 
     of BOGUS_DOCTYPE:
@@ -1390,7 +1395,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of null: parse_error unexpected_null_character
+      of null: parse_error UNEXPECTED_NULL_CHARACTER
       of eof:
         emit_tok
         emit_eof
@@ -1400,7 +1405,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of ']': switch_state CDATA_SECTION_BRACKET
       of eof:
-        parse_error eof_in_cdata
+        parse_error EOF_IN_CDATA
         emit_eof
       else:
         emit_current
@@ -1458,7 +1463,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
             switch_state tokenizer.rstate
           else:
             if tokenizer.tmp[^1] != ';':
-              parse_error missing_semicolon_after_character_reference_parse_error
+              parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
             tokenizer.tmp = value.get
             flush_code_points_consumed_as_a_character_reference
             switch_state tokenizer.rstate
@@ -1474,7 +1479,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           emit_current
       of ';':
-        parse_error unknown_named_character_reference
+        parse_error UNKNOWN_NAMED_CHARACTER_REFERENCE
         reconsume_in tokenizer.rstate
       else: reconsume_in tokenizer.rstate
 
@@ -1490,7 +1495,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiHexDigit: reconsume_in HEXADECIMAL_CHARACTER_REFERENCE
       else:
-        parse_error absence_of_digits_in_numeric_character_reference
+        parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         flush_code_points_consumed_as_a_character_reference
         reconsume_in tokenizer.rstate
 
@@ -1498,7 +1503,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiDigit: reconsume_in DECIMAL_CHARACTER_REFERENCE
       else:
-        parse_error absence_of_digits_in_numeric_character_reference
+        parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         flush_code_points_consumed_as_a_character_reference
         reconsume_in tokenizer.rstate
 
@@ -1509,7 +1514,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.code += hexValue(c)
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
       else:
-        parse_error missing_semicolon_after_character_reference
+        parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
         reconsume_in NUMERIC_CHARACTER_REFERENCE_END
 
     of DECIMAL_CHARACTER_REFERENCE:
@@ -1519,23 +1524,23 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.code += decValue(c)
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
       else:
-        parse_error missing_semicolon_after_character_reference
+        parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
         reconsume_in NUMERIC_CHARACTER_REFERENCE_END
 
     of NUMERIC_CHARACTER_REFERENCE_END:
       ignore_eof # we reconsume anyway
       case tokenizer.code
       of 0x00:
-        parse_error null_character_reference
+        parse_error NULL_CHARACTER_REFERENCE
         tokenizer.code = 0xFFFD
       elif tokenizer.code > 0x10FFFF:
-        parse_error character_reference_outside_unicode_range
+        parse_error CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
         tokenizer.code = 0xFFFD
       elif Rune(tokenizer.code).isSurrogate():
-        parse_error surrogate_character_reference
+        parse_error SURROGATE_CHARACTER_REFERENCE
         tokenizer.code = 0xFFFD
       elif Rune(tokenizer.code).isNonCharacter():
-        parse_error noncharacter_character_reference
+        parse_error NONCHARACTER_CHARACTER_REFERENCE
         # do nothing
       elif tokenizer.code in 0..255 and char(tokenizer.code) in ((Controls - AsciiWhitespace) + {chr(0x0D)}):
         const ControlMapTable = [

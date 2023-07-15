@@ -152,7 +152,6 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
   return ChaDOMBuilder(
     document: document,
     finish: finish,
-    parseError: parseError,
     setQuirksMode: setQuirksMode,
     setCharacterSet: setCharacterset,
     elementPopped: elementPopped,
