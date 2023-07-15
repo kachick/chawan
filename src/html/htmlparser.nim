@@ -32,7 +32,7 @@ type
     elementPopped*: DOMBuilderElementPopped[Handle]
     ## May be nil.
     getTemplateContent*: DOMBuilderGetTemplateContent[Handle]
-    ## Must never be nil.
+    ## May be nil. (If nil, templates are treated as regular elements.)
     getParentNode*: DOMBuilderGetParentNode[Handle]
     ## Must never be nil.
     getLocalName*: DOMBuilderGetLocalName[Handle]
@@ -473,6 +473,7 @@ func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
     let lastTemplate = parser.lastElementOfTag(TAG_TEMPLATE)
     let lastTable = parser.lastElementOfTag(TAG_TABLE)
     if lastTemplate.element != nil and
+        parser.dombuilder.getTemplateContent != nil and
         (lastTable.element == nil or lastTable.pos < lastTemplate.pos):
       let content = parser.getTemplateContent(lastTemplate.element)
       return last_child_of(content)
@@ -485,7 +486,8 @@ func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
     result = last_child_of(previousElement)
   else:
     result = last_child_of(target)
-  if parser.getTagType(result.inside) == TAG_TEMPLATE:
+  if parser.getTagType(result.inside) == TAG_TEMPLATE and
+      parser.dombuilder.getTemplateContent != nil:
     result = (parser.getTemplateContent(result.inside), nil)
 
 func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle]):
@@ -2673,7 +2675,6 @@ proc bomSniff(inputStream: Stream): Charset =
 
 # Any of these pointers being nil would later result in a crash.
 proc checkCallbacks(dombuilder: DOMBuilder) =
-  doAssert dombuilder.getTemplateContent != nil
   doAssert dombuilder.getParentNode != nil
   doAssert dombuilder.getLocalName != nil
   doAssert dombuilder.createElement != nil
