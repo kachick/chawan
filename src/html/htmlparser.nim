@@ -2671,10 +2671,23 @@ proc bomSniff(inputStream: Stream): Charset =
     else:
       inputStream.setPosition(0)
 
+# Any of these pointers being nil would later result in a crash.
+proc checkCallbacks(dombuilder: DOMBuilder) =
+  doAssert dombuilder.getTemplateContent != nil
+  doAssert dombuilder.getParentNode != nil
+  doAssert dombuilder.getLocalName != nil
+  doAssert dombuilder.createElement != nil
+  doAssert dombuilder.createComment != nil
+  doAssert dombuilder.createDocumentType != nil
+  doAssert dombuilder.insertBefore != nil
+  doAssert dombuilder.insertText != nil
+  doAssert dombuilder.remove != nil
+
 proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     opts: HTML5ParserOpts[Handle]) =
   ## Parse an HTML document, using the DOMBuilder object `dombuilder`, and
   ## parser options `opts`.
+  dombuilder.checkCallbacks()
   var charsetStack: seq[Charset]
   for i in countdown(opts.charsets.high, 0):
     charsetStack.add(opts.charsets[i])
