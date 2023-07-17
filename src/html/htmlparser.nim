@@ -1399,8 +1399,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       _ => (block:
-        let token = Token(t: START_TAG, tagtype: TAG_HEAD)
-        parser.head = some(parser.insertHTMLElement(token))
+        let head = Token(t: START_TAG, tagtype: TAG_HEAD)
+        parser.head = some(parser.insertHTMLElement(head))
         parser.insertionMode = IN_HEAD
         reprocess token
       )
