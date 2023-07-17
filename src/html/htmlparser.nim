@@ -2718,9 +2718,10 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     else:
       DECODER_ERROR_MODE_FATAL
     let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
+    proc x(e: ParseError) =
+      parser.parseError(e)
     let onParseError = if parser.hasParseError():
-      proc(e: ParseError) =
-        parser.parseError(e)
+      x
     else:
       nil
     parser.tokenizer = newTokenizer(decoder, onParseError)
