@@ -904,7 +904,7 @@ func cssMaxMinSize(cval: CSSComponentValue): Result[CSSLength, string] =
     of CSS_IDENT_TOKEN:
       if tok.value == "none":
         return ok(CSSLengthAuto)
-    of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN:
+    of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN, CSS_PERCENTAGE_TOKEN:
       return cssLength(tok, allow_negative = false)
     else: discard
   return err("Invalid min/max-size")
