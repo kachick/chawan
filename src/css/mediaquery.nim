@@ -59,13 +59,45 @@ type
     COMPARISON_EQ, COMPARISON_GT, COMPARISON_LT, COMPARISON_GE, COMPARISON_LE
 
 # for debugging
+func `$`*(mf: MediaFeature): string =
+  case mf.t
+  of FEATURE_COLOR:
+    return "color: " & $mf.range.a & ".." & $mf.range.b
+  of FEATURE_GRID:
+    return "grid: " & $mf.b
+  of FEATURE_HOVER:
+    return "hover: " & $mf.b
+  of FEATURE_PREFERS_COLOR_SCHEME:
+    return "prefers-color-scheme: " & $mf.b
+  of FEATURE_WIDTH:
+    result &= $mf.lengthrange.a
+    result &= " <"
+    if mf.lengthaeq:
+      result &= "="
+    result &= " width <"
+    if mf.lengthbeq:
+      result &= "="
+    result &= " "
+    result &= $mf.lengthrange.b
+  of FEATURE_HEIGHT:
+    result &= $mf.lengthrange.a
+    result &= " <"
+    if mf.lengthaeq:
+      result &= "="
+    result &= " width "
+    result &= "<"
+    if mf.lengthbeq:
+      result &= "="
+    result &= " "
+    result &= $mf.lengthrange.b
+
 func `$`*(mq: MediaQuery): string =
   case mq.t
   of CONDITION_MEDIA: return $mq.media
   of CONDITION_FEATURE: return $mq.feature
-  of CONDITION_NOT: return "not " & $mq.n
-  of CONDITION_OR: return $mq.ora & " or " & $mq.orb
-  of CONDITION_AND: return $mq.anda & " or " & $mq.andb
+  of CONDITION_NOT: return "not (" & $mq.n
+  of CONDITION_OR: return "(" & $mq.ora & ") or (" & $mq.orb & ")"
+  of CONDITION_AND: return "(" & $mq.anda & ") or (" & $mq.andb & ")"
 
 const MediaTypes = {
   "all": MEDIA_TYPE_ALL,
