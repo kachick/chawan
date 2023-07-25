@@ -80,7 +80,9 @@ func cellheight(ictx: InlineContext): LayoutUnit =
 func computeShift(ictx: InlineContext, computed: CSSComputedValues):
     LayoutUnit =
   if ictx.whitespacenum > 0:
-    if ictx.currentLine.atoms.len > 0 or computed.whitespacepre:
+    if ictx.currentLine.atoms.len > 0 and
+        not (ictx.currentLine.atoms[^1] of InlineSpacing) or
+        computed.whitespacepre:
       let spacing = computed{"word-spacing"}
       if spacing.auto:
         return ictx.cellwidth * ictx.whitespacenum
