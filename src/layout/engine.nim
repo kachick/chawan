@@ -623,12 +623,12 @@ func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
   return none(LayoutUnit)
  
 func getParentWidth(box, parent: BlockBox): SizeConstraint =
-  if box.positioned:
+  if box.computed{"position"} == POSITION_ABSOLUTE:
     return parent.viewport.positioned[^1].availableWidth
   return parent.availableWidth
 
 func getParentHeight(box, parent: BlockBox): SizeConstraint =
-  if box.positioned:
+  if box.computed{"position"} == POSITION_ABSOLUTE:
     return parent.viewport.positioned[^1].availableHeight
   return parent.availableHeight
 
