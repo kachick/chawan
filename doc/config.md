@@ -516,7 +516,7 @@ is typed in. A list of built-in pager functions can be found below.
 <td>`suspend()`</td>
 <td>Temporarily suspend the browser (by delivering the client process a
 SIGSTOP signal.)<br>
-Note: this does not suspend buffer processes.
+Note: this does not suspend buffer processes.</td>
 </tr>
 
 </table>
