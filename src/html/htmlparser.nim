@@ -1637,7 +1637,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       ("<address>", "<article>", "<aside>", "<blockquote>", "<center>",
       "<details>", "<dialog>", "<dir>", "<div>", "<dl>", "<fieldset>",
       "<figcaption>", "<figure>", "<footer>", "<header>", "<hgroup>", "<main>",
-      "<menu>", "<nav>", "<ol>", "<p>", "<section>", "<summary>", "<ul>") => (block:
+      "<menu>", "<nav>", "<ol>", "<p>", "<search>", "<section>", "<summary>",
+      "<ul>") => (block:
         if parser.hasElementInButtonScope(TAG_P):
           parser.closeP()
         discard parser.insertHTMLElement(token)
@@ -1728,7 +1729,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
        "</center>", "</details>", "</dialog>", "</dir>", "</div>", "</dl>",
        "</fieldset>", "</figcaption>", "</figure>", "</footer>", "</header>",
        "</hgroup>", "</listing>", "</main>", "</menu>", "</nav>", "</ol>",
-       "</pre>", "</section>", "</summary>", "</ul>") => (block:
+       "</pre>", "</search>", "</section>", "</summary>", "</ul>") => (block:
         if not parser.hasElementInScope(token.tagtype):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
