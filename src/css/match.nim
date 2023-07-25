@@ -112,6 +112,8 @@ func selectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T = n
   case sel.t
   of TYPE_SELECTOR:
     return elem.tagType == sel.tag
+  of UNKNOWN_TYPE_SELECTOR:
+    return elem.localName == sel.tagstr
   of CLASS_SELECTOR:
     return sel.class in elem.classList
   of ID_SELECTOR:

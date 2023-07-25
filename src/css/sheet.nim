@@ -63,7 +63,7 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool =
   of ID_SELECTOR:
     hashes.id = sel.id
     return true
-  of ATTR_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR:
+  of ATTR_SELECTOR, PSELEM_SELECTOR, UNIVERSAL_SELECTOR, UNKNOWN_TYPE_SELECTOR:
     return false
   of PSEUDO_SELECTOR:
     if sel.pseudo.t in {PSEUDO_IS, PSEUDO_WHERE}:

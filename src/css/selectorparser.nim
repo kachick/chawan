@@ -8,8 +8,8 @@ import html/tags
 
 type
   SelectorType* = enum
-    TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR,
-    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR
+    TYPE_SELECTOR, UNKNOWN_TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR,
+    CLASS_SELECTOR, UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR
 
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER,
@@ -36,6 +36,8 @@ type
     case t*: SelectorType
     of TYPE_SELECTOR:
       tag*: TagType
+    of UNKNOWN_TYPE_SELECTOR:
+      tagstr*: string
     of ID_SELECTOR:
       id*: string
     of ATTR_SELECTOR:
@@ -96,6 +98,8 @@ func `$`*(sel: Selector): string =
   case sel.t
   of TYPE_SELECTOR:
     return tagName(sel.tag)
+  of UNKNOWN_TYPE_SELECTOR:
+    return sel.tagstr
   of ID_SELECTOR:
     return '#' & sel.id
   of ATTR_SELECTOR:
@@ -184,7 +188,7 @@ func getSpecificity(sel: Selector): int =
       result += 1000
     of PSEUDO_WHERE: discard
     else: result += 1000
-  of TYPE_SELECTOR, PSELEM_SELECTOR:
+  of TYPE_SELECTOR, UNKNOWN_TYPE_SELECTOR, PSELEM_SELECTOR:
     result += 1
   of UNIVERSAL_SELECTOR:
     discard
@@ -349,7 +353,12 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.tokenType
       of CSS_IDENT_TOKEN:
         inc state.at
-        result.add(Selector(t: TYPE_SELECTOR, tag: tagType(tok.value)))
+        let tag = tagType(tok.value)
+        if tag == TAG_UNKNOWN:
+          let s = tok.value.toLowerAscii()
+          result.add(Selector(t: UNKNOWN_TYPE_SELECTOR, tagstr: s))
+        else:
+          result.add(Selector(t: TYPE_SELECTOR, tag: tag))
       of CSS_COLON_TOKEN:
         inc state.at
         result.add(state.parsePseudoSelector())
