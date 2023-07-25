@@ -37,6 +37,7 @@ substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + en
 
 [page]
 q = 'quit()'
+C-z = 'suspend()'
 h = 'pager.cursorLeft()' 
 j = 'pager.cursorDown()'
 k = 'pager.cursorUp()'

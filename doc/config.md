@@ -498,7 +498,7 @@ escape to the keybinding respectively (essentially making `M-` the same as
 An action is a JavaScript function called by Chawan every time the keybinding
 is typed in. A list of built-in pager functions can be found below.
 
-### Pager actions
+### Browser actions
 
 <table>
 
@@ -508,8 +508,26 @@ is typed in. A list of built-in pager functions can be found below.
 </tr>
 
 <tr>
-<td>`pager.quit()`</td>
+<td>`quit()`</td>
 <td>Exit the browser.</td>
+</tr>
+
+<tr>
+<td>`suspend()`</td>
+<td>Temporarily suspend the browser (by delivering the client process a
+SIGSTOP signal.)<br>
+Note: this does not suspend buffer processes.
+</tr>
+
+</table>
+
+### Pager actions
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Function**</th>
 </tr>
 
 <tr>

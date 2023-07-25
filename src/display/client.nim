@@ -154,6 +154,11 @@ proc command(client: Client, src: string) =
   client.console.container.requestLines().then(proc() =
     client.console.container.cursorLastLine())
 
+proc suspend(client: Client) {.jsfunc.} =
+  client.pager.term.quit()
+  discard kill(getpid(), cint(SIGSTOP))
+  client.pager.term.restart()
+
 proc quit(client: Client, code = 0) {.jsfunc.} =
   if client.alive:
     client.alive = false
