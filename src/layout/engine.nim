@@ -354,7 +354,7 @@ proc flushLine(ictx: InlineContext, computed: CSSComputedValues) =
   ictx.finishLine(computed, true)
 
 proc checkWrap(state: var InlineState, r: Rune) =
-  if state.computed{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}:
+  if state.computed.nowrap:
     return
   let shift = state.ictx.computeShift(state.computed)
   let rw = r.width()
