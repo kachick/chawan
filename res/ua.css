@@ -7,8 +7,10 @@ noframes, param, rp, script, style, template, title {
 	display: block !important;
 }
 
-address, blockquote, center, del, dir, div, dl, dt, dd, fieldset, form, h1, h2, h3, h4,
-h5, h6, hr, ins, menu, noframes, noscript, ol, p, pre, ul, body {
+address, article, aside, blockquote, body, center, dd, del, dialog, dir, div,
+dl, dt, fieldset, figcaption, figure, footer, form, h1, h2, h3, h4, h5, h6,
+header, hgroup, hr, html, ins, legend, listing, main, menu, nav, noframes,
+noscript, ol, p, plaintext, pre, search, section, ul, xmp {
 	display: block;
 }
 
