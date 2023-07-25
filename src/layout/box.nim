@@ -15,6 +15,20 @@ type
     width*: LayoutUnit
     height*: LayoutUnit
 
+  # min-content: box width is longest word's width
+  # max-content: box width is content width without wrapping
+  # stretch: box width is n px wide
+  # fit-content: also known as shrink-to-fit, box width is
+  #   min(max-content, max(stretch)
+  #   in other words, as wide as needed, but wrap if wider than allowed
+  # (note: I write width here, but it can apply for any constraint)
+  SizeConstraintType* = enum
+    STRETCH, FIT_CONTENT, MIN_CONTENT, MAX_CONTENT
+
+  SizeConstraint* = object
+    t*: SizeConstraintType
+    u*: LayoutUnit
+
   Strut* = object
     pos*: LayoutUnit
     neg*: LayoutUnit
@@ -95,16 +109,14 @@ type
     lines*: seq[LineBox]
     currentLine*: LineBox
     width*: LayoutUnit
-    contentWidth*: LayoutUnit
-    contentHeight*: Option[LayoutUnit]
-    contentWidthInfinite*: bool
+    availableWidth*: SizeConstraint
+    availableHeight*: SizeConstraint
 
     charwidth*: int
     whitespacenum*: int
     # this is actually xminwidth.
     minwidth*: LayoutUnit
     viewport*: Viewport
-    shrink*: bool
     format*: ComputedFormat
 
   BlockBox* = ref object of RootObj
@@ -131,13 +143,9 @@ type
     min_height*: Option[LayoutUnit]
     max_height*: Option[LayoutUnit]
 
-    # This is the (specified) content width/height. Actual dimensions may
-    # differ (i.e. overflow)
-    contentWidth*: LayoutUnit
-    contentHeight*: Option[LayoutUnit]
-    shrink*: bool
-    # Whether to stretch content to infinity.
-    contentWidthInfinite*: bool
+    # width and height constraints
+    availableWidth*: SizeConstraint
+    availableHeight*: SizeConstraint
 
     positioned*: bool
     x_positioned*: bool
@@ -199,3 +207,33 @@ proc append*(a: var Strut, b: LayoutUnit) =
 
 func sum*(a: Strut): LayoutUnit =
   return a.pos + a.neg
+
+func minContent*(): SizeConstraint =
+  return SizeConstraint(t: MIN_CONTENT)
+
+func maxContent*(): SizeConstraint =
+  return SizeConstraint(t: MAX_CONTENT)
+
+func stretch*(u: LayoutUnit): SizeConstraint =
+  return SizeConstraint(t: STRETCH, u: u)
+
+func fitContent*(u: LayoutUnit): SizeConstraint =
+  return SizeConstraint(t: FIT_CONTENT, u: u)
+
+#TODO ?
+func stretch*(sc: SizeConstraint): SizeConstraint =
+  case sc.t
+  of MIN_CONTENT, MAX_CONTENT:
+    return SizeConstraint(t: sc.t, u: sc.u)
+  of STRETCH, FIT_CONTENT:
+    return SizeConstraint(t: STRETCH, u: sc.u)
+
+func fitContent*(sc: SizeConstraint): SizeConstraint =
+  case sc.t
+  of MIN_CONTENT, MAX_CONTENT:
+    return SizeConstraint(t: sc.t)
+  of STRETCH, FIT_CONTENT:
+    return SizeConstraint(t: FIT_CONTENT, u: sc.u)
+
+func isDefinite*(sc: SizeConstraint): bool =
+  return sc.t in {STRETCH, FIT_CONTENT}
