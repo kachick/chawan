@@ -35,6 +35,8 @@ examples.
 * [Keybindings](#keybindings)
    * [Pager actions](#pager-actions)
    * [Line-editing actions](#line-editing-actions)
+* [Appendix](#appendix)
+   * [Regex handling](#regex-handling)
 
 ## Start
 
@@ -314,7 +316,9 @@ Omnirule options:
 <td>match</td>
 <td>regex</td>
 <td>Regular expression used to match the input string. Note that websites
-passed as arguments are matched as well.</td>
+passed as arguments are matched as well.<br>
+Note: regexes are handled according to the [regex handling](#regex-handling)
+rules.</td>
 </tr>
 
 <tr>
@@ -335,12 +339,12 @@ Examples:
 ```
 # Enable cookies on the orange website for log-in.
 [[siteconf]]
-url = '^https://news\.ycombinator\.com/.*'
+url = 'https://news\.ycombinator\.com/.*'
 cookie = true
 
 # Redirect npr.org to text.npr.org.
 [[siteconf]]
-host = '^(www\.)?npr\.org$'
+host = '(www\.)?npr\.org'
 rewrite-url = '''
 (x) => {
 	x.host = "text.npr.org";
@@ -351,10 +355,10 @@ rewrite-url = '''
 
 # Allow cookie sharing on *sr.ht domains.
 [[siteconf]]
-host = '^.*sr\.ht$'
+host = '.*sr\.ht'
 cookie = true
 share-cookie-jar = 'sr.ht'
-third-party-cookie = '^.*\.sr.ht$'
+third-party-cookie = '.*\.sr.ht'
 ```
 
 Siteconf options:
@@ -371,14 +375,18 @@ Siteconf options:
 <td>url</td>
 <td>regex</td>
 <td>Regular expression used to match the URL. Either this or the `host` option
-must be specified.</td>
+must be specified.<br>
+Note: regexes are handled according to the [regex handling](#regex-handling)
+rules.</td>
 </tr>
 
 <tr>
 <td>host</td>
 <td>regex</td>
 <td>Regular expression used to match the host part of the URL (i.e. domain
-name/ip address.) Either this or the `url` option must be specified.</td>
+name/ip address.) Either this or the `url` option must be specified.<br>
+Note: regexes are handled according to the [regex handling](#regex-handling)
+rules.</td>
 </tr>
 
 <tr>
@@ -399,7 +407,9 @@ false for all websites.</td>
 <td>third-party-cookie</td>
 <td>regex/array of regexes</td>
 <td>Domains for which third-party cookies are allowed on this domain. Note:
-this only works for buffers which share the same cookie jar.</td>
+this only works for buffers which share the same cookie jar.<br>
+Note: regexes are handled according to the [regex handling](#regex-handling)
+rules.</td>
 </tr>
 
 <tr>
@@ -875,4 +885,20 @@ as a word boundary.
 
 # Control+W deletes everything before the cursor until it reaches a space. 
 'C-w' = 'line.clearWord(x => x == " ")'
+```
+
+## Appendix
+
+### Regex handling
+
+Regular expressions are assumed to be exact matches, except when they start
+with a caret (^) sign or end with an unescaped dollar ($) sign.
+
+In other words, the following transformations occur:
+
+```
+^abcd -> ^abcd
+efgh$ -> efgh$
+^ijkl$ -> ^ijkl$
+mnop -> ^mnop$
 ```

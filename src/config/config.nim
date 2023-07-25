@@ -183,11 +183,11 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
       images: sc.images
     )
     if sc.url.isSome:
-      conf.url = opt(compileRegex(sc.url.get, 0))
+      conf.url = opt(compileMatchRegex(sc.url.get))
     elif sc.host.isSome:
-      conf.host = opt(compileRegex(sc.host.get, 0))
+      conf.host = opt(compileMatchRegex(sc.host.get))
     for rule in sc.third_party_cookie:
-      conf.third_party_cookie.add(compileRegex(rule, 0).get)
+      conf.third_party_cookie.add(compileMatchRegex(rule).get)
     if sc.rewrite_url.isSome:
       let fun = jsctx.eval(sc.rewrite_url.get, "<siteconf>",
         JS_EVAL_TYPE_GLOBAL)
@@ -201,7 +201,7 @@ proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
 
 proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
   for rule in config.omnirule:
-    let re = compileRegex(rule.match, 0)
+    let re = compileMatchRegex(rule.match)
     var conf = OmniRule(
       match: re.get
     )

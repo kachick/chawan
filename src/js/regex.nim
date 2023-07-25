@@ -68,6 +68,41 @@ proc compileRegex*(buf: string, flags: int): Result[Regex, string] =
   regex.bytecode = bytecode
   return ok(regex)
 
+func countBackslashes(buf: string, i: int): int =
+  var j = 0
+  for i in countdown(i, 0):
+    if buf[i] != '\\':
+      break
+    inc j
+  return j
+
+# ^abcd -> ^abcd
+# efgh$ -> efgh$
+# ^ijkl$ -> ^ijkl$
+# mnop -> ^mnop$
+proc compileMatchRegex*(buf: string): Result[Regex, string] =
+  if buf.len == 0:
+    return compileRegex(buf, 0)
+  if buf[0] == '^':
+    return compileRegex(buf, 0)
+  if buf[^1] == '$':
+    # Check whether the final dollar sign is escaped.
+    if buf.len == 1 or buf[^2] != '\\':
+      return compileRegex(buf, 0)
+    let j = buf.countBackslashes(buf.high - 2)
+    if j mod 2 == 1: # odd, because we do not count the last backslash
+      return compileRegex(buf, 0)
+    # escaped. proceed as if no dollar sign was at the end
+  if buf[^1] == '\\':
+    # Check if the regex contains an invalid trailing backslash.
+    let j = buf.countBackslashes(buf.high - 1)
+    if j mod 2 != 1: # odd, because we do not count the last backslash
+      return err("unexpected end")
+  var buf2 = "^"
+  buf2 &= buf
+  buf2 &= "$"
+  return compileRegex(buf2, 0)
+
 proc compileSearchRegex*(str: string): Result[Regex, string] =
   # Parse any applicable flags in regex/<flags>. The last forward slash is
   # dropped when <flags> is empty, and interpreted as a character when the
