@@ -137,8 +137,10 @@ type
       ## Note: this function must never return nil.
 
   DOMBuilderGetParentNode*[Handle] =
-    proc(builder: DOMBuilder[Handle], handle: Handle): Handle {.nimcall.}
+    proc(builder: DOMBuilder[Handle], handle: Handle): Option[Handle]
+        {.nimcall.}
       ## Retrieve a handle to the parent node.
+      ## May return none(Handle) if no parent node exists.
 
   DOMBuilderGetTagType*[Handle] =
     proc(builder: DOMBuilder[Handle], handle: Handle): TagType {.nimcall.}
@@ -263,7 +265,7 @@ type
     form: Option[Handle]
     fosterParenting: bool
     # Handle is an element. nil => marker
-    activeFormatting: seq[(Handle, Token)]
+    activeFormatting: seq[(Option[Handle], Token)]
     framesetok: bool
     ignoreLF: bool
     pendingTableChars: string
@@ -302,7 +304,7 @@ func getTemplateContent[Handle](parser: HTML5Parser[Handle],
   return dombuilder.getTemplateContent(dombuilder, handle)
 
 func getParentNode[Handle](parser: HTML5Parser[Handle],
-    handle: Handle): Handle =
+    handle: Handle): Option[Handle] =
   let dombuilder = parser.dombuilder
   return dombuilder.getParentNode(dombuilder, handle)
 
@@ -454,11 +456,11 @@ func adjustedCurrentNode[Handle](parser: HTML5Parser[Handle]): Handle =
     parser.currentNode
 
 func lastElementOfTag[Handle](parser: HTML5Parser[Handle],
-    tagType: TagType): tuple[element: Handle, pos: int] =
+    tagType: TagType): tuple[element: Option[Handle], pos: int] =
   for i in countdown(parser.openElements.high, 0):
     if parser.getTagType(parser.openElements[i]) == tagType:
-      return (parser.openElements[i], i)
-  return (nil, -1)
+      return (some(parser.openElements[i]), i)
+  return (none(Handle), -1)
 
 template last_child_of[Handle](n: Handle): AdjustedInsertionLocation[Handle] =
   (n, nil)
@@ -472,16 +474,16 @@ func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
   if parser.fosterParenting and targetTagType in FosterTagTypes:
     let lastTemplate = parser.lastElementOfTag(TAG_TEMPLATE)
     let lastTable = parser.lastElementOfTag(TAG_TABLE)
-    if lastTemplate.element != nil and
+    if lastTemplate.element.isSome and
         parser.dombuilder.getTemplateContent != nil and
-        (lastTable.element == nil or lastTable.pos < lastTemplate.pos):
-      let content = parser.getTemplateContent(lastTemplate.element)
+        (lastTable.element.isNone or lastTable.pos < lastTemplate.pos):
+      let content = parser.getTemplateContent(lastTemplate.element.get)
       return last_child_of(content)
-    if lastTable.element == nil:
+    if lastTable.element.isNone:
       return last_child_of(parser.openElements[0])
-    let parentNode = parser.getParentNode(lastTable.element)
-    if parentNode != nil:
-      return (parentNode, lastTable.element)
+    let parentNode = parser.getParentNode(lastTable.element.get)
+    if parentNode.isSome:
+      return (parentNode.get, lastTable.element.get)
     let previousElement = parser.openElements[lastTable.pos - 1]
     result = last_child_of(previousElement)
   else:
@@ -882,10 +884,10 @@ proc pushOntoActiveFormatting[Handle](parser: var HTML5Parser[Handle],
   var count = 0
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i]
-    if it[0] == nil: break
-    if not parser.tagNameEquals(it[0], element):
+    if it[0].isNone: break
+    if not parser.tagNameEquals(it[0].get, element):
       continue
-    if parser.getNamespace(it[0]) != parser.getNamespace(element):
+    if parser.getNamespace(it[0].get) != parser.getNamespace(element):
       continue
     var fail = false
     for k, v in it[1].attrs:
@@ -905,20 +907,20 @@ proc pushOntoActiveFormatting[Handle](parser: var HTML5Parser[Handle],
     if count == 3:
       parser.activeFormatting.delete(i)
       break
-  parser.activeFormatting.add((element, token))
+  parser.activeFormatting.add((some(element), token))
 
 proc reconstructActiveFormatting[Handle](parser: var HTML5Parser[Handle]) =
   type State = enum
     REWIND, ADVANCE, CREATE
   if parser.activeFormatting.len == 0:
     return
-  if parser.activeFormatting[^1][0] == nil:
+  if parser.activeFormatting[^1][0].isNone:
     return
-  let tagType = parser.getTagType(parser.activeFormatting[^1][0])
+  let tagType = parser.getTagType(parser.activeFormatting[^1][0].get)
   if parser.hasElement(tagType):
     return
   var i = parser.activeFormatting.high
-  template entry: Handle = (parser.activeFormatting[i][0])
+  template entry: Option[Handle] = (parser.activeFormatting[i][0])
   var state = REWIND
   while true:
     {.computedGoto.}
@@ -928,8 +930,8 @@ proc reconstructActiveFormatting[Handle](parser: var HTML5Parser[Handle]) =
         state = CREATE
         continue
       dec i
-      if entry != nil:
-        let tagType = parser.getTagType(entry)
+      if entry.isSome:
+        let tagType = parser.getTagType(entry.get)
         if not parser.hasElement(tagType):
           continue
       state = ADVANCE
@@ -937,14 +939,19 @@ proc reconstructActiveFormatting[Handle](parser: var HTML5Parser[Handle]) =
       inc i
       state = CREATE
     of CREATE:
-      parser.activeFormatting[i] = (parser.insertHTMLElement(parser.activeFormatting[i][1]), parser.activeFormatting[i][1])
+      let element = parser.insertHTMLElement(parser.activeFormatting[i][1])
+      parser.activeFormatting[i] = (
+        some(element), parser.activeFormatting[i][1]
+      )
       if i != parser.activeFormatting.high:
         state = ADVANCE
         continue
       break
 
 proc clearActiveFormattingTillMarker(parser: var HTML5Parser) =
-  while parser.activeFormatting.len > 0 and parser.activeFormatting.pop()[0] != nil: discard
+  while parser.activeFormatting.len > 0 and
+      parser.activeFormatting.pop()[0].isSome:
+    discard
 
 func isHTMLIntegrationPoint[Handle](parser: HTML5Parser[Handle],
     element: Handle): bool =
@@ -1016,7 +1023,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
   if parser.tagNameEquals(parser.currentNode, token):
     var fail = true
     for it in parser.activeFormatting:
-      if it[0] == parser.currentNode:
+      if it[0].isSome and it[0].get == parser.currentNode:
         fail = false
     if fail:
       pop_current_node
@@ -1030,10 +1037,10 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     var formattingIndex: int
     for j in countdown(parser.activeFormatting.high, 0):
       let element = parser.activeFormatting[j][0]
-      if element == nil:
+      if element.isNone:
         return true
       if parser.tagNameEquals(parser.currentNode, token):
-        formatting = element
+        formatting = element.get
         formattingIndex = j
         break
       if j == 0:
@@ -1074,7 +1081,8 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
       if node == formatting: break
       var nodeFormattingIndex = -1
       for i in countdown(parser.activeFormatting.high, 0):
-        if parser.activeFormatting[i][0] == node:
+        if parser.activeFormatting[i][0].isSome and
+            parser.activeFormatting[i][0].get == node:
           nodeFormattingIndex = i
           break
       if j > 3 and nodeFormattingIndex >= 0:
@@ -1088,8 +1096,9 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
           dec furthestBlockIndex
           furthestBlock = parser.openElements[furthestBlockIndex]
         continue
-      let element = parser.createElement(parser.activeFormatting[nodeFormattingIndex][1], Namespace.HTML, commonAncestor)
-      parser.activeFormatting[nodeFormattingIndex] = (element, parser.activeFormatting[nodeFormattingIndex][1])
+      let tok = parser.activeFormatting[nodeFormattingIndex][1]
+      let element = parser.createElement(tok, Namespace.HTML, commonAncestor)
+      parser.activeFormatting[nodeFormattingIndex] = (some(element), tok)
       parser.openElements[nodeStackIndex] = element
       aboveNode = parser.openElements[nodeStackIndex - 1]
       node = element
@@ -1111,7 +1120,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     for child in tomove:
       parser.append(element, child)
     parser.append(furthestBlock, element)
-    parser.activeFormatting.insert((element, token), bookmark)
+    parser.activeFormatting.insert((some(element), token), bookmark)
     parser.activeFormatting.delete(formattingIndex)
     parser.openElements.insert(element, furthestBlockIndex)
     parser.openElements.delete(stackIndex)
@@ -1455,7 +1464,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       ("</body>", "</html>", "</br>") => (block: anything_else)
       "<template>" => (block:
         discard parser.insertHTMLElement(token)
-        parser.activeFormatting.add((nil, nil))
+        parser.activeFormatting.add((none(Handle), nil))
         parser.framesetok = false
         parser.insertionMode = IN_TEMPLATE
         parser.templateModes.add(IN_TEMPLATE)
@@ -1796,10 +1805,10 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         var anchor: Option[Handle]
         for i in countdown(parser.activeFormatting.high, 0):
           let format = parser.activeFormatting[i]
-          if format[0] == nil:
+          if format[0].isNone:
             break
-          if parser.getTagType(format[0]) == TAG_A:
-            anchor = some(format[0])
+          if parser.getTagType(format[0].get) == TAG_A:
+            anchor = format[0]
             break
         if anchor.isSome:
           parse_error NESTED_TAGS
@@ -1807,7 +1816,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
             any_other_end_tag
             return
           for i in 0..parser.activeFormatting.high:
-            if parser.activeFormatting[i][0] == anchor.get:
+            if parser.activeFormatting[i][0].isSome and
+                parser.activeFormatting[i][0].get == anchor.get:
               parser.activeFormatting.delete(i)
               break
           for i in 0..parser.openElements.high:
@@ -1845,7 +1855,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       ("<applet>", "<marquee>", "<object>") => (block:
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement(token)
-        parser.activeFormatting.add((nil, nil))
+        parser.activeFormatting.add((none(Handle), nil))
         parser.framesetOk = false
       )
       ("</applet>", "</marquee>", "</object>") => (block:
@@ -2015,7 +2025,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<caption>" => (block:
         clear_the_stack_back_to_a_table_context
-        parser.activeFormatting.add((nil, nil))
+        parser.activeFormatting.add((none(Handle), nil))
         discard parser.insertHTMLElement(token)
         parser.insertionMode = IN_CAPTION
       )
@@ -2227,7 +2237,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         clear_the_stack_back_to_a_table_row_context
         discard parser.insertHTMLElement(token)
         parser.insertionMode = IN_CELL
-        parser.activeFormatting.add((nil, nil))
+        parser.activeFormatting.add((none(Handle), nil))
       )
       "</tr>" => (block:
         if not parser.hasElementInTableScope(TAG_TR):

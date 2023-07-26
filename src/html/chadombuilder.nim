@@ -1,4 +1,5 @@
 import deques
+import options
 import streams
 
 import data/charset
@@ -50,8 +51,8 @@ proc getTemplateContent(builder: DOMBuilder[Node], handle: Node): Node =
 proc getTagType(builder: DOMBuilder[Node], handle: Node): TagType =
   return Element(handle).tagType
 
-proc getParentNode(builder: DOMBuilder[Node], handle: Node): Node =
-  return handle.parentNode
+proc getParentNode(builder: DOMBuilder[Node], handle: Node): Option[Node] =
+  return option(handle.parentNode)
 
 proc getLocalName(builder: DOMBuilder[Node], handle: Node): string =
   return Element(handle).localName
