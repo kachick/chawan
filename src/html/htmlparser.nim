@@ -1055,19 +1055,18 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
       return false
     if formatting != parser.currentNode:
       parse_error ELEMENT_NOT_CURRENT_NODE
-    var furthestBlock: Handle = nil
-    var furthestBlockIndex: int
+    var furthestBlockIndex = -1
     for j in countdown(parser.openElements.high, 0):
       if parser.openElements[j] == formatting:
         break
       if parser.getTagType(parser.openElements[j]) in SpecialElements:
-        furthestBlock = parser.openElements[j]
         furthestBlockIndex = j
         break
-    if furthestBlock == nil:
+    if furthestBlockIndex == -1:
       while parser.popElement() != formatting: discard
       parser.activeFormatting.delete(formattingIndex)
       return false
+    var furthestBlock = parser.openElements[furthestBlockIndex]
     let commonAncestor = parser.openElements[stackIndex - 1]
     var bookmark = formattingIndex
     var node = furthestBlock
