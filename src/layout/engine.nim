@@ -559,7 +559,6 @@ proc calcAvailableHeight(box: BlockBox, containingHeight: SizeConstraint,
 proc calcAbsoluteAvailableWidth(box: BlockBox,
     containingWidth: SizeConstraint) =
   let viewport = box.viewport
-  let computed = box.computed
   let left = box.computed{"left"}
   let right = box.computed{"right"}
   let width = box.computed{"width"}
@@ -591,7 +590,6 @@ proc calcAbsoluteAvailableWidth(box: BlockBox,
 proc calcAbsoluteAvailableHeight(box: BlockBox,
     containingHeight: SizeConstraint) =
   let viewport = box.viewport
-  let computed = box.computed
   #TODO this might be incorrect because of percHeight?
   let top = box.computed{"top"}
   let bottom = box.computed{"bottom"}
@@ -620,7 +618,6 @@ proc calcAbsoluteAvailableHeight(box: BlockBox,
 # boxes.
 proc calcAbsoluteAvailableSizes(box: BlockBox) =
   let viewport = box.viewport
-  let computed = box.computed
   let containingWidth = viewport.positioned[^1].availableWidth
   let containingHeight = viewport.positioned[^1].availableHeight
   box.resolveMargins(containingWidth, viewport)
