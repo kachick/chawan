@@ -556,6 +556,78 @@ proc calcAvailableHeight(box: BlockBox, containingHeight: SizeConstraint,
         # same reasoning as for width.
         box.availableHeight = stretch(min_height.get)
 
+proc calcAbsoluteAvailableWidth(box: BlockBox,
+    containingWidth: SizeConstraint) =
+  let viewport = box.viewport
+  let computed = box.computed
+  let left = box.computed{"left"}
+  let right = box.computed{"right"}
+  let width = box.computed{"width"}
+  if width.auto:
+    if not left.auto and not right.auto:
+      # width is auto and left & right are not auto.
+      # Solve for width.
+      if containingWidth.isDefinite:
+        let leftpx = left.px(viewport, containingWidth)
+        let rightpx = right.px(viewport, containingWidth)
+        let u = containingWidth.u - leftpx - rightpx -
+          box.margin_left - box.margin_right - box.padding_left -
+          box.padding_right
+        box.availableWidth = stretch(max(u, 0))
+      else:
+        box.availableWidth = containingWidth
+    else:
+      # Return shrink to fit and solve for left/right.
+      # Note that we do not know content width yet, so it is impossible to
+      # solve left/right yet.
+      box.availableWidth = fitContent(containingWidth)
+  else:
+    let widthpx = width.px(viewport, containingWidth)
+    # We could solve for left/right here, as available width is known.
+    # Nevertheless, it is only needed for positioning, so we do not solve
+    # them yet.
+    box.availableWidth = stretch(widthpx)
+
+proc calcAbsoluteAvailableHeight(box: BlockBox,
+    containingHeight: SizeConstraint) =
+  let viewport = box.viewport
+  let computed = box.computed
+  #TODO this might be incorrect because of percHeight?
+  let top = box.computed{"top"}
+  let bottom = box.computed{"bottom"}
+  let height = box.computed{"height"}
+  if height.auto:
+    if not top.auto and not bottom.auto:
+      # height is auto and top & bottom are not auto.
+      # Solve for height.
+      if containingHeight.isDefinite:
+        let toppx = top.px(viewport, containingHeight)
+        let bottompx = bottom.px(viewport, containingHeight)
+        #TODO I assume border collapsing does not matter here?
+        let u = containingHeight.u - toppx - bottompx -
+          box.margin_top - box.margin_bottom - box.padding_top -
+          box.padding_bottom
+        box.availableHeight = stretch(max(u, 0))
+      else:
+        box.availableHeight = containingHeight
+    else:
+      box.availableHeight = fitContent(containingHeight)
+  else:
+    let heightpx = height.px(viewport, containingHeight)
+    box.availableHeight = stretch(heightpx)
+
+# Calculate and resolve available width & height for absolutely positioned
+# boxes.
+proc calcAbsoluteAvailableSizes(box: BlockBox) =
+  let viewport = box.viewport
+  let computed = box.computed
+  let containingWidth = viewport.positioned[^1].availableWidth
+  let containingHeight = viewport.positioned[^1].availableHeight
+  box.resolveMargins(containingWidth, viewport)
+  box.resolvePadding(containingWidth, viewport)
+  box.calcAbsoluteAvailableWidth(containingWidth)
+  box.calcAbsoluteAvailableHeight(containingHeight)
+
 # Calculate and resolve available width & height for box children.
 # availableWidth: width of the containing box
 # availableHeight: ditto, but with height.
@@ -569,15 +641,18 @@ proc calcAvailableHeight(box: BlockBox, containingHeight: SizeConstraint,
 proc calcAvailableSizes(box: BlockBox, containingWidth, containingHeight:
     SizeConstraint, percHeight: Option[LayoutUnit]) =
   let viewport = box.viewport
-  box.resolveMargins(containingWidth, viewport)
-  box.resolvePadding(containingWidth, viewport)
-  # Take defined sizes if our width/height resolves to auto.
-  # (For block boxes, this is width: stretch(parentWidth), height: max-content)
-  box.availableWidth = containingWidth
-  box.availableHeight = containingHeight
-  # Finally, calculate available width and height.
-  box.calcAvailableWidth(containingWidth)
-  box.calcAvailableHeight(containingHeight, percHeight)
+  if box.computed{"position"} == POSITION_ABSOLUTE:
+    box.calcAbsoluteAvailableSizes()
+  else:
+    box.resolveMargins(containingWidth, viewport)
+    box.resolvePadding(containingWidth, viewport)
+    # Take defined sizes if our width/height resolves to auto.
+    # (For block boxes, this is width: stretch(parentWidth), height: max-content)
+    box.availableWidth = containingWidth
+    box.availableHeight = containingHeight
+    # Finally, calculate available width and height.
+    box.calcAvailableWidth(containingWidth)
+    box.calcAvailableHeight(containingHeight, percHeight)
 
 proc calcTableCellAvailableSizes(box: BlockBox, availableWidth, availableHeight:
     SizeConstraint) =
@@ -625,13 +700,9 @@ func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
   return none(LayoutUnit)
  
 func getParentWidth(box, parent: BlockBox): SizeConstraint =
-  if box.computed{"position"} == POSITION_ABSOLUTE:
-    return parent.viewport.positioned[^1].availableWidth
   return parent.availableWidth
 
 func getParentHeight(box, parent: BlockBox): SizeConstraint =
-  if box.computed{"position"} == POSITION_ABSOLUTE:
-    return parent.viewport.positioned[^1].availableHeight
   return parent.availableHeight
 
 proc newBlockBox(parent: BlockBox, builder: BoxBuilder): BlockBox =
