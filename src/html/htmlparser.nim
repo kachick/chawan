@@ -1106,7 +1106,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
       parser.append(node, lastNode)
       lastNode = node
     let location = parser.appropriatePlaceForInsert(commonAncestor)
-    location.inside.insert(lastNode, location.before)
+    parser.insertBefore(location.inside, lastNode, location.before)
     let token = parser.activeFormatting[formattingIndex][1]
     let element = parser.createElement(token, Namespace.HTML, furthestBlock)
     var tomove: seq[Handle]
