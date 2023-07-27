@@ -1442,7 +1442,7 @@ func countChildren(node: Node, nodeType: NodeType): int =
 func hasChild(node: Node, nodeType: NodeType): bool =
   for child in node.childList:
     if child.nodeType == nodeType:
-      return false
+      return true
 
 func previousSibling*(node: Node): Node {.jsfget.} =
   let i = node.index - 1
