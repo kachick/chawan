@@ -2291,7 +2291,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           parser.insertionMode = IN_ROW
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<td>", "<tfoot>",
-       "<thead>", "<tr>") => (block:
+       "<th>", "<thead>", "<tr>") => (block:
         if not parser.hasElementInTableScope({TAG_TD, TAG_TH}):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
