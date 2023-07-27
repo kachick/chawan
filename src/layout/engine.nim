@@ -930,8 +930,6 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
   if box.splitend:
     let padding_right = box.computed{"padding-right"}.px(ictx.viewport,
       ictx.availableWidth)
-    # Padding should not be treated as whitespace, so we just increase line
-    # width instead of adding fake spacing.
     ictx.currentLine.width += padding_right
     if padding_right > 0:
       ictx.currentLine.addPadding(padding_right,
