@@ -76,9 +76,17 @@ func cellheight(viewport: Viewport): LayoutUnit =
 func cellheight(ictx: InlineContext): LayoutUnit =
   ictx.viewport.cellheight
 
+# Check if the last atom on the current line is a spacing atom, not counting
+# padding atoms.
 func hasLastSpacing(ictx: InlineContext): bool =
-  return ictx.currentLine.atoms[^1] of InlineSpacing and
-    not (ictx.currentLine.atoms[^1] of InlinePadding)
+  for i in countdown(ictx.currentLine.atoms.high, 0):
+    if ictx.currentLine.atoms[i] of InlineSpacing:
+      if ictx.currentLine.atoms[i] of InlinePadding:
+        continue # skip padding
+      return true
+    else:
+      break
+  return false
 
 # Whitespace between words
 func computeShift(ictx: InlineContext, computed: CSSComputedValues):
