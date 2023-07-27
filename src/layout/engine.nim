@@ -402,7 +402,7 @@ proc processWhitespace(state: var InlineState, c: char) =
     elif c == '\t':
       let prev = state.ictx.charwidth
       state.ictx.charwidth = ((state.ictx.charwidth +
-        state.ictx.whitespacenum div 8) + 1) * 8 - state.ictx.whitespacenum
+        state.ictx.whitespacenum) div 8 + 1) * 8 - state.ictx.whitespacenum
       state.ictx.whitespacenum += state.ictx.charwidth - prev
     else:
       inc state.ictx.whitespacenum
