@@ -892,8 +892,9 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
 
     let padding_left = box.computed{"padding-left"}.px(ictx.viewport,
       ictx.availableWidth)
-    if padding_left > 0:
-      ictx.currentLine.addSpacing(padding_left, ictx.cellheight, paddingformat)
+    # Padding should not be treated as whitespace, so we just increase line
+    # width instead of adding fake spacing.
+    ictx.currentLine.width += padding_left
 
   assert not (box.children.len > 0 and box.text.len > 0)
   for text in box.text:
@@ -917,9 +918,9 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
   if box.splitend:
     let padding_right = box.computed{"padding-right"}.px(ictx.viewport,
       ictx.availableWidth)
-    if padding_right > 0:
-      ictx.currentLine.addSpacing(padding_right,
-        max(ictx.currentLine.height, 1), paddingformat)
+    # Padding should not be treated as whitespace, so we just increase line
+    # width instead of adding fake spacing.
+    ictx.currentLine.width += padding_right
     let margin_right = box.computed{"margin-right"}.px(ictx.viewport,
       ictx.availableWidth)
     ictx.currentLine.width += margin_right
