@@ -76,12 +76,15 @@ func cellheight(viewport: Viewport): LayoutUnit =
 func cellheight(ictx: InlineContext): LayoutUnit =
   ictx.viewport.cellheight
 
+func hasLastSpacing(ictx: InlineContext): bool =
+  return ictx.currentLine.atoms[^1] of InlineSpacing and
+    not (ictx.currentLine.atoms[^1] of InlinePadding)
+
 # Whitespace between words
 func computeShift(ictx: InlineContext, computed: CSSComputedValues):
     LayoutUnit =
   if ictx.whitespacenum > 0:
-    if ictx.currentLine.atoms.len > 0 and
-        not (ictx.currentLine.atoms[^1] of InlineSpacing) or
+    if ictx.currentLine.atoms.len > 0 and not ictx.hasLastSpacing() or
         computed.whitespacepre:
       let spacing = computed{"word-spacing"}
       if spacing.auto:
@@ -244,6 +247,13 @@ proc verticalAlignLine(ictx: InlineContext) =
 
   line.height += margin_top
   line.height += margin_bottom
+
+proc addPadding(line: LineBox, width, height: LayoutUnit,
+    format: ComputedFormat) =
+  let padding = InlinePadding(width: width, height: height, baseline: height, format: format)
+  padding.offset.x = line.width
+  line.width += width
+  line.atoms.add(padding)
 
 proc addSpacing(line: LineBox, width, height: LayoutUnit,
     format: ComputedFormat, hang = false) =
@@ -892,9 +902,11 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
 
     let padding_left = box.computed{"padding-left"}.px(ictx.viewport,
       ictx.availableWidth)
-    # Padding should not be treated as whitespace, so we just increase line
-    # width instead of adding fake spacing.
-    ictx.currentLine.width += padding_left
+    if padding_left > 0:
+      # We must add spacing to the line to make sure that it is formatted
+      # appropriately.
+      # We need this so long as we have no proper inline boxes.
+      ictx.currentLine.addPadding(padding_left, ictx.cellheight, paddingformat)
 
   assert not (box.children.len > 0 and box.text.len > 0)
   for text in box.text:
@@ -921,6 +933,9 @@ proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
     # Padding should not be treated as whitespace, so we just increase line
     # width instead of adding fake spacing.
     ictx.currentLine.width += padding_right
+    if padding_right > 0:
+      ictx.currentLine.addPadding(padding_right,
+        max(ictx.currentLine.height, 1), paddingformat)
     let margin_right = box.computed{"margin-right"}.px(ictx.viewport,
       ictx.availableWidth)
     ictx.currentLine.width += margin_right

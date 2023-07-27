@@ -91,6 +91,9 @@ type
   InlineSpacing* = ref object of InlineAtom
     format*: ComputedFormat
 
+  # Treated exactly the same as InlineSpacing, except it signifies padding.
+  InlinePadding* = ref object of InlineSpacing
+
   InlineWord* = ref object of InlineAtom
     str*: string
     format*: ComputedFormat
