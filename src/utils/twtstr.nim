@@ -927,9 +927,9 @@ const Combining = [
 ]
 
 func cmp(range: (uint32, uint32), r: Rune): int =
-  if range[0] < cast[uint32](r):
+  if range[1] < cast[uint32](r):
     return -1
-  elif range[1] > cast[uint32](r):
+  elif range[0] > cast[uint32](r):
     return 1
   return 0
 
