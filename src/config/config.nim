@@ -96,6 +96,8 @@ type
     minimum_contrast*: int32
     force_clear*: bool
     set_title*: bool
+    default_background_color*: RGBColor
+    default_foreground_color*: RGBColor
 
   #TODO: add JS wrappers for objects
   Config* = ref ConfigObj
@@ -321,6 +323,7 @@ proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string)
 proc parseConfigValue(x: var Opt[FormatMode], v: TomlValue, k: string)
 proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string)
 proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string)
+proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string)
 proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
@@ -424,6 +427,14 @@ proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
 proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
   typeCheck(v, VALUE_STRING, k)
   let c = parseRGBAColor(v.s)
+  if c.isNone:
+      raise newException(ValueError, "invalid color '" & v.s &
+        "' for key " & k)
+  x = c.get
+
+proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let c = parseLegacyColor(v.s)
   if c.isNone:
       raise newException(ValueError, "invalid color '" & v.s &
         "' for key " & k)

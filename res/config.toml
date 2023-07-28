@@ -30,6 +30,8 @@ double-width-ambiguous = false
 minimum-contrast = 100
 force-clear = false
 set-title = true
+default-background-color = "#000000"
+default-foreground-color = "#FFFFFF"
 
 [[omnirule]]
 match = '^ddg:'

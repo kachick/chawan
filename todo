@@ -14,8 +14,12 @@ display:
 - important: buffer list
 	* either a buffer list buffer, or a buffer list popup menu. ideally
 	  both.
-- configurable default background color
 - dark mode (basically max Y)
+- do not assume default background color
+	* instead, add an "override-default-color" option that is set to
+	  true by default and replaces default bgcolor/fgcolor with
+	  default-background/foreground-color
+- allow overriding ansi colors
 config:
 - important: config editor
 - working js interface

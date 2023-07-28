@@ -51,7 +51,6 @@ type
     canvas*: FixedGrid
     pcanvas: FixedGrid
     attrs*: WindowAttributes
-    mincontrast: int
     colormode: ColorMode
     formatmode: FormatMode
     smcup: bool
@@ -201,26 +200,33 @@ proc disableAltScreen(term: Terminal): string =
   else:
     return RMCUP()
 
+func defaultBackground(term: Terminal): RGBColor =
+  return term.config.display.default_background_color
+
+func defaultForeground(term: Terminal): RGBColor =
+  return term.config.display.default_foreground_color
+
+func mincontrast(term: Terminal): int32 =
+  return term.config.display.minimum_contrast
+
 proc getRGB(a: CellColor, bg: bool): RGBColor =
   if a.rgb:
     return a.rgbcolor
-  elif a == defaultColor:
-    if bg:
-      return ColorsRGB["black"]
-    else:
-      return ColorsRGB["white"]
   elif a.color >= 16:
     return eightBitToRGB(EightBitColor(a.color))
-  return ANSIColorMap[a.color mod 10]
+  return ANSIColorMap[a.color]
 
 # Use euclidian distance to quantize RGB colors.
-proc approximateANSIColor(rgb: RGBColor): ANSIColor =
+proc approximateANSIColor(rgb, termDefault: RGBColor): CellColor =
   var a = 0i32
   var n = -1
-  for i in 0 .. ANSIColorMap.high:
-    let color = ANSIColorMap[i]
+  for i in -1 .. ANSIColorMap.high:
+    let color = if i > 0:
+      ANSIColorMap[i]
+    else:
+      termDefault
     if color == rgb:
-      return ANSIColor(i)
+      return if i == -1: defaultColor else: cellColor(ANSIColor(i))
     let x = int32(color.r) - int32(rgb.r)
     let y = int32(color.g) - int32(rgb.g)
     let z = int32(color.b) - int32(rgb.b)
@@ -231,14 +237,20 @@ proc approximateANSIColor(rgb: RGBColor): ANSIColor =
     if n == -1 or b < a:
       n = i
       a = b
-  return ANSIColor(n)
+  return if n == -1: defaultColor else: cellColor(ANSIColor(n))
 
-# Return a fgcolor contrasted to the background by contrast.
-proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int,
-    colormode: ColorMode): CellColor =
+# Return a fgcolor contrasted to the background by term.mincontrast.
+proc correctContrast(term: Terminal, bgcolor, fgcolor: CellColor): CellColor =
+  let contrast = term.mincontrast
   let cfgcolor = fgcolor
-  let bgcolor = getRGB(bgcolor, true)
-  let fgcolor = getRGB(fgcolor, false)
+  let bgcolor = if bgcolor == defaultColor:
+    term.defaultBackground
+  else:
+    getRGB(bgcolor, true)
+  let fgcolor = if fgcolor == defaultColor:
+    term.defaultForeground
+  else:
+    getRGB(fgcolor, false)
   let bgY = int(bgcolor.Y)
   var fgY = int(fgcolor.Y)
   let diff = abs(bgY - fgY)
@@ -256,11 +268,11 @@ proc correctContrast(bgcolor, fgcolor: CellColor, contrast: int,
         if fgY < 0:
           fgY = 255
     let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
-    case colormode
+    case term.colormode
     of TRUECOLOR:
       return cellColor(newrgb)
     of ANSI:
-      return cellColor(approximateANSIColor(newrgb))
+      return approximateANSIColor(newrgb, term.defaultForeground)
     of EIGHT_BIT:
       return cellColor(rgbToEightBit(newrgb))
     of MONOCHROME:
@@ -283,25 +295,16 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       let color = cellf.fgcolor.eightbit
       cellf.fgcolor = cellColor(eightBitToRGB(color))
     if cellf.bgcolor.rgb:
-      let color = approximateANSIColor(cellf.bgcolor.rgbcolor)
-      if color == ANSI_BLACK:
-        cellf.bgcolor = defaultColor
-      else:
-        cellf.bgcolor = cellColor(color)
+      cellf.bgcolor = approximateANSIColor(cellf.bgcolor.rgbcolor,
+        term.defaultBackground)
     if cellf.fgcolor.rgb:
       if cellf.bgcolor == defaultColor:
-        var color = approximateANSIColor(cellf.fgcolor.rgbcolor)
-        if color == ANSI_BLACK:
-          color = ANSI_WHITE
-        if color == ANSI_WHITE:
-          cellf.fgcolor = defaultColor
-        else:
-          cellf.fgcolor = cellColor(color)
+        cellf.fgcolor = approximateANSIColor(cellf.fgcolor.rgbcolor,
+          term.defaultForeground)
       else:
-        cellf.fgcolor = if cellf.bgcolor.color < 4:
-          defaultColor
-        else:
-          cellColor(ANSI_WHITE) # white
+        # ANSI non-default fgcolor AND bgcolor at the same time is assumed
+        # to be broken.
+        cellf.fgcolor = defaultColor
   of EIGHT_BIT:
     if cellf.bgcolor.rgb:
       cellf.bgcolor = cellColor(rgbToEightBit(cellf.bgcolor.rgbcolor))
@@ -313,8 +316,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   of TRUE_COLOR: discard
 
   if term.colormode != MONOCHROME:
-    cellf.fgcolor = correctContrast(cellf.bgcolor, cellf.fgcolor,
-      term.mincontrast, term.colormode)
+    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
   if cellf.fgcolor != format.fgcolor and cellf.fgcolor == defaultColor or
       cellf.bgcolor != format.bgcolor and cellf.bgcolor == defaultColor:
     result &= term.resetFormat()
@@ -520,7 +522,6 @@ proc applyConfig(term: Terminal) =
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
     term.set_title = term.config.display.set_title
-  term.mincontrast = term.config.display.minimum_contrast
   if term.config.encoding.display_charset.isSome:
     term.cs = term.config.encoding.display_charset.get
   else:

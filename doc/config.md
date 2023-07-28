@@ -282,6 +282,18 @@ black background, etc).</td>
 <td>Set the terminal emulator's window title to that of the current page.</td>
 </tr>
 
+<tr>
+<td>default-background-color</td>
+<td>color</td>
+<td>Sets the assumed background color of the terminal.</td>
+</tr>
+
+<tr>
+<td>default-foreground-color</td>
+<td>color</td>
+<td>Sets the assumed foreground color of the terminal.</td>
+</tr>
+
 </table>
 
 ## Omnirule
