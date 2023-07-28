@@ -22,8 +22,8 @@ type
   CSSStylesheet* = ref object
     mq_list*: seq[CSSMediaQueryDef]
     tag_table*: array[TagType, seq[CSSRuleDef]]
-    id_table*: TableRef[string, seq[CSSRuleDef]]
-    class_table*: TableRef[string, seq[CSSRuleDef]]
+    id_table*: Table[string, seq[CSSRuleDef]]
+    class_table*: Table[string, seq[CSSRuleDef]]
     general_list*: seq[CSSRuleDef]
     len*: int
 
@@ -35,8 +35,8 @@ type SelectorHashes = object
 func newStylesheet*(cap: int): CSSStylesheet =
   new(result)
   let bucketsize = cap div 2
-  result.id_table = newTable[string, seq[CSSRuleDef]](bucketsize)
-  result.class_table = newTable[string, seq[CSSRuleDef]](bucketsize)
+  result.id_table = initTable[string, seq[CSSRuleDef]](bucketsize)
+  result.class_table = initTable[string, seq[CSSRuleDef]](bucketsize)
   result.general_list = newSeqOfCap[CSSRuleDef](bucketsize)
 
 proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool
@@ -46,9 +46,6 @@ proc getSelectorIds(hashes: var SelectorHashes, sels: CompoundSelector) =
     if hashes.getSelectorIds(sel):
       break
 
-# For now, we match elements against the *last* selector.
-#TODO this is inefficient, so we should eventually get rid of this
-# function
 proc getSelectorIds(hashes: var SelectorHashes, cxsel: ComplexSelector) =
   hashes.getSelectorIds(cxsel[^1])
 
@@ -116,14 +113,13 @@ iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq
   for rule in sheet.tag_table[tag]:
     yield rule
   if id != "":
-    if sheet.id_table.hasKey(id):
-      for rule in sheet.id_table[id]:
+    sheet.id_table.withValue(id, v):
+      for rule in v[]:
         yield rule
-  if classes.len > 0:
-    for class in classes:
-      if sheet.class_table.hasKey(class):
-        for rule in sheet.class_table[class]:
-          yield rule
+  for class in classes:
+    sheet.class_table.withValue(class, v):
+      for rule in v[]:
+        yield rule
   for rule in sheet.general_list:
     yield rule
 

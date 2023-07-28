@@ -82,20 +82,20 @@ type
 
 proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
   for sel in rule.sels:
-    #TODO we shouldn't need backtracking for this...
     if styledNode.selectorsMatch(sel):
       let spec = getSpecificity(sel)
-      tosorts[sel.pseudo].add((spec,rule.decls))
+      tosorts[sel.pseudo].add((spec, rule.decls))
 
 func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
   let elem = Element(styledNode.node)
   for rule in sheet.gen_rules(elem.tagType, elem.id, elem.classList.toks):
     tosorts.calcRule(styledNode, rule)
-
   for i in PseudoElem:
-    tosorts[i].sort(proc(x, y: (int, seq[CSSDeclaration])): int =
-      x[0] - y[0])
+    tosorts[i].sort((proc(x, y: (int, seq[CSSDeclaration])): int =
+      cmp(x[0], y[0])
+    ), order = Ascending)
+    result[i] = newSeqOfCap[CSSDeclaration](tosorts[i].len)
     for item in tosorts[i]:
       result[i].add(item[1])
 
