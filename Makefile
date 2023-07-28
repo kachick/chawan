@@ -10,6 +10,10 @@ CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 debug: lib/libquickjs.a $(OBJDIR)/debug
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/debug -d:debug $(FILES)
 
+.PHONY: debug0
+debug0: lib/libquickjs.a $(OBJDIR)/debug0
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release1 -d:debug --stacktrace:off --linetrace:off --opt:speed $(FILES)
+
 .PHONY: release
 release: lib/libquickjs.a $(OBJDIR)/release
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release -d:release -d:strip -d:lto $(FILES)
@@ -18,13 +22,13 @@ release: lib/libquickjs.a $(OBJDIR)/release
 release0: lib/libquickjs.a $(OBJDIR)/release0
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release0 -d:release --stacktrace:on $(FILES)
 
-.PHONY: release1
-release1: lib/libquickjs.a $(OBJDIR)/release1
-	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release1 -d:release --passC:"-pg" --passL:"-pg" $(FILES)
-
 .PHONY: profile
 profile: lib/libquickjs.a $(OBJDIR)/profile
 	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/profile --profiler:on --stacktrace:on -d:profile $(FILES)
+
+.PHONY: profile0
+profile0: lib/libquickjs.a $(OBJDIR)/profile0
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/release1 -d:release --passC:"-pg" --passL:"-pg" $(FILES)
 
 $(OBJDIR)/%:
 	mkdir -p $@
