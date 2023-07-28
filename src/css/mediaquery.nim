@@ -268,6 +268,7 @@ template expect_length_range(range: var Slice[CSSLength], lengthaeq, lengthbeq:
       expect_comparison(comparison)
       if not skip_has: return nil
       expect_length(range.a)
+      if not skip_has: return nil
       expect_length(range.b)
       case comparison
       of COMPARISON_EQ:
@@ -302,6 +303,7 @@ proc parseFeature(parser: var MediaQueryParser, t: MediaFeatureType,
   parser.skipBlanks()
   if (ismin or ismax) and t notin RangeFeatures:
     return nil
+  if not parser.has(): return nil
   let feature = case t
   of FEATURE_GRID:
     var b: bool
