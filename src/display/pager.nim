@@ -302,7 +302,8 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
           x += r.width()
         s &= pager.term.processOutputString(outstr, w)
         s &= pager.term.processFormat(format, f.format)
-      s &= pager.term.processOutputString(line.str.substr(i), w)
+      if i < line.str.len:
+        s &= pager.term.processOutputString(line.str.substr(i), w)
       s &= pager.term.processFormat(format, newFormat()) & "\n"
       ostream.write(s))
   ostream.flush()

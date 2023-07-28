@@ -905,7 +905,7 @@ proc onreadline(container: Container, w: Slice[int], handle: (proc(line: SimpleF
     handle(line)
   if res.numLines > w.b + 1:
     var w = w
-    w.a = w.b
+    w.a += 24
     w.b += 24
     container.iface.getLines(w).then(proc(res: GetLinesResult) =
       container.onreadline(w, handle, res))
@@ -916,7 +916,7 @@ proc onreadline(container: Container, w: Slice[int], handle: (proc(line: SimpleF
 proc readLines*(container: Container, handle: (proc(line: SimpleFlexibleLine))) =
   if container.code == 0:
     # load succeded
-    let w = 0 .. 24
+    let w = 0 .. 23
     container.iface.getLines(w).then(proc(res: GetLinesResult) =
       container.onreadline(w, handle, res))
     while container.iface.hasPromises:
