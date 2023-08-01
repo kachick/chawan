@@ -10,8 +10,8 @@ It also functions as a pager, similarly to w3m.
 ## Compiling
 
 1. Install the nim compiler: <https://nim-lang.org/install.html>
-	* Please use 1.6+, older versions will probably not work. (You
-	  can check your nim compiler's version using `nim -v`.)
+	* Please use 1.6.8+, older versions will not work. (You can check
+	  your nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
 	* zlib: <http://zlib.net/>
