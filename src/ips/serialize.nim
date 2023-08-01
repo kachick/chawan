@@ -131,6 +131,7 @@ proc sread*(stream: Stream, s: var string) =
   stream.sread(len)
   if len > 0:
     s = newString(len)
+    prepareMutation(s)
     if stream.readData(addr s[0], len) < len:
       raise newException(EOFError, "eof")
   else:
