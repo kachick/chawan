@@ -1152,7 +1152,7 @@ proc closeP(parser: var HTML5Parser) =
 #     ("<p>", "<a>", "</div>") => (block: echo "p, a or closing div")
 #     ("<div>", "</p>") => (block: anything_else)
 #     (TokenType.START_TAG, TokenType.END_TAG) => (block: assert false, "invalid")
-#     _ => (block: echo "anything else")
+#     other => (block: echo "anything else")
 #
 # (effectively) generates this:
 #
@@ -1322,7 +1322,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
     quote do:
       discard (`v`, proc() = `body`)
 
-  template _ = discard
+  template other = discard
 
   template reprocess(tok: Token) =
     parser.processInHTMLContent(tok, parser.insertionMode)
@@ -1362,7 +1362,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
             parser.setQuirksMode(LIMITED_QUIRKS)
         parser.insertionMode = BEFORE_HTML
       )
-      _ => (block:
+      other => (block:
         if not parser.opts.isIframeSrcdoc:
           parse_error UNEXPECTED_INITIAL_TOKEN
         parser.setQuirksMode(QUIRKS)
@@ -1386,7 +1386,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
-      _ => (block:
+      other => (block:
         let element = parser.createElement(TAG_HTML, Namespace.HTML)
         parser.append(parser.document, element)
         parser.pushElement(element)
@@ -1406,7 +1406,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
-      _ => (block:
+      other => (block:
         let head = Token(t: START_TAG, tagtype: TAG_HEAD)
         parser.head = some(parser.insertHTMLElement(head))
         parser.insertionMode = IN_HEAD
@@ -1481,7 +1481,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           parser.resetInsertionMode()
       )
       ("<head>", TokenType.END_TAG) => (block: parse_error UNEXPECTED_END_TAG)
-      _ => (block:
+      other => (block:
         pop_current_node
         parser.insertionMode = AFTER_HEAD
         reprocess token
@@ -1503,7 +1503,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       "</br>" => (block: anything_else)
       ("<head>", "<noscript>") => (block: parse_error UNEXPECTED_START_TAG)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
-      _ => (block:
+      other => (block:
         pop_current_node
         parser.insertionMode = IN_HEAD
         reprocess token
@@ -1537,7 +1537,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       ("</body>", "</html>", "</br>") => (block: anything_else)
       ("<head>") => (block: parse_error UNEXPECTED_START_TAG)
       (TokenType.END_TAG) => (block: parse_error UNEXPECTED_END_TAG)
-      _ => (block:
+      other => (block:
         discard parser.insertHTMLElement(Token(t: START_TAG, tagtype: TAG_BODY))
         parser.insertionMode = IN_BODY
         reprocess token
@@ -2089,7 +2089,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       TokenType.EOF => (block:
         parser.processInHTMLContent(token, IN_BODY)
       )
-      _ => (block:
+      other => (block:
         parse_error UNEXPECTED_START_TAG
         parser.fosterParenting = true
         parser.processInHTMLContent(token, IN_BODY)
@@ -2108,7 +2108,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         parser.pendingTableChars &= $token.r
         parser.pendingTableCharsWhitespace = false
       )
-      _ => (block:
+      other => (block:
         if not parser.pendingTableCharsWhitespace:
           # I *think* this is effectively the same thing the specification
           # wants...
@@ -2151,7 +2151,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
        "</tfoot>", "</th>", "</thead>", "</tr>") => (block:
         parse_error UNEXPECTED_END_TAG
       )
-      _ => (block: parser.processInHTMLContent(token, IN_BODY))
+      other => (block: parser.processInHTMLContent(token, IN_BODY))
 
   of IN_COLUMN_GROUP:
     match token:
@@ -2175,7 +2175,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         parser.processInHTMLContent(token, IN_HEAD)
       )
       TokenType.EOF => (block: parser.processInHTMLContent(token, IN_BODY))
-      _ => (block:
+      other => (block:
         if parser.getTagType(parser.currentNode) != TAG_COLGROUP:
           parse_error MISMATCHED_TAGS
         else:
@@ -2224,7 +2224,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
        "</th>", "</tr>") => (block:
         parse_error ELEMENT_NOT_IN_SCOPE
       )
-      _ => (block: parser.processInHTMLContent(token, IN_TABLE))
+      other => (block: parser.processInHTMLContent(token, IN_TABLE))
 
   of IN_ROW:
     template clear_the_stack_back_to_a_table_row_context() =
@@ -2269,7 +2269,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</td>",
        "</th>") => (block: parse_error UNEXPECTED_END_TAG)
-      _ => (block: parser.processInHTMLContent(token, IN_TABLE))
+      other => (block: parser.processInHTMLContent(token, IN_TABLE))
 
   of IN_CELL:
     template close_cell() =
@@ -2308,7 +2308,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           close_cell
           reprocess token
       )
-      _ => (block: parser.processInHTMLContent(token, IN_BODY))
+      other => (block: parser.processInHTMLContent(token, IN_BODY))
 
   of IN_SELECT:
     match token:
@@ -2391,7 +2391,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           parser.resetInsertionMode()
           reprocess token
       )
-      _ => (block: parser.processInHTMLContent(token, IN_SELECT))
+      other => (block: parser.processInHTMLContent(token, IN_SELECT))
 
   of IN_TEMPLATE:
     match token:
@@ -2458,7 +2458,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           parser.insertionMode = AFTER_AFTER_BODY
       )
       TokenType.EOF => (block: discard) # stop
-      _ => (block:
+      other => (block:
         parse_error UNEXPECTED_AFTER_BODY_TOKEN
         parser.insertionMode = IN_BODY
         reprocess token
@@ -2489,7 +2489,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           parse_error UNEXPECTED_EOF
         # stop
       )
-      _ => (block: parser.parseErrorByTokenType(token.t))
+      other => (block: parser.parseErrorByTokenType(token.t))
 
   of AFTER_FRAMESET:
     match token:
@@ -2500,7 +2500,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       "</html>" => (block: parser.insertionMode = AFTER_AFTER_FRAMESET)
       "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
       TokenType.EOF => (block: discard) # stop
-      _ => (block: parser.parseErrorByTokenType(token.t))
+      other => (block: parser.parseErrorByTokenType(token.t))
 
   of AFTER_AFTER_BODY:
     match token:
@@ -2511,7 +2511,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         parser.processInHTMLContent(token, IN_BODY)
       )
       TokenType.EOF => (block: discard) # stop
-      _ => (block:
+      other => (block:
         parser.parseErrorByTokenType(token.t)
         parser.insertionMode = IN_BODY
         reprocess token
@@ -2527,7 +2527,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       TokenType.EOF => (block: discard) # stop
       "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
-      _ => (block: parser.parseErrorByTokenType(token.t))
+      other => (block: parser.parseErrorByTokenType(token.t))
 
 const CaseTable = {
   "altglyph": "altGlyph",

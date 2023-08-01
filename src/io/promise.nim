@@ -22,6 +22,9 @@ type
     tab: Table[int, EmptyPromise]
     opaque*: pointer
 
+proc newPromise*[T](): Promise[T] =
+  return Promise[T]()
+
 proc newPromiseMap*(opaque: pointer): PromiseMap =
   return PromiseMap(
     opaque: opaque

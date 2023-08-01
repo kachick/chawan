@@ -281,7 +281,8 @@ template JS_CGETSET_DEF*(n: string, fgetter, fsetter: untyped): JSCFunctionListE
                            get: JSCFunctionType(getter: fgetter),
                            set: JSCFunctionType(setter: fsetter))))
 
-template JS_CGETSET_MAGIC_DEF*(n: string, fgetter, fsetter: untyped, m: cint): JSCFunctionListEntry =
+template JS_CGETSET_MAGIC_DEF*(n: string, fgetter, fsetter: untyped,
+    m: int16): JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
                        prop_flags: JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CGETSET_MAGIC,

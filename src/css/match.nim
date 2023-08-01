@@ -142,7 +142,7 @@ func complexSelectorMatches[T: Element|StyledNode](elem: T, cxsel: ComplexSelect
     var match = false
     case sels.ct
     of NO_COMBINATOR:
-      match = e.selectorsMatch(sels, felem):
+      match = e.selectorsMatch(sels, felem)
     of DESCENDANT_COMBINATOR:
       e = e.parentElement
       while e != nil:

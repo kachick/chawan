@@ -49,7 +49,7 @@ proc close*(response: Response) {.jsfunc.} =
 
 proc text*(response: Response): Promise[Result[string, JSError]] {.jsfunc.} =
   if response.bodyRead == nil:
-    let p = Promise[Result[string, JSError]]()
+    let p = newPromise[Result[string, JSError]]()
     let err = Result[string, JSError]
       .err(newTypeError("Body has already been consumed"))
     p.resolve(err)

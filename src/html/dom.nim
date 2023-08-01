@@ -2872,9 +2872,9 @@ proc querySelector*(node: Node, q: string): Element {.jsfunc.} =
 
 const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
     seq[ReflectEntry],
-    Table[TagType, seq[uint16]],
-    uint16) =
-  var i: uint16 = 0
+    Table[TagType, seq[int16]],
+    int16) =
+  var i: int16 = 0
   while i < ReflectTable0.len:
     let x = ReflectTable0[i]
     result[0].add(x)
@@ -2882,7 +2882,7 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
       break
     for tag in result[0][i].tags:
       if tag notin result[1]:
-        result[1][tag] = newSeq[uint16]()
+        result[1][tag] = newSeq[int16]()
       result[1][tag].add(i)
     assert result[0][i].tags.len != 0
     inc i
@@ -2967,8 +2967,8 @@ func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
   return result
 
 func getElementReflectFunctions(): seq[TabGetSet] =
-  var i: uint16 = ReflectAllStartIndex
-  while i < uint16(ReflectTable.len):
+  var i: int16 = ReflectAllStartIndex
+  while i < int16(ReflectTable.len):
     let entry = ReflectTable[i]
     assert entry.tags == AllTagTypes
     result.add(TabGetSet(name: ReflectTable[i].funcname, get: jsReflectGet, set: jsReflectSet, magic: i))

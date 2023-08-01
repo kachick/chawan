@@ -195,7 +195,8 @@ proc next3startsWithIdentSequence(state: var CSSTokenizerState): bool =
 
   case state.peek()
   of '-':
-    return state.has(1) and state.peek(1) in IdentStart + {'-'} or state.has(2) and isValidEscape(state.peek(1), state.peek(2)):
+    return state.has(1) and state.peek(1) in IdentStart + {'-'} or
+      state.has(2) and isValidEscape(state.peek(1), state.peek(2))
   of IdentStart:
     return true
   of '\\':
@@ -239,7 +240,7 @@ proc consumeEscape(state: var CSSTokenizerState): string =
       inc i
     if state.peek().isWhitespace():
       discard state.consume()
-    if num == 0 or num > 0x10FFFF or num in {0xD800..0xDFFF}:
+    if num == 0 or num > 0x10FFFF or num in 0xD800..0xDFFF:
       return $Rune(0xFFFD)
     else:
       return $Rune(num)

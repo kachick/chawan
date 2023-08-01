@@ -1829,7 +1829,7 @@ type
     name*: string
     get*: JSGetterMagicFunction
     set*: JSSetterMagicFunction
-    magic*: uint16
+    magic*: int16
 
   TabFunc* = object
     name*: string

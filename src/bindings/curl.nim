@@ -286,7 +286,9 @@ type
     CURLMSG_LAST # last, not used
 
 proc `==`*(a: CURL, b: CURL): bool {.borrow.}
+proc `==`*(a: CURL, b: typeof(nil)): bool {.borrow.}
 proc `==`*(a: CURLM, b: CURLM): bool {.borrow.}
+proc `==`*(a: CURLM, b: typeof(nil)): bool {.borrow.}
 
 {.push importc.}
 

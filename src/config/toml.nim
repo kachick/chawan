@@ -124,7 +124,7 @@ proc consumeEscape(state: var TomlParser, c: char): Result[Rune, TomlError] =
     if i != len - 1:
       return state.err("invalid escaped length (" & $i & ", needs " & $len &
         ")")
-    if num > 0x10FFFF or num in {0xD800..0xDFFF}:
+    if num > 0x10FFFF or num in 0xD800..0xDFFF:
       return state.err("invalid escaped codepoint: " & $num)
     else:
       return ok(cast[Rune](num))

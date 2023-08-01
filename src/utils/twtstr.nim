@@ -5,7 +5,6 @@ import os
 import math
 import sequtils
 import options
-import punycode
 
 import bindings/libunicode
 import data/charwidth
@@ -13,6 +12,7 @@ import data/idna
 import js/javascript
 import utils/map
 import utils/opt
+import lib/punycode
 
 when defined(posix):
   import posix
@@ -951,7 +951,9 @@ func isCombining(r: Rune): bool =
 # We do not store a lookup table of ambiguous ranges, either.
 type PropertyTable = array[0..(0xFFFF div 8), uint8]
 
-func makePropertyTable(ranges, skip: openarray[(uint32, uint32)] = @[]): PropertyTable =
+type RangeMap = openarray[(uint32, uint32)]
+
+func makePropertyTable(ranges: RangeMap, skip: RangeMap = @[]): PropertyTable =
   var ucs: uint32 = 0
   var j = 0
   var k = 0
