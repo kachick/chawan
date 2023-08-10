@@ -297,3 +297,11 @@ center {
 blink {
 	text-decoration: blink;
 }
+
+rt::before {
+	content: '（';
+}
+
+rt::after {
+	content: '）';
+}
