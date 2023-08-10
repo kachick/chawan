@@ -353,9 +353,9 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.tokenType
       of CSS_IDENT_TOKEN:
         inc state.at
-        let tag = tagType(tok.value)
+        let s = tok.value.toLowerAscii()
+        let tag = tagType(s)
         if tag == TAG_UNKNOWN:
-          let s = tok.value.toLowerAscii()
           result.add(Selector(t: UNKNOWN_TYPE_SELECTOR, tagstr: s))
         else:
           result.add(Selector(t: TYPE_SELECTOR, tag: tag))

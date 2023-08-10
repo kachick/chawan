@@ -197,14 +197,6 @@ func toHexLower*(u: uint16): string =
 func pushHex*(buf: var string, i: uint8) =
   buf.pushHex(cast[char](i))
 
-func equalsIgnoreCase*(s1: seq[Rune], s2: string): bool =
-  var i = 0
-  while i < min(s1.len, s2.len):
-    if not s1[i].isAscii() or cast[char](s1[i]).tolower() != s2[i]:
-      return false
-    inc i
-  return true
-
 func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
