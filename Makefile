@@ -36,7 +36,8 @@ $(OBJDIR)/%/:
 $(QJSOBJ)/%.o: lib/quickjs/%.c | $(QJSOBJ)/
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o $(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o | $(QJSOBJ)
+lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o \
+		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o | $(QJSOBJ)/
 	$(AR) rcs $@ $^
 
 clean:
