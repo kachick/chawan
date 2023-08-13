@@ -9,6 +9,12 @@ a description of mailcap.
 Chawan parses all mime.types files defined in `external.mime-types`. If no
 mime.types file was found, the built-in mime type associations are used.
 
+The default search path for mime.types files is:
+
+```
+$HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
+```
+
 ## Format
 
 The mime.types file is a list of whitespace-separated columns. The first

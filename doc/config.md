@@ -161,6 +161,18 @@ Following is a list of external options:
 the line number.</td>
 </tr>
 
+<tr>
+<td>mailcap</td>
+<td>array of paths</td>
+<td>Search path for [mailcap](mailcap.md) files.</td>
+</tr>
+
+<tr>
+<td>mime-types</td>
+<td>array of paths</td>
+<td>Search path for [mime.types](mime.types.md) files.</td>
+</tr>
+
 </table>
 
 ## Network

@@ -14,8 +14,9 @@ It also functions as a pager, similarly to w3m.
 	  your nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
-	* zlib: <http://zlib.net/>
-	* (QuickJS is included in the repository.)
+	* zlib: <https://zlib.net/>
+	* pkg-config, pkgconf, or similar (must be found as "pkg-config"
+	  in PATH)
 3. Use one of the following:
 	* `make release` - optimized release build
 	* `make` - debug build (slow, for development)
@@ -28,6 +29,7 @@ Currently implemented features are:
 * a CSS-capable layout engine (with forms, tables...)
 * incremental loading of plain text streams
 * JavaScript based navigation, (very) basic JS support in documents
+* mailcap
 * cookies
 
 ...with a lot more planned.
@@ -78,6 +80,10 @@ text. To use true colors, either export COLORTERM=truecolor or set the
 display.color-mode to "24bit". To use 256 colors, set display.color-mode to
 "8bit" instead. (You can also turn off colors and/or styling altogether in
 the configuration; please consult [doc/config.md](doc/config.md) for details.)
+
+### Can I view Markdown files using Chawan?
+
+[Yes](doc/mailcap.md).
 
 ### Why write another web browser?
 

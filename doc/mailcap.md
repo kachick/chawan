@@ -3,15 +3,26 @@
 Chawan's buffers can only handle HTML and plain text. To make Chawan recognize
 other file formats, the mailcap file format can be used.
 
+Note that Chawan's default mime.types file only recognizes a few file
+extensions, which may result in your entries not being executed.
+Please consult the [mime.types](mime.types.md) documentation for details.
+
 For an exact description of the mailcap format, see
 [RFC 1524](https://www.rfc-editor.org/rfc/rfc1524).
 
 ## Search path
 
 The search path for mailcap files can be overridden using the configuration
-variable `external.mailcap`. If no mailcap files were found, Chawan simply
-uses the xdg-open command for all entries. NOTE: this will change once file
-downloading is implemented.
+variable `external.mailcap`.
+
+The default search path for mailcap files is:
+
+```
+$HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
+```
+
+When no mailcap files are found, Chawan simply uses the xdg-open command
+for all entries. Note: this will change once file downloading is implemented.
 
 ## Format
 
@@ -50,7 +61,7 @@ is recognized too.
   but makes Chawan interpret the command's output as HTML.
 * For a description of nametemplate, see the RFC.
 
-## Notes
+## Note
 
 Entries with a content type of text/html are ignored.
 
