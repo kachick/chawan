@@ -12,6 +12,18 @@ display-charset = "auto"
 #system-charset = "auto" #TODO
 
 [external]
+mailcap = [
+	"~/.mailcap",
+	"/etc/mailcap",
+	"/usr/etc/mailcap",
+	"/usr/local/etc/mailcap"
+]
+mime-types = [
+	"~/.mime.types",
+	"/etc/mime.types",
+	"/usr/etc/mime.types",
+	"/usr/local/etc/mime.types"
+]
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
 

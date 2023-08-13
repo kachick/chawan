@@ -1,7 +1,7 @@
 import options
 
 import js/javascript
-import types/mime
+import utils/mimeguess
 import utils/twtstr
 
 type

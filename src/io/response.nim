@@ -1,6 +1,7 @@
 import streams
 
 import bindings/quickjs
+import data/charset
 import io/headers
 import io/promise
 import io/request
@@ -20,6 +21,7 @@ type
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
     bodyRead*: Promise[string]
+    charset*: Charset
 
 jsDestructor(Response)
 

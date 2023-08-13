@@ -1,11 +1,10 @@
 import options
-import streams
 import strutils
 
 import bindings/curl
 import io/headers
+import io/loaderhandle
 import io/request
-import ips/serialize
 import types/blob
 import types/formdata
 import types/url
@@ -13,26 +12,27 @@ import utils/opt
 import utils/twtstr
 
 type
-  HandleData* = ref HandleDataObj
-  HandleDataObj = object
+  CurlHandle* = ref CurlHandleObj
+  CurlHandleObj = object
     curl*: CURL
     statusline: bool
     headers: Headers
     request: Request
-    ostream*: Stream
+    handle*: LoaderHandle
     mime: curl_mime
     slist: curl_slist
 
-func newHandleData(curl: CURL, request: Request, ostream: Stream): HandleData =
-  let handleData = HandleData(
+func newCurlHandle(curl: CURL, request: Request, handle: LoaderHandle):
+    CurlHandle =
+  return CurlHandle(
     headers: newHeaders(),
     curl: curl,
-    ostream: ostream,
+    handle: handle,
     request: request
   )
-  return handleData
 
-proc cleanup*(handleData: HandleData) =
+proc cleanup*(handleData: CurlHandle) =
+  handleData.handle.close()
   if handleData.mime != nil:
     curl_mime_free(handleData.mime)
   if handleData.slist != nil:
@@ -48,58 +48,51 @@ template setopt(curl: CURL, opt: CURLoption, arg: string) =
 template getinfo(curl: CURL, info: CURLINFO, arg: typed) =
   discard curl_easy_getinfo(curl, info, arg)
 
-proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t, userdata: pointer): csize_t {.cdecl.} =
+proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
+    userdata: pointer): csize_t {.cdecl.} =
   var line = newString(nitems)
   for i in 0..<nitems:
     line[i] = p[i]
 
-  let op = cast[HandleData](userdata)
+  let op = cast[CurlHandle](userdata)
   if not op.statusline:
     op.statusline = true
-    try:
-      op.ostream.swrite(int(CURLE_OK))
-    except IOError: # Broken pipe
+    if not op.handle.sendResult(int(CURLE_OK)):
       return 0
     var status: clong
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    op.ostream.swrite(cast[int](status))
+    if not op.handle.sendStatus(cast[int](status)):
+      return 0
     return nitems
 
   let k = line.until(':')
 
   if k.len == line.len:
     # empty line (last, before body) or invalid (=> error)
-    op.ostream.swrite(op.headers)
+    if not op.handle.sendHeaders(op.headers):
+      return 0
     return nitems
 
   let v = line.substr(k.len + 1).strip()
   op.headers.add(k, v)
   return nitems
 
-proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t, userdata: pointer): csize_t {.cdecl.} =
-  let handleData = cast[HandleData](userdata)
+# From the documentation: size is always 1.
+proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
+    userdata: pointer): csize_t {.cdecl.} =
+  let handleData = cast[CurlHandle](userdata)
   if nmemb > 0:
-    try:
-      handleData.ostream.writeData(p, int(nmemb))
-    except IOError: # Broken pipe
+    if not handleData.handle.sendData(p, int(nmemb)):
       return 0
   return nmemb
 
-proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =
+proc applyPostBody(curl: CURL, request: Request, handleData: CurlHandle) =
   if request.multipart.isOk:
     handleData.mime = curl_mime_init(curl)
-    if handleData.mime == nil:
-      # fail (TODO: raise?)
-      handleData.ostream.swrite(-1)
-      handleData.ostream.flush()
-      return
+    doAssert handleData.mime != nil
     for entry in request.multipart.get:
       let part = curl_mime_addpart(handleData.mime)
-      if part == nil:
-        # fail (TODO: raise?)
-        handleData.ostream.swrite(-1)
-        handleData.ostream.flush()
-        return
+      doAssert part != nil
       curl_mime_name(part, cstring(entry.name))
       if entry.isstr:
         curl_mime_data(part, cstring(entry.svalue), csize_t(entry.svalue.len))
@@ -116,15 +109,13 @@ proc applyPostBody(curl: CURL, request: Request, handleData: HandleData) =
     curl.setopt(CURLOPT_POSTFIELDS, cstring(request.body.get))
     curl.setopt(CURLOPT_POSTFIELDSIZE, request.body.get.len)
 
-proc loadHttp*(curlm: CURLM, request: Request, ostream: Stream): HandleData =
+proc loadHttp*(handle: LoaderHandle, curlm: CURLM,
+    request: Request): CurlHandle =
   let curl = curl_easy_init()
-  if curl == nil:
-    ostream.swrite(-1)
-    ostream.flush()
-    return # fail
+  doAssert curl != nil
   let surl = request.url.serialize()
   curl.setopt(CURLOPT_URL, surl)
-  let handleData = curl.newHandleData(request, ostream)
+  let handleData = curl.newCurlHandle(request, handle)
   curl.setopt(CURLOPT_WRITEDATA, handleData)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_HEADERDATA, handleData)
@@ -146,8 +137,6 @@ proc loadHttp*(curlm: CURLM, request: Request, ostream: Stream): HandleData =
     curl.setopt(CURLOPT_HTTPHEADER, handleData.slist)
   let res = curl_multi_add_handle(curlm, curl)
   if res != CURLM_OK:
-    ostream.swrite(int(res))
-    ostream.flush()
-    #TODO: raise here?
-    return
+    discard handle.sendResult(int(res))
+    return nil
   return handleData

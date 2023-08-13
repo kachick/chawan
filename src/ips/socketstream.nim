@@ -57,6 +57,7 @@ proc sockClose(s: Stream) = {.cast(tags: []).}: #...sigh
 
 # See https://stackoverflow.com/a/4491203
 proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
+  assert not s.source.hasDataBuffered
   var hdr: Tmsghdr
   var iov: IOVec
   var space: csize_t
@@ -90,6 +91,7 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   assert n == int(iov.iov_len) #TODO remove this
 
 proc recvFileHandle*(s: SocketStream): FileHandle =
+  assert not s.source.hasDataBuffered
   var iov: IOVec
   var hdr: Tmsghdr
   var buf: char
@@ -118,6 +120,9 @@ func newSocketStream*(): SocketStream =
   result.writeDataImpl = sockWriteData
   result.atEndImpl = sockAtEnd
   result.closeImpl = sockClose
+
+proc setBlocking*(ss: SocketStream, blocking: bool) =
+  ss.source.getFd().setBlocking(blocking)
 
 proc connectSocketStream*(path: string, buffered = true, blocking = true): SocketStream =
   result = newSocketStream()

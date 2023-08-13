@@ -30,6 +30,10 @@ proc raisePosixIOError*() =
   else:
     raise newException(IOError, $strerror(errno))
 
+proc psClose(s: Stream) =
+  let s = cast[PosixStream](s)
+  discard close(s.fd)
+
 proc psReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = cast[PosixStream](s)
@@ -63,6 +67,7 @@ proc psAtEnd(s: Stream): bool =
 proc newPosixStream*(fd: FileHandle): PosixStream =
   return PosixStream(
     fd: fd,
+    closeImpl: psClose,
     readDataImpl: psReadData,
     writeDataImpl: psWriteData,
     atEndImpl: psAtEnd

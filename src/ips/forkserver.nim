@@ -1,5 +1,6 @@
 import options
 import streams
+import tables
 
 when defined(posix):
   import posix
@@ -36,7 +37,6 @@ type
 proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers = nil,
     filter = newURLFilter(default = true), cookiejar: CookieJar = nil,
     proxy: URL = nil, acceptProxy = false): FileLoader =
-  new(result)
   forkserver.ostream.swrite(FORK_LOADER)
   var defaultHeaders = defaultHeaders
   if defaultHeaders == nil:
@@ -51,7 +51,9 @@ proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers = nil,
   )
   forkserver.ostream.swrite(config)
   forkserver.ostream.flush()
-  forkserver.istream.sread(result.process)
+  var process: Pid
+  forkserver.istream.sread(process)
+  return FileLoader(process: process)
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
   forkserver.ostream.swrite(LOAD_CONFIG)
@@ -117,7 +119,8 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
       filter: config.filter,
       cookiejar: config.cookiejar,
       referrerpolicy: config.referrerpolicy,
-      proxy: config.proxy
+      #TODO these should be in a separate config I think
+      proxy: config.proxy,
     )
   )
   let pid = fork()
@@ -190,7 +193,6 @@ proc runForkServer() =
   quit(0)
 
 proc newForkServer*(): ForkServer =
-  new(result)
   var pipefd_in: array[2, cint] # stdin in forkserver
   var pipefd_out: array[2, cint] # stdout in forkserver
   var pipefd_err: array[2, cint] # stderr in forkserver
@@ -230,7 +232,9 @@ proc newForkServer*(): ForkServer =
       raise newException(Defect, "Failed to open output handle")
     if not open(readf, pipefd_out[0], fmRead):
       raise newException(Defect, "Failed to open input handle")
-    result.ostream = newFileStream(writef)
-    result.istream = newFileStream(readf)
-    result.estream = newPosixStream(pipefd_err[0])
     discard fcntl(pipefd_err[0], F_SETFL, fcntl(pipefd_err[0], F_GETFL, 0) or O_NONBLOCK)
+    return ForkServer(
+      ostream: newFileStream(writef),
+      istream: newFileStream(readf),
+      estream: newPosixStream(pipefd_err[0])
+    )

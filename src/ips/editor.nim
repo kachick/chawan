@@ -3,6 +3,7 @@ import posix
 
 import config/config
 import display/term
+import io/tempfile
 
 func formatEditorName(editor, file: string, line: int): string =
   result = newStringOfCap(editor.len + file.len)
@@ -55,17 +56,10 @@ proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
       result = WIFSIGNALED(wstatus) and WTERMSIG(wstatus) == SIGINT
   term.restart()
 
-var tmpf_seq: int
 proc openInEditor*(term: Terminal, config: Config, input: var string): bool =
   try:
     let tmpdir = config.external.tmpdir
-    if not dirExists(tmpdir):
-      createDir(tmpdir)
-    var tmpf = tmpdir / "chatmp" & $tmpf_seq
-    while fileExists(tmpf):
-      inc tmpf_seq
-      tmpf = tmpdir / "chatmp" & $tmpf_seq
-    inc tmpf_seq
+    let tmpf = getTempFile(tmpdir)
     if input != "":
       writeFile(tmpf, input)
     if openEditor(term, config, tmpf):

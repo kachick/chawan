@@ -42,7 +42,6 @@ import js/module
 import js/timeout
 import types/blob
 import types/cookie
-import types/dispatcher
 import types/url
 import utils/opt
 import xhr/formdata
@@ -55,15 +54,16 @@ type
     attrs: WindowAttributes
     config {.jsget.}: Config
     console {.jsget.}: Console
-    dispatcher: Dispatcher
     errormessage: string
     fd: int
     fdmap: Table[int, Container]
     feednext: bool
+    forkserver: ForkServer
     jsctx: JSContext
     jsrt: JSRuntime
     line {.jsget.}: LineEdit
     loader: FileLoader
+    mainproc: Pid
     pager {.jsget.}: Pager
     s: string
     selector: Selector[Container]
@@ -156,7 +156,7 @@ proc command(client: Client, src: string) =
 
 proc suspend(client: Client) {.jsfunc.} =
   client.pager.term.quit()
-  discard kill(getpid(), cint(SIGSTOP))
+  discard kill(client.mainproc, cint(SIGSTOP))
   client.pager.term.restart()
 
 proc quit(client: Client, code = 0) {.jsfunc.} =
@@ -305,13 +305,13 @@ proc handleRead(client: Client, fd: int) =
   if client.console.tty != nil and fd == client.console.tty.getFileHandle():
     client.input()
     client.handlePagerEvents()
-  elif fd == client.dispatcher.forkserver.estream.fd:
+  elif fd == client.forkserver.estream.fd:
     var nl = false
     const prefix = "STDERR: "
     var s = prefix
     while true:
       try:
-        let c = client.dispatcher.forkserver.estream.readChar()
+        let c = client.forkserver.estream.readChar()
         if nl and s.len > prefix.len:
           client.console.err.write(s)
           s = prefix
@@ -337,14 +337,14 @@ proc handleRead(client: Client, fd: int) =
     client.pager.handleEvent(container)
 
 proc flushConsole*(client: Client) {.jsfunc.} =
-  client.handleRead(client.dispatcher.forkserver.estream.fd)
+  client.handleRead(client.forkserver.estream.fd)
 
 proc handleError(client: Client, fd: int) =
   if client.console.tty != nil and fd == client.console.tty.getFileHandle():
     #TODO do something here...
     stderr.write("Error in tty\n")
     quit(1)
-  elif fd == client.dispatcher.forkserver.estream.fd:
+  elif fd == client.forkserver.estream.fd:
     #TODO do something here...
     stderr.write("Fork server crashed :(\n")
     quit(1)
@@ -467,7 +467,7 @@ proc newConsole(pager: Pager, tty: File): Console =
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("javascript:console.show()")
-    result.container = pager.readPipe0(some("text/plain"), none(Charset),
+    result.container = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
       pipefd[0], option(url.get(nil)), "Browser console")
     var f: File
     if not open(f, pipefd[1], fmWrite):
@@ -491,12 +491,12 @@ proc dumpBuffers(client: Client) =
     except IOError:
       client.console.log("Error in buffer", $container.location)
       # check for errors
-      client.handleRead(client.dispatcher.forkserver.estream.fd)
+      client.handleRead(client.forkserver.estream.fd)
       quit(1)
   stdout.close()
 
-proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
-    cs: Option[Charset], dump: bool) =
+proc launchClient*(client: Client, pages: seq[string],
+    contentType: Option[string], cs: Charset, dump: bool) =
   var tty: File
   var dump = dump
   if not dump:
@@ -511,7 +511,7 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
   client.fd = int(client.ssock.sock.getFd())
   let selector = newSelector[Container]()
   selector.registerHandle(client.fd, {Read}, nil)
-  let efd = int(client.dispatcher.forkserver.estream.fd)
+  let efd = int(client.forkserver.estream.fd)
   selector.registerHandle(efd, {Read}, nil)
   client.loader.registerFun = proc(fd: int) =
     selector.registerHandle(fd, {Read}, nil)
@@ -537,11 +537,11 @@ proc launchClient*(client: Client, pages: seq[string], ctype: Option[string],
   client.userstyle = client.config.css.stylesheet.parseStylesheet()
 
   if not stdin.isatty():
-    client.pager.readPipe(ctype, cs, stdin.getFileHandle())
+    client.pager.readPipe(contentType, cs, stdin.getFileHandle())
 
   for page in pages:
-    client.pager.loadURL(page, ctype = ctype, cs = cs)
-  client.pager.refreshStatusMsg()
+    client.pager.loadURL(page, ctype = contentType, cs = cs)
+  client.pager.showAlerts()
   if not dump:
     client.inputLoop()
   else:
@@ -565,32 +565,7 @@ proc jsCollect(client: Client) {.jsfunc.} =
 proc sleep(client: Client, millis: int) {.jsfunc.} =
   sleep millis
 
-proc newClient*(config: Config, dispatcher: Dispatcher): Client =
-  new(result)
-  setControlCHook(proc() {.noconv.} = quit(1))
-  result.config = config
-  result.dispatcher = dispatcher
-  result.attrs = getWindowAttributes(stdout)
-  let forkserver = dispatcher.forkserver
-  result.loader = forkserver.newFileLoader(
-    proxy = config.getProxy(),
-    acceptProxy = true
-  )
-  result.jsrt = newJSRuntime()
-  result.jsrt.setInterruptHandler(interruptHandler, cast[pointer](result))
-  JS_SetModuleLoaderFunc(result.jsrt, normalizeModuleName, clientLoadJSModule,
-    nil)
-  let ctx = result.jsrt.newJSContext()
-  result.jsctx = ctx
-  result.pager = newPager(config, result.attrs, dispatcher, ctx)
-  var global = JS_GetGlobalObject(ctx)
-  ctx.registerType(Client, asglobal = true)
-  setGlobal(ctx, global, result)
-  ctx.setProperty(global, "client", global)
-  JS_FreeValue(ctx, global)
-
-  ctx.registerType(Console)
-
+proc addJSModules(client: Client, ctx: JSContext) =
   ctx.addDOMExceptionModule()
   ctx.addCookieModule()
   ctx.addURLModule()
@@ -608,3 +583,32 @@ proc newClient*(config: Config, dispatcher: Dispatcher): Client =
   ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
+
+proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
+  setControlCHook(proc() {.noconv.} = quit(1))
+  let jsrt = newJSRuntime()
+  JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
+  let jsctx = jsrt.newJSContext()
+  let attrs = getWindowAttributes(stdout)
+  let client = Client(
+    config: config,
+    forkserver: forkserver,
+    mainproc: mainproc,
+    attrs: attrs,
+    loader: forkserver.newFileLoader(
+      proxy = config.getProxy(),
+      acceptProxy = true
+    ),
+    jsrt: jsrt,
+    jsctx: jsctx,
+    pager: newPager(config, attrs, forkserver, mainproc, jsctx)
+  )
+  jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
+  var global = JS_GetGlobalObject(jsctx)
+  jsctx.registerType(Client, asglobal = true)
+  setGlobal(jsctx, global, client)
+  jsctx.setProperty(global, "client", global)
+  JS_FreeValue(jsctx, global)
+  jsctx.registerType(Console)
+  client.addJSModules(jsctx)
+  return client

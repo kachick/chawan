@@ -73,6 +73,7 @@ type
     destination* {.jsget.}: RequestDestination
     credentialsMode* {.jsget.}: CredentialsMode
     proxy*: URL #TODO do something with this
+    canredir*: bool
  
   ReadableStream* = ref object of Stream
     isource*: Stream
@@ -154,7 +155,8 @@ proc newReadableStream*(isource: Stream): ReadableStream =
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
     body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,
     credentialsMode = CredentialsMode.SAME_ORIGIN,
-    destination = RequestDestination.NO_DESTINATION, proxy: URL = nil): Request =
+    destination = RequestDestination.NO_DESTINATION, proxy: URL = nil,
+    canredir = false): Request =
   return Request(
     url: url,
     httpmethod: httpmethod,
@@ -169,7 +171,8 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
 
 func newRequest*(url: URL, httpmethod = HTTP_GET,
     headers: seq[(string, string)] = @[], body = opt(string),
-    multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil):
+    multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil,
+    canredir = false):
     Request =
   let hl = newHeaders()
   for pair in headers:

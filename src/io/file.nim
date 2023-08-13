@@ -3,18 +3,28 @@ import os
 import streams
 import tables
 
+import io/connecterror
 import io/headers
-import ips/serialize
+import io/loaderhandle
 import types/url
 
-proc loadDir(url: URL, path: string, ostream: Stream) =
-  ostream.swrite(0)
-  ostream.swrite(200) # ok
-  ostream.swrite(newHeaders({"Content-Type": "text/html"}.toTable()))
-  ostream.write("""
+proc loadDir(handle: LoaderHandle, url: URL, path: string) =
+  template t(body: untyped) =
+    if not body:
+      return
+  var path = path
+  if path[^1] != '/': #TODO dos/windows
+    path &= '/'
+  var base = $url
+  if base[^1] != '/': #TODO dos/windows
+    base &= '/'
+  t handle.sendResult(0)
+  t handle.sendStatus(200) # ok
+  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}.toTable()))
+  t handle.sendData("""
 <HTML>
 <HEAD>
-<BASE HREF="""" & $url & """">
+<BASE HREF="""" & base & """">
 <TITLE>Directory list of """ & path & """</TITLE>
 </HEAD>
 <BODY>
@@ -28,29 +38,31 @@ proc loadDir(url: URL, path: string, ostream: Stream) =
   for (pc, file) in fs:
     case pc
     of pcDir:
-      ostream.write("[DIR]&nbsp; ")
+      t handle.sendData("[DIR]&nbsp; ")
     of pcFile:
-      ostream.write("[FILE] ")
+      t handle.sendData("[FILE] ")
     of pcLinkToDir, pcLinkToFile:
-      ostream.write("[LINK] ")
+      t handle.sendData("[LINK] ")
     var fn = file
     if pc == pcDir:
       fn &= '/'
-    ostream.write("<A HREF=\"" & fn & "\">" & fn & "</A>")
+    t handle.sendData("<A HREF=\"" & fn & "\">" & fn & "</A>")
     if pc in {pcLinkToDir, pcLinkToFile}:
-      ostream.write(" -> " & expandSymlink(path / file))
-    ostream.write("<br>")
-  ostream.write("""
+      discard handle.sendData(" -> " & expandSymlink(path / file))
+    t handle.sendData("<br>")
+  t handle.sendData("""
 </BODY>
 </HTML>""")
-  ostream.flush()
 
-proc loadSymlink(path: string, ostream: Stream) =
-  ostream.swrite(0)
-  ostream.swrite(200) # ok
-  ostream.swrite(newHeaders({"Content-Type": "text/html"}.toTable()))
+proc loadSymlink(handle: LoaderHandle, path: string) =
+  template t(body: untyped) =
+    if not body:
+      return
+  t handle.sendResult(0)
+  t handle.sendStatus(200) # ok
+  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}.toTable()))
   let sl = expandSymlink(path)
-  ostream.write("""
+  t handle.sendData("""
 <HTML>
 <HEAD>
 <TITLE>Symlink view<TITLE>
@@ -59,10 +71,26 @@ proc loadSymlink(path: string, ostream: Stream) =
 Symbolic link to <A HREF="""" & sl & """">""" & sl & """</A></br>
 </BODY>
 </HTML>""")
-  ostream.flush()
 
+proc loadFile(handle: LoaderHandle, istream: Stream) =
+  template t(body: untyped) =
+    if not body:
+      return
+  t handle.sendResult(0)
+  t handle.sendStatus(200) # ok
+  t handle.sendHeaders(newHeaders())
+  while not istream.atEnd:
+    const bufferSize = 4096
+    var buffer {.noinit.}: array[bufferSize, char]
+    while true:
+      let n = readData(istream, addr buffer[0], bufferSize)
+      if n == 0:
+        break
+      t handle.sendData(addr buffer[0], n)
+      if n < bufferSize:
+        break
 
-proc loadFile*(url: URL, ostream: Stream) =
+proc loadFilePath*(handle: LoaderHandle, url: URL) =
   when defined(windows) or defined(OS2) or defined(DOS):
     let path = url.path.serialize_unicode_dos()
   else:
@@ -70,24 +98,10 @@ proc loadFile*(url: URL, ostream: Stream) =
   let istream = newFileStream(path, fmRead)
   if istream == nil:
     if dirExists(path):
-      loadDir(url, path, ostream)
+      handle.loadDir(url, path)
     elif symlinkExists(path):
-      loadSymlink(path, ostream)
+      handle.loadSymlink(path)
     else:
-      ostream.swrite(-1) # error
-      ostream.flush()
+      discard handle.sendResult(ERROR_FILE_NOT_FOUND)
   else:
-    ostream.swrite(0)
-    ostream.swrite(200) # ok
-    ostream.swrite(newHeaders())
-    while not istream.atEnd:
-      const bufferSize = 4096
-      var buffer {.noinit.}: array[bufferSize, char]
-      while true:
-        let n = readData(istream, addr buffer[0], bufferSize)
-        if n == 0:
-          break
-        ostream.writeData(addr buffer[0], n)
-        ostream.flush()
-        if n < bufferSize:
-          break
+    handle.loadFile(istream)

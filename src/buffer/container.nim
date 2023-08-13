@@ -17,14 +17,13 @@ import io/request
 import io/window
 import ips/forkserver
 import ips/serialize
-import ips/socketstream
 import js/javascript
 import js/regex
 import types/buffersource
 import types/color
 import types/cookie
-import types/dispatcher
 import types/url
+import utils/mimeguess
 import utils/twtstr
 
 type
@@ -39,7 +38,8 @@ type
 
   ContainerEventType* = enum
     NO_EVENT, FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE,
-    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED, TITLE
+    READ_LINE, READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED, TITLE,
+    CHECK_MAILCAP, QUIT
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -73,8 +73,7 @@ type
     attrs: WindowAttributes
     width* {.jsget.}: int
     height* {.jsget.}: int
-    contenttype* {.jsget.}: Option[string]
-    title: string
+    title*: string # used in status msg
     hovertext: array[HoverType, string]
     lastpeek: HoverType
     source*: BufferSource
@@ -89,9 +88,8 @@ type
     replace*: Container
     code*: int
     retry*: seq[URL]
-    hlon*: bool
-    sourcepair*: Container
-    pipeto: Container
+    hlon*: bool # highlight on?
+    sourcepair*: Container # pointer to buffer with a source view (may be nil)
     redraw*: bool
     needslines*: bool
     canceled: bool
@@ -103,27 +101,38 @@ type
 
 jsDestructor(Container)
 
-proc newBuffer*(dispatcher: Dispatcher, config: BufferConfig,
-                source: BufferSource, title = "", redirectdepth = 0): Container =
+proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
+    source: BufferSource, title = "", redirectdepth = 0): Container =
   let attrs = getWindowAttributes(stdout)
-  let ostream = dispatcher.forkserver.ostream
-  let istream = dispatcher.forkserver.istream
+  let ostream = forkserver.ostream
+  let istream = forkserver.istream
   ostream.swrite(FORK_BUFFER)
   ostream.swrite(source)
   ostream.swrite(config)
   ostream.swrite(attrs)
-  ostream.swrite(dispatcher.mainproc)
+  ostream.swrite(mainproc)
   ostream.flush()
-  result = Container(
-    source: source, attrs: attrs, width: attrs.width,
-    height: attrs.height - 1, contenttype: source.contenttype,
-    title: title, config: config, redirectdepth: redirectdepth
+  var process: Pid
+  istream.sread(process)
+  return Container(
+    source: source,
+    attrs: attrs,
+    width: attrs.width,
+    height: attrs.height - 1,
+    title: title,
+    config: config,
+    redirectdepth: redirectdepth,
+    process: process,
+    pos: CursorPosition(
+      setx: -1
+    )
   )
-  istream.sread(result.process)
-  result.pos.setx = -1
 
-func location*(container: Container): URL {.jsfunc.} =
-  container.source.location
+func contentType*(container: Container): Option[string] {.jsfget.} =
+  return container.source.contenttype
+
+func location*(container: Container): URL {.jsfget.} =
+  return container.source.location
 
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
@@ -699,7 +708,7 @@ proc setLoadInfo(container: Container, msg: string) =
   container.triggerEvent(STATUS)
 
 #TODO TODO TODO this should be called with a timeout.
-proc onload(container: Container, res: LoadResult) =
+proc onload*(container: Container, res: LoadResult) =
   if container.canceled:
     container.setLoadInfo("")
     #TODO we wouldn't need the then part if we had incremental rendering of
@@ -737,7 +746,7 @@ proc onload(container: Container, res: LoadResult) =
 
 proc load(container: Container) =
   container.setLoadInfo("Connecting to " & container.location.host & "...")
-  container.iface.connect().then(proc(res: ConnectResult): auto =
+  container.iface.connect().then(proc(res: ConnectResult) =
     let info = container.loadinfo
     if not res.invalid:
       container.code = res.code
@@ -753,16 +762,41 @@ proc load(container: Container) =
           container.triggerEvent(NEEDS_AUTH)
         if res.redirect != nil:
           container.triggerEvent(ContainerEvent(t: REDIRECT, request: res.redirect))
-        if res.contentType != "":
-          container.contenttype = some(res.contentType)
-        return container.iface.load()
+        container.source.charset = res.charset
+        if res.contentType == "application/octet-stream":
+          let contentType = guessContentType(container.location.pathname,
+            "application/octet-stream", container.config.mimeTypes)
+          if contentType != "application/octet-stream":
+            container.iface.setContentType(contentType)
+          container.source.contenttype = some(contentType)
+        elif res.contentType != "":
+          container.source.contenttype = some(res.contentType)
+        container.triggerEvent(CHECK_MAILCAP)
       else:
         container.setLoadInfo("")
         container.triggerEvent(FAIL)
     else:
       container.setLoadInfo(info)
-  ).then(proc(res: tuple[atend: bool, lines, bytes: int]) =
-        container.onload(res))
+  )
+
+proc startload*(container: Container) =
+  container.iface.load()
+    .then(proc(res: tuple[atend: bool, lines, bytes: int]) =
+      container.onload(res))
+
+proc connect2*(container: Container): EmptyPromise =
+  return container.iface.connect2()
+
+proc redirectToFd*(container: Container, fdin: FileHandle, wait: bool):
+    EmptyPromise =
+  return container.iface.redirectToFd(fdin, wait)
+
+proc readFromFd*(container: Container, fdout: FileHandle, ishtml: bool):
+    EmptyPromise =
+  return container.iface.readFromFd(fdout, ishtml)
+
+proc quit*(container: Container) =
+  container.triggerEvent(QUIT)
 
 proc cancel*(container: Container) {.jsfunc.} =
   if container.select.open:
@@ -795,19 +829,10 @@ proc reshape(container: Container): EmptyPromise {.discardable, jsfunc.} =
     container.setNumLines(lines)
     return container.requestLines())
 
-proc dupeBuffer*(dispatcher: Dispatcher, container: Container, config: Config, location: URL, contenttype: string): Container =
-  let source = BufferSource(
-    t: CLONE,
-    location: if location != nil: location else: container.source.location,
-    contenttype: if contenttype != "": some(contenttype) else: container.contenttype,
-    clonepid: container.process,
-  )
-  container.pipeto = dispatcher.newBuffer(container.config, source, container.title)
+proc pipeBuffer*(container, pipeTo: Container) =
   container.iface.getSource().then(proc() =
-    if container.pipeto != nil:
-      container.pipeto.load()
-      container.pipeto = nil)
-  return container.pipeto
+    pipeTo.load() #TODO do not load if pipeTo is killed first?
+  )
 
 proc onclick(container: Container, res: ClickResult)
 
@@ -893,10 +918,8 @@ proc handleCommand(container: Container) =
 proc setStream*(container: Container, stream: Stream) =
   container.iface = newBufferInterface(stream)
   if container.source.t == LOAD_PIPE:
-    container.iface.passFd()
-    let s = SocketStream(stream)
-    s.sendFileHandle(container.source.fd)
-    discard close(container.source.fd)
+    container.iface.passFd(container.source.fd).then(proc() =
+      discard close(container.source.fd))
     stream.flush()
   container.load()
 

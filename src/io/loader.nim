@@ -12,18 +12,21 @@
 # The body is passed to the stream as-is, so effectively nothing can follow it.
 
 import nativesockets
-import options
-import streams
-import tables
 import net
-when defined(posix):
-  import posix
+import options
+import posix
+import streams
+import strutils
+import tables
 
 import bindings/curl
+import data/charset
 import io/about
+import io/connecterror
 import io/file
 import io/headers
 import io/http
+import io/loaderhandle
 import io/posixstream
 import io/promise
 import io/request
@@ -34,9 +37,9 @@ import ips/serversocket
 import ips/socketstream
 import js/javascript
 import types/cookie
-import types/mime
 import types/referer
 import types/url
+import utils/mimeguess
 import utils/twtstr
 
 export request
@@ -62,14 +65,9 @@ type
     response: Response
     bodyRead: Promise[string]
 
-  ConnectErrorCode* = enum
-    ERROR_SOURCE_NOT_FOUND = (-4, "clone source could not be found"),
-    ERROR_LOADER_KILLED = (-3, "loader killed during transfer"),
-    ERROR_DISALLOWED_URL = (-2, "url not allowed by filter"),
-    ERROR_UNKNOWN_SCHEME = (-1, "unknown scheme")
-
   LoaderCommand = enum
-    LOAD, QUIT
+    LOAD
+    QUIT
 
   LoaderContext = ref object
     ssock: ServerSocket
@@ -77,7 +75,7 @@ type
     curlm: CURLM
     config: LoaderConfig
     extra_fds: seq[curl_waitfd]
-    handleList: seq[HandleData]
+    handleList: seq[CurlHandle]
 
   LoaderConfig* = object
     defaultheaders*: Headers
@@ -91,39 +89,36 @@ type
 
   FetchPromise* = Promise[Result[Response, JSError]]
 
-converter toInt*(code: ConnectErrorCode): int =
-  return int(code)
-
 proc addFd(ctx: LoaderContext, fd: int, flags: int) =
   ctx.extra_fds.add(curl_waitfd(
     fd: cast[cint](fd),
     events: cast[cshort](flags)
   ))
 
-proc loadResource(ctx: LoaderContext, request: Request, ostream: Stream) =
+proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   case request.url.scheme
   of "file":
-    loadFile(request.url, ostream)
-    ostream.close()
+    handle.loadFilePath(request.url)
+    handle.close()
   of "http", "https":
-    let handleData = loadHttp(ctx.curlm, request, ostream)
+    let handleData = handle.loadHttp(ctx.curlm, request)
     if handleData != nil:
       ctx.handleList.add(handleData)
   of "about":
-    loadAbout(request, ostream)
-    ostream.close()
+    handle.loadAbout(request)
+    handle.close()
   else:
-    ostream.swrite(ERROR_UNKNOWN_SCHEME) # error
-    ostream.close()
+    discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
+    handle.close()
 
 proc onLoad(ctx: LoaderContext, stream: Stream) =
   var request: Request
   stream.sread(request)
   if not ctx.config.filter.match(request.url):
-    stream.swrite(ERROR_DISALLOWED_URL) # error
-    stream.flush()
+    stream.swrite(ERROR_DISALLOWED_URL)
     stream.close()
   else:
+    let handle = newLoaderHandle(stream, request.canredir)
     for k, v in ctx.config.defaultHeaders.table:
       if k notin request.headers.table:
         request.headers.table[k] = v
@@ -138,7 +133,7 @@ proc onLoad(ctx: LoaderContext, stream: Stream) =
         request.headers["Referer"] = r
     if request.proxy == nil or not ctx.config.acceptProxy:
       request.proxy = ctx.config.proxy
-    ctx.loadResource(request, stream)
+    ctx.loadResource(request, handle)
 
 proc acceptConnection(ctx: LoaderContext) =
   #TODO TODO TODO acceptSocketStream should be non-blocking here,
@@ -160,15 +155,10 @@ proc acceptConnection(ctx: LoaderContext) =
     # (TODO: this is probably not a very good idea.)
     stream.close()
 
-proc finishCurlTransfer(ctx: LoaderContext, handleData: HandleData, res: int) =
+proc finishCurlTransfer(ctx: LoaderContext, handleData: CurlHandle, res: int) =
   if res != int(CURLE_OK):
-    try:
-      handleData.ostream.swrite(int(res))
-      handleData.ostream.flush()
-    except IOError: # Broken pipe
-      discard
+    discard handleData.handle.sendResult(int(res))
   discard curl_multi_remove_handle(ctx.curlm, handleData.curl)
-  handleData.ostream.close()
   handleData.cleanup()
 
 proc exitLoader(ctx: LoaderContext) =
@@ -192,7 +182,9 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
     config: config
   )
   gctx = ctx
-  ctx.ssock = initServerSocket()
+  #TODO ideally, buffered would be true. Unfortunately this conflicts with
+  # sendFileHandle/recvFileHandle.
+  ctx.ssock = initServerSocket(buffered = false)
   # The server has been initialized, so the main process can resume execution.
   var writef: File
   if not open(writef, FileHandle(fd), fmWrite):
@@ -235,11 +227,39 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
         ctx.handleList.del(idx)
   ctx.exitLoader()
 
-proc applyHeaders(request: Request, response: Response) =
+proc getAttribute(contentType, attrname: string): string =
+  let kvs = contentType.after(';')
+  var i = kvs.find(attrname)
+  var s = ""
+  if i != -1 and kvs.len > i + attrname.len and
+      kvs[i + attrname.len] == '=':
+    i += attrname.len + 1
+    while i < kvs.len and kvs[i] in AsciiWhitespace:
+      inc i
+    var q = false
+    for j in i ..< kvs.len:
+      if q:
+        s &= kvs[j]
+      else:
+        if kvs[j] == '\\':
+          q = true
+        elif kvs[j] == ';' or kvs[j] in AsciiWhitespace:
+          break
+        else:
+          s &= kvs[j]
+  return s
+
+proc applyHeaders(loader: FileLoader, request: Request, response: Response) =
   if "Content-Type" in response.headers.table:
-    response.contenttype = response.headers.table["Content-Type"][0].until(';')
+    #TODO this is inefficient and broken on several levels. (In particular,
+    # it breaks mailcap named attributes other than charset.)
+    # Ideally, contentType would be a separate object type.
+    let header = response.headers.table["Content-Type"][0].toLowerAscii()
+    response.contenttype = header.until(';').strip().toLowerAscii()
+    response.charset = getCharset(header.getAttribute("charset"))
   else:
-    response.contenttype = guessContentType($response.url.path)
+    response.contenttype = guessContentType($response.url.path,
+      "application/octet-stream", DefaultGuess)
   if "Location" in response.headers.table:
     if response.status in 301u16..303u16 or response.status in 307u16..308u16:
       let location = response.headers.table["Location"][0]
@@ -276,6 +296,18 @@ proc fetch*(loader: FileLoader, input: Request): FetchPromise =
 
 const BufferSize = 4096
 
+proc handleHeaders(loader: FileLoader, request: Request, response: Response,
+    stream: Stream): bool =
+  var status: int
+  stream.sread(status)
+  response.status = cast[uint16](status)
+  response.headers = newHeaders()
+  stream.sread(response.headers)
+  loader.applyHeaders(request, response)
+  # Only a stream of the response body may arrive after this point.
+  response.body = stream
+  return true # success
+
 proc onConnected*(loader: FileLoader, fd: int) =
   let connectData = loader.connecting[fd]
   let stream = connectData.stream
@@ -283,8 +315,8 @@ proc onConnected*(loader: FileLoader, fd: int) =
   let request = connectData.request
   var res: int
   stream.sread(res)
-  if res == 0:
-    let response = newResponse(res, request, fd, stream)
+  let response = newResponse(res, request, fd, stream)
+  if res == 0 and loader.handleHeaders(request, response, stream):
     assert loader.unregisterFun != nil
     let realCloseImpl = stream.closeImpl
     stream.closeImpl = nil
@@ -293,12 +325,6 @@ proc onConnected*(loader: FileLoader, fd: int) =
       loader.unregistered.add(fd)
       loader.unregisterFun(fd)
       realCloseImpl(stream)
-    var status: int
-    stream.sread(status)
-    response.status = cast[uint16](status)
-    stream.sread(response.headers)
-    applyHeaders(request, response)
-    response.body = stream
     loader.ongoing[fd] = OngoingData(
       response: response,
       readbufsize: BufferSize,
@@ -339,31 +365,23 @@ proc onRead*(loader: FileLoader, fd: int) =
 proc onError*(loader: FileLoader, fd: int) =
   loader.onRead(fd)
 
-proc doRequest*(loader: FileLoader, request: Request, blocking = true): Response =
-  new(result)
-  result.url = request.url
+proc doRequest*(loader: FileLoader, request: Request, blocking = true,
+    canredir = false): Response =
+  let response = Response(url: request.url)
   let stream = connectSocketStream(loader.process, false, blocking = true)
+  if canredir:
+    request.canredir = true #TODO set this somewhere else?
   stream.swrite(LOAD)
   stream.swrite(request)
   stream.flush()
-  stream.sread(result.res)
-  if result.res == 0:
-    var status: int
-    stream.sread(status)
-    result.status = cast[uint16](status)
-    stream.sread(result.headers)
-    applyHeaders(request, result)
-    # Only a stream of the response body may arrive after this point.
-    result.body = stream
-    if not blocking:
-      stream.source.getFd().setBlocking(blocking)
+  stream.sread(response.res)
+  if response.res == 0:
+    if loader.handleHeaders(request, response, stream):
+      if not blocking:
+        stream.source.getFd().setBlocking(blocking)
+  return response
 
 proc quit*(loader: FileLoader) =
   let stream = connectSocketStream(loader.process)
   if stream != nil:
     stream.swrite(QUIT)
-
-func getLoaderErrorMessage*(code: int): string =
-  if code < 0:
-    return $ConnectErrorCode(code)
-  return $curl_easy_strerror(CURLcode(cint(code)))

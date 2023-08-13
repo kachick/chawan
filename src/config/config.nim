@@ -4,6 +4,8 @@ import os
 import streams
 
 import buffer/cell
+import config/mailcap
+import config/mimetypes
 import config/toml
 import data/charset
 import io/headers
@@ -14,6 +16,7 @@ import types/color
 import types/cookie
 import types/referer
 import types/url
+import utils/mimeguess
 import utils/opt
 import utils/twtstr
 
@@ -79,6 +82,8 @@ type
   ExternalConfig = object
     tmpdir*: string
     editor*: string
+    mailcap*: seq[string]
+    mime_types*: seq[string]
 
   NetworkConfig = object
     max_redirect*: int32
@@ -102,6 +107,7 @@ type
   #TODO: add JS wrappers for objects
   Config* = ref ConfigObj
   ConfigObj* = object
+    configdir: string
     includes: seq[string]
     start*: StartConfig
     search*: SearchConfig
@@ -126,6 +132,7 @@ type
     charsets*: seq[Charset]
     images*: bool
     proxy*: URL
+    mimeTypes*: MimeTypes
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -159,7 +166,8 @@ func getProxy*(config: Config): URL =
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
-    images: bool, userstyle: string, proxy: URL): BufferConfig =
+    images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes):
+    BufferConfig =
   result = BufferConfig(
     userstyle: userstyle,
     filter: newURLFilter(scheme = some(location.scheme), default = true),
@@ -169,7 +177,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     scripting: scripting,
     charsets: charsets,
     images: images,
-    proxy: proxy
+    proxy: proxy,
+    mimeTypes: mimeTypes
   )
   new(result.headers)
   result.headers[] = DefaultHeaders
@@ -269,19 +278,58 @@ func constructActionTable*(origTable: Table[string, string]): Table[string, stri
         result[teststr] = "client.feedNext()"
     result[realk] = v
 
-proc readUserStylesheet(dir, file: string): string =
+proc openFileExpand(dir, file: string): FileStream =
   if file.len == 0:
-    return ""
+    return nil
   if file[0] == '~' or file[0] == '/':
-    var f: File
-    if f.open(expandPath(file)):
-      result = f.readAll()
-      f.close()
+    return newFileStream(expandPath(file))
   else:
-    var f: File
-    if f.open(dir / file):
-      result = f.readAll()
-      f.close()
+    return newFileStream(expandPath(dir / file))
+
+proc readUserStylesheet(dir, file: string): string =
+  let s = openFileExpand(dir, file)
+  if s != nil:
+    result = s.readAll()
+    s.close()
+
+# The overall configuration will be obtained through the virtual concatenation
+# of several individual configuration files known as mailcap files.
+proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
+  let configDir = getConfigDir() / "chawan" #TODO store this in config?
+  var mailcap: Mailcap
+  var errs: seq[string]
+  var found = false
+  for p in config.external.mailcap:
+    let f = openFileExpand(configDir, p)
+    if f != nil:
+      let res = parseMailcap(f)
+      if res.isSome:
+        mailcap.add(res.get)
+      else:
+        errs.add(res.error)
+      found = true
+  if not found:
+    return (DefaultMailcap, errs)
+  return (mailcap, errs)
+
+# We try to source mime types declared in config.
+# If none of these files can be found, fall back to DefaultGuess.
+#TODO some error handling would be nice, to at least show a warning to
+# the user. Not sure how this could be done, though.
+proc getMimeTypes*(config: Config): MimeTypes =
+  if config.external.mime_types.len == 0:
+    return DefaultGuess
+  var mimeTypes: MimeTypes
+  let configDir = getConfigDir() / "chawan" #TODO store this in config?
+  var found = false
+  for p in config.external.mime_types:
+    let f = openFileExpand(configDir, p)
+    if f != nil:
+      mimeTypes.parseMimeTypes(f)
+      found = true
+  if not found:
+    return DefaultGuess
+  return mimeTypes
 
 proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>")
 proc parseConfig*(config: Config, dir: string, s: string, name = "<input>")
@@ -489,6 +537,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
         config.parseConfig(dir, staticRead(dir / s))
       else:
         config.parseConfig(dir, newFileStream(dir / s))
+  config.configdir = dir
   #TODO: for omnirule/siteconf, check if substitution rules are specified?
 
 proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>") =

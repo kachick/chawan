@@ -1,9 +1,9 @@
-import streams
 import tables
 
+import io/connecterror
 import io/headers
+import io/loaderhandle
 import io/request
-import ips/serialize
 import types/url
 
 const chawan = staticRead"res/chawan.html"
@@ -11,19 +11,18 @@ const HeaderTable = {
   "Content-Type": "text/html"
 }.toTable()
 
-proc loadAbout*(request: Request, ostream: Stream) =
+proc loadAbout*(handle: LoaderHandle, request: Request) =
+  template t(body: untyped) =
+    if not body:
+      return
   if request.url.pathname == "blank":
-    ostream.swrite(0)
-    ostream.swrite(200) # ok
-    let headers = newHeaders(HeaderTable)
-    ostream.swrite(headers)
+    t handle.sendResult(0)
+    t handle.sendStatus(200) # ok
+    t handle.sendHeaders(newHeaders(HeaderTable))
   elif request.url.pathname == "chawan":
-    ostream.swrite(0)
-    ostream.swrite(200) # ok
-    let headers = newHeaders(HeaderTable)
-    ostream.swrite(headers)
-    ostream.write(chawan)
+    t handle.sendResult(0)
+    t handle.sendStatus(200) # ok
+    t handle.sendHeaders(newHeaders(HeaderTable))
+    t handle.sendData(chawan)
   else:
-    ostream.swrite(-1)
-  ostream.flush()
-
+    t handle.sendResult(ERROR_ABOUT_PAGE_NOT_FOUND)

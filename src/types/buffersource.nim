@@ -14,7 +14,7 @@ type
   BufferSource* = object
     location*: URL
     contenttype*: Option[string] # override
-    charset*: Option[Charset] # override
+    charset*: Charset # fallback
     case t*: BufferSourceType
     of CLONE:
       clonepid*: Pid

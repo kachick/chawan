@@ -1,9 +1,10 @@
-import types/dispatcher
-let disp = newDispatcher()
+import ips/forkserver
+let forks = newForkServer()
 
 import options
 import os
 import terminal
+import posix
 
 when defined(profile):
   import nimprof
@@ -11,7 +12,6 @@ when defined(profile):
 import config/config
 import data/charset
 import display/client
-import ips/forkserver
 import utils/opt
 import utils/twtstr
 
@@ -51,7 +51,7 @@ Options:
 
 var i = 0
 var ctype = none(string)
-var cs = none(Charset)
+var cs = CHARSET_UNKNOWN
 var pages: seq[string]
 var dump = false
 var visual = false
@@ -79,11 +79,10 @@ while i < params.len:
   of "-I", "--input-charset":
     inc i
     if i < params.len:
-      let c = getCharset(params[i])
-      if c == CHARSET_UNKNOWN:
+      cs = getCharset(params[i])
+      if cs == CHARSET_UNKNOWN:
         stderr.write("Unknown charset " & params[i] & "\n")
         quit(1)
-      cs = some(c)
     else:
       help(1)
   of "-O", "--output-charset":
@@ -147,9 +146,9 @@ if pages.len == 0 and not conf.start.headless:
 
 conf.page = constructActionTable(conf.page)
 conf.line = constructActionTable(conf.line)
-disp.forkserver.loadForkServerConfig(conf)
+forks.loadForkServerConfig(conf)
 
-let c = newClient(conf, disp)
+let c = newClient(conf, forks, getpid())
 try:
   c.launchClient(pages, ctype, cs, dump)
 except CatchableError:

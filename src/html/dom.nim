@@ -27,10 +27,10 @@ import js/timeout
 import types/blob
 import types/color
 import types/matrix
-import types/mime
 import types/referer
 import types/url
 import types/vector
+import utils/mimeguess
 import utils/twtstr
 
 type
@@ -794,6 +794,7 @@ const ReflectTable0 = [
 # Forward declarations
 func attrb*(element: Element, s: string): bool
 proc attr*(element: Element, name, value: string)
+func baseURL*(document: Document): URL
 
 proc tostr(ftype: enum): string =
   return ($ftype).split('_')[1..^1].join("-").tolower()
@@ -1802,8 +1803,8 @@ func target0*(element: Element): string =
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
   if element.attrb("href"):
-    let url = parseUrl(element.attr("href"), some(element.document.url))
-    if url.issome:
+    let url = parseURL(element.attr("href"), some(element.document.baseURL))
+    if url.isSome:
       return $url.get
 
 # <base>
@@ -2030,7 +2031,7 @@ func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
         return true
   return false
 
-func baseURL*(document: Document): Url =
+func baseURL*(document: Document): URL =
   #TODO frozen base url...
   var href = ""
   for base in document.elements(TAG_BASE):

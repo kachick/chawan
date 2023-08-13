@@ -2,6 +2,7 @@ import deques
 import net
 import options
 import os
+import osproc
 import streams
 import tables
 import unicode
@@ -13,13 +14,17 @@ import buffer/cell
 import buffer/container
 import buffer/select
 import config/config
+import config/mailcap
+import config/mimetypes
 import data/charset
 import display/term
+import io/connecterror
 import io/headers
 import io/lineedit
 import io/loader
 import io/promise
 import io/request
+import io/tempfile
 import io/window
 import ips/editor
 import ips/forkserver
@@ -29,7 +34,6 @@ import js/regex
 import types/buffersource
 import types/color
 import types/cookie
-import types/dispatcher
 import types/url
 import utils/opt
 import utils/twtstr
@@ -49,13 +53,16 @@ type
     config: Config
     container*: Container
     cookiejars: Table[string, CookieJar]
-    dispatcher*: Dispatcher
     display: FixedGrid
+    forkserver: ForkServer
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
     lineedit*: Option[LineEdit]
     linehist: array[LineMode, LineHistory]
     linemode*: LineMode
+    mailcap: Mailcap
+    mainproc: Pid
+    mimeTypes: MimeTypes
     numload*: int
     omnirules: seq[OmniRule]
     procmap*: Table[Pid, Container]
@@ -179,18 +186,26 @@ proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
       return
   pager.container.gotoLine(s)
 
+proc alert*(pager: Pager, msg: string)
+
 proc newPager*(config: Config, attrs: WindowAttributes,
-    dispatcher: Dispatcher, ctx: JSContext): Pager =
+    forkserver: ForkServer, mainproc: Pid, ctx: JSContext): Pager =
   let pager = Pager(
-    dispatcher: dispatcher,
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
+    forkserver: forkserver,
+    mainproc: mainproc,
+    omnirules: config.getOmniRules(ctx),
+    proxy: config.getProxy(),
+    siteconf: config.getSiteConfig(ctx),
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
-    siteconf: config.getSiteConfig(ctx),
-    omnirules: config.getOmniRules(ctx),
-    proxy: config.getProxy()
+    mimeTypes: config.getMimeTypes()
   )
+  let (mcap, errs) = config.getMailcap()
+  pager.mailcap = mcap
+  for err in errs:
+    pager.alert("Error reading mailcap: " & err)
   return pager
 
 proc launchPager*(pager: Pager, tty: File) =
@@ -248,6 +263,7 @@ proc writeStatusMessage(pager: Pager, str: string,
     pager.statusgrid[i].format = def
     inc i
 
+# Note: should only be called directly after user interaction.
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
   if container == nil: return
@@ -381,11 +397,39 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.registerContainer(container)
   pager.setContainer(container)
 
-proc dupeContainer(pager: Pager, container: Container, location: URL): Container =
-  return pager.dispatcher.dupeBuffer(container, pager.config, location, "")
+proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
+    title = "", redirectdepth = 0): Container =
+  return newBuffer(
+    pager.forkserver,
+    pager.mainproc,
+    bufferConfig,
+    source,
+    title,
+    redirectdepth
+  )
 
-proc dupeBuffer*(pager: Pager, location: URL = nil) {.jsfunc.} =
-  pager.addContainer(pager.dupeContainer(pager.container, location))
+proc dupeBuffer(pager: Pager, container: Container, location: URL,
+    contentType = ""): Container =
+  let contentType = if contentType != "":
+    some(contentType)
+  else:
+    container.contenttype
+  let location = if location != nil:
+    location
+  else:
+    container.source.location
+  let source = BufferSource(
+    t: CLONE,
+    location: location,
+    contenttype: contentType,
+    clonepid: container.process,
+  )
+  let pipeTo = pager.newBuffer(container.config, source, container.title)
+  container.pipeBuffer(pipeTo)
+  return pipeTo
+
+proc dupeBuffer(pager: Pager, location: URL = nil) {.jsfunc.} =
+  pager.addContainer(pager.dupeBuffer(pager.container, location))
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
@@ -491,7 +535,7 @@ proc deleteContainer(pager: Pager, container: Container) =
   container.parent = nil
   container.children.setLen(0)
   pager.unreg.add((container.process, SocketStream(container.iface.stream)))
-  pager.dispatcher.forkserver.removeChild(container.process)
+  pager.forkserver.removeChild(container.process)
 
 proc discardBuffer(pager: Pager, container = none(Container)) {.jsfunc.} =
   let c = container.get(pager.container)
@@ -512,11 +556,11 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let contenttype = if pager.container.contenttype.get("") == "text/html":
+    let contenttype = if pager.container.contentType.get("") == "text/html":
       "text/plain"
     else:
       "text/html"
-    let container = pager.dispatcher.dupeBuffer(pager.container, pager.config, nil, contenttype)
+    let container = pager.dupeBuffer(pager.container, nil, contenttype)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.addContainer(container)
@@ -529,7 +573,7 @@ proc windowChange*(pager: Pager, attrs: WindowAttributes) =
     container.windowChange(attrs)
   if pager.askprompt != "":
     pager.writeAskPrompt()
-  pager.refreshStatusMsg()
+  pager.showAlerts()
 
 # Apply siteconf settings to a request.
 # Note that this may modify the URL passed.
@@ -543,6 +587,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
   var charsets = pager.config.encoding.document_charset
   var userstyle = pager.config.css.stylesheet
   var proxy = pager.proxy
+  let mimeTypes = pager.mimeTypes
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -575,12 +620,12 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
       userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
       proxy = sc.proxy.get
-  return pager.config.getBufferConfig(url, cookiejar, headers,
-    referer_from, scripting, charsets, images, userstyle, proxy)
+  return pager.config.getBufferConfig(url, cookiejar, headers, referer_from,
+    scripting, charsets, images, userstyle, proxy, mimeTypes)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
-    ctype = none(string), cs = none(Charset), replace: Container = nil,
+    ctype = none(string), cs = CHARSET_UNKNOWN, replace: Container = nil,
     redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.referer_from:
     request.referer = referrer.source.location
@@ -602,7 +647,11 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     )
     if referrer != nil:
       bufferconfig.referrerpolicy = referrer.config.referrerpolicy
-    let container = pager.dispatcher.newBuffer(bufferconfig, source, redirectdepth = redirectdepth)
+    let container = pager.newBuffer(
+      bufferconfig,
+      source,
+      redirectdepth = redirectdepth
+    )
     if replace != nil:
       container.replace = replace
       container.copyCursorPos(container.replace)
@@ -627,7 +676,7 @@ proc omniRewrite(pager: Pager, s: string): string =
 # * https://<url>
 # So we attempt to load both, and see what works.
 proc loadURL*(pager: Pager, url: string, ctype = none(string),
-    cs = none(Charset)) =
+    cs = CHARSET_UNKNOWN) =
   let url0 = pager.omniRewrite(url)
   let url = if url[0] == '~': expandPath(url0) else: url0
   let firstparse = parseURL(url)
@@ -656,7 +705,7 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
     if pager.container != prevc:
       pager.container.retry = urls
 
-proc readPipe0*(pager: Pager, ctype: Option[string], cs: Option[Charset],
+proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
     fd: FileHandle, location: Option[URL], title: string): Container =
   var location = location.get(newURL("file://-").get)
   let bufferconfig = pager.applySiteconf(location)
@@ -667,9 +716,9 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Option[Charset],
     charset: cs,
     location: location
   )
-  return pager.dispatcher.newBuffer(bufferconfig, source, title = title)
+  return pager.newBuffer(bufferconfig, source, title = title)
 
-proc readPipe*(pager: Pager, ctype: Option[string], cs: Option[Charset],
+proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset,
     fd: FileHandle) =
   let container = pager.readPipe0(ctype, cs, fd, none(URL), "*pipe*")
   pager.addContainer(container)
@@ -784,6 +833,206 @@ proc reload(pager: Pager) {.jsfunc.} =
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)
 
+# Pipe input into the mailcap command, then read its output into a buffer.
+# needsterminal is ignored.
+proc runMailcapReadPipe(pager: Pager, container: Container,
+    entry: MailcapEntry, cmd: string): (EmptyPromise, bool) =
+  var pipefd_in: array[2, cint]
+  if pipe(pipefd_in) == -1:
+    raise newException(Defect, "Failed to open pipe.")
+  var pipefd_out: array[2, cint]
+  if pipe(pipefd_out) == -1:
+    raise newException(Defect, "Failed to open pipe.")
+  let pid = fork()
+  if pid == -1:
+    return (nil, false)
+  elif pid == 0:
+    # child process
+    discard close(pipefd_in[1])
+    discard close(pipefd_out[0])
+    stdout.flushFile()
+    discard dup2(pipefd_in[0], stdin.getFileHandle())
+    discard dup2(pipefd_out[1], stdout.getFileHandle())
+    let devnull = open("/dev/null", O_WRONLY)
+    discard dup2(devnull, stderr.getFileHandle())
+    discard close(devnull)
+    discard close(pipefd_in[0])
+    discard close(pipefd_out[1])
+    discard execCmd(cmd)
+    discard close(stdin.getFileHandle())
+    discard close(stdout.getFileHandle())
+    quit(0)
+  # parent
+  discard close(pipefd_in[0])
+  discard close(pipefd_out[1])
+  let fdin = pipefd_in[1]
+  let fdout = pipefd_out[0]
+  let p = container.redirectToFd(fdin, wait = false)
+  let p2 = p.then(proc(): auto =
+    discard close(fdin)
+    let ishtml = HTMLOUTPUT in entry.flags
+    if ishtml:
+      #TODO this is a hack for dupe buffer and should be reconsidered.
+      container.source.contenttype = some("text/html")
+    return container.readFromFd(fdout, ishtml)
+  ).then(proc() =
+    discard close(fdout)
+  )
+  return (p2, true)
+
+# Pipe input into the mailcap command, and discard its output.
+# If needsterminal, leave stderr and stdout open and wait for the process.
+proc runMailcapWritePipe(pager: Pager, container: Container,
+    entry: MailcapEntry, cmd: string): (EmptyPromise, bool) =
+  let needsterminal = NEEDSTERMINAL in entry.flags
+  var pipefd: array[2, cint]
+  if pipe(pipefd) == -1:
+    raise newException(Defect, "Failed to open pipe.")
+  if needsterminal:
+    pager.term.quit()
+  let pid = fork()
+  if pid == -1:
+    return (nil, false)
+  elif pid == 0:
+    # child process
+    discard close(pipefd[1])
+    discard dup2(pipefd[0], stdin.getFileHandle())
+    if not needsterminal:
+      let devnull = open("/dev/null", O_WRONLY)
+      discard dup2(devnull, stdout.getFileHandle())
+      discard dup2(devnull, stderr.getFileHandle())
+      discard close(devnull)
+    discard close(pipefd[0])
+    discard execCmd(cmd)
+    discard close(stdin.getFileHandle())
+    quit(0)
+  else:
+    # parent
+    discard close(pipefd[0])
+    let fd = pipefd[1]
+    let p = container.redirectToFd(fd, wait = false)
+    discard close(fd)
+    if needsterminal:
+      var x: cint
+      discard waitpid(pid, x, 0)
+      pager.term.restart()
+    return (p, false)
+
+# Save input in a file, run the command, and redirect its output to a
+# new buffer.
+# needsterminal is ignored.
+proc runMailcapReadFile(pager: Pager, container: Container,
+    entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
+  let fd = open(outpath, O_WRONLY or O_CREAT, 0o666)
+  if fd == -1:
+    return (nil, false)
+  let p = container.redirectToFd(fd, wait = true).then(proc(): auto =
+    var pipefd: array[2, cint] # redirect stdout here
+    if pipe(pipefd) == -1:
+      raise newException(Defect, "Failed to open pipe.")
+    let pid = fork()
+    if pid == 0:
+      # child process
+      discard close(pipefd[0])
+      discard dup2(pipefd[1], stdout.getFileHandle())
+      discard close(pipefd[1])
+      let devnull = open("/dev/null", O_WRONLY)
+      discard dup2(devnull, stderr.getFileHandle())
+      discard close(devnull)
+      discard execCmd(cmd)
+      discard tryRemoveFile(outpath)
+      quit(0)
+    # parent
+    discard close(pipefd[1])
+    let fdout = pipefd[0]
+    let ishtml = HTMLOUTPUT in entry.flags
+    if ishtml:
+      #TODO this is a hack for dupe buffer and should be reconsidered.
+      container.source.contenttype = some("text/html")
+    return container.readFromFd(fdout, ishtml).then(proc() =
+      discard close(fdout)
+    )
+  )
+  return (p, true)
+
+# Save input in a file, run the command, and discard its output.
+# If needsterminal, leave stderr and stdout open and wait for the process.
+proc runMailcapWriteFile(pager: Pager, container: Container,
+    entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
+  let needsterminal = NEEDSTERMINAL in entry.flags
+  let fd = open(outpath, O_WRONLY or O_CREAT, 0o666)
+  if fd == -1:
+    return (nil, false)
+  let p = container.redirectToFd(fd, wait = true).then(proc() =
+    if needsterminal:
+      pager.term.quit()
+      discard execCmd(cmd)
+      discard tryRemoveFile(outpath)
+      pager.term.restart()
+    else:
+      # don't block
+      let pid = fork()
+      if pid == 0:
+        # child process
+        let devnull = open("/dev/null", O_WRONLY)
+        discard dup2(devnull, stdin.getFileHandle())
+        discard dup2(devnull, stdout.getFileHandle())
+        discard dup2(devnull, stderr.getFileHandle())
+        discard close(devnull)
+        discard execCmd(cmd)
+        discard tryRemoveFile(outpath)
+        quit(0)
+  )
+  return (p, false)
+
+# Search for a mailcap entry, and if found, execute the specified command
+# and pipeline the input and output appropriately.
+# There is four possible outcomes:
+# * pipe stdin, discard stdout
+# * pipe stdin, read stdout
+# * write to file, run, discard stdout
+# * write to file, run, read stdout
+# If needsterminal is specified, and stdout is not being read, then the
+# pager is suspended until the command exits.
+#TODO add support for edit/compose, better error handling (use Promise[bool]
+# instead of tuple[EmptyPromise, bool])
+proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
+  if container.contenttype.isNone:
+    return (nil, true)
+  if container.source.t == CLONE:
+    return (nil, true) # clone cannot use mailcap
+  let contentType = container.contenttype.get
+  if contentType == "text/html":
+    # We support HTML natively, so it would make little sense to execute
+    # mailcap filters for it.
+    return (nil, true)
+  #TODO callback for outpath or something
+  let url = container.location
+  let cs = container.source.charset
+  let entry = pager.mailcap.getMailcapEntry(contentType, "", url, cs)
+  if entry != nil:
+    let tmpdir = pager.config.external.tmpdir
+    let ext = container.location.pathname.afterLast('.')
+    let tempfile = getTempfile(tmpdir, ext)
+    let outpath = if entry.nametemplate != "":
+      unquoteCommand(entry.nametemplate, contentType, tempfile, url, cs)
+    else:
+      tempfile
+    var canpipe = true
+    let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, cs, canpipe)
+    if {COPIOUSOUTPUT, HTMLOUTPUT} * entry.flags == {}:
+      # no output.
+      if canpipe:
+        return pager.runMailcapWritePipe(container, entry[], cmd)
+      else:
+        return pager.runMailcapWriteFile(container, entry[], cmd, outpath)
+    else:
+      if canpipe:
+        return pager.runMailcapReadPipe(container, entry[], cmd)
+      else:
+        return pager.runMailcapReadFile(container, entry[], cmd, outpath)
+  return (nil, true)
+
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
   of FAIL:
@@ -838,7 +1087,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of ANCHOR:
     var url2 = newURL(container.source.location)
     url2.setHash(event.anchor)
-    pager.addContainer(pager.dupeContainer(container, url2))
+    pager.addContainer(pager.dupeBuffer(container, url2))
   of NO_ANCHOR:
     pager.alert("Couldn't find anchor " & event.anchor)
   of UPDATE:
@@ -866,14 +1115,28 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of INVALID_COMMAND: discard
   of STATUS:
     if pager.container == container:
-      pager.refreshStatusMsg()
+      pager.showAlerts()
   of TITLE:
     if pager.container == container:
-      pager.refreshStatusMsg()
+      pager.showAlerts()
       pager.term.setTitle(container.getTitle())
   of ALERT:
     if pager.container == container:
       pager.alert(event.msg)
+  of CHECK_MAILCAP:
+    var (cm, connect) = pager.checkMailcap(container)
+    if cm == nil:
+      cm = container.connect2()
+    if connect:
+      cm.then(proc() =
+        container.startload())
+    else:
+      cm.then(proc(): auto =
+        container.quit())
+  of QUIT:
+    dec pager.numload
+    pager.deleteContainer(container)
+    return false
   of NO_EVENT: discard
   return true
 
