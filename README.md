@@ -32,7 +32,7 @@ Currently implemented features are:
 * mailcap
 * cookies
 
-...with a lot more planned.
+...with a [lot more](todo) planned.
 
 ## Caveats
 
