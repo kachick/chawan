@@ -84,7 +84,7 @@ audio/*; mpv -; needsterminal
 # and standard error to /dev/null.
 video/*; mpv -
 
-# Open OpenOffice files using LibreOffice Writer.
+# Open docx files using LibreOffice Writer.
 application/vnd.openxmlformats-officedocument.wordprocessingml.document;lowriter %s
 # (Wow that was ugly.)
 
