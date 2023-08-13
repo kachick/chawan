@@ -315,28 +315,17 @@ proc getMailcapEntry*(mailcap: Mailcap, mimeType, outpath: string,
     return nil
   let st = mimeType[mt.len + 1 .. ^1]
   for entry in mailcap:
-    block try_entry:
-      block check_mt:
-        if entry.mt.len == 1 and entry.mt[0] == '*':
-          break check_mt
-        if entry.mt.len != mt.len:
-          break try_entry
-        for i in 0 ..< mt.len:
-          if entry.mt[i] != mt[i]:
-            break try_entry
-      block check_subt:
-        if entry.subt.len == 1 and entry.subt[0] == '*':
-          break check_subt
-        if entry.subt.len != st.len:
-          break try_entry
-        for i in 0 ..< st.len:
-          if entry.subt[i] != st[i]:
-            break try_entry
-      if entry.test != "":
-        var canpipe = true
-        let cmd = unquoteCommand(entry.test, mimeType, outpath, url, charset,
-          canpipe)
-        #TODO TODO TODO if not canpipe ...
-        if execCmd(cmd) != 0:
-          break try_entry
-      return unsafeAddr entry
+    if not (entry.mt.len == 1 and entry.mt[0] == '*') and
+        entry.mt != mt:
+      continue
+    if not (entry.subt.len == 1 and entry.subt[0] == '*') and
+        entry.subt != st:
+      continue
+    if entry.test != "":
+      var canpipe = true
+      let cmd = unquoteCommand(entry.test, mimeType, outpath, url, charset,
+        canpipe)
+      #TODO TODO TODO if not canpipe ...
+      if execCmd(cmd) != 0:
+        continue
+    return unsafeAddr entry
