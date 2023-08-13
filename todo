@@ -58,8 +58,7 @@ network:
 - integrate curl-impersonate (LD_PRELOAD works, but still...)
 external:
 - something like EXTERN
-- mime type handling and external viewers (e.g. open sound with mpv...)
-- local cgi, external filters (e.g. rdrview, pandoc convert, ...)
+- local cgi
 - history, bookmarks (w3m format)
 - save buffer (source, output)
 - edit buffer (local file, or whatever we downloaded)
@@ -73,9 +72,7 @@ javascript:
 - better dom support, events
 	* more concretely: get jQuery and basic click events to work
 - implement ReadableStream, XHR
-- make document accessible from client console? (maybe a bad idea
-  security-wise, but it would sure be convenient...)
-	* alternative idea: separate console for each buffer
+* separate console for each buffer
 - implement JS access to non-ref object members (with a ptr opaque + GC_ref
   on parent object or something)
 - buffer selection
@@ -96,6 +93,7 @@ images:
 - incremental decoding (maybe implement streams first?)
 - separate image decoder process? or just run on a different thread?
 etc:
+- important: integrate Chame (just specify as submodule)
 - important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
 - tests (including aforementioned fuzzer)
 - orc support:
