@@ -41,7 +41,7 @@ lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o $(QJSOBJ)/libunicode
 
 clean:
 	rm -f cha
-	rm -rf ./$(OBJDIR)
+	rm -rf $(OBJDIR)
 	rm -f lib/libquickjs.a
 
 install:
