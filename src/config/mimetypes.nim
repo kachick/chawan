@@ -29,8 +29,7 @@ proc parseMimeTypes*(mimeTypes: var MimeTypes, stream: Stream) =
         ext &= line[i].tolower()
         inc i
       if ext == "": continue
-      if ext notin mimeTypes:
-        mimeTypes[ext] = t
+      discard mimeTypes.hasKeyOrPut(ext, t)
   stream.close()
 
 proc parseMimeTypes*(stream: Stream): MimeTypes =
