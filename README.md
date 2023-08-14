@@ -17,7 +17,7 @@ It also functions as a pager, similarly to w3m.
 	* zlib: <https://zlib.net/>
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config"
 	  in PATH)
-3. Install parts of Chawan in other repositories:
+3. Download parts of Chawan found in other repositories:
 	* `make submodule`
 4. Use one of the following:
 	* `make release` - optimized release build
