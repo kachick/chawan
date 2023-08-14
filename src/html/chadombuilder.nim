@@ -2,12 +2,13 @@ import deques
 import options
 import streams
 
-import data/charset
 import html/dom
 import html/htmlparser
 import html/tags
 import js/javascript
 import types/url
+
+import chakasu/charset
 
 # DOMBuilder implementation for Chawan.
 

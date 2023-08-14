@@ -1,12 +1,13 @@
 import streams
 
 import bindings/quickjs
-import data/charset
 import io/headers
 import io/promise
 import io/request
 import js/javascript
 import types/url
+
+import chakasu/charset
 
 type
   Response* = ref object

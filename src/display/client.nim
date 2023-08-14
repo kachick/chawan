@@ -18,7 +18,6 @@ import bindings/quickjs
 import buffer/container
 import config/config
 import css/sheet
-import data/charset
 import display/pager
 import display/term
 import html/chadombuilder
@@ -46,6 +45,8 @@ import types/url
 import utils/opt
 import xhr/formdata
 import xhr/xmlhttprequest
+
+import chakasu/charset
 
 type
   Client* = ref ClientObj

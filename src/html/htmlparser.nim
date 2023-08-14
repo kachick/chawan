@@ -6,12 +6,13 @@ import strutils
 import tables
 import unicode
 
-import data/charset
-import encoding/decoderstream
 import html/htmltokenizer
 import html/parseerror
 import html/tags
 import utils/twtstr
+
+import chakasu/charset
+import chakasu/decoderstream
 
 # Generics break without exporting macros. Maybe a compiler bug?
 export macros

@@ -5,14 +5,15 @@ import unicode
 
 import bindings/quickjs
 import buffer/cell
-import data/charset
 import display/term
-import encoding/decoderstream
-import encoding/encoderstream
 import js/javascript
 import types/color
 import utils/opt
 import utils/twtstr
+
+import chakasu/charset
+import chakasu/decoderstream
+import chakasu/encoderstream
 
 type
   LineEditState* = enum

@@ -4,10 +4,11 @@ import osproc
 import streams
 import strutils
 
-import data/charset
 import types/url
 import utils/opt
 import utils/twtstr
+
+import chakasu/charset
 
 type
   MailcapParser = object

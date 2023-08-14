@@ -16,7 +16,6 @@ import buffer/select
 import config/config
 import config/mailcap
 import config/mimetypes
-import data/charset
 import display/term
 import io/connecterror
 import io/headers
@@ -37,6 +36,8 @@ import types/cookie
 import types/url
 import utils/opt
 import utils/twtstr
+
+import chakasu/charset
 
 type
   LineMode* = enum

@@ -2,9 +2,10 @@ import streams
 import unicode
 
 import buffer/cell
-import data/charset
-import encoding/decoderstream
 import utils/twtstr
+
+import chakasu/charset
+import chakasu/decoderstream
 
 type StreamRenderer* = object
   ansiparser: AnsiCodeParser

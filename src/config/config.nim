@@ -7,7 +7,6 @@ import buffer/cell
 import config/mailcap
 import config/mimetypes
 import config/toml
-import data/charset
 import io/headers
 import io/urlfilter
 import js/javascript
@@ -19,6 +18,8 @@ import types/url
 import utils/mimeguess
 import utils/opt
 import utils/twtstr
+
+import chakasu/charset
 
 type
   ColorMode* = enum

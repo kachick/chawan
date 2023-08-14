@@ -3,9 +3,10 @@ import options
 when defined(posix):
   import posix
 
-import data/charset
 import io/request
 import types/url
+
+import chakasu/charset
 
 type
   BufferSourceType* = enum

@@ -20,7 +20,6 @@ import strutils
 import tables
 
 import bindings/curl
-import data/charset
 import io/about
 import io/connecterror
 import io/file
@@ -41,6 +40,8 @@ import types/referer
 import types/url
 import utils/mimeguess
 import utils/twtstr
+
+import chakasu/charset
 
 export request
 export response

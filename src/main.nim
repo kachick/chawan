@@ -1,3 +1,5 @@
+import version
+
 import ips/forkserver
 let forks = newForkServer()
 
@@ -10,10 +12,11 @@ when defined(profile):
   import nimprof
 
 import config/config
-import data/charset
 import display/client
 import utils/opt
 import utils/twtstr
+
+import chakasu/charset
 
 let conf = readConfig()
 set_cjk_ambiguous(conf.display.double_width_ambiguous)

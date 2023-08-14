@@ -17,8 +17,6 @@ import css/mediaquery
 import css/sheet
 import css/stylednode
 import css/values
-import data/charset
-import encoding/decoderstream
 import html/chadombuilder
 import html/dom
 import html/env
@@ -49,6 +47,9 @@ import types/url
 import utils/opt
 import utils/twtstr
 import xhr/formdata as formdata_impl
+
+import chakasu/charset
+import chakasu/decoderstream
 
 type
   LoadInfo* = enum

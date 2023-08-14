@@ -5,13 +5,14 @@ import macros
 import tables
 import unicode
 
-import encoding/decoderstream
 import html/entity
 import html/parseerror
 import html/tags
 import utils/opt
 import utils/radixtree
 import utils/twtstr
+
+import chakasu/decoderstream
 
 # Tokenizer
 type

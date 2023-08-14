@@ -40,14 +40,22 @@ lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o \
 		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o | $(QJSOBJ)/
 	$(AR) rcs $@ $^
 
+.PHONY: clean
 clean:
 	rm -f cha
 	rm -rf $(OBJDIR)
 	rm -f lib/libquickjs.a
 
+.PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(prefix)/bin"
 	install -m755 cha "$(DESTDIR)$(prefix)/bin"
 
+.PHONY: uninstall
 uninstall:
 	rm -f "$(DESTDIR)$(prefix)/bin/cha"
+
+
+.PHONY: submodule
+submodule:
+	git submodule update --init

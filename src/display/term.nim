@@ -8,13 +8,14 @@ import unicode
 import bindings/termcap
 import buffer/cell
 import config/config
-import data/charset
-import encoding/encoderstream
 import io/runestream
 import io/window
 import types/color
 import utils/opt
 import utils/twtstr
+
+import chakasu/charset
+import chakasu/encoderstream
 
 #TODO switch from termcap...
 

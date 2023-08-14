@@ -1,0 +1,3 @@
+[submodule "lib/chakasu"]
+	path = lib/chakasu
+	url = https://git.sr.ht/~bptato/chakasu

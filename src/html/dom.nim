@@ -10,8 +10,6 @@ import tables
 import css/cssparser
 import css/sheet
 import css/values
-import data/charset
-import encoding/decoderstream
 import html/event
 import html/tags
 import img/bitmap
@@ -32,6 +30,9 @@ import types/url
 import types/vector
 import utils/mimeguess
 import utils/twtstr
+
+import chakasu/charset
+import chakasu/decoderstream
 
 type
   FormMethod* = enum
