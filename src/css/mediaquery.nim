@@ -189,7 +189,7 @@ template expect_bool(b: bool, sfalse: string, strue: string) =
 template expect_comparison(comparison: var MediaQueryComparison) =
   let tok = consume_token()
   if tok != CSS_DELIM_TOKEN: return nil
-  if tok.rvalue.isAscii(): return nil
+  if not tok.rvalue.isAscii(): return nil
   let c = char(tok.rvalue)
   if c notin {'=', '<', '>'}: return nil
   block parse:
