@@ -1,7 +1,8 @@
 import css/selectorparser
 import css/values
 import html/dom
-import html/tags
+
+import chame/tags
 
 # Container to hold a style and a node.
 # Pseudo-elements are implemented using StyledNode objects without nodes. Input

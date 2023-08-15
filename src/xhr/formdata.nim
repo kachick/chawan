@@ -1,10 +1,11 @@
 import html/dom
-import html/tags
 import js/exception
 import js/javascript
 import types/blob
 import types/formdata
 import utils/twtstr
+
+import chame/tags
 
 proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     encoding: string = ""): Option[seq[FormDataEntry]]

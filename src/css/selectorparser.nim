@@ -4,7 +4,8 @@ import strutils
 import unicode
 
 import css/cssparser
-import html/tags
+
+import chame/tags
 
 type
   SelectorType* = enum

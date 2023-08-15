@@ -24,6 +24,8 @@ macro checkVersion(xs: static string, major, minor, patch: int) =
         "Please run `make submodule` to update.")
 
 tryImport chakasu/version, "chakasu"
+tryImport chame/version, "chame"
 
 static:
   checkVersion("chakasu", 0, 1, 2)
+  checkVersion("chame", 0, 9, 3)

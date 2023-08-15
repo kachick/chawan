@@ -7,13 +7,14 @@ import css/sheet
 import css/stylednode
 import css/values
 import html/dom
-import html/tags
 import io/window
 import layout/box
 import layout/engine
 import layout/layoutunit
 import types/color
 import utils/twtstr
+
+import chame/tags
 
 func formatFromWord(computed: ComputedFormat): Format =
   result.fgcolor = computed.color.cellColor()

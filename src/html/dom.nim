@@ -11,7 +11,6 @@ import css/cssparser
 import css/sheet
 import css/values
 import html/event
-import html/tags
 import img/bitmap
 import img/painter
 import img/path
@@ -33,6 +32,8 @@ import utils/twtstr
 
 import chakasu/charset
 import chakasu/decoderstream
+
+import chame/tags
 
 type
   FormMethod* = enum

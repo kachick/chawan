@@ -20,7 +20,6 @@ import css/values
 import html/chadombuilder
 import html/dom
 import html/env
-import html/tags
 import img/png
 import io/connecterror
 import io/loader
@@ -50,6 +49,8 @@ import xhr/formdata as formdata_impl
 
 import chakasu/charset
 import chakasu/decoderstream
+
+import chame/tags
 
 type
   LoadInfo* = enum

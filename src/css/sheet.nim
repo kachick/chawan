@@ -4,7 +4,8 @@ import tables
 import css/mediaquery
 import css/cssparser
 import css/selectorparser
-import html/tags
+
+import chame/tags
 
 type
   CSSRuleBase* = ref object of RootObj

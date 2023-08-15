@@ -7,7 +7,8 @@ import css/cssparser
 import css/selectorparser
 import css/stylednode
 import html/dom
-import html/tags
+
+import chame/tags
 
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel

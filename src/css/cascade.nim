@@ -11,9 +11,10 @@ import css/sheet
 import css/stylednode
 import css/values
 import html/dom
-import html/tags
 import layout/layoutunit
 import types/color
+
+import chame/tags
 
 type
   DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]

@@ -3,12 +3,13 @@ import options
 import streams
 
 import html/dom
-import html/htmlparser
-import html/tags
 import js/javascript
 import types/url
 
 import chakasu/charset
+
+import chame/htmlparser
+import chame/tags
 
 # DOMBuilder implementation for Chawan.
 
