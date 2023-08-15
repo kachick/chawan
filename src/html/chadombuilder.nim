@@ -33,6 +33,17 @@ proc finish(builder: DOMBuilder[Node]) =
     script.execute()
   #TODO events
 
+proc restart(builder: DOMBuilder[Node]) =
+  let document = newDocument()
+  document.contentType = "text/html"
+  let oldDocument = cast[Document](builder.document)
+  document.url = oldDocument.url
+  let window = oldDocument.window
+  if window != nil:
+    document.window = window
+    window.document = document
+  builder.document = document
+
 proc parseError(builder: DOMBuilder[Node], message: string) =
   discard
 
@@ -155,6 +166,7 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
   return ChaDOMBuilder(
     document: document,
     finish: finish,
+    restart: restart,
     setQuirksMode: setQuirksMode,
     setCharacterSet: setCharacterset,
     elementPopped: elementPopped,
