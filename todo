@@ -93,7 +93,6 @@ images:
 - incremental decoding (maybe implement streams first?)
 - separate image decoder process? or just run on a different thread?
 etc:
-- important: integrate Chame (just specify as submodule)
 - important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
 - tests (including aforementioned fuzzer)
 - orc support:
