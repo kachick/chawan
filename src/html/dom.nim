@@ -2013,13 +2013,6 @@ func newDocumentType*(document: Document, name: string, publicId = "", systemId 
     index: -1
   )
 
-func inHTMLNamespace*(element: Element): bool = element.namespace == Namespace.HTML
-func inMathMLNamespace*(element: Element): bool = element.namespace == Namespace.MATHML
-func inSVGNamespace*(element: Element): bool = element.namespace == Namespace.SVG
-func inXLinkNamespace*(element: Element): bool = element.namespace == Namespace.XLINK
-func inXMLNamespace*(element: Element): bool = element.namespace == Namespace.XML
-func inXMLNSNamespace*(element: Element): bool = element.namespace == Namespace.XMLNS
-
 func isResettable*(element: Element): bool =
   return element.tagType in {TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA}
 
