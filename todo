@@ -67,6 +67,7 @@ javascript:
 - important: callbacks leak memory, I think. fix this (e.g. have a ref
   JSCallback or something)
 - add support for JS mixins
+- legacyunforgeable
 - distinguish double from unrestricted double
 - "javascript:" urls
 - better dom support, events
