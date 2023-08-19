@@ -159,13 +159,15 @@ proc consumeString(state: var TomlParser, first: char):
     if c == '\n' and not multiline:
       return state.err("newline in string")
     elif c == first:
-      if multiline and state.has(1):
-        let c2 = state.peek(0)
-        let c3 = state.peek(1)
-        if c2 == first and c3 == first:
-          discard state.consume()
-          discard state.consume()
-          break
+      if multiline:
+        if state.has(1):
+          let c2 = state.peek(0)
+          let c3 = state.peek(1)
+          if c2 == first and c3 == first:
+            discard state.consume()
+            discard state.consume()
+            break
+        res &= c
       else:
         break
     elif first == '"' and c == '\\':
