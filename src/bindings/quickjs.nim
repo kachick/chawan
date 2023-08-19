@@ -262,7 +262,8 @@ const
 const
   JS_PARSE_JSON_EXT* = (1 shl 0)
 
-template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction): JSCFunctionListEntry = 
+template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction):
+    JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
                        prop_flags: JS_PROP_WRITABLE or JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CFUNC,
@@ -272,7 +273,8 @@ template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction): JSCFunctionLi
                            cproto: JS_CFUNC_generic,
                            cfunc: JSCFunctionType(generic: func1))))
 
-template JS_CGETSET_DEF*(n: string, fgetter, fsetter: untyped): JSCFunctionListEntry =
+template JS_CGETSET_DEF*(n: string, fgetter: JSGetterFunction,
+    fsetter: JSSetterFunction): JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
                        prop_flags: JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CGETSET,
@@ -281,7 +283,17 @@ template JS_CGETSET_DEF*(n: string, fgetter, fsetter: untyped): JSCFunctionListE
                            get: JSCFunctionType(getter: fgetter),
                            set: JSCFunctionType(setter: fsetter))))
 
-template JS_CGETSET_MAGIC_DEF*(n: string, fgetter, fsetter: untyped,
+template JS_CGETSET_DEF_NOCONF*(n: string, fgetter: JSGetterFunction,
+    fsetter: JSSetterFunction): JSCFunctionListEntry =
+  JSCFunctionListEntry(name: cstring(n),
+                       prop_flags: JS_PROP_ENUMERABLE,
+                       def_type: JS_DEF_CGETSET,
+                       u: JSCFunctionListEntryU(
+                         getset: JSCFunctionListEntryGetSet(
+                           get: JSCFunctionType(getter: fgetter),
+                           set: JSCFunctionType(setter: fsetter))))
+
+template JS_CGETSET_MAGIC_DEF*(n: string, fgetter, fsetter: typed,
     m: int16): JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
                        prop_flags: JS_PROP_CONFIGURABLE,

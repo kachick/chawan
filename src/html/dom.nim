@@ -83,7 +83,7 @@ type
   Location = ref object
     window: Window
 
-  Window* = ref object
+  Window* = ref object of EventTarget
     attrs*: WindowAttributes
     console* {.jsget.}: console
     navigator* {.jsget.}: Navigator
@@ -1783,6 +1783,17 @@ func formmethod*(element: Element): FormMethod =
         else: FORM_METHOD_GET
 
   return FORM_METHOD_GET
+
+# Forward declaration hack
+isDefaultPassive = func (eventTarget: EventTarget): bool =
+  if eventTarget of Window:
+    return true
+  if not (eventTarget of Node):
+    return false
+  let node = Node(eventTarget)
+  return EventTarget(node.document) == eventTarget or
+    EventTarget(node.document.html) == eventTarget or
+    EventTarget(node.document.body) == eventTarget
 
 proc parseColor(element: Element, s: string): RGBAColor =
   let cval = parseComponentValue(newStringStream(s))

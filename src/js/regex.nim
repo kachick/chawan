@@ -33,13 +33,21 @@ type
 var dummyRuntime = newJSRuntime()
 var dummyContext = dummyRuntime.newJSContextRaw()
 
-proc `=destroy`*(regex: var Regex) =
-  if regex.bytecode != nil:
-    if regex.clone:
-      dealloc(regex.bytecode)
-    else:
-      dummyRuntime.js_free_rt(regex.bytecode)
-    regex.bytecode = nil
+when NimMajor >= 2:
+  proc `=destroy`*(regex: Regex) =
+    if regex.bytecode != nil:
+      if regex.clone:
+        dealloc(regex.bytecode)
+      else:
+        dummyRuntime.js_free_rt(regex.bytecode)
+else:
+  proc `=destroy`*(regex: var Regex) =
+    if regex.bytecode != nil:
+      if regex.clone:
+        dealloc(regex.bytecode)
+      else:
+        dummyRuntime.js_free_rt(regex.bytecode)
+      regex.bytecode = nil
 
 proc `=copy`*(dest: var Regex, source: Regex) =
   if dest.bytecode != source.bytecode:
