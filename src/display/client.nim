@@ -585,6 +585,9 @@ proc addJSModules(client: Client, ctx: JSContext) =
   ctx.addPagerModule()
   ctx.addContainerModule()
 
+func getClient(client: Client): Client {.jsfget: "client".} =
+  return client
+
 proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = newJSRuntime()
@@ -608,7 +611,6 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
   var global = JS_GetGlobalObject(jsctx)
   jsctx.registerType(Client, asglobal = true)
   setGlobal(jsctx, global, client)
-  jsctx.setProperty(global, "client", global)
   JS_FreeValue(jsctx, global)
   jsctx.registerType(Console)
   client.addJSModules(jsctx)
