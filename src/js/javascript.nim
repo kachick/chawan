@@ -456,8 +456,6 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
         $cdef.class_name)
     if unforgeable.len != 0:
       let p = addr ctxOpaque.unforgeable[result][0]
-      for x in ctxOpaque.unforgeable[result]:
-        eprint "set global", x.name
       JS_SetPropertyFunctionList(ctx, global, p, cint(unforgeable.len))
     JS_FreeValue(ctx, global)
   let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0, JS_CFUNC_constructor)
