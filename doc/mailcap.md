@@ -48,7 +48,7 @@ x=%s; echo "$(cat "$x")"
 
 ### Fields
 
-The `test`, `nametemplate` and `copiousoutput` fields are
+The `test`, `nametemplate`, `needsterminal` and `copiousoutput` fields are
 recognized. Additionally, the non-standard `x-htmloutput` extension field
 is recognized too.
 
@@ -59,7 +59,10 @@ is recognized too.
   into a new buffer.
 * The `x-htmloutput` extension field behaves the same as `copiousoutput`,
   but makes Chawan interpret the command's output as HTML.
-* For a description of nametemplate, see the RFC.
+* `needsterminal` hands over control of the terminal to the command while
+  it is running. Note: as of now, `needsterminal` does nothing if either
+  `copiousoutput` or `x-htmloutput` is specified.
+* For a description of `nametemplate`, see the RFC.
 
 ## Note
 
