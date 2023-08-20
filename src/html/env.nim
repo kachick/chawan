@@ -93,6 +93,9 @@ proc setLocation(window: Window, s: string): Err[DOMException]
     {.jsfset: "location".} =
   window.document.setLocation(s)
 
+proc getWindow(window: Window): Window {.jsuffget: "window".} =
+  return window
+
 proc addScripting*(window: Window, selector: Selector[int]) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -115,7 +118,6 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   var global = JS_GetGlobalObject(ctx)
   ctx.registerType(Window, asglobal = true)
   ctx.setGlobal(global, window)
-  ctx.defineProperty(global, "window", global)
   JS_FreeValue(ctx, global)
   ctx.addDOMExceptionModule()
   ctx.addconsoleModule()

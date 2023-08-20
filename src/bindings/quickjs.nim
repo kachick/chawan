@@ -273,6 +273,17 @@ template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction):
                            cproto: JS_CFUNC_generic,
                            cfunc: JSCFunctionType(generic: func1))))
 
+template JS_CFUNC_DEF_NOCONF*(n: string, len: uint8, func1: JSCFunction):
+    JSCFunctionListEntry =
+  JSCFunctionListEntry(name: cstring(n),
+                       prop_flags: JS_PROP_ENUMERABLE,
+                       def_type: JS_DEF_CFUNC,
+                       u: JSCFunctionListEntryU(
+                         `func`: JSCFunctionListEntryFunc(
+                           length: len,
+                           cproto: JS_CFUNC_generic,
+                           cfunc: JSCFunctionType(generic: func1))))
+
 template JS_CGETSET_DEF*(n: string, fgetter: JSGetterFunction,
     fsetter: JSSetterFunction): JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),

@@ -92,7 +92,7 @@ type
     location* {.jsget.}: Location
     jsrt*: JSRuntime
     jsctx*: JSContext
-    document* {.jsget.}: Document
+    document* {.jsufget.}: Document
     timeouts*: TimeoutState[int]
     navigate*: proc(url: URL)
 
@@ -1179,7 +1179,7 @@ proc setLocation*(document: Document, s: string): Err[DOMException]
 
 # Note: we do not implement security checks (as documents are in separate
 # windows anyway).
-func href(location: Location): string {.jsfget.} =
+func href(location: Location): string {.jsuffget.} =
   return location.url.serialize()
 
 proc setHref(location: Location, s: string): Err[DOMException]
@@ -1188,21 +1188,21 @@ proc setHref(location: Location, s: string): Err[DOMException]
     return ok()
   return location.document.setLocation(s)
 
-proc assign(location: Location, s: string): Err[DOMException] {.jsfunc.} =
+proc assign(location: Location, s: string): Err[DOMException] {.jsuffunc.} =
   location.setHref(s)
 
-proc replace(location: Location, s: string): Err[DOMException] {.jsfunc.} =
+proc replace(location: Location, s: string): Err[DOMException] {.jsuffunc.} =
   location.setHref(s)
 
-proc reload(location: Location) {.jsfunc.} =
+proc reload(location: Location) {.jsuffunc.} =
   if location.document == nil:
     return
   location.document.window.navigate(location.url)
 
-func origin(location: Location): string {.jsfget.} =
+func origin(location: Location): string {.jsuffget.} =
   return location.url.origin
 
-func protocol(location: Location): string {.jsfget.} =
+func protocol(location: Location): string {.jsuffget.} =
   return location.url.protocol
 
 proc protocol(location: Location, s: string): Err[DOMException] {.jsfset.} =
@@ -1216,7 +1216,7 @@ proc protocol(location: Location, s: string): Err[DOMException] {.jsfset.} =
   document.window.navigate(copyURL)
   return ok()
 
-func host(location: Location): string {.jsfget.} =
+func host(location: Location): string {.jsuffget.} =
   return location.url.host
 
 proc setHost(location: Location, s: string) {.jsfset: "host".} =
@@ -1227,7 +1227,7 @@ proc setHost(location: Location, s: string) {.jsfset: "host".} =
   copyURL.setHost(s)
   document.window.navigate(copyURL)
 
-proc hostname(location: Location): string {.jsfget.} =
+proc hostname(location: Location): string {.jsuffget.} =
   return location.url.hostname
 
 proc setHostname(location: Location, s: string) {.jsfset: "hostname".} =
@@ -1238,7 +1238,7 @@ proc setHostname(location: Location, s: string) {.jsfset: "hostname".} =
   copyURL.setHostname(s)
   document.window.navigate(copyURL)
 
-proc port(location: Location): string {.jsfget.} =
+proc port(location: Location): string {.jsuffget.} =
   return location.url.port
 
 proc setPort(location: Location, s: string) {.jsfset: "port".} =
@@ -1249,7 +1249,7 @@ proc setPort(location: Location, s: string) {.jsfset: "port".} =
   copyURL.setPort(s)
   document.window.navigate(copyURL)
 
-proc pathname(location: Location): string {.jsfget.} =
+proc pathname(location: Location): string {.jsuffget.} =
   return location.url.pathname
 
 proc setPathname(location: Location, s: string) {.jsfset: "pathname".} =
@@ -1260,7 +1260,7 @@ proc setPathname(location: Location, s: string) {.jsfset: "pathname".} =
   copyURL.setPathname(s)
   document.window.navigate(copyURL)
 
-proc search(location: Location): string {.jsfget.} =
+proc search(location: Location): string {.jsuffget.} =
   return location.url.search
 
 proc setSearch(location: Location, s: string) {.jsfset: "search".} =
@@ -1271,7 +1271,7 @@ proc setSearch(location: Location, s: string) {.jsfset: "search".} =
   copyURL.setSearch(s)
   document.window.navigate(copyURL)
 
-proc hash(location: Location): string {.jsfget.} =
+proc hash(location: Location): string {.jsuffget.} =
   return location.url.hash
 
 proc setHash(location: Location, s: string) {.jsfset: "hash".} =
