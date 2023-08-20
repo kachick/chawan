@@ -12,7 +12,7 @@ mime.types file was found, the built-in mime type associations are used.
 The default search path for mime.types files is:
 
 ```
-$HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
+$HOME/.mime.types:/etc/mime.types:/usr/etc/mime.types:/usr/local/etc/mime.types
 ```
 
 ## Format
