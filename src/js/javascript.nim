@@ -1663,7 +1663,7 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator, okstmt, errstmt: NimNode) =
         `okstmt`
       `errstmt`
 
-proc makeCtorJSCallAndRet(gen: var JSFuncGenerator, okstmt, errstmt: NimNode) =
+proc makeCtorJSCallAndRet(gen: var JSFuncGenerator, errstmt: NimNode) =
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
   gen.jsCallAndRet = quote do:
@@ -1683,8 +1683,7 @@ macro jsctor*(fun: typed) =
   gen.finishFunCallList()
   let errstmt = quote do:
     return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
-  # no okstmt
-  gen.makeCtorJSCallAndRet(nil, errstmt)
+  gen.makeCtorJSCallAndRet(errstmt)
   discard gen.newJSProc(getJSParams())
   gen.registerConstructor()
   result = newStmtList(fun)
