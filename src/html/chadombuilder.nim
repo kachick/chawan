@@ -187,7 +187,6 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
     #TODO isSVGIntegrationPoint (SVG support)
   )
 
-#TODO we shouldn't allow passing nil to window
 proc parseHTML*(inputStream: Stream, window: Window, url: URL,
     charsets: seq[Charset] = @[], canReinterpret = true): Document =
   let builder = newChaDOMBuilder(url, window)
@@ -204,13 +203,20 @@ proc parseHTML*(inputStream: Stream, window: Window, url: URL,
 proc newDOMParser(): DOMParser {.jsctor.} =
   new(result)
 
-proc parseFromString(parser: DOMParser, str: string, t: string):
+proc parseFromString(ctx: JSContext, parser: DOMParser, str, t: string):
     Result[Document, JSError] {.jsfunc.} =
   case t
   of "text/html":
-    #TODO window should be stored in DOMParser somehow. Setting it to nil
-    # is wrong.
-    let url = newURL("about:blank").get
+    let global = JS_GetGlobalObject(ctx)
+    let window = if ctx.hasClass(Window):
+      fromJS[Window](ctx, global).get(nil)
+    else:
+      Window(nil)
+    JS_FreeValue(ctx, global)
+    let url = if window != nil and window.document != nil:
+      window.document.url
+    else:
+      newURL("about:blank").get
     let res = parseHTML(newStringStream(str), Window(nil), url)
     return ok(res)
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":

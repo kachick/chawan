@@ -239,11 +239,8 @@ func getClass*(ctx: JSContext, class: string): JSClassID =
   # This function *should* never fail.
   ctx.getOpaque().creg[class]
 
-func findClass*(ctx: JSContext, class: string): Option[JSClassID] =
-  let opaque = ctx.getOpaque()
-  if class in opaque.creg:
-    return some(opaque.creg[class])
-  return none(JSClassID)
+func hasClass*(ctx: JSContext, class: type): bool =
+  return $class in ctx.getOpaque().creg
 
 func newJSCFunction*(ctx: JSContext, name: string, fun: JSCFunction,
     argc: int = 0, proto = JS_CFUNC_generic, magic = 0): JSValue =
