@@ -43,7 +43,7 @@ Note that $(subprocesses) are not quoted properly yet. We recommend using
 something like:
 
 ```
-x=%s; echo "$(cat "$x")"
+x=%s\; echo "$(cat "$x")"
 ```
 
 ### Fields
