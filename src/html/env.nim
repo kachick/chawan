@@ -89,7 +89,7 @@ proc screenTop(window: Window): int64 {.jsfget.} = 0
 #TODO outerWidth, outerHeight
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
-proc setLocation(window: Window, s: string): Err[DOMException]
+proc setLocation(window: Window, s: string): Err[JSError]
     {.jsfset: "location".} =
   window.document.setLocation(s)
 

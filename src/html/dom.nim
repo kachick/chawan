@@ -1158,6 +1158,8 @@ proc newLocation*(window: Window): Location =
   return location
 
 func location(document: Document): Location {.jsfget.} =
+  if document.window == nil:
+    return nil
   return document.window.location
 
 func document(location: Location): Document =
@@ -1169,8 +1171,10 @@ func url(location: Location): URL =
     return document.url
   return newURL("about:blank").get
 
-proc setLocation*(document: Document, s: string): Err[DOMException]
+proc setLocation*(document: Document, s: string): Err[JSError]
     {.jsfset: "location".} =
+  if document.location == nil:
+    return err(newTypeError("document.location is not an object"))
   let url = parseURL(s)
   if url.isNone:
     return err(newDOMException("Invalid URL", "SyntaxError"))
@@ -1182,16 +1186,16 @@ proc setLocation*(document: Document, s: string): Err[DOMException]
 func href(location: Location): string {.jsuffget.} =
   return location.url.serialize()
 
-proc setHref(location: Location, s: string): Err[DOMException]
+proc setHref(location: Location, s: string): Err[JSError]
     {.jsfset: "href".} =
   if location.document == nil:
     return ok()
   return location.document.setLocation(s)
 
-proc assign(location: Location, s: string): Err[DOMException] {.jsuffunc.} =
+proc assign(location: Location, s: string): Err[JSError] {.jsuffunc.} =
   location.setHref(s)
 
-proc replace(location: Location, s: string): Err[DOMException] {.jsuffunc.} =
+proc replace(location: Location, s: string): Err[JSError] {.jsuffunc.} =
   location.setHref(s)
 
 proc reload(location: Location) {.jsuffunc.} =
