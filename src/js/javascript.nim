@@ -98,7 +98,9 @@ type
     typemap: Table[pointer, JSClassID]
     ctors: Table[JSClassID, JSValue]
     parents: Table[JSClassID, JSClassID]
-    # Note: we assume no zero-list entry is added here.
+    # Parent unforgeables are merged on class creation.
+    # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
+    # `unforgeable[classid]'.)
     unforgeable: Table[JSClassID, seq[JSCFunctionListEntry]]
     funmap: Table[pointer, pointer]
     gclaz: string
@@ -408,6 +410,22 @@ func getTypePtr(t: type): pointer =
   new(x)
   return getTypePtr(x)
 
+# Add all LegacyUnforgeable functions defined on the prototype chain to
+# the opaque.
+# Since every prototype has a list of all its ancestor's LegacyUnforgeable
+# functions, it is sufficient to simply merge the new list of new classes
+# with their parent's list to achieve this.
+proc addClassUnforgeable(ctx: JSContext, proto: JSValue,
+    classid, parent: JSClassID, ourUnforgeable: JSFunctionList) =
+  let ctxOpaque = ctx.getOpaque()
+  var merged = @ourUnforgeable
+  ctxOpaque.unforgeable.withValue(parent, uf):
+    merged.add(uf[])
+  if merged.len > 0:
+    let ufp = addr merged[0]
+    ctxOpaque.unforgeable[classid] = merged
+    JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
+
 func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     nimt: pointer, ctor: JSCFunction, funcs: JSFunctionList, parent: JSClassID,
     asglobal: bool, nointerface: bool, finalizer: proc(val: JSValue),
@@ -422,8 +440,6 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
   ctxOpaque.parents[result] = parent
-  if unforgeable.len != 0:
-    ctxOpaque.unforgeable[result] = @unforgeable
   if finalizer != nil:
     rtOpaque.fins[result] = finalizer
   var proto: JSValue
@@ -447,6 +463,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   let news = JS_NewString(ctx, cdef.class_name)
   doAssert JS_SetProperty(ctx, proto, toStringTag, news) == 1
   JS_SetClassProto(ctx, result, proto)
+  ctx.addClassUnforgeable(proto, result, parent, unforgeable)
   if asglobal:
     let global = JS_GetGlobalObject(ctx)
     assert ctxOpaque.gclaz == ""
@@ -454,9 +471,9 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " &
         $cdef.class_name)
-    if unforgeable.len != 0:
-      let p = addr ctxOpaque.unforgeable[result][0]
-      JS_SetPropertyFunctionList(ctx, global, p, cint(unforgeable.len))
+    # Global already exists, so set unforgeable functions here
+    ctxOpaque.unforgeable.withValue(result, uf):
+      JS_SetPropertyFunctionList(ctx, global, addr uf[][0], cint(uf[].len))
     JS_FreeValue(ctx, global)
   let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0, JS_CFUNC_constructor)
   JS_SetConstructor(ctx, jctor, proto)
@@ -537,16 +554,9 @@ proc defineUnforgeable*(ctx: JSContext, this: JSValue) =
   if unlikely(JS_IsException(this)):
     return
   let ctxOpaque = ctx.getOpaque()
-  var classid = JS_GetClassID(this)
-  while true:
-    ctxOpaque.unforgeable.withValue(classid, uf):
-      JS_SetPropertyFunctionList(ctx, this, addr uf[][0], cint(uf[].len))
-    ctxOpaque.parents.withValue(classid, val):
-      classid = val[]
-    do:
-      classid = 0 # not defined by Chawan; assume parent is Object.
-    if classid == 0:
-      break
+  let classid = JS_GetClassID(this)
+  ctxOpaque.unforgeable.withValue(classid, uf):
+    JS_SetPropertyFunctionList(ctx, this, addr uf[][0], cint(uf[].len))
 
 func fromJSString(ctx: JSContext, val: JSValue): Result[string, JSError] =
   var plen: csize_t
