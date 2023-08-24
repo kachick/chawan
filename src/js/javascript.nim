@@ -102,21 +102,19 @@ type
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)
     unforgeable: Table[JSClassID, seq[JSCFunctionListEntry]]
-    funmap: Table[pointer, pointer]
     gclaz: string
     sym_refs: array[JSSymbolRefs, JSAtom]
     str_refs: array[JSStrRefs, JSAtom]
     Array_prototype_values: JSValue
     Object_prototype_valueOf*: JSValue
     err_ctors: array[JSErrorEnum, JSValue]
-    dummy_ref_proto: JSValue
 
   JSRuntimeOpaque* = ref object
     plist: Table[pointer, pointer] # Nim, JS
     flist: seq[seq[JSCFunctionListEntry]]
     fins: Table[JSClassID, proc(val: JSValue)]
 
-  JSFunctionList* = openArray[JSCFunctionListEntry]
+  JSFunctionList = openArray[JSCFunctionListEntry]
 
   JSError* = ref object of RootObj
     e*: JSErrorEnum
@@ -228,9 +226,6 @@ proc newJSContext*(rt: JSRuntime): JSContext =
 
   JS_SetContextOpaque(ctx, cast[pointer](opaque))
   return ctx
-
-proc newJSContextRaw*(rt: JSRuntime): JSContext =
-  result = JS_NewContextRaw(rt)
 
 func getJSValue(argv: ptr JSValue, i: int): JSValue {.inline.} =
   cast[ptr UncheckedArray[JSValue]](argv)[i]
@@ -368,13 +363,6 @@ func isInstanceOf*(ctx: JSContext, val: JSValue, class: static string): bool =
     if classid == 0:
       break
   return found
-
-proc setProperty*(ctx: JSContext, val: JSValue, name: string, prop: JSValue) =
-  if JS_SetPropertyStr(ctx, val, cstring(name), prop) <= 0:
-    raise newException(Defect, "Failed to set property string: " & name)
-
-proc setProperty*(ctx: JSContext, val: JSValue, name: string, fun: JSCFunction, argc: int = 0) =
-  ctx.setProperty(val, name, ctx.newJSCFunction(name, fun, argc))
 
 proc defineProperty(ctx: JSContext, this: JSValue, name: string,
     prop: JSValue, flags = cint(0)) =
@@ -764,21 +752,19 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
 
 proc fromJSTable[A, B](ctx: JSContext, val: JSValue):
     Result[Table[A, B], JSError] =
-  var ptab: ptr JSPropertyEnum
+  var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return err()
   defer:
-    for i in 0..<plen:
-      let prop = cast[ptr JSPropertyEnum](cast[int](ptab) + sizeof(ptab[]) * int(i))
-      JS_FreeAtom(ctx, prop.atom)
+    for i in 0 ..< plen:
+      JS_FreeAtom(ctx, ptab[i].atom)
     js_free(ctx, ptab)
   var res = Table[A, B]()
-  for i in 0..<plen:
-    let prop = cast[ptr JSPropertyEnum](cast[int](ptab) + sizeof(ptab[]) * int(i))
-    let atom = prop.atom
+  for i in 0 ..< plen:
+    let atom = ptab[i].atom
     let k = JS_AtomToValue(ctx, atom)
     defer: JS_FreeValue(ctx, k)
     let kn = ?fromJS[A](ctx, k)
@@ -821,7 +807,7 @@ macro unpackReturnType(f: typed) =
     return quote do: void
   doAssert rv[0].strVal == "Result"
   let rvv = rv[1]
-  result = quote do: `rvv`
+  return quote do: `rvv`
 
 macro unpackArg0(f: typed) =
   var x = f.getRealTypeFun()
@@ -829,7 +815,7 @@ macro unpackArg0(f: typed) =
   let rv = params[1]
   doAssert rv.kind == nnkIdentDefs
   let rvv = rv[1]
-  result = quote do: `rvv`
+  return quote do: `rvv`
 
 proc fromJSFunction[T](ctx: JSContext, val: JSValue):
     Result[T, JSError] =
@@ -1007,7 +993,7 @@ proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue =
   let obj = JS_NewObject(ctx)
   if not JS_IsException(obj):
     for k, v in t:
-      setProperty(ctx, obj, k, toJS(ctx, v))
+      definePropertyCWE(ctx, obj, k, v)
   return obj
 
 proc toJS*(ctx: JSContext, opt: Option): JSValue =
@@ -1036,7 +1022,8 @@ proc toJS(ctx: JSContext, s: seq): JSValue =
       let j = toJS(ctx, s[i])
       if JS_IsException(j):
         return j
-      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j, JS_PROP_C_W_E or JS_PROP_THROW) < 0:
+      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j,
+          JS_PROP_C_W_E or JS_PROP_THROW) < 0:
         return JS_EXCEPTION
   return a
 
@@ -1146,8 +1133,6 @@ proc defineConsts*(ctx: JSContext, classid: JSClassID,
 type
   JSFuncGenerator = object
     t: BoundFunctionType
-    original: NimNode
-    copied: NimNode
     thisname: Option[string]
     funcName: string
     generics: Table[string, seq[NimNode]]
@@ -1578,11 +1563,12 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
     )
   result.add(gen.jsCallAndRet)
 
-proc newJSProc(gen: var JSFuncGenerator, params: openArray[NimNode], isva = true): NimNode =
+proc newJSProc(gen: var JSFuncGenerator, params: openArray[NimNode],
+    isva = true): NimNode =
   let jsBody = gen.newJSProcBody(isva)
   let jsPragmas = newNimNode(nnkPragma).add(ident("cdecl"))
-  result = newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
-  gen.res = result
+  gen.res = newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
+  return gen.res
 
 func getFuncName(fun: NimNode, jsname: string): string =
   if jsname != "":
@@ -1641,7 +1627,6 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
     funcParams: funcParams,
     returnType: getReturn(fun),
     minArgs: funcParams.getMinArgs(),
-    original: fun,
     thisname: thisname,
     errval: getErrVal(t),
     dielabel: ident("ondie"),
@@ -1693,7 +1678,7 @@ macro jsctor*(fun: typed) =
   gen.makeCtorJSCallAndRet(errstmt)
   discard gen.newJSProc(getJSParams())
   gen.registerConstructor()
-  result = newStmtList(fun)
+  return newStmtList(fun)
 
 macro jshasprop*(fun: typed) =
   var gen = setupGenerator(fun, PROPERTY_HAS, thisname = some("obj"))
@@ -1712,7 +1697,7 @@ macro jshasprop*(fun: typed) =
     doAssert false # TODO?
   let jsProc = gen.newJSProc(getJSHasPropParams(), false)
   gen.registerFunction()
-  result = newStmtList(fun, jsProc)
+  return newStmtList(fun, jsProc)
 
 macro jsgetprop*(fun: typed) =
   var gen = setupGenerator(fun, PROPERTY_GET, thisname = some("obj"))
@@ -1736,7 +1721,7 @@ macro jsgetprop*(fun: typed) =
     return cint(0)
   let jsProc = gen.newJSProc(getJSGetPropParams(), false)
   gen.registerFunction()
-  result = newStmtList(fun, jsProc)
+  return newStmtList(fun, jsProc)
 
 macro jsfgetn(jsname: static string, uf: static bool, fun: typed) =
   var gen = setupGenerator(fun, GETTER, jsname = jsname, unforgeable = uf)
@@ -1752,7 +1737,7 @@ macro jsfgetn(jsname: static string, uf: static bool, fun: typed) =
   gen.makeJSCallAndRet(nil, quote do: discard)
   let jsProc = gen.newJSProc(getJSGetterParams(), false)
   gen.registerFunction()
-  result = newStmtList(fun, jsProc)
+  return newStmtList(fun, jsProc)
 
 # "Why?" So the compiler doesn't cry.
 template jsfget*(fun: typed) =
@@ -1789,7 +1774,7 @@ macro jsfsetn(jsname: static string, fun: typed) =
   gen.makeJSCallAndRet(okstmt, errstmt)
   let jsProc = gen.newJSProc(getJSSetterParams(), false)
   gen.registerFunction()
-  result = newStmtList(fun, jsProc)
+  return newStmtList(fun, jsProc)
 
 template jsfset*(fun: typed) =
   jsfsetn("", fun)
@@ -1812,7 +1797,7 @@ macro jsfuncn*(jsname: static string, uf: static bool, fun: typed) =
   gen.makeJSCallAndRet(okstmt, errstmt)
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
-  result = newStmtList(fun, jsProc)
+  return newStmtList(fun, jsProc)
 
 template jsfunc*(fun: typed) =
   jsfuncn("", false, fun)
@@ -1874,7 +1859,9 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
   impl = impl[0].getImpl()
   # stolen from std's macros.customPragmaNode
   var identDefsStack = newSeq[NimNode](impl[2].len)
-  for i in 0..<identDefsStack.len: identDefsStack[i] = impl[2][i]
+  for i in 0 ..< identDefsStack.len:
+    identDefsStack[i] = impl[2][i]
+  var pragmas: JSObjectPragmas
   while identDefsStack.len > 0:
     var identDefs = identDefsStack.pop()
     case identDefs.kind
@@ -1903,15 +1890,16 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
               varsym: varName
             )
             case pragmaName
-            of "jsget": result.jsget.add(op)
-            of "jsset": result.jsset.add(op)
+            of "jsget": pragmas.jsget.add(op)
+            of "jsset": pragmas.jsset.add(op)
             of "jsufget": # LegacyUnforgeable
               op.unforgeable = true
-              result.jsget.add(op)
+              pragmas.jsget.add(op)
             of "jsgetset":
-              result.jsget.add(op)
-              result.jsset.add(op)
-            of "jsinclude": result.jsinclude.add(op)
+              pragmas.jsget.add(op)
+              pragmas.jsset.add(op)
+            of "jsinclude": pragmas.jsinclude.add(op)
+  return pragmas
 
 proc nim_finalize_for_js*[T](obj: ptr T) =
   for rt in runtimes:
@@ -2209,7 +2197,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
 proc getMemoryUsage*(rt: JSRuntime): string =
   var m: JSMemoryUsage
   JS_ComputeMemoryUsage(rt, addr m)
-  result = fmt"""
+  return fmt"""
 memory allocated: {m.malloc_count} {m.malloc_size} ({float(m.malloc_size)/float(m.malloc_count):.1f}/block)
 memory used: {m.memory_used_count} {m.memory_used_size} ({float(m.malloc_size-m.memory_used_size)/float(m.memory_used_count):.1f} average slack)
 atoms: {m.atom_count} {m.atom_size} ({float(m.atom_size)/float(m.atom_count):.1f}/atom)

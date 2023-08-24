@@ -63,7 +63,6 @@ external:
 - save buffer (source, output)
 - edit buffer (local file, or whatever we downloaded)
 javascript:
-- important: check where to use defineProperty and setProperty
 - important: callbacks leak memory, I think. fix this (e.g. have a ref
   JSCallback or something)
 - add support for JS mixins

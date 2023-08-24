@@ -2,7 +2,6 @@
 
 import bindings/libregexp
 import bindings/quickjs
-import js/javascript
 import utils/opt
 import utils/twtstr
 
@@ -30,8 +29,8 @@ type
     rule: string
     global: bool
 
-var dummyRuntime = newJSRuntime()
-var dummyContext = dummyRuntime.newJSContextRaw()
+var dummyRuntime = JS_NewRuntime()
+var dummyContext = JS_NewContextRaw(dummyRuntime)
 
 when NimMajor >= 2:
   proc `=destroy`*(regex: Regex) =
