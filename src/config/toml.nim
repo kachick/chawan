@@ -402,7 +402,8 @@ proc consumeArray(state: var TomlParser): TomlResult =
   while state.has():
     let c = state.consume()
     case c
-    of ' ', '\t', '\n': discard
+    of ' ', '\t': discard
+    of '\n': inc state.line
     of ']':
       if val != nil:
         res.a.add(val)
@@ -427,12 +428,9 @@ proc consumeInlineTable(state: var TomlParser): TomlResult =
   while state.has():
     let c = state.consume()
     case c
-    of ' ', '\t', '\n': discard
-    of '}':
-      if val != nil:
-        res.a.add(val)
-      break
-    of ',':
+    of ' ', '\t': discard
+    of '\n': inc state.line
+    of ',', '}':
       if key.len == 0:
         return state.err("missing key")
       if val == nil:
@@ -450,16 +448,21 @@ proc consumeInlineTable(state: var TomlParser): TomlResult =
       if k in table.map:
         return state.err("invalid re-definition of key " & k)
       table.map[k] = val
+      val = nil
+      haskey = false
+      if c == '}':
+        return ok(res)
     else:
       if val != nil:
         return state.err("missing comma")
       if not haskey:
+        state.reconsume()
         key = ?state.consumeKey()
         haskey = true
       else:
         state.reconsume()
         val = ?state.consumeValue()
-  return ok(res)
+  return state.err("unexpected end of file")
 
 proc consumeValue(state: var TomlParser): TomlResult =
   while state.has():
