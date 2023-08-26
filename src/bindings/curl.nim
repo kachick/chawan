@@ -1,7 +1,13 @@
 const curllib = (func(): string =
-  when defined(windows): return "libcurl.dll"
-  elif defined(macos): return "libcurl(|.4|.4.8.0).dylib"
-  else: return "libcurl.so(|.4|.4.8.0)" # assume posix
+  const curlLibName {.strdefine.} = ""
+  when curlLibName != "":
+    return curlLibName
+  elif defined(windows):
+    return "libcurl.dll"
+  elif defined(macos):
+    return "libcurl(|.4|.4.8.0).dylib"
+  else: # assume posix
+    return "libcurl.so(|.4|.4.8.0)"
 )()
 
 const

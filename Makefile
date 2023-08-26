@@ -1,6 +1,6 @@
 NIMC = nim c
 OBJDIR = .obj
-FLAGS = -o:cha
+FLAGS = -o:cha -d:curlLibName:$(CURLLIBNAME)
 FILES = src/main.nim
 prefix = /usr/local
 QJSOBJ = $(OBJDIR)/quickjs
