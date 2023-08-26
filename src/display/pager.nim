@@ -18,7 +18,6 @@ import config/mailcap
 import config/mimetypes
 import display/term
 import io/connecterror
-import io/headers
 import io/lineedit
 import io/loader
 import io/promise
@@ -582,7 +581,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
   let host = url.host
   var referer_from: bool
   var cookiejar: CookieJar
-  var headers: Headers
+  var headers = pager.config.getDefaultHeaders()
   var scripting: bool
   var images: bool
   var charsets = pager.config.encoding.document_charset

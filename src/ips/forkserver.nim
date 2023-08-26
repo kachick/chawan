@@ -34,14 +34,11 @@ type
     ostream: Stream
     children: seq[(Pid, Pid)]
 
-proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers = nil,
+proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers,
     filter = newURLFilter(default = true), cookiejar: CookieJar = nil,
     proxy: URL = nil, acceptProxy = false): FileLoader =
   forkserver.ostream.swrite(FORK_LOADER)
   var defaultHeaders = defaultHeaders
-  if defaultHeaders == nil:
-    new(defaultHeaders)
-    defaultHeaders[] = DefaultHeaders
   let config = LoaderConfig(
     defaultHeaders: defaultHeaders,
     filter: filter,

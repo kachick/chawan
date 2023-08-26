@@ -90,6 +90,7 @@ type
     max_redirect*: int32
     prepend_https*: bool
     proxy*: Opt[string]
+    default_headers*: Table[string, string]
 
   DisplayConfig = object
     color_mode*: Opt[ColorMode]
@@ -141,14 +142,6 @@ type
 
 jsDestructor(Config)
 
-const DefaultHeaders* = {
-  "User-Agent": "chawan",
-  "Accept": "text/html,text/*;q=0.5",
-  "Accept-Language": "en;q=1.0",
-  "Pragma": "no-cache",
-  "Cache-Control": "no-cache",
-}.toTable().newHeaders()[]
-
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
     tmpdir: config.external.tmpdir,
@@ -164,6 +157,9 @@ func getProxy*(config: Config): URL =
     else:
       raise newException(Defect, "Invalid proxy URL: " & s)
   return nil
+
+func getDefaultHeaders*(config: Config): Headers =
+  return newHeaders(config.network.default_headers)
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
@@ -181,8 +177,6 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     proxy: proxy,
     mimeTypes: mimeTypes
   )
-  new(result.headers)
-  result.headers[] = DefaultHeaders
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:

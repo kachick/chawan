@@ -30,6 +30,13 @@ editor = "vi %s +%d"
 [network]
 max-redirect = 10
 prepend-https = true
+default-headers = {
+	User-Agent = "chawan",
+	Accept = "text/html,text/*;q=0.5",
+	Accept-Language = "en;q=1.0",
+	Pragma = "no-cache",
+	Cache-Control = "no-cache"
+}
 
 [display]
 color-mode = "auto"

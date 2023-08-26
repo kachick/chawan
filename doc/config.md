@@ -207,6 +207,11 @@ https (e.g. wikipedia.org as https://wikipedia.org.)</td>
 supported by cURL may be used. Can be overridden by siteconf.</td>
 </tr>
 
+<tr>
+<td>default-headers</td>
+<td>Table</td>
+<td>Specify a list of default headers for all HTTP(S) network requests.</td>
+
 </table>
 
 ## Display

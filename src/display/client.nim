@@ -600,6 +600,7 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
     mainproc: mainproc,
     attrs: attrs,
     loader: forkserver.newFileLoader(
+      defaultHeaders = config.getDefaultHeaders(),
       proxy = config.getProxy(),
       acceptProxy = true
     ),
