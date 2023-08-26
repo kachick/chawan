@@ -147,8 +147,6 @@ if pages.len == 0 and not conf.start.headless:
   if stdin.isatty:
     help(1)
 
-conf.page = constructActionTable(conf.page)
-conf.line = constructActionTable(conf.line)
 forks.loadForkServerConfig(conf)
 
 let c = newClient(conf, forks, getpid())

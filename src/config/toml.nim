@@ -431,6 +431,8 @@ proc consumeInlineTable(state: var TomlParser): TomlResult =
     of ' ', '\t': discard
     of '\n': inc state.line
     of ',', '}':
+      if c == '}' and key.len == 0 and val == nil:
+        return ok(res) # empty, or trailing comma
       if key.len == 0:
         return state.err("missing key")
       if val == nil:

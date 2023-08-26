@@ -27,7 +27,7 @@ type
 
   FormatMode* = set[FormatFlags]
 
-  ActionMap = Table[string, string]
+  ActionMap = distinct Table[string, string]
 
   StaticSiteConfig = object
     url: Opt[string]
@@ -142,6 +142,12 @@ type
 
 jsDestructor(Config)
 
+proc `[]=`(a: var ActionMap, b, c: string) {.borrow.}
+proc `[]`*(a: ActionMap, b: string): string {.borrow.}
+proc contains*(a: ActionMap, b: string): bool {.borrow.}
+proc getOrDefault(a: ActionMap, b: string): string {.borrow.}
+proc hasKeyOrPut(a: var ActionMap, b, c: string): bool {.borrow.}
+
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
     tmpdir: config.external.tmpdir,
@@ -255,24 +261,6 @@ func getRealKey(key: string): string =
     realk &= 'M'
   return realk
 
-func constructActionTable*(origTable: Table[string, string]): Table[string, string] =
-  var strs: seq[string]
-  for k in origTable.keys:
-    let realk = getRealKey(k)
-    var teststr = ""
-    for c in realk:
-      teststr &= c
-      strs.add(teststr)
-
-  for k, v in origTable:
-    let realk = getRealKey(k)
-    var teststr = ""
-    for c in realk:
-      teststr &= c
-      if strs.contains(teststr):
-        result[teststr] = "client.feedNext()"
-    result[realk] = v
-
 proc openFileExpand(dir, file: string): FileStream =
   if file.len == 0:
     return nil
@@ -370,6 +358,7 @@ proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string)
 proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
+proc parseConfigValue[U, V](x: var Table[U, V], v: TomlValue, k: string)
 
 proc typeCheck(v: TomlValue, vt: ValueType, k: string) =
   if v.vt != vt:
@@ -391,6 +380,15 @@ proc parseConfigValue(x: var object, v: TomlValue, k: string) =
       else:
         fk
       parseConfigValue(fv, v[kebabk], kkk)
+
+proc parseConfigValue[U, V](x: var Table[U, V], v: TomlValue, k: string) =
+  typeCheck(v, VALUE_TABLE, k)
+  x.clear()
+  for kk, vv in v:
+    var y: V
+    let kkk = k & "[" & kk & "]"
+    parseConfigValue(y, vv, kkk)
+    x[kk] = y
 
 proc parseConfigValue(x: var bool, v: TomlValue, k: string) =
   typeCheck(v, VALUE_BOOLEAN, k)
@@ -495,7 +493,12 @@ proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
   typeCheck(v, VALUE_TABLE, k)
   for kk, vv in v:
     typeCheck(vv, VALUE_STRING, k & "[" & kk & "]")
-    x[getRealKey(kk)] = vv.s
+    let rk = getRealKey(kk)
+    var buf: string
+    for i in 0 ..< rk.high:
+      buf &= rk[i]
+      discard x.hasKeyOrPut(buf, "client.feedNext()")
+    x[rk] = vv.s
 
 var gdir {.compileTime.}: string
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string) =
@@ -560,14 +563,10 @@ proc readConfig(config: Config, dir: string) =
     config.parseConfig(dir, fs)
 
 proc getNormalAction*(config: Config, s: string): string =
-  if config.page.hasKey(s):
-    return config.page[s]
-  return ""
+  return config.page.getOrDefault(s)
 
 proc getLinedAction*(config: Config, s: string): string =
-  if config.line.hasKey(s):
-    return config.line[s]
-  return ""
+  return config.line.getOrDefault(s)
 
 proc readConfig*(): Config =
   new(result)
