@@ -56,7 +56,7 @@ proc reconsume(state: var MailcapParser, c: char) =
 proc skipBlanks(state: var MailcapParser, c: var char): bool =
   while state.has():
     c = state.consume()
-    if c notin AsciiWhitespace:
+    if c notin AsciiWhitespace - {'\n'}:
       return true
 
 proc skipBlanks(state: var MailcapParser) =
