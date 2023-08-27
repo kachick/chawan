@@ -113,6 +113,7 @@ type
     plist: Table[pointer, pointer] # Nim, JS
     flist: seq[seq[JSCFunctionListEntry]]
     fins: Table[JSClassID, proc(val: JSValue)]
+    refmap: Table[pointer, tuple[cref, cunref: (proc() {.closure.})]]
 
   JSFunctionList = openArray[JSCFunctionListEntry]
 
@@ -147,6 +148,8 @@ const QuickJSErrors = [
   JS_AGGREGATE_ERROR0
 ]
 
+# Convert Nim types to the corresponding JavaScript type.
+# This does not work with var objects.
 proc toJS*(ctx: JSContext, s: cstring): JSValue
 proc toJS*(ctx: JSContext, s: string): JSValue
 proc toJS(ctx: JSContext, r: Rune): JSValue
@@ -158,7 +161,7 @@ proc toJS*(ctx: JSContext, n: uint32): JSValue
 proc toJS*(ctx: JSContext, n: uint64): JSValue
 proc toJS(ctx: JSContext, n: SomeFloat): JSValue
 proc toJS*(ctx: JSContext, b: bool): JSValue
-proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue
+proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue
 proc toJS*(ctx: JSContext, opt: Option): JSValue
 proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue
 proc toJS(ctx: JSContext, s: seq): JSValue
@@ -171,6 +174,15 @@ proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, err: JSError): JSValue
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
+
+# Convert Nim types to the corresponding JavaScript type, with knowledge of
+# the parent object.
+# This supports conversion of var object types.
+#
+# The idea here is to allow conversion of var objects to quasi-reference types
+# by saving a pointer to their ancestor and incrementing/decrementing the
+# ancestor's reference count instead.
+proc toJSP[T, U](ctx: JSContext, parent: T, child: var U): JSValue
 
 func getOpaque*(ctx: JSContext): JSContextOpaque =
   return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
@@ -271,7 +283,6 @@ proc setOpaque[T](ctx: JSContext, val: JSValue, opaque: T) =
   let p = JS_VALUE_GET_PTR(val)
   rtOpaque.plist[cast[pointer](opaque)] = p
   JS_SetOpaque(val, cast[pointer](opaque))
-  GC_ref(opaque)
 
 proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
   # Add JSValue reference.
@@ -279,6 +290,7 @@ proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
   let header = cast[ptr JSRefCountHeader](p)
   inc header.ref_count
   ctx.setOpaque(global, obj)
+  GC_ref(obj)
 
 func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
@@ -387,12 +399,18 @@ proc getTypePtr[T](x: T): pointer =
     # I'm so sorry.
     # (This dereferences the object's first member, m_type. Probably.)
     return cast[ptr pointer](x)[]
+  elif T is RootObj:
+    return cast[pointer](x)
   else:
     return getTypeInfo(x)
 
-func getTypePtr(t: type): pointer =
+func getTypePtr(t: typedesc[ref object]): pointer =
   var x: t
   new(x)
+  return getTypePtr(x)
+
+func getTypePtr(t: type): pointer =
+  var x: t
   return getTypePtr(x)
 
 # Add all LegacyUnforgeable functions defined on the prototype chain to
@@ -933,9 +951,35 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
     return ok(val)
   elif T is ref object:
     return fromJSObject[T](ctx, val)
+  elif compiles(fromJS2(ctx, val, result)):
+    fromJS2(ctx, val, result)
   else:
     static:
       error("Unrecognized type " & $T)
+
+proc fromJSPObj[T](ctx: JSContext, val: JSValue): Result[ptr T, JSError] =
+  if JS_IsException(val):
+    return err(nil)
+  if JS_IsNull(val):
+    return ok((ptr T)(nil))
+  const t = $T
+  let ctxOpaque = ctx.getOpaque()
+  doAssert ctxOpaque.gclaz != t #TODO probably just remove?
+  if not JS_IsObject(val):
+    return err(newTypeError("Value is not an object"))
+  if not isInstanceOf(ctx, val, t):
+    const errmsg = t & " expected"
+    JS_ThrowTypeError(ctx, errmsg)
+    return err(newTypeError(errmsg))
+  let classid = JS_GetClassID(val)
+  let op = cast[ptr T](JS_GetOpaque(val, classid))
+  return ok(op)
+
+template fromJSP*[T](ctx: JSContext, val: JSValue): untyped =
+  when T is object and not compiles(fromJS[T](ctx, val)):
+    fromJSPObj[T](ctx, val)
+  else:
+    fromJS[T](ctx, val)
 
 const JS_ATOM_TAG_INT = cuint(1u32 shl 31)
 
@@ -989,7 +1033,7 @@ proc toJS(ctx: JSContext, n: SomeFloat): JSValue =
 proc toJS*(ctx: JSContext, b: bool): JSValue =
   return JS_NewBool(ctx, b)
 
-proc toJS[U, V](ctx: JSContext, t: Table[U, V]): JSValue =
+proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue =
   let obj = JS_NewObject(ctx)
   if not JS_IsException(obj):
     for k, v in t:
@@ -1027,22 +1071,25 @@ proc toJS(ctx: JSContext, s: seq): JSValue =
         return JS_EXCEPTION
   return a
 
-proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =
-  if obj == nil:
-    return JS_NULL
-  let op = JS_GetRuntime(ctx).getOpaque()
-  let p = cast[pointer](obj)
-  if p in op.plist:
+proc toJSP0(ctx: JSContext, p, tp: pointer): JSValue =
+  JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
-    return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, op.plist[p]))
-  let ctxOpaque = ctx.getOpaque()
-  let clazz = ctxOpaque.typemap[getTypePtr(obj)]
+    return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
+  let clazz = ctx.getOpaque().typemap[tp]
   let jsObj = JS_NewObjectClass(ctx, clazz)
-  setOpaque(ctx, jsObj, obj)
+  setOpaque(ctx, jsObj, p)
   # We are "constructing" a new JS object, so we must add unforgeable
   # properties here.
   defineUnforgeable(ctx, jsObj) # not an exception
   return jsObj
+
+proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =
+  if obj == nil:
+    return JS_NULL
+  let p = cast[pointer](obj)
+  GC_ref(obj)
+  let tp = getTypePtr(obj)
+  return toJSP0(ctx, p, tp)
 
 proc toJS*(ctx: JSContext, obj: ref object): JSValue =
   return toJSRefObj(ctx, obj)
@@ -1117,6 +1164,40 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
 
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
   return ctx.newJSCFunction("", f)
+
+proc toJSP1(ctx: JSContext, parent: ref object, child: var object): JSValue =
+  let p = addr child
+  # Save parent as the original ancestor for this tree.
+  JS_GetRuntime(ctx).getOpaque().refmap[p] = (
+    (proc() =
+      GC_ref(parent)),
+    (proc() =
+      GC_unref(parent))
+  )
+  GC_ref(parent)
+  let tp = getTypePtr(child)
+  return toJSP0(ctx, p, tp)
+
+proc toJSP1(ctx: JSContext, parent: ptr object, child: var object): JSValue =
+  let p = addr child
+  # Increment the reference count of parent's root ancestor, and save the
+  # increment/decrement callbacks for the child as well.
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  let ru = rtOpaque.refmap[parent]
+  ru.cref()
+  rtOpaque.refmap[p] = ru
+  let tp = getTypePtr(child)
+  return toJSP0(ctx, p, tp)
+
+proc toJSP[T, U](ctx: JSContext, parent: T, child: var U): JSValue =
+  #TODO this is rather ugly
+  # Ideally we would use toJSP when possible. However this would mess up
+  # object types that have a custom toJS but no toJSP. (Maybe write a separate
+  # toJSP for each of those objects?)
+  when not compiles(toJS(ctx, child)):
+    return toJSP1(ctx, parent, child)
+  else:
+    return toJS(ctx, child)
 
 proc defineConsts*[T](ctx: JSContext, classid: JSClassID,
     consts: static openarray[(string, T)]) =
@@ -1274,8 +1355,22 @@ template getJSSetterParams(): untyped =
 template fromJS_or_return*(t, ctx, val: untyped): untyped =
   (
     if JS_IsException(val):
+      #TODO this check can probably be removed?
       return JS_EXCEPTION
     let x = fromJS[t](ctx, val)
+    if x.isErr:
+      if x.error == nil:
+        return JS_EXCEPTION
+      return toJS(ctx, x.error)
+    x.get
+  )
+
+template fromJSP_or_return*(t, ctx, val: untyped): untyped =
+  (
+    if JS_IsException(val):
+      #TODO this check can probably be removed?
+      return JS_EXCEPTION
+    let x = fromJSP[t](ctx, val)
     if x.isErr:
       if x.error == nil:
         return JS_EXCEPTION
@@ -1855,8 +1950,10 @@ func getStringFromPragma(varPragma: NimNode): Option[string] =
 proc findPragmas(t: NimNode): JSObjectPragmas =
   let typ = t.getTypeInst()[1] # The type, as declared.
   var impl = typ.getTypeImpl() # ref t
-  assert impl.kind == nnkRefTy, "Only ref nodes are supported..."
-  impl = impl[0].getImpl()
+  if impl.kind == nnkRefTy:
+    impl = impl[0].getImpl()
+  else:
+    impl = typ.getImpl()
   # stolen from std's macros.customPragmaNode
   var identDefsStack = newSeq[NimNode](impl[2].len)
   for i in 0 ..< identDefsStack.len:
@@ -1901,17 +1998,17 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
             of "jsinclude": pragmas.jsinclude.add(op)
   return pragmas
 
-proc nim_finalize_for_js*[T](obj: ptr T) =
+proc nim_finalize_for_js*(obj: pointer) =
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
-    rtOpaque.plist.withValue(cast[pointer](obj), v):
+    rtOpaque.plist.withValue(obj, v):
       let p = v[]
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
       let classid = JS_GetClassID(val)
       rtOpaque.fins.withValue(classid, fin):
         fin[](val)
       JS_SetOpaque(val, nil)
-      rtOpaque.plist.del(cast[pointer](obj))
+      rtOpaque.plist.del(obj)
       JS_FreeValueRT(rt, val)
 
 type
@@ -1933,6 +2030,16 @@ template jsDestructor*[U](T: typedesc[ref U]) =
       nim_finalize_for_js(addr obj)
   else:
     proc `=destroy`(obj: var U) =
+      nim_finalize_for_js(addr obj)
+
+template jsDestructor*(T: typedesc[object]) =
+  static:
+    js_dtors.incl($T)
+  when NimMajor >= 2:
+    proc `=destroy`(obj: T) =
+      nim_finalize_for_js(addr obj)
+  else:
+    proc `=destroy`(obj: var T) =
       nim_finalize_for_js(addr obj)
 
 type RegistryInfo = object
@@ -2000,8 +2107,8 @@ proc registerGetters(stmts: NimNode, info: RegistryInfo,
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
-        let arg_0 = fromJS_or_return(`t`, ctx, this)
-        return toJS(ctx, arg_0.`node`)
+        let arg_0 = fromJSP_or_return(`t`, ctx, this)
+        return toJSP(ctx, arg_0, arg_0.`node`)
     )
     let nf = newBoundFunction(GETTER, fn, id, uf = op.unforgeable)
     registerFunction(tname, nf)
@@ -2024,8 +2131,10 @@ proc registerSetters(stmts: NimNode, info: RegistryInfo,
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
-        let arg_0 = fromJS_or_return(`t`, ctx, this)
+        let arg_0 = fromJSP_or_return(`t`, ctx, this)
         let arg_1 = val
+        # Note: if you get a compiler error that leads back to here, that
+        # might be because you added jsset to a non-ref object type.
         arg_0.`node` = fromJS_or_return(typeof(arg_0.`node`), ctx, arg_1)
         return JS_DupValue(ctx, arg_1)
     )
@@ -2108,20 +2217,36 @@ proc bindCheckDestroy(stmts: NimNode, info: RegistryInfo) =
     proc `dfin`(rt: JSRuntime, val: JSValue): JS_BOOL {.cdecl.} =
       let opaque = JS_GetOpaque(val, JS_GetClassID(val))
       if opaque != nil:
-        # Before this function is called, the ownership model is
-        # JSObject -> Nim object.
-        # Here we change it to Nim object -> JSObject.
-        # As a result, Nim object's reference count can now reach zero (it is
-        # no longer "referenced" by the JS object).
-        # nim_finalize_for_js will be invoked by the Nim GC when the Nim
-        # refcount reaches zero. Then, the JS object's opaque will be set
-        # to nil, and its refcount decreased again, so next time this function
-        # will return true.
-        GC_unref(cast[`t`](opaque))
-        # Returning false from this function signals to the QJS GC that it
-        # should not be collected yet. Accordingly, the JSObject's refcount
-        # will be set to one again.
-        return false
+        when `t` is ref object:
+          # Before this function is called, the ownership model is
+          # JSObject -> Nim object.
+          # Here we change it to Nim object -> JSObject.
+          # As a result, Nim object's reference count can now reach zero (it is
+          # no longer "referenced" by the JS object).
+          # nim_finalize_for_js will be invoked by the Nim GC when the Nim
+          # refcount reaches zero. Then, the JS object's opaque will be set
+          # to nil, and its refcount decreased again, so next time this
+          # function will return true.
+          GC_unref(cast[`t`](opaque))
+          # Returning false from this function signals to the QJS GC that it
+          # should not be collected yet. Accordingly, the JSObject's refcount
+          # will be set to one again.
+          return false
+        else:
+          # This is not a reference, just a pointer with a reference to the
+          # root ancestor object.
+          # Remove the reference, allowing destruction of the root object once
+          # again.
+          let rtOpaque = rt.getOpaque()
+          var crefunref: tuple[cref, cunref: (proc())]
+          discard rtOpaque.refmap.pop(opaque, crefunref)
+          crefunref.cunref()
+          # Of course, nim_finalize_for_js might only be called later for
+          # this object, because the parent can still have references to it.
+          # (And for the same reason, a reference to the same object might
+          # still be necessary.)
+          # Accordingly, we return false here as well.
+          return false
       return true
   )
 
