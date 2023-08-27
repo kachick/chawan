@@ -123,7 +123,10 @@ n = 'pager.searchNext()'
 N = 'pager.searchPrev()'
 c = 'pager.peek()'
 u = 'pager.peekCursor()'
-C-w = 'config.searchwrap = !config.searchwrap; pager.alert("Wrap search " + (config.searchwrap ? "on" : "off"))'
+C-w = '''
+config.search.wrap = !config.search.wrap;
+pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
+'''
 
 [line]
 C-m = 'line.submit()'

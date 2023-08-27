@@ -66,62 +66,62 @@ type
     substitute_url*: (proc(s: string): Result[string, JSError])
 
   StartConfig = object
-    visual_home*: string
-    startup_script*: string
-    headless*: bool
+    visual_home* {.jsgetset.}: string
+    startup_script* {.jsgetset.}: string
+    headless* {.jsgetset.}: bool
 
   CSSConfig = object
-    stylesheet*: string
+    stylesheet* {.jsgetset.}: string
 
   SearchConfig = object
-    wrap*: bool
+    wrap* {.jsgetset.}: bool
 
   EncodingConfig = object
-    display_charset*: Opt[Charset]
-    document_charset*: seq[Charset]
+    display_charset* {.jsgetset.}: Opt[Charset]
+    document_charset* {.jsgetset.}: seq[Charset]
 
   ExternalConfig = object
-    tmpdir*: string
-    editor*: string
-    mailcap*: seq[string]
-    mime_types*: seq[string]
+    tmpdir* {.jsgetset.}: string
+    editor* {.jsgetset.}: string
+    mailcap* {.jsgetset.}: seq[string]
+    mime_types* {.jsgetset.}: seq[string]
 
   NetworkConfig = object
-    max_redirect*: int32
-    prepend_https*: bool
-    proxy*: Opt[string]
-    default_headers*: Table[string, string]
+    max_redirect* {.jsgetset.}: int32
+    prepend_https* {.jsgetset.}: bool
+    proxy* {.jsgetset.}: Opt[string]
+    default_headers* {.jsgetset.}: Table[string, string]
 
   DisplayConfig = object
-    color_mode*: Opt[ColorMode]
-    format_mode*: Opt[FormatMode]
-    no_format_mode*: FormatMode
-    emulate_overline*: bool
-    alt_screen*: Opt[bool]
-    highlight_color*: RGBAColor
-    double_width_ambiguous*: bool
-    minimum_contrast*: int32
-    force_clear*: bool
-    set_title*: bool
-    default_background_color*: RGBColor
-    default_foreground_color*: RGBColor
+    color_mode* {.jsgetset.}: Opt[ColorMode]
+    format_mode*: Opt[FormatMode] #TODO getset
+    no_format_mode*: FormatMode #TODO getset
+    emulate_overline* {.jsgetset.}: bool
+    alt_screen* {.jsgetset.}: Opt[bool]
+    highlight_color* {.jsgetset.}: RGBAColor
+    double_width_ambiguous* {.jsgetset.}: bool
+    minimum_contrast* {.jsgetset.}: int32
+    force_clear* {.jsgetset.}: bool
+    set_title* {.jsgetset.}: bool
+    default_background_color* {.jsgetset.}: RGBColor
+    default_foreground_color* {.jsgetset.}: RGBColor
 
-  #TODO: add JS wrappers for objects
   Config* = ref ConfigObj
   ConfigObj* = object
-    configdir: string
-    includes: seq[string]
-    start*: StartConfig
-    search*: SearchConfig
-    css*: CSSConfig
-    encoding*: EncodingConfig
-    external*: ExternalConfig
-    network*: NetworkConfig
-    display*: DisplayConfig
+    configdir {.jsget.}: string
+    includes {.jsget.}: seq[string]
+    start* {.jsget.}: StartConfig
+    search* {.jsget.}: SearchConfig
+    css* {.jsget.}: CSSConfig
+    encoding* {.jsget.}: EncodingConfig
+    external* {.jsget.}: ExternalConfig
+    network* {.jsget.}: NetworkConfig
+    display* {.jsget.}: DisplayConfig
+    #TODO getset
     siteconf: seq[StaticSiteConfig]
     omnirule: seq[StaticOmniRule]
-    page*: ActionMap
-    line*: ActionMap
+    page* {.jsget.}: ActionMap
+    line* {.jsget.}: ActionMap
 
   BufferConfig* = object
     userstyle*: string
@@ -140,6 +140,13 @@ type
     tmpdir*: string
     ambiguous_double*: bool
 
+jsDestructor(StartConfig)
+jsDestructor(CSSConfig)
+jsDestructor(SearchConfig)
+jsDestructor(EncodingConfig)
+jsDestructor(ExternalConfig)
+jsDestructor(NetworkConfig)
+jsDestructor(DisplayConfig)
 jsDestructor(Config)
 
 proc `[]=`(a: var ActionMap, b, c: string) {.borrow.}
@@ -147,6 +154,7 @@ proc `[]`*(a: ActionMap, b: string): string {.borrow.}
 proc contains*(a: ActionMap, b: string): bool {.borrow.}
 proc getOrDefault(a: ActionMap, b: string): string {.borrow.}
 proc hasKeyOrPut(a: var ActionMap, b, c: string): bool {.borrow.}
+proc toJS(ctx: JSContext, a: ActionMap): JSValue {.borrow.}
 
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
@@ -469,16 +477,16 @@ proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
   typeCheck(v, VALUE_STRING, k)
   let c = parseRGBAColor(v.s)
   if c.isNone:
-      raise newException(ValueError, "invalid color '" & v.s &
-        "' for key " & k)
+    raise newException(ValueError, "invalid color '" & v.s &
+      "' for key " & k)
   x = c.get
 
 proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string) =
   typeCheck(v, VALUE_STRING, k)
   let c = parseLegacyColor(v.s)
   if c.isNone:
-      raise newException(ValueError, "invalid color '" & v.s &
-        "' for key " & k)
+    raise newException(ValueError, "invalid color '" & v.s &
+      "' for key " & k)
   x = c.get
 
 proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string) =
@@ -576,4 +584,11 @@ proc readConfig*(): Config =
   result.readConfig(getConfigDir() / "chawan")
 
 proc addConfigModule*(ctx: JSContext) =
+  ctx.registerType(StartConfig)
+  ctx.registerType(CSSConfig)
+  ctx.registerType(SearchConfig)
+  ctx.registerType(EncodingConfig)
+  ctx.registerType(ExternalConfig)
+  ctx.registerType(NetworkConfig)
+  ctx.registerType(DisplayConfig)
   ctx.registerType(Config)

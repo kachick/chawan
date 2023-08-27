@@ -2,6 +2,9 @@ import options
 import strutils
 import tables
 
+import bindings/quickjs
+import js/exception
+import js/javascript
 import utils/twtstr
 
 type
@@ -455,12 +458,12 @@ func parseRGBAColor*(s: string): Option[RGBAColor] =
     return parseHexColor(s[2..^1])
   return parseHexColor(s)
 
-func parseLegacyColor*(s: string): Option[RGBColor] =
+func parseLegacyColor0*(s: string): RGBColor =
   if s == "": return
   let s = s.strip(chars = AsciiWhitespace)
   if s == "transparent": return
   if s in ColorsRGB:
-    return some(ColorsRGB[s])
+    return ColorsRGB[s]
   block hex:
     if s.len == 4:
       for c in s:
@@ -469,7 +472,7 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
       let c = (hexValue(s[0]) * 17 shl 16) or
         (hexValue(s[1]) * 17 shl 8) or
         (hexValue(s[2]) * 17)
-      return some(RGBColor(c))
+      return RGBColor(c)
   # Seriously, what the hell.
   var s2 = if s[0] == '#':
     s.substr(1)
@@ -492,4 +495,51 @@ func parseLegacyColor*(s: string): Option[RGBColor] =
     (hexValue(c1[0]) shl 20) or (hexValue(c1[1]) shl 16) or
     (hexValue(c2[0]) shl 12) or (hexValue(c2[1]) shl 8) or
     (hexValue(c3[0]) shl 4) or hexValue(c3[1])
-  return some(RGBColor(c))
+  return RGBColor(c)
+
+func parseLegacyColor*(s: string): JSResult[RGBColor] =
+  if s == "":
+    return err(newTypeError("Color value must not be the empty string"))
+  return ok(parseLegacyColor0(s))
+
+proc toJS*(ctx: JSContext, rgb: RGBColor): JSValue =
+  var res = "#"
+  res.pushHex(rgb.r)
+  res.pushHex(rgb.g)
+  res.pushHex(rgb.b)
+  return toJS(ctx, res)
+
+proc fromJS2*(ctx: JSContext, val: JSValue, o: var JSResult[RGBColor]) =
+  let s = fromJS[string](ctx, val)
+  if s.isSome:
+    o = parseLegacyColor(s.get)
+  else:
+    o.err(s.error)
+
+proc toJS*(ctx: JSContext, rgba: RGBAColor): JSValue =
+  var res = "#"
+  res.pushHex(rgba.r)
+  res.pushHex(rgba.g)
+  res.pushHex(rgba.b)
+  res.pushHex(rgba.a)
+  return toJS(ctx, res)
+
+proc fromJS2*(ctx: JSContext, val: JSValue, o: var JSResult[RGBAColor]) =
+  if JS_IsNumber(val):
+    # as hex
+    let x = fromJS[uint32](ctx, val)
+    if x.isSome:
+      o.ok(RGBAColor(x.get))
+    else:
+      o.err(x.error)
+  else:
+    # parse
+    let s = fromJS[string](ctx, val)
+    if s.isSome:
+      let x = parseHexColor(s.get)
+      if x.isSome:
+        o.ok(x.get)
+      else:
+        o.err(newTypeError("Unrecognized color"))
+    else:
+      o.err(s.error)

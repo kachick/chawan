@@ -122,9 +122,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     if s.isSome and s.get.num != 0:
       set_cv "height", s.get
   template map_bgcolor =
-    let c = parseLegacyColor(element.attr("bgcolor"))
-    if c.isSome:
-      set_cv "background-color", c.get
+    let s = element.attr("bgcolor")
+    if s != "":
+      let c = parseLegacyColor0(s)
+      set_cv "background-color", c
   template map_size =
     let s = element.attrul("size")
     if s.isSome:
@@ -150,13 +151,15 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       set_cv "margin-left", CSSLengthAuto #TODO should be inline-start
       set_cv "margin-right", CSSLengthAuto #TODO should be inline-end
   template map_text =
-    let c = parseLegacyColor(element.attr("text"))
-    if c.isSome:
-      set_cv "color", c.get
+    let s = element.attr("text")
+    if s != "":
+      let c = parseLegacyColor0(s)
+      set_cv "color", c
   template map_color =
-    let c = parseLegacyColor(element.attr("color"))
-    if c.isSome:
-      set_cv "color", c.get
+    let s = element.attr("color")
+    if s != "":
+      let c = parseLegacyColor0(s)
+      set_cv "color", c
   template map_colspan =
     let colspan = element.attrulgz("colspan")
     if colspan.isSome:

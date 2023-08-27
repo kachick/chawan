@@ -67,7 +67,10 @@ C-s = 'pager.searchForward()'
 C-r = 'pager.searchBackward()'
 n = 'pager.searchNext()'
 N = 'pager.searchPrev()'
-C-w = 'config.searchwrap = !config.searchwrap; pager.alert("Wrap search " + (config.searchwrap ? "on" : "off"))'
+C-w = '''
+config.search.wrap = !config.search.wrap;
+pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
+'''
 # Misc
 #TODO shell out, help file, options, cookies
 C-c = 'pager.cancel()'
