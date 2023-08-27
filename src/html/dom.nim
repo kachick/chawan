@@ -97,12 +97,12 @@ type
     navigate*: proc(url: URL)
 
   # Navigator stuff
-  Navigator* = ref object
+  Navigator* = object
     plugins: PluginArray
 
-  PluginArray* = ref object
+  PluginArray* = object
 
-  MimeTypeArray* = ref object
+  MimeTypeArray* = object
 
   # "For historical reasons, console is lowercased."
   # Also, for a more practical reason: so the javascript macros don't confuse
@@ -161,7 +161,7 @@ type
     value* {.jsget.}: string
     ownerElement* {.jsget.}: Element
 
-  DOMImplementation = ref object
+  DOMImplementation = object
     document: Document
 
   Document* = ref object of Node
@@ -2827,15 +2827,15 @@ proc createElement(document: Document, localName: string):
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createDocumentType(implementation: DOMImplementation, qualifiedName,
+proc createDocumentType(implementation: ptr DOMImplementation, qualifiedName,
     publicId, systemId: string): Result[DocumentType, DOMException] {.jsfunc.} =
   if not qualifiedName.matchQNameProduction():
     return err(newDOMException("Invalid character in document type name",
       "InvalidCharacterError"))
-  return ok(implementation.document.newDocumentType(qualifiedName, publicId,
-    systemId))
+  let document = implementation.document
+  return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
-proc createHTMLDocument(implementation: DOMImplementation, title =
+proc createHTMLDocument(implementation: ptr DOMImplementation, title =
     none(string)): Document {.jsfunc.} =
   let doc = newDocument()
   doc.contentType = "text/html"
@@ -2851,6 +2851,9 @@ proc createHTMLDocument(implementation: DOMImplementation, title =
   html.append(doc.newHTMLElement(TAG_BODY, Namespace.HTML))
   #TODO set origin
   return doc
+
+proc hasFeature(implementation: ptr DOMImplementation): bool {.jsfunc.} =
+  return true
 
 proc createCDATASection(document: Document, data: string): Result[CDATASection, DOMException] {.jsfunc.} =
   if not document.isxml:

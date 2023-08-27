@@ -27,7 +27,8 @@ type
 
   FormatMode* = set[FormatFlags]
 
-  ActionMap = distinct Table[string, string]
+  ActionMap = object
+    t: Table[string, string]
 
   StaticSiteConfig = object
     url: Opt[string]
@@ -140,6 +141,7 @@ type
     tmpdir*: string
     ambiguous_double*: bool
 
+jsDestructor(ActionMap)
 jsDestructor(StartConfig)
 jsDestructor(CSSConfig)
 jsDestructor(SearchConfig)
@@ -149,12 +151,18 @@ jsDestructor(NetworkConfig)
 jsDestructor(DisplayConfig)
 jsDestructor(Config)
 
-proc `[]=`(a: var ActionMap, b, c: string) {.borrow.}
-proc `[]`*(a: ActionMap, b: string): string {.borrow.}
-proc contains*(a: ActionMap, b: string): bool {.borrow.}
-proc getOrDefault(a: ActionMap, b: string): string {.borrow.}
-proc hasKeyOrPut(a: var ActionMap, b, c: string): bool {.borrow.}
-proc toJS(ctx: JSContext, a: ActionMap): JSValue {.borrow.}
+proc `[]=`(a: var ActionMap, b, c: string) = a.t[b] = c
+proc `[]`*(a: ActionMap, b: string): string = a.t[b]
+proc contains*(a: ActionMap, b: string): bool = b in a.t
+proc getOrDefault(a: ActionMap, b: string): string = a.t.getOrDefault(b)
+proc hasKeyOrPut(a: var ActionMap, b, c: string): bool = a.t.hasKeyOrPut(b, c)
+
+proc getter(a: ptr ActionMap, s: string): Opt[string] {.jsgetprop.} =
+  a.t.withValue(s, p):
+    return opt(p[])
+
+proc hasprop(a: ptr ActionMap, s: string): bool {.jshasprop.} =
+  return s in a[]
 
 func getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
@@ -584,6 +592,7 @@ proc readConfig*(): Config =
   result.readConfig(getConfigDir() / "chawan")
 
 proc addConfigModule*(ctx: JSContext) =
+  ctx.registerType(ActionMap)
   ctx.registerType(StartConfig)
   ctx.registerType(CSSConfig)
   ctx.registerType(SearchConfig)

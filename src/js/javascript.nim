@@ -150,7 +150,6 @@ const QuickJSErrors = [
 
 # Convert Nim types to the corresponding JavaScript type.
 # This does not work with var objects.
-proc toJS*(ctx: JSContext, s: cstring): JSValue
 proc toJS*(ctx: JSContext, s: string): JSValue
 proc toJS(ctx: JSContext, r: Rune): JSValue
 proc toJS*(ctx: JSContext, n: int64): JSValue
@@ -182,7 +181,19 @@ proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
 # The idea here is to allow conversion of var objects to quasi-reference types
 # by saving a pointer to their ancestor and incrementing/decrementing the
 # ancestor's reference count instead.
-proc toJSP[T, U](ctx: JSContext, parent: T, child: var U): JSValue
+proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue
+proc toJSP(ctx: JSContext, parent: ptr object, child: var object): JSValue
+
+# Avoid accidentally calling toJSP on objects that we have explicit toJS
+# converters for.
+template makeToJSP(typ: untyped) =
+  template toJSP(ctx: JSContext, parent: ref object, child: var typ): JSValue =
+    toJS(ctx, child)
+  template toJSP(ctx: JSContext, parent: ptr object, child: var typ): JSValue =
+    toJS(ctx, child)
+makeToJSP(Table)
+makeToJSP(Option)
+makeToJSP(Result)
 
 func getOpaque*(ctx: JSContext): JSContextOpaque =
   return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
@@ -301,14 +312,18 @@ func getOpaque0*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
 
-func getGlobalOpaque*(ctx: JSContext, T: typedesc, val: JSValue = JS_UNDEFINED): Opt[T] =
+func getGlobalOpaque0(ctx: JSContext, val: JSValue = JS_UNDEFINED):
+    Opt[pointer] =
   let global = JS_GetGlobalObject(ctx)
   if JS_IsUndefined(val) or val == global:
     let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
     JS_FreeValue(ctx, global)
-    return ok(cast[T](opaque))
+    return ok(opaque)
   JS_FreeValue(ctx, global)
   return err()
+
+func getGlobalOpaque*(ctx: JSContext, T: typedesc, val: JSValue = JS_UNDEFINED): Opt[T] =
+  return ok(cast[T](?getGlobalOpaque0(ctx, val)))
 
 func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
   # Unfortunately, we can't change the global object's class.
@@ -359,7 +374,7 @@ proc runJSJobs*(rt: JSRuntime, err: Stream) =
     if r == -1:
       ctx.writeException(err)
 
-func isInstanceOf*(ctx: JSContext, val: JSValue, class: static string): bool =
+func isInstanceOf*(ctx: JSContext, val: JSValue, class: string): bool =
   let ctxOpaque = ctx.getOpaque()
   var classid = JS_GetClassID(val)
   let tclassid = ctxOpaque.creg[class]
@@ -797,6 +812,7 @@ proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue):
     proc(x: U): Result[T, JSError] =
   return proc(x: U): Result[T, JSError] =
     var arg1 = toJS(ctx, x)
+    #TODO exceptions?
     let ret = JS_Call(ctx, val, JS_UNDEFINED, 1, addr arg1)
     when T isnot void:
       result = fromJS[T](ctx, ret)
@@ -898,24 +914,27 @@ proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): Result[T, JSError] =
     return err(newTypeError("`" & s &
       "' is not a valid value for enumeration " & $T))
 
-proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Result[T, JSError] =
+proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
+    Result[pointer, JSError] =
   if JS_IsException(val):
     return err(nil)
   if JS_IsNull(val):
-    return ok(T(nil))
-  const t = $T
+    return ok(nil)
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque.gclaz == t:
-    return ok(?getGlobalOpaque(ctx, T, val))
+    return ok(?getGlobalOpaque0(ctx, val))
   if not JS_IsObject(val):
     return err(newTypeError("Value is not an object"))
   if not isInstanceOf(ctx, val, t):
-    const errmsg = t & " expected"
-    JS_ThrowTypeError(ctx, errmsg)
+    let errmsg = t & " expected"
+    JS_ThrowTypeError(ctx, cstring(errmsg))
     return err(newTypeError(errmsg))
   let classid = JS_GetClassID(val)
-  let op = cast[T](JS_GetOpaque(val, classid))
-  return ok(cast[T](op))
+  let op = JS_GetOpaque(val, classid)
+  return ok(op)
+
+proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Result[T, JSError] =
+  return ok(cast[T](?fromJSPObj0(ctx, val, $T)))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
   when T is string:
@@ -958,22 +977,7 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
       error("Unrecognized type " & $T)
 
 proc fromJSPObj[T](ctx: JSContext, val: JSValue): Result[ptr T, JSError] =
-  if JS_IsException(val):
-    return err(nil)
-  if JS_IsNull(val):
-    return ok((ptr T)(nil))
-  const t = $T
-  let ctxOpaque = ctx.getOpaque()
-  doAssert ctxOpaque.gclaz != t #TODO probably just remove?
-  if not JS_IsObject(val):
-    return err(newTypeError("Value is not an object"))
-  if not isInstanceOf(ctx, val, t):
-    const errmsg = t & " expected"
-    JS_ThrowTypeError(ctx, errmsg)
-    return err(newTypeError(errmsg))
-  let classid = JS_GetClassID(val)
-  let op = cast[ptr T](JS_GetOpaque(val, classid))
-  return ok(op)
+  return cast[Result[ptr T, JSError]](fromJSPObj0(ctx, val, $T))
 
 template fromJSP*[T](ctx: JSContext, val: JSValue): untyped =
   when T is object and not compiles(fromJS[T](ctx, val)):
@@ -993,6 +997,9 @@ func fromJS[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
   else:
     let val = JS_AtomToValue(ctx, atom)
     return toString(ctx, val)
+
+func fromJSP[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
+  return fromJS[T](ctx, atom)
 
 proc getJSFunction*[T, U](ctx: JSContext, val: JSValue):
     (proc(x: T): Result[U, JSError]) =
@@ -1165,7 +1172,7 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
   return ctx.newJSCFunction("", f)
 
-proc toJSP1(ctx: JSContext, parent: ref object, child: var object): JSValue =
+proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
   let p = addr child
   # Save parent as the original ancestor for this tree.
   JS_GetRuntime(ctx).getOpaque().refmap[p] = (
@@ -1178,7 +1185,7 @@ proc toJSP1(ctx: JSContext, parent: ref object, child: var object): JSValue =
   let tp = getTypePtr(child)
   return toJSP0(ctx, p, tp)
 
-proc toJSP1(ctx: JSContext, parent: ptr object, child: var object): JSValue =
+proc toJSP(ctx: JSContext, parent: ptr object, child: var object): JSValue =
   let p = addr child
   # Increment the reference count of parent's root ancestor, and save the
   # increment/decrement callbacks for the child as well.
@@ -1188,16 +1195,6 @@ proc toJSP1(ctx: JSContext, parent: ptr object, child: var object): JSValue =
   rtOpaque.refmap[p] = ru
   let tp = getTypePtr(child)
   return toJSP0(ctx, p, tp)
-
-proc toJSP[T, U](ctx: JSContext, parent: T, child: var U): JSValue =
-  #TODO this is rather ugly
-  # Ideally we would use toJSP when possible. However this would mess up
-  # object types that have a custom toJS but no toJSP. (Maybe write a separate
-  # toJSP for each of those objects?)
-  when not compiles(toJS(ctx, child)):
-    return toJSP1(ctx, parent, child)
-  else:
-    return toJS(ctx, child)
 
 proc defineConsts*[T](ctx: JSContext, classid: JSClassID,
     consts: static openarray[(string, T)]) =
@@ -1292,6 +1289,8 @@ proc getParams(fun: NimNode): seq[FuncParam] =
         typeof(`x`)
     else:
       error("?? " & treeRepr(it))
+    if t.kind in {nnkRefTy, nnkPtrTy}:
+      t = t[0]
     let val = if it[^1].kind != nnkEmpty:
       let x = it[^1]
       some(newPar(x))
@@ -1354,9 +1353,6 @@ template getJSSetterParams(): untyped =
 
 template fromJS_or_return*(t, ctx, val: untyped): untyped =
   (
-    if JS_IsException(val):
-      #TODO this check can probably be removed?
-      return JS_EXCEPTION
     let x = fromJS[t](ctx, val)
     if x.isErr:
       if x.error == nil:
@@ -1367,9 +1363,6 @@ template fromJS_or_return*(t, ctx, val: untyped): untyped =
 
 template fromJSP_or_return*(t, ctx, val: untyped): untyped =
   (
-    if JS_IsException(val):
-      #TODO this check can probably be removed?
-      return JS_EXCEPTION
     let x = fromJSP[t](ctx, val)
     if x.isErr:
       if x.error == nil:
@@ -1379,10 +1372,7 @@ template fromJSP_or_return*(t, ctx, val: untyped): untyped =
   )
 
 template fromJS_or_die*(t, ctx, val, ev, dl: untyped): untyped =
-  when not (typeof(val) is JSAtom):
-    if JS_IsException(val):
-      return ev
-  let x = fromJS[t](ctx, val)
+  let x = fromJSP[t](ctx, val)
   if x.isNone:
     break dl
   x.get
@@ -1692,7 +1682,7 @@ proc addThisName(gen: var JSFuncGenerator, thisname: Option[string]) =
     gen.newName = ident($gen.t & "_" & gen.thisType & "_" & gen.funcName)
   else:
     let rt = gen.returnType.get
-    if rt.kind == nnkRefTy:
+    if rt.kind in {nnkRefTy, nnkPtrTy}:
       gen.thisType = rt[0].strVal
     else:
       if rt.kind == nnkBracketExpr:
@@ -1950,7 +1940,7 @@ func getStringFromPragma(varPragma: NimNode): Option[string] =
 proc findPragmas(t: NimNode): JSObjectPragmas =
   let typ = t.getTypeInst()[1] # The type, as declared.
   var impl = typ.getTypeImpl() # ref t
-  if impl.kind == nnkRefTy:
+  if impl.kind in {nnkRefTy, nnkPtrTy}:
     impl = impl[0].getImpl()
   else:
     impl = typ.getImpl()
@@ -2108,7 +2098,10 @@ proc registerGetters(stmts: NimNode, info: RegistryInfo,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
         let arg_0 = fromJSP_or_return(`t`, ctx, this)
-        return toJSP(ctx, arg_0, arg_0.`node`)
+        when typeof(arg_0.`node`) is object:
+          return toJSP(ctx, arg_0, arg_0.`node`)
+        else:
+          return toJS(ctx, arg_0.`node`)
     )
     let nf = newBoundFunction(GETTER, fn, id, uf = op.unforgeable)
     registerFunction(tname, nf)

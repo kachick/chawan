@@ -20,24 +20,24 @@ import xhr/formdata
 import xhr/xmlhttprequest
 
 # NavigatorID
-proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
-proc appName(navigator: Navigator): string {.jsfget.} = "Netscape"
-proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (Windows)"
-proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
-proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
-proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
-proc userAgent(navigator: Navigator): string {.jsfget.} = "chawan" #TODO TODO TODO this should be configurable
-proc vendor(navigator: Navigator): string {.jsfget.} = ""
-proc vendorSub(navigator: Navigator): string {.jsfget.} = ""
-proc taintEnabled(navigator: Navigator): bool {.jsfget.} = false
-proc oscpu(navigator: Navigator): string {.jsfget.} = "Windows NT 10.0"
+proc appCodeName(navigator: ptr Navigator): string {.jsfget.} = "Mozilla"
+proc appName(navigator: ptr Navigator): string {.jsfget.} = "Netscape"
+proc appVersion(navigator: ptr Navigator): string {.jsfget.} = "5.0 (Windows)"
+proc platform(navigator: ptr Navigator): string {.jsfget.} = "Win32"
+proc product(navigator: ptr Navigator): string {.jsfget.} = "Gecko"
+proc productSub(navigator: ptr Navigator): string {.jsfget.} = "20100101"
+proc userAgent(navigator: ptr Navigator): string {.jsfget.} = "chawan" #TODO TODO TODO this should be configurable
+proc vendor(navigator: ptr Navigator): string {.jsfget.} = ""
+proc vendorSub(navigator: ptr Navigator): string {.jsfget.} = ""
+proc taintEnabled(navigator: ptr Navigator): bool {.jsfget.} = false
+proc oscpu(navigator: ptr Navigator): string {.jsfget.} = "Windows NT 10.0"
 
 # NavigatorLanguage
-proc language(navigator: Navigator): string {.jsfget.} = "en-US"
-proc languages(navigator: Navigator): seq[string] {.jsfget.} = @["en-US"] #TODO frozen array?
+proc language(navigator: ptr Navigator): string {.jsfget.} = "en-US"
+proc languages(navigator: ptr Navigator): seq[string] {.jsfget.} = @["en-US"] #TODO frozen array?
 
 # NavigatorOnline
-proc onLine(navigator: Navigator): bool {.jsfget.} =
+proc onLine(navigator: ptr Navigator): bool {.jsfget.} =
   true # at the very least, the terminal is on-line :)
 
 #TODO NavigatorContentUtils
@@ -45,19 +45,19 @@ proc onLine(navigator: Navigator): bool {.jsfget.} =
 # NavigatorCookies
 # "this website needs cookies to be enabled to function correctly"
 # It's probably better to lie here.
-proc cookieEnabled(navigator: Navigator): bool {.jsfget.} = true
+proc cookieEnabled(navigator: ptr Navigator): bool {.jsfget.} = true
 
 # NavigatorPlugins
-proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget.} = false
-proc javaEnabled(navigator: Navigator): bool {.jsfunc.} = false
-proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
-proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
-proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
-proc length(pluginArray: PluginArray): int {.jsfget.} = 0
-proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
-proc length(mimeTypeArray: MimeTypeArray): int {.jsfget.} = 0
-proc getter(pluginArray: PluginArray, i: int): Option[JSValue] {.jsgetprop.} = discard
-proc getter(mimeTypeArray: MimeTypeArray, i: int): Option[JSValue] {.jsgetprop.} = discard
+proc pdfViewerEnabled(navigator: ptr Navigator): bool {.jsfget.} = false
+proc javaEnabled(navigator: ptr Navigator): bool {.jsfunc.} = false
+proc namedItem(pluginArray: ptr PluginArray): string {.jsfunc.} = ""
+proc namedItem(mimeTypeArray: ptr MimeTypeArray): string {.jsfunc.} = ""
+proc item(pluginArray: ptr PluginArray): JSValue {.jsfunc.} = JS_NULL
+proc length(pluginArray: ptr PluginArray): int {.jsfget.} = 0
+proc item(mimeTypeArray: ptr MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
+proc length(mimeTypeArray: ptr MimeTypeArray): int {.jsfget.} = 0
+proc getter(pluginArray: ptr PluginArray, i: int): Option[JSValue] {.jsgetprop.} = discard
+proc getter(mimeTypeArray: ptr MimeTypeArray, i: int): Option[JSValue] {.jsgetprop.} = discard
 
 proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(Navigator)
