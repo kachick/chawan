@@ -1,5 +1,6 @@
 import bindings/quickjs
 import js/javascript
+import js/tojs
 
 proc setImportMeta(ctx: JSContext, funcVal: JSValue, isMain: bool) =
   let m = cast[JSModuleDef](JS_VALUE_GET_PTR(func_val))

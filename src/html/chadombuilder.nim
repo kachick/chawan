@@ -3,6 +3,7 @@ import options
 import streams
 
 import html/dom
+import js/error
 import js/javascript
 import types/url
 
@@ -204,7 +205,7 @@ proc newDOMParser(): DOMParser {.jsctor.} =
   new(result)
 
 proc parseFromString(ctx: JSContext, parser: DOMParser, str, t: string):
-    Result[Document, JSError] {.jsfunc.} =
+    JSResult[Document] {.jsfunc.} =
   case t
   of "text/html":
     let global = JS_GetGlobalObject(ctx)

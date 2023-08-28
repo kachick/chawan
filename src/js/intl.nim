@@ -2,6 +2,7 @@
 
 import bindings/quickjs
 import js/javascript
+import js/tojs
 
 type
   NumberFormat = ref object

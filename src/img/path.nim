@@ -4,7 +4,7 @@ import math
 
 import types/line
 import types/vector
-import js/exception
+import js/domexception
 import utils/opt
 
 type

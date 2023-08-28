@@ -9,7 +9,7 @@ import options
 import bindings/libunicode
 import data/charwidth
 import data/idna
-import js/javascript
+import js/error
 import utils/map
 import utils/opt
 import lib/punycode
@@ -1086,7 +1086,7 @@ func twidth*(s: string, w: int): int =
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
-type BoundaryFunction* = proc(x: Rune): Result[bool, JSError]
+type BoundaryFunction* = proc(x: Rune): JSResult[bool]
 
 proc breaksWord*(r: Rune, check: Opt[BoundaryFunction]): bool =
   if check.isSome:

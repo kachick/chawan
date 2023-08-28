@@ -1,6 +1,7 @@
 import html/dom
-import js/exception
+import js/domexception
 import js/javascript
+import js/tojs
 import types/blob
 import types/formdata
 import utils/twtstr
@@ -14,7 +15,7 @@ proc newFormData0*(): FormData =
   return FormData()
 
 proc newFormData*(form: HTMLFormElement = nil,
-    submitter: HTMLElement = nil): Result[FormData, JSError] {.jsctor.} =
+    submitter: HTMLElement = nil): DOMResult[FormData] {.jsctor.} =
   let this = FormData()
   if form != nil:
     if submitter != nil:

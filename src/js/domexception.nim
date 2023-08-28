@@ -1,6 +1,7 @@
 import tables
 
 import bindings/quickjs
+import js/error
 import js/javascript
 
 const NamesTable = {
@@ -28,15 +29,13 @@ const NamesTable = {
   "DataCloneError": 25u16
 }.toTable()
 
-type DOMException* = ref object of JSError
-  name* {.jsget.}: string
-
-jsDestructor(DOMException)
-
 type
-  JSResult*[T] = Result[T, JSError]
+  DOMException* = ref object of JSError
+    name* {.jsget.}: string
 
   DOMResult*[T] = Result[T, DOMException]
+
+jsDestructor(DOMException)
 
 proc newDOMException*(message = "", name = "Error"): DOMException {.jsctor.} =
   return DOMException(

@@ -2,6 +2,7 @@ import strutils
 import times
 
 import io/urlfilter
+import js/error
 import js/javascript
 import js/regex
 import types/url
@@ -204,7 +205,7 @@ proc serialize*(cookiejar: CookieJar, url: URL): string =
     result &= "="
     result &= cookie.value
 
-proc newCookie*(str: string, url: URL = nil): Result[Cookie, JSError]
+proc newCookie*(str: string, url: URL = nil): JSResult[Cookie]
     {.jsctor.} =
   let cookie = new(Cookie)
   cookie.expires = -1

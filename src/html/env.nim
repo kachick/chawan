@@ -10,7 +10,8 @@ import io/promise
 import io/request
 import io/response
 import io/window
-import js/exception
+import js/domexception
+import js/error
 import js/intl
 import js/javascript
 import js/timeout

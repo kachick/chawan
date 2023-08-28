@@ -3,8 +3,9 @@ import strutils
 import tables
 
 import bindings/quickjs
-import js/exception
+import js/error
 import js/javascript
+import js/tojs
 import utils/twtstr
 
 type

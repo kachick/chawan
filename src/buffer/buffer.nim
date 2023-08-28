@@ -30,7 +30,7 @@ import io/window
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
-import js/exception
+import js/error
 import js/javascript
 import js/regex
 import js/timeout

@@ -5,6 +5,7 @@ import options
 import unicode
 import math
 
+import js/error
 import js/javascript
 import types/blob
 import utils/twtstr

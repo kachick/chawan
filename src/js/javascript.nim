@@ -37,7 +37,10 @@ import strutils
 import tables
 import unicode
 
-import io/promise
+import js/error
+import js/opaque
+import js/tojs
+import js/typeptr
 import utils/opt
 
 import bindings/quickjs
@@ -70,56 +73,7 @@ when sizeof(int) < sizeof(int64):
   export quickjs.`==`
 
 type
-  JSErrorEnum* = enum
-    # QuickJS internal errors
-    JS_EVAL_ERROR0 = "EvalError"
-    JS_RANGE_ERROR0 = "RangeError"
-    JS_REFERENCE_ERROR0 = "ReferenceError"
-    JS_SYNTAX_ERROR0 = "SyntaxError"
-    JS_TYPE_ERROR0 = "TypeError"
-    JS_URI_ERROR0 = "URIError"
-    JS_INTERNAL_ERROR0 = "InternalError"
-    JS_AGGREGATE_ERROR0 = "AggregateError"
-    # Chawan errors
-    JS_DOM_EXCEPTION = "DOMException"
-
-  JSSymbolRefs = enum
-    ITERATOR = "iterator"
-    ASYNC_ITERATOR = "asyncIterator"
-    TO_STRING_TAG = "toStringTag"
-
-  JSStrRefs = enum
-    DONE = "done"
-    VALUE = "value"
-    NEXT = "next"
-
-  JSContextOpaque* = ref object
-    creg: Table[string, JSClassID]
-    typemap: Table[pointer, JSClassID]
-    ctors: Table[JSClassID, JSValue]
-    parents: Table[JSClassID, JSClassID]
-    # Parent unforgeables are merged on class creation.
-    # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
-    # `unforgeable[classid]'.)
-    unforgeable: Table[JSClassID, seq[JSCFunctionListEntry]]
-    gclaz: string
-    sym_refs: array[JSSymbolRefs, JSAtom]
-    str_refs: array[JSStrRefs, JSAtom]
-    Array_prototype_values: JSValue
-    Object_prototype_valueOf*: JSValue
-    err_ctors: array[JSErrorEnum, JSValue]
-
-  JSRuntimeOpaque* = ref object
-    plist: Table[pointer, pointer] # Nim, JS
-    flist: seq[seq[JSCFunctionListEntry]]
-    fins: Table[JSClassID, proc(val: JSValue)]
-    refmap: Table[pointer, tuple[cref, cunref: (proc() {.closure.})]]
-
   JSFunctionList = openArray[JSCFunctionListEntry]
-
-  JSError* = ref object of RootObj
-    e*: JSErrorEnum
-    message*: string
 
   BoundFunction = object
     t: BoundFunctionType
@@ -137,70 +91,6 @@ type
     PROPERTY_HAS = "js_prop_has"
     FINALIZER = "js_fin"
 
-const QuickJSErrors = [
-  JS_EVAL_ERROR0,
-  JS_RANGE_ERROR0,
-  JS_REFERENCE_ERROR0,
-  JS_SYNTAX_ERROR0,
-  JS_TYPE_ERROR0,
-  JS_URI_ERROR0,
-  JS_INTERNAL_ERROR0,
-  JS_AGGREGATE_ERROR0
-]
-
-# Convert Nim types to the corresponding JavaScript type.
-# This does not work with var objects.
-proc toJS*(ctx: JSContext, s: string): JSValue
-proc toJS(ctx: JSContext, r: Rune): JSValue
-proc toJS*(ctx: JSContext, n: int64): JSValue
-proc toJS*(ctx: JSContext, n: int32): JSValue
-proc toJS*(ctx: JSContext, n: int): JSValue
-proc toJS*(ctx: JSContext, n: uint16): JSValue
-proc toJS*(ctx: JSContext, n: uint32): JSValue
-proc toJS*(ctx: JSContext, n: uint64): JSValue
-proc toJS(ctx: JSContext, n: SomeFloat): JSValue
-proc toJS*(ctx: JSContext, b: bool): JSValue
-proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue
-proc toJS*(ctx: JSContext, opt: Option): JSValue
-proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue
-proc toJS(ctx: JSContext, s: seq): JSValue
-proc toJS(ctx: JSContext, e: enum): JSValue
-proc toJS(ctx: JSContext, j: JSValue): JSValue
-proc toJS[T](ctx: JSContext, promise: Promise[T]): JSValue
-proc toJS[T, E](ctx: JSContext, promise: Promise[Result[T, E]]): JSValue
-proc toJS(ctx: JSContext, promise: EmptyPromise): JSValue
-proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue
-proc toJS*(ctx: JSContext, obj: ref object): JSValue
-proc toJS*(ctx: JSContext, err: JSError): JSValue
-proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
-
-# Convert Nim types to the corresponding JavaScript type, with knowledge of
-# the parent object.
-# This supports conversion of var object types.
-#
-# The idea here is to allow conversion of var objects to quasi-reference types
-# by saving a pointer to their ancestor and incrementing/decrementing the
-# ancestor's reference count instead.
-proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue
-proc toJSP(ctx: JSContext, parent: ptr object, child: var object): JSValue
-
-# Avoid accidentally calling toJSP on objects that we have explicit toJS
-# converters for.
-template makeToJSP(typ: untyped) =
-  template toJSP(ctx: JSContext, parent: ref object, child: var typ): JSValue =
-    toJS(ctx, child)
-  template toJSP(ctx: JSContext, parent: ptr object, child: var typ): JSValue =
-    toJS(ctx, child)
-makeToJSP(Table)
-makeToJSP(Option)
-makeToJSP(Result)
-
-func getOpaque*(ctx: JSContext): JSContextOpaque =
-  return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
-
-func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
-  return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
-
 var runtimes {.threadVar.}: seq[JSRuntime]
 
 proc newJSRuntime*(): JSRuntime =
@@ -215,38 +105,8 @@ proc newJSRuntime*(): JSRuntime =
 
 proc newJSContext*(rt: JSRuntime): JSContext =
   let ctx = JS_NewContext(rt)
-  var opaque = new(JSContextOpaque)
+  let opaque = newJSContextOpaque(ctx)
   GC_ref(opaque)
-
-  block: # get well-known symbols and other functions
-    let global = JS_GetGlobalObject(ctx)
-    block:
-      let sym = JS_GetPropertyStr(ctx, global, "Symbol")
-      for s in JSSymbolRefs:
-        let name = $s
-        let val = JS_GetPropertyStr(ctx, sym, cstring(name))
-        assert JS_IsSymbol(val)
-        opaque.sym_refs[s] = JS_ValueToAtom(ctx, val)
-        JS_FreeValue(ctx, val)
-      JS_FreeValue(ctx, sym)
-      for s in JSStrRefs:
-        let ss = $s
-        opaque.str_refs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
-    block:
-      let arrproto = JS_GetClassProto(ctx, JS_CLASS_ARRAY)
-      opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto,
-        "values")
-      JS_FreeValue(ctx, arrproto)
-    block:
-      let objproto = JS_GetClassProto(ctx, JS_CLASS_OBJECT)
-      opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto, "valueOf")
-      JS_FreeValue(ctx, objproto)
-    for e in JSErrorEnum:
-      let s = $e
-      let err = JS_GetPropertyStr(ctx, global, cstring(s))
-      opaque.err_ctors[e] = err
-    JS_FreeValue(ctx, global)
-
   JS_SetContextOpaque(ctx, cast[pointer](opaque))
   return ctx
 
@@ -287,13 +147,6 @@ proc free*(rt: var JSRuntime) =
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
   rt = nil
-
-proc setOpaque[T](ctx: JSContext, val: JSValue, opaque: T) =
-  let rt = JS_GetRuntime(ctx)
-  let rtOpaque = rt.getOpaque()
-  let p = JS_VALUE_GET_PTR(val)
-  rtOpaque.plist[cast[pointer](opaque)] = p
-  JS_SetOpaque(val, cast[pointer](opaque))
 
 proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
   # Add JSValue reference.
@@ -390,43 +243,6 @@ func isInstanceOf*(ctx: JSContext, val: JSValue, class: string): bool =
     if classid == 0:
       break
   return found
-
-proc defineProperty(ctx: JSContext, this: JSValue, name: string,
-    prop: JSValue, flags = cint(0)) =
-  if JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags) <= 0:
-    raise newException(Defect, "Failed to define property string: " & name)
-
-proc defineProperty*[T](ctx: JSContext, this: JSValue, name: string, prop: T,
-    flags = cint(0)) =
-  defineProperty(ctx, this, name, toJS(ctx, prop), flags)
-
-proc definePropertyE*[T](ctx: JSContext, this: JSValue, name: string,
-    prop: T) =
-  defineProperty(ctx, this, name, prop, JS_PROP_ENUMERABLE)
-
-proc definePropertyCWE*[T](ctx: JSContext, this: JSValue, name: string,
-    prop: T) =
-  defineProperty(ctx, this, name, prop, JS_PROP_C_W_E)
-
-# Get a unique pointer for each type.
-proc getTypePtr[T](x: T): pointer =
-  when T is RootRef:
-    # I'm so sorry.
-    # (This dereferences the object's first member, m_type. Probably.)
-    return cast[ptr pointer](x)[]
-  elif T is RootObj:
-    return cast[pointer](x)
-  else:
-    return getTypeInfo(x)
-
-func getTypePtr(t: typedesc[ref object]): pointer =
-  var x: t
-  new(x)
-  return getTypePtr(x)
-
-func getTypePtr(t: type): pointer =
-  var x: t
-  return getTypePtr(x)
 
 # Add all LegacyUnforgeable functions defined on the prototype chain to
 # the opaque.
@@ -567,14 +383,6 @@ proc newAggregateError*(message: string): JSError =
     e: JS_AGGREGATE_ERROR0,
     message: message
   )
-
-proc defineUnforgeable*(ctx: JSContext, this: JSValue) =
-  if unlikely(JS_IsException(this)):
-    return
-  let ctxOpaque = ctx.getOpaque()
-  let classid = JS_GetClassID(this)
-  ctxOpaque.unforgeable.withValue(classid, uf):
-    JS_SetPropertyFunctionList(ctx, this, addr uf[][0], cint(uf[].len))
 
 func fromJSString(ctx: JSContext, val: JSValue): Result[string, JSError] =
   var plen: csize_t
@@ -839,7 +647,6 @@ macro unpackReturnType(f: typed) =
   let rv = params[0]
   if rv.isErrType():
     return quote do: void
-  doAssert rv[0].strVal == "Result"
   let rvv = rv[1]
   return quote do: `rvv`
 
@@ -936,6 +743,8 @@ proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
 proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Result[T, JSError] =
   return ok(cast[T](?fromJSPObj0(ctx, val, $T)))
 
+type FromJSAllowedT = (object and not (Result|Option|Table|JSValue))
+
 proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
   when T is string:
     return fromJSString(ctx, val)
@@ -980,7 +789,7 @@ proc fromJSPObj[T](ctx: JSContext, val: JSValue): Result[ptr T, JSError] =
   return cast[Result[ptr T, JSError]](fromJSPObj0(ctx, val, $T))
 
 template fromJSP*[T](ctx: JSContext, val: JSValue): untyped =
-  when T is object and not compiles(fromJS[T](ctx, val)):
+  when T is FromJSAllowedT:
     fromJSPObj[T](ctx, val)
   else:
     fromJS[T](ctx, val)
@@ -1004,197 +813,6 @@ func fromJSP[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
 proc getJSFunction*[T, U](ctx: JSContext, val: JSValue):
     (proc(x: T): Result[U, JSError]) =
   return fromJSFunction1[T, U](ctx, val)
-
-proc toJS*(ctx: JSContext, s: cstring): JSValue =
-  return JS_NewString(ctx, s)
-
-proc toJS*(ctx: JSContext, s: string): JSValue =
-  return toJS(ctx, cstring(s))
-
-proc toJS(ctx: JSContext, r: Rune): JSValue =
-  return toJS(ctx, $r)
-
-proc toJS*(ctx: JSContext, n: int32): JSValue =
-  return JS_NewInt32(ctx, n)
-
-proc toJS*(ctx: JSContext, n: int64): JSValue =
-  return JS_NewInt64(ctx, n)
-
-# Always int32, so we don't risk 32-bit only breakage.
-proc toJS*(ctx: JSContext, n: int): JSValue =
-  return toJS(ctx, int32(n))
-
-proc toJS*(ctx: JSContext, n: uint16): JSValue =
-  return JS_NewUint32(ctx, uint32(n))
-
-proc toJS*(ctx: JSContext, n: uint32): JSValue =
-  return JS_NewUint32(ctx, n)
-
-proc toJS*(ctx: JSContext, n: uint64): JSValue =
-  #TODO this is incorrect
-  return JS_NewFloat64(ctx, float64(n))
-
-proc toJS(ctx: JSContext, n: SomeFloat): JSValue =
-  return JS_NewFloat64(ctx, float64(n))
-
-proc toJS*(ctx: JSContext, b: bool): JSValue =
-  return JS_NewBool(ctx, b)
-
-proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue =
-  let obj = JS_NewObject(ctx)
-  if not JS_IsException(obj):
-    for k, v in t:
-      definePropertyCWE(ctx, obj, k, v)
-  return obj
-
-proc toJS*(ctx: JSContext, opt: Option): JSValue =
-  if opt.isSome:
-    return toJS(ctx, opt.get)
-  return JS_NULL
-
-proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue =
-  if opt.isSome:
-    when not (T is void):
-      return toJS(ctx, opt.get)
-    else:
-      return JS_UNDEFINED
-  else:
-    when not (E is void):
-      let res = toJS(ctx, opt.error)
-      if not JS_IsNull(res):
-        return JS_Throw(ctx, res)
-    else:
-      return JS_NULL
-
-proc toJS(ctx: JSContext, s: seq): JSValue =
-  let a = JS_NewArray(ctx)
-  if not JS_IsException(a):
-    for i in 0..s.high:
-      let j = toJS(ctx, s[i])
-      if JS_IsException(j):
-        return j
-      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j,
-          JS_PROP_C_W_E or JS_PROP_THROW) < 0:
-        return JS_EXCEPTION
-  return a
-
-proc toJSP0(ctx: JSContext, p, tp: pointer): JSValue =
-  JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
-    # a JSValue already points to this object.
-    return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
-  let clazz = ctx.getOpaque().typemap[tp]
-  let jsObj = JS_NewObjectClass(ctx, clazz)
-  setOpaque(ctx, jsObj, p)
-  # We are "constructing" a new JS object, so we must add unforgeable
-  # properties here.
-  defineUnforgeable(ctx, jsObj) # not an exception
-  return jsObj
-
-proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =
-  if obj == nil:
-    return JS_NULL
-  let p = cast[pointer](obj)
-  GC_ref(obj)
-  let tp = getTypePtr(obj)
-  return toJSP0(ctx, p, tp)
-
-proc toJS*(ctx: JSContext, obj: ref object): JSValue =
-  return toJSRefObj(ctx, obj)
-
-proc toJS(ctx: JSContext, e: enum): JSValue =
-  return toJS(ctx, $e)
-
-proc toJS(ctx: JSContext, j: JSValue): JSValue =
-  return j
-
-proc toJS(ctx: JSContext, promise: EmptyPromise): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc() =
-    var x = JS_UNDEFINED
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, addr x)
-    JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
-  return jsPromise
-
-proc toJS[T](ctx: JSContext, promise: Promise[T]): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc(x: T) =
-    var x = toJS(ctx, x)
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, addr x)
-    JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
-  return jsPromise
-
-proc toJS[T, E](ctx: JSContext, promise: Promise[Result[T, E]]): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc(x: Result[T, E]) =
-    if x.isOk:
-      let x = when T is void:
-        JS_UNDEFINED
-      else:
-        toJS(ctx, x.get)
-      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, unsafeAddr x)
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, x)
-    else: # err
-      let x = when E is void:
-        JS_UNDEFINED
-      else:
-        toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1, unsafeAddr x)
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
-  return jsPromise
-
-proc toJS*(ctx: JSContext, err: JSError): JSValue =
-  if err.e notin QuickJSErrors:
-    return toJSRefObj(ctx, err)
-  var msg = toJS(ctx, err.message)
-  if JS_IsException(msg):
-    return msg
-  let ctor = ctx.getOpaque().err_ctors[err.e]
-  return JS_CallConstructor(ctx, ctor, 1, addr msg)
-
-proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
-  return ctx.newJSCFunction("", f)
-
-proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
-  let p = addr child
-  # Save parent as the original ancestor for this tree.
-  JS_GetRuntime(ctx).getOpaque().refmap[p] = (
-    (proc() =
-      GC_ref(parent)),
-    (proc() =
-      GC_unref(parent))
-  )
-  GC_ref(parent)
-  let tp = getTypePtr(child)
-  return toJSP0(ctx, p, tp)
-
-proc toJSP(ctx: JSContext, parent: ptr object, child: var object): JSValue =
-  let p = addr child
-  # Increment the reference count of parent's root ancestor, and save the
-  # increment/decrement callbacks for the child as well.
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let ru = rtOpaque.refmap[parent]
-  ru.cref()
-  rtOpaque.refmap[p] = ru
-  let tp = getTypePtr(child)
-  return toJSP0(ctx, p, tp)
 
 proc defineConsts*[T](ctx: JSContext, classid: JSClassID,
     consts: static openarray[(string, T)]) =
@@ -2166,8 +1784,12 @@ proc bindFunctions(stmts: NimNode, info: var RegistryInfo) =
         do:
           info.getset[f0] = (newNilLit(), f1, false)
       of PROPERTY_GET:
+        if info.propGetFun.kind != nnkNilLit:
+          error("Class " & info.tname & " has 2+ property getters.")
         info.propGetFun = f1
       of PROPERTY_HAS:
+        if info.propHasFun.kind != nnkNilLit:
+          error("Class " & info.tname & " has 2+ hasprop getters.")
         info.propHasFun = f1
       of FINALIZER:
         f0 = fun.name

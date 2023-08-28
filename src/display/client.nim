@@ -34,7 +34,7 @@ import ips/forkserver
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
-import js/exception
+import js/domexception
 import js/intl
 import js/javascript
 import js/module

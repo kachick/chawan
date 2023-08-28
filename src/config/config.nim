@@ -9,6 +9,7 @@ import config/mimetypes
 import config/toml
 import io/headers
 import io/urlfilter
+import js/error
 import js/javascript
 import js/regex
 import types/color
@@ -51,7 +52,7 @@ type
   SiteConfig* = object
     url*: Opt[Regex]
     host*: Opt[Regex]
-    rewrite_url*: (proc(s: URL): Result[URL, JSError])
+    rewrite_url*: (proc(s: URL): JSResult[URL])
     cookie*: Opt[bool]
     third_party_cookie*: seq[Regex]
     share_cookie_jar*: Opt[string]
@@ -64,7 +65,7 @@ type
 
   OmniRule* = object
     match*: Regex
-    substitute_url*: (proc(s: string): Result[string, JSError])
+    substitute_url*: (proc(s: string): JSResult[string])
 
   StartConfig = object
     visual_home* {.jsgetset.}: string

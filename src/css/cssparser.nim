@@ -2,7 +2,7 @@ import options
 import streams
 import unicode
 
-import js/exception
+import js/domexception
 import utils/opt
 import utils/twtstr
 

@@ -4,6 +4,7 @@ import bindings/quickjs
 import io/headers
 import io/promise
 import io/request
+import js/error
 import js/javascript
 import types/url
 
@@ -50,7 +51,7 @@ proc close*(response: Response) {.jsfunc.} =
   if response.body != nil:
     response.body.close()
 
-proc text*(response: Response): Promise[Result[string, JSError]] {.jsfunc.} =
+proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.bodyRead == nil:
     let p = newPromise[Result[string, JSError]]()
     let err = Result[string, JSError]
@@ -62,7 +63,7 @@ proc text*(response: Response): Promise[Result[string, JSError]] {.jsfunc.} =
   return bodyRead.then(proc(s: string): Result[string, JSError] =
     ok(s))
 
-proc json(ctx: JSContext, this: Response): Promise[Result[JSValue, JSError]]
+proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
     {.jsfunc.} =
   return this.text().then(proc(s: Result[string, JSError]):
       Result[JSValue, JSError] =

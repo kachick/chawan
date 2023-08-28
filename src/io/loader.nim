@@ -34,6 +34,7 @@ import io/urlfilter
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/error
 import js/javascript
 import types/cookie
 import types/referer
@@ -56,7 +57,7 @@ type
     unregisterFun*: proc(fd: int)
 
   ConnectData = object
-    promise: Promise[Result[Response, JSError]]
+    promise: Promise[JSResult[Response]]
     stream: Stream
     request: Request
 

@@ -18,9 +18,12 @@ import img/png
 import io/loader
 import io/request
 import io/window
-import js/exception
+import js/domexception
+import js/error
 import js/javascript
+import js/opaque
 import js/timeout
+import js/tojs
 import types/blob
 import types/color
 import types/matrix
@@ -1101,7 +1104,7 @@ const SupportedTokensMap = {
 }.toTable()
 
 func supports(tokenList: DOMTokenList, token: string):
-    Result[bool, JSError] {.jsfunc.} =
+    JSResult[bool] {.jsfunc.} =
   if tokenList.localName in SupportedTokensMap:
     let lowercase = token.toLowerAscii()
     return ok(lowercase in SupportedTokensMap[tokenList.localName])

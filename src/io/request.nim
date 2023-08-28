@@ -5,6 +5,7 @@ import tables
 
 import bindings/quickjs
 import io/headers
+import js/error
 import js/javascript
 import types/formdata
 import types/url
@@ -194,7 +195,7 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
 
 #TODO init as an actual dictionary
 func newRequest*[T: string|Request](ctx: JSContext, resource: T,
-    init = none(JSValue)): Result[Request, JSError] {.jsctor.} =
+    init = none(JSValue)): JSResult[Request] {.jsctor.} =
   when T is string:
     let url = ?newURL(resource)
     if url.username != "" or url.password != "":

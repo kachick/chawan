@@ -29,6 +29,7 @@ import ips/forkserver
 import ips/socketstream
 import js/javascript
 import js/regex
+import js/tojs
 import types/buffersource
 import types/color
 import types/cookie
