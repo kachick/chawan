@@ -1073,7 +1073,7 @@ proc remove(tokenList: DOMTokenList, tokens: varargs[string]):
   return ok()
 
 proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)):
-    Result[bool, DOMException] {.jsfunc.} =
+    DOMResult[bool] {.jsfunc.} =
   ?validateDOMToken(token)
   let i = tokenList.toks.find(token)
   if i != -1:
@@ -1089,7 +1089,7 @@ proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)):
   return ok(false)
 
 proc replace(tokenList: DOMTokenList, token, newToken: string):
-    Result[bool, DOMException] {.jsfunc.} =
+    DOMResult[bool] {.jsfunc.} =
   ?validateDOMToken(token)
   ?validateDOMToken(newToken)
   let i = tokenList.toks.find(token)
@@ -2224,7 +2224,7 @@ proc removeAttributeNS(element: Element, namespace, localName: string) {.jsfunc.
     element.delAttr(i)
 
 proc toggleAttribute(element: Element, qualifiedName: string,
-    force = none(bool)): Result[bool, DOMException] {.jsfunc.} =
+    force = none(bool)): DOMResult[bool] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
     qualifiedName.toLowerAscii2()
@@ -2245,7 +2245,7 @@ proc value(attr: Attr, s: string) {.jsfset.} =
   if attr.ownerElement != nil:
     attr.ownerElement.attr0(attr.name, s)
 
-proc setNamedItem(map: NamedNodeMap, attr: Attr): Result[Attr, DOMException]
+proc setNamedItem(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
   if attr.ownerElement != nil and attr.ownerElement != map.element:
     return err(newDOMException("Attribute is currently in use",
@@ -2261,12 +2261,12 @@ proc setNamedItem(map: NamedNodeMap, attr: Attr): Result[Attr, DOMException]
   map.element.attrs[attr.name] = attr.value
   map.attrlist.add(attr)
 
-proc setNamedItemNS(map: NamedNodeMap, attr: Attr): Result[Attr, DOMException]
+proc setNamedItemNS(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
   return map.setNamedItem(attr)
 
 proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
-    Result[Attr, DOMException] {.jsfunc.} =
+    DOMResult[Attr] {.jsfunc.} =
   let i = map.findAttr(qualifiedName)
   if i != -1:
     let attr = map.attrlist[i]
@@ -2275,7 +2275,7 @@ proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
   return err(newDOMException("Item not found", "NotFoundError"))
 
 proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
-    Result[Attr, DOMException] {.jsfunc.} =
+    DOMResult[Attr] {.jsfunc.} =
   let i = map.findAttrNS(namespace, localName)
   if i != -1:
     let attr = map.attrlist[i]
@@ -2518,8 +2518,7 @@ proc insert*(parent, node, before: Node) =
   for node in nodes:
     insertNode(parent, node, before)
 
-proc insertBefore*(parent, node, before: Node): Result[Node, DOMException]
-    {.jsfunc.} =
+proc insertBefore*(parent, node, before: Node): DOMResult[Node] {.jsfunc.} =
   ?parent.preInsertionValidity(node, before)
   let referenceChild = if before == node:
     node.nextSibling
@@ -2528,7 +2527,7 @@ proc insertBefore*(parent, node, before: Node): Result[Node, DOMException]
   parent.insert(node, referenceChild)
   return ok(node)
 
-proc appendChild(parent, node: Node): Result[Node, DOMException] {.jsfunc.} =
+proc appendChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
   return parent.insertBefore(node, nil)
 
 proc append*(parent, node: Node) =
@@ -2536,7 +2535,7 @@ proc append*(parent, node: Node) =
 
 #TODO replaceChild
 
-proc removeChild(parent, node: Node): Result[Node, DOMException] {.jsfunc.} =
+proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
   if node.parentNode != parent:
     return err(newDOMException("Node is not a child of parent",
       "NotFoundError"))
@@ -2811,7 +2810,7 @@ proc prepare*(element: HTMLScriptElement) =
 
 #TODO options/custom elements
 proc createElement(document: Document, localName: string):
-    Result[Element, DOMException] {.jsfunc.} =
+    DOMResult[Element] {.jsfunc.} =
   if not localName.matchNameProduction():
     return err(newDOMException("Invalid character in element name",
       "InvalidCharacterError"))
@@ -2831,7 +2830,7 @@ proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
 proc createDocumentType(implementation: ptr DOMImplementation, qualifiedName,
-    publicId, systemId: string): Result[DocumentType, DOMException] {.jsfunc.} =
+    publicId, systemId: string): DOMResult[DocumentType] {.jsfunc.} =
   if not qualifiedName.matchQNameProduction():
     return err(newDOMException("Invalid character in document type name",
       "InvalidCharacterError"))
@@ -2858,7 +2857,8 @@ proc createHTMLDocument(implementation: ptr DOMImplementation, title =
 proc hasFeature(implementation: ptr DOMImplementation): bool {.jsfunc.} =
   return true
 
-proc createCDATASection(document: Document, data: string): Result[CDATASection, DOMException] {.jsfunc.} =
+proc createCDATASection(document: Document, data: string):
+    DOMResult[CDATASection] {.jsfunc.} =
   if not document.isxml:
     return err(newDOMException("CDATA sections are not supported in HTML",
       "NotSupportedError"))
@@ -2871,7 +2871,7 @@ proc createComment*(document: Document, data: string): Comment {.jsfunc.} =
   return newComment(document, data)
 
 proc createProcessingInstruction(document: Document, target, data: string):
-    Result[ProcessingInstruction, DOMException] {.jsfunc.} =
+    DOMResult[ProcessingInstruction] {.jsfunc.} =
   if not target.matchNameProduction() or "?>" in data:
     return err(newDOMException("Invalid data for processing instruction",
       "InvalidCharacterError"))

@@ -715,7 +715,7 @@ proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
   state.tokens = cast[seq[CSSParsedItem]](cvals)
   return state.parseListOfRules()
 
-proc parseRule(state: var CSSParseState): Result[CSSRule, DOMException] =
+proc parseRule(state: var CSSParseState): DOMResult[CSSRule] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
@@ -737,13 +737,12 @@ proc parseRule(state: var CSSParseState): Result[CSSRule, DOMException] =
     return err(newDOMException("EOF not reached", "SyntaxError"))
   return ok(res)
 
-proc parseRule*(inputStream: Stream): Result[CSSRule, DOMException] =
+proc parseRule*(inputStream: Stream): DOMResult[CSSRule] =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseRule()
 
-proc parseDeclaration(state: var CSSParseState):
-    Result[CSSDeclaration, DOMException] =
+proc parseDeclaration(state: var CSSParseState): DOMResult[CSSDeclaration] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
 
@@ -756,8 +755,7 @@ proc parseDeclaration(state: var CSSParseState):
 
   return err(newDOMException("No declaration found", "SyntaxError"))
 
-proc parseDeclaration*(inputStream: Stream):
-    Result[CSSDeclaration, DOMException] =
+proc parseDeclaration*(inputStream: Stream): DOMResult[CSSDeclaration] =
   var state = CSSParseState()
   state.tokens = tokenizeCSS(inputStream)
   return state.parseDeclaration()
@@ -789,7 +787,7 @@ proc parseListOfDeclarations2*(inputStream: Stream): seq[CSSDeclaration] =
   return state.parseListOfDeclarations2()
 
 proc parseComponentValue(state: var CSSParseState):
-    Result[CSSComponentValue, DOMException] =
+    DOMResult[CSSComponentValue] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
@@ -803,8 +801,7 @@ proc parseComponentValue(state: var CSSParseState):
     return err(newDOMException("EOF not reached", "SyntaxError"))
   return ok(res)
 
-proc parseComponentValue*(inputStream: Stream):
-    Result[CSSComponentValue, DOMException] =
+proc parseComponentValue*(inputStream: Stream): DOMResult[CSSComponentValue] =
   var state: CSSParseState
   state.tokens = tokenizeCSS(inputStream)
   return state.parseComponentValue()
