@@ -89,7 +89,7 @@ type
     # loader proxy.
     acceptProxy*: bool
 
-  FetchPromise* = Promise[Result[Response, JSError]]
+  FetchPromise* = Promise[JSResult[Response]]
 
 proc addFd(ctx: LoaderContext, fd: int, flags: int) =
   ctx.extra_fds.add(curl_waitfd(
@@ -333,12 +333,12 @@ proc onConnected*(loader: FileLoader, fd: int) =
       bodyRead: response.bodyRead
     )
     SocketStream(stream).source.getFd().setBlocking(false)
-    promise.resolve(Result[Response, JSError].ok(response))
+    promise.resolve(JSResult[Response].ok(response))
   else:
     loader.unregisterFun(fd)
     loader.unregistered.add(fd)
     let err = newTypeError("NetworkError when attempting to fetch resource")
-    promise.resolve(Result[Response, JSError].err(err))
+    promise.resolve(JSResult[Response].err(err))
   loader.connecting.del(fd)
 
 proc onRead*(loader: FileLoader, fd: int) =

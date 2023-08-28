@@ -994,7 +994,7 @@ proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
         params.list[i][1] = value
 
 proc newURL*(s: string, base: Option[string] = none(string)):
-    Result[URL, JSError] {.jsctor.} =
+    JSResult[URL] {.jsctor.} =
   if base.issome:
     let baseUrl = parseURL(base.get)
     if baseUrl.isNone:

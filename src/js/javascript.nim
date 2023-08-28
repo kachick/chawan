@@ -384,7 +384,7 @@ proc newAggregateError*(message: string): JSError =
     message: message
   )
 
-func fromJSString(ctx: JSContext, val: JSValue): Result[string, JSError] =
+func fromJSString(ctx: JSContext, val: JSValue): JSResult[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
   if outp == nil:
@@ -397,7 +397,7 @@ func fromJSString(ctx: JSContext, val: JSValue): Result[string, JSError] =
   return ok(ret)
 
 func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
-    Result[T, JSError] =
+    JSResult[T] =
   if not JS_IsNumber(val):
     return err()
   when T is int:
@@ -434,7 +434,7 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
     return ok(cast[uint64](ret))
 
 proc fromJSFloat[T: SomeFloat](ctx: JSContext, val: JSValue):
-    Result[T, JSError] =
+    JSResult[T] =
   if not JS_IsNumber(val):
     return err()
   var f64: float64
@@ -442,7 +442,7 @@ proc fromJSFloat[T: SomeFloat](ctx: JSContext, val: JSValue):
     return err()
   return ok(cast[T](f64))
 
-proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError]
+proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T]
 
 macro len(t: type tuple): int =
   let i = t.getType()[1].len - 1 # - tuple
@@ -504,7 +504,7 @@ macro fromJSTupleBody(a: tuple) =
           JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE]))
       )
 
-proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Result[T, JSError] =
+proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): JSResult[T] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
@@ -521,7 +521,7 @@ proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): Result[T, JSError] =
   fromJSTupleBody(x)
   return ok(x)
 
-proc fromJSSeq[T](ctx: JSContext, val: JSValue): Result[seq[T], JSError] =
+proc fromJSSeq[T](ctx: JSContext, val: JSValue): JSResult[seq[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
@@ -591,8 +591,7 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
     s.incl(genericRes)
   return ok(s)
 
-proc fromJSTable[A, B](ctx: JSContext, val: JSValue):
-    Result[Table[A, B], JSError] =
+proc fromJSTable[A, B](ctx: JSContext, val: JSValue): JSResult[Table[A, B]] =
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
@@ -617,8 +616,8 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue):
 
 #TODO varargs
 proc fromJSFunction1[T, U](ctx: JSContext, val: JSValue):
-    proc(x: U): Result[T, JSError] =
-  return proc(x: U): Result[T, JSError] =
+    proc(x: U): JSResult[T] =
+  return proc(x: U): JSResult[T] =
     var arg1 = toJS(ctx, x)
     #TODO exceptions?
     let ret = JS_Call(ctx, val, JS_UNDEFINED, 1, addr arg1)
@@ -659,7 +658,7 @@ macro unpackArg0(f: typed) =
   return quote do: `rvv`
 
 proc fromJSFunction[T](ctx: JSContext, val: JSValue):
-    Result[T, JSError] =
+    JSResult[T] =
   #TODO all args...
   return ok(
     fromJSFunction1[
@@ -686,7 +685,7 @@ template optionType[T](o: type Option[T]): auto =
   T
 
 # wrap
-proc fromJSOption[T](ctx: JSContext, val: JSValue): Result[Option[T], JSError] =
+proc fromJSOption[T](ctx: JSContext, val: JSValue): JSResult[Option[T]] =
   if JS_IsUndefined(val):
     #TODO what about null?
     return err()
@@ -694,7 +693,7 @@ proc fromJSOption[T](ctx: JSContext, val: JSValue): Result[Option[T], JSError] =
   return ok(some(res))
 
 # wrap
-proc fromJSOpt[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
+proc fromJSOpt[T](ctx: JSContext, val: JSValue): JSResult[T] =
   if JS_IsUndefined(val):
     #TODO what about null?
     return err()
@@ -703,7 +702,7 @@ proc fromJSOpt[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
     return ok(opt(T.valType))
   return ok(opt(res.get))
 
-proc fromJSBool(ctx: JSContext, val: JSValue): Result[bool, JSError] =
+proc fromJSBool(ctx: JSContext, val: JSValue): JSResult[bool] =
   let ret = JS_ToBool(ctx, val)
   if ret == -1: # exception
     return err()
@@ -711,7 +710,7 @@ proc fromJSBool(ctx: JSContext, val: JSValue): Result[bool, JSError] =
     return ok(false)
   return ok(true)
 
-proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): Result[T, JSError] =
+proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): JSResult[T] =
   if JS_IsException(val):
     return err()
   let s = ?toString(ctx, val)
@@ -722,7 +721,7 @@ proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): Result[T, JSError] =
       "' is not a valid value for enumeration " & $T))
 
 proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
-    Result[pointer, JSError] =
+    JSResult[pointer] =
   if JS_IsException(val):
     return err(nil)
   if JS_IsNull(val):
@@ -740,12 +739,12 @@ proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
   let op = JS_GetOpaque(val, classid)
   return ok(op)
 
-proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): Result[T, JSError] =
+proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): JSResult[T] =
   return ok(cast[T](?fromJSPObj0(ctx, val, $T)))
 
 type FromJSAllowedT = (object and not (Result|Option|Table|JSValue))
 
-proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
+proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
   when T is string:
     return fromJSString(ctx, val)
   elif T is char:
@@ -785,8 +784,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): Result[T, JSError] =
     static:
       error("Unrecognized type " & $T)
 
-proc fromJSPObj[T](ctx: JSContext, val: JSValue): Result[ptr T, JSError] =
-  return cast[Result[ptr T, JSError]](fromJSPObj0(ctx, val, $T))
+proc fromJSPObj[T](ctx: JSContext, val: JSValue): JSResult[ptr T] =
+  return cast[JSResult[ptr T]](fromJSPObj0(ctx, val, $T))
 
 template fromJSP*[T](ctx: JSContext, val: JSValue): untyped =
   when T is FromJSAllowedT:
@@ -811,7 +810,7 @@ func fromJSP[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
   return fromJS[T](ctx, atom)
 
 proc getJSFunction*[T, U](ctx: JSContext, val: JSValue):
-    (proc(x: T): Result[U, JSError]) =
+    (proc(x: T): JSResult[U]) =
   return fromJSFunction1[T, U](ctx, val)
 
 proc defineConsts*[T](ctx: JSContext, classid: JSClassID,

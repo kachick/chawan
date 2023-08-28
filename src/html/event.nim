@@ -84,7 +84,7 @@ proc innerEventCreationSteps(event: Event, ctx: JSContext,
 
 #TODO eventInitDict type
 proc newEvent(ctx: JSContext, ctype: string, eventInitDict = JS_UNDEFINED):
-    Result[Event, JSError] {.jsctor.} =
+    JSResult[Event] {.jsctor.} =
   if not JS_IsUndefined(eventInitDict) and not JS_IsObject(eventInitDict):
     return err(newTypeError("eventInitDict must be an object"))
   let event = Event()
@@ -149,7 +149,7 @@ func composed(this: Event): bool {.jsfget.} =
 
 # CustomEvent
 proc newCustomEvent(ctx: JSContext, ctype: string,
-    eventInitDict = JS_UNDEFINED): Result[CustomEvent, JSError] {.jsctor.} =
+    eventInitDict = JS_UNDEFINED): JSResult[CustomEvent] {.jsctor.} =
   if not JS_IsUndefined(eventInitDict) and not JS_IsObject(eventInitDict):
     return err(newTypeError("eventInitDict must be an object"))
   let event = CustomEvent()

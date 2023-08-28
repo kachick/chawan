@@ -572,7 +572,7 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
       let media = parseMediaQueryList(cvals)
       if not media.applies(document.window): return
     return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: Result[Response, JSError]): Promise[JSResult[string]] =
+      .then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
         if res.isOk:
           let res = res.get
           #TODO we should use ReadableStreams for this (which would allow us to
@@ -598,7 +598,7 @@ proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   if url.isSome:
     let url = url.get
     return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: Result[Response, JSError]): Promise[JSResult[string]] =
+      .then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
         if res.isErr:
           return
         let res = res.get

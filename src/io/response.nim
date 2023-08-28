@@ -53,20 +53,19 @@ proc close*(response: Response) {.jsfunc.} =
 
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.bodyRead == nil:
-    let p = newPromise[Result[string, JSError]]()
-    let err = Result[string, JSError]
+    let p = newPromise[JSResult[string]]()
+    let err = JSResult[string]
       .err(newTypeError("Body has already been consumed"))
     p.resolve(err)
     return p
   let bodyRead = response.bodyRead
   response.bodyRead = nil
-  return bodyRead.then(proc(s: string): Result[string, JSError] =
+  return bodyRead.then(proc(s: string): JSResult[string] =
     ok(s))
 
 proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
     {.jsfunc.} =
-  return this.text().then(proc(s: Result[string, JSError]):
-      Result[JSValue, JSError] =
+  return this.text().then(proc(s: JSResult[string]): JSResult[JSValue] =
     let s = ?s
     return ok(JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
       cstring"<input>")))
