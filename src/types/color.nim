@@ -536,7 +536,7 @@ proc fromJS2*(ctx: JSContext, val: JSValue, o: var JSResult[RGBAColor]) =
     # parse
     let s = fromJS[string](ctx, val)
     if s.isSome:
-      let x = parseHexColor(s.get)
+      let x = parseRGBAColor(s.get)
       if x.isSome:
         o.ok(x.get)
       else:
