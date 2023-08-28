@@ -181,32 +181,6 @@ iterator arcLines(p0, p1, o: Vector2D, r: float64, i: bool): Line {.inline.} =
     p0 = p1
     theta -= step
 
-# From SerenityOS
-iterator ellipseLines(p0, p1, o: Vector2D, rx, ry, theta_1, rotx,
-    theta_delta: float64): Line {.inline.} =
-  if rx > 0 and ry > 0:
-    var s = p0
-    var e = p1
-    var theta_1 = theta_1
-    var theta_delta = theta_delta
-    if theta_delta < 0:
-      swap(s, e)
-      theta_1 += theta_delta
-      theta_delta = abs(theta_delta)
-    # The segments are at most 1 long
-    let step = arctan2(1f64, max(rx, ry))
-    var current_point = s - o
-    var next_point = Vector2D()
-    var theta = theta_1
-    while theta <= theta_1 + theta_delta:
-      next_point.x = rx * cos(theta)
-      next_point.y = ry * sin(theta)
-      next_point = next_point.rotate(rotx)
-      yield Line(p0: current_point + o, p1: next_point + o)
-      current_point = next_point
-      theta += step
-    yield Line(p0: current_point + o, p1: e)
-
 iterator lines(subpath: Subpath, i: int): Line {.inline.} =
   let p0 = subpath.points[i]
   let p1 = subpath.points[i + 1]
