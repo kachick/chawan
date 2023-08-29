@@ -29,7 +29,7 @@
 # {.jssetprop.} for property setters. Called on SetProperty - in fact this
 #   is the set() method of Proxy, except it always returns true. Same rules as
 #   jsgetprop for keys.
-# {.jsdelprop.} for property deleteion. It is like the deleteProperty method
+# {.jsdelprop.} for property deletion. It is like the deleteProperty method
 #   of Proxy. Must return true if deleted, false if not deleted.
 # {.jshasprop.} for overriding has_property. Must return a boolean.
 
