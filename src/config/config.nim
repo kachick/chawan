@@ -176,6 +176,12 @@ proc setter(a: ptr ActionMap, k, v: string) {.jssetprop.} =
       a[][teststr] = "client.feedNext()"
     teststr.setLen(i)
 
+proc delete(a: ptr Actionmap, k: string): bool {.jsdelprop.} =
+  let k = getRealKey(k)
+  let ina = k in a[]
+  a[].t.del(k)
+  return ina
+
 proc bindPagerKey(config: Config, key, action: string) {.jsfunc.} =
   (addr config.page).setter(key, action)
 

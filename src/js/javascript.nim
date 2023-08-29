@@ -29,6 +29,8 @@
 # {.jssetprop.} for property setters. Called on SetProperty - in fact this
 #   is the set() method of Proxy, except it always returns true. Same rules as
 #   jsgetprop for keys.
+# {.jsdelprop.} for property deleteion. It is like the deleteProperty method
+#   of Proxy. Must return true if deleted, false if not deleted.
 # {.jshasprop.} for overriding has_property. Must return a boolean.
 
 import macros
@@ -92,6 +94,7 @@ type
     SETTER = "js_set"
     PROPERTY_GET = "js_prop_get"
     PROPERTY_SET = "js_prop_set"
+    PROPERTY_DEL = "js_prop_del"
     PROPERTY_HAS = "js_prop_has"
     FINALIZER = "js_fin"
 
@@ -966,6 +969,14 @@ template getJSSetPropParams(): untyped =
     newIdentDefs(ident("flags"), quote do: cint),
   ]
 
+template getJSDelPropParams(): untyped =
+  [
+    (quote do: cint),
+    newIdentDefs(ident("ctx"), quote do: JSContext),
+    newIdentDefs(ident("obj"), quote do: JSValue),
+    newIdentDefs(ident("prop"), quote do: JSAtom),
+  ]
+
 template getJSHasPropParams(): untyped =
   [
     (quote do: cint),
@@ -1297,7 +1308,7 @@ func getFuncName(fun: NimNode, jsname: string): string =
   return x
 
 func getErrVal(t: BoundFunctionType): NimNode =
-  if t in {PROPERTY_GET, PROPERTY_SET, PROPERTY_HAS}:
+  if t in {PROPERTY_GET, PROPERTY_SET, PROPERTY_DEL, PROPERTY_HAS}:
     return quote do: cint(-1)
   return quote do: JS_EXCEPTION
 
@@ -1457,6 +1468,25 @@ macro jssetprop*(fun: typed) =
       return cint(1)
     return cint(-1)
   let jsProc = gen.newJSProc(getJSSetPropParams(), false)
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jsdelprop*(fun: typed) =
+  var gen = setupGenerator(fun, PROPERTY_DEL, thisname = some("obj"))
+  if gen.newName.strVal in existing_funcs:
+    #TODO TODO TODO ditto
+    error("Function overloading hasn't been implemented yet...")
+  gen.addFixParam("obj")
+  gen.addFixParam("prop")
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      let retv = `jfcl`
+      return cint(retv)
+    return cint(-1)
+  let jsProc = gen.newJSProc(getJSDelPropParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1693,6 +1723,7 @@ type RegistryInfo = object
   getset: Table[string, (NimNode, NimNode, bool)] # name -> get, set, uf
   propGetFun: NimNode # custom get function ident
   propSetFun: NimNode # custom set function ident
+  propDelFun: NimNode # custom del function ident
   propHasFun: NimNode # custom has function ident
   finFun: NimNode # finalizer ident
   finName: NimNode # finalizer wrapper ident
@@ -1722,6 +1753,7 @@ proc newRegistryInfo(t: NimNode, name: string): RegistryInfo =
     finFun: newNilLit(),
     propGetFun: newNilLit(),
     propSetFun: newNilLit(),
+    propDelFun: newNilLit(),
     propHasFun: newNilLit()
   )
   if info.tname notin js_dtors:
@@ -1827,6 +1859,10 @@ proc bindFunctions(stmts: NimNode, info: var RegistryInfo) =
         if info.propSetFun.kind != nnkNilLit:
           error("Class " & info.tname & " has 2+ property setters.")
         info.propSetFun = f1
+      of PROPERTY_DEL:
+        if info.propDelFun.kind != nnkNilLit:
+          error("Class " & info.tname & " has 2+ property setters.")
+        info.propDelFun = f1
       of PROPERTY_HAS:
         if info.propHasFun.kind != nnkNilLit:
           error("Class " & info.tname & " has 2+ hasprop getters.")
@@ -1912,9 +1948,11 @@ proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
   let classDef = info.classDef
   if info.propGetFun.kind != nnkNilLit or
       info.propSetFun.kind != nnkNilLit or
+      info.propDelFun.kind != nnkNilLit or
       info.propHasFun.kind != nnkNilLit:
     let propGetFun = info.propGetFun
     let propSetFun = info.propSetFun
+    let propDelFun = info.propDelFun
     let propHasFun = info.propHasFun
     endstmts.add(quote do:
       # No clue how to do this in pure nim.
@@ -1922,7 +1960,8 @@ proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
 static JSClassExoticMethods exotic = {
 	.get_own_property = """, `propGetFun`, """,
 	.has_property = """, `propHasFun`, """,
-	.set_property = """, `propSetFun`, """
+	.set_property = """, `propSetFun`, """,
+	.delete_property = """, `propDelFun`, """
 };
 static JSClassDef """, `cdname`, """ = {
 	""", "\"", `jsname`, "\"", """,
