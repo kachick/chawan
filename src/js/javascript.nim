@@ -343,54 +343,6 @@ func getMinArgs(params: seq[FuncParam]): int =
         return i
   return params.len
 
-proc newEvalError*(message: string): JSError =
-  return JSError(
-    e: JS_EVAL_ERROR0,
-    message: message
-  )
-
-proc newRangeError*(message: string): JSError =
-  return JSError(
-    e: JS_RANGE_ERROR0,
-    message: message
-  )
-
-proc newReferenceError*(message: string): JSError =
-  return JSError(
-    e: JS_REFERENCE_ERROR0,
-    message: message
-  )
-
-proc newSyntaxError*(message: string): JSError =
-  return JSError(
-    e: JS_SYNTAX_ERROR0,
-    message: message
-  )
-
-proc newTypeError*(message: string): JSError =
-  return JSError(
-    e: JS_TYPE_ERROR0,
-    message: message
-  )
-
-proc newURIError*(message: string): JSError =
-  return JSError(
-    e: JS_URI_ERROR0,
-    message: message
-  )
-
-proc newInternalError*(message: string): JSError =
-  return JSError(
-    e: JS_INTERNAL_ERROR0,
-    message: message
-  )
-
-proc newAggregateError*(message: string): JSError =
-  return JSError(
-    e: JS_AGGREGATE_ERROR0,
-    message: message
-  )
-
 func fromJSString(ctx: JSContext, val: JSValue): JSResult[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
