@@ -1,5 +1,6 @@
 import tables
 
+import js/fromjs
 import js/javascript
 import utils/twtstr
 

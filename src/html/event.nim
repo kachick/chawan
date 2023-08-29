@@ -3,6 +3,7 @@ import times
 
 import bindings/quickjs
 import js/error
+import js/fromjs
 import js/javascript
 import js/tojs
 import utils/opt

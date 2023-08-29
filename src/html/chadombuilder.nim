@@ -4,6 +4,7 @@ import streams
 
 import html/dom
 import js/error
+import js/fromjs
 import js/javascript
 import types/url
 

@@ -20,6 +20,7 @@ import io/request
 import io/window
 import js/domexception
 import js/error
+import js/fromjs
 import js/javascript
 import js/opaque
 import js/timeout
@@ -2943,7 +2944,7 @@ proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cd
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
   of REFLECT_STR:
-    let x = toString(ctx, val)
+    let x = fromJS[string](ctx, val)
     if x.isSome:
       element.attr(entry.attrname, x.get)
   of REFLECT_BOOL:

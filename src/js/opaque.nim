@@ -2,6 +2,7 @@ import tables
 
 import bindings/quickjs
 import js/error
+import utils/opt
 
 type
   JSSymbolRefs* = enum
@@ -74,9 +75,45 @@ func getOpaque*(ctx: JSContext): JSContextOpaque =
 func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
   return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
 
+func isGlobal*(ctx: JSContext, class: string): bool =
+  assert class != ""
+  return ctx.getOpaque().gclaz == class
+
 proc setOpaque*[T](ctx: JSContext, val: JSValue, opaque: T) =
   let rt = JS_GetRuntime(ctx)
   let rtOpaque = rt.getOpaque()
   let p = JS_VALUE_GET_PTR(val)
   rtOpaque.plist[cast[pointer](opaque)] = p
   JS_SetOpaque(val, cast[pointer](opaque))
+
+# getOpaque, but doesn't work for global objects.
+func getOpaque0*(val: JSValue): pointer =
+  if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
+    return JS_GetOpaque(val, JS_GetClassID(val))
+
+func getGlobalOpaque0*(ctx: JSContext, val: JSValue = JS_UNDEFINED):
+    Opt[pointer] =
+  let global = JS_GetGlobalObject(ctx)
+  if JS_IsUndefined(val) or val == global:
+    let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
+    JS_FreeValue(ctx, global)
+    return ok(opaque)
+  JS_FreeValue(ctx, global)
+  return err()
+
+func getGlobalOpaque*(ctx: JSContext, T: typedesc, val: JSValue = JS_UNDEFINED): Opt[T] =
+  return ok(cast[T](?getGlobalOpaque0(ctx, val)))
+
+func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
+  # Unfortunately, we can't change the global object's class.
+  #TODO: or maybe we can, but I'm afraid of breaking something.
+  # This needs further investigation.
+  if ctx.isGlobal(class):
+    let global = JS_GetGlobalObject(ctx)
+    let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
+    JS_FreeValue(ctx, global)
+    return opaque
+  return getOpaque0(val)
+
+func getOpaque*[T: ref object](ctx: JSContext, val: JSValue): T =
+  cast[T](getOpaque(ctx, val, $T))

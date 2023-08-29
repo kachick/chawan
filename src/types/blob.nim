@@ -1,5 +1,6 @@
 import options
 
+import js/fromjs
 import js/javascript
 import utils/mimeguess
 import utils/twtstr

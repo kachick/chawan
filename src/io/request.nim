@@ -6,6 +6,7 @@ import tables
 import bindings/quickjs
 import io/headers
 import js/error
+import js/fromjs
 import js/javascript
 import types/formdata
 import types/url

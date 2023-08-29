@@ -35,6 +35,7 @@ import ips/serialize
 import ips/serversocket
 import ips/socketstream
 import js/domexception
+import js/fromjs
 import js/intl
 import js/javascript
 import js/module
@@ -144,8 +145,8 @@ proc command0(client: Client, src: string, filename = "<command>",
     client.jsctx.writeException(client.console.err)
   else:
     if not silence:
-      let str = toString(client.jsctx, ret)
-      if str.issome:
+      let str = fromJS[string](client.jsctx, ret)
+      if str.isSome:
         client.console.err.write(str.get & '\n')
         client.console.err.flush()
   JS_FreeValue(client.jsctx, ret)
