@@ -158,9 +158,29 @@ proc contains*(a: ActionMap, b: string): bool = b in a.t
 proc getOrDefault(a: ActionMap, b: string): string = a.t.getOrDefault(b)
 proc hasKeyOrPut(a: var ActionMap, b, c: string): bool = a.t.hasKeyOrPut(b, c)
 
+func getRealKey(key: string): string
+
 proc getter(a: ptr ActionMap, s: string): Opt[string] {.jsgetprop.} =
   a.t.withValue(s, p):
     return opt(p[])
+
+proc setter(a: ptr ActionMap, k, v: string) {.jssetprop.} =
+  let k = getRealKey(k)
+  if k == "":
+    return
+  a[][k] = v
+  var teststr = k
+  teststr.setLen(teststr.high)
+  for i in countdown(k.high, 0):
+    if teststr notin a[]:
+      a[][teststr] = "client.feedNext()"
+    teststr.setLen(i)
+
+proc bindPagerKey(config: Config, key, action: string) {.jsfunc.} =
+  (addr config.page).setter(key, action)
+
+proc bindLineKey(config: Config, key, action: string) {.jsfunc.} =
+  (addr config.line).setter(key, action)
 
 proc hasprop(a: ptr ActionMap, s: string): bool {.jshasprop.} =
   return s in a[]
@@ -341,24 +361,6 @@ proc loadConfig*(config: Config, s: string) {.jsfunc.} =
     getCurrentDir() / s
   if not fileExists(s): return
   config.parseConfig(parentDir(s), newFileStream(s))
-
-proc bindPagerKey*(config: Config, key, action: string) {.jsfunc.} =
-  let k = getRealKey(key)
-  config.page[k] = action
-  var teststr = ""
-  for c in k:
-    teststr &= c
-    if teststr notin config.page:
-      config.page[teststr] = "client.feedNext()"
-
-proc bindLineKey*(config: Config, key, action: string) {.jsfunc.} =
-  let k = getRealKey(key)
-  config.line[k] = action
-  var teststr = ""
-  for c in k:
-    teststr &= c
-    if teststr notin config.line:
-      config.line[teststr] = "client.feedNext()"
 
 proc parseConfigValue(x: var object, v: TomlValue, k: string)
 proc parseConfigValue(x: var bool, v: TomlValue, k: string)

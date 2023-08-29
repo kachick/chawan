@@ -26,6 +26,9 @@
 #   keyword, unfortunately that didn't work out.)
 # {.jsgetprop.} for property getters. Called when GetOwnProperty would return
 #   nothing. The key should probably be either a string or an integer.
+# {.jssetprop.} for property setters. Called on SetProperty - in fact this
+#   is the set() method of Proxy, except it always returns true. Same rules as
+#   jsgetprop for keys.
 # {.jshasprop.} for overriding has_property. Must return a boolean.
 
 import macros
@@ -88,6 +91,7 @@ type
     GETTER = "js_get"
     SETTER = "js_set"
     PROPERTY_GET = "js_prop_get"
+    PROPERTY_SET = "js_prop_set"
     PROPERTY_HAS = "js_prop_has"
     FINALIZER = "js_fin"
 
@@ -951,6 +955,17 @@ template getJSGetPropParams(): untyped =
     newIdentDefs(ident("prop"), quote do: JSAtom),
   ]
 
+template getJSSetPropParams(): untyped =
+  [
+    (quote do: cint),
+    newIdentDefs(ident("ctx"), quote do: JSContext),
+    newIdentDefs(ident("obj"), quote do: JSValue),
+    newIdentDefs(ident("atom"), quote do: JSAtom),
+    newIdentDefs(ident("value"), quote do: JSValue),
+    newIdentDefs(ident("receiver"), quote do: JSValue),
+    newIdentDefs(ident("flags"), quote do: cint),
+  ]
+
 template getJSHasPropParams(): untyped =
   [
     (quote do: cint),
@@ -1282,7 +1297,7 @@ func getFuncName(fun: NimNode, jsname: string): string =
   return x
 
 func getErrVal(t: BoundFunctionType): NimNode =
-  if t in {PROPERTY_GET, PROPERTY_HAS}:
+  if t in {PROPERTY_GET, PROPERTY_SET, PROPERTY_HAS}:
     return quote do: cint(-1)
   return quote do: JS_EXCEPTION
 
@@ -1422,6 +1437,26 @@ macro jsgetprop*(fun: typed) =
         return cint(1)
     return cint(0)
   let jsProc = gen.newJSProc(getJSGetPropParams(), false)
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jssetprop*(fun: typed) =
+  var gen = setupGenerator(fun, PROPERTY_SET, thisname = some("obj"))
+  if gen.newName.strVal in existing_funcs:
+    #TODO TODO TODO ditto
+    error("Function overloading hasn't been implemented yet...")
+  gen.addFixParam("receiver")
+  gen.addFixParam("atom")
+  gen.addFixParam("value")
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      `jfcl`
+      return cint(1)
+    return cint(-1)
+  let jsProc = gen.newJSProc(getJSSetPropParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1657,6 +1692,7 @@ type RegistryInfo = object
   ctorFun: NimNode # constructor ident
   getset: Table[string, (NimNode, NimNode, bool)] # name -> get, set, uf
   propGetFun: NimNode # custom get function ident
+  propSetFun: NimNode # custom set function ident
   propHasFun: NimNode # custom has function ident
   finFun: NimNode # finalizer ident
   finName: NimNode # finalizer wrapper ident
@@ -1685,6 +1721,7 @@ proc newRegistryInfo(t: NimNode, name: string): RegistryInfo =
     finName: newNilLit(),
     finFun: newNilLit(),
     propGetFun: newNilLit(),
+    propSetFun: newNilLit(),
     propHasFun: newNilLit()
   )
   if info.tname notin js_dtors:
@@ -1786,6 +1823,10 @@ proc bindFunctions(stmts: NimNode, info: var RegistryInfo) =
         if info.propGetFun.kind != nnkNilLit:
           error("Class " & info.tname & " has 2+ property getters.")
         info.propGetFun = f1
+      of PROPERTY_SET:
+        if info.propSetFun.kind != nnkNilLit:
+          error("Class " & info.tname & " has 2+ property setters.")
+        info.propSetFun = f1
       of PROPERTY_HAS:
         if info.propHasFun.kind != nnkNilLit:
           error("Class " & info.tname & " has 2+ hasprop getters.")
@@ -1869,15 +1910,19 @@ proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
   let cdname = "classDef" & jsname
   let dfin = info.dfin
   let classDef = info.classDef
-  if info.propGetFun.kind != nnkNilLit or info.propHasFun.kind != nnkNilLit:
+  if info.propGetFun.kind != nnkNilLit or
+      info.propSetFun.kind != nnkNilLit or
+      info.propHasFun.kind != nnkNilLit:
     let propGetFun = info.propGetFun
+    let propSetFun = info.propSetFun
     let propHasFun = info.propHasFun
     endstmts.add(quote do:
       # No clue how to do this in pure nim.
       {.emit: ["""
 static JSClassExoticMethods exotic = {
 	.get_own_property = """, `propGetFun`, """,
-	.has_property = """, `propHasFun`, """
+	.has_property = """, `propHasFun`, """,
+	.set_property = """, `propSetFun`, """
 };
 static JSClassDef """, `cdname`, """ = {
 	""", "\"", `jsname`, "\"", """,
