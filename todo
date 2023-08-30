@@ -22,7 +22,6 @@ display:
 - allow overriding ansi colors
 config:
 - important: config editor
-- working js interface
 buffer:
 - important: incremental html parsing
 	* also, do not needlessly copy in onload
@@ -72,8 +71,6 @@ javascript:
 	* more concretely: get jQuery and basic click events to work
 - implement ReadableStream, XHR
 * separate console for each buffer
-- implement JS access to non-ref object members (with a ptr opaque + GC_ref
-  on parent object or something)
 - buffer selection
 layout engine:
 - important: floats (way too many websites look very ugly without them)
