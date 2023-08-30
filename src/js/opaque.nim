@@ -79,12 +79,12 @@ func isGlobal*(ctx: JSContext, class: string): bool =
   assert class != ""
   return ctx.getOpaque().gclaz == class
 
-proc setOpaque*[T](ctx: JSContext, val: JSValue, opaque: T) =
+proc setOpaque*(ctx: JSContext, val: JSValue, opaque: pointer) =
   let rt = JS_GetRuntime(ctx)
   let rtOpaque = rt.getOpaque()
   let p = JS_VALUE_GET_PTR(val)
-  rtOpaque.plist[cast[pointer](opaque)] = p
-  JS_SetOpaque(val, cast[pointer](opaque))
+  rtOpaque.plist[opaque] = p
+  JS_SetOpaque(val, opaque)
 
 # getOpaque, but doesn't work for global objects.
 func getOpaque0*(val: JSValue): pointer =

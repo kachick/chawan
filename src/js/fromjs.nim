@@ -267,12 +267,14 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): JSResult[Table[A, B]] =
 #TODO varargs
 proc fromJSFunction1*[T, U](ctx: JSContext, val: JSValue):
     proc(x: U): JSResult[T] =
+  let dupval = JS_DupValue(ctx, JS_DupValue(ctx, val)) # save
   return proc(x: U): JSResult[T] =
     var arg1 = toJS(ctx, x)
     #TODO exceptions?
-    let ret = JS_Call(ctx, val, JS_UNDEFINED, 1, addr arg1)
+    let ret = JS_Call(ctx, dupval, JS_UNDEFINED, 1, addr arg1)
     when T isnot void:
       result = fromJS[T](ctx, ret)
+    JS_FreeValue(ctx, dupval)
     JS_FreeValue(ctx, ret)
 
 proc isErrType(rt: NimNode): bool =

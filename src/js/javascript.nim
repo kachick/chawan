@@ -161,7 +161,7 @@ proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
   let p = JS_VALUE_GET_PTR(global)
   let header = cast[ptr JSRefCountHeader](p)
   inc header.ref_count
-  ctx.setOpaque(global, obj)
+  ctx.setOpaque(global, cast[pointer](obj))
   GC_ref(obj)
 
 proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
