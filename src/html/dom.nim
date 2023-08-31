@@ -1187,8 +1187,11 @@ proc setLocation*(document: Document, s: string): Err[JSError]
 
 # Note: we do not implement security checks (as documents are in separate
 # windows anyway).
-func href(location: Location): string {.jsuffget.} =
+func `$`(location: Location): string {.jsuffunc.} =
   return location.url.serialize()
+
+func href(location: Location): string {.jsuffget.} =
+  return $location
 
 proc setHref(location: Location, s: string): Err[JSError]
     {.jsfset: "href".} =
@@ -1600,21 +1603,21 @@ func getElementsByClassName(element: Element, classNames: string): HTMLCollectio
   return element.getElementsByClassName0(classNames)
 
 func previousElementSibling*(elem: Element): Element {.jsfget.} =
-  if elem.parentNode == nil: return nil
-  var i = elem.index - 1
-  while i >= 0:
-    if elem.parentNode.childList[i].nodeType == ELEMENT_NODE:
+  let p = elem.parentNode
+  if p == nil: return nil
+  for i in countdown(elem.index - 1, 0):
+    let node = p.childList[i]
+    if p.childList[i].nodeType == ELEMENT_NODE:
       return elem
-    dec i
   return nil
 
 func nextElementSibling*(elem: Element): Element {.jsfget.} =
-  if elem.parentNode == nil: return nil
-  var i = elem.index + 1
-  while i < elem.parentNode.childList.len:
-    if elem.parentNode.childList[i].nodeType == ELEMENT_NODE:
-      return elem
-    inc i
+  let p = elem.parentNode
+  if p == nil: return nil
+  for i in elem.index + 1 .. p.childList.high:
+    let node = p.childList[i]
+    if node.nodeType == ELEMENT_NODE:
+      return Element(node)
   return nil
 
 func documentElement(document: Document): Element {.jsfget.} =
