@@ -15,7 +15,7 @@ type
     AT_TARGET = 2u16
     BUBBLING_PHASE = 3u16
 
-  EventFlag = enum
+  EventFlag* = enum
     FLAG_STOP_PROPAGATION
     FLAG_STOP_IMMEDIATE_PROPAGATION
     FLAG_CANCELED
@@ -26,14 +26,14 @@ type
 
   Event* = ref object of RootObj
     ctype {.jsget: "type".}: string
-    target {.jsget.}: EventTarget
+    target* {.jsget.}: EventTarget
     currentTarget {.jsget.}: EventTarget
     eventPhase {.jsget.}: uint16
     bubbles {.jsget.}: bool
     cancelable {.jsget.}: bool
     #TODO DOMHighResTimeStamp?
     timeStamp {.jsget.}: float64
-    flags: set[EventFlag]
+    flags*: set[EventFlag]
     isTrusted {.jsufget.}: bool
 
   CustomEvent* = ref object of Event
@@ -47,9 +47,9 @@ type
 
   EventListenerCallback = proc (event: Event): Err[JSError]
 
-  EventListener = ref object
-    ctype: string
-    callback: EventListenerCallback
+  EventListener* = ref object
+    ctype*: string
+    callback*: EventListenerCallback
     capture: bool
     passive: Opt[bool]
     once: bool
@@ -92,6 +92,13 @@ proc newEvent(ctx: JSContext, ctype: string, eventInitDict = JS_UNDEFINED):
   event.innerEventCreationSteps(ctx, eventInitDict)
   event.ctype = ctype
   return ok(event)
+
+proc newEvent*(ctx: JSContext, ctype: string, target, currentTarget: EventTarget): Event =
+  return Event(
+    ctype: ctype,
+    target: target,
+    currentTarget: currentTarget
+  )
 
 proc initialize(this: Event, ctype: string, bubbles, cancelable: bool) =
   this.flags.incl(FLAG_INITIALIZED)
@@ -231,10 +238,11 @@ proc flattenMore(ctx: JSContext, options: JSValue):
       passive = opt(x.get)
   return (capture, once, passive)
 
-proc addEventListener(ctx: JSContext, eventTarget: EventTarget,
+proc addEventListener(ctx: JSContext, eventTarget: EventTarget, ctype: string,
     callback: EventListenerCallback, options = JS_UNDEFINED) {.jsfunc.} =
   let (capture, once, passive) = flattenMore(ctx, options)
   let listener = EventListener(
+    ctype: ctype,
     capture: capture,
     passive: passive,
     once: once,

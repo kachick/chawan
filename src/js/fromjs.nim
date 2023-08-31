@@ -242,6 +242,8 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
   return ok(s)
 
 proc fromJSTable[A, B](ctx: JSContext, val: JSValue): JSResult[Table[A, B]] =
+  if not JS_IsObject(val):
+    return err(newTypeError("object expected"))
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
@@ -267,14 +269,13 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): JSResult[Table[A, B]] =
 #TODO varargs
 proc fromJSFunction1*[T, U](ctx: JSContext, val: JSValue):
     proc(x: U): JSResult[T] =
+  #TODO this leaks memory!
   let dupval = JS_DupValue(ctx, JS_DupValue(ctx, val)) # save
   return proc(x: U): JSResult[T] =
     var arg1 = toJS(ctx, x)
     #TODO exceptions?
     let ret = JS_Call(ctx, dupval, JS_UNDEFINED, 1, addr arg1)
-    when T isnot void:
-      result = fromJS[T](ctx, ret)
-    JS_FreeValue(ctx, dupval)
+    result = fromJS[T](ctx, ret)
     JS_FreeValue(ctx, ret)
 
 proc isErrType(rt: NimNode): bool =
@@ -312,6 +313,8 @@ macro unpackArg0(f: typed) =
 proc fromJSFunction[T](ctx: JSContext, val: JSValue):
     JSResult[T] =
   #TODO all args...
+  if not JS_IsFunction(ctx, val):
+    return err(newTypeError("function expected"))
   return ok(
     fromJSFunction1[
       typeof(unpackReturnType(T)),
@@ -394,6 +397,12 @@ proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
 proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): JSResult[T] =
   return ok(cast[T](?fromJSPObj0(ctx, val, $T)))
 
+proc fromJSVoid(ctx: JSContext, val: JSValue): JSResult[void] =
+  if JS_IsException(val):
+    #TODO maybe wrap or something
+    return err()
+  return ok()
+
 type FromJSAllowedT = (object and not (Result|Option|Table|JSValue))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
@@ -430,6 +439,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return ok(val)
   elif T is ref object:
     return fromJSObject[T](ctx, val)
+  elif T is void:
+    return fromJSVoid(ctx, val)
   elif compiles(fromJS2(ctx, val, result)):
     fromJS2(ctx, val, result)
   else:

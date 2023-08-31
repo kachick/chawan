@@ -20,6 +20,7 @@ import css/values
 import html/chadombuilder
 import html/dom
 import html/env
+import html/event
 import img/png
 import io/connecterror
 import io/loader
@@ -111,6 +112,7 @@ type
     tasks: array[BufferCommand, int] #TODO this should have arguments
     savetask: bool
     hovertext: array[HoverType, string]
+    estream: Stream # error stream
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -329,10 +331,23 @@ func getClickHover(styledNode: StyledNode): string =
       return "<textarea>"
     else: discard
 
-func getCursorClickable(buffer: Buffer, cursorx, cursory: int): Element =
+func getCursorStyledNode(buffer: Buffer, cursorx, cursory: int): StyledNode =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
-    return buffer.lines[cursory].formats[i].node.getClickable()
+    return buffer.lines[cursory].formats[i].node
+
+func getCursorElement(buffer: Buffer, cursorx, cursory: int): Element =
+  let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
+  if styledNode == nil or styledNode.node == nil:
+    return nil
+  if styledNode.t == STYLED_ELEMENT:
+    return Element(styledNode.node)
+  return styledNode.node.parentElement
+
+func getCursorClickable(buffer: Buffer, cursorx, cursory: int): Element =
+  let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
+  if styledNode != nil:
+    return styledNode.getClickable()
 
 func cursorBytes(buffer: Buffer, y: int, cc: int): int =
   let line = buffer.lines[y].str
@@ -1176,11 +1191,39 @@ proc click(buffer: Buffer, clickable: Element): ClickResult =
   else:
     result.repaint = buffer.restoreFocus()
 
+proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): bool =
+  var called = false
+  for a in elem.branch:
+    var stop = false
+    for el in a.eventListeners:
+      if el.ctype == "click":
+        let event = newEvent(buffer.window.jsctx, ctype, elem, a)
+        let e = el.callback(event)
+        called = true
+        if e.isErr:
+          buffer.window.jsctx.writeException(buffer.estream)
+        if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+          stop = true
+          break
+        if FLAG_STOP_PROPAGATION in event.flags:
+          stop = true
+    if stop:
+      break
+  return called
+
 proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return
+  var called = false
+  if buffer.config.scripting:
+    let elem = buffer.getCursorElement(cursorx, cursory)
+    if buffer.dispatchEvent("click", elem):
+      buffer.do_reshape()
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if clickable != nil:
-    return buffer.click(clickable)
+    var res = buffer.click(clickable)
+    res.repaint = called
+    return res
+  return ClickResult(repaint: called)
 
 proc select*(buffer: Buffer, selected: seq[int]): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
@@ -1347,7 +1390,7 @@ proc runBuffer(buffer: Buffer, rfd: int) =
         buffer.handleError(event.fd, event.errorCode)
       if not buffer.alive:
         break
-      if Event.Timer in event.events:
+      if selectors.Event.Timer in event.events:
         assert buffer.window != nil
         assert buffer.window.timeouts.runTimeoutFd(event.fd)
         buffer.window.runJSJobs()
@@ -1379,6 +1422,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     buffer.window = newWindow(buffer.config.scripting, buffer.selector,
       buffer.attrs, proc(url: URL) = buffer.navigate(url), some(buffer.loader))
   let socks = connectSocketStream(mainproc, false)
+  buffer.estream = newFileStream(stderr)
   socks.swrite(getpid())
   buffer.pstream = socks
   let rfd = int(socks.source.getFd())

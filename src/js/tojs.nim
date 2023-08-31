@@ -243,7 +243,9 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
   if JS_IsException(msg):
     return msg
   let ctor = ctx.getOpaque().err_ctors[err.e]
-  return JS_CallConstructor(ctx, ctor, 1, addr msg)
+  let ret = JS_CallConstructor(ctx, ctor, 1, addr msg)
+  JS_FreeValue(ctx, msg)
+  return ret
 
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
   return JS_NewCFunction(ctx, f, cstring"", 0)

@@ -170,7 +170,7 @@ proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer
 proc writeException*(ctx: JSContext, s: Stream) =
   let ex = JS_GetException(ctx)
   let str = fromJS[string](ctx, ex)
-  if str.issome:
+  if str.isSome:
     s.write(str.get & '\n')
   let stack = JS_GetPropertyStr(ctx, ex, cstring("stack"));
   if not JS_IsUndefined(stack):
