@@ -5,13 +5,13 @@
 A text-mode web browser. It displays websites in your terminal and allows
 you to navigate on them.
 
-It also functions as a pager, similarly to w3m.
+It can also be used as a terminal pager.
 
 ## Compiling
 
-1. Install the nim compiler: <https://nim-lang.org/install.html>
+1. Install the Nim compiler: <https://nim-lang.org/install.html>
 	* Please use 1.6.8+, older versions will not work. (You can check
-	  your nim compiler's version using `nim -v`.)
+	  your Nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
 	* zlib: <https://zlib.net/>
@@ -27,27 +27,24 @@ It also functions as a pager, similarly to w3m.
 
 Currently implemented features are:
 
-* a multi-charset, double-width capable, multi-processing pager
-* a CSS-capable layout engine (with forms, tables...)
-* incremental loading of plain text streams
-* JavaScript based navigation, (very) basic JS support in documents
+* multi-processing (several buffers can be loaded at once)
+* multi-charset, double-width aware text display (but no bi-di yet)
+* HTML5 support
+* a CSS-capable layout engine
+	* flow layout is supported, except for floats
+	* table layout is supported, except for fixed tables
+	* the box model is mostly implemented, except for borders
+* forms
+* incremental loading of plain text streams (but not HTML documents yet)
+* JavaScript based navigation
+* JavaScript support in documents
+	* some basic DOM manipulation APIs are supported
+	* off by default; use is discouraged until sandboxing is
+	  implemented
 * mailcap
 * cookies
 
-...with a [lot more](todo) planned.
-
-## Caveats
-
-Chawan is still an experimental web browser with some serious limitations:
-
-* The browser engine is still missing many features, both in JavaScript and
-  CSS. In particular, events haven't been implemented yet, and the layout
-  engine can't handle CSS floats.
-* Chawan has no incremental layouting capabilities yet, so it is rather slow
-  on large websites with a complicated layout.
-* While buffers run as separate processes, Chawan does not do any actual
-  sandboxing. I would strongly advise against enabling scripting until this
-  problem is resolved.
+...with a lot more [planned](todo).
 
 ## Configuration
 
@@ -59,8 +56,8 @@ Many other text-based web browsers exist. Here's some recommendations if you
 want to try more established ones:
 
 * [w3m](https://github.com/tats/w3m) - A text-mode browser, extensible using
-  local-cgi. Also has inline image display and very good table support. Heavily
-  inspired Chawan.
+  local-cgi. Also has inline image display and very good table support.
+  Inspired many features of Chawan.
 * [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
   and incremental rendering (it's pretty fast.)
 * [lynx](https://lynx.invisible-island.net/) - "THE text-based web browser."
@@ -85,7 +82,7 @@ the configuration; please consult [doc/config.md](doc/config.md) for details.)
 
 ### Can I view Markdown files using Chawan?
 
-[Yes](doc/mailcap.md).
+[Yes.](doc/mailcap.md)
 
 ### Why write another web browser?
 
