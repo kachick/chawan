@@ -1607,8 +1607,8 @@ func previousElementSibling*(elem: Element): Element {.jsfget.} =
   if p == nil: return nil
   for i in countdown(elem.index - 1, 0):
     let node = p.childList[i]
-    if p.childList[i].nodeType == ELEMENT_NODE:
-      return elem
+    if node.nodeType == ELEMENT_NODE:
+      return Element(node)
   return nil
 
 func nextElementSibling*(elem: Element): Element {.jsfget.} =
