@@ -9,6 +9,7 @@ import streams
 import tables
 import unicode
 
+import bindings/quickjs
 import buffer/cell
 import config/config
 import css/cascade
@@ -32,6 +33,7 @@ import ips/serialize
 import ips/serversocket
 import ips/socketstream
 import js/error
+import js/fromjs
 import js/javascript
 import js/regex
 import js/timeout
@@ -1083,13 +1085,47 @@ proc click(buffer: Buffer, select: HTMLSelectElement): ClickResult =
     select: some(select)
   )
 
+func baseURL(buffer: Buffer): URL =
+  return buffer.document.baseURL
+
+proc evalJSURL(buffer: Buffer, url: URL): Opt[string] =
+  let encodedScriptSource = ($url)["javascript:".len..^1]
+  let scriptSource = percentDecode(encodedScriptSource)
+  let ctx = buffer.window.jsctx
+  let ret = ctx.eval(scriptSource, $buffer.baseURL, JS_EVAL_TYPE_GLOBAL)
+  if JS_IsException(ret):
+    ctx.writeException(buffer.estream)
+    return err() # error
+  if JS_IsUndefined(ret):
+    return err() # no need to navigate
+  let s = ?fromJS[string](ctx, ret)
+  JS_FreeValue(ctx, ret)
+  # Navigate to result.
+  return ok(s)
+
 proc click(buffer: Buffer, anchor: HTMLAnchorElement): ClickResult =
-  let repaint = buffer.restoreFocus()
-  let url = parseURL(anchor.href, some(anchor.document.baseURL))
+  var repaint = buffer.restoreFocus()
+  let url = parseURL(anchor.href, some(buffer.baseURL))
   if url.isSome:
+    let url = url.get
+    if url.scheme == "javascript":
+      if buffer.config.scripting:
+        let s = buffer.evalJSURL(url)
+        buffer.do_reshape()
+        repaint = true
+        if s.isSome:
+          let url = newURL("data:text/html," & s.get).get
+          let req = newRequest(url, HTTP_GET)
+          return ClickResult(
+            repaint: repaint,
+            open: some(req)
+          )
+      return ClickResult(
+        repaint: repaint
+      )
     return ClickResult(
       repaint: repaint,
-      open: some(newRequest(url.get, HTTP_GET))
+      open: some(newRequest(url, HTTP_GET))
     )
   return ClickResult(
     repaint: repaint
