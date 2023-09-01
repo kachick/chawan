@@ -86,18 +86,15 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
   template failure(): Option[array[8, uint16]] = none(array[8, uint16])
   if c == ':':
     if not has(1) or c(1) != ':':
-      #TODO validation error
       return failure
     pointer += 2
     inc pieceindex
     compress = pieceindex
   while has:
     if pieceindex == 8:
-      #TODO validation error
       return failure
     if c == ':':
       if compress != -1:
-        #TODO validation error
         return failure
       inc pointer
       inc pieceindex
@@ -111,11 +108,9 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
       inc length
     if has and c == '.':
       if length == 0:
-        #TODO validation error
         return failure
       pointer -= length
       if pieceindex > 6:
-        #TODO validation error
         return failure
       var numbersseen = 0
       while has:
@@ -124,21 +119,17 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
           if c == '.' and numbersseen < 4:
             inc pointer
           else:
-            #TODO validation error
             return failure
         if not has or c notin Digits:
-          #TODO validation error
           return failure
         while has and c in Digits:
           if ipv4piece == -1:
             ipv4piece = c.decValue
           elif ipv4piece == 0:
-            #TODO validation error
             return failure
           else:
             ipv4piece = ipv4piece * 10 + c.decValue
           if ipv4piece > 255:
-            #TODO validation error
             return failure
           inc pointer
         address[pieceindex] = address[pieceindex] * 0x100 + uint16(ipv4piece)
@@ -146,17 +137,14 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
         if numbersseen == 2 or numbersseen == 4:
           inc pieceindex
       if numbersseen != 4:
-        #TODO validation error
         return failure
       break
     elif has:
       if c == ':':
         inc pointer
         if not has:
-          #TODO validation error
           return failure
       else:
-        #TODO validation error
         return failure
     address[pieceindex] = value
     inc pieceindex
@@ -170,26 +158,22 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
       dec pieceindex
       dec swaps
   elif pieceindex != 8:
-    #TODO validation error
     return failure
   return address.some
 
-func parseIpv4Number(s: string): tuple[num: int, validationError: bool] =
-  if s == "": return (-1, true)
+func parseIpv4Number(s: string): int =
+  if s == "": return -1
   var input = s
   var R = 10
-  var validationerror = false
   if input.len >= 2 and input[0] == '0':
     if input[1] in {'x', 'X'}:
-      validationerror = true
       input = input.substr(2)
       R = 16
     else:
-      validationerror = true
       input = input.substr(1)
       R = 8
   if input == "":
-    return (0, true)
+    return 0
 
   var output = 0
   try:
@@ -198,37 +182,27 @@ func parseIpv4Number(s: string): tuple[num: int, validationError: bool] =
     of 10: output = parseInt(input)
     of 16: output = parseHexInt(input)
     else: discard
-  except ValueError: return (-1, true)
-  return (output, validationerror)
+  except ValueError: return -1
+  return output
 
 func parseIpv4(input: string): Option[uint32] =
-  var validationerror = false
   var parts = input.split('.')
   if parts[^1] == "":
-    validationerror = true
     if parts.len > 1:
       discard parts.pop()
   if parts.len > 4:
-    #TODO validation error
     return none(uint32)
   var numbers: seq[int]
   for i in low(parts)..high(parts):
     let part = parts[i]
-    let pp = parseIpv4Number(part)
-    if pp[0] < 0: 
-      #TODO validation error
+    let num = parseIpv4Number(part)
+    if num < 0: 
       return none(uint32)
-    if pp[0] > 255:
-      validationerror = true
+    if num > 255:
       if i != high(parts):
-        #TODO validation error
         return none(uint32)
-    if pp[1]:
-      validationerror = true
-    numbers.add(pp[0])
-  #TODO validation error if validationerror
+    numbers.add(num)
   if numbers[^1] >= 256^(5-numbers.len):
-    #TODO validation error
     return none(uint32)
   var ipv4 = uint32(numbers[^1])
   discard numbers.pop()
@@ -245,10 +219,6 @@ func opaqueParseHost(input: string): Option[Host] =
   for c in input:
     if c in ForbiddenHostChars:
       return none(Host)
-    #TODO If input contains a code point that is not a URL code point and not
-    #U+0025 (%), validation error.
-    #TODO If input contains a U+0025 (%) and the two code points following it
-    #are not ASCII hex digits, validation error.
   var o = ""
   for c in input:
     o.percentEncode(c, ControlPercentEncodeSet)
@@ -298,7 +268,6 @@ func domainToAscii*(domain: string, bestrict = false): Option[string] =
     #Note: we don't implement STD3 separately, it's always true
     result = domain.unicodeToAscii(false, true, true, false, bestrict)
     if result.isNone or result.get == "":
-      #TODO validation error
       return none(string)
     return result
   else:
@@ -308,7 +277,6 @@ func parseHost(input: string, special: bool): Option[Host] =
   if input.len == 0: return
   if input[0] == '[':
     if input[^1] != ']':
-      #TODO validation error
       return none(Host)
     return Host(ipv6: parseIpv6(input.substr(1, input.high - 1))).some
   if not special:
@@ -316,11 +284,9 @@ func parseHost(input: string, special: bool): Option[Host] =
   let domain = percentDecode(input)
   let asciiDomain = domain.domainToAscii()
   if asciiDomain.isNone:
-    #TODO validation error
     return none(Host)
   for c in asciiDomain.get:
     if c in ForbiddenHostChars:
-      #TODO validation error
       return none(Host)
   if asciiDomain.get.len > 0 and asciiDomain.get.endsInNumber():
     let ipv4 = parseIpv4(asciiDomain.get)
@@ -359,8 +325,6 @@ template canHaveUsernamePasswordPort(url: URL): bool =
 #TODO encoding
 proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     stateOverride = none(URLState)): Option[URL] =
-  #TODO If input contains any leading or trailing C0 control or space, validation error.
-  #TODO If input contains any ASCII tab or newline, validation error.
   let input = input
     .strip(true, false, {chr(0x00)..chr(0x1F), ' '})
     .strip(true, false, {'\t', '\n'})
@@ -402,7 +366,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         state = NO_SCHEME_STATE
         dec pointer
       else:
-        #TODO validation error
         return none(URL)
     of SCHEME_STATE:
       if has and c in AsciiAlphaNumeric + {'+', '-', '.'}:
@@ -425,7 +388,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           return url.some
         buffer = ""
         if url.scheme == "file":
-          #TODO If remaining does not start with "//", validation error.
           state = FILE_STATE
         elif url.is_special and not base.isNone and
             base.get.scheme == url.scheme:
@@ -443,11 +405,9 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         state = NO_SCHEME_STATE
         start_over
       else:
-        #TODO validation error
         return none(URL)
     of NO_SCHEME_STATE:
       if base.isNone or base.get.path.opaque and (not has or c != '#'):
-        #TODO validation error
         return none(URL)
       elif base.get.path.opaque and has and c == '#':
         url.scheme = base.get.scheme
@@ -466,7 +426,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
         inc pointer
       else:
-        #TODO validation error
         state = RELATIVE_STATE
         dec pointer
     of PATH_OR_AUTHORITY_STATE:
@@ -481,7 +440,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
       if has and c == '/':
         state = RELATIVE_SLASH_STATE
       elif url.is_special and has and c == '\\':
-        #TODO validation error
         state = RELATIVE_SLASH_STATE
       else:
         url.username = base.get.username
@@ -503,7 +461,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           dec pointer
     of RELATIVE_SLASH_STATE:
       if url.is_special and has and c in {'/', '\\'}:
-        #TODO if c is \ validation error
         state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
       elif has and c == '/':
         state = AUTHORITY_STATE
@@ -519,19 +476,14 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
         inc pointer
       else:
-        #TODO validation error
         state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
         dec pointer
     of SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE:
       if not has or c notin {'/', '\\'}:
         state = AUTHORITY_STATE
         dec pointer
-      else:
-        #TODO validation error
-        discard
     of AUTHORITY_STATE:
       if has and c == '@':
-        #TODO validation error
         if atsignseen:
           buffer = "%40" & buffer
         atsignseen = true
@@ -546,7 +498,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         buffer = ""
       elif not has or c in {'/', '?', '#'} or (url.is_special and c == '\\'):
         if atsignseen and buffer == "":
-          #TODO validation error
           return none(URL)
         pointer -= buffer.len + 1
         buffer = ""
@@ -559,7 +510,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         state = FILE_HOST_STATE
       elif has and c == ':' and not insidebrackets:
         if buffer == "":
-          #TODO validation error
           return none(URL)
         let host = parseHost(buffer, url.is_special)
         if host.isNone:
@@ -571,7 +521,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         (url.is_special and c == '\\'):
         dec pointer
         if url.is_special and buffer == "":
-          #TODO validation error
           return none(URL)
         elif override and buffer == "" and
             (url.includes_credentials or url.port.isSome):
@@ -598,7 +547,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         if buffer != "":
           let i = parseInt32(buffer)
           if i.isNone or i.get notin 0..65535:
-            #TODO validation error
             return none(URL)
           let port = cast[uint16](i.get).some
           url.port = if url.is_special and url.default_port == port:
@@ -611,13 +559,11 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         state = PATH_START_STATE
         dec pointer
       else:
-        #TODO validation error
         return none(URL)
     of FILE_STATE:
       url.scheme = "file"
       url.host = EmptyHost
       if has and (c == '/' or c == '\\'):
-        #TODO if c == '\\' validation error
         state = FILE_SLASH_STATE
       elif base.isSome and base.get.scheme == "file":
         url.host = base.get.host
@@ -635,7 +581,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
             if not input.substr(pointer).starts_with_windows_drive_letter():
               url.shorten_path()
             else:
-              #TODO validation error
               url.path.ss.setLen(0)
             state = PATH_STATE
             dec pointer
@@ -644,7 +589,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         dec pointer
     of FILE_SLASH_STATE:
       if has and (c == '/' or c == '\\'):
-        #TODO if c == '\\' validation error
         state = FILE_HOST_STATE
       else:
         if base.isSome and base.get.scheme == "file":
@@ -659,7 +603,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
       if (not has or c in {'/', '\\', '?', '#'}):
         dec pointer
         if not override and buffer.is_windows_drive_letter:
-          #TODO validation error
           state = PATH_STATE
         elif buffer == "":
           url.host = Host(domain: "").some
@@ -681,7 +624,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         buffer &= c
     of PATH_START_STATE:
       if url.is_special:
-        #TODO if c == '\\' validation error
         state = PATH_STATE
         if not has or c notin {'/', '\\'}:
           dec pointer
@@ -700,7 +642,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     of PATH_STATE:
       if not has or c == '/' or (url.is_special and c == '\\') or
           (not override and c in {'?', '#'}):
-        #TODO if url.is_special and c == '\\' validation error
         let slash_cond = not has or (c != '/' and not url.is_special and c != '\\')
         if buffer.is_double_dot_path_segment:
           url.shorten_path()
@@ -722,8 +663,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
             url.fragment = "".some
             state = FRAGMENT_STATE
       else:
-        #TODO If c is not a URL code point and not U+0025 (%), validation error.
-        #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
         buffer.percentEncode(c, PathPercentEncodeSet)
     of OPAQUE_PATH_STATE:
       if has:
@@ -734,8 +673,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           url.fragment = "".some
           state = FRAGMENT_STATE
         else:
-          #TODO If c is not the EOF code point, not a URL code point, and not U+0025 (%), validation error.
-          #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
           url.path.append(percentEncode(c, ControlPercentEncodeSet))
     of QUERY_STATE:
       #TODO encoding
@@ -750,13 +687,9 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           url.fragment = "".some
           state = FRAGMENT_STATE
       elif has:
-        #TODO If c is not a URL code point and not U+0025 (%), validation error.
-        #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
         buffer &= c
     of FRAGMENT_STATE:
       if has:
-        #TODO If c is not a URL code point and not U+0025 (%), validation error.
-        #TODO If c is U+0025 (%) and remaining does not start with two ASCII hex digits, validation error.
         url.fragment.get.percentEncode(c, FragmentPercentEncodeSet)
     inc pointer
   return url.some
