@@ -22,6 +22,7 @@ import tables
 import bindings/curl
 import io/about
 import io/connecterror
+import io/data
 import io/file
 import io/headers
 import io/http
@@ -109,6 +110,9 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   of "about":
     handle.loadAbout(request)
     handle.close()
+  of "data":
+    handle.loadData(request)
+    handle.close()
   else:
     discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
     handle.close()
@@ -116,7 +120,9 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
 proc onLoad(ctx: LoaderContext, stream: Stream) =
   var request: Request
   stream.sread(request)
+  eprint "FETCH ONLOAD", $request.url
   if not ctx.config.filter.match(request.url):
+    eprint "disallowed"
     stream.swrite(ERROR_DISALLOWED_URL)
     stream.close()
   else:

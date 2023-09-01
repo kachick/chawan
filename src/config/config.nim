@@ -214,9 +214,14 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
     images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes):
     BufferConfig =
+  let filter = newURLFilter(
+    scheme = some(location.scheme),
+    allowschemes = @["data"],
+    default = true
+  )
   result = BufferConfig(
     userstyle: userstyle,
-    filter: newURLFilter(scheme = some(location.scheme), default = true),
+    filter: filter,
     cookiejar: cookiejar,
     headers: headers,
     referer_from: referer_from,

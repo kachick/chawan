@@ -1,6 +1,7 @@
 import bindings/curl
 
 type ConnectErrorCode* = enum
+  ERROR_INVALID_DATA_URL = (-7, "invalid data URL")
   ERROR_ABOUT_PAGE_NOT_FOUND = (-6, "about page not found")
   ERROR_FILE_NOT_FOUND = (-5, "file not found")
   ERROR_SOURCE_NOT_FOUND = (-4, "clone source could not be found"),
