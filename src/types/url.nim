@@ -252,6 +252,7 @@ func opaqueParseHost(input: string): Option[Host] =
   var o = ""
   for c in input:
     o.percentEncode(c, ControlPercentEncodeSet)
+  return some(Host(opaquehost: o))
 
 func endsInNumber(input: string): bool =
   var parts = input.split('.')
@@ -303,14 +304,14 @@ func domainToAscii*(domain: string, bestrict = false): Option[string] =
   else:
     return domain.tolower().some
 
-func parseHost(input: string, isnotspecial = false): Option[Host] =
+func parseHost(input: string, special: bool): Option[Host] =
   if input.len == 0: return
   if input[0] == '[':
     if input[^1] != ']':
       #TODO validation error
       return none(Host)
     return Host(ipv6: parseIpv6(input.substr(1, input.high - 1))).some
-  if isnotspecial: #TODO ??
+  if not special:
     return opaqueParseHost(input)
   let domain = percentDecode(input)
   let asciiDomain = domain.domainToAscii()
@@ -452,7 +453,7 @@ proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
         state = RELATIVE_STATE
         dec pointer
     of PATH_OR_AUTHORITY_STATE:
-      if c == '/':
+      if has and c == '/':
         state = AUTHORITY_STATE
       else:
         state = PATH_STATE
@@ -543,7 +544,7 @@ proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
         if buffer == "":
           #TODO validation error
           return none(Url)
-        let host = parseHost(buffer)
+        let host = parseHost(buffer, url.is_special)
         if host.isnone:
           return none(Url)
         url.host = host
@@ -557,7 +558,7 @@ proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
           return none(Url)
         elif override and buffer == "" and (url.includes_credentials or url.port.issome):
           return
-        let host = parseHost(buffer)
+        let host = parseHost(buffer, url.is_special)
         if host.isnone:
           return none(Url)
         url.host = host
@@ -644,7 +645,7 @@ proc basicParseUrl*(input: string, base = none(URL), url: URL = URL(),
             return
           state = PATH_START_STATE
         else:
-          var host = parseHost(buffer)
+          var host = parseHost(buffer, url.is_special)
           if host.isnone:
             return none(Url)
           if host.get.domain == "localhost":
