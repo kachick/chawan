@@ -51,7 +51,10 @@ buffer:
 network:
 - ftp/sftp
 - gopher
-- gemini? (not a fan, but quite a bit of interesting content is on gemini)
+- urimethodmap
+	* then we could add gemini as a bonus, without an SSL dependency
+	  outside of curl.
+- data URLs
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
 - integrate curl-impersonate (LD_PRELOAD works, but still...)
@@ -62,13 +65,12 @@ external:
 - save buffer (source, output)
 - edit buffer (local file, or whatever we downloaded)
 javascript:
-- important: callbacks leak memory, I think. fix this (e.g. have a ref
-  JSCallback or something)
+- important: callbacks should not leak memory
 - add support for JS mixins
 - distinguish double from unrestricted double
-- "javascript:" urls
-- better dom support, events
-	* more concretely: get jQuery and basic click events to work
+- better dom support, more events
+	* more concretely: get jQuery to work. this needs innerHTML, CSS
+	  properties in DOM, ...
 - implement ReadableStream, XHR
 * separate console for each buffer
 - buffer selection
