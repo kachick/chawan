@@ -1394,8 +1394,12 @@ proc handleRead(buffer: Buffer, fd: int) =
     buffer.onload()
   elif fd in buffer.loader.connecting:
     buffer.loader.onConnected(fd)
+    if buffer.config.scripting:
+      buffer.window.runJSJobs()
   elif fd in buffer.loader.ongoing:
     buffer.loader.onRead(fd)
+    if buffer.config.scripting:
+      buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else: assert false
@@ -1411,6 +1415,8 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
     assert false, $fd & ": " & $err
   elif fd in buffer.loader.ongoing:
     buffer.loader.onError(fd)
+    if buffer.config.scripting:
+      buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else:
