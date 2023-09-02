@@ -120,9 +120,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
 proc onLoad(ctx: LoaderContext, stream: Stream) =
   var request: Request
   stream.sread(request)
-  eprint "FETCH ONLOAD", $request.url
   if not ctx.config.filter.match(request.url):
-    eprint "disallowed"
     stream.swrite(ERROR_DISALLOWED_URL)
     stream.close()
   else:

@@ -15,7 +15,6 @@ proc loadData*(handle: LoaderHandle, request: Request) =
   let str = $request.url
   let si = "data:".len # start index
   var ct = ""
-  eprint "load data", str
   for i in si ..< str.len:
     if str[i] == ',':
       break
@@ -41,5 +40,4 @@ proc loadData*(handle: LoaderHandle, request: Request) =
       "Content-Type": ct
     }.toTable()))
     if ct.len + 1 < str.len:
-      eprint "send data", str[sd .. ^1], sd, str.len - sd
       t handle.sendData(addr str[sd], str.len - sd)
