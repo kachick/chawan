@@ -12,7 +12,7 @@ proc loadData*(handle: LoaderHandle, request: Request) =
   template t(body: untyped) =
     if not body:
       return
-  let str = $request.url
+  var str = $request.url
   let si = "data:".len # start index
   var ct = ""
   for i in si ..< str.len:
