@@ -200,8 +200,8 @@ proc addClassUnforgeable(ctx: JSContext, proto: JSValue,
   ctxOpaque.unforgeable.withValue(parent, uf):
     merged.add(uf[])
   if merged.len > 0:
-    let ufp = addr merged[0]
     ctxOpaque.unforgeable[classid] = merged
+    let ufp = addr ctxOpaque.unforgeable[classid][0]
     JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
 
 func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
