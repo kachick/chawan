@@ -154,7 +154,7 @@ proc defineUnforgeable*(ctx: JSContext, this: JSValue) =
   ctxOpaque.unforgeable.withValue(classid, uf):
     JS_SetPropertyFunctionList(ctx, this, addr uf[][0], cint(uf[].len))
 
-proc toJSP0(ctx: JSContext, p, tp: pointer): JSValue =
+proc toJSP0(ctx: JSContext, p, tp: pointer, needsref: var bool): JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
@@ -164,15 +164,19 @@ proc toJSP0(ctx: JSContext, p, tp: pointer): JSValue =
   # We are "constructing" a new JS object, so we must add unforgeable
   # properties here.
   defineUnforgeable(ctx, jsObj) # not an exception
+  needsref = true
   return jsObj
 
 proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =
   if obj == nil:
     return JS_NULL
   let p = cast[pointer](obj)
-  GC_ref(obj)
   let tp = getTypePtr(obj)
-  return toJSP0(ctx, p, tp)
+  var needsref = false
+  let val = toJSP0(ctx, p, tp, needsref)
+  if needsref:
+    GC_ref(obj)
+  return val
 
 proc toJS*(ctx: JSContext, obj: ref object): JSValue =
   return toJSRefObj(ctx, obj)
@@ -259,9 +263,12 @@ proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
     (proc() =
       GC_unref(parent))
   )
-  GC_ref(parent)
   let tp = getTypePtr(child)
-  return toJSP0(ctx, p, tp)
+  var needsref = false
+  let val = toJSP0(ctx, p, tp, needsref)
+  if needsref:
+    GC_ref(parent)
+  return val
 
 proc toJSP(ctx: JSContext, parent: ptr object, child: var object): JSValue =
   let p = addr child
