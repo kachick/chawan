@@ -5,8 +5,8 @@ let forks = newForkServer()
 
 import options
 import os
-import terminal
 import posix
+import terminal
 
 when defined(profile):
   import nimprof
@@ -59,78 +59,113 @@ var pages: seq[string]
 var dump = false
 var visual = false
 var escape_all = false
+
 while i < params.len:
   let param = params[i]
+
   if escape_all: # after --
     pages.add(param)
     inc i
     continue
-  case param
-  of "-v", "--version":
+
+  proc getnext(): string =
+    inc i
+    if i < params.len:
+      return params[i]
+    help(1)
+
+  proc pversion() =
     echo version(true)
     quit(0)
-  of "-M", "--monochrome":
+
+  proc pmonochrome() =
     conf.display.colormode.ok(MONOCHROME)
-  of "-V", "--visual":
+
+  proc pvisual() =
     visual = true
-  of "-T", "--type":
-    inc i
-    if i < params.len:
-      ctype = some(params[i])
-    else:
-      help(1)
-  of "-I", "--input-charset":
-    inc i
-    if i < params.len:
-      cs = getCharset(params[i])
-      if cs == CHARSET_UNKNOWN:
-        stderr.write("Unknown charset " & params[i] & "\n")
-        quit(1)
-    else:
-      help(1)
-  of "-O", "--output-charset":
-    inc i
-    if i < params.len:
-      let c = getCharset(params[i])
-      if c == CHARSET_UNKNOWN:
-        stderr.write("Unknown charset " & params[i] & "\n")
-        quit(1)
-      conf.encoding.display_charset.ok(c)
-    else:
-      help(1)
-  of "-":
-    discard # emulate programs that accept - as stdin
-  of "-d", "-dump", "--dump":
+    eprint "visual true"
+
+  proc ptype() =
+    ctype = some(getnext())
+
+  proc pgetCharset(): Charset =
+    let s = getnext()
+    let cs = getCharset(s)
+    if cs == CHARSET_UNKNOWN:
+      stderr.write("Unknown charset " & s & "\n")
+      quit(1)
+    return cs
+
+  proc pinput_charset() =
+    cs = pgetCharset()
+
+  proc poutput_charset() =
+    conf.encoding.display_charset.ok(pgetCharset())
+
+  proc pdump() =
     dump = true
-  of "-c", "--css":
-    inc i
-    if i < params.len:
-      conf.css.stylesheet &= params[i]
-    else:
-      help(1)
-  of "-o", "--opt":
-    inc i
-    if i < params.len:
-      conf.parseConfig(getCurrentDir(), params[i])
-    else:
-      help(1)
-  of "-h",  "--help":
+
+  proc pcss() =
+    conf.css.stylesheet &= getnext()
+
+  proc popt() =
+    conf.parseConfig(getCurrentDir(), getnext())
+
+  proc phelp() =
     help(0)
-  of "-r", "--run":
+
+  proc prun() =
+    conf.start.startup_script = getnext()
+    conf.start.headless = true
+    dump = true
+
+  if param.len == 0:
     inc i
-    if i < params.len:
-      conf.start.startup_script = params[i]
-      conf.start.headless = true
-      dump = true
+    continue
+
+  const NeedsNextParam = {'T', 'I', 'O', 'c', 'o', 'r'}
+
+  if param[0] == '-':
+    if param[1] != '-':
+      # If param.len is 0, we just interpret param as a single dash `-',
+      # which is ignored.
+      # (Some programs use single-dash to read from stdin, but we do that
+      # automatically stdin is not a tty. So ignoring it entirely is probably
+      # for the best.)
+      for j in 1 ..< param.len:
+        if j != param.high and param[j] in NeedsNextParam:
+          # expecting next parameter, but not the last char...
+          help(1)
+        case param[j]
+        of 'v': pversion()
+        of 'M': pmonochrome()
+        of 'V': pvisual()
+        of 'T': ptype()
+        of 'I': pinput_charset()
+        of 'O': poutput_charset()
+        of 'd': pdump()
+        of 'c': pcss()
+        of 'o': popt()
+        of 'h': phelp()
+        of 'r': prun()
+        else: help(1)
     else:
-      help(1)
-  of "--":
-    escape_all = true
-  elif param.len > 0:
-    if param[0] == '-':
-      help(1)
-    else:
-      pages.add(param)
+      case param
+      of "--version": pversion()
+      of "--monochrome": pmonochrome()
+      of "--visual": pvisual()
+      of "--type": ptype()
+      of "--input-charset": pinput_charset()
+      of "--output-charset": poutput_charset()
+      of "--dump": pdump()
+      of "--css": pcss()
+      of "--opt": popt()
+      of "--help": phelp()
+      of "--run": prun()
+      of "--": escape_all = true
+      else: help(1)
+  else:
+    pages.add(param)
   inc i
 
 if pages.len == 0 and stdin.isatty():
