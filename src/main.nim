@@ -37,7 +37,7 @@ Options:
     --                          Interpret all following arguments as URLs
     -d, --dump                  Print page to stdout
     -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
-    -o, --opt <config>          Pass config options (e.g. -o 'page.q="QUIT"')
+    -o, --opt <config>          Pass config options (e.g. -o 'page.q="quit()"')
     -T, --type <type>           Specify content mime type
     -I, --input-charset <enc>   Specify document charset
     -O, --display-charset <enc> Specify display charset
@@ -83,7 +83,6 @@ while i < params.len:
 
   proc pvisual() =
     visual = true
-    eprint "visual true"
 
   proc ptype() =
     ctype = some(getnext())
