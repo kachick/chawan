@@ -130,8 +130,8 @@ while i < params.len:
       # If param.len is 0, we just interpret param as a single dash `-',
       # which is ignored.
       # (Some programs use single-dash to read from stdin, but we do that
-      # automatically stdin is not a tty. So ignoring it entirely is probably
-      # for the best.)
+      # automatically when stdin is not a tty. So ignoring it entirely
+      # is probably for the best.)
       for j in 1 ..< param.len:
         if j != param.high and param[j] in NeedsNextParam:
           # expecting next parameter, but not the last char...
