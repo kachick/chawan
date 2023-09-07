@@ -34,6 +34,7 @@ import ips/forkserver
 import ips/serialize
 import ips/serversocket
 import ips/socketstream
+import js/base64
 import js/domexception
 import js/fromjs
 import js/intl
@@ -566,6 +567,12 @@ proc jsCollect(client: Client) {.jsfunc.} =
 
 proc sleep(client: Client, millis: int) {.jsfunc.} =
   sleep millis
+
+proc atob(client: Client, data: string): DOMResult[string] {.jsfunc.} =
+  return atob(data)
+
+proc btoa(client: Client, data: string): DOMResult[string] {.jsfunc.} =
+  return btoa(data)
 
 proc addJSModules(client: Client, ctx: JSContext) =
   ctx.addDOMExceptionModule()

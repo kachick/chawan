@@ -10,6 +10,7 @@ import io/promise
 import io/request
 import io/response
 import io/window
+import js/base64
 import js/domexception
 import js/error
 import js/intl
@@ -96,6 +97,12 @@ proc setLocation(window: Window, s: string): Err[JSError]
 
 proc getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
+
+proc atob(window: Window, data: string): DOMResult[string] {.jsfunc.} =
+  return atob(data)
+
+proc btoa(window: Window, data: string): DOMResult[string] {.jsfunc.} =
+  return btoa(data)
 
 proc addScripting*(window: Window, selector: Selector[int]) =
   let rt = newJSRuntime()
