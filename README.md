@@ -9,6 +9,7 @@ It can also be used as a terminal pager.
 
 ## Compiling
 
+0. Use a POSIX-compliant operating system. (Windows is not supported yet.)
 1. Install the Nim compiler: <https://nim-lang.org/install.html>
 	* Please use 1.6.14 or newer, ideally 2.0.0. Older versions will
 	  not work. (You can check your Nim compiler's version using `nim -v`.)
