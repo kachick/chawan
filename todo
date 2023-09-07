@@ -54,7 +54,6 @@ network:
 - urimethodmap
 	* then we could add gemini as a bonus, without an SSL dependency
 	  outside of curl.
-- data URLs
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
 - integrate curl-impersonate (LD_PRELOAD works, but still...)
@@ -73,7 +72,7 @@ javascript:
 	  properties in DOM, ...
 - implement ReadableStream, XHR
 - new Intl.NumberFormat().format(null)
-* separate console for each buffer
+- separate console for each buffer
 - buffer selection
 layout engine:
 - important: floats (way too many websites look very ugly without them)
