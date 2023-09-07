@@ -301,7 +301,7 @@ proc shorten_path(url: URL) {.inline.} =
   assert not url.path.opaque
 
   if url.scheme == "file" and url.path.ss.len == 1 and
-      url.path.ss[0].len == 2 and url.path.ss[0][0] in Letters and
+      url.path.ss[0].len == 2 and url.path.ss[0][0] in AsciiAlpha and
       url.path.ss[0][1] == ':':
     return
   if url.path.ss.len > 0:
@@ -317,7 +317,7 @@ template includes_credentials(url: URL): bool =
   url.username != "" or url.password != ""
 
 template is_windows_drive_letter(s: string): bool =
-  s.len == 2 and s[0] in Letters and (s[1] == ':' or s[1] == '|')
+  s.len == 2 and s[0] in AsciiAlpha and (s[1] == ':' or s[1] == '|')
 
 template canHaveUsernamePasswordPort(url: URL): bool =
   url.host.isSome and url.host.get.serialize() != "" and url.scheme != "file"
@@ -325,29 +325,34 @@ template canHaveUsernamePasswordPort(url: URL): bool =
 #TODO encoding
 proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     stateOverride = none(URLState)): Option[URL] =
-  let input = input
-    .strip(true, false, {chr(0x00)..chr(0x1F), ' '})
+  const NoStrip = AllChars - C0Controls - {' '}
+  let starti0 = input.find(NoStrip)
+  let starti = if starti0 == -1: 0 else: starti0
+  let endi0 = input.rfind(NoStrip)
+  let endi = if endi0 == -1: input.len else: endi0 + 1
   var buffer = ""
   var atsignseen = false
   var insidebrackets = false
   var passwordtokenseen = false
-  var pointer = 0
+  var pointer = starti
   let override = stateOverride.isSome
   var state = SCHEME_START_STATE
   if override:
     state = stateOverride.get
 
   template c(i = 0): char = input[pointer + i]
-  template has(i = 0): bool = (pointer + i < input.len)
+  template has(i = 0): bool = (pointer + i < endi)
   template is_special(url: URL): bool = url.scheme in SpecialSchemes
   template default_port(url: URL): Option[uint16] = SpecialSchemes[url.scheme]
-  template start_over() = pointer = -1
-  template starts_with_windows_drive_letter(s: string): bool =
-    s.len >= 2 and s[0] in Letters and (s[1] == ':' or s[1] == '|')
+  template start_over() =
+    pointer = starti
+    continue # skip pointer inc
+  template starts_with_windows_drive_letter(i: int): bool =
+    i + 2 <= endi and input[i] in AsciiAlpha and input[i + 1] in {':', '|'}
   template is_normalized_windows_drive_letter(s: string): bool =
-    s.len == 2 and s[0] in Letters and (s[1] == ':')
+    s.len == 2 and s[0] in AsciiAlpha and s[1] == ':'
   template is_windows_drive_letter(s: string): bool =
-    s.len == 2 and s[0] in Letters and (s[1] == ':' or s[1] == '|')
+    s.len == 2 and s[0] in AsciiAlpha and (s[1] == ':' or s[1] == '|')
   template is_double_dot_path_segment(s: string): bool =
     s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
       s.equalsIgnoreCase("%2e%2e")
@@ -355,8 +360,9 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     s == "." or s.equalsIgnoreCase("%2e")
   template is_empty(path: URLPath): bool = path.ss.len == 0
 
-  while pointer <= input.len:
-    if pointer < input.len and input[pointer] in {'\n', '\t'}:
+  while pointer <= endi:
+    assert pointer >= starti
+    if pointer < endi and input[pointer] in {'\n', '\t'}:
       inc pointer
       continue
     case state
@@ -580,7 +586,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
             state = FRAGMENT_STATE
           else:
             url.query = none(string)
-            if not input.substr(pointer).starts_with_windows_drive_letter():
+            if not starts_with_windows_drive_letter(pointer):
               url.shorten_path()
             else:
               url.path.ss.setLen(0)
@@ -596,7 +602,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         if base.isSome and base.get.scheme == "file":
           url.host = base.get.host
           let bpath = base.get.path.ss
-          if not input.substr(pointer).starts_with_windows_drive_letter() and
+          if not starts_with_windows_drive_letter(pointer) and
               bpath.len > 0 and bpath[0].is_normalized_windows_drive_letter():
             url.path.append(bpath[0])
           state = PATH_STATE
