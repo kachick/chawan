@@ -200,6 +200,7 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
   close(writef)
   discard close(fd)
   onSignal SIGTERM, SIGINT:
+    discard sig
     gctx.exitLoader()
   ctx.addFd(int(ctx.ssock.sock.getFd()), CURL_WAIT_POLLIN)
   return ctx
