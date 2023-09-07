@@ -1,7 +1,6 @@
 import deques
 import options
 import streams
-import strformat
 import strutils
 import unicode
 
@@ -596,7 +595,10 @@ proc alert(container: Container, msg: string) =
   container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
 
 proc lineInfo(container: Container) {.jsfunc.} =
-  container.alert(fmt"line {container.cursory + 1}/{container.numLines} ({container.atPercentOf}%) col {container.cursorx + 1}/{container.currentLineWidth} (byte {container.currentCursorBytes})")
+  container.alert("line " & $(container.cursory + 1) & "/" &
+    $container.numLines & " (" & $container.atPercentOf() & "%) col " &
+    $(container.cursorx + 1) & "/" & $container.currentLineWidth &
+    " (byte " & $container.currentCursorBytes & ")")
 
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
