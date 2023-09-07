@@ -70,7 +70,6 @@ type
     children* {.jsget.}: seq[Container]
     config*: BufferConfig
     iface*: BufferInterface
-    attrs: WindowAttributes
     width* {.jsget.}: int
     height* {.jsget.}: int
     title*: string # used in status msg
@@ -116,7 +115,6 @@ proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
   istream.sread(process)
   return Container(
     source: source,
-    attrs: attrs,
     width: attrs.width,
     height: attrs.height - 1,
     title: title,
@@ -875,7 +873,6 @@ proc click(container: Container) {.jsfunc.} =
       .then(proc(res: ClickResult) = container.onclick(res))
 
 proc windowChange*(container: Container, attrs: WindowAttributes) =
-  container.attrs = attrs
   if attrs.width != container.width or attrs.height - 1 != container.height:
     container.width = attrs.width
     container.height = attrs.height - 1
