@@ -2,7 +2,6 @@ import streams
 import tables
 import times
 import strutils
-import strformat
 import unicode
 
 import utils/opt
