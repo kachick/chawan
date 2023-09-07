@@ -327,7 +327,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     stateOverride = none(URLState)): Option[URL] =
   let input = input
     .strip(true, false, {chr(0x00)..chr(0x1F), ' '})
-    .strip(true, false, {'\t', '\n'})
   var buffer = ""
   var atsignseen = false
   var insidebrackets = false
@@ -357,6 +356,9 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
   template is_empty(path: URLPath): bool = path.ss.len == 0
 
   while pointer <= input.len:
+    if pointer < input.len and input[pointer] in {'\n', '\t'}:
+      inc pointer
+      continue
     case state
     of SCHEME_START_STATE:
       if has and c.isAlphaAscii():
