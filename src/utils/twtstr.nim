@@ -196,11 +196,6 @@ func substr*(s: seq[Rune], i, j: int): seq[Rune] =
     return @[]
   return s[min(high(s), i)..min(high(s), j - 1)]
 
-func substr*(s: seq[Rune], i: int): seq[Rune] =
-  if i > high(s) or s.len == 0:
-    return @[]
-  return s[min(high(s), i)..high(s)]
-
 func stripAndCollapse*(s: string): string =
   var i = 0
   while i < s.len and s[i] in AsciiWhitespace:
@@ -575,11 +570,6 @@ func join*(ss: openarray[string], sep: char): string =
     result &= sep
     result &= ss[i]
 
-func clearControls*(s: string): string =
-  for c in s:
-    if c notin Controls:
-      result &= c
-
 proc passRealloc(opaque: pointer, p: pointer, size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
@@ -809,18 +799,6 @@ proc expandPath*(path: string): string =
         let p = getpwnam(cstring(usr))
         if p != nil:
           result = $p.pw_dir / path.substr(i)
-
-iterator split*(s: seq[Rune], sep: Rune): seq[Rune] =
-  var i = 0
-  var prev = 0
-  while i < s.len:
-    if s[i] == sep:
-      yield s.substr(prev, i)
-      prev = i
-    inc i
-
-  if prev < i:
-    yield s.substr(prev, i)
 
 # Combining chars from https://www.cl.cam.ac.uk/~mgk25/ucs/wcwidth.c
 #
