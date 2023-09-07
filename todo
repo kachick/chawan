@@ -72,6 +72,7 @@ javascript:
 	* more concretely: get jQuery to work. this needs innerHTML, CSS
 	  properties in DOM, ...
 - implement ReadableStream, XHR
+- new Intl.NumberFormat().format(null)
 * separate console for each buffer
 - buffer selection
 layout engine:
