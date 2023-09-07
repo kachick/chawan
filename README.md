@@ -10,8 +10,8 @@ It can also be used as a terminal pager.
 ## Compiling
 
 1. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 1.6.14, older versions will not work. (You can check
-	  your Nim compiler's version using `nim -v`.)
+	* Please use 1.6.14 or newer, ideally 2.0.0. Older versions will
+	  not work. (You can check your Nim compiler's version using `nim -v`.)
 2. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
 	* zlib: <https://zlib.net/>
