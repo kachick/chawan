@@ -186,10 +186,12 @@ proc consumeString(state: var TomlParser, first: char):
       else: return state.err("invalid escape sequence \\" & c)
       escape = false
     elif ml_trim:
-      if not (c in {'\n', ' ', '\t'}):
+      if c notin {'\n', ' ', '\t'}:
         res &= c
         ml_trim = false
     else:
+      if c == '\n':
+        inc state.line
       res &= c
   return ok(res)
 
@@ -504,7 +506,7 @@ proc parseToml*(inputStream: Stream, filename = "<input>"): TomlResult =
   state.filename = filename
   while state.has():
     if ?state.consumeNoState():
-      #TODO what is this for?
+      # state.node has been set to a KV pair, so now we parse its value.
       let kvpair = TomlKVPair(state.node)
       kvpair.value = ?state.consumeValue()
     while state.has():
