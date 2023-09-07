@@ -408,7 +408,7 @@ proc consumeArray(state: var TomlParser): TomlResult =
     of ']':
       if val != nil:
         res.a.add(val)
-      break
+      return ok(res)
     of ',':
       if val == nil:
         return state.err("comma without element")
@@ -419,7 +419,7 @@ proc consumeArray(state: var TomlParser): TomlResult =
         return state.err("missing comma")
       state.reconsume()
       val = ?state.consumeValue()
-  return ok(res)
+  return err("unexpected end of file")
 
 proc consumeInlineTable(state: var TomlParser): TomlResult =
   let res = TomlValue(vt: VALUE_TABLE, t: TomlTable())
@@ -496,6 +496,7 @@ proc consumeValue(state: var TomlParser): TomlResult =
         return state.err("invalid token: " & s)
     else:
       return state.err("invalid character in value: " & c)
+  return state.err("unexpected end of file")
 
 proc parseToml*(inputStream: Stream, filename = "<input>"): TomlResult =
   var state: TomlParser
