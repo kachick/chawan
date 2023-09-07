@@ -1323,8 +1323,9 @@ func findAttrNS(map: NamedNodeMap, namespace, localName: string): int =
   return -1
 
 func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
-  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii2()
+  let qualifiedName = if element.namespace == Namespace.HTML and
+      not element.document.isxml:
+    qualifiedName.toLowerAscii()
   else:
     qualifiedName
   if qualifiedName in element.attrs:
@@ -1334,8 +1335,9 @@ func hasAttributeNS(element: Element, namespace, localName: string): bool {.jsfu
   return element.attributes.findAttrNS(namespace, localName) != -1
 
 func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsfunc.} =
-  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii2()
+  let qualifiedName = if element.namespace == Namespace.HTML and
+      not element.document.isxml:
+    qualifiedName.toLowerAscii()
   else:
     qualifiedName
   element.attrs.withValue(qualifiedName, val):
@@ -2190,7 +2192,7 @@ proc setAttribute(element: Element, qualifiedName, value: string):
     Err[DOMException] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii2()
+    qualifiedName.toLowerAscii()
   else:
     qualifiedName
   element.attr(qualifiedName, value)
@@ -2217,7 +2219,7 @@ proc setAttributeNS(element: Element, namespace, qualifiedName,
 
 proc removeAttribute(element: Element, qualifiedName: string) {.jsfunc.} =
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii2()
+    qualifiedName.toLowerAscii()
   else:
     qualifiedName
   element.delAttr(qualifiedName)
@@ -2231,7 +2233,7 @@ proc toggleAttribute(element: Element, qualifiedName: string,
     force = none(bool)): DOMResult[bool] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii2()
+    qualifiedName.toLowerAscii()
   else:
     qualifiedName
   if not element.attrb(qualifiedName):
@@ -2819,7 +2821,7 @@ proc createElement(document: Document, localName: string):
     return err(newDOMException("Invalid character in element name",
       "InvalidCharacterError"))
   let localName = if not document.isxml:
-    localName.toLowerAscii2()
+    localName.toLowerAscii()
   else:
     localName
   let namespace = if not document.isxml: #TODO or content type is application/xhtml+xml
