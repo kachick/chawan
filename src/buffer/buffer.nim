@@ -1227,8 +1227,12 @@ proc click(buffer: Buffer, clickable: Element): ClickResult =
   else:
     result.repaint = buffer.restoreFocus()
 
-proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): bool =
+proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
+      called: bool,
+      canceled: bool
+    ] =
   var called = false
+  var canceled = false
   for a in elem.branch:
     var stop = false
     for el in a.eventListeners:
@@ -1243,23 +1247,27 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): bool =
           break
         if FLAG_STOP_PROPAGATION in event.flags:
           stop = true
+        if FLAG_CANCELED in event.flags:
+          canceled = true
     if stop:
       break
-  return called
+  return (called, canceled)
 
 proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return
   var called = false
+  var canceled = false
   if buffer.config.scripting:
     let elem = buffer.getCursorElement(cursorx, cursory)
-    called = buffer.dispatchEvent("click", elem)
+    (called, canceled) = buffer.dispatchEvent("click", elem)
     if called:
       buffer.do_reshape()
-  let clickable = buffer.getCursorClickable(cursorx, cursory)
-  if clickable != nil:
-    var res = buffer.click(clickable)
-    res.repaint = called
-    return res
+  if not canceled:
+    let clickable = buffer.getCursorClickable(cursorx, cursory)
+    if clickable != nil:
+      var res = buffer.click(clickable)
+      res.repaint = called
+      return res
   return ClickResult(repaint: called)
 
 proc select*(buffer: Buffer, selected: seq[int]): ClickResult {.proxy.} =
