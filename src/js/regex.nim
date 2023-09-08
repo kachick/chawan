@@ -177,7 +177,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
     if start >= str.len:
       break
     if ps == start:
-      start += runeLenAt(str, i)
+      start += runeLenAt(str, start)
   if captureCount > 0:
     dealloc(capture)
 
