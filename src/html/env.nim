@@ -66,9 +66,11 @@ proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
 
-proc fetch(window: Window, req: Request): FetchPromise {.jsfunc.} =
+proc fetch[T: Request|string](window: Window, req: T, init = none(JSValue)):
+    JSResult[FetchPromise] {.jsfunc.} =
   if window.loader.isSome:
-    return window.loader.get.fetch(req)
+    let req = ?newRequest(window.jsctx, req, init)
+    return ok(window.loader.get.fetch(req))
 
 proc setTimeout[T: JSValue|string](window: Window, handler: T,
     timeout = 0i32): int32 {.jsfunc.} =

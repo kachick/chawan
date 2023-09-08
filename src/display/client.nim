@@ -36,6 +36,7 @@ import ips/serversocket
 import ips/socketstream
 import js/base64
 import js/domexception
+import js/error
 import js/fromjs
 import js/intl
 import js/javascript
@@ -104,8 +105,10 @@ proc finalize(client: Client) {.jsfin.} =
 proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
   return client.loader.doRequest(req)
 
-proc fetch(client: Client, req: Request): FetchPromise {.jsfunc.} =
-  return client.loader.fetch(req)
+proc fetch[T: Request|string](client: Client, req: T, init = none(JSValue)):
+    JSResult[FetchPromise] {.jsfunc.} =
+  let req = ?newRequest(client.jsctx, req, init)
+  return ok(client.loader.fetch(req))
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
   let client = cast[Client](opaque)
