@@ -91,10 +91,6 @@ template `strike=`*(f: var Format, b: bool) = flag_template f, b, FLAG_STRIKE
 template `overline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_OVERLINE
 template `blink=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BLINK
 
-func `==`*(a: FixedCell, b: FixedCell): bool =
-  return a.format == b.format and
-    a.str == b.str
-
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
   return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
 
