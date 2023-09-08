@@ -132,16 +132,14 @@ proc runJSJobs(client: Client) =
   client.jsrt.runJSJobs(client.console.err)
 
 proc evalJS(client: Client, src, filename: string, module = false): JSValue =
-  if client.console.tty != nil:
-    unblockStdin(client.console.tty.getFileHandle())
+  client.pager.term.unblockStdin()
   let flags = if module:
     JS_EVAL_TYPE_MODULE
   else:
     JS_EVAL_TYPE_GLOBAL
   result = client.jsctx.eval(src, filename, flags)
   client.runJSJobs()
-  if client.console.tty != nil:
-    restoreStdin(client.console.tty.getFileHandle())
+  client.pager.term.restoreStdin()
 
 proc evalJSFree(client: Client, src, filename: string) =
   JS_FreeValue(client.jsctx, client.evalJS(src, filename))
@@ -231,7 +229,7 @@ proc handleCommandInput(client: Client, c: char) =
     client.pager.refreshStatusMsg()
 
 proc input(client: Client) =
-  restoreStdin(client.console.tty.getFileHandle())
+  client.pager.term.restoreStdin()
   while true:
     let c = client.console.readChar()
     if client.pager.askpromise != nil:

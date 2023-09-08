@@ -1,8 +1,10 @@
 import options
 import os
+import posix
 import streams
 import tables
 import terminal
+import termios
 import unicode
 
 import bindings/termcap
@@ -58,6 +60,10 @@ type
     tc: Termcap
     tname: string
     set_title: bool
+    stdin_unblocked: bool
+    orig_flags: cint
+    orig_flags2: cint
+    orig_termios: Termios
 
 func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
 func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
@@ -137,6 +143,11 @@ proc clearDisplay(term: Terminal): string =
 
 proc isatty(term: Terminal): bool =
   term.infile != nil and term.infile.isatty() and term.outfile.isatty()
+
+proc anyKey*(term: Terminal) =
+  if term.isatty():
+    term.outfile.write("[Hit any key]")
+    discard term.infile.readChar()
 
 proc resetFormat(term: Terminal): string =
   when termcap_found:
@@ -556,60 +567,51 @@ proc outputGrid*(term: Terminal) =
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
 
-when defined(posix):
-  import posix
-  import termios
+# see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
+proc disableRawMode(term: Terminal) =
+  let fd = term.infile.getFileHandle()
+  discard tcSetAttr(fd, TCSAFLUSH, addr term.orig_termios)
 
-  # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
-  var orig_termios: Termios
-  var stdin_fileno: FileHandle
-  proc disableRawMode() {.noconv.} =
-    discard tcSetAttr(stdin_fileno, TCSAFLUSH, addr orig_termios)
+proc enableRawMode(term: Terminal) =
+  let fd = term.infile.getFileHandle()
+  discard tcGetAttr(fd, addr term.orig_termios)
+  var raw = term.orig_termios
+  raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
+  raw.c_oflag = raw.c_oflag and not (OPOST)
+  raw.c_cflag = raw.c_cflag or CS8
+  raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
+  discard tcSetAttr(fd, TCSAFLUSH, addr raw)
 
-  proc enableRawMode(fileno: FileHandle) =
-    stdin_fileno = fileno
-    discard tcGetAttr(fileno, addr orig_termios)
-    var raw = orig_termios
-    raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
-    raw.c_oflag = raw.c_oflag and not (OPOST)
-    raw.c_cflag = raw.c_cflag or CS8
-    raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
-    discard tcSetAttr(fileno, TCSAFLUSH, addr raw)
+proc unblockStdin*(term: Terminal) =
+  if term.isatty():
+    let fd = term.infile.getFileHandle()
+    term.orig_flags = fcntl(fd, F_GETFL, 0)
+    let flags = term.orig_flags or O_NONBLOCK
+    discard fcntl(fd, F_SETFL, flags)
+    term.stdin_unblocked = true
 
-  var orig_flags: cint
-  var stdin_unblocked = false
-  proc unblockStdin*(fileno: FileHandle) =
-    orig_flags = fcntl(fileno, F_GETFL, 0)
-    let flags = orig_flags or O_NONBLOCK
-    discard fcntl(fileno, F_SETFL, flags)
-    stdin_unblocked = true
-
-  proc restoreStdin*(fileno: FileHandle) =
-    if stdin_unblocked:
-      discard fcntl(fileno, F_SETFL, orig_flags)
-      stdin_unblocked = false
-else:
-  proc disableRawMode() =
-    discard
-
-  proc enableRawMode(fileno: FileHandle) =
-    discard
-
-  proc unblockStdin*(): cint =
-    discard
-
-  proc restoreStdin*(flags: cint) =
-    discard
+proc restoreStdin*(term: Terminal) =
+  if term.stdin_unblocked:
+    let fd = term.infile.getFileHandle()
+    discard fcntl(fd, F_SETFL, term.orig_flags)
+    term.stdin_unblocked = false
 
 proc quit*(term: Terminal) =
   if term.isatty():
-    disableRawMode()
+    term.disableRawMode()
     if term.smcup:
       term.write(term.disableAltScreen())
     else:
       term.write(term.cursorGoto(0, term.attrs.height - 1))
     term.showCursor()
     term.cleared = false
+    if term.stdin_unblocked:
+      let fd = term.infile.getFileHandle()
+      term.orig_flags2 = fcntl(fd, F_GETFL, 0)
+      discard fcntl(fd, F_SETFL, term.orig_flags2 and (not O_NONBLOCK))
+      term.stdin_unblocked = false
+    else:
+      term.orig_flags2 = -1
   term.flush()
 
 when termcap_found:
@@ -651,14 +653,19 @@ proc detectTermAttributes(term: Terminal) =
 proc start*(term: Terminal, infile: File) =
   term.infile = infile
   if term.isatty():
-    enableRawMode(infile.getFileHandle())
+    term.enableRawMode()
   term.detectTermAttributes()
   if term.smcup:
     term.write(term.enableAltScreen())
 
 proc restart*(term: Terminal) =
   if term.isatty():
-    enableRawMode(term.infile.getFileHandle())
+    term.enableRawMode()
+    if term.orig_flags2 != -1:
+      let fd = term.infile.getFileHandle()
+      discard fcntl(fd, F_SETFL, term.orig_flags2)
+      term.orig_flags2 = 0
+      term.stdin_unblocked = true
   if term.smcup:
     term.write(term.enableAltScreen())
 

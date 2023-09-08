@@ -17,6 +17,8 @@ import config/config
 import config/mailcap
 import config/mimetypes
 import display/term
+import extern/editor
+import extern/runproc
 import io/connecterror
 import io/lineedit
 import io/loader
@@ -24,7 +26,6 @@ import io/promise
 import io/request
 import io/tempfile
 import io/window
-import ips/editor
 import ips/forkserver
 import ips/socketstream
 import js/javascript
@@ -830,6 +831,33 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
 proc reload(pager: Pager) {.jsfunc.} =
   pager.gotoURL(newRequest(pager.container.source.location), none(URL),
     pager.container.contenttype, replace = pager.container)
+
+proc setEnvVars(pager: Pager) {.jsfunc.} =
+  try:
+    putEnv("CHA_URL", $pager.container.location)
+    putEnv("CHA_CHARSET", $pager.container.charset)
+  except OSError:
+    pager.alert("Warning: failed to set some environment variables")
+
+type ExternType = enum
+  SUSPEND_SETENV = "suspend-setenv"
+  SUSPEND_SETENV_WAIT = "suspend-setenv-wait"
+  SUSPEND_NO_SETENV = "suspend-no-setenv"
+  SUSPEND_NO_SETENV_WAIT = "suspend-no-setenv-wait"
+  NO_SUSPEND_SETENV = "no-suspend-setenv"
+  NO_SUSPEND_NO_SETENV = "no-suspend-no-setenv"
+
+#TODO this could be handled much better.
+# * suspend, setenv, wait as dict flags
+# * retval as int?
+proc extern(pager: Pager, cmd: string, t = SUSPEND_SETENV): bool {.jsfunc.} =
+  if t in {SUSPEND_SETENV, SUSPEND_SETENV_WAIT, NO_SUSPEND_SETENV}:
+    pager.setEnvVars()
+  if t in {NO_SUSPEND_SETENV, NO_SUSPEND_NO_SETENV}:
+    return runProcess(cmd)
+  else:
+    return runProcess(pager.term, cmd,
+      t in {SUSPEND_SETENV_WAIT, SUSPEND_NO_SETENV_WAIT})
 
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)

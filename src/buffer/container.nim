@@ -24,6 +24,8 @@ import types/url
 import utils/mimeguess
 import utils/twtstr
 
+import chakasu/charset
+
 type
   CursorPosition* = object
     cursorx*: int
@@ -123,6 +125,9 @@ proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
       setx: -1
     )
   )
+
+func charset*(container: Container): Charset =
+  return container.source.charset
 
 func contentType*(container: Container): Option[string] {.jsfget.} =
   return container.source.contenttype
