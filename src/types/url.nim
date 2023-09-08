@@ -977,6 +977,9 @@ proc newURL*(s: string, base: Option[string] = none(string)):
     let url = parseURL(s, baseURL)
     if url.isNone:
       return err(newTypeError(s & " is not a valid URL"))
+    url.get.searchParams = newURLSearchParams()
+    url.get.searchParams.url = url
+    url.get.searchParams.initURLSearchParams(url.get.query.get(""))
     return ok(url.get)
   let url = parseURL(s)
   if url.isNone:
