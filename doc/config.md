@@ -584,6 +584,11 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
+<td>`pager.cursorLineTextStart()`</td>
+<td>Move the cursor to the first non-blank character of the line.</td>
+</tr>
+
+<tr>
 <td>`pager.cursorLineEnd()`</td>
 <td>Move the cursor to the last cell of the line.</td>
 </tr>
