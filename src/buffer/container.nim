@@ -1,7 +1,6 @@
 import deques
 import options
 import streams
-import strutils
 import unicode
 
 when defined(posix):
@@ -627,13 +626,13 @@ proc gotoLine*[T: string|int](container: Container, s: T) =
     elif s[0] == '$':
       container.cursorLastLine()
     else:
-      try:
-        let i = parseInt(s)
-        container.setCursorY(i)
-      except ValueError:
+      let i = parseUInt32(s)
+      if i.isSome and i.get > 0:
+        container.setCursorY(int(i.get - 1))
+      else:
         container.alert("First line is #1") # :)
   else:
-    container.setCursorY(s)
+    container.setCursorY(s - 1)
 
 proc pushCursorPos*(container: Container) =
   if container.select.open:

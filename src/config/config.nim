@@ -88,6 +88,9 @@ type
     mailcap* {.jsgetset.}: seq[string]
     mime_types* {.jsgetset.}: seq[string]
 
+  InputConfig = object
+    vi_numeric_prefix* {.jsgetset.}: bool
+
   NetworkConfig = object
     max_redirect* {.jsgetset.}: int32
     prepend_https* {.jsgetset.}: bool
@@ -118,6 +121,7 @@ type
     encoding* {.jsget.}: EncodingConfig
     external* {.jsget.}: ExternalConfig
     network* {.jsget.}: NetworkConfig
+    input* {.jsget.}: InputConfig
     display* {.jsget.}: DisplayConfig
     #TODO getset
     siteconf: seq[StaticSiteConfig]

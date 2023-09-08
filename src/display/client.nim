@@ -42,10 +42,12 @@ import js/intl
 import js/javascript
 import js/module
 import js/timeout
+import js/tojs
 import types/blob
 import types/cookie
 import types/url
 import utils/opt
+import utils/twtstr
 import xhr/formdata
 import xhr/xmlhttprequest
 
@@ -63,13 +65,15 @@ type
     fdmap: Table[int, Container]
     feednext: bool
     forkserver: ForkServer
+    notnum: bool # has a non-numeric character been input already?
     jsctx: JSContext
     jsrt: JSRuntime
     line {.jsget.}: LineEdit
     loader: FileLoader
     mainproc: Pid
     pager {.jsget.}: Pager
-    s: string
+    precnum: int32 # current number prefix (when vi-numeric-prefix is true)
+    s: string # current input buffer
     selector: Selector[Container]
     ssock: ServerSocket
     store {.jsget, jsset.}: Document
@@ -190,6 +194,42 @@ proc handlePagerEvents(client: Client) =
   if container != nil:
     client.pager.handleEvents(container)
 
+proc evalAction(client: Client, action: string, arg0: int32) =
+  let ret = client.evalJS(action, "<command>")
+  let ctx = client.jsctx
+  if JS_IsFunction(ctx, ret):
+    if arg0 != 0: # no precnum
+      let arg0 = toJS(ctx, arg0)
+      JS_FreeValue(ctx, JS_Call(ctx, ret, JS_UNDEFINED, 1, addr arg0))
+      JS_FreeValue(ctx, arg0)
+    else:
+      JS_FreeValue(ctx, JS_Call(ctx, ret, JS_UNDEFINED, 0, nil))
+  JS_FreeValue(ctx, ret)
+
+# The maximum number we are willing to accept.
+# This should be fine for 32-bit signed ints (which precnum currently is).
+# We can always increase it further (e.g. by switching to uint32, uint64...) if
+# it proves to be too low.
+const MaxPrecNum = 100000000
+
+proc handleCommandInput(client: Client, c: char) =
+  if client.config.input.vi_numeric_prefix and not client.notnum:
+    if client.precnum != 0 and c == '0' or c in '1' .. '9':
+      if client.precnum < MaxPrecNum: # better ignore than eval...
+        client.precnum *= 10
+        client.precnum += cast[int32](decValue(c))
+      return
+    else:
+      client.notnum = true
+  client.s &= c
+  let action = getNormalAction(client.config, client.s)
+  client.evalAction(action, client.precnum)
+  if not client.feedNext:
+    client.precnum = 0
+    client.notnum = false
+    client.handlePagerEvents()
+    client.pager.refreshStatusMsg()
+
 proc input(client: Client) =
   restoreStdin(client.console.tty.getFileHandle())
   while true:
@@ -217,18 +257,13 @@ proc input(client: Client) =
           else:
             client.feedNext = true
         elif not client.feednext:
-          client.evalJSFree(action, "<command>")
+          client.evalAction(action, 0)
         if client.pager.lineedit.isNone:
           client.line = nil
         if not client.feedNext:
           client.pager.updateReadLine()
     else:
-      client.s &= c
-      let action = getNormalAction(client.config, client.s)
-      client.evalJSFree(action, "<command>")
-      if not client.feedNext:
-        client.handlePagerEvents()
-        client.pager.refreshStatusMsg()
+      client.handleCommandInput(c)
     if not client.feednext:
       client.s = ""
       break

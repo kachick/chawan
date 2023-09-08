@@ -38,6 +38,9 @@ default-headers = {
 	Cache-Control = "no-cache"
 }
 
+[input]
+vi-numeric-prefix = true
+
 [display]
 color-mode = "auto"
 format-mode = "auto"
@@ -104,9 +107,8 @@ U = 'pager.reload()'
 r = 'pager.redraw()'
 R = 'pager.reshape()'
 M-C-c = 'pager.cancel()'
-1G = 'pager.cursorFirstLine()'
 g = 'pager.cursorFirstLine()'
-G = 'pager.cursorLastLine()'
+G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
 M-g = 'pager.gotoLine()'
 z = 'pager.centerLine()'
 C-g = 'pager.lineInfo()'

@@ -175,6 +175,42 @@ the line number.</td>
 
 </table>
 
+## Input
+
+Input options are to be placed in the `[input]` section.
+
+<table>
+
+<tr>
+<th>**Name**</th>
+<th>**Value**</th>
+<th>**Function**</th>
+</tr>
+
+<tr>
+<td>vi-numeric-prefix</td>
+<td>boolean</td>
+<td>Whether vi-style numeric prefixes to commands should be accepted.<br>
+When set to true, commands that return a function will be called with the
+numeric prefix as their first argument.<br>
+Note: this only applies for keybindings defined in [page].</td>
+</tr>
+
+</table>
+
+Examples:
+```
+[input]
+vi-numeric-prefix = true
+
+[page]
+# Here, the arrow function will be called with the vi numbered prefix if
+# one was input, and with no argument otherwise.
+# The numeric prefix can never be zero, so it is safe to test for undefined
+# using the ternary operator.
+G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
+```
+
 ## Network
 
 Network options are to be placed in the `[network]` section.
@@ -520,12 +556,28 @@ modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
 escape to the keybinding respectively (essentially making `M-` the same as
 `C-[`). Modifiers can be escaped with the `\` sign.
 
-```Examples:
+```
+Examples:
 'C-M-j' = 'pager.load()' # change URL when Control, Escape and j are pressed
 'gg' = 'pager.cursorFirstLine()' # go to the first line of the page when g is pressed twice
 ```
-An action is a JavaScript function called by Chawan every time the keybinding
-is typed in. A list of built-in pager functions can be found below.
+
+An action is a JavaScript expression called by Chawan every time the keybinding
+is typed in. If an action returns a function, Chawan will also call the
+returned function automatically. So this works too:
+
+```
+U = '() => pager.load()' # works
+```
+
+Note however, that JavaScript functions must be called with an appropriate
+this value. Unfortunately, this also means that the following does not work:
+
+```
+q = 'pager.load' # broken!!!
+```
+
+A list of built-in pager functions can be found below.
 
 ### Browser actions
 
@@ -788,6 +840,13 @@ open the current buffer's contents as HTML.</td>
 <tr>
 <td>`pager.isearchBackward()`</td>
 <td>Incremental-search and highlight the first result, backwards.</td>
+</tr>
+
+<tr>
+<td>`pager.gotoLine()`</td>
+<td>Go to the line passed as the first argument.<br>
+If no arguments were specified, an input window for entering a line is
+shown.</td>
 </tr>
 
 <tr>
