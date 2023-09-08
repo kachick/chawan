@@ -1,4 +1,5 @@
 # Interface for QuickJS libregexp.
+import unicode
 
 import bindings/libregexp
 import bindings/quickjs
@@ -149,7 +150,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
   assert 0 <= start and start <= length, "Start: " & $start & ", length: " & $length & " str: " & $str
 
   let captureCount = lre_get_capture_count(regex.bytecode)
-  var capture: ptr UncheckedArray[int]= nil
+  var capture: ptr UncheckedArray[int] = nil
   if captureCount > 0:
     let size = sizeof(ptr uint8) * captureCount * 2
     capture = cast[ptr UncheckedArray[int]](alloc0(size))
@@ -165,6 +166,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
     if captureCount == 0 or nocaps:
       break
     let cstrAddress = cast[int](cstr)
+    let ps = start
     start = capture[1] - cstrAddress
     for i in 0 ..< captureCount:
       let s = capture[i * 2] - cstrAddress
@@ -172,6 +174,10 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
       result.captures.add((s, e))
     if (flags and LRE_FLAG_GLOBAL) != 1:
       break
+    if start >= str.len:
+      break
+    if ps == start:
+      start += runeLenAt(str, i)
   if captureCount > 0:
     dealloc(capture)
 
