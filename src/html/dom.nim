@@ -269,7 +269,7 @@ type
     start*: Option[int]
 
   HTMLLIElement* = ref object of HTMLElement
-    value* {.jsget.}: Option[int]
+    value* {.jsget.}: Option[int32]
 
   HTMLStyleElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
@@ -1031,8 +1031,8 @@ func childNodes(node: Node): NodeList {.jsfget.} =
   return node.childNodes_cached
 
 # DOMTokenList
-func length(tokenList: DOMTokenList): int {.jsfget.} =
-  return tokenList.toks.len
+func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
+  return uint32(tokenList.toks.len)
 
 func item(tokenList: DOMTokenList, i: int): Option[string] {.jsfunc.} =
   if i < tokenList.toks.len:
@@ -1122,8 +1122,8 @@ func getter(tokenList: DOMTokenList, i: int): Option[string] {.jsgetprop.} =
   return tokenList.item(i)
 
 # NodeList
-func length(nodeList: NodeList): int {.jsfget.} =
-  return nodeList.len
+func length(nodeList: NodeList): uint32 {.jsfget.} =
+  return uint32(nodeList.len)
 
 func hasprop(nodeList: NodeList, i: int): bool {.jshasprop.} =
   return i < nodeList.len
@@ -1136,8 +1136,8 @@ func getter(nodeList: NodeList, i: int): Option[Node] {.jsgetprop.} =
   return option(nodeList.item(i))
 
 # HTMLCollection
-proc length(collection: HTMLCollection): int {.jsfget.} =
-  return collection.len
+proc length(collection: HTMLCollection): uint32 {.jsfget.} =
+  return uint32(collection.len)
 
 func hasprop(collection: HTMLCollection, i: int): bool {.jshasprop.} =
   return i < collection.len
@@ -1359,8 +1359,8 @@ func getNamedItemNS(map: NamedNodeMap, namespace, localName: string): Option[Att
   if i != -1:
     return some(map.attrlist[i])
 
-func length(map: NamedNodeMap): int {.jsfget.} =
-  return map.element.attrs.len
+func length(map: NamedNodeMap): uint32 {.jsfget.} =
+  return uint32(map.element.attrs.len)
 
 func item(map: NamedNodeMap, i: int): Option[Attr] {.jsfunc.} =
   if i < map.attrlist.len:
@@ -1378,8 +1378,8 @@ func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} 
   else:
     return map.getNamedItem(i)
 
-func length(characterData: CharacterData): int {.jsfget.} =
-  return characterData.data.utf16Len
+func length(characterData: CharacterData): uint32 {.jsfget.} =
+  return uint32(characterData.data.utf16Len)
 
 func scriptingEnabled*(document: Document): bool =
   if document.window == nil:

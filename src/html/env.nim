@@ -55,9 +55,9 @@ proc javaEnabled(navigator: ptr Navigator): bool {.jsfunc.} = false
 proc namedItem(pluginArray: ptr PluginArray): string {.jsfunc.} = ""
 proc namedItem(mimeTypeArray: ptr MimeTypeArray): string {.jsfunc.} = ""
 proc item(pluginArray: ptr PluginArray): JSValue {.jsfunc.} = JS_NULL
-proc length(pluginArray: ptr PluginArray): int {.jsfget.} = 0
+proc length(pluginArray: ptr PluginArray): uint32 {.jsfget.} = 0
 proc item(mimeTypeArray: ptr MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
-proc length(mimeTypeArray: ptr MimeTypeArray): int {.jsfget.} = 0
+proc length(mimeTypeArray: ptr MimeTypeArray): uint32 {.jsfget.} = 0
 proc getter(pluginArray: ptr PluginArray, i: int): Option[JSValue] {.jsgetprop.} = discard
 proc getter(mimeTypeArray: ptr MimeTypeArray, i: int): Option[JSValue] {.jsgetprop.} = discard
 
