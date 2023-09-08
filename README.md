@@ -9,18 +9,22 @@ It can also be used as a terminal pager.
 
 ## Compiling
 
-0. Use a POSIX-compliant operating system. (Windows is not supported yet.)
-1. Install the Nim compiler: <https://nim-lang.org/install.html>
+Note: a POSIX-compliant operating system is required. (Windows is not
+supported yet.)
+
+1. Clone the Chawan repository:
+   `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
+2. Install the Nim compiler: <https://nim-lang.org/install.html>
 	* Please use 1.6.14 or newer, ideally 2.0.0. Older versions will
 	  not work. (You can check your Nim compiler's version using `nim -v`.)
-2. Install the following dependencies:
+3. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
 	* zlib: <https://zlib.net/>
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config"
 	  in PATH)
-3. Download parts of Chawan found in other repositories:
+4. Download parts of Chawan found in other repositories:
 	* `make submodule`
-4. Use one of the following:
+5. Use one of the following:
 	* `make release` - optimized release build
 	* `make` - debug build (slow, for development)
 
