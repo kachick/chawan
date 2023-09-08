@@ -707,25 +707,13 @@ func anchor*(url: URL): string =
     return url.fragment.get
   return ""
 
-proc parseURL*(input: string, base = none(URL), url: var URL,
-    override = none(URLState)): Option[URL] =
-  var url = basicParseURL(input, base, url, override)
-  if url.isNone:
-    return url
-  if url.get.scheme != "blob":
-    return url
-  url.get.blob = BlobURLEntry().some
-  return url
-
 proc parseURL*(input: string, base = none(URL), override = none(URLState)):
     Option[URL] =
-  var url = URL().some
-  url = basicParseURL(input, base, url.get, override)
+  let url = basicParseURL(input, base, stateOverride = override)
   if url.isNone:
     return url
-  if url.get.scheme != "blob":
-    return url
-  url.get.blob = BlobURLEntry().some
+  if url.get.scheme == "blob":
+    url.get.blob = some(BlobURLEntry())
   return url
 
 func serializeip(ipv4: uint32): string =
@@ -970,18 +958,14 @@ proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
 
 proc newURL*(s: string, base: Option[string] = none(string)):
     JSResult[URL] {.jsctor.} =
-  if base.isSome:
-    let baseURL = parseURL(base.get)
-    if baseURL.isNone:
+  let baseURL = if base.isSome:
+    let x = parseURL(base.get)
+    if x.isNone:
       return err(newTypeError(base.get & " is not a valid URL"))
-    let url = parseURL(s, baseURL)
-    if url.isNone:
-      return err(newTypeError(s & " is not a valid URL"))
-    url.get.searchParams = newURLSearchParams()
-    url.get.searchParams.url = url
-    url.get.searchParams.initURLSearchParams(url.get.query.get(""))
-    return ok(url.get)
-  let url = parseURL(s)
+    x
+  else:
+    none(URL)
+  let url = parseURL(s, baseURL)
   if url.isNone:
     return err(newTypeError(s & " is not a valid URL"))
   url.get.searchParams = newURLSearchParams()
