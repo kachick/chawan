@@ -1,5 +1,6 @@
 import options
 
+import js/dict
 import js/fromjs
 import js/javascript
 import utils/mimeguess
@@ -54,8 +55,16 @@ proc newWebFile*(path: string, webkitRelativePath = ""): WebFile =
     webkitRelativePath: webkitRelativePath
   )
 
+type
+  BlobPropertyBag = object of JSDict
+    `type`: string
+    #TODO endings
+
+  FilePropertyBag = object of BlobPropertyBag
+    #TODO lastModified: int64
+
 proc newWebFile(ctx: JSContext, fileBits: seq[string], fileName: string,
-    options = none(JSValue)): WebFile {.jsctor.} =
+    options = FilePropertyBag()): WebFile {.jsctor.} =
   let file = WebFile(
     isfile: false,
     path: fileName,
@@ -72,16 +81,11 @@ proc newWebFile(ctx: JSContext, fileBits: seq[string], fileName: string,
       copyMem(addr buf[i], unsafeAddr blobPart[0], blobPart.len)
       i += blobPart.len
   file.size = uint64(len)
-  if options.isSome:
-    block ctype:
-      let t = fromJS[string](ctx, JS_GetPropertyStr(ctx, options.get, "type"))
-      if t.isNone:
+  block ctype:
+    for c in options.`type`:
+      if c notin char(0x20)..char(0x7E):
         break ctype
-      for c in t.get:
-        if c notin char(0x20)..char(0x7E):
-          break ctype
-        file.ctype &= c.tolower()
-    #TODO lastmodified
+      file.ctype &= c.tolower()
   return file
 
 #TODO File, Blob constructors
