@@ -196,11 +196,11 @@ proc evalAction(client: Client, action: string, arg0: int32) =
   let ret = client.evalJS(action, "<command>")
   let ctx = client.jsctx
   if JS_IsFunction(ctx, ret):
-    if arg0 != 0: # no precnum
-      let arg0 = toJS(ctx, arg0)
+    if arg0 != 0:
+      var arg0 = toJS(ctx, arg0)
       JS_FreeValue(ctx, JS_Call(ctx, ret, JS_UNDEFINED, 1, addr arg0))
       JS_FreeValue(ctx, arg0)
-    else:
+    else: # no precnum
       JS_FreeValue(ctx, JS_Call(ctx, ret, JS_UNDEFINED, 0, nil))
   JS_FreeValue(ctx, ret)
 
