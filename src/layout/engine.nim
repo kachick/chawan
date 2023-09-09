@@ -1,3 +1,4 @@
+import algorithm
 import math
 import options
 import unicode
@@ -1135,12 +1136,53 @@ proc buildTableCell(viewport: Viewport, builder: TableCellBoxBuilder,
   tableCell.buildLayout(builder)
   return tableCell
 
+# Sort growing cells, and filter out cells that have grown to their intended
+# rowspan.
+proc sortGrowing(pctx: var TableContext) =
+  var i = 0
+  for j in 0 ..< pctx.growing.len:
+    if pctx.growing[i].grown == 0:
+      continue
+    if j != i:
+      pctx.growing[i] = pctx.growing[j]
+    inc i
+  pctx.growing.setLen(i)
+  pctx.growing.sort(proc(a, b: CellWrapper): int =
+    cmp(a.coli, b.coli))
+
+# Grow cells with a rowspan > 1 (to occupy their place in a new row).
+proc growRowspan(pctx: var TableContext, ctx: var RowContext,
+    growi, i, n: var int, growlen: int) =
+  while growi < growlen:
+    let cellw = pctx.growing[growi]
+    if cellw.coli > n:
+      break
+    dec cellw.grown
+    let rowspanFiller = CellWrapper(
+      colspan: cellw.colspan,
+      rowspan: cellw.rowspan,
+      coli: n
+    )
+    ctx.cells.add(nil)
+    ctx.cells[i] = rowspanFiller
+    for i in n ..< n + cellw.colspan:
+      ctx.width += pctx.cols[i].width
+      ctx.width += pctx.inlinespacing * 2
+    n += cellw.colspan
+    inc i
+    inc growi
+
 proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
-    parent: BlockBox, i: int): RowContext =
+    parent: BlockBox): RowContext =
   var ctx = RowContext(builder: box, cells: newSeq[CellWrapper](box.children.len))
   var n = 0
   var i = 0
+  var growi = 0
+  # this increases in the loop, but we only want to check growing cells that
+  # were added by previous rows.
+  let growlen = pctx.growing.len
   for child in box.children:
+    pctx.growRowspan(ctx, growi, i, n, growlen)
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
     let colspan = cellbuilder.computed{"-cha-colspan"}
@@ -1157,11 +1199,10 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
       builder: cellbuilder,
       colspan: colspan,
       rowspan: rowspan,
-      rowi: i,
       coli: n
     )
     ctx.cells[i] = wrapper
-    if rowspan != 1:
+    if rowspan > 1:
       pctx.growing.add(wrapper)
       wrapper.grown = rowspan - 1
     if pctx.cols.len < n + colspan:
@@ -1200,6 +1241,10 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
       ctx.width += pctx.inlinespacing
     n += colspan
     inc i
+  pctx.growRowspan(ctx, growi, i, n, growlen)
+  pctx.sortGrowing()
+  for i in 0 ..< ctx.cells.len:
+    doAssert ctx.cells[i] != nil, $i
   ctx.ncols = n
   return ctx
 
@@ -1216,7 +1261,7 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
       w += pctx.cols[i].width
     # Add inline spacing for merged columns.
     w += pctx.inlinespacing * (cellw.colspan - 1) * 2
-    if cellw.reflow:
+    if cellw.reflow and cellw.builder != nil:
       #TODO TODO TODO this is a hack, and it doesn't even work properly
       #TODO 2: maybe we can remove this now?
       #let ocomputed = cellw.builder.computed
@@ -1231,17 +1276,19 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
       #cellw.builder.computed = ocomputed
       w = max(w, cell.width)
     x += pctx.inlinespacing
-    cell.offset.x += x
+    if cell != nil:
+      cell.offset.x += x
     x += pctx.inlinespacing
     x += w
     n += cellw.colspan
     const HasNoBaseline = {
       VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_MIDDLE, VERTICAL_ALIGN_BOTTOM
     }
-    if cell.computed{"vertical-align"}.keyword notin HasNoBaseline: # baseline
-      baseline = max(cell.firstBaseline, baseline)
-    row.nested.add(cell)
-    row.height = max(row.height, cell.height)
+    if cell != nil:
+      if cell.computed{"vertical-align"}.keyword notin HasNoBaseline: # baseline
+        baseline = max(cell.firstBaseline, baseline)
+      row.nested.add(cell)
+      row.height = max(row.height, cell.height)
   for cell in row.nested:
     cell.height = min(cell.height, row.height)
   for cell in row.nested:
@@ -1300,7 +1347,7 @@ proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
       ctx.caption = TableCaptionBoxBuilder(row)
     else:
       let row = TableRowBoxBuilder(row)
-      let rctx = ctx.preBuildTableRow(row, table, i)
+      let rctx = ctx.preBuildTableRow(row, table)
       ctx.rows.add(rctx)
       ctx.maxwidth = max(rctx.width, ctx.maxwidth)
       inc i

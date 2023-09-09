@@ -165,7 +165,6 @@ type
   CellWrapper* = ref object
     builder*: TableCellBoxBuilder
     box*: BlockBox
-    rowi*: int
     coli*: int
     colspan*: int
     rowspan*: int

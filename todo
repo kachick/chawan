@@ -78,8 +78,6 @@ layout engine:
 - important: floats (way too many websites look very ugly without them)
 - make background-color a property of inline boxes, not words. (this would
   require implementing actual inline boxes)
-- table rowspan
-	* there's already a `growing' list in table context, just use that...
 - overflow
 - incremental layout & layout caching
 	* first for tree generation, then for layout.
