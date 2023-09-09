@@ -1294,53 +1294,30 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
   row.width = x
   return row
 
-iterator rows(builder: TableBoxBuilder): BoxBuilder {.inline.} =
-  var header: seq[TableRowBoxBuilder]
-  var body: seq[TableRowBoxBuilder]
-  var footer: seq[TableRowBoxBuilder]
+proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
+    table: BlockBox) =
+  var rows: seq[TableRowBoxBuilder]
   var caption: TableCaptionBoxBuilder
   for child in builder.children:
-    assert child.computed{"display"} in ProperTableChild, $child.computed{"display"}
+    assert child.computed{"display"} in ProperTableChild
     case child.computed{"display"}
     of DISPLAY_TABLE_ROW:
-      body.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_HEADER_GROUP:
+      rows.add(TableRowBoxBuilder(child))
+    of DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_ROW_GROUP,
+        DISPLAY_TABLE_FOOTER_GROUP:
       for child in child.children:
         assert child.computed{"display"} == DISPLAY_TABLE_ROW
-        header.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_ROW_GROUP:
-      for child in child.children:
-        assert child.computed{"display"} == DISPLAY_TABLE_ROW
-        body.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_FOOTER_GROUP:
-      for child in child.children:
-        assert child.computed{"display"} == DISPLAY_TABLE_ROW
-        footer.add(TableRowBoxBuilder(child))
+        rows.add(TableRowBoxBuilder(child))
     of DISPLAY_TABLE_CAPTION:
       if caption == nil:
         caption = TableCaptionBoxBuilder(child)
     else: discard
   if caption != nil:
-    yield caption
-  for child in header:
-    yield child
-  for child in body:
-    yield child
-  for child in footer:
-    yield child
-
-proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
-    table: BlockBox) =
-  var i = 0
-  for row in builder.rows:
-    if unlikely(row.computed{"display"} == DISPLAY_TABLE_CAPTION):
-      ctx.caption = TableCaptionBoxBuilder(row)
-    else:
-      let row = TableRowBoxBuilder(row)
-      let rctx = ctx.preBuildTableRow(row, table)
-      ctx.rows.add(rctx)
-      ctx.maxwidth = max(rctx.width, ctx.maxwidth)
-      inc i
+    ctx.caption = caption
+  for row in rows:
+    let rctx = ctx.preBuildTableRow(row, table)
+    ctx.rows.add(rctx)
+    ctx.maxwidth = max(rctx.width, ctx.maxwidth)
 
 proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     weight: var float64): seq[int] =
