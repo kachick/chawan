@@ -1262,18 +1262,8 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     # Add inline spacing for merged columns.
     w += pctx.inlinespacing * (cellw.colspan - 1) * 2
     if cellw.reflow and cellw.builder != nil:
-      #TODO TODO TODO this is a hack, and it doesn't even work properly
-      #TODO 2: maybe we can remove this now?
-      #let ocomputed = cellw.builder.computed
-      #cellw.builder.computed = ocomputed.copyProperties()
-      #cellw.builder.computed{"width"} = CSSLength(
-      #  num: toFloat64(w),
-      #  unit: UNIT_PX
-      #)
-      #TODO specified table height should be distributed among rows.
       cell = parent.viewport.buildTableCell(cellw.builder, stretch(w),
         maxContent())
-      #cellw.builder.computed = ocomputed
       w = max(w, cell.width)
     x += pctx.inlinespacing
     if cell != nil:
