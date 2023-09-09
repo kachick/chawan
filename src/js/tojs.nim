@@ -4,6 +4,7 @@ import unicode
 
 import bindings/quickjs
 import io/promise
+import js/dict
 import js/error
 import js/opaque
 import js/typeptr
@@ -33,6 +34,7 @@ proc toJS*(ctx: JSContext, promise: EmptyPromise): JSValue
 proc toJS*(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, err: JSError): JSValue
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
+proc toJS*(ctx: JSContext, d: JSDict): JSValue
 
 # Convert Nim types to the corresponding JavaScript type, with knowledge of
 # the parent object.
@@ -55,6 +57,7 @@ makeToJSP(Table)
 makeToJSP(Option)
 makeToJSP(Result)
 makeToJSP(JSValue)
+makeToJSP(JSDict)
 
 proc defineProperty(ctx: JSContext, this: JSValue, name: string,
     prop: JSValue, flags = cint(0)) =
@@ -253,6 +256,17 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
 
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
   return JS_NewCFunction(ctx, f, cstring"", 0)
+
+proc toJS*(ctx: JSContext, d: JSDict): JSValue =
+  let obj = JS_NewObject(ctx)
+  if JS_IsException(obj):
+    return obj
+  for k, v in d.fieldPairs:
+    let val = toJS(ctx, v)
+    if JS_IsException(val):
+      return val
+    definePropertyCWE(ctx, obj, k, val)
+  return obj
 
 proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
   let p = addr child

@@ -5,6 +5,7 @@ import tables
 import unicode
 
 import bindings/quickjs
+import js/dict
 import js/error
 import js/opaque
 import js/tojs
@@ -403,7 +404,19 @@ proc fromJSVoid(ctx: JSContext, val: JSValue): JSResult[void] =
     return err()
   return ok()
 
-type FromJSAllowedT = (object and not (Result|Option|Table|JSValue))
+proc fromJSDict[T: JSDict](ctx: JSContext, val: JSValue): JSResult[T] =
+  if not JS_IsUndefined(val) and not JS_IsNull(val) and not JS_IsObject(val):
+    return err(newTypeError("Dictionary is not an object"))
+  #TODO throw on missing required values
+  var d: T
+  if JS_IsObject(val):
+    for k, v in d.fieldPairs:
+      let esm = JS_GetPropertyStr(ctx, val, k)
+      if not JS_IsUndefined(esm):
+        v = ?fromJS[typeof(v)](ctx, esm)
+  return ok(d)
+
+type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
   when T is string:
@@ -441,6 +454,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return fromJSObject[T](ctx, val)
   elif T is void:
     return fromJSVoid(ctx, val)
+  elif T is JSDict:
+    return fromJSDict[T](ctx, val)
   elif compiles(fromJS2(ctx, val, result)):
     fromJS2(ctx, val, result)
   else:

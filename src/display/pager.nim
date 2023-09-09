@@ -28,6 +28,7 @@ import io/tempfile
 import io/window
 import ips/forkserver
 import ips/socketstream
+import js/dict
 import js/javascript
 import js/regex
 import js/tojs
@@ -839,25 +840,22 @@ proc setEnvVars(pager: Pager) {.jsfunc.} =
   except OSError:
     pager.alert("Warning: failed to set some environment variables")
 
-type ExternType = enum
-  SUSPEND_SETENV = "suspend-setenv"
-  SUSPEND_SETENV_WAIT = "suspend-setenv-wait"
-  SUSPEND_NO_SETENV = "suspend-no-setenv"
-  SUSPEND_NO_SETENV_WAIT = "suspend-no-setenv-wait"
-  NO_SUSPEND_SETENV = "no-suspend-setenv"
-  NO_SUSPEND_NO_SETENV = "no-suspend-no-setenv"
+#TODO use default values instead...
+type ExternDict = object of JSDict
+  setenv: Opt[bool]
+  suspend: Opt[bool]
+  wait: bool
 
 #TODO this could be handled much better.
 # * suspend, setenv, wait as dict flags
 # * retval as int?
-proc extern(pager: Pager, cmd: string, t = SUSPEND_SETENV): bool {.jsfunc.} =
-  if t in {SUSPEND_SETENV, SUSPEND_SETENV_WAIT, NO_SUSPEND_SETENV}:
+proc extern(pager: Pager, cmd: string, t = ExternDict()): bool {.jsfunc.} =
+  if t.setenv.get(true):
     pager.setEnvVars()
-  if t in {NO_SUSPEND_SETENV, NO_SUSPEND_NO_SETENV}:
-    return runProcess(cmd)
+  if t.suspend.get(true):
+    return runProcess(pager.term, cmd, t.wait)
   else:
-    return runProcess(pager.term, cmd,
-      t in {SUSPEND_SETENV_WAIT, SUSPEND_NO_SETENV_WAIT})
+    return runProcess(cmd)
 
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)
