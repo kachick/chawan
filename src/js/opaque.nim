@@ -36,6 +36,7 @@ type
     flist*: seq[seq[JSCFunctionListEntry]]
     fins*: Table[JSClassID, proc(val: JSValue)]
     refmap*: Table[pointer, tuple[cref, cunref: (proc() {.closure.})]]
+    destroying*: pointer
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque()

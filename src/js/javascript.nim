@@ -1148,7 +1148,11 @@ proc nim_finalize_for_js*(obj: pointer) =
         fin[](val)
       JS_SetOpaque(val, nil)
       rtOpaque.plist.del(obj)
-      JS_FreeValueRT(rt, val)
+      if rtOpaque.destroying == obj:
+        # Allow QJS to collect the JSValue through checkDestroy.
+        rtOpaque.destroying = nil
+      else:
+        JS_FreeValueRT(rt, val)
 
 type
   TabGetSet* = object
@@ -1385,11 +1389,24 @@ proc bindCheckDestroy(stmts: NimNode, info: RegistryInfo) =
           # refcount reaches zero. Then, the JS object's opaque will be set
           # to nil, and its refcount decreased again, so next time this
           # function will return true.
+          #
+          # Actually, we need another hack to ensure correct
+          # operation. GC_unref may call the destructor of this object, and
+          # in this case we cannot ask QJS to keep the JSValue alive. So we set
+          # the "destroying" pointer to the current opaque, and return true if
+          # the opaque was collected.
+          rt.getOpaque().destroying = opaque
           GC_unref(cast[`t`](opaque))
-          # Returning false from this function signals to the QJS GC that it
-          # should not be collected yet. Accordingly, the JSObject's refcount
-          # will be set to one again.
-          return false
+          if rt.getOpaque().destroying == nil:
+            # Looks like GC_unref called nim_finalize_for_js for this pointer.
+            # This means we can allow QJS to collect this JSValue.
+            return true
+          else:
+            rt.getOpaque().destroying = nil
+            # Returning false from this function signals to the QJS GC that it
+            # should not be collected yet. Accordingly, the JSObject's refcount
+            # will be set to one again.
+            return false
         else:
           # This is not a reference, just a pointer with a reference to the
           # root ancestor object.
