@@ -98,7 +98,6 @@ type
     document: Document
     viewport: Viewport
     prevstyled: StyledNode
-    url: URL #TODO already stored in source
     selector: Selector[int]
     istream: Stream
     sstream: Stream
@@ -254,6 +253,9 @@ macro task(fun: typed) =
   let pfun = getProxyFunction(funid)
   pfun.istask = true
   fun
+
+func url(buffer: Buffer): URL =
+  return buffer.source.location
 
 func charsets(buffer: Buffer): seq[Charset] =
   if buffer.source.charset != CHARSET_UNKNOWN:
@@ -669,7 +671,6 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   let setct = source.contenttype.isNone
   if not setct:
     buffer.contenttype = source.contenttype.get
-  buffer.url = source.location
   var charset = source.charset
   var needsAuth = false
   var redirect: Request
