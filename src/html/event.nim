@@ -2,6 +2,7 @@ import math
 import times
 
 import bindings/quickjs
+import js/dict
 import js/error
 import js/fromjs
 import js/javascript
@@ -63,31 +64,30 @@ jsDestructor(EventTarget)
 # Forward declaration hack
 var isDefaultPassive*: proc (eventTarget: EventTarget): bool
 
+type
+  EventInit = object of JSDict
+    bubbles: bool
+    cancelable: bool
+    composed: bool
+
+  CustomEventInit = object of EventInit
+    detail: JSValue
+
 # Event
 proc innerEventCreationSteps(event: Event, ctx: JSContext,
-    eventInitDict: JSValue) =
+    eventInitDict: EventInit) =
   event.flags = {FLAG_INITIALIZED}
   #TODO this is probably incorrect?
   # I think it measures the time since the first fork. not sure though
   event.timeStamp = round(cpuTime())
-  if not JS_IsUndefined(eventInitDict):
-    template set(name: static string, value: var bool) =
-      let prop = JS_GetPropertyStr(ctx, eventInitDict, name)
-      let jsVal = fromJS[bool](ctx, prop)
-      if jsVal.isSome:
-        value = jsVal.get
-    set "bubbles", event.bubbles
-    set "cancelable", event.cancelable
-    var composed: bool
-    set "composed", composed
-    if composed:
-      event.flags.incl(FLAG_COMPOSED)
+  event.bubbles = eventInitDict.bubbles
+  event.cancelable = eventInitDict.cancelable
+  if eventInitDict.composed:
+    event.flags.incl(FLAG_COMPOSED)
 
 #TODO eventInitDict type
-proc newEvent(ctx: JSContext, ctype: string, eventInitDict = JS_UNDEFINED):
+proc newEvent(ctx: JSContext, ctype: string, eventInitDict = EventInit()):
     JSResult[Event] {.jsctor.} =
-  if not JS_IsUndefined(eventInitDict) and not JS_IsObject(eventInitDict):
-    return err(newTypeError("eventInitDict must be an object"))
   let event = Event()
   event.innerEventCreationSteps(ctx, eventInitDict)
   event.ctype = ctype
@@ -157,12 +157,10 @@ func composed(this: Event): bool {.jsfget.} =
 
 # CustomEvent
 proc newCustomEvent(ctx: JSContext, ctype: string,
-    eventInitDict = JS_UNDEFINED): JSResult[CustomEvent] {.jsctor.} =
-  if not JS_IsUndefined(eventInitDict) and not JS_IsObject(eventInitDict):
-    return err(newTypeError("eventInitDict must be an object"))
+    eventInitDict = CustomEventInit()): JSResult[CustomEvent] {.jsctor.} =
   let event = CustomEvent()
   event.innerEventCreationSteps(ctx, eventInitDict)
-  event.detail = JS_GetPropertyStr(ctx, eventInitDict, "detail")
+  event.detail = eventInitDict.detail
   event.ctx = ctx
   event.ctype = ctype
   return ok(event)
