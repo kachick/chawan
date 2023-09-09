@@ -424,29 +424,29 @@ proc setCursorXY(container: Container, x, y: int, refresh = true) {.jsfunc.} =
   if fy != container.fromy:
     container.centerLine()
 
-proc cursorDown(container: Container) {.jsfunc.} =
+proc cursorDown(container: Container, n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorDown()
   else:
-    container.setCursorY(container.cursory + 1)
+    container.setCursorY(container.cursory + n)
 
-proc cursorUp(container: Container) {.jsfunc.} =
+proc cursorUp(container: Container, n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorUp()
   else:
-    container.setCursorY(container.cursory - 1)
+    container.setCursorY(container.cursory - n)
 
-proc cursorLeft(container: Container) {.jsfunc.} =
+proc cursorLeft(container: Container, n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorLeft()
   else:
-    container.setCursorX(container.cursorFirstX() - 1)
+    container.setCursorX(container.cursorFirstX() - n)
 
-proc cursorRight(container: Container) {.jsfunc.} =
+proc cursorRight(container: Container, n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorRight()
   else:
-    container.setCursorX(container.cursorLastX() + 1)
+    container.setCursorX(container.cursorLastX() + n)
 
 proc cursorLineBegin(container: Container) {.jsfunc.} =
   container.setCursorX(0)

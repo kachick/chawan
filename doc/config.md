@@ -612,22 +612,22 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorUp()`</td>
-<td>Move the cursor to the previous line.</td>
+<td>`pager.cursorUp(n = 1)`</td>
+<td>Move the cursor upwards by n lines, or if n is unspecified, by 1.</td>
 </tr>
 <tr>
-<td>`pager.cursorDown()`</td>
-<td>Move cursor to the next line.</td>
-</tr>
-
-<tr>
-<td>`pager.cursorLeft()`</td>
-<td>Move the cursor to the previous cell.</td>
+<td>`pager.cursorDown(n = 1)`</td>
+<td>Move the cursor downwards by n lines, or if n is unspecified, by 1.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorRight()`</td>
-<td>Move the cursor to the next cell.</td>
+<td>`pager.cursorLeft(n = 1)`</td>
+<td>Move the cursor to the left by n cells, or if n is unspecified, by 1.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorRight(n = 1)`</td>
+<td>Move the cursor to the right by n cells, or if n is unspecified, by 1.</td>
 </tr>
 
 <tr>
@@ -843,7 +843,7 @@ open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
-<td>`pager.gotoLine()`</td>
+<td>`pager.gotoLine(n?)`</td>
 <td>Go to the line passed as the first argument.<br>
 If no arguments were specified, an input window for entering a line is
 shown.</td>
