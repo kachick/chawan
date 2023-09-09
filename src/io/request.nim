@@ -5,17 +5,20 @@ import tables
 
 import bindings/quickjs
 import io/headers
+import js/dict
 import js/error
 import js/fromjs
 import js/javascript
+import types/blob
 import types/formdata
+import types/referer
 import types/url
 
 type
   HttpMethod* = enum
+    HTTP_GET = "GET"
     HTTP_CONNECT = "CONNECT"
     HTTP_DELETE = "DELETE"
-    HTTP_GET = "GET"
     HTTP_HEAD = "HEAD"
     HTTP_OPTIONS = "OPTIONS"
     HTTP_PATCH = "PATCH"
@@ -194,9 +197,66 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors
   else: CredentialsMode.INCLUDE
   return newRequest(url, destination = destination, mode = mode, credentialsMode = credentialsMode)
 
+type
+  BodyInitType = enum
+    BODY_INIT_BLOB, BODY_INIT_FORM_DATA, BODY_INIT_URL_SEARCH_PARAMS,
+    BODY_INIT_STRING
+
+  BodyInit = object
+    #TODO ReadableStream, BufferSource
+    case t: BodyInitType
+    of BODY_INIT_BLOB:
+      blob: Blob
+    of BODY_INIT_FORM_DATA:
+      formData: FormData
+    of BODY_INIT_URL_SEARCH_PARAMS:
+      searchParams: URLSearchParams
+    of BODY_INIT_STRING:
+      str: string
+
+  RequestInit* = object of JSDict
+    #TODO aliasing in dicts
+    `method`: HttpMethod # default: GET
+    headers: Opt[HeadersInit]
+    body: Opt[BodyInit]
+    referrer: Opt[string]
+    referrerPolicy: Opt[ReferrerPolicy]
+    credentials: Opt[CredentialsMode]
+    proxyUrl: URL
+    mode: Opt[RequestMode]
+
+proc fromJS2*(ctx: JSContext, val: JSValue, res: var JSResult[BodyInit]) =
+  if JS_IsUndefined(val) or JS_IsNull(val):
+    res.err(nil)
+    return
+  if not JS_IsObject(val):
+    res.err(newTypeError("Not an object"))
+    return
+  block formData:
+    let x = fromJS[FormData](ctx, val)
+    if x.isSome:
+      res.ok(BodyInit(t: BODY_INIT_FORM_DATA, formData: x.get))
+      return
+  block blob:
+    let x = fromJS[Blob](ctx, val)
+    if x.isSome:
+      res.ok(BodyInit(t: BODY_INIT_BLOB, blob: x.get))
+      return
+  block searchParams:
+    let x = fromJS[URLSearchParams](ctx, val)
+    if x.isSome:
+      res.ok(BodyInit(t: BODY_INIT_URL_SEARCH_PARAMS, searchParams: x.get))
+      return
+  block str:
+    let x = fromJS[string](ctx, val)
+    if x.isSome:
+      res.ok(BodyInit(t: BODY_INIT_STRING, str: x.get))
+      return
+  res.err(newTypeError("Invalid body init type"))
+
 #TODO init as an actual dictionary
 func newRequest*[T: string|Request](ctx: JSContext, resource: T,
-    init = none(JSValue)): JSResult[Request] {.jsctor.} =
+    init = none(RequestInit)): JSResult[Request] {.jsctor.} =
   when T is string:
     let url = ?newURL(resource)
     if url.username != "" or url.password != "":
@@ -224,28 +284,31 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
   let destination = NO_DESTINATION
   #TODO origin, window
   if init.isSome:
+    if mode == RequestMode.NAVIGATE:
+      mode = RequestMode.SAME_ORIGIN
+    #TODO flags?
+    #TODO referrer
     let init = init.get
-    httpMethod = fromJS[HttpMethod](ctx,
-      JS_GetPropertyStr(ctx, init, "method")).get(HTTP_GET)
-    let bodyProp = JS_GetPropertyStr(ctx, init, "body")
-    if not JS_IsNull(bodyProp) and not JS_IsUndefined(bodyProp):
-      # ????
-      multipart = opt(fromJS[FormData](ctx, bodyProp))
-      if multipart.isNone:
-        body = opt(fromJS[string](ctx, bodyProp))
-    #TODO inputbody
-    if (multipart.isSome or body.isSome) and
-        httpMethod in {HTTP_GET, HTTP_HEAD}:
-      return err(newTypeError("HEAD or GET Request cannot have a body."))
-    let jheaders = JS_GetPropertyStr(ctx, init, "headers")
-    headers.fill(ctx, jheaders)
-    credentials = fromJS[CredentialsMode](ctx, JS_GetPropertyStr(ctx, init,
-      "credentials")).get(credentials)
-    mode = fromJS[RequestMode](ctx, JS_GetPropertyStr(ctx, init, "mode"))
-      .get(mode)
+    httpMethod = init.`method`
+    if init.body.isSome:
+      let ibody = init.body.get
+      case ibody.t
+      of BODY_INIT_FORM_DATA:
+        multipart = opt(ibody.formData)
+      of BODY_INIT_STRING:
+        body = opt(ibody.str)
+      else:
+        discard #TODO
+      if httpMethod in {HTTP_GET, HTTP_HEAD}:
+        return err(newTypeError("HEAD or GET Request cannot have a body."))
+    if init.headers.isSome:
+      headers.fill(init.headers.get)
+    if init.credentials.isSome:
+      credentials = init.credentials.get
+    if init.mode.isSome:
+      mode = init.mode.get
     #TODO find a standard compatible way to implement this
-    let proxyUrlProp = JS_GetPropertyStr(ctx, init, "proxyUrl")
-    proxyUrl = fromJS[URL](ctx, proxyUrlProp).get(nil)
+    proxyUrl = init.proxyUrl
   return ok(Request(
     url: url,
     httpmethod: httpmethod,
