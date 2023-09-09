@@ -254,7 +254,6 @@ proc fromJS2*(ctx: JSContext, val: JSValue, res: var JSResult[BodyInit]) =
       return
   res.err(newTypeError("Invalid body init type"))
 
-#TODO init as an actual dictionary
 func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     init = none(RequestInit)): JSResult[Request] {.jsctor.} =
   when T is string:
