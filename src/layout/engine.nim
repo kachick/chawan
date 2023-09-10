@@ -1294,30 +1294,50 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
   row.width = x
   return row
 
+proc preBuildTableRows(ctx: var TableContext, rows: seq[TableRowBoxBuilder],
+    table: BlockBox) =
+  for row in rows:
+    let rctx = ctx.preBuildTableRow(row, table)
+    ctx.rows.add(rctx)
+    ctx.maxwidth = max(rctx.width, ctx.maxwidth)
+
 proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
     table: BlockBox) =
-  var rows: seq[TableRowBoxBuilder]
+  # Use separate seqs for different row groups, so that e.g. this HTML:
+  # echo '<TABLE><TBODY><TR><TD>world<THEAD><TR><TD>hello'|cha -T text/html
+  # is rendered as:
+  # hello
+  # world
+  var thead: seq[TableRowBoxBuilder]
+  var tbody: seq[TableRowBoxBuilder]
+  var tfoot: seq[TableRowBoxBuilder]
   var caption: TableCaptionBoxBuilder
   for child in builder.children:
     assert child.computed{"display"} in ProperTableChild
     case child.computed{"display"}
     of DISPLAY_TABLE_ROW:
-      rows.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_ROW_GROUP,
-        DISPLAY_TABLE_FOOTER_GROUP:
+      tbody.add(TableRowBoxBuilder(child))
+    of DISPLAY_TABLE_HEADER_GROUP:
       for child in child.children:
         assert child.computed{"display"} == DISPLAY_TABLE_ROW
-        rows.add(TableRowBoxBuilder(child))
+        thead.add(TableRowBoxBuilder(child))
+    of DISPLAY_TABLE_ROW_GROUP:
+      for child in child.children:
+        assert child.computed{"display"} == DISPLAY_TABLE_ROW
+        tbody.add(TableRowBoxBuilder(child))
+    of DISPLAY_TABLE_FOOTER_GROUP:
+      for child in child.children:
+        assert child.computed{"display"} == DISPLAY_TABLE_ROW
+        tfoot.add(TableRowBoxBuilder(child))
     of DISPLAY_TABLE_CAPTION:
       if caption == nil:
         caption = TableCaptionBoxBuilder(child)
     else: discard
   if caption != nil:
     ctx.caption = caption
-  for row in rows:
-    let rctx = ctx.preBuildTableRow(row, table)
-    ctx.rows.add(rctx)
-    ctx.maxwidth = max(rctx.width, ctx.maxwidth)
+  ctx.preBuildTableRows(thead, table)
+  ctx.preBuildTableRows(tbody, table)
+  ctx.preBuildTableRows(tfoot, table)
 
 proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     weight: var float64): seq[int] =
