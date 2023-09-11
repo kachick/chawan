@@ -8,7 +8,7 @@ CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 
 .PHONY: debug
 debug: lib/libquickjs.a $(OBJDIR)/debug/
-	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/debug -d:debug $(FILES)
+	$(NIMC) $(FLAGS) --nimcache:$(OBJDIR)/debug --debugger:native -d:debug $(FILES)
 
 .PHONY: debug0
 debug0: lib/libquickjs.a $(OBJDIR)/debug0/
