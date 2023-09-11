@@ -1161,7 +1161,9 @@ proc growRowspan(pctx: var TableContext, ctx: var RowContext,
     let rowspanFiller = CellWrapper(
       colspan: cellw.colspan,
       rowspan: cellw.rowspan,
-      coli: n
+      coli: n,
+      real: cellw,
+      last: cellw.grown == 0
     )
     ctx.cells.add(nil)
     ctx.cells[i] = rowspanFiller
@@ -1173,7 +1175,7 @@ proc growRowspan(pctx: var TableContext, ctx: var RowContext,
     inc growi
 
 proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
-    parent: BlockBox): RowContext =
+    parent: BlockBox, rowi, numrows: int): RowContext =
   var ctx = RowContext(builder: box, cells: newSeq[CellWrapper](box.children.len))
   var n = 0
   var i = 0
@@ -1186,7 +1188,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
     assert child.computed{"display"} == DISPLAY_TABLE_CELL
     let cellbuilder = TableCellBoxBuilder(child)
     let colspan = cellbuilder.computed{"-cha-colspan"}
-    let rowspan = cellbuilder.computed{"-cha-rowspan"}
+    let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
     let computedWidth = cellbuilder.computed{"width"}
     let cw = if (not computedWidth.auto) and computedWidth.unit != UNIT_PERC:
       stretch(computedWidth.px(parent.viewport, 0))
@@ -1248,23 +1250,40 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
   ctx.ncols = n
   return ctx
 
+proc alignTableCell(cell: BlockBox, availableHeight, baseline: LayoutUnit) =
+  case cell.computed{"vertical-align"}.keyword
+  of VERTICAL_ALIGN_TOP:
+    cell.offset.y = 0
+  of VERTICAL_ALIGN_MIDDLE:
+    cell.offset.y = availableHeight div 2 - cell.height div 2
+  of VERTICAL_ALIGN_BOTTOM:
+    cell.offset.y = availableHeight - cell.height
+  else:
+    cell.offset.y = baseline - cell.firstBaseline
+
 proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     builder: TableRowBoxBuilder): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
   let row = newBlockBoxStretch(parent, builder)
   var baseline: LayoutUnit = 0
+  # real cellwrappers of fillers
+  var to_align: seq[CellWrapper]
+  # cells with rowspan > 1 that must store baseline
+  var to_baseline: seq[CellWrapper]
+  # cells that we must update row height of
+  var to_height: seq[CellWrapper]
   for cellw in ctx.cells:
-    var cell = cellw.box
     var w: LayoutUnit = 0
     for i in n ..< n + cellw.colspan:
       w += pctx.cols[i].width
     # Add inline spacing for merged columns.
     w += pctx.inlinespacing * (cellw.colspan - 1) * 2
     if cellw.reflow and cellw.builder != nil:
-      cell = parent.viewport.buildTableCell(cellw.builder, stretch(w),
+      cellw.box = parent.viewport.buildTableCell(cellw.builder, stretch(w),
         maxContent())
-      w = max(w, cell.width)
+      w = max(w, cellw.box.width)
+    let cell = cellw.box
     x += pctx.inlinespacing
     if cell != nil:
       cell.offset.x += x
@@ -1277,27 +1296,34 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     if cell != nil:
       if cell.computed{"vertical-align"}.keyword notin HasNoBaseline: # baseline
         baseline = max(cell.firstBaseline, baseline)
+        if cellw.rowspan > 1:
+          to_baseline.add(cellw)
       row.nested.add(cell)
-      row.height = max(row.height, cell.height)
-  for cell in row.nested:
-    cell.height = min(cell.height, row.height)
-  for cell in row.nested:
-    case cell.computed{"vertical-align"}.keyword
-    of VERTICAL_ALIGN_TOP:
-      cell.offset.y = 0
-    of VERTICAL_ALIGN_MIDDLE:
-      cell.offset.y = row.height div 2 - cell.height div 2
-    of VERTICAL_ALIGN_BOTTOM:
-      cell.offset.y = row.height - cell.height
+      if cellw.rowspan > 1:
+        to_height.add(cellw)
+      row.height = max(row.height, cell.height div cellw.rowspan)
     else:
-      cell.offset.y = baseline - cell.firstBaseline
+      let real = cellw.real
+      row.height = max(row.height, real.box.height div cellw.rowspan)
+      to_height.add(real)
+      if cellw.last:
+        to_align.add(real)
+  for cellw in to_height:
+    cellw.height += row.height
+  for cellw in to_baseline:
+    cellw.baseline = baseline
+  for cellw in to_align:
+    alignTableCell(cellw.box, cellw.height, cellw.baseline)
+  for cell in row.nested:
+    alignTableCell(cell, row.height, baseline)
   row.width = x
   return row
 
 proc preBuildTableRows(ctx: var TableContext, rows: seq[TableRowBoxBuilder],
     table: BlockBox) =
-  for row in rows:
-    let rctx = ctx.preBuildTableRow(row, table)
+  for i in 0 ..< rows.len:
+    let row = rows[i]
+    let rctx = ctx.preBuildTableRow(row, table, i, rows.len)
     ctx.rows.add(rctx)
     ctx.maxwidth = max(rctx.width, ctx.maxwidth)
 

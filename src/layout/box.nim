@@ -170,11 +170,16 @@ type
     rowspan*: int
     reflow*: bool
     grown*: int # number of remaining rows
+    real*: CellWrapper # for filler wrappers
+    last*: bool # is this the last filler?
+    height*: LayoutUnit
+    baseline*: LayoutUnit
 
   RowContext* = object
     cells*: seq[CellWrapper]
     reflow*: seq[bool]
     width*: LayoutUnit
+    height*: LayoutUnit
     builder*: TableRowBoxBuilder
     ncols*: int
 
