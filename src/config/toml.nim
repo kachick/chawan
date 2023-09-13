@@ -353,30 +353,51 @@ proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
     else: return state.err("invalid character before key: " & c)
   return state.err("unexpected end of file")
 
+type ParsedNumberType = enum
+  NUMBER_INTEGER, NUMBER_FLOAT, NUMBER_HEX, NUMBER_OCT
+
 proc consumeNumber(state: var TomlParser, c: char): TomlResult =
   var repr = $c
-  var isfloat = false
+  var numType = NUMBER_INTEGER
   if state.has():
     if state.peek(0) == '+' or state.peek(0) == '-':
       repr &= state.consume()
+    elif state.peek(0) == '0' and state.has(1):
+      let c = state.peek(1)
+      if c == 'x':
+        numType = NUMBER_HEX
+      elif c == 'o':
+        numType = NUMBER_OCT
 
   if not state.has() or not isDigit(state.peek(0)):
     return state.err("invalid number")
 
-  while state.has() and isDigit(state.peek(0)):
-    repr &= state.consume()
+  var was_num = true
+  while state.has():
+    if isDigit(state.peek(0)):
+      repr &= state.consume()
+      was_num = true
+    elif was_num and state.peek(0) == '_':
+      was_num = false
+      repr &= '_'
+    else:
+      break
 
   if state.has(1):
     if state.peek(0) == '.' and isDigit(state.peek(1)):
       repr &= state.consume()
       repr &= state.consume()
-      isfloat = true
+      if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
+        return state.err("invalid floating point number")
+      numType = NUMBER_FLOAT
       while state.has() and isDigit(state.peek(0)):
         repr &= state.consume()
 
   if state.has(1):
     if state.peek(0) == 'E' or state.peek(0) == 'e':
-      isfloat = true
+      if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
+        return state.err("invalid floating point number")
+      numType = NUMBER_FLOAT
       var j = 2
       if state.peek(1) == '-' or state.peek(1) == '+':
         inc j
@@ -388,12 +409,27 @@ proc consumeNumber(state: var TomlParser, c: char): TomlResult =
         while state.has() and isDigit(state.peek(0)):
           repr &= state.consume()
 
-  if isfloat:
+  case numType
+  of NUMBER_INTEGER:
+    let val = parseInt64(repr)
+    if not val.isSome:
+      return state.err("invalid integer")
+    return ok(TomlValue(vt: VALUE_INTEGER, i: val.get))
+  of NUMBER_HEX:
+    try:
+      let val = parseHexInt(repr)
+      return ok(TomlValue(vt: VALUE_INTEGER, i: val))
+    except ValueError:
+      return state.err("invalid hexadecimal number")
+  of NUMBER_OCT:
+    try:
+      let val = parseOctInt(repr)
+      return ok(TomlValue(vt: VALUE_INTEGER, i:val))
+    except ValueError:
+      return state.err("invalid octal number")
+  of NUMBER_FLOAT:
     let val = parseFloat64(repr)
     return ok(TomlValue(vt: VALUE_FLOAT, f: val))
-
-  let val = parseInt64(repr)
-  return ok(TomlValue(vt: VALUE_INTEGER, i: val.get))
 
 proc consumeValue(state: var TomlParser): TomlResult
 
