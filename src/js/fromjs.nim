@@ -9,7 +9,7 @@ import js/dict
 import js/error
 import js/opaque
 import js/tojs
-import utils/opt
+import types/opt
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T]
 

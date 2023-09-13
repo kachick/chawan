@@ -1,11 +1,11 @@
 import streams
 
 import bindings/quickjs
-import io/headers
 import io/promise
-import io/request
 import js/error
 import js/javascript
+import loader/headers
+import loader/request
 import types/url
 
 import chakasu/charset

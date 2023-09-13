@@ -8,12 +8,12 @@ import termios
 import unicode
 
 import bindings/termcap
-import buffer/cell
 import config/config
+import display/window
 import io/runestream
-import io/window
+import types/cell
 import types/color
-import utils/opt
+import types/opt
 import utils/twtstr
 
 import chakasu/charset

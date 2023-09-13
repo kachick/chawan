@@ -5,13 +5,13 @@ import sets
 import streams
 import tables
 
-import io/request
 import js/regex
+import loader/request
 import types/blob
 import types/buffersource
 import types/formdata
 import types/url
-import utils/opt
+import types/opt
 
 proc swrite*(stream: Stream, n: SomeNumber)
 proc sread*(stream: Stream, n: var SomeNumber)

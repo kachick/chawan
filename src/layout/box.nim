@@ -2,7 +2,7 @@ import options
 
 import css/stylednode
 import css/values
-import io/window
+import display/window
 import layout/layoutunit
 import types/color
 

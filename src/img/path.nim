@@ -5,7 +5,7 @@ import math
 import types/line
 import types/vector
 import js/domexception
-import utils/opt
+import types/opt
 
 type
   Path* = ref object

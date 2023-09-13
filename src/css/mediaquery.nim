@@ -4,7 +4,7 @@ import unicode
 
 import css/cssparser
 import css/values
-import utils/opt
+import types/opt
 import utils/twtstr
 
 type

@@ -47,7 +47,7 @@ import js/fromjs
 import js/opaque
 import js/tojs
 import js/typeptr
-import utils/opt
+import types/opt
 
 import bindings/quickjs
 

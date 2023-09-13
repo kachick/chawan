@@ -13,7 +13,7 @@ import css/values
 import html/dom
 import layout/layoutunit
 import types/color
-import utils/opt
+import types/opt
 
 import chame/tags
 

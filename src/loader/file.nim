@@ -3,9 +3,9 @@ import os
 import streams
 import tables
 
-import io/connecterror
-import io/headers
-import io/loaderhandle
+import loader/connecterror
+import loader/headers
+import loader/loaderhandle
 import types/url
 
 proc loadDir(handle: LoaderHandle, url: URL, path: string) =

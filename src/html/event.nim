@@ -7,7 +7,7 @@ import js/error
 import js/fromjs
 import js/javascript
 import js/tojs
-import utils/opt
+import types/opt
 
 type
   EventPhase = enum

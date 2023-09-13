@@ -3,21 +3,21 @@ import options
 import os
 import streams
 
-import buffer/cell
 import config/mailcap
 import config/mimetypes
 import config/toml
-import io/headers
 import io/urlfilter
 import js/error
 import js/javascript
 import js/regex
+import loader/headers
+import types/cell
 import types/color
 import types/cookie
 import types/referer
 import types/url
 import utils/mimeguess
-import utils/opt
+import types/opt
 import utils/twtstr
 
 import chakasu/charset

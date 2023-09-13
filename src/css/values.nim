@@ -6,11 +6,11 @@ import unicode
 
 import css/cssparser
 import css/selectorparser
+import display/window
 import img/bitmap
-import io/window
 import layout/layoutunit
 import types/color
-import utils/opt
+import types/opt
 import utils/twtstr
 
 export selectorparser.PseudoElem

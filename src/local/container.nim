@@ -6,18 +6,18 @@ import unicode
 when defined(posix):
   import posix
 
-import buffer/buffer
-import buffer/cell
 import config/config
+import display/window
 import io/promise
-import io/request
-import io/window
-import ips/forkserver
-import ips/serialize
+import io/serialize
 import js/javascript
 import js/regex
+import loader/request
 import local/select
+import server/buffer
+import server/forkserver
 import types/buffersource
+import types/cell
 import types/color
 import types/cookie
 import types/url

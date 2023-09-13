@@ -6,7 +6,7 @@ import js/error
 import js/javascript
 import js/regex
 import types/url
-import utils/opt
+import types/opt
 import utils/twtstr
 
 type

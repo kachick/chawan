@@ -2,7 +2,7 @@
 
 import tables
 
-import utils/opt
+import types/opt
 
 type
   RadixPair[T] = tuple[k: string, v: RadixNode[T]]

@@ -7,7 +7,7 @@ when defined(posix):
   import posix
 
 import io/posixstream
-import ips/serversocket
+import io/serversocket
 
 type SocketStream* = ref object of Stream
   source*: Socket

@@ -4,7 +4,7 @@ import times
 import strutils
 import unicode
 
-import utils/opt
+import types/opt
 import utils/twtstr
 
 type

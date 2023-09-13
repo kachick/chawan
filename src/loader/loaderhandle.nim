@@ -2,9 +2,9 @@ import net
 import streams
 
 import io/posixstream
-import io/headers
-import ips/serialize
-import ips/socketstream
+import io/serialize
+import io/socketstream
+import loader/headers
 
 type LoaderHandle* = ref object
   ostream: Stream

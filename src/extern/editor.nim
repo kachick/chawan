@@ -3,7 +3,7 @@ import os
 import config/config
 import display/term
 import extern/runproc
-import io/tempfile
+import extern/tempfile
 
 func formatEditorName(editor, file: string, line: int): string =
   result = newStringOfCap(editor.len + file.len)

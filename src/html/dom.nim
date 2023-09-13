@@ -10,14 +10,12 @@ import tables
 import css/cssparser
 import css/sheet
 import css/values
+import display/window
 import html/event
 import img/bitmap
 import img/painter
 import img/path
 import img/png
-import io/loader
-import io/request
-import io/window
 import js/domexception
 import js/error
 import js/fromjs
@@ -25,6 +23,8 @@ import js/javascript
 import js/opaque
 import js/timeout
 import js/tojs
+import loader/loader
+import loader/request
 import types/blob
 import types/color
 import types/matrix

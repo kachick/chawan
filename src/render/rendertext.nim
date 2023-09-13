@@ -1,7 +1,7 @@
 import streams
 import unicode
 
-import buffer/cell
+import types/cell
 import utils/twtstr
 
 import chakasu/charset

@@ -1,6 +1,6 @@
 import version
 
-import ips/forkserver
+import server/forkserver
 let forks = newForkServer()
 
 import options
@@ -13,7 +13,7 @@ when defined(profile):
 
 import config/config
 import local/client
-import utils/opt
+import types/opt
 import utils/twtstr
 
 import chakasu/charset

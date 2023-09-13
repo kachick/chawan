@@ -3,7 +3,7 @@ import options
 when defined(posix):
   import posix
 
-import io/request
+import loader/request
 import types/url
 
 import chakasu/charset

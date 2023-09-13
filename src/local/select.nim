@@ -1,8 +1,8 @@
 import unicode
 
-import buffer/buffer
-import buffer/cell
 import js/regex
+import server/buffer
+import types/cell
 import utils/twtstr
 
 type

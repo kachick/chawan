@@ -8,7 +8,7 @@ import js/dict
 import js/error
 import js/opaque
 import js/typeptr
-import utils/opt
+import types/opt
 
 # Convert Nim types to the corresponding JavaScript type.
 # This does not work with var objects.

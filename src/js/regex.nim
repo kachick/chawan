@@ -3,7 +3,7 @@ import unicode
 
 import bindings/libregexp
 import bindings/quickjs
-import utils/opt
+import types/opt
 import utils/twtstr
 
 export

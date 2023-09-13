@@ -2,7 +2,7 @@ import tables
 
 import bindings/quickjs
 import js/error
-import utils/opt
+import types/opt
 
 type
   JSSymbolRefs* = enum

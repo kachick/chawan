@@ -5,7 +5,7 @@ import streams
 import strutils
 
 import types/url
-import utils/opt
+import types/opt
 import utils/twtstr
 
 import chakasu/charset

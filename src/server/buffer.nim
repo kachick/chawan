@@ -10,7 +10,6 @@ import tables
 import unicode
 
 import bindings/quickjs
-import buffer/cell
 import config/config
 import css/cascade
 import css/cssparser
@@ -18,35 +17,36 @@ import css/mediaquery
 import css/sheet
 import css/stylednode
 import css/values
+import display/window
 import html/chadombuilder
 import html/dom
 import html/env
 import html/event
 import img/png
-import io/connecterror
-import io/loader
 import io/posixstream
 import io/promise
+import io/serialize
+import io/serversocket
+import io/socketstream
 import io/teestream
-import io/window
-import ips/serialize
-import ips/serversocket
-import ips/socketstream
 import js/error
 import js/fromjs
 import js/javascript
 import js/regex
 import js/timeout
 import layout/box
+import loader/connecterror
+import loader/loader
 import render/renderdocument
 import render/rendertext
 import types/buffersource
+import types/cell
 import types/color
 import types/cookie
 import types/formdata
 import types/referer
 import types/url
-import utils/opt
+import types/opt
 import utils/twtstr
 import xhr/formdata as formdata_impl
 

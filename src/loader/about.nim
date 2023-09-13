@@ -1,9 +1,9 @@
 import tables
 
-import io/connecterror
-import io/headers
-import io/loaderhandle
-import io/request
+import loader/connecterror
+import loader/headers
+import loader/loaderhandle
+import loader/request
 import types/url
 
 const chawan = staticRead"res/chawan.html"

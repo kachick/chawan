@@ -3,7 +3,7 @@ import streams
 import unicode
 
 import js/domexception
-import utils/opt
+import types/opt
 import utils/twtstr
 
 type

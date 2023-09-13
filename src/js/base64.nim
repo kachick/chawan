@@ -1,7 +1,7 @@
 import std/base64
 
 import js/domexception
-import utils/opt
+import types/opt
 
 # atob and btoa convert Latin-1 to base64 and vice versa. (And throw on
 # anything above latin-1.)

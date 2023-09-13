@@ -4,11 +4,11 @@ import strutils
 import unicode
 
 import bindings/quickjs
-import buffer/cell
 import display/term
 import js/javascript
+import types/cell
 import types/color
-import utils/opt
+import types/opt
 import utils/twtstr
 
 import chakasu/charset

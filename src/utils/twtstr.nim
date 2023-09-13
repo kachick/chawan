@@ -11,7 +11,7 @@ import data/charwidth
 import data/idna
 import js/error
 import utils/map
-import utils/opt
+import types/opt
 import lib/punycode
 
 when defined(posix):

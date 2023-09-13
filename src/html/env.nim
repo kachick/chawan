@@ -1,21 +1,21 @@
 import selectors
 import streams
 
+import display/window
 import html/chadombuilder
 import html/dom
 import html/event
-import io/headers
-import io/loader
 import io/promise
-import io/request
-import io/response
-import io/window
 import js/base64
 import js/domexception
 import js/error
 import js/intl
 import js/javascript
 import js/timeout
+import loader/headers
+import loader/loader
+import loader/request
+import loader/response
 import types/blob
 import types/url
 import xhr/formdata

@@ -2,13 +2,13 @@ import options
 import strutils
 
 import bindings/curl
-import io/headers
-import io/loaderhandle
-import io/request
+import loader/headers
+import loader/loaderhandle
+import loader/request
 import types/blob
 import types/formdata
 import types/url
-import utils/opt
+import types/opt
 import utils/twtstr
 
 type

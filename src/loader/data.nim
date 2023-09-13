@@ -2,10 +2,10 @@ import base64
 import strutils
 import tables
 
-import io/connecterror
-import io/headers
-import io/loaderhandle
-import io/request
+import loader/connecterror
+import loader/headers
+import loader/loaderhandle
+import loader/request
 import types/url
 
 proc loadData*(handle: LoaderHandle, request: Request) =

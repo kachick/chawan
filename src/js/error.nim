@@ -1,4 +1,4 @@
-import utils/opt
+import types/opt
 
 type
   JSError* = ref object of RootObj

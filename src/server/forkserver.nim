@@ -5,15 +5,15 @@ import tables
 when defined(posix):
   import posix
 
-import buffer/buffer
 import config/config
-import io/headers
-import io/loader
+import display/window
 import io/posixstream
+import io/serialize
+import io/serversocket
 import io/urlfilter
-import io/window
-import ips/serialize
-import ips/serversocket
+import loader/headers
+import loader/loader
+import server/buffer
 import types/buffersource
 import types/cookie
 import types/url

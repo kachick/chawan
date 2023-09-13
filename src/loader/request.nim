@@ -4,11 +4,11 @@ import strutils
 import tables
 
 import bindings/quickjs
-import io/headers
 import js/dict
 import js/error
 import js/fromjs
 import js/javascript
+import loader/headers
 import types/blob
 import types/formdata
 import types/referer

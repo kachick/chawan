@@ -1,16 +1,16 @@
 import strutils
 import unicode
 
-import buffer/cell
 import css/cascade
 import css/sheet
 import css/stylednode
 import css/values
+import display/window
 import html/dom
-import io/window
 import layout/box
 import layout/engine
 import layout/layoutunit
+import types/cell
 import types/color
 import utils/twtstr
 

@@ -1,6 +1,6 @@
 import tables
 
-import utils/opt
+import types/opt
 
 type
   PromiseState* = enum
