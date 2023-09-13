@@ -370,7 +370,7 @@ proc consumeNumber(state: var TomlParser, c: char): TomlResult =
       return state.err("invalid number")
     repr &= c
 
-  var was_num = true
+  var was_num = repr.len > 0 and repr[0] in AsciiDigit
   while state.has():
     if isDigit(state.peek(0)):
       repr &= state.consume()
