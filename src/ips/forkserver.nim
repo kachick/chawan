@@ -120,6 +120,9 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
       proxy: config.proxy,
     )
   )
+  var pipefd: array[2, cint]
+  if pipe(pipefd) == -1:
+    raise newException(Defect, "Failed to open pipe.")
   let pid = fork()
   if pid == -1:
     raise newException(Defect, "Failed to fork process.")
@@ -129,11 +132,16 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
+    discard close(pipefd[0]) # close read
+    let ssock = initServerSocket(buffered = false)
+    let ps = newPosixStream(pipefd[1])
+    ps.write(char(0))
+    ps.close()
     discard close(stdin.getFileHandle())
     discard close(stdout.getFileHandle())
     let loader = FileLoader(process: loaderPid)
     try:
-      launchBuffer(config, source, attrs, loader, mainproc)
+      launchBuffer(config, source, attrs, loader, ssock)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -142,6 +150,10 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
       stderr.write(msg)
       quit(1)
     doAssert false
+  discard close(pipefd[1]) # close write
+  let ps = newPosixStream(pipefd[0])
+  assert ps.readChar() == char(0)
+  ps.close()
   ctx.children.add((pid, loaderPid))
   return pid
 

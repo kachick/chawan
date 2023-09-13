@@ -1447,12 +1447,9 @@ proc runBuffer(buffer: Buffer, rfd: int) =
         assert buffer.window.timeouts.runTimeoutFd(event.fd)
         buffer.window.runJSJobs()
     buffer.loader.unregistered.setLen(0)
-  buffer.pstream.close()
-  buffer.loader.quit()
-  quit(0)
 
 proc launchBuffer*(config: BufferConfig, source: BufferSource,
-    attrs: WindowAttributes, loader: FileLoader, mainproc: Pid) =
+    attrs: WindowAttributes, loader: FileLoader, ssock: ServerSocket) =
   let buffer = Buffer(
     alive: true,
     userstyle: parseStylesheet(config.userstyle),
@@ -1473,10 +1470,12 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, buffer.selector,
       buffer.attrs, proc(url: URL) = buffer.navigate(url), some(buffer.loader))
-  let socks = connectSocketStream(mainproc, false)
+  let socks = ssock.acceptSocketStream()
   buffer.estream = newFileStream(stderr)
-  socks.swrite(getpid())
   buffer.pstream = socks
   let rfd = int(socks.source.getFd())
   buffer.selector.registerHandle(rfd, {Read}, 0)
   buffer.runBuffer(rfd)
+  buffer.pstream.close()
+  buffer.loader.quit()
+  quit(0)
