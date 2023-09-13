@@ -354,19 +354,22 @@ type ParsedNumberType = enum
   NUMBER_INTEGER, NUMBER_FLOAT, NUMBER_HEX, NUMBER_OCT
 
 proc consumeNumber(state: var TomlParser, c: char): TomlResult =
-  var repr = $c
+  var repr = ""
   var numType = NUMBER_INTEGER
-  if state.has():
-    if state.peek(0) == '+' or state.peek(0) == '-':
-      repr &= state.consume()
-    elif state.peek(0) == '0' and state.has(1):
-      let c = state.peek(1)
-      if c == 'x':
-        numType = NUMBER_HEX
-      elif c == 'o':
-        numType = NUMBER_OCT
+  if c == '0' and state.has():
+    let c = state.consume()
+    if c == 'x':
+      numType = NUMBER_HEX
+    elif c == 'o':
+      numType == NUMBER_OCT
+    else:
+      state.reconsume()
+      repr &= c
+  else:
+    repr &= c
 
-  if not state.has() or not isDigit(state.peek(0)):
+  if repr.len > 0 and repr[0] in {'+', '-'} and
+      (not state.has() or not isDigit(state.peek(0))):
     return state.err("invalid number")
 
   var was_num = true
