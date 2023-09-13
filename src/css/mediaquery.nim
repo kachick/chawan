@@ -1,5 +1,6 @@
 import strutils
 import tables
+import unicode
 
 import css/cssparser
 import css/values
@@ -197,7 +198,7 @@ template expect_comparison(comparison: var MediaQueryComparison) =
     of '<':
       if parser.has():
         let tok = skip_consume()
-        if tok == CSS_DELIM_TOKEN and tok.rvalue == '=':
+        if tok == CSS_DELIM_TOKEN and tok.rvalue == Rune('='):
           comparison = COMPARISON_LE
           break parse
         parser.reconsume()
@@ -205,7 +206,7 @@ template expect_comparison(comparison: var MediaQueryComparison) =
     of '>':
       if parser.has():
         let tok = skip_consume()
-        if tok == CSS_DELIM_TOKEN and tok.rvalue == '=':
+        if tok == CSS_DELIM_TOKEN and tok.rvalue == Rune('='):
           comparison = COMPARISON_GE
           break parse
         parser.reconsume()

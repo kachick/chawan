@@ -117,9 +117,6 @@ func normalizeLocale*(s: string): string =
 func isAscii*(r: Rune): bool =
   return cast[uint32](r) < 128
 
-func `==`*(r: Rune, c: char): bool {.inline.} =
-  return Rune(c) == r
-
 func startsWithNoCase*(str, prefix: string): bool =
   if str.len < prefix.len: return false
   # prefix.len is always lower
@@ -159,9 +156,12 @@ func isAscii*(s: string): bool =
 
 const HexCharsUpper = "0123456789ABCDEF"
 const HexCharsLower = "0123456789abcdef"
+func pushHex*(buf: var string, u: uint8) =
+  buf &= HexCharsUpper[u shr 4]
+  buf &= HexCharsUpper[u and 0xF]
+
 func pushHex*(buf: var string, c: char) =
-  buf &= HexCharsUpper[(uint8(c) shr 4)]
-  buf &= HexCharsUpper[(uint8(c) and 0xF)]
+  buf.pushHex(cast[uint8](c))
 
 func toHexLower*(u: uint16): string =
   var x = u
@@ -179,14 +179,8 @@ func toHexLower*(u: uint16): string =
     x = x shr 4
   return s
 
-func pushHex*(buf: var string, i: uint8) =
-  buf.pushHex(cast[char](i))
-
 func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
-
-func isAlphaAscii*(r: Rune): bool =
-  return int(r) < 256 and isAlphaAscii(char(r))
 
 func isDigitAscii*(r: Rune): bool =
   return int(r) < 256 and isDigit(char(r))
