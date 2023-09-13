@@ -13,6 +13,7 @@ import css/values
 import html/dom
 import layout/layoutunit
 import types/color
+import utils/opt
 
 import chame/tags
 
@@ -124,8 +125,9 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
   template map_bgcolor =
     let s = element.attr("bgcolor")
     if s != "":
-      let c = parseLegacyColor0(s)
-      set_cv "background-color", c
+      let c = parseLegacyColor(s)
+      if c.isSome:
+        set_cv "background-color", c.get
   template map_size =
     let s = element.attrul("size")
     if s.isSome:
@@ -153,13 +155,15 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
   template map_text =
     let s = element.attr("text")
     if s != "":
-      let c = parseLegacyColor0(s)
-      set_cv "color", c
+      let c = parseLegacyColor(s)
+      if c.isSome:
+        set_cv "color", c.get
   template map_color =
     let s = element.attr("color")
     if s != "":
-      let c = parseLegacyColor0(s)
-      set_cv "color", c
+      let c = parseLegacyColor(s)
+      if c.isSome:
+        set_cv "color", c.get
   template map_colspan =
     let colspan = element.attrulgz("colspan")
     if colspan.isSome:

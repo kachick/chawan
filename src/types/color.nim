@@ -460,10 +460,7 @@ func parseRGBAColor*(s: string): Option[RGBAColor] =
     return parseHexColor(s[2..^1])
   return parseHexColor(s)
 
-func parseLegacyColor0*(s: string): RGBColor =
-  if s == "": return
-  let s = s.strip(chars = AsciiWhitespace)
-  if s == "transparent": return
+func parseLegacyColor0(s: string): RGBColor =
   if s in ColorsRGB:
     return ColorsRGB[s]
   block hex:
@@ -502,6 +499,9 @@ func parseLegacyColor0*(s: string): RGBColor =
 func parseLegacyColor*(s: string): JSResult[RGBColor] =
   if s == "":
     return err(newTypeError("Color value must not be the empty string"))
+  let s = s.strip(chars = AsciiWhitespace).toLowerAscii()
+  if s == "transparent":
+    return err(newTypeError("Color must not be transparent"))
   return ok(parseLegacyColor0(s))
 
 proc toJS*(ctx: JSContext, rgb: RGBColor): JSValue =
