@@ -132,7 +132,8 @@ config.search.wrap = !config.search.wrap;
 pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
 '''
 M-y = '''
-pager.extern('printf \'%s\\n\' "$CHA_URL" | xsel -bi', "no-suspend-setenv") ?
+pager.extern('printf \'%s\\n\' "$CHA_URL" | xsel -bi',
+		{suspend: false, setenv: true}) ?
 	pager.alert("Copied URL to clipboard.") :
 	pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
 '''
