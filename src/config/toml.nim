@@ -25,7 +25,6 @@ type
     filename: string
     at: int
     line: int
-    stream: Stream
     buf: string
     root: TomlTable
     node: TomlNode
@@ -100,8 +99,6 @@ proc reconsume(state: var TomlParser) =
   dec state.at
 
 proc has(state: var TomlParser, i: int = 0): bool =
-  if state.at + i >= state.buf.len and not state.stream.atEnd():
-    state.buf &= state.stream.readLine() & '\n'
   return state.at + i < state.buf.len
 
 proc consumeEscape(state: var TomlParser, c: char): Result[Rune, TomlError] =
@@ -536,7 +533,7 @@ proc consumeValue(state: var TomlParser): TomlResult =
 
 proc parseToml*(inputStream: Stream, filename = "<input>"): TomlResult =
   var state: TomlParser
-  state.stream = inputStream
+  state.buf = inputStream.readAll()
   state.line = 1
   state.root = TomlTable()
   state.filename = filename
