@@ -1033,6 +1033,11 @@ proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
     # We support HTML natively, so it would make little sense to execute
     # mailcap filters for it.
     return (nil, true)
+  elif contentType == "text/plain":
+    # This could potentially be useful. Unfortunately, many mailcaps include
+    # a text/plain entry with less by default, so it's probably better to
+    # ignore this.
+    return (nil, true)
   #TODO callback for outpath or something
   let url = container.location
   let cs = container.source.charset
