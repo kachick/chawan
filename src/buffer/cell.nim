@@ -252,7 +252,6 @@ proc parseSGR(parser: AnsiCodeParser, format: var Format) =
     while i < parser.params.len:
       if not parser.parseSGRAspect(format, i):
         break
-      inc i
 
 proc parseControlFunction(parser: var AnsiCodeParser, format: var Format,
     f: char) =
