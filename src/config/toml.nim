@@ -361,7 +361,7 @@ proc consumeNumber(state: var TomlParser, c: char): TomlResult =
     if c == 'x':
       numType = NUMBER_HEX
     elif c == 'o':
-      numType == NUMBER_OCT
+      numType = NUMBER_OCT
     else:
       state.reconsume()
       repr &= c
