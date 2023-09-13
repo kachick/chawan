@@ -15,10 +15,8 @@ when defined(posix):
 import std/exitprocs
 
 import bindings/quickjs
-import buffer/container
 import config/config
 import css/sheet
-import display/pager
 import display/term
 import html/chadombuilder
 import html/dom
@@ -41,6 +39,8 @@ import js/javascript
 import js/module
 import js/timeout
 import js/tojs
+import local/container
+import local/pager
 import types/blob
 import types/cookie
 import types/url

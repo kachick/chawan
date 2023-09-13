@@ -11,8 +11,6 @@ when defined(posix):
   import posix
 
 import buffer/cell
-import buffer/container
-import buffer/select
 import config/config
 import config/mailcap
 import config/mimetypes
@@ -32,6 +30,8 @@ import js/dict
 import js/javascript
 import js/regex
 import js/tojs
+import local/container
+import local/select
 import types/buffersource
 import types/color
 import types/cookie

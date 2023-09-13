@@ -8,7 +8,6 @@ when defined(posix):
 
 import buffer/buffer
 import buffer/cell
-import buffer/select
 import config/config
 import io/promise
 import io/request
@@ -17,6 +16,7 @@ import ips/forkserver
 import ips/serialize
 import js/javascript
 import js/regex
+import local/select
 import types/buffersource
 import types/color
 import types/cookie

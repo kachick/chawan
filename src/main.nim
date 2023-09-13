@@ -12,7 +12,7 @@ when defined(profile):
   import nimprof
 
 import config/config
-import display/client
+import local/client
 import utils/opt
 import utils/twtstr
 
