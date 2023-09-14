@@ -883,11 +883,12 @@ iterator branch*(node: Node): Node {.inline.} =
 # Returns the node's descendants
 iterator descendants*(node: Node): Node {.inline.} =
   var stack: seq[Node]
-  stack.add(node)
+  for i in countdown(node.childList.high, 0):
+    stack.add(node.childList[i])
   while stack.len > 0:
     let node = stack.pop()
+    yield node
     for i in countdown(node.childList.high, 0):
-      yield node.childList[i]
       stack.add(node.childList[i])
 
 iterator elements*(node: Node): Element {.inline.} =
