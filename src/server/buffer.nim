@@ -607,9 +607,8 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
           let ss = newStringStream(s.get)
           #TODO non-utf-8 css
           let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
-          let source = newEncoderStream(ds, cs = CHARSET_UTF_8).readAll()
-          let ss2 = newStringStream(source)
-          elem.sheet = parseStylesheet(ss2))
+          let source = newEncoderStream(ds, cs = CHARSET_UTF_8)
+          elem.sheet = parseStylesheet(source))
 
 proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let document = buffer.document
