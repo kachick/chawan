@@ -36,6 +36,7 @@ import utils/twtstr
 
 import chakasu/charset
 import chakasu/decoderstream
+import chakasu/encoderstream
 
 import chame/tags
 
@@ -2634,7 +2635,7 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
       else:
         cs
       let decoder = newDecoderStream(response.body, cs = cs)
-      let source = decoder.readAll()
+      let source = newEncoderStream(decoder).readAll()
       let script = createClassicScript(source, url, options, false)
       element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
 

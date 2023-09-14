@@ -120,7 +120,14 @@ proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
     discard parent.insertBefore(text, before)
 
 proc remove(builder: DOMBuilder[Node], child: Node) =
-  child.remove(true)
+  child.remove(suppressObservers = true)
+
+proc moveChildren(builder: DOMBuilder[Node], fromNode, toNode: Node) =
+  var tomove = fromNode.childList
+  for node in tomove:
+    node.remove(suppressObservers = true)
+  for child in tomove:
+    toNode.insert(child, nil)
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
     attrs: Table[string, string]) =
@@ -183,6 +190,7 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
     insertBefore: insertBefore,
     insertText: insertText,
     remove: remove,
+    moveChildren: moveChildren,
     addAttrsIfMissing: addAttrsIfMissing,
     setScriptAlreadyStarted: setScriptAlreadyStarted,
     associateWithForm: associateWithForm,

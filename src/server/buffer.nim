@@ -52,6 +52,7 @@ import xhr/formdata as formdata_impl
 
 import chakasu/charset
 import chakasu/decoderstream
+import chakasu/encoderstream
 
 import chame/tags
 
@@ -605,7 +606,8 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
           # utf8 anyways
           let ss = newStringStream(s.get)
           #TODO non-utf-8 css
-          let source = newDecoderStream(ss, cs = CHARSET_UTF_8).readAll()
+          let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
+          let source = newEncoderStream(ds, cs = CHARSET_UTF_8).readAll()
           let ss2 = newStringStream(source)
           elem.sheet = parseStylesheet(ss2))
 
