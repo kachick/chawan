@@ -535,8 +535,8 @@ func percentEncode*(c: char, set: set[char], spaceAsPlus = false): string {.inli
 func percentEncode*(s: string, set: set[char], spaceAsPlus = false): string =
   result.percentEncode(s, set, spaceAsPlus)
 
-func percentDecode*(input: string): string =
-  var i = 0
+func percentDecode*(input: string, si = 0): string =
+  var i = si
   while i < input.len:
     let c = input[i]
     if c != '%' or i + 2 >= input.len:

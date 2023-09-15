@@ -7,6 +7,7 @@ import loader/headers
 import loader/loaderhandle
 import loader/request
 import types/url
+import utils/twtstr
 
 proc loadData*(handle: LoaderHandle, request: Request) =
   template t(body: untyped) =
@@ -20,17 +21,17 @@ proc loadData*(handle: LoaderHandle, request: Request) =
       break
     ct &= str[i]
   let sd = si + ct.len + 1 # data start
+  let s = percentDecode(str, sd)
   if ct.endsWith(";base64"):
     try:
-      let d = base64.decode(str[sd .. ^1]) # decode from ct end + 1
+      let d = base64.decode(s) # decode from ct end + 1
       t handle.sendResult(0)
       t handle.sendStatus(200)
       ct.setLen(ct.len - ";base64".len) # remove base64 indicator
       t handle.sendHeaders(newHeaders({
         "Content-Type": ct
       }.toTable()))
-      if d.len > 0:
-        t handle.sendData(d)
+      t handle.sendData(d)
     except ValueError:
       discard handle.sendResult(ERROR_INVALID_DATA_URL)
   else:
@@ -39,5 +40,4 @@ proc loadData*(handle: LoaderHandle, request: Request) =
     t handle.sendHeaders(newHeaders({
       "Content-Type": ct
     }.toTable()))
-    if ct.len + 1 < str.len:
-      t handle.sendData(addr str[sd], str.len - sd)
+    t handle.sendData(s)
