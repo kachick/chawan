@@ -96,7 +96,8 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   var readf: File
   if not open(readf, FileHandle(readfd), fmRead):
     raise newException(Defect, "Failed to open output handle.")
-  assert readf.readChar() == char(0u8)
+  let c = readf.readChar()
+  assert c == char(0u8)
   close(readf)
   discard close(pipefd[0])
   return pid
@@ -152,7 +153,8 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     doAssert false
   discard close(pipefd[1]) # close write
   let ps = newPosixStream(pipefd[0])
-  assert ps.readChar() == char(0)
+  let c = ps.readChar()
+  assert c == char(0)
   ps.close()
   ctx.children.add((pid, loaderPid))
   return pid

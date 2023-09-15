@@ -633,7 +633,8 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners, transitiona
   var cr: CharRange
   {.cast(noSideEffect).}:
     cr_init(addr cr, nil, passRealloc)
-    assert unicode_general_category(addr cr, "Mark") == 0
+    let r = unicode_general_category(addr cr, "Mark")
+    assert r == 0
   var labels: seq[string]
   for label in ($mapped).split('.'):
     if label.startsWith("xn--"):

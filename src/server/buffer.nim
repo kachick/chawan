@@ -1445,7 +1445,8 @@ proc runBuffer(buffer: Buffer, rfd: int) =
         break
       if selectors.Event.Timer in event.events:
         assert buffer.window != nil
-        assert buffer.window.timeouts.runTimeoutFd(event.fd)
+        let r = buffer.window.timeouts.runTimeoutFd(event.fd)
+        assert r
         buffer.window.runJSJobs()
     buffer.loader.unregistered.setLen(0)
 

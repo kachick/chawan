@@ -407,7 +407,8 @@ proc inputLoop(client: Client) =
         client.attrs = getWindowAttributes(client.console.tty)
         client.pager.windowChange(client.attrs)
       if selectors.Event.Timer in event.events:
-        assert client.timeouts.runTimeoutFd(event.fd)
+        let r = client.timeouts.runTimeoutFd(event.fd)
+        assert r
         client.runJSJobs()
         client.console.container.requestLines().then(proc() =
           client.console.container.cursorLastLine())
@@ -439,7 +440,8 @@ proc headlessLoop(client: Client) =
       if Error in event.events:
         client.handleError(event.fd)
       if selectors.Event.Timer in event.events:
-        assert client.timeouts.runTimeoutFd(event.fd)
+        let r = client.timeouts.runTimeoutFd(event.fd)
+        assert r
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()

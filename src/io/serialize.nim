@@ -320,7 +320,8 @@ proc sread*(stream: Stream, blob: var Blob) =
     blob.buffer = alloc(blob.size)
     blob.deallocFun = dealloc
     if blob.size > 0:
-      assert stream.readData(blob.buffer, int(blob.size)) == int(blob.size)
+      let n = stream.readData(blob.buffer, int(blob.size))
+      assert n == int(blob.size)
 
 func slen*(blob: Blob): int =
   result += slen(blob.isfile)
