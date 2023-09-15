@@ -74,7 +74,7 @@ type
   JSSetterFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue): JSValue {.cdecl.}
   JSGetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, magic: cint): JSValue {.cdecl.}
   JSSetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue, magic: cint): JSValue {.cdecl.}
-  JSInterruptHandler* = proc (rt: JSRuntime, opaque: pointer): int {.cdecl.}
+  JSInterruptHandler* = proc (rt: JSRuntime, opaque: pointer): cint {.cdecl.}
   JSClassID* = uint32
   JSAtom* = uint32
   JSClassFinalizer* = proc (rt: JSRuntime, val: JSValue) {.cdecl.}

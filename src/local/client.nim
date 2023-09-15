@@ -110,7 +110,7 @@ proc fetch[T: Request|string](client: Client, req: T,
   let req = ?newRequest(client.jsctx, req, init)
   return ok(client.loader.fetch(req))
 
-proc interruptHandler(rt: JSRuntime, opaque: pointer): int {.cdecl.} =
+proc interruptHandler(rt: JSRuntime, opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
   if client.console == nil or client.console.tty == nil: return
   try:
