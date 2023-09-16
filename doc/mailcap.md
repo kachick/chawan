@@ -31,20 +31,14 @@ extensions.
 
 ### Templating
 
-%s, %t works as described in the standard. %{...} in general does not work,
-only %{charset}. (TODO: fix this.)
+%s, %t works as described in the standard. However, named content type fields
+(%{...}) only work with %{charset} as of now. (TODO: fix this.)
 
 Also, the non-standard template %u may be specified to get the original URL
 of the resource.
 
-If no quoting is applied, Chawan will quote the templates automatically.
-
-Note that $(subprocesses) are not quoted properly yet. We recommend using
-something like:
-
-```
-x=%s\; echo "$(cat "$x")"
-```
+If no quoting is applied, Chawan will quote the templates automatically. (This
+works with $(command substitutions) as well.)
 
 ### Fields
 

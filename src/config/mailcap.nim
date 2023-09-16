@@ -201,28 +201,33 @@ proc parseMailcap*(stream: Stream): Result[Mailcap, string] =
 
 # Mostly based on w3m's mailcap quote/unquote
 type UnquoteState = enum
-  STATE_NORMAL, STATE_QUOTED, STATE_PERC, STATE_ATTR, STATE_ATTR_QUOTED
+  STATE_NORMAL, STATE_QUOTED, STATE_PERC, STATE_ATTR, STATE_ATTR_QUOTED,
+  STATE_DOLLAR
 
 type UnquoteResult* = object
   canpipe*: bool
   cmd*: string
 
 type QuoteState = enum
-  QS_DQUOTED, QS_SQUOTED
+  QS_NORMAL, QS_DQUOTED, QS_SQUOTED
 
-proc quoteFile(file: string, qs: set[QuoteState]): string =
+proc quoteFile(file: string, qs: QuoteState): string =
   var s = ""
   for c in file:
     case c
     of '$', '`', '"', '\\':
-      if QS_SQUOTED notin qs:
+      if qs != QS_SQUOTED:
         s &= '\\'
     of '\'':
-      s &= "'\\'" # then re-open the quote by appending c
+      if qs == QS_SQUOTED:
+        s &= "'\\'" # then re-open the quote by appending c
+      elif qs == QS_NORMAL:
+        s &= '\\'
+      # double-quoted: append normally
     of '_', '.', ':', '/':
       discard # no need to quote
     else:
-      if c notin AsciiAlpha and qs == {}:
+      if c notin AsciiAlpha and qs == QS_NORMAL:
         s &= '\\'
     s &= c
   return s
@@ -232,47 +237,64 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
   var cmd = ""
   var attrname = ""
   var state: UnquoteState
-  var filename = ""
-  var qs: set[QuoteState]
+  var qss = @[QS_NORMAL] # quote state stack. len >1
+  template qs: var QuoteState = qss[^1]
   for c in ecmd:
     case state
     of STATE_QUOTED:
-      cmd &= c.tolower()
+      cmd &= c
       state = STATE_NORMAL
     of STATE_ATTR_QUOTED:
       attrname &= c.tolower()
       state = STATE_ATTR
-    of STATE_NORMAL:
+    of STATE_NORMAL, STATE_DOLLAR:
+      let prev_dollar = state == STATE_DOLLAR
+      state = STATE_NORMAL
       case c
       of '%':
         state = STATE_PERC
       of '\\':
         state = STATE_QUOTED
       of '\'':
-        if QS_SQUOTED in qs:
-          qs.excl(QS_SQUOTED)
+        if qs == QS_SQUOTED:
+          qs = QS_NORMAL
         else:
-          qs.incl(QS_SQUOTED)
+          qs = QS_SQUOTED
         cmd &= c
       of '"':
-        if QS_DQUOTED in qs:
-          qs.excl(QS_DQUOTED)
+        if qs == QS_DQUOTED:
+          qs = QS_NORMAL
         else:
-          qs.incl(QS_DQUOTED)
+          qs = QS_DQUOTED
+        cmd &= c
+      of '$':
+        if qs != QS_SQUOTED:
+          state = STATE_DOLLAR
+        cmd &= c
+      of '(':
+        if prev_dollar:
+          qss.add(QS_NORMAL)
+        cmd &= c
+      of ')':
+        if qs != QS_SQUOTED:
+          if qss.len > 1:
+            qss.setLen(qss.len - 1)
+          else:
+            # mismatched parens; probably an invalid shell command...
+            qss[0] = QS_NORMAL
         cmd &= c
       else:
-        cmd &= c.tolower()
+        cmd &= c
     of STATE_PERC:
       if c == '%':
-        cmd &= c.tolower()
+        cmd &= c
       elif c == 's':
-        filename = quoteFile(outpath, qs)
-        cmd &= filename
+        cmd &= quoteFile(outpath, qs)
         canpipe = false
       elif c == 't':
-        cmd &= contentType.until(';')
+        cmd &= quoteFile(contentType.until(';'), qs)
       elif c == 'u': # extension
-        cmd &= $url
+        cmd &= quoteFile($url, qs)
       elif c == '{':
         state = STATE_ATTR
         continue
@@ -280,28 +302,29 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
     of STATE_ATTR:
       if c == '}':
         if attrname == "charset":
-          cmd &= $charset
+          cmd &= quoteFile($charset, qs)
           continue
         #TODO this is broken, because content-type is stripped of ; fields
         let kvs = contentType.after(';').toLowerAscii()
         var i = kvs.find(attrname)
+        var s = ""
         if i != -1 and kvs.len > i + attrname.len and
             kvs[i + attrname.len] == '=':
-          i += attrname.len + 1
-          while i < kvs.len and kvs[i] in AsciiWhitespace:
-            inc i
+          i = skipBlanks(kvs, attrname.len + 1)
           var q = false
           for j in i ..< kvs.len:
-            if q:
-              cmd &= kvs[j]
+            if not q and kvs[j] == '\\':
+              q = true
+            elif not q and (kvs[j] == ';' or kvs[j] in AsciiWhitespace):
+              break
             else:
-              if kvs[j] == '\\':
-                q = true
-              elif kvs[j] == ';' or kvs[j] in AsciiWhitespace:
-                break
-              else:
-                cmd &= kvs[j]
+              s &= kvs[j]
+        cmd &= quoteFile(s, qs)
         attrname = ""
+      elif c == '\\':
+        state = STATE_ATTR_QUOTED
+      else:
+        attrname &= c
   return cmd
 
 proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
