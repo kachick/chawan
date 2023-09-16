@@ -86,7 +86,7 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
   # subtype
   while state.has():
     let c = state.consume()
-    if c == ';':
+    if c in AsciiWhitespace + {';'}:
       state.reconsume(c)
       break
     if c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
