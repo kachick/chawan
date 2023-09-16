@@ -310,7 +310,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
         var s = ""
         if i != -1 and kvs.len > i + attrname.len and
             kvs[i + attrname.len] == '=':
-          i = skipBlanks(kvs, attrname.len + 1)
+          i = skipBlanks(kvs, i + attrname.len + 1)
           var q = false
           for j in i ..< kvs.len:
             if not q and kvs[j] == '\\':
