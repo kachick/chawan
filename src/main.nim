@@ -12,6 +12,7 @@ when defined(profile):
   import nimprof
 
 import config/config
+import io/serversocket
 import local/client
 import types/opt
 import utils/twtstr
@@ -182,6 +183,7 @@ if pages.len == 0 and not conf.start.headless:
     help(1)
 
 forks.loadForkServerConfig(conf)
+SocketDirectory = conf.external.tmpdir
 
 let c = newClient(conf, forks, getpid())
 try:
