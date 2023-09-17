@@ -6,6 +6,7 @@ import js/error
 import js/javascript
 import loader/headers
 import loader/request
+import types/blob
 import types/url
 
 import chakasu/charset
@@ -16,7 +17,7 @@ type
     fd*: int
     body*: Stream
     bodyUsed* {.jsget.}: bool
-    contenttype* {.jsget.}: string
+    contenttype*: string
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
     redirect*: Request
@@ -62,6 +63,24 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   response.bodyRead = nil
   return bodyRead.then(proc(s: string): JSResult[string] =
     ok(s))
+
+proc blob(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
+  if response.bodyRead == nil:
+    let p = newPromise[JSResult[Blob]]()
+    let err = JSResult[Blob]
+      .err(newTypeError("Body has already been consumed"))
+    p.resolve(err)
+    return p
+  let bodyRead = response.bodyRead
+  response.bodyRead = nil
+  return bodyRead.then(proc(s: string): JSResult[Blob] =
+    if s.len == 0:
+      return ok(newBlob(nil, 0, response.contenttype, nil))
+    GC_ref(s)
+    let deallocFun = proc() =
+      GC_unref(s)
+    let blob = newBlob(addr s[0], s.len, response.contenttype, deallocFun)
+    ok(blob))
 
 proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
     {.jsfunc.} =

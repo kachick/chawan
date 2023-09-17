@@ -3014,7 +3014,7 @@ proc toBlob(ctx: JSContext, this: HTMLCanvasElement, callback: JSValue,
     s = "image/png", quality: float64 = 1): JSValue {.jsfunc.} =
   var outlen: int
   let buf = this.bitmap.toPNG(outlen)
-  let blob = newBlob(buf, outlen, "image/png", dealloc)
+  let blob = newBlob(buf, outlen, "image/png", proc() = dealloc(buf))
   var jsBlob = toJS(ctx, blob)
   let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, addr jsBlob)
   # Hack. TODO: implement JSValue to callback

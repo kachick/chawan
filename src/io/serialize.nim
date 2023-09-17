@@ -317,8 +317,9 @@ proc sread*(stream: Stream, blob: var Blob) =
     new(blob)
     stream.sread(blob.ctype)
     stream.sread(blob.size)
-    blob.buffer = alloc(blob.size)
-    blob.deallocFun = dealloc
+    let buffer = alloc(blob.size)
+    blob.buffer = buffer
+    blob.deallocFun = proc() = dealloc(buffer)
     if blob.size > 0:
       let n = stream.readData(blob.buffer, int(blob.size))
       assert n == int(blob.size)

@@ -7,7 +7,7 @@ import utils/mimeguess
 import utils/twtstr
 
 type
-  DeallocFun = proc(buffer: pointer) {.noconv.}
+  DeallocFun = proc() {.closure.}
 
   Blob* = ref object of RootObj
     isfile*: bool
@@ -35,12 +35,12 @@ proc newBlob*(buffer: pointer, size: int, ctype: string,
 
 proc finalize(blob: Blob) {.jsfin.} =
   if blob.deallocFun != nil and blob.buffer != nil:
-    blob.deallocFun(blob.buffer)
+    blob.deallocFun()
     blob.buffer = nil
 
 proc finalize(file: WebFile) {.jsfin.} =
   if file.deallocFun != nil and file.buffer != nil:
-    file.deallocFun(file.buffer)
+    file.deallocFun()
     file.buffer = nil
 
 proc newWebFile*(path: string, webkitRelativePath = ""): WebFile =
@@ -68,12 +68,13 @@ proc newWebFile(ctx: JSContext, fileBits: seq[string], fileName: string,
   let file = WebFile(
     isfile: false,
     path: fileName,
-    deallocFun: dealloc
   )
   var len = 0
   for blobPart in fileBits:
     len += blobPart.len
-  file.buffer = alloc(len)
+  let buffer = alloc(len)
+  file.buffer = buffer
+  file.deallocFun = proc() = dealloc(buffer)
   var buf = cast[ptr UncheckedArray[uint8]](file.buffer)
   var i = 0
   for blobPart in fileBits:
