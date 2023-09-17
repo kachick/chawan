@@ -956,8 +956,7 @@ proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
         first = false
         params.list[i][1] = value
 
-proc newURL*(s: string, base: Option[string] = none(string)):
-    JSResult[URL] {.jsctor.} =
+proc parseAPIURL(s: string, base: Option[string]): JSResult[URL] =
   let baseURL = if base.isSome:
     let x = parseURL(base.get)
     if x.isNone:
@@ -968,10 +967,15 @@ proc newURL*(s: string, base: Option[string] = none(string)):
   let url = parseURL(s, baseURL)
   if url.isNone:
     return err(newTypeError(s & " is not a valid URL"))
-  url.get.searchParams = newURLSearchParams()
-  url.get.searchParams.url = url
-  url.get.searchParams.initURLSearchParams(url.get.query.get(""))
   return ok(url.get)
+
+proc newURL*(s: string, base: Option[string] = none(string)):
+    JSResult[URL] {.jsctor.} =
+  let url = ?parseAPIURL(s, base)
+  url.searchParams = newURLSearchParams()
+  url.searchParams.url = some(url)
+  url.searchParams.initURLSearchParams(url.query.get(""))
+  return ok(url)
 
 proc origin0*(url: URL): Origin =
   case url.scheme
@@ -1096,6 +1100,9 @@ proc setHash*(url: URL, s: string) {.jsfset: "hash".} =
   let s = if s[0] == '#': s.substr(1) else: s
   url.fragment = some("")
   discard basicParseURL(s, url = url, stateOverride = some(FRAGMENT_STATE))
+
+proc canParse(url: string, base: Option[string]): bool {.jsstfunc: "URL".} =
+  return parseAPIURL(url, base).isSome
 
 proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)

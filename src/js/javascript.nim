@@ -87,6 +87,7 @@ type
     id: NimNode
     magic: uint16
     unforgeable: bool
+    isstatic: bool
 
   BoundFunctionType = enum
     FUNCTION = "js_func"
@@ -208,7 +209,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     nimt: pointer, ctor: JSCFunction, funcs: JSFunctionList, parent: JSClassID,
     asglobal: bool, nointerface: bool, finalizer: proc(val: JSValue),
     namespace: JSValue, errid: Opt[JSErrorEnum],
-    unforgeable: JSFunctionList): JSClassID {.discardable.} =
+    unforgeable, staticfuns: JSFunctionList): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
@@ -254,6 +255,10 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
       JS_SetPropertyFunctionList(ctx, global, addr uf[][0], cint(uf[].len))
     JS_FreeValue(ctx, global)
   let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0, JS_CFUNC_constructor)
+  if staticfuns.len > 0:
+    rtOpaque.flist.add(@staticfuns)
+    JS_SetPropertyFunctionList(ctx, jctor, addr rtOpaque.flist[^1][0],
+      cint(staticfuns.len))
   JS_SetConstructor(ctx, jctor, proto)
   if errid.isSome:
     ctx.getOpaque().err_ctors[errid.get] = JS_DupValue(ctx, jctor)
@@ -323,6 +328,7 @@ type
     j: int # js parameters accounted for (not including fix ones, e.g. `this')
     res: NimNode
     unforgeable: bool
+    isstatic: bool
 
 var BoundFunctions {.compileTime.}: Table[string, seq[BoundFunction]]
 
@@ -701,13 +707,14 @@ var existing_funcs {.compileTime.}: HashSet[string]
 var js_dtors {.compileTime.}: HashSet[string]
 
 proc newBoundFunction(t: BoundFunctionType, name: string, id: NimNode,
-    magic: uint16 = 0, uf = false): BoundFunction =
+    magic: uint16 = 0, uf = false, isstatic = false): BoundFunction =
   return BoundFunction(
     t: t,
     name: name,
     id: id,
     magic: magic,
-    unforgeable: uf
+    unforgeable: uf,
+    isstatic: isstatic
   )
 
 proc registerFunction(typ: string, nf: BoundFunction) =
@@ -718,18 +725,18 @@ proc registerFunction(typ: string, nf: BoundFunction) =
   existing_funcs.incl(nf.id.strVal)
 
 proc registerFunction(typ: string, t: BoundFunctionType, name: string,
-    id: NimNode, magic: uint16 = 0, uf = false) =
-  let nf = newBoundFunction(t, name, id, magic, uf)
+    id: NimNode, magic: uint16 = 0, uf = false, isstatic = false) =
+  let nf = newBoundFunction(t, name, id, magic, uf, isstatic)
   registerFunction(typ, nf)
 
 proc registerConstructor(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName,
-    uf = gen.unforgeable)
+    uf = gen.unforgeable, isstatic = gen.isstatic)
   js_funcs[gen.funcName] = gen
 
 proc registerFunction(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName,
-    uf = gen.unforgeable)
+    uf = gen.unforgeable, isstatic = gen.isstatic)
 
 export JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
        JS_ThrowInternalError, JS_ThrowReferenceError
@@ -745,7 +752,7 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
         return JS_ThrowTypeError(ctx, "At least %d arguments required, " &
           "but only %d passed", `ma`, argc)
     )
-  if gen.thisname.isSome:
+  if gen.thisname.isSome and not gen.isstatic:
     let tn = ident(gen.thisname.get)
     let ev = gen.errval
     result.add(quote do:
@@ -811,8 +818,8 @@ func getActualMinArgs(gen: var JSFuncGenerator): int =
   return ma
 
 proc setupGenerator(fun: NimNode, t: BoundFunctionType,
-    thisname = some("this"), jsname: string = "", unforgeable = false):
-    JSFuncGenerator =
+    thisname = some("this"), jsname: string = "", unforgeable = false,
+    isstatic = false, thisType = ""): JSFuncGenerator =
   let jsFunCallList = newStmtList()
   let funcParams = getParams(fun)
   var gen = JSFuncGenerator(
@@ -828,11 +835,16 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
     jsFunCallList: jsFunCallList,
     jsFunCallLists: @[jsFunCallList],
     jsFunCall: newCall(fun[0]),
-    unforgeable: unforgeable
+    unforgeable: unforgeable,
+    isstatic: isstatic
   )
   gen.addJSContext()
   gen.actualMinArgs = gen.getActualMinArgs() # must come after passctx is set
-  gen.addThisName(thisname)
+  if thisType == "":
+    gen.addThisName(thisname)
+  else:
+    gen.thisType = thisType
+    gen.newName = ident($gen.t & "_" & gen.funcName)
   return gen
 
 proc makeJSCallAndRet(gen: var JSFuncGenerator, okstmt, errstmt: NimNode) =
@@ -1016,8 +1028,10 @@ template jsfset*(fun: typed) =
 template jsfset*(jsname: static string, fun: typed) =
   jsfsetn(jsname, fun)
 
-macro jsfuncn*(jsname: static string, uf: static bool, fun: typed) =
-  var gen = setupGenerator(fun, FUNCTION, jsname = jsname, unforgeable = uf)
+macro jsfuncn*(jsname: static string, uf: static bool,
+    staticname: static string, fun: typed) =
+  var gen = setupGenerator(fun, FUNCTION, jsname = jsname, unforgeable = uf,
+    isstatic = staticname != "", thisType = staticname)
   if gen.minArgs == 0:
     error("Zero-parameter functions are not supported. (Maybe pass Window or Client?)")
   gen.addFixParam("this")
@@ -1034,16 +1048,19 @@ macro jsfuncn*(jsname: static string, uf: static bool, fun: typed) =
   return newStmtList(fun, jsProc)
 
 template jsfunc*(fun: typed) =
-  jsfuncn("", false, fun)
+  jsfuncn("", false, "", fun)
 
 template jsuffunc*(fun: typed) =
-  jsfuncn("", true, fun)
+  jsfuncn("", true, "", fun)
 
 template jsfunc*(jsname: static string, fun: typed) =
-  jsfuncn(jsname, false, fun)
+  jsfuncn(jsname, false, "", fun)
 
 template jsuffunc*(jsname: static string, fun: typed) =
-  jsfuncn(jsname, true, fun)
+  jsfuncn(jsname, true, "", fun)
+
+template jsstfunc*(name: static string, fun: typed) =
+  jsfuncn("", false, name, fun)
 
 macro jsfin*(fun: typed) =
   var gen = setupGenerator(fun, FINALIZER, thisname = some("fin"))
@@ -1201,6 +1218,7 @@ type RegistryInfo = object
   dfin: NimNode # CheckDestroy finalizer ident
   classDef: NimNode # ClassDef ident
   tabUnforgeable: NimNode # array of unforgeable function table
+  tabStatic: NimNode # array of static function table
 
 func tname(info: RegistryInfo): string =
   return info.t.strVal
@@ -1220,6 +1238,7 @@ proc newRegistryInfo(t: NimNode, name: string): RegistryInfo =
     classDef: ident("classDef"),
     tabList: newNimNode(nnkBracket),
     tabUnforgeable: newNimNode(nnkBracket),
+    tabStatic: newNimNode(nnkBracket),
     finName: newNilLit(),
     finFun: newNilLit(),
     propGetFun: newNilLit(),
@@ -1300,12 +1319,15 @@ proc bindFunctions(stmts: NimNode, info: var RegistryInfo) =
       case fun.t
       of FUNCTION:
         f0 = fun.name
-        if not fun.unforgeable:
-          info.tabList.add(quote do:
-            JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
-        else:
+        if fun.unforgeable:
           info.tabUnforgeable.add(quote do:
             JS_CFUNC_DEF_NOCONF(`f0`, 0, cast[JSCFunction](`f1`)))
+        elif fun.isstatic:
+          info.tabStatic.add(quote do:
+            JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
+        else:
+          info.tabList.add(quote do:
+            JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
       of CONSTRUCTOR:
         info.ctorImpl = js_funcs[$f0].res
         if info.ctorFun != nil:
@@ -1493,10 +1515,11 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
   let classDef = info.classDef
   let tname = info.tname
   let unforgeable = info.tabUnforgeable
+  let staticfuns = info.tabStatic
   endstmts.add(quote do:
     `ctx`.newJSClass(`classDef`, `tname`, getTypePtr(`t`), `sctr`, `tabList`,
       `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`,
-      `unforgeable`)
+      `unforgeable`, `staticfuns`)
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts
