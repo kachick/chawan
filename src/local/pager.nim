@@ -159,8 +159,11 @@ proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
     pager.linehist[mode] = newLineHistory()
   return pager.linehist[mode]
 
-proc setLineEdit(pager: Pager, prompt: string, mode: LineMode, current = "", hide = false) =
-  pager.lineedit = some(readLine(prompt, pager.attrs.width, current = current, term = pager.term, hide = hide, hist = pager.getLineHist(mode)))
+proc setLineEdit(pager: Pager, prompt: string, mode: LineMode,
+    current = "", hide = false) =
+  let hist = pager.getLineHist(mode)
+  let edit = readLine(prompt, pager.attrs.width, current, {}, hide, hist)
+  pager.lineedit = some(edit)
   pager.linemode = mode
 
 proc clearLineEdit(pager: Pager) =
@@ -344,10 +347,8 @@ proc draw*(pager: Pager) =
   if pager.askpromise != nil:
     discard
   elif pager.lineedit.isSome:
-    if pager.lineedit.get.isnew:
-      #TODO hack
-      # make term notice that it must redraw when status is restored
-      let x = newFixedGrid(pager.attrs.width)
+    if pager.lineedit.get.invalid:
+      let x = pager.lineedit.get.generateOutput()
       pager.term.writeGrid(x, 0, pager.attrs.height - 1)
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
@@ -355,13 +356,6 @@ proc draw*(pager: Pager) =
   if pager.askpromise != nil:
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit.isSome:
-    if pager.lineedit.get.isnew:
-      #TODO hack
-      pager.term.setCursor(0, pager.attrs.height - 1)
-      pager.lineedit.get.drawPrompt()
-      pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
-      pager.lineedit.get.fullRedraw()
-      pager.lineedit.get.isnew = false
     pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
   elif container.select.open:
     pager.term.setCursor(container.select.getCursorX(),

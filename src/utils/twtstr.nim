@@ -1022,6 +1022,10 @@ func width*(s: seq[Rune]): int =
   for r in s:
     result += r.twidth(result)
 
+func notwidth*(s: string): int =
+  for r in s.runes:
+    result += r.width()
+
 func width*(s: seq[Rune], min, max: int): int =
   var i = min
   var mi = min(max, s.len)
@@ -1070,6 +1074,24 @@ func padToWidth*(str: string, size: int, schar = '$'): string =
         result &= r
         w += r.width
     result &= schar
+
+func deleteChars*(s: string, todel: set[char]): string =
+  var i = 0
+  block earlyret:
+    for j in 0 ..< s.len:
+      if s[j] in todel:
+        i = j
+        break earlyret
+    return s
+  var rs = newStringOfCap(s.len - 1)
+  for j in 0 ..< i:
+    rs[j] = s[j]
+  for j in i + 1 ..< s.len:
+    if s[j] in todel:
+      continue
+    rs[i] = s[j]
+    inc i
+  return rs
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc makeCRLF*(s: string): string =
