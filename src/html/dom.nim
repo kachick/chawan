@@ -2690,7 +2690,9 @@ proc execute*(element: HTMLScriptElement) =
         let ss = newStringStream()
         document.window.jsctx.writeException(ss)
         ss.setPosition(0)
-        document.window.console.log("Exception in document", $document.url, ss.readAll())
+        let urls = document.url.serialize(excludepassword = true)
+        document.window.console.log("Exception in document", urls,
+          ss.readAll())
     document.currentScript = oldCurrentScript
   else: discard #TODO
 
