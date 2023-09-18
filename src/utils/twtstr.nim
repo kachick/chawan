@@ -185,11 +185,6 @@ func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
 func isDigitAscii*(r: Rune): bool =
   return int(r) < 256 and isDigit(char(r))
 
-func substr*(s: seq[Rune], i, j: int): seq[Rune] =
-  if s.len == 0:
-    return @[]
-  return s[min(high(s), i)..min(high(s), j - 1)]
-
 func stripAndCollapse*(s: string): string =
   var i = 0
   while i < s.len and s[i] in AsciiWhitespace:
@@ -1018,26 +1013,9 @@ func width*(s: string, start, len: int): int =
     fastRuneAt(s, i, r)
     result += r.twidth(result)
 
-func width*(s: seq[Rune]): int =
-  for r in s:
-    result += r.twidth(result)
-
 func notwidth*(s: string): int =
   for r in s.runes:
     result += r.width()
-
-func width*(s: seq[Rune], min, max: int): int =
-  var i = min
-  var mi = min(max, s.len)
-  while i < mi:
-    result += s[i].twidth(result)
-    inc i
-
-func width*(s: seq[Rune], min: int): int =
-  var i = min
-  while i < s.len:
-    result += s[i].twidth(result)
-    inc i
 
 func twidth*(s: string, w: int): int =
   var i = w
