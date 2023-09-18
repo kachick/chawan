@@ -30,8 +30,10 @@ import js/error
 import js/javascript
 import loader/about
 import loader/connecterror
+import loader/curlhandle
 import loader/data
 import loader/file
+import loader/ftp
 import loader/headers
 import loader/http
 import loader/loaderhandle
@@ -113,6 +115,10 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   of "data":
     handle.loadData(request)
     handle.close()
+  of "ftp", "ftps", "sftp":
+    let handleData = handle.loadFtp(ctx.curlm, request)
+    if handleData != nil:
+      ctx.handleList.add(handleData)
   else:
     discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
     handle.close()
@@ -164,6 +170,8 @@ proc acceptConnection(ctx: LoaderContext) =
 proc finishCurlTransfer(ctx: LoaderContext, handleData: CurlHandle, res: int) =
   if res != int(CURLE_OK):
     discard handleData.handle.sendResult(int(res))
+  if handleData.finish != nil:
+    handleData.finish(handleData)
   discard curl_multi_remove_handle(ctx.curlm, handleData.curl)
   handleData.cleanup()
 

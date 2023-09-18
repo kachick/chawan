@@ -2,51 +2,16 @@ import options
 import strutils
 
 import bindings/curl
+import loader/curlhandle
+import loader/curlwrap
 import loader/headers
 import loader/loaderhandle
 import loader/request
 import types/blob
 import types/formdata
-import types/url
 import types/opt
+import types/url
 import utils/twtstr
-
-type
-  CurlHandle* = ref CurlHandleObj
-  CurlHandleObj = object
-    curl*: CURL
-    statusline: bool
-    headers: Headers
-    request: Request
-    handle*: LoaderHandle
-    mime: curl_mime
-    slist: curl_slist
-
-func newCurlHandle(curl: CURL, request: Request, handle: LoaderHandle):
-    CurlHandle =
-  return CurlHandle(
-    headers: newHeaders(),
-    curl: curl,
-    handle: handle,
-    request: request
-  )
-
-proc cleanup*(handleData: CurlHandle) =
-  handleData.handle.close()
-  if handleData.mime != nil:
-    curl_mime_free(handleData.mime)
-  if handleData.slist != nil:
-    curl_slist_free_all(handleData.slist)
-  curl_easy_cleanup(handleData.curl)
-
-template setopt(curl: CURL, opt: CURLoption, arg: typed) =
-  discard curl_easy_setopt(curl, opt, arg)
-
-template setopt(curl: CURL, opt: CURLoption, arg: string) =
-  discard curl_easy_setopt(curl, opt, cstring(arg))
-
-template getinfo(curl: CURL, info: CURLINFO, arg: typed) =
-  discard curl_easy_getinfo(curl, info, arg)
 
 proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
     userdata: pointer): csize_t {.cdecl.} =

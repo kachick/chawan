@@ -79,9 +79,11 @@ type
     CURLOPT_SSLVERSION = CURLOPTTYPE_VALUES + 32
     CURLOPT_TIMECONDITION = CURLOPTTYPE_VALUES + 33
     CURLOPT_POST = CURLOPTTYPE_LONG + 47
+    CURLOPT_DIRLISTONLY = CURLOPTTYPE_LONG + 48
     CURLOPT_FOLLOWLOCATION = CURLOPTTYPE_LONG + 52
     CURLOPT_POSTFIELDSIZE = CURLOPTTYPE_LONG + 60
     CURLOPT_HTTPGET = CURLOPTTYPE_LONG + 80
+    CURLOPT_FTP_FILEMETHOD = CURLOPTTYPE_VALUES + 138
     CURLOPT_CONNECT_ONLY = CURLOPTTYPE_LONG + 141
 
     # Objectpoint
@@ -264,6 +266,12 @@ type
     CURLE_SSL_CLIENTCERT,          # 98 - client-side certificate required 
     CURLE_UNRECOVERABLE_POLL,      # 99 - poll/select returned fatal error 
     CURL_LAST # never use! 
+
+  curl_ftpmethod* {.size: sizeof(cint).} = enum
+    CURLFTPMETHOD_DEFAULT, # let libcurl pick
+    CURLFTPMETHOD_MULTICWD, # single CWD operation for each path part
+    CURLFTPMETHOD_NOCWD, # no CWD at all
+    CURLFTPMETHOD_SINGLECWD, # one CWD to full dir, then work on file
 
   CURLMcode* {.size: sizeof(cint).} = enum
     CURLM_CALL_MULTI_PERFORM = -1, # please call curl_multi_perform() or
