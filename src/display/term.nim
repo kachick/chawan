@@ -2,6 +2,7 @@ import options
 import os
 import posix
 import streams
+import strutils
 import tables
 import terminal
 import termios
@@ -10,13 +11,13 @@ import unicode
 import bindings/termcap
 import config/config
 import display/window
-import io/runestream
 import types/cell
 import types/color
 import types/opt
 import utils/twtstr
 
 import chakasu/charset
+import chakasu/decoderstream
 import chakasu/encoderstream
 
 #TODO switch from termcap...
@@ -174,29 +175,8 @@ proc endFormat(term: Terminal, flag: FormatFlags): string =
       return term.cap ue
   return SGR(FormatCodes[flag].e)
 
-#TODO get rid of these
 proc setCursor*(term: Terminal, x, y: int) =
   term.write(term.cursorGoto(x, y))
-
-proc cursorBackward*(term: Terminal, i: int) =
-  if i > 0:
-    if i == 1:
-      term.write("\b")
-    else:
-      when termcap_found:
-        term.write($tgoto(term.ccap LE, 0, cint(i)))
-      else:
-        term.outfile.cursorBackward(i)
-
-proc cursorForward*(term: Terminal, i: int) =
-  if i > 0:
-    when termcap_found:
-      term.write($tgoto(term.ccap RI, 0, cint(i)))
-    else:
-      term.outfile.cursorForward(i)
-
-proc cursorBegin*(term: Terminal) =
-  term.write("\r")
 
 proc enableAltScreen(term: Terminal): string =
   when termcap_found:
@@ -382,65 +362,25 @@ proc setTitle*(term: Terminal, title: string) =
   if term.set_title:
     term.outfile.write(XTERM_TITLE(title))
 
-const colorFormat = block:
-  var format = newFormat()
-  format.fgcolor = cellColor(ANSI_BLUE)
-  format
-
-const defaultFormat = newFormat()
-
-template processOutputString0*(term: Terminal, str: iterable[Rune],
-    colorctrl: static bool, w: var int): string =
-  var rs0: seq[Rune]
-  var ctrl = false
-  var format = newFormat()
-  discard ctrl
-  discard format
-  for r in str:
-    if r.isControlChar():
-      when colorctrl:
-        if not ctrl:
-          rs0 &= term.processFormat(format, colorFormat).toRunes()
-      rs0 &= Rune('^')
-      rs0 &= Rune(cast[char](r).getControlLetter())
-    else:
-      when colorctrl:
-        if ctrl:
-          rs0 &= term.processFormat(format, defaultFormat).toRunes()
-      rs0 &= r
-    ctrl = r.isControlChar()
-    # twidth wouldn't work here, the view may start at the nth character.
-    # pager must ensure tabs are converted beforehand.
-    w += r.width()
-  let ss = newRuneStream(toOpenArray(cast[seq[uint32]](rs0), 0, rs0.high))
-  let es = newEncoderStream(ss, term.cs, errormode = ENCODER_ERROR_MODE_FATAL)
-  es.readAll()
-
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
   if str.validateUtf8() != -1:
     return "?"
+  # twidth wouldn't work here, the view may start at the nth character.
+  # pager must ensure tabs are converted beforehand.
+  w += str.notwidth()
+  let str = if Controls in str:
+    str.replaceControls()
+  else:
+    str
   if term.cs == CHARSET_UTF_8:
-    # optimized common case
-    block notfound:
-      for c in str:
-        if c in Controls:
-          break notfound
-      # No control characters, and the output encoding matches the internal
-      # representation.
-      w += str.width()
-      return str
-    var s = ""
-    for c in str:
-      if c in Controls:
-        s &= '^'
-        s &= c.getControlLetter()
-      else:
-        s &= c
-      # no twidth, see above
-      w += Rune(c).width()
-    return s
-  # Output is not utf-8, so we must convert back to utf-32 and then encode.
-  return term.processOutputString0(str.runes, false, w)
+    # The output encoding matches the internal representation.
+    return str
+  else:
+    # Output is not utf-8, so we must convert back to utf-32 and then encode.
+    let ss = newStringStream(str)
+    let ds = newDecoderStream(ss)
+    let es = newEncoderStream(ds, term.cs, errormode = ENCODER_ERROR_MODE_FATAL)
+    return es.readAll()
 
 proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = newFormat()

@@ -1071,6 +1071,15 @@ func deleteChars*(s: string, todel: set[char]): string =
     inc i
   return rs
 
+func replaceControls*(s: string): string =
+  result = newStringOfCap(s.len)
+  for c in s:
+    if c in Controls:
+      result &= '^'
+      result &= c.getControlLetter()
+    else:
+      result &= c
+
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc makeCRLF*(s: string): string =
   result = newStringOfCap(s.len)
