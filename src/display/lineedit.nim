@@ -85,7 +85,8 @@ proc shiftView(edit: LineEdit) =
 
 proc generateOutput*(edit: LineEdit): FixedGrid =
   edit.shiftView()
-  result = newFixedGrid(edit.promptw + edit.maxwidth)
+  # Make the output grid +1 cell wide, so it covers the whole input area.
+  result = newFixedGrid(edit.promptw + edit.maxwidth + 1)
   var x = 0
   for r in edit.prompt.runes:
     result[x].str &= $r
