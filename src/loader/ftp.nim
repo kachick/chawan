@@ -36,19 +36,20 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
   let op = cast[FtpHandle](userdata)
 
   if not op.statusline:
-    op.statusline = true
-    if not op.handle.sendResult(int(CURLE_OK)):
-      return 0
-    var status: clong
-    op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    if not op.handle.sendStatus(cast[int](status)):
-      return 0
-    if op.dirmode:
-      op.headers.add("Content-Type", "text/html")
-    if not op.handle.sendHeaders(op.headers):
-      return 0
-    if op.dirmode:
-      if not op.handle.sendData("""
+    if line.startsWith("150") or line.startsWith("125"):
+      op.statusline = true
+      if not op.handle.sendResult(int(CURLE_OK)):
+        return 0
+      var status: clong
+      op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
+      if not op.handle.sendStatus(cast[int](status)):
+        return 0
+      if op.dirmode:
+        op.headers.add("Content-Type", "text/html")
+      if not op.handle.sendHeaders(op.headers):
+        return 0
+      if op.dirmode:
+        if not op.handle.sendData("""
 <HTML>
 <HEAD>
 <BASE HREF=""" & op.base & """>
@@ -59,8 +60,24 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
 <PRE>
 <A HREF="..">
 [Upper Directory]</A>"""):
+          return 0
+      return nitems
+    elif line.startsWith("530"): # login incorrect
+      op.statusline = true
+      if not op.handle.sendResult(int(CURLE_OK)):
         return 0
-    return nitems
+      var status: clong
+      op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
+      discard op.handle.sendStatus(401) # unauthorized (shim http)
+      op.headers.add("Content-Type", "text/html")
+      discard op.handle.sendHeaders(op.headers)
+      discard op.handle.sendData("""
+<HTML>
+<HEAD>
+<TITLE>Unauthorized</TITLE>
+</HEAD>
+<BODY><PRE>""" & line)
+      return 0
   return nitems
 
 # From the documentation: size is always 1.
@@ -81,6 +98,7 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
 proc finish(op: CurlHandle) =
   let op = cast[FtpHandle](op)
   for line in op.buffer.split('\n'):
+    if line.len == 0: continue
     var i = 10 # permission
     template skip_till_space =
       while i < line.len and line[i] != ' ':
