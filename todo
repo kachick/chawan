@@ -49,7 +49,6 @@ buffer:
 - do not prompt when submitting forms (it's annoying)
 	* this is mostly fixed, but not completely
 network:
-- gopher
 - urimethodmap
 	* then we could add gemini as a bonus, without an SSL dependency
 	  outside of curl.

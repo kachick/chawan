@@ -49,6 +49,7 @@ Currently implemented features are:
 * mailcap
 * cookies
 * FTP support
+* Gopher support
 
 ...with a lot more [planned](todo).
 

@@ -923,7 +923,7 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     submitter.action()
 
   let url = submitter.document.parseURL(action)
-  if url.isnone:
+  if url.isNone:
     return none(Request)
 
   var parsedaction = url.get
@@ -975,7 +975,8 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     return newRequest(parsedaction).some
 
   case scheme
-  of "http", "https":
+  of "http", "https",
+      "gopher", "gophers": # Note: gopher/s is non-standard.
     if formmethod == FORM_METHOD_GET:
       mutateActionUrl
     else:

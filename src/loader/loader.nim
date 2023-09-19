@@ -34,6 +34,7 @@ import loader/curlhandle
 import loader/data
 import loader/file
 import loader/ftp
+import loader/gopher
 import loader/headers
 import loader/http
 import loader/loaderhandle
@@ -117,6 +118,10 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
     handle.close()
   of "ftp", "ftps", "sftp":
     let handleData = handle.loadFtp(ctx.curlm, request)
+    if handleData != nil:
+      ctx.handleList.add(handleData)
+  of "gopher", "gophers":
+    let handleData = handle.loadGopher(ctx.curlm, request)
     if handleData != nil:
       ctx.handleList.add(handleData)
   else:

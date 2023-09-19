@@ -64,6 +64,16 @@ func newHeaders(obj = none(HeadersInit)): Headers {.jsctor.} =
     headers.fill(obj.get)
   return headers
 
+func newHeaders*(table: openArray[(string, string)]): Headers =
+  let headers = Headers()
+  for (k, v) in table:
+    let k = k.toHeaderCase()
+    if k in headers.table:
+      headers.table[k].add(v)
+    else:
+      headers.table[k] = @[v]
+  return headers
+
 func newHeaders*(table: Table[string, string]): Headers =
   let headers = Headers()
   for k, v in table:
