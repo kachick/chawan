@@ -1,4 +1,5 @@
 import html/dom
+import html/enums
 import js/domexception
 import js/javascript
 import js/tojs

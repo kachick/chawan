@@ -11,6 +11,7 @@ import css/cssparser
 import css/sheet
 import css/values
 import display/window
+import html/enums
 import html/event
 import img/bitmap
 import img/painter
@@ -2183,8 +2184,6 @@ proc reflectAttrs(element: Element, name, value: string) =
     let input = HTMLInputElement(element)
     input.reflect_str "value", value
     input.reflect_str "type", inputType, inputType
-    if input.inputType == INPUT_UNKNOWN:
-      input.inputType = INPUT_TEXT
     input.reflect_bool "checked", checked
   of TAG_OPTION:
     let option = HTMLOptionElement(element)

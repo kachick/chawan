@@ -20,6 +20,7 @@ import css/values
 import display/window
 import html/chadombuilder
 import html/dom
+import html/enums
 import html/env
 import html/event
 import img/png
@@ -44,9 +45,9 @@ import types/cell
 import types/color
 import types/cookie
 import types/formdata
+import types/opt
 import types/referer
 import types/url
-import types/opt
 import utils/twtstr
 import xhr/formdata as formdata_impl
 

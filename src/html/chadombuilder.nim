@@ -3,6 +3,7 @@ import options
 import streams
 
 import html/dom
+import html/enums
 import js/error
 import js/fromjs
 import js/javascript

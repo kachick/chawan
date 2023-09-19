@@ -11,6 +11,7 @@ import css/sheet
 import css/stylednode
 import css/values
 import html/dom
+import html/enums
 import layout/layoutunit
 import types/color
 import types/opt
