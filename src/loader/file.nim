@@ -2,8 +2,10 @@ import algorithm
 import os
 import streams
 import tables
+import times
 
 import loader/connecterror
+import loader/dirlist
 import loader/headers
 import loader/loaderhandle
 import types/url
@@ -29,30 +31,47 @@ proc loadDir(handle: LoaderHandle, url: URL, path: string) =
 </HEAD>
 <BODY>
 <H1>Directory list of """ & path & """</H1>
-[DIR]&nbsp; <A HREF="../">../</A></br>
+<PRE>
 """)
   var fs: seq[(PathComponent, string)]
   for pc, file in walkDir(path, relative = true):
     fs.add((pc, file))
   fs.sort(cmp = proc(a, b: (PathComponent, string)): int = cmp(a[1], b[1]))
+  var items: seq[DirlistItem]
   for (pc, file) in fs:
+    let fullpath = path / file
+    var info: FileInfo
+    try:
+      info = getFileInfo(fullpath, followSymlink = false)
+    except OSError:
+      continue
+    let modified = $info.lastWriteTime.local().format("MMM/dd/yyyy HH:MM")
     case pc
     of pcDir:
-      t handle.sendData("[DIR]&nbsp; ")
+      items.add(DirlistItem(
+        t: ITEM_DIR,
+        name: file,
+        modified: modified
+      ))
     of pcFile:
-      t handle.sendData("[FILE] ")
+      items.add(DirlistItem(
+        t: ITEM_FILE,
+        name: file,
+        modified: modified,
+        nsize: info.size
+      ))
     of pcLinkToDir, pcLinkToFile:
-      t handle.sendData("[LINK] ")
-    var fn = file
-    if pc == pcDir:
-      fn &= '/'
-    t handle.sendData("<A HREF=\"" & fn & "\">" & fn & "</A>")
-    if pc in {pcLinkToDir, pcLinkToFile}:
-      discard handle.sendData(" -> " & expandSymlink(path / file))
-    t handle.sendData("<br>")
-  t handle.sendData("""
-</BODY>
-</HTML>""")
+      var target = expandSymlink(fullpath)
+      if pc == pcLinkToDir:
+        target &= '/'
+      items.add(DirlistItem(
+        t: ITEM_LINK,
+        name: file,
+        modified: modified,
+        linkto: target
+      ))
+  t handle.sendData(makeDirlist(items))
+  t handle.sendData("\n</PRE>\n</BODY>\n</HTML>\n")
 
 proc loadSymlink(handle: LoaderHandle, path: string) =
   template t(body: untyped) =

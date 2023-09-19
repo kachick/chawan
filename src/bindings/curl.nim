@@ -267,7 +267,7 @@ type
     CURLE_UNRECOVERABLE_POLL,      # 99 - poll/select returned fatal error 
     CURL_LAST # never use! 
 
-  curl_ftpmethod* {.size: sizeof(cint).} = enum
+  curl_ftpmethod* {.size: sizeof(clong).} = enum
     CURLFTPMETHOD_DEFAULT, # let libcurl pick
     CURLFTPMETHOD_MULTICWD, # single CWD operation for each path part
     CURLFTPMETHOD_NOCWD, # no CWD at all

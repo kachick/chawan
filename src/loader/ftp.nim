@@ -4,6 +4,7 @@ import bindings/curl
 import loader/connecterror
 import loader/curlhandle
 import loader/curlwrap
+import loader/dirlist
 import loader/headers
 import loader/loaderhandle
 import loader/request
@@ -58,8 +59,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
 <BODY>
 <H1>Index of """ & htmlEscape(op.path) & """</H1>
 <PRE>
-<A HREF="..">
-[Upper Directory]</A>"""):
+"""):
           return 0
       return nitems
     elif line.startsWith("530"): # login incorrect
@@ -76,7 +76,9 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
 <HEAD>
 <TITLE>Unauthorized</TITLE>
 </HEAD>
-<BODY><PRE>""" & htmlEscape(line))
+<BODY>
+<PRE>
+""" & htmlEscape(line))
       return 0
   return nitems
 
@@ -97,6 +99,7 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
 
 proc finish(op: CurlHandle) =
   let op = cast[FtpHandle](op)
+  var items: seq[DirlistItem]
   for line in op.buffer.split('\n'):
     if line.len == 0: continue
     var i = 10 # permission
@@ -123,52 +126,65 @@ proc finish(op: CurlHandle) =
     let nsize = parseInt64(sizes).get(-1)
     # date
     i = line.skipBlanks(i)
+    let datestarti = i
     skip_till_space # m
     i = line.skipBlanks(i)
     skip_till_space # d
     i = line.skipBlanks(i)
     skip_till_space # y
+    let dates = line.substr(datestarti, i)
     inc i
     let name = line.substr(i)
+    if name == "." or name == "..": continue
     case line[0]
     of 'l': # link
       let x = " -> "
       let linki = name.find(x)
       let linkfrom = name.substr(0, linki - 1)
       let linkto = name.substr(linki + 4) # you?
-      let path = percentEncode(linkfrom, PathPercentEncodeSet)
-      discard op.handle.sendData("""
-<A HREF="""" & path & """"">
-""" & htmlEscape(linkfrom) & """@ (-> """ & htmlEscape(linkto) & """)</A>""")
+      items.add(DirlistItem(
+        t: ITEM_LINK,
+        name: linkfrom,
+        modified: dates,
+        linkto: linkto
+      ))
     of 'd': # directory
-      let path = percentEncode(name, PathPercentEncodeSet)
-      discard op.handle.sendData("""
-<A HREF="""" & path & """/">
-""" & htmlEscape(name) & """/</A>""")
+      items.add(DirlistItem(
+        t: ITEM_DIR,
+        name: name,
+        modified: dates
+      ))
     else: # file
-      let path = percentEncode(name, PathPercentEncodeSet)
-      discard op.handle.sendData("""
-<A HREF="""" & path & """">
-""" & htmlEscape(name) & """ (""" & $nsize & """)</A>""")
-  discard op.handle.sendData("""
-</PRE>
-</BODY>
-</HTML>
-""")
+      items.add(DirlistItem(
+        t: ITEM_FILE,
+        name: name,
+        modified: dates,
+        nsize: nsize
+      ))
+  discard op.handle.sendData(makeDirlist(items))
+  discard op.handle.sendData("\n</PRE>\n</BODY>\n</HTML>\n")
 
 proc loadFtp*(handle: LoaderHandle, curlm: CURLM,
     request: Request): CurlHandle =
   let curl = curl_easy_init()
   doAssert curl != nil
   let surl = request.url.serialize()
-  curl.setopt(CURLOPT_URL, surl)
   let path = request.url.path.serialize_unicode()
+  # By default, cURL CWD's into relative paths, and an extra slash is
+  # necessary to specify absolute paths.
+  # This is incredibly confusing, and probably not what the user wanted.
+  # So we work around it by adding the extra slash ourselves.
+  let hackurl = newURL(request.url)
+  hackurl.setPathname('/' & request.url.pathname)
+  let csurl = hackurl.serialize()
+  curl.setopt(CURLOPT_URL, csurl)
   let dirmode = path.len > 0 and path[^1] == '/'
   let handleData = curl.newFtpHandle(request, handle, dirmode)
   curl.setopt(CURLOPT_HEADERDATA, handleData)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
   curl.setopt(CURLOPT_WRITEDATA, handleData)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
+  curl.setopt(CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD)
   if dirmode:
     handleData.finish = finish
     handleData.base = surl
