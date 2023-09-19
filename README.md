@@ -48,6 +48,7 @@ Currently implemented features are:
 	  implemented
 * mailcap
 * cookies
+* FTP support
 
 ...with a lot more [planned](todo).
 
