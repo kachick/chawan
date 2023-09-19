@@ -2069,7 +2069,7 @@ func newDocument*(): Document {.jsctor.} =
     url: newURL("about:blank").get,
     index: -1
   )
-  document.implementation = DOMImplementation(document: result)
+  document.implementation = DOMImplementation(document: document)
   document.contentType = "application/xml"
   return document
 
