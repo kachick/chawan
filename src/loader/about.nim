@@ -1,5 +1,3 @@
-import tables
-
 import loader/connecterror
 import loader/headers
 import loader/loaderhandle
@@ -9,7 +7,7 @@ import types/url
 const chawan = staticRead"res/chawan.html"
 const HeaderTable = {
   "Content-Type": "text/html"
-}.toTable()
+}
 
 proc loadAbout*(handle: LoaderHandle, request: Request) =
   template t(body: untyped) =

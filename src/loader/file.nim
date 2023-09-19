@@ -1,7 +1,6 @@
 import algorithm
 import os
 import streams
-import tables
 import times
 
 import loader/connecterror
@@ -22,7 +21,7 @@ proc loadDir(handle: LoaderHandle, url: URL, path: string) =
     base &= '/'
   t handle.sendResult(0)
   t handle.sendStatus(200) # ok
-  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}.toTable()))
+  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}))
   t handle.sendData("""
 <HTML>
 <HEAD>
@@ -79,7 +78,7 @@ proc loadSymlink(handle: LoaderHandle, path: string) =
       return
   t handle.sendResult(0)
   t handle.sendStatus(200) # ok
-  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}.toTable()))
+  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}))
   let sl = expandSymlink(path)
   t handle.sendData("""
 <HTML>

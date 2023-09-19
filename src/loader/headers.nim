@@ -68,9 +68,9 @@ func newHeaders*(table: openArray[(string, string)]): Headers =
   let headers = Headers()
   for (k, v) in table:
     let k = k.toHeaderCase()
-    if k in headers.table:
-      headers.table[k].add(v)
-    else:
+    headers.table.withValue(k, vs):
+      vs[].add(v)
+    do:
       headers.table[k] = @[v]
   return headers
 
@@ -78,9 +78,9 @@ func newHeaders*(table: Table[string, string]): Headers =
   let headers = Headers()
   for k, v in table:
     let k = k.toHeaderCase()
-    if k in headers.table:
-      headers.table[k].add(v)
-    else:
+    headers.table.withValue(k, vs):
+      vs[].add(v)
+    do:
       headers.table[k] = @[v]
   return headers
 

@@ -1,6 +1,5 @@
 import base64
 import strutils
-import tables
 
 import loader/connecterror
 import loader/headers
@@ -28,16 +27,12 @@ proc loadData*(handle: LoaderHandle, request: Request) =
       t handle.sendResult(0)
       t handle.sendStatus(200)
       ct.setLen(ct.len - ";base64".len) # remove base64 indicator
-      t handle.sendHeaders(newHeaders({
-        "Content-Type": ct
-      }.toTable()))
+      t handle.sendHeaders(newHeaders({"Content-Type": ct}))
       t handle.sendData(d)
     except ValueError:
       discard handle.sendResult(ERROR_INVALID_DATA_URL)
   else:
     t handle.sendResult(0)
     t handle.sendStatus(200)
-    t handle.sendHeaders(newHeaders({
-      "Content-Type": ct
-    }.toTable()))
+    t handle.sendHeaders(newHeaders({"Content-Type": ct}))
     t handle.sendData(s)
