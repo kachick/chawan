@@ -160,13 +160,16 @@ proc toJSP0(ctx: JSContext, p, tp: pointer, needsref: var bool): JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
-  let clazz = ctx.getOpaque().typemap[tp]
+  let ctxOpaque = ctx.getOpaque()
+  let clazz = ctxOpaque.typemap[tp]
   let jsObj = JS_NewObjectClass(ctx, clazz)
   setOpaque(ctx, jsObj, p)
   # We are "constructing" a new JS object, so we must add unforgeable
   # properties here.
   defineUnforgeable(ctx, jsObj) # not an exception
   needsref = true
+  if unlikely(ctxOpaque.htmldda == clazz):
+    JS_SetIsHTMLDDA(ctx, jsObj)
   return jsObj
 
 proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =

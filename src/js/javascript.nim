@@ -209,7 +209,8 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     nimt: pointer, ctor: JSCFunction, funcs: JSFunctionList, parent: JSClassID,
     asglobal: bool, nointerface: bool, finalizer: proc(val: JSValue),
     namespace: JSValue, errid: Opt[JSErrorEnum],
-    unforgeable, staticfuns: JSFunctionList): JSClassID {.discardable.} =
+    unforgeable, staticfuns: JSFunctionList,
+    ishtmldda: bool): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
@@ -219,6 +220,8 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
   ctxOpaque.parents[result] = parent
+  if ishtmldda:
+    ctxOpaque.htmldda = result
   if finalizer != nil:
     rtOpaque.fins[result] = finalizer
   var proto: JSValue
@@ -1492,7 +1495,8 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     asglobal = false, nointerface = false, name: static string = "",
     has_extra_getset: static bool = false,
     extra_getset: static openarray[TabGetSet] = [],
-    namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum)): JSClassID =
+    namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum),
+    ishtmldda = false): JSClassID =
   var stmts = newStmtList()
   var info = newRegistryInfo(t, name)
   let pragmas = findPragmas(t)
@@ -1519,7 +1523,7 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
   endstmts.add(quote do:
     `ctx`.newJSClass(`classDef`, `tname`, getTypePtr(`t`), `sctr`, `tabList`,
       `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`,
-      `unforgeable`, `staticfuns`)
+      `unforgeable`, `staticfuns`, `ishtmldda`)
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts

@@ -424,6 +424,7 @@ proc JS_FreeCString*(ctx: JSContext, `ptr`: cstring)
 proc JS_Eval*(ctx: JSContext, input: cstring, input_len: cint, filename: cstring, eval_flags: cint): JSValue
 proc JS_SetInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer)
 proc JS_SetCanBlock*(rt: JSRuntime, can_block: JS_BOOL)
+proc JS_SetIsHTMLDDA*(ctx: JSContext, obj: JSValue)
 
 proc JS_IsNumber*(v: JSValue): JS_BOOL
 proc JS_IsBigInt*(v: JSValue): JS_BOOL

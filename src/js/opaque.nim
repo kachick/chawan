@@ -30,6 +30,7 @@ type
     Array_prototype_values*: JSValue
     Object_prototype_valueOf*: JSValue
     err_ctors*: array[JSErrorEnum, JSValue]
+    htmldda*: JSClassID # only one of these exists: document.all.
 
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, pointer] # Nim, JS

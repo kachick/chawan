@@ -137,6 +137,8 @@ type
 
   HTMLCollection = ref object of Collection
 
+  HTMLAllCollection = ref object of Collection
+
   DOMTokenList = ref object
     toks*: seq[string]
     element: Element
@@ -148,7 +150,6 @@ type
     parentNode* {.jsget.}: Node
     parentElement* {.jsget.}: Element
     root: Node
-    document*: Document
     index*: int # Index in parents children. -1 for nodes without a parent.
     # Live collection cache: ids of live collections are saved in all
     # nodes they refer to. These are removed when the collection is destroyed,
@@ -158,6 +159,7 @@ type
     liveCollections: HashSet[int]
     children_cached: HTMLCollection
     childNodes_cached: NodeList
+    document_internal: Document
 
   Attr* = ref object of Node
     namespaceURI* {.jsget.}: string
@@ -194,6 +196,7 @@ type
     invalidCollections: HashSet[int] # collection ids
     colln: int
 
+    all_cached: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
     cachedSheetsInvalid: bool
 
@@ -399,6 +402,7 @@ jsDestructor(HTMLImageElement)
 jsDestructor(Node)
 jsDestructor(NodeList)
 jsDestructor(HTMLCollection)
+jsDestructor(HTMLAllCollection)
 jsDestructor(Location)
 jsDestructor(Document)
 jsDestructor(DOMImplementation)
@@ -855,6 +859,13 @@ func `$`*(node: Node): string =
   else:
     result = "Node of " & $node.nodeType
 
+#TODO this should be an alias of ownerDocument, but I think we have plenty
+# of code depending on the fact that this returns identity for document nodes.
+func document*(node: Node): Document =
+  if node.nodeType == DOCUMENT_NODE:
+    return Document(node)
+  return node.document_internal
+
 iterator elementList*(node: Node): Element {.inline.} =
   for child in node.childList:
     if child.nodeType == ELEMENT_NODE:
@@ -956,6 +967,7 @@ proc populateCollection(collection: Collection) =
   if collection.islive:
     for child in collection.snapshot:
       child.liveCollections.incl(collection.id)
+    collection.root.liveCollections.incl(collection.id)
 
 proc refreshCollection(collection: Collection) =
   let document = collection.root.document
@@ -978,6 +990,9 @@ proc finalize(collection: HTMLCollection) {.jsfin.} =
   collection.finalize0()
 
 proc finalize(collection: NodeList) {.jsfin.} =
+  collection.finalize0()
+
+proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 
 func ownerDocument(node: Node): Document {.jsfget.} =
@@ -1151,6 +1166,31 @@ func item(collection: HTMLCollection, i: int): Element {.jsfunc.} =
 func getter(collection: HTMLCollection, i: int): Option[Element] {.jsgetprop.} =
   return option(collection.item(i))
 
+# HTMLAllCollection
+proc length(collection: HTMLAllCollection): uint32 {.jsfget.} =
+  return uint32(collection.len)
+
+func hasprop(collection: HTMLAllCollection, i: int): bool {.jshasprop.} =
+  return i < collection.len
+
+func item(collection: HTMLAllCollection, i: int): Element {.jsfunc.} =
+  if i < collection.len:
+    return Element(collection.snapshot[i])
+
+func getter(collection: HTMLAllCollection, i: int): Option[Element] {.jsgetprop.} =
+  return option(collection.item(i))
+
+proc all(document: Document): HTMLAllCollection {.jsfget.} =
+  if document.all_cached == nil:
+    document.all_cached = newCollection[HTMLAllCollection](
+      root = document,
+      match = isElement,
+      islive = true,
+      childonly = false
+    )
+  return document.all_cached
+
+# Location
 proc newLocation*(window: Window): Location =
   let location = Location(window: window)
   let ctx = window.jsctx
@@ -1298,7 +1338,7 @@ proc setHash(location: Location, s: string) {.jsfset: "hash".} =
 func newAttr(parent: Element, localName, value: string, prefix = "", namespaceURI = ""): Attr =
   return Attr(
     nodeType: ATTRIBUTE_NODE,
-    document: parent.document,
+    document_internal: parent.document,
     namespaceURI: namespaceURI,
     ownerElement: parent,
     localName: localName,
@@ -1885,7 +1925,7 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
 func newText(document: Document, data: string): Text =
   return Text(
     nodeType: TEXT_NODE,
-    document: document,
+    document_internal: document,
     data: data,
     index: -1
   )
@@ -1897,7 +1937,7 @@ func newText(ctx: JSContext, data = ""): Text {.jsctor.} =
 func newCDATASection(document: Document, data: string): CDATASection =
   return CDATASection(
     nodeType: CDATA_SECTION_NODE,
-    document: document,
+    document_internal: document,
     data: data,
     index: -1
   )
@@ -1905,7 +1945,7 @@ func newCDATASection(document: Document, data: string): CDATASection =
 func newProcessingInstruction(document: Document, target, data: string): ProcessingInstruction =
   return ProcessingInstruction(
     nodeType: PROCESSING_INSTRUCTION_NODE,
-    document: document,
+    document_internal: document,
     target: target,
     data: data,
     index: -1
@@ -1914,7 +1954,7 @@ func newProcessingInstruction(document: Document, target, data: string): Process
 func newDocumentFragment(document: Document): DocumentFragment =
   return DocumentFragment(
     nodeType: DOCUMENT_FRAGMENT_NODE,
-    document: document,
+    document_internal: document,
     index: -1
   )
 
@@ -1925,7 +1965,7 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
 func newComment(document: Document, data: string): Comment =
   return Comment(
     nodeType: COMMENT_NODE,
-    document: document,
+    document_internal: document,
     data: data,
     index: -1
   )
@@ -1970,8 +2010,12 @@ func newHTMLElement*(document: Document, tagType: TagType,
   of TAG_FORM:
     result = new(HTMLFormElement)
   of TAG_TEMPLATE:
-    result = new(HTMLTemplateElement)
-    HTMLTemplateElement(result).content = DocumentFragment(document: document, host: result)
+    result = HTMLTemplateElement(
+      content: DocumentFragment(
+        document_internal: document,
+        host: result
+      )
+    )
   of TAG_UNKNOWN:
     result = new(HTMLUnknownElement)
   of TAG_SCRIPT:
@@ -1995,7 +2039,7 @@ func newHTMLElement*(document: Document, tagType: TagType,
   result.tagType = tagType
   result.namespace = namespace
   result.namespacePrefix = prefix
-  result.document = document
+  result.document_internal = document
   result.attributes = NamedNodeMap(element: result)
   result.classList = DOMTokenList(localName: "classList")
   result.index = -1
@@ -2020,19 +2064,19 @@ func newHTMLElement*(document: Document, localName: string,
     result.localName = localName
 
 func newDocument*(): Document {.jsctor.} =
-  result = Document(
+  let document = Document(
     nodeType: DOCUMENT_NODE,
     url: newURL("about:blank").get,
     index: -1
   )
-  result.document = result
-  result.implementation = DOMImplementation(document: result)
-  result.contentType = "application/xml"
+  document.implementation = DOMImplementation(document: result)
+  document.contentType = "application/xml"
+  return document
 
 func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
   return DocumentType(
     nodeType: DOCUMENT_TYPE_NODE,
-    document: document,
+    document_internal: document,
     name: name,
     publicId: publicId,
     systemId: systemId,
@@ -2330,10 +2374,10 @@ proc adopt(document: Document, node: Node) =
   if oldDocument != document:
     #TODO shadow root
     for desc in node.descendants:
-      desc.document = document
+      desc.document_internal = document
       if desc.nodeType == ELEMENT_NODE:
         for attr in Element(desc).attributes.attrlist:
-          attr.document = document
+          attr.document_internal = document
     #TODO custom elements
     #..adopting steps
 
@@ -2502,6 +2546,7 @@ proc insertNode(parent, node, before: Node) =
   if parent.nodeType == ELEMENT_NODE:
     node.parentElement = Element(parent)
   node.invalidateCollections()
+  parent.invalidateCollections()
   if node.nodeType == ELEMENT_NODE:
     if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
       node.document.cachedSheetsInvalid = true
@@ -3068,6 +3113,7 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.defineConsts(nodeCID, NodeType, uint16)
   ctx.registerType(NodeList)
   ctx.registerType(HTMLCollection)
+  ctx.registerType(HTMLAllCollection, ishtmldda = true)
   ctx.registerType(Location)
   ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(DOMImplementation)
