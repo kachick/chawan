@@ -32,6 +32,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
     userdata: pointer): csize_t {.cdecl.} =
   var line = newString(nitems)
   if nitems > 0:
+    prepareMutation(line)
     copyMem(addr line[0], addr p[0], nitems)
 
   let op = cast[FtpHandle](userdata)
@@ -91,6 +92,7 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
     if op.dirmode:
       let i = op.buffer.len
       op.buffer.setLen(op.buffer.len + int(nmemb))
+      prepareMutation(op.buffer)
       copyMem(addr op.buffer[i], addr p[0], nmemb)
     else:
       if not op.handle.sendData(p, int(nmemb)):
