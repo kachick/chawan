@@ -56,7 +56,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
 <TITLE>""" & op.path & """</TITLE>
 </HEAD>
 <BODY>
-<H1>Index of """ & op.path & """</H1>
+<H1>Index of """ & htmlEscape(op.path) & """</H1>
 <PRE>
 <A HREF="..">
 [Upper Directory]</A>"""):
@@ -76,7 +76,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
 <HEAD>
 <TITLE>Unauthorized</TITLE>
 </HEAD>
-<BODY><PRE>""" & line)
+<BODY><PRE>""" & htmlEscape(line))
       return 0
   return nitems
 
@@ -136,17 +136,20 @@ proc finish(op: CurlHandle) =
       let linki = name.find(x)
       let linkfrom = name.substr(0, linki - 1)
       let linkto = name.substr(linki + 4) # you?
+      let path = percentEncode(linkfrom, PathPercentEncodeSet)
       discard op.handle.sendData("""
-<A HREF="""" & linkfrom & """"">
-""" & name & """@ (-> """ & linkto & """)</A>""")
+<A HREF="""" & path & """"">
+""" & htmlEscape(linkfrom) & """@ (-> """ & htmlEscape(linkto) & """)</A>""")
     of 'd': # directory
+      let path = percentEncode(name, PathPercentEncodeSet)
       discard op.handle.sendData("""
-<A HREF="""" & name & """/">
-""" & name & """/</A>""")
+<A HREF="""" & path & """/">
+""" & htmlEscape(name) & """/</A>""")
     else: # file
+      let path = percentEncode(name, PathPercentEncodeSet)
       discard op.handle.sendData("""
-<A HREF="""" & name & """">
-""" & name & """ (""" & $nsize & """)</A>""")
+<A HREF="""" & path & """">
+""" & htmlEscape(name) & """ (""" & $nsize & """)</A>""")
   discard op.handle.sendData("""
 </PRE>
 </BODY>

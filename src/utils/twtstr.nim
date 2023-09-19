@@ -546,6 +546,23 @@ func percentDecode*(input: string, si = 0): string =
         i += 2
     inc i
 
+func htmlEscape*(s: string): string =
+  var res = ""
+  for c in s:
+    if c == '<':
+      res &= "&lt;"
+    elif c == '>':
+      res &= "&gt;"
+    elif c == '&':
+      res &= "&amp;"
+    elif c == '"':
+      res &= "&quot;"
+    elif c == '\'':
+      res &= "&apos;"
+    else:
+      res &= c
+  return res
+
 #basically std join but with char
 func join*(ss: openarray[string], sep: char): string =
   if ss.len == 0:
