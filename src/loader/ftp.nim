@@ -33,7 +33,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
   var line = newString(nitems)
   if nitems > 0:
     prepareMutation(line)
-    copyMem(addr line[0], addr p[0], nitems)
+    copyMem(addr line[0], p, nitems)
 
   let op = cast[FtpHandle](userdata)
 
@@ -93,7 +93,7 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
       let i = op.buffer.len
       op.buffer.setLen(op.buffer.len + int(nmemb))
       prepareMutation(op.buffer)
-      copyMem(addr op.buffer[i], addr p[0], nmemb)
+      copyMem(addr op.buffer[i], p, nmemb)
     else:
       if not op.handle.sendData(p, int(nmemb)):
         return 0
@@ -161,7 +161,7 @@ proc finish(op: CurlHandle) =
         t: ITEM_FILE,
         name: name,
         modified: dates,
-        nsize: nsize
+        nsize: int(nsize)
       ))
   discard op.handle.sendData(makeDirlist(items))
   discard op.handle.sendData("\n</PRE>\n</BODY>\n</HTML>\n")

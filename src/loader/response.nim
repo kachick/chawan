@@ -79,7 +79,7 @@ proc blob(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
     GC_ref(s)
     let deallocFun = proc() =
       GC_unref(s)
-    let blob = newBlob(addr s[0], s.len, response.contenttype, deallocFun)
+    let blob = newBlob(unsafeAddr s[0], s.len, response.contenttype, deallocFun)
     ok(blob))
 
 proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]

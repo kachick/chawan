@@ -58,7 +58,7 @@ proc loadDir(handle: LoaderHandle, url: URL, path: string) =
         t: ITEM_FILE,
         name: file,
         modified: modified,
-        nsize: info.size
+        nsize: int(info.size)
       ))
     of pcLinkToDir, pcLinkToFile:
       var target = expandSymlink(fullpath)

@@ -199,7 +199,7 @@ proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
       let i = op.buffer.len
       op.buffer.setLen(op.buffer.len + int(nmemb))
       prepareMutation(op.buffer)
-      copyMem(addr op.buffer[i], addr p[0], nmemb)
+      copyMem(addr op.buffer[i], p, nmemb)
       if not op.onSendChunk(i):
         return 0
     else:
