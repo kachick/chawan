@@ -284,6 +284,9 @@ proc prevHist(edit: LineEdit) {.jsfunc.} =
       edit.histtmp = $edit.news
     dec edit.histindex
     edit.news = edit.hist.lines[edit.histindex]
+    # The begin call is needed so the cursor doesn't get lost outside
+    # the string.
+    edit.begin()
     edit.end()
     edit.invalid = true
 
@@ -291,11 +294,13 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
   if edit.histindex + 1 < edit.hist.lines.len:
     inc edit.histindex
     edit.news = edit.hist.lines[edit.histindex]
+    edit.begin()
     edit.end()
     edit.invalid = true
   elif edit.histindex < edit.hist.lines.len:
     inc edit.histindex
     edit.news = edit.histtmp
+    edit.begin()
     edit.end()
     edit.histtmp = ""
 
