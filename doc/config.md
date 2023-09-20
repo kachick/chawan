@@ -272,8 +272,8 @@ Following is a list of display options:
 <td>color-mode</td>
 <td>"monochrome"/"ansi"/"8bit"/"24bit"/"auto"</td>
 <td>Set the color mode. "auto" for automatic detection, "monochrome"
-for black on white, "ansi" for ansi colors, "24bit" for true colors. "8bit"
-is currently unimplemented (and falls back to ansi).</td>
+for black on white, "ansi" for ansi colors, "8bit" for 256-color mode, and
+"24bit" for true colors.</td>
 </tr>
 
 <tr>
