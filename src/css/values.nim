@@ -408,7 +408,7 @@ func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit {.in
   of UNIT_CH: ch_to_px(l.num, window)
   of UNIT_IC: ic_to_px(l.num, window)
   of UNIT_EX: ex_to_px(l.num, window)
-  of UNIT_PERC: p * l.num / 100
+  of UNIT_PERC: toLayoutUnit(toFloat64(p) * l.num / 100)
   of UNIT_PX: toLayoutUnit(l.num)
   of UNIT_CM: toLayoutUnit(l.num * 37.8)
   of UNIT_MM: toLayoutUnit(l.num * 3.78)
