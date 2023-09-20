@@ -186,8 +186,8 @@ proc clear(edit: LineEdit) {.jsfunc.} =
     edit.invalid = true
 
 proc kill(edit: LineEdit) {.jsfunc.} =
-  if edit.cursori > 0 and edit.cursori < edit.news.len:
-    edit.news.setLen(edit.cursori - 1)
+  if edit.cursori < edit.news.len:
+    edit.news.setLen(edit.cursori)
     edit.invalid = true
 
 proc backward(edit: LineEdit) {.jsfunc.} =
