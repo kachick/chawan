@@ -286,8 +286,8 @@ completely.</td>
 </tr>
 
 <tr>
-<td>no-format-mode
-<td>["bold", "italic", "underline", "reverse", "strike", "overline", "blink"]
+<td>no-format-mode</td>
+<td>["bold", "italic", "underline", "reverse", "strike", "overline", "blink"]</td>
 <td>Disable specified formatting modes.</td>
 </tr>
 

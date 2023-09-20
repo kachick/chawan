@@ -51,7 +51,7 @@ clean:
 
 .PHONY: manpage
 manpage:
-	sed '/<!-- TOCSTART -->/,/<!-- TOCEND -->/d' doc/config.md > .obj/cha-config.md
+	sed '/<!-- TOCSTART -->/,/<!-- TOCEND -->/d' doc/config.md | ./table_rewrite.sh > .obj/cha-config.md
 	pandoc --standalone --to man .obj/cha-config.md -o .obj/cha-config.5
 	cp doc/cha.1 "$(OBJDIR)/cha.1"
 
