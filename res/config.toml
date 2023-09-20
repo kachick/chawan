@@ -166,3 +166,7 @@ M-c = '''
 pager.commandMode = !(console.buffer == pager.buffer);
 console[pager.commandMode ? "show" : "hide"]();
 '''
+'M-[D' = 'line.backward()'
+'M-[B' = 'line.nextHist()'
+'M-[A' = 'line.prevHist()'
+'M-[C' = 'line.forward()'
