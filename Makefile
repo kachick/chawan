@@ -3,6 +3,9 @@ OBJDIR = .obj
 FLAGS = -o:cha -d:curlLibName:$(CURLLIBNAME)
 FILES = src/main.nim
 prefix = /usr/local
+manprefix = /usr/local/share/man
+manprefix1 = $(manprefix)/man1
+manprefix5 = $(manprefix)/man5
 QJSOBJ = $(OBJDIR)/quickjs
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 
@@ -46,10 +49,18 @@ clean:
 	rm -rf $(OBJDIR)
 	rm -f lib/libquickjs.a
 
+.PHONY: manpage
+manpage:
+	sed '/<!-- TOCSTART -->/,/<!-- TOCEND -->/d' doc/config.md > .obj/cha-config.md
+	pandoc --standalone --to man .obj/cha-config.md -o .obj/cha-config.5
+	cp doc/cha.1 "$(OBJDIR)/cha.1"
+
 .PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(prefix)/bin"
 	install -m755 cha "$(DESTDIR)$(prefix)/bin"
+	test -f "$(OBJDIR)/cha-config.5" && install -m755 "$(OBJDIR)/cha-config.5" "$(DESTDIR)$(manprefix5)"
+	test -f "$(OBJDIR)/cha.1" && install -m755 "$(OBJDIR)/cha.1" "$(DESTDIR)$(manprefix1)"
 
 .PHONY: uninstall
 uninstall:

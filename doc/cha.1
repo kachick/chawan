@@ -1,0 +1,123 @@
+.TH CHA 1
+.SH NAME
+cha - the Chawan text-mode browser
+.SH SYNOPSIS
+.B cha
+[\fBoptions\fR]
+[\fIURL(s) \fRor \fIfile(s)\fR...]
+.SH DESCRIPTION
+Chawan is a text-mode browser. It can be used as a pager, or as a
+web/FTP/gopher/file browser, and understands HTML, CSS and JavaScript.
+Chawan can also be used to as a general text-based document viewer using
+\fBmailcap\fR(5) extensions.
+
+Like \fBw3m\fR(1), Chawan organizes files and pages into buffers. The user
+can freely open, duplicate, delete, and navigate between these.
+
+.SH ARGUMENTS
+On invocation, Chawan looks through all arguments provided, and attempts
+to open each file supplied. An error message is provided if opening a file
+fails. If no files could successfully be opened, Chawan exits automatically.
+
+Chawan may also be started without specifying a file, if a file is provided
+through a pipe. In this case, it may be useful to set the content type using
+e.g. \fB\-T \fItext/html\fR. (The \fB-\fR pseudo-file argument, commonly accepted
+by other commands, is simply ignored.)
+
+.SH OPTIONS
+Command line options generally have both short forms (e.g. \fB\-d\fR) and long
+forms (e.g. \fB\-\-dump\fR).
+
+Long forms must be introduced with two dashes; when
+only a single dash is provided, each letter is parsed as a separate short form.
+.br
+(e.g. \fB\-abcd\fR is equivalent to \fB\-a \-b \-c \-d\fR, \fInot\fR
+\fB\-\-abcd\fR.)
+
+.TP
+\fB\-d, \-\-dump\fR
+Start in headless mode, and sequentially print the opened files to stdout.
+This option is implicitly enabled if stdout is not a tty (e.g. when piping
+\fIcha\fR output).
+.TP
+\fB\-o, \-\-opt\fR \fIconfig\fR
+Override configuration options. This accepts the configuration format is
+described in \fBcha-config\fR(5), in other words the passed string must be
+valid TOML.
+
+(The sole exception is quoting: to ease specifying string
+parameters, unrecognized bare keywords are converted to strings. So this
+works: \fB--opt\fR \fIabcd.option-name\fR=\fIoption-value\fR. However, symbols must
+still be quoted.)
+.TP
+\fB\-c, \-\-css\fR \fIstylesheet\fR
+Temporarily modify the user stylesheet. If a user stylesheet is already
+being used, the stylesheet given is appended to that.
+.TP
+\fB\-T, \-\-type\fR \fIcontent-type\fR
+Override the content type of all input files. Useful when the content type
+cannot be guessed from the file extension, or when reading a non-plaintext
+file from stdin.
+.TP
+\fB\-I, \-\-input-charset\fR \fIcharset\fR
+Override the character set of all input files. Useful when Chawan is
+incorrectly recognizing the input character set. (Note: if this happens
+often, consider changing the default input charset recognition list
+\fIencoding.document-charset\fR in the configuration.)
+.TP
+\fB\-O, \-\-output-charset\fR \fIcharset\fR
+Override the output character set. This is a shortcut for
+\fB\-o \fIencoding.display\-charset\fR=\fIcharset\fR.
+.TP
+\fB\-M, \-\-monochrome\fR
+Override the output character set. This is a shortcut for
+\fB\-o \fIdisplay.color\-mode\fR=\fIansi\fR.
+.TP
+\fB\-V, \-\-visual\fR
+Start in visual mode: the page specified in \fIstart.visual-home\fR is opened.
+.TP
+\fB\-r, \-\-run\fR \fIscript\fR/\fIfile\fR
+Execute the string provided as a JS script, or execute the supplied JS
+file. If the file ends in .mjs, it is executed as an ES module.
+.br
+(To execute an inline script as a module, the following hack can be used:
+.br
+\fIcha \fB-r \fR'await new Promise(x => setTimeout(x, 1000));
+console.log("hello from ESM!"); //.mjs'
+.br
+In other words, we add a comment \fI//.mjs\fR to the end of the script.)
+.TP
+\fB\-h, \-\-help\fR
+Print a short version of this page, then exit.
+.TP
+\fB\-v, \-\-version\fR
+Print information about the browser's version, then exit.
+.TP
+\fB\-\-\fP
+Interpret all following arguments as files. (e.g. if you have a file named
+\fI\-o\fR, open it as \fIcha \fB--\fR \fI-o\fR.
+
+.SH ENVIRONMENT VARIABLES
+Certain environment variables are read and used by Chawan.
+
+.TP
+\fBHTTP_HOME\fR, \fBWWW_HOME\fR
+When set, Chawan starts in visual mode by default and opens the page specified
+by one of these variables. (\fBHTTP_HOME\fR takes precedence over
+\fBWWW_HOME\fR.)
+.TP
+\fBCOLORTERM\fR
+When set to \fI24bit\fR or \fItruecolor\fR, and the \fIdisplay.color-mode\fR
+configuration option is set to \fIauto\fR, Chawan sets the color mode to
+true color.
+.TP
+\fBTERM\fR
+Used by Chawan to determine which termcap entry to load. When not set,
+defaults to \fIdosansi\fR.
+.TP
+\fBEDITOR\fR
+Used to determine the editor to use when the \fIexternal.editor\fR
+configuration option is not set.
+
+.SH CONFIGURATION
+Configuration options are described in \fBcha-config\fR(5).

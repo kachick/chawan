@@ -1,4 +1,6 @@
-# Configuration
+% cha-config(5) | Configuration of Chawan
+
+# Configuration of Chawan
 
 Chawan supports configuration of various options like keybindings, user
 stylesheets, site preferences, etc. The configuration format is very similar
@@ -21,6 +23,7 @@ environment variable is not set.) See the default configuration file in the
 res/ folder, and bonus configuration files in the bonus/ folder for further
 examples.
 
+<!-- TOCSTART -->
 **Table of contents**
 
 * [Start](#start)
@@ -38,6 +41,7 @@ examples.
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
 
+<!-- TOCEND -->
 ## Start
 
 Start-up options are to be placed in the `[start]` section.
