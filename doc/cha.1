@@ -16,20 +16,20 @@ can freely open, duplicate, delete, and navigate between these.
 
 .SH ARGUMENTS
 On invocation, Chawan looks through all arguments provided, and attempts
-to open each file supplied. An error message is provided if opening a file
-fails. If no files could successfully be opened, Chawan exits automatically.
+to open each file supplied. If no files could successfully be opened, Chawan
+exits automatically.
 
 Chawan may also be started without specifying a file, if a file is provided
 through a pipe. In this case, it may be useful to set the content type using
 e.g. \fB\-T \fItext/html\fR. (The \fB-\fR pseudo-file argument, commonly accepted
-by other commands, is simply ignored.)
+by other commands to mean "pipe input", is simply ignored.)
 
 .SH OPTIONS
 Command line options generally have both short forms (e.g. \fB\-d\fR) and long
 forms (e.g. \fB\-\-dump\fR).
 
-Long forms must be introduced with two dashes; when
-only a single dash is provided, each letter is parsed as a separate short form.
+Long forms must be introduced with two dashes; when only a single dash is
+provided, each letter is parsed as a separate short form.
 .br
 (e.g. \fB\-abcd\fR is equivalent to \fB\-a \-b \-c \-d\fR, \fInot\fR
 \fB\-\-abcd\fR.)
@@ -121,3 +121,6 @@ configuration option is not set.
 
 .SH CONFIGURATION
 Configuration options are described in \fBcha-config\fR(5).
+
+.SH SEE ALSO
+\fBcha-mailcap\fR(5), \fBcha-mime.types\fR(5)

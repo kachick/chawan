@@ -49,20 +49,27 @@ clean:
 	rm -rf $(OBJDIR)
 	rm -f lib/libquickjs.a
 
+$(OBJDIR)/cha-%.md: doc/%.md | $(OBJDIR)/
+	sed -e '/<!-- MANOFF -->/,/<!-- MANON -->/d' \
+		-e '/^<!-- MANON$$/d' \
+		-e '/^MANOFF -->$$/d' $< | \
+		./table_rewrite.sh > $@
+
+$(OBJDIR)/cha-%.5: $(OBJDIR)/cha-%.md
+	pandoc --standalone --to man $< -o $@
+
 .PHONY: manpage
-manpage:
-	sed '/<!-- TOCSTART -->/,/<!-- TOCEND -->/d' doc/config.md | \
-		sed '1s/<!-- \(.*\) -->/\1/' | \
-		./table_rewrite.sh > .obj/cha-config.md
-	pandoc --standalone --to man .obj/cha-config.md -o .obj/cha-config.5
+manpage: $(OBJDIR)/cha-config.5 $(OBJDIR)/cha-mailcap.5 $(OBJDIR)/cha-mime.types.5
 	cp doc/cha.1 "$(OBJDIR)/cha.1"
 
 .PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(prefix)/bin"
 	install -m755 cha "$(DESTDIR)$(prefix)/bin"
-	test -f "$(OBJDIR)/cha-config.5" && install -m755 "$(OBJDIR)/cha-config.5" "$(DESTDIR)$(manprefix5)"
-	test -f "$(OBJDIR)/cha.1" && install -m755 "$(OBJDIR)/cha.1" "$(DESTDIR)$(manprefix1)"
+	test -f "$(OBJDIR)/cha-config.5" && install -m755 "$(OBJDIR)/cha-config.5" "$(DESTDIR)$(manprefix5)" || true
+	test -f "$(OBJDIR)/cha-mailcap.5" && install -m755 "$(OBJDIR)/cha-mailcap.5" "$(DESTDIR)$(manprefix5)" || true
+	test -f "$(OBJDIR)/cha-mime.types.5" && install -m755 "$(OBJDIR)/cha-mime.types.5" "$(DESTDIR)$(manprefix5)" || true
+	test -f "$(OBJDIR)/cha.1" && install -m755 "$(OBJDIR)/cha.1" "$(DESTDIR)$(manprefix1)" || true
 
 .PHONY: uninstall
 uninstall:

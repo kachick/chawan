@@ -1,4 +1,6 @@
-<!-- % cha-config(5) | Configuration of Chawan -->
+<!-- MANON
+% cha-config(5) | Configuration of Chawan
+MANOFF -->
 
 # Configuration of Chawan
 
@@ -23,7 +25,7 @@ environment variable is not set.) See the default configuration file in the
 res/ folder, and bonus configuration files in the bonus/ folder for further
 examples.
 
-<!-- TOCSTART -->
+<!-- MANOFF -->
 **Table of contents**
 
 * [Start](#start)
@@ -41,7 +43,8 @@ examples.
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
 
-<!-- TOCEND -->
+<!-- MANON -->
+
 ## Start
 
 Start-up options are to be placed in the `[start]` section.
@@ -1030,3 +1033,9 @@ efgh$ -> efgh$
 ^ijkl$ -> ^ijkl$
 mnop -> ^mnop$
 ```
+<!-- MANON
+
+## See also
+
+**cha**(1)
+MANOFF -->

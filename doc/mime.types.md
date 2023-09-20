@@ -1,8 +1,18 @@
+<!-- MANON
+% cha-config(5) | MIME type detection in Chawan
+MANOFF -->
+
 # mime.types
 
 Chawan uses the mime.types file to recognize certain file extensions for
-matching mailcap entries. See the [mailcap](mailcap.md) documentation for
-a description of mailcap.
+matching mailcap entries. See the
+<!-- MANOFF -->
+[mailcap](mailcap.md)
+<!-- MANON -->
+<!-- MANON
+**cha-mailcap**(5)
+MANOFF -->
+documentation for a description of mailcap.
 
 ## Search path
 
@@ -42,3 +52,9 @@ The default mime.types file only includes file formats that buffers can handle,
 which is rather limited (at the time of writing, 5 file formats). Therefore it
 is highly recommended to configure at least one external mime.types file if you
 use mailcap.
+<!-- MANON
+
+## See also
+
+**cha**(1)
+MANOFF -->

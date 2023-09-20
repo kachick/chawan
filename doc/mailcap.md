@@ -1,3 +1,7 @@
+<!-- MANON
+% cha-mailcap(5) | Mailcap support in Chawan
+MANOFF -->
+
 # Mailcap
 
 Chawan's buffers can only handle HTML and plain text. To make Chawan recognize
@@ -5,7 +9,14 @@ other file formats, the mailcap file format can be used.
 
 Note that Chawan's default mime.types file only recognizes a few file
 extensions, which may result in your entries not being executed.
-Please consult the [mime.types](mime.types.md) documentation for details.
+Please consult the
+<!-- MANOFF -->
+[mime.types](mime.types.md)
+<!-- MANON -->
+<!-- MANON
+**cha-mime.types**(5)
+MANOFF -->
+documentation for details.
 
 For an exact description of the mailcap format, see
 [RFC 1524](https://www.rfc-editor.org/rfc/rfc1524).
@@ -88,3 +99,8 @@ application/vnd.openxmlformats-officedocument.wordprocessingml.document;lowriter
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha -T text/html -I %{charset}; copiousoutput
 ```
+<!-- MANON
+## See also
+
+**cha**(1)
+MANOFF -->
