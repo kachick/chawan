@@ -510,8 +510,8 @@ proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
 
 proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =
   if buffer.document == nil: return (-1, -1)
-  let anchor = buffer.document.getElementById(buffer.url.anchor)
-  if anchor == nil: return
+  let anchor = buffer.document.findAnchor(buffer.url.anchor)
+  if anchor == nil: return (-1, -1)
   for y in 0 ..< buffer.lines.len:
     let line = buffer.lines[y]
     for i in 0 ..< line.formats.len:
@@ -1297,7 +1297,7 @@ proc readCanceled*(buffer: Buffer): bool {.proxy.} =
   return buffer.restoreFocus()
 
 proc findAnchor*(buffer: Buffer, anchor: string): bool {.proxy.} =
-  return buffer.document != nil and buffer.document.getElementById(anchor) != nil
+  return buffer.document != nil and buffer.document.findAnchor(anchor) != nil
 
 type GetLinesResult* = tuple[
   numLines: int,

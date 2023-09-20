@@ -1840,6 +1840,15 @@ func formmethod*(element: Element): FormMethod =
 
   return FORM_METHOD_GET
 
+func findAnchor*(document: Document, id: string): Element =
+  if id.len == 0:
+    return nil
+  for child in document.elements:
+    if child.id == id:
+      return child
+    if child.tagType == TAG_A and child.attr("name") == id:
+      return child
+
 # Forward declaration hack
 isDefaultPassive = func (eventTarget: EventTarget): bool =
   if eventTarget of Window:
