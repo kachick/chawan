@@ -27,6 +27,8 @@ supported yet.)
 5. Use one of the following:
 	* `make release` - optimized release build
 	* `make` - debug build (slow, for development)
+6. If you want manpages: `make manpage`
+7. Finally, install using `make install` (e.g. `sudo make install`)
 
 ## Features
 
