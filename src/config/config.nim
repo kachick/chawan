@@ -584,7 +584,7 @@ proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>",
       echo "Fatal error: Failed to parse config"
       echo toml.error
     else:
-      stderr.write("Fatal error: Failed to parse config")
+      stderr.write("Fatal error: Failed to parse config\n")
       stderr.write(toml.error & '\n')
     quit(1)
 
