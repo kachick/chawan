@@ -1,4 +1,4 @@
-% cha-config(5) | Configuration of Chawan
+<!-- % cha-config(5) | Configuration of Chawan -->
 
 # Configuration of Chawan
 
