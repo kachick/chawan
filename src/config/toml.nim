@@ -30,6 +30,7 @@ type
     node: TomlNode
     currkey: seq[string]
     tarray: bool
+    laxnames: bool
 
   TomlValue* = ref object
     case vt*: ValueType
@@ -60,6 +61,57 @@ type
     key: seq[string]
     nodes: seq[TomlNode]
     map: Table[string, TomlValue]
+
+func `$`*(val: TomlValue): string
+
+func `$`(tab: TomlTable): string
+
+func `$`(kvpair: TomlKVPair): string =
+  if kvpair.key.len > 0:
+    #TODO escape
+    result = kvpair.key[0]
+    for i in 1 ..< kvpair.key.len:
+      result &= '.'
+      result &= kvpair.key[i]
+  else:
+    result = "\"\""
+  result &= " = "
+  result &= $kvpair.value
+  result &= '\n'
+
+func `$`(tab: TomlTable): string =
+  if tab.comment != "":
+    result &= "#" & tab.comment & '\n'
+  for key, val in tab.map:
+    result &= key & " = " & $val & '\n'
+  result &= '\n'
+
+func `$`*(val: TomlValue): string =
+  case val.vt
+  of VALUE_STRING:
+    result = "\""
+    for c in val.s:
+      if c == '"':
+        result &= '\\'
+      result &= c
+    result &= '"'
+  of VALUE_INTEGER:
+    result = $val.i
+  of VALUE_FLOAT:
+    result = $val.f
+  of VALUE_BOOLEAN:
+    result = $val.b
+  of VALUE_TABLE:
+    result = $val.t
+  of VALUE_DATE_TIME:
+    result = $val.dt
+  of VALUE_ARRAY:
+    #TODO if ad table array probably
+    result = "["
+    for it in val.a:
+      result &= $it
+      result &= ','
+    result &= ']'
 
 func `[]`*(val: TomlValue, key: string): TomlValue =
   return val.t.map[key]
@@ -526,18 +578,23 @@ proc consumeValue(state: var TomlParser): TomlResult =
         return ok(TomlValue(vt: VALUE_BOOLEAN, b: true))
       elif s == "false":
         return ok(TomlValue(vt: VALUE_BOOLEAN, b: false))
+      elif state.laxnames:
+        return ok(TomlValue(vt: VALUE_STRING, s: s))
       else:
         return state.err("invalid token: " & s)
     else:
       return state.err("invalid character in value: " & c)
   return state.err("unexpected end of file")
 
-proc parseToml*(inputStream: Stream, filename = "<input>"): TomlResult =
-  var state: TomlParser
-  state.buf = inputStream.readAll()
-  state.line = 1
-  state.root = TomlTable()
-  state.filename = filename
+proc parseToml*(inputStream: Stream, filename = "<input>", laxnames = false):
+    TomlResult =
+  var state = TomlParser(
+    buf: inputStream.readAll(),
+    line: 1,
+    root: TomlTable(),
+    filename: filename,
+    laxnames: laxnames
+  )
   while state.has():
     if ?state.consumeNoState():
       # state.node has been set to a KV pair, so now we parse its value.
@@ -553,5 +610,6 @@ proc parseToml*(inputStream: Stream, filename = "<input>"): TomlResult =
         state.consumeComment()
       of '\t', ' ': discard
       else: return state.err("invalid character after value: " & c)
+  ?state.flushLine()
   inputStream.close()
   return ok(TomlValue(vt: VALUE_TABLE, t: state.root))

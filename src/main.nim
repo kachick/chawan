@@ -109,7 +109,7 @@ while i < params.len:
     conf.css.stylesheet &= getnext()
 
   proc popt() =
-    conf.parseConfig(getCurrentDir(), getnext())
+    conf.parseConfig(getCurrentDir(), getnext(), laxnames = true)
 
   proc phelp() =
     help(0)

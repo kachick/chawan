@@ -366,8 +366,10 @@ proc getMimeTypes*(config: Config): MimeTypes =
     return DefaultGuess
   return mimeTypes
 
-proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>")
-proc parseConfig*(config: Config, dir: string, s: string, name = "<input>")
+proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>",
+  laxnames = false)
+proc parseConfig*(config: Config, dir: string, s: string, name = "<input>",
+  laxnames = false)
 
 proc loadConfig*(config: Config, s: string) {.jsfunc.} =
   let s = if s.len > 0 and s[0] == '/':
@@ -572,17 +574,23 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
   config.configdir = dir
   #TODO: for omnirule/siteconf, check if substitution rules are specified?
 
-proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>") =
-  let toml = parseToml(stream, dir / name)
+proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>",
+    laxnames = false) =
+  let toml = parseToml(stream, dir / name, laxnames)
   if toml.isOk:
     config.parseConfig(dir, toml.get)
   else:
-    eprint("Fatal error: Failed to parse config\n")
-    eprint(toml.error & "\n")
+    when nimvm:
+      echo "Fatal error: Failed to parse config"
+      echo toml.error
+    else:
+      stderr.write("Fatal error: Failed to parse config")
+      stderr.write(toml.error & '\n')
     quit(1)
 
-proc parseConfig*(config: Config, dir: string, s: string, name = "<input>") =
-  config.parseConfig(dir, newStringStream(s), name)
+proc parseConfig*(config: Config, dir: string, s: string, name = "<input>",
+    laxnames = false) =
+  config.parseConfig(dir, newStringStream(s), name, laxnames)
 
 proc staticReadConfig(): ConfigObj =
   var config = new(Config)
