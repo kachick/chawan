@@ -492,7 +492,8 @@ proc newConsole(pager: Pager, tty: File): Console =
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("javascript:console.show()")
     result.container = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
-      pipefd[0], option(url.get(nil)), "Browser console")
+      pipefd[0], option(url.get(nil)), "Browser console",
+      canreinterpret = false)
     var f: File
     if not open(f, pipefd[1], fmWrite):
       raise newException(Defect, "Failed to open file for console pipe.")

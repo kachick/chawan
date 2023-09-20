@@ -395,14 +395,15 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.setContainer(container)
 
 proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
-    title = "", redirectdepth = 0): Container =
+    title = "", redirectdepth = 0, canreinterpret = true): Container =
   return newBuffer(
     pager.forkserver,
     pager.mainproc,
     bufferConfig,
     source,
     title,
-    redirectdepth
+    redirectdepth,
+    canreinterpret
   )
 
 proc dupeBuffer(pager: Pager, container: Container, location: URL,
@@ -550,6 +551,8 @@ proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
     pager.alert("Buffer has no children!")
 
 proc toggleSource(pager: Pager) {.jsfunc.} =
+  if not pager.container.canreinterpret:
+    return
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
@@ -703,7 +706,8 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
       pager.container.retry = urls
 
 proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
-    fd: FileHandle, location: Option[URL], title: string): Container =
+    fd: FileHandle, location: Option[URL], title: string,
+    canreinterpret: bool): Container =
   var location = location.get(newURL("file://-").get)
   let bufferconfig = pager.applySiteconf(location)
   let source = BufferSource(
@@ -713,11 +717,12 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
     charset: cs,
     location: location
   )
-  return pager.newBuffer(bufferconfig, source, title = title)
+  return pager.newBuffer(bufferconfig, source, title = title,
+    canreinterpret = canreinterpret)
 
 proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset,
     fd: FileHandle) =
-  let container = pager.readPipe0(ctype, cs, fd, none(URL), "*pipe*")
+  let container = pager.readPipe0(ctype, cs, fd, none(URL), "*pipe*", true)
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =

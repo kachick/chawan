@@ -33,7 +33,6 @@ buffer:
 		- configurable/better url filtering in loader
 		- make peekCursor show the entire url
 - buffer cloning: fork buffer process instead of piping source
-- disable "reinterpret as html" for the log buffer
 - when the log buffer crashes, print its contents to stderr
 	* make console.err a TeeStream, and tee it to a StringStream that
 	  buffers up to 4KB

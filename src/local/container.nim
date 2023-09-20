@@ -97,11 +97,13 @@ type
     hasstart: bool
     redirectdepth*: int
     select*: Select
+    canreinterpret*: bool
 
 jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
-    source: BufferSource, title = "", redirectdepth = 0): Container =
+    source: BufferSource, title = "", redirectdepth = 0,
+    canreinterpret = true): Container =
   let attrs = getWindowAttributes(stdout)
   let ostream = forkserver.ostream
   let istream = forkserver.istream
@@ -123,7 +125,8 @@ proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
     process: process,
     pos: CursorPosition(
       setx: -1
-    )
+    ),
+    canreinterpret: canreinterpret
   )
 
 func charset*(container: Container): Charset =
