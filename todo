@@ -6,8 +6,6 @@ charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
 - JS TextEncoder interface
-docs:
-- manpage
 display:
 - important: add a virtual cursor (in some terminals, the real cursor is
   often obscured by white background color)
