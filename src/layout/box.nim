@@ -185,7 +185,6 @@ type
 
   ColumnContext* = object
     minwidth*: LayoutUnit
-    maxwidth*: LayoutUnit
     width*: LayoutUnit
     wspecified*: bool
     weight*: float64

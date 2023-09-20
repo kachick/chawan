@@ -671,31 +671,34 @@ proc calcAvailableSizes(box: BlockBox, containingWidth, containingHeight:
     box.calcAvailableHeight(containingHeight, percHeight)
 
 proc calcTableCellAvailableSizes(box: BlockBox, availableWidth, availableHeight:
-    SizeConstraint) =
+    SizeConstraint, override: bool) =
   let viewport = box.viewport
   let computed = box.computed
   box.resolvePadding(availableWidth, viewport)
   box.availableWidth = availableWidth
   box.availableHeight = availableHeight
 
-  let width = computed{"width"}
-  if not width.auto and width.unit != UNIT_PERC:
-    box.availableWidth = stretch(width.px(viewport))
+  if not override:
+    let width = computed{"width"}
+    if not width.auto and width.unit != UNIT_PERC:
+      box.availableWidth = stretch(width.px(viewport))
   box.availableWidth.u -= box.padding_left
   box.availableWidth.u -= box.padding_right
 
-  let height = computed{"height"}
-  if not height.auto and height.unit != UNIT_PERC:
-    box.availableHeight = stretch(height.px(viewport))
+  if not override:
+    let height = computed{"height"}
+    if not height.auto and height.unit != UNIT_PERC:
+      box.availableHeight = stretch(height.px(viewport))
 
 proc newTableCellBox(viewport: Viewport, builder: BoxBuilder,
-    availableWidth, availableHeight: SizeConstraint): BlockBox =
+    availableWidth, availableHeight: SizeConstraint, override: bool):
+    BlockBox =
   let box = BlockBox(
     viewport: viewport,
     computed: builder.computed,
     node: builder.node
   )
-  box.calcTableCellAvailableSizes(availableWidth, availableHeight)
+  box.calcTableCellAvailableSizes(availableWidth, availableHeight, override)
   return box
 
 proc newFlowRootBox(viewport: Viewport, builder: BoxBuilder,
@@ -1130,9 +1133,10 @@ proc buildTableCaption(viewport: Viewport, builder: TableCaptionBoxBuilder,
   return box
 
 proc buildTableCell(viewport: Viewport, builder: TableCellBoxBuilder,
-    availableWidth, availableHeight: SizeConstraint): BlockBox =
+    availableWidth, availableHeight: SizeConstraint, override: bool):
+    BlockBox =
   let tableCell = viewport.newTableCellBox(builder, availableWidth,
-    availableHeight)
+    availableHeight, override)
   tableCell.buildLayout(builder)
   return tableCell
 
@@ -1195,7 +1199,9 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
     else:
       maxContent()
     #TODO specified table height should be distributed among rows.
-    let box = parent.viewport.buildTableCell(cellbuilder, cw, maxContent())
+    # Allow the table cell to use its specified width.
+    let box = parent.viewport.buildTableCell(cellbuilder, cw, maxContent(),
+      override = false)
     let wrapper = CellWrapper(
       box: box,
       builder: cellbuilder,
@@ -1216,11 +1222,35 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
     for i in n ..< n + colspan:
       # Add spacing.
       ctx.width += pctx.inlinespacing
-      pctx.cols[i].maxwidth = w
-      if pctx.cols[i].width < w:
-        pctx.cols[i].width = w
-        if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
-        ctx.reflow[i] = true
+      # Figure out this cell's effect on the column's width.
+      # Four cases exits:
+      # 1. colwidth already fixed, cell width is fixed: take maximum
+      # 2. colwidth already fixed, cell width is auto: take colwidth
+      # 3. colwidth is not fixed, cell width is fixed: take cell width
+      # 4. neither of colwidth or cell width are fixed: take maximum
+      if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
+      if pctx.cols[i].wspecified:
+        if not computedWidth.auto and computedWidth.unit != UNIT_PERC:
+          let ww = computedWidth.px(parent.viewport)
+          # A specified column already exists; we take the larger width.
+          if ww > pctx.cols[i].width:
+            pctx.cols[i].width = ww
+            ctx.reflow[i] = true
+        else:
+          if pctx.cols[i].width < w:
+            wrapper.reflow = true
+      else:
+        if not computedWidth.auto and computedWidth.unit != UNIT_PERC:
+          let ww = computedWidth.px(parent.viewport)
+          # This is the first specified column. Replace colwidth with whatever
+          # we have.
+          ctx.reflow[i] = true
+          pctx.cols[i].wspecified = true
+          pctx.cols[i].width = ww
+        else:
+          if pctx.cols[i].width < w:
+            pctx.cols[i].width = w
+            ctx.reflow[i] = true
       if not computedWidth.auto and computedWidth.unit != UNIT_PERC:
         let ww = computedWidth.px(parent.viewport)
         if pctx.cols[i].wspecified:
@@ -1280,8 +1310,19 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     # Add inline spacing for merged columns.
     w += pctx.inlinespacing * (cellw.colspan - 1) * 2
     if cellw.reflow and cellw.builder != nil:
+      # Do not allow the table cell to make use of its specified width.
+      # e.g. in the following table
+      # <TABLE>
+      # <TR>
+      # <TD style="width: 5ch" bgcolor=blue>5ch</TD>
+      # </TR>
+      # <TR>
+      # <TD style="width: 9ch" bgcolor=red>9ch</TD>
+      # </TR>
+      # </TABLE>
+      # the TD with a width of 5ch should be 9ch wide as well.
       cellw.box = parent.viewport.buildTableCell(cellw.builder, stretch(w),
-        maxContent())
+        maxContent(), override = true)
       w = max(w, cellw.box.width)
     let cell = cellw.box
     x += pctx.inlinespacing
