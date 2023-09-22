@@ -141,7 +141,8 @@ input[type="radio"]::after {
 	color: initial;
 }
 
-input:is([type="text"], [type="password"], [type="search"], [type="file"]) {
+input:is([type="text"], [type="password"], [type="search"], [type="file"],
+		[type="url"], [type="email"], [type="tel"]) {
 	text-decoration: underline;
 }
 

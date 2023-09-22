@@ -1739,7 +1739,7 @@ func inputString*(input: HTMLInputElement): string =
   of INPUT_CHECKBOX, INPUT_RADIO:
     if input.checked: "*"
     else: " "
-  of INPUT_SEARCH, INPUT_TEXT:
+  of INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_URL, INPUT_TEL:
     input.value.padToWidth(int(input.attrulgz("size").get(20)))
   of INPUT_PASSWORD:
     '*'.repeat(input.value.len).padToWidth(int(input.attrulgz("size").get(20)))
