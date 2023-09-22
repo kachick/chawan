@@ -73,15 +73,21 @@ type
 
   LoaderCommand = enum
     LOAD
-    QUIT
+    TEE
+    SUSPEND
+    RESUME
+    ADDREF
+    UNREF
 
   LoaderContext = ref object
+    refcount: int
     ssock: ServerSocket
     alive: bool
     curlm: CURLM
     config: LoaderConfig
     extra_fds: seq[curl_waitfd]
     handleList: seq[CurlHandle]
+    handleMap: Table[int, LoaderHandle]
 
   LoaderConfig* = object
     defaultheaders*: Headers
@@ -128,7 +134,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
     discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
     handle.close()
 
-proc onLoad(ctx: LoaderContext, stream: Stream) =
+proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
   stream.sread(request)
   if not ctx.config.filter.match(request.url):
@@ -150,6 +156,8 @@ proc onLoad(ctx: LoaderContext, stream: Stream) =
         request.headers["Referer"] = r
     if request.proxy == nil or not ctx.config.acceptProxy:
       request.proxy = ctx.config.proxy
+    let fd = int(stream.source.getFd())
+    ctx.handleMap[fd] = handle
     ctx.loadResource(request, handle)
 
 proc acceptConnection(ctx: LoaderContext) =
@@ -163,9 +171,37 @@ proc acceptConnection(ctx: LoaderContext) =
     case cmd
     of LOAD:
       ctx.onLoad(stream)
-    of QUIT:
-      ctx.alive = false
-      stream.close()
+    of TEE:
+      var fd: int
+      stream.sread(fd)
+      if fd notin ctx.handleMap:
+        stream.swrite(false)
+      else:
+        let handle = ctx.handleMap[fd]
+        handle.addOutputStream(stream)
+        stream.swrite(true)
+    of ADDREF:
+      inc ctx.refcount
+    of UNREF:
+      dec ctx.refcount
+      if ctx.refcount == 0:
+        ctx.alive = false
+        stream.close()
+      else:
+        assert ctx.refcount > 0
+    of SUSPEND:
+      var fds: seq[int]
+      stream.sread(fds)
+      for fd in fds:
+        ctx.handleMap.withValue(fd, handlep):
+          handlep[].suspend()
+    of RESUME:
+      var fds: seq[int]
+      stream.sread(fds)
+      for fd in fds:
+        ctx.handleMap.withValue(fd, handlep):
+          handlep[].resume()
+
   except IOError:
     # End-of-file, broken pipe, or something else. For now we just
     # ignore it and pray nothing breaks.
@@ -198,7 +234,8 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
   var ctx = LoaderContext(
     alive: true,
     curlm: curlm,
-    config: config
+    config: config,
+    refcount: 1
   )
   gctx = ctx
   #TODO ideally, buffered would be true. Unfortunately this conflicts with
@@ -314,6 +351,52 @@ proc fetch*(loader: FileLoader, input: Request): FetchPromise =
   )
   return promise
 
+proc reconnect*(loader: FileLoader, data: ConnectData) =
+  let stream = connectSocketStream(loader.process, false, blocking = true)
+  stream.swrite(LOAD)
+  stream.swrite(data.request)
+  stream.flush()
+  let fd = int(stream.source.getFd())
+  loader.registerFun(fd)
+  loader.connecting[fd] = ConnectData(
+    promise: data.promise,
+    request: data.request,
+    stream: stream
+  )
+
+proc switchStream*(data: var ConnectData, stream: Stream) =
+  data.stream = stream
+
+proc switchStream*(loader: FileLoader, data: var OngoingData,
+    stream: SocketStream) =
+  data.response.body = stream
+  let fd = int(stream.source.getFd())
+  let realCloseImpl = stream.closeImpl
+  stream.closeImpl = nil
+  data.response.unregisterFun = proc() =
+    loader.ongoing.del(fd)
+    loader.unregistered.add(fd)
+    loader.unregisterFun(fd)
+    realCloseImpl(stream)
+
+proc suspend*(loader: FileLoader, fds: seq[int]) =
+  let stream = connectSocketStream(loader.process, false, blocking = true)
+  stream.swrite(SUSPEND)
+  stream.swrite(fds)
+  stream.close()
+
+proc resume*(loader: FileLoader, fds: seq[int]) =
+  let stream = connectSocketStream(loader.process, false, blocking = true)
+  stream.swrite(RESUME)
+  stream.swrite(fds)
+  stream.close()
+
+proc tee*(loader: FileLoader, fd: int): Stream =
+  let stream = connectSocketStream(loader.process, false, blocking = true)
+  stream.swrite(TEE)
+  stream.swrite(fd)
+  return stream
+
 const BufferSize = 4096
 
 proc handleHeaders(loader: FileLoader, request: Request, response: Response,
@@ -401,7 +484,12 @@ proc doRequest*(loader: FileLoader, request: Request, blocking = true,
         stream.source.getFd().setBlocking(blocking)
   return response
 
-proc quit*(loader: FileLoader) =
+proc addref*(loader: FileLoader) =
   let stream = connectSocketStream(loader.process)
   if stream != nil:
-    stream.swrite(QUIT)
+    stream.swrite(ADDREF)
+
+proc unref*(loader: FileLoader) =
+  let stream = connectSocketStream(loader.process)
+  if stream != nil:
+    stream.swrite(UNREF)

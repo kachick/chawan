@@ -1,3 +1,6 @@
+# TeeStream: write to another stream when reading from one stream.
+# See MultiStream for a push version.
+
 import streams
 
 type TeeStream = ref object of Stream

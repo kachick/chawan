@@ -406,7 +406,7 @@ proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
     canreinterpret
   )
 
-proc dupeBuffer(pager: Pager, container: Container, location: URL,
+proc dupeBuffer2(pager: Pager, container: Container, location: URL,
     contentType = ""): Container =
   let contentType = if contentType != "":
     some(contentType)
@@ -426,8 +426,16 @@ proc dupeBuffer(pager: Pager, container: Container, location: URL,
   container.pipeBuffer(pipeTo)
   return pipeTo
 
-proc dupeBuffer(pager: Pager, location: URL = nil) {.jsfunc.} =
-  pager.addContainer(pager.dupeBuffer(pager.container, location))
+proc dupeBuffer(pager: Pager, container: Container, location: URL) =
+  container.clone(location).then(proc(container: Container) =
+    if container == nil:
+      pager.alert("Failed to duplicate buffer.")
+    else:
+      pager.addContainer(container)
+  )
+
+proc dupeBuffer(pager: Pager) {.jsfunc.} =
+  pager.dupeBuffer(pager.container, pager.container.location)
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
@@ -560,7 +568,7 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       "text/plain"
     else:
       "text/html"
-    let container = pager.dupeBuffer(pager.container, nil, contenttype)
+    let container = pager.dupeBuffer2(pager.container, nil, contenttype)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.addContainer(container)
@@ -897,9 +905,6 @@ proc runMailcapReadPipe(pager: Pager, container: Container,
   let p2 = p.then(proc(): auto =
     discard close(fdin)
     let ishtml = HTMLOUTPUT in entry.flags
-    if ishtml:
-      #TODO this is a hack for dupe buffer and should be reconsidered.
-      container.source.contenttype = some("text/html")
     return container.readFromFd(fdout, ishtml)
   ).then(proc() =
     discard close(fdout)
@@ -972,9 +977,6 @@ proc runMailcapReadFile(pager: Pager, container: Container,
     discard close(pipefd[1])
     let fdout = pipefd[0]
     let ishtml = HTMLOUTPUT in entry.flags
-    if ishtml:
-      #TODO this is a hack for dupe buffer and should be reconsidered.
-      container.source.contenttype = some("text/html")
     return container.readFromFd(fdout, ishtml).then(proc() =
       discard close(fdout)
     )
@@ -1118,7 +1120,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of ANCHOR:
     var url2 = newURL(container.source.location)
     url2.setHash(event.anchor)
-    pager.addContainer(pager.dupeBuffer(container, url2))
+    pager.dupeBuffer(container, url2)
   of NO_ANCHOR:
     pager.alert("Couldn't find anchor " & event.anchor)
   of UPDATE:

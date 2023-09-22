@@ -98,6 +98,7 @@ type
     redirectdepth*: int
     select*: Select
     canreinterpret*: bool
+    cloned: bool
 
 jsDestructor(Container)
 
@@ -129,14 +130,61 @@ proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
     canreinterpret: canreinterpret
   )
 
+func location*(container: Container): URL {.jsfget.} =
+  return container.source.location
+
+proc clone*(container: Container, newurl: URL): Promise[Container] =
+  let url = if newurl != nil:
+    newurl
+  else:
+    container.location
+  return container.iface.clone(url).then(proc(pid: Pid): Container =
+    if pid == -1:
+      return nil
+    let ncontainer = Container(
+      config: container.config,
+      iface: container.iface, # changed later in setStream
+      width: container.width,
+      height: container.height,
+      title: container.title,
+      hovertext: container.hovertext,
+      lastpeek: container.lastpeek,
+      source: container.source,
+      pos: container.pos,
+      bpos: container.bpos,
+      process: pid,
+      loadinfo: container.loadinfo,
+      lines: container.lines,
+      lineshift: container.lineshift,
+      numLines: container.numLines,
+      code: container.code,
+      retry: container.retry,
+      hlon: container.hlon,
+      redraw: container.redraw,
+      #needslines: container.needslines,
+      canceled: container.canceled,
+      events: container.events,
+      startpos: container.startpos,
+      hasstart: container.hasstart,
+      redirectdepth: container.redirectdepth,
+      select: container.select,
+      canreinterpret: container.canreinterpret,
+      cloned: true
+    )
+    for hl in container.highlights:
+      var hl0 = Highlight()
+      hl0[] = hl[]
+      ncontainer.highlights.add(hl0)
+    if newurl != nil:
+      ncontainer.source.location = newurl
+    return ncontainer
+  )
+
 func charset*(container: Container): Charset =
   return container.source.charset
 
 func contentType*(container: Container): Option[string] {.jsfget.} =
   return container.source.contenttype
-
-func location*(container: Container): URL {.jsfget.} =
-  return container.source.location
 
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
@@ -931,12 +979,18 @@ proc handleCommand(container: Container) =
   container.iface.resolve(packetid, len - slen(packetid))
 
 proc setStream*(container: Container, stream: Stream) =
-  container.iface = newBufferInterface(stream)
-  if container.source.t == LOAD_PIPE:
-    container.iface.passFd(container.source.fd).then(proc() =
-      discard close(container.source.fd))
-    stream.flush()
-  container.load()
+  if not container.cloned:
+    container.iface = newBufferInterface(stream)
+    if container.source.t == LOAD_PIPE:
+      container.iface.passFd(container.source.fd).then(proc() =
+        discard close(container.source.fd))
+      stream.flush()
+    container.load()
+  else:
+    container.iface = container.iface.clone(stream)
+    # Maybe we have to resume loading. Let's try.
+    discard container.iface.load().then(proc(res: LoadResult) =
+      container.onload(res))
 
 proc onreadline(container: Container, w: Slice[int], handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =
   for line in res.lines:

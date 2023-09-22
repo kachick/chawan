@@ -1,6 +1,7 @@
 import net
 import streams
 
+import io/multistream
 import io/posixstream
 import io/serialize
 import io/socketstream
@@ -13,6 +14,7 @@ type LoaderHandle* = ref object
   # conditions that would be difficult to untangle.
   canredir: bool
   sostream: Stream # saved ostream when redirected
+  sostream_suspend: Stream # saved ostream when suspended
 
 # Create a new loader handle, with the output stream ostream.
 proc newLoaderHandle*(ostream: Stream, canredir: bool): LoaderHandle =
@@ -20,6 +22,22 @@ proc newLoaderHandle*(ostream: Stream, canredir: bool): LoaderHandle =
 
 proc getFd*(handle: LoaderHandle): int =
   return int(SocketStream(handle.ostream).source.getFd())
+
+proc addOutputStream*(handle: LoaderHandle, stream: Stream) =
+  if likely(handle.sostream_suspend != nil):
+    let ms = newMultiStream(handle.sostream_suspend, stream)
+    handle.sostream_suspend = ms
+  else:
+    # In buffer, addOutputStream is used as follows:
+    # * suspend handle
+    # * tee handle (-> call addOutputStream)
+    # * resume handle
+    # This means that this code path will never be executed, as
+    # sostream_suspend is never nil when the function is called.
+    # (Feel free to remove this assertion if this changes.)
+    doAssert false
+    let ms = newMultiStream(handle.ostream, stream)
+    handle.ostream = ms
 
 proc sendResult*(handle: LoaderHandle, res: int): bool =
   try:
@@ -61,6 +79,17 @@ proc sendData*(handle: LoaderHandle, s: string): bool =
   if s.len > 0:
     return handle.sendData(unsafeAddr s[0], s.len)
   return true
+
+proc suspend*(handle: LoaderHandle) =
+  handle.sostream_suspend = handle.ostream
+  handle.ostream = newStringStream()
+
+proc resume*(handle: LoaderHandle) =
+  let ss = handle.ostream
+  handle.ostream = handle.sostream_suspend
+  handle.sostream_suspend = nil
+  discard handle.sendData(ss.readAll())
+  ss.close()
 
 proc close*(handle: LoaderHandle) =
   if handle.sostream != nil:

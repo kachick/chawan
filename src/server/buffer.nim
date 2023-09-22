@@ -66,7 +66,7 @@ type
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
     GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, CONNECT2,
     GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD, READ_FROM_FD,
-    SET_CONTENT_TYPE
+    SET_CONTENT_TYPE, CLONE
 
   # LOADING_PAGE: istream open
   # LOADING_RESOURCES: istream closed, resources open
@@ -104,7 +104,7 @@ type
     istream: Stream
     sstream: Stream
     available: int
-    pstream: Stream # pipe stream
+    pstream: SocketStream # pipe stream
     srenderer: StreamRenderer
     connected: bool
     state: BufferState
@@ -140,6 +140,15 @@ proc newBufferInterface*(stream: Stream): BufferInterface =
     opaque: opaque,
     stream: stream
   )
+
+proc clone*(iface: BufferInterface, stream: Stream): BufferInterface =
+  let iface2 = newBufferInterface(stream)
+  var len: int
+  var pid: Pid
+  stream.sread(len)
+  stream.sread(iface2.packetid)
+  stream.sread(pid)
+  return iface2
 
 proc resolve*(iface: BufferInterface, packetid, len: int) =
   iface.opaque.len = len
@@ -680,7 +689,10 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   var referrerpolicy: Option[ReferrerPolicy]
   case source.t
   of CLONE:
-    #TODO clone should probably just fork() the buffer instead.
+    #TODO there is only one function for CLONE left: to get the source for
+    # the "view buffer" operation.
+    # This does not belong in buffers at all, and should be requested from
+    # the networking module instead.
     let s = connectSocketStream(source.clonepid, blocking = false)
     buffer.istream = s
     buffer.fd = int(s.source.getFd())
@@ -728,7 +740,7 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
 # * connect2, telling loader to load at last (we block loader until then)
 # * redirectToFd, telling loader to load into the passed fd
 proc connect2*(buffer: Buffer) {.proxy.} =
-  if buffer.source.t == LOAD_REQUEST:
+  if buffer.source.t == LOAD_REQUEST and buffer.istream of SocketStream:
     # Notify loader that we can proceed with loading the input stream.
     let ss = SocketStream(buffer.istream)
     ss.swrite(false)
@@ -776,6 +788,118 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
 
 proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
   buffer.source.contenttype = some(contentType)
+
+# Create an exact clone of the current buffer.
+# This clone will share the loader process with the previous buffer.
+proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
+  var pipefd: array[2, cint]
+  if pipe(pipefd) == -1:
+    buffer.estream.write("Failed to open pipe.\n")
+    return -1
+  # Naturally, we have to solve the problem of splitting up input streams here.
+  # The "cleanest" way is to get the source to duplicate the stream, and
+  # also send the new buffer the data over a separate stream. We do this
+  # for resources we retrieve with fetch().
+  # This is unfortunately not possible for the main source input stream,
+  # because it may come from a pipe that we receive from the client.
+  # So for istream, we just use a TeeStream from the original buffer and
+  # pray that no interruptions happen along the way.
+  # TODO: this is fundamentally broken and should be changed once the istream
+  # mess is untangled. A good first step would be to remove sstream from
+  # buffer.
+  let needsPipe = not buffer.istream.atEnd
+  var pipefd_write: array[2, cint]
+  if needsPipe:
+    assert buffer.fd != -1
+    if pipe(pipefd_write) == -1:
+      buffer.estream.write("Failed to open pipe.\n")
+      return -1
+  var fds: seq[int]
+  for fd in buffer.loader.connecting.keys:
+    fds.add(fd)
+  for fd in buffer.loader.ongoing.keys:
+    fds.add(fd)
+  #TODO maybe we still have some data in sockets... we should probably split
+  # this up to be executed after the main loop is finished...
+  buffer.loader.suspend(fds)
+  buffer.loader.addref()
+  let pid = fork()
+  if pid == -1:
+    buffer.estream.write("Failed to clone buffer.\n")
+    return -1
+  if pid == 0: # child
+    discard close(pipefd[0]) # close read
+    let ps = newPosixStream(pipefd[1])
+    # We must allocate a new selector for this new process. (Otherwise we
+    # would interfere with operation of the other one.)
+    # Closing seems to suffice here.
+    buffer.selector.close()
+    buffer.selector = newSelector[int]()
+    #TODO set buffer.window.timeouts.selector
+    var cfds: seq[int]
+    for fd in buffer.loader.connecting.keys:
+      cfds.add(fd)
+    for fd in cfds:
+      let stream = SocketStream(buffer.loader.tee(fd))
+      var success: bool
+      stream.sread(success)
+      let sfd = int(stream.source.getFd())
+      if success:
+        switchStream(buffer.loader.connecting[fd], stream)
+        buffer.loader.connecting[sfd] = buffer.loader.connecting[fd]
+      else:
+        # Unlikely, but theoretically possible: our SUSPEND connection
+        # finished before the connection could have been completed.
+        #TODO for now, we get an fd even if the connection has already been
+        # finished. there should be a better way to do this.
+        buffer.loader.reconnect(buffer.loader.connecting[fd])
+      buffer.loader.connecting.del(fd)
+    var ofds: seq[int]
+    for fd in buffer.loader.ongoing.keys:
+      ofds.add(fd)
+    for fd in ofds:
+      let stream = SocketStream(buffer.loader.tee(fd))
+      var success: bool
+      stream.sread(success)
+      let sfd = int(stream.source.getFd())
+      if success:
+        buffer.loader.switchStream(buffer.loader.ongoing[fd], stream)
+        buffer.loader.ongoing[sfd] = buffer.loader.ongoing[fd]
+      else:
+        # Already finished.
+        #TODO what to do?
+        discard
+    if needsPipe:
+      discard close(pipefd_write[1]) # close write
+      buffer.fd = pipefd_write[0]
+      buffer.selector.registerHandle(buffer.fd, {Read}, 0)
+      let ps = newPosixStream(pipefd_write[0])
+      buffer.istream = newTeeStream(ps, buffer.sstream, closedest = false)
+    buffer.pstream.close()
+    let ssock = initServerSocket(buffered = false)
+    ps.write(char(0))
+    buffer.source.location = newurl
+    for it in buffer.tasks.mitems:
+      it = 0
+    let socks = ssock.acceptSocketStream()
+    buffer.pstream = socks
+    buffer.rfd = int(socks.source.getFd())
+    buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
+    return 0
+  else: # parent
+    discard close(pipefd[1]) # close write
+    if needsPipe:
+      discard close(pipefd_write[0]) # close read
+    # We must wait for child to tee its ongoing streams.
+    let ps = newPosixStream(pipefd[0])
+    let c = ps.readChar()
+    assert c == char(0)
+    ps.close()
+    if needsPipe:
+      let istrmp = newPosixStream(pipefd_write[1])
+      buffer.istream = newTeeStream(buffer.istream, istrmp)
+    buffer.loader.resume(fds)
+    return pid
 
 const BufferSize = 4096
 
@@ -1346,7 +1470,7 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
         let typ = param[^2]
         stmts.add(quote do:
           when `typ` is FileHandle:
-            let `id` = SocketStream(`buffer`.pstream).recvFileHandle()
+            let `id` = `buffer`.pstream.recvFileHandle()
           else:
             var `id`: `typ`
             `buffer`.pstream.sread(`id`))
@@ -1434,8 +1558,7 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
   else:
     assert false, $fd & ": " & $err
 
-proc runBuffer(buffer: Buffer, rfd: int) =
-  buffer.rfd = rfd
+proc runBuffer(buffer: Buffer) =
   while buffer.alive:
     let events = buffer.selector.select(-1)
     for event in events:
@@ -1454,6 +1577,7 @@ proc runBuffer(buffer: Buffer, rfd: int) =
 
 proc launchBuffer*(config: BufferConfig, source: BufferSource,
     attrs: WindowAttributes, loader: FileLoader, ssock: ServerSocket) =
+  let socks = ssock.acceptSocketStream()
   let buffer = Buffer(
     alive: true,
     userstyle: parseStylesheet(config.userstyle),
@@ -1464,22 +1588,23 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     sstream: newStringStream(),
     viewport: Viewport(window: attrs),
     width: attrs.width,
-    height: attrs.height - 1
+    height: attrs.height - 1,
+    readbufsize: BufferSize,
+    selector: newSelector[int](),
+    estream: newFileStream(stderr),
+    pstream: socks,
+    rfd: int(socks.source.getFd())
   )
-  buffer.readbufsize = BufferSize
-  buffer.selector = newSelector[int]()
-  loader.registerFun = proc(fd: int) = buffer.selector.registerHandle(fd, {Read}, 0)
-  loader.unregisterFun = proc(fd: int) = buffer.selector.unregister(fd)
   buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
+  loader.registerFun = proc(fd: int) =
+    buffer.selector.registerHandle(fd, {Read}, 0)
+  loader.unregisterFun = proc(fd: int) =
+    buffer.selector.unregister(fd)
   if buffer.config.scripting:
     buffer.window = newWindow(buffer.config.scripting, buffer.selector,
       buffer.attrs, proc(url: URL) = buffer.navigate(url), some(buffer.loader))
-  let socks = ssock.acceptSocketStream()
-  buffer.estream = newFileStream(stderr)
-  buffer.pstream = socks
-  let rfd = int(socks.source.getFd())
-  buffer.selector.registerHandle(rfd, {Read}, 0)
-  buffer.runBuffer(rfd)
+  buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
+  buffer.runBuffer()
   buffer.pstream.close()
-  buffer.loader.quit()
+  buffer.loader.unref()
   quit(0)
