@@ -7,7 +7,7 @@ manprefix = /usr/local/share/man
 manprefix1 = $(manprefix)/man1
 manprefix5 = $(manprefix)/man5
 QJSOBJ = $(OBJDIR)/quickjs
-CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
+CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\" -DCONFIG_BIGNUM=1
 
 .PHONY: debug
 debug: lib/libquickjs.a $(OBJDIR)/debug/
@@ -40,7 +40,8 @@ $(QJSOBJ)/%.o: lib/quickjs/%.c | $(QJSOBJ)/
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o \
-		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o | $(QJSOBJ)/
+		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o \
+		$(QJSOBJ)/libbf.o | $(QJSOBJ)/
 	$(AR) rcs $@ $^
 
 .PHONY: clean
