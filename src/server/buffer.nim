@@ -750,8 +750,8 @@ proc connect2*(buffer: Buffer) {.proxy.} =
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait: bool) {.proxy.} =
-  #TODO also clone & fd
-  if buffer.source.t == LOAD_REQUEST:
+  case buffer.source.t
+  of LOAD_REQUEST:
     let ss = SocketStream(buffer.istream)
     ss.swrite(true)
     ss.sendFileHandle(fd)
@@ -765,6 +765,20 @@ proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait: bool) {.proxy.} =
       ss.sread(dummy)
     discard close(fd)
     ss.close()
+  of LOAD_PIPE:
+    let ps = newPosixStream(fd)
+    let bfd = cint(buffer.fd)
+    #TODO make it work without wait
+    discard fcntl(bfd, F_SETFL, fcntl(bfd, F_GETFL, 0) and not O_NONBLOCK)
+    var buf: array[4096, uint8]
+    while not buffer.istream.atEnd:
+      let n = buffer.istream.readData(addr buf[0], buf.len)
+      ps.writeData(addr buf[0], n)
+    ps.close()
+    buffer.fd = -1
+    buffer.istream.close()
+  of CLONE:
+    discard
 
 proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
   let contentType = if ishtml:
@@ -781,8 +795,7 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
   buffer.contenttype = contentType
   discard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) or O_NONBLOCK)
   let ps = newPosixStream(fd)
-  buffer.istream = newTeeStream(ps, buffer.sstream,
-    closedest = false)
+  buffer.istream = newTeeStream(ps, buffer.sstream, closedest = false)
   buffer.fd = fd
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
