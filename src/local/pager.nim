@@ -675,7 +675,8 @@ proc omniRewrite(pager: Pager, s: string): string =
       if sub.isSome:
         return sub.get
       else:
-        pager.alert("Error in substitution of rule " & rule.match.buf & " for " & s)
+        let buf = $rule.match
+        pager.alert("Error in substitution of rule " & buf & " for " & s)
   return s
 
 # When the user has passed a partial URL as an argument, they might've meant

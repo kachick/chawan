@@ -16,10 +16,8 @@ export
 
 type
   Regex* = object
-    bytecode*: ptr uint8
-    plen*: cint
-    clone*: bool
-    buf*: string
+    bytecode: seq[uint8]
+    buf: string
 
   RegexResult* = object
     success*: bool
@@ -33,47 +31,27 @@ type
 var dummyRuntime = JS_NewRuntime()
 var dummyContext = JS_NewContextRaw(dummyRuntime)
 
-when NimMajor >= 2:
-  proc `=destroy`*(regex: Regex) =
-    if regex.bytecode != nil:
-      if regex.clone:
-        dealloc(regex.bytecode)
-      else:
-        dummyRuntime.js_free_rt(regex.bytecode)
-else:
-  proc `=destroy`*(regex: var Regex) =
-    if regex.bytecode != nil:
-      if regex.clone:
-        dealloc(regex.bytecode)
-      else:
-        dummyRuntime.js_free_rt(regex.bytecode)
-      regex.bytecode = nil
-
-proc `=copy`*(dest: var Regex, source: Regex) =
-  if dest.bytecode != source.bytecode:
-    `=destroy`(dest)
-    wasMoved(dest)
-    dest.bytecode = cast[ptr uint8](alloc(source.plen))
-    copyMem(dest.bytecode, source.bytecode, source.plen)
-    dest.clone = true
-    dest.buf = source.buf
-    dest.plen = source.plen
-
 func `$`*(regex: Regex): string =
   regex.buf
 
 proc compileRegex*(buf: string, flags: int): Result[Regex, string] =
-  var regex: Regex
   var error_msg_size = 64
   var error_msg = newString(error_msg_size)
   prepareMutation(error_msg)
-  let bytecode = lre_compile(addr regex.plen, cstring(error_msg),
+  var plen: cint
+  let bytecode = lre_compile(addr plen, cstring(error_msg),
     cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags),
     dummyContext)
   if bytecode == nil:
     return err(error_msg.until('\0')) # Failed to compile.
-  regex.buf = buf
-  regex.bytecode = bytecode
+  assert plen > 0
+  var bcseq = newSeqUninitialized[uint8](plen)
+  copyMem(addr bcseq[0], bytecode, plen)
+  dummyRuntime.js_free_rt(bytecode)
+  let regex = Regex(
+    buf: buf,
+    bytecode: bcseq
+  )
   return ok(regex)
 
 func countBackslashes(buf: string, i: int): int =
@@ -147,18 +125,19 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
     str.len
   else:
     length
-  assert 0 <= start and start <= length, "Start: " & $start & ", length: " & $length & " str: " & $str
+  assert 0 <= start and start <= length
 
-  let captureCount = lre_get_capture_count(regex.bytecode)
+  let bytecode = unsafeAddr regex.bytecode[0]
+  let captureCount = lre_get_capture_count(bytecode)
   var capture: ptr UncheckedArray[int] = nil
   if captureCount > 0:
     let size = sizeof(ptr uint8) * captureCount * 2
     capture = cast[ptr UncheckedArray[int]](alloc0(size))
   var cstr = cstring(str)
-  let flags = lre_get_flags(regex.bytecode)
+  let flags = lre_get_flags(bytecode)
   var start = start
   while true:
-    let ret = lre_exec(cast[ptr ptr uint8](capture), regex.bytecode,
+    let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode,
       cast[ptr uint8](cstr), cint(start), cint(length), cint(0), dummyContext)
     if ret != 1: #TODO error handling? (-1)
       break

@@ -5,7 +5,6 @@ import sets
 import streams
 import tables
 
-import js/regex
 import loader/request
 import types/blob
 import types/buffersource
@@ -72,10 +71,6 @@ func slen*[T](o: Option[T]): int
 proc swrite*[T, E](stream: Stream, o: Result[T, E])
 proc sread*[T, E](stream: Stream, o: var Result[T, E])
 func slen*[T, E](o: Result[T, E]): int
-
-proc swrite*(stream: Stream, regex: Regex)
-proc sread*(stream: Stream, regex: var Regex)
-func slen*(regex: Regex): int
 
 proc swrite*(stream: Stream, source: BufferSource)
 proc sread*(stream: Stream, source: var BufferSource)
@@ -388,26 +383,6 @@ func slen*[T, E](o: Result[T, E]): int =
   else:
     when not (E is void):
       result += slen(o.error)
-
-proc swrite*(stream: Stream, regex: Regex) =
-  stream.swrite(regex.plen)
-  stream.writeData(regex.bytecode, regex.plen)
-  stream.swrite(regex.buf)
-
-proc sread*(stream: Stream, regex: var Regex) =
-  assert regex.bytecode == nil
-  stream.sread(regex.plen)
-  regex.bytecode = cast[ptr uint8](alloc(regex.plen))
-  regex.clone = true
-  let l = stream.readData(regex.bytecode, regex.plen)
-  stream.sread(regex.buf)
-  if l != regex.plen:
-    `=destroy`(regex)
-
-func slen*(regex: Regex): int =
-  result += slen(regex.plen)
-  result += regex.plen
-  result += slen(regex.buf)
 
 proc swrite*(stream: Stream, source: BufferSource) =
   stream.swrite(source.t)
