@@ -983,13 +983,16 @@ proc setStream*(container: Container, stream: Stream) =
     container.iface = newBufferInterface(stream)
     if container.source.t == LOAD_PIPE:
       container.iface.passFd(container.source.fd).then(proc() =
-        discard close(container.source.fd)
         if container.source.fd == 0:
-          # We have just closed stdin.
+          # We are closing stdin.
           # Leaving the stdin fileno open to grab is a bad idea.
-          # (Yes, I've just got bitten by this: dup2(0, 0). Ouch.)
           let devnull = open("/dev/null", O_RDONLY)
-          discard dup2(devnull, 0)
+          doAssert devnull != -1
+          if devnull != 0:
+            discard dup2(devnull, 0)
+            discard close(devnull)
+        else:
+          discard close(container.source.fd)
       )
       stream.flush()
     container.load()
