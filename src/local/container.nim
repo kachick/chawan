@@ -59,11 +59,11 @@ type
       force*: bool
     else: discard
 
-  Highlight* = ref object
-    x*, y*: int
-    endy*, endx*: int
-    rect*: bool
-    clear*: bool
+  Highlight = object
+    x, y: int
+    endy, endx: int
+    rect: bool
+    clear: bool
 
   Container* = ref object
     parent* {.jsget.}: Container
@@ -152,6 +152,7 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       source: container.source,
       pos: container.pos,
       bpos: container.bpos,
+      highlights: container.highlights,
       process: pid,
       loadinfo: container.loadinfo,
       lines: container.lines,
@@ -171,10 +172,6 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       canreinterpret: container.canreinterpret,
       cloned: true
     )
-    for hl in container.highlights:
-      var hl0 = Highlight()
-      hl0[] = hl[]
-      ncontainer.highlights.add(hl0)
     if newurl != nil:
       ncontainer.source.location = newurl
     return ncontainer
