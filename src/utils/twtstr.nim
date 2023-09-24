@@ -3,7 +3,6 @@ import strutils
 import unicode
 import os
 import math
-import sequtils
 import options
 
 import bindings/libunicode
@@ -286,8 +285,11 @@ const romanNumbers = [
   (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
 ]
 
-const romanNumbers_lower = romanNumbers.map(proc(x: auto): auto =
-  (x[0], x[1].tolower()))
+const romanNumbers_lower = block:
+  var res: seq[(int, string)]
+  for (n, s) in romanNumbers:
+    res.add((n, s.toLowerAscii()))
+  res
 
 func romanNumber*(i: int): string =
   return number_additive(i, 1..3999, romanNumbers)
