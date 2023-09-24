@@ -134,5 +134,5 @@ traversal commands.)
 Chawan is dedicated to the public domain. See the UNLICENSE file for details.
 
 Chawan also includes and depends on several other libraries. For further
-details, see [license.html](doc/license.html) or check the about:license
+details, see [license.html](res/license.html) or check the about:license
 page in Chawan.
