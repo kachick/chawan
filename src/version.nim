@@ -27,5 +27,5 @@ tryImport chakasu/version, "chakasu"
 tryImport chame/version, "chame"
 
 static:
-  checkVersion("chakasu", 0, 2, 0)
+  checkVersion("chakasu", 0, 2, 1)
   checkVersion("chame", 0, 11, 0)
