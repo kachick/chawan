@@ -16,7 +16,6 @@ import std/exitprocs
 
 import bindings/quickjs
 import config/config
-import css/sheet
 import display/lineedit
 import display/term
 import display/window
@@ -54,27 +53,21 @@ import chakasu/charset
 type
   Client* = ref object
     alive: bool
-    attrs: WindowAttributes
     config {.jsget.}: Config
     console {.jsget.}: Console
-    errormessage: string
-    fd: int
     fdmap: Table[int, Container]
     feednext: bool
     forkserver: ForkServer
     notnum: bool # has a non-numeric character been input already?
     jsctx: JSContext
     jsrt: JSRuntime
-    line {.jsget.}: LineEdit
     loader: FileLoader
     mainproc: Pid
     pager {.jsget.}: Pager
     precnum: int32 # current number prefix (when vi-numeric-prefix is true)
     s: string # current input buffer
     selector: Selector[int]
-    store {.jsget, jsset.}: Document
     timeouts: TimeoutState
-    userstyle: CSSStylesheet
 
   Console = ref object
     err: Stream
@@ -238,7 +231,6 @@ proc input(client: Client) =
     elif client.pager.lineedit.isSome:
       client.s &= c
       let edit = client.pager.lineedit.get
-      client.line = edit
       if edit.escNext:
         edit.escNext = false
         if edit.write(client.s, client.pager.term.cs):
@@ -252,8 +244,6 @@ proc input(client: Client) =
             client.feedNext = true
         elif not client.feednext:
           client.evalAction(action, 0)
-        if client.pager.lineedit.isNone:
-          client.line = nil
         if not client.feedNext:
           client.pager.updateReadLine()
     else:
@@ -404,8 +394,8 @@ proc inputLoop(client: Client) =
         client.handleError(event.fd)
       if Signal in event.events: 
         assert event.fd == sigwinch
-        client.attrs = getWindowAttributes(client.console.tty)
-        client.pager.windowChange(client.attrs)
+        let attrs = getWindowAttributes(client.console.tty)
+        client.pager.windowChange(attrs)
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
         assert r
@@ -556,7 +546,6 @@ proc launchClient*(client: Client, pages: seq[string],
     let ismodule = client.config.start.startup_script.endsWith(".mjs")
     client.command0(s, client.config.start.startup_script, silence = true,
       module = ismodule)
-  client.userstyle = client.config.css.stylesheet.parseStylesheet()
 
   if not stdin.isatty():
     client.pager.readPipe(contentType, cs, stdin.getFileHandle())
@@ -594,6 +583,9 @@ proc atob(client: Client, data: string): DOMResult[string] {.jsfunc.} =
 proc btoa(client: Client, data: string): DOMResult[string] {.jsfunc.} =
   return btoa(data)
 
+func line(client: Client): LineEdit {.jsfget.} =
+  return client.pager.lineedit.get(nil)
+
 proc addJSModules(client: Client, ctx: JSContext) =
   ctx.addDOMExceptionModule()
   ctx.addCookieModule()
@@ -626,7 +618,6 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
     config: config,
     forkserver: forkserver,
     mainproc: mainproc,
-    attrs: attrs,
     loader: forkserver.newFileLoader(
       defaultHeaders = config.getDefaultHeaders(),
       proxy = config.getProxy(),
