@@ -99,7 +99,7 @@ type
     jsrt*: JSRuntime
     jsctx*: JSContext
     document* {.jsufget.}: Document
-    timeouts*: TimeoutState[int]
+    timeouts*: TimeoutState
     navigate*: proc(url: URL)
 
   # Navigator stuff

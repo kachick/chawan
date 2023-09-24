@@ -71,9 +71,9 @@ type
     pager {.jsget.}: Pager
     precnum: int32 # current number prefix (when vi-numeric-prefix is true)
     s: string # current input buffer
-    selector: Selector[Container]
+    selector: Selector[int]
     store {.jsget, jsset.}: Document
-    timeouts: TimeoutState[Container]
+    timeouts: TimeoutState
     userstyle: CSSStylesheet
 
   Console = ref object
@@ -317,7 +317,7 @@ proc acceptBuffers(client: Client) =
     container.setStream(stream)
     let fd = stream.source.getFd()
     client.fdmap[int(fd)] = container
-    client.selector.registerHandle(fd, {Read}, nil)
+    client.selector.registerHandle(fd, {Read}, 0)
     client.pager.handleEvents(container)
   client.pager.procmap.clear()
 
@@ -393,8 +393,8 @@ proc handleError(client: Client, fd: int) =
 proc inputLoop(client: Client) =
   let selector = client.selector
   discard c_setvbuf(client.console.tty, nil, IONBF, 0)
-  selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, nil)
-  let sigwinch = selector.registerSignal(int(SIGWINCH), nil)
+  selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, 0)
+  let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
   while true:
     let events = client.selector.select(-1)
     for event in events:
@@ -532,11 +532,11 @@ proc launchClient*(client: Client, pages: seq[string],
         dump = not open(tty, "/dev/tty", fmRead)
     else:
       dump = true
-  let selector = newSelector[Container]()
+  let selector = newSelector[int]()
   let efd = int(client.forkserver.estream.fd)
-  selector.registerHandle(efd, {Read}, nil)
+  selector.registerHandle(efd, {Read}, 0)
   client.loader.registerFun = proc(fd: int) =
-    selector.registerHandle(fd, {Read}, nil)
+    selector.registerHandle(fd, {Read}, 0)
   client.loader.unregisterFun = proc(fd: int) =
     selector.unregister(fd)
   client.selector = selector

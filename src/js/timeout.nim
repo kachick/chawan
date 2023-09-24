@@ -4,20 +4,20 @@ import tables
 
 import js/javascript
 
-type TimeoutState*[T] = object
+type TimeoutState* = object
   timeoutid: int32
   timeouts: Table[int32, tuple[handler: (proc()), fdi: int]]
   intervals: Table[int32, tuple[handler: (proc()), fdi: int, tofree: JSValue]]
   timeout_fdis: Table[int, int32]
   interval_fdis: Table[int, int32]
-  selector: Selector[T] #TODO would be better with void...
+  selector: Selector[int] #TODO would be better with void...
   jsctx: JSContext
   err: Stream #TODO shouldn't be needed
   evalJSFree: proc(src, file: string) #TODO ew
 
-func newTimeoutState*[T](selector: Selector[T], jsctx: JSContext,
-    err: Stream, evalJSFree: proc(src, file: string)): TimeoutState[T] =
-  return TimeoutState[T](
+func newTimeoutState*(selector: Selector[int], jsctx: JSContext, err: Stream,
+    evalJSFree: proc(src, file: string)): TimeoutState =
+  return TimeoutState(
     selector: selector,
     jsctx: jsctx,
     err: err,
@@ -28,11 +28,11 @@ func empty*(state: TimeoutState): bool =
   return state.timeouts.len == 0 and state.intervals.len == 0
 
 #TODO varargs
-proc setTimeout*[T: JSValue|string, S](state: var TimeoutState[S], handler: T,
+proc setTimeout*[T: JSValue|string](state: var TimeoutState, handler: T,
     timeout = 0i32): int32 =
   let id = state.timeoutid
   inc state.timeoutid
-  let fdi = state.selector.registerTimer(max(timeout, 1), true, default(S))
+  let fdi = state.selector.registerTimer(max(timeout, 1), true, 0)
   state.timeout_fdis[fdi] = id
   when T is string:
     let evalJSFree = state.evalJSFree
@@ -68,11 +68,11 @@ proc clearInterval*(state: var TimeoutState, id: int32) =
     state.intervals.del(id)
 
 #TODO varargs
-proc setInterval*[T: JSValue|string, S](state: var TimeoutState[S], handler: T,
+proc setInterval*[T: JSValue|string](state: var TimeoutState, handler: T,
     interval = 0i32): int32 =
   let id = state.timeoutid
   inc state.timeoutid
-  let fdi = state.selector.registerTimer(max(interval, 1), false, default(S))
+  let fdi = state.selector.registerTimer(max(interval, 1), false, 0)
   state.interval_fdis[fdi] = id
   when T is string:
     let evalJSFree = state.evalJSFree
