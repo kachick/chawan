@@ -182,15 +182,22 @@ proc handlePagerEvents(client: Client) =
     client.pager.handleEvents(container)
 
 proc evalAction(client: Client, action: string, arg0: int32) =
-  let ret = client.evalJS(action, "<command>")
+  var ret = client.evalJS(action, "<command>")
   let ctx = client.jsctx
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
       var arg0 = toJS(ctx, arg0)
-      JS_FreeValue(ctx, JS_Call(ctx, ret, JS_UNDEFINED, 1, addr arg0))
+      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 1, addr arg0)
+      JS_FreeValue(ctx, arg0)
+      JS_FreeValue(ctx, ret)
+      ret = ret2
       JS_FreeValue(ctx, arg0)
     else: # no precnum
-      JS_FreeValue(ctx, JS_Call(ctx, ret, JS_UNDEFINED, 0, nil))
+      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 0, nil)
+      JS_FreeValue(ctx, ret)
+      ret = ret2
+  if JS_IsException(ret):
+    client.jsctx.writeException(client.console.err)
   JS_FreeValue(ctx, ret)
 
 # The maximum number we are willing to accept.
