@@ -147,6 +147,9 @@ proc consume(state: var TomlParser): char =
   result = state.buf[state.at]
   inc state.at
 
+proc seek(state: var TomlParser, n: int) =
+  state.at += n
+
 proc reconsume(state: var TomlParser) =
   dec state.at
 
@@ -188,11 +191,13 @@ proc consumeString(state: var TomlParser, first: char):
       let s = state.peek(0, 1)
       if s == "\"\"":
         multiline = true
+        state.seek(2)
   elif first == '\'':
     if state.has(1):
       let s = state.peek(0, 1)
       if s == "''":
         multiline = true
+        state.seek(2)
 
   if multiline:
     let c = state.peek(0)
