@@ -132,10 +132,22 @@ config.search.wrap = !config.search.wrap;
 pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
 '''
 M-y = '''
-pager.extern('printf \'%s\\n\' "$CHA_URL" | xsel -bi',
-		{suspend: false, setenv: true}) ?
-	pager.alert("Copied URL to clipboard.") :
-	pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+() => {
+	if (pager.extern('printf \'%s\\n\' "$CHA_URL" | xsel -bi',
+			{suspend: false, setenv: true}))
+		pager.alert("Copied URL to clipboard.");
+	else
+		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+}
+'''
+M-p = '''
+() => {
+	const s = pager.externCapture('xsel -bo');
+	if (s === null)
+		pager.alert("Failed to read URL from clipboard. (Is xsel installed?)");
+	else
+		pager.load(s + '\n');
+}
 '''
 
 [line]

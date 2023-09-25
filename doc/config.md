@@ -902,6 +902,14 @@ is true. Redirect to /dev/null in the command if this is not desired. (This
 will be fixed in the future.)</td>
 </tr>
 
+<tr>
+<td>`pager.externCapture(cmd)`
+</td>
+<td>Like extern(), but redirect the command's stdout string into the
+result. null is returned if the command wasn't executed successfully, or if
+the command returned a non-zero exit value.</td>
+</tr>
+
 </table>
 
 

@@ -854,9 +854,7 @@ type ExternDict = object of JSDict
   suspend: Opt[bool]
   wait: bool
 
-#TODO this could be handled much better.
-# * suspend, setenv, wait as dict flags
-# * retval as int?
+#TODO we should have versions with retval as int?
 proc extern(pager: Pager, cmd: string, t = ExternDict()): bool {.jsfunc.} =
   if t.setenv.get(true):
     pager.setEnvVars()
@@ -864,6 +862,13 @@ proc extern(pager: Pager, cmd: string, t = ExternDict()): bool {.jsfunc.} =
     return runProcess(pager.term, cmd, t.wait)
   else:
     return runProcess(cmd)
+
+proc externCapture(pager: Pager, cmd: string): Opt[string] {.jsfunc.} =
+  pager.setEnvVars()
+  var s: string
+  if not runProcessCapture(pager.term, cmd, s):
+    return err()
+  return ok(s)
 
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)

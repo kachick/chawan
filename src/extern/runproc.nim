@@ -1,3 +1,4 @@
+import streams
 import posix
 
 import display/term
@@ -27,3 +28,15 @@ proc runProcess*(term: Terminal, cmd: string, wait = false): bool =
   if wait:
     term.anyKey()
   term.restart()
+
+# Run process, and capture its output.
+proc runProcessCapture*(term: Terminal, cmd: string, outs: var string): bool =
+  let file = popen(cmd, "r")
+  if file == nil:
+    return false
+  let fs = newFileStream(file)
+  outs = fs.readAll()
+  let rv = pclose(file)
+  if rv == -1:
+    return false
+  return rv == 0
