@@ -58,14 +58,11 @@ type
     fdmap: Table[int, Container]
     feednext: bool
     forkserver: ForkServer
-    notnum: bool # has a non-numeric character been input already?
     jsctx: JSContext
     jsrt: JSRuntime
     loader: FileLoader
     mainproc: Pid
     pager {.jsget.}: Pager
-    precnum: int32 # current number prefix (when vi-numeric-prefix is true)
-    s: string # current input buffer
     selector: Selector[int]
     timeouts: TimeoutState
 
@@ -207,22 +204,21 @@ proc evalAction(client: Client, action: string, arg0: int32) =
 const MaxPrecNum = 100000000
 
 proc handleCommandInput(client: Client, c: char) =
-  if client.config.input.vi_numeric_prefix and not client.notnum:
-    if client.precnum != 0 and c == '0' or c in '1' .. '9':
-      if client.precnum < MaxPrecNum: # better ignore than eval...
-        client.precnum *= 10
-        client.precnum += cast[int32](decValue(c))
+  if client.config.input.vi_numeric_prefix and not client.pager.notnum:
+    if client.pager.precnum != 0 and c == '0' or c in '1' .. '9':
+      if client.pager.precnum < MaxPrecNum: # better ignore than eval...
+        client.pager.precnum *= 10
+        client.pager.precnum += cast[int32](decValue(c))
       return
     else:
-      client.notnum = true
-  client.s &= c
-  let action = getNormalAction(client.config, client.s)
-  client.evalAction(action, client.precnum)
+      client.pager.notnum = true
+  client.pager.inputBuffer &= c
+  let action = getNormalAction(client.config, client.pager.inputBuffer)
+  client.evalAction(action, client.pager.precnum)
   if not client.feedNext:
-    client.precnum = 0
-    client.notnum = false
+    client.pager.precnum = 0
+    client.pager.notnum = false
     client.handlePagerEvents()
-    client.pager.refreshStatusMsg()
 
 proc input(client: Client) =
   client.pager.term.restoreStdin()
@@ -236,17 +232,17 @@ proc input(client: Client) =
         client.pager.fulfillAsk(false)
         client.runJSJobs()
     elif client.pager.lineedit.isSome:
-      client.s &= c
+      client.pager.inputBuffer &= c
       let edit = client.pager.lineedit.get
       if edit.escNext:
         edit.escNext = false
-        if edit.write(client.s, client.pager.term.cs):
-          client.s = ""
+        if edit.write(client.pager.inputBuffer, client.pager.term.cs):
+          client.pager.inputBuffer = ""
       else:
-        let action = getLinedAction(client.config, client.s)
+        let action = getLinedAction(client.config, client.pager.inputBuffer)
         if action == "":
-          if edit.write(client.s, client.pager.term.cs):
-            client.s = ""
+          if edit.write(client.pager.inputBuffer, client.pager.term.cs):
+            client.pager.inputBuffer = ""
           else:
             client.feedNext = true
         elif not client.feednext:
@@ -255,12 +251,18 @@ proc input(client: Client) =
           client.pager.updateReadLine()
     else:
       client.handleCommandInput(c)
+      if not client.feednext:
+        client.pager.inputBuffer = ""
+        client.pager.refreshStatusMsg()
+        break
+      client.pager.refreshStatusMsg()
+      client.pager.draw()
     if not client.feednext:
-      client.s = ""
+      client.pager.inputBuffer = ""
       break
     else:
       client.feednext = false
-  client.s = ""
+  client.pager.inputBuffer = ""
 
 proc setTimeout[T: JSValue|string](client: Client, handler: T,
     timeout = 0i32): int32 {.jsfunc.} =

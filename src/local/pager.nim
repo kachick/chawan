@@ -52,12 +52,13 @@ type
     askcursor: int
     askpromise*: Promise[bool]
     askprompt: string
-    commandMode* {.jsget.}: bool
+    commandMode {.jsget.}: bool
     config: Config
     container*: Container
     cookiejars: Table[string, CookieJar]
     display: FixedGrid
     forkserver: ForkServer
+    inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
     lineedit*: Option[LineEdit]
@@ -66,8 +67,10 @@ type
     mailcap: Mailcap
     mainproc: Pid
     mimeTypes: MimeTypes
+    notnum*: bool # has a non-numeric character been input already?
     numload*: int
     omnirules: seq[OmniRule]
+    precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: Table[Pid, Container]
     proxy: URL
     redraw*: bool
@@ -196,6 +199,7 @@ proc alert*(pager: Pager, msg: string)
 
 proc newPager*(config: Config, attrs: WindowAttributes,
     forkserver: ForkServer, mainproc: Pid, ctx: JSContext): Pager =
+  let (mailcap, errs) = config.getMailcap()
   let pager = Pager(
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
@@ -206,10 +210,9 @@ proc newPager*(config: Config, attrs: WindowAttributes,
     siteconf: config.getSiteConfig(ctx),
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
-    mimeTypes: config.getMimeTypes()
+    mimeTypes: config.getMimeTypes(),
+    mailcap: mailcap
   )
-  let (mcap, errs) = config.getMailcap()
-  pager.mailcap = mcap
   for err in errs:
     pager.alert("Error reading mailcap: " & err)
   return pager
@@ -249,7 +252,7 @@ proc writeStatusMessage(pager: Pager, str: string,
     return i
   for r in str.runes:
     let pi = i
-    i += r.twidth(i)
+    i += r.width()
     if i >= e:
       if i >= pager.statusgrid.width:
         i = pi
@@ -258,7 +261,9 @@ proc writeStatusMessage(pager: Pager, str: string,
       inc i
       break
     if r.isControlChar():
-      pager.statusgrid[pi].str = "^" & getControlLetter(char(r))
+      pager.statusgrid[pi].str = "^"
+      pager.statusgrid[pi + 1].str = $getControlLetter(char(r))
+      pager.statusgrid[pi + 1].format = format
     else:
       pager.statusgrid[pi].str = $r
     pager.statusgrid[pi].format = format
@@ -275,7 +280,13 @@ proc refreshStatusMsg*(pager: Pager) =
   if container == nil: return
   if pager.tty == nil: return
   if pager.askpromise != nil: return
-  if container.loadinfo != "":
+  if pager.precnum != 0:
+    pager.writeStatusMessage($pager.precnum)
+    if pager.inputBuffer != "":
+      pager.writeStatusMessage(pager.inputBuffer)
+  elif pager.inputBuffer != "":
+    pager.writeStatusMessage(pager.inputBuffer)
+  elif container.loadinfo != "":
     pager.alerton = false
     pager.writeStatusMessage(container.loadinfo)
   elif pager.alerts.len > 0:
@@ -302,7 +313,7 @@ proc refreshStatusMsg*(pager: Pager) =
 
 # Call refreshStatusMsg if no alert is being displayed on the screen.
 proc showAlerts*(pager: Pager) =
-  if not pager.alerton:
+  if not pager.alerton and pager.inputBuffer == "" and pager.precnum == 0:
     pager.refreshStatusMsg()
 
 proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
