@@ -703,23 +703,23 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
-<td>`pager.scrollDown()`</td>
-<td>Scroll forwards by one line.</td>
+<td>`pager.scrollDown(n = 1)`</td>
+<td>Scroll forwards by n lines.</td>
 </tr>
 
 <tr>
-<td>`pager.scrollUp()`</td>
-<td>Scroll backwards by one line.</td>
+<td>`pager.scrollUp(n = 1)`</td>
+<td>Scroll backwards by n lines.</td>
 </tr>
 
 <tr>
-<td>`pager.scrollLeft()`</td>
-<td>Scroll to the left by one column.</td>
+<td>`pager.scrollLeft(n = 1)`</td>
+<td>Scroll to the left by n columns.</td>
 </tr>
 
 <tr>
-<td>`pager.scrollRight()`</td>
-<td>Scroll to the right by one column.</td>
+<td>`pager.scrollRight(n = 1)`</td>
+<td>Scroll to the right by n columns.</td>
 </tr>
 
 <tr>
@@ -857,13 +857,13 @@ shown.</td>
 </tr>
 
 <tr>
-<td>`pager.searchNext()`</td>
-<td>Jump to the next search result.</td>
+<td>`pager.searchNext(n = 1)`</td>
+<td>Jump to the nth next search result.</td>
 </tr>
 
 <tr>
-<td>`pager.searchPrev()`</td>
-<td>Jump to the previous search result.</td>
+<td>`pager.searchPrev(n = 1)`</td>
+<td>Jump to the nth previous search result.</td>
 </tr>
 
 <tr>

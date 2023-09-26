@@ -141,21 +141,21 @@ proc getter(ctx: JSContext, pager: Pager, s: string): Option[JSValue]
         return some(fun)
       return some(val)
 
-proc searchNext(pager: Pager) {.jsfunc.} =
+proc searchNext(pager: Pager, n = 1) {.jsfunc.} =
   if pager.regex.isSome:
     let wrap = pager.config.search.wrap
     if not pager.reverseSearch:
-      pager.container.cursorNextMatch(pager.regex.get, wrap, true)
+      pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
     else:
-      pager.container.cursorPrevMatch(pager.regex.get, wrap, true)
+      pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
 
-proc searchPrev(pager: Pager) {.jsfunc.} =
+proc searchPrev(pager: Pager, n = 1) {.jsfunc.} =
   if pager.regex.isSome:
     let wrap = pager.config.search.wrap
     if not pager.reverseSearch:
-      pager.container.cursorPrevMatch(pager.regex.get, wrap, true)
+      pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
     else:
-      pager.container.cursorNextMatch(pager.regex.get, wrap, true)
+      pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
 
 proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
@@ -778,9 +778,9 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
         pager.container.hlon = true
         let wrap = pager.config.search.wrap
         return if linemode == ISEARCH_F:
-          pager.container.cursorNextMatch(pager.iregex.get, wrap, false)
+          pager.container.cursorNextMatch(pager.iregex.get, wrap, false, 1)
         else:
-          pager.container.cursorPrevMatch(pager.iregex.get, wrap, false)
+          pager.container.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
     of FINISH:
       pager.regex = pager.checkRegex(pager.iregex)
       pager.reverseSearch = linemode == ISEARCH_B

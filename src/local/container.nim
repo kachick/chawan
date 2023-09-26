@@ -610,14 +610,16 @@ proc cursorLastLine*(container: Container) {.jsfunc.} =
   else:
     container.setCursorY(container.numLines - 1)
 
-proc cursorTop(container: Container) {.jsfunc.} =
-  container.setCursorY(container.fromy)
+proc cursorTop(container: Container, i = 1) {.jsfunc.} =
+  let i = clamp(i - 1, 0, container.height - 1)
+  container.setCursorY(container.fromy + i)
 
 proc cursorMiddle(container: Container) {.jsfunc.} =
   container.setCursorY(container.fromy + (container.height - 2) div 2)
 
-proc cursorBottom(container: Container) {.jsfunc.} =
-  container.setCursorY(container.fromy + container.height - 1)
+proc cursorBottom(container: Container, i = 1) {.jsfunc.} =
+  let i = clamp(i, 0, container.height)
+  container.setCursorY(container.fromy + container.height - i)
 
 proc cursorLeftEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx)
@@ -628,29 +630,30 @@ proc cursorMiddleColumn(container: Container) {.jsfunc.} =
 proc cursorRightEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx + container.width - 1)
 
-proc scrollDown(container: Container) {.jsfunc.} =
+proc scrollDown(container: Container, n = 1) {.jsfunc.} =
   if container.fromy + container.height < container.numLines:
-    container.setFromY(container.fromy + 1)
+    container.setFromY(container.fromy + n)
     if container.fromy > container.cursory:
-      container.cursorDown()
+      container.cursorDown(container.fromy - container.cursory)
   else:
-    container.cursorDown()
+    container.cursorDown(n)
 
-proc scrollUp(container: Container) {.jsfunc.} =
+proc scrollUp(container: Container, n = 1) {.jsfunc.} =
   if container.fromy > 0:
-    container.setFromY(container.fromy - 1)
+    container.setFromY(container.fromy - n)
     if container.fromy + container.height <= container.cursory:
-      container.cursorUp()
+      container.cursorUp(container.cursory - container.fromy -
+        container.height + 1)
   else:
-    container.cursorUp()
+    container.cursorUp(n)
 
-proc scrollRight(container: Container) {.jsfunc.} =
-  if container.fromx + container.width < container.maxScreenWidth():
-    container.setFromX(container.fromx + 1)
+proc scrollRight(container: Container, n = 1) {.jsfunc.} =
+  if container.fromx + container.width + n <= container.maxScreenWidth():
+    container.setFromX(container.fromx + n)
 
-proc scrollLeft(container: Container) {.jsfunc.} =
-  if container.fromx > 0:
-    container.setFromX(container.fromx - 1)
+proc scrollLeft(container: Container, n = 1) {.jsfunc.} =
+  if container.fromx - n >= 0:
+    container.setFromX(container.fromx - n)
 
 proc alert(container: Container, msg: string) =
   container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
@@ -742,25 +745,29 @@ proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
     container.needslines = true
     container.hlon = false
 
-proc cursorNextMatch*(container: Container, regex: Regex, wrap, refresh: bool):
-    EmptyPromise {.discardable.} =
+proc cursorNextMatch*(container: Container, regex: Regex, wrap, refresh: bool,
+    n: int): EmptyPromise {.discardable.} =
   if container.select.open:
-    container.select.cursorNextMatch(regex, wrap)
+    #TODO
+    for _ in 0 ..< n:
+      container.select.cursorNextMatch(regex, wrap)
     return newResolvedPromise()
   else:
     return container.iface
-      .findNextMatch(regex, container.cursorx, container.cursory, wrap)
+      .findNextMatch(regex, container.cursorx, container.cursory, wrap, n)
       .then(proc(res: BufferMatch) =
         container.onMatch(res, refresh))
 
-proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool):
-    EmptyPromise {.discardable.} =
+proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool,
+    n: int): EmptyPromise {.discardable.} =
   if container.select.open:
-    container.select.cursorPrevMatch(regex, wrap)
+    #TODO
+    for _ in 0 ..< n:
+      container.select.cursorPrevMatch(regex, wrap)
     return newResolvedPromise()
   else:
     return container.iface
-      .findPrevMatch(regex, container.cursorx, container.cursory, wrap)
+      .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
       .then(proc(res: BufferMatch) =
         container.onMatch(res, refresh))
 

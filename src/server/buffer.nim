@@ -463,16 +463,20 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
       inc i
   return (-1, -1)
 
-proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch {.proxy.} =
+proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,
+    wrap: bool, n: int): BufferMatch {.proxy.} =
   if cursory >= buffer.lines.len: return
   var y = cursory
   let b = buffer.cursorBytes(y, cursorx)
   let res = regex.exec(buffer.lines[y].str, 0, b)
+  var numfound = 0
   if res.success and res.captures.len > 0:
     let cap = res.captures[^1]
     let x = buffer.lines[y].str.width(0, cap.s)
     let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-    return BufferMatch(success: true, x: x, y: y, str: str)
+    inc numfound
+    if numfound >= n:
+      return BufferMatch(success: true, x: x, y: y, str: str)
   dec y
   while true:
     if y < 0:
@@ -485,21 +489,27 @@ proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
       let cap = res.captures[^1]
       let x = buffer.lines[y].str.width(0, cap.s)
       let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-      return BufferMatch(success: true, x: x, y: y, str: str)
+      inc numfound
+      if numfound >= n:
+        return BufferMatch(success: true, x: x, y: y, str: str)
     if y == cursory:
       break
     dec y
 
-proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: bool): BufferMatch {.proxy.} =
+proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,
+    wrap: bool, n: int): BufferMatch {.proxy.} =
   if cursory >= buffer.lines.len: return
   var y = cursory
   let b = buffer.cursorBytes(y, cursorx + 1)
   let res = regex.exec(buffer.lines[y].str, b, buffer.lines[y].str.len)
+  var numfound = 0
   if res.success and res.captures.len > 0:
     let cap = res.captures[0]
     let x = buffer.lines[y].str.width(0, cap.s)
     let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-    return BufferMatch(success: true, x: x, y: y, str: str)
+    inc numfound
+    if numfound >= n:
+      return BufferMatch(success: true, x: x, y: y, str: str)
   inc y
   while true:
     if y > buffer.lines.high:
@@ -512,7 +522,9 @@ proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int, wrap: b
       let cap = res.captures[0]
       let x = buffer.lines[y].str.width(0, cap.s)
       let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
-      return BufferMatch(success: true, x: x, y: y, str: str)
+      inc numfound
+      if numfound >= n:
+        return BufferMatch(success: true, x: x, y: y, str: str)
     if y == cursory:
       break
     inc y
