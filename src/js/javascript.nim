@@ -507,7 +507,10 @@ proc addParam2(gen: var JSFuncGenerator, s, t, val: NimNode, fallback: NimNode =
     else:
       let j = gen.j
       gen.jsFunCallLists[i].add(newLetStmt(s, quote do:
-        if `j` < argc: `stmt` else: `fallback`))
+        if `j` < argc and not JS_IsUndefined(getJSValue(argv, `j`)):
+          `stmt`
+        else:
+          `fallback`))
 
 proc addValueParam(gen: var JSFuncGenerator, s, t: NimNode, fallback: NimNode = nil) =
   let j = gen.j
