@@ -59,9 +59,12 @@ $(OBJDIR)/cha-%.md: doc/%.md | $(OBJDIR)/
 $(OBJDIR)/cha-%.5: $(OBJDIR)/cha-%.md
 	pandoc --standalone --to man $< -o $@
 
-.PHONY: manpage
-manpage: $(OBJDIR)/cha-config.5 $(OBJDIR)/cha-mailcap.5 $(OBJDIR)/cha-mime.types.5
+$(OBJDIR)/cha.1: doc/cha.1
 	cp doc/cha.1 "$(OBJDIR)/cha.1"
+
+.PHONY: manpage
+manpage: $(OBJDIR)/cha-config.5 $(OBJDIR)/cha-mailcap.5 \
+		$(OBJDIR)/cha-mime.types.5 $(OBJDIR)/cha.1
 
 .PHONY: install
 install:
