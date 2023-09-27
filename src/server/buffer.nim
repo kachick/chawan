@@ -141,14 +141,19 @@ proc newBufferInterface*(stream: Stream): BufferInterface =
     stream: stream
   )
 
-proc clone*(iface: BufferInterface, stream: Stream): BufferInterface =
-  let iface2 = newBufferInterface(stream)
+# After cloning a buffer, we need a new interface to the new buffer process.
+# Here we create a new interface for that clone.
+proc cloneInterface*(stream: Stream): BufferInterface =
+  let iface = newBufferInterface(stream)
+  # We have just fork'ed the buffer process inside an interface function,
+  # from which the new buffer is going to return as well. So we must also
+  # consume the return value of the clone function, which is the pid 0.
   var len: int
   var pid: Pid
   stream.sread(len)
-  stream.sread(iface2.packetid)
+  stream.sread(iface.packetid)
   stream.sread(pid)
-  return iface2
+  return iface
 
 proc resolve*(iface: BufferInterface, packetid, len: int) =
   iface.opaque.len = len

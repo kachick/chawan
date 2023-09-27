@@ -1001,7 +1001,7 @@ proc setStream*(container: Container, stream: Stream) =
       stream.flush()
     container.load()
   else:
-    container.iface = container.iface.clone(stream)
+    container.iface = cloneInterface(stream)
     # Maybe we have to resume loading. Let's try.
     discard container.iface.load().then(proc(res: LoadResult) =
       container.onload(res))
