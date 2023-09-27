@@ -422,7 +422,7 @@ proc dupeBuffer2(pager: Pager, container: Container, location: URL,
   let contentType = if contentType != "":
     some(contentType)
   else:
-    container.contenttype
+    container.contentType
   let location = if location != nil:
     location
   else:
@@ -430,7 +430,7 @@ proc dupeBuffer2(pager: Pager, container: Container, location: URL,
   let source = BufferSource(
     t: CLONE,
     location: location,
-    contenttype: contentType,
+    contentType: contentType,
     clonepid: container.process,
   )
   let pipeTo = pager.newBuffer(container.config, source, container.title)
@@ -575,11 +575,11 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let contenttype = if pager.container.contentType.get("") == "text/html":
+    let contentType = if pager.container.contentType.get("") == "text/html":
       "text/plain"
     else:
       "text/html"
-    let container = pager.dupeBuffer2(pager.container, nil, contenttype)
+    let container = pager.dupeBuffer2(pager.container, nil, contentType)
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.addContainer(container)
@@ -660,7 +660,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     let source = BufferSource(
       t: LOAD_REQUEST,
       request: request,
-      contenttype: ctype,
+      contentType: ctype,
       charset: cs,
       location: request.url
     )
@@ -733,7 +733,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
   let source = BufferSource(
     t: LOAD_PIPE,
     fd: fd,
-    contenttype: some(ctype.get("text/plain")),
+    contentType: some(ctype.get("text/plain")),
     charset: cs,
     location: location
   )
@@ -850,7 +850,7 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
   pager.gotoURL(newRequest(pager.container.source.location), none(URL),
-    pager.container.contenttype, replace = pager.container)
+    pager.container.contentType, replace = pager.container)
 
 proc setEnvVars(pager: Pager) {.jsfunc.} =
   try:
@@ -1042,11 +1042,11 @@ proc runMailcapWriteFile(pager: Pager, container: Container,
 #TODO add support for edit/compose, better error handling (use Promise[bool]
 # instead of tuple[EmptyPromise, bool])
 proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
-  if container.contenttype.isNone:
+  if container.contentType.isNone:
     return (nil, true)
   if container.source.t == CLONE:
     return (nil, true) # clone cannot use mailcap
-  let contentType = container.contenttype.get
+  let contentType = container.contentType.get
   if contentType == "text/html":
     # We support HTML natively, so it would make little sense to execute
     # mailcap filters for it.
@@ -1089,7 +1089,8 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     dec pager.numload
     pager.deleteContainer(container)
     if container.retry.len > 0:
-      pager.gotoURL(newRequest(container.retry.pop()), ctype = container.contenttype)
+      pager.gotoURL(newRequest(container.retry.pop()),
+        ctype = container.contentType)
     else:
       let errorMessage = getLoaderErrorMessage(container.code)
       pager.alert("Can't load " & $container.source.location & " (" &

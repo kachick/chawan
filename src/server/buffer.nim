@@ -89,7 +89,6 @@ type
     fd: int # file descriptor of buffer source
     alive: bool
     readbufsize: int
-    contenttype: string #TODO already stored in source
     lines: FlexibleGrid
     rendered: bool
     source: BufferSource
@@ -116,6 +115,7 @@ type
     savetask: bool
     hovertext: array[HoverType, string]
     estream: Stream # error stream
+    ishtml: bool
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -547,8 +547,7 @@ proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =
   return (-1, -1)
 
 proc do_reshape(buffer: Buffer) =
-  case buffer.contenttype
-  of "text/html":
+  if buffer.ishtml:
     if buffer.viewport == nil:
       buffer.viewport = Viewport(window: buffer.attrs)
     let ret = renderDocument(buffer.document, buffer.userstyle,
@@ -624,7 +623,7 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
           let res = res.get
           #TODO we should use ReadableStreams for this (which would allow us to
           # parse CSS asynchronously)
-          if res.contenttype == "text/css":
+          if res.contentType == "text/css":
             return res.text()
           res.unregisterFun()
       ).then(proc(s: JSResult[string]) =
@@ -649,7 +648,7 @@ proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
         if res.isErr:
           return
         let res = res.get
-        if res.contenttype == "image/png":
+        if res.contentType == "image/png":
           #TODO using text() for PNG is wrong
           return res.text()
       ).then(proc(pngData: JSResult[string]) =
@@ -696,9 +695,6 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   let source = buffer.source
   # Warning: source content type overrides received content types, but source
   # charset is just a fallback.
-  let setct = source.contenttype.isNone
-  if not setct:
-    buffer.contenttype = source.contenttype.get
   var charset = source.charset
   var needsAuth = false
   var redirect: Request
@@ -715,14 +711,14 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
     buffer.fd = int(s.source.getFd())
     if buffer.istream == nil:
       return ConnectResult(code: ERROR_SOURCE_NOT_FOUND)
-    if setct:
-      buffer.contenttype = "text/plain"
+    if buffer.source.contentType.isNone:
+      buffer.source.contentType = some("text/plain")
   of LOAD_PIPE:
     discard fcntl(source.fd, F_SETFL, fcntl(source.fd, F_GETFL, 0) or O_NONBLOCK)
     buffer.istream = newPosixStream(source.fd)
     buffer.fd = source.fd
-    if setct:
-      buffer.contenttype = "text/plain"
+    if buffer.source.contentType.isNone:
+      buffer.source.contentType = some("text/plain")
   of LOAD_REQUEST:
     let request = source.request
     let response = buffer.loader.doRequest(request, blocking = true, canredir = true)
@@ -730,8 +726,8 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
       return ConnectResult(code: response.res)
     if response.charset != CHARSET_UNKNOWN:
       charset = charset
-    if setct:
-      buffer.contenttype = response.contenttype
+    if buffer.source.contentType.isNone:
+      buffer.source.contentType = some(response.contentType)
     buffer.istream = response.body
     let fd = SocketStream(response.body).source.getFd()
     buffer.fd = int(fd)
@@ -745,12 +741,14 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
     if "Referrer-Policy" in response.headers.table:
       referrerpolicy = getReferrerPolicy(response.headers.table["Referrer-Policy"][0])
   buffer.connected = true
+  let contentType = buffer.source.contentType.get("")
+  buffer.ishtml = contentType == "text/html"
   return ConnectResult(
     charset: charset,
     needsAuth: needsAuth,
     redirect: redirect,
     cookies: cookies,
-    contentType: if setct: buffer.contenttype else: ""
+    contentType: contentType
   )
 
 # After connect, pager will call one of the following:
@@ -806,10 +804,10 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
     t: LOAD_PIPE,
     fd: fd,
     location: buffer.source.location,
-    contenttype: some(contentType),
+    contentType: some(contentType),
     charset: buffer.source.charset
   )
-  buffer.contenttype = contentType
+  buffer.ishtml = ishtml
   discard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) or O_NONBLOCK)
   let ps = newPosixStream(fd)
   buffer.istream = newTeeStream(ps, buffer.sstream, closedest = false)
@@ -817,7 +815,8 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
-  buffer.source.contenttype = some(contentType)
+  buffer.source.contentType = some(contentType)
+  buffer.ishtml = contentType == "text/html"
 
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
@@ -939,8 +938,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     p.resolve()
     return p
   var p: EmptyPromise
-  case buffer.contenttype
-  of "text/html":
+  if buffer.ishtml:
     buffer.sstream.setPosition(0)
     buffer.available = 0
     if buffer.window == nil:
@@ -1004,8 +1002,7 @@ proc onload(buffer: Buffer) =
       if buffer.readbufsize < BufferSize:
         buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
       buffer.available += s.len
-      case buffer.contenttype
-      of "text/html":
+      if buffer.ishtml:
         res.bytes = buffer.available
       else:
         buffer.do_reshape()
@@ -1033,8 +1030,7 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   if buffer.state != LOADING_PAGE: return
   buffer.istream.close()
   buffer.state = LOADED
-  case buffer.contenttype
-  of "text/html":
+  if buffer.ishtml:
     buffer.sstream.setPosition(0)
     buffer.available = 0
     if buffer.window == nil:

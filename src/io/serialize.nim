@@ -391,7 +391,7 @@ proc swrite*(stream: Stream, source: BufferSource) =
   of LOAD_REQUEST: stream.swrite(source.request)
   of LOAD_PIPE: stream.swrite(source.fd)
   stream.swrite(source.location)
-  stream.swrite(source.contenttype)
+  stream.swrite(source.contentType)
   stream.swrite(source.charset)
 
 proc sread*(stream: Stream, source: var BufferSource) =
@@ -408,7 +408,7 @@ proc sread*(stream: Stream, source: var BufferSource) =
     source = BufferSource(t: LOAD_PIPE)
     stream.sread(source.fd)
   stream.sread(source.location)
-  stream.sread(source.contenttype)
+  stream.sread(source.contentType)
   stream.sread(source.charset)
 
 func slen*(source: BufferSource): int =
@@ -418,4 +418,4 @@ func slen*(source: BufferSource): int =
   of LOAD_REQUEST: result += slen(source.request)
   of LOAD_PIPE: result += slen(source.fd)
   result += slen(source.location)
-  result += slen(source.contenttype)
+  result += slen(source.contentType)

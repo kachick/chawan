@@ -312,10 +312,10 @@ proc applyHeaders(loader: FileLoader, request: Request, response: Response) =
     # it breaks mailcap named attributes other than charset.)
     # Ideally, contentType would be a separate object type.
     let header = response.headers.table["Content-Type"][0].toLowerAscii()
-    response.contenttype = header.until(';').strip().toLowerAscii()
+    response.contentType = header.until(';').strip().toLowerAscii()
     response.charset = getCharset(header.getAttribute("charset"))
   else:
-    response.contenttype = guessContentType($response.url.path,
+    response.contentType = guessContentType($response.url.path,
       "application/octet-stream", DefaultGuess)
   if "Location" in response.headers.table:
     if response.status in 301u16..303u16 or response.status in 307u16..308u16:

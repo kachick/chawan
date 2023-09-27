@@ -17,7 +17,7 @@ type
     fd*: int
     body*: Stream
     bodyUsed* {.jsget.}: bool
-    contenttype*: string
+    contentType*: string
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
     redirect*: Request
@@ -75,11 +75,11 @@ proc blob(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   response.bodyRead = nil
   return bodyRead.then(proc(s: string): JSResult[Blob] =
     if s.len == 0:
-      return ok(newBlob(nil, 0, response.contenttype, nil))
+      return ok(newBlob(nil, 0, response.contentType, nil))
     GC_ref(s)
     let deallocFun = proc() =
       GC_unref(s)
-    let blob = newBlob(unsafeAddr s[0], s.len, response.contenttype, deallocFun)
+    let blob = newBlob(unsafeAddr s[0], s.len, response.contentType, deallocFun)
     ok(blob))
 
 proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]

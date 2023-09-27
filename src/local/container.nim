@@ -181,7 +181,7 @@ func charset*(container: Container): Charset =
   return container.source.charset
 
 func contentType*(container: Container): Option[string] {.jsfget.} =
-  return container.source.contenttype
+  return container.source.contentType
 
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
@@ -836,9 +836,9 @@ proc load(container: Container) =
             "application/octet-stream", container.config.mimeTypes)
           if contentType != "application/octet-stream":
             container.iface.setContentType(contentType)
-          container.source.contenttype = some(contentType)
-        elif res.contentType != "":
-          container.source.contenttype = some(res.contentType)
+          container.source.contentType = some(contentType)
+        else:
+          container.source.contentType = some(res.contentType)
         container.triggerEvent(CHECK_MAILCAP)
       else:
         container.setLoadInfo("")
