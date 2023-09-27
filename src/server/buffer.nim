@@ -40,6 +40,7 @@ import loader/connecterror
 import loader/loader
 import render/renderdocument
 import render/rendertext
+import types/blob
 import types/buffersource
 import types/cell
 import types/color
@@ -644,18 +645,20 @@ proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   if url.isSome:
     let url = url.get
     return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
+      .then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
         if res.isErr:
           return
         let res = res.get
         if res.contentType == "image/png":
-          #TODO using text() for PNG is wrong
-          return res.text()
-      ).then(proc(pngData: JSResult[string]) =
+          return res.blob()
+      ).then(proc(pngData: JSResult[Blob]) =
         if pngData.isErr:
           return
         let pngData = pngData.get
-        elem.bitmap = fromPNG(toOpenArrayByte(pngData, 0, pngData.high)))
+        let buffer = cast[ptr UncheckedArray[uint8]](pngData.buffer)
+        let high = int(pngData.size - 1)
+        elem.bitmap = fromPNG(toOpenArray(buffer, 0, high))
+      )
 
 proc loadResources(buffer: Buffer): EmptyPromise =
   let document = buffer.document

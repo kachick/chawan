@@ -1,4 +1,5 @@
 import streams
+import unicode
 
 import bindings/quickjs
 import io/promise
@@ -10,6 +11,8 @@ import types/blob
 import types/url
 
 import chakasu/charset
+import chakasu/decoderstream
+import chakasu/encoderstream
 
 type
   Response* = ref object
@@ -62,9 +65,20 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   let bodyRead = response.bodyRead
   response.bodyRead = nil
   return bodyRead.then(proc(s: string): JSResult[string] =
-    ok(s))
+    if response.charset == CHARSET_UTF_8 and s.validateUtf8() == -1:
+      ok(s)
+    else:
+      let ss = newStringStream(s)
+      let cs = if response.charset == CHARSET_UNKNOWN:
+        CHARSET_UTF_8
+      else:
+        response.charset
+      let ds = newDecoderStream(ss, cs)
+      let es = newEncoderStream(ds, CHARSET_UTF_8)
+      return ok(es.readAll())
+  )
 
-proc blob(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
+proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   if response.bodyRead == nil:
     let p = newPromise[JSResult[Blob]]()
     let err = JSResult[Blob]
