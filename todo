@@ -32,7 +32,6 @@ buffer:
 	* also, other security stuff:
 		- configurable/better url filtering in loader
 		- make peekCursor show the entire url
-- buffer cloning: fork buffer process instead of piping source
 - when the log buffer crashes, print its contents to stderr
 	* make console.err a TeeStream, and tee it to a StringStream that
 	  buffers up to 4KB
@@ -85,7 +84,5 @@ images:
 etc:
 - important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
 - tests (including aforementioned fuzzer)
-- orc support:
-	* go through copyMem & c library calls and add prepareMutation
-	  where necessary (for orc)
+- orc support
 - maybe windows support? (blocker: needs a windows machine)
