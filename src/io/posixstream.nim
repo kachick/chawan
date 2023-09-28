@@ -38,8 +38,9 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = cast[PosixStream](s)
   let wasend = s.isend
+  let buffer = cast[ptr UncheckedArray[uint8]](buffer)
   while result < len:
-    let n = read(s.fd, cast[pointer](cast[int](buffer) + result), len)
+    let n = read(s.fd, addr buffer[result], len - result)
     if n < 0:
       if result == 0:
         result = n
