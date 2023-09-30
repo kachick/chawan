@@ -278,7 +278,7 @@ proc flushLine(state: var TomlParser): Err[TomlError] =
             assert state.tarray
             table = node.a[^1].t
           else:
-            let s = keys.join(".")
+            let s = keys.join('.')
             return state.err("re-definition of node " & s)
         else:
           let node = TomlTable()
@@ -287,7 +287,7 @@ proc flushLine(state: var TomlParser): Err[TomlError] =
         inc i
 
       if keys[i] in table.map:
-        let s = keys.join(".")
+        let s = keys.join('.')
         return state.err("re-definition of node " & s)
 
       table.map[keys[i]] = TomlKVPair(state.node).value

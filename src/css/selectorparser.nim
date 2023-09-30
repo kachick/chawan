@@ -4,6 +4,7 @@ import strutils
 import unicode
 
 import css/cssparser
+import utils/twtstr
 
 import chame/tags
 
@@ -91,7 +92,7 @@ proc add*(sels: var CompoundSelector, sel: Selector) {.inline.} =
 
 # For debugging
 func tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
+  return ($ftype).split('_')[1..^1].join('-').toLowerAscii()
 
 func `$`*(cxsel: ComplexSelector): string
 

@@ -809,7 +809,7 @@ proc attr*(element: Element, name, value: string)
 func baseURL*(document: Document): URL
 
 proc tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
+  return ($ftype).split('_')[1..^1].join('-').toLowerAscii()
 
 func escapeText(s: string, attribute_mode = false): string =
   var nbsp_mode = false

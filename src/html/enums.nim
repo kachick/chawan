@@ -1,6 +1,8 @@
 import strutils
 import tables
 
+import utils/twtstr
+
 import chame/tags
 
 type
@@ -35,7 +37,7 @@ const LabelableElements* = {
 func getInputTypeMap(): Table[string, InputType] =
   for i in InputType:
     let enumname = $InputType(i)
-    let tagname = enumname.split('_')[1..^1].join("_").toLowerAscii()
+    let tagname = enumname.split('_')[1..^1].join('_').toLowerAscii()
     result[tagname] = InputType(i)
 
 const inputTypeMap = getInputTypeMap()
