@@ -147,7 +147,7 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
     let (r, len) = edit.news.lastRune(edit.cursori - 1)
     edit.news.delete(edit.cursori - len .. edit.cursori - 1)
-    dec edit.cursori
+    edit.cursori -= len
     edit.cursorx -= r.width()
     edit.invalid = true
 
