@@ -41,7 +41,7 @@ type
       value*: string
       tflaga*: tflaga
     of CSS_DELIM_TOKEN:
-      rvalue*: Rune
+      cvalue*: char
     of CSS_NUMBER_TOKEN, CSS_PERCENTAGE_TOKEN, CSS_DIMENSION_TOKEN:
       nvalue*: float64
       tflagb*: tflagb
@@ -91,7 +91,10 @@ proc `$`*(c: CSSParsedItem): string =
     of CSS_STRING_TOKEN:
       result &= ("\"" & c.value & "\"")
     of CSS_DELIM_TOKEN:
-      result &= c.rvalue
+      if c.cvalue != char(128):
+        result &= c.cvalue
+      else:
+        result &= "<UNICODE>"
     of CSS_DIMENSION_TOKEN:
       case c.tflagb
       of TFLAGB_NUMBER:
@@ -145,7 +148,7 @@ proc `$`*(c: CSSParsedItem): string =
 func `==`*(a: CSSParsedItem, b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).tokenType == b
 
-const IdentStart = AsciiAlpha + NonAscii + {'_'} 
+const IdentStart = AsciiAlpha + NonAscii + {'_'}
 const Ident = IdentStart + AsciiDigit + {'-'}
 
 proc consume(state: var CSSTokenizerState): char =
@@ -153,8 +156,12 @@ proc consume(state: var CSSTokenizerState): char =
   inc state.at
   return state.curr
 
-proc consumeRune(state: var CSSTokenizerState): Rune =
-  fastRuneAt(state.buf, state.at, result)
+proc consumeRChar(state: var CSSTokenizerState): char =
+  var r: Rune
+  fastRuneAt(state.buf, state.at, r)
+  if r.isAscii():
+    return cast[char](r)
+  return char(128)
 
 proc reconsume(state: var CSSTokenizerState) =
   dec state.at
@@ -416,7 +423,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
       result.value = consumeIdentSequence(state)
     else:
       state.reconsume()
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: state.consumeRune())
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: state.consumeRChar())
   of '(': return CSSToken(tokenType: CSS_LPAREN_TOKEN)
   of ')': return CSSToken(tokenType: CSS_RPAREN_TOKEN)
   of '{': return CSSToken(tokenType: CSS_LBRACE_TOKEN)
@@ -426,7 +433,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
       state.reconsume()
       return state.consumeNumericToken()
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: c)
   of ',': return CSSToken(tokenType: CSS_COMMA_TOKEN)
   of '-':
     if state.startsWithNumber():
@@ -441,13 +448,13 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
         state.reconsume()
         return state.consumeIdentLikeToken()
       else:
-        return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+        return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: c)
   of '.':
     if state.startsWithNumber():
       state.reconsume()
       return state.consumeNumericToken()
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: c)
   of ':': return CSSToken(tokenType: CSS_COLON_TOKEN)
   of ';': return CSSToken(tokenType: CSS_SEMICOLON_TOKEN)
   of '<':
@@ -457,20 +464,20 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
       discard state.consume()
       return CSSToken(tokenType: CSS_CDO_TOKEN)
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: c)
   of '@':
     if state.next3startsWithIdentSequence():
       let name = state.consumeIdentSequence()
       return CSSToken(tokenType: CSS_AT_KEYWORD_TOKEN, value: name)
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: c)
   of '[': return CSSToken(tokenType: CSS_LBRACKET_TOKEN)
   of '\\':
     if state.isValidEscape():
       state.reconsume()
       return state.consumeIdentLikeToken()
     else:
-      return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: Rune(c))
+      return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: c)
   of ']': return CSSToken(tokenType: CSS_RBRACKET_TOKEN)
   of AsciiDigit:
     state.reconsume()
@@ -480,7 +487,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
     return state.consumeIdentLikeToken()
   else:
     state.reconsume()
-    return CSSToken(tokenType: CSS_DELIM_TOKEN, rvalue: state.consumeRune())
+    return CSSToken(tokenType: CSS_DELIM_TOKEN, cvalue: state.consumeRChar())
 
 proc tokenizeCSS*(inputStream: Stream): seq[CSSParsedItem] =
   var state: CSSTokenizerState
@@ -520,7 +527,7 @@ proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
   of CSS_LPAREN_TOKEN: ending = CSS_RPAREN_TOKEN
   of CSS_LBRACKET_TOKEN: ending = CSS_RBRACKET_TOKEN
   else: doAssert false
-  
+
   result = CSSSimpleBlock(token: t)
   while state.at < state.tokens.len:
     let t = state.consume()
@@ -613,7 +620,7 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
           inc k
           l = i
       elif k == 1 and decl.value[i] == CSS_DELIM_TOKEN:
-        if CSSToken(decl.value[i]).rvalue == Rune('!'):
+        if CSSToken(decl.value[i]).cvalue == '!':
           decl.important = true
           decl.value.delete(l)
           decl.value.delete(i)
@@ -841,7 +848,8 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
       discard state.consume()
   template get_plus: bool =
-    if state.peek() == CSS_DELIM_TOKEN and CSSToken(state.peek()).rvalue == Rune('+'):
+    let tok = state.peek()
+    if tok == CSS_DELIM_TOKEN and CSSToken(tok).cvalue == '+':
       discard state.consume()
       true
     else:
@@ -894,9 +902,9 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         return some((1, 0))
       let tok2 = get_tok
       if tok2.tokenType == CSS_DELIM_TOKEN:
-        let sign = case tok2.rvalue
-        of Rune('+'): 1
-        of Rune('-'): -1
+        let sign = case tok2.cvalue
+        of '+': 1
+        of '-': -1
         else: return none(CSSAnB)
         let tok3 = get_tok
         fail_non_signless_integer tok3, some((1, 0))
@@ -910,9 +918,9 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         return some((-1, 0))
       let tok2 = get_tok
       if tok2.tokenType == CSS_DELIM_TOKEN:
-        let sign = case tok2.rvalue
-        of Rune('+'): 1
-        of Rune('-'): -1
+        let sign = case tok2.cvalue
+        of '+': 1
+        of '-': -1
         else: return none(CSSAnB)
         let tok3 = get_tok
         fail_non_signless_integer tok3, some((-1, 0))
@@ -957,9 +965,9 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         return some((int(tok.nvalue), 0))
       let tok2 = get_tok
       if tok2.tokenType == CSS_DELIM_TOKEN:
-        let sign = case tok2.rvalue
-        of Rune('+'): 1
-        of Rune('-'): -1
+        let sign = case tok2.cvalue
+        of '+': 1
+        of '-': -1
         else: return none(CSSAnB)
         let tok3 = get_tok
         fail_non_signless_integer tok3, some((int(tok.nvalue), 0))

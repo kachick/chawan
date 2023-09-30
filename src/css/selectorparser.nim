@@ -1,7 +1,6 @@
 import options
 import streams
 import strutils
-import unicode
 
 import css/cssparser
 import utils/twtstr
@@ -334,18 +333,23 @@ proc parseAttributeSelector(state: var SelectorParser, cssblock: CSSSimpleBlock)
   if not state2.has(): return Selector(t: ATTR_SELECTOR, attr: attr.value, rel: ' ')
   let delim0 = get_tok state2.consume()
   if delim0.tokenType != CSS_DELIM_TOKEN: fail
-  case delim0.rvalue
-  of Rune('~'), Rune('|'), Rune('^'), Rune('$'), Rune('*'):
+  case delim0.cvalue
+  of '~', '|', '^', '$', '*':
     let delim1 = get_tok state2.consume()
     if delim1.tokenType != CSS_DELIM_TOKEN: fail
-  of Rune('='):
+  of '=':
     discard
   else: fail
   state2.skipWhitespace()
   if not state2.has(): fail
   let value = get_tok state2.consume()
   if value.tokenType notin {CSS_IDENT_TOKEN, CSS_STRING_TOKEN}: fail
-  return Selector(t: ATTR_SELECTOR, attr: attr.value, value: value.value, rel: cast[char](delim0.rvalue))
+  return Selector(
+    t: ATTR_SELECTOR,
+    attr: attr.value,
+    value: value.value,
+    rel: delim0.cvalue
+  )
 
 proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
@@ -375,14 +379,14 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
         result.add(Selector(t: ID_SELECTOR, id: tok.value))
       of CSS_COMMA_TOKEN: break
       of CSS_DELIM_TOKEN:
-        case tok.rvalue
-        of Rune('.'):
+        case tok.cvalue
+        of '.':
           inc state.at
           result.add(state.parseClassSelector())
-        of Rune('*'):
+        of '*':
           inc state.at
           result.add(Selector(t: UNIVERSAL_SELECTOR))
-        of Rune('>'), Rune('+'), Rune('~'): break
+        of '>', '+', '~': break
         else: fail
       of CSS_WHITESPACE_TOKEN:
         # skip trailing whitespace
@@ -390,7 +394,7 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
           inc state.at
         elif state.peek(1) == CSS_DELIM_TOKEN:
           let tok = CSSToken(state.peek(1))
-          if tok.rvalue == Rune('>') or tok.rvalue == Rune('+') or tok.rvalue == Rune('~'):
+          if tok.cvalue in {'>', '+', '~'}:
             inc state.at
         break
       else: fail
@@ -411,10 +415,10 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     let tok = get_tok state.consume()
     case tok.tokenType
     of CSS_DELIM_TOKEN:
-      case tok.rvalue
-      of Rune('>'): result[^1].ct = CHILD_COMBINATOR
-      of Rune('+'): result[^1].ct = NEXT_SIBLING_COMBINATOR
-      of Rune('~'): result[^1].ct = SUBSEQ_SIBLING_COMBINATOR
+      case tok.cvalue
+      of '>': result[^1].ct = CHILD_COMBINATOR
+      of '+': result[^1].ct = NEXT_SIBLING_COMBINATOR
+      of '~': result[^1].ct = SUBSEQ_SIBLING_COMBINATOR
       else: fail
     of CSS_WHITESPACE_TOKEN:
       result[^1].ct = DESCENDANT_COMBINATOR

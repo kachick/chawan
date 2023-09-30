@@ -1,6 +1,5 @@
 import strutils
 import tables
-import unicode
 
 import css/cssparser
 import css/values
@@ -190,15 +189,14 @@ template expect_bool(b: bool, sfalse: string, strue: string) =
 template expect_comparison(comparison: var MediaQueryComparison) =
   let tok = consume_token()
   if tok != CSS_DELIM_TOKEN: return nil
-  if not tok.rvalue.isAscii(): return nil
-  let c = char(tok.rvalue)
+  let c = tok.cvalue
   if c notin {'=', '<', '>'}: return nil
   block parse:
-    case char(tok.rvalue)
+    case c
     of '<':
       if parser.has():
         let tok = skip_consume()
-        if tok == CSS_DELIM_TOKEN and tok.rvalue == Rune('='):
+        if tok == CSS_DELIM_TOKEN and tok.cvalue == '=':
           comparison = COMPARISON_LE
           break parse
         parser.reconsume()
@@ -206,7 +204,7 @@ template expect_comparison(comparison: var MediaQueryComparison) =
     of '>':
       if parser.has():
         let tok = skip_consume()
-        if tok == CSS_DELIM_TOKEN and tok.rvalue == Rune('='):
+        if tok == CSS_DELIM_TOKEN and tok.cvalue == '=':
           comparison = COMPARISON_GE
           break parse
         parser.reconsume()
@@ -440,7 +438,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     let cval = parser.consume()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      if tok.tokenType == CSS_IDENT_TOKEN: 
+      if tok.tokenType == CSS_IDENT_TOKEN:
         let tokval = tok.value
         case tokval
         of "not":
@@ -465,7 +463,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     let cval = parser.consume()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      if tok.tokenType == CSS_IDENT_TOKEN: 
+      if tok.tokenType == CSS_IDENT_TOKEN:
         let tokval = tok.value
         if result == nil:
           if tokval in MediaTypes:
@@ -496,7 +494,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     let cval = parser.consume()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      if tok.tokenType == CSS_IDENT_TOKEN: 
+      if tok.tokenType == CSS_IDENT_TOKEN:
         let tokval = tok.value
         if tokval != "and":
           return nil

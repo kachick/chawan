@@ -2,7 +2,6 @@ import tables
 import macros
 import options
 import strutils
-import unicode
 
 import css/cssparser
 import css/selectorparser
@@ -149,7 +148,7 @@ type
   CSSCounterReset* = object
     name*: string
     num*: int
-  
+
   CSSComputedValue* = ref object
     t*: CSSPropertyType
     case v*: CSSValueType
@@ -540,7 +539,8 @@ func cssColor*(val: CSSComponentValue): Result[RGBAColor, string] =
         elif commaMode:
           return err("Invalid color")
         elif slash:
-          if f.value[i] != CSS_DELIM_TOKEN or CSSToken(f.value[i]).rvalue != Rune('/'):
+          let tok = f.value[i]
+          if tok != CSS_DELIM_TOKEN or CSSToken(tok).cvalue != '/':
             return err("Invalid color")
           inc i
           f.value.skipWhitespace(i)
@@ -990,7 +990,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     vtype: CSSValueType, ptype: CSSPropertyType): Err[string] =
   var i = 0
   d.value.skipWhitespace(i)
-  if i >= d.value.len: 
+  if i >= d.value.len:
     return err("Empty value")
   let cval = d.value[i]
   inc i
