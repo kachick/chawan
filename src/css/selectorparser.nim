@@ -249,7 +249,7 @@ proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: Ps
     inc i
   if i >= cssfunction.value.len:
     return nthchild
-  if (get_tok cssfunction.value[i]).value != "of": fail
+  if not (get_tok cssfunction.value[i]).value.equalsIgnoreCase("of"): fail
   if i == cssfunction.value.len: fail
   nthchild.pseudo.ofsels = parseSelectorList(cssfunction.value[i..^1])
   if nthchild.pseudo.ofsels.len == 0: fail
@@ -269,13 +269,19 @@ proc parseLang(cvals: seq[CSSComponentValue]): Selector =
   return Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: PSEUDO_LANG, s: tok.value))
 
 proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction): Selector =
-  case cssfunction.name
-  of "not": return state.parseRecursiveSelectorFunction(PSEUDO_NOT, cssfunction.value)
-  of "is": return state.parseRecursiveSelectorFunction(PSEUDO_IS, cssfunction.value)
-  of "where": return state.parseRecursiveSelectorFunction(PSEUDO_WHERE, cssfunction.value)
-  of "nth-child": return state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_CHILD))
-  of "nth-last-child": return state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
-  of "lang": return parseLang(cssfunction.value)
+  return case cssfunction.name.toLowerAscii()
+  of "not":
+    state.parseRecursiveSelectorFunction(PSEUDO_NOT, cssfunction.value)
+  of "is":
+    state.parseRecursiveSelectorFunction(PSEUDO_IS, cssfunction.value)
+  of "where":
+    state.parseRecursiveSelectorFunction(PSEUDO_WHERE, cssfunction.value)
+  of "nth-child":
+    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_CHILD))
+  of "nth-last-child":
+    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
+  of "lang":
+    parseLang(cssfunction.value)
   else: fail
 
 proc parsePseudoSelector(state: var SelectorParser): Selector =
@@ -289,7 +295,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
     of CSS_IDENT_TOKEN:
       template add_pseudo_class(class: PseudoClass) =
         return Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: class))
-      case tok.value
+      case tok.value.toLowerAscii()
       of "before": add_pseudo_element PSEUDO_BEFORE
       of "after": add_pseudo_element PSEUDO_AFTER
       of "first-child": add_pseudo_class PSEUDO_FIRST_CHILD
@@ -306,7 +312,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
       if not state.has(): fail
       let tok = get_tok state.consume()
       if tok.tokenType != CSS_IDENT_TOKEN: fail
-      case tok.value
+      case tok.value.toLowerAscii()
       of "before": add_pseudo_element PSEUDO_BEFORE
       of "after": add_pseudo_element PSEUDO_AFTER
       else: fail
