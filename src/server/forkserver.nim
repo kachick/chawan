@@ -16,6 +16,7 @@ import loader/loader
 import server/buffer
 import types/buffersource
 import types/cookie
+import types/urimethodmap
 import types/url
 import utils/twtstr
 
@@ -35,16 +36,14 @@ type
     children: seq[(Pid, Pid)]
 
 proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers,
-    filter = newURLFilter(default = true), cookiejar: CookieJar = nil,
-    proxy: URL = nil, acceptProxy = false): FileLoader =
+    proxy: URL, urimethodmap: URIMethodMap, acceptProxy: bool): FileLoader =
   forkserver.ostream.swrite(FORK_LOADER)
-  var defaultHeaders = defaultHeaders
   let config = LoaderConfig(
     defaultHeaders: defaultHeaders,
-    filter: filter,
-    cookiejar: cookiejar,
+    filter: newURLFilter(default = true),
     proxy: proxy,
-    acceptProxy: acceptProxy
+    acceptProxy: acceptProxy,
+    urimethodmap: urimethodmap
   )
   forkserver.ostream.swrite(config)
   forkserver.ostream.flush()
@@ -111,17 +110,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
   ctx.istream.sread(mainproc)
-  let loaderPid = ctx.forkLoader(
-    LoaderConfig(
-      defaultHeaders: config.headers,
-      filter: config.filter,
-      cookiejar: config.cookiejar,
-      referrerpolicy: config.referrerpolicy,
-      #TODO these should be in a separate config I think
-      proxy: config.proxy,
-      cgiDir: config.cgiDir
-    )
-  )
+  let loaderPid = ctx.forkLoader(config.loaderConfig)
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")

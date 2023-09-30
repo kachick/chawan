@@ -206,13 +206,11 @@ func skipBlanks*(buf: string, at: int): int =
   while result < buf.len and buf[result].isWhitespace():
     inc result
 
-func until*(s: string, c: set[char]): string =
-  var i = 0
-  while i < s.len:
+func until*(s: string, c: set[char], starti = 0): string =
+  for i in starti ..< s.len:
     if s[i] in c:
       break
     result.add(s[i])
-    inc i
 
 func until*(s: string, c: char): string = s.until({c})
 

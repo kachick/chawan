@@ -59,12 +59,13 @@ $(OBJDIR)/man/cha-%.md: doc/%.md | $(OBJDIR)/man/
 $(OBJDIR)/man/cha-%.5: $(OBJDIR)/man/cha-%.md | $(OBJDIR)/man/
 	pandoc --standalone --to man $< -o $@
 
-$(OBJDIR)/man/cha.1: $(OBJDIR)/man/ doc/cha.1
+$(OBJDIR)/man/cha.1: doc/cha.1 | $(OBJDIR)/man/
 	cp doc/cha.1 "$(OBJDIR)/man/cha.1"
 
 .PHONY: manpage
 manpage:  $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 	$(OBJDIR)/man/cha-mime.types.5 $(OBJDIR)/man/cha-localcgi.5 \
+	$(OBJDIR)/man/cha-urimethodmap.5 \
 	$(OBJDIR)/man/cha.1
 
 .PHONY: install
@@ -76,6 +77,7 @@ install:
 	install -m755 "$(OBJDIR)/man/cha-mailcap.5" "$(DESTDIR)$(manprefix5)"; \
 	install -m755 "$(OBJDIR)/man/cha-mime.types.5" "$(DESTDIR)$(manprefix5)"; \
 	install -m755 "$(OBJDIR)/man/cha-localcgi.5" "$(DESTDIR)$(manprefix5)"; \
+	install -m755 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(manprefix5)"; \
 	install -m755 "$(OBJDIR)/cha.1" "$(DESTDIR)$(manprefix1)"; \
 	fi
 

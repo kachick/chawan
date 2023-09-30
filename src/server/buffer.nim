@@ -37,6 +37,7 @@ import js/regex
 import js/timeout
 import layout/box
 import loader/connecterror
+import loader/headers
 import loader/loader
 import render/renderdocument
 import render/rendertext
@@ -741,8 +742,10 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
         let cookie = newCookie(s, response.url)
         if cookie.isOk:
           cookies.add(cookie.get)
-    if "Referrer-Policy" in response.headers.table:
-      referrerpolicy = getReferrerPolicy(response.headers.table["Referrer-Policy"][0])
+    if "Referrer-Policy" in response.headers:
+      referrerpolicy = getReferrerPolicy(response.headers["Referrer-Policy"])
+      if referrerpolicy.isSome:
+        buffer.loader.setReferrerPolicy(referrerpolicy.get)
   buffer.connected = true
   let contentType = buffer.source.contentType.get("")
   buffer.ishtml = contentType == "text/html"

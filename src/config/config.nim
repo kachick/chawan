@@ -11,13 +11,15 @@ import js/error
 import js/javascript
 import js/regex
 import loader/headers
+import loader/loader
 import types/cell
 import types/color
 import types/cookie
+import types/opt
 import types/referer
+import types/urimethodmap
 import types/url
 import utils/mimeguess
-import types/opt
 import utils/twtstr
 
 import chakasu/charset
@@ -88,6 +90,7 @@ type
     mailcap* {.jsgetset.}: seq[string]
     mime_types* {.jsgetset.}: seq[string]
     cgi_dir* {.jsgetset.}: seq[string]
+    urimethodmap* {.jsgetset.}: seq[string]
 
   InputConfig = object
     vi_numeric_prefix* {.jsgetset.}: bool
@@ -132,15 +135,12 @@ type
 
   BufferConfig* = object
     userstyle*: string
-    filter*: URLFilter
-    cookiejar*: CookieJar
-    headers*: Headers
     referer_from*: bool
     referrerpolicy*: ReferrerPolicy
     scripting*: bool
     charsets*: seq[Charset]
     images*: bool
-    proxy*: URL
+    loaderConfig*: LoaderConfig
     mimeTypes*: MimeTypes
     cgiDir*: seq[string]
 
@@ -197,12 +197,6 @@ proc bindLineKey(config: Config, key, action: string) {.jsfunc.} =
 proc hasprop(a: ptr ActionMap, s: string): bool {.jshasprop.} =
   return s in a[]
 
-func getForkServerConfig*(config: Config): ForkServerConfig =
-  return ForkServerConfig(
-    tmpdir: config.external.tmpdir,
-    ambiguous_double: config.display.double_width_ambiguous
-  )
-
 func getProxy*(config: Config): URL =
   if config.network.proxy.isSome:
     let s = config.network.proxy.get
@@ -218,25 +212,28 @@ func getDefaultHeaders*(config: Config): Headers =
 
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
-    images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes):
-    BufferConfig =
+    images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes,
+    urimethodmap: URIMethodMap): BufferConfig =
   let filter = newURLFilter(
     scheme = some(location.scheme),
     allowschemes = @["data"],
     default = true
   )
-  result = BufferConfig(
+  return BufferConfig(
     userstyle: userstyle,
-    filter: filter,
-    cookiejar: cookiejar,
-    headers: headers,
     referer_from: referer_from,
     scripting: scripting,
     charsets: charsets,
     images: images,
-    proxy: proxy,
     mimeTypes: mimeTypes,
-    cgiDir: config.external.cgi_dir
+    loaderConfig: LoaderConfig(
+      defaultHeaders: headers,
+      filter: filter,
+      cookiejar: cookiejar,
+      proxy: proxy,
+      cgiDir: config.external.cgi_dir,
+      urimethodmap: urimethodmap
+    )
   )
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
@@ -368,6 +365,21 @@ proc getMimeTypes*(config: Config): MimeTypes =
   if not found:
     return DefaultGuess
   return mimeTypes
+
+proc getURIMethodMap*(config: Config): URIMethodMap =
+  let configDir = getConfigDir() / "chawan" #TODO store this in config?
+  var urimethodmap: URIMethodMap
+  for p in config.external.urimethodmap:
+    let f = openFileExpand(configDir, p)
+    if f != nil:
+      urimethodmap.parseURIMethodMap(f.readAll())
+  return urimethodmap
+
+proc getForkServerConfig*(config: Config): ForkServerConfig =
+  return ForkServerConfig(
+    tmpdir: config.external.tmpdir,
+    ambiguous_double: config.display.double_width_ambiguous
+  )
 
 proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>",
   laxnames = false)

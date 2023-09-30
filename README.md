@@ -53,6 +53,7 @@ Currently implemented features are:
 * FTP support
 * Gopher support
 * [local CGI](doc/localcgi.md) support
+* [urimethodmap](doc/urimethodmap.md) support
 
 ...with a lot more [planned](todo).
 

@@ -1,6 +1,8 @@
 import bindings/curl
 
 type ConnectErrorCode* = enum
+  ERROR_TOO_MANY_REWRITES = (-14, "too many URI method map rewrites")
+  ERROR_INVALID_URI_METHOD_ENTRY = (-13, "invalid URI method entry")
   ERROR_CGI_FILE_NOT_FOUND = (-12, "CGI file not found")
   ERROR_INVALID_CGI_PATH = (-11, "invalid CGI path")
   ERROR_FAIL_SETUP_CGI = (-10, "failed to set up CGI script")

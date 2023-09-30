@@ -822,8 +822,10 @@ proc load(container: Container) =
       if res.code == 0:
         container.triggerEvent(SUCCESS)
         # accept cookies
-        if res.cookies.len > 0 and container.config.cookiejar != nil:
-          container.config.cookiejar.add(res.cookies)
+        let cookiejar = container.config.loaderConfig.cookiejar
+        if res.cookies.len > 0 and cookiejar != nil:
+          cookiejar.add(res.cookies)
+        # set referrer policy, if any
         if res.referrerpolicy.isSome and container.config.referer_from:
           container.config.referrerpolicy = res.referrerpolicy.get
         container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")

@@ -43,6 +43,7 @@ import loader/request
 import loader/response
 import types/cookie
 import types/referer
+import types/urimethodmap
 import types/url
 import utils/mimeguess
 import utils/twtstr
@@ -79,6 +80,7 @@ type
     RESUME
     ADDREF
     UNREF
+    SET_REFERRER_POLICY
 
   LoaderContext = ref object
     refcount: int
@@ -89,17 +91,18 @@ type
     extra_fds: seq[curl_waitfd]
     handleList: seq[CurlHandle]
     handleMap: Table[int, LoaderHandle]
+    referrerpolicy: ReferrerPolicy
 
   LoaderConfig* = object
     defaultheaders*: Headers
     filter*: URLFilter
     cookiejar*: CookieJar
-    referrerpolicy*: ReferrerPolicy
     proxy*: URL
     # When set to false, requests with a proxy URL are overridden by the
     # loader proxy.
     acceptProxy*: bool
     cgiDir*: seq[string]
+    uriMethodMap*: URIMethodMap
 
   FetchPromise* = Promise[JSResult[Response]]
 
@@ -109,34 +112,51 @@ proc addFd(ctx: LoaderContext, fd: int, flags: int) =
     events: cast[cshort](flags)
   ))
 
+const MaxRewrites = 2 # should be enough? TODO find out what w3m thinks
+
 proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
-  case request.url.scheme
-  of "file":
-    handle.loadFilePath(request.url)
-    handle.close()
-  of "http", "https":
-    let handleData = handle.loadHttp(ctx.curlm, request)
-    if handleData != nil:
-      ctx.handleList.add(handleData)
-  of "about":
-    handle.loadAbout(request)
-    handle.close()
-  of "data":
-    handle.loadData(request)
-    handle.close()
-  of "ftp", "ftps", "sftp":
-    let handleData = handle.loadFtp(ctx.curlm, request)
-    if handleData != nil:
-      ctx.handleList.add(handleData)
-  of "gopher", "gophers":
-    let handleData = handle.loadGopher(ctx.curlm, request)
-    if handleData != nil:
-      ctx.handleList.add(handleData)
-  of "cgi-bin":
-    handle.loadCGI(request, ctx.config.cgiDir)
-    handle.close()
-  else:
-    discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
+  var redo = true
+  var tries = 0
+  while redo and tries < MaxRewrites:
+    redo = false
+    case request.url.scheme
+    of "file":
+      handle.loadFilePath(request.url)
+      handle.close()
+    of "http", "https":
+      let handleData = handle.loadHttp(ctx.curlm, request)
+      if handleData != nil:
+        ctx.handleList.add(handleData)
+    of "about":
+      handle.loadAbout(request)
+      handle.close()
+    of "data":
+      handle.loadData(request)
+      handle.close()
+    of "ftp", "ftps", "sftp":
+      let handleData = handle.loadFtp(ctx.curlm, request)
+      if handleData != nil:
+        ctx.handleList.add(handleData)
+    of "gopher", "gophers":
+      let handleData = handle.loadGopher(ctx.curlm, request)
+      if handleData != nil:
+        ctx.handleList.add(handleData)
+    of "cgi-bin":
+      handle.loadCGI(request, ctx.config.cgiDir)
+      handle.close()
+    else:
+      case ctx.config.urimethodmap.findAndRewrite(request.url)
+      of URI_RESULT_SUCCESS:
+        inc tries
+        redo = true
+      of URI_RESULT_WRONG_URL:
+        discard handle.sendResult(ERROR_INVALID_URI_METHOD_ENTRY)
+        handle.close()
+      of URI_RESULT_NOT_FOUND:
+        discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
+        handle.close()
+  if tries >= MaxRewrites:
+    discard handle.sendResult(ERROR_TOO_MANY_REWRITES)
     handle.close()
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
@@ -155,8 +175,8 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
         let cookie = ctx.config.cookiejar.serialize(request.url)
         if cookie != "":
           request.headers["Cookie"] = cookie
-    if request.referer != nil and "Referer" notin request.headers.table:
-      let r = getReferer(request.referer, request.url, ctx.config.referrerpolicy)
+    if request.referer != nil and "Referer" notin request.headers:
+      let r = getReferer(request.referer, request.url, ctx.referrerpolicy)
       if r != "":
         request.headers["Referer"] = r
     if request.proxy == nil or not ctx.config.acceptProxy:
@@ -185,15 +205,6 @@ proc acceptConnection(ctx: LoaderContext) =
         let handle = ctx.handleMap[fd]
         handle.addOutputStream(stream)
         stream.swrite(true)
-    of ADDREF:
-      inc ctx.refcount
-    of UNREF:
-      dec ctx.refcount
-      if ctx.refcount == 0:
-        ctx.alive = false
-        stream.close()
-      else:
-        assert ctx.refcount > 0
     of SUSPEND:
       var fds: seq[int]
       stream.sread(fds)
@@ -206,6 +217,18 @@ proc acceptConnection(ctx: LoaderContext) =
       for fd in fds:
         ctx.handleMap.withValue(fd, handlep):
           handlep[].resume()
+    of ADDREF:
+      inc ctx.refcount
+    of UNREF:
+      dec ctx.refcount
+      if ctx.refcount == 0:
+        ctx.alive = false
+        stream.close()
+      else:
+        assert ctx.refcount > 0
+    of SET_REFERRER_POLICY:
+      stream.sread(ctx.referrerpolicy)
+      stream.close()
   except IOError:
     # End-of-file, broken pipe, or something else. For now we just
     # ignore it and pray nothing breaks.
@@ -492,8 +515,16 @@ proc addref*(loader: FileLoader) =
   let stream = connectSocketStream(loader.process)
   if stream != nil:
     stream.swrite(ADDREF)
+  stream.close()
 
 proc unref*(loader: FileLoader) =
   let stream = connectSocketStream(loader.process)
   if stream != nil:
     stream.swrite(UNREF)
+
+proc setReferrerPolicy*(loader: FileLoader, referrerpolicy: ReferrerPolicy) =
+  let stream = connectSocketStream(loader.process)
+  if stream != nil:
+    stream.swrite(SET_REFERRER_POLICY)
+    stream.swrite(referrerpolicy)
+  stream.close()

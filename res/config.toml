@@ -24,6 +24,12 @@ mime-types = [
 	"/usr/etc/mime.types",
 	"/usr/local/etc/mime.types"
 ]
+urimethodmap = [
+	"~/.urimethodmap",
+	"~/.w3m/urimethodmap",
+	"/etc/urimethodmap",
+	"/usr/local/etc/w3m/urimethodmap"
+]
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
 

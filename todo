@@ -45,9 +45,6 @@ buffer:
 - do not prompt when submitting forms (it's annoying)
 	* this is mostly fixed, but not completely
 network:
-- urimethodmap
-	* then we could add gemini as a bonus, without an SSL dependency
-	  outside of curl.
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
 - integrate curl-impersonate (LD_PRELOAD works, but still...)

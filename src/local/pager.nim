@@ -35,8 +35,9 @@ import types/buffersource
 import types/cell
 import types/color
 import types/cookie
-import types/url
 import types/opt
+import types/urimethodmap
+import types/url
 import utils/twtstr
 
 import chakasu/charset
@@ -82,6 +83,7 @@ type
     term*: Terminal
     tty: File
     unreg*: seq[(Pid, SocketStream)]
+    urimethodmap: URIMethodMap
     username: string
 
 jsDestructor(Pager)
@@ -211,7 +213,8 @@ proc newPager*(config: Config, attrs: WindowAttributes,
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
     mimeTypes: config.getMimeTypes(),
-    mailcap: mailcap
+    mailcap: mailcap,
+    urimethodmap: config.getURIMethodMap()
   )
   for err in errs:
     pager.alert("Error reading mailcap: " & err)
@@ -607,6 +610,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
   var userstyle = pager.config.css.stylesheet
   var proxy = pager.proxy
   let mimeTypes = pager.mimeTypes
+  let urimethodmap = pager.urimethodmap
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -640,7 +644,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
     if sc.proxy.isSome:
       proxy = sc.proxy.get
   return pager.config.getBufferConfig(url, cookiejar, headers, referer_from,
-    scripting, charsets, images, userstyle, proxy, mimeTypes)
+    scripting, charsets, images, userstyle, proxy, mimeTypes, urimethodmap)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
