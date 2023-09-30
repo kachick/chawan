@@ -73,12 +73,12 @@ install:
 	mkdir -p "$(DESTDIR)$(prefix)/bin"
 	install -m755 cha "$(DESTDIR)$(prefix)/bin"
 	if test -d "$(OBJDIR)/man"; then \
-	install -m755 "$(OBJDIR)/man/cha-config.5" "$(DESTDIR)$(manprefix5)"; \
-	install -m755 "$(OBJDIR)/man/cha-mailcap.5" "$(DESTDIR)$(manprefix5)"; \
-	install -m755 "$(OBJDIR)/man/cha-mime.types.5" "$(DESTDIR)$(manprefix5)"; \
-	install -m755 "$(OBJDIR)/man/cha-localcgi.5" "$(DESTDIR)$(manprefix5)"; \
-	install -m755 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(manprefix5)"; \
-	install -m755 "$(OBJDIR)/man/cha.1" "$(DESTDIR)$(manprefix1)"; \
+	install -m655 "$(OBJDIR)/man/cha-config.5" "$(DESTDIR)$(manprefix5)"; \
+	install -m655 "$(OBJDIR)/man/cha-mailcap.5" "$(DESTDIR)$(manprefix5)"; \
+	install -m655 "$(OBJDIR)/man/cha-mime.types.5" "$(DESTDIR)$(manprefix5)"; \
+	install -m655 "$(OBJDIR)/man/cha-localcgi.5" "$(DESTDIR)$(manprefix5)"; \
+	install -m655 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(manprefix5)"; \
+	install -m655 "$(OBJDIR)/man/cha.1" "$(DESTDIR)$(manprefix1)"; \
 	fi
 
 .PHONY: uninstall
