@@ -78,7 +78,7 @@ install:
 	install -m755 "$(OBJDIR)/man/cha-mime.types.5" "$(DESTDIR)$(manprefix5)"; \
 	install -m755 "$(OBJDIR)/man/cha-localcgi.5" "$(DESTDIR)$(manprefix5)"; \
 	install -m755 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(manprefix5)"; \
-	install -m755 "$(OBJDIR)/cha.1" "$(DESTDIR)$(manprefix1)"; \
+	install -m755 "$(OBJDIR)/man/cha.1" "$(DESTDIR)$(manprefix1)"; \
 	fi
 
 .PHONY: uninstall
