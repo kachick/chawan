@@ -271,7 +271,7 @@ func domainToAscii*(domain: string, bestrict = false): Option[string] =
       return none(string)
     return result
   else:
-    return domain.tolower().some
+    return some(domain.toLowerAscii())
 
 func parseHost(input: string, special: bool): Option[Host] =
   if input.len == 0: return

@@ -809,7 +809,7 @@ proc attr*(element: Element, name, value: string)
 func baseURL*(document: Document): URL
 
 proc tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join("-").tolower()
+  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
 
 func escapeText(s: string, attribute_mode = false): string =
   var nbsp_mode = false
@@ -1801,7 +1801,7 @@ func action*(element: Element): string =
 func enctype*(element: Element): FormEncodingType =
   if element.isSubmitButton():
     if element.attrb("formenctype"):
-      return case element.attr("formenctype").tolower()
+      return case element.attr("formenctype").toLowerAscii()
       of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
       of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
       of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
@@ -1811,7 +1811,7 @@ func enctype*(element: Element): FormEncodingType =
     let element = HTMLInputElement(element)
     if element.form != nil:
       if element.form.attrb("enctype"):
-        return case element.attr("enctype").tolower()
+        return case element.attr("enctype").toLowerAscii()
         of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
         of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
         of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN

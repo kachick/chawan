@@ -75,7 +75,7 @@ proc parseCookieDate(val: string): Option[DateTime] =
     if not foundMonth:
       block monthBlock: # test for month
         if dateToken.len < 3: break monthBlock
-        case dateToken.substr(0, 2).toLower()
+        case dateToken.substr(0, 2).toLowerAscii()
         of "jan": month = 1
         of "feb": month = 2
         of "mar": month = 3
@@ -229,7 +229,7 @@ proc newCookie*(str: string, url: URL = nil): JSResult[Cookie]
       continue
     let key = part.substr(0, n - 1)
     let val = part.substr(n + 1)
-    case key.toLower()
+    case key.toLowerAscii()
     of "expires":
       let date = parseCookieDate(val)
       if date.issome:

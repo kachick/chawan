@@ -91,7 +91,7 @@ proc add*(sels: var CompoundSelector, sel: Selector) {.inline.} =
 
 # For debugging
 func tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join("-").tolower()
+  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
 
 func `$`*(cxsel: ComplexSelector): string
 

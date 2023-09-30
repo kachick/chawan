@@ -351,7 +351,8 @@ func valueType(prop: CSSPropertyType): CSSValueType =
 func `$`*(length: CSSLength): string =
   if length.auto:
     return "auto"
-  return $length.num & ($length.unit).split('_')[1..^1].join("_").tolower()
+  let us = ($length.unit).split('_')[1..^1].join('_').toLowerAscii()
+  return $length.num & us
 
 func `$`*(content: CSSContent): string =
   if content.s != "":
@@ -372,14 +373,14 @@ func `$`*(val: CSSComputedValue): string =
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
   let t = propertyType($s)
   let vs = $valueType(t)
-  let s = vs.split('_')[1..^1].join("_").tolower()
+  let s = vs.split('_')[1..^1].join('_').toLowerAscii()
   result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
 macro `{}=`*(vals: CSSComputedValues, s: string, val: typed) =
   let t = propertyType($s)
   let v = valueType(t)
   let vs = $v
-  let s = vs.split('_')[1..^1].join("_").tolower()
+  let s = vs.split('_')[1..^1].join('_').toLowerAscii()
   let id = ident(s)
   let expr = newTree(nnkBracketExpr, vals, newLit(t))
   result = quote do:
