@@ -809,8 +809,9 @@ proc onload*(container: Container, res: LoadResult) =
         container.triggerEvent(LOADED)
         if not container.hasstart and container.source.location.anchor != "":
           return container.iface.gotoAnchor()
-      ).then(proc(res: tuple[x, y: int]) =
-        if res.x != -1 and res.y != -1:
+      ).then(proc(res: Opt[tuple[x, y: int]]) =
+        if res.isSome:
+          let res = res.get
           container.setCursorXY(res.x, res.y))
 
 proc load(container: Container) =

@@ -536,17 +536,19 @@ proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,
       break
     inc y
 
-proc gotoAnchor*(buffer: Buffer): tuple[x, y: int] {.proxy.} =
-  if buffer.document == nil: return (-1, -1)
+proc gotoAnchor*(buffer: Buffer): Opt[tuple[x, y: int]] {.proxy.} =
+  if buffer.document == nil:
+    return err()
   let anchor = buffer.document.findAnchor(buffer.url.anchor)
-  if anchor == nil: return (-1, -1)
+  if anchor == nil:
+    return err()
   for y in 0 ..< buffer.lines.len:
     let line = buffer.lines[y]
     for i in 0 ..< line.formats.len:
       let format = line.formats[i]
       if format.node != nil and anchor in format.node.node:
-        return (format.pos, y)
-  return (-1, -1)
+        return ok((format.pos, y))
+  return err()
 
 proc do_reshape(buffer: Buffer) =
   if buffer.ishtml:
