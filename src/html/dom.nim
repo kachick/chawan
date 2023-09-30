@@ -1819,24 +1819,29 @@ func enctype*(element: Element): FormEncodingType =
 
   return FORM_ENCODING_TYPE_URLENCODED
 
+func parseFormMethod(s: string): FormMethod =
+  return case s.toLowerAscii()
+  of "get": FORM_METHOD_GET
+  of "post": FORM_METHOD_POST
+  of "dialog": FORM_METHOD_DIALOG
+  else: FORM_METHOD_GET
+
 func formmethod*(element: Element): FormMethod =
+  if element.tagType == TAG_FORM:
+    # The standard says nothing about this, but this code path is reached
+    # on implicit form submission and other browsers seem to agree on this
+    # behavior.
+    return parseFormMethod(element.attr("method"))
+
   if element.isSubmitButton():
     if element.attrb("formmethod"):
-      return case element.attr("formmethod").tolower()
-      of "get": FORM_METHOD_GET
-      of "post": FORM_METHOD_POST
-      of "dialog": FORM_METHOD_DIALOG
-      else: FORM_METHOD_GET
+      return parseFormMethod(element.attr("formmethod"))
 
   if element.tagType in SupportedFormAssociatedElements:
     let element = FormAssociatedElement(element)
     if element.form != nil:
       if element.form.attrb("method"):
-        return case element.form.attr("method").tolower()
-        of "get": FORM_METHOD_GET
-        of "post": FORM_METHOD_POST
-        of "dialog": FORM_METHOD_DIALOG
-        else: FORM_METHOD_GET
+        return parseFormMethod(element.form.attr("method"))
 
   return FORM_METHOD_GET
 

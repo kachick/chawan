@@ -1200,8 +1200,17 @@ type ReadSuccessResult* = object
   repaint*: bool
 
 func implicitSubmit(input: HTMLInputElement): Option[Request] =
-  if input.form != nil and input.form.canSubmitImplicitly():
-    return submitForm(input.form, input.form)
+  let form = input.form
+  if form != nil and form.canSubmitImplicitly():
+    var defaultButton: Element
+    for element in form.elements:
+      if element.isSubmitButton():
+        defaultButton = element
+        break
+    if defaultButton != nil:
+      return submitForm(form, defaultButton)
+    else:
+      return submitForm(form, form)
 
 proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
   if buffer.document.focus != nil:
