@@ -1129,7 +1129,7 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
 
   case scheme
   of "http", "https",
-      "gopher", "gophers": # Note: gopher/s is non-standard.
+      "gopher", "gophers", "cgi-bin": # Note: gopher/s, cgi-bin is non-standard.
     if formmethod == FORM_METHOD_GET:
       mutateActionUrl
     else:

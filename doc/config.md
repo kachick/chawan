@@ -171,13 +171,41 @@ the line number.</td>
 <tr>
 <td>mailcap</td>
 <td>array of paths</td>
-<td>Search path for [mailcap](mailcap.md) files.</td>
+<td>Search path for
+<!-- MANOFF -->
+[mailcap](mailcap.md) files.
+<!-- MANON -->
+<!-- MANON
+mailcap (**cha-mailcap**(5))
+MANOFF -->
+files.</td>
 </tr>
 
 <tr>
 <td>mime-types</td>
 <td>array of paths</td>
-<td>Search path for [mime.types](mime.types.md) files.</td>
+<td>Search path for
+<!-- MANOFF -->
+[mime.types](mime.types.md)
+<!-- MANON -->
+<!-- MANON
+mime.types (**cha-mime.types**(5))
+MANOFF -->
+files.</td>
+</tr>
+
+<tr>
+<td>cgi-dir</td>
+<td>array of paths</td>
+<td>Search path for
+<!-- MANOFF -->
+[mime.types](mime.types.md)
+[local CGI](localcgi.md)
+<!-- MANON -->
+<!-- MANON
+local CGI (**cha-localcgi**(5))
+MANOFF -->
+scripts.</td>
 </tr>
 
 </table>

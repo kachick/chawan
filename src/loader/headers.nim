@@ -89,22 +89,31 @@ func clone*(headers: Headers): Headers =
     table: headers.table
   )
 
-proc add*(headers: var Headers, k, v: string) =
+proc add*(headers: Headers, k, v: string) =
   let k = k.toHeaderCase()
-  if k notin headers.table:
+  headers.table.withValue(k, p):
+    p[].add(v)
+  do:
     headers.table[k] = @[v]
-  else:
-    headers.table[k].add(v)
 
-proc `[]=`*(headers: var Headers, k, v: string) =
-  headers.table[k.toHeaderCase()] = @[v]
+proc `[]=`*(headers: Headers, k: static string, v: string) =
+  const k = k.toHeaderCase()
+  headers.table[k] = @[v]
 
-func getOrDefault*(headers: Headers, k: string, default = ""): string =
-  let k = k.toHeaderCase()
-  if k in headers.table:
-    headers.table[k][0]
-  else:
-    default
+func `[]`*(headers: Headers, k: static string): string =
+  const k = k.toHeaderCase()
+  return headers.table[k][0]
+
+func contains*(headers: Headers, k: static string): bool =
+  const k = k.toHeaderCase()
+  return k in headers.table
+
+func getOrDefault*(headers: Headers, k: static string, default = ""): string =
+  const k = k.toHeaderCase()
+  headers.table.withValue(k, p):
+    return p[][0]
+  do:
+    return default
 
 proc addHeadersModule*(ctx: JSContext) =
   ctx.registerType(Headers)

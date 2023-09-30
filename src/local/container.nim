@@ -8,6 +8,7 @@ when defined(posix):
 
 import config/config
 import display/window
+import extern/stdio
 import io/promise
 import io/serialize
 import js/javascript
@@ -990,11 +991,7 @@ proc setStream*(container: Container, stream: Stream) =
         if container.source.fd == 0:
           # We are closing stdin.
           # Leaving the stdin fileno open to grab is a bad idea.
-          let devnull = open("/dev/null", O_RDONLY)
-          doAssert devnull != -1
-          if devnull != 0:
-            discard dup2(devnull, 0)
-            discard close(devnull)
+          closeStdin()
         else:
           discard close(container.source.fd)
       )

@@ -29,6 +29,7 @@ import io/urlfilter
 import js/error
 import js/javascript
 import loader/about
+import loader/cgi
 import loader/connecterror
 import loader/curlhandle
 import loader/data
@@ -98,6 +99,7 @@ type
     # When set to false, requests with a proxy URL are overridden by the
     # loader proxy.
     acceptProxy*: bool
+    cgiDir*: seq[string]
 
   FetchPromise* = Promise[JSResult[Response]]
 
@@ -130,6 +132,9 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
     let handleData = handle.loadGopher(ctx.curlm, request)
     if handleData != nil:
       ctx.handleList.add(handleData)
+  of "cgi-bin":
+    handle.loadCGI(request, ctx.config.cgiDir)
+    handle.close()
   else:
     discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
     handle.close()
@@ -201,7 +206,6 @@ proc acceptConnection(ctx: LoaderContext) =
       for fd in fds:
         ctx.handleMap.withValue(fd, handlep):
           handlep[].resume()
-
   except IOError:
     # End-of-file, broken pipe, or something else. For now we just
     # ignore it and pray nothing breaks.

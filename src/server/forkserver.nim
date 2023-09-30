@@ -119,6 +119,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
       referrerpolicy: config.referrerpolicy,
       #TODO these should be in a separate config I think
       proxy: config.proxy,
+      cgiDir: config.cgiDir
     )
   )
   var pipefd: array[2, cint]

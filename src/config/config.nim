@@ -87,6 +87,7 @@ type
     editor* {.jsgetset.}: string
     mailcap* {.jsgetset.}: seq[string]
     mime_types* {.jsgetset.}: seq[string]
+    cgi_dir* {.jsgetset.}: seq[string]
 
   InputConfig = object
     vi_numeric_prefix* {.jsgetset.}: bool
@@ -141,6 +142,7 @@ type
     images*: bool
     proxy*: URL
     mimeTypes*: MimeTypes
+    cgiDir*: seq[string]
 
   ForkServerConfig* = object
     tmpdir*: string
@@ -233,7 +235,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     charsets: charsets,
     images: images,
     proxy: proxy,
-    mimeTypes: mimeTypes
+    mimeTypes: mimeTypes,
+    cgiDir: config.external.cgi_dir
   )
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
