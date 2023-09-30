@@ -1065,6 +1065,7 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= value
     result &= "\r\n"
 
+# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   if form.constructingEntryList:
     return
@@ -1101,8 +1102,8 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   template mutateActionUrl() =
     let kvlist = entrylist.toNameValuePairs()
     let query = serializeApplicationXWWWFormUrlEncoded(kvlist)
-    parsedaction.query = query.some
-    return newRequest(parsedaction, httpmethod).some
+    parsedaction.query = some(query)
+    return some(newRequest(parsedaction, httpmethod))
 
   template submitAsEntityBody() =
     var mimetype: string
@@ -1125,17 +1126,39 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     return some(req) #TODO multipart
 
   template getActionUrl() =
-    return newRequest(parsedaction).some
+    return some(newRequest(parsedaction))
+
+  template mailWithHeaders() =
+    let kvlist = entrylist.toNameValuePairs()
+    let headers = serializeApplicationXWWWFormUrlEncoded(kvlist,
+      spaceAsPlus = false)
+    parsedaction.query = some(headers)
+    return some(newRequest(parsedaction, httpmethod))
+
+  template mailAsBody() =
+    let kvlist = entrylist.toNameValuePairs()
+    let body = if enctype == FORM_ENCODING_TYPE_TEXT_PLAIN:
+      let text = serializePlainTextFormData(kvlist)
+      percentEncode(text, PathPercentEncodeSet)
+    else:
+      serializeApplicationXWWWFormUrlEncoded(kvlist)
+    if parsedaction.query.isNone:
+      parsedaction.query = some("")
+    if parsedaction.query.get != "":
+      parsedaction.query.get &= '&'
+    parsedaction.query.get &= "body=" & body
+    return some(newRequest(parsedaction, httpmethod))
 
   case scheme
-  of "http", "https",
-      "gopher", "gophers", "cgi-bin": # Note: gopher/s, cgi-bin is non-standard.
+  of "http", "https", "gopher", "gophers", "cgi-bin":
+    # Note: only http & https are defined by the standard.
+    # We implement gopher, gophers & cgi-bin as HTTP-like protocols.
     if formmethod == FORM_METHOD_GET:
       mutateActionUrl
     else:
       assert formmethod == FORM_METHOD_POST
       submitAsEntityBody
-  of "ftp":
+  of "ftp", "javascript":
     getActionUrl
   of "data":
     if formmethod == FORM_METHOD_GET:
@@ -1143,6 +1166,19 @@ func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     else:
       assert formmethod == FORM_METHOD_POST
       getActionUrl
+  of "mailto":
+    if formmethod == FORM_METHOD_GET:
+      mailWithHeaders
+    else:
+      assert formmethod == FORM_METHOD_POST
+      mailAsBody
+  else:
+    # Assume an HTTP-like protocol.
+    if formmethod == FORM_METHOD_GET:
+      mutateActionUrl
+    else:
+      assert formmethod == FORM_METHOD_POST
+      submitAsEntityBody
 
 proc setFocus(buffer: Buffer, e: Element): bool =
   if buffer.document.focus != e:

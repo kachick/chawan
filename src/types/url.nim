@@ -886,15 +886,15 @@ proc parseApplicationXWWWFormUrlEncoded(input: string): seq[(string, string)] =
     result.add((percentDecode(name), percentDecode(value)))
 
 #https://url.spec.whatwg.org/#concept-urlencoded-serializer
-proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)]):
-    string =
+proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)],
+    spaceAsPlus = true): string =
   for it in kvs:
     let (name, value) = it
     if result != "":
       result &= '&'
-    result.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, true)
+    result.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
     result &= '='
-    result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, true)
+    result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
 proc initURLSearchParams(params: URLSearchParams, init: string) =
   params.list = parseApplicationXWWWFormUrlEncoded(init)
