@@ -32,7 +32,7 @@ URIMethodMap-File = *URIMethodMap-line
 
 URIMethodMap-Line = Comment / URIMethodMap-Entry
 
-URIMethodMap-Entry = Protocol *WHITESPACE Template *WHITESPACE
+URIMethodMap-Entry = Protocol *WHITESPACE Template *WHITESPACE CR
 
 Protocol = 1*CHAR COLON
 
@@ -51,7 +51,9 @@ Examples:
 protocol:	/cgi-bin/interpret-protocol?%s
 # This is ok too:
 protocol:/cgi-bin/interpret-protocol?%s
-# This is incorrect:
+# Spaces and tabs are both allowed, so this is also ok:
+protocol:	/cgi-bin/interpret-protocol?%s
+# However, this is incorrect, because the colon sign is missing:
 protocol	/cgi-bin/interpret-protocol?%s
 ```
 

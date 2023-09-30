@@ -176,9 +176,9 @@ the line number.</td>
 [mailcap](mailcap.md) files.
 <!-- MANON -->
 <!-- MANON
-mailcap (**cha-mailcap**(5))
+mailcap files. (See **cha-mailcap**(5) for details.)
 MANOFF -->
-files.</td>
+</td>
 </tr>
 
 <tr>
@@ -186,12 +186,12 @@ files.</td>
 <td>array of paths</td>
 <td>Search path for
 <!-- MANOFF -->
-[mime.types](mime.types.md)
+[mime.types](mime.types.md) files.
 <!-- MANON -->
 <!-- MANON
-mime.types (**cha-mime.types**(5))
+mime.types files. (See **cha-mime.types**(5) for details.)
 MANOFF -->
-files.</td>
+</td>
 </tr>
 
 <tr>
@@ -199,13 +199,25 @@ files.</td>
 <td>array of paths</td>
 <td>Search path for
 <!-- MANOFF -->
-[mime.types](mime.types.md)
-[local CGI](localcgi.md)
+[local CGI](localcgi.md) scripts.
 <!-- MANON -->
 <!-- MANON
-local CGI (**cha-localcgi**(5))
+local CGI scripts. (See **cha-localcgi**(5) for details.)
 MANOFF -->
-scripts.</td>
+</td>
+</tr>
+
+<tr>
+<td>cgi-dir</td>
+<td>array of paths</td>
+<td>Search path for
+<!-- MANOFF -->
+[urimethodmap](urimethodmap.md) files.
+<!-- MANON -->
+<!-- MANON
+urimethodmap files. (See **cha-urimethodmap**(5) for details.)
+MANOFF -->
+</td>
 </tr>
 
 </table>
