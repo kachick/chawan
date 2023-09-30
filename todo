@@ -52,7 +52,6 @@ network:
 - websockets (curl supports ws)
 - integrate curl-impersonate (LD_PRELOAD works, but still...)
 external:
-- local cgi
 - history, bookmarks (w3m format)
 - save buffer (source, output)
 - edit buffer (local file, or whatever we downloaded)

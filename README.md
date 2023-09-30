@@ -52,6 +52,7 @@ Currently implemented features are:
 * cookies
 * FTP support
 * Gopher support
+* [local CGI](doc/localcgi.md) support
 
 ...with a lot more [planned](todo).
 
