@@ -529,9 +529,12 @@ proc centerColumn(container: Container) {.jsfunc.} =
 
 proc setCursorXYCenter(container: Container, x, y: int, refresh = true) {.jsfunc.} =
   let fy = container.fromy
+  let fx = container.fromx
   container.setCursorXY(x, y, refresh)
   if fy != container.fromy:
     container.centerLine()
+  if fx != container.fromx:
+    container.centerColumn()
 
 proc cursorDown(container: Container, n = 1) {.jsfunc.} =
   if container.select.open:
