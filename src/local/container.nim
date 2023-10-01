@@ -460,16 +460,76 @@ proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
   if refresh:
     container.sendCursorPosition()
 
-proc centerLine(container: Container) {.jsfunc.} =
+proc setCursorXY(container: Container, x, y: int, refresh = true) {.jsfunc.} =
+  container.setCursorY(y, refresh)
+  container.setCursorX(x, refresh)
+
+proc cursorLineTextStart(container: Container) {.jsfunc.} =
+  if container.numLines == 0: return
+  var x = 0
+  for r in container.currentLine.runes:
+    if not r.isWhitespace():
+      break
+    x += r.twidth(x)
+  container.setCursorX(x)
+
+# zb
+proc lowerPage(container: Container, n = 0) {.jsfunc.} =
+  if n != 0:
+    container.setCursorY(n - 1)
+  container.setFromY(container.cursory - container.height + 1)
+
+# z-
+proc lowerPageBegin(container: Container, n = 0) {.jsfunc.} =
+  container.lowerPage(n)
+  container.cursorLineTextStart()
+
+# zz
+proc centerLine(container: Container, n = 0) {.jsfunc.} =
+  if n != 0:
+    container.setCursorY(n - 1)
   container.setFromY(container.cursory - container.height div 2)
+
+# z.
+proc centerLineBegin(container: Container, n = 0) {.jsfunc.} =
+  container.centerLine(n)
+  container.cursorLineTextStart()
+
+# zt
+proc raisePage(container: Container, n = 0) {.jsfunc.} =
+  if n != 0:
+    container.setCursorY(n - 1)
+  container.setFromY(container.cursory)
+
+# z^M
+proc raisePageBegin(container: Container, n = 0) {.jsfunc.} =
+  container.raisePage(n)
+  container.cursorLineTextStart()
+
+# z+
+proc nextPageBegin(container: Container, n = 0) {.jsfunc.} =
+  if n == 0:
+    container.setCursorY(container.fromy + container.height)
+  else:
+    container.setCursorY(n - 1)
+  container.cursorLineTextStart()
+  container.raisePage()
+
+# z^
+proc previousPageBegin(container: Container, n = 0) {.jsfunc.} =
+  if n == 0:
+    container.setCursorY(container.fromy - 1)
+  else:
+    container.setCursorY(n - container.height) # +- 1 cancels out
+  container.cursorLineTextStart()
+  container.lowerPage()
 
 proc centerColumn(container: Container) {.jsfunc.} =
   container.setFromX(container.cursorx - container.width div 2)
 
-proc setCursorXY(container: Container, x, y: int, refresh = true) {.jsfunc.} =
+proc setCursorXYCenter(container: Container, x, y: int, refresh = true) {.jsfunc.} =
   let fy = container.fromy
-  container.setCursorY(y, refresh)
-  container.setCursorX(x, refresh)
+  container.setCursorXY(x, y, refresh)
   if fy != container.fromy:
     container.centerLine()
 
@@ -499,15 +559,6 @@ proc cursorRight(container: Container, n = 1) {.jsfunc.} =
 
 proc cursorLineBegin(container: Container) {.jsfunc.} =
   container.setCursorX(0)
-
-proc cursorLineTextStart(container: Container) {.jsfunc.} =
-  if container.numLines == 0: return
-  var x = 0
-  for r in container.currentLine.runes:
-    if not r.isWhitespace():
-      break
-    x += r.twidth(x)
-  container.setCursorX(x)
 
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
@@ -716,14 +767,14 @@ proc cursorNextLink*(container: Container) {.jsfunc.} =
     .findNextLink(container.cursorx, container.cursory)
     .then(proc(res: tuple[x, y: int]) =
       if res.x > -1 and res.y != -1:
-        container.setCursorXY(res.x, res.y))
+        container.setCursorXYCenter(res.x, res.y))
 
 proc cursorPrevLink*(container: Container) {.jsfunc.} =
   container.iface
     .findPrevLink(container.cursorx, container.cursory)
     .then(proc(res: tuple[x, y: int]) =
       if res.x > -1 and res.y != -1:
-        container.setCursorXY(res.x, res.y))
+        container.setCursorXYCenter(res.x, res.y))
 
 proc clearSearchHighlights*(container: Container) =
   for i in countdown(container.highlights.high, 0):
@@ -732,7 +783,7 @@ proc clearSearchHighlights*(container: Container) =
 
 proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
   if res.success:
-    container.setCursorXY(res.x, res.y, refresh)
+    container.setCursorXYCenter(res.x, res.y, refresh)
     if container.hlon:
       container.clearSearchHighlights()
       let ex = res.x + res.str.twidth(res.x) - 1
@@ -812,7 +863,7 @@ proc onload*(container: Container, res: LoadResult) =
       ).then(proc(res: Opt[tuple[x, y: int]]) =
         if res.isSome:
           let res = res.get
-          container.setCursorXY(res.x, res.y))
+          container.setCursorXYCenter(res.x, res.y))
 
 proc load(container: Container) =
   container.setLoadInfo("Connecting to " & container.location.host & "...")

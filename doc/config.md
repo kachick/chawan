@@ -840,8 +840,45 @@ open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
-<td>`pager.centerLine()`</td>
-<td>Center screen around the current line.</td>
+<td>`pager.lowerPage(n = pager.cursory)`</td>
+<td>Move cursor to line n, then scroll up so that the cursor is on the
+top line on the screen. (`zt` in vim.)</td>
+</tr>
+
+<tr>
+<td>`pager.lowerPageBegin(n = pager.cursory)`</td>
+<td>Move cursor to the first non-blank character of line n, then scroll up
+so that the cursor is on the top line on the screen. (`z<CR>` in vi.)</td>
+</tr>
+
+<tr>
+<td>`pager.centerLine(n = pager.cursory)`</td>
+<td>Center screen around line n. (`zz` in vim.)</td>
+</tr>
+
+<tr>
+<td>`pager.centerLineBegin(n = pager.cursory)`</td>
+<td>Center screen around line n, and move the cursor to the line's first
+non-blank character. (`z.` in vi.)</td>
+</tr>
+
+<tr>
+<td>`pager.raisePage(n = pager.cursory)`</td>
+<td>Move cursor to line n, then scroll down so that the cursor is on the
+top line on the screen. (zb in vim.)</td>
+</tr>
+
+<tr>
+<td>`pager.lowerPageBegin(n = pager.cursory)`</td>
+<td>Move cursor to the first non-blank character of line n, then scroll up
+so that the cursor is on the last line on the screen. (`z^` in vi.)</td>
+</tr>
+
+<tr>
+<td>`pager.nextPageBegin(n = pager.cursory)`</td>
+<td>If n was given, move to the screen before the nth line and raise the page.
+Otherwise, go to the previous screen's last line and raise the page. (`z+`
+in vi.)</td>
 </tr>
 
 <tr>
