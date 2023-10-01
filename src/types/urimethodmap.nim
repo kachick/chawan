@@ -30,9 +30,6 @@ func rewriteURL(pattern, surl: string): string =
   if was_perc:
     result &= '%'
 
-proc `[]=`*(this: var URIMethodMap, k, v: string) =
-  this.map[k] = v
-
 type URIMethodMapResult* = enum
   URI_RESULT_NOT_FOUND, URI_RESULT_SUCCESS, URI_RESULT_WRONG_URL
 
@@ -53,11 +50,13 @@ proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
       continue # comments
     var k = ""
     var i = 0
-    while i < line.len and line[i] != ':':
-      k &= line[i].toLowerAscii()
+    while i < line.len and line[i] notin AsciiWhitespace + {':'}:
+      k &= line[i].tolower()
       inc i
-    if i >= line.len:
+    if i >= line.len or line[i] != ':':
       continue # invalid
+    k &= ':'
+    inc i # skip colon
     while i < line.len and line[i] in AsciiWhitespace:
       inc i
     var v = line.until(AsciiWhitespace, i)
@@ -69,4 +68,4 @@ proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
       v = "cgi-bin:" & v.substr("file:///cgi-bin/".len)
     elif v.startsWith("/cgi-bin/"):
       v = "cgi-bin:" & v.substr("/cgi-bin/".len)
-    this[k] = v
+    discard this.map.hasKeyOrPut(k, v)
