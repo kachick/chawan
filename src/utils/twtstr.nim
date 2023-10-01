@@ -911,7 +911,12 @@ func isCombining(r: Rune): bool =
 # per table, as opposed to the 135k that storing all characters would require.
 # The downside is obviously that we need a binary search fallback for non-bmp.
 # We do not store a lookup table of ambiguous ranges, either.
-type PropertyTable = array[0..(0xFFFF div 8), uint8]
+
+static:
+  # following won't work on 16-bit
+  doAssert sizeof(int) >= sizeof(Rune)
+
+type PropertyTable = array[0x10000 div (sizeof(int) * 8), int]
 
 type RangeMap = openarray[(uint32, uint32)]
 
@@ -931,34 +936,19 @@ func makePropertyTable(ranges: RangeMap, skip: RangeMap = @[]): PropertyTable =
     if j != skip.len and ucs == skip[j][0]:
       ucs = skip[j][1] + 1
       continue
-    let i = ucs div 8
-    case ucs mod 8
-    of 0: result[i] = result[i] or 0x01
-    of 1: result[i] = result[i] or 0x02
-    of 2: result[i] = result[i] or 0x04
-    of 3: result[i] = result[i] or 0x08
-    of 4: result[i] = result[i] or 0x10
-    of 5: result[i] = result[i] or 0x20
-    of 6: result[i] = result[i] or 0x40
-    of 7: result[i] = result[i] or 0x80
-    else: discard
+    let i = ucs div (sizeof(int) * 8)
+    let m = ucs mod (sizeof(int) * 8)
+    result[i] = result[i] or (1 shl m)
     inc ucs
 
 const DoubleWidthTable = (func(): PropertyTable =
   var ptab = makePropertyTable(DoubleWidthRanges, Combining)
   # Control chars return a width of 2, and are displayed as ^{letter}.
   for c in Controls:
-    let i = uint16(c) div 8
-    case uint16(c) mod 8
-    of 0: ptab[i] = ptab[i] or 0x01
-    of 1: ptab[i] = ptab[i] or 0x02
-    of 2: ptab[i] = ptab[i] or 0x04
-    of 3: ptab[i] = ptab[i] or 0x08
-    of 4: ptab[i] = ptab[i] or 0x10
-    of 5: ptab[i] = ptab[i] or 0x20
-    of 6: ptab[i] = ptab[i] or 0x40
-    of 7: ptab[i] = ptab[i] or 0x80
-    else: discard
+    let u = int(c)
+    let i = u div (sizeof(int) * 8)
+    let m = u mod (sizeof(int) * 8)
+    ptab[i] = ptab[i] or (1 shl m)
   return ptab
 )()
 
@@ -971,17 +961,10 @@ proc set_cjk_ambiguous*(b: bool) =
 
 {.push boundChecks:off.}
 func contains(props: PropertyTable, r: Rune): bool =
-  let i = cast[uint32](r) div 8
-  case cast[uint32](r) mod 8
-  of 0: return (props[i] and 0x01) != 0
-  of 1: return (props[i] and 0x02) != 0
-  of 2: return (props[i] and 0x04) != 0
-  of 3: return (props[i] and 0x08) != 0
-  of 4: return (props[i] and 0x10) != 0
-  of 5: return (props[i] and 0x20) != 0
-  of 6: return (props[i] and 0x40) != 0
-  of 7: return (props[i] and 0x80) != 0
-  else: discard
+  let u = int(r)
+  let i = u div (sizeof(int) * 8)
+  let m = u mod (sizeof(int) * 8)
+  return (props[i] and (1 shl m)) != 0
 {.pop.}
 
 # Warning: this shouldn't be called without normalization.
