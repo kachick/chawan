@@ -152,7 +152,7 @@ pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
 '''
 M-y = '''
 () => {
-	if (pager.extern('printf \'%s\\n\' "$CHA_URL" | xsel -bi',
+	if (pager.extern('printf \'%s\' "$CHA_URL" | xsel -bi',
 			{suspend: false, setenv: true}))
 		pager.alert("Copied URL to clipboard.");
 	else
