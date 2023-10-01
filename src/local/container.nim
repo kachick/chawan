@@ -1144,6 +1144,8 @@ proc drawLines*(container: Container, display: var FixedGrid,
     for hl in hls:
       let area = hl.colorArea(container.fromy + by, startw .. startw + aw)
       for i in area:
+        if i - startw >= container.width:
+          break
         var hlformat = display[dls + i - startw].format
         hlformat.bgcolor = hlcolor
         display[dls + i - startw].format = hlformat
