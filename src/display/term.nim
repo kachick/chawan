@@ -52,7 +52,7 @@ type
     infile: File
     outfile: File
     cleared: bool
-    canvas*: FixedGrid
+    canvas: FixedGrid
     pcanvas: FixedGrid
     attrs*: WindowAttributes
     colormode: ColorMode
