@@ -67,6 +67,8 @@ layout engine:
 - important: floats (way too many websites look very ugly without them)
 - make background-color a property of inline boxes, not words. (this would
   require implementing actual inline boxes)
+- table layout: include caption in width calculation
+- details element
 - overflow
 - incremental layout & layout caching
 	* first for tree generation, then for layout.
