@@ -36,14 +36,16 @@ type
     children: seq[(Pid, Pid)]
 
 proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers,
-    proxy: URL, urimethodmap: URIMethodMap, acceptProxy: bool): FileLoader =
+    proxy: URL, urimethodmap: URIMethodMap,
+    acceptProxy, w3mCGICompat: bool): FileLoader =
   forkserver.ostream.swrite(FORK_LOADER)
   let config = LoaderConfig(
     defaultHeaders: defaultHeaders,
     filter: newURLFilter(default = true),
     proxy: proxy,
     acceptProxy: acceptProxy,
-    urimethodmap: urimethodmap
+    urimethodmap: urimethodmap,
+    w3mCGICompat: w3mCGICompat
   )
   forkserver.ostream.swrite(config)
   forkserver.ostream.flush()

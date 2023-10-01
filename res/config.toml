@@ -32,6 +32,7 @@ urimethodmap = [
 ]
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
+w3m-cgi-compat = true
 
 [network]
 max-redirect = 10

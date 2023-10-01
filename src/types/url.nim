@@ -351,8 +351,6 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     i + 2 <= endi and input[i] in AsciiAlpha and input[i + 1] in {':', '|'}
   template is_normalized_windows_drive_letter(s: string): bool =
     s.len == 2 and s[0] in AsciiAlpha and s[1] == ':'
-  template is_windows_drive_letter(s: string): bool =
-    s.len == 2 and s[0] in AsciiAlpha and (s[1] == ':' or s[1] == '|')
   template is_double_dot_path_segment(s: string): bool =
     s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
       s.equalsIgnoreCase("%2e%2e")
@@ -779,26 +777,29 @@ func serialize*(path: URLPath): string {.inline.} =
     result &= '/'
     result &= s
 
-func serialize_unicode*(path: URLPath): string {.inline.} =
-  if path.opaque:
-    return percentDecode(path.s)
-  for s in path.ss:
-    result &= '/'
-    result &= percentDecode(s)
-
-func serialize_unicode_dos*(path: URLPath): string {.inline.} =
-  if path.opaque:
-    return percentDecode(path.s)
-  var i = 0
-  if i < path.ss.len:
-    if path.ss[i].is_windows_drive_letter:
-      result &= path.ss[i]
+when defined(windows) or defined(OS2) or defined(DOS):
+  func serialize_unicode_dos(path: URLPath): string =
+    if path.opaque:
+      return percentDecode(path.s)
+    var i = 0
+    if i < path.ss.len:
+      if path.ss[i].is_windows_drive_letter:
+        result &= path.ss[i]
+        inc i
+    while i < path.ss.len:
+      let s = path.ss[i]
+      result &= '\\'
+      result &= percentDecode(s)
       inc i
-  while i < path.ss.len:
-    let s = path.ss[i]
-    result &= '\\'
-    result &= percentDecode(s)
-    inc i
+  func serialize_unicode*(path: URLPath): string =
+    return path.serialize_unicode_dos()
+else:
+  func serialize_unicode*(path: URLPath): string =
+    if path.opaque:
+      return percentDecode(path.s)
+    for s in path.ss:
+      result &= '/'
+      result &= percentDecode(s)
 
 func serialize*(url: URL, excludefragment = false, excludepassword = false):
     string =

@@ -19,14 +19,23 @@ Further notes on processing CGI paths:
 
 * The URL must be opaque, so you must not add a double slash after the scheme.
   e.g. `cgi-bin://script-name` will NOT work, only `cgi-bin:script-name`.
+* Paths beginning with `/cgi-bin/` or `/$LIB/` are stripped of this segment
+  automatically. So e.g. `file:///cgi-bin/script-name` becomes
+  `cgi-bin:script-name`.
+* If `extern.w3m-cgi-compat` is true, file: URLs are converted to cgi-bin: URLs
+  if the path name starts with `/cgi-bin/`, `/$LIB/`, or the path of a local
+  CGI script.
 * Absolute paths are accepted as e.g. `cgi-bin:/path/to/cgi/dir/script-name`.
   Note however, that this only works if `/path/to/cgi/dir` has already been
   specified as a CGI directory in `external.cgi-dir`.
 
 Note that this is different from w3m's cgi-bin functionality, in that we
 use a custom scheme for local CGI instead of interpreting all requests to
-a designated path as a CGI request. Also, for now Chawan has no equivalent
-to the W3m-control headers (but this may change in the future).
+a designated path as a CGI request. (This incompatibility is bridged over when
+`external.cgi-dir` is true.)
+
+Also, for now Chawan has no equivalent to the W3m-control headers (but this
+may change in the future).
 
 ## Environment variables
 
@@ -109,3 +118,9 @@ script's executable bit is set, i.e. run `chmod +x /path/to/cgi/script`.
 
 This means that either `pipe` or `fork` failed. Something strange is going on
 with your system; we recommend exorcism. (Maybe you are running out of memory?)
+
+<!-- MANON
+## See also
+
+**cha**(1)
+MANOFF -->

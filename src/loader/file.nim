@@ -108,11 +108,7 @@ proc loadFile(handle: LoaderHandle, istream: Stream) =
       if n < bufferSize:
         break
 
-proc loadFilePath*(handle: LoaderHandle, url: URL) =
-  when defined(windows) or defined(OS2) or defined(DOS):
-    let path = url.path.serialize_unicode_dos()
-  else:
-    let path = url.path.serialize_unicode()
+proc loadFilePath*(handle: LoaderHandle, url: URL, path: string) =
   let istream = newFileStream(path, fmRead)
   if istream == nil:
     if dirExists(path):

@@ -103,6 +103,7 @@ type
     acceptProxy*: bool
     cgiDir*: seq[string]
     uriMethodMap*: URIMethodMap
+    w3mCGICompat*: bool
 
   FetchPromise* = Promise[JSResult[Response]]
 
@@ -114,6 +115,16 @@ proc addFd(ctx: LoaderContext, fd: int, flags: int) =
 
 const MaxRewrites = 2 # should be enough? TODO find out what w3m thinks
 
+func canRewriteForCGICompat(ctx: LoaderContext, path: string): bool =
+  if not ctx.config.w3mCGICompat:
+    return false
+  if path.startsWith("/cgi-bin/") or path.startsWith("/$LIB/"):
+    return true
+  for dir in ctx.config.cgiDir:
+    if path.startsWith(dir):
+      return true
+  return false
+
 proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   var redo = true
   var tries = 0
@@ -121,7 +132,15 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
     redo = false
     case request.url.scheme
     of "file":
-      handle.loadFilePath(request.url)
+      let path = request.url.path.serialize_unicode()
+      if ctx.canRewriteForCGICompat(path):
+        let newURL = newURL("cgi-bin:" & path & request.url.search)
+        if newURL.isSome:
+          request.url = newURL.get
+          inc tries
+          redo = true
+          continue
+      handle.loadFilePath(request.url, path)
       handle.close()
     of "http", "https":
       let handleData = handle.loadHttp(ctx.curlm, request)
@@ -280,6 +299,9 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
     discard sig
     gctx.exitLoader()
   ctx.addFd(int(ctx.ssock.sock.getFd()), CURL_WAIT_POLLIN)
+  for dir in ctx.config.cgiDir.mitems:
+    if dir.len > 0 and dir[^1] != '/':
+      dir &= '/'
   return ctx
 
 proc runFileLoader*(fd: cint, config: LoaderConfig) =

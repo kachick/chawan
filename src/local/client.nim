@@ -631,7 +631,8 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
       defaultHeaders = config.getDefaultHeaders(),
       proxy = config.getProxy(),
       urimethodmap = config.getURIMethodMap(),
-      acceptProxy = true
+      acceptProxy = true,
+      w3mCGICompat = config.external.w3m_cgi_compat
     ),
     jsrt: jsrt,
     jsctx: jsctx,

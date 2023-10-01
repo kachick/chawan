@@ -54,7 +54,11 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string]) =
   if cgiDir.len == 0:
     discard handle.sendResult(ERROR_NO_CGI_DIR)
     return
-  let path = percentDecode(request.url.pathname)
+  var path = percentDecode(request.url.pathname)
+  if path.startsWith("/cgi-bin/"):
+    path.delete(0 .. "/cgi-bin/".high)
+  elif path.startsWith("/$LIB/"):
+    path.delete(0 .. "/$LIB/".high)
   if path == "" or request.url.hostname != "":
     discard handle.sendResult(ERROR_INVALID_CGI_PATH)
     return

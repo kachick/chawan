@@ -91,6 +91,7 @@ type
     mime_types* {.jsgetset.}: seq[string]
     cgi_dir* {.jsgetset.}: seq[string]
     urimethodmap* {.jsgetset.}: seq[string]
+    w3m_cgi_compat* {.jsgetset.}: bool
 
   InputConfig = object
     vi_numeric_prefix* {.jsgetset.}: bool
@@ -232,7 +233,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
       cookiejar: cookiejar,
       proxy: proxy,
       cgiDir: config.external.cgi_dir,
-      urimethodmap: urimethodmap
+      urimethodmap: urimethodmap,
+      w3mCGICompat: config.external.w3m_cgi_compat
     )
   )
 

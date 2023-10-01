@@ -61,8 +61,12 @@ proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
     while i < line.len and line[i] in AsciiWhitespace:
       inc i
     var v = line.until(AsciiWhitespace, i)
+    # Basic w3m compatibility.
+    # If needed, w3m-cgi-compat covers more cases.
     if v.startsWith("file:/cgi-bin/"):
       v = "cgi-bin:" & v.substr("file:/cgi-bin/".len)
+    elif v.startsWith("file:///cgi-bin/"):
+      v = "cgi-bin:" & v.substr("file:///cgi-bin/".len)
     elif v.startsWith("/cgi-bin/"):
       v = "cgi-bin:" & v.substr("/cgi-bin/".len)
     this[k] = v

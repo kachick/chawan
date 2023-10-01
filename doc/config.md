@@ -220,6 +220,21 @@ MANOFF -->
 </td>
 </tr>
 
+<tr>
+<td>w3m-cgi-compat</td>
+<td>boolean</td>
+<td>Enable local CGI compatibility with w3m. In short, it redirects
+`file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`. For further
+details, see
+<!-- MANOFF -->
+[localcgi.md](localcgi.md).
+<!-- MANON -->
+<!-- MANON
+**cha-localcgi**(5).
+MANOFF -->
+</td>
+</tr>
+
 </table>
 
 ## Input
@@ -1123,10 +1138,10 @@ with a caret (^) sign or end with an unescaped dollar ($) sign.
 In other words, the following transformations occur:
 
 ```
-^abcd -> ^abcd
-efgh$ -> efgh$
-^ijkl$ -> ^ijkl$
-mnop -> ^mnop$
+^abcd -> ^abcd (no change)
+efgh$ -> efgh$ (no change)
+^ijkl$ -> ^ijkl$ (no change)
+mnop -> ^mnop$ (changed to exact match)
 ```
 <!-- MANON
 
