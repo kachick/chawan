@@ -415,7 +415,13 @@ proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
   container.setFromY(y)
   container.setFromX(x)
 
-proc setCursorX(container: Container, x: int, refresh = true, save = true) {.jsfunc.} =
+# Set the cursor to the xth column. 0-based.
+# * refresh = false inhibits reporting of the cursor position to the buffer.
+# * save = false inhibits cursor movement if it is currently outside the
+#   screen, and makes it so cursorx is not saved for restoration on cursory
+#   movement.
+proc setCursorX(container: Container, x: int, refresh = true, save = true)
+    {.jsfunc.} =
   if not container.lineLoaded(container.cursory):
     container.pos.setx = x
     container.pos.setxrefresh = refresh
@@ -424,9 +430,11 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true) {.jsf
   let cw = container.currentLineWidth()
   let x2 = x
   let x = max(min(x, cw - 1), 0)
-  if not refresh or container.fromx <= x and x < container.fromx + container.width:
+  # we check for save here, because it is only set by restoreCursorX where
+  # we do not want to move the cursor just because it is outside the window.
+  if not save or container.fromx <= x and x < container.fromx + container.width:
     container.pos.cursorx = x
-  elif refresh and container.fromx > x:
+  elif save and container.fromx > x:
     if x2 < container.cursorx:
       container.setFromX(x, false)
     container.pos.cursorx = container.fromx
