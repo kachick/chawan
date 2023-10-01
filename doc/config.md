@@ -713,33 +713,43 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
-<td>`pager.pageDown()`</td>
-<td>Scroll down by one page.</td>
+<td>`pager.pageDown(n = 1)`</td>
+<td>Scroll down by n pages.</td>
 </tr>
 
 <tr>
-<td>`pager.pageUp()`</td>
-<td>Scroll up by one page.</td>
+<td>`pager.pageUp(n = 1)`</td>
+<td>Scroll up by n pages.</td>
 </tr>
 
 <tr>
-<td>`pager.pageLeft()`</td>
-<td>Scroll to the left by one page.</td>
+<td>`pager.pageLeft(n = 1)`</td>
+<td>Scroll to the left by n pages.</td>
 </tr>
 
 <tr>
-<td>`pager.pageRight()`</td>
-<td>Scroll to the right by one page.</td>
+<td>`pager.pageRight(n = 1)`</td>
+<td>Scroll to the right n pages.</td>
 </tr>
 
 <tr>
-<td>`pager.halfPageDown()`</td>
-<td>Scroll forwards by half a page.</td>
+<td>`pager.halfPageDown(n = 1)`</td>
+<td>Scroll forwards by n half pages.</td>
 </tr>
 
 <tr>
-<td>`pager.halfPageUp()`</td>
-<td>Scroll backwards by half a page.</td>
+<td>`pager.halfPageUp(n = 1)`</td>
+<td>Scroll backwards by n half pages.</td>
+</tr>
+
+<tr>
+<td>`pager.halfPageLeft(n = 1)`</td>
+<td>Scroll to the left by n half pages.</td>
+</tr>
+
+<tr>
+<td>`pager.halfPageUp(n = 1)`</td>
+<td>Scroll to the right by n half pages.</td>
 </tr>
 
 <tr>

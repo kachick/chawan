@@ -624,31 +624,41 @@ proc cursorPrevWord(container: Container) {.jsfunc.} =
     else:
       container.cursorLineBegin()
 
-proc pageDown(container: Container) {.jsfunc.} =
-  container.setFromY(container.fromy + container.height)
-  container.setCursorY(container.cursory + container.height)
+proc pageDown(container: Container, n = 1) {.jsfunc.} =
+  container.setFromY(container.fromy + container.height * n)
+  container.setCursorY(container.cursory + container.height * n)
   container.restoreCursorX()
 
-proc pageUp(container: Container) {.jsfunc.} =
-  container.setFromY(container.fromy - container.height)
-  container.setCursorY(container.cursory - container.height)
+proc pageUp(container: Container, n = 1) {.jsfunc.} =
+  container.setFromY(container.fromy - container.height * n)
+  container.setCursorY(container.cursory - container.height * n)
   container.restoreCursorX()
 
-proc pageLeft(container: Container) {.jsfunc.} =
-  container.setFromX(container.fromx - container.width)
+proc pageLeft(container: Container, n = 1) {.jsfunc.} =
+  container.setFromX(container.fromx - container.width * n)
 
-proc pageRight(container: Container) {.jsfunc.} =
-  container.setFromX(container.fromx + container.width)
+proc pageRight(container: Container, n = 1) {.jsfunc.} =
+  container.setFromX(container.fromx + container.width * n)
 
-proc halfPageUp(container: Container) {.jsfunc.} =
-  container.setFromY(container.fromy - container.height div 2 + 1)
-  container.setCursorY(container.cursory - container.height div 2 + 1)
+# I am not cloning the vi behavior here because it is counter-intuitive
+# and annoying.
+# Users who disagree are free to implement it themselves. (It is about
+# 5 lines of JS.)
+proc halfPageUp(container: Container, n = 1) {.jsfunc.} =
+  container.setFromY(container.fromy - (container.height div 2 + 1) * n)
+  container.setCursorY(container.cursory - (container.height div 2 + 1) * n)
   container.restoreCursorX()
 
-proc halfPageDown(container: Container) {.jsfunc.} =
-  container.setFromY(container.fromy + container.height div 2 - 1)
-  container.setCursorY(container.cursory + container.height div 2 - 1)
+proc halfPageDown(container: Container, n = 1) {.jsfunc.} =
+  container.setFromY(container.fromy + (container.height div 2 - 1) * n)
+  container.setCursorY(container.cursory + (container.height div 2 - 1) * n)
   container.restoreCursorX()
+
+proc halfPageLeft(container: Container, n = 1) {.jsfunc.} =
+  container.setFromX(container.fromx - (container.width div 2 + 1) * n)
+
+proc halfPageRight(container: Container, n = 1) {.jsfunc.} =
+  container.setFromX(container.fromx + (container.width div 2 - 1) * n)
 
 proc cursorFirstLine(container: Container) {.jsfunc.} =
   if container.select.open:
