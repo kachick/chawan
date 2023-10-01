@@ -605,8 +605,8 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           if not starts_with_windows_drive_letter(pointer) and
               bpath.len > 0 and bpath[0].is_normalized_windows_drive_letter():
             url.path.append(bpath[0])
-          state = PATH_STATE
-          dec pointer
+        state = PATH_STATE
+        dec pointer
     of FILE_HOST_STATE:
       if (not has or c in {'/', '\\', '?', '#'}):
         dec pointer
