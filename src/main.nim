@@ -1,5 +1,9 @@
 import version
 
+# workaround for clang 16
+when defined(clang):
+  {.passC:"-Wno-error=incompatible-function-pointer-types".}
+
 import server/forkserver
 let forks = newForkServer()
 
