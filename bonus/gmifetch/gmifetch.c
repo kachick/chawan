@@ -153,7 +153,7 @@ static BIO *conn;
 #define BUFSIZE2 8192
 
 static char buffer[BUFSIZE + 1];
-static char buffer2[BUFSIZE + 1];
+static char buffer2[BUFSIZE2 + 1];
 static char urlbuf[BUFSIZE + 1];
 static char khsbuf[BUFSIZE + 2];
 static unsigned char hashbuf[EVP_MAX_MD_SIZE];
