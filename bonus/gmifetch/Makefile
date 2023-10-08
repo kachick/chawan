@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O2
+CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O3
 
 gmifetch: gmifetch.c
 	$(CC) $(CFLAGS) gmifetch.c -o gmifetch
