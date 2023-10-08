@@ -119,7 +119,7 @@ type
   Config* = ref ConfigObj
   ConfigObj* = object
     configdir {.jsget.}: string
-    includes {.jsget.}: seq[string]
+    `include` {.jsget.}: seq[string]
     start* {.jsget.}: StartConfig
     search* {.jsget.}: SearchConfig
     css* {.jsget.}: CSSConfig
@@ -579,10 +579,10 @@ proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string) =
 proc parseConfig(config: Config, dir: string, t: TomlValue) =
   gdir = dir
   parseConfigValue(config[], t, "")
-  while config.includes.len > 0:
+  while config.`include`.len > 0:
     #TODO: warn about recursive includes
-    let includes = config.includes
-    config.includes.setLen(0)
+    var includes = config.`include`
+    config.`include`.setLen(0)
     for s in includes:
       when nimvm:
         config.parseConfig(dir, staticRead(dir / s))
