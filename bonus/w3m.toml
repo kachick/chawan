@@ -5,42 +5,55 @@
 
 [page]
 # Page/cursor movement
-' ' = 'pager.pageDown()'
-C-v = 'pager.pageDown()'
-b = 'pager.pageUp()'
-M-v = 'pager.pageUp()'
-l = 'pager.cursorRight()'
-h = 'pager.cursorLeft()'
-j = 'pager.cursorDown()'
-k = 'pager.cursorUp()'
-C-f = 'pager.cursorRight()'
-C-b = 'pager.cursorLeft()'
-C-n = 'pager.cursorDown()'
-C-p = 'pager.cursorUp()'
-J = 'pager.scrollUp()'
-K = 'pager.scrollDown()'
+' ' = 'n => pager.pageDown(n)'
+C-v = 'n => pager.pageDown(n)'
+b = 'n => pager.pageUp(n)'
+M-v = 'n => pager.pageUp(n)'
+l = 'n => pager.cursorRight(n)'
+h = 'n => pager.cursorLeft(n)'
+j = 'n => pager.cursorDown(n)'
+k = 'n => pager.cursorUp(n)'
+C-f = 'n => pager.cursorRight(n)'
+C-b = 'n => pager.cursorLeft(n)'
+C-n = 'n => pager.cursorDown(n)'
+C-p = 'n => pager.cursorUp(n)'
+J = 'n => pager.scrollUp(n)'
+K = 'n => pager.scrollDown(n)'
 '^' = 'pager.cursorLineBegin()'
 C-a = 'pager.cursorLineBegin()'
 '$' = 'pager.cursorLineEnd()'
 C-e = 'pager.cursorLineEnd()'
 w = 'pager.cursorNextWord()'
 W = 'pager.cursorPrevWord()'
-'<' = 'pager.pageLeft()'
-'>' = 'pager.pageRight()'
-'.' = 'pager.scrollLeft()'
-',' = 'pager.scrollRight()'
-g = 'pager.cursorFirstLine()'
+'<' = 'n => pager.pageLeft(n)'
+'>' = 'n => pager.pageRight(n)'
+'.' = 'n => pager.scrollLeft(n)'
+',' = 'n => pager.scrollRight(n)'
+g = 'n => n ? pager.gotoLine(n) : pager.cursorFirstLine()'
 'M-<' = 'pager.cursorFirstLine()'
-G = 'pager.cursorLastLine()'
+G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
 'M->' = 'pager.cursorLastLine()'
-M-g = 'pager.gotoLine()'
+M-g = 'n => pager.gotoLine(n)'
 Z = 'pager.centerColumn()'
 z = 'pager.centerLine()'
-C-i = 'pager.cursorNextLink()'
-C-u = 'pager.cursorPrevLink()'
-M-C-i = 'pager.cursorPrevLink()'
-'[' = 'pager.cursorFirstLine();pager.cursorLineBegin();pager.cursorNextLink()'
-']' = 'pager.cursorLastLine();pager.cursorLineEnd();pager.cursorPrevLink()'
+C-i = 'n => pager.cursorNextLink(n)'
+C-u = 'n => pager.cursorPrevLink(n)'
+M-C-i = 'n => pager.cursorPrevLink(n)'
+#TODO precnum for [, ]
+'[' = '''
+n => {
+	pager.cursorFirstLine();
+	pager.cursorLineBegin();
+	pager.cursorNextLink(n);
+}
+'''
+']' = '''
+n => {
+	pager.cursorLastLine();
+	pager.cursorLineEnd();
+	pager.cursorPrevLink(n);
+}
+'''
 # Hyperlink selection
 C-j = 'pager.click()'
 C-m = 'pager.click()'
