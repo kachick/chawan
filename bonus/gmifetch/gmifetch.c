@@ -144,34 +144,24 @@ static BIO *conn;
 		exit(1); \
 	} while (0)
 
-#define FLAGS (SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | \
-	SSL_OP_NO_TLSv1_1)
-#define PREFERRED_CIPHERS "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4"
 #define BUFSIZE 1024
-
-/* A larger buffer that we can use for storing the full public key. */
-#define BUFSIZE2 8192
-
-static char buffer[BUFSIZE + 1];
-static char buffer2[BUFSIZE2 + 1];
-static char urlbuf[BUFSIZE + 1];
-static char khsbuf[BUFSIZE + 2];
-static unsigned char hashbuf[EVP_MAX_MD_SIZE];
-static char hashbuf2[EVP_MAX_MD_SIZE * 3 + 1];
-static FILE *known_hosts = NULL;
 
 static void setup_ssl(void)
 {
+#define FLAGS (SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | \
+	SSL_OP_NO_TLSv1_1)
+
 	SSL_library_init();
 	SSL_load_error_strings();
 	ssl_ctx = SSL_CTX_new(TLS_client_method());
 	SSL_CTX_set_options(ssl_ctx, FLAGS);
 	if (!(conn = BIO_new_ssl_connect(ssl_ctx)))
 		SDIE("Error creating BIO");
+#undef FLAGS
 }
 
 static void extract_hostname(const char *s, char **hostp, char **portp,
-	char **pathp, char **endp)
+	char **pathp, char **endp, char *urlbuf)
 {
 	const char *p;
 	size_t i, schlen;
@@ -213,12 +203,13 @@ static void extract_hostname(const char *s, char **hostp, char **portp,
 	urlbuf[i] = '\0';
 }
 
-int check_cert(const char *theirs, char *linebuf, char *hostp,
-	char **stored_digestp, time_t their_time)
+int check_cert(const char *theirs, char *hostp, char **stored_digestp,
+	time_t their_time, FILE *known_hosts)
 {
 	char *p, *q, *hashp, *timep;
 	int found;
 	time_t our_time;
+	char linebuf[BUFSIZE + 1];
 
 	rewind(known_hosts);
 	found = 0;
@@ -272,11 +263,11 @@ void hex_encode(const unsigned char *inp, char *outbuf, int len)
 	*q++ = '\0';
 }
 
-static void hash_buf(const unsigned char *ibuf, int len, unsigned char *obuf,
-	char *obuf2)
+static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
 {
 	unsigned int len2;
 	EVP_MD_CTX* mdctx;
+	unsigned char hashbuf[EVP_MAX_MD_SIZE];
 
 	if (!(mdctx = EVP_MD_CTX_new()))
 		SDIE("Failed to initialize MD_CTX");
@@ -285,10 +276,10 @@ static void hash_buf(const unsigned char *ibuf, int len, unsigned char *obuf,
 	if (!EVP_DigestUpdate(mdctx, ibuf, len))
 		SDIE("Failed to update digest");
 	len2 = 0;
-	if (!EVP_DigestFinal_ex(mdctx, obuf, &len2))
+	if (!EVP_DigestFinal_ex(mdctx, hashbuf, &len2))
 		SDIE("Failed to finalize digest");
 	EVP_MD_CTX_free(mdctx);
-	hex_encode(obuf, obuf2, len2);
+	hex_encode(hashbuf, obuf2, len2);
 }
 
 /* 1: cert found & valid
@@ -297,11 +288,13 @@ static void hash_buf(const unsigned char *ibuf, int len, unsigned char *obuf,
  * -2: cert found, but notAfter updated
  */
 static int connect(char *hostp, char *portp, char *pathp, char *endp,
-	char **stored_digestp, time_t *their_time)
+	char **stored_digestp, time_t *their_time, char *hashbuf2,
+	FILE *known_hosts)
 {
 	X509 *cert;
 	const EVP_PKEY *pkey;
-	unsigned char *pubkey_buf, *r;
+#define PUBKEY_BUF_SIZE 8192
+	unsigned char pubkey_buf[PUBKEY_BUF_SIZE + 1], *r;
 	int len, res;
 	const ASN1_TIME *notAfter;
 	struct tm their_tm;
@@ -311,6 +304,7 @@ static int connect(char *hostp, char *portp, char *pathp, char *endp,
 		SDIE("Error setting BIO hostname");
 	*pathp = '/';
 	BIO_get_ssl(conn, &ssl);
+#define PREFERRED_CIPHERS "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4"
 	if (!SSL_set_cipher_list(ssl, PREFERRED_CIPHERS))
 		SDIE("Error failed to set cipher list");
 	*portp = '\0';
@@ -325,13 +319,12 @@ static int connect(char *hostp, char *portp, char *pathp, char *endp,
 	if (!(pkey = X509_get0_pubkey(cert)))
 		SDIE("Failed to decode public key");
 	len = i2d_PUBKEY(pkey, NULL);
-	if (len * 3 > BUFSIZE2)
+	if (len * 3 > PUBKEY_BUF_SIZE)
 		DIE("Public key too long");
-	pubkey_buf = (unsigned char *)buffer2;
 	r = pubkey_buf;
 	if (i2d_PUBKEY(pkey, &r) != len)
 		DIE("wat");
-	hash_buf(pubkey_buf, len, hashbuf, hashbuf2);
+	hash_buf(pubkey_buf, len, hashbuf2);
 	notAfter = X509_get0_notAfter(cert);
 	if (!ASN1_TIME_to_tm(notAfter, &their_tm))
 		DIE("Failed to parse time");
@@ -340,18 +333,21 @@ static int connect(char *hostp, char *portp, char *pathp, char *endp,
 	if (X509_cmp_current_time(notAfter) <= 0)
 		DIE("Wrong time");
 	*their_time = mktime(&their_tm);
-	res = check_cert(hashbuf2, buffer, hostp, stored_digestp, *their_time);
+	res = check_cert(hashbuf2, hostp, stored_digestp, *their_time,
+		known_hosts);
 	*portp = ':';
 	X509_free(cert);
 	strcpy(endp, "\r\n");
 	return res;
+#undef PUBKEY_BUF_SIZE
 }
 
-static void read_response(void)
+static void read_response(const char *urlbuf)
 {
 	int bytes, total;
 	const char *tmp;
 	char *q, status0, status1;
+	char buffer[BUFSIZE + 1];
 
 	/* Read response */
 	total = 0;
@@ -490,7 +486,9 @@ void decode_query(const char *input_url, char *output_buffer)
 	*q = '\0';
 }
 
-void read_post(const char *hostp, char *portp, char *pathp)
+
+void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
+	char *khsbuf, FILE *known_hosts)
 {
 	/* TODO move query strings here */
 	size_t n;
@@ -498,10 +496,11 @@ void read_post(const char *hostp, char *portp, char *pathp)
 	FILE *known_hosts_tmp;
 	long last_pos, len, total;
 	size_t khslen;
+	char inbuf[BUFSIZE + 1], buffer[BUFSIZE + 1];
 
-	n = fread(buffer2, 1, BUFSIZE2, stdin);
-	buffer2[n] = '\0';
-	if ((p = strstr(buffer2, "input="))) {
+	n = fread(inbuf, 1, BUFSIZE, stdin);
+	inbuf[n] = '\0';
+	if ((p = strstr(inbuf, "input="))) {
 		decode_query(p + 6, buffer);
 		if (!(q = strstr(pathp, "?"))) /* no query string */
 			q = &pathp[strlen(pathp)];
@@ -509,7 +508,7 @@ void read_post(const char *hostp, char *portp, char *pathp)
 			*q = *p;
 		if (q >= &urlbuf[BUFSIZE])
 			DIE("Query too long");
-	} else if (!(p = strstr(buffer2, "trust_cert="))) {
+	} else if (!(p = strstr(inbuf, "trust_cert="))) {
 		DIE("Invalid POST request: trust_cert missing");
 	}
 	p += sizeof("trust_cert=") - 1;
@@ -573,12 +572,13 @@ void read_post(const char *hostp, char *portp, char *pathp)
 	}
 }
 
-void open_known_hosts(void)
+FILE *open_known_hosts(char *khsbuf)
 {
 	const char *known_hosts_path, *xdg_dir, *home_dir;
 	char *p;
 	size_t len;
 	struct stat s;
+	FILE *known_hosts;
 
 	known_hosts_path = getenv("GMIFETCH_KNOWN_HOSTS");
 	if (!known_hosts_path) {
@@ -629,6 +629,7 @@ void open_known_hosts(void)
 	}
 	if (!(known_hosts = fopen(khsbuf, "a+")))
 		PDIE("Error opening known hosts file");
+	return known_hosts;
 }
 
 int main(int argc, const char *argv[])
@@ -637,6 +638,9 @@ int main(int argc, const char *argv[])
 	char *hostp, *portp, *pathp, *endp, *stored_digestp;
 	int connect_res;
 	time_t their_time;
+	char hashbuf2[EVP_MAX_MD_SIZE * 3 + 1];
+	char urlbuf[BUFSIZE + 1], buffer[BUFSIZE + 1], khsbuf[BUFSIZE + 2];
+	FILE *known_hosts;
 
 	if (argc != 2) {
 		input_url = getenv("QUERY_STRING");
@@ -647,17 +651,17 @@ int main(int argc, const char *argv[])
 	} else {
 		input_url = argv[1];
 	}
-	open_known_hosts();
+	known_hosts = open_known_hosts(khsbuf);
 	setup_ssl();
-	extract_hostname(input_url, &hostp, &portp, &pathp, &endp);
+	extract_hostname(input_url, &hostp, &portp, &pathp, &endp, urlbuf);
 	method = getenv("REQUEST_METHOD");
 	if (method && !strcmp(method, "POST"))
-		read_post(hostp, portp, pathp);
+		read_post(hostp, portp, pathp, urlbuf, khsbuf, known_hosts);
 	connect_res = connect(hostp, portp, pathp, endp, &stored_digestp,
-		&their_time);
+		&their_time, hashbuf2, known_hosts);
 	if (connect_res == 1) { /* valid certificate */
 		BIO_puts(conn, urlbuf);
-		read_response();
+		read_response(urlbuf);
 	} else if (connect_res == 0) { /* invalid certificate */
 		printf(INVALID_CERT_RESPONSE, stored_digestp, buffer, khsbuf);
 	} else if (connect_res == -1) { /* no certificate */
