@@ -28,4 +28,4 @@ type trans >/dev/null || {
 
 # Call the `trans' program. It writes its output to standard out, which
 # Chawan's local CGI will read in as the content body.
-trans "$TEXT"
+trans -- "$TEXT"
