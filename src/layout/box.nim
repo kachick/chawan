@@ -19,7 +19,7 @@ type
   # max-content: box width is content width without wrapping
   # stretch: box width is n px wide
   # fit-content: also known as shrink-to-fit, box width is
-  #   min(max-content, max(stretch)
+  #   min(max-content, stretch(availableWidth))
   #   in other words, as wide as needed, but wrap if wider than allowed
   # (note: I write width here, but it can apply for any constraint)
   SizeConstraintType* = enum
