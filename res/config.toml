@@ -194,8 +194,10 @@ C-v = 'line.escape()'
 C-p = 'line.prevHist()'
 C-n = 'line.nextHist()'
 M-c = '''
-pager.commandMode = !(console.buffer == pager.buffer);
-console[pager.commandMode ? "show" : "hide"]();
+if ((pager.commandMode = consoleBuffer != pager.buffer))
+	console.show();
+else
+	console.hide();
 '''
 'M-[D' = 'line.backward()'
 'M-[B' = 'line.nextHist()'

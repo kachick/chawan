@@ -81,7 +81,7 @@ type
     siteconf: seq[SiteConfig]
     statusgrid*: FixedGrid
     term*: Terminal
-    tty: File
+    tty*: File #TODO this is already referenced in term, remove.
     unreg*: seq[(Pid, SocketStream)]
     urimethodmap: URIMethodMap
     username: string

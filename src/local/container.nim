@@ -367,8 +367,13 @@ proc setNumLines(container: Container, lines: int, finish = false) =
     container.updateCursor()
     container.triggerEvent(STATUS)
 
-proc requestLines*(container: Container, w = container.lineWindow): auto {.discardable.} =
-  return container.iface.getLines(w).then(proc(res: tuple[numLines: int, lines: seq[SimpleFlexibleLine]]) =
+proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
+    {.discardable.} =
+  if container.iface == nil:
+    let res = EmptyPromise()
+    res.resolve()
+    return res
+  return container.iface.getLines(w).then(proc(res: GetLinesResult) =
     container.lines.setLen(w.len)
     container.lineshift = w.a
     for y in 0 ..< min(res.lines.len, w.len):

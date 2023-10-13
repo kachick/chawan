@@ -26,6 +26,7 @@ import io/posixstream
 import io/promise
 import io/socketstream
 import js/base64
+import js/console
 import js/domexception
 import js/error
 import js/fromjs
@@ -42,8 +43,8 @@ import local/pager
 import server/forkserver
 import types/blob
 import types/cookie
-import types/url
 import types/opt
+import types/url
 import utils/twtstr
 import xhr/formdata
 import xhr/xmlhttprequest
@@ -54,10 +55,11 @@ type
   Client* = ref object
     alive: bool
     config {.jsget.}: Config
-    console {.jsget.}: Console
+    consoleWrapper: ConsoleWrapper
     fdmap: Table[int, Container]
     feednext: bool
     forkserver: ForkServer
+    ibuf: string
     jsctx: JSContext
     jsrt: JSRuntime
     loader: FileLoader
@@ -66,25 +68,25 @@ type
     selector: Selector[int]
     timeouts: TimeoutState
 
-  Console = ref object
-    err: Stream
-    pager: Pager
+  ConsoleWrapper = object
+    console: Console
     container: Container
     prev: Container
-    ibuf: string
-    tty: File
 
 jsDestructor(Client)
-jsDestructor(Console)
 
-proc readChar(console: Console): char =
-  if console.ibuf == "":
+func console(client: Client): Console {.jsfget.} =
+  return client.consoleWrapper.console
+
+proc readChar(client: Client): char =
+  if client.ibuf == "":
     try:
-      return console.tty.readChar()
+      return client.pager.tty.readChar()
     except EOFError:
       quit(1)
-  result = console.ibuf[0]
-  console.ibuf = console.ibuf.substr(1)
+  else:
+    result = client.ibuf[0]
+    client.ibuf.delete(0..0)
 
 proc finalize(client: Client) {.jsfin.} =
   if client.jsctx != nil:
@@ -102,14 +104,14 @@ proc fetch[T: Request|string](client: Client, req: T,
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
-  if client.console == nil or client.console.tty == nil: return
+  if client.console == nil or client.pager.tty == nil: return
   try:
-    let c = client.console.tty.readChar()
+    let c = client.pager.tty.readChar()
     if c == char(3): #C-c
-      client.console.ibuf = ""
+      client.ibuf = ""
       return 1
     else:
-      client.console.ibuf &= c
+      client.ibuf &= c
   except IOError:
     discard
   return 0
@@ -139,14 +141,14 @@ proc command0(client: Client, src: string, filename = "<command>",
     if not silence:
       let str = fromJS[string](client.jsctx, ret)
       if str.isSome:
-        client.console.err.write(str.get & '\n')
-        client.console.err.flush()
+        client.console.log(str.get)
   JS_FreeValue(client.jsctx, ret)
 
 proc command(client: Client, src: string) =
   client.command0(src)
-  client.console.container.requestLines().then(proc() =
-    client.console.container.cursorLastLine())
+  let container = client.consoleWrapper.container
+  container.requestLines().then(proc() =
+    container.cursorLastLine())
 
 proc suspend(client: Client) {.jsfunc.} =
   client.pager.term.quit()
@@ -223,7 +225,7 @@ proc handleCommandInput(client: Client, c: char) =
 proc input(client: Client) =
   client.pager.term.restoreStdin()
   while true:
-    let c = client.console.readChar()
+    let c = client.readChar()
     if client.pager.askpromise != nil:
       if c == 'y':
         client.pager.fulfillAsk(true)
@@ -280,26 +282,19 @@ proc clearInterval(client: Client, id: int32) {.jsfunc.} =
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
-proc log(console: Console, ss: varargs[string]) {.jsfunc.} =
-  for i in 0..<ss.len:
-    console.err.write(ss[i])
-    if i != ss.high:
-      console.err.write(' ')
-  console.err.write('\n')
-  console.err.flush()
+proc showConsole(client: Client) {.jsfunc.} =
+  let container = client.consoleWrapper.container
+  if client.pager.container != container:
+    client.consoleWrapper.prev = client.pager.container
+    client.pager.setContainer(container)
+    container.requestLines()
 
-proc show(console: Console) {.jsfunc.} =
-  if console.pager.container != console.container:
-    console.prev = console.pager.container
-    console.pager.setContainer(console.container)
-    console.container.requestLines()
+proc hideConsole(client: Client) {.jsfunc.} =
+  if client.pager.container == client.consoleWrapper.container:
+    client.pager.setContainer(client.consoleWrapper.prev)
 
-proc hide(console: Console) {.jsfunc.} =
-  if console.pager.container == console.container:
-    console.pager.setContainer(console.prev)
-
-proc buffer(console: Console): Container {.jsfget.} =
-  return console.container
+proc consoleBuffer(client: Client): Container {.jsfget.} =
+  return client.consoleWrapper.container
 
 proc acceptBuffers(client: Client) =
   while client.pager.unreg.len > 0:
@@ -324,7 +319,7 @@ proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
 proc handleRead(client: Client, fd: int) =
-  if client.console.tty != nil and fd == client.console.tty.getFileHandle():
+  if client.pager.tty != nil and fd == client.pager.tty.getFileHandle():
     client.input()
     client.handlePagerEvents()
   elif fd == client.forkserver.estream.fd:
@@ -360,7 +355,7 @@ proc flushConsole*(client: Client) {.jsfunc.} =
   client.handleRead(client.forkserver.estream.fd)
 
 proc handleError(client: Client, fd: int) =
-  if client.console.tty != nil and fd == client.console.tty.getFileHandle():
+  if client.pager.tty != nil and fd == client.pager.tty.getFileHandle():
     #TODO do something here...
     stderr.write("Error in tty\n")
     quit(1)
@@ -378,21 +373,21 @@ proc handleError(client: Client, fd: int) =
   else:
     if fd in client.fdmap:
       let container = client.fdmap[fd]
-      if container != client.console.container:
+      if container != client.consoleWrapper.container:
         client.console.log("Error in buffer", $container.location)
       else:
-        client.console.container = nil
+        client.consoleWrapper.container = nil
       client.selector.unregister(fd)
       client.fdmap.del(fd)
-    if client.console.container != nil:
-      client.console.show()
+    if client.consoleWrapper.container != nil:
+      client.showConsole()
     else:
       doAssert false
 
 proc inputLoop(client: Client) =
   let selector = client.selector
-  discard c_setvbuf(client.console.tty, nil, IONBF, 0)
-  selector.registerHandle(int(client.console.tty.getFileHandle()), {Read}, 0)
+  discard c_setvbuf(client.pager.tty, nil, IONBF, 0)
+  selector.registerHandle(int(client.pager.tty.getFileHandle()), {Read}, 0)
   let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
   while true:
     let events = client.selector.select(-1)
@@ -403,14 +398,14 @@ proc inputLoop(client: Client) =
         client.handleError(event.fd)
       if Signal in event.events: 
         assert event.fd == sigwinch
-        let attrs = getWindowAttributes(client.console.tty)
+        let attrs = getWindowAttributes(client.pager.tty)
         client.pager.windowChange(attrs)
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
         assert r
         client.runJSJobs()
-        client.console.container.requestLines().then(proc() =
-          client.console.container.cursorLastLine())
+        client.pager.container.requestLines().then(proc() =
+          client.pager.container.cursorLastLine())
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
     if client.pager.scommand != "":
@@ -483,27 +478,51 @@ proc readFile(client: Client, path: string): string {.jsfunc.} =
 proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
   writeFile(path, content)
 
-proc newConsole(pager: Pager, tty: File): Console =
-  new(result)
-  if tty != nil:
+const ConsoleTitle = "Browser Console"
+
+proc addConsole(pager: Pager, interactive: bool, clearFun, showFun, hideFun:
+    proc()): ConsoleWrapper =
+  if interactive:
     var pipefd: array[0..1, cint]
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
-    let url = newURL("javascript:console.show()")
-    result.container = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
-      pipefd[0], option(url.get(nil)), "Browser console",
-      canreinterpret = false)
-    var f: File
-    if not open(f, pipefd[1], fmWrite):
-      raise newException(Defect, "Failed to open file for console pipe.")
-    result.err = newFileStream(f)
-    result.err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
-    result.err.flush()
-    result.pager = pager
-    result.tty = tty
-    pager.registerContainer(result.container)
+    let url = newURL("javascript:console.show()").get
+    let container = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
+      pipefd[0], some(url), ConsoleTitle, canreinterpret = false)
+    let err = newPosixStream(pipefd[1])
+    err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
+    err.flush()
+    pager.registerContainer(container)
+    let console = newConsole(
+      err,
+      clearFun = clearFun,
+      showFun = showFun,
+      hideFun = hideFun
+    )
+    return ConsoleWrapper(
+      console: console,
+      container: container
+    )
   else:
-    result.err = newFileStream(stderr)
+    let err = newFileStream(stderr)
+    return ConsoleWrapper(
+      console: newConsole(err)
+    )
+
+proc clearConsole(client: Client) =
+  var pipefd: array[0..1, cint]
+  if pipe(pipefd) == -1:
+    raise newException(Defect, "Failed to open console pipe.")
+  let url = newURL("javascript:console.show()").get
+  let pager = client.pager
+  let replacement = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
+    pipefd[0], some(url), ConsoleTitle, canreinterpret = false)
+  replacement.replace = client.consoleWrapper.container
+  pager.registerContainer(replacement)
+  client.consoleWrapper.container = replacement
+  let console = client.consoleWrapper.console
+  console.err.close()
+  console.err = newPosixStream(pipefd[1])
 
 proc dumpBuffers(client: Client) =
   client.headlessLoop()
@@ -540,7 +559,14 @@ proc launchClient*(client: Client, pages: seq[string],
     selector.unregister(fd)
   client.selector = selector
   client.pager.launchPager(tty)
-  client.console = newConsole(client.pager, tty)
+  let clearFun = proc() =
+    client.clearConsole()
+  let showFun = proc() =
+    client.showConsole()
+  let hideFun = proc() =
+    client.hideConsole()
+  client.consoleWrapper = addConsole(client.pager, interactive = tty != nil,
+    clearFun, showFun, hideFun)
   #TODO passing console.err here makes it impossible to change it later. maybe
   # better associate it with jsctx
   client.timeouts = newTimeoutState(client.selector, client.jsctx,
@@ -597,6 +623,7 @@ func line(client: Client): LineEdit {.jsfget.} =
 
 proc addJSModules(client: Client, ctx: JSContext) =
   ctx.addDOMExceptionModule()
+  ctx.addConsoleModule()
   ctx.addCookieModule()
   ctx.addURLModule()
   ctx.addEventModule()
@@ -643,6 +670,5 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
   jsctx.registerType(Client, asglobal = true)
   setGlobal(jsctx, global, client)
   JS_FreeValue(jsctx, global)
-  jsctx.registerType(Console)
   client.addJSModules(jsctx)
   return client

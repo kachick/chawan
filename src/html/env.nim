@@ -7,6 +7,7 @@ import html/dom
 import html/event
 import io/promise
 import js/base64
+import js/console
 import js/domexception
 import js/error
 import js/intl
@@ -130,7 +131,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.setGlobal(global, window)
   JS_FreeValue(ctx, global)
   ctx.addDOMExceptionModule()
-  ctx.addconsoleModule()
+  ctx.addConsoleModule()
   ctx.addNavigatorModule()
   ctx.addEventModule()
   ctx.addDOMModule()
@@ -150,9 +151,10 @@ proc runJSJobs*(window: Window) =
 proc newWindow*(scripting: bool, selector: Selector[int],
     attrs: WindowAttributes, navigate: proc(url: URL) = nil,
     loader = none(FileLoader)): Window =
+  let err = newFileStream(stderr)
   let window = Window(
     attrs: attrs,
-    console: console(err: newFileStream(stderr)),
+    console: newConsole(err),
     navigator: Navigator(),
     loader: loader,
     settings: EnvironmentSettings(

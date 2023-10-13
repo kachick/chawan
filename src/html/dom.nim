@@ -17,6 +17,7 @@ import img/bitmap
 import img/painter
 import img/path
 import img/png
+import js/console
 import js/domexception
 import js/error
 import js/fromjs
@@ -91,7 +92,7 @@ type
 
   Window* = ref object of EventTarget
     attrs*: WindowAttributes
-    console* {.jsget.}: console
+    console* {.jsget.}: Console
     navigator* {.jsget.}: Navigator
     settings*: EnvironmentSettings
     loader*: Option[FileLoader]
@@ -109,13 +110,6 @@ type
   PluginArray* = object
 
   MimeTypeArray* = object
-
-  # "For historical reasons, console is lowercased."
-  # Also, for a more practical reason: so the javascript macros don't confuse
-  # this and the Client console.
-  # TODO: merge those two
-  console* = ref object
-    err*: Stream
 
   NamedNodeMap = ref object
     element: Element
@@ -372,7 +366,6 @@ jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
 jsDestructor(Window)
 
-jsDestructor(console)
 jsDestructor(Element)
 jsDestructor(HTMLElement)
 jsDestructor(HTMLInputElement)
@@ -2698,34 +2691,6 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
       let script = createClassicScript(source, url, options, false)
       element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
 
-proc log*(console: console, ss: varargs[string]) {.jsfunc.} =
-  var s = ""
-  for i in 0..<ss.len:
-    s &= ss[i]
-    console.err.write(ss[i])
-    if i != ss.high:
-      s &= ' '
-      console.err.write(' ')
-  console.err.write('\n')
-  console.err.flush()
-
-proc clear*(console: console) {.jsfunc.} =
-  # Do nothing. By design, we do not allow buffers to clear the console.
-  discard
-
-# For now, these are the same as log().
-proc debug*(console: console, ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
-
-proc error*(console: console, ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
-
-proc info*(console: console, ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
-
-proc warn*(console: console, ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
-
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
   if document != element.preparationTimeDocument:
@@ -3036,10 +3001,6 @@ proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cd
     if x.isSome:
       element.attrulgz(entry.attrname, x.get)
   return JS_DupValue(ctx, val)
-
-proc addconsoleModule*(ctx: JSContext) =
-  #TODO console should not have a prototype
-  ctx.registerType(console, nointerface = true)
 
 func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
   for tag in tags:
