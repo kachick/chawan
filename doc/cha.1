@@ -47,7 +47,7 @@ valid TOML.
 
 (The sole exception is quoting: to ease specifying string
 parameters, unrecognized bare keywords are converted to strings. So this
-works: \fB--opt\fR \fIabcd.option-name\fR=\fIoption-value\fR. However, symbols must
+works: \fB--opt\fR abcd.option-name=\fIoption-value\fR. However, symbols must
 still be quoted.)
 .TP
 \fB\-c, \-\-css\fR \fIstylesheet\fR
@@ -67,11 +67,11 @@ often, consider changing the default input charset recognition list
 .TP
 \fB\-O, \-\-output-charset\fR \fIcharset\fR
 Override the output character set. This is a shortcut for
-\fB\-o \fIencoding.display\-charset\fR=\fIcharset\fR.
+\fB\-o encoding.display\-charset=\fIcharset\fR.
 .TP
 \fB\-M, \-\-monochrome\fR
 Override the output character set. This is a shortcut for
-\fB\-o \fIdisplay.color\-mode\fR=\fIansi\fR.
+\fB\-o display.color\-mode=\fIansi\fR.
 .TP
 \fB\-V, \-\-visual\fR
 Start in visual mode: the page specified in \fIstart.visual-home\fR is opened.
@@ -124,4 +124,5 @@ Configuration options are described in \fBcha-config\fR(5).
 
 .SH SEE ALSO
 \fBcha-mailcap\fR(5), \fBcha-mime.types\fR(5), \fBcha-config\fR(5),
+.br
 \fBcha-localcgi\fR(5) \fBcha-urimethodmap\fR(5)

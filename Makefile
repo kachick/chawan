@@ -55,10 +55,7 @@ clean:
 	rm -f lib/libquickjs.a
 
 $(OBJDIR)/man/cha-%.md: doc/%.md | $(OBJDIR)/man/
-	sed -e '/<!-- MANOFF -->/,/<!-- MANON -->/d' \
-		-e '/^<!-- MANON$$/d' \
-		-e '/^MANOFF -->$$/d' $< | \
-		./table_rewrite.sh > $@
+	./md2manpreproc $< > $@
 
 $(OBJDIR)/man/cha-%.5: $(OBJDIR)/man/cha-%.md | $(OBJDIR)/man/
 	pandoc --standalone --to man $< -o $@
