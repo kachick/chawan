@@ -30469,7 +30469,8 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 /* do not close top level last result */
                 if (vd->scope_level == 0 &&
                     vd->var_name != JS_ATOM__ret_ &&
-                    vd->var_name != JS_ATOM_NULL) {
+                    vd->var_name != JS_ATOM_NULL &&
+                    (!has_this_binding || vd->var_name != JS_ATOM_this)) {
                     get_closure_var(ctx, s, fd,
                                     FALSE, i, vd->var_name, FALSE, FALSE,
                                     JS_VAR_NORMAL);
