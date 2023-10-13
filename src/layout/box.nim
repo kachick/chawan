@@ -109,18 +109,11 @@ type
   InlineContext* = ref object
     offset*: Offset
     height*: LayoutUnit
-    lines*: seq[LineBox]
-    currentLine*: LineBox
     width*: LayoutUnit
-    availableWidth*: SizeConstraint
-    availableHeight*: SizeConstraint
+    lines*: seq[LineBox]
 
-    charwidth*: int
-    whitespacenum*: int
     # this is actually xminwidth.
     minwidth*: LayoutUnit
-    viewport*: Viewport
-    format*: ComputedFormat
 
   BlockBox* = ref object of RootObj
     inline*: InlineContext

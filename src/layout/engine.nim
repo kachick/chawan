@@ -58,6 +58,13 @@ type InlineState = object
   wrappos: int # position of last wrapping opportunity, or -1
   hasshy: bool
   computed: CSSComputedValues
+  currentLine: LineBox
+  charwidth: int
+  whitespacenum: int
+  format: ComputedFormat
+  viewport: Viewport
+  availableWidth: SizeConstraint
+  availableHeight: SizeConstraint
 
 func whitespacepre(computed: CSSComputedValues): bool =
   computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP}
@@ -68,21 +75,21 @@ func nowrap(computed: CSSComputedValues): bool =
 func cellwidth(viewport: Viewport): LayoutUnit =
   viewport.window.ppc
 
-func cellwidth(ictx: InlineContext): LayoutUnit =
-  ictx.viewport.cellwidth
+func cellwidth(state: InlineState): LayoutUnit =
+  state.viewport.cellwidth
 
 func cellheight(viewport: Viewport): LayoutUnit =
   viewport.window.ppl
 
-func cellheight(ictx: InlineContext): LayoutUnit =
-  ictx.viewport.cellheight
+func cellheight(state: InlineState): LayoutUnit =
+  state.viewport.cellheight
 
 # Check if the last atom on the current line is a spacing atom, not counting
 # padding atoms.
-func hasLastSpacing(ictx: InlineContext): bool =
-  for i in countdown(ictx.currentLine.atoms.high, 0):
-    if ictx.currentLine.atoms[i] of InlineSpacing:
-      if ictx.currentLine.atoms[i] of InlinePadding:
+func hasLastSpacing(state: InlineState): bool =
+  for i in countdown(state.currentLine.atoms.high, 0):
+    if state.currentLine.atoms[i] of InlineSpacing:
+      if state.currentLine.atoms[i] of InlinePadding:
         continue # skip padding
       return true
     else:
@@ -90,15 +97,15 @@ func hasLastSpacing(ictx: InlineContext): bool =
   return false
 
 # Whitespace between words
-func computeShift(ictx: InlineContext, computed: CSSComputedValues):
+func computeShift(state: InlineState, computed: CSSComputedValues):
     LayoutUnit =
-  if ictx.whitespacenum > 0:
-    if ictx.currentLine.atoms.len > 0 and not ictx.hasLastSpacing() or
+  if state.whitespacenum > 0:
+    if state.currentLine.atoms.len > 0 and not state.hasLastSpacing() or
         computed.whitespacepre:
       let spacing = computed{"word-spacing"}
       if spacing.auto:
-        return ictx.cellwidth * ictx.whitespacenum
-      return spacing.px(ictx.viewport) * ictx.whitespacenum
+        return state.cellwidth * state.whitespacenum
+      return spacing.px(state.viewport) * state.whitespacenum
   return 0
 
 proc applyLineHeight(viewport: Viewport, line: LineBox, computed: CSSComputedValues) =
@@ -124,20 +131,20 @@ proc newWord(state: var InlineState) =
   let word = InlineWord()
   word.format = getComputedFormat(state.computed, state.node)
   word.vertalign = state.computed{"vertical-align"}
-  state.ictx.format = word.format
+  state.format = word.format
   state.word = word
   state.wrappos = -1
   state.hasshy = false
 
-proc horizontalAlignLine(ictx: InlineContext, line: LineBox,
+proc horizontalAlignLine(state: InlineState, line: LineBox,
     computed: CSSComputedValues, last = false) =
-  let width = case ictx.availableWidth.t
+  let width = case state.availableWidth.t
   of MIN_CONTENT, MAX_CONTENT:
-    ictx.width
+    state.ictx.width
   of FIT_CONTENT:
-    min(ictx.width, ictx.availableWidth.u)
+    min(state.ictx.width, state.availableWidth.u)
   of STRETCH:
-    max(ictx.width, ictx.availableWidth.u)
+    max(state.ictx.width, state.availableWidth.u)
   # we don't support directions for now so left = start and right = end
   case computed{"text-align"}
   of TEXT_ALIGN_START, TEXT_ALIGN_LEFT, TEXT_ALIGN_CHA_LEFT:
@@ -147,12 +154,12 @@ proc horizontalAlignLine(ictx: InlineContext, line: LineBox,
     let x = max(width, line.width) - line.width
     for atom in line.atoms:
       atom.offset.x += x
-      ictx.width = max(atom.offset.x + atom.width, ictx.width)
+      state.ictx.width = max(atom.offset.x + atom.width, state.ictx.width)
   of TEXT_ALIGN_CENTER, TEXT_ALIGN_CHA_CENTER:
     let x = max((max(width - line.offset.x, line.width)) div 2 - line.width div 2, 0)
     for atom in line.atoms:
       atom.offset.x += x
-      ictx.width = max(atom.offset.x + atom.width, ictx.width)
+      state.ictx.width = max(atom.offset.x + atom.width, state.ictx.width)
   of TEXT_ALIGN_JUSTIFY:
     if not computed.whitespacepre and not last:
       var sumwidth: LayoutUnit = 0
@@ -173,11 +180,11 @@ proc horizontalAlignLine(ictx: InlineContext, line: LineBox,
             let atom = InlineSpacing(atom)
             atom.width = spacingwidth
           line.width += atom.width
-  ictx.width = max(width, ictx.width) #TODO this seems meaningless?
+  state.ictx.width = max(width, state.ictx.width) #TODO this seems meaningless?
 
 # Align atoms (inline boxes, text, etc.) vertically inside the line.
-proc verticalAlignLine(ictx: InlineContext) =
-  let line = ictx.currentLine
+proc verticalAlignLine(state: InlineState) =
+  let line = state.currentLine
 
   # Start with line-height as the baseline and line height.
   line.height = line.lineheight
@@ -187,7 +194,7 @@ proc verticalAlignLine(ictx: InlineContext) =
   for atom in line.atoms:
     case atom.vertalign.keyword
     of VERTICAL_ALIGN_BASELINE:
-      let len = atom.vertalign.length.px(ictx.viewport, line.lineheight)
+      let len = atom.vertalign.length.px(state.viewport, line.lineheight)
       line.baseline = max(line.baseline, atom.baseline + len)
     of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
       line.baseline = max(line.baseline, atom.height)
@@ -207,7 +214,7 @@ proc verticalAlignLine(ictx: InlineContext) =
     of VERTICAL_ALIGN_BASELINE:
       # Line height must be at least as high as
       # (line baseline) - (atom baseline) + (atom height) + (extra height).
-      let len = atom.vertalign.length.px(ictx.viewport, line.lineheight)
+      let len = atom.vertalign.length.px(state.viewport, line.lineheight)
       line.height = max(line.baseline - atom.baseline + atom.height + len, line.height)
     of VERTICAL_ALIGN_MIDDLE:
       # Line height must be at least
@@ -225,7 +232,7 @@ proc verticalAlignLine(ictx: InlineContext) =
     case atom.vertalign.keyword
     of VERTICAL_ALIGN_BASELINE:
       # Atom is placed at (line baseline) - (atom baseline) - len
-      let len = atom.vertalign.length.px(ictx.viewport, line.lineheight)
+      let len = atom.vertalign.length.px(state.viewport, line.lineheight)
       atom.offset.y = line.baseline - atom.baseline - len
     of VERTICAL_ALIGN_MIDDLE:
       # Atom is placed at (line baseline) - ((atom height) / 2)
@@ -266,7 +273,12 @@ proc addPadding(line: LineBox, width, height: LayoutUnit,
 
 proc addSpacing(line: LineBox, width, height: LayoutUnit,
     format: ComputedFormat, hang = false) =
-  let spacing = InlineSpacing(width: width, height: height, baseline: height, format: format)
+  let spacing = InlineSpacing(
+    width: width,
+    height: height,
+    baseline: height,
+    format: format
+  )
   spacing.offset.x = line.width
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
@@ -274,85 +286,92 @@ proc addSpacing(line: LineBox, width, height: LayoutUnit,
     line.width += spacing.width
   line.atoms.add(spacing)
 
-proc flushWhitespace(ictx: InlineContext, computed: CSSComputedValues, hang = false) =
-  let shift = ictx.computeShift(computed)
-  ictx.charwidth += ictx.whitespacenum
-  ictx.whitespacenum = 0
+proc flushWhitespace(state: var InlineState, computed: CSSComputedValues,
+    hang = false) =
+  let shift = state.computeShift(computed)
+  state.charwidth += state.whitespacenum
+  state.whitespacenum = 0
   if shift > 0:
-    ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format, hang)
+    state.currentLine.addSpacing(shift, state.cellheight, state.format, hang)
 
-proc finishLine(ictx: InlineContext, computed: CSSComputedValues, force = false) =
-  if ictx.currentLine.atoms.len != 0 or force:
+proc finishLine(state: var InlineState, computed: CSSComputedValues,
+    force = false) =
+  if state.currentLine.atoms.len != 0 or force:
     let whitespace = computed{"white-space"}
     if whitespace == WHITESPACE_PRE:
-      ictx.flushWhitespace(computed)
+      state.flushWhitespace(computed)
     elif whitespace == WHITESPACE_PRE_WRAP:
-      ictx.flushWhitespace(computed, hang = true)
+      state.flushWhitespace(computed, hang = true)
     else:
-      ictx.whitespacenum = 0
-    ictx.verticalAlignLine()
+      state.whitespacenum = 0
+    state.verticalAlignLine()
 
-    let line = ictx.currentLine
-    ictx.lines.add(line)
-    ictx.height += line.height
-    ictx.width = max(ictx.width, line.width)
-    ictx.currentLine = LineBox(offset: Offset(y: line.offset.y + line.height))
-    ictx.charwidth = 0
+    let line = state.currentLine
+    state.ictx.lines.add(line)
+    state.ictx.height += line.height
+    state.ictx.width = max(state.ictx.width, line.width)
+    state.currentLine = LineBox(offset: Offset(y: line.offset.y + line.height))
+    state.charwidth = 0
 
-proc finish(ictx: InlineContext, computed: CSSComputedValues) =
-  ictx.finishLine(computed)
-  for line in ictx.lines:
-    ictx.horizontalAlignLine(line, computed, line == ictx.lines[^1])
+proc finish(state: var InlineState, computed: CSSComputedValues) =
+  state.finishLine(computed)
+  if state.ictx.lines.len > 0:
+    for i in 0 ..< state.ictx.lines.len - 1:
+      let line = state.ictx.lines[i]
+      state.horizontalAlignLine(line, computed, last = false)
+    let line = state.ictx.lines[^1]
+    state.horizontalAlignLine(line, computed, last = true)
 
 func minwidth(atom: InlineAtom): LayoutUnit =
   if atom of InlineBlockBox:
     return cast[InlineBlockBox](atom).innerbox.xminwidth
   return atom.width
 
-func shouldWrap(ictx: InlineContext, w: LayoutUnit,
+func shouldWrap(state: InlineState, w: LayoutUnit,
     pcomputed: CSSComputedValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
-  if ictx.availableWidth.t == MAX_CONTENT:
+  if state.availableWidth.t == MAX_CONTENT:
     return false # no wrap with max-content
-  if ictx.availableWidth.t == MIN_CONTENT:
+  if state.availableWidth.t == MIN_CONTENT:
     return true # always wrap with min-content
-  return ictx.currentLine.width + w > ictx.availableWidth.u
+  return state.currentLine.width + w > state.availableWidth.u
 
 # pcomputed: computed values of parent, for white-space: pre, line-height.
 # This isn't necessarily the computed of ictx (e.g. they may differ for nested
 # inline boxes.)
-proc addAtom(ictx: InlineContext, atom: InlineAtom, pcomputed: CSSComputedValues) =
-  var shift = ictx.computeShift(pcomputed)
-  ictx.whitespacenum = 0
+proc addAtom(state: var InlineState, atom: InlineAtom,
+    pcomputed: CSSComputedValues) =
+  var shift = state.computeShift(pcomputed)
+  state.whitespacenum = 0
   # Line wrapping
-  if ictx.shouldWrap(atom.width + shift, pcomputed):
-    ictx.finishLine(pcomputed, false)
+  if state.shouldWrap(atom.width + shift, pcomputed):
+    state.finishLine(pcomputed, false)
     # Recompute on newline
-    shift = ictx.computeShift(pcomputed)
+    shift = state.computeShift(pcomputed)
 
   if atom.width > 0 and atom.height > 0:
     if shift > 0:
-      ictx.currentLine.addSpacing(shift, ictx.cellheight, ictx.format)
+      state.currentLine.addSpacing(shift, state.cellheight, state.format)
 
-    atom.offset.x += ictx.currentLine.width
-    ictx.minwidth = max(ictx.minwidth, atom.minwidth)
-    applyLineHeight(ictx.viewport, ictx.currentLine, pcomputed)
-    ictx.currentLine.width += atom.width
+    atom.offset.x += state.currentLine.width
+    state.ictx.minwidth = max(state.ictx.minwidth, atom.minwidth)
+    applyLineHeight(state.viewport, state.currentLine, pcomputed)
+    state.currentLine.width += atom.width
     if atom of InlineWord:
-      ictx.format = InlineWord(atom).format
+      state.format = InlineWord(atom).format
     else:
-      ictx.charwidth = 0
-      ictx.format = nil
-    ictx.currentLine.atoms.add(atom)
+      state.charwidth = 0
+      state.format = nil
+    state.currentLine.atoms.add(atom)
 
 proc addWord(state: var InlineState) =
   if state.word.str != "":
     var word = state.word
     word.str.mnormalize() #TODO this may break on EOL.
-    word.height = state.ictx.cellheight
+    word.height = state.cellheight
     word.baseline = word.height
-    state.ictx.addAtom(word, state.computed)
+    state.addAtom(word, state.computed)
     state.newWord()
 
 proc addWordEOL(state: var InlineState) =
@@ -365,78 +384,90 @@ proc addWordEOL(state: var InlineState) =
         state.hasshy = false
       state.addWord()
       state.word.str = leftstr
-      state.word.width = leftstr.width() * state.ictx.cellwidth
+      state.word.width = leftstr.width() * state.cellwidth
     else:
       state.addWord()
 
 # Start a new line, even if the previous one is empty
-proc flushLine(ictx: InlineContext, computed: CSSComputedValues) =
-  applyLineHeight(ictx.viewport, ictx.currentLine, computed)
-  ictx.finishLine(computed, true)
+proc flushLine(state: var InlineState, computed: CSSComputedValues) =
+  applyLineHeight(state.viewport, state.currentLine, computed)
+  state.finishLine(computed, true)
 
 proc checkWrap(state: var InlineState, r: Rune) =
   if state.computed.nowrap:
     return
-  let shift = state.ictx.computeShift(state.computed)
+  let shift = state.computeShift(state.computed)
   let rw = r.width()
   case state.computed{"word-break"}
   of WORD_BREAK_NORMAL:
     if rw == 2 or state.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = state.word.width + shift + rw * state.ictx.cellwidth
-      if state.ictx.shouldWrap(plusWidth, nil):
-        let l = state.ictx.currentLine
+      let plusWidth = state.word.width + shift + rw * state.cellwidth
+      if state.shouldWrap(plusWidth, nil):
+        let l = state.currentLine
         state.addWordEOL()
-        if l == state.ictx.currentLine: # no line wrapping occured in addAtom
-          state.ictx.finishLine(state.computed)
-          state.ictx.whitespacenum = 0
+        if l == state.currentLine: # no line wrapping occured in addAtom
+          state.finishLine(state.computed)
+          state.whitespacenum = 0
   of WORD_BREAK_BREAK_ALL:
-    let plusWidth = state.word.width + shift + rw * state.ictx.cellwidth
-    if state.ictx.shouldWrap(plusWidth, nil):
-      let l = state.ictx.currentLine
+    let plusWidth = state.word.width + shift + rw * state.cellwidth
+    if state.shouldWrap(plusWidth, nil):
+      let l = state.currentLine
       state.addWordEOL()
-      if l == state.ictx.currentLine: # no line wrapping occured in addAtom
-        state.ictx.finishLine(state.computed)
-        state.ictx.whitespacenum = 0
+      if l == state.currentLine: # no line wrapping occured in addAtom
+        state.finishLine(state.computed)
+        state.whitespacenum = 0
   of WORD_BREAK_KEEP_ALL:
-    let plusWidth = state.word.width + shift + rw * state.ictx.cellwidth
-    if state.ictx.shouldWrap(plusWidth, nil):
-      state.ictx.finishLine(state.computed)
-      state.ictx.whitespacenum = 0
+    let plusWidth = state.word.width + shift + rw * state.cellwidth
+    if state.shouldWrap(plusWidth, nil):
+      state.finishLine(state.computed)
+      state.whitespacenum = 0
 
 proc processWhitespace(state: var InlineState, c: char) =
   state.addWord()
   case state.computed{"white-space"}
   of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
-    state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
+    state.whitespacenum = max(state.whitespacenum, 1)
   of WHITESPACE_PRE_LINE:
     if c == '\n':
-      state.ictx.flushLine(state.computed)
+      state.flushLine(state.computed)
     else:
-      state.ictx.whitespacenum = max(state.ictx.whitespacenum, 1)
+      state.whitespacenum = max(state.whitespacenum, 1)
   of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     #TODO whitespace type should be preserved here. (it isn't, because
     # it would break tabs in the current buffer model.)
     if c == '\n':
-      state.ictx.flushLine(state.computed)
+      state.flushLine(state.computed)
     elif c == '\t':
-      let prev = state.ictx.charwidth
-      state.ictx.charwidth = ((state.ictx.charwidth +
-        state.ictx.whitespacenum) div 8 + 1) * 8 - state.ictx.whitespacenum
-      state.ictx.whitespacenum += state.ictx.charwidth - prev
+      let prev = state.charwidth
+      state.charwidth = ((state.charwidth +
+        state.whitespacenum) div 8 + 1) * 8 - state.whitespacenum
+      state.whitespacenum += state.charwidth - prev
     else:
-      inc state.ictx.whitespacenum
+      inc state.whitespacenum
 
-proc layoutText(ictx: InlineContext, str: string, computed: CSSComputedValues, node: StyledNode) =
-  var state: InlineState
+func newInlineState(ictx: InlineContext, viewport: Viewport,
+    availableWidth, availableHeight: SizeConstraint): InlineState =
+  return InlineState(
+    currentLine: LineBox(),
+    ictx: ictx,
+    viewport: viewport,
+    availableWidth: availableWidth,
+    availableHeight: availableHeight
+  )
+
+proc layoutText(state: var InlineState, str: string,
+    computed: CSSComputedValues, node: StyledNode) =
+  #TODO the lifetime of these is somewhat confusing, maybe move into some
+  # other object?
   state.computed = computed
-  state.ictx = ictx
   state.node = node
-  state.ictx.flushWhitespace(state.computed)
+
+  state.flushWhitespace(state.computed)
   state.newWord()
 
   var i = 0
   while i < str.len:
-    if str[i].isWhitespace():
+    if str[i] in AsciiWhitespace:
       state.processWhitespace(str[i])
       inc i
     else:
@@ -449,8 +480,8 @@ proc layoutText(ictx: InlineContext, str: string, computed: CSSComputedValues, n
       else:
         state.word.str &= r
         let w = r.width()
-        state.word.width += w * state.ictx.cellwidth
-        state.ictx.charwidth += w
+        state.word.width += w * state.cellwidth
+        state.charwidth += w
         if r == Rune('-'): # ascii dash
           state.wrappos = state.word.str.len
           state.hasshy = false
@@ -793,13 +824,8 @@ proc newInlineBlock(viewport: Viewport, builder: BoxBuilder,
   )
   return box
 
-proc newInlineContext(parent: BlockBox): InlineContext =
-  return InlineContext(
-    currentLine: LineBox(),
-    viewport: parent.viewport,
-    availableWidth: parent.availableWidth,
-    availableHeight: parent.availableHeight
-  )
+proc newInlineContext(): InlineContext =
+  return InlineContext()
 
 proc buildBlock(builder: BlockBoxBuilder, parent: BlockBox): BlockBox
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext
@@ -875,9 +901,9 @@ func toperc100(sc: SizeConstraint): Option[LayoutUnit] =
   return none(LayoutUnit)
 
 # parentWidth, parentHeight: width/height of the containing block.
-proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext,
+proc buildInlineBlock(builder: BlockBoxBuilder, viewport: Viewport,
     parentWidth, parentHeight: SizeConstraint): InlineBlockBox =
-  result = newInlineBlock(parent.viewport, builder, fitContent(parentWidth),
+  result = newInlineBlock(viewport, builder, fitContent(parentWidth),
     maxContent(), parentHeight.toperc100())
 
   case builder.computed{"display"}
@@ -902,80 +928,86 @@ proc buildInlineBlock(builder: BlockBoxBuilder, parent: InlineContext,
   result.width += result.innerbox.margin_left
   result.width += result.innerbox.margin_right
 
-proc buildInline(ictx: InlineContext, box: InlineBoxBuilder) =
+proc buildInline(state: var InlineState, box: InlineBoxBuilder) =
+  let viewport = state.viewport
   if box.newline:
-    ictx.flushLine(box.computed)
+    state.flushLine(box.computed)
 
   let paddingformat = getComputedFormat(box.computed, box.node)
   if box.splitstart:
-    let margin_left = box.computed{"margin-left"}.px(ictx.viewport,
-      ictx.availableWidth)
-    ictx.currentLine.width += margin_left
+    let margin_left = box.computed{"margin-left"}.px(viewport,
+      state.availableWidth)
+    state.currentLine.width += margin_left
 
-    let padding_left = box.computed{"padding-left"}.px(ictx.viewport,
-      ictx.availableWidth)
+    let padding_left = box.computed{"padding-left"}.px(viewport,
+      state.availableWidth)
     if padding_left > 0:
       # We must add spacing to the line to make sure that it is formatted
       # appropriately.
       # We need this so long as we have no proper inline boxes.
-      ictx.currentLine.addPadding(padding_left, ictx.cellheight, paddingformat)
+      state.currentLine.addPadding(padding_left, state.cellheight,
+        paddingformat)
 
-  assert not (box.children.len > 0 and box.text.len > 0)
+  assert box.children.len == 0 or box.text.len == 0
   for text in box.text:
-    ictx.layoutText(text, box.computed, box.node)
+    state.layoutText(text, box.computed, box.node)
 
   for child in box.children:
     case child.computed{"display"}
     of DISPLAY_INLINE:
       let child = InlineBoxBuilder(child)
-      ictx.buildInline(child)
+      state.buildInline(child)
     of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
       let child = BlockBoxBuilder(child)
-      let w = fitContent(ictx.availableWidth)
-      let h = ictx.availableHeight
-      let iblock = child.buildInlineBlock(ictx, w, h)
-      ictx.addAtom(iblock, box.computed)
-      ictx.whitespacenum = 0
+      let w = fitContent(state.availableWidth)
+      let h = state.availableHeight
+      let iblock = child.buildInlineBlock(viewport, w, h)
+      state.addAtom(iblock, box.computed)
+      state.whitespacenum = 0
     else:
       assert false, "child.t is " & $child.computed{"display"}
 
   if box.splitend:
-    let padding_right = box.computed{"padding-right"}.px(ictx.viewport,
-      ictx.availableWidth)
-    ictx.currentLine.width += padding_right
+    let padding_right = box.computed{"padding-right"}.px(viewport,
+      state.availableWidth)
+    state.currentLine.width += padding_right
     if padding_right > 0:
-      ictx.currentLine.addPadding(padding_right,
-        max(ictx.currentLine.height, 1), paddingformat)
-    let margin_right = box.computed{"margin-right"}.px(ictx.viewport,
-      ictx.availableWidth)
-    ictx.currentLine.width += margin_right
+      state.currentLine.addPadding(padding_right,
+        max(state.currentLine.height, 1), paddingformat)
+    let margin_right = box.computed{"margin-right"}.px(viewport,
+      state.availableWidth)
+    state.currentLine.width += margin_right
 
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
-  let ictx = parent.newInlineContext()
+  let ictx = newInlineContext()
+  var state = newInlineState(ictx, parent.viewport, parent.availableWidth,
+    parent.availableHeight)
+  let viewport = state.viewport
   if inlines.len > 0:
     for child in inlines:
       case child.computed{"display"}
       of DISPLAY_INLINE:
         let child = InlineBoxBuilder(child)
-        ictx.buildInline(child)
+        state.buildInline(child)
       of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
         #TODO wtf
         let child = BlockBoxBuilder(child)
-        let w = fitContent(ictx.availableWidth)
-        let h = ictx.availableHeight
-        let iblock = child.buildInlineBlock(ictx, w, h)
-        ictx.addAtom(iblock, parent.computed)
-        ictx.whitespacenum = 0
+        let w = fitContent(state.availableWidth)
+        let h = state.availableHeight
+        let iblock = child.buildInlineBlock(viewport, w, h)
+        state.addAtom(iblock, parent.computed)
+        state.whitespacenum = 0
       else:
         assert false, "child.t is " & $child.computed{"display"}
-    ictx.finish(parent.computed)
+    state.finish(parent.computed)
   return ictx
 
 proc buildMarker(builder: MarkerBoxBuilder, parent: BlockBox): InlineContext =
-  let ictx = parent.newInlineContext()
-  ictx.availableWidth = fitContent(ictx.availableWidth)
-  ictx.buildInline(builder)
-  ictx.finish(builder.computed)
+  let ictx = newInlineContext()
+  var state = newInlineState(ictx, parent.viewport,
+    fitContent(parent.availableWidth), parent.availableHeight)
+  state.buildInline(builder)
+  state.finish(builder.computed)
   return ictx
 
 proc buildListItem(builder: ListItemBoxBuilder, parent: BlockBox): ListItemBox =
