@@ -587,7 +587,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
       when nimvm:
         config.parseConfig(dir, staticRead(dir / s))
       else:
-        config.parseConfig(dir, newFileStream(dir / s))
+        config.parseConfig(dir, openFileExpand(dir, s))
   config.configdir = dir
   #TODO: for omnirule/siteconf, check if substitution rules are specified?
 

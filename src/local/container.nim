@@ -802,6 +802,20 @@ proc cursorPrevLink*(container: Container) {.jsfunc.} =
       if res.x > -1 and res.y != -1:
         container.setCursorXYCenter(res.x, res.y))
 
+proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
+  container.iface
+    .findNthLink(n)
+    .then(proc(res: tuple[x, y: int]) =
+      if res.x > -1 and res.y != -1:
+        container.setCursorXYCenter(res.x, res.y))
+
+proc cursorRevNthLink*(container: Container, n = 1) {.jsfunc.} =
+  container.iface
+    .findRevNthLink(n)
+    .then(proc(res: tuple[x, y: int]) =
+      if res.x > -1 and res.y != -1:
+        container.setCursorXYCenter(res.x, res.y))
+
 proc clearSearchHighlights*(container: Container) =
   for i in countdown(container.highlights.high, 0):
     if container.highlights[i].clear:

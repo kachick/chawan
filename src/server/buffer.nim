@@ -65,10 +65,10 @@ type
 
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
-    CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NEXT_MATCH, FIND_PREV_MATCH,
-    GET_SOURCE, GET_LINES, UPDATE_HOVER, PASS_FD, CONNECT, CONNECT2,
-    GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD, READ_FROM_FD,
-    SET_CONTENT_TYPE, CLONE
+    CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
+    FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_SOURCE, GET_LINES, UPDATE_HOVER,
+    PASS_FD, CONNECT, CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT,
+    REDIRECT_TO_FD, READ_FROM_FD, SET_CONTENT_TYPE, CLONE
 
   # LOADING_PAGE: istream open
   # LOADING_RESOURCES: istream closed, resources open
@@ -468,6 +468,40 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
       if fl != nil and fl != link:
         return (format.pos, y)
       inc i
+  return (-1, -1)
+
+proc findNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
+  if i == 0:
+    return (-1, -1)
+  var k = 0
+  var link: Element
+  for y in 0 .. buffer.lines.high:
+    let line = buffer.lines[y]
+    for j in 0 ..< line.formats.len:
+      let format = line.formats[j]
+      let fl = format.node.getClickable()
+      if fl != nil and fl != link:
+        inc k
+        if k == i:
+          return (format.pos, y)
+        link = fl
+  return (-1, -1)
+
+proc findRevNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
+  if i == 0:
+    return (-1, -1)
+  var k = 0
+  var link: Element
+  for y in countdown(buffer.lines.high, 0):
+    let line = buffer.lines[y]
+    for j in countdown(line.formats.high, 0):
+      let format = line.formats[j]
+      let fl = format.node.getClickable()
+      if fl != nil and fl != link:
+        inc k
+        if k == i:
+          return (format.pos, y)
+        link = fl
   return (-1, -1)
 
 proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,

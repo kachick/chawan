@@ -728,6 +728,17 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
+<td>`pager.cursorNthLink(n = 1)`</td>
+<td>Move the cursor to the nth link of the document.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorRevNthLink(n = 1)`</td>
+<td>Move the cursor to the nth link of the document, counting backwards
+from the document's last line.</td>
+</tr>
+
+<tr>
 <td>`pager.pageDown(n = 1)`</td>
 <td>Scroll down by n pages.</td>
 </tr>

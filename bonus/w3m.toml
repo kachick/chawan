@@ -39,21 +39,8 @@ z = 'pager.centerLine()'
 C-i = 'n => pager.cursorNextLink(n)'
 C-u = 'n => pager.cursorPrevLink(n)'
 M-C-i = 'n => pager.cursorPrevLink(n)'
-#TODO precnum for [, ]
-'[' = '''
-n => {
-	pager.cursorFirstLine();
-	pager.cursorLineBegin();
-	pager.cursorNextLink(n);
-}
-'''
-']' = '''
-n => {
-	pager.cursorLastLine();
-	pager.cursorLineEnd();
-	pager.cursorPrevLink(n);
-}
-'''
+'[' = 'n => pager.cursorNthLink(n)'
+']' = 'n => pager.cursorRevNthLink(n)'
 # Hyperlink selection
 C-j = 'pager.click()'
 C-m = 'pager.click()'
