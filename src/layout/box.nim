@@ -74,8 +74,6 @@ type
     height*: LayoutUnit
     vertalign*: CSSVerticalAlign
     baseline*: LayoutUnit
-    top*: LayoutUnit
-    bottom*: LayoutUnit
 
   ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
