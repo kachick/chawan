@@ -103,8 +103,6 @@ type
     offset*: Offset
     width*: LayoutUnit
     height*: LayoutUnit
-    baseline*: LayoutUnit
-    lineheight*: LayoutUnit #line-height property
 
   InlineContext* = ref object
     offset*: Offset

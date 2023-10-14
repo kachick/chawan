@@ -50,21 +50,27 @@ func applySizeConstraint(u: LayoutUnit, availableSize: SizeConstraint):
   of FIT_CONTENT:
     return min(u, availableSize.u)
 
-type InlineState = object
-  ictx: InlineContext
-  skip: bool
-  node: StyledNode
-  word: InlineWord
-  wrappos: int # position of last wrapping opportunity, or -1
-  hasshy: bool
-  computed: CSSComputedValues
-  currentLine: LineBox
-  charwidth: int
-  whitespacenum: int
-  format: ComputedFormat
-  viewport: Viewport
-  availableWidth: SizeConstraint
-  availableHeight: SizeConstraint
+type
+  LineBoxState = object
+    line: LineBox
+    baseline: LayoutUnit
+    lineheight: LayoutUnit
+
+  InlineState = object
+    ictx: InlineContext
+    skip: bool
+    node: StyledNode
+    word: InlineWord
+    wrappos: int # position of last wrapping opportunity, or -1
+    hasshy: bool
+    computed: CSSComputedValues
+    currentLine: LineBoxState
+    charwidth: int
+    whitespacenum: int
+    format: ComputedFormat
+    viewport: Viewport
+    availableWidth: SizeConstraint
+    availableHeight: SizeConstraint
 
 func whitespacepre(computed: CSSComputedValues): bool =
   computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP}
@@ -87,9 +93,10 @@ func cellheight(state: InlineState): LayoutUnit =
 # Check if the last atom on the current line is a spacing atom, not counting
 # padding atoms.
 func hasLastSpacing(state: InlineState): bool =
-  for i in countdown(state.currentLine.atoms.high, 0):
-    if state.currentLine.atoms[i] of InlineSpacing:
-      if state.currentLine.atoms[i] of InlinePadding:
+  for i in countdown(state.currentLine.line.atoms.high, 0):
+    let atom = state.currentLine.line.atoms[i]
+    if atom of InlineSpacing:
+      if atom of InlinePadding:
         continue # skip padding
       return true
     else:
@@ -100,7 +107,7 @@ func hasLastSpacing(state: InlineState): bool =
 func computeShift(state: InlineState, computed: CSSComputedValues):
     LayoutUnit =
   if state.whitespacenum > 0:
-    if state.currentLine.atoms.len > 0 and not state.hasLastSpacing() or
+    if state.currentLine.line.atoms.len > 0 and not state.hasLastSpacing() or
         computed.whitespacepre:
       let spacing = computed{"word-spacing"}
       if spacing.auto:
@@ -108,14 +115,15 @@ func computeShift(state: InlineState, computed: CSSComputedValues):
       return spacing.px(state.viewport) * state.whitespacenum
   return 0
 
-proc applyLineHeight(viewport: Viewport, line: LineBox, computed: CSSComputedValues) =
+proc applyLineHeight(state: var LineBoxState, viewport: Viewport,
+    computed: CSSComputedValues) =
   #TODO this should be computed during cascading.
   let lineheight = if computed{"line-height"}.auto: # ergo normal
     viewport.cellheight
   else:
     # Percentage: refers to the font size of the element itself.
     computed{"line-height"}.px(viewport, viewport.cellheight)
-  line.lineheight = max(lineheight, line.lineheight)
+  state.lineheight = max(lineheight, state.lineheight)
 
 func getComputedFormat(computed: CSSComputedValues, node: StyledNode): ComputedFormat =
   return ComputedFormat(
@@ -183,25 +191,26 @@ proc horizontalAlignLine(state: InlineState, line: LineBox,
   state.ictx.width = max(width, state.ictx.width) #TODO this seems meaningless?
 
 # Align atoms (inline boxes, text, etc.) vertically inside the line.
-proc verticalAlignLine(state: InlineState) =
-  let line = state.currentLine
+proc verticalAlignLine(state: var InlineState) =
+  let line = state.currentLine.line
 
   # Start with line-height as the baseline and line height.
-  line.height = line.lineheight
-  line.baseline = line.height
+  let lineheight = state.currentLine.lineheight
+  line.height = lineheight
+  var baseline = lineheight
 
   # Calculate the line's baseline based on atoms' baseline.
   for atom in line.atoms:
     case atom.vertalign.keyword
     of VERTICAL_ALIGN_BASELINE:
-      let len = atom.vertalign.length.px(state.viewport, line.lineheight)
-      line.baseline = max(line.baseline, atom.baseline + len)
+      let len = atom.vertalign.length.px(state.viewport, lineheight)
+      baseline = max(baseline, atom.baseline + len)
     of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
-      line.baseline = max(line.baseline, atom.height)
+      baseline = max(baseline, atom.height)
     of VERTICAL_ALIGN_MIDDLE:
-      line.baseline = max(line.baseline, atom.height div 2)
+      baseline = max(baseline, atom.height div 2)
     else:
-      line.baseline = max(line.baseline, atom.baseline)
+      baseline = max(baseline, atom.baseline)
 
   # Resize the line's height based on atoms' height and baseline.
   # The line height should be at least as high as the highest baseline used by
@@ -214,29 +223,29 @@ proc verticalAlignLine(state: InlineState) =
     of VERTICAL_ALIGN_BASELINE:
       # Line height must be at least as high as
       # (line baseline) - (atom baseline) + (atom height) + (extra height).
-      let len = atom.vertalign.length.px(state.viewport, line.lineheight)
-      line.height = max(line.baseline - atom.baseline + atom.height + len, line.height)
+      let len = atom.vertalign.length.px(state.viewport, lineheight)
+      line.height = max(baseline - atom.baseline + atom.height + len, line.height)
     of VERTICAL_ALIGN_MIDDLE:
       # Line height must be at least
       # (line baseline) + (atom height / 2).
-      line.height = max(line.baseline + atom.height div 2, line.height)
+      line.height = max(baseline + atom.height div 2, line.height)
     of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
       # Line height must be at least atom height (already ensured above.)
       discard
     else:
       # See baseline (with len = 0).
-      line.height = max(line.baseline - atom.baseline + atom.height, line.height)
+      line.height = max(baseline - atom.baseline + atom.height, line.height)
 
   # Now we can calculate the actual position of atoms inside the line.
   for atom in line.atoms:
     case atom.vertalign.keyword
     of VERTICAL_ALIGN_BASELINE:
       # Atom is placed at (line baseline) - (atom baseline) - len
-      let len = atom.vertalign.length.px(state.viewport, line.lineheight)
-      atom.offset.y = line.baseline - atom.baseline - len
+      let len = atom.vertalign.length.px(state.viewport, lineheight)
+      atom.offset.y = baseline - atom.baseline - len
     of VERTICAL_ALIGN_MIDDLE:
       # Atom is placed at (line baseline) - ((atom height) / 2)
-      atom.offset.y = line.baseline - atom.height div 2
+      atom.offset.y = baseline - atom.height div 2
     of VERTICAL_ALIGN_TOP:
       # Atom is placed at the top of the line.
       atom.offset.y = 0
@@ -245,7 +254,7 @@ proc verticalAlignLine(state: InlineState) =
       atom.offset.y = line.height - atom.height
     else:
       # See baseline (with len = 0).
-      atom.offset.y = line.baseline - atom.baseline
+      atom.offset.y = baseline - atom.baseline
 
   # Finally, find the inline block with the largest block margins, then apply
   # these to the line itself.
@@ -263,10 +272,16 @@ proc verticalAlignLine(state: InlineState) =
 
   line.height += margin_top
   line.height += margin_bottom
+  state.currentLine.baseline = baseline
 
 proc addPadding(line: LineBox, width, height: LayoutUnit,
     format: ComputedFormat) =
-  let padding = InlinePadding(width: width, height: height, baseline: height, format: format)
+  let padding = InlinePadding(
+    width: width,
+    height: height,
+    baseline: height,
+    format: format
+  )
   padding.offset.x = line.width
   line.width += width
   line.atoms.add(padding)
@@ -292,11 +307,12 @@ proc flushWhitespace(state: var InlineState, computed: CSSComputedValues,
   state.charwidth += state.whitespacenum
   state.whitespacenum = 0
   if shift > 0:
-    state.currentLine.addSpacing(shift, state.cellheight, state.format, hang)
+    let line = state.currentLine.line
+    line.addSpacing(shift, state.cellheight, state.format, hang)
 
 proc finishLine(state: var InlineState, computed: CSSComputedValues,
     force = false) =
-  if state.currentLine.atoms.len != 0 or force:
+  if state.currentLine.line.atoms.len != 0 or force:
     let whitespace = computed{"white-space"}
     if whitespace == WHITESPACE_PRE:
       state.flushWhitespace(computed)
@@ -305,13 +321,20 @@ proc finishLine(state: var InlineState, computed: CSSComputedValues,
     else:
       state.whitespacenum = 0
     state.verticalAlignLine()
-
-    let line = state.currentLine
+    # add line to ictx
+    let line = state.currentLine.line
+    let y = line.offset.y
+    # * set first baseline if this is the first line box
+    # * always set last baseline (so the baseline of the last line box remains)
+    if state.ictx.lines.len == 0:
+      state.ictx.firstBaseline = y + state.currentLine.baseline
+    state.ictx.baseline = y + state.currentLine.baseline
     state.ictx.lines.add(line)
     state.ictx.height += line.height
     state.ictx.width = max(state.ictx.width, line.width)
-    state.currentLine = LineBox(offset: Offset(y: line.offset.y + line.height))
-    state.charwidth = 0
+    let newLine = LineBox(offset: Offset(y: y + line.height))
+    state.currentLine = LineBoxState(line: newLine)
+    state.charwidth = 0 #TODO put this in LineBoxState?
 
 proc finish(state: var InlineState, computed: CSSComputedValues) =
   state.finishLine(computed)
@@ -321,9 +344,6 @@ proc finish(state: var InlineState, computed: CSSComputedValues) =
       state.horizontalAlignLine(line, computed, last = false)
     let lastLine = state.ictx.lines[^1]
     state.horizontalAlignLine(lastLine, computed, last = true)
-    state.ictx.baseline = lastLine.offset.y + lastLine.baseline
-    let firstLine = state.ictx.lines[0]
-    state.ictx.firstBaseline = firstLine.offset.y + firstLine.baseline
 
 func minwidth(atom: InlineAtom): LayoutUnit =
   if atom of InlineBlockBox:
@@ -338,7 +358,7 @@ func shouldWrap(state: InlineState, w: LayoutUnit,
     return false # no wrap with max-content
   if state.availableWidth.t == MIN_CONTENT:
     return true # always wrap with min-content
-  return state.currentLine.width + w > state.availableWidth.u
+  return state.currentLine.line.width + w > state.availableWidth.u
 
 # pcomputed: computed values of parent, for white-space: pre, line-height.
 # This isn't necessarily the computed of ictx (e.g. they may differ for nested
@@ -355,18 +375,18 @@ proc addAtom(state: var InlineState, atom: InlineAtom,
 
   if atom.width > 0 and atom.height > 0:
     if shift > 0:
-      state.currentLine.addSpacing(shift, state.cellheight, state.format)
+      state.currentLine.line.addSpacing(shift, state.cellheight, state.format)
 
-    atom.offset.x += state.currentLine.width
+    atom.offset.x += state.currentLine.line.width
     state.ictx.minwidth = max(state.ictx.minwidth, atom.minwidth)
-    applyLineHeight(state.viewport, state.currentLine, pcomputed)
-    state.currentLine.width += atom.width
+    state.currentLine.applyLineHeight(state.viewport, pcomputed)
+    state.currentLine.line.width += atom.width
     if atom of InlineWord:
       state.format = InlineWord(atom).format
     else:
       state.charwidth = 0
       state.format = nil
-    state.currentLine.atoms.add(atom)
+    state.currentLine.line.atoms.add(atom)
 
 proc addWord(state: var InlineState) =
   if state.word.str != "":
@@ -393,7 +413,7 @@ proc addWordEOL(state: var InlineState) =
 
 # Start a new line, even if the previous one is empty
 proc flushLine(state: var InlineState, computed: CSSComputedValues) =
-  applyLineHeight(state.viewport, state.currentLine, computed)
+  state.currentLine.applyLineHeight(state.viewport, computed)
   state.finishLine(computed, true)
 
 proc checkWrap(state: var InlineState, r: Rune) =
@@ -451,7 +471,7 @@ proc processWhitespace(state: var InlineState, c: char) =
 func newInlineState(ictx: InlineContext, viewport: Viewport,
     availableWidth, availableHeight: SizeConstraint): InlineState =
   return InlineState(
-    currentLine: LineBox(),
+    currentLine: LineBoxState(line: LineBox()),
     ictx: ictx,
     viewport: viewport,
     availableWidth: availableWidth,
@@ -919,7 +939,7 @@ proc buildInline(state: var InlineState, box: InlineBoxBuilder) =
   if box.splitstart:
     let margin_left = box.computed{"margin-left"}.px(viewport,
       state.availableWidth)
-    state.currentLine.width += margin_left
+    state.currentLine.line.width += margin_left
 
     let padding_left = box.computed{"padding-left"}.px(viewport,
       state.availableWidth)
@@ -927,7 +947,7 @@ proc buildInline(state: var InlineState, box: InlineBoxBuilder) =
       # We must add spacing to the line to make sure that it is formatted
       # appropriately.
       # We need this so long as we have no proper inline boxes.
-      state.currentLine.addPadding(padding_left, state.cellheight,
+      state.currentLine.line.addPadding(padding_left, state.cellheight,
         paddingformat)
 
   assert box.children.len == 0 or box.text.len == 0
@@ -952,13 +972,13 @@ proc buildInline(state: var InlineState, box: InlineBoxBuilder) =
   if box.splitend:
     let padding_right = box.computed{"padding-right"}.px(viewport,
       state.availableWidth)
-    state.currentLine.width += padding_right
+    state.currentLine.line.width += padding_right
     if padding_right > 0:
-      state.currentLine.addPadding(padding_right,
-        max(state.currentLine.height, 1), paddingformat)
+      let height = max(state.currentLine.line.height, 1)
+      state.currentLine.line.addPadding(padding_right, height, paddingformat)
     let margin_right = box.computed{"margin-right"}.px(viewport,
       state.availableWidth)
-    state.currentLine.width += margin_right
+    state.currentLine.line.width += margin_right
 
 proc buildInlines(parent: BlockBox, inlines: seq[BoxBuilder]): InlineContext =
   let ictx = newInlineContext()
