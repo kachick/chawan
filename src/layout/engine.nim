@@ -1058,6 +1058,20 @@ proc positionRelative(parent, box: BlockBox) =
   elif not top.auto:
     box.offset.y -= parent.height - bottom.px(parent.viewport) - box.height
 
+
+type Strut = object
+  pos: LayoutUnit
+  neg: LayoutUnit
+
+proc append(a: var Strut, b: LayoutUnit) =
+  if b < 0:
+    a.neg = min(b, a.neg)
+  else:
+    a.pos = max(b, a.pos)
+
+func sum(a: Strut): LayoutUnit =
+  return a.pos + a.neg
+
 proc applyChildPosition(parent, child: BlockBox, x, y: var LayoutUnit,
     margin_todo: var Strut, maxChildWidth, childHeight: var LayoutUnit) =
   if child.computed{"position"} == POSITION_ABSOLUTE: #TODO sticky, fixed

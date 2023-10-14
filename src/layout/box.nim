@@ -29,10 +29,6 @@ type
     t*: SizeConstraintType
     u*: LayoutUnit
 
-  Strut* = object
-    pos*: LayoutUnit
-    neg*: LayoutUnit
-
   Viewport* = ref object
     window*: WindowAttributes
     positioned*: seq[BlockBox]
@@ -203,15 +199,6 @@ type
     innerbox*: BlockBox
     margin_top*: LayoutUnit
     margin_bottom*: LayoutUnit
-
-proc append*(a: var Strut, b: LayoutUnit) =
-  if b < 0:
-    a.neg = min(b, a.neg)
-  else:
-    a.pos = max(b, a.pos)
-
-func sum*(a: Strut): LayoutUnit =
-  return a.pos + a.neg
 
 func minContent*(): SizeConstraint =
   return SizeConstraint(t: MIN_CONTENT)
