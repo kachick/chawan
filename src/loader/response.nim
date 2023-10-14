@@ -15,7 +15,24 @@ import chakasu/decoderstream
 import chakasu/encoderstream
 
 type
+  ResponseType* = enum
+    TYPE_DEFAULT = "default"
+    TYPE_BASIC = "basic"
+    TYPE_CORS = "cors"
+    TYPE_ERROR = "error"
+    TYPE_OPAQUE = "opaque"
+    TYPE_OPAQUEREDIRECT = "opaqueredirect"
+
+  #TODO fully implement headers guards
+  HeadersGuard* = enum
+    GUARD_IMMUTABLE = "immutable"
+    GUARD_REQUEST = "request"
+    GUARD_REQUEST_NO_CORS = "request-no-cors"
+    GUARD_RESPONSE = "response"
+    GUARD_NONE = "none"
+
   Response* = ref object
+    responseType* {.jsget: "type".}: ResponseType
     res*: int
     fd*: int
     body*: Stream
@@ -23,6 +40,7 @@ type
     contentType*: string
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
+    headersGuard: HeadersGuard
     redirect*: Request
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
@@ -41,10 +59,26 @@ proc newResponse*(res: int, request: Request, fd = -1, stream: Stream = nil):
     fd: fd
   )
 
+func makeNetworkError*(): Response =
+  #TODO use "create" function
+  #TODO headers immutable
+  return Response(
+    res: 0,
+    responseType: TYPE_ERROR,
+    status: 0,
+    headers: newHeaders(),
+    headersGuard: GUARD_IMMUTABLE
+  )
+
+proc error(): Response {.jsstfunc: "Response".} =
+  return makeNetworkError()
+
 func sok(response: Response): bool {.jsfget: "ok".} =
   return response.status in 200u16 .. 299u16
 
 func surl(response: Response): string {.jsfget: "url".} =
+  if response.responseType == TYPE_ERROR:
+    return ""
   return $response.url
 
 #TODO: this should be a property of body
@@ -56,7 +90,11 @@ proc close*(response: Response) {.jsfunc.} =
     response.body.close()
 
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
-  if response.bodyRead == nil:
+  if response.body == nil:
+    let p = newPromise[JSResult[string]]()
+    p.resolve(JSResult[string].ok(""))
+    return p
+  if response.bodyUsed:
     let p = newPromise[JSResult[string]]()
     let err = JSResult[string]
       .err(newTypeError("Body has already been consumed"))

@@ -816,7 +816,7 @@ proc addThisName(gen: var JSFuncGenerator, thisname: Option[string]) =
 
 func getActualMinArgs(gen: var JSFuncGenerator): int =
   var ma = gen.minArgs
-  if gen.thisname.isSome:
+  if gen.thisname.isSome and not gen.isstatic:
     dec ma
   if gen.passCtx:
     dec ma
@@ -1038,9 +1038,10 @@ macro jsfuncn*(jsname: static string, uf: static bool,
     staticname: static string, fun: typed) =
   var gen = setupGenerator(fun, FUNCTION, jsname = jsname, unforgeable = uf,
     isstatic = staticname != "", thisType = staticname)
-  if gen.minArgs == 0:
+  if gen.minArgs == 0 and not gen.isstatic:
     error("Zero-parameter functions are not supported. (Maybe pass Window or Client?)")
-  gen.addFixParam("this")
+  if not gen.isstatic:
+    gen.addFixParam("this")
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
