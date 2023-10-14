@@ -22,6 +22,8 @@ supported yet.)
 	* zlib: <https://zlib.net/>
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config"
 	  in PATH)
+	* If you are using a system where the default make program is not
+	  GNU make (e.g. BSD), install gmake and use it in the following steps.
 4. Download parts of Chawan found in other repositories:
 	* `make submodule`
 5. Use one of the following:
