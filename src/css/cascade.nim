@@ -177,23 +177,24 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       let i = rowspan.get
       if i <= 65534:
         set_cv "-cha-rowspan", int(i)
-  template map_list_type =
+  template map_list_type_ol =
     let ctype = element.attr("type")
     if ctype.len > 0:
-      if ctype.len == 1:
-        case ctype[0]
-        of '1': set_cv "list-style-type", LIST_STYLE_TYPE_DECIMAL
-        of 'a': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ALPHA
-        of 'A': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ALPHA
-        of 'i': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ROMAN
-        of 'I': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ROMAN
-        else: discard
-      else:
-        case ctype.toLowerAscii()
-        of "none": set_cv "list-style-type", LIST_STYLE_TYPE_NONE
-        of "disc": set_cv "list-style-type", LIST_STYLE_TYPE_DISC
-        of "circle": set_cv "list-style-type", LIST_STYLE_TYPE_CIRCLE
-        of "square": set_cv "list-style-type", LIST_STYLE_TYPE_SQUARE
+      case ctype[0]
+      of '1': set_cv "list-style-type", LIST_STYLE_TYPE_DECIMAL
+      of 'a': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ALPHA
+      of 'A': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ALPHA
+      of 'i': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ROMAN
+      of 'I': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ROMAN
+      else: discard
+  template map_list_type_ul =
+    let ctype = element.attr("type")
+    if ctype.len > 0:
+      case ctype.toLowerAscii()
+      of "none": set_cv "list-style-type", LIST_STYLE_TYPE_NONE
+      of "disc": set_cv "list-style-type", LIST_STYLE_TYPE_DISC
+      of "circle": set_cv "list-style-type", LIST_STYLE_TYPE_CIRCLE
+      of "square": set_cv "list-style-type", LIST_STYLE_TYPE_SQUARE
 
   case element.tagType
   of TAG_DIV:
@@ -236,8 +237,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
       map_size
-  of TAG_OL, TAG_UL:
-    map_list_type
+  of TAG_OL:
+    map_list_type_ol
+  of TAG_UL:
+    map_list_type_ul
   else: discard
 
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues,
