@@ -112,6 +112,11 @@ type
     width*: LayoutUnit
     lines*: seq[LineBox]
 
+    # baseline of the first line box
+    firstBaseline*: LayoutUnit
+    # baseline of the last line box
+    baseline*: LayoutUnit
+
     # this is actually xminwidth.
     minwidth*: LayoutUnit
 
@@ -151,6 +156,11 @@ type
     # have been positioned (usually the width of the shortest word.) used
     # in table cells.
     xminwidth*: LayoutUnit
+
+    # baseline of the first line box of all descendants
+    firstBaseline*: LayoutUnit
+    # baseline of the last line box of all descendants
+    baseline*: LayoutUnit
 
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext

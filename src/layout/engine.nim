@@ -319,8 +319,11 @@ proc finish(state: var InlineState, computed: CSSComputedValues) =
     for i in 0 ..< state.ictx.lines.len - 1:
       let line = state.ictx.lines[i]
       state.horizontalAlignLine(line, computed, last = false)
-    let line = state.ictx.lines[^1]
-    state.horizontalAlignLine(line, computed, last = true)
+    let lastLine = state.ictx.lines[^1]
+    state.horizontalAlignLine(lastLine, computed, last = true)
+    state.ictx.baseline = lastLine.offset.y + lastLine.baseline
+    let firstLine = state.ictx.lines[0]
+    state.ictx.firstBaseline = firstLine.offset.y + firstLine.baseline
 
 func minwidth(atom: InlineAtom): LayoutUnit =
   if atom of InlineBlockBox:
@@ -851,6 +854,8 @@ proc applyInlineDimensions(box: BlockBox) =
   box.applyWidth(box.inline.width)
   box.width += box.padding_left
   box.width += box.padding_right
+  box.baseline = box.inline.offset.y + box.inline.baseline
+  box.firstBaseline = box.inline.offset.y + box.inline.firstBaseline
 
 # Builder only contains inline boxes.
 proc buildInlineLayout(parent: BlockBox, children: seq[BoxBuilder]) =
@@ -865,29 +870,6 @@ proc buildBlockLayout(box: BlockBox, children: seq[BoxBuilder], node: StyledNode
   box.buildBlocks(children, node)
   if positioned:
     discard box.viewport.positioned.pop()
-
-#TODO this is horribly inefficient, and should be inherited like xminwidth
-func firstBaseline(box: BlockBox): LayoutUnit =
-  if box.inline != nil:
-    if box.inline.lines.len > 0:
-      return box.offset.y + box.inline.lines[0].baseline
-    return box.offset.y
-  if box.nested.len > 0:
-    return box.offset.y + box.nested[^1].firstBaseline
-  box.offset.y
-
-#TODO ditto
-func baseline(box: BlockBox): LayoutUnit =
-  if box.inline != nil:
-    var y: LayoutUnit = 0
-    for line in box.inline.lines:
-      if line == box.inline.lines[^1]:
-        return box.offset.y + y + line.baseline
-      y += line.height
-    return box.offset.y + box.height
-  if box.nested.len > 0:
-    return box.offset.y + box.nested[^1].baseline
-  box.offset.y
 
 proc buildLayout(box: BlockBox, builder: BlockBoxBuilder) =
   if builder.inlinelayout:
@@ -1111,6 +1093,7 @@ proc positionBlocks(box: BlockBox) =
     box.margin_top = margin_todo.sum()
     applyChildPosition(box, child, x, y, margin_todo, maxChildWidth,
       childHeight)
+    box.firstBaseline = child.offset.y + child.firstBaseline
     inc i
 
   while i < box.nested.len:
@@ -1122,6 +1105,10 @@ proc positionBlocks(box: BlockBox) =
     applyChildPosition(box, child, x, y, margin_todo, maxChildWidth,
       childHeight)
     inc i
+
+  if box.nested.len > 0:
+    let lastNested = box.nested[^1]
+    box.baseline = lastNested.offset.y + lastNested.baseline
 
   margin_todo.append(box.margin_bottom)
   box.margin_bottom = margin_todo.sum()
