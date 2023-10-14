@@ -91,7 +91,6 @@ proc open(this: XMLHttpRequest, httpMethod, url: string): Err[DOMException]
   #TODO terminate fetch controller
   this.flags.excl(SEND_FLAG)
   this.flags.excl(UPLOAD_LISTENER_FLAG)
-  #TODO set if not async
   if async:
     this.flags.excl(SYNC_FLAG)
   else:
