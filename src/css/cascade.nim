@@ -177,6 +177,13 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       let i = rowspan.get
       if i <= 65534:
         set_cv "-cha-rowspan", int(i)
+  template map_list_type =
+    let ctype = element.attr("type")
+    if ctype != "":
+      let tok = CSSToken(tokenType: CSS_IDENT_TOKEN, value: ctype)
+      let x = cssListStyleType(tok)
+      if x.isSome:
+        set_cv "list-style-type", x.get
 
   case element.tagType
   of TAG_DIV:
@@ -219,6 +226,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
       map_size
+  of TAG_OL, TAG_UL:
+    map_list_type
   else: discard
 
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues,

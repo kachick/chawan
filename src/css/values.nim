@@ -1,7 +1,8 @@
-import tables
 import macros
 import options
 import strutils
+import tables
+import unicode
 
 import css/cssparser
 import css/selectorparser
@@ -81,6 +82,10 @@ type
     LIST_STYLE_TYPE_NONE, LIST_STYLE_TYPE_DISC, LIST_STYLE_TYPE_CIRCLE,
     LIST_STYLE_TYPE_SQUARE, LIST_STYLE_TYPE_DECIMAL,
     LIST_STYLE_TYPE_LOWER_ROMAN, LIST_STYLE_TYPE_UPPER_ROMAN,
+    LIST_STYLE_TYPE_LOWER_ALPHA, LIST_STYLE_TYPE_UPPER_ALPHA,
+    LIST_STYLE_TYPE_LOWER_GREEK,
+    LIST_STYLE_TYPE_HIRAGANA, LIST_STYLE_TYPE_HIRAGANA_IROHA,
+    LIST_STYLE_TYPE_KATAKANA, LIST_STYLE_TYPE_KATAKANA_IROHA,
     LIST_STYLE_TYPE_JAPANESE_INFORMAL
 
   CSSVerticalAlign2* = enum
@@ -422,6 +427,31 @@ func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit {.in
   of UNIT_VMAX:
     toLayoutUnit(max(window.width_px, window.width_px) / 100 * l.num)
 
+const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toRunes()
+const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toRunes()
+const LowerGreekMap = "αβγδεζηθικλμνξοπρστυφχψω".toRunes()
+const HiraganaMap = ("あいうえおかきくけこさしすせそたちつてとなにぬねの" &
+  "はひふへほまみむめもやゆよらりるれろわゐゑをん").toRunes()
+const HiraganaIrohaMap = ("いろはにほへとちりぬるをわかよたれそつねならむ" &
+  "うゐのおくやまけふこえてあさきゆめみしゑひもせす").toRunes()
+const KatakanaMap = ("アイウエオカキクケコサシスセソタチツテトナニヌネノ" &
+  "ハヒフヘホマミムメモヤユヨラリルレロワヰヱヲン").toRunes()
+const KatakanaIrohaMap = ("イロハニホヘトチリヌルヲワカヨタレソツネナラム" &
+  "ウヰノオクヤマケフコエテアサキユメミシヱヒモセス").toRunes()
+
+func numToBase(n: int, map: openArray[Rune]): string =
+  if n <= 0:
+    return $n
+  var tmp: seq[Rune]
+  var n = n
+  while n != 0:
+    n -= 1
+    tmp &= map[n mod map.len]
+    n = n div map.len
+  result = ""
+  for i in countdown(tmp.high, 0):
+    result &= $tmp[i]
+
 func listMarker*(t: CSSListStyleType, i: int): string =
   case t
   of LIST_STYLE_TYPE_NONE: return ""
@@ -431,6 +461,15 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_DECIMAL: return $i & ". "
   of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
+  of LIST_STYLE_TYPE_UPPER_ALPHA: return numToBase(i, UpperAlphaMap) & ". "
+  of LIST_STYLE_TYPE_LOWER_ALPHA: return numToBase(i, LowerAlphaMap) & ". "
+  of LIST_STYLE_TYPE_LOWER_GREEK: return numToBase(i, LowerGreekMap) & ". "
+  of LIST_STYLE_TYPE_HIRAGANA: return numToBase(i, HiraganaMap) & "、"
+  of LIST_STYLE_TYPE_HIRAGANA_IROHA:
+    return numToBase(i, HiraganaIrohaMap) & "、"
+  of LIST_STYLE_TYPE_KATAKANA: return numToBase(i, KatakanaMap) & "、"
+  of LIST_STYLE_TYPE_KATAKANA_IROHA:
+    return numToBase(i, KatakanaIrohaMap) & "、"
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
 #TODO this should change by language
@@ -788,7 +827,7 @@ func cssWordBreak(cval: CSSComponentValue): Result[CSSWordBreak, string] =
   }
   return cssIdent(WordBreakMap, cval)
 
-func cssListStyleType(cval: CSSComponentValue):
+func cssListStyleType*(cval: CSSComponentValue):
     Result[CSSListStyleType, string] =
   const ListStyleMap = {
     "none": LIST_STYLE_TYPE_NONE,
@@ -798,6 +837,15 @@ func cssListStyleType(cval: CSSComponentValue):
     "decimal": LIST_STYLE_TYPE_DECIMAL,
     "upper-roman": LIST_STYLE_TYPE_UPPER_ROMAN,
     "lower-roman": LIST_STYLE_TYPE_LOWER_ROMAN,
+    "upper-latin": LIST_STYLE_TYPE_UPPER_ALPHA,
+    "lower-latin": LIST_STYLE_TYPE_LOWER_ALPHA,
+    "upper-alpha": LIST_STYLE_TYPE_UPPER_ALPHA,
+    "lower-alpha": LIST_STYLE_TYPE_UPPER_ALPHA,
+    "lower-greek": LIST_STYLE_TYPE_LOWER_GREEK,
+    "hiragana": LIST_STYLE_TYPE_HIRAGANA,
+    "hiragana-iroha": LIST_STYLE_TYPE_HIRAGANA_IROHA,
+    "katakana": LIST_STYLE_TYPE_KATAKANA,
+    "katakana-iroha": LIST_STYLE_TYPE_KATAKANA_IROHA,
     "japanese-informal": LIST_STYLE_TYPE_JAPANESE_INFORMAL
   }
   return cssIdent(ListStyleMap, cval)
