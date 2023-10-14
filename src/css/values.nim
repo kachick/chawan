@@ -81,6 +81,8 @@ type
   CSSListStyleType* = enum
     LIST_STYLE_TYPE_NONE, LIST_STYLE_TYPE_DISC, LIST_STYLE_TYPE_CIRCLE,
     LIST_STYLE_TYPE_SQUARE, LIST_STYLE_TYPE_DECIMAL,
+    LIST_STYLE_TYPE_DISCLOSURE_CLOSED, LIST_STYLE_TYPE_DISCLOSURE_OPEN,
+    LIST_STYLE_TYPE_CJK_EARTHLY_BRANCH, LIST_STYLE_TYPE_CJK_HEAVENLY_STEM,
     LIST_STYLE_TYPE_LOWER_ROMAN, LIST_STYLE_TYPE_UPPER_ROMAN,
     LIST_STYLE_TYPE_LOWER_ALPHA, LIST_STYLE_TYPE_UPPER_ALPHA,
     LIST_STYLE_TYPE_LOWER_GREEK,
@@ -438,6 +440,8 @@ const KatakanaMap = ("アイウエオカキクケコサシスセソタチツテ�
   "ハヒフヘホマミムメモヤユヨラリルレロワヰヱヲン").toRunes()
 const KatakanaIrohaMap = ("イロハニホヘトチリヌルヲワカヨタレソツネナラム" &
   "ウヰノオクヤマケフコエテアサキユメミシヱヒモセス").toRunes()
+const EarthlyBranchMap = "子丑寅卯辰巳午未申酉戌亥".toRunes()
+const HeavenlyStemMap = "甲乙丙丁戊己庚辛壬癸".toRunes()
 
 func numToBase(n: int, map: openArray[Rune]): string =
   if n <= 0:
@@ -452,12 +456,20 @@ func numToBase(n: int, map: openArray[Rune]): string =
   for i in countdown(tmp.high, 0):
     result &= $tmp[i]
 
+func numToFixed(n: int, map: openArray[Rune]): string =
+  let n = n - 1
+  if n notin 0 .. map.high:
+    return $n
+  return $map[n]
+
 func listMarker*(t: CSSListStyleType, i: int): string =
   case t
   of LIST_STYLE_TYPE_NONE: return ""
-  of LIST_STYLE_TYPE_DISC: return "• "
-  of LIST_STYLE_TYPE_CIRCLE: return "○ "
-  of LIST_STYLE_TYPE_SQUARE: return "□ "
+  of LIST_STYLE_TYPE_DISC: return "• " # U+2022
+  of LIST_STYLE_TYPE_CIRCLE: return "○ " # U+25CB
+  of LIST_STYLE_TYPE_SQUARE: return "□ " # U+25A1
+  of LIST_STYLE_TYPE_DISCLOSURE_OPEN: return "▶ " # U+25B6
+  of LIST_STYLE_TYPE_DISCLOSURE_CLOSED: return "▼ " # U+25BC
   of LIST_STYLE_TYPE_DECIMAL: return $i & ". "
   of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
   of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
@@ -470,6 +482,10 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_KATAKANA: return numToBase(i, KatakanaMap) & "、"
   of LIST_STYLE_TYPE_KATAKANA_IROHA:
     return numToBase(i, KatakanaIrohaMap) & "、"
+  of LIST_STYLE_TYPE_CJK_EARTHLY_BRANCH:
+    return numToFixed(i, EarthlyBranchMap) & "、"
+  of LIST_STYLE_TYPE_CJK_HEAVENLY_STEM:
+    return numToFixed(i, HeavenlyStemMap) & "、"
   of LIST_STYLE_TYPE_JAPANESE_INFORMAL: return japaneseNumber(i) & "、"
 
 #TODO this should change by language
@@ -827,7 +843,7 @@ func cssWordBreak(cval: CSSComponentValue): Result[CSSWordBreak, string] =
   }
   return cssIdent(WordBreakMap, cval)
 
-func cssListStyleType*(cval: CSSComponentValue):
+func cssListStyleType(cval: CSSComponentValue):
     Result[CSSListStyleType, string] =
   const ListStyleMap = {
     "none": LIST_STYLE_TYPE_NONE,
@@ -835,6 +851,10 @@ func cssListStyleType*(cval: CSSComponentValue):
     "circle": LIST_STYLE_TYPE_CIRCLE,
     "square": LIST_STYLE_TYPE_SQUARE,
     "decimal": LIST_STYLE_TYPE_DECIMAL,
+    "disclosure-open": LIST_STYLE_TYPE_DISCLOSURE_OPEN,
+    "disclosure-closed": LIST_STYLE_TYPE_DISCLOSURE_CLOSED,
+    "cjk-earthly-branch": LIST_STYLE_TYPE_CJK_EARTHLY_BRANCH,
+    "cjk-heavenly-stem": LIST_STYLE_TYPE_CJK_HEAVENLY_STEM,
     "upper-roman": LIST_STYLE_TYPE_UPPER_ROMAN,
     "lower-roman": LIST_STYLE_TYPE_LOWER_ROMAN,
     "upper-latin": LIST_STYLE_TYPE_UPPER_ALPHA,

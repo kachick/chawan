@@ -179,11 +179,21 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
         set_cv "-cha-rowspan", int(i)
   template map_list_type =
     let ctype = element.attr("type")
-    if ctype != "":
-      let tok = CSSToken(tokenType: CSS_IDENT_TOKEN, value: ctype)
-      let x = cssListStyleType(tok)
-      if x.isSome:
-        set_cv "list-style-type", x.get
+    if ctype.len > 0:
+      if ctype.len == 1:
+        case ctype[0]
+        of '1': set_cv "list-style-type", LIST_STYLE_TYPE_DECIMAL
+        of 'a': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ALPHA
+        of 'A': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ALPHA
+        of 'i': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ROMAN
+        of 'I': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ROMAN
+        else: discard
+      else:
+        case ctype.toLowerAscii()
+        of "none": set_cv "list-style-type", LIST_STYLE_TYPE_NONE
+        of "disc": set_cv "list-style-type", LIST_STYLE_TYPE_DISC
+        of "circle": set_cv "list-style-type", LIST_STYLE_TYPE_CIRCLE
+        of "square": set_cv "list-style-type", LIST_STYLE_TYPE_SQUARE
 
   case element.tagType
   of TAG_DIV:
