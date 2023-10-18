@@ -588,6 +588,8 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
     pager.addContainer(container)
 
 proc windowChange*(pager: Pager, attrs: WindowAttributes) =
+  if pager.lineedit.isSome:
+    pager.lineedit.get.windowChange(attrs)
   pager.term.windowChange(attrs)
   pager.display = newFixedGrid(attrs.width, attrs.height - 1)
   pager.statusgrid = newFixedGrid(attrs.width)

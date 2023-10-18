@@ -3,6 +3,7 @@ import strutils
 import unicode
 
 import bindings/quickjs
+import display/window
 import js/javascript
 import types/cell
 import types/opt
@@ -303,6 +304,9 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
     edit.begin()
     edit.end()
     edit.histtmp = ""
+
+proc windowChange*(edit: LineEdit, attrs: WindowAttributes) =
+  edit.maxwidth = attrs.width - edit.promptw - 1
 
 proc readLine*(prompt: string, termwidth: int, current = "",
     disallowed: set[char] = {}, hide = false, hist: LineHistory): LineEdit =
