@@ -130,12 +130,14 @@ while i < params.len:
   const NeedsNextParam = {'T', 'I', 'O', 'c', 'o', 'r'}
 
   if param[0] == '-':
-    if param[1] != '-':
-      # If param.len is 0, we just interpret param as a single dash `-',
-      # which is ignored.
+    if param.len == 1:
+      # If param == "-", i.e. it is a single dash, then ignore it.
       # (Some programs use single-dash to read from stdin, but we do that
       # automatically when stdin is not a tty. So ignoring it entirely
       # is probably for the best.)
+      inc i
+      continue
+    if param[1] != '-':
       for j in 1 ..< param.len:
         if j != param.high and param[j] in NeedsNextParam:
           # expecting next parameter, but not the last char...
