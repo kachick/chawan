@@ -18,9 +18,10 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
   let s = SocketStream(s)
   let wasend = s.isend
+  let buffer = cast[ptr UncheckedArray[uint8]](buffer)
   if s.blk:
     while result < len:
-      let n = s.source.recv(cast[pointer](cast[int](buffer) + result), len - result)
+      let n = s.source.recv(addr buffer[result], len - result)
       if n < 0:
         if result == 0:
           result = n
@@ -42,8 +43,9 @@ proc sockReadData(s: Stream, buffer: pointer, len: int): int =
 
 proc sockWriteData(s: Stream, buffer: pointer, len: int) =
   var i = 0
+  let buffer = cast[ptr UncheckedArray[uint8]](buffer)
   while i < len:
-    let n = SocketStream(s).source.send(cast[pointer](cast[int](buffer) + i), len - i)
+    let n = SocketStream(s).source.send(addr buffer[i], len - i)
     if n < 0:
       raise newException(IOError, $strerror(errno))
     i += n
