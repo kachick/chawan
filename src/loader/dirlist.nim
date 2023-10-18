@@ -42,7 +42,7 @@ func makeDirlist*(items: seq[DirlistItem]): string =
         path &= '/'
     elif item.t == ITEM_DIR:
       path &= '/'
-    var line = "<A HREF=" & path & '>' & htmlEscape(name) & "</A>"
+    var line = "<A HREF=\"" & path & "\">" & htmlEscape(name) & "</A>"
     while width <= maxw:
       if width mod 2 == 0:
         line &= ' '
