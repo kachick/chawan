@@ -1,7 +1,7 @@
 import selectors
 import streams
 
-import display/window
+import display/winattrs
 import html/chadombuilder
 import html/dom
 import html/event

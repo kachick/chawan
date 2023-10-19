@@ -10,7 +10,7 @@ import tables
 import css/cssparser
 import css/sheet
 import css/values
-import display/window
+import display/winattrs
 import html/enums
 import html/event
 import img/bitmap

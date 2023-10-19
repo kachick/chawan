@@ -18,7 +18,7 @@ import bindings/quickjs
 import config/config
 import display/lineedit
 import display/term
-import display/window
+import display/winattrs
 import html/chadombuilder
 import html/dom
 import html/event

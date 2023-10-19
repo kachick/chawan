@@ -3,7 +3,7 @@ import strutils
 import unicode
 
 import bindings/quickjs
-import display/window
+import display/winattrs
 import js/javascript
 import types/cell
 import types/opt

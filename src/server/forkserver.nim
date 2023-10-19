@@ -6,7 +6,7 @@ when defined(posix):
   import posix
 
 import config/config
-import display/window
+import display/winattrs
 import io/posixstream
 import io/serialize
 import io/serversocket

@@ -15,7 +15,7 @@ import config/mailcap
 import config/mimetypes
 import display/lineedit
 import display/term
-import display/window
+import display/winattrs
 import extern/editor
 import extern/runproc
 import extern/tempfile

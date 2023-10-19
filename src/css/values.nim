@@ -6,7 +6,7 @@ import unicode
 
 import css/cssparser
 import css/selectorparser
-import display/window
+import display/winattrs
 import img/bitmap
 import layout/layoutunit
 import types/color

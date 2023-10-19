@@ -17,7 +17,7 @@ import css/mediaquery
 import css/sheet
 import css/stylednode
 import css/values
-import display/window
+import display/winattrs
 import html/chadombuilder
 import html/dom
 import html/enums

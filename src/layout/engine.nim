@@ -5,7 +5,7 @@ import unicode
 
 import css/stylednode
 import css/values
-import display/window
+import display/winattrs
 import layout/box
 import layout/layoutunit
 import utils/twtstr

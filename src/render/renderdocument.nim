@@ -5,7 +5,7 @@ import css/cascade
 import css/sheet
 import css/stylednode
 import css/values
-import display/window
+import display/winattrs
 import html/dom
 import layout/box
 import layout/engine

@@ -10,7 +10,7 @@ import unicode
 
 import bindings/termcap
 import config/config
-import display/window
+import display/winattrs
 import types/cell
 import types/color
 import types/opt

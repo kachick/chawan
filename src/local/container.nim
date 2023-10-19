@@ -7,7 +7,7 @@ when defined(posix):
   import posix
 
 import config/config
-import display/window
+import display/winattrs
 import extern/stdio
 import io/promise
 import io/serialize
