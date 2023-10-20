@@ -13,27 +13,55 @@ import types/opt
 import types/url
 import utils/twtstr
 
+type
+  EarlyHintState = enum
+    NO_EARLY_HINT, EARLY_HINT_STARTED, EARLY_HINT_DONE
+
+  HttpHandle = ref object of CurlHandle
+    earlyhint: EarlyHintState
+
+func newHttpHandle(curl: CURL, request: Request, handle: LoaderHandle):
+    HttpHandle =
+  return HttpHandle(
+    headers: newHeaders(),
+    curl: curl,
+    handle: handle,
+    request: request
+  )
+
 proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
     userdata: pointer): csize_t {.cdecl.} =
   var line = newString(nitems)
-  for i in 0..<nitems:
-    line[i] = p[i]
+  if nitems > 0:
+    prepareMutation(line)
+    copyMem(addr line[0], p, nitems)
 
-  let op = cast[CurlHandle](userdata)
+  let op = cast[HttpHandle](userdata)
   if not op.statusline:
     op.statusline = true
-    if not op.handle.sendResult(int(CURLE_OK)):
-      return 0
+    if op.earlyhint == NO_EARLY_HINT:
+      if not op.handle.sendResult(int(CURLE_OK)):
+        return 0
     var status: clong
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    if not op.handle.sendStatus(cast[int](status)):
-      return 0
+    eprint "status", status
+    if status == 103 and op.earlyhint == NO_EARLY_HINT:
+      op.earlyhint = EARLY_HINT_STARTED
+    else:
+      if not op.handle.sendStatus(cast[int](status)):
+        return 0
     return nitems
 
   let k = line.until(':')
 
   if k.len == line.len:
     # empty line (last, before body) or invalid (=> error)
+    if op.earlyhint == EARLY_HINT_STARTED:
+      # ignore; we do not have a way to stream headers yet.
+      op.earlyhint = EARLY_HINT_DONE
+      # reset statusline; we are awaiting the next line.
+      op.statusline = false
+      return nitems
     if not op.handle.sendHeaders(op.headers):
       return 0
     return nitems
@@ -45,13 +73,13 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
 # From the documentation: size is always 1.
 proc curlWriteBody(p: cstring, size: csize_t, nmemb: csize_t,
     userdata: pointer): csize_t {.cdecl.} =
-  let handleData = cast[CurlHandle](userdata)
+  let handleData = cast[HttpHandle](userdata)
   if nmemb > 0:
     if not handleData.handle.sendData(p, int(nmemb)):
       return 0
   return nmemb
 
-proc applyPostBody(curl: CURL, request: Request, handleData: CurlHandle) =
+proc applyPostBody(curl: CURL, request: Request, handleData: HttpHandle) =
   if request.multipart.isOk:
     handleData.mime = curl_mime_init(curl)
     doAssert handleData.mime != nil
@@ -75,12 +103,12 @@ proc applyPostBody(curl: CURL, request: Request, handleData: CurlHandle) =
     curl.setopt(CURLOPT_POSTFIELDSIZE, request.body.get.len)
 
 proc loadHttp*(handle: LoaderHandle, curlm: CURLM,
-    request: Request): CurlHandle =
+    request: Request): HttpHandle =
   let curl = curl_easy_init()
   doAssert curl != nil
   let surl = request.url.serialize()
   curl.setopt(CURLOPT_URL, surl)
-  let handleData = curl.newCurlHandle(request, handle)
+  let handleData = curl.newHttpHandle(request, handle)
   curl.setopt(CURLOPT_WRITEDATA, handleData)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_HEADERDATA, handleData)
