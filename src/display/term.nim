@@ -115,7 +115,7 @@ var goutfile: File
 proc putc(c: char): cint {.cdecl.} =
   goutfile.write(c)
 
-proc write*(term: Terminal, s: string) =
+proc write(term: Terminal, s: string) =
   when termcap_found:
     discard tputs(cstring(s), cint(s.len), putc)
   else:
@@ -360,6 +360,10 @@ proc windowChange*(term: Terminal, attrs: WindowAttributes) =
 
 proc setTitle*(term: Terminal, title: string) =
   if term.set_title:
+    let title = if Controls in title:
+      title.replaceControls()
+    else:
+      title
     term.outfile.write(XTERM_TITLE(title))
 
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
