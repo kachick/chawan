@@ -428,7 +428,8 @@ proc fromJSArrayBufferView(ctx: JSContext, val: JSValue):
   )
   return ok(view)
 
-type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict))
+type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict|
+  JSArrayBuffer|JSArrayBufferView|JSUint8Array))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
   when T is string:
