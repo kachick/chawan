@@ -94,8 +94,6 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
 
 proc fromJSFloat[T: SomeFloat](ctx: JSContext, val: JSValue):
     JSResult[T] =
-  if not JS_IsNumber(val):
-    return err()
   var f64: float64
   if JS_ToFloat64(ctx, addr f64, val) < 0:
     return err()
@@ -324,21 +322,6 @@ proc fromJSFunction[T](ctx: JSContext, val: JSValue):
       typeof(unpackArg0(T))
     ](ctx, val))
 
-proc fromJSChar(ctx: JSContext, val: JSValue): Opt[char] =
-  let s = ?toString(ctx, val)
-  if s.len > 1:
-    return err()
-  return ok(s[0])
-
-proc fromJSRune(ctx: JSContext, val: JSValue): Opt[Rune] =
-  let s = ?toString(ctx, val)
-  var i = 0
-  var r: Rune
-  fastRuneAt(s, i, r)
-  if i < s.len:
-    return err()
-  return ok(r)
-
 template optionType[T](o: type Option[T]): auto =
   T
 
@@ -452,10 +435,6 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return fromJSString(ctx, val)
   elif T is JSString:
     return fromJSString2(ctx, val)
-  elif T is char:
-    return fromJSChar(ctx, val)
-  elif T is Rune:
-    return fromJSRune(ctx, val)
   elif T is (proc):
     return fromJSFunction[T](ctx, val)
   elif T is Option:
