@@ -44,7 +44,6 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
         return 0
     var status: clong
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    eprint "status", status
     if status == 103 and op.earlyhint == NO_EARLY_HINT:
       op.earlyhint = EARLY_HINT_STARTED
     else:
