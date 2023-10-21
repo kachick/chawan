@@ -1,6 +1,7 @@
 import selectors
 import streams
 
+import bindings/quickjs
 import display/winattrs
 import html/chadombuilder
 import html/dom
@@ -13,6 +14,7 @@ import js/encoding
 import js/error
 import js/intl
 import js/javascript
+import js/strings
 import js/timeout
 import loader/headers
 import loader/loader
@@ -102,10 +104,10 @@ proc setLocation(window: Window, s: string): Err[JSError]
 proc getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
 
-proc atob(window: Window, data: string): DOMResult[string] {.jsfunc.} =
+proc atob(window: Window, data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
-proc btoa(window: Window, data: string): DOMResult[string] {.jsfunc.} =
+proc btoa(window: Window, data: JSString): DOMResult[string] {.jsfunc.} =
   return btoa(data)
 
 proc addScripting*(window: Window, selector: Selector[int]) =

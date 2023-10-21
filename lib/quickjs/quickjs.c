@@ -208,7 +208,6 @@ typedef enum JSErrorEnum {
 #define __exception __attribute__((warn_unused_result))
 
 typedef struct JSShape JSShape;
-typedef struct JSString JSString;
 typedef struct JSString JSAtomStruct;
 
 typedef enum {
@@ -4099,6 +4098,34 @@ void JS_FreeCString(JSContext *ctx, const char *ptr)
     /* purposely removing constness */
     p = (JSString *)(void *)(ptr - offsetof(JSString, u));
     JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
+}
+
+/* create a string from a narrow Unicode (latin-1) buffer */
+JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
+{
+    if (buf_len > JS_STRING_LEN_MAX)
+        return JS_ThrowInternalError(ctx, "string too long");
+    return js_new_string8(ctx, (const uint8_t *)buf, buf_len);
+}
+
+JS_BOOL JS_IsStringWideChar(JSString *str)
+{
+    return str->is_wide_char;
+}
+
+uint8_t *JS_GetNarrowStringBuffer(JSString *str)
+{
+    return str->u.str8;
+}
+
+uint16_t *JS_GetWideStringBuffer(JSString *str)
+{
+    return str->u.str16;
+}
+
+uint32_t JS_GetStringLength(JSString *str)
+{
+    return str->len;
 }
 
 static int memcmp16_8(const uint16_t *src1, const uint8_t *src2, int len)

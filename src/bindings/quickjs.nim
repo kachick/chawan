@@ -90,6 +90,8 @@ type
   JSFreeArrayBufferDataFunc* = proc (rt: JSRuntime,
     opaque, p: pointer) {.cdecl.}
 
+  JSString* {.importc: "JSString*", header: qjsheader.} = distinct pointer
+
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
     flags*: cint
     value*: JSValue
@@ -264,6 +266,9 @@ const
 const
   JS_PARSE_JSON_EXT* = (1 shl 0)
 
+template JS_VALUE_GET_STRING*(v: untyped): JSString =
+  JSString(JS_VALUE_GET_PTR(v))
+
 template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction):
     JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
@@ -431,6 +436,12 @@ proc JS_ToInt64Ext*(ctx: JSContext, pres: ptr int64, val: JSValue): cint
 proc JS_ToCStringLen*(ctx: JSContext, plen: ptr csize_t, val1: JSValue): cstring
 proc JS_ToCString*(ctx: JSContext, val1: JSValue): cstring
 proc JS_FreeCString*(ctx: JSContext, `ptr`: cstring)
+
+proc JS_NewNarrowStringLen*(ctx: JSContext, s: cstring, len: csize_t): JSValue
+proc JS_IsStringWideChar*(str: JSString): JS_BOOL
+proc JS_GetNarrowStringBuffer*(str: JSString): ptr UncheckedArray[uint8]
+proc JS_GetWideStringBuffer*(str: JSString): ptr UncheckedArray[uint16]
+proc JS_GetStringLength*(str: JSString): uint32
 
 proc JS_Eval*(ctx: JSContext, input: cstring, input_len: cint, filename: cstring, eval_flags: cint): JSValue
 proc JS_SetInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer)

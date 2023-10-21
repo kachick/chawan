@@ -49,6 +49,7 @@ extern "C" {
 typedef struct JSRuntime JSRuntime;
 typedef struct JSContext JSContext;
 typedef struct JSObject JSObject;
+typedef struct JSString JSString;
 typedef struct JSClass JSClass;
 typedef uint32_t JSClassID;
 typedef uint32_t JSAtom;
@@ -709,6 +710,12 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
     return JS_ToCStringLen2(ctx, NULL, val1, 0);
 }
 void JS_FreeCString(JSContext *ctx, const char *ptr);
+
+JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
+JS_BOOL JS_IsStringWideChar(JSString *str);
+uint8_t *JS_GetNarrowStringBuffer(JSString *str);
+uint16_t *JS_GetWideStringBuffer(JSString *str);
+uint32_t JS_GetWideStringLength(JSString *str);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);

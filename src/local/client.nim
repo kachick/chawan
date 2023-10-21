@@ -34,6 +34,7 @@ import js/fromjs
 import js/intl
 import js/javascript
 import js/module
+import js/strings
 import js/timeout
 import js/tojs
 import loader/headers
@@ -613,10 +614,10 @@ proc jsCollect(client: Client) {.jsfunc.} =
 proc sleep(client: Client, millis: int) {.jsfunc.} =
   sleep millis
 
-proc atob(client: Client, data: string): DOMResult[string] {.jsfunc.} =
+proc atob(client: Client, data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
-proc btoa(client: Client, data: string): DOMResult[string] {.jsfunc.} =
+proc btoa(client: Client, data: JSString): DOMResult[string] {.jsfunc.} =
   return btoa(data)
 
 func line(client: Client): LineEdit {.jsfget.} =

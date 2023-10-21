@@ -8,6 +8,7 @@ import js/arraybuffer
 import js/dict
 import js/error
 import js/opaque
+import js/strings
 import js/typeptr
 import types/opt
 
@@ -35,6 +36,9 @@ proc toJS*(ctx: JSContext, promise: EmptyPromise): JSValue
 proc toJS*(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, err: JSError): JSValue
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
+proc toJS*(ctx: JSContext, abuf: JSArrayBuffer): JSValue
+proc toJS*(ctx: JSContext, u8a: JSUint8Array): JSValue
+proc toJS*(ctx: JSContext, ns: NarrowString): JSValue
 
 # Convert Nim types to the corresponding JavaScript type, with knowledge of
 # the parent object.
@@ -269,6 +273,9 @@ proc toJS*(ctx: JSContext, u8a: JSUint8Array): JSValue =
   let ret = JS_CallConstructor(ctx, ctor, 1, addr jsabuf)
   JS_FreeValue(ctx, jsabuf)
   return ret
+
+proc toJS*(ctx: JSContext, ns: NarrowString): JSValue =
+  return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
 
 proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
   let p = addr child
