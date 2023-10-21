@@ -59,8 +59,6 @@ func fromJSString2(ctx: JSContext, val: JSValue): JSResult[JSString] =
 
 func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
     JSResult[T] =
-  if not JS_IsNumber(val):
-    return err()
   when T is int:
     # Always int32, so we don't risk 32-bit only breakage.
     # If int64 is needed, specify it explicitly.
