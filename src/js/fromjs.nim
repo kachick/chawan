@@ -5,6 +5,7 @@ import tables
 import unicode
 
 import bindings/quickjs
+import js/arraybuffer
 import js/dict
 import js/error
 import js/opaque
@@ -416,6 +417,33 @@ proc fromJSDict[T: JSDict](ctx: JSContext, val: JSValue): JSResult[T] =
         v = ?fromJS[typeof(v)](ctx, esm)
   return ok(d)
 
+proc fromJSArrayBuffer(ctx: JSContext, val: JSValue): JSResult[JSArrayBuffer] =
+  var len: csize_t
+  let p = JS_GetArrayBuffer(ctx, addr len, val)
+  if p == nil:
+    return err()
+  let abuf = JSArrayBuffer(
+    len: len,
+    p: cast[ptr UncheckedArray[uint8]](p)
+  )
+  return ok(abuf)
+
+proc fromJSArrayBufferView(ctx: JSContext, val: JSValue):
+    JSResult[JSArrayBufferView] =
+  var offset: csize_t
+  var nmemb: csize_t
+  var nsize: csize_t
+  let jsbuf = JS_GetTypedArrayBuffer(ctx, val, addr offset, addr nmemb,
+    addr nsize)
+  let abuf = ?fromJSArrayBuffer(ctx, jsbuf)
+  let view = JSArrayBufferView(
+    abuf: abuf,
+    offset: offset,
+    nmemb: nmemb,
+    nsize: nsize
+  )
+  return ok(view)
+
 type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict))
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
@@ -456,6 +484,10 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return fromJSVoid(ctx, val)
   elif T is JSDict:
     return fromJSDict[T](ctx, val)
+  elif T is JSArrayBuffer:
+    return fromJSArrayBuffer(ctx, val)
+  elif T is JSArrayBufferView:
+    return fromJSArrayBufferView(ctx, val)
   elif compiles(fromJS2(ctx, val, result)):
     fromJS2(ctx, val, result)
   else:

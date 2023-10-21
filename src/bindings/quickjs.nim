@@ -87,6 +87,8 @@ type
     opaque: pointer): JSModuleDef {.cdecl.}
   JSJobFunc* = proc (ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
+  JSFreeArrayBufferDataFunc* = proc (rt: JSRuntime,
+    opaque, p: pointer) {.cdecl.}
 
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
     flags*: cint
@@ -342,9 +344,18 @@ proc JS_SetOpaque*(obj: JSValue, opaque: pointer)
 proc JS_GetOpaque*(obj: JSValue, class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext, obj: JSValue, class_id: JSClassID): pointer
 proc JS_GetClassID*(obj: JSValue): JSClassID
+
 proc JS_ParseJSON*(ctx: JSContext, buf: cstring, buf_len: csize_t, filename: cstring): JSValue
 proc JS_ParseJSON2*(ctx: JSContext, buf: cstring, buf_len: csize_t,
   filename: cstring, flags: cint): JSValue
+
+proc JS_NewArrayBuffer*(ctx: JSContext, buf: ptr UncheckedArray[uint8],
+  len: csize_t, free_func: JSFreeArrayBufferDataFunc, opaque: pointer,
+  is_shared: JS_BOOL): JSValue
+proc JS_GetArrayBuffer*(ctx: JSContext, psize: ptr csize_t, obj: JSValue): ptr uint8
+proc JS_GetUint8Array*(ctx: JSContext, psize: ptr csize_t, obj: JSValue): ptr uint8
+proc JS_GetTypedArrayBuffer*(ctx: JSContext, obj: JSValue, pbyte_offset,
+  pbyte_length, pbytes_per_element: ptr csize_t): JSValue
 
 proc JS_NewClassID*(pclass_id: ptr JSClassID): JSClassID
 proc JS_NewClass*(rt: JSRuntime, class_id: JSClassID, class_def: ptr JSClassDef): cint

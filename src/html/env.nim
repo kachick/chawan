@@ -9,6 +9,7 @@ import io/promise
 import js/base64
 import js/console
 import js/domexception
+import js/encoding
 import js/error
 import js/intl
 import js/javascript
@@ -144,6 +145,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()
+  ctx.addEncodingModule()
 
 proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)

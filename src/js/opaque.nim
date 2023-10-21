@@ -29,6 +29,7 @@ type
     str_refs*: array[JSStrRefs, JSAtom]
     Array_prototype_values*: JSValue
     Object_prototype_valueOf*: JSValue
+    Uint8Array_ctor*: JSValue
     err_ctors*: array[JSErrorEnum, JSValue]
     htmldda*: JSClassID # only one of these exists: document.all.
 
@@ -64,6 +65,9 @@ func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
       let objproto = JS_GetClassProto(ctx, JS_CLASS_OBJECT)
       opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto, "valueOf")
       JS_FreeValue(ctx, objproto)
+    block:
+      let u8actor = JS_GetPropertyStr(ctx, global, "Uint8Array")
+      opaque.Uint8Array_ctor = u8actor
     for e in JSErrorEnum:
       let s = $e
       let err = JS_GetPropertyStr(ctx, global, cstring(s))

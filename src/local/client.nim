@@ -28,6 +28,7 @@ import io/socketstream
 import js/base64
 import js/console
 import js/domexception
+import js/encoding
 import js/error
 import js/fromjs
 import js/intl
@@ -640,6 +641,7 @@ proc addJSModules(client: Client, ctx: JSContext) =
   ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
+  ctx.addEncodingModule()
 
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client

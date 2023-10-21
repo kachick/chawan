@@ -4,6 +4,7 @@ import unicode
 
 import bindings/quickjs
 import io/promise
+import js/arraybuffer
 import js/dict
 import js/error
 import js/opaque
@@ -258,6 +259,16 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
 
 proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
   return JS_NewCFunction(ctx, f, cstring"", 0)
+
+proc toJS*(ctx: JSContext, abuf: JSArrayBuffer): JSValue =
+  return JS_NewArrayBuffer(ctx, abuf.p, abuf.len, abuf.dealloc, nil, false)
+
+proc toJS*(ctx: JSContext, u8a: JSUint8Array): JSValue =
+  var jsabuf = toJS(ctx, u8a.abuf)
+  let ctor = ctx.getOpaque().Uint8Array_ctor
+  let ret = JS_CallConstructor(ctx, ctor, 1, addr jsabuf)
+  JS_FreeValue(ctx, jsabuf)
+  return ret
 
 proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
   let p = addr child
