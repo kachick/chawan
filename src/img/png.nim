@@ -138,7 +138,8 @@ func scanlen(reader: PNGReader): int {.inline.} =
   return (w * reader.spp * int(reader.bitDepth) + 7) div 8
 
 proc handleError(reader: var PNGReader, msg: string) =
-  eprint msg
+  #TODO proper error handling?
+  stderr.write(msg & "\n")
   reader.bmp = nil
   if reader.hasstrm:
     discard inflateEnd(addr reader.strm)

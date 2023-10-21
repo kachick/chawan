@@ -383,7 +383,7 @@ func cursorBytes(buffer: Buffer, y: int, cc: int): int =
 
 proc navigate(buffer: Buffer, url: URL) =
   #TODO how?
-  eprint "navigate to", url
+  stderr.write("navigate to " & $url & "\n")
 
 proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
   if cursory >= buffer.lines.len: return (-1, -1)
