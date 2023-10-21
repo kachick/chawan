@@ -59,9 +59,14 @@ Currently implemented features are:
 
 ...with a lot more [planned](todo).
 
-## Configuration
+## Documentation
 
-See [doc/config.md](doc/config.md).
+* manpage: [doc/cha.1](doc/cha.1)
+* configuration options: [doc/config.md](doc/config.md)
+* mailcap: [doc/mailcap.md](doc/mailcap.md)
+* mime.types: [doc/mime.types.md](doc/mime.types.md)
+* urimethodmap: [doc/urimethodmap.md](doc/urimethodmap.md)
+* local CGI: [doc/localcgi.md](doc/localcgi.md)
 
 ## Neighbors
 
