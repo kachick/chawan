@@ -2708,12 +2708,12 @@ proc execute*(element: HTMLScriptElement) =
     document.currentScript = element
     if document.window != nil and document.window.jsctx != nil:
       let script = element.scriptResult.script
-      let ret = document.window.jsctx.eval(script.record, $script.baseURL, JS_EVAL_TYPE_GLOBAL)
+      let urls = script.baseURL.serialize(excludepassword = true)
+      let ret = document.window.jsctx.eval(script.record, urls, JS_EVAL_TYPE_GLOBAL)
       if JS_IsException(ret):
         let ss = newStringStream()
         document.window.jsctx.writeException(ss)
         ss.setPosition(0)
-        let urls = document.url.serialize(excludepassword = true)
         document.window.console.log("Exception in document", urls,
           ss.readAll())
     document.currentScript = oldCurrentScript
