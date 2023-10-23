@@ -12,6 +12,7 @@ import types/url
 import chakasu/charset
 
 import chame/htmlparser
+import chame/htmltokenizer
 import chame/tags
 
 # DOMBuilder implementation for Chawan.
@@ -166,7 +167,8 @@ proc elementPopped(builder: DOMBuilder[Node], element: Node) =
       #TODO style sheet
       script.execute()
 
-proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
+proc newChaDOMBuilder(url: URL, window: Window, isFragment = false):
+    ChaDOMBuilder =
   let document = newDocument()
   document.contentType = "text/html"
   document.url = url
@@ -196,7 +198,43 @@ proc newChaDOMBuilder(url: URL, window: Window): ChaDOMBuilder =
     setScriptAlreadyStarted: setScriptAlreadyStarted,
     associateWithForm: associateWithForm,
     #TODO isSVGIntegrationPoint (SVG support)
+    isFragment: isFragment
   )
+
+# https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+proc parseHTMLFragment*(element: Element, s: string): seq[Node] =
+  let url = parseURL("about:blank").get
+  let builder = newChaDOMBuilder(url, nil)
+  builder.isFragment = true
+  let document = Document(builder.document)
+  document.mode = element.document.mode
+  let state = case element.tagType
+  of TAG_TITLE, TAG_TEXTAREA: RCDATA
+  of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT
+  of TAG_SCRIPT: SCRIPT_DATA
+  of TAG_NOSCRIPT:
+    if element.document != nil and element.document.scriptingEnabled:
+      RAWTEXT
+    else:
+      DATA
+  of TAG_PLAINTEXT:
+    PLAINTEXT
+  else: DATA
+  let root = document.newHTMLElement(TAG_HTML)
+  document.append(root)
+  let opts = HTML5ParserOpts[Node](
+    isIframeSrcdoc: false, #TODO?
+    scripting: false,
+    canReinterpret: false,
+    charsets: @[CHARSET_UTF_8],
+    ctx: some(Node(element)),
+    initialTokenizerState: state,
+    openElementsInit: @[Node(root)],
+    pushInTemplate: element.tagType == TAG_TEMPLATE
+  )
+  let inputStream = newStringStream(s)
+  parseHTML(inputStream, builder, opts)
+  return root.childList
 
 proc parseHTML*(inputStream: Stream, window: Window, url: URL,
     charsets: seq[Charset] = @[], canReinterpret = true): Document =
@@ -207,7 +245,6 @@ proc parseHTML*(inputStream: Stream, window: Window, url: URL,
     canReinterpret: canReinterpret,
     charsets: charsets
   )
-  builder.isFragment = opts.ctx.isSome
   parseHTML(inputStream, builder, opts)
   return Document(builder.document)
 

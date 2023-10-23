@@ -154,7 +154,7 @@ type
     liveCollections: HashSet[int]
     children_cached: HTMLCollection
     childNodes_cached: NodeList
-    document_internal: Document
+    document_internal: Document # not nil
 
   Attr* = ref object of Node
     namespaceURI* {.jsget.}: string
@@ -1423,8 +1423,6 @@ func scriptingEnabled*(document: Document): bool =
   return document.window.settings.scripting
 
 func scriptingEnabled*(element: Element): bool =
-  if element.document == nil:
-    return false
   return element.document.scriptingEnabled
 
 func form*(element: FormAssociatedElement): HTMLFormElement =
@@ -2604,11 +2602,14 @@ proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
   return ok(node)
 
 proc replaceAll(parent, node: Node) =
-  for i in countdown(parent.childList.high, 0):
-    parent.childList[i].remove(true)
+  var removedNodes = parent.childList # copy
+  for child in removedNodes:
+    child.remove(true)
+  assert parent != node
   if node != nil:
     if node.nodeType == DOCUMENT_FRAGMENT_NODE:
-      for child in node.childList:
+      var addedNodes = node.childList # copy
+      for child in addedNodes:
         parent.append(child)
     else:
       parent.append(node)
@@ -2648,7 +2649,7 @@ proc renderBlocking*(element: Element): bool =
 
 proc blockRendering*(element: Element) =
   let document = element.document
-  if document != nil and document.contentType == "text/html" and document.body == nil:
+  if document.contentType == "text/html" and document.body == nil:
     element.document.renderBlockingElements.add(element)
 
 proc markAsReady(element: HTMLScriptElement, res: ScriptResult) =
@@ -3043,6 +3044,25 @@ proc toBlob(ctx: JSContext, this: HTMLCanvasElement, callback: JSValue,
     return JS_EXCEPTION
   JS_FreeValue(ctx, res)
   return JS_UNDEFINED
+
+import html/chadombuilder
+# https://w3c.github.io/DOM-Parsing/#dfn-fragment-parsing-algorithm
+proc fragmentParsingAlgorithm(element: Element, s: string): DocumentFragment =
+  #TODO xml
+  let newChildren = parseHTMLFragment(element, s)
+  let fragment = element.document.newDocumentFragment()
+  for child in newChildren:
+    fragment.append(child)
+  return fragment
+
+proc innerHTML(element: Element, s: string) {.jsfset.} =
+  #TODO shadow root
+  let fragment = fragmentParsingAlgorithm(element, s)
+  let ctx = if element.tagType == TAG_TEMPLATE:
+    HTMLTemplateElement(element).content
+  else:
+    element
+  ctx.replaceAll(fragment)
 
 proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
