@@ -109,7 +109,7 @@ func findFormatN*(line: FlexibleLine|SimpleFlexibleLine, pos: int): int =
   while i < line.formats.len:
     if line.formats[i].pos > pos:
       break
-    inc i 
+    inc i
   return i
 
 func findFormat*(line: FlexibleLine, pos: int): FormatCell =

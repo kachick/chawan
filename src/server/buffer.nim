@@ -267,7 +267,7 @@ macro proxy(fun: typed) =
     proxy1(`fun`)
 
 macro task(fun: typed) =
-  let funid = getFunId(fun) 
+  let funid = getFunId(fun)
   let pfun = getProxyFunction(funid)
   pfun.istask = true
   fun

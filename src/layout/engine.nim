@@ -771,7 +771,7 @@ func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
   if sc.isDefinite():
     return some(sc.u)
   return none(LayoutUnit)
- 
+
 func getParentWidth(box, parent: BlockBox): SizeConstraint =
   return parent.availableWidth
 

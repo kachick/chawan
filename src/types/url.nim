@@ -196,7 +196,7 @@ func parseIpv4(input: string): Option[uint32] =
   for i in low(parts)..high(parts):
     let part = parts[i]
     let num = parseIpv4Number(part)
-    if num < 0: 
+    if num < 0:
       return none(uint32)
     if num > 255:
       if i != high(parts):

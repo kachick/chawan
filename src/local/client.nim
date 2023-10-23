@@ -398,7 +398,7 @@ proc inputLoop(client: Client) =
         client.handleRead(event.fd)
       if Error in event.events:
         client.handleError(event.fd)
-      if Signal in event.events: 
+      if Signal in event.events:
         assert event.fd == sigwinch
         let attrs = getWindowAttributes(client.pager.tty)
         client.pager.windowChange(attrs)

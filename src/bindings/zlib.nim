@@ -56,13 +56,13 @@ type
     state*: ptr internal_state # not visible by applications
 
     zalloc*: alloc_func # used to allocate the internal state
-    zfree*: free_func # used to free the internal state 
-    opaque*: pointer # private data object passed to zalloc and zfree 
+    zfree*: free_func # used to free the internal state
+    opaque*: pointer # private data object passed to zalloc and zfree
 
     data_type*: cint # best guess about the data type: binary or text
-                     # for deflate, or the decoding state for inflate 
-    adler*: culong # Adler-32 or CRC-32 value of the uncompressed data 
-    reserved*: culong # reserved for future use 
+                     # for deflate, or the decoding state for inflate
+    adler*: culong # Adler-32 or CRC-32 value of the uncompressed data
+    reserved*: culong # reserved for future use
 
   z_streamp* = ptr z_stream
 
