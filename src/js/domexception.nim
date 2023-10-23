@@ -44,6 +44,9 @@ proc newDOMException*(message = "", name = "Error"): DOMException {.jsctor.} =
     message: message
   )
 
+template errDOMException*(message, name: string): untyped =
+  err(newDOMException(message, name))
+
 func message0(this: DOMException): string {.jsfget: "message".} =
   return this.message
 

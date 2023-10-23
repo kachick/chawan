@@ -254,7 +254,7 @@ type
 
   HTMLOptionElement* = ref object of HTMLElement
     selected*: bool
-  
+
   HTMLHeadingElement* = ref object of HTMLElement
     rank*: uint16
 
@@ -939,7 +939,7 @@ iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childList:
     if node.nodeType == TEXT_NODE:
       yield Text(node)
-  
+
 iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.elementList:
     if child.tagType == TAG_OPTION:
@@ -1059,10 +1059,10 @@ proc update(tokenList: DOMTokenList) =
 
 func validateDOMToken(tok: string): Err[DOMException] =
   if tok == "":
-    return err(newDOMException("Got an empty string", "SyntaxError"))
+    return errDOMException("Got an empty string", "SyntaxError")
   if AsciiWhitespace in tok:
-    return err(newDOMException("Got a string containing whitespace",
-      "InvalidCharacterError"))
+    return errDOMException("Got a string containing whitespace",
+      "InvalidCharacterError")
 
 proc add(tokenList: DOMTokenList, tokens: varargs[string]): Err[DOMException]
     {.jsfunc.} =
@@ -1217,7 +1217,7 @@ proc setLocation*(document: Document, s: string): Err[JSError]
     return err(newTypeError("document.location is not an object"))
   let url = parseURL(s)
   if url.isNone:
-    return err(newDOMException("Invalid URL", "SyntaxError"))
+    return errDOMException("Invalid URL", "SyntaxError")
   document.window.navigate(url.get)
   return ok()
 
@@ -1259,7 +1259,7 @@ proc protocol(location: Location, s: string): Err[DOMException] {.jsfset.} =
   let copyURL = newURL(location.url)
   copyURL.setProtocol(s)
   if copyURL.scheme != "http" and copyURL.scheme != "https":
-    return err(newDOMException("Invalid URL", "SyntaxError"))
+    return errDOMException("Invalid URL", "SyntaxError")
   document.window.navigate(copyURL)
   return ok()
 
@@ -1493,6 +1493,14 @@ func hasChild(node: Node, nodeType: NodeType): bool =
   for child in node.childList:
     if child.nodeType == nodeType:
       return true
+
+func hasChildExcept(node: Node, nodeType: NodeType, ex: Node): bool =
+  for child in node.childList:
+    if child == ex:
+      continue
+    if child.nodeType == nodeType:
+      return true
+  return false
 
 func previousSibling*(node: Node): Node {.jsfget.} =
   let i = node.index - 1
@@ -2237,8 +2245,8 @@ func validateAttributeName(name: string, isq: static bool = false):
   else:
     if name.matchQNameProduction():
       return ok()
-  return err(newDOMException("Invalid character in attribute name",
-    "InvalidCharacterError"))
+  return errDOMException("Invalid character in attribute name",
+    "InvalidCharacterError")
 
 proc setAttribute(element: Element, qualifiedName, value: string):
     Err[DOMException] {.jsfunc.} =
@@ -2260,7 +2268,7 @@ proc setAttributeNS(element: Element, namespace, qualifiedName,
       prefix == "xml" and namespace != $Namespace.XML or
       (qualifiedName == "xmlns" or prefix == "xmlns") and namespace != $Namespace.XMLNS or
       namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and prefix != "xmlns":
-    return err(newDOMException("Unexpected namespace", "NamespaceError"))
+    return errDOMException("Unexpected namespace", "NamespaceError")
   element.attr0(qualifiedName, value)
   let i = element.attributes.findAttrNS(namespace, localName)
   if i != -1:
@@ -2306,8 +2314,8 @@ proc value(attr: Attr, s: string) {.jsfset.} =
 proc setNamedItem(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
   if attr.ownerElement != nil and attr.ownerElement != map.element:
-    return err(newDOMException("Attribute is currently in use",
-      "InUseAttributeError"))
+    return errDOMException("Attribute is currently in use",
+      "InUseAttributeError")
   if attr.name in map.element.attrs:
     return ok(attr)
   let i = map.findAttr(attr.name)
@@ -2330,7 +2338,7 @@ proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
     let attr = map.attrlist[i]
     map.element.delAttr(i)
     return ok(attr)
-  return err(newDOMException("Item not found", "NotFoundError"))
+  return errDOMException("Item not found", "NotFoundError")
 
 proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
     DOMResult[Attr] {.jsfunc.} =
@@ -2339,7 +2347,7 @@ proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
     let attr = map.attrlist[i]
     map.element.delAttr(i)
     return ok(attr)
-  return err(newDOMException("Item not found", "NotFoundError"))
+  return errDOMException("Item not found", "NotFoundError")
 
 proc id(element: Element, id: string) {.jsfset.} =
   element.id = id
@@ -2385,7 +2393,7 @@ proc adopt(document: Document, node: Node) =
     #TODO custom elements
     #..adopting steps
 
-proc resetElement*(element: Element) = 
+proc resetElement*(element: Element) =
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputELement(element)
@@ -2453,7 +2461,7 @@ proc resetFormOwner(element: FormAssociatedElement) =
   if element.form != nil:
     if element.tagType notin ListedElements:
       return
-    let lastForm = element.findAncestor({TAG_FORM}) 
+    let lastForm = element.findAncestor({TAG_FORM})
     if not element.attrb("form") and lastForm == element.form:
       return
   element.form = nil
@@ -2485,52 +2493,58 @@ proc insertionSteps(insertedNode: Node) =
         return
       element.resetFormOwner()
 
-# WARNING the ordering of the arguments in the standard is whack so this doesn't match that
+func checkParentValidity(parent: Node): Err[DOMException] =
+  if parent.nodeType in {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
+    return ok()
+  const msg = "Parent must be a document, a document fragment, or an element."
+  return errDOMException(msg, "HierarchyRequestError")
+
+# WARNING the ordering of the arguments in the standard is whack so this
+# doesn't match that
 func preInsertionValidity*(parent, node, before: Node): Err[DOMException] =
-  if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
-    return err(newDOMException("Parent must be a document, document fragment, " &
-      "or element", "HierarchyRequestError"))
+  ?checkParentValidity(parent)
   if node.isHostIncludingInclusiveAncestor(parent):
-    return err(newDOMException("Parent must be an ancestor", "HierarchyRequestError"))
+    return errDOMException("Parent must be an ancestor",
+      "HierarchyRequestError")
   if before != nil and before.parentNode != parent:
-    return err(newDOMException("Reference node is not a child of parent",
-      "NotFoundError"))
+    return errDOMException("Reference node is not a child of parent",
+      "NotFoundError")
   if node.nodeType notin {DOCUMENT_FRAGMENT_NODE, DOCUMENT_TYPE_NODE,
       ELEMENT_NODE} + CharacterDataNodes:
-    return err(newDOMException("Cannot insert node type",
-      "HierarchyRequestError"))
+    return errDOMException("Cannot insert node type",
+      "HierarchyRequestError")
   if node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE:
-    return err(newDOMException("Cannot insert text into document",
-      "HierarchyRequestError"))
+    return errDOMException("Cannot insert text into document",
+      "HierarchyRequestError")
   if node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE:
-    return err(newDOMException("Document type can only be inserted into " &
-      "document", "HierarchyRequestError"))
+    return errDOMException("Document type can only be inserted into document",
+      "HierarchyRequestError")
   if parent.nodeType == DOCUMENT_NODE:
     case node.nodeType
     of DOCUMENT_FRAGMENT_NODE:
       let elems = node.countChildren(ELEMENT_NODE)
       if elems > 1 or node.hasChild(TEXT_NODE):
-        return err(newDOMException("Document fragment has invalid children",
-          "HierarchyRequestError"))
+        return errDOMException("Document fragment has invalid children",
+          "HierarchyRequestError")
       elif elems == 1 and (parent.hasChild(ELEMENT_NODE) or
           before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
           before.hasNextSibling(DOCUMENT_TYPE_NODE))):
-        return err(newDOMException("Document fragment has invalid children",
-          "HierarchyRequestError"))
+        return errDOMException("Document fragment has invalid children",
+          "HierarchyRequestError")
     of ELEMENT_NODE:
       if parent.hasChild(ELEMENT_NODE):
-        return err(newDOMException("Document already has an element child",
-          "HierarchyRequestError"))
+        return errDOMException("Document already has an element child",
+          "HierarchyRequestError")
       elif before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
             before.hasNextSibling(DOCUMENT_TYPE_NODE)):
-        return err(newDOMException("Cannot insert element before document " &
-          "type", "HierarchyRequestError"))
+        return errDOMException("Cannot insert element before document type",
+          "HierarchyRequestError")
     of DOCUMENT_TYPE_NODE:
       if parent.hasChild(DOCUMENT_TYPE_NODE) or
           before != nil and before.hasPreviousSibling(ELEMENT_NODE) or
           before == nil and parent.hasChild(ELEMENT_NODE):
-        return err(newDOMException("Cannot insert document type before " &
-          "an element node", "HierarchyRequestError"))
+        const msg = "Cannot insert document type before an element node"
+        return errDOMException(msg, "HierarchyRequestError")
     else: discard
   return ok() # no exception reached
 
@@ -2559,7 +2573,7 @@ proc insertNode(parent, node, before: Node) =
     insertionSteps(node)
 
 # WARNING ditto
-proc insert*(parent, node, before: Node) =
+proc insert*(parent, node, before: Node, suppressObservers = false) =
   let nodes = if node.nodeType == DOCUMENT_FRAGMENT_NODE: node.childList
   else: @[node]
   let count = nodes.len
@@ -2596,10 +2610,69 @@ proc append*(parent, node: Node) =
 
 proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
   if node.parentNode != parent:
-    return err(newDOMException("Node is not a child of parent",
-      "NotFoundError"))
+    return errDOMException("Node is not a child of parent", "NotFoundError")
   node.remove()
   return ok(node)
+
+# WARNING the ordering of the arguments in the standard is whack so this
+# doesn't match that
+# Note: the standard returns child if not err. We don't, it's just a
+# pointless copy.
+proc replace(parent, child, node: Node): Err[DOMException] =
+  ?checkParentValidity(parent)
+  if node.isHostIncludingInclusiveAncestor(parent):
+    return errDOMException("Parent must be an ancestor",
+      "HierarchyRequestError")
+  if child.parentNode != parent:
+    return errDOMException("Node to replace is not a child of parent",
+      "NotFoundError")
+  if node.nodeType notin {DOCUMENT_NODE, DOCUMENT_TYPE_NODE, ELEMENT_NODE} +
+      CharacterDataNodes:
+    return errDOMException("Replacement is not a valid replacement node type",
+      "HierarchyRequesError")
+  if node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE or
+      node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE:
+    return errDOMException("Replacement cannot be placed in parent",
+      "HierarchyRequesError")
+  let childNextSibling = child.nextSibling
+  let childPreviousSibling = child.previousSibling
+  if parent.nodeType == DOCUMENT_NODE:
+    case node.nodeType
+    of DOCUMENT_FRAGMENT_NODE:
+      let elems = node.countChildren(ELEMENT_NODE)
+      if elems > 1 or node.hasChild(TEXT_NODE):
+        return errDOMException("Document fragment has invalid children",
+          "HierarchyRequestError")
+      elif elems == 1 and (parent.hasChildExcept(ELEMENT_NODE, child) or
+          childNextSibling != nil and
+          childNextSibling.nodeType == DOCUMENT_TYPE_NODE):
+        return errDOMException("Document fragment has invalid children",
+          "HierarchyRequestError")
+    of ELEMENT_NODE:
+      if parent.hasChildExcept(ELEMENT_NODE, child):
+        return errDOMException("Document already has an element child",
+          "HierarchyRequestError")
+      elif childNextSibling != nil and
+          childNextSibling.nodeType == DOCUMENT_TYPE_NODE:
+        return errDOMException("Cannot insert element before document type ",
+          "HierarchyRequestError")
+    of DOCUMENT_TYPE_NODE:
+      if parent.hasChildExcept(DOCUMENT_TYPE_NODE, child) or
+          childPreviousSibling != nil and
+          childPreviousSibling.nodeType == DOCUMENT_TYPE_NODE:
+        const msg = "Cannot insert document type before an element node"
+        return errDOMException(msg, "HierarchyRequestError")
+    else: discard
+  let referenceChild = if childNextSibling == node:
+    node.nextSibling
+  else:
+    childNextSibling
+  #NOTE the standard says "if parent is not null", but the adoption step
+  # that made it necessary has been removed.
+  child.remove(suppressObservers = true)
+  parent.insert(node, referenceChild, suppressObservers = true)
+  #TODO tree mutation record
+  return ok()
 
 proc replaceAll(parent, node: Node) =
   var removedNodes = parent.childList # copy
@@ -2808,7 +2881,7 @@ proc prepare*(element: HTMLScriptElement) =
       #TODO MODULE, IMPORTMAP
       element.markAsReady(ScriptResult(t: RESULT_NULL))
   if element.ctype == CLASSIC and element.attrb("src") or element.ctype == MODULE:
-    let prepdoc = element.preparationTimeDocument 
+    let prepdoc = element.preparationTimeDocument
     if element.attrb("async"):
       prepdoc.scriptsToExecSoon.add(element)
       element.onReady = (proc() =
@@ -2848,8 +2921,8 @@ proc prepare*(element: HTMLScriptElement) =
 proc createElement(document: Document, localName: string):
     DOMResult[Element] {.jsfunc.} =
   if not localName.matchNameProduction():
-    return err(newDOMException("Invalid character in element name",
-      "InvalidCharacterError"))
+    return errDOMException("Invalid character in element name",
+      "InvalidCharacterError")
   let localName = if not document.isxml:
     localName.toLowerAscii()
   else:
@@ -2868,8 +2941,8 @@ proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
 proc createDocumentType(implementation: ptr DOMImplementation, qualifiedName,
     publicId, systemId: string): DOMResult[DocumentType] {.jsfunc.} =
   if not qualifiedName.matchQNameProduction():
-    return err(newDOMException("Invalid character in document type name",
-      "InvalidCharacterError"))
+    return errDOMException("Invalid character in document type name",
+      "InvalidCharacterError")
   let document = implementation.document
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
@@ -2896,11 +2969,11 @@ proc hasFeature(implementation: ptr DOMImplementation): bool {.jsfunc.} =
 proc createCDATASection(document: Document, data: string):
     DOMResult[CDATASection] {.jsfunc.} =
   if not document.isxml:
-    return err(newDOMException("CDATA sections are not supported in HTML",
-      "NotSupportedError"))
+    return errDOMException("CDATA sections are not supported in HTML",
+      "NotSupportedError")
   if "]]>" in data:
-    return err(newDOMException("CDATA sections may not contain the string ]]>",
-      "InvalidCharacterError"))
+    return errDOMException("CDATA sections may not contain the string ]]>",
+      "InvalidCharacterError")
   return ok(newCDATASection(document, data))
 
 proc createComment*(document: Document, data: string): Comment {.jsfunc.} =
@@ -2909,8 +2982,8 @@ proc createComment*(document: Document, data: string): Comment {.jsfunc.} =
 proc createProcessingInstruction(document: Document, target, data: string):
     DOMResult[ProcessingInstruction] {.jsfunc.} =
   if not target.matchNameProduction() or "?>" in data:
-    return err(newDOMException("Invalid data for processing instruction",
-      "InvalidCharacterError"))
+    return errDOMException("Invalid data for processing instruction",
+      "InvalidCharacterError")
   return ok(newProcessingInstruction(document, target, data))
 
 # Forward definition hack (these are set in selectors.nim)
@@ -3063,6 +3136,23 @@ proc innerHTML(element: Element, s: string) {.jsfset.} =
   else:
     element
   ctx.replaceAll(fragment)
+
+proc outerHTML(element: Element, s: string): Err[DOMException] {.jsfset.} =
+  let parent0 = element.parentNode
+  if parent0 == nil:
+    return ok()
+  if parent0.nodeType == DOCUMENT_NODE:
+    let ex = newDOMException("outerHTML is disallowed for Document children",
+      "NoModificationAllowedError")
+    return err(ex)
+  let parent = if parent0.nodeType == DOCUMENT_FRAGMENT_NODE:
+    element.document.newHTMLElement(TAG_BODY)
+  else:
+    # neither a document, nor a document fragment => parent must be an
+    # element node
+    Element(parent0)
+  let fragment = fragmentParsingAlgorithm(parent, s)
+  return parent.replace(element, fragment)
 
 proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
