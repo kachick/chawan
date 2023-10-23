@@ -1329,7 +1329,20 @@ proc setHash(location: Location, s: string) {.jsfset: "hash".} =
   copyURL.setHash(s)
   document.window.navigate(copyURL)
 
-func newAttr(parent: Element, localName, value: string, prefix = "", namespaceURI = ""): Attr =
+func newAttr(document: Document, localName, value, prefix,
+    namespaceURI: string): Attr =
+  return Attr(
+    nodeType: ATTRIBUTE_NODE,
+    document_internal: document,
+    namespaceURI: namespaceURI,
+    localName: localName,
+    prefix: prefix,
+    value: value,
+    index: -1
+  )
+
+func newAttr(parent: Element, localName, value: string, prefix = "",
+    namespaceURI = ""): Attr =
   return Attr(
     nodeType: ATTRIBUTE_NODE,
     document_internal: parent.document,
@@ -1956,7 +1969,8 @@ func newCDATASection(document: Document, data: string): CDATASection =
     index: -1
   )
 
-func newProcessingInstruction(document: Document, target, data: string): ProcessingInstruction =
+func newProcessingInstruction(document: Document, target, data: string):
+    ProcessingInstruction =
   return ProcessingInstruction(
     nodeType: PROCESSING_INSTRUCTION_NODE,
     document_internal: document,
@@ -2985,6 +2999,79 @@ proc createProcessingInstruction(document: Document, target, data: string):
     return errDOMException("Invalid data for processing instruction",
       "InvalidCharacterError")
   return ok(newProcessingInstruction(document, target, data))
+
+func clone(node: Node, document = none(Document), deep = false): Node =
+  let document = document.get(node.document)
+  let copy = case node.nodeType
+  of ELEMENT_NODE:
+    #TODO is value
+    let element = Element(node)
+    let x = document.newHTMLElement(element.localName, element.namespace,
+      element.namespacePrefix, element.tagType, element.attrs)
+    #TODO namespaced attrs?
+    # Cloning steps
+    if x.tagType == TAG_SCRIPT:
+      let x = HTMLScriptElement(x)
+      let element = HTMLScriptElement(element)
+      x.alreadyStarted = element.alreadyStarted
+    elif x.tagType == TAG_INPUT:
+      let x = HTMLInputElement(x)
+      let element = HTMLInputElement(element)
+      x.value = element.value
+      #TODO dirty value flag
+      x.checked = element.checked
+      #TODO dirty checkedness flag
+    Node(x)
+  of ATTRIBUTE_NODE:
+    let attr = Attr(node)
+    let x = document.newAttr(attr.localName, attr.value, attr.prefix,
+      attr.namespaceURI)
+    Node(x)
+  of TEXT_NODE:
+    let text = Text(node)
+    let x = document.newText(text.data)
+    Node(x)
+  of CDATA_SECTION_NODE:
+    let x = document.newCDATASection("")
+    #TODO is this really correct??
+    # really, I don't know. only relevant with xhtml anyway...
+    Node(x)
+  of COMMENT_NODE:
+    let comment = Comment(node)
+    let x = document.newComment(comment.data)
+    Node(x)
+  of PROCESSING_INSTRUCTION_NODE:
+    let procinst = ProcessingInstruction(node)
+    let x = document.newProcessingInstruction(procinst.target, procinst.data)
+    Node(x)
+  of DOCUMENT_NODE:
+    let document = Document(node)
+    let x = newDocument()
+    x.charset = document.charset
+    x.contentType = document.contentType
+    x.url = document.url
+    x.isxml = document.isxml
+    x.mode = document.mode
+    Node(x)
+  of DOCUMENT_TYPE_NODE:
+    let doctype = DocumentType(node)
+    let x = document.newDocumentType(doctype.name, doctype.publicId,
+      doctype.systemId)
+    Node(x)
+  of DOCUMENT_FRAGMENT_NODE:
+    let x = document.newDocumentFragment()
+    Node(x)
+  else:
+    assert false
+    Node(nil)
+  if deep:
+    for child in node.childList:
+      copy.append(child.clone(deep = true))
+  return copy
+
+func cloneNode(node: Node, deep = false): Node {.jsfunc.} =
+  #TODO shadow root
+  return node.clone(deep = deep)
 
 # Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node, q: string): seq[Element]
