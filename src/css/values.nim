@@ -354,6 +354,9 @@ func propertyType(s: string): CSSPropertyType =
 func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
+func isSupportedProperty*(s: string): bool =
+  return s in PropertyNames
+
 func `$`*(length: CSSLength): string =
   if length.auto:
     return "auto"

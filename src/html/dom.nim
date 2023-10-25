@@ -2273,7 +2273,51 @@ proc delAttr(element: Element, name: string) =
 proc newCSSStyleDeclaration(element: Element, value: string):
     CSSStyleDeclaration =
   let inline_rules = newStringStream(value).parseListOfDeclarations2()
+  var decls: seq[CSSDeclaration]
+  for rule in inline_rules:
+    if rule.name.isSupportedProperty():
+      decls.add(rule)
   return CSSStyleDeclaration(decls: inline_rules, element: element)
+
+proc cssText(this: CSSStyleDeclaration): string {.jsfunc.} =
+  #TODO this is incorrect
+  return $this.decls
+
+func length(this: CSSStyleDeclaration): uint32 =
+  return uint32(this.decls.len)
+
+func item(this: CSSStyleDeclaration, u: uint32): Opt[string] =
+  if u < this.length:
+    return ok(this.decls[int(u)].name)
+  return err()
+
+proc getPropertyValue(this: CSSStyleDeclaration, s: string): string =
+  for decl in this.decls:
+    if decl.name == s:
+      return $decl.value
+  return ""
+
+# https://drafts.csswg.org/cssom/#idl-attribute-to-css-property
+func IDLAttributeToCSSProperty(s: string, dashPrefix = false): string =
+  result = if dashPrefix: "-" else: ""
+  for c in s:
+    if c in AsciiUpperAlpha:
+      result &= '-'
+      result &= c.tolower()
+    else:
+      result &= c
+
+proc getter[T: uint32|string](this: CSSStyleDeclaration, u: T):
+    Opt[string] {.jsgetprop.} =
+  when T is uint32:
+    return this.item(u)
+  else:
+    if u.isSupportedProperty():
+      return ok(this.getPropertyValue(u))
+    let u = IDLAttributeToCSSProperty(u)
+    if u.isSupportedProperty():
+      return ok(this.getPropertyValue(u))
+    return err()
 
 proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.style_cached == nil:

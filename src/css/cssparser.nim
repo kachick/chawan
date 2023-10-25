@@ -116,10 +116,13 @@ proc `$`*(c: CSSParsedItem): string =
     else:
       result &= $c.tokenType & '\n'
   elif c of CSSDeclaration:
-    result &= CSSDeclaration(c).name
+    let decl = CSSDeclaration(c)
+    result &= decl.name
     result &= ": "
-    for s in CSSDeclaration(c).value:
+    for s in decl.value:
       result &= $s
+    if decl.important:
+      result &= " !important"
     result &= ";\n"
   elif c of CSSFunction:
     result &= CSSFunction(c).name & "("
