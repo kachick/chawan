@@ -169,7 +169,7 @@ type
 
   Document* = ref object of Node
     charset*: Charset
-    window*: Window
+    window* {.jsget: "defaultView".}: Window
     url* {.jsget: "URL".}: URL
     mode*: QuirksMode
     currentScript: HTMLScriptElement
@@ -1550,13 +1550,13 @@ func html*(document: Document): HTMLElement =
   for element in document.elements(TAG_HTML):
     return HTMLElement(element)
 
-func head*(document: Document): HTMLElement =
+func head*(document: Document): HTMLElement {.jsfget.} =
   let html = document.html
   if html != nil:
     for element in html.elements(TAG_HEAD):
       return HTMLElement(element)
 
-func body*(document: Document): HTMLElement =
+func body*(document: Document): HTMLElement {.jsfget.} =
   let html = document.html
   if html != nil:
     for element in html.elements(TAG_BODY):
