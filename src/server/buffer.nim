@@ -1023,6 +1023,17 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
   buffer.pstream.swrite(res)
   buffer.pstream.flush()
 
+proc dispatchLoadEvent(buffer: Buffer) =
+  let window = buffer.window
+  if window == nil:
+    return
+  for el in window.eventListeners:
+    if el.ctype == "load":
+      let event = newEvent(window.jsctx, "load", window, window)
+      let e = el.callback(event)
+      if e.isErr:
+        buffer.window.jsctx.writeException(buffer.estream)
+
 proc onload(buffer: Buffer) =
   var res: LoadResult = (false, buffer.lines.len, -1)
   case buffer.state
@@ -1052,6 +1063,7 @@ proc onload(buffer: Buffer) =
       res.atend = true
       buffer.finishLoad().then(proc() =
         buffer.state = LOADED
+        buffer.dispatchLoadEvent()
         buffer.resolveTask(LOAD, res))
       return
     buffer.resolveTask(LOAD, res)
@@ -1477,7 +1489,7 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
   for a in elem.branch:
     var stop = false
     for el in a.eventListeners:
-      if el.ctype == "click":
+      if el.ctype == ctype:
         let event = newEvent(buffer.window.jsctx, ctype, elem, a)
         let e = el.callback(event)
         called = true
