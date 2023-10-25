@@ -76,6 +76,11 @@ proc definePropertyE*[T](ctx: JSContext, this: JSValue, name: string,
     prop: T) =
   defineProperty(ctx, this, name, prop, JS_PROP_ENUMERABLE)
 
+proc definePropertyCW*[T](ctx: JSContext, this: JSValue, name: string,
+    prop: T) =
+  defineProperty(ctx, this, name, prop, JS_PROP_CONFIGURABLE or
+    JS_PROP_WRITABLE)
+
 proc definePropertyCWE*[T](ctx: JSContext, this: JSValue, name: string,
     prop: T) =
   defineProperty(ctx, this, name, prop, JS_PROP_C_W_E)

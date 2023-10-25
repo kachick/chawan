@@ -274,10 +274,10 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   if not nointerface:
     if JS_IsNull(namespace):
       let global = JS_GetGlobalObject(ctx)
-      ctx.defineProperty(global, $cdef.class_name, jctor)
+      ctx.definePropertyCW(global, $cdef.class_name, jctor)
       JS_FreeValue(ctx, global)
     else:
-      ctx.defineProperty(namespace, $cdef.class_name, jctor)
+      ctx.definePropertyCW(namespace, $cdef.class_name, jctor)
 
 type FuncParam = tuple[name: string, t: NimNode, val: Option[NimNode], generic: Option[NimNode]]
 
