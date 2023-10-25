@@ -255,6 +255,7 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     let global = JS_GetGlobalObject(ctx)
     assert ctxOpaque.gclaz == ""
     ctxOpaque.gclaz = tname
+    ctxOpaque.gparent = parent
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " &
         $cdef.class_name)
@@ -780,9 +781,7 @@ proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
     let tn = ident(gen.thisname.get)
     let ev = gen.errval
     result.add(quote do:
-      if not (JS_IsUndefined(`tn`) or ctx.isGlobal(`tt`)) and
-          not isInstanceOf(ctx, `tn`, `tt`):
-        # undefined -> global.
+      if not ctx.isInstanceOf(`tn`, `tt`):
         discard JS_ThrowTypeError(ctx,
           "'%s' called on an object that is not an instance of %s", `fn`, `tt`)
         return `ev`
@@ -1315,9 +1314,7 @@ proc registerGetters(stmts: NimNode, info: RegistryInfo,
     let id = ident($GETTER & "_" & tname & "_" & fn)
     stmts.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue): JSValue {.cdecl.} =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`tname`)) and
-            not ctx.isInstanceOf(this, `tname`):
-          # undefined -> global.
+        if not ctx.isInstanceOf(this, `tname`):
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
@@ -1342,9 +1339,7 @@ proc registerSetters(stmts: NimNode, info: RegistryInfo,
     stmts.add(quote do:
       proc `id`(ctx: JSContext, this: JSValue, val: JSValue): JSValue
           {.cdecl.} =
-        if not (JS_IsUndefined(this) or ctx.isGlobal(`tname`)) and
-            not ctx.isInstanceOf(this, `tname`):
-          # undefined -> global.
+        if not ctx.isInstanceOf(this, `tname`):
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)

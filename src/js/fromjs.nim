@@ -14,7 +14,7 @@ import types/opt
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T]
 
-func isInstanceOf*(ctx: JSContext, val: JSValue, class: string): bool =
+func isInstanceOfNonGlobal(ctx: JSContext, val: JSValue, class: string): bool =
   let ctxOpaque = ctx.getOpaque()
   var classid = JS_GetClassID(val)
   let tclassid = ctxOpaque.creg[class]
@@ -30,6 +30,28 @@ func isInstanceOf*(ctx: JSContext, val: JSValue, class: string): bool =
     if classid == 0:
       break
   return found
+
+func isInstanceOfGlobal(ctx: JSContext, val: JSValue, class: string): bool =
+  let ctxOpaque = ctx.getOpaque()
+  #TODO gparent only works for a single level. (But this is not really a
+  # problem right now, because our global objects have at most one inheritance
+  # level.)
+  if ctx.isGlobal(class) or ctxOpaque.creg[class] == ctxOpaque.gparent:
+    # undefined -> global
+    if JS_IsUndefined(val):
+      return true
+    if JS_IsObject(val):
+      let global = JS_GetGlobalObject(ctx)
+      let p0 = JS_VALUE_GET_PTR(global)
+      let p1 = JS_VALUE_GET_PTR(val)
+      JS_FreeValue(ctx, global)
+      if p0 == p1:
+        return true
+  return false
+
+func isInstanceOf*(ctx: JSContext, val: JSValue, class: string): bool =
+  return ctx.isInstanceOfGlobal(val, class) or
+    ctx.isInstanceOfNonGlobal(val, class)
 
 func toString(ctx: JSContext, val: JSValue): Opt[string] =
   var plen: csize_t
@@ -367,12 +389,11 @@ proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
     return err(nil)
   if JS_IsNull(val):
     return ok(nil)
-  let ctxOpaque = ctx.getOpaque()
-  if ctxOpaque.gclaz == t:
+  if ctx.isInstanceOfGlobal(val, t):
     return ok(?getGlobalOpaque0(ctx, val))
   if not JS_IsObject(val):
     return err(newTypeError("Value is not an object"))
-  if not isInstanceOf(ctx, val, t):
+  if not isInstanceOfNonGlobal(ctx, val, t):
     let errmsg = t & " expected"
     JS_ThrowTypeError(ctx, cstring(errmsg))
     return err(newTypeError(errmsg))

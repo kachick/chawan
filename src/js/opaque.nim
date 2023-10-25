@@ -25,6 +25,7 @@ type
     # `unforgeable[classid]'.)
     unforgeable*: Table[JSClassID, seq[JSCFunctionListEntry]]
     gclaz*: string
+    gparent*: JSClassID
     sym_refs*: array[JSSymbolRefs, JSAtom]
     str_refs*: array[JSStrRefs, JSAtom]
     Array_prototype_values*: JSValue
