@@ -34,11 +34,12 @@ type SelectorHashes = object
   class: string
 
 func newStylesheet*(cap: int): CSSStylesheet =
-  new(result)
   let bucketsize = cap div 2
-  result.id_table = initTable[string, seq[CSSRuleDef]](bucketsize)
-  result.class_table = initTable[string, seq[CSSRuleDef]](bucketsize)
-  result.general_list = newSeqOfCap[CSSRuleDef](bucketsize)
+  return CSSStylesheet(
+    id_table: initTable[string, seq[CSSRuleDef]](bucketsize),
+    class_table: initTable[string, seq[CSSRuleDef]](bucketsize),
+    general_list: newSeqOfCap[CSSRuleDef](bucketsize)
+  )
 
 proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool
 

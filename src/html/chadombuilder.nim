@@ -249,7 +249,7 @@ proc parseHTML*(inputStream: Stream, window: Window, url: URL,
   return Document(builder.document)
 
 proc newDOMParser(): DOMParser {.jsctor.} =
-  new(result)
+  return DOMParser()
 
 proc parseFromString(ctx: JSContext, parser: DOMParser, str, t: string):
     JSResult[Document] {.jsfunc.} =

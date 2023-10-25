@@ -108,7 +108,7 @@ var runtimes {.threadVar.}: seq[JSRuntime]
 
 proc newJSRuntime*(): JSRuntime =
   let rt = JS_NewRuntime()
-  let opaque = new(JSRuntimeOpaque)
+  let opaque = JSRuntimeOpaque()
   GC_ref(opaque)
   JS_SetRuntimeOpaque(rt, cast[pointer](opaque))
   # Must be added after opaque is set, or there is a chance of

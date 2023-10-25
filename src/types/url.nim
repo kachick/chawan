@@ -849,7 +849,7 @@ proc cloneInto(a, b: URL) =
     b.searchParams.url = some(b)
 
 proc newURL*(url: URL): URL =
-  new(result)
+  result = URL()
   url.cloneInto(result)
 
 proc setHref(url: URL, s: string): Err[JSError] {.jsfset: "href".} =
@@ -905,7 +905,7 @@ proc newURLSearchParams[
       Table[string, string]|
       string
     ](init: T = ""): URLSearchParams {.jsctor.} =
-  new(result)
+  result = URLSearchParams()
   when T is seq[(string, string)]:
     result.list = init
   elif T is Table[string, string]:

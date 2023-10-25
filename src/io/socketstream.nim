@@ -115,13 +115,14 @@ proc recvFileHandle*(s: SocketStream): FileHandle =
   dealloc(cmsgbuf)
 
 func newSocketStream*(): SocketStream =
-  new(result)
-  result.readDataImpl = cast[proc (s: Stream, buffer: pointer, bufLen: int): int
-      {.nimcall, raises: [Defect, IOError, OSError], tags: [ReadIOEffect], gcsafe.}
-  ](sockReadData) # ... ???
-  result.writeDataImpl = sockWriteData
-  result.atEndImpl = sockAtEnd
-  result.closeImpl = sockClose
+  return SocketStream(
+    readDataImpl: cast[proc (s: Stream, buffer: pointer, bufLen: int): int
+        {.nimcall, raises: [Defect, IOError, OSError], tags: [ReadIOEffect], gcsafe.}
+    ](sockReadData), # ... ???
+    writeDataImpl: sockWriteData,
+    atEndImpl: sockAtEnd,
+    closeImpl: sockClose
+  )
 
 proc setBlocking*(ss: SocketStream, blocking: bool) =
   ss.source.getFd().setBlocking(blocking)

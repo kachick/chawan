@@ -145,17 +145,17 @@ proc rsClose(s: Stream) = {.cast(tags: [WriteIOEffect]).}: #TODO TODO TODO ew.
     s.isource.setPosition(s.isource.getPosition() + len)
 
 proc newReadableStream*(isource: Stream): ReadableStream =
-  new(result)
-  result.isource = isource
-  result.readDataImpl = rsReadData
-  result.atEndImpl = rsAtEnd
-  result.closeImpl = rsClose
   var len: int
-  result.isource.read(len)
-  if len == 0:
-    result.isend = true
-  else:
-    result.isource.readStr(len, result.buf)
+  isource.read(len)
+  result = ReadableStream(
+    isource: isource,
+    readDataImpl: rsReadData,
+    atEndImpl: rsAtEnd,
+    closeImpl: rsClose,
+    isend: len == 0
+  )
+  if len != 0:
+    isource.readStr(len, result.buf)
 
 func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
     body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,

@@ -10,8 +10,7 @@ proc getTypePtr*[T](x: T): pointer =
     return getTypeInfo(x)
 
 func getTypePtr*(t: typedesc[ref object]): pointer =
-  var x: t
-  new(x)
+  var x = t()
   return getTypePtr(x)
 
 func getTypePtr*(t: type): pointer =

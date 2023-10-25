@@ -207,9 +207,10 @@ proc serialize*(cookiejar: CookieJar, url: URL): string =
 
 proc newCookie*(str: string, url: URL = nil): JSResult[Cookie]
     {.jsctor.} =
-  let cookie = new(Cookie)
-  cookie.expires = -1
-  cookie.created = now().toTime().toUnix()
+  let cookie = Cookie(
+    expires: -1,
+    created: now().toTime().toUnix()
+  )
   var first = true
   var haspath = false
   var hasdomain = false

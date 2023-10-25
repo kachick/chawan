@@ -2079,47 +2079,41 @@ func newHTMLElement*(document: Document, tagType: TagType,
     attrs = Table[string, string]()): HTMLElement =
   case tagType
   of TAG_INPUT:
-    result = new(HTMLInputElement)
+    result = HTMLInputElement()
   of TAG_A:
-    result = new(HTMLAnchorElement)
-    HTMLAnchorElement(result).relList = DOMTokenList(
-      element: result,
-      localName: "rel"
-    )
+    let anchor = HTMLAnchorElement()
+    anchor.relList = DOMTokenList(element: anchor, localName: "rel")
+    result = anchor
   of TAG_SELECT:
-    result = new(HTMLSelectElement)
+    result = HTMLSelectElement()
   of TAG_OPTGROUP:
-    result = new(HTMLOptGroupElement)
+    result = HTMLOptGroupElement()
   of TAG_OPTION:
-    result = new(HTMLOptionElement)
+    result = HTMLOptionElement()
   of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
-    result = new(HTMLHeadingElement)
+    result = HTMLHeadingElement()
   of TAG_BR:
-    result = new(HTMLBRElement)
+    result = HTMLBRElement()
   of TAG_SPAN:
-    result = new(HTMLSpanElement)
+    result = HTMLSpanElement()
   of TAG_OL:
-    result = new(HTMLOListElement)
+    result = HTMLOListElement()
   of TAG_UL:
-    result = new(HTMLUListElement)
+    result = HTMLUListElement()
   of TAG_MENU:
-    result = new(HTMLMenuElement)
+    result = HTMLMenuElement()
   of TAG_LI:
-    result = new(HTMLLIElement)
+    result = HTMLLIElement()
   of TAG_STYLE:
-    result = new(HTMLStyleElement)
+    result = HTMLStyleElement()
   of TAG_LINK:
-    result = new(HTMLLinkElement)
-    HTMLLinkElement(result).relList = DOMTokenList(
-      element: result,
-      localName: "rel"
-    )
+    let link = HTMLLinkElement()
+    link.relList = DOMTokenList(element: link, localName: "rel")
+    result = link
   of TAG_FORM:
-    result = new(HTMLFormElement)
-    HTMLFormElement(result).relList = DOMTokenList(
-      element: result,
-      localName: "rel"
-    )
+    let form = HTMLFormElement()
+    form.relList = DOMTokenList(element: form, localName: "rel")
+    result = form
   of TAG_TEMPLATE:
     result = HTMLTemplateElement(
       content: DocumentFragment(
@@ -2128,30 +2122,27 @@ func newHTMLElement*(document: Document, tagType: TagType,
       )
     )
   of TAG_UNKNOWN:
-    result = new(HTMLUnknownElement)
+    result = HTMLUnknownElement()
   of TAG_SCRIPT:
-    result = new(HTMLScriptElement)
-    HTMLScriptElement(result).forceAsync = true
+    result = HTMLScriptElement(forceAsync: true)
   of TAG_BASE:
-    result = new(HTMLBaseElement)
+    result = HTMLBaseElement()
   of TAG_BUTTON:
-    result = new(HTMLButtonElement)
+    result = HTMLButtonElement()
   of TAG_TEXTAREA:
-    result = new(HTMLTextAreaElement)
+    result = HTMLTextAreaElement()
   of TAG_LABEL:
-    result = new(HTMLLabelElement)
+    result = HTMLLabelElement()
   of TAG_CANVAS:
-    result = new(HTMLCanvasElement)
+    result = HTMLCanvasElement()
   of TAG_IMG:
-    result = new(HTMLImageElement)
+    result = HTMLImageElement()
   of TAG_AREA:
-    result = new(HTMLAreaElement)
-    HTMLAreaElement(result).relList = DOMTokenList(
-      element: result,
-      localName: "rel"
-    )
+    let area = HTMLAreaElement()
+    area.relList = DOMTokenList(element: result, localName: "rel")
+    result = area
   else:
-    result = new(HTMLElement)
+    result = HTMLElement()
   result.nodeType = ELEMENT_NODE
   result.tagType = tagType
   result.namespace = namespace

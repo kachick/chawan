@@ -309,7 +309,7 @@ proc sread*(stream: Stream, blob: var Blob) =
     stream.sread(file.path)
     blob = file
   else:
-    new(blob)
+    blob = Blob()
     stream.sread(blob.ctype)
     stream.sread(blob.size)
     let buffer = alloc(blob.size)

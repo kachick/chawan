@@ -619,7 +619,7 @@ proc parseConfig*(config: Config, dir: string, s: string, name = "<input>",
   config.parseConfig(dir, newStringStream(s), name, laxnames)
 
 proc staticReadConfig(): ConfigObj =
-  var config = new(Config)
+  var config = Config()
   config.parseConfig("res", staticRead"res/config.toml", "config.toml")
   return config[]
 
@@ -637,7 +637,7 @@ proc getLinedAction*(config: Config, s: string): string =
   return config.line.getOrDefault(s)
 
 proc readConfig*(): Config =
-  new(result)
+  result = Config()
   result[] = defaultConfig
   when defined(debug):
     result.readConfig(getCurrentDir() / "res")

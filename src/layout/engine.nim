@@ -1653,49 +1653,56 @@ proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder): BlockBox =
 
 # Returns a block box, disregarding the computed value of display
 proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
-  new(result)
-  result.computed = computed
+  return BlockBoxBuilder(computed: computed)
 
 proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
-  new(result)
-  result.inlinelayout = true
-  result.computed = computed
+  return InlineBoxBuilder(inlinelayout: true, computed: computed)
 
-proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int): MarkerBoxBuilder =
-  new(result)
-  result.inlinelayout = true
-  result.computed = computed.inheritProperties()
-  result.computed{"display"} = DISPLAY_INLINE
+proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int):
+    MarkerBoxBuilder =
+  let computed = computed.inheritProperties()
+  computed{"display"} = DISPLAY_INLINE
   # Use pre, so the space at the end of the default markers isn't ignored.
-  result.computed{"white-space"} = WHITESPACE_PRE
-  result.text.add(computed{"list-style-type"}.listMarker(listItemCounter))
+  computed{"white-space"} = WHITESPACE_PRE
+  return MarkerBoxBuilder(
+    inlinelayout: true,
+    computed: computed,
+    text: @[computed{"list-style-type"}.listMarker(listItemCounter)]
+  )
 
-proc getListItemBox(computed: CSSComputedValues, listItemCounter: int): ListItemBoxBuilder =
-  new(result)
-  result.computed = computed
-  result.marker = getMarkerBox(computed, listItemCounter)
+proc getListItemBox(computed: CSSComputedValues, listItemCounter: int):
+    ListItemBoxBuilder =
+  return ListItemBoxBuilder(
+    computed: computed,
+    marker: getMarkerBox(computed, listItemCounter)
+  )
 
 proc getTableBox(computed: CSSComputedValues): TableBoxBuilder =
-  new(result)
-  result.computed = computed
+  return TableBoxBuilder(
+    computed: computed
+  )
 
 # Also known as <tbody>.
 proc getTableRowGroupBox(computed: CSSComputedValues): TableRowGroupBoxBuilder =
-  new(result)
-  result.computed = computed
+  return TableRowGroupBoxBuilder(
+    computed: computed
+  )
 
 proc getTableRowBox(computed: CSSComputedValues): TableRowBoxBuilder =
-  new(result)
-  result.computed = computed
+  return TableRowBoxBuilder(
+    computed: computed
+  )
 
 # For <th> and <td>.
 proc getTableCellBox(computed: CSSComputedValues): TableCellBoxBuilder =
-  new(result)
-  result.computed = computed
+  return TableCellBoxBuilder(
+    computed: computed
+  )
 
 proc getTableCaptionBox(computed: CSSComputedValues): TableCaptionBoxBuilder =
-  new(result)
-  result.computed = computed
+  return TableCaptionBoxBuilder(
+    computed: computed
+  )
 
 type BlockGroup = object
   parent: BoxBuilder
