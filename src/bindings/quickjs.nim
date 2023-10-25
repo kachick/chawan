@@ -102,7 +102,7 @@ type
     get_own_property*: proc (ctx: JSContext, desc: ptr JSPropertyDescriptor,
                              obj: JSValue, prop: JSAtom): cint {.cdecl.}
     get_own_property_names*: proc (ctx: JSContext,
-                                   ptab: ptr ptr JSPropertyEnum,
+                                   ptab: ptr ptr UncheckedArray[JSPropertyEnum],
                                    plen: ptr uint32, obj: JSValue): cint {.cdecl.}
     delete_property*: proc (ctx: JSContext, obj: JSValue, prop: JSAtom): cint {.cdecl.}
     define_own_property*: proc (ctx: JSContext, this_obj: JSValue,
@@ -381,6 +381,7 @@ proc JS_NewBigUInt64*(ctx: JSContext, val: uint64): JSValue
 proc JS_NewFloat64*(ctx: JSContext, val: cdouble): JSValue
 
 proc JS_NewAtomLen*(ctx: JSContext, str: cstring, len: csize_t): JSAtom
+proc JS_NewAtomUInt32*(ctx: JSContext, u: uint32): JSAtom
 proc JS_ValueToAtom*(ctx: JSContext, val: JSValue): JSAtom
 proc JS_AtomToValue*(ctx: JSContext, atom: JSAtom): JSValue
 proc JS_AtomToCString*(ctx: JSContext, atom: JSAtom): cstring
@@ -490,6 +491,9 @@ proc JS_SetRuntimeOpaque*(rt: JSRuntime, p: pointer)
 proc JS_SetContextOpaque*(ctx: JSContext, opaque: pointer)
 proc JS_GetContextOpaque*(ctx: JSContext): pointer
 
+proc js_malloc*(ctx: JSContext, size: csize_t): pointer
+proc js_mallocz*(ctx: JSContext, size: csize_t): pointer
+proc js_realloc*(ctx: JSContext, p: pointer, size: csize_t): pointer
 proc js_free_rt*(rt: JSRuntime, p: pointer)
 proc js_free*(ctx: JSContext, p: pointer)
 

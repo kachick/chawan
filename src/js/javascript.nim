@@ -32,6 +32,9 @@
 # {.jsdelprop.} for property deletion. It is like the deleteProperty method
 #   of Proxy. Must return true if deleted, false if not deleted.
 # {.jshasprop.} for overriding has_property. Must return a boolean.
+# {.jspropnames.} overrides get_own_property_names. Must return a
+#   JSPropertyEnumList object.
+# UncheckedArray[JSPropertyEnum]
 
 import macros
 import options
@@ -98,6 +101,7 @@ type
     PROPERTY_SET = "js_prop_set"
     PROPERTY_DEL = "js_prop_del"
     PROPERTY_HAS = "js_prop_has"
+    PROPERTY_NAMES = "js_prop_names"
     FINALIZER = "js_fin"
 
 var runtimes {.threadVar.}: seq[JSRuntime]
@@ -471,6 +475,15 @@ template getJSSetterParams(): untyped =
     newIdentDefs(ident("val"), quote do: JSValue),
   ]
 
+template getJSPropNamesParams(): untyped =
+  [
+    (quote do: cint),
+    newIdentDefs(ident("ctx"), quote do: JSContext),
+    newIdentDefs(ident("ptab"), quote do: ptr JSPropertyEnumArray),
+    newIdentDefs(ident("plen"), quote do: ptr uint32),
+    newIdentDefs(ident("obj"), quote do: JSValue)
+  ]
+
 template fromJS_or_return*(t, ctx, val: untyped): untyped =
   (
     let x = fromJS[t](ctx, val)
@@ -563,6 +576,10 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
     elif g == bool.getTypeInst():
       hasBoolean = true
     elif g == int.getTypeInst(): #TODO should be SomeNumber
+      assert numg.isNone
+      numg = some(g)
+    elif g == uint32.getTypeInst(): #TODO should be SomeNumber
+      assert numg.isNone
       numg = some(g)
     elif g.getTypeInst().getTypeImpl().kind == nnkRefTy:
       # Assume it's ref object.
@@ -789,7 +806,8 @@ func getFuncName(fun: NimNode, jsname: string): string =
   return x
 
 func getErrVal(t: BoundFunctionType): NimNode =
-  if t in {PROPERTY_GET, PROPERTY_SET, PROPERTY_DEL, PROPERTY_HAS}:
+  if t in {PROPERTY_GET, PROPERTY_SET, PROPERTY_DEL, PROPERTY_HAS,
+      PROPERTY_NAMES}:
     return quote do: cint(-1)
   return quote do: JS_EXCEPTION
 
@@ -973,6 +991,26 @@ macro jsdelprop*(fun: typed) =
       return cint(retv)
     return cint(-1)
   let jsProc = gen.newJSProc(getJSDelPropParams(), false)
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jspropnames*(fun: typed) =
+  var gen = setupGenerator(fun, PROPERTY_NAMES, thisname = some("obj"))
+  if gen.newName.strVal in existing_funcs:
+    #TODO TODO TODO ditto
+    error("Function overloading hasn't been implemented yet...")
+  gen.addFixParam("obj")
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      let retv = `jfcl`
+      ptab[] = retv.buffer
+      plen[] = retv.len
+      return cint(0)
+    return cint(-1)
+  let jsProc = gen.newJSProc(getJSPropNamesParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1221,6 +1259,7 @@ type RegistryInfo = object
   propSetFun: NimNode # custom set function ident
   propDelFun: NimNode # custom del function ident
   propHasFun: NimNode # custom has function ident
+  propNamesFun: NimNode # custom property names function ident
   finFun: NimNode # finalizer ident
   finName: NimNode # finalizer wrapper ident
   dfin: NimNode # CheckDestroy finalizer ident
@@ -1252,7 +1291,8 @@ proc newRegistryInfo(t: NimNode, name: string): RegistryInfo =
     propGetFun: newNilLit(),
     propSetFun: newNilLit(),
     propDelFun: newNilLit(),
-    propHasFun: newNilLit()
+    propHasFun: newNilLit(),
+    propNamesFun: newNilLit()
   )
   if info.tname notin js_dtors:
     warning("No destructor has been defined for type " & info.tname)
@@ -1368,6 +1408,10 @@ proc bindFunctions(stmts: NimNode, info: var RegistryInfo) =
         if info.propHasFun.kind != nnkNilLit:
           error("Class " & info.tname & " has 2+ hasprop getters.")
         info.propHasFun = f1
+      of PROPERTY_NAMES:
+        if info.propNamesFun.kind != nnkNilLit:
+          error("Class " & info.tname & " has 2+ propnames getters.")
+        info.propNamesFun = f1
       of FINALIZER:
         f0 = fun.name
         info.finFun = ident(f0)
@@ -1463,16 +1507,19 @@ proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
   if info.propGetFun.kind != nnkNilLit or
       info.propSetFun.kind != nnkNilLit or
       info.propDelFun.kind != nnkNilLit or
-      info.propHasFun.kind != nnkNilLit:
+      info.propHasFun.kind != nnkNilLit or
+      info.propNamesFun.kind != nnkNilLit:
     let propGetFun = info.propGetFun
     let propSetFun = info.propSetFun
     let propDelFun = info.propDelFun
     let propHasFun = info.propHasFun
+    let propNamesFun = info.propNamesFun
     endstmts.add(quote do:
       # No clue how to do this in pure nim.
       {.emit: ["""
 static JSClassExoticMethods exotic = {
 	.get_own_property = """, `propGetFun`, """,
+        .get_own_property_names = """, `propNamesFun`, """,
 	.has_property = """, `propHasFun`, """,
 	.set_property = """, `propSetFun`, """,
 	.delete_property = """, `propDelFun`, """

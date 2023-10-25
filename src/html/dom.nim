@@ -23,6 +23,7 @@ import js/error
 import js/fromjs
 import js/javascript
 import js/opaque
+import js/propertyenumlist
 import js/timeout
 import js/tojs
 import loader/loader
@@ -228,6 +229,11 @@ type
     attributes* {.jsget.}: NamedNodeMap
     hover*: bool
     invalid*: bool
+    style_cached*: CSSStyleDeclaration
+
+  CSSStyleDeclaration* = ref object
+    decls*: seq[CSSDeclaration]
+    element: Element
 
   HTMLElement* = ref object of Element
 
@@ -412,6 +418,7 @@ jsDestructor(Attr)
 jsDestructor(NamedNodeMap)
 jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
+jsDestructor(CSSStyleDeclaration)
 
 proc parseColor(element: Element, s: string): RGBAColor
 
@@ -797,6 +804,7 @@ const ReflectTable0 = [
 ]
 
 # Forward declarations
+func attr*(element: Element, s: string): string {.inline.}
 func attrb*(element: Element, s: string): bool
 proc attr*(element: Element, name, value: string)
 func baseURL*(document: Document): URL
@@ -1146,19 +1154,54 @@ func item(nodeList: NodeList, i: int): Node {.jsfunc.} =
 func getter(nodeList: NodeList, i: int): Option[Node] {.jsgetprop.} =
   return option(nodeList.item(i))
 
+func names(ctx: JSContext, nodeList: NodeList): JSPropertyEnumList
+    {.jspropnames.} =
+  let L = nodeList.length
+  var list = newJSPropertyEnumList(ctx, L)
+  for u in 0 ..< L:
+    list.add(u)
+  return list
+
 # HTMLCollection
 proc length(collection: HTMLCollection): uint32 {.jsfget.} =
   return uint32(collection.len)
 
-func hasprop(collection: HTMLCollection, i: int): bool {.jshasprop.} =
-  return i < collection.len
+func hasprop(collection: HTMLCollection, u: uint32): bool {.jshasprop.} =
+  return u < collection.length
 
-func item(collection: HTMLCollection, i: int): Element {.jsfunc.} =
-  if i < collection.len:
-    return Element(collection.snapshot[i])
+func item(collection: HTMLCollection, u: uint32): Element {.jsfunc.} =
+  if u < collection.length:
+    return Element(collection.snapshot[int(u)])
 
-func getter(collection: HTMLCollection, i: int): Option[Element] {.jsgetprop.} =
-  return option(collection.item(i))
+func namedItem(collection: HTMLCollection, s: string): Element {.jsfunc.} =
+  for it in collection.snapshot:
+    let it = Element(it)
+    if it.id == s or it.namespace == Namespace.HTML and it.attr("name") == s:
+      return it
+
+func getter[T: uint32|string](collection: HTMLCollection, u: T):
+    Option[Element] {.jsgetprop.} =
+  when T is uint32:
+    return option(collection.item(u))
+  else:
+    return option(collection.namedItem(u))
+
+func names(ctx: JSContext, collection: HTMLCollection): JSPropertyEnumList
+    {.jspropnames.} =
+  let L = collection.length
+  var list = newJSPropertyEnumList(ctx, L)
+  var ids: OrderedSet[string]
+  for u in 0 ..< L:
+    list.add(u)
+    let elem = collection.item(u)
+    if elem.id != "":
+      ids.incl(elem.id)
+    if elem.namespace == Namespace.HTML:
+      let name = elem.attr("name")
+      ids.incl(name)
+  for id in ids:
+    list.add(id)
+  return list
 
 # HTMLAllCollection
 proc length(collection: HTMLAllCollection): uint32 {.jsfget.} =
@@ -1173,6 +1216,14 @@ func item(collection: HTMLAllCollection, i: int): Element {.jsfunc.} =
 
 func getter(collection: HTMLAllCollection, i: int): Option[Element] {.jsgetprop.} =
   return option(collection.item(i))
+
+func names(ctx: JSContext, collection: HTMLAllCollection): JSPropertyEnumList
+    {.jspropnames.} =
+  let L = collection.length
+  var list = newJSPropertyEnumList(ctx, L)
+  for u in 0 ..< L:
+    list.add(u)
+  return list
 
 proc all(document: Document): HTMLAllCollection {.jsfget.} =
   if document.all_cached == nil:
@@ -1426,6 +1477,20 @@ func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} 
     return map.item(i)
   else:
     return map.getNamedItem(i)
+
+func names(ctx: JSContext, map: NamedNodeMap): JSPropertyEnumList
+    {.jspropnames.} =
+  let len = if map.element.namespace == Namespace.HTML:
+    uint32(map.attrlist.len + map.element.attrs.len)
+  else:
+    uint32(map.attrlist.len)
+  var list = newJSPropertyEnumList(ctx, len)
+  for u in 0 ..< len:
+    list.add(u)
+  if map.element.namespace == Namespace.HTML:
+    for name in map.element.attrs.keys:
+      list.add(name)
+  return list
 
 func length(characterData: CharacterData): uint32 {.jsfget.} =
   return uint32(characterData.data.utf16Len)
@@ -2188,6 +2253,16 @@ proc delAttr(element: Element, name: string) =
   if i != -1:
     element.delAttr(i)
 
+proc newCSSStyleDeclaration(element: Element, value: string):
+    CSSStyleDeclaration =
+  let inline_rules = newStringStream(value).parseListOfDeclarations2()
+  return CSSStyleDeclaration(decls: inline_rules, element: element)
+
+proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
+  if element.style_cached == nil:
+    element.style_cached = CSSStyleDeclaration(element: element)
+  return element.style_cached
+
 proc reflectAttrs(element: Element, name, value: string) =
   template reflect_str(element: Element, n: static string, val: untyped) =
     if name == n:
@@ -2205,24 +2280,26 @@ proc reflectAttrs(element: Element, name, value: string) =
     for x in value.split(AsciiWhitespace):
       if x != "" and x notin element.classList:
         element.classList.toks.add(x)
-    return
-  case element.tagType
-  of TAG_INPUT:
-    let input = HTMLInputElement(element)
-    input.reflect_str "value", value
-    input.reflect_str "type", inputType, inputType
-    input.reflect_bool "checked", checked
-  of TAG_OPTION:
-    let option = HTMLOptionElement(element)
-    option.reflect_bool "selected", selected
-  of TAG_BUTTON:
-    let button = HTMLButtonElement(element)
-    button.reflect_str "type", ctype, (func(s: string): ButtonType =
-      case s
-      of "submit": return BUTTON_SUBMIT
-      of "reset": return BUTTON_RESET
-      of "button": return BUTTON_BUTTON)
-  else: discard
+  elif name == "style":
+    element.style_cached = newCSSStyleDeclaration(element, value)
+  else:
+    case element.tagType
+    of TAG_INPUT:
+      let input = HTMLInputElement(element)
+      input.reflect_str "value", value
+      input.reflect_str "type", inputType, inputType
+      input.reflect_bool "checked", checked
+    of TAG_OPTION:
+      let option = HTMLOptionElement(element)
+      option.reflect_bool "selected", selected
+    of TAG_BUTTON:
+      let button = HTMLButtonElement(element)
+      button.reflect_str "type", ctype, (func(s: string): ButtonType =
+        case s.toLowerAscii()
+        of "submit": return BUTTON_SUBMIT
+        of "reset": return BUTTON_RESET
+        of "button": return BUTTON_BUTTON)
+    else: discard
 
 proc attr0(element: Element, name, value: string) =
   element.attrs.withValue(name, val):
@@ -3300,4 +3377,5 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(NamedNodeMap)
   ctx.registerType(CanvasRenderingContext2D)
   ctx.registerType(TextMetrics)
+  ctx.registerType(CSSStyleDeclaration)
   ctx.registerElements(nodeCID)

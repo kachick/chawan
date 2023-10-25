@@ -9,6 +9,7 @@ import config/toml
 import io/urlfilter
 import js/error
 import js/javascript
+import js/propertyenumlist
 import js/regex
 import loader/headers
 import loader/loader
@@ -183,11 +184,19 @@ proc setter(a: ptr ActionMap, k, v: string) {.jssetprop.} =
       a[][teststr] = "client.feedNext()"
     teststr.setLen(i)
 
-proc delete(a: ptr Actionmap, k: string): bool {.jsdelprop.} =
+proc delete(a: ptr ActionMap, k: string): bool {.jsdelprop.} =
   let k = getRealKey(k)
   let ina = k in a[]
   a[].t.del(k)
   return ina
+
+func names(ctx: JSContext, a: ptr ActionMap): JSPropertyEnumList
+    {.jspropnames.} =
+  let L = uint32(a[].t.len)
+  var list = newJSPropertyEnumList(ctx, L)
+  for key in a[].t.keys:
+    list.add(key)
+  return list
 
 proc bindPagerKey(config: Config, key, action: string) {.jsfunc.} =
   (addr config.page).setter(key, action)

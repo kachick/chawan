@@ -1,6 +1,5 @@
 import algorithm
 import options
-import streams
 import strutils
 
 import css/cssparser
@@ -254,10 +253,9 @@ proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues,
     builder.addValues(rule[pseudo], ORIGIN_AUTHOR)
   if styledNode.node != nil:
     let element = Element(styledNode.node)
-    let style = element.attr("style")
-    if style.len > 0:
-      let inline_rules = newStringStream(style).parseListOfDeclarations2()
-      builder.addValues(inline_rules, ORIGIN_AUTHOR)
+    let style = element.style_cached
+    if style != nil:
+      builder.addValues(style.decls, ORIGIN_AUTHOR)
     builder.preshints = element.calcPresentationalHints()
 
   styledNode.computed = builder.buildComputedValues()
