@@ -250,6 +250,7 @@ type
     file*: Option[Url]
 
   HTMLAnchorElement* = ref object of HTMLElement
+    relList {.jsget.}: DOMTokenList
 
   HTMLSelectElement* = ref object of FormAssociatedElement
     form* {.jsget.}: HTMLFormElement
@@ -281,6 +282,7 @@ type
 
   HTMLLinkElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
+    relList {.jsget.}: DOMTokenList
 
   HTMLFormElement* = ref object of HTMLElement
     name*: string
@@ -289,6 +291,7 @@ type
     novalidate*: bool
     constructingentrylist*: bool
     controls*: seq[FormAssociatedElement]
+    relList {.jsget.}: DOMTokenList
 
   HTMLTemplateElement* = ref object of HTMLElement
     content*: DocumentFragment
@@ -311,6 +314,7 @@ type
   HTMLBaseElement* = ref object of HTMLElement
 
   HTMLAreaElement* = ref object of HTMLElement
+    relList {.jsget.}: DOMTokenList
 
   HTMLButtonElement* = ref object of FormAssociatedElement
     form* {.jsget.}: HTMLFormElement
@@ -778,7 +782,7 @@ const ReflectTable0 = [
   makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes("href", TAG_LINK),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
-  makes("rel", "relList", TAG_A, TAG_LINK, TAG_LABEL),
+  makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
   makes("for", "htmlFor", TAG_LABEL),
   makeul("cols", TAG_TEXTAREA, 20u32),
   makeul("rows", TAG_TEXTAREA, 1u32),
@@ -1120,7 +1124,9 @@ proc replace(tokenList: DOMTokenList, token, newToken: string):
   return ok(true)
 
 const SupportedTokensMap = {
-  "abcd": @["adsf"] #TODO
+  "rel": @["alternate", "dns-prefetch", "icon", "manifest", "modulepreload",
+    "next", "pingback", "preconnect", "prefetch", "preload", "search",
+    "stylesheet"]
 }.toTable()
 
 func supports(tokenList: DOMTokenList, token: string):
@@ -2076,6 +2082,10 @@ func newHTMLElement*(document: Document, tagType: TagType,
     result = new(HTMLInputElement)
   of TAG_A:
     result = new(HTMLAnchorElement)
+    HTMLAnchorElement(result).relList = DOMTokenList(
+      element: result,
+      localName: "rel"
+    )
   of TAG_SELECT:
     result = new(HTMLSelectElement)
   of TAG_OPTGROUP:
@@ -2100,8 +2110,16 @@ func newHTMLElement*(document: Document, tagType: TagType,
     result = new(HTMLStyleElement)
   of TAG_LINK:
     result = new(HTMLLinkElement)
+    HTMLLinkElement(result).relList = DOMTokenList(
+      element: result,
+      localName: "rel"
+    )
   of TAG_FORM:
     result = new(HTMLFormElement)
+    HTMLFormElement(result).relList = DOMTokenList(
+      element: result,
+      localName: "rel"
+    )
   of TAG_TEMPLATE:
     result = HTMLTemplateElement(
       content: DocumentFragment(
@@ -2126,6 +2144,12 @@ func newHTMLElement*(document: Document, tagType: TagType,
     result = new(HTMLCanvasElement)
   of TAG_IMG:
     result = new(HTMLImageElement)
+  of TAG_AREA:
+    result = new(HTMLAreaElement)
+    HTMLAreaElement(result).relList = DOMTokenList(
+      element: result,
+      localName: "rel"
+    )
   else:
     result = new(HTMLElement)
   result.nodeType = ELEMENT_NODE
@@ -2134,7 +2158,7 @@ func newHTMLElement*(document: Document, tagType: TagType,
   result.namespacePrefix = prefix
   result.document_internal = document
   result.attributes = NamedNodeMap(element: result)
-  result.classList = DOMTokenList(localName: "classList")
+  result.classList = DOMTokenList(element: result, localName: "classList")
   result.index = -1
   {.cast(noSideEffect).}:
     for k, v in attrs:
@@ -2208,7 +2232,9 @@ func parseURL*(document: Document, s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
 
-func rel*[T: HTMLAnchorElement|HTMLLinkElement|HTMLAreaElement](element: T): string =
+type RelElems = HTMLAnchorElement|HTMLLinkElement|HTMLAreaElement
+
+func rel*[T: RelElems](element: T): string =
   return element.attr("rel")
 
 func media*[T: HTMLLinkElement|HTMLStyleElement](element: T): string =
@@ -2271,35 +2297,50 @@ proc reflectAttrs(element: Element, name, value: string) =
   template reflect_str(element: Element, n: static string, val, fun: untyped) =
     if name == n:
       element.val = fun(value)
-  template reflect_bool(element: Element, name: static string, val: untyped) =
-    if name in element.attrs:
+      return
+  template reflect_bool(element: Element, n: static string, val: untyped) =
+    if name == n:
       element.val = true
+      return
+  template reflect_domtoklist(element: Element, n: static string,
+      val: untyped) =
+    if name == n:
+      element.val.toks.setLen(0)
+      for x in value.split(AsciiWhitespace):
+        if x != "" and x notin element.val:
+          element.val.toks.add(x)
+      return
   element.reflect_str "id", id
-  if name == "class":
-    element.classList.toks.setLen(0)
-    for x in value.split(AsciiWhitespace):
-      if x != "" and x notin element.classList:
-        element.classList.toks.add(x)
-  elif name == "style":
+  element.reflect_domtoklist "class", classList
+  if name == "style":
     element.style_cached = newCSSStyleDeclaration(element, value)
-  else:
-    case element.tagType
-    of TAG_INPUT:
-      let input = HTMLInputElement(element)
-      input.reflect_str "value", value
-      input.reflect_str "type", inputType, inputType
-      input.reflect_bool "checked", checked
-    of TAG_OPTION:
-      let option = HTMLOptionElement(element)
-      option.reflect_bool "selected", selected
-    of TAG_BUTTON:
-      let button = HTMLButtonElement(element)
-      button.reflect_str "type", ctype, (func(s: string): ButtonType =
-        case s.toLowerAscii()
-        of "submit": return BUTTON_SUBMIT
-        of "reset": return BUTTON_RESET
-        of "button": return BUTTON_BUTTON)
-    else: discard
+    return
+  case element.tagType
+  of TAG_INPUT:
+    let input = HTMLInputElement(element)
+    input.reflect_str "value", value
+    input.reflect_str "type", inputType, inputType
+    input.reflect_bool "checked", checked
+  of TAG_OPTION:
+    let option = HTMLOptionElement(element)
+    option.reflect_bool "selected", selected
+  of TAG_BUTTON:
+    let button = HTMLButtonElement(element)
+    button.reflect_str "type", ctype, (func(s: string): ButtonType =
+      case s.toLowerAscii()
+      of "submit": return BUTTON_SUBMIT
+      of "reset": return BUTTON_RESET
+      of "button": return BUTTON_BUTTON)
+  of TAG_LINK:
+    let link = HTMLLinkElement(element)
+    link.reflect_domtoklist "rel", relList
+  of TAG_A:
+    let anchor = HTMLAnchorElement(element)
+    anchor.reflect_domtoklist "rel", relList
+  of TAG_AREA:
+    let area = HTMLAnchorElement(element)
+    area.reflect_domtoklist "rel", relList
+  else: discard
 
 proc attr0(element: Element, name, value: string) =
   element.attrs.withValue(name, val):
