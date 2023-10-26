@@ -1721,7 +1721,8 @@ type InnerBlockContext = object
   parent: ptr InnerBlockContext
 
 proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
-  assert box.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
+  assert box.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_TABLE,
+    DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
   blockgroup.boxes.add(box)
 
 proc flush(blockgroup: var BlockGroup) {.inline.} =
@@ -1736,29 +1737,33 @@ proc flush(blockgroup: var BlockGroup) {.inline.} =
     blockgroup.boxes.setLen(0)
 
 # Don't generate empty anonymous inline blocks between block boxes
-func canGenerateAnonymousInline(blockgroup: BlockGroup, computed: CSSComputedValues, str: string): bool =
-  return blockgroup.boxes.len > 0 and blockgroup.boxes[^1].computed{"display"} == DISPLAY_INLINE or
+func canGenerateAnonymousInline(blockgroup: BlockGroup,
+    computed: CSSComputedValues, str: string): bool =
+  return blockgroup.boxes.len > 0 and
+      blockgroup.boxes[^1].computed{"display"} == DISPLAY_INLINE or
     computed.whitespacepre or not str.onlyWhitespace()
-
-proc iflush(blockgroup: var BlockGroup, ibox: var InlineBoxBuilder) =
-  if ibox != nil:
-    assert ibox.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE}
-    blockgroup.add(ibox)
-    ibox = nil
 
 proc newBlockGroup(parent: BoxBuilder): BlockGroup =
   assert parent.computed{"display"} != DISPLAY_INLINE
   result.parent = parent
 
-proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableBoxBuilder
-proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowGroupBoxBuilder
-proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowBoxBuilder
-proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCellBoxBuilder
-proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCaptionBoxBuilder
-proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil): BlockBoxBuilder
+proc generateTableBox(styledNode: StyledNode, viewport: Viewport,
+  parent: var InnerBlockContext): TableBoxBuilder
+proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport,
+  parent: var InnerBlockContext): TableRowGroupBoxBuilder
+proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport,
+  parent: var InnerBlockContext): TableRowBoxBuilder
+proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport,
+  parent: var InnerBlockContext): TableCellBoxBuilder
+proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport,
+  parent: var InnerBlockContext): TableCaptionBoxBuilder
+proc generateBlockBox(styledNode: StyledNode, viewport: Viewport,
+  marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
+  BlockBoxBuilder
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode)
 
-proc generateBlockBox(pctx: var InnerBlockContext, styledNode: StyledNode, marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
+proc generateBlockBox(pctx: var InnerBlockContext, styledNode: StyledNode,
+    marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
   return generateBlockBox(styledNode, pctx.viewport, marker, addr pctx)
 
 proc flushTableRow(ctx: var InnerBlockContext) =
@@ -1779,7 +1784,11 @@ proc flushTable(ctx: var InnerBlockContext) =
     ctx.blockgroup.parent.children.add(ctx.anonTable)
 
 proc iflush(ctx: var InnerBlockContext) =
-  ctx.blockgroup.iflush(ctx.ibox)
+  if ctx.ibox != nil:
+    assert ctx.ibox.computed{"display"} in {DISPLAY_INLINE,
+      DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE}
+    ctx.blockgroup.add(ctx.ibox)
+    ctx.ibox = nil
 
 proc bflush(ctx: var InnerBlockContext) =
   ctx.iflush()
@@ -1841,7 +1850,8 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
       ctx.anonTable.children.add(childbox)
-  of DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP:
+  of DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
+      DISPLAY_TABLE_FOOTER_GROUP:
     ctx.bflush()
     ctx.flushTableRow()
     let childbox = styledNode.generateTableRowGroupBox(ctx.viewport, ctx)
@@ -1888,7 +1898,8 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     discard #TODO
   of DISPLAY_NONE: discard
 
-proc generateAnonymousInlineText(ctx: var InnerBlockContext, text: string, styledNode: StyledNode) =
+proc generateAnonymousInlineText(ctx: var InnerBlockContext, text: string,
+    styledNode: StyledNode) =
   if ctx.ibox == nil:
     ctx.ibox = getTextBox(styledNode.computed.inheritProperties())
     ctx.ibox.node = styledNode
@@ -1959,7 +1970,8 @@ proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   lbox.splitend = true
   ctx.iflush()
 
-proc newInnerBlockContext(styledNode: StyledNode, box: BoxBuilder, viewport: Viewport, parent: ptr InnerBlockContext): InnerBlockContext =
+proc newInnerBlockContext(styledNode: StyledNode, box: BoxBuilder,
+    viewport: Viewport, parent: ptr InnerBlockContext): InnerBlockContext =
   result = InnerBlockContext(
     styledNode: styledNode,
     blockgroup: newBlockGroup(box),
@@ -1989,7 +2001,9 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
       ctx.generateReplacement(child, ctx.styledNode)
   ctx.iflush()
 
-proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil): BlockBoxBuilder =
+proc generateBlockBox(styledNode: StyledNode, viewport: Viewport,
+    marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
+    BlockBoxBuilder =
   let box = getBlockBox(styledNode.computed)
   box.node = styledNode
   var ctx = newInnerBlockContext(styledNode, box, viewport, parent)
@@ -2015,7 +2029,8 @@ proc generateBlockBox(styledNode: StyledNode, viewport: Viewport, marker = none(
   ctx.blockgroup.flush()
   return box
 
-proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCellBoxBuilder =
+proc generateTableCellBox(styledNode: StyledNode, viewport: Viewport,
+    parent: var InnerBlockContext): TableCellBoxBuilder =
   let box = getTableCellBox(styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
@@ -2035,7 +2050,8 @@ proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowBoxBuilder =
+proc generateTableRowBox(styledNode: StyledNode, viewport: Viewport,
+    parent: var InnerBlockContext): TableRowBoxBuilder =
   let box = getTableRowBox(styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
@@ -2057,7 +2073,8 @@ proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableRowGroupBoxBuilder =
+proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport,
+    parent: var InnerBlockContext): TableRowGroupBoxBuilder =
   let box = getTableRowGroupBox(styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
@@ -2065,7 +2082,8 @@ proc generateTableRowGroupBox(styledNode: StyledNode, viewport: Viewport, parent
   box.generateTableRowGroupChildWrappers()
   return box
 
-proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableCaptionBoxBuilder =
+proc generateTableCaptionBox(styledNode: StyledNode, viewport: Viewport,
+    parent: var InnerBlockContext): TableCaptionBoxBuilder =
   let box = getTableCaptionBox(styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
@@ -2086,7 +2104,8 @@ proc generateTableChildWrappers(box: TableBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableBox(styledNode: StyledNode, viewport: Viewport, parent: var InnerBlockContext): TableBoxBuilder =
+proc generateTableBox(styledNode: StyledNode, viewport: Viewport,
+    parent: var InnerBlockContext): TableBoxBuilder =
   let box = getTableBox(styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, viewport, addr parent)
   ctx.generateInnerBlockBox()
