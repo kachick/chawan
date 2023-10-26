@@ -625,8 +625,8 @@ proc staticReadConfig(): ConfigObj =
 
 const defaultConfig = staticReadConfig()
 
-proc readConfig(config: Config, dir: string) =
-  let fs = newFileStream(dir / "config.toml")
+proc readConfig(config: Config, dir, name: string) =
+  let fs = openFileExpand(dir, name)
   if fs != nil:
     config.parseConfig(dir, fs)
 
@@ -636,12 +636,15 @@ proc getNormalAction*(config: Config, s: string): string =
 proc getLinedAction*(config: Config, s: string): string =
   return config.line.getOrDefault(s)
 
-proc readConfig*(): Config =
+proc readConfig*(pathOverride: Option[string]): Config =
   result = Config()
   result[] = defaultConfig
-  when defined(debug):
-    result.readConfig(getCurrentDir() / "res")
-  result.readConfig(getConfigDir() / "chawan")
+  if pathOverride.isNone:
+    when defined(debug):
+      result.readConfig(getCurrentDir() / "res", "config.toml")
+    result.readConfig(getConfigDir() / "chawan", "config.toml")
+  else:
+    result.readConfig(getCurrentDir(), pathOverride.get)
 
 proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ActionMap)

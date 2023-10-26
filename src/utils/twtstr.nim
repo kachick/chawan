@@ -563,6 +563,13 @@ func htmlEscape*(s: string): string =
       res &= c
   return res
 
+func dqEscape*(s: string): string =
+  result = newStringOfCap(s.len)
+  for c in s:
+    if c == '"':
+      result &= '\\'
+    result &= c
+
 #basically std join but with char
 func join*(ss: openarray[string], sep: char): string =
   if ss.len == 0:

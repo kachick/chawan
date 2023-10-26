@@ -35,10 +35,17 @@ provided, each letter is parsed as a separate short form.
 \fB\-\-abcd\fR.)
 
 .TP
+\fB\-c, \-\-css\fR \fIstylesheet\fR
+Temporarily modify the user stylesheet. If a user stylesheet is already
+being used, the stylesheet given is appended to that.
+.TP
 \fB\-d, \-\-dump\fR
 Start in headless mode, and sequentially print the opened files to stdout.
 This option is implicitly enabled if stdout is not a tty (e.g. when piping
 \fIcha\fR output).
+.TP
+\fB\-h, \-\-help\fR
+Print a short version of this page, then exit.
 .TP
 \fB\-o, \-\-opt\fR \fIconfig\fR
 Override configuration options. This accepts the configuration format is
@@ -49,32 +56,6 @@ valid TOML.
 parameters, unrecognized bare keywords are converted to strings. So this
 works: \fB--opt\fR abcd.option-name=\fIoption-value\fR. However, symbols must
 still be quoted.)
-.TP
-\fB\-c, \-\-css\fR \fIstylesheet\fR
-Temporarily modify the user stylesheet. If a user stylesheet is already
-being used, the stylesheet given is appended to that.
-.TP
-\fB\-T, \-\-type\fR \fIcontent-type\fR
-Override the content type of all input files. Useful when the content type
-cannot be guessed from the file extension, or when reading a non-plaintext
-file from stdin.
-.TP
-\fB\-I, \-\-input-charset\fR \fIcharset\fR
-Override the character set of all input files. Useful when Chawan is
-incorrectly recognizing the input character set. (Note: if this happens
-often, consider changing the default input charset recognition list
-\fIencoding.document-charset\fR in the configuration.)
-.TP
-\fB\-O, \-\-output-charset\fR \fIcharset\fR
-Override the output character set. This is a shortcut for
-\fB\-o encoding.display\-charset=\fIcharset\fR.
-.TP
-\fB\-M, \-\-monochrome\fR
-Override the output character set. This is a shortcut for
-\fB\-o display.color\-mode=\fImonochrome\fR.
-.TP
-\fB\-V, \-\-visual\fR
-Start in visual mode: the page specified in \fIstart.visual-home\fR is opened.
 .TP
 \fB\-r, \-\-run\fR \fIscript\fR/\fIfile\fR
 Execute the string provided as a JS script, or execute the supplied JS
@@ -87,11 +68,34 @@ console.log("hello from ESM!"); //.mjs'
 .br
 In other words, we add a comment \fI//.mjs\fR to the end of the script.)
 .TP
-\fB\-h, \-\-help\fR
-Print a short version of this page, then exit.
-.TP
 \fB\-v, \-\-version\fR
 Print information about the browser's version, then exit.
+.TP
+\fB\-C, \-\-config\fR \fIfile\fR
+Override the default configuration search path. Both absolute and relative
+paths are allowed.
+.TP
+\fB\-I, \-\-input-charset\fR \fIcharset\fR
+Override the character set of all input files. Useful when Chawan is
+incorrectly recognizing the input character set. (Note: if this happens
+often, consider changing the default input charset recognition list
+\fIencoding.document-charset\fR in the configuration.)
+.TP
+\fB\-M, \-\-monochrome\fR
+Override the output character set. This is a shortcut for
+\fB\-o display.color\-mode=\fImonochrome\fR.
+.TP
+\fB\-O, \-\-output-charset\fR \fIcharset\fR
+Override the output character set. This is a shortcut for
+\fB\-o encoding.display\-charset=\fIcharset\fR.
+.TP
+\fB\-T, \-\-type\fR \fIcontent-type\fR
+Override the content type of all input files. Useful when the content type
+cannot be guessed from the file extension, or when reading a non-plaintext
+file from stdin.
+.TP
+\fB\-V, \-\-visual\fR
+Start in visual mode: the page specified in \fIstart.visual-home\fR is opened.
 .TP
 \fB\-\-\fP
 Interpret all following arguments as files. (e.g. if you have a file named
