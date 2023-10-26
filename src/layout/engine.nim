@@ -1853,6 +1853,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         #TODO make this an inline-table if we're in an inline context
         wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
+      ctx.anonTable.children.add(childbox)
   of DISPLAY_TABLE_CELL:
     ctx.bflush()
     let childbox = styledNode.generateTableCellBox(ctx.viewport, ctx)
@@ -1880,6 +1881,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         #TODO make this an inline-table if we're in an inline context
         wrappervals{"display"} = DISPLAY_TABLE
         ctx.anonTable = getTableBox(wrappervals)
+      ctx.anonTable.children.add(childbox)
   of DISPLAY_TABLE_COLUMN:
     discard #TODO
   of DISPLAY_TABLE_COLUMN_GROUP:
