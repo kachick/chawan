@@ -171,7 +171,7 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
   assert lines[y].formats[fi].pos <= nx
   # That's it!
 
-proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: LayoutUnit,
+proc setRowWord(lines: var FlexibleGrid, word: InlineAtom, x, y: LayoutUnit,
     window: WindowAttributes) =
   var r: Rune
 
@@ -185,16 +185,15 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineWord, x, y: LayoutUnit,
     x += r.twidth(x)
   if x < 0: return # highest x is outside the canvas, no need to draw
   let linestr = word.str.substr(i)
+  lines.setText(linestr, word.wformat, x, y)
 
-  lines.setText(linestr, word.format, x, y)
-
-proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: LayoutUnit,
+proc setSpacing(lines: var FlexibleGrid, spacing: InlineAtom, x, y: LayoutUnit,
     window: WindowAttributes) =
   var y = toInt((y + spacing.offset.y) div window.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
   var x = toInt((x + spacing.offset.x) div window.ppc) # x cell
-  let width = toInt(spacing.width div window.ppc) # cell width
+  let width = toInt(spacing.size.w div window.ppc) # cell width
 
   if x + width < 0: return # highest x is outside the canvas, no need to draw
   var i = 0
@@ -202,8 +201,7 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineSpacing, x, y: LayoutUni
     i -= x
     x = 0
   let linestr = ' '.repeat(width - i)
-
-  lines.setText(linestr, spacing.format, x, y)
+  lines.setText(linestr, spacing.sformat, x, y)
 
 proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
     starty, endx, endy: int, node: StyledNode, window: WindowAttributes) =
@@ -290,7 +288,7 @@ func calculateErrorY(ctx: InlineContext, window: WindowAttributes):
   var error = 0
   for i in 0 ..< ctx.lines.len:
     if i < ctx.lines.high:
-      let dy = toInt(ctx.lines[i + 1].offset.y - ctx.lines[i].offset.y)
+      let dy = toInt(ctx.lines[i + 1].offsety - ctx.lines[i].offsety)
       error += dy - (dy div window.ppl) * window.ppl
   return error div (ctx.lines.len - 1)
 
@@ -305,8 +303,7 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext,
   let erry = ctx.calculateErrorY(window)
   var i = 0
   for line in ctx.lines:
-    let x = x + line.offset.x
-    let y0 = y + line.offset.y
+    let y0 = y + line.offsety
     let y = y0 - erry * i
 
     let r = y div window.ppl
@@ -314,17 +311,15 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext,
       grid.addLine()
 
     for atom in line.atoms:
-      if atom of InlineBlockBox:
-        let iblock = InlineBlockBox(atom)
-        let x = x + iblock.offset.x
-        let y = y + iblock.offset.y
-        grid.renderBlockBox(iblock.innerbox, x, y, window, posx, posy)
-      elif atom of InlineWord:
-        let word = InlineWord(atom)
-        grid.setRowWord(word, x, y, window)
-      elif atom of InlineSpacing:
-        let spacing = InlineSpacing(atom)
-        grid.setSpacing(spacing, x, y, window)
+      case atom.t
+      of INLINE_BLOCK:
+        let x = x + atom.offset.x
+        let y = y + atom.offset.y
+        grid.renderBlockBox(atom.innerbox, x, y, window, posx, posy)
+      of INLINE_WORD:
+        grid.setRowWord(atom, x, y, window)
+      of INLINE_SPACING, INLINE_PADDING:
+        grid.setSpacing(atom, x, y, window)
     inc i
 
 proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,

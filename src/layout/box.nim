@@ -12,8 +12,8 @@ type
     y*: LayoutUnit
 
   Size* = object
-    width*: LayoutUnit
-    height*: LayoutUnit
+    w*: LayoutUnit
+    h*: LayoutUnit
 
   # min-content: box width is longest word's width
   # max-content: box width is content width without wrapping
@@ -64,12 +64,20 @@ type
 
   TableCaptionBoxBuilder* = ref object of BlockBoxBuilder
 
-  InlineAtom* = ref object of RootObj
+  InlineAtomType* = enum
+    INLINE_SPACING, INLINE_PADDING, INLINE_WORD, INLINE_BLOCK
+
+  InlineAtom* = ref object
     offset*: Offset
-    width*: LayoutUnit
-    height*: LayoutUnit
-    vertalign*: CSSVerticalAlign
-    baseline*: LayoutUnit
+    size*: Size
+    case t*: InlineAtomType
+    of INLINE_SPACING, INLINE_PADDING:
+      sformat*: ComputedFormat
+    of INLINE_WORD:
+      wformat*: ComputedFormat
+      str*: string
+    of INLINE_BLOCK:
+      innerbox*: BlockBox
 
   ComputedFormat* = ref object
     fontstyle*: CSSFontStyle
@@ -82,21 +90,10 @@ type
     # then properly blend them.
     bgcolor*: RGBAColor
 
-  InlineSpacing* = ref object of InlineAtom
-    format*: ComputedFormat
-
-  # Treated exactly the same as InlineSpacing, except it signifies padding.
-  InlinePadding* = ref object of InlineSpacing
-
-  InlineWord* = ref object of InlineAtom
-    str*: string
-    format*: ComputedFormat
-
   LineBox* = ref object
     atoms*: seq[InlineAtom]
-    offset*: Offset
-    width*: LayoutUnit
-    height*: LayoutUnit
+    offsety*: LayoutUnit
+    size*: Size
 
   InlineContext* = ref object
     offset*: Offset
@@ -194,11 +191,6 @@ type
     inlinespacing*: LayoutUnit
     collapse*: bool
     reflow*: seq[bool]
-
-  InlineBlockBox* = ref object of InlineAtom
-    innerbox*: BlockBox
-    margin_top*: LayoutUnit
-    margin_bottom*: LayoutUnit
 
 func minContent*(): SizeConstraint =
   return SizeConstraint(t: MIN_CONTENT)
