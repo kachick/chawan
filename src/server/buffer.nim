@@ -1732,4 +1732,5 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   buffer.runBuffer()
   buffer.pstream.close()
   buffer.loader.unref()
+  ssock.close()
   quit(0)
