@@ -1,20 +1,15 @@
 import strutils
 import unicode
 
-import css/cascade
-import css/sheet
 import css/stylednode
 import css/values
 import display/winattrs
-import html/dom
 import layout/box
 import layout/engine
 import layout/layoutunit
 import types/cell
 import types/color
 import utils/twtstr
-
-import chame/tags
 
 func formatFromWord(computed: ComputedFormat): Format =
   result.fgcolor = computed.color.cellColor()
@@ -39,8 +34,8 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
   var i = 0
   var r: Rune
   # make sure we have line y
-  while lines.len <= y:
-    lines.addLine()
+  if lines.high < y:
+    lines.addLines(y - lines.high)
 
   var cx = 0 # first x of new string (before padding)
   while cx < x and i < lines[y].str.len:
@@ -230,8 +225,8 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
   if startx == endx: return # width is 0, no need to paint
 
   # make sure we have line y
-  while lines.len <= endy:
-    lines.addLine()
+  if lines.high < endy:
+    lines.addLines(endy - lines.high)
 
   for y in starty..<endy:
     # Make sure line.width() >= endx
@@ -305,11 +300,9 @@ proc renderInlineContext(grid: var FlexibleGrid, ctx: InlineContext,
   for line in ctx.lines:
     let y0 = y + line.offsety
     let y = y0 - erry * i
-
-    let r = y div window.ppl
-    while grid.len <= r:
-      grid.addLine()
-
+    let r = (y div window.ppl).toInt()
+    if grid.high < r:
+      grid.addLines(r - grid.high)
     for atom in line.atoms:
       case atom.t
       of INLINE_BLOCK:
@@ -377,27 +370,11 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
       for i in countdown(box.nested.high, 0):
         stack.add((box.nested[i], x, y, posx, posy))
 
-const css = staticRead"res/ua.css"
-let uastyle = css.parseStylesheet()
-const quirk = css & staticRead"res/quirk.css"
-let quirkstyle = quirk.parseStylesheet()
-type RenderedDocument* = object
-  grid*: FlexibleGrid
-  styledRoot*: StyledNode
-  images*: seq[StyledNode]
-
-proc renderDocument*(document: Document, userstyle: CSSStylesheet,
-    layout: var Viewport, previousStyled: StyledNode): RenderedDocument =
+proc renderDocument*(styledRoot: StyledNode, viewport: Viewport,
+    attrs: WindowAttributes): FlexibleGrid =
   var grid: FlexibleGrid
-  var uastyle = uastyle
-  if document.mode == QUIRKS:
-    uastyle = quirkstyle
-  let styledRoot = document.applyStylesheets(uastyle, userstyle, previousStyled)
-  let rootBox = layout.renderLayout(styledRoot)
-  grid.renderBlockBox(rootBox, 0, 0, document.window.attrs)
+  let rootBox = viewport.renderLayout(styledRoot)
+  grid.renderBlockBox(rootBox, 0, 0, attrs)
   if grid.len == 0:
     grid.addLine()
-  return RenderedDocument(
-    grid: grid,
-    styledRoot: styledRoot
-  )
+  return grid

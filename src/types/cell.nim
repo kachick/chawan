@@ -143,6 +143,9 @@ func findNextFormat*(line: SimpleFlexibleLine, pos: int): SimpleFormatCell =
 proc addLine*(grid: var FlexibleGrid) =
   grid.add(FlexibleLine())
 
+proc addLines*(grid: var FlexibleGrid, n: int) =
+  grid.setLen(grid.len + n)
+
 proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format, node: StyledNode = nil) =
   line.formats.insert(FormatCell(format: format, node: node, pos: pos), i)
 

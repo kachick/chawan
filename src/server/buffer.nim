@@ -584,14 +584,23 @@ proc gotoAnchor*(buffer: Buffer): Opt[tuple[x, y: int]] {.proxy.} =
         return ok((format.pos, y))
   return err()
 
+const css = staticRead"res/ua.css"
+let uastyle = css.parseStylesheet()
+const quirk = css & staticRead"res/quirk.css"
+let quirkstyle = quirk.parseStylesheet()
+
 proc do_reshape(buffer: Buffer) =
   if buffer.ishtml:
     if buffer.viewport == nil:
       buffer.viewport = Viewport(window: buffer.attrs)
-    let ret = renderDocument(buffer.document, buffer.userstyle,
-      buffer.viewport, buffer.prevstyled)
-    buffer.lines = ret.grid
-    buffer.prevstyled = ret.styledRoot
+    let uastyle = if buffer.document.mode != QUIRKS:
+      uastyle
+    else:
+      quirkstyle
+    let styledRoot = buffer.document.applyStylesheets(uastyle,
+      buffer.userstyle, buffer.prevstyled)
+    buffer.lines = renderDocument(styledRoot, buffer.viewport, buffer.attrs)
+    buffer.prevstyled = styledRoot
   else:
     buffer.lines.renderStream(buffer.srenderer, buffer.available)
     buffer.available = 0
