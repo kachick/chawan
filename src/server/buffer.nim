@@ -35,7 +35,6 @@ import js/fromjs
 import js/javascript
 import js/regex
 import js/timeout
-import layout/box
 import loader/connecterror
 import loader/headers
 import loader/loader
@@ -99,7 +98,6 @@ type
     attrs: WindowAttributes
     window: Window
     document: Document
-    viewport: Viewport
     prevstyled: StyledNode
     selector: Selector[int]
     istream: Stream
@@ -591,15 +589,13 @@ let quirkstyle = quirk.parseStylesheet()
 
 proc do_reshape(buffer: Buffer) =
   if buffer.ishtml:
-    if buffer.viewport == nil:
-      buffer.viewport = Viewport(window: buffer.attrs)
     let uastyle = if buffer.document.mode != QUIRKS:
       uastyle
     else:
       quirkstyle
     let styledRoot = buffer.document.applyStylesheets(uastyle,
       buffer.userstyle, buffer.prevstyled)
-    buffer.lines = renderDocument(styledRoot, buffer.viewport, buffer.attrs)
+    buffer.lines = renderDocument(styledRoot, buffer.attrs)
     buffer.prevstyled = styledRoot
   else:
     buffer.lines.renderStream(buffer.srenderer, buffer.available)
@@ -607,7 +603,6 @@ proc do_reshape(buffer: Buffer) =
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
-  buffer.viewport = Viewport(window: buffer.attrs)
   buffer.width = buffer.attrs.width
   buffer.height = buffer.attrs.height - 1
 
@@ -1720,7 +1715,6 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     loader: loader,
     source: source,
     sstream: newStringStream(),
-    viewport: Viewport(window: attrs),
     width: attrs.width,
     height: attrs.height - 1,
     readbufsize: BufferSize,

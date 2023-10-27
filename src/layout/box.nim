@@ -30,7 +30,7 @@ type
     u*: LayoutUnit
 
   Viewport* = ref object
-    window*: WindowAttributes
+    attrs*: WindowAttributes
     positioned*: seq[BlockBox]
 
   BoxBuilder* = ref object of RootObj

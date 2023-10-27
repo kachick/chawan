@@ -370,10 +370,10 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
       for i in countdown(box.nested.high, 0):
         stack.add((box.nested[i], x, y, posx, posy))
 
-proc renderDocument*(styledRoot: StyledNode, viewport: Viewport,
-    attrs: WindowAttributes): FlexibleGrid =
+proc renderDocument*(styledRoot: StyledNode, attrs: WindowAttributes):
+    FlexibleGrid =
   var grid: FlexibleGrid
-  let rootBox = viewport.renderLayout(styledRoot)
+  let rootBox = renderLayout(styledRoot, attrs)
   grid.renderBlockBox(rootBox, 0, 0, attrs)
   if grid.len == 0:
     grid.addLine()

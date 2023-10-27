@@ -13,13 +13,13 @@ import utils/twtstr
 # Build phase
 func px(l: CSSLength, viewport: Viewport, p: LayoutUnit = 0):
     LayoutUnit {.inline.} =
-  return px(l, viewport.window, p)
+  return px(l, viewport.attrs, p)
 
 func px(l: CSSLength, viewport: Viewport, p: Option[LayoutUnit]):
     Option[LayoutUnit] {.inline.} =
   if l.unit == UNIT_PERC and p.isNone:
     return none(LayoutUnit)
-  return some(px(l, viewport.window, p.get(0)))
+  return some(px(l, viewport.attrs, p.get(0)))
 
 func canpx(l: CSSLength, sc: SizeConstraint): bool =
   return l.unit != UNIT_PERC or sc.isDefinite()
@@ -37,7 +37,7 @@ func px(l: CSSLength, viewport: Viewport, p: SizeConstraint): LayoutUnit =
       return 0
     of STRETCH, FIT_CONTENT:
       return l.px(viewport, p.u)
-  return px(l, viewport.window, 0)
+  return px(l, viewport.attrs, 0)
 
 func applySizeConstraint(u: LayoutUnit, availableSize: SizeConstraint):
     LayoutUnit =
@@ -87,13 +87,13 @@ func nowrap(computed: CSSComputedValues): bool =
   computed{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}
 
 func cellwidth(viewport: Viewport): LayoutUnit =
-  viewport.window.ppc
+  viewport.attrs.ppc
 
 func cellwidth(state: InlineState): LayoutUnit =
   state.viewport.cellwidth
 
 func cellheight(viewport: Viewport): LayoutUnit =
-  viewport.window.ppl
+  viewport.attrs.ppl
 
 func cellheight(state: InlineState): LayoutUnit =
   state.viewport.cellheight
@@ -1046,9 +1046,9 @@ proc positionAbsolute(box: BlockBox) =
   let right = box.computed{"right"}
   let top = box.computed{"top"}
   let bottom = box.computed{"bottom"}
-  let parentWidth = applySizeConstraint(viewport.window.width_px,
+  let parentWidth = applySizeConstraint(viewport.attrs.width_px,
     last.availableWidth)
-  let parentHeight = applySizeConstraint(viewport.window.height_px,
+  let parentHeight = applySizeConstraint(viewport.attrs.height_px,
     last.availableHeight)
   box.x_positioned = not (left.auto and right.auto)
   box.y_positioned = not (top.auto and bottom.auto)
@@ -1658,9 +1658,9 @@ proc buildBlock(builder: BlockBoxBuilder, parent: BlockBox): BlockBox =
 
 # Establish a new flow-root context and build a block box.
 proc buildRootBlock(viewport: Viewport, builder: BlockBoxBuilder): BlockBox =
-  let w = stretch(viewport.window.width_px)
+  let w = stretch(viewport.attrs.width_px)
   let h = maxContent()
-  let vh: LayoutUnit = viewport.window.height_px
+  let vh: LayoutUnit = viewport.attrs.height_px
   let box = viewport.newFlowRootBox(builder, w, h, some(vh))
   viewport.positioned.add(box)
   box.buildLayout(builder)
@@ -2134,7 +2134,7 @@ proc generateTableBox(styledNode: StyledNode, viewport: Viewport,
   box.generateTableChildWrappers()
   return box
 
-proc renderLayout*(viewport: Viewport, root: StyledNode): BlockBox =
-  viewport.positioned.setLen(0)
+proc renderLayout*(root: StyledNode, attrs: WindowAttributes): BlockBox =
+  let viewport = Viewport(attrs: attrs)
   let builder = root.generateBlockBox(viewport)
   return viewport.buildRootBlock(builder)
