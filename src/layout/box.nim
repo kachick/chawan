@@ -2,7 +2,6 @@ import options
 
 import css/stylednode
 import css/values
-import display/winattrs
 import layout/layoutunit
 import types/color
 
@@ -28,10 +27,6 @@ type
   SizeConstraint* = object
     t*: SizeConstraintType
     u*: LayoutUnit
-
-  Viewport* = ref object
-    attrs*: WindowAttributes
-    positioned*: seq[BlockBox]
 
   BoxBuilder* = ref object of RootObj
     children*: seq[BoxBuilder]
@@ -114,7 +109,6 @@ type
     node*: StyledNode
     nested*: seq[BlockBox]
     computed*: CSSComputedValues
-    viewport*: Viewport
     offset*: Offset
 
     # This is the padding width/height.
@@ -153,44 +147,6 @@ type
 
   ListItemBox* = ref object of BlockBox
     marker*: InlineContext
-
-  CellWrapper* = ref object
-    builder*: TableCellBoxBuilder
-    box*: BlockBox
-    coli*: int
-    colspan*: int
-    rowspan*: int
-    reflow*: bool
-    grown*: int # number of remaining rows
-    real*: CellWrapper # for filler wrappers
-    last*: bool # is this the last filler?
-    height*: LayoutUnit
-    baseline*: LayoutUnit
-
-  RowContext* = object
-    cells*: seq[CellWrapper]
-    reflow*: seq[bool]
-    width*: LayoutUnit
-    height*: LayoutUnit
-    builder*: TableRowBoxBuilder
-    ncols*: int
-
-  ColumnContext* = object
-    minwidth*: LayoutUnit
-    width*: LayoutUnit
-    wspecified*: bool
-    weight*: float64
-
-  TableContext* = object
-    caption*: TableCaptionBoxBuilder
-    rows*: seq[RowContext]
-    cols*: seq[ColumnContext]
-    growing*: seq[CellWrapper]
-    maxwidth*: LayoutUnit
-    blockspacing*: LayoutUnit
-    inlinespacing*: LayoutUnit
-    collapse*: bool
-    reflow*: seq[bool]
 
 func minContent*(): SizeConstraint =
   return SizeConstraint(t: MIN_CONTENT)
