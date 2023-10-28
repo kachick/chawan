@@ -871,8 +871,8 @@ proc buildBlock(lctx: LayoutState, builder: BlockBoxBuilder,
   parent: BlockBox): BlockBox
 proc buildInlines(lctx: LayoutState, parent: BlockBox,
   inlines: seq[BoxBuilder]): InlineContext
-proc buildBlocks(lctx: LayoutState, parent: BlockBox, blocks: seq[BoxBuilder],
-  node: StyledNode)
+proc buildBlockLayout(lctx: LayoutState, box: BlockBox,
+  builders: seq[BoxBuilder], node: StyledNode)
 proc buildTable(lctx: LayoutState, builder: TableBoxBuilder,
   parent: BlockBox): BlockBox
 proc buildTableLayout(lctx: LayoutState, table: BlockBox,
@@ -899,26 +899,18 @@ proc applyInlineDimensions(box: BlockBox) =
   box.baseline = box.inline.offset.y + box.inline.baseline
   box.firstBaseline = box.inline.offset.y + box.inline.firstBaseline
 
-# Builder only contains inline boxes.
 proc buildInlineLayout(lctx: LayoutState, parent: BlockBox,
     children: seq[BoxBuilder]) =
   parent.inline = lctx.buildInlines(parent, children)
   parent.applyInlineDimensions()
 
-# Builder only contains block boxes.
-proc buildBlockLayout(lctx: LayoutState, box: BlockBox,
-    children: seq[BoxBuilder], node: StyledNode) =
-  let positioned = box.computed{"position"} != POSITION_STATIC
-  if positioned:
-    lctx.positioned.add(box)
-  lctx.buildBlocks(box, children, node)
-  if positioned:
-    discard lctx.positioned.pop()
-
-proc buildLayout(lctx: LayoutState, box: BlockBox, builder: BlockBoxBuilder) =
+proc buildFlowLayout(lctx: LayoutState, box: BlockBox,
+    builder: BlockBoxBuilder) =
   if builder.inlinelayout:
+    # Builder only contains inline boxes.
     lctx.buildInlineLayout(box, builder.children)
   else:
+    # Builder only contains block boxes.
     lctx.buildBlockLayout(box, builder.children, builder.node)
 
 func toperc100(sc: SizeConstraint): Option[LayoutUnit] =
@@ -934,7 +926,7 @@ proc addInlineBlock(state: var InlineState, builder: BlockBoxBuilder,
   let lctx = state.lctx
   case builder.computed{"display"}
   of DISPLAY_INLINE_BLOCK:
-    lctx.buildLayout(innerbox, builder)
+    lctx.buildFlowLayout(innerbox, builder)
   of DISPLAY_INLINE_TABLE:
     lctx.buildTableLayout(innerbox, TableBoxBuilder(builder))
   else:
@@ -1040,7 +1032,7 @@ proc buildListItem(lctx: LayoutState, builder: ListItemBoxBuilder,
   result = newListItem(lctx, parent, builder)
   if builder.marker != nil:
     result.marker = buildMarker(builder.marker, result, lctx)
-  lctx.buildLayout(result, builder.content)
+  lctx.buildFlowLayout(result, builder.content)
 
 proc positionAbsolute(lctx: LayoutState, box: BlockBox) =
   let last = lctx.positioned[^1]
@@ -1080,123 +1072,6 @@ proc positionRelative(parent, box: BlockBox, lctx: LayoutState) =
     box.offset.y += top.px(lctx)
   elif not top.auto:
     box.offset.y -= parent.height - bottom.px(lctx) - box.height
-
-type Strut = object
-  pos: LayoutUnit
-  neg: LayoutUnit
-
-proc append(a: var Strut, b: LayoutUnit) =
-  if b < 0:
-    a.neg = min(b, a.neg)
-  else:
-    a.pos = max(b, a.pos)
-
-func sum(a: Strut): LayoutUnit =
-  return a.pos + a.neg
-
-proc applyChildPosition(parent, child: BlockBox, x, y: var LayoutUnit,
-    margin_todo: var Strut, maxChildWidth, childHeight: var LayoutUnit) =
-  if child.computed{"position"} == POSITION_ABSOLUTE: #TODO sticky, fixed
-    if child.computed{"left"}.auto and child.computed{"right"}.auto:
-      child.offset.x = x
-    if child.computed{"top"}.auto and child.computed{"bottom"}.auto:
-      child.offset.y = y + margin_todo.sum()
-    child.offset.y += child.margin_top
-  else:
-    child.offset.y = y
-    child.offset.x = x
-    y += child.height
-    childHeight += child.height
-    maxChildWidth = max(maxChildWidth, child.width)
-    parent.xminwidth = max(parent.xminwidth, child.xminwidth)
-    margin_todo = Strut()
-    margin_todo.append(child.margin_bottom)
-
-proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
-  case box.computed{"text-align"}
-  of TEXT_ALIGN_CHA_CENTER:
-    child.offset.x += max(width div 2 - child.width div 2, 0)
-  of TEXT_ALIGN_CHA_LEFT: discard
-  of TEXT_ALIGN_CHA_RIGHT:
-    child.offset.x += max(width - child.width, 0)
-  else:
-    child.offset.x += child.margin_left
-
-proc positionBlocks(lctx: LayoutState, box: BlockBox) =
-  var y: LayoutUnit = 0
-  var x: LayoutUnit = 0
-  var maxChildWidth: LayoutUnit
-  var childHeight: LayoutUnit
-  var margin_todo: Strut
-
-  y += box.padding_top
-  childHeight += box.padding_top
-  x += box.padding_left
-
-  var i = 0
-  while i < box.nested.len:
-    let child = box.nested[i]
-    if child.computed{"position"} != POSITION_ABSOLUTE:
-      break
-    applyChildPosition(box, child, x, y, margin_todo, maxChildWidth,
-      childHeight)
-    inc i
-
-  if i < box.nested.len:
-    let child = box.nested[i]
-    margin_todo.append(box.margin_top)
-    margin_todo.append(child.margin_top)
-    box.margin_top = margin_todo.sum()
-    applyChildPosition(box, child, x, y, margin_todo, maxChildWidth,
-      childHeight)
-    box.firstBaseline = child.offset.y + child.firstBaseline
-    inc i
-
-  while i < box.nested.len:
-    let child = box.nested[i]
-    if child.computed{"position"} != POSITION_ABSOLUTE:
-      margin_todo.append(child.margin_top)
-      y += margin_todo.sum()
-      childHeight += margin_todo.sum()
-    applyChildPosition(box, child, x, y, margin_todo, maxChildWidth,
-      childHeight)
-    inc i
-
-  if box.nested.len > 0:
-    let lastNested = box.nested[^1]
-    box.baseline = lastNested.offset.y + lastNested.baseline
-
-  margin_todo.append(box.margin_bottom)
-  box.margin_bottom = margin_todo.sum()
-
-  box.applyWidth(maxChildWidth)
-
-  # Re-position the children.
-  # The x offset for values in shrink mode depends on the parent box's
-  # width, so we cannot do this in the first pass.
-  let width = box.width
-  for child in box.nested:
-    if child.computed{"position"} != POSITION_ABSOLUTE:
-      box.postAlignChild(child, width)
-    case child.computed{"position"}
-    of POSITION_RELATIVE:
-      box.positionRelative(child, lctx)
-    of POSITION_ABSOLUTE:
-      lctx.positionAbsolute(child)
-    else: discard #TODO
-
-  # Finally, add padding. (We cannot do this further up without influencing
-  # positioning.)
-  box.width += box.padding_left
-  box.width += box.padding_right
-
-  childHeight += box.padding_bottom
-
-  box.height = applySizeConstraint(childHeight, box.availableHeight)
-  if box.max_height.isSome and box.height > box.max_height.get:
-    box.height = box.max_height.get
-  if box.min_height.isSome and box.height < box.min_height.get:
-    box.height = box.min_height.get
 
 type
   CellWrapper = ref object
@@ -1244,7 +1119,7 @@ proc buildTableCaption(lctx: LayoutState, builder: TableCaptionBoxBuilder,
   let h = maxContent()
   let ph = availableHeight.toperc100()
   let box = lctx.newFlowRootBox(builder, w, h, ph)
-  lctx.buildLayout(box, builder)
+  lctx.buildFlowLayout(box, builder)
   return box
 
 proc buildTableCell(lctx: LayoutState, builder: TableCellBoxBuilder,
@@ -1252,7 +1127,7 @@ proc buildTableCell(lctx: LayoutState, builder: TableCellBoxBuilder,
     BlockBox =
   let tableCell = lctx.newTableCellBox(builder, availableWidth,
     availableHeight, override)
-  lctx.buildLayout(tableCell, builder)
+  lctx.buildFlowLayout(tableCell, builder)
   return tableCell
 
 # Sort growing cells, and filter out cells that have grown to their intended
@@ -1683,26 +1558,165 @@ proc buildTable(lctx: LayoutState, builder: TableBoxBuilder, parent: BlockBox):
   lctx.buildTableLayout(box, builder)
   return box
 
-proc buildBlocks(lctx: LayoutState, parent: BlockBox, blocks: seq[BoxBuilder],
-    node: StyledNode) =
-  for child in blocks:
-    var cblock: BlockBox
-    case child.computed{"display"}
-    of DISPLAY_BLOCK:
-      cblock = lctx.buildBlock(BlockBoxBuilder(child), parent)
-    of DISPLAY_LIST_ITEM:
-      cblock = lctx.buildListItem(ListItemBoxBuilder(child), parent)
-    of DISPLAY_TABLE:
-      cblock = lctx.buildTable(TableBoxBuilder(child), parent)
-    else: assert false, "child.t is " & $child.computed{"display"}
-    parent.nested.add(cblock)
-  lctx.positionBlocks(parent)
+type
+  BlockState = object
+    lctx: LayoutState
+    x: LayoutUnit
+    y: LayoutUnit
+    childHeight: LayoutUnit
+    maxChildWidth: LayoutUnit
+    margin_todo: Strut
+    nested: seq[BlockBox]
+
+  Strut = object
+    pos: LayoutUnit
+    neg: LayoutUnit
+
+proc append(a: var Strut, b: LayoutUnit) =
+  if b < 0:
+    a.neg = min(b, a.neg)
+  else:
+    a.pos = max(b, a.pos)
+
+func sum(a: Strut): LayoutUnit =
+  return a.pos + a.neg
+
+proc applyChildPosition(ctx: var BlockState, parent, child: BlockBox) =
+  if child.computed{"position"} == POSITION_ABSOLUTE: #TODO sticky, fixed
+    if child.computed{"left"}.auto and child.computed{"right"}.auto:
+      child.offset.x = ctx.x
+    if child.computed{"top"}.auto and child.computed{"bottom"}.auto:
+      child.offset.y = ctx.y + ctx.margin_todo.sum()
+    child.offset.y += child.margin_top
+  else:
+    child.offset.y = ctx.y
+    child.offset.x = ctx.x
+    ctx.y += child.height
+    ctx.childHeight += child.height
+    ctx.maxChildWidth = max(ctx.maxChildWidth, child.width)
+    parent.xminwidth = max(parent.xminwidth, child.xminwidth)
+    ctx.margin_todo = Strut()
+    ctx.margin_todo.append(child.margin_bottom)
+
+proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
+  case box.computed{"text-align"}
+  of TEXT_ALIGN_CHA_CENTER:
+    child.offset.x += max(width div 2 - child.width div 2, 0)
+  of TEXT_ALIGN_CHA_LEFT: discard
+  of TEXT_ALIGN_CHA_RIGHT:
+    child.offset.x += max(width - child.width, 0)
+  else:
+    child.offset.x += child.margin_left
+
+proc addBlockChild(ctx: var BlockState, box: BlockBox,
+    builder: BoxBuilder): BlockBox =
+  let lctx = ctx.lctx
+  let box = case builder.computed{"display"}
+  of DISPLAY_BLOCK:
+    lctx.buildBlock(BlockBoxBuilder(builder), box)
+  of DISPLAY_LIST_ITEM:
+    lctx.buildListItem(ListItemBoxBuilder(builder), box)
+  of DISPLAY_TABLE:
+    lctx.buildTable(TableBoxBuilder(builder), box)
+  else:
+    assert false, "builder.t is " & $builder.computed{"display"}
+    BlockBox(nil)
+  ctx.nested.add(box)
+  return box
+
+proc skipAbsolutes(ctx: var BlockState, box: BlockBox,
+    builders: seq[BoxBuilder]): int =
+  var i = 0
+  while i < builders.len:
+    let builder = builders[i]
+    if builder.computed{"position"} != POSITION_ABSOLUTE:
+      break
+    let child = ctx.addBlockChild(box, builder)
+    if child.computed{"position"} != POSITION_ABSOLUTE:
+      break
+    ctx.applyChildPosition(box, child)
+    inc i
+  return i
+
+proc buildBlockLayout(lctx: LayoutState, box: BlockBox,
+    builders: seq[BoxBuilder], node: StyledNode) =
+  let positioned = box.computed{"position"} != POSITION_STATIC
+  if positioned:
+    lctx.positioned.add(box)
+  var ctx = BlockState(
+    x: box.padding_left,
+    y: box.padding_top,
+    childHeight: box.padding_top,
+    lctx: lctx
+  )
+
+  # Skip absolute boxes before setting the first margin.
+  var i = ctx.skipAbsolutes(box, builders)
+
+  if i < builders.len:
+    let builder = builders[i]
+    let child = ctx.addBlockChild(box, builder)
+    ctx.margin_todo.append(box.margin_top)
+    ctx.margin_todo.append(child.margin_top)
+    box.margin_top = ctx.margin_todo.sum()
+    ctx.applyChildPosition(box, child)
+    box.firstBaseline = child.offset.y + child.firstBaseline
+    inc i
+
+  while i < builders.len:
+    let builder = builders[i]
+    let child = ctx.addBlockChild(box, builder)
+    if child.computed{"position"} != POSITION_ABSOLUTE:
+      ctx.margin_todo.append(child.margin_top)
+      ctx.y += ctx.margin_todo.sum()
+      ctx.childHeight += ctx.margin_todo.sum()
+    ctx.applyChildPosition(box, child)
+    inc i
+
+  if ctx.nested.len > 0:
+    let lastNested = ctx.nested[^1]
+    box.baseline = lastNested.offset.y + lastNested.baseline
+
+  ctx.margin_todo.append(box.margin_bottom)
+  box.margin_bottom = ctx.margin_todo.sum()
+
+  box.applyWidth(ctx.maxChildWidth)
+
+  # Re-position the children.
+  # The x offset for values in shrink mode depends on the parent box's
+  # width, so we cannot do this in the first pass.
+  let width = box.width
+  for child in ctx.nested:
+    if child.computed{"position"} != POSITION_ABSOLUTE:
+      box.postAlignChild(child, width)
+    case child.computed{"position"}
+    of POSITION_RELATIVE:
+      box.positionRelative(child, lctx)
+    of POSITION_ABSOLUTE:
+      lctx.positionAbsolute(child)
+    else: discard #TODO
+
+  # Finally, add padding. (We cannot do this further up without influencing
+  # positioning.)
+  box.width += box.padding_left
+  box.width += box.padding_right
+
+  ctx.childHeight += box.padding_bottom
+
+  box.height = applySizeConstraint(ctx.childHeight, box.availableHeight)
+  if box.max_height.isSome and box.height > box.max_height.get:
+    box.height = box.max_height.get
+  if box.min_height.isSome and box.height < box.min_height.get:
+    box.height = box.min_height.get
+  box.nested = ctx.nested
+  if positioned:
+    discard lctx.positioned.pop()
 
 # Build a block box inside another block box, based on a builder.
 proc buildBlock(lctx: LayoutState, builder: BlockBoxBuilder,
     parent: BlockBox): BlockBox =
   let box = newBlockBox(lctx, parent, builder)
-  lctx.buildLayout(box, builder)
+  lctx.buildFlowLayout(box, builder)
   return box
 
 # Establish a new flow-root context and build a block box.
@@ -1712,7 +1726,7 @@ proc buildRootBlock(lctx: LayoutState, builder: BlockBoxBuilder): BlockBox =
   let vh: LayoutUnit = lctx.attrs.height_px
   let box = lctx.newFlowRootBox(builder, w, h, some(vh))
   lctx.positioned.add(box)
-  lctx.buildLayout(box, builder)
+  lctx.buildFlowLayout(box, builder)
   # Normally margin-top would be used by positionBlock, but the root block
   # doesn't get positioned by the parent, so we have to do it manually here.
   #TODO this is kind of ugly.
