@@ -488,7 +488,7 @@ void decode_query(const char *input_url, char *output_buffer)
 
 
 void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
-	char *khsbuf, FILE *known_hosts)
+	char *khsbuf, FILE **known_hosts)
 {
 	/* TODO move query strings here */
 	size_t n;
@@ -514,8 +514,8 @@ void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
 	p += sizeof("trust_cert=") - 1;
 	if (!strncmp(p, "always", 6)) {
 		/* move to file end */
-		fseek(known_hosts, 0L, SEEK_END);
-		last_pos = ftell(known_hosts);
+		fseek(*known_hosts, 0L, SEEK_END);
+		last_pos = ftell(*known_hosts);
 		if (!(p = strstr(p, "entry=")))
 			DIE("Invalid POST request: missing entry");
 		p += sizeof("entry=") - 1;
@@ -524,17 +524,17 @@ void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
 		p = buffer;
 		while ((p = strstr(p, "+")))
 			*p = ' ';
-		fwrite(buffer, 1, strlen(buffer), known_hosts);
-		fwrite("\n", 1, 1, known_hosts);
+		fwrite(buffer, 1, strlen(buffer), *known_hosts);
+		fwrite("\n", 1, 1, *known_hosts);
 		khslen = strlen(khsbuf);
 		khsbuf[khslen] = '~';
 		khsbuf[khslen + 1] = '\0';
 		if (!(known_hosts_tmp = fopen(khsbuf, "w+")))
 			PDIE("Error opening temporary hosts file");
-		rewind(known_hosts);
+		rewind(*known_hosts);
 		*portp = '\0';
 		total = 0;
-		while (fgets(buffer, BUFSIZE, known_hosts)) {
+		while (fgets(buffer, BUFSIZE, *known_hosts)) {
 			len = strlen(buffer);
 			if (!len)
 				continue;
@@ -560,12 +560,12 @@ void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
 		*portp = ':';
 		memcpy(buffer, khsbuf, BUFSIZE + 1);
 		buffer[khslen] = '\0';
-		fclose(known_hosts);
+		fclose(*known_hosts);
 		fclose(known_hosts_tmp);
 		if (rename(khsbuf, buffer))
 			PDIE("Failed to rename temporary file");
 		khsbuf[khslen] = '\0';
-		if (!(known_hosts = fopen(khsbuf, "a+")))
+		if (!(*known_hosts = fopen(khsbuf, "a+")))
 			PDIE("Failed to re-open known hosts file");
 	} else if (strncmp(p, "once", 4)) {
 		DIE("Invalid POST request");
@@ -656,10 +656,19 @@ int main(int argc, const char *argv[])
 	extract_hostname(input_url, &hostp, &portp, &pathp, &endp, urlbuf);
 	method = getenv("REQUEST_METHOD");
 	if (method && !strcmp(method, "POST"))
-		read_post(hostp, portp, pathp, urlbuf, khsbuf, known_hosts);
+		read_post(hostp, portp, pathp, urlbuf, khsbuf, &known_hosts);
 	connect_res = connect(hostp, portp, pathp, endp, &stored_digestp,
 		&their_time, hashbuf2, known_hosts);
 	if (connect_res == 1) { /* valid certificate */
+		/* I really wish this was explicitly mentioned in the
+		 * standard. Something like:
+		 *
+		 * !!!WARNING WARNING WARNING some gemini servers will
+		 * not accept URLs containing the default port number!!!
+		 */
+		if (!strncmp(portp, ":1965", 5))
+			/* move including null terminator */
+			memmove(portp, &portp[5], strlen(&portp[5]) + 1);
 		BIO_puts(conn, urlbuf);
 		read_response(urlbuf);
 	} else if (connect_res == 0) { /* invalid certificate */
