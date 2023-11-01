@@ -22,6 +22,7 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <pwd.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -148,13 +149,10 @@ static BIO *conn;
 
 static void setup_ssl(void)
 {
-#define FLAGS (SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | \
-	SSL_OP_NO_TLSv1_1)
-
 	SSL_library_init();
 	SSL_load_error_strings();
 	ssl_ctx = SSL_CTX_new(TLS_client_method());
-	SSL_CTX_set_options(ssl_ctx, FLAGS);
+	SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION);
 	if (!(conn = BIO_new_ssl_connect(ssl_ctx)))
 		SDIE("Error creating BIO");
 #undef FLAGS
