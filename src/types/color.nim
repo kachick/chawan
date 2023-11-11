@@ -428,7 +428,8 @@ func parseHexColor*(s: string): Option[RGBAColor] =
     if hexValue(c) == -1: return none(RGBAColor)
   case s.len
   of 6:
-    let c = (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
+    let c = 0xFF000000 or
+            (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
             (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
             (hexValue(s[4]) shl 4) or hexValue(s[5])
     return some(RGBAColor(c))
@@ -439,7 +440,8 @@ func parseHexColor*(s: string): Option[RGBAColor] =
             (hexValue(s[4]) shl 4) or hexValue(s[5])
     return some(RGBAColor(c))
   of 3:
-    let c = (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
+    let c = 0xFF000000 or
+            (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
             (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
             (hexValue(s[2]) shl 4) or hexValue(s[2])
     return some(RGBAColor(c))
