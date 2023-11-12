@@ -339,8 +339,8 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
       if box.computed{"background-color"}.a != 0: #TODO color blending
         let ix = toInt(x)
         let iy = toInt(y)
-        let iex = toInt(x + box.width)
-        let iey = toInt(y + box.height)
+        let iex = toInt(x + box.size.w)
+        let iey = toInt(y + box.size.h)
         grid.paintBackground(box.computed{"background-color"}, ix, iy, iex,
           iey, box.node, window)
       if box.computed{"background-image"}.t == CONTENT_IMAGE and box.computed{"background-image"}.s != "":
@@ -348,10 +348,10 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
         let s = "[img]"
         let w = s.len * window.ppc
         var ix = x
-        if box.width < w:
+        if box.size.w < w:
           # text is larger than image; center it to minimize error
           ix -= w div 2
-          ix += box.width div 2
+          ix += box.size.w div 2
         let x = toInt(ix div window.ppc)
         let y = toInt(y div window.ppl)
         if y >= 0 and x + w >= 0:
@@ -360,7 +360,7 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
       if box of ListItemBox:
         let box = ListItemBox(box)
         if box.marker != nil:
-          grid.renderInlineContext(box.marker, x - box.marker.width, y, window)
+          grid.renderInlineContext(box.marker, x - box.marker.size.w, y, window)
 
     if box.inline != nil:
       assert box.nested.len == 0

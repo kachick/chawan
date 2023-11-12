@@ -1467,3 +1467,16 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
         result[prop] = builder.parent[prop]
       else:
         result[prop] = getDefault(prop)
+  if result{"float"} != FLOAT_NONE:
+    case result{"display"}
+    of DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM, DISPLAY_NONE:
+       #TODO flex, grid
+      discard
+      {.linearScanEnd.}
+    of DISPLAY_INLINE, DISPLAY_INLINE_BLOCK, DISPLAY_TABLE_ROW,
+        DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_COLUMN,
+        DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION,
+        DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP:
+      result{"display"} = DISPLAY_BLOCK
+    of DISPLAY_INLINE_TABLE:
+      result{"display"} = DISPLAY_TABLE
