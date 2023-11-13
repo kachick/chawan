@@ -1668,7 +1668,7 @@ func firstElementChild*(node: Node): Element {.jsfget.} =
   return nil
 
 func lastElementChild*(node: Node): Element {.jsfget.} =
-  for child in node.elementList:
+  for child in node.elementList_rev:
     return child
   return nil
 
