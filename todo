@@ -19,6 +19,9 @@ display:
 - allow overriding ansi colors
 config:
 - important: config editor
+- better path handling
+	* e.g. expand tilde for all paths on load, allow environment
+	  variables/shell substitution, etc.
 buffer:
 - important: incremental html parsing
 	* also, do not needlessly copy in onload
@@ -60,6 +63,7 @@ javascript:
 	  properties in DOM, ...
 - implement ReadableStream, XHR
 - separate console for each buffer
+	* also, do not crash on / -> M-c
 - buffer selection
 layout engine:
 - important: floats (way too many websites look very ugly without them)
