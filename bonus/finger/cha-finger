@@ -1,0 +1,44 @@
+#!/bin/sh
+# Finger protocol adapter for Chawan. Requires curl.
+# (It also works with w3m.)
+#
+# Usage: put this script in your cgi-bin folder, then add the following line to
+# your urimethodmap:
+#
+# finger: file:/cgi-bin/cha-finger?%s
+
+decode() {
+	# URL-decode the string passed as the first parameter
+	printf '%s\n' "$1" | \
+		sed 's/+/ /g;s/%/\\x/g' | \
+		xargs -0 printf "%b"
+}
+
+printf 'Content-Type: text/plain\r\n\r\n'
+if test -z "$QUERY_STRING"
+then	echo "URL expected"
+	exit 1
+fi
+
+URL="$(decode "$QUERY_STRING" | sed 's/^finger:\/\///;s/^\([^/]*\):73/\1/')"
+
+if printf '%s\n' "$URL" | grep -q '^[^/]*:[0-9]'
+then	echo "Invalid port"
+	exit 1
+fi
+
+case "$URL" in
+*@*)	USER="$(printf '%s\n' "$URL" | sed 's/@.*//')"
+	HOST="$(printf '%s\n' "$URL" | \
+		tail -c +$((${#USER} + 2)) | \
+		sed 's/\/.*//')"
+	;;
+*/w*)	HOST="$(printf '%s\n' "$URL" | sed 's/\/.*//')"
+	USER="/w $(printf '%s\n' "$URL" | tail -c +$((${#HOST} + 4)))"
+	;;
+*)	HOST="$(printf '%s\n' "$URL" | sed 's/\/.*//')"
+	USER="$(printf '%s\n' "$URL" | tail -c +$((${#HOST} + 2)))"
+	;;
+esac
+
+printf '%s\r\n' "$USER" | curl -- "telnet://$HOST:79" 2>/dev/null
