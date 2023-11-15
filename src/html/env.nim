@@ -104,6 +104,12 @@ proc setLocation(window: Window, s: string): Err[JSError]
 proc getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
 
+proc getSelf(window: Window): Window {.jsfget: "self".} =
+  return window
+
+proc getFrames(window: Window): Window {.jsfget: "frames".} =
+  return window
+
 proc atob(window: Window, data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
