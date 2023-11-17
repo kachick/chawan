@@ -112,6 +112,9 @@ proc loadHttp*(handle: LoaderHandle, curlm: CURLM,
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_HEADERDATA, handleData)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
+  if "Accept-Encoding" in request.headers:
+    let s = request.headers["Accept-Encoding"]
+    curl.setopt(CURLOPT_ACCEPT_ENCODING, cstring(s))
   if request.proxy != nil:
     let purl = request.proxy.serialize()
     curl.setopt(CURLOPT_PROXY, purl)
