@@ -6,63 +6,22 @@ h1 {
 	margin-top: 0
 }
 .logo {
-	position: absolute;
-	bottom: 0;
-	right: 0;
+	float: right;
+	margin: 0em 2ch;
 }
-@media (max-width: 90ch) {
+@media (max-width: 80ch) {
 .logo {
 	display: none;
 }
+}
+kbd {
+	font-weight: bold;
+	word-break: keep-all;
 }
 </style>
 </head>
 <body>
 <center><h1>Welcome to Chawan!</h1></center>
-<p>
-This is the default visual home page. You can change it in your configuration
-file using the <code>start.visual-mode</code> option.
-<p>
-Following is a list of default keybindings for getting started. (Note: C-{key}
-means control + key, M-{key} means meta + key. Depending on your environment,
-the meta key may be called Alt or Escape.)
-<ul>
-<li><b>q</b>: quit the browser
-<li><b>hjkl</b>, <b>arrow keys</b>: move the cursor
-<li><b>J</b>, <b>K</b> (or <b>C-e</b>, <b>C-y)</b>: scroll up/down by one row
-<li><b>C-l</b>: location bar (to enter a URL, etc.)
-<li><b>U</b>: reload page
-<li><b>,</b> (comma), <b>.</b> (period): previous/next buffer
-<li><b>D</b>: discard current buffer
-<li><b>M-y</b>: copy current buffer's URL to clipboard (needs xsel)
-<li><b>M-p</b>: go to the URL currently on the clipboard (needs xsel)
-<li><b>[</b>, <b>]</b>: move cursor to the previous/next hyperlink
-<li><b>C-d</b>, <b>C-u</b>: scroll up/down by half a page
-<li><b>C-f</b>, <b>C-b</b> (or <b>PgDn</b>, <b>PgUp</b>)</b>: scroll up/down by an entire page
-<li><b>(</b>, <b>)</b> (or <b>zh</b>, <b>zl</b>): shift screen to the left/right by one cell
-<li><b>&lt;</b>, <b>&gt;</b>: shift screen to the left/right by one page
-<li><b>/</b>, <b>?</b>: search (or search backwards)
-<li><b>n</b>, <b>N</b>: next/previous match
-<li><b>C-z</b>: suspend the browser
-<li><b>M-C-c</b>: cancel loading
-<li><b>H</b>, <b>M</b>, <b>L</b>: move cursor to the Highest/Middle/Lowest rows
-<li><b>zz</b>, <b>z.</b>: center on current line (and move to beginning)
-<li><b>zt</b>, <b>z-</b>: center on current line (and move to beginning)
-<li><b>zb</b>, <b>zC-m</b>: center on current line (and move to beginning)
-<li><b>w</b>, <b>b</b>: move cursor to next/previous word
-<li><b>v</b>: toggle page source view
-<li><b>0</b>: cursor to first cell on line
-<li><b>^</b>: cursor to first non-whitespace on line
-<li><b>$</b>: cursor to last character on line
-<li><b>M-,</b>/<b>M-.</b>: previous/next sibling buffer
-<li><b>M-/</b>: parent buffer
-<li><b>{number}</b>, then movement: repeat movement n times<br>
-(or move to nth line, depending on command)
-<li><b>M-c</b>: input command
-<li><b>M-cM-c</b>: command mode (browser console)
-</ul>
-<p>
-Happy browsing!
 <pre class=logo>
  _......................._
 fr.,~.~,,~~.~~~,~,~~~~,,.bl
@@ -75,4 +34,57 @@ lCHCHCHCHCHCHCHCHCHCHCHCHCp
        \<u>ZM</u>NNNNNNN<u>MZ</u>/
           \<u>HHHHH</u>/
 </pre>
+<p>
+This is the default visual home page. You can change it in your configuration
+file using the <code>start.visual-mode</code> option.
+<p>
+Following is a list of default keybindings for getting started. (Note:
+<kbd>C-{key}</kbd> means <kbd>Control</kbd> + <kbd>key</kbd>,
+<kbd>M-{key}</kbd> means <kbd>Meta</kbd> + <kbd>key</kbd>. Depending
+on your environment, the <kbd>Meta</kbd> key may be called <kbd>Alt</kbd> or
+<kbd>Escape</kbd>.)
+<ul>
+<li><kbd>q</kbd>: quit the browser
+<li><kbd>hjkl</kbd>, <kbd>Arrow keys</kbd>: move the cursor
+<li><kbd>J</kbd>, <kbd>K</kbd> (or <kbd>C-e</kbd>, <kbd>C-y)</kbd>: scroll
+up/down by one row
+<li><kbd>C-l</kbd>: location bar (to enter a URL, etc.)
+<li><kbd>U</kbd>: reload page
+<li><kbd>,</kbd> (comma), <kbd>.</kbd> (period): previous/next buffer
+<li><kbd>D</kbd>: discard current buffer
+<li><kbd>M-y</kbd>: copy current buffer's URL to clipboard (needs xsel)
+<li><kbd>M-p</kbd>: go to the URL currently on the clipboard (needs xsel)
+<li><kbd>[</kbd>, <kbd>]</kbd>: move cursor to the previous/next hyperlink
+<li><kbd>C-d</kbd>, <kbd>C-u</kbd>: scroll up/down by half a page
+<li><kbd>C-f</kbd>, <kbd>C-b</kbd> (or <kbd>PgDn</kbd>, <kbd>PgUp</kbd>)</kbd>:
+scroll up/down by an entire page
+<li><kbd>(</kbd>, <kbd>)</kbd> (or <kbd>zh</kbd>, <kbd>zl</kbd>): shift
+screen to the left/right by one cell
+<li><kbd>&lt;</kbd>, <kbd>&gt;</kbd>: shift screen to the left/right by one page
+<li><kbd>/</kbd>, <kbd>?</kbd>: search (or search backwards)
+<li><kbd>n</kbd>, <kbd>N</kbd>: next/previous match
+<li><kbd>C-z</kbd>: suspend the browser
+<li><kbd>M-C-c</kbd>: cancel loading
+<li><kbd>H</kbd>, <kbd>M</kbd>, <kbd>L</kbd>: move cursor to the
+Highest/Middle/Lowest rows
+<li><kbd>zz</kbd>, <kbd>z.</kbd>: center on current line (and move to
+beginning)
+<li><kbd>zt</kbd>, <kbd>z-</kbd>: center on current line (and move to
+beginning)
+<li><kbd>zb</kbd>, <kbd>zC-m</kbd>: center on current line (and move to
+beginning)
+<li><kbd>w</kbd>, <kbd>b</kbd>: move cursor to next/previous word
+<li><kbd>v</kbd>: toggle page source view
+<li><kbd>0</kbd>: cursor to first cell on line
+<li><kbd>^</kbd>: cursor to first non-whitespace on line
+<li><kbd>$</kbd>: cursor to last character on line
+<li><kbd>M-,</kbd>/<kbd>M-.</kbd>: previous/next sibling buffer
+<li><kbd>M-/</kbd>: parent buffer
+<li><kbd>{number}</kbd>, then movement: repeat movement n times<br>
+(or move to nth line, depending on command)
+<li><kbd>M-c</kbd>: input command
+<li><kbd>M-cM-c</kbd>: command mode (browser console)
+</ul>
+<p>
+Happy browsing!
 </body>
