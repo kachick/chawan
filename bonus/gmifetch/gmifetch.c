@@ -644,8 +644,6 @@ int main(int argc, const char *argv[])
 		input_url = getenv("QUERY_STRING");
 		if (!input_url)
 			DIE("Usage: gmifetch [url] (or set QUERY_STRING)");
-		decode_query(input_url, buffer);
-		input_url = buffer;
 	} else {
 		input_url = argv[1];
 	}
