@@ -58,7 +58,8 @@ type
     DISPLAY_INLINE_BLOCK, DISPLAY_TABLE, DISPLAY_INLINE_TABLE,
     DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
     DISPLAY_TABLE_FOOTER_GROUP, DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_ROW,
-    DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION
+    DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION,
+    DISPLAY_FLOW_ROOT
 
   CSSWhitespace* = enum
     WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE, WHITESPACE_PRE_LINE,
@@ -777,6 +778,7 @@ func cssDisplay(cval: CSSComponentValue): Result[CSSDisplay, string] =
     "table-header-group": DISPLAY_TABLE_HEADER_GROUP,
     "table-footer-group": DISPLAY_TABLE_FOOTER_GROUP,
     "table-caption": DISPLAY_TABLE_CAPTION,
+    "flow-root": DISPLAY_FLOW_ROOT,
     "none": DISPLAY_NONE
   }
   return cssIdent(DisplayMap, cval)
@@ -1469,7 +1471,8 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
         result[prop] = getDefault(prop)
   if result{"float"} != FLOAT_NONE:
     case result{"display"}
-    of DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM, DISPLAY_NONE:
+    of DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM, DISPLAY_NONE,
+        DISPLAY_FLOW_ROOT:
        #TODO flex, grid
       discard
       {.linearScanEnd.}

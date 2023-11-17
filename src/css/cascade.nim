@@ -146,9 +146,9 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
   template map_table_align =
     case element.attr("align").toLowerAscii()
     of "left":
-     set_cv "margin-right", CSSLengthAuto #TODO should be float: left
+     set_cv "float", FLOAT_LEFT
     of "right":
-      set_cv "margin-left", CSSLengthAuto #TODO should be float: right
+      set_cv "float", FLOAT_RIGHT
     of "center":
       set_cv "margin-left", CSSLengthAuto #TODO should be inline-start
       set_cv "margin-right", CSSLengthAuto #TODO should be inline-end
