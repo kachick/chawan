@@ -187,6 +187,7 @@ type
     line: LineBox
     availableWidth: LayoutUnit
     hasExclusion: bool
+    charwidth: int
 
   InlineAtomState = object
     vertalign: CSSVerticalAlign
@@ -204,7 +205,6 @@ type
     hasshy: bool
     computed: CSSComputedValues
     currentLine: LineBoxState
-    charwidth: int
     whitespacenum: int
     format: ComputedFormat
     lctx: LayoutState
@@ -479,7 +479,7 @@ proc addSpacing(state: var InlineState, width, height: LayoutUnit,
 proc flushWhitespace(state: var InlineState, computed: CSSComputedValues,
     hang = false) =
   let shift = state.computeShift(computed)
-  state.charwidth += state.whitespacenum
+  state.currentLine.charwidth += state.whitespacenum
   state.whitespacenum = 0
   if shift > 0:
     state.addSpacing(shift, state.cellheight, hang)
@@ -539,7 +539,6 @@ proc finishLine(state: var InlineState, computed: CSSComputedValues,
       line: LineBox(offsety: y + state.currentLine.size.h)
     )
     state.initLine()
-    state.charwidth = 0 #TODO put this in LineBoxState?
 
 proc finish(state: var InlineState, computed: CSSComputedValues) =
   state.finishLine(computed, wrap = false)
@@ -602,7 +601,7 @@ proc addAtom(state: var InlineState, iastate: InlineAtomState,
     if atom.t == INLINE_WORD:
       state.format = atom.wformat
     else:
-      state.charwidth = 0
+      state.currentLine.charwidth = 0
       state.format = nil
     state.currentLine.atoms.add(atom)
     state.currentLine.atomstates.add(iastate)
@@ -673,10 +672,10 @@ proc processWhitespace(state: var InlineState, c: char) =
     if c == '\n':
       state.flushLine(state.computed)
     elif c == '\t':
-      let prev = state.charwidth
-      state.charwidth = ((state.charwidth +
+      let prev = state.currentLine.charwidth
+      state.currentLine.charwidth = ((state.currentLine.charwidth +
         state.whitespacenum) div 8 + 1) * 8 - state.whitespacenum
-      state.whitespacenum += state.charwidth - prev
+      state.whitespacenum += state.currentLine.charwidth - prev
     else:
       inc state.whitespacenum
 
@@ -718,7 +717,7 @@ proc layoutText(state: var InlineState, str: string,
         state.word.str &= c
         let w = r.width()
         state.word.size.w += w * state.cellwidth
-        state.charwidth += w
+        state.currentLine.charwidth += w
         if c == '-': # ascii dash
           state.wrappos = state.word.str.len
           state.hasshy = false
@@ -734,7 +733,7 @@ proc layoutText(state: var InlineState, str: string,
         state.word.str &= r
         let w = r.width()
         state.word.size.w += w * state.cellwidth
-        state.charwidth += w
+        state.currentLine.charwidth += w
   discard state.addWord()
 
 const DisplayOuterBlock = {DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM,
