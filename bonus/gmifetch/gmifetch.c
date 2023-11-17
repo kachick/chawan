@@ -146,6 +146,7 @@ static BIO *conn;
 	} while (0)
 
 #define BUFSIZE 1024
+#define PUBKEY_BUF_SIZE 8192
 
 static void setup_ssl(void)
 {
@@ -202,12 +203,11 @@ static void extract_hostname(const char *s, char **hostp, char **portp,
 }
 
 int check_cert(const char *theirs, char *hostp, char **stored_digestp,
-	time_t their_time, FILE *known_hosts)
+	char *linebuf, time_t their_time, FILE *known_hosts)
 {
 	char *p, *q, *hashp, *timep;
 	int found;
 	time_t our_time;
-	char linebuf[BUFSIZE + 1];
 
 	rewind(known_hosts);
 	found = 0;
@@ -286,12 +286,11 @@ static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
  * -2: cert found, but notAfter updated
  */
 static int connect(char *hostp, char *portp, char *pathp, char *endp,
-	char **stored_digestp, time_t *their_time, char *hashbuf2,
-	FILE *known_hosts)
+	char *linebuf, char **stored_digestp, time_t *their_time,
+	char *hashbuf2, FILE *known_hosts)
 {
 	X509 *cert;
 	const EVP_PKEY *pkey;
-#define PUBKEY_BUF_SIZE 8192
 	unsigned char pubkey_buf[PUBKEY_BUF_SIZE + 1], *r;
 	int len, res;
 	const ASN1_TIME *notAfter;
@@ -331,13 +330,12 @@ static int connect(char *hostp, char *portp, char *pathp, char *endp,
 	if (X509_cmp_current_time(notAfter) <= 0)
 		DIE("Wrong time");
 	*their_time = mktime(&their_tm);
-	res = check_cert(hashbuf2, hostp, stored_digestp, *their_time,
+	res = check_cert(hashbuf2, hostp, stored_digestp, linebuf, *their_time,
 		known_hosts);
 	*portp = ':';
 	X509_free(cert);
 	strcpy(endp, "\r\n");
 	return res;
-#undef PUBKEY_BUF_SIZE
 }
 
 static void read_response(const char *urlbuf)
@@ -637,7 +635,7 @@ int main(int argc, const char *argv[])
 	int connect_res;
 	time_t their_time;
 	char hashbuf2[EVP_MAX_MD_SIZE * 3 + 1];
-	char urlbuf[BUFSIZE + 1], buffer[BUFSIZE + 1], khsbuf[BUFSIZE + 2];
+	char urlbuf[BUFSIZE + 1], khsbuf[BUFSIZE + 2], linebuf[BUFSIZE + 1];
 	FILE *known_hosts;
 
 	if (argc != 2) {
@@ -653,7 +651,7 @@ int main(int argc, const char *argv[])
 	method = getenv("REQUEST_METHOD");
 	if (method && !strcmp(method, "POST"))
 		read_post(hostp, portp, pathp, urlbuf, khsbuf, &known_hosts);
-	connect_res = connect(hostp, portp, pathp, endp, &stored_digestp,
+	connect_res = connect(hostp, portp, pathp, endp, linebuf, &stored_digestp,
 		&their_time, hashbuf2, known_hosts);
 	if (connect_res == 1) { /* valid certificate */
 		/* I really wish this was explicitly mentioned in the
@@ -668,7 +666,8 @@ int main(int argc, const char *argv[])
 		BIO_puts(conn, urlbuf);
 		read_response(urlbuf);
 	} else if (connect_res == 0) { /* invalid certificate */
-		printf(INVALID_CERT_RESPONSE, stored_digestp, buffer, khsbuf);
+		printf(INVALID_CERT_RESPONSE, stored_digestp, hashbuf2,
+			khsbuf);
 	} else if (connect_res == -1) { /* no certificate */
 		*portp = '\0';
 		printf(UNKNOWN_CERT_RESPONSE, khsbuf, hashbuf2, hostp,
