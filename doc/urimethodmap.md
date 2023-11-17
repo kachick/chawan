@@ -58,8 +58,10 @@ protocol	/cgi-bin/interpret-protocol?%s
 ```
 
 The redirection template is the target URL. If the string `%s` is contained
-in the template, it will be replaced by the target URL encoded with the
-component percent encode set (i.e. EcmaScript's encodeURIComponent).
+in the template, it will be replaced by the target URL.
+
+Note: Chawan used to URL-encode the substituted URL in the past, but this is
+no longer the case.
 
 For compatibility with w3m, templates starting with `/cgi-bin/` and
 `file:/cgi-bin/` are special-cased and the starting string is replaced with

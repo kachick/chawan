@@ -18,7 +18,7 @@ func rewriteURL(pattern, surl: string): string =
       if c == '%':
         result &= '%'
       elif c == 's':
-        result.percentEncode(surl, ComponentPercentEncodeSet)
+        result &= surl
       else:
         result &= '%'
         result &= c
