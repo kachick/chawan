@@ -33,7 +33,7 @@ typedef enum {
 static ParseState state = STATE_NEWLINE;
 static ParseState prev_state = STATE_NORMAL;
 
-int main() {
+int main(void) {
 	int c;
 #define BUFSIZE 4096
 	char urlbuf[BUFSIZE + 1];
