@@ -412,6 +412,8 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
     for iy in countdown(ly - 1, 0):
       let line = buffer.lines[iy]
       i = line.formats.len - 1
+      let oly = iy
+      let olx = lx
       while i >= 0:
         let format = line.formats[i]
         let nl = format.node.getClickable()
@@ -419,6 +421,12 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
           ly = iy
           lx = format.pos
         dec i
+      if iy == oly and olx == lx:
+        # Assume multiline anchors are always placed on consecutive lines.
+        # This is not true, but otherwise we would have to loop through
+        # the entire document, which would be rather inefficient. TODO: find
+        # an efficient and correct way to do this.
+        break
 
   while i >= 0:
     let format = line.formats[i]
