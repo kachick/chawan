@@ -2219,6 +2219,9 @@ func baseURL*(document: Document): URL =
     return document.url
   return url.get
 
+func baseURI(node: Node): string {.jsfget.} =
+  return $node.document.baseURL
+
 func parseURL*(document: Document, s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
@@ -3393,6 +3396,38 @@ proc outerHTML(element: Element, s: string): Err[DOMException] {.jsfset.} =
     Element(parent0)
   let fragment = fragmentParsingAlgorithm(parent, s)
   return parent.replace(element, fragment)
+
+# https://w3c.github.io/DOM-Parsing/#dom-element-insertadjacenthtml
+proc insertAdjacentHTML(element: Element, position, text: string):
+    Err[DOMException] {.jsfunc.} =
+  #TODO enumize position
+  let ctx0 = case position
+  of "beforebegin", "afterend":
+    if element.parentNode.nodeType == DOCUMENT_NODE or
+        element.parentNode == nil:
+      return errDOMException("Parent is not a valid element",
+        "NoModificationAllowedError")
+    element.parentNode
+  of "afterbegin", "beforeend":
+    Node(element)
+  else:
+    return errDOMException("Invalid position", "SyntaxError")
+  let document = ctx0.document
+  let ctx = if ctx0.nodeType != ELEMENT_NODE or not document.isxml or
+      Element(ctx0).namespace == Namespace.HTML:
+    document.newHTMLElement(TAG_BODY)
+  else:
+    Element(ctx0)
+  let fragment = ctx.fragmentParsingAlgorithm(text)
+  case position
+  of "beforebegin":
+    ctx.parentNode.insert(fragment, ctx)
+  of "afterbegin":
+    ctx.insert(fragment, ctx.firstChild)
+  of "beforeend":
+    ctx.append(fragment)
+  of "afterend":
+    ctx.parentNode.insert(fragment, ctx.nextSibling)
 
 proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
