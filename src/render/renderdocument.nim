@@ -76,14 +76,6 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
   if nx < 0:
     nx = 0
 
-  # Note: following algorithm breaks if cx == nx or x == nx (I think).
-  # So we do an early return in both cases, just in case.
-  # This should result in correct behavior in all cases, since the formatting
-  # inserted would be for a zero width text.
-  if cx == nx:
-    # cx is nx, early return.
-    return
-
   # Skip unchanged formats before the new string
   var fi = lines[y].findFormatN(cx) - 1
 
@@ -121,10 +113,6 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
     assert lines[y].formats[fi].pos <= x
 
   # Now for the text's formats:
-  if x == nx:
-    # x is nx, early return.
-    return
-
   var format = cformat.formatFromWord()
   var lformat: Format
   var lnode: StyledNode
