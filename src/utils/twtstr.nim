@@ -28,12 +28,9 @@ const AsciiAlphaNumeric* = AsciiAlpha + AsciiDigit
 const AsciiHexDigit* = (AsciiDigit + {'a'..'f', 'A'..'F'})
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 
-func isWhitespace*(c: char): bool {.inline.} =
-  return c in AsciiWhitespace
-
 func onlyWhitespace*(s: string): bool =
   for c in s:
-    if not c.isWhitespace():
+    if c notin AsciiWhitespace:
       return false
   return true
 
@@ -70,20 +67,9 @@ const controlLetterMap = genControlLetterMap()
 func getControlLetter*(c: char): char =
   return controlLetterMap[int(c)]
 
-const lowerChars = (func(): array[char, char] =
-  for i in 0..255:
-    if char(i) in 'A'..'Z':
-      result[char(i)] = char(i + 32)
-    else:
-      result[char(i)] = char(i)
-)()
-
-func tolower*(c: char): char =
-  return lowerChars[c]
-
 proc mtoLowerAscii*(str: var string) =
   for i in 0 ..< str.len:
-    str[i] = str[i].tolower()
+    str[i] = str[i].toLowerAscii()
 
 func toHeaderCase*(str: string): string =
   result = str
@@ -122,7 +108,7 @@ func startsWithNoCase*(str, prefix: string): bool =
   var i = 0
   while true:
     if i == prefix.len: return true
-    if str[i].tolower() != prefix[i].tolower(): return false
+    if str[i].toLowerAscii() != prefix[i].toLowerAscii(): return false
     inc i
 
 const hexCharMap = (func(): array[char, int] =
@@ -203,7 +189,7 @@ func stripAndCollapse*(s: string): string =
 
 func skipBlanks*(buf: string, at: int): int =
   result = at
-  while result < buf.len and buf[result].isWhitespace():
+  while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
 
 func until*(s: string, c: set[char], starti = 0): string =

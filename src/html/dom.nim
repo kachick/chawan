@@ -2303,7 +2303,7 @@ func IDLAttributeToCSSProperty(s: string, dashPrefix = false): string =
   for c in s:
     if c in AsciiUpperAlpha:
       result &= '-'
-      result &= c.tolower()
+      result &= c.toLowerAscii()
     else:
       result &= c
 

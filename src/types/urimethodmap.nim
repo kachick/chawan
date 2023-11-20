@@ -51,7 +51,7 @@ proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
     var k = ""
     var i = 0
     while i < line.len and line[i] notin AsciiWhitespace + {':'}:
-      k &= line[i].tolower()
+      k &= line[i].toLowerAscii()
       inc i
     if i >= line.len or line[i] != ':':
       continue # invalid

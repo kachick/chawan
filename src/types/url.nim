@@ -232,7 +232,7 @@ func endsInNumber(input: string): bool =
   if parts.len == 0: return false
   var last = parts[^1]
   if last != "":
-    if last.len == 2 and last[0] in Digits and last[1].tolower() == 'x':
+    if last.len == 2 and last[0] in Digits and last[1].toLowerAscii() == 'x':
       last = last.substr(2)
     for c in last:
       if c notin Digits:
@@ -366,7 +366,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
     case state
     of SCHEME_START_STATE:
       if has and c.isAlphaAscii():
-        buffer &= c.tolower()
+        buffer &= c.toLowerAscii()
         state = SCHEME_STATE
       elif not override:
         state = NO_SCHEME_STATE
@@ -375,7 +375,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         return none(URL)
     of SCHEME_STATE:
       if has and c in AsciiAlphaNumeric + {'+', '-', '.'}:
-        buffer &= c.tolower()
+        buffer &= c.toLowerAscii()
       elif has and c == ':':
         if override:
           if url.scheme in SpecialSchemes and buffer notin SpecialSchemes:

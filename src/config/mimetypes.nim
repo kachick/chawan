@@ -1,4 +1,5 @@
 import streams
+import strutils
 import tables
 
 import utils/twtstr
@@ -18,7 +19,7 @@ proc parseMimeTypes*(mimeTypes: var MimeTypes, stream: Stream) =
     var t = ""
     var i = 0
     while i < line.len and line[i] notin AsciiWhitespace:
-      t &= line[i].tolower()
+      t &= line[i].toLowerAscii()
       inc i
     if t == "": continue
     while i < line.len:
@@ -26,7 +27,7 @@ proc parseMimeTypes*(mimeTypes: var MimeTypes, stream: Stream) =
         inc i
       var ext = ""
       while i < line.len and line[i] notin AsciiWhitespace:
-        ext &= line[i].tolower()
+        ext &= line[i].toLowerAscii()
         inc i
       if ext == "": continue
       discard mimeTypes.hasKeyOrPut(ext, t)

@@ -80,7 +80,7 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
       break
     if c notin AsciiAlphaNumeric + {'-', '*'}:
       return err("Invalid character encountered in type field")
-    s &= c.tolower()
+    s &= c.toLowerAscii()
   if not state.has():
     return err("Missing subtype")
   # subtype
@@ -91,7 +91,7 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
       break
     if c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
       return err("Invalid character encountered in subtype field")
-    s &= c.tolower()
+    s &= c.toLowerAscii()
   var c: char
   if not state.skipBlanks(c) or c != ';':
     return err("Semicolon not found")
@@ -245,7 +245,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
       cmd &= c
       state = STATE_NORMAL
     of STATE_ATTR_QUOTED:
-      attrname &= c.tolower()
+      attrname &= c.toLowerAscii()
       state = STATE_ATTR
     of STATE_NORMAL, STATE_DOLLAR:
       let prev_dollar = state == STATE_DOLLAR

@@ -1,4 +1,5 @@
 import options
+import strutils
 
 import js/dict
 import js/fromjs
@@ -86,7 +87,7 @@ proc newWebFile(ctx: JSContext, fileBits: seq[string], fileName: string,
     for c in options.`type`:
       if c notin char(0x20)..char(0x7E):
         break ctype
-      file.ctype &= c.tolower()
+      file.ctype &= c.toLowerAscii()
   return file
 
 #TODO File, Blob constructors

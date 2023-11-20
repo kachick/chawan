@@ -248,7 +248,7 @@ proc consumeEscape(state: var CSSTokenizerState): string =
       num *= 0x10
       num += hexValue(c)
       inc i
-    if state.peek().isWhitespace():
+    if state.peek() in AsciiWhitespace:
       discard state.consume()
     if num == 0 or num > 0x10FFFF or num in 0xD800..0xDFFF:
       return $Rune(0xFFFD)
@@ -347,7 +347,7 @@ const NonPrintable = {char(0x00)..char(0x08), char(0x0B), char(0x0E)..char(0x1F)
 
 proc consumeURL(state: var CSSTokenizerState): CSSToken =
   result = CSSToken(tokenType: CSS_URL_TOKEN)
-  while state.has() and state.peek().isWhitespace():
+  while state.has() and state.peek() in AsciiWhitespace:
     discard state.consume()
 
   while state.has():
@@ -359,7 +359,7 @@ proc consumeURL(state: var CSSTokenizerState): CSSToken =
       state.consumeBadURL()
       return CSSToken(tokenType: CSS_BAD_URL_TOKEN)
     of AsciiWhitespace:
-      while state.has() and state.peek().isWhitespace():
+      while state.has() and state.peek() in AsciiWhitespace:
         discard state.consume()
       if not state.has():
         return result
@@ -382,7 +382,8 @@ proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
   let s = state.consumeIdentSequence()
   if s.equalsIgnoreCase("url") and state.has() and state.peek() == '(':
     discard state.consume()
-    while state.has(1) and state.peek().isWhitespace() and state.peek(1).isWhitespace():
+    while state.has(1) and state.peek() in AsciiWhitespace and
+        state.peek(1) in AsciiWhitespace:
       discard state.consume()
     if state.has() and state.peek() in {'"', '\''} or
         state.has(1) and state.peek() in {'"', '\''} + AsciiWhitespace and state.peek(1) in {'"', '\''}:
@@ -413,7 +414,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
   let c = state.consume()
   case c
   of AsciiWhitespace:
-    while state.has() and state.peek().isWhitespace():
+    while state.has() and state.peek() in AsciiWhitespace:
       discard state.consume()
     return CSSToken(tokenType: CSS_WHITESPACE_TOKEN)
   of '"', '\'':
