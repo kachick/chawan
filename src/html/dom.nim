@@ -2322,7 +2322,7 @@ proc getter[T: uint32|string](this: CSSStyleDeclaration, u: T):
       return ok(this.getPropertyValue(u))
     return err()
 
-proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
+proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.style_cached == nil:
     element.style_cached = CSSStyleDeclaration(element: element)
   return element.style_cached

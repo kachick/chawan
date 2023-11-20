@@ -116,6 +116,11 @@ proc atob(window: Window, data: string): DOMResult[NarrowString] {.jsfunc.} =
 proc btoa(window: Window, data: JSString): DOMResult[string] {.jsfunc.} =
   return btoa(data)
 
+proc getComputedStyle(window: Window, element: Element,
+    pseudoElt = none(Element)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
+  #TODO implement this properly
+  return ok(element.style)
+
 proc addScripting*(window: Window, selector: Selector[int]) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
