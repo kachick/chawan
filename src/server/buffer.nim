@@ -35,6 +35,7 @@ import js/fromjs
 import js/javascript
 import js/regex
 import js/timeout
+import js/tojs
 import loader/connecterror
 import loader/headers
 import loader/loader
@@ -1037,14 +1038,23 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
-  if window == nil:
+  if window == nil or not buffer.config.scripting:
     return
+  let ctx = buffer.window.jsctx
+  let event = newEvent(ctx, "load", window, window)
   for el in window.eventListeners:
     if el.ctype == "load":
-      let event = newEvent(window.jsctx, "load", window, window)
       let e = el.callback(event)
       if e.isErr:
-        buffer.window.jsctx.writeException(buffer.estream)
+        ctx.writeException(buffer.estream)
+  let jsWindow = toJS(ctx, window)
+  let jsonload = JS_GetPropertyStr(ctx, jsWindow, "onload")
+  var jsEvent = toJS(ctx, event)
+  if JS_IsFunction(ctx, jsonload):
+    JS_FreeValue(ctx, JS_Call(ctx, jsonload, jsWindow, 1, addr jsEvent))
+  JS_FreeValue(ctx, jsEvent)
+  JS_FreeValue(ctx, jsonload)
+  JS_FreeValue(ctx, jsWindow)
 
 proc onload(buffer: Buffer) =
   var res: LoadResult = (false, buffer.lines.len, -1)
