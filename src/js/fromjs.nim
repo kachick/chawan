@@ -353,7 +353,7 @@ proc fromJSOption[T](ctx: JSContext, val: JSValue): JSResult[Option[T]] =
     #TODO what about null?
     return err()
   let res = ?fromJS[T](ctx, val)
-  return ok(some(res))
+  return ok(option(res))
 
 # wrap
 proc fromJSOpt[T](ctx: JSContext, val: JSValue): JSResult[T] =
