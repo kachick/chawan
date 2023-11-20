@@ -795,10 +795,16 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
   var widthpx: LayoutUnit = 0
   if not width.auto and width.canpx(containingWidth):
     widthpx = width.px(lctx, containingWidth)
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      widthpx = widthpx - sizes.padding.left - sizes.padding.right
+    widthpx = max(widthpx, 0)
     sizes.space.w = stretch(widthpx)
   sizes.resolveContentWidth(widthpx, containingWidth, computed, width.auto)
   if not computed{"max-width"}.auto:
-    let max_width = computed{"max-width"}.px(lctx, containingWidth)
+    var max_width = computed{"max-width"}.px(lctx, containingWidth)
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      max_width = max_width - sizes.padding.left - sizes.padding.right
+    max_width = max(max_width, 0)
     sizes.max_width = some(max_width)
     if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
         max_width < sizes.space.w.u or
@@ -812,7 +818,10 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
         sizes.space.w = fitContent(max_width)
       sizes.resolveContentWidth(max_width, containingWidth, computed)
   if not computed{"min-width"}.auto:
-    let min_width = computed{"min-width"}.px(lctx, containingWidth)
+    var min_width = computed{"min-width"}.px(lctx, containingWidth)
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      min_width = min_width - sizes.padding.left - sizes.padding.right
+    min_width = max(min_width, 0)
     sizes.min_width = some(min_width)
     if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
         min_width > sizes.space.w.u or
@@ -832,28 +841,40 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
   var heightpx: LayoutUnit = 0
   if not height.auto and height.canpx(percHeight):
     heightpx = height.px(lctx, percHeight).get
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      heightpx = heightpx - sizes.padding.top - sizes.padding.bottom
+    heightpx = max(heightpx, 0)
     sizes.space.h = stretch(heightpx)
   if not computed{"max-height"}.auto:
-    let max_height = computed{"max-height"}.px(lctx, percHeight)
+    var max_height = computed{"max-height"}.px(lctx, percHeight)
     sizes.max_height = max_height
     if max_height.isSome:
+      var max_height = max_height.get
+      if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+        max_height = max_height - sizes.padding.top - sizes.padding.bottom
+      sizes.max_height = some(max(max_height, 0))
       if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
-          max_height.get < sizes.space.h.u or
+          max_height < sizes.space.h.u or
           sizes.space.h.t == MAX_CONTENT:
         # same reasoning as for width.
         if sizes.space.h.t == STRETCH:
-          sizes.space.h = stretch(max_height.get)
+          sizes.space.h = stretch(max_height)
         else: # FIT_CONTENT
-          sizes.space.h = fitContent(max_height.get)
+          sizes.space.h = fitContent(max_height)
   if not computed{"min-height"}.auto:
-    let min_height = computed{"min-height"}.px(lctx, percHeight)
+    var min_height = computed{"min-height"}.px(lctx, percHeight)
+    min_height = min_height
     if min_height.isSome:
-      sizes.min_height = min_height
+      var min_height = min_height.get
+      if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+        min_height = min_height - sizes.padding.top - sizes.padding.bottom
+      min_height = max(min_height, 0)
+      sizes.min_height = some(min_height)
       if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
-          min_height.get > sizes.space.h.u or
+          min_height > sizes.space.h.u or
           sizes.space.h.t == MIN_CONTENT:
         # same reasoning as for width.
-        sizes.space.h = stretch(min_height.get)
+        sizes.space.h = stretch(min_height)
 
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes,
     containingWidth: SizeConstraint, computed: CSSComputedValues,
@@ -880,7 +901,10 @@ proc resolveAbsoluteWidth(sizes: var ResolvedSizes,
       # solve left/right yet.
       sizes.space.w = fitContent(containingWidth)
   else:
-    let widthpx = width.px(lctx, containingWidth)
+    var widthpx = width.px(lctx, containingWidth)
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      widthpx = widthpx - sizes.padding.left - sizes.padding.right
+    widthpx = max(widthpx, 0)
     # We could solve for left/right here, as available width is known.
     # Nevertheless, it is only needed for positioning, so we do not solve
     # them yet.
@@ -910,7 +934,10 @@ proc resolveAbsoluteHeight(sizes: var ResolvedSizes,
     else:
       sizes.space.h = fitContent(containingHeight)
   else:
-    let heightpx = height.px(lctx, containingHeight)
+    var heightpx = height.px(lctx, containingHeight)
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      heightpx = heightpx - sizes.padding.top - sizes.padding.bottom
+    heightpx = max(heightpx, 0)
     sizes.space.h = stretch(heightpx)
 
 proc resolveBlockSizes(lctx: LayoutState, containingWidth,

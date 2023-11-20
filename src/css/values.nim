@@ -40,7 +40,7 @@ type
     PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
     PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE,
     PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN, PROPERTY_FLOAT,
-    PROPERTY_VISIBILITY
+    PROPERTY_VISIBILITY, PROPERTY_BOX_SIZING
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -48,7 +48,8 @@ type
     VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
     VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
-    VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT, VALUE_VISIBILITY
+    VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT, VALUE_VISIBILITY,
+    VALUE_BOX_SIZING
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -122,6 +123,9 @@ type
 
   CSSVisibility* = enum
     VISIBILITY_VISIBLE, VISIBILITY_HIDDEN, VISIBILITY_COLLAPSE
+
+  CSSBoxSizing* = enum
+    BOX_SIZING_CONTENT_BOX, BOX_SIZING_BORDER_BOX
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -204,6 +208,8 @@ type
       float*: CSSFloat
     of VALUE_VISIBILITY:
       visibility*: CSSVisibility
+    of VALUE_BOX_SIZING:
+      boxsizing*: CSSBoxSizing
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -277,7 +283,8 @@ const PropertyNames = {
   "-cha-colspan": PROPERTY_CHA_COLSPAN,
   "-cha-rowspan": PROPERTY_CHA_ROWSPAN,
   "float": PROPERTY_FLOAT,
-  "visibility": PROPERTY_VISIBILITY
+  "visibility": PROPERTY_VISIBILITY,
+  "box-sizing": PROPERTY_BOX_SIZING
 }.toTable()
 
 const ValueTypes* = [
@@ -325,7 +332,8 @@ const ValueTypes* = [
   PROPERTY_CHA_COLSPAN: VALUE_INTEGER,
   PROPERTY_CHA_ROWSPAN: VALUE_INTEGER,
   PROPERTY_FLOAT: VALUE_FLOAT,
-  PROPERTY_VISIBILITY: VALUE_VISIBILITY
+  PROPERTY_VISIBILITY: VALUE_VISIBILITY,
+  PROPERTY_BOX_SIZING: VALUE_BOX_SIZING
 ]
 
 const InheritedProperties = {
@@ -1059,6 +1067,13 @@ func cssVisibility(cval: CSSComponentValue): Result[CSSVisibility, string] =
   }
   return cssIdent(VisibilityMap, cval)
 
+func cssBoxSizing(cval: CSSComponentValue): Result[CSSBoxSizing, string] =
+  const BoxSizingMap = {
+    "border-box": BOX_SIZING_BORDER_BOX,
+    "content-box": BOX_SIZING_CONTENT_BOX
+  }
+  return cssIdent(BoxSizingMap, cval)
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     vtype: CSSValueType, ptype: CSSPropertyType): Err[string] =
   var i = 0
@@ -1135,6 +1150,8 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     val.float = ?cssFloat(cval)
   of VALUE_VISIBILITY:
     val.visibility = ?cssVisibility(cval)
+  of VALUE_BOX_SIZING:
+    val.boxsizing = ?cssBoxSizing(cval)
   of VALUE_NONE:
     discard
   return ok()
