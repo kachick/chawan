@@ -31,6 +31,7 @@ func formatFromWord(computed: ComputedFormat): Format =
 
 proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
     x, y: int) {.inline.} =
+  assert linestr.len != 0
   var i = 0
   var r: Rune
   # make sure we have line y
@@ -75,6 +76,14 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
   if nx < 0:
     nx = 0
 
+  # Note: following algorithm breaks if cx == nx or x == nx (I think).
+  # So we do an early return in both cases, just in case.
+  # This should result in correct behavior in all cases, since the formatting
+  # inserted would be for a zero width text.
+  if cx == nx:
+    # cx is nx, early return.
+    return
+
   # Skip unchanged formats before the new string
   var fi = lines[y].findFormatN(cx) - 1
 
@@ -112,6 +121,10 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
     assert lines[y].formats[fi].pos <= x
 
   # Now for the text's formats:
+  if x == nx:
+    # x is nx, early return.
+    return
+
   var format = cformat.formatFromWord()
   var lformat: Format
   var lnode: StyledNode
@@ -155,7 +168,8 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
     lines[y].insertFormat(px, fi, format, cformat.node)
     inc fi
 
-  if i < ostr.len and (fi >= lines[y].formats.len or lines[y].formats[fi].pos > nx):
+  if i < ostr.len and
+      (fi >= lines[y].formats.len or lines[y].formats[fi].pos > nx):
     # nx < ostr.width, but we have removed all formatting in the range of our
     # string, and no formatting comes directly after it. So we insert the
     # continuation of the last format we replaced after our string.
@@ -170,7 +184,7 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineAtom, x, y: LayoutUnit,
     window: WindowAttributes) =
   var r: Rune
 
-  var y = toInt((y + word.offset.y) div window.ppl) # y cell
+  let y = toInt((y + word.offset.y) div window.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
   var x = toInt((x + word.offset.x) div window.ppc) # x cell
@@ -184,7 +198,7 @@ proc setRowWord(lines: var FlexibleGrid, word: InlineAtom, x, y: LayoutUnit,
 
 proc setSpacing(lines: var FlexibleGrid, spacing: InlineAtom, x, y: LayoutUnit,
     window: WindowAttributes) =
-  var y = toInt((y + spacing.offset.y) div window.ppl) # y cell
+  let y = toInt((y + spacing.offset.y) div window.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
 
   var x = toInt((x + spacing.offset.x) div window.ppc) # x cell
@@ -195,8 +209,9 @@ proc setSpacing(lines: var FlexibleGrid, spacing: InlineAtom, x, y: LayoutUnit,
   if x < 0:
     i -= x
     x = 0
-  let linestr = ' '.repeat(width - i)
-  lines.setText(linestr, spacing.sformat, x, y)
+  if i < width:
+    let linestr = ' '.repeat(width - i)
+    lines.setText(linestr, spacing.sformat, x, y)
 
 proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
     starty, endx, endy: int, node: StyledNode, window: WindowAttributes) =
@@ -232,7 +247,6 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
     # Make sure line.width() >= endx
     let linewidth = lines[y].width()
     if linewidth < endx:
-      lines[y].addFormat(linewidth, newFormat())
       lines[y].str &= ' '.repeat(endx - linewidth)
 
     # Process formatting around startx
@@ -251,7 +265,7 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
         # Last format lower than startx => separate format from startx
         let copy = lines[y].formats[fi]
         lines[y].formats[fi].pos = startx
-        lines[y].formats.insert(copy, fi)
+        lines[y].insertFormat(fi, copy)
 
     # Process formatting around endx
     assert lines[y].formats.len > 0
@@ -259,15 +273,14 @@ proc paintBackground(lines: var FlexibleGrid, color: RGBAColor, startx,
     if fi == -1:
       # Last format > endx -> nothing to be done
       discard
-    else:
-      if lines[y].formats[fi].pos != endx:
-        let copy = lines[y].formats[fi]
-        if linewidth != endx:
-          lines[y].formats[fi].pos = endx
-          lines[y].formats.insert(copy, fi)
-        else:
-          lines[y].formats.delete(fi)
-          lines[y].formats.insert(copy, fi)
+    elif lines[y].formats[fi].pos != endx:
+      let copy = lines[y].formats[fi]
+      if linewidth != endx:
+        lines[y].formats[fi].pos = endx
+        lines[y].insertFormat(fi, copy)
+      else:
+        lines[y].formats.delete(fi)
+        lines[y].insertFormat(fi, copy)
 
     # Paint format backgrounds between startx and endx
     for fi in 0..lines[y].formats.high:
@@ -343,7 +356,8 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
         let iey = toInt(y + box.size.h)
         grid.paintBackground(box.computed{"background-color"}, ix, iy, iex,
           iey, box.node, window)
-      if box.computed{"background-image"}.t == CONTENT_IMAGE and box.computed{"background-image"}.s != "":
+      if box.computed{"background-image"}.t == CONTENT_IMAGE and
+          box.computed{"background-image"}.s != "":
         # ugly hack for background-image display... TODO actually display images
         let s = "[img]"
         let w = s.len * window.ppc

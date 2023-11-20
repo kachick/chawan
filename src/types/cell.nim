@@ -31,6 +31,10 @@ type
     format*: Format
     pos*: int
 
+  # Following properties should hold for `formats':
+  # * Position should be >= 0, <= str.width().
+  # * The position of every FormatCell should be greater than the position
+  #   of the previous FormatCell.
   FlexibleLine* = object
     str*: string
     formats*: seq[FormatCell]
@@ -146,10 +150,15 @@ proc addLine*(grid: var FlexibleGrid) =
 proc addLines*(grid: var FlexibleGrid, n: int) =
   grid.setLen(grid.len + n)
 
-proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format, node: StyledNode = nil) =
-  line.formats.insert(FormatCell(format: format, node: node, pos: pos), i)
+proc insertFormat*(line: var FlexibleLine, i: int, cell: FormatCell) =
+  line.formats.insert(cell, i)
 
-proc addFormat*(line: var FlexibleLine, pos: int, format: Format, node: StyledNode = nil) =
+proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format,
+    node: StyledNode = nil) =
+  line.insertFormat(i, FormatCell(format: format, node: node, pos: pos))
+
+proc addFormat*(line: var FlexibleLine, pos: int, format: Format,
+    node: StyledNode = nil) =
   line.formats.add(FormatCell(format: format, node: node, pos: pos))
 
 # https://www.ecma-international.org/wp-content/uploads/ECMA-48_5th_edition_june_1991.pdf
