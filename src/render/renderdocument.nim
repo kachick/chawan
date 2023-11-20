@@ -170,28 +170,29 @@ proc setText(lines: var FlexibleGrid, linestr: string, cformat: ComputedFormat,
 
 proc setRowWord(lines: var FlexibleGrid, word: InlineAtom, x, y: LayoutUnit,
     window: WindowAttributes) =
-  var r: Rune
-
   let y = toInt((y + word.offset.y) div window.ppl) # y cell
-  if y < 0: return # y is outside the canvas, no need to draw
-
+  if y < 0:
+    # y is outside the canvas, no need to draw
+    return
   var x = toInt((x + word.offset.x) div window.ppc) # x cell
   var i = 0
+  var r: Rune
   while x < 0 and i < word.str.len:
     fastRuneAt(word.str, i, r)
     x += r.twidth(x)
-  if x < 0: return # highest x is outside the canvas, no need to draw
-  let linestr = word.str.substr(i)
-  lines.setText(linestr, word.wformat, x, y)
+  if x < 0:
+    # highest x is outside the canvas, no need to draw
+    return
+  if i < word.str.len:
+    let linestr = word.str.substr(i)
+    lines.setText(linestr, word.wformat, x, y)
 
 proc setSpacing(lines: var FlexibleGrid, spacing: InlineAtom, x, y: LayoutUnit,
     window: WindowAttributes) =
   let y = toInt((y + spacing.offset.y) div window.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
-
   var x = toInt((x + spacing.offset.x) div window.ppc) # x cell
   let width = toInt(spacing.size.w div window.ppc) # cell width
-
   if x + width < 0: return # highest x is outside the canvas, no need to draw
   var i = 0
   if x < 0:
