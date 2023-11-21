@@ -50,7 +50,7 @@ type
     cs*: Charset
     config: Config
     infile: File
-    outfile: File
+    outfile*: File
     cleared: bool
     canvas: FixedGrid
     pcanvas: FixedGrid
@@ -614,8 +614,9 @@ proc restart*(term: Terminal) =
     term.write(term.enableAltScreen())
 
 proc newTerminal*(outfile: File, config: Config, attrs: WindowAttributes): Terminal =
-  let term = new Terminal
-  term.outfile = outfile
-  term.config = config
+  let term = Terminal(
+    outfile: outfile,
+    config: config
+  )
   term.windowChange(attrs)
   return term

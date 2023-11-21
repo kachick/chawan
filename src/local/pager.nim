@@ -81,7 +81,6 @@ type
     siteconf: seq[SiteConfig]
     statusgrid*: FixedGrid
     term*: Terminal
-    tty*: File #TODO this is already referenced in term, remove.
     unreg*: seq[(Pid, SocketStream)]
     urimethodmap: URIMethodMap
     username: string
@@ -221,8 +220,10 @@ proc newPager*(config: Config, attrs: WindowAttributes,
   return pager
 
 proc launchPager*(pager: Pager, tty: File) =
-  pager.tty = tty
   pager.term.start(tty)
+
+func tty*(pager: Pager): File =
+  return pager.term.outfile
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
@@ -281,7 +282,6 @@ proc writeStatusMessage(pager: Pager, str: string,
 proc refreshStatusMsg*(pager: Pager) =
   let container = pager.container
   if container == nil: return
-  if pager.tty == nil: return
   if pager.askpromise != nil: return
   if pager.precnum != 0:
     pager.writeStatusMessage($pager.precnum)
