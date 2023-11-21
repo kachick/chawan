@@ -1209,20 +1209,19 @@ func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
 
 let defaultTable = getInitialTable()
 
-template getDefault(t: CSSPropertyType): CSSComputedValue = {.cast(noSideEffect).}:
-  defaultTable[t]
+template getDefault(t: CSSPropertyType): CSSComputedValue =
+  {.cast(noSideEffect).}:
+    defaultTable[t]
+
+type CSSComputedValueMaybeGlobal = (CSSComputedValue, CSSGlobalValueType)
 
 func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType,
-    vtype: CSSValueType):
-    Result[(CSSComputedValue, CSSGlobalValueType), string] =
+    vtype: CSSValueType): Result[CSSComputedValueMaybeGlobal, string] =
   let global = cssGlobal(d)
-  var val = CSSComputedValue(t: ptype, v: vtype)
-  let r = val.getValueFromDecl(d, vtype, ptype)
-  if r.isErr:
-    if global != VALUE_NOGLOBAL:
-      return ok((val, global))
-    else:
-      return err(r.error)
+  let val = CSSComputedValue(t: ptype, v: vtype)
+  if global != VALUE_NOGLOBAL:
+    return ok((val, global))
+  ?val.getValueFromDecl(d, vtype, ptype)
   return ok((val, global))
 
 func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]):
