@@ -192,8 +192,8 @@ type
   InlineAtomState = object
     vertalign: CSSVerticalAlign
     baseline: LayoutUnit
-    margin_top: LayoutUnit
-    margin_bottom: LayoutUnit
+    marginTop: LayoutUnit
+    marginBottom: LayoutUnit
 
   InlineState = object
     ictx: InlineContext
@@ -358,8 +358,8 @@ proc verticalAlignLine(state: var InlineState) =
 
   # Calculate the line's baseline based on atoms' baseline.
   # Also, collect the maximum vertical margins of inline blocks.
-  var margin_top: LayoutUnit = 0
-  var margin_bottom: LayoutUnit = 0
+  var marginTop: LayoutUnit = 0
+  var bottomEdge = baseline
   for i in 0 ..< state.currentLine.atoms.len:
     let atom = state.currentLine.atoms[i]
     let iastate = state.currentLine.atomstates[i]
@@ -373,8 +373,6 @@ proc verticalAlignLine(state: var InlineState) =
       baseline = max(baseline, atom.size.h div 2)
     else:
       baseline = max(baseline, iastate.baseline)
-    margin_top = max(iastate.margin_top, margin_top)
-    margin_bottom = max(iastate.margin_bottom, margin_bottom)
 
   # Resize the line's height based on atoms' height and baseline.
   # The line height should be at least as high as the highest baseline used by
@@ -426,13 +424,21 @@ proc verticalAlignLine(state: var InlineState) =
     else:
       # See baseline (with len = 0).
       atom.offset.y = baseline - iastate.baseline
-    # Offset the atom's y position by the largest margin_top value.
-    atom.offset.y += margin_top
+    # Find the best top margin and bottom edge of all atoms.
+    # In fact, we are looking for the lowest top edge and the highest bottom
+    # edge of the line, so we have to do this after we know where the atoms
+    # will be placed.
+    marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
+    bottomEdge = max(atom.offset.y + atom.size.h + iastate.marginBottom,
+      bottomEdge)
 
-  # Grow the line by the largest margin_top and margin_bottom, and set
-  # its baseline.
-  state.currentLine.size.h += margin_top
-  state.currentLine.size.h += margin_bottom
+  # Finally, offset all atoms' y position by the largest top margin.
+  for atom in state.currentLine.atoms:
+    atom.offset.y += marginTop
+
+  # Set the line height to new top edge + old bottom edge, and set the
+  # baseline.
+  state.currentLine.size.h = bottomEdge + marginTop
   state.currentLine.baseline = baseline
 
 proc addPadding(state: var InlineState, width, height: LayoutUnit,
@@ -736,16 +742,26 @@ proc layoutText(state: var InlineState, str: string,
         state.currentLine.charwidth += w
   discard state.addWord()
 
-const DisplayOuterBlock = {DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM,
-  DISPLAY_FLOW_ROOT}
+func spx(l: CSSLength, lctx: LayoutState, p: SizeConstraint,
+    computed: CSSComputedValues, padding: LayoutUnit): LayoutUnit =
+  let u = l.px(lctx, p)
+  if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+    return max(u - padding, 0)
+  return max(u, 0)
+
+func spx(l: CSSLength, lctx: LayoutState, p: Option[LayoutUnit],
+    computed: CSSComputedValues, padding: LayoutUnit): Option[LayoutUnit] =
+  let u = l.px(lctx, p)
+  if u.isSome:
+    let u = u.get
+    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+      return some(max(u - padding, 0))
+    return some(max(u, 0))
+  return u
 
 proc resolveContentWidth(sizes: var ResolvedSizes, widthpx: LayoutUnit,
     containingWidth: SizeConstraint, computed: CSSComputedValues,
     isauto = false) =
-  if computed{"display"} notin DisplayOuterBlock:
-    #TODO this is probably needed to avoid double-margin, but it's ugly and
-    # probably also broken.
-    return
   if not sizes.space.w.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
     return
@@ -792,89 +808,75 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
     containingWidth: SizeConstraint, computed: CSSComputedValues,
     lctx: LayoutState) =
   let width = computed{"width"}
+  let padding = sizes.padding.left + sizes.padding.right
   var widthpx: LayoutUnit = 0
   if not width.auto and width.canpx(containingWidth):
-    widthpx = width.px(lctx, containingWidth)
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-      widthpx = widthpx - sizes.padding.left - sizes.padding.right
-    widthpx = max(widthpx, 0)
+    widthpx = width.spx(lctx, containingWidth, computed, padding)
     sizes.space.w = stretch(widthpx)
   sizes.resolveContentWidth(widthpx, containingWidth, computed, width.auto)
   if not computed{"max-width"}.auto:
-    var max_width = computed{"max-width"}.px(lctx, containingWidth)
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-      max_width = max_width - sizes.padding.left - sizes.padding.right
-    max_width = max(max_width, 0)
-    sizes.max_width = some(max_width)
+    let maxWidth = computed{"max-width"}.spx(lctx, containingWidth, computed,
+      padding)
+    sizes.max_width = some(maxWidth)
     if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
-        max_width < sizes.space.w.u or
-        sizes.space.w.t == MAX_CONTENT:
-      sizes.space.w = stretch(max_width) #TODO is stretch ok here?
+        maxWidth < sizes.space.w.u or sizes.space.w.t == MAX_CONTENT:
+      sizes.space.w = stretch(maxWidth) #TODO is stretch ok here?
       if sizes.space.w.t == STRETCH:
         # available width would stretch over max-width
-        sizes.space.w = stretch(max_width)
+        sizes.space.w = stretch(maxWidth)
       else: # FIT_CONTENT
         # available width could be higher than max-width (but not necessarily)
-        sizes.space.w = fitContent(max_width)
-      sizes.resolveContentWidth(max_width, containingWidth, computed)
+        sizes.space.w = fitContent(maxWidth)
+      sizes.resolveContentWidth(maxWidth, containingWidth, computed)
   if not computed{"min-width"}.auto:
-    var min_width = computed{"min-width"}.px(lctx, containingWidth)
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-      min_width = min_width - sizes.padding.left - sizes.padding.right
-    min_width = max(min_width, 0)
-    sizes.min_width = some(min_width)
+    let minWidth = computed{"min-width"}.spx(lctx, containingWidth, computed,
+      padding)
+    sizes.min_width = some(minWidth)
     if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
-        min_width > sizes.space.w.u or
+        minWidth > sizes.space.w.u or
         sizes.space.w.t == MIN_CONTENT:
       # two cases:
       # * available width is stretched under min-width. in this case,
       #   stretch to min-width instead.
       # * available width is fit under min-width. in this case, stretch to
       #   min-width as well (as we must satisfy min-width >= width).
-      sizes.space.w = stretch(min_width)
-      sizes.resolveContentWidth(min_width, containingWidth, computed)
+      sizes.space.w = stretch(minWidth)
+      sizes.resolveContentWidth(minWidth, containingWidth, computed)
 
 proc resolveBlockHeight(sizes: var ResolvedSizes,
     containingHeight: SizeConstraint, percHeight: Option[LayoutUnit],
     computed: CSSComputedValues, lctx: LayoutState) =
   let height = computed{"height"}
+  let padding = sizes.padding.top + sizes.padding.bottom
   var heightpx: LayoutUnit = 0
   if not height.auto and height.canpx(percHeight):
-    heightpx = height.px(lctx, percHeight).get
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-      heightpx = heightpx - sizes.padding.top - sizes.padding.bottom
-    heightpx = max(heightpx, 0)
+    heightpx = height.spx(lctx, percHeight, computed, padding).get
     sizes.space.h = stretch(heightpx)
   if not computed{"max-height"}.auto:
-    var max_height = computed{"max-height"}.px(lctx, percHeight)
-    sizes.max_height = max_height
-    if max_height.isSome:
-      var max_height = max_height.get
-      if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-        max_height = max_height - sizes.padding.top - sizes.padding.bottom
-      sizes.max_height = some(max(max_height, 0))
+    let maxHeight = computed{"max-height"}.spx(lctx, percHeight, computed,
+      padding)
+    sizes.max_height = maxHeight
+    if maxHeight.isSome:
+      sizes.max_height = maxHeight
+      let maxHeight = maxHeight.get
       if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
-          max_height < sizes.space.h.u or
-          sizes.space.h.t == MAX_CONTENT:
+          maxHeight < sizes.space.h.u or sizes.space.h.t == MAX_CONTENT:
         # same reasoning as for width.
         if sizes.space.h.t == STRETCH:
-          sizes.space.h = stretch(max_height)
+          sizes.space.h = stretch(maxHeight)
         else: # FIT_CONTENT
-          sizes.space.h = fitContent(max_height)
+          sizes.space.h = fitContent(maxHeight)
   if not computed{"min-height"}.auto:
-    var min_height = computed{"min-height"}.px(lctx, percHeight)
-    min_height = min_height
-    if min_height.isSome:
-      var min_height = min_height.get
-      if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-        min_height = min_height - sizes.padding.top - sizes.padding.bottom
-      min_height = max(min_height, 0)
-      sizes.min_height = some(min_height)
+    let minHeight = computed{"min-height"}.spx(lctx, percHeight, computed,
+      padding)
+    sizes.min_height = minHeight
+    if minHeight.isSome:
+      var minHeight = minHeight.get
+      sizes.min_height = some(minHeight)
       if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
-          min_height > sizes.space.h.u or
-          sizes.space.h.t == MIN_CONTENT:
+          minHeight > sizes.space.h.u or sizes.space.h.t == MIN_CONTENT:
         # same reasoning as for width.
-        sizes.space.h = stretch(min_height)
+        sizes.space.h = stretch(minHeight)
 
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes,
     containingWidth: SizeConstraint, computed: CSSComputedValues,
@@ -901,10 +903,8 @@ proc resolveAbsoluteWidth(sizes: var ResolvedSizes,
       # solve left/right yet.
       sizes.space.w = fitContent(containingWidth)
   else:
-    var widthpx = width.px(lctx, containingWidth)
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-      widthpx = widthpx - sizes.padding.left - sizes.padding.right
-    widthpx = max(widthpx, 0)
+    let padding = sizes.padding.left + sizes.padding.right
+    let widthpx = width.spx(lctx, containingWidth, computed, padding)
     # We could solve for left/right here, as available width is known.
     # Nevertheless, it is only needed for positioning, so we do not solve
     # them yet.
@@ -934,10 +934,8 @@ proc resolveAbsoluteHeight(sizes: var ResolvedSizes,
     else:
       sizes.space.h = fitContent(containingHeight)
   else:
-    var heightpx = height.px(lctx, containingHeight)
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
-      heightpx = heightpx - sizes.padding.top - sizes.padding.bottom
-    heightpx = max(heightpx, 0)
+    let padding = sizes.padding.top + sizes.padding.bottom
+    let heightpx = height.spx(lctx, containingHeight, computed, padding)
     sizes.space.h = stretch(heightpx)
 
 proc resolveBlockSizes(lctx: LayoutState, containingWidth,
@@ -978,16 +976,42 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
     w: fitContent(containingWidth),
     h: containingHeight
   )
+  let padding = resolvePadding(containingWidth, lctx, computed)
+  let inlinePadding = padding.left + padding.right
+  let blockPadding = padding.top + padding.bottom
   let width = computed{"width"}
   if not width.auto and width.canpx(containingWidth):
-    space.w = stretch(width.px(lctx, containingWidth))
+    space.w = stretch(width.spx(lctx, containingWidth, computed,
+      inlinePadding))
   let height = computed{"height"}
   if not height.auto and height.canpx(percHeight):
     space.h = stretch(height.px(lctx, containingHeight))
+  let maxWidth = if computed{"max-width"}.auto:
+    none(LayoutUnit)
+  else:
+    some(computed{"max-width"}.spx(lctx, containingWidth, computed,
+      inlinePadding))
+  let minWidth = if computed{"min-width"}.auto:
+    none(LayoutUnit)
+  else:
+    some(computed{"min-width"}.spx(lctx, containingWidth, computed,
+      inlinePadding))
+  let maxHeight = if computed{"max-height"}.auto:
+    none(LayoutUnit)
+  else:
+    computed{"max-height"}.spx(lctx, percHeight, computed, blockPadding)
+  let minHeight = if computed{"min-height"}.auto:
+    none(LayoutUnit)
+  else:
+    computed{"min-height"}.spx(lctx, percHeight, computed, blockPadding)
   return ResolvedSizes(
     margin: resolveMargins(containingWidth, lctx, computed),
-    padding: resolvePadding(containingWidth, lctx, computed),
-    space: space
+    padding: padding,
+    space: space,
+    max_width: maxWidth,
+    min_width: minWidth,
+    max_height: maxHeight,
+    min_height: minHeight
   )
 
 # Calculate and resolve available width & height for box children.
@@ -1083,7 +1107,8 @@ proc buildInlineLayout(bctx: var BlockContext, box: BlockBox,
   box.baseline = box.inline.offset.y + box.inline.baseline
   box.firstBaseline = box.inline.offset.y + box.inline.firstBaseline
 
-const DisplayBlockLike = {DISPLAY_BLOCK, DISPLAY_LIST_ITEM}
+const DisplayBlockLike = {DISPLAY_BLOCK, DISPLAY_LIST_ITEM,
+  DISPLAY_INLINE_BLOCK}
 
 # Return true if no more margin collapsing can occur for the current strut.
 func canFlushMargins(builder: BlockBoxBuilder, sizes: ResolvedSizes): bool =
@@ -1218,7 +1243,7 @@ proc addInlineBlock(state: var InlineState, builder: BlockBoxBuilder,
     parentWidth, parentHeight: SizeConstraint, computed: CSSComputedValues) =
   let lctx = state.lctx
   let percHeight = parentHeight.toperc100()
-  let sizes = lctx.resolveSizes(parentWidth, maxContent(), percHeight,
+  let sizes = lctx.resolveFloatSizes(parentWidth, maxContent(), percHeight,
     builder.computed)
   let box = BlockBox(
     computed: builder.computed,
@@ -1227,6 +1252,7 @@ proc addInlineBlock(state: var InlineState, builder: BlockBoxBuilder,
     margin: sizes.margin
   )
   var bctx = BlockContext(lctx: lctx)
+  bctx.marginTodo.append(sizes.margin.top)
   case builder.computed{"display"}
   of DISPLAY_INLINE_BLOCK:
     bctx.buildFlowLayout(box, builder, sizes)
@@ -1234,6 +1260,15 @@ proc addInlineBlock(state: var InlineState, builder: BlockBoxBuilder,
     lctx.buildTableLayout(box, TableBoxBuilder(builder), sizes)
   else:
     assert false, $builder.computed{"display"}
+  bctx.positionFloats()
+  bctx.marginTodo.append(sizes.margin.bottom)
+  let marginTop = box.offset.y
+  let marginBottom = bctx.marginTodo.sum()
+  # If the highest float edge is higher than the box itself, set that as
+  # the box height.
+  if bctx.maxFloatHeight > box.offset.y + box.size.h + marginBottom:
+    box.size.h = bctx.maxFloatHeight - box.offset.y - marginBottom
+  box.offset.y = 0
   # Apply the block box's properties to the atom itself.
   let iblock = InlineAtom(
     t: INLINE_BLOCK,
@@ -1244,13 +1279,11 @@ proc addInlineBlock(state: var InlineState, builder: BlockBoxBuilder,
       h: box.size.h
     )
   )
-  let marginTop = box.offset.y
-  box.offset.y = 0
   let iastate = InlineAtomState(
     baseline: box.baseline,
     vertalign: builder.computed{"vertical-align"},
-    margin_top: marginTop,
-    margin_bottom: bctx.marginTodo.sum()
+    marginTop: marginTop,
+    marginBottom: bctx.marginTodo.sum()
   )
   discard state.addAtom(iastate, iblock, computed)
 
@@ -1660,26 +1693,15 @@ proc alignTableCell(cell: BlockBox, availableHeight, baseline: LayoutUnit) =
   else:
     cell.offset.y = baseline - cell.firstBaseline
 
-proc newTableRowBox(lctx: LayoutState, parent: BlockBox,
-    builder: BoxBuilder, sizes: ResolvedSizes): BlockBox =
-  let availableWidth = stretch(sizes.space.w)
-  let availableHeight = maxContent() #TODO fit-content when clip
-  let percHeight = sizes.space.h.toPercSize()
-  let sizes = lctx.resolveSizes(availableWidth, availableHeight, percHeight,
-    builder.computed)
-  let box = BlockBox(
-    computed: builder.computed,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
-    node: builder.node,
-    margin: sizes.margin
-  )
-  return box
-
 proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     builder: TableRowBoxBuilder, sizes: ResolvedSizes): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
-  let row = newTableRowBox(pctx.lctx, parent, builder, sizes)
+  let row = BlockBox(
+    computed: builder.computed,
+    positioned: builder.computed{"position"} != POSITION_STATIC,
+    node: builder.node
+  )
   var baseline: LayoutUnit = 0
   # real cellwrappers of fillers
   var to_align: seq[CellWrapper]
@@ -1988,13 +2010,12 @@ proc layoutRootBlock(lctx: LayoutState, builder: BoxBuilder,
   else:
     assert false, "builder.t is " & $builder.computed{"display"}
     BlockBox(nil)
-  bctx.flushMargins(box)
   bctx.positionFloats()
   marginBottomOut = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   if bctx.maxFloatHeight > box.offset.y + box.size.h + marginBottomOut:
-    box.size.h = bctx.maxFloatHeight - box.size.h - marginBottomOut
+    box.size.h = bctx.maxFloatHeight - box.offset.y - marginBottomOut
   return box
 
 proc initBlockPositionStates(state: var BlockState, bctx: var BlockContext,
