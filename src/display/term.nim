@@ -49,8 +49,8 @@ type
   TerminalObj = object
     cs*: Charset
     config: Config
-    infile: File
-    outfile*: File
+    infile*: File
+    outfile: File
     cleared: bool
     canvas: FixedGrid
     pcanvas: FixedGrid

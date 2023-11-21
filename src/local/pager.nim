@@ -219,11 +219,11 @@ proc newPager*(config: Config, attrs: WindowAttributes,
     pager.alert("Error reading mailcap: " & err)
   return pager
 
-proc launchPager*(pager: Pager, tty: File) =
-  pager.term.start(tty)
+proc launchPager*(pager: Pager, infile: File) =
+  pager.term.start(infile)
 
-func tty*(pager: Pager): File =
-  return pager.term.outfile
+func infile*(pager: Pager): File =
+  return pager.term.infile
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:

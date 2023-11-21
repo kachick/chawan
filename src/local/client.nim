@@ -83,7 +83,7 @@ func console(client: Client): Console {.jsfget.} =
 proc readChar(client: Client): char =
   if client.ibuf == "":
     try:
-      return client.pager.tty.readChar()
+      return client.pager.infile.readChar()
     except EOFError:
       quit(1)
   else:
@@ -106,9 +106,9 @@ proc fetch[T: Request|string](client: Client, req: T,
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
-  if client.console == nil or client.pager.tty == nil: return
+  if client.console == nil or client.pager.infile == nil: return
   try:
-    let c = client.pager.tty.readChar()
+    let c = client.pager.infile.readChar()
     if c == char(3): #C-c
       client.ibuf = ""
       return 1
@@ -321,7 +321,7 @@ proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
 proc handleRead(client: Client, fd: int) =
-  if client.pager.tty != nil and fd == client.pager.tty.getFileHandle():
+  if client.pager.infile != nil and fd == client.pager.infile.getFileHandle():
     client.input()
     client.handlePagerEvents()
   elif fd == client.forkserver.estream.fd:
@@ -357,7 +357,7 @@ proc flushConsole*(client: Client) {.jsfunc.} =
   client.handleRead(client.forkserver.estream.fd)
 
 proc handleError(client: Client, fd: int) =
-  if client.pager.tty != nil and fd == client.pager.tty.getFileHandle():
+  if client.pager.infile != nil and fd == client.pager.infile.getFileHandle():
     #TODO do something here...
     stderr.write("Error in tty\n")
     quit(1)
@@ -388,8 +388,8 @@ proc handleError(client: Client, fd: int) =
 
 proc inputLoop(client: Client) =
   let selector = client.selector
-  discard c_setvbuf(client.pager.tty, nil, IONBF, 0)
-  selector.registerHandle(int(client.pager.tty.getFileHandle()), {Read}, 0)
+  discard c_setvbuf(client.pager.infile, nil, IONBF, 0)
+  selector.registerHandle(int(client.pager.infile.getFileHandle()), {Read}, 0)
   let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
   while true:
     let events = client.selector.select(-1)
@@ -400,7 +400,7 @@ proc inputLoop(client: Client) =
         client.handleError(event.fd)
       if Signal in event.events:
         assert event.fd == sigwinch
-        let attrs = getWindowAttributes(client.pager.tty)
+        let attrs = getWindowAttributes(client.pager.infile)
         client.pager.windowChange(attrs)
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
@@ -542,14 +542,14 @@ proc dumpBuffers(client: Client) =
 
 proc launchClient*(client: Client, pages: seq[string],
     contentType: Option[string], cs: Charset, dump: bool) =
-  var tty: File
+  var infile: File
   var dump = dump
   if not dump:
     if stdin.isatty():
-      tty = stdin
+      infile = stdin
     if stdout.isatty():
-      if tty == nil:
-        dump = not open(tty, "/dev/tty", fmRead)
+      if infile == nil:
+        dump = not open(infile, "/dev/tty", fmRead)
     else:
       dump = true
   let selector = newSelector[int]()
@@ -560,14 +560,14 @@ proc launchClient*(client: Client, pages: seq[string],
   client.loader.unregisterFun = proc(fd: int) =
     selector.unregister(fd)
   client.selector = selector
-  client.pager.launchPager(tty)
+  client.pager.launchPager(infile)
   let clearFun = proc() =
     client.clearConsole()
   let showFun = proc() =
     client.showConsole()
   let hideFun = proc() =
     client.hideConsole()
-  client.consoleWrapper = addConsole(client.pager, interactive = tty != nil,
+  client.consoleWrapper = addConsole(client.pager, interactive = infile != nil,
     clearFun, showFun, hideFun)
   #TODO passing console.err here makes it impossible to change it later. maybe
   # better associate it with jsctx
