@@ -37,10 +37,10 @@ type
     margin: RelativeRect
     padding: RelativeRect
     space: AvailableSpace
-    min_width: Option[LayoutUnit]
-    max_width: Option[LayoutUnit]
-    min_height: Option[LayoutUnit]
-    max_height: Option[LayoutUnit]
+    minWidth: LayoutUnit
+    maxWidth: LayoutUnit
+    minHeight: LayoutUnit
+    maxHeight: LayoutUnit
 
 func maxContent(): SizeConstraint =
   return SizeConstraint(t: MAX_CONTENT)
@@ -817,7 +817,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
   if not computed{"max-width"}.auto:
     let maxWidth = computed{"max-width"}.spx(lctx, containingWidth, computed,
       padding)
-    sizes.max_width = some(maxWidth)
+    sizes.maxWidth = maxWidth
     if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
         maxWidth < sizes.space.w.u or sizes.space.w.t == MAX_CONTENT:
       sizes.space.w = stretch(maxWidth) #TODO is stretch ok here?
@@ -831,10 +831,9 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
   if not computed{"min-width"}.auto:
     let minWidth = computed{"min-width"}.spx(lctx, containingWidth, computed,
       padding)
-    sizes.min_width = some(minWidth)
+    sizes.minWidth = minWidth
     if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
-        minWidth > sizes.space.w.u or
-        sizes.space.w.t == MIN_CONTENT:
+        minWidth > sizes.space.w.u or sizes.space.w.t == MIN_CONTENT:
       # two cases:
       # * available width is stretched under min-width. in this case,
       #   stretch to min-width instead.
@@ -855,9 +854,8 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
   if not computed{"max-height"}.auto:
     let maxHeight = computed{"max-height"}.spx(lctx, percHeight, computed,
       padding)
-    sizes.max_height = maxHeight
+    sizes.maxHeight = maxHeight.get(high(LayoutUnit))
     if maxHeight.isSome:
-      sizes.max_height = maxHeight
       let maxHeight = maxHeight.get
       if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
           maxHeight < sizes.space.h.u or sizes.space.h.t == MAX_CONTENT:
@@ -869,10 +867,9 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
   if not computed{"min-height"}.auto:
     let minHeight = computed{"min-height"}.spx(lctx, percHeight, computed,
       padding)
-    sizes.min_height = minHeight
+    sizes.minHeight = minHeight.get(0)
     if minHeight.isSome:
-      var minHeight = minHeight.get
-      sizes.min_height = some(minHeight)
+      let minHeight = minHeight.get
       if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
           minHeight > sizes.space.h.u or sizes.space.h.t == MIN_CONTENT:
         # same reasoning as for width.
@@ -947,7 +944,11 @@ proc resolveBlockSizes(lctx: LayoutState, containingWidth,
     # Take defined sizes if our width/height resolves to auto.
     # For block boxes, this is:
     # (width: stretch(parentWidth), height: max-content)
-    space: AvailableSpace(w: containingWidth, h: containingHeight)
+    space: AvailableSpace(w: containingWidth, h: containingHeight),
+    minWidth: 0,
+    maxWidth: high(LayoutUnit),
+    minHeight: 0,
+    maxHeight: high(LayoutUnit)
   )
   # Finally, calculate available width and height.
   sizes.resolveBlockWidth(containingWidth, computed, lctx)
@@ -962,7 +963,9 @@ proc resolveAbsoluteSizes(lctx: LayoutState, computed: CSSComputedValues):
   let containingHeight = lctx.positioned[^1].h
   var sizes = ResolvedSizes(
     margin: resolveMargins(containingWidth, lctx, computed),
-    padding: resolvePadding(containingWidth, lctx, computed)
+    padding: resolvePadding(containingWidth, lctx, computed),
+    minWidth: 0,
+    maxWidth: high(LayoutUnit)
   )
   sizes.resolveAbsoluteWidth(containingWidth, computed, lctx)
   sizes.resolveAbsoluteHeight(containingHeight, computed, lctx)
@@ -984,34 +987,33 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
     space.w = stretch(width.spx(lctx, containingWidth, computed,
       inlinePadding))
   let height = computed{"height"}
-  if not height.auto and height.canpx(percHeight):
+  if not height.auto and height.canpx(containingHeight):
     space.h = stretch(height.px(lctx, containingHeight))
-  let maxWidth = if computed{"max-width"}.auto:
-    none(LayoutUnit)
+  let minWidth: LayoutUnit = if not computed{"min-width"}.auto:
+    computed{"min-width"}.spx(lctx, containingWidth, computed, inlinePadding)
   else:
-    some(computed{"max-width"}.spx(lctx, containingWidth, computed,
-      inlinePadding))
-  let minWidth = if computed{"min-width"}.auto:
-    none(LayoutUnit)
+    0
+  let maxWidth = if not computed{"max-width"}.auto:
+    computed{"max-width"}.spx(lctx, containingWidth, computed, inlinePadding)
   else:
-    some(computed{"min-width"}.spx(lctx, containingWidth, computed,
-      inlinePadding))
-  let maxHeight = if computed{"max-height"}.auto:
-    none(LayoutUnit)
+    high(LayoutUnit)
+  let minHeight: LayoutUnit = if not computed{"min-height"}.auto:
+    computed{"min-height"}.spx(lctx, percHeight, computed, blockPadding).get(0)
   else:
+    0
+  let maxHeight = if not computed{"max-height"}.auto:
     computed{"max-height"}.spx(lctx, percHeight, computed, blockPadding)
-  let minHeight = if computed{"min-height"}.auto:
-    none(LayoutUnit)
+      .get(high(LayoutUnit))
   else:
-    computed{"min-height"}.spx(lctx, percHeight, computed, blockPadding)
+    high(LayoutUnit)
   return ResolvedSizes(
     margin: resolveMargins(containingWidth, lctx, computed),
     padding: padding,
     space: space,
-    max_width: maxWidth,
-    min_width: minWidth,
-    max_height: maxHeight,
-    min_height: minHeight
+    minWidth: minWidth,
+    maxWidth: maxWidth,
+    minHeight: minHeight,
+    maxHeight: maxHeight
   )
 
 # Calculate and resolve available width & height for box children.
@@ -1041,7 +1043,11 @@ proc resolveTableCellSizes(lctx: LayoutState, containingWidth,
     computed: CSSComputedValues): ResolvedSizes =
   var sizes = ResolvedSizes(
     padding: resolvePadding(containingWidth, lctx, computed),
-    space: AvailableSpace(w: containingWidth, h: containingHeight)
+    space: AvailableSpace(w: containingWidth, h: containingHeight),
+    minWidth: 0,
+    maxWidth: high(LayoutUnit),
+    minHeight: 0,
+    maxHeight: high(LayoutUnit)
   )
   if not override:
     let width = computed{"width"}
@@ -1082,9 +1088,8 @@ proc applyWidth(box: BlockBox, sizes: ResolvedSizes,
     maxChildWidth: LayoutUnit) =
   # Make the box as small/large as the content's width or specified width.
   box.size.w = maxChildWidth.applySizeConstraint(sizes.space.w)
-  # Then, clamp it to min_width and max_width (if applicable).
-  box.size.w = clamp(box.size.w, sizes.min_width.get(0),
-    sizes.max_width.get(high(LayoutUnit)))
+  # Then, clamp it to minWidth and maxWidth (if applicable).
+  box.size.w = clamp(box.size.w, sizes.minWidth, sizes.maxWidth)
 
 proc buildInlineLayout(bctx: var BlockContext, box: BlockBox,
     children: seq[BoxBuilder], sizes: ResolvedSizes) =
@@ -2199,10 +2204,7 @@ proc buildBlockLayout(bctx: var BlockContext, box: BlockBox,
 
   let paddingHeight = state.offset.y + sizes.padding.bottom
   box.size.h = applySizeConstraint(paddingHeight, sizes.space.h)
-  if sizes.max_height.isSome and box.size.h > sizes.max_height.get:
-    box.size.h = sizes.max_height.get
-  if sizes.min_height.isSome and box.size.h < sizes.min_height.get:
-    box.size.h = sizes.min_height.get
+  box.size.h = clamp(box.size.h, sizes.minHeight, sizes.maxHeight)
 
   box.nested = state.nested
   box.xminwidth = state.xminwidth
