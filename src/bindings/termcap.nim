@@ -1,9 +1,20 @@
-const termlib = (func(): string =
-  let libs = ["terminfo", "mytinfo", "termlib", "termcap", "tinfo", "ncurses", "curses"]
+import os
+const termlib = (proc(): string =
+  const libs = [
+    "terminfo", "mytinfo", "termlib", "termcap", "tinfo", "ncurses", "curses"
+  ]
   for lib in libs:
     let res = staticExec("pkg-config --libs --silence-errors " & lib)
     if res != "":
       return res
+  # Apparently on some systems pkg-config will fail to locate ncurses.
+  const dirs = [
+    "/lib", "/usr/lib", "/usr/local/lib"
+  ]
+  for lib in libs:
+    for dir in dirs:
+      if fileExists(dir & "/lib" & lib & ".a"):
+        return "-l" & lib
 )()
 when termlib != "":
   {.passl: termlib.}

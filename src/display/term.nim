@@ -66,10 +66,6 @@ type
     orig_flags2: cint
     orig_termios: Termios
 
-func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
-func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
-func ccap(term: Terminal, c: TermcapCap): cstring = term.tc.caps[c]
-
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
   "\e[" & s.join(';')
@@ -96,6 +92,14 @@ when not termcap_found:
     CSI() & "K"
   template ED(): string =
     CSI() & "J"
+else:
+  func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
+  func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
+  func ccap(term: Terminal, c: TermcapCap): cstring = term.tc.caps[c]
+
+  var goutfile: File
+  proc putc(c: char): cint {.cdecl.} =
+    goutfile.write(c)
 
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
@@ -110,10 +114,6 @@ const ANSIColorMap = [
   ColorsRGB["cyan"],
   ColorsRGB["white"],
 ]
-
-var goutfile: File
-proc putc(c: char): cint {.cdecl.} =
-  goutfile.write(c)
 
 proc write(term: Terminal, s: string) =
   when termcap_found:
