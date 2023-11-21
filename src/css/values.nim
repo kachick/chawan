@@ -536,10 +536,10 @@ const Units = {
   "vmax": UNIT_VMAX,
 }.toTable()
 
-func cssLength(val: float64, unit: string): Result[CSSLength, string] =
+func cssLength(val: float64, unit: string): Opt[CSSLength] =
   if unit in Units:
     return ok(CSSLength(num: val, unit: Units[unit]))
-  return err("Invalid unit")
+  return err()
 
 const CSSLengthAuto* = CSSLength(auto: true)
 
@@ -572,7 +572,7 @@ func skipWhitespace(vals: seq[CSSComponentValue], i: var int) =
       break
     inc i
 
-func cssColor*(val: CSSComponentValue): Result[RGBAColor, string] =
+func cssColor*(val: CSSComponentValue): Opt[RGBAColor] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.tokenType
@@ -593,7 +593,7 @@ func cssColor*(val: CSSComponentValue): Result[RGBAColor, string] =
       #TODO calc, percentages, etc (cssnumber function or something)
       if not slash and i >= f.value.len or i < f.value.len and
           f.value[i] != CSS_NUMBER_TOKEN:
-        return err("Invalid color")
+        return err()
     template next_value(first = false, slash = false) =
       inc i
       f.value.skipWhitespace(i)
@@ -604,11 +604,11 @@ func cssColor*(val: CSSComponentValue): Result[RGBAColor, string] =
           f.value.skipWhitespace(i)
           commaMode = true
         elif commaMode:
-          return err("Invalid color")
+          return err()
         elif slash:
           let tok = f.value[i]
           if tok != CSS_DELIM_TOKEN or CSSToken(tok).cvalue != '/':
-            return err("Invalid color")
+            return err()
           inc i
           f.value.skipWhitespace(i)
       check_err slash
@@ -626,14 +626,14 @@ func cssColor*(val: CSSComponentValue): Result[RGBAColor, string] =
       else:
         1
       return ok(rgba(int(r), int(g), int(b), int(a * 255)))
-  return err("Invalid color")
+  return err()
 
 func isToken(cval: CSSComponentValue): bool {.inline.} = cval of CSSToken
 
 func getToken(cval: CSSComponentValue): CSSToken = (CSSToken)cval
 
 func cssIdent[T](map: static openArray[(string, T)], cval: CSSComponentValue):
-    Result[T, string] =
+    Opt[T] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -647,16 +647,16 @@ func cssIdent[T](map: static openArray[(string, T)], cval: CSSComponentValue):
         let val = tok.value.toLowerAscii()
         if val in MapTable:
           return ok(MapTable[val])
-  return err("Invalid ident")
+  return err()
 
 func cssIdentFirst[T](map: static openArray[(string, T)], d: CSSDeclaration):
-    Result[T, string] =
+    Opt[T] =
   if d.value.len == 1:
     return cssIdent(map, d.value[0])
-  return err("Invalid ident")
+  return err()
 
 func cssLength*(val: CSSComponentValue, has_auto: static bool = true,
-    allow_negative: static bool = true): Result[CSSLength, string] =
+    allow_negative: static bool = true): Opt[CSSLength] =
   block nofail:
     if val of CSSToken:
       let tok = CSSToken(val)
@@ -679,9 +679,9 @@ func cssLength*(val: CSSComponentValue, has_auto: static bool = true,
           if tok.value.equalsIgnoreCase("auto"):
             return ok(CSSLengthAuto)
       else: discard
-  return err("Invalid length")
+  return err()
 
-func cssAbsoluteLength(val: CSSComponentValue): Result[CSSLength, string] =
+func cssAbsoluteLength(val: CSSComponentValue): Opt[CSSLength] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.tokenType
@@ -692,9 +692,9 @@ func cssAbsoluteLength(val: CSSComponentValue): Result[CSSLength, string] =
       if tok.nvalue >= 0:
         return cssLength(tok.nvalue, tok.unit)
     else: discard
-  return err("Invalid length")
+  return err()
 
-func cssWordSpacing(cval: CSSComponentValue): Result[CSSLength, string] =
+func cssWordSpacing(cval: CSSComponentValue): Opt[CSSLength] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     case tok.tokenType
@@ -704,7 +704,7 @@ func cssWordSpacing(cval: CSSComponentValue): Result[CSSLength, string] =
       if tok.value.equalsIgnoreCase("normal"):
         return ok(CSSLengthAuto)
     else: discard
-  return err("Invalid word spacing")
+  return err()
 
 func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
   const GlobalMap = {
@@ -715,9 +715,9 @@ func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
   }
   return cssIdentFirst(GlobalMap, d).get(VALUE_NOGLOBAL)
 
-func cssQuotes(d: CSSDeclaration): Result[CSSQuotes, string] =
+func cssQuotes(d: CSSDeclaration): Opt[CSSQuotes] =
   template die =
-    return err("Invalid quotes")
+    return err()
   if d.value.len == 0:
     die
   var res: CSSQuotes
@@ -770,7 +770,7 @@ func cssContent(d: CSSDeclaration): seq[CSSContent] =
         result.add(CSSContent(t: CONTENT_STRING, s: tok.value))
       else: return
 
-func cssDisplay(cval: CSSComponentValue): Result[CSSDisplay, string] =
+func cssDisplay(cval: CSSComponentValue): Opt[CSSDisplay] =
   const DisplayMap = {
     "block": DISPLAY_BLOCK,
     "inline": DISPLAY_INLINE,
@@ -791,7 +791,7 @@ func cssDisplay(cval: CSSComponentValue): Result[CSSDisplay, string] =
   }
   return cssIdent(DisplayMap, cval)
 
-func cssFontStyle(cval: CSSComponentValue): Result[CSSFontStyle, string] =
+func cssFontStyle(cval: CSSComponentValue): Opt[CSSFontStyle] =
   const FontStyleMap = {
     "normal": FONTSTYLE_NORMAL,
     "italic": FONTSTYLE_ITALIC,
@@ -799,7 +799,7 @@ func cssFontStyle(cval: CSSComponentValue): Result[CSSFontStyle, string] =
   }
   return cssIdent(FontStyleMap, cval)
 
-func cssWhiteSpace(cval: CSSComponentValue): Result[CSSWhitespace, string] =
+func cssWhiteSpace(cval: CSSComponentValue): Opt[CSSWhitespace] =
   const WhiteSpaceMap = {
     "normal": WHITESPACE_NORMAL,
     "nowrap": WHITESPACE_NOWRAP,
@@ -809,7 +809,7 @@ func cssWhiteSpace(cval: CSSComponentValue): Result[CSSWhitespace, string] =
   }
   return cssIdent(WhiteSpaceMap, cval)
 
-func cssFontWeight(cval: CSSComponentValue): Result[int, string] =
+func cssFontWeight(cval: CSSComponentValue): Opt[int] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -823,10 +823,9 @@ func cssFontWeight(cval: CSSComponentValue): Result[int, string] =
     elif tok.tokenType == CSS_NUMBER_TOKEN:
       if tok.nvalue in 1f64..1000f64:
         return ok(int(tok.nvalue))
-  return err("Invalid font weight")
+  return err()
 
-func cssTextDecoration(d: CSSDeclaration):
-    Result[set[CSSTextDecoration], string] =
+func cssTextDecoration(d: CSSDeclaration): Opt[set[CSSTextDecoration]] =
   var s: set[CSSTextDecoration]
   for cval in d.value:
     if isToken(cval):
@@ -834,7 +833,7 @@ func cssTextDecoration(d: CSSDeclaration):
       if tok.tokenType == CSS_IDENT_TOKEN:
         if tok.value.equalsIgnoreCase("none"):
           if d.value.len != 1:
-            return err("Invalid text decoration")
+            return err()
           return ok(s)
         elif tok.value.equalsIgnoreCase("underline"):
           s.incl(TEXT_DECORATION_UNDERLINE)
@@ -845,10 +844,10 @@ func cssTextDecoration(d: CSSDeclaration):
         elif tok.value.equalsIgnoreCase("blink"):
           s.incl(TEXT_DECORATION_BLINK)
         else:
-          return err("Invalid text decoration")
+          return err()
   return ok(s)
 
-func cssWordBreak(cval: CSSComponentValue): Result[CSSWordBreak, string] =
+func cssWordBreak(cval: CSSComponentValue): Opt[CSSWordBreak] =
   const WordBreakMap = {
     "normal": WORD_BREAK_NORMAL,
     "break-all": WORD_BREAK_BREAK_ALL,
@@ -857,7 +856,7 @@ func cssWordBreak(cval: CSSComponentValue): Result[CSSWordBreak, string] =
   return cssIdent(WordBreakMap, cval)
 
 func cssListStyleType(cval: CSSComponentValue):
-    Result[CSSListStyleType, string] =
+    Opt[CSSListStyleType] =
   const ListStyleMap = {
     "none": LIST_STYLE_TYPE_NONE,
     "disc": LIST_STYLE_TYPE_DISC,
@@ -884,7 +883,7 @@ func cssListStyleType(cval: CSSComponentValue):
   return cssIdent(ListStyleMap, cval)
 
 func cssVerticalAlign(cval: CSSComponentValue):
-    Result[CSSVerticalAlign, string] =
+    Opt[CSSVerticalAlign] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -906,9 +905,9 @@ func cssVerticalAlign(cval: CSSComponentValue):
         keyword: VERTICAL_ALIGN_BASELINE,
         length: ?cssLength(tok, has_auto = false)
       ))
-  return err("Invalid vertical align")
+  return err()
 
-func cssLineHeight(cval: CSSComponentValue): Result[CSSLength, string] =
+func cssLineHeight(cval: CSSComponentValue): Opt[CSSLength] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     case tok.tokenType
@@ -919,9 +918,9 @@ func cssLineHeight(cval: CSSComponentValue): Result[CSSLength, string] =
         return ok(CSSLengthAuto)
     else:
       return cssLength(tok, has_auto = false)
-  return err("Invalid line height")
+  return err()
 
-func cssTextAlign(cval: CSSComponentValue): Result[CSSTextAlign, string] =
+func cssTextAlign(cval: CSSComponentValue): Opt[CSSTextAlign] =
   const TextAlignMap = {
     "start": TEXT_ALIGN_START,
     "end": TEXT_ALIGN_END,
@@ -934,14 +933,14 @@ func cssTextAlign(cval: CSSComponentValue): Result[CSSTextAlign, string] =
   return cssIdent(TextAlignMap, cval)
 
 func cssListStylePosition(cval: CSSComponentValue):
-    Result[CSSListStylePosition, string] =
+    Opt[CSSListStylePosition] =
   const ListStylePositionMap = {
     "inside": LIST_STYLE_POSITION_INSIDE,
     "outside": LIST_STYLE_POSITION_OUTSIDE
   }
   return cssIdent(ListStylePositionMap, cval)
 
-func cssPosition(cval: CSSComponentValue): Result[CSSPosition, string] =
+func cssPosition(cval: CSSComponentValue): Opt[CSSPosition] =
   const PositionMap = {
     "static": POSITION_STATIC,
     "relative": POSITION_RELATIVE,
@@ -951,7 +950,7 @@ func cssPosition(cval: CSSComponentValue): Result[CSSPosition, string] =
   }
   return cssIdent(PositionMap, cval)
 
-func cssCaptionSide(cval: CSSComponentValue): Result[CSSCaptionSide, string] =
+func cssCaptionSide(cval: CSSComponentValue): Opt[CSSCaptionSide] =
   const CaptionSideMap = {
     "top": CAPTION_SIDE_TOP,
     "bottom": CAPTION_SIDE_BOTTOM,
@@ -965,16 +964,16 @@ func cssCaptionSide(cval: CSSComponentValue): Result[CSSCaptionSide, string] =
   return cssIdent(CaptionSideMap, cval)
 
 func cssBorderCollapse(cval: CSSComponentValue):
-    Result[CSSBorderCollapse, string] =
+    Opt[CSSBorderCollapse] =
   const BorderCollapseMap = {
     "collapse": BORDER_COLLAPSE_COLLAPSE,
     "separate": BORDER_COLLAPSE_SEPARATE
   }
   return cssIdent(BorderCollapseMap, cval)
 
-func cssCounterReset(d: CSSDeclaration): Result[seq[CSSCounterReset], string] =
+func cssCounterReset(d: CSSDeclaration): Opt[seq[CSSCounterReset]] =
   template die =
-    return err("Invalid counter-reset")
+    return err()
   var r: CSSCounterReset
   var s = false
   var res: seq[CSSCounterReset]
@@ -998,7 +997,7 @@ func cssCounterReset(d: CSSDeclaration): Result[seq[CSSCounterReset], string] =
         die
   return ok(res)
 
-func cssMaxMinSize(cval: CSSComponentValue): Result[CSSLength, string] =
+func cssMaxMinSize(cval: CSSComponentValue): Opt[CSSLength] =
   if isToken(cval):
     let tok = getToken(cval)
     case tok.tokenType
@@ -1008,7 +1007,7 @@ func cssMaxMinSize(cval: CSSComponentValue): Result[CSSLength, string] =
     of CSS_NUMBER_TOKEN, CSS_DIMENSION_TOKEN, CSS_PERCENTAGE_TOKEN:
       return cssLength(tok, allow_negative = false)
     else: discard
-  return err("Invalid min/max-size")
+  return err()
 
 #TODO should be URL (parsed with baseurl of document...)
 func cssURL(cval: CSSComponentValue): Option[string] =
@@ -1031,7 +1030,7 @@ func cssURL(cval: CSSComponentValue): Option[string] =
           break
 
 #TODO this should be bg-image, add gradient, etc etc
-func cssImage(cval: CSSComponentValue): Result[CSSContent, string] =
+func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
   if isToken(cval):
     #TODO bg-image only
     let tok = getToken(cval)
@@ -1040,18 +1039,18 @@ func cssImage(cval: CSSComponentValue): Result[CSSContent, string] =
   let url = cssURL(cval)
   if url.isSome:
     return ok(CSSContent(t: CONTENT_IMAGE, s: url.get))
-  return err("Invalid image")
+  return err()
 
 func cssInteger(cval: CSSComponentValue, range: Slice[int]):
-    Result[int, string] =
+    Opt[int] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_NUMBER_TOKEN:
       if tok.nvalue in float64(range.a)..float64(range.b):
         return ok(int(tok.nvalue))
-  return err("Invalid integer")
+  return err()
 
-func cssFloat(cval: CSSComponentValue): Result[CSSFloat, string] =
+func cssFloat(cval: CSSComponentValue): Opt[CSSFloat] =
   const FloatMap = {
     "none": FLOAT_NONE,
     "left": FLOAT_LEFT,
@@ -1059,7 +1058,7 @@ func cssFloat(cval: CSSComponentValue): Result[CSSFloat, string] =
   }
   return cssIdent(FloatMap, cval)
 
-func cssVisibility(cval: CSSComponentValue): Result[CSSVisibility, string] =
+func cssVisibility(cval: CSSComponentValue): Opt[CSSVisibility] =
   const VisibilityMap = {
     "visible": VISIBILITY_VISIBLE,
     "hidden": VISIBILITY_HIDDEN,
@@ -1067,7 +1066,7 @@ func cssVisibility(cval: CSSComponentValue): Result[CSSVisibility, string] =
   }
   return cssIdent(VisibilityMap, cval)
 
-func cssBoxSizing(cval: CSSComponentValue): Result[CSSBoxSizing, string] =
+func cssBoxSizing(cval: CSSComponentValue): Opt[CSSBoxSizing] =
   const BoxSizingMap = {
     "border-box": BOX_SIZING_BORDER_BOX,
     "content-box": BOX_SIZING_CONTENT_BOX
@@ -1075,11 +1074,11 @@ func cssBoxSizing(cval: CSSComponentValue): Result[CSSBoxSizing, string] =
   return cssIdent(BoxSizingMap, cval)
 
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
-    vtype: CSSValueType, ptype: CSSPropertyType): Err[string] =
+    vtype: CSSValueType, ptype: CSSPropertyType): Err[void] =
   var i = 0
   d.value.skipWhitespace(i)
   if i >= d.value.len:
-    return err("Empty value")
+    return err()
   let cval = d.value[i]
   inc i
   case vtype
@@ -1216,7 +1215,7 @@ template getDefault(t: CSSPropertyType): CSSComputedValue =
 type CSSComputedValueMaybeGlobal = (CSSComputedValue, CSSGlobalValueType)
 
 func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType,
-    vtype: CSSValueType): Result[CSSComputedValueMaybeGlobal, string] =
+    vtype: CSSValueType): Opt[CSSComputedValueMaybeGlobal] =
   let global = cssGlobal(d)
   let val = CSSComputedValue(t: ptype, v: vtype)
   if global != VALUE_NOGLOBAL:
@@ -1225,7 +1224,7 @@ func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType,
   return ok((val, global))
 
 func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]):
-    Result[seq[(CSSComputedValue, CSSGlobalValueType)], string] =
+    Opt[seq[(CSSComputedValue, CSSGlobalValueType)]] =
   var i = 0
   var cvals: seq[CSSComponentValue]
   while i < d.value.len:
@@ -1281,7 +1280,7 @@ const PropertyPaddingSpec = [
 ]
 
 proc getComputedValues0(d: CSSDeclaration):
-    Result[seq[(CSSComputedValue, CSSGlobalValueType)], string] =
+    Opt[seq[(CSSComputedValue, CSSGlobalValueType)]] =
   let name = d.name
   var res: seq[(CSSComputedValue, CSSGlobalValueType)]
   case shorthandType(name)
