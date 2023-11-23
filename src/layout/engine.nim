@@ -158,6 +158,7 @@ type
     exclusions: seq[Exclusion]
     unpositionedFloats: seq[UnpositionedFloat]
     maxFloatHeight: LayoutUnit
+    clearOffset: LayoutUnit
 
   UnpositionedFloat = object
     parentBps: BlockPositionState
@@ -168,8 +169,8 @@ type
     next: BlockPositionState
     box: BlockBox
     offset: Offset # offset relative to the block formatting context
+    resolved: bool # has the position been resolved yet?
 
-  #TODO clear
   Exclusion = object
     offset: Offset
     size: Size
@@ -503,11 +504,8 @@ proc initLine(state: var InlineState) =
     let y = state.currentLine.line.offsety + bfcOffset.y
     var left = bfcOffset.x
     var right = bfcOffset.x + state.currentLine.availableWidth
-    #TODO this could be much more efficient if we removed cleared exclusions
-    # etc.
     for ex in bctx.exclusions:
-      #if y2 >= ex.offset.y and y < ex.offset.y + ex.size.h:
-      if y in ex.offset.y .. ex.offset.y + ex.size.h:
+      if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
         state.currentLine.hasExclusion = true
         if ex.t == FLOAT_LEFT:
           left = ex.offset.x + ex.size.w
@@ -1091,12 +1089,27 @@ proc applyWidth(box: BlockBox, sizes: ResolvedSizes,
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.size.w = clamp(box.size.w, sizes.minWidth, sizes.maxWidth)
 
+proc applyHeight(box: BlockBox, sizes: ResolvedSizes,
+    maxChildHeight: LayoutUnit) =
+  # Make the box as small/large as the content's width or specified width.
+  box.size.h = maxChildHeight.applySizeConstraint(sizes.space.h)
+  # Then, clamp it to minWidth and maxWidth (if applicable).
+  box.size.h = clamp(box.size.h, sizes.minHeight, sizes.maxHeight)
+
+proc applyPadding(box: BlockBox, padding: RelativeRect) =
+  box.size.w += padding.left
+  box.size.w += padding.right
+  box.size.h += padding.top
+  box.size.h += padding.bottom
+
+func bfcOffset(bctx: BlockContext): Offset =
+  if bctx.parentBps != nil:
+    return bctx.parentBps.offset
+  return Offset()
+
 proc buildInlineLayout(bctx: var BlockContext, box: BlockBox,
     children: seq[BoxBuilder], sizes: ResolvedSizes) =
-  var bfcOffset = if bctx.parentBps != nil:
-    bctx.parentBps.offset
-  else:
-    Offset()
+  var bfcOffset = bctx.bfcOffset
   let offset = Offset(x: sizes.padding.left, y: sizes.padding.top)
   bfcOffset.x += box.offset.x + offset.x
   bfcOffset.y += box.offset.y + offset.y
@@ -1104,11 +1117,9 @@ proc buildInlineLayout(bctx: var BlockContext, box: BlockBox,
     bfcOffset)
   box.xminwidth = max(box.xminwidth, box.inline.minwidth)
   box.size.w = box.inline.size.w + sizes.padding.left + sizes.padding.right
-  box.size.h = applySizeConstraint(box.inline.size.h, sizes.space.h)
-  box.size.h += sizes.padding.top + sizes.padding.bottom
   box.applyWidth(sizes, box.inline.size.w)
-  box.size.w += sizes.padding.left
-  box.size.w += sizes.padding.right
+  box.applyHeight(sizes, box.inline.size.h)
+  box.applyPadding(sizes.padding)
   box.baseline = box.inline.offset.y + box.inline.baseline
   box.firstBaseline = box.inline.offset.y + box.inline.firstBaseline
 
@@ -1133,10 +1144,29 @@ proc flushMargins(bctx: var BlockContext, box: BlockBox) =
     var p = bctx.marginTarget
     while true:
       p.offset.y += margin
+      p.resolved = true
       p = p.next
       if p == nil: break
     bctx.marginTarget = nil
   bctx.marginTodo = Strut()
+
+proc clearFloats(offset: var Offset, bctx: var BlockContext, clear: CSSClear) =
+  var y = bctx.bfcOffset.y + offset.y
+  case clear
+  of CLEAR_LEFT, CLEAR_INLINE_START:
+    for ex in bctx.exclusions:
+      if ex.t == FLOAT_LEFT:
+        y = max(ex.offset.y + ex.size.h, y)
+  of CLEAR_RIGHT, CLEAR_INLINE_END:
+    for ex in bctx.exclusions:
+      if ex.t == FLOAT_RIGHT:
+        y = max(ex.offset.y + ex.size.h, y)
+  of CLEAR_BOTH:
+    for ex in bctx.exclusions:
+      y = max(ex.offset.y + ex.size.h, y)
+  of CLEAR_NONE: assert false
+  bctx.clearOffset = y
+  offset.y = y - bctx.bfcOffset.y
 
 type
   BlockState = object
@@ -1155,7 +1185,8 @@ type
     initialParentOffset: Offset
 
 func findNextFloatOffset(bctx: BlockContext, offset: Offset, size: Size,
-    space: AvailableSpace, float: CSSFloat): Offset =
+    space: AvailableSpace, float: CSSFloat, clear: CSSClear): Offset =
+  # Algorithm originally from QEmacs.
   var y = offset.y
   let leftStart = offset.x
   let rightStart = max(offset.x + size.w, space.w.u)
@@ -1185,18 +1216,21 @@ func findNextFloatOffset(bctx: BlockContext, offset: Offset, size: Size,
 
 proc positionFloat(bctx: var BlockContext, child: BlockBox,
     space: AvailableSpace, bfcOffset: Offset) =
+  let clear = child.computed{"clear"}
+  if clear != CLEAR_NONE:
+    child.offset.clearFloats(bctx, clear)
   let size = Size(
     w: child.margin.left + child.margin.right + child.size.w,
     h: child.margin.top + child.margin.bottom + child.size.h
   )
   let childBfcOffset = Offset(
     x: bfcOffset.x + child.offset.x - child.margin.left,
-    y: bfcOffset.y + child.offset.y - child.margin.top
+    y: max(bfcOffset.y + child.offset.y - child.margin.top, bctx.clearOffset)
   )
   assert space.w.t != FIT_CONTENT
   let ft = child.computed{"float"}
   assert ft != FLOAT_NONE
-  let offset = bctx.findNextFloatOffset(childBfcOffset, size, space, ft)
+  let offset = bctx.findNextFloatOffset(childBfcOffset, size, space, ft, clear)
   child.offset = Offset(
     x: offset.x - bfcOffset.x + child.margin.left,
     y: offset.y - bfcOffset.y + child.margin.top
@@ -1229,6 +1263,8 @@ proc buildFlowLayout(bctx: var BlockContext, box: BlockBox,
   if builder.canFlushMargins(sizes):
     bctx.flushMargins(box)
     bctx.positionFloats()
+  if builder.computed{"clear"} != CLEAR_NONE:
+    box.offset.clearFloats(bctx, builder.computed{"clear"})
   if builder.inlinelayout:
     # Builder only contains inline boxes.
     bctx.buildInlineLayout(box, builder.children, sizes)
@@ -2029,22 +2065,34 @@ proc initBlockPositionStates(state: var BlockState, bctx: var BlockContext,
   bctx.ancestorsHead = BlockPositionState(
     box: box,
     offset: Offset(
-      x: state.offset.x + box.offset.x,
-      y: state.offset.y + box.offset.y
-    )
+      x: state.offset.x,
+      y: state.offset.y
+    ),
+    resolved: bctx.parentBps == nil
   )
   if prevBps != nil:
     prevBps.next = bctx.ancestorsHead
   if bctx.parentBps != nil:
     bctx.ancestorsHead.offset.x += bctx.parentBps.offset.x
     bctx.ancestorsHead.offset.y += bctx.parentBps.offset.y
+    # If parentBps is not nil, then our starting position is not in a new
+    # BFC -> we must add it to our BFC offset.
+    bctx.ancestorsHead.offset.x += box.offset.x
+    bctx.ancestorsHead.offset.y += box.offset.y
   if bctx.marginTarget == nil:
     bctx.marginTarget = bctx.ancestorsHead
   state.initialMarginTarget = bctx.marginTarget
   state.initialTargetOffset = bctx.marginTarget.offset
+  if bctx.parentBps == nil:
+    # We have just established a new BFC. Resolve the margins instantly.
+    bctx.marginTarget = nil
   state.prevParentBps = bctx.parentBps
   bctx.parentBps = bctx.ancestorsHead
   state.initialParentOffset = bctx.parentBps.offset
+
+func isParentResolved(state: BlockState, bctx: BlockContext): bool =
+  return bctx.marginTarget != state.initialMarginTarget or
+    state.prevParentBps != nil and state.prevParentBps.resolved
 
 # Layout and place all children in the block box.
 # Box placement must occur during this pass, since child box layout in the
@@ -2070,7 +2118,11 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
         bctx.positionFloats()
         bctx.marginTodo.append(child.margin.bottom)
       else:
-        child.offset.y += child.margin.top + bctx.marginTodo.sum()
+        child.offset.y += child.margin.top
+        if state.isParentResolved(bctx):
+          # If parent offset has been resolved, use marginTodo in this
+          # float's initial offset.
+          child.offset.y += bctx.marginTodo.sum()
       # delta y is difference between old and new offsets (margin-top), sum
       # of margin todo in bctx2 (margin-bottom) + height.
       dy = child.offset.y - state.offset.y + child.size.h + marginBottomOut
@@ -2109,7 +2161,7 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
       # * if our saved marginTarget and bctx's marginTarget no longer point
       #   to the same object, that means our (or an ancestor's) offset has
       #   been resolved, i.e. we can position floats already.
-      if state.initialMarginTarget != bctx.marginTarget:
+      if state.isParentResolved(bctx):
         # y offset resolved
         bctx.positionFloat(child, state.space, bctx.parentBps.offset)
       else:
@@ -2189,29 +2241,33 @@ proc buildBlockLayout(bctx: var BlockContext, box: BlockBox,
   if state.needsReLayout:
     state.initReLayout(bctx, box, sizes)
     state.layoutBlockChildren(bctx, builder.children)
-
   if state.nested.len > 0:
     let lastNested = state.nested[^1]
     box.baseline = lastNested.offset.y + lastNested.baseline
-
+  # Apply width then move the inline offset of children that still need
+  # further relative positioning.
   box.applyWidth(sizes, state.maxChildWidth)
   state.repositionChildren(box, lctx)
-
-  # Finally, add padding. (We cannot do this further up without influencing
-  # positioning.)
-  box.size.w += sizes.padding.left
-  box.size.w += sizes.padding.right
-
-  let paddingHeight = state.offset.y + sizes.padding.bottom
-  box.size.h = applySizeConstraint(paddingHeight, sizes.space.h)
-  box.size.h = clamp(box.size.h, sizes.minHeight, sizes.maxHeight)
-
+  # Set the inner height to the last y offset minus the starting offset
+  # (that is, top padding).
+  let innerHeight = state.offset.y - sizes.padding.top
+  box.applyHeight(sizes, innerHeight)
+  # Add padding; we cannot do this further up without influencing positioning.
+  box.applyPadding(sizes.padding)
+  # Pass down relevant data from state.
   box.nested = state.nested
   box.xminwidth = state.xminwidth
+  if state.isParentResolved(bctx):
+    # Our offset has already been resolved, ergo any margins in marginTodo will
+    # be passed onto the next box. Set marginTarget to nil, so that if we
+    # (or one of our ancestors) was still set as a marginTarget, it no
+    # longer is.
+    #TODO we might need flushMargin & positionFloats here
+    bctx.marginTarget = nil
+  # Reset parentBps to the previous node.
+  bctx.parentBps = state.prevParentBps
   if positioned:
     lctx.positioned.setLen(lctx.positioned.len - 1)
-  bctx.marginTarget = nil
-  bctx.parentBps = state.prevParentBps
 
 # Tree generation (1st pass)
 
