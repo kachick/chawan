@@ -244,7 +244,7 @@ type
     form* {.jsget.}: HTMLFormElement
     inputType*: InputType
     value* {.jsget.}: string
-    checked*: bool
+    checked* {.jsget.}: bool
     xcoord*: int
     ycoord*: int
     file*: Option[Url]
