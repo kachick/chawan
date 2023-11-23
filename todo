@@ -66,7 +66,9 @@ javascript:
 	* also, do not crash on / -> M-c
 - buffer selection
 layout engine:
-- important: clear (to complete float support)
+- box borders
+	* will probably need special treatment, as borders must round to
+	  1ch in x direction and 1em in y direction.
 - fix conflict in renderdocument Y error correction and floats
 	* if too many line breaks are done because of floats, Y error
 	  correction will happily arrange the lines on top of the floating box

@@ -40,7 +40,7 @@ Currently implemented features are:
 * multi-charset, double-width aware text display (but no bi-di yet)
 * HTML5 support
 * a CSS-capable layout engine
-	* flow layout is supported, except for floats
+	* flow layout is supported (now with floats!)
 	* table layout is supported, except for fixed tables
 	* the box model is mostly implemented, except for borders
 * forms
