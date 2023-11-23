@@ -1,5 +1,9 @@
 # Chawan - a web browser for your terminal
 
+[Project page](https://sr.ht/~bptato/chawan)
+
+![Screenshot of Chawan displaying its SourceHut page](doc/showcase.png)
+
 ## What is this?
 
 A text-mode web browser. It displays websites in your terminal and allows
@@ -31,6 +35,13 @@ supported yet.)
 	* `make` - debug build (slow, for development)
 6. If you want manpages: `make manpage`
 7. Finally, install using `make install` (e.g. `sudo make install`)
+
+Then, try:
+
+```bash
+$ cha -V # open in visual mode for a list of default keybindings
+$ cha example.org # open your favorite website directly from the terminal
+```
 
 ## Features
 
