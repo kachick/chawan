@@ -980,13 +980,6 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
   let padding = resolvePadding(containingWidth, lctx, computed)
   let inlinePadding = padding.left + padding.right
   let blockPadding = padding.top + padding.bottom
-  let width = computed{"width"}
-  if not width.auto and width.canpx(containingWidth):
-    space.w = stretch(width.spx(lctx, containingWidth, computed,
-      inlinePadding))
-  let height = computed{"height"}
-  if not height.auto and height.canpx(containingHeight):
-    space.h = stretch(height.px(lctx, containingHeight))
   let minWidth: LayoutUnit = if not computed{"min-width"}.auto:
     computed{"min-width"}.spx(lctx, containingWidth, computed, inlinePadding)
   else:
@@ -995,6 +988,12 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
     computed{"max-width"}.spx(lctx, containingWidth, computed, inlinePadding)
   else:
     high(LayoutUnit)
+  let width = computed{"width"}
+  if not width.auto and width.canpx(containingWidth):
+    let widthpx = width.spx(lctx, containingWidth, computed, inlinePadding)
+    space.w = stretch(clamp(widthpx, minWidth, maxWidth))
+  elif containingWidth.isDefinite():
+    space.w = fitContent(clamp(containingWidth.u, minWidth, maxWidth))
   let minHeight: LayoutUnit = if not computed{"min-height"}.auto:
     computed{"min-height"}.spx(lctx, percHeight, computed, blockPadding).get(0)
   else:
@@ -1004,6 +1003,12 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
       .get(high(LayoutUnit))
   else:
     high(LayoutUnit)
+  let height = computed{"height"}
+  if not height.auto and height.canpx(containingHeight):
+    let heightpx = height.px(lctx, containingHeight)
+    space.h = stretch(clamp(heightpx, minHeight, maxHeight))
+  elif containingHeight.isDefinite():
+    space.h = fitContent(clamp(containingHeight.u, minHeight, maxHeight))
   return ResolvedSizes(
     margin: resolveMargins(containingWidth, lctx, computed),
     padding: padding,
