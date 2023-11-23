@@ -40,7 +40,7 @@ Then, try:
 
 ```bash
 $ cha -V # open in visual mode for a list of default keybindings
-$ cha example.org # open your favorite website directly from the terminal
+$ cha example.org # open your favorite website directly from the shell
 ```
 
 ## Features
