@@ -34,7 +34,6 @@
 # {.jshasprop.} for overriding has_property. Must return a boolean.
 # {.jspropnames.} overrides get_own_property_names. Must return a
 #   JSPropertyEnumList object.
-# UncheckedArray[JSPropertyEnum]
 
 import macros
 import options
