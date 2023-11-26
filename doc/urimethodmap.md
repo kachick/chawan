@@ -42,7 +42,7 @@ Comment = *WHITESPACE CR / "#" *CHAR CR
 ```
 
 Note that an ASCII colon sign (:) must be present after the protocol
-name. However, the whitespace may not be omitted.
+name. However, the whitespace may be omitted.
 
 Examples:
 
