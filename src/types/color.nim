@@ -409,7 +409,7 @@ func rgbToEightBit*(rgb: RGBColor): EightBitColor =
       return EightBitColor(16)
     if r > 248:
       return EightBitColor(231)
-    return EightBitColor(cast[uint8](((r - 8 * 24) div 247) + 232))
+    return EightBitColor(cast[uint8](((r - 8) * 24 div 247) + 232))
   #16 + 36 * r + 6 * g + b
   return EightBitColor(cast[uint8](16 + 36 * (r * 5 div 255) +
     6 * (g * 5 div 255) + (b * 5 div 255)))
