@@ -328,10 +328,14 @@ Following is a list of display options:
 
 <tr>
 <td>color-mode</td>
-<td>"monochrome"/"ansi"/"8bit"/"24bit"/"auto"</td>
+<td>"monochrome"/"ansi"/"eight-bit","8bit"/"true-color","24bit"/"auto"</td>
 <td>Set the color mode. "auto" for automatic detection, "monochrome"
-for black on white, "ansi" for ansi colors, "8bit" for 256-color mode, and
-"24bit" for true colors.</td>
+for black on white, "ansi" for ansi colors, "eight-bit" for 256-color mode, and
+"true-color" for true colors.<br>
+"8bit" is a legacy alias of "eight-bit". "24bit" is a legacy alias of
+"true-color". (The only difference is that when overriding these values with
+the `-o` command line switch, you can use "eight-bit" and "true-color"
+without quoting.)</td>
 </tr>
 
 <tr>

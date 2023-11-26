@@ -495,8 +495,8 @@ proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string) =
   of "auto": x.err()
   of "monochrome": x.ok(MONOCHROME)
   of "ansi": x.ok(ANSI)
-  of "8bit": x.ok(EIGHT_BIT)
-  of "24bit": x.ok(TRUE_COLOR)
+  of "8bit", "eight-bit": x.ok(EIGHT_BIT)
+  of "24bit", "true-color": x.ok(TRUE_COLOR)
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
       "' for key " & k)
