@@ -1069,9 +1069,10 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     if buffer.window == nil:
       buffer.window = newWindow(buffer.config.scripting, buffer.selector,
         buffer.attrs)
-    let doc = parseHTML(buffer.sstream, charsets = buffer.charsets,
+    let document = parseHTML(buffer.sstream, charsets = buffer.charsets,
       window = buffer.window, url = buffer.url)
-    buffer.document = doc
+    buffer.document = document
+    document.readyState = READY_STATE_INTERACTIVE
     buffer.state = LOADING_RESOURCES
     buffer.dispatchDOMContentLoadedEvent()
     p = buffer.loadResources()
@@ -1136,6 +1137,7 @@ proc onload(buffer: Buffer) =
       res.atend = true
       buffer.finishLoad().then(proc() =
         buffer.state = LOADED
+        buffer.document.readyState = READY_STATE_COMPLETE
         buffer.dispatchLoadEvent()
         buffer.resolveTask(LOAD, res))
       return

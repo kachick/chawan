@@ -87,6 +87,11 @@ type
     of RESULT_IMPORT_MAP_PARSE:
       discard #TODO
 
+type DocumentReadyState* = enum
+  READY_STATE_LOADING = "loading"
+  READY_STATE_INTERACTIVE = "interactive"
+  READY_STATE_COMPLETE = "complete"
+
 type
   Location = ref object
     window: Window
@@ -176,6 +181,7 @@ type
     isxml*: bool
     implementation {.jsget.}: DOMImplementation
     origin: Origin
+    readyState* {.jsget.}: DocumentReadyState
 
     scriptsToExecSoon*: seq[HTMLScriptElement]
     scriptsToExecInOrder*: Deque[HTMLScriptElement]
