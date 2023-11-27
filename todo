@@ -75,8 +75,6 @@ layout engine:
 - make table width calculation consistent with FF etc.
 	* unfortunately, most websites are designed for auto table layouts
 	  where w3m's space distribution algorithm does not work really well :/
-- make background-color a property of inline boxes, not words. (this would
-  require implementing actual inline boxes)
 - table layout: include caption in width calculation
 - details element
 - overflow
