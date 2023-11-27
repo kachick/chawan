@@ -985,6 +985,76 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     buffer.loader.resume(fds)
     return pid
 
+proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
+  let window = buffer.window
+  if window == nil or not buffer.config.scripting:
+    return
+  let ctx = window.jsctx
+  let document = buffer.document
+  let event = newEvent(ctx, "DOMContentLoaded", document)
+  var called = false
+  for el in document.eventListeners:
+    if el.ctype == "DOMContentLoaded":
+      let e = el.callback(event)
+      if e.isErr:
+        ctx.writeException(buffer.estream)
+      called = true
+  if called:
+    buffer.do_reshape()
+
+proc dispatchLoadEvent(buffer: Buffer) =
+  let window = buffer.window
+  if window == nil or not buffer.config.scripting:
+    return
+  let ctx = window.jsctx
+  let event = newEvent(ctx, "load", window)
+  var called = false
+  for el in window.eventListeners:
+    if el.ctype == "load":
+      let e = el.callback(event)
+      if e.isErr:
+        ctx.writeException(buffer.estream)
+      called = true
+  let jsWindow = toJS(ctx, window)
+  let jsonload = JS_GetPropertyStr(ctx, jsWindow, "onload")
+  var jsEvent = toJS(ctx, event)
+  if JS_IsFunction(ctx, jsonload):
+    JS_FreeValue(ctx, JS_Call(ctx, jsonload, jsWindow, 1, addr jsEvent))
+    called = true
+  JS_FreeValue(ctx, jsEvent)
+  JS_FreeValue(ctx, jsonload)
+  JS_FreeValue(ctx, jsWindow)
+  if called:
+    buffer.do_reshape()
+
+proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
+      called: bool,
+      canceled: bool
+    ] =
+  var called = false
+  var canceled = false
+  let ctx = buffer.window.jsctx
+  let event = newEvent(ctx, ctype, elem)
+  for a in elem.branch:
+    event.currentTarget = a
+    var stop = false
+    for el in a.eventListeners:
+      if el.ctype == ctype:
+        let e = el.callback(event)
+        called = true
+        if e.isErr:
+          ctx.writeException(buffer.estream)
+        if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+          stop = true
+          break
+        if FLAG_STOP_PROPAGATION in event.flags:
+          stop = true
+        if FLAG_CANCELED in event.flags:
+          canceled = true
+    if stop:
+      break
+  return (called, canceled)
+
 const BufferSize = 4096
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
@@ -1003,6 +1073,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
       window = buffer.window, url = buffer.url)
     buffer.document = doc
     buffer.state = LOADING_RESOURCES
+    buffer.dispatchDOMContentLoadedEvent()
     p = buffer.loadResources()
   else:
     p = EmptyPromise()
@@ -1035,26 +1106,6 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
   buffer.tasks[cmd] = 0
   buffer.pstream.swrite(res)
   buffer.pstream.flush()
-
-proc dispatchLoadEvent(buffer: Buffer) =
-  let window = buffer.window
-  if window == nil or not buffer.config.scripting:
-    return
-  let ctx = buffer.window.jsctx
-  let event = newEvent(ctx, "load", window, window)
-  for el in window.eventListeners:
-    if el.ctype == "load":
-      let e = el.callback(event)
-      if e.isErr:
-        ctx.writeException(buffer.estream)
-  let jsWindow = toJS(ctx, window)
-  let jsonload = JS_GetPropertyStr(ctx, jsWindow, "onload")
-  var jsEvent = toJS(ctx, event)
-  if JS_IsFunction(ctx, jsonload):
-    JS_FreeValue(ctx, JS_Call(ctx, jsonload, jsWindow, 1, addr jsEvent))
-  JS_FreeValue(ctx, jsEvent)
-  JS_FreeValue(ctx, jsonload)
-  JS_FreeValue(ctx, jsWindow)
 
 proc onload(buffer: Buffer) =
   var res: LoadResult = (false, buffer.lines.len, -1)
@@ -1502,32 +1553,6 @@ proc click(buffer: Buffer, clickable: Element): ClickResult =
   else:
     result.repaint = buffer.restoreFocus()
 
-proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
-      called: bool,
-      canceled: bool
-    ] =
-  var called = false
-  var canceled = false
-  for a in elem.branch:
-    var stop = false
-    for el in a.eventListeners:
-      if el.ctype == ctype:
-        let event = newEvent(buffer.window.jsctx, ctype, elem, a)
-        let e = el.callback(event)
-        called = true
-        if e.isErr:
-          buffer.window.jsctx.writeException(buffer.estream)
-        if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
-          stop = true
-          break
-        if FLAG_STOP_PROPAGATION in event.flags:
-          stop = true
-        if FLAG_CANCELED in event.flags:
-          canceled = true
-    if stop:
-      break
-  return (called, canceled)
-
 proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return
   var called = false
@@ -1720,6 +1745,7 @@ proc runBuffer(buffer: Buffer) =
         let r = buffer.window.timeouts.runTimeoutFd(event.fd)
         assert r
         buffer.window.runJSJobs()
+        buffer.do_reshape()
     buffer.loader.unregistered.setLen(0)
 
 proc launchBuffer*(config: BufferConfig, source: BufferSource,

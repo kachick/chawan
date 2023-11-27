@@ -28,7 +28,7 @@ type
   Event* = ref object of RootObj
     ctype {.jsget: "type".}: string
     target* {.jsget.}: EventTarget
-    currentTarget {.jsget.}: EventTarget
+    currentTarget* {.jsget.}: EventTarget
     eventPhase {.jsget.}: uint16
     bubbles {.jsget.}: bool
     cancelable {.jsget.}: bool
@@ -93,11 +93,11 @@ proc newEvent(ctx: JSContext, ctype: string, eventInitDict = EventInit()):
   event.ctype = ctype
   return ok(event)
 
-proc newEvent*(ctx: JSContext, ctype: string, target, currentTarget: EventTarget): Event =
+proc newEvent*(ctx: JSContext, ctype: string, target: EventTarget): Event =
   return Event(
     ctype: ctype,
     target: target,
-    currentTarget: currentTarget
+    currentTarget: target
   )
 
 proc initialize(this: Event, ctype: string, bubbles, cancelable: bool) =
