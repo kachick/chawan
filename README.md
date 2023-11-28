@@ -28,12 +28,10 @@ supported yet.)
 	  in PATH)
 	* If you are using a system where the default make program is not
 	  GNU make (e.g. BSD), install gmake and use it in the following steps.
-4. Download parts of Chawan found in other repositories:
-	* `make submodule`
-5. Use one of the following:
-	* `make release` - optimized release build
-	* `make` - debug build (slow, for development)
-6. If you want manpages: `make manpage`
+4. Download parts of Chawan found in other repositories: `make submodule`
+5. Run `make`. (By default, this will build in release mode for development,
+   use `make TARGET=debug`. For details, see [doc/build.md](doc/build.md).)
+6. If you want manpages, run `make manpage`.
 7. Finally, install using `make install` (e.g. `sudo make install`)
 
 Then, try:
