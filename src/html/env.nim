@@ -101,14 +101,23 @@ proc setLocation(window: Window, s: string): Err[JSError]
     {.jsfset: "location".} =
   window.document.setLocation(s)
 
-proc getWindow(window: Window): Window {.jsuffget: "window".} =
+func getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
 
-proc getSelf(window: Window): Window {.jsfget: "self".} =
+#TODO [Replaceable]
+func getSelf(window: Window): Window {.jsfget: "self".} =
   return window
 
-proc getFrames(window: Window): Window {.jsfget: "frames".} =
+#TODO [Replaceable]
+func getFrames(window: Window): Window {.jsfget: "frames".} =
   return window
+
+func getTop(window: Window): Window {.jsuffget: "top".} =
+  return window #TODO frames?
+
+#TODO [Replaceable]
+func getParent(window: Window): Window {.jsfget: "parent".} =
+  return window #TODO frames?
 
 proc atob(window: Window, data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
