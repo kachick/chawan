@@ -779,26 +779,19 @@ func utf16Len*(s: string): int =
       result += 2
 
 proc expandPath*(path: string): string =
-  if path.len == 0:
+  if path.len == 0 or path[0] != '~':
     return path
-  result = path
-  var i = 0
-  if path[0] == '~':
-    if path.len == 1:
-      result = getHomeDir()
-    elif path[1] == '/':
-      result = getHomeDir() / path.substr(2)
-      inc i
-    else:
-      when defined(posix):
-        i = 1
-        var usr = ""
-        while path[i] != '/':
-          usr &= path[i]
-          inc i
-        let p = getpwnam(cstring(usr))
-        if p != nil:
-          result = $p.pw_dir / path.substr(i)
+  if path.len == 1:
+    return getHomeDir()
+  elif path[1] == '/':
+    return getHomeDir() / path.substr(2)
+  else:
+    when defined(posix):
+      let usr = path.until({'/'}, 1)
+      let p = getpwnam(cstring(usr))
+      if p != nil:
+        return $p.pw_dir / path.substr(usr.len)
+    return path
 
 # Combining chars from https://www.cl.cam.ac.uk/~mgk25/ucs/wcwidth.c
 #
