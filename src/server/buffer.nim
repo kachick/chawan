@@ -1137,7 +1137,8 @@ proc onload(buffer: Buffer) =
       res.atend = true
       buffer.finishLoad().then(proc() =
         buffer.state = LOADED
-        buffer.document.readyState = READY_STATE_COMPLETE
+        if buffer.document != nil: # may be nil if not buffer.ishtml
+          buffer.document.readyState = READY_STATE_COMPLETE
         buffer.dispatchLoadEvent()
         buffer.resolveTask(LOAD, res))
       return
