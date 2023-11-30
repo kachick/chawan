@@ -10,7 +10,7 @@ TARGET ?= release
 ifeq ($(TARGET),debug)
 FLAGS += --debugger:native
 else ifeq ($(TARGET),release)
-FLAGS += -d:strip, -d:lto
+FLAGS += -d:strip -d:lto
 else ifeq ($(TARGET),release0)
 FLAGS += -d:release --stacktrace:on
 else ifeq ($(TARGET),release1)
@@ -20,7 +20,8 @@ endif
 $(OUTDIR)/$(TARGET)/bin/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
 	$(NIMC) -d:curlLibName:$(CURLLIBNAME) -o:"$(OUTDIR)/$(TARGET)/bin/cha" \
-		--nimcache:"$(OBJDIR)/$(TARGET)" -d:$(TARGET) src/main.nim
+		--nimcache:"$(OBJDIR)/$(TARGET)" -d:$(TARGET) $(FLAGS) \
+		src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\" \
