@@ -51,7 +51,7 @@ proc toJS*(ctx: JSContext, dict: JSDict): JSValue
 proc toJSP*(ctx: JSContext, parent: ref object, child: var object): JSValue
 proc toJSP*(ctx: JSContext, parent: ptr object, child: var object): JSValue
 
-# Same as toJSP, but used in constructors. ctor contains the target prototype,
+# Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
 proc toJSNew*(ctx: JSContext, obj: ref object, ctor: JSValue): JSValue
 proc toJSNew*[T, E](ctx: JSContext, opt: Result[T, E], ctor: JSValue): JSValue
@@ -164,41 +164,23 @@ proc toJS(ctx: JSContext, s: seq): JSValue =
         return JS_EXCEPTION
   return a
 
-proc defineUnforgeable*(ctx: JSContext, this: JSValue) =
-  if unlikely(JS_IsException(this)):
-    return
-  let ctxOpaque = ctx.getOpaque()
-  let classid = JS_GetClassID(this)
-  ctxOpaque.unforgeable.withValue(classid, uf):
-    JS_SetPropertyFunctionList(ctx, this, addr uf[][0], cint(uf[].len))
-
 proc toJSP0(ctx: JSContext, p, tp: pointer, ctor: JSValue,
     needsref: var bool): JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
   let ctxOpaque = ctx.getOpaque()
-  let clazz = ctxOpaque.typemap[tp]
-  let jsObj = if JS_IsUndefined(ctor):
-    JS_NewObjectClass(ctx, clazz)
-  else:
-    let proto = JS_GetProperty(ctx, ctor, ctxOpaque.str_refs[PROTOTYPE])
-    if JS_IsException(proto):
-      return proto
-    if not JS_IsObject(proto):
-      JS_FreeValue(ctx, proto)
-      #TODO switch ctx to ctor realm
-      JS_NewObjectClass(ctx, clazz)
-    else:
-      let x = JS_NewObjectProtoClass(ctx, proto, clazz)
-      JS_FreeValue(ctx, proto)
-      x
+  let class = ctxOpaque.typemap[tp]
+  let jsObj = JS_NewObjectFromCtor(ctx, ctor, class)
+  if JS_IsException(jsObj):
+    return jsObj
   setOpaque(ctx, jsObj, p)
-  # We are "constructing" a new JS object, so we must add unforgeable
-  # properties here.
-  defineUnforgeable(ctx, jsObj) # not an exception
+  # We are constructing a new JS object, so we must add unforgeable properties
+  # here.
+  ctxOpaque.unforgeable.withValue(class, uf):
+    JS_SetPropertyFunctionList(ctx, jsObj, addr uf[][0], cint(uf[].len))
   needsref = true
-  if unlikely(ctxOpaque.htmldda == clazz):
+  if unlikely(ctxOpaque.htmldda == class):
     JS_SetIsHTMLDDA(ctx, jsObj)
   return jsObj
 

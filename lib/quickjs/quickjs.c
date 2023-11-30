@@ -18908,6 +18908,12 @@ static JSValue js_create_from_ctor(JSContext *ctx, JSValueConst ctor,
     return obj;
 }
 
+JSValue JS_NewObjectFromCtor(JSContext *ctx, JSValueConst ctor,
+                             JSClassID class_id)
+{
+    return js_create_from_ctor(ctx, ctor, class_id);
+}
+
 /* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 static JSValue JS_CallConstructorInternal(JSContext *ctx,
                                           JSValueConst func_obj,

@@ -778,6 +778,8 @@ int JS_GetOwnProperty(JSContext *ctx, JSPropertyDescriptor *desc,
 
 JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
                 int argc, JSValueConst *argv);
+JSValue JS_NewObjectFromCtor(JSContext *ctx, JSValueConst ctor,
+                             JSClassID class_id);
 JSValue JS_Invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
                   int argc, JSValueConst *argv);
 JSValue JS_CallConstructor(JSContext *ctx, JSValueConst func_obj,

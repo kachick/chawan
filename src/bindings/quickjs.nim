@@ -407,8 +407,12 @@ proc JS_GetOwnPropertyNames*(ctx: JSContext,
     ptab: ptr ptr UncheckedArray[JSPropertyEnum], plen: ptr uint32,
     obj: JSValue, flags: cint): cint
 
-proc JS_GetOwnProperty*(ctx: JSContext, desc: ptr JSPropertyDescriptor, obj: JSValue, prop: JSAtom): cint
-proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint, argv: ptr JSValue): JSValue
+proc JS_GetOwnProperty*(ctx: JSContext, desc: ptr JSPropertyDescriptor,
+  obj: JSValue, prop: JSAtom): cint
+proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint,
+  argv: ptr JSValue): JSValue
+proc JS_NewObjectFromCtor*(ctx: JSContext, ctor: JSValue,
+  class_id: JSClassID): JSValue
 proc JS_CallConstructor*(ctx: JSContext, func_obj: JSValue, argc: cint,
   argv: ptr JSValue): JSValue
 

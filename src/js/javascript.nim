@@ -890,9 +890,7 @@ proc makeCtorJSCallAndRet(gen: var JSFuncGenerator, errstmt: NimNode) =
   let dl = gen.dielabel
   gen.jsCallAndRet = quote do:
     block `dl`:
-      let val = ctx.toJSNew(`jfcl`, this)
-      defineUnforgeable(ctx, val)
-      return val
+      return ctx.toJSNew(`jfcl`, this)
     `errstmt`
 
 macro jsctor*(fun: typed) =
