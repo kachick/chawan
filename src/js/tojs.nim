@@ -39,6 +39,7 @@ proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
 proc toJS*(ctx: JSContext, abuf: JSArrayBuffer): JSValue
 proc toJS*(ctx: JSContext, u8a: JSUint8Array): JSValue
 proc toJS*(ctx: JSContext, ns: NarrowString): JSValue
+proc toJS*(ctx: JSContext, dict: JSDict): JSValue
 
 # Convert Nim types to the corresponding JavaScript type, with knowledge of
 # the parent object.
@@ -281,6 +282,14 @@ proc toJS*(ctx: JSContext, u8a: JSUint8Array): JSValue =
 
 proc toJS*(ctx: JSContext, ns: NarrowString): JSValue =
   return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
+
+proc toJS*(ctx: JSContext, dict: JSDict): JSValue =
+  let obj = JS_NewObject(ctx)
+  if JS_IsException(obj):
+    return obj
+  for k, v in dict.fieldPairs:
+    ctx.defineProperty(obj, k, v)
+  return obj
 
 proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
   let p = addr child

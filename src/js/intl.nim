@@ -1,18 +1,34 @@
 # Very minimal Intl module... TODO make it more complete
 
 import bindings/quickjs
+import js/dict
 import js/javascript
 import js/tojs
 
 type
   NumberFormat = ref object
 
+  PluralRules = ref object
+
+  PRResolvedOptions = object of JSDict
+    locale: string
+
 jsDestructor(NumberFormat)
+jsDestructor(PluralRules)
 
 #TODO ...yeah
 proc newNumberFormat(name: string = "en-US",
     options = none(JSValue)): NumberFormat {.jsctor.} =
   return NumberFormat()
+
+#TODO
+proc newPluralRules(): PluralRules {.jsctor.} =
+  return PluralRules()
+
+proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
+  return PRResolvedOptions(
+    locale: "en-US"
+  )
 
 #TODO: this should accept string/BigInt too
 proc format(nf: NumberFormat, num: float64): string {.jsfunc.} =
@@ -45,5 +61,6 @@ proc addIntlModule*(ctx: JSContext) =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
   ctx.registerType(NumberFormat, namespace = intl)
+  ctx.registerType(PluralRules, namespace = intl)
   ctx.defineProperty(global, "Intl", intl)
   JS_FreeValue(ctx, global)
