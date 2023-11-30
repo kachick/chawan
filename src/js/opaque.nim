@@ -14,6 +14,7 @@ type
     DONE = "done"
     VALUE = "value"
     NEXT = "next"
+    PROTOTYPE = "prototype"
 
   JSContextOpaque* = ref object
     creg*: Table[string, JSClassID]

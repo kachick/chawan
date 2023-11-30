@@ -51,6 +51,11 @@ proc toJS*(ctx: JSContext, dict: JSDict): JSValue
 proc toJSP*(ctx: JSContext, parent: ref object, child: var object): JSValue
 proc toJSP*(ctx: JSContext, parent: ptr object, child: var object): JSValue
 
+# Same as toJSP, but used in constructors. ctor contains the target prototype,
+# used for subclassing from JS.
+proc toJSNew*(ctx: JSContext, obj: ref object, ctor: JSValue): JSValue
+proc toJSNew*[T, E](ctx: JSContext, opt: Result[T, E], ctor: JSValue): JSValue
+
 # Avoid accidentally calling toJSP on objects that we have explicit toJS
 # converters for.
 template makeToJSP(typ: untyped) =
@@ -167,13 +172,27 @@ proc defineUnforgeable*(ctx: JSContext, this: JSValue) =
   ctxOpaque.unforgeable.withValue(classid, uf):
     JS_SetPropertyFunctionList(ctx, this, addr uf[][0], cint(uf[].len))
 
-proc toJSP0(ctx: JSContext, p, tp: pointer, needsref: var bool): JSValue =
+proc toJSP0(ctx: JSContext, p, tp: pointer, ctor: JSValue,
+    needsref: var bool): JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
   let ctxOpaque = ctx.getOpaque()
   let clazz = ctxOpaque.typemap[tp]
-  let jsObj = JS_NewObjectClass(ctx, clazz)
+  let jsObj = if JS_IsUndefined(ctor):
+    JS_NewObjectClass(ctx, clazz)
+  else:
+    let proto = JS_GetProperty(ctx, ctor, ctxOpaque.str_refs[PROTOTYPE])
+    if JS_IsException(proto):
+      return proto
+    if not JS_IsObject(proto):
+      JS_FreeValue(ctx, proto)
+      #TODO switch ctx to ctor realm
+      JS_NewObjectClass(ctx, clazz)
+    else:
+      let x = JS_NewObjectProtoClass(ctx, proto, clazz)
+      JS_FreeValue(ctx, proto)
+      x
   setOpaque(ctx, jsObj, p)
   # We are "constructing" a new JS object, so we must add unforgeable
   # properties here.
@@ -189,13 +208,38 @@ proc toJSRefObj(ctx: JSContext, obj: ref object): JSValue =
   let p = cast[pointer](obj)
   let tp = getTypePtr(obj)
   var needsref = false
-  let val = toJSP0(ctx, p, tp, needsref)
+  let val = toJSP0(ctx, p, tp, JS_UNDEFINED, needsref)
   if needsref:
     GC_ref(obj)
   return val
 
 proc toJS*(ctx: JSContext, obj: ref object): JSValue =
   return toJSRefObj(ctx, obj)
+
+proc toJSNew*(ctx: JSContext, obj: ref object, ctor: JSValue): JSValue =
+  if obj == nil:
+    return JS_NULL
+  let p = cast[pointer](obj)
+  let tp = getTypePtr(obj)
+  var needsref = false
+  let val = toJSP0(ctx, p, tp, ctor, needsref)
+  if needsref:
+    GC_ref(obj)
+  return val
+
+proc toJSNew[T, E](ctx: JSContext, opt: Result[T, E], ctor: JSValue): JSValue =
+  if opt.isSome:
+    when not (T is void):
+      return toJSNew(ctx, opt.get, ctor)
+    else:
+      return JS_UNDEFINED
+  else:
+    when not (E is void):
+      let res = toJS(ctx, opt.error)
+      if not JS_IsNull(res):
+        return JS_Throw(ctx, res)
+    else:
+      return JS_NULL
 
 proc toJS(ctx: JSContext, e: enum): JSValue =
   return toJS(ctx, $e)
@@ -302,7 +346,7 @@ proc toJSP(ctx: JSContext, parent: ref object, child: var object): JSValue =
   )
   let tp = getTypePtr(child)
   var needsref = false
-  let val = toJSP0(ctx, p, tp, needsref)
+  let val = toJSP0(ctx, p, tp, JS_UNDEFINED, needsref)
   if needsref:
     GC_ref(parent)
   return val
