@@ -587,7 +587,7 @@ proc gotoAnchor*(buffer: Buffer): Opt[tuple[x, y: int]] {.proxy.} =
     let line = buffer.lines[y]
     for i in 0 ..< line.formats.len:
       let format = line.formats[i]
-      if format.node != nil and anchor in format.node.node:
+      if format.node != nil and format.node.node in anchor:
         return ok((format.pos, y))
   return err()
 

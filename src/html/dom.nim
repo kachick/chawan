@@ -1721,10 +1721,12 @@ func isConnected*(node: Node): bool {.jsfget.} =
 func inSameTree*(a, b: Node): bool =
   a.rootNode == b.rootNode
 
-# a == b or b in a's ancestors
-func contains*(a, b: Node): bool =
-  for node in a.branch:
-    if node == b: return true
+# a == b or a in b's ancestors
+func contains*(a, b: Node): bool {.jsfunc.} =
+  if b != nil:
+    for node in b.branch:
+      if node == a:
+        return true
   return false
 
 func firstChild*(node: Node): Node {.jsfget.} =
