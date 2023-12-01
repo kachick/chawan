@@ -161,7 +161,6 @@ type
     # (We can't just store pointers, because those may be invalidated by
     # the JavaScript finalizers.)
     liveCollections: HashSet[int]
-    children_cached: HTMLCollection
     childNodes_cached: NodeList
     document_internal: Document # not nil
 
@@ -204,6 +203,7 @@ type
     all_cached: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
     cachedSheetsInvalid: bool
+    children_cached: HTMLCollection
 
   CharacterData* = ref object of Node
     data* {.jsget.}: string
@@ -219,6 +219,7 @@ type
 
   DocumentFragment* = ref object of Node
     host*: Element
+    children_cached*: HTMLCollection
 
   DocumentType* = ref object of Node
     name*: string
@@ -239,6 +240,7 @@ type
     hover*: bool
     invalid*: bool
     style_cached*: CSSStyleDeclaration
+    children_cached: HTMLCollection
 
   CSSStyleDeclaration* = ref object
     decls*: seq[CSSDeclaration]
@@ -1044,15 +1046,24 @@ func nodeType(node: Node): uint16 {.jsfget.} =
 func isElement(node: Node): bool =
   return node.nodeType == ELEMENT_NODE
 
-func children(node: Node): HTMLCollection {.jsfget.} =
-  if node.children_cached == nil:
-    node.children_cached = newCollection[HTMLCollection](
-      root = node,
+template parentNodeChildrenImpl(parentNode: typed) =
+  if parentNode.children_cached == nil:
+    parentNode.children_cached = newCollection[HTMLCollection](
+      root = parentNode,
       match = isElement,
       islive = true,
       childonly = true
     )
-  return node.children_cached
+  return parentNode.children_cached
+
+func children(parentNode: Document): HTMLCollection {.jsfget.} =
+  parentNodeChildrenImpl(parentNode)
+
+func children(parentNode: DocumentFragment): HTMLCollection {.jsfget.} =
+  parentNodeChildrenImpl(parentNode)
+
+func children(parentNode: Element): HTMLCollection {.jsfget.} =
+  parentNodeChildrenImpl(parentNode)
 
 func childNodes(node: Node): NodeList {.jsfget.} =
   if node.childNodes_cached == nil:
