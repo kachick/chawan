@@ -152,7 +152,6 @@ type
     nodeType*: NodeType
     childList*: seq[Node]
     parentNode* {.jsget.}: Node
-    parentElement* {.jsget.}: Element
     root: Node
     index*: int # Index in parents children. -1 for nodes without a parent.
     # Live collection cache: ids of live collections are saved in all
@@ -878,12 +877,16 @@ func `$`*(node: Node): string =
   else:
     result = "Node of " & $node.nodeType
 
-#TODO this should be an alias of ownerDocument, but I think we have plenty
-# of code depending on the fact that this returns identity for document nodes.
 func document*(node: Node): Document =
-  if node.nodeType == DOCUMENT_NODE:
+  if node of Document:
     return Document(node)
   return node.document_internal
+
+func parentElement*(node: Node): Element {.jsfget.} =
+  let p = node.parentNode
+  if p != nil and p of Element:
+    return Element(p)
+  return nil
 
 iterator elementList*(node: Node): Element {.inline.} =
   for child in node.childList:
@@ -2600,7 +2603,6 @@ proc remove*(node: Node, suppressObservers: bool) =
   parent.childList.setLen(parent.childList.len - 1)
   node.parentNode.invalidateCollections()
   node.parentNode = nil
-  node.parentElement = nil
   node.root = nil
   node.index = -1
   if node.nodeType == ELEMENT_NODE:
@@ -2795,8 +2797,6 @@ proc insertNode(parent, node, before: Node) =
   parent.childList[node.index] = node
   node.root = parent.rootNode
   node.parentNode = parent
-  if parent.nodeType == ELEMENT_NODE:
-    node.parentElement = Element(parent)
   node.invalidateCollections()
   parent.invalidateCollections()
   if node.nodeType == ELEMENT_NODE:
