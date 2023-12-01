@@ -237,7 +237,7 @@ func beforeLast*(s: string, c: set[char], n = 1): string =
         return s.substr(0, i)
   return s
 
-func beforeLast*(s: string, c: char, n = 1): string = s.afterLast({c}, n)
+func beforeLast*(s: string, c: char, n = 1): string = s.beforeLast({c}, n)
 
 proc c_sprintf(buf, fm: cstring): cint {.header: "<stdio.h>", importc: "sprintf", varargs}
 

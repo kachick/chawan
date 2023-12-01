@@ -10,6 +10,7 @@ import unicode
 when defined(posix):
   import posix
 
+import config/chapath
 import config/config
 import config/mailcap
 import config/mimetypes
@@ -50,10 +51,11 @@ type
   Pager* = ref object
     alerton: bool
     alerts: seq[string]
+    askcharpromise*: Promise[string]
     askcursor: int
     askpromise*: Promise[bool]
-    askcharpromise*: Promise[string]
     askprompt: string
+    cgiDir: seq[string]
     commandMode {.jsget.}: bool
     config: Config
     container*: Container
@@ -82,6 +84,7 @@ type
     siteconf: seq[SiteConfig]
     statusgrid*: FixedGrid
     term*: Terminal
+    tmpdir: string
     unreg*: seq[(Pid, SocketStream)]
     urimethodmap: URIMethodMap
     username: string
@@ -205,6 +208,28 @@ proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
 
 proc alert*(pager: Pager, msg: string)
 
+proc dumpAlerts*(pager: Pager) =
+  for msg in pager.alerts:
+    stderr.write("cha: " & msg & '\n')
+
+proc quit*(pager: Pager, code = 0) =
+  pager.term.quit()
+  pager.dumpAlerts()
+
+proc setPaths(pager: Pager): Err[string] =
+  let tmpdir0 = pager.config.external.tmpdir.unquote()
+  if tmpdir0.isErr:
+    return err("Error unquoting external.tmpdir: " & tmpdir0.error)
+  pager.tmpdir = tmpdir0.get
+  var cgiDir: seq[string]
+  for path in pager.config.external.cgi_dir:
+    let x = path.unquote()
+    if x.isErr:
+      return err("Error unquoting external.cgi-dir: " & x.error)
+    cgiDir.add(x.get)
+  pager.cgiDir = cgiDir
+  return ok()
+
 proc newPager*(config: Config, attrs: WindowAttributes,
     forkserver: ForkServer, mainproc: Pid, ctx: JSContext): Pager =
   let (mailcap, errs) = config.getMailcap()
@@ -212,16 +237,23 @@ proc newPager*(config: Config, attrs: WindowAttributes,
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
     forkserver: forkserver,
+    mailcap: mailcap,
     mainproc: mainproc,
+    mimeTypes: config.getMimeTypes(),
     omnirules: config.getOmniRules(ctx),
     proxy: config.getProxy(),
     siteconf: config.getSiteConfig(ctx),
     statusgrid: newFixedGrid(attrs.width),
     term: newTerminal(stdout, config, attrs),
-    mimeTypes: config.getMimeTypes(),
-    mailcap: mailcap,
     urimethodmap: config.getURIMethodMap()
   )
+  let r = pager.setPaths()
+  if r.isErr:
+    pager.alert(r.error)
+    pager.alert("Exiting...")
+    #TODO maybe there is a better way to do this
+    pager.quit(1)
+    quit(1)
   for err in errs:
     pager.alert("Error reading mailcap: " & err)
   return pager
@@ -231,14 +263,6 @@ proc launchPager*(pager: Pager, infile: File) =
 
 func infile*(pager: Pager): File =
   return pager.term.infile
-
-proc dumpAlerts*(pager: Pager) =
-  for msg in pager.alerts:
-    stderr.write("cha: " & msg & '\n')
-
-proc quit*(pager: Pager, code = 0) =
-  pager.term.quit()
-  pager.dumpAlerts()
 
 proc clearDisplay(pager: Pager) =
   pager.display = newFixedGrid(pager.display.width, pager.display.height)
@@ -662,7 +686,8 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
     if sc.proxy.isSome:
       proxy = sc.proxy.get
   return pager.config.getBufferConfig(url, cookiejar, headers, referer_from,
-    scripting, charsets, images, userstyle, proxy, mimeTypes, urimethodmap)
+    scripting, charsets, images, userstyle, proxy, mimeTypes, urimethodmap,
+    pager.cgiDir)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
@@ -1088,7 +1113,7 @@ proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
   let cs = container.source.charset
   let entry = pager.mailcap.getMailcapEntry(contentType, "", url, cs)
   if entry != nil:
-    let tmpdir = pager.config.external.tmpdir
+    let tmpdir = pager.tmpdir
     let ext = container.location.pathname.afterLast('.')
     let tempfile = getTempfile(tmpdir, ext)
     let outpath = if entry.nametemplate != "":
@@ -1178,7 +1203,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of READ_AREA:
     if container == pager.container:
       var s = event.tvalue
-      if openInEditor(pager.term, pager.config, s):
+      if openInEditor(pager.term, pager.config, pager.tmpdir, s):
         pager.container.readSuccess(s)
       else:
         pager.container.readCanceled()

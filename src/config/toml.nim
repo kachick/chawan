@@ -236,6 +236,7 @@ proc consumeString(state: var TomlParser, first: char):
       of '\\': res &= '\\'
       of 'u', 'U': res &= ?state.consumeEscape(c)
       of '\n': ml_trim = true
+      of '$': res &= "\\$" # special case for substitution in paths
       else: return state.err("invalid escape sequence \\" & c)
       escape = false
     elif ml_trim:

@@ -1232,6 +1232,21 @@ efgh$ -> efgh$ (no change)
 ^ijkl$ -> ^ijkl$ (no change)
 mnop -> ^mnop$ (changed to exact match)
 ```
+
+### Path handling
+
+Rules for path handling are similar to how strings in the shell are handled.
+
+* Tilde-expansion is used to determine the user's home directory. So
+  e.g. `~/whatever` works.
+* Environment variables can be used like `$ENV_VAR`.
+* Relative paths are relative to the Chawan configuration directory.
+
+Some non-external variables are also defined by Chawan. These can be accessed
+using the syntax `${%VARIABLE}`:
+
+* `${%CHA_BIN_DIR}
+
 <!-- MANON
 
 ## See also

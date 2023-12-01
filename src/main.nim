@@ -11,9 +11,11 @@ import terminal
 when defined(profile):
   import nimprof
 
+import config/chapath
 import config/config
 import io/serversocket
 import local/client
+import types/opt
 import utils/twtstr
 
 import chakasu/charset
@@ -201,7 +203,12 @@ Options:
       help(1)
 
   forks.loadForkServerConfig(config)
-  SocketDirectory = config.external.tmpdir
+  let tmpdir0 = config.external.tmpdir.unquote()
+  if tmpdir0.isErr:
+    stderr.write("Error unquoting external.tmpdir: " & tmpdir0.error)
+    stderr.write("Exiting...")
+    quit(1)
+  SocketDirectory = tmpdir0.get
 
   let c = newClient(config, forks, getpid())
   try:

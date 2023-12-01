@@ -40,9 +40,9 @@ proc openEditor*(term: Terminal, config: Config, file: string, line = 1): bool =
   let cmd = formatEditorName(editor, file, line)
   return runProcess(term, cmd)
 
-proc openInEditor*(term: Terminal, config: Config, input: var string): bool =
+proc openInEditor*(term: Terminal, config: Config, tmpdir: string,
+    input: var string): bool =
   try:
-    let tmpdir = config.external.tmpdir
     let tmpf = getTempFile(tmpdir)
     if input != "":
       writeFile(tmpf, input)

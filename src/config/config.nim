@@ -3,6 +3,7 @@ import options
 import os
 import streams
 
+import config/chapath
 import config/mailcap
 import config/mimetypes
 import config/toml
@@ -86,12 +87,12 @@ type
     document_charset* {.jsgetset.}: seq[Charset]
 
   ExternalConfig = object
-    tmpdir* {.jsgetset.}: string
+    tmpdir* {.jsgetset.}: ChaPath
     editor* {.jsgetset.}: string
-    mailcap* {.jsgetset.}: seq[string]
-    mime_types* {.jsgetset.}: seq[string]
-    cgi_dir* {.jsgetset.}: seq[string]
-    urimethodmap* {.jsgetset.}: seq[string]
+    mailcap* {.jsgetset.}: seq[ChaPath]
+    mime_types* {.jsgetset.}: seq[ChaPath]
+    cgi_dir* {.jsgetset.}: seq[ChaPath]
+    urimethodmap* {.jsgetset.}: seq[ChaPath]
     w3m_cgi_compat* {.jsgetset.}: bool
 
   InputConfig = object
@@ -121,7 +122,7 @@ type
   Config* = ref ConfigObj
   ConfigObj* = object
     configdir {.jsget.}: string
-    `include` {.jsget.}: seq[string]
+    `include` {.jsget.}: seq[ChaPath]
     start* {.jsget.}: StartConfig
     search* {.jsget.}: SearchConfig
     css* {.jsget.}: CSSConfig
@@ -224,7 +225,7 @@ func getDefaultHeaders*(config: Config): Headers =
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
     images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes,
-    urimethodmap: URIMethodMap): BufferConfig =
+    urimethodmap: URIMethodMap, cgiDir: seq[string]): BufferConfig =
   let filter = newURLFilter(
     scheme = some(location.scheme),
     allowschemes = @["data"],
@@ -242,7 +243,7 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
       filter: filter,
       cookiejar: cookiejar,
       proxy: proxy,
-      cgiDir: config.external.cgi_dir,
+      cgiDir: cgiDir,
       urimethodmap: urimethodmap,
       w3mCGICompat: config.external.w3m_cgi_compat
     )
@@ -327,16 +328,20 @@ func getRealKey(key: string): string =
     realk &= '\\'
   return realk
 
-proc openFileExpand(dir, file: string): FileStream =
+proc openFileExpand(dir: string, file: ChaPath): FileStream =
+  let file0 = file.unquote()
+  if file0.isNone:
+    raise newException(ValueError, file0.error)
+  let file = file0.get
   if file.len == 0:
     return nil
-  if file[0] == '~' or file[0] == '/':
-    return newFileStream(expandPath(file))
+  if file[0] == '/':
+    return newFileStream(file)
   else:
-    return newFileStream(expandPath(dir / file))
+    return newFileStream(dir / file)
 
 proc readUserStylesheet(dir, file: string): string =
-  let s = openFileExpand(dir, file)
+  let s = openFileExpand(dir, ChaPath(file))
   if s != nil:
     result = s.readAll()
     s.close()
@@ -390,8 +395,11 @@ proc getURIMethodMap*(config: Config): URIMethodMap =
   return urimethodmap
 
 proc getForkServerConfig*(config: Config): ForkServerConfig =
+  let tmpdir0 = config.external.tmpdir.unquote()
+  if tmpdir0.isNone:
+    raise newException(ValueError, tmpdir0.error)
   return ForkServerConfig(
-    tmpdir: config.external.tmpdir,
+    tmpdir: tmpdir0.get,
     ambiguous_double: config.display.double_width_ambiguous
   )
 
@@ -411,6 +419,7 @@ proc loadConfig*(config: Config, s: string) {.jsfunc.} =
 proc parseConfigValue(x: var object, v: TomlValue, k: string)
 proc parseConfigValue(x: var bool, v: TomlValue, k: string)
 proc parseConfigValue(x: var string, v: TomlValue, k: string)
+proc parseConfigValue(x: var ChaPath, v: TomlValue, k: string)
 proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var Charset, v: TomlValue, k: string)
 proc parseConfigValue(x: var int32, v: TomlValue, k: string)
@@ -463,12 +472,16 @@ proc parseConfigValue(x: var string, v: TomlValue, k: string) =
   typeCheck(v, VALUE_STRING, k)
   x = v.s
 
+proc parseConfigValue(x: var ChaPath, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  x = ChaPath(v.s)
+
 proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt != VALUE_ARRAY:
     var y: T
     parseConfigValue(y, v, k)
-    x.add(y)
+    x = @[y]
   else:
     if not v.ad:
       x.setLen(0)
@@ -597,7 +610,7 @@ proc parseConfig(config: Config, dir: string, t: TomlValue) =
     config.`include`.setLen(0)
     for s in includes:
       when nimvm:
-        config.parseConfig(dir, staticRead(dir / s))
+        config.parseConfig(dir, staticRead(dir / string(s)))
       else:
         config.parseConfig(dir, openFileExpand(dir, s))
   config.configdir = dir
@@ -629,7 +642,10 @@ proc staticReadConfig(): ConfigObj =
 const defaultConfig = staticReadConfig()
 
 proc readConfig(config: Config, dir, name: string) =
-  let fs = openFileExpand(dir, name)
+  let fs = if name.len > 0 and name[0] == '/':
+    newFileStream(name)
+  else:
+    newFileStream(dir / name)
   if fs != nil:
     config.parseConfig(dir, fs)
 
