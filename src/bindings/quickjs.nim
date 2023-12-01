@@ -68,7 +68,8 @@ type
   JSRuntime* = ptr object
   JSContext* = ptr object
   JSModuleDef* = ptr object
-  JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
+  JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: cint,
+      argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.}
   JSCFunctionData* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.}
   JSGetterFunction* = proc(ctx: JSContext, this_val: JSValue): JSValue {.cdecl.}
   JSSetterFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue): JSValue {.cdecl.}

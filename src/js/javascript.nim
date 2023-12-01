@@ -122,9 +122,6 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   JS_SetContextOpaque(ctx, cast[pointer](opaque))
   return ctx
 
-func getJSValue(argv: ptr JSValue, i: int): JSValue {.inline.} =
-  cast[ptr UncheckedArray[JSValue]](argv)[i]
-
 func getClass*(ctx: JSContext, class: string): JSClassID =
   # This function *should* never fail.
   ctx.getOpaque().creg[class]
@@ -420,7 +417,7 @@ template getJSParams(): untyped =
     newIdentDefs(ident("ctx"), quote do: JSContext),
     newIdentDefs(ident("this"), quote do: JSValue),
     newIdentDefs(ident("argc"), quote do: cint),
-    newIdentDefs(ident("argv"), quote do: ptr JSValue)
+    newIdentDefs(ident("argv"), quote do: ptr UncheckedArray[JSValue])
   ]
 
 template getJSGetterParams(): untyped =
@@ -521,14 +518,14 @@ proc addParam2(gen: var JSFuncGenerator, s, t, val: NimNode, fallback: NimNode =
     else:
       let j = gen.j
       gen.jsFunCallLists[i].add(newLetStmt(s, quote do:
-        if `j` < argc and not JS_IsUndefined(getJSValue(argv, `j`)):
+        if `j` < argc and not JS_IsUndefined(argv[`j`]):
           `stmt`
         else:
           `fallback`))
 
 proc addValueParam(gen: var JSFuncGenerator, s, t: NimNode, fallback: NimNode = nil) =
   let j = gen.j
-  gen.addParam2(s, t, quote do: getJSValue(argv, `j`), fallback)
+  gen.addParam2(s, t, quote do: argv[`j`], fallback)
 
 proc addUnionParamBranch(gen: var JSFuncGenerator, query, newBranch: NimNode, fallback: NimNode = nil) =
   let i = gen.i
@@ -662,9 +659,10 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
     gen.jsFunCallLists.add(branch)
   gen.newBranchList.setLen(0)
 
-proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, fallback: NimNode = nil) =
+proc addUnionParam(gen: var JSFuncGenerator, tt: NimNode, s: NimNode,
+    fallback: NimNode = nil) =
   let j = gen.j
-  gen.addUnionParam0(tt, s, quote do: getJSValue(argv, `j`), fallback)
+  gen.addUnionParam0(tt, s, quote do: argv[`j`], fallback)
 
 proc addFixParam(gen: var JSFuncGenerator, name: string) =
   let s = ident("arg_" & $gen.i)
@@ -703,7 +701,7 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
           (
             var valist: seq[`vt`]
             for i in `j`..<argc:
-              let it = fromJS_or_return(`vt`, ctx, getJSValue(argv, i))
+              let it = fromJS_or_return(`vt`, ctx, argv[i])
               valist.add(it)
             valist
           )
@@ -1128,7 +1126,8 @@ template jsgetset*(name: string) {.pragma.}
 template jsufget*() {.pragma.}
 template jsufget*(name: string) {.pragma.}
 
-proc js_illegal_ctor*(ctx: JSContext, this: JSValue, argc: cint, argv: ptr JSValue): JSValue {.cdecl.} =
+proc js_illegal_ctor*(ctx: JSContext, this: JSValue, argc: cint,
+    argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
 type
