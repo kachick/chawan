@@ -7,9 +7,9 @@ noframes, param, rp, script, style, template, title {
 	display: block !important;
 }
 
-address, article, aside, blockquote, body, center, dd, del, dialog, dir, div,
+address, article, aside, blockquote, body, center, dd, dialog, dir, div,
 dl, dt, fieldset, figcaption, figure, footer, form, h1, h2, h3, h4, h5, h6,
-header, hgroup, hr, html, ins, legend, listing, main, menu, nav, noframes,
+header, hgroup, hr, html, legend, listing, main, menu, nav, noframes,
 noscript, ol, p, plaintext, pre, search, section, ul, xmp {
 	display: block;
 }
@@ -299,7 +299,7 @@ blink {
 	text-decoration: blink;
 }
 
-s, strike {
+del, s, strike {
 	text-decoration: line-through;
 }
 
