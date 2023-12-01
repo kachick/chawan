@@ -67,17 +67,13 @@ const controlLetterMap = genControlLetterMap()
 func getControlLetter*(c: char): char =
   return controlLetterMap[int(c)]
 
-proc mtoLowerAscii*(str: var string) =
-  for i in 0 ..< str.len:
-    str[i] = str[i].toLowerAscii()
-
 func toHeaderCase*(str: string): string =
   result = str
   var flip = true
-  for i in 0..str.high:
+  for c in result.mitems:
     if flip:
-      result[i] = result[i].toUpperAscii()
-    flip = result[i] == '-'
+      c = c.toUpperAscii()
+    flip = c == '-'
 
 func toScreamingSnakeCase*(str: string): string = # input is camel case
   if str.len >= 1: result &= str[0].toUpperAscii()
@@ -94,10 +90,22 @@ func snakeToKebabCase*(str: string): string =
     if c == '_':
       c = '-'
 
-func normalizeLocale*(s: string): string =
-  for i in 0 ..< s.len:
-    if cast[uint8](s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
-      result &= s[i].toLowerAscii()
+func kebabToCamelCase*(s: string): string =
+  result = s
+  var flip = false
+  for c in result.mitems:
+    if flip:
+      c = c.toUpperAscii()
+    flip = c == '-'
+
+func camelToKebabCase*(s: string): string =
+  result = ""
+  for c in s:
+    if c in AsciiUpperAlpha:
+      result &= '-'
+      result &= c.toLowerAscii()
+    else:
+      result &= c
 
 func isAscii*(r: Rune): bool =
   return cast[uint32](r) < 128

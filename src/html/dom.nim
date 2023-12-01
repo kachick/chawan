@@ -145,6 +145,9 @@ type
     element: Element
     localName: string
 
+  DOMStringMap = object
+    target {.cursor.}: HTMLElement
+
   Node* = ref object of EventTarget
     nodeType*: NodeType
     childList*: seq[Node]
@@ -242,6 +245,7 @@ type
     element: Element
 
   HTMLElement* = ref object of Element
+    dataset {.jsget.}: DOMStringMap
 
   FormAssociatedElement* = ref object of HTMLElement
     parserInserted*: bool
@@ -417,6 +421,7 @@ jsDestructor(Location)
 jsDestructor(Document)
 jsDestructor(DOMImplementation)
 jsDestructor(DOMTokenList)
+jsDestructor(DOMStringMap)
 jsDestructor(Comment)
 jsDestructor(CDATASection)
 jsDestructor(DocumentFragment)
@@ -1152,6 +1157,56 @@ func value(tokenList: DOMTokenList): string {.jsfget.} =
 func getter(tokenList: DOMTokenList, i: int): Option[string] {.jsgetprop.} =
   return tokenList.item(i)
 
+# DOMStringMap
+func validateAttributeName(name: string, isq: static bool = false):
+    Err[DOMException] =
+  when isq:
+    if name.matchNameProduction():
+      return ok()
+  else:
+    if name.matchQNameProduction():
+      return ok()
+  return errDOMException("Invalid character in attribute name",
+    "InvalidCharacterError")
+
+func hasprop(map: ptr DOMStringMap, name: string): bool {.jshasprop.} =
+  return "data-" & name in map[].target.attrs
+
+proc delete(map: ptr DOMStringMap, name: string): bool {.jsfunc.} =
+  let name = "data-" & name.camelToKebabCase()
+  let res = name in map[].target.attrs
+  map[].target.attrs.del(name)
+  return res
+
+func getter(map: ptr DOMStringMap, name: string): Option[string]
+    {.jsgetprop.} =
+  let name = "data-" & name.camelToKebabCase()
+  map[].target.attrs.withValue(name, p):
+    return some(p[])
+  return none(string)
+
+proc setter(map: ptr DOMStringMap, name, value: string): Err[DOMException]
+    {.jssetprop.} =
+  var washy = false
+  for c in name:
+    if not washy or c notin AsciiLowerAlpha:
+      washy = c == '-'
+      continue
+    return errDOMException("Lower case after hyphen is not allowed in dataset",
+      "InvalidCharacterError")
+  let name = "data-" & name.camelToKebabCase()
+  ?name.validateAttributeName()
+  map.target.attr(name, value)
+  return ok()
+
+func names(ctx: JSContext, map: ptr DOMStringMap): JSPropertyEnumList
+    {.jspropnames.} =
+  var list = newJSPropertyEnumList(ctx, uint32(map[].target.attrs.len))
+  for k, v in map[].target.attrs:
+    if k.startsWith("data-") and AsciiUpperAlpha notin k:
+      list.add(k["data-".len .. ^1].kebabToCamelCase())
+  return list
+
 # NodeList
 func length(nodeList: NodeList): uint32 {.jsfget.} =
   return uint32(nodeList.len)
@@ -1712,15 +1767,17 @@ func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
   var classes = classNames.split(AsciiWhitespace)
   let isquirks = node.document.mode == QUIRKS
   if isquirks:
-    for i in 0 .. classes.high:
-      classes[i].mtoLowerAscii()
+    for class in classes.mitems:
+      for c in class.mitems:
+        c = c.toLowerAscii()
   return newCollection[HTMLCollection](node,
     func(node: Node): bool =
       if node.nodeType == ELEMENT_NODE:
         if isquirks:
           var cl = Element(node).classList
-          for i in 0 .. cl.toks.high:
-            cl.toks[i].mtoLowerAscii()
+          for tok in cl.toks.mitems:
+            for c in tok.mitems:
+              c = c.toLowerAscii()
           for class in classes:
             if class notin cl:
               return false
@@ -2157,6 +2214,7 @@ func newHTMLElement*(document: Document, tagType: TagType,
   result.attributes = NamedNodeMap(element: result)
   result.classList = DOMTokenList(element: result, localName: "classList")
   result.index = -1
+  result.dataset = DOMStringMap(target: result)
   {.cast(noSideEffect).}:
     for k, v in attrs:
       result.attr(k, v)
@@ -2412,17 +2470,6 @@ proc attrul(element: Element, name: string, value: uint32) =
 proc attrulgz(element: Element, name: string, value: uint32) =
   if value > 0:
     element.attrul(name, value)
-
-func validateAttributeName(name: string, isq: static bool = false):
-    Err[DOMException] =
-  when isq:
-    if name.matchNameProduction():
-      return ok()
-  else:
-    if name.matchQNameProduction():
-      return ok()
-  return errDOMException("Invalid character in attribute name",
-    "InvalidCharacterError")
 
 proc setAttribute(element: Element, qualifiedName, value: string):
     Err[DOMException] {.jsfunc.} =
@@ -3483,6 +3530,7 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(DOMImplementation)
   ctx.registerType(DOMTokenList)
+  ctx.registerType(DOMStringMap)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
   ctx.registerType(Comment, parent = characterDataCID)
   ctx.registerType(CDATASection, parent = characterDataCID)

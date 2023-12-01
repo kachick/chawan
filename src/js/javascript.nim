@@ -873,7 +873,7 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
 proc makeJSCallAndRet(gen: var JSFuncGenerator, okstmt, errstmt: NimNode) =
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
-  gen.jsCallAndRet = if gen.returnType.issome:
+  gen.jsCallAndRet = if gen.returnType.isSome:
     quote do:
       block `dl`:
         return ctx.toJS(`jfcl`)
@@ -962,11 +962,19 @@ macro jssetprop*(fun: typed) =
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      `jfcl`
-      return cint(1)
-    return cint(-1)
+  gen.jsCallAndRet = if gen.returnType.isSome:
+    quote do:
+      block `dl`:
+        let v = toJS(ctx, `jfcl`)
+        if not JS_IsException(v):
+          return cint(1)
+      return cint(-1)
+  else:
+    quote do:
+      block `dl`:
+        `jfcl`
+        return cint(1)
+      return cint(-1)
   let jsProc = gen.newJSProc(getJSSetPropParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
