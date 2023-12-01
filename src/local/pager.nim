@@ -330,12 +330,12 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
       var i = 0
       var s = ""
       for f in line.formats:
-        var outstr = ""
+        let si = i
         while x < f.pos:
           var r: Rune
           fastRuneAt(line.str, i, r)
-          outstr &= r
           x += r.width()
+        let outstr = line.str.substr(si, i - 1)
         s &= pager.term.processOutputString(outstr, w)
         s &= pager.term.processFormat(format, f.format)
       if i < line.str.len:
