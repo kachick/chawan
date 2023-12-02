@@ -2070,6 +2070,9 @@ proc href(anchor: HTMLAnchorElement, href: string) {.jsfset.} =
 func `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
   anchor.href
 
+proc setRelList(anchor: HTMLAnchorElement, s: string) {.jsfset: "relList".} =
+  anchor.attr("rel", s)
+
 # <area>
 func href(area: HTMLAreaElement): string {.jsfget.} =
   area.href0
@@ -2079,6 +2082,9 @@ proc href(area: HTMLAreaElement, href: string) {.jsfset.} =
 
 func `$`(area: HTMLAreaElement): string {.jsfunc.} =
   area.href
+
+proc setRelList(area: HTMLAreaElement, s: string) {.jsfset: "relList".} =
+  area.attr("rel", s)
 
 # <label>
 func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
@@ -2098,6 +2104,14 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
   let control = label.control
   if control != nil:
     return control.form
+
+# <link>
+proc setRelList(link: HTMLLinkElement, s: string) {.jsfset: "relList".} =
+  link.attr("rel", s)
+
+# <form>
+proc setRelList(form: HTMLFormElement, s: string) {.jsfset: "relList".} =
+  form.attr("rel", s)
 
 func newText(document: Document, data: string): Text =
   return Text(
@@ -2305,11 +2319,6 @@ func baseURI(node: Node): string {.jsfget.} =
 func parseURL*(document: Document, s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
-
-type RelElems = HTMLAnchorElement|HTMLLinkElement|HTMLAreaElement
-
-func rel*[T: RelElems](element: T): string =
-  return element.attr("rel")
 
 func media*[T: HTMLLinkElement|HTMLStyleElement](element: T): string =
   return element.attr("media")

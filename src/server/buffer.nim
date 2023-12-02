@@ -722,7 +722,7 @@ proc loadResources(buffer: Buffer): EmptyPromise =
       case elem.tagType
       of TAG_LINK:
         let elem = HTMLLinkElement(elem)
-        if elem.rel == "stylesheet":
+        if elem.attr("rel") == "stylesheet":
           p = buffer.loadResource(elem)
       of TAG_IMG:
         let elem = HTMLImageElement(elem)
