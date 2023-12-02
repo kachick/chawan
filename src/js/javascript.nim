@@ -1500,7 +1500,6 @@ proc bindCheckDestroy(stmts: NimNode, info: RegistryInfo) =
 
 proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
   let jsname = info.jsname
-  let cdname = "classDef" & jsname
   let dfin = info.dfin
   let classDef = info.classDef
   if info.propGetFun.kind != nnkNilLit or
@@ -1514,33 +1513,27 @@ proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
     let propHasFun = info.propHasFun
     let propNamesFun = info.propNamesFun
     endstmts.add(quote do:
-      # No clue how to do this in pure nim.
-      {.emit: ["""
-static JSClassExoticMethods exotic = {
-	.get_own_property = """, `propGetFun`, """,
-        .get_own_property_names = """, `propNamesFun`, """,
-	.has_property = """, `propHasFun`, """,
-	.set_property = """, `propSetFun`, """,
-	.delete_property = """, `propDelFun`, """
-};
-static JSClassDef """, `cdname`, """ = {
-	""", "\"", `jsname`, "\"", """,
-        .can_destroy = """, `dfin`, """,
-	.exotic = &exotic
-};"""
-      ].}
-      var `classDef`: JSClassDefConst
-      {.emit: [
-        `classDef`, " = &", `cdname`, ";"
-      ].}
+      var exotic {.global.} = JSClassExoticMethods(
+        get_own_property: `propGetFun`,
+        get_own_property_names: `propNamesFun`,
+        has_property: `propHasFun`,
+        set_property: `propSetFun`,
+        delete_property: `propDelFun`
+      )
+      var cd {.global.} = JSClassDef(
+        class_name: `jsname`,
+        can_destroy: `dfin`,
+        exotic: addr exotic
+      )
+      let `classDef` = JSClassDefConst(addr cd)
     )
   else:
     endstmts.add(quote do:
-      const cd = JSClassDef(
+      var cd {.global.} = JSClassDef(
         class_name: `jsname`,
         can_destroy: `dfin`
       )
-      let `classDef` = JSClassDefConst(unsafeAddr cd))
+      let `classDef` = JSClassDefConst(addr cd))
 
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     asglobal = false, nointerface = false, name: static string = "",
