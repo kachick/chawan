@@ -1,3 +1,5 @@
+import bindings/constcharp
+
 const qjsheader = "quickjs/quickjs.h"
 
 {.passC: "-Ilib/".}
@@ -65,9 +67,16 @@ else:
     JSValue(u: JSValueUnion(`ptr`: p), tag: t)
 
 type
-  JSRuntime* = ptr object
-  JSContext* = ptr object
-  JSModuleDef* = ptr object
+  JSRuntimeT {.importc: "JSRuntime", header: qjsheader,
+    incompleteStruct.} = object
+  JSContextT {.importc: "JSContext", header: qjsheader,
+    incompleteStruct.} = object
+  JSModuleDefT {.importc: "JSModuleDef", header: qjsheader,
+    incompleteStruct.} = object
+
+  JSRuntime* = ptr JSRuntimeT
+  JSContext* = ptr JSContextT
+  JSModuleDef* = ptr JSModuleDefT
   JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: cint,
       argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.}
   JSCFunctionData* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.}
@@ -83,8 +92,8 @@ type
   JSClassGCMark* = proc (rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
   JS_MarkFunc* = proc (rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
   JSModuleNormalizeFunc* = proc(ctx: JSContext, module_base_name,
-    module_name: cstring, opaque: pointer): cstring {.cdecl.}
-  JSModuleLoaderFunc* = proc(ctx: JSContext, module_name: cstring,
+    module_name: cstringConst, opaque: pointer): cstring {.cdecl.}
+  JSModuleLoaderFunc* = proc(ctx: JSContext, module_name: cstringConst,
     opaque: pointer): JSModuleDef {.cdecl.}
   JSJobFunc* = proc (ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object

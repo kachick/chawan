@@ -1,3 +1,4 @@
+import bindings/constcharp
 import bindings/quickjs
 import js/javascript
 import js/tojs
@@ -23,6 +24,6 @@ proc finishLoadModule*(ctx: JSContext, f: string, name: cstring): JSModuleDef =
   result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   JS_FreeValue(ctx, funcVal)
 
-proc normalizeModuleName*(ctx: JSContext, base_name: cstring, name: cstring,
+proc normalizeModuleName*(ctx: JSContext, base_name, name: cstringConst,
     opaque: pointer): cstring {.cdecl.} =
-  return js_strdup(ctx, name)
+  return js_strdup(ctx, cstring(name))

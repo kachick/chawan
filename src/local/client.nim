@@ -1,4 +1,3 @@
-import cstrutils
 import nativesockets
 import net
 import options
@@ -14,6 +13,7 @@ when defined(posix):
 
 import std/exitprocs
 
+import bindings/constcharp
 import bindings/quickjs
 import config/config
 import display/lineedit
@@ -442,13 +442,14 @@ proc headlessLoop(client: Client) =
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
 
-proc clientLoadJSModule(ctx: JSContext, module_name: cstring,
+proc clientLoadJSModule(ctx: JSContext, module_name: cstringConst,
     opaque: pointer): JSModuleDef {.cdecl.} =
   let global = JS_GetGlobalObject(ctx)
   JS_FreeValue(ctx, global)
   var x: Option[URL]
-  if module_name.startsWith("/") or module_name.startsWith("./") or
-      module_name.startsWith("../"):
+  if module_name[0] == '/' or module_name[0] == '.' and
+      (module_name[1] == '/' or
+      module_name[1] == '.' and module_name[2] == '/'):
     let cur = getCurrentDir()
     x = parseURL($module_name, parseURL("file://" & cur & "/"))
   else:
@@ -458,7 +459,7 @@ proc clientLoadJSModule(ctx: JSContext, module_name: cstring,
     return nil
   try:
     let f = readFile($x.get.path)
-    return finishLoadModule(ctx, f, module_name)
+    return finishLoadModule(ctx, f, cstring(module_name))
   except IOError:
     JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
     return nil
