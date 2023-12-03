@@ -182,9 +182,11 @@ proc handlePagerEvents(client: Client) =
   if container != nil:
     client.pager.handleEvents(container)
 
-proc evalAction(client: Client, action: string, arg0: int32) =
+proc evalAction(client: Client, action: string, arg0: int32): EmptyPromise =
   var ret = client.evalJS(action, "<command>")
   let ctx = client.jsctx
+  var p = EmptyPromise()
+  p.resolve()
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
       var arg0 = toJS(ctx, arg0)
@@ -199,7 +201,12 @@ proc evalAction(client: Client, action: string, arg0: int32) =
       ret = ret2
   if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
+  if JS_IsObject(ret):
+    let maybep = fromJS[EmptyPromise](ctx, ret)
+    if maybep.isOk:
+      p = maybep.get
   JS_FreeValue(ctx, ret)
+  return p
 
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
@@ -207,7 +214,7 @@ proc evalAction(client: Client, action: string, arg0: int32) =
 # it proves to be too low.
 const MaxPrecNum = 100000000
 
-proc handleCommandInput(client: Client, c: char) =
+proc handleCommandInput(client: Client, c: char): EmptyPromise =
   if client.config.input.vi_numeric_prefix and not client.pager.notnum:
     if client.pager.precnum != 0 and c == '0' or c in '1' .. '9':
       if client.pager.precnum < MaxPrecNum: # better ignore than eval...
@@ -218,23 +225,23 @@ proc handleCommandInput(client: Client, c: char) =
       client.pager.notnum = true
   client.pager.inputBuffer &= c
   let action = getNormalAction(client.config, client.pager.inputBuffer)
-  client.evalAction(action, client.pager.precnum)
+  let p = client.evalAction(action, client.pager.precnum)
   if not client.feedNext:
     client.pager.precnum = 0
     client.pager.notnum = false
     client.handlePagerEvents()
+  return p
 
-proc input(client: Client) =
+proc input(client: Client): EmptyPromise =
+  var p: EmptyPromise = nil
   client.pager.term.restoreStdin()
   while true:
     let c = client.readChar()
     if client.pager.askpromise != nil:
       if c == 'y':
         client.pager.fulfillAsk(true)
-        client.runJSJobs()
       elif c == 'n':
         client.pager.fulfillAsk(false)
-        client.runJSJobs()
     elif client.pager.lineedit.isSome:
       client.pager.inputBuffer &= c
       let edit = client.pager.lineedit.get
@@ -250,11 +257,11 @@ proc input(client: Client) =
           else:
             client.feedNext = true
         elif not client.feednext:
-          client.evalAction(action, 0)
+          discard client.evalAction(action, 0)
         if not client.feedNext:
           client.pager.updateReadLine()
     else:
-      client.handleCommandInput(c)
+      p = client.handleCommandInput(c)
       if not client.feednext:
         client.pager.inputBuffer = ""
         client.pager.refreshStatusMsg()
@@ -267,6 +274,10 @@ proc input(client: Client) =
     else:
       client.feednext = false
   client.pager.inputBuffer = ""
+  if p == nil:
+    p = EmptyPromise()
+    p.resolve()
+  return p
 
 proc setTimeout[T: JSValue|string](client: Client, handler: T,
     timeout = 0i32): int32 {.jsfunc.} =
@@ -322,8 +333,9 @@ proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
 
 proc handleRead(client: Client, fd: int) =
   if client.pager.infile != nil and fd == client.pager.infile.getFileHandle():
-    client.input()
-    client.handlePagerEvents()
+    client.input().then(proc() =
+      client.handlePagerEvents()
+    )
   elif fd == client.forkserver.estream.fd:
     var nl = false
     const prefix = "STDERR: "
@@ -405,9 +417,9 @@ proc inputLoop(client: Client) =
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
         assert r
-        client.runJSJobs()
         client.pager.container.requestLines().then(proc() =
           client.pager.container.cursorLastLine())
+    client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
     if client.pager.scommand != "":

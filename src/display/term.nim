@@ -410,11 +410,17 @@ proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
     var change = false
     # scan for changes, and set cx to x of the first change
     var cx = 0
+    # if there is a change, we have to start from the last x with
+    # a string (otherwise we might overwrite a double-width char)
+    var lastx = 0
     for x in 0 ..< grid.width:
-      if grid[y * grid.width + x] != prev[y * grid.width + x]:
+      let i = y * grid.width + x
+      if grid[i].str != "":
+        lastx = x
+      if grid[i] != prev[i]:
         change = true
-        cx = x
-        w = x
+        cx = lastx
+        w = lastx
         break
     if change:
       if cx == 0 and vy != -1:
@@ -427,6 +433,9 @@ proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
       result &= term.resetFormat()
       var format = newFormat()
       for x in cx ..< grid.width:
+        while w < x: # if previous cell had no width, catch up with x
+          result &= ' '
+          inc w
         let cell = grid[y * grid.width + x]
         result &= term.processFormat(format, cell.format)
         result &= term.processOutputString(cell.str, w)

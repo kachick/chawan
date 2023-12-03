@@ -132,7 +132,24 @@ zz = 'n => pager.centerLine(n)'
 'z+' = 'n => pager.nextPageBegin(n)'
 'z^' = 'n => pager.previousPageBegin(n)'
 C-g = 'pager.lineInfo()'
-v = 'pager.toggleSource()'
+v = 'n => pager.cursorToggleSelection(n)'
+V = 'n => pager.cursorToggleSelection(n, {selectionType: "line"})'
+C-v = 'n => pager.cursorToggleSelection(n, {selectionType: "block"})'
+y = '''
+async () => {
+	if (!pager.currentSelection) {
+		pager.alert("No selection to yank.");
+		return;
+	}
+	const text = await pager.getSelectionText(pager.currentSelection);
+	if (pager.externInto('xsel -bi', text))
+		pager.alert("Copied selection to clipboard.");
+	else
+		pager.alert("Failed to copy selection to clipboard. (Is xsel installed?)");
+	pager.cursorToggleSelection();
+}
+'''
+'\' = 'pager.toggleSource()'
 D = 'pager.discardBuffer()'
 M-d = 'pager.discardTree()'
 ',' = 'pager.prevBuffer()'

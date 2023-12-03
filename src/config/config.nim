@@ -322,6 +322,8 @@ func getRealKey(key: string): string =
     realk &= 'C'
   if meta == 1:
     realk &= 'M'
+  if skip:
+    realk &= '\\'
   return realk
 
 proc openFileExpand(dir, file: string): FileStream =

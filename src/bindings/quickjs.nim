@@ -423,6 +423,8 @@ proc JS_Call*(ctx: JSContext, func_obj, this_obj: JSValue, argc: cint,
   argv: ptr JSValue): JSValue
 proc JS_NewObjectFromCtor*(ctx: JSContext, ctor: JSValue,
   class_id: JSClassID): JSValue
+proc JS_Invoke*(ctx: JSContext, this_obj: JSValue, atom: JSAtom, argc: cint,
+  argv: ptr JSValue): JSValue
 proc JS_CallConstructor*(ctx: JSContext, func_obj: JSValue, argc: cint,
   argv: ptr JSValue): JSValue
 

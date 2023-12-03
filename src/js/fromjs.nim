@@ -5,6 +5,7 @@ import tables
 import unicode
 
 import bindings/quickjs
+import io/promise
 import js/arraybuffer
 import js/dict
 import js/error
@@ -449,6 +450,28 @@ proc fromJSArrayBufferView(ctx: JSContext, val: JSValue):
   )
   return ok(view)
 
+proc promiseThenCallback(ctx: JSContext, this_val: JSValue, argc: cint,
+    argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.} =
+  let op = JS_GetOpaque(func_data[], JS_GetClassID(func_data[]))
+  let p = cast[EmptyPromise](op)
+  p.resolve()
+  GC_unref(p)
+  return JS_UNDEFINED
+
+proc fromJSEmptyPromise(ctx: JSContext, val: JSValue): JSResult[EmptyPromise] =
+  if not JS_IsObject(val):
+    return err(newTypeError("Value is not an object"))
+  #TODO I have a feeling this leaks memory in some cases :(
+  var p = EmptyPromise()
+  GC_ref(p)
+  var tmp = JS_NewObject(ctx)
+  JS_SetOpaque(tmp, cast[pointer](p))
+  var fun = JS_NewCFunctionData(ctx, promiseThenCallback, 0, 0, 1, addr tmp)
+  let res = JS_Invoke(ctx, val, ctx.getOpaque().str_refs[THEN], 1, addr fun)
+  if JS_IsException(res):
+    return err()
+  return ok(p)
+
 type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict|
   JSArrayBuffer|JSArrayBufferView|JSUint8Array))
 
@@ -482,6 +505,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return fromJSEnum[T](ctx, val)
   elif T is JSValue:
     return ok(val)
+  elif T is EmptyPromise:
+    return fromJSEmptyPromise(ctx, val)
   elif T is ref object:
     return fromJSObject[T](ctx, val)
   elif T is void:

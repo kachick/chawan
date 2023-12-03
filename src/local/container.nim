@@ -11,6 +11,7 @@ import display/winattrs
 import extern/stdio
 import io/promise
 import io/serialize
+import js/dict
 import js/javascript
 import js/regex
 import loader/request
@@ -60,11 +61,21 @@ type
       force*: bool
     else: discard
 
-  Highlight = object
-    x, y: int
-    endy, endx: int
-    rect: bool
-    clear: bool
+  HighlightType = enum
+    HL_SEARCH, HL_SELECT
+
+  SelectionType = enum
+    SEL_NORMAL = "normal"
+    SEL_BLOCK = "block"
+    SEL_LINE = "line"
+
+  Highlight = ref object
+    case t: HighlightType
+    of HL_SEARCH: discard
+    of HL_SELECT:
+      selectionType {.jsget.}: SelectionType
+    x1, y1: int
+    x2, y2: int
 
   Container* = ref object
     parent* {.jsget.}: Container
@@ -90,7 +101,6 @@ type
     retry*: seq[URL]
     hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
-    redraw*: bool
     needslines*: bool
     canceled: bool
     events*: Deque[ContainerEvent]
@@ -100,7 +110,9 @@ type
     select*: Select
     canreinterpret*: bool
     cloned: bool
+    currentSelection {.jsget.}: Highlight
 
+jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
@@ -162,7 +174,6 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       code: container.code,
       retry: container.retry,
       hlon: container.hlon,
-      redraw: container.redraw,
       #needslines: container.needslines,
       canceled: container.canceled,
       events: container.events,
@@ -205,15 +216,17 @@ func lastVisibleLine(container: Container): int = min(container.fromy + containe
 func currentLine(container: Container): string =
   return container.getLine(container.cursory).str
 
-func cursorBytes(container: Container, y: int, cc = container.cursorx): int =
-  let line = container.getLine(y).str
-  var w = 0
-  var i = 0
-  while i < line.len and w < cc:
+func findColBytes(s: string, endx: int, startx = 0, starti = 0): int =
+  var w = startx
+  var i = starti
+  while i < s.len and w < endx:
     var r: Rune
-    fastRuneAt(line, i, r)
+    fastRuneAt(s, i, r)
     w += r.twidth(w)
   return i
+
+func cursorBytes(container: Container, y: int, cc = container.cursorx): int =
+  return container.getLine(y).str.findColBytes(cc, 0, 0)
 
 func currentCursorBytes(container: Container, cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
@@ -310,35 +323,63 @@ func lineWindow(container: Container): Slice[int] =
     x = 0
   return x .. y
 
-func contains*(hl: Highlight, x, y: int): bool =
-  if hl.rect:
-    let rx = hl.x .. hl.endx
-    let ry = hl.y .. hl.endy
-    return x in rx and y in ry
+func startx(hl: Highlight): int =
+  if hl.y1 < hl.y2:
+    hl.x1
+  elif hl.y2 < hl.y1:
+    hl.x2
   else:
-    return (y > hl.y or y == hl.y and x >= hl.x) and
-      (y < hl.endy or y == hl.endy and x <= hl.endx)
-
-func contains*(hl: Highlight, y: int): bool =
-  return y in hl.y .. hl.endy
-
-func colorArea*(hl: Highlight, y: int, limitx: Slice[int]): Slice[int] =
-  if hl.rect:
-    if y in hl.y .. hl.endy:
-      return max(hl.x, limitx.a) .. min(hl.endx, limitx.b)
+    min(hl.x1, hl.x2)
+func starty(hl: Highlight): int = min(hl.y1, hl.y2)
+func endx(hl: Highlight): int =
+  if hl.y1 > hl.y2:
+    hl.x1
+  elif hl.y2 > hl.y1:
+    hl.x2
   else:
-    if y in hl.y + 1 .. hl.endy - 1:
-      return limitx
-    if y == hl.y and y == hl.endy:
-      return max(hl.x, limitx.a) .. min(hl.endx, limitx.b)
-    if y == hl.y:
-      return max(hl.x, limitx.a) .. limitx.b
-    if y == hl.endy:
-      return limitx.a .. min(hl.endx, limitx.b)
+    max(hl.x1, hl.x2)
+func endy(hl: Highlight): int = max(hl.y1, hl.y2)
+
+func colorNormal(container: Container, hl: Highlight, y: int,
+    limitx: Slice[int]): Slice[int] =
+  let starty = hl.starty
+  let endy = hl.endy
+  if y in starty + 1 .. endy - 1:
+    let w = container.getLine(y).str.width()
+    return min(limitx.a, w) .. min(limitx.b, w)
+  if y == starty and y == endy:
+    return max(hl.startx, limitx.a) .. min(hl.endx, limitx.b)
+  if y == starty:
+    let w = container.getLine(y).str.width()
+    return max(hl.startx, limitx.a) .. min(limitx.b, w)
+  if y == endy:
+    let w = container.getLine(y).str.width()
+    return min(limitx.a, w) .. min(hl.endx, limitx.b)
+
+func colorArea(container: Container, hl: Highlight, y: int,
+    limitx: Slice[int]): Slice[int] =
+  case hl.t
+  of HL_SELECT:
+    case hl.selectionType
+    of SEL_NORMAL:
+      return container.colorNormal(hl, y, limitx)
+    of SEL_BLOCK:
+      if y in hl.starty .. hl.endy:
+        let (x, endx) = if hl.x1 < hl.x2:
+          (hl.x1, hl.x2)
+        else:
+          (hl.x2, hl.x1)
+        return max(x, limitx.a) .. min(endx, limitx.b)
+    of SEL_LINE:
+      if y in hl.starty .. hl.endy:
+        let w = container.getLine(y).str.width()
+        return min(limitx.a, w) .. min(limitx.b, w)
+  else:
+    return container.colorNormal(hl, y, limitx)
 
 func findHighlights*(container: Container, y: int): seq[Highlight] =
   for hl in container.highlights:
-    if y in hl:
+    if y in hl.starty .. hl.endy:
       result.add(hl)
 
 func getHoverText*(container: Container): string =
@@ -449,6 +490,10 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true)
   elif x < container.cursorx:
     container.setFromX(x, false)
     container.pos.cursorx = x
+  if container.cursorx == x and container.currentSelection != nil and
+      container.currentSelection.x2 != x:
+    container.currentSelection.x2 = x
+    container.triggerEvent(UPDATE)
   if refresh:
     container.sendCursorPosition()
   if save:
@@ -469,6 +514,9 @@ proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
     else:
       container.setFromY(y)
     container.pos.cursory = y
+  if container.currentSelection != nil and container.currentSelection.y2 != y:
+    container.triggerEvent(UPDATE)
+    container.currentSelection.y2 = y
   container.restoreCursorX()
   if refresh:
     container.sendCursorPosition()
@@ -818,7 +866,7 @@ proc cursorRevNthLink*(container: Container, n = 1) {.jsfunc.} =
 
 proc clearSearchHighlights*(container: Container) =
   for i in countdown(container.highlights.high, 0):
-    if container.highlights[i].clear:
+    if container.highlights[i].t == HL_SEARCH:
       container.highlights.del(i)
 
 proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
@@ -827,7 +875,13 @@ proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
     if container.hlon:
       container.clearSearchHighlights()
       let ex = res.x + res.str.twidth(res.x) - 1
-      let hl = Highlight(x: res.x, y: res.y, endx: ex, endy: res.y, clear: true)
+      let hl = Highlight(
+        t: HL_SEARCH,
+        x1: res.x,
+        y1: res.y,
+        x2: ex,
+        y2: res.y
+      )
       container.highlights.add(hl)
       container.triggerEvent(UPDATE)
       container.hlon = false
@@ -862,6 +916,73 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool,
       .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
       .then(proc(res: BufferMatch) =
         container.onMatch(res, refresh))
+
+type
+  SelectionOptions = object of JSDict
+    selectionType: SelectionType
+
+proc cursorToggleSelection(container: Container, n = 1,
+    opts = SelectionOptions()): Highlight {.jsfunc.} =
+  if container.currentSelection != nil:
+    let i = container.highlights.find(container.currentSelection)
+    if i != -1:
+      container.highlights.delete(i)
+    container.currentSelection = nil
+  else:
+    let n = n - 1
+    let hl = Highlight(
+      t: HL_SELECT,
+      selectionType: opts.selectionType,
+      x1: container.cursorx,
+      y1: container.cursory,
+      x2: container.cursorx + n,
+      y2: container.cursory
+    )
+    container.highlights.add(hl)
+    container.currentSelection = hl
+    container.cursorRight(n)
+  container.triggerEvent(UPDATE)
+  return container.currentSelection
+
+#TODO I don't like this API
+# maybe make selection a subclass of highlight?
+proc getSelectionText(container: Container, hl: Highlight = nil):
+    Promise[string] {.jsfunc.} =
+  let hl = if hl == nil: container.currentSelection else: hl
+  if hl.t != HL_SELECT:
+    let p = newPromise[string]()
+    p.resolve("")
+    return p
+  let startx = hl.startx
+  let starty = hl.starty
+  let endx = hl.endx
+  let endy = hl.endy
+  let nw = starty .. endy
+  return container.iface.getLines(nw).then(proc(res: GetLinesResult): string =
+    var s = ""
+    case hl.selectionType
+    of SEL_NORMAL:
+      if starty == endy:
+        let si = res.lines[0].str.findColBytes(startx)
+        let ei = res.lines[0].str.findColBytes(endx, startx, si)
+        s = res.lines[0].str.substr(si, ei)
+      else:
+        let si = res.lines[0].str.findColBytes(startx)
+        s &= res.lines[0].str.substr(si) & '\n'
+        for i in 1 .. res.lines.high - 1:
+          s &= res.lines[i].str & '\n'
+        let ei = res.lines[^1].str.findColBytes(endx)
+        s &= res.lines[^1].str.substr(0, ei)
+    of SEL_BLOCK:
+      for line in res.lines:
+        let si = line.str.findColBytes(startx)
+        let ei = line.str.findColBytes(endx, startx, si)
+        s &= line.str.substr(si, ei) & '\n'
+    of SEL_LINE:
+      for line in res.lines:
+        s &= line.str & '\n'
+    return s
+  )
 
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
@@ -1169,7 +1290,8 @@ proc drawLines*(container: Container, display: var FixedGrid,
     let hls = container.findHighlights(container.fromy + by)
     let aw = container.width - (startw - container.fromx) # actual width
     for hl in hls:
-      let area = hl.colorArea(container.fromy + by, startw .. startw + aw)
+      let area = container.colorArea(hl, container.fromy + by,
+        startw .. startw + aw)
       for i in area:
         if i - startw >= container.width:
           break
@@ -1185,4 +1307,5 @@ proc handleEvent*(container: Container) =
     container.needslines = false
 
 proc addContainerModule*(ctx: JSContext) =
+  ctx.registerType(Highlight)
   ctx.registerType(Container, name = "Buffer")

@@ -243,10 +243,9 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
   container.drawLines(pager.display,
     cellColor(pager.config.display.highlight_color))
 
-# Note: this function doesn't work if start < i of last written char
-proc writeStatusMessage(pager: Pager, str: string,
-                        format: Format = newFormat(), start = 0,
-                        maxwidth = -1, clip = '$'): int {.discardable.} =
+# Note: this function does not work correctly if start < i of last written char
+proc writeStatusMessage(pager: Pager, str: string, format = newFormat(),
+    start = 0, maxwidth = -1, clip = '$'): int {.discardable.} =
   var maxwidth = maxwidth
   if maxwidth == -1:
     maxwidth = pager.statusgrid.len
@@ -255,22 +254,20 @@ proc writeStatusMessage(pager: Pager, str: string,
   if i >= e:
     return i
   for r in str.runes:
-    let pi = i
-    i += r.width()
-    if i >= e:
-      if i >= pager.statusgrid.width:
-        i = pi
+    let w = r.width()
+    if i + w >= e:
       pager.statusgrid[i].format = format
       pager.statusgrid[i].str = $clip
-      inc i
+      inc i # Note: we assume `clip' is 1 cell wide
       break
     if r.isControlChar():
-      pager.statusgrid[pi].str = "^"
-      pager.statusgrid[pi + 1].str = $getControlLetter(char(r))
-      pager.statusgrid[pi + 1].format = format
+      pager.statusgrid[i].str = "^"
+      pager.statusgrid[i + 1].str = $getControlLetter(char(r))
+      pager.statusgrid[i + 1].format = format
     else:
-      pager.statusgrid[pi].str = $r
-    pager.statusgrid[pi].format = format
+      pager.statusgrid[i].str = $r
+    pager.statusgrid[i].format = format
+    i += w
   result = i
   var def = newFormat()
   while i < e:
@@ -883,9 +880,13 @@ proc extern(pager: Pager, cmd: string, t = ExternDict()): bool {.jsfunc.} =
 proc externCapture(pager: Pager, cmd: string): Opt[string] {.jsfunc.} =
   pager.setEnvVars()
   var s: string
-  if not runProcessCapture(pager.term, cmd, s):
+  if not runProcessCapture(cmd, s):
     return err()
   return ok(s)
+
+proc externInto(pager: Pager, cmd, ins: string): bool {.jsfunc.} =
+  pager.setEnvVars()
+  return runProcessInto(cmd, ins)
 
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)
