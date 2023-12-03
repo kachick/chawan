@@ -38,7 +38,6 @@ type
     isTrusted {.jsufget.}: bool
 
   CustomEvent* = ref object of Event
-    ctx: JSContext #TODO get rid of this
     detail {.jsget.}: JSValue
 
   EventTarget* = ref object of RootObj
@@ -74,8 +73,7 @@ type
     detail: JSValue
 
 # Event
-proc innerEventCreationSteps(event: Event, ctx: JSContext,
-    eventInitDict: EventInit) =
+proc innerEventCreationSteps(event: Event, eventInitDict: EventInit) =
   event.flags = {FLAG_INITIALIZED}
   #TODO this is probably incorrect?
   # I think it measures the time since the first fork. not sure though
@@ -86,10 +84,10 @@ proc innerEventCreationSteps(event: Event, ctx: JSContext,
     event.flags.incl(FLAG_COMPOSED)
 
 #TODO eventInitDict type
-proc newEvent(ctx: JSContext, ctype: string, eventInitDict = EventInit()):
+proc newEvent(ctype: string, eventInitDict = EventInit()):
     JSResult[Event] {.jsctor.} =
   let event = Event()
-  event.innerEventCreationSteps(ctx, eventInitDict)
+  event.innerEventCreationSteps(eventInitDict)
   event.ctype = ctype
   return ok(event)
 
@@ -156,23 +154,21 @@ func composed(this: Event): bool {.jsfget.} =
   return FLAG_COMPOSED in this.flags
 
 # CustomEvent
-proc newCustomEvent(ctx: JSContext, ctype: string,
-    eventInitDict = CustomEventInit()): JSResult[CustomEvent] {.jsctor.} =
+proc newCustomEvent(ctype: string, eventInitDict = CustomEventInit()):
+    JSResult[CustomEvent] {.jsctor.} =
   let event = CustomEvent()
-  event.innerEventCreationSteps(ctx, eventInitDict)
+  event.innerEventCreationSteps(eventInitDict)
   event.detail = eventInitDict.detail
-  event.ctx = ctx
   event.ctype = ctype
   return ok(event)
 
-proc finalize(this: CustomEvent) {.jsfin.} =
-  JS_FreeValue(this.ctx, this.detail)
+proc finalize(rt: JSRuntime, this: CustomEvent) {.jsfin.} =
+  JS_FreeValueRT(rt, this.detail)
 
-proc initCustomEvent(ctx: JSContext, this: CustomEvent, ctype: string,
+proc initCustomEvent(this: CustomEvent, ctype: string,
     bubbles, cancelable: bool, detail: JSValue) {.jsfunc.} =
   if FLAG_DISPATCH notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
-    this.ctx = ctx
     this.detail = detail
 
 # EventTarget

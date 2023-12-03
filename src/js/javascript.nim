@@ -208,7 +208,7 @@ proc addClassUnforgeable(ctx: JSContext, proto: JSValue,
 
 func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
     nimt: pointer, ctor: JSCFunction, funcs: JSFunctionList, parent: JSClassID,
-    asglobal: bool, nointerface: bool, finalizer: proc(val: JSValue),
+    asglobal: bool, nointerface: bool, finalizer: JSFinalizerFunction,
     namespace: JSValue, errid: Opt[JSErrorEnum],
     unforgeable, staticfuns: JSFunctionList,
     ishtmldda: bool): JSClassID {.discardable.} =
@@ -318,6 +318,7 @@ type
     funcParams: seq[FuncParam]
     passCtx: bool
     thisType: string
+    thisTypeNode: NimNode
     returnType: Option[NimNode]
     newName: NimNode
     newBranchList: seq[NimNode]
@@ -808,24 +809,30 @@ func getErrVal(t: BoundFunctionType): NimNode =
   return quote do: JS_EXCEPTION
 
 proc addJSContext(gen: var JSFuncGenerator) =
-  if gen.funcParams.len > gen.i and
-      gen.funcParams[gen.i].t.eqIdent(ident("JSContext")):
-    gen.passCtx = true
-    gen.jsFunCall.add(ident("ctx"))
-    inc gen.i
+  if gen.funcParams.len > gen.i:
+    if gen.funcParams[gen.i].t.eqIdent(ident("JSContext")):
+      gen.passCtx = true
+      gen.jsFunCall.add(ident("ctx"))
+      inc gen.i
+    elif gen.funcParams[gen.i].t.eqIdent(ident("JSRuntime")):
+      inc gen.i # special case for finalizers that have a JSRuntime param
 
 proc addThisName(gen: var JSFuncGenerator, thisname: Option[string]) =
   if thisname.isSome:
+    gen.thisTypeNode = gen.funcParams[gen.i][1]
     gen.thisType = $gen.funcParams[gen.i][1]
     gen.newName = ident($gen.t & "_" & gen.thisType & "_" & gen.funcName)
   else:
     let rt = gen.returnType.get
     if rt.kind in {nnkRefTy, nnkPtrTy}:
+      gen.thisTypeNode = rt[0]
       gen.thisType = rt[0].strVal
     else:
       if rt.kind == nnkBracketExpr:
+        gen.thisTypeNode = rt[1]
         gen.thisType = rt[1].strVal
       else:
+        gen.thisTypeNode = rt
         gen.thisType = rt.strVal
     gen.newName = ident($gen.t & "_" & gen.funcName)
 
@@ -1112,8 +1119,27 @@ template jsstfunc*(name: static string, fun: typed) =
 
 macro jsfin*(fun: typed) =
   var gen = setupGenerator(fun, FINALIZER, thisname = some("fin"))
-  registerFunction(gen.thisType, FINALIZER, gen.funcName, gen.newName)
-  fun
+  let finName = gen.newName
+  let finFun = ident(gen.funcName)
+  let t = gen.thisTypeNode
+  if gen.minArgs == 1:
+    let jsProc = quote do:
+      proc `finName`(rt: JSRuntime, val: JSValue) =
+        let opaque = JS_GetOpaque(val, JS_GetClassID(val))
+        if opaque != nil:
+          `finFun`(cast[`t`](opaque))
+    gen.registerFunction()
+    result = newStmtList(fun, jsProc)
+  elif gen.minArgs == 2:
+    let jsProc = quote do:
+      proc `finName`(rt: JSRuntime, val: JSValue) =
+        let opaque = JS_GetOpaque(val, JS_GetClassID(val))
+        if opaque != nil:
+          `finFun`(rt, cast[`t`](opaque))
+    gen.registerFunction()
+    result = newStmtList(fun, jsProc)
+  else:
+    error("Expected one or two parameters")
 
 # Having the same names for these and the macros leads to weird bugs, so the
 # macros get an additional f.
@@ -1211,7 +1237,7 @@ proc nim_finalize_for_js*(obj: pointer) =
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
       let classid = JS_GetClassID(val)
       rtOpaque.fins.withValue(classid, fin):
-        fin[](val)
+        fin[](rt, val)
       JS_SetOpaque(val, nil)
       rtOpaque.plist.del(obj)
       if rtOpaque.destroying == obj:
@@ -1433,18 +1459,6 @@ proc bindExtraGetSet(stmts: NimNode, info: var RegistryInfo,
     let m = x.magic
     info.tabList.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
 
-proc bindFinalizer(stmts: NimNode, info: RegistryInfo) =
-  if info.finFun.kind != nnkNilLit:
-    let t = info.t
-    let finFun = info.finFun
-    let finName = info.finName
-    stmts.add(quote do:
-      proc `finName`(val: JSValue) =
-        let opaque = JS_GetOpaque(val, JS_GetClassID(val))
-        if opaque != nil:
-          `finFun`(cast[`t`](opaque))
-    )
-
 proc bindCheckDestroy(stmts: NimNode, info: RegistryInfo) =
   let t = info.t
   let dfin = info.dfin
@@ -1554,7 +1568,6 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     # been passed to it at all.
     stmts.bindExtraGetSet(info, extra_getset)
   let sctr = stmts.bindConstructor(info)
-  stmts.bindFinalizer(info)
   stmts.bindCheckDestroy(info)
   let endstmts = newStmtList()
   endstmts.bindEndStmts(info)

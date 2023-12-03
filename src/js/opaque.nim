@@ -36,10 +36,12 @@ type
     err_ctors*: array[JSErrorEnum, JSValue]
     htmldda*: JSClassID # only one of these exists: document.all.
 
+  JSFinalizerFunction* = proc(rt: JSRuntime, val: JSValue) {.nimcall.}
+
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, pointer] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
-    fins*: Table[JSClassID, proc(val: JSValue)]
+    fins*: Table[JSClassID, JSFinalizerFunction]
     refmap*: Table[pointer, tuple[cref, cunref: (proc() {.closure.})]]
     destroying*: pointer
 
