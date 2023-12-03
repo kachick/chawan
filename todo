@@ -24,7 +24,6 @@ config:
 	  variables/shell substitution, etc.
 buffer:
 - important: incremental html parsing
-	* also, do not needlessly copy in onload
 - important: validate returned values
 	* do not block container when receiving buffer data; if invalid, kill
 	  buffer
@@ -37,7 +36,6 @@ buffer:
 - when the log buffer crashes, print its contents to stderr
 	* make console.err a TeeStream, and tee it to a StringStream that
 	  buffers up to 4KB
-- add highlighting, copy
 - add buffer groups
 - add option to write source to a file, instead of keeping it in memory
 - hex viewer
