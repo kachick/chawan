@@ -815,8 +815,6 @@ proc connect2*(buffer: Buffer) {.proxy.} =
     let ss = SocketStream(buffer.istream)
     ss.swrite(false)
     ss.setBlocking(false)
-  buffer.istream = newTeeStream(buffer.istream, buffer.sstream,
-    closedest = false)
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait: bool) {.proxy.} =
@@ -864,8 +862,7 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
   )
   buffer.ishtml = ishtml
   discard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) or O_NONBLOCK)
-  let ps = newPosixStream(fd)
-  buffer.istream = newTeeStream(ps, buffer.sstream, closedest = false)
+  buffer.istream = newPosixStream(fd)
   buffer.fd = fd
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
@@ -957,8 +954,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
       discard close(pipefd_write[1]) # close write
       buffer.fd = pipefd_write[0]
       buffer.selector.registerHandle(buffer.fd, {Read}, 0)
-      let ps = newPosixStream(pipefd_write[0])
-      buffer.istream = newTeeStream(ps, buffer.sstream, closedest = false)
+      buffer.istream = newPosixStream(pipefd_write[0])
     buffer.pstream.close()
     let ssock = initServerSocket(buffered = false)
     ps.write(char(0))
@@ -1119,16 +1115,16 @@ proc onload(buffer: Buffer) =
   of LOADING_PAGE:
     discard
   let op = buffer.sstream.getPosition()
-  var s = newString(buffer.readbufsize)
+  var s = newSeqUninitialized[uint8](buffer.readbufsize)
   try:
     buffer.sstream.setPosition(op + buffer.available)
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
     if n != 0: # n can be 0 if we get EOF. (in which case we shouldn't reshape unnecessarily.)
-      s.setLen(n)
+      buffer.sstream.writeData(addr s[0], n)
       buffer.sstream.setPosition(op)
       if buffer.readbufsize < BufferSize:
         buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
-      buffer.available += s.len
+      buffer.available += n
       if buffer.ishtml:
         res.bytes = buffer.available
       else:
