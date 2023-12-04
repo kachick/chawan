@@ -1,0 +1,69 @@
+From 6de52d878ae8ee06e4a59cbd2e77d84704c9f602 Mon Sep 17 00:00:00 2001
+From: bellard <6490144+bellard@users.noreply.github.com>
+Date: Fri, 1 Dec 2023 17:56:22 +0100
+Subject: [PATCH] bf_set_ui() fix (github issue #133)
+
+---
+ libbf.c | 32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/libbf.c b/libbf.c
+index fe1628e..c48fdbb 100644
+--- a/libbf.c
++++ b/libbf.c
+@@ -164,6 +164,21 @@ static inline slimb_t sat_add(slimb_t a, slimb_t b)
+     return r;
+ }
+ 
++static inline __maybe_unused limb_t shrd(limb_t low, limb_t high, long shift)
++{
++    if (shift != 0)
++        low = (low >> shift) | (high << (LIMB_BITS - shift));
++    return low;
++}
++
++static inline __maybe_unused limb_t shld(limb_t a1, limb_t a0, long shift)
++{
++    if (shift != 0)
++        return (a1 << shift) | (a0 >> (LIMB_BITS - shift));
++    else
++        return a1;
++}
++
+ #define malloc(s) malloc_is_forbidden(s)
+ #define free(p) free_is_forbidden(p)
+ #define realloc(p, s) realloc_is_forbidden(p, s)
+@@ -236,7 +251,7 @@ int bf_set_ui(bf_t *r, uint64_t a)
+         a1 = a >> 32;
+         shift = clz(a1);
+         r->tab[0] = a0 << shift;
+-        r->tab[1] = (a1 << shift) | (a0 >> (LIMB_BITS - shift));
++        r->tab[1] = shld(a1, a0, shift);
+         r->expn = 2 * LIMB_BITS - shift;
+     }
+ #endif
+@@ -5392,21 +5407,6 @@ int bf_acos(bf_t *r, const bf_t *a, limb_t prec, bf_flags_t flags)
+ 
+ #endif /* LIMB_BITS != 64 */
+ 
+-static inline __maybe_unused limb_t shrd(limb_t low, limb_t high, long shift)
+-{
+-    if (shift != 0)
+-        low = (low >> shift) | (high << (LIMB_BITS - shift));
+-    return low;
+-}
+-
+-static inline __maybe_unused limb_t shld(limb_t a1, limb_t a0, long shift)
+-{
+-    if (shift != 0)
+-        return (a1 << shift) | (a0 >> (LIMB_BITS - shift));
+-    else
+-        return a1;
+-}
+-
+ #if LIMB_DIGITS == 19
+ 
+ /* WARNING: hardcoded for b = 1e19. It is assumed that:
+-- 
+2.43.0
+
