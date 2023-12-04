@@ -261,6 +261,8 @@ struct JSRuntime {
     /* list of JSGCObjectHeader.link. Used during JS_FreeValueRT() */
     struct list_head gc_zero_ref_count_list; 
     struct list_head tmp_obj_list; /* used during GC */
+    /* used during GC (for keeping track of objects with a can_destroy hook) */
+    struct list_head tmp_hook_obj_list;
     JSGCPhaseEnum gc_phase : 8;
     size_t malloc_gc_threshold;
 #ifdef DUMP_LEAKS
@@ -5503,18 +5505,27 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
     }
 }
 
+/* Check if object has a can_destroy hook */
+static int gc_has_can_destroy_hook(JSRuntime *rt, JSGCObjectHeader *p)
+{
+    JSObject *obj;
+
+    if (p->gc_obj_type != JS_GC_OBJ_TYPE_JS_OBJECT)
+        return 0;
+    obj = (JSObject *)p;
+    return rt->class_array[obj->class_id].can_destroy != NULL;
+}
+
 /* User-defined override for object destruction. */
 static int gc_can_destroy(JSRuntime *rt, JSGCObjectHeader *p)
 {
     JSClassCanDestroy *can_destroy;
     JSObject *obj;
 
-    if (p->gc_obj_type != JS_GC_OBJ_TYPE_JS_OBJECT)
+    if (!gc_has_can_destroy_hook(rt, p))
         return 1;
     obj = (JSObject *)p;
     can_destroy = rt->class_array[obj->class_id].can_destroy;
-    if (!can_destroy)
-        return 1;
     if (!((*can_destroy)(rt, JS_MKPTR(JS_TAG_OBJECT, obj))))
         return 0;
     return 1;
@@ -5752,7 +5763,10 @@ static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
     p->ref_count--;
     if (p->ref_count == 0 && p->mark == 1) {
         list_del(&p->link);
-        list_add_tail(&p->link, &rt->tmp_obj_list);
+        if (gc_has_can_destroy_hook(rt, p))
+            list_add_tail(&p->link, &rt->tmp_hook_obj_list);
+        else
+            list_add_tail(&p->link, &rt->tmp_obj_list);
     }
 }
 
@@ -5762,6 +5776,7 @@ static void gc_decref(JSRuntime *rt)
     JSGCObjectHeader *p;
     
     init_list_head(&rt->tmp_obj_list);
+    init_list_head(&rt->tmp_hook_obj_list);
 
     /* decrement the refcount of all the children of all the GC
        objects and move the GC objects with zero refcount to
@@ -5773,7 +5788,10 @@ static void gc_decref(JSRuntime *rt)
         p->mark = 1;
         if (p->ref_count == 0) {
             list_del(&p->link);
-            list_add_tail(&p->link, &rt->tmp_obj_list);
+            if (gc_has_can_destroy_hook(rt, p))
+                list_add_tail(&p->link, &rt->tmp_hook_obj_list);
+            else
+                list_add_tail(&p->link, &rt->tmp_obj_list);
         }
     }
 }
@@ -5797,7 +5815,7 @@ static void gc_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
 
 static void gc_scan(JSRuntime *rt)
 {
-    struct list_head *el, *gc_head, *tmp_head, *gc_tail;
+    struct list_head *el, *el1, *gc_tail;
     JSGCObjectHeader *p;
     int redo;
 
@@ -5809,31 +5827,34 @@ static void gc_scan(JSRuntime *rt)
         mark_children(rt, p, gc_scan_incref_child);
     }
 
-    /* keep objects that cannot be destroyed yet */
-    /* TODO this is rather inefficient */
-    gc_head = &rt->gc_obj_list;
-    gc_tail = gc_head->prev;
-    tmp_head = &rt->tmp_obj_list;
+    /* restore objects whose can_destroy hook returns 0 and their children. */
     do {
+        /* save previous tail position of gc_obj_list */
+        gc_tail = rt->gc_obj_list.prev;
         redo = 0;
-        for (el = tmp_head->next; el != tmp_head;) {
+        list_for_each_safe(el, el1, &rt->tmp_hook_obj_list) {
             p = list_entry(el, JSGCObjectHeader, link);
-            el = el->next;
-            if (!gc_can_destroy(rt, p)) {
-                gc_scan_incref_child(rt, p);
+            list_del(&p->link);
+            if (gc_can_destroy(rt, p)) {
+                /* object can be destroyed; move to tmp_obj_list. */
+                list_add_tail(&p->link, &rt->tmp_obj_list);
+            } else {
+                /* hook says we cannot destroy yet; move back to gc_obj_list. */
+                p->ref_count++;
+                list_add_tail(&p->link, &rt->gc_obj_list);
                 redo = 1;
                 break;
             }
         }
-
-        /* keep children of newly appended objects */
-        for (el = gc_tail->next; el != gc_head; el = el->next) {
+        /* if redo, restore object and all its descendants.
+           Note: we must do this outside the previous loop, because el/el1
+           might get moved into gc_obj_list here. */
+        for (el = gc_tail->next; el != &rt->gc_obj_list; el = el->next) {
             p = list_entry(el, JSGCObjectHeader, link);
             assert(p->ref_count > 0);
             p->mark = 0; /* reset the mark for the next GC call */
             mark_children(rt, p, gc_scan_incref_child);
         }
-        gc_tail = gc_head->prev;
     } while(redo);
 
     /* restore the refcount of the objects to be deleted. */
