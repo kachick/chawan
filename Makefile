@@ -24,8 +24,7 @@ $(OUTDIR)/$(TARGET)/bin/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/*
 		src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
-CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\" \
-	-DCONFIG_BIGNUM=1
+CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
 $(QJSOBJ)/%.o: lib/quickjs/%.c
 	@mkdir -p "$(QJSOBJ)"
