@@ -38253,35 +38253,6 @@ exception:
     return JS_EXCEPTION;
 }
 
-static JSValue js_array_at(JSContext *ctx, JSValueConst this_val, int argc,
-                           JSValueConst *argv)
-{
-    JSValue obj, val;
-    int64_t len, k;
-
-    obj = JS_ToObject(ctx, this_val);
-    if (JS_IsException(obj))
-        return JS_EXCEPTION;
-
-    if (js_get_length64(ctx, &len, obj))
-        goto exception;
-
-    if (JS_ToInt64Clamp(ctx, &k, argv[0], -1, len, len))
-        goto exception;
-
-    if (k >= len || k < 0) {
-        JS_FreeValue(ctx, obj);
-        return JS_UNDEFINED;
-    }
-
-    val = JS_GetPropertyInt64(ctx, obj, k);
-    JS_FreeValue(ctx, obj);
-    return val;
-exception:
-    JS_FreeValue(ctx, obj);
-    return JS_EXCEPTION;
-}
-
 #define special_every    0
 #define special_some     1
 #define special_forEach  2
@@ -39578,7 +39549,6 @@ static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
 
 static const JSCFunctionListEntry js_array_proto_funcs[] = {
     JS_CFUNC_DEF("concat", 1, js_array_concat ),
-    JS_CFUNC_DEF("at", 1, js_array_at ),
     JS_CFUNC_MAGIC_DEF("every", 1, js_array_every, special_every ),
     JS_CFUNC_MAGIC_DEF("some", 1, js_array_every, special_some ),
     JS_CFUNC_MAGIC_DEF("forEach", 1, js_array_every, special_forEach ),
