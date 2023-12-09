@@ -850,6 +850,20 @@ proc cursorPrevLink*(container: Container) {.jsfunc.} =
       if res.x > -1 and res.y != -1:
         container.setCursorXYCenter(res.x, res.y))
 
+proc cursorNextParagraph*(container: Container, n = 1) {.jsfunc.} =
+  container.iface
+    .findNextParagraph(container.cursory, n)
+    .then(proc(res: int) =
+      container.setCursorY(res)
+    )
+
+proc cursorPrevParagraph*(container: Container, n = 1) {.jsfunc.} =
+  container.iface
+    .findPrevParagraph(container.cursory, n)
+    .then(proc(res: int) =
+      container.setCursorY(res)
+    )
+
 proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
   container.iface
     .findNthLink(n)

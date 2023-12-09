@@ -68,7 +68,8 @@ type
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
     FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_SOURCE, GET_LINES, UPDATE_HOVER,
     PASS_FD, CONNECT, CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT,
-    REDIRECT_TO_FD, READ_FROM_FD, SET_CONTENT_TYPE, CLONE
+    REDIRECT_TO_FD, READ_FROM_FD, SET_CONTENT_TYPE, CLONE, FIND_PREV_PARAGRAPH,
+    FIND_NEXT_PARAGRAPH
 
   # LOADING_PAGE: istream open
   # LOADING_RESOURCES: istream closed, resources open
@@ -476,6 +477,24 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
         return (format.pos, y)
       inc i
   return (-1, -1)
+
+proc findPrevParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =
+  var y = cursory
+  for i in 0 ..< n:
+    while y >= 0 and buffer.lines[y].str.onlyWhitespace():
+      dec y
+    while y >= 0 and not buffer.lines[y].str.onlyWhitespace():
+      dec y
+  return y
+
+proc findNextParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =
+  var y = cursory
+  for i in 0 ..< n:
+    while y < buffer.lines.len and buffer.lines[y].str.onlyWhitespace():
+      inc y
+    while y < buffer.lines.len and not buffer.lines[y].str.onlyWhitespace():
+      inc y
+  return y
 
 proc findNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
   if i == 0:

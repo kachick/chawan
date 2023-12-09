@@ -732,6 +732,16 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
+<td>`pager.cursorPrevParagraph(n = 1)`</td>
+<td>Move the cursor to the beginning of the nth next paragraph.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorNextParagraph(n = 1)`</td>
+<td>Move the cursor to the end of the nth previous paragraph.</td>
+</tr>
+
+<tr>
 <td>`pager.cursorNthLink(n = 1)`</td>
 <td>Move the cursor to the nth link of the document.</td>
 </tr>
@@ -1025,6 +1035,14 @@ will be fixed in the future.)</td>
 <td>Like extern(), but redirect the command's stdout string into the
 result. null is returned if the command wasn't executed successfully, or if
 the command returned a non-zero exit value.</td>
+</tr>
+
+<tr>
+<td>`pager.externInto(cmd, ins)`
+</td>
+<td>Like extern(), but redirect `ins` into the command's standard input stream.
+`true` is returned if the command exits successfully, otherwise the return
+value is `false`.</td>
 </tr>
 
 </table>
