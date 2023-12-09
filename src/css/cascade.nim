@@ -498,8 +498,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
     let styledParent = frame.styledParent
     let valid = frame.cachedChild != nil and frame.cachedChild.isValid()
     let styledChild = if valid:
-      let styledChild = frame.applyRulesFrameValid()
-      styledChild
+      frame.applyRulesFrameValid()
     else:
       # From here on, computed values of this node's children are invalid
       # because of property inheritance.
