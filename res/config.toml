@@ -56,6 +56,7 @@ no-format-mode = ["overline"]
 emulate-overline = true
 alt-screen = "auto"
 highlight-color = "cyan"
+highlight-marks = true
 double-width-ambiguous = false
 minimum-contrast = 100
 force-clear = false
@@ -105,6 +106,9 @@ C-b = 'n => pager.pageUp(n)'
 '>' = 'n => pager.pageRight(n)'
 C-e = 'n => pager.scrollDown(n)'
 C-y = 'n => pager.scrollUp(n)'
+m = 'async () => pager.setMark(await pager.askChar("m"))'
+'`' = 'async () => pager.gotoMark(await pager.askChar("`"))'
+"'" = "async () => pager.gotoMarkY(await pager.askChar(\"'\"))"
 'zh'= 'n => pager.scrollLeft(n)'
 'zl' = 'n => pager.scrollRight(n)'
 J = 'n => pager.scrollDown(n)'

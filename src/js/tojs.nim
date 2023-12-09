@@ -28,6 +28,7 @@ proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue
 proc toJS*(ctx: JSContext, opt: Option): JSValue
 proc toJS*[T, E](ctx: JSContext, opt: Result[T, E]): JSValue
 proc toJS*(ctx: JSContext, s: seq): JSValue
+proc toJS*(ctx: JSContext, t: tuple): JSValue
 proc toJS*(ctx: JSContext, e: enum): JSValue
 proc toJS*(ctx: JSContext, j: JSValue): JSValue
 proc toJS*[T](ctx: JSContext, promise: Promise[T]): JSValue
@@ -162,6 +163,20 @@ proc toJS(ctx: JSContext, s: seq): JSValue =
       if JS_DefinePropertyValueInt64(ctx, a, int64(i), j,
           JS_PROP_C_W_E or JS_PROP_THROW) < 0:
         return JS_EXCEPTION
+  return a
+
+proc toJS(ctx: JSContext, t: tuple): JSValue =
+  let a = JS_NewArray(ctx)
+  if not JS_IsException(a):
+    var i = 0
+    for f in t.fields:
+      let j = toJS(ctx, f)
+      if JS_IsException(j):
+        return j
+      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j,
+          JS_PROP_C_W_E or JS_PROP_THROW) < 0:
+        return JS_EXCEPTION
+      inc i
   return a
 
 proc toJSP0(ctx: JSContext, p, tp: pointer, ctor: JSValue,

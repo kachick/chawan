@@ -59,7 +59,35 @@ C-l = 'pager.redraw()'
 R = 'pager.reload()'
 #TODO save, save source, view in editor
 #TODO buffer selection mode
-#TODO mark
+'C-@' = '''
+() => {
+	/* id is always the current position; this way we can clear by
+	   setting a mark twice at the same position. */
+	const id = pager.buffer.cursorx + " " + pager.buffer.cursory;
+	if (!pager.getMarkPos(id))
+		pager.setMark(id);
+	else
+		pager.clearMark(id);
+}
+'''
+M-p = '''
+() => {
+	const next = pager.findPrevMark();
+	if (next)
+		pager.gotoMark(next);
+	else
+		pager.alert("No mark exists before here");
+}
+'''
+M-n = '''
+() => {
+	const next = pager.findNextMark();
+	if (next)
+		pager.gotoMark(next);
+	else
+		pager.alert("No mark exists after here");
+}
+'''
 # Search
 '/' = 'pager.searchForward()'
 C-s = 'pager.searchForward()'

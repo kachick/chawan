@@ -7,6 +7,7 @@ import streams
 import strutils
 import tables
 import terminal
+import unicode
 
 when defined(posix):
   import posix
@@ -235,6 +236,7 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
 proc input(client: Client): EmptyPromise =
   var p: EmptyPromise = nil
   client.pager.term.restoreStdin()
+  var buf: string
   while true:
     let c = client.readChar()
     if client.pager.askpromise != nil:
@@ -242,6 +244,11 @@ proc input(client: Client): EmptyPromise =
         client.pager.fulfillAsk(true)
       elif c == 'n':
         client.pager.fulfillAsk(false)
+    elif client.pager.askcharpromise != nil:
+      buf &= c
+      if buf.validateUtf8() != -1:
+        continue
+      client.pager.fulfillCharAsk(buf)
     elif client.pager.lineedit.isSome:
       client.pager.inputBuffer &= c
       let edit = client.pager.lineedit.get

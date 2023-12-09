@@ -52,6 +52,7 @@ type
     alerts: seq[string]
     askcursor: int
     askpromise*: Promise[bool]
+    askcharpromise*: Promise[string]
     askprompt: string
     commandMode {.jsget.}: bool
     config: Config
@@ -145,18 +146,22 @@ proc getter(ctx: JSContext, pager: Pager, s: string): Option[JSValue]
 proc searchNext(pager: Pager, n = 1) {.jsfunc.} =
   if pager.regex.isSome:
     let wrap = pager.config.search.wrap
+    pager.container.markPos0()
     if not pager.reverseSearch:
       pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
     else:
       pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
+    pager.container.markPos()
 
 proc searchPrev(pager: Pager, n = 1) {.jsfunc.} =
   if pager.regex.isSome:
     let wrap = pager.config.search.wrap
+    pager.container.markPos0()
     if not pager.reverseSearch:
       pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
     else:
       pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
+    pager.container.markPos()
 
 proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
@@ -182,11 +187,13 @@ proc searchBackward(pager: Pager) {.jsfunc.} =
 proc isearchForward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.isearchpromise = newResolvedPromise()
+  pager.container.markPos0()
   pager.setLineEdit("/", ISEARCH_F)
 
 proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.isearchpromise = newResolvedPromise()
+  pager.container.markPos0()
   pager.setLineEdit("?", ISEARCH_B)
 
 proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
@@ -240,8 +247,10 @@ proc buffer(pager: Pager): Container {.jsfget, inline.} = pager.container
 
 proc refreshDisplay(pager: Pager, container = pager.container) =
   pager.clearDisplay()
-  container.drawLines(pager.display,
-    cellColor(pager.config.display.highlight_color))
+  let hlcolor = cellColor(pager.config.display.highlight_color)
+  container.drawLines(pager.display, hlcolor)
+  if pager.config.display.highlight_marks:
+    container.highlightMarks(pager.display, hlcolor)
 
 # Note: this function does not work correctly if start < i of last written char
 proc writeStatusMessage(pager: Pager, str: string, format = newFormat(),
@@ -355,7 +364,7 @@ proc draw*(pager: Pager) =
   if container.select.open and container.select.redraw:
     container.select.drawSelect(pager.display)
     pager.term.writeGrid(pager.display)
-  if pager.askpromise != nil:
+  if pager.askpromise != nil or pager.askcharpromise != nil:
     discard
   elif pager.lineedit.isSome:
     if pager.lineedit.get.invalid:
@@ -377,22 +386,32 @@ proc draw*(pager: Pager) =
   pager.term.flush()
   pager.redraw = false
 
-proc writeAskPrompt(pager: Pager) =
-  let yn = " (y/n)"
-  let maxwidth = pager.statusgrid.width - yn.len
+proc writeAskPrompt(pager: Pager, s = "") =
+  let maxwidth = pager.statusgrid.width - s.len
   let i = pager.writeStatusMessage(pager.askprompt, maxwidth = maxwidth)
-  pager.askcursor = pager.writeStatusMessage(yn, start = i)
+  pager.askcursor = pager.writeStatusMessage(s, start = i)
   pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
 
 proc ask(pager: Pager, prompt: string): Promise[bool] {.jsfunc.} =
   pager.askprompt = prompt
-  pager.writeAskPrompt()
+  pager.writeAskPrompt(" (y/n)")
   pager.askpromise = Promise[bool]()
   return pager.askpromise
+
+proc askChar(pager: Pager, prompt: string): Promise[string] {.jsfunc.} =
+  pager.askprompt = prompt
+  pager.writeAskPrompt()
+  pager.askcharpromise = Promise[string]()
+  return pager.askcharpromise
 
 proc fulfillAsk*(pager: Pager, y: bool) =
   pager.askpromise.resolve(y)
   pager.askpromise = nil
+  pager.askprompt = ""
+
+proc fulfillCharAsk*(pager: Pager, s: string) =
+  pager.askcharpromise.resolve(s)
+  pager.askcharpromise = nil
   pager.askprompt = ""
 
 proc registerContainer*(pager: Pager, container: Container) =
@@ -787,6 +806,7 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
     of FINISH:
       pager.regex = pager.checkRegex(pager.iregex)
       pager.reverseSearch = linemode == ISEARCH_B
+      pager.container.markPos()
       pager.container.clearSearchHighlights()
       pager.container.sendCursorPosition()
       pager.redraw = true

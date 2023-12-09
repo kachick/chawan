@@ -77,6 +77,10 @@ type
     x1, y1: int
     x2, y2: int
 
+  PagePos = tuple
+    x: int
+    y: int
+
   Container* = ref object
     parent* {.jsget.}: Container
     children* {.jsget.}: seq[Container]
@@ -111,6 +115,9 @@ type
     canreinterpret*: bool
     cloned: bool
     currentSelection {.jsget.}: Highlight
+    tmpJumpMark: PagePos
+    jumpMark: PagePos
+    marks: Table[string, PagePos]
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -206,10 +213,18 @@ iterator ilines*(container: Container, slice: Slice[int]): SimpleFlexibleLine {.
   for y in slice:
     yield container.getLine(y)
 
-func cursorx*(container: Container): int {.inline.} = container.pos.cursorx
-func cursory*(container: Container): int {.inline.} = container.pos.cursory
-func fromx*(container: Container): int {.inline.} = container.pos.fromx
-func fromy*(container: Container): int {.inline.} = container.pos.fromy
+func cursorx*(container: Container): int {.jsfget.} =
+  container.pos.cursorx
+
+func cursory*(container: Container): int {.jsfget.} =
+  container.pos.cursory
+
+func fromx*(container: Container): int {.jsfget.} =
+  container.pos.fromx
+
+func fromy*(container: Container): int {.jsfget.} =
+  container.pos.fromy
+
 func xend(container: Container): int {.inline.} = container.pos.xend
 func lastVisibleLine(container: Container): int = min(container.fromy + container.height, container.numLines) - 1
 
@@ -588,6 +603,13 @@ proc previousPageBegin(container: Container, n = 0) {.jsfunc.} =
 proc centerColumn(container: Container) {.jsfunc.} =
   container.setFromX(container.cursorx - container.width div 2)
 
+proc setCursorYCenter(container: Container, y: int, refresh = true)
+    {.jsfunc.} =
+  let fy = container.fromy
+  container.setCursorY(y, refresh)
+  if fy != container.fromy:
+    container.centerLine()
+
 proc setCursorXYCenter(container: Container, x, y: int, refresh = true) {.jsfunc.} =
   let fy = container.fromy
   let fx = container.fromx
@@ -724,28 +746,46 @@ proc halfPageLeft(container: Container, n = 1) {.jsfunc.} =
 proc halfPageRight(container: Container, n = 1) {.jsfunc.} =
   container.setFromX(container.fromx + (container.width div 2 - 1) * n)
 
+proc markPos0*(container: Container) =
+  container.tmpJumpMark = (container.cursorx, container.cursory)
+
+proc markPos*(container: Container) =
+  let pos = container.tmpJumpMark
+  if container.cursorx != pos.x or container.cursory != pos.y:
+    container.jumpMark = pos
+
 proc cursorFirstLine(container: Container) {.jsfunc.} =
   if container.select.open:
     container.select.cursorFirstLine()
   else:
+    container.markPos0()
     container.setCursorY(0)
+    container.markPos()
 
 proc cursorLastLine*(container: Container) {.jsfunc.} =
   if container.select.open:
     container.select.cursorLastLine()
   else:
+    container.markPos0()
     container.setCursorY(container.numLines - 1)
+    container.markPos()
 
 proc cursorTop(container: Container, i = 1) {.jsfunc.} =
+  container.markPos0()
   let i = clamp(i - 1, 0, container.height - 1)
   container.setCursorY(container.fromy + i)
+  container.markPos()
 
 proc cursorMiddle(container: Container) {.jsfunc.} =
+  container.markPos0()
   container.setCursorY(container.fromy + (container.height - 2) div 2)
+  container.markPos()
 
 proc cursorBottom(container: Container, i = 1) {.jsfunc.} =
+  container.markPos0()
   let i = clamp(i, 0, container.height)
   container.setCursorY(container.fromy + container.height - i)
+  container.markPos()
 
 proc cursorLeftEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx)
@@ -810,11 +850,15 @@ proc gotoLine*[T: string|int](container: Container, s: T) =
     else:
       let i = parseUInt32(s)
       if i.isSome and i.get > 0:
+        container.markPos0()
         container.setCursorY(int(i.get - 1))
+        container.markPos()
       else:
         container.alert("First line is #1") # :)
   else:
+    container.markPos0()
     container.setCursorY(s - 1)
+    container.markPos()
 
 proc pushCursorPos*(container: Container) =
   if container.select.open:
@@ -837,32 +881,117 @@ proc copyCursorPos*(container, c2: Container) =
   container.hasstart = true
 
 proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
+  container.markPos0()
   container.iface
     .findNextLink(container.cursorx, container.cursory, n)
     .then(proc(res: tuple[x, y: int]) =
       if res.x > -1 and res.y != -1:
-        container.setCursorXYCenter(res.x, res.y))
+        container.setCursorXYCenter(res.x, res.y)
+        container.markPos()
+    )
 
 proc cursorPrevLink*(container: Container, n = 1) {.jsfunc.} =
+  container.markPos0()
   container.iface
     .findPrevLink(container.cursorx, container.cursory, n)
     .then(proc(res: tuple[x, y: int]) =
       if res.x > -1 and res.y != -1:
-        container.setCursorXYCenter(res.x, res.y))
+        container.setCursorXYCenter(res.x, res.y)
+        container.markPos()
+    )
 
 proc cursorNextParagraph*(container: Container, n = 1) {.jsfunc.} =
+  container.markPos0()
   container.iface
     .findNextParagraph(container.cursory, n)
     .then(proc(res: int) =
       container.setCursorY(res)
+      container.markPos()
     )
 
 proc cursorPrevParagraph*(container: Container, n = 1) {.jsfunc.} =
+  container.markPos0()
   container.iface
     .findPrevParagraph(container.cursory, n)
     .then(proc(res: int) =
       container.setCursorY(res)
+      container.markPos()
     )
+
+proc setMark*(container: Container, id: string, x = none(int),
+    y = none(int)): bool {.jsfunc.} =
+  let x = x.get(container.cursorx)
+  let y = y.get(container.cursory)
+  container.marks.withValue(id, p):
+    p[] = (x, y)
+    container.triggerEvent(UPDATE)
+    return false
+  do:
+    container.marks[id] = (x, y)
+    container.triggerEvent(UPDATE)
+    return true
+
+proc clearMark*(container: Container, id: string): bool {.jsfunc.} =
+  result = id in container.marks
+  container.marks.del(id)
+  container.triggerEvent(UPDATE)
+
+proc getMarkPos(container: Container, id: string): Opt[PagePos] {.jsfunc.} =
+  if id == "`" or id == "'":
+    return ok(container.jumpMark)
+  container.marks.withValue(id, p):
+    return ok(p[])
+  return err()
+
+proc gotoMark*(container: Container, id: string): bool {.jsfunc.} =
+  container.markPos0()
+  let mark = container.getMarkPos(id)
+  if mark.isSome:
+    let mark = mark.get
+    container.setCursorXYCenter(mark.x, mark.y)
+    container.markPos()
+    return true
+  return false
+
+proc gotoMarkY*(container: Container, id: string): bool {.jsfunc.} =
+  container.markPos0()
+  let mark = container.getMarkPos(id)
+  if mark.isSome:
+    let mark = mark.get
+    container.setCursorXYCenter(mark.x, mark.y)
+    container.markPos()
+    return true
+  return false
+
+proc findNextMark*(container: Container, x = none(int), y = none(int)):
+    Option[string] {.jsfunc.} =
+  #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
+  let x = x.get(container.cursorx)
+  let y = y.get(container.cursory)
+  var best: PagePos = (high(int), high(int))
+  var bestid = none(string)
+  for id, mark in container.marks:
+    if mark.y < y or mark.y == y and mark.x <= x:
+      continue
+    if mark.y < best.y or mark.y == best.y and mark.x < best.x:
+      best = mark
+      bestid = some(id)
+  return bestid
+
+proc findPrevMark*(container: Container, x = none(int), y = none(int)):
+    Option[string] {.jsfunc.} =
+  #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
+  let x = x.get(container.cursorx)
+  let y = y.get(container.cursory)
+  var best: PagePos = (-1, -1)
+  var bestid = none(string)
+  for id, mark in container.marks:
+    if mark.y > y or mark.y == y and mark.x >= x:
+      continue
+    if mark.y > best.y or mark.y == best.y and mark.x > best.x:
+      best = mark
+      bestid = some(id)
+  return bestid
 
 proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
   container.iface
@@ -926,10 +1055,13 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool,
       container.select.cursorPrevMatch(regex, wrap)
     return newResolvedPromise()
   else:
+    container.markPos0()
     return container.iface
       .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
       .then(proc(res: BufferMatch) =
-        container.onMatch(res, refresh))
+        container.onMatch(res, refresh)
+        container.markPos()
+      )
 
 type
   SelectionOptions = object of JSDict
@@ -1313,6 +1445,17 @@ proc drawLines*(container: Container, display: var FixedGrid,
         hlformat.bgcolor = hlcolor
         display[dls + i - startw].format = hlformat
     inc by
+
+proc highlightMarks*(container: Container, display: var FixedGrid,
+    hlcolor: CellColor) =
+  for mark in container.marks.values:
+    if mark.x in container.fromx ..< container.fromx + display.width and
+        mark.y in container.fromy ..< container.fromy + display.height:
+      let x = mark.x - container.fromx
+      let y = mark.y - container.fromy
+      var hlformat = display[y * display.width + x].format
+      hlformat.bgcolor = hlcolor
+      display[y * display.width + x].format = hlformat
 
 proc handleEvent*(container: Container) =
   container.handleCommand()

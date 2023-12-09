@@ -110,6 +110,7 @@ type
     emulate_overline* {.jsgetset.}: bool
     alt_screen* {.jsgetset.}: Opt[bool]
     highlight_color* {.jsgetset.}: RGBAColor
+    highlight_marks* {.jsgetset.}: bool
     double_width_ambiguous* {.jsgetset.}: bool
     minimum_contrast* {.jsgetset.}: int32
     force_clear* {.jsgetset.}: bool

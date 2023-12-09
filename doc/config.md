@@ -374,6 +374,12 @@ accepted.</td>
 </tr>
 
 <tr>
+<td>highlight-marks</td>
+<td>boolean</td>
+<td>Enable/disable highlighting of marks.</td>
+</tr>
+
+<tr>
 <td>double-width-ambiguous</td>
 <td>boolean</td>
 <td>Assume the terminal displays characters in the East Asian Ambiguous
@@ -1014,6 +1020,56 @@ Can be used to implement an exit prompt like this:
 q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
 ```
 </td>
+</tr>
+
+<tr>
+<td>`pager.askChar(prompt)`</td>
+<td>Ask the user for any character.<br>
+Like `pager.ask`, but the return value is a character.</td>
+</tr>
+
+<tr>
+<td>`pager.setMark(id, x = pager.cursorx, y = pager.cursory)`</td>
+<td>Set a mark at (x, y) using the name `id`.<br>
+Returns true if no other mark exists with `id`. If one already exists,
+it will be overridden and the function returns false.</td>
+</tr>
+
+<tr>
+<td>`pager.clearMark(id)`</td>
+<td>Clear the mark with the name `id`. Returns true if the mark existed,
+false otherwise.</td>
+</tr>
+
+<tr>
+<td>`pager.gotoMark(id)`</td>
+<td>If the mark `id` exists, jump to its position and return true. Otherwise,
+do nothing and return false.</td>
+</tr>
+
+<tr>
+<td>`pager.gotoMarkY(id)`</td>
+<td>If the mark `id` exists, jump to its Y position and return true. Otherwise,
+do nothing and return false.</td>
+</tr>
+
+<tr>
+<td>`pager.getMarkPos(id)`</td>
+<td>If the mark `id` exists, return its position as an array where the
+first element is the X position and the second element is the Y position.
+If the mark does not exist, return null.</td>
+</tr>
+
+<tr>
+<td>`pager.findNextMark(x = pager.cursorx, y = pager.cursory)`</td>
+<td>Find the next mark after `x`, `y`, if any; and return its id (or null
+if none were found.)</td>
+</tr>
+
+<tr>
+<td>`pager.findPrevMark(x = pager.cursorx, y = pager.cursory)`</td>
+<td>Find the previous mark before `x`, `y`, if any; and return its id (or null
+if none were found.)</td>
 </tr>
 
 <tr>
