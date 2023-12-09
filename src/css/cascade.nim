@@ -20,7 +20,7 @@ import chame/tags
 type
   DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]
 
-  DeclarationListMap* = object
+  DeclarationListMap* = ref object
     ua: DeclarationList # user agent
     user: DeclarationList
     author: seq[DeclarationList]
@@ -303,171 +303,210 @@ proc applyStyle(parent, styledNode: StyledNode, map: DeclarationListMap) =
     rootProperties()
   styledNode.applyDeclarations(parentComputed, map)
 
-type CascadeLevel = tuple[
-  styledParent: StyledNode,
-  child: Node,
-  pseudo: PseudoElem,
+type CascadeFrame = object
+  styledParent: StyledNode
+  child: Node
+  pseudo: PseudoElem
   cachedChild: StyledNode
-]
+  parentDeclMap: DeclarationListMap
+
+proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
+  var author: seq[CSSStylesheet]
+  for sheet in document.sheets():
+    author.add(sheet.applyMediaQuery(document.window))
+  return author
+
+proc applyRulesFrameValid(frame: CascadeFrame): StyledNode =
+  let styledParent = frame.styledParent
+  let cachedChild = frame.cachedChild
+  if cachedChild.t == STYLED_ELEMENT:
+    if cachedChild.pseudo != PSEUDO_NONE:
+      # Pseudo elements can't have invalid children.
+      return cachedChild
+    # We can't just copy cachedChild.children from the previous pass,
+    # as any child could be invalid.
+    let element = Element(cachedChild.node)
+    return styledParent.newStyledElement(element, cachedChild.computed,
+      cachedChild.depends)
+  # Text
+  return cachedChild
+
+proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
+    author: seq[CSSStylesheet], declmap: var DeclarationListMap): StyledNode =
+  var styledChild: StyledNode
+  let pseudo = frame.pseudo
+  let styledParent = frame.styledParent
+  let child = frame.child
+  if frame.pseudo != PSEUDO_NONE:
+    case pseudo
+    of PSEUDO_BEFORE, PSEUDO_AFTER:
+      let declmap = frame.parentDeclMap
+      let styledPseudo = pseudo.applyDeclarations(styledParent, declmap)
+      if styledPseudo != nil:
+        let contents = styledPseudo.computed{"content"}
+        for content in contents:
+          styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
+        styledChild = styledPseudo
+    of PSEUDO_INPUT_TEXT:
+      let content = HTMLInputElement(styledParent.node).inputString()
+      if content.len > 0:
+        let styledText = styledParent.newStyledText(content)
+        # Note: some pseudo-elements (like input text) generate text nodes
+        # directly, so we have to cache them like this.
+        styledText.pseudo = pseudo
+        styledChild = styledText
+    of PSEUDO_TEXTAREA_TEXT:
+      let content = HTMLTextAreaElement(styledParent.node).textAreaString()
+      if content.len > 0:
+        let styledText = styledParent.newStyledText(content)
+        styledText.pseudo = pseudo
+        styledChild = styledText
+    of PSEUDO_IMAGE:
+      let src = Element(styledParent.node).attr("src")
+      let content = CSSContent(t: CONTENT_IMAGE, s: src)
+      let styledText = styledParent.newStyledReplacement(content)
+      styledText.pseudo = pseudo
+      styledChild = styledText
+    of PSEUDO_NEWLINE:
+      let content = CSSContent(t: CONTENT_NEWLINE)
+      let styledText = styledParent.newStyledReplacement(content)
+      styledText.pseudo = pseudo
+      styledChild = styledText
+    of PSEUDO_NONE: assert false
+  else:
+    assert child != nil
+    if styledParent != nil:
+      if child.nodeType == ELEMENT_NODE:
+        styledChild = styledParent.newStyledElement(Element(child))
+        declmap = styledChild.calcRules(ua, user, author)
+        applyStyle(styledParent, styledChild, declmap)
+      elif child.nodeType == TEXT_NODE:
+        let text = Text(child)
+        styledChild = styledParent.newStyledText(text)
+    else:
+      # Root element
+      styledChild = newStyledElement(Element(child))
+      declmap = styledChild.calcRules(ua, user, author)
+      applyStyle(styledParent, styledChild, declmap)
+  return styledChild
+
+proc stackAppend(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
+    styledParent: StyledNode, child: Node, i: var int) =
+  if frame.cachedChild != nil:
+    var cached: StyledNode
+    while i >= 0:
+      let it = frame.cachedChild.children[i]
+      dec i
+      if it.node == child:
+        cached = it
+        break
+    styledStack.add(CascadeFrame(
+      styledParent: styledParent,
+      child: child,
+      pseudo: PSEUDO_NONE,
+      cachedChild: cached
+    ))
+  else:
+    styledStack.add(CascadeFrame(
+      styledParent: styledParent,
+      child: child,
+      pseudo: PSEUDO_NONE,
+      cachedChild: nil
+    ))
+
+proc stackAppend(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
+    styledParent: StyledNode, pseudo: PseudoElem, i: var int,
+    parentDeclMap: DeclarationListMap = nil) =
+  if frame.cachedChild != nil:
+    var cached: StyledNode
+    let oldi = i
+    while i >= 0:
+      let it = frame.cachedChild.children[i]
+      dec i
+      if it.pseudo == pseudo:
+        cached = it
+        break
+    # When calculating pseudo-element rules, their dependencies are added
+    # to their parent's dependency list; so invalidating a pseudo-element
+    # invalidates its parent too, which in turn automatically rebuilds
+    # the pseudo-element.
+    # In other words, we can just do this:
+    if cached != nil:
+      styledStack.add(CascadeFrame(
+        styledParent: styledParent,
+        pseudo: pseudo,
+        cachedChild: cached,
+        parentDeclMap: parentDeclMap
+      ))
+    else:
+      i = oldi # move pointer back to where we started
+  else:
+    styledStack.add(CascadeFrame(
+      styledParent: styledParent,
+      pseudo: pseudo,
+      cachedChild: nil,
+      parentDeclMap: parentDeclMap
+    ))
+
+# Append children to styledChild.
+proc appendChildren(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
+    styledChild: StyledNode, parentDeclMap: DeclarationListMap) =
+  # i points to the child currently being inspected.
+  var idx = if frame.cachedChild != nil:
+    frame.cachedChild.children.len - 1
+  else:
+    -1
+  let elem = Element(styledChild.node)
+  styledStack.stackAppend(frame, styledChild, PSEUDO_AFTER, idx, parentDeclMap)
+  if elem.tagType == TAG_TEXTAREA:
+    styledStack.stackAppend(frame, styledChild, PSEUDO_TEXTAREA_TEXT, idx)
+  elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
+    styledStack.stackAppend(frame, styledChild, PSEUDO_IMAGE, idx)
+  elif elem.tagType == TAG_BR:
+    styledStack.stackAppend(frame, styledChild, PSEUDO_NEWLINE, idx)
+  else:
+    for i in countdown(elem.childList.high, 0):
+      if elem.childList[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
+        styledStack.stackAppend(frame, styledChild, elem.childList[i], idx)
+    if elem.tagType == TAG_INPUT:
+      styledStack.stackAppend(frame, styledChild, PSEUDO_INPUT_TEXT, idx)
+  styledStack.stackAppend(frame, styledChild, PSEUDO_BEFORE, idx, parentDeclMap)
 
 # Builds a StyledNode tree, optionally based on a previously cached version.
 proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledNode): StyledNode =
   let html = document.html
   if html == nil:
     return
-
-  var author: seq[CSSStylesheet]
-  for sheet in document.sheets():
-    author.add(sheet.applyMediaQuery(document.window))
-
-  var styledStack: seq[CascadeLevel]
-  styledStack.add((nil, html, PSEUDO_NONE, cachedTree))
-
+  let author = document.getAuthorSheets()
+  var styledStack = @[CascadeFrame(
+    child: html,
+    pseudo: PSEUDO_NONE,
+    cachedChild: cachedTree
+  )]
   var root: StyledNode
-
   while styledStack.len > 0:
-    var (styledParent, child, pseudo, cachedChild) = styledStack.pop()
-
-    var styledChild: StyledNode
-    let valid = cachedChild != nil and cachedChild.isValid()
-    if valid:
-      if cachedChild.t == STYLED_ELEMENT:
-        if cachedChild.pseudo == PSEUDO_NONE:
-          # We can't just copy cachedChild.children from the previous pass, as
-          # any child could be invalid.
-          styledChild = styledParent.newStyledElement(Element(cachedChild.node), cachedChild.computed, cachedChild.depends)
-        else:
-          # Pseudo elements can't have invalid children.
-          styledChild = cachedChild
-          styledChild.parent = styledParent
-      else:
-        # Text
-        styledChild = cachedChild
-        styledChild.parent = styledParent
-      if styledParent == nil:
-        # Root element
-        root = styledChild
-      else:
-        styledParent.children.add(styledChild)
+    var frame = styledStack.pop()
+    var declmap: DeclarationListMap
+    let styledParent = frame.styledParent
+    let valid = frame.cachedChild != nil and frame.cachedChild.isValid()
+    let styledChild = if valid:
+      let styledChild = frame.applyRulesFrameValid()
+      styledChild.parent = styledParent
+      styledChild
     else:
       # From here on, computed values of this node's children are invalid
       # because of property inheritance.
-      cachedChild = nil
-      if pseudo != PSEUDO_NONE:
-        let declmap = styledParent.calcRules(ua, user, author)
-        case pseudo
-        of PSEUDO_BEFORE, PSEUDO_AFTER:
-          let styledPseudo = pseudo.applyDeclarations(styledParent, declmap)
-          if styledPseudo != nil:
-            styledParent.children.add(styledPseudo)
-            let contents = styledPseudo.computed{"content"}
-            for content in contents:
-              styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
-        of PSEUDO_INPUT_TEXT:
-          let content = HTMLInputElement(styledParent.node).inputString()
-          if content.len > 0:
-            let styledText = styledParent.newStyledText(content)
-            # Note: some pseudo-elements (like input text) generate text nodes
-            # directly, so we have to cache them like this.
-            styledText.pseudo = pseudo
-            styledParent.children.add(styledText)
-        of PSEUDO_TEXTAREA_TEXT:
-          let content = HTMLTextAreaElement(styledParent.node).textAreaString()
-          if content.len > 0:
-            let styledText = styledParent.newStyledText(content)
-            styledText.pseudo = pseudo
-            styledParent.children.add(styledText)
-        of PSEUDO_IMAGE:
-          let src = Element(styledParent.node).attr("src")
-          let content = CSSContent(t: CONTENT_IMAGE, s: src)
-          let styledText = styledParent.newStyledReplacement(content)
-          styledText.pseudo = pseudo
-          styledParent.children.add(styledText)
-        of PSEUDO_NEWLINE:
-          let content = CSSContent(t: CONTENT_NEWLINE)
-          let styledText = styledParent.newStyledReplacement(content)
-          styledText.pseudo = pseudo
-          styledParent.children.add(styledText)
-        of PSEUDO_NONE: discard
+      frame.cachedChild = nil
+      frame.applyRulesFrameInvalid(ua, user, author, declmap)
+    if styledChild != nil:
+      if styledParent != nil:
+        styledParent.children.add(styledChild)
       else:
-        assert child != nil
-        if styledParent != nil:
-          if child.nodeType == ELEMENT_NODE:
-            styledChild = styledParent.newStyledElement(Element(child))
-            styledParent.children.add(styledChild)
-            let map = styledChild.calcRules(ua, user, author)
-            applyStyle(styledParent, styledChild, map)
-          elif child.nodeType == TEXT_NODE:
-            let text = Text(child)
-            styledChild = styledParent.newStyledText(text)
-            styledParent.children.add(styledChild)
-        else:
-          # Root element
-          styledChild = newStyledElement(Element(child))
-          let declmap = styledChild.calcRules(ua, user, author)
-          applyStyle(styledParent, styledChild, declmap)
-          root = styledChild
-
-    if styledChild != nil and styledChild.t == STYLED_ELEMENT and styledChild.node != nil:
-      styledChild.applyDependValues()
-      # i points to the child currently being inspected.
-      var i = if cachedChild != nil:
-        cachedChild.children.len - 1
-      else:
-        -1
-      template stack_append(styledParent: StyledNode, child: Node) =
-        if cachedChild != nil:
-          var cached: StyledNode
-          while i >= 0:
-            let it = cachedChild.children[i]
-            dec i
-            if it.node == child:
-              cached = it
-              break
-          styledStack.add((styledParent, child, PSEUDO_NONE, cached))
-        else:
-          styledStack.add((styledParent, child, PSEUDO_NONE, nil))
-
-      template stack_append(styledParent: StyledNode, ps: PseudoElem) =
-        if cachedChild != nil:
-          var cached: StyledNode
-          let oldi = i
-          while i >= 0:
-            let it = cachedChild.children[i]
-            dec i
-            if it.pseudo == ps:
-              cached = it
-              break
-          # When calculating pseudo-element rules, their dependencies are added
-          # to their parent's dependency list; so invalidating a pseudo-element
-          # invalidates its parent too, which in turn automatically rebuilds
-          # the pseudo-element.
-          # In other words, we can just do this:
-          if cached != nil:
-            styledStack.add((styledParent, nil, ps, cached))
-          else:
-            i = oldi # move pointer back to where we started
-        else:
-          styledStack.add((styledParent, nil, ps, nil))
-
-      let elem = Element(styledChild.node)
-
-      stack_append styledChild, PSEUDO_AFTER
-
-      if elem.tagType == TAG_TEXTAREA:
-        stack_append styledChild, PSEUDO_TEXTAREA_TEXT
-      elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
-        stack_append styledChild, PSEUDO_IMAGE
-      elif elem.tagType == TAG_BR:
-        stack_append styledChild, PSEUDO_NEWLINE
-      else:
-        for i in countdown(elem.childList.high, 0):
-          if elem.childList[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
-            stack_append styledChild, elem.childList[i]
-        if elem.tagType == TAG_INPUT:
-          stack_append styledChild, PSEUDO_INPUT_TEXT
-
-      stack_append styledChild, PSEUDO_BEFORE
+        # Root element
+        root = styledChild
+      if styledChild.t == STYLED_ELEMENT and styledChild.node != nil:
+        styledChild.applyDependValues()
+        styledStack.appendChildren(frame, styledChild, declmap)
   return root
 
 proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet,
