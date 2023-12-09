@@ -319,17 +319,23 @@ proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
 proc applyRulesFrameValid(frame: CascadeFrame): StyledNode =
   let styledParent = frame.styledParent
   let cachedChild = frame.cachedChild
-  if cachedChild.t == STYLED_ELEMENT:
+  let styledChild = if cachedChild.t == STYLED_ELEMENT:
     if cachedChild.pseudo != PSEUDO_NONE:
       # Pseudo elements can't have invalid children.
-      return cachedChild
-    # We can't just copy cachedChild.children from the previous pass,
-    # as any child could be invalid.
-    let element = Element(cachedChild.node)
-    return styledParent.newStyledElement(element, cachedChild.computed,
-      cachedChild.depends)
-  # Text
-  return cachedChild
+      cachedChild
+    else:
+      # We can't just copy cachedChild.children from the previous pass,
+      # as any child could be invalid.
+      let element = Element(cachedChild.node)
+      styledParent.newStyledElement(element, cachedChild.computed,
+        cachedChild.depends)
+  else:
+    # Text
+    cachedChild
+  styledChild.parent = styledParent
+  if styledParent != nil:
+    styledParent.children.add(styledChild)
+  return styledChild
 
 proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
     author: seq[CSSStylesheet], declmap: var DeclarationListMap): StyledNode =
@@ -346,7 +352,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
         let contents = styledPseudo.computed{"content"}
         for content in contents:
           styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
-        styledChild = styledPseudo
+        styledParent.children.add(styledPseudo)
     of PSEUDO_INPUT_TEXT:
       let content = HTMLInputElement(styledParent.node).inputString()
       if content.len > 0:
@@ -354,35 +360,37 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
         # Note: some pseudo-elements (like input text) generate text nodes
         # directly, so we have to cache them like this.
         styledText.pseudo = pseudo
-        styledChild = styledText
+        styledParent.children.add(styledText)
     of PSEUDO_TEXTAREA_TEXT:
       let content = HTMLTextAreaElement(styledParent.node).textAreaString()
       if content.len > 0:
         let styledText = styledParent.newStyledText(content)
         styledText.pseudo = pseudo
-        styledChild = styledText
+        styledParent.children.add(styledText)
     of PSEUDO_IMAGE:
       let src = Element(styledParent.node).attr("src")
       let content = CSSContent(t: CONTENT_IMAGE, s: src)
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
-      styledChild = styledText
+      styledParent.children.add(styledText)
     of PSEUDO_NEWLINE:
       let content = CSSContent(t: CONTENT_NEWLINE)
       let styledText = styledParent.newStyledReplacement(content)
+      styledParent.children.add(styledText)
       styledText.pseudo = pseudo
-      styledChild = styledText
     of PSEUDO_NONE: assert false
   else:
     assert child != nil
     if styledParent != nil:
       if child.nodeType == ELEMENT_NODE:
         styledChild = styledParent.newStyledElement(Element(child))
+        styledParent.children.add(styledChild)
         declmap = styledChild.calcRules(ua, user, author)
         applyStyle(styledParent, styledChild, declmap)
       elif child.nodeType == TEXT_NODE:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
+        styledParent.children.add(styledChild)
     else:
       # Root element
       styledChild = newStyledElement(Element(child))
@@ -491,7 +499,6 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
     let valid = frame.cachedChild != nil and frame.cachedChild.isValid()
     let styledChild = if valid:
       let styledChild = frame.applyRulesFrameValid()
-      styledChild.parent = styledParent
       styledChild
     else:
       # From here on, computed values of this node's children are invalid
@@ -499,9 +506,7 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       frame.cachedChild = nil
       frame.applyRulesFrameInvalid(ua, user, author, declmap)
     if styledChild != nil:
-      if styledParent != nil:
-        styledParent.children.add(styledChild)
-      else:
+      if styledParent == nil:
         # Root element
         root = styledChild
       if styledChild.t == STYLED_ELEMENT and styledChild.node != nil:
