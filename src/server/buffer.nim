@@ -385,8 +385,10 @@ proc navigate(buffer: Buffer, url: URL) =
   #TODO how?
   stderr.write("navigate to " & $url & "\n")
 
-proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
+proc findPrevLink*(buffer: Buffer, cursorx, cursory, n: int):
+    tuple[x, y: int] {.proxy.} =
   if cursory >= buffer.lines.len: return (-1, -1)
+  var found = 0
   let line = buffer.lines[cursory]
   var i = line.findFormatN(cursorx) - 1
   var link: Element = nil
@@ -430,13 +432,19 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
         # an efficient and correct way to do this.
         break
 
+  template found_pos(x, y: int, fl: Element) =
+    inc found
+    link = fl
+    if found == n:
+      return (x, y)
+
   while i >= 0:
     let format = line.formats[i]
     let fl = format.node.getClickable()
     if fl != nil and fl != link:
       let y = cursory
       link_beginning
-      return (lx, ly)
+      found_pos lx, ly, fl
     dec i
 
   for y in countdown(cursory - 1, 0):
@@ -447,11 +455,12 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
         link_beginning
-        return (lx, ly)
+        found_pos lx, ly, fl
       dec i
   return (-1, -1)
 
-proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.proxy.} =
+proc findNextLink*(buffer: Buffer, cursorx, cursory, n: int):
+    tuple[x, y: int] {.proxy.} =
   if cursory >= buffer.lines.len: return (-1, -1)
   let line = buffer.lines[cursory]
   var i = line.findFormatN(cursorx) - 1
@@ -460,22 +469,27 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory: int): tuple[x, y: int] {.pr
     link = line.formats[i].node.getClickable()
   inc i
 
+  var found = 0
+  template found_pos(x, y: int, fl: Element) =
+    inc found
+    link = fl
+    if found == n:
+      return (x, y)
+
   while i < line.formats.len:
     let format = line.formats[i]
     let fl = format.node.getClickable()
     if fl != nil and fl != link:
-      return (format.pos, cursory)
+      found_pos format.pos, cursory, fl
     inc i
 
   for y in (cursory + 1)..(buffer.lines.len - 1):
     let line = buffer.lines[y]
-    i = 0
-    while i < line.formats.len:
+    for i in 0 ..< line.formats.len:
       let format = line.formats[i]
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
-        return (format.pos, y)
-      inc i
+        found_pos format.pos, y, fl
   return (-1, -1)
 
 proc findPrevParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =

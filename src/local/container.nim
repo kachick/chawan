@@ -836,16 +836,16 @@ proc copyCursorPos*(container, c2: Container) =
   container.startpos = some(c2.pos)
   container.hasstart = true
 
-proc cursorNextLink*(container: Container) {.jsfunc.} =
+proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
   container.iface
-    .findNextLink(container.cursorx, container.cursory)
+    .findNextLink(container.cursorx, container.cursory, n)
     .then(proc(res: tuple[x, y: int]) =
       if res.x > -1 and res.y != -1:
         container.setCursorXYCenter(res.x, res.y))
 
-proc cursorPrevLink*(container: Container) {.jsfunc.} =
+proc cursorPrevLink*(container: Container, n = 1) {.jsfunc.} =
   container.iface
-    .findPrevLink(container.cursorx, container.cursory)
+    .findPrevLink(container.cursorx, container.cursory, n)
     .then(proc(res: tuple[x, y: int]) =
       if res.x > -1 and res.y != -1:
         container.setCursorXYCenter(res.x, res.y))
