@@ -33,6 +33,10 @@ type
     at: int
     failed: bool
 
+  RelationType* = enum
+    RELATION_EXISTS, RELATION_EQUALS, RELATION_TOKEN, RELATION_BEGIN_DASH,
+    RELATION_STARTS_WITH, RELATION_ENDS_WITH, RELATION_CONTAINS
+
   Selector* = ref object # Simple selector
     case t*: SelectorType
     of TYPE_SELECTOR:
@@ -44,7 +48,7 @@ type
     of ATTR_SELECTOR:
       attr*: string
       value*: string
-      rel*: char
+      rel*: RelationType
     of CLASS_SELECTOR:
       class*: string
     of UNIVERSAL_SELECTOR: #TODO namespaces?
@@ -104,13 +108,14 @@ func `$`*(sel: Selector): string =
   of ID_SELECTOR:
     return '#' & sel.id
   of ATTR_SELECTOR:
-    var rel = ""
-    if sel.rel == '=':
-      rel = "="
-    elif sel.rel == ' ':
-      discard
-    else:
-      rel = sel.rel & '='
+    let rel = case sel.rel
+    of RELATION_EXISTS: ""
+    of RELATION_EQUALS: "="
+    of RELATION_TOKEN: "~="
+    of RELATION_BEGIN_DASH: "|="
+    of RELATION_STARTS_WITH: "^="
+    of RELATION_ENDS_WITH: "$="
+    of RELATION_CONTAINS: "*="
     return '[' & sel.attr & rel & sel.value & ']'
   of CLASS_SELECTOR:
     return '.' & sel.class
@@ -322,7 +327,8 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
 
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 
-proc parseAttributeSelector(state: var SelectorParser, cssblock: CSSSimpleBlock): Selector =
+proc parseAttributeSelector(state: var SelectorParser,
+    cssblock: CSSSimpleBlock): Selector =
   if cssblock.token.tokenType != CSS_LBRACKET_TOKEN: fail
   var state2 = SelectorParser(cvals: cssblock.value)
   state2.skipWhitespace()
@@ -330,16 +336,21 @@ proc parseAttributeSelector(state: var SelectorParser, cssblock: CSSSimpleBlock)
   let attr = get_tok state2.consume()
   if attr.tokenType != CSS_IDENT_TOKEN: fail
   state2.skipWhitespace()
-  if not state2.has(): return Selector(t: ATTR_SELECTOR, attr: attr.value, rel: ' ')
+  if not state2.has():
+    return Selector(t: ATTR_SELECTOR, attr: attr.value, rel: RELATION_EXISTS)
   let delim0 = get_tok state2.consume()
   if delim0.tokenType != CSS_DELIM_TOKEN: fail
-  case delim0.cvalue
-  of '~', '|', '^', '$', '*':
-    let delim1 = get_tok state2.consume()
-    if delim1.tokenType != CSS_DELIM_TOKEN: fail
-  of '=':
-    discard
+  let rel = case delim0.cvalue
+  of '~': RELATION_TOKEN
+  of '|': RELATION_BEGIN_DASH
+  of '^': RELATION_STARTS_WITH
+  of '$': RELATION_ENDS_WITH
+  of '*': RELATION_CONTAINS
+  of '=': RELATION_EQUALS
   else: fail
+  if rel != RELATION_EQUALS:
+    let delim1 = get_tok state2.consume()
+    if delim1.tokenType != CSS_DELIM_TOKEN or delim1.cvalue != '=': fail
   state2.skipWhitespace()
   if not state2.has(): fail
   let value = get_tok state2.consume()
@@ -348,7 +359,7 @@ proc parseAttributeSelector(state: var SelectorParser, cssblock: CSSSimpleBlock)
     t: ATTR_SELECTOR,
     attr: attr.value,
     value: value.value,
-    rel: delim0.cvalue
+    rel: rel
   )
 
 proc parseClassSelector(state: var SelectorParser): Selector =

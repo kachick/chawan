@@ -12,16 +12,15 @@ import chame/tags
 
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
   case sel.rel
-  of ' ': return elem.attrb(sel.attr)
-  of '=': return elem.attr(sel.attr) == sel.value
-  of '~': return sel.value in elem.attr(sel.attr).split(Whitespace)
-  of '|':
+  of RELATION_EXISTS: return elem.attrb(sel.attr)
+  of RELATION_EQUALS: return elem.attr(sel.attr) == sel.value
+  of RELATION_TOKEN: return sel.value in elem.attr(sel.attr).split(Whitespace)
+  of RELATION_BEGIN_DASH:
     let val = elem.attr(sel.attr)
     return val == sel.value or sel.value.startsWith(val & '-')
-  of '^': return elem.attr(sel.attr).startsWith(sel.value)
-  of '$': return elem.attr(sel.attr).endsWith(sel.value)
-  of '*': return elem.attr(sel.attr).contains(sel.value)
-  else: return false
+  of RELATION_STARTS_WITH: return elem.attr(sel.attr).startsWith(sel.value)
+  of RELATION_ENDS_WITH: return elem.attr(sel.attr).endsWith(sel.value)
+  of RELATION_CONTAINS: return elem.attr(sel.attr).contains(sel.value)
 
 func selectorsMatch*[T: Element|StyledNode](elem: T, cxsel: ComplexSelector, felem: T = nil): bool
 
