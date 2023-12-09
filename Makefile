@@ -62,8 +62,7 @@ $(OBJDIR)/man/cha.1: doc/cha.1
 
 .PHONY: clean
 clean:
-	rm -rf "$(OUTDIR)"
-	rm -rf "$(OBJDIR)"
+	rm -rf "$(OBJDIR)/$(TARGET)"
 	rm -f lib/libquickjs.a
 
 .PHONY: manpage
