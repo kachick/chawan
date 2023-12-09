@@ -91,7 +91,7 @@ proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
 func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
   let elem = Element(styledNode.node)
-  for rule in sheet.gen_rules(elem.tagType, elem.id, elem.classList.toks):
+  for rule in sheet.genRules(elem.tagType, elem.id, elem.classList.toks):
     tosorts.calcRule(styledNode, rule)
   for i in PseudoElem:
     tosorts[i].sort((proc(x, y: (int, seq[CSSDeclaration])): int =
@@ -277,7 +277,7 @@ proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode,
 func applyMediaQuery(ss: CSSStylesheet, window: Window): CSSStylesheet =
   if ss == nil: return nil
   result = ss
-  for mq in ss.mq_list:
+  for mq in ss.mqList:
     if mq.query.applies(window):
       result.add(mq.children.applyMediaQuery(window))
 

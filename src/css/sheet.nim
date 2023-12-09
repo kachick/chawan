@@ -1,3 +1,4 @@
+import algorithm
 import streams
 import tables
 
@@ -13,6 +14,9 @@ type
   CSSRuleDef* = ref object of CSSRuleBase
     sels*: SelectorList
     decls*: seq[CSSDeclaration]
+    # Absolute position in the stylesheet; used for sorting rules after
+    # retrieval from the cache.
+    idx: int
 
   CSSConditionalDef* = ref object of CSSRuleBase
     children*: CSSStylesheet
@@ -21,12 +25,12 @@ type
     query*: MediaQueryList
 
   CSSStylesheet* = ref object
-    mq_list*: seq[CSSMediaQueryDef]
-    tag_table*: array[TagType, seq[CSSRuleDef]]
-    id_table*: Table[string, seq[CSSRuleDef]]
-    class_table*: Table[string, seq[CSSRuleDef]]
-    general_list*: seq[CSSRuleDef]
-    len*: int
+    mqList*: seq[CSSMediaQueryDef]
+    tagTable: array[TagType, seq[CSSRuleDef]]
+    idTable: Table[string, seq[CSSRuleDef]]
+    classTable: Table[string, seq[CSSRuleDef]]
+    generalList: seq[CSSRuleDef]
+    len: int
 
 type SelectorHashes = object
   tag: TagType
@@ -36,9 +40,9 @@ type SelectorHashes = object
 func newStylesheet*(cap: int): CSSStylesheet =
   let bucketsize = cap div 2
   return CSSStylesheet(
-    id_table: initTable[string, seq[CSSRuleDef]](bucketsize),
-    class_table: initTable[string, seq[CSSRuleDef]](bucketsize),
-    general_list: newSeqOfCap[CSSRuleDef](bucketsize)
+    idTable: initTable[string, seq[CSSRuleDef]](bucketsize),
+    classTable: initTable[string, seq[CSSRuleDef]](bucketsize),
+    generalList: newSeqOfCap[CSSRuleDef](bucketsize)
   )
 
 proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool
@@ -111,18 +115,26 @@ proc getSelectorIds(hashes: var SelectorHashes, sel: Selector): bool =
       if hashes.tag != TAG_UNKNOWN or hashes.id != "" or hashes.class != "":
         return true
 
-iterator gen_rules*(sheet: CSSStylesheet, tag: TagType, id: string, classes: seq[string]): CSSRuleDef =
-  for rule in sheet.tag_table[tag]:
-    yield rule
+proc ruleDefCmp(a, b: CSSRuleDef): int =
+  cmp(a.idx, b.idx)
+
+iterator genRules*(sheet: CSSStylesheet, tag: TagType, id: string,
+    classes: seq[string]): CSSRuleDef =
+  var rules: seq[CSSRuleDef]
+  for rule in sheet.tagTable[tag]:
+    rules.add(rule)
   if id != "":
-    sheet.id_table.withValue(id, v):
+    sheet.idTable.withValue(id, v):
       for rule in v[]:
-        yield rule
+        rules.add(rule)
   for class in classes:
-    sheet.class_table.withValue(class, v):
+    sheet.classTable.withValue(class, v):
       for rule in v[]:
-        yield rule
-  for rule in sheet.general_list:
+        rules.add(rule)
+  for rule in sheet.generalList:
+    rules.add(rule)
+  rules.sort(ruleDefCmp, order = Ascending)
+  for rule in rules:
     yield rule
 
 proc add(sheet: var CSSStylesheet, rule: CSSRuleDef) =
@@ -130,47 +142,45 @@ proc add(sheet: var CSSStylesheet, rule: CSSRuleDef) =
   for cxsel in rule.sels:
     hashes.getSelectorIds(cxsel)
     if hashes.tag != TAG_UNKNOWN:
-      sheet.tag_table[hashes.tag].add(rule)
+      sheet.tagTable[hashes.tag].add(rule)
     elif hashes.id != "":
-      if hashes.id notin sheet.id_table:
-        sheet.id_table[hashes.id] = newSeq[CSSRuleDef]()
-      sheet.id_table[hashes.id].add(rule)
+      sheet.idTable.withValue(hashes.id, p):
+        p[].add(rule)
+      do:
+        sheet.idTable[hashes.id] = @[rule]
     elif hashes.class != "":
-      if hashes.class notin sheet.class_table:
-        sheet.class_table[hashes.class] = newSeq[CSSRuleDef]()
-      sheet.class_table[hashes.class].add(rule)
+      sheet.classTable.withValue(hashes.class, p):
+        p[].add(rule)
+      do:
+        sheet.classTable[hashes.class] = @[rule]
     else:
-      sheet.general_list.add(rule)
+      sheet.generalList.add(rule)
 
-proc add*(sheet: var CSSStylesheet, rule: CSSRuleBase) {.inline.} =
-  if rule of CSSRuleDef:
-    sheet.add(CSSRuleDef(rule))
-  else:
-    sheet.mq_list.add(CSSMediaQueryDef(rule))
-  inc sheet.len
-
-proc add*(sheet: var CSSStylesheet, sheet2: CSSStylesheet) {.inline.} =
-  sheet.general_list.add(sheet2.general_list)
+proc add*(sheet: var CSSStylesheet, sheet2: CSSStylesheet) =
+  sheet.generalList.add(sheet2.generalList)
   for tag in TagType:
-    sheet.tag_table[tag].add(sheet2.tag_table[tag])
-  for key, value in sheet2.id_table.pairs:
-    if key notin sheet.id_table:
-      sheet.id_table[key] = newSeq[CSSRuleDef]()
-    sheet.id_table[key].add(value)
-  for key, value in sheet2.class_table.pairs:
-    if key notin sheet.class_table:
-      sheet.class_table[key] = newSeq[CSSRuleDef]()
-    sheet.class_table[key].add(value)
-  sheet.len += sheet2.len
-
-proc getDeclarations(rule: CSSQualifiedRule): seq[CSSDeclaration] {.inline.} =
-  rule.oblock.value.parseListOfDeclarations2()
+    sheet.tagTable[tag].add(sheet2.tagTable[tag])
+  for key, value in sheet2.idTable.pairs:
+    sheet.idTable.withValue(key, p):
+      p[].add(value)
+    do:
+      sheet.idTable[key] = value
+  for key, value in sheet2.classTable.pairs:
+    sheet.classTable.withValue(key, p):
+      p[].add(value)
+    do:
+      sheet.classTable[key] = value
 
 proc addRule(stylesheet: var CSSStylesheet, rule: CSSQualifiedRule) =
   let sels = parseSelectors(rule.prelude)
   if sels.len > 0:
-    let r = CSSRuleDef(sels: sels, decls: rule.getDeclarations())
+    let r = CSSRuleDef(
+      sels: sels,
+      decls: rule.oblock.value.parseListOfDeclarations2(),
+      idx: stylesheet.len
+    )
     stylesheet.add(r)
+    inc stylesheet.len
 
 proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
   case atrule.name
@@ -180,13 +190,15 @@ proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
     if rules.len > 0:
       var media = CSSMediaQueryDef()
       media.children = newStylesheet(rules.len)
+      media.children.len = stylesheet.len
       media.query = query
       for rule in rules:
         if rule of CSSAtRule:
           media.children.addAtRule(CSSAtRule(rule))
         else:
           media.children.addRule(CSSQualifiedRule(rule))
-      stylesheet.add(media)
+      stylesheet.mqList.add(media)
+      stylesheet.len += media.children.len
   else: discard #TODO
 
 proc parseStylesheet*(s: Stream): CSSStylesheet =
