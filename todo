@@ -1,7 +1,5 @@
 compilation:
 - reduce binary size (maybe gzip data/*?)
-- improve compilation times (it's sloooow... we could probably speed up the js
-  macros somehow, also the html parser/tokenizer?)
 charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
