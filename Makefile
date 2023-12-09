@@ -26,6 +26,19 @@ $(OUTDIR)/$(TARGET)/bin/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/*
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
+
+# Dependencies
+$(QJSOBJ)/cutils.o: lib/quickjs/cutils.h
+$(QJSOBJ)/libbf.o: lib/quickjs/cutils.h lib/quickjs/libbf.h
+$(QJSOBJ)/libregexp.o: lib/quickjs/cutils.h lib/quickjs/libregexp.h \
+	lib/quickjs/libunicode.h lib/quickjs/libregexp-opcode.h
+$(QJSOBJ)/libunicode.o: lib/quickjs/cutils.h lib/quickjs/libunicode.h \
+	lib/quickjs/libunicode-table.h
+$(QJSOBJ)/quickjs.o: lib/quickjs/cutils.h lib/quickjs/list.h \
+	lib/quickjs/quickjs.h lib/quickjs/libregexp.h \
+	lib/quickjs/libunicode.h lib/quickjs/libbf.h \
+	lib/quickjs/quickjs-atom.h lib/quickjs/quickjs-opcode.h
+
 $(QJSOBJ)/%.o: lib/quickjs/%.c
 	@mkdir -p "$(QJSOBJ)"
 	$(CC) $(CFLAGS) -c -o $@ $<
