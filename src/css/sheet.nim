@@ -198,7 +198,7 @@ proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
         else:
           media.children.addRule(CSSQualifiedRule(rule))
       stylesheet.mqList.add(media)
-      stylesheet.len += media.children.len
+      stylesheet.len = media.children.len
   else: discard #TODO
 
 proc parseStylesheet*(s: Stream): CSSStylesheet =
