@@ -385,9 +385,13 @@ proc getMimeTypes*(config: Config): MimeTypes =
     return DefaultGuess
   return mimeTypes
 
+const DefaultURIMethodMap = parseURIMethodMap("""
+finger:		cgi-bin:cha-finger?%s
+""")
+
 proc getURIMethodMap*(config: Config): URIMethodMap =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
-  var urimethodmap: URIMethodMap
+  var urimethodmap = DefaultURIMethodMap
   for p in config.external.urimethodmap:
     let f = openFileExpand(configDir, p)
     if f != nil:

@@ -1,6 +1,6 @@
 a
 cha
-cha.exe
+target/
 test/
 profile_results.txt
 .obj/

@@ -63,6 +63,7 @@ Currently implemented features are:
 * cookies
 * FTP support
 * Gopher support
+* Finger support
 * [local CGI](doc/localcgi.md) support
 * [urimethodmap](doc/urimethodmap.md) support
 

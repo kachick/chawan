@@ -7,6 +7,11 @@ MANPREFIX1 ?= $(MANPREFIX)/man1
 MANPREFIX5 ?= $(MANPREFIX)/man5
 TARGET ?= release
 
+TARGETDIR = $(OUTDIR)/$(TARGET)
+BIN = $(TARGETDIR)/bin
+LIBEXEC = $(TARGETDIR)/libexec/chawan
+CGI_BIN = $(LIBEXEC)/cgi-bin
+
 ifeq ($(TARGET),debug)
 FLAGS += --debugger:native
 else ifeq ($(TARGET),release)
@@ -17,12 +22,19 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
-$(OUTDIR)/$(TARGET)/bin/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
+.PHONY: all
+all: $(BIN)/cha $(CGI_BIN)/cha-finger
+
+$(BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
 	$(NIMC) -d:curlLibName:$(CURLLIBNAME) -o:"$(OUTDIR)/$(TARGET)/bin/cha" \
 		--nimcache:"$(OBJDIR)/$(TARGET)" -d:$(TARGET) $(FLAGS) \
 		src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
+
+$(CGI_BIN)/cha-finger: adapter/finger/cha-finger
+	@mkdir -p $(CGI_BIN)
+	cp adapter/finger/cha-finger $(CGI_BIN)
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
@@ -75,7 +87,9 @@ manpage: $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 .PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
-	install -m755 "$(OUTDIR)/$(TARGET)/bin/cha" "$(DESTDIR)$(PREFIX)/bin"
+	install -m755 "$(BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
+	mkdir -p "$(DESTDIR)$(PREFIX)/libexec/chawan/cgi-bin"
+	install -m755 "$(CGI_BIN)/cha-finger" "$(DESTDIR)$(PREFIX)/libexec/chawan/cgi-bin"
 	if test -d "$(OBJDIR)/man"; then \
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"; \

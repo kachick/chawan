@@ -5,19 +5,28 @@
 # Usage: put this script in your cgi-bin folder, then add the following line to
 # your urimethodmap:
 #
-# finger: file:/cgi-bin/cha-finger?%s
+# finger: /cgi-bin/cha-finger?%s
+#
+# Note: the Chawan default configuration already does this, so normally you
+# don't need to do anything to use the finger protocol.
 
-printf 'Content-Type: text/plain\r\n\r\n'
-if test -z "$QUERY_STRING"
-then	echo "URL expected"
+die() {
+	echo "$1"
 	exit 1
+}
+
+if test -z "$QUERY_STRING"
+then	die "URL expected"
 fi
+type curl >/dev/null || \
+	die "curl must be installed on your computer to use finger."
 URL="$(printf '%s\n' "$QUERY_STRING" | \
 	sed 's/^finger:\/\///;s/^\([^[]\/:]\|\[[^]:]*\]\):79/\1/')"
 
+printf 'Content-Type: text/plain\r\n\r\n'
+
 if printf '%s\n' "$URL" | grep -q '^\([^[]/]*\)\|\(\[[^]]*\]\):[0-9]'
-then	echo "Invalid port"
-	exit 1
+then	die "Invalid port"
 fi
 
 case "$URL" in
@@ -34,4 +43,7 @@ case "$URL" in
 	;;
 esac
 
-printf '%s\r\n' "$USER" | curl -- "telnet://$HOST:79" 2>/dev/null
+printf '%s\r\n' "$USER" | if test -n "$ALL_PROXY"
+then	curl -x "$ALL_PROXY" -- "telnet://$HOST:79"
+else	curl -- "telnet://$HOST:79"
+fi 2>/dev/null

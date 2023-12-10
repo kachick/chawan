@@ -69,3 +69,7 @@ proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
     elif v.startsWith("/cgi-bin/"):
       v = "cgi-bin:" & v.substr("/cgi-bin/".len)
     discard this.map.hasKeyOrPut(k, v)
+
+proc parseURIMethodMap*(s: string): URIMethodMap =
+  result = URIMethodMap()
+  result.parseURIMethodMap(s)
