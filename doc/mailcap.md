@@ -45,11 +45,15 @@ extensions.
 %s, %t works as described in the standard. However, named content type fields
 (%{...}) only work with %{charset} as of now. (TODO: fix this.)
 
-Also, the non-standard template %u may be specified to get the original URL
-of the resource.
-
 If no quoting is applied, Chawan will quote the templates automatically. (This
 works with $(command substitutions) as well.)
+
+DEPRECATED:
+
+Also, the non-standard template %u may be specified to get the original URL
+of the resource. Note that this is no longer recommended; instead, use the
+$MAILCAP_URL environment variable which is set to the same value before the
+execution of every mailcap command.
 
 ### Fields
 
@@ -69,6 +73,17 @@ is recognized too.
   `copiousoutput` or `x-htmloutput` is specified.
 * For a description of `nametemplate`, see the RFC.
 
+### Environment variables
+
+As noted above, the $MAILCAP_URL variable is set to the URL of the target
+resource before the execution of the mailcap command. Backwards compatibility
+with mailcap agents that do not support this variable can be achieved through
+shell substitution, e.g. ${MAILCAP_URL:-string for when it is unsupported}.
+
+Note that it is not recommended to set %s as the fallback, because it
+will force Chawan to download the entire file before displaying it even if
+it could have been piped into the command.
+
 ## Note
 
 Entries with a content type of text/html are ignored.
@@ -83,7 +98,7 @@ Entries with a content type of text/html are ignored.
 text/markdown; pandoc - -f markdown -t html -o -; x-htmloutput
 
 # Show syntax highlighting for JavaScript source files using bat.
-text/javascript; bat -f -l es6 --file-name %u -; copiousoutput
+text/javascript; bat -f -l es6 --file-name ${MAILCAP_URL:-STDIN} -; copiousoutput
 
 # Play music using mpv, and hand over control of the terminal until mpv exits.
 audio/*; mpv -; needsterminal
@@ -95,6 +110,10 @@ video/*; mpv -
 # Open docx files using LibreOffice Writer.
 application/vnd.openxmlformats-officedocument.wordprocessingml.document;lowriter %s
 # (Wow that was ugly.)
+
+# Display manpages using pandoc. (Make sure the mime type matches the one
+# set in your mime.types file for extensions .1, .2, .3, ...)
+application/x-troff-man;pandoc - -f man -t html -o -; x-htmloutput
 
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha -T text/html -I %{charset}; copiousoutput
