@@ -9,6 +9,8 @@ import js/tojs
 import types/opt
 import utils/twtstr
 
+const libexecPath {.strdefine.} = "${%CHA_BIN_DIR}/../libexec/chawan"
+
 type ChaPath* = distinct string
 
 func `$`*(p: ChaPath): string =
@@ -34,6 +36,7 @@ type
 
   ChaPathResult[T] = Result[T, ChaPathError]
 
+proc unquote*(p: ChaPath): ChaPathResult[string]
 proc unquote(p: string, starti: var int, terminal: Option[char]):
     ChaPathResult[string]
 
@@ -181,6 +184,8 @@ proc stateCurlyPerc(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
   if c == '}':
     if ctx.identStr == "CHA_BIN_DIR":
       ctx.s &= getAppFileName().beforeLast('/')
+    elif ctx.identStr == "CHA_LIBEXEC_DIR":
+      ctx.s &= ?ChaPath(libexecPath).unquote()
     else:
       return err("Unknown internal variable " & ctx.identStr)
     ctx.identStr = ""

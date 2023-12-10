@@ -350,7 +350,14 @@ proc readUserStylesheet(dir, file: string): string =
 # of several individual configuration files known as mailcap files.
 proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
-  var mailcap: Mailcap
+  const gopherPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gopher2html -u %u")
+  let gopherPath = gopherPath0.unquote().get
+  var mailcap = @[MailcapEntry(
+    mt: "text",
+    subt: "gopher",
+    cmd: gopherPath,
+    flags: {HTMLOUTPUT}
+  )]
   var errs: seq[string]
   var found = false
   for p in config.external.mailcap:
@@ -363,6 +370,11 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
         errs.add(res.error)
       found = true
   if not found:
+    mailcap.insert(MailcapEntry(
+      mt: "*",
+      subt: "*",
+      cmd: "xdg-open '%s'"
+    ), 0)
     return (DefaultMailcap, errs)
   return (mailcap, errs)
 

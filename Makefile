@@ -1,40 +1,61 @@
 NIMC ?= nim c
 OBJDIR ?= .obj
 OUTDIR ?= target
+# These paths are quoted in recipes.
 PREFIX ?= /usr/local
 MANPREFIX ?= $(PREFIX)/share/man
 MANPREFIX1 ?= $(MANPREFIX)/man1
 MANPREFIX5 ?= $(MANPREFIX)/man5
 TARGET ?= release
+# This must be single-quoted, because it is not a real shell substitution.
+# The default setting is at {the binary's path}/../libexec/chawan.
+# You may override it with any path if your system does not have a libexec
+# directory, but make sure to surround it with quotes if it contains spaces.
+# (This way, the cha binary can be directly executed without installation.)
+LIBEXECDIR ?= '$${%CHA_BIN_DIR}/../libexec/chawan'
+# If overridden, take libexecdir that was specified.
+# Otherwise, just install to libexec/chawan.
+ifeq ($(LIBEXECDIR),'$${%CHA_BIN_DIR}/../libexec/chawan')
+LIBEXECDIR_CHAWAN = $(DESTDIR)$(PREFIX)/libexec/chawan
+else
+LIBEXECDIR_CHAWAN = $(LIBEXECDIR)/chawan
+endif
 
-TARGETDIR = $(OUTDIR)/$(TARGET)
-BIN = $(TARGETDIR)/bin
-LIBEXEC = $(TARGETDIR)/libexec/chawan
-CGI_BIN = $(LIBEXEC)/cgi-bin
+# These paths are quoted in recipes.
+OUTDIR_TARGET = $(OUTDIR)/$(TARGET)
+OUTDIR_BIN = $(OUTDIR_TARGET)/bin
+OUTDIR_LIBEXEC = $(OUTDIR_TARGET)/libexec/chawan
+OUTDIR_CGI_BIN = $(OUTDIR_LIBEXEC)/cgi-bin
 
+# Nim compiler flags
 ifeq ($(TARGET),debug)
-FLAGS += --debugger:native
+FLAGS += -d:debug --debugger:native
 else ifeq ($(TARGET),release)
-FLAGS += -d:strip -d:lto
+FLAGS += -d:release -d:strip -d:lto
 else ifeq ($(TARGET),release0)
 FLAGS += -d:release --stacktrace:on
 else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
-.PHONY: all
-all: $(BIN)/cha $(CGI_BIN)/cha-finger
+FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 
-$(BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
+.PHONY: all
+all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/cha-finger
+
+$(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
-	$(NIMC) -d:curlLibName:$(CURLLIBNAME) -o:"$(OUTDIR)/$(TARGET)/bin/cha" \
-		--nimcache:"$(OBJDIR)/$(TARGET)" -d:$(TARGET) $(FLAGS) \
-		src/main.nim
+	$(NIMC) -d:curlLibName:$(CURLLIBNAME) -d:libexecPath=$(LIBEXECDIR) \
+		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
-$(CGI_BIN)/cha-finger: adapter/finger/cha-finger
-	@mkdir -p $(CGI_BIN)
-	cp adapter/finger/cha-finger $(CGI_BIN)
+$(OUTDIR_LIBEXEC)/gopher2html: adapter/gopher/gopher2html.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_LIBEXEC)/gopher2html" \
+		adapter/gopher/gopher2html.nim
+
+$(OUTDIR_CGI_BIN)/cha-finger: adapter/finger/cha-finger
+	@mkdir -p $(OUTDIR_CGI_BIN)
+	cp adapter/finger/cha-finger $(OUTDIR_CGI_BIN)
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
@@ -87,9 +108,11 @@ manpage: $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 .PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
-	install -m755 "$(BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
-	mkdir -p "$(DESTDIR)$(PREFIX)/libexec/chawan/cgi-bin"
-	install -m755 "$(CGI_BIN)/cha-finger" "$(DESTDIR)$(PREFIX)/libexec/chawan/cgi-bin"
+	install -m755 "$(OUTDIR_BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
+	# intentionally not quoted
+	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_LIBEXEC)/gopher2html" $(LIBEXECDIR_CHAWAN)
+	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	if test -d "$(OBJDIR)/man"; then \
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"; \

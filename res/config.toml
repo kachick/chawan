@@ -33,7 +33,7 @@ urimethodmap = [
 tmpdir = "/tmp/cha"
 editor = "vi %s +%d"
 w3m-cgi-compat = false
-cgi-dir = "${%CHA_BIN_DIR}/../libexec/chawan/cgi-bin"
+cgi-dir = "${%CHA_LIBEXEC_DIR}/cgi-bin"
 
 [network]
 max-redirect = 10
