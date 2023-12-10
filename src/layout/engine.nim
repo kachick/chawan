@@ -2210,7 +2210,7 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
       # * if our saved marginTarget and bctx's marginTarget no longer point
       #   to the same object, that means our (or an ancestor's) offset has
       #   been resolved, i.e. we can position floats already.
-      if state.isParentResolved(bctx):
+      if bctx.marginTarget != state.initialMarginTarget:
         # y offset resolved
         bctx.positionFloat(child, state.space, bctx.parentBps.offset)
       else:
@@ -2311,7 +2311,7 @@ proc buildBlockLayout(bctx: var BlockContext, box: BlockBox,
     # be passed onto the next box. Set marginTarget to nil, so that if we
     # (or one of our ancestors) was still set as a marginTarget, it no
     # longer is.
-    #TODO we might need flushMargin & positionFloats here
+    bctx.positionFloats()
     bctx.marginTarget = nil
   # Reset parentBps to the previous node.
   bctx.parentBps = state.prevParentBps
