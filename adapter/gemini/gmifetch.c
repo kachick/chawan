@@ -630,7 +630,7 @@ FILE *open_known_hosts(char *khsbuf)
 
 int main(int argc, const char *argv[])
 {
-	const char *input_url, *method;
+	const char *input_url, *method, *all_proxy;
 	char *hostp, *portp, *pathp, *endp, *stored_digestp;
 	int connect_res;
 	time_t their_time;
@@ -645,6 +645,11 @@ int main(int argc, const char *argv[])
 	} else {
 		input_url = argv[1];
 	}
+	all_proxy = getenv("ALL_PROXY");
+#define PROXY_ERR "gmifetch does not support proxies yet. Please disable" \
+	"your proxy for gemini URLs if you wish to proceed anyway."
+	if (all_proxy && *all_proxy)
+		DIE(PROXY_ERR);
 	known_hosts = open_known_hosts(khsbuf);
 	setup_ssl();
 	extract_hostname(input_url, &hostp, &portp, &pathp, &endp, urlbuf);

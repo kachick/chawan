@@ -59,13 +59,10 @@ Currently implemented features are:
 	* some basic DOM manipulation APIs are supported
 	* off by default; use is discouraged until sandboxing is
 	  implemented
-* mailcap
 * cookies
-* FTP support
-* Gopher support
-* Finger support
-* [local CGI](doc/localcgi.md) support
-* [urimethodmap](doc/urimethodmap.md) support
+* Supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger
+* Can load user-defined protocols/files using [local CGI](doc/localcgi.md),
+  [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
 
 ...with a lot more [planned](todo).
 

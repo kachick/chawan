@@ -41,7 +41,7 @@ endif
 FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/cha-finger
+all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
@@ -52,6 +52,14 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gopher/gopher2html.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_LIBEXEC)/gopher2html" \
 		adapter/gopher/gopher2html.nim
+
+GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O3
+$(OUTDIR_CGI_BIN)/gmifetch: adapter/gemini/gmifetch.c
+	$(CC) $(GMIFETCH_CFLAGS) adapter/gemini/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch"
+
+GMI2HTML_CFLAGS = -Wall -Wextra -std=c89 -pedantic -g -O3
+$(OUTDIR_LIBEXEC)/gmi2html: adapter/gemini/gmi2html.c
+	$(CC) $(GMI2HTML_CFLAGS) adapter/gemini/gmi2html.c -o "$(OUTDIR_LIBEXEC)/gmi2html"
 
 $(OUTDIR_CGI_BIN)/cha-finger: adapter/finger/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
@@ -112,6 +120,8 @@ install:
 	# intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/gopher2html" $(LIBEXECDIR_CHAWAN)
+	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
+	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	if test -d "$(OBJDIR)/man"; then \
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \

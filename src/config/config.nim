@@ -352,12 +352,22 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
   const gopherPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gopher2html -u $MAILCAP_URL")
   let gopherPath = gopherPath0.unquote().get
-  var mailcap = @[MailcapEntry(
-    mt: "text",
-    subt: "gopher",
-    cmd: gopherPath,
-    flags: {HTMLOUTPUT}
-  )]
+  const geminiPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gmi2html")
+  let geminiPath = geminiPath0.unquote().get
+  var mailcap = @[
+    MailcapEntry(
+      mt: "text",
+      subt: "gopher",
+      cmd: gopherPath,
+      flags: {HTMLOUTPUT}
+    ),
+    MailcapEntry(
+      mt: "text",
+      subt: "gemini",
+      cmd: geminiPath,
+      flags: {HTMLOUTPUT}
+    )
+  ]
   var errs: seq[string]
   var found = false
   for p in config.external.mailcap:
@@ -399,6 +409,7 @@ proc getMimeTypes*(config: Config): MimeTypes =
 
 const DefaultURIMethodMap = parseURIMethodMap("""
 finger:		cgi-bin:cha-finger?%s
+gemini:		cgi-bin:gmifetch?%s
 """)
 
 proc getURIMethodMap*(config: Config): URIMethodMap =
