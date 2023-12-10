@@ -218,6 +218,7 @@ type
     wrappos: int # position of last wrapping opportunity, or -1
     firstTextFragment: InlineFragment
     lastTextFragment: InlineFragment
+    errorY: LayoutUnit # rounding error distributed along lines
 
   InlineState = object
     computed: CSSComputedValues
@@ -530,6 +531,10 @@ proc finishLine(ictx: var InlineContext, state: var InlineState, wrap: bool,
     else:
       state.fragment.size.w = max(lineWidth, state.fragment.size.w)
     ictx.size.w = max(ictx.size.w, lineWidth)
+    # count error
+    if ictx.lines.len > 0:
+      let dy = ictx.currentLine.line.offsety - ictx.lines[^1].offsety
+      ictx.errorY += dy - toInt(dy div ictx.cellheight) * ictx.cellheight
     ictx.lines.add(ictx.currentLine.line)
     ictx.currentLine = LineBoxState(
       line: LineBox(offsety: y + ictx.currentLine.size.h)
@@ -1387,18 +1392,10 @@ proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
     state.startOffsetTop.y
   return fragment
 
-# Calculate the average division error for the placement of each line box.
-# This is then used to evenly distribute error along line boxes.
-func calculateErrorY(ictx: InlineContext): LayoutUnit =
-  if ictx.lines.len <= 1: return 0
-  var error: LayoutUnit = 0
-  for i in 0 ..< ictx.lines.high:
-    let dy = toInt(ictx.lines[i + 1].offsety - ictx.lines[i].offsety)
-    error += dy - (dy div ictx.cellheight) * ictx.cellheight
-  return error div ictx.lines.high
-
 proc positionAtoms(ictx: var InlineContext) =
-  let erry = ictx.calculateErrorY()
+  if ictx.lines.len == 0:
+    return
+  let erry = ictx.errorY / ictx.lines.len
   var i = 0
   for line in ictx.lines:
     let erry0 = erry * i
