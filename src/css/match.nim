@@ -7,20 +7,57 @@ import css/cssparser
 import css/selectorparser
 import css/stylednode
 import html/dom
+import utils/twtstr
 
 import chame/tags
 
+#TODO FLAG_NONE should match insensitively for certain properties
 func attrSelectorMatches(elem: Element, sel: Selector): bool =
-  case sel.rel
+  case sel.rel.t
   of RELATION_EXISTS: return elem.attrb(sel.attr)
-  of RELATION_EQUALS: return elem.attr(sel.attr) == sel.value
-  of RELATION_TOKEN: return sel.value in elem.attr(sel.attr).split(Whitespace)
+  of RELATION_EQUALS:
+    case sel.rel.flag
+    of FLAG_NONE: return elem.attr(sel.attr) == sel.value
+    of FLAG_I: return elem.attr(sel.attr).equalsIgnoreCase(sel.value)
+    of FLAG_S: return elem.attr(sel.attr) == sel.value
+  of RELATION_TOKEN:
+    let val = elem.attr(sel.attr)
+    case sel.rel.flag
+    of FLAG_NONE: return sel.value in val.split(AsciiWhitespace)
+    of FLAG_I:
+      let val = val.toLowerAscii()
+      let selval = sel.value.toLowerAscii()
+      return selval in val.split(AsciiWhitespace)
+    of FLAG_S: return sel.value in val.split(AsciiWhitespace)
   of RELATION_BEGIN_DASH:
     let val = elem.attr(sel.attr)
-    return val == sel.value or sel.value.startsWith(val & '-')
-  of RELATION_STARTS_WITH: return elem.attr(sel.attr).startsWith(sel.value)
-  of RELATION_ENDS_WITH: return elem.attr(sel.attr).endsWith(sel.value)
-  of RELATION_CONTAINS: return elem.attr(sel.attr).contains(sel.value)
+    case sel.rel.flag
+    of FLAG_NONE: return val == sel.value or sel.value.startsWith(val & '-')
+    of FLAG_I:
+      return val.equalsIgnoreCase(sel.value) or
+        sel.value.startsWithIgnoreCase(val & '-')
+    of FLAG_S: return val == sel.value or sel.value.startsWith(val & '-')
+  of RELATION_STARTS_WITH:
+    let val = elem.attr(sel.attr)
+    case sel.rel.flag
+    of FLAG_NONE: return val.startsWith(sel.value)
+    of FLAG_I: return val.startsWithIgnoreCase(sel.value)
+    of FLAG_S: return val.startsWith(sel.value)
+  of RELATION_ENDS_WITH:
+    let val = elem.attr(sel.attr)
+    case sel.rel.flag
+    of FLAG_NONE: return val.endsWith(sel.value)
+    of FLAG_I: return val.endsWithIgnoreCase(sel.value)
+    of FLAG_S: return val.endsWith(sel.value)
+  of RELATION_CONTAINS:
+    let val = elem.attr(sel.attr)
+    case sel.rel.flag
+    of FLAG_NONE: return val.contains(sel.value)
+    of FLAG_I:
+      let val = val.toLowerAscii()
+      let selval = sel.value.toLowerAscii()
+      return val.contains(selval)
+    of FLAG_S: return val.contains(sel.value)
 
 func selectorsMatch*[T: Element|StyledNode](elem: T, cxsel: ComplexSelector, felem: T = nil): bool
 

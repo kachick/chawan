@@ -33,9 +33,16 @@ type
     at: int
     failed: bool
 
-  RelationType* = enum
+  RelationType* {.size: sizeof(int) div 2.} = enum
     RELATION_EXISTS, RELATION_EQUALS, RELATION_TOKEN, RELATION_BEGIN_DASH,
     RELATION_STARTS_WITH, RELATION_ENDS_WITH, RELATION_CONTAINS
+
+  RelationFlag* {.size: sizeof(int) div 2.} = enum
+    FLAG_NONE, FLAG_I, FLAG_S
+
+  SelectorRelation* = object
+    t*: RelationType
+    flag*: RelationFlag
 
   Selector* = ref object # Simple selector
     case t*: SelectorType
@@ -48,7 +55,7 @@ type
     of ATTR_SELECTOR:
       attr*: string
       value*: string
-      rel*: RelationType
+      rel*: SelectorRelation
     of CLASS_SELECTOR:
       class*: string
     of UNIVERSAL_SELECTOR: #TODO namespaces?
@@ -108,7 +115,7 @@ func `$`*(sel: Selector): string =
   of ID_SELECTOR:
     return '#' & sel.id
   of ATTR_SELECTOR:
-    let rel = case sel.rel
+    let rel = case sel.rel.t
     of RELATION_EXISTS: ""
     of RELATION_EQUALS: "="
     of RELATION_TOKEN: "~="
@@ -116,7 +123,11 @@ func `$`*(sel: Selector): string =
     of RELATION_STARTS_WITH: "^="
     of RELATION_ENDS_WITH: "$="
     of RELATION_CONTAINS: "*="
-    return '[' & sel.attr & rel & sel.value & ']'
+    let flag = case sel.rel.flag
+    of FLAG_NONE: ""
+    of FLAG_I: " i"
+    of FLAG_S: " s"
+    return '[' & sel.attr & rel & sel.value & flag & ']'
   of CLASS_SELECTOR:
     return '.' & sel.class
   of UNIVERSAL_SELECTOR:
@@ -337,10 +348,14 @@ proc parseAttributeSelector(state: var SelectorParser,
   if attr.tokenType != CSS_IDENT_TOKEN: fail
   state2.skipWhitespace()
   if not state2.has():
-    return Selector(t: ATTR_SELECTOR, attr: attr.value, rel: RELATION_EXISTS)
-  let delim0 = get_tok state2.consume()
-  if delim0.tokenType != CSS_DELIM_TOKEN: fail
-  let rel = case delim0.cvalue
+    return Selector(
+      t: ATTR_SELECTOR,
+      attr: attr.value,
+      rel: SelectorRelation(t: RELATION_EXISTS)
+    )
+  let delim = get_tok state2.consume()
+  if delim.tokenType != CSS_DELIM_TOKEN: fail
+  let rel = case delim.cvalue
   of '~': RELATION_TOKEN
   of '|': RELATION_BEGIN_DASH
   of '^': RELATION_STARTS_WITH
@@ -349,17 +364,29 @@ proc parseAttributeSelector(state: var SelectorParser,
   of '=': RELATION_EQUALS
   else: fail
   if rel != RELATION_EQUALS:
-    let delim1 = get_tok state2.consume()
-    if delim1.tokenType != CSS_DELIM_TOKEN or delim1.cvalue != '=': fail
+    let delim = get_tok state2.consume()
+    if delim.tokenType != CSS_DELIM_TOKEN or delim.cvalue != '=': fail
   state2.skipWhitespace()
   if not state2.has(): fail
   let value = get_tok state2.consume()
   if value.tokenType notin {CSS_IDENT_TOKEN, CSS_STRING_TOKEN}: fail
+  state2.skipWhitespace()
+  var flag = FLAG_NONE
+  if state2.has():
+    let delim = get_tok state2.consume()
+    if delim.tokenType != CSS_IDENT_TOKEN: fail
+    if delim.value.equalsIgnoreCase("i"):
+      flag = FLAG_I
+    elif delim.value.equalsIgnoreCase("s"):
+      flag = FLAG_S
   return Selector(
     t: ATTR_SELECTOR,
     attr: attr.value,
     value: value.value,
-    rel: rel
+    rel: SelectorRelation(
+      t: rel,
+      flag: flag
+    )
   )
 
 proc parseClassSelector(state: var SelectorParser): Selector =
