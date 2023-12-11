@@ -1,9 +1,11 @@
 import algorithm
-import strutils
-import unicode
-import os
+import json
 import math
 import options
+import os
+import strutils
+import tables
+import unicode
 
 import bindings/libunicode
 import data/charwidth
@@ -1096,3 +1098,111 @@ proc makeCRLF*(s: string): string =
       result &= '\n'
     else:
       result &= s[i]
+
+const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &
+  "サシスセソタチツテトハヒフヘホ").toRunes()
+
+const CanHaveHandakuten = "はひふへほハヒフヘホ".toRunes()
+
+const HasDakuten = ("がぎぐげござじずぜぞだぢづでどばびぶべぼガギグゲゴ" &
+  "ザジゼゾダヂヅデドバビブベボ").toRunes()
+
+const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toRunes()
+
+# in unicode, char + 1 is dakuten and char + 2 handakuten
+
+const HalfDakuten = Rune(0xFF9E) # half-width dakuten
+const HalfHanDakuten = Rune(0xFF9F)
+
+func dakuten(r: Rune): Rune =
+  if r in CanHaveDakuten:
+    return Rune(int32(r) + 1)
+  return r
+
+func handakuten(r: Rune): Rune =
+  if r in CanHaveHandakuten:
+    return Rune(int32(r) + 2)
+  return r
+
+func nodakuten(r: Rune): Rune =
+  return Rune(int32(r) - 1)
+
+func nohandakuten(r: Rune): Rune =
+  return Rune(int32(r) - 2)
+
+# Halfwidth to fullwidth & vice versa
+const widthconv = staticRead"res/widthconv.json"
+proc genHalfWidthTable(): Table[Rune, Rune] =
+  let widthconvjson = parseJson(widthconv)
+  for k, v in widthconvjson:
+    if v.kind == JString:
+      result[v.getStr().toRunes()[0]] = k.toRunes()[0]
+    else:
+      for s in v:
+        result[s.getStr().toRunes()[0]] = k.toRunes()[0]
+
+proc genFullWidthTable(): Table[Rune, Rune] =
+  let widthconvjson = parseJson(widthconv)
+  for k, v in widthconvjson:
+    if v.kind == JString:
+      result[k.toRunes()[0]] = v.getStr().toRunes()[0]
+    else:
+      result[k.toRunes()[0]] = v[0].getStr().toRunes()[0]
+
+const halfwidthtable = genHalfWidthTable()
+const fullwidthtable = genFullWidthTable()
+
+func halfwidth(r: Rune): Rune =
+  return halfwidthtable.getOrDefault(r, r)
+
+func halfwidth*(s: string): string =
+  for r in s.runes:
+    case r
+    of HasDakuten:
+      result.add(halfwidth(r.nodakuten()))
+      result.add(HalfDakuten)
+    of HasHanDakuten:
+      result.add(halfwidth(r.nohandakuten()))
+      result.add(HalfHanDakuten)
+    else:
+      result.add(halfwidth(r))
+
+func fullwidth(r: Rune): Rune =
+  return fullwidthtable.getOrDefault(r, r)
+
+proc fullwidth(s: seq[Rune]): seq[Rune] =
+  for r in s:
+    if r == HalfDakuten: #dakuten
+      if result.len > 0:
+        result[^1] = result[^1].dakuten()
+      else:
+        result.add(r)
+    elif r == HalfHanDakuten: #handakuten
+      if result.len > 0:
+        result[^1] = result[^1].handakuten()
+      else:
+        result.add(r)
+    else:
+      result.add(fullwidth(r))
+
+proc fullwidth*(s: string): string =
+  return $fullwidth(s.toRunes())
+
+const kanamap = staticRead"res/kanamap.tab"
+func genFullSizeMap(): seq[(uint32, uint32)] =
+  result = @[]
+  for line in kanamap.split('\n'):
+    if line.len == 0: break
+    let rs = line.toRunes()
+    assert rs[1] == Rune('\t')
+    result.add((uint32(rs[0]), uint32(rs[2])))
+const fullSizeMap = genFullSizeMap()
+
+proc fullsize*(s: string): string =
+  result = ""
+  for r in s.runes():
+    let i = searchInMap(fullSizeMap, uint32(r))
+    if i == -1:
+      result &= r
+    else:
+      result &= $Rune(fullSizeMap[i][1])

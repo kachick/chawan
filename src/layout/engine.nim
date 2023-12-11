@@ -697,9 +697,7 @@ func newInlineContext(bctx: var BlockContext, space: AvailableSpace,
   ictx.initLine()
   return ictx
 
-proc layoutText(ictx: var InlineContext, state: var InlineState, str: string) =
-  ictx.flushWhitespace(state)
-  ictx.newWord(state)
+proc layoutTextLoop(ictx: var InlineContext, state: var InlineState, str: string) =
   var i = 0
   while i < str.len:
     let c = str[i]
@@ -732,6 +730,26 @@ proc layoutText(ictx: var InlineContext, state: var InlineState, str: string) =
   discard ictx.addWord(state)
   let shift = ictx.computeShift(state)
   ictx.currentLine.widthAfterWhitespace = ictx.currentLine.size.w + shift
+
+proc layoutText(ictx: var InlineContext, state: var InlineState, str: string) =
+  ictx.flushWhitespace(state)
+  ictx.newWord(state)
+  case state.computed{"text-transform"}
+  of TEXT_TRANSFORM_NONE:
+    ictx.layoutTextLoop(state, str)
+    {.linearScanEnd.}
+  of TEXT_TRANSFORM_CAPITALIZE:
+    ictx.layoutTextLoop(state, str.capitalize())
+  of TEXT_TRANSFORM_UPPERCASE:
+    ictx.layoutTextLoop(state, str.toUpper())
+  of TEXT_TRANSFORM_LOWERCASE:
+    ictx.layoutTextLoop(state, str.toLower())
+  of TEXT_TRANSFORM_FULL_WIDTH:
+    ictx.layoutTextLoop(state, str.fullwidth())
+  of TEXT_TRANSFORM_FULL_SIZE_KANA:
+    ictx.layoutTextLoop(state, str.fullsize())
+  of TEXT_TRANSFORM_CHA_HALF_WIDTH:
+    ictx.layoutTextLoop(state, str.halfwidth())
 
 func spx(l: CSSLength, lctx: LayoutState, p: SizeConstraint,
     computed: CSSComputedValues, padding: LayoutUnit): LayoutUnit =

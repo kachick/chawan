@@ -40,7 +40,8 @@ type
     PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
     PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE,
     PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN, PROPERTY_FLOAT,
-    PROPERTY_VISIBILITY, PROPERTY_BOX_SIZING, PROPERTY_CLEAR
+    PROPERTY_VISIBILITY, PROPERTY_BOX_SIZING, PROPERTY_CLEAR,
+    PROPERTY_TEXT_TRANSFORM
 
   CSSValueType* = enum
     VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
@@ -49,7 +50,7 @@ type
     VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
     VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
     VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT, VALUE_VISIBILITY,
-    VALUE_BOX_SIZING, VALUE_CLEAR
+    VALUE_BOX_SIZING, VALUE_CLEAR, VALUE_TEXT_TRANSFORM
 
   CSSGlobalValueType* = enum
     VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
@@ -130,6 +131,11 @@ type
   CSSClear* = enum
     CLEAR_NONE, CLEAR_LEFT, CLEAR_RIGHT, CLEAR_BOTH, CLEAR_INLINE_START,
     CLEAR_INLINE_END
+
+  CSSTextTransform* = enum
+    TEXT_TRANSFORM_NONE, TEXT_TRANSFORM_CAPITALIZE, TEXT_TRANSFORM_UPPERCASE,
+    TEXT_TRANSFORM_LOWERCASE, TEXT_TRANSFORM_FULL_WIDTH,
+    TEXT_TRANSFORM_FULL_SIZE_KANA, TEXT_TRANSFORM_CHA_HALF_WIDTH
 
 const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
                       DISPLAY_TABLE_FOOTER_GROUP}
@@ -216,6 +222,8 @@ type
       boxsizing*: CSSBoxSizing
     of VALUE_CLEAR:
       clear*: CSSClear
+    of VALUE_TEXT_TRANSFORM:
+      texttransform*: CSSTextTransform
     of VALUE_NONE: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -291,7 +299,8 @@ const PropertyNames = {
   "float": PROPERTY_FLOAT,
   "visibility": PROPERTY_VISIBILITY,
   "box-sizing": PROPERTY_BOX_SIZING,
-  "clear": PROPERTY_CLEAR
+  "clear": PROPERTY_CLEAR,
+  "text-transform": PROPERTY_TEXT_TRANSFORM
 }.toTable()
 
 const ValueTypes* = [
@@ -341,7 +350,8 @@ const ValueTypes* = [
   PROPERTY_FLOAT: VALUE_FLOAT,
   PROPERTY_VISIBILITY: VALUE_VISIBILITY,
   PROPERTY_BOX_SIZING: VALUE_BOX_SIZING,
-  PROPERTY_CLEAR: VALUE_CLEAR
+  PROPERTY_CLEAR: VALUE_CLEAR,
+  PROPERTY_TEXT_TRANSFORM: VALUE_TEXT_TRANSFORM
 ]
 
 const InheritedProperties = {
@@ -350,7 +360,7 @@ const InheritedProperties = {
   PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
   PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_CAPTION_SIDE,
   PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
-  PROPERTY_VISIBILITY
+  PROPERTY_VISIBILITY, PROPERTY_TEXT_TRANSFORM
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -1092,6 +1102,18 @@ func cssClear(cval: CSSComponentValue): Opt[CSSClear] =
   }
   return cssIdent(ClearMap, cval)
 
+func cssTextTransform(cval: CSSComponentValue): Opt[CSSTextTransform] =
+  const TextTransformMap = {
+    "none": TEXT_TRANSFORM_NONE,
+    "capitalize": TEXT_TRANSFORM_CAPITALIZE,
+    "uppercase": TEXT_TRANSFORM_UPPERCASE,
+    "lowercase": TEXT_TRANSFORM_LOWERCASE,
+    "full-width": TEXT_TRANSFORM_FULL_WIDTH,
+    "full-size-kana": TEXT_TRANSFORM_FULL_SIZE_KANA,
+    "-cha-half-width": TEXT_TRANSFORM_CHA_HALF_WIDTH
+  }
+  return cssIdent(TextTransformMap, cval)
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     vtype: CSSValueType, ptype: CSSPropertyType): Err[void] =
   var i = 0
@@ -1172,6 +1194,8 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     val.boxsizing = ?cssBoxSizing(cval)
   of VALUE_CLEAR:
     val.clear = ?cssClear(cval)
+  of VALUE_TEXT_TRANSFORM:
+    val.texttransform = ?cssTextTransform(cval)
   of VALUE_NONE:
     discard
   return ok()
