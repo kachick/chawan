@@ -107,7 +107,11 @@ Double check that your CGI script is in the correct location. Also, make
 sure that you are not accidentally calling the script with an absolute path via
 `cgi-bin:/script-name` (instead of the correct `cgi-bin:script-name`).
 
-Also, make sure `external.cgi-dir` is set to the directory your script is in.
+It is also possible that `external.cgi-dir` is not really set to the directory
+your script is in. Note that by default, this depends on the binary's path,
+so e.g. if your binary is in `~/src/chawan/target/release/bin/cha`, but you
+put your CGI script to `/usr/local/libexec/chawan/cgi-bin`, then it will
+not work.
 
 ### My script returns a page saying "Failed to execute script".
 
