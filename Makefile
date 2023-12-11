@@ -16,7 +16,7 @@ LIBEXECDIR ?= '$${%CHA_BIN_DIR}/../libexec/chawan'
 # If overridden, take libexecdir that was specified.
 # Otherwise, just install to libexec/chawan.
 ifeq ($(LIBEXECDIR),'$${%CHA_BIN_DIR}/../libexec/chawan')
-LIBEXECDIR_CHAWAN = $(DESTDIR)$(PREFIX)/libexec/chawan
+LIBEXECDIR_CHAWAN = "$(DESTDIR)$(PREFIX)/libexec/chawan"
 else
 LIBEXECDIR_CHAWAN = $(LIBEXECDIR)/chawan
 endif
@@ -117,7 +117,7 @@ manpage: $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 install:
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
 	install -m755 "$(OUTDIR_BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
-	# intentionally not quoted
+	@# intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/gopher2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
@@ -137,6 +137,12 @@ install:
 .PHONY: uninstall
 uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/cha"
+	@# intentionally not quoted
+	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
+	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
+	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin && rmdir $(LIBEXECDIR_CHAWAN) || true
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-config.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mailcap.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mime.types.5"
