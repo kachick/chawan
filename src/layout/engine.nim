@@ -1413,8 +1413,12 @@ proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
 proc positionAtoms(ictx: var InlineContext) =
   if ictx.lines.len == 0:
     return
-  let erry = ictx.errorY / ictx.lines.len
-  var i = 0
+  let H = ictx.lines.len - 1
+  let erry = if H != 0:
+    ictx.errorY / H
+  else:
+    0
+  var i = 1
   for line in ictx.lines:
     let erry0 = erry * i
     for atom in line.atoms:
