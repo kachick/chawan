@@ -14,8 +14,17 @@ import types/opt
 import types/url
 import utils/twtstr
 
+proc putMappedURL(url: URL) =
+  putEnv("MAPPED_URI_SCHEME", url.scheme)
+  putEnv("MAPPED_URI_USERNAME", url.username)
+  putEnv("MAPPED_URI_PASSWORD", url.password)
+  putEnv("MAPPED_URI_HOST", url.hostname)
+  putEnv("MAPPED_URI_PORT", url.port)
+  putEnv("MAPPED_URI_PATH", url.path.serialize())
+  putEnv("MAPPED_URI_QUERY", url.query.get(""))
+
 proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
-    contentLen: int) =
+    contentLen: int, prevURL: URL) =
   let url = request.url
   putEnv("SERVER_SOFTWARE", "Chawan")
   putEnv("SERVER_PROTOCOL", "HTTP/1.0")
@@ -28,6 +37,8 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
   putEnv("SCRIPT_FILENAME", cmd)
   putEnv("REQUEST_URI", requestURI)
   putEnv("REQUEST_METHOD", $request.httpmethod)
+  if prevURL != nil:
+    putMappedURL(prevURL)
   if pathInfo != "":
     putEnv("PATH_INFO", pathInfo)
   if url.query.isSome:
@@ -47,7 +58,8 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
       putEnv("HTTPS_proxy", s)
     putEnv("ALL_PROXY", s)
 
-proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string]) =
+proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
+    prevURL: URL) =
   template t(body: untyped) =
     if not body:
       return
@@ -127,7 +139,8 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string]) =
     else:
       closeStdin()
     # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cmd, scriptName, pathInfo, requestURI, request, contentLen)
+    setupEnv(cmd, scriptName, pathInfo, requestURI, request, contentLen,
+      prevURL)
     discard execl(cstring(cmd), cstring(basename), nil)
     stdout.write("Content-Type: text/plain\r\n\r\nFailed to execute script.")
     quit(1)

@@ -41,7 +41,7 @@ endif
 FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger
+all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
@@ -64,6 +64,9 @@ $(OUTDIR_LIBEXEC)/gmi2html: adapter/gemini/gmi2html.c
 $(OUTDIR_CGI_BIN)/cha-finger: adapter/finger/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
 	cp adapter/finger/cha-finger $(OUTDIR_CGI_BIN)
+
+$(OUTDIR_CGI_BIN)/about: adapter/about/about.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/about" adapter/about/about.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
@@ -140,6 +143,7 @@ uninstall:
 	@# intentionally not quoted
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
 	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin && rmdir $(LIBEXECDIR_CHAWAN) || true

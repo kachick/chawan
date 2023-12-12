@@ -410,6 +410,7 @@ proc getMimeTypes*(config: Config): MimeTypes =
 const DefaultURIMethodMap = parseURIMethodMap("""
 finger:		cgi-bin:cha-finger?%s
 gemini:		cgi-bin:gmifetch?%s
+about:		cgi-bin:about
 """)
 
 proc getURIMethodMap*(config: Config): URIMethodMap =

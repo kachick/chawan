@@ -28,7 +28,6 @@ import io/socketstream
 import io/urlfilter
 import js/error
 import js/javascript
-import loader/about
 import loader/cgi
 import loader/connecterror
 import loader/curlhandle
@@ -113,7 +112,8 @@ proc addFd(ctx: LoaderContext, fd: int, flags: int) =
     events: cast[cshort](flags)
   ))
 
-const MaxRewrites = 2 # should be enough? TODO find out what w3m thinks
+#TODO this may be too low if we want to use urimethodmap for everything
+const MaxRewrites = 4
 
 func canRewriteForCGICompat(ctx: LoaderContext, path: string): bool =
   if not ctx.config.w3mCGICompat:
@@ -128,6 +128,7 @@ func canRewriteForCGICompat(ctx: LoaderContext, path: string): bool =
 proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   var redo = true
   var tries = 0
+  var prevurl: URL = nil
   while redo and tries < MaxRewrites:
     redo = false
     case request.url.scheme
@@ -146,9 +147,6 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
       let handleData = handle.loadHttp(ctx.curlm, request)
       if handleData != nil:
         ctx.handleList.add(handleData)
-    of "about":
-      handle.loadAbout(request)
-      handle.close()
     of "data":
       handle.loadData(request)
       handle.close()
@@ -161,9 +159,10 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
       if handleData != nil:
         ctx.handleList.add(handleData)
     of "cgi-bin":
-      handle.loadCGI(request, ctx.config.cgiDir)
+      handle.loadCGI(request, ctx.config.cgiDir, prevurl)
       handle.close()
     else:
+      prevurl = request.url
       case ctx.config.urimethodmap.findAndRewrite(request.url)
       of URI_RESULT_SUCCESS:
         inc tries

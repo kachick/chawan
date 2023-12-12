@@ -67,6 +67,33 @@ Chawan sets the following environment variables:
 * `HTTP_COOKIE=` if set, the Cookie header.
 * `HTTP_REFERER=` if set, the Referer header.
 
+For requests originating from a urimethodmap rewrite, Chawan will also set
+the parsed URL's parts as environment variables. Use of these is highly
+encouraged, to avoid exploits originating from double-parsing of URLs.
+
+Let example://username:password@host.org:1234/path/name.html?example be the
+original URL. Then:
+
+* `MAPPED_URI_SCHEME=` the scheme of the original URL, in this case `example`.
+* `MAPPED_URI_USERNAME=` the username part, in this case `username`. If no
+  username was specified, the variable is set to the empty string.
+* `MAPPED_URI_PASSWORD=` the password part, in this case `password`. If no
+  password was specified, the variable is set to the empty string.
+* `MAPPED_URI_HOST=` the host part, in this case `host.org` If no host was
+  specified, the variable is set to the empty string. (An example of an URL
+  with no host: `about:blank`, here `blank` is the path name.)
+* `MAPPED_URI_PORT=` the port, in this case `1234`. If no port was specified,
+  the variable is set to the empty string. (In this case, the CGI script is
+  expected to use the default port for the scheme, if any.)
+* `MAPPED_URI_PATH=` the path name, in this case `/path/name.html?example`. If
+  no path was specified, the variable is set to the empty string. Note:
+  the path name is percent-encoded.
+* `MAPPED_URI_QUERY=` the query string, in this case `example`. Note that,
+  unlike in JavaScript, no question mark is prepended to the string.  
+  The query string is percent-encoded as well.
+
+Note: the fragment part is omitted intentionally.
+
 ## Request body
 
 If the request body is not empty, it is streamed into the program through
