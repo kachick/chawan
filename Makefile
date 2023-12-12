@@ -49,27 +49,27 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
-$(OUTDIR_LIBEXEC)/gopher2html: adapter/gopher/gopher2html.nim
+$(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_LIBEXEC)/gopher2html" \
-		adapter/gopher/gopher2html.nim
+		adapter/format/gopher2html.nim
 
 GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O3
-$(OUTDIR_CGI_BIN)/gmifetch: adapter/gemini/gmifetch.c
-	$(CC) $(GMIFETCH_CFLAGS) adapter/gemini/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch"
+$(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
+	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch"
 
 GMI2HTML_CFLAGS = -Wall -Wextra -std=c89 -pedantic -g -O3
-$(OUTDIR_LIBEXEC)/gmi2html: adapter/gemini/gmi2html.c
-	$(CC) $(GMI2HTML_CFLAGS) adapter/gemini/gmi2html.c -o "$(OUTDIR_LIBEXEC)/gmi2html"
+$(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.c
+	$(CC) $(GMI2HTML_CFLAGS) adapter/format/gmi2html.c -o "$(OUTDIR_LIBEXEC)/gmi2html"
 
-$(OUTDIR_CGI_BIN)/cha-finger: adapter/finger/cha-finger
+$(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
-	cp adapter/finger/cha-finger $(OUTDIR_CGI_BIN)
+	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
-$(OUTDIR_CGI_BIN)/about: adapter/about/about.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/about" adapter/about/about.nim
+$(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
 
-$(OUTDIR_CGI_BIN)/data: adapter/data/data.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/data/data.nim
+$(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
