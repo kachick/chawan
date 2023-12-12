@@ -41,7 +41,9 @@ endif
 FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about $(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file
+all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch \
+	$(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
+	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
@@ -71,8 +73,14 @@ $(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim
 $(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 
-$(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim src/loader/dirlist.nim src/utils/twtstr.nim
+$(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim src/loader/dirlist.nim \
+		src/utils/twtstr.nim src/loader/connecterror.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
+
+$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim src/bindings/curl.nim \
+		src/loader/dirlist.nim src/utils/twtstr.nim src/types/url.nim \
+		src/types/opt.nim src/loader/connecterror.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs

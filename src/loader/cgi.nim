@@ -70,6 +70,7 @@ proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
     return RESULT_ERROR
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
+    discard handle.sendResult(0) # success
     status = parseInt32(v).get(0)
     return RESULT_CONTROL_CONTINUE
   if k.equalsIgnoreCase("Cha-Control"):
@@ -77,18 +78,19 @@ proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
       discard handle.sendResult(0) # success
       return RESULT_CONTROL_CONTINUE
     elif v.startsWithIgnoreCase("ConnectionError"):
-      let errs = v.substr("ConnectionError".len + 1).split(' ')
-      if errs.len == 0:
+      let errs = v.split(' ')
+      if errs.len <= 1:
         discard handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
       else:
         let fb = int32(ERROR_CGI_INVALID_CHA_CONTROL)
-        let code = int(parseInt32(errs[0]).get(fb))
+        let code = int(parseInt32(errs[1]).get(fb))
         discard handle.sendResult(code)
       return RESULT_ERROR
     elif v.startsWithIgnoreCase("ControlDone"):
       return RESULT_CONTROL_DONE
     discard handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
     return RESULT_ERROR
+  discard handle.sendResult(0) # success
   headers.add(k, v)
   return RESULT_CONTROL_DONE
 
@@ -230,16 +232,21 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
       var res = handle.handleFirstLine(line, headers, status)
       if res == RESULT_ERROR:
         return
+      var crlfFound = false
       while not ps.atEnd and res == RESULT_CONTROL_CONTINUE:
         let line = ps.readLine()
+        if line == "":
+          crlfFound = true
+          break
         res = handle.handleControlLine(line, headers, status)
         if res == RESULT_ERROR:
           return
-      while not ps.atEnd:
-        let line = ps.readLine()
-        if line == "": #\r\n
-          break
-        handle.handleLine(line, headers)
+      if not crlfFound:
+        while not ps.atEnd:
+          let line = ps.readLine()
+          if line == "": #\r\n
+            break
+          handle.handleLine(line, headers)
     t handle.sendStatus(status)
     t handle.sendHeaders(headers)
     var buffer: array[4096, uint8]

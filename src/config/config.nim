@@ -413,6 +413,9 @@ gemini:		cgi-bin:gmifetch?%s
 about:		cgi-bin:about
 data:		cgi-bin:data
 file:		cgi-bin:file?%s
+ftp:		cgi-bin:ftp?%s
+sftp:		cgi-bin:sftp?%s
+ftps:		cgi-bin:ftps?%s
 """)
 
 proc getURIMethodMap*(config: Config): URIMethodMap =
