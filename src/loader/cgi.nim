@@ -58,6 +58,66 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
       putEnv("HTTPS_proxy", s)
     putEnv("ALL_PROXY", s)
 
+type ControlResult = enum
+  RESULT_CONTROL_DONE, RESULT_CONTROL_CONTINUE, RESULT_ERROR
+
+proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
+    status: var int): ControlResult =
+  let k = line.until(':')
+  if k.len == line.len:
+    # invalid
+    discard handle.sendResult(ERROR_CGI_MALFORMED_HEADER)
+    return RESULT_ERROR
+  let v = line.substr(k.len + 1).strip()
+  if k.equalsIgnoreCase("Status"):
+    status = parseInt32(v).get(0)
+    return RESULT_CONTROL_CONTINUE
+  if k.equalsIgnoreCase("Cha-Control"):
+    if v.startsWithIgnoreCase("Connected"):
+      discard handle.sendResult(0) # success
+      return RESULT_CONTROL_CONTINUE
+    elif v.startsWithIgnoreCase("ConnectionError"):
+      let errs = v.substr("ConnectionError".len + 1).split(' ')
+      if errs.len == 0:
+        discard handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+      else:
+        let fb = int32(ERROR_CGI_INVALID_CHA_CONTROL)
+        let code = int(parseInt32(errs[0]).get(fb))
+        discard handle.sendResult(code)
+      return RESULT_ERROR
+    elif v.startsWithIgnoreCase("ControlDone"):
+      return RESULT_CONTROL_DONE
+    discard handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+    return RESULT_ERROR
+  headers.add(k, v)
+  return RESULT_CONTROL_DONE
+
+proc handleControlLine(handle: LoaderHandle, line: string, headers: Headers,
+    status: var int): ControlResult =
+  let k = line.until(':')
+  if k.len == line.len:
+    # invalid
+    return RESULT_ERROR
+  let v = line.substr(k.len + 1).strip()
+  if k.equalsIgnoreCase("Status"):
+    status = parseInt32(v).get(0)
+    return RESULT_CONTROL_CONTINUE
+  if k.equalsIgnoreCase("Cha-Control"):
+    if v.startsWithIgnoreCase("ControlDone"):
+      return RESULT_CONTROL_DONE
+    return RESULT_ERROR
+  headers.add(k, v)
+  return RESULT_CONTROL_DONE
+
+# returns false if transfer was interrupted
+proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
+  let k = line.until(':')
+  if k.len == line.len:
+    # invalid
+    return
+  let v = line.substr(k.len + 1).strip()
+  headers.add(k, v)
+
 proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
     prevURL: URL) =
   template t(body: untyped) =
@@ -159,20 +219,28 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
     let ps = newPosixStream(pipefd[0])
     let headers = newHeaders()
     var status = 200
-    while not ps.atEnd:
-      let line = ps.readLine()
-      if line == "": #\r\n
-        break
-      let k = line.until(':')
-      if k == line:
-        # invalid?
-        discard
-      else:
-        let v = line.substr(k.len + 1).strip()
-        if k.equalsIgnoreCase("Status"):
-          status = parseInt32(v).get(0)
-        else:
-          headers.add(k, v)
+    if ps.atEnd:
+      # no data?
+      discard handle.sendResult(ERROR_CGI_NO_DATA)
+      return
+    let line = ps.readLine()
+    if line == "": #\r\n
+      # no headers, body comes immediately
+      t handle.sendResult(0) # success
+    else:
+      var res = handle.handleFirstLine(line, headers, status)
+      if res == RESULT_ERROR:
+        return
+      while not ps.atEnd and res == RESULT_CONTROL_CONTINUE:
+        let line = ps.readLine()
+        res = handle.handleControlLine(line, headers, status)
+        if res == RESULT_ERROR:
+          return
+      while not ps.atEnd:
+        let line = ps.readLine()
+        if line == "": #\r\n
+          break
+        handle.handleLine(line, headers)
     t handle.sendStatus(status)
     t handle.sendHeaders(headers)
     var buffer: array[4096, uint8]

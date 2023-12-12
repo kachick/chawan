@@ -31,7 +31,6 @@ import js/javascript
 import loader/cgi
 import loader/connecterror
 import loader/curlhandle
-import loader/data
 import loader/file
 import loader/ftp
 import loader/gopher
@@ -147,9 +146,6 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
       let handleData = handle.loadHttp(ctx.curlm, request)
       if handleData != nil:
         ctx.handleList.add(handleData)
-    of "data":
-      handle.loadData(request)
-      handle.close()
     of "ftp", "ftps", "sftp":
       let handleData = handle.loadFtp(ctx.curlm, request)
       if handleData != nil:

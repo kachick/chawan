@@ -34,8 +34,47 @@ use a custom scheme for local CGI instead of interpreting all requests to
 a designated path as a CGI request. (This incompatibility is bridged over when
 `external.cgi-dir` is true.)
 
-Also, for now Chawan has no equivalent to the W3m-control headers (but this
-may change in the future).
+## Headers
+
+Local CGI scripts may send some headers that Chawan will interpret
+specially (and thus will not pass forward to e.g. the fetch API, etc):
+
+* `Status`: interpreted as the HTTP status code.
+* `Cha-Control`: special header, see below.
+
+Note that these headers MUST be sent before any regular headers. Headers
+received after a regular header or a `Cha-Control: ControlDone` header will be
+treated as regular headers.
+
+The `Cha-Control` header's value is parsed as follows:
+
+```
+Cha-Control-Value = Command *Parameter
+Command = ALPHA *ALPHA
+Parameter = *SPACE *CHAR
+```
+
+In other words, it is `Command [Param1] [Param2] ...`.
+
+Currently available commands are:
+
+* `Connected`: Takes no parameters. Must be the first reported header;
+  it means that connection to the server has been successfully established,
+  but no data has been received yet. When any other header is sent first,
+  Chawan will act as if a `Cha-Control: Connected` header had been implicitly
+  sent before that.
+* `ConnectionError`: Must be the first reported header. Parameter 1 is the
+  error code, see below. If any following parameters are given, they are
+  concatenated to form a custom error message. TODO implement this
+* `ControlDone`: Signals that no more special headers will be sent; this
+  means that `Cha-Control` and `Status` headers sent after this must be
+  interpreted as regular headers (and thus e.g. will be available for JS
+  code calling the script using the fetch API).  
+  WARNING: this header must be sent before any non-hardcoded headers that
+  take external input. For example, a HTTP client would have to send
+  `Cha-Control: ControlDone` before returning the retrieved headers.
+
+TODO insert list of public error codes here
 
 ## Environment variables
 
