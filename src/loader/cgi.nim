@@ -215,7 +215,6 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
         #TODO
         discard
       ps.close()
-    discard handle.sendResult(0) # success
     let ps = newPosixStream(pipefd[0])
     let headers = newHeaders()
     var status = 200

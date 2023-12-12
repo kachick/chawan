@@ -1,28 +1,22 @@
-import algorithm
-import os
-import streams
-import times
+import std/algorithm
+import std/os
+import std/streams
+import std/times
+import std/envvars
 
 import loader/connecterror
 import loader/dirlist
-import loader/headers
-import loader/loaderhandle
-import types/url
+import utils/twtstr
 
-proc loadDir(handle: LoaderHandle, url: URL, path: string) =
-  template t(body: untyped) =
-    if not body:
-      return
+proc loadDir(path: string) =
   var path = path
   if path[^1] != '/': #TODO dos/windows
     path &= '/'
-  var base = $url
+  var base = getEnv("QUERY_STRING")
   if base[^1] != '/': #TODO dos/windows
     base &= '/'
-  t handle.sendResult(0)
-  t handle.sendStatus(200) # ok
-  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}))
-  t handle.sendData("""
+  stdout.write("Content-Type: text/html\n\n")
+  stdout.write("""
 <HTML>
 <HEAD>
 <BASE HREF="""" & base & """">
@@ -69,18 +63,13 @@ proc loadDir(handle: LoaderHandle, url: URL, path: string) =
         modified: modified,
         linkto: target
       ))
-  t handle.sendData(makeDirlist(items))
-  t handle.sendData("\n</PRE>\n</BODY>\n</HTML>\n")
+  stdout.write(makeDirlist(items))
+  stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
 
-proc loadSymlink(handle: LoaderHandle, path: string) =
-  template t(body: untyped) =
-    if not body:
-      return
-  t handle.sendResult(0)
-  t handle.sendStatus(200) # ok
-  t handle.sendHeaders(newHeaders({"Content-Type": "text/html"}))
+proc loadSymlink(path: string) =
+  stdout.write("Content-Type: text/html\n\n")
   let sl = expandSymlink(path)
-  t handle.sendData("""
+  stdout.write("""
 <HTML>
 <HEAD>
 <TITLE>Symlink view<TITLE>
@@ -90,13 +79,10 @@ Symbolic link to <A HREF="""" & sl & """">""" & sl & """</A></br>
 </BODY>
 </HTML>""")
 
-proc loadFile(handle: LoaderHandle, istream: Stream) =
-  template t(body: untyped) =
-    if not body:
-      return
-  t handle.sendResult(0)
-  t handle.sendStatus(200) # ok
-  t handle.sendHeaders(newHeaders())
+proc loadFile(istream: Stream) =
+  # No headers, we'll let the browser figure out the file type.
+  stdout.write("\n")
+  let outs = newFileStream(stdout)
   while not istream.atEnd:
     const bufferSize = 4096
     var buffer {.noinit.}: array[bufferSize, char]
@@ -104,18 +90,22 @@ proc loadFile(handle: LoaderHandle, istream: Stream) =
       let n = readData(istream, addr buffer[0], bufferSize)
       if n == 0:
         break
-      t handle.sendData(addr buffer[0], n)
+      outs.writeData(addr buffer[0], n)
       if n < bufferSize:
         break
 
-proc loadFilePath*(handle: LoaderHandle, url: URL, path: string) =
+proc main() =
+  let path = percentDecode(getEnv("MAPPED_URI_PATH"))
   let istream = newFileStream(path, fmRead)
   if istream == nil:
     if dirExists(path):
-      handle.loadDir(url, path)
+      loadDir(path)
     elif symlinkExists(path):
-      handle.loadSymlink(path)
+      loadSymlink(path)
     else:
-      discard handle.sendResult(ERROR_FILE_NOT_FOUND)
+      let code = int(ERROR_FILE_NOT_FOUND)
+      stdout.write("Cha-Control: ConnectionError " & $code)
   else:
-    handle.loadFile(istream)
+    loadFile(istream)
+
+main()

@@ -41,7 +41,7 @@ endif
 FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about $(OUTDIR_CGI_BIN)/data
+all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about $(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
@@ -49,7 +49,7 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
-$(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim
+$(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim src/utils/twtstr.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_LIBEXEC)/gopher2html" \
 		adapter/format/gopher2html.nim
 
@@ -68,8 +68,11 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 $(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
 
-$(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim
+$(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
+
+$(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim src/loader/dirlist.nim src/utils/twtstr.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs

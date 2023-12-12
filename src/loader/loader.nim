@@ -31,7 +31,6 @@ import js/javascript
 import loader/cgi
 import loader/connecterror
 import loader/curlhandle
-import loader/file
 import loader/ftp
 import loader/gopher
 import loader/headers
@@ -115,8 +114,6 @@ proc addFd(ctx: LoaderContext, fd: int, flags: int) =
 const MaxRewrites = 4
 
 func canRewriteForCGICompat(ctx: LoaderContext, path: string): bool =
-  if not ctx.config.w3mCGICompat:
-    return false
   if path.startsWith("/cgi-bin/") or path.startsWith("/$LIB/"):
     return true
   for dir in ctx.config.cgiDir:
@@ -130,8 +127,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   var prevurl: URL = nil
   while redo and tries < MaxRewrites:
     redo = false
-    case request.url.scheme
-    of "file":
+    if ctx.config.w3mCGICompat and request.url.scheme == "file":
       let path = request.url.path.serialize_unicode()
       if ctx.canRewriteForCGICompat(path):
         let newURL = newURL("cgi-bin:" & path & request.url.search)
@@ -140,8 +136,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
           inc tries
           redo = true
           continue
-      handle.loadFilePath(request.url, path)
-      handle.close()
+    case request.url.scheme
     of "http", "https":
       let handleData = handle.loadHttp(ctx.curlm, request)
       if handleData != nil:
