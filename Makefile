@@ -43,7 +43,8 @@ FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 .PHONY: all
 all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch \
 	$(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
-	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp
+	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
+	$(OUTDIR_CGI_BIN)/gopher
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
@@ -51,7 +52,8 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
-$(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim src/utils/twtstr.nim
+$(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
+		src/utils/twtstr.nim adapter/gophertypes.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_LIBEXEC)/gopher2html" \
 		adapter/format/gopher2html.nim
 
@@ -81,6 +83,12 @@ $(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim src/bindings/curl.nim \
 		src/loader/dirlist.nim src/utils/twtstr.nim src/types/url.nim \
 		src/types/opt.nim src/loader/connecterror.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
+
+$(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/gophertypes.nim \
+		src/bindings/curl.nim src/loader/dirlist.nim \
+		src/utils/twtstr.nim src/types/url.nim src/types/opt.nim \
+		src/loader/connecterror.nim
+	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
@@ -161,6 +169,8 @@ uninstall:
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/ftp
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gopher
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin && rmdir $(LIBEXECDIR_CHAWAN) || true
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-config.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mailcap.5"

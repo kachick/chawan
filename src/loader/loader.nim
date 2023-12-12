@@ -31,7 +31,6 @@ import js/javascript
 import loader/cgi
 import loader/connecterror
 import loader/curlhandle
-import loader/gopher
 import loader/headers
 import loader/http
 import loader/loaderhandle
@@ -138,10 +137,6 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
     case request.url.scheme
     of "http", "https":
       let handleData = handle.loadHttp(ctx.curlm, request)
-      if handleData != nil:
-        ctx.handleList.add(handleData)
-    of "gopher", "gophers":
-      let handleData = handle.loadGopher(ctx.curlm, request)
       if handleData != nil:
         ctx.handleList.add(handleData)
     of "cgi-bin":

@@ -407,16 +407,7 @@ proc getMimeTypes*(config: Config): MimeTypes =
     return DefaultGuess
   return mimeTypes
 
-const DefaultURIMethodMap = parseURIMethodMap("""
-finger:		cgi-bin:cha-finger
-gemini:		cgi-bin:gmifetch?%s
-about:		cgi-bin:about
-data:		cgi-bin:data
-file:		cgi-bin:file?%s
-ftp:		cgi-bin:ftp?%s
-sftp:		cgi-bin:sftp?%s
-ftps:		cgi-bin:ftps?%s
-""")
+const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
 
 proc getURIMethodMap*(config: Config): URIMethodMap =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
