@@ -5,6 +5,8 @@ import std/os
 import std/streams
 import std/strutils
 
+import utils/twtstr
+
 type GopherType = enum
   UNKNOWN = "unsupported"
   TEXT_FILE = "text file"
@@ -37,23 +39,6 @@ func gopherType(c: char): GopherType =
   of '9': BINARY
   of 'p': PNG
   else: UNKNOWN
-
-func htmlEscape(s: string): string =
-  result = ""
-  for c in s:
-    case c
-    of '<': result &= "&lt;"
-    of '>': result &= "&gt;"
-    of '&': result &= "&amp;"
-    of '"': result &= "&quot;"
-    of '\'': result &= "&apos;"
-    else: result &= c
-
-func until(s: string, c: char, starti = 0): string =
-  for i in starti ..< s.len:
-    if s[i] == c:
-      break
-    result &= s[i]
 
 const ControlPercentEncodeSet = {char(0x00)..char(0x1F), char(0x7F)..char(0xFF)}
 const QueryPercentEncodeSet = (ControlPercentEncodeSet + {' ', '"', '#', '<', '>'})

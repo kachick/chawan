@@ -222,7 +222,8 @@ func until*(s: string, c: set[char], starti = 0): string =
       break
     result.add(s[i])
 
-func until*(s: string, c: char): string = s.until({c})
+func until*(s: string, c: char, starti = 0): string =
+  s.until({c}, starti)
 
 func after*(s: string, c: set[char]): string =
   var i = 0
@@ -557,21 +558,15 @@ func percentDecode*(input: string, si = 0): string =
     inc i
 
 func htmlEscape*(s: string): string =
-  var res = ""
+  result = ""
   for c in s:
-    if c == '<':
-      res &= "&lt;"
-    elif c == '>':
-      res &= "&gt;"
-    elif c == '&':
-      res &= "&amp;"
-    elif c == '"':
-      res &= "&quot;"
-    elif c == '\'':
-      res &= "&apos;"
-    else:
-      res &= c
-  return res
+    case c
+    of '<': result &= "&lt;"
+    of '>': result &= "&gt;"
+    of '&': result &= "&amp;"
+    of '"': result &= "&quot;"
+    of '\'': result &= "&apos;"
+    else: result &= c
 
 func dqEscape*(s: string): string =
   result = newStringOfCap(s.len)
