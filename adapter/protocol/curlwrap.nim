@@ -8,3 +8,6 @@ template setopt*(curl: CURL, opt: CURLoption, arg: string) =
 
 template getinfo*(curl: CURL, info: CURLINFO, arg: typed) =
   discard curl_easy_getinfo(curl, info, arg)
+
+template set*(url: CURLU, part: CURLUPart, content: string, flags: cuint) =
+  discard curl_url_set(url, part, cstring(content), flags)

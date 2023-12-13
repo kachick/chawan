@@ -1,7 +1,7 @@
 # Default urimethodmap file for Chawan.
 
-http:		cgi-bin:http?%s
-https:		cgi-bin:http?%s
+http:		cgi-bin:http
+https:		cgi-bin:http
 finger:		cgi-bin:cha-finger
 gemini:		cgi-bin:gmifetch?%s
 about:		cgi-bin:about

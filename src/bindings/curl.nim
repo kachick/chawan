@@ -47,11 +47,32 @@ const
   CURL_WAIT_POLLPRI* = 0x0002
   CURL_WAIT_POLLOUT* = 0x0004
 
+# CURLU
+const
+  CURLU_DEFAULT_PORT* = (1 shl 0)       # return default port number
+  CURLU_NO_DEFAULT_PORT* = (1 shl 1)    # act as if no port number was set,
+                                        # if the port number matches the
+                                        # default for the scheme
+  CURLU_DEFAULT_SCHEME* = (1 shl 2)     # return default scheme if missing
+  CURLU_NON_SUPPORT_SCHEME* = (1 shl 3) # allow non-supported scheme
+  CURLU_PATH_AS_IS* = (1 shl 4)         # leave dot sequences
+  CURLU_DISALLOW_USER* = (1 shl 5)      # no user+password allowed
+  CURLU_URLDECODE* = (1 shl 6)          # URL decode on get
+  CURLU_URLENCODE* = (1 shl 7)          # URL encode on set
+  CURLU_APPENDQUERY* = (1 shl 8)        # append a form style part
+  CURLU_GUESS_SCHEME* = (1 shl 9)       # legacy curl-style guessing
+  CURLU_NO_AUTHORITY* = (1 shl 10)      # Allow empty authority when the scheme
+                                        # is unknown.
+  CURLU_ALLOW_SPACE* = (1 shl 11)       # Allow spaces in the URL
+  CURLU_PUNYCODE* = (1 shl 12)          # get the host name in punycode
+  CURLU_PUNY2IDN* = (1 shl 13)          # punycode => IDN conversion
+
 {.push cdecl, dynlib: curllib.}
 
 type
   CURL* = distinct pointer
   CURLM* = distinct pointer
+  CURLU* = distinct pointer
 
   curl_mime_struct = object
   curl_mime* = ptr curl_mime_struct
@@ -95,6 +116,7 @@ type
     CURLOPT_HEADERDATA = CURLOPTTYPE_CBPOINT + 29
     CURLOPT_ACCEPT_ENCODING = CURLOPTTYPE_STRINGPOINT + 102
     CURLOPT_MIMEPOST = CURLOPTTYPE_OBJECTPOINT + 269
+    CURLOPT_CURLU = CURLOPTTYPE_OBJECTPOINT + 282
     CURLOPT_PREREQDATA = CURLOPTTYPE_CBPOINT + 313
 
     # Functionpoint
@@ -303,6 +325,53 @@ type
                  # the CURLcode of the transfer
     CURLMSG_LAST # last, not used
 
+  CURLUcode* {.size: sizeof(cint).} = enum
+    CURLUE_OK,
+    CURLUE_BAD_HANDLE # 1
+    CURLUE_BAD_PARTPOINTER # 2
+    CURLUE_MALFORMED_INPUT # 3
+    CURLUE_BAD_PORT_NUMBER # 4
+    CURLUE_UNSUPPORTED_SCHEME # 5
+    CURLUE_URLDECODE # 6
+    CURLUE_OUT_OF_MEMORY # 7
+    CURLUE_USER_NOT_ALLOWED # 8
+    CURLUE_UNKNOWN_PART # 9
+    CURLUE_NO_SCHEME # 10
+    CURLUE_NO_USER # 11
+    CURLUE_NO_PASSWORD # 12
+    CURLUE_NO_OPTIONS # 13
+    CURLUE_NO_HOST # 14
+    CURLUE_NO_PORT # 15
+    CURLUE_NO_QUERY # 16
+    CURLUE_NO_FRAGMENT # 17
+    CURLUE_NO_ZONEID # 18
+    CURLUE_BAD_FILE_URL # 19
+    CURLUE_BAD_FRAGMENT # 20
+    CURLUE_BAD_HOSTNAME # 21
+    CURLUE_BAD_IPV6 # 22
+    CURLUE_BAD_LOGIN # 23
+    CURLUE_BAD_PASSWORD # 24
+    CURLUE_BAD_PATH # 25
+    CURLUE_BAD_QUERY # 26
+    CURLUE_BAD_SCHEME # 27
+    CURLUE_BAD_SLASHES # 28
+    CURLUE_BAD_USER # 29
+    CURLUE_LACKS_IDN # 30
+    CURLUE_LAST
+
+  CURLUPart* {.size: sizeof(cint).} = enum
+    CURLUPART_URL
+    CURLUPART_SCHEME
+    CURLUPART_USER
+    CURLUPART_PASSWORD
+    CURLUPART_OPTIONS
+    CURLUPART_HOST
+    CURLUPART_PORT
+    CURLUPART_PATH
+    CURLUPART_QUERY
+    CURLUPART_FRAGMENT
+    CURLUPART_ZONEID # added in 7.65.0
+
 proc `==`*(a: CURL, b: CURL): bool {.borrow.}
 proc `==`*(a: CURL, b: typeof(nil)): bool {.borrow.}
 proc `==`*(a: CURLM, b: CURLM): bool {.borrow.}
@@ -319,6 +388,15 @@ proc curl_easy_setopt*(handle: CURL, option: CURLoption): CURLcode {.varargs.}
 proc curl_easy_perform*(handle: CURL): CURLcode
 proc curl_easy_getinfo*(handle: CURL, info: CURLINFO): CURLcode {.varargs.}
 proc curl_easy_strerror*(errornum: CURLcode): cstring
+
+proc curl_url*(): CURLU
+proc curl_url_cleanup*(handle: CURLU)
+proc curl_url_dup*(inh: CURLU): CURLU
+proc curl_url_get*(handle: CURLU, what: CURLUPart, part: ptr cstring,
+  flags: cuint): CURLUcode
+proc curl_url_set*(handle: CURLU, what: CURLUPart, part: cstring,
+  flags: cuint): CURLUcode
+proc curl_url_strerror*(code: CURLUcode): cstring
 
 proc curl_mime_init*(handle: CURL): curl_mime
 proc curl_mime_free*(mime: curl_mime)

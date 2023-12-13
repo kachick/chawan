@@ -77,8 +77,26 @@ proc curlPreRequest(clientp: pointer, conn_primary_ip, conn_local_ip: cstring,
 proc main() =
   let curl = curl_easy_init()
   doAssert curl != nil
-  let surl = getEnv("QUERY_STRING")
-  curl.setopt(CURLOPT_URL, surl)
+  let url = curl_url()
+  const flags = cuint(CURLU_PATH_AS_IS)
+  url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
+  let username = getEnv("MAPPED_URI_USERNAME")
+  if username != "":
+    url.set(CURLUPART_USER, username, flags)
+  let password = getEnv("MAPPED_URI_PASSWORD")
+  if password != "":
+    url.set(CURLUPART_PASSWORD, password, flags)
+  url.set(CURLUPART_HOST, getEnv("MAPPED_URI_HOST"), flags)
+  let port = getEnv("MAPPED_URI_PORT")
+  if port != "":
+    url.set(CURLUPART_PORT, port, flags)
+  let path = getEnv("MAPPED_URI_PATH")
+  if path != "":
+    url.set(CURLUPART_PATH, path, flags)
+  let query = getEnv("MAPPED_URI_QUERY")
+  if query != "":
+    url.set(CURLUPART_QUERY, query, flags)
+  curl.setopt(CURLOPT_CURLU, url)
   let op = HttpHandle(curl: curl)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_HEADERDATA, op)
