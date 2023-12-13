@@ -1,12 +1,10 @@
 import std/envvars
-import std/options
 import std/strutils
 
 import curlerrors
 import curlwrap
 
 import bindings/curl
-import types/opt
 import utils/twtstr
 
 type
@@ -111,7 +109,7 @@ proc main() =
     curl.setopt(CURLOPT_HTTPGET, 1)
   of "POST":
     curl.setopt(CURLOPT_POST, 1)
-    let len = parseInt64(getEnv("CONTENT_LENGTH")).get
+    let len = parseInt(getEnv("CONTENT_LENGTH"))
     # > For any given platform/compiler curl_off_t must be typedef'ed to
     # a 64-bit
     # > wide signed integral data type. The width of this data type must remain

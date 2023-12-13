@@ -12,6 +12,7 @@ import js/error
 import js/javascript
 import lib/punycode
 import types/blob
+import utils/luwrap
 import utils/twtstr
 
 type

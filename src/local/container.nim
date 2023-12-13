@@ -23,6 +23,7 @@ import types/cell
 import types/color
 import types/cookie
 import types/url
+import utils/luwrap
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr

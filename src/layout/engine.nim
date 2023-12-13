@@ -8,6 +8,7 @@ import css/values
 import display/winattrs
 import layout/box
 import layout/layoutunit
+import utils/luwrap
 import utils/strwidth
 import utils/twtstr
 

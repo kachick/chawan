@@ -6,9 +6,9 @@ finger:		cgi-bin:cha-finger
 gemini:		cgi-bin:gmifetch?%s
 about:		cgi-bin:about
 data:		cgi-bin:data
-file:		cgi-bin:file?%s
-ftp:		cgi-bin:ftp?%s
-sftp:		cgi-bin:sftp?%s
-ftps:		cgi-bin:ftps?%s
-gopher:		cgi-bin:gopher?%s
-gophers:	cgi-bin:gophers?%s
+file:		cgi-bin:file
+ftp:		cgi-bin:ftp
+sftp:		cgi-bin:sftp
+ftps:		cgi-bin:ftps
+gopher:		cgi-bin:gopher
+gophers:	cgi-bin:gophers

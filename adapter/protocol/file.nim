@@ -9,11 +9,11 @@ import dirlist
 import loader/connecterror
 import utils/twtstr
 
-proc loadDir(path: string) =
+proc loadDir(path, opath: string) =
   var path = path
   if path[^1] != '/': #TODO dos/windows
     path &= '/'
-  var base = getEnv("QUERY_STRING")
+  var base = "file://" & opath
   if base[^1] != '/': #TODO dos/windows
     base &= '/'
   stdout.write("Content-Type: text/html\n\n")
@@ -96,11 +96,12 @@ proc loadFile(istream: Stream) =
         break
 
 proc main() =
-  let path = percentDecode(getEnv("MAPPED_URI_PATH"))
+  let opath = getEnv("MAPPED_URI_PATH")
+  let path = percentDecode(opath)
   let istream = newFileStream(path, fmRead)
   if istream == nil:
     if dirExists(path):
-      loadDir(path)
+      loadDir(path, opath)
     elif symlinkExists(path):
       loadSymlink(path)
     else:

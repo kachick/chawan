@@ -1,5 +1,4 @@
 import std/envvars
-import std/options
 
 import curlwrap
 import curlerrors
@@ -8,8 +7,6 @@ import ../gophertypes
 
 import bindings/curl
 import loader/connecterror
-import types/opt
-import types/url
 import utils/twtstr
 
 type GopherHandle = ref object
@@ -63,35 +60,43 @@ proc main() =
   if getEnv("REQUEST_METHOD") != "GET":
     stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_METHOD))
     return
-  var url = newURL(getEnv("QUERY_STRING")).get
-  var path = url.pathname
+  var path = getEnv("MAPPED_URI_PATH")
   if path.len < 1:
     path &= '/'
   if path.len < 2:
     path &= '1'
-    url = newURL(url)
-    url.setPathname(path)
+  let url = curl_url()
+  const flags = cuint(CURLU_PATH_AS_IS)
+  url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
+  url.set(CURLUPART_HOST, getEnv("MAPPED_URI_HOST"), flags)
+  let port = getEnv("MAPPED_URI_PORT")
+  if port != "":
+    url.set(CURLUPART_PORT, port, flags)
+  url.set(CURLUPART_PATH, path, flags)
+  let query = getEnv("MAPPED_URI_QUERY")
+  if query != "":
+    url.set(CURLUPART_QUERY, query.after('='), flags)
   let op = GopherHandle(
     curl: curl,
     t: gopherType(path[1])
   )
-  if op.t == SEARCH:
-    if url.query.isNone:
-      op.loadSearch(url.serialize())
-      return
+  if op.t == SEARCH and query == "":
+    const flags = cuint(CURLU_PUNY2IDN)
+    let surl = url.get(CURLUPART_URL, flags)
+    if surl == nil:
+      stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_URL))
     else:
-      url.query = some(url.query.get.after('='))
-  let surl = url.serialize()
-  #TODO avoid re-parsing
-  curl.setopt(CURLOPT_URL, surl)
-  curl.setopt(CURLOPT_WRITEDATA, op)
-  curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
-  let proxy = getEnv("ALL_PROXY")
-  if proxy != "":
-    curl.setopt(CURLOPT_PROXY, proxy)
-  let res = curl_easy_perform(curl)
-  if res != CURLE_OK and not op.statusline:
-    stdout.write(getCurlConnectionError(res))
+      op.loadSearch($surl)
+  else:
+    curl.setopt(CURLOPT_CURLU, url)
+    curl.setopt(CURLOPT_WRITEDATA, op)
+    curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
+    let proxy = getEnv("ALL_PROXY")
+    if proxy != "":
+      curl.setopt(CURLOPT_PROXY, proxy)
+    let res = curl_easy_perform(curl)
+    if res != CURLE_OK and not op.statusline:
+      stdout.write(getCurlConnectionError(res))
   curl_easy_cleanup(curl)
 
 main()

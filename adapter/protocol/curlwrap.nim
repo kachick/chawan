@@ -11,3 +11,10 @@ template getinfo*(curl: CURL, info: CURLINFO, arg: typed) =
 
 template set*(url: CURLU, part: CURLUPart, content: string, flags: cuint) =
   discard curl_url_set(url, part, cstring(content), flags)
+
+template get*(url: CURLU, part: CURLUPart, flags: cuint): cstring =
+  var outs: cstring
+  if curl_url_get(url, part, addr outs, flags) == CURLUE_OK:
+    outs
+  else:
+    nil

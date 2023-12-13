@@ -9,7 +9,6 @@ import dirlist
 import bindings/curl
 import loader/connecterror
 import types/opt
-import types/url
 import utils/twtstr
 
 type FtpHandle = ref object
@@ -153,17 +152,27 @@ proc finish(op: FtpHandle) =
 proc main() =
   let curl = curl_easy_init()
   doAssert curl != nil
-  let surl = getEnv("QUERY_STRING")
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
+  let url = curl_url()
+  const flags = cuint(CURLU_PATH_AS_IS)
+  url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
+  let username = getEnv("MAPPED_URI_USERNAME")
+  if username != "":
+    url.set(CURLUPART_USER, username, flags)
+  let password = getEnv("MAPPED_URI_PASSWORD")
+  if password != "":
+    url.set(CURLUPART_PASSWORD, password, flags)
+  url.set(CURLUPART_HOST, getEnv("MAPPED_URI_HOST"), flags)
+  let port = getEnv("MAPPED_URI_PORT")
+  if port != "":
+    url.set(CURLUPART_PORT, port, flags)
   # By default, cURL CWD's into relative paths, and an extra slash is
   # necessary to specify absolute paths.
   # This is incredibly confusing, and probably not what the user wanted.
   # So we work around it by adding the extra slash ourselves.
-  let hackurl = newURL(surl).get
-  hackurl.setPathname('/' & opath)
-  let csurl = hackurl.serialize()
-  curl.setopt(CURLOPT_URL, csurl)
+  url.set(CURLUPART_PATH, '/' & opath, flags)
+  curl.setopt(CURLOPT_CURLU, url)
   let dirmode = path.len > 0 and path[^1] == '/'
   let op = FtpHandle(
     curl: curl,
@@ -175,7 +184,12 @@ proc main() =
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD)
   if dirmode:
-    op.base = surl
+    const flags = cuint(CURLU_PUNY2IDN)
+    let surl = url.get(CURLUPART_URL, flags)
+    if surl == nil:
+      stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_URL))
+      return
+    op.base = $surl
     op.path = path
   let purl = getEnv("ALL_PROXY")
   if purl != "":

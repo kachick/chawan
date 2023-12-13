@@ -350,7 +350,7 @@ proc readUserStylesheet(dir, file: string): string =
 # of several individual configuration files known as mailcap files.
 proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
-  const gopherPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gopher2html -u $MAILCAP_URL")
+  const gopherPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL")
   let gopherPath = gopherPath0.unquote().get
   const geminiPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gmi2html")
   let geminiPath = geminiPath0.unquote().get

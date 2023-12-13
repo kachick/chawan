@@ -38,8 +38,6 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
-FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
-
 .PHONY: all
 all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
@@ -49,7 +47,8 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
-	$(NIMC) -d:libexecPath=$(LIBEXECDIR) $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
+	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
+		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
@@ -71,33 +70,33 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim src/bindings/curl.nim \
-		src/types/opt.nim src/utils/twtstr.nim
-	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
+		src/utils/twtstr.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/http" -d:curlLibName:$(CURLLIBNAME) \
 		-o:"$(OUTDIR_CGI_BIN)/http" adapter/protocol/http.nim
 
 $(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/about" -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
 
 $(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/data" -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 
 $(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim adapter/protocol/dirlist.nim \
 		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
 		res/map/EastAsianWidth.txt src/loader/connecterror.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/file" -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
 
-$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim src/bindings/curl.nim \
-		adapter/protocol/dirlist.nim src/utils/twtstr.nim src/types/url.nim \
+$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim adapter/protocol/dirlist.nim \
 		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
-		res/map/EastAsianWidth.txt src/types/opt.nim src/loader/connecterror.nim
-	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
+		res/map/EastAsianWidth.txt src/loader/connecterror.nim \
+		src/types/opt.nim src/bindings/curl.nim
+	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/ftp" \
 		-o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
 
 $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/gophertypes.nim \
 		src/bindings/curl.nim src/loader/connecterror.nim \
-		src/utils/twtstr.nim src/types/url.nim src/types/opt.nim
-	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
+		src/utils/twtstr.nim
+	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/gopher" \
 		-o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
@@ -154,6 +153,12 @@ install:
 	install -m755 "$(OUTDIR_BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
 	@# intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/http" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/about" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/data" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/file" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/ftp" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/gopher" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/gopher2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
@@ -173,16 +178,17 @@ install:
 uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/cha"
 	@# intentionally not quoted
-	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
-	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/http
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/ftp
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gopher
-	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin && rmdir $(LIBEXECDIR_CHAWAN) || true
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
+	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
+	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
+	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
+	rmdir $(LIBEXECDIR_CHAWAN) || true
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-config.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mailcap.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mime.types.5"
