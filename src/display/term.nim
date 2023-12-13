@@ -14,6 +14,7 @@ import display/winattrs
 import types/cell
 import types/color
 import types/opt
+import utils/strwidth
 import utils/twtstr
 
 import chakasu/charset

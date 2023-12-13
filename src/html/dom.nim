@@ -35,6 +35,7 @@ import types/referer
 import types/url
 import types/vector
 import utils/mimeguess
+import utils/strwidth
 import utils/twtstr
 
 import chakasu/charset

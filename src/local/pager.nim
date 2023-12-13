@@ -39,6 +39,7 @@ import types/cookie
 import types/opt
 import types/urimethodmap
 import types/url
+import utils/strwidth
 import utils/twtstr
 
 import chakasu/charset

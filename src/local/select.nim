@@ -3,6 +3,7 @@ import unicode
 import js/regex
 import server/buffer
 import types/cell
+import utils/strwidth
 import utils/twtstr
 
 type

@@ -50,6 +50,7 @@ import types/formdata
 import types/opt
 import types/referer
 import types/url
+import utils/strwidth
 import utils/twtstr
 import xhr/formdata as formdata_impl
 

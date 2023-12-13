@@ -3,6 +3,7 @@ import tables
 
 import css/stylednode
 import types/color
+import utils/strwidth
 import utils/twtstr
 
 type

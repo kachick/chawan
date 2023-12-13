@@ -82,12 +82,14 @@ $(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 
 $(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim adapter/protocol/dirlist.nim \
-		src/utils/twtstr.nim src/loader/connecterror.nim
+		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
+		res/map/EastAsianWidth.txt src/loader/connecterror.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
 
 $(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim src/bindings/curl.nim \
 		adapter/protocol/dirlist.nim src/utils/twtstr.nim src/types/url.nim \
-		src/types/opt.nim src/loader/connecterror.nim
+		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
+		res/map/EastAsianWidth.txt src/types/opt.nim src/loader/connecterror.nim
 	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
 		-o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
 

@@ -2,6 +2,7 @@ import streams
 import unicode
 
 import types/cell
+import utils/strwidth
 import utils/twtstr
 
 import chakasu/charset

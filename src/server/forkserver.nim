@@ -18,7 +18,7 @@ import types/buffersource
 import types/cookie
 import types/urimethodmap
 import types/url
-import utils/twtstr
+import utils/strwidth
 
 type
   ForkCommand* = enum

@@ -1,12 +1,16 @@
 # See https://url.spec.whatwg.org/#url-parsing.
-import strutils
-import tables
-import options
-import unicode
-import math
+import std/algorithm
+import std/math
+import std/options
+import std/strutils
+import std/tables
+import std/unicode
 
+import bindings/libunicode
+import data/idna
 import js/error
 import js/javascript
+import lib/punycode
 import types/blob
 import utils/twtstr
 
@@ -239,6 +243,106 @@ func endsInNumber(input: string): bool =
         return false
     return true
   return false
+
+type u32pair {.packed.} = object
+  a: uint32
+  b: uint32
+
+func cmpRange(x: u32pair, y: uint32): int =
+  if x.a < y:
+    return -1
+  elif x.b > y:
+    return 1
+  return 0
+
+func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
+    transitionalprocessing: bool): Option[string] =
+  var mapped: seq[Rune]
+  for r in str.runes():
+    let status = getIdnaTableStatus(r)
+    case status
+    of IDNA_DISALLOWED: return none(string) #error
+    of IDNA_IGNORED: discard
+    of IDNA_MAPPED: mapped &= getIdnaMapped(r).toRunes()
+    of IDNA_DEVIATION:
+      if transitionalprocessing:
+        mapped &= getDeviationMapped(r).toRunes()
+      else:
+        mapped &= r
+    of IDNA_VALID: mapped &= r
+  if mapped.len == 0: return
+  mapped.mnormalize()
+  var cr: CharRange
+  {.cast(noSideEffect).}:
+    cr_init(addr cr, nil, passRealloc)
+    let r = unicode_general_category(addr cr, "Mark")
+    assert r == 0
+  var labels: seq[string]
+  for label in ($mapped).split('.'):
+    if label.startsWith("xn--"):
+      try:
+        let s = punycode.decode(label.substr("xn--".len))
+        let x0 = s.toRunes()
+        let x1 = normalize(x0)
+        if x0 != x1:
+          return none(string) #error
+        if checkhyphens:
+          if s.len >= 4 and s[2] == '-' and s[3] == '-':
+            return none(string) #error
+          if s.len > 0 and s[0] == '-' and s[^1] == '-':
+            return none(string) #error
+        if x0.len > 0:
+          let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
+          let c = cast[uint32](x0[0])
+          if binarySearch(toOpenArray(cps, 0, cr.len div 2 - 1), c, cmpRange) != -1:
+            return none(string) #error
+        for r in x0:
+          if r == Rune('.'):
+            return none(string) #error
+          let status = getIdnaTableStatus(r)
+          case status
+          of IDNA_DISALLOWED, IDNA_IGNORED, IDNA_MAPPED:
+            return none(string) #error
+          of IDNA_DEVIATION:
+            if transitionalprocessing:
+              return none(string) #error
+          of IDNA_VALID: discard
+          #TODO check joiners
+          #TODO check bidi
+        labels.add(s)
+      except PunyError:
+        return none(string) #error
+    else:
+      labels.add(label)
+  cr_free(addr cr)
+  return some(labels.join('.'))
+
+func unicodeToAscii(s: string, checkhyphens, checkbidi, checkjoiners,
+    transitionalprocessing, verifydnslength: bool): Option[string] =
+  let processed = s.processIdna(checkhyphens, checkbidi, checkjoiners,
+    transitionalprocessing)
+  if processed.isnone:
+    return none(string) #error
+  var labels: seq[string]
+  var all = 0
+  for label in processed.get.split('.'):
+    if not label.isAscii():
+      try:
+        let converted = "xn--" & punycode.encode(label)
+        labels.add(converted)
+      except PunyError:
+        return none(string) #error
+    else:
+      labels.add(label)
+    if verifydnslength:
+      let rl = labels[^1].runeLen()
+      if rl notin 1..63:
+        return none(string)
+      all += rl
+  if verifydnslength:
+    if all notin 1..253:
+      return none(string) #error
+  return some(labels.join('.'))
 
 func domainToAscii*(domain: string, bestrict = false): Option[string] =
   var needsprocessing = false

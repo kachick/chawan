@@ -7,6 +7,7 @@ import display/winattrs
 import js/javascript
 import types/cell
 import types/opt
+import utils/strwidth
 import utils/twtstr
 
 import chakasu/charset

@@ -1,5 +1,6 @@
 import algorithm
 
+import utils/strwidth
 import utils/twtstr
 
 type DirlistItemType = enum

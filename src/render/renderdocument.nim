@@ -9,7 +9,7 @@ import layout/engine
 import layout/layoutunit
 import types/cell
 import types/color
-import utils/twtstr
+import utils/strwidth
 
 func toFormat(computed: CSSComputedValues): Format =
   if computed == nil:

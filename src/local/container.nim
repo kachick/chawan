@@ -24,6 +24,7 @@ import types/color
 import types/cookie
 import types/url
 import utils/mimeguess
+import utils/strwidth
 import utils/twtstr
 
 import chakasu/charset
