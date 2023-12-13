@@ -9,6 +9,8 @@ import loader/headers
 
 type LoaderHandle* = ref object
   ostream: Stream
+  # Stream for taking input
+  istream*: PosixStream
   # Only the first handle can be redirected, because a) mailcap can only
   # redirect the first handle and b) async redirects would result in race
   # conditions that would be difficult to untangle.
@@ -100,3 +102,5 @@ proc close*(handle: LoaderHandle) =
       discard
     handle.sostream.close()
   handle.ostream.close()
+  if handle.istream != nil:
+    handle.istream.close()

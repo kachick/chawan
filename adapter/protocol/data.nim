@@ -2,15 +2,17 @@ import std/envvars
 import std/base64
 import std/strutils
 
+import loader/connecterror
 import utils/twtstr
 
 proc main() =
   let str = getEnv("MAPPED_URI_PATH")
   const si = "data:".len # start index
+  const iu = $int(ERROR_INVALID_URL)
   var ct = str.until(',', si)
   for c in ct:
     if c notin AsciiAlphaNumeric and c != '/':
-      stdout.write("Cha-Control: ConnectionError -7 invalid data URL")
+      stdout.write("Cha-Control: ConnectionError " & iu  & " invalid data URL")
       return
   let sd = si + ct.len + 1 # data start
   let body = percentDecode(str, sd)
@@ -21,7 +23,7 @@ proc main() =
       stdout.write("Content-Type: " & ct & "\n\n")
       stdout.write(d)
     except ValueError:
-      stdout.write("Cha-Control: ConnectionError -7 invalid data URL")
+      stdout.write("Cha-Control: ConnectionError " & iu  & " invalid data URL")
   else:
     stdout.write("Content-Type: " & ct & "\n\n")
     stdout.write(body)

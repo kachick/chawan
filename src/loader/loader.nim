@@ -11,15 +11,15 @@
 #
 # The body is passed to the stream as-is, so effectively nothing can follow it.
 
-import nativesockets
-import net
-import options
-import posix
-import streams
-import strutils
-import tables
+import std/nativesockets
+import std/net
+import std/options
+import std/posix
+import std/selectors
+import std/streams
+import std/strutils
+import std/tables
 
-import bindings/curl
 import io/posixstream
 import io/promise
 import io/serialize
@@ -30,9 +30,7 @@ import js/error
 import js/javascript
 import loader/cgi
 import loader/connecterror
-import loader/curlhandle
 import loader/headers
-import loader/http
 import loader/loaderhandle
 import loader/request
 import loader/response
@@ -81,12 +79,11 @@ type
     refcount: int
     ssock: ServerSocket
     alive: bool
-    curlm: CURLM
     config: LoaderConfig
-    extra_fds: seq[curl_waitfd]
-    handleList: seq[CurlHandle]
     handleMap: Table[int, LoaderHandle]
     referrerpolicy: ReferrerPolicy
+    selector: Selector[int]
+    fd: int
 
   LoaderConfig* = object
     defaultheaders*: Headers
@@ -101,12 +98,6 @@ type
     w3mCGICompat*: bool
 
   FetchPromise* = Promise[JSResult[Response]]
-
-proc addFd(ctx: LoaderContext, fd: int, flags: int) =
-  ctx.extra_fds.add(curl_waitfd(
-    fd: cast[cint](fd),
-    events: cast[cshort](flags)
-  ))
 
 #TODO this may be too low if we want to use urimethodmap for everything
 const MaxRewrites = 4
@@ -134,14 +125,18 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
           inc tries
           redo = true
           continue
-    case request.url.scheme
-    of "http", "https":
-      let handleData = handle.loadHttp(ctx.curlm, request)
-      if handleData != nil:
-        ctx.handleList.add(handleData)
-    of "cgi-bin":
+    if request.url.scheme == "cgi-bin":
       handle.loadCGI(request, ctx.config.cgiDir, prevurl)
-      handle.close()
+      if handle.istream == nil:
+        handle.close()
+      else:
+        let fd = handle.istream.fd
+        ctx.selector.registerHandle(fd, {Read}, 0)
+        let ofl = fcntl(fd, F_GETFL, 0)
+        discard fcntl(fd, F_SETFL, ofl or O_NONBLOCK)
+        # yes, this puts the istream fd in addition to the ostream fd in
+        # handlemap to point to the same ref
+        ctx.handleMap[fd] = handle
     else:
       prevurl = request.url
       case ctx.config.urimethodmap.findAndRewrite(request.url)
@@ -234,39 +229,24 @@ proc acceptConnection(ctx: LoaderContext) =
     # (TODO: this is probably not a very good idea.)
     stream.close()
 
-proc finishCurlTransfer(ctx: LoaderContext, handleData: CurlHandle, res: int) =
-  if res != int(CURLE_OK):
-    discard handleData.handle.sendResult(int(res))
-  if handleData.finish != nil:
-    handleData.finish(handleData)
-  discard curl_multi_remove_handle(ctx.curlm, handleData.curl)
-  handleData.cleanup()
-
 proc exitLoader(ctx: LoaderContext) =
-  for handleData in ctx.handleList:
-    ctx.finishCurlTransfer(handleData, ERROR_LOADER_KILLED)
-  discard curl_multi_cleanup(ctx.curlm)
-  curl_global_cleanup()
   ctx.ssock.close()
   quit(0)
 
 var gctx: LoaderContext
 proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
-  if curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK:
-    raise newException(Defect, "Failed to initialize libcurl.")
-  let curlm = curl_multi_init()
-  if curlm == nil:
-    raise newException(Defect, "Failed to initialize multi handle.")
   var ctx = LoaderContext(
     alive: true,
-    curlm: curlm,
     config: config,
-    refcount: 1
+    refcount: 1,
+    selector: newSelector[int]()
   )
   gctx = ctx
   #TODO ideally, buffered would be true. Unfortunately this conflicts with
   # sendFileHandle/recvFileHandle.
   ctx.ssock = initServerSocket(buffered = false)
+  ctx.fd = int(ctx.ssock.sock.getFd())
+  ctx.selector.registerHandle(ctx.fd, {Read}, 0)
   # The server has been initialized, so the main process can resume execution.
   var writef: File
   if not open(writef, FileHandle(fd), fmWrite):
@@ -278,7 +258,6 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
   onSignal SIGTERM, SIGINT:
     discard sig
     gctx.exitLoader()
-  ctx.addFd(int(ctx.ssock.sock.getFd()), CURL_WAIT_POLLIN)
   for dir in ctx.config.cgiDir.mitems:
     if dir.len > 0 and dir[^1] != '/':
       dir &= '/'
@@ -286,31 +265,40 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
 
 proc runFileLoader*(fd: cint, config: LoaderConfig) =
   var ctx = initLoaderContext(fd, config)
+  var buffer {.noInit.}: array[16384, uint8]
   while ctx.alive:
-    var numfds: cint = 0
-    #TODO do not discard
-    discard curl_multi_poll(ctx.curlm, addr ctx.extra_fds[0],
-      cuint(ctx.extra_fds.len), 30_000, addr numfds)
-    discard curl_multi_perform(ctx.curlm, addr numfds)
-    for extra_fd in ctx.extra_fds.mitems:
-      # For now, this is always ssock.sock.getFd().
-      if extra_fd.events == extra_fd.revents:
-        ctx.acceptConnection()
-        extra_fd.revents = 0
-    var msgs_left: cint = 1
-    while msgs_left > 0:
-      let msg = curl_multi_info_read(ctx.curlm, addr msgs_left)
-      if msg == nil:
-        break
-      if msg.msg == CURLMSG_DONE: # the only possible value atm
-        var idx = -1
-        for i in 0 ..< ctx.handleList.len:
-          if ctx.handleList[i].curl == msg.easy_handle:
-            idx = i
-            break
-        assert idx != -1
-        ctx.finishCurlTransfer(ctx.handleList[idx], int(msg.data.result))
-        ctx.handleList.del(idx)
+    let events = ctx.selector.select(-1)
+    var unreg: seq[int]
+    for event in events:
+      if Read in event.events:
+        if event.fd == ctx.fd: # incoming connection
+          ctx.acceptConnection()
+        else:
+          let handle = ctx.handleMap[event.fd]
+          while not handle.istream.atEnd:
+            try:
+              let n = handle.istream.readData(addr buffer[0], buffer.len)
+              if not handle.sendData(addr buffer[0], n):
+                unreg.add(event.fd)
+                break
+            except ErrorAgain, ErrorWouldBlock:
+              break
+      if Error in event.events:
+        assert event.fd != ctx.fd
+        when defined(debug):
+          # sanity check
+          let handle = ctx.handleMap[event.fd]
+          if not handle.istream.atEnd():
+            let n = handle.istream.readData(addr buffer[0], buffer.len)
+            assert n == 0
+            assert handle.istream.atEnd()
+        unreg.add(event.fd)
+    for fd in unreg:
+      ctx.selector.unregister(fd)
+      let handle = ctx.handleMap[fd]
+      ctx.handleMap.del(fd)
+      ctx.handleMap.del(handle.getFd())
+      handle.close()
   ctx.exitLoader()
 
 proc getAttribute(contentType, attrname: string): string =

@@ -10,6 +10,7 @@ import loader/connecterror
 import loader/headers
 import loader/loaderhandle
 import loader/request
+import types/formdata
 import types/opt
 import types/url
 import utils/twtstr
@@ -37,6 +38,10 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
   putEnv("SCRIPT_FILENAME", cmd)
   putEnv("REQUEST_URI", requestURI)
   putEnv("REQUEST_METHOD", $request.httpmethod)
+  var headers = ""
+  for k, v in request.headers:
+    headers &= k & ": " & v & "\r\n"
+  putEnv("REQUEST_HEADERS", headers)
   if prevURL != nil:
     putMappedURL(prevURL)
   if pathInfo != "":
@@ -44,19 +49,17 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
   if url.query.isSome:
     putEnv("QUERY_STRING", url.query.get)
   if request.httpmethod == HTTP_POST:
-    putEnv("CONTENT_TYPE", request.headers.getOrDefault("Content-Type", ""))
+    if request.multipart.isSome:
+      putEnv("CONTENT_TYPE", request.multipart.get.getContentType())
+    else:
+      putEnv("CONTENT_TYPE", request.headers.getOrDefault("Content-Type", ""))
     putEnv("CONTENT_LENGTH", $contentLen)
   if "Cookie" in request.headers:
     putEnv("HTTP_COOKIE", request.headers["Cookie"])
   if request.referer != nil:
     putEnv("HTTP_REFERER", $request.referer)
   if request.proxy != nil:
-    let s = $request.proxy
-    if request.proxy.scheme == "https" or request.proxy.scheme == "http":
-      putEnv("http_proxy", s)
-      putEnv("HTTP_PROXY", s)
-      putEnv("HTTPS_proxy", s)
-    putEnv("ALL_PROXY", s)
+    putEnv("ALL_PROXY", $request.proxy)
 
 type ControlResult = enum
   RESULT_CONTROL_DONE, RESULT_CONTROL_CONTINUE, RESULT_ERROR
@@ -184,9 +187,7 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
   if request.body.isSome:
     contentLen = request.body.get.len
   elif request.multipart.isSome:
-    #TODO multipart
-    # maybe use curl formdata? (the mime api has no serialization functions)
-    discard
+    contentLen = request.multipart.get.calcLength()
   let pid = fork()
   if pid == -1:
     t handle.sendResult(ERROR_FAIL_SETUP_CGI)
@@ -214,8 +215,9 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
       if request.body.isSome:
         ps.write(request.body.get)
       elif request.multipart.isSome:
-        #TODO
-        discard
+        let multipart = request.multipart.get
+        for entry in multipart.entries:
+          ps.writeEntry(entry, multipart.boundary)
       ps.close()
     let ps = newPosixStream(pipefd[0])
     let headers = newHeaders()
@@ -249,8 +251,4 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
           handle.handleLine(line, headers)
     t handle.sendStatus(status)
     t handle.sendHeaders(headers)
-    var buffer: array[4096, uint8]
-    while not ps.atEnd:
-      let n = ps.readData(addr buffer[0], buffer.len)
-      t handle.sendData(addr buffer[0], n)
-    ps.close()
+    handle.istream = ps

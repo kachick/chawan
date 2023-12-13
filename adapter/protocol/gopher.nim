@@ -1,37 +1,21 @@
 import std/envvars
 import std/options
 
+import curlwrap
+import curlerrors
+
+import ../gophertypes
+
 import bindings/curl
 import loader/connecterror
-import loader/curlwrap
-import loader/request
 import types/opt
 import types/url
 import utils/twtstr
-
-include ../gophertypes
 
 type GopherHandle = ref object
   curl: CURL
   t: GopherType
   statusline: bool
-
-func gopherType(c: char): GopherType =
-  return case c
-  of '0': TEXT_FILE
-  of '1': DIRECTORY
-  of '3': ERROR
-  of '5': DOS_BINARY
-  of '7': SEARCH
-  of 'm': MESSAGE
-  of 's': SOUND
-  of 'g': GIF
-  of 'h': HTML
-  of 'i': INFO
-  of 'I': IMAGE
-  of '9': BINARY
-  of 'p': PNG
-  else: UNKNOWN
 
 proc onStatusLine(op: GopherHandle) =
   var status: clong
@@ -107,7 +91,7 @@ proc main() =
     curl.setopt(CURLOPT_PROXY, proxy)
   let res = curl_easy_perform(curl)
   if res != CURLE_OK and not op.statusline:
-    stdout.write("Cha-Control: ConnectionError " & $int(res) & "\n")
+    stdout.write(getCurlConnectionError(res))
   curl_easy_cleanup(curl)
 
 main()

@@ -1,5 +1,6 @@
-import options
-import strutils
+import std/options
+import std/os
+import std/strutils
 
 import js/dict
 import js/fromjs
@@ -92,11 +93,13 @@ proc newWebFile(ctx: JSContext, fileBits: seq[string], fileName: string,
 
 #TODO File, Blob constructors
 
-func size*(this: WebFile): uint64 {.jsfget.} =
-  #TODO use stat instead
+proc getSize*(this: Blob): uint64 =
   if this.isfile:
-    return uint64(this.file.getFileSize())
+    return uint64(WebFile(this).path.getFileSize())
   return this.size
+
+proc size*(this: WebFile): uint64 {.jsfget.} =
+  return this.getSize()
 
 func name*(this: WebFile): string {.jsfget.} =
   if this.path.len > 0 and this.path[^1] != '/':

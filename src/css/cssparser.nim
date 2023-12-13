@@ -248,7 +248,7 @@ proc consumeEscape(state: var CSSTokenizerState): string =
       num *= 0x10
       num += hexValue(c)
       inc i
-    if state.peek() in AsciiWhitespace:
+    if state.has() and state.peek() in AsciiWhitespace:
       discard state.consume()
     if num == 0 or num > 0x10FFFF or num in 0xD800..0xDFFF:
       return $Rune(0xFFFD)

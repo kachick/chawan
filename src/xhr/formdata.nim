@@ -1,3 +1,6 @@
+import std/base64
+import std/streams
+
 import html/dom
 import html/enums
 import js/domexception
@@ -12,12 +15,20 @@ import chame/tags
 proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     encoding: string = ""): Option[seq[FormDataEntry]]
 
+
+proc generateBoundary(): string =
+  let urandom = newFileStream("/dev/urandom")
+  let s = urandom.readStr(32)
+  urandom.close()
+  # 32 * 4 / 3 (padded) = 44 + prefix string is 22 bytes = 66 bytes
+  return "----WebKitFormBoundary" & base64.encode(s)
+
 proc newFormData0*(): FormData =
-  return FormData()
+  return FormData(boundary: generateBoundary())
 
 proc newFormData*(form: HTMLFormElement = nil,
     submitter: HTMLElement = nil): DOMResult[FormData] {.jsctor.} =
-  let this = FormData()
+  let this = newFormData0()
   if form != nil:
     if submitter != nil:
       if not submitter.isSubmitButton():

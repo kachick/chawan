@@ -65,7 +65,9 @@ Currently available commands are:
   sent before that.
 * `ConnectionError`: Must be the first reported header. Parameter 1 is the
   error code, see below. If any following parameters are given, they are
-  concatenated to form a custom error message. TODO implement this
+  concatenated to form a custom error message.  
+  Note: short but descriptive error messages are preferred, messages that
+  do not fit on the screen are currently truncated. (TODO fix this somehow :P)
 * `ControlDone`: Signals that no more special headers will be sent; this
   means that `Cha-Control` and `Status` headers sent after this must be
   interpreted as regular headers (and thus e.g. will be available for JS
@@ -74,7 +76,25 @@ Currently available commands are:
   take external input. For example, a HTTP client would have to send
   `Cha-Control: ControlDone` before returning the retrieved headers.
 
-TODO insert list of public error codes here
+List of public error codes:
+
+* `1 internal error`: An internal error prevented the script from retrieving
+  the requested resource. CGI scripts can also use this to signal that they
+  have no information on what went wrong.
+* `2 invalid method`: The client requested data using a method not supported
+  by this protocol.
+* `3 invalid URL`: The request URL could not be interpreted as a valid URL
+  for this format.
+* `4 file not found`: No file was found at the requested address, and thus
+  the request is meaningless. Note: this should only be used by protocols
+  that do not rely on a client-server architecture, e.g. local file access,
+  local databases, or peer-to-peer file retrieval mechanisms. A server
+  responding with "no file found" is NOT a connection error, and is better
+  represented as a response with a 404 status code.
+* `5 failed to resolve host`: The hostname could not be resolved.
+* `6 failed to resolve proxy`: The proxy could not be resolved.
+* `7 connection refused`: The server refused to establish a connection.
+* `8 proxy refused to connect`: The proxy refused to establish a connection.
 
 ## Environment variables
 
@@ -97,12 +117,15 @@ Chawan sets the following environment variables:
   variable is NOT percent-encoded.
 * `REQUEST_URI="$SCRIPT_NAME/$PATH_INFO?$QUERY_STRING`
 * `REQUEST_METHOD=` HTTP method used for making the request, e.g. GET or POST
+* `REQUEST_HEADERS=` A newline-separated list of all headers for this request.
 * `CONTENT_TYPE=` for POST requests, the Content-Type header. Not set for
   other request types (e.g. GET).
 * `CONTENT_LENGTH=` the content length, if $CONTENT_TYPE has been set.
-* `HTTP_PROXY=` and (lower case) `http_proxy=`: the proxy URL if a proxy
-  has been set and its scheme is either `http` or `https`.
-* `ALL_PROXY=` if a proxy has been set, the proxy URL.
+* `ALL_PROXY=` if a proxy has been set, the proxy URL. WARNING: for security
+  reasons, this MUST be respected when making external connections. If a
+  CGI script does not support proxies, it must never make any external
+  connections when the `ALL_PROXY` variable is set, even if this results in it
+  returning an error.
 * `HTTP_COOKIE=` if set, the Cookie header.
 * `HTTP_REFERER=` if set, the Referer header.
 

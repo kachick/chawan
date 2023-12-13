@@ -2,10 +2,12 @@ import std/envvars
 import std/options
 import std/strutils
 
+import curlerrors
+import curlwrap
+import dirlist
+
 import bindings/curl
 import loader/connecterror
-import loader/curlwrap
-import loader/dirlist
 import types/opt
 import types/url
 import utils/twtstr
@@ -185,7 +187,7 @@ proc main() =
   let res = curl_easy_perform(curl)
   if res != CURLE_OK:
     if not op.statusline:
-      stdout.write("Cha-Control: ConnectionError " & $int(res) & "\n")
+      stdout.write(getCurlConnectionError(res))
   elif op.dirmode:
     op.finish()
   curl_easy_cleanup(curl)

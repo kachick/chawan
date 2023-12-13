@@ -4,8 +4,9 @@ import std/streams
 import std/times
 import std/envvars
 
+import dirlist
+
 import loader/connecterror
-import loader/dirlist
 import utils/twtstr
 
 proc loadDir(path: string) =
@@ -84,14 +85,14 @@ proc loadFile(istream: Stream) =
   stdout.write("\n")
   let outs = newFileStream(stdout)
   while not istream.atEnd:
-    const bufferSize = 4096
-    var buffer {.noinit.}: array[bufferSize, char]
+    const BufferSize = 16384
+    var buffer {.noinit.}: array[BufferSize, char]
     while true:
-      let n = readData(istream, addr buffer[0], bufferSize)
+      let n = readData(istream, addr buffer[0], BufferSize)
       if n == 0:
         break
       outs.writeData(addr buffer[0], n)
-      if n < bufferSize:
+      if n < BufferSize:
         break
 
 proc main() =

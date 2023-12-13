@@ -41,15 +41,15 @@ endif
 FLAGS += --nimcache:"$(OBJDIR)/$(TARGET)"
 
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_LIBEXEC)/gopher2html $(OUTDIR_CGI_BIN)/gmifetch \
-	$(OUTDIR_LIBEXEC)/gmi2html $(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
-	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
-	$(OUTDIR_CGI_BIN)/gopher
+all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
+	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
+	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
+	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
+	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
-	$(NIMC) -d:curlLibName:$(CURLLIBNAME) -d:libexecPath=$(LIBEXECDIR) \
-		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
+	$(NIMC) -d:libexecPath=$(LIBEXECDIR) $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
@@ -69,26 +69,34 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
+$(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
+		adapter/protocol/curlerrors.nim src/bindings/curl.nim \
+		src/types/opt.nim src/utils/twtstr.nim
+	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
+		-o:"$(OUTDIR_CGI_BIN)/http" adapter/protocol/http.nim
+
 $(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
 
 $(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 
-$(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim src/loader/dirlist.nim \
+$(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim adapter/protocol/dirlist.nim \
 		src/utils/twtstr.nim src/loader/connecterror.nim
 	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
 
 $(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim src/bindings/curl.nim \
-		src/loader/dirlist.nim src/utils/twtstr.nim src/types/url.nim \
+		adapter/protocol/dirlist.nim src/utils/twtstr.nim src/types/url.nim \
 		src/types/opt.nim src/loader/connecterror.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
+	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
+		-o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
 
-$(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/gophertypes.nim \
-		src/bindings/curl.nim src/loader/dirlist.nim \
-		src/utils/twtstr.nim src/types/url.nim src/types/opt.nim \
-		src/loader/connecterror.nim
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
+$(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.nim \
+		adapter/protocol/curlerrors.nim adapter/gophertypes.nim \
+		src/bindings/curl.nim src/loader/connecterror.nim \
+		src/utils/twtstr.nim src/types/url.nim src/types/opt.nim
+	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) \
+		-o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
 
 CFLAGS = -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
@@ -165,6 +173,7 @@ uninstall:
 	@# intentionally not quoted
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
 	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/http
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch

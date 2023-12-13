@@ -315,7 +315,7 @@ func getClickable(styledNode: StyledNode): Element =
       return Element(styledNode.node)
     styledNode = stylednode.parent
 
-func submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
+proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
 
 func canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
@@ -330,7 +330,7 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
       return true
   return false
 
-func getClickHover(styledNode: StyledNode): string =
+proc getClickHover(styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
   if clickable != nil:
     case clickable.tagType
@@ -1084,7 +1084,7 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
       break
   return (called, canceled)
 
-const BufferSize = 4096
+const BufferSize = 16384
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.state != LOADING_PAGE:
@@ -1148,7 +1148,7 @@ proc onload(buffer: Buffer) =
   of LOADING_PAGE:
     discard
   let op = buffer.sstream.getPosition()
-  var s = newSeqUninitialized[uint8](buffer.readbufsize)
+  var s {.noInit.}: array[16384, uint8]
   try:
     buffer.sstream.setPosition(op + buffer.available)
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
@@ -1222,7 +1222,7 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= "\r\n"
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-func submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
+proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   if form.constructingEntryList:
     return
   let entrylist = form.constructEntryList(submitter).get(@[])
@@ -1352,7 +1352,7 @@ type ReadSuccessResult* = object
   open*: Option[Request]
   repaint*: bool
 
-func implicitSubmit(input: HTMLInputElement): Option[Request] =
+proc implicitSubmit(input: HTMLInputElement): Option[Request] =
   let form = input.form
   if form != nil and form.canSubmitImplicitly():
     var defaultButton: Element
