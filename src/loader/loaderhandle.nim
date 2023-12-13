@@ -17,13 +17,18 @@ type LoaderHandle* = ref object
   canredir: bool
   sostream: Stream # saved ostream when redirected
   sostream_suspend: Stream # saved ostream when suspended
+  fd: int
 
 # Create a new loader handle, with the output stream ostream.
 proc newLoaderHandle*(ostream: Stream, canredir: bool): LoaderHandle =
-  return LoaderHandle(ostream: ostream, canredir: canredir)
+  return LoaderHandle(
+    ostream: ostream,
+    canredir: canredir,
+    fd: int(SocketStream(ostream).source.getFd())
+  )
 
 proc getFd*(handle: LoaderHandle): int =
-  return int(SocketStream(handle.ostream).source.getFd())
+  return handle.fd
 
 proc addOutputStream*(handle: LoaderHandle, stream: Stream) =
   if likely(handle.sostream_suspend != nil):
