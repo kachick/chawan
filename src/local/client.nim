@@ -326,13 +326,18 @@ proc acceptBuffers(client: Client) =
     else:
       client.pager.procmap.del(pid)
     stream.close()
+  var accepted: seq[Pid]
   for pid, container in client.pager.procmap:
     let stream = connectSocketStream(pid, buffered = false, blocking = true)
+    if stream == nil:
+      client.pager.alert("Error: failed to set up buffer")
+      continue
     container.setStream(stream)
     let fd = stream.source.getFd()
     client.fdmap[int(fd)] = container
     client.selector.registerHandle(fd, {Read}, 0)
     client.pager.handleEvents(container)
+    accepted.add(pid)
   client.pager.procmap.clear()
 
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
