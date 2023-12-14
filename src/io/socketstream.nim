@@ -127,13 +127,18 @@ func newSocketStream*(): SocketStream =
 proc setBlocking*(ss: SocketStream, blocking: bool) =
   ss.source.getFd().setBlocking(blocking)
 
+# see serversocket.nim for an explanation
+{.compile: "connect_unix.c".}
+proc connect_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint {.importc.}
+
 proc connectSocketStream*(path: string, buffered = true, blocking = true): SocketStream =
   result = newSocketStream()
   result.blk = blocking
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
   if not blocking:
     sock.getFd().setBlocking(false)
-  connectUnix(sock, path)
+  if connect_unix_from_c(cint(sock.getFd()), cstring(path), cint(path.len)) != 0:
+    raiseOSError(osLastError())
   result.source = sock
 
 proc connectSocketStream*(pid: Pid, buffered = true, blocking = true): SocketStream =

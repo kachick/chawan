@@ -45,7 +45,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp
 
-$(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim res/* res/**/*
+$(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim

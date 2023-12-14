@@ -1,6 +1,6 @@
-import nativesockets
-import net
-import os
+import std/nativesockets
+import std/net
+import std/os
 when defined(posix):
   import posix
 
@@ -13,15 +13,22 @@ const SocketPathPrefix = "cha_sock_"
 proc getSocketPath*(pid: Pid): string =
   SocketDirectory / SocketPathPrefix & $pid
 
+# The way stdlib does bindUnix is utterly broken at least on FreeBSD.
+# It seems that just writing it in C is the easiest solution.
+{.compile: "bind_unix.c".}
+proc bind_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint {.importc.}
+
 proc initServerSocket*(buffered = true, blocking = true): ServerSocket =
   createDir(SocketDirectory)
-  result.sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
+  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
   if not blocking:
-    result.sock.getFd().setBlocking(false)
-  result.path = getSocketPath(getpid())
-  discard unlink(cstring(result.path))
-  bindUnix(result.sock, result.path)
-  listen(result.sock)
+    sock.getFd().setBlocking(false)
+  let path = getSocketPath(getpid())
+  discard unlink(cstring(path))
+  if bind_unix_from_c(cint(sock.getFd()), cstring(path), cint(path.len)) != 0:
+    raiseOSError(osLastError())
+  listen(sock)
+  return ServerSocket(sock: sock, path: path)
 
 proc close*(ssock: ServerSocket) =
   close(ssock.sock)
