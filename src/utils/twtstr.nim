@@ -96,7 +96,7 @@ func camelToKebabCase*(s: string): string =
       result &= c
 
 func isAscii*(r: Rune): bool =
-  return cast[uint32](r) < 128
+  return uint32(r) < 128
 
 func startsWithNoCase*(str, prefix: string): bool =
   if str.len < prefix.len: return false

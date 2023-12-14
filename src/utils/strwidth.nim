@@ -232,6 +232,9 @@ func padToWidth*(str: string, size: int, schar = '$'): string =
         w += r.width
     result &= schar
 
+func isDigitAscii(r: Rune): bool =
+  return uint32(r) < 128 and char(r) in AsciiDigit
+
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
