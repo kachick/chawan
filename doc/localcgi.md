@@ -51,7 +51,7 @@ The `Cha-Control` header's value is parsed as follows:
 ```
 Cha-Control-Value = Command *Parameter
 Command = ALPHA *ALPHA
-Parameter = *SPACE *CHAR
+Parameter = SPACE *CHAR
 ```
 
 In other words, it is `Command [Param1] [Param2] ...`.
@@ -161,8 +161,9 @@ Note: the fragment part is omitted intentionally.
 If the request body is not empty, it is streamed into the program through
 the standard input.
 
-NOTE: multipart requests are not implemented yet. This will be fixed in
-the future.
+Note that this may be both an application/x-www-form-urlencoded or a
+multipart/form-data request; `CONTENT_TYPE` stores information about the
+request type, and in case of a multipart request, the boundary as well.
 
 ## Troubleshooting
 
