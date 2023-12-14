@@ -373,6 +373,11 @@ proc handleRead(client: Client, fd: int) =
     client.pager.handleEvent(container)
 
 proc flushConsole*(client: Client) {.jsfunc.} =
+  if client.console == nil:
+    # hack for when client crashes before console has been initialized
+    client.consoleWrapper = ConsoleWrapper(
+      console: newConsole(newFileStream(stderr))
+    )
   client.handleRead(client.forkserver.estream.fd)
 
 proc handleError(client: Client, fd: int) =
