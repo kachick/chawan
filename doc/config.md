@@ -42,6 +42,7 @@ examples.
    * [Line-editing actions](#line-editing-actions)
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
+   * [Path handling](#path-handling)
 
 <!-- MANON -->
 
@@ -1245,7 +1246,10 @@ Rules for path handling are similar to how strings in the shell are handled.
 Some non-external variables are also defined by Chawan. These can be accessed
 using the syntax `${%VARIABLE}`:
 
-* `${%CHA_BIN_DIR}
+* `${%CHA_BIN_DIR}`: the directory which the `cha` binary resides in. Note
+  that symbolic links are automatically resolved to determine this path.
+* `${%CHA_LIBEXEC_DIR}`: the directory for all executables Chawan uses
+  for operation. By default, this is `${%CHA_BIN_DIR}/../libexec/chawan`.
 
 <!-- MANON
 
