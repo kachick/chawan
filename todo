@@ -17,9 +17,13 @@ display:
 - allow overriding ansi colors
 config:
 - important: config editor
-- better path handling
-	* e.g. expand tilde for all paths on load, allow environment
-	  variables/shell substitution, etc.
+- completely replace siteconf; the new solution should:
+	* not be based on table arrays
+	* allow overriding pretty much every global value per URL
+	* allow better URL matching (regexes aren't great for this task)
+	* be called url-config
+	* allow matching $TERM string, buffer groups (but maybe this should
+	  be a separate setting?)
 buffer:
 - important: incremental html parsing
 - important: validate returned values
@@ -45,7 +49,6 @@ buffer:
 network:
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
-- integrate curl-impersonate (LD_PRELOAD works, but still...)
 external:
 - history, bookmarks (w3m format)
 - save buffer (source, output)
@@ -59,7 +62,6 @@ javascript:
 	  properties in DOM, ...
 - implement ReadableStream, XHR
 - separate console for each buffer
-	* also, do not crash on / -> M-c
 - buffer selection
 layout engine:
 - box borders
