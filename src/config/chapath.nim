@@ -236,12 +236,13 @@ proc flushCurlyExpand(ctx: var UnquoteContext, word: string):
   else: assert false
   ctx.subChar = '\0'
   ctx.hasColon = false
+  return ok()
 
 proc stateCurlyExpand(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
   # ${ident:-[word], ${ident:=[word], ${ident:?[word], ${ident:+[word]
   # word must be unquoted too.
   let word = ?unquote(ctx.p, ctx.i, some('}'))
-  ctx.flushCurlyExpand(word)
+  return ctx.flushCurlyExpand(word)
 
 proc unquote(p: string, starti: var int, terminal: Option[char]):
     ChaPathResult[string] =
