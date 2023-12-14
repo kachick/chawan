@@ -73,3 +73,7 @@ proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
 proc parseURIMethodMap*(s: string): URIMethodMap =
   result = URIMethodMap()
   result.parseURIMethodMap(s)
+
+proc append*(this: var URIMethodMap, that: URIMethodMap) =
+  for k, v in that.map:
+    discard this.map.hasKeyOrPut(k, v)

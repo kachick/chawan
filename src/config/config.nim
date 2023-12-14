@@ -411,11 +411,12 @@ const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
 
 proc getURIMethodMap*(config: Config): URIMethodMap =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
-  var urimethodmap = DefaultURIMethodMap
+  var urimethodmap: URIMethodMap
   for p in config.external.urimethodmap:
     let f = openFileExpand(configDir, p)
     if f != nil:
       urimethodmap.parseURIMethodMap(f.readAll())
+  urimethodmap.append(DefaultURIMethodMap)
   return urimethodmap
 
 proc getForkServerConfig*(config: Config): ForkServerConfig =
