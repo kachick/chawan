@@ -96,6 +96,11 @@ proc loadFile(istream: Stream) =
         break
 
 proc main() =
+  if getEnv("MAPPED_URI_HOST") != "":
+      let code = int(ERROR_INVALID_URL)
+      stdout.write("Cha-Control: ConnectionError " & $code &
+        " cannot use host in file")
+      return
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
   let istream = newFileStream(path, fmRead)
