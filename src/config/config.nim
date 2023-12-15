@@ -101,6 +101,7 @@ type
   NetworkConfig = object
     max_redirect* {.jsgetset.}: int32
     prepend_https* {.jsgetset.}: bool
+    prepend_scheme* {.jsgetset.}: string
     proxy* {.jsgetset.}: Opt[string]
     default_headers* {.jsgetset.}: Table[string, string]
 

@@ -755,8 +755,9 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
     pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
     return
   var urls: seq[URL]
-  if pager.config.network.prepend_https and url[0] != '/':
-    let pageurl = parseURL("https://" & url)
+  if pager.config.network.prepend_https and
+      pager.config.network.prepend_scheme != "" and url[0] != '/':
+    let pageurl = parseURL(pager.config.network.prepend_scheme & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
   let cdir = parseURL("file://" & percentEncode(getCurrentDir(), LocalPathPercentEncodeSet) & DirSep)

@@ -293,10 +293,21 @@ Network options are to be placed in the `[network]` section.
 </tr>
 
 <tr>
+<td>prepend-scheme</td>
+<td>string</td>
+<td>Prepend this to URLs passed to Chawan without a scheme.<br>
+Note that local files (`file:` scheme) will always be checked first; only
+if this fails, Chawan will retry the request with `prepend-scheme` set as
+the scheme.<br>
+By default, this is set to "https://". Note that the "://" part is
+mandatory.</td>
+</tr>
+
+<tr>
 <td>prepend-https</td>
 <td>boolean</td>
-<td>Whether or not Chawan should attempt loading "raw" URLs without a scheme as
-https (e.g. wikipedia.org as https://wikipedia.org.)</td>
+<td>Deprecated: use prepend-scheme instead.<br>
+When set to false, Chawan will act as if prepend-scheme were set to "".</td>
 </tr>
 
 <tr>
