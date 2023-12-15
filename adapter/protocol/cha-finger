@@ -6,24 +6,25 @@
 # Usage: put this script in your cgi-bin folder, then add the following line to
 # your urimethodmap:
 #
-# finger: /cgi-bin/cha-finger?%s
+# finger: /cgi-bin/cha-finger
 #
 # Note: the Chawan default configuration already does this, so normally you
 # don't need to do anything to use the finger protocol.
 
+# Check for errors.
 die() {
-	echo "$1"
+	echo "Cha-Control: ConnectionError $1 $2"
 	exit 1
 }
 
 type curl >/dev/null || \
-	die "curl must be installed on your computer to use finger."
-
-printf 'Content-Type: text/plain\n\n'
+	die 1 "curl must be installed on your computer to use finger"
 
 PORT="${MAPPED_URI_PORT:-79}"
-test "$PORT" = 79 || die "Invalid port"
+test "$PORT" = 79 || die 3 "invalid port; only port 79 is supported"
 
+# Parse the URL. Roughly based on Lynx finger URL parsing, but less
+# sophisticated.
 if test -n "$MAPPED_URI_USERNAME"
 then	USER="$MAPPED_URI_USERNAME"
 else	case "$MAPPED_URI_PATH" in
@@ -33,6 +34,11 @@ else	case "$MAPPED_URI_PATH" in
 fi
 URL="telnet://$MAPPED_URI_HOST:$PORT"
 
+# Headers.
+printf 'Content-Type: text/plain\n'
+# Newline; from here on we are sending the content body.
+printf '\n'
+# Finger request, the output of which goes to stdout.
 printf '%s\r\n' "$USER" | if test -n "$ALL_PROXY"
 then	curl -x "$ALL_PROXY" -- "$URL"
 else	curl -- "$URL"
