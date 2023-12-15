@@ -101,14 +101,8 @@ urimethodmap = "urimethodmap"
 #### gmifetch
 
 For the following example, it is recommended to set a text/gemini handler
-in your mailcap file. See
-<!-- MANOFF -->
-[mailcap](mailcap.md)
-<!-- MANON -->
-<!-- MANON
-**cha-mailcap**(5)
-MANOFF -->
-for details.
+in your mailcap file. See <!-- MANOFF -->[mailcap](mailcap.md)<!-- MANON -->
+<!-- MANON **cha-mailcap**(5) MANOFF --> for details.
 
 ```
 # Use the `gmifetch` CGI program to retrieve files through the gemini protocol.

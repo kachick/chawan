@@ -147,3 +147,10 @@ command that will retrieve the specified `finger:` URL; it prints the header
 'Content-Type: text/plain' to the output, then an empty line, then the body
 of the retrieved resource. If an error is encountered, it prints a
 `Cha-Control` header with an error code and a specific error message instead.
+<!-- MANON
+
+## See also
+
+**cha**(1), **cha-urimethodmap**(5), **cha-localcgi**(5),
+**cha-urimethodmap**(5)
+MANOFF -->

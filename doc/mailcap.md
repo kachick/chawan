@@ -9,14 +9,8 @@ other file formats, the mailcap file format can be used.
 
 Note that Chawan's default mime.types file only recognizes a few file
 extensions, which may result in your entries not being executed.
-Please consult the
-<!-- MANOFF -->
-[mime.types](mime.types.md)
-<!-- MANON -->
-<!-- MANON
-**cha-mime.types**(5)
-MANOFF -->
-documentation for details.
+Please consult the <!-- MANOFF -->[mime.types](mime.types.md)<!-- MANON -->
+<!-- MANON **cha-mime.types**(5) MANOFF --> documentation for details.
 
 For an exact description of the mailcap format, see
 [RFC 1524](https://www.rfc-editor.org/rfc/rfc1524).

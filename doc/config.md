@@ -172,52 +172,32 @@ the line number.</td>
 <tr>
 <td>mailcap</td>
 <td>array of paths</td>
-<td>Search path for
-<!-- MANOFF -->
-[mailcap](mailcap.md) files.
-<!-- MANON -->
-<!-- MANON
-mailcap files. (See **cha-mailcap**(5) for details.)
-MANOFF -->
+<td>Search path for <!-- MANOFF -->[mailcap](mailcap.md) files.<!-- MANON -->
+<!-- MANON mailcap files. (See **cha-mailcap**(5) for details.) MANOFF -->
 </td>
 </tr>
 
 <tr>
 <td>mime-types</td>
 <td>array of paths</td>
-<td>Search path for
-<!-- MANOFF -->
-[mime.types](mime.types.md) files.
-<!-- MANON -->
-<!-- MANON
-mime.types files. (See **cha-mime.types**(5) for details.)
-MANOFF -->
+<td>Search path for <!-- MANOFF -->[mime.types](mime.types.md) files.<!-- MANON -->
+<!-- MANON mime.types files. (See **cha-mime.types**(5) for details.) MANOFF -->
 </td>
 </tr>
 
 <tr>
 <td>cgi-dir</td>
 <td>array of paths</td>
-<td>Search path for
-<!-- MANOFF -->
-[local CGI](localcgi.md) scripts.
-<!-- MANON -->
-<!-- MANON
-local CGI scripts. (See **cha-localcgi**(5) for details.)
-MANOFF -->
+<td>Search path for <!-- MANOFF -->[local CGI](localcgi.md) scripts.<!-- MANON -->
+<!-- MANON local CGI scripts. (See **cha-localcgi**(5) for details.) MANOFF -->
 </td>
 </tr>
 
 <tr>
 <td>cgi-dir</td>
 <td>array of paths</td>
-<td>Search path for
-<!-- MANOFF -->
-[urimethodmap](urimethodmap.md) files.
-<!-- MANON -->
-<!-- MANON
-urimethodmap files. (See **cha-urimethodmap**(5) for details.)
-MANOFF -->
+<td>Search path for <!-- MANOFF -->[urimethodmap](urimethodmap.md) files.<!-- MANON -->
+<!-- MANON urimethodmap files. (See **cha-urimethodmap**(5) for details.) MANOFF -->
 </td>
 </tr>
 
@@ -226,13 +206,8 @@ MANOFF -->
 <td>boolean</td>
 <td>Enable local CGI compatibility with w3m. In short, it redirects
 `file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`. For further
-details, see
-<!-- MANOFF -->
-[localcgi.md](localcgi.md).
-<!-- MANON -->
-<!-- MANON
-**cha-localcgi**(5).
-MANOFF -->
+details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
+<!-- MANON **cha-localcgi**(5). MANOFF -->
 </td>
 </tr>
 

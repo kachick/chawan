@@ -133,7 +133,7 @@ lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o \
 	@mkdir -p "$(QJSOBJ)"
 	$(AR) rcs $@ $^
 
-$(OBJDIR)/man/cha-%.md: doc/%.md
+$(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
 	./md2manpreproc $< > $@
 

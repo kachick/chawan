@@ -36,9 +36,12 @@ format_table() {
 		-e 's/^ *//g;s/ *$//g'
 }
 
-sed -e '/<!-- MANOFF -->/,/<!-- MANON -->/d' \
+sed -e 's/<!-- MANOFF -->.*<!-- MANON -->//g' \
+	-e 's/<!-- MANON \(.*\) MANOFF -->/\1/g' \
+	-e '/<!-- MANOFF -->/,/<!-- MANON -->/d' \
 	-e '/^<!-- MANON$/d' \
-	-e '/^MANOFF -->$/d' "$@" | \
+	-e '/^MANOFF -->$/d' "$@" \
+	| \
 while read line
 do	if test "$line" = "<table>"
 	then	format_table
