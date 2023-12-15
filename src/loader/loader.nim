@@ -7,9 +7,17 @@
 # if success:
 #  S: status code
 #  S: headers
-#  S: response body
+#  if canredir:
+#    C: redir?
+#    if redir:
+#      C: redirection file handle (through sendFileHandle)
+#  S: response body (potentially into redirection file handle)
+# else:
+#  S: error message
 #
 # The body is passed to the stream as-is, so effectively nothing can follow it.
+# canredir is a mechanism for piping files into pager-opened processes
+# (i.e. mailcap).
 
 import std/nativesockets
 import std/net
@@ -453,6 +461,10 @@ proc onConnected*(loader: FileLoader, fd: int) =
     SocketStream(stream).source.getFd().setBlocking(false)
     promise.resolve(JSResult[Response].ok(response))
   else:
+    var msg: string
+    # msg is discarded.
+    #TODO maybe print if called from trusted code (i.e. global == client)?
+    stream.sread(msg)
     loader.unregisterFun(fd)
     loader.unregistered.add(fd)
     let err = newTypeError("NetworkError when attempting to fetch resource")
@@ -499,6 +511,11 @@ proc doRequest*(loader: FileLoader, request: Request, blocking = true,
     if loader.handleHeaders(request, response, stream):
       if not blocking:
         stream.source.getFd().setBlocking(blocking)
+  else:
+    var msg: string
+    stream.sread(msg)
+    if msg != "":
+      response.internalMessage = msg
   return response
 
 proc addref*(loader: FileLoader) =

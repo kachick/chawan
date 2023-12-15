@@ -14,6 +14,7 @@ import io/serialize
 import js/dict
 import js/javascript
 import js/regex
+import loader/connecterror
 import loader/request
 import local/select
 import server/buffer
@@ -103,7 +104,8 @@ type
     lineshift: int
     numLines*: int
     replace*: Container
-    code*: int
+    code*: int # note: this is not the status code, but the ConnectErrorCode.
+    errorMessage*: string
     retry*: seq[URL]
     hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
@@ -1208,6 +1210,10 @@ proc load(container: Container) =
           container.source.contentType = some(res.contentType)
         container.triggerEvent(CHECK_MAILCAP)
       else:
+        if res.errorMessage != "":
+          container.errorMessage = res.errorMessage
+        else:
+          container.errorMessage = getLoaderErrorMessage(res.code)
         container.setLoadInfo("")
         container.triggerEvent(FAIL)
     else:

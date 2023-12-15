@@ -46,6 +46,7 @@ type
     unregisterFun*: proc()
     bodyRead*: Promise[string]
     charset*: Charset
+    internalMessage*: string # should NOT be exposed to JS!
 
 jsDestructor(Response)
 

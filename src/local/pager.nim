@@ -26,7 +26,6 @@ import js/dict
 import js/javascript
 import js/regex
 import js/tojs
-import loader/connecterror
 import loader/loader
 import loader/request
 import local/container
@@ -1147,9 +1146,8 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.gotoURL(newRequest(container.retry.pop()),
         ctype = container.contentType)
     else:
-      let errorMessage = getLoaderErrorMessage(container.code)
       pager.alert("Can't load " & $container.source.location & " (" &
-        errorMessage & ")")
+        container.errorMessage & ")")
     return false
   of SUCCESS:
     if container.replace != nil:

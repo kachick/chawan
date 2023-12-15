@@ -87,7 +87,13 @@ proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
       else:
         let fb = int32(ERROR_CGI_INVALID_CHA_CONTROL)
         let code = int(parseInt32(errs[1]).get(fb))
-        discard handle.sendResult(code)
+        var message = ""
+        if errs.len > 2:
+          message &= errs[2]
+          for i in 3 ..< errs.len:
+            message &= ' '
+            message &= errs[i]
+        discard handle.sendResult(code, message)
       return RESULT_ERROR
     elif v.startsWithIgnoreCase("ControlDone"):
       return RESULT_CONTROL_DONE

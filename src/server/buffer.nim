@@ -769,6 +769,7 @@ proc loadResources(buffer: Buffer): EmptyPromise =
 type ConnectResult* = object
   invalid*: bool
   code*: int
+  errorMessage*: string # if empty, use getLoaderErrorMessage
   needsAuth*: bool
   redirect*: Request
   contentType*: string
@@ -810,7 +811,10 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
     let request = source.request
     let response = buffer.loader.doRequest(request, blocking = true, canredir = true)
     if response.body == nil:
-      return ConnectResult(code: response.res)
+      return ConnectResult(
+        code: response.res,
+        errorMessage: response.internalMessage
+      )
     if response.charset != CHARSET_UNKNOWN:
       charset = charset
     if buffer.source.contentType.isNone:

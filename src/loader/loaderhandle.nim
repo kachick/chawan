@@ -46,9 +46,13 @@ proc addOutputStream*(handle: LoaderHandle, stream: Stream) =
     let ms = newMultiStream(handle.ostream, stream)
     handle.ostream = ms
 
-proc sendResult*(handle: LoaderHandle, res: int): bool =
+proc sendResult*(handle: LoaderHandle, res: int, msg = ""): bool =
   try:
     handle.ostream.swrite(res)
+    if res == 0: # success
+      assert msg == ""
+    else: # error
+      handle.ostream.swrite(msg)
     return true
   except IOError: # broken pipe
     return false
