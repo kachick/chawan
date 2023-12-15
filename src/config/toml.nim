@@ -298,7 +298,8 @@ proc flushLine(state: var TomlParser): Err[TomlError] =
   return ok()
 
 proc consumeComment(state: var TomlParser) =
-  state.node = TomlNode()
+  if state.node == nil:
+    state.node = TomlNode()
   while state.has():
     let c = state.consume()
     if c == '\n':
