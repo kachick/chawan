@@ -61,7 +61,7 @@ Currently implemented features are:
 	  implemented
 * cookies
 * Supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger
-* Can load user-defined protocols/files using [local CGI](doc/localcgi.md),
+* Can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
   [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
 
 ...with a lot more [planned](todo).
@@ -74,6 +74,7 @@ Currently implemented features are:
 * mime.types: [doc/mime.types.md](doc/mime.types.md)
 * urimethodmap: [doc/urimethodmap.md](doc/urimethodmap.md)
 * local CGI: [doc/localcgi.md](doc/localcgi.md)
+* protocols: [doc/protocols.md](doc/protocols.md)
 
 ## Neighbors
 

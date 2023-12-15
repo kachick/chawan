@@ -153,7 +153,7 @@ clean:
 .PHONY: manpage
 manpage: $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 	$(OBJDIR)/man/cha-mime.types.5 $(OBJDIR)/man/cha-localcgi.5 \
-	$(OBJDIR)/man/cha-urimethodmap.5 \
+	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5 \
 	$(OBJDIR)/man/cha.1
 
 .PHONY: install
@@ -180,6 +180,7 @@ install:
 	install -m644 "$(OBJDIR)/man/cha-mime.types.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OBJDIR)/man/cha-localcgi.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OBJDIR)/man/cha-protocols.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OBJDIR)/man/cha.1" "$(DESTDIR)$(MANPREFIX1)"; \
 	fi
 
@@ -203,6 +204,7 @@ uninstall:
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mime.types.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-localcgi.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-urimethodmap.5"
+	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-cha-protocols.5"
 	rm -f "$(DESTDIR)$(MANPREFIX1)/cha.1"
 
 .PHONY: submodule
