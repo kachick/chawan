@@ -619,7 +619,7 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let contentType = if pager.container.contentType.get("") == "text/html":
+    let contentType = if pager.container.ishtml:
       "text/plain"
     else:
       "text/html"

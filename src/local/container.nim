@@ -120,6 +120,7 @@ type
     tmpJumpMark: PagePos
     jumpMark: PagePos
     marks: Table[string, PagePos]
+    ishtml*: bool
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -1200,6 +1201,7 @@ proc load(container: Container) =
             "application/octet-stream", container.config.mimeTypes)
           if contentType != "application/octet-stream":
             container.iface.setContentType(contentType)
+            container.ishtml = contentType == "text/html"
           container.source.contentType = some(contentType)
         else:
           container.source.contentType = some(res.contentType)
@@ -1225,6 +1227,7 @@ proc redirectToFd*(container: Container, fdin: FileHandle, wait: bool):
 
 proc readFromFd*(container: Container, fdout: FileHandle, ishtml: bool):
     EmptyPromise =
+  container.ishtml = ishtml
   return container.iface.readFromFd(fdout, ishtml)
 
 proc quit*(container: Container) =
