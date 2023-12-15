@@ -1,4 +1,4 @@
-import bindings/curl
+import curl
 import loader/connecterror
 
 func curlErrorToChaError*(res: CURLcode): ConnectErrorCode =

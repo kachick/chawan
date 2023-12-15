@@ -1,11 +1,11 @@
 import std/envvars
 
-import curlwrap
+import curl
 import curlerrors
+import curlwrap
 
 import ../gophertypes
 
-import bindings/curl
 import loader/connecterror
 import utils/twtstr
 

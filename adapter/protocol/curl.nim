@@ -381,6 +381,7 @@ proc `==`*(a: CURLM, b: typeof(nil)): bool {.borrow.}
 
 proc curl_global_init*(flags: clong): CURLcode
 proc curl_global_cleanup*()
+proc curl_free*(p: pointer)
 
 proc curl_easy_init*(): CURL
 proc curl_easy_cleanup*(handle: CURL)

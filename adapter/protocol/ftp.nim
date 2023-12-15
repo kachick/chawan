@@ -2,11 +2,11 @@ import std/envvars
 import std/options
 import std/strutils
 
+import curl
 import curlerrors
 import curlwrap
 import dirlist
 
-import bindings/curl
 import loader/connecterror
 import types/opt
 import utils/twtstr
@@ -154,6 +154,10 @@ proc main() =
   doAssert curl != nil
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
+  let op = FtpHandle(
+    curl: curl,
+    dirmode: path.len > 0 and path[^1] == '/'
+  )
   let url = curl_url()
   const flags = cuint(CURLU_PATH_AS_IS)
   url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
@@ -171,39 +175,44 @@ proc main() =
   # necessary to specify absolute paths.
   # This is incredibly confusing, and probably not what the user wanted.
   # So we work around it by adding the extra slash ourselves.
+  #
+  # But before that, we take the serialized URL without the path for
+  # setting the base URL:
+  url.set(CURLUPART_PATH, opath, flags)
+  if op.dirmode:
+    let surl = url.get(CURLUPART_URL, cuint(CURLU_PUNY2IDN))
+    if surl == nil:
+      stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_URL))
+      curl_url_cleanup(url)
+      curl_easy_cleanup(curl)
+      return
+    op.base = $surl
+    op.path = path
+    curl_free(surl)
+  # Now for the workaround:
   url.set(CURLUPART_PATH, '/' & opath, flags)
+  # Set opts for the request
   curl.setopt(CURLOPT_CURLU, url)
-  let dirmode = path.len > 0 and path[^1] == '/'
-  let op = FtpHandle(
-    curl: curl,
-    dirmode: dirmode
-  )
   curl.setopt(CURLOPT_HEADERDATA, op)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
   curl.setopt(CURLOPT_WRITEDATA, op)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD)
-  if dirmode:
-    const flags = cuint(CURLU_PUNY2IDN)
-    let surl = url.get(CURLUPART_URL, flags)
-    if surl == nil:
-      stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_URL))
-      return
-    op.base = $surl
-    op.path = path
   let purl = getEnv("ALL_PROXY")
   if purl != "":
     curl.setopt(CURLOPT_PROXY, purl)
   if getEnv("REQUEST_METHOD") != "GET":
+    # fail
     let code = $int(ERROR_INVALID_METHOD)
     stdout.write("Cha-Control: ConnectionError " & $code & "\n")
-    return
-  let res = curl_easy_perform(curl)
-  if res != CURLE_OK:
-    if not op.statusline:
-      stdout.write(getCurlConnectionError(res))
-  elif op.dirmode:
-    op.finish()
+  else:
+    let res = curl_easy_perform(curl)
+    if res != CURLE_OK:
+      if not op.statusline:
+        stdout.write(getCurlConnectionError(res))
+    elif op.dirmode:
+      op.finish()
+  curl_url_cleanup(url)
   curl_easy_cleanup(curl)
 
 main()

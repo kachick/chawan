@@ -1,4 +1,4 @@
-import bindings/curl
+import curl
 
 template setopt*(curl: CURL, opt: CURLoption, arg: typed) =
   discard curl_easy_setopt(curl, opt, arg)

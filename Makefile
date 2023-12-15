@@ -72,7 +72,7 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
-		adapter/protocol/curlerrors.nim src/bindings/curl.nim \
+		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
 		src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/http" -d:curlLibName:$(CURLLIBNAME) \
@@ -95,14 +95,14 @@ $(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim adapter/protocol/dirlist.nim \
 $(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim adapter/protocol/dirlist.nim \
 		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
 		res/map/EastAsianWidth.txt src/loader/connecterror.nim \
-		src/types/opt.nim src/bindings/curl.nim
+		src/types/opt.nim adapter/protocol/curl.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/ftp" \
 		-o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
 
 $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/gophertypes.nim \
-		src/bindings/curl.nim src/loader/connecterror.nim \
+		adapter/protocol/curl.nim src/loader/connecterror.nim \
 		src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/gopher" \

@@ -1,10 +1,10 @@
 import std/envvars
 import std/strutils
 
+import curl
 import curlerrors
 import curlwrap
 
-import bindings/curl
 import utils/twtstr
 
 type
