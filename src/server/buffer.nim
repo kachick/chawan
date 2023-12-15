@@ -1149,7 +1149,7 @@ proc onload(buffer: Buffer) =
   of LOADING_PAGE:
     discard
   let op = buffer.sstream.getPosition()
-  var s {.noInit.}: array[16384, uint8]
+  var s {.noInit.}: array[BufferSize, uint8]
   try:
     buffer.sstream.setPosition(op + buffer.available)
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
