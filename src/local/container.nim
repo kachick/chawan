@@ -192,6 +192,7 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       redirectdepth: container.redirectdepth,
       select: container.select,
       canreinterpret: container.canreinterpret,
+      ishtml: container.ishtml,
       cloned: true
     )
     if newurl != nil:
@@ -1196,12 +1197,12 @@ proc load(container: Container) =
         if res.redirect != nil:
           container.triggerEvent(ContainerEvent(t: REDIRECT, request: res.redirect))
         container.source.charset = res.charset
+        container.ishtml = res.contentType == "text/html"
         if res.contentType == "application/octet-stream":
           let contentType = guessContentType(container.location.pathname,
             "application/octet-stream", container.config.mimeTypes)
           if contentType != "application/octet-stream":
             container.iface.setContentType(contentType)
-            container.ishtml = contentType == "text/html"
           container.source.contentType = some(contentType)
         else:
           container.source.contentType = some(res.contentType)
