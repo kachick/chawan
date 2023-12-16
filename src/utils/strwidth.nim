@@ -98,7 +98,7 @@ func isDoubleWidthAmbiguousHigh(r: Rune): bool =
   return r.isDoubleWidthHigh()
 
 func isCombining(r: Rune): bool =
-  return DoubleWidthAmbiguousRanges.isInRange(uint32(r))
+  return Combining.isInRange(uint32(r))
 
 # Lookup tables for characters on the BMP. This "only" takes up 8k of space
 # per table, as opposed to the 135k that storing all characters would require.

@@ -250,10 +250,10 @@ type u32pair {.packed.} = object
   b: uint32
 
 func cmpRange(x: u32pair, y: uint32): int =
-  if x.a < y:
-    return -1
-  elif x.b > y:
+  if x.a > y:
     return 1
+  elif x.b < y:
+    return -1
   return 0
 
 func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
