@@ -1116,23 +1116,27 @@ proc getSelectionText(container: Container, hl: Highlight = nil):
     of SEL_NORMAL:
       if starty == endy:
         let si = res.lines[0].str.findColBytes(startx)
-        let ei = res.lines[0].str.findColBytes(endx, startx, si)
+        let ei = res.lines[0].str.findColBytes(endx + 1, startx, si) - 1
         s = res.lines[0].str.substr(si, ei)
       else:
         let si = res.lines[0].str.findColBytes(startx)
         s &= res.lines[0].str.substr(si) & '\n'
         for i in 1 .. res.lines.high - 1:
           s &= res.lines[i].str & '\n'
-        let ei = res.lines[^1].str.findColBytes(endx)
+        let ei = res.lines[^1].str.findColBytes(endx + 1) - 1
         s &= res.lines[^1].str.substr(0, ei)
     of SEL_BLOCK:
-      for line in res.lines:
+      for i, line in res.lines:
         let si = line.str.findColBytes(startx)
-        let ei = line.str.findColBytes(endx, startx, si)
-        s &= line.str.substr(si, ei) & '\n'
+        let ei = line.str.findColBytes(endx + 1, startx, si) - 1
+        if i > 0:
+          s &= '\n'
+        s &= line.str.substr(si, ei)
     of SEL_LINE:
-      for line in res.lines:
-        s &= line.str & '\n'
+      for i, line in res.lines:
+        if i > 0:
+          s &= '\n'
+        s &= line.str
     return s
   )
 
