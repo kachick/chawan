@@ -2,7 +2,6 @@ import std/algorithm
 import std/os
 import std/streams
 import std/times
-import std/envvars
 
 import dirlist
 
