@@ -57,62 +57,27 @@ proc sockClose(s: Stream) = {.cast(tags: []).}: #...sigh
   let s = SocketStream(s)
   s.source.close()
 
+{.compile: "sendfd.c".}
+proc sendfd(sock: SocketHandle, fd: cint): int {.importc.}
+
 # See https://stackoverflow.com/a/4491203
 proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   assert not s.source.hasDataBuffered
-  var hdr: Tmsghdr
-  var iov: IOVec
-  var space: csize_t
-  {.emit: [
-  space, """ = CMSG_SPACE(sizeof(int));""",
-  ].}
-  var cmsgbuf = alloc(cast[int](space))
-  var buf = char(0)
-  iov.iov_base = addr buf
-  iov.iov_len = csize_t(1)
-  zeroMem(addr hdr, sizeof(hdr))
-  hdr.msg_iov = addr iov
-  hdr.msg_iovlen = 1
-  hdr.msg_control = cmsgbuf
-  # ...sigh
-  {.emit: [
-  hdr.msg_controllen, """ = CMSG_LEN(sizeof(int));""",
-  ].}
-  let cmsg = CMSG_FIRSTHDR(addr hdr)
-  # FileHandle is cint, so sizeof(FileHandle) in c is sizeof(int).
-  when sizeof(FileHandle) != sizeof(cint):
-    error("Or not...")
-  {.emit: [
-  cmsg.cmsg_len, """ = CMSG_LEN(sizeof(int));"""
-  ].}
-  cmsg.cmsg_level = SOL_SOCKET
-  cmsg.cmsg_type = SCM_RIGHTS
-  cast[ptr FileHandle](CMSG_DATA(cmsg))[] = fd
-  let n = sendmsg(s.source.getFd(), addr hdr, 0)
-  dealloc(cmsgbuf)
-  assert n == int(iov.iov_len) #TODO remove this
+  let n = sendfd(s.source.getFd(), cint(fd))
+  if n < -1:
+    raisePosixIOError()
+  assert n == 1 # we send a single nul byte as buf
+
+{.compile: "recvfd.c".}
+proc recvfd(sock: SocketHandle, fdout: ptr cint): int {.importc.}
 
 proc recvFileHandle*(s: SocketStream): FileHandle =
   assert not s.source.hasDataBuffered
-  var iov: IOVec
-  var hdr: Tmsghdr
-  var buf: char
-  var cmsgbuf = alloc(CMSG_SPACE(csize_t(sizeof(FileHandle))))
-  iov.iov_base = addr buf
-  iov.iov_len = 1
-  zeroMem(addr hdr, sizeof(hdr))
-  hdr.msg_iov = addr iov
-  hdr.msg_iovlen = 1
-  hdr.msg_control = cmsgbuf
-  {.emit: [
-  hdr.msg_controllen, """ = CMSG_SPACE(sizeof(int));"""
-  ].}
-  let n = recvmsg(s.source.getFd(), addr hdr, 0)
-  assert n != 0, "Unexpected EOF" #TODO remove this
-  assert n > 0, "Failed to receive message " & $osLastError() #TODO remove this
-  var cmsg = CMSG_FIRSTHDR(addr hdr)
-  result = cast[ptr FileHandle](CMSG_DATA(cmsg))[]
-  dealloc(cmsgbuf)
+  var fd: cint
+  let n = recvfd(s.source.getFd(), addr fd)
+  if n < 0:
+    raisePosixIOError()
+  return FileHandle(fd)
 
 func newSocketStream*(): SocketStream =
   return SocketStream(
