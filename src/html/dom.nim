@@ -1601,6 +1601,14 @@ func `form=`*(element: FormAssociatedElement, form: HTMLFormElement) =
   of TAG_TEXTAREA: HTMLTextAreaElement(element).form = form
   else: assert false
 
+func isSubmitButton*(element: Element): bool =
+  if element.tagType == TAG_BUTTON:
+    return element.attr("type") == "submit"
+  elif element.tagType == TAG_INPUT:
+    let element = HTMLInputElement(element)
+    return element.inputType in {INPUT_SUBMIT, INPUT_IMAGE}
+  return false
+
 func canSubmitImplicitly*(form: HTMLFormElement): bool =
   const BlocksImplicitSubmission = {
     INPUT_TEXT, INPUT_SEARCH, INPUT_URL, INPUT_TEL, INPUT_EMAIL, INPUT_PASSWORD,
@@ -1616,6 +1624,8 @@ func canSubmitImplicitly*(form: HTMLFormElement): bool =
           return false
         else:
           found = true
+    elif control.isSubmitButton():
+      return false
   return true
 
 func qualifiedName*(element: Element): string =
@@ -1938,14 +1948,6 @@ func isButton*(element: Element): bool =
   if element.tagType == TAG_INPUT:
     let element = HTMLInputElement(element)
     return element.inputType in {INPUT_SUBMIT, INPUT_BUTTON, INPUT_RESET, INPUT_IMAGE}
-  return false
-
-func isSubmitButton*(element: Element): bool =
-  if element.tagType == TAG_BUTTON:
-    return element.attr("type") == "submit"
-  elif element.tagType == TAG_INPUT:
-    let element = HTMLInputElement(element)
-    return element.inputType in {INPUT_SUBMIT, INPUT_IMAGE}
   return false
 
 func action*(element: Element): string =
