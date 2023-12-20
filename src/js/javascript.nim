@@ -946,10 +946,15 @@ macro jsgetprop*(fun: typed) =
     block `dl`:
       let retv = ctx.toJS(`jfcl`)
       if retv != JS_NULL:
-        desc[].setter = JS_UNDEFINED
-        desc[].getter = JS_UNDEFINED
-        desc[].value = retv
-        desc[].flags = 0
+        if desc != nil:
+          # From quickjs.h:
+          # > If 1 is returned, the property descriptor 'desc' is filled
+          # > if != NULL.
+          # So desc may be nil.
+          desc[].setter = JS_UNDEFINED
+          desc[].getter = JS_UNDEFINED
+          desc[].value = retv
+          desc[].flags = 0
         return cint(1)
     return cint(0)
   let jsProc = gen.newJSProc(getJSGetPropParams(), false)
