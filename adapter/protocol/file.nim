@@ -65,19 +65,6 @@ proc loadDir(path, opath: string) =
   stdout.write(makeDirlist(items))
   stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
 
-proc loadSymlink(path: string) =
-  stdout.write("Content-Type: text/html\n\n")
-  let sl = expandSymlink(path)
-  stdout.write("""
-<HTML>
-<HEAD>
-<TITLE>Symlink view<TITLE>
-</HEAD>
-<BODY>
-Symbolic link to <A HREF="""" & sl & """">""" & sl & """</A></br>
-</BODY>
-</HTML>""")
-
 proc loadFile(f: File) =
   # No headers, we'll let the browser figure out the file type.
   stdout.write("\n")
@@ -93,10 +80,10 @@ proc loadFile(f: File) =
 
 proc main() =
   if getEnv("MAPPED_URI_HOST") != "":
-      let code = int(ERROR_INVALID_URL)
-      stdout.write("Cha-Control: ConnectionError " & $code &
-        " cannot use host in file")
-      return
+    let code = int(ERROR_INVALID_URL)
+    stdout.write("Cha-Control: ConnectionError " & $code &
+      " cannot use host in file")
+    return
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
   var f: File
@@ -104,8 +91,6 @@ proc main() =
     loadFile(f)
   elif dirExists(path):
     loadDir(path, opath)
-  elif symlinkExists(path):
-    loadSymlink(path)
   else:
     let code = int(ERROR_FILE_NOT_FOUND)
     stdout.write("Cha-Control: ConnectionError " & $code)
