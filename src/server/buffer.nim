@@ -1,13 +1,13 @@
-import macros
-import nativesockets
-import net
-import options
-import os
-import posix
-import selectors
-import streams
-import tables
-import unicode
+import std/macros
+import std/nativesockets
+import std/net
+import std/options
+import std/os
+import std/posix
+import std/selectors
+import std/streams
+import std/tables
+import std/unicode
 
 import bindings/quickjs
 import config/config
@@ -119,6 +119,7 @@ type
     hovertext: array[HoverType, string]
     estream: Stream # error stream
     ishtml: bool
+    ssock: ServerSocket
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -995,6 +996,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
       buffer.istream = newPosixStream(pipefd_write[0])
     buffer.pstream.close()
     let ssock = initServerSocket(buffered = false)
+    buffer.ssock = ssock
     ps.write(char(0))
     buffer.source.location = newurl
     for it in buffer.tasks.mitems:
@@ -1730,7 +1732,7 @@ proc handleRead(buffer: Buffer, fd: int) =
   if fd == buffer.rfd:
     try:
       buffer.readCommand()
-    except EOFError:
+    except ErrorConnectionReset, EOFError:
       #eprint "EOF error", $buffer.url & "\nMESSAGE:",
       #       getCurrentExceptionMsg() & "\n",
       #       getStackTrace(getCurrentException())
@@ -1785,6 +1787,12 @@ proc runBuffer(buffer: Buffer) =
         buffer.do_reshape()
     buffer.loader.unregistered.setLen(0)
 
+proc cleanup(buffer: Buffer) =
+  buffer.pstream.close()
+  buffer.ssock.close()
+  buffer.loader.unref()
+
+var gbuffer: Buffer
 proc launchBuffer*(config: BufferConfig, source: BufferSource,
     attrs: WindowAttributes, loader: FileLoader, ssock: ServerSocket) =
   let socks = ssock.acceptSocketStream()
@@ -1802,8 +1810,13 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     selector: newSelector[int](),
     estream: newFileStream(stderr),
     pstream: socks,
-    rfd: int(socks.source.getFd())
+    rfd: int(socks.source.getFd()),
+    ssock: ssock
   )
+  gbuffer = buffer
+  onSignal SIGTERM, SIGINT:
+    discard sig
+    gbuffer.cleanup()
   buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
   loader.registerFun = proc(fd: int) =
     buffer.selector.registerHandle(fd, {Read}, 0)
@@ -1814,7 +1827,5 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
       buffer.attrs, proc(url: URL) = buffer.navigate(url), some(buffer.loader))
   buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
   buffer.runBuffer()
-  buffer.pstream.close()
-  buffer.loader.unref()
-  ssock.close()
+  buffer.cleanup()
   quit(0)

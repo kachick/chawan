@@ -1,9 +1,7 @@
-import options
-import streams
-import tables
-
-when defined(posix):
-  import posix
+import std/options
+import std/posix
+import std/streams
+import std/tables
 
 import config/config
 import display/winattrs
@@ -103,6 +101,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   discard close(pipefd[0])
   return pid
 
+var gssock: ServerSocket
 proc forkBuffer(ctx: var ForkServerContext): Pid =
   var source: BufferSource
   var config: BufferConfig
@@ -127,6 +126,12 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
     let ssock = initServerSocket(buffered = false)
+    gssock = ssock
+    onSignal SIGTERM, SIGINT:
+      # This will be overridden after buffer has been set up; it is only
+      # necessary to avoid a race condition when buffer is killed before that.
+      discard sig
+      gssock.close()
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
     ps.close()
