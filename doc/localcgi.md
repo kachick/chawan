@@ -186,6 +186,11 @@ cgi-dir = "/usr/local/libexec/chawan/cgi-bin"
 
 and then put your script in `/usr/local/libexec/chawan/cgi-bin`.
 
+### My script is returning a "Failed to execute script" error message.
+
+This means the `execl` call to the script failed. Make sure that your CGI
+script's executable bit is set, i.e. run `chmod +x /path/to/cgi/script`.
+
 ### My script is returning an "invalid CGI path" error message.
 
 Make sure that you did not include leading slashes. Reminder:
@@ -202,11 +207,6 @@ your script is in. Note that by default, this depends on the binary's path,
 so e.g. if your binary is in `~/src/chawan/target/release/bin/cha`, but you
 put your CGI script to `/usr/local/libexec/chawan/cgi-bin`, then it will
 not work.
-
-### My script returns a page saying "Failed to execute script".
-
-This means the `execl` call to the script failed. Make sure that your CGI
-script's executable bit is set, i.e. run `chmod +x /path/to/cgi/script`.
 
 ### My script is returning a "failed to set up CGI script" error message.
 
