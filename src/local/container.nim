@@ -964,7 +964,7 @@ proc gotoMarkY*(container: Container, id: string): bool {.jsfunc.} =
   let mark = container.getMarkPos(id)
   if mark.isSome:
     let mark = mark.get
-    container.setCursorXYCenter(mark.x, mark.y)
+    container.setCursorXYCenter(0, mark.y)
     container.markPos()
     return true
   return false

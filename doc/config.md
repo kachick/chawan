@@ -1036,8 +1036,8 @@ do nothing and return false.</td>
 
 <tr>
 <td>`pager.gotoMarkY(id)`</td>
-<td>If the mark `id` exists, jump to its Y position and return true. Otherwise,
-do nothing and return false.</td>
+<td>If the mark `id` exists, jump to the beginning of the line at
+its Y position and return true. Otherwise, do nothing and return false.</td>
 </tr>
 
 <tr>
