@@ -1,6 +1,5 @@
 import std/algorithm
 import std/os
-import std/streams
 import std/times
 
 import dirlist
@@ -79,20 +78,18 @@ Symbolic link to <A HREF="""" & sl & """">""" & sl & """</A></br>
 </BODY>
 </HTML>""")
 
-proc loadFile(istream: Stream) =
+proc loadFile(f: File) =
   # No headers, we'll let the browser figure out the file type.
   stdout.write("\n")
-  let outs = newFileStream(stdout)
-  while not istream.atEnd:
-    const BufferSize = 16384
-    var buffer {.noinit.}: array[BufferSize, char]
-    while true:
-      let n = readData(istream, addr buffer[0], BufferSize)
-      if n == 0:
-        break
-      outs.writeData(addr buffer[0], n)
-      if n < BufferSize:
-        break
+  const BufferSize = 16384
+  var buffer {.noinit.}: array[BufferSize, char]
+  while true:
+    let n = readBuffer(f, addr buffer[0], BufferSize)
+    if n == 0:
+      break
+    let n2 = stdout.writeBuffer(addr buffer[0], n)
+    if n2 < n or n < BufferSize:
+      break
 
 proc main() =
   if getEnv("MAPPED_URI_HOST") != "":
@@ -102,16 +99,15 @@ proc main() =
       return
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
-  let istream = newFileStream(path, fmRead)
-  if istream == nil:
-    if dirExists(path):
-      loadDir(path, opath)
-    elif symlinkExists(path):
-      loadSymlink(path)
-    else:
-      let code = int(ERROR_FILE_NOT_FOUND)
-      stdout.write("Cha-Control: ConnectionError " & $code)
+  var f: File
+  if f.open(path, fmRead):
+    loadFile(f)
+  elif dirExists(path):
+    loadDir(path, opath)
+  elif symlinkExists(path):
+    loadSymlink(path)
   else:
-    loadFile(istream)
+    let code = int(ERROR_FILE_NOT_FOUND)
+    stdout.write("Cha-Control: ConnectionError " & $code)
 
 main()
