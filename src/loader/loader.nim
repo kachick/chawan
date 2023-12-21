@@ -70,7 +70,6 @@ type
 
   OngoingData = object
     buf: string
-    readbufsize: int
     response: Response
     bodyRead: Promise[string]
 
@@ -455,7 +454,6 @@ proc onConnected*(loader: FileLoader, fd: int) =
       realCloseImpl(stream)
     loader.ongoing[fd] = OngoingData(
       response: response,
-      readbufsize: BufferSize,
       bodyRead: response.bodyRead
     )
     SocketStream(stream).source.getFd().setBlocking(false)
@@ -474,28 +472,33 @@ proc onConnected*(loader: FileLoader, fd: int) =
 proc onRead*(loader: FileLoader, fd: int) =
   loader.ongoing.withValue(fd, buffer):
     let response = buffer[].response
-    while true:
-      let olen = buffer[].buf.len
-      buffer[].buf.setLen(olen + buffer.readbufsize)
+    while not response.body.atEnd():
       try:
-        let n = response.body.readData(addr buffer[].buf[olen],
-          buffer.readbufsize)
-        if n != 0:
-          if buffer[].readbufsize < BufferSize:
-            buffer[].readbufsize = min(BufferSize, buffer[].readbufsize * 2)
+        let olen = buffer[].buf.len
+        buffer[].buf.setLen(olen + BufferSize)
+        let n = response.body.readData(addr buffer[].buf[olen], BufferSize)
         buffer[].buf.setLen(olen + n)
-        if response.body.atEnd():
-          buffer[].bodyRead.resolve(buffer[].buf)
-          buffer[].bodyRead = nil
-          buffer[].buf = ""
-          response.unregisterFun()
-        break
       except ErrorAgain, ErrorWouldBlock:
-        assert buffer.readbufsize > 1
-        buffer.readbufsize = buffer.readbufsize div 2
+        break
+    if response.body.atEnd():
+      buffer[].bodyRead.resolve(buffer[].buf)
+      buffer[].bodyRead = nil
+      buffer[].buf = ""
+      response.unregisterFun()
 
 proc onError*(loader: FileLoader, fd: int) =
-  loader.onRead(fd)
+  loader.ongoing.withValue(fd, buffer):
+    let response = buffer[].response
+    when defined(debug):
+      var lbuf {.noInit.}: array[BufferSize, char]
+      if not response.body.atEnd():
+        let n = response.body.readData(addr lbuf[0], lbuf.len)
+        assert n == 0
+      assert response.body.atEnd()
+    buffer[].bodyRead.resolve(buffer[].buf)
+    buffer[].bodyRead = nil
+    buffer[].buf = ""
+    response.unregisterFun()
 
 proc doRequest*(loader: FileLoader, request: Request, blocking = true,
     canredir = false): Response =
