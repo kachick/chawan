@@ -54,18 +54,18 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* res/
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
 		src/utils/twtstr.nim adapter/gophertypes.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) -o:"$(OUTDIR_LIBEXEC)/gopher2html" \
-		adapter/format/gopher2html.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/gopher2html" \
+		-o:"$(OUTDIR_LIBEXEC)/gopher2html" adapter/format/gopher2html.nim
 
 GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O3
 $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch"
 
-GMI2HTML_CFLAGS = -Wall -Wextra -std=c89 -pedantic -g -O3
-$(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.c
+$(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(CC) $(GMI2HTML_CFLAGS) adapter/format/gmi2html.c -o "$(OUTDIR_LIBEXEC)/gmi2html"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/gmi2html" \
+		-o:"$(OUTDIR_LIBEXEC)/gmi2html" adapter/format/gmi2html.nim
 
 $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
