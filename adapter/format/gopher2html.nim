@@ -2,7 +2,6 @@
 # Gopher directory -> HTML converter for Chawan.
 
 import std/os
-import std/streams
 import std/strutils
 
 include ../gophertypes
@@ -53,10 +52,9 @@ proc main() =
 </HEAD>
 <BODY>
 <H1>Index of """ & escapedURL & """</H1>""")
-  let ins = newFileStream(stdin)
   var ispre = false
-  while not ins.atEnd:
-    let line = ins.readLine()
+  while not stdin.endOfFile:
+    let line = stdin.readLine()
     if line.len == 0:
       break # invalid
     let tc = line[0]
