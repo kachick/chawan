@@ -17,7 +17,7 @@ this document.
 * [Gopher](#gopher)
 * [Gemini](#gemini)
 * [Finger](#finger)
-* [Local schemes: file:, about:, data:-](#local-schemes-file-about-data)
+* [Local schemes: file:, about:, data:, cgi-bin:](#local-schemes-file-about-data-cgi-bin)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
