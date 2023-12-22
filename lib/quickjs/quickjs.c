@@ -5493,7 +5493,7 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
     }
 }
 
-/* Check if object has a can_destroy hook */
+/* Check if object has a can_destroy hook. */
 static int gc_has_can_destroy_hook(JSRuntime *rt, JSGCObjectHeader *p)
 {
     JSObject *obj;
@@ -5510,8 +5510,6 @@ static int gc_can_destroy(JSRuntime *rt, JSGCObjectHeader *p)
     JSClassCanDestroy *can_destroy;
     JSObject *obj;
 
-    if (!gc_has_can_destroy_hook(rt, p))
-        return 1;
     obj = (JSObject *)p;
     can_destroy = rt->class_array[obj->class_id].can_destroy;
     if (!((*can_destroy)(rt, JS_MKPTR(JS_TAG_OBJECT, obj))))
@@ -5572,7 +5570,7 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
         {
             JSGCObjectHeader *p = JS_VALUE_GET_PTR(v);
             if (rt->gc_phase != JS_GC_PHASE_REMOVE_CYCLES) {
-                if (!gc_can_destroy(rt, p)) {
+                if (gc_has_can_destroy_hook(rt, p) && !gc_can_destroy(rt, p)) {
                     p->ref_count++;
                     break;
                 }
@@ -5825,6 +5823,8 @@ static void gc_scan(JSRuntime *rt)
         list_for_each_safe(el, el1, &rt->tmp_hook_obj_list) {
             p = list_entry(el, JSGCObjectHeader, link);
             list_del(&p->link);
+            /* gc_has_can_destroy_hook is the condition for objects to be
+               placed in tmp_hook_obj_list, so it is true here. */
             if (gc_can_destroy(rt, p)) {
                 /* object can be destroyed; move to tmp_obj_list. */
                 list_add_tail(&p->link, &rt->tmp_obj_list);
