@@ -84,11 +84,11 @@ thus has some legacy issues. In particular:
 * It does not support proxies.
 * It does not support private key authentication.
 
-`adapter/format/gmi2html.c` is its companion program to convert the
+`adapter/format/gmi2html.nim` is its companion program to convert the
 `text/gemini` file format to HTML. Note that the gemtext specification insists
 on line breaks being visually significant, and forbids their collapsing onto
-a single line; gmi2html respects this, with the unfortunate effect that the
-generated HTML page is just a bunch of lines with lots of `<BR>` tags.
+a single line; gmi2html respects this. However, inline whitespace is still
+collapsed outside of preformatted blocks.
 
 ## Finger
 
