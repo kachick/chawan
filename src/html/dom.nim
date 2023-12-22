@@ -2988,30 +2988,29 @@ proc createClassicScript(source: string, baseURL: URL, options: ScriptOptions, m
     mutedErrors: mutedErrors
   )
 
-#TODO settings object
+type OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
+
 proc fetchClassicScript(element: HTMLScriptElement, url: URL,
-    options: ScriptOptions, cors: CORSAttribute,
-    cs: Charset, onComplete: (proc(element: HTMLScriptElement,
-                                   res: ScriptResult))) =
-  if not element.scriptingEnabled:
-      element.onComplete(ScriptResult(t: RESULT_NULL))
+    options: ScriptOptions, cors: CORSAttribute, cs: Charset,
+    onComplete: OnCompleteProc) =
+  let window = element.document.window
+  if not element.scriptingEnabled or window.loader.isNone:
+    element.onComplete(ScriptResult(t: RESULT_NULL))
+    return
+  let loader = window.loader.get
+  let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
+  let response = loader.doRequest(request)
+  if response.res != 0:
+    element.onComplete(ScriptResult(t: RESULT_NULL))
+    return
+  let cs = if cs == CHARSET_UNKNOWN:
+    CHARSET_UTF_8
   else:
-    let loader = element.document.window.loader
-    if loader.isSome:
-      let loader = loader.get
-      let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-      let response = loader.doRequest(request)
-      if response.res != 0:
-        element.onComplete(ScriptResult(t: RESULT_NULL))
-        return
-      let cs = if cs == CHARSET_UNKNOWN:
-        CHARSET_UTF_8
-      else:
-        cs
-      let decoder = newDecoderStream(response.body, cs = cs)
-      let source = newEncoderStream(decoder).readAll()
-      let script = createClassicScript(source, url, options, false)
-      element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
+    cs
+  let decoder = newDecoderStream(response.body, cs = cs)
+  let source = newEncoderStream(decoder).readAll()
+  let script = createClassicScript(source, url, options, false)
+  element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
