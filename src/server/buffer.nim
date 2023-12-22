@@ -633,6 +633,8 @@ let quirkstyle = quirk.parseStylesheet()
 
 proc do_reshape(buffer: Buffer) =
   if buffer.ishtml:
+    if buffer.document == nil:
+      return # not parsed yet, nothing to render
     let uastyle = if buffer.document.mode != QUIRKS:
       uastyle
     else:
