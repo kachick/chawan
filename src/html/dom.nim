@@ -1,11 +1,11 @@
-import deques
-import macros
-import math
-import options
-import sets
-import streams
-import strutils
-import tables
+import std/deques
+import std/macros
+import std/math
+import std/options
+import std/sets
+import std/streams
+import std/strutils
+import std/tables
 
 import css/cssparser
 import css/sheet
