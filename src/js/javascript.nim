@@ -1609,8 +1609,9 @@ fast array elements: {m.fast_array_elements} {m.fast_array_elements*sizeof(JSVal
 binary objects: {m.binary_object_count} {m.binary_object_size}"""
 
 proc eval*(ctx: JSContext, s: string, file: string, eval_flags: int): JSValue =
-  return JS_Eval(ctx, cstring(s), cint(s.len), cstring(file), cint(eval_flags))
+  return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file),
+    cint(eval_flags))
 
 proc compileModule*(ctx: JSContext, s: string, file: cstring): JSValue =
-  return JS_Eval(ctx, cstring(s), cint(s.len), file,
+  return JS_Eval(ctx, cstring(s), csize_t(s.len), file,
     cint(JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY))
