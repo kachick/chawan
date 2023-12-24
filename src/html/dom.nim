@@ -75,7 +75,7 @@ type
     document* {.jsufget.}: Document
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
-    importMapsAllowed: bool
+    importMapsAllowed*: bool
 
   # Navigator stuff
   Navigator* = object
