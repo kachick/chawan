@@ -1878,7 +1878,8 @@ func crossOrigin0(element: HTMLElement): CORSAttribute =
     return ANONYMOUS
   of "use-credentials":
     return USE_CREDENTIALS
-  return ANONYMOUS
+  else:
+    return ANONYMOUS
 
 func crossOrigin(element: HTMLScriptElement): CORSAttribute {.jsfget.} =
   return element.crossOrigin0

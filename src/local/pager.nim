@@ -1123,7 +1123,7 @@ proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
       tempfile
     var canpipe = true
     let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, cs, canpipe)
-    putEnv("MAILCAP_URL", $url)
+    putEnv("MAILCAP_URL", $url) #TODO delEnv this after command is finished?
     if {COPIOUSOUTPUT, HTMLOUTPUT} * entry.flags == {}:
       # no output.
       if canpipe:
@@ -1135,7 +1135,6 @@ proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
         return pager.runMailcapReadPipe(container, entry[], cmd)
       else:
         return pager.runMailcapReadFile(container, entry[], cmd, outpath)
-    delEnv("MAILCAP_URL")
   return (nil, true)
 
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
