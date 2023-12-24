@@ -1,11 +1,12 @@
-import selectors
-import streams
+import std/selectors
+import std/streams
 
 import bindings/quickjs
 import display/winattrs
 import html/chadombuilder
 import html/dom
 import html/event
+import html/script
 import io/promise
 import js/base64
 import js/console
@@ -135,6 +136,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
   let ctx = rt.newJSContext()
   window.jsrt = rt
   window.jsctx = ctx
+  window.importMapsAllowed = true
   window.timeouts = newTimeoutState(
     selector = selector,
     jsctx = ctx,

@@ -1612,6 +1612,13 @@ proc eval*(ctx: JSContext, s: string, file: string, eval_flags: int): JSValue =
   return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file),
     cint(eval_flags))
 
+proc compileScript*(ctx: JSContext, s: string, file: cstring): JSValue =
+  return JS_Eval(ctx, cstring(s), csize_t(s.len), file,
+    cint(JS_EVAL_FLAG_COMPILE_ONLY))
+
 proc compileModule*(ctx: JSContext, s: string, file: cstring): JSValue =
   return JS_Eval(ctx, cstring(s), csize_t(s.len), file,
     cint(JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY))
+
+proc evalFunction*(ctx: JSContext, val: JSValue): JSValue =
+  return JS_EvalFunction(ctx, val)

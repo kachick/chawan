@@ -13,6 +13,7 @@ import css/values
 import display/winattrs
 import html/enums
 import html/event
+import html/script
 import img/bitmap
 import img/painter
 import img/path
@@ -53,41 +54,6 @@ type
     FORM_ENCODING_TYPE_MULTIPART = "multipart/form-data",
     FORM_ENCODING_TYPE_TEXT_PLAIN = "text/plain"
 
-  ScriptType = enum
-    NO_SCRIPTTYPE, CLASSIC, MODULE, IMPORTMAP
-
-  ParserMetadata = enum
-    PARSER_INSERTED, NOT_PARSER_INSERTED
-
-  ScriptResultType = enum
-    RESULT_NULL, RESULT_UNINITIALIZED, RESULT_SCRIPT, RESULT_IMPORT_MAP_PARSE
-
-type
-  Script = object
-    #TODO setings
-    baseURL: URL
-    options: ScriptOptions
-    mutedErrors: bool
-    #TODO parse error/error to rethrow
-    record: string #TODO should be a record...
-
-  ScriptOptions = object
-    nonce: string
-    integrity: string
-    parserMetadata: ParserMetadata
-    credentialsMode: CredentialsMode
-    referrerPolicy: Option[ReferrerPolicy]
-    renderBlocking: bool
-
-  ScriptResult = object
-    case t: ScriptResultType
-    of RESULT_NULL, RESULT_UNINITIALIZED:
-      discard
-    of RESULT_SCRIPT:
-      script: Script
-    of RESULT_IMPORT_MAP_PARSE:
-      discard #TODO
-
 type DocumentReadyState* = enum
   READY_STATE_LOADING = "loading"
   READY_STATE_INTERACTIVE = "interactive"
@@ -109,6 +75,7 @@ type
     document* {.jsufget.}: Document
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
+    importMapsAllowed: bool
 
   # Navigator stuff
   Navigator* = object
@@ -121,9 +88,6 @@ type
   NamedNodeMap = ref object
     element: Element
     attrlist: seq[Attr]
-
-  EnvironmentSettings* = object
-    scripting*: bool
 
   Collection = ref CollectionObj
   CollectionObj = object of RootObj
@@ -2981,9 +2945,12 @@ proc markAsReady(element: HTMLScriptElement, res: ScriptResult) =
     element.onReady = nil
   element.delayingTheLoadEvent = false
 
-proc createClassicScript(source: string, baseURL: URL, options: ScriptOptions, mutedErrors = false): Script =
+proc createClassicScript(ctx: JSContext, source: string, baseURL: URL,
+    options: ScriptOptions, mutedErrors = false): Script =
+  let urls = baseURL.serialize(excludepassword = true)
+  let record = compileScript(ctx, source, cstring(urls))
   return Script(
-    record: source,
+    record: record,
     baseURL: baseURL,
     options: options,
     mutedErrors: mutedErrors
@@ -3010,8 +2977,70 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
     cs
   let decoder = newDecoderStream(response.body, cs = cs)
   let source = newEncoderStream(decoder).readAll()
-  let script = createClassicScript(source, url, options, false)
-  element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
+  let script = window.jsctx.createClassicScript(source, url, options, false)
+  element.onComplete(ScriptResult(t: RESULT_SCRIPT, script: script))
+
+#TODO settings object
+proc fetchDescendantsAndLink(element: HTMLScriptElement, script: Script,
+    destination: RequestDestination, onComplete: OnCompleteProc)
+proc fetchSingleModule(element: HTMLScriptElement, url: URL,
+    destination: RequestDestination, options: ScriptOptions,
+    referrer: URL, isTopLevel: bool, onComplete: OnCompleteProc)
+
+#TODO settings object
+proc fetchExternalModuleGraph(element: HTMLScriptElement, url: URL,
+    options: ScriptOptions, onComplete: OnCompleteProc) =
+  let window = element.document.window
+  if not element.scriptingEnabled or window.loader.isNone:
+    element.onComplete(ScriptResult(t: RESULT_NULL))
+    return
+  window.importMapsAllowed = false
+  element.fetchSingleModule(
+    url,
+    RequestDestination.SCRIPT,
+    options,
+    parseURL("about:client").get,
+    isTopLevel = true,
+    onComplete = proc(element: HTMLScriptElement, res: ScriptResult) =
+      if res.t == RESULT_NULL:
+        element.onComplete(res)
+      else:
+        element.fetchDescendantsAndLink(res.script, RequestDestination.SCRIPT,
+          onComplete)
+  )
+
+proc fetchDescendantsAndLink(element: HTMLScriptElement, script: Script,
+    destination: RequestDestination, onComplete: OnCompleteProc) =
+  discard
+
+#TODO settings object
+proc fetchSingleModule(element: HTMLScriptElement, url: URL,
+    destination: RequestDestination, options: ScriptOptions,
+    referrer: URL, isTopLevel: bool, onComplete: OnCompleteProc) =
+  let moduleType = "javascript"
+  #TODO moduleRequest
+  let settings = element.document.window.settings
+  let i = settings.moduleMap.find(url, moduleType)
+  if i != -1:
+    if settings.moduleMap[i].value.t == RESULT_FETCHING:
+      #TODO await value
+      assert false
+    element.onComplete(settings.moduleMap[i].value)
+    return
+  let destination = fetchDestinationFromModuleType(destination, moduleType)
+  let mode = if destination in {WORKER, SHAREDWORKER, SERVICEWORKER}:
+    RequestMode.SAME_ORIGIN
+  else:
+    RequestMode.CORS
+  #TODO client
+  #TODO initiator type
+  let request = newRequest(
+    url,
+    mode = mode,
+    referrer = referrer,
+    destination = destination
+  )
+  discard request #TODO
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
@@ -3020,6 +3049,10 @@ proc execute*(element: HTMLScriptElement) =
   let i = document.renderBlockingElements.find(element)
   if i != -1:
     document.renderBlockingElements.delete(i)
+  #TODO this should work eventually (when module & importmap are implemented)
+  #assert element.scriptResult != nil
+  if element.scriptResult == nil:
+    return
   if element.scriptResult.t == RESULT_NULL:
     #TODO fire error event
     return
@@ -3028,10 +3061,11 @@ proc execute*(element: HTMLScriptElement) =
     let oldCurrentScript = document.currentScript
     #TODO not if shadow root
     document.currentScript = element
-    if document.window != nil and document.window.jsctx != nil:
+    let window = document.window
+    if window != nil and window.jsctx != nil:
       let script = element.scriptResult.script
       let urls = script.baseURL.serialize(excludepassword = true)
-      let ret = document.window.jsctx.eval(script.record, urls, JS_EVAL_TYPE_GLOBAL)
+      let ret = window.jsctx.evalFunction(script.record)
       if JS_IsException(ret):
         let ss = newStringStream()
         document.window.jsctx.writeException(ss)
@@ -3118,12 +3152,12 @@ proc prepare*(element: HTMLScriptElement) =
     if element.ctype == CLASSIC:
       element.fetchClassicScript(url.get, options, classicCORS, encoding, markAsReady)
     else:
-      #TODO MODULE
-      element.markAsReady(ScriptResult(t: RESULT_NULL))
+      element.fetchExternalModuleGraph(url.get, options, markAsReady)
   else:
     let baseURL = element.document.baseURL
     if element.ctype == CLASSIC:
-      let script = createClassicScript(sourceText, baseURL, options)
+      let ctx = element.document.window.jsctx
+      let script = ctx.createClassicScript(sourceText, baseURL, options)
       element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
     else:
       #TODO MODULE, IMPORTMAP
@@ -3143,7 +3177,7 @@ proc prepare*(element: HTMLScriptElement) =
         if prepdoc.scriptsToExecInOrder.len > 0 and prepdoc.scriptsToExecInOrder[0] != element:
           while prepdoc.scriptsToExecInOrder.len > 0:
             let script = prepdoc.scriptsToExecInOrder[0]
-            if script.scriptResult.t == RESULT_UNINITIALIZED:
+            if script.scriptResult == nil:
               break
             script.execute()
             prepdoc.scriptsToExecInOrder.shrink(1)

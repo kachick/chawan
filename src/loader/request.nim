@@ -43,6 +43,7 @@ type
     FRAME = "frame"
     IFRAME = "iframe"
     IMAGE = "image"
+    JSON = "json"
     MANIFEST = "manifest"
     OBJECT = "object"
     PAINTWORKLET = "paintworklet"
@@ -161,7 +162,7 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
     body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,
     credentialsMode = CredentialsMode.SAME_ORIGIN,
     destination = RequestDestination.NO_DESTINATION, proxy: URL = nil,
-    canredir = false): Request =
+    referrer: URL = nil, canredir = false): Request =
   return Request(
     url: url,
     httpmethod: httpmethod,
@@ -171,6 +172,7 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
     mode: mode,
     credentialsMode: credentialsMode,
     destination: destination,
+    referer: referrer,
     proxy: proxy
   )
 

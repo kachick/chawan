@@ -462,6 +462,7 @@ proc JS_GetStringLength*(str: JSString): uint32
 
 proc JS_Eval*(ctx: JSContext, input: cstring, input_len: csize_t,
   filename: cstring, eval_flags: cint): JSValue
+proc JS_EvalFunction*(ctx: JSContext, val: JSValue): JSValue
 proc JS_SetInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer)
 proc JS_SetCanBlock*(rt: JSRuntime, can_block: JS_BOOL)
 proc JS_SetIsHTMLDDA*(ctx: JSContext, obj: JSValue)
