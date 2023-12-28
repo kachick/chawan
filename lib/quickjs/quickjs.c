@@ -1276,10 +1276,6 @@ static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
                                                JSAtom atom, void *opaque);
 void JS_SetUncatchableError(JSContext *ctx, JSValueConst val, BOOL flag);
 
-static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
-                          JS_MarkFunc *mark_func);
-static void gc_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p);
-
 static const JSClassExoticMethods js_arguments_exotic_methods;
 static const JSClassExoticMethods js_string_exotic_methods;
 static const JSClassExoticMethods js_proxy_exotic_methods;
