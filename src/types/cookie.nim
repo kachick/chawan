@@ -164,7 +164,7 @@ func cookieDomainMatches(cookieDomain: string, url: URL): bool =
     cookieDomain
   return host.endsWith(cookieDomain)
 
-proc add*(cookiejar: CookieJar, cookie: Cookie) =
+proc add*(cookieJar: CookieJar, cookie: Cookie) =
   var i = -1
   for j in 0 ..< cookieJar.cookies.len:
     let old = cookieJar.cookies[j]

@@ -643,7 +643,7 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
 proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
   while state.has():
     let t = state.consume()
-    if t == CSS_wHITESPACE_TOKEN or t == CSS_SEMICOLON_TOKEN:
+    if t == CSS_WHITESPACE_TOKEN or t == CSS_SEMICOLON_TOKEN:
       continue
     elif t == CSS_AT_KEYWORD_TOKEN:
       state.reconsume()
@@ -666,7 +666,7 @@ proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
 proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
   while state.has():
     let t = state.consume()
-    if t == CSS_wHITESPACE_TOKEN or t == CSS_SEMICOLON_TOKEN:
+    if t == CSS_WHITESPACE_TOKEN or t == CSS_SEMICOLON_TOKEN:
       continue
     elif t == CSS_AT_KEYWORD_TOKEN:
       state.reconsume()
@@ -1001,4 +1001,4 @@ proc parseAnB*(cvals: seq[CSSComponentValue]): (Option[CSSAnB], int) =
 proc parseCSS*(inputStream: Stream): CSSRawStylesheet =
   if inputStream.atEnd():
     return CSSRawStylesheet()
-  return inputstream.parseStylesheet()
+  return inputStream.parseStylesheet()

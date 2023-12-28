@@ -24,7 +24,7 @@ else:
       (u shl 24)
 
 proc fromBytesBEu32*(x: openArray[uint8]): uint32 {.inline.} =
-  var u {.noInit.}: uint32
+  var u {.noinit.}: uint32
   copyMem(addr u, unsafeAddr x[0], sizeof(uint32))
   when system.cpuEndian == littleEndian:
     return swap(u)

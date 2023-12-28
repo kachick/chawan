@@ -68,7 +68,7 @@ type
     WHITESPACE_PRE_WRAP
 
   CSSFontStyle* = enum
-    FONTSTYLE_NORMAL, FONTSTYLE_ITALIC, FONTSTYLE_OBLIQUE
+    FONT_STYLE_NORMAL, FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE
 
   CSSPosition* = enum
     POSITION_STATIC, POSITION_RELATIVE, POSITION_ABSOLUTE, POSITION_FIXED,
@@ -186,7 +186,7 @@ type
       content*: seq[CSSContent]
     of VALUE_QUOTES:
       quotes*: CSSQuotes
-    of VALUE_WHITESPACE:
+    of VALUE_WHITE_SPACE:
       whitespace*: CSSWhitespace
     of VALUE_INTEGER:
       integer*: int
@@ -811,9 +811,9 @@ func cssDisplay(cval: CSSComponentValue): Opt[CSSDisplay] =
 
 func cssFontStyle(cval: CSSComponentValue): Opt[CSSFontStyle] =
   const FontStyleMap = {
-    "normal": FONTSTYLE_NORMAL,
-    "italic": FONTSTYLE_ITALIC,
-    "oblique": FONTSTYLE_OBLIQUE
+    "normal": FONT_STYLE_NORMAL,
+    "italic": FONT_STYLE_ITALIC,
+    "oblique": FONT_STYLE_OBLIQUE
   }
   return cssIdent(FontStyleMap, cval)
 

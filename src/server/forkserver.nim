@@ -56,7 +56,7 @@ proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
   forkserver.ostream.swrite(config.getForkServerConfig())
   forkserver.ostream.flush()
 
-proc removeChild*(forkserver: Forkserver, pid: Pid) =
+proc removeChild*(forkserver: ForkServer, pid: Pid) =
   forkserver.ostream.swrite(REMOVE_CHILD)
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()

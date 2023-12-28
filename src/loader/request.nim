@@ -69,8 +69,8 @@ type
 type
   Request* = ref RequestObj
   RequestObj* = object
-    httpmethod*: HttpMethod
-    url*: Url
+    httpMethod*: HttpMethod
+    url*: URL
     headers* {.jsget.}: Headers
     body*: Opt[string]
     multipart*: Opt[FormData]
@@ -158,14 +158,14 @@ proc newReadableStream*(isource: Stream): ReadableStream =
   if len != 0:
     isource.readStr(len, result.buf)
 
-func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
+func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
     body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,
     credentialsMode = CredentialsMode.SAME_ORIGIN,
     destination = RequestDestination.NO_DESTINATION, proxy: URL = nil,
     referrer: URL = nil, canredir = false): Request =
   return Request(
     url: url,
-    httpmethod: httpmethod,
+    httpMethod: httpMethod,
     headers: headers,
     body: body,
     multipart: multipart,
@@ -176,7 +176,7 @@ func newRequest*(url: URL, httpmethod = HTTP_GET, headers = newHeaders(),
     proxy: proxy
   )
 
-func newRequest*(url: URL, httpmethod = HTTP_GET,
+func newRequest*(url: URL, httpMethod = HTTP_GET,
     headers: seq[(string, string)] = @[], body = opt(string),
     multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil,
     canredir = false):
@@ -185,7 +185,7 @@ func newRequest*(url: URL, httpmethod = HTTP_GET,
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
-  return newRequest(url, httpmethod, hl, body, multipart, mode, proxy = proxy)
+  return newRequest(url, httpMethod, hl, body, multipart, mode, proxy = proxy)
 
 func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors: CORSAttribute, fallbackFlag = false): Request =
   var mode = if cors == NO_CORS:
@@ -312,7 +312,7 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     proxyUrl = init.proxyUrl
   return ok(Request(
     url: url,
-    httpmethod: httpmethod,
+    httpMethod: httpMethod,
     headers: headers,
     body: body,
     multipart: multipart,

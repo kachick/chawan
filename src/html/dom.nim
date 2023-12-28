@@ -223,7 +223,7 @@ type
     checked* {.jsget.}: bool
     xcoord*: int
     ycoord*: int
-    file*: Option[Url]
+    file*: Option[URL]
 
   HTMLAnchorElement* = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
@@ -2024,7 +2024,7 @@ func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
 func href(base: HTMLBaseElement): string {.jsfget.} =
   if base.attrb("href"):
     #TODO with fallback base url
-    let url = parseUrl(base.attr("href"))
+    let url = parseURL(base.attr("href"))
     if url.isSome:
       return $url.get
 
@@ -2611,14 +2611,14 @@ proc adopt(document: Document, node: Node) =
 proc resetElement*(element: Element) =
   case element.tagType
   of TAG_INPUT:
-    let input = HTMLInputELement(element)
+    let input = HTMLInputElement(element)
     case input.inputType
     of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
       input.value = input.attr("value")
     of INPUT_CHECKBOX, INPUT_RADIO:
       input.checked = input.attrb("checked")
     of INPUT_FILE:
-      input.file = none(Url)
+      input.file = none(URL)
     else: discard
     input.invalid = true
   of TAG_SELECT:
@@ -3123,7 +3123,7 @@ proc prepare*(element: HTMLScriptElement) =
       return
   let cs = getCharset(element.attr("charset"))
   let encoding = if cs != CHARSET_UNKNOWN: cs else: element.document.charset
-  let classicCORS = element.crossorigin
+  let classicCORS = element.crossOrigin
   var options = ScriptOptions(
     nonce: element.internalNonce,
     integrity: element.attr("integrity"),
@@ -3387,7 +3387,7 @@ proc jsReflectGet(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.}
   of REFLECT_STR:
     let x = toJS(ctx, element.attr(entry.attrname))
     return x
-  of REFLECT_BOOl:
+  of REFLECT_BOOL:
     return toJS(ctx, element.attrb(entry.attrname))
   of REFLECT_LONG:
     return toJS(ctx, element.attrl(entry.attrname).get(entry.i))

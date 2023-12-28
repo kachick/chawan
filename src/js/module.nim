@@ -4,7 +4,7 @@ import js/javascript
 import js/tojs
 
 proc setImportMeta(ctx: JSContext, funcVal: JSValue, isMain: bool) =
-  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(func_val))
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   let moduleNameAtom = JS_GetModuleName(ctx, m)
   let moduleName = JS_AtomToCString(ctx, moduleNameAtom)
   let metaObj = JS_GetImportMeta(ctx, m)

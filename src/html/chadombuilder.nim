@@ -180,7 +180,7 @@ proc newChaDOMBuilder(url: URL, window: Window, isFragment = false):
     finish: finish,
     restart: restart,
     setQuirksMode: setQuirksMode,
-    setCharacterSet: setCharacterset,
+    setCharacterSet: setCharacterSet,
     elementPopped: elementPopped,
     getTemplateContent: getTemplateContent,
     getTagType: getTagType,

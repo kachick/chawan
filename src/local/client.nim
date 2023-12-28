@@ -227,7 +227,7 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
   client.pager.inputBuffer &= c
   let action = getNormalAction(client.config, client.pager.inputBuffer)
   let p = client.evalAction(action, client.pager.precnum)
-  if not client.feedNext:
+  if not client.feednext:
     client.pager.precnum = 0
     client.pager.notnum = false
     client.handlePagerEvents()
@@ -262,10 +262,10 @@ proc input(client: Client): EmptyPromise =
           if edit.write(client.pager.inputBuffer, client.pager.term.cs):
             client.pager.inputBuffer = ""
           else:
-            client.feedNext = true
+            client.feednext = true
         elif not client.feednext:
           discard client.evalAction(action, 0)
-        if not client.feedNext:
+        if not client.feednext:
           client.pager.updateReadLine()
     else:
       p = client.handleCommandInput(c)

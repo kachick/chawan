@@ -6,7 +6,7 @@ const
   LRE_FLAG_UTF16* = 1 shl 4
   LRE_FLAG_STICKY* = 1 shl 5
 
-{.passC: "-Ilib/".}
+{.passc: "-Ilib/".}
 
 {.push header: "quickjs/libregexp.h", importc.}
 proc lre_compile*(plen: ptr cint, error_msg: cstring, error_msg_size: cint,

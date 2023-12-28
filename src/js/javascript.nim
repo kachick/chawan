@@ -103,7 +103,7 @@ type
     PROPERTY_NAMES = "js_prop_names"
     FINALIZER = "js_fin"
 
-var runtimes {.threadVar.}: seq[JSRuntime]
+var runtimes {.threadvar.}: seq[JSRuntime]
 
 proc newJSRuntime*(): JSRuntime =
   let rt = JS_NewRuntime()

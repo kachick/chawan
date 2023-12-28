@@ -262,7 +262,7 @@ proc correctContrast(term: Terminal, bgcolor, fgcolor: CellColor): CellColor =
           fgY = 255
     let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
     case term.colormode
-    of TRUECOLOR:
+    of TRUE_COLOR:
       return cellColor(newrgb)
     of ANSI:
       return approximateANSIColor(newrgb, term.defaultForeground)
@@ -318,7 +318,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor
     if color.rgb:
-      assert term.colormode == TRUECOLOR
+      assert term.colormode == TRUE_COLOR
       let rgb = color.rgbcolor
       result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
@@ -328,13 +328,13 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       if n < 8:
         result &= SGR(30 + n)
       else:
-        assert term.colormode in {TRUECOLOR, EIGHT_BIT}
+        assert term.colormode in {TRUE_COLOR, EIGHT_BIT}
         result &= SGR(38, 5, n)
 
   if cellf.bgcolor != format.bgcolor:
     var color = cellf.bgcolor
     if color.rgb:
-      assert term.colormode == TRUECOLOR
+      assert term.colormode == TRUE_COLOR
       let rgb = color.rgbcolor
       result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
     elif color == defaultColor:
@@ -344,7 +344,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       if n < 8:
         result &= SGR(40 + n)
       else:
-        assert term.colormode in {TRUECOLOR, EIGHT_BIT}
+        assert term.colormode in {TRUE_COLOR, EIGHT_BIT}
         result &= SGR(48, 5, n)
 
   for flag in FormatFlags:

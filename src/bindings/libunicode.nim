@@ -11,7 +11,7 @@ type
   UnicodeNormalizationEnum* {.size: sizeof(cint).} = enum
     UNICODE_NFC, UNICODE_NFD, UNICODE_NKFC, UNICODE_NKFD
 
-{.passC: "-Ilib/".}
+{.passc: "-Ilib/".}
 
 {.push header: "quickjs/libunicode.h", importc.}
 

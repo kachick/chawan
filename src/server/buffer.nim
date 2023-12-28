@@ -315,7 +315,7 @@ func getClickable(styledNode: StyledNode): Element =
   while styledNode != nil:
     if styledNode.isClickable():
       return Element(styledNode.node)
-    styledNode = stylednode.parent
+    styledNode = styledNode.parent
 
 proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
 
@@ -1157,7 +1157,7 @@ proc onload(buffer: Buffer) =
   of LOADING_PAGE:
     discard
   let op = buffer.sstream.getPosition()
-  var s {.noInit.}: array[BufferSize, uint8]
+  var s {.noinit.}: array[BufferSize, uint8]
   try:
     buffer.sstream.setPosition(op + buffer.available)
     let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
@@ -1232,7 +1232,7 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
-  if form.constructingEntryList:
+  if form.constructingentrylist:
     return
   let entrylist = form.constructEntryList(submitter).get(@[])
 

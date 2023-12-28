@@ -665,7 +665,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
     if sc.cookie.isSome:
       if sc.cookie.get:
         # host/url might have changed by now
-        let jarid = sc.share_cookiejar.get(url.host)
+        let jarid = sc.share_cookie_jar.get(url.host)
         if jarid notin pager.cookiejars:
           pager.cookiejars[jarid] = newCookieJar(url,
             sc.third_party_cookie)
@@ -697,7 +697,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     request.referer = referrer.source.location
   var bufferconfig = pager.applySiteconf(request.url)
   if prevurl.isnone or not prevurl.get.equals(request.url, true) or
-      request.url.hash == "" or request.httpmethod != HTTP_GET:
+      request.url.hash == "" or request.httpMethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
     # a) we force a reload (by setting prevurl to none)
     # b) or the new URL isn't just the old URL + an anchor
@@ -1116,7 +1116,7 @@ proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
   if entry != nil:
     let tmpdir = pager.tmpdir
     let ext = container.location.pathname.afterLast('.')
-    let tempfile = getTempfile(tmpdir, ext)
+    let tempfile = getTempFile(tmpdir, ext)
     let outpath = if entry.nametemplate != "":
       unquoteCommand(entry.nametemplate, contentType, tempfile, url, cs)
     else:

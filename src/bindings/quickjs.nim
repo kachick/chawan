@@ -2,8 +2,8 @@ import bindings/constcharp
 
 const qjsheader = "quickjs/quickjs.h"
 
-{.passC: "-Ilib/".}
-{.passL: "-Llib/ -lquickjs -lm -lpthread".}
+{.passc: "-Ilib/".}
+{.passl: "-Llib/ -lquickjs -lm -lpthread".}
 
 const                         ##  all tags with a reference count are negative
   JS_TAG_FIRST* = -10           ##  first negative tag
@@ -170,7 +170,7 @@ type
     cproto*: JSCFunctionEnum
     cfunc*: JSCFunctionType
 
-  JSCFunctionListEntryGetset = object
+  JSCFunctionListEntryGetSet = object
     get*: JSCFunctionType
     set*: JSCFunctionType
 
@@ -179,12 +179,12 @@ type
     base: cint
 
   JSCFunctionListEntryPropList = object
-    tab: ptr JSCfunctionListEntry
+    tab: ptr JSCFunctionListEntry
     len: cint
 
   JSCFunctionListEntryU* {.union.} = object
     `func`* {.importc: "func".}: JSCFunctionListEntryFunc
-    getset: JSCFunctionListEntryGetset
+    getset: JSCFunctionListEntryGetSet
     alias: JSCFunctionListEntryAlias
     prop_list: JSCFunctionListEntryPropList
     str: cstring
@@ -213,7 +213,7 @@ type
     JS_CLASS_ARRAY
     JS_CLASS_ERROR
 
-converter toBool*(js: JS_BOOl): bool {.inline.} =
+converter toBool*(js: JS_BOOL): bool {.inline.} =
   cast[cint](js) != 0
 
 converter toJSBool*(b: bool): JS_BOOL {.inline.} =

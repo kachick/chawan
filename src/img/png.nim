@@ -54,7 +54,7 @@ proc writeIHDR(writer: var PNGWriter, width, height: uint32,
     bitDepth: uint8, colorType: PNGColorType,
     compressionMethod, filterMethod, interlaceMethod: uint8) =
   writer.writeStr(PNGSignature)
-  var ihdr {.noInit.}: array[13, uint8]
+  var ihdr {.noinit.}: array[13, uint8]
   var pw = pngInt(width)
   var ph = pngInt(height)
   copyMem(addr ihdr[0], addr pw[0], 4)
@@ -304,7 +304,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       j = j mod 8
       crow[x] = rgba(n, n, n, 255u8)
   of TRUECOLOR:
-    let step = int(reader.bitdepth) div 8
+    let step = int(reader.bitDepth) div 8
     var i = 0
     for x in 0 ..< crow.len:
       let r = reader.uprow[i]

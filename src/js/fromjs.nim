@@ -226,7 +226,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): JSResult[seq[T]] =
       return err()
     defer: JS_FreeValue(ctx, valueVal)
     let genericRes = fromJS[typeof(s[0])](ctx, valueVal)
-    if genericRes.isnone: # exception
+    if genericRes.isNone: # exception
       return err()
     s.add(genericRes.get)
   return ok(s)

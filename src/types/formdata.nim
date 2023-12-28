@@ -76,7 +76,7 @@ proc writeEntry*(stream: Stream, entry: FormDataEntry, boundary: string) =
     if blob.isfile:
       let fs = newFileStream(WebFile(blob).path)
       if fs != nil:
-        var buf {.noInit.}: array[4096, uint8]
+        var buf {.noinit.}: array[4096, uint8]
         while true:
           let n = fs.readData(addr buf[0], 4096)
           stream.writeData(addr buf[0], n)

@@ -37,7 +37,7 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
   putEnv("SCRIPT_NAME", scriptName)
   putEnv("SCRIPT_FILENAME", cmd)
   putEnv("REQUEST_URI", requestURI)
-  putEnv("REQUEST_METHOD", $request.httpmethod)
+  putEnv("REQUEST_METHOD", $request.httpMethod)
   var headers = ""
   for k, v in request.headers:
     headers &= k & ": " & v & "\r\n"
@@ -48,7 +48,7 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
     putEnv("PATH_INFO", pathInfo)
   if url.query.isSome:
     putEnv("QUERY_STRING", url.query.get)
-  if request.httpmethod == HTTP_POST:
+  if request.httpMethod == HTTP_POST:
     if request.multipart.isSome:
       putEnv("CONTENT_TYPE", request.multipart.get.getContentType())
     else:

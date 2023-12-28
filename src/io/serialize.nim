@@ -32,9 +32,9 @@ proc swrite*(stream: Stream, b: bool)
 proc sread*(stream: Stream, b: var bool)
 func slen*(b: bool): int
 
-proc swrite*(stream: Stream, url: Url)
-proc sread*(stream: Stream, url: var Url)
-func slen*(url: Url): int
+proc swrite*(stream: Stream, url: URL)
+proc sread*(stream: Stream, url: var URL)
+func slen*(url: URL): int
 
 proc swrite*(stream: Stream, tup: tuple)
 proc sread*(stream: Stream, tup: var tuple)

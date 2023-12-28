@@ -146,7 +146,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
         ctx.handleMap[fd] = handle
     else:
       prevurl = request.url
-      case ctx.config.urimethodmap.findAndRewrite(request.url)
+      case ctx.config.uriMethodMap.findAndRewrite(request.url)
       of URI_RESULT_SUCCESS:
         inc tries
         redo = true
@@ -168,7 +168,7 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
     stream.close()
   else:
     let handle = newLoaderHandle(stream, request.canredir)
-    for k, v in ctx.config.defaultHeaders.table:
+    for k, v in ctx.config.defaultheaders.table:
       if k notin request.headers.table:
         request.headers.table[k] = v
     if ctx.config.cookiejar != nil and ctx.config.cookiejar.cookies.len > 0:
@@ -272,7 +272,7 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
 
 proc runFileLoader*(fd: cint, config: LoaderConfig) =
   var ctx = initLoaderContext(fd, config)
-  var buffer {.noInit.}: array[16384, uint8]
+  var buffer {.noinit.}: array[16384, uint8]
   while ctx.alive:
     let events = ctx.selector.select(-1)
     var unreg: seq[int]
@@ -344,17 +344,17 @@ proc applyHeaders(loader: FileLoader, request: Request, response: Response) =
   if "Location" in response.headers.table:
     if response.status in 301u16..303u16 or response.status in 307u16..308u16:
       let location = response.headers.table["Location"][0]
-      let url = parseUrl(location, option(request.url))
+      let url = parseURL(location, option(request.url))
       if url.isSome:
         if (response.status == 303 and
-            request.httpmethod notin {HTTP_GET, HTTP_HEAD}) or
+            request.httpMethod notin {HTTP_GET, HTTP_HEAD}) or
             (response.status == 301 or response.status == 302 and
-            request.httpmethod == HTTP_POST):
+            request.httpMethod == HTTP_POST):
           response.redirect = newRequest(url.get, HTTP_GET,
             mode = request.mode, credentialsMode = request.credentialsMode,
             destination = request.destination)
         else:
-          response.redirect = newRequest(url.get, request.httpmethod,
+          response.redirect = newRequest(url.get, request.httpMethod,
             body = request.body, multipart = request.multipart,
             mode = request.mode, credentialsMode = request.credentialsMode,
             destination = request.destination)
@@ -490,7 +490,7 @@ proc onError*(loader: FileLoader, fd: int) =
   loader.ongoing.withValue(fd, buffer):
     let response = buffer[].response
     when defined(debug):
-      var lbuf {.noInit.}: array[BufferSize, char]
+      var lbuf {.noinit.}: array[BufferSize, char]
       if not response.body.atEnd():
         let n = response.body.readData(addr lbuf[0], lbuf.len)
         assert n == 0

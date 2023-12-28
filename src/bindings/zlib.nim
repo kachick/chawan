@@ -6,7 +6,7 @@ const zlib = (func(): string =
 when zlib == "":
   error("zlib not found")
 
-{.passL: zlib.}
+{.passl: zlib.}
 
 const
   Z_NO_FLUSH* = cint(0)
