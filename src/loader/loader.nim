@@ -163,11 +163,11 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
   stream.sread(request)
+  let handle = newLoaderHandle(stream, request.canredir)
   if not ctx.config.filter.match(request.url):
-    stream.swrite(ERROR_DISALLOWED_URL)
-    stream.close()
+    discard handle.sendResult(ERROR_DISALLOWED_URL)
+    handle.close()
   else:
-    let handle = newLoaderHandle(stream, request.canredir)
     for k, v in ctx.config.defaultheaders.table:
       if k notin request.headers.table:
         request.headers.table[k] = v
