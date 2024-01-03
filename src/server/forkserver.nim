@@ -127,7 +127,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
     discard close(pipefd[0]) # close read
     let ssock = initServerSocket(buffered = false)
     gssock = ssock
-    onSignal SIGTERM, SIGINT:
+    onSignal SIGTERM:
       # This will be overridden after buffer has been set up; it is only
       # necessary to avoid a race condition when buffer is killed before that.
       discard sig

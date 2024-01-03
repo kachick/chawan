@@ -1816,7 +1816,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     ssock: ssock
   )
   gbuffer = buffer
-  onSignal SIGTERM, SIGINT:
+  onSignal SIGTERM:
     discard sig
     gbuffer.cleanup()
   buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
