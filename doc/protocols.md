@@ -17,6 +17,7 @@ this document.
 * [Gopher](#gopher)
 * [Gemini](#gemini)
 * [Finger](#finger)
+* [Spartan](#spartan)
 * [Local schemes: file:, about:, data:, cgi-bin:](#local-schemes-file-about-data-cgi-bin)
 * [Custom protocols](#custom-protocols)
 
@@ -99,6 +100,17 @@ As such, it will not work if `curl` is not installed.
 
 Aspiring protocol adapter writers are encouraged to study cha-finger for
 a simple example of how a custom protocol handler could be written.
+
+## Spartan
+
+Spartan is a protocol similar to Gemini, but without TLS. It is supported
+through the `adapter/protocol/spartan` shell script, which uses `nc` to make
+requests.
+
+Spartan has the very strange property of extending gemtext with a
+protocol-specific line type. This is sort of supported through a sed filter
+for gemtext outputs in the CGI script (in other words, no modification to
+gmi2html was done to support this).
 
 ## Local schemes: file:, about:, data:, cgi-bin:
 

@@ -12,3 +12,4 @@ sftp:		cgi-bin:sftp
 ftps:		cgi-bin:ftps
 gopher:		cgi-bin:gopher
 gophers:	cgi-bin:gophers
+spartan:	cgi-bin:spartan

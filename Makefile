@@ -43,7 +43,8 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
-	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp
+	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
+	$(OUTDIR_CGI_BIN)/spartan
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* res/**/*
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
@@ -70,6 +71,10 @@ $(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.nim
 $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
+
+$(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
+	@mkdir -p $(OUTDIR_CGI_BIN)
+	cp adapter/protocol/spartan $(OUTDIR_CGI_BIN)
 
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
@@ -172,6 +177,7 @@ install:
 	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	if test -d "$(OBJDIR)/man"; then \
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"; \
@@ -195,6 +201,7 @@ uninstall:
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gopher
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/spartan
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
 	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
