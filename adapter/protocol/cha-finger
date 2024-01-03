@@ -29,7 +29,7 @@ if test -n "$MAPPED_URI_USERNAME"
 then	USER="$MAPPED_URI_USERNAME"
 else	case "$MAPPED_URI_PATH" in
 	/w*) USER="/w ${MAPPED_URI_PATH#/w}" ;;
-	*) USER="$MAPPED_URI_PATH" ;;
+	*) USER="${MAPPED_URI_PATH#/}" ;;
 	esac
 fi
 URL="telnet://$MAPPED_URI_HOST:$PORT"
