@@ -185,6 +185,9 @@ proc addRule(stylesheet: var CSSStylesheet, rule: CSSQualifiedRule) =
 proc addAtRule(stylesheet: var CSSStylesheet, atrule: CSSAtRule) =
   case atrule.name
   of "media":
+    if atrule.oblock == nil:
+      # invalid at-rule
+      return
     let query = parseMediaQueryList(atrule.prelude)
     let rules = atrule.oblock.value.parseListOfRules()
     if rules.len > 0:
