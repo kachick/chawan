@@ -69,6 +69,7 @@ proc loadIdnaData() =
     stderr.write("res/map/IdnaMappingTable.txt not found\n")
     quit(1)
   let s = f.readAll()
+  f.close()
   for line in s.split('\n'):
     if line.len == 0 or line[0] == '#':
       continue

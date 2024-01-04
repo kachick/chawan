@@ -53,12 +53,21 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
-$(OBJDIR)/idna_gen: res/genidna.nim
+$(OBJDIR)/genidna: res/genidna.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger \
-		-o:"$(OBJDIR)/idna_gen" res/genidna.nim
+		-o:"$(OBJDIR)/genidna" res/genidna.nim
 
-res/map/idna_gen.nim: $(OBJDIR)/idna_gen
-	$(OBJDIR)/idna_gen > res/map/idna_gen.nim
+res/map/idna_gen.nim: $(OBJDIR)/genidna
+	$(OBJDIR)/genidna > res/map/idna_gen.nim
+
+$(OBJDIR)/gencharwidth: res/gencharwidth.nim
+	$(NIMC) --nimcache:"$(OBJDIR)/charwidth_gen_cache" -d:danger \
+		-o:"$(OBJDIR)/gencharwidth" res/gencharwidth.nim
+
+res/map/charwidth_gen.nim: $(OBJDIR)/gencharwidth
+	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
+
+src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
 
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
 		src/utils/twtstr.nim adapter/gophertypes.nim
@@ -100,13 +109,13 @@ $(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/data" -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 
 $(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim adapter/protocol/dirlist.nim \
-		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
+		src/utils/twtstr.nim src/utils/strwidth.nim \
 		res/map/EastAsianWidth.txt src/loader/connecterror.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/file" -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
 
 $(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim adapter/protocol/dirlist.nim \
-		src/utils/twtstr.nim src/utils/strwidth.nim src/data/charwidth.nim \
+		src/utils/twtstr.nim src/utils/strwidth.nim \
 		res/map/EastAsianWidth.txt src/loader/connecterror.nim \
 		src/types/opt.nim adapter/protocol/curl.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
