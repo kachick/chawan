@@ -24,6 +24,9 @@ config:
 	* be called url-config
 	* allow matching $TERM string, buffer groups (but maybe this should
 	  be a separate setting?)
+- add per-scheme configuration (e.g. proto.gemini.known-hosts = '/some/path')
+- add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
+	* also some way to set permissions for RPC calls
 buffer:
 - important: incremental html parsing
 - important: validate returned values
