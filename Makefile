@@ -46,11 +46,19 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/spartan
 
-$(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* res/**/*
+$(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
+		res/**/* res/map/idna_gen.nim
 	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
+
+$(OBJDIR)/idna_gen: res/genidna.nim
+	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger \
+		-o:"$(OBJDIR)/idna_gen" res/genidna.nim
+
+res/map/idna_gen.nim: $(OBJDIR)/idna_gen
+	$(OBJDIR)/idna_gen > res/map/idna_gen.nim
 
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
 		src/utils/twtstr.nim adapter/gophertypes.nim
