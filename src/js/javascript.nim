@@ -281,7 +281,7 @@ type FuncParam = tuple[name: string, t: NimNode, val: Option[NimNode], generic: 
 func getMinArgs(params: seq[FuncParam]): int =
   for i in 0..<params.len:
     let it = params[i]
-    if it[2].issome:
+    if it[2].isSome:
       return i
     let t = it.t
     if t.kind == nnkBracketExpr:
@@ -597,7 +597,7 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
       fallback)
   # 10. If Type(V) is Object, then:
   # Sequence:
-  if seqg.issome:
+  if seqg.isSome:
     let query = quote do:
       isSequence(ctx, `val`)
     let a = seqg.get[1]
@@ -605,7 +605,7 @@ proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimN
       let `s` = fromJS_or_die(seq[`a`], ctx, `val`, `ev`, `dl`),
       fallback)
   # Record:
-  if tableg.issome:
+  if tableg.isSome:
     let a = tableg.get[1]
     let b = tableg.get[2]
     let query = quote do:
@@ -1032,7 +1032,7 @@ macro jsfgetn(jsname: static string, uf: static bool, fun: typed) =
   var gen = setupGenerator(fun, GETTER, jsname = jsname, unforgeable = uf)
   if gen.actualMinArgs != 0 or gen.funcParams.len != gen.minArgs:
     error("jsfget functions must only accept one parameter.")
-  if gen.returnType.isnone:
+  if gen.returnType.isNone:
     error("jsfget functions must have a return type.")
   if gen.newName.strVal in existing_funcs:
     #TODO TODO TODO ditto

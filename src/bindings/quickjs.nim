@@ -27,7 +27,7 @@ const                         ##  all tags with a reference count are negative
   JS_TAG_FLOAT64* = 7           ##  any larger tag is FLOAT64 if JS_NAN_BOXING
 
 when sizeof(int) < sizeof(int64):
-  {.passC: "-DJS_NAN_BOXING".}
+  {.passc: "-DJS_NAN_BOXING".}
   type
     JSValue* {.importc, header: qjsheader.} = distinct uint64
 

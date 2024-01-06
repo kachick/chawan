@@ -233,7 +233,7 @@ proc newCookie*(str: string, url: URL = nil): JSResult[Cookie]
     case key.toLowerAscii()
     of "expires":
       let date = parseCookieDate(val)
-      if date.issome:
+      if date.isSome:
         cookie.expires = date.get.toTime().toUnix()
     of "max-age":
       let x = parseInt64(val)

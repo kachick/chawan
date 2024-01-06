@@ -1389,7 +1389,7 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
       of INPUT_FILE:
         let cdir = parseURL("file://" & getCurrentDir() & DirSep)
         let path = parseURL(s, cdir)
-        if path.issome:
+        if path.isSome:
           input.file = path
           input.invalid = true
           buffer.do_reshape()
@@ -1543,7 +1543,7 @@ proc click(buffer: Buffer, input: HTMLInputElement): ClickResult =
     ))
   of INPUT_FILE:
     result.repaint = buffer.setFocus(input)
-    var path = if input.file.issome:
+    var path = if input.file.isSome:
       input.file.get.path.serialize_unicode()
     else:
       ""

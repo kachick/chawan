@@ -696,7 +696,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
   if referrer != nil and referrer.config.referer_from:
     request.referer = referrer.source.location
   var bufferconfig = pager.applySiteconf(request.url)
-  if prevurl.isnone or not prevurl.get.equals(request.url, true) or
+  if prevurl.isNone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpMethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
     # a) we force a reload (by setting prevurl to none)
@@ -747,7 +747,7 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
   let url0 = pager.omniRewrite(url)
   let url = if url[0] == '~': expandPath(url0) else: url0
   let firstparse = parseURL(url)
-  if firstparse.issome:
+  if firstparse.isSome:
     let prev = if pager.container != nil:
       some(pager.container.source.location)
     else:

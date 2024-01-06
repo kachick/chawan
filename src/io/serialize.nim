@@ -329,7 +329,7 @@ func slen*(blob: Blob): int =
     result += int(blob.size) #TODO ??
 
 proc swrite*[T](stream: Stream, o: Option[T]) =
-  stream.swrite(o.issome)
+  stream.swrite(o.isSome)
   if o.isSome:
     stream.swrite(o.get)
 

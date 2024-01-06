@@ -370,7 +370,7 @@ func unicodeToAscii(s: string, checkhyphens, checkbidi, checkjoiners,
     transitionalprocessing, verifydnslength: bool): Option[string] =
   let processed = s.processIdna(checkhyphens, checkbidi, checkjoiners,
     transitionalprocessing)
-  if processed.isnone:
+  if processed.isNone:
     return none(string) #error
   var labels: seq[string]
   var all = 0

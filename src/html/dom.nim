@@ -1593,8 +1593,10 @@ func canSubmitImplicitly*(form: HTMLFormElement): bool =
   return true
 
 func qualifiedName*(element: Element): string =
-  if element.namespacePrefix.issome: element.namespacePrefix.get & ':' & element.localName
-  else: element.localName
+  if element.namespacePrefix.isSome:
+    element.namespacePrefix.get & ':' & element.localName
+  else:
+    element.localName
 
 func html*(document: Document): HTMLElement =
   for element in document.elements(TAG_HTML):
@@ -1888,7 +1890,7 @@ func inputString*(input: HTMLInputElement): string =
     if input.value != "": input.value
     else: "SUBMIT"
   of INPUT_FILE:
-    if input.file.isnone:
+    if input.file.isNone:
       "".padToWidth(int(input.attrulgz("size").get(20)))
     else:
       input.file.get.path.serialize_unicode().padToWidth(int(input.attrulgz("size").get(20)))
