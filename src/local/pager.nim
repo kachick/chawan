@@ -55,7 +55,7 @@ type
     askcursor: int
     askpromise*: Promise[bool]
     askprompt: string
-    cgiDir: seq[string]
+    cgiDir*: seq[string]
     commandMode {.jsget.}: bool
     config: Config
     container*: Container

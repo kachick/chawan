@@ -683,6 +683,7 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let jsctx = jsrt.newJSContext()
   let attrs = getWindowAttributes(stdout)
+  let pager = newPager(config, attrs, forkserver, mainproc, jsctx)
   let client = Client(
     config: config,
     forkserver: forkserver,
@@ -691,12 +692,13 @@ proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
       defaultHeaders = config.getDefaultHeaders(),
       proxy = config.getProxy(),
       urimethodmap = config.getURIMethodMap(),
+      cgiDir = pager.cgiDir,
       acceptProxy = true,
       w3mCGICompat = config.external.w3m_cgi_compat
     ),
     jsrt: jsrt,
     jsctx: jsctx,
-    pager: newPager(config, attrs, forkserver, mainproc, jsctx)
+    pager: pager
   )
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
   var global = JS_GetGlobalObject(jsctx)
