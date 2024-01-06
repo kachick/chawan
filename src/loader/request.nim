@@ -231,9 +231,6 @@ proc fromJS2*(ctx: JSContext, val: JSValue, res: var JSResult[BodyInit]) =
   if JS_IsUndefined(val) or JS_IsNull(val):
     res.err(nil)
     return
-  if not JS_IsObject(val):
-    res.err(newTypeError("Not an object"))
-    return
   block formData:
     let x = fromJS[FormData](ctx, val)
     if x.isSome:
