@@ -1,4 +1,7 @@
-import std/envvars
+when NimMajor >= 2:
+  import std/envvars
+else:
+  import std/os
 
 const chawan = staticRead"res/chawan.html"
 const license = staticRead"res/license.html"
