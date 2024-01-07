@@ -44,7 +44,8 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
-	$(OUTDIR_CGI_BIN)/spartan
+	$(OUTDIR_CGI_BIN)/spartan \
+	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
 		res/**/* res/map/idna_gen.nim
@@ -130,6 +131,16 @@ $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.
 	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/gopher" \
 		-o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
 
+$(OUTDIR_LIBEXEC)/urldec: adapter/tools/urldec.nim src/utils/twtstr.nim
+	@mkdir -p "$(OUTDIR_LIBEXEC)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urldec" \
+		-o:"$(OUTDIR_LIBEXEC)/urldec" adapter/tools/urldec.nim
+
+$(OUTDIR_LIBEXEC)/urlenc: adapter/tools/urlenc.nim src/utils/twtstr.nim
+	@mkdir -p "$(OUTDIR_LIBEXEC)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urlenc" \
+		-o:"$(OUTDIR_LIBEXEC)/urlenc" adapter/tools/urlenc.nim
+
 CFLAGS = -fwrapv -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
 QJSOBJ = $(OBJDIR)/quickjs
 
@@ -195,6 +206,8 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
+	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
 	if test -d "$(OBJDIR)/man"; then \
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"; \
@@ -222,6 +235,8 @@ uninstall:
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
 	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
+	rm -f $(LIBEXECDIR_CHAWAN)/urldec
+	rm -f $(LIBEXECDIR_CHAWAN)/urlenc
 	rmdir $(LIBEXECDIR_CHAWAN) || true
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-config.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mailcap.5"

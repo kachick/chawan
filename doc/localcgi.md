@@ -118,6 +118,9 @@ Chawan sets the following environment variables:
 * `REQUEST_URI="$SCRIPT_NAME/$PATH_INFO?$QUERY_STRING`
 * `REQUEST_METHOD=` HTTP method used for making the request, e.g. GET or POST
 * `REQUEST_HEADERS=` A newline-separated list of all headers for this request.
+* `CHA_LIBEXEC_DIR=` The libexec directory Chawan was configured to use at
+  compile time. See the [tools](#tools) section below for details of
+  why this is useful.
 * `CONTENT_TYPE=` for POST requests, the Content-Type header. Not set for
   other request types (e.g. GET).
 * `CONTENT_LENGTH=` the content length, if $CONTENT_TYPE has been set.
@@ -164,6 +167,18 @@ the standard input.
 Note that this may be both an application/x-www-form-urlencoded or a
 multipart/form-data request; `CONTENT_TYPE` stores information about the
 request type, and in case of a multipart request, the boundary as well.
+
+## Tools
+
+Chawan provides certain helper binaries that may be useful for CGI
+scripts. These can be portably accessed by executing
+`"$CHA_LIBEXEC_DIR"/[program name]`.
+
+Currently, the following tools are available:
+
+* `urldec`: percent-decode strings passed on standard input.
+* `urlenc`: percent-encode strings passed on standard input, taking a
+  percent-encode set as the first parameter.
 
 ## Troubleshooting
 

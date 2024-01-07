@@ -1,16 +1,24 @@
 #!/bin/sh
 # Needs https://github.com/soimort/translate-shell to work.
 # Usage: cgi-bin:trans.cgi?word
+# You can also set it as a keybinding (in config.toml):
+#
+# [page]
+# gT = '''
+# async () => {
+#   if (!pager.currentSelection) {
+#     pager.alert("No selection to translate.");
+#     return;
+#   }
+#   const text = await pager.getSelectionText(pager.currentSelection);
+#   pager.cursorToggleSelection();
+#   pager.load(`cgi-bin:trans.cgi?${encodeURIComponent(text)}\n`);
+# }
+# '''
 
-decode() {
-	# URL-decode the string passed as the first parameter
-	printf '%s\n' "$1" | \
-		sed 's/+/ /g;s/%/\\x/g' | \
-		xargs -0 printf "%b"
-}
-
-# QUERY_STRING is URL-encoded. We decode it using the decode() function.
-TEXT="$(decode "$QUERY_STRING")"
+# QUERY_STRING is URL-encoded. We decode it using the urldec utility provided
+# by Chawan.
+TEXT=$(printf '%s\n' "$QUERY_STRING" | "$CHA_LIBEXEC_DIR"/urldec)
 
 # Write a Content-Type HTTP header. The `trans' command outputs plain text,
 # so we use text/plain.
@@ -21,10 +29,10 @@ printf 'Content-Type: text/plain\n'
 printf '\n'
 
 # Check if the `trans' program exists, and if not, die.
-type trans >/dev/null || {
-	printf "ERROR: translator not found"
+if ! type trans >/dev/null
+then	printf "ERROR: translator not found"
 	exit 1
-}
+fi
 
 # Call the `trans' program. It writes its output to standard out, which
 # Chawan's local CGI will read in as the content body.

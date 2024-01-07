@@ -491,19 +491,25 @@ func isNonCharacter*(r: Rune): bool =
         0xCFFFE, 0xCFFFF, 0xDFFFE, 0xDFFFF, 0xEFFFE, 0xEFFFF, 0xFFFFE, 0xFFFFF,
         0x10FFFE, 0x10FFFF]
 
-const ControlPercentEncodeSet* = (Controls + NonAscii)
-const FragmentPercentEncodeSet* = (Controls + NonAscii)
-const QueryPercentEncodeSet* = (ControlPercentEncodeSet + {' ', '"', '#', '<', '>'})
-const SpecialQueryPercentEncodeSet* = (QueryPercentEncodeSet + {'\''})
-const PathPercentEncodeSet* = (QueryPercentEncodeSet + {'?', '`', '{', '}'})
-const UserInfoPercentEncodeSet* = (PathPercentEncodeSet + {'/', ':', ';', '=', '@', '['..'^', '|'})
-const ComponentPercentEncodeSet* = (UserInfoPercentEncodeSet + {'$'..'&', '+', ','})
-const ApplicationXWWWFormUrlEncodedSet* = (ComponentPercentEncodeSet + {'!', '\''..')', '~'})
-# used by client
-when defined(windows) or defined(OS2) or defined(DOS):
-  const LocalPathPercentEncodeSet* = (Ascii - AsciiAlpha - AsciiDigit - {'.', '\\', '/'})
+const ControlPercentEncodeSet* = Controls + NonAscii
+const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
+  {' ', '"', '<', '>', '`'}
+const QueryPercentEncodeSet* = FragmentPercentEncodeSet - {'`'} + {'#'}
+const SpecialQueryPercentEncodeSet* = QueryPercentEncodeSet + {'\''}
+const PathPercentEncodeSet* = QueryPercentEncodeSet + {'?', '`', '{', '}'}
+const UserInfoPercentEncodeSet* = PathPercentEncodeSet +
+  {'/', ':', ';', '=', '@', '['..'^', '|'}
+const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
+  {'$'..'&', '+', ','}
+const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
+  {'!', '\''..')', '~'}
+# used by pager
+when DirSep == '\\':
+  const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
+    {'.', '\\', '/'}
 else:
-  const LocalPathPercentEncodeSet* = (Ascii - AsciiAlpha - AsciiDigit -  {'.', '/'})
+  const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
+    {'.', '/'}
 
 proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = false) {.inline.} =
   if spaceAsPlus and c == ' ':

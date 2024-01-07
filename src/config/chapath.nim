@@ -9,7 +9,7 @@ import js/tojs
 import types/opt
 import utils/twtstr
 
-const libexecPath {.strdefine.} = "${%CHA_BIN_DIR}/../libexec/chawan"
+const libexecPath* {.strdefine.} = "${%CHA_BIN_DIR}/../libexec/chawan"
 
 type ChaPath* = distinct string
 

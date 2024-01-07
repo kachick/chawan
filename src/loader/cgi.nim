@@ -4,6 +4,7 @@ import std/posix
 import std/streams
 import std/strutils
 
+import config/chapath
 import extern/stdio
 import io/posixstream
 import loader/connecterror
@@ -38,6 +39,7 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
   putEnv("SCRIPT_FILENAME", cmd)
   putEnv("REQUEST_URI", requestURI)
   putEnv("REQUEST_METHOD", $request.httpMethod)
+  putEnv("CHA_LIBEXEC_DIR", libexecPath)
   var headers = ""
   for k, v in request.headers:
     headers &= k & ": " & v & "\r\n"
