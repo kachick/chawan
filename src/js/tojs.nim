@@ -1,6 +1,44 @@
-import options
-import tables
-import unicode
+# Automatic conversion of Nim types to JavaScript types.
+#
+# Every conversion involves copying unless explicitly noted below.
+#
+# * Primitives are converted to their respective JavaScript counterparts.
+# * seq is converted to a JS array. Note: this always copies the seq's contents.
+# * Promise is converted to a JS promise which will be resolved when the Nim
+#   promise is resolved.
+# * enum is converted to its stringifier's output.
+# * JSValue is returned as-is, *without* a DupValue operation.
+# * JSError is converted to a new error object corresponding to the error
+#   it represents.
+# * JSArrayBuffer, JSUint8Array are converted to a JS object without copying
+#   their contents.
+# * NarrowString is converted to a JS narrow string (with copying). For more
+#   information on JS string handling, see js/strings.nim.
+# * Finally, ref object is converted to a JS object whose opaque is the ref
+#   object. (See below.)
+#
+# Note that ref objects can be seamlessly converted to JS objects, despite
+# the fact that they are managed by two separate garbage collectors. This
+# works thanks to a patch in QJS and machine oil. Basically:
+#
+# * Nim objects registered with registerType can be paired with one (1)
+#   JS object each.
+# * This happens on-demand, whenever the Nim object has to be converted into JS.
+# * Once the conversion happened, the JS object will be kept alive until the
+#   Nim object is destroyed, so that JS properties on the JS object are not
+#   lost during a re-conversion.
+# * Similarly, the Nim object is kept alive so long as the JS object is alive.
+# * The patched in can_destroy hook is used to synchronize reference counts
+#   of the two objects; this way, no memory leak occurs.
+#
+# There are also toJSP variants of object converters. These work identically
+# to ref object converters, except the reference count of the closest
+# `ref object' ancestor is incremented/decremented when synchronizing refcounts
+# with the JS object pair.
+
+import std/options
+import std/tables
+import std/unicode
 
 import bindings/quickjs
 import io/promise
@@ -36,7 +74,6 @@ proc toJS*[T, E](ctx: JSContext, promise: Promise[Result[T, E]]): JSValue
 proc toJS*(ctx: JSContext, promise: EmptyPromise): JSValue
 proc toJS*(ctx: JSContext, obj: ref object): JSValue
 proc toJS*(ctx: JSContext, err: JSError): JSValue
-proc toJS*(ctx: JSContext, f: JSCFunction): JSValue
 proc toJS*(ctx: JSContext, abuf: JSArrayBuffer): JSValue
 proc toJS*(ctx: JSContext, u8a: JSUint8Array): JSValue
 proc toJS*(ctx: JSContext, ns: NarrowString): JSValue
@@ -307,9 +344,6 @@ proc toJS*(ctx: JSContext, err: JSError): JSValue =
   let ret = JS_CallConstructor(ctx, ctor, 1, addr msg)
   JS_FreeValue(ctx, msg)
   return ret
-
-proc toJS*(ctx: JSContext, f: JSCFunction): JSValue =
-  return JS_NewCFunction(ctx, f, cstring"", 0)
 
 proc toJS*(ctx: JSContext, abuf: JSArrayBuffer): JSValue =
   return JS_NewArrayBuffer(ctx, abuf.p, abuf.len, abuf.dealloc, nil, false)
