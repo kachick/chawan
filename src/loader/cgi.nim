@@ -1,8 +1,8 @@
-import options
-import os
-import posix
-import streams
-import strutils
+import std/options
+import std/os
+import std/posix
+import std/streams
+import std/strutils
 
 import extern/stdio
 import io/posixstream

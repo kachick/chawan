@@ -1,5 +1,5 @@
-import streams
-import unicode
+import std/streams
+import std/unicode
 
 import types/cell
 import utils/strwidth

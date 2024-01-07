@@ -1,5 +1,5 @@
-import options
-import tables
+import std/options
+import std/tables
 
 import css/stylednode
 import types/color

@@ -1,5 +1,5 @@
-import strutils
-import times
+import std/strutils
+import std/times
 
 import io/urlfilter
 import js/error

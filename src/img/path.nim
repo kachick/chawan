@@ -1,6 +1,6 @@
-import algorithm
-import deques
-import math
+import std/algorithm
+import std/deques
+import std/math
 
 import types/line
 import types/vector

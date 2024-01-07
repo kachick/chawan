@@ -1,6 +1,6 @@
-import selectors
-import streams
-import tables
+import std/selectors
+import std/streams
+import std/tables
 
 import js/javascript
 

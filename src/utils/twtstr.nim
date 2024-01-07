@@ -1,20 +1,20 @@
-import algorithm
-import json
-import math
-import options
-import os
-import strutils
-import tables
-import unicode
+import std/algorithm
+import std/json
+import std/math
+import std/options
+import std/os
+import std/strutils
+import std/tables
+import std/unicode
+
+when defined(posix):
+  import std/posix
 
 import types/opt
 import utils/charcategory
 import utils/map
 
 export charcategory
-
-when defined(posix):
-  import posix
 
 func onlyWhitespace*(s: string): bool =
   for c in s:

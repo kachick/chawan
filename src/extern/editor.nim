@@ -1,4 +1,4 @@
-import os
+import std/os
 
 import config/config
 import display/term

@@ -1,4 +1,4 @@
-import options
+import std/options
 
 import js/regex
 import types/url

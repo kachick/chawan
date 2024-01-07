@@ -1,9 +1,9 @@
 # Write data to streams.
 
-import options
-import sets
-import streams
-import tables
+import std/options
+import std/sets
+import std/streams
+import std/tables
 
 import loader/request
 import types/blob

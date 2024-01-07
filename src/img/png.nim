@@ -1,4 +1,4 @@
-import math
+import std/math
 
 import bindings/zlib
 import img/bitmap

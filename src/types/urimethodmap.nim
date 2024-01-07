@@ -1,7 +1,7 @@
 # w3m's URI method map format.
 
-import strutils
-import tables
+import std/strutils
+import std/tables
 
 import types/opt
 import types/url

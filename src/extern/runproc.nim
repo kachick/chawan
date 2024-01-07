@@ -1,5 +1,5 @@
-import streams
-import posix
+import std/posix
+import std/streams
 
 import display/term
 

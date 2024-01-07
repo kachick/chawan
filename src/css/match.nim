@@ -1,7 +1,7 @@
-import options
-import streams
-import strutils
-import tables
+import std/options
+import std/streams
+import std/strutils
+import std/tables
 
 import css/cssparser
 import css/selectorparser

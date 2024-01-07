@@ -1,5 +1,5 @@
-import strutils
-import tables
+import std/strutils
+import std/tables
 
 import utils/twtstr
 

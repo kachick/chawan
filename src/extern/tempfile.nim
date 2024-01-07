@@ -1,4 +1,4 @@
-import os
+import std/os
 
 var tmpf_seq: int
 proc getTempFile*(tmpdir: string, ext = ""): string =

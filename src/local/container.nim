@@ -1,10 +1,10 @@
-import deques
-import options
-import streams
-import unicode
+import std/deques
+import std/options
+import std/streams
+import std/unicode
 
 when defined(posix):
-  import posix
+  import std/posix
 
 import config/config
 import display/winattrs

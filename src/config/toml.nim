@@ -1,8 +1,8 @@
-import streams
-import tables
-import times
-import strutils
-import unicode
+import std/streams
+import std/strutils
+import std/tables
+import std/times
+import std/unicode
 
 import types/opt
 import utils/twtstr

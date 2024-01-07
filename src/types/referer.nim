@@ -1,5 +1,6 @@
-import url
-import options
+import std/options
+
+import types/url
 
 type ReferrerPolicy* = enum
   STRICT_ORIGIN_WHEN_CROSS_ORIGIN

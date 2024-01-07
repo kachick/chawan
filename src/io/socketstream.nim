@@ -1,10 +1,10 @@
-import nativesockets
-import net
-import os
-import streams
+import std/nativesockets
+import std/net
+import std/os
+import std/streams
 
 when defined(posix):
-  import posix
+  import std/posix
 
 import io/posixstream
 import io/serversocket

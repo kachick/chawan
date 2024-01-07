@@ -1,6 +1,6 @@
 {.used.}
 
-import macros
+import std/macros
 
 template imp(x: untyped) = import x
 

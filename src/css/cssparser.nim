@@ -1,6 +1,6 @@
-import options
-import streams
-import unicode
+import std/options
+import std/streams
+import std/unicode
 
 import js/domexception
 import types/opt

@@ -1,5 +1,5 @@
-import algorithm
-import unicode
+import std/algorithm
+import std/unicode
 
 import css/values
 import img/bitmap

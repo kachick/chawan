@@ -1,7 +1,7 @@
-import options
+import std/options
 
 when defined(posix):
-  import posix
+  import std/posix
 
 import loader/request
 import types/url

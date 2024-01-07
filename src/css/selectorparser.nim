@@ -1,6 +1,6 @@
-import options
-import streams
-import strutils
+import std/options
+import std/streams
+import std/strutils
 
 import css/cssparser
 import utils/twtstr

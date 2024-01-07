@@ -1,12 +1,12 @@
-import options
-import os
-import posix
-import streams
-import strutils
-import tables
-import terminal
-import termios
-import unicode
+import std/options
+import std/os
+import std/posix
+import std/streams
+import std/strutils
+import std/tables
+import std/terminal
+import std/termios
+import std/unicode
 
 import bindings/termcap
 import config/config

@@ -1,16 +1,16 @@
-import nativesockets
-import net
-import options
-import os
-import selectors
-import streams
-import strutils
-import tables
-import terminal
-import unicode
+import std/nativesockets
+import std/net
+import std/options
+import std/os
+import std/selectors
+import std/streams
+import std/strutils
+import std/tables
+import std/terminal
+import std/unicode
 
 when defined(posix):
-  import posix
+  import std/posix
 
 import std/exitprocs
 

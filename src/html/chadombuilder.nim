@@ -1,6 +1,6 @@
-import deques
-import options
-import streams
+import std/deques
+import std/options
+import std/streams
 
 import html/dom
 import html/enums

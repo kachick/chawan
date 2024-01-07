@@ -1,4 +1,4 @@
-import posix
+import std/posix
 
 proc closeHandle(fd, flags: cint) =
   let devnull = open("/dev/null", flags)

@@ -1,6 +1,6 @@
-import streams
-import strutils
-import tables
+import std/streams
+import std/strutils
+import std/tables
 
 import utils/twtstr
 

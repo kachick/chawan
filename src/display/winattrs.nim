@@ -1,7 +1,7 @@
-import terminal
+import std/terminal
 
 when defined(posix):
-  import termios
+  import std/termios
 
 type
   WindowAttributes* = object

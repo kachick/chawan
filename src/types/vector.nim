@@ -1,4 +1,4 @@
-import math
+import std/math
 
 type Vector2D* = object
   x*: float64

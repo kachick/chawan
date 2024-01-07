@@ -35,14 +35,14 @@
 # {.jspropnames.} overrides get_own_property_names. Must return a
 #   JSPropertyEnumList object.
 
-import macros
-import options
-import sets
-import streams
-import strformat
-import strutils
-import tables
-import unicode
+import std/macros
+import std/options
+import std/sets
+import std/streams
+import std/strformat
+import std/strutils
+import std/tables
+import std/unicode
 
 import js/error
 import js/fromjs

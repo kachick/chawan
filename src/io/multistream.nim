@@ -2,7 +2,7 @@
 # stream.
 # See TeeStream for a pull version.
 
-import streams
+import std/streams
 
 type MultiStream = ref object of Stream
   s1: Stream

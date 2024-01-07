@@ -1,5 +1,5 @@
-import streams
-import unicode
+import std/streams
+import std/unicode
 
 import bindings/quickjs
 import io/promise

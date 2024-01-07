@@ -1,6 +1,6 @@
 # stdlib file handling is broken, so we use this instead of FileStream.
-import posix
-import streams
+import std/posix
+import std/streams
 
 type
   PosixStream* = ref object of Stream

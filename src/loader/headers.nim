@@ -1,4 +1,4 @@
-import tables
+import std/tables
 
 import bindings/quickjs
 import js/error

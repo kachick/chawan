@@ -1,5 +1,5 @@
 # Interface for QuickJS libregexp.
-import unicode
+import std/unicode
 
 import bindings/libregexp
 import bindings/quickjs

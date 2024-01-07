@@ -1,7 +1,7 @@
 # TeeStream: write to another stream when reading from one stream.
 # See MultiStream for a push version.
 
-import streams
+import std/streams
 
 type TeeStream = ref object of Stream
   source: Stream

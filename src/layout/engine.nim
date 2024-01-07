@@ -1,7 +1,7 @@
-import algorithm
-import math
-import options
-import unicode
+import std/algorithm
+import std/math
+import std/options
+import std/unicode
 
 import css/stylednode
 import css/values

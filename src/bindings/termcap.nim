@@ -1,4 +1,4 @@
-import os
+import std/os
 const termlib = (proc(): string =
   const libs = [
     "terminfo", "mytinfo", "termlib", "termcap", "tinfo", "ncurses", "curses"

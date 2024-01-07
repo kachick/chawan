@@ -1,8 +1,8 @@
 # See https://www.rfc-editor.org/rfc/rfc1524
 
-import osproc
-import streams
-import strutils
+import std/osproc
+import std/streams
+import std/strutils
 
 import types/url
 import types/opt

@@ -1,4 +1,4 @@
-import algorithm
+import std/algorithm
 
 func searchInMap*[U, T](a: openArray[(U, T)], u: U): int =
   when not (typeof(u) is U):

@@ -1,8 +1,9 @@
 import std/nativesockets
 import std/net
 import std/os
+
 when defined(posix):
-  import posix
+  import std/posix
 
 type ServerSocket* = object
   sock*: Socket

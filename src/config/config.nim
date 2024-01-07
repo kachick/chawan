@@ -1,7 +1,7 @@
-import tables
-import options
-import os
-import streams
+import std/options
+import std/os
+import std/streams
+import std/tables
 
 import config/chapath
 import config/mailcap

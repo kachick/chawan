@@ -1,5 +1,5 @@
-import net
-import streams
+import std/net
+import std/streams
 
 import io/multistream
 import io/posixstream

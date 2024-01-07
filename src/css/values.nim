@@ -1,8 +1,8 @@
-import macros
-import options
-import strutils
-import tables
-import unicode
+import std/macros
+import std/options
+import std/strutils
+import std/tables
+import std/unicode
 
 import css/cssparser
 import css/selectorparser

@@ -1,6 +1,6 @@
-import streams
-import strutils
-import unicode
+import std/streams
+import std/strutils
+import std/unicode
 
 import bindings/quickjs
 import display/winattrs

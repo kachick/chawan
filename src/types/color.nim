@@ -1,6 +1,6 @@
-import options
-import strutils
-import tables
+import std/options
+import std/strutils
+import std/tables
 
 import bindings/quickjs
 import js/error

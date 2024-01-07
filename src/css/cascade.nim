@@ -1,6 +1,6 @@
-import algorithm
-import options
-import strutils
+import std/algorithm
+import std/options
+import std/strutils
 
 import css/cssparser
 import css/match

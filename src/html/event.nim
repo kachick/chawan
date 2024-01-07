@@ -1,5 +1,5 @@
-import math
-import times
+import std/math
+import std/times
 
 import bindings/quickjs
 import js/dict

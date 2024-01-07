@@ -1,5 +1,5 @@
-import strutils
-import unicode
+import std/strutils
+import std/unicode
 
 import css/stylednode
 import css/values

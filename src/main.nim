@@ -3,13 +3,10 @@ import version
 import server/forkserver
 let forks = newForkServer()
 
-import options
-import os
-import posix
-import terminal
-
-when defined(profile):
-  import nimprof
+import std/options
+import std/os
+import std/posix
+import std/terminal
 
 import config/chapath
 import config/config

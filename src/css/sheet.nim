@@ -1,6 +1,6 @@
-import algorithm
-import streams
-import tables
+import std/algorithm
+import std/streams
+import std/tables
 
 import css/mediaquery
 import css/cssparser

@@ -1,14 +1,14 @@
-import deques
-import net
-import options
-import os
-import osproc
-import streams
-import tables
-import unicode
+import std/deques
+import std/net
+import std/options
+import std/os
+import std/osproc
+import std/streams
+import std/tables
+import std/unicode
 
 when defined(posix):
-  import posix
+  import std/posix
 
 import config/chapath
 import config/config
