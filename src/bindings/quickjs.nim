@@ -77,27 +77,27 @@ type
   JSRuntime* = ptr JSRuntimeT
   JSContext* = ptr JSContextT
   JSModuleDef* = ptr JSModuleDefT
-  JSCFunction* = proc (ctx: JSContext, this_val: JSValue, argc: cint,
+  JSCFunction* = proc(ctx: JSContext, this_val: JSValue, argc: cint,
       argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.}
-  JSCFunctionData* = proc (ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.}
+  JSCFunctionData* = proc(ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.}
   JSGetterFunction* = proc(ctx: JSContext, this_val: JSValue): JSValue {.cdecl.}
   JSSetterFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue): JSValue {.cdecl.}
   JSGetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, magic: cint): JSValue {.cdecl.}
   JSSetterMagicFunction* = proc(ctx: JSContext, this_val: JSValue, val: JSValue, magic: cint): JSValue {.cdecl.}
-  JSInterruptHandler* = proc (rt: JSRuntime, opaque: pointer): cint {.cdecl.}
+  JSInterruptHandler* = proc(rt: JSRuntime, opaque: pointer): cint {.cdecl.}
   JSClassID* = uint32
   JSAtom* = uint32
-  JSClassFinalizer* = proc (rt: JSRuntime, val: JSValue) {.cdecl.}
-  JSClassCheckDestroy* = proc (rt: JSRuntime, val: JSValue): JS_BOOL {.cdecl.}
-  JSClassGCMark* = proc (rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
-  JS_MarkFunc* = proc (rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
+  JSClassFinalizer* = proc(rt: JSRuntime, val: JSValue) {.cdecl.}
+  JSClassCheckDestroy* = proc(rt: JSRuntime, val: JSValue): JS_BOOL {.cdecl.}
+  JSClassGCMark* = proc(rt: JSRuntime, val: JSValue, mark_func: JS_MarkFunc) {.cdecl.}
+  JS_MarkFunc* = proc(rt: JSRuntime, gp: ptr JSGCObjectHeader) {.cdecl.}
   JSModuleNormalizeFunc* = proc(ctx: JSContext, module_base_name,
     module_name: cstringConst, opaque: pointer): cstring {.cdecl.}
   JSModuleLoaderFunc* = proc(ctx: JSContext, module_name: cstringConst,
     opaque: pointer): JSModuleDef {.cdecl.}
-  JSJobFunc* = proc (ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
+  JSJobFunc* = proc(ctx: JSContext, argc: cint, argv: ptr JSValue): JSValue {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
-  JSFreeArrayBufferDataFunc* = proc (rt: JSRuntime,
+  JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime,
     opaque, p: pointer) {.cdecl.}
 
   JSString* {.importc: "JSString*", header: qjsheader.} = distinct pointer
@@ -109,19 +109,19 @@ type
     setter*: JSValue
 
   JSClassExoticMethods* {.importc, header: qjsheader.} =  object
-    get_own_property*: proc (ctx: JSContext, desc: ptr JSPropertyDescriptor,
+    get_own_property*: proc(ctx: JSContext, desc: ptr JSPropertyDescriptor,
                              obj: JSValue, prop: JSAtom): cint {.cdecl.}
-    get_own_property_names*: proc (ctx: JSContext,
+    get_own_property_names*: proc(ctx: JSContext,
                                    ptab: ptr ptr UncheckedArray[JSPropertyEnum],
                                    plen: ptr uint32, obj: JSValue): cint {.cdecl.}
-    delete_property*: proc (ctx: JSContext, obj: JSValue, prop: JSAtom): cint {.cdecl.}
-    define_own_property*: proc (ctx: JSContext, this_obj: JSValue,
+    delete_property*: proc(ctx: JSContext, obj: JSValue, prop: JSAtom): cint {.cdecl.}
+    define_own_property*: proc(ctx: JSContext, this_obj: JSValue,
                                 prop: JSAtom, val, getter, setter: JSValue,
                                 flags: cint): cint {.cdecl.}
-    has_property*: proc (ctx: JSContext, obj: JSValue, atom: JSAtom): cint {.cdecl.}
-    get_property*: proc (ctx: JSContext, obj: JSValue, atom: JSAtom,
+    has_property*: proc(ctx: JSContext, obj: JSValue, atom: JSAtom): cint {.cdecl.}
+    get_property*: proc(ctx: JSContext, obj: JSValue, atom: JSAtom,
                          receiver: JSValue, flags: cint): JSValue {.cdecl.}
-    set_property*: proc (ctx: JSContext, obj: JSValue, atom: JSAtom,
+    set_property*: proc(ctx: JSContext, obj: JSValue, atom: JSAtom,
                          value, receiver: JSValue, flags: cint): cint {.cdecl.}
 
   JSClassExoticMethodsConst* {.importc: "const JSClassExoticMethods *", header: qjsheader.} = ptr JSClassExoticMethods
@@ -212,6 +212,19 @@ type
     JS_CLASS_OBJECT = 1
     JS_CLASS_ARRAY
     JS_CLASS_ERROR
+
+  JSMallocState* {.importc.} = object
+    malloc_count*: csize_t
+    malloc_size*: csize_t
+    malloc_limit*: csize_t
+    opaque*: pointer
+
+  JSMallocFunctions* {.importc.} = object
+    js_malloc*: proc(s: ptr JSMallocState, size: csize_t): pointer {.cdecl.}
+    js_free*: proc(s: ptr JSMallocState, p: pointer) {.cdecl.}
+    js_realloc*: proc(s: ptr JSMallocState, p: pointer, size: csize_t): pointer
+      {.cdecl.}
+    js_malloc_usable_size*: proc(p: pointer) {.cdecl.}
 
 converter toBool*(js: JS_BOOL): bool {.inline.} =
   cast[cint](js) != 0
@@ -336,6 +349,7 @@ template JS_CGETSET_MAGIC_DEF*(n: string, fgetter, fsetter: typed,
 {.push header: qjsheader, importc, cdecl.}
 
 proc JS_NewRuntime*(): JSRuntime
+proc JS_NewRuntime2*(mf: ptr JSMallocFunctions, opaque: pointer): JSRuntime
 proc JS_FreeRuntime*(rt: JSRuntime)
 proc JS_GetRuntime*(ctx: JSContext): JSRuntime
 

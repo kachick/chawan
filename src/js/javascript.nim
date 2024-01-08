@@ -105,8 +105,26 @@ type
 
 var runtimes {.threadvar.}: seq[JSRuntime]
 
+proc bindMalloc(s: ptr JSMallocState, size: csize_t): pointer {.cdecl.} =
+  return alloc(size)
+
+proc bindFree(s: ptr JSMallocState, p: pointer) {.cdecl.} =
+  if p == nil:
+    return
+  dealloc(p)
+
+proc bindRealloc(s: ptr JSMallocState, p: pointer, size: csize_t): pointer
+    {.cdecl.} =
+  return realloc(p, size)
+
 proc newJSRuntime*(): JSRuntime =
-  let rt = JS_NewRuntime()
+  var mf {.global.} = JSMallocFunctions(
+    js_malloc: bindMalloc,
+    js_free: bindFree,
+    js_realloc: bindRealloc,
+    js_malloc_usable_size: nil
+  )
+  let rt = JS_NewRuntime2(addr mf, nil)
   let opaque = JSRuntimeOpaque()
   GC_ref(opaque)
   JS_SetRuntimeOpaque(rt, cast[pointer](opaque))
