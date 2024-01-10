@@ -651,6 +651,9 @@ proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
   buffer.width = buffer.attrs.width
   buffer.height = buffer.attrs.height - 1
+  buffer.prevstyled = nil
+  if buffer.window != nil:
+    buffer.window.attrs = attrs
 
 type UpdateHoverResult* = object
   link*: Option[string]

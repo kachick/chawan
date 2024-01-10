@@ -628,6 +628,8 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
     pager.addContainer(container)
 
 proc windowChange*(pager: Pager, attrs: WindowAttributes) =
+  if attrs == pager.attrs:
+    return
   if pager.lineedit.isSome:
     pager.lineedit.get.windowChange(attrs)
   pager.term.windowChange(attrs)

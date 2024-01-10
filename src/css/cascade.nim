@@ -276,7 +276,8 @@ proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode,
 
 func applyMediaQuery(ss: CSSStylesheet, window: Window): CSSStylesheet =
   if ss == nil: return nil
-  result = ss
+  new(result)
+  result[] = ss[]
   for mq in ss.mqList:
     if mq.query.applies(window):
       result.add(mq.children.applyMediaQuery(window))
