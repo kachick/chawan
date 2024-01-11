@@ -67,7 +67,7 @@ type
     isearchpromise: EmptyPromise
     lineedit*: Option[LineEdit]
     linehist: array[LineMode, LineHistory]
-    linemode*: LineMode
+    linemode: LineMode
     mailcap: Mailcap
     mainproc: Pid
     mimeTypes: MimeTypes
@@ -820,8 +820,8 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       pager.redraw = true
       pager.isearchpromise = nil
     of EDIT:
-      let x = $lineedit.news
-      if x != "": pager.iregex = compileSearchRegex(x)
+      if lineedit.news != "":
+        pager.iregex = compileSearchRegex(lineedit.news)
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
       if pager.iregex.isSome:
@@ -843,7 +843,6 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
 
 proc updateReadLine*(pager: Pager) =
   let lineedit = pager.lineedit.get
-  template s: string = $lineedit.news
   if pager.linemode in {ISEARCH_F, ISEARCH_B}:
     pager.updateReadLineISearch(pager.linemode)
   else:
@@ -851,29 +850,32 @@ proc updateReadLine*(pager: Pager) =
     of EDIT: return
     of FINISH:
       case pager.linemode
-      of LOCATION: pager.loadURL(s)
+      of LOCATION: pager.loadURL(lineedit.news)
       of USERNAME:
-        pager.username = s
+        pager.username = lineedit.news
         pager.setLineEdit("Password: ", PASSWORD, hide = true)
       of PASSWORD:
         let url = newURL(pager.container.source.location)
         url.username = pager.username
-        url.password = s
+        url.password = lineedit.news
         pager.username = ""
-        pager.gotoURL(newRequest(url), some(pager.container.source.location), replace = pager.container, referrer = pager.container)
+        pager.gotoURL(
+          newRequest(url), some(pager.container.source.location),
+          replace = pager.container,
+          referrer = pager.container
+        )
       of COMMAND:
-        pager.scommand = s
+        pager.scommand = lineedit.news
         if pager.commandMode:
           pager.command()
-      of BUFFER: pager.container.readSuccess(s)
+      of BUFFER: pager.container.readSuccess(lineedit.news)
       of SEARCH_F, SEARCH_B:
-        let x = s
-        if x != "":
-          pager.regex = pager.checkRegex(compileSearchRegex(x))
+        if lineedit.news != "":
+          pager.regex = pager.checkRegex(compileSearchRegex(lineedit.news))
         pager.reverseSearch = pager.linemode == SEARCH_B
         pager.searchNext()
       of GOTO_LINE:
-        pager.container.gotoLine(s)
+        pager.container.gotoLine(lineedit.news)
       else: discard
     of CANCEL:
       case pager.linemode
