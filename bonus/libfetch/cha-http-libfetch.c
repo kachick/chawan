@@ -32,14 +32,6 @@
 		exit(1); \
 	} while (0)
 
-#define PDIE(x) \
-	do { \
-		puts("Content-Type: text/plain\r\n"); \
-		puts(x); \
-		puts(strerror(errno)); \
-		exit(1); \
-	} while (0)
-
 #define DIE(x) \
 	do { \
 		puts("Content-Type: text/plain\r\n\r\n" x); \
@@ -91,15 +83,12 @@ int main(int argc, char **argv)
 		iport = 443;
 	docbuf[0] = '\0';
 	path = getenv("MAPPED_URI_PATH");
-	if (path && *path)
-		strncat(docbuf, path, sizeof(docbuf) - 1);
-	else
-		strcat(docbuf, "/");
+	strlcat(docbuf, path && *path ? path : "/", sizeof(docbuf));
 	has_file_ext = hasext(docbuf);
 	query = getenv("MAPPED_URI_QUERY");
 	if (query && *query) {
-		strncat(docbuf, "?", sizeof(docbuf) - 1);
-		strncat(docbuf, query, sizeof(docbuf) - 1);
+		strlcat(docbuf, "?", sizeof(docbuf));
+		strlcat(docbuf, query, sizeof(docbuf));
 	}
 	u = fetchMakeURL(scheme, host, iport, docbuf, username, password);
 	if (!u)
