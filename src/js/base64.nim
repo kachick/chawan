@@ -3,7 +3,7 @@ import std/base64
 import bindings/quickjs
 import js/domexception
 import js/javascript
-import js/strings
+import js/jstypes
 import types/opt
 
 # atob and btoa convert Latin-1 to base64 and vice versa. (And throw on

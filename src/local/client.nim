@@ -34,8 +34,8 @@ import js/error
 import js/fromjs
 import js/intl
 import js/javascript
+import js/jstypes
 import js/module
-import js/strings
 import js/timeout
 import js/tojs
 import loader/headers

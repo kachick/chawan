@@ -2,10 +2,10 @@ import std/math
 import std/times
 
 import bindings/quickjs
-import js/dict
 import js/error
 import js/fromjs
 import js/javascript
+import js/jstypes
 import js/tojs
 import types/opt
 

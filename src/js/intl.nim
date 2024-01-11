@@ -1,8 +1,8 @@
 # Very minimal Intl module... TODO make it more complete
 
 import bindings/quickjs
-import js/dict
 import js/javascript
+import js/jstypes
 import js/tojs
 
 type

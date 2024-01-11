@@ -11,8 +11,8 @@ import display/winattrs
 import extern/stdio
 import io/promise
 import io/serialize
-import js/dict
 import js/javascript
+import js/jstypes
 import js/regex
 import loader/connecterror
 import loader/request

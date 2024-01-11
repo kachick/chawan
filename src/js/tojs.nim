@@ -13,7 +13,7 @@
 # * JSArrayBuffer, JSUint8Array are converted to a JS object without copying
 #   their contents.
 # * NarrowString is converted to a JS narrow string (with copying). For more
-#   information on JS string handling, see js/strings.nim.
+#   information on JS string handling, see js/jstypes.nim.
 # * Finally, ref object is converted to a JS object whose opaque is the ref
 #   object. (See below.)
 #
@@ -42,11 +42,9 @@ import std/unicode
 
 import bindings/quickjs
 import io/promise
-import js/arraybuffer
-import js/dict
 import js/error
+import js/jstypes
 import js/opaque
-import js/strings
 import js/typeptr
 import types/opt
 
@@ -60,7 +58,7 @@ proc toJS*(ctx: JSContext, n: int): JSValue
 proc toJS*(ctx: JSContext, n: uint16): JSValue
 proc toJS*(ctx: JSContext, n: uint32): JSValue
 proc toJS*(ctx: JSContext, n: uint64): JSValue
-proc toJS*(ctx: JSContext, n: SomeFloat): JSValue
+proc toJS*(ctx: JSContext, n: float64): JSValue
 proc toJS*(ctx: JSContext, b: bool): JSValue
 proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue
 proc toJS*(ctx: JSContext, opt: Option): JSValue
@@ -158,8 +156,8 @@ proc toJS*(ctx: JSContext, n: uint64): JSValue =
   #TODO this is incorrect
   return JS_NewFloat64(ctx, float64(n))
 
-proc toJS*(ctx: JSContext, n: SomeFloat): JSValue =
-  return JS_NewFloat64(ctx, float64(n))
+proc toJS*(ctx: JSContext, n: float64): JSValue =
+  return JS_NewFloat64(ctx, n)
 
 proc toJS*(ctx: JSContext, b: bool): JSValue =
   return JS_NewBool(ctx, b)

@@ -6,9 +6,8 @@ import std/unicode
 
 import bindings/quickjs
 import io/promise
-import js/arraybuffer
-import js/dict
 import js/error
+import js/jstypes
 import js/opaque
 import js/tojs
 import types/opt
@@ -115,12 +114,11 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
       return err()
     return ok(cast[uint64](ret))
 
-proc fromJSFloat[T: SomeFloat](ctx: JSContext, val: JSValue):
-    JSResult[T] =
+proc fromJSFloat64(ctx: JSContext, val: JSValue): JSResult[float64] =
   var f64: float64
   if JS_ToFloat64(ctx, addr f64, val) < 0:
     return err()
-  return ok(cast[T](f64))
+  return ok(f64)
 
 macro fromJSTupleBody(a: tuple) =
   let len = a.getType().len - 1
@@ -499,8 +497,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
       typeof(result.get.values)](ctx, val)
   elif T is SomeInteger:
     return fromJSInt[T](ctx, val)
-  elif T is SomeFloat:
-    return fromJSFloat[T](ctx, val)
+  elif T is float64:
+    return fromJSFloat64(ctx, val)
   elif T is enum:
     return fromJSEnum[T](ctx, val)
   elif T is JSValue:

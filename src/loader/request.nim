@@ -4,10 +4,10 @@ import std/strutils
 import std/tables
 
 import bindings/quickjs
-import js/dict
 import js/error
 import js/fromjs
 import js/javascript
+import js/jstypes
 import loader/headers
 import types/blob
 import types/formdata

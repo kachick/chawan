@@ -2,9 +2,9 @@ import std/options
 import std/os
 import std/strutils
 
-import js/dict
 import js/fromjs
 import js/javascript
+import js/jstypes
 import utils/mimeguess
 import utils/twtstr
 

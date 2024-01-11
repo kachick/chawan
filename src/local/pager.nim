@@ -22,8 +22,8 @@ import extern/runproc
 import extern/tempfile
 import io/promise
 import io/socketstream
-import js/dict
 import js/javascript
+import js/jstypes
 import js/regex
 import js/tojs
 import loader/loader

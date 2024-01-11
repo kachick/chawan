@@ -1,9 +1,8 @@
 import std/streams
 
-import js/arraybuffer
-import js/dict
 import js/error
 import js/javascript
+import js/jstypes
 
 import chakasu/charset
 import chakasu/decoderstream

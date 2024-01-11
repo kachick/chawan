@@ -15,7 +15,7 @@ import js/encoding
 import js/error
 import js/intl
 import js/javascript
-import js/strings
+import js/jstypes
 import js/timeout
 import loader/headers
 import loader/loader
