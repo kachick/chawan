@@ -1828,13 +1828,75 @@ func attrb*(element: Element, s: string): bool =
     return true
   return false
 
-# Element attribute reflection (getters)
-func innerHTML*(element: Element): string {.jsfget.} =
-  for child in element.childList:
-    result &= $child
+# https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
+func serializesAsVoid(element: Element): bool =
+  const Extra = {TAG_BASEFONT, TAG_BGSOUND, TAG_FRAME, TAG_KEYGEN, TAG_PARAM}
+  return element.tagType in VoidElements + Extra
 
-func outerHTML*(element: Element): string {.jsfget.} =
-  return $element
+func serializeFragment(node: Node): string
+
+func serializeFragmentInner(child: Node, parentType: TagType): string =
+  result = ""
+  if child of Element:
+    let element = Element(child)
+    result &= '<'
+    #TODO qualified name if not HTML, SVG or MathML
+    result &= element.localName
+    #TODO custom elements
+    for k, v in element.attrs:
+      #TODO namespaced attrs
+      result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
+    result &= '>'
+    result &= element.serializeFragment()
+    result &= "</"
+    result &= element.localName
+    result &= '>'
+  elif child of Text:
+    let text = Text(child)
+    const LiteralTags = {
+      TAG_STYLE, TAG_SCRIPT, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES,
+      TAG_PLAINTEXT, TAG_NOSCRIPT
+    }
+    result = if parentType in LiteralTags:
+      text.data
+    else:
+      text.data.escapeText()
+  elif child of Comment:
+    result &= "<!--" & Comment(child).data & "-->"
+  elif child of ProcessingInstruction:
+    let inst = ProcessingInstruction(child)
+    result &= "<?" & inst.target & " " & inst.data & '>'
+  elif child of DocumentType:
+    result &= "<!DOCTYPE " & DocumentType(child).name & '>'
+
+func serializeFragment(node: Node): string =
+  var node = node
+  var parentType = TAG_UNKNOWN
+  if node of Element:
+    let element = Element(node)
+    if element.serializesAsVoid():
+      return ""
+    if element of HTMLTemplateElement:
+      node = HTMLTemplateElement(element).content
+    else:
+      parentType = element.tagType
+      if parentType == TAG_NOSCRIPT and not element.scriptingEnabled:
+        # Pretend parentType is not noscript, so we do not append literally
+        # in serializeFragmentInner.
+        parentType = TAG_UNKNOWN
+  var s = ""
+  for child in node.childList:
+    s &= child.serializeFragmentInner(parentType)
+  return s
+
+# Element attribute reflection (getters)
+func innerHTML(element: Element): string {.jsfget.} =
+  #TODO xml
+  return element.serializeFragment()
+
+func outerHTML(element: Element): string {.jsfget.} =
+  #TODO xml
+  return element.serializeFragmentInner(TAG_UNKNOWN)
 
 func crossOrigin0(element: HTMLElement): CORSAttribute =
   if not element.attrb("crossorigin"):

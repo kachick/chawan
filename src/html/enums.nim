@@ -34,6 +34,12 @@ const LabelableElements* = {
   TAG_BUTTON, TAG_INPUT, TAG_METER, TAG_OUTPUT, TAG_PROGRESS, TAG_SELECT, TAG_TEXTAREA
 }
 
+# https://html.spec.whatwg.org/multipage/syntax.html#void-elements
+const VoidElements* = {
+  TAG_AREA, TAG_BASE, TAG_BR, TAG_COL, TAG_EMBED, TAG_HR, TAG_IMG, TAG_INPUT,
+  TAG_LINK, TAG_META, TAG_SOURCE, TAG_TRACK, TAG_WBR
+}
+
 func getInputTypeMap(): Table[string, InputType] =
   for i in InputType:
     let enumname = $InputType(i)
