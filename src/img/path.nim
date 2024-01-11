@@ -305,8 +305,8 @@ proc arcTo*(path: Path, x1, y1, x2, y2, radius: float64): Err[DOMException] =
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return ok()
   if radius < 0:
-    return err(newDOMException("Expected positive radius, but got negative",
-      "IndexSizeError"))
+    return errDOMException("Expected positive radius, but got negative",
+      "IndexSizeError")
   path.ensureSubpath(x1, y1)
   #TODO this should be transformed by the inverse of the transformation matrix
   let v0 = path.subpaths[^1].points[^1]
@@ -352,8 +352,8 @@ proc arc*(path: Path, x, y, radius, startAngle, endAngle: float64,
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return ok()
   if radius < 0:
-    return err(newDOMException("Expected positive radius, but got negative",
-      "IndexSizeError"))
+    return errDOMException("Expected positive radius, but got negative",
+      "IndexSizeError")
   let o = Vector2D(x: x, y: y)
   var s = resolveEllipsePoint(o, startAngle, radius, radius, 0)
   var e = resolveEllipsePoint(o, endAngle, radius, radius, 0)
@@ -374,8 +374,8 @@ proc ellipse*(path: Path, x, y, radiusX, radiusY, rotation, startAngle,
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return ok()
   if radiusX < 0 or radiusY < 0:
-    return err(newDOMException("Expected positive radius, but got negative",
-      "IndexSizeError"))
+    return errDOMException("Expected positive radius, but got negative",
+      "IndexSizeError")
   let o = Vector2D(x: x, y: y)
   var s = resolveEllipsePoint(o, startAngle, radiusX, radiusY, rotation)
   var e = resolveEllipsePoint(o, endAngle, radiusX, radiusY, rotation)

@@ -14,13 +14,13 @@ proc atob*(data: string): DOMResult[NarrowString] =
     let ds = NarrowString(base64.decode(data))
     return ok(ds)
   except ValueError:
-    return err(newDOMException("Invalid character in string",
-      "InvalidCharacterError"))
+    return errDOMException("Invalid character in string",
+      "InvalidCharacterError")
 
 proc btoa*(data: JSString): DOMResult[string] =
   if JS_IsStringWideChar(data):
-    return err(newDOMException("Invalid character in string",
-      "InvalidCharacterError"))
+    return errDOMException("Invalid character in string",
+      "InvalidCharacterError")
   let len = int(JS_GetStringLength(data))
   if len == 0:
     return ok("")

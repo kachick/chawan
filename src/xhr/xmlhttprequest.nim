@@ -74,16 +74,16 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
   of "post": ok(HTTP_POST)
   of "put": ok(HTTP_PUT)
   of "connect", "trace", "track":
-    err(newDOMException("Forbidden method", "SecurityError"))
+    errDOMException("Forbidden method", "SecurityError")
   else:
-    err(newDOMException("Invalid method", "SyntaxError"))
+    errDOMException("Invalid method", "SyntaxError")
 
 proc open(this: XMLHttpRequest, httpMethod, url: string): Err[DOMException]
     {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
   let x = parseURL(url)
   if x.isNone:
-    return err(newDOMException("Invalid URL", "SyntaxError"))
+    return errDOMException("Invalid URL", "SyntaxError")
   let parsedURL = x.get
   #TODO async, username, password arguments
   let async = true

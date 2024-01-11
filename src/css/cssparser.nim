@@ -730,7 +730,7 @@ proc parseRule(state: var CSSParseState): DOMResult[CSSRule] =
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
-    return err(newDOMException("Unexpected EOF", "SyntaxError"))
+    return errDOMException("Unexpected EOF", "SyntaxError")
 
   var res: CSSRule
   if state.peek() == CSS_AT_KEYWORD_TOKEN:
@@ -740,12 +740,12 @@ proc parseRule(state: var CSSParseState): DOMResult[CSSRule] =
     if q.isSome:
       res = q.get
     else:
-      return err(newDOMException("No qualified rule found!", "SyntaxError"))
+      return errDOMException("No qualified rule found!", "SyntaxError")
 
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if state.has():
-    return err(newDOMException("EOF not reached", "SyntaxError"))
+    return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
 
 proc parseRule*(inputStream: Stream): DOMResult[CSSRule] =
@@ -758,13 +758,13 @@ proc parseDeclaration(state: var CSSParseState): DOMResult[CSSDeclaration] =
     discard state.consume()
 
   if not state.has() or state.peek() != CSS_IDENT_TOKEN:
-    return err(newDOMException("No ident token found", "SyntaxError"))
+    return errDOMException("No ident token found", "SyntaxError")
 
   let d = state.consumeDeclaration()
   if d.isSome:
     return ok(d.get)
 
-  return err(newDOMException("No declaration found", "SyntaxError"))
+  return errDOMException("No declaration found", "SyntaxError")
 
 proc parseDeclaration*(inputStream: Stream): DOMResult[CSSDeclaration] =
   var state = CSSParseState()
@@ -802,14 +802,14 @@ proc parseComponentValue(state: var CSSParseState):
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if not state.has():
-    return err(newDOMException("Unexpected EOF", "SyntaxError"))
+    return errDOMException("Unexpected EOF", "SyntaxError")
 
   let res = state.consumeComponentValue()
 
   while state.has() and state.peek() == CSS_WHITESPACE_TOKEN:
     discard state.consume()
   if state.has():
-    return err(newDOMException("EOF not reached", "SyntaxError"))
+    return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
 
 proc parseComponentValue*(inputStream: Stream): DOMResult[CSSComponentValue] =

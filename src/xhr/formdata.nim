@@ -32,11 +32,11 @@ proc newFormData*(form: HTMLFormElement = nil,
   if form != nil:
     if submitter != nil:
       if not submitter.isSubmitButton():
-        return err(newDOMException("Submitter must be a submit button",
-          "InvalidStateError"))
+        return errDOMException("Submitter must be a submit button",
+          "InvalidStateError")
       if FormAssociatedElement(submitter).form != form:
-        return err(newDOMException("Submitter's form owner is not form",
-          "InvalidStateError"))
+        return errDOMException("Submitter's form owner is not form",
+          "InvalidStateError")
     this.entries = constructEntryList(form, submitter).get(@[])
   return ok(this)
 
