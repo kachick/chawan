@@ -18,6 +18,7 @@ import css/sheet
 import css/stylednode
 import css/values
 import display/winattrs
+import html/catom
 import html/chadombuilder
 import html/dom
 import html/enums
@@ -120,6 +121,9 @@ type
     estream: Stream # error stream
     ishtml: bool
     ssock: ServerSocket
+    factory: CAtomFactory
+    uastyle: CSSStylesheet
+    quirkstyle: CSSStylesheet
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -626,19 +630,14 @@ proc gotoAnchor*(buffer: Buffer): Opt[tuple[x, y: int]] {.proxy.} =
         return ok((format.pos, y))
   return err()
 
-const css = staticRead"res/ua.css"
-let uastyle = css.parseStylesheet()
-const quirk = css & staticRead"res/quirk.css"
-let quirkstyle = quirk.parseStylesheet()
-
 proc do_reshape(buffer: Buffer) =
   if buffer.ishtml:
     if buffer.document == nil:
       return # not parsed yet, nothing to render
     let uastyle = if buffer.document.mode != QUIRKS:
-      uastyle
+      buffer.uastyle
     else:
-      quirkstyle
+      buffer.quirkstyle
     let styledRoot = buffer.document.applyStylesheets(uastyle,
       buffer.userstyle, buffer.prevstyled)
     buffer.lines = renderDocument(styledRoot, buffer.attrs)
@@ -725,7 +724,7 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
           #TODO non-utf-8 css
           let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
           let source = newEncoderStream(ds, cs = CHARSET_UTF_8)
-          elem.sheet = parseStylesheet(source))
+          elem.sheet = parseStylesheet(source, buffer.factory))
 
 proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let document = buffer.document
@@ -782,6 +781,33 @@ type ConnectResult* = object
   cookies*: seq[Cookie]
   referrerpolicy*: Option[ReferrerPolicy]
   charset*: Charset
+
+proc setHTML(buffer: Buffer, ishtml: bool) =
+  buffer.ishtml = ishtml
+  if ishtml:
+    let factory = newCAtomFactory()
+    buffer.factory = factory
+    if buffer.config.scripting:
+      buffer.window = newWindow(
+        buffer.config.scripting,
+        buffer.selector,
+        buffer.attrs,
+        factory,
+        proc(url: URL) = buffer.navigate(url),
+        some(buffer.loader)
+      )
+    else:
+      buffer.window = newWindow(
+        buffer.config.scripting,
+        buffer.selector,
+        buffer.attrs,
+        buffer.factory
+      )
+    const css = staticRead"res/ua.css"
+    const quirk = css & staticRead"res/quirk.css"
+    buffer.uastyle = css.parseStylesheet(factory)
+    buffer.quirkstyle = quirk.parseStylesheet(factory)
+    buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   if buffer.connected:
@@ -841,7 +867,7 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
         buffer.loader.setReferrerPolicy(referrerpolicy.get)
   buffer.connected = true
   let contentType = buffer.source.contentType.get("")
-  buffer.ishtml = contentType == "text/html"
+  buffer.setHTML(contentType == "text/html")
   return ConnectResult(
     charset: charset,
     needsAuth: needsAuth,
@@ -904,7 +930,7 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
     contentType: some(contentType),
     charset: buffer.source.charset
   )
-  buffer.ishtml = ishtml
+  buffer.setHTML(ishtml)
   discard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) or O_NONBLOCK)
   buffer.istream = newPosixStream(fd)
   buffer.fd = fd
@@ -912,7 +938,7 @@ proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
 
 proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
   buffer.source.contentType = some(contentType)
-  buffer.ishtml = contentType == "text/html"
+  buffer.setHTML(contentType == "text/html")
 
 # As defined in std/selectors: this determines whether kqueue is being used.
 # On these platforms, we must not close the selector after fork, since kqueue
@@ -1114,11 +1140,13 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.ishtml:
     buffer.sstream.setPosition(0)
     buffer.available = 0
-    if buffer.window == nil:
-      buffer.window = newWindow(buffer.config.scripting, buffer.selector,
-        buffer.attrs)
-    let document = parseHTML(buffer.sstream, charsets = buffer.charsets,
-      window = buffer.window, url = buffer.url)
+    let document = parseHTML(
+      buffer.sstream,
+      charsets = buffer.charsets,
+      window = buffer.window,
+      url = buffer.url,
+      factory = buffer.factory
+    )
     buffer.document = document
     document.readyState = READY_STATE_INTERACTIVE
     buffer.state = LOADING_RESOURCES
@@ -1211,12 +1239,14 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   if buffer.ishtml:
     buffer.sstream.setPosition(0)
     buffer.available = 0
-    if buffer.window == nil:
-      buffer.window = newWindow(buffer.config.scripting, buffer.selector,
-        buffer.attrs)
-    buffer.document = parseHTML(buffer.sstream,
-      charsets = buffer.charsets, window = buffer.window,
-      url = buffer.url, canReinterpret = false)
+    buffer.document = parseHTML(
+      buffer.sstream,
+      charsets = buffer.charsets,
+      window = buffer.window,
+      url = buffer.url,
+      factory = buffer.factory,
+      seekable = false
+    )
     buffer.do_reshape()
   return buffer.lines.len
 
@@ -1811,7 +1841,6 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   let socks = ssock.acceptSocketStream()
   let buffer = Buffer(
     alive: true,
-    userstyle: parseStylesheet(config.userstyle),
     attrs: attrs,
     config: config,
     loader: loader,
@@ -1835,9 +1864,6 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     buffer.selector.registerHandle(fd, {Read}, 0)
   loader.unregisterFun = proc(fd: int) =
     buffer.selector.unregister(fd)
-  if buffer.config.scripting:
-    buffer.window = newWindow(buffer.config.scripting, buffer.selector,
-      buffer.attrs, proc(url: URL) = buffer.navigate(url), some(buffer.loader))
   buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
   buffer.runBuffer()
   buffer.cleanup()

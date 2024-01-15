@@ -137,7 +137,7 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     if field.tagType == TAG_SELECT:
       let field = HTMLSelectElement(field)
       for option in field.options:
-        if option.selected or option.disabled:
+        if option.selected or option.isDisabled:
           entrylist.add((name, option.value))
     elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
       let value = if field.attr("value") != "":

@@ -3,6 +3,7 @@ import std/streams
 
 import bindings/quickjs
 import display/winattrs
+import html/catom
 import html/chadombuilder
 import html/dom
 import html/event
@@ -176,8 +177,8 @@ proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)
 
 proc newWindow*(scripting: bool, selector: Selector[int],
-    attrs: WindowAttributes, navigate: proc(url: URL) = nil,
-    loader = none(FileLoader)): Window =
+    attrs: WindowAttributes, factory: CAtomFactory,
+    navigate: proc(url: URL) = nil, loader = none(FileLoader)): Window =
   let err = newFileStream(stderr)
   let window = Window(
     attrs: attrs,
@@ -187,7 +188,8 @@ proc newWindow*(scripting: bool, selector: Selector[int],
     settings: EnvironmentSettings(
       scripting: scripting
     ),
-    navigate: navigate
+    navigate: navigate,
+    factory: factory
   )
   window.location = window.newLocation()
   if scripting:

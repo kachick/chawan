@@ -56,6 +56,10 @@ external:
 - history, bookmarks (w3m format)
 - save buffer (source, output)
 - edit buffer (local file, or whatever we downloaded)
+dom:
+- atomize `id'
+	* maybe also add `name' attr atom?
+- add attr name enum (like TagType)
 javascript:
 - important: callbacks should not leak memory
 - add support for JS mixins
@@ -66,6 +70,7 @@ javascript:
 - implement ReadableStream, XHR
 - separate console for each buffer
 - buffer selection
+- errTypeError etc templates
 layout engine:
 - box borders
 	* will probably need special treatment, as borders must round to

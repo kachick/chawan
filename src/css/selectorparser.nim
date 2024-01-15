@@ -3,14 +3,13 @@ import std/streams
 import std/strutils
 
 import css/cssparser
+import html/catom
 import utils/twtstr
-
-import chame/tags
 
 type
   SelectorType* = enum
-    TYPE_SELECTOR, UNKNOWN_TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR,
-    CLASS_SELECTOR, UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR
+    TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR,
+    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR
 
   PseudoElem* = enum
     PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER,
@@ -32,6 +31,7 @@ type
     cvals: seq[CSSComponentValue]
     at: int
     failed: bool
+    factory: CAtomFactory
 
   RelationType* {.size: sizeof(int) div 2.} = enum
     RELATION_EXISTS, RELATION_EQUALS, RELATION_TOKEN, RELATION_BEGIN_DASH,
@@ -47,9 +47,9 @@ type
   Selector* = ref object # Simple selector
     case t*: SelectorType
     of TYPE_SELECTOR:
-      tag*: TagType
-    of UNKNOWN_TYPE_SELECTOR:
-      tagstr*: string
+      tag*: CAtom
+      when defined(debug):
+        tags: string
     of ID_SELECTOR:
       id*: string
     of ATTR_SELECTOR:
@@ -109,9 +109,10 @@ func `$`*(cxsel: ComplexSelector): string
 func `$`*(sel: Selector): string =
   case sel.t
   of TYPE_SELECTOR:
-    return tagName(sel.tag)
-  of UNKNOWN_TYPE_SELECTOR:
-    return sel.tagstr
+    when defined(debug):
+      return sel.tags
+    else:
+      return "tagt " & $int(sel.tag)
   of ID_SELECTOR:
     return '#' & sel.id
   of ATTR_SELECTOR:
@@ -205,7 +206,7 @@ func getSpecificity(sel: Selector): int =
       result += 1000
     of PSEUDO_WHERE: discard
     else: result += 1000
-  of TYPE_SELECTOR, UNKNOWN_TYPE_SELECTOR, PSELEM_SELECTOR:
+  of TYPE_SELECTOR, PSELEM_SELECTOR:
     result += 1
   of UNIVERSAL_SELECTOR:
     discard
@@ -242,15 +243,17 @@ template get_tok(cval: CSSComponentValue): CSSToken =
   if not (c of CSSToken): fail
   CSSToken(c)
 
-proc parseSelectorList(cvals: seq[CSSComponentValue]): SelectorList
+proc parseSelectorList(cvals: seq[CSSComponentValue], factory: CAtomFactory):
+  SelectorList
 
 # Functions that may contain other selectors, functions, etc.
-proc parseRecursiveSelectorFunction(state: var SelectorParser, class: PseudoClass, body: seq[CSSComponentValue]): Selector =
+proc parseRecursiveSelectorFunction(state: var SelectorParser,
+    class: PseudoClass, body: seq[CSSComponentValue]): Selector =
   var fun = Selector(
     t: PSEUDO_SELECTOR,
     pseudo: PseudoData(t: class),
   )
-  fun.pseudo.fsels = parseSelectorList(body)
+  fun.pseudo.fsels = parseSelectorList(body, state.factory)
   if fun.pseudo.fsels.len == 0: fail
   return fun
 
@@ -266,7 +269,8 @@ proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: Ps
     return nthchild
   if not (get_tok cssfunction.value[i]).value.equalsIgnoreCase("of"): fail
   if i == cssfunction.value.len: fail
-  nthchild.pseudo.ofsels = parseSelectorList(cssfunction.value[i..^1])
+  nthchild.pseudo.ofsels = parseSelectorList(cssfunction.value[i..^1],
+    state.factory)
   if nthchild.pseudo.ofsels.len == 0: fail
   return nthchild
 
@@ -396,6 +400,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   return Selector(t: CLASS_SELECTOR, class: tok.value)
 
 proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
+  result = CompoundSelector()
   while state.has():
     let cval = state.peek()
     if cval of CSSToken:
@@ -403,12 +408,8 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.tokenType
       of CSS_IDENT_TOKEN:
         inc state.at
-        let s = tok.value.toLowerAscii()
-        let tag = tagType(s)
-        if tag == TAG_UNKNOWN:
-          result.add(Selector(t: UNKNOWN_TYPE_SELECTOR, tagstr: s))
-        else:
-          result.add(Selector(t: TYPE_SELECTOR, tag: tag))
+        let tag = state.factory.toAtom(tok.value.toLowerAscii())
+        result.add(Selector(t: TYPE_SELECTOR, tag: tag))
       of CSS_COLON_TOKEN:
         inc state.at
         result.add(state.parsePseudoSelector())
@@ -466,16 +467,19 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
   if result.len == 0 or result[^1].ct != NO_COMBINATOR:
     fail
 
-proc parseSelectorList(cvals: seq[CSSComponentValue]): SelectorList =
-  var state = SelectorParser(cvals: cvals)
+proc parseSelectorList(cvals: seq[CSSComponentValue], factory: CAtomFactory):
+    SelectorList =
+  var state = SelectorParser(cvals: cvals, factory: factory)
   var res: SelectorList
   while state.has():
     res.add(state.parseComplexSelector())
   if not state.failed:
     return res
 
-func parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] = {.cast(noSideEffect).}:
-  return parseSelectorList(cvals)
+proc parseSelectors*(cvals: seq[CSSComponentValue], factory: CAtomFactory):
+    seq[ComplexSelector] =
+  return parseSelectorList(cvals, factory)
 
-proc parseSelectors*(stream: Stream): seq[ComplexSelector] =
-  return parseSelectors(parseListOfComponentValues(stream))
+proc parseSelectors*(stream: Stream, factory: CAtomFactory):
+    seq[ComplexSelector] =
+  return parseSelectors(parseListOfComponentValues(stream), factory)

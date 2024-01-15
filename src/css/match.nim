@@ -6,6 +6,7 @@ import std/tables
 import css/cssparser
 import css/selectorparser
 import css/stylednode
+import html/catom
 import html/dom
 import utils/twtstr
 
@@ -148,9 +149,7 @@ func selectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem: T = n
     let elem = Element(selem.node)
   case sel.t
   of TYPE_SELECTOR:
-    return elem.tagType == sel.tag
-  of UNKNOWN_TYPE_SELECTOR:
-    return elem.localName == sel.tagstr
+    return elem.localName == sel.tag
   of CLASS_SELECTOR:
     return sel.class in elem.classList
   of ID_SELECTOR:
@@ -232,14 +231,14 @@ func selectorsMatch*[T: Element|StyledNode](elem: T, cxsel: ComplexSelector, fel
   return elem.complexSelectorMatches(cxsel, felem)
 
 proc querySelectorAll(node: Node, q: string): seq[Element] =
-  let selectors = parseSelectors(newStringStream(q))
+  let selectors = parseSelectors(newStringStream(q), node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       result.add(element)
 doqsa = (proc(node: Node, q: string): seq[Element] = querySelectorAll(node, q))
 
 proc querySelector(node: Node, q: string): Element =
-  let selectors = parseSelectors(newStringStream(q))
+  let selectors = parseSelectors(newStringStream(q), node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       return element

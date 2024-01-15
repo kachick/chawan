@@ -91,7 +91,7 @@ proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
 func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
   let elem = Element(styledNode.node)
-  for rule in sheet.genRules(elem.tagType, elem.id, elem.classList.toks):
+  for rule in sheet.genRules(elem.localName, elem.id, elem.classList.toks):
     tosorts.calcRule(styledNode, rule)
   for i in PseudoElem:
     tosorts[i].sort((proc(x, y: (int, seq[CSSDeclaration])): int =
@@ -383,12 +383,12 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
   else:
     assert child != nil
     if styledParent != nil:
-      if child.nodeType == ELEMENT_NODE:
+      if child of Element:
         styledChild = styledParent.newStyledElement(Element(child))
         styledParent.children.add(styledChild)
         declmap = styledChild.calcRules(ua, user, author)
         applyStyle(styledParent, styledChild, declmap)
-      elif child.nodeType == TEXT_NODE:
+      elif child of Text:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
         styledParent.children.add(styledChild)
@@ -475,7 +475,7 @@ proc appendChildren(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
     styledStack.stackAppend(frame, styledChild, PSEUDO_NEWLINE, idx)
   else:
     for i in countdown(elem.childList.high, 0):
-      if elem.childList[i].nodeType in {ELEMENT_NODE, TEXT_NODE}:
+      if elem.childList[i] of Element or elem.childList[i] of Text:
         styledStack.stackAppend(frame, styledChild, elem.childList[i], idx)
     if elem.tagType == TAG_INPUT:
       styledStack.stackAppend(frame, styledChild, PSEUDO_INPUT_TEXT, idx)

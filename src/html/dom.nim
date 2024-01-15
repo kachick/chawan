@@ -1,5 +1,4 @@
 import std/deques
-import std/macros
 import std/math
 import std/options
 import std/sets
@@ -11,6 +10,7 @@ import css/cssparser
 import css/sheet
 import css/values
 import display/winattrs
+import html/catom
 import html/enums
 import html/event
 import html/script
@@ -76,6 +76,7 @@ type
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
+    factory*: CAtomFactory
 
   # Navigator stuff
   Navigator* = object
@@ -108,13 +109,12 @@ type
   DOMTokenList = ref object
     toks*: seq[string]
     element: Element
-    localName: string
+    localName: CAtom
 
   DOMStringMap = object
     target {.cursor.}: HTMLElement
 
   Node* = ref object of EventTarget
-    nodeType*: NodeType
     childList*: seq[Node]
     parentNode* {.jsget.}: Node
     root: Node
@@ -129,16 +129,18 @@ type
     document_internal: Document # not nil
 
   Attr* = ref object of Node
-    namespaceURI* {.jsget.}: string
-    prefix* {.jsget.}: string
-    localName* {.jsget.}: string
-    value* {.jsget.}: string
-    ownerElement* {.jsget.}: Element
+    dataIdx: int
+    ownerElement*: Element
 
   DOMImplementation = object
     document: Document
 
+  DocumentWriteBuffer* = ref object
+    data*: string
+    i*: int
+
   Document* = ref object of Node
+    factory*: CAtomFactory
     charset*: Charset
     window* {.jsget: "defaultView".}: Window
     url* {.jsget: "URL".}: URL
@@ -148,6 +150,11 @@ type
     implementation {.jsget.}: DOMImplementation
     origin: Origin
     readyState* {.jsget.}: DocumentReadyState
+    # document.write
+    ignoreDestructiveWrites: int
+    throwOnDynamicMarkupInsertion: int
+    activeParserWasAborted: bool
+    writeBuffers*: seq[DocumentWriteBuffer]
 
     scriptsToExecSoon*: seq[HTMLScriptElement]
     scriptsToExecInOrder*: Deque[HTMLScriptElement]
@@ -190,21 +197,29 @@ type
     publicId*: string
     systemId*: string
 
+  AttrData* = object
+    qualifiedName*: CAtom
+    localName*: CAtom
+    prefix*: CAtom
+    namespace*: CAtom
+    value*: string
+
   Element* = ref object of Node
     namespace*: Namespace
-    namespacePrefix*: Option[string]
+    namespacePrefix*: NamespacePrefix
     prefix*: string
-    localName*: string
-    tagType*: TagType
+    localName*: CAtom
 
     id* {.jsget.}: string
     classList* {.jsget.}: DOMTokenList
-    attrs: Table[string, string]
-    attributes* {.jsget.}: NamedNodeMap
+    attrs: seq[AttrData]
+    attributesInternal: NamedNodeMap
     hover*: bool
     invalid*: bool
     style_cached*: CSSStyleDeclaration
     children_cached: HTMLCollection
+
+  AttrDummyElement = ref object of Element
 
   CSSStyleDeclaration* = ref object
     decls*: seq[CSSDeclaration]
@@ -277,7 +292,7 @@ type
     parserDocument*: Document
     preparationTimeDocument*: Document
     forceAsync*: bool
-    fromAnExternalFile*: bool
+    external*: bool
     readyForParserExec*: bool
     alreadyStarted*: bool
     delayingTheLoadEvent: bool
@@ -782,13 +797,64 @@ const ReflectTable0 = [
 ]
 
 # Forward declarations
-func attr*(element: Element, s: string): string {.inline.}
-func attrb*(element: Element, s: string): bool
+func attr*(element: Element, s: CAtom): string
+func attr*(element: Element, s: string): string
+func attrb*(element: Element, s: CAtom): bool
+proc attr*(element: Element, name: CAtom, value: string)
 proc attr*(element: Element, name, value: string)
 func baseURL*(document: Document): URL
+proc delAttr(element: Element, i: int, keep = false)
+proc reflectAttrs(element: Element, name: CAtom, value: string)
 
-proc tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join('-').toLowerAscii()
+func document*(node: Node): Document =
+  if node of Document:
+    return Document(node)
+  return node.document_internal
+
+proc toAtom*(document: Document, s: string): CAtom =
+  return document.factory.toAtom(s)
+
+proc toStr(document: Document, atom: CAtom): string =
+  return document.factory.toStr(atom)
+
+proc toTagType*(document: Document, atom: CAtom): TagType =
+  return document.factory.toTagType(atom)
+
+proc toAtom*(document: Document, tagType: TagType): CAtom =
+  return document.factory.toAtom(tagType)
+
+proc toAtom(document: Document, namespace: Namespace): CAtom =
+  #TODO optimize
+  assert namespace != NO_NAMESPACE
+  return document.toAtom($namespace)
+
+proc toAtom(document: Document, prefix: NamespacePrefix): CAtom =
+  #TODO optimize
+  assert prefix != NO_PREFIX
+  return document.toAtom($prefix)
+
+func tagTypeNoNS(element: Element): TagType =
+  return element.document.toTagType(element.localName)
+
+func tagType*(element: Element): TagType =
+  if element.namespace != Namespace.HTML:
+    return TAG_UNKNOWN
+  return element.tagTypeNoNS
+
+func localNameStr*(element: Element): string =
+  return element.document.toStr(element.localName)
+
+func findAttr(element: Element, qualifiedName: CAtom): int =
+  for i, attr in element.attrs:
+    if attr.qualifiedName == qualifiedName:
+      return i
+  return -1
+
+func findAttrNS(element: Element, namespace, qualifiedName: CAtom): int =
+  for i, attr in element.attrs:
+    if attr.namespace == namespace and attr.qualifiedName == qualifiedName:
+      return i
+  return -1
 
 func escapeText(s: string, attribute_mode = false): string =
   var nbsp_mode = false
@@ -816,33 +882,30 @@ func escapeText(s: string, attribute_mode = false): string =
 
 func `$`*(node: Node): string =
   if node == nil: return "null" #TODO this isn't standard compliant but helps debugging
-  case node.nodeType
-  of ELEMENT_NODE:
+  if node of Element:
     let element = Element(node)
-    result = "<" & $element.tagType.tostr()
-    for k, v in element.attrs:
-      result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
+    result = "<" & element.localNameStr
+    for attr in element.attrs:
+      let k = element.document.toStr(attr.localName)
+      result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
     result &= ">\n"
     for node in element.childList:
       for line in ($node).split('\n'):
         result &= "\t" & line & "\n"
-    result &= "</" & $element.tagType.tostr() & ">"
-  of TEXT_NODE:
+    result &= "</" & element.localNameStr & ">"
+  elif node of Text:
     let text = Text(node)
     result = text.data.escapeText()
-  of COMMENT_NODE:
+  elif node of Comment:
     result = "<!-- " & Comment(node).data & "-->"
-  of PROCESSING_INSTRUCTION_NODE:
+  elif node of ProcessingInstruction:
     result = "" #TODO
-  of DOCUMENT_TYPE_NODE:
+  elif node of DocumentType:
     result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
+  elif node of Document:
+    result = "Node of Document"
   else:
-    result = "Node of " & $node.nodeType
-
-func document*(node: Node): Document =
-  if node of Document:
-    return Document(node)
-  return node.document_internal
+    result = "Unknown node"
 
 func parentElement*(node: Node): Element {.jsfget.} =
   let p = node.parentNode
@@ -852,13 +915,13 @@ func parentElement*(node: Node): Element {.jsfget.} =
 
 iterator elementList*(node: Node): Element {.inline.} =
   for child in node.childList:
-    if child.nodeType == ELEMENT_NODE:
+    if child of Element:
       yield Element(child)
 
 iterator elementList_rev*(node: Node): Element {.inline.} =
   for i in countdown(node.childList.high, 0):
     let child = node.childList[i]
-    if child.nodeType == ELEMENT_NODE:
+    if child of Element:
       yield Element(child)
 
 # Returns the node's ancestors
@@ -888,7 +951,7 @@ iterator descendants*(node: Node): Node {.inline.} =
 
 iterator elements*(node: Node): Element {.inline.} =
   for child in node.descendants:
-    if child.nodeType == ELEMENT_NODE:
+    if child of Element:
       yield Element(child)
 
 iterator elements*(node: Node, tag: TagType): Element {.inline.} =
@@ -927,7 +990,7 @@ iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
 
 iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childList:
-    if node.nodeType == TEXT_NODE:
+    if node of Text:
       yield Text(node)
 
 iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
@@ -980,7 +1043,7 @@ proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 
 func ownerDocument(node: Node): Document {.jsfget.} =
-  if node.nodeType == DOCUMENT_NODE:
+  if node of Document:
     return nil
   return node.document
 
@@ -1005,11 +1068,34 @@ func newCollection[T: Collection](root: Node, match: CollectionMatchFun,
   inc root.document.colln
   result.populateCollection()
 
-func nodeType(node: Node): uint16 {.jsfget.} =
-  return uint16(node.nodeType)
+func jsNodeType0(node: Node): NodeType =
+  if node of CharacterData:
+    if node of Text:
+      return TEXT_NODE
+    elif node of Comment:
+      return COMMENT_NODE
+    elif node of CDATASection:
+      return CDATA_SECTION_NODE
+    elif node of ProcessingInstruction:
+      return PROCESSING_INSTRUCTION_NODE
+    assert false
+  elif node of Element:
+    return ELEMENT_NODE
+  elif node of Document:
+    return DOCUMENT_NODE
+  elif node of DocumentType:
+    return DOCUMENT_TYPE_NODE
+  elif node of Attr:
+    return ATTRIBUTE_NODE
+  elif node of DocumentFragment:
+    return DOCUMENT_FRAGMENT_NODE
+  assert false
+
+func jsNodeType(node: Node): uint16 {.jsfget: "nodeType".} =
+  return uint16(node.jsNodeType0)
 
 func isElement(node: Node): bool =
-  return node.nodeType == ELEMENT_NODE
+  return node of Element
 
 template parentNodeChildrenImpl(parentNode: typed) =
   if parentNode.children_cached == nil:
@@ -1052,7 +1138,8 @@ func contains*(tokenList: DOMTokenList, s: string): bool {.jsfunc.} =
   return s in tokenList.toks
 
 proc update(tokenList: DOMTokenList) =
-  if not tokenList.element.attrb(tokenList.localName) and tokenList.toks.len == 0:
+  if not tokenList.element.attrb(tokenList.localName) and
+      tokenList.toks.len == 0:
     return
   tokenList.element.attr(tokenList.localName, tokenList.toks.join(' '))
 
@@ -1111,18 +1198,22 @@ proc replace(tokenList: DOMTokenList, token, newToken: string):
   return ok(true)
 
 const SupportedTokensMap = {
-  "rel": @["alternate", "dns-prefetch", "icon", "manifest", "modulepreload",
+  "rel": @[
+    "alternate", "dns-prefetch", "icon", "manifest", "modulepreload",
     "next", "pingback", "preconnect", "prefetch", "preload", "search",
-    "stylesheet"]
+    "stylesheet"
+  ]
 }.toTable()
 
 func supports(tokenList: DOMTokenList, token: string):
     JSResult[bool] {.jsfunc.} =
-  if tokenList.localName in SupportedTokensMap:
+  #TODO atomize SupportedTokensMap (or preferably add an attribute name enum)
+  let localName = tokenList.element.document.toStr(tokenList.localName)
+  if localName in SupportedTokensMap:
     let lowercase = token.toLowerAscii()
-    return ok(lowercase in SupportedTokensMap[tokenList.localName])
+    return ok(lowercase in SupportedTokensMap[localName])
   return err(newTypeError("No supported tokens defined for attribute " &
-    tokenList.localName))
+    localName))
 
 func `$`(tokenList: DOMTokenList): string {.jsfunc.} =
   return tokenList.toks.join(' ')
@@ -1134,31 +1225,35 @@ func getter(tokenList: DOMTokenList, i: int): Option[string] {.jsgetprop.} =
   return tokenList.item(i)
 
 # DOMStringMap
-func validateAttributeName(name: string, isq: static bool = false):
-    Err[DOMException] =
-  when isq:
-    if name.matchNameProduction():
-      return ok()
-  else:
-    if name.matchQNameProduction():
-      return ok()
+func validateAttributeName(name: string): Err[DOMException] =
+  if name.matchNameProduction():
+    return ok()
+  return errDOMException("Invalid character in attribute name",
+    "InvalidCharacterError")
+
+func validateAttributeQName(name: string): Err[DOMException] =
+  if name.matchQNameProduction():
+    return ok()
   return errDOMException("Invalid character in attribute name",
     "InvalidCharacterError")
 
 func hasprop(map: ptr DOMStringMap, name: string): bool {.jshasprop.} =
-  return "data-" & name in map[].target.attrs
+  let name = map[].target.document.toAtom("data-" & name)
+  return map[].target.attrb(name)
 
 proc delete(map: ptr DOMStringMap, name: string): bool {.jsfunc.} =
-  let name = "data-" & name.camelToKebabCase()
-  let res = name in map[].target.attrs
-  map[].target.attrs.del(name)
-  return res
+  let name = map[].target.document.toAtom("data-" & name.camelToKebabCase())
+  let i = map[].target.findAttr(name)
+  if i != -1:
+    map[].target.delAttr(i)
+  return i != -1
 
 func getter(map: ptr DOMStringMap, name: string): Option[string]
     {.jsgetprop.} =
-  let name = "data-" & name.camelToKebabCase()
-  map[].target.attrs.withValue(name, p):
-    return some(p[])
+  let name = map[].target.document.toAtom("data-" & name.camelToKebabCase())
+  let i = map[].target.findAttr(name)
+  if i != -1:
+    return some(map[].target.attrs[i].value)
   return none(string)
 
 proc setter(map: ptr DOMStringMap, name, value: string): Err[DOMException]
@@ -1172,13 +1267,15 @@ proc setter(map: ptr DOMStringMap, name, value: string): Err[DOMException]
       "InvalidCharacterError")
   let name = "data-" & name.camelToKebabCase()
   ?name.validateAttributeName()
-  map.target.attr(name, value)
+  let aname = map[].target.document.toAtom(name)
+  map.target.attr(aname, value)
   return ok()
 
 func names(ctx: JSContext, map: ptr DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(map[].target.attrs.len))
-  for k, v in map[].target.attrs:
+  for attr in map[].target.attrs:
+    let k = map[].target.document.toStr(attr.localName)
     if k.startsWith("data-") and AsciiUpperAlpha notin k:
       list.add(k["data-".len .. ^1].kebabToCamelCase())
   return list
@@ -1231,6 +1328,7 @@ func getter[T: uint32|string](collection: HTMLCollection, u: T):
 
 func names(ctx: JSContext, collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
+  let aName = collection.root.document.toAtom("name") #TODO enumize
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
   var ids: OrderedSet[string]
@@ -1240,7 +1338,7 @@ func names(ctx: JSContext, collection: HTMLCollection): JSPropertyEnumList
     if elem.id != "":
       ids.incl(elem.id)
     if elem.namespace == Namespace.HTML:
-      let name = elem.attr("name")
+      let name = elem.attr(aName)
       ids.incl(name)
   for id in ids:
     list.add(id)
@@ -1423,100 +1521,127 @@ proc setHash(location: Location, s: string) {.jsfset: "hash".} =
   copyURL.setHash(s)
   document.window.navigate(copyURL)
 
-func newAttr(document: Document, localName, value, prefix,
-    namespaceURI: string): Attr =
-  return Attr(
-    nodeType: ATTRIBUTE_NODE,
-    document_internal: document,
-    namespaceURI: namespaceURI,
-    localName: localName,
-    prefix: prefix,
-    value: value,
-    index: -1
-  )
+func jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
+  if attr.ownerElement of AttrDummyElement:
+    return nil
+  return attr.ownerElement
 
-func newAttr(parent: Element, localName, value: string, prefix = "",
-    namespaceURI = ""): Attr =
-  return Attr(
-    nodeType: ATTRIBUTE_NODE,
-    document_internal: parent.document,
-    namespaceURI: namespaceURI,
-    ownerElement: parent,
-    localName: localName,
-    prefix: prefix,
-    value: value,
-    index: -1
-  )
+func data(attr: Attr): lent AttrData =
+  return attr.ownerElement.attrs[attr.dataIdx]
+
+proc jsNamespaceURI(attr: Attr): string {.jsfget: "namespaceURI".} =
+  return attr.ownerElement.document.toStr(attr.data.namespace)
+
+proc jsPrefix(attr: Attr): string {.jsfget: "prefix".} =
+  return attr.ownerElement.document.toStr(attr.data.prefix)
+
+proc jsLocalName(attr: Attr): string {.jsfget: "localName".} =
+  return attr.ownerElement.document.toStr(attr.data.localName)
+
+proc jsValue(attr: Attr): string {.jsfget: "value".} =
+  return attr.data.value
 
 func name(attr: Attr): string {.jsfget.} =
-  if attr.prefix == "":
-    return attr.localName
-  return attr.prefix & ':' & attr.localName
+  return attr.ownerElement.document.toStr(attr.data.qualifiedName)
 
-func findAttr(map: NamedNodeMap, name: string): int =
-  for i in 0 ..< map.attrlist.len:
-    if map.attrlist[i].name == name:
+func findAttr(map: NamedNodeMap, dataIdx: int): int =
+  for i, attr in map.attrlist:
+    if attr.dataIdx == dataIdx:
       return i
   return -1
 
-func findAttrNS(map: NamedNodeMap, namespace, localName: string): int =
-  for i in 0 ..< map.attrlist.len:
-    if map.attrlist[i].namespaceURI == namespace and map.attrlist[i].localName == localName:
-      return i
-  return -1
+proc getAttr(map: NamedNodeMap, dataIdx: int): Attr =
+  let i = map.findAttr(dataIdx)
+  if i != -1:
+    return map.attrlist[i]
+  let attr = Attr(
+    document_internal: map.element.document,
+    index: -1,
+    dataIdx: dataIdx,
+    ownerElement: map.element
+  )
+  map.attrlist.add(attr)
+  return attr
+
+func normalizeAttrQName(element: Element, qualifiedName: string): CAtom =
+  if element.namespace == Namespace.HTML and not element.document.isxml:
+    return element.document.toAtom(qualifiedName.toLowerAscii())
+  return element.document.toAtom(qualifiedName)
+
+func hasAttributes(element: Element): bool {.jsfunc.} =
+  return element.attrs.len > 0
+
+func attributes(element: Element): NamedNodeMap {.jsfget.} =
+  if element.attributesInternal != nil:
+    return element.attributesInternal
+  element.attributesInternal = NamedNodeMap(element: element)
+  for i, attr in element.attrs:
+    element.attributesInternal.attrlist.add(Attr(
+      document_internal: element.document,
+      index: -1,
+      dataIdx: i,
+      ownerElement: element
+    ))
+  return element.attributesInternal
+
+func findAttr(element: Element, qualifiedName: string): int =
+  return element.findAttr(element.normalizeAttrQName(qualifiedName))
+
+func findAttrNS(element: Element, namespace, localName: string): int =
+  let namespace = element.document.toAtom(namespace)
+  let localName = element.document.toAtom(localName)
+  return element.findAttrNS(namespace, localName)
 
 func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
-  let qualifiedName = if element.namespace == Namespace.HTML and
-      not element.document.isxml:
-    qualifiedName.toLowerAscii()
-  else:
-    qualifiedName
-  if qualifiedName in element.attrs:
-    return true
+  return element.findAttr(qualifiedName) != -1
 
 func hasAttributeNS(element: Element, namespace, localName: string): bool {.jsfunc.} =
-  return element.attributes.findAttrNS(namespace, localName) != -1
+  return element.findAttrNS(namespace, localName) != -1
 
 func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsfunc.} =
-  let qualifiedName = if element.namespace == Namespace.HTML and
-      not element.document.isxml:
-    qualifiedName.toLowerAscii()
-  else:
-    qualifiedName
-  element.attrs.withValue(qualifiedName, val):
-    return some(val[])
-
-func getAttributeNS(element: Element, namespace, localName: string): Option[string] {.jsfunc.} =
-  let i = element.attributes.findAttrNS(namespace, localName)
+  let i = element.findAttr(qualifiedName)
   if i != -1:
-    return some(element.attributes.attrlist[i].value)
+    return some(element.attrs[i].value)
+  return none(string)
 
-func getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr] {.jsfunc.} =
-  if map.element.hasAttribute(qualifiedName):
-    let i = map.findAttr(qualifiedName)
-    if i != -1:
-      return some(map.attrlist[i])
-
-func getNamedItemNS(map: NamedNodeMap, namespace, localName: string): Option[Attr] {.jsfunc.} =
-  let i = map.findAttrNS(namespace, localName)
+func getAttributeNS(element: Element, namespace, localName: string):
+    Option[string] {.jsfunc.} =
+  let i = element.findAttrNS(namespace, localName)
   if i != -1:
-    return some(map.attrlist[i])
+    return some(element.attrs[i].value)
+  return none(string)
+
+proc getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr]
+    {.jsfunc.} =
+  let i = map.element.findAttr(qualifiedName)
+  if i != -1:
+    return some(map.getAttr(i))
+  return none(Attr)
+
+proc getNamedItemNS(map: NamedNodeMap, namespace, localName: string):
+    Option[Attr] {.jsfunc.} =
+  let i = map.element.findAttrNS(namespace, localName)
+  if i != -1:
+    return some(map.getAttr(i))
+  return none(Attr)
 
 func length(map: NamedNodeMap): uint32 {.jsfget.} =
   return uint32(map.element.attrs.len)
 
-func item(map: NamedNodeMap, i: int): Option[Attr] {.jsfunc.} =
-  if i < map.attrlist.len:
-    return some(map.attrlist[i])
+proc item(map: NamedNodeMap, i: uint32): Option[Attr] {.jsfunc.} =
+  if int(i) < map.element.attrs.len:
+    return some(map.getAttr(int(i)))
+  return none(Attr)
 
-func hasprop[T: int|string](map: NamedNodeMap, i: T): bool {.jshasprop.} =
-  when T is int:
-    return i < map.attrlist.len
+func hasprop[T: uint32|string](map: NamedNodeMap, i: T): bool {.jshasprop.} =
+  when T is uint32:
+    return int(i) < map.element.attrs.len
   else:
     return map.getNamedItem(i).isSome
 
-func getter[T: int|string](map: NamedNodeMap, i: T): Option[Attr] {.jsgetprop.} =
-  when T is int:
+func getter[T: uint32|string](map: NamedNodeMap, i: T): Option[Attr]
+    {.jsgetprop.} =
+  when T is uint32:
     return map.item(i)
   else:
     return map.getNamedItem(i)
@@ -1530,9 +1655,16 @@ func names(ctx: JSContext, map: NamedNodeMap): JSPropertyEnumList
   var list = newJSPropertyEnumList(ctx, len)
   for u in 0 ..< len:
     list.add(u)
-  if map.element.namespace == Namespace.HTML:
-    for name in map.element.attrs.keys:
-      list.add(name)
+  var names: HashSet[string]
+  let element = map.element
+  for attr in element.attrs:
+    let name = element.document.toStr(attr.qualifiedName)
+    if element.namespace == Namespace.HTML and AsciiUpperAlpha in name:
+      continue
+    if name in names:
+      continue
+    names.incl(name)
+    list.add(name)
   return list
 
 func length(characterData: CharacterData): uint32 {.jsfget.} =
@@ -1590,10 +1722,28 @@ func canSubmitImplicitly*(form: HTMLFormElement): bool =
   return true
 
 func qualifiedName*(element: Element): string =
-  if element.namespacePrefix.isSome:
-    element.namespacePrefix.get & ':' & element.localName
+  if element.namespacePrefix != NO_PREFIX:
+    $element.namespacePrefix & ':' & element.localNameStr
   else:
-    element.localName
+    element.localNameStr
+
+# https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+proc write(document: Document, text: varargs[string]): Err[DOMException]
+    {.jsfunc.} =
+  if document.isxml:
+    return errDOMException("document.write not supported in XML documents",
+      "InvalidStateError")
+  if document.throwOnDynamicMarkupInsertion > 0:
+    return errDOMException("throw-on-dynamic-markup-insertion counter > 0",
+      "InvalidStateError")
+  if document.activeParserWasAborted:
+    return ok()
+  #TODO if insertion point is undefined... (open document)
+  if document.writeBuffers.len == 0:
+    return ok() #TODO (probably covered by open above)
+  for s in text:
+    document.writeBuffers[^1].data &= s
+  return ok()
 
 func html*(document: Document): HTMLElement =
   for element in document.elements(TAG_HTML):
@@ -1617,21 +1767,21 @@ func select*(option: HTMLOptionElement): HTMLSelectElement =
       return HTMLSelectElement(anc)
   return nil
 
-func countChildren(node: Node, nodeType: NodeType): int =
+func countChildren(node: Node, nodeType: type): int =
   for child in node.childList:
-    if child.nodeType == nodeType:
+    if child of nodeType:
       inc result
 
-func hasChild(node: Node, nodeType: NodeType): bool =
+func hasChild(node: Node, nodeType: type): bool =
   for child in node.childList:
-    if child.nodeType == nodeType:
+    if child of nodeType:
       return true
 
-func hasChildExcept(node: Node, nodeType: NodeType, ex: Node): bool =
+func hasChildExcept(node: Node, nodeType: type, ex: Node): bool =
   for child in node.childList:
     if child == ex:
       continue
-    if child.nodeType == nodeType:
+    if child of nodeType:
       return true
   return false
 
@@ -1647,42 +1797,46 @@ func nextSibling*(node: Node): Node {.jsfget.} =
     return nil
   return node.parentNode.childList[i]
 
-func hasNextSibling(node: Node, nodeType: NodeType): bool =
+func hasNextSibling(node: Node, nodeType: type): bool =
   var node = node.nextSibling
   while node != nil:
-    if node.nodeType == nodeType: return true
+    if node of nodeType:
+      return true
     node = node.nextSibling
   return false
 
-func hasPreviousSibling(node: Node, nodeType: NodeType): bool =
+func hasPreviousSibling(node: Node, nodeType: type): bool =
   var node = node.previousSibling
   while node != nil:
-    if node.nodeType == nodeType: return true
+    if node of nodeType:
+      return true
     node = node.previousSibling
   return false
 
 func nodeValue(node: Node): Option[string] {.jsfget.} =
-  case node.nodeType
-  of CharacterDataNodes:
+  if node of CharacterData:
     return some(CharacterData(node).data)
-  of ATTRIBUTE_NODE:
-    return some(Attr(node).value)
-  else: discard
+  elif node of Attr:
+    return some(Attr(node).data.value)
+  return none(string)
 
-func textContent*(node: Node): string {.jsfget.} =
-  case node.nodeType
-  of DOCUMENT_NODE, DOCUMENT_TYPE_NODE:
-    return "" #TODO null
-  of CharacterDataNodes:
-    return CharacterData(node).data
+func textContent*(node: Node): string =
+  if node of CharacterData:
+    result = CharacterData(node).data
   else:
+    result = ""
     for child in node.childList:
-      if child.nodeType != COMMENT_NODE:
+      if not (child of Comment):
         result &= child.textContent
+
+func jsTextContent(node: Node): Opt[string] {.jsfget: "textContent".} =
+  if node of Document or node of DocumentType:
+    return err() # null
+  return ok(node.textContent)
 
 func childTextContent*(node: Node): string =
   for child in node.childList:
-    if child.nodeType == TEXT_NODE:
+    if child of Text:
       result &= Text(child).data
 
 func rootNode*(node: Node): Node =
@@ -1690,7 +1844,7 @@ func rootNode*(node: Node): Node =
   return node.root
 
 func isConnected(node: Node): bool {.jsfget.} =
-  return node.rootNode.nodeType == DOCUMENT_NODE #TODO shadow root
+  return node.rootNode of Document #TODO shadow root
 
 func inSameTree*(a, b: Node): bool =
   a.rootNode == b.rootNode
@@ -1735,13 +1889,30 @@ func getElementById(node: Node, id: string): Element {.jsfunc.} =
   for child in node.elements:
     if child.id == id:
       return child
+  return nil
 
 func getElementsByTagName0(root: Node, tagName: string): HTMLCollection =
   if tagName == "*":
-    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement, true, false)
-  let t = tagType(tagName)
-  if t != TAG_UNKNOWN:
-    return newCollection[HTMLCollection](root, func(node: Node): bool = node.isElement and Element(node).tagType == t, true, false)
+    return newCollection[HTMLCollection](
+      root,
+      isElement,
+      islive = true,
+      childonly = false
+    )
+  let localName = root.document.toAtom(tagName)
+  let localNameLower = root.document.toAtom(tagName.toLowerAscii())
+  return newCollection[HTMLCollection](
+    root,
+    func(node: Node): bool =
+      if node of Element:
+        let element = Element(node)
+        if element.namespace == Namespace.HTML:
+          return element.localName == localNameLower
+        return element.localName == localName
+      return false,
+    islive = true,
+    childonly = false
+  )
 
 func getElementsByTagName(document: Document, tagName: string): HTMLCollection {.jsfunc.} =
   return document.getElementsByTagName0(tagName)
@@ -1758,7 +1929,7 @@ func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
         c = c.toLowerAscii()
   return newCollection[HTMLCollection](node,
     func(node: Node): bool =
-      if node.nodeType == ELEMENT_NODE:
+      if node of Element:
         if isquirks:
           var cl = Element(node).classList
           for tok in cl.toks.mitems:
@@ -1784,7 +1955,7 @@ func previousElementSibling*(elem: Element): Element {.jsfget.} =
   if p == nil: return nil
   for i in countdown(elem.index - 1, 0):
     let node = p.childList[i]
-    if node.nodeType == ELEMENT_NODE:
+    if node of Element:
       return Element(node)
   return nil
 
@@ -1793,15 +1964,21 @@ func nextElementSibling*(elem: Element): Element {.jsfget.} =
   if p == nil: return nil
   for i in elem.index + 1 .. p.childList.high:
     let node = p.childList[i]
-    if node.nodeType == ELEMENT_NODE:
+    if node of Element:
       return Element(node)
   return nil
 
 func documentElement(document: Document): Element {.jsfget.} =
   document.firstElementChild()
 
-func attr*(element: Element, s: string): string {.inline.} =
-  return element.attrs.getOrDefault(s, "")
+func attr*(element: Element, s: CAtom): string =
+  let i = element.findAttr(s)
+  if i != -1:
+    return element.attrs[i].value
+  return ""
+
+func attr*(element: Element, s: string): string =
+  return element.attr(element.document.toAtom(s))
 
 func attrl*(element: Element, s: string): Option[int32] =
   return parseInt32(element.attr(s))
@@ -1816,10 +1993,12 @@ func attrul*(element: Element, s: string): Option[uint32] =
   if x.isSome and x.get >= 0:
     return x
 
+func attrb*(element: Element, s: CAtom): bool =
+  return element.findAttr(s) != -1
+
 func attrb*(element: Element, s: string): bool =
-  if s in element.attrs:
-    return true
-  return false
+  let atom = element.document.toAtom(s)
+  return element.attrb(atom)
 
 # https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
 func serializesAsVoid(element: Element): bool =
@@ -1832,23 +2011,19 @@ func serializeFragmentInner(child: Node, parentType: TagType): string =
   result = ""
   if child of Element:
     let element = Element(child)
+    let tags = element.localNameStr
     result &= '<'
     #TODO qualified name if not HTML, SVG or MathML
-    if element.tagType == TAG_UNKNOWN:
-      result &= element.localName
-    else:
-      result &= tagName(element.tagType)
+    result &= tags
     #TODO custom elements
-    for k, v in element.attrs:
+    for attr in element.attrs:
       #TODO namespaced attrs
-      result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
+      let k = element.document.toStr(attr.localName)
+      result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
     result &= '>'
     result &= element.serializeFragment()
     result &= "</"
-    if element.tagType == TAG_UNKNOWN:
-      result &= element.localName
-    else:
-      result &= tagName(element.tagType)
+    result &= tags
     result &= '>'
   elif child of Text:
     let text = Text(child)
@@ -1924,7 +2099,7 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
       case elem.tagType
       of TAG_STYLE:
         let style = HTMLStyleElement(elem)
-        style.sheet = parseStylesheet(newStringStream(style.textContent))
+        style.sheet = parseStylesheet(style.textContent, document.factory)
         if style.sheet != nil:
           document.cachedSheets.add(style.sheet)
       of TAG_LINK:
@@ -2162,7 +2337,6 @@ func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
 
 func newText(document: Document, data: string): Text =
   return Text(
-    nodeType: TEXT_NODE,
     document_internal: document,
     data: data,
     index: -1
@@ -2174,7 +2348,6 @@ func newText(ctx: JSContext, data = ""): Text {.jsctor.} =
 
 func newCDATASection(document: Document, data: string): CDATASection =
   return CDATASection(
-    nodeType: CDATA_SECTION_NODE,
     document_internal: document,
     data: data,
     index: -1
@@ -2183,7 +2356,6 @@ func newCDATASection(document: Document, data: string): CDATASection =
 func newProcessingInstruction(document: Document, target, data: string):
     ProcessingInstruction =
   return ProcessingInstruction(
-    nodeType: PROCESSING_INSTRUCTION_NODE,
     document_internal: document,
     target: target,
     data: data,
@@ -2192,7 +2364,6 @@ func newProcessingInstruction(document: Document, target, data: string):
 
 func newDocumentFragment(document: Document): DocumentFragment =
   return DocumentFragment(
-    nodeType: DOCUMENT_FRAGMENT_NODE,
     document_internal: document,
     index: -1
   )
@@ -2203,7 +2374,6 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
 
 func newComment(document: Document, data: string): Comment =
   return Comment(
-    nodeType: COMMENT_NODE,
     document_internal: document,
     data: data,
     index: -1
@@ -2214,15 +2384,17 @@ func newComment(ctx: JSContext, data: string = ""): Comment {.jsctor.} =
   return window.document.newComment(data)
 
 #TODO custom elements
-func newHTMLElement*(document: Document, tagType: TagType,
-    namespace = Namespace.HTML, prefix = none[string](),
-    attrs = Table[string, string]()): HTMLElement =
+proc newHTMLElement*(document: Document, localName: CAtom,
+    namespace = Namespace.HTML, prefix = NO_PREFIX,
+    attrs = newSeq[AttrData]()): HTMLElement =
+  let tagType = document.toTagType(localName)
   case tagType
   of TAG_INPUT:
     result = HTMLInputElement()
   of TAG_A:
     let anchor = HTMLAnchorElement()
-    anchor.relList = DOMTokenList(element: anchor, localName: "rel")
+    let localName = document.toAtom("rel")
+    anchor.relList = DOMTokenList(element: anchor, localName: localName)
     result = anchor
   of TAG_SELECT:
     result = HTMLSelectElement()
@@ -2248,11 +2420,13 @@ func newHTMLElement*(document: Document, tagType: TagType,
     result = HTMLStyleElement()
   of TAG_LINK:
     let link = HTMLLinkElement()
-    link.relList = DOMTokenList(element: link, localName: "rel")
+    let localName = document.toAtom("rel") #TODO enumize
+    link.relList = DOMTokenList(element: link, localName: localName)
     result = link
   of TAG_FORM:
     let form = HTMLFormElement()
-    form.relList = DOMTokenList(element: form, localName: "rel")
+    let localName = document.toAtom("rel") #TODO enumize
+    form.relList = DOMTokenList(element: form, localName: localName)
     result = form
   of TAG_TEMPLATE:
     result = HTMLTemplateElement(
@@ -2279,52 +2453,52 @@ func newHTMLElement*(document: Document, tagType: TagType,
     result = HTMLImageElement()
   of TAG_AREA:
     let area = HTMLAreaElement()
-    area.relList = DOMTokenList(element: result, localName: "rel")
+    let localName = document.toAtom("rel") #TODO enumize
+    area.relList = DOMTokenList(element: result, localName: localName)
     result = area
   else:
     result = HTMLElement()
-  result.nodeType = ELEMENT_NODE
-  result.tagType = tagType
+  result.localName = localName
   result.namespace = namespace
   result.namespacePrefix = prefix
   result.document_internal = document
-  result.attributes = NamedNodeMap(element: result)
-  result.classList = DOMTokenList(element: result, localName: "classList")
+  let localName = document.toAtom("classList") #TODO enumize
+  result.classList = DOMTokenList(element: result, localName: localName)
   result.index = -1
   result.dataset = DOMStringMap(target: result)
-  {.cast(noSideEffect).}:
-    for k, v in attrs:
-      result.attr(k, v)
-  case tagType
-  of TAG_SCRIPT:
-    HTMLScriptElement(result).internalNonce = result.attr("nonce")
-  of TAG_CANVAS:
-    HTMLCanvasElement(result).bitmap = newBitmap(
-      width = result.attrul("width").get(300),
-      height = result.attrul("height").get(150)
-    )
-  else: discard
+  result.attrs = attrs
 
-func newHTMLElement*(document: Document, localName: string,
-    namespace = Namespace.HTML, prefix = none[string](),
-    tagType = tagType(localName), attrs = Table[string, string]()): Element =
-  result = document.newHTMLElement(tagType, namespace, prefix, attrs)
-  if tagType == TAG_UNKNOWN:
-    result.localName = localName
+proc newHTMLElement*(document: Document, tagType: TagType,
+    namespace = Namespace.HTML, prefix = NO_PREFIX,
+    attrs = newSeq[AttrData]()): HTMLElement =
+  let localName = document.toAtom(tagType)
+  return document.newHTMLElement(localName, namespace, prefix, attrs)
 
-func newDocument*(): Document {.jsctor.} =
+func newDocument*(factory: CAtomFactory): Document =
+  assert factory != nil
   let document = Document(
-    nodeType: DOCUMENT_NODE,
     url: newURL("about:blank").get,
-    index: -1
+    index: -1,
+    factory: factory
   )
   document.implementation = DOMImplementation(document: document)
   document.contentType = "application/xml"
   return document
 
-func newDocumentType*(document: Document, name: string, publicId = "", systemId = ""): DocumentType =
+func newDocument(ctx: JSContext): Document {.jsctor.} =
+  let global = JS_GetGlobalObject(ctx)
+  let window = if ctx.hasClass(Window):
+    fromJS[Window](ctx, global).get(nil)
+  else:
+    Window(nil)
+  JS_FreeValue(ctx, global)
+  #TODO this is probably broken in client (or at least sub-optimal)
+  let factory = if window != nil: window.factory else: newCAtomFactory()
+  return newDocument(factory)
+
+func newDocumentType*(document: Document, name, publicId, systemId: string):
+    DocumentType =
   return DocumentType(
-    nodeType: DOCUMENT_TYPE_NODE,
     document_internal: document,
     name: name,
     publicId: publicId,
@@ -2332,15 +2506,13 @@ func newDocumentType*(document: Document, name: string, publicId = "", systemId 
     index: -1
   )
 
-func isResettable*(element: Element): bool =
-  return element.tagType in {TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA}
-
 func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
   for parent in b.branch:
     if parent == a:
       return true
-  if b.rootNode.nodeType == DOCUMENT_FRAGMENT_NODE and DocumentFragment(b.rootNode).host != nil:
-    for parent in b.rootNode.branch:
+  let root = b.rootNode
+  if root of DocumentFragment and DocumentFragment(root).host != nil:
+    for parent in root.branch:
       if parent == a:
         return true
   return false
@@ -2375,39 +2547,55 @@ func title*(document: Document): string =
     return title.childTextContent.stripAndCollapse()
   return ""
 
-func disabled*(option: HTMLOptionElement): bool =
-  if option.parentElement.tagType == TAG_OPTGROUP and option.parentElement.attrb("disabled"):
+# https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
+func isDisabled*(option: HTMLOptionElement): bool =
+  if option.parentElement.tagType == TAG_OPTGROUP and
+      option.parentElement.attrb("disabled"):
     return true
   return option.attrb("disabled")
 
-func text*(option: HTMLOptionElement): string =
+func text(option: HTMLOptionElement): string {.jsfget.} =
+  var s = ""
   for child in option.descendants:
-    if child.nodeType == TEXT_NODE:
-      let child = Text(child)
-      if child.parentElement.tagType != TAG_SCRIPT: #TODO svg
-        result &= child.data.stripAndCollapse()
+    let parent = child.parentElement
+    if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
+        parent.namespace notin {Namespace.HTML, Namespace.SVG}):
+      s &= Text(child).data
+  return s.stripAndCollapse()
 
 func value*(option: HTMLOptionElement): string {.jsfget.} =
   if option.attrb("value"):
     return option.attr("value")
-  return option.childTextContent.stripAndCollapse()
+  return option.text
 
 proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
     node.document.invalidCollections.incl(id)
 
-proc delAttr(element: Element, i: int) =
-  if i != -1:
-    let attr = element.attributes.attrlist[i]
-    element.attrs.del(attr.name)
-    element.attributes.attrlist.delete(i)
-    element.invalidateCollections()
-    element.invalid = true
-
-proc delAttr(element: Element, name: string) =
-  let i = element.attributes.findAttr(name)
-  if i != -1:
-    element.delAttr(i)
+proc delAttr(element: Element, i: int, keep = false) =
+  let map = element.attributesInternal
+  element.attrs.delete(i) # ordering matters
+  if map != nil:
+    # delete from attrlist + adjust indices invalidated
+    var j = -1
+    for i, attr in map.attrlist.mpairs:
+      if attr.dataIdx == i:
+        j = i
+      elif attr.dataIdx > i:
+        dec attr.dataIdx
+    if j != -1:
+      if keep:
+        let attr = map.attrlist[j]
+        let data = attr.data
+        attr.ownerElement = AttrDummyElement(
+          document_internal: attr.ownerElement.document,
+          index: -1,
+          attrs: @[data]
+        )
+        attr.dataIdx = 0
+      map.attrlist.del(j) # ordering does not matter
+  element.invalidateCollections()
+  element.invalid = true
 
 proc newCSSStyleDeclaration(element: Element, value: string):
     CSSStyleDeclaration =
@@ -2463,7 +2651,9 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
     element.style_cached = CSSStyleDeclaration(element: element)
   return element.style_cached
 
-proc reflectAttrs(element: Element, name, value: string) =
+proc reflectAttrs(element: Element, name: CAtom, value: string) =
+  #TODO enumize
+  let name = element.document.toStr(name)
   template reflect_str(element: Element, n: static string, val: untyped) =
     if name == n:
       element.val = value
@@ -2486,6 +2676,7 @@ proc reflectAttrs(element: Element, name, value: string) =
       return
   element.reflect_str "id", id
   element.reflect_domtoklist "class", classList
+  #TODO internalNonce
   if name == "style":
     element.style_cached = newCSSStyleDeclaration(element, value)
     return
@@ -2514,24 +2705,64 @@ proc reflectAttrs(element: Element, name, value: string) =
   of TAG_AREA:
     let area = HTMLAreaElement(element)
     area.reflect_domtoklist "rel", relList
+  of TAG_CANVAS:
+    if name == "width" or name == "height":
+      let w = element.attrul("width").get(300)
+      let h = element.attrul("height").get(150)
+      let canvas = HTMLCanvasElement(element)
+      if canvas.bitmap.width != w or canvas.bitmap.height != h:
+        canvas.bitmap = newBitmap(w, h)
   else: discard
 
-proc attr0(element: Element, name, value: string) =
-  element.attrs.withValue(name, val):
-    val[] = value
+proc attr*(element: Element, name: CAtom, value: string) =
+  let i = element.findAttr(name)
+  if i != -1:
+    element.attrs[i].value = value
     element.invalidateCollections()
     element.invalid = true
-  do: # else
-    element.attrs[name] = value
+  else:
+    #TODO sort?
+    element.attrs.add(AttrData(
+      qualifiedName: name,
+      localName: name,
+      value: value
+    ))
   element.reflectAttrs(name, value)
 
-proc attr*(element: Element, name, value: string) =
-  let i = element.attributes.findAttr(name)
-  if i != -1:
-    element.attributes.attrlist[i].value = value
+proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
+    namespace: Namespace, value: sink string) =
+  if prefix == NO_PREFIX and namespace == NO_NAMESPACE:
+    element.attr(localName, value)
+    return
+  let namespace = element.document.toAtom(namespace)
+  let i = element.findAttrNS(namespace, localName)
+  var prefixAtom, qualifiedName: CAtom
+  if prefix != NO_PREFIX:
+    prefixAtom = element.document.toAtom(prefix)
+    let tmp = $prefix & ':' & element.document.toStr(localName)
+    qualifiedName = element.document.toAtom(tmp)
   else:
-    element.attributes.attrlist.add(element.newAttr(name, value))
-  element.attr0(name, value)
+    qualifiedName = localName
+  if i != -1:
+    element.attrs[i].prefix = prefixAtom
+    element.attrs[i].qualifiedName = qualifiedName
+    element.attrs[i].value = value
+    element.invalidateCollections()
+    element.invalid = true
+  else:
+    #TODO sort?
+    element.attrs.add(AttrData(
+      prefix: prefixAtom,
+      localName: localName,
+      qualifiedName: qualifiedName,
+      namespace: namespace,
+      value: value
+    ))
+  element.reflectAttrs(qualifiedName, value)
+
+proc attr*(element: Element, name, value: string) =
+  let name = element.document.toAtom(name)
+  element.attr(name, value)
 
 proc attrl(element: Element, name: string, value: int32) =
   element.attr(name, $value)
@@ -2555,72 +2786,76 @@ proc setAttribute(element: Element, qualifiedName, value: string):
 
 proc setAttributeNS(element: Element, namespace, qualifiedName,
     value: string): Err[DOMException] {.jsfunc.} =
-  ?validateAttributeName(qualifiedName, isq = true)
+  ?validateAttributeQName(qualifiedName)
   let ps = qualifiedName.until(':')
   let prefix = if ps.len < qualifiedName.len: ps else: ""
-  let localName = qualifiedName.substr(prefix.len)
+  let localName = element.document.toAtom(qualifiedName.substr(prefix.len))
+  #TODO atomize here
   if prefix != "" and namespace == "" or
       prefix == "xml" and namespace != $Namespace.XML or
       (qualifiedName == "xmlns" or prefix == "xmlns") and namespace != $Namespace.XMLNS or
       namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and prefix != "xmlns":
     return errDOMException("Unexpected namespace", "NamespaceError")
-  element.attr0(qualifiedName, value)
-  let i = element.attributes.findAttrNS(namespace, localName)
+  let qualifiedName = element.document.toAtom(qualifiedName)
+  let namespace = element.document.toAtom(namespace)
+  let i = element.findAttrNS(namespace, localName)
   if i != -1:
-    element.attributes.attrlist[i].value = value
+    element.attrs[i].value = value
   else:
-    element.attributes.attrlist.add(element.newAttr(localName, value, prefix, namespace))
+    element.attrs.add(AttrData(
+      localName: localName,
+      namespace: namespace,
+      qualifiedName: qualifiedName,
+      value: value
+    ))
   return ok()
 
 proc removeAttribute(element: Element, qualifiedName: string) {.jsfunc.} =
-  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii()
-  else:
-    qualifiedName
-  element.delAttr(qualifiedName)
+  let i = element.findAttr(qualifiedName)
+  if i != -1:
+    element.delAttr(i)
 
 proc removeAttributeNS(element: Element, namespace, localName: string) {.jsfunc.} =
-  let i = element.attributes.findAttrNS(namespace, localName)
+  let i = element.findAttrNS(namespace, localName)
   if i != -1:
     element.delAttr(i)
 
 proc toggleAttribute(element: Element, qualifiedName: string,
     force = none(bool)): DOMResult[bool] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
-  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii()
-  else:
-    qualifiedName
+  let qualifiedName = element.normalizeAttrQName(qualifiedName)
   if not element.attrb(qualifiedName):
     if force.get(true):
       element.attr(qualifiedName, "")
       return ok(true)
     return ok(false)
   if not force.get(false):
-    element.delAttr(qualifiedName)
+    let i = element.findAttr(qualifiedName)
+    if i != -1:
+      element.delAttr(i)
     return ok(false)
   return ok(true)
 
 proc value(attr: Attr, s: string) {.jsfset.} =
-  attr.value = s
-  if attr.ownerElement != nil:
-    attr.ownerElement.attr0(attr.name, s)
+  attr.ownerElement.attr(attr.name, s)
 
 proc setNamedItem(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
-  if attr.ownerElement != nil and attr.ownerElement != map.element:
+  if attr.ownerElement == map.element:
+    # Setting attr on its owner element does nothing, since the "get an
+    # attribute by namespace and local name" step is used for retrieval
+    # (which will always return self).
+    return
+  if attr.jsOwnerElement != nil:
     return errDOMException("Attribute is currently in use",
       "InUseAttributeError")
-  if attr.name in map.element.attrs:
-    return ok(attr)
-  let i = map.findAttr(attr.name)
+  let i = map.element.findAttrNS(attr.data.namespace, attr.data.localName)
+  attr.ownerElement = map.element
   if i != -1:
-    result = ok(map.attrlist[i])
-    map.attrlist.delete(i)
-  else:
-    result = ok(nil)
-  map.element.attrs[attr.name] = attr.value
-  map.attrlist.add(attr)
+    map.element.attrs[i] = attr.data
+    return ok(attr)
+  map.element.attrs.add(attr.data)
+  return ok(nil)
 
 proc setNamedItemNS(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
@@ -2628,19 +2863,19 @@ proc setNamedItemNS(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
 
 proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
     DOMResult[Attr] {.jsfunc.} =
-  let i = map.findAttr(qualifiedName)
+  let i = map.element.findAttr(qualifiedName)
   if i != -1:
-    let attr = map.attrlist[i]
-    map.element.delAttr(i)
+    let attr = map.getAttr(i)
+    map.element.delAttr(i, keep = true)
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
 proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
     DOMResult[Attr] {.jsfunc.} =
-  let i = map.findAttrNS(namespace, localName)
+  let i = map.element.findAttrNS(namespace, localName)
   if i != -1:
-    let attr = map.attrlist[i]
-    map.element.delAttr(i)
+    let attr = map.getAttr(i)
+    map.element.delAttr(i, keep = true)
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
@@ -2663,7 +2898,7 @@ proc remove*(node: Node, suppressObservers: bool) =
   node.parentNode = nil
   node.root = nil
   node.index = -1
-  if node.nodeType == ELEMENT_NODE:
+  if node of Element:
     if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
       node.document.cachedSheetsInvalid = true
 
@@ -2681,7 +2916,7 @@ proc adopt(document: Document, node: Node) =
     #TODO shadow root
     for desc in node.descendants:
       desc.document_internal = document
-      if desc.nodeType == ELEMENT_NODE:
+      if desc of Element:
         for attr in Element(desc).attributes.attrlist:
           attr.document_internal = document
     #TODO custom elements
@@ -2766,7 +3001,7 @@ proc resetFormOwner(element: FormAssociatedElement) =
       element.setForm(HTMLFormElement(form))
 
 proc insertionSteps(insertedNode: Node) =
-  if insertedNode.nodeType == ELEMENT_NODE:
+  if insertedNode of Element:
     let element = Element(insertedNode)
     let tagType = element.tagType
     case tagType
@@ -2787,8 +3022,14 @@ proc insertionSteps(insertedNode: Node) =
         return
       element.resetFormOwner()
 
+func isValidParent(node: Node): bool =
+  return node of Element or node of Document or node of DocumentFragment
+
+func isValidChild(node: Node): bool =
+  return node.isValidParent or node of DocumentType or node of CharacterData
+
 func checkParentValidity(parent: Node): Err[DOMException] =
-  if parent.nodeType in {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
+  if parent.isValidParent():
     return ok()
   const msg = "Parent must be a document, a document fragment, or an element."
   return errDOMException(msg, "HierarchyRequestError")
@@ -2803,40 +3044,37 @@ func preInsertionValidity*(parent, node, before: Node): Err[DOMException] =
   if before != nil and before.parentNode != parent:
     return errDOMException("Reference node is not a child of parent",
       "NotFoundError")
-  if node.nodeType notin {DOCUMENT_FRAGMENT_NODE, DOCUMENT_TYPE_NODE,
-      ELEMENT_NODE} + CharacterDataNodes:
-    return errDOMException("Cannot insert node type",
-      "HierarchyRequestError")
-  if node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE:
+  if not node.isValidChild():
+    return errDOMException("Node is not a valid child", "HierarchyRequestError")
+  if node of Text and parent of Document:
     return errDOMException("Cannot insert text into document",
       "HierarchyRequestError")
-  if node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE:
+  if node of DocumentType and not (parent of Document):
     return errDOMException("Document type can only be inserted into document",
       "HierarchyRequestError")
-  if parent.nodeType == DOCUMENT_NODE:
-    case node.nodeType
-    of DOCUMENT_FRAGMENT_NODE:
-      let elems = node.countChildren(ELEMENT_NODE)
-      if elems > 1 or node.hasChild(TEXT_NODE):
+  if parent of Document:
+    if node of DocumentFragment:
+      let elems = node.countChildren(Element)
+      if elems > 1 or node.hasChild(Text):
         return errDOMException("Document fragment has invalid children",
           "HierarchyRequestError")
-      elif elems == 1 and (parent.hasChild(ELEMENT_NODE) or
-          before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
-          before.hasNextSibling(DOCUMENT_TYPE_NODE))):
+      elif elems == 1 and (parent.hasChild(Element) or
+          before != nil and (before of DocumentType or
+          before.hasNextSibling(DocumentType))):
         return errDOMException("Document fragment has invalid children",
           "HierarchyRequestError")
-    of ELEMENT_NODE:
-      if parent.hasChild(ELEMENT_NODE):
+    elif node of Element:
+      if parent.hasChild(Element):
         return errDOMException("Document already has an element child",
           "HierarchyRequestError")
-      elif before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
-            before.hasNextSibling(DOCUMENT_TYPE_NODE)):
+      elif before != nil and (before of DocumentType or
+            before.hasNextSibling(DocumentType)):
         return errDOMException("Cannot insert element before document type",
           "HierarchyRequestError")
-    of DOCUMENT_TYPE_NODE:
-      if parent.hasChild(DOCUMENT_TYPE_NODE) or
-          before != nil and before.hasPreviousSibling(ELEMENT_NODE) or
-          before == nil and parent.hasChild(ELEMENT_NODE):
+    elif node of DocumentType:
+      if parent.hasChild(DocumentType) or
+          before != nil and before.hasPreviousSibling(Element) or
+          before == nil and parent.hasChild(Element):
         const msg = "Cannot insert document type before an element node"
         return errDOMException(msg, "HierarchyRequestError")
     else: discard
@@ -2857,28 +3095,29 @@ proc insertNode(parent, node, before: Node) =
   node.parentNode = parent
   node.invalidateCollections()
   parent.invalidateCollections()
-  if node.nodeType == ELEMENT_NODE:
+  if node of Element:
     if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
       node.document.cachedSheetsInvalid = true
-  if node.nodeType == ELEMENT_NODE:
     #TODO shadow root
     insertionSteps(node)
 
 # WARNING ditto
 proc insert*(parent, node, before: Node, suppressObservers = false) =
-  let nodes = if node.nodeType == DOCUMENT_FRAGMENT_NODE: node.childList
-  else: @[node]
+  let nodes = if node of DocumentFragment:
+    node.childList
+  else:
+    @[node]
   let count = nodes.len
   if count == 0:
     return
-  if node.nodeType == DOCUMENT_FRAGMENT_NODE:
+  if node of DocumentFragment:
     for i in countdown(node.childList.high, 0):
       node.childList[i].remove(true)
     #TODO tree mutation record
   if before != nil:
     #TODO live ranges
     discard
-  if parent.nodeType == ELEMENT_NODE:
+  if parent of Element:
     Element(parent).invalid = true
   for node in nodes:
     insertNode(parent, node, before)
@@ -2918,43 +3157,36 @@ proc replace(parent, child, node: Node): Err[DOMException] =
   if child.parentNode != parent:
     return errDOMException("Node to replace is not a child of parent",
       "NotFoundError")
-  if node.nodeType notin {DOCUMENT_NODE, DOCUMENT_TYPE_NODE, ELEMENT_NODE} +
-      CharacterDataNodes:
-    return errDOMException("Replacement is not a valid replacement node type",
-      "HierarchyRequesError")
-  if node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE or
-      node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE:
+  if not node.isValidChild():
+    return errDOMException("Node is not a valid child", "HierarchyRequesError")
+  if node of Text and parent of Document or
+      node of DocumentType and not (parent of Document):
     return errDOMException("Replacement cannot be placed in parent",
       "HierarchyRequesError")
   let childNextSibling = child.nextSibling
   let childPreviousSibling = child.previousSibling
-  if parent.nodeType == DOCUMENT_NODE:
-    case node.nodeType
-    of DOCUMENT_FRAGMENT_NODE:
-      let elems = node.countChildren(ELEMENT_NODE)
-      if elems > 1 or node.hasChild(TEXT_NODE):
+  if parent of Document:
+    if node of DocumentFragment:
+      let elems = node.countChildren(Element)
+      if elems > 1 or node.hasChild(Text):
         return errDOMException("Document fragment has invalid children",
           "HierarchyRequestError")
-      elif elems == 1 and (parent.hasChildExcept(ELEMENT_NODE, child) or
-          childNextSibling != nil and
-          childNextSibling.nodeType == DOCUMENT_TYPE_NODE):
+      elif elems == 1 and (parent.hasChildExcept(Element, child) or
+          childNextSibling != nil and childNextSibling of DocumentType):
         return errDOMException("Document fragment has invalid children",
           "HierarchyRequestError")
-    of ELEMENT_NODE:
-      if parent.hasChildExcept(ELEMENT_NODE, child):
+    elif node of Element:
+      if parent.hasChildExcept(Element, child):
         return errDOMException("Document already has an element child",
           "HierarchyRequestError")
-      elif childNextSibling != nil and
-          childNextSibling.nodeType == DOCUMENT_TYPE_NODE:
+      elif childNextSibling != nil and childNextSibling of DocumentType:
         return errDOMException("Cannot insert element before document type ",
           "HierarchyRequestError")
-    of DOCUMENT_TYPE_NODE:
-      if parent.hasChildExcept(DOCUMENT_TYPE_NODE, child) or
-          childPreviousSibling != nil and
-          childPreviousSibling.nodeType == DOCUMENT_TYPE_NODE:
+    elif node of DocumentType:
+      if parent.hasChildExcept(DocumentType, child) or
+          childPreviousSibling != nil and childPreviousSibling of DocumentType:
         const msg = "Cannot insert document type before an element node"
         return errDOMException(msg, "HierarchyRequestError")
-    else: discard
   let referenceChild = if childNextSibling == node:
     node.nextSibling
   else:
@@ -2972,7 +3204,7 @@ proc replaceAll(parent, node: Node) =
     child.remove(true)
   assert parent != node
   if node != nil:
-    if node.nodeType == DOCUMENT_FRAGMENT_NODE:
+    if node of DocumentFragment:
       var addedNodes = node.childList # copy
       for child in addedNodes:
         parent.append(child)
@@ -2984,18 +3216,16 @@ proc createTextNode*(document: Document, data: string): Text {.jsfunc.} =
   return newText(document, data)
 
 proc textContent*(node: Node, data: Option[string]) {.jsfset.} =
-  case node.nodeType
-  of DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE:
+  if node of Element or node of DocumentFragment:
     let x = if data.isSome:
       node.document.createTextNode(data.get)
     else:
       nil
     node.replaceAll(x)
-  of ATTRIBUTE_NODE:
-    value(Attr(node), data.get(""))
-  of TEXT_NODE, COMMENT_NODE:
+  elif node of CharacterData:
     CharacterData(node).data = data.get("")
-  else: discard
+  elif node of Attr:
+    value(Attr(node), data.get(""))
 
 proc reset*(form: HTMLFormElement) =
   for control in form.controls:
@@ -3135,6 +3365,9 @@ proc execute*(element: HTMLScriptElement) =
   if element.scriptResult.t == RESULT_NULL:
     #TODO fire error event
     return
+  let needsInc = element.external or element.ctype == MODULE
+  if needsInc:
+    inc document.ignoreDestructiveWrites
   case element.ctype
   of CLASSIC:
     let oldCurrentScript = document.currentScript
@@ -3153,6 +3386,8 @@ proc execute*(element: HTMLScriptElement) =
           ss.readAll())
     document.currentScript = oldCurrentScript
   else: discard #TODO
+  if needsInc:
+    dec document.ignoreDestructiveWrites
 
 # https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
 proc prepare*(element: HTMLScriptElement) =
@@ -3218,7 +3453,7 @@ proc prepare*(element: HTMLScriptElement) =
     if src == "":
       #TODO fire error event
       return
-    element.fromAnExternalFile = true
+    element.external = true
     let url = element.document.parseURL(src)
     if url.isNone:
       #TODO fire error event
@@ -3285,9 +3520,9 @@ proc createElement(document: Document, localName: string):
     return errDOMException("Invalid character in element name",
       "InvalidCharacterError")
   let localName = if not document.isxml:
-    localName.toLowerAscii()
+    document.toAtom(localName.toLowerAscii())
   else:
-    localName
+    document.toAtom(localName)
   let namespace = if not document.isxml: #TODO or content type is application/xhtml+xml
     Namespace.HTML
   else:
@@ -3307,11 +3542,11 @@ proc createDocumentType(implementation: ptr DOMImplementation, qualifiedName,
   let document = implementation.document
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
-proc createHTMLDocument(implementation: ptr DOMImplementation, title =
-    none(string)): Document {.jsfunc.} =
-  let doc = newDocument()
+proc createHTMLDocument(ctx: JSContext, implementation: ptr DOMImplementation,
+    title = none(string)): Document {.jsfunc.} =
+  let doc = newDocument(ctx)
   doc.contentType = "text/html"
-  doc.append(doc.newDocumentType("html"))
+  doc.append(doc.newDocumentType("html", "", ""))
   let html = doc.newHTMLElement(TAG_HTML, Namespace.HTML)
   doc.append(html)
   let head = doc.newHTMLElement(TAG_HEAD, Namespace.HTML)
@@ -3347,14 +3582,13 @@ proc createProcessingInstruction(document: Document, target, data: string):
       "InvalidCharacterError")
   return ok(newProcessingInstruction(document, target, data))
 
-func clone(node: Node, document = none(Document), deep = false): Node =
+proc clone(node: Node, document = none(Document), deep = false): Node =
   let document = document.get(node.document)
-  let copy = case node.nodeType
-  of ELEMENT_NODE:
+  let copy = if node of Element:
     #TODO is value
     let element = Element(node)
     let x = document.newHTMLElement(element.localName, element.namespace,
-      element.namespacePrefix, element.tagType, element.attrs)
+      element.namespacePrefix, element.attrs)
     #TODO namespaced attrs?
     # Cloning steps
     if x.tagType == TAG_SCRIPT:
@@ -3369,43 +3603,50 @@ func clone(node: Node, document = none(Document), deep = false): Node =
       x.checked = element.checked
       #TODO dirty checkedness flag
     Node(x)
-  of ATTRIBUTE_NODE:
+  elif node of Attr:
     let attr = Attr(node)
-    let x = document.newAttr(attr.localName, attr.value, attr.prefix,
-      attr.namespaceURI)
+    let data = attr.data
+    let x = Attr(
+      ownerElement: AttrDummyElement(
+        document_internal: attr.ownerElement.document,
+        index: -1,
+        attrs: @[data]
+      ),
+      dataIdx: 0
+    )
     Node(x)
-  of TEXT_NODE:
+  elif node of Text:
     let text = Text(node)
     let x = document.newText(text.data)
     Node(x)
-  of CDATA_SECTION_NODE:
+  elif node of CDATASection:
     let x = document.newCDATASection("")
     #TODO is this really correct??
     # really, I don't know. only relevant with xhtml anyway...
     Node(x)
-  of COMMENT_NODE:
+  elif node of Comment:
     let comment = Comment(node)
     let x = document.newComment(comment.data)
     Node(x)
-  of PROCESSING_INSTRUCTION_NODE:
+  elif node of ProcessingInstruction:
     let procinst = ProcessingInstruction(node)
     let x = document.newProcessingInstruction(procinst.target, procinst.data)
     Node(x)
-  of DOCUMENT_NODE:
+  elif node of Document:
     let document = Document(node)
-    let x = newDocument()
+    let x = newDocument(document.factory)
     x.charset = document.charset
     x.contentType = document.contentType
     x.url = document.url
     x.isxml = document.isxml
     x.mode = document.mode
     Node(x)
-  of DOCUMENT_TYPE_NODE:
+  elif node of DocumentType:
     let doctype = DocumentType(node)
     let x = document.newDocumentType(doctype.name, doctype.publicId,
       doctype.systemId)
     Node(x)
-  of DOCUMENT_FRAGMENT_NODE:
+  elif node of DocumentFragment:
     let x = document.newDocumentFragment()
     Node(x)
   else:
@@ -3416,7 +3657,7 @@ func clone(node: Node, document = none(Document), deep = false): Node =
       copy.append(child.clone(deep = true))
   return copy
 
-func cloneNode(node: Node, deep = false): Node {.jsfunc.} =
+proc cloneNode(node: Node, deep = false): Node {.jsfunc.} =
   #TODO shadow root
   return node.clone(deep = deep)
 
@@ -3495,7 +3736,9 @@ proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cd
       if x.get:
         element.attr(entry.attrname, "")
       else:
-        element.delAttr(entry.attrname)
+        let i = element.findAttr(entry.attrname)
+        if i != -1:
+          element.delAttr(i)
   of REFLECT_LONG:
     let x = fromJS[int32](ctx, val)
     if x.isSome:
@@ -3575,11 +3818,11 @@ proc outerHTML(element: Element, s: string): Err[DOMException] {.jsfset.} =
   let parent0 = element.parentNode
   if parent0 == nil:
     return ok()
-  if parent0.nodeType == DOCUMENT_NODE:
+  if parent0 of Document:
     let ex = newDOMException("outerHTML is disallowed for Document children",
       "NoModificationAllowedError")
     return err(ex)
-  let parent = if parent0.nodeType == DOCUMENT_FRAGMENT_NODE:
+  let parent = if parent0 of DocumentFragment:
     element.document.newHTMLElement(TAG_BODY)
   else:
     # neither a document, nor a document fragment => parent must be an
@@ -3594,8 +3837,7 @@ proc insertAdjacentHTML(element: Element, position, text: string):
   #TODO enumize position
   let ctx0 = case position
   of "beforebegin", "afterend":
-    if element.parentNode.nodeType == DOCUMENT_NODE or
-        element.parentNode == nil:
+    if element.parentNode of Document or element.parentNode == nil:
       return errDOMException("Parent is not a valid element",
         "NoModificationAllowedError")
     element.parentNode
@@ -3604,7 +3846,7 @@ proc insertAdjacentHTML(element: Element, position, text: string):
   else:
     return errDOMException("Invalid position", "SyntaxError")
   let document = ctx0.document
-  let ctx = if ctx0.nodeType != ELEMENT_NODE or not document.isxml or
+  let ctx = if not (ctx0 of Element) or not document.isxml or
       Element(ctx0).namespace == Namespace.HTML:
     document.newHTMLElement(TAG_BODY)
   else:
