@@ -1,9 +1,6 @@
 import std/algorithm
 
 func searchInMap*[U, T](a: openArray[(U, T)], u: U): int =
-  when not (typeof(u) is U):
-    if c > cast[typeof(c)](high(U)):
-      return -1
   binarySearch(a, u, proc(x: (U, T), y: U): int = cmp(x[0], y))
 
 func isInMap*[U, T](a: openArray[(U, T)], u: U): bool =
