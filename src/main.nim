@@ -6,10 +6,10 @@ let forks = newForkServer()
 import std/options
 import std/os
 import std/posix
-import std/terminal
 
 import config/chapath
 import config/config
+import display/term
 import io/serversocket
 import local/client
 import types/opt

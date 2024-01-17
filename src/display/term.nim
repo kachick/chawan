@@ -4,7 +4,6 @@ import std/posix
 import std/streams
 import std/strutils
 import std/tables
-import std/terminal
 import std/termios
 import std/unicode
 
@@ -20,6 +19,8 @@ import utils/twtstr
 import chakasu/charset
 import chakasu/decoderstream
 import chakasu/encoderstream
+
+export isatty
 
 #TODO switch from termcap...
 
@@ -40,6 +41,9 @@ type
     me # end all formatting modes
     LE # cursor left %1 characters
     RI # cursor right %1 characters
+    vs # enhance cursor
+    vi # make cursor invisible
+    ve # reset cursor to normal
 
   Termcap = ref object
     bp: array[1024, uint8]
@@ -85,14 +89,19 @@ when not termcap_found:
   # DEC reset
   template DECRST(s: varargs[string, `$`]): string =
     "\e[?" & s.join(';') & 'l'
-  template SMCUP(): string = DECSET(1049)
-  template RMCUP(): string = DECRST(1049)
+  const SMCUP = DECSET(1049)
+  const RMCUP = DECRST(1049)
+  const CNORM = DECSET(25)
+  const CIVIS = DECRST(25)
   template HVP(s: varargs[string, `$`]): string =
     CSI(s) & "f"
   template EL(): string =
     CSI() & "K"
   template ED(): string =
     CSI() & "J"
+
+  proc write(term: Terminal, s: string) =
+    term.outfile.write(s)
 else:
   func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
   func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
@@ -101,6 +110,12 @@ else:
   var goutfile: File
   proc putc(c: char): cint {.cdecl.} =
     goutfile.write(c)
+
+  proc write(term: Terminal, s: cstring) =
+    discard tputs(s, 1, putc)
+
+  proc write(term: Terminal, s: string) =
+    term.write(cstring(s))
 
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
@@ -115,12 +130,6 @@ const ANSIColorMap = [
   ColorsRGB["cyan"],
   ColorsRGB["white"],
 ]
-
-proc write(term: Terminal, s: string) =
-  when termcap_found:
-    discard tputs(cstring(s), cint(s.len), putc)
-  else:
-    term.outfile.write(s)
 
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
@@ -184,14 +193,14 @@ proc enableAltScreen(term: Terminal): string =
     if term.hascap ti:
       term.write($term.cap ti)
   else:
-    return SMCUP()
+    return SMCUP
 
 proc disableAltScreen(term: Terminal): string =
   when termcap_found:
     if term.hascap te:
       term.write($term.cap te)
   else:
-    return RMCUP()
+    return RMCUP
 
 func defaultBackground(term: Terminal): RGBColor =
   return term.config.display.default_background_color
@@ -444,10 +453,16 @@ proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
         result &= term.clearEnd()
 
 proc hideCursor*(term: Terminal) =
-  term.outfile.hideCursor()
+  when termcap_found:
+    term.write(term.ccap vi)
+  else:
+    term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
-  term.outfile.showCursor()
+  when termcap_found:
+    term.write(term.ccap ve)
+  else:
+    term.write(CNORM)
 
 func emulateOverline(term: Terminal): bool =
   term.config.display.emulate_overline and
@@ -623,7 +638,8 @@ proc restart*(term: Terminal) =
   if term.smcup:
     term.write(term.enableAltScreen())
 
-proc newTerminal*(outfile: File, config: Config, attrs: WindowAttributes): Terminal =
+proc newTerminal*(outfile: File, config: Config, attrs: WindowAttributes):
+    Terminal =
   let term = Terminal(
     outfile: outfile,
     config: config

@@ -6,7 +6,6 @@ import std/selectors
 import std/streams
 import std/strutils
 import std/tables
-import std/terminal
 import std/unicode
 
 when defined(posix):
