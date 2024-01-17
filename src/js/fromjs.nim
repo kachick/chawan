@@ -137,7 +137,9 @@ macro fromJSTupleBody(a: tuple) =
       defer: JS_FreeValue(ctx, doneVal)
       `done` = ?fromJS[bool](ctx, doneVal)
       if `done`:
-        JS_ThrowTypeError(ctx, "Too few arguments in sequence (got %d, expected %d)", `i`, `len`)
+        JS_ThrowTypeError(ctx,
+          "Too few arguments in sequence (got %d, expected %d)", cint(`i`),
+          cint(`len`))
         return err()
       let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE])
       if JS_IsException(valueVal):

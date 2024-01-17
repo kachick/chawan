@@ -136,7 +136,7 @@ type
 
   JSClassDefConst* {.importc: "const JSClassDef *", header: qjsheader.} = ptr JSClassDef
 
-  JSMemoryUsage*  = object
+  JSMemoryUsage* = object
     malloc_size*, malloc_limit*, memory_used_size*: int64
     malloc_count*: int64
     memory_used_count*: int64

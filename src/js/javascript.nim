@@ -39,7 +39,6 @@ import std/macros
 import std/options
 import std/sets
 import std/streams
-import std/strformat
 import std/strutils
 import std/tables
 import std/unicode
@@ -50,6 +49,7 @@ import js/opaque
 import js/tojs
 import js/typeptr
 import types/opt
+import utils/twtstr
 
 import bindings/quickjs
 
@@ -328,7 +328,7 @@ proc defineConsts*(ctx: JSContext, classid: JSClassID,
     ctx.definePropertyE(proto, $e, astype(e))
 
 type
-  JSFuncGenerator = object
+  JSFuncGenerator = ref object
     t: BoundFunctionType
     thisname: Option[string]
     funcName: string
@@ -567,7 +567,8 @@ func isSequence*(ctx: JSContext, o: JSValue): bool =
   result = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
 
-proc addUnionParam0(gen: var JSFuncGenerator, tt: NimNode, s: NimNode, val: NimNode, fallback: NimNode = nil) =
+proc addUnionParam0(gen: var JSFuncGenerator, tt, s, val: NimNode,
+    fallback: NimNode = nil) =
   # Union types.
   #TODO quite a few types are still missing.
   let flattened = gen.generics[tt.strVal] # flattened member types
@@ -785,13 +786,14 @@ export JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
 proc newJSProcBody(gen: var JSFuncGenerator, isva: bool): NimNode =
   let tt = gen.thisType
   let fn = gen.funcName
-  var ma = gen.actualMinArgs
+  let ma = gen.actualMinArgs
   result = newStmtList()
   if isva:
     result.add(quote do:
       if argc < `ma`:
-        return JS_ThrowTypeError(ctx, "At least %d arguments required, " &
-          "but only %d passed", `ma`, argc)
+        return JS_ThrowTypeError(ctx,
+          "At least %d arguments required, but only %d passed", cint(`ma`),
+          cint(argc))
     )
   if gen.thisname.isSome and not gen.isstatic:
     let tn = ident(gen.thisname.get)
@@ -1611,20 +1613,48 @@ macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
 proc getMemoryUsage*(rt: JSRuntime): string =
   var m: JSMemoryUsage
   JS_ComputeMemoryUsage(rt, addr m)
-  return fmt"""
-memory allocated: {m.malloc_count} {m.malloc_size} ({float(m.malloc_size)/float(m.malloc_count):.1f}/block)
-memory used: {m.memory_used_count} {m.memory_used_size} ({float(m.malloc_size-m.memory_used_size)/float(m.memory_used_count):.1f} average slack)
-atoms: {m.atom_count} {m.atom_size} ({float(m.atom_size)/float(m.atom_count):.1f}/atom)
-strings: {m.str_count} {m.str_size} ({float(m.str_size)/float(m.str_count):.1f}/string)
-objects: {m.obj_count} {m.obj_size} ({float(m.obj_size)/float(m.obj_count):.1f}/object)
-properties: {m.prop_count} {m.prop_size} ({float(m.prop_size)/float(m.obj_count):.1f}/object)
-shapes: {m.shape_count} {m.shape_size} ({float(m.shape_size)/float(m.shape_count):.1f}/shape)
-js functions: {m.js_func_count} {m.js_func_size} ({float(m.js_func_size)/float(m.js_func_count):.1f}/function)
-native functions: {m.c_func_count}
-arrays: {m.array_count}
-fast arrays: {m.fast_array_count}
-fast array elements: {m.fast_array_elements} {m.fast_array_elements*sizeof(JSValue)} ({float(m.fast_array_elements)/float(m.fast_array_count):.1f})
-binary objects: {m.binary_object_count} {m.binary_object_size}"""
+  template row(title: string, count, size, sz2, cnt2: int64, name: string):
+      string =
+    let fv0 = $(float(sz2) / float(cnt2))
+    var fv = fv0.until('.')
+    if fv.len < fv0.len:
+      fv &= '.' & fv0[fv.len + 1]
+    else:
+      fv &= ".0"
+    title & ": " & $count & " " & $size & " (" & fv & ")" & name & "\n"
+  template row(title: string, count, size, sz2: int64, name: string):
+      string =
+    row(title, count, size, sz2, count, name)
+  template row(title: string, count, size: int64, name: string): string =
+    row(title, count, size, size, name)
+  var s = ""
+  if m.malloc_count != 0:
+    s &= row("memory allocated", m.malloc_count, m.malloc_size, "/block")
+    s &= row("memory used", m.memory_used_count, m.memory_used_size,
+      m.malloc_size - m.memory_used_size, " average slack")
+  if m.atom_count != 0:
+    s &= row("atoms", m.atom_count, m.atom_size, "/atom")
+  if m.str_count != 0:
+    s &= row("strings", m.str_count, m.str_size, "/string")
+  if m.obj_count != 0:
+    s &= row("objects", m.obj_count, m.obj_size, "/object") &
+      row("properties", m.prop_count, m.prop_size, m.prop_size, m.obj_count,
+        "/object") &
+      row("shapes", m.shape_count, m.shape_size, "/shape")
+  if m.js_func_count != 0:
+    s &= row("js functions", m.js_func_count, m.js_func_size, "/function")
+  if m.c_func_count != 0:
+    s &= "native functions: " & $m.c_func_count & "\n"
+  if m.array_count != 0:
+    s &= "arrays: " & $m.array_count & "\n" &
+      "fast arrays: " & $m.fast_array_count & "\n" &
+      row("fast array elements", m.fast_array_elements,
+        m.fast_array_elements * sizeof(JSValue), m.fast_array_elements,
+        m.fast_array_count, "")
+  if m.binary_object_count != 0:
+    s &= "binary objects: " & $m.binary_object_count & " " &
+      $m.binary_object_size
+  return s
 
 proc eval*(ctx: JSContext, s: string, file: string, eval_flags: int): JSValue =
   return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file),
