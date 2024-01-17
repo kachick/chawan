@@ -1841,7 +1841,10 @@ func serializeFragmentInner(child: Node, parentType: TagType): string =
     let element = Element(child)
     result &= '<'
     #TODO qualified name if not HTML, SVG or MathML
-    result &= element.localName
+    if element.tagType == TAG_UNKNOWN:
+      result &= element.localName
+    else:
+      result &= tagName(element.tagType)
     #TODO custom elements
     for k, v in element.attrs:
       #TODO namespaced attrs
@@ -1849,7 +1852,10 @@ func serializeFragmentInner(child: Node, parentType: TagType): string =
     result &= '>'
     result &= element.serializeFragment()
     result &= "</"
-    result &= element.localName
+    if element.tagType == TAG_UNKNOWN:
+      result &= element.localName
+    else:
+      result &= tagName(element.tagType)
     result &= '>'
   elif child of Text:
     let text = Text(child)
