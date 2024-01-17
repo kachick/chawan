@@ -2497,7 +2497,7 @@ proc reflectAttrs(element: Element, name, value: string) =
     let anchor = HTMLAnchorElement(element)
     anchor.reflect_domtoklist "rel", relList
   of TAG_AREA:
-    let area = HTMLAnchorElement(element)
+    let area = HTMLAreaElement(element)
     area.reflect_domtoklist "rel", relList
   else: discard
 
