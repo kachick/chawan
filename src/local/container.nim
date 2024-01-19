@@ -655,23 +655,33 @@ proc cursorLineBegin(container: Container) {.jsfunc.} =
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
 
-proc cursorNextWord(container: Container) {.jsfunc.} =
+type BreakFunc = proc(r: Rune): BreakCategory {.nimcall.}
+
+proc cursorNextWord(container: Container, breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var r: Rune
   var b = container.currentCursorBytes()
   var x = container.cursorx
-  while b < container.currentLine.len:
-    let pb = b
-    fastRuneAt(container.currentLine, b, r)
-    if r.breaksWord():
-      b = pb
-      break
-    x += r.twidth(x)
+  # meow
+  let currentCat = if b < container.currentLine.len:
+    container.currentLine.runeAt(b).breakFunc()
+  else:
+    BREAK_SPACE
+  if currentCat != BREAK_SPACE:
+    # not in space, skip chars that have the same category
+    while b < container.currentLine.len:
+      let pb = b
+      fastRuneAt(container.currentLine, b, r)
+      if r.breakFunc() != currentCat:
+        b = pb
+        break
+      x += r.twidth(x)
 
+  # skip space
   while b < container.currentLine.len:
     let pb = b
     fastRuneAt(container.currentLine, b, r)
-    if not r.breaksWord():
+    if r.breakFunc() != BREAK_SPACE:
       b = pb
       break
     x += r.twidth(x)
@@ -685,22 +695,38 @@ proc cursorNextWord(container: Container) {.jsfunc.} =
     else:
       container.cursorLineEnd()
 
-proc cursorPrevWord(container: Container) {.jsfunc.} =
+proc cursorNextWord(container: Container) {.jsfunc.} =
+  container.cursorNextWord(breaksWordCat)
+
+proc cursorNextViWord(container: Container) {.jsfunc.} =
+  container.cursorNextWord(breaksViWordCat)
+
+proc cursorNextBigWord(container: Container) {.jsfunc.} =
+  container.cursorNextWord(breaksBigWordCat)
+
+proc cursorPrevWord(container: Container, breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var b = container.currentCursorBytes()
   var x = container.cursorx
   if container.currentLine.len > 0:
     b = min(b, container.currentLine.len - 1)
-    while b >= 0:
-      let (r, o) = lastRune(container.currentLine, b)
-      if r.breaksWord():
-        break
-      b -= o
-      x -= r.twidth(x)
+    let currentCat = if b >= 0:
+      container.currentLine.runeAt(b).breakFunc()
+    else:
+      BREAK_SPACE
+    if currentCat != BREAK_SPACE:
+      # not in space, skip chars that have the same category
+      while b >= 0:
+        let (r, o) = lastRune(container.currentLine, b)
+        if r.breakFunc() != currentCat:
+          break
+        b -= o
+        x -= r.twidth(x)
 
+    # skip space
     while b >= 0:
       let (r, o) = lastRune(container.currentLine, b)
-      if not r.breaksWord():
+      if r.breakFunc() != BREAK_SPACE:
         break
       b -= o
       x -= r.twidth(x)
@@ -715,6 +741,126 @@ proc cursorPrevWord(container: Container) {.jsfunc.} =
       container.cursorLineEnd()
     else:
       container.cursorLineBegin()
+
+proc cursorPrevWord(container: Container) {.jsfunc.} =
+  container.cursorPrevWord(breaksWordCat)
+
+proc cursorPrevViWord(container: Container) {.jsfunc.} =
+  container.cursorPrevWord(breaksViWordCat)
+
+proc cursorPrevBigWord(container: Container) {.jsfunc.} =
+  container.cursorPrevWord(breaksBigWordCat)
+
+proc cursorWordEnd(container: Container, breakFunc: BreakFunc) =
+  if container.numLines == 0: return
+  var r: Rune
+  var b = container.currentCursorBytes()
+  var x = container.cursorx
+  var px = x
+  # if not in space, move to the right by one
+  if b < container.currentLine.len:
+    let pb = b
+    fastRuneAt(container.currentLine, b, r)
+    if r.breakFunc() == BREAK_SPACE:
+      b = pb
+    else:
+      px = x
+      x += r.twidth(x)
+
+  # skip space
+  while b < container.currentLine.len:
+    let pb = b
+    fastRuneAt(container.currentLine, b, r)
+    if r.breakFunc() != BREAK_SPACE:
+      b = pb
+      break
+    x += r.twidth(x)
+
+  if b < container.currentLine.len:
+    let currentCat = container.currentLine.runeAt(b).breakFunc()
+    while b < container.currentLine.len:
+      let pb = b
+      fastRuneAt(container.currentLine, b, r)
+      if r.breakFunc() != currentCat:
+        b = pb
+        break
+      px = x
+      x += r.twidth(x)
+    x = px
+
+  if b < container.currentLine.len:
+    container.setCursorX(x)
+  else:
+    if container.cursory < container.numLines - 1:
+      container.cursorDown()
+      container.cursorLineBegin()
+    else:
+      container.cursorLineEnd()
+
+proc cursorWordEnd(container: Container) {.jsfunc.} =
+  container.cursorWordEnd(breaksWordCat)
+
+proc cursorViWordEnd(container: Container) {.jsfunc.} =
+  container.cursorWordEnd(breaksViWordCat)
+
+proc cursorBigWordEnd(container: Container) {.jsfunc.} =
+  container.cursorWordEnd(breaksBigWordCat)
+
+proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
+  if container.numLines == 0: return
+  var b = container.currentCursorBytes()
+  var x = container.cursorx
+  var px = x
+  if container.currentLine.len > 0:
+    b = min(b, container.currentLine.len - 1)
+    if b >= 0:
+      let (r, o) = lastRune(container.currentLine, b)
+      # if not in space, move to the left by one
+      if r.breakFunc() != BREAK_SPACE:
+        b -= o
+        px = x
+        x -= r.twidth(x)
+
+    # skip space
+    while b >= 0:
+      let (r, o) = lastRune(container.currentLine, b)
+      if r.breakFunc() != BREAK_SPACE:
+        break
+      b -= o
+      x -= r.twidth(x)
+
+    # move to the last char in the current category
+    if b >= 0:
+      let (r, _) = lastRune(container.currentLine, b)
+      let currentCat = r.breakFunc()
+      while b >= 0:
+        let (r, o) = lastRune(container.currentLine, b)
+        if r.breakFunc() != currentCat:
+          break
+        b -= o
+        px = x
+        x -= r.twidth(x)
+    x = px
+  else:
+    b = -1
+
+  if b >= 0:
+    container.setCursorX(x)
+  else:
+    if container.cursory > 0:
+      container.cursorUp()
+      container.cursorLineEnd()
+    else:
+      container.cursorLineBegin()
+
+proc cursorWordBegin(container: Container) {.jsfunc.} =
+  container.cursorWordBegin(breaksWordCat)
+
+proc cursorViWordBegin(container: Container) {.jsfunc.} =
+  container.cursorWordBegin(breaksViWordCat)
+
+proc cursorBigWordBegin(container: Container) {.jsfunc.} =
+  container.cursorWordBegin(breaksBigWordCat)
 
 proc pageDown(container: Container, n = 1) {.jsfunc.} =
   container.setFromY(container.fromy + container.height * n)

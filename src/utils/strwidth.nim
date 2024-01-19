@@ -2,8 +2,6 @@ import std/strutils
 import std/unicode
 
 import utils/proptable
-import js/error
-import types/opt
 import utils/charcategory
 import utils/map
 
@@ -101,15 +99,25 @@ func padToWidth*(str: string, size: int, schar = '$'): string =
 func isDigitAscii(r: Rune): bool =
   return uint32(r) < 128 and char(r) in AsciiDigit
 
+type BreakCategory* = enum
+  BREAK_ALPHA, BREAK_SPACE, BREAK_SYMBOL
+
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
-type BoundaryFunction* = proc(x: Rune): JSResult[bool]
+func breaksViWordCat*(r: Rune): BreakCategory =
+  if r.isWhiteSpace():
+    return BREAK_SPACE
+  elif r.breaksWord():
+    return BREAK_SYMBOL
+  return BREAK_ALPHA
 
-proc breaksWord*(r: Rune, check: Opt[BoundaryFunction]): bool =
-  if check.isSome:
-    let f = check.get()
-    let v = f(r)
-    if v.isSome: #TODO report error?
-      return v.get()
-  return r.breaksWord()
+func breaksWordCat*(r: Rune): BreakCategory =
+  if not r.breaksWord():
+    return BREAK_ALPHA
+  return BREAK_SPACE
+
+func breaksBigWordCat*(r: Rune): BreakCategory =
+  if not r.isWhiteSpace():
+    return BREAK_ALPHA
+  return BREAK_SPACE

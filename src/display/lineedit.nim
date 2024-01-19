@@ -208,50 +208,50 @@ proc forward(edit: LineEdit) {.jsfunc.} =
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
       edit.invalid = true
 
-proc prevWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
+proc prevWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori == 0:
     return
   let (r, len) = edit.news.lastRune(edit.cursori - 1)
-  if r.breaksWord(check):
+  if r.breaksWord():
     edit.cursori -= len
     edit.cursorx -= r.width()
   while edit.cursori > 0:
     let (r, len) = edit.news.lastRune(edit.cursori - 1)
-    if r.breaksWord(check):
+    if r.breaksWord():
       break
     edit.cursori -= len
     edit.cursorx -= r.width()
   if edit.cursorx < edit.shiftx:
     edit.invalid = true
 
-proc nextWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
+proc nextWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
     return
   let oc = edit.cursori
   var r: Rune
   fastRuneAt(edit.news, edit.cursori, r)
-  if r.breaksWord(check):
+  if r.breaksWord():
     edit.cursorx += r.width()
   else:
     edit.cursori = oc
   while edit.cursori < edit.news.len:
     let pc = edit.cursori
     fastRuneAt(edit.news, edit.cursori, r)
-    if r.breaksWord(check):
+    if r.breaksWord():
       edit.cursori = pc
       break
     edit.cursorx += r.width()
   if edit.cursorx >= edit.shiftx + edit.maxwidth:
     edit.invalid = true
 
-proc clearWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
+proc clearWord(edit: LineEdit) {.jsfunc.} =
   let oc = edit.cursori
-  edit.prevWord(check)
+  edit.prevWord()
   if oc != edit.cursori:
     edit.news.delete(edit.cursori .. oc - 1)
     edit.invalid = true
 
-proc killWord(edit: LineEdit, check = opt(BoundaryFunction)) {.jsfunc.} =
+proc killWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
     return
   let oc = edit.cursori

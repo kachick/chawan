@@ -145,7 +145,7 @@ original URL. Then:
 * `MAPPED_URI_PASSWORD=` the password part, in this case `password`. If no
   password was specified, the variable is set to the empty string.
 * `MAPPED_URI_HOST=` the host part, in this case `host.org` If no host was
-  specified, the variable is set to the empty string. (An example of an URL
+  specified, the variable is set to the empty string. (An example of a URL
   with no host: `about:blank`, here `blank` is the path name.)
 * `MAPPED_URI_PORT=` the port, in this case `1234`. If no port was specified,
   the variable is set to the empty string. (In this case, the CGI script is

@@ -43,6 +43,10 @@ examples.
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
    * [Path handling](#path-handling)
+   * [Word types](#word-types)
+     * [w3m word](#w3m-word)
+     * [vi word](#vi-word)
+     * [Big word](#big-word)
 
 <!-- MANON -->
 
@@ -122,7 +126,7 @@ Following is a list of encoding options:
 
 <tr>
 <td>document-charset</td>
-<td>string/array</td>
+<td>array of charset label strings</td>
 <td>List of character sets for loading documents.<br>
 All listed character sets are enumerated until the document has been decoded
 without errors. In HTML, meta tags and the BOM may override this with a
@@ -315,19 +319,17 @@ Following is a list of display options:
 
 <tr>
 <td>color-mode</td>
-<td>"monochrome"/"ansi"/"eight-bit","8bit"/"true-color","24bit"/"auto"</td>
+<td>"monochrome" / "ansi" / "eight-bit" / "true-color" / "auto"</td>
 <td>Set the color mode. "auto" for automatic detection, "monochrome"
 for black on white, "ansi" for ansi colors, "eight-bit" for 256-color mode, and
 "true-color" for true colors.<br>
-"8bit" is a legacy alias of "eight-bit". "24bit" is a legacy alias of
-"true-color". (The only difference is that when overriding these values with
-the `-o` command line switch, you can use "eight-bit" and "true-color"
-without quoting.)</td>
+"8bit" is accepted as a legacy alias of "eight-bit". "24bit" is accepted as
+a legacy alias of "true-color".</td>
 </tr>
 
 <tr>
 <td>format-mode</td>
-<td>"auto"/["bold", "italic", "underline", "reverse", "strike", "overline",
+<td>"auto" / ["bold", "italic", "underline", "reverse", "strike", "overline",
 "blink"]</td>
 <td>Specifies output formatting modes. Accepts the string "auto" or an array
 of specific attributes. An empty array (`[]`) disables formatting
@@ -349,7 +351,7 @@ overlines are substituted by underlines on the previous line.</td>
 
 <tr>
 <td>alt-screen</td>
-<td>"auto"/boolean</td>
+<td>"auto" / boolean</td>
 <td>Enable/disable the alternative screen.</td>
 </tr>
 
@@ -529,7 +531,7 @@ false for all websites.</td>
 
 <tr>
 <td>third-party-cookie</td>
-<td>regex/array of regexes</td>
+<td>array of regexes</td>
 <td>Domains for which third-party cookies are allowed on this domain. Note:
 this only works for buffers which share the same cookie jar.<br>
 Note: regexes are handled according to the [regex handling](#regex-handling)
@@ -705,13 +707,29 @@ Note: this does not suspend buffer processes.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorNextWord()`</td>
-<td>Move the cursor to the beginning of the next word.</td>
+<td>`pager.cursorNextWord()`, `pager.cursorNextViWord()`,
+`pager.cursorNextBigWord()`</td>
+<td>Move the cursor to the beginning of the next [word](#word-types).</td>
 </tr>
 
 <tr>
-<td>`pager.cursorPrevWord()`</td>
-<td>Move the cursor to the end of the previous word.</td>
+<td>`pager.cursorPrevWord()`, `pager.cursorPrevViWord()`,
+`pager.cursorPrevBigWord()`</td>
+<td>Move the cursor to the end of the previous [word](#word-types).</td>
+</tr>
+
+<tr>
+<td>`pager.cursorWordEnd()`, `pager.cursorViWordEnd()`,
+`pager.cursorBigWordEnd()`</td>
+<td>Move the cursor to the end of the current [word](#word-types), or if already
+there, to the end of the next word.</td>
+</tr>
+
+<tr>
+<td>`pager.cursorWordBegin()`, `pager.cursorViWordBegin()`,
+`pager.cursorBigWordBegin()`</td>
+<td>Move the cursor to the beginning of the current [word](#word-types), or if
+already there, to the end of the previous word.</td>
 </tr>
 
 <tr>
@@ -853,7 +871,7 @@ buffer.</td>
 
 <tr>
 <td>`pager.toggleSource()`</td>
-<td>If viewing a HTML buffer, open a new buffer with its source. Otherwise,
+<td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
 open the current buffer's contents as HTML.</td>
 </tr>
 
@@ -1131,12 +1149,12 @@ value is `false`.</td>
 </tr>
 
 <tr>
-<td>`line.clearWord(bounds)`</td>
+<td>`line.clearWord()`</td>
 <td>Delete word before cursor</td>
 </tr>
 
 <tr>
-<td>`line.killWord(bounds)`</td>
+<td>`line.killWord()`</td>
 <td>Delete word after cursor</td>
 </tr>
 
@@ -1151,12 +1169,12 @@ value is `false`.</td>
 </tr>
 
 <tr>
-<td>`line.prevWord(bounds)`</td>
+<td>`line.prevWord()`</td>
 <td>Move cursor to the previous word by one character</td>
 </tr>
 
 <tr>
-<td>`line.nextWord(bounds)`</td>
+<td>`line.nextWord()`</td>
 <td>Move cursor to the previous word by one character</td>
 </tr>
 
@@ -1187,10 +1205,11 @@ value is `false`.</td>
 
 </table>
 
-Some of these entries have an optional `bounds` parameter. If passed, this
-must be a JavaScript function that expects one parameter (the current
-unicode character), and returns true if the passed character should count
-as a word boundary.
+Note: to facilitate URL editing, the line editor has a different definition
+of what a word is than the pager. For the line editor, a word is either a
+sequence of alphanumeric characters, or any single non-alphanumeric
+character. (This means that e.g. `https://` consists of four words: `https`,
+`:`, `/` and `/`.)
 
 ```Examples:
 # Control+A moves the cursor to the beginning of the line.
@@ -1199,9 +1218,6 @@ as a word boundary.
 # Escape+D deletes everything after the cursor until it reaches a word-breaking
 # character.
 'M-d' = 'line.killWord()'
-
-# Control+W deletes everything before the cursor until it reaches a space. 
-'C-w' = 'line.clearWord(x => x == " ")'
 ```
 
 ## Appendix
@@ -1236,6 +1252,39 @@ using the syntax `${%VARIABLE}`:
   that symbolic links are automatically resolved to determine this path.
 * `${%CHA_LIBEXEC_DIR}`: the directory for all executables Chawan uses
   for operation. By default, this is `${%CHA_BIN_DIR}/../libexec/chawan`.
+
+### Word types
+
+Word-based pager commands can operate with different definitions of
+words. Currently, these are:
+
+* w3m words
+* vi words
+* Big words
+
+#### w3m word
+
+A w3m word is a sequence of alphanumeric characters. Symbols are treated
+in the same way as whitespace.
+
+#### vi word
+
+A vi word is a sequence of alphanumeric characters, OR a sequence of symbols.
+
+vi words may be separated by whitespace; however, symbolic and alphanumeric
+vi words do not have to be whitespace-separated. e.g. following character
+sequence contains two words:
+
+```
+hello[]+{}@`!
+```
+
+#### Big word
+
+A big word is a sequence of non-whitespace characters.
+
+It is essentially the same as a w3m word, but with symbols being defined as
+non-whitespace.
 
 <!-- MANON
 
