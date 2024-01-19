@@ -214,10 +214,10 @@ type
     dataset {.jsget.}: DOMStringMap
 
   FormAssociatedElement* = ref object of HTMLElement
+    form: HTMLFormElement
     parserInserted*: bool
 
   HTMLInputElement* = ref object of FormAssociatedElement
-    form* {.jsget.}: HTMLFormElement
     inputType*: InputType
     value* {.jsget.}: string
     checked* {.jsget.}: bool
@@ -229,7 +229,6 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLSelectElement* = ref object of FormAssociatedElement
-    form* {.jsget.}: HTMLFormElement
 
   HTMLSpanElement* = ref object of HTMLElement
 
@@ -293,12 +292,10 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLButtonElement* = ref object of FormAssociatedElement
-    form* {.jsget.}: HTMLFormElement
     ctype*: ButtonType
     value* {.jsget, jsset.}: string
 
   HTMLTextAreaElement* = ref object of FormAssociatedElement
-    form* {.jsget.}: HTMLFormElement
     value* {.jsget.}: string
 
   HTMLLabelElement* = ref object of HTMLElement
@@ -1692,7 +1689,7 @@ func rootNode*(node: Node): Node =
   if node.root == nil: return node
   return node.root
 
-func isConnected*(node: Node): bool {.jsfget.} =
+func isConnected(node: Node): bool {.jsfget.} =
   return node.rootNode.nodeType == DOCUMENT_NODE #TODO shadow root
 
 func inSameTree*(a, b: Node): bool =
@@ -1732,16 +1729,12 @@ func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
       return element
   return nil
 
-func getElementById*(node: Node, id: string): Element {.jsfunc.} =
+func getElementById(node: Node, id: string): Element {.jsfunc.} =
   if id.len == 0:
     return nil
   for child in node.elements:
     if child.id == id:
       return child
-
-func getElementsByTag*(node: Node, tag: TagType): seq[Element] =
-  for element in node.elements(tag):
-    result.add(element)
 
 func getElementsByTagName0(root: Node, tagName: string): HTMLCollection =
   if tagName == "*":
@@ -1989,8 +1982,8 @@ func action*(element: Element): string =
   if element.isSubmitButton():
     if element.attrb("formaction"):
       return element.attr("formaction")
-  if element.tagType == TAG_INPUT:
-    let element = HTMLInputElement(element)
+  if element of FormAssociatedElement:
+    let element = FormAssociatedElement(element)
     if element.form != nil:
       if element.form.attrb("action"):
         return element.form.attr("action")
@@ -2150,6 +2143,22 @@ proc setRelList(link: HTMLLinkElement, s: string) {.jsfset: "relList".} =
 # <form>
 proc setRelList(form: HTMLFormElement, s: string) {.jsfset: "relList".} =
   form.attr("rel", s)
+
+# <input>
+func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
+  return this.form
+
+# <select>
+func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
+  return this.form
+
+# <button>
+func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
+  return this.form
+
+# <textarea>
+func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
+  return this.form
 
 func newText(document: Document, data: string): Text =
   return Text(
@@ -2750,11 +2759,11 @@ proc resetFormOwner(element: FormAssociatedElement) =
     if not element.attrb("form") and lastForm == element.form:
       return
   element.form = nil
-  if element.tagType in ListedElements and element.attrb("form") and element.isConnected:
-    let form = element.attr("form")
-    for desc in element.elements(TAG_FORM):
-      if desc.id == form:
-        element.setForm(HTMLFormElement(desc))
+  if element.tagType in ListedElements and element.attrb("form") and
+      element.isConnected:
+    let form = element.document.getElementById(element.attr("form"))
+    if form of HTMLFormElement:
+      element.setForm(HTMLFormElement(form))
 
 proc insertionSteps(insertedNode: Node) =
   if insertedNode.nodeType == ELEMENT_NODE:

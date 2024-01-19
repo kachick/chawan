@@ -1246,10 +1246,11 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     return
   let entrylist = form.constructEntryList(submitter).get(@[])
 
-  let action = if submitter.action() == "":
-    $form.document.url
+  let subAction = submitter.action()
+  let action = if subAction != "":
+    subAction
   else:
-    submitter.action()
+    $form.document.url
 
   let url = submitter.document.parseURL(action)
   if url.isNone:
