@@ -145,9 +145,9 @@ proc main() =
   var DoubleWidthTable = makePropertyTable(DoubleWidthRanges, Combining)
   # Control chars return a width of 2, and are displayed as ^{letter}.
   for c in Controls:
-    let u = int(c)
-    let i = u div (sizeof(int) * 8)
-    let m = u mod (sizeof(int) * 8)
+    let u = ptint(c)
+    let i = u div (sizeof(ptint) * 8)
+    let m = u mod (sizeof(ptint) * 8)
     DoubleWidthTable[i] = DoubleWidthTable[i] or ptint(1 shl m)
   let CombiningTable = makePropertyTable(Combining)
 
