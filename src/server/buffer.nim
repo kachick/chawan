@@ -914,6 +914,12 @@ proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
   buffer.source.contentType = some(contentType)
   buffer.ishtml = contentType == "text/html"
 
+# As defined in std/selectors: this determines whether kqueue is being used.
+# On these platforms, we must not close the selector after fork, since kqueue
+# fds are not inherited after a fork.
+const bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
+  defined(openbsd) or defined(dragonfly)
+
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
@@ -958,7 +964,8 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     # We must allocate a new selector for this new process. (Otherwise we
     # would interfere with operation of the other one.)
     # Closing seems to suffice here.
-    buffer.selector.close()
+    when not bsdPlatform:
+      buffer.selector.close()
     buffer.selector = newSelector[int]()
     #TODO set buffer.window.timeouts.selector
     var cfds: seq[int]
