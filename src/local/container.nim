@@ -776,6 +776,8 @@ proc cursorWordEnd(container: Container, breakFunc: BreakFunc) =
       break
     x += r.twidth(x)
 
+  # move to the last char in the current category
+  let ob = b
   if b < container.currentLine.len:
     let currentCat = container.currentLine.runeAt(b).breakFunc()
     while b < container.currentLine.len:
@@ -788,7 +790,7 @@ proc cursorWordEnd(container: Container, breakFunc: BreakFunc) =
       x += r.twidth(x)
     x = px
 
-  if b < container.currentLine.len:
+  if b < container.currentLine.len or ob != b:
     container.setCursorX(x)
   else:
     if container.cursory < container.numLines - 1:
@@ -811,6 +813,7 @@ proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
   var b = container.currentCursorBytes()
   var x = container.cursorx
   var px = x
+  var ob = b
   if container.currentLine.len > 0:
     b = min(b, container.currentLine.len - 1)
     if b >= 0:
@@ -829,7 +832,8 @@ proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
       b -= o
       x -= r.twidth(x)
 
-    # move to the last char in the current category
+    # move to the first char in the current category
+    ob = b
     if b >= 0:
       let (r, _) = lastRune(container.currentLine, b)
       let currentCat = r.breakFunc()
@@ -843,8 +847,9 @@ proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
     x = px
   else:
     b = -1
+    ob = -1
 
-  if b >= 0:
+  if b >= 0 or ob != b:
     container.setCursorX(x)
   else:
     if container.cursory > 0:
