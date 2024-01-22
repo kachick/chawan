@@ -15,24 +15,24 @@ format_table() {
 		fi
 		table_lines="$table_lines $line"
 	done
-	printf '%s' "$first_row" | sed \
+	printf '%s' "$first_row" | sed -E \
 		-e 's/<tr>/|/g' \
 		-e 's/<\/tr>/|\n/g' \
 		-e 's/<\/t[hd]> *<t[hd]>/|/g' \
-		-e 's/<\/\?t[hd]>//g' \
+		-e 's/<\/?t[hd]>//g' \
 		-e 's/^ *//g;s/ *$//g'
-	printf '%s\n' "$first_row" | sed \
+	printf '%s\n' "$first_row" | sed -E \
 		-e 's/<tr>/|/g' \
 		-e 's/<\/tr>/|\n/g' \
 		-e 's/<\/t[hd]> *<t[hd]>/|/g' \
-		-e 's/<\/\?t[hd]>//g' \
+		-e 's/<\/?t[hd]>//g' \
 		-e 's/[^|]/-/g' \
 		-e 's/^ *//g;s/ *$//g'
-	printf '%s\n' "$table_lines" | sed \
+	printf '%s\n' "$table_lines" | sed -E \
 		-e 's/<tr>/|/g' \
 		-e 's/<\/tr>/|\n/g' \
 		-e 's/<\/t[hd]> *<t[hd]>/|/g' \
-		-e 's/<\/\?t[hd]>//g' \
+		-e 's/<\/?t[hd]>//g' \
 		-e 's/^ *//g;s/ *$//g'
 }
 
