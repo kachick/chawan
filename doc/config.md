@@ -481,10 +481,10 @@ rewrite-url = '''
 
 # Allow cookie sharing on *sr.ht domains.
 [[siteconf]]
-host = '.*sr\.ht'
-cookie = true
-share-cookie-jar = 'sr.ht'
-third-party-cookie = '.*\.sr.ht'
+host = '(.*\.)?sr\.ht' # either 'something.sr.ht' or 'sr.ht'
+cookie = true # enable cookies
+share-cookie-jar = 'sr.ht' # use the cookie jar of 'sr.ht' for all matched hosts
+third-party-cookie = '.*\.sr\.ht' # allow cookies from subdomains
 ```
 
 Siteconf options:
