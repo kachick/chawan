@@ -277,7 +277,7 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     container.highlightMarks(pager.display, hlcolor)
 
 # Note: this function does not work correctly if start < i of last written char
-proc writeStatusMessage(pager: Pager, str: string, format = newFormat(),
+proc writeStatusMessage(pager: Pager, str: string, format = Format(),
     start = 0, maxwidth = -1, clip = '$'): int {.discardable.} =
   var maxwidth = maxwidth
   if maxwidth == -1:
@@ -302,7 +302,7 @@ proc writeStatusMessage(pager: Pager, str: string, format = newFormat(),
     pager.statusgrid[i].format = format
     i += w
   result = i
-  var def = newFormat()
+  var def = Format()
   while i < e:
     pager.statusgrid[i].str = ""
     pager.statusgrid[i].format = def
@@ -327,8 +327,7 @@ proc refreshStatusMsg*(pager: Pager) =
     pager.writeStatusMessage(pager.alerts[0])
     pager.alerts.delete(0)
   else:
-    var format = newFormat()
-    format.reverse = true
+    var format = Format(flags: {FLAG_REVERSE})
     pager.alerton = false
     container.clearHover()
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
@@ -350,7 +349,7 @@ proc showAlerts*(pager: Pager) =
     pager.refreshStatusMsg()
 
 proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
-  var format = newFormat()
+  var format = Format()
   container.readLines(proc(line: SimpleFlexibleLine) =
     if line.formats.len == 0:
       ostream.write(line.str & "\n")
@@ -370,7 +369,7 @@ proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
         s &= pager.term.processFormat(format, f.format)
       if i < line.str.len:
         s &= pager.term.processOutputString(line.str.substr(i), w)
-      s &= pager.term.processFormat(format, newFormat()) & "\n"
+      s &= pager.term.processFormat(format, Format()) & "\n"
       ostream.write(s))
   ostream.flush()
 

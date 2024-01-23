@@ -85,7 +85,7 @@ proc setText(grid: var FlexibleGrid, linestr: string, x, y: int,
 
   if padwidth > 0:
     # Replace formats for padding
-    var padformat = newFormat()
+    var padformat = Format()
     if fi == -1:
       # No formats
       inc fi # insert after first format (meaning fi = 0)
@@ -124,7 +124,7 @@ proc setText(grid: var FlexibleGrid, linestr: string, x, y: int,
     # No formats => just insert a new format at 0
     inc fi
     grid[y].insertFormat(x, fi, format, node)
-    lformat = newFormat()
+    lformat = Format()
   else:
     # First format's pos may be == x here.
     lformat = grid[y].formats[fi].format # save for later use
@@ -240,12 +240,12 @@ proc paintBackground(grid: var FlexibleGrid, color: CellColor, startx,
     # Process formatting around startx
     if grid[y].formats.len == 0:
       # No formats
-      grid[y].addFormat(startx, newFormat())
+      grid[y].addFormat(startx, Format())
     else:
       let fi = grid[y].findFormatN(startx) - 1
       if fi == -1:
         # No format <= startx
-        grid[y].insertFormat(startx, 0, newFormat())
+        grid[y].insertFormat(startx, 0, Format())
       elif grid[y].formats[fi].pos == startx:
         # Last format equals startx => next comes after, nothing to be done
         discard

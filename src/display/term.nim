@@ -322,7 +322,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   if cellf.fgcolor != format.fgcolor and cellf.fgcolor == defaultColor or
       cellf.bgcolor != format.bgcolor and cellf.bgcolor == defaultColor:
     result &= term.resetFormat()
-    format = newFormat()
+    format = Format()
 
   if cellf.fgcolor != format.fgcolor:
     var color = cellf.fgcolor
@@ -397,7 +397,7 @@ proc processOutputString*(term: Terminal, str: string, w: var int): string =
     return es.readAll()
 
 proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
-  var format = newFormat()
+  var format = Format()
   result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
   result &= term.clearDisplay()
@@ -441,7 +441,7 @@ proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
         result &= term.cursorGoto(cx, y)
         vy = y
       result &= term.resetFormat()
-      var format = newFormat()
+      var format = Format()
       for x in cx ..< grid.width:
         while w < x: # if previous cell had no width, catch up with x
           result &= ' '

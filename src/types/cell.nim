@@ -105,9 +105,6 @@ func width*(line: FlexibleLine): int =
 func width*(cell: FixedCell): int =
   return cell.str.width()
 
-func newFormat*(): Format =
-  return Format(fgcolor: defaultColor, bgcolor: defaultColor)
-
 # Get the first format cell after pos, if any.
 func findFormatN*(line: FlexibleLine|SimpleFlexibleLine, pos: int): int =
   var i = 0
@@ -252,14 +249,14 @@ proc parseSGRAspect(parser: AnsiCodeParser, format: var Format,
       format.flags.incl(entry.flag)
     return true
   elif u == 0:
-    format = newFormat()
+    format = Format()
     return true
   else:
     return parser.parseSGRColor(format, i, u)
 
 proc parseSGR(parser: AnsiCodeParser, format: var Format) =
   if parser.params.len == 0:
-    format = newFormat()
+    format = Format()
   else:
     var i = 0
     while i < parser.params.len:

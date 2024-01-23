@@ -223,7 +223,7 @@ proc drawBorders(display: var FixedGrid, sx, ex, sy, ey: int,
   let tr = if upmore: VerticalBar else: CornerTopRight
   let bl = if downmore: VerticalBar else: CornerBottomLeft
   let br = if downmore: VerticalBar else: CornerBottomRight
-  const fmt = newFormat()
+  const fmt = Format()
   display[sy * display.width + sx].str = tl
   display[sy * display.width + ex].str = tr
   display[ey * display.width + sx].str = bl
@@ -279,7 +279,7 @@ proc drawSelect*(select: Select, display: var FixedGrid) =
   inc sx
   var r: Rune
   var k = 0
-  var format = newFormat()
+  var format = Format()
   while k < select.selected.len and select.selected[k] < si:
     inc k
   for y in sy ..< ey:
