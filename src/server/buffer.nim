@@ -644,7 +644,7 @@ proc do_reshape(buffer: Buffer) =
     buffer.lines = renderDocument(styledRoot, buffer.attrs)
     buffer.prevstyled = styledRoot
   else:
-    buffer.lines.renderStream(buffer.srenderer, buffer.available)
+    buffer.lines.renderStream(buffer.srenderer)
     buffer.available = 0
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
