@@ -12,11 +12,8 @@ import utils/twtstr
 type
   RGBColor* = distinct uint32
 
-  # Straight RGBA color, stored in ARGB format
+  # RGBA color, stored in ARGB format
   RGBAColor* = distinct uint32
-
-  # Premultiplied RGBA color
-  RGBAColorPremul* = distinct RGBAColor
 
   ANSIColor* = distinct uint8
 
@@ -248,11 +245,6 @@ proc `b=`*(c: var RGBAColor, b: uint8) =
 proc `a=`*(c: var RGBAColor, a: uint8) =
   c = RGBAColor(uint32(c) or (uint32(a) shl 24))
 
-func r*(c: RGBAColorPremul): uint8 {.borrow.}
-func g*(c: RGBAColorPremul): uint8 {.borrow.}
-func b*(c: RGBAColorPremul): uint8 {.borrow.}
-func a*(c: RGBAColorPremul): uint8 {.borrow.}
-
 # https://html.spec.whatwg.org/#serialisation-of-a-color
 func serialize*(color: RGBAColor): string =
   if color.a == 255:
@@ -298,24 +290,24 @@ func fastmul1(c, ca: uint32): uint32 =
   ga = ga and 0xFF00FF00u32
   return ga or (rb shr 8)
 
-func fastmul1(c: RGBAColorPremul, ca: uint32): RGBAColorPremul =
-  return RGBAColorPremul(fastmul1(uint32(c), ca))
+func fastmul1(c: RGBAColor, ca: uint32): RGBAColor =
+  return RGBAColor(fastmul1(uint32(c), ca))
 
 func rgba*(r, g, b, a: uint8): RGBAColor
 
-func premul(c: RGBAColor): RGBAColorPremul =
-  return RGBAColorPremul(fastmul(uint32(c), uint32(c.a)))
+func premul(c: RGBAColor): RGBAColor =
+  return RGBAColor(fastmul(uint32(c), uint32(c.a)))
 
 # This is somewhat faster than floats or a lookup table, and is correct for
 # all inputs.
-proc straight(c: RGBAColorPremul): RGBAColor =
+proc straight(c: RGBAColor): RGBAColor =
   let a8 = c.a
   if a8 == 0:
     return RGBAColor(0)
   let a = uint32(a8)
-  let r = (uint32(c.r) * 0xFF00 div a + 0x80) shr 8
-  let g = (uint32(c.g) * 0xFF00 div a + 0x80) shr 8
-  let b = (uint32(c.b) * 0xFF00 div a + 0x80) shr 8
+  let r = ((uint32(c.r) * 0xFF00 div a + 0x80) shr 8) and 0xFF
+  let g = ((uint32(c.g) * 0xFF00 div a + 0x80) shr 8) and 0xFF
+  let b = ((uint32(c.b) * 0xFF00 div a + 0x80) shr 8) and 0xFF
   return RGBAColor((a shl 24) or (r shl 16) or (g shl 8) or b)
 
 func blend*(c0, c1: RGBAColor): RGBAColor =
@@ -327,7 +319,7 @@ func blend*(c0, c1: RGBAColor): RGBAColor =
   let rg = cast[uint8](uint16(pc1.g) + uint16(mc.g))
   let rb = cast[uint8](uint16(pc1.b) + uint16(mc.b))
   let ra = cast[uint8](uint16(pc1.a) + uint16(mc.a))
-  let pres = RGBAColorPremul(rgba(rr, rg, rb, ra))
+  let pres = rgba(rr, rg, rb, ra)
   let res = straight(pres)
   return res
 
