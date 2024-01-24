@@ -12,8 +12,13 @@
 #   one. In other words: cross-language reference semantics work seamlessly.)
 # {.jsfunc.} is used for binding normal functions. Needs a `this' value, as all
 #   following pragmas. As mentioned before, overloading doesn't work but OR
-#   generics do. Bare objects (returned by value) can't be passed either, for
-#   now. Otherwise, most types should work.
+#   generics do. By default, the Nim function name is bound; if this is not
+#   desired, you can rename the function like this: {.jsfunc: "preferredName".}
+#   This also works for all other pragmas that define named functions in JS.
+# {.jsstfunc.} binds static functions. Unlike .jsfunc, it does not have a
+#   `this' value. A class name must be specified, e.g. {.jsstfunc: "URL".} to
+#   define on the URL class. To rename a static function, use the syntax
+#   "ClassName:funcName", e.g. "Response:error".
 # {.jsget.}, {.jsfget.} must be specified on object fields; these generate
 #   regular getter & setter functions.
 # {.jsufget, jsuffget, jsuffunc.} For fields with the [LegacyUnforgeable]
@@ -25,7 +30,8 @@
 #   can only be used on object fields. (I initially wanted to use the same
 #   keyword, unfortunately that didn't work out.)
 # {.jsgetprop.} for property getters. Called when GetOwnProperty would return
-#   nothing. The key should probably be either a string or an integer.
+#   nothing. The key must be either a string or an integer (preferably uint32),
+#   since it is converted from a JSAtom.
 # {.jssetprop.} for property setters. Called on SetProperty - in fact this
 #   is the set() method of Proxy, except it always returns true. Same rules as
 #   jsgetprop for keys.
