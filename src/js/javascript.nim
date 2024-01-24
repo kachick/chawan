@@ -90,6 +90,7 @@ type
     magic: uint16
     unforgeable: bool
     isstatic: bool
+    ctorBody: NimNode
 
   BoundFunctionType = enum
     FUNCTION = "js_func"
@@ -350,7 +351,6 @@ type
     actualMinArgs: int # minArgs without JSContext
     i: int # nim parameters accounted for
     j: int # js parameters accounted for (not including fix ones, e.g. `this')
-    res: NimNode
     unforgeable: bool
     isstatic: bool
 
@@ -744,37 +744,32 @@ proc finishFunCallList(gen: var JSFuncGenerator) =
   for branch in gen.jsFunCallLists:
     branch.add(gen.jsFunCall)
 
-var js_funcs {.compileTime.}: Table[string, JSFuncGenerator]
-var existing_funcs {.compileTime.}: HashSet[string]
-var js_dtors {.compileTime.}: HashSet[string]
-
-proc newBoundFunction(t: BoundFunctionType, name: string, id: NimNode,
-    magic: uint16 = 0, uf = false, isstatic = false): BoundFunction =
-  return BoundFunction(
-    t: t,
-    name: name,
-    id: id,
-    magic: magic,
-    unforgeable: uf,
-    isstatic: isstatic
-  )
+var existingFuncs {.compileTime.}: HashSet[string]
+var jsDtors {.compileTime.}: HashSet[string]
 
 proc registerFunction(typ: string, nf: BoundFunction) =
   BoundFunctions.withValue(typ, val):
     val[].add(nf)
   do:
     BoundFunctions[typ] = @[nf]
-  existing_funcs.incl(nf.id.strVal)
+  existingFuncs.incl(nf.id.strVal)
 
 proc registerFunction(typ: string, t: BoundFunctionType, name: string,
-    id: NimNode, magic: uint16 = 0, uf = false, isstatic = false) =
-  let nf = newBoundFunction(t, name, id, magic, uf, isstatic)
-  registerFunction(typ, nf)
+    id: NimNode, magic: uint16 = 0, uf = false, isstatic = false,
+    ctorBody: NimNode = nil) =
+  registerFunction(typ, BoundFunction(
+    t: t,
+    name: name,
+    id: id,
+    magic: magic,
+    unforgeable: uf,
+    isstatic: isstatic,
+    ctorBody: ctorBody
+  ))
 
-proc registerConstructor(gen: JSFuncGenerator) =
+proc registerConstructor(gen: JSFuncGenerator, jsProc: NimNode) =
   registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName,
-    uf = gen.unforgeable, isstatic = gen.isstatic)
-  js_funcs[gen.funcName] = gen
+    uf = gen.unforgeable, isstatic = gen.isstatic, ctorBody = jsProc)
 
 proc registerFunction(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName,
@@ -810,12 +805,15 @@ proc newJSProc(gen: var JSFuncGenerator, params: openArray[NimNode],
     isva = true): NimNode =
   let jsBody = gen.newJSProcBody(isva)
   let jsPragmas = newNimNode(nnkPragma).add(ident("cdecl"))
-  gen.res = newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
-  return gen.res
+  return newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
 
-func getFuncName(fun: NimNode, jsname: string): string =
+func getFuncName(fun: NimNode, jsname, staticName: string): string =
   if jsname != "":
     return jsname
+  if staticName != "":
+    let name = staticName.after(':')
+    if name != "":
+      return name
   let x = $fun[0]
   if x == "$":
     # stringifier
@@ -865,14 +863,14 @@ func getActualMinArgs(gen: var JSFuncGenerator): int =
   assert ma >= 0
   return ma
 
-proc setupGenerator(fun: NimNode, t: BoundFunctionType,
+proc initGenerator(fun: NimNode, t: BoundFunctionType,
     thisname = some("this"), jsname: string = "", unforgeable = false,
-    isstatic = false, thisType = ""): JSFuncGenerator =
+    staticName = ""): JSFuncGenerator =
   let jsFunCallList = newStmtList()
   let funcParams = getParams(fun)
   var gen = JSFuncGenerator(
     t: t,
-    funcName: getFuncName(fun, jsname),
+    funcName: getFuncName(fun, jsname, staticName),
     generics: getGenerics(fun),
     funcParams: funcParams,
     returnType: getReturn(fun),
@@ -884,14 +882,14 @@ proc setupGenerator(fun: NimNode, t: BoundFunctionType,
     jsFunCallLists: @[jsFunCallList],
     jsFunCall: newCall(fun[0]),
     unforgeable: unforgeable,
-    isstatic: isstatic
+    isstatic: staticName != ""
   )
   gen.addJSContext()
   gen.actualMinArgs = gen.getActualMinArgs() # must come after passctx is set
-  if thisType == "":
+  if staticName == "":
     gen.addThisName(thisname)
   else:
-    gen.thisType = thisType
+    gen.thisType = staticName.until(':')
     gen.newName = ident($gen.t & "_" & gen.funcName)
   return gen
 
@@ -919,8 +917,8 @@ proc makeCtorJSCallAndRet(gen: var JSFuncGenerator, errstmt: NimNode) =
     `errstmt`
 
 macro jsctor*(fun: typed) =
-  var gen = setupGenerator(fun, CONSTRUCTOR, thisname = none(string))
-  if gen.newName.strVal in existing_funcs:
+  var gen = initGenerator(fun, CONSTRUCTOR, thisname = none(string))
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO implement function overloading
     error("Function overloading hasn't been implemented yet...")
   gen.addRequiredParams()
@@ -929,13 +927,13 @@ macro jsctor*(fun: typed) =
   let errstmt = quote do:
     return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
   gen.makeCtorJSCallAndRet(errstmt)
-  discard gen.newJSProc(getJSParams())
-  gen.registerConstructor()
+  let jsProc = gen.newJSProc(getJSParams())
+  gen.registerConstructor(jsProc)
   return newStmtList(fun)
 
 macro jshasprop*(fun: typed) =
-  var gen = setupGenerator(fun, PROPERTY_HAS, thisname = some("obj"))
-  if gen.newName.strVal in existing_funcs:
+  var gen = initGenerator(fun, PROPERTY_HAS, thisname = some("obj"))
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
@@ -953,8 +951,8 @@ macro jshasprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsgetprop*(fun: typed) =
-  var gen = setupGenerator(fun, PROPERTY_GET, thisname = some("obj"))
-  if gen.newName.strVal in existing_funcs:
+  var gen = initGenerator(fun, PROPERTY_GET, thisname = some("obj"))
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
@@ -982,8 +980,8 @@ macro jsgetprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jssetprop*(fun: typed) =
-  var gen = setupGenerator(fun, PROPERTY_SET, thisname = some("obj"))
-  if gen.newName.strVal in existing_funcs:
+  var gen = initGenerator(fun, PROPERTY_SET, thisname = some("obj"))
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("receiver")
@@ -1010,8 +1008,8 @@ macro jssetprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsdelprop*(fun: typed) =
-  var gen = setupGenerator(fun, PROPERTY_DEL, thisname = some("obj"))
-  if gen.newName.strVal in existing_funcs:
+  var gen = initGenerator(fun, PROPERTY_DEL, thisname = some("obj"))
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
@@ -1029,8 +1027,8 @@ macro jsdelprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jspropnames*(fun: typed) =
-  var gen = setupGenerator(fun, PROPERTY_NAMES, thisname = some("obj"))
-  if gen.newName.strVal in existing_funcs:
+  var gen = initGenerator(fun, PROPERTY_NAMES, thisname = some("obj"))
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
@@ -1049,12 +1047,12 @@ macro jspropnames*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsfgetn(jsname: static string, uf: static bool, fun: typed) =
-  var gen = setupGenerator(fun, GETTER, jsname = jsname, unforgeable = uf)
+  var gen = initGenerator(fun, GETTER, jsname = jsname, unforgeable = uf)
   if gen.actualMinArgs != 0 or gen.funcParams.len != gen.minArgs:
     error("jsfget functions must only accept one parameter.")
   if gen.returnType.isNone:
     error("jsfget functions must have a return type.")
-  if gen.newName.strVal in existing_funcs:
+  if gen.newName.strVal in existingFuncs:
     #TODO TODO TODO ditto
     error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("this")
@@ -1080,7 +1078,7 @@ template jsuffget*(jsname: static string, fun: typed) =
 # Ideally we could simulate JS setters using nim setters, but nim setters
 # won't accept types that don't match their reflected field's type.
 macro jsfsetn(jsname: static string, fun: typed) =
-  var gen = setupGenerator(fun, SETTER, jsname = jsname)
+  var gen = initGenerator(fun, SETTER, jsname = jsname)
   if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
   if gen.returnType.isSome:
@@ -1108,9 +1106,9 @@ template jsfset*(jsname: static string, fun: typed) =
   jsfsetn(jsname, fun)
 
 macro jsfuncn*(jsname: static string, uf: static bool,
-    staticname: static string, fun: typed) =
-  var gen = setupGenerator(fun, FUNCTION, jsname = jsname, unforgeable = uf,
-    isstatic = staticname != "", thisType = staticname)
+    staticName: static string, fun: typed) =
+  var gen = initGenerator(fun, FUNCTION, jsname = jsname, unforgeable = uf,
+    staticName = staticName)
   if gen.minArgs == 0 and not gen.isstatic:
     error("Zero-parameter functions are not supported. (Maybe pass Window or Client?)")
   if not gen.isstatic:
@@ -1143,7 +1141,7 @@ template jsstfunc*(name: static string, fun: typed) =
   jsfuncn("", false, name, fun)
 
 macro jsfin*(fun: typed) =
-  var gen = setupGenerator(fun, FINALIZER, thisname = some("fin"))
+  var gen = initGenerator(fun, FINALIZER, thisname = some("fin"))
   let finName = gen.newName
   let finFun = ident(gen.funcName)
   let t = gen.thisTypeNode
@@ -1284,7 +1282,7 @@ type
 
 template jsDestructor*[U](T: typedesc[ref U]) =
   static:
-    js_dtors.incl($T)
+    jsDtors.incl($T)
   when NimMajor >= 2:
     proc `=destroy`(obj: U) =
       nim_finalize_for_js(addr obj)
@@ -1294,7 +1292,7 @@ template jsDestructor*[U](T: typedesc[ref U]) =
 
 template jsDestructor*(T: typedesc[object]) =
   static:
-    js_dtors.incl($T)
+    jsDtors.incl($T)
   when NimMajor >= 2:
     proc `=destroy`(obj: T) =
       nim_finalize_for_js(addr obj)
@@ -1348,7 +1346,7 @@ proc newRegistryInfo(t: NimNode, name: string): RegistryInfo =
     propHasFun: newNilLit(),
     propNamesFun: newNilLit()
   )
-  if info.tname notin js_dtors:
+  if info.tname notin jsDtors:
     warning("No destructor has been defined for type " & info.tname)
   return info
 
@@ -1379,8 +1377,12 @@ proc registerGetters(stmts: NimNode, info: RegistryInfo,
         else:
           return toJS(ctx, arg_0.`node`)
     )
-    let nf = newBoundFunction(GETTER, fn, id, uf = op.unforgeable)
-    registerFunction(tname, nf)
+    registerFunction(tname, BoundFunction(
+      t: GETTER,
+      name: fn,
+      id: id,
+      unforgeable: op.unforgeable
+    ))
 
 proc registerSetters(stmts: NimNode, info: RegistryInfo,
     jsset: seq[JSObjectPragma]) =
@@ -1427,7 +1429,7 @@ proc bindFunctions(stmts: NimNode, info: var RegistryInfo) =
           info.tabList.add(quote do:
             JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
       of CONSTRUCTOR:
-        info.ctorImpl = js_funcs[$f0].res
+        info.ctorImpl = fun.ctorBody
         if info.ctorFun != nil:
           error("Class " & info.tname & " has 2+ constructors.")
         info.ctorFun = f1

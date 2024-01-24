@@ -60,7 +60,7 @@ proc newResponse*(res: int, request: Request, fd = -1, stream: Stream = nil):
     fd: fd
   )
 
-func makeNetworkError*(): Response =
+func makeNetworkError*(): Response {.jsstfunc: "Response:error".} =
   #TODO use "create" function
   #TODO headers immutable
   return Response(
@@ -70,9 +70,6 @@ func makeNetworkError*(): Response =
     headers: newHeaders(),
     headersGuard: GUARD_IMMUTABLE
   )
-
-proc error(): Response {.jsstfunc: "Response".} =
-  return makeNetworkError()
 
 func sok(response: Response): bool {.jsfget: "ok".} =
   return response.status in 200u16 .. 299u16
