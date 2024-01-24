@@ -261,9 +261,9 @@ func newJSClass*(ctx: JSContext, cdef: JSClassDefConst, tname: string,
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
     let val = JS_DupValue(ctx, ctxOpaque.Array_prototype_values)
     doAssert JS_SetProperty(ctx, proto, ctxOpaque.sym_refs[ITERATOR], val) == 1
-  let toStringTag = ctxOpaque.sym_refs[TO_STRING_TAG]
-  let news = JS_NewString(ctx, cdef.class_name)
-  doAssert JS_SetProperty(ctx, proto, toStringTag, news) == 1
+  let news = JS_NewAtomString(ctx, cdef.class_name)
+  doAssert not JS_IsException(news)
+  ctx.definePropertyC(proto, ctxOpaque.sym_refs[TO_STRING_TAG], news)
   JS_SetClassProto(ctx, result, proto)
   ctx.addClassUnforgeable(proto, result, parent, unforgeable)
   if asglobal:

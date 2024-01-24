@@ -105,6 +105,15 @@ makeToJSP(Result)
 makeToJSP(JSValue)
 makeToJSP(JSDict)
 
+proc defineProperty(ctx: JSContext, this: JSValue, name: JSAtom,
+    prop: JSValue, flags = cint(0)) =
+  if JS_DefinePropertyValue(ctx, this, name, prop, flags) <= 0:
+    raise newException(Defect, "Failed to define property string")
+
+proc definePropertyC*(ctx: JSContext, this: JSValue, name: JSAtom,
+    prop: JSValue) =
+  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
+
 proc defineProperty(ctx: JSContext, this: JSValue, name: string,
     prop: JSValue, flags = cint(0)) =
   if JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags) <= 0:
