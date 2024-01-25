@@ -1,0 +1,241 @@
+#!/usr/bin/perl
+#
+# From w3m.
+#
+# Note that this script has licensing terms different from those of Chawan.
+# See /res/license.html#w3m for details.
+#
+# Usage: install perl, then look up man pages using:
+#
+# $ cha man:cha # view in any manual (man cha)
+# $ cha 'man:cha(1)' # view in a specific manual (man -s 1 cha)
+# $ cha man-k:cha # search in any manual (man -k cha)
+# $ cha 'man-k:cha(1)' # search in a specific manual (man -k cha -s 1)
+#
+# You may also use the `mancha` wrapper.
+
+$MAN = $ENV{'MANCHA_MAN'} || '/usr/bin/man';
+$QUERY = $ENV{'QUERY_STRING'} || $ARGV[0];
+$SCRIPT_NAME = $ENV{'SCRIPT_NAME'} || $0;
+$CGI = "man:";
+$CGI2 = "file:";
+# $CGI2 = "file:///\$LIB/hlink.cgi?";
+$SQUEEZE = 1;
+$ENV{'PAGER'} = 'cat';
+
+if ($QUERY =~ /^man-k:/) {
+  $QUERY =~ s/^man-k://;
+  $query{"keyword"} = &form_decode($QUERY);
+  if ($query{"keyword"} =~ s/(.*)\((\w+)\)$//) {
+    $query{"keyword"} = $1;
+    $query{"section"} = $2;
+  }
+} elsif ($QUERY =~ /^man-l:/) {
+  $QUERY =~ s/^man-l://;
+  $query{"local"} = &form_decode($QUERY);
+} else {
+  $QUERY =~ s/^man://;
+  $query{"man"} = &form_decode($QUERY);
+}
+
+if ($query{"local"}) {
+  $file = $query{"local"};
+  if (! ($file =~ /^\//)) {
+    $file = $query{"pwd"} . '/' . $file;
+  }
+  open(F, "GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 $MAN $file 2> /dev/null |");
+} else {
+  $man = $query{"man"};
+  if ($man =~ s/\((\w+)\)$//) {
+    $section = $1;
+    $man_section = "$man($1)";
+  } elsif ($query{"section"}) {
+    $section = $query{"section"};
+    $man_section = "$man($section)";
+  } else {
+    $section = "";
+    $man_section = "$man";
+  }
+
+  $section =~ s:([^-\w\200-\377.,])::g;
+  $man =~ s:([^-\w\200-\377.,])::g;
+  open(F, "GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 $MAN $section $man 2> /dev/null |");
+}
+$ok = 0;
+undef $header;
+$blank = -1;
+$cmd = "";
+$prev = "";
+while(<F>) {
+  if (! defined($header)) {
+    /^\s*$/ && next;
+    $header = $_;
+    $space = $header;
+    chop $space;
+    $space =~ s/\S.*//;
+  } elsif ($_ eq $header) {		# delete header
+    $blank = -1;
+    next;
+  } elsif (!/\010/ && /^$space[\w\200-\377].*\s\S/o) {	# delete footer
+    $blank = -1;
+    next;
+  }
+  if ($SQUEEZE) {
+    if (/^\s*$/) {
+      $blank || $blank++;
+      next;
+    } elsif ($blank) {
+      $blank > 0 && print "\n";
+      $blank = 0;
+    }
+  }
+
+  s/\&/\&amp;/g;
+  s/\</\&lt;/g;
+  s/\>/\&gt;/g;
+  # non ASCII UTF-8 codepoint
+  my $utf8="[\300-\337][\200-\277]|[\340-\357][\200-\277]{2}|[\360-\367][\200-\277]{3}|[\370-\373][\200-\277]{4}|[\374\375][\200-\277]{5}";
+
+  s@($utf8)(\010\1)+@<b>$1</b>@g;
+  s@(\&\w+;|.)(\010\1)+@<b>$1</b>@g;
+  s@_\010((\<b\>)?($utf8)(\</b\>)?)@<u>$1</u>@g;
+  s@_\010((\<b\>)?(\&\w+\;|.)(\</b\>)?)@<u>$1</u>@g;
+  s@((\<b\>)?($utf8)(\</b\>)?)\010_@<u>$1</u>@g;
+  s@((\<b\>)?(\&\w+\;|.)(\</b\>)?)\010_@<u>$1</u>@g;
+  s@.\010(.)@$1@g;
+
+  s@\</b\>\</u\>\<b\>_\</b\>\<u\>\<b\>@_@g;
+  s@\</u\>\<b\>_\</b\>\<u\>@_@g;
+  s@\</u\>\<u\>@@g;
+  s@\</b\>\<b\>@@g;
+
+  if (! $ok) {
+    /^No/ && last;
+    print <<EOF;
+Content-Type: text/html
+
+<html>
+<head><title>man $man_section</title></head>
+<body>
+<pre>
+EOF
+    print;
+    $ok = 1;
+    next;
+  }
+
+  s@(https?|ftp)://[\w.\-/~]+[\w/]@<a href="$&">$&</a>@g;
+  s@\b(mailto:|)(\w[\w.\-]*\@\w[\w.\-]*\.[\w.\-]*\w)@<a href="mailto:$2">$1$2</a>@g;
+  s@(\W)(\~?/[\w.][\w.\-/~]*)@$1 . &file_ref($2)@ge;
+  s@(include(<\/?[bu]\>|\s)*\&lt;)([\w.\-/]+)@$1 . &include_ref($3)@ge;
+  if ($prev && m@^\s*(\<[bu]\>)*(\w[\w.\-]*)(\</[bu]\>)*(\([\dm]\w*\))@) {
+    $cmd .= "$2$4";
+    $prev =~ s@(\w[\w.\-]*-)((\</[bu]\>)*\s*)$@<a href="$CGI$cmd">$1</a>$2@;
+    print $prev;
+    $prev = '';
+    s@^(\s*(\<[bu]\>)*)(\w[\w.\-]*)@@;
+    print "$1<a href=\"$CGI$cmd\">$3</a>";
+  } elsif ($prev) {
+    print $prev;
+    $prev = '';
+  }
+  s@(\w[\w.\-]*)((\</[bu]\>)*)(\([\dm]\w*\))@<a href="$CGI$1$4">$1</a>$2$4@g;
+  if (m@(\w[\w.\-]*)-(\</[bu]\>)*\s*$@) {
+    $cmd = $1;
+    $prev = $_;
+    next;
+  }
+  print;
+}
+if ($prev) {
+  print $prev;
+}
+close(F);
+if (! $ok) {
+  if ($query{'local'}) {
+    print "Cha-Control: ConnectionError 4 file $file not found";
+  } else {
+    print "Cha-Control: ConnectionError 4 no manual entry for $man_section";
+  }
+  exit 1;
+}
+print <<EOF;
+</pre>
+</body>
+</html>
+EOF
+
+sub is_command {
+  local($_) = @_;
+  local($p);
+
+  (! -d && -x) || return 0;
+  if (! %PATH) {
+    for $p (split(":", $ENV{'PATH'})) {
+      $p =~ s@/+$@@;
+      $PATH{$p} = 1;
+    }
+  }
+  s@/[^/]*$@@;
+  return defined($PATH{$_});
+}
+
+sub file_ref {
+  local($_) = @_;
+
+  if (&is_command($_)) {
+    ($man = $_) =~ s@.*/@@;
+    return "<a href=\"$CGI$man\">$_</a>";
+  }
+  if (/^\~/ || -f || -d) {
+    ($file = $_) =~ s/^\~/$ENV{"HOME"}/;
+    return "<a href=\"$CGI2$file\">$_</a>";
+  }
+  return $_;
+}
+
+sub include_ref {
+  local($_) = @_;
+  local($d);
+
+  for $d (
+	"/usr/include",
+	"/usr/local/include",
+	"/usr/X11R6/include",
+	"/usr/X11/include",
+	"/usr/X/include",
+	"/usr/include/X11"
+  ) {
+    -f "$d/$_" && return "<a href=\"$CGI2$d/$_\">$_</a>";
+  }
+  return $_;
+}
+
+sub keyword_ref {
+  local($_, $s) = @_;
+  local(@a) = ();
+
+  for (split(/\s*,\s*/)) {
+    push(@a, "<a href=\"$CGI$_$s\">$_</a>");
+  }
+  return join(", ", @a) . $s;
+}
+
+sub html_quote {
+  local($_) = @_;
+  local(%QUOTE) = (
+    '<', '&lt;',
+    '>', '&gt;',
+    '&', '&amp;',
+    '"', '&quot;',
+  );
+  s/[<>&"]/$QUOTE{$&}/g;
+  return $_;
+}
+
+sub form_decode {
+  local($_) = @_;
+  s/\+/ /g;
+  s/%([\da-f][\da-f])/pack('c', hex($1))/egi;
+  return $_;
+}

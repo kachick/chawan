@@ -18,7 +18,7 @@ this document.
 * [Gemini](#gemini)
 * [Finger](#finger)
 * [Spartan](#spartan)
-* [Local schemes: file:, about:, data:, cgi-bin:](#local-schemes-file-about-data-cgi-bin)
+* [Local schemes: file:, about:, man:, data:, cgi-bin:](#local-schemes-file-about-man-data-cgi-bin)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
@@ -112,7 +112,7 @@ protocol-specific line type. This is sort of supported through a sed filter
 for gemtext outputs in the CGI script (in other words, no modification to
 gmi2html was done to support this).
 
-## Local schemes: file:, about:, data:, cgi-bin:
+## Local schemes: file:, about:, man:, data:, cgi-bin:
 
 While these are not necessarily *protocols*, they are implemented similarly
 to the protocols listed above (and thus can also be replaced, if the user
@@ -124,6 +124,12 @@ shows the directory listing like the FTP protocol does.
 `about:` contains informational pages about the browser. At the time of
 writing, the following pages are available: `about:chawan`, `about:blank`
 and `about:license`.
+
+`man:`, `man-k:` and `man-l:` are wrappers around the commands `man`, `man -k`
+and `man -l`. These look up man pages using `/usr/bin/man` and turn on-page
+references into links. A wrapper command `mancha` also exists; this has an
+interface similar to `man`. Note that Perl is required for these protocols
+to work.
 
 `data:` decodes a data URL as defined in RFC 2397.
 

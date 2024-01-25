@@ -88,6 +88,9 @@ images:
 - more formats (apng, gif: write own decoders, jpeg: use libjpeg, webp: ?)
 - incremental decoding (maybe implement streams first?)
 - separate image decoder process? or just run on a different thread?
+man:
+- detect man directory automatically
+- eventually rewrite in Nim
 etc:
 - important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
 - tests (including aforementioned fuzzer)

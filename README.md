@@ -32,13 +32,15 @@ supported yet.)
 5. Run `make`. (By default, this will build in release mode; for development,
    use `make TARGET=debug`. For details, see [doc/build.md](doc/build.md).)
 6. If you want manpages, run `make manpage`.
-7. Finally, install using `make install` (e.g. `sudo make install`)
+7. Finally, install using `make install` (e.g. `sudo make install`).
+8. (Optional): install Perl so that the man page viewer (`mancha`) works too.
 
 Then, try:
 
 ```bash
 $ cha -V # open in visual mode for a list of default keybindings
 $ cha example.org # open your favorite website directly from the shell
+$ mancha cha # read the cha(1) man page using `mancha' (requires Perl)
 ```
 
 ## Features
@@ -63,6 +65,7 @@ Currently implemented features are:
 * Supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger
 * Can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
   [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
+* Man page viewer (based on w3mman)
 
 ...with a lot more [planned](todo).
 

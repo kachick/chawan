@@ -1,0 +1,51 @@
+.TH MANCHA 1
+
+.SH NAME
+mancha - view manual pages via cha(1)
+
+.SH SYNOPSIS
+.B mancha
+[\fB\-M \fIpath\fR] [\fIsection\fR] \fIname\fR
+.br
+.B mancha
+[\fB\-M \fIpath\fR] [\fIsection\fR] \-k \fIkeyword\fR
+.br
+.B mancha
+-l \fIfile\fR
+
+.SH DESCRIPTION
+\fBmancha\fR enables viewing man pages using the Chawan browser. It is analogous
+to the \fBw3mman\fR(1) utility.
+
+\fBmancha\fR will call \fBcha\fR(1) with the appropriate \fIman:\fR,
+\fIman-k:\fR or \fIman-l:\fR URLs. The protocol adapter then opens the man page
+and injects markup into it, e.g. man page references are converted into
+\fIman:\fR links.
+
+.SH OPTIONS
+Command line options are:
+
+.TP
+\fB\-M \fIpath\fR
+Set \fIpath\fR as the MANPATH environment variable. See \fBman\fR(1) for
+details of how this is interpreted.
+.TP
+\fB\-k \fIkeyword\fR
+Use \fIkeyword\fR for keyword-based man page search.
+.TP
+\fB\-l \fIfile\fR
+Open the specified local \fIfile\fR as a man page.
+
+.SH ENVIRONMENT
+Following environment variables are used:
+
+.TP
+.B MANCHA_CHA
+If set, the contents of the variable are used instead of \fIcha\fR.
+
+.TP
+.B MANCHA_MAN
+If set, the contents of the variable are used instead of \fI/usr/bin/man\fR.
+
+.SH SEE ALSO
+\fBman\fR(1), \fBcha\fR(1), \fBcha-localcgi\fR(5), \fBw3mman\fR(1)

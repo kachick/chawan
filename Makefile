@@ -39,20 +39,25 @@ FLAGS += -d:release --debugger:native
 endif
 
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_CGI_BIN)/http \
+all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
-	$(OUTDIR_CGI_BIN)/spartan \
+	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
 		res/**/* res/map/idna_gen.nim
-	@mkdir -p "$(OUTDIR)/$(TARGET)/bin"
+	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
+
+$(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
+	@mkdir -p "$(OUTDIR_BIN)"
+	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
+		-o:"$(OUTDIR_BIN)/mancha" $(FLAGS) adapter/tools/mancha.nim
 
 $(OBJDIR)/genidna: res/genidna.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger \
@@ -89,6 +94,10 @@ $(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.nim
 $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
+
+$(OUTDIR_CGI_BIN)/man: adapter/protocol/man
+	@mkdir -p $(OUTDIR_CGI_BIN)
+	cp adapter/protocol/man $(OUTDIR_CGI_BIN)
 
 $(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
 	@mkdir -p $(OUTDIR_CGI_BIN)
@@ -177,6 +186,10 @@ $(OBJDIR)/man/cha.1: doc/cha.1
 	@mkdir -p "$(OBJDIR)/man"
 	cp doc/cha.1 "$(OBJDIR)/man/cha.1"
 
+$(OBJDIR)/man/mancha.1: doc/mancha.1
+	@mkdir -p "$(OBJDIR)/man"
+	cp doc/mancha.1 "$(OBJDIR)/man/mancha.1"
+
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
@@ -187,12 +200,13 @@ clean:
 manpage: $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 	$(OBJDIR)/man/cha-mime.types.5 $(OBJDIR)/man/cha-localcgi.5 \
 	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5 \
-	$(OBJDIR)/man/cha.1
+	$(OBJDIR)/man/cha.1 $(OBJDIR)/man/mancha.1
 
 .PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
 	install -m755 "$(OUTDIR_BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
+	install -m755 "$(OUTDIR_BIN)/mancha" "$(DESTDIR)$(PREFIX)/bin"
 	@# intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/http" $(LIBEXECDIR_CHAWAN)/cgi-bin
@@ -205,6 +219,7 @@ install:
 	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/man" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
@@ -218,19 +233,23 @@ install:
 	install -m644 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OBJDIR)/man/cha-protocols.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OBJDIR)/man/cha.1" "$(DESTDIR)$(MANPREFIX1)"; \
+	install -m644 "$(OBJDIR)/man/mancha.1" "$(DESTDIR)$(MANPREFIX1)"; \
 	fi
 
 .PHONY: uninstall
 uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/cha"
+	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 	@# intentionally not quoted
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/http
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/file
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/ftp
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gopher
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/man
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/spartan
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
@@ -245,6 +264,7 @@ uninstall:
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-urimethodmap.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-cha-protocols.5"
 	rm -f "$(DESTDIR)$(MANPREFIX1)/cha.1"
+	rm -f "$(DESTDIR)$(MANPREFIX1)/mancha.1"
 
 .PHONY: submodule
 submodule:
