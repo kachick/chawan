@@ -246,7 +246,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
       proxy: proxy,
       cgiDir: cgiDir,
       urimethodmap: urimethodmap,
-      w3mCGICompat: config.external.w3m_cgi_compat
+      w3mCGICompat: config.external.w3m_cgi_compat,
+      libexecPath: ChaPath("${%CHA_LIBEXEC_DIR}").unquote().get
     )
   )
 

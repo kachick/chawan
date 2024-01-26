@@ -103,6 +103,7 @@ type
     cgiDir*: seq[string]
     uriMethodMap*: URIMethodMap
     w3mCGICompat*: bool
+    libexecPath*: string
 
   FetchPromise* = Promise[JSResult[Response]]
 
@@ -133,7 +134,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
           redo = true
           continue
     if request.url.scheme == "cgi-bin":
-      handle.loadCGI(request, ctx.config.cgiDir, prevurl)
+      handle.loadCGI(request, ctx.config.cgiDir, ctx.config.libexecPath, prevurl)
       if handle.istream == nil:
         handle.close()
       else:

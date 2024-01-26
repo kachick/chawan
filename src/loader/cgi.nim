@@ -4,7 +4,6 @@ import std/posix
 import std/streams
 import std/strutils
 
-import config/chapath
 import extern/stdio
 import io/posixstream
 import loader/connecterror
@@ -25,8 +24,8 @@ proc putMappedURL(url: URL) =
   putEnv("MAPPED_URI_PATH", url.path.serialize())
   putEnv("MAPPED_URI_QUERY", url.query.get(""))
 
-proc setupEnv(cmd, scriptName, pathInfo, requestURI: string, request: Request,
-    contentLen: int, prevURL: URL) =
+proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath: string,
+    request: Request, contentLen: int, prevURL: URL) =
   let url = request.url
   putEnv("SERVER_SOFTWARE", "Chawan")
   putEnv("SERVER_PROTOCOL", "HTTP/1.0")
@@ -132,7 +131,7 @@ proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
   headers.add(k, v)
 
 proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
-    prevURL: URL) =
+    libexecPath: string, prevURL: URL) =
   template t(body: untyped) =
     if not body:
       return
@@ -210,8 +209,8 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
     else:
       closeStdin()
     # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cmd, scriptName, pathInfo, requestURI, request, contentLen,
-      prevURL)
+    setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, request,
+      contentLen, prevURL)
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
     stdout.write("Cha-Control: ConnectionError " & $code)
