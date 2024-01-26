@@ -14,6 +14,7 @@ type
   ErrorInterrupted* = object of IOError
   ErrorInvalid* = object of IOError
   ErrorConnectionReset* = object of IOError
+  ErrorBrokenPipe* = object of IOError
 
 proc raisePosixIOError*() =
   # In the nim stdlib, these are only constants on linux amd64, so we
@@ -30,6 +31,8 @@ proc raisePosixIOError*() =
     raise newException(ErrorInvalid, "invalid")
   elif errno == ECONNRESET:
     raise newException(ErrorConnectionReset, "connection reset by peer")
+  elif errno == EPIPE:
+    raise newException(ErrorBrokenPipe, "broken pipe")
   else:
     raise newException(IOError, $strerror(errno))
 

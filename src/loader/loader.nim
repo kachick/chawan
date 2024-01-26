@@ -152,13 +152,13 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
         inc tries
         redo = true
       of URI_RESULT_WRONG_URL:
-        discard handle.sendResult(ERROR_INVALID_URI_METHOD_ENTRY)
+        handle.sendResult(ERROR_INVALID_URI_METHOD_ENTRY)
         handle.close()
       of URI_RESULT_NOT_FOUND:
-        discard handle.sendResult(ERROR_UNKNOWN_SCHEME)
+        handle.sendResult(ERROR_UNKNOWN_SCHEME)
         handle.close()
   if tries >= MaxRewrites:
-    discard handle.sendResult(ERROR_TOO_MANY_REWRITES)
+    handle.sendResult(ERROR_TOO_MANY_REWRITES)
     handle.close()
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
@@ -166,7 +166,7 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   stream.sread(request)
   let handle = newLoaderHandle(stream, request.canredir)
   if not ctx.config.filter.match(request.url):
-    discard handle.sendResult(ERROR_DISALLOWED_URL)
+    handle.sendResult(ERROR_DISALLOWED_URL)
     handle.close()
   else:
     for k, v in ctx.config.defaultheaders.table:
@@ -231,10 +231,8 @@ proc acceptConnection(ctx: LoaderContext) =
     of SET_REFERRER_POLICY:
       stream.sread(ctx.referrerpolicy)
       stream.close()
-  except IOError:
-    # End-of-file, broken pipe, or something else. For now we just
-    # ignore it and pray nothing breaks.
-    # (TODO: this is probably not a very good idea.)
+  except ErrorBrokenPipe:
+    # receiving end died while reading the file; give up.
     stream.close()
 
 proc exitLoader(ctx: LoaderContext) =
@@ -286,10 +284,11 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           while not handle.istream.atEnd:
             try:
               let n = handle.istream.readData(addr buffer[0], buffer.len)
-              if not handle.sendData(addr buffer[0], n):
-                unreg.add(event.fd)
-                break
-            except ErrorAgain, ErrorWouldBlock:
+              handle.sendData(addr buffer[0], n)
+            except ErrorAgain, ErrorWouldBlock: # retry later
+              break
+            except ErrorBrokenPipe: # receiver died; stop streaming
+              unreg.add(event.fd)
               break
       if Error in event.events:
         assert event.fd != ctx.fd

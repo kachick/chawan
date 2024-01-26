@@ -47,7 +47,7 @@ proc sockWriteData(s: Stream, buffer: pointer, len: int) =
   while i < len:
     let n = SocketStream(s).source.send(addr buffer[i], len - i)
     if n < 0:
-      raise newException(IOError, $strerror(errno))
+      raisePosixIOError()
     i += n
 
 proc sockAtEnd(s: Stream): bool =
@@ -64,7 +64,7 @@ proc sendfd(sock: SocketHandle, fd: cint): int {.importc.}
 proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   assert not s.source.hasDataBuffered
   let n = sendfd(s.source.getFd(), cint(fd))
-  if n < -1:
+  if n < 0:
     raisePosixIOError()
   assert n == 1 # we send a single nul byte as buf
 
@@ -82,7 +82,8 @@ proc recvFileHandle*(s: SocketStream): FileHandle =
 func newSocketStream*(): SocketStream =
   return SocketStream(
     readDataImpl: cast[proc (s: Stream, buffer: pointer, bufLen: int): int
-        {.nimcall, raises: [Defect, IOError, OSError], tags: [ReadIOEffect], gcsafe.}
+        {.nimcall, raises: [Defect, IOError, OSError], tags: [ReadIOEffect],
+        gcsafe.}
     ](sockReadData), # ... ???
     writeDataImpl: sockWriteData,
     atEndImpl: sockAtEnd,
@@ -94,19 +95,24 @@ proc setBlocking*(ss: SocketStream, blocking: bool) =
 
 # see serversocket.nim for an explanation
 {.compile: "connect_unix.c".}
-proc connect_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint {.importc.}
+proc connect_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint
+  {.importc.}
 
-proc connectSocketStream*(path: string, buffered = true, blocking = true): SocketStream =
+proc connectSocketStream*(path: string, buffered = true, blocking = true):
+    SocketStream =
   result = newSocketStream()
   result.blk = blocking
-  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
+  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM,
+    Protocol.IPPROTO_IP, buffered)
   if not blocking:
     sock.getFd().setBlocking(false)
-  if connect_unix_from_c(cint(sock.getFd()), cstring(path), cint(path.len)) != 0:
+  if connect_unix_from_c(cint(sock.getFd()), cstring(path),
+      cint(path.len)) != 0:
     raiseOSError(osLastError())
   result.source = sock
 
-proc connectSocketStream*(pid: Pid, buffered = true, blocking = true): SocketStream =
+proc connectSocketStream*(pid: Pid, buffered = true, blocking = true):
+    SocketStream =
   try:
     connectSocketStream(getSocketPath(pid), buffered, blocking)
   except OSError:

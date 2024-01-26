@@ -70,21 +70,21 @@ proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
   let k = line.until(':')
   if k.len == line.len:
     # invalid
-    discard handle.sendResult(ERROR_CGI_MALFORMED_HEADER)
+    handle.sendResult(ERROR_CGI_MALFORMED_HEADER)
     return RESULT_ERROR
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
-    discard handle.sendResult(0) # success
+    handle.sendResult(0) # success
     status = parseInt32(v).get(0)
     return RESULT_CONTROL_CONTINUE
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("Connected"):
-      discard handle.sendResult(0) # success
+      handle.sendResult(0) # success
       return RESULT_CONTROL_CONTINUE
     elif v.startsWithIgnoreCase("ConnectionError"):
       let errs = v.split(' ')
       if errs.len <= 1:
-        discard handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+        handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
       else:
         let fb = int32(ERROR_CGI_INVALID_CHA_CONTROL)
         let code = int(parseInt32(errs[1]).get(fb))
@@ -94,13 +94,13 @@ proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
           for i in 3 ..< errs.len:
             message &= ' '
             message &= errs[i]
-        discard handle.sendResult(code, message)
+        handle.sendResult(code, message)
       return RESULT_ERROR
     elif v.startsWithIgnoreCase("ControlDone"):
       return RESULT_CONTROL_DONE
-    discard handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+    handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
     return RESULT_ERROR
-  discard handle.sendResult(0) # success
+  handle.sendResult(0) # success
   headers.add(k, v)
   return RESULT_CONTROL_DONE
 
@@ -132,11 +132,8 @@ proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
 
 proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
     libexecPath: string, prevURL: URL) =
-  template t(body: untyped) =
-    if not body:
-      return
   if cgiDir.len == 0:
-    discard handle.sendResult(ERROR_NO_CGI_DIR)
+    handle.sendResult(ERROR_NO_CGI_DIR)
     return
   var path = percentDecode(request.url.pathname)
   if path.startsWith("/cgi-bin/"):
@@ -144,7 +141,7 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
   elif path.startsWith("/$LIB/"):
     path.delete(0 .. "/$LIB/".high)
   if path == "" or request.url.hostname != "":
-    discard handle.sendResult(ERROR_INVALID_CGI_PATH)
+    handle.sendResult(ERROR_INVALID_CGI_PATH)
     return
   var basename: string
   var pathInfo: string
@@ -163,7 +160,7 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
         requestURI = cmd / pathInfo & request.url.search
         break
     if cmd == "":
-      discard handle.sendResult(ERROR_INVALID_CGI_PATH)
+      handle.sendResult(ERROR_INVALID_CGI_PATH)
       return
   else:
     basename = path.until('/')
@@ -175,20 +172,21 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
       if fileExists(cmd):
         break
   if not fileExists(cmd):
-    discard handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
+    handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
+    return
   if basename in ["", ".", ".."] or basename.startsWith("~"):
-    discard handle.sendResult(ERROR_INVALID_CGI_PATH)
+    handle.sendResult(ERROR_INVALID_CGI_PATH)
     return
   var pipefd: array[0..1, cint] # child -> parent
   if pipe(pipefd) == -1:
-    discard handle.sendResult(ERROR_FAIL_SETUP_CGI)
+    handle.sendResult(ERROR_FAIL_SETUP_CGI)
     return
   # Pipe the request body as stdin for POST.
   var pipefd_read: array[0..1, cint] # parent -> child
   let needsPipe = request.body.isSome or request.multipart.isSome
   if needsPipe:
     if pipe(pipefd_read) == -1:
-      discard handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      handle.sendResult(ERROR_FAIL_SETUP_CGI)
       return
   var contentLen = 0
   if request.body.isSome:
@@ -197,7 +195,7 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
     contentLen = request.multipart.get.calcLength()
   let pid = fork()
   if pid == -1:
-    t handle.sendResult(ERROR_FAIL_SETUP_CGI)
+    handle.sendResult(ERROR_FAIL_SETUP_CGI)
   elif pid == 0:
     discard close(pipefd[0]) # close read
     discard dup2(pipefd[1], 1) # dup stdout
@@ -232,12 +230,12 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
     var status = 200
     if ps.atEnd:
       # no data?
-      discard handle.sendResult(ERROR_CGI_NO_DATA)
+      handle.sendResult(ERROR_CGI_NO_DATA)
       return
     let line = ps.readLine()
     if line == "": #\r\n
       # no headers, body comes immediately
-      t handle.sendResult(0) # success
+      handle.sendResult(0) # success
     else:
       var res = handle.handleFirstLine(line, headers, status)
       if res == RESULT_ERROR:
@@ -257,6 +255,6 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
           if line == "": #\r\n
             break
           handle.handleLine(line, headers)
-    t handle.sendStatus(status)
-    t handle.sendHeaders(headers)
+    handle.sendStatus(status)
+    handle.sendHeaders(headers)
     handle.istream = ps
