@@ -1,5 +1,4 @@
 import std/streams
-import std/strutils
 import std/tables
 
 import utils/twtstr
@@ -10,27 +9,21 @@ type MimeTypes* = Table[string, string]
 # Add mime types found in stream to mimeTypes.
 # No error handling for now.
 proc parseMimeTypes*(mimeTypes: var MimeTypes, stream: Stream) =
-  while not stream.atEnd():
-    let line = stream.readLine()
+  var line: string
+  while stream.readLine(line):
     if line.len == 0:
       continue
     if line[0] == '#':
       continue
-    var t = ""
-    var i = 0
-    while i < line.len and line[i] notin AsciiWhitespace:
-      t &= line[i].toLowerAscii()
-      inc i
+    let t = line.untilLower(AsciiWhitespace)
     if t == "": continue
+    var i = t.len
     while i < line.len:
-      while i < line.len and line[i] in AsciiWhitespace:
-        inc i
-      var ext = ""
-      while i < line.len and line[i] notin AsciiWhitespace:
-        ext &= line[i].toLowerAscii()
-        inc i
-      if ext == "": continue
-      discard mimeTypes.hasKeyOrPut(ext, t)
+      i = line.skipBlanks(i)
+      let ext = line.untilLower(AsciiWhitespace, i)
+      i += ext.len
+      if ext != "":
+        discard mimeTypes.hasKeyOrPut(ext, t)
   stream.close()
 
 proc parseMimeTypes*(stream: Stream): MimeTypes =

@@ -205,6 +205,12 @@ func until*(s: string, c: set[char], starti = 0): string =
       break
     result.add(s[i])
 
+func untilLower*(s: string, c: set[char], starti = 0): string =
+  for i in starti ..< s.len:
+    if s[i] in c:
+      break
+    result.add(s[i].toLowerAscii())
+
 func until*(s: string, c: char, starti = 0): string =
   s.until({c}, starti)
 
