@@ -1092,19 +1092,29 @@ will be fixed in the future.)</td>
 </tr>
 
 <tr>
-<td>`pager.externCapture(cmd)`
-</td>
+<td>`pager.externCapture(cmd)`</td>
 <td>Like extern(), but redirect the command's stdout string into the
 result. null is returned if the command wasn't executed successfully, or if
 the command returned a non-zero exit value.</td>
 </tr>
 
 <tr>
-<td>`pager.externInto(cmd, ins)`
-</td>
+<td>`pager.externInto(cmd, ins)`</td>
 <td>Like extern(), but redirect `ins` into the command's standard input stream.
 `true` is returned if the command exits successfully, otherwise the return
 value is `false`.</td>
+</tr>
+
+<tr>
+<td>`pager.hoverLink`</td>
+<td>Getter for the link currently under the cursor. Returns the empty string if
+no link is found.</td>
+</tr>
+
+<tr>
+<td>`pager.hoverTitle`</td>
+<td>Getter for the title currently under the cursor. Returns the empty string if
+no title is found.</td>
 </tr>
 
 </table>

@@ -1495,6 +1495,12 @@ proc peekCursor(container: Container) {.jsfunc.} =
   else:
     container.lastpeek = low(HoverType)
 
+func hoverLink(container: Container): string {.jsfget.} =
+  return container.hovertext[HOVER_LINK]
+
+func hoverTitle(container: Container): string {.jsfget.} =
+  return container.hovertext[HOVER_TITLE]
+
 proc handleCommand(container: Container) =
   var packetid, len: int
   container.iface.stream.sread(len)

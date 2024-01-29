@@ -150,7 +150,7 @@ C-v = 'n => pager.cursorToggleSelection(n, {selectionType: "block"})'
 y = '''
 async () => {
 	if (!pager.currentSelection) {
-		pager.alert("No selection to yank.");
+		feedNext();
 		return;
 	}
 	const text = await pager.getSelectionText(pager.currentSelection);
@@ -184,6 +184,17 @@ M-y = '''
 () => {
 	if (pager.extern('printf \'%s\' "$CHA_URL" | xsel -bi',
 			{suspend: false, setenv: true}))
+		pager.alert("Copied URL to clipboard.");
+	else
+		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+}
+'''
+yc = '''
+() => {
+	const link = pager.hoverLink
+	if (!link)
+		pager.alert("Please move the cursor above a link and try again.");
+	else if (pager.externInto('xsel -bi', link))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
