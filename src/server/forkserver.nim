@@ -24,8 +24,8 @@ type
 
   ForkServer* = ref object
     process*: Pid
-    istream*: Stream
-    ostream*: Stream
+    istream: Stream
+    ostream: Stream
     estream*: PosixStream
 
   ForkServerContext = object
@@ -61,6 +61,17 @@ proc removeChild*(forkserver: ForkServer, pid: Pid) =
   forkserver.ostream.swrite(REMOVE_CHILD)
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
+
+proc forkBuffer*(forkserver: ForkServer, source: BufferSource,
+    config: BufferConfig, attrs: WindowAttributes): Pid =
+  forkserver.ostream.swrite(FORK_BUFFER)
+  forkserver.ostream.swrite(source)
+  forkserver.ostream.swrite(config)
+  forkserver.ostream.swrite(attrs)
+  forkserver.ostream.flush()
+  var process: Pid
+  forkserver.istream.sread(process)
+  return process
 
 proc trapSIGINT() =
   # trap SIGINT, so e.g. an external editor receiving an interrupt in the
@@ -107,11 +118,9 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   var source: BufferSource
   var config: BufferConfig
   var attrs: WindowAttributes
-  var mainproc: Pid
   ctx.istream.sread(source)
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
-  ctx.istream.sread(mainproc)
   let loaderPid = ctx.forkLoader(config.loaderConfig)
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
@@ -158,9 +167,10 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   return pid
 
 proc runForkServer() =
-  var ctx: ForkServerContext
-  ctx.istream = newPosixStream(stdin.getFileHandle())
-  ctx.ostream = newPosixStream(stdout.getFileHandle())
+  var ctx = ForkServerContext(
+    istream: newPosixStream(stdin.getFileHandle()),
+    ostream: newPosixStream(stdout.getFileHandle())
+  )
   while true:
     try:
       var cmd: ForkCommand

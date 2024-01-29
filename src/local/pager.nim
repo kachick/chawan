@@ -69,7 +69,6 @@ type
     linehist: array[LineMode, LineHistory]
     linemode: LineMode
     mailcap: Mailcap
-    mainproc: Pid
     mimeTypes: MimeTypes
     notnum*: bool # has a non-numeric character been input already?
     numload*: int
@@ -230,15 +229,14 @@ proc setPaths(pager: Pager): Err[string] =
   pager.cgiDir = cgiDir
   return ok()
 
-proc newPager*(config: Config, attrs: WindowAttributes,
-    forkserver: ForkServer, mainproc: Pid, ctx: JSContext): Pager =
+proc newPager*(config: Config, attrs: WindowAttributes, forkserver: ForkServer,
+    ctx: JSContext): Pager =
   let (mailcap, errs) = config.getMailcap()
   let pager = Pager(
     config: config,
     display: newFixedGrid(attrs.width, attrs.height - 1),
     forkserver: forkserver,
     mailcap: mailcap,
-    mainproc: mainproc,
     mimeTypes: config.getMimeTypes(),
     omnirules: config.getOmniRules(ctx),
     proxy: config.getProxy(),
@@ -451,7 +449,6 @@ proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
     title = "", redirectdepth = 0, canreinterpret = true): Container =
   return newBuffer(
     pager.forkserver,
-    pager.mainproc,
     bufferConfig,
     source,
     title,

@@ -5,7 +5,6 @@ let forks = newForkServer()
 
 import std/options
 import std/os
-import std/posix
 
 import config/chapath
 import config/config
@@ -208,7 +207,7 @@ Options:
     quit(1)
   SocketDirectory = tmpdir0.get
 
-  let c = newClient(config, forks, getpid())
+  let c = newClient(config, forks)
   try:
     c.launchClient(pages, ctype, cs, dump)
   except CatchableError:

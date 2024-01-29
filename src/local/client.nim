@@ -65,7 +65,6 @@ type
     jsctx: JSContext
     jsrt: JSRuntime
     loader: FileLoader
-    mainproc: Pid
     pager {.jsget.}: Pager
     selector: Selector[int]
     timeouts: TimeoutState
@@ -676,17 +675,16 @@ proc addJSModules(client: Client, ctx: JSContext) =
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client
 
-proc newClient*(config: Config, forkserver: ForkServer, mainproc: Pid): Client =
+proc newClient*(config: Config, forkserver: ForkServer): Client =
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = newJSRuntime()
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let jsctx = jsrt.newJSContext()
   let attrs = getWindowAttributes(stdout)
-  let pager = newPager(config, attrs, forkserver, mainproc, jsctx)
+  let pager = newPager(config, attrs, forkserver, jsctx)
   let client = Client(
     config: config,
     forkserver: forkserver,
-    mainproc: mainproc,
     loader: forkserver.newFileLoader(
       defaultHeaders = config.getDefaultHeaders(),
       proxy = config.getProxy(),

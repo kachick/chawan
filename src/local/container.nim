@@ -127,28 +127,18 @@ type
 jsDestructor(Highlight)
 jsDestructor(Container)
 
-proc newBuffer*(forkserver: ForkServer, mainproc: Pid, config: BufferConfig,
+proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     source: BufferSource, title = "", redirectdepth = 0,
     canreinterpret = true): Container =
   let attrs = getWindowAttributes(stdout)
-  let ostream = forkserver.ostream
-  let istream = forkserver.istream
-  ostream.swrite(FORK_BUFFER)
-  ostream.swrite(source)
-  ostream.swrite(config)
-  ostream.swrite(attrs)
-  ostream.swrite(mainproc)
-  ostream.flush()
-  var process: Pid
-  istream.sread(process)
   return Container(
+    process: forkserver.forkBuffer(source, config, attrs),
     source: source,
     width: attrs.width,
     height: attrs.height - 1,
     title: title,
     config: config,
     redirectdepth: redirectdepth,
-    process: process,
     pos: CursorPosition(
       setx: -1
     ),
