@@ -62,8 +62,7 @@ type
   InlineBoxBuilder = ref object of BoxBuilder
     text: seq[string]
     newline: bool
-    splitstart: bool
-    splitend: bool
+    splitType: set[SplitType]
 
   BlockBoxBuilder = ref object of BoxBuilder
     inlinelayout: bool
@@ -1307,7 +1306,6 @@ proc addInlineBlock(ictx: var InlineContext, state: var InlineState,
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
     margin: sizes.margin
   )
   var bctx = BlockContext(lctx: lctx)
@@ -1350,8 +1348,12 @@ proc addInlineBlock(ictx: var InlineContext, state: var InlineState,
 proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
     InlineFragment =
   let lctx = ictx.lctx
-  let fragment = InlineFragment(computed: box.computed, node: box.node)
-  if box.splitstart:
+  let fragment = InlineFragment(
+    computed: box.computed,
+    node: box.node,
+    splitType: box.splitType
+  )
+  if stSplitStart in box.splitType:
     let marginLeft = box.computed{"margin-left"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += marginLeft
   var state = InlineState(
@@ -1366,7 +1368,7 @@ proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
   )
   if box.newline:
     ictx.flushLine(state)
-  if box.splitstart:
+  if stSplitStart in box.splitType:
     let paddingLeft = box.computed{"padding-left"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingLeft
 
@@ -1391,7 +1393,7 @@ proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
     else:
       assert false, "child.t is " & $child.computed{"display"}
 
-  if box.splitend:
+  if stSplitEnd in box.splitType:
     let paddingRight = box.computed{"padding-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingRight
     let marginRight = box.computed{"margin-right"}.px(lctx, ictx.space.w)
@@ -1492,7 +1494,6 @@ proc buildBlock(bctx: var BlockContext, builder: BlockBoxBuilder,
     builder.computed)
   let box = BlockBox(
     computed: builder.computed,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
     node: builder.node,
     offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
     margin: sizes.margin
@@ -1510,7 +1511,6 @@ proc buildListItem(bctx: var BlockContext, builder: ListItemBoxBuilder,
     builder.computed)
   let box = ListItemBox(
     computed: builder.computed,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
     node: builder.node,
     offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
     margin: sizes.margin
@@ -1530,7 +1530,6 @@ proc buildTable(bctx: var BlockContext, builder: TableBoxBuilder,
     builder.computed)
   let box = BlockBox(
     computed: builder.computed,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
     node: builder.node,
     offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
     margin: sizes.margin
@@ -1552,8 +1551,6 @@ proc positionAbsolute(lctx: LayoutState, box: BlockBox, margin: RelativeRect) =
   let bottom = box.computed{"bottom"}
   let parentWidth = applySizeConstraint(lctx.attrs.width_px, last.w)
   let parentHeight = applySizeConstraint(lctx.attrs.height_px, last.h)
-  box.x_positioned = not (left.auto and right.auto)
-  box.y_positioned = not (top.auto and bottom.auto)
   if not left.auto:
     box.offset.x = left.px(lctx, parentWidth)
     box.offset.x += margin.left
@@ -1629,7 +1626,6 @@ proc buildTableCaption(lctx: LayoutState, builder: TableCaptionBoxBuilder,
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
     margin: sizes.margin
   )
   var bctx = BlockContext(lctx: lctx)
@@ -1813,7 +1809,6 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
   var n = 0
   let row = BlockBox(
     computed: builder.computed,
-    positioned: builder.computed{"position"} != POSITION_STATIC,
     node: builder.node
   )
   var baseline: LayoutUnit = 0
@@ -2665,7 +2660,7 @@ proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   ctx.iflush()
   ctx.inlineStack.add(styledNode)
   var lbox = ctx.reconstructInlineParents()
-  lbox.splitstart = true
+  lbox.splitType.incl(stSplitStart)
   ctx.ibox = lbox
   for child in styledNode.children:
     case child.t
@@ -2683,7 +2678,7 @@ proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
     ctx.iflush()
     lbox = ctx.reconstructInlineParents()
     ctx.ibox = lbox
-  lbox.splitend = true
+  lbox.splitType.incl(stSplitEnd)
   ctx.inlineStack.setLen(ctx.inlineStack.len - 1)
   ctx.iflush()
 

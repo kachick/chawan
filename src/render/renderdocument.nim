@@ -33,8 +33,8 @@ func toFormat(computed: CSSComputedValues): Format =
     flags: flags
   )
 
-proc setText(grid: var FlexibleGrid, linestr: string, x, y: int,
-    format: Format, node: StyledNode) {.inline.} =
+proc setText(grid: var FlexibleGrid; linestr: string; x, y: int;
+    format: Format; node: StyledNode) {.inline.} =
   assert linestr.len != 0
   var i = 0
   var r: Rune
@@ -169,13 +169,13 @@ proc setText(grid: var FlexibleGrid, linestr: string, x, y: int,
   assert grid[y].formats[fi].pos <= nx
   # That's it!
 
-proc setRowWord(grid: var FlexibleGrid, word: InlineAtom, x, y: LayoutUnit,
-    attrs: WindowAttributes, format: Format, node: StyledNode) =
-  let y = toInt((y + word.offset.y) div attrs.ppl) # y cell
+proc setRowWord(grid: var FlexibleGrid; word: InlineAtom; offset: Offset;
+    attrs: WindowAttributes; format: Format; node: StyledNode) =
+  let y = toInt((offset.y + word.offset.y) div attrs.ppl) # y cell
   if y < 0:
     # y is outside the canvas, no need to draw
     return
-  var x = toInt((x + word.offset.x) div attrs.ppc) # x cell
+  var x = toInt((offset.x + word.offset.x) div attrs.ppc) # x cell
   var i = 0
   var r: Rune
   while x < 0 and i < word.str.len:
@@ -188,13 +188,14 @@ proc setRowWord(grid: var FlexibleGrid, word: InlineAtom, x, y: LayoutUnit,
     let linestr = word.str.substr(i)
     grid.setText(linestr, x, y, format, node)
 
-proc setSpacing(grid: var FlexibleGrid, spacing: InlineAtom, x, y: LayoutUnit,
-    attrs: WindowAttributes, format: Format, node: StyledNode) =
-  let y = toInt((y + spacing.offset.y) div attrs.ppl) # y cell
+proc setSpacing(grid: var FlexibleGrid; spacing: InlineAtom; offset: Offset;
+    attrs: WindowAttributes; format: Format; node: StyledNode) =
+  let y = toInt((offset.y + spacing.offset.y) div attrs.ppl) # y cell
   if y < 0: return # y is outside the canvas, no need to draw
-  var x = toInt((x + spacing.offset.x) div attrs.ppc) # x cell
+  var x = toInt((offset.x + spacing.offset.x) div attrs.ppc) # x cell
   let width = toInt(spacing.size.w div attrs.ppc) # cell width
-  if x + width < 0: return # highest x is outside the canvas, no need to draw
+  if x + width < 0:
+    return # highest x is outside the canvas, no need to draw
   var i = 0
   if x < 0:
     i -= x
@@ -203,8 +204,8 @@ proc setSpacing(grid: var FlexibleGrid, spacing: InlineAtom, x, y: LayoutUnit,
     let linestr = ' '.repeat(width - i)
     grid.setText(linestr, x, y, format, node)
 
-proc paintBackground(grid: var FlexibleGrid, color: CellColor, startx,
-    starty, endx, endy: int, node: StyledNode, attrs: WindowAttributes) =
+proc paintBackground(grid: var FlexibleGrid; color: CellColor; startx,
+    starty, endx, endy: int; node: StyledNode; attrs: WindowAttributes) =
   var starty = starty div attrs.ppl
   var endy = endy div attrs.ppl
 
@@ -278,11 +279,18 @@ proc paintBackground(grid: var FlexibleGrid, color: CellColor, startx,
         grid[y].formats[fi].format.bgcolor = color
         grid[y].formats[fi].node = node
 
-proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
-  attrs: WindowAttributes, posx: LayoutUnit = 0, posy: LayoutUnit = 0)
+type RenderState = object
+  # Position of the absolute positioning containing block:
+  # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
+  absolutePos: seq[Offset]
 
-proc paintInlineFragment(grid: var FlexibleGrid, fragment: InlineFragment,
-    x, y: LayoutUnit, bgcolor: CellColor, attrs: WindowAttributes) =
+proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
+  box: BlockBox; offset: Offset; attrs: WindowAttributes)
+
+proc paintInlineFragment(grid: var FlexibleGrid; fragment: InlineFragment;
+    offset: Offset; bgcolor: CellColor; attrs: WindowAttributes) =
+  let x = offset.x
+  let y = offset.y
   let node = fragment.node
   if fragment.startOffset.y - fragment.size.h == fragment.endOffset.y:
     let x0 = toInt(x + fragment.startOffset.x)
@@ -307,61 +315,75 @@ proc paintInlineFragment(grid: var FlexibleGrid, fragment: InlineFragment,
     let y5 = toInt(y + fragment.size.h)
     grid.paintBackground(bgcolor, x4, y4, x5, y5, node, attrs)
 
-proc renderInlineFragment(grid: var FlexibleGrid, fragment: InlineFragment,
-    x, y: LayoutUnit, attrs: WindowAttributes, posx: LayoutUnit = 0,
-    posy: LayoutUnit = 0) =
+proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState,
+    fragment: InlineFragment; offset: Offset; attrs: WindowAttributes) =
   assert fragment.atoms.len == 0 or fragment.children.len == 0
   if fragment.computed{"background-color"}.a > 0: # TODO color blending
     let bgcolor = fragment.computed{"background-color"}.cellColor()
-    grid.paintInlineFragment(fragment, x, y, bgcolor, attrs)
+    grid.paintInlineFragment(fragment, offset, bgcolor, attrs)
   if fragment.atoms.len > 0:
     let format = fragment.computed.toFormat()
     for atom in fragment.atoms:
       case atom.t
       of INLINE_BLOCK:
-        let x = x + atom.offset.x
-        let y = y + atom.offset.y
-        grid.renderBlockBox(atom.innerbox, x, y, attrs, posx, posy)
+        let offset = Offset(
+          x: offset.x + atom.offset.x,
+          y: offset.y + atom.offset.y
+        )
+        grid.renderBlockBox(state, atom.innerbox, offset, attrs)
       of INLINE_WORD:
-        grid.setRowWord(atom, x, y, attrs, format, fragment.node)
+        grid.setRowWord(atom, offset, attrs, format, fragment.node)
       of INLINE_SPACING:
-        grid.setSpacing(atom, x, y, attrs, format, fragment.node)
+        grid.setSpacing(atom, offset, attrs, format, fragment.node)
+  if fragment.computed{"position"} != POSITION_STATIC:
+    if fragment.splitType != {stSplitStart, stSplitEnd}:
+      if stSplitStart in fragment.splitType:
+        state.absolutePos.add(Offset(
+          x: offset.x + fragment.startOffset.x,
+          y: offset.y + fragment.endOffset.y
+        ))
+      if stSplitEnd in fragment.splitType:
+        discard state.absolutePos.pop()
   for child in fragment.children:
-    grid.renderInlineFragment(child, x, y, attrs, posx, posy)
+    grid.renderInlineFragment(state, child, offset, attrs)
 
-proc renderRootInlineFragment(grid: var FlexibleGrid, root: RootInlineFragment,
-    x, y: LayoutUnit, attrs: WindowAttributes, posx: LayoutUnit = 0,
-    posy: LayoutUnit = 0) =
-  let x = x + root.offset.x
-  let y = y + root.offset.y
-  grid.renderInlineFragment(root.fragment, x, y, attrs, posx, posy)
+proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
+    root: RootInlineFragment; offset: Offset; attrs: WindowAttributes) =
+  let offset = Offset(
+    x: offset.x + root.offset.x,
+    y: offset.y + root.offset.y
+  )
+  grid.renderInlineFragment(state, root.fragment, offset, attrs)
 
-proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
-    attrs: WindowAttributes, posx: LayoutUnit = 0, posy: LayoutUnit = 0) =
+proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
+    box: BlockBox; offset: Offset; attrs: WindowAttributes) =
   var stack = newSeqOfCap[tuple[
     box: BlockBox,
-    x, y, posx, posy: LayoutUnit
+    offset: Offset
   ]](100)
-  stack.add((box, x, y, posx, posy))
+  stack.add((box, offset))
 
   while stack.len > 0:
-    var (box, x, y, posx, posy) = stack.pop()
-    if box.x_positioned:
-      x = posx
-    if box.y_positioned:
-      y = posy
-    x += box.offset.x
-    y += box.offset.y
-    if box.positioned:
-      posx = x
-      posy = y
+    var (box, offset) = stack.pop()
+    if box == nil: # positioned marker
+      discard state.absolutePos.pop()
+      continue
+    if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
+      offset.x = state.absolutePos[^1].x
+    if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
+      offset.y = state.absolutePos[^1].y
+    offset.x += box.offset.x
+    offset.y += box.offset.y
+    if box.computed{"position"} != POSITION_STATIC:
+      state.absolutePos.add(offset)
+      stack.add((nil, Offset(x: -1, y: -1)))
 
     if box.computed{"visibility"} == VISIBILITY_VISIBLE:
       if box.computed{"background-color"}.a != 0: #TODO color blending
-        let ix = toInt(x)
-        let iy = toInt(y)
-        let iex = toInt(x + box.size.w)
-        let iey = toInt(y + box.size.h)
+        let ix = toInt(offset.x)
+        let iy = toInt(offset.y)
+        let iex = toInt(offset.x + box.size.w)
+        let iey = toInt(offset.y + box.size.h)
         let color = box.computed{"background-color"}.cellColor()
         grid.paintBackground(color, ix, iy, iex, iey, box.node, attrs)
       if box.computed{"background-image"}.t == CONTENT_IMAGE and
@@ -369,35 +391,41 @@ proc renderBlockBox(grid: var FlexibleGrid, box: BlockBox, x, y: LayoutUnit,
         # ugly hack for background-image display... TODO actually display images
         let s = "[img]"
         let w = s.len * attrs.ppc
-        var ix = x
+        var ix = offset.x
         if box.size.w < w:
           # text is larger than image; center it to minimize error
           ix -= w div 2
           ix += box.size.w div 2
         let x = toInt(ix div attrs.ppc)
-        let y = toInt(y div attrs.ppl)
+        let y = toInt(offset.y div attrs.ppl)
         if y >= 0 and x + w >= 0:
           grid.setText(s, x, y, box.computed.toFormat(), box.node)
 
       if box of ListItemBox:
         let box = ListItemBox(box)
         if box.marker != nil:
-          let x = x - box.marker.size.w
-          grid.renderRootInlineFragment(box.marker, x, y, attrs)
+          let offset = Offset(
+            x: offset.x - box.marker.size.w,
+            y: offset.y
+          )
+          grid.renderRootInlineFragment(state, box.marker, offset, attrs)
 
     if box.inline != nil:
       assert box.nested.len == 0
       if box.computed{"visibility"} == VISIBILITY_VISIBLE:
-        grid.renderRootInlineFragment(box.inline, x, y, attrs)
+        grid.renderRootInlineFragment(state, box.inline, offset, attrs)
     else:
       for i in countdown(box.nested.high, 0):
-        stack.add((box.nested[i], x, y, posx, posy))
+        stack.add((box.nested[i], offset))
 
-proc renderDocument*(styledRoot: StyledNode, attrs: WindowAttributes):
+proc renderDocument*(styledRoot: StyledNode; attrs: WindowAttributes):
     FlexibleGrid =
   var grid: FlexibleGrid
+  var state = RenderState(
+    absolutePos: @[Offset(x: 0, y: 0)]
+  )
   let rootBox = renderLayout(styledRoot, attrs)
-  grid.renderBlockBox(rootBox, 0, 0, attrs)
+  grid.renderBlockBox(state, rootBox, Offset(x: 0, y: 0), attrs)
   if grid.len == 0:
     grid.addLine()
   return grid

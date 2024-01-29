@@ -43,6 +43,9 @@ type
     xminwidth*: LayoutUnit
     size*: Size
 
+  SplitType* = enum
+    stSplitStart, stSplitEnd
+
   InlineFragment* = ref object
     # Say we have the following inline box:
     #   abcd
@@ -64,6 +67,7 @@ type
     atoms*: seq[InlineAtom]
     computed*: CSSComputedValues
     node*: StyledNode
+    splitType*: set[SplitType]
 
   RelativeRect* = object
     top*: LayoutUnit
@@ -79,9 +83,6 @@ type
     offset*: Offset
     size*: Size # padding size
     margin*: RelativeRect #TODO get rid of this?
-    positioned*: bool
-    x_positioned*: bool
-    y_positioned*: bool
     # very bad name. basically the minimum content width after the contents
     # have been positioned (usually the width of the shortest word.) used
     # in table cells.
