@@ -154,7 +154,7 @@ proc command(client: Client, src: string) =
 
 proc suspend(client: Client) {.jsfunc.} =
   client.pager.term.quit()
-  discard kill(client.mainproc, cint(SIGSTOP))
+  discard kill(0, cint(SIGTSTP))
   client.pager.term.restart()
 
 proc quit(client: Client, code = 0) {.jsfunc.} =

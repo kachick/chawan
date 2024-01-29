@@ -657,8 +657,9 @@ A list of built-in pager functions can be found below.
 <tr>
 <td>`suspend()`</td>
 <td>Temporarily suspend the browser (by delivering the client process a
-SIGSTOP signal.)<br>
-Note: this does not suspend buffer processes.</td>
+SIGTSTP signal.)<br>
+Note: this suspends the entire process group, including e.g. buffer processes or
+CGI scripts.</td>
 </tr>
 
 </table>
