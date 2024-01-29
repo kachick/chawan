@@ -683,7 +683,7 @@ proc processWhitespace(ictx: var InlineContext, state: var InlineState,
       inc ictx.whitespacenum
       ictx.whitespaceFragment = state.fragment
 
-func newInlineContext(bctx: var BlockContext, space: AvailableSpace,
+func initInlineContext(bctx: var BlockContext, space: AvailableSpace,
     bfcOffset: Offset, root: RootInlineFragment): InlineContext =
   var ictx = InlineContext(
     currentLine: LineBoxState(
@@ -1093,10 +1093,10 @@ func sum(a: Strut): LayoutUnit =
 proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
   space: AvailableSpace, computed: CSSComputedValues, offset,
   bfcOffset: Offset): RootInlineFragment
-proc buildBlockLayout(bctx: var BlockContext, box: BlockBox,
+proc layoutBlock(bctx: var BlockContext, box: BlockBox,
   builder: BlockBoxBuilder, sizes: ResolvedSizes)
-proc buildTableLayout(lctx: LayoutState, table: BlockBox,
-  builder: TableBoxBuilder, sizes: ResolvedSizes)
+proc layoutTable(lctx: LayoutState, table: BlockBox, builder: TableBoxBuilder,
+  sizes: ResolvedSizes)
 
 # Note: padding must still be applied after this.
 proc applyWidth(box: BlockBox, sizes: ResolvedSizes,
@@ -1124,7 +1124,7 @@ func bfcOffset(bctx: BlockContext): Offset =
     return bctx.parentBps.offset
   return Offset()
 
-proc buildInlineLayout(bctx: var BlockContext, box: BlockBox,
+proc layoutInline(bctx: var BlockContext, box: BlockBox,
     children: seq[BoxBuilder], sizes: ResolvedSizes) =
   var bfcOffset = bctx.bfcOffset
   let offset = Offset(x: sizes.padding.left, y: sizes.padding.top)
@@ -1272,8 +1272,8 @@ func establishesBFC(computed: CSSComputedValues): bool =
       InternalTableBox
     #TODO overflow, contain, flex, grid, multicol, column-span
 
-proc buildFlowLayout(bctx: var BlockContext, box: BlockBox,
-    builder: BlockBoxBuilder, sizes: ResolvedSizes) =
+proc layoutFlow(bctx: var BlockContext, box: BlockBox, builder: BlockBoxBuilder,
+    sizes: ResolvedSizes) =
   let isBfc = builder.computed.establishesBFC()
   if not isBfc:
     bctx.marginTodo.append(sizes.margin.top)
@@ -1284,10 +1284,10 @@ proc buildFlowLayout(bctx: var BlockContext, box: BlockBox,
     box.offset.clearFloats(bctx, builder.computed{"clear"})
   if builder.inlinelayout:
     # Builder only contains inline boxes.
-    bctx.buildInlineLayout(box, builder.children, sizes)
+    bctx.layoutInline(box, builder.children, sizes)
   else:
     # Builder only contains block boxes.
-    bctx.buildBlockLayout(box, builder, sizes)
+    bctx.layoutBlock(box, builder, sizes)
   if not isBfc:
     bctx.marginTodo.append(sizes.margin.bottom)
 
@@ -1312,9 +1312,9 @@ proc addInlineBlock(ictx: var InlineContext, state: var InlineState,
   bctx.marginTodo.append(sizes.margin.top)
   case builder.computed{"display"}
   of DISPLAY_INLINE_BLOCK:
-    bctx.buildFlowLayout(box, builder, sizes)
+    bctx.layoutFlow(box, builder, sizes)
   of DISPLAY_INLINE_TABLE:
-    lctx.buildTableLayout(box, TableBoxBuilder(builder), sizes)
+    lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
   else:
     assert false, $builder.computed{"display"}
   bctx.positionFloats()
@@ -1436,7 +1436,7 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
     offset: offset,
     fragment: InlineFragment(computed: computed)
   )
-  var ictx = bctx.newInlineContext(space, bfcOffset, root)
+  var ictx = bctx.initInlineContext(space, bfcOffset, root)
   for child in inlines:
     case child.computed{"display"}
     of DISPLAY_INLINE:
@@ -1498,7 +1498,7 @@ proc buildBlock(bctx: var BlockContext, builder: BlockBoxBuilder,
     offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
     margin: sizes.margin
   )
-  bctx.buildFlowLayout(box, builder, sizes)
+  bctx.layoutFlow(box, builder, sizes)
   return box
 
 proc buildListItem(bctx: var BlockContext, builder: ListItemBoxBuilder,
@@ -1517,7 +1517,7 @@ proc buildListItem(bctx: var BlockContext, builder: ListItemBoxBuilder,
   )
   if builder.marker != nil:
     box.marker = buildMarker(builder.marker, sizes.space, lctx)
-  bctx.buildFlowLayout(box, builder.content, sizes)
+  bctx.layoutFlow(box, builder.content, sizes)
   return box
 
 proc buildTable(bctx: var BlockContext, builder: TableBoxBuilder,
@@ -1538,7 +1538,7 @@ proc buildTable(bctx: var BlockContext, builder: TableBoxBuilder,
   if not isBfc:
     bctx.marginTodo.append(sizes.margin.top)
   bctx.flushMargins(box)
-  lctx.buildTableLayout(box, builder, sizes)
+  lctx.layoutTable(box, builder, sizes)
   if not isBfc:
     bctx.marginTodo.append(sizes.margin.bottom)
   return box
@@ -1629,7 +1629,7 @@ proc buildTableCaption(lctx: LayoutState, builder: TableCaptionBoxBuilder,
     margin: sizes.margin
   )
   var bctx = BlockContext(lctx: lctx)
-  bctx.buildFlowLayout(box, builder, sizes)
+  bctx.layoutFlow(box, builder, sizes)
   # Include marginTodo in our own height.
   #TODO this is not quite correct, as height should be the padding height.
   box.size.h += box.offset.y
@@ -1647,7 +1647,7 @@ proc buildTableCell(lctx: LayoutState, builder: TableCellBoxBuilder,
     margin: sizes.margin
   )
   var ctx = BlockContext(lctx: lctx)
-  ctx.buildFlowLayout(box, builder, sizes)
+  ctx.layoutFlow(box, builder, sizes)
   # Table cells ignore margins.
   box.offset.y = 0
   return box
@@ -2060,8 +2060,8 @@ proc addTableCaption(ctx: TableContext, table: BlockBox,
 #      Distribute the table's content width among cells with an unspecified
 #      width. If this would give any cell a width < min_width, set that
 #      cell's width to min_width, then re-do the distribution.
-proc buildTableLayout(lctx: LayoutState, table: BlockBox,
-    builder: TableBoxBuilder, sizes: ResolvedSizes) =
+proc layoutTable(lctx: LayoutState, table: BlockBox, builder: TableBoxBuilder,
+    sizes: ResolvedSizes) =
   let collapse = table.computed{"border-collapse"} == BORDER_COLLAPSE_COLLAPSE
   var ctx = TableContext(lctx: lctx, collapse: collapse)
   if not ctx.collapse:
@@ -2225,7 +2225,7 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
       # b) `box' has resolved its y offset, so the float can already
       #    be positioned.
       # We check whether our y offset has been positioned as follows:
-      # * save marginTarget in BlockState at buildBlockLayout's start
+      # * save marginTarget in BlockState at layoutBlock's start
       # * if our saved marginTarget and bctx's marginTarget no longer point
       #   to the same object, that means our (or an ancestor's) offset has
       #   been resolved, i.e. we can position floats already.
@@ -2292,7 +2292,7 @@ proc repositionChildren(state: BlockState, box: BlockBox, lctx: LayoutState) =
       lctx.positionAbsolute(child, child.margin)
     else: discard #TODO
 
-proc buildBlockLayout(bctx: var BlockContext, box: BlockBox,
+proc layoutBlock(bctx: var BlockContext, box: BlockBox,
     builder: BlockBoxBuilder, sizes: ResolvedSizes) =
   let lctx = bctx.lctx
   let positioned = box.computed{"position"} != POSITION_STATIC
@@ -2339,14 +2339,7 @@ proc buildBlockLayout(bctx: var BlockContext, box: BlockBox,
 
 # Tree generation (1st pass)
 
-# Returns a block box, disregarding the computed value of display
-proc getBlockBox(computed: CSSComputedValues): BlockBoxBuilder =
-  return BlockBoxBuilder(computed: computed)
-
-proc getTextBox(computed: CSSComputedValues): InlineBoxBuilder =
-  return InlineBoxBuilder(computed: computed)
-
-proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int):
+proc newMarkerBox(computed: CSSComputedValues, listItemCounter: int):
     MarkerBoxBuilder =
   let computed = computed.inheritProperties()
   computed{"display"} = DISPLAY_INLINE
@@ -2355,40 +2348,6 @@ proc getMarkerBox(computed: CSSComputedValues, listItemCounter: int):
   return MarkerBoxBuilder(
     computed: computed,
     text: @[computed{"list-style-type"}.listMarker(listItemCounter)]
-  )
-
-proc getListItemBox(computed: CSSComputedValues, listItemCounter: int):
-    ListItemBoxBuilder =
-  return ListItemBoxBuilder(
-    computed: computed,
-    marker: getMarkerBox(computed, listItemCounter)
-  )
-
-proc getTableBox(computed: CSSComputedValues): TableBoxBuilder =
-  return TableBoxBuilder(
-    computed: computed
-  )
-
-# Also known as <tbody>.
-proc getTableRowGroupBox(computed: CSSComputedValues): TableRowGroupBoxBuilder =
-  return TableRowGroupBoxBuilder(
-    computed: computed
-  )
-
-proc getTableRowBox(computed: CSSComputedValues): TableRowBoxBuilder =
-  return TableRowBoxBuilder(
-    computed: computed
-  )
-
-# For <th> and <td>.
-proc getTableCellBox(computed: CSSComputedValues): TableCellBoxBuilder =
-  return TableCellBoxBuilder(
-    computed: computed
-  )
-
-proc getTableCaptionBox(computed: CSSComputedValues): TableCaptionBoxBuilder =
-  return TableCaptionBoxBuilder(
-    computed: computed
   )
 
 type BlockGroup = object
@@ -2419,7 +2378,7 @@ proc flush(blockgroup: var BlockGroup) {.inline.} =
     assert blockgroup.parent.computed{"display"} != DISPLAY_INLINE
     let computed = blockgroup.parent.computed.inheritProperties()
     computed{"display"} = DISPLAY_BLOCK
-    let bbox = getBlockBox(computed)
+    let bbox = BlockBoxBuilder(computed: computed)
     bbox.inlinelayout = true
     bbox.children = blockgroup.boxes
     blockgroup.parent.children.add(bbox)
@@ -2463,7 +2422,7 @@ proc flushTableRow(ctx: var InnerBlockContext) =
       if ctx.anonTable == nil:
         var wrappervals = ctx.styledNode.computed.inheritProperties()
         wrappervals{"display"} = DISPLAY_TABLE
-        ctx.anonTable = getTableBox(wrappervals)
+        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(ctx.anonRow)
     ctx.anonRow = nil
 
@@ -2508,7 +2467,10 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
   of DISPLAY_LIST_ITEM:
     ctx.flush()
     inc ctx.listItemCounter
-    let childbox = getListItemBox(styledNode.computed, ctx.listItemCounter)
+    let childbox = ListItemBoxBuilder(
+      computed: styledNode.computed,
+      marker: newMarkerBox(styledNode.computed, ctx.listItemCounter)
+    )
     if childbox.computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
       childbox.content = ctx.generateBlockBox(styledNode, some(childbox.marker))
       childbox.marker = nil
@@ -2538,7 +2500,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
         wrappervals{"display"} = DISPLAY_TABLE
-        ctx.anonTable = getTableBox(wrappervals)
+        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(childbox)
   of DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
       DISPLAY_TABLE_FOOTER_GROUP:
@@ -2552,7 +2514,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
         wrappervals{"display"} = DISPLAY_TABLE
-        ctx.anonTable = getTableBox(wrappervals)
+        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(childbox)
   of DISPLAY_TABLE_CELL:
     ctx.bflush()
@@ -2563,7 +2525,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       if ctx.anonRow == nil:
         var wrappervals = box.computed.inheritProperties()
         wrappervals{"display"} = DISPLAY_TABLE_ROW
-        ctx.anonRow = getTableRowBox(wrappervals)
+        ctx.anonRow = TableRowBoxBuilder(computed: wrappervals)
       ctx.anonRow.children.add(childbox)
   of DISPLAY_INLINE_TABLE:
     ctx.iflush()
@@ -2580,7 +2542,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
         wrappervals{"display"} = DISPLAY_TABLE
-        ctx.anonTable = getTableBox(wrappervals)
+        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(childbox)
   of DISPLAY_TABLE_COLUMN:
     discard #TODO
@@ -2652,7 +2614,7 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
     #TODO ??
     # this used to set ibox (before we had iroot), now I'm not sure if we
     # should reconstruct here first
-    ctx.iroot = getTextBox(parent.computed.inheritProperties())
+    ctx.iroot = InlineBoxBuilder(computed: parent.computed.inheritProperties())
     ctx.iroot.newline = true
     ctx.iflush()
 
@@ -2716,7 +2678,7 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
 proc generateBlockBox(styledNode: StyledNode, lctx: LayoutState,
     marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
     BlockBoxBuilder =
-  let box = getBlockBox(styledNode.computed)
+  let box = BlockBoxBuilder(computed: styledNode.computed)
   box.node = styledNode
   var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
 
@@ -2743,7 +2705,7 @@ proc generateBlockBox(styledNode: StyledNode, lctx: LayoutState,
 
 proc generateTableCellBox(styledNode: StyledNode, lctx: LayoutState,
     parent: var InnerBlockContext): TableCellBoxBuilder =
-  let box = getTableCellBox(styledNode.computed)
+  let box = TableCellBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
@@ -2757,14 +2719,14 @@ proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
     if child.computed{"display"} == DISPLAY_TABLE_CELL:
       newchildren.add(child)
     else:
-      let wrapper = getTableCellBox(wrappervals)
+      let wrapper = TableCellBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       newchildren.add(wrapper)
   box.children = newchildren
 
 proc generateTableRowBox(styledNode: StyledNode, lctx: LayoutState,
     parent: var InnerBlockContext): TableRowBoxBuilder =
-  let box = getTableRowBox(styledNode.computed)
+  let box = TableRowBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
@@ -2779,7 +2741,7 @@ proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
     if child.computed{"display"} == DISPLAY_TABLE_ROW:
       newchildren.add(child)
     else:
-      let wrapper = getTableRowBox(wrappervals)
+      let wrapper = TableRowBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       wrapper.generateTableRowChildWrappers()
       newchildren.add(wrapper)
@@ -2787,7 +2749,7 @@ proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
 
 proc generateTableRowGroupBox(styledNode: StyledNode, lctx: LayoutState,
     parent: var InnerBlockContext): TableRowGroupBoxBuilder =
-  let box = getTableRowGroupBox(styledNode.computed)
+  let box = TableRowGroupBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
@@ -2796,7 +2758,7 @@ proc generateTableRowGroupBox(styledNode: StyledNode, lctx: LayoutState,
 
 proc generateTableCaptionBox(styledNode: StyledNode, lctx: LayoutState,
     parent: var InnerBlockContext): TableCaptionBoxBuilder =
-  let box = getTableCaptionBox(styledNode.computed)
+  let box = TableCaptionBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
@@ -2810,7 +2772,7 @@ proc generateTableChildWrappers(box: TableBoxBuilder) =
     if child.computed{"display"} in ProperTableChild:
       newchildren.add(child)
     else:
-      let wrapper = getTableRowBox(wrappervals)
+      let wrapper = TableRowBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       wrapper.generateTableRowChildWrappers()
       newchildren.add(wrapper)
