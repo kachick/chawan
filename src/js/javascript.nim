@@ -1289,20 +1289,14 @@ type
 template jsDestructor*[U](T: typedesc[ref U]) =
   static:
     jsDtors.incl($T)
-  when NimMajor >= 2:
-    proc `=destroy`(obj: U) =
-      nim_finalize_for_js(addr obj)
-  else:
+  {.warning[Deprecated]:off.}:
     proc `=destroy`(obj: var U) =
       nim_finalize_for_js(addr obj)
 
 template jsDestructor*(T: typedesc[object]) =
   static:
     jsDtors.incl($T)
-  when NimMajor >= 2:
-    proc `=destroy`(obj: T) =
-      nim_finalize_for_js(addr obj)
-  else:
+  {.warning[Deprecated]:off.}:
     proc `=destroy`(obj: var T) =
       nim_finalize_for_js(addr obj)
 
