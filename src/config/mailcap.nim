@@ -32,14 +32,6 @@ type
 
   Mailcap* = seq[MailcapEntry]
 
-const DefaultMailcap* = @[
-  MailcapEntry(
-    mt: "*",
-    subt: "*",
-    cmd: "xdg-open '%s'"
-  )
-]
-
 proc has(state: MailcapParser): bool {.inline.} =
   return not state.stream.atEnd
 

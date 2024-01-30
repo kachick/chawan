@@ -389,12 +389,12 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
     flags: {HTMLOUTPUT}
   ))
   if not found:
-    mailcap.insert(MailcapEntry(
+    mailcap.add(MailcapEntry(
       mt: "*",
       subt: "*",
       cmd: "xdg-open '%s'"
-    ), 0)
-    return (DefaultMailcap, errs)
+    ))
+    return (mailcap, errs)
   return (mailcap, errs)
 
 # We try to source mime types declared in config.
