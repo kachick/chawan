@@ -111,7 +111,8 @@ the configuration; please consult [doc/config.md](doc/config.md) for details.)
 
 ### Can I view Markdown files using Chawan?
 
-[Yes.](doc/mailcap.md)
+Yes; Chawan now has a built-in markdown converter. If you don't like it, you
+can always [replace it](doc/mailcap.md) with e.g. pandoc.
 
 ### Why write another web browser?
 

@@ -356,20 +356,9 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
   let gopherPath = gopherPath0.unquote().get
   const geminiPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gmi2html")
   let geminiPath = geminiPath0.unquote().get
-  var mailcap = @[
-    MailcapEntry(
-      mt: "text",
-      subt: "gopher",
-      cmd: gopherPath,
-      flags: {HTMLOUTPUT}
-    ),
-    MailcapEntry(
-      mt: "text",
-      subt: "gemini",
-      cmd: geminiPath,
-      flags: {HTMLOUTPUT}
-    )
-  ]
+  const mdPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/md2html")
+  let mdPath = mdPath0.unquote().get
+  var mailcap: Mailcap = @[]
   var errs: seq[string]
   var found = false
   for p in config.external.mailcap:
@@ -381,6 +370,24 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
       else:
         errs.add(res.error)
       found = true
+  mailcap.add(MailcapEntry(
+      mt: "text",
+      subt: "gopher",
+      cmd: gopherPath,
+      flags: {HTMLOUTPUT}
+  ))
+  mailcap.add(MailcapEntry(
+    mt: "text",
+    subt: "gemini",
+    cmd: geminiPath,
+    flags: {HTMLOUTPUT}
+  ))
+  mailcap.add(MailcapEntry(
+    mt: "text",
+    subt: "markdown",
+    cmd: mdPath,
+    flags: {HTMLOUTPUT}
+  ))
   if not found:
     mailcap.insert(MailcapEntry(
       mt: "*",
