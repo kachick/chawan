@@ -116,29 +116,17 @@ func `$`*(val: TomlValue): string =
 func `[]`*(val: TomlValue, key: string): TomlValue =
   return val.t.map[key]
 
-iterator pairs*(val: TomlTable): (string, TomlValue) {.inline.} =
-  for k, v in val.map.pairs:
-    yield (k, v)
-
 iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
-  for k, v in val.t:
+  for k, v in val.t.map:
     yield (k, v)
-
-iterator items*(val: TomlValue): TomlValue {.inline.} =
-  for v in val.a:
-    yield v
 
 func contains*(val: TomlValue, key: string): bool =
   return key in val.t.map
 
-func isBare(c: char): bool =
-  return c == '-' or c == '_' or c.isAlphaNumeric()
+const ValidBare = AsciiAlphaNumeric + {'-', '_'}
 
 func peek(state: TomlParser, i: int): char =
   return state.buf[state.at + i]
-
-func peek(state: TomlParser, i: int, len: int): string =
-  return state.buf.substr(state.at + i, state.at + i + len)
 
 template err(state: TomlParser, msg: string): untyped =
   err(state.filename & "(" & $state.line & "):" & msg)
@@ -178,32 +166,23 @@ proc consumeEscape(state: var TomlParser, c: char): Result[Rune, TomlError] =
     if num > 0x10FFFF or num in 0xD800..0xDFFF:
       return state.err("invalid escaped codepoint: " & $num)
     else:
-      return ok(cast[Rune](num))
+      return ok(Rune(num))
   else:
     return state.err("invalid escaped codepoint: " & $c)
 
 proc consumeString(state: var TomlParser, first: char):
     Result[string, string] =
   var multiline = false
-
-  if first == '"':
-    if state.has(1):
-      let s = state.peek(0, 1)
-      if s == "\"\"":
-        multiline = true
-        state.seek(2)
-  elif first == '\'':
-    if state.has(1):
-      let s = state.peek(0, 1)
-      if s == "''":
-        multiline = true
-        state.seek(2)
-
-  if multiline:
-    let c = state.peek(0)
-    if c == '\n':
-      discard state.consume()
-
+  if first == '"' and state.has(1) and state.peek(0) == '"' and
+      state.peek(1) == '"':
+    multiline = true
+    state.seek(2)
+  elif first == '\'' and state.has(1) and state.peek(0) == '\'' and
+      state.peek(1) == '\'':
+    multiline = true
+    state.seek(2)
+  if multiline and state.peek(0) == '\n':
+    discard state.consume()
   var escape = false
   var ml_trim = false
   var res = ""
@@ -258,7 +237,7 @@ proc consumeBare(state: var TomlParser, c: char): Result[string, TomlError] =
     of '.', '=', ']', '\n':
       state.reconsume()
       break
-    elif c.isBare():
+    elif c in ValidBare:
       res &= c
     else:
       return state.err("invalid value in token: " & c)
@@ -286,11 +265,8 @@ proc flushLine(state: var TomlParser): Err[TomlError] =
           table.map[keys[i]] = TomlValue(vt: VALUE_TABLE, t: node)
           table = node
         inc i
-
       if keys[i] in table.map:
-        let s = keys.join('.')
-        return state.err("re-definition of node " & s)
-
+        return state.err("re-definition of node " & keys.join('.'))
       table.map[keys[i]] = TomlKVPair(state.node).value
       table.nodes.add(state.node)
     state.node = nil
@@ -335,7 +311,7 @@ proc consumeKey(state: var TomlParser): Result[seq[string], TomlError] =
         return state.err("newline without value")
       else:
         ?state.flushLine()
-    elif c.isBare():
+    elif c in ValidBare:
       if str.len > 0:
         return state.err("multiple strings without dot: " & str)
       str = ?state.consumeBare(c)
@@ -360,7 +336,7 @@ proc consumeTable(state: var TomlParser): Result[TomlTable, TomlError] =
       discard state.consume()
     of '"', '\'':
       res.key = ?state.consumeKey()
-    elif c.isBare():
+    elif c in ValidBare:
       res.key = ?state.consumeKey()
     else: return state.err("invalid character before key: " & c)
   return state.err("unexpected end of file")
@@ -401,7 +377,7 @@ proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
       state.currkey = table.key
       state.node = table
       return ok(false)
-    elif c == '"' or c == '\'' or c.isBare():
+    elif c == '"' or c == '\'' or c in ValidBare:
       let kvpair = TomlKVPair()
       kvpair.key = ?state.consumeKey()
       state.node = kvpair
@@ -425,13 +401,12 @@ proc consumeNumber(state: var TomlParser, c: char): TomlResult =
       state.reconsume()
       repr &= c
   else:
-    if c in {'+', '-'} and (not state.has() or not isDigit(state.peek(0))):
+    if c in {'+', '-'} and (not state.has() or state.peek(0) notin AsciiDigit):
       return state.err("invalid number")
     repr &= c
-
   var was_num = repr.len > 0 and repr[0] in AsciiDigit
   while state.has():
-    if isDigit(state.peek(0)):
+    if state.peek(0) in AsciiDigit:
       repr &= state.consume()
       was_num = true
     elif was_num and state.peek(0) == '_':
@@ -439,33 +414,27 @@ proc consumeNumber(state: var TomlParser, c: char): TomlResult =
       repr &= '_'
     else:
       break
-
-  if state.has(1):
-    if state.peek(0) == '.' and isDigit(state.peek(1)):
+  if state.has(1) and state.peek(0) == '.' and state.peek(1) in AsciiDigit:
+    repr &= state.consume()
+    repr &= state.consume()
+    if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
+      return state.err("invalid floating point number")
+    numType = NUMBER_FLOAT
+    while state.has() and state.peek(0) in AsciiDigit:
       repr &= state.consume()
-      repr &= state.consume()
-      if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
-        return state.err("invalid floating point number")
-      numType = NUMBER_FLOAT
-      while state.has() and isDigit(state.peek(0)):
+  if state.has(1) and state.peek(0) in {'E', 'e'}:
+    if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
+      return state.err("invalid floating point number")
+    numType = NUMBER_FLOAT
+    var j = 2
+    if state.peek(1) == '-' or state.peek(1) == '+':
+      inc j
+    if state.has(j) and state.peek(j) in AsciiDigit:
+      while j > 0:
         repr &= state.consume()
-
-  if state.has(1):
-    if state.peek(0) == 'E' or state.peek(0) == 'e':
-      if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
-        return state.err("invalid floating point number")
-      numType = NUMBER_FLOAT
-      var j = 2
-      if state.peek(1) == '-' or state.peek(1) == '+':
-        inc j
-      if state.has(j) and isDigit(state.peek(j)):
-        while j > 0:
-          repr &= state.consume()
-          dec j
-
-        while state.has() and isDigit(state.peek(0)):
-          repr &= state.consume()
-
+        dec j
+      while state.has() and state.peek(0) in AsciiDigit:
+        repr &= state.consume()
   case numType
   of NUMBER_INTEGER:
     let val = parseInt64(repr)
@@ -579,7 +548,7 @@ proc consumeValue(state: var TomlParser): TomlResult =
       return state.consumeArray()
     of '{':
       return state.consumeInlineTable()
-    elif c.isBare():
+    elif c in ValidBare:
       let s = ?state.consumeBare(c)
       if s == "true":
         return ok(TomlValue(vt: VALUE_BOOLEAN, b: true))
