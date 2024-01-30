@@ -141,7 +141,7 @@ correctly.
 <td>Character set for keyboard input and displaying documents.<br>
 Used in dump mode as well.<br>
 (This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is equivalent to `iconv
--f EUC-JP -t UTF-8.)</td>
+-f EUC-JP -t UTF-8`.)</td>
 </tr>
 
 </table>
