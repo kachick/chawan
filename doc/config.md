@@ -59,9 +59,9 @@ Following is a list of start-up options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -97,9 +97,9 @@ Following is a list of search options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -119,9 +119,9 @@ Following is a list of encoding options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -155,9 +155,9 @@ Following is a list of external options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -224,9 +224,9 @@ Input options are to be placed in the `[input]` section.
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -260,9 +260,9 @@ Network options are to be placed in the `[network]` section.
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -312,9 +312,9 @@ Following is a list of display options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -433,9 +433,9 @@ Omnirule options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -492,9 +492,9 @@ Siteconf options:
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Value**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -645,8 +645,8 @@ A list of built-in pager functions can be found below.
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -669,8 +669,8 @@ CGI scripts.</td>
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Function</th>
 </tr>
 
 <tr>
@@ -1106,6 +1106,11 @@ value is `false`.</td>
 </tr>
 
 <tr>
+<td>`pager.location`</td>
+<td>Getter for the link of the current buffer. Returns a `URL` object.</td>
+</tr>
+
+<tr>
 <td>`pager.hoverLink`</td>
 <td>Getter for the link currently under the cursor. Returns the empty string if
 no link is found.</td>
@@ -1125,8 +1130,8 @@ no title is found.</td>
 <table>
 
 <tr>
-<th>**Name**</th>
-<th>**Function**</th>
+<th>Name</th>
+<th>Function</th>
 </tr>
 
 <tr>
