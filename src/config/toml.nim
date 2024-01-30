@@ -591,6 +591,8 @@ proc consumeValue(state: var TomlParser): TomlResult =
         return state.err("invalid token: " & s)
     else:
       return state.err("invalid character in value: " & c)
+  if state.laxnames:
+    return ok(TomlValue(vt: VALUE_STRING, s: ""))
   return state.err("unexpected end of file")
 
 proc parseToml*(inputStream: Stream, filename = "<input>", laxnames = false):
