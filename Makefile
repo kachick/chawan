@@ -116,7 +116,8 @@ $(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim 
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/http" -d:curlLibName:$(CURLLIBNAME) \
 		-o:"$(OUTDIR_CGI_BIN)/http" adapter/protocol/http.nim
 
-$(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim
+$(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim res/chawan.html \
+		res/license.html
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/about" -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
 
