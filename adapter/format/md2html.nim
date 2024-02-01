@@ -272,7 +272,7 @@ proc parseNone(state: var ParseState, line: string) =
     state.listDepth = n
     state.hasp = false
     state.pushList(t)
-    state.blockData = line.substr(len) & "\n"
+    state.blockData = line.substr(len + 1) & "\n"
   else:
     state.blockType = btPar
     state.hasp = true
@@ -305,7 +305,7 @@ proc parseList(state: var ParseState, line: string) =
       state.pushList(t)
     stdout.write("<LI>")
     state.listDepth = n
-    state.blockData = line.substr(len) & "\n"
+    state.blockData = line.substr(len + 1) & "\n"
   else:
     state.blockData &= line & "\n"
 
