@@ -312,9 +312,7 @@ proc refreshStatusMsg*(pager: Pager) =
   if container == nil: return
   if pager.askpromise != nil: return
   if pager.precnum != 0:
-    pager.writeStatusMessage($pager.precnum)
-    if pager.inputBuffer != "":
-      pager.writeStatusMessage(pager.inputBuffer)
+    pager.writeStatusMessage($pager.precnum & pager.inputBuffer)
   elif pager.inputBuffer != "":
     pager.writeStatusMessage(pager.inputBuffer)
   elif container.loadinfo != "":
