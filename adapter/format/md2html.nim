@@ -182,7 +182,7 @@ proc getListDepth(line: string): tuple[depth, len: int, ol: ListType] =
       depth += 8
     elif c == ' ':
       inc depth
-    elif c == '*':
+    elif c in {'*', '-'}:
       let i = i + 1
       if i < line.len and line[i] in {'\t', ' '}:
         return (depth, i, ltUl)
