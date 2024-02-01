@@ -47,7 +47,7 @@ proc getId(line: openArray[char]): string =
 type InlineState = enum
   isItalic, isBold, isCode, isComment
 
-const AsciiWhitespace = {' ', '\t', '\n', '\r'}
+const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
 proc parseInline(line: openArray[char]) =
   var state: set[InlineState] = {}
   var bs = bsNone
@@ -88,7 +88,9 @@ proc parseInline(line: openArray[char]) =
       else: append c
     elif c == '\\':
       quote = true
-    elif c == '*' or c == '_' and (i == 0 or line[i - 1] in AsciiWhitespace):
+    elif c == '*' or c == '_' and
+        (i == 0 or line[i - 1] notin AsciiAlphaNumeric or
+        i + 1 >= line.len or line[i + 1] notin AsciiAlphaNumeric + {'_'}):
       if i + 1 < line.len and line[i + 1] == c:
         if state.toggle(isBold):
           append "<B>"
