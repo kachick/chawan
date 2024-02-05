@@ -2444,7 +2444,7 @@ int lre_exec(uint8_t **capture,
     StackInt *stack_buf;
     
     if (cbuf_width == 3) /* UTF-8 */
-        cbuf_width = 1;
+        cbuf_width = 0;
     re_flags = bc_buf[RE_HEADER_FLAGS];
     s->multi_line = (re_flags & LRE_FLAG_MULTILINE) != 0;
     s->ignore_case = (re_flags & LRE_FLAG_IGNORECASE) != 0;
