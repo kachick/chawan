@@ -1845,8 +1845,8 @@ static BOOL is_word_char(uint32_t c)
 #define GET_CHAR(c, cptr, cbuf_end)                                     \
     do {                                                                \
         if (cbuf_type == 0) {                                           \
-            c = unicode_from_utf8(cptr, cbuf_end - cptr, &cptr);        \
-        } else {                                                        \
+            c = *cptr++;                                                \
+        } else if (cbuf_type < 3) {                                     \
             uint32_t __c1;                                              \
             c = *(uint16_t *)cptr;                                      \
             cptr += 2;                                                  \
@@ -1858,15 +1858,16 @@ static BOOL is_word_char(uint32_t c)
                     cptr += 2;                                          \
                 }                                                       \
             }                                                           \
+        } else {                                                        \
+            c = unicode_from_utf8(cptr, cbuf_end - cptr, &cptr);        \
         }                                                               \
     } while (0)
 
 #define PEEK_CHAR(c, cptr, cbuf_end)             \
     do {                                         \
         if (cbuf_type == 0) {                    \
-            const uint8_t *__cpt2;                                      \
-            c = unicode_from_utf8(cptr, cbuf_end - cptr, &__cpt2);      \
-        } else {                                 \
+            c = cptr[0];                         \
+        } else if (cbuf_type < 3) {                                     \
             uint32_t __c1;                                              \
             c = ((uint16_t *)cptr)[0];                                  \
             if (c >= 0xd800 && c < 0xdc00 &&                            \
@@ -1876,18 +1877,17 @@ static BOOL is_word_char(uint32_t c)
                     c = (((c & 0x3ff) << 10) | (__c1 & 0x3ff)) + 0x10000; \
                 }                                                       \
             }                                                           \
-        }                                        \
+        } else {                                                        \
+            const uint8_t *__cpt2;                                      \
+            c = unicode_from_utf8(cptr, cbuf_end - cptr, &__cpt2);      \
+        }                                                               \
     } while (0)
 
 #define PEEK_PREV_CHAR(c, cptr, cbuf_start)                 \
     do {                                         \
         if (cbuf_type == 0) {                    \
-            const uint8_t *__cpt2 = cptr;                               \
-            int __i = 0;                                                \
-            while (__cpt2 > cbuf_start && ((*__cpt2-- >> 6) & 2))       \
-                __i++;                                                  \
-            c = unicode_from_utf8(__cpt2, __i, &__cpt2);                \
-        } else {                                 \
+            c = cptr[-1];                        \
+        } else if (cbuf_type < 3) {                                     \
             uint32_t __c1;                                              \
             c = ((uint16_t *)cptr)[-1];                                 \
             if (c >= 0xdc00 && c < 0xe000 &&                            \
@@ -1897,18 +1897,21 @@ static BOOL is_word_char(uint32_t c)
                     c = (((__c1 & 0x3ff) << 10) | (c & 0x3ff)) + 0x10000; \
                 }                                                       \
             }                                                           \
+        } else {                                                        \
+            const uint8_t *__cpt2 = cptr;                               \
+            int __i = 0;                                                \
+            while (__cpt2 > cbuf_start && ((*__cpt2-- >> 6) & 2))       \
+                __i++;                                                  \
+            c = unicode_from_utf8(__cpt2, __i, &__cpt2);                \
         }                                                               \
     } while (0)
 
 #define GET_PREV_CHAR(c, cptr, cbuf_start)       \
     do {                                         \
         if (cbuf_type == 0) {                    \
-            const uint8_t *__cpt2;                                      \
-            int __i = 0;                                                \
-            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2))           \
-                __i++;                                                  \
-            c = unicode_from_utf8(cptr, __i, &__cpt2);                  \
-        } else {                                 \
+            cptr--;                              \
+            c = cptr[0];                         \
+        } else if (cbuf_type < 3) {                                     \
             uint32_t __c1;                                              \
             cptr -= 2;                                                  \
             c = ((uint16_t *)cptr)[0];                                 \
@@ -1920,14 +1923,20 @@ static BOOL is_word_char(uint32_t c)
                     c = (((__c1 & 0x3ff) << 10) | (c & 0x3ff)) + 0x10000; \
                 }                                                       \
             }                                                           \
-        }                                                               \
+        } else {                                                        \
+            const uint8_t *__cpt2;                                      \
+            int __i = 0;                                                \
+            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2))           \
+                __i++;                                                  \
+            c = unicode_from_utf8(cptr, __i, &__cpt2);                  \
+       }                                                                \
     } while (0)
 
 #define PREV_CHAR(cptr, cbuf_start)       \
     do {                                  \
         if (cbuf_type == 0) {             \
-            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2));          \
-        } else {                          \
+            cptr--;                       \
+        } else if (cbuf_type < 3) {       \
             cptr -= 2;                          \
             if (cbuf_type == 2) {                                       \
                 c = ((uint16_t *)cptr)[0];                              \
@@ -1937,6 +1946,8 @@ static BOOL is_word_char(uint32_t c)
                         cptr -= 2;                                      \
                 }                                                       \
             }                                                           \
+        } else {                                                        \
+            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2));          \
         }                                                               \
     } while (0)
 
@@ -1961,7 +1972,8 @@ typedef struct REExecState {
 typedef struct {
     const uint8_t *cbuf;
     const uint8_t *cbuf_end;
-    /* 0 = 8 bit chars, 1 = 16 bit chars, 2 = 16 bit chars, UTF-16 */
+    /* 0 = 8 bit chars, 1 = 16 bit chars, 2 = 16 bit chars, UTF-16,
+       3 = 8 bit chars, UTF-8 */
     int cbuf_type; 
     int capture_count;
     int stack_size_max;
@@ -2428,9 +2440,11 @@ int lre_exec(uint8_t **capture,
              int cbuf_type, void *opaque)
 {
     REExecContext s_s, *s = &s_s;
-    int re_flags, i, alloca_size, ret;
+    int re_flags, i, alloca_size, ret, cbuf_width = cbuf_type;
     StackInt *stack_buf;
     
+    if (cbuf_width == 3) /* UTF-8 */
+        cbuf_width = 1;
     re_flags = bc_buf[RE_HEADER_FLAGS];
     s->multi_line = (re_flags & LRE_FLAG_MULTILINE) != 0;
     s->ignore_case = (re_flags & LRE_FLAG_IGNORECASE) != 0;
@@ -2438,7 +2452,7 @@ int lre_exec(uint8_t **capture,
     s->capture_count = bc_buf[RE_HEADER_CAPTURE_COUNT];
     s->stack_size_max = bc_buf[RE_HEADER_STACK_SIZE];
     s->cbuf = cbuf;
-    s->cbuf_end = cbuf + (clen << cbuf_type);
+    s->cbuf_end = cbuf + (clen << cbuf_width);
     s->cbuf_type = cbuf_type;
     if (s->cbuf_type == 1 && s->is_utf16)
         s->cbuf_type = 2;
@@ -2456,7 +2470,7 @@ int lre_exec(uint8_t **capture,
     alloca_size = s->stack_size_max * sizeof(stack_buf[0]);
     stack_buf = alloca(alloca_size);
     ret = lre_exec_backtrack(s, capture, stack_buf, 0, bc_buf + RE_HEADER_LEN,
-                             cbuf + (cindex << cbuf_type), FALSE);
+                             cbuf + (cindex << cbuf_width), FALSE);
     lre_realloc(s->opaque, s->state_stack, 0);
     return ret;
 }

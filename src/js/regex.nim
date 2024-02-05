@@ -138,7 +138,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
   var start = start
   while true:
     let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode,
-      cast[ptr uint8](cstr), cint(start), cint(length), cint(0), dummyContext)
+      cast[ptr uint8](cstr), cint(start), cint(length), cint(3), dummyContext)
     if ret != 1: #TODO error handling? (-1)
       break
     result.success = true
