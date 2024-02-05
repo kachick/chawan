@@ -45,7 +45,7 @@ proc getId(line: openArray[char]): string =
     inc i
 
 type InlineState = enum
-  isItalic, isBold, isCode, isComment
+  isItalic, isBold, isCode, isComment, isDel
 
 const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
 proc parseInline(line: openArray[char]) =
@@ -105,6 +105,12 @@ proc parseInline(line: openArray[char]) =
     elif c == '`':
       state.incl(isCode)
       append "<CODE>"
+    elif c == '~' and i + 1 < line.len and line[i + 1] == '~':
+      if state.toggle(isDel):
+        append "<DEL>"
+      else:
+        append "</DEL>"
+      inc i
     elif c == '!' and bs == bsNone and i + 1 < line.len and line[i + 1] == '[':
       image = true
     elif c == '[' and bs == bsNone:
