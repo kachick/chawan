@@ -20,14 +20,23 @@ import chame/tags
 # DOMBuilder implementation for Chawan.
 
 type CharsetConfidence = enum
-  CONFIDENCE_TENTATIVE, CONFIDENCE_CERTAIN, CONFIDENCE_IRRELEVANT
+  ccTentative, ccCertain, ccIrrelevant
 
 type
+  HTML5ParserWrapper* = ref object
+    parser: HTML5Parser[Node, CAtom]
+    charsetStack: seq[Charset]
+    seekable: bool
+    builder*: ChaDOMBuilder
+    opts: HTML5ParserOpts[Node, CAtom]
+    inputStream: Stream
+    encoder: EncoderStream
+    decoder: DecoderStream
+
   ChaDOMBuilder = ref object of DOMBuilder[Node, CAtom]
     charset: Charset
     confidence: CharsetConfidence
-    document: Document
-    isFragment: bool
+    document*: Document
     factory: CAtomFactory
     poppedScript: HTMLScriptElement
 
@@ -79,19 +88,21 @@ proc setQuirksModeImpl(builder: ChaDOMBuilder, quirksMode: QuirksMode) =
 
 proc setEncodingImpl(builder: ChaDOMBuilder, encoding: string):
     SetEncodingResult =
+  if builder.confidence != ccTentative:
+    return SET_ENCODING_CONTINUE
+  if builder.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
+    builder.confidence = ccCertain
+    return SET_ENCODING_CONTINUE
   let charset = getCharset(encoding)
   if charset == CHARSET_UNKNOWN:
     return SET_ENCODING_CONTINUE
-  if builder.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
-    builder.confidence = CONFIDENCE_CERTAIN
-    return SET_ENCODING_CONTINUE
-  builder.confidence = CONFIDENCE_CERTAIN
+  builder.confidence = ccCertain
   if charset == builder.charset:
     return SET_ENCODING_CONTINUE
-  if charset == CHARSET_X_USER_DEFINED:
-    builder.charset = CHARSET_WINDOWS_1252
+  builder.charset = if charset == CHARSET_X_USER_DEFINED:
+    CHARSET_WINDOWS_1252
   else:
-    builder.charset = charset
+    charset
   return SET_ENCODING_STOP
 
 proc getTemplateContentImpl(builder: ChaDOMBuilder, handle: Node): Node =
@@ -189,7 +200,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder, element: Node) =
     builder.poppedScript = HTMLScriptElement(element)
 
 proc newChaDOMBuilder(url: URL, window: Window, factory: CAtomFactory,
-    isFragment = false): ChaDOMBuilder =
+    confidence: CharsetConfidence): ChaDOMBuilder =
   let document = newDocument(factory)
   document.contentType = "text/html"
   document.url = url
@@ -198,17 +209,15 @@ proc newChaDOMBuilder(url: URL, window: Window, factory: CAtomFactory,
     window.document = document
   return ChaDOMBuilder(
     document: document,
-    isFragment: isFragment,
-    factory: factory
+    factory: factory,
+    confidence: confidence
   )
 
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
 proc parseHTMLFragment*(element: Element, s: string): seq[Node] =
   let url = parseURL("about:blank").get
   let factory = element.document.factory
-  let builder = newChaDOMBuilder(url, nil, factory)
-  let inputStream = newStringStream(s)
-  builder.isFragment = true
+  let builder = newChaDOMBuilder(url, nil, factory, ccIrrelevant)
   let document = builder.document
   document.mode = element.document.mode
   let state = case element.tagType
@@ -234,12 +243,9 @@ proc parseHTMLFragment*(element: Element, s: string): seq[Node] =
     pushInTemplate: element.tagType == TAG_TEMPLATE
   )
   var parser = initHTML5Parser(builder, opts)
-  var buffer: array[4096, char]
-  while true:
-    let n = inputStream.readData(addr buffer[0], buffer.len)
-    if n == 0: break
-    let res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
-    assert res == PRES_CONTINUE # scripting is false, so this must be continue
+  let res = parser.parseChunk(s.toOpenArray(0, s.high))
+  # scripting is false and confidence is certain -> this must be continue
+  assert res == PRES_CONTINUE
   parser.finish()
   builder.finish()
   return root.childList
@@ -257,107 +263,126 @@ proc bomSniff(inputStream: Stream): Charset =
   inputStream.setPosition(0)
   return CHARSET_UNKNOWN
 
-proc parseHTML*(inputStream: Stream, window: Window, url: URL,
-    factory: CAtomFactory, charsets: seq[Charset] = @[],
-    seekable = true): Document =
+proc switchCharset(wrapper: HTML5ParserWrapper) =
+  let builder = wrapper.builder
+  builder.charset = wrapper.charsetStack.pop()
+  if wrapper.seekable:
+    builder.confidence = ccTentative # used in the next iteration
+  else:
+    builder.confidence = ccCertain
+  let em = if wrapper.charsetStack.len == 0 or not wrapper.seekable:
+    DECODER_ERROR_MODE_REPLACEMENT
+  else:
+    DECODER_ERROR_MODE_FATAL
+  wrapper.parser = initHTML5Parser(builder, wrapper.opts)
+  wrapper.decoder = newDecoderStream(wrapper.inputStream, builder.charset,
+    errormode = em)
+  wrapper.decoder.setInhibitCheckEnd(true)
+  wrapper.encoder = newEncoderStream(wrapper.decoder, CHARSET_UTF_8,
+    errormode = ENCODER_ERROR_MODE_FATAL)
+
+proc newHTML5ParserWrapper*(inputStream: Stream, window: Window, url: URL,
+    factory: CAtomFactory, charsets: seq[Charset] = @[], seekable = true):
+    HTML5ParserWrapper =
   let opts = HTML5ParserOpts[Node, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: window != nil and window.settings.scripting
   )
-  let builder = newChaDOMBuilder(url, window, factory)
-  var charsetStack: seq[Charset]
-  for i in countdown(charsets.high, 0):
-    charsetStack.add(charsets[i])
-  var seekable = seekable
-  var inputStream = inputStream
-  if seekable:
-    let scs = inputStream.bomSniff()
-    if scs != CHARSET_UNKNOWN:
-      charsetStack.add(scs)
-      builder.confidence = CONFIDENCE_CERTAIN
-      seekable = false
-  if charsetStack.len == 0:
-    charsetStack.add(DefaultCharset) # UTF-8
-  while true:
-    builder.charset = charsetStack.pop()
-    if seekable:
-      builder.confidence = CONFIDENCE_TENTATIVE # used in the next iteration
-    else:
-      builder.confidence = CONFIDENCE_CERTAIN
-    let em = if charsetStack.len == 0 or not seekable:
-      DECODER_ERROR_MODE_REPLACEMENT
-    else:
-      DECODER_ERROR_MODE_FATAL
-    let decoder = newDecoderStream(inputStream, builder.charset, errormode = em)
-    let encoder = newEncoderStream(decoder, CHARSET_UTF_8,
-      errormode = ENCODER_ERROR_MODE_FATAL)
-    var parser = initHTML5Parser(builder, opts)
-    let document = builder.document
-    var buffer: array[4096, char]
-    while true:
-      let n = encoder.readData(addr buffer[0], buffer.len)
-      if n == 0: break
-      var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
-      # set insertion point for when it's needed
-      var ip = parser.getInsertionPoint()
-      while res == PRES_SCRIPT:
-        if builder.poppedScript != nil:
-          #TODO microtask
-          document.writeBuffers.add(DocumentWriteBuffer())
-          builder.poppedScript.prepare()
-        while document.parserBlockingScript != nil:
-          let script = document.parserBlockingScript
-          document.parserBlockingScript = nil
-          #TODO style sheet
-          script.execute()
-          assert document.parserBlockingScript != script
-        builder.poppedScript = nil
-        if document.writeBuffers.len == 0:
-          if ip == n:
-            # nothing left to re-parse.
-            break
-          # parse rest of input buffer
-          res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
-          ip += parser.getInsertionPoint() # move insertion point
-        else:
-          let writeBuffer = document.writeBuffers[^1]
-          let p = writeBuffer.i
-          let n = writeBuffer.data.len
-          res = parser.parseChunk(writeBuffer.data.toOpenArray(p, n - 1))
-          case res
-          of PRES_CONTINUE:
-            discard document.writeBuffers.pop()
-            res = PRES_SCRIPT
-          of PRES_SCRIPT:
-            let pp = p + parser.getInsertionPoint()
-            if pp == writeBuffer.data.len:
-              discard document.writeBuffers.pop()
-            else:
-              writeBuffer.i = pp
-          of PRES_STOP:
-            break
-            {.linearScanEnd.}
-      # PRES_STOP is returned when we return SET_ENCODING_STOP from
-      # setEncodingImpl. We immediately stop parsing in this case.
-      if res == PRES_STOP:
+  let builder = newChaDOMBuilder(url, window, factory, ccTentative)
+  let wrapper = HTML5ParserWrapper(
+    seekable: seekable,
+    builder: builder,
+    opts: opts,
+    inputStream: inputStream
+  )
+  if seekable and (let scs = inputStream.bomSniff(); scs != CHARSET_UNKNOWN):
+    builder.confidence = ccCertain
+    wrapper.charsetStack = @[scs]
+    wrapper.seekable = false
+  elif charsets.len == 0:
+    wrapper.charsetStack = @[DefaultCharset] # UTF-8
+  else:
+    for i in countdown(charsets.high, 0):
+      wrapper.charsetStack.add(charsets[i])
+  wrapper.switchCharset()
+  return wrapper
+
+proc parseBuffer(wrapper: HTML5ParserWrapper, buffer: openArray[char]):
+    ParseResult =
+  let builder = wrapper.builder
+  let document = builder.document
+  var res = wrapper.parser.parseChunk(buffer)
+  # set insertion point for when it's needed
+  var ip = wrapper.parser.getInsertionPoint()
+  while res == PRES_SCRIPT:
+    if builder.poppedScript != nil:
+      #TODO microtask
+      document.writeBuffers.add(DocumentWriteBuffer())
+      builder.poppedScript.prepare()
+    while document.parserBlockingScript != nil:
+      let script = document.parserBlockingScript
+      document.parserBlockingScript = nil
+      #TODO style sheet
+      script.execute()
+      assert document.parserBlockingScript != script
+    builder.poppedScript = nil
+    if document.writeBuffers.len == 0:
+      if ip == buffer.len:
+        # nothing left to re-parse.
         break
-    parser.finish()
-    if builder.confidence == CONFIDENCE_CERTAIN and seekable:
+      # parse rest of input buffer
+      res = wrapper.parser.parseChunk(buffer.toOpenArray(ip, buffer.high))
+      ip += wrapper.parser.getInsertionPoint() # move insertion point
+    else:
+      let writeBuffer = document.writeBuffers[^1]
+      let p = writeBuffer.i
+      let H = writeBuffer.data.high
+      res = wrapper.parser.parseChunk(writeBuffer.data.toOpenArray(p, H))
+      case res
+      of PRES_CONTINUE:
+        discard document.writeBuffers.pop()
+        res = PRES_SCRIPT
+      of PRES_SCRIPT:
+        let pp = p + wrapper.parser.getInsertionPoint()
+        if pp == writeBuffer.data.len:
+          discard document.writeBuffers.pop()
+        else:
+          writeBuffer.i = pp
+      of PRES_STOP:
+        break
+        {.linearScanEnd.}
+  return res
+
+proc parseAll*(wrapper: HTML5ParserWrapper) =
+  let builder = wrapper.builder
+  while true:
+    let buffer = wrapper.encoder.readAll()
+    if wrapper.decoder.failed:
+      assert wrapper.seekable
+      # Retry with another charset.
+      builder.restart()
+      wrapper.inputStream.setPosition(0)
+      wrapper.switchCharset()
+      continue
+    if buffer.len == 0:
+      break
+    let res = wrapper.parseBuffer(buffer)
+    if res == PRES_STOP:
       # A meta tag describing the charset has been found; force use of this
       # charset.
       builder.restart()
-      inputStream.setPosition(0)
-      charsetStack.add(builder.charset)
-      seekable = false
-      continue
-    if decoder.failed and seekable:
-      # Retry with another charset.
-      builder.restart()
-      inputStream.setPosition(0)
+      wrapper.inputStream.setPosition(0)
+      wrapper.charsetStack.add(builder.charset)
+      wrapper.seekable = false
+      wrapper.switchCharset()
       continue
     break
-  builder.finish()
-  return builder.document
+
+proc finish*(wrapper: HTML5ParserWrapper) =
+  wrapper.decoder.setInhibitCheckEnd(false)
+  wrapper.parseAll()
+  wrapper.parser.finish()
+  wrapper.builder.finish()
 
 proc newDOMParser(): DOMParser {.jsctor.} =
   return DOMParser()
@@ -378,8 +403,13 @@ proc parseFromString(ctx: JSContext, parser: DOMParser, str, t: string):
       newURL("about:blank").get
     #TODO this is probably broken in client (or at least sub-optimal)
     let factory = if window != nil: window.factory else: newCAtomFactory()
-    let res = parseHTML(newStringStream(str), Window(nil), url, factory)
-    return ok(res)
+    let builder = newChaDOMBuilder(url, window, factory, ccIrrelevant)
+    var parser = initHTML5Parser(builder, HTML5ParserOpts[Node, CAtom]())
+    let res = parser.parseChunk(str)
+    assert res == PRES_CONTINUE
+    parser.finish()
+    builder.finish()
+    return ok(builder.document)
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
     return err(newInternalError("XML parsing is not supported yet"))
   else:

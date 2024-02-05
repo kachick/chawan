@@ -93,7 +93,6 @@ type
     rfd: int # file descriptor of command pipe
     fd: int # file descriptor of buffer source
     alive: bool
-    readbufsize: int
     lines: FlexibleGrid
     rendered: bool
     source: BufferSource
@@ -124,6 +123,7 @@ type
     factory: CAtomFactory
     uastyle: CSSStylesheet
     quirkstyle: CSSStylesheet
+    htmlParser: HTML5ParserWrapper
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -644,7 +644,13 @@ proc do_reshape(buffer: Buffer) =
     buffer.prevstyled = styledRoot
   else:
     buffer.lines.renderStream(buffer.srenderer)
-    buffer.available = 0
+
+proc processData(buffer: Buffer) =
+  if buffer.ishtml:
+    buffer.htmlParser.parseAll()
+    buffer.document = buffer.htmlParser.builder.document
+  else:
+    buffer.lines.renderStream(buffer.srenderer)
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -695,14 +701,14 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
   buffer.prevnode = thisnode
 
-proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
+proc loadResource(buffer: Buffer, link: HTMLLinkElement): EmptyPromise =
   let document = buffer.document
-  let href = elem.attr("href")
+  let href = link.attr("href")
   if href == "": return
   let url = parseURL(href, document.url.some)
   if url.isSome:
     let url = url.get
-    let media = elem.media
+    let media = link.media
     if media != "":
       let cvals = parseListOfComponentValues(newStringStream(media))
       let media = parseMediaQueryList(cvals)
@@ -724,7 +730,8 @@ proc loadResource(buffer: Buffer, elem: HTMLLinkElement): EmptyPromise =
           #TODO non-utf-8 css
           let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
           let source = newEncoderStream(ds, cs = CHARSET_UTF_8)
-          elem.sheet = parseStylesheet(source, buffer.factory))
+          link.setSheet(parseStylesheet(source, buffer.factory))
+      )
 
 proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let document = buffer.document
@@ -803,6 +810,14 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
         buffer.attrs,
         buffer.factory
       )
+    buffer.htmlParser = newHTML5ParserWrapper(
+      buffer.sstream,
+      buffer.window,
+      buffer.url,
+      buffer.factory,
+      buffer.charsets,
+      seekable = true
+    )
     const css = staticRead"res/ua.css"
     const quirk = css & staticRead"res/quirk.css"
     buffer.uastyle = css.parseStylesheet(factory)
@@ -1138,17 +1153,9 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     return p
   var p: EmptyPromise
   if buffer.ishtml:
-    buffer.sstream.setPosition(0)
-    buffer.available = 0
-    let document = parseHTML(
-      buffer.sstream,
-      charsets = buffer.charsets,
-      window = buffer.window,
-      url = buffer.url,
-      factory = buffer.factory
-    )
-    buffer.document = document
-    document.readyState = READY_STATE_INTERACTIVE
+    buffer.htmlParser.finish()
+    buffer.document = buffer.htmlParser.builder.document
+    buffer.document.readyState = READY_STATE_INTERACTIVE
     buffer.state = LOADING_RESOURCES
     buffer.dispatchDOMContentLoadedEvent()
     p = buffer.loadResources()
@@ -1194,34 +1201,47 @@ proc onload(buffer: Buffer) =
     return
   of LOADING_PAGE:
     discard
-  let op = buffer.sstream.getPosition()
-  var s {.noinit.}: array[BufferSize, uint8]
-  try:
-    buffer.sstream.setPosition(op + buffer.available)
-    let n = buffer.istream.readData(addr s[0], buffer.readbufsize)
-    if n != 0: # n can be 0 if we get EOF. (in which case we shouldn't reshape unnecessarily.)
-      buffer.sstream.writeData(addr s[0], n)
-      buffer.sstream.setPosition(op)
-      if buffer.readbufsize < BufferSize:
-        buffer.readbufsize = min(BufferSize, buffer.readbufsize * 2)
-      buffer.available += n
-      if buffer.ishtml:
+  while true:
+    let op = buffer.sstream.getPosition()
+    var s {.noinit.}: array[BufferSize, uint8]
+    try:
+      let n = buffer.istream.readData(addr s[0], s.len)
+      if n != 0:
+        buffer.sstream.writeData(addr s[0], n)
+        buffer.sstream.setPosition(op)
+        buffer.available += n
+        buffer.processData()
         res.bytes = buffer.available
-      else:
-        buffer.do_reshape()
-    if buffer.istream.atEnd():
-      res.atend = true
-      buffer.finishLoad().then(proc() =
-        buffer.state = LOADED
-        if buffer.document != nil: # may be nil if not buffer.ishtml
-          buffer.document.readyState = READY_STATE_COMPLETE
-        buffer.dispatchLoadEvent()
-        buffer.resolveTask(LOAD, res))
-      return
-    buffer.resolveTask(LOAD, res)
-  except ErrorAgain, ErrorWouldBlock:
-    if buffer.readbufsize > 1:
-      buffer.readbufsize = buffer.readbufsize div 2
+      res.lines = buffer.lines.len
+      if buffer.istream.atEnd():
+        # EOF
+        res.atend = true
+        buffer.finishLoad().then(proc() =
+          buffer.prevstyled = nil # for incremental rendering
+          buffer.do_reshape()
+          res.lines = buffer.lines.len
+          buffer.state = LOADED
+          if buffer.document != nil: # may be nil if not buffer.ishtml
+            buffer.document.readyState = READY_STATE_COMPLETE
+          buffer.dispatchLoadEvent()
+          buffer.resolveTask(LOAD, res)
+        )
+        return # skip incr render
+      buffer.resolveTask(LOAD, res)
+    except ErrorAgain, ErrorWouldBlock:
+      break
+  if buffer.document != nil:
+    # incremental rendering: only if we cannot read the entire stream in one
+    # pass
+    #TODO this is too simplistic to be really useful
+    let uastyle = if buffer.document.mode != QUIRKS:
+      buffer.uastyle
+    else:
+      buffer.quirkstyle
+    let styledRoot = buffer.document.applyStylesheets(uastyle,
+      buffer.userstyle, buffer.prevstyled)
+    buffer.lines = renderDocument(styledRoot, buffer.attrs)
+    buffer.prevstyled = styledRoot
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:
@@ -1237,16 +1257,10 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   buffer.istream.close()
   buffer.state = LOADED
   if buffer.ishtml:
-    buffer.sstream.setPosition(0)
-    buffer.available = 0
-    buffer.document = parseHTML(
-      buffer.sstream,
-      charsets = buffer.charsets,
-      window = buffer.window,
-      url = buffer.url,
-      factory = buffer.factory,
-      seekable = false
-    )
+    buffer.htmlParser.finish()
+    buffer.document = buffer.htmlParser.builder.document
+    buffer.document.readyState = READY_STATE_INTERACTIVE
+    buffer.state = LOADING_RESOURCES
     buffer.do_reshape()
   return buffer.lines.len
 
@@ -1784,6 +1798,7 @@ proc handleRead(buffer: Buffer, fd: int) =
     buffer.onload()
   elif fd in buffer.loader.connecting:
     buffer.loader.onConnected(fd)
+    buffer.loader.onRead(fd)
     if buffer.config.scripting:
       buffer.window.runJSJobs()
   elif fd in buffer.loader.ongoing:
@@ -1848,7 +1863,6 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     sstream: newStringStream(),
     width: attrs.width,
     height: attrs.height - 1,
-    readbufsize: BufferSize,
     selector: newSelector[int](),
     estream: newFileStream(stderr),
     pstream: socks,

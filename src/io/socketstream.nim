@@ -9,10 +9,9 @@ when defined(posix):
 import io/posixstream
 import io/serversocket
 
-type SocketStream* = ref object of Stream
+type SocketStream* = ref object of PosixStream
   source*: Socket
   blk*: bool
-  isend: bool
 
 proc sockReadData(s: Stream, buffer: pointer, len: int): int =
   assert len != 0
@@ -49,6 +48,12 @@ proc sockWriteData(s: Stream, buffer: pointer, len: int) =
     if n < 0:
       raisePosixIOError()
     i += n
+
+method sendData*(s: SocketStream, buffer: pointer, len: int): int =
+  let n = s.source.send(buffer, len)
+  if n < 0:
+    raisePosixIOError()
+  return n
 
 proc sockAtEnd(s: Stream): bool =
   SocketStream(s).isend
@@ -124,3 +129,5 @@ proc acceptSocketStream*(ssock: ServerSocket, blocking = true): SocketStream =
   var sock: Socket
   ssock.sock.accept(sock, inheritable = true)
   result.source = sock
+  if not blocking:
+    sock.getFd().setBlocking(false)

@@ -62,11 +62,19 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
   if result == -1:
     raisePosixIOError()
 
+method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
+  #TODO use sendData instead
+  let n = write(s.fd, buffer, len)
+  if n < 0:
+    raisePosixIOError()
+  return n
+
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
+  #TODO use sendData instead
   let s = cast[PosixStream](s)
   let res = write(s.fd, buffer, len)
   if res == -1:
-    raise newException(IOError, $strerror(errno))
+    raisePosixIOError()
 
 proc psAtEnd(s: Stream): bool =
   return cast[PosixStream](s).isend

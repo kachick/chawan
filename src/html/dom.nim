@@ -268,7 +268,7 @@ type
     value* {.jsget.}: Option[int32]
 
   HTMLStyleElement* = ref object of HTMLElement
-    sheet*: CSSStylesheet
+    sheet: CSSStylesheet
 
   HTMLLinkElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
@@ -2315,6 +2315,11 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
 proc setRelList(link: HTMLLinkElement, s: string) {.jsfset: "relList".} =
   link.attr("rel", s)
 
+proc setSheet*(link: HTMLLinkElement, sheet: CSSStylesheet) =
+  link.sheet = sheet
+  if link.document != nil:
+    link.document.cachedSheetsInvalid = true
+
 # <form>
 proc setRelList(form: HTMLFormElement, s: string) {.jsfset: "relList".} =
   form.attr("rel", s)
@@ -3276,7 +3281,7 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
     return
   let loader = window.loader.get
   let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-  let response = loader.doRequest(request)
+  let response = loader.doRequest(request, canredir = false)
   if response.res != 0:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
