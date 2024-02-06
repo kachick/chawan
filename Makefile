@@ -49,7 +49,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_LIBEXEC)/md2html
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
-		res/**/* res/map/idna_gen.nim
+		res/**/* res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
 		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
