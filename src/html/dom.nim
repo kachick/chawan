@@ -175,6 +175,8 @@ type
     cachedSheets: seq[CSSStylesheet]
     cachedSheetsInvalid: bool
     children_cached: HTMLCollection
+    #TODO I hate this but I really don't want to put chadombuilder into dom too
+    parser*: pointer
 
   CharacterData* = ref object of Node
     data* {.jsget.}: string
@@ -1727,6 +1729,12 @@ func qualifiedName*(element: Element): string =
   else:
     element.localNameStr
 
+template toOA*(writeBuffer: DocumentWriteBuffer): openArray[char] =
+  writeBuffer.data.toOpenArray(writeBuffer.i, writeBuffer.data.high)
+
+#TODO :(
+proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.importc.}
+
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
 proc write(document: Document, text: varargs[string]): Err[DOMException]
     {.jsfunc.} =
@@ -1738,11 +1746,15 @@ proc write(document: Document, text: varargs[string]): Err[DOMException]
       "InvalidStateError")
   if document.activeParserWasAborted:
     return ok()
+  assert document.parser != nil
   #TODO if insertion point is undefined... (open document)
   if document.writeBuffers.len == 0:
     return ok() #TODO (probably covered by open above)
+  let buffer = document.writeBuffers[^1]
   for s in text:
-    document.writeBuffers[^1].data &= s
+    buffer.data &= s
+  if document.parserBlockingScript == nil:
+    CDB_parseDocumentWriteChunk(document.parser)
   return ok()
 
 func html*(document: Document): HTMLElement =

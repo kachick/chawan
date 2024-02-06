@@ -23,7 +23,7 @@ type CharsetConfidence = enum
   ccTentative, ccCertain, ccIrrelevant
 
 type
-  HTML5ParserWrapper* = ref object
+  HTML5ParserWrapper* {.package.} = ref object
     parser: HTML5Parser[Node, CAtom]
     charsetStack: seq[Charset]
     seekable: bool
@@ -32,6 +32,9 @@ type
     inputStream: Stream
     encoder: EncoderStream
     decoder: DecoderStream
+    # hack so we don't have to worry about leaks or the GC deallocating parser
+    refs: seq[Document]
+    stoppedFromScript: bool
 
   ChaDOMBuilder = ref object of DOMBuilder[Node, CAtom]
     charset: Charset
@@ -50,6 +53,11 @@ include chame/htmlparseriface
 type DOMParser = ref object # JS interface
 
 jsDestructor(DOMParser)
+
+#TODO this is disgusting and should be removed
+proc setActiveParser(document: Document, wrapper: HTML5ParserWrapper) =
+  document.parser = cast[pointer](wrapper)
+  wrapper.refs.add(document)
 
 proc getDocumentImpl(builder: ChaDOMBuilder): Node =
   return builder.document
@@ -70,8 +78,10 @@ proc finish(builder: ChaDOMBuilder) =
     script.execute()
   #TODO events
 
-proc restart(builder: ChaDOMBuilder) =
+proc restart(builder: ChaDOMBuilder, wrapper: HTML5ParserWrapper) =
   let document = newDocument(builder.factory)
+  document.setActiveParser(wrapper)
+  wrapper.refs.add(document)
   document.contentType = "text/html"
   let oldDocument = builder.document
   document.url = oldDocument.url
@@ -295,6 +305,7 @@ proc newHTML5ParserWrapper*(inputStream: Stream, window: Window, url: URL,
     opts: opts,
     inputStream: inputStream
   )
+  builder.document.setActiveParser(wrapper)
   if seekable and (let scs = inputStream.bomSniff(); scs != CHARSET_UNKNOWN):
     builder.confidence = ccCertain
     wrapper.charsetStack = @[scs]
@@ -315,43 +326,62 @@ proc parseBuffer(wrapper: HTML5ParserWrapper, buffer: openArray[char]):
   # set insertion point for when it's needed
   var ip = wrapper.parser.getInsertionPoint()
   while res == PRES_SCRIPT:
-    if builder.poppedScript != nil:
-      #TODO microtask
-      document.writeBuffers.add(DocumentWriteBuffer())
-      builder.poppedScript.prepare()
+    #TODO microtask
+    let script = builder.poppedScript
+    builder.poppedScript = nil
+    document.writeBuffers.add(DocumentWriteBuffer())
+    script.prepare()
     while document.parserBlockingScript != nil:
       let script = document.parserBlockingScript
       document.parserBlockingScript = nil
       #TODO style sheet
       script.execute()
       assert document.parserBlockingScript != script
-    builder.poppedScript = nil
-    if document.writeBuffers.len == 0:
-      if ip == buffer.len:
-        # nothing left to re-parse.
-        break
-      # parse rest of input buffer
-      res = wrapper.parser.parseChunk(buffer.toOpenArray(ip, buffer.high))
-      ip += wrapper.parser.getInsertionPoint() # move insertion point
-    else:
-      let writeBuffer = document.writeBuffers[^1]
-      let p = writeBuffer.i
-      let H = writeBuffer.data.high
-      res = wrapper.parser.parseChunk(writeBuffer.data.toOpenArray(p, H))
-      case res
-      of PRES_CONTINUE:
-        discard document.writeBuffers.pop()
-        res = PRES_SCRIPT
-      of PRES_SCRIPT:
-        let pp = p + wrapper.parser.getInsertionPoint()
-        if pp == writeBuffer.data.len:
-          discard document.writeBuffers.pop()
-        else:
-          writeBuffer.i = pp
-      of PRES_STOP:
-        break
-        {.linearScanEnd.}
+    if wrapper.stoppedFromScript:
+      # document.write inserted a meta charset tag
+      break
+    assert document.writeBuffers[^1].toOA().len == 0
+    discard document.writeBuffers.pop()
+    assert document.writeBuffers.len == 0
+    if ip == buffer.len:
+      # script was at the end of the buffer; nothing to parse
+      break
+    # parse rest of input buffer
+    res = wrapper.parser.parseChunk(buffer.toOpenArray(ip, buffer.high))
+    ip += wrapper.parser.getInsertionPoint() # move insertion point
   return res
+
+# Called from dom whenever document.write is executed.
+# We consume everything pushed into the top buffer.
+proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.exportc.} =
+  let wrapper = cast[HTML5ParserWrapper](wrapper)
+  let builder = wrapper.builder
+  let document = builder.document
+  let buffer = document.writeBuffers[^1]
+  var res = wrapper.parser.parseChunk(buffer.toOA())
+  if res == PRES_SCRIPT:
+    document.writeBuffers.add(DocumentWriteBuffer())
+    while true:
+      buffer.i += wrapper.parser.getInsertionPoint()
+      #TODO microtask
+      let script = builder.poppedScript
+      builder.poppedScript = nil
+      script.prepare()
+      while document.parserBlockingScript != nil:
+        let script = document.parserBlockingScript
+        document.parserBlockingScript = nil
+        #TODO style sheet
+        script.execute()
+        assert document.parserBlockingScript != script
+      res = wrapper.parser.parseChunk(buffer.toOA())
+      if res != PRES_SCRIPT:
+        break
+    assert document.writeBuffers[^1].i == document.writeBuffers[^1].data.len
+    discard document.writeBuffers.pop()
+  assert builder.poppedScript == nil
+  buffer.i = buffer.data.len
+  if res == PRES_STOP:
+    wrapper.stoppedFromScript = true
 
 proc parseAll*(wrapper: HTML5ParserWrapper) =
   let builder = wrapper.builder
@@ -360,29 +390,31 @@ proc parseAll*(wrapper: HTML5ParserWrapper) =
     if wrapper.decoder.failed:
       assert wrapper.seekable
       # Retry with another charset.
-      builder.restart()
+      builder.restart(wrapper)
       wrapper.inputStream.setPosition(0)
       wrapper.switchCharset()
       continue
     if buffer.len == 0:
       break
     let res = wrapper.parseBuffer(buffer)
-    if res == PRES_STOP:
-      # A meta tag describing the charset has been found; force use of this
-      # charset.
-      builder.restart()
-      wrapper.inputStream.setPosition(0)
-      wrapper.charsetStack.add(builder.charset)
-      wrapper.seekable = false
-      wrapper.switchCharset()
-      continue
-    break
+    if res != PRES_STOP:
+      break
+    # res == PRES_STOP: A meta tag describing the charset has been found; force
+    # use of this charset.
+    builder.restart(wrapper)
+    wrapper.inputStream.setPosition(0)
+    wrapper.charsetStack.add(builder.charset)
+    wrapper.seekable = false
+    wrapper.switchCharset()
 
 proc finish*(wrapper: HTML5ParserWrapper) =
   wrapper.decoder.setInhibitCheckEnd(false)
   wrapper.parseAll()
   wrapper.parser.finish()
   wrapper.builder.finish()
+  for r in wrapper.refs:
+    r.parser = nil
+  wrapper.refs.setLen(0)
 
 proc newDOMParser(): DOMParser {.jsctor.} =
   return DOMParser()
