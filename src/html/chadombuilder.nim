@@ -196,7 +196,7 @@ proc associateWithFormImpl(builder: ChaDOMBuilder, element, form,
     intendedParent: Node) =
   if form.inSameTree(intendedParent):
     #TODO remove following test eventually
-    if Element(element).tagType in SupportedFormAssociatedElements:
+    if element of FormAssociatedElement:
       let element = FormAssociatedElement(element)
       element.setForm(HTMLFormElement(form))
       element.parserInserted = true

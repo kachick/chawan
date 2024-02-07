@@ -30,12 +30,6 @@ type
     DOCUMENT_FRAGMENT_NODE = 11,
     NOTATION_NODE = 12
 
-
-#TODO support all the other ones
-const SupportedFormAssociatedElements* = {
-  TAG_BUTTON, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
 const InputTypeWithSize* = {
   INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_PASSWORD, INPUT_URL, INPUT_TEL
 }

@@ -231,7 +231,7 @@ type
     dataset {.jsget.}: DOMStringMap
 
   FormAssociatedElement* = ref object of HTMLElement
-    form: HTMLFormElement
+    form*: HTMLFormElement
     parserInserted*: bool
 
   HTMLInputElement* = ref object of FormAssociatedElement
@@ -968,7 +968,7 @@ iterator elements*(node: Node, tag: set[TagType]): Element {.inline.} =
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for control in form.controls:
-    if control.tagType == TAG_INPUT:
+    if control of HTMLInputElement:
       yield HTMLInputElement(control)
 
 iterator radiogroup(form: HTMLFormElement): HTMLInputElement {.inline.} =
@@ -997,11 +997,11 @@ iterator textNodes*(node: Node): Text {.inline.} =
 
 iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.elementList:
-    if child.tagType == TAG_OPTION:
+    if child of HTMLOptionElement:
       yield HTMLOptionElement(child)
-    elif child.tagType == TAG_OPTGROUP:
+    elif child of HTMLOptGroupElement:
       for opt in child.elementList:
-        if opt.tagType == TAG_OPTION:
+        if opt of HTMLOptionElement:
           yield HTMLOptionElement(opt)
 
 proc populateCollection(collection: Collection) =
@@ -1680,26 +1680,10 @@ func scriptingEnabled*(document: Document): bool =
 func scriptingEnabled*(element: Element): bool =
   return element.document.scriptingEnabled
 
-func form*(element: FormAssociatedElement): HTMLFormElement =
-  case element.tagType
-  of TAG_INPUT: return HTMLInputElement(element).form
-  of TAG_SELECT: return HTMLSelectElement(element).form
-  of TAG_BUTTON: return HTMLButtonElement(element).form
-  of TAG_TEXTAREA: return HTMLTextAreaElement(element).form
-  else: assert false
-
-func `form=`*(element: FormAssociatedElement, form: HTMLFormElement) =
-  case element.tagType
-  of TAG_INPUT: HTMLInputElement(element).form = form
-  of TAG_SELECT:  HTMLSelectElement(element).form = form
-  of TAG_BUTTON: HTMLButtonElement(element).form = form
-  of TAG_TEXTAREA: HTMLTextAreaElement(element).form = form
-  else: assert false
-
 func isSubmitButton*(element: Element): bool =
-  if element.tagType == TAG_BUTTON:
+  if element of HTMLButtonElement:
     return element.attr("type") == "submit"
-  elif element.tagType == TAG_INPUT:
+  elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
     return element.inputType in {INPUT_SUBMIT, INPUT_IMAGE}
   return false
@@ -1712,7 +1696,7 @@ func canSubmitImplicitly*(form: HTMLFormElement): bool =
   }
   var found = false
   for control in form.controls:
-    if control.tagType == TAG_INPUT:
+    if control of HTMLInputElement:
       let input = HTMLInputElement(control)
       if input.inputType in BlocksImplicitSubmission:
         if found:
@@ -1775,7 +1759,7 @@ func body*(document: Document): HTMLElement {.jsfget.} =
 
 func select*(option: HTMLOptionElement): HTMLSelectElement =
   for anc in option.ancestors:
-    if anc.tagType == TAG_SELECT:
+    if anc of HTMLSelectElement:
       return HTMLSelectElement(anc)
   return nil
 
@@ -2107,14 +2091,13 @@ func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
 proc sheets*(document: Document): seq[CSSStylesheet] =
   if document.cachedSheetsInvalid:
     document.cachedSheets.setLen(0)
-    for elem in document.html.elements({TAG_STYLE, TAG_LINK}):
-      case elem.tagType
-      of TAG_STYLE:
+    for elem in document.html.descendants:
+      if elem of HTMLStyleElement:
         let style = HTMLStyleElement(elem)
         style.sheet = parseStylesheet(style.textContent, document.factory)
         if style.sheet != nil:
           document.cachedSheets.add(style.sheet)
-      of TAG_LINK:
+      elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
         if link.sheet != nil:
           document.cachedSheets.add(link.sheet)
@@ -2158,9 +2141,9 @@ func textAreaString*(textarea: HTMLTextAreaElement): string =
       result &= "[]\n"
 
 func isButton*(element: Element): bool =
-  if element.tagType == TAG_BUTTON:
+  if element of HTMLButtonElement:
     return true
-  if element.tagType == TAG_INPUT:
+  if element of HTMLInputElement:
     let element = HTMLInputElement(element)
     return element.inputType in {INPUT_SUBMIT, INPUT_BUTTON, INPUT_RESET, INPUT_IMAGE}
   return false
@@ -2174,7 +2157,7 @@ func action*(element: Element): string =
     if element.form != nil:
       if element.form.attrb("action"):
         return element.form.attr("action")
-  if element.tagType == TAG_FORM:
+  if element of HTMLFormElement:
     return element.attr("action")
   return ""
 
@@ -2187,7 +2170,7 @@ func enctype*(element: Element): FormEncodingType =
       of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
       else: FORM_ENCODING_TYPE_URLENCODED
 
-  if element.tagType == TAG_INPUT:
+  if element of HTMLInputElement:
     let element = HTMLInputElement(element)
     if element.form != nil:
       if element.form.attrb("enctype"):
@@ -2207,7 +2190,7 @@ func parseFormMethod(s: string): FormMethod =
   else: FORM_METHOD_GET
 
 func formmethod*(element: Element): FormMethod =
-  if element.tagType == TAG_FORM:
+  if element of HTMLFormElement:
     # The standard says nothing about this, but this code path is reached
     # on implicit form submission and other browsers seem to agree on this
     # behavior.
@@ -2217,7 +2200,7 @@ func formmethod*(element: Element): FormMethod =
     if element.attrb("formmethod"):
       return parseFormMethod(element.attr("formmethod"))
 
-  if element.tagType in SupportedFormAssociatedElements:
+  if element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.form != nil:
       if element.form.attrb("method"):
@@ -2231,7 +2214,7 @@ func findAnchor*(document: Document, id: string): Element =
   for child in document.elements:
     if child.id == id:
       return child
-    if child.tagType == TAG_A and child.attr("name") == id:
+    if child of HTMLAnchorElement and child.attr("name") == id:
       return child
 
 # Forward declaration hack
@@ -2310,13 +2293,14 @@ func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
   if f != "":
     let elem = label.document.getElementById(f)
     #TODO the supported check shouldn't be needed, just labelable
-    if elem.tagType in SupportedFormAssociatedElements and elem.tagType in LabelableElements:
+    if elem of FormAssociatedElement and elem.tagType in LabelableElements:
       return FormAssociatedElement(elem)
     return nil
   for elem in label.elements(LabelableElements):
-    if elem.tagType in SupportedFormAssociatedElements: #TODO remove this
+    if elem of FormAssociatedElement: #TODO remove this
       return FormAssociatedElement(elem)
     return nil
+  return nil
 
 func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
   let control = label.control
@@ -2566,7 +2550,7 @@ func title*(document: Document): string =
 
 # https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
 func isDisabled*(option: HTMLOptionElement): bool =
-  if option.parentElement.tagType == TAG_OPTGROUP and
+  if option.parentElement of HTMLOptGroupElement and
       option.parentElement.attrb("disabled"):
     return true
   return option.attrb("disabled")
@@ -2915,9 +2899,9 @@ proc remove*(node: Node, suppressObservers: bool) =
   node.parentNode = nil
   node.root = nil
   node.index = -1
-  if node of Element:
-    if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
-      node.document.cachedSheetsInvalid = true
+  if node.document != nil and (node of HTMLStyleElement or
+      node of HTMLLinkElement):
+    node.document.cachedSheetsInvalid = true
 
   #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
   #TODO not suppress observers => queue tree mutation record
@@ -3020,20 +3004,18 @@ proc resetFormOwner(element: FormAssociatedElement) =
 proc insertionSteps(insertedNode: Node) =
   if insertedNode of Element:
     let element = Element(insertedNode)
-    let tagType = element.tagType
-    case tagType
-    of TAG_OPTION:
+    if element of HTMLOptionElement:
       if element.parentElement != nil:
         let parent = element.parentElement
         var select: HTMLSelectElement
-        if parent.tagType == TAG_SELECT:
+        if parent of HTMLSelectElement:
           select = HTMLSelectElement(parent)
-        elif parent.tagType == TAG_OPTGROUP and parent.parentElement != nil and parent.parentElement.tagType == TAG_SELECT:
+        elif parent.tagType == TAG_OPTGROUP and parent.parentElement != nil and
+            parent.parentElement of HTMLSelectElement:
           select = HTMLSelectElement(parent.parentElement)
         if select != nil:
           select.resetElement()
-    else: discard
-    if tagType in SupportedFormAssociatedElements:
+    if element of FormAssociatedElement:
       let element = FormAssociatedElement(element)
       if element.parserInserted:
         return
@@ -3112,9 +3094,10 @@ proc insertNode(parent, node, before: Node) =
   node.parentNode = parent
   node.invalidateCollections()
   parent.invalidateCollections()
+  if node.document != nil and (node of HTMLStyleElement or
+      node of HTMLLinkElement):
+    node.document.cachedSheetsInvalid = true
   if node of Element:
-    if Element(node).tagType in {TAG_STYLE, TAG_LINK} and node.document != nil:
-      node.document.cachedSheetsInvalid = true
     #TODO shadow root
     insertionSteps(node)
 
@@ -3252,7 +3235,7 @@ proc reset*(form: HTMLFormElement) =
 proc renderBlocking*(element: Element): bool =
   if "render" in element.attr("blocking").split(AsciiWhitespace):
     return true
-  if element.tagType == TAG_SCRIPT:
+  if element of HTMLScriptElement:
     let element = HTMLScriptElement(element)
     if element.ctype == CLASSIC and element.parserDocument != nil and
         not element.attrb("async") and not element.attrb("defer"):
@@ -3608,11 +3591,11 @@ proc clone(node: Node, document = none(Document), deep = false): Node =
       element.namespacePrefix, element.attrs)
     #TODO namespaced attrs?
     # Cloning steps
-    if x.tagType == TAG_SCRIPT:
+    if x of HTMLScriptElement:
       let x = HTMLScriptElement(x)
       let element = HTMLScriptElement(element)
       x.alreadyStarted = element.alreadyStarted
-    elif x.tagType == TAG_INPUT:
+    elif x of HTMLInputElement:
       let x = HTMLInputElement(x)
       let element = HTMLInputElement(element)
       x.value = element.value
@@ -3825,7 +3808,7 @@ proc fragmentParsingAlgorithm(element: Element, s: string): DocumentFragment =
 proc innerHTML(element: Element, s: string) {.jsfset.} =
   #TODO shadow root
   let fragment = fragmentParsingAlgorithm(element, s)
-  let ctx = if element.tagType == TAG_TEMPLATE:
+  let ctx = if element of HTMLTemplateElement:
     HTMLTemplateElement(element).content
   else:
     element

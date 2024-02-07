@@ -310,7 +310,7 @@ func isClickable(styledNode: StyledNode): bool =
   if styledNode.computed{"visibility"} != VISIBILITY_VISIBLE:
     return false
   let element = Element(styledNode.node)
-  if element.tagType == TAG_A:
+  if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).href != ""
   return element.tagType in ClickableElements
 
@@ -328,12 +328,11 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
     return false
   if fae.form.canSubmitImplicitly():
     return true
-  if fae.tagType == TAG_BUTTON:
-    if HTMLButtonElement(fae).ctype == BUTTON_SUBMIT:
-      return true
-  if fae.tagType == TAG_INPUT:
-    if HTMLInputElement(fae).inputType in {INPUT_SUBMIT, INPUT_BUTTON}:
-      return true
+  if fae of HTMLButtonElement and HTMLButtonElement(fae).ctype == BUTTON_SUBMIT:
+    return true
+  if fae of HTMLInputElement and
+      HTMLInputElement(fae).inputType in {INPUT_SUBMIT, INPUT_BUTTON}:
+    return true
   return false
 
 proc getClickHover(styledNode: StyledNode): string =
@@ -1668,7 +1667,7 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
 
 proc select*(buffer: Buffer, selected: seq[int]): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
-      buffer.document.focus.tagType == TAG_SELECT:
+      buffer.document.focus of HTMLSelectElement:
     let select = HTMLSelectElement(buffer.document.focus)
     var i = 0
     var j = 0
