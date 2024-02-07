@@ -55,17 +55,17 @@ Currently implemented features are:
 	* table layout is supported, except for fixed tables
 	* the box model is mostly implemented, except for borders
 * forms
-* incremental loading of plain text streams (but not HTML documents yet)
+* incremental loading of plain text streams and HTML documents
 * JavaScript based navigation
 * JavaScript support in documents
 	* some basic DOM manipulation APIs are supported
 	* off by default; use is discouraged until sandboxing is
 	  implemented
 * cookies
-* Supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger
-* Can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
+* supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
+* can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
   [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
-* Man page viewer (based on w3mman)
+* man page viewer (based on w3mman)
 
 ...with a lot more [planned](todo).
 
