@@ -78,3 +78,6 @@ proc newAggregateError*(message: string): JSError =
     e: JS_AGGREGATE_ERROR0,
     message: message
   )
+
+template errTypeError*(message: string): untyped =
+  err(newTypeError(message))

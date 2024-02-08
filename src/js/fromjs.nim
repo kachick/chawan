@@ -1,6 +1,5 @@
 import std/macros
 import std/options
-import std/strutils
 import std/tables
 import std/unicode
 
@@ -378,11 +377,20 @@ proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): JSResult[T] =
   if JS_IsException(val):
     return err()
   let s = ?toString(ctx, val)
-  try:
-    return ok(parseEnum[T](s))
-  except ValueError:
-    return err(newTypeError("`" & s &
-      "' is not a valid value for enumeration " & $T))
+  # cmp when len is small enough, otherwise hashmap
+  when {T.low..T.high}.len <= 4:
+    for e in T.low .. T.high:
+      if $e == s:
+        return ok(e)
+  else:
+    const tab = (func(): Table[string, T] =
+      result = initTable[string, T]()
+      for e in T.low .. T.high:
+        result[$e] = e
+    )()
+    if s in tab:
+      return ok(tab[s])
+  return errTypeError("`" & s & "' is not a valid value for enumeration " & $T)
 
 proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
     JSResult[pointer] =
