@@ -51,13 +51,17 @@ type
       when defined(debug):
         tags: string
     of ID_SELECTOR:
-      id*: string
+      id*: CAtom
+      when defined(debug):
+        ids: string
+    of CLASS_SELECTOR:
+      class*: CAtom
+      when defined(debug):
+        classs: string
     of ATTR_SELECTOR:
       attr*: string
       value*: string
       rel*: SelectorRelation
-    of CLASS_SELECTOR:
-      class*: string
     of UNIVERSAL_SELECTOR: #TODO namespaces?
       discard
     of PSEUDO_SELECTOR:
@@ -112,9 +116,12 @@ func `$`*(sel: Selector): string =
     when defined(debug):
       return sel.tags
     else:
-      return "tagt " & $int(sel.tag)
+      return "ATOM" & $int(sel.tag)
   of ID_SELECTOR:
-    return '#' & sel.id
+    when defined(debug):
+      return "#" & sel.ids
+    else:
+      return "#ATOM" & $int(sel.id)
   of ATTR_SELECTOR:
     let rel = case sel.rel.t
     of RELATION_EXISTS: ""
@@ -130,7 +137,10 @@ func `$`*(sel: Selector): string =
     of FLAG_S: " s"
     return '[' & sel.attr & rel & sel.value & flag & ']'
   of CLASS_SELECTOR:
-    return '.' & sel.class
+    when defined(debug):
+      return "." & sel.classs
+    else:
+      return ".ATOM" & $int(sel.id)
   of UNIVERSAL_SELECTOR:
     return "*"
   of PSEUDO_SELECTOR:
@@ -397,7 +407,10 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
   if tok.tokenType != CSS_IDENT_TOKEN: fail
-  return Selector(t: CLASS_SELECTOR, class: tok.value)
+  let class = state.factory.toAtom(tok.value)
+  result = Selector(t: CLASS_SELECTOR, class: class)
+  when defined(debug):
+    result.classs = tok.value
 
 proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
   result = CompoundSelector()
@@ -408,14 +421,21 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.tokenType
       of CSS_IDENT_TOKEN:
         inc state.at
-        let tag = state.factory.toAtom(tok.value.toLowerAscii())
-        result.add(Selector(t: TYPE_SELECTOR, tag: tag))
+        let s = tok.value.toLowerAscii()
+        let tag = state.factory.toAtom(s)
+        let sel = Selector(t: TYPE_SELECTOR, tag: tag)
+        when defined(debug):
+          sel.tags = s
+        result.add(sel)
       of CSS_COLON_TOKEN:
         inc state.at
         result.add(state.parsePseudoSelector())
       of CSS_HASH_TOKEN:
         inc state.at
-        result.add(Selector(t: ID_SELECTOR, id: tok.value))
+        let id = state.factory.toAtom(tok.value)
+        result.add(Selector(t: ID_SELECTOR, id: id))
+        when defined(debug):
+          result[^1].ids = tok.value
       of CSS_COMMA_TOKEN: break
       of CSS_DELIM_TOKEN:
         case tok.cvalue

@@ -107,7 +107,7 @@ type
   HTMLAllCollection = ref object of Collection
 
   DOMTokenList = ref object
-    toks*: seq[string]
+    toks*: seq[CAtom]
     element: Element
     localName: CAtom
 
@@ -212,7 +212,8 @@ type
     prefix*: string
     localName*: CAtom
 
-    id* {.jsget.}: string
+    id*: CAtom
+    name*: CAtom
     classList* {.jsget.}: DOMTokenList
     attrs: seq[AttrData]
     attributesInternal: NamedNodeMap
@@ -277,7 +278,6 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLFormElement* = ref object of HTMLElement
-    name*: string
     smethod*: string
     enctype*: string
     novalidate*: bool
@@ -1134,16 +1134,29 @@ func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
 
 func item(tokenList: DOMTokenList, i: int): Option[string] {.jsfunc.} =
   if i < tokenList.toks.len:
-    return some(tokenList.toks[i])
+    return some(tokenList.element.document.toStr(tokenList.toks[i]))
+  return none(string)
 
-func contains*(tokenList: DOMTokenList, s: string): bool {.jsfunc.} =
-  return s in tokenList.toks
+func contains*(tokenList: DOMTokenList, a: CAtom): bool =
+  return a in tokenList.toks
+
+func jsContains(tokenList: DOMTokenList, s: string): bool
+    {.jsfunc: "contains".} =
+  return tokenList.element.document.toAtom(s) in tokenList
+
+func `$`(tokenList: DOMTokenList): string {.jsfunc.} =
+  var s = ""
+  for i, tok in tokenList.toks:
+    if i != 0:
+      s &= ' '
+    s &= tokenList.element.document.toStr(tok)
+  return s
 
 proc update(tokenList: DOMTokenList) =
   if not tokenList.element.attrb(tokenList.localName) and
       tokenList.toks.len == 0:
     return
-  tokenList.element.attr(tokenList.localName, tokenList.toks.join(' '))
+  tokenList.element.attr(tokenList.localName, $tokenList)
 
 func validateDOMToken(tok: string): Err[DOMException] =
   if tok == "":
@@ -1151,12 +1164,14 @@ func validateDOMToken(tok: string): Err[DOMException] =
   if AsciiWhitespace in tok:
     return errDOMException("Got a string containing whitespace",
       "InvalidCharacterError")
+  return ok()
 
 proc add(tokenList: DOMTokenList, tokens: varargs[string]): Err[DOMException]
     {.jsfunc.} =
   for tok in tokens:
     ?validateDOMToken(tok)
   for tok in tokens:
+    let tok = tokenList.element.document.toAtom(tok)
     tokenList.toks.add(tok)
   tokenList.update()
   return ok()
@@ -1166,6 +1181,7 @@ proc remove(tokenList: DOMTokenList, tokens: varargs[string]):
   for tok in tokens:
     ?validateDOMToken(tok)
   for tok in tokens:
+    let tok = tokenList.element.document.toAtom(tok)
     let i = tokenList.toks.find(tok)
     if i != -1:
       tokenList.toks.delete(i)
@@ -1175,6 +1191,7 @@ proc remove(tokenList: DOMTokenList, tokens: varargs[string]):
 proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)):
     DOMResult[bool] {.jsfunc.} =
   ?validateDOMToken(token)
+  let token = tokenList.element.document.toAtom(token)
   let i = tokenList.toks.find(token)
   if i != -1:
     if not force.get(false):
@@ -1192,9 +1209,11 @@ proc replace(tokenList: DOMTokenList, token, newToken: string):
     DOMResult[bool] {.jsfunc.} =
   ?validateDOMToken(token)
   ?validateDOMToken(newToken)
+  let token = tokenList.element.document.toAtom(token)
   let i = tokenList.toks.find(token)
   if i == -1:
     return ok(false)
+  let newToken = tokenList.element.document.toAtom(newToken)
   tokenList.toks[i] = newToken
   tokenList.update()
   return ok(true)
@@ -1216,9 +1235,6 @@ func supports(tokenList: DOMTokenList, token: string):
     return ok(lowercase in SupportedTokensMap[localName])
   return err(newTypeError("No supported tokens defined for attribute " &
     localName))
-
-func `$`(tokenList: DOMTokenList): string {.jsfunc.} =
-  return tokenList.toks.join(' ')
 
 func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
@@ -1314,12 +1330,15 @@ func hasprop(collection: HTMLCollection, u: uint32): bool {.jshasprop.} =
 func item(collection: HTMLCollection, u: uint32): Element {.jsfunc.} =
   if u < collection.length:
     return Element(collection.snapshot[int(u)])
+  return nil
 
 func namedItem(collection: HTMLCollection, s: string): Element {.jsfunc.} =
+  let a = collection.root.document.toAtom(s)
   for it in collection.snapshot:
     let it = Element(it)
-    if it.id == s or it.namespace == Namespace.HTML and it.attr("name") == s:
+    if it.id == a or it.namespace == Namespace.HTML and it.name == a:
       return it
+  return nil
 
 func getter[T: uint32|string](collection: HTMLCollection, u: T):
     Option[Element] {.jsgetprop.} =
@@ -1330,20 +1349,18 @@ func getter[T: uint32|string](collection: HTMLCollection, u: T):
 
 func names(ctx: JSContext, collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
-  let aName = collection.root.document.toAtom("name") #TODO enumize
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
-  var ids: OrderedSet[string]
+  var ids: OrderedSet[CAtom]
   for u in 0 ..< L:
     list.add(u)
     let elem = collection.item(u)
-    if elem.id != "":
+    if elem.id != CAtomNull:
       ids.incl(elem.id)
     if elem.namespace == Namespace.HTML:
-      let name = elem.attr(aName)
-      ids.incl(name)
+      ids.incl(elem.name)
   for id in ids:
-    list.add(id)
+    list.add(collection.root.document.toStr(id))
   return list
 
 # HTMLAllCollection
@@ -1882,6 +1899,7 @@ func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
 func getElementById(node: Node, id: string): Element {.jsfunc.} =
   if id.len == 0:
     return nil
+  let id = node.document.toAtom(id)
   for child in node.elements:
     if child.id == id:
       return child
@@ -1917,28 +1935,35 @@ func getElementsByTagName(element: Element, tagName: string): HTMLCollection {.j
   return element.getElementsByTagName0(tagName)
 
 func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
-  var classes = classNames.split(AsciiWhitespace)
-  let isquirks = node.document.mode == QUIRKS
+  var classAtoms = newSeq[CAtom]()
+  let document = node.document
+  let isquirks = document.mode == QUIRKS
   if isquirks:
-    for class in classes.mitems:
-      for c in class.mitems:
-        c = c.toLowerAscii()
+    for class in classNames.split(AsciiWhitespace):
+      classAtoms.add(document.toAtom(class.toLowerAscii()))
+  else:
+    for class in classNames.split(AsciiWhitespace):
+      classAtoms.add(document.toAtom(class))
   return newCollection[HTMLCollection](node,
     func(node: Node): bool =
       if node of Element:
+        let element = Element(node)
         if isquirks:
-          var cl = Element(node).classList
-          for tok in cl.toks.mitems:
-            for c in tok.mitems:
-              c = c.toLowerAscii()
-          for class in classes:
+          var cl = newSeq[CAtom]()
+          for tok in element.classList.toks:
+            let s = document.toStr(tok)
+            cl.add(document.toAtom(s.toLowerAscii()))
+          for class in classAtoms:
             if class notin cl:
               return false
         else:
-          for class in classes:
-            if class notin Element(node).classList:
+          for class in classAtoms:
+            if class notin element.classList.toks:
               return false
-        return true, true, false)
+        return true,
+    islive = true,
+    childonly = false
+  )
 
 func getElementsByClassName(document: Document, classNames: string): HTMLCollection {.jsfunc.} =
   return document.getElementsByClassName0(classNames)
@@ -2060,6 +2085,9 @@ func serializeFragment(node: Node): string =
   return s
 
 # Element attribute reflection (getters)
+func jsId(element: Element): string {.jsfget: "id".} =
+  return element.document.toStr(element.id)
+
 func innerHTML(element: Element): string {.jsfget.} =
   #TODO xml
   return element.serializeFragment()
@@ -2211,11 +2239,13 @@ func formmethod*(element: Element): FormMethod =
 func findAnchor*(document: Document, id: string): Element =
   if id.len == 0:
     return nil
+  let id = document.toAtom(id)
   for child in document.elements:
     if child.id == id:
       return child
-    if child of HTMLAnchorElement and child.attr("name") == id:
+    if child of HTMLAnchorElement and child.name == id:
       return child
+  return nil
 
 # Forward declaration hack
 isDefaultPassive = func (eventTarget: EventTarget): bool =
@@ -2672,10 +2702,17 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
     if name == n:
       element.val.toks.setLen(0)
       for x in value.split(AsciiWhitespace):
-        if x != "" and x notin element.val:
-          element.val.toks.add(x)
+        if x != "":
+          let a = element.document.toAtom(x)
+          if a notin element.val:
+            element.val.toks.add(a)
       return
-  element.reflect_str "id", id
+  if name == "id":
+    element.id = element.document.toAtom(value)
+    return
+  if name == "name":
+    element.name = element.document.toAtom(value)
+    return
   element.reflect_domtoklist "class", classList
   #TODO internalNonce
   if name == "style":
@@ -2880,8 +2917,7 @@ proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
-proc id(element: Element, id: string) {.jsfset.} =
-  element.id = id
+proc jsId(element: Element, id: string) {.jsfset: "id".} =
   element.attr("id", id)
 
 # Pass an index to avoid searching for the node in parent's child list.
