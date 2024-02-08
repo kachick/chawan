@@ -339,10 +339,14 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
         unregWrite.add(handle)
       #TODO TODO TODO what to do about sostream
     for handle in unregWrite:
-      ctx.selector.unregister(handle.fd)
-      ctx.handleMap.del(handle.fd)
-      handle.ostream.close()
-      handle.ostream = nil
+      if handle.ostream != nil:
+        # if the previous loop adds its handle to this one, it is possible that
+        # we try to unregister the same handle twice
+        #TODO this is kind of a mess
+        ctx.selector.unregister(handle.fd)
+        ctx.handleMap.del(handle.fd)
+        handle.ostream.close()
+        handle.ostream = nil
       if handle.istream != nil:
         ctx.handleMap.del(handle.istream.fd)
         ctx.selector.unregister(handle.istream.fd)
