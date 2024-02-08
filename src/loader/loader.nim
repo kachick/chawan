@@ -323,8 +323,9 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
       if Error in event.events:
         assert event.fd != ctx.fd
         let handle = ctx.handleMap[event.fd]
-        if handle.fd == event.fd: # ostream died
-          unregWrite.add(handle)
+        if handle.fd == event.fd:
+          if unregWrite.len == 0 or unregWrite[^1] != handle: # ostream died
+            unregWrite.add(handle)
         else: # istream died
           unregRead.add(handle)
     for handle in unregRead:
@@ -341,7 +342,6 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
       handle.ostream.close()
       handle.ostream = nil
       if handle.istream != nil:
-        handle.istream.close()
         ctx.handleMap.del(handle.istream.fd)
         ctx.selector.unregister(handle.istream.fd)
         handle.istream.close()
