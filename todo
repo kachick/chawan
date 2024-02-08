@@ -1,5 +1,8 @@
 compilation:
-- reduce binary size (maybe gzip data/*?)
+- reduce binary size
+	* remove the null columns in EUC-KR decoding
+	* fbf for unifont
+	* maybe use system wcwidth?
 charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
@@ -28,7 +31,6 @@ config:
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
 buffer:
-- important: incremental html parsing
 - important: validate returned values
 	* do not block container when receiving buffer data; if invalid, kill
 	  buffer
@@ -42,7 +44,7 @@ buffer:
 	* make console.err a TeeStream, and tee it to a StringStream that
 	  buffers up to 4KB
 - add buffer groups
-- add option to write source to a file, instead of keeping it in memory
+- always write buffer sources to tmp dir
 - hex viewer
 - xhtml
 - better horizontal line handling: allow viewing content positioned before page
@@ -56,10 +58,6 @@ external:
 - history, bookmarks (w3m format)
 - save buffer (source, output)
 - edit buffer (local file, or whatever we downloaded)
-dom:
-- atomize `id'
-	* maybe also add `name' attr atom?
-- add attr name enum (like TagType)
 javascript:
 - important: callbacks should not leak memory
 - add support for JS mixins
@@ -70,7 +68,6 @@ javascript:
 - implement ReadableStream, XHR
 - separate console for each buffer
 - buffer selection
-- errTypeError etc templates
 layout engine:
 - box borders
 	* will probably need special treatment, as borders must round to
@@ -91,15 +88,21 @@ layout engine:
 - iframe
 - writing-mode, flexbox, grid, ruby, ... (i.e. cool new stuff)
 images:
-- sixel encoding (eventually also kitty)
+- sixel encoding (eventually also kitty) -> actually display them :P
 - more formats (apng, gif: write own decoders, jpeg: use libjpeg, webp: ?)
 - incremental decoding (maybe implement streams first?)
 - separate image decoder process? or just run on a different thread?
 man:
-- detect man directory automatically
-- eventually rewrite in Nim
+- mancha:
+	* detect man directory automatically
+	* eventually rewrite in Nim
+- man pages:
+	* add a DOM -> man page converter so that we do not depend on pandoc
+	  for man page conversion
+gmifetch:
+- use proper env vars instead of re-parsing the URL
+- rewrite in Nim
 etc:
-- important: replace fastRuneAt with qjs libunicode (fastRuneAt has no error handling...)
 - tests (including aforementioned fuzzer)
 - orc support
 - maybe windows support? (blocker: needs a windows machine)
