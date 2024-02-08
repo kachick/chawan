@@ -661,7 +661,8 @@ type UpdateHoverResult* = object
   repaint*: bool
 
 proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.proxy.} =
-  if buffer.lines.len == 0: return
+  if cursory >= buffer.lines.len:
+    return
   var thisnode: StyledNode
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
