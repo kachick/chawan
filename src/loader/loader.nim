@@ -284,8 +284,8 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           let handle = ctx.handleMap[event.fd]
           assert event.fd != handle.fd
           while true:
+            let buffer = newLoaderBuffer()
             try:
-              let buffer = newLoaderBuffer()
               buffer.len = handle.istream.readData(addr buffer[0], buffer.cap)
               if buffer.len == 0:
                 dealloc(buffer)
@@ -294,8 +294,10 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
               if buffer.len < buffer.cap:
                 break
             except ErrorAgain, ErrorWouldBlock: # retry later
+              dealloc(buffer)
               break
             except ErrorBrokenPipe: # sender died; stop streaming
+              dealloc(buffer)
               unregRead.add(handle)
               break
       if Write in event.events:
