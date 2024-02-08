@@ -166,7 +166,9 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
   stream.sread(request)
-  let handle = newLoaderHandle(stream, request.canredir, request.url)
+  let handle = newLoaderHandle(stream, request.canredir)
+  when defined(debug):
+    handle.url = request.url
   if not ctx.config.filter.match(request.url):
     handle.sendResult(ERROR_DISALLOWED_URL)
     handle.close()
@@ -512,14 +514,15 @@ proc onRead*(loader: FileLoader, fd: int) =
   loader.ongoing.withValue(fd, buffer):
     let response = buffer[].response
     while not response.body.atEnd():
+      let olen = buffer[].buf.len
       try:
-        let olen = buffer[].buf.len
         buffer[].buf.setLen(olen + BufferSize)
         let n = response.body.readData(addr buffer[].buf[olen], BufferSize)
         buffer[].buf.setLen(olen + n)
         if n == 0:
           break
       except ErrorAgain, ErrorWouldBlock:
+        buffer[].buf.setLen(olen)
         break
     if response.body.atEnd():
       buffer[].bodyRead.resolve(buffer[].buf)

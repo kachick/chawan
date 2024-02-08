@@ -8,7 +8,9 @@ import io/serialize
 import io/socketstream
 import loader/headers
 
-import types/url
+when defined(debug):
+  import types/url
+
 type
   LoaderBufferPage = array[4056, uint8] # 4096 - 8 - 32
 
@@ -32,15 +34,15 @@ type
     currentBuffer*: LoaderBuffer
     currentBufferIdx*: int
     buffers: Deque[LoaderBuffer]
-    url*: URL #TODO TODO TODO debug
+    when defined(debug):
+      url*: URL
 
 # Create a new loader handle, with the output stream ostream.
-proc newLoaderHandle*(ostream: PosixStream, canredir: bool, url: URL): LoaderHandle =
+proc newLoaderHandle*(ostream: PosixStream, canredir: bool): LoaderHandle =
   return LoaderHandle(
     ostream: ostream,
     canredir: canredir,
-    fd: int(SocketStream(ostream).source.getFd()),
-    url: url
+    fd: int(SocketStream(ostream).source.getFd())
   )
 
 func `[]`*(buffer: LoaderBuffer, i: int): var uint8 {.inline.} =
