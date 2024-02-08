@@ -215,7 +215,7 @@ type
     id*: CAtom
     name*: CAtom
     classList* {.jsget.}: DOMTokenList
-    attrs: seq[AttrData]
+    attrs*: seq[AttrData] #TODO TODO TODO unextern
     attributesInternal: NamedNodeMap
     hover*: bool
     invalid*: bool
@@ -699,7 +699,7 @@ type
     REFLECT_STR, REFLECT_BOOL, REFLECT_LONG, REFLECT_ULONG_GZ, REFLECT_ULONG
 
   ReflectEntry = object
-    attrname: string
+    attrname: AttrType
     funcname: string
     tags: set[TagType]
     case t: ReflectType
@@ -709,22 +709,27 @@ type
       u: uint32
     else: discard
 
+func attrType0(s: static string): AttrType =
+  return parseEnum[AttrType](s)
+
 template toset(ts: openarray[TagType]): set[TagType] =
   var tags: system.set[TagType]
   for tag in ts:
     tags.incl(tag)
   tags
 
-func makes(name: string, ts: set[TagType]): ReflectEntry =
+func makes(name: static string, ts: set[TagType]): ReflectEntry =
+  const attrname = attrType0(name)
   ReflectEntry(
-    attrname: name,
+    attrname: attrname,
     funcname: name,
     t: REFLECT_STR,
     tags: ts
   )
 
-func makes(attrname: string, funcname: string, ts: set[TagType]):
+func makes(attrname, funcname: static string, ts: set[TagType]):
     ReflectEntry =
+  const attrname = attrType0(attrname)
   ReflectEntry(
     attrname: attrname,
     funcname: funcname,
@@ -732,14 +737,16 @@ func makes(attrname: string, funcname: string, ts: set[TagType]):
     tags: ts
   )
 
-func makes(name: string, ts: varargs[TagType]): ReflectEntry =
+func makes(name: static string, ts: varargs[TagType]): ReflectEntry =
   makes(name, toset(ts))
 
-func makes(attrname, funcname: string, ts: varargs[TagType]): ReflectEntry =
+func makes(attrname, funcname: static string, ts: varargs[TagType]):
+    ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
-func makeb(attrname, funcname: string, ts: varargs[TagType]):
+func makeb(attrname, funcname: static string, ts: varargs[TagType]):
     ReflectEntry =
+  const attrname = attrType0(attrname)
   ReflectEntry(
     attrname: attrname,
     funcname: funcname,
@@ -747,21 +754,25 @@ func makeb(attrname, funcname: string, ts: varargs[TagType]):
     tags: toset(ts)
   )
 
-func makeb(name: string, ts: varargs[TagType]): ReflectEntry =
+func makeb(name: static string, ts: varargs[TagType]): ReflectEntry =
   makeb(name, name, ts)
 
-template makeul(name: string, ts: varargs[TagType], default = 0u32): ReflectEntry =
+func makeul(name: static string, ts: varargs[TagType], default = 0u32):
+    ReflectEntry =
+  const attrname = attrType0(name)
   ReflectEntry(
-    attrname: name,
+    attrname: attrname,
     funcname: name,
     t: REFLECT_ULONG,
     tags: toset(ts),
     u: default
   )
 
-template makeulgz(name: string, ts: varargs[TagType], default = 0u32): ReflectEntry =
+func makeulgz(name: static string, ts: varargs[TagType], default = 0u32):
+    ReflectEntry =
+  const attrname = attrType0(name)
   ReflectEntry(
-    attrname: name,
+    attrname: attrname,
     funcname: name,
     t: REFLECT_ULONG_GZ,
     tags: toset(ts),
@@ -799,11 +810,10 @@ const ReflectTable0 = [
 ]
 
 # Forward declarations
-func attr*(element: Element, s: CAtom): string
-func attr*(element: Element, s: string): string
+func attr*(element: Element, s: AttrType): string
 func attrb*(element: Element, s: CAtom): bool
 proc attr*(element: Element, name: CAtom, value: string)
-proc attr*(element: Element, name, value: string)
+proc attr*(element: Element, name: AttrType, value: string)
 func baseURL*(document: Document): URL
 proc delAttr(element: Element, i: int, keep = false)
 proc reflectAttrs(element: Element, name: CAtom, value: string)
@@ -816,11 +826,17 @@ func document*(node: Node): Document =
 proc toAtom*(document: Document, s: string): CAtom =
   return document.factory.toAtom(s)
 
+proc toAtom*(document: Document, at: AttrType): CAtom =
+  return document.factory.toAtom(at)
+
 proc toStr(document: Document, atom: CAtom): string =
   return document.factory.toStr(atom)
 
 proc toTagType*(document: Document, atom: CAtom): TagType =
   return document.factory.toTagType(atom)
+
+proc toAttrType(document: Document, atom: CAtom): AttrType =
+  return document.factory.toAttrType(atom)
 
 proc toAtom*(document: Document, tagType: TagType): CAtom =
   return document.factory.toAtom(tagType)
@@ -851,6 +867,9 @@ func findAttr(element: Element, qualifiedName: CAtom): int =
     if attr.qualifiedName == qualifiedName:
       return i
   return -1
+
+func findAttr(element: Element, qualifiedName: AttrType): int =
+  return element.findAttr(element.document.toAtom(qualifiedName))
 
 func findAttrNS(element: Element, namespace, qualifiedName: CAtom): int =
   for i, attr in element.attrs:
@@ -1560,7 +1579,7 @@ proc jsLocalName(attr: Attr): string {.jsfget: "localName".} =
 proc jsValue(attr: Attr): string {.jsfget: "value".} =
   return attr.data.value
 
-func name(attr: Attr): string {.jsfget.} =
+func jsName(attr: Attr): string {.jsfget: "name".} =
   return attr.ownerElement.document.toStr(attr.data.qualifiedName)
 
 func findAttr(map: NamedNodeMap, dataIdx: int): int =
@@ -1699,7 +1718,7 @@ func scriptingEnabled*(element: Element): bool =
 
 func isSubmitButton*(element: Element): bool =
   if element of HTMLButtonElement:
-    return element.attr("type") == "submit"
+    return element.attr(atType) == "submit"
   elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
     return element.inputType in {INPUT_SUBMIT, INPUT_IMAGE}
@@ -1998,27 +2017,29 @@ func attr*(element: Element, s: CAtom): string =
     return element.attrs[i].value
   return ""
 
-func attr*(element: Element, s: string): string =
+func attr*(element: Element, s: AttrType): string =
   return element.attr(element.document.toAtom(s))
 
-func attrl*(element: Element, s: string): Option[int32] =
+func attrl*(element: Element, s: AttrType): Option[int32] =
   return parseInt32(element.attr(s))
 
-func attrulgz*(element: Element, s: string): Option[uint32] =
+func attrulgz*(element: Element, s: AttrType): Option[uint32] =
   let x = parseUInt32(element.attr(s))
   if x.isSome and x.get > 0:
     return x
+  return none(uint32)
 
-func attrul*(element: Element, s: string): Option[uint32] =
+func attrul*(element: Element, s: AttrType): Option[uint32] =
   let x = parseUInt32(element.attr(s))
   if x.isSome and x.get >= 0:
     return x
+  return none(uint32)
 
 func attrb*(element: Element, s: CAtom): bool =
   return element.findAttr(s) != -1
 
-func attrb*(element: Element, s: string): bool =
-  let atom = element.document.toAtom(s)
+func attrb*(element: Element, at: AttrType): bool =
+  let atom = element.document.toAtom(at)
   return element.attrb(atom)
 
 # https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
@@ -2097,9 +2118,9 @@ func outerHTML(element: Element): string {.jsfget.} =
   return element.serializeFragmentInner(TAG_UNKNOWN)
 
 func crossOrigin0(element: HTMLElement): CORSAttribute =
-  if not element.attrb("crossorigin"):
+  if not element.attrb(atCrossorigin):
     return NO_CORS
-  case element.attr("crossorigin")
+  case element.attr(atCrossorigin)
   of "anonymous", "":
     return ANONYMOUS
   of "use-credentials":
@@ -2114,7 +2135,7 @@ func crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
   return element.crossOrigin0
 
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
-  getReferrerPolicy(element.attr("referrerpolicy"))
+  getReferrerPolicy(element.attr(atReferrerpolicy))
 
 proc sheets*(document: Document): seq[CSSStylesheet] =
   if document.cachedSheetsInvalid:
@@ -2139,9 +2160,9 @@ func inputString*(input: HTMLInputElement): string =
     if input.checked: "*"
     else: " "
   of INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_URL, INPUT_TEL:
-    input.value.padToWidth(int(input.attrulgz("size").get(20)))
+    input.value.padToWidth(int(input.attrulgz(atSize).get(20)))
   of INPUT_PASSWORD:
-    '*'.repeat(input.value.len).padToWidth(int(input.attrulgz("size").get(20)))
+    '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(atSize).get(20)))
   of INPUT_RESET:
     if input.value != "": input.value
     else: "RESET"
@@ -2150,16 +2171,17 @@ func inputString*(input: HTMLInputElement): string =
     else: "SUBMIT"
   of INPUT_FILE:
     if input.file.isNone:
-      "".padToWidth(int(input.attrulgz("size").get(20)))
+      "".padToWidth(int(input.attrulgz(atSize).get(20)))
     else:
-      input.file.get.path.serialize_unicode().padToWidth(int(input.attrulgz("size").get(20)))
+      input.file.get.path.serialize_unicode()
+        .padToWidth(int(input.attrulgz(atSize).get(20)))
   else: input.value
 
 func textAreaString*(textarea: HTMLTextAreaElement): string =
   let split = textarea.value.split('\n')
-  let rows = int(textarea.attrul("rows").get(1))
+  let rows = int(textarea.attrul(atRows).get(1))
   for i in 0 ..< rows:
-    let cols = int(textarea.attrul("cols").get(20))
+    let cols = int(textarea.attrul(atCols).get(20))
     if cols > 2:
       if i < split.len:
         result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
@@ -2178,21 +2200,21 @@ func isButton*(element: Element): bool =
 
 func action*(element: Element): string =
   if element.isSubmitButton():
-    if element.attrb("formaction"):
-      return element.attr("formaction")
+    if element.attrb(atFormaction):
+      return element.attr(atFormaction)
   if element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.form != nil:
-      if element.form.attrb("action"):
-        return element.form.attr("action")
+      if element.form.attrb(atAction):
+        return element.form.attr(atAction)
   if element of HTMLFormElement:
-    return element.attr("action")
+    return element.attr(atAction)
   return ""
 
 func enctype*(element: Element): FormEncodingType =
   if element.isSubmitButton():
-    if element.attrb("formenctype"):
-      return case element.attr("formenctype").toLowerAscii()
+    if element.attrb(atFormenctype):
+      return case element.attr(atFormenctype).toLowerAscii()
       of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
       of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
       of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
@@ -2201,8 +2223,8 @@ func enctype*(element: Element): FormEncodingType =
   if element of HTMLInputElement:
     let element = HTMLInputElement(element)
     if element.form != nil:
-      if element.form.attrb("enctype"):
-        return case element.attr("enctype").toLowerAscii()
+      if element.form.attrb(atEnctype):
+        return case element.attr(atEnctype).toLowerAscii()
         of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
         of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
         of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
@@ -2222,17 +2244,17 @@ func formmethod*(element: Element): FormMethod =
     # The standard says nothing about this, but this code path is reached
     # on implicit form submission and other browsers seem to agree on this
     # behavior.
-    return parseFormMethod(element.attr("method"))
+    return parseFormMethod(element.attr(atMethod))
 
   if element.isSubmitButton():
-    if element.attrb("formmethod"):
-      return parseFormMethod(element.attr("formmethod"))
+    if element.attrb(atFormmethod):
+      return parseFormMethod(element.attr(atFormmethod))
 
   if element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.form != nil:
-      if element.form.attrb("method"):
-        return parseFormMethod(element.form.attr("method"))
+      if element.form.attrb(atMethod):
+        return parseFormMethod(element.form.attr(atMethod))
 
   return FORM_METHOD_GET
 
@@ -2269,57 +2291,57 @@ proc parseColor(element: Element, s: string): RGBAColor =
 
 #TODO ??
 func target0*(element: Element): string =
-  if element.attrb("target"):
-    return element.attr("target")
+  if element.attrb(atTarget):
+    return element.attr(atTarget)
   for base in element.document.elements(TAG_BASE):
-    if base.attrb("target"):
-      return base.attr("target")
+    if base.attrb(atTarget):
+      return base.attr(atTarget)
   return ""
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
-  if element.attrb("href"):
-    let url = parseURL(element.attr("href"), some(element.document.baseURL))
-    if url.isSome:
-      return $url.get
+  let url = parseURL(element.attr(atHref), some(element.document.baseURL))
+  if url.isSome:
+    return $url.get
+  return ""
 
 # <base>
 func href(base: HTMLBaseElement): string {.jsfget.} =
-  if base.attrb("href"):
-    #TODO with fallback base url
-    let url = parseURL(base.attr("href"))
-    if url.isSome:
-      return $url.get
+  #TODO with fallback base url
+  let url = parseURL(base.attr(atHref))
+  if url.isSome:
+    return $url.get
+  return ""
 
 # <a>
 func href*(anchor: HTMLAnchorElement): string {.jsfget.} =
   anchor.href0
 
 proc href(anchor: HTMLAnchorElement, href: string) {.jsfset.} =
-  anchor.attr("href", href)
+  anchor.attr(atHref, href)
 
 func `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
   anchor.href
 
 proc setRelList(anchor: HTMLAnchorElement, s: string) {.jsfset: "relList".} =
-  anchor.attr("rel", s)
+  anchor.attr(atRel, s)
 
 # <area>
 func href(area: HTMLAreaElement): string {.jsfget.} =
   area.href0
 
 proc href(area: HTMLAreaElement, href: string) {.jsfset.} =
-  area.attr("href", href)
+  area.attr(atHref, href)
 
 func `$`(area: HTMLAreaElement): string {.jsfunc.} =
   area.href
 
 proc setRelList(area: HTMLAreaElement, s: string) {.jsfset: "relList".} =
-  area.attr("rel", s)
+  area.attr(atRel, s)
 
 # <label>
 func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
-  let f = label.attr("for")
+  let f = label.attr(atFor)
   if f != "":
     let elem = label.document.getElementById(f)
     #TODO the supported check shouldn't be needed, just labelable
@@ -2339,7 +2361,7 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
 
 # <link>
 proc setRelList(link: HTMLLinkElement, s: string) {.jsfset: "relList".} =
-  link.attr("rel", s)
+  link.attr(atRel, s)
 
 proc setSheet*(link: HTMLLinkElement, sheet: CSSStylesheet) =
   link.sheet = sheet
@@ -2348,7 +2370,7 @@ proc setSheet*(link: HTMLLinkElement, sheet: CSSStylesheet) =
 
 # <form>
 proc setRelList(form: HTMLFormElement, s: string) {.jsfset: "relList".} =
-  form.attr("rel", s)
+  form.attr(atRel, s)
 
 # <input>
 func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
@@ -2424,7 +2446,7 @@ proc newHTMLElement*(document: Document, localName: CAtom,
     result = HTMLInputElement()
   of TAG_A:
     let anchor = HTMLAnchorElement()
-    let localName = document.toAtom("rel")
+    let localName = document.toAtom(atRel)
     anchor.relList = DOMTokenList(element: anchor, localName: localName)
     result = anchor
   of TAG_SELECT:
@@ -2451,12 +2473,12 @@ proc newHTMLElement*(document: Document, localName: CAtom,
     result = HTMLStyleElement()
   of TAG_LINK:
     let link = HTMLLinkElement()
-    let localName = document.toAtom("rel") #TODO enumize
+    let localName = document.toAtom(atRel)
     link.relList = DOMTokenList(element: link, localName: localName)
     result = link
   of TAG_FORM:
     let form = HTMLFormElement()
-    let localName = document.toAtom("rel") #TODO enumize
+    let localName = document.toAtom(atRel)
     form.relList = DOMTokenList(element: form, localName: localName)
     result = form
   of TAG_TEMPLATE:
@@ -2484,7 +2506,7 @@ proc newHTMLElement*(document: Document, localName: CAtom,
     result = HTMLImageElement()
   of TAG_AREA:
     let area = HTMLAreaElement()
-    let localName = document.toAtom("rel") #TODO enumize
+    let localName = document.toAtom(atRel)
     area.relList = DOMTokenList(element: result, localName: localName)
     result = area
   else:
@@ -2493,7 +2515,7 @@ proc newHTMLElement*(document: Document, localName: CAtom,
   result.namespace = namespace
   result.namespacePrefix = prefix
   result.document_internal = document
-  let localName = document.toAtom("classList") #TODO enumize
+  let localName = document.toAtom(atClassList)
   result.classList = DOMTokenList(element: result, localName: localName)
   result.index = -1
   result.dataset = DOMStringMap(target: result)
@@ -2552,8 +2574,8 @@ func baseURL*(document: Document): URL =
   #TODO frozen base url...
   var href = ""
   for base in document.elements(TAG_BASE):
-    if base.attrb("href"):
-      href = base.attr("href")
+    if base.attrb(atHref):
+      href = base.attr(atHref)
   if href == "":
     return document.url
   if document.url == nil:
@@ -2571,7 +2593,7 @@ func parseURL*(document: Document, s: string): Option[URL] =
   return parseURL(s, some(document.baseURL))
 
 func media*[T: HTMLLinkElement|HTMLStyleElement](element: T): string =
-  return element.attr("media")
+  return element.attr(atMedia)
 
 func title*(document: Document): string =
   for title in document.elements(TAG_TITLE):
@@ -2581,9 +2603,9 @@ func title*(document: Document): string =
 # https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
 func isDisabled*(option: HTMLOptionElement): bool =
   if option.parentElement of HTMLOptGroupElement and
-      option.parentElement.attrb("disabled"):
+      option.parentElement.attrb(atDisabled):
     return true
-  return option.attrb("disabled")
+  return option.attrb(atDisabled)
 
 func text(option: HTMLOptionElement): string {.jsfget.} =
   var s = ""
@@ -2595,8 +2617,8 @@ func text(option: HTMLOptionElement): string {.jsfget.} =
   return s.stripAndCollapse()
 
 func value*(option: HTMLOptionElement): string {.jsfget.} =
-  if option.attrb("value"):
-    return option.attr("value")
+  if option.attrb(atValue):
+    return option.attr(atValue)
   return option.text
 
 proc invalidateCollections(node: Node) =
@@ -2605,6 +2627,7 @@ proc invalidateCollections(node: Node) =
 
 proc delAttr(element: Element, i: int, keep = false) =
   let map = element.attributesInternal
+  let name = element.attrs[i].qualifiedName
   element.attrs.delete(i) # ordering matters
   if map != nil:
     # delete from attrlist + adjust indices invalidated
@@ -2625,6 +2648,7 @@ proc delAttr(element: Element, i: int, keep = false) =
         )
         attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
+  element.reflectAttrs(name, "")
   element.invalidateCollections()
   element.invalid = true
 
@@ -2683,22 +2707,24 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   return element.style_cached
 
 proc reflectAttrs(element: Element, name: CAtom, value: string) =
-  #TODO enumize
-  let name = element.document.toStr(name)
-  template reflect_str(element: Element, n: static string, val: untyped) =
+  let name = element.document.toAttrType(name)
+  template reflect_str(element: Element, n: AttrType, val: untyped) =
     if name == n:
       element.val = value
       return
-  template reflect_str(element: Element, n: static string, val, fun: untyped) =
+  template reflect_atom(element: Element, n: AttrType, val: untyped) =
+    if name == n:
+      element.val = element.document.toAtom(value)
+      return
+  template reflect_str(element: Element, n: AttrType, val, fun: untyped) =
     if name == n:
       element.val = fun(value)
       return
-  template reflect_bool(element: Element, n: static string, val: untyped) =
+  template reflect_bool(element: Element, n: AttrType, val: untyped) =
     if name == n:
       element.val = true
       return
-  template reflect_domtoklist(element: Element, n: static string,
-      val: untyped) =
+  template reflect_domtoklist(element: Element, n: AttrType, val: untyped) =
     if name == n:
       element.val.toks.setLen(0)
       for x in value.split(AsciiWhitespace):
@@ -2707,46 +2733,42 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
           if a notin element.val:
             element.val.toks.add(a)
       return
-  if name == "id":
-    element.id = element.document.toAtom(value)
-    return
-  if name == "name":
-    element.name = element.document.toAtom(value)
-    return
-  element.reflect_domtoklist "class", classList
+  element.reflect_atom atId, id
+  element.reflect_atom atName, name
+  element.reflect_domtoklist atClass, classList
   #TODO internalNonce
-  if name == "style":
+  if name == atStyle:
     element.style_cached = newCSSStyleDeclaration(element, value)
     return
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
-    input.reflect_str "value", value
-    input.reflect_str "type", inputType, inputType
-    input.reflect_bool "checked", checked
+    input.reflect_str atValue, value
+    input.reflect_str atType, inputType, inputType
+    input.reflect_bool atChecked, checked
   of TAG_OPTION:
     let option = HTMLOptionElement(element)
-    option.reflect_bool "selected", selected
+    option.reflect_bool atSelected, selected
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
-    button.reflect_str "type", ctype, (func(s: string): ButtonType =
+    button.reflect_str atType, ctype, (func(s: string): ButtonType =
       case s.toLowerAscii()
       of "submit": return BUTTON_SUBMIT
       of "reset": return BUTTON_RESET
       of "button": return BUTTON_BUTTON)
   of TAG_LINK:
     let link = HTMLLinkElement(element)
-    link.reflect_domtoklist "rel", relList
+    link.reflect_domtoklist atRel, relList
   of TAG_A:
     let anchor = HTMLAnchorElement(element)
-    anchor.reflect_domtoklist "rel", relList
+    anchor.reflect_domtoklist atRel, relList
   of TAG_AREA:
     let area = HTMLAreaElement(element)
-    area.reflect_domtoklist "rel", relList
+    area.reflect_domtoklist atRel, relList
   of TAG_CANVAS:
-    if name == "width" or name == "height":
-      let w = element.attrul("width").get(300)
-      let h = element.attrul("height").get(150)
+    if name == atWidth or name == atHeight:
+      let w = element.attrul(atWidth).get(300)
+      let h = element.attrul(atHeight).get(150)
       let canvas = HTMLCanvasElement(element)
       if canvas.bitmap.width != w or canvas.bitmap.height != h:
         canvas.bitmap = newBitmap(w, h)
@@ -2766,6 +2788,9 @@ proc attr*(element: Element, name: CAtom, value: string) =
       value: value
     ))
   element.reflectAttrs(name, value)
+
+proc attr*(element: Element, name: AttrType, value: string) =
+  element.attr(element.document.toAtom(name), value)
 
 proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
     namespace: Namespace, value: sink string) =
@@ -2798,27 +2823,24 @@ proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
     ))
   element.reflectAttrs(qualifiedName, value)
 
-proc attr*(element: Element, name, value: string) =
-  let name = element.document.toAtom(name)
-  element.attr(name, value)
-
-proc attrl(element: Element, name: string, value: int32) =
+proc attrl(element: Element, name: AttrType, value: int32) =
   element.attr(name, $value)
 
-proc attrul(element: Element, name: string, value: uint32) =
+proc attrul(element: Element, name: AttrType, value: uint32) =
   element.attr(name, $value)
 
-proc attrulgz(element: Element, name: string, value: uint32) =
+proc attrulgz(element: Element, name: AttrType, value: uint32) =
   if value > 0:
     element.attrul(name, value)
 
 proc setAttribute(element: Element, qualifiedName, value: string):
     Err[DOMException] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
-  let qualifiedName = if element.namespace == Namespace.HTML and not element.document.isxml:
-    qualifiedName.toLowerAscii()
+  let qualifiedName = if element.namespace == Namespace.HTML and
+      not element.document.isxml:
+    element.document.toAtom(qualifiedName.toLowerAscii())
   else:
-    qualifiedName
+    element.document.toAtom(qualifiedName)
   element.attr(qualifiedName, value)
   return ok()
 
@@ -2875,7 +2897,7 @@ proc toggleAttribute(element: Element, qualifiedName: string,
   return ok(true)
 
 proc value(attr: Attr, s: string) {.jsfset.} =
-  attr.ownerElement.attr(attr.name, s)
+  attr.ownerElement.attr(attr.data.qualifiedName, s)
 
 proc setNamedItem(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
@@ -2918,7 +2940,7 @@ proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
   return errDOMException("Item not found", "NotFoundError")
 
 proc jsId(element: Element, id: string) {.jsfset: "id".} =
-  element.attr("id", id)
+  element.attr(atId, id)
 
 # Pass an index to avoid searching for the node in parent's child list.
 proc remove*(node: Node, suppressObservers: bool) =
@@ -2965,17 +2987,17 @@ proc resetElement*(element: Element) =
     let input = HTMLInputElement(element)
     case input.inputType
     of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
-      input.value = input.attr("value")
+      input.value = input.attr(atValue)
     of INPUT_CHECKBOX, INPUT_RADIO:
-      input.checked = input.attrb("checked")
+      input.checked = input.attrb(atChecked)
     of INPUT_FILE:
       input.file = none(URL)
     else: discard
     input.invalid = true
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
-    if not select.attrb("multiple"):
-      if select.attrul("size").get(1) == 1:
+    if not select.attrb(atMultiple):
+      if select.attrul(atSize).get(1) == 1:
         var i = 0
         var firstOption: HTMLOptionElement
         for option in select.options:
@@ -3028,12 +3050,11 @@ proc resetFormOwner(element: FormAssociatedElement) =
     if element.tagType notin ListedElements:
       return
     let lastForm = element.findAncestor({TAG_FORM})
-    if not element.attrb("form") and lastForm == element.form:
+    if not element.attrb(atForm) and lastForm == element.form:
       return
   element.form = nil
-  if element.tagType in ListedElements and element.attrb("form") and
-      element.isConnected:
-    let form = element.document.getElementById(element.attr("form"))
+  if element.tagType in ListedElements and element.isConnected:
+    let form = element.document.getElementById(element.attr(atForm))
     if form of HTMLFormElement:
       element.setForm(HTMLFormElement(form))
 
@@ -3269,12 +3290,12 @@ proc reset*(form: HTMLFormElement) =
     control.invalid = true
 
 proc renderBlocking*(element: Element): bool =
-  if "render" in element.attr("blocking").split(AsciiWhitespace):
+  if "render" in element.attr(atBlocking).split(AsciiWhitespace):
     return true
   if element of HTMLScriptElement:
     let element = HTMLScriptElement(element)
     if element.ctype == CLASSIC and element.parserDocument != nil and
-        not element.attrb("async") and not element.attrb("defer"):
+        not element.attrb(atAsync) and not element.attrb(atDefer):
       return true
   return false
 
@@ -3431,17 +3452,18 @@ proc prepare*(element: HTMLScriptElement) =
     return
   let parserDocument = element.parserDocument
   element.parserDocument = nil
-  if parserDocument != nil and not element.attrb("async"):
+  if parserDocument != nil and not element.attrb(atAsync):
     element.forceAsync = true
   let sourceText = element.childTextContent
-  if not element.attrb("src") and sourceText == "":
+  if not element.attrb(atSrc) and sourceText == "":
     return
   if not element.isConnected:
     return
-  let typeString = if element.attr("type") != "":
-    element.attr("type").strip(chars = AsciiWhitespace).toLowerAscii()
-  elif element.attr("language") != "":
-    "text/" & element.attr("language").toLowerAscii()
+  let t = element.attr(atType)
+  let typeString = if t != "":
+    t.strip(chars = AsciiWhitespace).toLowerAscii()
+  elif (let l = element.attr(atLanguage); l != ""):
+    "text/" & l.toLowerAscii()
   else:
     "text/javascript"
   if typeString.isJavaScriptType():
@@ -3461,31 +3483,32 @@ proc prepare*(element: HTMLScriptElement) =
     return
   if not element.scriptingEnabled:
     return
-  if element.attrb("nomodule") and element.ctype == CLASSIC:
+  if element.attrb(atNomodule) and element.ctype == CLASSIC:
     return
   #TODO content security policy
-  if element.ctype == CLASSIC and element.attrb("event") and element.attrb("for"):
-    let f = element.attr("for").strip(chars = AsciiWhitespace)
-    let event = element.attr("event").strip(chars = AsciiWhitespace)
+  if element.ctype == CLASSIC and element.attrb(atEvent) and
+      element.attrb(atFor):
+    let f = element.attr(atFor).strip(chars = AsciiWhitespace)
+    let event = element.attr(atEvent).strip(chars = AsciiWhitespace)
     if not f.equalsIgnoreCase("window"):
       return
     if not event.equalsIgnoreCase("onload") and not event.equalsIgnoreCase("onload()"):
       return
-  let cs = getCharset(element.attr("charset"))
+  let cs = getCharset(element.attr(atCharset))
   let encoding = if cs != CHARSET_UNKNOWN: cs else: element.document.charset
   let classicCORS = element.crossOrigin
   var options = ScriptOptions(
     nonce: element.internalNonce,
-    integrity: element.attr("integrity"),
+    integrity: element.attr(atIntegrity),
     parserMetadata: if element.parserDocument != nil: PARSER_INSERTED else: NOT_PARSER_INSERTED,
     referrerpolicy: element.referrerpolicy
   )
   #TODO settings object
-  if element.attrb("src"):
+  if element.attrb(atSrc):
     if element.ctype == IMPORTMAP:
       #TODO fire error event
       return
-    let src = element.attr("src")
+    let src = element.attr(atSrc)
     if src == "":
       #TODO fire error event
       return
@@ -3500,7 +3523,8 @@ proc prepare*(element: HTMLScriptElement) =
     if element in element.document.renderBlockingElements:
       options.renderBlocking = true
     if element.ctype == CLASSIC:
-      element.fetchClassicScript(url.get, options, classicCORS, encoding, markAsReady)
+      element.fetchClassicScript(url.get, options, classicCORS, encoding,
+        markAsReady)
     else:
       element.fetchExternalModuleGraph(url.get, options, markAsReady)
   else:
@@ -3512,9 +3536,10 @@ proc prepare*(element: HTMLScriptElement) =
     else:
       #TODO MODULE, IMPORTMAP
       element.markAsReady(ScriptResult(t: RESULT_NULL))
-  if element.ctype == CLASSIC and element.attrb("src") or element.ctype == MODULE:
+  if element.ctype == CLASSIC and element.attrb(atSrc) or
+      element.ctype == MODULE:
     let prepdoc = element.preparationTimeDocument
-    if element.attrb("async"):
+    if element.attrb(atAsync):
       prepdoc.scriptsToExecSoon.add(element)
       element.onReady = (proc() =
         element.execute()
@@ -3532,7 +3557,7 @@ proc prepare*(element: HTMLScriptElement) =
             script.execute()
             prepdoc.scriptsToExecInOrder.shrink(1)
       )
-    elif element.ctype == MODULE or element.attrb("defer"):
+    elif element.ctype == MODULE or element.attrb(atDefer):
       element.parserDocument.scriptsToExecOnLoad.addFirst(element)
       element.onReady = (proc() =
         element.readyForParserExec = true

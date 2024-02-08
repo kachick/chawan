@@ -291,14 +291,15 @@ func getTitleAttr(node: StyledNode): string =
     return ""
   if node.t == STYLED_ELEMENT and node.node != nil:
     let element = Element(node.node)
-    if element.attrb("title"):
-      return element.attr("title")
+    if element.attrb(atTitle):
+      return element.attr(atTitle)
   if node.node != nil:
     var node = node.node
     for element in node.ancestors:
-      if element.attrb("title"):
-        return element.attr("title")
+      if element.attrb(atTitle):
+        return element.attr(atTitle)
   #TODO pseudo-elements
+  return ""
 
 const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL
@@ -702,7 +703,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
 proc loadResource(buffer: Buffer, link: HTMLLinkElement): EmptyPromise =
   let document = buffer.document
-  let href = link.attr("href")
+  let href = link.attr(atHref)
   if href == "": return
   let url = parseURL(href, document.url.some)
   if url.isSome:
@@ -734,7 +735,7 @@ proc loadResource(buffer: Buffer, link: HTMLLinkElement): EmptyPromise =
 
 proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
   let document = buffer.document
-  let src = elem.attr("src")
+  let src = elem.attr(atSrc)
   if src == "": return
   let url = parseURL(src, document.url.some)
   if url.isSome:
@@ -767,7 +768,7 @@ proc loadResources(buffer: Buffer): EmptyPromise =
       case elem.tagType
       of TAG_LINK:
         let elem = HTMLLinkElement(elem)
-        if elem.attr("rel") == "stylesheet":
+        if elem.attr(atRel) == "stylesheet":
           p = buffer.loadResource(elem)
       of TAG_IMG:
         let elem = HTMLImageElement(elem)
@@ -1497,7 +1498,7 @@ proc click(buffer: Buffer, select: HTMLSelectElement): ClickResult =
       selected.add(i)
     inc i
   let select = SelectResult(
-    multiple: select.attrb("multiple"),
+    multiple: select.attrb(atMultiple),
     options: options,
     selected: selected
   )

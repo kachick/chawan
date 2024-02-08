@@ -59,7 +59,9 @@ type
       when defined(debug):
         classs: string
     of ATTR_SELECTOR:
-      attr*: string
+      attr*: CAtom
+      when defined(debug):
+        attrs: string
       value*: string
       rel*: SelectorRelation
     of UNIVERSAL_SELECTOR: #TODO namespaces?
@@ -135,7 +137,11 @@ func `$`*(sel: Selector): string =
     of FLAG_NONE: ""
     of FLAG_I: " i"
     of FLAG_S: " s"
-    return '[' & sel.attr & rel & sel.value & flag & ']'
+    let attrs = when defined(debug):
+      sel.attrs
+    else:
+      "ATOM" & $int(sel.attr)
+    return '[' & attrs & rel & sel.value & flag & ']'
   of CLASS_SELECTOR:
     when defined(debug):
       return "." & sel.classs
@@ -364,7 +370,7 @@ proc parseAttributeSelector(state: var SelectorParser,
   if not state2.has():
     return Selector(
       t: ATTR_SELECTOR,
-      attr: attr.value,
+      attr: state.factory.toAtom(attr.value),
       rel: SelectorRelation(t: RELATION_EXISTS)
     )
   let delim = get_tok state2.consume()
@@ -395,7 +401,7 @@ proc parseAttributeSelector(state: var SelectorParser,
       flag = FLAG_S
   return Selector(
     t: ATTR_SELECTOR,
-    attr: attr.value,
+    attr: state.factory.toAtom(attr.value),
     value: value.value,
     rel: SelectorRelation(
       t: rel,

@@ -112,24 +112,23 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
   var entrylist: seq[FormDataEntry]
   for field in form.controls:
     if field.findAncestor({TAG_DATALIST}) != nil or
-        field.attrb("disabled") or
+        field.attrb(atDisabled) or
         field.isButton() and Element(field) != submitter:
       continue
 
     if field.tagType == TAG_INPUT:
       let field = HTMLInputElement(field)
       if field.inputType == INPUT_IMAGE:
-        let name = if field.attr("name") != "":
-          field.attr("name") & '.'
-        else:
-          ""
+        var name = field.attr(atName)
+        if name != "":
+          name &= '.'
         entrylist.add((name & 'x', $field.xcoord))
         entrylist.add((name & 'y', $field.ycoord))
         continue
 
     #TODO custom elements
 
-    let name = field.attr("name")
+    let name = field.attr(atName)
 
     if name == "":
       continue
@@ -139,16 +138,21 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
       for option in field.options:
         if option.selected or option.isDisabled:
           entrylist.add((name, option.value))
-    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
-      let value = if field.attr("value") != "":
-        field.attr("value")
+    elif field of HTMLInputElement and
+        HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
+      let v = field.attr(atValue)
+      let value = if v != "":
+        v
       else:
         "on"
       entrylist.add((name, value))
-    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_FILE:
+    elif field of HTMLInputElement and
+        HTMLInputElement(field).inputType == INPUT_FILE:
       #TODO file
       discard
-    elif field.tagType == TAG_INPUT and HTMLInputElement(field).inputType == INPUT_HIDDEN and name.equalsIgnoreCase("_charset_"):
+    elif field of HTMLInputElement and
+        HTMLInputElement(field).inputType == INPUT_HIDDEN and
+        name.equalsIgnoreCase("_charset_"):
       let charset = if encoding != "":
         encoding
       else:
@@ -163,10 +167,11 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
       of TAG_TEXTAREA:
         entrylist.add((name, HTMLTextAreaElement(field).value))
       else: assert false, "Tag type " & $field.tagType & " not accounted for in constructEntryList"
-    if field.tagType == TAG_TEXTAREA or
-        field.tagType == TAG_INPUT and HTMLInputElement(field).inputType in {INPUT_TEXT, INPUT_SEARCH}:
-      if field.attr("dirname") != "":
-        let dirname = field.attr("dirname")
+    if field of HTMLTextAreaElement or
+        field of HTMLInputElement and
+        HTMLInputElement(field).inputType in {INPUT_TEXT, INPUT_SEARCH}:
+      let dirname = field.attr(atDirname)
+      if dirname != "":
         let dir = "ltr" #TODO bidi
         entrylist.add((dirname, dir))
 

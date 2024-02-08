@@ -107,44 +107,44 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       new(result)
     result{a} = b
   template map_width =
-    let s = parseDimensionValues(element.attr("width"))
+    let s = parseDimensionValues(element.attr(atWidth))
     if s.isSome:
       set_cv "width", s.get
   template map_height =
-    let s = parseDimensionValues(element.attr("height"))
+    let s = parseDimensionValues(element.attr(atHeight))
     if s.isSome:
       set_cv "height", s.get
   template map_width_nozero =
-    let s = parseDimensionValues(element.attr("width"))
+    let s = parseDimensionValues(element.attr(atWidth))
     if s.isSome and s.get.num != 0:
       set_cv "width", s.get
   template map_height_nozero =
-    let s = parseDimensionValues(element.attr("height"))
+    let s = parseDimensionValues(element.attr(atHeight))
     if s.isSome and s.get.num != 0:
       set_cv "height", s.get
   template map_bgcolor =
-    let s = element.attr("bgcolor")
+    let s = element.attr(atBgcolor)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
         set_cv "background-color", c.get
   template map_size =
-    let s = element.attrul("size")
+    let s = element.attrul(atSize)
     if s.isSome:
       set_cv "width", CSSLength(num: float64(s.get), unit: UNIT_CH)
   template map_valign =
-    case element.attr("valign").toLowerAscii()
+    case element.attr(atValign).toLowerAscii()
     of "top": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_TOP)
     of "middle": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_MIDDLE)
     of "bottom": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_BOTTOM)
     of "baseline": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_BASELINE)
   template map_align =
-    case element.attr("align").toLowerAscii()
+    case element.attr(atAlign).toLowerAscii()
     of "center", "middle": set_cv "text-align", TEXT_ALIGN_CHA_CENTER
     of "left": set_cv "text-align", TEXT_ALIGN_CHA_LEFT
     of "right": set_cv "text-align", TEXT_ALIGN_CHA_RIGHT
   template map_table_align =
-    case element.attr("align").toLowerAscii()
+    case element.attr(atAlign).toLowerAscii()
     of "left":
      set_cv "float", FLOAT_LEFT
     of "right":
@@ -153,31 +153,31 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       set_cv "margin-left", CSSLengthAuto #TODO should be inline-start
       set_cv "margin-right", CSSLengthAuto #TODO should be inline-end
   template map_text =
-    let s = element.attr("text")
+    let s = element.attr(atText)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
         set_cv "color", c.get
   template map_color =
-    let s = element.attr("color")
+    let s = element.attr(atColor)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
         set_cv "color", c.get
   template map_colspan =
-    let colspan = element.attrulgz("colspan")
+    let colspan = element.attrulgz(atColspan)
     if colspan.isSome:
       let i = colspan.get
       if i <= 1000:
         set_cv "-cha-colspan", int(i)
   template map_rowspan =
-    let rowspan = element.attrul("rowspan")
+    let rowspan = element.attrul(atRowspan)
     if rowspan.isSome:
       let i = rowspan.get
       if i <= 65534:
         set_cv "-cha-rowspan", int(i)
   template map_list_type_ol =
-    let ctype = element.attr("type")
+    let ctype = element.attr(atType)
     if ctype.len > 0:
       case ctype[0]
       of '1': set_cv "list-style-type", LIST_STYLE_TYPE_DECIMAL
@@ -187,7 +187,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       of 'I': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ROMAN
       else: discard
   template map_list_type_ul =
-    let ctype = element.attr("type")
+    let ctype = element.attr(atType)
     if ctype.len > 0:
       case ctype.toLowerAscii()
       of "none": set_cv "list-style-type", LIST_STYLE_TYPE_NONE
@@ -226,8 +226,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_text
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
-    let cols = textarea.attrul("cols").get(20)
-    let rows = textarea.attrul("rows").get(1)
+    let cols = textarea.attrul(atCols).get(20)
+    let rows = textarea.attrul(atRows).get(1)
     set_cv "width", CSSLength(unit: UNIT_CH, num: float64(cols))
     set_cv "height", CSSLength(unit: UNIT_EM, num: float64(rows))
   of TAG_FONT:
@@ -369,7 +369,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
         styledText.pseudo = pseudo
         styledParent.children.add(styledText)
     of PSEUDO_IMAGE:
-      let src = Element(styledParent.node).attr("src")
+      let src = Element(styledParent.node).attr(atSrc)
       let content = CSSContent(t: CONTENT_IMAGE, s: src)
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
