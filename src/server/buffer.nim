@@ -339,7 +339,7 @@ proc getClickHover(styledNode: StyledNode): string =
       return HTMLAnchorElement(clickable).href
     of TAG_INPUT:
       #TODO this is inefficient and also quite stupid
-      if clickable.tagType in FormAssociatedElements:
+      if clickable of FormAssociatedElement:
         let fae = FormAssociatedElement(clickable)
         if fae.canSubmitOnClick():
           let req = fae.form.submitForm(fae)
