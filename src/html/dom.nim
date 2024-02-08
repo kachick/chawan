@@ -215,7 +215,7 @@ type
     id*: CAtom
     name*: CAtom
     classList* {.jsget.}: DOMTokenList
-    attrs*: seq[AttrData] #TODO TODO TODO unextern
+    attrs: seq[AttrData]
     attributesInternal: NamedNodeMap
     hover*: bool
     invalid*: bool
@@ -3892,20 +3892,30 @@ proc outerHTML(element: Element, s: string): Err[DOMException] {.jsfset.} =
   let fragment = fragmentParsingAlgorithm(parent, s)
   return parent.replace(element, fragment)
 
+type InsertAdjacentPosition = enum
+  iapBeforeBegin = "beforebegin"
+  iapAfterEnd = "afterend"
+  iapAfterBegin = "afterbegin"
+  iapBeforeEnd = "beforeend"
+
+func parseInsertAdjacentPosition(s: string): DOMResult[InsertAdjacentPosition] =
+  for iap in InsertAdjacentPosition.low .. InsertAdjacentPosition.high:
+    if ($iap).equalsIgnoreCase(s):
+      return ok(iap)
+  return errDOMException("Invalid position", "SyntaxError")
+
 # https://w3c.github.io/DOM-Parsing/#dom-element-insertadjacenthtml
 proc insertAdjacentHTML(element: Element, position, text: string):
     Err[DOMException] {.jsfunc.} =
-  #TODO enumize position
+  let position = ?parseInsertAdjacentPosition(position)
   let ctx0 = case position
-  of "beforebegin", "afterend":
+  of iapBeforeBegin, iapAfterEnd:
     if element.parentNode of Document or element.parentNode == nil:
       return errDOMException("Parent is not a valid element",
         "NoModificationAllowedError")
     element.parentNode
-  of "afterbegin", "beforeend":
+  of iapAfterBegin, iapBeforeEnd:
     Node(element)
-  else:
-    return errDOMException("Invalid position", "SyntaxError")
   let document = ctx0.document
   let ctx = if not (ctx0 of Element) or not document.isxml or
       Element(ctx0).namespace == Namespace.HTML:
@@ -3914,13 +3924,13 @@ proc insertAdjacentHTML(element: Element, position, text: string):
     Element(ctx0)
   let fragment = ctx.fragmentParsingAlgorithm(text)
   case position
-  of "beforebegin":
+  of iapBeforeBegin:
     ctx.parentNode.insert(fragment, ctx)
-  of "afterbegin":
+  of iapAfterBegin:
     ctx.insert(fragment, ctx.firstChild)
-  of "beforeend":
+  of iapBeforeEnd:
     ctx.append(fragment)
-  of "afterend":
+  of iapAfterEnd:
     ctx.parentNode.insert(fragment, ctx.nextSibling)
 
 proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
