@@ -23,7 +23,7 @@ type CharsetConfidence = enum
   ccTentative, ccCertain, ccIrrelevant
 
 type
-  HTML5ParserWrapper* {.package.} = ref object
+  HTML5ParserWrapper* = ref object
     parser: HTML5Parser[Node, CAtom]
     charsetStack: seq[Charset]
     seekable: bool
