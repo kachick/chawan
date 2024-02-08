@@ -79,6 +79,8 @@ func applies*(mqlist: MediaQueryList, window: Window): bool =
       return true
   return false
 
+appliesFwdDecl = applies
+
 type
   ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
 

@@ -24,14 +24,12 @@ import html/dom
 import html/enums
 import html/env
 import html/event
-import img/png
 import io/posixstream
 import io/promise
 import io/serialize
 import io/serversocket
 import io/socketstream
 import io/teestream
-import js/error
 import js/fromjs
 import js/javascript
 import js/regex
@@ -42,7 +40,6 @@ import loader/headers
 import loader/loader
 import render/renderdocument
 import render/rendertext
-import types/blob
 import types/buffersource
 import types/cell
 import types/color
@@ -56,8 +53,6 @@ import utils/twtstr
 import xhr/formdata as formdata_impl
 
 import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
 
 import chame/tags
 
@@ -701,82 +696,8 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
 
   buffer.prevnode = thisnode
 
-proc loadResource(buffer: Buffer, link: HTMLLinkElement): EmptyPromise =
-  let document = buffer.document
-  let href = link.attr(atHref)
-  if href == "": return
-  let url = parseURL(href, document.url.some)
-  if url.isSome:
-    let url = url.get
-    let media = link.media
-    if media != "":
-      let cvals = parseListOfComponentValues(newStringStream(media))
-      let media = parseMediaQueryList(cvals)
-      if not media.applies(document.window): return
-    return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
-        if res.isOk:
-          let res = res.get
-          #TODO we should use ReadableStreams for this (which would allow us to
-          # parse CSS asynchronously)
-          if res.contentType == "text/css":
-            return res.text()
-          res.unregisterFun()
-      ).then(proc(s: JSResult[string]) =
-        if s.isOk:
-          #TODO this is extremely inefficient, and text() should return
-          # utf8 anyways
-          let ss = newStringStream(s.get)
-          #TODO non-utf-8 css
-          let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
-          let source = newEncoderStream(ds, cs = CHARSET_UTF_8)
-          link.setSheet(parseStylesheet(source, buffer.factory))
-      )
-
-proc loadResource(buffer: Buffer, elem: HTMLImageElement): EmptyPromise =
-  let document = buffer.document
-  let src = elem.attr(atSrc)
-  if src == "": return
-  let url = parseURL(src, document.url.some)
-  if url.isSome:
-    let url = url.get
-    return buffer.loader.fetch(newRequest(url))
-      .then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
-        if res.isErr:
-          return
-        let res = res.get
-        if res.contentType == "image/png":
-          return res.blob()
-      ).then(proc(pngData: JSResult[Blob]) =
-        if pngData.isErr:
-          return
-        let pngData = pngData.get
-        let buffer = cast[ptr UncheckedArray[uint8]](pngData.buffer)
-        let high = int(pngData.size - 1)
-        elem.bitmap = fromPNG(toOpenArray(buffer, 0, high))
-      )
-
 proc loadResources(buffer: Buffer): EmptyPromise =
-  let document = buffer.document
-  var promises: seq[EmptyPromise]
-  if document.html != nil:
-    var searchElems = {TAG_LINK}
-    if buffer.config.images:
-      searchElems.incl(TAG_IMG)
-    for elem in document.html.elements(searchElems):
-      var p: EmptyPromise = nil
-      case elem.tagType
-      of TAG_LINK:
-        let elem = HTMLLinkElement(elem)
-        if elem.attr(atRel) == "stylesheet":
-          p = buffer.loadResource(elem)
-      of TAG_IMG:
-        let elem = HTMLImageElement(elem)
-        p = buffer.loadResource(elem)
-      else: discard
-      if p != nil:
-        promises.add(p)
-  return all(promises)
+  return buffer.window.loadingResourcePromises.all()
 
 type ConnectResult* = object
   invalid*: bool
@@ -797,6 +718,7 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
     if buffer.config.scripting:
       buffer.window = newWindow(
         buffer.config.scripting,
+        buffer.config.images,
         buffer.selector,
         buffer.attrs,
         factory,
@@ -806,9 +728,12 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
     else:
       buffer.window = newWindow(
         buffer.config.scripting,
+        buffer.config.images,
         buffer.selector,
         buffer.attrs,
-        buffer.factory
+        factory,
+        nil,
+        some(buffer.loader)
       )
     buffer.htmlParser = newHTML5ParserWrapper(
       buffer.sstream,

@@ -7,6 +7,7 @@ import std/strutils
 import std/tables
 
 import css/cssparser
+import css/mediaquery
 import css/sheet
 import css/values
 import display/winattrs
@@ -18,6 +19,7 @@ import img/bitmap
 import img/painter
 import img/path
 import img/png
+import io/promise
 import js/console
 import js/domexception
 import js/error
@@ -77,6 +79,8 @@ type
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
     factory*: CAtomFactory
+    loadingResourcePromises*: seq[EmptyPromise]
+    images*: bool
 
   # Navigator stuff
   Navigator* = object
@@ -276,6 +280,7 @@ type
   HTMLLinkElement* = ref object of HTMLElement
     sheet*: CSSStylesheet
     relList {.jsget.}: DOMTokenList
+    fetchStarted: bool
 
   HTMLFormElement* = ref object of HTMLElement
     smethod*: string
@@ -360,6 +365,7 @@ type
 
   HTMLImageElement* = ref object of HTMLElement
     bitmap*: Bitmap
+    fetchStarted: bool
 
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
@@ -2363,11 +2369,6 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
 proc setRelList(link: HTMLLinkElement, s: string) {.jsfset: "relList".} =
   link.attr(atRel, s)
 
-proc setSheet*(link: HTMLLinkElement, sheet: CSSStylesheet) =
-  link.sheet = sheet
-  if link.document != nil:
-    link.document.cachedSheetsInvalid = true
-
 # <form>
 proc setRelList(form: HTMLFormElement, s: string) {.jsfset: "relList".} =
   form.attr(atRel, s)
@@ -2706,6 +2707,80 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
     element.style_cached = CSSStyleDeclaration(element: element)
   return element.style_cached
 
+# Forward declaration hack
+var appliesFwdDecl*: proc(mqlist: MediaQueryList, window: Window): bool
+  {.nimcall, noSideEffect.}
+
+# see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
+#TODO make this somewhat compliant with ^this
+proc loadResource(window: Window, link: HTMLLinkElement) =
+  if link.fetchStarted:
+    return
+  link.fetchStarted = true
+  let href = link.attr(atHref)
+  if href == "":
+    return
+  let url = parseURL(href, window.document.url.some)
+  if url.isSome and window.loader.isSome:
+    let loader = window.loader.get
+    let url = url.get
+    let media = link.media
+    if media != "":
+      let cvals = parseListOfComponentValues(newStringStream(media))
+      let media = parseMediaQueryList(cvals)
+      if not media.appliesFwdDecl(window):
+        return
+    let p = loader.fetch(
+      newRequest(url)
+    ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
+      if res.isOk:
+        let res = res.get
+        #TODO we should use ReadableStreams for this (which would allow us to
+        # parse CSS asynchronously)
+        if res.contentType == "text/css":
+          return res.text()
+        res.unregisterFun()
+    ).then(proc(s: JSResult[string]) =
+      if s.isOk:
+        #TODO this is extremely inefficient, and text() should return
+        # utf8 anyways
+        let ss = newStringStream(s.get)
+        #TODO non-utf-8 css
+        let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
+        let source = newEncoderStream(ds, cs = CHARSET_UTF_8)
+        link.sheet = parseStylesheet(source, window.factory)
+        window.document.cachedSheetsInvalid = true
+    )
+    window.loadingResourcePromises.add(p)
+
+proc loadResource(window: Window, image: HTMLImageElement) =
+  if not window.images or image.fetchStarted:
+    return
+  image.fetchStarted = true
+  let src = image.attr(atSrc)
+  if src == "":
+    return
+  let url = parseURL(src, window.document.url.some)
+  if url.isSome and window.loader.isSome:
+    let url = url.get
+    let loader = window.loader.get
+    let p = loader.fetch(newRequest(url))
+      .then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
+        if res.isErr:
+          return
+        let res = res.get
+        if res.contentType == "image/png":
+          return res.blob()
+      ).then(proc(pngData: JSResult[Blob]) =
+        if pngData.isErr:
+          return
+        let pngData = pngData.get
+        let buffer = cast[ptr UncheckedArray[uint8]](pngData.buffer)
+        let high = int(pngData.size - 1)
+        image.bitmap = fromPNG(toOpenArray(buffer, 0, high))
+      )
+    window.loadingResourcePromises.add(p)
+
 proc reflectAttrs(element: Element, name: CAtom, value: string) =
   let name = element.document.toAttrType(name)
   template reflect_str(element: Element, n: AttrType, val: untyped) =
@@ -2758,6 +2833,12 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
       of "button": return BUTTON_BUTTON)
   of TAG_LINK:
     let link = HTMLLinkElement(element)
+    if link.isConnected and (name == atRel and value == "stylesheet" or
+        name == atHref):
+      link.fetchStarted = false
+      let window = link.document.window
+      if window != nil:
+        window.loadResource(link)
     link.reflect_domtoklist atRel, relList
   of TAG_A:
     let anchor = HTMLAnchorElement(element)
@@ -2772,6 +2853,14 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
       let canvas = HTMLCanvasElement(element)
       if canvas.bitmap.width != w or canvas.bitmap.height != h:
         canvas.bitmap = newBitmap(w, h)
+  of TAG_IMG:
+    let image = HTMLImageElement(element)
+    # https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+    if name == atSrc:
+      image.fetchStarted = false
+      let window = image.document.window
+      if window != nil:
+        window.loadResource(image)
   else: discard
 
 proc attr*(element: Element, name: CAtom, value: string) =
@@ -3058,25 +3147,38 @@ proc resetFormOwner(element: FormAssociatedElement) =
     if form of HTMLFormElement:
       element.setForm(HTMLFormElement(form))
 
+proc elementInsertionSteps(element: Element) =
+  if element of HTMLOptionElement:
+    if element.parentElement != nil:
+      let parent = element.parentElement
+      var select: HTMLSelectElement
+      if parent of HTMLSelectElement:
+        select = HTMLSelectElement(parent)
+      elif parent.tagType == TAG_OPTGROUP and parent.parentElement != nil and
+          parent.parentElement of HTMLSelectElement:
+        select = HTMLSelectElement(parent.parentElement)
+      if select != nil:
+        select.resetElement()
+  elif element of FormAssociatedElement:
+    let element = FormAssociatedElement(element)
+    if element.parserInserted:
+      return
+    element.resetFormOwner()
+  elif element of HTMLLinkElement:
+    let window = element.document.window
+    if window != nil:
+      let link = HTMLLinkElement(element)
+      window.loadResource(link)
+  elif element of HTMLImageElement:
+    let window = element.document.window
+    if window != nil:
+      let image = HTMLImageElement(element)
+      window.loadResource(image)
+
 proc insertionSteps(insertedNode: Node) =
   if insertedNode of Element:
     let element = Element(insertedNode)
-    if element of HTMLOptionElement:
-      if element.parentElement != nil:
-        let parent = element.parentElement
-        var select: HTMLSelectElement
-        if parent of HTMLSelectElement:
-          select = HTMLSelectElement(parent)
-        elif parent.tagType == TAG_OPTGROUP and parent.parentElement != nil and
-            parent.parentElement of HTMLSelectElement:
-          select = HTMLSelectElement(parent.parentElement)
-        if select != nil:
-          select.resetElement()
-    if element of FormAssociatedElement:
-      let element = FormAssociatedElement(element)
-      if element.parserInserted:
-        return
-      element.resetFormOwner()
+    element.elementInsertionSteps()
 
 func isValidParent(node: Node): bool =
   return node of Element or node of Document or node of DocumentFragment

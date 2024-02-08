@@ -176,7 +176,7 @@ proc addScripting*(window: Window, selector: Selector[int]) =
 proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)
 
-proc newWindow*(scripting: bool, selector: Selector[int],
+proc newWindow*(scripting, images: bool, selector: Selector[int],
     attrs: WindowAttributes, factory: CAtomFactory,
     navigate: proc(url: URL) = nil, loader = none(FileLoader)): Window =
   let err = newFileStream(stderr)
@@ -185,6 +185,7 @@ proc newWindow*(scripting: bool, selector: Selector[int],
     console: newConsole(err),
     navigator: Navigator(),
     loader: loader,
+    images: images,
     settings: EnvironmentSettings(
       scripting: scripting
     ),
