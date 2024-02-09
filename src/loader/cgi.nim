@@ -257,4 +257,5 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
           handle.handleLine(line, headers)
     handle.sendStatus(status)
     handle.sendHeaders(headers)
-    handle.istream = ps
+    if not ps.atEnd():
+      handle.istream = ps
