@@ -286,7 +286,7 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           while true:
             let buffer = newLoaderBuffer()
             try:
-              buffer.len = handle.istream.readData(addr buffer[0], buffer.cap)
+              buffer.len = handle.istream.recvData(addr buffer[0], buffer.cap)
               if buffer.len == 0:
                 dealloc(buffer)
                 break
@@ -318,31 +318,30 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           except ErrorBrokenPipe: # receiver died; stop streaming
             unregWrite.add(handle)
             break
-        if handle.istream == nil and handle.currentBuffer == nil and
-            (unregWrite.len == 0 or unregWrite[^1] != handle):
+        if handle.istream == nil and handle.currentBuffer == nil:
           # after EOF, but not appended in this send cycle
           unregWrite.add(handle)
       if Error in event.events:
         assert event.fd != ctx.fd
         let handle = ctx.handleMap[event.fd]
-        if handle.fd == event.fd:
-          if unregWrite.len == 0 or unregWrite[^1] != handle: # ostream died
-            unregWrite.add(handle)
+        if handle.fd == event.fd: # ostream died
+          unregWrite.add(handle)
         else: # istream died
           unregRead.add(handle)
+    # Unregister handles queued for unregistration.
+    # It is possible for both unregRead and unregWrite to contain duplicates. To
+    # avoid double-close/double-unregister, we set the istream/ostream of
+    # unregistered handles to nil.
     for handle in unregRead:
-      ctx.selector.unregister(handle.istream.fd)
-      ctx.handleMap.del(handle.istream.fd)
-      handle.istream.close()
-      handle.istream = nil
-      if handle.currentBuffer == nil:
-        unregWrite.add(handle)
-      #TODO TODO TODO what to do about sostream
+      if handle.istream != nil:
+        ctx.selector.unregister(handle.istream.fd)
+        ctx.handleMap.del(handle.istream.fd)
+        handle.istream.close()
+        handle.istream = nil
+        if handle.currentBuffer == nil:
+          unregWrite.add(handle)
     for handle in unregWrite:
       if handle.ostream != nil:
-        # if the previous loop adds its handle to this one, it is possible that
-        # we try to unregister the same handle twice
-        #TODO this is kind of a mess
         ctx.selector.unregister(handle.fd)
         ctx.handleMap.del(handle.fd)
         handle.ostream.close()

@@ -62,6 +62,16 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
   if result == -1:
     raisePosixIOError()
 
+method recvData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
+  let n = read(s.fd, buffer, len)
+  if n < 0:
+    raisePosixIOError()
+  if n == 0:
+    if unlikely(s.isend):
+      raise newException(EOFError, "eof")
+    s.isend = true
+  return n
+
 method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
   #TODO use sendData instead
   let n = write(s.fd, buffer, len)

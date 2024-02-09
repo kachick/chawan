@@ -49,6 +49,16 @@ proc sockWriteData(s: Stream, buffer: pointer, len: int) =
       raisePosixIOError()
     i += n
 
+method recvData*(s: SocketStream, buffer: pointer, len: int): int =
+  let n = s.source.recv(buffer, len)
+  if n < 0:
+    raisePosixIOError()
+  if n == 0:
+    if unlikely(s.isend):
+      raise newException(EOFError, "eof")
+    s.isend = true
+  return n
+
 method sendData*(s: SocketStream, buffer: pointer, len: int): int =
   let n = s.source.send(buffer, len)
   if n < 0:
