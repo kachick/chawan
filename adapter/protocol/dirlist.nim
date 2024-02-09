@@ -54,7 +54,7 @@ func makeDirlist*(items: seq[DirlistItem]): string =
       line &= ' '
     line &= htmlEscape(item.modified)
     if item.t == ITEM_FILE:
-      line &= ' ' & convert_size(item.nsize)
+      line &= ' ' & convertSize(item.nsize)
     elif item.t == ITEM_LINK:
       line &= " -> " & htmlEscape(item.linkto)
     outs &= line & '\n'

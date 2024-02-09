@@ -11,6 +11,7 @@ import layout/layoutunit
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
+import utils/widthconv
 
 type
   LayoutState = ref object

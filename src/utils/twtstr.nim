@@ -1,10 +1,8 @@
 import std/algorithm
-import std/json
 import std/math
 import std/options
 import std/os
 import std/strutils
-import std/tables
 import std/unicode
 
 when defined(posix):
@@ -65,7 +63,7 @@ func toHeaderCase*(str: string): string =
 
 func toScreamingSnakeCase*(str: string): string = # input is camel case
   if str.len >= 1: result &= str[0].toUpperAscii()
-  for c in str[1..^1]:
+  for c in str.toOpenArray(1, str.high):
     if c in AsciiUpperAlpha:
       result &= '_'
       result &= c
@@ -245,14 +243,15 @@ func beforeLast*(s: string, c: set[char], n = 1): string =
 
 func beforeLast*(s: string, c: char, n = 1): string = s.beforeLast({c}, n)
 
-proc c_sprintf(buf, fm: cstring): cint {.header: "<stdio.h>", importc: "sprintf", varargs}
+proc c_sprintf(buf, fm: cstring): cint
+  {.header: "<stdio.h>", importc: "sprintf", varargs}
 
 # From w3m
 const SizeUnit = [
   cstring"b", cstring"kb", cstring"Mb", cstring"Gb", cstring"Tb", cstring"Pb",
   cstring"Eb", cstring"Zb", cstring"Bb", cstring"Yb"
 ]
-func convert_size*(size: int): string =
+func convertSize*(size: int): string =
   var sizepos = 0
   var csize = float32(size)
   while csize >= 999.495 and sizepos < SizeUnit.len:
@@ -263,10 +262,10 @@ func convert_size*(size: int): string =
   discard c_sprintf(cstring(result), cstring("%.3g%s"), f, SizeUnit[sizepos])
   result.setLen(cstring(result).len)
 
-func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, string)]): string =
+func numberAdditive*(i: int, range: HSlice[int, int],
+    symbols: openArray[(int, string)]): string =
   if i notin range:
     return $i
-
   var n = i
   var at = 0
   while n > 0:
@@ -275,25 +274,24 @@ func number_additive*(i: int, range: HSlice[int, int], symbols: openarray[(int, 
       result &= symbols[at][1]
       continue
     inc at
-
   return result
 
 const romanNumbers = [
-  (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"), (50, "L"),
-  (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+  (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+  (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
 ]
 
-const romanNumbers_lower = block:
+const romanNumbersLower = block:
   var res: seq[(int, string)]
   for (n, s) in romanNumbers:
     res.add((n, s.toLowerAscii()))
   res
 
 func romanNumber*(i: int): string =
-  return number_additive(i, 1..3999, romanNumbers)
+  return numberAdditive(i, 1..3999, romanNumbers)
 
-func romanNumber_lower*(i: int): string =
-  return number_additive(i, 1..3999, romanNumbers_lower)
+func romanNumberLower*(i: int): string =
+  return numberAdditive(i, 1..3999, romanNumbersLower)
 
 func japaneseNumber*(i: int): string =
   if i == 0:
@@ -445,7 +443,7 @@ func parseUInt32*(s: string): Option[uint32] =
 
 #TODO not sure where this algorithm is from...
 func parseFloat64*(s: string): float64 =
-  var sign = 1
+  var sign = 1f64
   var t = 1
   var d = 0
   var integer: float64 = 0
@@ -454,7 +452,7 @@ func parseFloat64*(s: string): float64 =
 
   var i = 0
   if i < s.len and s[i] == '-':
-    sign = -1
+    sign = -1f64
     inc i
   elif i < s.len and s[i] == '+':
     inc i
@@ -485,17 +483,7 @@ func parseFloat64*(s: string): float64 =
       e += float64(decValue(s[i]))
       inc i
 
-  return float64(sign) * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
-
-func isSurrogate*(r: Rune): bool = int32(r) in 0xD800..0xDFFF
-func isNonCharacter*(r: Rune): bool =
-  let n = int32(r)
-  n in 0xFDD0..0xFDEF or
-  n in [0xFFFE, 0xFFFF, 0x1FFFE, 0x1FFFF, 0x2FFFE, 0x2FFFF, 0x3FFFE, 0x3FFFF,
-        0x4FFFE, 0x4FFFF, 0x5FFFE, 0x5FFFF, 0x6FFFE, 0x6FFFF, 0x7FFFE, 0x7FFFF,
-        0x8FFFE, 0x8FFFF, 0x9FFFE, 0x9FFFF, 0xAFFFE, 0xAFFFF, 0xBFFFE, 0xBFFFF,
-        0xCFFFE, 0xCFFFF, 0xDFFFE, 0xDFFFF, 0xEFFFE, 0xEFFFF, 0xFFFFE, 0xFFFFF,
-        0x10FFFE, 0x10FFFF]
+  return sign * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
 
 const ControlPercentEncodeSet* = Controls + NonAscii
 const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
@@ -517,7 +505,8 @@ else:
   const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
     {'.', '/'}
 
-proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = false) {.inline.} =
+proc percentEncode*(append: var string, c: char, set: set[char],
+    spaceAsPlus = false) {.inline.} =
   if spaceAsPlus and c == ' ':
     append &= '+'
   elif c notin set:
@@ -526,11 +515,13 @@ proc percentEncode*(append: var string, c: char, set: set[char], spaceAsPlus = f
     append &= '%'
     append.pushHex(c)
 
-proc percentEncode*(append: var string, s: string, set: set[char], spaceAsPlus = false) {.inline.} =
+proc percentEncode*(append: var string, s: string, set: set[char],
+    spaceAsPlus = false) {.inline.} =
   for c in s:
     append.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(c: char, set: set[char], spaceAsPlus = false): string {.inline.} =
+func percentEncode*(c: char, set: set[char], spaceAsPlus = false): string
+    {.inline.} =
   result.percentEncode(c, set, spaceAsPlus)
 
 func percentEncode*(s: string, set: set[char], spaceAsPlus = false): string =
@@ -583,8 +574,7 @@ func join*(ss: openarray[string], sep: char): string =
     result &= sep
     result &= ss[i]
 
-proc passRealloc*(opaque: pointer, p: pointer, size: csize_t): pointer
-    {.cdecl.} =
+proc passRealloc*(opaque, p: pointer, size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
 # https://www.w3.org/TR/xml/#NT-Name
@@ -652,8 +642,9 @@ func matchQNameProduction*(s: string): bool =
   return s.matchNameProduction()
 
 func utf16Len*(s: string): int =
+  result = 0
   for r in s.runes:
-    if cast[uint32](r) < 0x10000: # ucs-2
+    if uint32(r) < 0x10000: # ucs-2
       result += 1
     else: # surrogate
       result += 2
@@ -722,111 +713,3 @@ proc makeCRLF*(s: string): string =
       result &= '\n'
     else:
       result &= s[i]
-
-const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &
-  "サシスセソタチツテトハヒフヘホ").toRunes()
-
-const CanHaveHandakuten = "はひふへほハヒフヘホ".toRunes()
-
-const HasDakuten = ("がぎぐげござじずぜぞだぢづでどばびぶべぼガギグゲゴ" &
-  "ザジゼゾダヂヅデドバビブベボ").toRunes()
-
-const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toRunes()
-
-# in unicode, char + 1 is dakuten and char + 2 handakuten
-
-const HalfDakuten = Rune(0xFF9E) # half-width dakuten
-const HalfHanDakuten = Rune(0xFF9F)
-
-func dakuten(r: Rune): Rune =
-  if r in CanHaveDakuten:
-    return Rune(int32(r) + 1)
-  return r
-
-func handakuten(r: Rune): Rune =
-  if r in CanHaveHandakuten:
-    return Rune(int32(r) + 2)
-  return r
-
-func nodakuten(r: Rune): Rune =
-  return Rune(int32(r) - 1)
-
-func nohandakuten(r: Rune): Rune =
-  return Rune(int32(r) - 2)
-
-# Halfwidth to fullwidth & vice versa
-const widthconv = staticRead"res/widthconv.json"
-proc genHalfWidthTable(): Table[Rune, Rune] =
-  let widthconvjson = parseJson(widthconv)
-  for k, v in widthconvjson:
-    if v.kind == JString:
-      result[v.getStr().toRunes()[0]] = k.toRunes()[0]
-    else:
-      for s in v:
-        result[s.getStr().toRunes()[0]] = k.toRunes()[0]
-
-proc genFullWidthTable(): Table[Rune, Rune] =
-  let widthconvjson = parseJson(widthconv)
-  for k, v in widthconvjson:
-    if v.kind == JString:
-      result[k.toRunes()[0]] = v.getStr().toRunes()[0]
-    else:
-      result[k.toRunes()[0]] = v[0].getStr().toRunes()[0]
-
-const halfwidthtable = genHalfWidthTable()
-const fullwidthtable = genFullWidthTable()
-
-func halfwidth(r: Rune): Rune =
-  return halfwidthtable.getOrDefault(r, r)
-
-func halfwidth*(s: string): string =
-  for r in s.runes:
-    case r
-    of HasDakuten:
-      result.add(halfwidth(r.nodakuten()))
-      result.add(HalfDakuten)
-    of HasHanDakuten:
-      result.add(halfwidth(r.nohandakuten()))
-      result.add(HalfHanDakuten)
-    else:
-      result.add(halfwidth(r))
-
-func fullwidth(r: Rune): Rune =
-  return fullwidthtable.getOrDefault(r, r)
-
-proc fullwidth(s: seq[Rune]): seq[Rune] =
-  for r in s:
-    if r == HalfDakuten: #dakuten
-      if result.len > 0:
-        result[^1] = result[^1].dakuten()
-      else:
-        result.add(r)
-    elif r == HalfHanDakuten: #handakuten
-      if result.len > 0:
-        result[^1] = result[^1].handakuten()
-      else:
-        result.add(r)
-    else:
-      result.add(fullwidth(r))
-
-proc fullwidth*(s: string): string =
-  return $fullwidth(s.toRunes())
-
-const kanamap = staticRead"res/kanamap.tab"
-func genFullSizeMap(): seq[(uint32, uint32)] =
-  result = @[]
-  for line in kanamap.split('\n'):
-    if line.len == 0: break
-    let rs = line.toRunes()
-    assert rs[1] == Rune('\t')
-    result.add((uint32(rs[0]), uint32(rs[2])))
-const fullSizeMap = genFullSizeMap()
-
-proc fullsize*(s: string): string =
-  result = ""
-  for r in s.runes():
-    let i = searchInMap(fullSizeMap, uint32(r))
-    if i == -1:
-      result &= r
-    else:
-      result &= $Rune(fullSizeMap[i][1])

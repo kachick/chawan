@@ -1298,7 +1298,7 @@ proc onload*(container: Container, res: LoadResult) =
     if res.bytes == -1 or res.atend:
       container.setLoadInfo("")
     elif not res.atend:
-      container.setLoadInfo(convert_size(res.bytes) & " loaded")
+      container.setLoadInfo(convertSize(res.bytes) & " loaded")
     if res.lines > container.numLines:
       container.setNumLines(res.lines)
       container.triggerEvent(STATUS)

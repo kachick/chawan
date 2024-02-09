@@ -502,7 +502,7 @@ func listMarker*(t: CSSListStyleType, i: int): string =
   of LIST_STYLE_TYPE_DISCLOSURE_CLOSED: return "▼ " # U+25BC
   of LIST_STYLE_TYPE_DECIMAL: return $i & ". "
   of LIST_STYLE_TYPE_UPPER_ROMAN: return romanNumber(i) & ". "
-  of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumber_lower(i) & ". "
+  of LIST_STYLE_TYPE_LOWER_ROMAN: return romanNumberLower(i) & ". "
   of LIST_STYLE_TYPE_UPPER_ALPHA: return numToBase(i, UpperAlphaMap) & ". "
   of LIST_STYLE_TYPE_LOWER_ALPHA: return numToBase(i, LowerAlphaMap) & ". "
   of LIST_STYLE_TYPE_LOWER_GREEK: return numToBase(i, LowerGreekMap) & ". "
