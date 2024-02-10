@@ -1022,7 +1022,7 @@ proc runMailcapWritePipe(pager: Pager, container: Container,
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager, container: Container,
     entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
-  let fd = open(outpath, O_WRONLY or O_CREAT, 0o666)
+  let fd = open(outpath, O_WRONLY or O_CREAT, 0o644)
   if fd == -1:
     return (nil, false)
   let p = container.redirectToFd(fd, wait = true).then(proc(): auto =
@@ -1056,7 +1056,7 @@ proc runMailcapReadFile(pager: Pager, container: Container,
 proc runMailcapWriteFile(pager: Pager, container: Container,
     entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
   let needsterminal = NEEDSTERMINAL in entry.flags
-  let fd = open(outpath, O_WRONLY or O_CREAT, 0o666)
+  let fd = open(outpath, O_WRONLY or O_CREAT, 0o644)
   if fd == -1:
     return (nil, false)
   let p = container.redirectToFd(fd, wait = true).then(proc() =
