@@ -120,6 +120,10 @@ func canRewriteForCGICompat(ctx: LoaderContext, path: string): bool =
       return true
   return false
 
+proc rejectHandle(handle: LoaderHandle, code: ConnectErrorCode, msg = "") =
+  handle.sendResult(code, msg)
+  handle.close()
+
 proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   var redo = true
   var tries = 0
@@ -164,14 +168,11 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
         inc tries
         redo = true
       of URI_RESULT_WRONG_URL:
-        handle.sendResult(ERROR_INVALID_URI_METHOD_ENTRY)
-        handle.close()
+        handle.rejectHandle(ERROR_INVALID_URI_METHOD_ENTRY)
       of URI_RESULT_NOT_FOUND:
-        handle.sendResult(ERROR_UNKNOWN_SCHEME)
-        handle.close()
+        handle.rejectHandle(ERROR_UNKNOWN_SCHEME)
   if tries >= MaxRewrites:
-    handle.sendResult(ERROR_TOO_MANY_REWRITES)
-    handle.close()
+    handle.rejectHandle(ERROR_TOO_MANY_REWRITES)
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
@@ -186,8 +187,7 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   when defined(debug):
     handle.url = request.url
   if not ctx.config.filter.match(request.url):
-    handle.sendResult(ERROR_DISALLOWED_URL)
-    handle.close()
+    handle.rejectHandle(ERROR_DISALLOWED_URL)
   else:
     for k, v in ctx.config.defaultheaders.table:
       if k notin request.headers.table:
