@@ -2,7 +2,6 @@ import std/deques
 import std/net
 import std/streams
 
-import io/multistream
 import io/posixstream
 import io/serialize
 import io/socketstream
@@ -20,6 +19,8 @@ type
 
   LoaderBuffer* = ptr LoaderBufferObj
 
+  OutputHandle* = object
+
   LoaderHandle* = ref object
     ostream*: PosixStream #TODO un-extern
     # Stream for taking input
@@ -28,9 +29,7 @@ type
     # redirect the first handle and b) async redirects would result in race
     # conditions that would be difficult to untangle.
     canredir: bool
-    sostream: Stream # saved ostream when redirected
-    sostream_suspend: Stream # saved ostream when suspended
-    fd*: int # ostream fd
+    sostream*: PosixStream # saved ostream when redirected
     currentBuffer*: LoaderBuffer
     currentBufferIdx*: int
     buffers: Deque[LoaderBuffer]
@@ -41,8 +40,7 @@ type
 proc newLoaderHandle*(ostream: PosixStream, canredir: bool): LoaderHandle =
   return LoaderHandle(
     ostream: ostream,
-    canredir: canredir,
-    fd: int(SocketStream(ostream).source.getFd())
+    canredir: canredir
   )
 
 func `[]`*(buffer: LoaderBuffer, i: int): var uint8 {.inline.} =
@@ -78,30 +76,10 @@ proc bufferCleared*(handle: LoaderHandle) =
     handle.currentBuffer = nil
 
 proc addOutputStream*(handle: LoaderHandle, stream: Stream) =
-  if likely(handle.sostream_suspend != nil):
-    let ms = newMultiStream(handle.sostream_suspend, stream)
-    handle.sostream_suspend = ms
-  else:
-    # In buffer, addOutputStream is used as follows:
-    # * suspend handle
-    # * tee handle (-> call addOutputStream)
-    # * resume handle
-    # This means that this code path will never be executed, as
-    # sostream_suspend is never nil when the function is called.
-    # (Feel free to remove this assertion if this changes.)
-    doAssert false
-    #TODO TODO TODO fix this
-    #let ms = newMultiStream(handle.ostream, stream)
-    #handle.ostream = ms
-
-proc setBlocking*(handle: LoaderHandle, blocking: bool) =
-  #TODO this is stupid
-  if handle.sostream_suspend != nil and handle.sostream_suspend of SocketStream:
-    SocketStream(handle.sostream_suspend).setBlocking(blocking)
-  elif handle.sostream != nil and handle.sostream of SocketStream:
-    SocketStream(handle.sostream).setBlocking(blocking)
-  else:
-    SocketStream(handle.ostream).setBlocking(blocking)
+  doAssert false
+  #TODO TODO TODO fix this
+  #let ms = newMultiStream(handle.ostream, stream)
+  #handle.ostream = ms
 
 proc sendResult*(handle: LoaderHandle, res: int, msg = "") =
   handle.ostream.swrite(res)
@@ -121,37 +99,13 @@ proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
     if redir:
       let fd = SocketStream(handle.ostream).recvFileHandle()
       handle.sostream = handle.ostream
-      let stream = newPosixStream(fd)
-      handle.ostream = stream
+      handle.ostream = newPosixStream(fd)
 
 proc sendData*(handle: LoaderHandle, p: pointer, nmemb: int): int =
   return handle.ostream.sendData(p, nmemb)
 
-proc suspend*(handle: LoaderHandle) =
-  #TODO TODO TODO fix suspend
-  doAssert false
-  handle.sostream_suspend = handle.ostream
-  #handle.ostream = newStringStream()
-
-proc resume*(handle: LoaderHandle) =
-  #TODO TODO TODO fix resume
-  doAssert false
-  #[
-  let ss = handle.ostream
-  handle.ostream = handle.sostream_suspend
-  handle.sostream_suspend = nil
-  handle.sendData(ss.readAll())
-  ss.close()
-  ]#
-
 proc close*(handle: LoaderHandle) =
-  if handle.sostream != nil:
-    try:
-      handle.sostream.swrite(true)
-    except IOError:
-      # ignore error, that just means the buffer has already closed the stream
-      discard
-    handle.sostream.close()
+  assert handle.sostream == nil
   if handle.ostream != nil:
     handle.ostream.close()
     handle.ostream = nil

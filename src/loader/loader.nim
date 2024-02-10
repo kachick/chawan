@@ -138,15 +138,18 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
       if handle.istream == nil:
         handle.close()
       else:
-        let fd = handle.istream.fd
-        handle.setBlocking(false)
-        ctx.selector.registerHandle(fd, {Read}, 0)
-        ctx.selector.registerHandle(handle.fd, {Write}, 0)
-        let ofl = fcntl(fd, F_GETFL, 0)
-        discard fcntl(fd, F_SETFL, ofl or O_NONBLOCK)
+        handle.ostream.setBlocking(false)
+        ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
+        ctx.selector.registerHandle(handle.ostream.fd, {Write}, 0)
+        let ofl = fcntl(handle.istream.fd, F_GETFL, 0)
+        discard fcntl(handle.istream.fd, F_SETFL, ofl or O_NONBLOCK)
         # yes, this puts the istream fd in addition to the ostream fd in
         # handlemap to point to the same ref
-        ctx.handleMap[fd] = handle
+        ctx.handleMap[handle.istream.fd] = handle
+        # also put the new fd into handleMap if stream was redirected
+        if handle.sostream != nil:
+          ctx.handleMap[handle.ostream.fd] = handle
+          ctx.handleMap.del(handle.sostream.fd)
     else:
       prevurl = request.url
       case ctx.config.uriMethodMap.findAndRewrite(request.url)
@@ -213,13 +216,19 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(fds)
       for fd in fds:
         ctx.handleMap.withValue(fd, handlep):
-          handlep[].suspend()
+          if handlep[].ostream != nil and handlep[].ostream.fd == fd:
+            # remove from the selector, so any new reads will be just placed
+            # in the handle's buffer
+            ctx.selector.unregister(fd)
     of RESUME:
       var fds: seq[int]
       stream.sread(fds)
       for fd in fds:
         ctx.handleMap.withValue(fd, handlep):
-          handlep[].resume()
+          if handlep[].ostream != nil and handlep[].ostream.fd == fd:
+            # place the stream back into the selector, so we can write to it
+            # again
+            ctx.selector.registerHandle(fd, {Write}, 0)
     of ADDREF:
       inc ctx.refcount
     of UNREF:
@@ -282,7 +291,7 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           ctx.acceptConnection()
         else:
           let handle = ctx.handleMap[event.fd]
-          assert event.fd != handle.fd
+          assert event.fd == handle.istream.fd
           while true:
             let buffer = newLoaderBuffer()
             try:
@@ -302,7 +311,7 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
               break
       if Write in event.events:
         let handle = ctx.handleMap[event.fd]
-        assert event.fd == handle.fd
+        assert event.fd == handle.ostream.fd
         while handle.currentBuffer != nil:
           let buffer = handle.currentBuffer
           try:
@@ -324,9 +333,10 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
       if Error in event.events:
         assert event.fd != ctx.fd
         let handle = ctx.handleMap[event.fd]
-        if handle.fd == event.fd: # ostream died
+        if handle.ostream.fd == event.fd: # ostream died
           unregWrite.add(handle)
         else: # istream died
+          assert handle.istream.fd == event.fd
           unregRead.add(handle)
     # Unregister handles queued for unregistration.
     # It is possible for both unregRead and unregWrite to contain duplicates. To
@@ -342,10 +352,19 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           unregWrite.add(handle)
     for handle in unregWrite:
       if handle.ostream != nil:
-        ctx.selector.unregister(handle.fd)
-        ctx.handleMap.del(handle.fd)
+        ctx.selector.unregister(handle.ostream.fd)
+        ctx.handleMap.del(handle.ostream.fd)
         handle.ostream.close()
         handle.ostream = nil
+      if handle.sostream != nil:
+        try:
+          handle.sostream.swrite(true)
+        except IOError:
+          # ignore error, that just means the buffer has already closed the
+          # stream
+          discard
+        handle.sostream.close()
+        handle.sostream = nil
       if handle.istream != nil:
         ctx.handleMap.del(handle.istream.fd)
         ctx.selector.unregister(handle.istream.fd)

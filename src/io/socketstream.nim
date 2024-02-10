@@ -105,8 +105,8 @@ func newSocketStream*(): SocketStream =
     closeImpl: sockClose
   )
 
-proc setBlocking*(ss: SocketStream, blocking: bool) =
-  ss.source.getFd().setBlocking(blocking)
+method setBlocking*(s: SocketStream, blocking: bool) =
+  s.source.getFd().setBlocking(blocking)
 
 # see serversocket.nim for an explanation
 {.compile: "connect_unix.c".}
@@ -125,6 +125,7 @@ proc connectSocketStream*(path: string, buffered = true, blocking = true):
       cint(path.len)) != 0:
     raiseOSError(osLastError())
   result.source = sock
+  result.fd = cint(sock.getFd())
 
 proc connectSocketStream*(pid: Pid, buffered = true, blocking = true):
     SocketStream =
@@ -141,3 +142,4 @@ proc acceptSocketStream*(ssock: ServerSocket, blocking = true): SocketStream =
   result.source = sock
   if not blocking:
     sock.getFd().setBlocking(false)
+  result.fd = cint(sock.getFd())

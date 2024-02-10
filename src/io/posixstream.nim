@@ -4,7 +4,7 @@ import std/streams
 
 type
   PosixStream* = ref object of Stream
-    fd*: FileHandle
+    fd*: cint
     isend*: bool
 
   ErrorAgain* = object of IOError
@@ -78,6 +78,13 @@ method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
   if n < 0:
     raisePosixIOError()
   return n
+
+method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
+  let ofl = fcntl(s.fd, F_GETFL, 0)
+  if blocking:
+    discard fcntl(s.fd, F_SETFL, ofl and not O_NONBLOCK)
+  else:
+    discard fcntl(s.fd, F_SETFL, ofl or O_NONBLOCK)
 
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
   #TODO use sendData instead
