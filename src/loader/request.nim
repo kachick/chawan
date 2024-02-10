@@ -80,6 +80,8 @@ type
     credentialsMode* {.jsget.}: CredentialsMode
     proxy*: URL #TODO do something with this
     canredir*: bool
+    clientFd*: int
+    clientPid*: int
 
   ReadableStream* = ref object of Stream
     isource*: Stream

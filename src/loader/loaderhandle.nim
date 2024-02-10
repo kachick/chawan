@@ -10,44 +10,68 @@ import loader/headers
 when defined(debug):
   import types/url
 
-type
-  LoaderBufferPage = array[4056, uint8] # 4096 - 8 - 32
+const LoaderBufferPageSize = 4064 # 4096 - 32
 
+type
   LoaderBufferObj = object
-    page*: LoaderBufferPage
+    page: ptr UncheckedArray[uint8]
     len: int
 
-  LoaderBuffer* = ptr LoaderBufferObj
+  LoaderBuffer* = ref LoaderBufferObj
 
-  OutputHandle* = object
+  OutputHandle* = ref object
+    parent*: LoaderHandle
+    currentBuffer*: LoaderBuffer
+    currentBufferIdx*: int
+    buffers: Deque[LoaderBuffer]
+    ostream*: PosixStream
+    istreamAtEnd*: bool
+    sostream*: PosixStream # saved ostream when redirected
+    clientFd*: int
+    clientPid*: int
 
   LoaderHandle* = ref object
-    ostream*: PosixStream #TODO un-extern
     # Stream for taking input
     istream*: PosixStream
     # Only the first handle can be redirected, because a) mailcap can only
     # redirect the first handle and b) async redirects would result in race
     # conditions that would be difficult to untangle.
     canredir: bool
-    sostream*: PosixStream # saved ostream when redirected
-    currentBuffer*: LoaderBuffer
-    currentBufferIdx*: int
-    buffers: Deque[LoaderBuffer]
+    outputs*: seq[OutputHandle]
     when defined(debug):
       url*: URL
 
+{.warning[Deprecated]:off.}:
+  proc `=destroy`(buffer: var LoaderBufferObj) =
+    if buffer.page != nil:
+      dealloc(buffer.page)
+      buffer.page = nil
+
 # Create a new loader handle, with the output stream ostream.
-proc newLoaderHandle*(ostream: PosixStream, canredir: bool): LoaderHandle =
-  return LoaderHandle(
-    ostream: ostream,
+proc newLoaderHandle*(ostream: PosixStream, canredir: bool,
+    clientPid, clientFd: int): LoaderHandle =
+  let handle = LoaderHandle(
     canredir: canredir
   )
+  handle.outputs.add(OutputHandle(
+    ostream: ostream,
+    parent: handle,
+    clientPid: clientPid,
+    clientFd: clientFd
+  ))
+  return handle
+
+proc findOutputHandle*(handle: LoaderHandle, fd: int): OutputHandle =
+  for output in handle.outputs:
+    if output.ostream.fd == fd:
+      return output
+  return nil
 
 func `[]`*(buffer: LoaderBuffer, i: int): var uint8 {.inline.} =
   return buffer[].page[i]
 
 func cap*(buffer: LoaderBuffer): int {.inline.} =
-  return buffer[].page.len
+  return LoaderBufferPageSize
 
 func len*(buffer: LoaderBuffer): var int {.inline.} =
   return buffer[].len
@@ -56,59 +80,75 @@ proc `len=`*(buffer: LoaderBuffer, i: int) {.inline.} =
   buffer[].len = i
 
 proc newLoaderBuffer*(): LoaderBuffer =
-  let buffer = cast[LoaderBuffer](alloc(sizeof(LoaderBufferObj)))
+  let buffer = LoaderBuffer(
+    page: cast[ptr UncheckedArray[uint8]](alloc(LoaderBufferPageSize))
+  )
   buffer.len = 0
   return buffer
 
 proc addBuffer*(handle: LoaderHandle, buffer: LoaderBuffer) =
-  if handle.currentBuffer == nil:
-    handle.currentBuffer = buffer
-  else:
-    handle.buffers.addLast(buffer)
+  for output in handle.outputs.mitems:
+    if output.currentBuffer == nil:
+      output.currentBuffer = buffer
+    else:
+      output.buffers.addLast(buffer)
 
-proc bufferCleared*(handle: LoaderHandle) =
-  assert handle.currentBuffer != nil
-  handle.currentBufferIdx = 0
-  dealloc(handle.currentBuffer)
-  if handle.buffers.len > 0:
-    handle.currentBuffer = handle.buffers.popFirst()
+proc bufferCleared*(output: OutputHandle) =
+  assert output.currentBuffer != nil
+  output.currentBufferIdx = 0
+  if output.buffers.len > 0:
+    output.currentBuffer = output.buffers.popFirst()
   else:
-    handle.currentBuffer = nil
+    output.currentBuffer = nil
 
-proc addOutputStream*(handle: LoaderHandle, stream: Stream) =
-  doAssert false
-  #TODO TODO TODO fix this
-  #let ms = newMultiStream(handle.ostream, stream)
-  #handle.ostream = ms
+proc tee*(outputIn: OutputHandle, ostream: PosixStream,
+    clientFd, clientPid: int) =
+  outputIn.parent.outputs.add(OutputHandle(
+    parent: outputIn.parent,
+    ostream: ostream,
+    currentBuffer: outputIn.currentBuffer,
+    currentBufferIdx: outputIn.currentBufferIdx,
+    buffers: outputIn.buffers,
+    istreamAtEnd: outputIn.istreamAtEnd,
+    clientFd: clientFd,
+    clientPid: clientPid
+  ))
+
+template output*(handle: LoaderHandle): OutputHandle =
+  handle.outputs[0]
 
 proc sendResult*(handle: LoaderHandle, res: int, msg = "") =
-  handle.ostream.swrite(res)
+  handle.output.ostream.swrite(res)
   if res == 0: # success
     assert msg == ""
   else: # error
-    handle.ostream.swrite(msg)
+    handle.output.ostream.swrite(msg)
 
 proc sendStatus*(handle: LoaderHandle, status: int) =
-  handle.ostream.swrite(status)
+  handle.output.ostream.swrite(status)
 
 proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
-  handle.ostream.swrite(headers)
+  let output = handle.output
+  output.ostream.swrite(headers)
   if handle.canredir:
     var redir: bool
-    handle.ostream.sread(redir)
+    output.ostream.sread(redir)
     if redir:
-      let fd = SocketStream(handle.ostream).recvFileHandle()
-      handle.sostream = handle.ostream
-      handle.ostream = newPosixStream(fd)
+      let fd = SocketStream(output.ostream).recvFileHandle()
+      output.sostream = output.ostream
+      output.ostream = newPosixStream(fd)
+      output.clientFd = -1
+      output.clientPid = -1
 
-proc sendData*(handle: LoaderHandle, p: pointer, nmemb: int): int =
-  return handle.ostream.sendData(p, nmemb)
+proc sendData*(output: OutputHandle, p: pointer, nmemb: int): int =
+  return output.ostream.sendData(p, nmemb)
 
 proc close*(handle: LoaderHandle) =
-  assert handle.sostream == nil
-  if handle.ostream != nil:
-    handle.ostream.close()
-    handle.ostream = nil
+  for output in handle.outputs:
+    assert output.sostream == nil
+    if output.ostream != nil:
+      output.ostream.close()
+      output.ostream = nil
   if handle.istream != nil:
     handle.istream.close()
     handle.istream = nil

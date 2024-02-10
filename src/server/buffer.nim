@@ -919,7 +919,8 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     fds.add(fd)
   #TODO maybe we still have some data in sockets... we should probably split
   # this up to be executed after the main loop is finished...
-  buffer.loader.suspend(fds)
+  let parentPid = getpid()
+  buffer.loader.suspend(parentPid, fds)
   buffer.loader.addref()
   let pid = fork()
   if pid == -1:
@@ -939,7 +940,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     for fd in buffer.loader.connecting.keys:
       cfds.add(fd)
     for fd in cfds:
-      let stream = SocketStream(buffer.loader.tee(fd))
+      let stream = SocketStream(buffer.loader.tee(parentPid, fd))
       var success: bool
       stream.sread(success)
       let sfd = int(stream.source.getFd())
@@ -957,7 +958,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     for fd in buffer.loader.ongoing.keys:
       ofds.add(fd)
     for fd in ofds:
-      let stream = SocketStream(buffer.loader.tee(fd))
+      let stream = SocketStream(buffer.loader.tee(parentPid, fd))
       var success: bool
       stream.sread(success)
       let sfd = int(stream.source.getFd())
@@ -997,7 +998,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     if needsPipe:
       let istrmp = newPosixStream(pipefd_write[1])
       buffer.istream = newTeeStream(buffer.istream, istrmp)
-    buffer.loader.resume(fds)
+    buffer.loader.resume(parentPid, fds)
     return pid
 
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
