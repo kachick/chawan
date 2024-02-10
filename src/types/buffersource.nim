@@ -10,7 +10,7 @@ import chakasu/charset
 
 type
   BufferSourceType* = enum
-    CLONE, LOAD_REQUEST, LOAD_PIPE
+    CLONE, LOAD_REQUEST
 
   BufferSource* = object
     location*: URL
@@ -21,5 +21,3 @@ type
       clonepid*: Pid
     of LOAD_REQUEST:
       request*: Request
-    of LOAD_PIPE:
-      fd*: FileHandle

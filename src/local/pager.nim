@@ -444,14 +444,16 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.setContainer(container)
 
 proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
-    title = "", redirectdepth = 0, canreinterpret = true): Container =
+    title = "", redirectdepth = 0, canreinterpret = true,
+    fd = FileHandle(-1)): Container =
   return newBuffer(
     pager.forkserver,
     bufferConfig,
     source,
     title,
     redirectdepth,
-    canreinterpret
+    canreinterpret,
+    fd
   )
 
 proc dupeBuffer2(pager: Pager, container: Container, location: URL,
@@ -772,21 +774,21 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
 proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
     fd: FileHandle, location: Option[URL], title: string,
     canreinterpret: bool): Container =
-  var location = location.get(newURL("file://-").get)
+  var location = location.get(newURL("stream:-").get)
   let bufferconfig = pager.applySiteconf(location)
   let source = BufferSource(
-    t: LOAD_PIPE,
-    fd: fd,
+    t: LOAD_REQUEST,
+    request: newRequest(location),
     contentType: some(ctype.get("text/plain")),
     charset: cs,
     location: location
   )
   return pager.newBuffer(bufferconfig, source, title = title,
-    canreinterpret = canreinterpret)
+    canreinterpret = canreinterpret, fd = fd)
 
-proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset,
-    fd: FileHandle) =
-  let container = pager.readPipe0(ctype, cs, fd, none(URL), "*pipe*", true)
+proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset, fd: FileHandle,
+    title: string) =
+  let container = pager.readPipe0(ctype, cs, fd, none(URL), title, true)
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
@@ -973,7 +975,7 @@ proc runMailcapReadPipe(pager: Pager, container: Container,
   let p2 = p.then(proc(): auto =
     discard close(fdin)
     let ishtml = HTMLOUTPUT in entry.flags
-    return container.readFromFd(fdout, ishtml)
+    return container.readFromFd(fdout, $pid, ishtml)
   ).then(proc() =
     discard close(fdout)
   )
@@ -1045,7 +1047,7 @@ proc runMailcapReadFile(pager: Pager, container: Container,
     discard close(pipefd[1])
     let fdout = pipefd[0]
     let ishtml = HTMLOUTPUT in entry.flags
-    return container.readFromFd(fdout, ishtml).then(proc() =
+    return container.readFromFd(fdout, $pid, ishtml).then(proc() =
       discard close(fdout)
     )
   )

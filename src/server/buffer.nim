@@ -64,8 +64,8 @@ type
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
     FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_SOURCE, GET_LINES, UPDATE_HOVER,
-    PASS_FD, CONNECT, CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT,
-    REDIRECT_TO_FD, READ_FROM_FD, SET_CONTENT_TYPE, CLONE, FIND_PREV_PARAGRAPH,
+    CONNECT, CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
+    READ_FROM_FD, SET_CONTENT_TYPE, CLONE, FIND_PREV_PARAGRAPH,
     FIND_NEXT_PARAGRAPH
 
   # LOADING_PAGE: istream open
@@ -774,12 +774,6 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
       return ConnectResult(code: ERROR_SOURCE_NOT_FOUND)
     if buffer.source.contentType.isNone:
       buffer.source.contentType = some("text/plain")
-  of LOAD_PIPE:
-    discard fcntl(source.fd, F_SETFL, fcntl(source.fd, F_GETFL, 0) or O_NONBLOCK)
-    buffer.istream = newPosixStream(source.fd)
-    buffer.fd = source.fd
-    if buffer.source.contentType.isNone:
-      buffer.source.contentType = some("text/plain")
   of LOAD_REQUEST:
     let request = source.request
     let response = buffer.loader.doRequest(request, blocking = true, canredir = true)
@@ -844,37 +838,27 @@ proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait: bool) {.proxy.} =
       ss.sread(dummy)
     discard close(fd)
     ss.close()
-  of LOAD_PIPE:
-    let ps = newPosixStream(fd)
-    let bfd = cint(buffer.fd)
-    #TODO make it work without wait
-    discard fcntl(bfd, F_SETFL, fcntl(bfd, F_GETFL, 0) and not O_NONBLOCK)
-    var buf: array[4096, uint8]
-    while not buffer.istream.atEnd:
-      let n = buffer.istream.readData(addr buf[0], buf.len)
-      ps.writeData(addr buf[0], n)
-    ps.close()
-    buffer.fd = -1
-    buffer.istream.close()
   of CLONE:
     discard
 
-proc readFromFd*(buffer: Buffer, fd: FileHandle, ishtml: bool) {.proxy.} =
+proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
   let contentType = if ishtml:
     "text/html"
   else:
     "text/plain"
+  let request = newRequest(url)
   buffer.source = BufferSource(
-    t: LOAD_PIPE,
-    fd: fd,
+    t: LOAD_REQUEST,
+    request: request,
     location: buffer.source.location,
     contentType: some(contentType),
     charset: buffer.source.charset
   )
   buffer.setHTML(ishtml)
-  discard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) or O_NONBLOCK)
-  buffer.istream = newPosixStream(fd)
-  buffer.fd = fd
+  let response = buffer.loader.doRequest(request, blocking = true,
+    canredir = false)
+  buffer.istream = response.body
+  buffer.fd = int(SocketStream(response.body).source.getFd())
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
@@ -1634,9 +1618,6 @@ proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
       line.formats.add(SimpleFormatCell(format: f.format, pos: f.pos))
     result.lines.add(line)
   result.numLines = buffer.lines.len
-
-proc passFd*(buffer: Buffer, fd: FileHandle) {.proxy.} =
-  buffer.source.fd = fd
 
 #TODO this is mostly broken
 proc getSource*(buffer: Buffer) {.proxy.} =

@@ -516,7 +516,7 @@ proc addConsole(pager: Pager, interactive: bool, clearFun, showFun, hideFun:
     var pipefd: array[0..1, cint]
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
-    let url = newURL("javascript:console.show()").get
+    let url = newURL("stream:console").get
     let container = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
       pipefd[0], some(url), ConsoleTitle, canreinterpret = false)
     let err = newPosixStream(pipefd[1])
@@ -543,7 +543,7 @@ proc clearConsole(client: Client) =
   var pipefd: array[0..1, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open console pipe.")
-  let url = newURL("javascript:console.show()").get
+  let url = newURL("stream:console").get
   let pager = client.pager
   let replacement = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
     pipefd[0], some(url), ConsoleTitle, canreinterpret = false)
@@ -613,7 +613,7 @@ proc launchClient*(client: Client, pages: seq[string],
       module = ismodule)
 
   if not stdin.isatty():
-    client.pager.readPipe(contentType, cs, stdin.getFileHandle())
+    client.pager.readPipe(contentType, cs, stdin.getFileHandle(), "*stdin*")
 
   for page in pages:
     client.pager.loadURL(page, ctype = contentType, cs = cs)

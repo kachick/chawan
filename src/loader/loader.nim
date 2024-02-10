@@ -81,6 +81,9 @@ type
     ADDREF
     UNREF
     SET_REFERRER_POLICY
+    PASS_FD
+
+  ClientFdMap = seq[tuple[pid, fd: int, output: OutputHandle]]
 
   LoaderContext = ref object
     refcount: int
@@ -89,10 +92,12 @@ type
     config: LoaderConfig
     handleMap: Table[int, LoaderHandle]
     outputMap: Table[int, OutputHandle]
-    clientFdMap: seq[tuple[pid, fd: int, output: OutputHandle]]
+    clientFdMap: ClientFdMap
     referrerpolicy: ReferrerPolicy
     selector: Selector[int]
     fd: int
+    # List of file descriptors passed by the pager.
+    passedFdMap: Table[string, FileHandle]
 
   LoaderConfig* = object
     defaultheaders*: Headers
@@ -124,6 +129,52 @@ proc rejectHandle(handle: LoaderHandle, code: ConnectErrorCode, msg = "") =
   handle.sendResult(code, msg)
   handle.close()
 
+func findOutputIdx(clientFdMap: ClientFdMap, pid, fd: int): int =
+  for i, (itpid, itfd, _) in clientFdMap:
+    if pid == itpid and fd == itfd:
+      return i
+  return -1
+
+proc delOutput(clientFdMap: var ClientFdMap, pid, fd: int) =
+  let i = clientFdMap.findOutputIdx(pid, fd)
+  if i != -1:
+    clientFdMap.del(i)
+
+func findOutput(clientFdMap: ClientFdMap, pid, fd: int): OutputHandle =
+  let i = clientFdMap.findOutputIdx(pid, fd)
+  if i != -1:
+    return clientFdMap[i].output
+  return nil
+
+proc addFd(ctx: LoaderContext, handle: LoaderHandle) =
+  let output = handle.output
+  output.ostream.setBlocking(false)
+  ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
+  ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
+  let ofl = fcntl(handle.istream.fd, F_GETFL, 0)
+  discard fcntl(handle.istream.fd, F_SETFL, ofl or O_NONBLOCK)
+  ctx.handleMap[handle.istream.fd] = handle
+  if output.sostream != nil:
+    # replace the fd with the new one in outputMap if stream was
+    # redirected
+    # (kind of a hack, but should always work)
+    ctx.outputMap[output.ostream.fd] = output
+    ctx.outputMap.del(output.sostream.fd)
+    if output.clientPid != -1:
+      ctx.clientFdMap.delOutput(output.clientPid, output.clientFd)
+      output.clientFd = -1
+      output.clientPid = -1
+
+proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request) =
+  ctx.passedFdMap.withValue(request.url.host, fdp):
+    handle.sendResult(0)
+    handle.sendStatus(200)
+    handle.sendHeaders(newHeaders())
+    handle.istream = newPosixStream(fdp[])
+    ctx.passedFdMap.del(request.url.host)
+  do:
+    handle.rejectHandle(ERROR_FILE_NOT_FOUND, "stream not found")
+
 proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
   var redo = true
   var tries = 0
@@ -141,26 +192,14 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
           continue
     if request.url.scheme == "cgi-bin":
       handle.loadCGI(request, ctx.config.cgiDir, ctx.config.libexecPath, prevurl)
-      if handle.istream == nil:
-        handle.close()
+      if handle.istream != nil:
+        ctx.addFd(handle)
       else:
-        let output = handle.output
-        output.ostream.setBlocking(false)
-        ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
-        ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
-        let ofl = fcntl(handle.istream.fd, F_GETFL, 0)
-        discard fcntl(handle.istream.fd, F_SETFL, ofl or O_NONBLOCK)
-        ctx.handleMap[handle.istream.fd] = handle
-        if output.sostream != nil:
-          # replace the fd with the new one in outputMap if stream was
-          # redirected
-          # (kind of a hack, but should always work)
-          ctx.outputMap[output.ostream.fd] = output
-          ctx.outputMap.del(output.sostream.fd)
-          # currently only the main buffer stream can have redirects, and we
-          # don't suspend/resume it; if we did, we would have to put the new
-          # output stream's clientFd in clientFdMap too.
-          ctx.clientFdMap.del(output.sostream.fd)
+        handle.close()
+    elif request.url.scheme == "stream":
+      ctx.loadStream(handle, request)
+      if handle.istream != nil:
+        ctx.addFd(handle)
     else:
       prevurl = request.url
       case ctx.config.uriMethodMap.findAndRewrite(request.url)
@@ -208,18 +247,6 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
     ctx.clientFdMap.add((request.clientPid, request.clientFd, handle.output))
     ctx.loadResource(request, handle)
 
-func findClientFdEntry(ctx: LoaderContext, pid, fd: int): int =
-  for i, (itpid, itfd, _) in ctx.clientFdMap:
-    if pid == itpid and fd == itfd:
-      return i
-  return -1
-
-func findOutputByClientFd(ctx: LoaderContext, pid, fd: int): OutputHandle =
-  let i = ctx.findClientFdEntry(pid, fd)
-  if i != -1:
-    return ctx.clientFdMap[i].output
-  return nil
-
 proc acceptConnection(ctx: LoaderContext) =
   let stream = ctx.ssock.acceptSocketStream()
   try:
@@ -237,7 +264,7 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(fd)
       stream.sread(clientPid)
       stream.sread(clientFd)
-      let output = ctx.findOutputByClientFd(pid, fd)
+      let output = ctx.clientFdMap.findOutput(pid, fd)
       if output != nil:
         output.tee(stream, clientPid, clientFd)
       stream.swrite(output != nil)
@@ -247,7 +274,7 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(pid)
       stream.sread(fds)
       for fd in fds:
-        let output = ctx.findOutputByClientFd(pid, fd)
+        let output = ctx.clientFdMap.findOutput(pid, fd)
         if output != nil:
           # remove from the selector, so any new reads will be just placed
           # in the handle's buffer
@@ -258,7 +285,7 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(pid)
       stream.sread(fds)
       for fd in fds:
-        let output = ctx.findOutputByClientFd(pid, fd)
+        let output = ctx.clientFdMap.findOutput(pid, fd)
         if output != nil:
           # place the stream back into the selector, so we can write to it
           # again
@@ -274,6 +301,12 @@ proc acceptConnection(ctx: LoaderContext) =
         assert ctx.refcount > 0
     of SET_REFERRER_POLICY:
       stream.sread(ctx.referrerpolicy)
+      stream.close()
+    of PASS_FD:
+      var id: string
+      stream.sread(id)
+      let fd = stream.recvFileHandle()
+      ctx.passedFdMap[id] = fd
       stream.close()
   except ErrorBrokenPipe:
     # receiving end died while reading the file; give up.
@@ -386,8 +419,7 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
         ctx.selector.unregister(output.ostream.fd)
         ctx.outputMap.del(output.ostream.fd)
         if output.clientFd != -1:
-          let i = ctx.findClientFdEntry(output.clientPid, output.clientFd)
-          ctx.clientFdMap.del(i)
+          ctx.clientFdMap.delOutput(output.clientPid, output.clientFd)
         output.ostream.close()
         output.ostream = nil
         let handle = output.parent
@@ -666,4 +698,12 @@ proc setReferrerPolicy*(loader: FileLoader, referrerpolicy: ReferrerPolicy) =
   if stream != nil:
     stream.swrite(SET_REFERRER_POLICY)
     stream.swrite(referrerpolicy)
-  stream.close()
+    stream.close()
+
+proc passFd*(pid: Pid, id: string, fd: FileHandle) =
+  let stream = connectSocketStream(pid, buffered = false)
+  if stream != nil:
+    stream.swrite(PASS_FD)
+    stream.swrite(id)
+    stream.sendFileHandle(fd)
+    stream.close()

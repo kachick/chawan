@@ -389,7 +389,6 @@ proc swrite*(stream: Stream, source: BufferSource) =
   case source.t
   of CLONE: stream.swrite(source.clonepid)
   of LOAD_REQUEST: stream.swrite(source.request)
-  of LOAD_PIPE: stream.swrite(source.fd)
   stream.swrite(source.location)
   stream.swrite(source.contentType)
   stream.swrite(source.charset)
@@ -404,9 +403,6 @@ proc sread*(stream: Stream, source: var BufferSource) =
   of LOAD_REQUEST:
     source = BufferSource(t: LOAD_REQUEST)
     stream.sread(source.request)
-  of LOAD_PIPE:
-    source = BufferSource(t: LOAD_PIPE)
-    stream.sread(source.fd)
   stream.sread(source.location)
   stream.sread(source.contentType)
   stream.sread(source.charset)
@@ -416,6 +412,5 @@ func slen*(source: BufferSource): int =
   case source.t
   of CLONE: result += slen(source.clonepid)
   of LOAD_REQUEST: result += slen(source.request)
-  of LOAD_PIPE: result += slen(source.fd)
   result += slen(source.location)
   result += slen(source.contentType)

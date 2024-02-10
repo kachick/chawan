@@ -15,6 +15,7 @@ import js/javascript
 import js/jstypes
 import js/regex
 import loader/connecterror
+import loader/loader
 import loader/request
 import local/select
 import server/buffer
@@ -99,6 +100,7 @@ type
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     process* {.jsget.}: Pid
+    loaderPid* {.jsget.}: Pid
     loadinfo*: string
     lines: SimpleFlexibleGrid
     lineshift: int
@@ -129,10 +131,19 @@ jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     source: BufferSource, title = "", redirectdepth = 0,
-    canreinterpret = true): Container =
+    canreinterpret = true, fd = FileHandle(-1)): Container =
   let attrs = getWindowAttributes(stdout)
+  let (process, loaderPid) = forkserver.forkBuffer(source, config, attrs)
+  if fd != -1:
+    loaderPid.passFd(source.location.host, fd)
+    if fd == 0:
+      # We are passing stdin.
+      closeStdin()
+    else:
+      discard close(fd)
   return Container(
-    process: forkserver.forkBuffer(source, config, attrs),
+    process: process,
+    loaderPid: loaderPid,
     source: source,
     width: attrs.width,
     height: attrs.height - 1,
@@ -1377,10 +1388,12 @@ proc redirectToFd*(container: Container, fdin: FileHandle, wait: bool):
     EmptyPromise =
   return container.iface.redirectToFd(fdin, wait)
 
-proc readFromFd*(container: Container, fdout: FileHandle, ishtml: bool):
-    EmptyPromise =
+proc readFromFd*(container: Container, fdout: FileHandle, id: string,
+    ishtml: bool): EmptyPromise =
   container.ishtml = ishtml
-  return container.iface.readFromFd(fdout, ishtml)
+  let url = newURL("stream:" & id).get
+  container.loaderPid.passFd(url.host, fdout)
+  return container.iface.readFromFd(url, ishtml)
 
 proc quit*(container: Container) =
   container.triggerEvent(QUIT)
@@ -1510,16 +1523,6 @@ proc handleCommand(container: Container) =
 proc setStream*(container: Container, stream: Stream) =
   if not container.cloned:
     container.iface = newBufferInterface(stream)
-    if container.source.t == LOAD_PIPE:
-      container.iface.passFd(container.source.fd).then(proc() =
-        if container.source.fd == 0:
-          # We are closing stdin.
-          # Leaving the stdin fileno open to grab is a bad idea.
-          closeStdin()
-        else:
-          discard close(container.source.fd)
-      )
-      stream.flush()
     container.load()
   else:
     container.iface = cloneInterface(stream)

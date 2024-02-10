@@ -137,8 +137,6 @@ proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
       let fd = SocketStream(output.ostream).recvFileHandle()
       output.sostream = output.ostream
       output.ostream = newPosixStream(fd)
-      output.clientFd = -1
-      output.clientPid = -1
 
 proc sendData*(output: OutputHandle, p: pointer, nmemb: int): int =
   return output.ostream.sendData(p, nmemb)

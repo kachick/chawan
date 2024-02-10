@@ -63,15 +63,18 @@ proc removeChild*(forkserver: ForkServer, pid: Pid) =
   forkserver.ostream.flush()
 
 proc forkBuffer*(forkserver: ForkServer, source: BufferSource,
-    config: BufferConfig, attrs: WindowAttributes): Pid =
+    config: BufferConfig, attrs: WindowAttributes):
+    tuple[process, loaderPid: Pid] =
   forkserver.ostream.swrite(FORK_BUFFER)
   forkserver.ostream.swrite(source)
   forkserver.ostream.swrite(config)
   forkserver.ostream.swrite(attrs)
   forkserver.ostream.flush()
   var process: Pid
+  var loaderPid: Pid
   forkserver.istream.sread(process)
-  return process
+  forkserver.istream.sread(loaderPid)
+  return (process, loaderPid)
 
 proc trapSIGINT() =
   # trap SIGINT, so e.g. an external editor receiving an interrupt in the
@@ -114,7 +117,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   return pid
 
 var gssock: ServerSocket
-proc forkBuffer(ctx: var ForkServerContext): Pid =
+proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
   var source: BufferSource
   var config: BufferConfig
   var attrs: WindowAttributes
@@ -164,7 +167,7 @@ proc forkBuffer(ctx: var ForkServerContext): Pid =
   assert c == char(0)
   ps.close()
   ctx.children.add((pid, loaderPid))
-  return pid
+  return (pid, loaderPid)
 
 proc runForkServer() =
   var ctx = ForkServerContext(
