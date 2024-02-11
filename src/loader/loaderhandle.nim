@@ -81,11 +81,10 @@ proc `len=`*(buffer: LoaderBuffer, i: int) {.inline.} =
   buffer[].len = i
 
 proc newLoaderBuffer*(): LoaderBuffer =
-  let buffer = LoaderBuffer(
-    page: cast[ptr UncheckedArray[uint8]](alloc(LoaderBufferPageSize))
+  return LoaderBuffer(
+    page: cast[ptr UncheckedArray[uint8]](alloc(LoaderBufferPageSize)),
+    len: 0
   )
-  buffer.len = 0
-  return buffer
 
 proc addBuffer*(output: OutputHandle, buffer: LoaderBuffer) =
   if output.currentBuffer == nil:
