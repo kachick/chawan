@@ -1233,18 +1233,19 @@ proc cursorToggleSelection(container: Container, n = 1,
       container.highlights.delete(i)
     container.currentSelection = nil
   else:
+    let cx = container.cursorFirstX()
     let n = n - 1
+    container.cursorRight(n)
     let hl = Highlight(
       t: HL_SELECT,
       selectionType: opts.selectionType,
-      x1: container.cursorx,
+      x1: cx,
       y1: container.cursory,
-      x2: container.cursorx + n,
+      x2: container.cursorx,
       y2: container.cursory
     )
     container.highlights.add(hl)
     container.currentSelection = hl
-    container.cursorRight(n)
   container.triggerEvent(UPDATE)
   return container.currentSelection
 
