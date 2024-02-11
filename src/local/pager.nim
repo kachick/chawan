@@ -97,21 +97,23 @@ func getRoot(container: Container): Container =
   while c.parent != nil: c = c.parent
   return c
 
-iterator all_children(parent: Container): Container {.inline.} =
+# depth-first descendant iterator
+iterator descendants(parent: Container): Container {.inline.} =
   var stack = newSeqOfCap[Container](parent.children.len)
   for i in countdown(parent.children.high, 0):
     stack.add(parent.children[i])
   while stack.len > 0:
     let c = stack.pop()
-    yield c
+    # add children first, so that deleteContainer works on c
     for i in countdown(c.children.high, 0):
       stack.add(c.children[i])
+    yield c
 
 iterator containers*(pager: Pager): Container {.inline.} =
   if pager.container != nil:
     let root = getRoot(pager.container)
     yield root
-    for c in root.all_children:
+    for c in root.descendants:
       yield c
 
 proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
@@ -603,7 +605,7 @@ proc discardBuffer(pager: Pager, container = none(Container)) {.jsfunc.} =
 proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
   let container = container.get(pager.container)
   if container != nil:
-    for c in container.all_children:
+    for c in container.descendants:
       pager.deleteContainer(c)
   else:
     pager.alert("Buffer has no children!")
