@@ -214,6 +214,7 @@ type
     minwidth: LayoutUnit
     space: AvailableSpace
     whitespacenum: int
+    whitespaceIsLF: bool
     whitespaceFragment: InlineFragment
     word: InlineAtom
     wordstate: InlineAtomState
@@ -228,6 +229,11 @@ type
     fragment: InlineFragment
     firstLine: bool
     startOffsetTop: Offset
+    # we do not want to collapse newlines over tag boundaries, so these are
+    # in state
+    lastrw: int # last rune width of the previous word
+    firstrw: int # first rune width of the current word
+    prevrw: int # last processed rune's width
 
 func whitespacepre(computed: CSSComputedValues): bool =
   computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP}
@@ -262,6 +268,9 @@ func size(ictx: var InlineContext): var Size =
 # Whitespace between words
 func computeShift(ictx: InlineContext, state: InlineState): LayoutUnit =
   if ictx.whitespacenum == 0:
+    return 0
+  if ictx.whitespaceIsLF and state.lastrw == 2 and state.firstrw == 2:
+    # skip line feed between double-width characters
     return 0
   if not state.computed.whitespacepre:
     if ictx.currentLine.atoms.len == 0 or
@@ -635,6 +644,9 @@ proc checkWrap(ictx: var InlineContext, state: var InlineState, r: Rune) =
     return
   let shift = ictx.computeShift(state)
   let rw = r.width()
+  state.prevrw = rw
+  if ictx.word.str.len == 0:
+    state.firstrw = rw
   case state.computed{"word-break"}
   of WORD_BREAK_NORMAL:
     if rw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
@@ -663,15 +675,20 @@ proc processWhitespace(ictx: var InlineContext, state: var InlineState,
     if ictx.whitespacenum < 1:
       ictx.whitespacenum = 1
       ictx.whitespaceFragment = state.fragment
+      ictx.whitespaceIsLF = c == '\n'
+    if c != '\n':
+      ictx.whitespaceIsLF = false
   of WHITESPACE_PRE_LINE:
     if c == '\n':
       ictx.flushLine(state)
     elif ictx.whitespacenum < 1:
+      ictx.whitespaceIsLF = false
       ictx.whitespacenum = 1
       ictx.whitespaceFragment = state.fragment
   of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
     #TODO whitespace type should be preserved here. (it isn't, because
     # it would break tabs in the current buffer model.)
+    ictx.whitespaceIsLF = false
     if c == '\n':
       ictx.flushLine(state)
     elif c == '\t':
@@ -683,6 +700,8 @@ proc processWhitespace(ictx: var InlineContext, state: var InlineState,
     else:
       inc ictx.whitespacenum
       ictx.whitespaceFragment = state.fragment
+  # set the "last word's last rune width" to the previous rune width
+  state.lastrw = state.prevrw
 
 func initInlineContext(bctx: var BlockContext, space: AvailableSpace,
     bfcOffset: Offset, root: RootInlineFragment): InlineContext =
