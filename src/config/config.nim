@@ -229,7 +229,7 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     urimethodmap: URIMethodMap, cgiDir: seq[string]): BufferConfig =
   let filter = newURLFilter(
     scheme = some(location.scheme),
-    allowschemes = @["data"],
+    allowschemes = @["data", "stream"],
     default = true
   )
   return BufferConfig(
