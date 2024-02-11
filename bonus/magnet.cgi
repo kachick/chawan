@@ -23,13 +23,6 @@ die() {
 	exit 1
 }
 
-decode() {
-	# URL-decode the string passed as the first parameter
-	printf '%s\n' "$1" | \
-		sed 's/+/ /g;s/%/\\x/g' | \
-		xargs -0 printf "%b"
-}
-
 html_quote() {
 	sed 's/&/&amp;/g;s/</&lt;/g;s/>/&gt;/g;s/'\''/&apos;/g;s/"/&quot;/g'
 }
@@ -62,16 +55,13 @@ POST)	read line
 	esac
 	case $line in
 	URL=*) line="${line#*=}" ;;
-	*) die 'Invalid POST 2; this is probably a bug in the magnet script.'"$line" ;;
+	*) die 'Invalid POST 2; this is probably a bug in the magnet script.' ;;
 	esac
-	line="$(decode "$line")"
-	if test -n "$CHA_TRANSMISSION_AUTH"
-	then	authparam="--auth=$CHA_TRANSMISSION_AUTH"
-	fi
-	if test -n "$authparam"
-	then	output="$(transmission-remote "${CHA_TRANSMISSION_ADDRESS:-localhost:9091}" "$authparam" -a "$line" 2>&1)"
-	else	output="$(transmission-remote "${CHA_TRANSMISSION_ADDRESS:-localhost:9091}" -a "$line" 2>&1)"
-	fi
+	line=$(printf '%s' "$line" | "$CHA_LIBEXEC_DIR"/urldec)
+	auth=$CHA_TRANSMISSION_AUTH
+	address=${CHA_TRANSMISSION_ADDRESS:-localhost:9091}
+	output=$(transmission-remote "$address" ${auth:+ --auth="$auth"} \
+			-a "$line" 2>&1)
 	printf 'Content-Type: text/plain\n\n%s' "$output"
 	;;
 *)	die "Unrecognized HTTP method $HTTP_METHOD" ;;
