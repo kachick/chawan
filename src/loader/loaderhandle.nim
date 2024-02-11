@@ -29,6 +29,7 @@ type
     sostream*: PosixStream # saved ostream when redirected
     clientFd*: int
     clientPid*: int
+    registered*: bool
 
   LoaderHandle* = ref object
     # Stream for taking input
@@ -86,12 +87,11 @@ proc newLoaderBuffer*(): LoaderBuffer =
   buffer.len = 0
   return buffer
 
-proc addBuffer*(handle: LoaderHandle, buffer: LoaderBuffer) =
-  for output in handle.outputs.mitems:
-    if output.currentBuffer == nil:
-      output.currentBuffer = buffer
-    else:
-      output.buffers.addLast(buffer)
+proc addBuffer*(output: OutputHandle, buffer: LoaderBuffer) =
+  if output.currentBuffer == nil:
+    output.currentBuffer = buffer
+  else:
+    output.buffers.addLast(buffer)
 
 proc bufferCleared*(output: OutputHandle) =
   assert output.currentBuffer != nil
