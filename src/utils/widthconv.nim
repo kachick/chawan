@@ -12,25 +12,6 @@ const HasDakuten = ("がぎぐげござじずぜぞだぢづでどばびぶべ�
 
 const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toRunes()
 
-# in unicode, char + 1 is dakuten and char + 2 handakuten
-
-const HalfDakuten = Rune(0xFF9E) # half-width dakuten
-const HalfHanDakuten = Rune(0xFF9F)
-
-func dakuten(r: Rune): Rune =
-  assert r in CanHaveDakuten
-  return Rune(int32(r) + 1)
-
-func handakuten(r: Rune): Rune =
-  assert r in CanHaveHanDakuten
-  return Rune(int32(r) + 2)
-
-func nodakuten(r: Rune): Rune =
-  return Rune(int32(r) - 1)
-
-func nohandakuten(r: Rune): Rune =
-  return Rune(int32(r) - 2)
-
 # Halfwidth to fullwidth & vice versa
 const halfFullMap = (func(): seq[tuple[half, full1, full2: Rune]] =
   result = @[]
@@ -60,15 +41,20 @@ func halfwidth(r: Rune): Rune =
         return h
   return r
 
+const HalfDakuten = Rune(0xFF9E) # half-width dakuten
+const HalfHanDakuten = Rune(0xFF9F) # half-width handakuten
+
+# Note: in unicode, char + 1 is dakuten and char + 2 handakuten
+
 func halfwidth*(s: string): string =
   result = ""
   for r in s.runes:
     case r
     of HasDakuten:
-      result &= halfwidth(r.nodakuten())
+      result &= halfwidth(Rune(uint32(r) - 1))
       result &= HalfDakuten
     of HasHanDakuten:
-      result &= halfwidth(r.nohandakuten())
+      result &= halfwidth(Rune(uint32(r) - 2))
       result &= HalfHanDakuten
     else:
       result &= halfwidth(r)
@@ -87,12 +73,12 @@ func fullwidth*(s: string): string =
     if lastr != Rune(0):
       if r == HalfDakuten:
         # flush with dakuten
-        result &= lastr.dakuten()
+        result &= Rune(uint32(lastr) + 1)
         lastr = Rune(0)
         continue
-      elif r == HalfHanDakuten:
+      elif r == HalfHanDakuten and lastr in CanHaveHanDakuten:
         # flush with handakuten
-        result &= lastr.handakuten()
+        result &= Rune(uint32(lastr) + 2)
         lastr = Rune(0)
         continue
       result &= lastr
@@ -118,7 +104,7 @@ const fullSizeMap = genFullSizeMap()
 
 proc fullsize*(s: string): string =
   result = ""
-  for r in s.runes():
+  for r in s.runes:
     let i = searchInMap(fullSizeMap, uint32(r))
     if i == -1:
       result &= r
