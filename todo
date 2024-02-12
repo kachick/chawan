@@ -4,6 +4,9 @@ compilation:
 	* fbf for unifont
 	* maybe use system wcwidth?
 charsets:
+- rewrite it:
+	* push API (not based on std/streams)
+	* directly convert to/from UTF-8, not UTF-32
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
 display:
@@ -44,8 +47,6 @@ buffer:
 	* make console.err a TeeStream, and tee it to a StringStream that
 	  buffers up to 4KB
 - add buffer groups
-- always write buffer sources to tmp dir
-- hex viewer
 - xhtml
 - better horizontal line handling: allow viewing content positioned before page
   start, handle long lines, etc
