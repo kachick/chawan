@@ -108,16 +108,16 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
   if form.constructingentrylist:
     return
   form.constructingentrylist = true
-
-  var entrylist: seq[FormDataEntry]
+  var entrylist: seq[FormDataEntry] = @[]
   for field in form.controls:
     if field.findAncestor({TAG_DATALIST}) != nil or
         field.attrb(atDisabled) or
         field.isButton() and Element(field) != submitter:
       continue
-
-    if field.tagType == TAG_INPUT:
+    if field of HTMLInputElement:
       let field = HTMLInputElement(field)
+      if field.inputType in {INPUT_CHECKBOX, INPUT_RADIO} and not field.checked:
+        continue
       if field.inputType == INPUT_IMAGE:
         var name = field.attr(atName)
         if name != "":
@@ -125,56 +125,53 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
         entrylist.add((name & 'x', $field.xcoord))
         entrylist.add((name & 'y', $field.ycoord))
         continue
-
     #TODO custom elements
-
     let name = field.attr(atName)
-
     if name == "":
       continue
-
-    if field.tagType == TAG_SELECT:
+    if field of HTMLSelectElement:
       let field = HTMLSelectElement(field)
       for option in field.options:
         if option.selected or option.isDisabled:
           entrylist.add((name, option.value))
-    elif field of HTMLInputElement and
-        HTMLInputElement(field).inputType in {INPUT_CHECKBOX, INPUT_RADIO}:
-      let v = field.attr(atValue)
-      let value = if v != "":
-        v
+    elif field of HTMLInputElement:
+      let field = HTMLInputElement(field)
+      case field.inputType
+      of INPUT_CHECKBOX, INPUT_RADIO:
+        let v = field.attr(atValue)
+        let value = if v != "":
+          v
+        else:
+          "on"
+        entrylist.add((name, value))
+      of INPUT_FILE:
+        #TODO file
+        discard
+      of INPUT_HIDDEN:
+        if name.equalsIgnoreCase("_charset_"):
+          let charset = if encoding != "":
+            encoding
+          else:
+            "UTF-8"
+          entrylist.add((name, charset))
+        else:
+          entrylist.add((name, field.value))
       else:
-        "on"
-      entrylist.add((name, value))
-    elif field of HTMLInputElement and
-        HTMLInputElement(field).inputType == INPUT_FILE:
-      #TODO file
-      discard
-    elif field of HTMLInputElement and
-        HTMLInputElement(field).inputType == INPUT_HIDDEN and
-        name.equalsIgnoreCase("_charset_"):
-      let charset = if encoding != "":
-        encoding
-      else:
-        "UTF-8"
-      entrylist.add((name, charset))
+        entrylist.add((name, field.value))
+    elif field of HTMLButtonElement:
+      entrylist.add((name, HTMLButtonElement(field).value))
+    elif field of HTMLTextAreaElement:
+      entrylist.add((name, HTMLTextAreaElement(field).value))
     else:
-      case field.tagType
-      of TAG_INPUT:
-        entrylist.add((name, HTMLInputElement(field).value))
-      of TAG_BUTTON:
-        entrylist.add((name, HTMLButtonElement(field).value))
-      of TAG_TEXTAREA:
-        entrylist.add((name, HTMLTextAreaElement(field).value))
-      else: assert false, "Tag type " & $field.tagType & " not accounted for in constructEntryList"
+      assert false, "Tag type " & $field.tagType &
+        " not accounted for in constructEntryList"
     if field of HTMLTextAreaElement or
         field of HTMLInputElement and
-        HTMLInputElement(field).inputType in {INPUT_TEXT, INPUT_SEARCH}:
+        HTMLInputElement(field).inputType in AutoDirInput:
       let dirname = field.attr(atDirname)
       if dirname != "":
         let dir = "ltr" #TODO bidi
         entrylist.add((dirname, dir))
-
   form.constructingentrylist = false
   return some(entrylist)
 

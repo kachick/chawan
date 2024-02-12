@@ -122,3 +122,8 @@ const inputTypeMap = getInputTypeMap()
 
 func inputType*(s: string): InputType =
   return inputTypeMap.getOrDefault(s.toLowerAscii())
+
+const AutoDirInput* = {
+  INPUT_HIDDEN, INPUT_TEXT, INPUT_SEARCH, INPUT_TEL, INPUT_URL, INPUT_EMAIL,
+  INPUT_PASSWORD, INPUT_SUBMIT, INPUT_RESET, INPUT_BUTTON
+}

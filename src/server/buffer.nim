@@ -332,25 +332,19 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
 proc getClickHover(styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
   if clickable != nil:
-    case clickable.tagType
-    of TAG_A:
+    if clickable of HTMLAnchorElement:
       return HTMLAnchorElement(clickable).href
-    of TAG_INPUT:
+    elif clickable of FormAssociatedElement:
       #TODO this is inefficient and also quite stupid
-      if clickable of FormAssociatedElement:
-        let fae = FormAssociatedElement(clickable)
-        if fae.canSubmitOnClick():
-          let req = fae.form.submitForm(fae)
-          if req.isSome:
-            return $req.get.url
-      return "<input>"
-    of TAG_OPTION:
+      let fae = FormAssociatedElement(clickable)
+      if fae.canSubmitOnClick():
+        let req = fae.form.submitForm(fae)
+        if req.isSome:
+          return $req.get.url
+      return "<" & $clickable.tagType & ">"
+    elif clickable of HTMLOptionElement:
       return "<option>"
-    of TAG_BUTTON:
-      return "<button>"
-    of TAG_TEXTAREA:
-      return "<textarea>"
-    else: discard
+  return ""
 
 func getCursorStyledNode(buffer: Buffer, cursorx, cursory: int): StyledNode =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
