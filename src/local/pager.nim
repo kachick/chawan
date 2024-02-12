@@ -919,13 +919,26 @@ proc externInto(pager: Pager, cmd, ins: string): bool {.jsfunc.} =
   pager.setEnvVars()
   return runProcessInto(cmd, ins)
 
+proc externFilterSource(pager: Pager, cmd: string, c: Container = nil,
+    contentType = opt(string)) {.jsfunc.} =
+  let container = newBufferFrom(
+    pager.forkserver,
+    pager.attrs,
+    if c != nil: c else: pager.container,
+    contentType.get(pager.container.contentType.get(""))
+  )
+  pager.addContainer(container)
+  container.filter = BufferFilter(cmd: cmd)
+
 proc authorize(pager: Pager) =
   pager.setLineEdit("Username: ", USERNAME)
+
+type CheckMailcapResult = tuple[promise: EmptyPromise, connect: bool]
 
 # Pipe input into the mailcap command, then read its output into a buffer.
 # needsterminal is ignored.
 proc runMailcapReadPipe(pager: Pager, container: Container,
-    entry: MailcapEntry, cmd: string): (EmptyPromise, bool) =
+    entry: MailcapEntry, cmd: string): CheckMailcapResult =
   var pipefd_in: array[2, cint]
   if pipe(pipefd_in) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -969,7 +982,7 @@ proc runMailcapReadPipe(pager: Pager, container: Container,
 # Pipe input into the mailcap command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
 proc runMailcapWritePipe(pager: Pager, container: Container,
-    entry: MailcapEntry, cmd: string): (EmptyPromise, bool) =
+    entry: MailcapEntry, cmd: string): CheckMailcapResult =
   let needsterminal = NEEDSTERMINAL in entry.flags
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
@@ -1008,7 +1021,7 @@ proc runMailcapWritePipe(pager: Pager, container: Container,
 # new buffer.
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager, container: Container,
-    entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
+    entry: MailcapEntry, cmd, outpath: string): CheckMailcapResult =
   let fd = open(outpath, O_WRONLY or O_CREAT, 0o600)
   if fd == -1:
     return (nil, false)
@@ -1042,7 +1055,7 @@ proc runMailcapReadFile(pager: Pager, container: Container,
 # Save input in a file, run the command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
 proc runMailcapWriteFile(pager: Pager, container: Container,
-    entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
+    entry: MailcapEntry, cmd, outpath: string): CheckMailcapResult =
   let needsterminal = NEEDSTERMINAL in entry.flags
   let fd = open(outpath, O_WRONLY or O_CREAT, 0o600)
   if fd == -1:
@@ -1069,9 +1082,50 @@ proc runMailcapWriteFile(pager: Pager, container: Container,
   )
   return (p, false)
 
+proc filterBuffer(pager: Pager, container: Container): CheckMailcapResult =
+  pager.setEnvVars()
+  let cmd = container.filter.cmd
+  var pipefd_in: array[2, cint]
+  if pipe(pipefd_in) == -1:
+    raise newException(Defect, "Failed to open pipe.")
+  var pipefd_out: array[2, cint]
+  if pipe(pipefd_out) == -1:
+    raise newException(Defect, "Failed to open pipe.")
+  let pid = fork()
+  if pid == -1:
+    return (nil, true)
+  elif pid == 0:
+    # child
+    discard close(pipefd_in[1])
+    discard close(pipefd_out[0])
+    stdout.flushFile()
+    discard dup2(pipefd_in[0], stdin.getFileHandle())
+    discard dup2(pipefd_out[1], stdout.getFileHandle())
+    let devnull = open("/dev/null", O_WRONLY)
+    discard dup2(devnull, stderr.getFileHandle())
+    discard close(devnull)
+    discard close(pipefd_in[0])
+    discard close(pipefd_out[1])
+    discard execCmd(cmd)
+    quit(0)
+  else:
+    # parent
+    discard close(pipefd_in[0])
+    discard close(pipefd_out[1])
+    let fdin = pipefd_in[1]
+    let fdout = pipefd_out[0]
+    let p = container.redirectToFd(fdin, wait = false, cache = false)
+    let p2 = p.then(proc(): auto =
+      discard close(fdin)
+      return container.readFromFd(fdout, $pid, container.ishtml)
+    ).then(proc() =
+      discard close(fdout)
+    )
+    return (p2, true)
+
 # Search for a mailcap entry, and if found, execute the specified command
 # and pipeline the input and output appropriately.
-# There is four possible outcomes:
+# There are four possible outcomes:
 # * pipe stdin, discard stdout
 # * pipe stdin, read stdout
 # * write to file, run, discard stdout
@@ -1080,7 +1134,9 @@ proc runMailcapWriteFile(pager: Pager, container: Container,
 # pager is suspended until the command exits.
 #TODO add support for edit/compose, better error handling (use Promise[bool]
 # instead of tuple[EmptyPromise, bool])
-proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
+proc checkMailcap(pager: Pager, container: Container): CheckMailcapResult =
+  if container.filter != nil:
+    return pager.filterBuffer(container)
   if container.contentType.isNone:
     return (nil, true)
   let contentType = container.contentType.get

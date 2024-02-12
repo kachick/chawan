@@ -3435,7 +3435,7 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
     return
   let loader = window.loader.get
   let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-  let response = loader.doRequest(request, canredir = false)
+  let response = loader.doRequest(request)
   if response.res != 0:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return

@@ -713,7 +713,7 @@ proc rewind(buffer: Buffer): bool =
   if buffer.loader.rewind(buffer.fd):
     return true
   let request = newRequest(buffer.url, fromcache = true)
-  let response = buffer.loader.doRequest(request, canredir = false)
+  let response = buffer.loader.doRequest(request)
   if response.body != nil:
     buffer.selector.unregister(buffer.fd)
     buffer.loader.unregistered.add(buffer.fd)
@@ -781,7 +781,8 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   var cookies: seq[Cookie]
   var referrerpolicy: Option[ReferrerPolicy]
   let request = source.request
-  let response = buffer.loader.doRequest(request, canredir = true)
+  request.canredir = true #TODO set somewhere else?
+  let response = buffer.loader.doRequest(request)
   if response.body == nil:
     return ConnectResult(
       code: response.res,
@@ -820,7 +821,7 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
 # * connect2, telling loader to load at last (we block loader until then)
 # * redirectToFd, telling loader to load into the passed fd
 proc connect2*(buffer: Buffer) {.proxy.} =
-  if not buffer.source.request.fromcache:
+  if buffer.source.request.canredir:
     # Notify loader that we can proceed with loading the input stream.
     buffer.istream.swrite(false)
     buffer.istream.swrite(true)
@@ -856,7 +857,7 @@ proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
     charset: buffer.source.charset
   )
   buffer.setHTML(ishtml)
-  let response = buffer.loader.doRequest(request, canredir = false)
+  let response = buffer.loader.doRequest(request)
   buffer.istream = response.body
   buffer.fd = int(response.body.source.getFd())
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)

@@ -617,10 +617,17 @@ modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
 escape to the keybinding respectively (essentially making `M-` the same as
 `C-[`). Modifiers can be escaped with the `\` sign.
 
-```
 Examples:
-'C-M-j' = 'pager.load()' # change URL when Control, Escape and j are pressed
-'gg' = 'pager.cursorFirstLine()' # go to the first line of the page when g is pressed twice
+
+```
+# change URL when Control, Escape and j are pressed
+'C-M-j' = 'pager.load()'
+# go to the first line of the page when g is pressed twice
+'gg' = 'pager.cursorFirstLine()'
+# filter the current buffer's source through rdrview, then display the output in
+# a new buffer when the keys `g' and then `f' are pressed
+# (see https://github.com/eafer/rdrview)
+'gr' = 'pager.externFilterSource("rdrview -H")'
 ```
 
 An action is a JavaScript expression called by Chawan every time the keybinding
@@ -1106,6 +1113,15 @@ value is `false`.</td>
 </tr>
 
 <tr>
+<td>`pager.externFilterSource(cmd, buffer = null, contentType = null)`</td>
+<td>Redirects the specified (or if `buffer` is null, the current) buffer's
+source into `cmd`.<br>
+Then, it pipes the output into a new buffer, with the content type `contentType`
+(or, if `contentType` is null, the original buffer's content type).<br>
+Returns `undefined`. (It should return a promise; TODO.)</td>
+</tr>
+
+<tr>
 <td>`pager.location`</td>
 <td>Getter for the link of the current buffer. Returns a `URL` object.</td>
 </tr>
@@ -1120,6 +1136,11 @@ no link is found.</td>
 <td>`pager.hoverTitle`</td>
 <td>Getter for the title currently under the cursor. Returns the empty string if
 no title is found.</td>
+</tr>
+
+<tr>
+<td>`pager.buffer`</td>
+<td>Getter for the currently displayed buffer. Returns a `Buffer` object.</td>
 </tr>
 
 </table>

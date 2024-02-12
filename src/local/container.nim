@@ -85,6 +85,9 @@ type
     x: int
     y: int
 
+  BufferFilter* = ref object
+    cmd*: string
+
   Container* = ref object
     parent* {.jsget.}: Container
     children* {.jsget.}: seq[Container]
@@ -125,6 +128,7 @@ type
     jumpMark: PagePos
     marks: Table[string, PagePos]
     ishtml*: bool
+    filter*: BufferFilter
 
 jsDestructor(Highlight)
 jsDestructor(Container)

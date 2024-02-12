@@ -233,7 +233,7 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
     handle.rejectHandle(ERROR_TOO_MANY_REWRITES)
 
 proc loadFromCache(ctx: LoaderContext, stream: SocketStream, request: Request) =
-  let handle = newLoaderHandle(stream, false, request.clientId)
+  let handle = newLoaderHandle(stream, request.canredir, request.clientId)
   let surl = $request.url
   let cachedHandle = ctx.findCachedHandle(surl)
   ctx.cacheMap.withValue(surl, p):
@@ -270,6 +270,17 @@ proc loadFromCache(ctx: LoaderContext, stream: SocketStream, request: Request) =
     output.parent = cachedHandle
     cachedHandle.outputs.add(output)
     ctx.outputMap[output.ostream.fd] = output
+  if handle.outputs.len > 0:
+    let output = handle.output
+    if output.sostream != nil:
+      try:
+        handle.output.sostream.swrite(true)
+      except IOError:
+        # ignore error, that just means the buffer has already closed the
+        # stream
+        discard
+      output.sostream.close()
+      output.sostream = nil
   handle.close()
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
@@ -794,12 +805,9 @@ proc onError*(loader: FileLoader, fd: int) =
     buffer[].buf = ""
     response.unregisterFun()
 
-proc doRequest*(loader: FileLoader, request: Request, canredir = false):
-    Response =
+proc doRequest*(loader: FileLoader, request: Request): Response =
   let response = Response(url: request.url)
   let stream = connectSocketStream(loader.process, false, blocking = true)
-  if canredir:
-    request.canredir = true #TODO set this somewhere else?
   request.clientId = (loader.clientPid, int(stream.fd))
   stream.swrite(LOAD)
   stream.swrite(request)
