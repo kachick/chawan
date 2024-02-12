@@ -28,7 +28,7 @@ type
     buffers: Deque[LoaderBuffer]
     ostream*: PosixStream
     istreamAtEnd*: bool
-    sostream*: PosixStream # saved ostream when redirected
+    sostream*: SocketStream # saved ostream when redirected
     clientId*: StreamId
     registered*: bool
 
@@ -134,8 +134,9 @@ proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
     output.ostream.sread(redir)
     output.ostream.sread(handle.cached)
     if redir:
-      let fd = SocketStream(output.ostream).recvFileHandle()
-      output.sostream = output.ostream
+      let sostream = SocketStream(output.ostream)
+      let fd = sostream.recvFileHandle()
+      output.sostream = sostream
       output.ostream = newPosixStream(fd)
 
 proc sendData*(output: OutputHandle, p: pointer, nmemb: int): int =
