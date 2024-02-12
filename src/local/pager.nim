@@ -679,7 +679,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     ctype = none(string), cs = CHARSET_UNKNOWN, replace: Container = nil,
     redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.referer_from:
-    request.referer = referrer.source.location
+    request.referer = referrer.location
   var bufferconfig = pager.applySiteconf(request.url)
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpMethod != HTTP_GET:
@@ -692,8 +692,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     let source = BufferSource(
       request: request,
       contentType: ctype,
-      charset: cs,
-      location: request.url
+      charset: cs
     )
     if referrer != nil:
       bufferconfig.referrerpolicy = referrer.config.referrerpolicy
@@ -733,7 +732,7 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
   let firstparse = parseURL(url)
   if firstparse.isSome:
     let prev = if pager.container != nil:
-      some(pager.container.source.location)
+      some(pager.container.location)
     else:
       none(URL)
     pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
@@ -765,8 +764,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
   let source = BufferSource(
     request: newRequest(location),
     contentType: some(ctype.get("text/plain")),
-    charset: cs,
-    location: location
+    charset: cs
   )
   return pager.newBuffer(bufferconfig, source, title = title,
     canreinterpret = canreinterpret, fd = fd)
@@ -836,12 +834,12 @@ proc updateReadLine*(pager: Pager) =
         pager.username = lineedit.news
         pager.setLineEdit("Password: ", PASSWORD, hide = true)
       of PASSWORD:
-        let url = newURL(pager.container.source.location)
+        let url = newURL(pager.container.location)
         url.username = pager.username
         url.password = lineedit.news
         pager.username = ""
         pager.gotoURL(
-          newRequest(url), some(pager.container.source.location),
+          newRequest(url), some(pager.container.location),
           replace = pager.container,
           referrer = pager.container
         )
@@ -878,12 +876,12 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
   else:
     var url = s
     if url == "":
-      url = pager.container.source.location.serialize()
+      url = pager.container.location.serialize()
     pager.setLineEdit("URL: ", LOCATION, url)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
-  pager.gotoURL(newRequest(pager.container.source.location), none(URL),
+  pager.gotoURL(newRequest(pager.container.location), none(URL),
     pager.container.contentType, replace = pager.container)
 
 proc setEnvVars(pager: Pager) {.jsfunc.} =
@@ -1186,7 +1184,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.gotoURL(newRequest(container.retry.pop()),
         ctype = container.contentType)
     else:
-      pager.alert("Can't load " & $container.source.location & " (" &
+      pager.alert("Can't load " & $container.location & " (" &
         container.errorMessage & ")")
     return false
   of SUCCESS:
@@ -1221,7 +1219,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of REDIRECT:
     if container.redirectdepth < pager.config.network.max_redirect:
       pager.alert("Redirecting to " & $event.request.url)
-      pager.gotoURL(event.request, some(container.source.location),
+      pager.gotoURL(event.request, some(container.location),
         replace = container, redirectdepth = container.redirectdepth + 1,
         referrer = pager.container)
     else:
@@ -1229,7 +1227,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.deleteContainer(container)
       return false
   of ANCHOR:
-    var url2 = newURL(container.source.location)
+    var url2 = newURL(container.location)
     url2.setHash(event.anchor)
     pager.dupeBuffer(container, url2)
   of NO_ANCHOR:
@@ -1250,12 +1248,16 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
         pager.container.readCanceled()
       pager.redraw = true
   of OPEN:
-    if pager.container == nil or not pager.container.isHoverURL(event.request.url):
-      pager.ask("Open pop-up? " & $event.request.url).then(proc(x: bool) =
+    let url = event.request.url
+    if pager.container == nil or not pager.container.isHoverURL(url):
+      pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
-          pager.gotoURL(event.request, some(container.source.location), referrer = pager.container))
+          pager.gotoURL(event.request, some(container.location),
+            referrer = pager.container)
+      )
     else:
-      pager.gotoURL(event.request, some(container.source.location), referrer = pager.container)
+      pager.gotoURL(event.request, some(container.location),
+        referrer = pager.container)
   of INVALID_COMMAND: discard
   of STATUS:
     if pager.container == container:

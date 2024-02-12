@@ -272,7 +272,7 @@ macro task(fun: typed) =
   fun
 
 func url(buffer: Buffer): URL =
-  return buffer.source.location
+  return buffer.source.request.url
 
 func charsets(buffer: Buffer): seq[Charset] =
   if buffer.source.charset != CHARSET_UNKNOWN:
@@ -852,7 +852,6 @@ proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
   let request = newRequest(url)
   buffer.source = BufferSource(
     request: request,
-    location: buffer.source.location,
     contentType: some(contentType),
     charset: buffer.source.charset
   )
@@ -953,7 +952,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     let ssock = initServerSocket(buffered = false)
     buffer.ssock = ssock
     ps.write(char(0))
-    buffer.source.location = newurl
+    buffer.source.request.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
     let socks = ssock.acceptSocketStream()

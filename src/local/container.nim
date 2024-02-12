@@ -139,7 +139,7 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
   let attrs = getWindowAttributes(stdout)
   let (process, loaderPid) = forkserver.forkBuffer(source, config, attrs)
   if fd != -1:
-    loaderPid.passFd(source.location.host, fd)
+    loaderPid.passFd(source.request.url.host, fd)
     if fd == 0:
       # We are passing stdin.
       closeStdin()
@@ -184,7 +184,7 @@ proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
   )
 
 func location*(container: Container): URL {.jsfget.} =
-  return container.source.location
+  return container.source.request.url
 
 proc clone*(container: Container, newurl: URL): Promise[Container] =
   let url = if newurl != nil:
@@ -226,7 +226,7 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       cloned: true
     )
     if newurl != nil:
-      ncontainer.source.location = newurl
+      ncontainer.source.request.url = newurl
     return ncontainer
   )
 
@@ -344,15 +344,17 @@ func maxScreenWidth(container: Container): int =
 func getTitle*(container: Container): string {.jsfunc.} =
   if container.title != "":
     return container.title
-  return container.source.location.serialize(excludepassword = true)
+  return container.location.serialize(excludepassword = true)
 
 func currentLineWidth(container: Container): int =
   if container.numLines == 0: return 0
   return container.currentLine.width()
 
-func maxfromy(container: Container): int = max(container.numLines - container.height, 0)
+func maxfromy(container: Container): int =
+  return max(container.numLines - container.height, 0)
 
-func maxfromx(container: Container): int = max(container.maxScreenWidth() - container.width, 0)
+func maxfromx(container: Container): int =
+  return max(container.maxScreenWidth() - container.width, 0)
 
 func atPercentOf*(container: Container): int =
   if container.numLines == 0: return 100
@@ -1355,7 +1357,7 @@ proc onload*(container: Container, res: LoadResult) =
         container.setNumLines(lines, true)
         container.needslines = true
         container.triggerEvent(LOADED)
-        if not container.hasstart and container.source.location.anchor != "":
+        if not container.hasstart and container.location.anchor != "":
           return container.iface.gotoAnchor()
       ).then(proc(res: Opt[tuple[x, y: int]]) =
         if res.isSome:
@@ -1377,7 +1379,8 @@ proc load(container: Container) =
         # set referrer policy, if any
         if res.referrerpolicy.isSome and container.config.referer_from:
           container.config.referrerpolicy = res.referrerpolicy.get
-        container.setLoadInfo("Connected to " & $container.source.location & ". Downloading...")
+        container.setLoadInfo("Connected to " & $container.location &
+          ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)
         if res.redirect != nil:
@@ -1510,7 +1513,7 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
       container.needslines = true)
 
 proc peek(container: Container) {.jsfunc.} =
-  container.alert($container.source.location)
+  container.alert($container.location)
 
 proc clearHover*(container: Container) =
   container.lastpeek = low(HoverType)
