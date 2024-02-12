@@ -112,9 +112,27 @@ C-b = 'n => pager.pageUp(n)'
 '>' = 'n => pager.pageRight(n)'
 C-e = 'n => pager.scrollDown(n)'
 C-y = 'n => pager.scrollUp(n)'
-m = 'async () => pager.setMark(await pager.askChar("m"))'
-'`' = 'async () => pager.gotoMark(await pager.askChar("`"))'
-"'" = "async () => pager.gotoMarkY(await pager.askChar(\"'\"))"
+m = '''
+async () => {
+	const c = await pager.askChar("m");
+	if (c.charCodeAt() != 3) /* ctrl-c */
+		pager.setMark(c);
+}
+'''
+'`' = '''
+async () => {
+	const c = await pager.askChar('`');
+	if (c.charCodeAt() != 3) /* C-c */
+		pager.gotoMark(c);
+}
+'''
+"'" = '''
+async () => {
+	const c = await pager.askChar('`');
+	if (c.charCodeAt() != 3) /* C-c */
+		pager.gotoMarkY(c);
+}
+'''
 'zh'= 'n => pager.scrollLeft(n)'
 'zl' = 'n => pager.scrollRight(n)'
 J = 'n => pager.scrollDown(n)'
