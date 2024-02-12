@@ -1334,35 +1334,34 @@ proc onload*(container: Container, res: LoadResult) =
     # HTML.
     container.iface.cancel().then(proc(lines: int) =
       container.setNumLines(lines)
-      container.needslines = true)
+      container.needslines = true
+    )
   else:
     if res.bytes == -1 or res.atend:
       container.setLoadInfo("")
     elif not res.atend:
       container.setLoadInfo(convertSize(res.bytes) & " loaded")
-    if res.lines > container.numLines:
-      container.setNumLines(res.lines)
+    if res.lines > container.numLines or res.atend:
+      container.setNumLines(res.lines, res.atend)
       container.triggerEvent(STATUS)
       container.needslines = true
     if not res.atend:
       discard container.iface.load().then(proc(res: LoadResult) =
-        container.onload(res))
+        container.onload(res)
+      )
     else:
-      container.iface.getTitle().then(proc(title: string): auto =
+      container.triggerEvent(LOADED)
+      container.iface.getTitle().then(proc(title: string) =
         if title != "":
           container.title = title
           container.triggerEvent(TITLE)
-        return container.iface.render()
-      ).then(proc(lines: int): auto =
-        container.setNumLines(lines, true)
-        container.needslines = true
-        container.triggerEvent(LOADED)
-        if not container.hasstart and container.location.anchor != "":
-          return container.iface.gotoAnchor()
-      ).then(proc(res: Opt[tuple[x, y: int]]) =
-        if res.isSome:
-          let res = res.get
-          container.setCursorXYCenter(res.x, res.y))
+      )
+      if not container.hasstart and container.location.anchor != "":
+        container.iface.gotoAnchor().then(proc(res: Opt[tuple[x, y: int]]) =
+          if res.isSome:
+            let res = res.get
+            container.setCursorXYCenter(res.x, res.y)
+        )
 
 proc load(container: Container) =
   container.setLoadInfo("Connecting to " & container.location.host & "...")
@@ -1455,10 +1454,11 @@ proc readSuccess*(container: Container, s: string) =
     if res.open.isSome:
       container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get)))
 
-proc reshape(container: Container): EmptyPromise {.discardable, jsfunc.} =
+proc reshape(container: Container): EmptyPromise {.jsfunc.} =
   return container.iface.render().then(proc(lines: int): auto =
     container.setNumLines(lines)
-    return container.requestLines())
+    return container.requestLines()
+  )
 
 proc onclick(container: Container, res: ClickResult)
 
