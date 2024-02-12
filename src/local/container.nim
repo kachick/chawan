@@ -457,7 +457,6 @@ proc setNumLines(container: Container, lines: int, finish = false) =
       container.pos = container.startpos.get
       container.startpos = none(CursorPosition)
     container.updateCursor()
-    container.triggerEvent(STATUS)
 
 proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
     {.discardable.} =
@@ -474,9 +473,11 @@ proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
     container.updateCursor()
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
+      container.triggerEvent(STATUS)
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
-      container.triggerEvent(UPDATE))
+      container.triggerEvent(UPDATE)
+  )
 
 proc redraw(container: Container) {.jsfunc.} =
   container.triggerEvent(ContainerEvent(t: UPDATE, force: true))
@@ -491,7 +492,8 @@ proc sendCursorPosition*(container: Container) =
     if res.link.isSome or res.title.isSome:
       container.triggerEvent(STATUS)
     if res.repaint:
-      container.needslines = true)
+      container.needslines = true
+  )
 
 proc setFromY(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
@@ -1333,7 +1335,9 @@ proc onload*(container: Container, res: LoadResult) =
     #TODO we wouldn't need the then part if we had incremental rendering of
     # HTML.
     container.iface.cancel().then(proc(lines: int) =
-      container.setNumLines(lines)
+      if lines != container.numLines:
+        container.setNumLines(lines)
+        container.triggerEvent(STATUS)
       container.needslines = true
     )
   else:
@@ -1341,9 +1345,10 @@ proc onload*(container: Container, res: LoadResult) =
       container.setLoadInfo("")
     elif not res.atend:
       container.setLoadInfo(convertSize(res.bytes) & " loaded")
-    if res.lines > container.numLines or res.atend:
+    if res.lines != container.numLines or res.atend:
       container.setNumLines(res.lines, res.atend)
-      container.triggerEvent(STATUS)
+      if res.atend:
+        container.triggerEvent(STATUS)
       container.needslines = true
     if not res.atend:
       discard container.iface.load().then(proc(res: LoadResult) =
@@ -1457,6 +1462,7 @@ proc readSuccess*(container: Container, s: string) =
 proc reshape(container: Container): EmptyPromise {.jsfunc.} =
   return container.iface.render().then(proc(lines: int): auto =
     container.setNumLines(lines)
+    container.triggerEvent(STATUS)
     return container.requestLines()
   )
 

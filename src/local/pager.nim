@@ -318,8 +318,9 @@ proc refreshStatusMsg*(pager: Pager) =
   elif pager.inputBuffer != "":
     pager.writeStatusMessage(pager.inputBuffer)
   elif container.loadinfo != "":
-    pager.alerton = false
+    pager.alerton = true
     pager.writeStatusMessage(container.loadinfo)
+    container.loadinfo = ""
   elif pager.alerts.len > 0:
     pager.alerton = true
     pager.writeStatusMessage(pager.alerts[0])
@@ -1261,7 +1262,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
   of INVALID_COMMAND: discard
   of STATUS:
     if pager.container == container:
-      pager.showAlerts()
+      pager.refreshStatusMsg()
   of TITLE:
     if pager.container == container:
       pager.showAlerts()
