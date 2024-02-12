@@ -20,9 +20,11 @@ type StreamRenderer* = object
   newline: bool
   w: int
   j: int # byte in line
+  rewindImpl: proc()
 
-proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset]):
-    StreamRenderer =
+#TODO pass bool for whether we can rewind
+proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset],
+    rewindImpl: proc()): StreamRenderer =
   var charsets = newSeq[Charset](charsets0.len)
   for i in 0 ..< charsets.len:
     charsets[i] = charsets0[charsets.high - i]
@@ -44,11 +46,12 @@ proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset]):
     charsets: charsets,
     ansiparser: AnsiCodeParser(
       state: PARSE_DONE
-    )
+    ),
+    rewindImpl: rewindImpl
   )
 
 proc rewind(renderer: var StreamRenderer) =
-  renderer.stream.setPosition(0)
+  renderer.rewindImpl()
   let cs = renderer.charsets.pop()
   let em = if renderer.charsets.len > 0:
     DECODER_ERROR_MODE_FATAL

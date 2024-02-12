@@ -29,13 +29,11 @@ import io/promise
 import io/serialize
 import io/serversocket
 import io/socketstream
-import io/teestream
 import js/fromjs
 import js/javascript
 import js/regex
 import js/timeout
 import js/tojs
-import loader/connecterror
 import loader/headers
 import loader/loader
 import render/renderdocument
@@ -63,8 +61,8 @@ type
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
-    FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_SOURCE, GET_LINES, UPDATE_HOVER,
-    CONNECT, CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
+    FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_LINES, UPDATE_HOVER, CONNECT,
+    CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
     READ_FROM_FD, SET_CONTENT_TYPE, CLONE, FIND_PREV_PARAGRAPH,
     FIND_NEXT_PARAGRAPH
 
@@ -98,8 +96,8 @@ type
     document: Document
     prevstyled: StyledNode
     selector: Selector[int]
-    istream: Stream
-    sstream: Stream
+    istream: SocketStream
+    sstream: StringStream
     available: int
     pstream: SocketStream # pipe stream
     srenderer: StreamRenderer
@@ -711,8 +709,25 @@ type ConnectResult* = object
   referrerpolicy*: Option[ReferrerPolicy]
   charset*: Charset
 
+proc rewind(buffer: Buffer): bool =
+  if buffer.loader.rewind(buffer.fd):
+    return true
+  let request = newRequest(buffer.url, fromcache = true)
+  let response = buffer.loader.doRequest(request, canredir = false)
+  if response.body != nil:
+    buffer.selector.unregister(buffer.fd)
+    buffer.loader.unregistered.add(buffer.fd)
+    buffer.istream.close()
+    buffer.istream = response.body
+    buffer.fd = response.body.fd
+    buffer.selector.registerHandle(buffer.fd, {Read}, 0)
+    return true
+  return false
+
 proc setHTML(buffer: Buffer, ishtml: bool) =
   buffer.ishtml = ishtml
+  let rewindImpl = proc() =
+    doAssert buffer.rewind()
   if ishtml:
     let factory = newCAtomFactory()
     buffer.factory = factory
@@ -741,6 +756,7 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
       buffer.window,
       buffer.url,
       buffer.factory,
+      rewindImpl = rewindImpl,
       buffer.charsets,
       seekable = true
     )
@@ -749,6 +765,9 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
     buffer.uastyle = css.parseStylesheet(factory)
     buffer.quirkstyle = quirk.parseStylesheet(factory)
     buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
+  else:
+    buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets,
+      rewindImpl)
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   if buffer.connected:
@@ -761,45 +780,31 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   var redirect: Request
   var cookies: seq[Cookie]
   var referrerpolicy: Option[ReferrerPolicy]
-  case source.t
-  of CLONE:
-    #TODO there is only one function for CLONE left: to get the source for
-    # the "view buffer" operation.
-    # This does not belong in buffers at all, and should be requested from
-    # the networking module instead.
-    let s = connectSocketStream(source.clonepid, blocking = false)
-    buffer.istream = s
-    buffer.fd = int(s.source.getFd())
-    if buffer.istream == nil:
-      return ConnectResult(code: ERROR_SOURCE_NOT_FOUND)
-    if buffer.source.contentType.isNone:
-      buffer.source.contentType = some("text/plain")
-  of LOAD_REQUEST:
-    let request = source.request
-    let response = buffer.loader.doRequest(request, blocking = true, canredir = true)
-    if response.body == nil:
-      return ConnectResult(
-        code: response.res,
-        errorMessage: response.internalMessage
-      )
-    if response.charset != CHARSET_UNKNOWN:
-      charset = charset
-    if buffer.source.contentType.isNone:
-      buffer.source.contentType = some(response.contentType)
-    buffer.istream = response.body
-    let fd = SocketStream(response.body).source.getFd()
-    buffer.fd = int(fd)
-    needsAuth = response.status == 401 # Unauthorized
-    redirect = response.redirect
-    if "Set-Cookie" in response.headers.table:
-      for s in response.headers.table["Set-Cookie"]:
-        let cookie = newCookie(s, response.url)
-        if cookie.isOk:
-          cookies.add(cookie.get)
-    if "Referrer-Policy" in response.headers:
-      referrerpolicy = getReferrerPolicy(response.headers["Referrer-Policy"])
-      if referrerpolicy.isSome:
-        buffer.loader.setReferrerPolicy(referrerpolicy.get)
+  let request = source.request
+  let response = buffer.loader.doRequest(request, canredir = true)
+  if response.body == nil:
+    return ConnectResult(
+      code: response.res,
+      errorMessage: response.internalMessage
+    )
+  if response.charset != CHARSET_UNKNOWN:
+    charset = charset
+  if buffer.source.contentType.isNone:
+    buffer.source.contentType = some(response.contentType)
+  buffer.istream = response.body
+  let fd = response.body.source.getFd()
+  buffer.fd = int(fd)
+  needsAuth = response.status == 401 # Unauthorized
+  redirect = response.redirect
+  if "Set-Cookie" in response.headers.table:
+    for s in response.headers.table["Set-Cookie"]:
+      let cookie = newCookie(s, response.url)
+      if cookie.isOk:
+        cookies.add(cookie.get)
+  if "Referrer-Policy" in response.headers:
+    referrerpolicy = getReferrerPolicy(response.headers["Referrer-Policy"])
+    if referrerpolicy.isSome:
+      buffer.loader.setReferrerPolicy(referrerpolicy.get)
   buffer.connected = true
   let contentType = buffer.source.contentType.get("")
   buffer.setHTML(contentType == "text/html")
@@ -815,31 +820,28 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
 # * connect2, telling loader to load at last (we block loader until then)
 # * redirectToFd, telling loader to load into the passed fd
 proc connect2*(buffer: Buffer) {.proxy.} =
-  if buffer.source.t == LOAD_REQUEST and buffer.istream of SocketStream:
+  if not buffer.source.request.fromcache:
     # Notify loader that we can proceed with loading the input stream.
-    let ss = SocketStream(buffer.istream)
-    ss.swrite(false)
-    ss.setBlocking(false)
+    buffer.istream.swrite(false)
+    buffer.istream.swrite(true)
+    buffer.istream.setBlocking(false)
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
-proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait: bool) {.proxy.} =
-  case buffer.source.t
-  of LOAD_REQUEST:
-    let ss = SocketStream(buffer.istream)
-    ss.swrite(true)
-    ss.sendFileHandle(fd)
-    if wait:
-      #TODO this is kind of dumb
-      # Basically, after redirect the network process keeps the socket open,
-      # and writes a boolean after transfer has been finished. This way,
-      # we can block this promise so it only returns after e.g. the whole
-      # file has been saved.
-      var dummy: bool
-      ss.sread(dummy)
-    discard close(fd)
-    ss.close()
-  of CLONE:
-    discard
+proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait, cache: bool)
+    {.proxy.} =
+  buffer.istream.swrite(true)
+  buffer.istream.swrite(cache)
+  buffer.istream.sendFileHandle(fd)
+  if wait:
+    #TODO this is kind of dumb
+    # Basically, after redirect the network process keeps the socket open,
+    # and writes a boolean after transfer has been finished. This way,
+    # we can block this promise so it only returns after e.g. the whole
+    # file has been saved.
+    var dummy: bool
+    buffer.istream.sread(dummy)
+  discard close(fd)
+  buffer.istream.close()
 
 proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
   let contentType = if ishtml:
@@ -848,17 +850,15 @@ proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
     "text/plain"
   let request = newRequest(url)
   buffer.source = BufferSource(
-    t: LOAD_REQUEST,
     request: request,
     location: buffer.source.location,
     contentType: some(contentType),
     charset: buffer.source.charset
   )
   buffer.setHTML(ishtml)
-  let response = buffer.loader.doRequest(request, blocking = true,
-    canredir = false)
+  let response = buffer.loader.doRequest(request, canredir = false)
   buffer.istream = response.body
-  buffer.fd = int(SocketStream(response.body).source.getFd())
+  buffer.fd = int(response.body.source.getFd())
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
@@ -878,24 +878,10 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
   if pipe(pipefd) == -1:
     buffer.estream.write("Failed to open pipe.\n")
     return -1
-  # Naturally, we have to solve the problem of splitting up input streams here.
-  # The "cleanest" way is to get the source to duplicate the stream, and
-  # also send the new buffer the data over a separate stream. We do this
-  # for resources we retrieve with fetch().
-  # This is unfortunately not possible for the main source input stream,
-  # because it may come from a pipe that we receive from the client.
-  # So for istream, we just use a TeeStream from the original buffer and
-  # pray that no interruptions happen along the way.
-  # TODO: this is fundamentally broken and should be changed once the istream
-  # mess is untangled. A good first step would be to remove sstream from
-  # buffer.
+  # We have to solve the problem of splitting up open input streams here.
+  # To "split up" all open streams, we request a new handle to all open streams
+  # (possibly including buffer.istream) from the FileLoader process.
   let needsPipe = not buffer.istream.atEnd
-  var pipefd_write: array[2, cint]
-  if needsPipe:
-    assert buffer.fd != -1
-    if pipe(pipefd_write) == -1:
-      buffer.estream.write("Failed to open pipe.\n")
-      return -1
   var fds: seq[int]
   for fd in buffer.loader.connecting.keys:
     fds.add(fd)
@@ -903,8 +889,9 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     fds.add(fd)
   #TODO maybe we still have some data in sockets... we should probably split
   # this up to be executed after the main loop is finished...
-  let parentPid = getpid()
-  buffer.loader.suspend(parentPid, fds)
+  buffer.loader.suspend(fds)
+  if needsPipe:
+    buffer.loader.suspend(@[buffer.fd])
   buffer.loader.addref()
   let pid = fork()
   if pid == -1:
@@ -919,12 +906,15 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     when not bsdPlatform:
       buffer.selector.close()
     buffer.selector = newSelector[int]()
+    let parentPid = buffer.loader.clientPid
+    # We have a new process ID.
+    buffer.loader.clientPid = getCurrentProcessId()
     #TODO set buffer.window.timeouts.selector
     var cfds: seq[int]
     for fd in buffer.loader.connecting.keys:
       cfds.add(fd)
     for fd in cfds:
-      let stream = SocketStream(buffer.loader.tee(parentPid, fd))
+      let stream = buffer.loader.tee((parentPid, fd))
       var success: bool
       stream.sread(success)
       let sfd = int(stream.source.getFd())
@@ -942,7 +932,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     for fd in buffer.loader.ongoing.keys:
       ofds.add(fd)
     for fd in ofds:
-      let stream = SocketStream(buffer.loader.tee(parentPid, fd))
+      let stream = buffer.loader.tee((parentPid, fd))
       var success: bool
       stream.sread(success)
       let sfd = int(stream.source.getFd())
@@ -954,10 +944,10 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
         #TODO what to do?
         discard
     if needsPipe:
-      discard close(pipefd_write[1]) # close write
-      buffer.fd = pipefd_write[0]
+      let ofd = int(buffer.istream.fd)
+      buffer.istream = buffer.loader.tee((parentPid, ofd))
+      buffer.fd = buffer.istream.fd
       buffer.selector.registerHandle(buffer.fd, {Read}, 0)
-      buffer.istream = newPosixStream(pipefd_write[0])
     buffer.pstream.close()
     let ssock = initServerSocket(buffered = false)
     buffer.ssock = ssock
@@ -972,17 +962,12 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     return 0
   else: # parent
     discard close(pipefd[1]) # close write
-    if needsPipe:
-      discard close(pipefd_write[0]) # close read
     # We must wait for child to tee its ongoing streams.
     let ps = newPosixStream(pipefd[0])
     let c = ps.readChar()
     assert c == char(0)
     ps.close()
-    if needsPipe:
-      let istrmp = newPosixStream(pipefd_write[1])
-      buffer.istream = newTeeStream(buffer.istream, istrmp)
-    buffer.loader.resume(parentPid, fds)
+    buffer.loader.resume(fds)
     return pid
 
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
@@ -1113,18 +1098,20 @@ proc onload(buffer: Buffer) =
   of LOADING_PAGE:
     discard
   while true:
-    let op = buffer.sstream.getPosition()
-    var s {.noinit.}: array[BufferSize, uint8]
+    buffer.sstream.setPosition(0)
+    buffer.sstream.data.setLen(BufferSize)
     try:
-      let n = buffer.istream.readData(addr s[0], s.len)
+      buffer.sstream.data.prepareMutation()
+      let n = buffer.istream.readData(addr buffer.sstream.data[0], BufferSize)
+      if n != buffer.sstream.data.len:
+        buffer.sstream.data.setLen(n)
       if n != 0:
-        buffer.sstream.writeData(addr s[0], n)
-        buffer.sstream.setPosition(op)
         buffer.available += n
         buffer.processData()
         res.bytes = buffer.available
       res.lines = buffer.lines.len
       if buffer.istream.atEnd():
+        buffer.sstream = nil
         # EOF
         res.atend = true
         buffer.finishLoad().then(proc() =
@@ -1619,17 +1606,6 @@ proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
     result.lines.add(line)
   result.numLines = buffer.lines.len
 
-#TODO this is mostly broken
-proc getSource*(buffer: Buffer) {.proxy.} =
-  let ssock = initServerSocket()
-  let stream = ssock.acceptSocketStream()
-  let op = buffer.sstream.getPosition()
-  buffer.sstream.setPosition(0)
-  stream.write(buffer.sstream.readAll())
-  buffer.sstream.setPosition(op)
-  stream.close()
-  ssock.close()
-
 macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
     cmd: BufferCommand, packetid: int) =
   let switch = newNimNode(nnkCaseStmt)
@@ -1781,7 +1757,6 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
   onSignal SIGTERM:
     discard sig
     gbuffer.cleanup()
-  buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
   loader.registerFun = proc(fd: int) =
     buffer.selector.registerHandle(fd, {Read}, 0)
   loader.unregisterFun = proc(fd: int) =

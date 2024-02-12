@@ -1,11 +1,13 @@
 import std/deques
 import std/net
 import std/streams
+import std/tables
 
 import io/posixstream
 import io/serialize
 import io/socketstream
 import loader/headers
+import loader/streamid
 
 when defined(debug):
   import types/url
@@ -27,8 +29,7 @@ type
     ostream*: PosixStream
     istreamAtEnd*: bool
     sostream*: PosixStream # saved ostream when redirected
-    clientFd*: int
-    clientPid*: int
+    clientId*: StreamId
     registered*: bool
 
   LoaderHandle* = ref object
@@ -39,6 +40,8 @@ type
     # conditions that would be difficult to untangle.
     canredir: bool
     outputs*: seq[OutputHandle]
+    cached*: bool
+    cachepath*: string
     when defined(debug):
       url*: URL
 
@@ -49,16 +52,15 @@ type
       buffer.page = nil
 
 # Create a new loader handle, with the output stream ostream.
-proc newLoaderHandle*(ostream: PosixStream, canredir: bool,
-    clientPid, clientFd: int): LoaderHandle =
+proc newLoaderHandle*(ostream: PosixStream, canredir: bool, clientId: StreamId):
+    LoaderHandle =
   let handle = LoaderHandle(
     canredir: canredir
   )
   handle.outputs.add(OutputHandle(
     ostream: ostream,
     parent: handle,
-    clientPid: clientPid,
-    clientFd: clientFd
+    clientId: clientId
   ))
   return handle
 
@@ -100,8 +102,7 @@ proc bufferCleared*(output: OutputHandle) =
   else:
     output.currentBuffer = nil
 
-proc tee*(outputIn: OutputHandle, ostream: PosixStream,
-    clientFd, clientPid: int) =
+proc tee*(outputIn: OutputHandle, ostream: PosixStream, clientId: StreamId) =
   outputIn.parent.outputs.add(OutputHandle(
     parent: outputIn.parent,
     ostream: ostream,
@@ -109,8 +110,7 @@ proc tee*(outputIn: OutputHandle, ostream: PosixStream,
     currentBufferIdx: outputIn.currentBufferIdx,
     buffers: outputIn.buffers,
     istreamAtEnd: outputIn.istreamAtEnd,
-    clientFd: clientFd,
-    clientPid: clientPid
+    clientId: clientId
   ))
 
 template output*(handle: LoaderHandle): OutputHandle =
@@ -132,6 +132,7 @@ proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
   if handle.canredir:
     var redir: bool
     output.ostream.sread(redir)
+    output.ostream.sread(handle.cached)
     if redir:
       let fd = SocketStream(output.ostream).recvFileHandle()
       output.sostream = output.ostream

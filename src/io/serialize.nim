@@ -5,9 +5,7 @@ import std/sets
 import std/streams
 import std/tables
 
-import loader/request
 import types/blob
-import types/buffersource
 import types/formdata
 import types/url
 import types/opt
@@ -71,10 +69,6 @@ func slen*[T](o: Option[T]): int
 proc swrite*[T, E](stream: Stream, o: Result[T, E])
 proc sread*[T, E](stream: Stream, o: var Result[T, E])
 func slen*[T, E](o: Result[T, E]): int
-
-proc swrite*(stream: Stream, source: BufferSource)
-proc sread*(stream: Stream, source: var BufferSource)
-func slen*(source: BufferSource): int
 
 proc swrite*(stream: Stream, n: SomeNumber) =
   stream.write(n)
@@ -383,34 +377,3 @@ func slen*[T, E](o: Result[T, E]): int =
   else:
     when not (E is void):
       result += slen(o.error)
-
-proc swrite*(stream: Stream, source: BufferSource) =
-  stream.swrite(source.t)
-  case source.t
-  of CLONE: stream.swrite(source.clonepid)
-  of LOAD_REQUEST: stream.swrite(source.request)
-  stream.swrite(source.location)
-  stream.swrite(source.contentType)
-  stream.swrite(source.charset)
-
-proc sread*(stream: Stream, source: var BufferSource) =
-  var t: BufferSourceType
-  stream.sread(t)
-  case t
-  of CLONE:
-    source = BufferSource(t: CLONE)
-    stream.sread(source.clonepid)
-  of LOAD_REQUEST:
-    source = BufferSource(t: LOAD_REQUEST)
-    stream.sread(source.request)
-  stream.sread(source.location)
-  stream.sread(source.contentType)
-  stream.sread(source.charset)
-
-func slen*(source: BufferSource): int =
-  result += slen(source.t)
-  case source.t
-  of CLONE: result += slen(source.clonepid)
-  of LOAD_REQUEST: result += slen(source.request)
-  result += slen(source.location)
-  result += slen(source.contentType)

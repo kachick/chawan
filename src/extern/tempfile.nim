@@ -4,7 +4,7 @@ var tmpf_seq: int
 proc getTempFile*(tmpdir: string, ext = ""): string =
   if not dirExists(tmpdir):
     createDir(tmpdir)
-  var tmpf = tmpdir / "chatmp" & $tmpf_seq
+  var tmpf = tmpdir / "chatmp" & $getCurrentProcessId() & "-" & $tmpf_seq
   if ext != "":
     tmpf &= "."
     tmpf &= ext

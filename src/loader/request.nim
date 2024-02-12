@@ -9,6 +9,7 @@ import js/fromjs
 import js/javascript
 import js/jstypes
 import loader/headers
+import loader/streamid
 import types/blob
 import types/formdata
 import types/referer
@@ -80,8 +81,8 @@ type
     credentialsMode* {.jsget.}: CredentialsMode
     proxy*: URL #TODO do something with this
     canredir*: bool
-    clientFd*: int
-    clientPid*: int
+    fromcache*: bool
+    clientId*: StreamId
 
   ReadableStream* = ref object of Stream
     isource*: Stream
@@ -164,7 +165,7 @@ func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
     body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,
     credentialsMode = CredentialsMode.SAME_ORIGIN,
     destination = RequestDestination.NO_DESTINATION, proxy: URL = nil,
-    referrer: URL = nil, canredir = false): Request =
+    referrer: URL = nil, canredir = false, fromcache = false): Request =
   return Request(
     url: url,
     httpMethod: httpMethod,
@@ -175,7 +176,9 @@ func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
     credentialsMode: credentialsMode,
     destination: destination,
     referer: referrer,
-    proxy: proxy
+    proxy: proxy,
+    canredir: canredir,
+    fromcache: fromcache
   )
 
 func newRequest*(url: URL, httpMethod = HTTP_GET,

@@ -3,6 +3,7 @@ import std/unicode
 
 import bindings/quickjs
 import io/promise
+import io/socketstream
 import js/error
 import js/javascript
 import loader/headers
@@ -35,7 +36,7 @@ type
     responseType* {.jsget: "type".}: ResponseType
     res*: int
     fd*: int
-    body*: Stream
+    body*: SocketStream
     bodyUsed* {.jsget.}: bool
     contentType*: string
     status* {.jsget.}: uint16
@@ -50,8 +51,8 @@ type
 
 jsDestructor(Response)
 
-proc newResponse*(res: int, request: Request, fd = -1, stream: Stream = nil):
-    Response =
+proc newResponse*(res: int, request: Request, fd = -1,
+    stream: SocketStream = nil): Response =
   return Response(
     res: res,
     url: request.url,

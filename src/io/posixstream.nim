@@ -104,3 +104,9 @@ proc newPosixStream*(fd: FileHandle): PosixStream =
     writeDataImpl: psWriteData,
     atEndImpl: psAtEnd
   )
+
+proc newPosixStream*(path: string, flags, mode: cint): PosixStream =
+  let fd = open(cstring(path), flags, mode)
+  if fd == -1:
+    return nil
+  return newPosixStream(fd)

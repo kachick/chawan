@@ -458,26 +458,6 @@ proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
     fd
   )
 
-proc dupeBuffer2(pager: Pager, container: Container, location: URL,
-    contentType = ""): Container =
-  let contentType = if contentType != "":
-    some(contentType)
-  else:
-    container.contentType
-  let location = if location != nil:
-    location
-  else:
-    container.source.location
-  let source = BufferSource(
-    t: CLONE,
-    location: location,
-    contentType: contentType,
-    clonepid: container.process,
-  )
-  let pipeTo = pager.newBuffer(container.config, source, container.title)
-  container.pipeBuffer(pipeTo)
-  return pipeTo
-
 proc dupeBuffer(pager: Pager, container: Container, location: URL) =
   container.clone(location).then(proc(container: Container) =
     if container == nil:
@@ -620,7 +600,12 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       "text/plain"
     else:
       "text/html"
-    let container = pager.dupeBuffer2(pager.container, nil, contentType)
+    let container = newBufferFrom(
+      pager.forkserver,
+      pager.attrs,
+      pager.container,
+      contentType
+    )
     container.sourcepair = pager.container
     pager.container.sourcepair = container
     pager.addContainer(container)
@@ -687,7 +672,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
       proxy = sc.proxy.get
   return pager.config.getBufferConfig(url, cookiejar, headers, referer_from,
     scripting, charsets, images, userstyle, proxy, mimeTypes, urimethodmap,
-    pager.cgiDir)
+    pager.cgiDir, pager.tmpdir)
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
@@ -705,7 +690,6 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     # what other browsers do. Still, it would be nice if we got some visual
     # feedback on what is actually going to happen when typing a URL; TODO.
     let source = BufferSource(
-      t: LOAD_REQUEST,
       request: request,
       contentType: ctype,
       charset: cs,
@@ -779,7 +763,6 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
   var location = location.get(newURL("stream:-").get)
   let bufferconfig = pager.applySiteconf(location)
   let source = BufferSource(
-    t: LOAD_REQUEST,
     request: newRequest(location),
     contentType: some(ctype.get("text/plain")),
     charset: cs,
@@ -973,7 +956,7 @@ proc runMailcapReadPipe(pager: Pager, container: Container,
   discard close(pipefd_out[1])
   let fdin = pipefd_in[1]
   let fdout = pipefd_out[0]
-  let p = container.redirectToFd(fdin, wait = false)
+  let p = container.redirectToFd(fdin, wait = false, cache = true)
   let p2 = p.then(proc(): auto =
     discard close(fdin)
     let ishtml = HTMLOUTPUT in entry.flags
@@ -1013,7 +996,7 @@ proc runMailcapWritePipe(pager: Pager, container: Container,
     # parent
     discard close(pipefd[0])
     let fd = pipefd[1]
-    let p = container.redirectToFd(fd, wait = false)
+    let p = container.redirectToFd(fd, wait = false, cache = false)
     discard close(fd)
     if needsterminal:
       var x: cint
@@ -1026,10 +1009,11 @@ proc runMailcapWritePipe(pager: Pager, container: Container,
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager, container: Container,
     entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
-  let fd = open(outpath, O_WRONLY or O_CREAT, 0o644)
+  let fd = open(outpath, O_WRONLY or O_CREAT, 0o600)
   if fd == -1:
     return (nil, false)
-  let p = container.redirectToFd(fd, wait = true).then(proc(): auto =
+  let p = container.redirectToFd(fd, wait = true, cache = true).then(proc():
+      auto =
     var pipefd: array[2, cint] # redirect stdout here
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open pipe.")
@@ -1060,10 +1044,10 @@ proc runMailcapReadFile(pager: Pager, container: Container,
 proc runMailcapWriteFile(pager: Pager, container: Container,
     entry: MailcapEntry, cmd, outpath: string): (EmptyPromise, bool) =
   let needsterminal = NEEDSTERMINAL in entry.flags
-  let fd = open(outpath, O_WRONLY or O_CREAT, 0o644)
+  let fd = open(outpath, O_WRONLY or O_CREAT, 0o600)
   if fd == -1:
     return (nil, false)
-  let p = container.redirectToFd(fd, wait = true).then(proc() =
+  let p = container.redirectToFd(fd, wait = true, cache = false).then(proc() =
     if needsterminal:
       pager.term.quit()
       discard execCmd(cmd)
@@ -1099,8 +1083,6 @@ proc runMailcapWriteFile(pager: Pager, container: Container,
 proc checkMailcap(pager: Pager, container: Container): (EmptyPromise, bool) =
   if container.contentType.isNone:
     return (nil, true)
-  if container.source.t == CLONE:
-    return (nil, true) # clone cannot use mailcap
   let contentType = container.contentType.get
   if contentType == "text/html":
     # We support HTML natively, so it would make little sense to execute

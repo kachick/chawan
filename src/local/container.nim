@@ -156,6 +156,29 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     canreinterpret: canreinterpret
   )
 
+proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
+    container: Container, contentTypeOverride: string): Container =
+  var source = container.source
+  source.contentType = some(contentTypeOverride)
+  source.request = newRequest(source.request.url, fromcache = true)
+  let config = container.config
+  let loaderPid = container.loaderPid
+  let bufferPid = forkserver.forkBufferWithLoader(source, config, attrs,
+    loaderPid)
+  return Container(
+    source: source,
+    width: container.width,
+    height: container.height,
+    title: container.title,
+    config: config,
+    process: bufferPid,
+    loaderPid: loaderPid,
+    pos: CursorPosition(
+      setx: -1
+    ),
+    canreinterpret: true
+  )
+
 func location*(container: Container): URL {.jsfget.} =
   return container.source.location
 
@@ -1385,9 +1408,9 @@ proc startload*(container: Container) =
 proc connect2*(container: Container): EmptyPromise =
   return container.iface.connect2()
 
-proc redirectToFd*(container: Container, fdin: FileHandle, wait: bool):
+proc redirectToFd*(container: Container, fdin: FileHandle, wait, cache: bool):
     EmptyPromise =
-  return container.iface.redirectToFd(fdin, wait)
+  return container.iface.redirectToFd(fdin, wait, cache)
 
 proc readFromFd*(container: Container, fdout: FileHandle, id: string,
     ishtml: bool): EmptyPromise =
@@ -1429,11 +1452,6 @@ proc reshape(container: Container): EmptyPromise {.discardable, jsfunc.} =
   return container.iface.render().then(proc(lines: int): auto =
     container.setNumLines(lines)
     return container.requestLines())
-
-proc pipeBuffer*(container, pipeTo: Container) =
-  container.iface.getSource().then(proc() =
-    pipeTo.load() #TODO do not load if pipeTo is killed first?
-  )
 
 proc onclick(container: Container, res: ClickResult)
 
@@ -1531,7 +1549,8 @@ proc setStream*(container: Container, stream: Stream) =
     discard container.iface.load().then(proc(res: LoadResult) =
       container.onload(res))
 
-proc onreadline(container: Container, w: Slice[int], handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =
+proc onreadline(container: Container, w: Slice[int],
+    handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =
   for line in res.lines:
     handle(line)
   if res.numLines > w.b + 1:
@@ -1544,7 +1563,7 @@ proc onreadline(container: Container, w: Slice[int], handle: (proc(line: SimpleF
     container.setNumLines(res.numLines, true)
 
 # Synchronously read all lines in the buffer.
-proc readLines*(container: Container, handle: (proc(line: SimpleFlexibleLine))) =
+proc readLines*(container: Container, handle: proc(line: SimpleFlexibleLine)) =
   if container.code == 0:
     # load succeded
     let w = 0 .. 23

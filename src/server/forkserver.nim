@@ -1,4 +1,5 @@
 import std/options
+import std/os
 import std/posix
 import std/streams
 import std/tables
@@ -20,10 +21,9 @@ import utils/strwidth
 
 type
   ForkCommand* = enum
-    FORK_BUFFER, FORK_LOADER, REMOVE_CHILD, LOAD_CONFIG
+    FORK_BUFFER, FORK_LOADER, REMOVE_CHILD, LOAD_CONFIG, FORK_BUFFER_WITH_LOADER
 
   ForkServer* = ref object
-    process*: Pid
     istream: Stream
     ostream: Stream
     estream*: PosixStream
@@ -50,7 +50,7 @@ proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers,
   forkserver.ostream.flush()
   var process: Pid
   forkserver.istream.sread(process)
-  return FileLoader(process: process)
+  return FileLoader(process: process, clientPid: getCurrentProcessId())
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
   forkserver.ostream.swrite(LOAD_CONFIG)
@@ -75,6 +75,18 @@ proc forkBuffer*(forkserver: ForkServer, source: BufferSource,
   forkserver.istream.sread(process)
   forkserver.istream.sread(loaderPid)
   return (process, loaderPid)
+
+proc forkBufferWithLoader*(forkserver: ForkServer, source: BufferSource,
+    config: BufferConfig, attrs: WindowAttributes, loaderPid: Pid): Pid =
+  forkserver.ostream.swrite(FORK_BUFFER_WITH_LOADER)
+  forkserver.ostream.swrite(source)
+  forkserver.ostream.swrite(config)
+  forkserver.ostream.swrite(attrs)
+  forkserver.ostream.swrite(loaderPid)
+  forkserver.ostream.flush()
+  var bufferPid: Pid
+  forkserver.istream.sread(bufferPid)
+  return bufferPid
 
 proc trapSIGINT() =
   # trap SIGINT, so e.g. an external editor receiving an interrupt in the
@@ -117,14 +129,8 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   return pid
 
 var gssock: ServerSocket
-proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
-  var source: BufferSource
-  var config: BufferConfig
-  var attrs: WindowAttributes
-  ctx.istream.sread(source)
-  ctx.istream.sread(config)
-  ctx.istream.sread(attrs)
-  let loaderPid = ctx.forkLoader(config.loaderConfig)
+proc forkBuffer0(ctx: var ForkServerContext, source: BufferSource,
+    config: BufferConfig, attrs: WindowAttributes, loaderPid: Pid): Pid =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -150,7 +156,10 @@ proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
     ps.close()
     discard close(stdin.getFileHandle())
     discard close(stdout.getFileHandle())
-    let loader = FileLoader(process: loaderPid)
+    let loader = FileLoader(
+      process: loaderPid,
+      clientPid: getCurrentProcessId()
+    )
     try:
       launchBuffer(config, source, attrs, loader, ssock)
     except CatchableError:
@@ -167,7 +176,30 @@ proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
   assert c == char(0)
   ps.close()
   ctx.children.add((pid, loaderPid))
-  return (pid, loaderPid)
+  return pid
+
+proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
+  var source: BufferSource
+  var config: BufferConfig
+  var attrs: WindowAttributes
+  ctx.istream.sread(source)
+  ctx.istream.sread(config)
+  ctx.istream.sread(attrs)
+  let loaderPid = ctx.forkLoader(config.loaderConfig)
+  let process = ctx.forkBuffer0(source, config, attrs, loaderPid)
+  return (process, loaderPid)
+
+proc forkBufferWithLoader(ctx: var ForkServerContext): Pid =
+  var source: BufferSource
+  var config: BufferConfig
+  var attrs: WindowAttributes
+  var loaderPid: Pid
+  ctx.istream.sread(source)
+  ctx.istream.sread(config)
+  ctx.istream.sread(attrs)
+  ctx.istream.sread(loaderPid)
+  FileLoader(process: loaderPid).addref()
+  return ctx.forkBuffer0(source, config, attrs, loaderPid)
 
 proc runForkServer() =
   var ctx = ForkServerContext(
@@ -188,6 +220,8 @@ proc runForkServer() =
             break
       of FORK_BUFFER:
         ctx.ostream.swrite(ctx.forkBuffer())
+      of FORK_BUFFER_WITH_LOADER:
+        ctx.ostream.swrite(ctx.forkBufferWithLoader())
       of FORK_LOADER:
         var config: LoaderConfig
         ctx.istream.sread(config)

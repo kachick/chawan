@@ -226,7 +226,8 @@ func getDefaultHeaders*(config: Config): Headers =
 proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
     images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes,
-    urimethodmap: URIMethodMap, cgiDir: seq[string]): BufferConfig =
+    urimethodmap: URIMethodMap, cgiDir: seq[string], tmpdir: string):
+    BufferConfig =
   let filter = newURLFilter(
     scheme = some(location.scheme),
     allowschemes = @["data", "stream"],
@@ -247,7 +248,8 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
       cgiDir: cgiDir,
       urimethodmap: urimethodmap,
       w3mCGICompat: config.external.w3m_cgi_compat,
-      libexecPath: ChaPath("${%CHA_LIBEXEC_DIR}").unquote().get
+      libexecPath: ChaPath("${%CHA_LIBEXEC_DIR}").unquote().get,
+      tmpdir: tmpdir
     )
   )
 

@@ -1,4 +1,6 @@
 type ConnectErrorCode* = enum
+  ERROR_URL_NOT_IN_CACHE = (-16, "URL was not found in the cache")
+  ERROR_FILE_NOT_IN_CACHE = (-15, "file was not found in the cache")
   ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT = (-14, "failed to execute CGI script")
   ERROR_CGI_NO_DATA = (-13, "CGI script returned no data")
   ERROR_CGI_MALFORMED_HEADER = (-12, "CGI script returned a malformed header")

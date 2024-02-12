@@ -95,9 +95,6 @@ proc finalize(client: Client) {.jsfin.} =
   if client.jsrt != nil:
     free(client.jsrt)
 
-proc doRequest(client: Client, req: Request): Response {.jsfunc.} =
-  return client.loader.doRequest(req)
-
 proc fetch[T: Request|string](client: Client, req: T,
     init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
   let req = ?newRequest(client.jsctx, req, init)
