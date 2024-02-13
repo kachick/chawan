@@ -207,7 +207,8 @@ M-y = '''
 		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
 }
 '''
-yc = '''
+yc = '() => pager.alert("Please use `yu` to copy URLs instead!");'
+yu = '''
 () => {
 	const link = pager.hoverLink
 	if (!link)
