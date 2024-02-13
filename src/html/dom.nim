@@ -286,7 +286,7 @@ type
     smethod*: string
     enctype*: string
     novalidate*: bool
-    constructingentrylist*: bool
+    constructingEntryList*: bool
     controls*: seq[FormAssociatedElement]
     relList {.jsget.}: DOMTokenList
 

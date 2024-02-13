@@ -1,3 +1,5 @@
+from std/strutils import split
+
 import std/macros
 import std/nativesockets
 import std/net
@@ -1176,11 +1178,29 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= value
     result &= "\r\n"
 
+func getOutputEncoding(charset: Charset): Charset =
+  if charset in {CHARSET_REPLACEMENT, CHARSET_UTF_16_BE, CHARSET_UTF_16_LE}:
+    return CHARSET_UTF_8
+  return charset
+
+func pickCharset(form: HTMLFormElement): Charset =
+  if form.attrb(atAcceptCharset):
+    let input = form.attr(atAcceptCharset)
+    for label in input.split(AsciiWhitespace):
+      let charset = label.getCharset()
+      if charset != CHARSET_UNKNOWN:
+        return charset.getOutputEncoding()
+    return CHARSET_UTF_8
+  return form.document.charset.getOutputEncoding()
+
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
-  if form.constructingentrylist:
-    return
-  let entrylist = form.constructEntryList(submitter).get(@[])
+  if form.constructingEntryList:
+    return none(Request)
+  #TODO submit()
+  let charset = form.pickCharset()
+  discard charset #TODO pass to constructEntryList
+  let entrylist = form.constructEntryList(submitter)
 
   let subAction = submitter.action()
   let action = if subAction != "":
@@ -1188,6 +1208,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   else:
     $form.document.url
 
+  #TODO encoding-parse
   let url = submitter.document.parseURL(action)
   if url.isNone:
     return none(Request)
@@ -1213,6 +1234,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
 
   template mutateActionUrl() =
     let kvlist = entrylist.toNameValuePairs()
+    #TODO with charset
     let query = serializeApplicationXWWWFormUrlEncoded(kvlist)
     parsedaction.query = some(query)
     return some(newRequest(parsedaction, httpmethod))
@@ -1223,13 +1245,16 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     var multipart: Opt[FormData]
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
+      #TODO with charset
       let kvlist = entrylist.toNameValuePairs()
       body.ok(serializeApplicationXWWWFormUrlEncoded(kvlist))
       mimeType = $enctype
     of FORM_ENCODING_TYPE_MULTIPART:
+      #TODO with charset
       multipart.ok(serializeMultipartFormData(entrylist))
       mimetype = $enctype
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
+      #TODO with charset
       let kvlist = entrylist.toNameValuePairs()
       body.ok(serializePlainTextFormData(kvlist))
       mimetype = $enctype
@@ -1242,6 +1267,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
 
   template mailWithHeaders() =
     let kvlist = entrylist.toNameValuePairs()
+    #TODO with charset
     let headers = serializeApplicationXWWWFormUrlEncoded(kvlist,
       spaceAsPlus = false)
     parsedaction.query = some(headers)
@@ -1253,6 +1279,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
       let text = serializePlainTextFormData(kvlist)
       percentEncode(text, PathPercentEncodeSet)
     else:
+      #TODO with charset
       serializeApplicationXWWWFormUrlEncoded(kvlist)
     if parsedaction.query.isNone:
       parsedaction.query = some("")
@@ -1262,14 +1289,6 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     return some(newRequest(parsedaction, httpmethod))
 
   case scheme
-  of "http", "https", "gopher", "gophers", "cgi-bin":
-    # Note: only http & https are defined by the standard.
-    # We implement gopher, gophers & cgi-bin as HTTP-like protocols.
-    if formmethod == FORM_METHOD_GET:
-      mutateActionUrl
-    else:
-      assert formmethod == FORM_METHOD_POST
-      submitAsEntityBody
   of "ftp", "javascript":
     getActionUrl
   of "data":
@@ -1285,6 +1304,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
       assert formmethod == FORM_METHOD_POST
       mailAsBody
   else:
+    # Note: only http & https are defined by the standard.
     # Assume an HTTP-like protocol.
     if formmethod == FORM_METHOD_GET:
       mutateActionUrl

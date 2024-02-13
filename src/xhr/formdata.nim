@@ -13,7 +13,7 @@ import utils/twtstr
 import chame/tags
 
 proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
-    encoding: string = ""): Option[seq[FormDataEntry]]
+    encoding = "UTF-8"): seq[FormDataEntry]
 
 
 proc generateBoundary(): string =
@@ -37,7 +37,8 @@ proc newFormData*(form: HTMLFormElement = nil,
       if FormAssociatedElement(submitter).form != form:
         return errDOMException("Submitter's form owner is not form",
           "InvalidStateError")
-    this.entries = constructEntryList(form, submitter).get(@[])
+    if not form.constructingEntryList:
+      this.entries = constructEntryList(form, submitter)
   return ok(this)
 
 #TODO filename should not be allowed for string entries
@@ -103,11 +104,12 @@ func toNameValuePairs*(list: seq[FormDataEntry]):
       result.add((entry.name, entry.name))
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
+# Warning: we skip the first "constructing entry list" check; the caller must
+# do it.
 proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
-    encoding: string = ""): Option[seq[FormDataEntry]] =
-  if form.constructingentrylist:
-    return
-  form.constructingentrylist = true
+    encoding = "UTF-8"): seq[FormDataEntry] =
+  assert not form.constructingEntryList
+  form.constructingEntryList = true
   var entrylist: seq[FormDataEntry] = @[]
   for field in form.controls:
     if field.findAncestor({TAG_DATALIST}) != nil or
@@ -132,7 +134,7 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     if field of HTMLSelectElement:
       let field = HTMLSelectElement(field)
       for option in field.options:
-        if option.selected or option.isDisabled:
+        if option.selected and not option.isDisabled:
           entrylist.add((name, option.value))
     elif field of HTMLInputElement:
       let field = HTMLInputElement(field)
@@ -149,11 +151,7 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
         discard
       of INPUT_HIDDEN:
         if name.equalsIgnoreCase("_charset_"):
-          let charset = if encoding != "":
-            encoding
-          else:
-            "UTF-8"
-          entrylist.add((name, charset))
+          entrylist.add((name, encoding))
         else:
           entrylist.add((name, field.value))
       else:
@@ -172,8 +170,8 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
       if dirname != "":
         let dir = "ltr" #TODO bidi
         entrylist.add((dirname, dir))
-  form.constructingentrylist = false
-  return some(entrylist)
+  form.constructingEntryList = false
+  return entrylist
 
 proc addFormDataModule*(ctx: JSContext) =
   ctx.registerType(FormData)

@@ -32,6 +32,7 @@ type
 
   AttrType* = enum
     atUnknown = ""
+    atAcceptCharset = "accept-charset"
     atAction = "action"
     atAlign = "align"
     atAlt = "alt"
