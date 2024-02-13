@@ -1545,13 +1545,13 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return
   var called = false
   var canceled = false
+  let clickable = buffer.getCursorClickable(cursorx, cursory)
   if buffer.config.scripting:
     let elem = buffer.getCursorElement(cursorx, cursory)
     (called, canceled) = buffer.dispatchEvent("click", elem)
     if called:
       buffer.do_reshape()
   if not canceled:
-    let clickable = buffer.getCursorClickable(cursorx, cursory)
     if clickable != nil:
       var res = buffer.click(clickable)
       res.repaint = called
