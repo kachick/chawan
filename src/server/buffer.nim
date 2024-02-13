@@ -119,6 +119,7 @@ type
     uastyle: CSSStylesheet
     quirkstyle: CSSStylesheet
     htmlParser: HTML5ParserWrapper
+    firstBufferRead: bool
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -815,7 +816,7 @@ proc connect2*(buffer: Buffer) {.proxy.} =
     # Notify loader that we can proceed with loading the input stream.
     buffer.istream.swrite(false)
     buffer.istream.swrite(true)
-    buffer.istream.setBlocking(false)
+  buffer.istream.setBlocking(false)
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait, cache: bool)
@@ -1088,19 +1089,28 @@ proc onload(buffer: Buffer) =
     return
   of LOADING_PAGE:
     discard
+  var reprocess = false
   while true:
     buffer.sstream.setPosition(0)
-    buffer.sstream.data.setLen(BufferSize)
+    if not reprocess:
+      buffer.sstream.data.setLen(BufferSize)
     try:
-      buffer.sstream.data.prepareMutation()
-      let n = buffer.istream.readData(addr buffer.sstream.data[0], BufferSize)
-      if n != buffer.sstream.data.len:
-        buffer.sstream.data.setLen(n)
-      if n != 0:
+      var n = 0
+      if not reprocess:
+        buffer.sstream.data.prepareMutation()
+        n = buffer.istream.readData(addr buffer.sstream.data[0], BufferSize)
+        if n != buffer.sstream.data.len:
+          buffer.sstream.data.setLen(n)
+      if n != 0 or reprocess:
         buffer.available += n
         if not buffer.processData():
+          if not buffer.firstBufferRead:
+            reprocess = true
+            continue
           if buffer.rewind():
             continue
+        buffer.firstBufferRead = true
+        reprocess = false
         res.bytes = buffer.available
       res.lines = buffer.lines.len
       if buffer.istream.atEnd():
