@@ -14827,8 +14827,6 @@ static JSValue js_build_arguments(JSContext *ctx, int argc, JSValueConst *argv)
     if (JS_IsException(val))
         return val;
     p = JS_VALUE_GET_OBJ(val);
-    p->u.array.u.values = NULL;
-    p->u.array.count = 0;
 
     /* add the length field (cannot fail) */
     pr = add_property(ctx, p, JS_ATOM_length,
