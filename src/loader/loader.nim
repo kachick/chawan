@@ -81,7 +81,6 @@ type
     TEE
     SUSPEND
     RESUME
-    REWIND
     ADDREF
     UNREF
     SET_REFERRER_POLICY
@@ -141,10 +140,10 @@ func findOutput(ctx: LoaderContext, id: StreamId): OutputHandle =
   return nil
 
 #TODO linear search over strings :(
-func findCachedHandle(ctx: LoaderContext, cachepath: string): LoaderHandle =
-  assert cachepath != ""
+func findCachedHandle(ctx: LoaderContext, cacheUrl: string): LoaderHandle =
+  assert cacheUrl != ""
   for it in ctx.handleMap.values:
-    if it.cached and it.cachepath == cachepath:
+    if it.cached and it.cacheUrl == cacheUrl:
       return it
   return nil
 
@@ -152,6 +151,30 @@ proc delOutput(ctx: LoaderContext, id: StreamId) =
   let output = ctx.findOutput(id)
   if output != nil:
     ctx.outputMap.del(output.ostream.fd)
+
+type PushBufferResult = enum
+  pbrDone, pbrUnregister
+
+# Either write data to the target output, or append it to the list of buffers to
+# write and register the output in our selector.
+proc pushBuffer(ctx: LoaderContext, output: OutputHandle, buffer: LoaderBuffer):
+    PushBufferResult =
+  if output.currentBuffer == nil:
+    var n = 0
+    try:
+      n = output.ostream.sendData(buffer)
+    except ErrorAgain, ErrorWouldBlock:
+      discard
+    except ErrorBrokenPipe:
+      return pbrUnregister
+    if n < buffer.len:
+      output.currentBuffer = buffer
+      output.currentBufferIdx = n
+      ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
+      output.registered = true
+  else:
+    output.addBuffer(buffer)
+  return pbrDone
 
 proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
   let output = handle.output
@@ -174,9 +197,9 @@ proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
     let ps = newPosixStream(tmpf, O_CREAT or O_WRONLY, 0o600)
     if ps != nil:
       output.tee(ps, NullStreamId)
-      let path = $originalUrl
-      ctx.cacheMap[path] = tmpf
-      handle.cachepath = path
+      let surl = $originalUrl
+      ctx.cacheMap[surl] = tmpf
+      handle.cacheUrl = surl
 
 proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request) =
   ctx.passedFdMap.withValue(request.url.host, fdp):
@@ -236,52 +259,47 @@ proc loadFromCache(ctx: LoaderContext, stream: SocketStream, request: Request) =
   let handle = newLoaderHandle(stream, request.canredir, request.clientId)
   let surl = $request.url
   let cachedHandle = ctx.findCachedHandle(surl)
+  let output = handle.output
   ctx.cacheMap.withValue(surl, p):
     let ps = newPosixStream(p[], O_RDONLY, 0)
     if ps == nil:
       handle.rejectHandle(ERROR_FILE_NOT_IN_CACHE)
       ctx.cacheMap.del(surl)
+      handle.close()
       return
     handle.sendResult(0)
     handle.sendStatus(200)
     handle.sendHeaders(newHeaders())
-    var buffer {.noinit.}: array[BufferSize, uint8]
-    try:
-      while true:
-        let n = ps.recvData(addr buffer[0], buffer.len)
-        if buffer.len == 0:
-          break
-        if handle.output.sendData(addr buffer[0], n) < n:
-          break
-        if n < buffer.len:
-          break
-    except ErrorBrokenPipe:
-      handle.close()
-      raise
+    if handle.cached:
+      handle.cacheUrl = surl
+    output.ostream.setBlocking(false)
+    while true:
+      let buffer = newLoaderBuffer()
+      let n = ps.recvData(buffer)
+      if n == 0:
+        break
+      if ctx.pushBuffer(output, buffer) == pbrUnregister:
+        if output.registered:
+          ctx.selector.unregister(output.ostream.fd)
+        ps.close()
+        return
+      if n < buffer.cap:
+        break
     ps.close()
   do:
     if cachedHandle == nil:
-      handle.sendResult(ERROR_URL_NOT_IN_CACHE)
+      handle.rejectHandle(ERROR_URL_NOT_IN_CACHE)
+      return
   if cachedHandle != nil:
     # download is still ongoing; move output to the original handle
-    let output = handle.output
-    output.ostream.setBlocking(false)
     handle.outputs.setLen(0)
     output.parent = cachedHandle
     cachedHandle.outputs.add(output)
+  elif output.registered:
+    output.istreamAtEnd = true
     ctx.outputMap[output.ostream.fd] = output
-  if handle.outputs.len > 0:
-    let output = handle.output
-    if output.sostream != nil:
-      try:
-        handle.output.sostream.swrite(true)
-      except IOError:
-        # ignore error, that just means the buffer has already closed the
-        # stream
-        discard
-      output.sostream.close()
-      output.sostream = nil
-  handle.close()
+  else:
+    output.ostream.close()
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
@@ -316,33 +334,6 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
     let fd = int(stream.source.getFd())
     ctx.outputMap[fd] = handle.output
     ctx.loadResource(request, handle)
-
-proc rewind(ctx: LoaderContext, stream: PosixStream, clientId: StreamId) =
-  let output = ctx.findOutput(clientId)
-  if output == nil or output.ostream == nil:
-    stream.swrite(false)
-    return
-  let handle = output.parent
-  if not handle.cached:
-    stream.swrite(false)
-    return
-  assert handle.cachepath != ""
-  let ps = newPosixStream(handle.cachepath, O_RDONLY, 0)
-  if ps == nil:
-    stream.swrite(false)
-    return
-  stream.swrite(true)
-  output.ostream.setBlocking(true) #TODO
-  var buffer {.noinit.}: array[BufferSize, uint8]
-  while true:
-    let n = ps.recvData(addr buffer[0], BufferSize)
-    if n == 0:
-      break
-    if output.sendData(addr buffer[0], n) < n:
-      break
-    if n < BufferSize:
-      break
-  ps.close()
 
 proc acceptConnection(ctx: LoaderContext) =
   let stream = ctx.ssock.acceptSocketStream()
@@ -384,10 +375,6 @@ proc acceptConnection(ctx: LoaderContext) =
           # place the stream back into the selector, so we can write to it
           # again
           ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
-    of REWIND:
-      var targetId: StreamId
-      stream.sread(targetId)
-      ctx.rewind(stream, targetId)
     of ADDREF:
       inc ctx.refcount
     of UNREF:
@@ -446,39 +433,19 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
       dir &= '/'
   return ctx
 
-# Either write data to the target output, or append it to the list of buffers to
-# write and register the output in our selector.
-proc pushBuffer(ctx: LoaderContext, handle: LoaderHandle,
-    buffer: LoaderBuffer, unregWrite: var seq[OutputHandle]) =
-  for output in handle.outputs:
-    if output.currentBuffer == nil:
-      var n = 0
-      try:
-        n = output.sendData(addr buffer[0], buffer.len)
-      except ErrorAgain, ErrorWouldBlock:
-        discard
-      except ErrorBrokenPipe:
-        unregWrite.add(output)
-        break
-      if n < buffer.len:
-        output.currentBuffer = buffer
-        output.currentBufferIdx = n
-        ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
-        output.registered = true
-    else:
-      output.addBuffer(buffer)
-
 # Called whenever there is more data available to read.
 proc handleRead(ctx: LoaderContext, handle: LoaderHandle,
     unregRead: var seq[LoaderHandle], unregWrite: var seq[OutputHandle]) =
   while true:
     let buffer = newLoaderBuffer()
     try:
-      buffer.len = handle.istream.recvData(addr buffer[0], buffer.cap)
-      if buffer.len == 0:
+      let n = handle.istream.recvData(buffer)
+      if n == 0:
         break
-      ctx.pushBuffer(handle, buffer, unregWrite)
-      if buffer.len < buffer.cap:
+      for output in handle.outputs:
+        if ctx.pushBuffer(output, buffer) == pbrUnregister:
+          unregWrite.add(output)
+      if n < buffer.cap:
         break
     except ErrorAgain, ErrorWouldBlock: # retry later
       break
@@ -493,9 +460,7 @@ proc handleWrite(ctx: LoaderContext, output: OutputHandle,
   while output.currentBuffer != nil:
     let buffer = output.currentBuffer
     try:
-      let i = output.currentBufferIdx
-      assert buffer.len - i > 0
-      let n = output.sendData(addr buffer[i], buffer.len - i)
+      let n = output.ostream.sendData(buffer, output.currentBufferIdx)
       output.currentBufferIdx += n
       if output.currentBufferIdx < buffer.len:
         break
@@ -714,15 +679,6 @@ proc tee*(loader: FileLoader, targetId: StreamId): SocketStream =
   stream.swrite(clientId)
   return stream
 
-proc rewind*(loader: FileLoader, fd: int): bool =
-  let stream = connectSocketStream(loader.process, false, blocking = true)
-  stream.swrite(REWIND)
-  let id: StreamId = (loader.clientPid, fd)
-  stream.swrite(id)
-  var res: bool
-  stream.sread(res)
-  return res
-
 const BufferSize = 4096
 
 proc handleHeaders(loader: FileLoader, request: Request, response: Response,
@@ -816,10 +772,7 @@ proc doRequest*(loader: FileLoader, request: Request): Response =
   if response.res == 0:
     loader.handleHeaders(request, response, stream)
   else:
-    var msg: string
-    stream.sread(msg)
-    if msg != "":
-      response.internalMessage = msg
+    stream.sread(response.internalMessage)
   return response
 
 proc addref*(loader: FileLoader) =

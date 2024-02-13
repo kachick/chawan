@@ -17,7 +17,7 @@ const LoaderBufferPageSize = 4064 # 4096 - 32
 type
   LoaderBufferObj = object
     page: ptr UncheckedArray[uint8]
-    len: int
+    len*: int
 
   LoaderBuffer* = ref LoaderBufferObj
 
@@ -41,7 +41,7 @@ type
     canredir: bool
     outputs*: seq[OutputHandle]
     cached*: bool
-    cachepath*: string
+    cacheUrl*: string
     when defined(debug):
       url*: URL
 
@@ -70,17 +70,8 @@ proc findOutputHandle*(handle: LoaderHandle, fd: int): OutputHandle =
       return output
   return nil
 
-func `[]`*(buffer: LoaderBuffer, i: int): var uint8 {.inline.} =
-  return buffer[].page[i]
-
 func cap*(buffer: LoaderBuffer): int {.inline.} =
   return LoaderBufferPageSize
-
-func len*(buffer: LoaderBuffer): var int {.inline.} =
-  return buffer[].len
-
-proc `len=`*(buffer: LoaderBuffer, i: int) {.inline.} =
-  buffer[].len = i
 
 proc newLoaderBuffer*(): LoaderBuffer =
   return LoaderBuffer(
@@ -101,6 +92,14 @@ proc bufferCleared*(output: OutputHandle) =
     output.currentBuffer = output.buffers.popFirst()
   else:
     output.currentBuffer = nil
+
+proc clearBuffers*(output: OutputHandle) =
+  if output.currentBuffer != nil:
+    output.currentBuffer = nil
+    output.currentBufferIdx = 0
+    output.buffers.clear()
+  else:
+    assert output.buffers.len == 0
 
 proc tee*(outputIn: OutputHandle, ostream: PosixStream, clientId: StreamId) =
   outputIn.parent.outputs.add(OutputHandle(
@@ -139,8 +138,14 @@ proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
       output.sostream = sostream
       output.ostream = newPosixStream(fd)
 
-proc sendData*(output: OutputHandle, p: pointer, nmemb: int): int =
-  return output.ostream.sendData(p, nmemb)
+proc recvData*(ps: PosixStream, buffer: LoaderBuffer): int {.inline.} =
+  let n = ps.recvData(addr buffer.page[0], buffer.cap)
+  buffer.len = n
+  return n
+
+proc sendData*(ps: PosixStream, buffer: LoaderBuffer, si = 0): int {.inline.} =
+  assert buffer.len - si > 0
+  return ps.sendData(addr buffer.page[si], buffer.len - si)
 
 proc close*(handle: LoaderHandle) =
   for output in handle.outputs:

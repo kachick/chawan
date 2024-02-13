@@ -20,11 +20,10 @@ type StreamRenderer* = object
   newline: bool
   w: int
   j: int # byte in line
-  rewindImpl: proc()
 
 #TODO pass bool for whether we can rewind
-proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset],
-    rewindImpl: proc()): StreamRenderer =
+proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset]):
+    StreamRenderer =
   var charsets = newSeq[Charset](charsets0.len)
   for i in 0 ..< charsets.len:
     charsets[i] = charsets0[charsets.high - i]
@@ -46,12 +45,10 @@ proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset],
     charsets: charsets,
     ansiparser: AnsiCodeParser(
       state: PARSE_DONE
-    ),
-    rewindImpl: rewindImpl
+    )
   )
 
 proc rewind(renderer: var StreamRenderer) =
-  renderer.rewindImpl()
   let cs = renderer.charsets.pop()
   let em = if renderer.charsets.len > 0:
     DECODER_ERROR_MODE_FATAL
@@ -162,12 +159,13 @@ proc renderChunk(grid: var FlexibleGrid, renderer: var StreamRenderer,
       renderer.w += r.twidth(renderer.w)
       renderer.j += i - pi
 
-proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer) =
-  var buf = renderer.encoder.readAll()
-  while renderer.decoder.failed:
+proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, debug = false): bool =
+  let buf = renderer.encoder.readAll()
+  if renderer.decoder.failed:
     renderer.rewind()
     grid.setLen(0)
-    buf = renderer.encoder.readAll()
+    return false
   if grid.len == 0:
     grid.addLine()
   grid.renderChunk(renderer, buf)
+  return true

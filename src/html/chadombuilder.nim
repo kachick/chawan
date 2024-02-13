@@ -32,7 +32,6 @@ type
     stream: StringStream
     encoder: EncoderStream
     decoder: DecoderStream
-    rewindImpl: proc()
     # hack so we don't have to worry about leaks or the GC deallocating parser
     refs: seq[Document]
     stoppedFromScript: bool
@@ -301,8 +300,8 @@ proc switchCharset(wrapper: HTML5ParserWrapper) =
     errormode = ENCODER_ERROR_MODE_FATAL)
 
 proc newHTML5ParserWrapper*(stream: StringStream, window: Window, url: URL,
-    factory: CAtomFactory, rewindImpl: proc(), charsets: seq[Charset],
-    seekable: bool): HTML5ParserWrapper =
+    factory: CAtomFactory, charsets: seq[Charset], seekable: bool):
+    HTML5ParserWrapper =
   let opts = HTML5ParserOpts[Node, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: window != nil and window.settings.scripting
@@ -313,7 +312,6 @@ proc newHTML5ParserWrapper*(stream: StringStream, window: Window, url: URL,
     builder: builder,
     opts: opts,
     stream: stream,
-    rewindImpl: rewindImpl,
     needsBOMSniff: seekable
   )
   builder.document.setActiveParser(wrapper)
@@ -390,11 +388,11 @@ proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.exportc.} =
   if res == PRES_STOP:
     wrapper.stoppedFromScript = true
 
-proc parseAll*(wrapper: HTML5ParserWrapper) =
+proc parseAll*(wrapper: HTML5ParserWrapper): bool =
   let builder = wrapper.builder
   if wrapper.needsBOMSniff:
     if wrapper.stream.getPosition() + 3 >= wrapper.stream.data.len:
-      return
+      return true
     let scs = wrapper.bomSniff()
     if scs != CHARSET_UNKNOWN:
       builder.confidence = ccCertain
@@ -402,27 +400,25 @@ proc parseAll*(wrapper: HTML5ParserWrapper) =
       wrapper.seekable = false
       wrapper.switchCharset()
     wrapper.needsBOMSniff = false
-  while true:
-    let buffer = wrapper.encoder.readAll()
-    if wrapper.decoder.failed:
-      assert wrapper.seekable
-      # Retry with another charset.
-      builder.restart(wrapper)
-      wrapper.rewindImpl()
-      wrapper.switchCharset()
-      continue
-    if buffer.len == 0:
-      break
-    let res = wrapper.parseBuffer(buffer)
-    if res != PRES_STOP:
-      break
-    # res == PRES_STOP: A meta tag describing the charset has been found; force
-    # use of this charset.
+  let buffer = wrapper.encoder.readAll()
+  if wrapper.decoder.failed:
+    assert wrapper.seekable
+    # Retry with another charset.
     builder.restart(wrapper)
-    wrapper.rewindImpl()
+    wrapper.switchCharset()
+    return false
+  if buffer.len == 0:
+    return true
+  let res = wrapper.parseBuffer(buffer)
+  if res == PRES_STOP:
+    # A meta tag describing the charset has been found; force use of this
+    # charset.
+    builder.restart(wrapper)
     wrapper.charsetStack.add(builder.charset)
     wrapper.seekable = false
     wrapper.switchCharset()
+    return false
+  return true
 
 proc finish*(wrapper: HTML5ParserWrapper) =
   if wrapper.needsBOMSniff:
@@ -435,7 +431,7 @@ proc finish*(wrapper: HTML5ParserWrapper) =
     wrapper.needsBOMSniff = false
   wrapper.decoder.setInhibitCheckEnd(false)
   wrapper.wasICE = false
-  wrapper.parseAll()
+  doAssert wrapper.parseAll()
   wrapper.parser.finish()
   wrapper.builder.finish()
   for r in wrapper.refs:

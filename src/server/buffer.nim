@@ -632,14 +632,15 @@ proc do_reshape(buffer: Buffer) =
     buffer.lines = renderDocument(styledRoot, buffer.attrs)
     buffer.prevstyled = styledRoot
   else:
-    buffer.lines.renderStream(buffer.srenderer)
+    discard
+    #buffer.lines.renderStream(buffer.srenderer) TODO remove?
 
-proc processData(buffer: Buffer) =
+proc processData(buffer: Buffer): bool =
   if buffer.ishtml:
-    buffer.htmlParser.parseAll()
+    result = buffer.htmlParser.parseAll()
     buffer.document = buffer.htmlParser.builder.document
   else:
-    buffer.lines.renderStream(buffer.srenderer)
+    result = buffer.lines.renderStream(buffer.srenderer, debug = buffer.url.pathname != "console")
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -706,24 +707,20 @@ type ConnectResult* = object
   charset*: Charset
 
 proc rewind(buffer: Buffer): bool =
-  if buffer.loader.rewind(buffer.fd):
-    return true
   let request = newRequest(buffer.url, fromcache = true)
   let response = buffer.loader.doRequest(request)
-  if response.body != nil:
-    buffer.selector.unregister(buffer.fd)
-    buffer.loader.unregistered.add(buffer.fd)
-    buffer.istream.close()
-    buffer.istream = response.body
-    buffer.fd = response.body.fd
-    buffer.selector.registerHandle(buffer.fd, {Read}, 0)
-    return true
-  return false
+  if response.body == nil:
+    return false
+  buffer.selector.unregister(buffer.fd)
+  buffer.loader.unregistered.add(buffer.fd)
+  buffer.istream.close()
+  buffer.istream = response.body
+  buffer.fd = response.body.fd
+  buffer.selector.registerHandle(buffer.fd, {Read}, 0)
+  return true
 
 proc setHTML(buffer: Buffer, ishtml: bool) =
   buffer.ishtml = ishtml
-  let rewindImpl = proc() =
-    doAssert buffer.rewind()
   if ishtml:
     let factory = newCAtomFactory()
     buffer.factory = factory
@@ -752,7 +749,6 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
       buffer.window,
       buffer.url,
       buffer.factory,
-      rewindImpl = rewindImpl,
       buffer.charsets,
       seekable = true
     )
@@ -762,8 +758,7 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
     buffer.quirkstyle = quirk.parseStylesheet(factory)
     buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
   else:
-    buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets,
-      rewindImpl)
+    buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   if buffer.connected:
@@ -1103,7 +1098,9 @@ proc onload(buffer: Buffer) =
         buffer.sstream.data.setLen(n)
       if n != 0:
         buffer.available += n
-        buffer.processData()
+        if not buffer.processData():
+          if buffer.rewind():
+            continue
         res.bytes = buffer.available
       res.lines = buffer.lines.len
       if buffer.istream.atEnd():
