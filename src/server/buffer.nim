@@ -784,8 +784,7 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   if buffer.source.contentType.isNone:
     buffer.source.contentType = some(response.contentType)
   buffer.istream = response.body
-  let fd = response.body.source.getFd()
-  buffer.fd = int(fd)
+  buffer.fd = response.body.fd
   needsAuth = response.status == 401 # Unauthorized
   redirect = response.redirect
   if "Set-Cookie" in response.headers.table:
@@ -849,7 +848,8 @@ proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
   buffer.setHTML(ishtml)
   let response = buffer.loader.doRequest(request)
   buffer.istream = response.body
-  buffer.fd = int(response.body.source.getFd())
+  buffer.istream.setBlocking(false)
+  buffer.fd = response.body.fd
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
 proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
@@ -1119,7 +1119,7 @@ proc onload(buffer: Buffer) =
         )
         return # skip incr render
       buffer.resolveTask(LOAD, res)
-    except ErrorAgain, ErrorWouldBlock:
+    except ErrorAgain:
       break
   if buffer.document != nil:
     # incremental rendering: only if we cannot read the entire stream in one

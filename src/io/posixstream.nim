@@ -8,7 +8,6 @@ type
     isend*: bool
 
   ErrorAgain* = object of IOError
-  ErrorWouldBlock* = object of IOError
   ErrorBadFD* = object of IOError
   ErrorFault* = object of IOError
   ErrorInterrupted* = object of IOError
@@ -19,10 +18,8 @@ type
 proc raisePosixIOError*() =
   # In the nim stdlib, these are only constants on linux amd64, so we
   # can't use a switch.
-  if errno == EAGAIN:
+  if errno == EAGAIN or errno == EWOULDBLOCK:
     raise newException(ErrorAgain, "eagain")
-  elif errno == EWOULDBLOCK:
-    raise newException(ErrorWouldBlock, "would block")
   elif errno == EBADF:
     raise newException(ErrorBadFD, "bad fd")
   elif errno == EFAULT:

@@ -147,11 +147,6 @@ func findCachedHandle(ctx: LoaderContext, cacheUrl: string): LoaderHandle =
       return it
   return nil
 
-proc delOutput(ctx: LoaderContext, id: StreamId) =
-  let output = ctx.findOutput(id)
-  if output != nil:
-    ctx.outputMap.del(output.ostream.fd)
-
 type PushBufferResult = enum
   pbrDone, pbrUnregister
 
@@ -163,7 +158,7 @@ proc pushBuffer(ctx: LoaderContext, output: OutputHandle, buffer: LoaderBuffer):
     var n = 0
     try:
       n = output.ostream.sendData(buffer)
-    except ErrorAgain, ErrorWouldBlock:
+    except ErrorAgain:
       discard
     except ErrorBrokenPipe:
       return pbrUnregister
@@ -179,9 +174,8 @@ proc pushBuffer(ctx: LoaderContext, output: OutputHandle, buffer: LoaderBuffer):
 proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
   let output = handle.output
   output.ostream.setBlocking(false)
+  handle.istream.setBlocking(false)
   ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
-  let ofl = fcntl(handle.istream.fd, F_GETFL, 0)
-  discard fcntl(handle.istream.fd, F_SETFL, ofl or O_NONBLOCK)
   ctx.handleMap[handle.istream.fd] = handle
   if output.sostream != nil:
     # replace the fd with the new one in outputMap if stream was
@@ -189,9 +183,7 @@ proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
     # (kind of a hack, but should always work)
     ctx.outputMap[output.ostream.fd] = output
     ctx.outputMap.del(output.sostream.fd)
-    if output.clientId != NullStreamId:
-      ctx.delOutput(output.clientId)
-      output.clientId = NullStreamId
+    output.clientId = NullStreamId
   if originalUrl != nil:
     let tmpf = getTempFile(ctx.config.tmpdir)
     let ps = newPosixStream(tmpf, O_CREAT or O_WRONLY, 0o600)
@@ -331,8 +323,8 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
         request.headers["Referer"] = r
     if request.proxy == nil or not ctx.config.acceptProxy:
       request.proxy = ctx.config.proxy
-    let fd = int(stream.source.getFd())
-    ctx.outputMap[fd] = handle.output
+    let output = handle.output
+    ctx.outputMap[output.ostream.fd] = output
     ctx.loadResource(request, handle)
 
 proc acceptConnection(ctx: LoaderContext) =
@@ -360,7 +352,7 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(fds)
       for fd in fds:
         let output = ctx.findOutput((pid, fd))
-        if output != nil:
+        if output != nil and output.registered:
           # remove from the selector, so any new reads will be just placed
           # in the handle's buffer
           ctx.selector.unregister(output.ostream.fd)
@@ -371,7 +363,7 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(fds)
       for fd in fds:
         let output = ctx.findOutput((pid, fd))
-        if output != nil:
+        if output != nil and output.registered:
           # place the stream back into the selector, so we can write to it
           # again
           ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
@@ -447,7 +439,7 @@ proc handleRead(ctx: LoaderContext, handle: LoaderHandle,
           unregWrite.add(output)
       if n < buffer.cap:
         break
-    except ErrorAgain, ErrorWouldBlock: # retry later
+    except ErrorAgain: # retry later
       break
     except ErrorBrokenPipe: # sender died; stop streaming
       unregRead.add(handle)
@@ -465,7 +457,7 @@ proc handleWrite(ctx: LoaderContext, output: OutputHandle,
       if output.currentBufferIdx < buffer.len:
         break
       output.bufferCleared() # swap out buffer
-    except ErrorAgain, ErrorWouldBlock: # never mind
+    except ErrorAgain: # never mind
       break
     except ErrorBrokenPipe: # receiver died; stop streaming
       unregWrite.add(output)
@@ -500,8 +492,6 @@ proc finishCycle(ctx: LoaderContext, unregRead: var seq[LoaderHandle],
       if output.registered:
         ctx.selector.unregister(output.ostream.fd)
       ctx.outputMap.del(output.ostream.fd)
-      if output.clientId != NullStreamId:
-        ctx.delOutput(output.clientId)
       output.ostream.close()
       output.ostream = nil
       let handle = output.parent
@@ -738,7 +728,7 @@ proc onRead*(loader: FileLoader, fd: int) =
         buffer[].buf.setLen(olen + n)
         if n == 0:
           break
-      except ErrorAgain, ErrorWouldBlock:
+      except ErrorAgain:
         buffer[].buf.setLen(olen)
         break
     if response.body.atEnd():
