@@ -527,8 +527,8 @@ proc addConsole(pager: Pager, interactive: bool, clearFun, showFun, hideFun:
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("stream:console").get
-    let container = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
-      pipefd[0], some(url), ConsoleTitle, canreinterpret = false)
+    let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
+      some(url), ConsoleTitle, canreinterpret = false)
     let err = newPosixStream(pipefd[1])
     err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
     err.flush()
@@ -555,8 +555,8 @@ proc clearConsole(client: Client) =
     raise newException(Defect, "Failed to open console pipe.")
   let url = newURL("stream:console").get
   let pager = client.pager
-  let replacement = pager.readPipe0(some("text/plain"), CHARSET_UNKNOWN,
-    pipefd[0], some(url), ConsoleTitle, canreinterpret = false)
+  let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
+    some(url), ConsoleTitle, canreinterpret = false)
   replacement.replace = client.consoleWrapper.container
   pager.registerContainer(replacement)
   client.consoleWrapper.container = replacement
@@ -621,10 +621,10 @@ proc launchClient*(client: Client, pages: seq[string],
     let ismodule = client.config.start.startup_script.endsWith(".mjs")
     client.command0(s, client.config.start.startup_script, silence = true,
       module = ismodule)
-
   if not stdin.isatty():
+    # stdin may very well receive ANSI text
+    let contentType = contentType.get("text/x-ansi")
     client.pager.readPipe(contentType, cs, stdin.getFileHandle(), "*stdin*")
-
   for page in pages:
     client.pager.loadURL(page, ctype = contentType, cs = cs)
   client.pager.showAlerts()

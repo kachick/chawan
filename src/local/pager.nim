@@ -761,7 +761,7 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
     if pager.container != prevc:
       pager.container.retry = urls
 
-proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
+proc readPipe0*(pager: Pager, contentType: string, cs: Charset,
     fd: FileHandle, location: Option[URL], title: string,
     canreinterpret: bool): Container =
   var location = location.get(newURL("stream:-").get)
@@ -773,12 +773,12 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
     title = title,
     canreinterpret = canreinterpret,
     fd = fd,
-    contentType = some(ctype.get("text/plain"))
+    contentType = some(contentType)
   )
 
-proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset, fd: FileHandle,
+proc readPipe*(pager: Pager, contentType: string, cs: Charset, fd: FileHandle,
     title: string) =
-  let container = pager.readPipe0(ctype, cs, fd, none(URL), title, true)
+  let container = pager.readPipe0(contentType, cs, fd, none(URL), title, true)
   inc pager.numload
   pager.addContainer(container)
 
@@ -948,45 +948,85 @@ proc authorize(pager: Pager) =
 
 type CheckMailcapResult = tuple[promise: EmptyPromise, connect: bool]
 
+proc checkMailcap(pager: Pager, container: Container,
+  contentTypeOverride = none(string)): CheckMailcapResult
+
+# Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
+proc ansiDecode(pager: Pager, container: Container, fdin: cint,
+    ishtml: var bool, fdout: var cint) =
+  let cs = container.charset
+  let url = container.location
+  let entry = pager.mailcap.getMailcapEntry("text/x-ansi", "", url, cs)
+  var canpipe = true
+  let cmd = unquoteCommand(entry.cmd, "text/x-ansi", "", url, cs, canpipe)
+  if not canpipe:
+    pager.alert("Error: could not pipe to text/x-ansi, decoding as text/plain")
+  else:
+    var pipefdOutAnsi: array[2, cint]
+    if pipe(pipefdOutAnsi) == -1:
+      raise newException(Defect, "Failed to open pipe.")
+    case fork()
+    of -1:
+      pager.alert("Error: failed to fork ANSI decoder process")
+      discard close(pipefdOutAnsi[0])
+      discard close(pipefdOutAnsi[1])
+    of 0: # child process
+      if fdin != -1:
+        discard close(fdin)
+      discard close(pipefdOutAnsi[0])
+      discard dup2(fdout, stdin.getFileHandle())
+      discard close(fdout)
+      discard dup2(pipefdOutAnsi[1], stdout.getFileHandle())
+      discard close(pipefdOutAnsi[1])
+      closeStderr()
+      myExec(cmd)
+      assert false
+    else:
+      discard close(pipefdOutAnsi[1])
+      discard close(fdout)
+      fdout = pipefdOutAnsi[0]
+      ishtml = HTMLOUTPUT in entry.flags
+
 # Pipe input into the mailcap command, then read its output into a buffer.
 # needsterminal is ignored.
 proc runMailcapReadPipe(pager: Pager, container: Container,
     entry: MailcapEntry, cmd: string): CheckMailcapResult =
-  var pipefd_in: array[2, cint]
-  if pipe(pipefd_in) == -1:
-    raise newException(Defect, "Failed to open pipe.")
-  var pipefd_out: array[2, cint]
-  if pipe(pipefd_out) == -1:
+  var pipefdIn: array[2, cint]
+  var pipefdOut: array[2, cint]
+  if pipe(pipefdIn) == -1 or pipe(pipefdOut) == -1:
     raise newException(Defect, "Failed to open pipe.")
   let pid = fork()
   if pid == -1:
+    pager.alert("Failed to fork process!")
     return (nil, false)
-  elif pid == 0:
-    # child process
-    discard close(pipefd_in[1])
-    discard close(pipefd_out[0])
-    stdout.flushFile()
-    discard dup2(pipefd_in[0], stdin.getFileHandle())
-    discard dup2(pipefd_out[1], stdout.getFileHandle())
+  elif pid == 0: # child process
+    discard close(pipefdIn[1])
+    discard close(pipefdOut[0])
+    discard dup2(pipefdIn[0], stdin.getFileHandle())
+    discard dup2(pipefdOut[1], stdout.getFileHandle())
     closeStderr()
-    discard close(pipefd_in[0])
-    discard close(pipefd_out[1])
+    discard close(pipefdIn[0])
+    discard close(pipefdOut[1])
     myExec(cmd)
     assert false
-  # parent
-  discard close(pipefd_in[0])
-  discard close(pipefd_out[1])
-  let fdin = pipefd_in[1]
-  let fdout = pipefd_out[0]
-  let p = container.redirectToFd(fdin, wait = false, cache = true)
-  let p2 = p.then(proc(): auto =
+  else:
+    # parent
+    discard close(pipefdIn[0])
+    discard close(pipefdOut[1])
+    let fdin = pipefdIn[1]
+    var fdout = pipefdOut[0]
+    var ishtml = HTMLOUTPUT in entry.flags
+    if not ishtml and ANSIOUTPUT in entry.flags:
+      # decode ANSI sequence
+      pager.ansiDecode(container, fdin, ishtml, fdout)
+    let p = container.redirectToFd(fdin, wait = false, cache = true)
     discard close(fdin)
-    let ishtml = HTMLOUTPUT in entry.flags
-    return container.readFromFd(fdout, $pid, ishtml)
-  ).then(proc() =
-    discard close(fdout)
-  )
-  return (p2, true)
+    let p2 = p.then(proc(): auto =
+      let p = container.readFromFd(fdout, $pid, ishtml)
+      discard close(fdout)
+      return p
+    )
+    return (p2, true)
 
 # Pipe input into the mailcap command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
@@ -1048,11 +1088,13 @@ proc runMailcapReadFile(pager: Pager, container: Container,
       quit(ret)
     # parent
     discard close(pipefd[1])
-    let fdout = pipefd[0]
-    let ishtml = HTMLOUTPUT in entry.flags
-    return container.readFromFd(fdout, $pid, ishtml).then(proc() =
-      discard close(fdout)
-    )
+    var fdout = pipefd[0]
+    var ishtml = HTMLOUTPUT in entry.flags
+    if not ishtml and ANSIOUTPUT in entry.flags:
+      pager.ansiDecode(container, -1, ishtml, fdout)
+    let p = container.readFromFd(fdout, $pid, ishtml)
+    discard close(fdout)
+    return p
   )
   return (p, true)
 
@@ -1134,12 +1176,13 @@ proc filterBuffer(pager: Pager, container: Container): CheckMailcapResult =
 # pager is suspended until the command exits.
 #TODO add support for edit/compose, better error handling (use Promise[bool]
 # instead of tuple[EmptyPromise, bool])
-proc checkMailcap(pager: Pager, container: Container): CheckMailcapResult =
+proc checkMailcap(pager: Pager, container: Container,
+    contentTypeOverride = none(string)): CheckMailcapResult =
   if container.filter != nil:
     return pager.filterBuffer(container)
   if container.contentType.isNone:
     return (nil, true)
-  let contentType = container.contentType.get
+  let contentType = contentTypeOverride.get(container.contentType.get)
   if contentType == "text/html":
     # We support HTML natively, so it would make little sense to execute
     # mailcap filters for it.
@@ -1164,7 +1207,7 @@ proc checkMailcap(pager: Pager, container: Container): CheckMailcapResult =
     var canpipe = true
     let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, cs, canpipe)
     putEnv("MAILCAP_URL", $url) #TODO delEnv this after command is finished?
-    if {COPIOUSOUTPUT, HTMLOUTPUT} * entry.flags == {}:
+    if {COPIOUSOUTPUT, HTMLOUTPUT, ANSIOUTPUT} * entry.flags == {}:
       # no output.
       if canpipe:
         return pager.runMailcapWritePipe(container, entry[], cmd)

@@ -36,10 +36,9 @@ import js/javascript
 import js/regex
 import js/timeout
 import js/tojs
+import layout/renderdocument
 import loader/headers
 import loader/loader
-import render/renderdocument
-import render/rendertext
 import types/cell
 import types/color
 import types/cookie
@@ -109,7 +108,6 @@ type
     quirkstyle: CSSStylesheet
     userstyle: CSSStylesheet
     htmlParser: HTML5ParserWrapper
-    srenderer: StreamRenderer
     bgcolor: CellColor
     needsBOMSniff: bool
     decoder: TextDecoder
@@ -610,34 +608,43 @@ proc gotoAnchor*(buffer: Buffer): Opt[tuple[x, y: int]] {.proxy.} =
   return err()
 
 proc do_reshape(buffer: Buffer) =
-  if buffer.ishtml:
-    if buffer.document == nil:
-      return # not parsed yet, nothing to render
-    let uastyle = if buffer.document.mode != QUIRKS:
-      buffer.uastyle
-    else:
-      buffer.quirkstyle
-    if buffer.document.cachedSheetsInvalid:
-      buffer.prevStyled = nil
-    let styledRoot = buffer.document.applyStylesheets(uastyle,
-      buffer.userstyle, buffer.prevStyled)
-    buffer.lines.renderDocument(buffer.bgcolor, styledRoot, buffer.attrs)
-    buffer.prevStyled = styledRoot
+  if buffer.document == nil:
+    return # not parsed yet, nothing to render
+  let uastyle = if buffer.document.mode != QUIRKS:
+    buffer.uastyle
+  else:
+    buffer.quirkstyle
+  if buffer.document.cachedSheetsInvalid:
+    buffer.prevStyled = nil
+  let styledRoot = buffer.document.applyStylesheets(uastyle,
+    buffer.userstyle, buffer.prevStyled)
+  buffer.lines.renderDocument(buffer.bgcolor, styledRoot, buffer.attrs)
+  buffer.prevStyled = styledRoot
 
 proc processData0(buffer: Buffer, data: openArray[char]): bool =
   if buffer.ishtml:
     if buffer.htmlParser.parseBuffer(data) == PRES_STOP:
       buffer.charsetStack = @[buffer.htmlParser.builder.charset]
       return false
-    buffer.document = buffer.htmlParser.builder.document
   else:
-    buffer.lines.renderChunk(buffer.srenderer, data)
+    var plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
+    if plaintext == nil:
+      const s = "<plaintext id='text'>"
+      doAssert buffer.htmlParser.parseBuffer(s) != PRES_STOP
+      plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
+    if data.len > 0:
+      let lastChild = plaintext.lastChild
+      var text = newString(data.len)
+      copyMem(addr text[0], unsafeAddr data[0], data.len)
+      if lastChild != nil and lastChild of Text:
+        Text(lastChild).data &= text
+      else:
+        plaintext.insert(buffer.document.createTextNode(text), nil)
   true
 
 func canSwitch(buffer: Buffer): bool {.inline.} =
-  if buffer.ishtml and buffer.htmlParser.builder.confidence != ccTentative:
-    return false
-  return buffer.charsetStack.len > 0
+  return buffer.htmlParser.builder.confidence == ccTentative and
+    buffer.charsetStack.len > 0
 
 proc initDecoder(buffer: Buffer) =
   if buffer.charset != CHARSET_UTF_8:
@@ -648,11 +655,8 @@ proc initDecoder(buffer: Buffer) =
 proc switchCharset(buffer: Buffer) =
   buffer.charset = buffer.charsetStack.pop()
   buffer.initDecoder()
-  if buffer.ishtml:
-    buffer.htmlParser.restart(buffer.charset)
-  else:
-    buffer.srenderer.rewind()
-    buffer.lines.setLen(0)
+  buffer.htmlParser.restart(buffer.charset)
+  buffer.document = buffer.htmlParser.builder.document
 
 const BufferSize = 16384
 
@@ -812,41 +816,39 @@ proc rewind(buffer: Buffer): bool =
 proc setHTML(buffer: Buffer, ishtml: bool) =
   buffer.ishtml = ishtml
   buffer.initDecoder()
-  if ishtml:
-    let factory = newCAtomFactory()
-    buffer.factory = factory
-    let navigate = if buffer.config.scripting:
-      proc(url: URL) = buffer.navigate(url)
-    else:
-      nil
-    buffer.window = newWindow(
-      buffer.config.scripting,
-      buffer.config.images,
-      buffer.selector,
-      buffer.attrs,
-      factory,
-      navigate,
-      some(buffer.loader)
-    )
-    let confidence = if buffer.config.charsetOverride == CHARSET_UNKNOWN:
-      ccTentative
-    else:
-      ccCertain
-    buffer.htmlParser = newHTML5ParserWrapper(
-      buffer.window,
-      buffer.url,
-      buffer.factory,
-      confidence,
-      buffer.charset
-    )
-    assert buffer.htmlParser.builder.document != nil
-    const css = staticRead"res/ua.css"
-    const quirk = css & staticRead"res/quirk.css"
-    buffer.uastyle = css.parseStylesheet(factory)
-    buffer.quirkstyle = quirk.parseStylesheet(factory)
-    buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
+  let factory = newCAtomFactory()
+  buffer.factory = factory
+  let navigate = if buffer.config.scripting:
+    proc(url: URL) = buffer.navigate(url)
   else:
-    buffer.srenderer = newStreamRenderer()
+    nil
+  buffer.window = newWindow(
+    buffer.config.scripting,
+    buffer.config.images,
+    buffer.selector,
+    buffer.attrs,
+    factory,
+    navigate,
+    some(buffer.loader)
+  )
+  let confidence = if buffer.config.charsetOverride == CHARSET_UNKNOWN:
+    ccTentative
+  else:
+    ccCertain
+  buffer.htmlParser = newHTML5ParserWrapper(
+    buffer.window,
+    buffer.url,
+    buffer.factory,
+    confidence,
+    buffer.charset
+  )
+  assert buffer.htmlParser.builder.document != nil
+  const css = staticRead"res/ua.css"
+  const quirk = css & staticRead"res/quirk.css"
+  buffer.uastyle = css.parseStylesheet(factory)
+  buffer.quirkstyle = quirk.parseStylesheet(factory)
+  buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
+  buffer.document = buffer.htmlParser.builder.document
 
 proc extractCookies(response: Response): seq[Cookie] =
   result = @[]
@@ -1122,21 +1124,14 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.decoder != nil and buffer.decoder.finish() == tdfrError or
       buffer.validator != nil and buffer.validator[].finish() == tvrError:
     doAssert buffer.processData0("\uFFFD")
-  var p: EmptyPromise
-  if buffer.ishtml:
-    buffer.htmlParser.finish()
-    buffer.document = buffer.htmlParser.builder.document
-    buffer.document.readyState = rsInteractive
-    buffer.dispatchDOMContentLoadedEvent()
-    p = buffer.loadResources()
-  else:
-    p = EmptyPromise()
-    p.resolve()
+  buffer.htmlParser.finish()
+  buffer.document.readyState = rsInteractive
+  buffer.dispatchDOMContentLoadedEvent()
   buffer.selector.unregister(buffer.fd)
   buffer.loader.unregistered.add(buffer.fd)
   buffer.fd = -1
   buffer.istream.close()
-  return p
+  return buffer.loadResources()
 
 type LoadResult* = tuple[
   atend: bool,
@@ -1235,12 +1230,10 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   buffer.loader.unregistered.add(buffer.fd)
   buffer.fd = -1
   buffer.istream.close()
-  if buffer.ishtml:
-    buffer.htmlParser.finish()
-    buffer.document = buffer.htmlParser.builder.document
-    buffer.document.readyState = rsInteractive
-    buffer.state = bsLoaded
-    buffer.do_reshape()
+  buffer.htmlParser.finish()
+  buffer.document.readyState = rsInteractive
+  buffer.state = bsLoaded
+  buffer.do_reshape()
   return buffer.lines.len
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm

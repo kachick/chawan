@@ -1781,21 +1781,19 @@ proc write(document: Document, text: varargs[string]): Err[DOMException]
     CDB_parseDocumentWriteChunk(document.parser)
   return ok()
 
-func html*(document: Document): HTMLElement =
-  for element in document.elements(TAG_HTML):
+func findFirst*(document: Document, tagType: TagType): HTMLElement =
+  for element in document.elements(tagType):
     return HTMLElement(element)
+  nil
+
+func html*(document: Document): HTMLElement =
+  return document.findFirst(TAG_HTML)
 
 func head*(document: Document): HTMLElement {.jsfget.} =
-  let html = document.html
-  if html != nil:
-    for element in html.elements(TAG_HEAD):
-      return HTMLElement(element)
+  return document.findFirst(TAG_HEAD)
 
 func body*(document: Document): HTMLElement {.jsfget.} =
-  let html = document.html
-  if html != nil:
-    for element in html.elements(TAG_BODY):
-      return HTMLElement(element)
+  return document.findFirst(TAG_BODY)
 
 func select*(option: HTMLOptionElement): HTMLSelectElement =
   for anc in option.ancestors:

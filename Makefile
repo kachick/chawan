@@ -46,7 +46,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
-	$(OUTDIR_LIBEXEC)/md2html
+	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 
 $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
 		res/**/* res/map/idna_gen.nim nim.cfg
@@ -86,6 +86,12 @@ $(OUTDIR_LIBEXEC)/md2html: adapter/format/md2html.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/md2html" \
 		-o:"$(OUTDIR_LIBEXEC)/md2html" adapter/format/md2html.nim
+
+$(OUTDIR_LIBEXEC)/ansi2html: adapter/format/ansi2html.nim src/io/posixstream.nim \
+		src/types/color.nim src/utils/twtstr.nim
+	@mkdir -p "$(OUTDIR_LIBEXEC)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/ansi2html" \
+		-o:"$(OUTDIR_LIBEXEC)/ansi2html" adapter/format/ansi2html.nim
 
 GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O3
 $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
@@ -224,6 +230,7 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/gopher" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/gopher2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_LIBEXEC)/md2html" $(LIBEXECDIR_CHAWAN)
+	install -m755 "$(OUTDIR_LIBEXEC)/ansi2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
 	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
@@ -262,6 +269,7 @@ uninstall:
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
 	rm -f $(LIBEXECDIR_CHAWAN)/md2html
+	rm -f $(LIBEXECDIR_CHAWAN)/ansi2html
 	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
 	rm -f $(LIBEXECDIR_CHAWAN)/urldec
 	rm -f $(LIBEXECDIR_CHAWAN)/urlenc

@@ -10,3 +10,4 @@ text/css		css
 image/png		png
 text/markdown		md
 text/gemini		gmi
+text/x-ansi		ans	asc

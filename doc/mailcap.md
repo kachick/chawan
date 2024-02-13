@@ -52,16 +52,20 @@ execution of every mailcap command.
 ### Fields
 
 The `test`, `nametemplate`, `needsterminal` and `copiousoutput` fields are
-recognized. Additionally, the non-standard `x-htmloutput` extension field
-is recognized too.
+recognized. Additionally, the non-standard `x-htmloutput` and `x-ansioutput`
+extension fields are recognized too.
 
 * When the `test` named field is specified, the mailcap entry is only used
   if the test command returns 0.  
   Warning: as of now, %s does not work with test.
 * `copiousoutput` makes Chawan redirect the output of the external command
-  into a new buffer.
+  into a new buffer. If either x-htmloutput or x-ansioutput is defined too, then
+  it is ignored.
 * The `x-htmloutput` extension field behaves the same as `copiousoutput`,
   but makes Chawan interpret the command's output as HTML.
+* `x-ansioutput` makes Chawan pipe the output through the default "text/x-ansi"
+  content type handler. This means that you get colors, formatting, etc.
+  displayed with ANSI escape sequences.
 * `needsterminal` hands over control of the terminal to the command while
   it is running. Note: as of now, `needsterminal` does nothing if either
   `copiousoutput` or `x-htmloutput` is specified.
@@ -80,7 +84,7 @@ it could have been piped into the command.
 
 ## Note
 
-Entries with a content type of text/html are ignored.
+Entries with a content type of text/html or text/plain are ignored.
 
 ## Examples
 
@@ -92,7 +96,7 @@ Entries with a content type of text/html are ignored.
 text/markdown; pandoc - -f markdown -t html -o -; x-htmloutput
 
 # Show syntax highlighting for JavaScript source files using bat.
-text/javascript; bat -f -l es6 --file-name ${MAILCAP_URL:-STDIN} -; copiousoutput
+text/javascript; bat -f -l es6 --file-name ${MAILCAP_URL:-STDIN} -; x-ansioutput
 
 # Play music using mpv, and hand over control of the terminal until mpv exits.
 audio/*; mpv -; needsterminal
@@ -110,7 +114,7 @@ application/vnd.openxmlformats-officedocument.wordprocessingml.document;lowriter
 application/x-troff-man;pandoc - -f man -t html -o -; x-htmloutput
 
 # Following entry will be ignored, as text/html is supported natively by Chawan.
-text/html; cha -T text/html -I %{charset}; copiousoutput
+text/html; cha -dT text/html -I %{charset}; copiousoutput
 ```
 <!-- MANON
 ## See also

@@ -20,6 +20,7 @@ type
     NEEDSTERMINAL = "needsterminal"
     COPIOUSOUTPUT = "copiousoutput"
     HTMLOUTPUT = "x-htmloutput" # from w3m
+    ANSIOUTPUT = "x-ansioutput" # Chawan extension
 
   MailcapEntry* = object
     mt*: string
@@ -122,6 +123,8 @@ proc parseFieldKey(entry: var MailcapEntry, k: string): NamedField =
     entry.flags.incl(COPIOUSOUTPUT)
   of "x-htmloutput":
     entry.flags.incl(HTMLOUTPUT)
+  of "x-ansioutput":
+    entry.flags.incl(ANSIOUTPUT)
   of "test":
     return NAMED_FIELD_TEST
   of "nametemplate":

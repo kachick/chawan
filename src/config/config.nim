@@ -357,12 +357,12 @@ proc readUserStylesheet(dir, file: string): string =
 # of several individual configuration files known as mailcap files.
 proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
   let configDir = getConfigDir() / "chawan" #TODO store this in config?
-  const gopherPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL")
-  let gopherPath = gopherPath0.unquote().get
-  const geminiPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/gmi2html")
-  let geminiPath = geminiPath0.unquote().get
-  const mdPath0 = ChaPath("${%CHA_LIBEXEC_DIR}/md2html")
-  let mdPath = mdPath0.unquote().get
+  template uq(s: string): string =
+    ChaPath(s).unquote.get
+  let gopherPath = "${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL".uq
+  let geminiPath = "${%CHA_LIBEXEC_DIR}/gmi2html".uq
+  let mdPath = "${%CHA_LIBEXEC_DIR}/md2html".uq
+  let ansiPath = "${%CHA_LIBEXEC_DIR}/ansi2html".uq
   var mailcap: Mailcap = @[]
   var errs: seq[string]
   var found = false
@@ -391,6 +391,12 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
     mt: "text",
     subt: "markdown",
     cmd: mdPath,
+    flags: {HTMLOUTPUT}
+  ))
+  mailcap.add(MailcapEntry(
+    mt: "text",
+    subt: "x-ansi",
+    cmd: ansiPath,
     flags: {HTMLOUTPUT}
   ))
   if not found:

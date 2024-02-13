@@ -55,4 +55,4 @@ proc runProcessInto*(cmd, ins: string): bool =
 
 proc myExec*(cmd: string) =
   discard execl("/bin/sh", "sh", "-c", cmd, nil)
-  quit(127)
+  exitnow(127)
