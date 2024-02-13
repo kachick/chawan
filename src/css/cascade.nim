@@ -53,6 +53,8 @@ func applies(feature: MediaFeature, window: Window): bool =
     return feature.appliesLR(window, toLayoutUnit(window.attrs.width_px))
   of FEATURE_HEIGHT:
     return feature.appliesLR(window, toLayoutUnit(window.attrs.height_px))
+  of FEATURE_SCRIPTING:
+    return feature.b == window.settings.scripting
 
 func applies(mq: MediaQuery, window: Window): bool =
   case mq.t

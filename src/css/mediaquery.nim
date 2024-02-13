@@ -25,13 +25,14 @@ type
 
   MediaFeatureType* = enum
     FEATURE_COLOR, FEATURE_GRID, FEATURE_HOVER, FEATURE_PREFERS_COLOR_SCHEME,
-    FEATURE_WIDTH, FEATURE_HEIGHT
+    FEATURE_WIDTH, FEATURE_HEIGHT, FEATURE_SCRIPTING
 
   MediaFeature* = object
     case t*: MediaFeatureType
     of FEATURE_COLOR:
       range*: Slice[int]
-    of FEATURE_GRID, FEATURE_HOVER, FEATURE_PREFERS_COLOR_SCHEME:
+    of FEATURE_GRID, FEATURE_HOVER, FEATURE_PREFERS_COLOR_SCHEME,
+        FEATURE_SCRIPTING:
       b*: bool
     of FEATURE_WIDTH, FEATURE_HEIGHT:
       lengthrange*: Slice[CSSLength]
@@ -90,6 +91,8 @@ func `$`*(mf: MediaFeature): string =
       result &= "="
     result &= " "
     result &= $mf.lengthrange.b
+  of FEATURE_SCRIPTING:
+    return "scripting: " & (if mf.b: "enabled" else: "none")
 
 func `$`*(mq: MediaQuery): string =
   case mq.t
@@ -177,13 +180,22 @@ template expect_mq_int(b: bool, ifalse: int, itrue: int) =
   elif i == itrue: b = true
   else: return nil
 
-template expect_bool(b: bool, sfalse: string, strue: string) =
+template expect_bool(b: bool, sfalse, strue: string) =
   let tok = consume_token()
   if tok.tokenType != CSS_IDENT_TOKEN: return nil
   let s = tok.value
   case s
   of strue: b = true
   of sfalse: b = false
+  else: return nil
+
+template expect_bool(b: bool, sfalse, sfalse2, strue: string) =
+  let tok = consume_token()
+  if tok.tokenType != CSS_IDENT_TOKEN: return nil
+  let s = tok.value
+  case s
+  of strue: b = true
+  of sfalse, sfalse2: b = false
   else: return nil
 
 template expect_comparison(comparison: var MediaQueryComparison) =
@@ -331,6 +343,12 @@ proc parseFeature(parser: var MediaQueryParser, t: MediaFeatureType,
       lengthaeq: lengthaeq,
       lengthbeq: lengthbeq
     )
+  of FEATURE_SCRIPTING:
+    if ismin or ismax:
+      return nil
+    var b: bool
+    expect_bool(b, "none", "initial-only", "enabled")
+    MediaFeature(t: t, b: b)
   parser.skipBlanks()
   if parser.has():
     return nil
@@ -374,6 +392,8 @@ proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
         return fparser.parseFeature(FEATURE_HOVER, ismin, ismax)
       of "prefers-color-scheme":
         return fparser.parseFeature(FEATURE_PREFERS_COLOR_SCHEME, ismin, ismax)
+      of "scripting":
+        return fparser.parseFeature(FEATURE_SCRIPTING, ismin, ismax)
       else: discard
   return nil
 

@@ -14,6 +14,12 @@ noscript, ol, p, plaintext, pre, search, section, ul, xmp {
 	display: block;
 }
 
+@media (scripting: enabled) {
+noscript {
+	display: none;
+}
+}
+
 textarea, tt, var, font, iframe, u, s, strike, frame, input, img {
 	display: inline-block;
 }
