@@ -44,7 +44,7 @@ Add the following magnet URL to transmission?
 <PRE>%s</PRE>
 <FORM METHOD=POST>
 <INPUT TYPE=SUBMIT NAME=ADD_URL VALUE=OK>
-<INPUT type=HIDDEN NAME=URL VALUE='%s'>
+<INPUT type=HIDDEN NAME=URL VALUE="%s">
 </FORM>
 ' "$URL_HTML_QUOTED" "$URL_HTML_QUOTED"
 	;;
