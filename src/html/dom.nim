@@ -177,7 +177,7 @@ type
 
     all_cached: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
-    cachedSheetsInvalid: bool
+    cachedSheetsInvalid*: bool
     children_cached: HTMLCollection
     #TODO I hate this but I really don't want to put chadombuilder into dom too
     parser*: pointer

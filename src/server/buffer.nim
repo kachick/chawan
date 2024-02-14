@@ -630,16 +630,14 @@ proc do_reshape(buffer: Buffer) =
       buffer.userstyle, buffer.prevstyled)
     buffer.lines = renderDocument(styledRoot, buffer.attrs)
     buffer.prevstyled = styledRoot
-  else:
-    discard
-    #buffer.lines.renderStream(buffer.srenderer) TODO remove?
 
 proc processData(buffer: Buffer): bool =
   if buffer.ishtml:
-    result = buffer.htmlParser.parseAll()
+    let res = buffer.htmlParser.parseAll()
     buffer.document = buffer.htmlParser.builder.document
+    return res
   else:
-    result = buffer.lines.renderStream(buffer.srenderer, debug = buffer.url.pathname != "console")
+    return buffer.lines.renderStream(buffer.srenderer)
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -1137,6 +1135,8 @@ proc onload(buffer: Buffer) =
       buffer.uastyle
     else:
       buffer.quirkstyle
+    if buffer.document.cachedSheetsInvalid:
+      buffer.prevstyled = nil
     let styledRoot = buffer.document.applyStylesheets(uastyle,
       buffer.userstyle, buffer.prevstyled)
     buffer.lines = renderDocument(styledRoot, buffer.attrs)

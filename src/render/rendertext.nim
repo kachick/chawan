@@ -159,7 +159,7 @@ proc renderChunk(grid: var FlexibleGrid, renderer: var StreamRenderer,
       renderer.w += r.twidth(renderer.w)
       renderer.j += i - pi
 
-proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer, debug = false): bool =
+proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer): bool =
   let buf = renderer.encoder.readAll()
   if renderer.decoder.failed:
     renderer.rewind()

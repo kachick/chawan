@@ -170,6 +170,8 @@ proc insertTextImpl(builder: ChaDOMBuilder, parent: Node, text: string,
     parent.lastChild
   if prevSibling != nil and prevSibling of Text:
     Text(prevSibling).data &= text
+    if parent of Element:
+      Element(parent).invalid = true
   else:
     let text = builder.document.createTextNode(text)
     discard parent.insertBefore(text, before.get(nil))
