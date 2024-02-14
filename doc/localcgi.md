@@ -20,11 +20,12 @@ Further notes on processing CGI paths:
 * The URL must be opaque, so you must not add a double slash after the scheme.
   e.g. `cgi-bin://script-name` will NOT work, only `cgi-bin:script-name`.
 * Paths beginning with `/cgi-bin/` or `/$LIB/` are stripped of this segment
-  automatically. So e.g. `file:///cgi-bin/script-name` becomes
+  automatically. So e.g. `cgi-bin:/cgi-bin/script-name` becomes
   `cgi-bin:script-name`.
-* If `extern.w3m-cgi-compat` is true, file: URLs are converted to cgi-bin: URLs
-  if the path name starts with `/cgi-bin/`, `/$LIB/`, or the path of a local
-  CGI script.
+* If `external.w3m-cgi-compat` is true, file: URLs are converted to cgi-bin:
+  URLs if the path name starts with `/cgi-bin/`, `/$LIB/`, or the path of
+  a local CGI script. Note: this is unsafe, please do not use it unless you
+  must.
 * Absolute paths are accepted as e.g. `cgi-bin:/path/to/cgi/dir/script-name`.
   Note however, that this only works if `/path/to/cgi/dir` has already been
   specified as a CGI directory in `external.cgi-dir`.
@@ -32,7 +33,7 @@ Further notes on processing CGI paths:
 Note that this is different from w3m's cgi-bin functionality, in that we
 use a custom scheme for local CGI instead of interpreting all requests to
 a designated path as a CGI request. (This incompatibility is bridged over when
-`external.cgi-dir` is true.)
+`external.w3m-cgi-compat` is true.)
 
 ## Headers
 
@@ -136,8 +137,8 @@ For requests originating from a urimethodmap rewrite, Chawan will also set
 the parsed URL's parts as environment variables. Use of these is highly
 encouraged, to avoid exploits originating from double-parsing of URLs.
 
-Let example://username:password@host.org:1234/path/name.html?example be the
-original URL. Then:
+e.g. if example://username:password@example.org:1234/path/name.html?example
+is the original URL, then:
 
 * `MAPPED_URI_SCHEME=` the scheme of the original URL, in this case `example`.
 * `MAPPED_URI_USERNAME=` the username part, in this case `username`. If no
@@ -190,16 +191,24 @@ redirects stderr to /dev/null.
 
 ### My script is returning a "no local-CGI directory configured" error message.
 
-Configure a local-CGI directory using `external.cgi-dir`.
+Currently, the default setting includes a cgi-bin directory at
+`$(which cha)/../libexec/chawan/cgi-bin`, which usually looks something like
+`/usr/local/libexec/chawan/cgi-bin`. You only get the above message if you
+intentionally set the cgi-dir setting to an empty array. (This will likely break
+everything else too, so do not.)
+
+To change the default local-CGI directory, use the `external.cgi-dir` option.
 
 e.g. you could add this to your config.toml:
 
 ```toml
 [external]
-cgi-dir = "/usr/local/libexec/chawan/cgi-bin"
+cgi-dir = ["~/cgi-bin", "${%CHA_LIBEXEC_DIR}/cgi-bin"]
 ```
 
-and then put your script in `/usr/local/libexec/chawan/cgi-bin`.
+and then put your script in `$HOME/cgi-bin`. Note the second element in the
+array; if you don't add it, the default CGI scripts (including http, https,
+etc...) will not work.
 
 ### My script is returning a "Failed to execute script" error message.
 

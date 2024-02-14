@@ -98,20 +98,15 @@ urimethodmap = "urimethodmap"
 
 ### In urimethodmap
 
-#### gmifetch
-
-For the following example, it is recommended to set a text/gemini handler
-in your mailcap file. See <!-- MANOFF -->[mailcap](mailcap.md)<!-- MANON -->
-<!-- MANON **cha-mailcap**(5) MANOFF --> for details.
+#### magnet.cgi
 
 ```
-# Use the `gmifetch` CGI program to retrieve files through the gemini protocol.
-gemini:		/cgi-bin/gmifetch?%s
+# Use the `magnet.cgi` CGI shell script to pass magnet links to Transmission.
+magnet:		/cgi-bin/magnet.cgi?%s
 ```
 
-`gmifetch` can be found in the `bonus/` directory. But you could write a
-local CGI wrapper for any other gemini document downloader, and it would
-work just fine.
+`magnet.cgi` can be found in the `bonus/` directory. You can also write a
+local CGI wrapper to pass the links to your BitTorrent client of choice.
 
 #### dict
 

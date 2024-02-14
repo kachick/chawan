@@ -44,7 +44,7 @@ Chawan only uses mime.types files for finding mailcap entries; buffers use an
 internal mime.types file for content type detection instead.
 
 The default mime.types file only includes file formats that buffers can handle,
-which is rather limited (at the time of writing, 5 file formats). Therefore it
+which is rather limited (at the time of writing, 7 file formats). Therefore it
 is highly recommended to configure at least one external mime.types file if you
 use mailcap.
 <!-- MANON
