@@ -1176,6 +1176,11 @@ proc checkMailcap(pager: Pager, container: Container): CheckMailcapResult =
         return pager.runMailcapReadFile(container, entry[], cmd, outpath)
   return (nil, true)
 
+proc redirectTo(pager: Pager, container: Container, request: Request) =
+  pager.alert("Redirecting to " & $request.url)
+  pager.gotoURL(request, some(container.location), replace = container,
+    redirectdepth = container.redirectdepth + 1, referrer = pager.container)
+
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
   of FAIL:
@@ -1219,10 +1224,17 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.authorize()
   of REDIRECT:
     if container.redirectdepth < pager.config.network.max_redirect:
-      pager.alert("Redirecting to " & $event.request.url)
-      pager.gotoURL(event.request, some(container.location),
-        replace = container, redirectdepth = container.redirectdepth + 1,
-        referrer = pager.container)
+      let url = event.request.url
+      if container.location.scheme == url.scheme or
+          container.location.scheme == "cgi-bin" or
+          container.location.scheme == "http" and url.scheme == "https" or
+          container.location.scheme == "https" and url.scheme == "http":
+        pager.redirectTo(container, event.request)
+      else:
+        pager.ask("Warning: switch protocols? " & $url).then(proc(x: bool) =
+          if x:
+            pager.redirectTo(container, event.request)
+        )
     else:
       pager.alert("Error: maximum redirection depth reached")
       pager.deleteContainer(container)
