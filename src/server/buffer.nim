@@ -87,6 +87,7 @@ type
   Buffer* = ref object
     rfd: int # file descriptor of command pipe
     fd: int # file descriptor of buffer source
+    url: URL # URL before readFromFd
     alive: bool
     lines: FlexibleGrid
     rendered: bool
@@ -273,9 +274,6 @@ macro task(fun: typed) =
   let pfun = getProxyFunction(funid)
   pfun.istask = true
   fun
-
-func url(buffer: Buffer): URL =
-  return buffer.source.request.url
 
 func charsets(buffer: Buffer): seq[Charset] =
   if buffer.source.charset != CHARSET_UNKNOWN:
@@ -1760,6 +1758,7 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     attrs: WindowAttributes, loader: FileLoader, ssock: ServerSocket) =
   let socks = ssock.acceptSocketStream()
   let buffer = Buffer(
+    url: source.request.url,
     alive: true,
     attrs: attrs,
     config: config,
