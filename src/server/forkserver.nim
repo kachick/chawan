@@ -13,7 +13,6 @@ import io/urlfilter
 import loader/headers
 import loader/loader
 import server/buffer
-import types/buffersource
 import types/cookie
 import types/urimethodmap
 import types/url
@@ -288,9 +287,10 @@ proc newForkServer*(): ForkServer =
       raise newException(Defect, "Failed to open output handle")
     if not open(readf, pipefd_out[0], fmRead):
       raise newException(Defect, "Failed to open input handle")
-    discard fcntl(pipefd_err[0], F_SETFL, fcntl(pipefd_err[0], F_GETFL, 0) or O_NONBLOCK)
+    let estream = newPosixStream(pipefd_err[0])
+    estream.setBlocking(false)
     return ForkServer(
       ostream: newFileStream(writef),
       istream: newFileStream(readf),
-      estream: newPosixStream(pipefd_err[0])
+      estream: estream
     )

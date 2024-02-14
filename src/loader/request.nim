@@ -1,5 +1,4 @@
 import std/options
-import std/streams
 import std/strutils
 import std/tables
 
@@ -84,11 +83,6 @@ type
     fromcache*: bool
     clientId*: StreamId
 
-  ReadableStream* = ref object of Stream
-    isource*: Stream
-    buf: string
-    isend: bool
-
 jsDestructor(Request)
 
 proc js_url(this: Request): string {.jsfget: "url".} =
@@ -104,62 +98,6 @@ iterator pairs*(headers: Headers): (string, string) =
   for k, vs in headers.table:
     for v in vs:
       yield (k, v)
-
-proc rsReadData(s: Stream, buffer: pointer, bufLen: int): int =
-  var s = ReadableStream(s)
-  if s.atEnd:
-    return 0
-  while s.buf.len < bufLen:
-    var len: int
-    s.isource.read(len)
-    if len == 0:
-      result = s.buf.len
-      copyMem(buffer, addr(s.buf[0]), result)
-      s.buf = s.buf.substr(result)
-      s.isend = true
-      return
-    var nbuf: string
-    s.isource.readStr(len, nbuf)
-    s.buf &= nbuf
-  assert s.buf.len >= bufLen
-  result = bufLen
-  copyMem(buffer, addr(s.buf[0]), result)
-  s.buf = s.buf.substr(result)
-  if s.buf.len == 0:
-    var len: int
-    s.isource.read(len)
-    if len == 0:
-      s.isend = true
-    else:
-      s.isource.readStr(len, s.buf)
-
-proc rsAtEnd(s: Stream): bool =
-  ReadableStream(s).isend
-
-proc rsClose(s: Stream) = {.cast(tags: [WriteIOEffect]).}: #TODO TODO TODO ew.
-  var s = ReadableStream(s)
-  if s.isend: return
-  s.buf = ""
-  while true:
-    var len: int
-    s.isource.read(len)
-    if len == 0:
-      s.isend = true
-      break
-    s.isource.setPosition(s.isource.getPosition() + len)
-
-proc newReadableStream*(isource: Stream): ReadableStream =
-  var len: int
-  isource.read(len)
-  result = ReadableStream(
-    isource: isource,
-    readDataImpl: rsReadData,
-    atEndImpl: rsAtEnd,
-    closeImpl: rsClose,
-    isend: len == 0
-  )
-  if len != 0:
-    isource.readStr(len, result.buf)
 
 func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
     body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,

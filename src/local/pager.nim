@@ -31,8 +31,8 @@ import loader/loader
 import loader/request
 import local/container
 import local/select
+import server/buffer
 import server/forkserver
-import types/buffersource
 import types/cell
 import types/color
 import types/cookie

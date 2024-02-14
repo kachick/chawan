@@ -608,7 +608,7 @@ proc fetch*(loader: FileLoader, input: Request): FetchPromise =
   stream.swrite(LOAD)
   stream.swrite(input)
   stream.flush()
-  let fd = int(stream.source.getFd())
+  let fd = int(stream.fd)
   loader.registerFun(fd)
   let promise = FetchPromise()
   loader.connecting[fd] = ConnectData(
@@ -624,7 +624,7 @@ proc reconnect*(loader: FileLoader, data: ConnectData) =
   stream.swrite(LOAD)
   stream.swrite(data.request)
   stream.flush()
-  let fd = int(stream.source.getFd())
+  let fd = int(stream.fd)
   loader.registerFun(fd)
   loader.connecting[fd] = ConnectData(
     promise: data.promise,
@@ -638,7 +638,7 @@ proc switchStream*(data: var ConnectData, stream: SocketStream) =
 proc switchStream*(loader: FileLoader, data: var OngoingData,
     stream: SocketStream) =
   data.response.body = stream
-  let fd = int(stream.source.getFd())
+  let fd = int(stream.fd)
   let realCloseImpl = stream.closeImpl
   stream.closeImpl = nil
   data.response.unregisterFun = proc() =
@@ -704,7 +704,7 @@ proc onConnected*(loader: FileLoader, fd: int) =
       response: response,
       bodyRead: response.bodyRead
     )
-    stream.source.getFd().setBlocking(false)
+    stream.setBlocking(false)
     promise.resolve(JSResult[Response].ok(response))
   else:
     var msg: string
@@ -724,7 +724,7 @@ proc onRead*(loader: FileLoader, fd: int) =
       let olen = buffer[].buf.len
       try:
         buffer[].buf.setLen(olen + BufferSize)
-        let n = response.body.readData(addr buffer[].buf[olen], BufferSize)
+        let n = response.body.recvData(addr buffer[].buf[olen], BufferSize)
         buffer[].buf.setLen(olen + n)
         if n == 0:
           break
@@ -743,7 +743,7 @@ proc onError*(loader: FileLoader, fd: int) =
     when defined(debug):
       var lbuf {.noinit.}: array[BufferSize, char]
       if not response.body.atEnd():
-        let n = response.body.readData(addr lbuf[0], lbuf.len)
+        let n = response.body.recvData(addr lbuf[0], lbuf.len)
         assert n == 0
       assert response.body.atEnd()
     buffer[].bodyRead.resolve(buffer[].buf)

@@ -216,11 +216,10 @@ proc quoteFile(file: string, qs: QuoteState): string =
       elif qs == QS_NORMAL:
         s &= '\\'
       # double-quoted: append normally
-    of '_', '.', ':', '/':
+    of AsciiAlphaNumeric, '_', '.', ':', '/':
       discard # no need to quote
-    else:
-      if c notin AsciiAlpha and qs == QS_NORMAL:
-        s &= '\\'
+    elif qs == QS_NORMAL:
+      s &= '\\'
     s &= c
   return s
 

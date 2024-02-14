@@ -23,7 +23,7 @@ type StreamRenderer* = object
 
 #TODO pass bool for whether we can rewind
 proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset]):
-    StreamRenderer =
+    ref StreamRenderer =
   var charsets = newSeq[Charset](charsets0.len)
   for i in 0 ..< charsets.len:
     charsets[i] = charsets0[charsets.high - i]
@@ -37,7 +37,7 @@ proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset]):
   let decoder = newDecoderStream(stream, cs, errormode = em)
   decoder.setInhibitCheckEnd(true)
   let encoder = newEncoderStream(decoder)
-  return StreamRenderer(
+  return (ref StreamRenderer)(
     stream: stream,
     decoder: decoder,
     encoder: encoder,
@@ -169,3 +169,10 @@ proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer): bool =
     grid.addLine()
   grid.renderChunk(renderer, buf)
   return true
+
+proc finishRender*(grid: var FlexibleGrid, renderer: var StreamRenderer) =
+  renderer.decoder.setInhibitCheckEnd(false)
+  let buf = renderer.decoder.readAll()
+  if grid.len == 0:
+    grid.addLine()
+  grid.renderChunk(renderer, buf)

@@ -40,7 +40,6 @@ import loader/headers
 import loader/loader
 import render/renderdocument
 import render/rendertext
-import types/buffersource
 import types/cell
 import types/color
 import types/cookie
@@ -57,8 +56,10 @@ import chakasu/charset
 import chame/tags
 
 type
-  LoadInfo* = enum
-    CONNECT, DOWNLOAD, RENDER, DONE
+  BufferSource* = object
+    contentType*: Option[string] # override
+    charset*: Charset # fallback
+    request*: Request
 
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
@@ -71,7 +72,7 @@ type
   # LOADING_PAGE: istream open
   # LOADING_RESOURCES: istream closed, resources open
   # LOADED: istream closed, resources closed
-  BufferState* = enum
+  BufferState = enum
     LOADING_PAGE, LOADING_RESOURCES, LOADED
 
   HoverType* = enum
@@ -88,12 +89,14 @@ type
     rfd: int # file descriptor of command pipe
     fd: int # file descriptor of buffer source
     url: URL # URL before readFromFd
+    pstream: SocketStream # control stream
     alive: bool
+    connected: bool
+    savetask: bool
+    ishtml: bool
+    firstBufferRead: bool
     lines: FlexibleGrid
-    rendered: bool
     source: BufferSource
-    width: int
-    height: int
     attrs: WindowAttributes
     window: Window
     document: Document
@@ -102,25 +105,20 @@ type
     istream: SocketStream
     sstream: StringStream
     available: int
-    pstream: SocketStream # pipe stream
-    srenderer: StreamRenderer
-    connected: bool
     state: BufferState
     prevnode: StyledNode
     loader: FileLoader
     config: BufferConfig
-    userstyle: CSSStylesheet
     tasks: array[BufferCommand, int] #TODO this should have arguments
-    savetask: bool
     hovertext: array[HoverType, string]
     estream: Stream # error stream
-    ishtml: bool
     ssock: ServerSocket
     factory: CAtomFactory
     uastyle: CSSStylesheet
     quirkstyle: CSSStylesheet
+    userstyle: CSSStylesheet
     htmlParser: HTML5ParserWrapper
-    firstBufferRead: bool
+    srenderer: ref StreamRenderer
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -637,12 +635,10 @@ proc processData(buffer: Buffer): bool =
     buffer.document = buffer.htmlParser.builder.document
     return res
   else:
-    return buffer.lines.renderStream(buffer.srenderer)
+    return buffer.lines.renderStream(buffer.srenderer[])
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
-  buffer.width = buffer.attrs.width
-  buffer.height = buffer.attrs.height - 1
   buffer.prevstyled = nil
   if buffer.window != nil:
     buffer.window.attrs = attrs
@@ -905,10 +901,9 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
       let stream = buffer.loader.tee((parentPid, fd))
       var success: bool
       stream.sread(success)
-      let sfd = int(stream.source.getFd())
       if success:
         switchStream(buffer.loader.connecting[fd], stream)
-        buffer.loader.connecting[sfd] = buffer.loader.connecting[fd]
+        buffer.loader.connecting[stream.fd] = buffer.loader.connecting[fd]
       else:
         # Unlikely, but theoretically possible: our SUSPEND connection
         # finished before the connection could have been completed.
@@ -923,10 +918,9 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
       let stream = buffer.loader.tee((parentPid, fd))
       var success: bool
       stream.sread(success)
-      let sfd = int(stream.source.getFd())
       if success:
         buffer.loader.switchStream(buffer.loader.ongoing[fd], stream)
-        buffer.loader.ongoing[sfd] = buffer.loader.ongoing[fd]
+        buffer.loader.ongoing[stream.fd] = buffer.loader.ongoing[fd]
       else:
         # Already finished.
         #TODO what to do?
@@ -945,7 +939,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
       it = 0
     let socks = ssock.acceptSocketStream()
     buffer.pstream = socks
-    buffer.rfd = int(socks.source.getFd())
+    buffer.rfd = socks.fd
     buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
     return 0
   else: # parent
@@ -1094,7 +1088,7 @@ proc onload(buffer: Buffer) =
       var n = 0
       if not reprocess:
         buffer.sstream.data.prepareMutation()
-        n = buffer.istream.readData(addr buffer.sstream.data[0], BufferSize)
+        n = buffer.istream.recvData(addr buffer.sstream.data[0], BufferSize)
         if n != buffer.sstream.data.len:
           buffer.sstream.data.setLen(n)
       if n != 0 or reprocess:
@@ -1120,6 +1114,8 @@ proc onload(buffer: Buffer) =
           buffer.state = LOADED
           if buffer.document != nil: # may be nil if not buffer.ishtml
             buffer.document.readyState = READY_STATE_COMPLETE
+          if not buffer.ishtml:
+            buffer.lines.finishRender(buffer.srenderer[])
           buffer.dispatchLoadEvent()
           buffer.resolveTask(LOAD, res)
         )
@@ -1765,12 +1761,10 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     loader: loader,
     source: source,
     sstream: newStringStream(),
-    width: attrs.width,
-    height: attrs.height - 1,
     selector: newSelector[int](),
     estream: newFileStream(stderr),
     pstream: socks,
-    rfd: int(socks.source.getFd()),
+    rfd: socks.fd,
     ssock: ssock
   )
   gbuffer = buffer

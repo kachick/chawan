@@ -79,8 +79,11 @@ proc writeEntry*(stream: Stream, entry: FormDataEntry, boundary: string) =
         var buf {.noinit.}: array[4096, uint8]
         while true:
           let n = fs.readData(addr buf[0], 4096)
+          if n == 0:
+            break
           stream.writeData(addr buf[0], n)
-          if n != 4096: break
+          if n < buf.len:
+            break
     else:
       stream.writeData(blob.buffer, int(blob.size))
     stream.write("\r\n")

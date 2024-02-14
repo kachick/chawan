@@ -314,10 +314,10 @@ proc consoleBuffer(client: Client): Container {.jsfget.} =
 proc acceptBuffers(client: Client) =
   while client.pager.unreg.len > 0:
     let (pid, stream) = client.pager.unreg.pop()
-    let fd = stream.source.getFd()
-    if int(fd) in client.fdmap:
+    let fd = int(stream.fd)
+    if fd in client.fdmap:
       client.selector.unregister(fd)
-      client.fdmap.del(int(fd))
+      client.fdmap.del(fd)
     else:
       client.pager.procmap.del(pid)
     stream.close()
@@ -328,8 +328,8 @@ proc acceptBuffers(client: Client) =
       client.pager.alert("Error: failed to set up buffer")
       continue
     container.setStream(stream)
-    let fd = stream.source.getFd()
-    client.fdmap[int(fd)] = container
+    let fd = int(stream.fd)
+    client.fdmap[fd] = container
     client.selector.registerHandle(fd, {Read}, 0)
     client.pager.handleEvents(container)
     accepted.add(pid)
@@ -344,22 +344,33 @@ proc handleRead(client: Client, fd: int) =
       client.handlePagerEvents()
     )
   elif fd == client.forkserver.estream.fd:
-    var nl = false
+    const BufferSize = 4096
     const prefix = "STDERR: "
-    var s = prefix
+    var buffer {.noinit.}: array[BufferSize, char]
+    let estream = client.forkserver.estream
+    var hadlf = true
     while true:
       try:
-        let c = client.forkserver.estream.readChar()
-        if nl and s.len > prefix.len:
-          client.console.err.write(s)
-          s = prefix
-          nl = false
-        s &= c
-        nl = c == '\n'
-      except IOError:
+        let n = estream.recvData(addr buffer[0], BufferSize)
+        var i = 0
+        while i < n:
+          var j = n
+          var found = false
+          for k in i ..< n:
+            if buffer[k] == '\n':
+              j = k + 1
+              found = true
+              break
+          if hadlf:
+            client.console.err.write(prefix)
+          if j - i > 0:
+            client.console.err.writeData(addr buffer[i], j - i)
+          i = j
+          hadlf = found
+      except ErrorAgain:
         break
-    if s.len > prefix.len:
-      client.console.err.write(s)
+    if not hadlf:
+      client.console.err.write('\n')
     client.console.err.flush()
   elif fd in client.loader.connecting:
     client.loader.onConnected(fd)

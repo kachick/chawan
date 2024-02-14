@@ -20,7 +20,6 @@ import loader/request
 import local/select
 import server/buffer
 import server/forkserver
-import types/buffersource
 import types/cell
 import types/color
 import types/cookie

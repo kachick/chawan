@@ -6,6 +6,7 @@ type
   PosixStream* = ref object of Stream
     fd*: cint
     isend*: bool
+    blocking*: bool
 
   ErrorAgain* = object of IOError
   ErrorBadFD* = object of IOError
@@ -33,32 +34,6 @@ proc raisePosixIOError*() =
   else:
     raise newException(IOError, $strerror(errno))
 
-proc psClose(s: Stream) =
-  let s = cast[PosixStream](s)
-  discard close(s.fd)
-
-proc psReadData(s: Stream, buffer: pointer, len: int): int =
-  assert len != 0
-  let s = cast[PosixStream](s)
-  let wasend = s.isend
-  let buffer = cast[ptr UncheckedArray[uint8]](buffer)
-  while result < len:
-    let n = read(s.fd, addr buffer[result], len - result)
-    if n < 0:
-      if result == 0:
-        result = n
-      break
-    elif n == 0:
-      s.isend = true
-      break
-    result += n
-  if result == 0:
-    if wasend:
-      raise newException(EOFError, "eof")
-    s.isend = true
-  if result == -1:
-    raisePosixIOError()
-
 method recvData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
   let n = read(s.fd, buffer, len)
   if n < 0:
@@ -69,6 +44,12 @@ method recvData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
     s.isend = true
   return n
 
+proc recvData*(s: PosixStream, buffer: var openArray[uint8]): int {.inline.} =
+  return s.recvData(addr buffer[0], buffer.len)
+
+proc recvData*(s: PosixStream, buffer: var openArray[char]): int {.inline.} =
+  return s.recvData(addr buffer[0], buffer.len)
+
 method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
   #TODO use sendData instead
   let n = write(s.fd, buffer, len)
@@ -77,30 +58,42 @@ method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
   return n
 
 method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
+  s.blocking = blocking
   let ofl = fcntl(s.fd, F_GETFL, 0)
   if blocking:
     discard fcntl(s.fd, F_SETFL, ofl and not O_NONBLOCK)
   else:
     discard fcntl(s.fd, F_SETFL, ofl or O_NONBLOCK)
 
+method sclose*(s: PosixStream) {.base.} =
+  discard close(s.fd)
+
+proc psClose(s: Stream) =
+  PosixStream(s).sclose()
+
+proc psReadData(s: Stream, buffer: pointer, len: int): int =
+  let s = PosixStream(s)
+  assert len != 0 and s.blocking
+  return s.recvData(buffer, len)
+
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
-  #TODO use sendData instead
-  let s = cast[PosixStream](s)
-  let res = write(s.fd, buffer, len)
-  if res == -1:
-    raisePosixIOError()
+  let s = PosixStream(s)
+  assert len != 0 and s.blocking
+  discard s.sendData(buffer, len)
 
 proc psAtEnd(s: Stream): bool =
-  return cast[PosixStream](s).isend
+  return PosixStream(s).isend
+
+proc addStreamIface*(ps: PosixStream) =
+  ps.closeImpl = cast[typeof(ps.closeImpl)](psClose)
+  ps.readDataImpl = cast[typeof(ps.readDataImpl)](psReadData)
+  ps.writeDataImpl = cast[typeof(ps.writeDataImpl)](psWriteData)
+  ps.atEndImpl = psAtEnd
 
 proc newPosixStream*(fd: FileHandle): PosixStream =
-  return PosixStream(
-    fd: fd,
-    closeImpl: psClose,
-    readDataImpl: psReadData,
-    writeDataImpl: psWriteData,
-    atEndImpl: psAtEnd
-  )
+  let ps = PosixStream(fd: fd, blocking: true)
+  ps.addStreamIface()
+  return ps
 
 proc newPosixStream*(path: string, flags, mode: cint): PosixStream =
   let fd = open(cstring(path), flags, mode)
