@@ -19,6 +19,7 @@ import display/term
 import display/winattrs
 import extern/editor
 import extern/runproc
+import extern/stdio
 import extern/tempfile
 import io/promise
 import io/socketstream
@@ -954,15 +955,11 @@ proc runMailcapReadPipe(pager: Pager, container: Container,
     stdout.flushFile()
     discard dup2(pipefd_in[0], stdin.getFileHandle())
     discard dup2(pipefd_out[1], stdout.getFileHandle())
-    let devnull = open("/dev/null", O_WRONLY)
-    discard dup2(devnull, stderr.getFileHandle())
-    discard close(devnull)
+    closeStderr()
     discard close(pipefd_in[0])
     discard close(pipefd_out[1])
-    discard execCmd(cmd)
-    discard close(stdin.getFileHandle())
-    discard close(stdout.getFileHandle())
-    quit(0)
+    myExec(cmd)
+    assert false
   # parent
   discard close(pipefd_in[0])
   discard close(pipefd_out[1])
@@ -996,14 +993,11 @@ proc runMailcapWritePipe(pager: Pager, container: Container,
     discard close(pipefd[1])
     discard dup2(pipefd[0], stdin.getFileHandle())
     if not needsterminal:
-      let devnull = open("/dev/null", O_WRONLY)
-      discard dup2(devnull, stdout.getFileHandle())
-      discard dup2(devnull, stderr.getFileHandle())
-      discard close(devnull)
+      closeStdout()
+      closeStderr()
     discard close(pipefd[0])
-    discard execCmd(cmd)
-    discard close(stdin.getFileHandle())
-    quit(0)
+    myExec(cmd)
+    assert false
   else:
     # parent
     discard close(pipefd[0])
@@ -1035,12 +1029,10 @@ proc runMailcapReadFile(pager: Pager, container: Container,
       discard close(pipefd[0])
       discard dup2(pipefd[1], stdout.getFileHandle())
       discard close(pipefd[1])
-      let devnull = open("/dev/null", O_WRONLY)
-      discard dup2(devnull, stderr.getFileHandle())
-      discard close(devnull)
-      discard execCmd(cmd)
+      closeStderr()
+      let ret = execCmd(cmd)
       discard tryRemoveFile(outpath)
-      quit(0)
+      quit(ret)
     # parent
     discard close(pipefd[1])
     let fdout = pipefd[0]
@@ -1070,14 +1062,12 @@ proc runMailcapWriteFile(pager: Pager, container: Container,
       let pid = fork()
       if pid == 0:
         # child process
-        let devnull = open("/dev/null", O_WRONLY)
-        discard dup2(devnull, stdin.getFileHandle())
-        discard dup2(devnull, stdout.getFileHandle())
-        discard dup2(devnull, stderr.getFileHandle())
-        discard close(devnull)
-        discard execCmd(cmd)
+        closeStdin()
+        closeStdout()
+        closeStderr()
+        let ret = execCmd(cmd)
         discard tryRemoveFile(outpath)
-        quit(0)
+        quit(ret)
   )
   return (p, false)
 
@@ -1100,13 +1090,11 @@ proc filterBuffer(pager: Pager, container: Container): CheckMailcapResult =
     stdout.flushFile()
     discard dup2(pipefd_in[0], stdin.getFileHandle())
     discard dup2(pipefd_out[1], stdout.getFileHandle())
-    let devnull = open("/dev/null", O_WRONLY)
-    discard dup2(devnull, stderr.getFileHandle())
-    discard close(devnull)
+    closeStderr()
     discard close(pipefd_in[0])
     discard close(pipefd_out[1])
-    discard execCmd(cmd)
-    quit(0)
+    myExec(cmd)
+    assert false
   else:
     # parent
     discard close(pipefd_in[0])
@@ -1240,7 +1228,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       pager.deleteContainer(container)
       return false
   of ANCHOR:
-    var url2 = newURL(container.location)
+    let url2 = newURL(container.location)
     url2.setHash(event.anchor)
     pager.dupeBuffer(container, url2)
   of NO_ANCHOR:
@@ -1296,7 +1284,6 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     dec pager.numload
     pager.deleteContainer(container)
     return false
-  of NO_EVENT: discard
   return true
 
 proc handleEvents*(pager: Pager, container: Container) =
