@@ -474,7 +474,8 @@ host = '(www\.)?npr\.org'
 rewrite-url = '''
 (x) => {
 	x.host = "text.npr.org";
-	x.pathname = x.pathname.replace(/(.*)\/.*/, "$1").replace(/.*\//, "");
+	const s = x.pathname.split('/');
+	x.pathname = s.at(s.length > 2 ? -2 : 1);
 	/* No need to return; URL objects are passed by reference. */
 }
 '''
