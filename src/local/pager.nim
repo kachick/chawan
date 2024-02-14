@@ -1002,7 +1002,7 @@ proc runMailcapWritePipe(pager: Pager, container: Container,
     # parent
     discard close(pipefd[0])
     let fd = pipefd[1]
-    let p = container.redirectToFd(fd, wait = false, cache = false)
+    let p = container.redirectToFd(fd, wait = true, cache = false)
     discard close(fd)
     if needsterminal:
       var x: cint
