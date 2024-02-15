@@ -149,6 +149,7 @@ proc sendData*(ps: PosixStream, buffer: LoaderBuffer, si = 0): int {.inline.} =
 
 proc close*(handle: LoaderHandle) =
   for output in handle.outputs:
+    #TODO assert not output.registered
     assert output.sostream == nil
     if output.ostream != nil:
       output.ostream.close()
