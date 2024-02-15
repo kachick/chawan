@@ -210,14 +210,11 @@ proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
     if S_ISREG(stats.st_mode):
       # stdin is a regular file, so we can't select on it.
       let originalUrl = if handle.cached: originalUrl else: nil
-      let output = handle.output
-      output.ostream.setBlocking(false)
+      handle.output.ostream.setBlocking(false)
       ctx.addFd0(handle, originalUrl)
-      var nn = 0
       while true:
         let buffer = newLoaderBuffer()
         let n = ps.recvData(buffer)
-        nn += n
         if n == 0:
           break
         var unregWrite: seq[OutputHandle] = @[]
@@ -238,7 +235,12 @@ proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
         if n < buffer.cap:
           break
       for output in handle.outputs:
-        output.parent = nil
+        if output.registered:
+          output.parent = nil
+          output.istreamAtEnd = true
+        else:
+          output.ostream.close()
+          output.ostream = nil
       handle.outputs.setLen(0)
       handle.istream.close()
       handle.istream = nil
