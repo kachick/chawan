@@ -2306,6 +2306,8 @@ func target0*(element: Element): string =
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
+  if not element.attrb(atHref):
+    return ""
   let url = parseURL(element.attr(atHref), some(element.document.baseURL))
   if url.isSome:
     return $url.get
