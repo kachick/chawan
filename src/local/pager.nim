@@ -774,6 +774,7 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
 proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset, fd: FileHandle,
     title: string) =
   let container = pager.readPipe0(ctype, cs, fd, none(URL), title, true)
+  inc pager.numload
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
