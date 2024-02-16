@@ -25,10 +25,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static SSL_CTX* ssl_ctx;
-static SSL *ssl;
-static BIO *conn;
-
 /* CGI responses */
 #define INPUT_RESPONSE "Content-Type: text/html\r\n" \
 	"\r\n" \
@@ -189,27 +185,14 @@ static int check_cert(const char *theirs, const char *hostp,
 	return 1;
 }
 
-static char HexTable[] = "0123456789ABCDEF";
-
-static void hex_encode(const unsigned char *inp, char *outbuf, int len)
-{
-	const unsigned char *p;
-	char *q;
-
-	for (p = inp, q = outbuf; p < &inp[len]; ++p) {
-		if (p != inp)
-			*q++ = ':';
-		*q++ = HexTable[(*p >> 4) & 0xF];
-		*q++ = HexTable[*p & 0xF];
-	}
-	*q++ = '\0';
-}
-
 static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
 {
-	unsigned int len2;
+	static const char HexTable[] = "0123456789ABCDEF";
+	unsigned int len2 = 0;
 	EVP_MD_CTX* mdctx;
 	unsigned char hashbuf[EVP_MAX_MD_SIZE];
+	const unsigned char *p;
+	char *q;
 
 	if (!(mdctx = EVP_MD_CTX_new()))
 		SDIE("Failed to initialize MD_CTX");
@@ -217,11 +200,17 @@ static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
 		SDIE("Failed to initialize sha256");
 	if (!EVP_DigestUpdate(mdctx, ibuf, len))
 		SDIE("Failed to update digest");
-	len2 = 0;
 	if (!EVP_DigestFinal_ex(mdctx, hashbuf, &len2))
 		SDIE("Failed to finalize digest");
 	EVP_MD_CTX_free(mdctx);
-	hex_encode(hashbuf, obuf2, len2);
+	/* hex encode hashbuf */
+	for (p = hashbuf, q = obuf2; p < &hashbuf[len2]; ++p) {
+		if (p != hashbuf)
+			*q++ = ':';
+		*q++ = HexTable[(*p >> 4) & 0xF];
+		*q++ = HexTable[*p & 0xF];
+	}
+	*q = '\0';
 }
 
 /* 1: cert found & valid
@@ -229,7 +218,7 @@ static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
  * -1: cert not found
  * -2: cert found, but notAfter updated
  */
-static int connect(const char *hostp, const char *portp,
+static int connect(BIO *conn, const char *hostp, const char *portp,
 	char *linebuf, char **stored_digestp, time_t *their_time,
 	char *hashbuf2, FILE *known_hosts)
 {
@@ -239,6 +228,7 @@ static int connect(const char *hostp, const char *portp,
 	int len, res;
 	const ASN1_TIME *notAfter;
 	struct tm their_tm;
+	SSL *ssl;
 
 	if (!BIO_set_conn_hostname(conn, hostp))
 		SDIE("Error setting BIO hostname");
@@ -279,7 +269,7 @@ static int connect(const char *hostp, const char *portp,
 	return res;
 }
 
-static void read_response(const char *urlbuf)
+static void read_response(BIO *conn, const char *urlbuf)
 {
 	int bytes, total;
 	const char *tmp;
@@ -398,9 +388,8 @@ static void read_response(const char *urlbuf)
 static void decode_query(const char *input_url, char *output_buffer)
 {
 	const char *p;
-	char *q, *endp, c;
+	char *q, c, *endp = &output_buffer[BUFSIZE];
 
-	endp = &output_buffer[BUFSIZE];
 	for (p = input_url, q = output_buffer; *p && q < endp; ++p, ++q) {
 		if (*p != '%') {
 			*q = *p;
@@ -586,6 +575,8 @@ int main(void)
 	char reqbuf[BUFSIZE + 1] = "gemini://", khsbuf[BUFSIZE + 2],
 		linebuf[BUFSIZE + 1];
 	FILE *known_hosts;
+	SSL_CTX *ssl_ctx;
+	BIO *conn;
 
 #define PROXY_ERR "gmifetch does not support proxies yet. Please disable" \
 	"your proxy for gemini URLs if you wish to proceed anyway."
@@ -630,12 +621,12 @@ int main(void)
 	if (method && !strcmp(method, "POST"))
 		read_post(hostp, reqbuf, khsbuf, &known_hosts);
 	CAT(reqbuf, "\r\n");
-	switch (connect(hostp, portp, linebuf, &stored_digestp, &their_time,
-		hashbuf2, known_hosts))
+	switch (connect(conn, hostp, portp, linebuf, &stored_digestp,
+		&their_time, hashbuf2, known_hosts))
 	{
 	case 1: /* valid certificate, connect */
 		BIO_puts(conn, reqbuf);
-		read_response(reqbuf);
+		read_response(conn, reqbuf);
 		break;
 	case 0: /* invalid certificate */
 		printf(INVALID_CERT_RESPONSE, stored_digestp, hashbuf2,
