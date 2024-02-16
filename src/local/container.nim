@@ -1600,13 +1600,14 @@ proc drawLines*(container: Container, display: var FixedGrid,
     let dls = by * display.width # starting position of row in display
     # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
     # we encountered a double-width character.)
-    var k = 0
-    if w > container.fromx:
-      while k < w - container.fromx:
-        display[dls + k].str &= ' '
-        inc k
     var cf = line.findFormat(w)
     var nf = line.findNextFormat(w)
+    var k = 0
+    while k < w - container.fromx:
+      display[dls + k].str &= ' '
+      if cf.pos != -1:
+        display[dls + k].format = cf.format
+      inc k
     let startw = w # save this for later
     # Now fill in the visible part of the row.
     while i < line.str.len:
@@ -1619,16 +1620,18 @@ proc drawLines*(container: Container, display: var FixedGrid,
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      if cf.pos != -1:
-        display[dls + k].format = cf.format
       if r == Rune('\t'):
         # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
         let tk = k + rw
         while k < tk:
           display[dls + k].str &= ' '
+          if cf.pos != -1:
+            display[dls + k].format = cf.format
           inc k
       else:
         display[dls + k].str &= r
+        if cf.pos != -1:
+          display[dls + k].format = cf.format
         k += rw
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
