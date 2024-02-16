@@ -647,6 +647,10 @@ proc checkWrap(ictx: var InlineContext, state: var InlineState, r: Rune) =
   state.prevrw = rw
   if ictx.word.str.len == 0:
     state.firstrw = rw
+  if rw >= 2:
+    # remove wrap opportunity, so we wrap properly on the last CJK char (instead
+    # of any dash inside CJK sentences)
+    ictx.wrappos = -1
   case state.computed{"word-break"}
   of WORD_BREAK_NORMAL:
     if rw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
