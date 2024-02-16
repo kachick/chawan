@@ -3,17 +3,16 @@
  * Gemini protocol adapter for Chawan.
  * Intended to be used through local CGI (by redirection in scheme-map).
  *
- * (FWIW, it should work with normal CGI or w3m's local CGI too. However,
- * it does not rewrite URLs, so you would have to figure out something for
- * that, e.g. by setting the base href or rewriting URLs in another layer.)
- *
- * Usage: gmifetch [URL]
+ * Usage: gmifetch
  *
  * Environment variables:
- * - QUERY_STRING is used if no URL arguments are passed.
+ * - MAPPED_URI_SCHEME, MAPPED_URI_HOST, MAPPED_URI_PORT, MAPPED_URI_PATH,
+ *   MAPPED_URI_QUERY for the URL parts. (Parameters are ignored, gmifetch does
+ *   not parse URLs.)
  * - GMIFETCH_KNOWN_HOSTS is used for setting the known_hosts file. If not set,
  *   we use $XDG_CONFIG_HOME/gmifetch/known_hosts, where $XDG_CONFIG_HOME falls
- *   back to $HOME/.config/gmifetch if not set.
+ *   back to $HOME/.config/gmifetch if not set. (TODO: add a way to set this
+ *   in config.toml)
  */
 
 #include <ctype.h>
@@ -125,84 +124,28 @@ static BIO *conn;
 
 #define PDIE(x) \
 	do { \
-		puts("Content-Type: text/plain\r\n"); \
-		puts(x); \
+		fputs("Cha-Control: ConnectionError 1 " x ": ", stdout); \
 		puts(strerror(errno)); \
 		exit(1); \
 	} while (0)
 
 #define SDIE(x) \
 	do { \
-		puts("Content-Type: text/plain\r\n"); \
-		puts(x); \
+		fputs("Cha-Control: ConnectionError 5 " x ": ", stdout); \
 		ERR_print_errors_fp(stdout); \
 		exit(1); \
 	} while (0)
 
 #define DIE(x) \
 	do { \
-		puts("Content-Type: text/plain\r\n\r\n" x); \
+		puts("Cha-Control: ConnectionError 1 " x); \
 		exit(1); \
 	} while (0)
 
 #define BUFSIZE 1024
 #define PUBKEY_BUF_SIZE 8192
 
-static void setup_ssl(void)
-{
-	SSL_library_init();
-	SSL_load_error_strings();
-	ssl_ctx = SSL_CTX_new(TLS_client_method());
-	SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION);
-	if (!(conn = BIO_new_ssl_connect(ssl_ctx)))
-		SDIE("Error creating BIO");
-#undef FLAGS
-}
-
-static void extract_hostname(const char *s, char **hostp, char **portp,
-	char **pathp, char **endp, char *urlbuf)
-{
-	const char *p;
-	size_t i, schlen;
-
-	if (!(p = strstr(s, "gemini://")))
-		DIE("Invalid URL: scheme delimiter not found");
-	p += strlen("gemini://");
-	schlen = p - s;
-	if (schlen >= BUFSIZE)
-		DIE("Scheme too long");
-#define SCHEME "gemini://"
-	schlen = strlen(SCHEME);
-	strcpy(urlbuf, SCHEME);
-	*hostp = &urlbuf[schlen];
-	for (i = schlen; *p && *p != ':' && *p != '/' && i < BUFSIZE; ++p, ++i)
-		urlbuf[i] = *p;
-	if (i + 2 >= BUFSIZE) /* +2 for CRLF */
-		DIE("Host too long");
-	*portp = &urlbuf[i];
-	if (*p != ':') {
-		if (i + 5 >= BUFSIZE)
-			DIE("Host too long");
-		strcpy(&urlbuf[i], ":1965");
-		i += 5;
-	} else {
-		for (; *p && *p != '/' && i < BUFSIZE; ++i, ++p)
-			urlbuf[i] = *p;
-	}
-	*pathp = &urlbuf[i];
-	if (i < BUFSIZE)
-		urlbuf[i++] = '/';
-	if (*p == '/')
-		++p;
-	for (; *p && i < BUFSIZE; ++i, ++p)
-		urlbuf[i] = *p;
-	if (i + 2 >= BUFSIZE) /* +2 for CRLF */
-		DIE("Host too long");
-	*endp = &urlbuf[i];
-	urlbuf[i] = '\0';
-}
-
-int check_cert(const char *theirs, char *hostp, char **stored_digestp,
+int check_cert(const char *theirs, const char *hostp, char **stored_digestp,
 	char *linebuf, time_t their_time, FILE *known_hosts)
 {
 	char *p, *q, *hashp, *timep;
@@ -285,7 +228,7 @@ static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
  * -1: cert not found
  * -2: cert found, but notAfter updated
  */
-static int connect(char *hostp, char *portp, char *pathp, char *endp,
+static int connect(const char *hostname, const char *hostp,
 	char *linebuf, char **stored_digestp, time_t *their_time,
 	char *hashbuf2, FILE *known_hosts)
 {
@@ -296,15 +239,12 @@ static int connect(char *hostp, char *portp, char *pathp, char *endp,
 	const ASN1_TIME *notAfter;
 	struct tm their_tm;
 
-	*pathp = '\0';
-	if (!BIO_set_conn_hostname(conn, hostp))
+	if (!BIO_set_conn_hostname(conn, hostname)) /* includes port */
 		SDIE("Error setting BIO hostname");
-	*pathp = '/';
 	BIO_get_ssl(conn, &ssl);
 #define PREFERRED_CIPHERS "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4"
 	if (!SSL_set_cipher_list(ssl, PREFERRED_CIPHERS))
 		SDIE("Error failed to set cipher list");
-	*portp = '\0';
 	if (!SSL_set_tlsext_host_name(ssl, hostp))
 		SDIE("Error failed to set tlsext host name");
 	if (BIO_do_connect(conn) <= 0)
@@ -332,9 +272,7 @@ static int connect(char *hostp, char *portp, char *pathp, char *endp,
 	*their_time = mktime(&their_tm);
 	res = check_cert(hashbuf2, hostp, stored_digestp, linebuf, *their_time,
 		known_hosts);
-	*portp = ':';
 	X509_free(cert);
-	strcpy(endp, "\r\n");
 	return res;
 }
 
@@ -483,10 +421,9 @@ void decode_query(const char *input_url, char *output_buffer)
 }
 
 
-void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
-	char *khsbuf, FILE **known_hosts)
+void read_post(const char *hostp, char *reqbuf, char *khsbuf,
+	FILE **known_hosts)
 {
-	/* TODO move query strings here */
 	size_t n;
 	char *p, *q;
 	FILE *known_hosts_tmp;
@@ -497,13 +434,19 @@ void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
 	n = fread(inbuf, 1, BUFSIZE, stdin);
 	inbuf[n] = '\0';
 	if ((p = strstr(inbuf, "input="))) {
-		decode_query(p + 6, buffer);
-		if (!(q = strstr(pathp, "?"))) /* no query string */
-			q = &pathp[strlen(pathp)];
-		for (; *p && q < &urlbuf[BUFSIZE]; ++p, ++q)
+		p += strlen("input=");
+		decode_query(p, buffer);
+		if (!(q = strstr(reqbuf, "?"))) { /* no query string */
+			q = &reqbuf[strlen(reqbuf)];
+			if (q == &reqbuf[BUFSIZE])
+				DIE("Query too long");
+			*q++ = '?';
+		}
+		for (; *p && q < &reqbuf[BUFSIZE]; ++p, ++q)
 			*q = *p;
-		if (q >= &urlbuf[BUFSIZE])
+		if (q >= &reqbuf[BUFSIZE])
 			DIE("Query too long");
+		return;
 	} else if (!(p = strstr(inbuf, "trust_cert="))) {
 		DIE("Invalid POST request: trust_cert missing");
 	}
@@ -528,7 +471,6 @@ void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
 		if (!(known_hosts_tmp = fopen(khsbuf, "w+")))
 			PDIE("Error opening temporary hosts file");
 		rewind(*known_hosts);
-		*portp = '\0';
 		total = 0;
 		while (fgets(buffer, BUFSIZE, *known_hosts)) {
 			len = strlen(buffer);
@@ -553,7 +495,6 @@ void read_post(const char *hostp, char *portp, char *pathp, const char *urlbuf,
 				fwrite(buffer, 1, len, known_hosts_tmp);
 			}
 		}
-		*portp = ':';
 		memcpy(buffer, khsbuf, BUFSIZE + 1);
 		buffer[khslen] = '\0';
 		fclose(*known_hosts);
@@ -628,60 +569,90 @@ FILE *open_known_hosts(char *khsbuf)
 	return known_hosts;
 }
 
-int main(int argc, const char *argv[])
+int main(void)
 {
-	const char *input_url, *method, *all_proxy;
-	char *hostp, *portp, *pathp, *endp, *stored_digestp;
-	int connect_res;
+	const char *schemep = getenv("MAPPED_URI_SCHEME");
+	const char *hostp = getenv("MAPPED_URI_HOST");
+	const char *portp = getenv("MAPPED_URI_PORT");
+	const char *pathp = getenv("MAPPED_URI_PATH");
+	const char *queryp = getenv("MAPPED_URI_QUERY");
+	const char *method = getenv("REQUEST_METHOD");
+	const char *all_proxy = getenv("ALL_PROXY");
+	char *stored_digestp;
 	time_t their_time;
 	char hashbuf2[EVP_MAX_MD_SIZE * 3 + 1];
-	char urlbuf[BUFSIZE + 1], khsbuf[BUFSIZE + 2], linebuf[BUFSIZE + 1];
+	char hostname[BUFSIZE + 1], reqbuf[BUFSIZE + 1] = "gemini://",
+		khsbuf[BUFSIZE + 2], linebuf[BUFSIZE + 1];
 	FILE *known_hosts;
 
-	if (argc != 2) {
-		input_url = getenv("QUERY_STRING");
-		if (!input_url)
-			DIE("Usage: gmifetch [url] (or set QUERY_STRING)");
-	} else {
-		input_url = argv[1];
-	}
-	all_proxy = getenv("ALL_PROXY");
 #define PROXY_ERR "gmifetch does not support proxies yet. Please disable" \
 	"your proxy for gemini URLs if you wish to proceed anyway."
 	if (all_proxy && *all_proxy)
 		DIE(PROXY_ERR);
 	known_hosts = open_known_hosts(khsbuf);
-	setup_ssl();
-	extract_hostname(input_url, &hostp, &portp, &pathp, &endp, urlbuf);
-	method = getenv("REQUEST_METHOD");
+	/* setup SSL */
+	OPENSSL_init_ssl(0, NULL);
+	ssl_ctx = SSL_CTX_new(TLS_client_method());
+	SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION);
+	/* check received URL */
+	if (!(conn = BIO_new_ssl_connect(ssl_ctx)))
+		SDIE("Error creating BIO");
+	if (!schemep || !*schemep || strcmp(schemep, "gemini"))
+		DIE("Invalid scheme");
+	if (!hostp || !*hostp)
+		DIE("Missing hostname");
+	if (!portp || !*portp)
+		portp = "1965";
+	if (!pathp || !*pathp)
+		pathp = "/";
+	if (!queryp)
+		queryp = "";
+	/* Hostname for BIO_set_conn_hostname */
+	strncpy(hostname, hostp, sizeof(hostname) - 1);
+#define CAT(me, ow) strncat(me, ow, sizeof(me) - strlen(me) - 1);
+	CAT(hostname, ":");
+	CAT(hostname, portp);
+	/* Note: we do not include the port number in the request string,
+	 * otherwise some servers refuse to serve anything.
+	 *
+	 * (I really wish this was explicitly mentioned in the standard.
+	 * Something like:
+	 *
+	 * WARNING: some gemini servers will not accept URLs containing the
+	 * default port number!!!)
+	 */
+	CAT(reqbuf, hostp);
+	CAT(reqbuf, pathp);
+	if (*queryp) {
+		CAT(reqbuf, "?");
+		CAT(reqbuf, queryp);
+	}
+	/* read_post may modify reqbuf (it appends a query string for input form
+	 * responses) */
 	if (method && !strcmp(method, "POST"))
-		read_post(hostp, portp, pathp, urlbuf, khsbuf, &known_hosts);
-	connect_res = connect(hostp, portp, pathp, endp, linebuf, &stored_digestp,
-		&their_time, hashbuf2, known_hosts);
-	if (connect_res == 1) { /* valid certificate */
-		/* I really wish this was explicitly mentioned in the
-		 * standard. Something like:
-		 *
-		 * !!!WARNING WARNING WARNING some gemini servers will
-		 * not accept URLs containing the default port number!!!
-		 */
-		if (!strncmp(portp, ":1965", 5))
-			/* move including null terminator */
-			memmove(portp, &portp[5], strlen(&portp[5]) + 1);
-		BIO_puts(conn, urlbuf);
-		read_response(urlbuf);
-	} else if (connect_res == 0) { /* invalid certificate */
+		read_post(hostp, reqbuf, khsbuf, &known_hosts);
+	CAT(reqbuf, "\r\n");
+	switch (connect(hostname, hostp, linebuf, &stored_digestp, &their_time,
+		hashbuf2, known_hosts))
+	{
+	case 1: /* valid certificate, connect */
+		BIO_puts(conn, reqbuf);
+		read_response(reqbuf);
+		break;
+	case 0: /* invalid certificate */
 		printf(INVALID_CERT_RESPONSE, stored_digestp, hashbuf2,
 			khsbuf);
-	} else if (connect_res == -1) { /* no certificate */
-		*portp = '\0';
+		break;
+	case -1: /* no certificate */
 		printf(UNKNOWN_CERT_RESPONSE, khsbuf, hashbuf2, hostp,
 			hashbuf2, (unsigned long)their_time);
-	} else { /* -2: updated expiration date */
-		*portp = '\0';
+		break;
+	case -2: /* -2: updated expiration date */
 		printf(UPDATED_CERT_RESPONSE, khsbuf,
 			ctime(&their_time), hostp, hashbuf2,
 			(unsigned long)their_time);
+		break;
+	default: DIE("wat 2");
 	}
 	BIO_free_all(conn);
 	exit(0);

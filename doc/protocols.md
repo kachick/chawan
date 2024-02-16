@@ -78,10 +78,6 @@ Note that gmifetch was written as a candidate for the bonus/ directory when
 Chawan's local CGI support was still in early stages of development, and
 thus has some legacy issues. In particular:
 
-* It takes the URL through `$QUERY_STRING`, and re-parses it for its needs. In
-  all likelihood it breaks on IPv6 URLs. Needless to say this is a bad idea
-  and should not be imitated.
-* Error messages are returned as full documents.
 * It does not support proxies.
 * It does not support private key authentication.
 
