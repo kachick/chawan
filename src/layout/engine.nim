@@ -608,7 +608,7 @@ proc addAtom(ictx: var InlineContext, state: var InlineState,
       ictx.addSpacing(shift, ictx.cellheight)
     ictx.minwidth = max(ictx.minwidth, atom.minwidth)
     ictx.applyLineHeight(ictx.currentLine, state.computed)
-    if atom.t == INLINE_WORD:
+    if atom.t != INLINE_WORD:
       ictx.currentLine.charwidth = 0
     ictx.currentLine.atoms.add(atom)
     state.fragment.atoms.add(atom)
