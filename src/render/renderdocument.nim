@@ -283,6 +283,8 @@ type RenderState = object
   # Position of the absolute positioning containing block:
   # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
   absolutePos: seq[Offset]
+  bgcolor: CellColor
+  root: bool
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   box: BlockBox; offset: Offset; attrs: WindowAttributes)
@@ -378,14 +380,19 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       state.absolutePos.add(offset)
       stack.add((nil, Offset(x: -1, y: -1)))
 
-    if box.computed{"visibility"} == VISIBILITY_VISIBLE:
+    if box.computed{"-cha-bgcolor-is-canvas"} and
+        state.bgcolor == defaultColor:
+      #TODO bgimage
       if box.computed{"background-color"}.a != 0: #TODO color blending
-        let ix = toInt(offset.x)
-        let iy = toInt(offset.y)
-        let iex = toInt(offset.x + box.size.w)
-        let iey = toInt(offset.y + box.size.h)
-        let color = box.computed{"background-color"}.cellColor()
-        grid.paintBackground(color, ix, iy, iex, iey, box.node, attrs)
+        state.bgcolor = box.computed{"background-color"}.cellColor()
+    elif box.computed{"visibility"} == VISIBILITY_VISIBLE:
+      if box.computed{"background-color"}.a != 0: #TODO color blending
+          let ix = toInt(offset.x)
+          let iy = toInt(offset.y)
+          let iex = toInt(offset.x + box.size.w)
+          let iey = toInt(offset.y + box.size.h)
+          let color = box.computed{"background-color"}.cellColor()
+          grid.paintBackground(color, ix, iy, iex, iey, box.node, attrs)
       if box.computed{"background-image"}.t == CONTENT_IMAGE and
           box.computed{"background-image"}.s != "":
         # ugly hack for background-image display... TODO actually display images
@@ -418,14 +425,16 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       for i in countdown(box.nested.high, 0):
         stack.add((box.nested[i], offset))
 
-proc renderDocument*(styledRoot: StyledNode; attrs: WindowAttributes):
-    FlexibleGrid =
-  var grid: FlexibleGrid
+proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
+    styledRoot: StyledNode; attrs: WindowAttributes) =
+  grid.setLen(0)
   var state = RenderState(
-    absolutePos: @[Offset(x: 0, y: 0)]
+    absolutePos: @[Offset(x: 0, y: 0)],
+    root: true,
+    bgcolor: bgcolor
   )
   let rootBox = renderLayout(styledRoot, attrs)
   grid.renderBlockBox(state, rootBox, Offset(x: 0, y: 0), attrs)
   if grid.len == 0:
     grid.addLine()
-  return grid
+  bgcolor = state.bgcolor

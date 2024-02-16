@@ -128,6 +128,7 @@ type
     marks: Table[string, PagePos]
     ishtml*: bool
     filter*: BufferFilter
+    bgcolor*: CellColor
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -470,11 +471,14 @@ proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
       container.lines[y] = res.lines[y]
       container.lines[y].str.mnormalize()
     container.updateCursor()
+    var isBgNew = container.bgcolor != res.bgcolor
+    if isBgNew:
+      container.bgcolor = res.bgcolor
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
       container.triggerEvent(STATUS)
     let cw = container.fromy ..< container.fromy + container.height
-    if w.a in cw or w.b in cw or cw.a in w or cw.b in w:
+    if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
       container.triggerEvent(UPDATE)
   )
 
@@ -1587,6 +1591,12 @@ proc readLines*(container: Container, handle: proc(line: SimpleFlexibleLine)) =
 
 proc drawLines*(container: Container, display: var FixedGrid,
     hlcolor: CellColor) =
+  let bgcolor = container.bgcolor
+  template set_fmt(cell, cf: typed) =
+    if cf.pos != -1:
+      cell.format = cf.format
+    if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
+      cell.format.bgcolor = bgcolor
   var r: Rune
   var by = 0
   let endy = min(container.fromy + display.height, container.numLines)
@@ -1605,8 +1615,7 @@ proc drawLines*(container: Container, display: var FixedGrid,
     var k = 0
     while k < w - container.fromx:
       display[dls + k].str &= ' '
-      if cf.pos != -1:
-        display[dls + k].format = cf.format
+      set_fmt display[dls + k], cf
       inc k
     let startw = w # save this for later
     # Now fill in the visible part of the row.
@@ -1625,14 +1634,18 @@ proc drawLines*(container: Container, display: var FixedGrid,
         let tk = k + rw
         while k < tk:
           display[dls + k].str &= ' '
-          if cf.pos != -1:
-            display[dls + k].format = cf.format
+          set_fmt display[dls + k], cf
           inc k
       else:
         display[dls + k].str &= r
-        if cf.pos != -1:
-          display[dls + k].format = cf.format
+        set_fmt display[dls + k], cf
         k += rw
+    if bgcolor != defaultColor:
+      # Fill the screen if bgcolor is not default.
+      while k < display.width:
+        display[dls + k].str &= ' '
+        display[dls + k].format.bgcolor = bgcolor
+        inc k
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
     let aw = container.width - (startw - container.fromx) # actual width

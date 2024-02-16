@@ -119,6 +119,7 @@ type
     userstyle: CSSStylesheet
     htmlParser: HTML5ParserWrapper
     srenderer: ref StreamRenderer
+    bgcolor: CellColor
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -624,9 +625,11 @@ proc do_reshape(buffer: Buffer) =
       buffer.uastyle
     else:
       buffer.quirkstyle
+    if buffer.document.cachedSheetsInvalid:
+      buffer.prevstyled = nil
     let styledRoot = buffer.document.applyStylesheets(uastyle,
       buffer.userstyle, buffer.prevstyled)
-    buffer.lines = renderDocument(styledRoot, buffer.attrs)
+    buffer.lines.renderDocument(buffer.bgcolor, styledRoot, buffer.attrs)
     buffer.prevstyled = styledRoot
 
 proc processData(buffer: Buffer): bool =
@@ -1108,7 +1111,6 @@ proc onload(buffer: Buffer) =
         # EOF
         res.atend = true
         buffer.finishLoad().then(proc() =
-          buffer.prevstyled = nil # for incremental rendering
           buffer.do_reshape()
           res.lines = buffer.lines.len
           buffer.state = LOADED
@@ -1123,20 +1125,10 @@ proc onload(buffer: Buffer) =
       buffer.resolveTask(LOAD, res)
     except ErrorAgain:
       break
-  if buffer.document != nil:
-    # incremental rendering: only if we cannot read the entire stream in one
-    # pass
-    #TODO this is too simplistic to be really useful
-    let uastyle = if buffer.document.mode != QUIRKS:
-      buffer.uastyle
-    else:
-      buffer.quirkstyle
-    if buffer.document.cachedSheetsInvalid:
-      buffer.prevstyled = nil
-    let styledRoot = buffer.document.applyStylesheets(uastyle,
-      buffer.userstyle, buffer.prevstyled)
-    buffer.lines = renderDocument(styledRoot, buffer.attrs)
-    buffer.prevstyled = styledRoot
+  # incremental rendering: only if we cannot read the entire stream in one
+  # pass
+  #TODO this could be improved
+  buffer.do_reshape()
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:
@@ -1606,7 +1598,8 @@ proc findAnchor*(buffer: Buffer, anchor: string): bool {.proxy.} =
 
 type GetLinesResult* = tuple[
   numLines: int,
-  lines: seq[SimpleFlexibleLine]
+  lines: seq[SimpleFlexibleLine],
+  bgcolor: CellColor
 ]
 
 proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
@@ -1620,6 +1613,7 @@ proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
       line.formats.add(SimpleFormatCell(format: f.format, pos: f.pos))
     result.lines.add(line)
   result.numLines = buffer.lines.len
+  result.bgcolor = buffer.bgcolor
 
 macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
     cmd: BufferCommand, packetid: int) =

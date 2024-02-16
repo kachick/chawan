@@ -164,9 +164,7 @@ proc resetFormat(term: Terminal): string =
   when termcap_found:
     if term.isatty():
       return term.cap me
-    return SGR()
-  else:
-    return SGR()
+  return SGR()
 
 proc startFormat(term: Terminal, flag: FormatFlags): string =
   when termcap_found:
@@ -473,7 +471,8 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
     for lx in x ..< x + grid.width:
       let i = ly * term.canvas.width + lx
       term.canvas[i] = grid[(ly - y) * grid.width + (lx - x)]
-      if i >= term.canvas.width and FLAG_OVERLINE in term.canvas[i].format.flags and term.emulateOverline:
+      let isol = FLAG_OVERLINE in term.canvas[i].format.flags
+      if i >= term.canvas.width and isol and term.emulateOverline:
         let w = grid[(ly - y) * grid.width + (lx - x)].width()
         let s = i - term.canvas.width
         var j = s
@@ -483,7 +482,8 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
           if cell.str == "":
             cell.str = " "
           if cell.str == " ":
-            cell.format.fgcolor = grid[(ly - y) * grid.width + (lx - x)].format.fgcolor
+            let i = (ly - y) * grid.width + (lx - x)
+            cell.format.fgcolor = grid[i].format.fgcolor
           j += cell[].width()
 
 proc applyConfig(term: Terminal) =
@@ -520,7 +520,8 @@ proc outputGrid*(term: Terminal) =
   if term.config.display.force_clear:
     term.applyConfig()
   term.outfile.write(term.resetFormat())
-  let samesize = term.canvas.width == term.pcanvas.width and term.canvas.height == term.pcanvas.height
+  let samesize = term.canvas.width == term.pcanvas.width and
+    term.canvas.height == term.pcanvas.height
   if term.config.display.force_clear or not term.cleared or not samesize:
     term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true

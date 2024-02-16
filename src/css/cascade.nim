@@ -198,6 +198,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       of "disc": set_cv "list-style-type", LIST_STYLE_TYPE_DISC
       of "circle": set_cv "list-style-type", LIST_STYLE_TYPE_CIRCLE
       of "square": set_cv "list-style-type", LIST_STYLE_TYPE_SQUARE
+  template set_bgcolor_is_canvas =
+    set_cv "-cha-bgcolor-is-canvas", true
 
   case element.tagType
   of TAG_DIV:
@@ -225,7 +227,10 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
   of TAG_IMG, TAG_CANVAS:
     map_width
     map_height
+  of TAG_HTML:
+    set_bgcolor_is_canvas
   of TAG_BODY:
+    set_bgcolor_is_canvas
     map_bgcolor
     map_text
   of TAG_TEXTAREA:
