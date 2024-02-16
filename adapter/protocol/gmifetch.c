@@ -145,8 +145,9 @@ static BIO *conn;
 #define BUFSIZE 1024
 #define PUBKEY_BUF_SIZE 8192
 
-int check_cert(const char *theirs, const char *hostp, char **stored_digestp,
-	char *linebuf, time_t their_time, FILE *known_hosts)
+static int check_cert(const char *theirs, const char *hostp,
+	char **stored_digestp, char *linebuf, time_t their_time,
+	FILE *known_hosts)
 {
 	char *p, *q, *hashp, *timep;
 	int found;
@@ -190,7 +191,7 @@ int check_cert(const char *theirs, const char *hostp, char **stored_digestp,
 
 static char HexTable[] = "0123456789ABCDEF";
 
-void hex_encode(const unsigned char *inp, char *outbuf, int len)
+static void hex_encode(const unsigned char *inp, char *outbuf, int len)
 {
 	const unsigned char *p;
 	char *q;
@@ -228,7 +229,7 @@ static void hash_buf(const unsigned char *ibuf, int len, char *obuf2)
  * -1: cert not found
  * -2: cert found, but notAfter updated
  */
-static int connect(const char *hostname, const char *hostp,
+static int connect(const char *hostp, const char *portp,
 	char *linebuf, char **stored_digestp, time_t *their_time,
 	char *hashbuf2, FILE *known_hosts)
 {
@@ -239,8 +240,10 @@ static int connect(const char *hostname, const char *hostp,
 	const ASN1_TIME *notAfter;
 	struct tm their_tm;
 
-	if (!BIO_set_conn_hostname(conn, hostname)) /* includes port */
+	if (!BIO_set_conn_hostname(conn, hostp))
 		SDIE("Error setting BIO hostname");
+	if (!BIO_set_conn_port(conn, portp))
+		SDIE("Error setting BIO port");
 	BIO_get_ssl(conn, &ssl);
 #define PREFERRED_CIPHERS "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4"
 	if (!SSL_set_cipher_list(ssl, PREFERRED_CIPHERS))
@@ -392,7 +395,7 @@ static void read_response(const char *urlbuf)
 	}
 }
 
-void decode_query(const char *input_url, char *output_buffer)
+static void decode_query(const char *input_url, char *output_buffer)
 {
 	const char *p;
 	char *q, *endp, c;
@@ -420,8 +423,7 @@ void decode_query(const char *input_url, char *output_buffer)
 	*q = '\0';
 }
 
-
-void read_post(const char *hostp, char *reqbuf, char *khsbuf,
+static void read_post(const char *hostp, char *reqbuf, char *khsbuf,
 	FILE **known_hosts)
 {
 	size_t n;
@@ -509,7 +511,7 @@ void read_post(const char *hostp, char *reqbuf, char *khsbuf,
 	}
 }
 
-FILE *open_known_hosts(char *khsbuf)
+static FILE *open_known_hosts(char *khsbuf)
 {
 	const char *known_hosts_path, *xdg_dir, *home_dir;
 	char *p;
@@ -581,8 +583,8 @@ int main(void)
 	char *stored_digestp;
 	time_t their_time;
 	char hashbuf2[EVP_MAX_MD_SIZE * 3 + 1];
-	char hostname[BUFSIZE + 1], reqbuf[BUFSIZE + 1] = "gemini://",
-		khsbuf[BUFSIZE + 2], linebuf[BUFSIZE + 1];
+	char reqbuf[BUFSIZE + 1] = "gemini://", khsbuf[BUFSIZE + 2],
+		linebuf[BUFSIZE + 1];
 	FILE *known_hosts;
 
 #define PROXY_ERR "gmifetch does not support proxies yet. Please disable" \
@@ -607,11 +609,6 @@ int main(void)
 		pathp = "/";
 	if (!queryp)
 		queryp = "";
-	/* Hostname for BIO_set_conn_hostname */
-	strncpy(hostname, hostp, sizeof(hostname) - 1);
-#define CAT(me, ow) strncat(me, ow, sizeof(me) - strlen(me) - 1);
-	CAT(hostname, ":");
-	CAT(hostname, portp);
 	/* Note: we do not include the port number in the request string,
 	 * otherwise some servers refuse to serve anything.
 	 *
@@ -621,6 +618,7 @@ int main(void)
 	 * WARNING: some gemini servers will not accept URLs containing the
 	 * default port number!!!)
 	 */
+#define CAT(me, ow) strncat(me, ow, sizeof(me) - strlen(me) - 1);
 	CAT(reqbuf, hostp);
 	CAT(reqbuf, pathp);
 	if (*queryp) {
@@ -632,7 +630,7 @@ int main(void)
 	if (method && !strcmp(method, "POST"))
 		read_post(hostp, reqbuf, khsbuf, &known_hosts);
 	CAT(reqbuf, "\r\n");
-	switch (connect(hostname, hostp, linebuf, &stored_digestp, &their_time,
+	switch (connect(hostp, portp, linebuf, &stored_digestp, &their_time,
 		hashbuf2, known_hosts))
 	{
 	case 1: /* valid certificate, connect */
