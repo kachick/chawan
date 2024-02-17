@@ -284,7 +284,6 @@ type RenderState = object
   # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
   absolutePos: seq[Offset]
   bgcolor: CellColor
-  root: bool
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   box: BlockBox; offset: Offset; attrs: WindowAttributes)
@@ -380,12 +379,12 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       state.absolutePos.add(offset)
       stack.add((nil, Offset(x: -1, y: -1)))
 
-    if box.computed{"-cha-bgcolor-is-canvas"} and
-        state.bgcolor == defaultColor:
-      #TODO bgimage
-      if box.computed{"background-color"}.a != 0: #TODO color blending
-        state.bgcolor = box.computed{"background-color"}.cellColor()
-    elif box.computed{"visibility"} == VISIBILITY_VISIBLE:
+    if box.computed{"visibility"} == VISIBILITY_VISIBLE:
+      if box.computed{"-cha-bgcolor-is-canvas"} and
+          state.bgcolor == defaultColor:
+        #TODO bgimage
+        if box.computed{"background-color"}.a != 0: #TODO color blending
+          state.bgcolor = box.computed{"background-color"}.cellColor()
       if box.computed{"background-color"}.a != 0: #TODO color blending
           let ix = toInt(offset.x)
           let iy = toInt(offset.y)
@@ -429,9 +428,7 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     styledRoot: StyledNode; attrs: WindowAttributes) =
   grid.setLen(0)
   var state = RenderState(
-    absolutePos: @[Offset(x: 0, y: 0)],
-    root: true,
-    bgcolor: bgcolor
+    absolutePos: @[Offset(x: 0, y: 0)]
   )
   let rootBox = renderLayout(styledRoot, attrs)
   grid.renderBlockBox(state, rootBox, Offset(x: 0, y: 0), attrs)
