@@ -874,7 +874,7 @@ proc updateReadLine*(pager: Pager) =
       of BUFFER: pager.container.readCanceled()
       of COMMAND: pager.commandMode = false
       else: discard
-  if lineedit.state in {CANCEL, FINISH}:
+  if lineedit.state in {LineEditState.CANCEL, LineEditState.FINISH}:
     if pager.lineedit.get == lineedit:
       pager.clearLineEdit()
 
