@@ -20,7 +20,7 @@ noscript {
 }
 }
 
-textarea, tt, var, font, iframe, u, s, strike, frame, input, img {
+textarea, iframe, frame, input, img {
 	display: inline-block;
 }
 
