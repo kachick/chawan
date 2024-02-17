@@ -64,6 +64,7 @@ proc toJS*[U, V](ctx: JSContext, t: Table[U, V]): JSValue
 proc toJS*(ctx: JSContext, opt: Option): JSValue
 proc toJS*[T, E](ctx: JSContext, opt: Result[T, E]): JSValue
 proc toJS*(ctx: JSContext, s: seq): JSValue
+proc toJS*[T](ctx: JSContext, s: set[T]): JSValue
 proc toJS*(ctx: JSContext, t: tuple): JSValue
 proc toJS*(ctx: JSContext, e: enum): JSValue
 proc toJS*(ctx: JSContext, j: JSValue): JSValue
@@ -208,6 +209,16 @@ proc toJS(ctx: JSContext, s: seq): JSValue =
           JS_PROP_C_W_E or JS_PROP_THROW) < 0:
         return JS_EXCEPTION
   return a
+
+proc toJS*[T](ctx: JSContext, s: set[T]): JSValue =
+  #TODO this is a bit lazy :p
+  var x = newSeq[T]()
+  for e in s:
+    x.add(e)
+  var a = toJS(ctx, x)
+  if JS_IsException(a):
+    return a
+  return JS_CallConstructor(ctx, ctx.getOpaque().Set_ctor, 1, addr a)
 
 proc toJS(ctx: JSContext, t: tuple): JSValue =
   let a = JS_NewArray(ctx)

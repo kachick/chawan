@@ -33,6 +33,7 @@ type
     Array_prototype_values*: JSValue
     Object_prototype_valueOf*: JSValue
     Uint8Array_ctor*: JSValue
+    Set_ctor*: JSValue
     err_ctors*: array[JSErrorEnum, JSValue]
     htmldda*: JSClassID # only one of these exists: document.all.
 
@@ -71,8 +72,11 @@ func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
       opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto, "valueOf")
       JS_FreeValue(ctx, objproto)
     block:
-      let u8actor = JS_GetPropertyStr(ctx, global, "Uint8Array")
-      opaque.Uint8Array_ctor = u8actor
+      opaque.Set_ctor = JS_GetPropertyStr(ctx, global, "Set")
+      assert not JS_IsException(opaque.Set_ctor)
+    block:
+      opaque.Uint8Array_ctor = JS_GetPropertyStr(ctx, global, "Uint8Array")
+      assert not JS_IsException(opaque.Uint8Array_ctor)
     for e in JSErrorEnum:
       let s = $e
       let err = JS_GetPropertyStr(ctx, global, cstring(s))

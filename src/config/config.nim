@@ -81,6 +81,7 @@ type
 
   SearchConfig = object
     wrap* {.jsgetset.}: bool
+    default_flags* {.jsgetset.}: LREFlags
 
   EncodingConfig = object
     display_charset* {.jsgetset.}: Opt[Charset]
@@ -107,8 +108,8 @@ type
 
   DisplayConfig = object
     color_mode* {.jsgetset.}: Opt[ColorMode]
-    format_mode*: Opt[FormatMode] #TODO getset
-    no_format_mode*: FormatMode #TODO getset
+    format_mode* {.jsgetset.}: Opt[FormatMode]
+    no_format_mode* {.jsgetset.}: FormatMode
     emulate_overline* {.jsgetset.}: bool
     alt_screen* {.jsgetset.}: Opt[bool]
     highlight_color* {.jsgetset.}: RGBAColor
@@ -470,6 +471,7 @@ proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string)
 proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
 proc parseConfigValue[U, V](x: var Table[U, V], v: TomlValue, k: string)
+proc parseConfigValue[T](x: var set[T], v: TomlValue, k: string)
 
 proc typeCheck(v: TomlValue, vt: ValueType, k: string) =
   if v.vt != vt:
@@ -566,9 +568,10 @@ proc parseConfigValue(x: var Opt[FormatMode], v: TomlValue, k: string) =
 proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
   typeCheck(v, VALUE_ARRAY, k)
   for i in 0 ..< v.a.len:
-    let s = v.a[i].s
     let kk = k & "[" & $i & "]"
-    case s
+    let vv = v.a[i]
+    typeCheck(vv, VALUE_STRING, kk)
+    case vv.s
     of "bold": x.incl(FLAG_BOLD)
     of "italic": x.incl(FLAG_ITALIC)
     of "underline": x.incl(FLAG_UNDERLINE)
@@ -577,7 +580,7 @@ proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
     of "overline": x.incl(FLAG_OVERLINE)
     of "blink": x.incl(FLAG_BLINK)
     else:
-      raise newException(ValueError, "unknown format mode '" & s &
+      raise newException(ValueError, "unknown format mode '" & vv.s &
         "' for key " & kk)
 
 proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
@@ -614,6 +617,27 @@ proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
       buf &= rk[i]
       discard x.hasKeyOrPut(buf, "client.feedNext()")
     x[rk] = vv.s
+
+proc parseConfigValue[T: enum](x: var T, v: TomlValue, k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let e = strictParseEnum[T](v.s)
+  if e.isNone:
+    raise newException(ValueError, "invalid value '" & v.s & "' for key " & k)
+  x = e.get
+
+proc parseConfigValue[T](x: var set[T], v: TomlValue, k: string) =
+  typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
+  if v.vt == VALUE_STRING:
+    var xx: T
+    xx.parseConfigValue(v, k)
+    x = {xx}
+  else:
+    x = {}
+    for i in 0 ..< v.a.len:
+      let kk = k & "[" & $i & "]"
+      var xx: T
+      xx.parseConfigValue(v.a[i], kk)
+      x.incl(xx)
 
 var gdir {.compileTime.}: string
 proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string) =

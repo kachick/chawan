@@ -807,7 +807,8 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       pager.isearchpromise = nil
     of EDIT:
       if lineedit.news != "":
-        pager.iregex = compileSearchRegex(lineedit.news)
+        pager.iregex = compileSearchRegex(lineedit.news,
+          pager.config.search.default_flags)
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
       if pager.iregex.isSome:
@@ -857,7 +858,8 @@ proc updateReadLine*(pager: Pager) =
       of BUFFER: pager.container.readSuccess(lineedit.news)
       of SEARCH_F, SEARCH_B:
         if lineedit.news != "":
-          pager.regex = pager.checkRegex(compileSearchRegex(lineedit.news))
+          pager.regex = pager.checkRegex(compileSearchRegex(lineedit.news,
+            pager.config.search.default_flags))
         pager.reverseSearch = pager.linemode == SEARCH_B
         pager.searchNext()
       of GOTO_LINE:

@@ -108,6 +108,16 @@ Following is a list of search options:
 <td>When set to true, searchNext/searchPrev wraps around the document.</td>
 </tr>
 
+<tr>
+<td>default-flags</td>
+<td>Array of JS regex flags</td>
+<td>Theoretically, you could use any JS regex flag. Practically, the only values
+that work/make sense right now are either `[]` (the default; an empty array) or
+`["i"]` (an array with the string "i").<br>
+Note: this can also be overridden inline in the search bar (vim-style), with the
+escape sequences `\c` (ignore case) and `\C` (strict case).</td>
+</tr>
+
 </table>
 
 ## Encoding

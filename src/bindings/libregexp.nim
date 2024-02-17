@@ -1,10 +1,19 @@
-const
-  LRE_FLAG_GLOBAL* = 1 shl 0
-  LRE_FLAG_IGNORECASE* = 1 shl 1
-  LRE_FLAG_MULTILINE* = 1 shl 2
-  LRE_FLAG_DOTALL* = 1 shl 3
-  LRE_FLAG_UTF16* = 1 shl 4
-  LRE_FLAG_STICKY* = 1 shl 5
+type
+  LREFlag* {.size: sizeof(cint).} = enum
+    LRE_FLAG_GLOBAL = "g"
+    LRE_FLAG_IGNORECASE = "i"
+    LRE_FLAG_MULTILINE = "m"
+    LRE_FLAG_DOTALL = "s"
+    LRE_FLAG_UTF16 = "u"
+    LRE_FLAG_STICKY = "y"
+
+  LREFlags* = set[LREFlag]
+
+func toCInt*(flags: LREFlags): cint =
+  cast[cint](flags)
+
+func toLREFlags*(flags: cint): LREFlags =
+  cast[LREFlags](flags)
 
 {.passc: "-Ilib/".}
 

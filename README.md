@@ -141,9 +141,8 @@ than if it doesn't.
 
 Chawan does not have browser tabs. Instead, each website is opened in a new
 buffer, which is added to the buffer tree. This is very similar to how w3m
-handles buffers, except a) source files are stored in memory, not on the disk,
-and b) instead of a linked list of buffers, they are stored in a tree. (And
-of course, c) there are no tabs.)
+handles buffers, except instead of a linked list of buffers, they are stored in
+a tree.
 
 This model has the advantage of allowing the user to instantly view the
 previous page in all cases, without any complicated caching mechanism. It

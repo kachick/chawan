@@ -10,6 +10,7 @@ import js/jstypes
 import js/opaque
 import js/tojs
 import types/opt
+import utils/twtstr
 
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T]
 
@@ -230,7 +231,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): JSResult[seq[T]] =
     s.add(genericRes.get)
   return ok(s)
 
-proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
+proc fromJSSet[T](ctx: JSContext, val: JSValue): JSResult[set[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
@@ -249,14 +250,14 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): Opt[set[T]] =
     if JS_IsException(next):
       return err()
     defer: JS_FreeValue(ctx, next)
-    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().done)
+    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
     if JS_IsException(doneVal):
       return err()
     defer: JS_FreeValue(ctx, doneVal)
     let done = ?fromJS[bool](ctx, doneVal)
     if done:
       break
-    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().value)
+    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE])
     if JS_IsException(valueVal):
       return err()
     defer: JS_FreeValue(ctx, valueVal)
@@ -377,19 +378,9 @@ proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): JSResult[T] =
   if JS_IsException(val):
     return err()
   let s = ?toString(ctx, val)
-  # cmp when len is small enough, otherwise hashmap
-  when {T.low..T.high}.len <= 4:
-    for e in T.low .. T.high:
-      if $e == s:
-        return ok(e)
-  else:
-    const tab = (func(): Table[string, T] =
-      result = initTable[string, T]()
-      for e in T.low .. T.high:
-        result[$e] = e
-    )()
-    if s in tab:
-      return ok(tab[s])
+  let r = strictParseEnum[T](s)
+  if r.isSome:
+    return ok(r.get)
   return errTypeError("`" & s & "' is not a valid value for enumeration " & $T)
 
 proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):

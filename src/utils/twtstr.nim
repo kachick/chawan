@@ -713,3 +713,19 @@ proc makeCRLF*(s: string): string =
       result &= '\n'
     else:
       result &= s[i]
+
+func strictParseEnum*[T: enum](s: string): Opt[T] =
+  # cmp when len is small enough, otherwise hashmap
+  when {T.low..T.high}.len <= 4:
+    for e in T.low .. T.high:
+      if $e == s:
+        return ok(e)
+  else:
+    const tab = (func(): Table[string, T] =
+      result = initTable[string, T]()
+      for e in T.low .. T.high:
+        result[$e] = e
+    )()
+    if s in tab:
+      return ok(tab[s])
+  return err()

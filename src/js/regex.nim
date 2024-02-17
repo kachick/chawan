@@ -6,13 +6,7 @@ import bindings/quickjs
 import types/opt
 import utils/twtstr
 
-export
-  LRE_FLAG_GLOBAL,
-  LRE_FLAG_IGNORECASE,
-  LRE_FLAG_MULTILINE,
-  LRE_FLAG_DOTALL,
-  LRE_FLAG_UTF16,
-  LRE_FLAG_STICKY
+export LREFlags
 
 type
   Regex* = object
@@ -34,13 +28,13 @@ var dummyContext = JS_NewContextRaw(dummyRuntime)
 func `$`*(regex: Regex): string =
   regex.buf
 
-proc compileRegex*(buf: string, flags: int): Result[Regex, string] =
+proc compileRegex*(buf: string, flags: LREFlags = {}): Result[Regex, string] =
   var error_msg_size = 64
   var error_msg = newString(error_msg_size)
   prepareMutation(error_msg)
   var plen: cint
   let bytecode = lre_compile(addr plen, cstring(error_msg),
-    cint(error_msg_size), cstring(buf), csize_t(buf.len), cint(flags),
+    cint(error_msg_size), cstring(buf), csize_t(buf.len), flags.toCInt,
     dummyContext)
   if bytecode == nil:
     return err(error_msg.until('\0')) # Failed to compile.
@@ -68,16 +62,16 @@ func countBackslashes(buf: string, i: int): int =
 # mnop -> ^mnop$
 proc compileMatchRegex*(buf: string): Result[Regex, string] =
   if buf.len == 0:
-    return compileRegex(buf, 0)
+    return compileRegex(buf)
   if buf[0] == '^':
-    return compileRegex(buf, 0)
+    return compileRegex(buf)
   if buf[^1] == '$':
     # Check whether the final dollar sign is escaped.
     if buf.len == 1 or buf[^2] != '\\':
-      return compileRegex(buf, 0)
+      return compileRegex(buf)
     let j = buf.countBackslashes(buf.high - 2)
     if j mod 2 == 1: # odd, because we do not count the last backslash
-      return compileRegex(buf, 0)
+      return compileRegex(buf)
     # escaped. proceed as if no dollar sign was at the end
   if buf[^1] == '\\':
     # Check if the regex contains an invalid trailing backslash.
@@ -87,38 +81,34 @@ proc compileMatchRegex*(buf: string): Result[Regex, string] =
   var buf2 = "^"
   buf2 &= buf
   buf2 &= "$"
-  return compileRegex(buf2, 0)
+  return compileRegex(buf2)
 
-proc compileSearchRegex*(str: string): Result[Regex, string] =
-  # Parse any applicable flags in regex/<flags>. The last forward slash is
-  # dropped when <flags> is empty, and interpreted as a character when the
-  # flags are is invalid.
-
-  var i = str.high
-  var flagsi = -1
-  while i >= 0:
-    case str[i]
-    of '/':
-      flagsi = i
-      break
-    of 'i', 'm', 's', 'u': discard
-    else: break # invalid flag
-    dec i
-
-  var flags = LRE_FLAG_GLOBAL # for easy backwards matching
-
-  if flagsi == -1:
-    return compileRegex(str, flags)
-
-  for i in flagsi..str.high:
-    case str[i]
-    of '/': discard
-    of 'i': flags = flags or LRE_FLAG_IGNORECASE
-    of 'm': flags = flags or LRE_FLAG_MULTILINE
-    of 's': flags = flags or LRE_FLAG_DOTALL
-    of 'u': flags = flags or LRE_FLAG_UTF16
-    else: assert false
-  return compileRegex(str.substr(0, flagsi - 1), flags)
+proc compileSearchRegex*(str: string, defaultFlags: LREFlags):
+    Result[Regex, string] =
+  # Emulate vim's \c/\C: override defaultFlags if one is found, then remove it
+  # from str.
+  var flags = defaultFlags
+  var s = newStringOfCap(str.len)
+  var quot = false
+  for c in str:
+    if quot:
+      quot = false
+      if c == 'c':
+        flags.incl(LRE_FLAG_IGNORECASE)
+        continue
+      elif c == 'C':
+        flags.excl(LRE_FLAG_IGNORECASE)
+        continue
+      else:
+        s &= '\\'
+    if c == '\\':
+      quot = true
+    else:
+      s &= c
+  if quot:
+    s &= '\\'
+  flags.incl(LRE_FLAG_GLOBAL) # for easy backwards matching
+  return compileRegex(s, flags)
 
 proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): RegexResult =
   let length = if length == -1:
@@ -134,7 +124,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
     let size = sizeof(ptr uint8) * captureCount * 2
     capture = cast[ptr UncheckedArray[int]](alloc0(size))
   var cstr = cstring(str)
-  let flags = lre_get_flags(bytecode)
+  let flags = lre_get_flags(bytecode).toLREFlags
   var start = start
   while true:
     let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode,
@@ -151,7 +141,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
       let s = capture[i * 2] - cstrAddress
       let e = capture[i * 2 + 1] - cstrAddress
       result.captures.add((s, e))
-    if (flags and LRE_FLAG_GLOBAL) != 1:
+    if LRE_FLAG_GLOBAL notin flags:
       break
     if start >= str.len:
       break
