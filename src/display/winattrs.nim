@@ -54,5 +54,5 @@ proc getWindowAttributes*(tty: File): WindowAttributes =
     ppc: ppc,
     ppl: ppl,
     width_px: ppc * width,
-    height_px: ppl * width
+    height_px: ppl * height
   )

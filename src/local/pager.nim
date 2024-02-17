@@ -448,12 +448,13 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.setContainer(container)
 
 proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
-    title = "", redirectdepth = 0, canreinterpret = true,
-    fd = FileHandle(-1)): Container =
+    title = "", redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1)):
+    Container =
   return newBuffer(
     pager.forkserver,
     bufferConfig,
     source,
+    pager.attrs,
     title,
     redirectdepth,
     canreinterpret,

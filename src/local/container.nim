@@ -134,9 +134,8 @@ jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
-    source: BufferSource, title = "", redirectdepth = 0,
-    canreinterpret = true, fd = FileHandle(-1)): Container =
-  let attrs = getWindowAttributes(stdout)
+    source: BufferSource, attrs: WindowAttributes, title = "",
+    redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1)): Container =
   let (process, loaderPid) = forkserver.forkBuffer(source, config, attrs)
   if fd != -1:
     loaderPid.passFd(source.request.url.host, fd)
