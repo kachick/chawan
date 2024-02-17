@@ -117,8 +117,9 @@ type
     minimum_contrast* {.jsgetset.}: int32
     force_clear* {.jsgetset.}: bool
     set_title* {.jsgetset.}: bool
-    default_background_color* {.jsgetset.}: RGBColor
-    default_foreground_color* {.jsgetset.}: RGBColor
+    default_background_color* {.jsgetset.}: Opt[RGBColor]
+    default_foreground_color* {.jsgetset.}: Opt[RGBColor]
+    query_da1* {.jsgetset.}: bool
 
   Config* = ref ConfigObj
   ConfigObj* = object

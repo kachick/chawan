@@ -36,11 +36,10 @@ type
     us # start underline mode
     mr # start reverse mode
     mb # start blink mode
+    ZH # start italic mode
     ue # end underline mode
     se # end standout mode
     me # end all formatting modes
-    LE # cursor left %1 characters
-    RI # cursor right %1 characters
     vs # enhance cursor
     vi # make cursor invisible
     ve # reset cursor to normal
@@ -70,10 +69,22 @@ type
     orig_flags: cint
     orig_flags2: cint
     orig_termios: Termios
+    defaultBackground: RGBColor
+    defaultForeground: RGBColor
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
   "\e[" & s.join(';')
+
+# primary device attributes
+const DA1 = CSI("c")
+
+# device control string
+template DCS(a, b: char, s: varargs[string]): string =
+  "\eP" & a & b & s.join(';') & "\e\\"
+
+template XTGETTCAP(s: varargs[string, `$`]): string =
+  DCS('+', 'q', s)
 
 # OS command
 template OSC(s: varargs[string, `$`]): string =
@@ -81,6 +92,9 @@ template OSC(s: varargs[string, `$`]): string =
 
 template XTERM_TITLE(s: string): string =
   OSC(0, s)
+
+const XTGETFG = OSC(10, "?") # get foreground color
+const XTGETBG = OSC(11, "?") # get background color
 
 when not termcap_found:
   # DEC set
@@ -174,6 +188,7 @@ proc startFormat(term: Terminal, flag: FormatFlags): string =
       of FLAG_UNDERLINE: return term.cap us
       of FLAG_REVERSE: return term.cap mr
       of FLAG_BLINK: return term.cap mb
+      of FLAG_ITALIC: return term.cap ZH
       else: discard
   return SGR(FormatCodes[flag].s)
 
@@ -199,12 +214,6 @@ proc disableAltScreen(term: Terminal): string =
       term.write($term.cap te)
   else:
     return RMCUP
-
-func defaultBackground(term: Terminal): RGBColor =
-  return term.config.display.default_background_color
-
-func defaultForeground(term: Terminal): RGBColor =
-  return term.config.display.default_foreground_color
 
 func mincontrast(term: Terminal): int32 =
   return term.config.display.minimum_contrast
@@ -490,10 +499,9 @@ proc applyConfig(term: Terminal) =
   if term.config.display.color_mode.isSome:
     term.colormode = term.config.display.color_mode.get
   elif term.isatty():
-    term.colormode = ANSI
     let colorterm = getEnv("COLORTERM")
-    case colorterm
-    of "24bit", "truecolor": term.colormode = TRUE_COLOR
+    if colorterm in ["24bit", "truecolor"]:
+      term.colormode = TRUE_COLOR
   if term.config.display.format_mode.isSome:
     term.formatmode = term.config.display.format_mode.get
   for fm in FormatFlags:
@@ -503,6 +511,10 @@ proc applyConfig(term: Terminal) =
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
     term.set_title = term.config.display.set_title
+  if term.config.display.default_background_color.isSome:
+    term.defaultBackground = term.config.display.default_background_color.get
+  if term.config.display.default_foreground_color.isSome:
+    term.defaultForeground = term.config.display.default_foreground_color.get
   if term.config.encoding.display_charset.isSome:
     term.cs = term.config.encoding.display_charset.get
   else:
@@ -596,35 +608,163 @@ when termcap_found:
     else:
       raise newException(Defect, "Failed to load termcap description for terminal " & term.tname)
 
-proc detectTermAttributes(term: Terminal) =
+type
+  QueryAttrs = enum
+    qaAnsiColor, qaRGB, qaSixel
+
+  QueryResult = object
+    success: bool
+    attrs: set[QueryAttrs]
+    fgcolor: Option[RGBColor]
+    bgcolor: Option[RGBColor]
+
+proc queryAttrs(term: Terminal): QueryResult =
+  const tcapRGB = 0x524742 # RGB supported?
+  const outs =
+    XTGETFG &
+    XTGETBG &
+    XTGETTCAP("524742") &
+    DA1
+  term.outfile.write(outs)
+  result = QueryResult(success: false, attrs: {})
+  while true:
+    template consume(term: Terminal): char = term.infile.readChar()
+    template fail = break
+    template expect(term: Terminal, c: char) =
+      if term.consume != c:
+        fail
+    template expect(term: Terminal, s: string) =
+      for c in s:
+        term.expect c
+    template skip_until(term: Terminal, c: char) =
+      while (let cc = term.consume; cc != c):
+        discard
+    term.expect '\e'
+    case term.consume
+    of '[':
+      # CSI
+      term.expect '?'
+      var n = 0
+      while (let c = term.consume; c != 'c'):
+        if c == ';':
+          case n
+          of 4: result.attrs.incl(qaSixel)
+          of 22: result.attrs.incl(qaAnsiColor)
+          else: discard
+          n = 0
+        else:
+          n *= 10
+          n += decValue(c)
+      result.success = true
+      break # DA1 returned; done
+    of ']':
+      # OSC
+      term.expect '1'
+      let c = term.consume
+      if c notin {'0', '1'}: fail
+      term.expect ';'
+      if term.consume == 'r' and term.consume == 'g' and term.consume == 'b':
+        term.expect ':'
+        template eat_color(tc: char): uint8 =
+          var val = 0u8
+          var i = 0
+          while (let c = term.consume; c != tc):
+            let v0 = hexValue(c)
+            if i > 4 or v0 == -1: fail # wat
+            let v = uint8(v0)
+            if i == 0: # 1st place
+              val = (v shl 4) or v
+            elif i == 1: # 2nd place
+              val = (val xor 0xF) or v
+            # all other places are irrelevant
+            inc i
+          val
+        let r = eat_color '/'
+        let g = eat_color '/'
+        let b = eat_color '\a'
+        if c == '0':
+          result.fgcolor = some(rgb(r, g, b))
+        else:
+          result.bgcolor = some(rgb(r, g, b))
+      else:
+        # not RGB, give up
+        term.skip_until '\a'
+    of 'P':
+      # DCS
+      let c = term.consume
+      if c notin {'0', '1'}:
+        fail
+      term.expect "+r"
+      if c == '1':
+        var id = 0
+        while (let c = term.consume; c != '='):
+          if c notin AsciiHexDigit:
+            fail
+          id *= 0x10
+          id += hexValue(c)
+        term.skip_until '\e' # ST (1)
+        if id == tcapRGB:
+          result.attrs.incl(qaRGB)
+      else: # 0
+        term.expect '\e' # ST (1)
+      term.expect '\\' # ST (2)
+    else:
+      fail
+
+type TermStartResult* = enum
+  tsrSuccess, tsrDA1Fail
+
+proc detectTermAttributes(term: Terminal): TermStartResult =
+  result = tsrSuccess
   term.tname = getEnv("TERM")
   if term.tname == "":
     term.tname = "dosansi"
-  when termcap_found:
-    if term.isatty():
+  if term.isatty():
+    if term.config.display.query_da1:
+      let r = term.queryAttrs()
+      if r.success: # DA1 success
+        if qaAnsiColor in r.attrs:
+          term.colormode = ANSI
+        if qaRGB in r.attrs:
+          term.colormode = TRUE_COLOR
+        # just assume the terminal doesn't choke on these.
+        term.formatmode = {FLAG_STRIKE, FLAG_OVERLINE}
+        if r.bgcolor.isSome:
+          term.defaultBackground = r.bgcolor.get
+        if r.fgcolor.isSome:
+          term.defaultForeground = r.fgcolor.get
+      else:
+        # something went horribly wrong. set result to DA1 fail, pager will
+        # alert the user
+        result = tsrDA1Fail
+    if term.colormode != TRUE_COLOR:
+      let colorterm = getEnv("COLORTERM")
+      if colorterm in ["24bit", "truecolor"]:
+        term.colormode = TRUE_COLOR
+    when termcap_found:
       term.loadTermcap()
       if term.tc != nil:
         term.smcup = term.hascap(ti)
-      term.formatmode = {FLAG_ITALIC, FLAG_OVERLINE, FLAG_STRIKE}
-      if term.hascap(us):
-        term.formatmode.incl(FLAG_UNDERLINE)
-      if term.hascap(md):
-        term.formatmode.incl(FLAG_BOLD)
-      if term.hascap(mr):
-        term.formatmode.incl(FLAG_REVERSE)
-      if term.hascap(mb):
-        term.formatmode.incl(FLAG_BLINK)
-  else:
-    if term.isatty():
+        if term.hascap(ZH):
+          term.formatmode.incl(FLAG_ITALIC)
+        if term.hascap(us):
+          term.formatmode.incl(FLAG_UNDERLINE)
+        if term.hascap(md):
+          term.formatmode.incl(FLAG_BOLD)
+        if term.hascap(mr):
+          term.formatmode.incl(FLAG_REVERSE)
+        if term.hascap(mb):
+          term.formatmode.incl(FLAG_BLINK)
+    else:
       term.smcup = true
       term.formatmode = {low(FormatFlags)..high(FormatFlags)}
-  term.applyConfig()
 
-proc start*(term: Terminal, infile: File) =
+proc start*(term: Terminal, infile: File): TermStartResult =
   term.infile = infile
   if term.isatty():
     term.enableRawMode()
-  term.detectTermAttributes()
+  result = term.detectTermAttributes()
+  term.applyConfig()
   if term.smcup:
     term.write(term.enableAltScreen())
 
@@ -643,7 +783,9 @@ proc newTerminal*(outfile: File, config: Config, attrs: WindowAttributes):
     Terminal =
   let term = Terminal(
     outfile: outfile,
-    config: config
+    config: config,
+    defaultBackground: ColorsRGB["black"],
+    defaultForeground: ColorsRGB["white"]
   )
   term.windowChange(attrs)
   return term

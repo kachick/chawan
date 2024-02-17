@@ -260,7 +260,10 @@ proc newPager*(config: Config, attrs: WindowAttributes, forkserver: ForkServer,
   return pager
 
 proc launchPager*(pager: Pager, infile: File) =
-  pager.term.start(infile)
+  case pager.term.start(infile)
+  of tsrSuccess: discard
+  of tsrDA1Fail:
+    pager.alert("Failed to query DA1, please set display.query-da1 = false")
 
 func infile*(pager: Pager): File =
   return pager.term.infile

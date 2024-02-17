@@ -398,14 +398,26 @@ black background, etc).</td>
 
 <tr>
 <td>default-background-color</td>
-<td>color</td>
-<td>Sets the assumed background color of the terminal.</td>
+<td>"auto" / color</td>
+<td>Overrides the assumed background color of the terminal. "auto" leaves
+background color detection to Chawan.</td>
 </tr>
 
 <tr>
 <td>default-foreground-color</td>
-<td>color</td>
-<td>Sets the assumed foreground color of the terminal.</td>
+<td>"auto" / color</td>
+<td>Sets the assumed foreground color of the terminal. "auto" leaves foreground
+color detection to Chawan.</td>
+</tr>
+
+<tr>
+<td>query-da1</td>
+<td>bool</td>
+<td>Enable/disable querying Primary Device Attributes, and with it, all
+"dynamic" terminal querying.<br>
+It is highly recommended not to alter the default value (which is true), or the
+output will most likely look horrible. (Except, obviously, if your terminal does
+not support Primary Device Attributes.)</td>
 </tr>
 
 </table>

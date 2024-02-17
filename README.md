@@ -98,16 +98,17 @@ want to try more established ones:
 
 ### Why does Chawan use strange/incorrect/ugly colors?
 
-Chawan assumes the terminal's default background/foreground colors are
-black and white. If this is not true for your terminal, make sure to set
-the display.default-background-color and display.default-foreground-color
-properties in your Chawan configuration file.
+Chawan's display capabilities depend on what your terminal reports. In
+particular:
 
-Also, by default, Chawan uses the eight ANSI colors to display colored
-text. To use true colors, either export COLORTERM=truecolor or set the
-display.color-mode to "24bit". To use 256 colors, set display.color-mode to
-"8bit" instead. (You can also turn off colors and/or styling altogether in
-the configuration; please consult [doc/config.md](doc/config.md) for details.)
+* if it does not respond to querying XTGETTCAP, and the COLORTERM environment
+  variable is not set, then Chawan falls back to ANSI colors
+* if it does not respond to querying the background color, then Chawan's color
+  contrast correction will likely malfunction
+
+You can fix this manually by adjusting the display.default-background-color,
+display.default-foreground-color, and display.color-mode variables. See
+[doc/config.md](doc/config.md) for details.
 
 ### Can I view Markdown files using Chawan?
 
