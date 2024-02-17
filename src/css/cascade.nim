@@ -254,8 +254,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
 proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues,
     map: DeclarationListMap) =
   let pseudo = PSEUDO_NONE
-  var builder = newComputedValueBuilder(parent)
-
+  var builder = CSSComputedValuesBuilder(parent: parent)
   builder.addValues(map.ua[pseudo], ORIGIN_USER_AGENT)
   builder.addValues(map.user[pseudo], ORIGIN_USER)
   for rule in map.author:
@@ -266,19 +265,16 @@ proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues,
     if style != nil:
       builder.addValues(style.decls, ORIGIN_AUTHOR)
     builder.preshints = element.calcPresentationalHints()
-
   styledNode.computed = builder.buildComputedValues()
 
 # Either returns a new styled node or nil.
 proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode,
     map: DeclarationListMap): StyledNode =
-  var builder = newComputedValueBuilder(styledParent.computed)
-
+  var builder = CSSComputedValuesBuilder(parent: styledParent.computed)
   builder.addValues(map.ua[pseudo], ORIGIN_USER_AGENT)
   builder.addValues(map.user[pseudo], ORIGIN_USER)
   for rule in map.author:
     builder.addValues(rule[pseudo], ORIGIN_AUTHOR)
-
   if builder.hasValues():
     let cvals = builder.buildComputedValues()
     result = styledParent.newStyledElement(pseudo, cvals)

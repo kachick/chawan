@@ -172,7 +172,6 @@ type
     num*: int
 
   CSSComputedValue* = ref object
-    t*: CSSPropertyType
     case v*: CSSValueType
     of VALUE_COLOR:
       color*: RGBAColor
@@ -235,16 +234,17 @@ type
     ORIGIN_USER
     ORIGIN_AUTHOR
 
-  CSSComputedValueBuilder = object
-    global: CSSGlobalValueType
+  CSSComputedEntry = tuple
+    t: CSSPropertyType
     val: CSSComputedValue
+    global: CSSGlobalValueType
 
-  CSSComputedValueBuilders = seq[CSSComputedValueBuilder]
+  CSSComputedEntries = seq[CSSComputedEntry]
 
   CSSComputedValuesBuilder* = object
-    parent: CSSComputedValues
-    normalProperties: array[CSSOrigin, CSSComputedValueBuilders]
-    importantProperties: array[CSSOrigin, CSSComputedValueBuilders]
+    parent*: CSSComputedValues
+    normalProperties: array[CSSOrigin, CSSComputedEntries]
+    importantProperties: array[CSSOrigin, CSSComputedEntries]
     preshints*: CSSComputedValues
 
 const ShorthandNames = {
@@ -391,7 +391,8 @@ func isSupportedProperty*(s: string): bool =
 func `$`*(length: CSSLength): string =
   if length.auto:
     return "auto"
-  let us = ($length.unit).split('_')[1..^1].join('_').toLowerAscii()
+  let ss = ($length.unit).split('_')
+  let us = ss.toOpenArray(1, ss.high).join('_').toLowerAscii()
   return $length.num & us
 
 func `$`*(content: CSSContent): string =
@@ -400,7 +401,6 @@ func `$`*(content: CSSContent): string =
   return "none"
 
 func `$`*(val: CSSComputedValue): string =
-  result = ($val.t).toLowerAscii().split('_')[1..^1].join('-') & ": "
   case val.v
   of VALUE_COLOR:
     result &= $val.color
@@ -408,23 +408,26 @@ func `$`*(val: CSSComputedValue): string =
     result &= $val.image
   of VALUE_LENGTH:
     result &= $val.length
-  else: discard
+  else:
+    result = $val.v
 
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
   let t = propertyType($s)
   let vs = $valueType(t)
-  let s = vs.split('_')[1..^1].join('_').toLowerAscii()
-  result = newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
+  let vss = vs.split('_')
+  let s = vss.toOpenArray(1, vss.high).join('_').toLowerAscii()
+  return newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
 
 macro `{}=`*(vals: CSSComputedValues, s: string, val: typed) =
   let t = propertyType($s)
   let v = valueType(t)
   let vs = $v
-  let s = vs.split('_')[1..^1].join('_').toLowerAscii()
+  let vss = vs.split('_')
+  let s = vss.toOpenArray(1, vss.high).join('_').toLowerAscii()
   let id = ident(s)
   let expr = newTree(nnkBracketExpr, vals, newLit(t))
-  result = quote do:
-    `expr` = CSSComputedValue(t: CSSPropertyType(`t`), v: CSSValueType(`v`), `id`: `val`)
+  return quote do:
+    `expr` = CSSComputedValue(v: CSSValueType(`v`), `id`: `val`)
 
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
@@ -443,7 +446,8 @@ func ic_to_px(ic: float64, window: WindowAttributes): LayoutUnit =
 func ex_to_px(ex: float64, window: WindowAttributes): LayoutUnit =
   ex * float64(window.ppc) / 2
 
-func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit {.inline.} =
+func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit
+    {.inline.} =
   case l.unit
   of UNIT_EM, UNIT_REM: em_to_px(l.num, window)
   of UNIT_CH: ch_to_px(l.num, window)
@@ -877,8 +881,7 @@ func cssWordBreak(cval: CSSComponentValue): Opt[CSSWordBreak] =
   }
   return cssIdent(WordBreakMap, cval)
 
-func cssListStyleType(cval: CSSComponentValue):
-    Opt[CSSListStyleType] =
+func cssListStyleType(cval: CSSComponentValue): Opt[CSSListStyleType] =
   const ListStyleMap = {
     "none": LIST_STYLE_TYPE_NONE,
     "disc": LIST_STYLE_TYPE_DISC,
@@ -904,8 +907,7 @@ func cssListStyleType(cval: CSSComponentValue):
   }
   return cssIdent(ListStyleMap, cval)
 
-func cssVerticalAlign(cval: CSSComponentValue):
-    Opt[CSSVerticalAlign] =
+func cssVerticalAlign(cval: CSSComponentValue): Opt[CSSVerticalAlign] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_IDENT_TOKEN:
@@ -954,8 +956,7 @@ func cssTextAlign(cval: CSSComponentValue): Opt[CSSTextAlign] =
   }
   return cssIdent(TextAlignMap, cval)
 
-func cssListStylePosition(cval: CSSComponentValue):
-    Opt[CSSListStylePosition] =
+func cssListStylePosition(cval: CSSComponentValue): Opt[CSSListStylePosition] =
   const ListStylePositionMap = {
     "inside": LIST_STYLE_POSITION_INSIDE,
     "outside": LIST_STYLE_POSITION_OUTSIDE
@@ -985,8 +986,7 @@ func cssCaptionSide(cval: CSSComponentValue): Opt[CSSCaptionSide] =
   }
   return cssIdent(CaptionSideMap, cval)
 
-func cssBorderCollapse(cval: CSSComponentValue):
-    Opt[CSSBorderCollapse] =
+func cssBorderCollapse(cval: CSSComponentValue): Opt[CSSBorderCollapse] =
   const BorderCollapseMap = {
     "collapse": BORDER_COLLAPSE_COLLAPSE,
     "separate": BORDER_COLLAPSE_SEPARATE
@@ -1063,8 +1063,7 @@ func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
     return ok(CSSContent(t: CONTENT_IMAGE, s: url.get))
   return err()
 
-func cssInteger(cval: CSSComponentValue, range: Slice[int]):
-    Opt[int] =
+func cssInteger(cval: CSSComponentValue, range: Slice[int]): Opt[int] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == CSS_NUMBER_TOKEN:
@@ -1238,19 +1237,19 @@ func calcInitial(t: CSSPropertyType): CSSComputedValue =
   var nv: CSSComputedValue
   case v
   of VALUE_COLOR:
-    nv = CSSComputedValue(t: t, v: v, color: getInitialColor(t))
+    nv = CSSComputedValue(v: v, color: getInitialColor(t))
   of VALUE_DISPLAY:
-    nv = CSSComputedValue(t: t, v: v, display: DISPLAY_INLINE)
+    nv = CSSComputedValue(v: v, display: DISPLAY_INLINE)
   of VALUE_WORD_BREAK:
-    nv = CSSComputedValue(t: t, v: v, wordbreak: WORD_BREAK_NORMAL)
+    nv = CSSComputedValue(v: v, wordbreak: WORD_BREAK_NORMAL)
   of VALUE_LENGTH:
-    nv = CSSComputedValue(t: t, v: v, length: getInitialLength(t))
+    nv = CSSComputedValue(v: v, length: getInitialLength(t))
   of VALUE_INTEGER:
-    nv = CSSComputedValue(t: t, v: v, integer: getInitialInteger(t))
+    nv = CSSComputedValue(v: v, integer: getInitialInteger(t))
   of VALUE_QUOTES:
-    nv = CSSComputedValue(t: t, v: v, quotes: CSSQuotes(auto: true))
+    nv = CSSComputedValue(v: v, quotes: CSSQuotes(auto: true))
   else:
-    nv = CSSComputedValue(t: t, v: v)
+    nv = CSSComputedValue(v: v)
   return nv
 
 func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
@@ -1263,45 +1262,43 @@ template getDefault(t: CSSPropertyType): CSSComputedValue =
   {.cast(noSideEffect).}:
     defaultTable[t]
 
-type CSSComputedValueMaybeGlobal = (CSSComputedValue, CSSGlobalValueType)
-
 func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType,
-    vtype: CSSValueType): Opt[CSSComputedValueMaybeGlobal] =
+    vtype: CSSValueType): Opt[CSSComputedEntry] =
   let global = cssGlobal(d)
-  let val = CSSComputedValue(t: ptype, v: vtype)
+  let val = CSSComputedValue(v: vtype)
   if global != VALUE_NOGLOBAL:
-    return ok((val, global))
+    return ok((ptype, val, global))
   ?val.getValueFromDecl(d, vtype, ptype)
-  return ok((val, global))
+  return ok((ptype, val, global))
 
 func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]):
-    Opt[seq[(CSSComputedValue, CSSGlobalValueType)]] =
+    Opt[seq[CSSComputedEntry]] =
   var i = 0
   var cvals: seq[CSSComponentValue]
   while i < d.value.len:
     if d.value[i] != CSS_WHITESPACE_TOKEN:
       cvals.add(d.value[i])
     inc i
-  var res: seq[(CSSComputedValue, CSSGlobalValueType)]
+  var res: seq[CSSComputedEntry]
   case cvals.len
   of 1: # top, bottom, left, right
     for ptype in props:
       let vtype = valueType(ptype)
-      let val = CSSComputedValue(t: ptype, v: vtype)
+      let val = CSSComputedValue(v: vtype)
       ?val.getValueFromDecl(d, vtype, ptype)
-      res.add((val, cssGlobal(d)))
+      res.add((ptype, val, cssGlobal(d)))
   of 2: # top, bottom | left, right
     for i in 0 ..< props.len:
       let ptype = props[i]
       let vtype = valueType(ptype)
-      let val = CSSComputedValue(t: ptype, v: vtype)
+      let val = CSSComputedValue(v: vtype)
       val.length = ?cssLength(cvals[i mod 2])
-      res.add((val, cssGlobal(d)))
+      res.add((ptype, val, cssGlobal(d)))
   of 3: # top | left, right | bottom
     for i in 0 ..< props.len:
       let ptype = props[i]
       let vtype = valueType(ptype)
-      let val = CSSComputedValue(t: ptype, v: vtype)
+      let val = CSSComputedValue(v: vtype)
       let j = if i == 0:
         0 # top
       elif i == 3:
@@ -1309,14 +1306,14 @@ func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]):
       else:
         1 # left, right
       val.length = ?cssLength(cvals[j])
-      res.add((val, cssGlobal(d)))
+      res.add((ptype, val, cssGlobal(d)))
   of 4: # top | right | bottom | left
     for i in 0 ..< props.len:
       let ptype = props[i]
       let vtype = valueType(ptype)
-      let val = CSSComputedValue(t: ptype, v: vtype)
+      let val = CSSComputedValue(v: vtype)
       val.length = ?cssLength(cvals[i])
-      res.add((val, cssGlobal(d)))
+      res.add((ptype, val, cssGlobal(d)))
   else: discard
   return ok(res)
 
@@ -1330,13 +1327,11 @@ const PropertyPaddingSpec = [
   PROPERTY_PADDING_LEFT
 ]
 
-proc getComputedValues0(d: CSSDeclaration):
-    Opt[seq[(CSSComputedValue, CSSGlobalValueType)]] =
-  let name = d.name
-  var res: seq[(CSSComputedValue, CSSGlobalValueType)]
-  case shorthandType(name)
+proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
+    Err[void] =
+  case shorthandType(d.name)
   of SHORTHAND_NONE:
-    let ptype = propertyType(name)
+    let ptype = propertyType(d.name)
     let vtype = valueType(ptype)
     res.add(?getComputedValue(d, ptype, vtype))
   of SHORTHAND_ALL:
@@ -1344,8 +1339,8 @@ proc getComputedValues0(d: CSSDeclaration):
     if global != VALUE_NOGLOBAL:
       for ptype in CSSPropertyType:
         let vtype = valueType(ptype)
-        let val = CSSComputedValue(t: ptype, v: vtype)
-        res.add((val, global))
+        let val = CSSComputedValue(v: vtype)
+        res.add((ptype, val, global))
   of SHORTHAND_MARGIN:
     res.add(?lengthShorthand(d, PropertyMarginSpec))
   of SHORTHAND_PADDING:
@@ -1353,9 +1348,9 @@ proc getComputedValues0(d: CSSDeclaration):
   of SHORTHAND_BACKGROUND:
     let global = cssGlobal(d)
     let bgcolorptype = PROPERTY_BACKGROUND_COLOR
-    let bgcolorval = CSSComputedValue(t: bgcolorptype, v: valueType(bgcolorptype))
+    let bgcolorval = CSSComputedValue(v: valueType(bgcolorptype))
     let bgimageptype = PROPERTY_BACKGROUND_IMAGE
-    let bgimageval = CSSComputedValue(t: bgimageptype, v: valueType(bgimageptype))
+    let bgimageval = CSSComputedValue(v: valueType(bgimageptype))
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
         if tok == CSS_WHITESPACE_TOKEN:
@@ -1363,73 +1358,53 @@ proc getComputedValues0(d: CSSDeclaration):
         let r = cssImage(tok)
         if r.isOk:
           bgimageval.image = r.get
-          res.add((bgimageval, global))
+          res.add((bgimageptype, bgimageval, global))
         else:
           let r = cssColor(tok)
           if r.isOk:
             bgcolorval.color = r.get
-            res.add((bgcolorval, global))
+            res.add((bgcolorptype, bgcolorval, global))
     else:
-      res.add((bgcolorval, global))
+      res.add((bgcolorptype, bgcolorval, global))
   of SHORTHAND_LIST_STYLE:
     let global = cssGlobal(d)
     let positionptype = PROPERTY_LIST_STYLE_POSITION
-    let positionval = CSSComputedValue(t: positionptype, v: valueType(positionptype))
+    let positionval = CSSComputedValue(v: valueType(positionptype))
     let typeptype = PROPERTY_LIST_STYLE_TYPE
-    let typeval = CSSComputedValue(t: typeptype, v: valueType(typeptype))
+    let typeval = CSSComputedValue(v: valueType(typeptype))
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
         let r = cssListStylePosition(tok)
         if r.isOk:
           positionval.liststyleposition = r.get
-          res.add((positionval, global))
+          res.add((positionptype, positionval, global))
         else:
           let r = cssListStyleType(tok)
           if r.isOk:
             typeval.liststyletype = r.get
-            res.add((typeval, global))
+            res.add((typeptype, typeval, global))
           else:
             #TODO list-style-image
             discard
-  return ok(res)
+  return ok()
 
-proc getComputedValues(d: CSSDeclaration):
-    seq[(CSSComputedValue, CSSGlobalValueType)] =
-  return getComputedValues0(d).get(@[])
+proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
+  var res: seq[CSSComputedEntry] = @[]
+  if res.getComputedValues0(d).isOk:
+    return res
+  return @[]
 
-proc newComputedValueBuilder*(parent: CSSComputedValues): CSSComputedValuesBuilder =
-  return CSSComputedValuesBuilder(
-    parent: parent
-  )
-
-proc addValuesImportant*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
+proc addValues*(builder: var CSSComputedValuesBuilder,
+    decls: seq[CSSDeclaration], origin: CSSOrigin) =
   for decl in decls:
     if decl.important:
-      let vals = getComputedValues(decl)
-      for vg in vals:
-        let (val, global) = vg
-        builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
+      builder.importantProperties[origin].add(getComputedValues(decl))
+    else:
+      builder.normalProperties[origin].add(getComputedValues(decl))
 
-proc addValuesNormal*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
-  for decl in decls:
-    if not decl.important:
-      let vals = getComputedValues(decl)
-      for vg in vals:
-        let (val, global) = vg
-        builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
-
-proc addValues*(builder: var CSSComputedValuesBuilder, decls: seq[CSSDeclaration], origin: CSSOrigin) =
-  for decl in decls:
-    let vals = getComputedValues(decl)
-    for vg in vals:
-      let (val, global) = vg
-      if decl.important:
-        builder.importantProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
-      else:
-        builder.normalProperties[origin].add(CSSComputedValueBuilder(val: val, global: global))
-
-proc applyValue(vals: CSSComputedValues, val: CSSComputedValue, global: CSSGlobalValueType, parent: CSSComputedValues, previousOrigin: CSSComputedValues) =
-  let prop = val.t
+proc applyValue(vals: CSSComputedValues, prop: CSSPropertyType,
+    val: CSSComputedValue, global: CSSGlobalValueType,
+    parent: CSSComputedValues, previousOrigin: CSSComputedValues) =
   let parentVal = if parent != nil:
     parent[prop]
   else:
@@ -1470,8 +1445,7 @@ func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
 
 func copyProperties*(props: CSSComputedValues): CSSComputedValues =
   new(result)
-  for prop in CSSPropertyType:
-    result[prop] = props[prop]
+  result[] = props[]
 
 func rootProperties*(): CSSComputedValues =
   new(result)
@@ -1486,15 +1460,17 @@ func hasValues*(builder: CSSComputedValuesBuilder): bool =
       return true
   return false
 
-func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues =
+func buildComputedValues*(builder: CSSComputedValuesBuilder):
+    CSSComputedValues =
   new(result)
   var previousOrigins: array[CSSOrigin, CSSComputedValues]
   block:
     let origin = ORIGIN_USER_AGENT
     for build in builder.normalProperties[origin]:
-      result.applyValue(build.val, build.global, builder.parent, nil)
+      result.applyValue(build.t, build.val, build.global, builder.parent, nil)
     previousOrigins[origin] = result.copyProperties()
-  # Presentational hints override user agent style, but respect user/author style.
+  # Presentational hints override user agent style, but respect user/author
+  # style.
   if builder.preshints != nil:
     for prop in CSSPropertyType:
       if builder.preshints[prop] != nil:
@@ -1503,35 +1479,41 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder): CSSComputedValues 
     let origin = ORIGIN_USER
     let prevOrigin = ORIGIN_USER_AGENT
     for build in builder.normalProperties[origin]:
-      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
-    previousOrigins[origin] = result.copyProperties() # save user origins so author can use them
+      result.applyValue(build.t, build.val, build.global, builder.parent,
+        previousOrigins[prevOrigin])
+    # save user origins so author can use them
+    previousOrigins[origin] = result.copyProperties()
   block:
     let origin = ORIGIN_AUTHOR
     let prevOrigin = ORIGIN_USER
     for build in builder.normalProperties[origin]:
-      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
+      result.applyValue(build.t, build.val, build.global, builder.parent,
+        previousOrigins[prevOrigin])
     # no need to save user origins
   block:
     let origin = ORIGIN_AUTHOR
     let prevOrigin = ORIGIN_USER
     for build in builder.importantProperties[origin]:
-      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
+      result.applyValue(build.t, build.val, build.global, builder.parent,
+        previousOrigins[prevOrigin])
     # important, so no need to save origins
   block:
     let origin = ORIGIN_USER
     let prevOrigin = ORIGIN_USER_AGENT
     for build in builder.importantProperties[origin]:
-      result.applyValue(build.val, build.global, builder.parent, previousOrigins[prevOrigin])
+      result.applyValue(build.t, build.val, build.global, builder.parent,
+        previousOrigins[prevOrigin])
     # important, so no need to save origins
   block:
     let origin = ORIGIN_USER_AGENT
     for build in builder.importantProperties[origin]:
-      result.applyValue(build.val, build.global, builder.parent, nil)
+      result.applyValue(build.t, build.val, build.global, builder.parent, nil)
     # important, so no need to save origins
   # set defaults
   for prop in CSSPropertyType:
     if result[prop] == nil:
-      if inherited(prop) and builder.parent != nil and builder.parent[prop] != nil:
+      if inherited(prop) and builder.parent != nil and
+          builder.parent[prop] != nil:
         result[prop] = builder.parent[prop]
       else:
         result[prop] = getDefault(prop)
