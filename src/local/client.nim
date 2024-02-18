@@ -352,6 +352,8 @@ proc handleRead(client: Client, fd: int) =
     while true:
       try:
         let n = estream.recvData(addr buffer[0], BufferSize)
+        if n == 0:
+          break
         var i = 0
         while i < n:
           var j = n
