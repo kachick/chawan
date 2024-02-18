@@ -937,7 +937,7 @@ proc clone*(buffer: Buffer, newurl: URL): Pid {.proxy.} =
     let ssock = initServerSocket(buffered = false)
     buffer.ssock = ssock
     ps.write(char(0))
-    buffer.source.request.url = newurl
+    buffer.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
     let socks = ssock.acceptSocketStream()
