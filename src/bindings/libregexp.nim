@@ -10,7 +10,7 @@ type
   LREFlags* = set[LREFlag]
 
 func toCInt*(flags: LREFlags): cint =
-  cast[cint](flags)
+  cint(cast[uint8](flags))
 
 func toLREFlags*(flags: cint): LREFlags =
   cast[LREFlags](flags)
