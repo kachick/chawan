@@ -87,21 +87,19 @@ proc compileSearchRegex*(str: string, defaultFlags: LREFlags):
     Result[Regex, string] =
   # Emulate vim's \c/\C: override defaultFlags if one is found, then remove it
   # from str.
+  # Also, replace \< and \> with \b as (a bit sloppy) vi emulation.
   var flags = defaultFlags
   var s = newStringOfCap(str.len)
   var quot = false
   for c in str:
     if quot:
       quot = false
-      if c == 'c':
-        flags.incl(LRE_FLAG_IGNORECASE)
-        continue
-      elif c == 'C':
-        flags.excl(LRE_FLAG_IGNORECASE)
-        continue
-      else:
-        s &= '\\'
-    if c == '\\':
+      case c
+      of 'c': flags.incl(LRE_FLAG_IGNORECASE)
+      of 'C': flags.excl(LRE_FLAG_IGNORECASE)
+      of '<', '>': s &= "\\b"
+      else: s &= '\\' & c
+    elif c == '\\':
       quot = true
     else:
       s &= c
