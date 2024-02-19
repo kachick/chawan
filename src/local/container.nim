@@ -88,6 +88,9 @@ type
     cmd*: string
 
   Container* = ref object
+    # note: this is not the same as source.request.url (but should be synced
+    # with buffer.url)
+    url: URL
     parent* {.jsget.}: Container
     children* {.jsget.}: seq[Container]
     config*: BufferConfig
@@ -145,6 +148,7 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     else:
       discard close(fd)
   return Container(
+    url: source.request.url,
     process: process,
     loaderPid: loaderPid,
     source: source,
@@ -169,6 +173,7 @@ proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
   let bufferPid = forkserver.forkBufferWithLoader(source, config, attrs,
     loaderPid)
   return Container(
+    url: source.request.url,
     source: source,
     width: container.width,
     height: container.height,
@@ -183,7 +188,7 @@ proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
   )
 
 func location*(container: Container): URL {.jsfget.} =
-  return container.source.request.url
+  return container.url
 
 proc clone*(container: Container, newurl: URL): Promise[Container] =
   let url = if newurl != nil:
@@ -193,7 +198,8 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
   return container.iface.clone(url).then(proc(pid: Pid): Container =
     if pid == -1:
       return nil
-    let ncontainer = Container(
+    return Container(
+      url: url,
       config: container.config,
       iface: container.iface, # changed later in setStream
       width: container.width,
@@ -206,6 +212,7 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       bpos: container.bpos,
       highlights: container.highlights,
       process: pid,
+      loaderPid: container.loaderPid,
       loadinfo: container.loadinfo,
       lines: container.lines,
       lineshift: container.lineshift,
@@ -224,9 +231,6 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       ishtml: container.ishtml,
       cloned: true
     )
-    if newurl != nil:
-      ncontainer.source.request.url = newurl
-    return ncontainer
   )
 
 func charset*(container: Container): Charset =
