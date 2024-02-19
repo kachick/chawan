@@ -240,7 +240,8 @@ proc matchHTMLPreEnd(line: string): bool =
 
 type
   BlockType = enum
-    btNone, btPar, btList, btPre, btHTML, btHTMLPre, btComment
+    btNone, btPar, btList, btPre, btTabPre, btSpacePre, btHTML, btHTMLPre,
+    btComment
 
   ParseState = object
     blockType: BlockType
@@ -249,6 +250,7 @@ type
     lists: seq[ListType]
     hasp: bool
     reprocess: bool
+    numPreLines: int
 
 proc pushList(state: var ParseState, t: ListType) =
   case t
@@ -272,9 +274,23 @@ proc parseNone(state: var ParseState, line: string) =
   elif line[0] == '<' and line.find('>') == line.high:
     state.blockType = if line.matchHTMLPreStart(): btHTMLPre else: btHTML
     state.reprocess = true
-  elif line.len >= 3 and line.startsWith("```"):
+  elif line.startsWith("```"):
     state.blockType = btPre
     stdout.write("<PRE>")
+  elif line.startsWith("    "):
+    state.blockType = btSpacePre
+    if state.hasp:
+      state.hasp = false
+      stdout.write("</P>\n")
+    stdout.write("<PRE>")
+    state.blockData = line.substr(4) & "\n"
+  elif line.startsWith("\t"):
+    state.blockType = btTabPre
+    if state.hasp:
+      state.hasp = false
+      stdout.write("</P>\n")
+    stdout.write("<PRE>")
+    state.blockData = line.substr(1) & "\n"
   elif (let (n, len, t) = line.getListDepth(); n != -1):
     state.blockType = btList
     state.listDepth = n
@@ -361,6 +377,38 @@ proc parseHTMLPre(state: var ParseState, line: string) =
   else:
     state.blockData &= line & "\n"
 
+proc parseTabPre(state: var ParseState, line: string) =
+  if line.len == 0:
+    inc state.numPreLines
+  elif line[0] != '\t':
+    state.numPreLines = 0
+    stdout.write(state.blockData)
+    stdout.write("</PRE>")
+    state.blockData = ""
+    state.reprocess = true
+    state.blockType = btNone
+  else:
+    while state.numPreLines > 0:
+      state.blockData &= '\n'
+      dec state.numPreLines
+    state.blockData &= line.substr(1) & "\n"
+
+proc parseSpacePre(state: var ParseState, line: string) =
+  if line.len == 0:
+    inc state.numPreLines
+  elif not line.startsWith("    "):
+    state.numPreLines = 0
+    stdout.write(state.blockData)
+    stdout.write("</PRE>")
+    state.blockData = ""
+    state.reprocess = true
+    state.blockType = btNone
+  else:
+    while state.numPreLines > 0:
+      state.blockData &= '\n'
+      dec state.numPreLines
+    state.blockData &= line.substr(4) & "\n"
+
 proc parseComment(state: var ParseState, line: string) =
   let i = line.find("-->")
   if i != -1:
@@ -378,6 +426,8 @@ proc main() =
     case state.blockType
     of btNone: state.parseNone(line)
     of btPre: state.parsePre(line)
+    of btTabPre: state.parseTabPre(line)
+    of btSpacePre: state.parseSpacePre(line)
     of btList: state.parseList(line)
     of btPar: state.parsePar(line)
     of btHTML: state.parseHTML(line)
