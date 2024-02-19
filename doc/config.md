@@ -42,6 +42,8 @@ examples.
    * [Line-editing actions](#line-editing-actions)
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
+     * [Match mode](#match-mode)
+     * [Search mode](#search-mode)
    * [Path handling](#path-handling)
    * [Word types](#word-types)
      * [w3m word](#w3m-word)
@@ -465,8 +467,8 @@ Omnirule options:
 <td>regex</td>
 <td>Regular expression used to match the input string. Note that websites
 passed as arguments are matched as well.<br>
-Note: regexes are handled according to the [regex handling](#regex-handling)
-rules.</td>
+Note: regexes are handled according to the [match mode](#match-mode) regex
+handling rules.</td>
 </tr>
 
 <tr>
@@ -525,8 +527,8 @@ Siteconf options:
 <td>regex</td>
 <td>Regular expression used to match the URL. Either this or the `host` option
 must be specified.<br>
-Note: regexes are handled according to the [regex handling](#regex-handling)
-rules.</td>
+Note: regexes are handled according to the [match mode](#match-mode) regex
+handling rules.</td>
 </tr>
 
 <tr>
@@ -534,8 +536,8 @@ rules.</td>
 <td>regex</td>
 <td>Regular expression used to match the host part of the URL (i.e. domain
 name/ip address.) Either this or the `url` option must be specified.<br>
-Note: regexes are handled according to the [regex handling](#regex-handling)
-rules.</td>
+Note: regexes are handled according to the [match mode](#match-mode) regex
+handling rules.</td>
 </tr>
 
 <tr>
@@ -557,8 +559,8 @@ false for all websites.</td>
 <td>array of regexes</td>
 <td>Domains for which third-party cookies are allowed on this domain. Note:
 this only works for buffers which share the same cookie jar.<br>
-Note: regexes are handled according to the [regex handling](#regex-handling)
-rules.</td>
+Note: regexes are handled according to the [match mode](#match-mode) regex
+handling rules.</td>
 </tr>
 
 <tr>
@@ -1284,6 +1286,16 @@ character. (This means that e.g. `https://` consists of four words: `https`,
 
 ### Regex handling
 
+Regular expressions are currently handled using libregexp which is included in
+QuickJS. This means that all regular expressions should work as in JavaScript.
+
+There are two different modes of regex handling in Chawan: "search" mode, and
+"match" mode. "match" mode is used for configurations (meaning in all values
+in this document described as "regex"). "search" mode is used for the on-page
+search function (using searchForward/isearchForward etc.)
+
+#### Match mode
+
 Regular expressions are assumed to be exact matches, except when they start
 with a caret (^) sign or end with an unescaped dollar ($) sign.
 
@@ -1295,6 +1307,23 @@ efgh$ -> efgh$ (no change)
 ^ijkl$ -> ^ijkl$ (no change)
 mnop -> ^mnop$ (changed to exact match)
 ```
+
+Match mode has no way to toggle JavaScript regex flags.
+
+#### Search mode
+
+For on-page search, the above transformations do not apply; the search `/abcd`
+searches for the string `abcd` inside all lines.
+
+"Search" mode also has some other convenience transformations:
+
+* The string `\c` (backslash + lower-case c) inside a search-mode regex enables
+  case-insensitive matching.
+* Conversely, `\C` (backslash + capital C) disables case-insensitive
+  matching. (Useful if you have the "i" flag inside default-flags.)
+* `\<` and `\>` is converted to `\b` (as in vi, grep, etc.)
+
+Note that none of these work in "match" mode.
 
 ### Path handling
 
