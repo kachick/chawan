@@ -82,6 +82,7 @@ proc parseInline(line: openArray[char]) =
       of '>': append "&gt;"
       of '"': append "&quot;"
       of '\'': append "&apos;"
+      of '&': append "&amp;"
       of '`':
         append "</CODE>"
         state.excl(isCode)
