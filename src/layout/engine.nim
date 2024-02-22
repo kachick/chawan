@@ -1446,12 +1446,11 @@ proc positionAtoms(ictx: var InlineContext) =
     ictx.errorY / H
   else:
     0
-  var i = 1
-  for line in ictx.lines:
+  for i in 1 ..< ictx.lines.len:
     let erry0 = erry * i
-    for atom in line.atoms:
-      atom.offset.y += line.offsety - erry0
-    inc i
+    let offsety = ictx.lines[i].offsety
+    for atom in ictx.lines[i].atoms:
+      atom.offset.y += offsety - erry0
 
 proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
     space: AvailableSpace, computed: CSSComputedValues, offset,
