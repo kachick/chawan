@@ -74,7 +74,13 @@ proc psClose(s: Stream) =
 proc psReadData(s: Stream, buffer: pointer, len: int): int =
   let s = PosixStream(s)
   assert len != 0 and s.blocking
-  return s.recvData(buffer, len)
+  result = 0
+  while result < len:
+    let p = addr cast[ptr UncheckedArray[uint8]](buffer)[result]
+    let n = s.recvData(p, len - result)
+    if n == 0:
+      break
+    result += n
 
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
   let s = PosixStream(s)

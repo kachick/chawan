@@ -1,6 +1,5 @@
 import std/deques
 import std/options
-import std/streams
 
 import html/catom
 import html/dom
@@ -10,37 +9,30 @@ import js/fromjs
 import js/javascript
 import types/url
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
+import chagashi/charset
 
 import chame/htmlparser
 import chame/tags
 
+export htmlparser.ParseResult
+
 # DOMBuilder implementation for Chawan.
 
-type CharsetConfidence = enum
+type CharsetConfidence* = enum
   ccTentative, ccCertain, ccIrrelevant
 
 type
   HTML5ParserWrapper* = ref object
     parser: HTML5Parser[Node, CAtom]
-    charsetStack: seq[Charset]
-    seekable: bool
     builder*: ChaDOMBuilder
     opts: HTML5ParserOpts[Node, CAtom]
-    stream: StringStream
-    encoder: EncoderStream
-    decoder: DecoderStream
     # hack so we don't have to worry about leaks or the GC deallocating parser
     refs: seq[Document]
     stoppedFromScript: bool
-    needsBOMSniff: bool
-    wasICE: bool # inhibitCheckEnd
 
   ChaDOMBuilder = ref object of DOMBuilder[Node, CAtom]
-    charset: Charset
-    confidence: CharsetConfidence
+    charset*: Charset
+    confidence*: CharsetConfidence
     document*: Document
     factory: CAtomFactory
     poppedScript: HTMLScriptElement
@@ -80,7 +72,8 @@ proc finish(builder: ChaDOMBuilder) =
     script.execute()
   #TODO events
 
-proc restart(builder: ChaDOMBuilder, wrapper: HTML5ParserWrapper) =
+proc restart*(wrapper: HTML5ParserWrapper, charset: Charset) =
+  let builder = wrapper.builder
   let document = newDocument(builder.factory)
   document.setActiveParser(wrapper)
   wrapper.refs.add(document)
@@ -92,7 +85,9 @@ proc restart(builder: ChaDOMBuilder, wrapper: HTML5ParserWrapper) =
     document.window = window
     window.document = document
   builder.document = document
+  builder.charset = charset
   assert document.factory != nil
+  wrapper.parser = initHTML5Parser(builder, wrapper.opts)
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder, quirksMode: QuirksMode) =
   if not builder.document.parser_cannot_change_the_mode_flag:
@@ -214,7 +209,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder, element: Node) =
     builder.poppedScript = HTMLScriptElement(element)
 
 proc newChaDOMBuilder(url: URL, window: Window, factory: CAtomFactory,
-    confidence: CharsetConfidence): ChaDOMBuilder =
+    confidence: CharsetConfidence, charset = DefaultCharset): ChaDOMBuilder =
   let document = newDocument(factory)
   document.contentType = "text/html"
   document.url = url
@@ -224,7 +219,8 @@ proc newChaDOMBuilder(url: URL, window: Window, factory: CAtomFactory,
   return ChaDOMBuilder(
     document: document,
     factory: factory,
-    confidence: confidence
+    confidence: confidence,
+    charset: charset
   )
 
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
@@ -264,68 +260,22 @@ proc parseHTMLFragment*(element: Element, s: string): seq[Node] =
   builder.finish()
   return root.childList
 
-#TODO this should be handled by decoderstream or buffer
-proc bomSniff(wrapper: HTML5ParserWrapper): Charset =
-  let stream = wrapper.stream
-  let op = stream.getPosition()
-  if op + 2 >= stream.data.len:
-    return CHARSET_UNKNOWN
-  let bom = stream.readStr(2)
-  if bom == "\xFE\xFF":
-    return CHARSET_UTF_16_BE
-  if bom == "\xFF\xFE":
-    return CHARSET_UTF_16_LE
-  if bom == "\xEF\xBB":
-    if op + 3 < stream.data.len and stream.readChar() == '\xBF':
-      return CHARSET_UTF_8
-  wrapper.stream.setPosition(op)
-  return CHARSET_UNKNOWN
-
-proc switchCharset(wrapper: HTML5ParserWrapper) =
-  let builder = wrapper.builder
-  builder.charset = wrapper.charsetStack.pop()
-  if wrapper.seekable:
-    builder.confidence = ccTentative # used in the next iteration
-  else:
-    builder.confidence = ccCertain
-  let em = if wrapper.charsetStack.len == 0 or not wrapper.seekable:
-    DECODER_ERROR_MODE_REPLACEMENT
-  else:
-    DECODER_ERROR_MODE_FATAL
-  let ice = wrapper.decoder == nil or wrapper.wasICE
-  wrapper.parser = initHTML5Parser(builder, wrapper.opts)
-  wrapper.decoder = newDecoderStream(wrapper.stream, builder.charset,
-    errormode = em)
-  wrapper.decoder.setInhibitCheckEnd(ice)
-  wrapper.wasICE = ice
-  wrapper.encoder = newEncoderStream(wrapper.decoder, CHARSET_UTF_8,
-    errormode = ENCODER_ERROR_MODE_FATAL)
-
-proc newHTML5ParserWrapper*(stream: StringStream, window: Window, url: URL,
-    factory: CAtomFactory, charsets: seq[Charset], seekable: bool):
-    HTML5ParserWrapper =
+proc newHTML5ParserWrapper*(window: Window, url: URL, factory: CAtomFactory,
+    charset: Charset): HTML5ParserWrapper =
   let opts = HTML5ParserOpts[Node, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: window != nil and window.settings.scripting
   )
-  let builder = newChaDOMBuilder(url, window, factory, ccTentative)
+  let builder = newChaDOMBuilder(url, window, factory, ccTentative, charset)
   let wrapper = HTML5ParserWrapper(
-    seekable: seekable,
     builder: builder,
     opts: opts,
-    stream: stream,
-    needsBOMSniff: seekable
+    parser: initHTML5Parser(builder, opts)
   )
   builder.document.setActiveParser(wrapper)
-  if charsets.len == 0:
-    wrapper.charsetStack = @[DefaultCharset] # UTF-8
-  else:
-    for i in countdown(charsets.high, 0):
-      wrapper.charsetStack.add(charsets[i])
-  wrapper.switchCharset()
   return wrapper
 
-proc parseBuffer(wrapper: HTML5ParserWrapper, buffer: openArray[char]):
+proc parseBuffer*(wrapper: HTML5ParserWrapper, buffer: openArray[char]):
     ParseResult =
   let builder = wrapper.builder
   let document = builder.document
@@ -390,50 +340,7 @@ proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.exportc.} =
   if res == PRES_STOP:
     wrapper.stoppedFromScript = true
 
-proc parseAll*(wrapper: HTML5ParserWrapper): bool =
-  let builder = wrapper.builder
-  if wrapper.needsBOMSniff:
-    if wrapper.stream.getPosition() + 3 >= wrapper.stream.data.len:
-      return true
-    let scs = wrapper.bomSniff()
-    if scs != CHARSET_UNKNOWN:
-      builder.confidence = ccCertain
-      wrapper.charsetStack = @[scs]
-      wrapper.seekable = false
-      wrapper.switchCharset()
-    wrapper.needsBOMSniff = false
-  let buffer = wrapper.encoder.readAll()
-  if wrapper.decoder.failed:
-    assert wrapper.seekable
-    # Retry with another charset.
-    builder.restart(wrapper)
-    wrapper.switchCharset()
-    return false
-  if buffer.len == 0:
-    return true
-  let res = wrapper.parseBuffer(buffer)
-  if res == PRES_STOP:
-    # A meta tag describing the charset has been found; force use of this
-    # charset.
-    builder.restart(wrapper)
-    wrapper.charsetStack.add(builder.charset)
-    wrapper.seekable = false
-    wrapper.switchCharset()
-    return false
-  return true
-
 proc finish*(wrapper: HTML5ParserWrapper) =
-  if wrapper.needsBOMSniff:
-    let scs = wrapper.bomSniff()
-    if scs != CHARSET_UNKNOWN:
-      wrapper.builder.confidence = ccCertain
-      wrapper.charsetStack = @[scs]
-      wrapper.seekable = false
-      wrapper.switchCharset()
-    wrapper.needsBOMSniff = false
-  wrapper.decoder.setInhibitCheckEnd(false)
-  wrapper.wasICE = false
-  doAssert wrapper.parseAll()
   wrapper.parser.finish()
   wrapper.builder.finish()
   for r in wrapper.refs:

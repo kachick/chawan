@@ -29,7 +29,7 @@ import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
 
-import chakasu/charset
+import chagashi/charset
 
 type
   CursorPosition* = object

@@ -42,7 +42,7 @@ import types/url
 import utils/strwidth
 import utils/twtstr
 
-import chakasu/charset
+import chagashi/charset
 
 type
   LineMode* = enum

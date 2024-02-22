@@ -41,9 +41,9 @@ import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
+import chagashi/charset
+import chagashi/decoder
+import chagashi/validator
 
 import chame/tags
 
@@ -2744,13 +2744,8 @@ proc loadResource(window: Window, link: HTMLLinkElement) =
         res.unregisterFun()
     ).then(proc(s: JSResult[string]) =
       if s.isOk:
-        #TODO this is extremely inefficient, and text() should return
-        # utf8 anyways
-        let ss = newStringStream(s.get)
-        #TODO non-utf-8 css
-        let ds = newDecoderStream(ss, cs = CHARSET_UTF_8)
-        let source = newEncoderStream(ds, cs = CHARSET_UTF_8)
-        link.sheet = parseStylesheet(source, window.factory)
+        #TODO non-utf-8 css?
+        link.sheet = parseStylesheet(newStringStream(s.get), window.factory)
         window.document.cachedSheetsInvalid = true
     )
     window.loadingResourcePromises.add(p)
@@ -3441,12 +3436,12 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
   if response.res != 0:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
-  let cs = if cs == CHARSET_UNKNOWN:
-    CHARSET_UTF_8
+  #TODO make this non-blocking somehow
+  let s = response.body.readAll()
+  let source = if cs in {CHARSET_UNKNOWN, CHARSET_UTF_8}:
+    s.toValidUTF8()
   else:
-    cs
-  let decoder = newDecoderStream(response.body, cs = cs)
-  let source = newEncoderStream(decoder).readAll()
+    newTextDecoder(cs).decodeAll(s)
   let script = window.jsctx.createClassicScript(source, url, options, false)
   element.onComplete(ScriptResult(t: RESULT_SCRIPT, script: script))
 

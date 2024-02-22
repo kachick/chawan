@@ -15,7 +15,7 @@ import types/opt
 import utils/strwidth
 import utils/twtstr
 
-import chakasu/charset
+import chagashi/charset
 
 proc main() =
   let params = commandLineParams()

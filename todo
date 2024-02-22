@@ -4,9 +4,6 @@ compilation:
 	* fbf for unifont
 	* maybe use system wcwidth?
 charsets:
-- rewrite it:
-	* push API (not based on std/streams)
-	* directly convert to/from UTF-8, not UTF-32
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
 display:

@@ -5,69 +5,29 @@ import std/unicode
 import types/cell
 import utils/strwidth
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
-
-type StreamRenderer* = object
+type StreamRenderer* = ref object
   ansiparser: AnsiCodeParser
   format: Format
   af: bool
   stream: Stream
-  decoder: DecoderStream
-  encoder: EncoderStream
-  charsets: seq[Charset]
   newline: bool
   w: int
   j: int # byte in line
 
-#TODO pass bool for whether we can rewind
-proc newStreamRenderer*(stream: Stream, charsets0: openArray[Charset]):
-    ref StreamRenderer =
-  var charsets = newSeq[Charset](charsets0.len)
-  for i in 0 ..< charsets.len:
-    charsets[i] = charsets0[charsets.high - i]
-  if charsets.len == 0:
-    charsets.add(DefaultCharset)
-  let cs = charsets.pop()
-  let em = if charsets.len > 0:
-    DECODER_ERROR_MODE_FATAL
-  else:
-    DECODER_ERROR_MODE_REPLACEMENT
-  let decoder = newDecoderStream(stream, cs, errormode = em)
-  decoder.setInhibitCheckEnd(true)
-  let encoder = newEncoderStream(decoder)
-  return (ref StreamRenderer)(
-    stream: stream,
-    decoder: decoder,
-    encoder: encoder,
-    format: Format(),
-    charsets: charsets,
-    ansiparser: AnsiCodeParser(
-      state: PARSE_DONE
-    )
-  )
+proc newStreamRenderer*(): StreamRenderer =
+  return StreamRenderer(ansiparser: AnsiCodeParser(state: PARSE_DONE))
 
-proc rewind(renderer: var StreamRenderer) =
-  let cs = renderer.charsets.pop()
-  let em = if renderer.charsets.len > 0:
-    DECODER_ERROR_MODE_FATAL
-  else:
-    DECODER_ERROR_MODE_REPLACEMENT
-  let decoder = newDecoderStream(renderer.stream, cs, errormode = em)
-  decoder.setInhibitCheckEnd(true)
-  renderer.decoder = decoder
-  renderer.encoder = newEncoderStream(decoder)
+proc rewind*(renderer: StreamRenderer) =
   renderer.format = Format()
   renderer.ansiparser.state = PARSE_DONE
 
-proc addFormat(grid: var FlexibleGrid, renderer: var StreamRenderer) =
+proc addFormat(grid: var FlexibleGrid, renderer: StreamRenderer) =
   if renderer.af:
     renderer.af = false
     if renderer.j == grid[^1].str.len:
       grid[^1].addFormat(renderer.w, renderer.format)
 
-proc processBackspace(grid: var FlexibleGrid, renderer: var StreamRenderer,
+proc processBackspace(grid: var FlexibleGrid, renderer: StreamRenderer,
     r: Rune): bool =
   let pj = renderer.j
   var cr: Rune
@@ -105,8 +65,7 @@ proc processBackspace(grid: var FlexibleGrid, renderer: var StreamRenderer,
   grid[^1].str.setLen(renderer.j)
   return false
 
-proc processAscii(grid: var FlexibleGrid, renderer: var StreamRenderer,
-    c: char) =
+proc processAscii(grid: var FlexibleGrid, renderer: StreamRenderer, c: char) =
   case c
   of '\b':
     if renderer.j == 0:
@@ -129,8 +88,10 @@ proc processAscii(grid: var FlexibleGrid, renderer: var StreamRenderer,
     renderer.w += Rune(c).twidth(renderer.w)
     inc renderer.j
 
-proc renderChunk(grid: var FlexibleGrid, renderer: var StreamRenderer,
-    buf: string) =
+proc renderChunk*(grid: var FlexibleGrid, renderer: StreamRenderer,
+    buf: openArray[char]) =
+  if grid.len == 0:
+    grid.addLine()
   var i = 0
   while i < buf.len:
     if renderer.newline:
@@ -158,21 +119,3 @@ proc renderChunk(grid: var FlexibleGrid, renderer: var StreamRenderer,
       grid[^1].str &= r
       renderer.w += r.twidth(renderer.w)
       renderer.j += i - pi
-
-proc renderStream*(grid: var FlexibleGrid, renderer: var StreamRenderer): bool =
-  let buf = renderer.encoder.readAll()
-  if renderer.decoder.failed:
-    renderer.rewind()
-    grid.setLen(0)
-    return false
-  if grid.len == 0:
-    grid.addLine()
-  grid.renderChunk(renderer, buf)
-  return true
-
-proc finishRender*(grid: var FlexibleGrid, renderer: var StreamRenderer) =
-  renderer.decoder.setInhibitCheckEnd(false)
-  let buf = renderer.decoder.readAll()
-  if grid.len == 0:
-    grid.addLine()
-  grid.renderChunk(renderer, buf)

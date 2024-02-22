@@ -51,7 +51,7 @@ import utils/twtstr
 import xhr/formdata
 import xhr/xmlhttprequest
 
-import chakasu/charset
+import chagashi/charset
 
 type
   Client* = ref object

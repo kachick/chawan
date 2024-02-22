@@ -51,7 +51,7 @@ import types/url
 import utils/mimeguess
 import utils/twtstr
 
-import chakasu/charset
+import chagashi/charset
 
 export request
 export response

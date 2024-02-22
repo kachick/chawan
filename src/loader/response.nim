@@ -1,5 +1,4 @@
 import std/streams
-import std/unicode
 
 import bindings/quickjs
 import io/promise
@@ -11,9 +10,9 @@ import loader/request
 import types/blob
 import types/url
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
+import chagashi/charset
+import chagashi/decoder
+import chagashi/validator
 
 type
   ResponseType* = enum
@@ -106,13 +105,12 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
       CHARSET_UTF_8
     else:
       response.charset
-    if cs == CHARSET_UTF_8 and s.validateUtf8() == -1:
-      ok(s)
+    #TODO this is inefficient
+    # maybe add a JS type that turns a seq[char] into JS strings
+    if cs in {CHARSET_UTF_8, CHARSET_UNKNOWN}:
+      ok(s.toValidUTF8())
     else:
-      let ss = newStringStream(s)
-      let ds = newDecoderStream(ss, cs)
-      let es = newEncoderStream(ds, CHARSET_UTF_8)
-      return ok(es.readAll())
+      ok(newTextDecoder(cs).decodeAll(s))
   )
 
 proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =

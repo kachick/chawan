@@ -23,9 +23,9 @@ macro checkVersion(xs: static string, major, minor, patch: int) =
         gs & ").\n" &
         "Please run `make submodule` to update.")
 
-tryImport chakasu/version, "chakasu"
+tryImport chagashi/version, "chagashi"
 tryImport chame/version, "chame"
 
 static:
-  checkVersion("chakasu", 0, 3, 2)
+  checkVersion("chagashi", 0, 4, 0)
   checkVersion("chame", 0, 14, 3)

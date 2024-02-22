@@ -8,7 +8,7 @@ import types/url
 import types/opt
 import utils/twtstr
 
-import chakasu/charset
+import chagashi/charset
 
 type
   MailcapParser = object

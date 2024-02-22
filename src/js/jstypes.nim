@@ -30,3 +30,6 @@ type
     abuf*: JSArrayBuffer
     offset*: csize_t # offset into the buffer
     nmemb*: csize_t # number of members
+
+func high*(abuf: JSArrayBuffer): int =
+  return int(abuf.len) - 1

@@ -24,7 +24,7 @@ import types/url
 import utils/mimeguess
 import utils/twtstr
 
-import chakasu/charset
+import chagashi/charset
 
 type
   ColorMode* = enum

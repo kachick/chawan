@@ -16,9 +16,9 @@ import types/opt
 import utils/strwidth
 import utils/twtstr
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
+import chagashi/charset
+import chagashi/encoder
+import chagashi/validator
 
 export isatty
 
@@ -384,7 +384,7 @@ proc setTitle*(term: Terminal, title: string) =
     term.outfile.write(XTERM_TITLE(title))
 
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
-  if str.validateUtf8() != -1:
+  if str.validateUTF8Surr() != -1:
     return "?"
   # twidth wouldn't work here, the view may start at the nth character.
   # pager must ensure tabs are converted beforehand.
@@ -397,11 +397,9 @@ proc processOutputString*(term: Terminal, str: string, w: var int): string =
     # The output encoding matches the internal representation.
     return str
   else:
-    # Output is not utf-8, so we must convert back to utf-32 and then encode.
-    let ss = newStringStream(str)
-    let ds = newDecoderStream(ss)
-    let es = newEncoderStream(ds, term.cs, errormode = ENCODER_ERROR_MODE_FATAL)
-    return es.readAll()
+    # Output is not utf-8, so we must encode it first.
+    var success = false
+    return newTextEncoder(term.cs).encodeAll(str, success)
 
 proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
   var format = Format()

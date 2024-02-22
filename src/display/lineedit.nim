@@ -1,4 +1,3 @@
-import std/streams
 import std/strutils
 import std/unicode
 
@@ -10,9 +9,9 @@ import types/opt
 import utils/strwidth
 import utils/twtstr
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
+import chagashi/charset
+import chagashi/validator
+import chagashi/decoder
 
 type
   LineEditState* = enum
@@ -155,15 +154,14 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
 
 proc write*(edit: LineEdit, s: string, cs: Charset): bool =
   if cs == CHARSET_UTF_8:
-    if s.validateUtf8() != -1:
+    if s.validateUTF8Surr() != -1:
       return false
     edit.insertCharseq(s)
   else:
-    let ss = newStringStream(s)
-    let ds = newDecoderStream(ss, cs, errormode = DECODER_ERROR_MODE_FATAL)
-    let es = newEncoderStream(ds, CHARSET_UTF_8)
-    let s = es.readAll()
-    if ds.failed or es.failed:
+    let td = newTextDecoder(cs)
+    var success = false
+    let s = td.decodeAll(s, success)
+    if not success:
       return false
     edit.insertCharseq(s)
   return true

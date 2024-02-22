@@ -51,7 +51,10 @@ import utils/strwidth
 import utils/twtstr
 import xhr/formdata as formdata_impl
 
-import chakasu/charset
+from chagashi/decoder import newTextDecoder
+import chagashi/charset
+import chagashi/decodercore
+import chagashi/validatorcore
 
 import chame/tags
 
@@ -103,7 +106,6 @@ type
     prevstyled: StyledNode
     selector: Selector[int]
     istream: SocketStream
-    sstream: StringStream
     available: int
     state: BufferState
     prevnode: StyledNode
@@ -118,8 +120,15 @@ type
     quirkstyle: CSSStylesheet
     userstyle: CSSStylesheet
     htmlParser: HTML5ParserWrapper
-    srenderer: ref StreamRenderer
+    srenderer: StreamRenderer
     bgcolor: CellColor
+    needsBOMSniff: bool
+    seekable: bool
+    decoder: TextDecoder
+    validator: ref TextValidatorUTF8
+    validateBuf: seq[char]
+    charsetStack: seq[Charset]
+    charset: Charset
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -273,11 +282,6 @@ macro task(fun: typed) =
   let pfun = getProxyFunction(funid)
   pfun.istask = true
   fun
-
-func charsets(buffer: Buffer): seq[Charset] =
-  if buffer.source.charset != CHARSET_UNKNOWN:
-    return @[buffer.source.charset]
-  return buffer.config.charsets
 
 func getTitleAttr(node: StyledNode): string =
   if node == nil:
@@ -632,13 +636,115 @@ proc do_reshape(buffer: Buffer) =
     buffer.lines.renderDocument(buffer.bgcolor, styledRoot, buffer.attrs)
     buffer.prevstyled = styledRoot
 
-proc processData(buffer: Buffer): bool =
+proc processData0(buffer: Buffer, data: openArray[char]): bool =
   if buffer.ishtml:
-    let res = buffer.htmlParser.parseAll()
+    if buffer.htmlParser.parseBuffer(data) == PRES_STOP:
+      buffer.charsetStack = @[buffer.htmlParser.builder.charset]
+      return false
     buffer.document = buffer.htmlParser.builder.document
-    return res
   else:
-    return buffer.lines.renderStream(buffer.srenderer[])
+    buffer.lines.renderChunk(buffer.srenderer, data)
+  true
+
+func canSwitch(buffer: Buffer): bool {.inline.} =
+  if buffer.ishtml and buffer.htmlParser.builder.confidence != ccTentative:
+    return false
+  return buffer.charsetStack.len > 0
+
+proc initDecoder(buffer: Buffer) =
+  if buffer.charset != CHARSET_UTF_8:
+    buffer.decoder = newTextDecoder(buffer.charset)
+  else:
+    buffer.validator = (ref TextValidatorUTF8)()
+
+proc switchCharset(buffer: Buffer) =
+  buffer.charset = buffer.charsetStack.pop()
+  buffer.initDecoder()
+  if buffer.ishtml:
+    buffer.htmlParser.restart(buffer.charset)
+  else:
+    buffer.srenderer.rewind()
+    buffer.lines.setLen(0)
+
+const BufferSize = 16384
+
+proc decodeData(buffer: Buffer, iq: openArray[uint8]): bool =
+  var oq {.noinit.}: array[BufferSize, char]
+  var n = 0
+  while true:
+    case buffer.decoder.decode(iq, oq.toOpenArrayByte(0, oq.high), n)
+    of tdrDone:
+      if not buffer.processData0(oq.toOpenArray(0, n - 1)):
+        assert buffer.canSwitch
+        buffer.switchCharset()
+        return false
+      break
+    of tdrReqOutput:
+      # flush output buffer
+      if not buffer.processData0(oq.toOpenArray(0, n - 1)):
+        assert buffer.canSwitch
+        buffer.switchCharset()
+        return false
+      n = 0
+    of tdrError:
+      if buffer.canSwitch:
+        buffer.switchCharset()
+        return false
+      doAssert buffer.processData0("\uFFFD")
+  true
+
+proc validateData(buffer: Buffer, iq: openArray[char]): bool =
+  var pi = 0
+  var n = 0
+  while true:
+    case buffer.validator[].validate(iq.toOpenArrayByte(0, iq.high), n)
+    of tvrDone:
+      if n == -1:
+        return true
+      if buffer.validateBuf.len > 0:
+        doAssert buffer.processData0(buffer.validateBuf)
+        buffer.validateBuf.setLen(0)
+      if not buffer.processData0(iq.toOpenArray(pi, n)):
+        assert buffer.canSwitch
+        buffer.switchCharset()
+        return false
+      buffer.validateBuf.add(iq.toOpenArray(n + 1, iq.high))
+      break
+    of tvrError:
+      buffer.validateBuf.setLen(0)
+      if buffer.canSwitch:
+        buffer.switchCharset()
+        return false
+      if n > pi:
+        doAssert buffer.processData0(iq.toOpenArray(pi, n - 1))
+      doAssert buffer.processData0("\uFFFD")
+      pi = buffer.validator.i
+  true
+
+proc bomSniff(buffer: Buffer, iq: openArray[char]): int =
+  if iq[0] == '\xFE' and iq[1] == '\xFF':
+    buffer.charsetStack = @[CHARSET_UTF_16_BE]
+    buffer.switchCharset()
+    return 2
+  if iq[0] == '\xFF' and iq[1] == '\xFE':
+    buffer.charsetStack = @[CHARSET_UTF_16_LE]
+    buffer.switchCharset()
+    return 2
+  if iq[0] == '\xEF' and iq[1] == '\xBB' and iq[2] == '\xBF':
+    buffer.charsetStack = @[CHARSET_UTF_8]
+    buffer.switchCharset()
+    return 3
+  return 0
+
+proc processData(buffer: Buffer, iq: openArray[char]): bool =
+  var start = 0
+  if buffer.needsBOMSniff:
+    if iq.len >= 3: # ehm... TODO
+      start += buffer.bomSniff(iq)
+    buffer.needsBOMSniff = false
+  if buffer.decoder != nil:
+    return buffer.decodeData(iq.toOpenArrayByte(start, iq.high))
+  return buffer.validateData(iq.toOpenArray(start, iq.high))
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -717,44 +823,38 @@ proc rewind(buffer: Buffer): bool =
 
 proc setHTML(buffer: Buffer, ishtml: bool) =
   buffer.ishtml = ishtml
+  buffer.charset = buffer.charsetStack.pop()
+  buffer.initDecoder()
   if ishtml:
     let factory = newCAtomFactory()
     buffer.factory = factory
-    if buffer.config.scripting:
-      buffer.window = newWindow(
-        buffer.config.scripting,
-        buffer.config.images,
-        buffer.selector,
-        buffer.attrs,
-        factory,
-        proc(url: URL) = buffer.navigate(url),
-        some(buffer.loader)
-      )
+    let navigate = if buffer.config.scripting:
+      proc(url: URL) = buffer.navigate(url)
     else:
-      buffer.window = newWindow(
-        buffer.config.scripting,
-        buffer.config.images,
-        buffer.selector,
-        buffer.attrs,
-        factory,
-        nil,
-        some(buffer.loader)
-      )
+      nil
+    buffer.window = newWindow(
+      buffer.config.scripting,
+      buffer.config.images,
+      buffer.selector,
+      buffer.attrs,
+      factory,
+      navigate,
+      some(buffer.loader)
+    )
     buffer.htmlParser = newHTML5ParserWrapper(
-      buffer.sstream,
       buffer.window,
       buffer.url,
       buffer.factory,
-      buffer.charsets,
-      seekable = true
+      buffer.charset
     )
+    assert buffer.htmlParser.builder.document != nil
     const css = staticRead"res/ua.css"
     const quirk = css & staticRead"res/quirk.css"
     buffer.uastyle = css.parseStylesheet(factory)
     buffer.quirkstyle = quirk.parseStylesheet(factory)
     buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
   else:
-    buffer.srenderer = newStreamRenderer(buffer.sstream, buffer.charsets)
+    buffer.srenderer = newStreamRenderer()
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   if buffer.connected:
@@ -1025,13 +1125,14 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
       break
   return (called, canceled)
 
-const BufferSize = 16384
-
 proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.state != LOADING_PAGE:
     let p = EmptyPromise()
     p.resolve()
     return p
+  if buffer.decoder != nil and buffer.decoder.finish() == tdfrError or
+      buffer.validator != nil and buffer.validator[].finish() == tvrError:
+    doAssert buffer.processData0("\uFFFD")
   var p: EmptyPromise
   if buffer.ishtml:
     buffer.htmlParser.finish()
@@ -1083,20 +1184,16 @@ proc onload(buffer: Buffer) =
   of LOADING_PAGE:
     discard
   var reprocess = false
+  var iq {.noinit.}: array[BufferSize, char]
+  var n = 0
   while true:
-    buffer.sstream.setPosition(0)
-    if not reprocess:
-      buffer.sstream.data.setLen(BufferSize)
     try:
-      var n = 0
       if not reprocess:
-        buffer.sstream.data.prepareMutation()
-        n = buffer.istream.recvData(addr buffer.sstream.data[0], BufferSize)
-        if n != buffer.sstream.data.len:
-          buffer.sstream.data.setLen(n)
-      if n != 0 or reprocess:
+        n = buffer.istream.recvData(addr iq[0], iq.len)
         buffer.available += n
-        if not buffer.processData():
+      res.lines = buffer.lines.len
+      if n != 0:
+        if not buffer.processData(iq.toOpenArray(0, n - 1)):
           if not buffer.firstBufferRead:
             reprocess = true
             continue
@@ -1105,10 +1202,8 @@ proc onload(buffer: Buffer) =
         buffer.firstBufferRead = true
         reprocess = false
         res.bytes = buffer.available
-      res.lines = buffer.lines.len
-      if buffer.istream.atEnd():
-        buffer.sstream = nil
-        # EOF
+        res.lines = buffer.lines.len
+      else: # EOF
         res.atend = true
         buffer.finishLoad().then(proc() =
           buffer.do_reshape()
@@ -1116,8 +1211,6 @@ proc onload(buffer: Buffer) =
           buffer.state = LOADED
           if buffer.document != nil: # may be nil if not buffer.ishtml
             buffer.document.readyState = READY_STATE_COMPLETE
-          if not buffer.ishtml:
-            buffer.lines.finishRender(buffer.srenderer[])
           buffer.dispatchLoadEvent()
           buffer.resolveTask(LOAD, res)
         )
@@ -1754,13 +1847,18 @@ proc launchBuffer*(config: BufferConfig, source: BufferSource,
     config: config,
     loader: loader,
     source: source,
-    sstream: newStringStream(),
     selector: newSelector[int](),
     estream: newFileStream(stderr),
     pstream: socks,
     rfd: socks.fd,
-    ssock: ssock
+    ssock: ssock,
+    needsBOMSniff: true,
+    seekable: true
   )
+  for i in countdown(buffer.config.charsets.high, 0):
+    buffer.charsetStack.add(buffer.config.charsets[i])
+  if buffer.charsetStack.len == 0:
+    buffer.charsetStack.add(DefaultCharset)
   gbuffer = buffer
   onSignal SIGTERM:
     discard sig
