@@ -101,6 +101,9 @@ type
     hovertext: array[HoverType, string]
     lastpeek: HoverType
     source*: BufferSource
+    # if set, this *overrides* any content type received from the network. (this
+    # is because it stores the content type from the -T flag.)
+    contentType* {.jsget.}: Option[string]
     pos: CursorPosition
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
@@ -138,7 +141,8 @@ jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     source: BufferSource, attrs: WindowAttributes, title = "",
-    redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1)): Container =
+    redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1),
+    contentType: Option[string]): Container =
   let (process, loaderPid) = forkserver.forkBuffer(source, config, attrs)
   if fd != -1:
     loaderPid.passFd(source.request.url.host, fd)
@@ -152,6 +156,7 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     process: process,
     loaderPid: loaderPid,
     source: source,
+    contentType: contentType,
     width: attrs.width,
     height: attrs.height - 1,
     title: title,
@@ -165,8 +170,8 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
 
 proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
     container: Container, contentTypeOverride: string): Container =
+  container.contentType = some(contentTypeOverride)
   var source = container.source
-  source.contentType = some(contentTypeOverride)
   source.request = newRequest(source.request.url, fromcache = true)
   let config = container.config
   let loaderPid = container.loaderPid
@@ -235,9 +240,6 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
 
 func charset*(container: Container): Charset =
   return container.source.charset
-
-func contentType*(container: Container): Option[string] {.jsfget.} =
-  return container.source.contentType
 
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
@@ -1396,15 +1398,17 @@ proc load(container: Container) =
         if res.redirect != nil:
           container.triggerEvent(ContainerEvent(t: REDIRECT, request: res.redirect))
         container.source.charset = res.charset
-        container.ishtml = res.contentType == "text/html"
-        if res.contentType == "application/octet-stream":
-          let contentType = guessContentType(container.location.pathname,
-            "application/octet-stream", container.config.mimeTypes)
-          if contentType != "application/octet-stream":
-            container.iface.setContentType(contentType)
-          container.source.contentType = some(contentType)
-        else:
-          container.source.contentType = some(res.contentType)
+        if container.contentType.isNone:
+          if res.contentType == "application/octet-stream":
+            let contentType = guessContentType(container.location.pathname,
+              "application/octet-stream", container.config.mimeTypes)
+            if contentType != "application/octet-stream":
+              container.contentType = some(contentType)
+            else:
+              container.contentType = some(res.contentType)
+          else:
+            container.contentType = some(res.contentType)
+        container.ishtml = container.contentType.get == "text/html"
         container.triggerEvent(CHECK_MAILCAP)
       else:
         if res.errorMessage != "":
@@ -1423,7 +1427,7 @@ proc startload*(container: Container) =
       container.onload(res))
 
 proc connect2*(container: Container): EmptyPromise =
-  return container.iface.connect2()
+  return container.iface.connect2(container.ishtml)
 
 proc redirectToFd*(container: Container, fdin: FileHandle, wait, cache: bool):
     EmptyPromise =

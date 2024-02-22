@@ -452,8 +452,8 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.setContainer(container)
 
 proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
-    title = "", redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1)):
-    Container =
+    title = "", redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1),
+    contentType = none(string)): Container =
   return newBuffer(
     pager.forkserver,
     bufferConfig,
@@ -462,7 +462,8 @@ proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
     title,
     redirectdepth,
     canreinterpret,
-    fd
+    fd,
+    contentType
   )
 
 proc dupeBuffer(pager: Pager, container: Container, location: URL) =
@@ -683,7 +684,7 @@ proc applySiteconf(pager: Pager, url: var URL): BufferConfig =
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
-    ctype = none(string), cs = CHARSET_UNKNOWN, replace: Container = nil,
+    contentType = none(string), cs = CHARSET_UNKNOWN, replace: Container = nil,
     redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.referer_from:
     request.referer = referrer.location
@@ -698,7 +699,6 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     # feedback on what is actually going to happen when typing a URL; TODO.
     let source = BufferSource(
       request: request,
-      contentType: ctype,
       charset: cs
     )
     if referrer != nil:
@@ -706,7 +706,8 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     let container = pager.newBuffer(
       bufferconfig,
       source,
-      redirectdepth = redirectdepth
+      redirectdepth = redirectdepth,
+      contentType = contentType
     )
     if replace != nil:
       container.replace = replace
@@ -759,7 +760,7 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
     pager.alert("Invalid URL " & url)
   else:
     let prevc = pager.container
-    pager.gotoURL(newRequest(urls.pop()), ctype = ctype, cs = cs)
+    pager.gotoURL(newRequest(urls.pop()), contentType = ctype, cs = cs)
     if pager.container != prevc:
       pager.container.retry = urls
 
@@ -770,11 +771,16 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
   let bufferconfig = pager.applySiteconf(location)
   let source = BufferSource(
     request: newRequest(location),
-    contentType: some(ctype.get("text/plain")),
     charset: cs
   )
-  return pager.newBuffer(bufferconfig, source, title = title,
-    canreinterpret = canreinterpret, fd = fd)
+  return pager.newBuffer(
+    bufferconfig,
+    source,
+    title = title,
+    canreinterpret = canreinterpret,
+    fd = fd,
+    contentType = some(ctype.get("text/plain"))
+  )
 
 proc readPipe*(pager: Pager, ctype: Option[string], cs: Charset, fd: FileHandle,
     title: string) =
@@ -1189,7 +1195,7 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
     pager.deleteContainer(container)
     if container.retry.len > 0:
       pager.gotoURL(newRequest(container.retry.pop()),
-        ctype = container.contentType)
+        contentType = container.contentType)
     else:
       pager.alert("Can't load " & $container.location & " (" &
         container.errorMessage & ")")

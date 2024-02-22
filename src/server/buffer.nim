@@ -60,7 +60,6 @@ import chame/tags
 
 type
   BufferSource* = object
-    contentType*: Option[string] # override
     charset*: Charset # fallback
     request*: Request
 
@@ -69,8 +68,7 @@ type
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
     FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_LINES, UPDATE_HOVER, CONNECT,
     CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
-    READ_FROM_FD, SET_CONTENT_TYPE, CLONE, FIND_PREV_PARAGRAPH,
-    FIND_NEXT_PARAGRAPH
+    READ_FROM_FD, CLONE, FIND_PREV_PARAGRAPH, FIND_NEXT_PARAGRAPH
 
   # LOADING_PAGE: istream open
   # LOADING_RESOURCES: istream closed, resources open
@@ -877,8 +875,6 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
     )
   if response.charset != CHARSET_UNKNOWN:
     charset = charset
-  if buffer.source.contentType.isNone:
-    buffer.source.contentType = some(response.contentType)
   buffer.istream = response.body
   buffer.fd = response.body.fd
   needsAuth = response.status == 401 # Unauthorized
@@ -893,24 +889,23 @@ proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
     if referrerpolicy.isSome:
       buffer.loader.setReferrerPolicy(referrerpolicy.get)
   buffer.connected = true
-  let contentType = buffer.source.contentType.get("")
-  buffer.setHTML(contentType == "text/html")
   return ConnectResult(
     charset: charset,
     needsAuth: needsAuth,
     redirect: redirect,
     cookies: cookies,
-    contentType: contentType
+    contentType: response.contentType
   )
 
 # After connect, pager will call one of the following:
 # * connect2, telling loader to load at last (we block loader until then)
 # * redirectToFd, telling loader to load into the passed fd
-proc connect2*(buffer: Buffer) {.proxy.} =
+proc connect2*(buffer: Buffer, ishtml: bool) {.proxy.} =
   if buffer.source.request.canredir:
     # Notify loader that we can proceed with loading the input stream.
     buffer.istream.swrite(false)
     buffer.istream.swrite(true)
+  buffer.setHTML(ishtml)
   buffer.istream.setBlocking(false)
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
@@ -931,14 +926,9 @@ proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait, cache: bool)
   buffer.istream.close()
 
 proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
-  let contentType = if ishtml:
-    "text/html"
-  else:
-    "text/plain"
   let request = newRequest(url)
   buffer.source = BufferSource(
     request: request,
-    contentType: some(contentType),
     charset: buffer.source.charset
   )
   buffer.setHTML(ishtml)
@@ -947,10 +937,6 @@ proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
   buffer.istream.setBlocking(false)
   buffer.fd = response.body.fd
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
-
-proc setContentType*(buffer: Buffer, contentType: string) {.proxy.} =
-  buffer.source.contentType = some(contentType)
-  buffer.setHTML(contentType == "text/html")
 
 # As defined in std/selectors: this determines whether kqueue is being used.
 # On these platforms, we must not close the selector after fork, since kqueue
