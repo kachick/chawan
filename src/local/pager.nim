@@ -451,13 +451,13 @@ proc addContainer*(pager: Pager, container: Container) =
   pager.registerContainer(container)
   pager.setContainer(container)
 
-proc newBuffer(pager: Pager, bufferConfig: BufferConfig, source: BufferSource,
+proc newBuffer(pager: Pager, bufferConfig: BufferConfig, request: Request,
     title = "", redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1),
     contentType = none(string)): Container =
   return newBuffer(
     pager.forkserver,
     bufferConfig,
-    source,
+    request,
     pager.attrs,
     title,
     redirectdepth,
@@ -688,7 +688,8 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     redirectdepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.referer_from:
     request.referer = referrer.location
-  var bufferconfig = pager.applySiteconf(request.url)
+  var bufferConfig = pager.applySiteconf(request.url)
+  bufferConfig.charsetOverride = cs
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpMethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
@@ -697,15 +698,11 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     # I think this makes navigation pretty natural, or at least very close to
     # what other browsers do. Still, it would be nice if we got some visual
     # feedback on what is actually going to happen when typing a URL; TODO.
-    let source = BufferSource(
-      request: request,
-      charset: cs
-    )
     if referrer != nil:
-      bufferconfig.referrerpolicy = referrer.config.referrerpolicy
+      bufferConfig.referrerPolicy = referrer.config.referrerPolicy
     let container = pager.newBuffer(
-      bufferconfig,
-      source,
+      bufferConfig,
+      request,
       redirectdepth = redirectdepth,
       contentType = contentType
     )
@@ -768,14 +765,11 @@ proc readPipe0*(pager: Pager, ctype: Option[string], cs: Charset,
     fd: FileHandle, location: Option[URL], title: string,
     canreinterpret: bool): Container =
   var location = location.get(newURL("stream:-").get)
-  let bufferconfig = pager.applySiteconf(location)
-  let source = BufferSource(
-    request: newRequest(location),
-    charset: cs
-  )
+  var bufferConfig = pager.applySiteconf(location)
+  bufferConfig.charsetOverride = cs
   return pager.newBuffer(
-    bufferconfig,
-    source,
+    bufferConfig,
+    newRequest(location),
     title = title,
     canreinterpret = canreinterpret,
     fd = fd,
@@ -1157,7 +1151,7 @@ proc checkMailcap(pager: Pager, container: Container): CheckMailcapResult =
     return (nil, true)
   #TODO callback for outpath or something
   let url = container.location
-  let cs = container.source.charset
+  let cs = container.charset
   let entry = pager.mailcap.getMailcapEntry(contentType, "", url, cs)
   if entry != nil:
     let tmpdir = pager.tmpdir

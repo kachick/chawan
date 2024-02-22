@@ -261,12 +261,9 @@ proc parseHTMLFragment*(element: Element, s: string): seq[Node] =
   return root.childList
 
 proc newHTML5ParserWrapper*(window: Window, url: URL, factory: CAtomFactory,
-    charset: Charset): HTML5ParserWrapper =
-  let opts = HTML5ParserOpts[Node, CAtom](
-    isIframeSrcdoc: false, #TODO?
-    scripting: window != nil and window.settings.scripting
-  )
-  let builder = newChaDOMBuilder(url, window, factory, ccTentative, charset)
+    confidence: CharsetConfidence, charset: Charset): HTML5ParserWrapper =
+  let opts = HTML5ParserOpts[Node, CAtom](scripting: window.settings.scripting)
+  let builder = newChaDOMBuilder(url, window, factory, confidence, charset)
   let wrapper = HTML5ParserWrapper(
     builder: builder,
     opts: opts,

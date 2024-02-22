@@ -61,11 +61,11 @@ proc removeChild*(forkserver: ForkServer, pid: Pid) =
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
-proc forkBuffer*(forkserver: ForkServer, source: BufferSource,
+proc forkBuffer*(forkserver: ForkServer, request: Request,
     config: BufferConfig, attrs: WindowAttributes):
     tuple[process, loaderPid: Pid] =
   forkserver.ostream.swrite(FORK_BUFFER)
-  forkserver.ostream.swrite(source)
+  forkserver.ostream.swrite(request)
   forkserver.ostream.swrite(config)
   forkserver.ostream.swrite(attrs)
   forkserver.ostream.flush()
@@ -75,10 +75,10 @@ proc forkBuffer*(forkserver: ForkServer, source: BufferSource,
   forkserver.istream.sread(loaderPid)
   return (process, loaderPid)
 
-proc forkBufferWithLoader*(forkserver: ForkServer, source: BufferSource,
+proc forkBufferWithLoader*(forkserver: ForkServer, request: Request,
     config: BufferConfig, attrs: WindowAttributes, loaderPid: Pid): Pid =
   forkserver.ostream.swrite(FORK_BUFFER_WITH_LOADER)
-  forkserver.ostream.swrite(source)
+  forkserver.ostream.swrite(request)
   forkserver.ostream.swrite(config)
   forkserver.ostream.swrite(attrs)
   forkserver.ostream.swrite(loaderPid)
@@ -128,7 +128,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   return pid
 
 var gssock: ServerSocket
-proc forkBuffer0(ctx: var ForkServerContext, source: BufferSource,
+proc forkBuffer0(ctx: var ForkServerContext, request: Request,
     config: BufferConfig, attrs: WindowAttributes, loaderPid: Pid): Pid =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
@@ -160,7 +160,7 @@ proc forkBuffer0(ctx: var ForkServerContext, source: BufferSource,
       clientPid: getCurrentProcessId()
     )
     try:
-      launchBuffer(config, source, attrs, loader, ssock)
+      launchBuffer(config, request, attrs, loader, ssock)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -178,27 +178,27 @@ proc forkBuffer0(ctx: var ForkServerContext, source: BufferSource,
   return pid
 
 proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
-  var source: BufferSource
+  var request: Request
   var config: BufferConfig
   var attrs: WindowAttributes
-  ctx.istream.sread(source)
+  ctx.istream.sread(request)
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
   let loaderPid = ctx.forkLoader(config.loaderConfig)
-  let process = ctx.forkBuffer0(source, config, attrs, loaderPid)
+  let process = ctx.forkBuffer0(request, config, attrs, loaderPid)
   return (process, loaderPid)
 
 proc forkBufferWithLoader(ctx: var ForkServerContext): Pid =
-  var source: BufferSource
+  var request: Request
   var config: BufferConfig
   var attrs: WindowAttributes
   var loaderPid: Pid
-  ctx.istream.sread(source)
+  ctx.istream.sread(request)
   ctx.istream.sread(config)
   ctx.istream.sread(attrs)
   ctx.istream.sread(loaderPid)
   FileLoader(process: loaderPid).addref()
-  return ctx.forkBuffer0(source, config, attrs, loaderPid)
+  return ctx.forkBuffer0(request, config, attrs, loaderPid)
 
 proc runForkServer() =
   var ctx = ForkServerContext(

@@ -143,13 +143,14 @@ type
   BufferConfig* = object
     userstyle*: string
     referer_from*: bool
-    referrerpolicy*: ReferrerPolicy
+    referrerPolicy*: ReferrerPolicy
     scripting*: bool
     charsets*: seq[Charset]
     images*: bool
     loaderConfig*: LoaderConfig
     mimeTypes*: MimeTypes
     cgiDir*: seq[string]
+    charsetOverride*: Charset
 
   ForkServerConfig* = object
     tmpdir*: string

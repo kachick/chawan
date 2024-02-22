@@ -59,10 +59,6 @@ import chagashi/validatorcore
 import chame/tags
 
 type
-  BufferSource* = object
-    charset*: Charset # fallback
-    request*: Request
-
   BufferCommand* = enum
     LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
@@ -97,7 +93,7 @@ type
     ishtml: bool
     firstBufferRead: bool
     lines: FlexibleGrid
-    source: BufferSource
+    request: Request # source request
     attrs: WindowAttributes
     window: Window
     document: Document
@@ -803,7 +799,7 @@ type ConnectResult* = object
   redirect*: Request
   contentType*: string
   cookies*: seq[Cookie]
-  referrerpolicy*: Option[ReferrerPolicy]
+  referrerPolicy*: Option[ReferrerPolicy]
   charset*: Charset
 
 proc rewind(buffer: Buffer): bool =
@@ -821,7 +817,6 @@ proc rewind(buffer: Buffer): bool =
 
 proc setHTML(buffer: Buffer, ishtml: bool) =
   buffer.ishtml = ishtml
-  buffer.charset = buffer.charsetStack.pop()
   buffer.initDecoder()
   if ishtml:
     let factory = newCAtomFactory()
@@ -839,10 +834,15 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
       navigate,
       some(buffer.loader)
     )
+    let confidence = if buffer.config.charsetOverride == CHARSET_UNKNOWN:
+      ccTentative
+    else:
+      ccCertain
     buffer.htmlParser = newHTML5ParserWrapper(
       buffer.window,
       buffer.url,
       buffer.factory,
+      confidence,
       buffer.charset
     )
     assert buffer.htmlParser.builder.document != nil
@@ -854,54 +854,65 @@ proc setHTML(buffer: Buffer, ishtml: bool) =
   else:
     buffer.srenderer = newStreamRenderer()
 
+proc extractCookies(response: Response): seq[Cookie] =
+  result = @[]
+  if "Set-Cookie" in response.headers.table:
+    for s in response.headers.table["Set-Cookie"]:
+      let cookie = newCookie(s, response.url)
+      if cookie.isOk:
+        result.add(cookie.get)
+
+proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =
+  if "Referrer-Policy" in response.headers:
+    return getReferrerPolicy(response.headers["Referrer-Policy"])
+  return none(ReferrerPolicy)
+
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
   if buffer.connected:
     return ConnectResult(invalid: true)
-  let source = buffer.source
-  # Warning: source content type overrides received content types, but source
-  # charset is just a fallback.
-  var charset = source.charset
-  var needsAuth = false
-  var redirect: Request
-  var cookies: seq[Cookie]
-  var referrerpolicy: Option[ReferrerPolicy]
-  let request = source.request
-  request.canredir = true #TODO set somewhere else?
-  let response = buffer.loader.doRequest(request)
+  buffer.connected = true
+  buffer.request.canredir = true #TODO set somewhere else?
+  let response = buffer.loader.doRequest(buffer.request)
   if response.body == nil:
     return ConnectResult(
       code: response.res,
       errorMessage: response.internalMessage
     )
-  if response.charset != CHARSET_UNKNOWN:
-    charset = charset
   buffer.istream = response.body
   buffer.fd = response.body.fd
-  needsAuth = response.status == 401 # Unauthorized
-  redirect = response.redirect
-  if "Set-Cookie" in response.headers.table:
-    for s in response.headers.table["Set-Cookie"]:
-      let cookie = newCookie(s, response.url)
-      if cookie.isOk:
-        cookies.add(cookie.get)
-  if "Referrer-Policy" in response.headers:
-    referrerpolicy = getReferrerPolicy(response.headers["Referrer-Policy"])
-    if referrerpolicy.isSome:
-      buffer.loader.setReferrerPolicy(referrerpolicy.get)
-  buffer.connected = true
+  let cookies = response.extractCookies()
+  let referrerPolicy = response.extractReferrerPolicy()
+  if referrerPolicy.isSome:
+    buffer.loader.setReferrerPolicy(referrerPolicy.get)
+  # setup charsets:
+  # * override charset
+  # * network charset
+  # * default charset guesses
+  # HTML may override the last two (but not the override charset).
+  if buffer.config.charsetOverride != CHARSET_UNKNOWN:
+    buffer.charsetStack = @[buffer.config.charsetOverride]
+  elif response.charset != CHARSET_UNKNOWN:
+    buffer.charsetStack = @[response.charset]
+  else:
+    for i in countdown(buffer.config.charsets.high, 0):
+      buffer.charsetStack.add(buffer.config.charsets[i])
+    if buffer.charsetStack.len == 0:
+      buffer.charsetStack.add(DefaultCharset)
+  buffer.charset = buffer.charsetStack.pop()
   return ConnectResult(
-    charset: charset,
-    needsAuth: needsAuth,
-    redirect: redirect,
+    charset: buffer.charset,
+    needsAuth: response.status == 401, # Unauthorized
+    redirect: response.redirect,
     cookies: cookies,
-    contentType: response.contentType
+    contentType: response.contentType,
+    referrerPolicy: referrerPolicy
   )
 
 # After connect, pager will call one of the following:
 # * connect2, telling loader to load at last (we block loader until then)
 # * redirectToFd, telling loader to load into the passed fd
 proc connect2*(buffer: Buffer, ishtml: bool) {.proxy.} =
-  if buffer.source.request.canredir:
+  if buffer.request.canredir:
     # Notify loader that we can proceed with loading the input stream.
     buffer.istream.swrite(false)
     buffer.istream.swrite(true)
@@ -927,10 +938,7 @@ proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait, cache: bool)
 
 proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
   let request = newRequest(url)
-  buffer.source = BufferSource(
-    request: request,
-    charset: buffer.source.charset
-  )
+  buffer.request = request
   buffer.setHTML(ishtml)
   let response = buffer.loader.doRequest(request)
   buffer.istream = response.body
@@ -1823,28 +1831,24 @@ proc cleanup(buffer: Buffer) =
   buffer.loader.unref()
 
 var gbuffer: Buffer
-proc launchBuffer*(config: BufferConfig, source: BufferSource,
+proc launchBuffer*(config: BufferConfig, request: Request,
     attrs: WindowAttributes, loader: FileLoader, ssock: ServerSocket) =
   let socks = ssock.acceptSocketStream()
   let buffer = Buffer(
-    url: source.request.url,
+    url: request.url,
     alive: true,
     attrs: attrs,
     config: config,
     loader: loader,
-    source: source,
+    request: request,
     selector: newSelector[int](),
     estream: newFileStream(stderr),
     pstream: socks,
     rfd: socks.fd,
     ssock: ssock,
-    needsBOMSniff: true,
+    needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
     seekable: true
   )
-  for i in countdown(buffer.config.charsets.high, 0):
-    buffer.charsetStack.add(buffer.config.charsets[i])
-  if buffer.charsetStack.len == 0:
-    buffer.charsetStack.add(DefaultCharset)
   gbuffer = buffer
   onSignal SIGTERM:
     discard sig

@@ -91,6 +91,8 @@ type
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
     url: URL
+    #TODO this is inaccurate, because only the network charset is passed through
+    charset*: Charset
     parent* {.jsget.}: Container
     children* {.jsget.}: seq[Container]
     config*: BufferConfig
@@ -100,7 +102,7 @@ type
     title*: string # used in status msg
     hovertext: array[HoverType, string]
     lastpeek: HoverType
-    source*: BufferSource
+    request*: Request # source request
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
     contentType* {.jsget.}: Option[string]
@@ -140,22 +142,22 @@ jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
-    source: BufferSource, attrs: WindowAttributes, title = "",
+    request: Request, attrs: WindowAttributes, title = "",
     redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1),
     contentType: Option[string]): Container =
-  let (process, loaderPid) = forkserver.forkBuffer(source, config, attrs)
+  let (process, loaderPid) = forkserver.forkBuffer(request, config, attrs)
   if fd != -1:
-    loaderPid.passFd(source.request.url.host, fd)
+    loaderPid.passFd(request.url.host, fd)
     if fd == 0:
       # We are passing stdin.
       closeStdin()
     else:
       discard close(fd)
   return Container(
-    url: source.request.url,
+    url: request.url,
     process: process,
     loaderPid: loaderPid,
-    source: source,
+    request: request,
     contentType: contentType,
     width: attrs.width,
     height: attrs.height - 1,
@@ -170,16 +172,14 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
 
 proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
     container: Container, contentTypeOverride: string): Container =
-  container.contentType = some(contentTypeOverride)
-  var source = container.source
-  source.request = newRequest(source.request.url, fromcache = true)
+  let request = newRequest(container.request.url, fromcache = true)
   let config = container.config
   let loaderPid = container.loaderPid
-  let bufferPid = forkserver.forkBufferWithLoader(source, config, attrs,
+  let bufferPid = forkserver.forkBufferWithLoader(request, config, attrs,
     loaderPid)
   return Container(
-    url: source.request.url,
-    source: source,
+    url: request.url,
+    request: request,
     width: container.width,
     height: container.height,
     title: container.title,
@@ -189,7 +189,8 @@ proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
     pos: CursorPosition(
       setx: -1
     ),
-    canreinterpret: true
+    canreinterpret: true,
+    contentType: some(contentTypeOverride)
   )
 
 func location*(container: Container): URL {.jsfget.} =
@@ -212,7 +213,7 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       title: container.title,
       hovertext: container.hovertext,
       lastpeek: container.lastpeek,
-      source: container.source,
+      request: container.request,
       pos: container.pos,
       bpos: container.bpos,
       highlights: container.highlights,
@@ -237,9 +238,6 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       cloned: true
     )
   )
-
-func charset*(container: Container): Charset =
-  return container.source.charset
 
 func lineLoaded(container: Container, y: int): bool =
   return y - container.lineshift in 0..container.lines.high
@@ -1389,15 +1387,15 @@ proc load(container: Container) =
         if res.cookies.len > 0 and cookiejar != nil:
           cookiejar.add(res.cookies)
         # set referrer policy, if any
-        if res.referrerpolicy.isSome and container.config.referer_from:
-          container.config.referrerpolicy = res.referrerpolicy.get
+        if res.referrerPolicy.isSome and container.config.referer_from:
+          container.config.referrerPolicy = res.referrerPolicy.get
         container.setLoadInfo("Connected to " & $container.location &
           ". Downloading...")
         if res.needsAuth:
           container.triggerEvent(NEEDS_AUTH)
         if res.redirect != nil:
           container.triggerEvent(ContainerEvent(t: REDIRECT, request: res.redirect))
-        container.source.charset = res.charset
+        container.charset = res.charset
         if container.contentType.isNone:
           if res.contentType == "application/octet-stream":
             let contentType = guessContentType(container.location.pathname,
