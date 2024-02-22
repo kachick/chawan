@@ -319,7 +319,7 @@ proc horizontalAlignLine(ictx: var InlineContext, state: InlineState,
     max(ictx.size.w, ictx.space.w.u)
   # we don't support directions for now so left = start and right = end
   case state.computed{"text-align"}
-  of TEXT_ALIGN_START, TEXT_ALIGN_LEFT, TEXT_ALIGN_CHA_LEFT:
+  of TEXT_ALIGN_START, TEXT_ALIGN_LEFT, TEXT_ALIGN_CHA_LEFT, TEXT_ALIGN_JUSTIFY:
     discard
   of TEXT_ALIGN_END, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CHA_RIGHT:
     # move everything
@@ -334,25 +334,6 @@ proc horizontalAlignLine(ictx: var InlineContext, state: InlineState,
     for atom in line.atoms.mitems:
       atom.offset.x += x
       ictx.size.w = max(atom.offset.x + atom.size.w, ictx.size.w)
-  of TEXT_ALIGN_JUSTIFY:
-    if not state.computed.whitespacepre and not last:
-      var sumwidth: LayoutUnit = 0
-      var spaces = 0
-      for atom in line.atoms.mitems:
-        if atom.t == INLINE_SPACING:
-          discard
-        else:
-          inc spaces
-          sumwidth += atom.size.w
-      dec spaces
-      if spaces > 0:
-        let spacingwidth = (width - sumwidth) div spaces
-        line.size.w = 0
-        for atom in line.atoms.mitems:
-          atom.offset.x = line.size.w
-          if atom.t == INLINE_SPACING:
-            atom.size.w = spacingwidth
-          line.size.w += atom.size.w
   # If necessary, update ictx's width.
   ictx.size.w = max(line.size.w, ictx.size.w)
 
