@@ -10,6 +10,7 @@ import std/unicode
 when defined(posix):
   import std/posix
 
+import bindings/libregexp
 import config/chapath
 import config/config
 import config/mailcap
@@ -795,6 +796,12 @@ proc checkRegex(pager: Pager, regex: Result[Regex, string]): Opt[Regex] =
     return err()
   return ok(regex.get)
 
+proc compileSearchRegex(pager: Pager, s: string): Result[Regex, string] =
+  var flags = {LRE_FLAG_UTF16}
+  if pager.config.search.ignore_case:
+    flags.incl(LRE_FLAG_IGNORECASE)
+  return compileSearchRegex(s, flags)
+
 proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
   pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
@@ -807,8 +814,7 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       pager.isearchpromise = nil
     of EDIT:
       if lineedit.news != "":
-        pager.iregex = compileSearchRegex(lineedit.news,
-          pager.config.search.default_flags)
+        pager.iregex = pager.compileSearchRegex(lineedit.news)
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
       if pager.iregex.isSome:
@@ -858,8 +864,8 @@ proc updateReadLine*(pager: Pager) =
       of BUFFER: pager.container.readSuccess(lineedit.news)
       of SEARCH_F, SEARCH_B:
         if lineedit.news != "":
-          pager.regex = pager.checkRegex(compileSearchRegex(lineedit.news,
-            pager.config.search.default_flags))
+          let regex = pager.compileSearchRegex(lineedit.news)
+          pager.regex = pager.checkRegex(regex)
         pager.reverseSearch = pager.linemode == SEARCH_B
         pager.searchNext()
       of GOTO_LINE:

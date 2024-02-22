@@ -5,6 +5,7 @@ headless = false
 
 [search]
 wrap = true
+ignore-case = true
 
 [encoding]
 document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
