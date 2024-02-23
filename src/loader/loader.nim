@@ -68,12 +68,12 @@ type
 
   ConnectData = object
     promise: Promise[JSResult[Response]]
-    stream: SocketStream
+    stream*: SocketStream
     request: Request
 
   OngoingData = object
     buf: string
-    response: Response
+    response*: Response
     bodyRead: Promise[string]
 
   LoaderCommand = enum
@@ -437,7 +437,7 @@ proc exitLoader(ctx: LoaderContext) =
   ctx.ssock.close()
   for path in ctx.cacheMap.values:
     discard unlink(cstring(path))
-  quit(0)
+  exitnow(1)
 
 var gctx: LoaderContext
 proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =

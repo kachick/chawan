@@ -57,9 +57,9 @@ type
     FORM_ENCODING_TYPE_TEXT_PLAIN = "text/plain"
 
 type DocumentReadyState* = enum
-  READY_STATE_LOADING = "loading"
-  READY_STATE_INTERACTIVE = "interactive"
-  READY_STATE_COMPLETE = "complete"
+  rsLoading = "loading"
+  rsInteractive = "interactive"
+  rsComplete = "complete"
 
 type
   Location = ref object

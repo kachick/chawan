@@ -66,11 +66,8 @@ type
     CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
     READ_FROM_FD, CLONE, FIND_PREV_PARAGRAPH, FIND_NEXT_PARAGRAPH
 
-  # LOADING_PAGE: istream open
-  # LOADING_RESOURCES: istream closed, resources open
-  # LOADED: istream closed, resources closed
   BufferState = enum
-    LOADING_PAGE, LOADING_RESOURCES, LOADED
+    bsConnecting, bsLoadingPage, bsLoadingResources, bsLoaded
 
   HoverType* = enum
     HOVER_TITLE = "TITLE"
@@ -87,8 +84,6 @@ type
     fd: int # file descriptor of buffer source
     url: URL # URL before readFromFd
     pstream: SocketStream # control stream
-    alive: bool
-    connected: bool
     savetask: bool
     ishtml: bool
     firstBufferRead: bool
@@ -97,10 +92,10 @@ type
     attrs: WindowAttributes
     window: Window
     document: Document
-    prevstyled: StyledNode
+    prevStyled: StyledNode
     selector: Selector[int]
     istream: SocketStream
-    available: int
+    bytesRead: int
     state: BufferState
     prevnode: StyledNode
     loader: FileLoader
@@ -117,7 +112,6 @@ type
     srenderer: StreamRenderer
     bgcolor: CellColor
     needsBOMSniff: bool
-    seekable: bool
     decoder: TextDecoder
     validator: ref TextValidatorUTF8
     validateBuf: seq[char]
@@ -624,11 +618,11 @@ proc do_reshape(buffer: Buffer) =
     else:
       buffer.quirkstyle
     if buffer.document.cachedSheetsInvalid:
-      buffer.prevstyled = nil
+      buffer.prevStyled = nil
     let styledRoot = buffer.document.applyStylesheets(uastyle,
-      buffer.userstyle, buffer.prevstyled)
+      buffer.userstyle, buffer.prevStyled)
     buffer.lines.renderDocument(buffer.bgcolor, styledRoot, buffer.attrs)
-    buffer.prevstyled = styledRoot
+    buffer.prevStyled = styledRoot
 
 proc processData0(buffer: Buffer, data: openArray[char]): bool =
   if buffer.ishtml:
@@ -742,7 +736,7 @@ proc processData(buffer: Buffer, iq: openArray[char]): bool =
 
 proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
-  buffer.prevstyled = nil
+  buffer.prevStyled = nil
   if buffer.window != nil:
     buffer.window.attrs = attrs
 
@@ -868,9 +862,9 @@ proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =
   return none(ReferrerPolicy)
 
 proc connect*(buffer: Buffer): ConnectResult {.proxy.} =
-  if buffer.connected:
+  if buffer.state > bsConnecting:
     return ConnectResult(invalid: true)
-  buffer.connected = true
+  buffer.state = bsLoadingPage
   buffer.request.canredir = true #TODO set somewhere else?
   let response = buffer.loader.doRequest(buffer.request)
   if response.body == nil:
@@ -1120,10 +1114,11 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
   return (called, canceled)
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
-  if buffer.state != LOADING_PAGE:
+  if buffer.state != bsLoadingPage:
     let p = EmptyPromise()
     p.resolve()
     return p
+  buffer.state = bsLoadingResources
   if buffer.decoder != nil and buffer.decoder.finish() == tdfrError or
       buffer.validator != nil and buffer.validator[].finish() == tvrError:
     doAssert buffer.processData0("\uFFFD")
@@ -1131,8 +1126,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.ishtml:
     buffer.htmlParser.finish()
     buffer.document = buffer.htmlParser.builder.document
-    buffer.document.readyState = READY_STATE_INTERACTIVE
-    buffer.state = LOADING_RESOURCES
+    buffer.document.readyState = rsInteractive
     buffer.dispatchDOMContentLoadedEvent()
     p = buffer.loadResources()
   else:
@@ -1151,7 +1145,7 @@ type LoadResult* = tuple[
 ]
 
 proc load*(buffer: Buffer): LoadResult {.proxy, task.} =
-  if buffer.state == LOADED:
+  if buffer.state == bsLoaded:
     return (true, buffer.lines.len, -1)
   else:
     buffer.savetask = true
@@ -1170,12 +1164,12 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
 proc onload(buffer: Buffer) =
   var res: LoadResult = (false, buffer.lines.len, -1)
   case buffer.state
-  of LOADING_RESOURCES:
+  of bsConnecting:
     assert false
-  of LOADED:
+  of bsLoadingResources, bsLoaded:
     buffer.resolveTask(LOAD, res)
     return
-  of LOADING_PAGE:
+  of bsLoadingPage:
     discard
   var reprocess = false
   var iq {.noinit.}: array[BufferSize, char]
@@ -1184,7 +1178,7 @@ proc onload(buffer: Buffer) =
     try:
       if not reprocess:
         n = buffer.istream.recvData(addr iq[0], iq.len)
-        buffer.available += n
+        buffer.bytesRead += n
       res.lines = buffer.lines.len
       if n != 0:
         if not buffer.processData(iq.toOpenArray(0, n - 1)):
@@ -1195,16 +1189,16 @@ proc onload(buffer: Buffer) =
             continue
         buffer.firstBufferRead = true
         reprocess = false
-        res.bytes = buffer.available
+        res.bytes = buffer.bytesRead
         res.lines = buffer.lines.len
       else: # EOF
         res.atend = true
         buffer.finishLoad().then(proc() =
           buffer.do_reshape()
           res.lines = buffer.lines.len
-          buffer.state = LOADED
+          buffer.state = bsLoaded
           if buffer.document != nil: # may be nil if not buffer.ishtml
-            buffer.document.readyState = READY_STATE_COMPLETE
+            buffer.document.readyState = rsComplete
           buffer.dispatchLoadEvent()
           buffer.resolveTask(LOAD, res)
         )
@@ -1226,15 +1220,26 @@ proc render*(buffer: Buffer): int {.proxy.} =
   return buffer.lines.len
 
 proc cancel*(buffer: Buffer): int {.proxy.} =
-  #TODO TODO TODO cancel resource loading too
-  if buffer.state != LOADING_PAGE: return
+  if buffer.state == bsLoaded:
+    return
+  buffer.state = bsLoaded
+  for fd, data in buffer.loader.connecting:
+    buffer.selector.unregister(fd)
+    buffer.loader.unregistered.add(fd)
+    data.stream.close()
+  buffer.loader.connecting.clear()
+  for fd, data in buffer.loader.ongoing:
+    data.response.unregisterFun()
+  buffer.loader.ongoing.clear()
+  buffer.selector.unregister(buffer.fd)
+  buffer.loader.unregistered.add(buffer.fd)
+  buffer.fd = -1
   buffer.istream.close()
-  buffer.state = LOADED
   if buffer.ishtml:
     buffer.htmlParser.finish()
     buffer.document = buffer.htmlParser.builder.document
-    buffer.document.readyState = READY_STATE_INTERACTIVE
-    buffer.state = LOADING_RESOURCES
+    buffer.document.readyState = rsInteractive
+    buffer.state = bsLoaded
     buffer.do_reshape()
   return buffer.lines.len
 
@@ -1765,7 +1770,7 @@ proc readCommand(buffer: Buffer) =
   buffer.pstream.sread(packetid)
   bufferDispatcher(ProxyFunctions, buffer, cmd, packetid)
 
-proc handleRead(buffer: Buffer, fd: int) =
+proc handleRead(buffer: Buffer, fd: int): bool =
   if fd == buffer.rfd:
     try:
       buffer.readCommand()
@@ -1773,7 +1778,7 @@ proc handleRead(buffer: Buffer, fd: int) =
       #eprint "EOF error", $buffer.url & "\nMESSAGE:",
       #       getCurrentExceptionMsg() & "\n",
       #       getStackTrace(getCurrentException())
-      buffer.alive = false
+      return false
   elif fd == buffer.fd:
     buffer.onload()
   elif fd in buffer.loader.connecting:
@@ -1788,11 +1793,12 @@ proc handleRead(buffer: Buffer, fd: int) =
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else: assert false
+  true
 
-proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
+proc handleError(buffer: Buffer, fd: int, err: OSErrorCode): bool =
   if fd == buffer.rfd:
     # Connection reset by peer, probably. Close the buffer.
-    buffer.alive = false
+    return false
   elif fd == buffer.fd:
     buffer.onload()
   elif fd in buffer.loader.connecting:
@@ -1806,17 +1812,21 @@ proc handleError(buffer: Buffer, fd: int, err: OSErrorCode) =
     discard # ignore
   else:
     assert false, $fd & ": " & $err
+  true
 
 proc runBuffer(buffer: Buffer) =
-  while buffer.alive:
+  var alive = true
+  while alive:
     let events = buffer.selector.select(-1)
     for event in events:
       if Read in event.events:
-        buffer.handleRead(event.fd)
+        if not buffer.handleRead(event.fd):
+          alive = false
+          break
       if Error in event.events:
-        buffer.handleError(event.fd, event.errorCode)
-      if not buffer.alive:
-        break
+        if not buffer.handleError(event.fd, event.errorCode):
+          alive = false
+          break
       if selectors.Event.Timer in event.events:
         assert buffer.window != nil
         let r = buffer.window.timeouts.runTimeoutFd(event.fd)
@@ -1830,13 +1840,11 @@ proc cleanup(buffer: Buffer) =
   buffer.ssock.close()
   buffer.loader.unref()
 
-var gbuffer: Buffer
 proc launchBuffer*(config: BufferConfig, request: Request,
     attrs: WindowAttributes, loader: FileLoader, ssock: ServerSocket) =
   let socks = ssock.acceptSocketStream()
   let buffer = Buffer(
     url: request.url,
-    alive: true,
     attrs: attrs,
     config: config,
     loader: loader,
@@ -1846,13 +1854,14 @@ proc launchBuffer*(config: BufferConfig, request: Request,
     pstream: socks,
     rfd: socks.fd,
     ssock: ssock,
-    needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
-    seekable: true
+    needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN
   )
+  var gbuffer {.global.}: Buffer
   gbuffer = buffer
   onSignal SIGTERM:
     discard sig
     gbuffer.cleanup()
+    exitnow(1)
   loader.registerFun = proc(fd: int) =
     buffer.selector.registerHandle(fd, {Read}, 0)
   loader.unregisterFun = proc(fd: int) =
