@@ -1180,7 +1180,7 @@ proc checkMailcap(pager: Pager, container: Container): CheckMailcapResult =
 proc redirectTo(pager: Pager, container: Container, request: Request) =
   pager.alert("Redirecting to " & $request.url)
   pager.gotoURL(request, some(container.location), replace = container,
-    redirectdepth = container.redirectdepth + 1, referrer = pager.container)
+    redirectdepth = container.redirectdepth + 1, referrer = container)
 
 proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bool =
   case event.t
