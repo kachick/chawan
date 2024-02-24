@@ -2852,7 +2852,7 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
   of TAG_LINK:
     let link = HTMLLinkElement(element)
     if link.isConnected and (name == atRel and value == "stylesheet" or
-        name == atHref):
+        name == atHref and link.attr(atRel) == "stylesheet"):
       link.fetchStarted = false
       let window = link.document.window
       if window != nil:
