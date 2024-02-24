@@ -1150,7 +1150,7 @@ const DisplayBlockLike = {DISPLAY_BLOCK, DISPLAY_LIST_ITEM,
 
 # Return true if no more margin collapsing can occur for the current strut.
 func canFlushMargins(builder: BlockBoxBuilder, sizes: ResolvedSizes): bool =
-  if builder.computed{"position"} in {POSITION_ABSOLUTE, POSITION_FIXED}:
+  if builder.computed{"position"} == POSITION_ABSOLUTE:
     return false
   return sizes.padding.top != 0 or sizes.padding.bottom != 0 or
     builder.inlinelayout or builder.computed{"display"} notin DisplayBlockLike
@@ -1272,7 +1272,7 @@ proc positionFloats(bctx: var BlockContext) =
 
 func establishesBFC(computed: CSSComputedValues): bool =
   return computed{"float"} != FLOAT_NONE or
-    computed{"position"} in {POSITION_ABSOLUTE, POSITION_FIXED} or
+    computed{"position"} in POSITION_ABSOLUTE or
     computed{"display"} in {DISPLAY_INLINE_BLOCK, DISPLAY_FLOW_ROOT} +
       InternalTableBox
     #TODO overflow, contain, flex, grid, multicol, column-span
@@ -2176,8 +2176,8 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
     var dy: LayoutUnit = 0 # delta
     var child: BlockBox
     let isfloat = builder.computed{"float"} != FLOAT_NONE
-    let isinflow = builder.computed{"position"} notin {POSITION_ABSOLUTE,
-      POSITION_FIXED} and not isfloat
+    let isinflow = builder.computed{"position"} != POSITION_ABSOLUTE
+      and not isfloat
     if builder.computed.establishesBFC():
       var marginBottomOut: LayoutUnit
       child = bctx.lctx.layoutRootBlock(builder, state.space, state.offset,
@@ -2206,8 +2206,7 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
     let childWidth = child.margin.left + child.size.w + child.margin.right
     state.maxChildWidth = max(state.maxChildWidth, childWidth)
     state.xminwidth = max(state.xminwidth, child.xminwidth)
-    if child.computed{"position"} notin {POSITION_ABSOLUTE, POSITION_FIXED} and
-        not isfloat:
+    if child.computed{"position"} != POSITION_ABSOLUTE and not isfloat:
       # Not absolute, and not a float.
       state.offset.y += dy
     elif isfloat:
@@ -2299,7 +2298,9 @@ proc repositionChildren(state: BlockState, box: BlockBox, lctx: LayoutState) =
 proc layoutBlock(bctx: var BlockContext, box: BlockBox,
     builder: BlockBoxBuilder, sizes: ResolvedSizes) =
   let lctx = bctx.lctx
-  let positioned = box.computed{"position"} != POSITION_STATIC
+  let positioned = box.computed{"position"} != {
+    POSITION_STATIC, POSITION_FIXED, POSITION_STICKY
+  }
   if positioned:
     lctx.positioned.add(sizes.space)
   var state = BlockState(
