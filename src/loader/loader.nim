@@ -190,10 +190,12 @@ proc addFd0(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
       handle.cacheUrl = surl
 
 proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
-  handle.output.ostream.setBlocking(false)
+  let output = handle.output
+  output.ostream.setBlocking(false)
   handle.istream.setBlocking(false)
   ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
   ctx.handleMap[handle.istream.fd] = handle
+  ctx.outputMap[output.ostream.fd] = output
   ctx.addFd0(handle, originalUrl)
 
 proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
@@ -238,6 +240,7 @@ proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
         if output.registered:
           output.parent = nil
           output.istreamAtEnd = true
+          ctx.outputMap[output.ostream.fd] = output
         else:
           output.ostream.close()
           output.ostream = nil
@@ -367,8 +370,6 @@ proc onLoad(ctx: LoaderContext, stream: SocketStream) =
         request.headers["Referer"] = r
     if request.proxy == nil or not ctx.config.acceptProxy:
       request.proxy = ctx.config.proxy
-    let output = handle.output
-    ctx.outputMap[output.ostream.fd] = output
     ctx.loadResource(request, handle)
 
 proc acceptConnection(ctx: LoaderContext) =
