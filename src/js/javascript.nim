@@ -171,6 +171,7 @@ proc free*(ctx: var JSContext) =
     JS_FreeValue(ctx, opaque.Object_prototype_valueOf)
     JS_FreeValue(ctx, opaque.Uint8Array_ctor)
     JS_FreeValue(ctx, opaque.Set_ctor)
+    JS_FreeValue(ctx, opaque.Function_ctor)
     for v in opaque.err_ctors:
       JS_FreeValue(ctx, v)
     GC_unref(opaque)

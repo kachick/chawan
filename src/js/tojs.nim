@@ -120,6 +120,10 @@ proc defineProperty(ctx: JSContext, this: JSValue, name: string,
   if JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags) <= 0:
     raise newException(Defect, "Failed to define property string: " & name)
 
+proc definePropertyC*(ctx: JSContext, this: JSValue, name: string,
+    prop: JSValue) =
+  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
+
 proc defineProperty*[T](ctx: JSContext, this: JSValue, name: string, prop: T,
     flags = cint(0)) =
   defineProperty(ctx, this, name, toJS(ctx, prop), flags)
@@ -136,6 +140,18 @@ proc definePropertyCW*[T](ctx: JSContext, this: JSValue, name: string,
 proc definePropertyCWE*[T](ctx: JSContext, this: JSValue, name: string,
     prop: T) =
   defineProperty(ctx, this, name, prop, JS_PROP_C_W_E)
+
+proc newFunction*(ctx: JSContext, args: openArray[string], body: string):
+    JSValue =
+  var paramList: seq[JSValue] = @[]
+  for arg in args:
+    paramList.add(toJS(ctx, arg))
+  paramList.add(toJS(ctx, body))
+  let fun = JS_CallConstructor(ctx, ctx.getOpaque().Function_ctor,
+    cint(paramList.len), addr paramList[0])
+  for param in paramList:
+    JS_FreeValue(ctx, param)
+  return fun
 
 proc toJS*(ctx: JSContext, s: cstring): JSValue =
   return JS_NewString(ctx, s)
@@ -218,7 +234,9 @@ proc toJS*[T](ctx: JSContext, s: set[T]): JSValue =
   var a = toJS(ctx, x)
   if JS_IsException(a):
     return a
-  return JS_CallConstructor(ctx, ctx.getOpaque().Set_ctor, 1, addr a)
+  let ret = JS_CallConstructor(ctx, ctx.getOpaque().Set_ctor, 1, addr a)
+  JS_FreeValue(ctx, a)
+  return ret
 
 proc toJS(ctx: JSContext, t: tuple): JSValue =
   let a = JS_NewArray(ctx)

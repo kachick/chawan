@@ -68,6 +68,7 @@ type
     atMultiple = "multiple"
     atName = "name"
     atNomodule = "nomodule"
+    atOnload = "onload"
     atReferrerpolicy = "referrerpolicy"
     atRel = "rel"
     atRequired = "required"

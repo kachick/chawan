@@ -2813,6 +2813,21 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
     element.style_cached = newCSSStyleDeclaration(element, value)
     return
   case element.tagType
+  of TAG_BODY:
+    if name == atOnload and element.scriptingEnabled:
+      let document = element.document
+      let ctx = document.window.jsctx
+      let urls = document.baseURL.serialize(excludepassword = true)
+      let fun = ctx.newFunction(["event"], value)
+      assert ctx != nil
+      if JS_IsException(fun):
+        let s = ctx.getExceptionStr()
+        document.window.console.log("Exception in body content attribute of",
+          urls, s)
+      else:
+        let jsWindow = ctx.toJS(document.window)
+        ctx.definePropertyC(jsWindow, "onload", fun)
+        JS_FreeValue(ctx, jsWindow)
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     input.reflect_str atValue, value
@@ -3533,14 +3548,16 @@ proc execute*(element: HTMLScriptElement) =
     if window != nil and window.jsctx != nil:
       let script = element.scriptResult.script
       let urls = script.baseURL.serialize(excludepassword = true)
+      let ctx = window.jsctx
       if JS_IsException(script.record):
-        let s = document.window.jsctx.getExceptionStr()
-        document.window.console.log("Exception in document", urls, s)
+        let s = ctx.getExceptionStr()
+        window.console.log("Exception in document", urls, s)
       else:
-        let ret = window.jsctx.evalFunction(script.record)
+        let ret = ctx.evalFunction(script.record)
         if JS_IsException(ret):
-          let s = document.window.jsctx.getExceptionStr()
-          document.window.console.log("Exception in document", urls, s)
+          let s = ctx.getExceptionStr()
+          window.console.log("Exception in document", urls, s)
+        JS_FreeValue(ctx, ret)
     document.currentScript = oldCurrentScript
   else: discard #TODO
   if needsInc:
