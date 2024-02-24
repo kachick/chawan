@@ -1272,7 +1272,7 @@ proc positionFloats(bctx: var BlockContext) =
 
 func establishesBFC(computed: CSSComputedValues): bool =
   return computed{"float"} != FLOAT_NONE or
-    computed{"position"} in POSITION_ABSOLUTE or
+    computed{"position"} == POSITION_ABSOLUTE or
     computed{"display"} in {DISPLAY_INLINE_BLOCK, DISPLAY_FLOW_ROOT} +
       InternalTableBox
     #TODO overflow, contain, flex, grid, multicol, column-span
@@ -2298,7 +2298,7 @@ proc repositionChildren(state: BlockState, box: BlockBox, lctx: LayoutState) =
 proc layoutBlock(bctx: var BlockContext, box: BlockBox,
     builder: BlockBoxBuilder, sizes: ResolvedSizes) =
   let lctx = bctx.lctx
-  let positioned = box.computed{"position"} != {
+  let positioned = box.computed{"position"} notin {
     POSITION_STATIC, POSITION_FIXED, POSITION_STICKY
   }
   if positioned:
