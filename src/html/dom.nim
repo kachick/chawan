@@ -1244,7 +1244,7 @@ proc replace(tokenList: DOMTokenList, token, newToken: string):
   return ok(true)
 
 const SupportedTokensMap = {
-  "rel": @[
+  atRel: @[
     "alternate", "dns-prefetch", "icon", "manifest", "modulepreload",
     "next", "pingback", "preconnect", "prefetch", "preload", "search",
     "stylesheet"
@@ -1253,13 +1253,11 @@ const SupportedTokensMap = {
 
 func supports(tokenList: DOMTokenList, token: string):
     JSResult[bool] {.jsfunc.} =
-  #TODO atomize SupportedTokensMap (or preferably add an attribute name enum)
-  let localName = tokenList.element.document.toStr(tokenList.localName)
+  let localName = tokenList.element.document.toAttrType(tokenList.localName)
   if localName in SupportedTokensMap:
     let lowercase = token.toLowerAscii()
     return ok(lowercase in SupportedTokensMap[localName])
-  return err(newTypeError("No supported tokens defined for attribute " &
-    localName))
+  return err(newTypeError("No supported tokens defined for attribute"))
 
 func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
