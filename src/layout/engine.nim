@@ -2176,8 +2176,8 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
     var dy: LayoutUnit = 0 # delta
     var child: BlockBox
     let isfloat = builder.computed{"float"} != FLOAT_NONE
-    let isinflow = builder.computed{"position"} != POSITION_ABSOLUTE
-      and not isfloat
+    let isinflow = builder.computed{"position"} != POSITION_ABSOLUTE and
+      not isfloat
     if builder.computed.establishesBFC():
       var marginBottomOut: LayoutUnit
       child = bctx.lctx.layoutRootBlock(builder, state.space, state.offset,
