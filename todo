@@ -31,6 +31,10 @@ config:
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
 buffer:
+- allow setting ansi colors from HTML
+	* then convert the ANSI text parser to an htmloutput filter, and
+	  separate it from text/plain
+	* text/plain can then be parsed as HTML with a <plaintext> tag
 - important: validate returned values
 	* do not block container when receiving buffer data; if invalid, kill
 	  buffer
@@ -98,7 +102,6 @@ man:
 	* add a DOM -> man page converter so that we do not depend on pandoc
 	  for man page conversion
 gmifetch:
-- use proper env vars instead of re-parsing the URL
 - rewrite in Nim
 etc:
 - tests (including aforementioned fuzzer)
