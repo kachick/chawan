@@ -3533,13 +3533,14 @@ proc execute*(element: HTMLScriptElement) =
     if window != nil and window.jsctx != nil:
       let script = element.scriptResult.script
       let urls = script.baseURL.serialize(excludepassword = true)
-      let ret = window.jsctx.evalFunction(script.record)
-      if JS_IsException(ret):
-        let ss = newStringStream()
-        document.window.jsctx.writeException(ss)
-        ss.setPosition(0)
-        document.window.console.log("Exception in document", urls,
-          ss.readAll())
+      if JS_IsException(script.record):
+        let s = document.window.jsctx.getExceptionStr()
+        document.window.console.log("Exception in document", urls, s)
+      else:
+        let ret = window.jsctx.evalFunction(script.record)
+        if JS_IsException(ret):
+          let s = document.window.jsctx.getExceptionStr()
+          document.window.console.log("Exception in document", urls, s)
     document.currentScript = oldCurrentScript
   else: discard #TODO
   if needsInc:

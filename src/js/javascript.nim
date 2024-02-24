@@ -195,19 +195,21 @@ proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
 proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
   JS_SetInterruptHandler(rt, cb, opaque)
 
-proc writeException*(ctx: JSContext, s: Stream) =
+proc getExceptionStr*(ctx: JSContext): string =
+  result = ""
   let ex = JS_GetException(ctx)
   let str = fromJS[string](ctx, ex)
   if str.isSome:
-    s.write(str.get & '\n')
+    result &= str.get & '\n'
   let stack = JS_GetPropertyStr(ctx, ex, cstring("stack"));
   if not JS_IsUndefined(stack):
-    let str = fromJS[string](ctx, stack)
-    if str.isSome:
-      s.write(str.get)
-  s.flush()
+    result &= fromJS[string](ctx, stack).get("")
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
+
+proc writeException*(ctx: JSContext, s: Stream) =
+  s.write(ctx.getExceptionStr())
+  s.flush()
 
 proc runJSJobs*(rt: JSRuntime, err: Stream) =
   while JS_IsJobPending(rt):
