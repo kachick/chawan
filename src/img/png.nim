@@ -108,7 +108,7 @@ type PNGReader = object
   i: int
   bitDepth: uint8
   colorType: PNGColorType
-  background: RGBColor
+  background: RGBAColor
   isend: bool
   idatBuf: seq[uint8]
   uprow: seq[uint8]

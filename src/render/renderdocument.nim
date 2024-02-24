@@ -14,7 +14,6 @@ import utils/strwidth
 func toFormat(computed: CSSComputedValues): Format =
   if computed == nil:
     return Format()
-  let fgcolor = computed{"color"}.cellColor()
   var flags: set[FormatFlags]
   if computed{"font-style"} in {FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE}:
     flags.incl(FLAG_ITALIC)
@@ -29,7 +28,7 @@ func toFormat(computed: CSSComputedValues): Format =
   if TEXT_DECORATION_BLINK in computed{"text-decoration"}:
     flags.incl(FLAG_BLINK)
   return Format(
-    fgcolor: fgcolor,
+    fgcolor: computed{"color"},
     flags: flags
   )
 
@@ -319,8 +318,9 @@ proc paintInlineFragment(grid: var FlexibleGrid; fragment: InlineFragment;
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState,
     fragment: InlineFragment; offset: Offset; attrs: WindowAttributes) =
   assert fragment.atoms.len == 0 or fragment.children.len == 0
-  if fragment.computed{"background-color"}.a > 0: # TODO color blending
-    let bgcolor = fragment.computed{"background-color"}.cellColor()
+  let bgcolor = fragment.computed{"background-color"}
+  if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.rgbacolor.a > 0:
+    #TODO color blending
     grid.paintInlineFragment(fragment, offset, bgcolor, attrs)
   if fragment.atoms.len > 0:
     let format = fragment.computed.toFormat()
@@ -380,18 +380,18 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       stack.add((nil, Offset(x: -1, y: -1)))
 
     if box.computed{"visibility"} == VISIBILITY_VISIBLE:
-      if box.computed{"-cha-bgcolor-is-canvas"} and
-          state.bgcolor == defaultColor:
-        #TODO bgimage
-        if box.computed{"background-color"}.a != 0: #TODO color blending
-          state.bgcolor = box.computed{"background-color"}.cellColor()
-      if box.computed{"background-color"}.a != 0: #TODO color blending
-          let ix = toInt(offset.x)
-          let iy = toInt(offset.y)
-          let iex = toInt(offset.x + box.size.w)
-          let iey = toInt(offset.y + box.size.h)
-          let color = box.computed{"background-color"}.cellColor()
-          grid.paintBackground(color, ix, iy, iex, iey, box.node, attrs)
+      let bgcolor = box.computed{"background-color"}
+      if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.rgbacolor.a > 0:
+        if box.computed{"-cha-bgcolor-is-canvas"} and
+            state.bgcolor == defaultColor:
+          #TODO bgimage
+          state.bgcolor = bgcolor
+        #TODO color blending
+        let ix = toInt(offset.x)
+        let iy = toInt(offset.y)
+        let iex = toInt(offset.x + box.size.w)
+        let iey = toInt(offset.y + box.size.h)
+        grid.paintBackground(bgcolor, ix, iy, iex, iey, box.node, attrs)
       if box.computed{"background-image"}.t == CONTENT_IMAGE and
           box.computed{"background-image"}.s != "":
         # ugly hack for background-image display... TODO actually display images

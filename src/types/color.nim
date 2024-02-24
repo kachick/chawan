@@ -19,11 +19,17 @@ type
 
   EightBitColor* = distinct uint8
 
+  # ctNone: default color (intentionally 0), n is unused
+  # ctANSI: ANSI color, as selected by SGR 38/48
+  # ctRGB: RGB color
+  ColorTag* {.size: sizeof(uint32).} = enum
+    ctNone, ctANSI, ctRGB
+
   CellColor* = object
-    rgb*: bool
+    t*: ColorTag
     n: uint32
 
-converter toRGBColor*(i: RGBAColor): RGBColor =
+func toRGBColor*(i: RGBAColor): RGBColor =
   return RGBColor(uint32(i) and 0xFFFFFFu32)
 
 converter toRGBAColor*(i: RGBColor): RGBAColor =
@@ -36,6 +42,9 @@ func `==`*(a, b: ANSIColor): bool {.borrow.}
 func rgbcolor*(color: CellColor): RGBColor =
   cast[RGBColor](color.n)
 
+func rgbacolor*(color: CellColor): RGBAColor =
+  cast[RGBAColor](color.n)
+
 func color*(color: CellColor): uint8 =
   cast[uint8](color.n)
 
@@ -43,17 +52,20 @@ func eightbit*(color: CellColor): EightBitColor =
   EightBitColor(color.color)
 
 func cellColor*(rgb: RGBColor): CellColor =
-  return CellColor(rgb: true, n: uint32(rgb))
+  return CellColor(t: ctRGB, n: uint32(rgb) or 0xFF000000u32)
+
+func cellColor*(rgba: RGBAColor): CellColor =
+  return CellColor(t: ctRGB, n: uint32(rgba))
+
+#TODO bright ANSI colors (8..15)
 
 func cellColor*(c: ANSIColor): CellColor =
-  return CellColor(rgb: false, n: uint32(c) mod 10)
-
-#TODO maybe bright ANSI colors? (8..15)
+  return CellColor(t: ctANSI, n: uint32(c))
 
 func cellColor*(c: EightBitColor): CellColor =
-  return CellColor(rgb: false, n: uint32(c))
+  return CellColor(t: ctANSI, n: uint32(c))
 
-const defaultColor* = CellColor(rgb: false, n: 0)
+const defaultColor* = CellColor(t: ctNone, n: 0)
 
 const
   ANSI_BLACK* = ANSIColor(0u8)
@@ -374,7 +386,7 @@ func gray*(n: uint8): RGBColor =
   return rgb(n, n, n) #TODO use yuv instead?
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
-func eightBitToRGB*(param0: EightBitColor): RGBColor =
+func toRGB*(param0: EightBitColor): RGBColor =
   doAssert uint8(param0) notin 0u8..15u8
   let u = uint8(param0)
   if u in 16u8..231u8:
@@ -389,7 +401,7 @@ func eightBitToRGB*(param0: EightBitColor): RGBColor =
     let n = (u - 232) * 10 + 8
     return gray(n)
 
-func rgbToEightBit*(rgb: RGBColor): EightBitColor =
+func toEightBit*(rgb: RGBColor): EightBitColor =
   let r = int(rgb.r)
   let g = int(rgb.g)
   let b = int(rgb.b)
@@ -410,8 +422,8 @@ template `$`*(rgbcolor: RGBColor): string =
   "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"
 
 template `$`*(color: CellColor): string =
-  if color.rgb:
-    $color.rgbcolor
+  if color.t == ctRGB:
+    $color.rgbacolor
   else:
     "tcolor" & $color.n
 

@@ -174,7 +174,7 @@ type
   CSSComputedValue* = ref object
     case v*: CSSValueType
     of VALUE_COLOR:
-      color*: RGBAColor
+      color*: CellColor
     of VALUE_LENGTH:
       length*: CSSLength
     of VALUE_FONT_STYLE:
@@ -592,66 +592,114 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
   if s[i] == '%': return some(CSSLength(num: n, unit: UNIT_PERC))
   return some(CSSLength(num: n, unit: UNIT_PX))
 
-func skipWhitespace(vals: seq[CSSComponentValue], i: var int) =
+func skipWhitespace(vals: openArray[CSSComponentValue], i: var int) =
   while i < vals.len:
     if vals[i] != CSS_WHITESPACE_TOKEN:
       break
     inc i
 
-func cssColor*(val: CSSComponentValue): Opt[RGBAColor] =
+func parseRGBA(value: openArray[CSSComponentValue]): Opt[CellColor] =
+  var i = 0
+  var commaMode = false
+  template check_err(slash: bool) =
+    #TODO calc, percentages, etc (cssnumber function or something)
+    if not slash and i >= value.len or i < value.len and
+        value[i] != CSS_NUMBER_TOKEN:
+      return err()
+  template next_value(first = false, slash = false) =
+    inc i
+    value.skipWhitespace(i)
+    if i < value.len:
+      if value[i] == CSS_COMMA_TOKEN and (commaMode or first):
+        # legacy compatibility
+        inc i
+        value.skipWhitespace(i)
+        commaMode = true
+      elif commaMode:
+        return err()
+      elif slash:
+        let tok = value[i]
+        if tok != CSS_DELIM_TOKEN or CSSToken(tok).cvalue != '/':
+          return err()
+        inc i
+        value.skipWhitespace(i)
+    check_err slash
+  value.skipWhitespace(i)
+  check_err false
+  let r = CSSToken(value[i]).nvalue
+  next_value true
+  let g = CSSToken(value[i]).nvalue
+  next_value
+  let b = CSSToken(value[i]).nvalue
+  next_value false, true
+  let a = if i < value.len:
+    CSSToken(value[i]).nvalue
+  else:
+    1
+  value.skipWhitespace(i)
+  if i < value.len:
+    return err()
+  return ok(rgba(int(r), int(g), int(b), int(a * 255)).cellColor())
+
+# syntax: -cha-ansi( number | ident )
+# where number is an ANSI color (0..255)
+# and ident is in NameTable and may start with "bright-"
+func parseANSI(value: openArray[CSSComponentValue]): Opt[CellColor] =
+  var i = 0
+  value.skipWhitespace(i)
+  if i != value.high or not (value[i] of CSSToken): # only 1 param is valid
+    #TODO numeric functions
+    return err()
+  let tok = CSSToken(value[i])
+  if tok.tokenType == CSS_NUMBER_TOKEN:
+    if tok.nvalue notin 0..255:
+      return err() # invalid numeric ANSI color
+    return ok(ANSIColor(tok.nvalue).cellColor())
+  elif tok.tokenType == CSS_IDENT_TOKEN:
+    var name = tok.value
+    if name.equalsIgnoreCase("default"):
+      return ok(defaultColor)
+    var bright = false
+    if name.startsWithIgnoreCase("bright-"):
+      bright = true
+      name = name.substr("bright-".len)
+    const NameTable = [
+      "black",
+      "red",
+      "green",
+      "yellow",
+      "blue",
+      "magenta",
+      "cyan",
+      "white"
+    ]
+    for i, it in NameTable:
+      if it.equalsIgnoreCase(name):
+        var i = int(i)
+        if bright:
+          i += 8
+        return ok(ANSIColor(i).cellColor())
+  return err()
+
+func cssColor*(val: CSSComponentValue): Opt[CellColor] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.tokenType
     of CSS_HASH_TOKEN:
       let c = parseHexColor(tok.value)
       if c.isSome:
-        return ok(c.get)
+        return ok(c.get.cellColor())
     of CSS_IDENT_TOKEN:
-      let s = tok.value
+      let s = tok.value.toLowerAscii()
       if s in Colors:
-        return ok(Colors[s])
+        return ok(Colors[s].cellColor())
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
-    var i = 0
-    var commaMode = false
-    template check_err(slash: bool) =
-      #TODO calc, percentages, etc (cssnumber function or something)
-      if not slash and i >= f.value.len or i < f.value.len and
-          f.value[i] != CSS_NUMBER_TOKEN:
-        return err()
-    template next_value(first = false, slash = false) =
-      inc i
-      f.value.skipWhitespace(i)
-      if i < f.value.len:
-        if f.value[i] == CSS_COMMA_TOKEN and (commaMode or first):
-          # legacy compatibility
-          inc i
-          f.value.skipWhitespace(i)
-          commaMode = true
-        elif commaMode:
-          return err()
-        elif slash:
-          let tok = f.value[i]
-          if tok != CSS_DELIM_TOKEN or CSSToken(tok).cvalue != '/':
-            return err()
-          inc i
-          f.value.skipWhitespace(i)
-      check_err slash
     if f.name.equalsIgnoreCase("rgb") or f.name.equalsIgnoreCase("rgba"):
-      f.value.skipWhitespace(i)
-      check_err false
-      let r = CSSToken(f.value[i]).nvalue
-      next_value true
-      let g = CSSToken(f.value[i]).nvalue
-      next_value
-      let b = CSSToken(f.value[i]).nvalue
-      next_value false, true
-      let a = if i < f.value.len:
-        CSSToken(f.value[i]).nvalue
-      else:
-        1
-      return ok(rgba(int(r), int(g), int(b), int(a * 255)))
+      return parseRGBA(f.value)
+    elif f.name.equalsIgnoreCase("-cha-ansi"):
+      return parseANSI(f.value)
   return err()
 
 func isToken(cval: CSSComponentValue): bool {.inline.} = cval of CSSToken
@@ -1205,14 +1253,14 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     discard
   return ok()
 
-func getInitialColor(t: CSSPropertyType): RGBAColor =
+func getInitialColor(t: CSSPropertyType): CellColor =
   case t
   of PROPERTY_COLOR:
-    return Colors["white"]
+    return Colors["white"].cellColor()
   of PROPERTY_BACKGROUND_COLOR:
-    return Colors["transparent"]
+    return Colors["transparent"].cellColor()
   else:
-    return Colors["black"]
+    return Colors["black"].cellColor()
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t

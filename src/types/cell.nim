@@ -204,11 +204,8 @@ proc parseSGRDefColor(parser: AnsiCodeParser, format: var Format,
       set_color cellColor(gray(param0))
   elif u == 5:
     let param0 = parser.getParamU8(i, colon = true)
-    if param0 in 0u8..7u8:
+    if param0 in 0u8..15u8:
       set_color cellColor(ANSIColor(param0))
-    elif param0 in 8u8..15u8:
-      format.bold = true
-      set_color cellColor(ANSIColor(param0 - 8))
     elif param0 in 16u8..255u8:
       set_color cellColor(EightBitColor(param0))
   else:
@@ -229,11 +226,9 @@ proc parseSGRColor(parser: AnsiCodeParser, format: var Format,
   elif u == 49:
     format.bgcolor = defaultColor
   elif u in 90u8..97u8:
-    format.fgcolor = cellColor(ANSIColor(u - 90u8))
-    format.bold = true
+    format.fgcolor = cellColor(ANSIColor(u - 82))
   elif u in 100u8..107u8:
-    format.bgcolor = cellColor(ANSIColor(u - 90u8))
-    format.bold = true
+    format.bgcolor = cellColor(ANSIColor(u - 92))
   else:
     return false
   return true

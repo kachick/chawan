@@ -134,15 +134,24 @@ else:
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
 
+#TODO a) this should be customizable b) these defaults sucks
 const ANSIColorMap = [
-  ColorsRGB["black"],
-  ColorsRGB["red"],
-  ColorsRGB["green"],
-  ColorsRGB["yellow"],
-  ColorsRGB["blue"],
-  ColorsRGB["magenta"],
-  ColorsRGB["cyan"],
-  ColorsRGB["white"],
+  rgb(0, 0, 0),
+  rgb(205, 0, 0),
+  rgb(0, 205, 0),
+  rgb(205, 205, 0),
+  rgb(0, 0, 238),
+  rgb(205, 0, 205),
+  rgb(0, 205, 205),
+  rgb(229, 229, 229),
+  rgb(127, 127, 127),
+  rgb(255, 0, 0),
+  rgb(0, 255, 0),
+  rgb(255, 255, 0),
+  rgb(92, 92, 255),
+  rgb(255, 0, 255),
+  rgb(0, 255, 255),
+  rgb(255, 255, 255)
 ]
 
 proc flush*(term: Terminal) =
@@ -218,24 +227,28 @@ proc disableAltScreen(term: Terminal): string =
 func mincontrast(term: Terminal): int32 =
   return term.config.display.minimum_contrast
 
-proc getRGB(a: CellColor, bg: bool): RGBColor =
-  if a.rgb:
+proc getRGB(a: CellColor, termDefault: RGBColor): RGBColor =
+  case a.t
+  of ctNone:
+    return termDefault
+  of ctANSI:
+    if a.color >= 16:
+      return EightBitColor(a.color).toRGB()
+    return ANSIColorMap[a.color]
+  of ctRGB:
     return a.rgbcolor
-  elif a.color >= 16:
-    return eightBitToRGB(EightBitColor(a.color))
-  return ANSIColorMap[a.color]
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(rgb, termDefault: RGBColor): CellColor =
   var a = 0i32
   var n = -1
   for i in -1 .. ANSIColorMap.high:
-    let color = if i > 0:
+    let color = if i >= 0:
       ANSIColorMap[i]
     else:
       termDefault
     if color == rgb:
-      return if i == -1: defaultColor else: cellColor(ANSIColor(i))
+      return if i == -1: defaultColor else: ANSIColor(i).cellColor()
     let x = int32(color.r) - int32(rgb.r)
     let y = int32(color.g) - int32(rgb.g)
     let z = int32(color.b) - int32(rgb.b)
@@ -243,23 +256,17 @@ proc approximateANSIColor(rgb, termDefault: RGBColor): CellColor =
     let yy = y * y
     let zz = z * z
     let b = xx + yy + zz
-    if n == -1 or b < a:
+    if i == -1 or b < a:
       n = i
       a = b
-  return if n == -1: defaultColor else: cellColor(ANSIColor(n))
+  return if n == -1: defaultColor else: ANSIColor(n).cellColor()
 
 # Return a fgcolor contrasted to the background by term.mincontrast.
 proc correctContrast(term: Terminal, bgcolor, fgcolor: CellColor): CellColor =
   let contrast = term.mincontrast
   let cfgcolor = fgcolor
-  let bgcolor = if bgcolor == defaultColor:
-    term.defaultBackground
-  else:
-    getRGB(bgcolor, true)
-  let fgcolor = if fgcolor == defaultColor:
-    term.defaultForeground
-  else:
-    getRGB(fgcolor, false)
+  let bgcolor = getRGB(bgcolor, term.defaultBackground)
+  let fgcolor = getRGB(fgcolor, term.defaultForeground)
   let bgY = int(bgcolor.Y)
   var fgY = int(fgcolor.Y)
   let diff = abs(bgY - fgY)
@@ -283,91 +290,95 @@ proc correctContrast(term: Terminal, bgcolor, fgcolor: CellColor): CellColor =
     of ANSI:
       return approximateANSIColor(newrgb, term.defaultForeground)
     of EIGHT_BIT:
-      return cellColor(rgbToEightBit(newrgb))
+      return cellColor(newrgb.toEightBit())
     of MONOCHROME:
       doAssert false
   return cfgcolor
+
+template ansiSGR(n: uint8, bgmod: int): string =
+  if n < 8:
+    SGR(30 + bgmod + n)
+  else:
+    SGR(82 + bgmod + n)
+
+template eightBitSGR(n: uint8, bgmod: int): string =
+  if n < 16:
+    ansiSGR(n, bgmod)
+  else:
+    SGR(38 + bgmod, 5, n)
+
+template rgbSGR(rgb: RGBColor, bgmod: int): string =
+  SGR(38 + bgmod, 2, rgb.r, rgb.g, rgb.b)
 
 proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
   for flag in FormatFlags:
     if flag in term.formatmode:
       if flag in format.flags and flag notin cellf.flags:
         result &= term.endFormat(flag)
-
+      if flag notin format.flags and flag in cellf.flags:
+        result &= term.startFormat(flag)
   var cellf = cellf
   case term.colormode
   of ANSI:
-    if not cellf.bgcolor.rgb and cellf.bgcolor.color > 15:
-      let color = cellf.bgcolor.eightbit
-      cellf.bgcolor = cellColor(eightBitToRGB(color))
-    if not cellf.fgcolor.rgb and cellf.fgcolor.color > 15:
-      let color = cellf.fgcolor.eightbit
-      cellf.fgcolor = cellColor(eightBitToRGB(color))
-    if cellf.bgcolor.rgb:
+    # quantize
+    if cellf.bgcolor.t == ctANSI and cellf.bgcolor.color > 15:
+      cellf.bgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
+    if cellf.bgcolor.t == ctRGB:
       cellf.bgcolor = approximateANSIColor(cellf.bgcolor.rgbcolor,
         term.defaultBackground)
-    if cellf.fgcolor.rgb:
-      if cellf.bgcolor == defaultColor:
+    if cellf.fgcolor.t == ctANSI and cellf.fgcolor.color > 15:
+      cellf.fgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
+    if cellf.fgcolor.t == ctRGB:
+      if cellf.bgcolor.t == ctNone:
         cellf.fgcolor = approximateANSIColor(cellf.fgcolor.rgbcolor,
           term.defaultForeground)
       else:
-        # ANSI non-default fgcolor AND bgcolor at the same time is assumed
-        # to be broken.
+        # ANSI fgcolor + bgcolor at the same time is broken
         cellf.fgcolor = defaultColor
-  of EIGHT_BIT:
-    if cellf.bgcolor.rgb:
-      cellf.bgcolor = cellColor(rgbToEightBit(cellf.bgcolor.rgbcolor))
-    if cellf.fgcolor.rgb:
-      cellf.fgcolor = cellColor(rgbToEightBit(cellf.fgcolor.rgbcolor))
-  of MONOCHROME:
-    cellf.fgcolor = defaultColor
-    cellf.bgcolor = defaultColor
-  of TRUE_COLOR: discard
-
-  if term.colormode != MONOCHROME:
+    # correct
     cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
-  if cellf.fgcolor != format.fgcolor and cellf.fgcolor == defaultColor or
-      cellf.bgcolor != format.bgcolor and cellf.bgcolor == defaultColor:
-    result &= term.resetFormat()
-    format = Format()
-
-  if cellf.fgcolor != format.fgcolor:
-    var color = cellf.fgcolor
-    if color.rgb:
-      assert term.colormode == TRUE_COLOR
-      let rgb = color.rgbcolor
-      result &= SGR(38, 2, rgb.r, rgb.g, rgb.b)
-    elif color == defaultColor:
-      discard
-    else:
-      let n = color.color
-      if n < 8:
-        result &= SGR(30 + n)
-      else:
-        assert term.colormode in {TRUE_COLOR, EIGHT_BIT}
-        result &= SGR(38, 5, n)
-
-  if cellf.bgcolor != format.bgcolor:
-    var color = cellf.bgcolor
-    if color.rgb:
-      assert term.colormode == TRUE_COLOR
-      let rgb = color.rgbcolor
-      result &= SGR(48, 2, rgb.r, rgb.g, rgb.b)
-    elif color == defaultColor:
-      discard
-    else:
-      let n = color.color
-      if n < 8:
-        result &= SGR(40 + n)
-      else:
-        assert term.colormode in {TRUE_COLOR, EIGHT_BIT}
-        result &= SGR(48, 5, n)
-
-  for flag in FormatFlags:
-    if flag in term.formatmode:
-      if flag notin format.flags and flag in cellf.flags:
-        result &= term.startFormat(flag)
-
+    # print
+    case cellf.fgcolor.t
+    of ctNone: result &= SGR(39)
+    of ctANSI: result &= ansiSGR(cellf.fgcolor.color, 0)
+    else: assert false
+    case cellf.bgcolor.t
+    of ctNone: result &= SGR(49)
+    of ctANSI: result &= ansiSGR(cellf.bgcolor.color, 10)
+    else: assert false
+  of EIGHT_BIT:
+    # quantize
+    if cellf.bgcolor.t == ctRGB:
+      cellf.bgcolor = cellf.bgcolor.rgbcolor.toEightBit().cellColor()
+    if cellf.fgcolor.t == ctRGB:
+      cellf.fgcolor = cellf.fgcolor.rgbcolor.toEightBit().cellColor()
+    # correct
+    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
+    # print
+    case cellf.fgcolor.t
+    of ctNone: result &= SGR(39)
+    of ctANSI: result &= eightBitSGR(cellf.fgcolor.color, 0)
+    of ctRGB: assert false
+    case cellf.bgcolor.t
+    of ctNone: result &= SGR(49)
+    of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
+    of ctRGB: assert false
+  of TRUE_COLOR:
+    # correct
+    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
+    # print
+    if cellf.fgcolor != format.fgcolor:
+      case cellf.fgcolor.t
+      of ctNone: result &= SGR(39)
+      of ctANSI: result &= eightBitSGR(cellf.fgcolor.color, 0)
+      of ctRGB: result &= rgbSGR(cellf.fgcolor.rgbcolor, 0)
+    if cellf.bgcolor != format.bgcolor:
+      case cellf.bgcolor.t
+      of ctNone: result &= SGR(49)
+      of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
+      of ctRGB: result &= rgbSGR(cellf.bgcolor.rgbcolor, 10)
+  of MONOCHROME:
+    discard # nothing to do
   format = cellf
 
 proc windowChange*(term: Terminal, attrs: WindowAttributes) =

@@ -2288,12 +2288,18 @@ isDefaultPassive = func (eventTarget: EventTarget): bool =
 
 proc parseColor(element: Element, s: string): RGBAColor =
   let cval = parseComponentValue(newStringStream(s))
-  #TODO TODO TODO return element style
+  #TODO return element style
   # For now we just use white.
   let ec = rgb(255, 255, 255)
   if cval.isErr:
     return ec
-  return cssColor(cval.get).get(ec)
+  let color0 = cssColor(cval.get)
+  if color0.isErr:
+    return ec
+  let color = color0.get
+  if color.t != ctRGB:
+    return ec
+  return color.rgbacolor
 
 #TODO ??
 func target0*(element: Element): string =

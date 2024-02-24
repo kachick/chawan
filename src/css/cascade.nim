@@ -131,7 +131,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
-        set_cv "background-color", c.get
+        set_cv "background-color", c.get.cellColor()
   template map_size =
     let s = element.attrul(atSize)
     if s.isSome:
@@ -161,13 +161,13 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
-        set_cv "color", c.get
+        set_cv "color", c.get.cellColor()
   template map_color =
     let s = element.attr(atColor)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
-        set_cv "color", c.get
+        set_cv "color", c.get.cellColor()
   template map_colspan =
     let colspan = element.attrulgz(atColspan)
     if colspan.isSome:
