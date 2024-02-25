@@ -1254,13 +1254,9 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
   return ok()
 
 func getInitialColor(t: CSSPropertyType): CellColor =
-  case t
-  of PROPERTY_COLOR:
-    return Colors["white"].cellColor()
-  of PROPERTY_BACKGROUND_COLOR:
+  if t == PROPERTY_BACKGROUND_COLOR:
     return Colors["transparent"].cellColor()
-  else:
-    return Colors["black"].cellColor()
+  return defaultColor
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
@@ -1278,7 +1274,8 @@ func getInitialInteger(t: CSSPropertyType): int =
     return 1
   of PROPERTY_FONT_WEIGHT:
     return 400 # normal
-  else: discard
+  else:
+    return 0
 
 func calcInitial(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
