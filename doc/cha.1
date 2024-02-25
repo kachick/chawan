@@ -49,13 +49,13 @@ Print a short version of this page, then exit.
 .TP
 \fB\-o, \-\-opt\fR \fIconfig\fR
 Override configuration options. This accepts the configuration format is
-described in \fBcha-config\fR(5), in other words the passed string must be
-valid TOML.
+described in \fBcha-config\fR(5), so the passed string must be valid TOML.
 
-(The sole exception is quoting: to ease specifying string
-parameters, unrecognized bare keywords are converted to strings. So this
-works: \fB--opt\fR abcd.option-name=\fIoption-value\fR. However, symbols must
-still be quoted.)
+The sole exception is quoting: to ease specifying string parameters,
+unrecognized bare keywords are converted to strings. So this works:
+.br
+\fB--opt\fR display.color-mode=\fIeight-bit\fR. Note that symbols and words
+starting with a number must still be quoted.
 .TP
 \fB\-r, \-\-run\fR \fIscript\fR/\fIfile\fR
 Execute the string provided as a JS script, or execute the supplied JS
@@ -98,8 +98,8 @@ file from stdin.
 Start in visual mode: the page specified in \fIstart.visual-home\fR is opened.
 .TP
 \fB\-\-\fP
-Interpret all following arguments as files. (e.g. if you have a file named
-\fI\-o\fR, open it as \fIcha \fB--\fR \fI-o\fR.
+Interpret all following arguments as files. For example, if you have a file
+named \fI\-o\fR, you can open it using \fIcha \fB--\fR \fI-o\fR.
 
 .SH ENVIRONMENT
 Certain environment variables are read and used by Chawan.
