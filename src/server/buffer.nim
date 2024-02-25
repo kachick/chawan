@@ -669,14 +669,12 @@ proc decodeData(buffer: Buffer, iq: openArray[uint8]): bool =
     case buffer.decoder.decode(iq, oq.toOpenArrayByte(0, oq.high), n)
     of tdrDone:
       if not buffer.processData0(oq.toOpenArray(0, n - 1)):
-        assert buffer.canSwitch
         buffer.switchCharset()
         return false
       break
     of tdrReqOutput:
       # flush output buffer
       if not buffer.processData0(oq.toOpenArray(0, n - 1)):
-        assert buffer.canSwitch
         buffer.switchCharset()
         return false
       n = 0
@@ -699,7 +697,6 @@ proc validateData(buffer: Buffer, iq: openArray[char]): bool =
         doAssert buffer.processData0(buffer.validateBuf)
         buffer.validateBuf.setLen(0)
       if not buffer.processData0(iq.toOpenArray(pi, n)):
-        assert buffer.canSwitch
         buffer.switchCharset()
         return false
       buffer.validateBuf.add(iq.toOpenArray(n + 1, iq.high))
