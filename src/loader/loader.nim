@@ -85,6 +85,7 @@ type
     UNREF
     SET_REFERRER_POLICY
     PASS_FD
+    REMOVE_CACHED_URL
 
   LoaderContext = ref object
     refcount: int
@@ -201,6 +202,7 @@ proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
 proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
     originalUrl: URL) =
   ctx.passedFdMap.withValue(request.url.host, fdp):
+    handle.canredir = request.canredir
     handle.sendResult(0)
     handle.sendStatus(200)
     handle.sendHeaders(newHeaders())
@@ -429,6 +431,13 @@ proc acceptConnection(ctx: LoaderContext) =
       stream.sread(id)
       let fd = stream.recvFileHandle()
       ctx.passedFdMap[id] = fd
+      stream.close()
+    of REMOVE_CACHED_URL:
+      var surl: string
+      stream.sread(surl)
+      ctx.cacheMap.withValue(surl, p):
+        discard unlink(cstring(p[]))
+        ctx.cacheMap.del(surl)
       stream.close()
   except ErrorBrokenPipe:
     # receiving end died while reading the file; give up.
@@ -836,4 +845,11 @@ proc passFd*(pid: Pid, id: string, fd: FileHandle) =
     stream.swrite(PASS_FD)
     stream.swrite(id)
     stream.sendFileHandle(fd)
+    stream.close()
+
+proc removeCachedURL*(loader: FileLoader, surl: string) =
+  let stream = connectSocketStream(loader.process)
+  if stream != nil:
+    stream.swrite(REMOVE_CACHED_URL)
+    stream.swrite(surl)
     stream.close()

@@ -38,7 +38,7 @@ type
     # Only the first handle can be redirected, because a) mailcap can only
     # redirect the first handle and b) async redirects would result in race
     # conditions that would be difficult to untangle.
-    canredir: bool
+    canredir*: bool
     outputs*: seq[OutputHandle]
     cached*: bool
     cacheUrl*: string

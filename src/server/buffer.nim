@@ -115,6 +115,7 @@ type
     validateBuf: seq[char]
     charsetStack: seq[Charset]
     charset: Charset
+    tmpCacheFlag: bool
 
   InterfaceOpaque = ref object
     stream: Stream
@@ -629,7 +630,7 @@ proc processData0(buffer: Buffer, data: openArray[char]): bool =
   else:
     var plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
     if plaintext == nil:
-      const s = "<plaintext id='text'>"
+      const s = "<plaintext>"
       doAssert buffer.htmlParser.parseBuffer(s) != PRES_STOP
       plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
     if data.len > 0:
@@ -640,6 +641,7 @@ proc processData0(buffer: Buffer, data: openArray[char]): bool =
         Text(lastChild).data &= text
       else:
         plaintext.insert(buffer.document.createTextNode(text), nil)
+      plaintext.invalid = true
   true
 
 func canSwitch(buffer: Buffer): bool {.inline.} =
@@ -801,7 +803,7 @@ type ConnectResult* = object
   charset*: Charset
 
 proc rewind(buffer: Buffer): bool =
-  let request = newRequest(buffer.url, fromcache = true)
+  let request = newRequest(buffer.request.url, fromcache = true)
   let response = buffer.loader.doRequest(request)
   if response.body == nil:
     return false
@@ -933,12 +935,15 @@ proc redirectToFd*(buffer: Buffer, fd: FileHandle, wait, cache: bool)
   buffer.istream.close()
 
 proc readFromFd*(buffer: Buffer, url: URL, ishtml: bool) {.proxy.} =
-  let request = newRequest(url)
+  let request = newRequest(url, canredir = true)
   buffer.request = request
   buffer.setHTML(ishtml)
   let response = buffer.loader.doRequest(request)
   buffer.istream = response.body
+  buffer.istream.swrite(false) # no redir
+  buffer.istream.swrite(true) # cache on
   buffer.istream.setBlocking(false)
+  buffer.tmpCacheFlag = true
   buffer.fd = response.body.fd
   buffer.selector.registerHandle(buffer.fd, {Read}, 0)
 
@@ -1131,6 +1136,8 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   buffer.loader.unregistered.add(buffer.fd)
   buffer.fd = -1
   buffer.istream.close()
+  if buffer.tmpCacheFlag:
+    buffer.loader.removeCachedURL($buffer.request.url)
   return buffer.loadResources()
 
 type LoadResult* = tuple[
@@ -1192,8 +1199,7 @@ proc onload(buffer: Buffer) =
           buffer.do_reshape()
           res.lines = buffer.lines.len
           buffer.state = bsLoaded
-          if buffer.document != nil: # may be nil if not buffer.ishtml
-            buffer.document.readyState = rsComplete
+          buffer.document.readyState = rsComplete
           buffer.dispatchLoadEvent()
           buffer.resolveTask(LOAD, res)
         )

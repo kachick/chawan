@@ -122,15 +122,24 @@ func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
 func newRequest*(url: URL, httpMethod = HTTP_GET,
     headers: seq[(string, string)] = @[], body = opt(string),
     multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil,
-    canredir = false):
-    Request =
+    canredir = false): Request =
   let hl = newHeaders()
   for pair in headers:
     let (k, v) = pair
     hl.table[k] = @[v]
-  return newRequest(url, httpMethod, hl, body, multipart, mode, proxy = proxy)
+  return newRequest(
+    url,
+    httpMethod,
+    hl,
+    body,
+    multipart,
+    mode,
+    proxy = proxy,
+    canredir = canredir
+  )
 
-func createPotentialCORSRequest*(url: URL, destination: RequestDestination, cors: CORSAttribute, fallbackFlag = false): Request =
+func createPotentialCORSRequest*(url: URL, destination: RequestDestination,
+    cors: CORSAttribute, fallbackFlag = false): Request =
   var mode = if cors == NO_CORS:
     RequestMode.NO_CORS
   else:
