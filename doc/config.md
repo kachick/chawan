@@ -432,6 +432,22 @@ output will most likely look horrible. (Except, obviously, if your terminal does
 not support Primary Device Attributes.)</td>
 </tr>
 
+<tr>
+<td>columns, lines, pixels-per-column, pixels-per-line</td>
+<td>number</td>
+<td>Fallback values for the number of columns, lines, pixels per
+column, and pixels per line for the cases where it cannot be determined
+automatically. (For example, these values are used in dump mode.)</td>
+</tr>
+
+<tr>
+<td>force-columns, force-lines, force-pixels-per-column,
+force-pixels-per-line</td>
+<td>boolean</td>
+<td>Force-set columns, lines, pixels per column, or pixels per line to the
+fallback values provided above.</td>
+</tr>
+
 </table>
 
 ## Omnirule

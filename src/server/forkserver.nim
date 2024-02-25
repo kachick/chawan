@@ -5,7 +5,7 @@ import std/streams
 import std/tables
 
 import config/config
-import display/winattrs
+import display/term
 import io/posixstream
 import io/serialize
 import io/serversocket

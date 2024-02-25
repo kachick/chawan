@@ -19,7 +19,7 @@ import css/mediaquery
 import css/sheet
 import css/stylednode
 import css/values
-import display/winattrs
+import display/term
 import html/catom
 import html/chadombuilder
 import html/dom

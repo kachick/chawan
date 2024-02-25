@@ -5,7 +5,7 @@ import std/unicode
 
 import css/stylednode
 import css/values
-import display/winattrs
+import display/term
 import layout/box
 import layout/layoutunit
 import utils/luwrap

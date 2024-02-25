@@ -3,13 +3,70 @@ import std/unicode
 
 import css/stylednode
 import css/values
-import display/winattrs
+import display/term
 import layout/box
 import layout/engine
 import layout/layoutunit
 import types/cell
 import types/color
 import utils/strwidth
+
+type
+  # A FormatCell *starts* a new terminal formatting context.
+  # If no FormatCell exists before a given cell, the default formatting is used.
+  FormatCell* = object
+    format*: Format
+    pos*: int
+    node*: StyledNode
+
+  # Following properties should hold for `formats':
+  # * Position should be >= 0, <= str.width().
+  # * The position of every FormatCell should be greater than the position
+  #   of the previous FormatCell.
+  FlexibleLine* = object
+    str*: string
+    formats*: seq[FormatCell]
+
+  FlexibleGrid* = seq[FlexibleLine]
+
+func findFormatN*(line: FlexibleLine, pos: int): int =
+  var i = 0
+  while i < line.formats.len:
+    if line.formats[i].pos > pos:
+      break
+    inc i
+  return i
+
+func findFormat*(line: FlexibleLine, pos: int): FormatCell =
+  let i = line.findFormatN(pos) - 1
+  if i != -1:
+    result = line.formats[i]
+  else:
+    result.pos = -1
+
+func findNextFormat*(line: FlexibleLine, pos: int): FormatCell =
+  let i = line.findFormatN(pos)
+  if i < line.formats.len:
+    result = line.formats[i]
+  else:
+    result.pos = -1
+
+proc addLine*(grid: var FlexibleGrid) =
+  grid.add(FlexibleLine())
+
+proc addLines*(grid: var FlexibleGrid, n: int) =
+  grid.setLen(grid.len + n)
+
+proc insertFormat*(line: var FlexibleLine, i: int, cell: FormatCell) =
+  line.formats.insert(cell, i)
+
+proc insertFormat*(line: var FlexibleLine, pos, i: int, format: Format,
+    node: StyledNode = nil) =
+  line.insertFormat(i, FormatCell(format: format, node: node, pos: pos))
+
+proc addFormat*(line: var FlexibleLine, pos: int, format: Format,
+    node: StyledNode = nil) =
+  line.formats.add(FormatCell(format: format, node: node, pos: pos))
 
 func toFormat(computed: CSSComputedValues): Format =
   if computed == nil:
@@ -233,7 +290,7 @@ proc paintBackground(grid: var FlexibleGrid; color: CellColor; startx,
 
   for y in starty..<endy:
     # Make sure line.width() >= endx
-    let linewidth = grid[y].width()
+    let linewidth = grid[y].str.width()
     if linewidth < endx:
       grid[y].str &= ' '.repeat(endx - linewidth)
 

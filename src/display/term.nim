@@ -9,7 +9,6 @@ import std/unicode
 
 import bindings/termcap
 import config/config
-import display/winattrs
 import types/cell
 import types/color
 import types/opt
@@ -19,8 +18,6 @@ import utils/twtstr
 import chagashi/charset
 import chagashi/encoder
 import chagashi/validator
-
-export isatty
 
 #TODO switch from termcap...
 
@@ -48,6 +45,14 @@ type
     bp: array[1024, uint8]
     funcstr: array[256, uint8]
     caps: array[TermcapCap, cstring]
+
+  WindowAttributes* = object
+    width*: int
+    height*: int
+    ppc*: int # cell width
+    ppl*: int # cell height
+    width_px*: int
+    height_px*: int
 
   Terminal* = ref TerminalObj
   TerminalObj = object
@@ -78,6 +83,12 @@ template CSI(s: varargs[string, `$`]): string =
 
 # primary device attributes
 const DA1 = CSI("c")
+
+# report xterm text area size in pixels
+const GEOMPIXEL = CSI(14, "t")
+
+# report window size in chars
+const GEOMCELL = CSI(18, "t")
 
 # device control string
 template DCS(a, b: char, s: varargs[string]): string =
@@ -174,6 +185,10 @@ proc clearDisplay(term: Terminal): string =
     return term.cap cd
   else:
     return ED()
+
+proc isatty(fd: FileHandle): cint {.importc: "isatty", header: "<unistd.h>".}
+proc isatty*(f: File): bool =
+  return isatty(f.getFileHandle()) != 0
 
 proc isatty(term: Terminal): bool =
   term.infile != nil and term.infile.isatty() and term.outfile.isatty()
@@ -381,11 +396,6 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
     discard # nothing to do
   format = cellf
 
-proc windowChange*(term: Terminal, attrs: WindowAttributes) =
-  term.attrs = attrs
-  term.canvas = newFixedGrid(attrs.width, attrs.height)
-  term.cleared = false
-
 proc setTitle*(term: Terminal, title: string) =
   if term.set_title:
     let title = if Controls in title:
@@ -504,7 +514,21 @@ proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
             cell.format.fgcolor = grid[i].format.fgcolor
           j += cell[].width()
 
+proc applyConfigDimensions(term: Terminal) =
+  # screen dimensions
+  if term.attrs.width == 0 or term.config.display.force_columns:
+    term.attrs.width = int(term.config.display.columns)
+  if term.attrs.height == 0 or term.config.display.force_lines:
+    term.attrs.height = int(term.config.display.lines)
+  if term.attrs.ppc == 0 or term.config.display.force_pixels_per_column:
+    term.attrs.ppc = int(term.config.display.pixels_per_column)
+  if term.attrs.ppl == 0 or term.config.display.force_pixels_per_line:
+    term.attrs.ppl = int(term.config.display.pixels_per_line)
+  term.attrs.width_px = term.attrs.ppc * term.attrs.width
+  term.attrs.height_px = term.attrs.ppl * term.attrs.height
+
 proc applyConfig(term: Terminal) =
+  # colors, formatting
   if term.config.display.color_mode.isSome:
     term.colormode = term.config.display.color_mode.get
   elif term.isatty():
@@ -524,6 +548,7 @@ proc applyConfig(term: Terminal) =
     term.defaultBackground = term.config.display.default_background_color.get
   if term.config.display.default_foreground_color.isSome:
     term.defaultForeground = term.config.display.default_foreground_color.get
+  # charsets
   if term.config.encoding.display_charset.isSome:
     term.cs = term.config.encoding.display_charset.get
   else:
@@ -536,10 +561,9 @@ proc applyConfig(term: Terminal) =
       if cs != CHARSET_UNKNOWN:
         term.cs = cs
         break
+  term.applyConfigDimensions()
 
 proc outputGrid*(term: Terminal) =
-  if term.config.display.force_clear:
-    term.applyConfig()
   term.outfile.write(term.resetFormat())
   let samesize = term.canvas.width == term.pcanvas.width and
     term.canvas.height == term.pcanvas.height
@@ -626,19 +650,32 @@ type
     attrs: set[QueryAttrs]
     fgcolor: Option[RGBColor]
     bgcolor: Option[RGBColor]
+    widthPx: int
+    heightPx: int
+    width: int
+    height: int
 
-proc queryAttrs(term: Terminal): QueryResult =
+proc queryAttrs(term: Terminal, windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
-  const outs =
-    XTGETFG &
-    XTGETBG &
-    XTGETTCAP("524742") &
-    DA1
-  term.outfile.write(outs)
+  if not windowOnly:
+    const outs =
+      XTGETFG &
+      XTGETBG &
+      GEOMPIXEL &
+      GEOMCELL &
+      XTGETTCAP("524742") &
+      DA1
+    term.outfile.write(outs)
+  else:
+    const outs =
+      GEOMPIXEL &
+      GEOMCELL &
+      DA1
+    term.outfile.write(outs)
   result = QueryResult(success: false, attrs: {})
   while true:
     template consume(term: Terminal): char = term.infile.readChar()
-    template fail = break
+    template fail = return
     template expect(term: Terminal, c: char) =
       if term.consume != c:
         fail
@@ -652,20 +689,44 @@ proc queryAttrs(term: Terminal): QueryResult =
     case term.consume
     of '[':
       # CSI
-      term.expect '?'
-      var n = 0
-      while (let c = term.consume; c != 'c'):
-        if c == ';':
-          case n
-          of 4: result.attrs.incl(qaSixel)
-          of 22: result.attrs.incl(qaAnsiColor)
-          else: discard
-          n = 0
-        else:
-          n *= 10
-          n += decValue(c)
-      result.success = true
-      break # DA1 returned; done
+      case (let c = term.consume; c)
+      of '?': # DA1
+        var n = 0
+        while (let c = term.consume; c != 'c'):
+          if c == ';':
+            case n
+            of 4: result.attrs.incl(qaSixel)
+            of 22: result.attrs.incl(qaAnsiColor)
+            else: discard
+            n = 0
+          else:
+            n *= 10
+            n += decValue(c)
+        result.success = true
+        break # DA1 returned; done
+      of '4', '8': # GEOMPIXEL, GEOMCELL
+        term.expect ';'
+        var height = 0
+        var width = 0
+        while (let c = term.consume; c != ';'):
+          if (let x = decValue(c); x != -1):
+            height *= 10
+            height += x
+          else:
+            fail
+        while (let c = term.consume; c != 't'):
+          if (let x = decValue(c); x != -1):
+            width *= 10
+            width += x
+          else:
+            fail
+        if c == '4': # GEOMSIZE
+          result.widthPx = width
+          result.heightPx = height
+        if c == '8': # GEOMCELL
+          result.width = width
+          result.height = height
+      else: fail
     of ']':
       # OSC
       term.expect '1'
@@ -723,57 +784,87 @@ proc queryAttrs(term: Terminal): QueryResult =
 type TermStartResult* = enum
   tsrSuccess, tsrDA1Fail
 
-proc detectTermAttributes(term: Terminal): TermStartResult =
+# when windowOnly, only refresh window size.
+proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
   result = tsrSuccess
   term.tname = getEnv("TERM")
   if term.tname == "":
     term.tname = "dosansi"
-  if term.isatty():
-    if term.config.display.query_da1:
-      let r = term.queryAttrs()
-      if r.success: # DA1 success
-        if qaAnsiColor in r.attrs:
-          term.colormode = ANSI
-        if qaRGB in r.attrs:
-          term.colormode = TRUE_COLOR
-        # just assume the terminal doesn't choke on these.
-        term.formatmode = {FLAG_STRIKE, FLAG_OVERLINE}
-        if r.bgcolor.isSome:
-          term.defaultBackground = r.bgcolor.get
-        if r.fgcolor.isSome:
-          term.defaultForeground = r.fgcolor.get
-      else:
-        # something went horribly wrong. set result to DA1 fail, pager will
-        # alert the user
-        result = tsrDA1Fail
-    if term.colormode != TRUE_COLOR:
-      let colorterm = getEnv("COLORTERM")
-      if colorterm in ["24bit", "truecolor"]:
+  if not term.isatty():
+    return
+  let fd = term.infile.getFileHandle()
+  var win: IOctl_WinSize
+  if ioctl(cint(fd), TIOCGWINSZ, addr win) != -1:
+    term.attrs.width = int(win.ws_col)
+    term.attrs.height = int(win.ws_row)
+    term.attrs.ppc = int(win.ws_xpixel) div term.attrs.width
+    term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
+  if term.config.display.query_da1:
+    let r = term.queryAttrs(windowOnly)
+    if r.success: # DA1 success
+      if r.width != 0:
+        term.attrs.width = r.width
+        if r.widthPx != 0:
+          term.attrs.ppc = r.widthPx div r.width
+      if r.height != 0:
+        term.attrs.height = r.height
+        if r.heightPx != 0:
+          term.attrs.ppl = r.heightPx div r.height
+      if windowOnly:
+        return
+      if qaAnsiColor in r.attrs:
+        term.colormode = ANSI
+      if qaRGB in r.attrs:
         term.colormode = TRUE_COLOR
-    when termcap_found:
-      term.loadTermcap()
-      if term.tc != nil:
-        term.smcup = term.hascap(ti)
-        if term.hascap(ZH):
-          term.formatmode.incl(FLAG_ITALIC)
-        if term.hascap(us):
-          term.formatmode.incl(FLAG_UNDERLINE)
-        if term.hascap(md):
-          term.formatmode.incl(FLAG_BOLD)
-        if term.hascap(mr):
-          term.formatmode.incl(FLAG_REVERSE)
-        if term.hascap(mb):
-          term.formatmode.incl(FLAG_BLINK)
+      # just assume the terminal doesn't choke on these.
+      term.formatmode = {FLAG_STRIKE, FLAG_OVERLINE}
+      if r.bgcolor.isSome:
+        term.defaultBackground = r.bgcolor.get
+      if r.fgcolor.isSome:
+        term.defaultForeground = r.fgcolor.get
     else:
-      term.smcup = true
-      term.formatmode = {low(FormatFlags)..high(FormatFlags)}
+      # something went horribly wrong. set result to DA1 fail, pager will
+      # alert the user
+      result = tsrDA1Fail
+  if windowOnly:
+    return
+  if term.colormode != TRUE_COLOR:
+    let colorterm = getEnv("COLORTERM")
+    if colorterm in ["24bit", "truecolor"]:
+      term.colormode = TRUE_COLOR
+  when termcap_found:
+    term.loadTermcap()
+    if term.tc != nil:
+      term.smcup = term.hascap(ti)
+      if term.hascap(ZH):
+        term.formatmode.incl(FLAG_ITALIC)
+      if term.hascap(us):
+        term.formatmode.incl(FLAG_UNDERLINE)
+      if term.hascap(md):
+        term.formatmode.incl(FLAG_BOLD)
+      if term.hascap(mr):
+        term.formatmode.incl(FLAG_REVERSE)
+      if term.hascap(mb):
+        term.formatmode.incl(FLAG_BLINK)
+  else:
+    term.smcup = true
+    term.formatmode = {low(FormatFlags)..high(FormatFlags)}
+
+proc windowChange*(term: Terminal) =
+  discard term.detectTermAttributes(windowOnly = true)
+  term.applyConfigDimensions()
+  term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
+  term.cleared = false
 
 proc start*(term: Terminal, infile: File): TermStartResult =
   term.infile = infile
   if term.isatty():
     term.enableRawMode()
-  result = term.detectTermAttributes()
+  result = term.detectTermAttributes(windowOnly = false)
+  if result == tsrDA1Fail:
+    term.config.display.query_da1 = false
   term.applyConfig()
+  term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
   if term.smcup:
     term.write(term.enableAltScreen())
 
@@ -788,13 +879,10 @@ proc restart*(term: Terminal) =
   if term.smcup:
     term.write(term.enableAltScreen())
 
-proc newTerminal*(outfile: File, config: Config, attrs: WindowAttributes):
-    Terminal =
-  let term = Terminal(
+proc newTerminal*(outfile: File, config: Config): Terminal =
+  return Terminal(
     outfile: outfile,
     config: config,
     defaultBackground: ColorsRGB["black"],
     defaultForeground: ColorsRGB["white"]
   )
-  term.windowChange(attrs)
-  return term

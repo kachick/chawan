@@ -2,7 +2,7 @@ import std/selectors
 import std/streams
 
 import bindings/quickjs
-import display/winattrs
+import display/term
 import html/catom
 import html/chadombuilder
 import html/dom

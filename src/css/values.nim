@@ -6,7 +6,7 @@ import std/unicode
 
 import css/cssparser
 import css/selectorparser
-import display/winattrs
+import display/term
 import img/bitmap
 import layout/layoutunit
 import types/color

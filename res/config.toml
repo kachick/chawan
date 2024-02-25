@@ -66,6 +66,14 @@ set-title = true
 default-background-color = "auto"
 default-foreground-color = "auto"
 query-da1 = true
+columns = 80
+lines = 24
+pixels-per-column = 9
+pixels-per-line = 18
+force-columns = false
+force-lines = false
+force-pixels-per-column = false
+force-pixels-per-line = false
 
 [[omnirule]]
 match = '^ddg:'

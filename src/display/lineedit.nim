@@ -2,7 +2,7 @@ import std/strutils
 import std/unicode
 
 import bindings/quickjs
-import display/winattrs
+import display/term
 import js/javascript
 import types/cell
 import types/opt

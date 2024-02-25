@@ -121,6 +121,14 @@ type
     default_background_color* {.jsgetset.}: Opt[RGBColor]
     default_foreground_color* {.jsgetset.}: Opt[RGBColor]
     query_da1* {.jsgetset.}: bool
+    columns* {.jsgetset.}: int32
+    lines* {.jsgetset.}: int32
+    pixels_per_column* {.jsgetset.}: int32
+    pixels_per_line* {.jsgetset.}: int32
+    force_columns* {.jsgetset.}: bool
+    force_lines* {.jsgetset.}: bool
+    force_pixels_per_column* {.jsgetset.}: bool
+    force_pixels_per_line* {.jsgetset.}: bool
 
   Config* = ref ConfigObj
   ConfigObj* = object

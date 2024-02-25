@@ -17,7 +17,6 @@ import config/mailcap
 import config/mimetypes
 import display/lineedit
 import display/term
-import display/winattrs
 import extern/editor
 import extern/runproc
 import extern/stdio
@@ -233,20 +232,17 @@ proc setPaths(pager: Pager): Err[string] =
   pager.cgiDir = cgiDir
   return ok()
 
-proc newPager*(config: Config, attrs: WindowAttributes, forkserver: ForkServer,
-    ctx: JSContext): Pager =
+proc newPager*(config: Config, forkserver: ForkServer, ctx: JSContext): Pager =
   let (mailcap, errs) = config.getMailcap()
   let pager = Pager(
     config: config,
-    display: newFixedGrid(attrs.width, attrs.height - 1),
     forkserver: forkserver,
     mailcap: mailcap,
     mimeTypes: config.getMimeTypes(),
     omnirules: config.getOmniRules(ctx),
     proxy: config.getProxy(),
     siteconf: config.getSiteConfig(ctx),
-    statusgrid: newFixedGrid(attrs.width),
-    term: newTerminal(stdout, config, attrs),
+    term: newTerminal(stdout, config),
     urimethodmap: config.getURIMethodMap()
   )
   let r = pager.setPaths()
@@ -265,6 +261,8 @@ proc launchPager*(pager: Pager, infile: File) =
   of tsrSuccess: discard
   of tsrDA1Fail:
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
+  pager.display = newFixedGrid(pager.attrs.width, pager.attrs.height - 1)
+  pager.statusgrid = newFixedGrid(pager.attrs.width)
 
 func infile*(pager: Pager): File =
   return pager.term.infile
@@ -458,7 +456,7 @@ proc newBuffer(pager: Pager, bufferConfig: BufferConfig, request: Request,
     pager.forkserver,
     bufferConfig,
     request,
-    pager.attrs,
+    pager.term.attrs,
     title,
     redirectdepth,
     canreinterpret,
@@ -618,16 +616,18 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
     pager.container.sourcepair = container
     pager.addContainer(container)
 
-proc windowChange*(pager: Pager, attrs: WindowAttributes) =
-  if attrs == pager.attrs:
+proc windowChange*(pager: Pager) =
+  let oldAttrs = pager.attrs
+  pager.term.windowChange()
+  if pager.attrs == oldAttrs:
+    #TODO maybe it's more efficient to let false positives through?
     return
   if pager.lineedit.isSome:
-    pager.lineedit.get.windowChange(attrs)
-  pager.term.windowChange(attrs)
-  pager.display = newFixedGrid(attrs.width, attrs.height - 1)
-  pager.statusgrid = newFixedGrid(attrs.width)
+    pager.lineedit.get.windowChange(pager.attrs)
+  pager.display = newFixedGrid(pager.attrs.width, pager.attrs.height - 1)
+  pager.statusgrid = newFixedGrid(pager.attrs.width)
   for container in pager.containers:
-    container.windowChange(attrs)
+    container.windowChange(pager.attrs)
   if pager.askprompt != "":
     pager.writeAskPrompt()
   pager.showAlerts()

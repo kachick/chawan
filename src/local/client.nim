@@ -18,7 +18,6 @@ import bindings/quickjs
 import config/config
 import display/lineedit
 import display/term
-import display/winattrs
 import html/chadombuilder
 import html/dom
 import html/event
@@ -437,8 +436,7 @@ proc inputLoop(client: Client) =
         client.handleError(event.fd)
       if Signal in event.events:
         assert event.fd == sigwinch
-        let attrs = getWindowAttributes(client.pager.infile)
-        client.pager.windowChange(attrs)
+        client.pager.windowChange()
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
         assert r
@@ -690,8 +688,7 @@ proc newClient*(config: Config, forkserver: ForkServer): Client =
   let jsrt = newJSRuntime()
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let jsctx = jsrt.newJSContext()
-  let attrs = getWindowAttributes(stdout)
-  let pager = newPager(config, attrs, forkserver, jsctx)
+  let pager = newPager(config, forkserver, jsctx)
   let client = Client(
     config: config,
     forkserver: forkserver,
