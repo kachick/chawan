@@ -207,7 +207,7 @@ p {
 }
 
 a[href] {
-	color: yellow;
+	color: -cha-ansi(yellow);
 }
 
 a[href]:hover {
