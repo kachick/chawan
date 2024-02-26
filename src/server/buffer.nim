@@ -1137,16 +1137,15 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     buffer.loader.removeCachedURL($buffer.request.url)
   return buffer.loadResources()
 
-type LoadResult* = tuple[
-  atend: bool,
-  lines: int,
-  bytes: int
-]
-
-proc load*(buffer: Buffer): LoadResult {.proxy, task.} =
+# Returns:
+# * -1 if loading is done
+# * -2 if the page was partially rendered
+# * a positive number for just reporting the number of bytes loaded.
+proc load*(buffer: Buffer): int {.proxy, task.} =
   if buffer.state == bsLoaded:
-    return (true, buffer.lines.len, -1)
+    return -1
   else:
+    # will be resolved in onload
     buffer.savetask = true
 
 proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
@@ -1161,12 +1160,11 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
   buffer.pstream.flush()
 
 proc onload(buffer: Buffer) =
-  var res: LoadResult = (false, buffer.lines.len, -1)
   case buffer.state
   of bsConnecting:
     assert false
   of bsLoadingResources, bsLoaded:
-    buffer.resolveTask(LOAD, res)
+    buffer.resolveTask(LOAD, -1)
     return
   of bsLoadingPage:
     discard
@@ -1178,7 +1176,6 @@ proc onload(buffer: Buffer) =
       if not reprocess:
         n = buffer.istream.recvData(addr iq[0], iq.len)
         buffer.bytesRead += n
-      res.lines = buffer.lines.len
       if n != 0:
         if not buffer.processData(iq.toOpenArray(0, n - 1)):
           if not buffer.firstBufferRead:
@@ -1188,26 +1185,23 @@ proc onload(buffer: Buffer) =
             continue
         buffer.firstBufferRead = true
         reprocess = false
-        res.bytes = buffer.bytesRead
-        res.lines = buffer.lines.len
       else: # EOF
-        res.atend = true
         buffer.finishLoad().then(proc() =
           buffer.do_reshape()
-          res.lines = buffer.lines.len
           buffer.state = bsLoaded
           buffer.document.readyState = rsComplete
           buffer.dispatchLoadEvent()
-          buffer.resolveTask(LOAD, res)
+          buffer.resolveTask(LOAD, -1)
         )
         return # skip incr render
-      buffer.resolveTask(LOAD, res)
+      buffer.resolveTask(LOAD, buffer.bytesRead)
     except ErrorAgain:
       break
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
   #TODO this could be improved
   buffer.do_reshape()
+  buffer.resolveTask(LOAD, -2)
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:

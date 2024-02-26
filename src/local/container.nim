@@ -137,6 +137,7 @@ type
     ishtml*: bool
     filter*: BufferFilter
     bgcolor*: CellColor
+    tailOnLoad*: bool
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -461,6 +462,8 @@ proc setNumLines(container: Container, lines: int, finish = false) =
       container.startpos = none(CursorPosition)
     container.updateCursor()
 
+proc cursorLastLine*(container: Container)
+
 proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
     {.discardable.} =
   if container.iface == nil:
@@ -473,13 +476,17 @@ proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
     for y in 0 ..< min(res.lines.len, w.len):
       container.lines[y] = res.lines[y]
       container.lines[y].str.mnormalize()
-    container.updateCursor()
     var isBgNew = container.bgcolor != res.bgcolor
     if isBgNew:
       container.bgcolor = res.bgcolor
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
       container.triggerEvent(STATUS)
+    if res.numLines > 0:
+      container.updateCursor()
+      if container.tailOnLoad:
+        container.tailOnLoad = false
+        container.cursorLastLine()
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
       container.triggerEvent(UPDATE)
@@ -1334,45 +1341,36 @@ proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
   container.triggerEvent(STATUS)
 
-#TODO TODO TODO this should be called with a timeout.
-proc onload*(container: Container, res: LoadResult) =
+#TODO this should be called with a timeout.
+proc onload*(container: Container, res: int) =
   if container.canceled:
     container.setLoadInfo("")
-    #TODO we wouldn't need the then part if we had incremental rendering of
-    # HTML.
-    container.iface.cancel().then(proc(lines: int) =
-      if lines != container.numLines:
-        container.setNumLines(lines)
-        container.triggerEvent(STATUS)
+    container.iface.cancel().then(proc() =
       container.needslines = true
     )
+  elif res == -1:
+    container.setLoadInfo("")
+    container.triggerEvent(STATUS)
+    container.needslines = true
+    container.triggerEvent(LOADED)
+    container.iface.getTitle().then(proc(title: string) =
+      if title != "":
+        container.title = title
+        container.triggerEvent(TITLE)
+    )
+    if not container.hasstart and container.location.anchor != "":
+      container.iface.gotoAnchor().then(proc(res: Opt[tuple[x, y: int]]) =
+        if res.isSome:
+          let res = res.get
+          container.setCursorXYCenter(res.x, res.y)
+      )
+  elif res == -2:
+    container.setLoadInfo(convertSize(res) & " loaded")
   else:
-    if res.bytes == -1 or res.atend:
-      container.setLoadInfo("")
-    elif not res.atend:
-      container.setLoadInfo(convertSize(res.bytes) & " loaded")
-    if res.lines != container.numLines or res.atend:
-      container.setNumLines(res.lines, res.atend)
-      if res.atend:
-        container.triggerEvent(STATUS)
-      container.needslines = true
-    if not res.atend:
-      discard container.iface.load().then(proc(res: LoadResult) =
-        container.onload(res)
-      )
-    else:
-      container.triggerEvent(LOADED)
-      container.iface.getTitle().then(proc(title: string) =
-        if title != "":
-          container.title = title
-          container.triggerEvent(TITLE)
-      )
-      if not container.hasstart and container.location.anchor != "":
-        container.iface.gotoAnchor().then(proc(res: Opt[tuple[x, y: int]]) =
-          if res.isSome:
-            let res = res.get
-            container.setCursorXYCenter(res.x, res.y)
-        )
+    container.needslines = true
+    discard container.iface.load().then(proc(res: int) =
+      container.onload(res)
+    )
 
 proc load(container: Container) =
   container.setLoadInfo("Connecting to " & container.location.host & "...")
@@ -1420,9 +1418,9 @@ proc load(container: Container) =
   )
 
 proc startload*(container: Container) =
-  container.iface.load()
-    .then(proc(res: tuple[atend: bool, lines, bytes: int]) =
-      container.onload(res))
+  container.iface.load().then(proc(res: int) =
+    container.onload(res)
+  )
 
 proc connect2*(container: Container): EmptyPromise =
   return container.iface.connect2(container.ishtml)
@@ -1567,8 +1565,9 @@ proc setStream*(container: Container, stream: Stream) =
   else:
     container.iface = cloneInterface(stream)
     # Maybe we have to resume loading. Let's try.
-    discard container.iface.load().then(proc(res: LoadResult) =
-      container.onload(res))
+    discard container.iface.load().then(proc(res: int) =
+      container.onload(res)
+    )
 
 proc onreadline(container: Container, w: Slice[int],
     handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =

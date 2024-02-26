@@ -144,8 +144,7 @@ proc command0(client: Client, src: string, filename = "<command>",
 proc command(client: Client, src: string) =
   client.command0(src)
   let container = client.consoleWrapper.container
-  container.requestLines().then(proc() =
-    container.cursorLastLine())
+  container.tailOnLoad = true
 
 proc suspend(client: Client) {.jsfunc.} =
   client.pager.term.quit()
