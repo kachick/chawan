@@ -371,10 +371,7 @@ proc main() =
       except ErrorAgain:
         state.flushOutbuf()
         selector.registerHandle(ps.fd, {Read}, 0)
-        let events = selector.select(-1)
-        for event in events:
-          if Error in event.events:
-            break mainloop
+        discard selector.select(-1)
         selector.unregister(ps.fd)
   state.flushOutbuf()
 

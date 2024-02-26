@@ -172,32 +172,93 @@ proc pushBuffer(ctx: LoaderContext, output: OutputHandle, buffer: LoaderBuffer):
     output.addBuffer(buffer)
   return pbrDone
 
-proc addFd0(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
+proc addCacheFile(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
   let output = handle.output
-  if output.sostream != nil:
-    # replace the fd with the new one in outputMap if stream was
-    # redirected
-    # (kind of a hack, but should always work)
-    ctx.outputMap[output.ostream.fd] = output
-    ctx.outputMap.del(output.sostream.fd)
-    output.clientId = NullStreamId
-  if originalUrl != nil:
-    let tmpf = getTempFile(ctx.config.tmpdir)
-    let ps = newPosixStream(tmpf, O_CREAT or O_WRONLY, 0o600)
-    if ps != nil:
-      output.tee(ps, NullStreamId)
-      let surl = $originalUrl
-      ctx.cacheMap[surl] = tmpf
-      handle.cacheUrl = surl
+  let tmpf = getTempFile(ctx.config.tmpdir)
+  let ps = newPosixStream(tmpf, O_CREAT or O_WRONLY, 0o600)
+  if ps != nil:
+    output.tee(ps, NullStreamId)
+    let surl = $originalUrl
+    ctx.cacheMap[surl] = tmpf
+    handle.cacheUrl = surl
 
-proc addFd(ctx: LoaderContext, handle: LoaderHandle, originalUrl: URL) =
+proc addFd(ctx: LoaderContext, handle: LoaderHandle) =
   let output = handle.output
   output.ostream.setBlocking(false)
   handle.istream.setBlocking(false)
   ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
+  assert handle.istream.fd notin ctx.handleMap
+  assert output.ostream.fd notin ctx.outputMap
   ctx.handleMap[handle.istream.fd] = handle
   ctx.outputMap[output.ostream.fd] = output
-  ctx.addFd0(handle, originalUrl)
+
+type HandleReadResult = enum
+  hrrDone, hrrEmpty, hrrUnregister
+
+# Called whenever there is more data available to read.
+proc handleRead(ctx: LoaderContext, handle: LoaderHandle,
+    unregWrite: var seq[OutputHandle]): HandleReadResult =
+  while true:
+    let buffer = newLoaderBuffer()
+    try:
+      let n = handle.istream.recvData(buffer)
+      if n == 0:
+        return hrrEmpty
+      for output in handle.outputs:
+        if ctx.pushBuffer(output, buffer) == pbrUnregister:
+          unregWrite.add(output)
+      if n < buffer.cap:
+        break
+    except ErrorAgain: # retry later
+      break
+    except ErrorBrokenPipe: # sender died; stop streaming
+      return hrrUnregister
+  hrrDone
+
+# stream is a regular file, so we can't select on it.
+# cachedHandle is used for attaching the output handle to a different
+# LoaderHandle when loadFromCache is called while a download is still ongoing
+# (and thus some parts of the document are not cached yet).
+proc loadStreamRegular(ctx: LoaderContext, handle, cachedHandle: LoaderHandle) =
+  var fail = false
+  while true:
+    var unregWrite: seq[OutputHandle] = @[]
+    case ctx.handleRead(handle, unregWrite)
+    of hrrDone: discard
+    of hrrEmpty: break
+    of hrrUnregister:
+      fail = true
+      break
+    for output in unregWrite:
+      output.parent = nil
+      let i = handle.outputs.find(output)
+      if output.registered:
+        ctx.selector.unregister(output.ostream.fd)
+        output.registered = false
+      handle.outputs.del(i)
+    if handle.outputs.len == 0:
+      # original output died and so did the cache file. (or we didn't have a
+      # cache file in the first place)
+      break
+  for output in handle.outputs:
+    if unlikely(fail):
+      output.ostream.close()
+      output.ostream = nil
+    elif cachedHandle != nil:
+      output.parent = cachedHandle
+      cachedHandle.outputs.add(output)
+      ctx.outputMap[output.ostream.fd] = output
+    elif output.registered:
+      output.parent = nil
+      output.istreamAtEnd = true
+      ctx.outputMap[output.ostream.fd] = output
+    else:
+      assert output.ostream.fd notin ctx.outputMap
+      output.ostream.close()
+      output.ostream = nil
+  handle.outputs.setLen(0)
+  handle.istream.close()
+  handle.istream = nil
 
 proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
     originalUrl: URL) =
@@ -211,44 +272,12 @@ proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
     doAssert fstat(fdp[], stats) != -1
     handle.istream = ps
     ctx.passedFdMap.del(request.url.host)
-    if S_ISREG(stats.st_mode):
-      # stdin is a regular file, so we can't select on it.
-      let originalUrl = if handle.cached: originalUrl else: nil
+    if S_ISREG(stats.st_mode): # probably stdin, like cha <file
       handle.output.ostream.setBlocking(false)
-      ctx.addFd0(handle, originalUrl)
-      while true:
-        let buffer = newLoaderBuffer()
-        let n = ps.recvData(buffer)
-        if n == 0:
-          break
-        var unregWrite: seq[OutputHandle] = @[]
-        for output in handle.outputs:
-          if ctx.pushBuffer(output, buffer) == pbrUnregister:
-            unregWrite.add(output)
-        for output in unregWrite:
-          output.parent = nil
-          let i = handle.outputs.find(output)
-          if output.registered:
-            ctx.selector.unregister(output.ostream.fd)
-            output.registered = false
-          handle.outputs.del(i)
-        if handle.outputs.len == 0:
-          # original output died and so did the cache file. (or we didn't have a
-          # cache file in the first place)
-          break
-        if n < buffer.cap:
-          break
-      for output in handle.outputs:
-        if output.registered:
-          output.parent = nil
-          output.istreamAtEnd = true
-          ctx.outputMap[output.ostream.fd] = output
-        else:
-          output.ostream.close()
-          output.ostream = nil
-      handle.outputs.setLen(0)
-      handle.istream.close()
-      handle.istream = nil
+      if handle.cached:
+        ctx.addCacheFile(handle, originalUrl)
+      # not loading from cache, so cachedHandle is nil
+      ctx.loadStreamRegular(handle, nil)
   do:
     handle.sendResult(ERROR_FILE_NOT_FOUND, "stream not found")
 
@@ -272,15 +301,17 @@ proc loadResource(ctx: LoaderContext, request: Request, handle: LoaderHandle) =
       handle.loadCGI(request, ctx.config.cgiDir, ctx.config.libexecPath,
         prevurl)
       if handle.istream != nil:
-        let originalUrl = if handle.cached: originalUrl else: nil
-        ctx.addFd(handle, originalUrl)
+        ctx.addFd(handle)
+        if handle.cached:
+          ctx.addCacheFile(handle, originalUrl)
       else:
         handle.close()
     elif request.url.scheme == "stream":
       ctx.loadStream(handle, request, originalUrl)
       if handle.istream != nil:
-        let originalUrl = if handle.cached: originalUrl else: nil
-        ctx.addFd(handle, originalUrl)
+        ctx.addFd(handle)
+        if handle.cached:
+          ctx.addCacheFile(handle, originalUrl)
       else:
         handle.close()
     else:
@@ -308,39 +339,18 @@ proc loadFromCache(ctx: LoaderContext, stream: SocketStream, request: Request) =
       ctx.cacheMap.del(surl)
       handle.close()
       return
+    handle.istream = ps
     handle.sendResult(0)
     handle.sendStatus(200)
     handle.sendHeaders(newHeaders())
     if handle.cached:
       handle.cacheUrl = surl
     output.ostream.setBlocking(false)
-    while true:
-      let buffer = newLoaderBuffer()
-      let n = ps.recvData(buffer)
-      if n == 0:
-        break
-      if ctx.pushBuffer(output, buffer) == pbrUnregister:
-        if output.registered:
-          ctx.selector.unregister(output.ostream.fd)
-        ps.close()
-        return
-      if n < buffer.cap:
-        break
-    ps.close()
+    ctx.loadStreamRegular(handle, cachedHandle)
   do:
     if cachedHandle == nil:
       handle.rejectHandle(ERROR_URL_NOT_IN_CACHE)
       return
-  if cachedHandle != nil:
-    # download is still ongoing; move output to the original handle
-    handle.outputs.setLen(0)
-    output.parent = cachedHandle
-    cachedHandle.outputs.add(output)
-  elif output.registered:
-    output.istreamAtEnd = true
-    ctx.outputMap[output.ostream.fd] = output
-  else:
-    output.ostream.close()
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
@@ -479,26 +489,6 @@ proc initLoaderContext(fd: cint, config: LoaderConfig): LoaderContext =
       dir &= '/'
   return ctx
 
-# Called whenever there is more data available to read.
-proc handleRead(ctx: LoaderContext, handle: LoaderHandle,
-    unregRead: var seq[LoaderHandle], unregWrite: var seq[OutputHandle]) =
-  while true:
-    let buffer = newLoaderBuffer()
-    try:
-      let n = handle.istream.recvData(buffer)
-      if n == 0:
-        break
-      for output in handle.outputs:
-        if ctx.pushBuffer(output, buffer) == pbrUnregister:
-          unregWrite.add(output)
-      if n < buffer.cap:
-        break
-    except ErrorAgain: # retry later
-      break
-    except ErrorBrokenPipe: # sender died; stop streaming
-      unregRead.add(handle)
-      break
-
 # This is only called when an OutputHandle could not read enough of one (or
 # more) buffers, and we asked select to notify us when it will be available.
 proc handleWrite(ctx: LoaderContext, output: OutputHandle,
@@ -593,7 +583,11 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
         if event.fd == ctx.fd: # incoming connection
           ctx.acceptConnection()
         else:
-          ctx.handleRead(ctx.handleMap[event.fd], unregRead, unregWrite)
+          let handle = ctx.handleMap[event.fd]
+          case ctx.handleRead(handle, unregWrite)
+          of hrrDone: discard
+          of hrrEmpty: discard # handled as an error event
+          of hrrUnregister: unregRead.add(handle)
       if Write in event.events:
         ctx.handleWrite(ctx.outputMap[event.fd], unregWrite)
       if Error in event.events:

@@ -51,6 +51,12 @@ type
       dealloc(buffer.page)
       buffer.page = nil
 
+# for debugging
+func `$`*(buffer: LoaderBuffer): string =
+  var s = newString(buffer.len)
+  copyMem(addr s[0], addr buffer.page[0], buffer.len)
+  return s
+
 # Create a new loader handle, with the output stream ostream.
 proc newLoaderHandle*(ostream: PosixStream, canredir: bool, clientId: StreamId):
     LoaderHandle =
@@ -137,6 +143,7 @@ proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
       let fd = sostream.recvFileHandle()
       output.sostream = sostream
       output.ostream = newPosixStream(fd)
+      output.clientId = NullStreamId
 
 proc recvData*(ps: PosixStream, buffer: LoaderBuffer): int {.inline.} =
   let n = ps.recvData(addr buffer.page[0], buffer.cap)

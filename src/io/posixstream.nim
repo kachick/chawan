@@ -51,7 +51,6 @@ proc recvData*(s: PosixStream, buffer: var openArray[char]): int {.inline.} =
   return s.recvData(addr buffer[0], buffer.len)
 
 method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
-  #TODO use sendData instead
   let n = write(s.fd, buffer, len)
   if n < 0:
     raisePosixIOError()
