@@ -348,6 +348,7 @@ proc processData(state: var State, buf: openArray[char]) =
     of '>': state.puts("&gt;")
     of '\'': state.puts("&apos;")
     of '"': state.puts("&quot;")
+    of '&': state.puts("&amp;")
     of '\e': state.parser.reset()
     of '\b': state.parser.state = acpsBackspace
     of '\0': state.puts("\uFFFD") # HTML eats NUL, so replace it here
