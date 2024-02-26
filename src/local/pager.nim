@@ -709,7 +709,9 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     if replace != nil:
       container.replace = replace
       container.copyCursorPos(container.replace)
-    pager.addContainer(container)
+      pager.registerContainer(container)
+    else:
+      pager.addContainer(container)
     inc pager.numload
   else:
     pager.container.findAnchor(request.url.anchor)
