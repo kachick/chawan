@@ -677,10 +677,10 @@ proc processWhitespace(ictx: var InlineContext, state: var InlineState,
     if c == '\n':
       ictx.flushLine(state)
     elif c == '\t':
-      let prev = ictx.currentLine.charwidth
-      ictx.currentLine.charwidth = ((ictx.currentLine.charwidth +
-        ictx.whitespacenum) div 8 + 1) * 8 - ictx.whitespacenum
-      ictx.whitespacenum += ictx.currentLine.charwidth - prev
+      let realWidth = ictx.currentLine.charwidth + ictx.whitespacenum
+      let targetTabStops = realWidth div 8 + 1
+      let targetWidth = targetTabStops * 8
+      ictx.whitespacenum += targetWidth - realWidth
       ictx.whitespaceFragment = state.fragment
     else:
       inc ictx.whitespacenum
