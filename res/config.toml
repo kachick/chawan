@@ -220,9 +220,20 @@ M-y = '''
 yc = '() => pager.alert("Please use `yu` to copy URLs instead!");'
 yu = '''
 () => {
-	const link = pager.hoverLink
+	const link = pager.hoverLink;
 	if (!link)
 		pager.alert("Please move the cursor above a link and try again.");
+	else if (pager.externInto('xsel -bi', link))
+		pager.alert("Copied URL to clipboard.");
+	else
+		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+}
+'''
+yI = '''
+() => {
+	const link = pager.hoverImage;
+	if (!link)
+		pager.alert("Please move the cursor above an image and try again.");
 	else if (pager.externInto('xsel -bi', link))
 		pager.alert("Copied URL to clipboard.");
 	else
