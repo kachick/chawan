@@ -1466,9 +1466,7 @@ proc readSuccess*(container: Container, s: string) =
       container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get)))
 
 proc reshape(container: Container): EmptyPromise {.jsfunc.} =
-  return container.iface.render().then(proc(lines: int): auto =
-    container.setNumLines(lines)
-    container.triggerEvent(STATUS)
+  return container.iface.forceRender().then(proc(): EmptyPromise =
     return container.requestLines()
   )
 
@@ -1516,13 +1514,9 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
   if attrs.width != container.width or attrs.height - 1 != container.height:
     container.width = attrs.width
     container.height = attrs.height - 1
-    container.iface.windowChange(attrs).then(proc(): auto =
+    container.iface.windowChange(attrs).then(proc() =
       container.needslines = true
-      return container.iface.render()
-    ).then(proc(lines: int) =
-      if lines != container.numLines:
-        container.setNumLines(lines, true)
-      container.needslines = true)
+    )
 
 proc peek(container: Container) {.jsfunc.} =
   container.alert($container.location)

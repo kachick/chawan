@@ -59,7 +59,7 @@ import chame/tags
 
 type
   BufferCommand* = enum
-    LOAD, RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
+    LOAD, FORCE_RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
     CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
     FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_LINES, UPDATE_HOVER, CONNECT,
     CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
@@ -659,6 +659,7 @@ proc switchCharset(buffer: Buffer) =
   buffer.initDecoder()
   buffer.htmlParser.restart(buffer.charset)
   buffer.document = buffer.htmlParser.builder.document
+  buffer.prevStyled = nil
 
 const BufferSize = 16384
 
@@ -742,6 +743,7 @@ proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.prevStyled = nil
   if buffer.window != nil:
     buffer.window.attrs = attrs
+  buffer.do_reshape()
 
 type UpdateHoverResult* = object
   link*: Option[string]
@@ -1207,9 +1209,9 @@ proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:
     return buffer.document.title
 
-proc render*(buffer: Buffer): int {.proxy.} =
+proc forceRender*(buffer: Buffer) {.proxy.} =
+  buffer.prevStyled = nil
   buffer.do_reshape()
-  return buffer.lines.len
 
 proc cancel*(buffer: Buffer): int {.proxy.} =
   if buffer.state == bsLoaded:
