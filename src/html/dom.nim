@@ -2718,6 +2718,8 @@ var appliesFwdDecl*: proc(mqlist: MediaQueryList, window: Window): bool
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window, link: HTMLLinkElement) =
+  if link.attr(atRel) != "stylesheet":
+    return
   if link.fetchStarted:
     return
   link.fetchStarted = true
