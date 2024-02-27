@@ -31,6 +31,7 @@ type
     sostream*: SocketStream # saved ostream when redirected
     clientId*: StreamId
     registered*: bool
+    dead*: bool
 
   LoaderHandle* = ref object
     # Stream for taking input

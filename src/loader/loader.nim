@@ -193,20 +193,32 @@ proc addFd(ctx: LoaderContext, handle: LoaderHandle) =
   ctx.outputMap[output.ostream.fd] = output
 
 type HandleReadResult = enum
-  hrrDone, hrrEmpty, hrrUnregister
+  hrrDone, hrrUnregister
 
 # Called whenever there is more data available to read.
 proc handleRead(ctx: LoaderContext, handle: LoaderHandle,
     unregWrite: var seq[OutputHandle]): HandleReadResult =
+  var unregs = 0
+  let maxUnregs = handle.outputs.len
   while true:
     let buffer = newLoaderBuffer()
     try:
       let n = handle.istream.recvData(buffer)
       if n == 0:
-        return hrrEmpty
+        break
       for output in handle.outputs:
-        if ctx.pushBuffer(output, buffer) == pbrUnregister:
+        if output.dead:
+          # do not push to unregWrite candidates
+          continue
+        case ctx.pushBuffer(output, buffer)
+        of pbrUnregister:
+          output.dead = true
           unregWrite.add(output)
+          inc unregs
+        of pbrDone: discard
+      if unregs == maxUnregs:
+        # early return: no more outputs to write to
+        break
       if n < buffer.cap:
         break
     except ErrorAgain: # retry later
@@ -220,28 +232,17 @@ proc handleRead(ctx: LoaderContext, handle: LoaderHandle,
 # LoaderHandle when loadFromCache is called while a download is still ongoing
 # (and thus some parts of the document are not cached yet).
 proc loadStreamRegular(ctx: LoaderContext, handle, cachedHandle: LoaderHandle) =
-  var fail = false
-  while true:
-    var unregWrite: seq[OutputHandle] = @[]
-    case ctx.handleRead(handle, unregWrite)
-    of hrrDone: discard
-    of hrrEmpty: break
-    of hrrUnregister:
-      fail = true
-      break
-    for output in unregWrite:
-      output.parent = nil
-      let i = handle.outputs.find(output)
-      if output.registered:
-        ctx.selector.unregister(output.ostream.fd)
-        output.registered = false
-      handle.outputs.del(i)
-    if handle.outputs.len == 0:
-      # original output died and so did the cache file. (or we didn't have a
-      # cache file in the first place)
-      break
+  var unregWrite: seq[OutputHandle] = @[]
+  let r = ctx.handleRead(handle, unregWrite)
+  for output in unregWrite:
+    output.parent = nil
+    let i = handle.outputs.find(output)
+    if output.registered:
+      ctx.selector.unregister(output.ostream.fd)
+      output.registered = false
+    handle.outputs.del(i)
   for output in handle.outputs:
-    if unlikely(fail):
+    if r == hrrUnregister:
       output.ostream.close()
       output.ostream = nil
     elif cachedHandle != nil:
@@ -343,14 +344,12 @@ proc loadFromCache(ctx: LoaderContext, stream: SocketStream, request: Request) =
     handle.sendResult(0)
     handle.sendStatus(200)
     handle.sendHeaders(newHeaders())
-    if handle.cached:
-      handle.cacheUrl = surl
     output.ostream.setBlocking(false)
     ctx.loadStreamRegular(handle, cachedHandle)
   do:
-    if cachedHandle == nil:
-      handle.rejectHandle(ERROR_URL_NOT_IN_CACHE)
-      return
+    # addCacheFile sets cacheUrl only after adding the entry to cacheMap, so
+    # cachedHandle is always nil here.
+    handle.rejectHandle(ERROR_URL_NOT_IN_CACHE)
 
 proc onLoad(ctx: LoaderContext, stream: SocketStream) =
   var request: Request
@@ -586,7 +585,6 @@ proc runFileLoader*(fd: cint, config: LoaderConfig) =
           let handle = ctx.handleMap[event.fd]
           case ctx.handleRead(handle, unregWrite)
           of hrrDone: discard
-          of hrrEmpty: discard # handled as an error event
           of hrrUnregister: unregRead.add(handle)
       if Write in event.events:
         ctx.handleWrite(ctx.outputMap[event.fd], unregWrite)
