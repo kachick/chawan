@@ -1,4 +1,4 @@
-from std/strutils import split
+from std/strutils import split, toUpperAscii
 
 import std/macros
 import std/nativesockets
@@ -59,18 +59,19 @@ import chame/tags
 
 type
   BufferCommand* = enum
-    LOAD, FORCE_RENDER, WINDOW_CHANGE, FIND_ANCHOR, READ_SUCCESS, READ_CANCELED,
-    CLICK, FIND_NEXT_LINK, FIND_PREV_LINK, FIND_NTH_LINK, FIND_REV_NTH_LINK,
-    FIND_NEXT_MATCH, FIND_PREV_MATCH, GET_LINES, UPDATE_HOVER, CONNECT,
-    CONNECT2, GOTO_ANCHOR, CANCEL, GET_TITLE, SELECT, REDIRECT_TO_FD,
-    READ_FROM_FD, CLONE, FIND_PREV_PARAGRAPH, FIND_NEXT_PARAGRAPH
+    bcLoad, bcForceRender, bcWindowChange, bcFindAnchor, bcReadSuccess,
+    bcReadCanceled, bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink,
+    bcFindRevNthLink, bcFindNextMatch, bcFindPrevMatch, bcGetLines,
+    bcUpdateHover, bcConnect, bcConnect2, bcGotoAnchor, bcCancel, bcGetTitle,
+    bcSelect, bcRedirectToFd, bcReadFromFd, bcClone, bcFindPrevParagraph,
+    bcFindNextParagraph
 
   BufferState = enum
     bsConnecting, bsLoadingPage, bsLoadingResources, bsLoaded
 
   HoverType* = enum
-    HOVER_TITLE = "TITLE"
-    HOVER_LINK = "URL"
+    htTitle = "TITLE"
+    htLink = "URL"
 
   BufferMatch* = object
     success*: bool
@@ -165,9 +166,7 @@ proc hasPromises*(iface: BufferInterface): bool =
 # get enum identifier of proxy function
 func getFunId(fun: NimNode): string =
   let name = fun[0] # sym
-  result = name.strVal.toScreamingSnakeCase()
-  if result[^1] == '=':
-    result = "SET_" & result[0..^2]
+  return "bc" & name.strVal[0].toUpperAscii() & name.strVal.substr(1)
 
 proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] =
   let name = fun[0] # sym
@@ -768,13 +767,13 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.pr
           result.repaint = true
 
     let title = thisnode.getTitleAttr()
-    if buffer.hovertext[HOVER_TITLE] != title:
+    if buffer.hovertext[htTitle] != title:
       result.title = some(title)
-      buffer.hovertext[HOVER_TITLE] = title
+      buffer.hovertext[htTitle] = title
     let click = thisnode.getClickHover()
-    if buffer.hovertext[HOVER_LINK] != click:
+    if buffer.hovertext[htLink] != click:
       result.link = some(click)
-      buffer.hovertext[HOVER_LINK] = click
+      buffer.hovertext[htLink] = click
 
     for styledNode in prevnode.branch:
       if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
@@ -1166,7 +1165,7 @@ proc onload(buffer: Buffer) =
   of bsConnecting:
     assert false
   of bsLoadingResources, bsLoaded:
-    buffer.resolveTask(LOAD, -1)
+    buffer.resolveTask(bcLoad, -1)
     return
   of bsLoadingPage:
     discard
@@ -1193,17 +1192,17 @@ proc onload(buffer: Buffer) =
           buffer.state = bsLoaded
           buffer.document.readyState = rsComplete
           buffer.dispatchLoadEvent()
-          buffer.resolveTask(LOAD, -1)
+          buffer.resolveTask(bcLoad, -1)
         )
         return # skip incr render
-      buffer.resolveTask(LOAD, buffer.bytesRead)
+      buffer.resolveTask(bcLoad, buffer.bytesRead)
     except ErrorAgain:
       break
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
   #TODO this could be improved
   buffer.do_reshape()
-  buffer.resolveTask(LOAD, -2)
+  buffer.resolveTask(bcLoad, -2)
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:

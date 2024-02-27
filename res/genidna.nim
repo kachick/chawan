@@ -14,7 +14,6 @@ var MappedMapHigh: HighMap
 var DisallowedRanges: FullRangeList
 var Disallowed: FullSet
 var Ignored: FullSet
-var Deviation: LowMap
 
 proc loadIdnaData() =
   template add_map(i: uint32, str: string) =
@@ -43,9 +42,6 @@ proc loadIdnaData() =
       Ignored.lm.add(uint16(i))
     else:
       Ignored.hm.add(i)
-  template add_deviation(i: uint32, str: string) =
-    assert i <= high(uint16)
-    Deviation.add((uint16(i), str))
   template add(firstcol: string, str: string, temp: untyped) =
     if firstcol.contains(".."):
       let fcs = firstcol.split("..")
@@ -119,13 +115,6 @@ proc loadIdnaData() =
         str &= Rune(parseHexInt(code))
 
       add(firstcol, str, add_map)
-    of "deviation":
-      let codepoints = thirdcol
-      var str = ""
-      for code in codepoints:
-        str &= Rune(parseHexInt(code))
-
-      add(firstcol, str, add_deviation)
     of "valid":
       if fourthcol == "NV8" or fourthcol == "XV8":
         add(firstcol, add_disallow)
@@ -205,14 +194,6 @@ proc main() =
   echo "const IgnoredHigh: array[" & $Ignored.hm.len & ", uint32] = ["
   for ucs in Ignored.hm:
     writer.write($ucs & ",")
-  writer.flush()
-  echo "]"
-
-  echo ""
-  echo "const Deviation: array[" & $Deviation.len &
-    ", tuple[ucs: uint16, s: Z]] = ["
-  for (ucs, s) in Deviation:
-    writer.write("(" & $ucs & "," & s.escape() & ".Z),")
   writer.flush()
   echo "]"
 

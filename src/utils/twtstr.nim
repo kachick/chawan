@@ -61,15 +61,6 @@ func toHeaderCase*(str: string): string =
       c = c.toUpperAscii()
     flip = c == '-'
 
-func toScreamingSnakeCase*(str: string): string = # input is camel case
-  if str.len >= 1: result &= str[0].toUpperAscii()
-  for c in str.toOpenArray(1, str.high):
-    if c in AsciiUpperAlpha:
-      result &= '_'
-      result &= c
-    else:
-      result &= c.toUpperAscii()
-
 func snakeToKebabCase*(str: string): string =
   result = str
   for c in result.mitems:
@@ -92,9 +83,6 @@ func camelToKebabCase*(s: string): string =
       result &= c.toLowerAscii()
     else:
       result &= c
-
-func isAscii*(r: Rune): bool =
-  return uint32(r) < 128
 
 func startsWithNoCase*(str, prefix: string): bool =
   if str.len < prefix.len: return false
@@ -129,7 +117,7 @@ func decValue*(c: char): int =
 
 func isAscii*(s: string): bool =
   for c in s:
-    if c > char(0x80):
+    if c >= char(0x80):
       return false
   return true
 

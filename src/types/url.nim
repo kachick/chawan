@@ -270,9 +270,6 @@ func getIdnaTableStatus(r: Rune): IDNATableStatus =
       return IDNA_IGNORED
     if u in DisallowedLow:
       return IDNA_DISALLOWED
-    for item in Deviation:
-      if item[0] == u:
-        return IDNA_DEVIATION
     if DisallowedRangesLow.isInRange(u):
       return IDNA_DISALLOWED
     if MappedMapLow.isInMap(u):
@@ -298,14 +295,13 @@ func getIdnaMapped(r: Rune): string =
   let n = MappedMapHigh.searchInMap(i)
   return $MappedMapHigh[n].mapped
 
-func getDeviationMapped(r: Rune): string =
-  for item in Deviation:
-    if item[0] == uint16(r):
-      return $item[1]
-  return ""
-
-func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
-    transitionalprocessing: bool): Option[string] =
+func processIdna(str: string, beStrict: bool): Option[string] =
+  # CheckHyphens = false
+  # CheckBidi = true
+  # CheckJoiners = true
+  # UseSTD3ASCIIRules = beStrict (but STD3 is not implemented)
+  # Transitional_Processing = false
+  # VerifyDnsLength = beStrict
   var mapped: seq[Rune]
   for r in str.runes():
     let status = getIdnaTableStatus(r)
@@ -313,11 +309,7 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
     of IDNA_DISALLOWED: return none(string) #error
     of IDNA_IGNORED: discard
     of IDNA_MAPPED: mapped &= getIdnaMapped(r).toRunes()
-    of IDNA_DEVIATION:
-      if transitionalprocessing:
-        mapped &= getDeviationMapped(r).toRunes()
-      else:
-        mapped &= r
+    of IDNA_DEVIATION: mapped &= r
     of IDNA_VALID: mapped &= r
   if mapped.len == 0: return
   mapped.mnormalize()
@@ -335,11 +327,7 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
         let x1 = normalize(x0)
         if x0 != x1:
           return none(string) #error
-        if checkhyphens:
-          if s.len >= 4 and s[2] == '-' and s[3] == '-':
-            return none(string) #error
-          if s.len > 0 and s[0] == '-' and s[^1] == '-':
-            return none(string) #error
+        # CheckHyphens is false
         if x0.len > 0:
           let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
           let c = cast[uint32](x0[0])
@@ -349,13 +337,8 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
           if r == Rune('.'):
             return none(string) #error
           let status = getIdnaTableStatus(r)
-          case status
-          of IDNA_DISALLOWED, IDNA_IGNORED, IDNA_MAPPED:
+          if status in {IDNA_DISALLOWED, IDNA_IGNORED, IDNA_MAPPED}:
             return none(string) #error
-          of IDNA_DEVIATION:
-            if transitionalprocessing:
-              return none(string) #error
-          of IDNA_VALID: discard
           #TODO check joiners
           #TODO check bidi
         labels.add(s)
@@ -366,10 +349,8 @@ func processIdna(str: string, checkhyphens, checkbidi, checkjoiners,
   cr_free(addr cr)
   return some(labels.join('.'))
 
-func unicodeToAscii(s: string, checkhyphens, checkbidi, checkjoiners,
-    transitionalprocessing, verifydnslength: bool): Option[string] =
-  let processed = s.processIdna(checkhyphens, checkbidi, checkjoiners,
-    transitionalprocessing)
+func unicodeToAscii(s: string, beStrict: bool): Option[string] =
+  let processed = s.processIdna(beStrict)
   if processed.isNone:
     return none(string) #error
   var labels: seq[string]
@@ -383,44 +364,26 @@ func unicodeToAscii(s: string, checkhyphens, checkbidi, checkjoiners,
         return none(string) #error
     else:
       labels.add(label)
-    if verifydnslength:
+    if beStrict: # VerifyDnsLength
       let rl = labels[^1].runeLen()
       if rl notin 1..63:
         return none(string)
       all += rl
-  if verifydnslength:
+  if beStrict: # VerifyDnsLength
     if all notin 1..253:
       return none(string) #error
   return some(labels.join('.'))
 
-func domainToAscii*(domain: string, bestrict = false): Option[string] =
+func domainToAscii(domain: string, bestrict = false): Option[string] =
   var needsprocessing = false
   for s in domain.split('.'):
-    var i = 0
-    var xn = 0
-    while i < s.len:
-      if s[i] notin Ascii:
-        needsprocessing = true
-        break
-      case i
-      of 0:
-        if s[i] == 'x': inc xn
-      of 1:
-        if s[i] == 'n': inc xn
-      of 2:
-        if s[i] == '-': inc xn
-      of 3:
-        if s[i] == '-' and xn == 3:
-          needsprocessing = true
-          break
-      else: discard
-      inc i
-    if needsprocessing:
+    if s.startsWith("xn--") or not s.isAscii():
+      needsprocessing = true
       break
   if bestrict or needsprocessing:
     #Note: we don't implement STD3 separately, it's always true
-    result = domain.unicodeToAscii(false, true, true, false, bestrict)
-    if result.isNone or result.get == "":
+    let res = domain.unicodeToAscii(bestrict)
+    if res.isNone or res.get == "":
       return none(string)
     return result
   else:

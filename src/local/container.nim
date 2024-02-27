@@ -443,7 +443,7 @@ func getHoverText*(container: Container): string =
       return container.hovertext[t]
 
 func isHoverURL*(container: Container, url: URL): bool =
-  let hoverurl = parseURL(container.hovertext[HOVER_LINK])
+  let hoverurl = parseURL(container.hovertext[htLink])
   return hoverurl.isSome and url.host == hoverurl.get.host
 
 proc triggerEvent(container: Container, event: ContainerEvent) =
@@ -499,9 +499,9 @@ proc sendCursorPosition*(container: Container) =
   container.iface.updateHover(container.cursorx, container.cursory)
       .then(proc(res: UpdateHoverResult) =
     if res.link.isSome:
-      container.hovertext[HOVER_LINK] = res.link.get
+      container.hovertext[htLink] = res.link.get
     if res.title.isSome:
-      container.hovertext[HOVER_TITLE] = res.title.get
+      container.hovertext[htTitle] = res.title.get
     if res.link.isSome or res.title.isSome:
       container.triggerEvent(STATUS)
     if res.repaint:
@@ -1541,10 +1541,10 @@ proc peekCursor(container: Container) {.jsfunc.} =
     container.lastpeek = low(HoverType)
 
 func hoverLink(container: Container): string {.jsfget.} =
-  return container.hovertext[HOVER_LINK]
+  return container.hovertext[htLink]
 
 func hoverTitle(container: Container): string {.jsfget.} =
-  return container.hovertext[HOVER_TITLE]
+  return container.hovertext[htTitle]
 
 proc handleCommand(container: Container) =
   var packetid, len: int

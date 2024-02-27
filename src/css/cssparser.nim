@@ -162,8 +162,8 @@ proc consume(state: var CSSTokenizerState): char =
 proc consumeRChar(state: var CSSTokenizerState): char =
   var r: Rune
   fastRuneAt(state.buf, state.at, r)
-  if r.isAscii():
-    return cast[char](r)
+  if int32(r) < 0x80:
+    return char(r)
   return char(128)
 
 proc reconsume(state: var CSSTokenizerState) =
