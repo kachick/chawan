@@ -40,6 +40,7 @@ type
     fromy*: int
     setx: int
     setxrefresh: bool
+    setxsave: bool
 
   ContainerEventType* = enum
     FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE, READ_LINE,
@@ -263,8 +264,11 @@ func fromx*(container: Container): int {.jsfget.} =
 func fromy*(container: Container): int {.jsfget.} =
   container.pos.fromy
 
-func xend(container: Container): int {.inline.} = container.pos.xend
-func lastVisibleLine(container: Container): int = min(container.fromy + container.height, container.numLines) - 1
+func xend(container: Container): int {.inline.} =
+  container.pos.xend
+
+func lastVisibleLine(container: Container): int =
+  min(container.fromy + container.height, container.numLines) - 1
 
 func currentLine(container: Container): string =
   return container.getLine(container.cursory).str
@@ -528,8 +532,8 @@ proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
   container.setFromX(x)
 
 # Set the cursor to the xth column. 0-based.
-# * refresh = false inhibits reporting of the cursor position to the buffer.
-# * save = false inhibits cursor movement if it is currently outside the
+# * `refresh = false' inhibits reporting of the cursor position to the buffer.
+# * `save = false' inhibits cursor movement if it is currently outside the
 #   screen, and makes it so cursorx is not saved for restoration on cursory
 #   movement.
 proc setCursorX(container: Container, x: int, refresh = true, save = true)
@@ -537,6 +541,7 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true)
   if not container.lineLoaded(container.cursory):
     container.pos.setx = x
     container.pos.setxrefresh = refresh
+    container.pos.setxsave = save
     return
   container.pos.setx = -1
   let cw = container.currentLineWidth()
@@ -547,13 +552,24 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true)
   if not save or container.fromx <= x and x < container.fromx + container.width:
     container.pos.cursorx = x
   elif save and container.fromx > x:
+    # target x is before the screen start
     if x2 < container.cursorx:
-      container.setFromX(x, false)
+      # desired X position is lower than cursor X; move screen back to the
+      # desired position if valid, otherwise the last cell of the current line.
+      if x2 == x:
+        container.setFromX(x, false)
+      else:
+        container.setFromX(cw - 1, false)
+    # take whatever position the jump has resulted in.
     container.pos.cursorx = container.fromx
   elif x > container.cursorx:
+    # target x is greater than current x; a simple case, just shift fromx too
+    # accordingly
     container.setFromX(max(x - container.width + 1, container.fromx), false)
     container.pos.cursorx = x
   elif x < container.cursorx:
+    # target x is lower than current x, but is outside the screen
+    #TODO I have no clue if/when this is used :(
     container.setFromX(x, false)
     container.pos.cursorx = x
   if container.cursorx == x and container.currentSelection != nil and
@@ -1034,7 +1050,8 @@ proc lineInfo(container: Container) {.jsfunc.} =
 
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
-    container.setCursorX(container.pos.setx, container.pos.setxrefresh)
+    container.setCursorX(container.pos.setx, container.pos.setxrefresh,
+      container.pos.setxsave)
   if container.fromy > container.maxfromy:
     container.setFromY(container.maxfromy)
   if container.cursory >= container.numLines:
@@ -1230,6 +1247,7 @@ proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
       container.highlights.add(hl)
       container.triggerEvent(UPDATE)
       container.hlon = false
+      container.needslines = true
   elif container.hlon:
     container.clearSearchHighlights()
     container.triggerEvent(UPDATE)
