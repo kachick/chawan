@@ -72,6 +72,7 @@ type
   HoverType* = enum
     htTitle = "TITLE"
     htLink = "URL"
+    htImage = "IMAGE"
 
   BufferMatch* = object
     success*: bool
@@ -101,7 +102,7 @@ type
     loader: FileLoader
     config: BufferConfig
     tasks: array[BufferCommand, int] #TODO this should have arguments
-    hovertext: array[HoverType, string]
+    hoverText: array[HoverType, string]
     estream: Stream # error stream
     ssock: ServerSocket
     factory: CAtomFactory
@@ -334,12 +335,26 @@ proc getClickHover(styledNode: StyledNode): string =
       return "<" & $clickable.tagType & ">"
     elif clickable of HTMLOptionElement:
       return "<option>"
-  return ""
+  ""
+
+proc getImageHover(styledNode: StyledNode): string =
+  var styledNode = styledNode
+  while styledNode != nil:
+    if styledNode.t == STYLED_ELEMENT and styledNode.node of HTMLImageElement:
+      let image = HTMLImageElement(styledNode.node)
+      let src = image.attr(atSrc)
+      if src != "":
+        let url = image.document.parseURL(src)
+        if url.isSome:
+          return $url.get
+    styledNode = styledNode.parent
+  ""
 
 func getCursorStyledNode(buffer: Buffer, cursorx, cursory: int): StyledNode =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     return buffer.lines[cursory].formats[i].node
+  nil
 
 func getCursorElement(buffer: Buffer, cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
@@ -745,46 +760,48 @@ proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
   buffer.do_reshape()
 
 type UpdateHoverResult* = object
-  link*: Option[string]
-  title*: Option[string]
+  hover*: seq[tuple[t: HoverType, s: string]]
   repaint*: bool
 
-proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult {.proxy.} =
+const HoverFun = [
+  htTitle: getTitleAttr,
+  htLink: getClickHover,
+  htImage: getImageHover
+]
+proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult
+    {.proxy.} =
   if cursory >= buffer.lines.len:
-    return
+    return UpdateHoverResult()
   var thisnode: StyledNode
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     thisnode = buffer.lines[cursory].formats[i].node
+  var hover: seq[tuple[t: HoverType, s: string]] = @[]
+  var repaint = false
   let prevnode = buffer.prevnode
-
-  if thisnode != prevnode and (thisnode == nil or prevnode == nil or thisnode.node != prevnode.node):
+  if thisnode != prevnode and (thisnode == nil or prevnode == nil or
+      thisnode.node != prevnode.node):
     for styledNode in thisnode.branch:
       if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
         let elem = Element(styledNode.node)
         if not elem.hover:
           elem.hover = true
-          result.repaint = true
-
-    let title = thisnode.getTitleAttr()
-    if buffer.hovertext[htTitle] != title:
-      result.title = some(title)
-      buffer.hovertext[htTitle] = title
-    let click = thisnode.getClickHover()
-    if buffer.hovertext[htLink] != click:
-      result.link = some(click)
-      buffer.hovertext[htLink] = click
-
+          repaint = true
+    for ht in HoverType:
+      let s = HoverFun[ht](thisnode)
+      if buffer.hoverText[ht] != s:
+        hover.add((ht, s))
+        buffer.hoverText[ht] = s
     for styledNode in prevnode.branch:
       if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
         let elem = Element(styledNode.node)
         if elem.hover:
           elem.hover = false
-          result.repaint = true
-  if result.repaint:
+          repaint = true
+  if repaint:
     buffer.do_reshape()
-
   buffer.prevnode = thisnode
+  return UpdateHoverResult(repaint: repaint, hover: hover)
 
 proc loadResources(buffer: Buffer): EmptyPromise =
   return buffer.window.loadingResourcePromises.all()

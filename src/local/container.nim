@@ -100,8 +100,8 @@ type
     width* {.jsget.}: int
     height* {.jsget.}: int
     title*: string # used in status msg
-    hovertext: array[HoverType, string]
-    lastpeek: HoverType
+    hoverText: array[HoverType, string]
+    lastPeek: HoverType
     request*: Request # source request
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
@@ -212,8 +212,8 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       width: container.width,
       height: container.height,
       title: container.title,
-      hovertext: container.hovertext,
-      lastpeek: container.lastpeek,
+      hoverText: container.hoverText,
+      lastPeek: container.lastPeek,
       request: container.request,
       pos: container.pos,
       bpos: container.bpos,
@@ -439,11 +439,12 @@ func findHighlights*(container: Container, y: int): seq[Highlight] =
 
 func getHoverText*(container: Container): string =
   for t in HoverType:
-    if container.hovertext[t] != "":
-      return container.hovertext[t]
+    if container.hoverText[t] != "":
+      return container.hoverText[t]
+  ""
 
 func isHoverURL*(container: Container, url: URL): bool =
-  let hoverurl = parseURL(container.hovertext[htLink])
+  let hoverurl = parseURL(container.hoverText[htLink])
   return hoverurl.isSome and url.host == hoverurl.get.host
 
 proc triggerEvent(container: Container, event: ContainerEvent) =
@@ -498,11 +499,10 @@ proc redraw(container: Container) {.jsfunc.} =
 proc sendCursorPosition*(container: Container) =
   container.iface.updateHover(container.cursorx, container.cursory)
       .then(proc(res: UpdateHoverResult) =
-    if res.link.isSome:
-      container.hovertext[htLink] = res.link.get
-    if res.title.isSome:
-      container.hovertext[htTitle] = res.title.get
-    if res.link.isSome or res.title.isSome:
+    if res.hover.len > 0:
+      assert res.hover.high <= int(HoverType.high)
+      for (ht, s) in res.hover:
+        container.hoverText[ht] = s
       container.triggerEvent(STATUS)
     if res.repaint:
       container.needslines = true
@@ -1522,29 +1522,28 @@ proc peek(container: Container) {.jsfunc.} =
   container.alert($container.location)
 
 proc clearHover*(container: Container) =
-  container.lastpeek = low(HoverType)
+  container.lastPeek = low(HoverType)
 
 proc peekCursor(container: Container) {.jsfunc.} =
-  var p = container.lastpeek
+  var p = container.lastPeek
   while true:
-    if container.hovertext[p] != "":
-      container.alert($p & ": " & container.hovertext[p])
-      break
     if p < high(HoverType):
       inc p
     else:
       p = low(HoverType)
-    if p == container.lastpeek: break
-  if container.lastpeek < high(HoverType):
-    inc container.lastpeek
-  else:
-    container.lastpeek = low(HoverType)
+    if container.hoverText[p] != "" or p == container.lastPeek:
+      break
+  container.alert($p & ": " & container.hoverText[p])
+  container.lastPeek = p
 
 func hoverLink(container: Container): string {.jsfget.} =
-  return container.hovertext[htLink]
+  return container.hoverText[htLink]
 
 func hoverTitle(container: Container): string {.jsfget.} =
-  return container.hovertext[htTitle]
+  return container.hoverText[htTitle]
+
+func hoverImage(container: Container): string {.jsfget.} =
+  return container.hoverText[htImage]
 
 proc handleCommand(container: Container) =
   var packetid, len: int
