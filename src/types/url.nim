@@ -385,7 +385,7 @@ func domainToAscii(domain: string, bestrict = false): Option[string] =
     let res = domain.unicodeToAscii(bestrict)
     if res.isNone or res.get == "":
       return none(string)
-    return result
+    return res
   else:
     return some(domain.toLowerAscii())
 
