@@ -70,9 +70,6 @@ layout engine:
 - box borders
 	* will probably need special treatment, as borders must round to
 	  1ch in x direction and 1em in y direction.
-- fix conflict in renderdocument Y error correction and floats
-	* if too many line breaks are done because of floats, Y error
-	  correction will happily arrange the lines on top of the floating box
 - make table width calculation consistent with FF etc.
 	* unfortunately, most websites are designed for auto table layouts
 	  where w3m's space distribution algorithm does not work really well :/

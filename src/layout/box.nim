@@ -25,11 +25,6 @@ type
     of INLINE_BLOCK:
       innerbox*: BlockBox
 
-  LineBox* = ref object
-    atoms*: seq[InlineAtom]
-    offsety*: LayoutUnit
-    size*: Size
-
   RootInlineFragment* = ref object
     # offset relative to parent
     offset*: Offset

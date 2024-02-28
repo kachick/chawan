@@ -196,6 +196,11 @@ type
     # Set at the end of layoutText. It helps determine the beginning of the
     # next inline fragment.
     widthAfterWhitespace: LayoutUnit
+    offsety: LayoutUnit
+
+  LineBox = ref object
+    atoms: seq[InlineAtom]
+    size: Size
 
   InlineAtomState = object
     vertalign: CSSVerticalAlign
@@ -221,7 +226,6 @@ type
     wrappos: int # position of last wrapping opportunity, or -1
     firstTextFragment: InlineFragment
     lastTextFragment: InlineFragment
-    errorY: LayoutUnit # rounding error distributed along lines
 
   InlineState = object
     computed: CSSComputedValues
@@ -258,9 +262,6 @@ template atoms(state: LineBoxState): untyped =
 
 template size(state: LineBoxState): untyped =
   state.line.size
-
-template offsety(state: var LineBoxState): untyped =
-  state.line.offsety
 
 func size(ictx: var InlineContext): var Size =
   ictx.root.size
@@ -309,7 +310,7 @@ proc newWord(ictx: var InlineContext, state: var InlineState) =
   ictx.hasshy = false
 
 proc horizontalAlignLine(ictx: var InlineContext, state: InlineState,
-    line: var LineBox, last = false) =
+    line: var LineBox) =
   let width = case ictx.space.w.t
   of MIN_CONTENT, MAX_CONTENT:
     ictx.size.w
@@ -426,6 +427,7 @@ proc verticalAlignLine(ictx: var InlineContext) =
   for atom in ictx.currentLine.atoms:
     atom.offset.y += marginTop
     atom.offset.y += ictx.currentLine.paddingTop
+    atom.offset.y += ictx.currentLine.offsety
 
   # Set the line height to new top edge + old bottom edge, and set the
   # baseline.
@@ -476,7 +478,7 @@ proc initLine(ictx: var InlineContext) =
   #TODO what if maxContent/minContent?
   if bctx.exclusions.len != 0:
     let bfcOffset = ictx.bfcOffset
-    let y = ictx.currentLine.line.offsety + bfcOffset.y
+    let y = ictx.currentLine.offsety + bfcOffset.y
     var left = bfcOffset.x
     var right = bfcOffset.x + ictx.currentLine.availableWidth
     for ex in bctx.exclusions:
@@ -523,22 +525,21 @@ proc finishLine(ictx: var InlineContext, state: var InlineState, wrap: bool,
     else:
       state.fragment.size.w = max(lineWidth, state.fragment.size.w)
     ictx.size.w = max(ictx.size.w, lineWidth)
-    # count error
-    if ictx.lines.len > 0:
-      let dy = ictx.currentLine.line.offsety - ictx.lines[^1].offsety
-      ictx.errorY += dy - toInt(dy div ictx.cellheight) * ictx.cellheight
     ictx.lines.add(ictx.currentLine.line)
+    # round line height to real cell height, so that the next line will actually
+    # come after ours.
+    let ch = ictx.cellheight
+    ictx.currentLine.size.h = toInt(ictx.currentLine.size.h div ch) * ch
     ictx.currentLine = LineBoxState(
-      line: LineBox(offsety: y + ictx.currentLine.size.h)
+      offsety: y + ictx.currentLine.size.h,
+      line: LineBox()
     )
     ictx.initLine()
 
 proc finish(ictx: var InlineContext, state: var InlineState) =
   ictx.finishLine(state, wrap = false)
-  if ictx.lines.len > 0:
-    for i in 0 ..< ictx.lines.len - 1:
-      ictx.horizontalAlignLine(state, ictx.lines[i], last = false)
-    ictx.horizontalAlignLine(state, ictx.lines[^1], last = true)
+  for line in ictx.lines.mitems:
+    ictx.horizontalAlignLine(state, line)
 
 func minwidth(atom: InlineAtom): LayoutUnit =
   if atom.t == INLINE_BLOCK:
@@ -1368,7 +1369,7 @@ proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
     firstLine: true,
     startOffsetTop: Offset(
       x: ictx.currentLine.widthAfterWhitespace,
-      y: ictx.currentLine.line.offsety
+      y: ictx.currentLine.offsety
     )
   )
   if box.newline:
@@ -1419,20 +1420,6 @@ proc layoutInline(ictx: var InlineContext, box: InlineBoxBuilder):
     state.startOffsetTop.y
   return fragment
 
-proc positionAtoms(ictx: var InlineContext) =
-  if ictx.lines.len == 0:
-    return
-  let H = ictx.lines.len - 1
-  let erry = if H != 0:
-    ictx.errorY / H
-  else:
-    0
-  for i in 1 ..< ictx.lines.len:
-    let erry0 = erry * i
-    let offsety = ictx.lines[i].offsety
-    for atom in ictx.lines[i].atoms:
-      atom.offset.y += offsety - erry0
-
 proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
     space: AvailableSpace, computed: CSSComputedValues, offset,
     bfcOffset: Offset): RootInlineFragment =
@@ -1471,7 +1458,6 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
   var state = InlineState(computed: computed, fragment: lastFragment)
   ictx.finish(state)
   root.xminwidth = ictx.minwidth
-  ictx.positionAtoms()
   return root
 
 proc buildMarker(builder: MarkerBoxBuilder, space: AvailableSpace,
