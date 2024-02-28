@@ -245,16 +245,16 @@ func whitespacepre(computed: CSSComputedValues): bool =
 func nowrap(computed: CSSComputedValues): bool =
   computed{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}
 
-func cellwidth(lctx: LayoutState): LayoutUnit =
+func cellwidth(lctx: LayoutState): int =
   lctx.attrs.ppc
 
-func cellwidth(ictx: InlineContext): LayoutUnit =
+func cellwidth(ictx: InlineContext): int =
   ictx.lctx.cellwidth
 
-func cellheight(lctx: LayoutState): LayoutUnit =
+func cellheight(lctx: LayoutState): int =
   lctx.attrs.ppl
 
-func cellheight(ictx: InlineContext): LayoutUnit =
+func cellheight(ictx: InlineContext): int =
   ictx.lctx.attrs.ppl
 
 template atoms(state: LineBoxState): untyped =
@@ -287,7 +287,7 @@ proc applyLineHeight(ictx: InlineContext, state: var LineBoxState,
   let lctx = ictx.lctx
   #TODO this should be computed during cascading.
   let lineheight = if computed{"line-height"}.auto: # ergo normal
-    lctx.cellheight
+    lctx.cellheight.toLayoutUnit
   else:
     # Percentage: refers to the font size of the element itself.
     computed{"line-height"}.px(lctx, lctx.cellheight)
@@ -424,10 +424,11 @@ proc verticalAlignLine(ictx: var InlineContext) =
 
   # Finally, offset all atoms' y position by the largest top margin and the
   # line box's top padding.
+  let paddingTop = ictx.currentLine.paddingTop
+  let offsety = ictx.currentLine.offsety
+  let ch = ictx.cellheight
   for atom in ictx.currentLine.atoms:
-    atom.offset.y += marginTop
-    atom.offset.y += ictx.currentLine.paddingTop
-    atom.offset.y += ictx.currentLine.offsety
+    atom.offset.y = (atom.offset.y + marginTop + paddingTop + offsety).round(ch)
 
   # Set the line height to new top edge + old bottom edge, and set the
   # baseline.
@@ -528,8 +529,7 @@ proc finishLine(ictx: var InlineContext, state: var InlineState, wrap: bool,
     ictx.lines.add(ictx.currentLine.line)
     # round line height to real cell height, so that the next line will actually
     # come after ours.
-    let ch = ictx.cellheight
-    ictx.currentLine.size.h = toInt(ictx.currentLine.size.h div ch) * ch
+    ictx.currentLine.size.h = ictx.currentLine.size.h.round(ictx.cellheight)
     ictx.currentLine = LineBoxState(
       offsety: y + ictx.currentLine.size.h,
       line: LineBox()
