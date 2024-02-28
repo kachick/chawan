@@ -150,11 +150,11 @@ K = 'n => pager.scrollUp(n)'
 ')' = 'n => pager.scrollRight(n)'
 C-m = 'pager.click()'
 C-j = 'pager.click()'
-I = 'pager.load(pager.hoverImage + "\n")'
+I = 'pager.gotoURL(pager.hoverImage)'
 M-u = 'pager.dupeBuffer()'
 C-l = 'pager.load()'
 C-k = 'pager.load("ddg:")'
-M-b = 'pager.load("~/.w3m/bookmark.html\n")'
+M-b = 'pager.loadSubmit("~/.w3m/bookmark.html")'
 U = 'pager.reload()'
 r = 'pager.redraw()'
 R = 'pager.reshape()'
@@ -246,7 +246,7 @@ M-p = '''
 	if (s === null)
 		pager.alert("Failed to read URL from clipboard. (Is xsel installed?)");
 	else
-		pager.load(s + '\n');
+		pager.loadSubmit(s);
 }
 '''
 

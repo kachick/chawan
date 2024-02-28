@@ -879,10 +879,26 @@ from the document's last line.</td>
 
 <tr>
 <td>`pager.load(url)`</td>
-<td>Go to the specified URL. Opens a prompt with the current URL when no
-parameters are specified; otherwise, the string passed is displayed in
-the prompt. If this string ends with a newline
+<td>Put the specified address into the URL bar, and optionally load it.<br>
+Note that this performs auto-expansion of URLs, so Chawan will expand any
+matching omni-rules (e.g. search), try to open schemeless URLs with the default
+scheme/local files, etc.<br>
+Opens a prompt with the current URL when no parameters are specified; otherwise,
+the string passed is displayed in the prompt. If this string ends with a newline
 (e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.</td>
+</tr>
+
+<tr>
+<td>`pager.loadSubmit(url)`</td>
+<td>Act as if `url` had been input into the address bar.<br>
+Same as `pager.load(url + "\n")`.</td>
+</tr>
+
+<tr>
+<td>`pager.gotoURL(url)`</td>
+<td>Go to the specified URL immediately (without a prompt). This differs from
+`load` and `loadSubmit` in that it *does not* try to correct the URL.<br>
+Use this for loading automatically retrieved (i.e. non-user-provided) URLs.</td>
 </tr>
 
 <tr>

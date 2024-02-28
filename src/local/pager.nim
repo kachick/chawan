@@ -23,6 +23,7 @@ import extern/stdio
 import extern/tempfile
 import io/promise
 import io/socketstream
+import js/error
 import js/javascript
 import js/jstypes
 import js/regex
@@ -886,15 +887,23 @@ proc updateReadLine*(pager: Pager) =
     if pager.lineedit.get == lineedit:
       pager.clearLineEdit()
 
+# Same as load(s + '\n')
+proc loadSubmit(pager: Pager, s: string) {.jsfunc.} =
+  pager.loadURL(s)
+
 # Open a URL prompt and visit the specified URL.
 proc load(pager: Pager, s = "") {.jsfunc.} =
   if s.len > 0 and s[^1] == '\n':
-    pager.loadURL(s[0..^2])
+    if s.len > 1:
+      pager.loadURL(s[0..^2])
+  elif s == "":
+    pager.setLineEdit("URL: ", LOCATION, $pager.container.location)
   else:
-    var url = s
-    if url == "":
-      url = pager.container.location.serialize()
-    pager.setLineEdit("URL: ", LOCATION, url)
+    pager.setLineEdit("URL: ", LOCATION, s)
+
+# Go to specific URL (for JS)
+proc jsGotoURL(pager: Pager, s: string): JSResult[void] {.jsfunc: "gotoURL".} =
+  pager.gotoURL(newRequest(?newURL(s)))
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
