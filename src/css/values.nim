@@ -1412,18 +1412,18 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
       res.add((PROPERTY_BACKGROUND_IMAGE, bgimageval, global))
   of SHORTHAND_LIST_STYLE:
     let global = cssGlobal(d)
-    var positionval = getDefault(PROPERTY_LIST_STYLE_POSITION)
-    var typeval = getDefault(PROPERTY_LIST_STYLE_TYPE)
+    var positionVal = getDefault(PROPERTY_LIST_STYLE_POSITION)
+    var typeVal = getDefault(PROPERTY_LIST_STYLE_TYPE)
     var valid = true
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
         if (let r = cssListStylePosition(tok); r.isOk):
-          positionval = CSSComputedValue(
+          positionVal = CSSComputedValue(
             v: VALUE_LIST_STYLE_POSITION,
             liststyleposition: r.get
           )
         elif (let r = cssListStyleType(tok); r.isOk):
-          positionval = CSSComputedValue(
+          typeVal = CSSComputedValue(
             v: VALUE_LIST_STYLE_TYPE,
             liststyletype: r.get
           )
@@ -1432,8 +1432,8 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
           #valid = false
           discard
     if valid:
-      res.add((PROPERTY_LIST_STYLE_TYPE, positionval, global))
-      res.add((PROPERTY_LIST_STYLE_POSITION, typeval, global))
+      res.add((PROPERTY_LIST_STYLE_POSITION, positionVal, global))
+      res.add((PROPERTY_LIST_STYLE_TYPE, typeVal, global))
   return ok()
 
 proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
