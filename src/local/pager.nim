@@ -904,6 +904,7 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
 # Go to specific URL (for JS)
 proc jsGotoURL(pager: Pager, s: string): JSResult[void] {.jsfunc: "gotoURL".} =
   pager.gotoURL(newRequest(?newURL(s)))
+  ok()
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
