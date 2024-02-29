@@ -21,6 +21,7 @@ import display/term
 import html/chadombuilder
 import html/dom
 import html/event
+import io/bufstream
 import io/posixstream
 import io/promise
 import io/socketstream
@@ -41,6 +42,7 @@ import loader/loader
 import loader/request
 import local/container
 import local/pager
+import server/buffer
 import server/forkserver
 import types/blob
 import types/cookie
@@ -450,12 +452,15 @@ proc acceptBuffers(client: Client) =
       client.pager.procmap.del(pid)
     stream.close()
   var accepted: seq[Pid]
+  let registerFun = proc(fd: int) =
+    client.selector.unregister(fd)
+    client.selector.registerHandle(fd, {Read, Write}, 0)
   for pid, container in client.pager.procmap:
     let stream = connectSocketStream(pid, buffered = false, blocking = true)
     if stream == nil:
       client.pager.alert("Error: failed to set up buffer")
       continue
-    container.setStream(stream)
+    container.setStream(stream, registerFun)
     let fd = int(stream.fd)
     client.fdmap[fd] = container
     client.selector.registerHandle(fd, {Read}, 0)
@@ -513,6 +518,12 @@ proc handleRead(client: Client, fd: int) =
     let container = client.fdmap[fd]
     client.pager.handleEvent(container)
 
+proc handleWrite(client: Client, fd: int) =
+  let container = client.fdmap[fd]
+  if container.iface.stream.flushWrite():
+    client.selector.unregister(fd)
+    client.selector.registerHandle(fd, {Read}, 0)
+
 proc flushConsole*(client: Client) {.jsfunc.} =
   if client.console == nil:
     # hack for when client crashes before console has been initialized
@@ -561,6 +572,8 @@ proc inputLoop(client: Client) =
     for event in events:
       if Read in event.events:
         client.handleRead(event.fd)
+      if Write in event.events:
+        client.handleWrite(event.fd)
       if Error in event.events:
         client.handleError(event.fd)
       if Signal in event.events:
@@ -597,6 +610,8 @@ proc headlessLoop(client: Client) =
     for event in events:
       if Read in event.events:
         client.handleRead(event.fd)
+      if Write in event.events:
+        client.handleWrite(event.fd)
       if Error in event.events:
         client.handleError(event.fd)
       if selectors.Event.Timer in event.events:

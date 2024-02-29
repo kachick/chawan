@@ -1,6 +1,5 @@
 import std/deques
 import std/options
-import std/streams
 import std/unicode
 
 when defined(posix):
@@ -11,6 +10,7 @@ import display/term
 import extern/stdio
 import io/promise
 import io/serialize
+import io/socketstream
 import js/javascript
 import js/jstypes
 import js/regex
@@ -144,8 +144,8 @@ jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
-    request: Request, attrs: WindowAttributes, title = "",
-    redirectdepth = 0, canreinterpret = true, fd = FileHandle(-1),
+    request: Request, attrs: WindowAttributes, title: string,
+    redirectdepth: int, canreinterpret: bool, fd: FileHandle,
     contentType: Option[string]): Container =
   let (process, loaderPid) = forkserver.forkBuffer(request, config, attrs)
   if fd != -1:
@@ -1575,12 +1575,13 @@ proc handleCommand(container: Container) =
   container.iface.stream.sread(packetid)
   container.iface.resolve(packetid, len - slen(packetid))
 
-proc setStream*(container: Container, stream: Stream) =
+proc setStream*(container: Container, stream: SocketStream,
+    registerFun: proc(fd: int)) =
   if not container.cloned:
-    container.iface = newBufferInterface(stream)
+    container.iface = newBufferInterface(stream, registerFun)
     container.load()
   else:
-    container.iface = cloneInterface(stream)
+    container.iface = cloneInterface(stream, registerFun)
     # Maybe we have to resume loading. Let's try.
     discard container.iface.load().then(proc(res: int) =
       container.onload(res)

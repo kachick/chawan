@@ -56,6 +56,9 @@ method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
     raisePosixIOError()
   return n
 
+proc sendData*(s: PosixStream, buffer: openArray[char]): int {.inline.} =
+  return s.sendData(unsafeAddr buffer[0], buffer.len)
+
 method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
   s.blocking = blocking
   let ofl = fcntl(s.fd, F_GETFL, 0)
@@ -83,7 +86,7 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
 
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
   let s = PosixStream(s)
-  assert len != 0 and s.blocking
+  #TODO assert len != 0 and s.blocking
   discard s.sendData(buffer, len)
 
 proc psAtEnd(s: Stream): bool =

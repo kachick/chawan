@@ -26,6 +26,7 @@ import html/dom
 import html/enums
 import html/env
 import html/event
+import io/bufstream
 import io/posixstream
 import io/promise
 import io/serialize
@@ -127,26 +128,29 @@ type
     map: PromiseMap
     packetid: int
     opaque: InterfaceOpaque
-    stream*: Stream
+    stream*: BufStream
 
 proc getFromOpaque[T](opaque: pointer, res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:
     opaque.stream.sread(res)
 
-proc newBufferInterface*(stream: Stream): BufferInterface =
+proc newBufferInterface*(stream: SocketStream, registerFun: proc(fd: int)):
+    BufferInterface =
   let opaque = InterfaceOpaque(stream: stream)
   result = BufferInterface(
     map: newPromiseMap(cast[pointer](opaque)),
     packetid: 1, # ids below 1 are invalid
     opaque: opaque,
-    stream: stream
+    stream: newBufStream(stream, registerFun)
   )
 
 # After cloning a buffer, we need a new interface to the new buffer process.
 # Here we create a new interface for that clone.
-proc cloneInterface*(stream: Stream): BufferInterface =
-  let iface = newBufferInterface(stream)
+proc cloneInterface*(stream: SocketStream, registerFun: proc(fd: int)):
+    BufferInterface =
+  let iface = newBufferInterface(stream, registerFun)
+  #TODO buffered data should probably be copied here
   # We have just fork'ed the buffer process inside an interface function,
   # from which the new buffer is going to return as well. So we must also
   # consume the return value of the clone function, which is the pid 0.
@@ -180,7 +184,8 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
   let thisval = this2[0]
   body.add(quote do:
     `thisval`.stream.swrite(BufferCommand.`nup`)
-    `thisval`.stream.swrite(`thisval`.packetid))
+    `thisval`.stream.swrite(`thisval`.packetid)
+  )
   var params2: seq[NimNode]
   var retval2: NimNode
   var addfun: NimNode
@@ -196,6 +201,7 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
       retval)
   params2.add(retval2)
   params2.add(this2)
+  # flatten args
   for i in 2 ..< params.len:
     let param = params[i]
     for i in 0 ..< param.len - 2:
@@ -205,15 +211,16 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
     let s = params2[i][0] # sym e.g. url
     body.add(quote do:
       when typeof(`s`) is FileHandle:
-        SocketStream(`thisval`.stream).sendFileHandle(`s`)
+        #TODO flush or something
+        SocketStream(`thisval`.stream.source).sendFileHandle(`s`)
       else:
-        `thisval`.stream.swrite(`s`))
-  body.add(quote do:
-    `thisval`.stream.flush())
+        `thisval`.stream.swrite(`s`)
+    )
   body.add(quote do:
     let promise = `addfun`
     inc `thisval`.packetid
-    return promise)
+    return promise
+  )
   var pragmas: NimNode
   if retval.kind == nnkEmpty:
     pragmas = newNimNode(nnkPragma).add(ident("discardable"))
@@ -1749,14 +1756,14 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
         let len = slen(`packetid`)
         buffer.pstream.swrite(len)
         buffer.pstream.swrite(`packetid`)
-        buffer.pstream.flush())
+      )
     else:
       resolve.add(quote do:
         let len = slen(`packetid`) + slen(`rval`)
         buffer.pstream.swrite(len)
         buffer.pstream.swrite(`packetid`)
         buffer.pstream.swrite(`rval`)
-        buffer.pstream.flush())
+      )
     if v.istask:
       let en = v.ename
       stmts.add(quote do:

@@ -21,8 +21,8 @@ import extern/editor
 import extern/runproc
 import extern/stdio
 import extern/tempfile
+import io/posixstream
 import io/promise
-import io/socketstream
 import js/error
 import js/javascript
 import js/jstypes
@@ -86,7 +86,7 @@ type
     statusgrid*: FixedGrid
     term*: Terminal
     tmpdir: string
-    unreg*: seq[(Pid, SocketStream)]
+    unreg*: seq[(Pid, PosixStream)]
     urimethodmap: URIMethodMap
     username: string
 
@@ -583,7 +583,7 @@ proc deleteContainer(pager: Pager, container: Container) =
       pager.setContainer(nil)
   container.parent = nil
   container.children.setLen(0)
-  pager.unreg.add((container.process, SocketStream(container.iface.stream)))
+  pager.unreg.add((container.process, container.iface.stream))
   pager.forkserver.removeChild(container.process)
 
 proc discardBuffer(pager: Pager, container = none(Container)) {.jsfunc.} =
