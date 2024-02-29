@@ -250,6 +250,13 @@ numeric prefix as their first argument.<br>
 Note: this only applies for keybindings defined in [page].</td>
 </tr>
 
+<tr>
+<td>use-mouse</td>
+<td>boolean</td>
+<td>Whether Chawan is allowed to use the mouse.<br>
+Currently, the default behavior imitates that of w3m.</td>
+</tr>
+
 </table>
 
 Examples:

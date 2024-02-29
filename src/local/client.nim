@@ -67,6 +67,7 @@ type
     pager {.jsget.}: Pager
     selector: Selector[int]
     timeouts: TimeoutState
+    pressed: tuple[col: int, row: int]
 
   ConsoleWrapper = object
     console: Console
@@ -202,6 +203,83 @@ proc evalAction(client: Client, action: string, arg0: int32): EmptyPromise =
   JS_FreeValue(ctx, ret)
   return p
 
+type
+  MouseInputType = enum
+    mitPress = "press", mitRelease = "release", mitMove = "move"
+
+  MouseInputMod = enum
+    mimShift = "shift", mimCtrl = "ctrl", mimMeta = "meta"
+
+  MouseInputButton = enum
+    mibLeft = (0, "left")
+    mibMiddle = (1, "middle")
+    mibRight = (2, "right")
+    mibWheelUp = (3, "wheelUp")
+    mibWheelDown = (4, "wheelDown")
+    mibButton6 = (5, "button6")
+    mibButton7 = (6, "button7")
+    mibButton8 = (7, "button8")
+    mibButton9 = (8, "button9")
+    mibButton10 = (9, "button10")
+    mibButton11 = (10, "button11")
+
+  MouseInput = object
+    t: MouseInputType
+    button: MouseInputButton
+    mods: set[MouseInputMod]
+    col: int
+    row: int
+
+proc parseMouseInput(client: Client): Opt[MouseInput] =
+  template fail =
+    return err()
+  var btn = 0
+  while (let c = client.readChar(); c != ';'):
+    let n = decValue(c)
+    if n == -1:
+      fail
+    btn *= 10
+    btn += n
+  var mods: set[MouseInputMod] = {}
+  if (btn and 4) != 0:
+    mods.incl(mimShift)
+  if (btn and 8) != 0:
+    mods.incl(mimCtrl)
+  if (btn and 16) != 0:
+    mods.incl(mimMeta)
+  var px = 0
+  while (let c = client.readChar(); c != ';'):
+    let n = decValue(c)
+    if n == -1:
+      fail
+    px *= 10
+    px += n
+  var py = 0
+  var c: char
+  while (c = client.readChar(); c notin {'m', 'M'}):
+    let n = decValue(c)
+    if n == -1:
+      fail
+    py *= 10
+    py += n
+  var t = if c == 'M': mitPress else: mitRelease
+  if (btn and 32) != 0:
+    t = mitMove
+  var button = btn and 3
+  if (btn and 64) != 0:
+    button += 3
+  if (btn and 128) != 0:
+    button += 6
+  if button notin int(MouseInputButton.low)..int(MouseInputButton.high):
+    return err()
+  ok(MouseInput(
+    t: t,
+    mods: mods,
+    button: MouseInputButton(button),
+    col: px - 1,
+    row: py - 1
+  ))
+
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
 # We can always increase it further (e.g. by switching to uint32, uint64...) if
@@ -219,12 +297,61 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
       client.pager.notnum = true
   client.pager.inputBuffer &= c
   let action = getNormalAction(client.config, client.pager.inputBuffer)
-  let p = client.evalAction(action, client.pager.precnum)
-  if not client.feednext:
-    client.pager.precnum = 0
-    client.pager.notnum = false
-    client.handlePagerEvents()
-  return p
+  if action != "":
+    let p = client.evalAction(action, client.pager.precnum)
+    if not client.feednext:
+      client.pager.precnum = 0
+      client.pager.notnum = false
+      client.handlePagerEvents()
+    return p
+  if client.config.input.use_mouse:
+    if client.pager.inputBuffer == "\e[<":
+      let input = client.parseMouseInput()
+      if input.isSome:
+        let input = input.get
+        let container = client.pager.container
+        if container != nil:
+          case input.button
+          of mibLeft:
+            case input.t
+            of mitPress:
+              client.pressed = (input.col, input.row)
+            of mitRelease:
+              #TODO this does not work very well with double width chars,
+              # because pressed could be equivalent to two separate cells
+              if client.pressed == (input.col, input.row):
+                if input.col == container.acursorx and
+                    input.row == container.acursory:
+                  container.click()
+                else:
+                  container.setCursorXY(container.fromx + input.col,
+                    container.fromy + input.row)
+              else:
+                let diff = (input.col - client.pressed.col,
+                  input.row - client.pressed.row)
+                if diff[0] > 0:
+                  container.scrollLeft(diff[0])
+                else:
+                  container.scrollRight(-diff[0])
+                if diff[1] > 0:
+                  container.scrollUp(diff[1])
+                else:
+                  container.scrollDown(-diff[1])
+              client.pressed = (-1, -1)
+            else: discard
+          of mibWheelUp: container.scrollUp(5)
+          of mibWheelDown: container.scrollDown(5)
+          of mibButton6, mibButton8:
+            if input.t == mitPress:
+              discard client.pager.nextBuffer()
+          of mibButton7, mibButton9:
+            if input.t == mitPress:
+              discard client.pager.prevBuffer()
+          else: discard
+      client.pager.inputBuffer = ""
+    elif "\e[<".startsWith(client.pager.inputBuffer):
+      client.feednext = true
+  return nil
 
 proc input(client: Client): EmptyPromise =
   var p: EmptyPromise = nil
@@ -266,8 +393,11 @@ proc input(client: Client): EmptyPromise =
         client.pager.inputBuffer = ""
         client.pager.refreshStatusMsg()
         break
-      client.pager.refreshStatusMsg()
-      client.pager.draw()
+      #TODO this is not perfect, because it results in us never displaying
+      # lone escape. maybe a timeout for escape display would be useful
+      if not "\e[<".startsWith(client.pager.inputBuffer):
+        client.pager.refreshStatusMsg()
+        client.pager.draw()
     if not client.feednext:
       client.pager.inputBuffer = ""
       break

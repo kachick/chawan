@@ -603,7 +603,7 @@ proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
   if refresh:
     container.sendCursorPosition()
 
-proc setCursorXY(container: Container, x, y: int, refresh = true) {.jsfunc.} =
+proc setCursorXY*(container: Container, x, y: int, refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
   container.setCursorX(x, refresh)
 
@@ -1014,30 +1014,36 @@ proc cursorMiddleColumn(container: Container) {.jsfunc.} =
 proc cursorRightEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx + container.width - 1)
 
-proc scrollDown(container: Container, n = 1) {.jsfunc.} =
-  if container.fromy + container.height < container.numLines:
-    container.setFromY(container.fromy + n)
+proc scrollDown*(container: Container, n = 1) {.jsfunc.} =
+  let H = container.numLines - 1
+  let y = min(container.fromy + container.height + n, H) - container.height
+  if y > container.fromy:
+    container.setFromY(y)
     if container.fromy > container.cursory:
       container.cursorDown(container.fromy - container.cursory)
   else:
     container.cursorDown(n)
 
-proc scrollUp(container: Container, n = 1) {.jsfunc.} =
-  if container.fromy > 0:
-    container.setFromY(container.fromy - n)
+proc scrollUp*(container: Container, n = 1) {.jsfunc.} =
+  let y = max(container.fromy - n, 0)
+  if y < container.fromy:
+    container.setFromY(y)
     if container.fromy + container.height <= container.cursory:
       container.cursorUp(container.cursory - container.fromy -
         container.height + 1)
   else:
     container.cursorUp(n)
 
-proc scrollRight(container: Container, n = 1) {.jsfunc.} =
-  if container.fromx + container.width + n <= container.maxScreenWidth():
-    container.setFromX(container.fromx + n)
+proc scrollRight*(container: Container, n = 1) {.jsfunc.} =
+  let msw = container.maxScreenWidth()
+  let x = min(container.fromx + container.width + n, msw) - container.width
+  if x > container.fromx:
+    container.setFromX(x)
 
-proc scrollLeft(container: Container, n = 1) {.jsfunc.} =
-  if container.fromx - n >= 0:
-    container.setFromX(container.fromx - n)
+proc scrollLeft*(container: Container, n = 1) {.jsfunc.} =
+  let x = max(container.fromx - n, 0)
+  if x < container.fromx:
+    container.setFromX(x)
 
 proc alert(container: Container, msg: string) =
   container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
@@ -1521,7 +1527,7 @@ proc onclick(container: Container, res: ClickResult) =
       )
     container.triggerEvent(event)
 
-proc click(container: Container) {.jsfunc.} =
+proc click*(container: Container) {.jsfunc.} =
   if container.select.open:
     container.select.click()
   else:

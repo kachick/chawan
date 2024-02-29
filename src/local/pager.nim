@@ -177,12 +177,16 @@ proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
 proc setLineEdit(pager: Pager, prompt: string, mode: LineMode,
     current = "", hide = false) =
   let hist = pager.getLineHist(mode)
+  if pager.term.isatty() and pager.config.input.use_mouse:
+    pager.term.disableMouse()
   let edit = readLine(prompt, pager.attrs.width, current, {}, hide, hist)
   pager.lineedit = some(edit)
   pager.linemode = mode
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = none(LineEdit)
+  if pager.term.isatty() and pager.config.input.use_mouse:
+    pager.term.enableMouse()
 
 proc searchForward(pager: Pager) {.jsfunc.} =
   pager.setLineEdit("/", SEARCH_F)
@@ -478,7 +482,7 @@ proc dupeBuffer(pager: Pager) {.jsfunc.} =
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
-proc prevBuffer(pager: Pager): bool {.jsfunc.} =
+proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
   if pager.container == nil:
     return false
   if pager.container.parent == nil:
@@ -494,7 +498,7 @@ proc prevBuffer(pager: Pager): bool {.jsfunc.} =
     pager.setContainer(pager.container.parent)
   return true
 
-proc nextBuffer(pager: Pager): bool {.jsfunc.} =
+proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
   if pager.container == nil:
     return false
   if pager.container.children.len > 0:

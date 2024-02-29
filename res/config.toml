@@ -50,6 +50,7 @@ default-headers = {
 
 [input]
 vi-numeric-prefix = true
+use-mouse = true
 
 [display]
 color-mode = "auto"

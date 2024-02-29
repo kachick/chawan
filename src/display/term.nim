@@ -90,6 +90,9 @@ const GEOMPIXEL = CSI(14, "t")
 # report window size in chars
 const GEOMCELL = CSI(18, "t")
 
+# allow shift-key to override mouse protocol
+const XTSHIFTESCAPE = CSI(">0s")
+
 # device control string
 template DCS(a, b: char, s: varargs[string]): string =
   "\eP" & a & b & s.join(';') & "\e\\"
@@ -107,13 +110,19 @@ template XTERM_TITLE(s: string): string =
 const XTGETFG = OSC(10, "?") # get foreground color
 const XTGETBG = OSC(11, "?") # get background color
 
+# DEC set
+template DECSET(s: varargs[string, `$`]): string =
+  "\e[?" & s.join(';') & 'h'
+
+# DEC reset
+template DECRST(s: varargs[string, `$`]): string =
+  "\e[?" & s.join(';') & 'l'
+
+# mouse tracking
+const SGRMOUSEBTNON = DECSET(1002, 1006)
+const SGRMOUSEBTNOFF = DECRST(1002, 1006)
+
 when not termcap_found:
-  # DEC set
-  template DECSET(s: varargs[string, `$`]): string =
-    "\e[?" & s.join(';') & 'h'
-  # DEC reset
-  template DECRST(s: varargs[string, `$`]): string =
-    "\e[?" & s.join(';') & 'l'
   const SMCUP = DECSET(1049)
   const RMCUP = DECRST(1049)
   const CNORM = DECSET(25)
@@ -190,7 +199,7 @@ proc isatty(fd: FileHandle): cint {.importc: "isatty", header: "<unistd.h>".}
 proc isatty*(f: File): bool =
   return isatty(f.getFileHandle()) != 0
 
-proc isatty(term: Terminal): bool =
+proc isatty*(term: Terminal): bool =
   term.infile != nil and term.infile.isatty() and term.outfile.isatty()
 
 proc anyKey*(term: Terminal) =
@@ -403,6 +412,12 @@ proc setTitle*(term: Terminal, title: string) =
     else:
       title
     term.outfile.write(XTERM_TITLE(title))
+
+proc enableMouse*(term: Terminal) =
+  term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
+
+proc disableMouse*(term: Terminal) =
+  term.write(SGRMOUSEBTNOFF)
 
 proc processOutputString*(term: Terminal, str: string, w: var int): string =
   if str.validateUTF8Surr() != -1:
@@ -618,6 +633,8 @@ proc quit*(term: Terminal) =
       term.write(term.disableAltScreen())
     else:
       term.write(term.cursorGoto(0, term.attrs.height - 1))
+    if term.config.input.use_mouse:
+      term.disableMouse()
     term.showCursor()
     term.cleared = false
     if term.stdin_unblocked:
@@ -863,6 +880,8 @@ proc start*(term: Terminal, infile: File): TermStartResult =
   result = term.detectTermAttributes(windowOnly = false)
   if result == tsrDA1Fail:
     term.config.display.query_da1 = false
+  if term.isatty() and term.config.input.use_mouse:
+    term.enableMouse()
   term.applyConfig()
   term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
   if term.smcup:
@@ -876,6 +895,8 @@ proc restart*(term: Terminal) =
       discard fcntl(fd, F_SETFL, term.orig_flags2)
       term.orig_flags2 = 0
       term.stdin_unblocked = true
+    if term.config.input.use_mouse:
+      term.enableMouse()
   if term.smcup:
     term.write(term.enableAltScreen())
 

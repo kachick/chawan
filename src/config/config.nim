@@ -98,6 +98,7 @@ type
 
   InputConfig = object
     vi_numeric_prefix* {.jsgetset.}: bool
+    use_mouse* {.jsgetset.}: bool
 
   NetworkConfig = object
     max_redirect* {.jsgetset.}: int32

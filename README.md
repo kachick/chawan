@@ -66,6 +66,7 @@ Currently implemented features are:
 * can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
   [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
 * man page viewer (based on w3mman)
+* mouse support
 
 ...with a lot more [planned](todo).
 
