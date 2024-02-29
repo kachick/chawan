@@ -196,7 +196,10 @@ type
     # Set at the end of layoutText. It helps determine the beginning of the
     # next inline fragment.
     widthAfterWhitespace: LayoutUnit
+    # offset of line in root fragment
     offsety: LayoutUnit
+    # minimum height to fit all inline atoms
+    minHeight: LayoutUnit
 
   LineBox = ref object
     atoms: seq[InlineAtom]
@@ -310,7 +313,7 @@ proc newWord(ictx: var InlineContext, state: var InlineState) =
   ictx.hasshy = false
 
 proc horizontalAlignLine(ictx: var InlineContext, state: InlineState,
-    line: var LineBox) =
+    line: LineBox) =
   let width = case ictx.space.w.t
   of MIN_CONTENT, MAX_CONTENT:
     ictx.size.w
@@ -350,7 +353,7 @@ proc verticalAlignLine(ictx: var InlineContext) =
   # Also, collect the maximum vertical margins of inline blocks.
   var marginTop: LayoutUnit = 0
   var bottomEdge = baseline
-  for i in 0 ..< ictx.currentLine.atoms.len:
+  for i, atom in ictx.currentLine.atoms:
     let atom = ictx.currentLine.atoms[i]
     let iastate = ictx.currentLine.atomstates[i]
     case iastate.vertalign.keyword
@@ -364,10 +367,13 @@ proc verticalAlignLine(ictx: var InlineContext) =
     else:
       baseline = max(baseline, iastate.baseline)
 
+  let ch = ictx.cellheight
+  baseline = baseline.round(ch)
+
   # Resize the line's height based on atoms' height and baseline.
   # The line height should be at least as high as the highest baseline used by
   # an atom plus that atom's height.
-  for i in 0 ..< ictx.currentLine.atoms.len:
+  for i, atom in ictx.currentLine.atoms:
     let atom = ictx.currentLine.atoms[i]
     let iastate = ictx.currentLine.atomstates[i]
     # In all cases, the line's height must at least equal the atom's height.
@@ -394,9 +400,8 @@ proc verticalAlignLine(ictx: var InlineContext) =
         atom.size.h, ictx.currentLine.size.h)
 
   # Now we can calculate the actual position of atoms inside the line.
-  for i in 0 ..< ictx.currentLine.atoms.len:
+  for i, atom in ictx.currentLine.atoms:
     let iastate = ictx.currentLine.atomstates[i]
-    let atom = addr ictx.currentLine.atoms[i]
     case iastate.vertalign.keyword
     of VERTICAL_ALIGN_BASELINE:
       # Atom is placed at (line baseline) - (atom baseline) - len
@@ -426,9 +431,10 @@ proc verticalAlignLine(ictx: var InlineContext) =
   # line box's top padding.
   let paddingTop = ictx.currentLine.paddingTop
   let offsety = ictx.currentLine.offsety
-  let ch = ictx.cellheight
   for atom in ictx.currentLine.atoms:
     atom.offset.y = (atom.offset.y + marginTop + paddingTop + offsety).round(ch)
+    ictx.currentLine.minHeight = max(ictx.currentLine.minHeight,
+      atom.offset.y - offsety + atom.size.h)
 
   # Set the line height to new top edge + old bottom edge, and set the
   # baseline.
@@ -437,7 +443,11 @@ proc verticalAlignLine(ictx: var InlineContext) =
   # Add padding.
   ictx.currentLine.size.h += ictx.currentLine.paddingTop
   ictx.currentLine.size.h += ictx.currentLine.paddingBottom
+  #TODO this does not really work with rounding :/
   ictx.currentLine.baseline += ictx.currentLine.paddingTop
+  # Round line
+  ictx.currentLine.size.h = max(ictx.currentLine.size.h.round(ch),
+    ictx.currentLine.minHeight)
 
 proc addSpacing(ictx: var InlineContext, width, height: LayoutUnit,
     hang = false) =
@@ -527,9 +537,6 @@ proc finishLine(ictx: var InlineContext, state: var InlineState, wrap: bool,
       state.fragment.size.w = max(lineWidth, state.fragment.size.w)
     ictx.size.w = max(ictx.size.w, lineWidth)
     ictx.lines.add(ictx.currentLine.line)
-    # round line height to real cell height, so that the next line will actually
-    # come after ours.
-    ictx.currentLine.size.h = ictx.currentLine.size.h.round(ictx.cellheight)
     ictx.currentLine = LineBoxState(
       offsety: y + ictx.currentLine.size.h,
       line: LineBox()
@@ -538,7 +545,7 @@ proc finishLine(ictx: var InlineContext, state: var InlineState, wrap: bool,
 
 proc finish(ictx: var InlineContext, state: var InlineState) =
   ictx.finishLine(state, wrap = false)
-  for line in ictx.lines.mitems:
+  for line in ictx.lines:
     ictx.horizontalAlignLine(state, line)
 
 func minwidth(atom: InlineAtom): LayoutUnit =
