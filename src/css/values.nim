@@ -1392,45 +1392,48 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
     res.add(?lengthShorthand(d, PropertyPaddingSpec))
   of SHORTHAND_BACKGROUND:
     let global = cssGlobal(d)
-    let bgcolorptype = PROPERTY_BACKGROUND_COLOR
-    let bgcolorval = CSSComputedValue(v: valueType(bgcolorptype))
-    let bgimageptype = PROPERTY_BACKGROUND_IMAGE
-    let bgimageval = CSSComputedValue(v: valueType(bgimageptype))
+    var bgcolorval = getDefault(PROPERTY_BACKGROUND_COLOR)
+    var bgimageval = getDefault(PROPERTY_BACKGROUND_IMAGE)
+    var valid = true
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
         if tok == CSS_WHITESPACE_TOKEN:
           continue
-        let r = cssImage(tok)
-        if r.isOk:
-          bgimageval.image = r.get
-          res.add((bgimageptype, bgimageval, global))
+        if (let r = cssImage(tok); r.isOk):
+          bgimageval = CSSComputedValue(v: VALUE_IMAGE, image: r.get)
+        elif (let r = cssColor(tok); r.isOk):
+          bgcolorval = CSSComputedValue(v: VALUE_COLOR, color: r.get)
         else:
-          let r = cssColor(tok)
-          if r.isOk:
-            bgcolorval.color = r.get
-            res.add((bgcolorptype, bgcolorval, global))
-    else:
-      res.add((bgcolorptype, bgcolorval, global))
+          #TODO when we implement the other shorthands too
+          #valid = false
+          discard
+    if valid:
+      res.add((PROPERTY_BACKGROUND_COLOR, bgcolorval, global))
+      res.add((PROPERTY_BACKGROUND_IMAGE, bgimageval, global))
   of SHORTHAND_LIST_STYLE:
     let global = cssGlobal(d)
-    let positionptype = PROPERTY_LIST_STYLE_POSITION
-    let positionval = CSSComputedValue(v: valueType(positionptype))
-    let typeptype = PROPERTY_LIST_STYLE_TYPE
-    let typeval = CSSComputedValue(v: valueType(typeptype))
+    var positionval = getDefault(PROPERTY_LIST_STYLE_POSITION)
+    var typeval = getDefault(PROPERTY_LIST_STYLE_TYPE)
+    var valid = true
     if global == VALUE_NOGLOBAL:
       for tok in d.value:
-        let r = cssListStylePosition(tok)
-        if r.isOk:
-          positionval.liststyleposition = r.get
-          res.add((positionptype, positionval, global))
+        if (let r = cssListStylePosition(tok); r.isOk):
+          positionval = CSSComputedValue(
+            v: VALUE_LIST_STYLE_POSITION,
+            liststyleposition: r.get
+          )
+        elif (let r = cssListStyleType(tok); r.isOk):
+          positionval = CSSComputedValue(
+            v: VALUE_LIST_STYLE_TYPE,
+            liststyletype: r.get
+          )
         else:
-          let r = cssListStyleType(tok)
-          if r.isOk:
-            typeval.liststyletype = r.get
-            res.add((typeptype, typeval, global))
-          else:
-            #TODO list-style-image
-            discard
+          #TODO list-style-image
+          #valid = false
+          discard
+    if valid:
+      res.add((PROPERTY_LIST_STYLE_TYPE, positionval, global))
+      res.add((PROPERTY_LIST_STYLE_POSITION, typeval, global))
   return ok()
 
 proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
