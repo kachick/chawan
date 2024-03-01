@@ -2863,11 +2863,12 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
     let area = HTMLAreaElement(element)
     area.reflect_domtoklist atRel, relList
   of TAG_CANVAS:
-    if name == atWidth or name == atHeight:
+    if element.scriptingEnabled and (name == atWidth or name == atHeight):
       let w = element.attrul(atWidth).get(300)
       let h = element.attrul(atHeight).get(150)
       let canvas = HTMLCanvasElement(element)
-      if canvas.bitmap.width != w or canvas.bitmap.height != h:
+      if canvas.bitmap == nil or canvas.bitmap.width != w or
+          canvas.bitmap.height != h:
         canvas.bitmap = newBitmap(w, h)
   of TAG_IMG:
     let image = HTMLImageElement(element)
