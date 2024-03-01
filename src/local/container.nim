@@ -614,6 +614,8 @@ proc cursorLineTextStart(container: Container) {.jsfunc.} =
     if not r.isWhitespace():
       break
     x += r.twidth(x)
+  if x == 0:
+    dec x
   container.setCursorX(x)
 
 # zb
@@ -711,7 +713,7 @@ proc cursorRight(container: Container, n = 1) {.jsfunc.} =
     container.setCursorX(container.cursorLastX() + n)
 
 proc cursorLineBegin(container: Container) {.jsfunc.} =
-  container.setCursorX(0)
+  container.setCursorX(-1)
 
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
