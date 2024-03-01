@@ -5,10 +5,12 @@
 
 [page]
 # Page/cursor movement
-' ' = 'n => pager.pageDown(n)'
-C-v = 'n => pager.pageDown(n)'
-b = 'n => pager.pageUp(n)'
-M-v = 'n => pager.pageUp(n)'
+' ' = 'n => pager.scrollDown(pager.height * (n ?? 1))'
+C-v = 'n => pager.scrollDown(pager.height * (n ?? 1))'
+b = 'n => pager.scrollUp(pager.height * (n ?? 1))'
+M-v = 'n => pager.scrollUp(pager.height * (n ?? 1))'
+'M-[6~' = 'n => pager.scrollDown(pager.height * (n ?? 1))'
+'M-[5~' = 'n => pager.scrollUp(pager.height * (n ?? 1))'
 l = 'n => pager.cursorRight(n)'
 h = 'n => pager.cursorLeft(n)'
 j = 'n => pager.cursorDown(n)'
