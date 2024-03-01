@@ -2028,25 +2028,10 @@ proc addTableCaption(ctx: TableContext, table: BlockBox,
   of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
     let caption = lctx.buildTableCaption(ctx.caption, stretch(table.size.w),
       maxContent())
-    caption.offset.y += table.size.w
+    caption.offset.y += table.size.h
     table.nested.add(caption)
     table.size.h += caption.size.h
     table.size.w = max(table.size.w, caption.size.w)
-  of CAPTION_SIDE_LEFT, CAPTION_SIDE_INLINE_START:
-    let caption = lctx.buildTableCaption(ctx.caption,
-      fitContent(sizes.space.w), fitContent(table.size.h))
-    for r in table.nested:
-      r.offset.x += caption.size.w
-    table.nested.insert(caption, 0)
-    table.size.w += caption.size.w
-    table.size.h = max(table.size.h, caption.size.h)
-  of CAPTION_SIDE_RIGHT, CAPTION_SIDE_INLINE_END:
-    let caption = lctx.buildTableCaption(ctx.caption,
-      fitContent(sizes.space.w), fitContent(table.size.h))
-    caption.offset.x += table.size.w
-    table.nested.add(caption)
-    table.size.w += caption.size.w
-    table.size.h = max(table.size.h, caption.size.h)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
