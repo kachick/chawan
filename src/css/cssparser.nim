@@ -943,9 +943,9 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       let tok2 = get_tok
       fail_non_signless_integer tok2, none(CSSAnB)
       return some((-1, -int(tok2.nvalue)))
-    elif tok.unit.startsWithNoCase("n-"):
+    elif tok.value.startsWithNoCase("n-"):
       return some((1, -parse_sub_int(tok.value, "n-".len)))
-    elif tok.unit.startsWithNoCase("-n-"):
+    elif tok.value.startsWithNoCase("-n-"):
       fail_plus
       return some((-1, -parse_sub_int(tok.value, "n-".len)))
     else:
