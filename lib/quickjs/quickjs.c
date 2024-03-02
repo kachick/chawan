@@ -36055,7 +36055,11 @@ static JSValue JS_ReadBigNum(BCReaderState *s, int tag)
             JS_ThrowInternalError(s->ctx, "invalid bignum length");
             goto fail;
         }
+#ifdef CONFIG_BIGNUM
         if (tag != BC_TAG_BIG_DECIMAL)
+#else
+        if (TRUE)
+#endif
             l = (len + sizeof(limb_t) - 1) / sizeof(limb_t);
         else
             l = (len + LIMB_DIGITS - 1) / LIMB_DIGITS;
@@ -36063,7 +36067,11 @@ static JSValue JS_ReadBigNum(BCReaderState *s, int tag)
             JS_ThrowOutOfMemory(s->ctx);
             goto fail;
         }
+#ifdef CONFIG_BIGNUM
         if (tag != BC_TAG_BIG_DECIMAL) {
+#else
+        if (TRUE) {
+#endif
             n = len & (sizeof(limb_t) - 1);
             if (n != 0) {
                 v = 0;
