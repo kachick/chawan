@@ -859,8 +859,8 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     else:
       false
   template get_tok: CSSToken =
-    fail_eof
     skip_whitespace
+    fail_eof
     CSSToken(state.consume())
   template get_tok_nows: CSSToken =
     fail_eof
@@ -902,9 +902,10 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       fail_plus
       return some((2, 0))
     of "n", "N":
+      skip_whitespace
       if is_eof:
         return some((1, 0))
-      let tok2 = get_tok
+      let tok2 = get_tok_nows
       if tok2.tokenType == CSS_DELIM_TOKEN:
         let sign = case tok2.cvalue
         of '+': 1
@@ -918,9 +919,10 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         return some((1, int(tok2.nvalue)))
     of "-n", "-N":
       fail_plus
+      skip_whitespace
       if is_eof:
         return some((-1, 0))
-      let tok2 = get_tok
+      let tok2 = get_tok_nows
       if tok2.tokenType == CSS_DELIM_TOKEN:
         let sign = case tok2.cvalue
         of '+': 1
@@ -965,9 +967,10 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     case tok.unit
     of "n", "N":
       # <n-dimension>
+      skip_whitespace
       if is_eof:
         return some((int(tok.nvalue), 0))
-      let tok2 = get_tok
+      let tok2 = get_tok_nows
       if tok2.tokenType == CSS_DELIM_TOKEN:
         let sign = case tok2.cvalue
         of '+': 1
