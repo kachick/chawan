@@ -69,6 +69,7 @@ type
     attrs*: WindowAttributes
     console* {.jsget.}: Console
     navigator* {.jsget.}: Navigator
+    screen* {.jsget.}: Screen
     settings*: EnvironmentSettings
     loader*: Option[FileLoader]
     location* {.jsget.}: Location
@@ -89,6 +90,8 @@ type
   PluginArray* = object
 
   MimeTypeArray* = object
+
+  Screen* = object
 
   NamedNodeMap = ref object
     element: Element
@@ -370,6 +373,7 @@ type
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
+jsDestructor(Screen)
 jsDestructor(Window)
 
 jsDestructor(Element)

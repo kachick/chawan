@@ -67,10 +67,27 @@ proc length(mimeTypeArray: ptr MimeTypeArray): uint32 {.jsfget.} = 0
 proc getter(pluginArray: ptr PluginArray, i: int): Option[JSValue] {.jsgetprop.} = discard
 proc getter(mimeTypeArray: ptr MimeTypeArray, i: int): Option[JSValue] {.jsgetprop.} = discard
 
+# Screen
+proc availWidth(screen: ptr Screen): int64 {.jsfget.} =
+  #TODO this is a fingerprinting vector, but users should be able to allow it
+  # selectively
+  # for now just return something standard-ish
+  80 * 9
+proc availHeight(screen: ptr Screen): int64 {.jsfget.} =
+  #TODO see above
+  24 * 18
+proc width(screen: ptr Screen): int64 {.jsfget.} =
+  screen.availWidth
+proc height(screen: ptr Screen): int64 {.jsfget.} =
+  screen.availHeight
+proc colorDepth(screen: ptr Screen): int64 {.jsfget.} = 24
+proc pixelDepth(screen: ptr Screen): int64 {.jsfget.} = screen.colorDepth
+
 proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(Navigator)
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
+  ctx.registerType(Screen)
 
 proc fetch[T: Request|string](window: Window, req: T, init = none(RequestInit)):
     JSResult[FetchPromise] {.jsfunc.} =
@@ -96,7 +113,10 @@ proc screenX(window: Window): int64 {.jsfget.} = 0
 proc screenY(window: Window): int64 {.jsfget.} = 0
 proc screenLeft(window: Window): int64 {.jsfget.} = 0
 proc screenTop(window: Window): int64 {.jsfget.} = 0
-#TODO outerWidth, outerHeight
+proc outerWidth(window: Window): int64 {.jsfget.} =
+  (addr window.screen).availWidth
+proc outerHeight(window: Window): int64 {.jsfget.} =
+  (addr window.screen).availHeight
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
 proc setLocation(window: Window, s: string): Err[JSError]
