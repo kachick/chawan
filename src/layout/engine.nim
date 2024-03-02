@@ -1229,9 +1229,9 @@ func findNextFloatOffset(bctx: BlockContext, offset: Offset, size: Size,
       let ey2 = ex.offset.y + ex.size.h
       if cy2 >= ex.offset.y and y < ey2:
         let ex2 = ex.offset.x + ex.size.w
-        if left + size.w >= ex.offset.x and left < ex2:
+        if ex.t == FLOAT_LEFT and left < ex2:
           left = ex2
-        if right + size.w > ex.offset.x and right <= ex2:
+        if ex.t == FLOAT_RIGHT and right > ex.offset.x:
           right = ex.offset.x
         miny = min(ey2, miny)
     if right - left >= size.w or miny == high(LayoutUnit):
