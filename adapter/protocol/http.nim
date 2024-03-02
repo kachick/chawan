@@ -2,6 +2,7 @@ when NimMajor >= 2:
   import std/envvars
 else:
   import std/os
+import std/posix
 import std/strutils
 
 import curl
@@ -21,6 +22,9 @@ type
     earlyhint: EarlyHintState
     slist: curl_slist
 
+proc puts(s: string) =
+  discard write(1, unsafeAddr s[0], s.len)
+
 proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
     csize_t {.cdecl.} =
   var line = newString(nitems)
@@ -37,8 +41,7 @@ proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
       op.earlyhint = EARLY_HINT_STARTED
     else:
       op.connectreport = true
-      stdout.write("Status: " & $status & "\n")
-      stdout.write("Cha-Control: ControlDone\n")
+      puts("Status: " & $status & "\nCha-Control: ControlDone\n")
     return nitems
 
   if line == "":
@@ -55,13 +58,13 @@ proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
     # Regrettably, we can only write early hint headers after the status
     # code is already known.
     # For now, it seems easiest to just ignore them all.
-    stdout.write(line)
+    puts(line)
   return nitems
 
 # From the documentation: size is always 1.
 proc curlWriteBody(p: cstring, size, nmemb: csize_t, userdata: pointer):
     csize_t {.cdecl.} =
-  return csize_t(stdout.writeBuffer(p, int(nmemb)))
+  return csize_t(write(stdout.getFileHandle(), p, int(nmemb)))
 
 # From the documentation: size is always 1.
 proc readFromStdin(buffer: cstring, size, nitems: csize_t, userdata: pointer):
@@ -72,7 +75,7 @@ proc curlPreRequest(clientp: pointer, conn_primary_ip, conn_local_ip: cstring,
     conn_primary_port, conn_local_port: cint): cint {.cdecl.} =
   let op = cast[HttpHandle](clientp)
   op.connectreport = true
-  stdout.write("Cha-Control: Connected\n")
+  puts("Cha-Control: Connected\n")
   return 0 # ok
 
 proc main() =
@@ -140,7 +143,7 @@ proc main() =
     curl.setopt(CURLOPT_HTTPHEADER, op.slist)
   let res = curl_easy_perform(curl)
   if res != CURLE_OK and not op.connectreport:
-    stdout.write(getCurlConnectionError(res))
+    puts(getCurlConnectionError(res))
     op.connectreport = true
   curl_easy_cleanup(curl)
 
