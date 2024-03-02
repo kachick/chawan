@@ -49,7 +49,6 @@ extern "C" {
 typedef struct JSRuntime JSRuntime;
 typedef struct JSContext JSContext;
 typedef struct JSObject JSObject;
-typedef struct JSString JSString;
 typedef struct JSClass JSClass;
 typedef uint32_t JSClassID;
 typedef uint32_t JSAtom;
@@ -715,10 +714,8 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
 void JS_FreeCString(JSContext *ctx, const char *ptr);
 
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
-JS_BOOL JS_IsStringWideChar(JSString *str);
-uint8_t *JS_GetNarrowStringBuffer(JSString *str);
-uint16_t *JS_GetWideStringBuffer(JSString *str);
-uint32_t JS_GetWideStringLength(JSString *str);
+JS_BOOL JS_IsStringWideChar(JSValue value);
+uint8_t *JS_GetNarrowStringBuffer(JSValue value);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);
@@ -815,7 +812,6 @@ int JS_DefinePropertyGetSet(JSContext *ctx, JSValueConst this_obj,
 void JS_SetOpaque(JSValue obj, void *opaque);
 void *JS_GetOpaque(JSValueConst obj, JSClassID class_id);
 void *JS_GetOpaque2(JSContext *ctx, JSValueConst obj, JSClassID class_id);
-JSClassID JS_GetClassID(JSValueConst obj);
 
 /* 'buf' must be zero terminated i.e. buf[buf_len] = '\0'. */
 JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len,
@@ -833,7 +829,6 @@ JSValue JS_NewArrayBuffer(JSContext *ctx, uint8_t *buf, size_t len,
 JSValue JS_NewArrayBufferCopy(JSContext *ctx, const uint8_t *buf, size_t len);
 void JS_DetachArrayBuffer(JSContext *ctx, JSValueConst obj);
 uint8_t *JS_GetArrayBuffer(JSContext *ctx, size_t *psize, JSValueConst obj);
-uint8_t *JS_GetUint8Array(JSContext *ctx, size_t *psize, JSValueConst obj);
 JSValue JS_GetTypedArrayBuffer(JSContext *ctx, JSValueConst obj,
                                size_t *pbyte_offset,
                                size_t *pbyte_length,

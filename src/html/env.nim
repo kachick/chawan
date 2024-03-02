@@ -144,8 +144,9 @@ func getParent(window: Window): Window {.jsfget: "parent".} =
 proc atob(window: Window, data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
-proc btoa(window: Window, data: JSString): DOMResult[string] {.jsfunc.} =
-  return btoa(data)
+proc btoa(ctx: JSContext, window: Window, data: JSValue): DOMResult[string]
+    {.jsfunc.} =
+  return btoa(ctx, data)
 
 proc getComputedStyle(window: Window, element: Element,
     pseudoElt = none(Element)): JSResult[CSSStyleDeclaration] {.jsfunc.} =

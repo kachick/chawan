@@ -17,13 +17,20 @@ proc atob*(data: string): DOMResult[NarrowString] =
     return errDOMException("Invalid character in string",
       "InvalidCharacterError")
 
-proc btoa*(data: JSString): DOMResult[string] =
+proc btoa*(ctx: JSContext, data: JSValue): DOMResult[string] =
+  let data = JS_ToString(ctx, data)
+  if JS_IsException(data):
+    return err()
+  assert JS_IsString(data)
   if JS_IsStringWideChar(data):
+    JS_FreeValue(ctx, data)
     return errDOMException("Invalid character in string",
       "InvalidCharacterError")
   let len = int(JS_GetStringLength(data))
   if len == 0:
+    JS_FreeValue(ctx, data)
     return ok("")
   let buf = JS_GetNarrowStringBuffer(data)
   let res = base64.encode(toOpenArray(buf, 0, len - 1))
+  JS_FreeValue(ctx, data)
   return ok(res)

@@ -100,8 +100,6 @@ type
   JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime,
     opaque, p: pointer) {.cdecl.}
 
-  JSString* {.importc: "JSString*", header: qjsheader.} = distinct pointer
-
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
     flags*: cint
     value*: JSValue
@@ -289,9 +287,6 @@ const
 const
   JS_PARSE_JSON_EXT* = (1 shl 0)
 
-template JS_VALUE_GET_STRING*(v: untyped): JSString =
-  JSString(JS_VALUE_GET_PTR(v))
-
 template JS_CFUNC_DEF*(n: string, len: uint8, func1: JSCFunction):
     JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
@@ -382,7 +377,6 @@ proc JS_NewArrayBuffer*(ctx: JSContext, buf: ptr UncheckedArray[uint8],
   len: csize_t, free_func: JSFreeArrayBufferDataFunc, opaque: pointer,
   is_shared: JS_BOOL): JSValue
 proc JS_GetArrayBuffer*(ctx: JSContext, psize: ptr csize_t, obj: JSValue): ptr uint8
-proc JS_GetUint8Array*(ctx: JSContext, psize: ptr csize_t, obj: JSValue): ptr uint8
 proc JS_GetTypedArrayBuffer*(ctx: JSContext, obj: JSValue, pbyte_offset,
   pbyte_length, pbytes_per_element: ptr csize_t): JSValue
 
@@ -419,6 +413,7 @@ proc JS_NewCFunction*(ctx: JSContext, cfunc: JSCFunction, name: cstring, length:
 proc JS_NewString*(ctx: JSContext, str: cstring): JSValue
 proc JS_NewStringLen*(ctx: JSContext, str: cstring, len1: csize_t): JSValue
 proc JS_NewAtomString*(ctx: JSContext, str: cstring): JSValue
+proc JS_ToString*(ctx: JSContext; val: JSValue): JSValue
 
 proc JS_SetProperty*(ctx: JSContext, this_obj: JSValue, prop: JSAtom, val: JSValue): cint
 proc JS_SetPropertyUint32*(ctx: JSContext, this_obj: JSValue, idx: uint32, val: JSValue): cint
@@ -470,10 +465,9 @@ proc JS_ToCString*(ctx: JSContext, val1: JSValue): cstring
 proc JS_FreeCString*(ctx: JSContext, `ptr`: cstring)
 
 proc JS_NewNarrowStringLen*(ctx: JSContext, s: cstring, len: csize_t): JSValue
-proc JS_IsStringWideChar*(str: JSString): JS_BOOL
-proc JS_GetNarrowStringBuffer*(str: JSString): ptr UncheckedArray[uint8]
-proc JS_GetWideStringBuffer*(str: JSString): ptr UncheckedArray[uint16]
-proc JS_GetStringLength*(str: JSString): uint32
+proc JS_IsStringWideChar*(str: JSValue): JS_BOOL
+proc JS_GetNarrowStringBuffer*(str: JSValue): ptr UncheckedArray[uint8]
+proc JS_GetStringLength*(str: JSValue): uint32
 
 proc JS_Eval*(ctx: JSContext, input: cstring, input_len: csize_t,
   filename: cstring, eval_flags: cint): JSValue

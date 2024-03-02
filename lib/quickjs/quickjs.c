@@ -67,8 +67,7 @@
 
 /* define to include Atomics.* operations which depend on the OS
    threads */
-//#if !defined(EMSCRIPTEN) && !defined(_WIN32)
-#if 0
+#if !defined(EMSCRIPTEN)
 #define CONFIG_ATOMICS
 #endif
 
@@ -205,6 +204,7 @@ typedef enum JSErrorEnum {
 #define __exception __attribute__((warn_unused_result))
 
 typedef struct JSShape JSShape;
+typedef struct JSString JSString;
 typedef struct JSString JSAtomStruct;
 
 typedef enum {
@@ -4106,24 +4106,25 @@ JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
     return js_new_string8(ctx, (const uint8_t *)buf, buf_len);
 }
 
-JS_BOOL JS_IsStringWideChar(JSString *str)
+JS_BOOL JS_IsStringWideChar(JSValue value)
 {
-    return str->is_wide_char;
+    if (unlikely(JS_VALUE_GET_TAG(value) != JS_TAG_STRING))
+        return FALSE;
+    return JS_VALUE_GET_STRING(value)->is_wide_char;
 }
 
-uint8_t *JS_GetNarrowStringBuffer(JSString *str)
+uint8_t *JS_GetNarrowStringBuffer(JSValue value)
 {
-    return str->u.str8;
+    if (unlikely(JS_VALUE_GET_TAG(value) != JS_TAG_STRING))
+        return NULL;
+    return JS_VALUE_GET_STRING(value)->u.str8;
 }
 
-uint16_t *JS_GetWideStringBuffer(JSString *str)
+uint32_t JS_GetStringLength(JSValue value)
 {
-    return str->u.str16;
-}
-
-uint32_t JS_GetStringLength(JSString *str)
-{
-    return str->len;
+    if (unlikely(JS_VALUE_GET_TAG(value) != JS_TAG_STRING))
+        return 0;
+    return JS_VALUE_GET_STRING(value)->len;
 }
 
 static int memcmp16_8(const uint16_t *src1, const uint8_t *src2, int len)
@@ -5842,7 +5843,7 @@ static void gc_scan(JSRuntime *rt)
         p->mark = 0; /* reset the mark for the next GC call */
         mark_children(rt, p, gc_scan_incref_child);
     }
-
+    
     /* restore objects whose can_destroy hook returns 0 and their children. */
     do {
         /* save previous tail position of gc_obj_list */
@@ -9933,15 +9934,6 @@ void *JS_GetOpaque2(JSContext *ctx, JSValueConst obj, JSClassID class_id)
     return p;
 }
 
-JSClassID JS_GetClassID(JSValueConst obj)
-{
-    JSObject *p;
-    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
-        return 0;
-    p = JS_VALUE_GET_OBJ(obj);
-    return p->class_id;
-}
-
 #define HINT_STRING  0
 #define HINT_NUMBER  1
 #define HINT_NONE    2
@@ -10880,7 +10872,7 @@ static int JS_ToInt64SatFree(JSContext *ctx, int64_t *pres, JSValue val)
             } else {
                 if (d < INT64_MIN)
                     *pres = INT64_MIN;
-                else if (d >= (double)INT64_MAX)
+                else if (d > INT64_MAX)
                     *pres = INT64_MAX;
                 else
                     *pres = (int64_t)d;
@@ -46613,12 +46605,10 @@ static int js_proxy_isArray(JSContext *ctx, JSValueConst obj)
     JSProxyData *s = JS_GetOpaque(obj, JS_CLASS_PROXY);
     if (!s)
         return FALSE;
-
     if (js_check_stack_overflow(ctx->rt, 0)) {
         JS_ThrowStackOverflow(ctx);
         return -1;
     }
-
     if (s->is_revoked) {
         JS_ThrowTypeErrorRevokedProxy(ctx);
         return -1;
@@ -53136,34 +53126,6 @@ JSValue JS_GetTypedArrayBuffer(JSContext *ctx, JSValueConst obj,
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, ta->buffer));
 }
                                
-/* return NULL if exception. WARNING: any JS call can detach the
-   buffer and render the returned pointer invalid */
-uint8_t *JS_GetUint8Array(JSContext *ctx, size_t *psize, JSValueConst obj)
-{
-    JSObject *p;
-    JSTypedArray *ta;
-    JSArrayBuffer *abuf;
-    p = get_typed_array(ctx, obj, FALSE);
-    if (!p)
-        goto fail;
-    if (typed_array_is_detached(ctx, p)) {
-        JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
-        goto fail;
-    }
-    if (p->class_id != JS_CLASS_UINT8_ARRAY) {
-        JS_ThrowTypeError(ctx, "not a Uint8Array");
-        goto fail;
-    }
-    ta = p->u.typed_array;
-    abuf = ta->buffer->u.array_buffer;
-
-    *psize = ta->length;
-    return abuf->data + ta->offset;
- fail:
-    *psize = 0;
-    return NULL;
-}
-
 static JSValue js_typed_array_get_toStringTag(JSContext *ctx,
                                               JSValueConst this_val)
 {

@@ -76,9 +76,6 @@ func fromJSString(ctx: JSContext, val: JSValue): JSResult[string] =
   JS_FreeCString(ctx, outp)
   return ok(ret)
 
-func fromJSString2(ctx: JSContext, val: JSValue): JSResult[JSString] =
-  return ok(JS_VALUE_GET_STRING(val))
-
 func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
     JSResult[T] =
   when T is int:
@@ -477,8 +474,6 @@ type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict|
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
   when T is string:
     return fromJSString(ctx, val)
-  elif T is JSString:
-    return fromJSString2(ctx, val)
   elif T is (proc):
     return fromJSFunction[T](ctx, val)
   elif T is Option:

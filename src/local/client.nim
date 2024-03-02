@@ -797,8 +797,9 @@ proc sleep(client: Client, millis: int) {.jsfunc.} =
 proc atob(client: Client, data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
-proc btoa(client: Client, data: JSString): DOMResult[string] {.jsfunc.} =
-  return btoa(data)
+proc btoa(ctx: JSContext, client: Client, data: JSValue): DOMResult[string]
+    {.jsfunc.} =
+  return btoa(ctx, data)
 
 func line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit.get(nil)
