@@ -1224,9 +1224,10 @@ proc onload(buffer: Buffer) =
       break
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  #TODO this could be improved
-  buffer.do_reshape()
-  buffer.resolveTask(bcLoad, -2)
+  if not buffer.config.isdump:
+    # only makes sense when not in dump mode
+    buffer.do_reshape()
+    buffer.resolveTask(bcLoad, -2)
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:

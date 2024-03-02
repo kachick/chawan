@@ -158,6 +158,7 @@ type
     images*: bool
     loaderConfig*: LoaderConfig
     mimeTypes*: MimeTypes
+    isdump*: bool
     cgiDir*: seq[string]
     charsetOverride*: Charset
 
@@ -252,6 +253,7 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     charsets: charsets,
     images: images,
     mimeTypes: mimeTypes,
+    isdump: config.start.headless,
     loaderConfig: LoaderConfig(
       defaultHeaders: headers,
       filter: filter,
