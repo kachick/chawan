@@ -1017,7 +1017,7 @@ proc cursorRightEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx + container.width - 1)
 
 proc scrollDown*(container: Container, n = 1) {.jsfunc.} =
-  let H = container.numLines - 1
+  let H = container.numLines
   let y = min(container.fromy + container.height + n, H) - container.height
   if y > container.fromy:
     container.setFromY(y)
