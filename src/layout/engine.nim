@@ -469,6 +469,10 @@ proc addSpacing(ictx: var InlineContext, width, height: LayoutUnit,
     ictx.currentLine.size.w += width
   ictx.currentLine.atomstates.add(iastate)
   ictx.currentLine.atoms.add(spacing)
+  # whitespaceFragment's endOffset may already be set, in this case we must
+  # shift it by width.
+  # (If it is not set, then it will simply be overridden when endOffset is set.)
+  ictx.whitespaceFragment.endOffset.x += width
   ictx.whitespaceFragment.atoms.add(spacing)
 
 proc flushWhitespace(ictx: var InlineContext, state: InlineState,
