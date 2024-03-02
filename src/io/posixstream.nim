@@ -86,8 +86,24 @@ proc psReadData(s: Stream, buffer: pointer, len: int): int =
 
 proc psWriteData(s: Stream, buffer: pointer, len: int) =
   let s = PosixStream(s)
-  #TODO assert len != 0 and s.blocking
+  assert len != 0 and s.blocking
   discard s.sendData(buffer, len)
+
+proc psReadLine(s: Stream, line: var string): bool =
+  let s = PosixStream(s)
+  assert s.blocking
+  line = ""
+  var c: char
+  while true:
+    if s.recvData(addr c, 1) == 0:
+      return false
+    if c == '\r':
+      if s.recvData(addr c, 1) == 0:
+        return false
+    if c == '\n':
+      break
+    line &= c
+  true
 
 proc psAtEnd(s: Stream): bool =
   return PosixStream(s).isend
@@ -96,6 +112,7 @@ proc addStreamIface*(ps: PosixStream) =
   ps.closeImpl = cast[typeof(ps.closeImpl)](psClose)
   ps.readDataImpl = cast[typeof(ps.readDataImpl)](psReadData)
   ps.writeDataImpl = cast[typeof(ps.writeDataImpl)](psWriteData)
+  ps.readLineImpl = cast[typeof(ps.readLineImpl)](psReadLine)
   ps.atEndImpl = psAtEnd
 
 proc newPosixStream*(fd: FileHandle): PosixStream =

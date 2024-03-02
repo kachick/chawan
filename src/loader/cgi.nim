@@ -232,8 +232,8 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
       # no data?
       handle.sendResult(ERROR_CGI_NO_DATA)
       return
-    let line = ps.readLine()
-    if line == "": #\r\n
+    var line: string
+    if not ps.readLine(line) or line == "": #\r\n
       # no headers, body comes immediately
       handle.sendResult(0) # success
     else:
@@ -242,8 +242,7 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
         return
       var crlfFound = false
       while not ps.atEnd and res == RESULT_CONTROL_CONTINUE:
-        let line = ps.readLine()
-        if line == "":
+        if not ps.readLine(line) or line == "": # \r\n
           crlfFound = true
           break
         res = handle.handleControlLine(line, headers, status)
@@ -251,8 +250,7 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
           return
       if not crlfFound:
         while not ps.atEnd:
-          let line = ps.readLine()
-          if line == "": #\r\n
+          if not ps.readLine(line) or line == "": # \r\n
             break
           handle.handleLine(line, headers)
     handle.sendStatus(status)
