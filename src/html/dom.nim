@@ -1078,7 +1078,7 @@ func ownerDocument(node: Node): Document {.jsfget.} =
     return nil
   return node.document
 
-func hasChildNodes(node: Node): bool {.jsfget.} =
+func hasChildNodes(node: Node): bool {.jsfunc.} =
   return node.childList.len > 0
 
 func len(collection: Collection): int =
@@ -1715,6 +1715,32 @@ func names(ctx: JSContext, map: NamedNodeMap): JSPropertyEnumList
 
 func length(characterData: CharacterData): uint32 {.jsfget.} =
   return uint32(characterData.data.utf16Len)
+
+func tagName(element: Element): string {.jsfget.} =
+  if element.namespace == Namespace.HTML:
+    return element.document.toStr(element.localName).toUpperAscii()
+  return element.document.toStr(element.localName)
+
+func nodeName(node: Node): string {.jsfget.} =
+  if node of Element:
+    return Element(node).tagName
+  if node of Attr:
+    let attr = Attr(node)
+    return attr.ownerElement.document.toStr(attr.data.qualifiedName)
+  if node of DocumentType:
+    return DocumentType(node).name
+  if node of CDATASection:
+    return "#cdata-section"
+  if node of Comment:
+    return "#comment"
+  if node of Document:
+    return "#document"
+  if node of DocumentFragment:
+    return "#document-fragment"
+  if node of ProcessingInstruction:
+    return ProcessingInstruction(node).target
+  assert node of Text
+  return "#text"
 
 func scriptingEnabled*(document: Document): bool =
   if document.window == nil:
@@ -3266,7 +3292,7 @@ proc insertNode(parent, node, before: Node) =
     node.index = parent.childList.high
   else:
     node.index = before.index
-    for i in before.index ..< parent.childList.len - 1:
+    for i in countdown(parent.childList.high - 1, node.index):
       parent.childList[i + 1] = parent.childList[i]
       parent.childList[i + 1].index = i + 1
   parent.childList[node.index] = node

@@ -1,8 +1,11 @@
 import std/options
 import std/strutils
 
+import bindings/quickjs
+import html/dom
 import html/event
 import js/domexception
+import js/fromjs
 import js/javascript
 import loader/headers
 import loader/request
@@ -48,7 +51,7 @@ type
     requestURL: URL
     authorRequestHeaders: Headers
     response: Response
-    responseType {.jsget.}: XMLHttpRequestResponseType
+    responseType {.jsgetset.}: XMLHttpRequestResponseType
 
 jsDestructor(XMLHttpRequestEventTarget)
 jsDestructor(XMLHttpRequestUpload)
@@ -78,10 +81,16 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
   else:
     errDOMException("Invalid method", "SyntaxError")
 
-proc open(this: XMLHttpRequest, httpMethod, url: string): Err[DOMException]
-    {.jsfunc.} =
+proc open(ctx: JSContext, this: XMLHttpRequest, httpMethod, url: string):
+    Err[DOMException] {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
-  let x = parseURL(url)
+  let global = JS_GetGlobalObject(ctx)
+  let window = fromJS[Window](ctx, global)
+  JS_FreeValue(ctx, global)
+  let x = if window.isSome:
+    parseURL(url, some(window.get.document.baseURL))
+  else:
+    parseURL(url)
   if x.isNone:
     return errDOMException("Invalid URL", "SyntaxError")
   let parsedURL = x.get
