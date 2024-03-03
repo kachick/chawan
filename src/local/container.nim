@@ -88,6 +88,9 @@ type
   BufferFilter* = ref object
     cmd*: string
 
+  LoadState = enum
+    lsLoading, lsCanceled, lsLoaded
+
   Container* = ref object
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
@@ -123,7 +126,7 @@ type
     hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
     needslines*: bool
-    canceled: bool
+    loadState: LoadState
     events*: Deque[ContainerEvent]
     startpos: Option[CursorPosition]
     hasstart: bool
@@ -229,7 +232,7 @@ proc clone*(container: Container, newurl: URL): Promise[Container] =
       retry: container.retry,
       hlon: container.hlon,
       #needslines: container.needslines,
-      canceled: container.canceled,
+      loadState: container.loadState,
       events: container.events,
       startpos: container.startpos,
       hasstart: container.hasstart,
@@ -469,12 +472,13 @@ proc setNumLines(container: Container, lines: int, finish = false) =
 
 proc cursorLastLine*(container: Container)
 
-proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
+proc requestLines(container: Container): EmptyPromise
     {.discardable.} =
   if container.iface == nil:
     let res = EmptyPromise()
     res.resolve()
     return res
+  let w = container.lineWindow
   return container.iface.getLines(w).then(proc(res: GetLinesResult) =
     container.lines.setLen(w.len)
     container.lineshift = w.a
@@ -486,7 +490,8 @@ proc requestLines*(container: Container, w = container.lineWindow): EmptyPromise
       container.bgcolor = res.bgcolor
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
-      container.triggerEvent(STATUS)
+      if container.loadState != lsLoading:
+        container.triggerEvent(STATUS)
     if res.numLines > 0:
       container.updateCursor()
       if container.tailOnLoad:
@@ -1369,12 +1374,13 @@ proc setLoadInfo(container: Container, msg: string) =
 
 #TODO this should be called with a timeout.
 proc onload*(container: Container, res: int) =
-  if container.canceled:
+  if container.loadState == lsCanceled:
     container.setLoadInfo("")
     container.iface.cancel().then(proc() =
       container.needslines = true
     )
   elif res == -1:
+    container.loadState = lsLoaded
     container.setLoadInfo("")
     container.triggerEvent(STATUS)
     container.needslines = true
@@ -1390,10 +1396,9 @@ proc onload*(container: Container, res: int) =
           let res = res.get
           container.setCursorXYCenter(res.x, res.y)
       )
-  elif res == -2:
-    container.setLoadInfo(convertSize(res) & " loaded")
   else:
     container.needslines = true
+    container.setLoadInfo(convertSize(res) & " loaded")
     discard container.iface.load().then(proc(res: int) =
       container.onload(res)
     )
@@ -1468,8 +1473,8 @@ proc quit*(container: Container) =
 proc cancel*(container: Container) {.jsfunc.} =
   if container.select.open:
     container.select.cancel()
-  else:
-    container.canceled = true
+  elif container.loadState == lsLoading:
+    container.loadState = lsCanceled
     container.alert("Canceled loading")
 
 proc findAnchor*(container: Container, anchor: string) =

@@ -432,7 +432,6 @@ proc showConsole(client: Client) {.jsfunc.} =
   if client.pager.container != container:
     client.consoleWrapper.prev = client.pager.container
     client.pager.setContainer(container)
-    container.requestLines()
 
 proc hideConsole(client: Client) {.jsfunc.} =
   if client.pager.container == client.consoleWrapper.container:
@@ -582,8 +581,9 @@ proc inputLoop(client: Client) =
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
         assert r
-        client.pager.container.requestLines().then(proc() =
-          client.pager.container.cursorLastLine())
+        let container = client.consoleWrapper.container
+        if container != nil:
+          container.tailOnLoad = true
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
@@ -671,10 +671,9 @@ proc addConsole(pager: Pager, interactive: bool, clearFun, showFun, hideFun:
     let url = newURL("stream:console").get
     let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
       some(url), ConsoleTitle, canreinterpret = false)
+    pager.registerContainer(container)
     let err = newPosixStream(pipefd[1])
     err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
-    err.flush()
-    pager.registerContainer(container)
     let console = newConsole(
       err,
       clearFun = clearFun,

@@ -98,6 +98,7 @@ type
     selector: Selector[int]
     istream: SocketStream
     bytesRead: int
+    reportedBytesRead: int
     state: BufferState
     prevnode: StyledNode
     loader: FileLoader
@@ -1164,14 +1165,19 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
 
 # Returns:
 # * -1 if loading is done
-# * -2 if the page was partially rendered
-# * a positive number for just reporting the number of bytes loaded.
+# * a positive number for reporting the number of bytes loaded and that the page
+#   has been partially rendered.
 proc load*(buffer: Buffer): int {.proxy, task.} =
   if buffer.state == bsLoaded:
     return -1
+  elif buffer.bytesRead > buffer.reportedBytesRead:
+    buffer.do_reshape()
+    buffer.reportedBytesRead = buffer.bytesRead
+    return buffer.bytesRead
   else:
     # will be resolved in onload
     buffer.savetask = true
+    return -2 # unused
 
 proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
   let packetid = buffer.tasks[cmd]
@@ -1219,15 +1225,15 @@ proc onload(buffer: Buffer) =
           buffer.resolveTask(bcLoad, -1)
         )
         return # skip incr render
-      buffer.resolveTask(bcLoad, buffer.bytesRead)
     except ErrorAgain:
       break
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  if not buffer.config.isdump:
-    # only makes sense when not in dump mode
+  if not buffer.config.isdump and buffer.tasks[bcLoad] != 0:
+    # only makes sense when not in dump mode (and the user has requested a load)
     buffer.do_reshape()
-    buffer.resolveTask(bcLoad, -2)
+    buffer.reportedBytesRead = buffer.bytesRead
+    buffer.resolveTask(bcLoad, buffer.bytesRead)
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:
