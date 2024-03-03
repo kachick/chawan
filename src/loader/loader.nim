@@ -273,7 +273,9 @@ proc loadStream(ctx: LoaderContext, handle: LoaderHandle, request: Request,
     doAssert fstat(fdp[], stats) != -1
     handle.istream = ps
     ctx.passedFdMap.del(request.url.host)
-    if S_ISREG(stats.st_mode): # probably stdin, like cha <file
+    if S_ISCHR(stats.st_mode) or S_ISREG(stats.st_mode):
+      # regular file: e.g. cha <file
+      # or character device: e.g. cha </dev/null
       handle.output.ostream.setBlocking(false)
       if handle.cached:
         ctx.addCacheFile(handle, originalUrl)
