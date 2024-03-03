@@ -7,48 +7,31 @@ import utils/map
 
 include res/map/charwidth_gen
 
-func isDoubleWidthHigh(r: Rune): bool =
-  return DoubleWidthRanges.isInRange(uint32(r))
-
-func isDoubleWidthAmbiguousHigh(r: Rune): bool =
-  # binary search in table of non-spacing characters
-  if DoubleWidthAmbiguousRanges.isInRange(uint32(r)):
-    return true
-  return r.isDoubleWidthHigh()
-
-func isCombining(r: Rune): bool =
-  return Combining.isInRange(uint32(r))
-
 # One of the few global variables in the code. Honestly, it should not exist.
-var is_cjk_ambiguous = false
+var isCJKAmbiguous = false
 proc set_cjk_ambiguous*(b: bool) =
-  is_cjk_ambiguous = b
+  isCJKAmbiguous = b
 
 # Warning: this shouldn't be called without normalization.
-# We could make this function more efficient in edge cases, but it's already
-# too complex for my taste.
 func width*(r: Rune): int =
-  {.cast(noSideEffect).}:
-    let u = uint32(r)
-    if u <= 0xFFFF:
-      if r in CombiningTable:
-        return 0
-      if not is_cjk_ambiguous:
-        if r in DoubleWidthTable:
-          return 2
-      else:
-        if r in DoubleWidthTable or DoubleWidthAmbiguousRanges.isInRange(u):
-          return 2
-    else:
-      if r.isCombining():
-        return 0
-      if not is_cjk_ambiguous:
-        if r.isDoubleWidthHigh():
-          return 2
-      else:
-        if r.isDoubleWidthAmbiguousHigh():
-          return 2
-    return 1
+  let u = uint32(r)
+  if u <= 0xFFFF: # fast path for BMP
+    if u in CombiningTable:
+      return 0
+    if u in DoubleWidthTable:
+      return 2
+    {.cast(noSideEffect).}:
+      if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
+        return 2
+  else:
+    if Combining.isInRange(u):
+      return 0
+    if DoubleWidthRanges.isInRange(u):
+      return 2
+    {.cast(noSideEffect).}:
+      if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
+        return 2
+  return 1
 
 # Width, but also works with tabs.
 # Needs the column width of the text so far.

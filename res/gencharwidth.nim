@@ -187,14 +187,14 @@ proc main() =
 
   echo "const DoubleWidthTable: PropertyTable = ["
   for u in DoubleWidthTable:
-    writer.write($u & ",")
+    writer.write($u & "u32,")
   writer.flush()
   echo "]"
   echo ""
 
   echo "const CombiningTable: PropertyTable = ["
   for u in CombiningTable:
-    writer.write($u & ",")
+    writer.write($u & "u32,")
   writer.flush()
   echo "]"
   echo ""

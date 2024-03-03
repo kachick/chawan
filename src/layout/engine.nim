@@ -15,7 +15,7 @@ import utils/widthconv
 
 type
   LayoutState = ref object
-    attrs: WindowAttributes
+    attrsp: ptr WindowAttributes
     positioned: seq[AvailableSpace]
 
   # min-content: box width is longest word's width
@@ -44,6 +44,9 @@ type
     maxWidth: LayoutUnit
     minHeight: LayoutUnit
     maxHeight: LayoutUnit
+
+template attrs(state: LayoutState): WindowAttributes =
+  state.attrsp[]
 
 func maxContent(): SizeConstraint =
   return SizeConstraint(t: MAX_CONTENT)
@@ -2774,13 +2777,13 @@ proc generateTableBox(styledNode: StyledNode, lctx: LayoutState,
   box.generateTableChildWrappers()
   return box
 
-proc renderLayout*(root: StyledNode, attrs: WindowAttributes): BlockBox =
+proc renderLayout*(root: StyledNode, attrsp: ptr WindowAttributes): BlockBox =
   let space = AvailableSpace(
-    w: stretch(attrs.width_px),
-    h: stretch(attrs.height_px)
+    w: stretch(attrsp[].width_px),
+    h: stretch(attrsp[].height_px)
   )
   let lctx = LayoutState(
-    attrs: attrs,
+    attrsp: attrsp,
     positioned: @[space]
   )
   let builder = root.generateBlockBox(lctx)

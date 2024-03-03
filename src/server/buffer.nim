@@ -641,7 +641,7 @@ proc do_reshape(buffer: Buffer) =
     buffer.prevStyled = nil
   let styledRoot = buffer.document.applyStylesheets(uastyle,
     buffer.userstyle, buffer.prevStyled)
-  buffer.lines.renderDocument(buffer.bgcolor, styledRoot, buffer.attrs)
+  buffer.lines.renderDocument(buffer.bgcolor, styledRoot, addr buffer.attrs)
   buffer.prevStyled = styledRoot
 
 proc processData0(buffer: Buffer, data: openArray[char]): bool =
