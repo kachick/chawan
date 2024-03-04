@@ -74,7 +74,7 @@ Currently available commands are:
   interpreted as regular headers (and thus e.g. will be available for JS
   code calling the script using the fetch API).  
   WARNING: this header must be sent before any non-hardcoded headers that
-  take external input. For example, a HTTP client would have to send
+  take external input. For example, an HTTP client would have to send
   `Cha-Control: ControlDone` before returning the retrieved headers.
 
 List of public error codes:
