@@ -7,16 +7,11 @@ charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
 display:
-- important: add a virtual cursor (in some terminals, the real cursor is
-  often obscured by white background color)
 - important: buffer list
 	* either a buffer list buffer, or a buffer list popup menu. ideally
 	  both.
 - dark mode (basically max Y)
-- do not assume default background color
-	* instead, add an "override-default-color" option that is set to
-	  true by default and replaces default bgcolor/fgcolor with
-	  default-background/foreground-color
+- override bgcolor ourselves when terminal fails to report it
 - allow overriding ansi colors
 config:
 - important: config editor
@@ -41,14 +36,11 @@ buffer:
 		- configurable/better url filtering in loader
 		- make peekCursor show the entire url
 - when the log buffer crashes, print its contents to stderr
-	* make console.err a TeeStream, and tee it to a StringStream that
-	  buffers up to 4KB
+	* easiest way seems to be to just dump its cache file
 - add buffer groups
 - xhtml
 - better horizontal line handling: allow viewing content positioned before page
   start, handle long lines, etc
-- do not prompt when submitting forms (it's annoying)
-	* this is mostly fixed, but not completely
 network:
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
