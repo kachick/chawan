@@ -17,43 +17,100 @@ export selectorparser.PseudoElem
 
 type
   CSSShorthandType = enum
-    SHORTHAND_NONE, SHORTHAND_ALL, SHORTHAND_MARGIN, SHORTHAND_PADDING,
-    SHORTHAND_BACKGROUND, SHORTHAND_LIST_STYLE
+    cstNone = ""
+    cstAll = "all"
+    cstMargin = "margin"
+    cstPadding = "padding"
+    cstBackground = "background"
+    cstListStyle = "list-style"
 
   CSSUnit* = enum
-    UNIT_CM, UNIT_MM, UNIT_IN, UNIT_PX, UNIT_PT, UNIT_PC,
-    UNIT_EM, UNIT_EX, UNIT_CH, UNIT_REM, UNIT_VW, UNIT_VH, UNIT_VMIN,
-    UNIT_VMAX, UNIT_PERC, UNIT_IC
+    UNIT_CM, UNIT_MM, UNIT_IN, UNIT_PX, UNIT_PT, UNIT_PC, UNIT_EM, UNIT_EX,
+    UNIT_CH, UNIT_REM, UNIT_VW, UNIT_VH, UNIT_VMIN, UNIT_VMAX, UNIT_PERC,
+    UNIT_IC
 
   CSSPropertyType* = enum
-    PROPERTY_NONE, PROPERTY_COLOR, PROPERTY_MARGIN_TOP, PROPERTY_MARGIN_LEFT,
-    PROPERTY_MARGIN_RIGHT, PROPERTY_MARGIN_BOTTOM, PROPERTY_FONT_STYLE,
-    PROPERTY_DISPLAY, PROPERTY_CONTENT, PROPERTY_WHITE_SPACE,
-    PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
-    PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_LIST_STYLE_TYPE,
-    PROPERTY_PADDING_TOP, PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT,
-    PROPERTY_PADDING_BOTTOM, PROPERTY_WORD_SPACING, PROPERTY_VERTICAL_ALIGN,
-    PROPERTY_LINE_HEIGHT, PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION,
-    PROPERTY_BACKGROUND_COLOR, PROPERTY_POSITION, PROPERTY_LEFT,
-    PROPERTY_RIGHT, PROPERTY_TOP, PROPERTY_BOTTOM, PROPERTY_CAPTION_SIDE,
-    PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
-    PROPERTY_COUNTER_RESET, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
-    PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT, PROPERTY_BACKGROUND_IMAGE,
-    PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN, PROPERTY_FLOAT,
-    PROPERTY_VISIBILITY, PROPERTY_BOX_SIZING, PROPERTY_CLEAR,
-    PROPERTY_TEXT_TRANSFORM, PROPERTY_BGCOLOR_IS_CANVAS
+    cptNone = ""
+    cptColor = "color"
+    cptMarginTop = "margin-top"
+    cptMarginLeft = "margin-left"
+    cptMarginRight = "margin-right"
+    cptMarginBottom = "margin-bottom"
+    cptFontStyle = "font-style"
+    cptDisplay = "display"
+    cptContent = "content"
+    cptWhiteSpace = "white-space"
+    cptFontWeight = "font-weight"
+    cptTextDecoration = "text-decoration"
+    cptWordBreak = "word-break"
+    cptWidth = "width"
+    cptHeight = "height"
+    cptListStyleType = "list-style-type"
+    cptPaddingTop = "padding-top"
+    cptPaddingLeft = "padding-left"
+    cptPaddingRight = "padding-right"
+    cptPaddingBottom = "padding-bottom"
+    cptWordSpacing = "word-spacing"
+    cptVerticalAlign = "vertical-align"
+    cptLineHeight = "line-height"
+    cptTextAlign = "text-align"
+    cptListStylePosition = "list-style-position"
+    cptBackgroundColor = "background-color"
+    cptPosition = "position"
+    cptLeft = "left"
+    cptRight = "right"
+    cptTop = "top"
+    cptBottom = "bottom"
+    cptCaptionSide = "caption-side"
+    cptBorderSpacing = "border-spacing"
+    cptBorderCollapse = "border-collapse"
+    cptQuotes = "quotes"
+    cptCounterReset = "counter-reset"
+    cptMaxWidth = "max-width"
+    cptMaxHeight = "max-height"
+    cptMinWidth = "min-width"
+    cptMinHeight = "min-height"
+    cptBackgroundImage = "background-image"
+    cptChaColspan = "-cha-colspan"
+    cptChaRowspan = "-cha-rowspan"
+    cptFloat = "float"
+    cptVisibility = "visibility"
+    cptBoxSizing = "box-sizing"
+    cptClear = "clear"
+    cptTextTransform = "text-transform"
+    cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
 
   CSSValueType* = enum
-    VALUE_NONE, VALUE_LENGTH, VALUE_COLOR, VALUE_CONTENT, VALUE_DISPLAY,
-    VALUE_FONT_STYLE, VALUE_WHITE_SPACE, VALUE_INTEGER, VALUE_TEXT_DECORATION,
-    VALUE_WORD_BREAK, VALUE_LIST_STYLE_TYPE, VALUE_VERTICAL_ALIGN,
-    VALUE_TEXT_ALIGN, VALUE_LIST_STYLE_POSITION, VALUE_POSITION,
-    VALUE_CAPTION_SIDE, VALUE_LENGTH2, VALUE_BORDER_COLLAPSE, VALUE_QUOTES,
-    VALUE_COUNTER_RESET, VALUE_IMAGE, VALUE_FLOAT, VALUE_VISIBILITY,
-    VALUE_BOX_SIZING, VALUE_CLEAR, VALUE_TEXT_TRANSFORM, VALUE_BGCOLOR_IS_CANVAS
+    cvtNone = ""
+    cvtLength = "length"
+    cvtColor = "color"
+    cvtContent = "content"
+    cvtDisplay = "display"
+    cvtFontStyle = "fontstyle"
+    cvtWhiteSpace = "whitespace"
+    cvtInteger = "integer"
+    cvtTextDecoration = "textdecoration"
+    cvtWordBreak = "wordbreak"
+    cvtListStyleType = "liststyletype"
+    cvtVerticalAlign = "verticalalign"
+    cvtTextAlign = "textalign"
+    cvtListStylePosition = "liststyleposition"
+    cvtPosition = "position"
+    cvtCaptionSide = "captionside"
+    cvtLength2 = "length2"
+    cvtBorderCollapse = "bordercollapse"
+    cvtQuotes = "quotes"
+    cvtCounterReset = "counterreset"
+    cvtImage = "image"
+    cvtFloat = "float"
+    cvtVisibility = "visibility"
+    cvtBoxSizing = "boxsizing"
+    cvtClear = "clear"
+    cvtTextTransform = "texttransform"
+    cvtBgcolorIsCanvas = "bgcoloriscanvas"
 
   CSSGlobalValueType* = enum
-    VALUE_NOGLOBAL, VALUE_INITIAL, VALUE_INHERIT, VALUE_REVERT, VALUE_UNSET
+    cvtNoglobal, cvtInitial, cvtInherit, cvtRevert, cvtUnset
 
   CSSDisplay* = enum
     DISPLAY_NONE, DISPLAY_INLINE, DISPLAY_BLOCK, DISPLAY_LIST_ITEM,
@@ -172,59 +229,59 @@ type
 
   CSSComputedValue* = ref object
     case v*: CSSValueType
-    of VALUE_COLOR:
+    of cvtColor:
       color*: CellColor
-    of VALUE_LENGTH:
+    of cvtLength:
       length*: CSSLength
-    of VALUE_FONT_STYLE:
+    of cvtFontStyle:
       fontstyle*: CSSFontStyle
-    of VALUE_DISPLAY:
+    of cvtDisplay:
       display*: CSSDisplay
-    of VALUE_CONTENT:
+    of cvtContent:
       content*: seq[CSSContent]
-    of VALUE_QUOTES:
+    of cvtQuotes:
       quotes*: CSSQuotes
-    of VALUE_WHITE_SPACE:
+    of cvtWhiteSpace:
       whitespace*: CSSWhitespace
-    of VALUE_INTEGER:
+    of cvtInteger:
       integer*: int
-    of VALUE_TEXT_DECORATION:
+    of cvtTextDecoration:
       textdecoration*: set[CSSTextDecoration]
-    of VALUE_WORD_BREAK:
+    of cvtWordBreak:
       wordbreak*: CSSWordBreak
-    of VALUE_LIST_STYLE_TYPE:
+    of cvtListStyleType:
       liststyletype*: CSSListStyleType
-    of VALUE_VERTICAL_ALIGN:
+    of cvtVerticalAlign:
       verticalalign*: CSSVerticalAlign
-    of VALUE_TEXT_ALIGN:
+    of cvtTextAlign:
       textalign*: CSSTextAlign
-    of VALUE_LIST_STYLE_POSITION:
+    of cvtListStylePosition:
       liststyleposition*: CSSListStylePosition
-    of VALUE_POSITION:
+    of cvtPosition:
       position*: CSSPosition
-    of VALUE_CAPTION_SIDE:
+    of cvtCaptionSide:
       captionside*: CSSCaptionSide
-    of VALUE_LENGTH2:
+    of cvtLength2:
       length2*: tuple[a, b: CSSLength]
-    of VALUE_BORDER_COLLAPSE:
+    of cvtBorderCollapse:
       bordercollapse*: CSSBorderCollapse
-    of VALUE_COUNTER_RESET:
+    of cvtCounterReset:
       counterreset*: seq[CSSCounterReset]
-    of VALUE_IMAGE:
+    of cvtImage:
       image*: CSSContent
-    of VALUE_FLOAT:
+    of cvtFloat:
       float*: CSSFloat
-    of VALUE_VISIBILITY:
+    of cvtVisibility:
       visibility*: CSSVisibility
-    of VALUE_BOX_SIZING:
+    of cvtBoxSizing:
       boxsizing*: CSSBoxSizing
-    of VALUE_CLEAR:
+    of cvtClear:
       clear*: CSSClear
-    of VALUE_TEXT_TRANSFORM:
+    of cvtTextTransform:
       texttransform*: CSSTextTransform
-    of VALUE_BGCOLOR_IS_CANVAS:
+    of cvtBgcolorIsCanvas:
       bgcoloriscanvas*: bool
-    of VALUE_NONE: discard
+    of cvtNone: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
 
@@ -247,123 +304,77 @@ type
     preshints*: CSSComputedValues
 
 const ShorthandNames = {
-  "all": SHORTHAND_ALL,
-  "margin": SHORTHAND_MARGIN,
-  "padding": SHORTHAND_PADDING,
-  "background": SHORTHAND_BACKGROUND,
-  "list-style": SHORTHAND_LIST_STYLE
+  "all": cstAll,
+  "margin": cstMargin,
+  "padding": cstPadding,
+  "background": cstBackground,
+  "list-style": cstListStyle
 }.toTable()
 
-const PropertyNames = {
-  "color": PROPERTY_COLOR,
-  "margin-top": PROPERTY_MARGIN_TOP,
-  "margin-bottom": PROPERTY_MARGIN_BOTTOM,
-  "margin-left": PROPERTY_MARGIN_LEFT,
-  "margin-right": PROPERTY_MARGIN_RIGHT,
-  "font-style": PROPERTY_FONT_STYLE,
-  "display": PROPERTY_DISPLAY,
-  "content": PROPERTY_CONTENT,
-  "white-space": PROPERTY_WHITE_SPACE,
-  "font-weight": PROPERTY_FONT_WEIGHT,
-  "text-decoration": PROPERTY_TEXT_DECORATION,
-  "word-break": PROPERTY_WORD_BREAK,
-  "width": PROPERTY_WIDTH,
-  "height": PROPERTY_HEIGHT,
-  "list-style-type": PROPERTY_LIST_STYLE_TYPE,
-  "padding-top": PROPERTY_PADDING_TOP,
-  "padding-bottom": PROPERTY_PADDING_BOTTOM,
-  "padding-left": PROPERTY_PADDING_LEFT,
-  "padding-right": PROPERTY_PADDING_RIGHT,
-  "word-spacing": PROPERTY_WORD_SPACING,
-  "vertical-align": PROPERTY_VERTICAL_ALIGN,
-  "line-height": PROPERTY_LINE_HEIGHT,
-  "text-align": PROPERTY_TEXT_ALIGN,
-  "list-style-position": PROPERTY_LIST_STYLE_POSITION,
-  "background-color": PROPERTY_BACKGROUND_COLOR,
-  "position": PROPERTY_POSITION,
-  "left": PROPERTY_LEFT,
-  "right": PROPERTY_RIGHT,
-  "top": PROPERTY_TOP,
-  "bottom": PROPERTY_BOTTOM,
-  "caption-side": PROPERTY_CAPTION_SIDE,
-  "border-spacing": PROPERTY_BORDER_SPACING,
-  "border-collapse": PROPERTY_BORDER_COLLAPSE,
-  "quotes": PROPERTY_QUOTES,
-  "counter-reset": PROPERTY_COUNTER_RESET,
-  "max-width": PROPERTY_MAX_WIDTH,
-  "max-height": PROPERTY_MAX_HEIGHT,
-  "min-width": PROPERTY_MIN_WIDTH,
-  "min-height": PROPERTY_MIN_HEIGHT,
-  "background-image": PROPERTY_BACKGROUND_IMAGE,
-  "-cha-colspan": PROPERTY_CHA_COLSPAN,
-  "-cha-rowspan": PROPERTY_CHA_ROWSPAN,
-  "float": PROPERTY_FLOAT,
-  "visibility": PROPERTY_VISIBILITY,
-  "box-sizing": PROPERTY_BOX_SIZING,
-  "clear": PROPERTY_CLEAR,
-  "text-transform": PROPERTY_TEXT_TRANSFORM,
-  "-cha-bgcolor-is-canvas": PROPERTY_BGCOLOR_IS_CANVAS
-}.toTable()
+const PropertyNames = block:
+  var tab = initTable[string, CSSPropertyType]()
+  for t in CSSPropertyType:
+    if $t != "":
+      tab[$t] = t
+  tab
 
 const ValueTypes* = [
-  PROPERTY_NONE: VALUE_NONE,
-  PROPERTY_COLOR: VALUE_COLOR,
-  PROPERTY_MARGIN_TOP: VALUE_LENGTH,
-  PROPERTY_MARGIN_LEFT: VALUE_LENGTH,
-  PROPERTY_MARGIN_RIGHT: VALUE_LENGTH,
-  PROPERTY_MARGIN_BOTTOM: VALUE_LENGTH,
-  PROPERTY_FONT_STYLE: VALUE_FONT_STYLE,
-  PROPERTY_DISPLAY: VALUE_DISPLAY,
-  PROPERTY_CONTENT: VALUE_CONTENT,
-  PROPERTY_WHITE_SPACE: VALUE_WHITE_SPACE,
-  PROPERTY_FONT_WEIGHT: VALUE_INTEGER,
-  PROPERTY_TEXT_DECORATION: VALUE_TEXT_DECORATION,
-  PROPERTY_WORD_BREAK: VALUE_WORD_BREAK,
-  PROPERTY_WIDTH: VALUE_LENGTH,
-  PROPERTY_HEIGHT: VALUE_LENGTH,
-  PROPERTY_LIST_STYLE_TYPE: VALUE_LIST_STYLE_TYPE,
-  PROPERTY_PADDING_TOP: VALUE_LENGTH,
-  PROPERTY_PADDING_LEFT: VALUE_LENGTH,
-  PROPERTY_PADDING_RIGHT: VALUE_LENGTH,
-  PROPERTY_PADDING_BOTTOM: VALUE_LENGTH,
-  PROPERTY_WORD_SPACING: VALUE_LENGTH,
-  PROPERTY_VERTICAL_ALIGN: VALUE_VERTICAL_ALIGN,
-  PROPERTY_LINE_HEIGHT: VALUE_LENGTH,
-  PROPERTY_TEXT_ALIGN: VALUE_TEXT_ALIGN,
-  PROPERTY_LIST_STYLE_POSITION: VALUE_LIST_STYLE_POSITION,
-  PROPERTY_BACKGROUND_COLOR: VALUE_COLOR,
-  PROPERTY_POSITION: VALUE_POSITION,
-  PROPERTY_LEFT: VALUE_LENGTH,
-  PROPERTY_RIGHT: VALUE_LENGTH,
-  PROPERTY_TOP: VALUE_LENGTH,
-  PROPERTY_BOTTOM: VALUE_LENGTH,
-  PROPERTY_CAPTION_SIDE: VALUE_CAPTION_SIDE,
-  PROPERTY_BORDER_SPACING: VALUE_LENGTH2,
-  PROPERTY_BORDER_COLLAPSE: VALUE_BORDER_COLLAPSE,
-  PROPERTY_QUOTES: VALUE_QUOTES,
-  PROPERTY_COUNTER_RESET: VALUE_COUNTER_RESET,
-  PROPERTY_MAX_WIDTH: VALUE_LENGTH,
-  PROPERTY_MAX_HEIGHT: VALUE_LENGTH,
-  PROPERTY_MIN_WIDTH: VALUE_LENGTH,
-  PROPERTY_MIN_HEIGHT: VALUE_LENGTH,
-  PROPERTY_BACKGROUND_IMAGE: VALUE_IMAGE,
-  PROPERTY_CHA_COLSPAN: VALUE_INTEGER,
-  PROPERTY_CHA_ROWSPAN: VALUE_INTEGER,
-  PROPERTY_FLOAT: VALUE_FLOAT,
-  PROPERTY_VISIBILITY: VALUE_VISIBILITY,
-  PROPERTY_BOX_SIZING: VALUE_BOX_SIZING,
-  PROPERTY_CLEAR: VALUE_CLEAR,
-  PROPERTY_TEXT_TRANSFORM: VALUE_TEXT_TRANSFORM,
-  PROPERTY_BGCOLOR_IS_CANVAS: VALUE_BGCOLOR_IS_CANVAS
+  cptNone: cvtNone,
+  cptColor: cvtColor,
+  cptMarginTop: cvtLength,
+  cptMarginLeft: cvtLength,
+  cptMarginRight: cvtLength,
+  cptMarginBottom: cvtLength,
+  cptFontStyle: cvtFontStyle,
+  cptDisplay: cvtDisplay,
+  cptContent: cvtContent,
+  cptWhiteSpace: cvtWhiteSpace,
+  cptFontWeight: cvtInteger,
+  cptTextDecoration: cvtTextDecoration,
+  cptWordBreak: cvtWordBreak,
+  cptWidth: cvtLength,
+  cptHeight: cvtLength,
+  cptListStyleType: cvtListStyleType,
+  cptPaddingTop: cvtLength,
+  cptPaddingLeft: cvtLength,
+  cptPaddingRight: cvtLength,
+  cptPaddingBottom: cvtLength,
+  cptWordSpacing: cvtLength,
+  cptVerticalAlign: cvtVerticalAlign,
+  cptLineHeight: cvtLength,
+  cptTextAlign: cvtTextAlign,
+  cptListStylePosition: cvtListStylePosition,
+  cptBackgroundColor: cvtColor,
+  cptPosition: cvtPosition,
+  cptLeft: cvtLength,
+  cptRight: cvtLength,
+  cptTop: cvtLength,
+  cptBottom: cvtLength,
+  cptCaptionSide: cvtCaptionSide,
+  cptBorderSpacing: cvtLength2,
+  cptBorderCollapse: cvtBorderCollapse,
+  cptQuotes: cvtQuotes,
+  cptCounterReset: cvtCounterReset,
+  cptMaxWidth: cvtLength,
+  cptMaxHeight: cvtLength,
+  cptMinWidth: cvtLength,
+  cptMinHeight: cvtLength,
+  cptBackgroundImage: cvtImage,
+  cptChaColspan: cvtInteger,
+  cptChaRowspan: cvtInteger,
+  cptFloat: cvtFloat,
+  cptVisibility: cvtVisibility,
+  cptBoxSizing: cvtBoxSizing,
+  cptClear: cvtClear,
+  cptTextTransform: cvtTextTransform,
+  cptBgcolorIsCanvas: cvtBgcolorIsCanvas
 ]
 
 const InheritedProperties = {
-  PROPERTY_COLOR, PROPERTY_FONT_STYLE, PROPERTY_WHITE_SPACE,
-  PROPERTY_FONT_WEIGHT, PROPERTY_TEXT_DECORATION, PROPERTY_WORD_BREAK,
-  PROPERTY_LIST_STYLE_TYPE, PROPERTY_WORD_SPACING, PROPERTY_LINE_HEIGHT,
-  PROPERTY_TEXT_ALIGN, PROPERTY_LIST_STYLE_POSITION, PROPERTY_CAPTION_SIDE,
-  PROPERTY_BORDER_SPACING, PROPERTY_BORDER_COLLAPSE, PROPERTY_QUOTES,
-  PROPERTY_VISIBILITY, PROPERTY_TEXT_TRANSFORM
+  cptColor, cptFontStyle, cptWhiteSpace, cptFontWeight, cptTextDecoration,
+  cptWordBreak, cptListStyleType, cptWordSpacing, cptLineHeight, cptTextAlign,
+  cptListStylePosition, cptCaptionSide, cptBorderSpacing, cptBorderCollapse,
+  cptQuotes, cptVisibility, cptTextTransform
 }
 
 func getPropInheritedArray(): array[CSSPropertyType, bool] =
@@ -376,10 +387,10 @@ func getPropInheritedArray(): array[CSSPropertyType, bool] =
 const InheritedArray = getPropInheritedArray()
 
 func shorthandType(s: string): CSSShorthandType =
-  return ShorthandNames.getOrDefault(s.toLowerAscii(), SHORTHAND_NONE)
+  return ShorthandNames.getOrDefault(s.toLowerAscii(), cstNone)
 
 func propertyType(s: string): CSSPropertyType =
-  return PropertyNames.getOrDefault(s.toLowerAscii(), PROPERTY_NONE)
+  return PropertyNames.getOrDefault(s.toLowerAscii(), cptNone)
 
 func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
@@ -401,32 +412,27 @@ func `$`*(content: CSSContent): string =
 
 func `$`*(val: CSSComputedValue): string =
   case val.v
-  of VALUE_COLOR:
+  of cvtColor:
     result &= $val.color
-  of VALUE_IMAGE:
+  of cvtImage:
     result &= $val.image
-  of VALUE_LENGTH:
+  of cvtLength:
     result &= $val.length
   else:
     result = $val.v
 
 macro `{}`*(vals: CSSComputedValues, s: string): untyped =
   let t = propertyType($s)
-  let vs = $valueType(t)
-  let vss = vs.split('_')
-  let s = vss.toOpenArray(1, vss.high).join('_').toLowerAscii()
-  return newDotExpr(newTree(nnkBracketExpr, vals, newLit(t)), newIdentNode(s))
+  let vs = ident($valueType(t))
+  return quote do:
+    `vals`[`t`].`vs`
 
 macro `{}=`*(vals: CSSComputedValues, s: string, val: typed) =
   let t = propertyType($s)
   let v = valueType(t)
-  let vs = $v
-  let vss = vs.split('_')
-  let s = vss.toOpenArray(1, vss.high).join('_').toLowerAscii()
-  let id = ident(s)
-  let expr = newTree(nnkBracketExpr, vals, newLit(t))
+  let vs = ident($v)
   return quote do:
-    `expr` = CSSComputedValue(v: CSSValueType(`v`), `id`: `val`)
+    `vals`[`t`] = CSSComputedValue(v: `v`, `vs`: `val`)
 
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
@@ -781,12 +787,12 @@ func cssWordSpacing(cval: CSSComponentValue): Opt[CSSLength] =
 
 func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
   const GlobalMap = {
-    "inherit": VALUE_INHERIT,
-    "initial": VALUE_INITIAL,
-    "unset": VALUE_UNSET,
-    "revert": VALUE_REVERT
+    "inherit": cvtInherit,
+    "initial": cvtInitial,
+    "unset": cvtUnset,
+    "revert": cvtRevert
   }
-  return cssIdentFirst(GlobalMap, d).get(VALUE_NOGLOBAL)
+  return cssIdentFirst(GlobalMap, d).get(cvtNoglobal)
 
 func cssQuotes(d: CSSDeclaration): Opt[CSSQuotes] =
   template die =
@@ -1169,56 +1175,56 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
   let cval = d.value[i]
   inc i
   case vtype
-  of VALUE_COLOR:
+  of cvtColor:
     val.color = ?cssColor(cval)
-  of VALUE_LENGTH:
+  of cvtLength:
     case ptype
-    of PROPERTY_WORD_SPACING:
+    of cptWordSpacing:
       val.length = ?cssWordSpacing(cval)
-    of PROPERTY_LINE_HEIGHT:
+    of cptLineHeight:
       val.length = ?cssLineHeight(cval)
-    of PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT, PROPERTY_MIN_WIDTH,
-       PROPERTY_MIN_HEIGHT:
+    of cptMaxWidth, cptMaxHeight, cptMinWidth,
+       cptMinHeight:
       val.length = ?cssMaxMinSize(cval)
-    of PROPERTY_PADDING_LEFT, PROPERTY_PADDING_RIGHT, PROPERTY_PADDING_TOP,
-       PROPERTY_PADDING_BOTTOM:
+    of cptPaddingLeft, cptPaddingRight, cptPaddingTop,
+       cptPaddingBottom:
       val.length = ?cssLength(cval, has_auto = false)
     else:
       val.length = ?cssLength(cval)
-  of VALUE_FONT_STYLE:
+  of cvtFontStyle:
     val.fontstyle = ?cssFontStyle(cval)
-  of VALUE_DISPLAY:
+  of cvtDisplay:
     val.display = ?cssDisplay(cval)
-  of VALUE_CONTENT:
+  of cvtContent:
     val.content = cssContent(d)
-  of VALUE_WHITE_SPACE:
+  of cvtWhiteSpace:
     val.whitespace = ?cssWhiteSpace(cval)
-  of VALUE_INTEGER:
-    if ptype == PROPERTY_FONT_WEIGHT:
+  of cvtInteger:
+    if ptype == cptFontWeight:
       val.integer = ?cssFontWeight(cval)
-    elif ptype == PROPERTY_CHA_COLSPAN:
+    elif ptype == cptChaColspan:
       val.integer = ?cssInteger(cval, 1 .. 1000)
-    elif ptype == PROPERTY_CHA_ROWSPAN:
+    elif ptype == cptChaRowspan:
       val.integer = ?cssInteger(cval, 0 .. 65534)
-  of VALUE_TEXT_DECORATION:
+  of cvtTextDecoration:
     val.textdecoration = ?cssTextDecoration(d)
-  of VALUE_WORD_BREAK:
+  of cvtWordBreak:
     val.wordbreak = ?cssWordBreak(cval)
-  of VALUE_LIST_STYLE_TYPE:
+  of cvtListStyleType:
     val.liststyletype = ?cssListStyleType(cval)
-  of VALUE_VERTICAL_ALIGN:
+  of cvtVerticalAlign:
     val.verticalalign = ?cssVerticalAlign(cval)
-  of VALUE_TEXT_ALIGN:
+  of cvtTextAlign:
     val.textalign = ?cssTextAlign(cval)
-  of VALUE_LIST_STYLE_POSITION:
+  of cvtListStylePosition:
     val.liststyleposition = ?cssListStylePosition(cval)
-  of VALUE_POSITION:
+  of cvtPosition:
     val.position = ?cssPosition(cval)
-  of VALUE_CAPTION_SIDE:
+  of cvtCaptionSide:
     val.captionside = ?cssCaptionSide(cval)
-  of VALUE_BORDER_COLLAPSE:
+  of cvtBorderCollapse:
     val.bordercollapse = ?cssBorderCollapse(cval)
-  of VALUE_LENGTH2:
+  of cvtLength2:
     val.length2.a = ?cssAbsoluteLength(cval)
     d.value.skipWhitespace(i)
     if i >= d.value.len:
@@ -1226,48 +1232,48 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     else:
       let cval = d.value[i]
       val.length2.b = ?cssAbsoluteLength(cval)
-  of VALUE_QUOTES:
+  of cvtQuotes:
     val.quotes = ?cssQuotes(d)
-  of VALUE_COUNTER_RESET:
+  of cvtCounterReset:
     val.counterreset = ?cssCounterReset(d)
-  of VALUE_IMAGE:
+  of cvtImage:
     val.image = ?cssImage(cval)
-  of VALUE_FLOAT:
+  of cvtFloat:
     val.float = ?cssFloat(cval)
-  of VALUE_VISIBILITY:
+  of cvtVisibility:
     val.visibility = ?cssVisibility(cval)
-  of VALUE_BOX_SIZING:
+  of cvtBoxSizing:
     val.boxsizing = ?cssBoxSizing(cval)
-  of VALUE_CLEAR:
+  of cvtClear:
     val.clear = ?cssClear(cval)
-  of VALUE_TEXT_TRANSFORM:
+  of cvtTextTransform:
     val.texttransform = ?cssTextTransform(cval)
-  of VALUE_BGCOLOR_IS_CANVAS:
+  of cvtBgcolorIsCanvas:
     return err() # internal value
-  of VALUE_NONE:
+  of cvtNone:
     discard
   return ok()
 
 func getInitialColor(t: CSSPropertyType): CellColor =
-  if t == PROPERTY_BACKGROUND_COLOR:
+  if t == cptBackgroundColor:
     return Colors["transparent"].cellColor()
   return defaultColor
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of PROPERTY_WIDTH, PROPERTY_HEIGHT, PROPERTY_WORD_SPACING,
-     PROPERTY_LINE_HEIGHT, PROPERTY_LEFT, PROPERTY_RIGHT, PROPERTY_TOP,
-     PROPERTY_BOTTOM, PROPERTY_MAX_WIDTH, PROPERTY_MAX_HEIGHT,
-     PROPERTY_MIN_WIDTH, PROPERTY_MIN_HEIGHT:
+  of cptWidth, cptHeight, cptWordSpacing,
+     cptLineHeight, cptLeft, cptRight, cptTop,
+     cptBottom, cptMaxWidth, cptMaxHeight,
+     cptMinWidth, cptMinHeight:
     return CSSLengthAuto
   else:
     return CSSLength(auto: false, unit: UNIT_PX, num: 0)
 
 func getInitialInteger(t: CSSPropertyType): int =
   case t
-  of PROPERTY_CHA_COLSPAN, PROPERTY_CHA_ROWSPAN:
+  of cptChaColspan, cptChaRowspan:
     return 1
-  of PROPERTY_FONT_WEIGHT:
+  of cptFontWeight:
     return 400 # normal
   else:
     return 0
@@ -1276,17 +1282,17 @@ func calcInitial(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
   var nv: CSSComputedValue
   case v
-  of VALUE_COLOR:
+  of cvtColor:
     nv = CSSComputedValue(v: v, color: getInitialColor(t))
-  of VALUE_DISPLAY:
+  of cvtDisplay:
     nv = CSSComputedValue(v: v, display: DISPLAY_INLINE)
-  of VALUE_WORD_BREAK:
+  of cvtWordBreak:
     nv = CSSComputedValue(v: v, wordbreak: WORD_BREAK_NORMAL)
-  of VALUE_LENGTH:
+  of cvtLength:
     nv = CSSComputedValue(v: v, length: getInitialLength(t))
-  of VALUE_INTEGER:
+  of cvtInteger:
     nv = CSSComputedValue(v: v, integer: getInitialInteger(t))
-  of VALUE_QUOTES:
+  of cvtQuotes:
     nv = CSSComputedValue(v: v, quotes: CSSQuotes(auto: true))
   else:
     nv = CSSComputedValue(v: v)
@@ -1306,7 +1312,7 @@ func getComputedValue(d: CSSDeclaration, ptype: CSSPropertyType,
     vtype: CSSValueType): Opt[CSSComputedEntry] =
   let global = cssGlobal(d)
   let val = CSSComputedValue(v: vtype)
-  if global != VALUE_NOGLOBAL:
+  if global != cvtNoglobal:
     return ok((ptype, val, global))
   ?val.getValueFromDecl(d, vtype, ptype)
   return ok((ptype, val, global))
@@ -1358,68 +1364,68 @@ func lengthShorthand(d: CSSDeclaration, props: array[4, CSSPropertyType]):
   return ok(res)
 
 const PropertyMarginSpec = [
-  PROPERTY_MARGIN_TOP, PROPERTY_MARGIN_RIGHT, PROPERTY_MARGIN_BOTTOM,
-  PROPERTY_MARGIN_LEFT
+  cptMarginTop, cptMarginRight, cptMarginBottom,
+  cptMarginLeft
 ]
 
 const PropertyPaddingSpec = [
-  PROPERTY_PADDING_TOP, PROPERTY_PADDING_RIGHT, PROPERTY_PADDING_BOTTOM,
-  PROPERTY_PADDING_LEFT
+  cptPaddingTop, cptPaddingRight, cptPaddingBottom,
+  cptPaddingLeft
 ]
 
 proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
     Err[void] =
   case shorthandType(d.name)
-  of SHORTHAND_NONE:
+  of cstNone:
     let ptype = propertyType(d.name)
     let vtype = valueType(ptype)
     res.add(?getComputedValue(d, ptype, vtype))
-  of SHORTHAND_ALL:
+  of cstAll:
     let global = cssGlobal(d)
-    if global != VALUE_NOGLOBAL:
+    if global != cvtNoglobal:
       for ptype in CSSPropertyType:
         let vtype = valueType(ptype)
         let val = CSSComputedValue(v: vtype)
         res.add((ptype, val, global))
-  of SHORTHAND_MARGIN:
+  of cstMargin:
     res.add(?lengthShorthand(d, PropertyMarginSpec))
-  of SHORTHAND_PADDING:
+  of cstPadding:
     res.add(?lengthShorthand(d, PropertyPaddingSpec))
-  of SHORTHAND_BACKGROUND:
+  of cstBackground:
     let global = cssGlobal(d)
-    var bgcolorval = getDefault(PROPERTY_BACKGROUND_COLOR)
-    var bgimageval = getDefault(PROPERTY_BACKGROUND_IMAGE)
+    var bgcolorval = getDefault(cptBackgroundColor)
+    var bgimageval = getDefault(cptBackgroundImage)
     var valid = true
-    if global == VALUE_NOGLOBAL:
+    if global == cvtNoglobal:
       for tok in d.value:
         if tok == CSS_WHITESPACE_TOKEN:
           continue
         if (let r = cssImage(tok); r.isOk):
-          bgimageval = CSSComputedValue(v: VALUE_IMAGE, image: r.get)
+          bgimageval = CSSComputedValue(v: cvtImage, image: r.get)
         elif (let r = cssColor(tok); r.isOk):
-          bgcolorval = CSSComputedValue(v: VALUE_COLOR, color: r.get)
+          bgcolorval = CSSComputedValue(v: cvtColor, color: r.get)
         else:
           #TODO when we implement the other shorthands too
           #valid = false
           discard
     if valid:
-      res.add((PROPERTY_BACKGROUND_COLOR, bgcolorval, global))
-      res.add((PROPERTY_BACKGROUND_IMAGE, bgimageval, global))
-  of SHORTHAND_LIST_STYLE:
+      res.add((cptBackgroundColor, bgcolorval, global))
+      res.add((cptBackgroundImage, bgimageval, global))
+  of cstListStyle:
     let global = cssGlobal(d)
-    var positionVal = getDefault(PROPERTY_LIST_STYLE_POSITION)
-    var typeVal = getDefault(PROPERTY_LIST_STYLE_TYPE)
+    var positionVal = getDefault(cptListStylePosition)
+    var typeVal = getDefault(cptListStyleType)
     var valid = true
-    if global == VALUE_NOGLOBAL:
+    if global == cvtNoglobal:
       for tok in d.value:
         if (let r = cssListStylePosition(tok); r.isOk):
           positionVal = CSSComputedValue(
-            v: VALUE_LIST_STYLE_POSITION,
+            v: cvtListStylePosition,
             liststyleposition: r.get
           )
         elif (let r = cssListStyleType(tok); r.isOk):
           typeVal = CSSComputedValue(
-            v: VALUE_LIST_STYLE_TYPE,
+            v: cvtListStyleType,
             liststyletype: r.get
           )
         else:
@@ -1427,8 +1433,8 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
           #valid = false
           discard
     if valid:
-      res.add((PROPERTY_LIST_STYLE_POSITION, positionVal, global))
-      res.add((PROPERTY_LIST_STYLE_TYPE, typeVal, global))
+      res.add((cptListStylePosition, positionVal, global))
+      res.add((cptListStyleType, typeVal, global))
   return ok()
 
 proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
@@ -1453,14 +1459,14 @@ proc applyValue(vals: CSSComputedValues, prop: CSSPropertyType,
   else:
     nil
   case global
-  of VALUE_INHERIT:
+  of cvtInherit:
     if parentVal != nil:
       vals[prop] = parentVal
     else:
       vals[prop] = getDefault(prop)
-  of VALUE_INITIAL:
+  of cvtInitial:
     vals[prop] = getDefault(prop)
-  of VALUE_UNSET:
+  of cvtUnset:
     if inherited(prop):
       # inherit
       if parentVal != nil:
@@ -1470,12 +1476,12 @@ proc applyValue(vals: CSSComputedValues, prop: CSSPropertyType,
     else:
       # initial
       vals[prop] = getDefault(prop)
-  of VALUE_REVERT:
+  of cvtRevert:
     if previousOrigin != nil:
       vals[prop] = previousOrigin[prop]
     else:
       vals[prop] = getDefault(prop)
-  of VALUE_NOGLOBAL:
+  of cvtNoglobal:
     vals[prop] = val
 
 func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
