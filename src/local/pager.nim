@@ -1350,6 +1350,8 @@ proc handleEvent0(pager: Pager, container: Container, event: ContainerEvent): bo
       cm.then(proc() =
         container.startload())
     else:
+      # remove "connecting..." message left by connect2
+      pager.refreshStatusMsg()
       cm.then(proc(): auto =
         container.quit())
   of QUIT:
