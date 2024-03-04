@@ -1169,6 +1169,9 @@ func item(tokenList: DOMTokenList, i: int): Option[string] {.jsfunc.} =
 func contains*(tokenList: DOMTokenList, a: CAtom): bool =
   return a in tokenList.toks
 
+func contains(tokenList: DOMTokenList, a: AttrType): bool =
+  return tokenList.element.document.toAtom(a) in tokenList.toks
+
 func jsContains(tokenList: DOMTokenList, s: string): bool
     {.jsfunc: "contains".} =
   return tokenList.element.document.toAtom(s) in tokenList
@@ -2748,7 +2751,7 @@ var appliesFwdDecl*: proc(mqlist: MediaQueryList, window: Window): bool
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window, link: HTMLLinkElement) =
-  if link.attr(atRel) != "stylesheet":
+  if atStylesheet notin link.relList:
     return
   if link.fetchStarted:
     return
@@ -2830,14 +2833,16 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
     if name == n:
       element.val = true
       return
+  template reflect_domtoklist0(element: Element, val: untyped) =
+    element.val.toks.setLen(0)
+    for x in value.split(AsciiWhitespace):
+      if x != "":
+        let a = element.document.toAtom(x)
+        if a notin element.val:
+          element.val.toks.add(a)
   template reflect_domtoklist(element: Element, n: AttrType, val: untyped) =
     if name == n:
-      element.val.toks.setLen(0)
-      for x in value.split(AsciiWhitespace):
-        if x != "":
-          let a = element.document.toAtom(x)
-          if a notin element.val:
-            element.val.toks.add(a)
+      element.reflect_domtoklist0 val
       return
   element.reflect_atom atId, id
   element.reflect_atom atName, name
@@ -2879,13 +2884,14 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
       of "button": return BUTTON_BUTTON)
   of TAG_LINK:
     let link = HTMLLinkElement(element)
-    if link.isConnected and (name == atRel and value == "stylesheet" or
-        name == atHref and link.attr(atRel) == "stylesheet"):
+    if name == atRel:
+      link.reflect_domtoklist0 relList # do not return
+    if link.isConnected and atStylesheet in link.relList and
+        name in {atHref, atRel}:
       link.fetchStarted = false
       let window = link.document.window
       if window != nil:
         window.loadResource(link)
-    link.reflect_domtoklist atRel, relList
   of TAG_A:
     let anchor = HTMLAnchorElement(element)
     anchor.reflect_domtoklist atRel, relList

@@ -81,6 +81,7 @@ type
     atSrc = "src"
     atSrcset = "srcset"
     atStyle = "style"
+    atStylesheet = "stylesheet"
     atTarget = "target"
     atText = "text"
     atTitle = "title"
