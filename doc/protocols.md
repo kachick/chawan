@@ -18,7 +18,8 @@ this document.
 * [Gemini](#gemini)
 * [Finger](#finger)
 * [Spartan](#spartan)
-* [Local schemes: file:, about:, man:, data:, cgi-bin:](#local-schemes-file-about-man-data-cgi-bin)
+* [Local schemes: file:, about:, man:, data:](#local-schemes-file-about-man-data)
+* [Internal schemes: cgi-bin:, stream:](#internal-schemes-cgi-bin-stream)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
@@ -108,7 +109,7 @@ protocol-specific line type. This is sort of supported through a sed filter
 for gemtext outputs in the CGI script (in other words, no modification to
 gmi2html was done to support this).
 
-## Local schemes: file:, about:, man:, data:, cgi-bin:
+## Local schemes: file:, about:, man:, data:
 
 While these are not necessarily *protocols*, they are implemented similarly
 to the protocols listed above (and thus can also be replaced, if the user
@@ -129,17 +130,35 @@ to work.
 
 `data:` decodes a data URL as defined in RFC 2397.
 
-Finally, `cgi-bin:` executes a local CGI script. This scheme is used for
-the actual implementations of all supported protocols and can *not*
-be replaced.
+## Internal schemes: cgi-bin:, stream:
+
+Two internal protocols exist: `cgi-bin:` and `stream:`. These are the basic
+building blocks for the implementation of every protocol mentioned above; for
+this reason, these can *not* be replaced, and are implemented in the main
+browser binary.
+
+`cgi-bin:` executes a local CGI script. This scheme is used for the actual
+implementation of the non-internal protocols mentioned above. Local CGI scripts
+can also be used to implement wrappers of other programs inside Chawan
+(e.g. dictionaries).
+
+`stream:` is used for reading in streams returned by external programs or passed
+to Chawan via standard input. It differs from `cgi-bin:` in that it does not
+cooperate with the external process, and that the loader does not keep track
+of where the stream originally comes from. Therefore it is suitable for reading
+in the output of mailcap entries, or for turning stdin into a URL.
+
+Since Chawan does not keep track of the origin of `stream:` URLs, it is not
+possible to reload them. (For that matter, reloading stdin does not make much
+sense anyway.) To support rewinding and "view source", the output of `stream:`'s
+is stored in a temporary file until the buffer is discarded.
 
 ## Custom protocols
 
-Chawan itself is protocol-agnostic. This means that the `cha` binary itself
-does not know much about the protocols listed above; instead, it loads
-these through a combination of local CGI, urimethodmap, and if conversion
-to HTML or plain text is necessary, mailcap (using x-htmloutput and
-copiousoutput).
+Chawan is protocol-agnostic. This means that the `cha` binary itself does not
+know much about the protocols listed above; instead, it loads these through a
+combination of local CGI, urimethodmap, and if conversion to HTML or plain text
+is necessary, mailcap (using x-htmloutput and copiousoutput).
 
 urimethodmap can also be used to override default handlers for the protocols
 listed above. This is similar to how w3m allows you to override the default
