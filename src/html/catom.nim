@@ -1,25 +1,112 @@
 import std/hashes
-
-import html/enums
+import std/macros
+import std/sets
+import std/strutils
 
 import chame/tags
+
+# create a static enum compatible with chame/tags
+
+macro makeStaticAtom =
+  # declare inside the macro to avoid confusion with StaticAtom0
+  type
+    StaticAtom0 = enum
+      atAcceptCharset = "accept-charset"
+      atAction = "action"
+      atAlign = "align"
+      atAlt = "alt"
+      atAsync = "async"
+      atBgcolor = "bgcolor"
+      atBlocking = "blocking"
+      atCharset = "charset"
+      atChecked = "checked"
+      atClass = "class"
+      atClassList
+      atColor = "color"
+      atCols = "cols"
+      atColspan = "colspan"
+      atCrossorigin = "crossorigin"
+      atDefer = "defer"
+      atDirname = "dirname"
+      atDisabled = "disabled"
+      atEnctype = "enctype"
+      atEvent = "event"
+      atFor = "for"
+      atForm = "form"
+      atFormaction = "formaction"
+      atFormenctype = "formenctype"
+      atFormmethod = "formmethod"
+      atHeight = "height"
+      atHref = "href"
+      atId = "id"
+      atIntegrity = "integrity"
+      atIsmap = "ismap"
+      atLanguage = "language"
+      atMedia = "media"
+      atMethod = "method"
+      atMultiple = "multiple"
+      atName = "name"
+      atNomodule = "nomodule"
+      atOnload = "onload"
+      atReferrerpolicy = "referrerpolicy"
+      atRel = "rel"
+      atRequired = "required"
+      atRows = "rows"
+      atRowspan = "rowspan"
+      atSelected = "selected"
+      atSize = "size"
+      atSizes = "sizes"
+      atSlot = "slot"
+      atSrc = "src"
+      atSrcset = "srcset"
+      atStyle = "style"
+      atStylesheet = "stylesheet"
+      atTarget = "target"
+      atText = "text"
+      atTitle = "title"
+      atType = "type"
+      atUsemap = "usemap"
+      atValign = "valign"
+      atValue = "value"
+      atWidth = "width"
+  let decl = quote do:
+    type StaticAtom* {.inject.} = enum
+      atUnknown = ""
+  let decl0 = decl[0][2]
+  var seen: HashSet[string]
+  for t in TagType:
+    if t == TAG_UNKNOWN:
+      continue
+    let tn = $t
+    var name = "at"
+    name &= tn[0].toUpperAscii()
+    name &= tn.substr(1)
+    if name == "atTr":
+      # Nim cries about this overlapping with the attr() procs :/
+      name = "satTr"
+    seen.incl(tn)
+    decl0.add(newNimNode(nnkEnumFieldDef).add(ident(name), newStrLitNode(tn)))
+  for i, f in StaticAtom0.getType():
+    if i == 0:
+      continue
+    let tn = $StaticAtom0(i - 1)
+    if tn in seen:
+      continue
+    decl0.add(newNimNode(nnkEnumFieldDef).add(ident(f.strVal), newStrLitNode(tn)))
+  decl
+
+makeStaticAtom
 
 #TODO use a better hash map
 const CAtomFactoryStrMapLength = 1024 # must be a power of 2
 static:
   doAssert (CAtomFactoryStrMapLength and (CAtomFactoryStrMapLength - 1)) == 0
 
-# Null atom + mapped tag types + mapped attr types
-const AttrMapNum = 1 + ({TagType.low..TagType.high} - {TAG_UNKNOWN}).card +
-  ({AttrType.low..AttrType.high} - {atUnknown}).card
-
 type
   CAtom* = distinct int
 
   CAtomFactoryInit = object
     obj: CAtomFactoryObj
-    attrToAtom: array[AttrType, CAtom]
-    atomToAttr: array[AttrMapNum, AttrType]
 
   CAtomFactoryObj = object
     strMap: array[CAtomFactoryStrMapLength, seq[CAtom]]
@@ -53,14 +140,9 @@ const factoryInit = (func(): CAtomFactoryInit =
   var init = CAtomFactoryInit()
   # Null atom
   init.obj.atomMap.add("")
-  # TagType: 1..TagType.high
-  for tagType in TagType(1) .. TagType.high:
-    discard init.obj.toAtom($tagType)
-  # Attr: may overlap with TagType; exclude atUnknown
-  for attrType in AttrType(1) .. AttrType.high:
-    let atom = init.obj.toAtom($attrType)
-    init.attrToAtom[attrType] = atom
-    init.atomToAttr[int(atom)] = attrType
+  # StaticAtom includes TagType too.
+  for sa in StaticAtom(1) .. StaticAtom.high:
+    discard init.obj.toAtom($sa)
   return init
 )()
 
@@ -76,21 +158,21 @@ func toAtom*(factory: CAtomFactory, tagType: TagType): CAtom =
   assert tagType != TAG_UNKNOWN
   return CAtom(tagType)
 
-func toAtom*(factory: CAtomFactory, attrType: AttrType): CAtom =
+func toAtom*(factory: CAtomFactory, attrType: StaticAtom): CAtom =
   assert attrType != atUnknown
-  return factoryInit.attrToAtom[attrType]
+  return CAtom(attrType)
 
 func toStr*(factory: CAtomFactory, atom: CAtom): string =
   return factory.atomMap[int(atom)]
 
 func toTagType*(factory: CAtomFactory, atom: CAtom): TagType =
   let i = int(atom)
-  if i in 1 .. int(TagType.high):
-    return TagType(atom)
+  if i <= int(TagType.high):
+    return TagType(i)
   return TAG_UNKNOWN
 
-func toAttrType*(factory: CAtomFactory, atom: CAtom): AttrType =
+func toStaticAtom*(factory: CAtomFactory, atom: CAtom): StaticAtom =
   let i = int(atom)
-  if i < factoryInit.atomToAttr.len:
-    return factoryInit.atomToAttr[i]
+  if i <= int(StaticAtom.high):
+    return StaticAtom(i)
   return atUnknown

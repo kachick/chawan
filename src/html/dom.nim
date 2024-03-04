@@ -709,7 +709,7 @@ type
     REFLECT_STR, REFLECT_BOOL, REFLECT_LONG, REFLECT_ULONG_GZ, REFLECT_ULONG
 
   ReflectEntry = object
-    attrname: AttrType
+    attrname: StaticAtom
     funcname: string
     tags: set[TagType]
     case t: ReflectType
@@ -719,8 +719,8 @@ type
       u: uint32
     else: discard
 
-func attrType0(s: static string): AttrType =
-  return parseEnum[AttrType](s)
+func attrType0(s: static string): StaticAtom =
+  return parseEnum[StaticAtom](s)
 
 template toset(ts: openarray[TagType]): set[TagType] =
   var tags: system.set[TagType]
@@ -820,10 +820,10 @@ const ReflectTable0 = [
 ]
 
 # Forward declarations
-func attr*(element: Element, s: AttrType): string
+func attr*(element: Element, s: StaticAtom): string
 func attrb*(element: Element, s: CAtom): bool
 proc attr*(element: Element, name: CAtom, value: string)
-proc attr*(element: Element, name: AttrType, value: string)
+proc attr*(element: Element, name: StaticAtom, value: string)
 func baseURL*(document: Document): URL
 proc delAttr(element: Element, i: int, keep = false)
 proc reflectAttrs(element: Element, name: CAtom, value: string)
@@ -836,7 +836,7 @@ func document*(node: Node): Document =
 proc toAtom*(document: Document, s: string): CAtom =
   return document.factory.toAtom(s)
 
-proc toAtom*(document: Document, at: AttrType): CAtom =
+proc toAtom*(document: Document, at: StaticAtom): CAtom =
   return document.factory.toAtom(at)
 
 proc toStr(document: Document, atom: CAtom): string =
@@ -845,8 +845,8 @@ proc toStr(document: Document, atom: CAtom): string =
 proc toTagType*(document: Document, atom: CAtom): TagType =
   return document.factory.toTagType(atom)
 
-proc toAttrType(document: Document, atom: CAtom): AttrType =
-  return document.factory.toAttrType(atom)
+proc toStaticAtom(document: Document, atom: CAtom): StaticAtom =
+  return document.factory.toStaticAtom(atom)
 
 proc toAtom*(document: Document, tagType: TagType): CAtom =
   return document.factory.toAtom(tagType)
@@ -878,7 +878,7 @@ func findAttr(element: Element, qualifiedName: CAtom): int =
       return i
   return -1
 
-func findAttr(element: Element, qualifiedName: AttrType): int =
+func findAttr(element: Element, qualifiedName: StaticAtom): int =
   return element.findAttr(element.document.toAtom(qualifiedName))
 
 func findAttrNS(element: Element, namespace, qualifiedName: CAtom): int =
@@ -1169,7 +1169,7 @@ func item(tokenList: DOMTokenList, i: int): Option[string] {.jsfunc.} =
 func contains*(tokenList: DOMTokenList, a: CAtom): bool =
   return a in tokenList.toks
 
-func contains(tokenList: DOMTokenList, a: AttrType): bool =
+func contains(tokenList: DOMTokenList, a: StaticAtom): bool =
   return tokenList.element.document.toAtom(a) in tokenList.toks
 
 func jsContains(tokenList: DOMTokenList, s: string): bool
@@ -1260,7 +1260,7 @@ const SupportedTokensMap = {
 
 func supports(tokenList: DOMTokenList, token: string):
     JSResult[bool] {.jsfunc.} =
-  let localName = tokenList.element.document.toAttrType(tokenList.localName)
+  let localName = tokenList.element.document.toStaticAtom(tokenList.localName)
   if localName in SupportedTokensMap:
     let lowercase = token.toLowerAscii()
     return ok(lowercase in SupportedTokensMap[localName])
@@ -2052,19 +2052,19 @@ func attr*(element: Element, s: CAtom): string =
     return element.attrs[i].value
   return ""
 
-func attr*(element: Element, s: AttrType): string =
+func attr*(element: Element, s: StaticAtom): string =
   return element.attr(element.document.toAtom(s))
 
-func attrl*(element: Element, s: AttrType): Option[int32] =
+func attrl*(element: Element, s: StaticAtom): Option[int32] =
   return parseInt32(element.attr(s))
 
-func attrulgz*(element: Element, s: AttrType): Option[uint32] =
+func attrulgz*(element: Element, s: StaticAtom): Option[uint32] =
   let x = parseUInt32(element.attr(s))
   if x.isSome and x.get > 0:
     return x
   return none(uint32)
 
-func attrul*(element: Element, s: AttrType): Option[uint32] =
+func attrul*(element: Element, s: StaticAtom): Option[uint32] =
   let x = parseUInt32(element.attr(s))
   if x.isSome and x.get >= 0:
     return x
@@ -2073,7 +2073,7 @@ func attrul*(element: Element, s: AttrType): Option[uint32] =
 func attrb*(element: Element, s: CAtom): bool =
   return element.findAttr(s) != -1
 
-func attrb*(element: Element, at: AttrType): bool =
+func attrb*(element: Element, at: StaticAtom): bool =
   let atom = element.document.toAtom(at)
   return element.attrb(atom)
 
@@ -2816,20 +2816,20 @@ proc loadResource(window: Window, image: HTMLImageElement) =
     window.loadingResourcePromises.add(p)
 
 proc reflectAttrs(element: Element, name: CAtom, value: string) =
-  let name = element.document.toAttrType(name)
-  template reflect_str(element: Element, n: AttrType, val: untyped) =
+  let name = element.document.toStaticAtom(name)
+  template reflect_str(element: Element, n: StaticAtom, val: untyped) =
     if name == n:
       element.val = value
       return
-  template reflect_atom(element: Element, n: AttrType, val: untyped) =
+  template reflect_atom(element: Element, n: StaticAtom, val: untyped) =
     if name == n:
       element.val = element.document.toAtom(value)
       return
-  template reflect_str(element: Element, n: AttrType, val, fun: untyped) =
+  template reflect_str(element: Element, n: StaticAtom, val, fun: untyped) =
     if name == n:
       element.val = fun(value)
       return
-  template reflect_bool(element: Element, n: AttrType, val: untyped) =
+  template reflect_bool(element: Element, n: StaticAtom, val: untyped) =
     if name == n:
       element.val = true
       return
@@ -2840,7 +2840,7 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
         let a = element.document.toAtom(x)
         if a notin element.val:
           element.val.toks.add(a)
-  template reflect_domtoklist(element: Element, n: AttrType, val: untyped) =
+  template reflect_domtoklist(element: Element, n: StaticAtom, val: untyped) =
     if name == n:
       element.reflect_domtoklist0 val
       return
@@ -2931,7 +2931,7 @@ proc attr*(element: Element, name: CAtom, value: string) =
     ))
   element.reflectAttrs(name, value)
 
-proc attr*(element: Element, name: AttrType, value: string) =
+proc attr*(element: Element, name: StaticAtom, value: string) =
   element.attr(element.document.toAtom(name), value)
 
 proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
@@ -2965,13 +2965,13 @@ proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
     ))
   element.reflectAttrs(qualifiedName, value)
 
-proc attrl(element: Element, name: AttrType, value: int32) =
+proc attrl(element: Element, name: StaticAtom, value: int32) =
   element.attr(name, $value)
 
-proc attrul(element: Element, name: AttrType, value: uint32) =
+proc attrul(element: Element, name: StaticAtom, value: uint32) =
   element.attr(name, $value)
 
-proc attrulgz(element: Element, name: AttrType, value: uint32) =
+proc attrulgz(element: Element, name: StaticAtom, value: uint32) =
   if value > 0:
     element.attrul(name, value)
 

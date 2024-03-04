@@ -8,7 +8,6 @@ import css/selectorparser
 import css/stylednode
 import html/catom
 import html/dom
-import html/enums
 import utils/twtstr
 
 import chame/tags

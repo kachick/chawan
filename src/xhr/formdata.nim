@@ -1,6 +1,7 @@
 import std/base64
 import std/streams
 
+import html/catom
 import html/dom
 import html/enums
 import js/domexception
@@ -14,7 +15,6 @@ import chame/tags
 
 proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     encoding = "UTF-8"): seq[FormDataEntry]
-
 
 proc generateBoundary(): string =
   let urandom = newFileStream("/dev/urandom")

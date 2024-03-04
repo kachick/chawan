@@ -9,6 +9,7 @@ import css/selectorparser
 import css/sheet
 import css/stylednode
 import css/values
+import html/catom
 import html/dom
 import html/enums
 import layout/layoutunit
