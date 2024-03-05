@@ -729,8 +729,8 @@ proc validateData(buffer: Buffer, iq: openArray[char]): bool =
       if buffer.canSwitch:
         buffer.switchCharset()
         return false
-      if n > pi:
-        doAssert buffer.processData0(iq.toOpenArray(pi, n - 1))
+      if n >= pi:
+        doAssert buffer.processData0(iq.toOpenArray(pi, n))
       doAssert buffer.processData0("\uFFFD")
       pi = buffer.validator.i
   true
