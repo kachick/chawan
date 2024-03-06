@@ -211,7 +211,8 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
       contentLen, prevURL)
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
-    stdout.write("Cha-Control: ConnectionError " & $code)
+    stdout.write("Cha-Control: ConnectionError " & $code &
+      ($strerror(errno)).deleteChars({'\n', '\r'}))
     quit(1)
   else:
     discard close(pipefd[1]) # close write
