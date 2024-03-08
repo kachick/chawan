@@ -118,13 +118,15 @@ template DECSET(s: varargs[string, `$`]): string =
 template DECRST(s: varargs[string, `$`]): string =
   "\e[?" & s.join(';') & 'l'
 
+# alt screen
+const SMCUP = DECSET(1049)
+const RMCUP = DECRST(1049)
+
 # mouse tracking
 const SGRMOUSEBTNON = DECSET(1002, 1006)
 const SGRMOUSEBTNOFF = DECRST(1002, 1006)
 
 when not termcap_found:
-  const SMCUP = DECSET(1049)
-  const RMCUP = DECRST(1049)
   const CNORM = DECSET(25)
   const CIVIS = DECRST(25)
   template HVP(s: varargs[string, `$`]): string =
@@ -237,16 +239,14 @@ proc setCursor*(term: Terminal, x, y: int) =
 proc enableAltScreen(term: Terminal): string =
   when termcap_found:
     if term.hascap ti:
-      term.write($term.cap ti)
-  else:
-    return SMCUP
+      return term.cap ti
+  return SMCUP
 
 proc disableAltScreen(term: Terminal): string =
   when termcap_found:
     if term.hascap te:
-      term.write($term.cap te)
-  else:
-    return RMCUP
+      return term.cap te
+  return RMCUP
 
 func mincontrast(term: Terminal): int32 =
   return term.config.display.minimum_contrast
@@ -632,7 +632,8 @@ proc quit*(term: Terminal) =
     if term.smcup:
       term.write(term.disableAltScreen())
     else:
-      term.write(term.cursorGoto(0, term.attrs.height - 1))
+      term.write(term.cursorGoto(0, term.attrs.height - 1) &
+        term.resetFormat() & "\n")
     if term.config.input.use_mouse:
       term.disableMouse()
     term.showCursor()
@@ -852,7 +853,7 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
   when termcap_found:
     term.loadTermcap()
     if term.tc != nil:
-      term.smcup = term.hascap(ti)
+      term.smcup = term.hascap ti
       if term.hascap(ZH):
         term.formatmode.incl(FLAG_ITALIC)
       if term.hascap(us):
