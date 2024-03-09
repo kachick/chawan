@@ -29,6 +29,7 @@ proc main() =
   var local = ""
   var man = ""
   var keyword = ""
+  var forceSection = false
   while i <= n:
     let s = paramStr(i)
     if s == "":
@@ -42,7 +43,9 @@ proc main() =
       case s[1]
       of 'h': help(0)
       of 'M': putEnv("MANPATH", getnext())
-      of 's': section = getnext()
+      of 's':
+        section = getnext()
+        forceSection = true
       of 'l': local = getnext()
       of 'k': keyword = getnext()
       else: help(1)
@@ -53,6 +56,9 @@ proc main() =
     else:
       help(1)
     inc i
+  if not forceSection and section != "" and man == "":
+    man = section
+    section = ""
   if not ((local != "") != (man != "") != (keyword != "")):
     help(1)
   if local != "" and section != "":
