@@ -18,7 +18,7 @@ import types/cell
 import types/color
 import types/cookie
 import types/opt
-import types/referer
+import types/referrer
 import types/urimethodmap
 import types/url
 import utils/mimeguess
@@ -156,7 +156,7 @@ type
     scripting*: bool
     charsets*: seq[Charset]
     images*: bool
-    loaderConfig*: LoaderConfig
+    loaderConfig*: LoaderClientConfig
     mimeTypes*: MimeTypes
     isdump*: bool
     cgiDir*: seq[string]
@@ -236,14 +236,14 @@ func getProxy*(config: Config): URL =
 func getDefaultHeaders*(config: Config): Headers =
   return newHeaders(config.network.default_headers)
 
-proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
-    headers: Headers, referer_from, scripting: bool, charsets: seq[Charset],
-    images: bool, userstyle: string, proxy: URL, mimeTypes: MimeTypes,
-    urimethodmap: URIMethodMap, cgiDir: seq[string], tmpdir: string):
-    BufferConfig =
+proc getBufferConfig*(config: Config; location: URL; cookiejar: CookieJar,
+    headers: Headers; referer_from, scripting: bool; charsets: seq[Charset];
+    images: bool; userstyle: string; proxy: URL; mimeTypes: MimeTypes;
+    urimethodmap: URIMethodMap; cgiDir: seq[string]; tmpdir: string;
+    charsetOverride: Charset): BufferConfig =
   let filter = newURLFilter(
     scheme = some(location.scheme),
-    allowschemes = @["data", "stream"],
+    allowschemes = @["data", "cache"],
     default = true
   )
   return BufferConfig(
@@ -254,16 +254,12 @@ proc getBufferConfig*(config: Config, location: URL, cookiejar: CookieJar,
     images: images,
     mimeTypes: mimeTypes,
     isdump: config.start.headless,
-    loaderConfig: LoaderConfig(
+    charsetOverride: charsetOverride,
+    loaderConfig: LoaderClientConfig(
       defaultHeaders: headers,
-      filter: filter,
       cookiejar: cookiejar,
       proxy: proxy,
-      cgiDir: cgiDir,
-      urimethodmap: urimethodmap,
-      w3mCGICompat: config.external.w3m_cgi_compat,
-      libexecPath: ChaPath("${%CHA_LIBEXEC_DIR}").unquote().get,
-      tmpdir: tmpdir
+      filter: filter
     )
   )
 

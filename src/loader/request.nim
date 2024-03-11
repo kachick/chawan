@@ -8,10 +8,9 @@ import js/fromjs
 import js/javascript
 import js/jstypes
 import loader/headers
-import loader/streamid
 import types/blob
 import types/formdata
-import types/referer
+import types/referrer
 import types/url
 
 type
@@ -74,14 +73,14 @@ type
     headers* {.jsget.}: Headers
     body*: Opt[string]
     multipart*: Opt[FormData]
-    referer*: URL
+    referrer*: URL
     mode* {.jsget.}: RequestMode
     destination* {.jsget.}: RequestDestination
     credentialsMode* {.jsget.}: CredentialsMode
     proxy*: URL #TODO do something with this
-    canredir*: bool
-    fromcache*: bool
-    clientId*: StreamId
+    # when set to true, the loader will not write data from the body (not
+    # headers!) into the output until a resume is received.
+    suspended*: bool
 
 jsDestructor(Request)
 
@@ -90,8 +89,8 @@ proc js_url(this: Request): string {.jsfget: "url".} =
 
 #TODO pretty sure this is incorrect
 proc js_referrer(this: Request): string {.jsfget: "referrer".} =
-  if this.referer != nil:
-    return $this.referer
+  if this.referrer != nil:
+    return $this.referrer
   return ""
 
 iterator pairs*(headers: Headers): (string, string) =
@@ -99,11 +98,11 @@ iterator pairs*(headers: Headers): (string, string) =
     for v in vs:
       yield (k, v)
 
-func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
-    body = opt(string), multipart = opt(FormData), mode = RequestMode.NO_CORS,
-    credentialsMode = CredentialsMode.SAME_ORIGIN,
-    destination = RequestDestination.NO_DESTINATION, proxy: URL = nil,
-    referrer: URL = nil, canredir = false, fromcache = false): Request =
+func newRequest*(url: URL; httpMethod = HTTP_GET; headers = newHeaders();
+    body = opt(string); multipart = opt(FormData); mode = RequestMode.NO_CORS;
+    credentialsMode = CredentialsMode.SAME_ORIGIN;
+    destination = RequestDestination.NO_DESTINATION; proxy: URL = nil;
+    referrer: URL = nil; suspended = false): Request =
   return Request(
     url: url,
     httpMethod: httpMethod,
@@ -113,16 +112,15 @@ func newRequest*(url: URL, httpMethod = HTTP_GET, headers = newHeaders(),
     mode: mode,
     credentialsMode: credentialsMode,
     destination: destination,
-    referer: referrer,
+    referrer: referrer,
     proxy: proxy,
-    canredir: canredir,
-    fromcache: fromcache
+    suspended: suspended
   )
 
 func newRequest*(url: URL, httpMethod = HTTP_GET,
     headers: seq[(string, string)] = @[], body = opt(string),
-    multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil,
-    canredir = false): Request =
+    multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil):
+    Request =
   let hl = newHeaders()
   for pair in headers:
     let (k, v) = pair
@@ -134,8 +132,7 @@ func newRequest*(url: URL, httpMethod = HTTP_GET,
     body,
     multipart,
     mode,
-    proxy = proxy,
-    canredir = canredir
+    proxy = proxy
   )
 
 func createPotentialCORSRequest*(url: URL, destination: RequestDestination,
@@ -213,7 +210,7 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
       return err(newTypeError("Input URL contains a username or password"))
     var httpMethod = HTTP_GET
     var headers = newHeaders()
-    let referer: URL = nil
+    let referrer: URL = nil
     var credentials = CredentialsMode.SAME_ORIGIN
     var body: Opt[string]
     var multipart: Opt[FormData]
@@ -223,7 +220,7 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     let url = resource.url
     var httpMethod = resource.httpMethod
     var headers = resource.headers.clone()
-    let referer = resource.referer
+    let referrer = resource.referrer
     var credentials = resource.credentialsMode
     var body = resource.body
     var multipart = resource.multipart
@@ -269,7 +266,7 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     credentialsMode: credentials,
     destination: destination,
     proxy: proxyUrl,
-    referer: referer
+    referrer: referrer
   ))
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =

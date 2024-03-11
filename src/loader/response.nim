@@ -5,6 +5,7 @@ import io/promise
 import io/socketstream
 import js/error
 import js/javascript
+import loader/connecterror
 import loader/headers
 import loader/request
 import types/blob
@@ -34,7 +35,6 @@ type
   Response* = ref object
     responseType* {.jsget: "type".}: ResponseType
     res*: int
-    fd*: int
     body*: SocketStream
     bodyUsed* {.jsget.}: bool
     contentType*: string
@@ -47,17 +47,17 @@ type
     bodyRead*: Promise[string]
     charset*: Charset
     internalMessage*: string # should NOT be exposed to JS!
+    outputId*: int
 
 jsDestructor(Response)
 
-proc newResponse*(res: int, request: Request, fd = -1,
-    stream: SocketStream = nil): Response =
+proc newResponse*(res: int; request: Request; stream: SocketStream): Response =
   return Response(
     res: res,
     url: request.url,
     body: stream,
     bodyRead: Promise[string](),
-    fd: fd
+    outputId: -1
   )
 
 func makeNetworkError*(): Response {.jsstfunc: "Response:error".} =
@@ -137,6 +137,11 @@ proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
     let s = ?s
     return ok(JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
       cstring"<input>")))
+
+func getErrorMessage*(this: Response): string =
+  if this.internalMessage != "":
+    return this.internalMessage
+  getLoaderErrorMessage(this.res)
 
 proc addResponseModule*(ctx: JSContext) =
   ctx.registerType(Response)

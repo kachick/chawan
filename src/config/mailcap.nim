@@ -326,8 +326,8 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, charset, canpipe)
 
-proc getMailcapEntry*(mailcap: Mailcap, mimeType, outpath: string,
-    url: URL, charset: Charset): ptr MailcapEntry =
+proc getMailcapEntry*(mailcap: Mailcap; mimeType, outpath: string;
+    url: URL; charset: Charset): ptr MailcapEntry =
   let mt = mimeType.until('/')
   if mt.len + 1 >= mimeType.len:
     return nil
@@ -343,7 +343,8 @@ proc getMailcapEntry*(mailcap: Mailcap, mimeType, outpath: string,
       var canpipe = true
       let cmd = unquoteCommand(entry.test, mimeType, outpath, url, charset,
         canpipe)
-      #TODO TODO TODO if not canpipe ...
+      if not canpipe:
+        continue
       if execCmd(cmd) != 0:
         continue
     return unsafeAddr entry

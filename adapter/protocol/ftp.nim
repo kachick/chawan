@@ -11,7 +11,6 @@ import curlwrap
 import dirlist
 
 import loader/connecterror
-import types/opt
 import utils/twtstr
 
 type FtpHandle = ref object

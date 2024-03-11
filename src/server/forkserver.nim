@@ -9,18 +9,17 @@ import display/term
 import io/posixstream
 import io/serialize
 import io/serversocket
-import io/urlfilter
-import loader/headers
 import loader/loader
 import server/buffer
-import types/cookie
 import types/urimethodmap
 import types/url
 import utils/strwidth
 
+import chagashi/charset
+
 type
-  ForkCommand* = enum
-    FORK_BUFFER, FORK_LOADER, REMOVE_CHILD, LOAD_CONFIG, FORK_BUFFER_WITH_LOADER
+  ForkCommand = enum
+    fcForkBuffer, fcForkLoader, fcRemoveChild, fcLoadConfig
 
   ForkServer* = ref object
     istream: Stream
@@ -30,62 +29,41 @@ type
   ForkServerContext = object
     istream: Stream
     ostream: Stream
-    children: seq[(Pid, Pid)]
+    children: seq[int]
+    loaderPid: int
 
-proc newFileLoader*(forkserver: ForkServer, defaultHeaders: Headers,
-    proxy: URL, urimethodmap: URIMethodMap, cgiDir: seq[string],
-    acceptProxy, w3mCGICompat: bool): FileLoader =
-  forkserver.ostream.swrite(FORK_LOADER)
-  let config = LoaderConfig(
-    defaultHeaders: defaultHeaders,
-    filter: newURLFilter(default = true),
-    proxy: proxy,
-    acceptProxy: acceptProxy,
-    urimethodmap: urimethodmap,
-    w3mCGICompat: w3mCGICompat,
-    cgiDir: cgiDir
-  )
+proc newFileLoader*(forkserver: ForkServer; config: LoaderConfig): FileLoader =
+  forkserver.ostream.swrite(fcForkLoader)
   forkserver.ostream.swrite(config)
   forkserver.ostream.flush()
-  var process: Pid
+  var process: int
   forkserver.istream.sread(process)
   return FileLoader(process: process, clientPid: getCurrentProcessId())
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
-  forkserver.ostream.swrite(LOAD_CONFIG)
+  forkserver.ostream.swrite(fcLoadConfig)
   forkserver.ostream.swrite(config.getForkServerConfig())
   forkserver.ostream.flush()
 
-proc removeChild*(forkserver: ForkServer, pid: Pid) =
-  forkserver.ostream.swrite(REMOVE_CHILD)
+proc removeChild*(forkserver: ForkServer, pid: int) =
+  forkserver.ostream.swrite(fcRemoveChild)
   forkserver.ostream.swrite(pid)
   forkserver.ostream.flush()
 
-proc forkBuffer*(forkserver: ForkServer, request: Request,
-    config: BufferConfig, attrs: WindowAttributes):
-    tuple[process, loaderPid: Pid] =
-  forkserver.ostream.swrite(FORK_BUFFER)
-  forkserver.ostream.swrite(request)
+proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
+    request: Request; attrs: WindowAttributes; ishtml: bool;
+    charsetStack: seq[Charset]): int =
+  forkserver.ostream.swrite(fcForkBuffer)
   forkserver.ostream.swrite(config)
-  forkserver.ostream.swrite(attrs)
-  forkserver.ostream.flush()
-  var process: Pid
-  var loaderPid: Pid
-  forkserver.istream.sread(process)
-  forkserver.istream.sread(loaderPid)
-  return (process, loaderPid)
-
-proc forkBufferWithLoader*(forkserver: ForkServer, request: Request,
-    config: BufferConfig, attrs: WindowAttributes, loaderPid: Pid): Pid =
-  forkserver.ostream.swrite(FORK_BUFFER_WITH_LOADER)
+  forkserver.ostream.swrite(url)
   forkserver.ostream.swrite(request)
-  forkserver.ostream.swrite(config)
   forkserver.ostream.swrite(attrs)
-  forkserver.ostream.swrite(loaderPid)
+  forkserver.ostream.swrite(ishtml)
+  forkserver.ostream.swrite(charsetStack)
   forkserver.ostream.flush()
-  var bufferPid: Pid
+  var bufferPid: int
   forkserver.istream.sread(bufferPid)
-  return bufferPid
+  bufferPid
 
 proc trapSIGINT() =
   # trap SIGINT, so e.g. an external editor receiving an interrupt in the
@@ -94,7 +72,7 @@ proc trapSIGINT() =
   # all child processes as well).
   setControlCHook(proc() {.noconv.} = discard)
 
-proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
+proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): int =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -102,7 +80,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   if pid == 0:
     # child process
     trapSIGINT()
-    for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
+    for i in 0 ..< ctx.children.len: ctx.children[i] = 0
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
@@ -128,8 +106,19 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): Pid =
   return pid
 
 var gssock: ServerSocket
-proc forkBuffer0(ctx: var ForkServerContext, request: Request,
-    config: BufferConfig, attrs: WindowAttributes, loaderPid: Pid): Pid =
+proc forkBuffer(ctx: var ForkServerContext): int =
+  var config: BufferConfig
+  var url: URL
+  var request: Request
+  var attrs: WindowAttributes
+  var ishtml: bool
+  var charsetStack: seq[Charset]
+  ctx.istream.sread(config)
+  ctx.istream.sread(url)
+  ctx.istream.sread(request)
+  ctx.istream.sread(attrs)
+  ctx.istream.sread(ishtml)
+  ctx.istream.sread(charsetStack)
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -139,11 +128,13 @@ proc forkBuffer0(ctx: var ForkServerContext, request: Request,
   if pid == 0:
     # child process
     trapSIGINT()
-    for i in 0 ..< ctx.children.len: ctx.children[i] = (Pid(0), Pid(0))
+    for i in 0 ..< ctx.children.len: ctx.children[i] = 0
     ctx.children.setLen(0)
+    let loaderPid = ctx.loaderPid
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
-    let ssock = initServerSocket(buffered = false)
+    let pid = getCurrentProcessId()
+    let ssock = initServerSocket(pid, buffered = false)
     gssock = ssock
     onSignal SIGTERM:
       # This will be overridden after buffer has been set up; it is only
@@ -157,10 +148,11 @@ proc forkBuffer0(ctx: var ForkServerContext, request: Request,
     discard close(stdout.getFileHandle())
     let loader = FileLoader(
       process: loaderPid,
-      clientPid: getCurrentProcessId()
+      clientPid: pid
     )
     try:
-      launchBuffer(config, request, attrs, loader, ssock)
+      launchBuffer(config, url, request, attrs, ishtml, charsetStack, loader,
+        ssock)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -174,31 +166,8 @@ proc forkBuffer0(ctx: var ForkServerContext, request: Request,
   let c = ps.readChar()
   assert c == char(0)
   ps.close()
-  ctx.children.add((pid, loaderPid))
+  ctx.children.add(pid)
   return pid
-
-proc forkBuffer(ctx: var ForkServerContext): tuple[process, loaderPid: Pid] =
-  var request: Request
-  var config: BufferConfig
-  var attrs: WindowAttributes
-  ctx.istream.sread(request)
-  ctx.istream.sread(config)
-  ctx.istream.sread(attrs)
-  let loaderPid = ctx.forkLoader(config.loaderConfig)
-  let process = ctx.forkBuffer0(request, config, attrs, loaderPid)
-  return (process, loaderPid)
-
-proc forkBufferWithLoader(ctx: var ForkServerContext): Pid =
-  var request: Request
-  var config: BufferConfig
-  var attrs: WindowAttributes
-  var loaderPid: Pid
-  ctx.istream.sread(request)
-  ctx.istream.sread(config)
-  ctx.istream.sread(attrs)
-  ctx.istream.sread(loaderPid)
-  FileLoader(process: loaderPid).addref()
-  return ctx.forkBuffer0(request, config, attrs, loaderPid)
 
 proc runForkServer() =
   var ctx = ForkServerContext(
@@ -210,24 +179,23 @@ proc runForkServer() =
       var cmd: ForkCommand
       ctx.istream.sread(cmd)
       case cmd
-      of REMOVE_CHILD:
-        var pid: Pid
+      of fcRemoveChild:
+        var pid: int
         ctx.istream.sread(pid)
-        for i in 0 .. ctx.children.high:
-          if ctx.children[i][0] == pid:
-            ctx.children.del(i)
-            break
-      of FORK_BUFFER:
+        let i = ctx.children.find(pid)
+        if i != -1:
+          ctx.children.del(i)
+      of fcForkBuffer:
         ctx.ostream.swrite(ctx.forkBuffer())
-      of FORK_BUFFER_WITH_LOADER:
-        ctx.ostream.swrite(ctx.forkBufferWithLoader())
-      of FORK_LOADER:
+      of fcForkLoader:
+        assert ctx.loaderPid == 0
         var config: LoaderConfig
         ctx.istream.sread(config)
         let pid = ctx.forkLoader(config)
         ctx.ostream.swrite(pid)
-        ctx.children.add((pid, Pid(-1)))
-      of LOAD_CONFIG:
+        ctx.loaderPid = pid
+        ctx.children.add(pid)
+      of fcLoadConfig:
         var config: ForkServerConfig
         ctx.istream.sread(config)
         set_cjk_ambiguous(config.ambiguous_double)
@@ -239,12 +207,8 @@ proc runForkServer() =
   ctx.istream.close()
   ctx.ostream.close()
   # Clean up when the main process crashed.
-  for childpair in ctx.children:
-    let a = childpair[0]
-    let b = childpair[1]
-    discard kill(cint(a), cint(SIGTERM))
-    if b != -1:
-      discard kill(cint(b), cint(SIGTERM))
+  for child in ctx.children:
+    discard kill(cint(child), cint(SIGTERM))
   quit(0)
 
 proc newForkServer*(): ForkServer =

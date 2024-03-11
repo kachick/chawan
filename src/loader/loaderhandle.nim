@@ -5,9 +5,7 @@ import std/tables
 
 import io/posixstream
 import io/serialize
-import io/socketstream
 import loader/headers
-import loader/streamid
 
 when defined(debug):
   import types/url
@@ -16,7 +14,7 @@ const LoaderBufferPageSize = 4064 # 4096 - 32
 
 type
   LoaderBufferObj = object
-    page: ptr UncheckedArray[uint8]
+    page*: ptr UncheckedArray[uint8]
     len*: int
 
   LoaderBuffer* = ref LoaderBufferObj
@@ -25,24 +23,36 @@ type
     parent*: LoaderHandle
     currentBuffer*: LoaderBuffer
     currentBufferIdx*: int
-    buffers: Deque[LoaderBuffer]
+    buffers*: Deque[LoaderBuffer]
     ostream*: PosixStream
     istreamAtEnd*: bool
-    sostream*: SocketStream # saved ostream when redirected
-    clientId*: StreamId
+    ownerPid*: int
+    outputId*: int
     registered*: bool
+    suspended*: bool
     dead*: bool
+    when defined(debug):
+      url*: URL
+
+  HandleParserState* = enum
+    hpsBeforeLines, hpsAfterFirstLine, hpsControlDone
+
+  HeaderParser* = ref object
+    state*: HandleParserState
+    lineBuffer*: string
+    crSeen*: bool
+    headers*: Headers
+    status*: uint16
+
+  ResponseState = enum
+    rsBeforeResult, rsBeforeStatus, rsBeforeHeaders, rsAfterHeaders
 
   LoaderHandle* = ref object
-    # Stream for taking input
-    istream*: PosixStream
-    # Only the first handle can be redirected, because a) mailcap can only
-    # redirect the first handle and b) async redirects would result in race
-    # conditions that would be difficult to untangle.
-    canredir*: bool
-    outputs*: seq[OutputHandle]
-    cached*: bool
-    cacheUrl*: string
+    istream*: PosixStream # stream for taking input
+    outputs*: seq[OutputHandle] # list of outputs to be streamed into
+    cacheId*: int # if cached, our ID in a client cacheMap
+    parser*: HeaderParser # only exists for CGI handles
+    rstate: ResponseState # just an enum for sanity checks
     when defined(debug):
       url*: URL
 
@@ -53,25 +63,26 @@ type
       buffer.page = nil
 
 # for debugging
-func `$`*(buffer: LoaderBuffer): string =
-  var s = newString(buffer.len)
-  copyMem(addr s[0], addr buffer.page[0], buffer.len)
-  return s
+when defined(debug):
+  func `$`*(buffer: LoaderBuffer): string =
+    var s = newString(buffer.len)
+    copyMem(addr s[0], addr buffer.page[0], buffer.len)
+    return s
 
 # Create a new loader handle, with the output stream ostream.
-proc newLoaderHandle*(ostream: PosixStream, canredir: bool, clientId: StreamId):
-    LoaderHandle =
-  let handle = LoaderHandle(
-    canredir: canredir
-  )
+proc newLoaderHandle*(ostream: PosixStream; outputId, pid: int;
+    suspended: bool): LoaderHandle =
+  let handle = LoaderHandle(cacheId: -1)
   handle.outputs.add(OutputHandle(
     ostream: ostream,
     parent: handle,
-    clientId: clientId
+    outputId: outputId,
+    ownerPid: pid,
+    suspended: suspended
   ))
   return handle
 
-proc findOutputHandle*(handle: LoaderHandle, fd: int): OutputHandle =
+proc findOutputHandle*(handle: LoaderHandle; fd: int): OutputHandle =
   for output in handle.outputs:
     if output.ostream.fd == fd:
       return output
@@ -80,17 +91,14 @@ proc findOutputHandle*(handle: LoaderHandle, fd: int): OutputHandle =
 func cap*(buffer: LoaderBuffer): int {.inline.} =
   return LoaderBufferPageSize
 
+template isEmpty*(output: OutputHandle): bool =
+  output.currentBuffer == nil and not output.suspended
+
 proc newLoaderBuffer*(): LoaderBuffer =
   return LoaderBuffer(
     page: cast[ptr UncheckedArray[uint8]](alloc(LoaderBufferPageSize)),
     len: 0
   )
-
-proc addBuffer*(output: OutputHandle, buffer: LoaderBuffer) =
-  if output.currentBuffer == nil:
-    output.currentBuffer = buffer
-  else:
-    output.buffers.addLast(buffer)
 
 proc bufferCleared*(output: OutputHandle) =
   assert output.currentBuffer != nil
@@ -100,15 +108,7 @@ proc bufferCleared*(output: OutputHandle) =
   else:
     output.currentBuffer = nil
 
-proc clearBuffers*(output: OutputHandle) =
-  if output.currentBuffer != nil:
-    output.currentBuffer = nil
-    output.currentBufferIdx = 0
-    output.buffers.clear()
-  else:
-    assert output.buffers.len == 0
-
-proc tee*(outputIn: OutputHandle, ostream: PosixStream, clientId: StreamId) =
+proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int) =
   outputIn.parent.outputs.add(OutputHandle(
     parent: outputIn.parent,
     ostream: ostream,
@@ -116,49 +116,55 @@ proc tee*(outputIn: OutputHandle, ostream: PosixStream, clientId: StreamId) =
     currentBufferIdx: outputIn.currentBufferIdx,
     buffers: outputIn.buffers,
     istreamAtEnd: outputIn.istreamAtEnd,
-    clientId: clientId
+    outputId: outputId,
+    ownerPid: pid
   ))
 
 template output*(handle: LoaderHandle): OutputHandle =
   handle.outputs[0]
 
-proc sendResult*(handle: LoaderHandle, res: int, msg = "") =
-  handle.output.ostream.swrite(res)
+proc sendResult*(handle: LoaderHandle; res: int; msg = "") =
+  assert handle.rstate == rsBeforeResult
+  inc handle.rstate
+  let output = handle.output
+  let blocking = output.ostream.blocking
+  output.ostream.setBlocking(true)
+  output.ostream.swrite(res)
   if res == 0: # success
     assert msg == ""
+    output.ostream.swrite(output.outputId)
   else: # error
-    handle.output.ostream.swrite(msg)
+    output.ostream.swrite(msg)
+  output.ostream.setBlocking(blocking)
 
-proc sendStatus*(handle: LoaderHandle, status: int) =
+proc sendStatus*(handle: LoaderHandle; status: uint16) =
+  assert handle.rstate == rsBeforeStatus
+  inc handle.rstate
+  let blocking = handle.output.ostream.blocking
+  handle.output.ostream.setBlocking(true)
   handle.output.ostream.swrite(status)
+  handle.output.ostream.setBlocking(blocking)
 
-proc sendHeaders*(handle: LoaderHandle, headers: Headers) =
-  let output = handle.output
-  output.ostream.swrite(headers)
-  if handle.canredir:
-    var redir: bool
-    output.ostream.sread(redir)
-    output.ostream.sread(handle.cached)
-    if redir:
-      let sostream = SocketStream(output.ostream)
-      let fd = sostream.recvFileHandle()
-      output.sostream = sostream
-      output.ostream = newPosixStream(fd)
-      output.clientId = NullStreamId
+proc sendHeaders*(handle: LoaderHandle; headers: Headers) =
+  assert handle.rstate == rsBeforeHeaders
+  inc handle.rstate
+  let blocking = handle.output.ostream.blocking
+  handle.output.ostream.setBlocking(true)
+  handle.output.ostream.swrite(headers)
+  handle.output.ostream.setBlocking(blocking)
 
-proc recvData*(ps: PosixStream, buffer: LoaderBuffer): int {.inline.} =
+proc recvData*(ps: PosixStream; buffer: LoaderBuffer): int {.inline.} =
   let n = ps.recvData(addr buffer.page[0], buffer.cap)
   buffer.len = n
   return n
 
-proc sendData*(ps: PosixStream, buffer: LoaderBuffer, si = 0): int {.inline.} =
+proc sendData*(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
   return ps.sendData(addr buffer.page[si], buffer.len - si)
 
 proc close*(handle: LoaderHandle) =
   for output in handle.outputs:
     #TODO assert not output.registered
-    assert output.sostream == nil
     if output.ostream != nil:
       output.ostream.close()
       output.ostream = nil

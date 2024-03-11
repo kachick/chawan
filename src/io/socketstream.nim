@@ -2,9 +2,6 @@ import std/nativesockets
 import std/net
 import std/os
 
-when defined(posix):
-  import std/posix
-
 import io/posixstream
 import io/serversocket
 
@@ -52,6 +49,9 @@ method setBlocking*(s: SocketStream, blocking: bool) =
   s.blocking = blocking
   s.source.getFd().setBlocking(blocking)
 
+method seek*(s: PosixStream; off: int) =
+  doAssert false
+
 method sclose*(s: SocketStream) =
   s.source.close()
 
@@ -76,7 +76,7 @@ proc connectSocketStream*(path: string, buffered = true, blocking = true):
   )
   result.addStreamIface()
 
-proc connectSocketStream*(pid: Pid, buffered = true, blocking = true):
+proc connectSocketStream*(pid: int, buffered = true, blocking = true):
     SocketStream =
   try:
     return connectSocketStream(getSocketPath(pid), buffered, blocking)

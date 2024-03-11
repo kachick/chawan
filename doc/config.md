@@ -1186,7 +1186,7 @@ Returns `undefined`. (It should return a promise; TODO.)</td>
 </tr>
 
 <tr>
-<td>`pager.location`</td>
+<td>`pager.url`</td>
 <td>Getter for the link of the current buffer. Returns a `URL` object.</td>
 </tr>
 

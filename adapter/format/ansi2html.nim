@@ -42,7 +42,7 @@ template getParamU8(parser: AnsiCodeParser, i: var int,
     colon = false): uint8 =
   if i >= parser.params.len:
     return false
-  let u = parseUInt8(parser.getParam(i))
+  let u = parseUInt8(parser.getParam(i), allowSign = false)
   if u.isNone:
     return false
   u.get

@@ -15,3 +15,11 @@ proc closeStdout*() =
 
 proc closeStderr*() =
   closeHandle(2, O_WRONLY)
+
+proc safeClose*(fd: cint) =
+  if fd == 0:
+    closeStdin()
+  elif fd == 1 or fd == 2:
+    closeHandle(fd, O_WRONLY)
+  else:
+    discard close(fd)

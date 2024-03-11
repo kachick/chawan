@@ -57,30 +57,30 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath: string,
     putEnv("CONTENT_LENGTH", $contentLen)
   if "Cookie" in request.headers:
     putEnv("HTTP_COOKIE", request.headers["Cookie"])
-  if request.referer != nil:
-    putEnv("HTTP_REFERER", $request.referer)
+  if request.referrer != nil:
+    putEnv("HTTP_REFERER", $request.referrer)
   if request.proxy != nil:
     putEnv("ALL_PROXY", $request.proxy)
 
 type ControlResult = enum
-  RESULT_CONTROL_DONE, RESULT_CONTROL_CONTINUE, RESULT_ERROR
+  crDone, crContinue, crError
 
-proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
-    status: var int): ControlResult =
+proc handleFirstLine(handle: LoaderHandle; line: string; headers: Headers;
+    status: var uint16): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
     # invalid
     handle.sendResult(ERROR_CGI_MALFORMED_HEADER)
-    return RESULT_ERROR
+    return crError
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
     handle.sendResult(0) # success
-    status = parseInt32(v).get(0)
-    return RESULT_CONTROL_CONTINUE
+    status = parseUInt16(v, allowSign = false).get(0)
+    return crContinue
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("Connected"):
       handle.sendResult(0) # success
-      return RESULT_CONTROL_CONTINUE
+      return crContinue
     elif v.startsWithIgnoreCase("ConnectionError"):
       let errs = v.split(' ')
       if errs.len <= 1:
@@ -95,31 +95,31 @@ proc handleFirstLine(handle: LoaderHandle, line: string, headers: Headers,
             message &= ' '
             message &= errs[i]
         handle.sendResult(code, message)
-      return RESULT_ERROR
+      return crError
     elif v.startsWithIgnoreCase("ControlDone"):
-      return RESULT_CONTROL_DONE
+      return crDone
     handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
-    return RESULT_ERROR
+    return crError
   handle.sendResult(0) # success
   headers.add(k, v)
-  return RESULT_CONTROL_DONE
+  return crDone
 
 proc handleControlLine(handle: LoaderHandle, line: string, headers: Headers,
-    status: var int): ControlResult =
+    status: var uint16): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
     # invalid
-    return RESULT_ERROR
+    return crError
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
-    status = parseInt32(v).get(0)
-    return RESULT_CONTROL_CONTINUE
+    status = parseUInt16(v, allowSign = false).get(0)
+    return crContinue
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("ControlDone"):
-      return RESULT_CONTROL_DONE
-    return RESULT_ERROR
+      return crDone
+    return crError
   headers.add(k, v)
-  return RESULT_CONTROL_DONE
+  return crDone
 
 # returns false if transfer was interrupted
 proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
@@ -130,8 +130,8 @@ proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
   let v = line.substr(k.len + 1).strip()
   headers.add(k, v)
 
-proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
-    libexecPath: string, prevURL: URL) =
+proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
+    libexecPath: string; prevURL: URL) =
   if cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
     return
@@ -226,38 +226,67 @@ proc loadCGI*(handle: LoaderHandle, request: Request, cgiDir: seq[string],
         for entry in multipart.entries:
           ps.writeEntry(entry, multipart.boundary)
       ps.close()
-    let ps = newPosixStream(pipefd[0])
-    let headers = newHeaders()
-    var status = 200
-    if ps.atEnd:
-      # no data?
-      handle.sendResult(ERROR_CGI_NO_DATA)
-      return
-    var line: string
-    var hasMore = ps.readLine(line)
-    if line == "": # \r\n or EOF
-      # no headers, body comes immediately
-      handle.sendResult(0) # success
+    handle.parser = HeaderParser(headers: newHeaders())
+    handle.istream = newPosixStream(pipefd[0])
+
+proc killHandle(handle: LoaderHandle) =
+  if handle.parser.state != hpsBeforeLines:
+    # not an ideal solution, but better than silently eating malformed
+    # headers
+    handle.output.ostream.setBlocking(true)
+    handle.sendStatus(500)
+    handle.sendHeaders(newHeaders())
+    const msg = "Error: malformed header in CGI script"
+    discard handle.output.ostream.sendData(msg)
+  handle.istream = nil
+  handle.parser = nil
+
+proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
+  let parser = handle.parser
+  var s = parser.lineBuffer
+  let L = if buffer == nil: 1 else: buffer.len
+  for i in 0 ..< L:
+    template die =
+      handle.killHandle()
+      return i
+    let c = if buffer != nil:
+      char(buffer.page[i])
     else:
-      var res = handle.handleFirstLine(line, headers, status)
-      if res == RESULT_ERROR:
-        return
-      var crlfFound = false
-      while hasMore and res == RESULT_CONTROL_CONTINUE:
-        hasMore = ps.readLine(line)
-        if line == "": # \r\n
-          crlfFound = true
-          break
-        res = handle.handleControlLine(line, headers, status)
-        if res == RESULT_ERROR:
-          return
-      if not crlfFound:
-        while hasMore:
-          hasMore = ps.readLine(line)
-          if line == "": # \r\n
-            break
-          handle.handleLine(line, headers)
-    handle.sendStatus(status)
-    handle.sendHeaders(headers)
-    if not ps.atEnd():
-      handle.istream = ps
+      '\n'
+    if parser.crSeen and c != '\n':
+      die
+    parser.crSeen = false
+    if c == '\r':
+      parser.crSeen = true
+    elif c == '\n':
+      if s == "":
+        if parser.state == hpsBeforeLines:
+          # body comes immediately, so we haven't had a chance to send result
+          # yet.
+          handle.sendResult(0)
+        handle.sendStatus(parser.status)
+        handle.sendHeaders(parser.headers)
+        handle.parser = nil
+        return i + 1 # +1 to skip \n
+      case parser.state
+      of hpsBeforeLines:
+        case handle.handleFirstLine(s, parser.headers, parser.status)
+        of crDone: parser.state = hpsControlDone
+        of crContinue: parser.state = hpsAfterFirstLine
+        of crError: die
+      of hpsAfterFirstLine:
+        case handle.handleControlLine(s, parser.headers, parser.status)
+        of crDone: parser.state = hpsControlDone
+        of crContinue: discard
+        of crError: die
+      of hpsControlDone:
+        handle.handleLine(s, parser.headers)
+      s = ""
+    else:
+      s &= c
+  if s != "":
+    parser.lineBuffer = s
+  return buffer.len
+
+proc finishParse*(handle: LoaderHandle) =
+  discard handle.parseHeaders(nil)

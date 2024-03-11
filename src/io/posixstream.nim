@@ -59,6 +59,9 @@ method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
 proc sendData*(s: PosixStream, buffer: openArray[char]): int {.inline.} =
   return s.sendData(unsafeAddr buffer[0], buffer.len)
 
+proc sendData*(s: PosixStream, buffer: openArray[uint8]): int {.inline.} =
+  return s.sendData(unsafeAddr buffer[0], buffer.len)
+
 method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
   s.blocking = blocking
   let ofl = fcntl(s.fd, F_GETFL, 0)
@@ -66,6 +69,9 @@ method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
     discard fcntl(s.fd, F_SETFL, ofl and not O_NONBLOCK)
   else:
     discard fcntl(s.fd, F_SETFL, ofl or O_NONBLOCK)
+
+method seek*(s: PosixStream; off: int) {.base.} =
+  discard lseek(s.fd, Off(off), SEEK_SET)
 
 method sclose*(s: PosixStream) {.base.} =
   discard close(s.fd)

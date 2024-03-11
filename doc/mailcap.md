@@ -57,7 +57,8 @@ extension fields are recognized too.
 
 * When the `test` named field is specified, the mailcap entry is only used
   if the test command returns 0.  
-  Warning: as of now, %s does not work with test.
+  Warning: as of now, `%s` does not work with `test`; `test` named fields with a
+  `%s` template are skipped. Additionally, no data is piped into `test` either.
 * `copiousoutput` makes Chawan redirect the output of the external command
   into a new buffer. If either x-htmloutput or x-ansioutput is defined too, then
   it is ignored.
@@ -69,7 +70,8 @@ extension fields are recognized too.
 * `needsterminal` hands over control of the terminal to the command while
   it is running. Note: as of now, `needsterminal` does nothing if either
   `copiousoutput` or `x-htmloutput` is specified.
-* For a description of `nametemplate`, see the RFC.
+* For a description of `nametemplate`, see the RFC. Note however, that it does
+  not work with test (since %s is not supported there).
 
 ### Environment variables
 

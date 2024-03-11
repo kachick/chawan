@@ -19,7 +19,7 @@ this document.
 * [Finger](#finger)
 * [Spartan](#spartan)
 * [Local schemes: file:, about:, man:, data:](#local-schemes-file-about-man-data)
-* [Internal schemes: cgi-bin:, stream:](#internal-schemes-cgi-bin-stream)
+* [Internal schemes: cgi-bin:, stream:, cache:](#internal-schemes-cgi-bin-stream-cache)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
@@ -130,12 +130,12 @@ to work.
 
 `data:` decodes a data URL as defined in RFC 2397.
 
-## Internal schemes: cgi-bin:, stream:
+## Internal schemes: cgi-bin:, stream:, cache:
 
-Two internal protocols exist: `cgi-bin:` and `stream:`. These are the basic
-building blocks for the implementation of every protocol mentioned above; for
-this reason, these can *not* be replaced, and are implemented in the main
-browser binary.
+Three internal protocols exist: `cgi-bin:`, `stream:` and `cache:`. These are
+the basic building blocks for the implementation of every protocol mentioned
+above; for this reason, these can *not* be replaced, and are implemented in
+the main browser binary.
 
 `cgi-bin:` executes a local CGI script. This scheme is used for the actual
 implementation of the non-internal protocols mentioned above. Local CGI scripts
@@ -152,6 +152,12 @@ Since Chawan does not keep track of the origin of `stream:` URLs, it is not
 possible to reload them. (For that matter, reloading stdin does not make much
 sense anyway.) To support rewinding and "view source", the output of `stream:`'s
 is stored in a temporary file until the buffer is discarded.
+
+`cache:` is not something an end user would normally see; it's used for
+rewinding or re-interpreting streams already downloaded. Note that this is not a
+real cache; files are deterministically loaded from the "cache" upon certain
+actions, and from the network upon others, but neither is used as a fallback
+to the other.
 
 ## Custom protocols
 

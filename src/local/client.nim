@@ -24,6 +24,7 @@ import html/event
 import io/bufstream
 import io/posixstream
 import io/promise
+import io/serialize
 import io/socketstream
 import js/base64
 import js/console
@@ -61,7 +62,6 @@ type
     consoleWrapper: ConsoleWrapper
     fdmap: Table[int, Container]
     feednext: bool
-    forkserver: ForkServer
     ibuf: string
     jsctx: JSContext
     jsrt: JSRuntime
@@ -77,6 +77,9 @@ type
     prev: Container
 
 jsDestructor(Client)
+
+func forkserver(client: Client): ForkServer {.inline.} =
+  client.pager.forkserver
 
 func console(client: Client): Console {.jsfget.} =
   return client.consoleWrapper.console
@@ -454,31 +457,51 @@ proc consoleBuffer(client: Client): Container {.jsfget.} =
   return client.consoleWrapper.container
 
 proc acceptBuffers(client: Client) =
-  while client.pager.unreg.len > 0:
-    let (pid, stream) = client.pager.unreg.pop()
+  let pager = client.pager
+  while pager.unreg.len > 0:
+    let (pid, stream) = pager.unreg.pop()
     let fd = int(stream.fd)
     if fd in client.fdmap:
       client.selector.unregister(fd)
       client.fdmap.del(fd)
     else:
-      client.pager.procmap.del(pid)
+      pager.procmap.del(pid)
     stream.close()
-  var accepted: seq[Pid]
   let registerFun = proc(fd: int) =
     client.selector.unregister(fd)
     client.selector.registerHandle(fd, {Read, Write}, 0)
-  for pid, container in client.pager.procmap:
-    let stream = connectSocketStream(pid, buffered = false, blocking = true)
+  for item in pager.procmap:
+    let container = item.container
+    let stream = connectSocketStream(container.process, buffered = false)
     if stream == nil:
-      client.pager.alert("Error: failed to set up buffer")
+      pager.alert("Error: failed to set up buffer")
       continue
-    container.setStream(stream, registerFun)
+    let key = pager.addLoaderClient(container.process,
+      container.config.loaderConfig)
+    stream.swrite(key)
+    let loader = pager.loader
+    if item.fdin != -1:
+      let outputId = item.istreamOutputId
+      if container.cacheId == -1:
+        container.cacheId = loader.addCacheFile(outputId, loader.clientPid)
+      var outCacheId = container.cacheId
+      let pid = container.process
+      if item.fdout == item.fdin:
+        loader.shareCachedItem(container.cacheId, pid)
+        loader.resume(@[item.istreamOutputId])
+      else:
+        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
+        loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
+      # pass down fdout
+      container.setStream(stream, registerFun, item.fdout, outCacheId)
+    else:
+      # buffer is cloned, no need to cache anything
+      container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
     client.fdmap[fd] = container
     client.selector.registerHandle(fd, {Read}, 0)
-    client.pager.handleEvents(container)
-    accepted.add(pid)
-  client.pager.procmap.clear()
+    pager.handleEvents(container)
+  pager.procmap.setLen(0)
 
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
@@ -488,6 +511,19 @@ proc handleRead(client: Client, fd: int) =
     client.input().then(proc() =
       client.handlePagerEvents()
     )
+  elif (let i = client.pager.findConnectingBuffer(fd); i != -1):
+    client.selector.unregister(fd)
+    client.loader.unregistered.add(fd)
+    let (container, stream) = client.pager.connectingBuffers[i]
+    let response = stream.readResponse(container.request)
+    if response.body == nil:
+      client.pager.fail(container, response.getErrorMessage())
+    elif response.redirect != nil:
+      client.pager.redirect(container, response)
+      response.body.close()
+    else:
+      client.pager.connected(container, response)
+    client.pager.connectingBuffers.del(i)
   elif fd == client.forkserver.estream.fd:
     const BufferSize = 4096
     const prefix = "STDERR: "
@@ -560,11 +596,18 @@ proc handleError(client: Client, fd: int) =
     client.loader.onError(fd)
   elif fd in client.loader.unregistered:
     discard # already unregistered...
+  elif (let i = client.pager.findConnectingBuffer(fd); i != -1):
+    # bleh
+    let (container, stream) = client.pager.connectingBuffers[i]
+    client.pager.fail(container, "loader died while loading")
+    client.selector.unregister(fd)
+    stream.close()
+    client.pager.connectingBuffers.del(i)
   else:
     if fd in client.fdmap:
       let container = client.fdmap[fd]
       if container != client.consoleWrapper.container:
-        client.console.log("Error in buffer", $container.location)
+        client.console.log("Error in buffer", $container.url)
       else:
         client.consoleWrapper.container = nil
       client.selector.unregister(fd)
@@ -675,7 +718,7 @@ proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
 
 const ConsoleTitle = "Browser Console"
 
-proc addConsole(pager: Pager, interactive: bool, clearFun, showFun, hideFun:
+proc addConsole(pager: Pager; interactive: bool; clearFun, showFun, hideFun:
     proc()): ConsoleWrapper =
   if interactive:
     var pipefd: array[0..1, cint]
@@ -683,25 +726,14 @@ proc addConsole(pager: Pager, interactive: bool, clearFun, showFun, hideFun:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("stream:console").get
     let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-      some(url), ConsoleTitle, canreinterpret = false)
-    pager.registerContainer(container)
+      url, ConsoleTitle, canreinterpret = false)
     let err = newPosixStream(pipefd[1])
     err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
-    let console = newConsole(
-      err,
-      clearFun = clearFun,
-      showFun = showFun,
-      hideFun = hideFun
-    )
-    return ConsoleWrapper(
-      console: console,
-      container: container
-    )
+    let console = newConsole(err, clearFun, showFun, hideFun)
+    return ConsoleWrapper(console: console, container: container)
   else:
-    let err = newFileStream(stderr)
-    return ConsoleWrapper(
-      console: newConsole(err)
-    )
+    let err = newPosixStream(stderr.getFileHandle())
+    return ConsoleWrapper(console: newConsole(err))
 
 proc clearConsole(client: Client) =
   var pipefd: array[0..1, cint]
@@ -710,9 +742,8 @@ proc clearConsole(client: Client) =
   let url = newURL("stream:console").get
   let pager = client.pager
   let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-    some(url), ConsoleTitle, canreinterpret = false)
+    url, ConsoleTitle, canreinterpret = false)
   replacement.replace = client.consoleWrapper.container
-  pager.registerContainer(replacement)
   client.consoleWrapper.container = replacement
   let console = client.consoleWrapper.console
   console.err.close()
@@ -726,7 +757,7 @@ proc dumpBuffers(client: Client) =
       client.pager.drawBuffer(container, ostream)
       client.pager.handleEvents(container)
     except IOError:
-      client.console.log("Error in buffer", $container.location)
+      client.console.log("Error in buffer", $container.url)
       # check for errors
       client.handleRead(client.forkserver.estream.fd)
       quit(1)
@@ -846,17 +877,16 @@ proc newClient*(config: Config, forkserver: ForkServer): Client =
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let jsctx = jsrt.newJSContext()
   let pager = newPager(config, forkserver, jsctx)
+  let loader = forkserver.newFileLoader(LoaderConfig(
+    urimethodmap: config.getURIMethodMap(),
+    w3mCGICompat: config.external.w3m_cgi_compat,
+    cgiDir: pager.cgiDir,
+    tmpdir: pager.tmpdir
+  ))
+  pager.setLoader(loader)
   let client = Client(
     config: config,
-    forkserver: forkserver,
-    loader: forkserver.newFileLoader(
-      defaultHeaders = config.getDefaultHeaders(),
-      proxy = config.getProxy(),
-      urimethodmap = config.getURIMethodMap(),
-      cgiDir = pager.cgiDir,
-      acceptProxy = true,
-      w3mCGICompat = config.external.w3m_cgi_compat
-    ),
+    loader: loader,
     jsrt: jsrt,
     jsctx: jsctx,
     pager: pager

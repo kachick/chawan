@@ -11,7 +11,7 @@ type ServerSocket* = object
 
 var SocketDirectory* = "/tmp/cha"
 const SocketPathPrefix = "cha_sock_"
-proc getSocketPath*(pid: Pid): string =
+proc getSocketPath*(pid: int): string =
   SocketDirectory / SocketPathPrefix & $pid
 
 # The way stdlib does bindUnix is utterly broken at least on FreeBSD.
@@ -19,12 +19,13 @@ proc getSocketPath*(pid: Pid): string =
 {.compile: "bind_unix.c".}
 proc bind_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint {.importc.}
 
-proc initServerSocket*(buffered = true, blocking = true): ServerSocket =
+proc initServerSocket*(pid: int; buffered = true; blocking = true):
+    ServerSocket =
   createDir(SocketDirectory)
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
   if not blocking:
     sock.getFd().setBlocking(false)
-  let path = getSocketPath(getpid())
+  let path = getSocketPath(pid)
   discard unlink(cstring(path))
   if bind_unix_from_c(cint(sock.getFd()), cstring(path), cint(path.len)) != 0:
     raiseOSError(osLastError())

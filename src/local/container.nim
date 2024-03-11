@@ -7,22 +7,21 @@ when defined(posix):
 
 import config/config
 import display/term
-import extern/stdio
 import io/promise
 import io/serialize
 import io/socketstream
 import js/javascript
 import js/jstypes
 import js/regex
-import loader/connecterror
+import loader/headers
 import loader/loader
 import loader/request
 import local/select
 import server/buffer
-import server/forkserver
 import types/cell
 import types/color
 import types/cookie
+import types/referrer
 import types/url
 import utils/luwrap
 import utils/mimeguess
@@ -43,25 +42,24 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    FAIL, SUCCESS, NEEDS_AUTH, REDIRECT, ANCHOR, NO_ANCHOR, UPDATE, READ_LINE,
-    READ_AREA, OPEN, INVALID_COMMAND, STATUS, ALERT, LOADED, TITLE,
-    CHECK_MAILCAP, QUIT
+    cetAnchor, cetNoAnchor, cetUpdate, cetReadLine, cetReadArea, cetOpen,
+    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle
 
   ContainerEvent* = object
     case t*: ContainerEventType
-    of READ_LINE:
+    of cetReadLine:
       prompt*: string
       value*: string
       password*: bool
-    of READ_AREA:
+    of cetReadArea:
       tvalue*: string
-    of OPEN, REDIRECT:
+    of cetOpen:
       request*: Request
-    of ANCHOR, NO_ANCHOR:
+    of cetAnchor, cetNoAnchor:
       anchor*: string
-    of ALERT:
+    of cetAlert:
       msg*: string
-    of UPDATE:
+    of cetUpdate:
       force*: bool
     else: discard
 
@@ -94,9 +92,15 @@ type
   Container* = ref object
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
-    url: URL
-    #TODO this is inaccurate, because only the network charset is passed through
+    url* {.jsget.}: URL
+    #TODO this is inaccurate, because charsetStack can desync
     charset*: Charset
+    charsetStack*: seq[Charset]
+    # note: this is *not* the same as Buffer.cacheId. buffer has the cache ID of
+    # the output, while container holds that of the input. Thus pager can
+    # re-interpret the original input, and buffer can rewind the (potentially
+    # mailcap) output.
+    cacheId* {.jsget.}: int
     parent* {.jsget.}: Container
     children* {.jsget.}: seq[Container]
     config*: BufferConfig
@@ -113,8 +117,7 @@ type
     pos: CursorPosition
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
-    process* {.jsget.}: Pid
-    loaderPid* {.jsget.}: Pid
+    process* {.jsget.}: int
     loadinfo*: string
     lines: SimpleFlexibleGrid
     lineshift: int
@@ -146,22 +149,12 @@ type
 jsDestructor(Highlight)
 jsDestructor(Container)
 
-proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
-    request: Request, attrs: WindowAttributes, title: string,
-    redirectdepth: int, canreinterpret: bool, fd: FileHandle,
-    contentType: Option[string]): Container =
-  let (process, loaderPid) = forkserver.forkBuffer(request, config, attrs)
-  if fd != -1:
-    loaderPid.passFd(request.url.host, fd)
-    if fd == 0:
-      # We are passing stdin.
-      closeStdin()
-    else:
-      discard close(fd)
+proc newContainer*(config: BufferConfig; url: URL; request: Request;
+    attrs: WindowAttributes; title: string; redirectdepth: int;
+    canreinterpret: bool; contentType: Option[string];
+    charsetStack: seq[Charset]; cacheId: int): Container =
   return Container(
-    url: request.url,
-    process: process,
-    loaderPid: loaderPid,
+    url: url,
     request: request,
     contentType: contentType,
     width: attrs.width,
@@ -172,76 +165,31 @@ proc newBuffer*(forkserver: ForkServer, config: BufferConfig,
     pos: CursorPosition(
       setx: -1
     ),
-    canreinterpret: canreinterpret
+    canreinterpret: canreinterpret,
+    loadinfo: "Connecting to " & request.url.host & "...",
+    cacheId: cacheId
   )
 
-proc newBufferFrom*(forkserver: ForkServer, attrs: WindowAttributes,
-    container: Container, contentTypeOverride: string): Container =
-  let request = newRequest(container.request.url, fromcache = true)
-  let config = container.config
-  let loaderPid = container.loaderPid
-  let bufferPid = forkserver.forkBufferWithLoader(request, config, attrs,
-    loaderPid)
-  return Container(
-    url: request.url,
-    request: request,
-    width: container.width,
-    height: container.height,
-    title: container.title,
-    config: config,
-    process: bufferPid,
-    loaderPid: loaderPid,
-    pos: CursorPosition(
-      setx: -1
-    ),
-    canreinterpret: true,
-    contentType: some(contentTypeOverride)
-  )
-
-func location*(container: Container): URL {.jsfget.} =
+func location(container: Container): URL {.jsfget.} =
   return container.url
 
-proc clone*(container: Container, newurl: URL): Promise[Container] =
+proc clone*(container: Container; newurl: URL): Promise[Container] =
   let url = if newurl != nil:
     newurl
   else:
-    container.location
-  return container.iface.clone(url).then(proc(pid: Pid): Container =
+    container.url
+  return container.iface.clone(url).then(proc(pid: int): Container =
     if pid == -1:
       return nil
-    return Container(
-      url: url,
-      config: container.config,
-      iface: container.iface, # changed later in setStream
-      width: container.width,
-      height: container.height,
-      title: container.title,
-      hoverText: container.hoverText,
-      lastPeek: container.lastPeek,
-      request: container.request,
-      pos: container.pos,
-      bpos: container.bpos,
-      highlights: container.highlights,
-      process: pid,
-      loaderPid: container.loaderPid,
-      loadinfo: container.loadinfo,
-      lines: container.lines,
-      lineshift: container.lineshift,
-      numLines: container.numLines,
-      code: container.code,
-      retry: container.retry,
-      hlon: container.hlon,
-      #needslines: container.needslines,
-      loadState: container.loadState,
-      events: container.events,
-      startpos: container.startpos,
-      hasstart: container.hasstart,
-      redirectdepth: container.redirectdepth,
-      select: container.select,
-      canreinterpret: container.canreinterpret,
-      ishtml: container.ishtml,
-      cloned: true
-    )
+    let nc = Container()
+    nc[] = container[]
+    nc.url = url
+    nc.process = pid
+    nc.cloned = true
+    nc.retry = @[]
+    nc.parent = nil
+    nc.children = @[]
+    return nc
   )
 
 func lineLoaded(container: Container, y: int): bool =
@@ -355,7 +303,7 @@ func maxScreenWidth(container: Container): int =
 func getTitle*(container: Container): string {.jsfunc.} =
   if container.title != "":
     return container.title
-  return container.location.serialize(excludepassword = true)
+  return container.url.serialize(excludepassword = true)
 
 func currentLineWidth(container: Container): int =
   if container.numLines == 0: return 0
@@ -472,12 +420,9 @@ proc setNumLines(container: Container, lines: int, finish = false) =
 
 proc cursorLastLine*(container: Container)
 
-proc requestLines(container: Container): EmptyPromise
-    {.discardable.} =
+proc requestLines(container: Container): EmptyPromise {.discardable.} =
   if container.iface == nil:
-    let res = EmptyPromise()
-    res.resolve()
-    return res
+    return newResolvedPromise()
   let w = container.lineWindow
   return container.iface.getLines(w).then(proc(res: GetLinesResult) =
     container.lines.setLen(w.len)
@@ -491,7 +436,7 @@ proc requestLines(container: Container): EmptyPromise
     if res.numLines != container.numLines:
       container.setNumLines(res.numLines, true)
       if container.loadState != lsLoading:
-        container.triggerEvent(STATUS)
+        container.triggerEvent(cetStatus)
     if res.numLines > 0:
       container.updateCursor()
       if container.tailOnLoad:
@@ -499,20 +444,22 @@ proc requestLines(container: Container): EmptyPromise
         container.cursorLastLine()
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
-      container.triggerEvent(UPDATE)
+      container.triggerEvent(cetUpdate)
   )
 
 proc redraw(container: Container) {.jsfunc.} =
-  container.triggerEvent(ContainerEvent(t: UPDATE, force: true))
+  container.triggerEvent(ContainerEvent(t: cetUpdate, force: true))
 
 proc sendCursorPosition*(container: Container) =
+  if container.iface == nil:
+    return
   container.iface.updateHover(container.cursorx, container.cursory)
       .then(proc(res: UpdateHoverResult) =
     if res.hover.len > 0:
       assert res.hover.high <= int(HoverType.high)
       for (ht, s) in res.hover:
         container.hoverText[ht] = s
-      container.triggerEvent(STATUS)
+      container.triggerEvent(cetStatus)
     if res.repaint:
       container.needslines = true
   )
@@ -521,7 +468,7 @@ proc setFromY(container: Container, y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.needslines = true
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
 
 proc setFromX(container: Container, x: int, refresh = true) {.jsfunc.} =
   if container.pos.fromx != x:
@@ -530,7 +477,7 @@ proc setFromX(container: Container, x: int, refresh = true) {.jsfunc.} =
       container.pos.cursorx = min(container.pos.fromx, container.currentLineWidth())
       if refresh:
         container.sendCursorPosition()
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
 
 proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
   container.setFromY(y)
@@ -580,7 +527,7 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true)
   if container.cursorx == x and container.currentSelection != nil and
       container.currentSelection.x2 != x:
     container.currentSelection.x2 = x
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
   if refresh:
     container.sendCursorPosition()
   if save:
@@ -602,7 +549,7 @@ proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
       container.setFromY(y)
     container.pos.cursory = y
   if container.currentSelection != nil and container.currentSelection.y2 != y:
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
     container.currentSelection.y2 = y
   container.restoreCursorX()
   if refresh:
@@ -1053,7 +1000,7 @@ proc scrollLeft*(container: Container, n = 1) {.jsfunc.} =
     container.setFromX(x)
 
 proc alert(container: Container, msg: string) =
-  container.triggerEvent(ContainerEvent(t: ALERT, msg: msg))
+  container.triggerEvent(ContainerEvent(t: cetAlert, msg: msg))
 
 proc lineInfo(container: Container) {.jsfunc.} =
   container.alert("line " & $(container.cursory + 1) & "/" &
@@ -1080,7 +1027,7 @@ proc gotoLine*[T: string|int](container: Container, s: T) =
     elif s[0] == '$':
       container.cursorLastLine()
     else:
-      let i = parseUInt32(s)
+      let i = parseUInt32(s, allowSign = true)
       if i.isSome and i.get > 0:
         container.markPos0()
         container.setCursorY(int(i.get - 1))
@@ -1113,6 +1060,8 @@ proc copyCursorPos*(container, c2: Container) =
   container.hasstart = true
 
 proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
   container.markPos0()
   container.iface
     .findNextLink(container.cursorx, container.cursory, n)
@@ -1123,6 +1072,8 @@ proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
     )
 
 proc cursorPrevLink*(container: Container, n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
   container.markPos0()
   container.iface
     .findPrevLink(container.cursorx, container.cursory, n)
@@ -1133,6 +1084,8 @@ proc cursorPrevLink*(container: Container, n = 1) {.jsfunc.} =
     )
 
 proc cursorNextParagraph*(container: Container, n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
   container.markPos0()
   container.iface
     .findNextParagraph(container.cursory, n)
@@ -1142,6 +1095,8 @@ proc cursorNextParagraph*(container: Container, n = 1) {.jsfunc.} =
     )
 
 proc cursorPrevParagraph*(container: Container, n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
   container.markPos0()
   container.iface
     .findPrevParagraph(container.cursory, n)
@@ -1156,17 +1111,17 @@ proc setMark*(container: Container, id: string, x = none(int),
   let y = y.get(container.cursory)
   container.marks.withValue(id, p):
     p[] = (x, y)
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
     return false
   do:
     container.marks[id] = (x, y)
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
     return true
 
 proc clearMark*(container: Container, id: string): bool {.jsfunc.} =
   result = id in container.marks
   container.marks.del(id)
-  container.triggerEvent(UPDATE)
+  container.triggerEvent(cetUpdate)
 
 proc getMarkPos(container: Container, id: string): Opt[PagePos] {.jsfunc.} =
   if id == "`" or id == "'":
@@ -1226,6 +1181,8 @@ proc findPrevMark*(container: Container, x = none(int), y = none(int)):
   return bestid
 
 proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
   container.iface
     .findNthLink(n)
     .then(proc(res: tuple[x, y: int]) =
@@ -1233,6 +1190,8 @@ proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
         container.setCursorXYCenter(res.x, res.y))
 
 proc cursorRevNthLink*(container: Container, n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
   container.iface
     .findRevNthLink(n)
     .then(proc(res: tuple[x, y: int]) =
@@ -1258,12 +1217,12 @@ proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
         y2: res.y
       )
       container.highlights.add(hl)
-      container.triggerEvent(UPDATE)
+      container.triggerEvent(cetUpdate)
       container.hlon = false
       container.needslines = true
   elif container.hlon:
     container.clearSearchHighlights()
-    container.triggerEvent(UPDATE)
+    container.triggerEvent(cetUpdate)
     container.needslines = true
     container.hlon = false
 
@@ -1275,6 +1234,8 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap, refresh: bool,
       container.select.cursorNextMatch(regex, wrap)
     return newResolvedPromise()
   else:
+    if container.iface == nil:
+      return
     return container.iface
       .findNextMatch(regex, container.cursorx, container.cursory, wrap, n)
       .then(proc(res: BufferMatch) =
@@ -1288,6 +1249,8 @@ proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool,
       container.select.cursorPrevMatch(regex, wrap)
     return newResolvedPromise()
   else:
+    if container.iface == nil:
+      return
     container.markPos0()
     return container.iface
       .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
@@ -1321,13 +1284,15 @@ proc cursorToggleSelection(container: Container, n = 1,
     )
     container.highlights.add(hl)
     container.currentSelection = hl
-  container.triggerEvent(UPDATE)
+  container.triggerEvent(cetUpdate)
   return container.currentSelection
 
 #TODO I don't like this API
 # maybe make selection a subclass of highlight?
 proc getSelectionText(container: Container, hl: Highlight = nil):
     Promise[string] {.jsfunc.} =
+  if container.iface == nil:
+    return
   let hl = if hl == nil: container.currentSelection else: hl
   if hl.t != HL_SELECT:
     let p = newPromise[string]()
@@ -1370,7 +1335,7 @@ proc getSelectionText(container: Container, hl: Highlight = nil):
 
 proc setLoadInfo(container: Container, msg: string) =
   container.loadinfo = msg
-  container.triggerEvent(STATUS)
+  container.triggerEvent(cetSetLoadInfo)
 
 #TODO this should be called with a timeout.
 proc onload*(container: Container, res: int) =
@@ -1382,15 +1347,15 @@ proc onload*(container: Container, res: int) =
   elif res == -1:
     container.loadState = lsLoaded
     container.setLoadInfo("")
-    container.triggerEvent(STATUS)
+    container.triggerEvent(cetStatus)
     container.needslines = true
-    container.triggerEvent(LOADED)
+    container.triggerEvent(cetLoaded)
     container.iface.getTitle().then(proc(title: string) =
       if title != "":
         container.title = title
-        container.triggerEvent(TITLE)
+        container.triggerEvent(cetTitle)
     )
-    if not container.hasstart and container.location.anchor != "":
+    if not container.hasstart and container.url.anchor != "":
       container.iface.gotoAnchor().then(proc(res: Opt[tuple[x, y: int]]) =
         if res.isSome:
           let res = res.get
@@ -1403,72 +1368,62 @@ proc onload*(container: Container, res: int) =
       container.onload(res)
     )
 
-proc load(container: Container) =
-  container.setLoadInfo("Connecting to " & container.location.host & "...")
-  container.iface.connect().then(proc(res: ConnectResult) =
-    let info = container.loadinfo
-    if not res.invalid:
-      container.code = res.code
-      if res.code == 0:
-        container.triggerEvent(SUCCESS)
-        # accept cookies
-        let cookiejar = container.config.loaderConfig.cookiejar
-        if res.cookies.len > 0 and cookiejar != nil:
-          cookiejar.add(res.cookies)
-        # set referrer policy, if any
-        if res.referrerPolicy.isSome and container.config.referer_from:
-          container.config.referrerPolicy = res.referrerPolicy.get
-        container.setLoadInfo("Connected to " & $container.location &
-          ". Downloading...")
-        if res.needsAuth:
-          container.triggerEvent(NEEDS_AUTH)
-        if res.redirect != nil:
-          container.triggerEvent(ContainerEvent(t: REDIRECT, request: res.redirect))
-        container.charset = res.charset
-        if container.contentType.isNone:
-          if res.contentType == "application/octet-stream":
-            let contentType = guessContentType(container.location.pathname,
-              "application/octet-stream", container.config.mimeTypes)
-            if contentType != "application/octet-stream":
-              container.contentType = some(contentType)
-            else:
-              container.contentType = some(res.contentType)
-          else:
-            container.contentType = some(res.contentType)
-        container.ishtml = container.contentType.get == "text/html"
-        container.triggerEvent(CHECK_MAILCAP)
+proc extractCookies(response: Response): seq[Cookie] =
+  result = @[]
+  if "Set-Cookie" in response.headers.table:
+    for s in response.headers.table["Set-Cookie"]:
+      let cookie = newCookie(s, response.url)
+      if cookie.isOk:
+        result.add(cookie.get)
+
+proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =
+  if "Referrer-Policy" in response.headers:
+    return getReferrerPolicy(response.headers["Referrer-Policy"])
+  return none(ReferrerPolicy)
+
+# Apply data received in response.
+# Note: pager must call this before checkMailcap.
+proc applyResponse*(container: Container; response: Response) =
+  container.code = response.res
+  # accept cookies
+  let cookieJar = container.config.loaderConfig.cookieJar
+  if cookieJar != nil:
+    cookieJar.add(response.extractCookies())
+  # set referrer policy, if any
+  let referrerPolicy = response.extractReferrerPolicy()
+  if container.config.referer_from:
+    if referrerPolicy.isSome:
+      container.config.referrerPolicy = referrerPolicy.get
+  else:
+    container.config.referrerPolicy = NO_REFERRER
+  container.setLoadInfo("Connected to " & $response.url & ". Downloading...")
+  # setup content type; note that isSome means an override so we skip it
+  if container.contentType.isNone:
+    if response.contentType == "application/octet-stream":
+      let contentType = guessContentType(container.url.pathname,
+        "application/octet-stream", container.config.mimeTypes)
+      if contentType != "application/octet-stream":
+        container.contentType = some(contentType)
       else:
-        if res.errorMessage != "":
-          container.errorMessage = res.errorMessage
-        else:
-          container.errorMessage = getLoaderErrorMessage(res.code)
-        container.setLoadInfo("")
-        container.triggerEvent(FAIL)
+        container.contentType = some(response.contentType)
     else:
-      container.setLoadInfo(info)
-  )
-
-proc startload*(container: Container) =
-  container.iface.load().then(proc(res: int) =
-    container.onload(res)
-  )
-
-proc connect2*(container: Container): EmptyPromise =
-  return container.iface.connect2(container.ishtml)
-
-proc redirectToFd*(container: Container, fdin: FileHandle, wait, cache: bool):
-    EmptyPromise =
-  return container.iface.redirectToFd(fdin, wait, cache)
-
-proc readFromFd*(container: Container, fdout: FileHandle, id: string,
-    ishtml: bool): EmptyPromise =
-  container.ishtml = ishtml
-  let url = newURL("stream:" & id).get
-  container.loaderPid.passFd(url.host, fdout)
-  return container.iface.readFromFd(url, ishtml)
-
-proc quit*(container: Container) =
-  container.triggerEvent(QUIT)
+      container.contentType = some(response.contentType)
+  # setup charsets:
+  # * override charset
+  # * network charset
+  # * default charset guesses
+  # HTML may override the last two (but not the override charset).
+  if container.config.charsetOverride != CHARSET_UNKNOWN:
+    container.charsetStack = @[container.config.charsetOverride]
+  elif response.charset != CHARSET_UNKNOWN:
+    container.charsetStack = @[response.charset]
+  else:
+    container.charsetStack = @[]
+    for i in countdown(container.config.charsets.high, 0):
+      container.charsetStack.add(container.config.charsets[i])
+    if container.charsetStack.len == 0:
+      container.charsetStack.add(DefaultCharset)
+  container.charset = container.charsetStack[^1]
 
 proc cancel*(container: Container) {.jsfunc.} =
   if container.select.open:
@@ -1477,26 +1432,30 @@ proc cancel*(container: Container) {.jsfunc.} =
     container.loadState = lsCanceled
     container.alert("Canceled loading")
 
-proc findAnchor*(container: Container, anchor: string) =
+proc findAnchor*(container: Container; anchor: string) =
   container.iface.findAnchor(anchor).then(proc(found: bool) =
     if found:
-      container.triggerEvent(ContainerEvent(t: ANCHOR, anchor: anchor))
+      container.triggerEvent(ContainerEvent(t: cetAnchor, anchor: anchor))
     else:
-      container.triggerEvent(NO_ANCHOR))
+      container.triggerEvent(ContainerEvent(t: cetNoAnchor, anchor: anchor))
+  )
 
 proc readCanceled*(container: Container) =
   container.iface.readCanceled().then(proc(repaint: bool) =
     if repaint:
       container.needslines = true)
 
-proc readSuccess*(container: Container, s: string) =
+proc readSuccess*(container: Container; s: string) =
   container.iface.readSuccess(s).then(proc(res: ReadSuccessResult) =
     if res.repaint:
       container.needslines = true
     if res.open.isSome:
-      container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get)))
+      container.triggerEvent(ContainerEvent(t: cetOpen, request: res.open.get))
+  )
 
 proc reshape(container: Container): EmptyPromise {.jsfunc.} =
+  if container.iface == nil:
+    return
   return container.iface.forceRender().then(proc(): EmptyPromise =
     return container.requestLines()
   )
@@ -1509,25 +1468,25 @@ proc displaySelect(container: Container, selectResult: SelectResult) =
       container.onclick(res))
   container.select.initSelect(selectResult, container.acursorx,
     container.acursory, container.height, submitSelect)
-  container.triggerEvent(UPDATE)
+  container.triggerEvent(cetUpdate)
 
-proc onclick(container: Container, res: ClickResult) =
+proc onclick(container: Container; res: ClickResult) =
   if res.repaint:
     container.needslines = true
   if res.open.isSome:
-    container.triggerEvent(ContainerEvent(t: OPEN, request: res.open.get))
+    container.triggerEvent(ContainerEvent(t: cetOpen, request: res.open.get))
   if res.select.isSome:
     container.displaySelect(res.select.get)
   if res.readline.isSome:
     let rl = res.readline.get
     let event = if rl.area:
       ContainerEvent(
-        t: READ_AREA,
+        t: cetReadArea,
         tvalue: rl.value
       )
     else:
       ContainerEvent(
-        t: READ_LINE,
+        t: cetReadLine,
         prompt: rl.prompt,
         value: rl.value,
         password: rl.hide
@@ -1538,6 +1497,8 @@ proc click*(container: Container) {.jsfunc.} =
   if container.select.open:
     container.select.click()
   else:
+    if container.iface == nil:
+      return
     container.iface.click(container.cursorx, container.cursory)
       .then(proc(res: ClickResult) = container.onclick(res))
 
@@ -1545,12 +1506,13 @@ proc windowChange*(container: Container, attrs: WindowAttributes) =
   if attrs.width != container.width or attrs.height - 1 != container.height:
     container.width = attrs.width
     container.height = attrs.height - 1
-    container.iface.windowChange(attrs).then(proc() =
-      container.needslines = true
-    )
+    if container.iface != nil:
+      container.iface.windowChange(attrs).then(proc() =
+        container.needslines = true
+      )
 
 proc peek(container: Container) {.jsfunc.} =
-  container.alert($container.location)
+  container.alert($container.url)
 
 proc clearHover*(container: Container) =
   container.lastPeek = low(HoverType)
@@ -1582,17 +1544,24 @@ proc handleCommand(container: Container) =
   container.iface.stream.sread(packetid)
   container.iface.resolve(packetid, len - slen(packetid))
 
-proc setStream*(container: Container, stream: SocketStream,
+proc setStream*(container: Container; stream: SocketStream;
+    registerFun: proc(fd: int); fd: FileHandle; outCacheId: int) =
+  assert not container.cloned
+  container.iface = newBufferInterface(stream, registerFun)
+  container.iface.passFd(fd, outCacheId)
+  discard close(fd)
+  discard container.iface.load().then(proc(res: int) =
+    container.onload(res)
+  )
+
+proc setCloneStream*(container: Container; stream: SocketStream;
     registerFun: proc(fd: int)) =
-  if not container.cloned:
-    container.iface = newBufferInterface(stream, registerFun)
-    container.load()
-  else:
-    container.iface = cloneInterface(stream, registerFun)
-    # Maybe we have to resume loading. Let's try.
-    discard container.iface.load().then(proc(res: int) =
-      container.onload(res)
-    )
+  assert container.cloned
+  container.iface = cloneInterface(stream, registerFun)
+  # Maybe we have to resume loading. Let's try.
+  discard container.iface.load().then(proc(res: int) =
+    container.onload(res)
+  )
 
 proc onreadline(container: Container, w: Slice[int],
     handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =

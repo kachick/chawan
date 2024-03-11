@@ -10,7 +10,7 @@ type Console* = ref object
 
 jsDestructor(Console)
 
-proc newConsole*(err: Stream, clearFun: proc() = nil, showFun: proc() = nil,
+proc newConsole*(err: Stream; clearFun: proc() = nil; showFun: proc() = nil;
     hideFun: proc() = nil): Console =
   return Console(
     err: err,

@@ -345,8 +345,8 @@ func japaneseNumber*(i: int): string =
     dec n
 
 # Implements https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#signed-integers
-func parseInt32*(s: string): Option[int32] =
-  var sign: int32 = 1
+func parseIntImpl[T: SomeSignedInt](s: string): Option[T] =
+  var sign: T = 1
   var i = 0
   if i < s.len and s[i] == '-':
     sign = -1
@@ -354,82 +354,58 @@ func parseInt32*(s: string): Option[int32] =
   elif i < s.len and s[i] == '+':
     inc i
   if i == s.len or s[i] notin AsciiDigit:
-    return none(int32)
-  var integer = int32(decValue(s[i]))
+    return none(T)
+  var integer = T(decValue(s[i]))
   inc i
   while i < s.len and isDigit(s[i]):
-    if unlikely(integer != 0 and high(int32) div 10 < integer):
-      return none(int32) # overflow
+    if unlikely(integer != 0 and high(T) div 10 < integer):
+      return none(T) # overflow
     integer *= 10
-    let c = int32(decValue(s[i]))
-    if unlikely(high(int32) - c < integer):
-      return none(int32) # overflow
+    let c = T(decValue(s[i]))
+    if unlikely(high(T) - c < integer):
+      return none(T) # overflow
     integer += c
     inc i
   return some(sign * integer)
 
-func parseInt64*(s: string): Opt[int64] =
-  var sign: int64 = 1
-  var i = 0
-  if i < s.len and s[i] == '-':
-    sign = -1
-    inc i
-  elif i < s.len and s[i] == '+':
-    inc i
-  if i == s.len or s[i] notin AsciiDigit:
-    return err()
-  var integer = int64(decValue(s[i]))
-  inc i
-  while i < s.len and isDigit(s[i]):
-    if unlikely(integer != 0 and high(int64) div 10 < integer):
-      return err() # overflow
-    integer *= 10
-    let c = int64(decValue(s[i]))
-    if unlikely(high(int64) - c < integer):
-      return err() # overflow
-    integer += c
-    inc i
-  return ok(sign * integer)
+func parseInt32*(s: string): Option[int32] =
+  return parseIntImpl[int32](s)
 
-func parseUInt8*(s: string): Option[uint8] =
+func parseInt64*(s: string): Option[int64] =
+  return parseIntImpl[int64](s)
+
+func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool):
+    Option[T] =
   var i = 0
-  if i < s.len and s[i] == '+':
-    inc i
-  if i == s.len or s[i] notin AsciiDigit:
-    return none(uint8)
-  var integer = uint8(decValue(s[i]))
+  when allowSign:
+    if i < s.len and s[i] == '+':
+      inc i
+    if i == s.len or s[i] notin AsciiDigit:
+      return none(T)
+  var integer = T(decValue(s[i]))
   inc i
-  while i < s.len and isDigit(s[i]):
-    if unlikely(integer != 0 and high(uint8) div 10 < integer):
-      return none(uint8) # overflow
+  while i < s.len and s[i] in AsciiDigit:
+    if unlikely(integer != 0 and high(T) div 10 < integer):
+      return none(T) # overflow
     integer *= 10
-    let c = uint8(decValue(s[i]))
-    if unlikely(high(uint8) - c < integer):
-      return none(uint8) # overflow
-    integer += uint8(c)
+    let c = T(decValue(s[i]))
+    if unlikely(high(T) - c < integer):
+      return none(T) # overflow
+    integer += T(c)
     inc i
   return some(integer)
 
-func parseUInt32*(s: string): Option[uint32] =
-  var i = 0
-  if i < s.len and s[i] == '+':
-    inc i
-  if i == s.len or s[i] notin AsciiDigit:
-    return none(uint32)
-  var integer = uint32(decValue(s[i]))
-  inc i
-  while i < s.len and isDigit(s[i]):
-    if unlikely(integer != 0 and high(uint32) div 10 < integer):
-      return none(uint32) # overflow
-    integer *= 10
-    let c = uint32(decValue(s[i]))
-    if unlikely(high(uint32) - c < integer):
-      return none(uint32) # overflow
-    integer += c
-    inc i
-  return some(integer)
+func parseUInt8*(s: string; allowSign: static bool): Option[uint8] =
+  return parseUIntImpl[uint8](s, allowSign)
+
+func parseUInt16*(s: string; allowSign: static bool): Option[uint16] =
+  return parseUIntImpl[uint16](s, allowSign)
+
+func parseUInt32*(s: string; allowSign: static bool): Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign)
 
 #TODO not sure where this algorithm is from...
+# (probably from CSS)
 func parseFloat64*(s: string): float64 =
   var sign = 1f64
   var t = 1

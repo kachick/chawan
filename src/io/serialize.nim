@@ -38,8 +38,12 @@ proc swrite*(stream: Stream, tup: tuple)
 proc sread*(stream: Stream, tup: var tuple)
 func slen*(tup: tuple): int
 
-proc swrite*[T](stream: Stream, s: seq[T])
-proc sread*[T](stream: Stream, s: var seq[T])
+proc swrite*[I, T](stream: Stream, a: array[I, T])
+proc sread*[I, T](stream: Stream, a: var array[I, T])
+func slen*[I, T](a: array[I, T]): int
+
+proc swrite*(stream: Stream, s: seq)
+proc sread*(stream: Stream, s: var seq)
 func slen*(s: seq): int
 
 proc swrite*[U, V](stream: Stream, t: Table[U, V])
@@ -182,19 +186,29 @@ func slen*(tup: tuple): int =
   for f in tup.fields:
     result += slen(f)
 
-proc swrite*[T](stream: Stream, s: seq[T]) =
-  stream.swrite(s.len)
-  var i = 0
-  for m in s:
-    stream.swrite(m)
-    inc i
+proc swrite*[I, T](stream: Stream; a: array[I, T]) =
+  for x in a:
+    stream.swrite(x)
 
-proc sread*[T](stream: Stream, s: var seq[T]) =
+proc sread*[I, T](stream: Stream; a: var array[I, T]) =
+  for x in a.mitems:
+    stream.sread(x)
+
+func slen*[I, T](a: array[I, T]): int =
+  for x in a:
+    result += slen(x)
+
+proc swrite*(stream: Stream, s: seq) =
+  stream.swrite(s.len)
+  for x in s:
+    stream.swrite(x)
+
+proc sread*(stream: Stream, s: var seq) =
   var len: int
   stream.sread(len)
   s.setLen(len)
-  for i in 0..<len:
-    stream.sread(s[i])
+  for x in s.mitems:
+    stream.sread(x)
 
 func slen*(s: seq): int =
   result = slen(s.len)

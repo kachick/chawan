@@ -1,6 +1,6 @@
 import js/javascript
 import loader/request
-import types/referer
+import types/referrer
 import types/url
 
 type

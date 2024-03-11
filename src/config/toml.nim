@@ -1,3 +1,4 @@
+import std/options
 import std/streams
 import std/strutils
 import std/tables
