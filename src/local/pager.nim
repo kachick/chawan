@@ -586,7 +586,7 @@ proc deleteContainer(pager: Pager, container: Container) =
   pager.unreg.add((container.process, container.iface.stream))
   pager.forkserver.removeChild(container.process)
 
-proc discardBuffer(pager: Pager, container = none(Container)) {.jsfunc.} =
+proc discardBuffer*(pager: Pager, container = none(Container)) {.jsfunc.} =
   let c = container.get(pager.container)
   if c == nil or c.parent == nil and c.children.len == 0:
     pager.alert("Cannot discard last buffer!")

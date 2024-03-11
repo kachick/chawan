@@ -218,8 +218,8 @@ type
     mibRight = (2, "right")
     mibWheelUp = (3, "wheelUp")
     mibWheelDown = (4, "wheelDown")
-    mibButton6 = (5, "button6")
-    mibButton7 = (6, "button7")
+    mibWheelLeft = (5, "wheelLeft")
+    mibWheelRight = (6, "wheelRight")
     mibButton8 = (7, "button8")
     mibButton9 = (8, "button9")
     mibButton10 = (9, "button10")
@@ -341,16 +341,25 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
                   container.scrollDown(-diff[1])
               client.pressed = (-1, -1)
             else: discard
+          of mibMiddle:
+            if input.t == mitPress:
+              client.pager.discardBuffer()
           of mibWheelUp:
             if input.t == mitPress:
               container.scrollUp(5)
           of mibWheelDown:
             if input.t == mitPress:
               container.scrollDown(5)
-          of mibButton6, mibButton8:
+          of mibWheelLeft:
+            if input.t == mitPress:
+              container.scrollLeft(5)
+          of mibWheelRight:
+            if input.t == mitPress:
+              container.scrollRight(5)
+          of mibButton8:
             if input.t == mitPress:
               discard client.pager.nextBuffer()
-          of mibButton7, mibButton9:
+          of mibButton9:
             if input.t == mitPress:
               discard client.pager.prevBuffer()
           else: discard
