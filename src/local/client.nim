@@ -341,8 +341,12 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
                   container.scrollDown(-diff[1])
               client.pressed = (-1, -1)
             else: discard
-          of mibWheelUp: container.scrollUp(5)
-          of mibWheelDown: container.scrollDown(5)
+          of mibWheelUp:
+            if input.t == mitPress:
+              container.scrollUp(5)
+          of mibWheelDown:
+            if input.t == mitPress:
+              container.scrollDown(5)
           of mibButton6, mibButton8:
             if input.t == mitPress:
               discard client.pager.nextBuffer()
