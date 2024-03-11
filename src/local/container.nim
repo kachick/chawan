@@ -1347,7 +1347,6 @@ proc onload*(container: Container, res: int) =
   elif res == -1:
     container.loadState = lsLoaded
     container.setLoadInfo("")
-    container.triggerEvent(cetStatus)
     container.needslines = true
     container.triggerEvent(cetLoaded)
     container.iface.getTitle().then(proc(title: string) =

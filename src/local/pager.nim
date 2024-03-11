@@ -1461,7 +1461,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
         referrer = pager.container)
   of cetStatus:
     if pager.container == container:
-      pager.refreshStatusMsg()
+      pager.showAlerts()
   of cetSetLoadInfo:
     if pager.container == container:
       pager.onSetLoadInfo(container)
