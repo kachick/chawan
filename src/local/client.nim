@@ -213,17 +213,17 @@ type
     mimShift = "shift", mimCtrl = "ctrl", mimMeta = "meta"
 
   MouseInputButton = enum
-    mibLeft = (0, "left")
-    mibMiddle = (1, "middle")
-    mibRight = (2, "right")
-    mibWheelUp = (3, "wheelUp")
-    mibWheelDown = (4, "wheelDown")
-    mibWheelLeft = (5, "wheelLeft")
-    mibWheelRight = (6, "wheelRight")
-    mibButton8 = (7, "button8")
-    mibButton9 = (8, "button9")
-    mibButton10 = (9, "button10")
-    mibButton11 = (10, "button11")
+    mibLeft = (1, "left")
+    mibMiddle = (2, "middle")
+    mibRight = (3, "right")
+    mibWheelUp = (4, "wheelUp")
+    mibWheelDown = (5, "wheelDown")
+    mibWheelLeft = (6, "wheelLeft")
+    mibWheelRight = (7, "wheelRight")
+    mibThumbInner = (8, "thumbInner")
+    mibThumbTip = (9, "thumbTip")
+    mibButton10 = (10, "button10")
+    mibButton11 = (11, "button11")
 
   MouseInput = object
     t: MouseInputType
@@ -267,11 +267,11 @@ proc parseMouseInput(client: Client): Opt[MouseInput] =
   var t = if c == 'M': mitPress else: mitRelease
   if (btn and 32) != 0:
     t = mitMove
-  var button = btn and 3
+  var button = (btn and 3) + 1
   if (btn and 64) != 0:
     button += 3
   if (btn and 128) != 0:
-    button += 6
+    button += 7
   if button notin int(MouseInputButton.low)..int(MouseInputButton.high):
     return err()
   ok(MouseInput(
@@ -342,7 +342,7 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
               client.pressed = (-1, -1)
             else: discard
           of mibMiddle:
-            if input.t == mitPress:
+            if input.t == mitRelease: # release, to emulate w3m
               client.pager.discardBuffer()
           of mibWheelUp:
             if input.t == mitPress:
@@ -356,12 +356,12 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
           of mibWheelRight:
             if input.t == mitPress:
               container.scrollRight(5)
-          of mibButton8:
-            if input.t == mitPress:
-              discard client.pager.nextBuffer()
-          of mibButton9:
+          of mibThumbInner:
             if input.t == mitPress:
               discard client.pager.prevBuffer()
+          of mibThumbTip:
+            if input.t == mitPress:
+              discard client.pager.nextBuffer()
           else: discard
       client.pager.inputBuffer = ""
     elif "\e[<".startsWith(client.pager.inputBuffer):
