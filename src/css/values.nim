@@ -421,18 +421,21 @@ func `$`*(val: CSSComputedValue): string =
   else:
     result = $val.v
 
-macro `{}`*(vals: CSSComputedValues, s: string): untyped =
-  let t = propertyType($s)
+macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
+  let t = propertyType(s)
   let vs = ident($valueType(t))
   return quote do:
-    `vals`[`t`].`vs`
+    `vals`[CSSPropertyType(`t`)].`vs`
 
-macro `{}=`*(vals: CSSComputedValues, s: string, val: typed) =
-  let t = propertyType($s)
+macro `{}=`*(vals: CSSComputedValues, s: static string, val: typed) =
+  let t = propertyType(s)
   let v = valueType(t)
   let vs = ident($v)
   return quote do:
-    `vals`[`t`] = CSSComputedValue(v: `v`, `vs`: `val`)
+    `vals`[CSSPropertyType(`t`)] = CSSComputedValue(
+      v: CSSValueType(`v`),
+      `vs`: `val`
+    )
 
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
