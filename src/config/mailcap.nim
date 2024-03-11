@@ -15,6 +15,7 @@ type
     stream: Stream
     hasbuf: bool
     buf: char
+    line: int
 
   MailcapFlags* = enum
     NEEDSTERMINAL = "needsterminal"
@@ -40,7 +41,15 @@ proc consume(state: var MailcapParser): char =
   if state.hasbuf:
     state.hasbuf = false
     return state.buf
-  return state.stream.readChar()
+  var c = state.stream.readChar()
+  if c == '\\' and not state.stream.atEnd:
+    let c2 = state.stream.readChar()
+    if c2 == '\n' and not state.stream.atEnd:
+      inc state.line
+      c = state.stream.readChar()
+  if c == '\n':
+    inc state.line
+  return c
 
 proc reconsume(state: var MailcapParser, c: char) =
   state.buf = c
@@ -72,7 +81,8 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
       s &= c
       break
     if c notin AsciiAlphaNumeric + {'-', '*'}:
-      return err("Invalid character encountered in type field")
+      return err("line " & $state.line & ": invalid character in type field: " &
+        c)
     s &= c.toLowerAscii()
   if not state.has():
     return err("Missing subtype")
@@ -83,7 +93,8 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
       state.reconsume(c)
       break
     if c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
-      return err("Invalid character encountered in subtype field")
+      return err("line " & $state.line &
+        ": invalid character in subtype field: " & c)
     s &= c.toLowerAscii()
   var c: char
   if not state.skipBlanks(c) or c != ';':
@@ -106,7 +117,8 @@ proc consumeCommand(state: var MailcapParser): Result[string, string] =
         quoted = true
         continue
       if c notin Ascii - Controls:
-        return err("Invalid character encountered in command")
+        return err("line " & $state.line & ": invalid character in command: " &
+          c)
     else:
       quoted = false
     s &= c
@@ -163,11 +175,11 @@ proc consumeField(state: var MailcapParser, entry: var MailcapEntry):
       return ok(state.consume() == ';')
     else:
       if c in Controls:
-        return err("Invalid character encountered in field")
+        return err("line " & $state.line & ": invalid character in field: " & c)
       buf &= c
 
 proc parseMailcap*(stream: Stream): Result[Mailcap, string] =
-  var state = MailcapParser(stream: stream)
+  var state = MailcapParser(stream: stream, line: 1)
   var mailcap: Mailcap
   while not stream.atEnd():
     let c = state.consume()
