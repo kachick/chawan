@@ -257,8 +257,8 @@ proc handleRead(ctx: LoaderContext; handle: LoaderHandle;
     let buffer = newLoaderBuffer()
     try:
       let n = handle.istream.recvData(buffer)
-      if n == 0:
-        break
+      if n == 0: # EOF
+        return hrrUnregister
       var si = 0
       if handle.parser != nil:
         si = handle.parseHeaders(buffer)
