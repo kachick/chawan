@@ -1347,7 +1347,7 @@ proc onload*(container: Container, res: int) =
   elif res == -1:
     container.loadState = lsLoaded
     container.setLoadInfo("")
-    container.needslines = true
+    container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
     container.iface.getTitle().then(proc(title: string) =
       if title != "":
@@ -1355,11 +1355,15 @@ proc onload*(container: Container, res: int) =
         container.triggerEvent(cetTitle)
     )
     if not container.hasstart and container.url.anchor != "":
-      container.iface.gotoAnchor().then(proc(res: Opt[tuple[x, y: int]]) =
+      container.requestLines().then(proc(): Promise[Opt[tuple[x, y: int]]] =
+        return container.iface.gotoAnchor()
+      ).then(proc(res: Opt[tuple[x, y: int]]) =
         if res.isSome:
           let res = res.get
           container.setCursorXYCenter(res.x, res.y)
       )
+    else:
+      container.needslines = true
   else:
     container.needslines = true
     container.setLoadInfo(convertSize(res) & " loaded")

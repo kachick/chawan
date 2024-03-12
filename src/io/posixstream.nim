@@ -70,7 +70,8 @@ method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
     discard fcntl(s.fd, F_SETFL, ofl or O_NONBLOCK)
 
 method seek*(s: PosixStream; off: int) =
-  discard lseek(s.fd, Off(off), SEEK_SET)
+  if lseek(s.fd, Off(off), SEEK_SET) == -1:
+    raisePosixIOError()
 
 method sclose*(s: PosixStream) =
   discard close(s.fd)
