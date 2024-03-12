@@ -1330,6 +1330,7 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
   pager.alert("Redirecting to " & $request.url)
   pager.gotoURL(request, some(container.url), replace = container,
     redirectdepth = container.redirectdepth + 1, referrer = container)
+  dec pager.numload
 
 proc fail*(pager: Pager; container: Container; errorMessage: string) =
   dec pager.numload
