@@ -744,6 +744,7 @@ proc clearConsole(client: Client) =
   let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
     url, ConsoleTitle, canreinterpret = false)
   replacement.replace = client.consoleWrapper.container
+  pager.replace(client.consoleWrapper.container, replacement)
   client.consoleWrapper.container = replacement
   let console = client.consoleWrapper.console
   console.err.close()

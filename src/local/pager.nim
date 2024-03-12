@@ -644,7 +644,30 @@ proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
 proc alert*(pager: Pager, msg: string) {.jsfunc.} =
   pager.alerts.add(msg)
 
-proc deleteContainer(pager: Pager, container: Container) =
+# replace target with container in the tree
+proc replace*(pager: Pager; target, container: Container) =
+  let n = target.children.find(container)
+  if n != -1:
+    target.children.delete(n)
+    container.parent = nil
+  let n2 = container.children.find(target)
+  if n2 != -1:
+    container.children.delete(n2)
+    target.parent = nil
+  container.children.add(target.children)
+  for child in container.children:
+    child.parent = container
+  target.children.setLen(0)
+  if target.parent != nil:
+    container.parent = target.parent
+    let n = target.parent.children.find(target)
+    assert n != -1, "Container not a child of its parent"
+    container.parent.children[n] = container
+    target.parent = nil
+  if pager.container == target:
+    pager.setContainer(container)
+
+proc deleteContainer(pager: Pager; container: Container) =
   container.cancel()
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
@@ -678,6 +701,9 @@ proc deleteContainer(pager: Pager, container: Container) =
       pager.setContainer(nil)
   container.parent = nil
   container.children.setLen(0)
+  if container.replace != nil:
+    pager.replace(container, container.replace)
+    container.replace = nil
   if container.iface != nil:
     pager.unreg.add((container.process, container.iface.stream))
     pager.forkserver.removeChild(container.process)
@@ -806,8 +832,9 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
       contentType = contentType
     )
     if replace != nil:
+      pager.replace(replace, container)
       container.replace = replace
-      container.copyCursorPos(container.replace)
+      container.copyCursorPos(replace)
     else:
       pager.addContainer(container)
     inc pager.numload
@@ -1361,30 +1388,6 @@ proc redirect*(pager: Pager; container: Container; response: Response) =
     pager.alert("Error: maximum redirection depth reached")
     pager.deleteContainer(container)
 
-proc replace(pager: Pager; container: Container) =
-  let n = container.replace.children.find(container)
-  if n != -1:
-    container.replace.children.delete(n)
-    container.parent = nil
-  let n2 = container.children.find(container.replace)
-  if n2 != -1:
-    container.children.delete(n2)
-    container.replace.parent = nil
-  container.children.add(container.replace.children)
-  for child in container.children:
-    child.parent = container
-  container.replace.children.setLen(0)
-  if container.replace.parent != nil:
-    container.parent = container.replace.parent
-    let n = container.replace.parent.children.find(container.replace)
-    assert n != -1, "Container not a child of its parent"
-    container.parent.children[n] = container
-    container.replace.parent = nil
-  if pager.container == container.replace:
-    pager.setContainer(container)
-  pager.deleteContainer(container.replace)
-  container.replace = nil
-
 proc connected*(pager: Pager; container: Container; response: Response) =
   let istream = response.body
   container.applyResponse(response)
@@ -1416,7 +1419,8 @@ proc connected*(pager: Pager; container: Container; response: Response) =
       istreamOutputId: response.outputId
     ))
     if container.replace != nil:
-      pager.replace(container)
+      pager.deleteContainer(container.replace)
+      container.replace = nil
   else:
     dec pager.numload
     pager.deleteContainer(container)
