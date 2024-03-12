@@ -286,7 +286,7 @@ proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
       s &= c
   if s != "":
     parser.lineBuffer = s
-  return buffer.len
+  return L
 
 proc finishParse*(handle: LoaderHandle) =
   discard handle.parseHeaders(nil)
