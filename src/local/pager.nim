@@ -3,6 +3,7 @@ import std/net
 import std/options
 import std/os
 import std/osproc
+import std/selectors
 import std/streams
 import std/tables
 import std/unicode
@@ -24,6 +25,7 @@ import extern/tempfile
 import io/bufstream
 import io/posixstream
 import io/promise
+import io/serialize
 import io/socketstream
 import io/urlfilter
 import js/error
@@ -31,6 +33,7 @@ import js/javascript
 import js/jstypes
 import js/regex
 import js/tojs
+import loader/connecterror
 import loader/headers
 import loader/loader
 import loader/request
@@ -67,6 +70,17 @@ type
   PagerAlertState = enum
     pasNormal, pasAlertOn, pasLoadInfo
 
+  ContainerConnectionState = enum
+    ccsBeforeResult, ccsBeforeStatus, ccsBeforeHeaders
+
+  ConnectingContainerItem = ref object
+    state: ContainerConnectionState
+    container: Container
+    stream: SocketStream
+    res: int
+    outputId: int
+    status: uint16
+
   Pager* = ref object
     alertState: PagerAlertState
     alerts: seq[string]
@@ -77,7 +91,7 @@ type
     cgiDir*: seq[string]
     commandMode {.jsget.}: bool
     config: Config
-    connectingBuffers*: seq[tuple[container: Container; stream: SocketStream]]
+    connectingContainers: seq[ConnectingContainerItem]
     container*: Container
     cookiejars: Table[string, CookieJar]
     devRandom: PosixStream
@@ -98,10 +112,11 @@ type
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
     proxy: URL
-    redraw*: bool
+    redraw: bool
     regex: Opt[Regex]
     reverseSearch: bool
     scommand*: string
+    selector*: Selector[int]
     siteconf: seq[SiteConfig]
     statusgrid*: FixedGrid
     term*: Terminal
@@ -307,7 +322,8 @@ proc setLoader*(pager: Pager, loader: FileLoader) =
   )
   loader.key = pager.addLoaderClient(pager.loader.clientPid, config)
 
-proc launchPager*(pager: Pager, infile: File) =
+proc launchPager*(pager: Pager; infile: File; selector: Selector[int]) =
+  pager.selector = selector
   case pager.term.start(infile)
   of tsrSuccess: discard
   of tsrDA1Fail:
@@ -535,7 +551,11 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig; request: Request;
     charsetStack,
     cacheId
   )
-  pager.connectingBuffers.add((container, stream))
+  pager.connectingContainers.add(ConnectingContainerItem(
+    state: ccsBeforeResult,
+    container: container,
+    stream: stream
+  ))
   pager.onSetLoadInfo(container)
   return container
 
@@ -551,9 +571,9 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     cacheId = container.cacheId
   )
 
-func findConnectingBuffer*(pager: Pager; fd: int): int =
-  for i, (_, stream) in pager.connectingBuffers:
-    if stream.fd == fd:
+func findConnectingContainer*(pager: Pager; fd: int): int =
+  for i, item in pager.connectingContainers:
+    if item.stream.fd == fd:
       return i
   -1
 
@@ -1357,7 +1377,7 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
     redirectdepth = container.redirectdepth + 1, referrer = container)
   dec pager.numload
 
-proc fail*(pager: Pager; container: Container; errorMessage: string) =
+proc fail(pager: Pager; container: Container; errorMessage: string) =
   dec pager.numload
   pager.deleteContainer(container)
   if container.retry.len > 0:
@@ -1366,7 +1386,7 @@ proc fail*(pager: Pager; container: Container; errorMessage: string) =
   else:
     pager.alert("Can't load " & $container.url & " (" & errorMessage & ")")
 
-proc redirect*(pager: Pager; container: Container; response: Response;
+proc redirect(pager: Pager; container: Container; response: Response;
     request: Request) =
   # still need to apply response, or we lose cookie jars.
   container.applyResponse(response)
@@ -1386,7 +1406,7 @@ proc redirect*(pager: Pager; container: Container; response: Response;
     pager.alert("Error: maximum redirection depth reached")
     pager.deleteContainer(container)
 
-proc connected*(pager: Pager; container: Container; response: Response) =
+proc connected(pager: Pager; container: Container; response: Response) =
   let istream = response.body
   container.applyResponse(response)
   if response.status == 401: # unauthorized
@@ -1429,6 +1449,64 @@ proc connected*(pager: Pager; container: Container; response: Response) =
     pager.deleteContainer(container)
     pager.redraw = true
     pager.refreshStatusMsg()
+
+# true if done, false if keep
+proc handleConnectingContainer*(pager: Pager; i: int) =
+  let item = pager.connectingContainers[i]
+  let container = item.container
+  let stream = item.stream
+  case item.state
+  of ccsBeforeResult:
+    var res: int
+    stream.sread(res)
+    if res == 0:
+      stream.sread(item.outputId)
+      inc item.state
+      container.loadinfo = "Connected to " & $container.url & ". Downloading..."
+      pager.onSetLoadInfo(container)
+      # continue
+    else:
+      var msg: string
+      stream.sread(msg)
+      if msg == "":
+        msg = getLoaderErrorMessage(res)
+      pager.fail(container, msg)
+      # done
+      pager.connectingContainers.del(i)
+      pager.selector.unregister(item.stream.fd)
+      pager.loader.unregistered.add(item.stream.fd)
+      stream.close()
+  of ccsBeforeStatus:
+    stream.sread(item.status)
+    inc item.state
+    # continue
+  of ccsBeforeHeaders:
+    let response = Response(
+      res: item.res,
+      outputId: item.outputId,
+      status: item.status,
+      url: container.request.url,
+      body: stream
+    )
+    stream.sread(response.headers)
+    # done
+    pager.connectingContainers.del(i)
+    pager.selector.unregister(item.stream.fd)
+    pager.loader.unregistered.add(item.stream.fd)
+    let redirect = response.getRedirect(container.request)
+    if redirect != nil:
+      stream.close()
+      pager.redirect(container, response, redirect)
+    else:
+      pager.connected(container, response)
+
+proc handleConnectingContainerError*(pager: Pager; i: int) =
+  let item = pager.connectingContainers[i]
+  pager.fail(item.container, "loader died while loading")
+  pager.selector.unregister(item.stream.fd)
+  pager.loader.unregistered.add(item.stream.fd)
+  item.stream.close()
+  pager.connectingContainers.del(i)
 
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     bool =

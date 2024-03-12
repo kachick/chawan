@@ -7,7 +7,6 @@ import io/promise
 import io/socketstream
 import js/error
 import js/javascript
-import loader/connecterror
 import loader/headers
 import loader/request
 import types/blob
@@ -153,11 +152,6 @@ proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
     let s = ?s
     return ok(JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
       cstring"<input>")))
-
-func getErrorMessage*(this: Response): string =
-  if this.internalMessage != "":
-    return this.internalMessage
-  getLoaderErrorMessage(this.res)
 
 proc addResponseModule*(ctx: JSContext) =
   ctx.registerType(Response)

@@ -785,12 +785,18 @@ proc connect(loader: FileLoader; buffered = true): SocketStream =
     return stream
   return nil
 
-#TODO: add init
-proc fetch*(loader: FileLoader; input: Request): FetchPromise =
+# Start a request. This should not block (not for a significant amount of time
+# anyway).
+proc startRequest*(loader: FileLoader; request: Request): SocketStream =
   let stream = loader.connect(buffered = false)
   stream.swrite(lcLoad)
-  stream.swrite(input)
+  stream.swrite(request)
   stream.flush()
+  return stream
+
+#TODO: add init
+proc fetch*(loader: FileLoader; input: Request): FetchPromise =
+  let stream = loader.startRequest(input)
   let fd = int(stream.fd)
   loader.registerFun(fd)
   let promise = FetchPromise()
@@ -866,8 +872,6 @@ proc handleHeaders(response: Response; request: Request; stream: SocketStream) =
   stream.sread(response.outputId)
   stream.sread(response.status)
   stream.sread(response.headers)
-  # Only a stream of the response body may arrive after this point.
-  response.body = stream
 
 proc onConnected*(loader: FileLoader, fd: int) =
   let connectData = loader.connecting[fd]
@@ -879,6 +883,8 @@ proc onConnected*(loader: FileLoader, fd: int) =
   let response = newResponse(res, request, stream)
   if res == 0:
     response.handleHeaders(request, stream)
+    # Only a stream of the response body may arrive after this point.
+    response.body = stream
     assert loader.unregisterFun != nil
     let realCloseImpl = stream.closeImpl
     stream.closeImpl = nil
@@ -938,30 +944,20 @@ proc onError*(loader: FileLoader; fd: int) =
     buffer[].buf = ""
     response.unregisterFun()
 
-# Start a request. This should not block (for a significant amount of time
-# anyway).
-proc startRequest*(loader: FileLoader; request: Request): SocketStream =
-  let stream = loader.connect(buffered = false)
-  stream.swrite(lcLoad)
-  stream.swrite(request)
-  stream.flush()
-  return stream
-
-# Read a response from a request stream (received from startRequest). This
-# blocks until headers are received.
-proc readResponse*(stream: SocketStream; request: Request): Response =
+# Note: this blocks until headers are received.
+proc doRequest*(loader: FileLoader; request: Request): Response =
+  let stream = loader.startRequest(request)
   let response = Response(url: request.url)
   stream.sread(response.res)
   if response.res == 0:
     response.handleHeaders(request, stream)
+    # Only a stream of the response body may arrive after this point.
+    response.body = stream
   else:
-    stream.sread(response.internalMessage)
+    var msg: string
+    stream.sread(msg)
+    stream.close()
   return response
-
-# Note: this blocks until headers are received; see above.
-proc doRequest*(loader: FileLoader; request: Request): Response =
-  let stream = loader.startRequest(request)
-  return stream.readResponse(request)
 
 proc shareCachedItem*(loader: FileLoader; id, targetPid: int) =
   let stream = loader.connect()

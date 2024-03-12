@@ -1399,7 +1399,6 @@ proc applyResponse*(container: Container; response: Response) =
       container.config.referrerPolicy = referrerPolicy.get
   else:
     container.config.referrerPolicy = NO_REFERRER
-  container.setLoadInfo("Connected to " & $response.url & ". Downloading...")
   # setup content type; note that isSome means an override so we skip it
   if container.contentType.isNone:
     var contentType = response.getContentType()

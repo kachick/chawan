@@ -1,3 +1,4 @@
+import std/exitprocs
 import std/nativesockets
 import std/net
 import std/options
@@ -10,8 +11,6 @@ import std/unicode
 
 when defined(posix):
   import std/posix
-
-import std/exitprocs
 
 import bindings/constcharp
 import bindings/quickjs
@@ -65,9 +64,7 @@ type
     ibuf: string
     jsctx: JSContext
     jsrt: JSRuntime
-    loader: FileLoader
     pager {.jsget.}: Pager
-    selector: Selector[int]
     timeouts: TimeoutState
     pressed: tuple[col: int, row: int]
 
@@ -78,11 +75,17 @@ type
 
 jsDestructor(Client)
 
-func forkserver(client: Client): ForkServer {.inline.} =
-  client.pager.forkserver
-
 func console(client: Client): Console {.jsfget.} =
   return client.consoleWrapper.console
+
+template selector(client: Client): Selector[int] =
+  client.pager.selector
+
+template loader(client: Client): FileLoader =
+  client.pager.loader
+
+template forkserver(client: Client): ForkServer =
+  client.pager.forkserver
 
 proc readChar(client: Client): char =
   if client.ibuf == "":
@@ -506,25 +509,13 @@ proc acceptBuffers(client: Client) =
 proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
   importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
-proc handleRead(client: Client, fd: int) =
+proc handleRead(client: Client; fd: int) =
   if client.pager.infile != nil and fd == client.pager.infile.getFileHandle():
     client.input().then(proc() =
       client.handlePagerEvents()
     )
-  elif (let i = client.pager.findConnectingBuffer(fd); i != -1):
-    client.selector.unregister(fd)
-    client.loader.unregistered.add(fd)
-    let (container, stream) = client.pager.connectingBuffers[i]
-    let response = stream.readResponse(container.request)
-    if response.body == nil:
-      client.pager.fail(container, response.getErrorMessage())
-    elif (let redirect = response.getRedirect(container.request);
-        redirect != nil):
-      client.pager.redirect(container, response, redirect)
-      response.body.close()
-    else:
-      client.pager.connected(container, response)
-    client.pager.connectingBuffers.del(i)
+  elif (let i = client.pager.findConnectingContainer(fd); i != -1):
+    client.pager.handleConnectingContainer(i)
   elif fd == client.forkserver.estream.fd:
     const BufferSize = 4096
     const prefix = "STDERR: "
@@ -597,13 +588,8 @@ proc handleError(client: Client, fd: int) =
     client.loader.onError(fd)
   elif fd in client.loader.unregistered:
     discard # already unregistered...
-  elif (let i = client.pager.findConnectingBuffer(fd); i != -1):
-    # bleh
-    let (container, stream) = client.pager.connectingBuffers[i]
-    client.pager.fail(container, "loader died while loading")
-    client.selector.unregister(fd)
-    stream.close()
-    client.pager.connectingBuffers.del(i)
+  elif (let i = client.pager.findConnectingContainer(fd); i != -1):
+    client.pager.handleConnectingContainerError(i)
   else:
     if fd in client.fdmap:
       let container = client.fdmap[fd]
@@ -784,8 +770,7 @@ proc launchClient*(client: Client, pages: seq[string],
     selector.registerHandle(fd, {Read}, 0)
   client.loader.unregisterFun = proc(fd: int) =
     selector.unregister(fd)
-  client.selector = selector
-  client.pager.launchPager(infile)
+  client.pager.launchPager(infile, selector)
   let clearFun = proc() =
     client.clearConsole()
   let showFun = proc() =
@@ -888,7 +873,6 @@ proc newClient*(config: Config, forkserver: ForkServer): Client =
   pager.setLoader(loader)
   let client = Client(
     config: config,
-    loader: loader,
     jsrt: jsrt,
     jsctx: jsctx,
     pager: pager
