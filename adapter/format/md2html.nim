@@ -8,7 +8,8 @@ proc toggle[T](s: var set[T], t: T): bool =
     s.excl(t)
 
 type BracketState = enum
-  bsNone, bsInBracketRef, bsInBracket, bsAfterBracket, bsInParen, bsInImage
+  bsNone, bsInBracketRef, bsInBracket, bsAfterBracket, bsInParen, bsInImage,
+  bsInTag
 
 proc getId(line: openArray[char]): string =
   result = ""
@@ -48,6 +49,14 @@ type InlineState = enum
   isItalic, isBold, isCode, isComment, isDel
 
 const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
+func startsWithScheme(s: string): bool =
+  for i, c in s:
+    if i > 0 and c == ':':
+      return true
+    if c notin AsciiAlphaNumeric:
+      break
+  false
+
 proc parseInline(line: openArray[char]) =
   var state: set[InlineState] = {}
   var bs = bsNone
@@ -76,6 +85,25 @@ proc parseInline(line: openArray[char]) =
         i += 2
       else:
         append c
+    elif bs == bsInTag:
+      if c == '>': # done
+        if bracketChars.startsWithScheme(): # link
+          var linkChars = ""
+          for c in bracketChars:
+            if c == '\'':
+              linkChars &= "&apos"
+            else:
+              linkChars &= c
+          stdout.write("<A HREF='" & linkChars & "'>" & bracketChars & "</A>")
+        else: # tag
+          stdout.write('<' & bracketChars & '>')
+        bracketChars = ""
+        bs = bsNone
+      elif c == '<':
+        stdout.write('<' & bracketChars)
+        bracketChars = ""
+      else:
+        bracketChars &= c
     elif isCode in state:
       case c
       of '<': append "&lt;"
@@ -141,6 +169,9 @@ proc parseInline(line: openArray[char]) =
       bs = bsNone
     elif c == '\'' and bs == bsInParen:
       stdout.write("&apos;")
+    elif c == '<' and bs == bsNone:
+      bs = bsInTag
+      bracketChars = ""
     elif i + 4 < line.len and line.toOpenArray(i, i + 3) == "<!--":
       append "<!--"
       i += 3
