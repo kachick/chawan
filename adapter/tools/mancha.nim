@@ -56,7 +56,8 @@ proc main() =
     else:
       help(1)
     inc i
-  if not forceSection and section != "" and man == "":
+  if not forceSection and section != "" and man == "" and keyword == "" and
+      local == "":
     man = section
     section = ""
   if not ((local != "") != (man != "") != (keyword != "")):
