@@ -25,13 +25,15 @@ supported yet.)
 	* libcurl: <https://curl.se/libcurl/>
 	* zlib: <https://zlib.net/>
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config"
-	  in PATH)
+	  in your `$PATH`)
 	* If you are using a system where the default make program is not
-	  GNU make (e.g. BSD), install gmake and use it in the following steps.
+          GNU make (e.g. BSD), install gmake and use that in the following
+	  steps.
 4. Download parts of Chawan found in other repositories: `make submodule`
-5. Run `make`. (By default, this will build in release mode; for development,
-   use `make TARGET=debug`. For details, see [doc/build.md](doc/build.md).)
-6. If you want manpages, run `make manpage`.
+5. Run `make`. (By default, this will build the whole project in release mode;
+   for details, see [doc/build.md](doc/build.md).)
+6. If you want manpages, run `make manpage`. (This requires pandoc to be
+   installed.)
 7. Finally, install using `make install` (e.g. `sudo make install`).
 8. (Optional): install Perl so that the man page viewer (`mancha`) works too.
 
@@ -55,12 +57,11 @@ Currently implemented features are:
 	* table layout is supported, except for fixed tables
 	* the box model is mostly implemented, except for borders
 * forms
-* incremental loading of plain text streams and HTML documents
+* incremental loading of various kinds of documents (plain text, HTML, etc.)
 * JavaScript based navigation
 * JavaScript support in documents
 	* some basic DOM manipulation APIs are supported
-	* off by default; use is discouraged until sandboxing is
-	  implemented
+        * off by default; use is discouraged until sandboxing is implemented
 * cookies
 * supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
 * can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
@@ -102,13 +103,13 @@ want to try more established ones:
 Chawan's display capabilities depend on what your terminal reports. In
 particular:
 
-* if it does not respond to querying XTGETTCAP, and the COLORTERM environment
+* if it does not respond to querying XTGETTCAP, and the `$COLORTERM` environment
   variable is not set, then Chawan falls back to ANSI colors
 * if it does not respond to querying the background color, then Chawan's color
   contrast correction will likely malfunction
 
-You can fix this manually by adjusting the display.default-background-color,
-display.default-foreground-color, and display.color-mode variables. See
+You can fix this manually by adjusting the `display.default-background-color`,
+`display.default-foreground-color`, and `display.color-mode` variables. See
 [doc/config.md](doc/config.md) for details.
 
 ### Can I view Markdown files using Chawan?
@@ -132,24 +133,61 @@ implemented yet, so it's not 100% compatible.
 I use vi for editing text, and I prefer my pager to function similarly to
 my editor. Hence the default vi-like keybindings.
 
-### Why does *website X* look awful in Chawan?
+### Why does `$WEBSITE` look awful in Chawan?
 
-As mentioned above, the layout engine is still very much a work in progress. At
-this point, it's more interesting if a website works as intended in Chawan
-than if it doesn't.
+Usually, this is because the website uses some CSS features that are not yet
+implemented in Chawan. The most common offenders are flexbox, grid, and CSS
+variables.
 
-### Where are the tabs?
+There are three ways of dealing with this:
 
-Chawan does not have browser tabs. Instead, each website is opened in a new
-buffer, which is added to the buffer tree. This is very similar to how w3m
-handles buffers, except instead of a linked list of buffers, they are stored in
-a tree.
+1. The hacky solution: if the website's contents are mostly text, install
+   [rdrview](https://github.com/eafer/rdrview). Then bind the following command
+   to a key of your choice in the config (e.g. <space> r):<br>
+   `' r' = "pager.externFilterSource('rdrview -H -u \"$CHA_URL\"')"`<br>
+   This does not fix anything, but will significantly improve your reading
+   experience anyway.
+2. The slow solution: complain [here](https://todo.sr.ht/~bptato/chawan),
+   and wait until the problem goes away.
+3. If you're feeling adventurous: write a patch to fix the problem, and send it
+   [here](https://lists.sr.ht/~bptato/chawan-devel).
 
-This model has the advantage of allowing the user to instantly view the
-previous page in all cases, without any complicated caching mechanism. It
-also opens up many interesting possibilities concering buffer organization;
-unfortunately, not much of that is implemented yet (except for basic tree
-traversal commands.)
+### `$WEBSITE`'s interactive features don't work!
+
+Some potential fixes:
+
+* Usually logging in to websites requires cookies. Some websites also require
+  cookie sharing accross domains. For security reasons, Chawan does not allow
+  any of this by default, so you will have to fiddle with siteconf to fix
+  it. (i.e. on all target hostnames, set `cookie` to true, `share-cookie-jar`
+  to the main host, and `third-party-cookie` to all target hosts. See
+  [doc/config.md#siteconf](doc/config.md#siteconf) for details.)
+* Set the `referer-from` siteconf value to true; this will cause Chawan to send
+  a `Referer` header when navigating to other URLs from the target URL.
+* Enable JavaScript. If something broke, type M-c M-c to check the browser
+  console, then follow step 3. of the previous answer.<br>
+  Warning: remote JavaScript execution is inherently unsafe; more so in Chawan,
+  which lacks proper sandboxing of buffer processes. Please only enable
+  JavaScript on websites you trust.
+
+### I'm interested in the technical details of Chawan.
+
+Here's some:
+
+* Written in Nim
+* Uses QuickJS for JavaScript execution. (The QuickJS regex engine, libregexp,
+  is also used for in-document searches.)
+* Uses multi-processing provided by POSIX. (No threads.) Each buffer gets
+  its own process; as a result, buffers can be duplicated by simply forking
+  their process. File loading is done in yet another process. IPC happens
+  through UNIX domain sockets.
+* Layout, CSS cascading, HTML parsing, etc. are handled by built-in modules, not
+  external libraries. (However, the HTML parser and the character coding library
+  are available as separate libraries as well.)
+* Uses termcap for basic terminal capability querying, and notcurses-style
+  terminal queries for detecting "modern" features (like true color).
+
+For further details, you will have to read the source code.
 
 ## License
 
