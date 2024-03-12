@@ -8,8 +8,6 @@ import types/url
 import types/opt
 import utils/twtstr
 
-import chagashi/charset
-
 type
   MailcapParser = object
     stream: Stream
@@ -51,11 +49,11 @@ proc consume(state: var MailcapParser): char =
     inc state.line
   return c
 
-proc reconsume(state: var MailcapParser, c: char) =
+proc reconsume(state: var MailcapParser; c: char) =
   state.buf = c
   state.hasbuf = true
 
-proc skipBlanks(state: var MailcapParser, c: var char): bool =
+proc skipBlanks(state: var MailcapParser; c: var char): bool =
   while state.has():
     c = state.consume()
     if c notin AsciiWhitespace - {'\n'}:
@@ -127,7 +125,7 @@ proc consumeCommand(state: var MailcapParser): Result[string, string] =
 type NamedField = enum
   NO_NAMED_FIELD, NAMED_FIELD_TEST, NAMED_FIELD_NAMETEMPLATE, NAMED_FIELD_EDIT
 
-proc parseFieldKey(entry: var MailcapEntry, k: string): NamedField =
+proc parseFieldKey(entry: var MailcapEntry; k: string): NamedField =
   case k
   of "needsterminal":
     entry.flags.incl(NEEDSTERMINAL)
@@ -145,7 +143,7 @@ proc parseFieldKey(entry: var MailcapEntry, k: string): NamedField =
     return NAMED_FIELD_EDIT
   return NO_NAMED_FIELD
 
-proc consumeField(state: var MailcapParser, entry: var MailcapEntry):
+proc consumeField(state: var MailcapParser; entry: var MailcapEntry):
     Result[bool, string] =
   state.skipBlanks()
   if not state.has():
@@ -218,7 +216,7 @@ type UnquoteResult* = object
 type QuoteState = enum
   QS_NORMAL, QS_DQUOTED, QS_SQUOTED
 
-proc quoteFile(file: string, qs: QuoteState): string =
+proc quoteFile(file: string; qs: QuoteState): string =
   var s = ""
   for c in file:
     case c
@@ -238,8 +236,8 @@ proc quoteFile(file: string, qs: QuoteState): string =
     s &= c
   return s
 
-proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
-    charset: Charset, canpipe: var bool): string =
+proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
+    canpipe: var bool): string =
   var cmd = ""
   var attrname = ""
   var state: UnquoteState
@@ -307,24 +305,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
       state = STATE_NORMAL
     of STATE_ATTR:
       if c == '}':
-        if attrname == "charset":
-          cmd &= quoteFile($charset, qs)
-          continue
-        #TODO this is broken, because content-type is stripped of ; fields
-        let kvs = contentType.after(';').toLowerAscii()
-        var i = kvs.find(attrname)
-        var s = ""
-        if i != -1 and kvs.len > i + attrname.len and
-            kvs[i + attrname.len] == '=':
-          i = skipBlanks(kvs, i + attrname.len + 1)
-          var q = false
-          for j in i ..< kvs.len:
-            if not q and kvs[j] == '\\':
-              q = true
-            elif not q and (kvs[j] == ';' or kvs[j] in AsciiWhitespace):
-              break
-            else:
-              s &= kvs[j]
+        let s = contentType.getContentTypeAttr(attrname)
         cmd &= quoteFile(s, qs)
         attrname = ""
       elif c == '\\':
@@ -333,28 +314,24 @@ proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
         attrname &= c
   return cmd
 
-proc unquoteCommand*(ecmd, contentType, outpath: string, url: URL,
-    charset: Charset): string =
+proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
-  return unquoteCommand(ecmd, contentType, outpath, url, charset, canpipe)
+  return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
-proc getMailcapEntry*(mailcap: Mailcap; mimeType, outpath: string;
-    url: URL; charset: Charset): ptr MailcapEntry =
-  let mt = mimeType.until('/')
-  if mt.len + 1 >= mimeType.len:
+proc getMailcapEntry*(mailcap: Mailcap; contentType, outpath: string; url: URL):
+    ptr MailcapEntry =
+  let mt = contentType.until('/')
+  if mt.len + 1 >= contentType.len:
     return nil
-  let st = mimeType[mt.len + 1 .. ^1]
+  let st = contentType.until(AsciiWhitespace + {';'}, mt.len + 1)
   for entry in mailcap:
-    if not (entry.mt.len == 1 and entry.mt[0] == '*') and
-        entry.mt != mt:
+    if not (entry.mt.len == 1 and entry.mt[0] == '*') and entry.mt != mt:
       continue
-    if not (entry.subt.len == 1 and entry.subt[0] == '*') and
-        entry.subt != st:
+    if not (entry.subt.len == 1 and entry.subt[0] == '*') and entry.subt != st:
       continue
     if entry.test != "":
       var canpipe = true
-      let cmd = unquoteCommand(entry.test, mimeType, outpath, url, charset,
-        canpipe)
+      let cmd = unquoteCommand(entry.test, contentType, outpath, url, canpipe)
       if not canpipe:
         continue
       if execCmd(cmd) != 0:

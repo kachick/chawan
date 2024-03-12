@@ -53,7 +53,7 @@ proc newWebFile*(path: string, webkitRelativePath = ""): WebFile =
     isfile: true,
     path: path,
     file: file,
-    ctype: guessContentType(path),
+    ctype: DefaultGuess.guessContentType(path),
     webkitRelativePath: webkitRelativePath
   )
 

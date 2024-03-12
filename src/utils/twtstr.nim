@@ -693,3 +693,24 @@ func strictParseEnum*[T: enum](s: string): Opt[T] =
     if s in tab:
       return ok(tab[s])
   return err()
+
+proc getContentTypeAttr*(contentType, attrname: string): string =
+  let kvs = contentType.after(';')
+  var i = kvs.find(attrname)
+  var s = ""
+  if i != -1 and kvs.len > i + attrname.len and
+      kvs[i + attrname.len] == '=':
+    i += attrname.len + 1
+    while i < kvs.len and kvs[i] in AsciiWhitespace:
+      inc i
+    var q = false
+    for j, c in kvs.toOpenArray(i, kvs.high):
+      if q:
+        s &= c
+      elif c == '\\':
+        q = true
+      elif c == ';' or c in AsciiWhitespace:
+        break
+      else:
+        s &= c
+  return s

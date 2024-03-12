@@ -43,10 +43,7 @@ import types/cookie
 import types/referrer
 import types/urimethodmap
 import types/url
-import utils/mimeguess
 import utils/twtstr
-
-import chagashi/charset
 
 export request
 export response
@@ -760,38 +757,7 @@ proc runFileLoader*(fd: cint; config: LoaderConfig) =
     ctx.finishCycle(unregRead, unregWrite)
   ctx.exitLoader()
 
-proc getAttribute(contentType, attrname: string): string =
-  let kvs = contentType.after(';')
-  var i = kvs.find(attrname)
-  var s = ""
-  if i != -1 and kvs.len > i + attrname.len and
-      kvs[i + attrname.len] == '=':
-    i += attrname.len + 1
-    while i < kvs.len and kvs[i] in AsciiWhitespace:
-      inc i
-    var q = false
-    for j, c in kvs.toOpenArray(i, kvs.high):
-      if q:
-        s &= c
-      elif c == '\\':
-        q = true
-      elif c == ';' or c in AsciiWhitespace:
-        break
-      else:
-        s &= c
-  return s
-
-proc applyHeaders(response: Response; request: Request) =
-  if "Content-Type" in response.headers.table:
-    #TODO this is inefficient and broken on several levels. (In particular,
-    # it breaks mailcap named attributes other than charset.)
-    # Ideally, contentType would be a separate object type.
-    let header = response.headers.table["Content-Type"][0].toLowerAscii()
-    response.contentType = header.until(';').strip().toLowerAscii()
-    response.charset = getCharset(header.getAttribute("charset"))
-  else:
-    response.contentType = guessContentType($response.url.path,
-      "application/octet-stream", DefaultGuess)
+proc getRedirect*(response: Response; request: Request): Request =
   if "Location" in response.headers.table:
     if response.status in 301u16..303u16 or response.status in 307u16..308u16:
       let location = response.headers.table["Location"][0]
@@ -801,14 +767,15 @@ proc applyHeaders(response: Response; request: Request) =
             request.httpMethod notin {HTTP_GET, HTTP_HEAD}) or
             (response.status == 301 or response.status == 302 and
             request.httpMethod == HTTP_POST):
-          response.redirect = newRequest(url.get, HTTP_GET,
+          return newRequest(url.get, HTTP_GET,
             mode = request.mode, credentialsMode = request.credentialsMode,
             destination = request.destination)
         else:
-          response.redirect = newRequest(url.get, request.httpMethod,
+          return newRequest(url.get, request.httpMethod,
             body = request.body, multipart = request.multipart,
             mode = request.mode, credentialsMode = request.credentialsMode,
             destination = request.destination)
+  return nil
 
 proc connect(loader: FileLoader; buffered = true): SocketStream =
   let stream = connectSocketStream(loader.process, buffered, blocking = true)
@@ -899,7 +866,6 @@ proc handleHeaders(response: Response; request: Request; stream: SocketStream) =
   stream.sread(response.outputId)
   stream.sread(response.status)
   stream.sread(response.headers)
-  response.applyHeaders(request)
   # Only a stream of the response body may arrive after this point.
   response.body = stream
 

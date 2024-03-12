@@ -8,22 +8,19 @@ const DefaultGuess* = block:
   let ss = newStringStream(staticRead"res/mime.types")
   parseMimeTypes(ss)
 
-proc guessContentType*(path: string, fallback = "text/plain",
-    guess = DefaultGuess): string =
-  var i = path.len - 1
+func guessContentType*(mimeTypes: MimeTypes; path: string): string =
   var n = 0
-  while i > 0:
+  for i in countdown(path.high, 0):
     if path[i] == '/':
-      return fallback
+      break
     if path[i] == '.':
       n = i
       break
-    dec i
   if n > 0:
     let ext = path.substr(n + 1)
-    if ext in guess:
-      return guess[ext]
-  return fallback
+    if ext in mimeTypes:
+      return mimeTypes[ext]
+  return "application/octet-stream"
 
 const JavaScriptTypes = [
   "application/ecmascript",
@@ -44,5 +41,5 @@ const JavaScriptTypes = [
   "text/x-javascript"
 ]
 
-proc isJavaScriptType*(s: string): bool =
-  return binarySearch(JavaScriptTypes, s) != -1
+func isJavaScriptType*(s: string): bool =
+  return JavaScriptTypes.binarySearch(s) != -1

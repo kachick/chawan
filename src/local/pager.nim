@@ -1087,11 +1087,10 @@ type CheckMailcapResult = object
   ishtml: bool
 
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
-proc ansiDecode(pager: Pager; url: URL; charset: Charset; ishtml: var bool;
-    fdin: cint): cint =
-  let entry = pager.mailcap.getMailcapEntry("text/x-ansi", "", url, charset)
+proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
+  let entry = pager.mailcap.getMailcapEntry("text/x-ansi", "", url)
   var canpipe = true
-  let cmd = unquoteCommand(entry.cmd, "text/x-ansi", "", url, charset, canpipe)
+  let cmd = unquoteCommand(entry.cmd, "text/x-ansi", "", url, canpipe)
   if not canpipe:
     pager.alert("Error: could not pipe to text/x-ansi, decoding as text/plain")
     return -1
@@ -1283,35 +1282,34 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
 # pager is suspended until the command exits.
 #TODO add support for edit/compose, better error handling
 proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
-    istreamOutputId: int): CheckMailcapResult =
+    istreamOutputId: int; contentType: string): CheckMailcapResult =
   if container.filter != nil:
     return pager.filterBuffer(stream, container.filter.cmd, container.ishtml)
   # contentType must exist, because we set it in applyResponse
-  let contentType = container.contentType.get
-  if contentType == "text/html":
+  let shortContentType = container.contentType.get
+  if shortContentType == "text/html":
     # We support text/html natively, so it would make little sense to execute
     # mailcap filters for it.
     return CheckMailcapResult(connect: true, fdout: stream.fd, ishtml: true)
-  if contentType == "text/plain":
+  if shortContentType == "text/plain":
     # text/plain could potentially be useful. Unfortunately, many mailcaps
     # include a text/plain entry with less by default, so it's probably better
     # to ignore this.
     return CheckMailcapResult(connect: true, fdout: stream.fd)
   #TODO callback for outpath or something
   let url = container.url
-  let cs = container.charset
-  let entry = pager.mailcap.getMailcapEntry(contentType, "", url, cs)
+  let entry = pager.mailcap.getMailcapEntry(contentType, "", url)
   if entry == nil:
     return CheckMailcapResult(connect: true, fdout: stream.fd)
   let tmpdir = pager.tmpdir
   let ext = url.pathname.afterLast('.')
   let tempfile = getTempFile(tmpdir, ext)
   let outpath = if entry.nametemplate != "":
-    unquoteCommand(entry.nametemplate, contentType, tempfile, url, cs)
+    unquoteCommand(entry.nametemplate, contentType, tempfile, url)
   else:
     tempfile
   var canpipe = true
-  let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, cs, canpipe)
+  let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
   var ishtml = HTMLOUTPUT in entry.flags
   let needsterminal = NEEDSTERMINAL in entry.flags
   putEnv("MAILCAP_URL", $url)
@@ -1336,7 +1334,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
       pager.runMailcapReadFile(stream, cmd, outpath, pipefdOut)
     discard close(pipefdOut[1]) # close write
     let fdout = if not ishtml and ANSIOUTPUT in entry.flags:
-      pager.ansiDecode(url, cs, ishtml, pipefdOut[0])
+      pager.ansiDecode(url, ishtml, pipefdOut[0])
     else:
       pipefdOut[0]
     delEnv("MAILCAP_URL")
@@ -1368,10 +1366,10 @@ proc fail*(pager: Pager; container: Container; errorMessage: string) =
   else:
     pager.alert("Can't load " & $container.url & " (" & errorMessage & ")")
 
-proc redirect*(pager: Pager; container: Container; response: Response) =
+proc redirect*(pager: Pager; container: Container; response: Response;
+    request: Request) =
   # still need to apply response, or we lose cookie jars.
   container.applyResponse(response)
-  let request = response.redirect
   if container.redirectdepth < pager.config.network.max_redirect:
     if container.url.scheme == request.url.scheme or
         container.url.scheme == "cgi-bin" or
@@ -1395,10 +1393,15 @@ proc connected*(pager: Pager; container: Container; response: Response) =
     pager.authorize()
     istream.close()
     return
-  let mailcapRes = pager.checkMailcap(container, istream, response.outputId)
+  let realContentType = if "Content-Type" in response.headers:
+    response.headers["Content-Type"]
+  else:
+    # both contentType and charset must be set by applyResponse.
+    container.contentType.get & ";charset=" & $container.charset
+  let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
+    realContentType)
   if mailcapRes.connect:
     container.ishtml = mailcapRes.ishtml
-    container.applyResponse(response)
     # buffer now actually exists; create a process for it
     container.process = pager.forkserver.forkBuffer(
       container.config,

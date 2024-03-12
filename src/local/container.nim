@@ -1402,15 +1402,11 @@ proc applyResponse*(container: Container; response: Response) =
   container.setLoadInfo("Connected to " & $response.url & ". Downloading...")
   # setup content type; note that isSome means an override so we skip it
   if container.contentType.isNone:
-    if response.contentType == "application/octet-stream":
-      let contentType = guessContentType(container.url.pathname,
-        "application/octet-stream", container.config.mimeTypes)
-      if contentType != "application/octet-stream":
-        container.contentType = some(contentType)
-      else:
-        container.contentType = some(response.contentType)
-    else:
-      container.contentType = some(response.contentType)
+    var contentType = response.getContentType()
+    if contentType == "application/octet-stream":
+      contentType = container.config.mimeTypes
+        .guessContentType(container.url.pathname)
+    container.contentType = some(contentType)
   # setup charsets:
   # * override charset
   # * network charset
@@ -1418,8 +1414,9 @@ proc applyResponse*(container: Container; response: Response) =
   # HTML may override the last two (but not the override charset).
   if container.config.charsetOverride != CHARSET_UNKNOWN:
     container.charsetStack = @[container.config.charsetOverride]
-  elif response.charset != CHARSET_UNKNOWN:
-    container.charsetStack = @[response.charset]
+  elif (let charset = response.getCharset(CHARSET_UNKNOWN);
+      charset != CHARSET_UNKNOWN):
+    container.charsetStack = @[charset]
   else:
     container.charsetStack = @[]
     for i in countdown(container.config.charsets.high, 0):

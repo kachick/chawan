@@ -518,8 +518,9 @@ proc handleRead(client: Client, fd: int) =
     let response = stream.readResponse(container.request)
     if response.body == nil:
       client.pager.fail(container, response.getErrorMessage())
-    elif response.redirect != nil:
-      client.pager.redirect(container, response)
+    elif (let redirect = response.getRedirect(container.request);
+        redirect != nil):
+      client.pager.redirect(container, response, redirect)
       response.body.close()
     else:
       client.pager.connected(container, response)

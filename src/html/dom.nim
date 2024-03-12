@@ -2776,7 +2776,7 @@ proc loadResource(window: Window, link: HTMLLinkElement) =
         let res = res.get
         #TODO we should use ReadableStreams for this (which would allow us to
         # parse CSS asynchronously)
-        if res.contentType == "text/css":
+        if res.getContentType() == "text/css":
           return res.text()
         res.unregisterFun()
     ).then(proc(s: JSResult[string]) =
@@ -2803,7 +2803,7 @@ proc loadResource(window: Window, image: HTMLImageElement) =
         if res.isErr:
           return
         let res = res.get
-        if res.contentType == "image/png":
+        if res.getContentType() == "image/png":
           return res.blob()
       ).then(proc(pngData: JSResult[Blob]) =
         if pngData.isErr:

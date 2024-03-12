@@ -1,4 +1,6 @@
 import std/streams
+import std/strutils
+import std/tables
 
 import bindings/quickjs
 import io/promise
@@ -10,6 +12,8 @@ import loader/headers
 import loader/request
 import types/blob
 import types/url
+import utils/mimeguess
+import utils/twtstr
 
 import chagashi/charset
 import chagashi/decoder
@@ -37,15 +41,12 @@ type
     res*: int
     body*: SocketStream
     bodyUsed* {.jsget.}: bool
-    contentType*: string
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
     headersGuard: HeadersGuard
-    redirect*: Request
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
     bodyRead*: Promise[string]
-    charset*: Charset
     internalMessage*: string # should NOT be exposed to JS!
     outputId*: int
 
@@ -87,6 +88,23 @@ proc close*(response: Response) {.jsfunc.} =
   if response.body != nil:
     response.body.close()
 
+func getCharset*(this: Response; fallback: Charset): Charset =
+  if "Content-Type" notin this.headers.table:
+    return fallback
+  let header = this.headers.table["Content-Type"][0].toLowerAscii()
+  let cs = header.getContentTypeAttr("charset").getCharset()
+  if cs == CHARSET_UNKNOWN:
+    return fallback
+  return cs
+
+func getContentType*(this: Response): string =
+  if "Content-Type" in this.headers.table:
+    let header = this.headers.table["Content-Type"][0].toLowerAscii()
+    return header.until(';').strip()
+  # also use DefaultGuess for container, so that local mime.types cannot
+  # override buffer mime.types
+  return DefaultGuess.guessContentType(this.url.pathname)
+
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.body == nil:
     let p = newPromise[JSResult[string]]()
@@ -101,16 +119,13 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   let bodyRead = response.bodyRead
   response.bodyRead = nil
   return bodyRead.then(proc(s: string): JSResult[string] =
-    let cs = if response.charset == CHARSET_UNKNOWN:
-      CHARSET_UTF_8
-    else:
-      response.charset
+    let charset = response.getCharset(CHARSET_UTF_8)
     #TODO this is inefficient
     # maybe add a JS type that turns a seq[char] into JS strings
-    if cs in {CHARSET_UTF_8, CHARSET_UNKNOWN}:
+    if charset == CHARSET_UTF_8:
       ok(s.toValidUTF8())
     else:
-      ok(newTextDecoder(cs).decodeAll(s))
+      ok(newTextDecoder(charset).decodeAll(s))
   )
 
 proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
@@ -122,13 +137,14 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
     return p
   let bodyRead = response.bodyRead
   response.bodyRead = nil
+  let contentType = response.getContentType()
   return bodyRead.then(proc(s: string): JSResult[Blob] =
     if s.len == 0:
-      return ok(newBlob(nil, 0, response.contentType, nil))
+      return ok(newBlob(nil, 0, contentType, nil))
     GC_ref(s)
     let deallocFun = proc() =
       GC_unref(s)
-    let blob = newBlob(unsafeAddr s[0], s.len, response.contentType, deallocFun)
+    let blob = newBlob(unsafeAddr s[0], s.len, contentType, deallocFun)
     ok(blob))
 
 proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
