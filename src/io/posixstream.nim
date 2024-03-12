@@ -1,12 +1,11 @@
 # stdlib file handling is broken, so we use this instead of FileStream.
 import std/posix
-import std/streams
+
+import io/dynstream
 
 type
-  PosixStream* = ref object of Stream
+  PosixStream* = ref object of DynStream
     fd*: cint
-    isend*: bool
-    blocking*: bool
 
   ErrorAgain* = object of IOError
   ErrorBadFD* = object of IOError
@@ -34,7 +33,7 @@ proc raisePosixIOError*() =
   else:
     raise newException(IOError, $strerror(errno))
 
-method recvData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
+method recvData*(s: PosixStream, buffer: pointer, len: int): int =
   let n = read(s.fd, buffer, len)
   if n < 0:
     raisePosixIOError()
@@ -50,7 +49,7 @@ proc recvData*(s: PosixStream, buffer: var openArray[uint8]): int {.inline.} =
 proc recvData*(s: PosixStream, buffer: var openArray[char]): int {.inline.} =
   return s.recvData(addr buffer[0], buffer.len)
 
-method sendData*(s: PosixStream, buffer: pointer, len: int): int {.base.} =
+method sendData*(s: PosixStream, buffer: pointer, len: int): int =
   let n = write(s.fd, buffer, len)
   if n < 0:
     raisePosixIOError()
@@ -70,56 +69,11 @@ method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
   else:
     discard fcntl(s.fd, F_SETFL, ofl or O_NONBLOCK)
 
-method seek*(s: PosixStream; off: int) {.base.} =
+method seek*(s: PosixStream; off: int) =
   discard lseek(s.fd, Off(off), SEEK_SET)
 
-method sclose*(s: PosixStream) {.base.} =
+method sclose*(s: PosixStream) =
   discard close(s.fd)
-
-proc psClose(s: Stream) =
-  PosixStream(s).sclose()
-
-proc psReadData(s: Stream, buffer: pointer, len: int): int =
-  let s = PosixStream(s)
-  assert len != 0 and s.blocking
-  result = 0
-  while result < len:
-    let p = addr cast[ptr UncheckedArray[uint8]](buffer)[result]
-    let n = s.recvData(p, len - result)
-    if n == 0:
-      break
-    result += n
-
-proc psWriteData(s: Stream, buffer: pointer, len: int) =
-  let s = PosixStream(s)
-  assert len != 0 and s.blocking
-  discard s.sendData(buffer, len)
-
-proc psReadLine(s: Stream, line: var string): bool =
-  let s = PosixStream(s)
-  assert s.blocking
-  line = ""
-  var c: char
-  while true:
-    if s.recvData(addr c, 1) == 0:
-      return false
-    if c == '\r':
-      if s.recvData(addr c, 1) == 0:
-        return false
-    if c == '\n':
-      break
-    line &= c
-  true
-
-proc psAtEnd(s: Stream): bool =
-  return PosixStream(s).isend
-
-proc addStreamIface*(ps: PosixStream) =
-  ps.closeImpl = cast[typeof(ps.closeImpl)](psClose)
-  ps.readDataImpl = cast[typeof(ps.readDataImpl)](psReadData)
-  ps.writeDataImpl = cast[typeof(ps.writeDataImpl)](psWriteData)
-  ps.readLineImpl = cast[typeof(ps.readLineImpl)](psReadLine)
-  ps.atEndImpl = psAtEnd
 
 proc newPosixStream*(fd: FileHandle): PosixStream =
   let ps = PosixStream(fd: fd, blocking: true)

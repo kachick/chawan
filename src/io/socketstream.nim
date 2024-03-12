@@ -2,6 +2,7 @@ import std/nativesockets
 import std/net
 import std/os
 
+import io/dynstream
 import io/posixstream
 import io/serversocket
 

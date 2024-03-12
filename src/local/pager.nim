@@ -21,6 +21,7 @@ import extern/editor
 import extern/runproc
 import extern/stdio
 import extern/tempfile
+import io/bufstream
 import io/posixstream
 import io/promise
 import io/socketstream
@@ -105,7 +106,7 @@ type
     statusgrid*: FixedGrid
     term*: Terminal
     tmpdir*: string
-    unreg*: seq[tuple[pid: int; stream: PosixStream]]
+    unreg*: seq[tuple[pid: int; stream: BufStream]]
     urimethodmap: URIMethodMap
     username: string
 

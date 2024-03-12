@@ -1,7 +1,8 @@
+import io/dynstream
 import io/posixstream
 
 type
-  BufStream* = ref object of PosixStream
+  BufStream* = ref object of DynStream
     source*: PosixStream
     registerFun: proc(fd: int)
     registered: bool
@@ -46,7 +47,6 @@ proc flushWrite*(s: BufStream): bool =
 
 proc newBufStream*(ps: PosixStream, registerFun: proc(fd: int)): BufStream =
   result = BufStream(
-    fd: ps.fd,
     source: ps,
     blocking: ps.blocking,
     registerFun: registerFun

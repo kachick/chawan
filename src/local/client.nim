@@ -460,7 +460,7 @@ proc acceptBuffers(client: Client) =
   let pager = client.pager
   while pager.unreg.len > 0:
     let (pid, stream) = pager.unreg.pop()
-    let fd = int(stream.fd)
+    let fd = int(stream.source.fd)
     if fd in client.fdmap:
       client.selector.unregister(fd)
       client.fdmap.del(fd)
