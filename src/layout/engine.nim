@@ -283,10 +283,7 @@ func computeShift(ictx: InlineContext, state: InlineState): LayoutUnit =
     if ictx.currentLine.atoms.len == 0 or
         ictx.currentLine.atoms[^1].t == INLINE_SPACING:
       return 0
-  let spacing = state.computed{"word-spacing"}
-  if spacing.auto:
-    return ictx.cellwidth * ictx.whitespacenum
-  return spacing.px(ictx.lctx) * ictx.whitespacenum
+  return ictx.cellwidth * ictx.whitespacenum
 
 proc applyLineHeight(ictx: InlineContext, state: var LineBoxState,
     computed: CSSComputedValues) =
