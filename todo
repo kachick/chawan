@@ -80,12 +80,8 @@ images:
 - incremental decoding (maybe implement streams first?)
 - separate image decoder process? or just run on a different thread?
 man:
-- mancha:
-	* detect man directory automatically
-	* eventually rewrite in Nim
-- man pages:
-	* add a DOM -> man page converter so that we do not depend on pandoc
-	  for man page conversion
+* add a DOM -> man page converter so that we do not depend on pandoc
+  for man page conversion
 gmifetch:
 - rewrite in Nim
 etc:

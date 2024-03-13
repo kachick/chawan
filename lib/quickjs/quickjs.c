@@ -43960,16 +43960,20 @@ fail:
 
 BOOL lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
+    if (!opaque)
+        return 0;
     JSContext *ctx = opaque;
     return js_check_stack_overflow(ctx->rt, alloca_size);
 }
 
+#if 0
 void *lre_realloc(void *opaque, void *ptr, size_t size)
 {
     JSContext *ctx = opaque;
     /* No JS exception is raised here */
     return js_realloc_rt(ctx->rt, ptr, size);
 }
+#endif
 
 static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv)

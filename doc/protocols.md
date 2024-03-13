@@ -125,8 +125,8 @@ and `about:license`.
 `man:`, `man-k:` and `man-l:` are wrappers around the commands `man`, `man -k`
 and `man -l`. These look up man pages using `/usr/bin/man` and turn on-page
 references into links. A wrapper command `mancha` also exists; this has an
-interface similar to `man`. Note that Perl is required for these protocols
-to work.
+interface similar to `man`. Note: this used to be based on w3mman2html.cgi, but
+it has been rewritten in Nim (and therefore no longer depends on Perl either).
 
 `data:` decodes a data URL as defined in RFC 2397.
 

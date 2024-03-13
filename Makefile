@@ -38,6 +38,8 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
+QJSOBJ = $(OBJDIR)/quickjs
+
 .PHONY: all
 all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
@@ -107,9 +109,13 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p $(OUTDIR_CGI_BIN)
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
-$(OUTDIR_CGI_BIN)/man: adapter/protocol/man
+$(OUTDIR_CGI_BIN)/man: adapter/protocol/man.nim $(QJSOBJ)/libregexp.o \
+		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o src/js/regex.nim \
+		src/bindings/libregexp.nim src/types/opt.nim src/utils/twtstr.nim
 	@mkdir -p $(OUTDIR_CGI_BIN)
-	cp adapter/protocol/man $(OUTDIR_CGI_BIN)
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/man" \
+		--passL:"$(QJSOBJ)/libregexp.o $(QJSOBJ)/cutils.o $(QJSOBJ)/libunicode.o" \
+		-o:"$(OUTDIR_CGI_BIN)/man" adapter/protocol/man.nim
 
 $(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
 	@mkdir -p $(OUTDIR_CGI_BIN)
@@ -164,7 +170,6 @@ $(OUTDIR_LIBEXEC)/urlenc: adapter/tools/urlenc.nim src/utils/twtstr.nim
 		-o:"$(OUTDIR_LIBEXEC)/urlenc" adapter/tools/urlenc.nim
 
 CFLAGS = -fwrapv -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
-QJSOBJ = $(OBJDIR)/quickjs
 
 # Dependencies
 $(QJSOBJ)/cutils.o: lib/quickjs/cutils.h

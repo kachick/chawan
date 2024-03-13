@@ -2,7 +2,6 @@
 import std/unicode
 
 import bindings/libregexp
-import bindings/quickjs
 import types/opt
 import utils/twtstr
 
@@ -13,35 +12,37 @@ type
     bytecode: seq[uint8]
     buf: string
 
+  RegexCapture* = tuple # start, end, index
+    s, e: int
+    i: int32
+
   RegexResult* = object
     success*: bool
-    captures*: seq[tuple[s, e: int]] # start, end
+    captures*: seq[RegexCapture]
 
   RegexReplace* = object
     regex: Regex
     rule: string
     global: bool
 
-var dummyRuntime = JS_NewRuntime()
-var dummyContext = JS_NewContextRaw(dummyRuntime)
-
 func `$`*(regex: Regex): string =
   regex.buf
 
-proc compileRegex*(buf: string, flags: LREFlags = {}): Result[Regex, string] =
-  var error_msg_size = 64
-  var error_msg = newString(error_msg_size)
-  prepareMutation(error_msg)
+# this is hardcoded into quickjs, so we must override it here.
+proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
+  return realloc(p, size)
+
+proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
+  var errorMsg = newString(64)
   var plen: cint
-  let bytecode = lre_compile(addr plen, cstring(error_msg),
-    cint(error_msg_size), cstring(buf), csize_t(buf.len), flags.toCInt,
-    dummyContext)
+  let bytecode = lre_compile(addr plen, cstring(errorMsg), cint(errorMsg.len),
+    cstring(buf), csize_t(buf.len), flags.toCInt, nil)
   if bytecode == nil:
-    return err(error_msg.until('\0')) # Failed to compile.
+    return err(errorMsg.until('\0')) # Failed to compile.
   assert plen > 0
   var bcseq = newSeqUninitialized[uint8](plen)
   copyMem(addr bcseq[0], bytecode, plen)
-  dummyRuntime.js_free_rt(bytecode)
+  dealloc(bytecode)
   let regex = Regex(
     buf: buf,
     bytecode: bcseq
@@ -83,7 +84,7 @@ proc compileMatchRegex*(buf: string): Result[Regex, string] =
   buf2 &= "$"
   return compileRegex(buf2)
 
-proc compileSearchRegex*(str: string, defaultFlags: LREFlags):
+proc compileSearchRegex*(str: string; defaultFlags: LREFlags):
     Result[Regex, string] =
   # Emulate vim's \c/\C: override defaultFlags if one is found, then remove it
   # from str.
@@ -108,13 +109,13 @@ proc compileSearchRegex*(str: string, defaultFlags: LREFlags):
   flags.incl(LRE_FLAG_GLOBAL) # for easy backwards matching
   return compileRegex(s, flags)
 
-proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): RegexResult =
+proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
+    RegexResult =
   let length = if length == -1:
     str.len
   else:
     length
-  assert 0 <= start and start <= length
-
+  assert start in 0 .. length
   let bytecode = unsafeAddr regex.bytecode[0]
   let captureCount = lre_get_capture_count(bytecode)
   var capture: ptr UncheckedArray[int] = nil
@@ -126,7 +127,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
   var start = start
   while true:
     let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode,
-      cast[ptr uint8](cstr), cint(start), cint(length), cint(3), dummyContext)
+      cast[ptr uint8](cstr), cint(start), cint(length), cint(3), nil)
     if ret != 1: #TODO error handling? (-1)
       break
     result.success = true
@@ -138,7 +139,7 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
     for i in 0 ..< captureCount:
       let s = capture[i * 2] - cstrAddress
       let e = capture[i * 2 + 1] - cstrAddress
-      result.captures.add((s, e))
+      result.captures.add((s, e, i))
     if LRE_FLAG_GLOBAL notin flags:
       break
     if start >= str.len:
@@ -148,5 +149,5 @@ proc exec*(regex: Regex, str: string, start = 0, length = -1, nocaps = false): R
   if captureCount > 0:
     dealloc(capture)
 
-proc match*(regex: Regex, str: string, start = 0, length = str.len): bool =
+proc match*(regex: Regex; str: string; start = 0; length = str.len): bool =
   return regex.exec(str, start, length, nocaps = true).success

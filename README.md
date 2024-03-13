@@ -35,14 +35,13 @@ supported yet.)
 6. If you want manpages, run `make manpage`. (This requires pandoc to be
    installed.)
 7. Finally, install using `make install` (e.g. `sudo make install`).
-8. (Optional): install Perl so that the man page viewer (`mancha`) works too.
 
 Then, try:
 
 ```bash
 $ cha -V # open in visual mode for a list of default keybindings
 $ cha example.org # open your favorite website directly from the shell
-$ mancha cha # read the cha(1) man page using `mancha' (requires Perl)
+$ mancha cha # read the cha(1) man page using `mancha'
 ```
 
 ## Features
@@ -66,7 +65,7 @@ Currently implemented features are:
 * supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
 * can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
   [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
-* man page viewer (based on w3mman)
+* man page viewer (like w3mman)
 * mouse support
 
 ...with a lot more [planned](todo).
