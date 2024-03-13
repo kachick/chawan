@@ -380,6 +380,16 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
       styledParent.children.add(styledText)
+    of PSEUDO_VIDEO:
+      let content = CSSContent(t: CONTENT_VIDEO)
+      let styledText = styledParent.newStyledReplacement(content)
+      styledText.pseudo = pseudo
+      styledParent.children.add(styledText)
+    of PSEUDO_AUDIO:
+      let content = CSSContent(t: CONTENT_AUDIO)
+      let styledText = styledParent.newStyledReplacement(content)
+      styledText.pseudo = pseudo
+      styledParent.children.add(styledText)
     of PSEUDO_NEWLINE:
       let content = CSSContent(t: CONTENT_NEWLINE)
       let styledText = styledParent.newStyledReplacement(content)
@@ -477,6 +487,10 @@ proc appendChildren(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
     styledStack.stackAppend(frame, styledChild, PSEUDO_TEXTAREA_TEXT, idx)
   elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
     styledStack.stackAppend(frame, styledChild, PSEUDO_IMAGE, idx)
+  elif elem.tagType == TAG_VIDEO:
+    styledStack.stackAppend(frame, styledChild, PSEUDO_VIDEO, idx)
+  elif elem.tagType == TAG_AUDIO:
+    styledStack.stackAppend(frame, styledChild, PSEUDO_AUDIO, idx)
   elif elem.tagType == TAG_BR:
     styledStack.stackAppend(frame, styledChild, PSEUDO_NEWLINE, idx)
   else:

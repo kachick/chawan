@@ -354,13 +354,28 @@ proc getClickHover(styledNode: StyledNode): string =
 proc getImageHover(styledNode: StyledNode): string =
   var styledNode = styledNode
   while styledNode != nil:
-    if styledNode.t == STYLED_ELEMENT and styledNode.node of HTMLImageElement:
-      let image = HTMLImageElement(styledNode.node)
-      let src = image.attr(atSrc)
-      if src != "":
-        let url = image.document.parseURL(src)
-        if url.isSome:
-          return $url.get
+    if styledNode.t == STYLED_ELEMENT:
+      if styledNode.node of HTMLImageElement:
+        let image = HTMLImageElement(styledNode.node)
+        let src = image.attr(atSrc)
+        if src != "":
+          let url = image.document.parseURL(src)
+          if url.isSome:
+            return $url.get
+      elif styledNode.node of HTMLVideoElement:
+        let video = HTMLVideoElement(styledNode.node)
+        let src = video.getSrc()
+        if src != "":
+          let url = video.document.parseURL(src)
+          if url.isSome:
+            return $url.get
+      elif styledNode.node of HTMLAudioElement:
+        let audio = HTMLAudioElement(styledNode.node)
+        let src = audio.getSrc()
+        if src != "":
+          let url = audio.document.parseURL(src)
+          if url.isSome:
+            return $url.get
     styledNode = styledNode.parent
   ""
 

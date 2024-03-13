@@ -370,6 +370,10 @@ type
     bitmap*: Bitmap
     fetchStarted: bool
 
+  HTMLVideoElement* = ref object of HTMLElement
+
+  HTMLAudioElement* = ref object of HTMLElement
+
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
@@ -403,6 +407,8 @@ jsDestructor(HTMLTextAreaElement)
 jsDestructor(HTMLLabelElement)
 jsDestructor(HTMLCanvasElement)
 jsDestructor(HTMLImageElement)
+jsDestructor(HTMLVideoElement)
+jsDestructor(HTMLAudioElement)
 jsDestructor(Node)
 jsDestructor(NodeList)
 jsDestructor(HTMLCollection)
@@ -2426,6 +2432,16 @@ func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
 func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
+# <video>
+func getSrc*(this: HTMLVideoElement|HTMLAudioElement): string =
+  var src = this.attr(atSrc)
+  if src == "":
+    for el in this.elements(TAG_SOURCE):
+      src = el.attr(atSrc)
+      if src != "":
+        break
+  src
+
 func newText(document: Document, data: string): Text =
   return Text(
     document_internal: document,
@@ -2542,6 +2558,10 @@ proc newHTMLElement*(document: Document, localName: CAtom,
     result = HTMLCanvasElement()
   of TAG_IMG:
     result = HTMLImageElement()
+  of TAG_VIDEO:
+    result = HTMLVideoElement()
+  of TAG_AUDIO:
+    result = HTMLAudioElement()
   of TAG_AREA:
     let area = HTMLAreaElement()
     let localName = document.toAtom(atRel)
@@ -4127,6 +4147,8 @@ proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
   register(HTMLLabelElement, TAG_LABEL)
   register(HTMLCanvasElement, TAG_CANVAS)
   register(HTMLImageElement, TAG_IMG)
+  register(HTMLVideoElement, TAG_VIDEO)
+  register(HTMLAudioElement, TAG_AUDIO)
 
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.getClass("EventTarget")

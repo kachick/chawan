@@ -2599,6 +2599,10 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
   of CONTENT_IMAGE:
     #TODO idk
     ctx.generateAnonymousInlineText("[img]", parent)
+  of CONTENT_VIDEO:
+    ctx.generateAnonymousInlineText("[video]", parent)
+  of CONTENT_AUDIO:
+    ctx.generateAnonymousInlineText("[audio]", parent)
   of CONTENT_NEWLINE:
     ctx.iflush()
     #TODO ??
