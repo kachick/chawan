@@ -1372,9 +1372,10 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
   return CheckMailcapResult(connect: false, fdout: -1)
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
-  pager.alert("Redirecting to " & $request.url)
   pager.gotoURL(request, some(container.url), replace = container,
     redirectdepth = container.redirectdepth + 1, referrer = container)
+  pager.container.loadinfo = "Redirecting to " & $request.url
+  pager.onSetLoadInfo(pager.container)
   dec pager.numload
 
 proc fail(pager: Pager; container: Container; errorMessage: string) =
