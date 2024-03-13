@@ -21,37 +21,20 @@ func onlyWhitespace*(s: string): bool =
   return true
 
 func isControlChar*(r: Rune): bool =
-  case r
-  of Rune(0x00)..Rune(0x1F): return true
-  of Rune(0x7F): return true
-  else: return false
+  return int(r) <= 0x1F or int(r) == 0x7F
 
 func isC0ControlOrSpace*(c: char): bool =
   return c in (Controls + {' '})
 
-func genControlCharMap*(): string =
-  for c in low(char)..high(char):
-    if c == '?':
-      result &= char(127)
-    else:
-      result &= char((int(c) and 0x1f))
-
-const controlCharMap = genControlCharMap()
-
 func getControlChar*(c: char): char =
-  return controlCharMap[int(c)]
-
-func genControlLetterMap*(): string =
-  for c in low(char)..high(char):
-    if c == char(127):
-      result &= '?'
-    else:
-      result &= char((int(c) or 0x40))
-
-const controlLetterMap = genControlLetterMap()
+  if c == '?':
+    return char(127)
+  return char(int(c) and 0x1F)
 
 func getControlLetter*(c: char): char =
-  return controlLetterMap[int(c)]
+  if c == char(127):
+    return '?'
+  return char(int(c) or 0x40)
 
 func toHeaderCase*(str: string): string =
   result = str
