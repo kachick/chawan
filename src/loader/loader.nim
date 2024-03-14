@@ -93,7 +93,6 @@ type
   ClientData = ref object
     pid: int
     key: ClientKey
-    referrerPolicy: ReferrerPolicy
     cacheMap: seq[CachedItem]
     config: LoaderClientConfig
 
@@ -127,6 +126,7 @@ type
     # When set to false, requests with a proxy URL are overridden by the
     # loader proxy (i.e. the variable above).
     acceptProxy*: bool
+    referrerPolicy*: ReferrerPolicy
 
   FetchPromise* = Promise[JSResult[Response]]
 
@@ -443,7 +443,8 @@ proc onLoad(ctx: LoaderContext; stream: SocketStream; client: ClientData) =
         if cookie != "":
           request.headers["Cookie"] = cookie
     if request.referrer != nil and "Referer" notin request.headers:
-      let r = request.referrer.getReferrer(request.url, client.referrerPolicy)
+      let r = request.referrer.getReferrer(request.url,
+        client.config.referrerPolicy)
       if r != "":
         request.headers["Referer"] = r
     if request.proxy == nil or not client.config.acceptProxy:

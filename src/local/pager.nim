@@ -36,6 +36,7 @@ import local/container
 import local/lineedit
 import local/select
 import local/term
+import server/buffer
 import server/forkserver
 import types/cell
 import types/color
@@ -518,32 +519,34 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
       pager.writeStatusMessage(container.loadinfo)
       pager.alertState = pasLoadInfo
 
-proc newContainer(pager: Pager; bufferConfig: BufferConfig; request: Request;
-    title = ""; redirectdepth = 0; canreinterpret = true;
-    contentType = none(string); charsetStack: seq[Charset] = @[];
-    url: URL = request.url; cacheId = -1; cacheFile = ""): Container =
+proc newContainer(pager: Pager; bufferConfig: BufferConfig;
+    loaderConfig: LoaderClientConfig; request: Request; title = "";
+    redirectDepth = 0; canreinterpret = true; contentType = none(string);
+    charsetStack: seq[Charset] = @[]; url = request.url; cacheId = -1;
+    cacheFile = ""): Container =
   request.suspended = true
-  if bufferConfig.loaderConfig.cookieJar != nil:
+  if loaderConfig.cookieJar != nil:
     # loader stores cookie jars per client, but we have no client yet.
     # therefore we must set cookie here
-    let cookie = bufferConfig.loaderConfig.cookieJar.serialize(request.url)
+    let cookie = loaderConfig.cookieJar.serialize(request.url)
     if cookie != "":
       request.headers["Cookie"] = cookie
   if request.referrer != nil:
     # same with referrer
     let r = request.referrer.getReferrer(request.url,
-      bufferConfig.referrerPolicy)
+      loaderConfig.referrerPolicy)
     if r != "":
       request.headers["Referer"] = r
   let stream = pager.loader.startRequest(request)
   pager.loader.registerFun(stream.fd)
   let container = newContainer(
     bufferConfig,
+    loaderConfig,
     url,
     request,
     pager.term.attrs,
     title,
-    redirectdepth,
+    redirectDepth,
     canreinterpret,
     contentType,
     charsetStack,
@@ -563,6 +566,7 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
   let url = newURL("cache:" & $container.cacheId).get
   return pager.newContainer(
     container.config,
+    container.loaderConfig,
     newRequest(url),
     contentType = some(contentType),
     charsetStack = container.charsetStack,
@@ -894,7 +898,8 @@ proc windowChange*(pager: Pager) =
 
 # Apply siteconf settings to a request.
 # Note that this may modify the URL passed.
-proc applySiteconf(pager: Pager; url: var URL; cs: Charset): BufferConfig =
+proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
+    loaderConfig: var LoaderClientConfig): BufferConfig =
   let host = url.host
   var referer_from = false
   var cookieJar: CookieJar = nil
@@ -904,8 +909,6 @@ proc applySiteconf(pager: Pager; url: var URL; cs: Charset): BufferConfig =
   var charsets = pager.config.encoding.document_charset
   var userstyle = pager.config.css.stylesheet
   var proxy = pager.proxy
-  let mimeTypes = pager.mimeTypes
-  let urimethodmap = pager.urimethodmap
   for sc in pager.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -938,17 +941,34 @@ proc applySiteconf(pager: Pager; url: var URL; cs: Charset): BufferConfig =
       userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
       proxy = sc.proxy.get
-  return pager.config.getBufferConfig(url, cookieJar, headers, referer_from,
-    scripting, charsets, images, userstyle, proxy, mimeTypes, urimethodmap,
-    pager.cgiDir, pager.tmpdir, cs)
+  loaderConfig = LoaderClientConfig(
+    defaultHeaders: headers,
+    cookiejar: cookieJar,
+    proxy: proxy,
+    filter: newURLFilter(
+      scheme = some(url.scheme),
+      allowschemes = @["data", "cache"],
+      default = true
+    )
+  )
+  return BufferConfig(
+    userstyle: userstyle,
+    referer_from: referer_from,
+    scripting: scripting,
+    charsets: charsets,
+    images: images,
+    isdump: pager.config.start.headless,
+    charsetOverride: charsetOverride,
+  )
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     contentType = none(string), cs = CHARSET_UNKNOWN, replace: Container = nil,
-    redirectdepth = 0, referrer: Container = nil) =
+    redirectDepth = 0, referrer: Container = nil) =
   if referrer != nil and referrer.config.referer_from:
     request.referrer = referrer.url
-  var bufferConfig = pager.applySiteconf(request.url, cs)
+  var loaderConfig: LoaderClientConfig
+  var bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig)
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpMethod != HTTP_GET:
     # Basically, we want to reload the page *only* when
@@ -958,11 +978,12 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     # what other browsers do. Still, it would be nice if we got some visual
     # feedback on what is actually going to happen when typing a URL; TODO.
     if referrer != nil:
-      bufferConfig.referrerPolicy = referrer.config.referrerPolicy
+      loaderConfig.referrerPolicy = referrer.loaderConfig.referrerPolicy
     let container = pager.newContainer(
       bufferConfig,
+      loaderConfig,
       request,
-      redirectdepth = redirectdepth,
+      redirectDepth = redirectDepth,
       contentType = contentType
     )
     if replace != nil:
@@ -1027,9 +1048,11 @@ proc readPipe0*(pager: Pager, contentType: string, cs: Charset,
   var url = url
   pager.loader.passFd(url.pathname, fd)
   safeClose(fd)
-  let bufferConfig = pager.applySiteconf(url, cs)
+  var loaderConfig: LoaderClientConfig
+  let bufferConfig = pager.applySiteconf(url, cs, loaderConfig)
   return pager.newContainer(
     bufferConfig,
+    loaderConfig,
     newRequest(url),
     title = title,
     canreinterpret = canreinterpret,
@@ -1483,7 +1506,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
   pager.gotoURL(request, some(container.url), replace = container,
-    redirectdepth = container.redirectdepth + 1, referrer = container)
+    redirectDepth = container.redirectDepth + 1, referrer = container)
   pager.container.loadinfo = "Redirecting to " & $request.url
   pager.onSetLoadInfo(pager.container)
   dec pager.numload
@@ -1500,8 +1523,8 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
 proc redirect(pager: Pager; container: Container; response: Response;
     request: Request) =
   # still need to apply response, or we lose cookie jars.
-  container.applyResponse(response)
-  if container.redirectdepth < pager.config.network.max_redirect:
+  container.applyResponse(response, pager.mimeTypes)
+  if container.redirectDepth < pager.config.network.max_redirect:
     if container.url.scheme == request.url.scheme or
         container.url.scheme == "cgi-bin" or
         container.url.scheme == "http" and request.url.scheme == "https" or
@@ -1519,7 +1542,7 @@ proc redirect(pager: Pager; container: Container; response: Response;
 
 proc connected(pager: Pager; container: Container; response: Response) =
   let istream = response.body
-  container.applyResponse(response)
+  container.applyResponse(response, pager.mimeTypes)
   if response.status == 401: # unauthorized
     pager.authorize()
     istream.close()

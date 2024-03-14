@@ -130,6 +130,15 @@ type
     opaque: InterfaceOpaque
     stream*: BufStream
 
+  BufferConfig* = object
+    userstyle*: string
+    referer_from*: bool
+    scripting*: bool
+    images*: bool
+    isdump*: bool
+    charsets*: seq[Charset]
+    charsetOverride*: Charset
+
 proc getFromOpaque[T](opaque: pointer, res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:

@@ -7,18 +7,15 @@ import config/chapath
 import config/mailcap
 import config/mimetypes
 import config/toml
-import io/urlfilter
 import js/error
 import js/javascript
 import js/propertyenumlist
 import js/regex
 import loader/headers
-import loader/loader
 import types/cell
 import types/color
 import types/cookie
 import types/opt
-import types/referrer
 import types/urimethodmap
 import types/url
 import utils/mimeguess
@@ -149,19 +146,6 @@ type
     page* {.jsget.}: ActionMap
     line* {.jsget.}: ActionMap
 
-  BufferConfig* = object
-    userstyle*: string
-    referer_from*: bool
-    referrerPolicy*: ReferrerPolicy
-    scripting*: bool
-    charsets*: seq[Charset]
-    images*: bool
-    loaderConfig*: LoaderClientConfig
-    mimeTypes*: MimeTypes
-    isdump*: bool
-    cgiDir*: seq[string]
-    charsetOverride*: Charset
-
   ForkServerConfig* = object
     tmpdir*: string
     ambiguous_double*: bool
@@ -235,33 +219,6 @@ func getProxy*(config: Config): URL =
 
 func getDefaultHeaders*(config: Config): Headers =
   return newHeaders(config.network.default_headers)
-
-proc getBufferConfig*(config: Config; location: URL; cookiejar: CookieJar,
-    headers: Headers; referer_from, scripting: bool; charsets: seq[Charset];
-    images: bool; userstyle: string; proxy: URL; mimeTypes: MimeTypes;
-    urimethodmap: URIMethodMap; cgiDir: seq[string]; tmpdir: string;
-    charsetOverride: Charset): BufferConfig =
-  let filter = newURLFilter(
-    scheme = some(location.scheme),
-    allowschemes = @["data", "cache"],
-    default = true
-  )
-  return BufferConfig(
-    userstyle: userstyle,
-    referer_from: referer_from,
-    scripting: scripting,
-    charsets: charsets,
-    images: images,
-    mimeTypes: mimeTypes,
-    isdump: config.start.headless,
-    charsetOverride: charsetOverride,
-    loaderConfig: LoaderClientConfig(
-      defaultHeaders: headers,
-      cookiejar: cookiejar,
-      proxy: proxy,
-      filter: filter
-    )
-  )
 
 proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
   for sc in config.siteconf:

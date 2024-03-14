@@ -487,8 +487,7 @@ proc acceptBuffers(client: Client) =
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
       continue
-    let key = pager.addLoaderClient(container.process,
-      container.config.loaderConfig)
+    let key = pager.addLoaderClient(container.process, container.loaderConfig)
     stream.swrite(key)
     let loader = pager.loader
     if item.fdin != -1:

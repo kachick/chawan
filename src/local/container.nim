@@ -6,6 +6,7 @@ when defined(posix):
   import std/posix
 
 import config/config
+import config/mimetypes
 import io/promise
 import io/serialize
 import io/socketstream
@@ -104,6 +105,7 @@ type
     parent* {.jsget.}: Container
     children* {.jsget.}: seq[Container]
     config*: BufferConfig
+    loaderConfig*: LoaderClientConfig
     iface*: BufferInterface
     width* {.jsget.}: int
     height* {.jsget.}: int
@@ -133,7 +135,7 @@ type
     events*: Deque[ContainerEvent]
     startpos: Option[CursorPosition]
     hasstart: bool
-    redirectdepth*: int
+    redirectDepth*: int
     select*: Select
     canreinterpret*: bool
     cloned: bool
@@ -150,9 +152,9 @@ type
 jsDestructor(Highlight)
 jsDestructor(Container)
 
-proc newContainer*(config: BufferConfig; url: URL; request: Request;
-    attrs: WindowAttributes; title: string; redirectdepth: int;
-    canreinterpret: bool; contentType: Option[string];
+proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
+    url: URL; request: Request; attrs: WindowAttributes; title: string;
+    redirectDepth: int; canreinterpret: bool; contentType: Option[string];
     charsetStack: seq[Charset]; cacheId: int; cacheFile: string): Container =
   return Container(
     url: url,
@@ -162,7 +164,8 @@ proc newContainer*(config: BufferConfig; url: URL; request: Request;
     height: attrs.height - 1,
     title: title,
     config: config,
-    redirectdepth: redirectdepth,
+    loaderConfig: loaderConfig,
+    redirectDepth: redirectDepth,
     pos: CursorPosition(
       setx: -1
     ),
@@ -1389,25 +1392,25 @@ proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =
 
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
-proc applyResponse*(container: Container; response: Response) =
+proc applyResponse*(container: Container; response: Response;
+    mimeTypes: MimeTypes) =
   container.code = response.res
   # accept cookies
-  let cookieJar = container.config.loaderConfig.cookieJar
+  let cookieJar = container.loaderConfig.cookieJar
   if cookieJar != nil:
     cookieJar.add(response.extractCookies())
   # set referrer policy, if any
   let referrerPolicy = response.extractReferrerPolicy()
   if container.config.referer_from:
     if referrerPolicy.isSome:
-      container.config.referrerPolicy = referrerPolicy.get
+      container.loaderConfig.referrerPolicy = referrerPolicy.get
   else:
-    container.config.referrerPolicy = NO_REFERRER
+    container.loaderConfig.referrerPolicy = NO_REFERRER
   # setup content type; note that isSome means an override so we skip it
   if container.contentType.isNone:
     var contentType = response.getContentType()
     if contentType == "application/octet-stream":
-      contentType = container.config.mimeTypes
-        .guessContentType(container.url.pathname)
+      contentType = mimeTypes.guessContentType(container.url.pathname)
     container.contentType = some(contentType)
   # setup charsets:
   # * override charset
