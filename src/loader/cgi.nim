@@ -240,7 +240,7 @@ proc killHandle(handle: LoaderHandle) =
     discard handle.output.ostream.sendData(msg)
   handle.parser = nil
 
-proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
+proc parseHeaders0(handle: LoaderHandle; buffer: LoaderBuffer): int =
   let parser = handle.parser
   var s = parser.lineBuffer
   let L = if buffer == nil: 1 else: buffer.len
@@ -286,6 +286,13 @@ proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
   if s != "":
     parser.lineBuffer = s
   return L
+
+proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
+  try:
+    return handle.parseHeaders0(buffer)
+  except ErrorBrokenPipe:
+    handle.parser = nil
+    return -1
 
 proc finishParse*(handle: LoaderHandle) =
   discard handle.parseHeaders(nil)
