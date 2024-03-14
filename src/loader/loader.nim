@@ -259,7 +259,7 @@ proc handleRead(ctx: LoaderContext; handle: LoaderHandle;
       var si = 0
       if handle.parser != nil:
         si = handle.parseHeaders(buffer)
-        if handle.istream == nil: # died while parsing headers; unregister
+        if si == -1: # died while parsing headers; unregister
           return hrrUnregister
         if si == n: # parsed the entire buffer as headers; skip output handling
           continue

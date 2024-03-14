@@ -238,7 +238,6 @@ proc killHandle(handle: LoaderHandle) =
     handle.sendHeaders(newHeaders())
     const msg = "Error: malformed header in CGI script"
     discard handle.output.ostream.sendData(msg)
-  handle.istream = nil
   handle.parser = nil
 
 proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
@@ -248,7 +247,7 @@ proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
   for i in 0 ..< L:
     template die =
       handle.killHandle()
-      return i
+      return -1
     let c = if buffer != nil:
       char(buffer.page[i])
     else:
