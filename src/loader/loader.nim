@@ -576,8 +576,15 @@ proc acceptConnection(ctx: LoaderContext) =
     var key: ClientKey
     stream.sread(myPid)
     stream.sread(key)
+    if myPid notin ctx.clientData:
+      # possibly already removed
+      stream.close()
+      return
     let client = ctx.clientData[myPid]
-    doAssert client.key == key
+    if client.key != key:
+      # ditto
+      stream.close()
+      return
     var cmd: LoaderCommand
     stream.sread(cmd)
     template privileged_command =
