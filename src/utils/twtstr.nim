@@ -611,28 +611,28 @@ proc expandPath*(path: string): string =
         return $p.pw_dir / path.substr(usr.len)
     return path
 
-func deleteChars*(s: string, todel: set[char]): string =
+func deleteChars*(s: string; todel: set[char]): string =
   var i = 0
   block earlyret:
-    for j in 0 ..< s.len:
-      if s[j] in todel:
+    for j, c in s:
+      if c in todel:
         i = j
         break earlyret
     return s
   var rs = newStringOfCap(s.len - 1)
   for j in 0 ..< i:
-    rs[j] = s[j]
+    rs &= s[j]
   for j in i + 1 ..< s.len:
     if s[j] in todel:
       continue
-    rs[i] = s[j]
+    rs &= s[j]
     inc i
   return rs
 
 func replaceControls*(s: string): string =
   result = newStringOfCap(s.len)
   for c in s:
-    if c in Controls:
+    if c in Controls - {' '}:
       result &= '^'
       result &= c.getControlLetter()
     else:

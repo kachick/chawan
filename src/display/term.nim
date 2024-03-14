@@ -407,11 +407,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
 
 proc setTitle*(term: Terminal, title: string) =
   if term.set_title:
-    let title = if Controls in title:
-      title.replaceControls()
-    else:
-      title
-    term.outfile.write(XTERM_TITLE(title))
+    term.outfile.write(XTERM_TITLE(title.replaceControls()))
 
 proc enableMouse*(term: Terminal) =
   term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
