@@ -13,6 +13,6 @@ ftps:		cgi-bin:ftps
 gopher:		cgi-bin:gopher
 gophers:	cgi-bin:gophers
 spartan:	cgi-bin:spartan
-man:		cgi-bin:man?%s
-man-k:		cgi-bin:man?%s
-man-l:		cgi-bin:man?%s
+man:		cgi-bin:man
+man-k:		cgi-bin:man
+man-l:		cgi-bin:man

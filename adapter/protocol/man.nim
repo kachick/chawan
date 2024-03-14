@@ -1,7 +1,7 @@
 import std/os
 import std/posix
 import std/strutils
-import std/unicode
+from std/unicode import runeLenAt
 
 import bindings/libregexp
 import js/regex
@@ -80,9 +80,8 @@ func processBackspace(line: string): string =
     i += n
   let n = 0
   flushChar
-  pendingInU = false
-  pendingInB = false
-  flushChar
+  if inU: s &= "</u>"
+  if inB: s &= "</b>"
   return s
 
 proc isCommand(paths: seq[string]; s: string): bool =
@@ -99,7 +98,33 @@ iterator myCaptures(captures: var seq[RegexCapture]; target: int;
       cap.e += offset
       yield cap
 
-proc processManpage(file: File) =
+proc processManpage(file: File; header: string) =
+  var line: string
+  # The "right thing" would be to check for the error code and output error
+  # messages accordingly. Unfortunately that would prevent us from streaming
+  # the output, so what we do instead is:
+  # * read first line
+  # * if EOF, probably an error, print it as an error
+  # * if not EOF, probably not an error, print it as a document
+  # This is somewhat broken at least with mandoc, because it sometimes outputs
+  # more than one error message (e.g. with man -l directory). But it's still
+  # better than losing streaming completely.
+  if not file.readLine(line) or file.endOfFile():
+    # try to get the error message into an acceptable format
+    if line.startsWith("man: "):
+      line.delete(0..4)
+    line = line.toLower().strip().replaceControls()
+    if line.len > 0 and line[^1] == '.':
+      line.setLen(line.high)
+    stdout.write("Cha-Control: ConnectionError 4 " & line)
+    discard file.pclose() # not much we can do with the exit code, so discard
+    return
+  # skip formatting of line 0, like w3mman does
+  # this is useful because otherwise the header would get caught in the man
+  # regex, and that makes navigation slightly more annoying
+  stdout.write(header)
+  stdout.write(line & '\n')
+  var wasBlank = false
   template re(s: static string): Regex =
     let r = s.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UTF16})
     if r.isNone:
@@ -118,8 +143,6 @@ proc processManpage(file: File) =
     while i > 0 and p[i] == '/':
       dec i
     paths.add(p.substr(0, i) & "/")
-  var line: string
-  var wasBlank = false
   while file.readLine(line):
     if line == "":
       if wasBlank:
@@ -128,23 +151,26 @@ proc processManpage(file: File) =
     else:
       wasBlank = false
     var line = line.processBackspace()
-    if (var res = linkRe.exec(line); res.success):
-      var offset = 0
-      for cap in res.captures.myCaptures(0, offset):
+    var offset = 0
+    var linkRes = linkRe.exec(line)
+    var mailRes = mailRe.exec(line)
+    var fileRes = fileRe.exec(line)
+    var includeRes = includeRe.exec(line)
+    var manRes = manRe.exec(line)
+    if linkRes.success:
+      for cap in linkRes.captures.myCaptures(0, offset):
         let s = line[cap.s..<cap.e]
         let link = "<a href='" & s & "'>" & s & "</a>"
         line[cap.s..<cap.e] = link
         offset += link.len - (cap.e - cap.s)
-    if (var res = mailRe.exec(line); res.success):
-      var offset = 0
-      for cap in res.captures.myCaptures(2, offset):
+    if mailRes.success:
+      for cap in mailRes.captures.myCaptures(2, offset):
         let s = line[cap.s..<cap.e]
         let link = "<a href='mailto:" & s & "'>" & s & "</a>"
         line[cap.s..<cap.e] = link
         offset += link.len - (cap.e - cap.s)
-    if (var res = fileRe.exec(line); res.success):
-      var offset = 0
-      for cap in res.captures.myCaptures(0, offset):
+    if fileRes.success:
+      for cap in fileRes.captures.myCaptures(0, offset):
         let s = line[cap.s..<cap.e]
         let target = s.expandTilde()
         if not fileExists(target) and not symlinkExists(target) and
@@ -156,9 +182,8 @@ proc processManpage(file: File) =
           "<a href='file:" & target & "'>" & s & "</a>"
         line[cap.s..<cap.e] = link
         offset += link.len - (cap.e - cap.s)
-    if (var res = includeRe.exec(line); res.success):
-      var offset = 0
-      for cap in res.captures.myCaptures(2, offset):
+    if includeRes.success:
+      for cap in includeRes.captures.myCaptures(2, offset):
         let s = line[cap.s..<cap.e]
         const includePaths = [
           "/usr/include/",
@@ -175,16 +200,15 @@ proc processManpage(file: File) =
             line[cap.s..<cap.e] = link
             offset += link.len - (cap.e - cap.s)
             break
-    if (var res = manRe.exec(line); res.success):
-      var offset = 0
-      for j, cap in res.captures.mpairs:
+    if manRes.success:
+      for j, cap in manRes.captures.mpairs:
         if cap.i == 0:
           cap.s += offset
           cap.e += offset
-          var manCap = res.captures[j + 2]
+          var manCap = manRes.captures[j + 2]
           manCap.s += offset
           manCap.e += offset
-          var secCap = res.captures[j + 4]
+          var secCap = manRes.captures[j + 4]
           secCap.s += offset
           secCap.e += offset
           let man = line[manCap.s..<manCap.e]
@@ -192,7 +216,8 @@ proc processManpage(file: File) =
           let link = "<a href='man:" & cat & "'>" & man & "</a>"
           line[manCap.s..<manCap.e] = link
           offset += link.len - (manCap.e - manCap.s)
-    stdout.write(line & "\n")
+    stdout.write(line & '\n')
+  discard file.pclose()
 
 proc doMan(man, keyword, section: string) =
   let sectionOpt = if section == "": "" else: " -s " & section
@@ -202,37 +227,25 @@ proc doMan(man, keyword, section: string) =
   if file == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
     return
-  var line0: string
-  if not file.readLine(line0) or file.endOfFile():
-    discard file.pclose()
-    if line0.startsWith("man: "):
-      line0 = line0.after(' ')
-    stdout.write("Cha-Control: ConnectionError 4 " & line0)
-    return
   var manword = keyword
   if section != "":
     manword &= '(' & section & ')'
-  stdout.write("""Content-Type: text/html
+  file.processManpage(header = """Content-Type: text/html
 
 <title>man """ & manword & """</title>
-<pre>""" & line0 & "\n")
-  file.processManpage()
-  discard file.pclose()
+<pre>""")
 
-proc doLocal(man, keyword: string) =
+proc doLocal(man, path: string) =
   let cmd = "GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & " -l " & keyword & " 2>/dev/null"
+    man & " -l " & path & " 2>&1"
   let file = popen(cstring(cmd), "r")
   if file == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
     return
-  stdout.write("""Content-Type: text/html
+  file.processManpage(header = """Content-Type: text/html
 
-<title>man -l """ & keyword & """</title>
-<h1>man -l <b>""" & keyword & """</b></h1>
+<title>man -l """ & path & """</title>
 <pre>""")
-  file.processManpage()
-  discard file.pclose()
 
 proc doKeyword(man, keyword, section: string) =
   let sectionOpt = if section == "": "" else: " -s " & section
@@ -285,24 +298,23 @@ proc doKeyword(man, keyword, section: string) =
 proc main() =
   var man = getEnv("MANCHA_MAN")
   if man == "":
-    man = "/usr/bin/man"
-    if not fileExists(man):
-      man = "/bin/man"
-      if not fileExists(man):
-        man = "/usr/local/bin/man"
-        if not fileExists(man):
-          man = "/usr/bin/env man"
-    doAssert getAppFilename() != man # don't accidentally fork bomb ourselves
-  let query = percentDecode(getEnv("QUERY_STRING"))
-  if query.startsWith("man:"):
-    let (keyword, section) = parseSection(query.after(':'))
+    block notfound:
+      for s in ["/usr/bin/man", "/bin/man", "/usr/local/bin/man"]:
+        if fileExists(s) or symlinkExists(s):
+          man = s
+          break notfound
+      man = "/usr/bin/env man"
+  let path = getEnv("MAPPED_URI_PATH")
+  let scheme = getEnv("MAPPED_URI_SCHEME")
+  if scheme == "man":
+    let (keyword, section) = parseSection(path)
     doMan(man, keyword, section)
-  elif query.startsWith("man-k:"):
-    let (keyword, section) = parseSection(query.after(':'))
+  elif scheme == "man-k":
+    let (keyword, section) = parseSection(path)
     doKeyword(man, keyword, section)
-  elif query.startsWith("man-l:"):
-    doLocal(man, query.after(':'))
+  elif scheme == "man-l":
+    doLocal(man, path)
   else:
-    stdout.write("Cha-Control: ConnectionError 1 invalid invocation")
+    stdout.write("Cha-Control: ConnectionError 1 invalid scheme")
 
 main()
