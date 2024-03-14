@@ -24,12 +24,12 @@ import std/streams
 import std/strutils
 import std/tables
 
-import extern/tempfile
 import io/posixstream
 import io/promise
 import io/serialize
 import io/serversocket
 import io/socketstream
+import io/tempfile
 import io/urlfilter
 import js/error
 import js/javascript

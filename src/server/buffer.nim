@@ -19,13 +19,13 @@ import css/mediaquery
 import css/sheet
 import css/stylednode
 import css/values
-import display/term
 import html/catom
 import html/chadombuilder
 import html/dom
 import html/enums
 import html/env
 import html/event
+import html/formdata as formdata_impl
 import io/bufstream
 import io/posixstream
 import io/promise
@@ -46,9 +46,9 @@ import types/cookie
 import types/formdata
 import types/opt
 import types/url
+import types/winattrs
 import utils/strwidth
 import utils/twtstr
-import xhr/formdata as formdata_impl
 
 from chagashi/decoder import newTextDecoder
 import chagashi/charset

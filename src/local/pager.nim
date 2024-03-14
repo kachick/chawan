@@ -16,16 +16,13 @@ import config/chapath
 import config/config
 import config/mailcap
 import config/mimetypes
-import display/lineedit
-import display/term
-import extern/runproc
-import extern/stdio
-import extern/tempfile
 import io/bufstream
 import io/posixstream
 import io/promise
 import io/serialize
 import io/socketstream
+import io/stdio
+import io/tempfile
 import io/urlfilter
 import js/error
 import js/javascript
@@ -37,7 +34,9 @@ import loader/headers
 import loader/loader
 import loader/request
 import local/container
+import local/lineedit
 import local/select
+import local/term
 import server/buffer
 import server/forkserver
 import types/cell
@@ -47,6 +46,7 @@ import types/opt
 import types/referrer
 import types/urimethodmap
 import types/url
+import types/winattrs
 import utils/strwidth
 import utils/twtstr
 
@@ -126,7 +126,8 @@ type
 
 jsDestructor(Pager)
 
-func attrs(pager: Pager): WindowAttributes = pager.term.attrs
+template attrs(pager: Pager): WindowAttributes =
+  pager.term.attrs
 
 func loaderPid(pager: Pager): int64 {.jsfget.} =
   int64(pager.loader.process)
@@ -745,6 +746,59 @@ proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
   else:
     pager.alert("Buffer has no children!")
 
+proc c_system(cmd: cstring): cint {.importc: "system", header: "<stdlib.h>".}
+
+# Run process (without suspending the terminal controller).
+proc runProcess(cmd: string): bool =
+  let wstatus = c_system(cstring(cmd))
+  if wstatus == -1:
+    result = false
+  else:
+    result = WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0
+    if not result:
+      # Hack.
+      #TODO this is a very bad idea, e.g. say the editor is writing into the
+      # file, then receives SIGINT, now the file is corrupted but Chawan will
+      # happily read it as if nothing happened.
+      # We should find a proper solution for this.
+      result = WIFSIGNALED(wstatus) and WTERMSIG(wstatus) == SIGINT
+
+# Run process (and suspend the terminal controller).
+proc runProcess(term: Terminal, cmd: string, wait = false): bool =
+  term.quit()
+  result = runProcess(cmd)
+  if wait:
+    term.anyKey()
+  term.restart()
+
+# Run process, and capture its output.
+proc runProcessCapture(cmd: string, outs: var string): bool =
+  let file = popen(cmd, "r")
+  if file == nil:
+    return false
+  let fs = newFileStream(file)
+  outs = fs.readAll()
+  let rv = pclose(file)
+  if rv == -1:
+    return false
+  return rv == 0
+
+# Run process, and write an arbitrary string into its standard input.
+proc runProcessInto(cmd, ins: string): bool =
+  let file = popen(cmd, "w")
+  if file == nil:
+    return false
+  let fs = newFileStream(file)
+  fs.write(ins)
+  let rv = pclose(file)
+  if rv == -1:
+    return false
+  return rv == 0
+
+template myExec(cmd: string) =
+  discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+  exitnow(127)
+
 proc toggleSource(pager: Pager) {.jsfunc.} =
   if not pager.container.canreinterpret:
     return
@@ -1182,7 +1236,6 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
     discard close(pipefdOutAnsi[1])
     closeStderr()
     myExec(cmd)
-    assert false
   else:
     discard close(pipefdOutAnsi[1])
     discard close(fdin)
@@ -1206,7 +1259,6 @@ proc runMailcapReadPipe(pager: Pager; stream: SocketStream; cmd: string;
     closeStderr()
     discard close(pipefdOut[1])
     myExec(cmd)
-    doAssert false
   # parent
   pid
 
@@ -1227,7 +1279,6 @@ proc runMailcapWritePipe(pager: Pager; stream: SocketStream;
       closeStdout()
       closeStderr()
     myExec(cmd)
-    doAssert false
   else:
     # parent
     stream.close()
@@ -1326,7 +1377,6 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
     closeStderr()
     discard close(pipefd_out[1])
     myExec(cmd)
-    doAssert false
   # parent
   discard close(pipefd_out[1])
   let fdout = pipefd_out[0]

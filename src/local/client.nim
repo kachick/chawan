@@ -15,11 +15,11 @@ when defined(posix):
 import bindings/constcharp
 import bindings/quickjs
 import config/config
-import display/lineedit
-import display/term
 import html/chadombuilder
 import html/dom
 import html/event
+import html/formdata
+import html/xmlhttprequest
 import io/bufstream
 import io/posixstream
 import io/promise
@@ -41,7 +41,9 @@ import loader/headers
 import loader/loader
 import loader/request
 import local/container
+import local/lineedit
 import local/pager
+import local/term
 import server/buffer
 import server/forkserver
 import types/blob
@@ -49,8 +51,6 @@ import types/cookie
 import types/opt
 import types/url
 import utils/twtstr
-import xhr/formdata
-import xhr/xmlhttprequest
 
 import chagashi/charset
 

@@ -8,9 +8,9 @@ import std/os
 
 import config/chapath
 import config/config
-import display/term
 import io/serversocket
 import local/client
+import local/term
 import types/opt
 import utils/strwidth
 import utils/twtstr

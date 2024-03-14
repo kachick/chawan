@@ -4,8 +4,8 @@ import std/posix
 import std/streams
 import std/strutils
 
-import extern/stdio
 import io/posixstream
+import io/stdio
 import loader/connecterror
 import loader/headers
 import loader/loaderhandle

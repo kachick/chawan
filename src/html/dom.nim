@@ -10,7 +10,6 @@ import css/cssparser
 import css/mediaquery
 import css/sheet
 import css/values
-import display/term
 import html/catom
 import html/enums
 import html/event
@@ -37,6 +36,7 @@ import types/matrix
 import types/referrer
 import types/url
 import types/vector
+import types/winattrs
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr

@@ -2,12 +2,13 @@ import std/selectors
 import std/streams
 
 import bindings/quickjs
-import display/term
 import html/catom
 import html/chadombuilder
 import html/dom
 import html/event
+import html/formdata
 import html/script
+import html/xmlhttprequest
 import io/promise
 import js/base64
 import js/console
@@ -24,8 +25,7 @@ import loader/request
 import loader/response
 import types/blob
 import types/url
-import xhr/formdata
-import xhr/xmlhttprequest
+import types/winattrs
 
 # NavigatorID
 proc appCodeName(navigator: ptr Navigator): string {.jsfget.} = "Mozilla"

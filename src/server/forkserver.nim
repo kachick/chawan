@@ -5,7 +5,6 @@ import std/streams
 import std/tables
 
 import config/config
-import display/term
 import io/posixstream
 import io/serialize
 import io/serversocket
@@ -13,6 +12,7 @@ import loader/loader
 import server/buffer
 import types/urimethodmap
 import types/url
+import types/winattrs
 import utils/strwidth
 
 import chagashi/charset

@@ -12,6 +12,7 @@ import config/config
 import types/cell
 import types/color
 import types/opt
+import types/winattrs
 import utils/strwidth
 import utils/twtstr
 
@@ -45,14 +46,6 @@ type
     bp: array[1024, uint8]
     funcstr: array[256, uint8]
     caps: array[TermcapCap, cstring]
-
-  WindowAttributes* = object
-    width*: int
-    height*: int
-    ppc*: int # cell width
-    ppl*: int # cell height
-    width_px*: int
-    height_px*: int
 
   Terminal* = ref TerminalObj
   TerminalObj = object

@@ -6,7 +6,6 @@ when defined(posix):
   import std/posix
 
 import config/config
-import display/term
 import io/promise
 import io/serialize
 import io/socketstream
@@ -23,6 +22,7 @@ import types/color
 import types/cookie
 import types/referrer
 import types/url
+import types/winattrs
 import utils/luwrap
 import utils/mimeguess
 import utils/strwidth

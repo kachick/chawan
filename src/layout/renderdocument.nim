@@ -3,10 +3,10 @@ import std/unicode
 
 import css/stylednode
 import css/values
-import display/term
 import layout/box
 import layout/engine
 import layout/layoutunit
+import types/winattrs
 import types/cell
 import types/color
 import utils/strwidth

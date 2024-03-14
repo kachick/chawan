@@ -2,10 +2,10 @@ import std/strutils
 import std/unicode
 
 import bindings/quickjs
-import display/term
 import js/javascript
 import types/cell
 import types/opt
+import types/winattrs
 import utils/strwidth
 import utils/twtstr
 
@@ -22,7 +22,7 @@ type
 
   LineEdit* = ref object
     news*: string
-    prompt*: string
+    prompt: string
     promptw: int
     state*: LineEditState
     escNext*: bool

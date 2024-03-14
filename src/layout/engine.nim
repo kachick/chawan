@@ -5,9 +5,9 @@ import std/unicode
 
 import css/stylednode
 import css/values
-import display/term
 import layout/box
 import layout/layoutunit
+import types/winattrs
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
