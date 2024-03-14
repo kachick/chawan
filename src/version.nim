@@ -9,8 +9,8 @@ macro tryImport(x: untyped, name: static string) =
   quote do:
     when not compiles(imp `x`):
       static:
-        error("Cannot find submodule " & `name` & ".\n" &
-          "Please run `make submodule` to fetch the required submodules.")
+        error("Cannot find submodule " & `name` &
+          ". Please run `make submodule` to fetch the required submodules.")
     import `x` as `vs`
 
 macro checkVersion(xs: static string, major, minor, patch: int) =
@@ -20,8 +20,7 @@ macro checkVersion(xs: static string, major, minor, patch: int) =
       var es = $`major` & "." & $`minor` & "." & $`patch`
       var gs = $`x`.Major & "." & $`x`.Minor & "." & $`x`.Patch
       error("Version of " & `xs` & " too low (expected " & es & ", got " &
-        gs & ").\n" &
-        "Please run `make submodule` to update.")
+        gs & "). Please run `make submodule` to update.")
 
 tryImport chagashi/version, "chagashi"
 tryImport chame/version, "chame"
