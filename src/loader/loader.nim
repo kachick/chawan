@@ -633,7 +633,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   let ps = newPosixStream(fd)
   ps.write(char(0u8))
   ps.close()
-  onSignal SIGTERM, SIGINT:
+  onSignal SIGTERM:
     discard sig
     gctx.exitLoader()
   for dir in ctx.config.cgiDir.mitems:
