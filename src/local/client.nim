@@ -462,14 +462,22 @@ proc consoleBuffer(client: Client): Container {.jsfget.} =
 proc acceptBuffers(client: Client) =
   let pager = client.pager
   while pager.unreg.len > 0:
-    let (pid, stream) = pager.unreg.pop()
-    let fd = int(stream.source.fd)
-    if fd in client.fdmap:
+    let container = pager.unreg.pop()
+    if container.iface != nil: # fully connected
+      let stream = container.iface.stream
+      let fd = int(stream.source.fd)
       client.selector.unregister(fd)
       client.fdmap.del(fd)
-    else:
-      pager.procmap.del(pid)
-    stream.close()
+      stream.close()
+    elif container.process != -1: # connecting to buffer process
+      let i = pager.findProcMapItem(container.process)
+      pager.procmap.del(i)
+    else: # connecting to URL
+      let i = pager.findConnectingContainer(container)
+      let stream = pager.connectingContainers[i].stream
+      client.selector.unregister(stream.fd)
+      stream.close()
+      pager.connectingContainers.del(i)
   let registerFun = proc(fd: int) =
     client.selector.unregister(fd)
     client.selector.registerHandle(fd, {Read, Write}, 0)

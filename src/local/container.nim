@@ -169,7 +169,8 @@ proc newContainer*(config: BufferConfig; url: URL; request: Request;
     canreinterpret: canreinterpret,
     loadinfo: "Connecting to " & request.url.host & "...",
     cacheId: cacheId,
-    cacheFile: cacheFile
+    cacheFile: cacheFile,
+    process: -1
   )
 
 func location(container: Container): URL {.jsfget.} =

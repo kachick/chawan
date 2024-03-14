@@ -16,7 +16,6 @@ import config/chapath
 import config/config
 import config/mailcap
 import config/mimetypes
-import io/bufstream
 import io/posixstream
 import io/promise
 import io/serialize
@@ -37,7 +36,6 @@ import local/container
 import local/lineedit
 import local/select
 import local/term
-import server/buffer
 import server/forkserver
 import types/cell
 import types/color
@@ -75,7 +73,7 @@ type
   ConnectingContainerItem = ref object
     state: ContainerConnectionState
     container: Container
-    stream: SocketStream
+    stream*: SocketStream
     res: int
     outputId: int
     status: uint16
@@ -90,7 +88,7 @@ type
     cgiDir*: seq[string]
     commandMode {.jsget.}: bool
     config: Config
-    connectingContainers: seq[ConnectingContainerItem]
+    connectingContainers*: seq[ConnectingContainerItem]
     container*: Container
     cookiejars: Table[string, CookieJar]
     devRandom: PosixStream
@@ -120,7 +118,7 @@ type
     statusgrid*: FixedGrid
     term*: Terminal
     tmpdir*: string
-    unreg*: seq[tuple[pid: int; stream: BufStream]]
+    unreg*: seq[Container]
     urimethodmap: URIMethodMap
     username: string
 
@@ -579,6 +577,18 @@ func findConnectingContainer*(pager: Pager; fd: int): int =
       return i
   -1
 
+func findConnectingContainer*(pager: Pager; container: Container): int =
+  for i, item in pager.connectingContainers:
+    if item.container == container:
+      return i
+  -1
+
+func findProcMapItem*(pager: Pager; pid: int): int =
+  for i, item in pager.procmap:
+    if item.container.process == pid:
+      return i
+  -1
+
 proc dupeBuffer(pager: Pager, container: Container, url: URL) =
   container.clone(url).then(proc(container: Container) =
     if container == nil:
@@ -726,8 +736,8 @@ proc deleteContainer(pager: Pager; container: Container) =
   if container.replace != nil:
     pager.replace(container, container.replace)
     container.replace = nil
-  if container.iface != nil:
-    pager.unreg.add((container.process, container.iface.stream))
+  pager.unreg.add(container)
+  if container.process != -1:
     pager.forkserver.removeChild(container.process)
     pager.loader.removeClient(container.process)
 
