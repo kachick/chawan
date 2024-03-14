@@ -59,7 +59,15 @@ v = 'pager.toggleSource()'
 #TODO edit
 C-l = 'pager.redraw()'
 R = 'pager.reload()'
-#TODO save, save source, view in editor
+#TODO save, save source
+E = '''
+() => {
+	if (pager.url.protocol == "file:")
+		pager.extern(pager.getEditorCommand(pager.url.pathname))
+	else
+		pager.alert("Can't edit other than local file");
+}
+'''
 #TODO buffer selection mode
 'C-@' = '''
 () => {

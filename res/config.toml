@@ -122,6 +122,14 @@ C-b = 'n => pager.pageUp(n)'
 '>' = 'n => pager.pageRight(n)'
 C-e = 'n => pager.scrollDown(n)'
 C-y = 'n => pager.scrollUp(n)'
+sE = '''
+() => {
+	const url = url.pathname;
+	pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
+		url.pathname :
+		pager.cacheFile));
+}
+'''
 m = '''
 async () => {
 	const c = await pager.askChar("m");

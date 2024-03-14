@@ -124,6 +124,11 @@ I thought it'd be a fun excercise to write one by myself, for myself.
 Generally, I'm happy if Chawan works on websites I use frequently. If it
 also works on other websites, that's a bonus.
 
+### Where are the keybindings?
+
+Please run `cha about:chawan` for a list of default keybindings. (By default,
+this is equivalent to `cha -V`.)
+
 ### Where are the w3m keybindings?
 
 At [bonus/w3m.toml](bonus/w3m.toml). Note that not every w3m feature is

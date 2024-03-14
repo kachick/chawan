@@ -18,7 +18,6 @@ import config/mailcap
 import config/mimetypes
 import display/lineedit
 import display/term
-import extern/editor
 import extern/runproc
 import extern/stdio
 import extern/tempfile
@@ -523,7 +522,7 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
 proc newContainer(pager: Pager; bufferConfig: BufferConfig; request: Request;
     title = ""; redirectdepth = 0; canreinterpret = true;
     contentType = none(string); charsetStack: seq[Charset] = @[];
-    url: URL = request.url; cacheId = -1): Container =
+    url: URL = request.url; cacheId = -1; cacheFile = ""): Container =
   request.suspended = true
   if bufferConfig.loaderConfig.cookieJar != nil:
     # loader stores cookie jars per client, but we have no client yet.
@@ -549,7 +548,8 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig; request: Request;
     canreinterpret,
     contentType,
     charsetStack,
-    cacheId
+    cacheId,
+    cacheFile
   )
   pager.connectingContainers.add(ConnectingContainerItem(
     state: ccsBeforeResult,
@@ -568,7 +568,8 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     contentType = some(contentType),
     charsetStack = container.charsetStack,
     url = container.url,
-    cacheId = container.cacheId
+    cacheId = container.cacheId,
+    cacheFile = container.cacheFile
   )
 
 func findConnectingContainer*(pager: Pager; fd: int): int =
@@ -761,6 +762,55 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       container.sourcepair = pager.container
       pager.container.sourcepair = container
       pager.addContainer(container)
+
+func formatEditorName(editor, file: string; line: int): string =
+  result = newStringOfCap(editor.len + file.len)
+  var i = 0
+  var filefound = false
+  while i < editor.len:
+    if editor[i] == '%' and i < editor.high:
+      if editor[i + 1] == 's':
+        result &= file
+        filefound = true
+        i += 2
+        continue
+      elif editor[i + 1] == 'd':
+        result &= $line
+        i += 2
+        continue
+      elif editor[i + 1] == '%':
+        result &= '%'
+        i += 2
+        continue
+    result &= editor[i]
+    inc i
+  if not filefound:
+    if result[^1] != ' ':
+      result &= ' '
+    result &= file
+
+func getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
+  var editor = pager.config.external.editor
+  if editor == "":
+    editor = getEnv("EDITOR")
+    if editor == "":
+      editor = "vi %s +%d"
+  return formatEditorName(editor, file, line)
+
+proc openInEditor(pager: Pager; input: var string): bool =
+  try:
+    let tmpf = getTempFile(pager.tmpdir)
+    if input != "":
+      writeFile(tmpf, input)
+    let cmd = pager.getEditorCommand(tmpf)
+    if pager.term.runProcess(cmd):
+      if fileExists(tmpf):
+        input = readFile(tmpf)
+        removeFile(tmpf)
+        return true
+  except IOError:
+    discard
+  return false
 
 proc windowChange*(pager: Pager) =
   let oldAttrs = pager.attrs
@@ -1531,7 +1581,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
   of cetReadArea:
     if container == pager.container:
       var s = event.tvalue
-      if openInEditor(pager.term, pager.config, pager.tmpdir, s):
+      if pager.openInEditor(s):
         pager.container.readSuccess(s)
       else:
         pager.container.readCanceled()

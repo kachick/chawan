@@ -486,14 +486,15 @@ proc acceptBuffers(client: Client) =
     if item.fdin != -1:
       let outputId = item.istreamOutputId
       if container.cacheId == -1:
-        container.cacheId = loader.addCacheFile(outputId, loader.clientPid)
+        (container.cacheId, container.cacheFile) = loader.addCacheFile(outputId,
+          loader.clientPid)
       var outCacheId = container.cacheId
       let pid = container.process
       if item.fdout == item.fdin:
         loader.shareCachedItem(container.cacheId, pid)
         loader.resume(@[item.istreamOutputId])
       else:
-        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
+        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
         loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
       # pass down fdout
       container.setStream(stream, registerFun, item.fdout, outCacheId)

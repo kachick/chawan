@@ -145,6 +145,7 @@ type
     filter*: BufferFilter
     bgcolor*: CellColor
     tailOnLoad*: bool
+    cacheFile* {.jsget.}: string
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -152,7 +153,7 @@ jsDestructor(Container)
 proc newContainer*(config: BufferConfig; url: URL; request: Request;
     attrs: WindowAttributes; title: string; redirectdepth: int;
     canreinterpret: bool; contentType: Option[string];
-    charsetStack: seq[Charset]; cacheId: int): Container =
+    charsetStack: seq[Charset]; cacheId: int; cacheFile: string): Container =
   return Container(
     url: url,
     request: request,
@@ -167,7 +168,8 @@ proc newContainer*(config: BufferConfig; url: URL; request: Request;
     ),
     canreinterpret: canreinterpret,
     loadinfo: "Connecting to " & request.url.host & "...",
-    cacheId: cacheId
+    cacheId: cacheId,
+    cacheFile: cacheFile
   )
 
 func location(container: Container): URL {.jsfget.} =

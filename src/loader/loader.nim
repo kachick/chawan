@@ -201,25 +201,27 @@ proc getOutputId(ctx: LoaderContext): int =
   result = ctx.outputNum
   inc ctx.outputNum
 
+type AddCacheFileResult = tuple[outputId: int; cacheFile: string]
+
 proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
-    int =
+    AddCacheFileResult =
   if output.parent != nil and output.parent.cacheId != -1:
     # may happen e.g. if client tries to cache a `cache:' URL
-    return output.parent.cacheId
+    return (output.parent.cacheId, "") #TODO can we get the file name somehow?
   let tmpf = getTempFile(ctx.config.tmpdir)
   let ps = newPosixStream(tmpf, O_CREAT or O_WRONLY, 0o600)
   if unlikely(ps == nil):
-    return -1
+    return (-1, "")
   if output.currentBuffer != nil:
     let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
     if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
       ps.close()
-      return -1
+      return (-1, "")
   for buffer in output.buffers:
     let n = ps.sendData(buffer)
     if unlikely(n < buffer.len):
       ps.close()
-      return -1
+      return (-1, "")
   let cacheId = output.outputId
   if output.parent != nil:
     output.parent.cacheId = cacheId
@@ -230,7 +232,7 @@ proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
       outputId: ctx.getOutputId()
     ))
   client.cacheMap.add(CachedItem(id: cacheId, path: tmpf, refc: 1))
-  return cacheId
+  return (cacheId, tmpf)
 
 proc addFd(ctx: LoaderContext; handle: LoaderHandle) =
   let output = handle.output
@@ -485,8 +487,9 @@ proc addCacheFile(ctx: LoaderContext; stream: SocketStream) =
   let output = ctx.findOutput(outputId)
   assert output != nil
   let targetClient = ctx.clientData[targetPid]
-  let id = ctx.addCacheFile(targetClient, output)
+  let (id, file) = ctx.addCacheFile(targetClient, output)
   stream.swrite(id)
+  stream.swrite(file)
   stream.close()
 
 proc shareCachedItem(ctx: LoaderContext; stream: SocketStream) =
@@ -857,14 +860,19 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
   stream.sread(outputId)
   return (stream, outputId)
 
-proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
+proc addCacheFile*(loader: FileLoader; outputId, targetPid: int):
+    AddCacheFileResult =
   let stream = loader.connect()
   if stream == nil:
-    return -1
+    return (-1, "")
   stream.swrite(lcAddCacheFile)
   stream.swrite(outputId)
   stream.swrite(targetPid)
-  stream.sread(result)
+  var outputId: int
+  var cacheFile: string
+  stream.sread(outputId)
+  stream.sread(cacheFile)
+  return (outputId, cacheFile)
 
 const BufferSize = 4096
 
