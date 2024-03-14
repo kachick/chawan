@@ -472,8 +472,8 @@ proc acceptBuffers(client: Client) =
     elif container.process != -1: # connecting to buffer process
       let i = pager.findProcMapItem(container.process)
       pager.procmap.del(i)
-    else: # connecting to URL
-      let i = pager.findConnectingContainer(container)
+    elif (let i = pager.findConnectingContainer(container); i != -1):
+      # connecting to URL
       let stream = pager.connectingContainers[i].stream
       client.selector.unregister(stream.fd)
       stream.close()
