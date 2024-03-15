@@ -88,7 +88,7 @@ type
     askprompt: string
     cgiDir*: seq[string]
     commandMode {.jsget.}: bool
-    config: Config
+    config*: Config
     connectingContainers*: seq[ConnectingContainerItem]
     container*: Container
     cookiejars: Table[string, CookieJar]

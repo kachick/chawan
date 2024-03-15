@@ -88,6 +88,16 @@ do not block loading.)</td>
 enabled when Chawan is called with -r.</td>
 </tr>
 
+<tr>
+<td>console-buffer</td>
+<td>boolean</td>
+<td>Whether Chawan should open a console buffer in non-headless mode. Defaults
+to true.<br>
+Warning: this is only useful for debugging. Disabling this option without
+manually redirecting standard error will result in error messages randomly
+appearing on your screen.</td>
+</tr>
+
 </table>
 
 ## Search

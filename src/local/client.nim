@@ -153,7 +153,8 @@ proc command0(client: Client, src: string, filename = "<command>",
 proc command(client: Client, src: string) =
   client.command0(src)
   let container = client.consoleWrapper.container
-  container.tailOnLoad = true
+  if container != nil:
+    container.tailOnLoad = true
 
 proc suspend(client: Client) {.jsfunc.} =
   client.pager.term.quit()
@@ -715,7 +716,7 @@ const ConsoleTitle = "Browser Console"
 
 proc addConsole(pager: Pager; interactive: bool; clearFun, showFun, hideFun:
     proc()): ConsoleWrapper =
-  if interactive:
+  if interactive and pager.config.start.console_buffer:
     var pipefd: array[0..1, cint]
     if pipe(pipefd) == -1:
       raise newException(Defect, "Failed to open console pipe.")

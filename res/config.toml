@@ -2,6 +2,7 @@
 visual-home = "about:chawan"
 startup-script = ""
 headless = false
+console-buffer = true
 
 [search]
 wrap = true

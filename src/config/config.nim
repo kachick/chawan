@@ -72,6 +72,7 @@ type
     visual_home* {.jsgetset.}: string
     startup_script* {.jsgetset.}: string
     headless* {.jsgetset.}: bool
+    console_buffer* {.jsgetset.}: bool
 
   CSSConfig = object
     stylesheet* {.jsgetset.}: string
