@@ -260,6 +260,7 @@ func cursorFirstX(container: Container): int =
     if w + tw > cc:
       return w
     w += tw
+  return w
 
 # Returns the X position of the last cell occupied by the character the cursor
 # currently points to.
@@ -513,8 +514,9 @@ proc setCursorX(container: Container, x: int, refresh = true, save = true)
     # target x is before the screen start
     if x2 < container.cursorx:
       # desired X position is lower than cursor X; move screen back to the
-      # desired position if valid, otherwise the last cell of the current line.
-      if x2 == x:
+      # desired position if valid, to 0 if the desired position is less than 0,
+      # otherwise the last cell of the current line.
+      if x2 <= x:
         container.setFromX(x, false)
       else:
         container.setFromX(cw - 1, false)
