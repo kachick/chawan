@@ -10,14 +10,12 @@ import utils/twtstr
 
 proc main() =
   let str = getEnv("MAPPED_URI_PATH")
-  const si = "data:".len # start index
   const iu = $int(ERROR_INVALID_URL)
-  var ct = str.until(',', si)
-  for c in ct:
-    if c notin AsciiAlphaNumeric and c != '/':
-      stdout.write("Cha-Control: ConnectionError " & iu  & " invalid data URL")
-      return
-  let sd = si + ct.len + 1 # data start
+  var ct = str.until(',')
+  if AllChars - Ascii + Controls - {'\t', ' '} in ct:
+    stdout.write("Cha-Control: ConnectionError " & iu  & " invalid data URL")
+    return
+  let sd = ct.len + 1 # data start
   let body = percentDecode(str, sd)
   if ct.endsWith(";base64"):
     try:
