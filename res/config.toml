@@ -124,7 +124,7 @@ C-e = 'n => pager.scrollDown(n)'
 C-y = 'n => pager.scrollUp(n)'
 sE = '''
 () => {
-	const url = url.pathname;
+	const url = pager.url;
 	pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
 		url.pathname :
 		pager.cacheFile));
