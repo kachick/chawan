@@ -98,7 +98,7 @@ iterator myCaptures(captures: var seq[RegexCapture]; target: int;
       cap.e += offset
       yield cap
 
-proc processManpage(file: File; header: string) =
+proc processManpage(file: File; header, keyword: string) =
   var line: string
   # The "right thing" would be to check for the error code and output error
   # messages accordingly. Unfortunately that would prevent us from streaming
@@ -123,7 +123,7 @@ proc processManpage(file: File; header: string) =
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
   stdout.write(header)
-  stdout.write(line & '\n')
+  stdout.write(line.processBackspace() & '\n')
   var wasBlank = false
   template re(s: static string): Regex =
     let r = s.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UTF16})
@@ -138,6 +138,9 @@ proc processManpage(file: File; header: string) =
   let includeRe = re"#include(</?[bu]>|\s)*&lt;([\w./-]+)"
   let manRe = re"(</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\))"
   var paths: seq[string] = @[]
+  var ignoreMan = keyword.toUpperAscii()
+  if ignoreMan == keyword or keyword.len == 1:
+    ignoreMan = ""
   for p in getEnv("PATH").split(':'):
     var i = p.high
     while i > 0 and p[i] == '/':
@@ -212,6 +215,10 @@ proc processManpage(file: File; header: string) =
           secCap.s += offset
           secCap.e += offset
           let man = line[manCap.s..<manCap.e]
+          # ignore footers like MYPAGE(1)
+          # (just to be safe, we also check if it's in paths too)
+          if man == ignoreMan and not paths.isCommand(man):
+            continue
           let cat = man & line[secCap.s..<secCap.e]
           let link = "<a href='man:" & cat & "'>" & man & "</a>"
           line[manCap.s..<manCap.e] = link
@@ -233,7 +240,7 @@ proc doMan(man, keyword, section: string) =
   file.processManpage(header = """Content-Type: text/html
 
 <title>man """ & manword & """</title>
-<pre>""")
+<pre>""", keyword = keyword)
 
 proc doLocal(man, path: string) =
   # Note: we intentionally do not use -l, because it is not supported on
@@ -247,7 +254,7 @@ proc doLocal(man, path: string) =
   file.processManpage(header = """Content-Type: text/html
 
 <title>man -l """ & path & """</title>
-<pre>""")
+<pre>""", keyword = path.afterLast('/').until('.'))
 
 proc doKeyword(man, keyword, section: string) =
   let sectionOpt = if section == "": "" else: " -s " & section
