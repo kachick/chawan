@@ -18,8 +18,8 @@ mancha - view manual pages via cha(1)
 to the \fBw3mman\fR(1) utility.
 
 \fBmancha\fR will call \fBcha\fR(1) with the appropriate \fIman:\fR,
-\fIman-k:\fR or \fIman-l:\fR URLs. The protocol adapter then opens the man page
-and injects markup into it, e.g. man page references are converted into
+\fIman\-k:\fR or \fIman\-l:\fR URLs. The protocol adapter then opens the man
+page and injects markup into it, e.g. man page references are converted into
 \fIman:\fR links.
 
 .SH OPTIONS
@@ -41,11 +41,22 @@ Following environment variables are used:
 
 .TP
 .B MANCHA_CHA
-If set, the contents of the variable are used instead of \fIcha\fR.
+If set, the contents of the variable are used instead of \fIcha\fR. (Note that
+the \fIcha\fR command is called through \fBsystem\fR(3), so you do not have to
+override it so long as \fIcha\fR is found in your \fBPATH\fR.)
 
 .TP
 .B MANCHA_MAN
 If set, the contents of the variable are used instead of \fI/usr/bin/man\fR.
+
+.TP
+.B MANCHA_APROPOS
+If set, the contents of the variable are used instead of \fI/usr/bin/man\fR.
+
+(This is not a typo; normally (except on FreeBSD), \fBmancha\fR assumes that
+\fBman\fR(1) is compatible with \fBapropos\fR(1) and accepts the \fI\-s\fR
+parameter. Overriding \fBMANCHA_MAN\fR therefore also overrides the command used
+for \fBman\-k\fR, so long as \fBMANCHA_APROPOS\fR is not set.)
 
 .SH SEE ALSO
 \fBman\fR(1), \fBcha\fR(1), \fBcha-localcgi\fR(5), \fBw3mman\fR(1)

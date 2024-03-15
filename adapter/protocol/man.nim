@@ -220,9 +220,9 @@ proc processManpage(file: File; header: string) =
   discard file.pclose()
 
 proc doMan(man, keyword, section: string) =
-  let sectionOpt = if section == "": "" else: " -s " & section
-  let cmd = "GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & sectionOpt & " " & keyword & " 2>&1"
+  let sectionOpt = if section == "": "" else: ' ' & section
+  let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
+    man & sectionOpt & ' ' & keyword & " 2>&1"
   let file = popen(cstring(cmd), "r")
   if file == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
@@ -236,8 +236,10 @@ proc doMan(man, keyword, section: string) =
 <pre>""")
 
 proc doLocal(man, path: string) =
-  let cmd = "GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & " -l " & path & " 2>&1"
+  # Note: we intentionally do not use -l, because it is not supported on
+  # various systems (at the very least FreeBSD, NetBSD).
+  let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
+    man & ' ' & path & " 2>&1"
   let file = popen(cstring(cmd), "r")
   if file == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
@@ -304,6 +306,16 @@ proc main() =
           man = s
           break notfound
       man = "/usr/bin/env man"
+  var apropos = getEnv("MANCHA_APROPOS")
+  if apropos == "":
+    # on most systems, man is compatible with apropos (using -s syntax for
+    # specifying sections).
+    # ...not on FreeBSD :( here we have -S and MANSECT for specifying man
+    # sections, and both are silently ignored when searching with -k. hooray.
+    when not defined(freebsd):
+      apropos = man
+    else:
+      apropos = "/usr/bin/apropos" # this is where it should be.
   let path = getEnv("MAPPED_URI_PATH")
   let scheme = getEnv("MAPPED_URI_SCHEME")
   if scheme == "man":
@@ -311,7 +323,7 @@ proc main() =
     doMan(man, keyword, section)
   elif scheme == "man-k":
     let (keyword, section) = parseSection(path)
-    doKeyword(man, keyword, section)
+    doKeyword(apropos, keyword, section)
   elif scheme == "man-l":
     doLocal(man, path)
   else:
