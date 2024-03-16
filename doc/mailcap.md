@@ -26,9 +26,6 @@ The default search path for mailcap files is:
 $HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
 ```
 
-When no mailcap files are found, Chawan simply uses the xdg-open command
-for all entries. Note: this will change once file downloading is implemented.
-
 ## Format
 
 Chawan tries to adhere to the format described in RFC 1524, with a few
