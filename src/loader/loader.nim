@@ -75,6 +75,7 @@ type
     lcAddClient
     lcLoad
     lcPassFd
+    lcRedirectToFile
     lcRemoveCachedItem
     lcRemoveClient
     lcResume
@@ -202,6 +203,30 @@ proc getOutputId(ctx: LoaderContext): int =
   result = ctx.outputNum
   inc ctx.outputNum
 
+proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
+    targetPath: string): bool =
+  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY, 0o600)
+  if ps == nil:
+    return false
+  if output.currentBuffer != nil:
+    let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
+    if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
+      ps.close()
+      return false
+  for buffer in output.buffers:
+    let n = ps.sendData(buffer)
+    if unlikely(n < buffer.len):
+      ps.close()
+      return false
+  if output.parent != nil:
+    output.parent.outputs.add(OutputHandle(
+      parent: output.parent,
+      ostream: ps,
+      istreamAtEnd: output.istreamAtEnd,
+      outputId: ctx.getOutputId()
+    ))
+  return true
+
 type AddCacheFileResult = tuple[outputId: int; cacheFile: string]
 
 proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
@@ -210,30 +235,13 @@ proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
     # may happen e.g. if client tries to cache a `cache:' URL
     return (output.parent.cacheId, "") #TODO can we get the file name somehow?
   let tmpf = getTempFile(ctx.config.tmpdir)
-  let ps = newPosixStream(tmpf, O_CREAT or O_WRONLY, 0o600)
-  if unlikely(ps == nil):
-    return (-1, "")
-  if output.currentBuffer != nil:
-    let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
-    if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
-      ps.close()
-      return (-1, "")
-  for buffer in output.buffers:
-    let n = ps.sendData(buffer)
-    if unlikely(n < buffer.len):
-      ps.close()
-      return (-1, "")
-  let cacheId = output.outputId
-  if output.parent != nil:
-    output.parent.cacheId = cacheId
-    output.parent.outputs.add(OutputHandle(
-      parent: output.parent,
-      ostream: ps,
-      istreamAtEnd: output.istreamAtEnd,
-      outputId: ctx.getOutputId()
-    ))
-  client.cacheMap.add(CachedItem(id: cacheId, path: tmpf, refc: 1))
-  return (cacheId, tmpf)
+  if ctx.redirectToFile(output, tmpf):
+    let cacheId = output.outputId
+    if output.parent != nil:
+      output.parent.cacheId = cacheId
+    client.cacheMap.add(CachedItem(id: cacheId, path: tmpf, refc: 1))
+    return (cacheId, tmpf)
+  return (-1, "")
 
 proc addFd(ctx: LoaderContext; handle: LoaderHandle) =
   let output = handle.output
@@ -493,6 +501,18 @@ proc addCacheFile(ctx: LoaderContext; stream: SocketStream) =
   stream.swrite(file)
   stream.close()
 
+proc redirectToFile(ctx: LoaderContext; stream: SocketStream) =
+  var outputId: int
+  var targetPath: string
+  stream.sread(outputId)
+  stream.sread(targetPath)
+  let output = ctx.findOutput(outputId)
+  var success = false
+  if output != nil:
+    success = ctx.redirectToFile(output, targetPath)
+  stream.swrite(success)
+  stream.close()
+
 proc shareCachedItem(ctx: LoaderContext; stream: SocketStream) =
   # share a cached file with another buffer. this is for newBufferFrom
   # (i.e. view source)
@@ -606,6 +626,9 @@ proc acceptConnection(ctx: LoaderContext) =
     of lcPassFd:
       privileged_command
       ctx.passFd(stream)
+    of lcRedirectToFile:
+      privileged_command
+      ctx.redirectToFile(stream)
     of lcRemoveCachedItem:
       ctx.removeCachedItem(stream, client)
     of lcLoad:
@@ -884,6 +907,17 @@ proc addCacheFile*(loader: FileLoader; outputId, targetPid: int):
   stream.sread(cacheFile)
   return (outputId, cacheFile)
 
+proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
+    bool =
+  let stream = loader.connect()
+  if stream == nil:
+    return false
+  stream.swrite(lcRedirectToFile)
+  stream.swrite(outputId)
+  stream.swrite(targetPath)
+  stream.flush()
+  stream.sread(result)
+
 const BufferSize = 4096
 
 proc handleHeaders(response: Response; request: Request; stream: SocketStream) =
@@ -994,11 +1028,11 @@ proc passFd*(loader: FileLoader; id: string; fd: FileHandle) =
     stream.sendFileHandle(fd)
     stream.close()
 
-proc removeCachedItem*(loader: FileLoader; outputId: int) =
+proc removeCachedItem*(loader: FileLoader; cacheId: int) =
   let stream = loader.connect()
   if stream != nil:
     stream.swrite(lcRemoveCachedItem)
-    stream.swrite(outputId)
+    stream.swrite(cacheId)
     stream.close()
 
 proc addClient*(loader: FileLoader; key: ClientKey; pid: int;

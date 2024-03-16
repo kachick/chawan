@@ -53,8 +53,9 @@ import chagashi/charset
 
 type
   LineMode* = enum
-    NO_LINEMODE, LOCATION, USERNAME, PASSWORD, COMMAND, BUFFER, SEARCH_F,
-    SEARCH_B, ISEARCH_F, ISEARCH_B, GOTO_LINE
+    LOCATION, USERNAME, PASSWORD, COMMAND, BUFFER, SEARCH_F, SEARCH_B,
+    ISEARCH_F, ISEARCH_B, GOTO_LINE,
+    DOWNLOAD = "(Download) Save file to"
 
   # fdin is the original fd; fdout may be the same, or different if mailcap
   # is used.
@@ -79,6 +80,12 @@ type
     outputId: int
     status: uint16
 
+  LineData = ref object of RootObj
+
+  LineDataDownload = ref object of LineData
+    outputId: int
+    stream: Stream
+
   Pager* = ref object
     alertState: PagerAlertState
     alerts: seq[string]
@@ -98,6 +105,7 @@ type
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
+    lineData: LineData
     lineedit*: Option[LineEdit]
     linehist: array[LineMode, LineHistory]
     linemode: LineMode
@@ -206,19 +214,22 @@ proc searchPrev(pager: Pager, n = 1) {.jsfunc.} =
       pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
     pager.container.markPos()
 
-proc getLineHist(pager: Pager, mode: LineMode): LineHistory =
+proc getLineHist(pager: Pager; mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
     pager.linehist[mode] = newLineHistory()
   return pager.linehist[mode]
 
-proc setLineEdit(pager: Pager, prompt: string, mode: LineMode,
-    current = "", hide = false) =
+proc setLineEdit(pager: Pager; prompt: string; mode: LineMode; current = "";
+    hide = false) =
   let hist = pager.getLineHist(mode)
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
   let edit = readLine(prompt, pager.attrs.width, current, {}, hide, hist)
   pager.lineedit = some(edit)
   pager.linemode = mode
+
+proc setLineEdit(pager: Pager; mode: LineMode; current = "") =
+  pager.setLineEdit($mode, mode, current)
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = none(LineEdit)
@@ -1118,6 +1129,23 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       pager.isearchpromise = nil
   )
 
+proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
+  if pager.loader.redirectToFile(data.outputId, path):
+    pager.alert("Saving file to " & path)
+    pager.loader.resume(@[data.outputId])
+    data.stream.close()
+    pager.lineData = nil
+  else:
+    pager.ask("Failed to save to path " & path & ". Retry?").then(
+      proc(x: bool) =
+        if x:
+          pager.alert("Failed to save to path " & path)
+          pager.setLineEdit(DOWNLOAD, path)
+        else:
+          data.stream.close()
+          pager.lineData = nil
+    )
+
 proc updateReadLine*(pager: Pager) =
   let lineedit = pager.lineedit.get
   if pager.linemode in {ISEARCH_F, ISEARCH_B}:
@@ -1154,7 +1182,18 @@ proc updateReadLine*(pager: Pager) =
         pager.searchNext()
       of GOTO_LINE:
         pager.container.gotoLine(lineedit.news)
-      else: discard
+      of DOWNLOAD:
+        let data = LineDataDownload(pager.lineData)
+        if fileExists(lineedit.news):
+          pager.ask("Override file " & lineedit.news & "?").then(
+            proc(x: bool) =
+              if x:
+                pager.saveTo(data, lineedit.news)
+              else:
+                pager.setLineEdit(DOWNLOAD, lineedit.news)
+          )
+        pager.saveTo(data, lineedit.news)
+      of ISEARCH_F, ISEARCH_B: discard
     of CANCEL:
       case pager.linemode
       of USERNAME: pager.discardBuffer()
@@ -1163,7 +1202,11 @@ proc updateReadLine*(pager: Pager) =
         pager.discardBuffer()
       of BUFFER: pager.container.readCanceled()
       of COMMAND: pager.commandMode = false
+      of DOWNLOAD:
+        let data = LineDataDownload(pager.lineData)
+        data.stream.close()
       else: discard
+      pager.lineData = nil
   if lineedit.state in {LineEditState.CANCEL, LineEditState.FINISH}:
     if pager.lineedit.get == lineedit:
       pager.clearLineEdit()
@@ -1242,6 +1285,7 @@ type CheckMailcapResult = object
   ostreamOutputId: int
   connect: bool
   ishtml: bool
+  found: bool
 
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
@@ -1443,17 +1487,22 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
   if shortContentType == "text/html":
     # We support text/html natively, so it would make little sense to execute
     # mailcap filters for it.
-    return CheckMailcapResult(connect: true, fdout: stream.fd, ishtml: true)
+    return CheckMailcapResult(
+      connect: true,
+      fdout: stream.fd,
+      ishtml: true,
+      found: true
+    )
   if shortContentType == "text/plain":
     # text/plain could potentially be useful. Unfortunately, many mailcaps
     # include a text/plain entry with less by default, so it's probably better
     # to ignore this.
-    return CheckMailcapResult(connect: true, fdout: stream.fd)
+    return CheckMailcapResult(connect: true, fdout: stream.fd, found: true)
   #TODO callback for outpath or something
   let url = container.url
   let entry = pager.mailcap.getMailcapEntry(contentType, "", url)
   if entry == nil:
-    return CheckMailcapResult(connect: true, fdout: stream.fd)
+    return CheckMailcapResult(connect: true, fdout: stream.fd, found: false)
   let tmpdir = pager.tmpdir
   let ext = url.pathname.afterLast('.')
   let tempfile = getTempFile(tmpdir, ext)
@@ -1499,10 +1548,11 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
       connect: true,
       fdout: response.body.fd,
       ostreamOutputId: response.outputId,
-      ishtml: ishtml
+      ishtml: ishtml,
+      found: true
     )
   delEnv("MAILCAP_URL")
-  return CheckMailcapResult(connect: false, fdout: -1)
+  return CheckMailcapResult(connect: false, fdout: -1, found: true)
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
   pager.gotoURL(request, some(container.url), replace = container,
@@ -1554,6 +1604,19 @@ proc connected(pager: Pager; container: Container; response: Response) =
     container.contentType.get & ";charset=" & $container.charset
   let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
     realContentType)
+  if not mailcapRes.found:
+    pager.setLineEdit(DOWNLOAD,
+      pager.config.external.download_dir &
+      container.url.pathname.afterLast('/'))
+    pager.lineData = LineDataDownload(
+      outputId: response.outputId,
+      stream: istream
+    )
+    pager.deleteContainer(container)
+    pager.redraw = true
+    pager.refreshStatusMsg()
+    dec pager.numload
+    return
   if mailcapRes.connect:
     container.ishtml = mailcapRes.ishtml
     # buffer now actually exists; create a process for it

@@ -92,6 +92,7 @@ type
     mime_types* {.jsgetset.}: seq[ChaPath]
     cgi_dir* {.jsgetset.}: seq[ChaPath]
     urimethodmap* {.jsgetset.}: seq[ChaPath]
+    download_dir* {.jsgetset.}: string
     w3m_cgi_compat* {.jsgetset.}: bool
 
   InputConfig = object
@@ -364,13 +365,6 @@ proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
     cmd: ansiPath,
     flags: {HTMLOUTPUT}
   ))
-  if not found:
-    mailcap.add(MailcapEntry(
-      mt: "*",
-      subt: "*",
-      cmd: "xdg-open '%s'"
-    ))
-    return (mailcap, errs)
   return (mailcap, errs)
 
 # We try to source mime types declared in config.

@@ -220,7 +220,7 @@ the line number.</td>
 </tr>
 
 <tr>
-<td>cgi-dir</td>
+<td>urimethodmap</td>
 <td>array of paths</td>
 <td>Search path for <!-- MANOFF -->[urimethodmap](urimethodmap.md) files.<!-- MANON -->
 <!-- MANON urimethodmap files. (See **cha-urimethodmap**(5) for details.) MANOFF -->
@@ -235,6 +235,13 @@ the line number.</td>
 details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
 <!-- MANON **cha-localcgi**(5). MANOFF -->
 </td>
+</tr>
+
+<tr>
+<td>download-dir</td>
+<td>string</td>
+<td>Path to pre-fill for "Save to:" prompts. This is not validated, you can set
+it to whatever you find useful.</td>
 </tr>
 
 </table>
