@@ -1618,6 +1618,7 @@ type
     inlinespacing: LayoutUnit
     collapse: bool
     reflow: seq[bool]
+    space: AvailableSpace # space we got from parent
 
 proc buildTableCaption(lctx: LayoutState, builder: TableCaptionBoxBuilder,
     availableWidth, availableHeight: SizeConstraint): BlockBox =
@@ -1707,8 +1708,8 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
     let colspan = cellbuilder.computed{"-cha-colspan"}
     let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
     let computedWidth = cellbuilder.computed{"width"}
-    let cw = if (not computedWidth.auto) and computedWidth.unit != UNIT_PERC:
-      stretch(computedWidth.px(pctx.lctx, 0))
+    let cw = if not computedWidth.auto:
+      stretch(computedWidth.px(pctx.lctx, pctx.space.w))
     else:
       maxContent()
     #TODO specified table height should be distributed among rows.
@@ -1743,8 +1744,8 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
       # 4. neither of colwidth or cell width are fixed: take maximum
       if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
       if pctx.cols[i].wspecified:
-        if not computedWidth.auto and computedWidth.unit != UNIT_PERC:
-          let ww = computedWidth.px(pctx.lctx)
+        if not computedWidth.auto:
+          let ww = computedWidth.px(pctx.lctx, pctx.space.w)
           # A specified column already exists; we take the larger width.
           if ww > pctx.cols[i].width:
             pctx.cols[i].width = ww
@@ -1753,8 +1754,8 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
           if pctx.cols[i].width < w:
             wrapper.reflow = true
       else:
-        if not computedWidth.auto and computedWidth.unit != UNIT_PERC:
-          let ww = computedWidth.px(pctx.lctx)
+        if not computedWidth.auto:
+          let ww = computedWidth.px(pctx.lctx, pctx.space.w)
           # This is the first specified column. Replace colwidth with whatever
           # we have.
           ctx.reflow[i] = true
@@ -1764,18 +1765,6 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
           if pctx.cols[i].width < w:
             pctx.cols[i].width = w
             ctx.reflow[i] = true
-      if not computedWidth.auto and computedWidth.unit != UNIT_PERC:
-        let ww = computedWidth.px(pctx.lctx)
-        if pctx.cols[i].wspecified:
-          # A specified column already exists; we take the larger width.
-          if ww > pctx.cols[i].width:
-            pctx.cols[i].width = ww
-            ctx.reflow[i] = true
-        else:
-          # This is the first specified column. Replace colwidth with whatever
-          # we have.
-          pctx.cols[i].wspecified = true
-          pctx.cols[i].width = ww
       if pctx.cols[i].minwidth < minw:
         pctx.cols[i].minwidth = minw
         if pctx.cols[i].width < minw:
@@ -1805,7 +1794,7 @@ proc alignTableCell(cell: BlockBox, availableHeight, baseline: LayoutUnit) =
     cell.offset.y = baseline - cell.firstBaseline
 
 proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
-    builder: TableRowBoxBuilder, sizes: ResolvedSizes): BlockBox =
+    builder: TableRowBoxBuilder): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
   let row = BlockBox(
@@ -1945,21 +1934,20 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     inc i
   return avail
 
-func needsRedistribution(ctx: TableContext, computed: CSSComputedValues,
-    sizes: ResolvedSizes): bool =
-  case sizes.space.w.t
+func needsRedistribution(ctx: TableContext, computed: CSSComputedValues): bool =
+  case ctx.space.w.t
   of MIN_CONTENT, MAX_CONTENT:
     # bleh
     return false
   of STRETCH:
-    let u = sizes.space.w.u
+    let u = ctx.space.w.u
     return u > ctx.maxwidth or u < ctx.maxwidth
   of FIT_CONTENT:
-    let u = sizes.space.w.u
+    let u = ctx.space.w.u
     return u > ctx.maxwidth and not computed{"width"}.auto or u < ctx.maxwidth
 
-proc redistributeWidth(ctx: var TableContext, sizes: ResolvedSizes) =
-  var W = sizes.space.w.u
+proc redistributeWidth(ctx: var TableContext) =
+  var W = ctx.space.w.u
   # Remove inline spacing from distributable width.
   W -= ctx.cols.len * ctx.inlinespacing * 2
   var weight: float64
@@ -2006,7 +1994,7 @@ proc buildTableRows(ctx: TableContext, table: BlockBox, sizes: ResolvedSizes) =
     if roww.builder.computed{"visibility"} == VISIBILITY_COLLAPSE:
       continue
     y += ctx.blockspacing
-    let row = ctx.buildTableRow(roww, table, roww.builder, sizes)
+    let row = ctx.buildTableRow(roww, table, roww.builder)
     row.offset.y += y
     row.offset.x += sizes.padding.left
     row.size.w += sizes.padding.left
@@ -2017,8 +2005,7 @@ proc buildTableRows(ctx: TableContext, table: BlockBox, sizes: ResolvedSizes) =
     table.size.w = max(row.size.w, table.size.w)
   table.size.h = applySizeConstraint(y, sizes.space.h)
 
-proc addTableCaption(ctx: TableContext, table: BlockBox,
-    sizes: ResolvedSizes) =
+proc addTableCaption(ctx: TableContext, table: BlockBox) =
   let lctx = ctx.lctx
   case ctx.caption.computed{"caption-side"}
   of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
@@ -2049,20 +2036,20 @@ proc addTableCaption(ctx: TableContext, table: BlockBox,
 proc layoutTable(lctx: LayoutState, table: BlockBox, builder: TableBoxBuilder,
     sizes: ResolvedSizes) =
   let collapse = table.computed{"border-collapse"} == BORDER_COLLAPSE_COLLAPSE
-  var ctx = TableContext(lctx: lctx, collapse: collapse)
+  var ctx = TableContext(lctx: lctx, collapse: collapse, space: sizes.space)
   if not ctx.collapse:
     ctx.inlinespacing = table.computed{"border-spacing"}.a.px(lctx)
     ctx.blockspacing = table.computed{"border-spacing"}.b.px(lctx)
   ctx.preBuildTableRows(builder, table)
   ctx.reflow = newSeq[bool](ctx.cols.len)
-  if ctx.needsRedistribution(table.computed, sizes):
-    ctx.redistributeWidth(sizes)
+  if ctx.needsRedistribution(table.computed):
+    ctx.redistributeWidth()
   for col in ctx.cols:
     table.size.w += col.width
   ctx.reflowTableCells()
   ctx.buildTableRows(table, sizes)
   if ctx.caption != nil:
-    ctx.addTableCaption(table, sizes)
+    ctx.addTableCaption(table)
 
 proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
   case box.computed{"text-align"}
