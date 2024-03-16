@@ -643,8 +643,10 @@ proc inputLoop(client: Client) =
       client.command(client.pager.scommand)
       client.pager.scommand = ""
       client.handlePagerEvents()
-    if client.pager.container == nil:
+    if client.pager.container == nil and client.pager.lineedit.isNone:
       # No buffer to display.
+      client.pager.term.setCursor(0, client.pager.term.attrs.height - 1)
+      client.pager.term.anyKey("Hit any key to quit Chawan:")
       quit(1)
     client.pager.showAlerts()
     client.pager.draw()

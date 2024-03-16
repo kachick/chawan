@@ -63,7 +63,7 @@ type
     lmISearchF = "/"
     lmISearchB = "?"
     lmGotoLine = "Goto line: "
-    lmDownload = "(Download) Save file to"
+    lmDownload = "(Download) Save file to: "
 
   # fdin is the original fd; fdout may be the same, or different if mailcap
   # is used.
@@ -467,14 +467,14 @@ proc redraw(pager: Pager) {.jsfunc.} =
 
 proc draw*(pager: Pager) =
   let container = pager.container
-  if container == nil: return
   pager.term.hideCursor()
-  if pager.redraw:
-    pager.refreshDisplay()
-    pager.term.writeGrid(pager.display)
-  if container.select.open and container.select.redraw:
-    container.select.drawSelect(pager.display)
-    pager.term.writeGrid(pager.display)
+  if container != nil:
+    if pager.redraw:
+      pager.refreshDisplay()
+      pager.term.writeGrid(pager.display)
+    if container.select.open and container.select.redraw:
+      container.select.drawSelect(pager.display)
+      pager.term.writeGrid(pager.display)
   if pager.askpromise != nil or pager.askcharpromise != nil:
     discard
   elif pager.lineedit.isSome:
@@ -488,11 +488,12 @@ proc draw*(pager: Pager) =
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit.isSome:
     pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
-  elif container.select.open:
-    pager.term.setCursor(container.select.getCursorX(),
-      container.select.getCursorY())
-  else:
-    pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
+  elif container != nil:
+    if container.select.open:
+      pager.term.setCursor(container.select.getCursorX(),
+        container.select.getCursorY())
+    else:
+      pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
   pager.term.showCursor()
   pager.term.flush()
   pager.redraw = false
@@ -1144,7 +1145,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     data.stream.close()
     pager.lineData = nil
   else:
-    pager.ask("Failed to save to path " & path & ". Retry?").then(
+    pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
         if x:
           pager.setLineEdit(lmDownload, path)
@@ -1200,7 +1201,8 @@ proc updateReadLine*(pager: Pager) =
               else:
                 pager.setLineEdit(lmDownload, lineedit.news)
           )
-        pager.saveTo(data, lineedit.news)
+        else:
+          pager.saveTo(data, lineedit.news)
       of lmISearchF, lmISearchB: discard
     of lesCancel:
       case pager.linemode

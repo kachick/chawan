@@ -197,9 +197,9 @@ proc isatty*(f: File): bool =
 proc isatty*(term: Terminal): bool =
   term.infile != nil and term.infile.isatty() and term.outfile.isatty()
 
-proc anyKey*(term: Terminal) =
+proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
-    term.outfile.write("[Hit any key]")
+    term.outfile.write(term.clearEnd() & msg)
     discard term.infile.readChar()
 
 proc resetFormat(term: Terminal): string =
