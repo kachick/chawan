@@ -21,9 +21,9 @@ import html/event
 import html/formdata
 import html/xmlhttprequest
 import io/bufstream
+import io/bufwriter
 import io/posixstream
 import io/promise
-import io/serialize
 import io/socketstream
 import js/base64
 import js/console
@@ -489,7 +489,8 @@ proc acceptBuffers(client: Client) =
       pager.alert("Error: failed to set up buffer")
       continue
     let key = pager.addLoaderClient(container.process, container.loaderConfig)
-    stream.swrite(key)
+    stream.withWriter w:
+      w.swrite(key)
     let loader = pager.loader
     if item.fdin != -1:
       let outputId = item.istreamOutputId

@@ -24,6 +24,9 @@ method seek*(s: DynStream; off: int) {.base.} =
 method sclose*(s: DynStream) {.base.} =
   assert false
 
+method sflush*(s: DynStream) {.base.} =
+  discard
+
 proc recvData*(s: DynStream; buffer: var openArray[uint8]): int {.inline.} =
   return s.recvData(addr buffer[0], buffer.len)
 

@@ -5,6 +5,7 @@ import std/streams
 import std/tables
 
 import config/config
+import io/bufwriter
 import io/posixstream
 import io/serialize
 import io/serversocket
@@ -23,44 +24,44 @@ type
 
   ForkServer* = ref object
     istream: Stream
-    ostream: Stream
+    ostream: PosixStream
     estream*: PosixStream
 
   ForkServerContext = object
-    istream: Stream
-    ostream: Stream
+    istream: PosixStream
+    ostream: PosixStream
     children: seq[int]
     loaderPid: int
 
 proc newFileLoader*(forkserver: ForkServer; config: LoaderConfig): FileLoader =
-  forkserver.ostream.swrite(fcForkLoader)
-  forkserver.ostream.swrite(config)
-  forkserver.ostream.flush()
+  forkserver.ostream.withWriter w:
+    w.swrite(fcForkLoader)
+    w.swrite(config)
   var process: int
   forkserver.istream.sread(process)
   return FileLoader(process: process, clientPid: getCurrentProcessId())
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
-  forkserver.ostream.swrite(fcLoadConfig)
-  forkserver.ostream.swrite(config.getForkServerConfig())
-  forkserver.ostream.flush()
+  forkserver.ostream.withWriter w:
+    w.swrite(fcLoadConfig)
+    w.swrite(config.getForkServerConfig())
 
 proc removeChild*(forkserver: ForkServer, pid: int) =
-  forkserver.ostream.swrite(fcRemoveChild)
-  forkserver.ostream.swrite(pid)
-  forkserver.ostream.flush()
+  forkserver.ostream.withWriter w:
+    w.swrite(fcRemoveChild)
+    w.swrite(pid)
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     request: Request; attrs: WindowAttributes; ishtml: bool;
     charsetStack: seq[Charset]): int =
-  forkserver.ostream.swrite(fcForkBuffer)
-  forkserver.ostream.swrite(config)
-  forkserver.ostream.swrite(url)
-  forkserver.ostream.swrite(request)
-  forkserver.ostream.swrite(attrs)
-  forkserver.ostream.swrite(ishtml)
-  forkserver.ostream.swrite(charsetStack)
-  forkserver.ostream.flush()
+  forkserver.ostream.withWriter w:
+    w.swrite(fcForkBuffer)
+    w.swrite(config)
+    w.swrite(url)
+    w.swrite(request)
+    w.swrite(attrs)
+    w.swrite(ishtml)
+    w.swrite(charsetStack)
   var bufferPid: int
   forkserver.istream.sread(bufferPid)
   bufferPid
@@ -186,13 +187,16 @@ proc runForkServer() =
         if i != -1:
           ctx.children.del(i)
       of fcForkBuffer:
-        ctx.ostream.swrite(ctx.forkBuffer())
+        let r = ctx.forkBuffer()
+        ctx.ostream.withWriter w:
+          w.swrite(r)
       of fcForkLoader:
         assert ctx.loaderPid == 0
         var config: LoaderConfig
         ctx.istream.sread(config)
         let pid = ctx.forkLoader(config)
-        ctx.ostream.swrite(pid)
+        ctx.ostream.withWriter w:
+          w.swrite(pid)
         ctx.loaderPid = pid
         ctx.children.add(pid)
       of fcLoadConfig:
@@ -246,15 +250,13 @@ proc newForkServer*(): ForkServer =
     discard close(pipefd_in[0]) # close read
     discard close(pipefd_out[1]) # close write
     discard close(pipefd_err[1]) # close write
-    var writef, readf: File
-    if not open(writef, pipefd_in[1], fmWrite):
-      raise newException(Defect, "Failed to open output handle")
+    var readf: File
     if not open(readf, pipefd_out[0], fmRead):
       raise newException(Defect, "Failed to open input handle")
     let estream = newPosixStream(pipefd_err[0])
     estream.setBlocking(false)
     return ForkServer(
-      ostream: newFileStream(writef),
+      ostream: newPosixStream(pipefd_in[1]),
       istream: newFileStream(readf),
       estream: estream
     )

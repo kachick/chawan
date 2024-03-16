@@ -10,72 +10,53 @@ import types/formdata
 import types/url
 import types/opt
 
-proc swrite*(stream: Stream, n: SomeNumber)
 proc sread*(stream: Stream, n: var SomeNumber)
 func slen*(n: SomeNumber): int
 
-proc swrite*[T](stream: Stream, s: set[T])
 proc sread*[T](stream: Stream, s: var set[T])
 func slen*[T](s: set[T]): int
 
-proc swrite*[T: enum](stream: Stream, x: T)
 proc sread*[T: enum](stream: Stream, x: var T)
 func slen*[T: enum](x: T): int
 
-proc swrite*(stream: Stream, s: string)
 proc sread*(stream: Stream, s: var string)
 func slen*(s: string): int
 
-proc swrite*(stream: Stream, b: bool)
 proc sread*(stream: Stream, b: var bool)
 func slen*(b: bool): int
 
-proc swrite*(stream: Stream, url: URL)
 proc sread*(stream: Stream, url: var URL)
 func slen*(url: URL): int
 
-proc swrite*(stream: Stream, tup: tuple)
 proc sread*(stream: Stream, tup: var tuple)
 func slen*(tup: tuple): int
 
-proc swrite*[I, T](stream: Stream, a: array[I, T])
 proc sread*[I, T](stream: Stream, a: var array[I, T])
 func slen*[I, T](a: array[I, T]): int
 
-proc swrite*(stream: Stream, s: seq)
 proc sread*(stream: Stream, s: var seq)
 func slen*(s: seq): int
 
-proc swrite*[U, V](stream: Stream, t: Table[U, V])
 proc sread*[U, V](stream: Stream, t: var Table[U, V])
 func slen*[U, V](t: Table[U, V]): int
 
-proc swrite*(stream: Stream, obj: object)
 proc sread*(stream: Stream, obj: var object)
 func slen*(obj: object): int
 
-proc swrite*(stream: Stream, obj: ref object)
 proc sread*(stream: Stream, obj: var ref object)
 func slen*(obj: ref object): int
 
-proc swrite*(stream: Stream, part: FormDataEntry)
 proc sread*(stream: Stream, part: var FormDataEntry)
 func slen*(part: FormDataEntry): int
 
-proc swrite*(stream: Stream, blob: Blob)
 proc sread*(stream: Stream, blob: var Blob)
 func slen*(blob: Blob): int
 
-proc swrite*[T](stream: Stream, o: Option[T])
 proc sread*[T](stream: Stream, o: var Option[T])
 func slen*[T](o: Option[T]): int
 
-proc swrite*[T, E](stream: Stream, o: Result[T, E])
 proc sread*[T, E](stream: Stream, o: var Result[T, E])
 func slen*[T, E](o: Result[T, E]): int
-
-proc swrite*(stream: Stream, n: SomeNumber) =
-  stream.write(n)
 
 proc sread*(stream: Stream, n: var SomeNumber) =
   if stream.readData(addr n, sizeof(n)) < sizeof(n):
@@ -84,11 +65,6 @@ proc sread*(stream: Stream, n: var SomeNumber) =
 func slen*(n: SomeNumber): int =
   return sizeof(n)
 
-proc swrite*[T: enum](stream: Stream, x: T) =
-  static:
-    doAssert sizeof(int) >= sizeof(T)
-  stream.swrite(int(x))
-
 proc sread*[T: enum](stream: Stream, x: var T) =
   var i: int
   stream.sread(i)
@@ -96,11 +72,6 @@ proc sread*[T: enum](stream: Stream, x: var T) =
 
 func slen*[T: enum](x: T): int =
   return sizeof(int)
-
-proc swrite*[T](stream: Stream, s: set[T]) =
-  stream.swrite(s.card)
-  for e in s:
-    stream.swrite(e)
 
 proc sread*[T](stream: Stream, s: var set[T]) =
   var len: int
@@ -114,10 +85,6 @@ func slen*[T](s: set[T]): int =
   result = slen(s.card)
   for x in s:
     result += slen(x)
-
-proc swrite*(stream: Stream, s: string) =
-  stream.swrite(s.len)
-  stream.write(s)
 
 proc sread*(stream: Stream, s: var string) =
   var len: int
@@ -133,12 +100,6 @@ proc sread*(stream: Stream, s: var string) =
 func slen*(s: string): int =
   slen(s.len) + s.len
 
-proc swrite*(stream: Stream, b: bool) =
-  if b:
-    stream.swrite(1u8)
-  else:
-    stream.swrite(0u8)
-
 proc sread*(stream: Stream, b: var bool) =
   var n: uint8
   stream.sread(n)
@@ -150,12 +111,6 @@ proc sread*(stream: Stream, b: var bool) =
 
 func slen*(b: bool): int =
   return sizeof(uint8)
-
-proc swrite*(stream: Stream, url: URL) =
-  if url != nil:
-    stream.swrite(url.serialize())
-  else:
-    stream.swrite("")
 
 proc sread*(stream: Stream, url: var URL) =
   var s: string
@@ -174,10 +129,6 @@ func slen*(url: URL): int =
     return slen("")
   return slen(url.serialize())
 
-proc swrite*(stream: Stream, tup: tuple) =
-  for f in tup.fields:
-    stream.swrite(f)
-
 proc sread*(stream: Stream, tup: var tuple) =
   for f in tup.fields:
     stream.sread(f)
@@ -186,10 +137,6 @@ func slen*(tup: tuple): int =
   for f in tup.fields:
     result += slen(f)
 
-proc swrite*[I, T](stream: Stream; a: array[I, T]) =
-  for x in a:
-    stream.swrite(x)
-
 proc sread*[I, T](stream: Stream; a: var array[I, T]) =
   for x in a.mitems:
     stream.sread(x)
@@ -197,11 +144,6 @@ proc sread*[I, T](stream: Stream; a: var array[I, T]) =
 func slen*[I, T](a: array[I, T]): int =
   for x in a:
     result += slen(x)
-
-proc swrite*(stream: Stream, s: seq) =
-  stream.swrite(s.len)
-  for x in s:
-    stream.swrite(x)
 
 proc sread*(stream: Stream, s: var seq) =
   var len: int
@@ -214,12 +156,6 @@ func slen*(s: seq): int =
   result = slen(s.len)
   for x in s:
     result += slen(x)
-
-proc swrite*[U, V](stream: Stream, t: Table[U, V]) =
-  stream.swrite(t.len)
-  for k, v in t:
-    stream.swrite(k)
-    stream.swrite(v)
 
 proc sread*[U, V](stream: Stream, t: var Table[U, V]) =
   var len: int
@@ -237,10 +173,6 @@ func slen*[U, V](t: Table[U, V]): int =
     result += slen(k)
     result += slen(v)
 
-proc swrite*(stream: Stream, obj: object) =
-  for f in obj.fields:
-    stream.swrite(f)
-
 proc sread*(stream: Stream, obj: var object) =
   for f in obj.fields:
     stream.sread(f)
@@ -248,11 +180,6 @@ proc sread*(stream: Stream, obj: var object) =
 func slen*(obj: object): int =
   for f in obj.fields:
     result += slen(f)
-
-proc swrite*(stream: Stream, obj: ref object) =
-  stream.swrite(obj != nil)
-  if obj != nil:
-    stream.swrite(obj[])
 
 proc sread*(stream: Stream, obj: var ref object) =
   var n: bool
@@ -265,15 +192,6 @@ func slen*(obj: ref object): int =
   result = slen(obj != nil)
   if obj != nil:
     result += slen(obj[])
-
-proc swrite*(stream: Stream, part: FormDataEntry) =
-  stream.swrite(part.isstr)
-  stream.swrite(part.name)
-  stream.swrite(part.filename)
-  if part.isstr:
-    stream.swrite(part.svalue)
-  else:
-    stream.swrite(part.value)
 
 proc sread*(stream: Stream, part: var FormDataEntry) =
   var isstr: bool
@@ -297,16 +215,6 @@ func slen*(part: FormDataEntry): int =
     result += slen(part.svalue)
   else:
     result += slen(part.value)
-
-#TODO clean up this mess
-proc swrite*(stream: Stream, blob: Blob) =
-  stream.swrite(blob.isfile)
-  if blob.isfile:
-    stream.swrite(WebFile(blob).path)
-  else:
-    stream.swrite(blob.ctype)
-    stream.swrite(blob.size)
-    stream.writeData(blob.buffer, int(blob.size))
 
 proc sread*(stream: Stream, blob: var Blob) =
   var isfile: bool
@@ -336,11 +244,6 @@ func slen*(blob: Blob): int =
     result += slen(blob.size)
     result += int(blob.size) #TODO ??
 
-proc swrite*[T](stream: Stream, o: Option[T]) =
-  stream.swrite(o.isSome)
-  if o.isSome:
-    stream.swrite(o.get)
-
 proc sread*[T](stream: Stream, o: var Option[T]) =
   var x: bool
   stream.sread(x)
@@ -355,15 +258,6 @@ func slen*[T](o: Option[T]): int =
   result = slen(o.isSome)
   if o.isSome:
     result += slen(o.get)
-
-proc swrite*[T, E](stream: Stream, o: Result[T, E]) =
-  stream.swrite(o.isOk)
-  if o.isOk:
-    when not (T is void):
-      stream.swrite(o.get)
-  else:
-    when not (E is void):
-      stream.swrite(o.error)
 
 proc sread*[T, E](stream: Stream, o: var Result[T, E]) =
   var x: bool

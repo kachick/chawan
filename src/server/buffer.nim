@@ -27,6 +27,7 @@ import html/env
 import html/event
 import html/formdata as formdata_impl
 import io/bufstream
+import io/bufwriter
 import io/posixstream
 import io/promise
 import io/serialize
@@ -192,8 +193,9 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
   body.add(quote do:
-    `thisval`.stream.swrite(BufferCommand.`nup`)
-    `thisval`.stream.swrite(`thisval`.packetid)
+    var writer {.inject.} = `thisval`.stream.initWriter()
+    writer.swrite(BufferCommand.`nup`)
+    writer.swrite(`thisval`.packetid)
   )
   var params2: seq[NimNode]
   var retval2: NimNode
@@ -220,12 +222,14 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
     let s = params2[i][0] # sym e.g. url
     body.add(quote do:
       when typeof(`s`) is FileHandle:
-        #TODO flush or something
+        writer.flush()
         SocketStream(`thisval`.stream.source).sendFileHandle(`s`)
       else:
-        `thisval`.stream.swrite(`s`)
+        writer.swrite(`s`)
     )
   body.add(quote do:
+    writer.flush()
+    writer.deinit()
     let promise = `addfun`
     inc `thisval`.packetid
     return promise
@@ -1099,11 +1103,11 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
   if packetid == 0:
     return # no task to resolve (TODO this is kind of inefficient)
   let len = slen(buffer.tasks[cmd]) + slen(res)
-  buffer.pstream.swrite(len)
-  buffer.pstream.swrite(packetid)
+  buffer.pstream.withWriter w:
+    w.swrite(len)
+    w.swrite(packetid)
+    w.swrite(res)
   buffer.tasks[cmd] = 0
-  buffer.pstream.swrite(res)
-  buffer.pstream.flush()
 
 proc onload(buffer: Buffer) =
   case buffer.state
@@ -1664,7 +1668,8 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
             let `id` = `buffer`.pstream.recvFileHandle()
           else:
             var `id`: `typ`
-            `buffer`.pstream.sread(`id`))
+            `buffer`.pstream.sread(`id`)
+        )
         call.add(id)
     var rval: NimNode
     if v.params[0].kind == nnkEmpty:
@@ -1677,15 +1682,19 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
     if rval == nil:
       resolve.add(quote do:
         let len = slen(`packetid`)
-        buffer.pstream.swrite(len)
-        buffer.pstream.swrite(`packetid`)
+        block:
+          buffer.pstream.withWriter w:
+            w.swrite(len)
+            w.swrite(`packetid`)
       )
     else:
       resolve.add(quote do:
         let len = slen(`packetid`) + slen(`rval`)
-        buffer.pstream.swrite(len)
-        buffer.pstream.swrite(`packetid`)
-        buffer.pstream.swrite(`rval`)
+        block:
+          buffer.pstream.withWriter w:
+            w.swrite(len)
+            w.swrite(`packetid`)
+            w.swrite(`rval`)
       )
     if v.istask:
       let en = v.ename
@@ -1694,7 +1703,8 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
           buffer.savetask = false
           buffer.tasks[BufferCommand.`en`] = `packetid`
         else:
-          `resolve`)
+          `resolve`
+      )
     else:
       stmts.add(resolve)
     ofbranch.add(stmts)

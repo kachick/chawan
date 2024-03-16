@@ -3,8 +3,8 @@ import std/net
 import std/streams
 import std/tables
 
+import io/bufwriter
 import io/posixstream
-import io/serialize
 import loader/headers
 
 when defined(debug):
@@ -129,12 +129,13 @@ proc sendResult*(handle: LoaderHandle; res: int; msg = "") =
   let output = handle.output
   let blocking = output.ostream.blocking
   output.ostream.setBlocking(true)
-  output.ostream.swrite(res)
-  if res == 0: # success
-    assert msg == ""
-    output.ostream.swrite(output.outputId)
-  else: # error
-    output.ostream.swrite(msg)
+  output.ostream.withWriter w:
+    w.swrite(res)
+    if res == 0: # success
+      assert msg == ""
+      w.swrite(output.outputId)
+    else: # error
+      w.swrite(msg)
   output.ostream.setBlocking(blocking)
 
 proc sendStatus*(handle: LoaderHandle; status: uint16) =
@@ -142,7 +143,8 @@ proc sendStatus*(handle: LoaderHandle; status: uint16) =
   inc handle.rstate
   let blocking = handle.output.ostream.blocking
   handle.output.ostream.setBlocking(true)
-  handle.output.ostream.swrite(status)
+  handle.output.ostream.withWriter w:
+    w.swrite(status)
   handle.output.ostream.setBlocking(blocking)
 
 proc sendHeaders*(handle: LoaderHandle; headers: Headers) =
@@ -150,7 +152,8 @@ proc sendHeaders*(handle: LoaderHandle; headers: Headers) =
   inc handle.rstate
   let blocking = handle.output.ostream.blocking
   handle.output.ostream.setBlocking(true)
-  handle.output.ostream.swrite(headers)
+  handle.output.ostream.withWriter w:
+    w.swrite(headers)
   handle.output.ostream.setBlocking(blocking)
 
 proc recvData*(ps: PosixStream; buffer: LoaderBuffer): int {.inline.} =
