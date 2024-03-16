@@ -53,9 +53,17 @@ import chagashi/charset
 
 type
   LineMode* = enum
-    LOCATION, USERNAME, PASSWORD, COMMAND, BUFFER, SEARCH_F, SEARCH_B,
-    ISEARCH_F, ISEARCH_B, GOTO_LINE,
-    DOWNLOAD = "(Download) Save file to"
+    lmLocation = "URL: "
+    lmUsername = "Username: "
+    lmPassword = "Password: "
+    lmCommand = "COMMAND: "
+    lmBuffer = "(BUFFER) "
+    lmSearchF = "/"
+    lmSearchB = "?"
+    lmISearchF = "/"
+    lmISearchB = "?"
+    lmGotoLine = "Goto line: "
+    lmDownload = "(Download) Save file to"
 
   # fdin is the original fd; fdout may be the same, or different if mailcap
   # is used.
@@ -85,6 +93,10 @@ type
   LineDataDownload = ref object of LineData
     outputId: int
     stream: Stream
+
+  LineDataAuth = ref object of LineData
+    url: URL
+    username: string
 
   Pager* = ref object
     alertState: PagerAlertState
@@ -129,7 +141,6 @@ type
     tmpdir*: string
     unreg*: seq[Container]
     urimethodmap: URIMethodMap
-    username: string
 
 jsDestructor(Pager)
 
@@ -219,17 +230,15 @@ proc getLineHist(pager: Pager; mode: LineMode): LineHistory =
     pager.linehist[mode] = newLineHistory()
   return pager.linehist[mode]
 
-proc setLineEdit(pager: Pager; prompt: string; mode: LineMode; current = "";
-    hide = false) =
+proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
+    extraPrompt = "") =
   let hist = pager.getLineHist(mode)
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
-  let edit = readLine(prompt, pager.attrs.width, current, {}, hide, hist)
+  let edit = readLine($mode & extraPrompt, pager.attrs.width, current, {}, hide,
+    hist)
   pager.lineedit = some(edit)
   pager.linemode = mode
-
-proc setLineEdit(pager: Pager; mode: LineMode; current = "") =
-  pager.setLineEdit($mode, mode, current)
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = none(LineEdit)
@@ -237,27 +246,27 @@ proc clearLineEdit(pager: Pager) =
     pager.term.enableMouse()
 
 proc searchForward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit("/", SEARCH_F)
+  pager.setLineEdit(lmSearchF)
 
 proc searchBackward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit("?", SEARCH_B)
+  pager.setLineEdit(lmSearchB)
 
 proc isearchForward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.isearchpromise = newResolvedPromise()
   pager.container.markPos0()
-  pager.setLineEdit("/", ISEARCH_F)
+  pager.setLineEdit(lmISearchF)
 
 proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.pushCursorPos()
   pager.isearchpromise = newResolvedPromise()
   pager.container.markPos0()
-  pager.setLineEdit("?", ISEARCH_B)
+  pager.setLineEdit(lmISearchB)
 
 proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
   when s is string:
     if s == "":
-      pager.setLineEdit("Goto line: ", GOTO_LINE)
+      pager.setLineEdit(lmGotoLine)
       return
   pager.container.gotoLine(s)
 
@@ -1078,7 +1087,7 @@ proc readPipe*(pager: Pager, contentType: string, cs: Charset, fd: FileHandle,
   pager.addContainer(container)
 
 proc command(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit("COMMAND: ", COMMAND)
+  pager.setLineEdit(lmCommand)
 
 proc commandMode(pager: Pager, val: bool) {.jsfset.} =
   pager.commandMode = val
@@ -1101,13 +1110,13 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
   let lineedit = pager.lineedit.get
   pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
     case lineedit.state
-    of CANCEL:
+    of lesCancel:
       pager.iregex.err()
       pager.container.popCursorPos()
       pager.container.clearSearchHighlights()
       pager.redraw = true
       pager.isearchpromise = nil
-    of EDIT:
+    of lesEdit:
       if lineedit.news != "":
         pager.iregex = pager.compileSearchRegex(lineedit.news)
       pager.container.popCursorPos(true)
@@ -1115,13 +1124,13 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
       if pager.iregex.isSome:
         pager.container.hlon = true
         let wrap = pager.config.search.wrap
-        return if linemode == ISEARCH_F:
+        return if linemode == lmISearchF:
           pager.container.cursorNextMatch(pager.iregex.get, wrap, false, 1)
         else:
           pager.container.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
-    of FINISH:
+    of lesFinish:
       pager.regex = pager.checkRegex(pager.iregex)
-      pager.reverseSearch = linemode == ISEARCH_B
+      pager.reverseSearch = linemode == lmISearchB
       pager.container.markPos()
       pager.container.clearSearchHighlights()
       pager.container.sendCursorPosition()
@@ -1139,8 +1148,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.ask("Failed to save to path " & path & ". Retry?").then(
       proc(x: bool) =
         if x:
-          pager.alert("Failed to save to path " & path)
-          pager.setLineEdit(DOWNLOAD, path)
+          pager.setLineEdit(lmDownload, path)
         else:
           data.stream.close()
           pager.lineData = nil
@@ -1148,41 +1156,42 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
 
 proc updateReadLine*(pager: Pager) =
   let lineedit = pager.lineedit.get
-  if pager.linemode in {ISEARCH_F, ISEARCH_B}:
+  if pager.linemode in {lmISearchF, lmISearchB}:
     pager.updateReadLineISearch(pager.linemode)
   else:
     case lineedit.state
-    of EDIT: return
-    of FINISH:
+    of lesEdit: discard
+    of lesFinish:
       case pager.linemode
-      of LOCATION: pager.loadURL(lineedit.news)
-      of USERNAME:
-        pager.username = lineedit.news
-        pager.setLineEdit("Password: ", PASSWORD, hide = true)
-      of PASSWORD:
-        let url = newURL(pager.container.url)
-        url.username = pager.username
+      of lmLocation: pager.loadURL(lineedit.news)
+      of lmUsername:
+        LineDataAuth(pager.lineData).username = lineedit.news
+        pager.setLineEdit(lmPassword, hide = true)
+      of lmPassword:
+        let data = LineDataAuth(pager.lineData)
+        let url = newURL(data.url)
+        url.username = data.username
         url.password = lineedit.news
-        pager.username = ""
         pager.gotoURL(
           newRequest(url), some(pager.container.url),
           replace = pager.container,
           referrer = pager.container
         )
-      of COMMAND:
+        pager.lineData = nil
+      of lmCommand:
         pager.scommand = lineedit.news
         if pager.commandMode:
           pager.command()
-      of BUFFER: pager.container.readSuccess(lineedit.news)
-      of SEARCH_F, SEARCH_B:
+      of lmBuffer: pager.container.readSuccess(lineedit.news)
+      of lmSearchF, lmSearchB:
         if lineedit.news != "":
           let regex = pager.compileSearchRegex(lineedit.news)
           pager.regex = pager.checkRegex(regex)
-        pager.reverseSearch = pager.linemode == SEARCH_B
+        pager.reverseSearch = pager.linemode == lmSearchB
         pager.searchNext()
-      of GOTO_LINE:
+      of lmGotoLine:
         pager.container.gotoLine(lineedit.news)
-      of DOWNLOAD:
+      of lmDownload:
         let data = LineDataDownload(pager.lineData)
         if fileExists(lineedit.news):
           pager.ask("Override file " & lineedit.news & "?").then(
@@ -1190,26 +1199,23 @@ proc updateReadLine*(pager: Pager) =
               if x:
                 pager.saveTo(data, lineedit.news)
               else:
-                pager.setLineEdit(DOWNLOAD, lineedit.news)
+                pager.setLineEdit(lmDownload, lineedit.news)
           )
         pager.saveTo(data, lineedit.news)
-      of ISEARCH_F, ISEARCH_B: discard
-    of CANCEL:
+      of lmISearchF, lmISearchB: discard
+    of lesCancel:
       case pager.linemode
-      of USERNAME: pager.discardBuffer()
-      of PASSWORD:
-        pager.username = ""
-        pager.discardBuffer()
-      of BUFFER: pager.container.readCanceled()
-      of COMMAND: pager.commandMode = false
-      of DOWNLOAD:
+      of lmUsername, lmPassword: pager.discardBuffer()
+      of lmBuffer: pager.container.readCanceled()
+      of lmCommand: pager.commandMode = false
+      of lmDownload:
         let data = LineDataDownload(pager.lineData)
         data.stream.close()
       else: discard
       pager.lineData = nil
-  if lineedit.state in {LineEditState.CANCEL, LineEditState.FINISH}:
-    if pager.lineedit.get == lineedit:
-      pager.clearLineEdit()
+  if lineedit.state in {lesCancel, lesFinish} and
+      pager.lineedit.get == lineedit:
+    pager.clearLineEdit()
 
 # Same as load(s + '\n')
 proc loadSubmit(pager: Pager, s: string) {.jsfunc.} =
@@ -1221,9 +1227,9 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
     if s.len > 1:
       pager.loadURL(s[0..^2])
   elif s == "":
-    pager.setLineEdit("URL: ", LOCATION, $pager.container.url)
+    pager.setLineEdit(lmLocation, $pager.container.url)
   else:
-    pager.setLineEdit("URL: ", LOCATION, s)
+    pager.setLineEdit(lmLocation, s)
 
 # Go to specific URL (for JS)
 proc jsGotoURL(pager: Pager, s: string): JSResult[void] {.jsfunc: "gotoURL".} =
@@ -1276,9 +1282,6 @@ proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
   container.ishtml = contentType == "text/html"
   pager.addContainer(container)
   container.filter = BufferFilter(cmd: cmd)
-
-proc authorize(pager: Pager) =
-  pager.setLineEdit("Username: ", USERNAME)
 
 type CheckMailcapResult = object
   fdout: int
@@ -1594,7 +1597,8 @@ proc connected(pager: Pager; container: Container; response: Response) =
   let istream = response.body
   container.applyResponse(response, pager.mimeTypes)
   if response.status == 401: # unauthorized
-    pager.authorize()
+    pager.setLineEdit(lmUsername)
+    pager.lineData = LineDataAuth(url: container.url)
     istream.close()
     return
   let realContentType = if "Content-Type" in response.headers:
@@ -1605,7 +1609,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
   let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
     realContentType)
   if not mailcapRes.found:
-    pager.setLineEdit(DOWNLOAD,
+    pager.setLineEdit(lmDownload,
       pager.config.external.download_dir &
       container.url.pathname.afterLast('/'))
     pager.lineData = LineDataDownload(
@@ -1723,7 +1727,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
         pager.term.clearCanvas()
   of cetReadLine:
     if container == pager.container:
-      pager.setLineEdit("(BUFFER) " & event.prompt, BUFFER, event.value, hide = event.password)
+      pager.setLineEdit(lmBuffer, event.value, hide = event.password,
+        extraPrompt = event.prompt)
   of cetReadArea:
     if container == pager.container:
       var s = event.tvalue

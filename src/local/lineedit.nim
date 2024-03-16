@@ -15,7 +15,7 @@ import chagashi/decoder
 
 type
   LineEditState* = enum
-    EDIT, FINISH, CANCEL
+    lesEdit, lesFinish, lesCancel
 
   LineHistory* = ref object
     lines: seq[string]
@@ -137,12 +137,12 @@ proc insertCharseq(edit: LineEdit, s: string) =
   edit.invalid = true
 
 proc cancel(edit: LineEdit) {.jsfunc.} =
-  edit.state = CANCEL
+  edit.state = lesCancel
 
 proc submit(edit: LineEdit) {.jsfunc.} =
   if edit.hist.lines.len == 0 or edit.news != edit.hist.lines[^1]:
     edit.hist.lines.add(edit.news)
-  edit.state = FINISH
+  edit.state = lesFinish
 
 proc backspace(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
