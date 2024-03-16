@@ -861,7 +861,7 @@ proc resume*(loader: FileLoader; fds: seq[int]) =
   stream.close()
 
 proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
-  let stream = loader.connect()
+  let stream = loader.connect(buffered = false)
   stream.swrite(lcTee)
   stream.swrite(sourceId)
   stream.swrite(targetPid)
@@ -877,6 +877,7 @@ proc addCacheFile*(loader: FileLoader; outputId, targetPid: int):
   stream.swrite(lcAddCacheFile)
   stream.swrite(outputId)
   stream.swrite(targetPid)
+  stream.flush()
   var outputId: int
   var cacheFile: string
   stream.sread(outputId)
@@ -983,6 +984,7 @@ proc shareCachedItem*(loader: FileLoader; id, targetPid: int) =
     stream.swrite(loader.clientPid)
     stream.swrite(targetPid)
     stream.swrite(id)
+    stream.close()
 
 proc passFd*(loader: FileLoader; id: string; fd: FileHandle) =
   let stream = loader.connect(buffered = false)
@@ -1006,6 +1008,7 @@ proc addClient*(loader: FileLoader; key: ClientKey; pid: int;
   stream.swrite(key)
   stream.swrite(pid)
   stream.swrite(config)
+  stream.flush()
   stream.sread(result)
   stream.close()
 
