@@ -1412,7 +1412,8 @@ proc applyResponse*(container: Container; response: Response;
   if container.contentType.isNone:
     var contentType = response.getContentType()
     if contentType == "application/octet-stream":
-      contentType = mimeTypes.guessContentType(container.url.pathname)
+      contentType = mimeTypes.guessContentType(container.url.pathname,
+        "text/plain")
     container.contentType = some(contentType)
   # setup charsets:
   # * override charset

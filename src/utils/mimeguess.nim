@@ -8,7 +8,8 @@ const DefaultGuess* = block:
   let ss = newStringStream(staticRead"res/mime.types")
   parseMimeTypes(ss)
 
-func guessContentType*(mimeTypes: MimeTypes; path: string): string =
+func guessContentType*(mimeTypes: MimeTypes; path: string;
+    fallback = "application/octet-stream"): string =
   var n = 0
   for i in countdown(path.high, 0):
     if path[i] == '/':
@@ -20,7 +21,7 @@ func guessContentType*(mimeTypes: MimeTypes; path: string): string =
     let ext = path.substr(n + 1)
     if ext in mimeTypes:
       return mimeTypes[ext]
-  return "application/octet-stream"
+  return fallback
 
 const JavaScriptTypes = [
   "application/ecmascript",
