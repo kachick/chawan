@@ -21,8 +21,8 @@
 TEXT=$(printf '%s\n' "$QUERY_STRING" | "$CHA_LIBEXEC_DIR"/urldec)
 
 # Write a Content-Type HTTP header. The `trans' command outputs plain text,
-# so we use text/plain.
-printf 'Content-Type: text/plain\n'
+# but with ANSI escape codes, so we use text/x-ansi.
+printf 'Content-Type: text/x-ansi\n'
 
 # We must write a newline here, so Chawan knows that all headers have been
 # written and incoming data from now on belongs to the body.
