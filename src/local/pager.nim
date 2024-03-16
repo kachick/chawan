@@ -728,6 +728,7 @@ proc deleteContainer(pager: Pager; container: Container) =
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
+  var setTarget: Container = nil
   if container.parent != nil:
     let parent = container.parent
     let n = parent.children.find(container)
@@ -737,29 +738,27 @@ proc deleteContainer(pager: Pager; container: Container) =
       child.parent = container.parent
       parent.children.insert(child, n + 1)
     parent.children.delete(n)
-    if container == pager.container:
-      if n == 0:
-        pager.setContainer(parent)
-      else:
-        pager.setContainer(parent.children[n - 1])
+    if n == 0:
+      setTarget = parent
+    else:
+      setTarget = parent.children[n - 1]
   elif container.children.len > 0:
     let parent = container.children[0]
     parent.parent = nil
     for i in 1..container.children.high:
       container.children[i].parent = parent
       parent.children.add(container.children[i])
-    if container == pager.container:
-      pager.setContainer(parent)
+    setTarget = parent
   else:
     for child in container.children:
       child.parent = nil
-    if container == pager.container:
-      pager.setContainer(nil)
   container.parent = nil
   container.children.setLen(0)
   if container.replace != nil:
     pager.replace(container, container.replace)
     container.replace = nil
+  elif pager.container == container:
+    pager.setContainer(setTarget)
   pager.unreg.add(container)
   if container.process != -1:
     pager.forkserver.removeChild(container.process)
