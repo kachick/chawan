@@ -1278,7 +1278,8 @@ proc externInto(pager: Pager, cmd, ins: string): bool {.jsfunc.} =
 proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
     contentType = opt(string)) {.jsfunc.} =
   let fromc = if c != nil: c else: pager.container
-  let contentType = contentType.get(pager.container.contentType.get(""))
+  let fallback = pager.container.contentType.get("text/plain")
+  let contentType = contentType.get(fallback)
   let container = pager.newContainerFrom(fromc, contentType)
   container.ishtml = contentType == "text/html"
   pager.addContainer(container)
@@ -1469,7 +1470,8 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
     connect: true,
     fdout: response.body.fd,
     ostreamOutputId: response.outputId,
-    ishtml: ishtml
+    ishtml: ishtml,
+    found: true
   )
 
 # Search for a mailcap entry, and if found, execute the specified command
