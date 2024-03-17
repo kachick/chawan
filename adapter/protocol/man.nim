@@ -98,27 +98,39 @@ iterator myCaptures(captures: var seq[RegexCapture]; target: int;
       cap.e += offset
       yield cap
 
-proc processManpage(file: File; header, keyword: string) =
-  var line: string
-  # The "right thing" would be to check for the error code and output error
-  # messages accordingly. Unfortunately that would prevent us from streaming
-  # the output, so what we do instead is:
-  # * read first line
-  # * if EOF, probably an error, print it as an error
-  # * if not EOF, probably not an error, print it as a document
-  # This is somewhat broken at least with mandoc, because it sometimes outputs
-  # more than one error message (e.g. with man -l directory). But it's still
-  # better than losing streaming completely.
-  if not file.readLine(line) or file.endOfFile():
+proc readErrorMsg(efile: File; line: var string): string =
+  var msg = ""
+  while true:
     # try to get the error message into an acceptable format
     if line.startsWith("man: "):
       line.delete(0..4)
     line = line.toLower().strip().replaceControls()
     if line.len > 0 and line[^1] == '.':
       line.setLen(line.high)
-    stdout.write("Cha-Control: ConnectionError 4 " & line)
-    discard file.pclose() # not much we can do with the exit code, so discard
-    return
+    if msg != "":
+      msg &= ' '
+    msg &= line
+    if not efile.readLine(line):
+      break
+  return msg
+
+proc processManpage(ofile, efile: File; header, keyword: string) =
+  var line: string
+  # The "right thing" would be to check for the error code and output error
+  # messages accordingly. Unfortunately that would prevent us from streaming
+  # the output, so what we do instead is:
+  # * read first line
+  # * if EOF, probably an error; read all of stderr and print it
+  # * if not EOF, probably not an error; print stdout as a document and ignore
+  #   stderr
+  # This may break in some edge cases, e.g. if man writes a long error
+  # message to stdout. But it's much better (faster) than not streaming the
+  # output.
+  if not ofile.readLine(line) or ofile.endOfFile():
+    stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
+    ofile.close()
+    efile.close()
+    quit(1)
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
@@ -129,7 +141,7 @@ proc processManpage(file: File; header, keyword: string) =
     let r = s.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UTF16})
     if r.isNone:
       stdout.write(s & ": " & r.error)
-      return
+      quit(1)
     r.get
   # regexes partially from w3mman2html
   let linkRe = re"(https?|ftp)://[\w/~.-]+"
@@ -146,7 +158,7 @@ proc processManpage(file: File; header, keyword: string) =
     while i > 0 and p[i] == '/':
       dec i
     paths.add(p.substr(0, i) & "/")
-  while file.readLine(line):
+  while ofile.readLine(line):
     if line == "":
       if wasBlank:
         continue
@@ -224,20 +236,51 @@ proc processManpage(file: File; header, keyword: string) =
           line[manCap.s..<manCap.e] = link
           offset += link.len - (manCap.e - manCap.s)
     stdout.write(line & '\n')
-  discard file.pclose()
+  ofile.close()
+  efile.close()
+
+proc myOpen(cmd: string): tuple[ofile, efile: File] =
+  var opipe = default(array[2, cint])
+  var epipe = default(array[2, cint])
+  if pipe(opipe) == -1 or pipe(epipe) == -1:
+    return (nil, nil)
+  case fork()
+  of -1: # fail
+    return (nil, nil)
+  of 0: # child
+    discard close(opipe[0])
+    discard close(epipe[0])
+    discard dup2(opipe[1], stdout.getFileHandle())
+    discard dup2(epipe[1], stderr.getFileHandle())
+    discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+    exitnow(1)
+  else: # parent
+    var ofile: File = nil
+    var efile: File = nil
+    discard close(opipe[1])
+    discard close(epipe[1])
+    if not ofile.open(FileHandle(opipe[0])):
+      discard close(opipe[0])
+      discard close(epipe[0])
+      return (nil, nil)
+    if not efile.open(FileHandle(epipe[0])):
+      ofile.close()
+      discard close(epipe[0])
+      return (nil, nil)
+    return (ofile, efile)
 
 proc doMan(man, keyword, section: string) =
   let sectionOpt = if section == "": "" else: ' ' & section
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & sectionOpt & ' ' & keyword & " 2>&1"
-  let file = popen(cstring(cmd), "r")
-  if file == nil:
+    man & sectionOpt & ' ' & keyword
+  let (ofile, efile) = myOpen(cmd)
+  if ofile == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
-    return
+    quit(1)
   var manword = keyword
   if section != "":
     manword &= '(' & section & ')'
-  file.processManpage(header = """Content-Type: text/html
+  ofile.processManpage(efile, header = """Content-Type: text/html
 
 <title>man """ & manword & """</title>
 <pre>""", keyword = keyword)
@@ -246,34 +289,41 @@ proc doLocal(man, path: string) =
   # Note: we intentionally do not use -l, because it is not supported on
   # various systems (at the very least FreeBSD, NetBSD).
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & ' ' & path & " 2>&1"
-  let file = popen(cstring(cmd), "r")
-  if file == nil:
+    man & ' ' & path
+  let (ofile, efile) = myOpen(cmd)
+  if ofile == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
-    return
-  file.processManpage(header = """Content-Type: text/html
+    quit(1)
+  ofile.processManpage(efile, header = """Content-Type: text/html
 
 <title>man -l """ & path & """</title>
 <pre>""", keyword = path.afterLast('/').until('.'))
 
 proc doKeyword(man, keyword, section: string) =
   let sectionOpt = if section == "": "" else: " -s " & section
-  let cmd = man & sectionOpt & " -k " & keyword & " 2>/dev/null"
-  let file = popen(cstring(cmd), "r")
-  if file == nil:
+  let cmd = man & sectionOpt & " -k " & keyword
+  let (ofile, efile) = myOpen(cmd)
+  if ofile == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
-    return
+    quit(1)
+  var line: string
+  if not ofile.readLine(line) or ofile.endOfFile():
+    stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
+    ofile.close()
+    efile.close()
+    quit(1)
   stdout.write("Content-Type: text/html\n\n")
   stdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
   stdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
   stdout.write("<ul>")
-  var line: string
   template die =
     stdout.write("Error parsing line! " & line)
-    return
-  while file.readLine(line):
+    quit(1)
+  while true:
     if line.len == 0:
       stdout.write("\n")
+      if not ofile.readLine(line):
+        break
       continue
     # collect titles
     var titles: seq[string] = @[]
@@ -303,6 +353,10 @@ proc doKeyword(man, keyword, section: string) =
     s &= line.substr(i)
     s &= "\n"
     stdout.write(s)
+    if not ofile.readLine(line):
+      break
+  ofile.close()
+  efile.close()
 
 proc main() =
   var man = getEnv("MANCHA_MAN")
