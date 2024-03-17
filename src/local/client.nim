@@ -646,9 +646,20 @@ proc inputLoop(client: Client) =
       client.handlePagerEvents()
     if client.pager.container == nil and client.pager.lineedit.isNone:
       # No buffer to display.
-      client.pager.term.setCursor(0, client.pager.term.attrs.height - 1)
-      client.pager.term.anyKey("Hit any key to quit Chawan:")
-      quit(1)
+      if not client.pager.hasload:
+        # Failed to load every single URL the user passed us. We quit, and that
+        # will dump all alerts to stderr.
+        quit(1)
+      else:
+        # At least one connection has succeeded, but we have nothing to display.
+        # Normally, this means that the input stream has been redirected to a
+        # file or to an external program. That also means we can't just exit
+        # without potentially interrupting that stream.
+        #TODO: a better UI would be querying the number of ongoing streams in
+        # loader, and then asking for confirmation if there is at least one.
+        client.pager.term.setCursor(0, client.pager.term.attrs.height - 1)
+        client.pager.term.anyKey("Hit any key to quit Chawan:")
+        quit(0)
     client.pager.showAlerts()
     client.pager.draw()
 
@@ -725,7 +736,7 @@ proc addConsole(pager: Pager; interactive: bool; clearFun, showFun, hideFun:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("stream:console").get
     let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-      url, ConsoleTitle, canreinterpret = false)
+      url, ConsoleTitle, canReinterpret = false, userRequested = false)
     let err = newPosixStream(pipefd[1])
     err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
     let console = newConsole(err, clearFun, showFun, hideFun)
@@ -741,7 +752,7 @@ proc clearConsole(client: Client) =
   let url = newURL("stream:console").get
   let pager = client.pager
   let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-    url, ConsoleTitle, canreinterpret = false)
+    url, ConsoleTitle, canreinterpret = false, userRequested = false)
   replacement.replace = client.consoleWrapper.container
   pager.replace(client.consoleWrapper.container, replacement)
   client.consoleWrapper.container = replacement

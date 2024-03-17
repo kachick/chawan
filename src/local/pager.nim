@@ -114,6 +114,7 @@ type
     devRandom: PosixStream
     display: FixedGrid
     forkserver*: ForkServer
+    hasload*: bool # has a page been successfully loaded since startup?
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
@@ -125,7 +126,7 @@ type
     mailcap: Mailcap
     mimeTypes: MimeTypes
     notnum*: bool # has a non-numeric character been input already?
-    numload*: int
+    numload*: int # number of pages currently being loaded
     omnirules: seq[OmniRule]
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
@@ -542,9 +543,9 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; title = "";
-    redirectDepth = 0; canreinterpret = true; contentType = none(string);
+    redirectDepth = 0; canReinterpret = true; contentType = none(string);
     charsetStack: seq[Charset] = @[]; url = request.url; cacheId = -1;
-    cacheFile = ""): Container =
+    cacheFile = ""; userRequested = true): Container =
   request.suspended = true
   if loaderConfig.cookieJar != nil:
     # loader stores cookie jars per client, but we have no client yet.
@@ -568,11 +569,12 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     pager.term.attrs,
     title,
     redirectDepth,
-    canreinterpret,
+    canReinterpret,
     contentType,
     charsetStack,
     cacheId,
-    cacheFile
+    cacheFile,
+    userRequested
   )
   pager.connectingContainers.add(ConnectingContainerItem(
     state: ccsBeforeResult,
@@ -834,7 +836,7 @@ template myExec(cmd: string) =
   exitnow(127)
 
 proc toggleSource(pager: Pager) {.jsfunc.} =
-  if not pager.container.canreinterpret:
+  if not pager.container.canReinterpret:
     return
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
@@ -1063,8 +1065,9 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
     if pager.container != prevc:
       pager.container.retry = urls
 
-proc readPipe0*(pager: Pager, contentType: string, cs: Charset,
-    fd: FileHandle, url: URL, title: string, canreinterpret: bool): Container =
+proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
+    fd: FileHandle; url: URL, title: string;
+    canReinterpret, userRequested: bool): Container =
   var url = url
   pager.loader.passFd(url.pathname, fd)
   safeClose(fd)
@@ -1075,14 +1078,16 @@ proc readPipe0*(pager: Pager, contentType: string, cs: Charset,
     loaderConfig,
     newRequest(url),
     title = title,
-    canreinterpret = canreinterpret,
-    contentType = some(contentType)
+    canReinterpret = canReinterpret,
+    contentType = some(contentType),
+    userRequested = userRequested
   )
 
 proc readPipe*(pager: Pager, contentType: string, cs: Charset, fd: FileHandle,
     title: string) =
   let url = newURL("stream:-").get
-  let container = pager.readPipe0(contentType, cs, fd, url, title, true)
+  let container = pager.readPipe0(contentType, cs, fd, url, title,
+    canReinterpret = true, userRequested = true)
   inc pager.numload
   pager.addContainer(container)
 
@@ -1604,6 +1609,11 @@ proc connected(pager: Pager; container: Container; response: Response) =
     pager.lineData = LineDataAuth(url: container.url)
     istream.close()
     return
+  # This forces client to ask for confirmation before quitting.
+  # (It checks a flag on container, because console buffers must not affect this
+  # variable.)
+  if container.userRequested:
+    pager.hasload = true
   let realContentType = if "Content-Type" in response.headers:
     response.headers["Content-Type"]
   else:

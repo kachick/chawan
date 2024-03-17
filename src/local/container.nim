@@ -137,7 +137,7 @@ type
     hasstart: bool
     redirectDepth*: int
     select*: Select
-    canreinterpret*: bool
+    canReinterpret*: bool
     cloned: bool
     currentSelection {.jsget.}: Highlight
     tmpJumpMark: PagePos
@@ -148,14 +148,16 @@ type
     bgcolor*: CellColor
     tailOnLoad*: bool
     cacheFile* {.jsget.}: string
+    userRequested*: bool
 
 jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: string;
-    redirectDepth: int; canreinterpret: bool; contentType: Option[string];
-    charsetStack: seq[Charset]; cacheId: int; cacheFile: string): Container =
+    redirectDepth: int; canReinterpret: bool; contentType: Option[string];
+    charsetStack: seq[Charset]; cacheId: int; cacheFile: string;
+    userRequested: bool): Container =
   return Container(
     url: url,
     request: request,
@@ -169,11 +171,12 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     pos: CursorPosition(
       setx: -1
     ),
-    canreinterpret: canreinterpret,
+    canReinterpret: canReinterpret,
     loadinfo: "Connecting to " & request.url.host & "...",
     cacheId: cacheId,
     cacheFile: cacheFile,
-    process: -1
+    process: -1,
+    userRequested: userRequested
   )
 
 func location(container: Container): URL {.jsfget.} =
