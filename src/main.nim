@@ -1,9 +1,5 @@
 import version
 
-when defined(posix):
-  from posix import signal, SIGCHLD, SIG_IGN
-  signal(SIGCHLD, SIG_IGN)
-
 import server/forkserver
 let forks = newForkServer()
 

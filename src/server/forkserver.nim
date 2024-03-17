@@ -179,6 +179,7 @@ proc runForkServer() =
     istream: newPosixStream(stdin.getFileHandle()),
     ostream: newPosixStream(stdout.getFileHandle())
   )
+  signal(SIGCHLD, SIG_IGN)
   while true:
     try:
       var cmd: ForkCommand
