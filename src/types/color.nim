@@ -517,14 +517,10 @@ proc toJS*(ctx: JSContext, rgb: RGBColor): JSValue =
   res.pushHex(rgb.b)
   return toJS(ctx, res)
 
-proc fromJS2*(ctx: JSContext, val: JSValue, o: var JSResult[RGBColor]) =
-  let s = fromJS[string](ctx, val)
-  if s.isSome:
-    o = parseLegacyColor(s.get)
-  else:
-    o.err(s.error)
+proc fromJSRGBColor*(ctx: JSContext, val: JSValue): JSResult[RGBColor] =
+  return parseLegacyColor(?fromJS[string](ctx, val))
 
-proc toJS*(ctx: JSContext, rgba: RGBAColor): JSValue =
+proc toJS*(ctx: JSContext; rgba: RGBAColor): JSValue =
   var res = "#"
   res.pushHex(rgba.r)
   res.pushHex(rgba.g)
@@ -532,22 +528,12 @@ proc toJS*(ctx: JSContext, rgba: RGBAColor): JSValue =
   res.pushHex(rgba.a)
   return toJS(ctx, res)
 
-proc fromJS2*(ctx: JSContext, val: JSValue, o: var JSResult[RGBAColor]) =
+proc fromJSRGBAColor*(ctx: JSContext; val: JSValue): JSResult[RGBAColor] =
   if JS_IsNumber(val):
     # as hex
-    let x = fromJS[uint32](ctx, val)
-    if x.isSome:
-      o.ok(RGBAColor(x.get))
-    else:
-      o.err(x.error)
-  else:
-    # parse
-    let s = fromJS[string](ctx, val)
-    if s.isSome:
-      let x = parseRGBAColor(s.get)
-      if x.isSome:
-        o.ok(x.get)
-      else:
-        o.err(newTypeError("Unrecognized color"))
-    else:
-      o.err(s.error)
+    return ok(RGBAColor(?fromJS[uint32](ctx, val)))
+  # parse
+  let x = parseRGBAColor(?fromJS[string](ctx, val))
+  if x.isSome:
+    return ok(x.get)
+  return errTypeError("Unrecognized color")

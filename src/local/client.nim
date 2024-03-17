@@ -774,8 +774,9 @@ proc dumpBuffers(client: Client) =
       quit(1)
   stdout.close()
 
-proc launchClient*(client: Client, pages: seq[string],
-    contentType: Option[string], cs: Charset, dump: bool) =
+proc launchClient*(client: Client; pages: seq[string];
+    contentType: Option[string]; cs: Charset; dump: bool;
+    warnings: seq[string]) =
   var infile: File
   var dump = dump
   if not dump:
@@ -794,6 +795,7 @@ proc launchClient*(client: Client, pages: seq[string],
   client.loader.unregisterFun = proc(fd: int) =
     selector.unregister(fd)
   client.pager.launchPager(infile, selector)
+  client.pager.alerts.add(warnings)
   let clearFun = proc() =
     client.clearConsole()
   let showFun = proc() =
@@ -881,17 +883,17 @@ proc addJSModules(client: Client, ctx: JSContext) =
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client
 
-proc newClient*(config: Config, forkserver: ForkServer): Client =
+proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext):
+    Client =
   setControlCHook(proc() {.noconv.} = quit(1))
-  let jsrt = newJSRuntime()
+  let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
-  let jsctx = jsrt.newJSContext()
   let pager = newPager(config, forkserver, jsctx)
   let loader = forkserver.newFileLoader(LoaderConfig(
     urimethodmap: config.getURIMethodMap(),
     w3mCGICompat: config.external.w3m_cgi_compat,
     cgiDir: pager.cgiDir,
-    tmpdir: pager.tmpdir
+    tmpdir: config.external.tmpdir
   ))
   pager.setLoader(loader)
   let client = Client(

@@ -176,31 +176,26 @@ type
     proxyUrl: URL
     mode: Opt[RequestMode]
 
-proc fromJS2*(ctx: JSContext, val: JSValue, res: var JSResult[BodyInit]) =
+proc fromJSBodyInit(ctx: JSContext, val: JSValue): JSResult[BodyInit] =
   if JS_IsUndefined(val) or JS_IsNull(val):
-    res.err(nil)
-    return
+    return err(nil)
   block formData:
     let x = fromJS[FormData](ctx, val)
     if x.isSome:
-      res.ok(BodyInit(t: BODY_INIT_FORM_DATA, formData: x.get))
-      return
+      return ok(BodyInit(t: BODY_INIT_FORM_DATA, formData: x.get))
   block blob:
     let x = fromJS[Blob](ctx, val)
     if x.isSome:
-      res.ok(BodyInit(t: BODY_INIT_BLOB, blob: x.get))
-      return
+      return ok(BodyInit(t: BODY_INIT_BLOB, blob: x.get))
   block searchParams:
     let x = fromJS[URLSearchParams](ctx, val)
     if x.isSome:
-      res.ok(BodyInit(t: BODY_INIT_URL_SEARCH_PARAMS, searchParams: x.get))
-      return
+      return ok(BodyInit(t: BODY_INIT_URL_SEARCH_PARAMS, searchParams: x.get))
   block str:
     let x = fromJS[string](ctx, val)
     if x.isSome:
-      res.ok(BodyInit(t: BODY_INIT_STRING, str: x.get))
-      return
-  res.err(newTypeError("Invalid body init type"))
+      return ok(BodyInit(t: BODY_INIT_STRING, str: x.get))
+  return err(newTypeError("Invalid body init type"))
 
 func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     init = none(RequestInit)): JSResult[Request] {.jsctor.} =

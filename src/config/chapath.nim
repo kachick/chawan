@@ -284,8 +284,8 @@ proc unquote(p: string): ChaPathResult[string] =
 proc toJS*(ctx: JSContext, p: ChaPath): JSValue =
   toJS(ctx, $p)
 
-proc fromJS2*(ctx: JSContext, val: JSValue, o: var JSResult[ChaPath]) =
-  o = cast[JSResult[ChaPath]](fromJS[string](ctx, val))
+proc fromJSChaPath*(ctx: JSContext; val: JSValue): JSResult[ChaPath] =
+  return cast[JSResult[ChaPath]](fromJS[string](ctx, val))
 
 proc unquote*(p: ChaPath): ChaPathResult[string] =
   let s = ?unquote(string(p))

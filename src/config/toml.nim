@@ -58,7 +58,7 @@ type
     key*: seq[string]
     value*: TomlValue
 
-  TomlTable = ref object of TomlNode
+  TomlTable* = ref object of TomlNode
     key: seq[string]
     nodes: seq[TomlNode]
     map: Table[string, TomlValue]

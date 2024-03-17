@@ -6,12 +6,11 @@ let forks = newForkServer()
 import std/options
 import std/os
 
-import config/chapath
 import config/config
 import io/serversocket
+import js/javascript
 import local/client
 import local/term
-import types/opt
 import utils/strwidth
 import utils/twtstr
 
@@ -178,9 +177,15 @@ Options:
       pages.add(param)
     inc i
 
-  let config = readConfig(configPath)
+  let jsrt = newJSRuntime()
+  let jsctx = jsrt.newJSContext()
+  let config = readConfig(configPath, jsctx)
+  var warnings = newSeq[string]()
   for opt in opts:
-    config.parseConfig(getCurrentDir(), opt, laxnames = true)
+    let res = config.parseConfig(getCurrentDir(), opt, laxnames = true)
+    if not res.success:
+      stderr.write(res.errorMsg)
+      quit(1)
   config.css.stylesheet &= stylesheet
 
   set_cjk_ambiguous(config.display.double_width_ambiguous)
@@ -200,16 +205,11 @@ Options:
       help(1)
 
   forks.loadForkServerConfig(config)
-  let tmpdir0 = config.external.tmpdir.unquote()
-  if tmpdir0.isErr:
-    stderr.write("Error unquoting external.tmpdir: " & tmpdir0.error)
-    stderr.write("Exiting...")
-    quit(1)
-  SocketDirectory = tmpdir0.get
+  SocketDirectory = config.external.tmpdir
 
-  let c = newClient(config, forks)
+  let c = newClient(config, forks, jsctx)
   try:
-    c.launchClient(pages, ctype, cs, dump)
+    c.launchClient(pages, ctype, cs, dump, warnings)
   except CatchableError:
     c.flushConsole()
     raise

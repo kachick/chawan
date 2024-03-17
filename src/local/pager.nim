@@ -12,7 +12,6 @@ when defined(posix):
   import std/posix
 
 import bindings/libregexp
-import config/chapath
 import config/config
 import config/mailcap
 import config/mimetypes
@@ -100,7 +99,7 @@ type
 
   Pager* = ref object
     alertState: PagerAlertState
-    alerts: seq[string]
+    alerts*: seq[string]
     askcharpromise*: Promise[string]
     askcursor: int
     askpromise*: Promise[bool]
@@ -127,7 +126,6 @@ type
     mimeTypes: MimeTypes
     notnum*: bool # has a non-numeric character been input already?
     numload*: int # number of pages currently being loaded
-    omnirules: seq[OmniRule]
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
     proxy: URL
@@ -136,10 +134,8 @@ type
     reverseSearch: bool
     scommand*: string
     selector*: Selector[int]
-    siteconf: seq[SiteConfig]
     statusgrid*: FixedGrid
     term*: Terminal
-    tmpdir*: string
     unreg*: seq[Container]
     urimethodmap: URIMethodMap
 
@@ -282,16 +278,9 @@ proc quit*(pager: Pager, code = 0) =
   pager.dumpAlerts()
 
 proc setPaths(pager: Pager): Err[string] =
-  let tmpdir0 = pager.config.external.tmpdir.unquote()
-  if tmpdir0.isErr:
-    return err("Error unquoting external.tmpdir: " & tmpdir0.error)
-  pager.tmpdir = tmpdir0.get
   var cgiDir: seq[string]
   for path in pager.config.external.cgi_dir:
-    let x = path.unquote()
-    if x.isErr:
-      return err("Error unquoting external.cgi-dir: " & x.error)
-    cgiDir.add(x.get)
+    cgiDir.add(path)
   pager.cgiDir = cgiDir
   return ok()
 
@@ -302,9 +291,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext): Pager =
     forkserver: forkserver,
     mailcap: mailcap,
     mimeTypes: config.getMimeTypes(),
-    omnirules: config.getOmniRules(ctx),
     proxy: config.getProxy(),
-    siteconf: config.getSiteConfig(ctx),
     term: newTerminal(stdout, config),
     urimethodmap: config.getURIMethodMap()
   )
@@ -889,7 +876,7 @@ func getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
 
 proc openInEditor(pager: Pager; input: var string): bool =
   try:
-    let tmpf = getTempFile(pager.tmpdir)
+    let tmpf = getTempFile(pager.config.external.tmpdir)
     if input != "":
       writeFile(tmpf, input)
     let cmd = pager.getEditorCommand(tmpf)
@@ -931,7 +918,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   var charsets = pager.config.encoding.document_charset
   var userstyle = pager.config.css.stylesheet
   var proxy = pager.proxy
-  for sc in pager.siteconf:
+  for sc in pager.config.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
@@ -1019,7 +1006,7 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     pager.container.findAnchor(request.url.anchor)
 
 proc omniRewrite(pager: Pager, s: string): string =
-  for rule in pager.omnirules:
+  for rule in pager.config.omnirule:
     if rule.match.match(s):
       let sub = rule.substitute_url(s)
       if sub.isSome:
@@ -1514,9 +1501,8 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
   let entry = pager.mailcap.getMailcapEntry(contentType, "", url)
   if entry == nil:
     return CheckMailcapResult(connect: true, fdout: stream.fd, found: false)
-  let tmpdir = pager.tmpdir
   let ext = url.pathname.afterLast('.')
-  let tempfile = getTempFile(tmpdir, ext)
+  let tempfile = getTempFile(pager.config.external.tmpdir, ext)
   let outpath = if entry.nametemplate != "":
     unquoteCommand(entry.nametemplate, contentType, tempfile, url)
   else:

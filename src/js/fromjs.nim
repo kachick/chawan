@@ -471,6 +471,11 @@ proc fromJSEmptyPromise(ctx: JSContext, val: JSValue): JSResult[EmptyPromise] =
 type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict|
   JSArrayBuffer|JSArrayBufferView|JSUint8Array))
 
+macro fromJS2(ctx: JSContext; val: JSValue; x: static string): untyped =
+  let id = ident("fromJS" & x)
+  return quote do:
+    `id`(`ctx`, `val`)
+
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
   when T is string:
     return fromJSString(ctx, val)
@@ -511,11 +516,8 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return fromJSArrayBuffer(ctx, val)
   elif T is JSArrayBufferView:
     return fromJSArrayBufferView(ctx, val)
-  elif compiles(fromJS2(ctx, val, result)):
-    fromJS2(ctx, val, result)
   else:
-    static:
-      error("Unrecognized type " & $T)
+    return fromJS2(ctx, val, $T)
 
 const JS_ATOM_TAG_INT = cuint(1u32 shl 31)
 

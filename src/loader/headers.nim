@@ -22,18 +22,15 @@ type
 
 jsDestructor(Headers)
 
-proc fromJS2*(ctx: JSContext, val: JSValue, res: var JSResult[HeadersInit]) =
+proc fromJSHeadersInit(ctx: JSContext; val: JSValue): JSResult[HeadersInit] =
   if JS_IsUndefined(val) or JS_IsNull(val):
-    res.err(nil)
-    return
+    return err(nil)
   if isSequence(ctx, val):
     let x = fromJS[seq[(string, string)]](ctx, val)
     if x.isSome:
-      res.ok(HeadersInit(t: HEADERS_INIT_SEQUENCE, s: x.get))
-  else:
-    let x = fromJS[Table[string, string]](ctx, val)
-    if x.isSome:
-      res.ok(HeadersInit(t: HEADERS_INIT_TABLE, tab: x.get))
+      return ok(HeadersInit(t: HEADERS_INIT_SEQUENCE, s: x.get))
+  let x = ?fromJS[Table[string, string]](ctx, val)
+  return ok(HeadersInit(t: HEADERS_INIT_TABLE, tab: x))
 
 proc fill*(headers: Headers, s: seq[(string, string)]) =
   for (k, v) in s:

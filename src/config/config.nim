@@ -8,6 +8,7 @@ import config/mailcap
 import config/mimetypes
 import config/toml
 import js/error
+import js/fromjs
 import js/javascript
 import js/propertyenumlist
 import js/regex
@@ -29,26 +30,10 @@ type
 
   FormatMode* = set[FormatFlags]
 
+  ChaPathResolved* = distinct string
+
   ActionMap = object
     t: Table[string, string]
-
-  StaticSiteConfig = object
-    url: Opt[string]
-    host: Opt[string]
-    rewrite_url: Opt[string]
-    cookie: Opt[bool]
-    third_party_cookie: seq[string]
-    share_cookie_jar: Opt[string]
-    referer_from*: Opt[bool]
-    scripting: Opt[bool]
-    document_charset: seq[Charset]
-    images: Opt[bool]
-    stylesheet: Opt[string]
-    proxy: Opt[string]
-
-  StaticOmniRule = object
-    match: string
-    substitute_url: string
 
   SiteConfig* = object
     url*: Opt[Regex]
@@ -86,12 +71,12 @@ type
     document_charset* {.jsgetset.}: seq[Charset]
 
   ExternalConfig = object
-    tmpdir* {.jsgetset.}: ChaPath
+    tmpdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
-    mailcap* {.jsgetset.}: seq[ChaPath]
-    mime_types* {.jsgetset.}: seq[ChaPath]
-    cgi_dir* {.jsgetset.}: seq[ChaPath]
-    urimethodmap* {.jsgetset.}: seq[ChaPath]
+    mailcap* {.jsgetset.}: seq[ChaPathResolved]
+    mime_types* {.jsgetset.}: seq[ChaPathResolved]
+    cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
+    urimethodmap* {.jsgetset.}: seq[ChaPathResolved]
     download_dir* {.jsgetset.}: string
     w3m_cgi_compat* {.jsgetset.}: bool
 
@@ -130,10 +115,10 @@ type
     force_pixels_per_column* {.jsgetset.}: bool
     force_pixels_per_line* {.jsgetset.}: bool
 
-  Config* = ref ConfigObj
-  ConfigObj* = object
+  Config* = ref object
+    jsctx: JSContext
     configdir {.jsget.}: string
-    `include` {.jsget.}: seq[ChaPath]
+    `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
     search* {.jsget.}: SearchConfig
     css* {.jsget.}: CSSConfig
@@ -143,8 +128,8 @@ type
     input* {.jsget.}: InputConfig
     display* {.jsget.}: DisplayConfig
     #TODO getset
-    siteconf: seq[StaticSiteConfig]
-    omnirule: seq[StaticOmniRule]
+    siteconf*: seq[SiteConfig]
+    omnirule*: seq[OmniRule]
     page* {.jsget.}: ActionMap
     line* {.jsget.}: ActionMap
 
@@ -162,102 +147,27 @@ jsDestructor(NetworkConfig)
 jsDestructor(DisplayConfig)
 jsDestructor(Config)
 
-proc `[]=`(a: var ActionMap, b, c: string) = a.t[b] = c
-proc `[]`*(a: ActionMap, b: string): string = a.t[b]
-proc contains*(a: ActionMap, b: string): bool = b in a.t
-proc getOrDefault(a: ActionMap, b: string): string = a.t.getOrDefault(b)
-proc hasKeyOrPut(a: var ActionMap, b, c: string): bool = a.t.hasKeyOrPut(b, c)
+converter toStr*(p: ChaPathResolved): string {.inline.} =
+  return string(p)
 
-func getRealKey(key: string): string
+proc fromJSChaPathResolved(ctx: JSContext; val: JSValue):
+    JSResult[ChaPathResolved] =
+  return cast[JSResult[ChaPathResolved]](fromJS[string](ctx, val))
 
-proc getter(a: ptr ActionMap, s: string): Opt[string] {.jsgetprop.} =
-  a.t.withValue(s, p):
-    return opt(p[])
+proc `[]=`(a: var ActionMap; b, c: string) =
+  a.t[b] = c
 
-proc setter(a: ptr ActionMap, k, v: string) {.jssetprop.} =
-  let k = getRealKey(k)
-  if k == "":
-    return
-  a[][k] = v
-  var teststr = k
-  teststr.setLen(teststr.high)
-  for i in countdown(k.high, 0):
-    if teststr notin a[]:
-      a[][teststr] = "client.feedNext()"
-    teststr.setLen(i)
+proc `[]`*(a: ActionMap; b: string): string =
+  a.t[b]
 
-proc delete(a: ptr ActionMap, k: string): bool {.jsdelprop.} =
-  let k = getRealKey(k)
-  let ina = k in a[]
-  a[].t.del(k)
-  return ina
+proc contains*(a: ActionMap; b: string): bool =
+  return b in a.t
 
-func names(ctx: JSContext, a: ptr ActionMap): JSPropertyEnumList
-    {.jspropnames.} =
-  let L = uint32(a[].t.len)
-  var list = newJSPropertyEnumList(ctx, L)
-  for key in a[].t.keys:
-    list.add(key)
-  return list
+proc getOrDefault(a: ActionMap; b: string): string =
+  return a.t.getOrDefault(b)
 
-proc bindPagerKey(config: Config, key, action: string) {.jsfunc.} =
-  (addr config.page).setter(key, action)
-
-proc bindLineKey(config: Config, key, action: string) {.jsfunc.} =
-  (addr config.line).setter(key, action)
-
-proc hasprop(a: ptr ActionMap, s: string): bool {.jshasprop.} =
-  return s in a[]
-
-func getProxy*(config: Config): URL =
-  if config.network.proxy.isSome:
-    let s = config.network.proxy.get
-    let x = parseURL(s)
-    if x.isSome:
-      return x.get
-    else:
-      raise newException(Defect, "Invalid proxy URL: " & s)
-  return nil
-
-func getDefaultHeaders*(config: Config): Headers =
-  return newHeaders(config.network.default_headers)
-
-proc getSiteConfig*(config: Config, jsctx: JSContext): seq[SiteConfig] =
-  for sc in config.siteconf:
-    var conf = SiteConfig(
-      cookie: sc.cookie,
-      scripting: sc.scripting,
-      share_cookie_jar: sc.share_cookie_jar,
-      referer_from: sc.referer_from,
-      document_charset: sc.document_charset,
-      images: sc.images
-    )
-    if sc.url.isSome:
-      conf.url = opt(compileMatchRegex(sc.url.get))
-    elif sc.host.isSome:
-      conf.host = opt(compileMatchRegex(sc.host.get))
-    for rule in sc.third_party_cookie:
-      conf.third_party_cookie.add(compileMatchRegex(rule).get)
-    if sc.rewrite_url.isSome:
-      let fun = jsctx.eval(sc.rewrite_url.get, "<siteconf>",
-        JS_EVAL_TYPE_GLOBAL)
-      conf.rewrite_url = getJSFunction[URL, URL](jsctx, fun)
-    if sc.proxy.isSome:
-      let x = parseURL(sc.proxy.get)
-      if x.isNone:
-        raise newException(Defect, "invalid URL: " & sc.proxy.get)
-      conf.proxy = opt(x.get)
-    result.add(conf)
-
-proc getOmniRules*(config: Config, jsctx: JSContext): seq[OmniRule] =
-  for rule in config.omnirule:
-    let re = compileMatchRegex(rule.match)
-    var conf = OmniRule(
-      match: re.get
-    )
-    let fun = jsctx.eval(rule.substitute_url, "<siteconf>", JS_EVAL_TYPE_GLOBAL)
-    conf.substitute_url = getJSFunction[string, string](jsctx, fun)
-    result.add(conf)
+proc hasKeyOrPut(a: var ActionMap; b, c: string): bool =
+  return a.t.hasKeyOrPut(b, c)
 
 func getRealKey(key: string): string =
   var realk: string
@@ -301,11 +211,59 @@ func getRealKey(key: string): string =
     realk &= '\\'
   return realk
 
-proc openFileExpand(dir: string, file: ChaPath): FileStream =
-  let file0 = file.unquote()
-  if file0.isNone:
-    raise newException(ValueError, file0.error)
-  let file = file0.get
+proc getter(a: ptr ActionMap; s: string): Opt[string] {.jsgetprop.} =
+  a.t.withValue(s, p):
+    return opt(p[])
+
+proc setter(a: ptr ActionMap; k, v: string) {.jssetprop.} =
+  let k = getRealKey(k)
+  if k == "":
+    return
+  a[][k] = v
+  var teststr = k
+  teststr.setLen(teststr.high)
+  for i in countdown(k.high, 0):
+    if teststr notin a[]:
+      a[][teststr] = "client.feedNext()"
+    teststr.setLen(i)
+
+proc delete(a: ptr ActionMap; k: string): bool {.jsdelprop.} =
+  let k = getRealKey(k)
+  let ina = k in a[]
+  a[].t.del(k)
+  return ina
+
+func names(ctx: JSContext, a: ptr ActionMap): JSPropertyEnumList
+    {.jspropnames.} =
+  let L = uint32(a[].t.len)
+  var list = newJSPropertyEnumList(ctx, L)
+  for key in a[].t.keys:
+    list.add(key)
+  return list
+
+proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
+  (addr config.page).setter(key, action)
+
+proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
+  (addr config.line).setter(key, action)
+
+proc hasprop(a: ptr ActionMap; s: string): bool {.jshasprop.} =
+  return s in a[]
+
+func getProxy*(config: Config): URL =
+  if config.network.proxy.isSome:
+    let s = config.network.proxy.get
+    let x = parseURL(s)
+    if x.isSome:
+      return x.get
+    else:
+      raise newException(ValueError, "Invalid proxy URL: " & s)
+  return nil
+
+func getDefaultHeaders*(config: Config): Headers =
+  return newHeaders(config.network.default_headers)
+
+proc openFileExpand(dir, file: string): FileStream =
   if file.len == 0:
     return nil
   if file[0] == '/':
@@ -314,7 +272,10 @@ proc openFileExpand(dir: string, file: ChaPath): FileStream =
     return newFileStream(dir / file)
 
 proc readUserStylesheet(dir, file: string): string =
-  let s = openFileExpand(dir, ChaPath(file))
+  let x = ChaPath(file).unquote()
+  if x.isNone:
+    raise newException(ValueError, x.error)
+  let s = openFileExpand(dir, x.get)
   if s != nil:
     result = s.readAll()
     s.close()
@@ -322,7 +283,7 @@ proc readUserStylesheet(dir, file: string): string =
 # The overall configuration will be obtained through the virtual concatenation
 # of several individual configuration files known as mailcap files.
 proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
-  let configDir = getConfigDir() / "chawan" #TODO store this in config?
+  let configDir = config.configdir
   template uq(s: string): string =
     ChaPath(s).unquote.get
   let gopherPath = "${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL".uq
@@ -375,7 +336,7 @@ proc getMimeTypes*(config: Config): MimeTypes =
   if config.external.mime_types.len == 0:
     return DefaultGuess
   var mimeTypes: MimeTypes
-  let configDir = getConfigDir() / "chawan" #TODO store this in config?
+  let configDir = config.configdir
   var found = false
   for p in config.external.mime_types:
     let f = openFileExpand(configDir, p)
@@ -389,7 +350,7 @@ proc getMimeTypes*(config: Config): MimeTypes =
 const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
 
 proc getURIMethodMap*(config: Config): URIMethodMap =
-  let configDir = getConfigDir() / "chawan" #TODO store this in config?
+  let configDir = config.configdir
   var urimethodmap: URIMethodMap
   for p in config.external.urimethodmap:
     let f = openFileExpand(configDir, p)
@@ -399,45 +360,62 @@ proc getURIMethodMap*(config: Config): URIMethodMap =
   return urimethodmap
 
 proc getForkServerConfig*(config: Config): ForkServerConfig =
-  let tmpdir0 = config.external.tmpdir.unquote()
-  if tmpdir0.isNone:
-    raise newException(ValueError, tmpdir0.error)
   return ForkServerConfig(
-    tmpdir: tmpdir0.get,
+    tmpdir: config.external.tmpdir,
     ambiguous_double: config.display.double_width_ambiguous
   )
 
-proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>",
-  laxnames = false)
-proc parseConfig*(config: Config, dir: string, s: string, name = "<input>",
-  laxnames = false)
+type ConfigParser = object
+  config: Config
+  dir: string
+  warnings: seq[string]
 
-proc loadConfig*(config: Config, s: string) {.jsfunc.} =
-  let s = if s.len > 0 and s[0] == '/':
-    s
-  else:
-    getCurrentDir() / s
-  if not fileExists(s): return
-  config.parseConfig(parentDir(s), newFileStream(s))
-
-proc parseConfigValue(x: var object, v: TomlValue, k: string)
-proc parseConfigValue(x: var bool, v: TomlValue, k: string)
-proc parseConfigValue(x: var string, v: TomlValue, k: string)
-proc parseConfigValue(x: var ChaPath, v: TomlValue, k: string)
-proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string)
-proc parseConfigValue(x: var Charset, v: TomlValue, k: string)
-proc parseConfigValue(x: var int32, v: TomlValue, k: string)
-proc parseConfigValue(x: var int64, v: TomlValue, k: string)
-proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string)
-proc parseConfigValue(x: var Opt[FormatMode], v: TomlValue, k: string)
-proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string)
-proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string)
-proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string)
-proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string)
-proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string)
-proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string)
-proc parseConfigValue[U, V](x: var Table[U, V], v: TomlValue, k: string)
-proc parseConfigValue[T](x: var set[T], v: TomlValue, k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var string; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var ChaPath; v: TomlValue;
+  k: string)
+proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var Opt[ColorMode];
+  v: TomlValue; k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var Opt[FormatMode];
+  v: TomlValue; k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
+  k: string)
+proc parseConfigValue[T](ctx: var ConfigParser; x: var Opt[T]; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
+  k: string)
+proc parseConfigValue[U; V](ctx: var ConfigParser; x: var Table[U, V];
+  v: TomlValue; k: string)
+proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
+  k: string)
+proc parseConfigValue[T](ctx: var ConfigParser; x: var proc(x: T): JSResult[T];
+  v: TomlValue; k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
+  v: TomlValue; k: string)
 
 proc typeCheck(v: TomlValue, vt: ValueType, k: string) =
   if v.vt != vt:
@@ -449,68 +427,84 @@ proc typeCheck(v: TomlValue, vt: set[ValueType], k: string) =
     raise newException(ValueError, "invalid type for key " & k &
       " (got " & $v.vt & ", expected " & $vt & ")")
 
-proc parseConfigValue(x: var object, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_TABLE, k)
   for fk, fv in x.fieldPairs:
-    let kebabk = snakeToKebabCase(fk)
-    if kebabk in v:
-      let kkk = if k != "":
-        k & "." & fk
-      else:
-        fk
-      parseConfigValue(fv, v[kebabk], kkk)
+    when typeof(fv) isnot JSContext:
+      let kebabk = snakeToKebabCase(fk)
+      if kebabk in v:
+        let kkk = if k != "":
+          k & "." & fk
+        else:
+          fk
+        ctx.parseConfigValue(fv, v[kebabk], kkk)
 
-proc parseConfigValue[U, V](x: var Table[U, V], v: TomlValue, k: string) =
+proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
+    v: TomlValue; k: string) =
   typeCheck(v, VALUE_TABLE, k)
   x.clear()
   for kk, vv in v:
     var y: V
     let kkk = k & "[" & kk & "]"
-    parseConfigValue(y, vv, kkk)
+    ctx.parseConfigValue(y, vv, kkk)
     x[kk] = y
 
-proc parseConfigValue(x: var bool, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_BOOLEAN, k)
   x = v.b
 
-proc parseConfigValue(x: var string, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var string; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_STRING, k)
   x = v.s
 
-proc parseConfigValue(x: var ChaPath, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var ChaPath;
+    v: TomlValue; k: string) =
   typeCheck(v, VALUE_STRING, k)
   x = ChaPath(v.s)
 
-proc parseConfigValue[T](x: var seq[T], v: TomlValue, k: string) =
+proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
+    k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt != VALUE_ARRAY:
     var y: T
-    parseConfigValue(y, v, k)
+    ctx.parseConfigValue(y, v, k)
     x = @[y]
   else:
     if not v.ad:
       x.setLen(0)
     for i in 0 ..< v.a.len:
       var y: T
-      parseConfigValue(y, v.a[i], k & "[" & $i & "]")
+      ctx.parseConfigValue(y, v.a[i], k & "[" & $i & "]")
       x.add(y)
 
-proc parseConfigValue(x: var Charset, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
+    k: string) =
+  typeCheck(v, {VALUE_TABLE}, k)
+  x = v.t
+
+proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_STRING, k)
   x = getCharset(v.s)
   if x == CHARSET_UNKNOWN:
     raise newException(ValueError, "unknown charset '" & v.s & "' for key " &
       k)
 
-proc parseConfigValue(x: var int32, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_INTEGER, k)
   x = int32(v.i)
 
-proc parseConfigValue(x: var int64, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_INTEGER, k)
   x = v.i
 
-proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var Opt[ColorMode];
+    v: TomlValue; k: string) =
   typeCheck(v, VALUE_STRING, k)
   case v.s
   of "auto": x.err()
@@ -522,16 +516,18 @@ proc parseConfigValue(x: var Opt[ColorMode], v: TomlValue, k: string) =
     raise newException(ValueError, "unknown color mode '" & v.s &
       "' for key " & k)
 
-proc parseConfigValue(x: var Opt[FormatMode], v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var Opt[FormatMode];
+    v: TomlValue; k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt == VALUE_STRING and v.s == "auto":
     x.err()
   else:
     var y: FormatMode
-    parseConfigValue(y, v, k)
+    ctx.parseConfigValue(y, v, k)
     x.ok(y)
 
-proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_ARRAY, k)
   for i in 0 ..< v.a.len:
     let kk = k & "[" & $i & "]"
@@ -549,7 +545,8 @@ proc parseConfigValue(x: var FormatMode, v: TomlValue, k: string) =
       raise newException(ValueError, "unknown format mode '" & vv.s &
         "' for key " & kk)
 
-proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_STRING, k)
   let c = parseRGBAColor(v.s)
   if c.isNone:
@@ -557,7 +554,8 @@ proc parseConfigValue(x: var RGBAColor, v: TomlValue, k: string) =
       "' for key " & k)
   x = c.get
 
-proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_STRING, k)
   let c = parseLegacyColor(v.s)
   if c.isNone:
@@ -565,15 +563,17 @@ proc parseConfigValue(x: var RGBColor, v: TomlValue, k: string) =
       "' for key " & k)
   x = c.get
 
-proc parseConfigValue[T](x: var Opt[T], v: TomlValue, k: string) =
+proc parseConfigValue[T](ctx: var ConfigParser; x: var Opt[T]; v: TomlValue;
+    k: string) =
   if v.vt == VALUE_STRING and v.s == "auto":
     x.err()
   else:
     var y: T
-    parseConfigValue(y, v, k)
+    ctx.parseConfigValue(y, v, k)
     x.ok(y)
 
-proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_TABLE, k)
   for kk, vv in v:
     typeCheck(vv, VALUE_STRING, k & "[" & kk & "]")
@@ -584,14 +584,16 @@ proc parseConfigValue(x: var ActionMap, v: TomlValue, k: string) =
       discard x.hasKeyOrPut(buf, "client.feedNext()")
     x[rk] = vv.s
 
-proc parseConfigValue[T: enum](x: var T, v: TomlValue, k: string) =
+proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_STRING, k)
   let e = strictParseEnum[T](v.s)
   if e.isNone:
     raise newException(ValueError, "invalid value '" & v.s & "' for key " & k)
   x = e.get
 
-proc parseConfigValue[T](x: var set[T], v: TomlValue, k: string) =
+proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
+    k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt == VALUE_STRING:
     var xx: T
@@ -605,10 +607,9 @@ proc parseConfigValue[T](x: var set[T], v: TomlValue, k: string) =
       xx.parseConfigValue(v.a[i], kk)
       x.incl(xx)
 
-var gdir {.compileTime.}: string
-proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
+    k: string) =
   typeCheck(v, VALUE_TABLE, k)
-  let dir = gdir
   for kk, vv in v:
     let kkk = if k != "":
       k & "." & kk
@@ -619,78 +620,128 @@ proc parseConfigValue(x: var CSSConfig, v: TomlValue, k: string) =
       typeCheck(vv, {VALUE_STRING, VALUE_ARRAY}, kkk)
       case vv.vt
       of VALUE_STRING:
-        x.stylesheet &= readUserStylesheet(dir, vv.s)
+        x.stylesheet &= readUserStylesheet(ctx.dir, vv.s)
       of VALUE_ARRAY:
         for child in vv.a:
-          x.stylesheet &= readUserStylesheet(dir, vv.s)
+          x.stylesheet &= readUserStylesheet(ctx.dir, vv.s)
       else: discard
     of "inline":
       typeCheck(vv, VALUE_STRING, kkk)
       x.stylesheet &= vv.s
 
-proc parseConfig(config: Config, dir: string, t: TomlValue) =
-  gdir = dir
-  parseConfigValue(config[], t, "")
-  while config.`include`.len > 0:
-    #TODO: warn about recursive includes
-    var includes = config.`include`
-    config.`include`.setLen(0)
-    for s in includes:
-      when nimvm:
-        config.parseConfig(dir, staticRead(dir / string(s)))
-      else:
-        config.parseConfig(dir, openFileExpand(dir, s))
-  config.configdir = dir
-  #TODO: for omnirule/siteconf, check if substitution rules are specified?
+proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
+    k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let y = compileMatchRegex(v.s)
+  if y.isNone:
+    raise newException(ValueError, "invalid regex " & k & " : " & y.error)
+  x = y.get
 
-proc parseConfig(config: Config, dir: string, stream: Stream, name = "<input>",
-    laxnames = false) =
+proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
+    k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let y = parseURL(v.s)
+  if y.isNone:
+    raise newException(ValueError, "invalid URL " & k)
+  x = y.get
+
+proc parseConfigValue[T](ctx: var ConfigParser; x: var proc(x: T): JSResult[T];
+    v: TomlValue; k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let fun = ctx.config.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
+  x = getJSFunction[T, T](ctx.config.jsctx, fun)
+
+proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
+    v: TomlValue; k: string) =
+  typeCheck(v, VALUE_STRING, k)
+  let y = ChaPath(v.s).unquote()
+  if y.isErr:
+    raise newException(ValueError, y.error)
+  x = ChaPathResolved(y.get)
+
+type ParseConfigResult* = object
+  success*: bool
+  warnings*: seq[string] #TODO actually use warnings
+  errorMsg*: string
+
+proc parseConfig(config: Config; dir: string; stream: Stream; name = "<input>";
+  laxnames = false): ParseConfigResult
+
+proc parseConfig(config: Config; dir: string; t: TomlValue): ParseConfigResult =
+  var ctx = ConfigParser(config: config, dir: dir)
+  config.configdir = dir
+  try:
+    var myRes = ParseConfigResult(success: true)
+    ctx.parseConfigValue(config[], t, "")
+    #TODO: for omnirule/siteconf, check if substitution rules are specified?
+    while config.`include`.len > 0:
+      #TODO: warn about recursive includes
+      var includes = config.`include`
+      config.`include`.setLen(0)
+      for s in includes:
+        let res = config.parseConfig(dir, openFileExpand(dir, s))
+        if not res.success:
+          return res
+        myRes.warnings.add(res.warnings)
+    myRes.warnings.add(ctx.warnings)
+    return myRes
+  except ValueError as e:
+    return ParseConfigResult(
+      success: false,
+      warnings: ctx.warnings,
+      errorMsg: e.msg
+    )
+
+proc parseConfig(config: Config; dir: string; stream: Stream; name = "<input>";
+    laxnames = false): ParseConfigResult =
   let toml = parseToml(stream, dir / name, laxnames)
   if toml.isOk:
-    config.parseConfig(dir, toml.get)
+    return config.parseConfig(dir, toml.get)
   else:
-    when nimvm:
-      echo "Fatal error: Failed to parse config"
-      echo toml.error
-    else:
-      stderr.write("Fatal error: Failed to parse config\n")
-      stderr.write(toml.error & '\n')
-    quit(1)
+    return ParseConfigResult(
+      success: false,
+      errorMsg: "Fatal error: failed to parse config\n" & toml.error & '\n'
+    )
 
-proc parseConfig*(config: Config, dir: string, s: string, name = "<input>",
-    laxnames = false) =
-  config.parseConfig(dir, newStringStream(s), name, laxnames)
+proc parseConfig*(config: Config; dir, s: string; name = "<input>";
+    laxnames = false): ParseConfigResult =
+  return config.parseConfig(dir, newStringStream(s), name, laxnames)
 
-proc staticReadConfig(): ConfigObj =
-  var config = Config()
-  config.parseConfig("res", staticRead"res/config.toml", "config.toml")
-  return config[]
+const defaultConfig = staticRead"res/config.toml"
 
-const defaultConfig = staticReadConfig()
-
-proc readConfig(config: Config, dir, name: string) =
+proc readConfig(config: Config; dir, name: string): ParseConfigResult =
   let fs = if name.len > 0 and name[0] == '/':
     newFileStream(name)
   else:
     newFileStream(dir / name)
   if fs != nil:
-    config.parseConfig(dir, fs)
+    return config.parseConfig(dir, fs)
+  return ParseConfigResult(success: true)
 
-proc getNormalAction*(config: Config, s: string): string =
+proc loadConfig*(config: Config; s: string) {.jsfunc.} =
+  let s = if s.len > 0 and s[0] == '/':
+    s
+  else:
+    getCurrentDir() / s
+  if not fileExists(s):
+    return
+  discard config.parseConfig(parentDir(s), newFileStream(s))
+
+proc getNormalAction*(config: Config; s: string): string =
   return config.page.getOrDefault(s)
 
-proc getLinedAction*(config: Config, s: string): string =
+proc getLinedAction*(config: Config; s: string): string =
   return config.line.getOrDefault(s)
 
-proc readConfig*(pathOverride: Option[string]): Config =
-  result = Config()
-  result[] = defaultConfig
+proc readConfig*(pathOverride: Option[string]; jsctx: JSContext): Config =
+  result = Config(jsctx: jsctx)
+  discard result.parseConfig("res", newStringStream(defaultConfig)) #TODO TODO TODO
   if pathOverride.isNone:
     when defined(debug):
-      result.readConfig(getCurrentDir() / "res", "config.toml")
-    result.readConfig(getConfigDir() / "chawan", "config.toml")
+      discard result.readConfig(getCurrentDir() / "res", "config.toml")
+    discard result.readConfig(getConfigDir() / "chawan", "config.toml")
   else:
-    result.readConfig(getCurrentDir(), pathOverride.get)
+    discard result.readConfig(getCurrentDir(), pathOverride.get)
 
 proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ActionMap)
