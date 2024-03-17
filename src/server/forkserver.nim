@@ -14,6 +14,7 @@ import server/buffer
 import types/urimethodmap
 import types/url
 import types/winattrs
+import utils/proctitle
 import utils/strwidth
 
 import chagashi/charset
@@ -86,6 +87,7 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): int =
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
     try:
+      setProcessTitle("cha loader")
       runFileLoader(pipefd[1], config)
     except CatchableError:
       let e = getCurrentException()
@@ -152,6 +154,7 @@ proc forkBuffer(ctx: var ForkServerContext): int =
       clientPid: pid
     )
     try:
+      setBufferProcessTitle(url)
       launchBuffer(config, url, request, attrs, ishtml, charsetStack, loader,
         ssock)
     except CatchableError:
@@ -171,6 +174,7 @@ proc forkBuffer(ctx: var ForkServerContext): int =
   return pid
 
 proc runForkServer() =
+  setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(
     istream: newPosixStream(stdin.getFileHandle()),
     ostream: newPosixStream(stdout.getFileHandle())
