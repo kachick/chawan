@@ -61,7 +61,6 @@ type
     consoleWrapper: ConsoleWrapper
     fdmap: Table[int, Container]
     feednext: bool
-    ibuf: string
     jsctx: JSContext
     jsrt: JSRuntime
     pager {.jsget.}: Pager
@@ -87,15 +86,8 @@ template loader(client: Client): FileLoader =
 template forkserver(client: Client): ForkServer =
   client.pager.forkserver
 
-proc readChar(client: Client): char =
-  if client.ibuf == "":
-    try:
-      return client.pager.infile.readChar()
-    except EOFError:
-      quit(1)
-  else:
-    result = client.ibuf[0]
-    client.ibuf.delete(0..0)
+template readChar(client: Client): char =
+  client.pager.term.readChar()
 
 proc finalize(client: Client) {.jsfin.} =
   if client.jsctx != nil:
@@ -110,14 +102,15 @@ proc fetch[T: Request|string](client: Client, req: T,
 
 proc interruptHandler(rt: JSRuntime, opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
-  if client.console == nil or client.pager.infile == nil: return
+  if client.console == nil or client.pager.term.istream == nil:
+    return 0
   try:
-    let c = client.pager.infile.readChar()
+    let c = client.pager.term.istream.sreadChar()
     if c == char(3): #C-c
-      client.ibuf = ""
+      client.pager.term.ibuf = ""
       return 1
     else:
-      client.ibuf &= c
+      client.pager.term.ibuf &= c
   except IOError:
     discard
   return 0
@@ -212,83 +205,6 @@ proc evalAction(client: Client, action: string, arg0: int32): EmptyPromise =
   JS_FreeValue(ctx, ret)
   return p
 
-type
-  MouseInputType = enum
-    mitPress = "press", mitRelease = "release", mitMove = "move"
-
-  MouseInputMod = enum
-    mimShift = "shift", mimCtrl = "ctrl", mimMeta = "meta"
-
-  MouseInputButton = enum
-    mibLeft = (1, "left")
-    mibMiddle = (2, "middle")
-    mibRight = (3, "right")
-    mibWheelUp = (4, "wheelUp")
-    mibWheelDown = (5, "wheelDown")
-    mibWheelLeft = (6, "wheelLeft")
-    mibWheelRight = (7, "wheelRight")
-    mibThumbInner = (8, "thumbInner")
-    mibThumbTip = (9, "thumbTip")
-    mibButton10 = (10, "button10")
-    mibButton11 = (11, "button11")
-
-  MouseInput = object
-    t: MouseInputType
-    button: MouseInputButton
-    mods: set[MouseInputMod]
-    col: int
-    row: int
-
-proc parseMouseInput(client: Client): Opt[MouseInput] =
-  template fail =
-    return err()
-  var btn = 0
-  while (let c = client.readChar(); c != ';'):
-    let n = decValue(c)
-    if n == -1:
-      fail
-    btn *= 10
-    btn += n
-  var mods: set[MouseInputMod] = {}
-  if (btn and 4) != 0:
-    mods.incl(mimShift)
-  if (btn and 8) != 0:
-    mods.incl(mimCtrl)
-  if (btn and 16) != 0:
-    mods.incl(mimMeta)
-  var px = 0
-  while (let c = client.readChar(); c != ';'):
-    let n = decValue(c)
-    if n == -1:
-      fail
-    px *= 10
-    px += n
-  var py = 0
-  var c: char
-  while (c = client.readChar(); c notin {'m', 'M'}):
-    let n = decValue(c)
-    if n == -1:
-      fail
-    py *= 10
-    py += n
-  var t = if c == 'M': mitPress else: mitRelease
-  if (btn and 32) != 0:
-    t = mitMove
-  var button = (btn and 3) + 1
-  if (btn and 64) != 0:
-    button += 3
-  if (btn and 128) != 0:
-    button += 7
-  if button notin int(MouseInputButton.low)..int(MouseInputButton.high):
-    return err()
-  ok(MouseInput(
-    t: t,
-    mods: mods,
-    button: MouseInputButton(button),
-    col: px - 1,
-    row: py - 1
-  ))
-
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
 # We can always increase it further (e.g. by switching to uint32, uint64...) if
@@ -315,7 +231,7 @@ proc handleCommandInput(client: Client, c: char): EmptyPromise =
     return p
   if client.config.input.use_mouse:
     if client.pager.inputBuffer == "\e[<":
-      let input = client.parseMouseInput()
+      let input = client.pager.term.parseMouseInput()
       if input.isSome:
         let input = input.get
         let container = client.pager.container
@@ -516,11 +432,8 @@ proc acceptBuffers(client: Client) =
     pager.handleEvents(container)
   pager.procmap.setLen(0)
 
-proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize_t): cint {.
-  importc: "setvbuf", header: "<stdio.h>", tags: [].}
-
 proc handleRead(client: Client; fd: int) =
-  if client.pager.infile != nil and fd == client.pager.infile.getFileHandle():
+  if client.pager.term.istream != nil and fd == client.pager.term.istream.fd:
     client.input().then(proc() =
       client.handlePagerEvents()
     )
@@ -583,7 +496,7 @@ proc flushConsole*(client: Client) {.jsfunc.} =
   client.handleRead(client.forkserver.estream.fd)
 
 proc handleError(client: Client, fd: int) =
-  if client.pager.infile != nil and fd == client.pager.infile.getFileHandle():
+  if client.pager.term.istream != nil and fd == client.pager.term.istream.fd:
     #TODO do something here...
     stderr.write("Error in tty\n")
     quit(1)
@@ -616,8 +529,7 @@ proc handleError(client: Client, fd: int) =
 
 proc inputLoop(client: Client) =
   let selector = client.selector
-  discard c_setvbuf(client.pager.infile, nil, IONBF, 0)
-  selector.registerHandle(int(client.pager.infile.getFileHandle()), {Read}, 0)
+  selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
   let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
   while true:
     let events = client.selector.select(-1)
@@ -775,18 +687,19 @@ proc dumpBuffers(client: Client) =
   stdout.close()
 
 proc launchClient*(client: Client; pages: seq[string];
-    contentType: Option[string]; cs: Charset; dump: bool;
-    warnings: seq[string]) =
-  var infile: File
+    contentType: Option[string]; cs: Charset; dump: bool) =
+  var istream: PosixStream
   var dump = dump
   if not dump:
     if stdin.isatty():
-      infile = stdin
-    if stdout.isatty():
-      if infile == nil:
-        dump = not open(infile, "/dev/tty", fmRead)
-    else:
-      dump = true
+      istream = newPosixStream(stdin.getFileHandle())
+    if istream == nil:
+      if stdout.isatty():
+        istream = newPosixStream("/dev/tty", O_RDONLY, 0)
+        if istream == nil:
+          dump = true
+      else:
+        dump = true
   let selector = newSelector[int]()
   let efd = int(client.forkserver.estream.fd)
   selector.registerHandle(efd, {Read}, 0)
@@ -794,15 +707,14 @@ proc launchClient*(client: Client; pages: seq[string];
     selector.registerHandle(fd, {Read}, 0)
   client.loader.unregisterFun = proc(fd: int) =
     selector.unregister(fd)
-  client.pager.launchPager(infile, selector)
-  client.pager.alerts.add(warnings)
+  client.pager.launchPager(istream, selector)
   let clearFun = proc() =
     client.clearConsole()
   let showFun = proc() =
     client.showConsole()
   let hideFun = proc() =
     client.hideConsole()
-  client.consoleWrapper = addConsole(client.pager, interactive = infile != nil,
+  client.consoleWrapper = client.pager.addConsole(interactive = istream != nil,
     clearFun, showFun, hideFun)
   #TODO passing console.err here makes it impossible to change it later. maybe
   # better associate it with jsctx
@@ -883,12 +795,12 @@ proc addJSModules(client: Client, ctx: JSContext) =
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client
 
-proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext):
-    Client =
+proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
+    warnings: seq[string]): Client =
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
-  let pager = newPager(config, forkserver, jsctx)
+  let pager = newPager(config, forkserver, jsctx, warnings)
   let loader = forkserver.newFileLoader(LoaderConfig(
     urimethodmap: config.external.urimethodmap,
     w3mCGICompat: config.external.w3m_cgi_compat,

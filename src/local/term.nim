@@ -1,7 +1,6 @@
 import std/options
 import std/os
 import std/posix
-import std/streams
 import std/strutils
 import std/tables
 import std/termios
@@ -9,6 +8,7 @@ import std/unicode
 
 import bindings/termcap
 import config/config
+import io/posixstream
 import types/cell
 import types/color
 import types/opt
@@ -51,7 +51,7 @@ type
   TerminalObj = object
     cs*: Charset
     config: Config
-    infile*: File
+    istream*: PosixStream
     outfile: File
     cleared: bool
     canvas: FixedGrid
@@ -63,12 +63,12 @@ type
     tc: Termcap
     tname: string
     set_title: bool
-    stdin_unblocked: bool
-    orig_flags: cint
-    orig_flags2: cint
+    stdinUnblocked: bool
+    stdinWasUnblocked: bool
     orig_termios: Termios
     defaultBackground: RGBColor
     defaultForeground: RGBColor
+    ibuf*: string # buffer for chars when we can't process them
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
@@ -146,6 +146,13 @@ else:
   proc write(term: Terminal, s: string) =
     term.write(cstring(s))
 
+proc readChar*(term: Terminal): char =
+  if term.ibuf.len == 0:
+    result = term.istream.sreadChar()
+  else:
+    result = term.ibuf[0]
+    term.ibuf.delete(0..0)
+
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
 
@@ -190,17 +197,17 @@ proc clearDisplay(term: Terminal): string =
   else:
     return ED()
 
-proc isatty(fd: FileHandle): cint {.importc: "isatty", header: "<unistd.h>".}
-proc isatty*(f: File): bool =
-  return isatty(f.getFileHandle()) != 0
+proc isatty*(file: File): bool =
+  return file.getFileHandle().isatty() != 0
 
 proc isatty*(term: Terminal): bool =
-  term.infile != nil and term.infile.isatty() and term.outfile.isatty()
+  return term.istream != nil and term.istream.fd.isatty() != 0 and
+    term.outfile.isatty()
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
     term.outfile.write(term.clearEnd() & msg)
-    discard term.infile.readChar()
+    discard term.istream.sreadChar()
 
 proc resetFormat(term: Terminal): string =
   when termcap_found:
@@ -588,32 +595,26 @@ proc clearCanvas*(term: Terminal) =
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 proc disableRawMode(term: Terminal) =
-  let fd = term.infile.getFileHandle()
-  discard tcSetAttr(fd, TCSAFLUSH, addr term.orig_termios)
+  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.orig_termios)
 
 proc enableRawMode(term: Terminal) =
-  let fd = term.infile.getFileHandle()
-  discard tcGetAttr(fd, addr term.orig_termios)
+  discard tcGetAttr(term.istream.fd, addr term.orig_termios)
   var raw = term.orig_termios
   raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
   raw.c_oflag = raw.c_oflag and not (OPOST)
   raw.c_cflag = raw.c_cflag or CS8
   raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
-  discard tcSetAttr(fd, TCSAFLUSH, addr raw)
+  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr raw)
 
 proc unblockStdin*(term: Terminal) =
   if term.isatty():
-    let fd = term.infile.getFileHandle()
-    term.orig_flags = fcntl(fd, F_GETFL, 0)
-    let flags = term.orig_flags or O_NONBLOCK
-    discard fcntl(fd, F_SETFL, flags)
-    term.stdin_unblocked = true
+    term.istream.setBlocking(false)
+    term.stdinUnblocked = true
 
 proc restoreStdin*(term: Terminal) =
-  if term.stdin_unblocked:
-    let fd = term.infile.getFileHandle()
-    discard fcntl(fd, F_SETFL, term.orig_flags)
-    term.stdin_unblocked = false
+  if term.stdinUnblocked:
+    term.istream.setBlocking(true)
+    term.stdinUnblocked = false
 
 proc quit*(term: Terminal) =
   if term.isatty():
@@ -627,13 +628,9 @@ proc quit*(term: Terminal) =
       term.disableMouse()
     term.showCursor()
     term.cleared = false
-    if term.stdin_unblocked:
-      let fd = term.infile.getFileHandle()
-      term.orig_flags2 = fcntl(fd, F_GETFL, 0)
-      discard fcntl(fd, F_SETFL, term.orig_flags2 and (not O_NONBLOCK))
-      term.stdin_unblocked = false
-    else:
-      term.orig_flags2 = -1
+    if term.stdinUnblocked:
+      term.restoreStdin()
+      term.stdinWasUnblocked = true
   term.flush()
 
 when termcap_found:
@@ -679,9 +676,10 @@ proc queryAttrs(term: Terminal, windowOnly: bool): QueryResult =
       GEOMCELL &
       DA1
     term.outfile.write(outs)
+  term.flush()
   result = QueryResult(success: false, attrs: {})
   while true:
-    template consume(term: Terminal): char = term.infile.readChar()
+    template consume(term: Terminal): char = term.readChar()
     template fail = return
     template expect(term: Terminal, c: char) =
       if term.consume != c:
@@ -799,9 +797,8 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
     term.tname = "dosansi"
   if not term.isatty():
     return
-  let fd = term.infile.getFileHandle()
   var win: IOctl_WinSize
-  if ioctl(cint(fd), TIOCGWINSZ, addr win) != -1:
+  if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
     term.attrs.width = int(win.ws_col)
     term.attrs.height = int(win.ws_row)
     term.attrs.ppc = int(win.ws_xpixel) div term.attrs.width
@@ -857,14 +854,91 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
     term.smcup = true
     term.formatmode = {low(FormatFlags)..high(FormatFlags)}
 
+type
+  MouseInputType* = enum
+    mitPress = "press", mitRelease = "release", mitMove = "move"
+
+  MouseInputMod* = enum
+    mimShift = "shift", mimCtrl = "ctrl", mimMeta = "meta"
+
+  MouseInputButton* = enum
+    mibLeft = (1, "left")
+    mibMiddle = (2, "middle")
+    mibRight = (3, "right")
+    mibWheelUp = (4, "wheelUp")
+    mibWheelDown = (5, "wheelDown")
+    mibWheelLeft = (6, "wheelLeft")
+    mibWheelRight = (7, "wheelRight")
+    mibThumbInner = (8, "thumbInner")
+    mibThumbTip = (9, "thumbTip")
+    mibButton10 = (10, "button10")
+    mibButton11 = (11, "button11")
+
+  MouseInput* = object
+    t*: MouseInputType
+    button*: MouseInputButton
+    mods*: set[MouseInputMod]
+    col*: int
+    row*: int
+
+proc parseMouseInput*(term: Terminal): Opt[MouseInput] =
+  template fail =
+    return err()
+  var btn = 0
+  while (let c = term.readChar(); c != ';'):
+    let n = decValue(c)
+    if n == -1:
+      fail
+    btn *= 10
+    btn += n
+  var mods: set[MouseInputMod] = {}
+  if (btn and 4) != 0:
+    mods.incl(mimShift)
+  if (btn and 8) != 0:
+    mods.incl(mimCtrl)
+  if (btn and 16) != 0:
+    mods.incl(mimMeta)
+  var px = 0
+  while (let c = term.readChar(); c != ';'):
+    let n = decValue(c)
+    if n == -1:
+      fail
+    px *= 10
+    px += n
+  var py = 0
+  var c: char
+  while (c = term.readChar(); c notin {'m', 'M'}):
+    let n = decValue(c)
+    if n == -1:
+      fail
+    py *= 10
+    py += n
+  var t = if c == 'M': mitPress else: mitRelease
+  if (btn and 32) != 0:
+    t = mitMove
+  var button = (btn and 3) + 1
+  if (btn and 64) != 0:
+    button += 3
+  if (btn and 128) != 0:
+    button += 7
+  if button notin int(MouseInputButton.low)..int(MouseInputButton.high):
+    return err()
+  ok(MouseInput(
+    t: t,
+    mods: mods,
+    button: MouseInputButton(button),
+    col: px - 1,
+    row: py - 1
+  ))
+
 proc windowChange*(term: Terminal) =
   discard term.detectTermAttributes(windowOnly = true)
   term.applyConfigDimensions()
   term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
   term.cleared = false
 
-proc start*(term: Terminal, infile: File): TermStartResult =
-  term.infile = infile
+proc start*(term: Terminal; istream: PosixStream): TermStartResult =
+  term.istream = istream
   if term.isatty():
     term.enableRawMode()
   result = term.detectTermAttributes(windowOnly = false)
@@ -880,11 +954,9 @@ proc start*(term: Terminal, infile: File): TermStartResult =
 proc restart*(term: Terminal) =
   if term.isatty():
     term.enableRawMode()
-    if term.orig_flags2 != -1:
-      let fd = term.infile.getFileHandle()
-      discard fcntl(fd, F_SETFL, term.orig_flags2)
-      term.orig_flags2 = 0
-      term.stdin_unblocked = true
+    if term.stdinWasUnblocked:
+      term.unblockStdin()
+      term.stdinWasUnblocked = false
     if term.config.input.use_mouse:
       term.enableMouse()
   if term.smcup:

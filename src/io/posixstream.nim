@@ -43,6 +43,16 @@ method recvData*(s: PosixStream, buffer: pointer, len: int): int =
     s.isend = true
   return n
 
+proc sreadChar*(s: PosixStream): char =
+  let n = read(s.fd, addr result, 1)
+  if n < 0:
+    raisePosixIOError()
+  if n == 0:
+    if unlikely(s.isend):
+      raise newException(EOFError, "eof")
+    s.isend = true
+  assert n == 1
+
 proc recvData*(s: PosixStream, buffer: var openArray[uint8]): int {.inline.} =
   return s.recvData(addr buffer[0], buffer.len)
 

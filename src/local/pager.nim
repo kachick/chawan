@@ -271,14 +271,15 @@ proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
   pager.dumpAlerts()
 
-proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext): Pager =
-  let pager = Pager(
+proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
+    alerts: seq[string]): Pager =
+  return Pager(
     config: config,
     forkserver: forkserver,
     proxy: config.getProxy(),
-    term: newTerminal(stdout, config)
+    term: newTerminal(stdout, config),
+    alerts: alerts
   )
-  return pager
 
 proc genClientKey(pager: Pager): ClientKey =
   var key: ClientKey
@@ -303,17 +304,14 @@ proc setLoader*(pager: Pager, loader: FileLoader) =
   )
   loader.key = pager.addLoaderClient(pager.loader.clientPid, config)
 
-proc launchPager*(pager: Pager; infile: File; selector: Selector[int]) =
+proc launchPager*(pager: Pager; istream: PosixStream; selector: Selector[int]) =
   pager.selector = selector
-  case pager.term.start(infile)
+  case pager.term.start(istream)
   of tsrSuccess: discard
   of tsrDA1Fail:
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
   pager.display = newFixedGrid(pager.attrs.width, pager.attrs.height - 1)
   pager.statusgrid = newFixedGrid(pager.attrs.width)
-
-func infile*(pager: Pager): File =
-  return pager.term.infile
 
 proc clearDisplay(pager: Pager) =
   pager.display = newFixedGrid(pager.display.width, pager.display.height)

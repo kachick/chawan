@@ -201,15 +201,15 @@ Options:
         if www != "": pages.add(www)
 
   if pages.len == 0 and not config.start.headless:
-    if stdin.isatty:
+    if stdin.isatty():
       help(1)
 
   forks.loadForkServerConfig(config)
   SocketDirectory = config.external.tmpdir
 
-  let c = newClient(config, forks, jsctx)
+  let c = newClient(config, forks, jsctx, warnings)
   try:
-    c.launchClient(pages, ctype, cs, dump, warnings)
+    c.launchClient(pages, ctype, cs, dump)
   except CatchableError:
     c.flushConsole()
     raise
