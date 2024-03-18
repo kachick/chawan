@@ -890,7 +890,7 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext):
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let pager = newPager(config, forkserver, jsctx)
   let loader = forkserver.newFileLoader(LoaderConfig(
-    urimethodmap: config.getURIMethodMap(),
+    urimethodmap: config.external.urimethodmap,
     w3mCGICompat: config.external.w3m_cgi_compat,
     cgiDir: seq[string](config.external.cgi_dir),
     tmpdir: config.external.tmpdir

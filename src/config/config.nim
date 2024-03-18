@@ -19,7 +19,6 @@ import types/cookie
 import types/opt
 import types/urimethodmap
 import types/url
-import utils/mimeguess
 import utils/twtstr
 
 import chagashi/charset
@@ -73,10 +72,10 @@ type
   ExternalConfig = object
     tmpdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
-    mailcap* {.jsgetset.}: seq[ChaPathResolved]
-    mime_types* {.jsgetset.}: seq[ChaPathResolved]
+    mailcap*: Mailcap
+    mime_types*: MimeTypes
     cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
-    urimethodmap* {.jsgetset.}: seq[ChaPathResolved]
+    urimethodmap*: URIMethodMap
     download_dir* {.jsgetset.}: string
     w3m_cgi_compat* {.jsgetset.}: bool
 
@@ -280,85 +279,6 @@ proc readUserStylesheet(dir, file: string): string =
     result = s.readAll()
     s.close()
 
-# The overall configuration will be obtained through the virtual concatenation
-# of several individual configuration files known as mailcap files.
-proc getMailcap*(config: Config): tuple[mailcap: Mailcap, errs: seq[string]] =
-  let configDir = config.configdir
-  template uq(s: string): string =
-    ChaPath(s).unquote.get
-  let gopherPath = "${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL".uq
-  let geminiPath = "${%CHA_LIBEXEC_DIR}/gmi2html".uq
-  let mdPath = "${%CHA_LIBEXEC_DIR}/md2html".uq
-  let ansiPath = "${%CHA_LIBEXEC_DIR}/ansi2html".uq
-  var mailcap: Mailcap = @[]
-  var errs: seq[string]
-  var found = false
-  for p in config.external.mailcap:
-    let f = openFileExpand(configDir, p)
-    if f != nil:
-      let res = parseMailcap(f)
-      if res.isSome:
-        mailcap.add(res.get)
-      else:
-        errs.add(res.error)
-      found = true
-  mailcap.add(MailcapEntry(
-      mt: "text",
-      subt: "gopher",
-      cmd: gopherPath,
-      flags: {HTMLOUTPUT}
-  ))
-  mailcap.add(MailcapEntry(
-    mt: "text",
-    subt: "gemini",
-    cmd: geminiPath,
-    flags: {HTMLOUTPUT}
-  ))
-  mailcap.add(MailcapEntry(
-    mt: "text",
-    subt: "markdown",
-    cmd: mdPath,
-    flags: {HTMLOUTPUT}
-  ))
-  mailcap.add(MailcapEntry(
-    mt: "text",
-    subt: "x-ansi",
-    cmd: ansiPath,
-    flags: {HTMLOUTPUT}
-  ))
-  return (mailcap, errs)
-
-# We try to source mime types declared in config.
-# If none of these files can be found, fall back to DefaultGuess.
-#TODO some error handling would be nice, to at least show a warning to
-# the user. Not sure how this could be done, though.
-proc getMimeTypes*(config: Config): MimeTypes =
-  if config.external.mime_types.len == 0:
-    return DefaultGuess
-  var mimeTypes: MimeTypes
-  let configDir = config.configdir
-  var found = false
-  for p in config.external.mime_types:
-    let f = openFileExpand(configDir, p)
-    if f != nil:
-      mimeTypes.parseMimeTypes(f)
-      found = true
-  if not found:
-    return DefaultGuess
-  return mimeTypes
-
-const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
-
-proc getURIMethodMap*(config: Config): URIMethodMap =
-  let configDir = config.configdir
-  var urimethodmap: URIMethodMap
-  for p in config.external.urimethodmap:
-    let f = openFileExpand(configDir, p)
-    if f != nil:
-      urimethodmap.parseURIMethodMap(f.readAll())
-  urimethodmap.append(DefaultURIMethodMap)
-  return urimethodmap
-
 proc getForkServerConfig*(config: Config): ForkServerConfig =
   return ForkServerConfig(
     tmpdir: config.external.tmpdir,
@@ -416,6 +336,12 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var proc(x: T): JSResult[T];
   v: TomlValue; k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
   v: TomlValue; k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
+  k: string)
 
 proc typeCheck(v: TomlValue, vt: ValueType, k: string) =
   if v.vt != vt:
@@ -659,9 +585,61 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     raise newException(ValueError, y.error)
   x = ChaPathResolved(y.get)
 
+proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
+    k: string) =
+  var paths: seq[ChaPathResolved]
+  ctx.parseConfigValue(paths, v, k)
+  x = default(MimeTypes)
+  for p in paths:
+    let f = openFileExpand(ctx.config.configdir, p)
+    if f != nil:
+      x.parseMimeTypes(f)
+
+proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
+    k: string) =
+  var paths: seq[ChaPathResolved]
+  ctx.parseConfigValue(paths, v, k)
+  x = default(Mailcap)
+  for p in paths:
+    let f = openFileExpand(ctx.config.configdir, p)
+    if f != nil:
+      let res = parseMailcap(f)
+      if res.isSome:
+        x.add(res.get)
+      else:
+        ctx.warnings.add("Error reading mailcap: " & res.error)
+  template uq(s: string): string =
+    ChaPath(s).unquote.get
+  let defaultCmds = {
+    "gopher": "${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL".uq,
+    "gemini": "${%CHA_LIBEXEC_DIR}/gmi2html".uq,
+    "markdown": "${%CHA_LIBEXEC_DIR}/md2html".uq,
+    "x-ansi":"${%CHA_LIBEXEC_DIR}/ansi2html".uq
+  }
+  for (subt, cmd) in defaultCmds:
+    x.add(MailcapEntry(
+      mt: "text",
+      subt: subt,
+      cmd: cmd,
+      flags: {HTMLOUTPUT}
+    ))
+
+const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
+
+proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
+    k: string) =
+  var paths: seq[ChaPathResolved]
+  ctx.parseConfigValue(paths, v, k)
+  x = default(URIMethodMap)
+  for p in paths:
+    let f = openFileExpand(ctx.config.configdir, p)
+    if f != nil:
+      x.parseURIMethodMap(f.readAll())
+  x.append(DefaultURIMethodMap)
+
 type ParseConfigResult* = object
   success*: bool
-  warnings*: seq[string] #TODO actually use warnings
+  warnings*: seq[string]
   errorMsg*: string
 
 proc parseConfig(config: Config; dir: string; stream: Stream; name = "<input>";

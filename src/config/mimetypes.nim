@@ -4,7 +4,11 @@ import std/tables
 import utils/twtstr
 
 # extension -> type
-type MimeTypes* = Table[string, string]
+type MimeTypes* = distinct Table[string, string]
+
+proc `[]`*(mimeTypes: MimeTypes; k: string): string {.borrow.}
+proc contains*(mimeTypes: MimeTypes; k: string): bool {.borrow.}
+proc hasKeyOrPut*(mimeTypes: var MimeTypes; k, v: string): bool {.borrow.}
 
 # Add mime types found in stream to mimeTypes.
 # No error handling for now.

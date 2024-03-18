@@ -14,7 +14,6 @@ when defined(posix):
 import bindings/libregexp
 import config/config
 import config/mailcap
-import config/mimetypes
 import io/posixstream
 import io/promise
 import io/serialize
@@ -42,7 +41,6 @@ import types/color
 import types/cookie
 import types/opt
 import types/referrer
-import types/urimethodmap
 import types/url
 import types/winattrs
 import utils/strwidth
@@ -62,7 +60,7 @@ type
     lmISearchF = "/"
     lmISearchB = "?"
     lmGotoLine = "Goto line: "
-    lmDownload = "(Download) Save file to: "
+    lmDownload = "(Download)Save file to: "
 
   # fdin is the original fd; fdout may be the same, or different if mailcap
   # is used.
@@ -121,8 +119,6 @@ type
     linehist: array[LineMode, LineHistory]
     linemode: LineMode
     loader*: FileLoader
-    mailcap: Mailcap
-    mimeTypes: MimeTypes
     notnum*: bool # has a non-numeric character been input already?
     numload*: int # number of pages currently being loaded
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
@@ -136,7 +132,6 @@ type
     statusgrid*: FixedGrid
     term*: Terminal
     unreg*: seq[Container]
-    urimethodmap: URIMethodMap
 
 jsDestructor(Pager)
 
@@ -277,18 +272,12 @@ proc quit*(pager: Pager, code = 0) =
   pager.dumpAlerts()
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext): Pager =
-  let (mailcap, errs) = config.getMailcap()
   let pager = Pager(
     config: config,
     forkserver: forkserver,
-    mailcap: mailcap,
-    mimeTypes: config.getMimeTypes(),
     proxy: config.getProxy(),
-    term: newTerminal(stdout, config),
-    urimethodmap: config.getURIMethodMap()
+    term: newTerminal(stdout, config)
   )
-  for err in errs:
-    pager.alert("Error reading mailcap: " & err)
   return pager
 
 proc genClientKey(pager: Pager): ClientKey =
@@ -1271,7 +1260,8 @@ type CheckMailcapResult = object
 
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
-  let entry = pager.mailcap.getMailcapEntry("text/x-ansi", "", url)
+  let entry = pager.config.external.mailcap.getMailcapEntry("text/x-ansi", "",
+    url)
   var canpipe = true
   let cmd = unquoteCommand(entry.cmd, "text/x-ansi", "", url, canpipe)
   if not canpipe:
@@ -1483,7 +1473,8 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
     return CheckMailcapResult(connect: true, fdout: stream.fd, found: true)
   #TODO callback for outpath or something
   let url = container.url
-  let entry = pager.mailcap.getMailcapEntry(contentType, "", url)
+  let entry = pager.config.external.mailcap.getMailcapEntry(contentType, "",
+    url)
   if entry == nil:
     return CheckMailcapResult(connect: true, fdout: stream.fd, found: false)
   let ext = url.pathname.afterLast('.')
@@ -1555,7 +1546,7 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
 proc redirect(pager: Pager; container: Container; response: Response;
     request: Request) =
   # still need to apply response, or we lose cookie jars.
-  container.applyResponse(response, pager.mimeTypes)
+  container.applyResponse(response, pager.config.external.mime_types)
   if container.redirectDepth < pager.config.network.max_redirect:
     if container.url.scheme == request.url.scheme or
         container.url.scheme == "cgi-bin" or
@@ -1574,7 +1565,7 @@ proc redirect(pager: Pager; container: Container; response: Response;
 
 proc connected(pager: Pager; container: Container; response: Response) =
   let istream = response.body
-  container.applyResponse(response, pager.mimeTypes)
+  container.applyResponse(response, pager.config.external.mime_types)
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername)
     pager.lineData = LineDataAuth(url: container.url)

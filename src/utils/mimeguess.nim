@@ -1,6 +1,5 @@
 import std/algorithm
 import std/streams
-import std/tables
 
 import config/mimetypes
 
