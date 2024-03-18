@@ -104,7 +104,6 @@ type
     askcursor: int
     askpromise*: Promise[bool]
     askprompt: string
-    cgiDir*: seq[string]
     commandMode {.jsget.}: bool
     config*: Config
     connectingContainers*: seq[ConnectingContainerItem]
@@ -277,13 +276,6 @@ proc quit*(pager: Pager, code = 0) =
   pager.term.quit()
   pager.dumpAlerts()
 
-proc setPaths(pager: Pager): Err[string] =
-  var cgiDir: seq[string]
-  for path in pager.config.external.cgi_dir:
-    cgiDir.add(path)
-  pager.cgiDir = cgiDir
-  return ok()
-
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext): Pager =
   let (mailcap, errs) = config.getMailcap()
   let pager = Pager(
@@ -295,13 +287,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext): Pager =
     term: newTerminal(stdout, config),
     urimethodmap: config.getURIMethodMap()
   )
-  let r = pager.setPaths()
-  if r.isErr:
-    pager.alert(r.error)
-    pager.alert("Exiting...")
-    #TODO maybe there is a better way to do this
-    pager.quit(1)
-    quit(1)
   for err in errs:
     pager.alert("Error reading mailcap: " & err)
   return pager
