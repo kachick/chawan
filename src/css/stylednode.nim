@@ -60,7 +60,8 @@ type
       computed*: CSSComputedValues
       children*: seq[StyledNode]
       depends*: DependencyInfo
-    of STYLED_REPLACEMENT: # replaced elements: quotes, or (TODO) markers, images
+    of STYLED_REPLACEMENT:
+      # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
 # For debugging
@@ -91,7 +92,7 @@ iterator elementList_rev*(node: StyledNode): StyledNode {.inline.} =
   for i in countdown(node.children.high, 0):
     yield node.children[i]
 
-func findElement*(root: StyledNode, elem: Element): StyledNode =
+func findElement*(root: StyledNode; elem: Element): StyledNode =
   var stack: seq[StyledNode]
   for child in root.elementList_rev:
     if child.t == STYLED_ELEMENT and child.pseudo == PSEUDO_NONE:
@@ -149,43 +150,51 @@ proc applyDependValues*(styledNode: StyledNode) =
   styledNode.depends.prev[DEPEND_FOCUS] = focus
   elem.invalid = false
 
-proc addDependency*(styledNode, dep: StyledNode, t: DependencyType) =
+proc addDependency*(styledNode, dep: StyledNode; t: DependencyType) =
   if dep notin styledNode.depends.nodes[t]:
     styledNode.depends.nodes[t].add(dep)
 
-func newStyledElement*(parent: StyledNode, element: Element, computed: CSSComputedValues, reg: DependencyInfo): StyledNode =
-  result = StyledNode(t: STYLED_ELEMENT, computed: computed, node: element, parent: parent)
-  result.depends = reg
-  result.parent = parent
+func newStyledElement*(parent: StyledNode; element: Element;
+    computed: CSSComputedValues; reg: DependencyInfo): StyledNode =
+  return StyledNode(
+    t: STYLED_ELEMENT,
+    computed: computed,
+    node: element,
+    parent: parent,
+    depends: reg
+  )
 
-func newStyledElement*(parent: StyledNode, element: Element): StyledNode =
-  result = StyledNode(t: STYLED_ELEMENT, node: element, parent: parent)
-  result.parent = parent
+func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
+  return StyledNode(t: STYLED_ELEMENT, node: element, parent: parent)
 
 # Root
 func newStyledElement*(element: Element): StyledNode =
-  result = StyledNode(t: STYLED_ELEMENT, node: element)
+  return StyledNode(t: STYLED_ELEMENT, node: element)
 
-func newStyledElement*(parent: StyledNode, pseudo: PseudoElem, computed: CSSComputedValues, reg: sink DependencyInfo): StyledNode =
-  result = StyledNode(t: STYLED_ELEMENT, computed: computed, pseudo: pseudo, parent: parent)
-  result.depends = reg
-  result.parent = parent
-
-func newStyledElement*(parent: StyledNode, pseudo: PseudoElem, computed: CSSComputedValues): StyledNode =
-  result = StyledNode(t: STYLED_ELEMENT, computed: computed, pseudo: pseudo, parent: parent)
-  result.parent = parent
-
-func newStyledText*(parent: StyledNode, text: string): StyledNode =
-  result = StyledNode(t: STYLED_TEXT, text: text, parent: parent)
-  result.parent = parent
-
-func newStyledText*(parent: StyledNode, text: Text): StyledNode =
-  result = StyledNode(t: STYLED_TEXT, text: text.data, node: text, parent: parent)
-  result.parent = parent
-
-func newStyledReplacement*(parent: StyledNode, content: CSSContent): StyledNode =
+func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
+    computed: CSSComputedValues; reg: sink DependencyInfo): StyledNode =
   return StyledNode(
-    t: STYLED_REPLACEMENT,
+    t: STYLED_ELEMENT,
+    computed: computed,
+    pseudo: pseudo,
     parent: parent,
-    content: content
+    depends: reg
   )
+
+func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
+    computed: CSSComputedValues): StyledNode =
+  return StyledNode(
+    t: STYLED_ELEMENT,
+    computed: computed,
+    pseudo: pseudo,
+    parent: parent
+  )
+
+func newStyledText*(parent: StyledNode; text: string): StyledNode =
+  return StyledNode(t: STYLED_TEXT, text: text, parent: parent)
+
+func newStyledText*(parent: StyledNode; text: Text): StyledNode =
+  return StyledNode(t: STYLED_TEXT, text: text.data, node: text, parent: parent)
+
+func newStyledReplacement*(parent: StyledNode; content: CSSContent): StyledNode =
+  return StyledNode(t: STYLED_REPLACEMENT, parent: parent, content: content)
