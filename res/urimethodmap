@@ -8,8 +8,8 @@ about:		cgi-bin:about
 data:		cgi-bin:data
 file:		cgi-bin:file
 ftp:		cgi-bin:ftp
-sftp:		cgi-bin:sftp
-ftps:		cgi-bin:ftps
+sftp:		cgi-bin:ftp
+ftps:		cgi-bin:ftp
 gopher:		cgi-bin:gopher
 gophers:	cgi-bin:gophers
 spartan:	cgi-bin:spartan
