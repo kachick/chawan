@@ -1582,7 +1582,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     container.contentType.get & ";charset=" & $container.charset
   let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
     realContentType)
-  if not mailcapRes.found:
+  if not mailcapRes.found and container.contentType.get.until('/') != "text":
     pager.setLineEdit(lmDownload,
       pager.config.external.download_dir &
       container.url.pathname.afterLast('/'))
