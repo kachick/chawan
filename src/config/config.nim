@@ -595,6 +595,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
     if f != nil:
       x.parseMimeTypes(f)
 
+const DefaultMailcap = block:
+  let ss = newStringStream(staticRead"res/mailcap")
+  parseMailcap(ss).get
+
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     k: string) =
   var paths: seq[ChaPathResolved]
@@ -608,21 +612,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
         x.add(res.get)
       else:
         ctx.warnings.add("Error reading mailcap: " & res.error)
-  template uq(s: string): string =
-    ChaPath(s).unquote.get
-  let defaultCmds = {
-    "gopher": "${%CHA_LIBEXEC_DIR}/gopher2html -u \\$MAILCAP_URL".uq,
-    "gemini": "${%CHA_LIBEXEC_DIR}/gmi2html".uq,
-    "markdown": "${%CHA_LIBEXEC_DIR}/md2html".uq,
-    "x-ansi":"${%CHA_LIBEXEC_DIR}/ansi2html".uq
-  }
-  for (subt, cmd) in defaultCmds:
-    x.add(MailcapEntry(
-      mt: "text",
-      subt: subt,
-      cmd: cmd,
-      flags: {HTMLOUTPUT}
-    ))
+  x.add(DefaultMailcap)
 
 const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
 

@@ -24,7 +24,7 @@ proc putMappedURL(url: URL) =
   putEnv("MAPPED_URI_PATH", url.path.serialize())
   putEnv("MAPPED_URI_QUERY", url.query.get(""))
 
-proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, myDir: string;
+proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
     request: Request; contentLen: int; prevURL: URL) =
   let url = request.url
   putEnv("SERVER_SOFTWARE", "Chawan")
@@ -38,7 +38,6 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, myDir: string;
   putEnv("SCRIPT_FILENAME", cmd)
   putEnv("REQUEST_URI", requestURI)
   putEnv("REQUEST_METHOD", $request.httpMethod)
-  putEnv("CHA_LIBEXEC_DIR", libexecPath)
   var headers = ""
   for k, v in request.headers:
     headers &= k & ": " & v & "\r\n"
@@ -132,7 +131,7 @@ proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
   headers.add(k, v)
 
 proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
-    libexecPath: string; prevURL: URL) =
+    prevURL: URL) =
   if cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
     return
@@ -211,8 +210,8 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     else:
       closeStdin()
     # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, myDir, request,
-      contentLen, prevURL)
+    setupEnv(cmd, scriptName, pathInfo, requestURI, myDir, request, contentLen,
+      prevURL)
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
     stdout.write("Cha-Control: ConnectionError " & $code & " " &

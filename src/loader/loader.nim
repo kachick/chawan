@@ -24,7 +24,6 @@ import std/streams
 import std/strutils
 import std/tables
 
-import config/chapath
 import io/bufwriter
 import io/posixstream
 import io/promise
@@ -104,7 +103,6 @@ type
     ssock: ServerSocket
     alive: bool
     config: LoaderConfig
-    libexecPath: string
     handleMap: Table[int, LoaderHandle]
     outputMap: Table[int, OutputHandle]
     selector: Selector[int]
@@ -403,7 +401,7 @@ proc loadResource(ctx: LoaderContext; client: ClientData; request: Request;
           redo = true
           continue
     if request.url.scheme == "cgi-bin":
-      handle.loadCGI(request, ctx.config.cgiDir, ctx.libexecPath, prevurl)
+      handle.loadCGI(request, ctx.config.cgiDir, prevurl)
       if handle.istream != nil:
         ctx.addFd(handle)
       else:
@@ -660,8 +658,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   var ctx = LoaderContext(
     alive: true,
     config: config,
-    selector: newSelector[int](),
-    libexecPath: ChaPath("${%CHA_LIBEXEC_DIR}").unquote().get
+    selector: newSelector[int]()
   )
   gctx = ctx
   #TODO ideally, buffered would be true. Unfortunately this conflicts with

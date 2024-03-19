@@ -1,10 +1,14 @@
 import version
 
 import server/forkserver
+import config/chapath
+from std/os import getEnv, putEnv, commandLineParams, getCurrentDir
+from types/opt import get
+
+putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquote().get)
 let forks = newForkServer()
 
 import std/options
-import std/os
 
 import config/config
 import io/serversocket
