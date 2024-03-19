@@ -24,8 +24,8 @@ proc putMappedURL(url: URL) =
   putEnv("MAPPED_URI_PATH", url.path.serialize())
   putEnv("MAPPED_URI_QUERY", url.query.get(""))
 
-proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath: string,
-    request: Request, contentLen: int, prevURL: URL) =
+proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, myDir: string;
+    request: Request; contentLen: int; prevURL: URL) =
   let url = request.url
   putEnv("SERVER_SOFTWARE", "Chawan")
   putEnv("SERVER_PROTOCOL", "HTTP/1.0")
@@ -61,6 +61,7 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath: string,
     putEnv("HTTP_REFERER", $request.referrer)
   if request.proxy != nil:
     putEnv("ALL_PROXY", $request.proxy)
+  setCurrentDir(myDir)
 
 type ControlResult = enum
   crDone, crContinue, crError
@@ -148,6 +149,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
   var cmd: string
   var scriptName: string
   var requestURI: string
+  var myDir: string
   if path[0] == '/':
     for dir in cgiDir:
       if path.startsWith(dir):
@@ -156,6 +158,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
         cmd = dir / basename
         if not fileExists(cmd):
           continue
+        myDir = dir
         scriptName = path.substr(0, dir.len + basename.len)
         requestURI = cmd / pathInfo & request.url.search
         break
@@ -170,6 +173,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     for dir in cgiDir:
       cmd = dir / basename
       if fileExists(cmd):
+        myDir = dir
         break
   if not fileExists(cmd):
     handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
@@ -207,7 +211,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     else:
       closeStdin()
     # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, request,
+    setupEnv(cmd, scriptName, pathInfo, requestURI, libexecPath, myDir, request,
       contentLen, prevURL)
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
