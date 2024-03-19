@@ -20,10 +20,20 @@ For an exact description of the mailcap format, see
 The search path for mailcap files can be overridden using the configuration
 variable `external.mailcap`.
 
-The default search path for mailcap files is:
+By default, the only file checked by Chawan is `$HOME/.mailcap`.
 
-```
-$HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
+In the past, the full path from the specification was used. This was changed
+because mailcap files shipped with various systems are usually incompatible
+with the assumptions Chawan makes about mailcap file contents. You can restore
+the old/standard-recommended behavior by adding this to your config.toml:
+
+```toml
+mailcap = [
+	"~/.mailcap",
+	"/etc/mailcap",
+	"/usr/etc/mailcap",
+	"/usr/local/etc/mailcap"
+]
 ```
 
 ## Format
