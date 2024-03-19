@@ -68,10 +68,14 @@ func processBackspace(line: string): string =
         thiscs = i ..< i + n
         pendingInU = true
       elif line[i] == '_' and line[thiscs.a] == '_':
-        if pendingInB:
-          pendingInU = true
-        else:
+        if inB and not pendingInB:
           pendingInB = true
+        elif inU and not pendingInU:
+          pendingInU = true
+        elif not pendingInB:
+          pendingInB = true
+        else:
+          pendingInU = true
       elif not pendingInB:
         pendingInB = true
       bspace = false
