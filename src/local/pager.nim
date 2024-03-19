@@ -533,7 +533,8 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     charsetStack,
     cacheId,
     cacheFile,
-    userRequested
+    userRequested,
+    pager.config
   )
   pager.connectingContainers.add(ConnectingContainerItem(
     state: ccsBeforeResult,

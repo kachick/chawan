@@ -1,4 +1,4 @@
-from std/strutils import split, toUpperAscii
+from std/strutils import split, toUpperAscii, find
 
 import std/macros
 import std/nativesockets
@@ -11,6 +11,7 @@ import std/streams
 import std/tables
 import std/unicode
 
+import bindings/libregexp
 import bindings/quickjs
 import config/config
 import css/cascade
@@ -64,7 +65,7 @@ type
     bcReadSuccess, bcReadCanceled, bcClick, bcFindNextLink, bcFindPrevLink,
     bcFindNthLink, bcFindRevNthLink, bcFindNextMatch, bcFindPrevMatch,
     bcGetLines, bcUpdateHover, bcGotoAnchor, bcCancel, bcGetTitle, bcSelect,
-    bcClone, bcFindPrevParagraph, bcFindNextParagraph
+    bcClone, bcFindPrevParagraph, bcFindNextParagraph, bcMarkURL
 
   BufferState = enum
     bsLoadingPage, bsLoadingResources, bsLoaded
@@ -1648,6 +1649,47 @@ proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
     result.lines.add(line)
   result.numLines = buffer.lines.len
   result.bgcolor = buffer.bgcolor
+
+proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
+  if buffer.document == nil or buffer.document.body == nil:
+    return
+  var buf = "("
+  for i, scheme in schemes:
+    if i > 0:
+      buf &= '|'
+    buf &= scheme
+  buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&]*#?[\w:~.=-]*[\w/~=-]"
+  let regex = compileRegex(buf, {LRE_FLAG_GLOBAL}).get
+  # Dummy element for the fragment parsing algorithm. We can't just use parent
+  # there, because e.g. plaintext would not parse the text correctly.
+  let html = buffer.document.newHTMLElement(TAG_DIV)
+  var stack = @[buffer.document.body]
+  while stack.len > 0:
+    let element = stack.pop()
+    for i in countdown(element.childList.high, 0):
+      let node = element.childList[i]
+      if node of Text:
+        let text = Text(node)
+        var res = regex.exec(text.data)
+        if res.success:
+          var data = text.data
+          var offset = 0
+          for cap in res.captures.mitems:
+            if cap.i != 0:
+              continue
+            cap.s += offset
+            cap.e += offset
+            let s = data[cap.s..<cap.e]
+            let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
+            data[cap.s..<cap.e] = news
+            offset += news.len - (cap.e - cap.s)
+          let replacement = html.fragmentParsingAlgorithm(data)
+          discard element.replace(text, replacement)
+      elif node of HTMLElement:
+        let element = HTMLElement(node)
+        if element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
+          stack.add(element)
+  buffer.do_reshape()
 
 macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
     cmd: BufferCommand, packetid: int) =

@@ -149,6 +149,7 @@ type
     tailOnLoad*: bool
     cacheFile* {.jsget.}: string
     userRequested*: bool
+    mainConfig*: Config
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -157,7 +158,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: string;
     redirectDepth: int; canReinterpret: bool; contentType: Option[string];
     charsetStack: seq[Charset]; cacheId: int; cacheFile: string;
-    userRequested: bool): Container =
+    userRequested: bool; mainConfig: Config): Container =
   return Container(
     url: url,
     request: request,
@@ -176,7 +177,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     cacheId: cacheId,
     cacheFile: cacheFile,
     process: -1,
-    userRequested: userRequested
+    userRequested: userRequested,
+    mainConfig: mainConfig
   )
 
 func location(container: Container): URL {.jsfget.} =
@@ -1342,6 +1344,14 @@ proc getSelectionText(container: Container, hl: Highlight = nil):
           s &= '\n'
         s &= line.str
     return s
+  )
+
+proc markURL(container: Container) {.jsfunc.} =
+  var schemes: seq[string] = @[]
+  for key in container.mainConfig.external.urimethodmap.map.keys:
+    schemes.add(key.until(':'))
+  container.iface.markURL(schemes).then(proc() =
+    container.needslines = true
   )
 
 proc setLoadInfo(container: Container, msg: string) =

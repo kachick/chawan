@@ -3334,8 +3334,8 @@ proc insertNode(parent, node, before: Node) =
     insertionSteps(node)
 
 # WARNING ditto
-proc insert*(parent, node, before: Node, suppressObservers = false) =
-  let nodes = if node of DocumentFragment:
+proc insert*(parent, node, before: Node; suppressObservers = false) =
+  var nodes = if node of DocumentFragment:
     node.childList
   else:
     @[node]
@@ -3381,7 +3381,7 @@ proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
 # doesn't match that
 # Note: the standard returns child if not err. We don't, it's just a
 # pointless copy.
-proc replace(parent, child, node: Node): Err[DOMException] =
+proc replace*(parent, child, node: Node): Err[DOMException] =
   ?checkParentValidity(parent)
   if node.isHostIncludingInclusiveAncestor(parent):
     return errDOMException("Parent must be an ancestor",
@@ -4036,7 +4036,7 @@ proc toBlob(ctx: JSContext, this: HTMLCanvasElement, callback: JSValue,
 
 import html/chadombuilder
 # https://w3c.github.io/DOM-Parsing/#dfn-fragment-parsing-algorithm
-proc fragmentParsingAlgorithm(element: Element, s: string): DocumentFragment =
+proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =
   #TODO xml
   let newChildren = parseHTMLFragment(element, s)
   let fragment = element.document.newDocumentFragment()

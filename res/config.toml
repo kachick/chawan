@@ -260,6 +260,7 @@ M-p = '''
 		pager.loadSubmit(s);
 }
 '''
+':' = 'pager.markURL()'
 
 [line]
 C-m = 'line.submit()'

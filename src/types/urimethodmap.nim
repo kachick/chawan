@@ -8,7 +8,7 @@ import types/url
 import utils/twtstr
 
 type URIMethodMap* = object
-  map: Table[string, string]
+  map*: Table[string, string]
 
 func rewriteURL(pattern, surl: string): string =
   result = ""

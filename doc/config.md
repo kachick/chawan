@@ -1167,6 +1167,11 @@ if none were found.)</td>
 </tr>
 
 <tr>
+<td>`pager.markURL()`</td>
+<td>Convert URL-like strings to anchors on the current page.</td>
+</tr>
+
+<tr>
 <td>`pager.extern(cmd, options = {setenv: true, suspend: true, wait: false})`
 </td>
 <td>Run an external command `cmd`. The `$CHA_URL` and `$CHA_CHARSET` variables
