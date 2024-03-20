@@ -1615,7 +1615,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     container.contentType.get & ";charset=" & $container.charset
   let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
     realContentType)
-  if not mailcapRes.found and realContentType.startsWithIgnoreCase("text/"):
+  if not mailcapRes.found and not realContentType.startsWithIgnoreCase("text/"):
     pager.askDownloadPath(container, response)
     return
   if mailcapRes.connect:
