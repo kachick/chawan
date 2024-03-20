@@ -1172,6 +1172,16 @@ if none were found.)</td>
 </tr>
 
 <tr>
+<td>`pager.saveLink()`</td>
+<td>Save URL pointed to by the cursor.</td>
+</tr>
+
+<tr>
+<td>`pager.saveSource()`</td>
+<td>Save the source of the current buffer.</td>
+</tr>
+
+<tr>
 <td>`pager.extern(cmd, options = {setenv: true, suspend: true, wait: false})`
 </td>
 <td>Run an external command `cmd`. The `$CHA_URL` and `$CHA_CHARSET` variables

@@ -56,6 +56,8 @@ type
       tvalue*: string
     of cetOpen:
       request*: Request
+      url*: URL
+      save*: bool
     of cetAnchor, cetNoAnchor:
       anchor*: string
     of cetAlert:
@@ -89,6 +91,9 @@ type
 
   LoadState = enum
     lsLoading, lsCanceled, lsLoaded
+
+  ContainerFlag* = enum
+    cfCloned, cfUserRequested, cfHasStart, cfCanReinterpret, cfSave, cfIsHTML
 
   Container* = ref object
     # note: this is not the same as source.request.url (but should be synced
@@ -134,31 +139,27 @@ type
     loadState: LoadState
     events*: Deque[ContainerEvent]
     startpos: Option[CursorPosition]
-    hasstart: bool
     redirectDepth*: int
     select*: Select
-    canReinterpret*: bool
-    cloned: bool
     currentSelection {.jsget.}: Highlight
     tmpJumpMark: PagePos
     jumpMark: PagePos
     marks: Table[string, PagePos]
-    ishtml*: bool
     filter*: BufferFilter
     bgcolor*: CellColor
     tailOnLoad*: bool
     cacheFile* {.jsget.}: string
-    userRequested*: bool
     mainConfig*: Config
+    flags*: set[ContainerFlag]
 
 jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: string;
-    redirectDepth: int; canReinterpret: bool; contentType: Option[string];
+    redirectDepth: int; flags: set[ContainerFlag]; contentType: Option[string];
     charsetStack: seq[Charset]; cacheId: int; cacheFile: string;
-    userRequested: bool; mainConfig: Config): Container =
+    mainConfig: Config): Container =
   return Container(
     url: url,
     request: request,
@@ -172,13 +173,12 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     pos: CursorPosition(
       setx: -1
     ),
-    canReinterpret: canReinterpret,
     loadinfo: "Connecting to " & request.url.host & "...",
     cacheId: cacheId,
     cacheFile: cacheFile,
     process: -1,
-    userRequested: userRequested,
-    mainConfig: mainConfig
+    mainConfig: mainConfig,
+    flags: flags
   )
 
 func location(container: Container): URL {.jsfget.} =
@@ -196,7 +196,7 @@ proc clone*(container: Container; newurl: URL): Promise[Container] =
     nc[] = container[]
     nc.url = url
     nc.process = pid
-    nc.cloned = true
+    nc.flags.incl(cfCloned)
     nc.retry = @[]
     nc.parent = nil
     nc.children = @[]
@@ -1070,7 +1070,7 @@ proc popCursorPos*(container: Container, nojump = false) =
 
 proc copyCursorPos*(container, c2: Container) =
   container.startpos = some(c2.pos)
-  container.hasstart = true
+  container.flags.incl(cfHasStart)
 
 proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
   if container.iface == nil:
@@ -1375,7 +1375,7 @@ proc onload*(container: Container, res: int) =
         container.title = title
         container.triggerEvent(cetTitle)
     )
-    if not container.hasstart and container.url.anchor != "":
+    if cfHasStart notin container.flags and container.url.anchor != "":
       container.requestLines().then(proc(): Promise[Opt[tuple[x, y: int]]] =
         return container.iface.gotoAnchor()
       ).then(proc(res: Opt[tuple[x, y: int]]) =
@@ -1481,22 +1481,26 @@ proc reshape(container: Container): EmptyPromise {.jsfunc.} =
     return container.requestLines()
   )
 
-proc onclick(container: Container, res: ClickResult)
+proc onclick(container: Container; res: ClickResult; save: bool)
 
-proc displaySelect(container: Container, selectResult: SelectResult) =
+proc displaySelect(container: Container; selectResult: SelectResult) =
   let submitSelect = proc(selected: seq[int]) =
     container.iface.select(selected).then(proc(res: ClickResult) =
-      container.onclick(res))
+      container.onclick(res, save = false))
   container.select.initSelect(selectResult, container.acursorx,
     container.acursory, container.height, submitSelect)
   container.triggerEvent(cetUpdate)
 
-proc onclick(container: Container; res: ClickResult) =
+proc onclick(container: Container; res: ClickResult; save: bool) =
   if res.repaint:
     container.needslines = true
   if res.open.isSome:
-    container.triggerEvent(ContainerEvent(t: cetOpen, request: res.open.get))
-  if res.select.isSome:
+    container.triggerEvent(ContainerEvent(
+      t: cetOpen,
+      request: res.open.get,
+      save: save
+    ))
+  if res.select.isSome and not save:
     container.displaySelect(res.select.get)
   if res.readline.isSome:
     let rl = res.readline.get
@@ -1521,9 +1525,25 @@ proc click*(container: Container) {.jsfunc.} =
     if container.iface == nil:
       return
     container.iface.click(container.cursorx, container.cursory)
-      .then(proc(res: ClickResult) = container.onclick(res))
+      .then(proc(res: ClickResult) = container.onclick(res, save = false))
 
-proc windowChange*(container: Container, attrs: WindowAttributes) =
+proc saveLink*(container: Container) {.jsfunc.} =
+  if container.iface == nil:
+    return
+  container.iface.click(container.cursorx, container.cursory)
+    .then(proc(res: ClickResult) = container.onclick(res, save = true))
+
+proc saveSource*(container: Container) {.jsfunc.} =
+  if container.iface == nil:
+    return
+  container.triggerEvent(ContainerEvent(
+    t: cetOpen,
+    request: newRequest(newURL("cache:" & $container.cacheId).get),
+    save: true,
+    url: container.url
+  ))
+
+proc windowChange*(container: Container; attrs: WindowAttributes) =
   if attrs.width != container.width or attrs.height - 1 != container.height:
     container.width = attrs.width
     container.height = attrs.height - 1
@@ -1567,7 +1587,7 @@ proc handleCommand(container: Container) =
 
 proc setStream*(container: Container; stream: SocketStream;
     registerFun: proc(fd: int); fd: FileHandle; outCacheId: int) =
-  assert not container.cloned
+  assert cfCloned notin container.flags
   container.iface = newBufferInterface(stream, registerFun)
   container.iface.passFd(fd, outCacheId)
   discard close(fd)
@@ -1577,7 +1597,7 @@ proc setStream*(container: Container; stream: SocketStream;
 
 proc setCloneStream*(container: Container; stream: SocketStream;
     registerFun: proc(fd: int)) =
-  assert container.cloned
+  assert cfCloned in container.flags
   container.iface = cloneInterface(stream, registerFun)
   # Maybe we have to resume loading. Let's try.
   discard container.iface.load().then(proc(res: int) =

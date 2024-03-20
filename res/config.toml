@@ -106,9 +106,9 @@ W = 'pager.cursorNextBigWord()'
 H = 'n => pager.cursorTop(n)'
 M = '() => pager.cursorMiddle()'
 L = 'n => pager.cursorBottom(n)'
-';' = 'pager.cursorLeftEdge()'
-'+' = 'pager.cursorMiddleColumn()'
-'@' = 'pager.cursorRightEdge()'
+g0 = 'pager.cursorLeftEdge()'
+gc = 'pager.cursorMiddleColumn()'
+'g$' = 'pager.cursorRightEdge()'
 C-d = 'n => pager.halfPageDown(n)'
 C-u = 'n => pager.halfPageUp(n)'
 C-f = 'n => pager.pageDown(n)'
@@ -129,6 +129,9 @@ sE = '''
 		pager.cacheFile));
 }
 '''
+sC-m = 'pager.saveLink()'
+sC-j = 'pager.saveLink()'
+sS = 'pager.saveSource()'
 m = '''
 async () => {
 	const c = await pager.askChar("m");
@@ -154,8 +157,8 @@ async () => {
 'zl' = 'n => pager.scrollRight(n)'
 J = 'n => pager.scrollDown(n)'
 K = 'n => pager.scrollUp(n)'
-'('= 'n => pager.scrollLeft(n)'
-')' = 'n => pager.scrollRight(n)'
+'-'= 'n => pager.scrollLeft(n)'
+'+' = 'n => pager.scrollRight(n)'
 C-m = 'pager.click()'
 C-j = 'pager.click()'
 I = 'pager.gotoURL(pager.hoverImage)'
@@ -218,8 +221,7 @@ pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
 '''
 M-y = '''
 () => {
-	if (pager.extern('printf \'%s\' "$CHA_URL" | xsel -bi',
-			{suspend: false, setenv: true}))
+	if (pager.externInto('xsel -bi', pager.url))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");

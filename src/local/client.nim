@@ -648,7 +648,7 @@ proc addConsole(pager: Pager; interactive: bool; clearFun, showFun, hideFun:
       raise newException(Defect, "Failed to open console pipe.")
     let url = newURL("stream:console").get
     let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-      url, ConsoleTitle, canReinterpret = false, userRequested = false)
+      url, ConsoleTitle, {})
     let err = newPosixStream(pipefd[1])
     err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
     let console = newConsole(err, clearFun, showFun, hideFun)
@@ -664,7 +664,7 @@ proc clearConsole(client: Client) =
   let url = newURL("stream:console").get
   let pager = client.pager
   let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-    url, ConsoleTitle, canreinterpret = false, userRequested = false)
+    url, ConsoleTitle, {})
   replacement.replace = client.consoleWrapper.container
   pager.replace(client.consoleWrapper.container, replacement)
   client.consoleWrapper.container = replacement

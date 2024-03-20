@@ -502,9 +502,9 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; title = "";
-    redirectDepth = 0; canReinterpret = true; contentType = none(string);
-    charsetStack: seq[Charset] = @[]; url = request.url; cacheId = -1;
-    cacheFile = ""; userRequested = true): Container =
+    redirectDepth = 0; flags = {cfCanReinterpret, cfUserRequested};
+    contentType = none(string); charsetStack: seq[Charset] = @[];
+    url = request.url; cacheId = -1; cacheFile = ""): Container =
   request.suspended = true
   if loaderConfig.cookieJar != nil:
     # loader stores cookie jars per client, but we have no client yet.
@@ -528,12 +528,11 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     pager.term.attrs,
     title,
     redirectDepth,
-    canReinterpret,
+    flags,
     contentType,
     charsetStack,
     cacheId,
     cacheFile,
-    userRequested,
     pager.config
   )
   pager.connectingContainers.add(ConnectingContainerItem(
@@ -796,12 +795,12 @@ template myExec(cmd: string) =
   exitnow(127)
 
 proc toggleSource(pager: Pager) {.jsfunc.} =
-  if not pager.container.canReinterpret:
+  if cfCanReinterpret notin pager.container.flags:
     return
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
-    let ishtml = not pager.container.ishtml
+    let ishtml = cfIsHTML notin pager.container.flags
     #TODO I wish I could set the contentType to whatever I wanted, not just HTML
     let contentType = if ishtml:
       "text/html"
@@ -944,11 +943,13 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   )
 
 # Load request in a new buffer.
-proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
-    contentType = none(string), cs = CHARSET_UNKNOWN, replace: Container = nil,
-    redirectDepth = 0, referrer: Container = nil) =
+proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
+    contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
+    redirectDepth = 0; referrer: Container = nil; save = false;
+    url: URL = nil) =
   if referrer != nil and referrer.config.referer_from:
     request.referrer = referrer.url
+  let url = if url != nil: url else: request.url
   var loaderConfig: LoaderClientConfig
   var bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig)
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
@@ -961,12 +962,17 @@ proc gotoURL(pager: Pager, request: Request, prevurl = none(URL),
     # feedback on what is actually going to happen when typing a URL; TODO.
     if referrer != nil:
       loaderConfig.referrerPolicy = referrer.loaderConfig.referrerPolicy
+    var flags = {cfCanReinterpret, cfUserRequested}
+    if save:
+      flags.incl(cfSave)
     let container = pager.newContainer(
       bufferConfig,
       loaderConfig,
       request,
       redirectDepth = redirectDepth,
-      contentType = contentType
+      contentType = contentType,
+      flags = flags,
+      url = url
     )
     if replace != nil:
       pager.replace(replace, container)
@@ -1026,8 +1032,8 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
       pager.container.retry = urls
 
 proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
-    fd: FileHandle; url: URL, title: string;
-    canReinterpret, userRequested: bool): Container =
+    fd: FileHandle; url: URL; title: string; flags: set[ContainerFlag]):
+    Container =
   var url = url
   pager.loader.passFd(url.pathname, fd)
   safeClose(fd)
@@ -1038,16 +1044,15 @@ proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
     loaderConfig,
     newRequest(url),
     title = title,
-    canReinterpret = canReinterpret,
-    contentType = some(contentType),
-    userRequested = userRequested
+    flags = flags,
+    contentType = some(contentType)
   )
 
 proc readPipe*(pager: Pager, contentType: string, cs: Charset, fd: FileHandle,
     title: string) =
   let url = newURL("stream:-").get
   let container = pager.readPipe0(contentType, cs, fd, url, title,
-    canReinterpret = true, userRequested = true)
+    {cfCanReinterpret, cfUserRequested})
   inc pager.numload
   pager.addContainer(container)
 
@@ -1246,7 +1251,10 @@ proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
   let fallback = pager.container.contentType.get("text/plain")
   let contentType = contentType.get(fallback)
   let container = pager.newContainerFrom(fromc, contentType)
-  container.ishtml = contentType == "text/html"
+  if contentType == "text/html":
+    container.flags.incl(cfIsHTML)
+  else:
+    container.flags.excl(cfIsHTML)
   pager.addContainer(container)
   container.filter = BufferFilter(cmd: cmd)
 
@@ -1453,7 +1461,11 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
 proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
     istreamOutputId: int; contentType: string): CheckMailcapResult =
   if container.filter != nil:
-    return pager.filterBuffer(stream, container.filter.cmd, container.ishtml)
+    return pager.filterBuffer(
+      stream,
+      container.filter.cmd,
+      cfIsHTML in container.flags
+    )
   # contentType must exist, because we set it in applyResponse
   let shortContentType = container.contentType.get
   if shortContentType == "text/html":
@@ -1562,6 +1574,23 @@ proc redirect(pager: Pager; container: Container; response: Response;
     pager.alert("Error: maximum redirection depth reached")
     pager.deleteContainer(container)
 
+proc askDownloadPath(pager: Pager; container: Container; response: Response) =
+  var buf = pager.config.external.download_dir
+  let pathname = container.url.pathname
+  if pathname[^1] == '/':
+    buf &= "index.html"
+  else:
+    buf &= container.url.pathname.afterLast('/')
+  pager.setLineEdit(lmDownload, buf)
+  pager.lineData = LineDataDownload(
+    outputId: response.outputId,
+    stream: response.body
+  )
+  pager.deleteContainer(container)
+  pager.redraw = true
+  pager.refreshStatusMsg()
+  dec pager.numload
+
 proc connected(pager: Pager; container: Container; response: Response) =
   let istream = response.body
   container.applyResponse(response, pager.config.external.mime_types)
@@ -1573,8 +1602,12 @@ proc connected(pager: Pager; container: Container; response: Response) =
   # This forces client to ask for confirmation before quitting.
   # (It checks a flag on container, because console buffers must not affect this
   # variable.)
-  if container.userRequested:
+  if cfUserRequested in container.flags:
     pager.hasload = true
+  if cfSave in container.flags:
+    # download queried by user
+    pager.askDownloadPath(container, response)
+    return
   let realContentType = if "Content-Type" in response.headers:
     response.headers["Content-Type"]
   else:
@@ -1582,35 +1615,28 @@ proc connected(pager: Pager; container: Container; response: Response) =
     container.contentType.get & ";charset=" & $container.charset
   let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
     realContentType)
-  if not mailcapRes.found and container.contentType.get.until('/') != "text":
-    pager.setLineEdit(lmDownload,
-      pager.config.external.download_dir &
-      container.url.pathname.afterLast('/'))
-    pager.lineData = LineDataDownload(
-      outputId: response.outputId,
-      stream: istream
-    )
-    pager.deleteContainer(container)
-    pager.redraw = true
-    pager.refreshStatusMsg()
-    dec pager.numload
+  if not mailcapRes.found and realContentType.startsWithIgnoreCase("text/"):
+    pager.askDownloadPath(container, response)
     return
   if mailcapRes.connect:
-    container.ishtml = mailcapRes.ishtml
+    if mailcapRes.ishtml:
+      container.flags.incl(cfIsHTML)
+    else:
+      container.flags.excl(cfIsHTML)
     # buffer now actually exists; create a process for it
     container.process = pager.forkserver.forkBuffer(
       container.config,
       container.url,
       container.request,
       pager.attrs,
-      container.ishtml,
+      mailcapRes.ishtml,
       container.charsetStack
     )
     if mailcapRes.fdout != istream.fd:
       # istream has been redirected into a filter
       istream.close()
     pager.procmap.add(ProcMapItem(
-      container: container, 
+      container: container,
       fdout: FileHandle(mailcapRes.fdout),
       fdin: FileHandle(istream.fd),
       ostreamOutputId: mailcapRes.ostreamOutputId,
@@ -1713,15 +1739,17 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       pager.redraw = true
   of cetOpen:
     let url = event.request.url
-    if pager.container == nil or not pager.container.isHoverURL(url):
+    if not event.save and (pager.container != container or
+        not container.isHoverURL(url)):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
           pager.gotoURL(event.request, some(container.url),
-            referrer = pager.container)
+            referrer = pager.container, save = event.save)
       )
     else:
+      let url = if event.url != nil: event.url else: event.request.url
       pager.gotoURL(event.request, some(container.url),
-        referrer = pager.container)
+        referrer = pager.container, save = event.save, url = url)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()
