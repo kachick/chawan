@@ -693,13 +693,13 @@ proc launchClient*(client: Client; pages: seq[string];
   if not dump:
     if stdin.isatty():
       istream = newPosixStream(stdin.getFileHandle())
-    if istream == nil:
-      if stdout.isatty():
-        istream = newPosixStream("/dev/tty", O_RDONLY, 0)
-        if istream == nil:
-          dump = true
-      else:
-        dump = true
+    dump = istream == nil
+    if stdout.isatty():
+      istream = newPosixStream("/dev/tty", O_RDONLY, 0)
+      if istream != nil:
+        dump = false
+    else:
+      dump = true
   let selector = newSelector[int]()
   let efd = int(client.forkserver.estream.fd)
   selector.registerHandle(efd, {Read}, 0)
