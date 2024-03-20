@@ -1,8 +1,5 @@
-when NimMajor >= 2:
-  import std/envvars
-else:
-  import std/os
 import std/options
+import std/os
 import std/strutils
 
 import curl
@@ -21,8 +18,24 @@ type FtpHandle = ref object
   path: string
   statusline: bool
 
-proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
-    userdata: pointer): csize_t {.cdecl.} =
+proc printHeader(op: FtpHandle) =
+    if op.dirmode:
+      stdout.write("""Content-Type: text/html
+
+<HTML>
+<HEAD>
+<BASE HREF=""" & op.base & """>
+<TITLE>""" & op.path & """</TITLE>
+</HEAD>
+<BODY>
+<H1>Index of """ & htmlEscape(op.path) & """</H1>
+<PRE>
+""")
+    else:
+      stdout.write('\n')
+
+proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
+    csize_t {.cdecl.} =
   var line = newString(nitems)
   if nitems > 0:
     prepareMutation(line)
@@ -34,20 +47,7 @@ proc curlWriteHeader(p: cstring, size: csize_t, nitems: csize_t,
       var status: clong
       op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
       stdout.write("Status: " & $status & "\n")
-      if op.dirmode:
-        stdout.write("Content-Type: text/html\n")
-      stdout.write("\n")
-      if op.dirmode:
-        stdout.write("""
-<HTML>
-<HEAD>
-<BASE HREF=""" & op.base & """>
-<TITLE>""" & op.path & """</TITLE>
-</HEAD>
-<BODY>
-<H1>Index of """ & htmlEscape(op.path) & """</H1>
-<PRE>
-""")
+      op.printHeader()
       return nitems
     elif line.startsWith("530"): # login incorrect
       op.statusline = true
@@ -72,14 +72,16 @@ Content-Type: text/html
   return nitems
 
 # From the documentation: size is always 1.
-proc curlWriteBody(p: cstring, size, nmemb: csize_t, userdata: pointer):
+proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   let op = cast[FtpHandle](userdata)
+  if not op.statusline:
+    op.statusline = true
+    op.printHeader()
   if nmemb > 0:
     if op.dirmode:
       let i = op.buffer.len
       op.buffer.setLen(op.buffer.len + int(nmemb))
-      prepareMutation(op.buffer)
       copyMem(addr op.buffer[i], p, nmemb)
     else:
       return csize_t(stdout.writeBuffer(p, int(nmemb)))
@@ -87,7 +89,7 @@ proc curlWriteBody(p: cstring, size, nmemb: csize_t, userdata: pointer):
 
 proc finish(op: FtpHandle) =
   let op = op
-  var items: seq[DirlistItem]
+  var items: seq[DirlistItem] = @[]
   for line in op.buffer.split('\n'):
     if line.len == 0: continue
     var i = 10 # permission
@@ -151,10 +153,70 @@ proc finish(op: FtpHandle) =
   stdout.write(makeDirlist(items))
   stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
 
+proc matchesPattern(s, pat: openArray[char]): bool =
+  var i = 0
+  for j, c in pat:
+    if c == '*':
+      while i < s.len:
+        if s.toOpenArray(i, s.high).matchesPattern(pat.toOpenArray(j + 1,
+            pat.high)):
+          return true
+        inc i
+      return false
+    if i >= s.len or c != '?' and c != s[i]:
+      return false
+    inc i
+  return true
+
+proc parseSSHConfig(f: File; curl: CURL; host: string; idSet: var bool) =
+  var skipTillNext = false
+  var line: string
+  var certificateFile = ""
+  var identityFile = ""
+  while f.readLine(line):
+    var i = line.skipBlanks(0)
+    if i == line.len or line[i] == '#':
+      continue
+    let k = line.until(AsciiWhitespace, i)
+    i = line.skipBlanks(i + k.len)
+    if i < line.len and line[i] == '=':
+      i = line.skipBlanks(i + 1)
+    if i == line.len or line[i] == '#':
+      continue
+    var arg = ""
+    let isStr = line[i] in {'"', '\''}
+    if isStr:
+      inc i
+    var quot = false
+    while i < line.len and (quot or line[i] != '"' or not isStr):
+      if not quot and line[i] == '\\':
+        quot = true
+      else:
+        arg &= line[i]
+      inc i
+    if k == "Match": #TODO support this
+      skipTillNext = true
+    elif k == "Host":
+      skipTillNext = not host.matchesPattern(arg)
+    elif skipTillNext:
+      continue
+    elif k == "IdentityFile":
+      identityFile = expandTilde(arg)
+    elif k == "CertificateFile":
+      certificateFile = expandTilde(arg)
+  if identityFile != "":
+    curl.setopt(CURLOPT_SSH_PRIVATE_KEYFILE, identityFile)
+    idSet = true
+  if certificateFile != "":
+    curl.setopt(CURLOPT_SSH_PUBLIC_KEYFILE, certificateFile)
+  f.close()
+
 proc main() =
   let curl = curl_easy_init()
   doAssert curl != nil
-  let opath = getEnv("MAPPED_URI_PATH")
+  var opath = getEnv("MAPPED_URI_PATH")
+  if opath == "":
+    opath = "/"
   let path = percentDecode(opath)
   let op = FtpHandle(
     curl: curl,
@@ -162,14 +224,30 @@ proc main() =
   )
   let url = curl_url()
   const flags = cuint(CURLU_PATH_AS_IS)
-  url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
+  let scheme = getEnv("MAPPED_URI_SCHEME")
+  url.set(CURLUPART_SCHEME, scheme, flags)
   let username = getEnv("MAPPED_URI_USERNAME")
   if username != "":
     url.set(CURLUPART_USER, username, flags)
+  let host = getEnv("MAPPED_URI_HOST")
   let password = getEnv("MAPPED_URI_PASSWORD")
-  if password != "":
-    url.set(CURLUPART_PASSWORD, password, flags)
-  url.set(CURLUPART_HOST, getEnv("MAPPED_URI_HOST"), flags)
+  var idSet = false
+  # Parse SSH config for sftp.
+  if scheme == "sftp":
+    let systemConfig = "/etc/ssh/ssh_config"
+    if fileExists(systemConfig):
+      var f: File
+      if f.open(systemConfig):
+        parseSSHConfig(f, curl, host, idSet)
+    let userConfig = expandTilde("~/.ssh/config")
+    if fileExists(userConfig):
+      var f: File
+      if f.open(userConfig):
+        parseSSHConfig(f, curl, host, idSet)
+    if idSet:
+      curl.setopt(CURLOPT_KEYPASSWD, password)
+  url.set(CURLUPART_PASSWORD, password, flags)
+  url.set(CURLUPART_HOST, host, flags)
   let port = getEnv("MAPPED_URI_PORT")
   if port != "":
     url.set(CURLUPART_PORT, port, flags)
@@ -192,7 +270,12 @@ proc main() =
     op.path = path
     curl_free(surl)
   # Now for the workaround:
-  url.set(CURLUPART_PATH, '/' & opath, flags)
+  if scheme != "sftp" and (opath.len <= 1 or opath[1] != '~'):
+    url.set(CURLUPART_PATH, '/' & opath, flags)
+  # Another hack: if password was set for the identity file, then clear it from
+  # the URL.
+  if idSet:
+    url.set(CURLUPART_PASSWORD, nil, flags)
   # Set opts for the request
   curl.setopt(CURLOPT_CURLU, url)
   curl.setopt(CURLOPT_HEADERDATA, op)
@@ -211,7 +294,10 @@ proc main() =
     let res = curl_easy_perform(curl)
     if res != CURLE_OK:
       if not op.statusline:
-        stdout.write(getCurlConnectionError(res))
+        if res == CURLE_LOGIN_DENIED:
+          stdout.write("Status: 401\n")
+        else:
+          stdout.write(getCurlConnectionError(res))
     elif op.dirmode:
       op.finish()
   curl_url_cleanup(url)

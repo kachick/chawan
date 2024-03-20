@@ -9,8 +9,11 @@ template setopt*(curl: CURL, opt: CURLoption, arg: string) =
 template getinfo*(curl: CURL, info: CURLINFO, arg: typed) =
   discard curl_easy_getinfo(curl, info, arg)
 
+template set*(url: CURLU, part: CURLUPart, content: cstring, flags: cuint) =
+  discard curl_url_set(url, part, content, flags)
+
 template set*(url: CURLU, part: CURLUPart, content: string, flags: cuint) =
-  discard curl_url_set(url, part, cstring(content), flags)
+  url.set(part, cstring(content), flags)
 
 template get*(url: CURLU, part: CURLUPart, flags: cuint): cstring =
   var outs: cstring

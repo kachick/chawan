@@ -17,7 +17,7 @@ type DirlistItem* = object
   of ITEM_DIR:
     discard
 
-type NameWidthTuple = tuple[name: string, width: int]
+type NameWidthTuple = tuple[name: string, width: int, item: ptr DirlistItem]
 
 func makeDirlist*(items: seq[DirlistItem]): string =
   var names: seq[NameWidthTuple]
@@ -30,12 +30,11 @@ func makeDirlist*(items: seq[DirlistItem]): string =
       name &= '/'
     let w = name.width()
     maxw = max(w, maxw)
-    names.add((name, w))
+    names.add((name, w, unsafeAddr item))
   names.sort(proc(a, b: NameWidthTuple): int = cmp(a.name, b.name))
   var outs = "<A HREF=\"../\">[Upper Directory]</A>\n"
-  for i in 0 ..< items.len:
-    let item = items[i]
-    var (name, width) = names[i]
+  for (name, width, itemp) in names.mitems:
+    let item = itemp[]
     var path = percentEncode(item.name, PathPercentEncodeSet)
     if item.t == ITEM_LINK:
       if item.linkto.len > 0 and item.linkto[^1] == '/':

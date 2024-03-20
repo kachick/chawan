@@ -52,11 +52,14 @@ not work.
 Chawan supports FTP through the `adapter/protocol/ftp.nim` libcurl adapter. For
 directory listings, it assumes UNIX output style, and will probably break
 horribly on receiving anything else. Otherwise, the directory listing view
-is identical to (and uses the same code path as) the file:// directory listing.
+is identical to the file:// directory listing.
 
-In theory, SFTP and FTPS should be supported as well. In practice, SFTP does
-not really work yet because there is no way to specify private keys, and I
-have never seen an FTPS server in the wild so I assume it is broken too.
+SFTP "works" too, but YMMV. Note that if an IdentityFile declaration is found in
+your ssh config, then it will prompt for the identity file password, but there
+is no way to tell whether it is really asking for that. Also, settings covered
+by the Match field are ignored.
+
+In theory, FTPS should work too, but it is completely untested.
 
 ## Gopher
 
