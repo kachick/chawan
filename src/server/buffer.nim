@@ -123,7 +123,8 @@ type
     outputId: int
 
   InterfaceOpaque = ref object
-    stream: Stream
+    stream: SocketStream
+    dummyStream: StringStream
     len: int
 
   BufferInterface* = ref object
@@ -144,11 +145,16 @@ type
 proc getFromOpaque[T](opaque: pointer, res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:
-    opaque.stream.sread(res)
+    let dummyStream = opaque.dummyStream
+    opaque.dummyStream.setPosition(0)
+    dummyStream.data = newString(opaque.len)
+    let n = opaque.stream.readData(addr dummyStream.data[0], opaque.len)
+    assert n == opaque.len
+    dummyStream.sread(res)
 
 proc newBufferInterface*(stream: SocketStream, registerFun: proc(fd: int)):
     BufferInterface =
-  let opaque = InterfaceOpaque(stream: stream)
+  let opaque = InterfaceOpaque(stream: stream, dummyStream: newStringStream())
   result = BufferInterface(
     map: newPromiseMap(cast[pointer](opaque)),
     packetid: 1, # ids below 1 are invalid
@@ -1724,19 +1730,17 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
     if rval == nil:
       resolve.add(quote do:
         let len = slen(`packetid`)
-        block:
-          buffer.pstream.withWriter w:
-            w.swrite(len)
-            w.swrite(`packetid`)
+        buffer.pstream.withWriter w:
+          w.swrite(len)
+          w.swrite(`packetid`)
       )
     else:
       resolve.add(quote do:
         let len = slen(`packetid`) + slen(`rval`)
-        block:
-          buffer.pstream.withWriter w:
-            w.swrite(len)
-            w.swrite(`packetid`)
-            w.swrite(`rval`)
+        buffer.pstream.withWriter w:
+          w.swrite(len)
+          w.swrite(`packetid`)
+          w.swrite(`rval`)
       )
     if v.istask:
       let en = v.ename

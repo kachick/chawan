@@ -48,10 +48,11 @@ proc deinit*(writer: var BufferedWriter) =
   writer.bufLen = 0
 
 template withWriter*(stream: DynStream; w, body: untyped) =
-  var w {.inject.} = stream.initWriter()
-  body
-  w.flush()
-  w.deinit()
+  block:
+    var w {.inject.} = stream.initWriter()
+    body
+    w.flush()
+    w.deinit()
 
 proc swrite*(writer: var BufferedWriter; n: SomeNumber)
 proc swrite*[T](writer: var BufferedWriter; s: set[T])
