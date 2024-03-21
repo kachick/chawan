@@ -702,6 +702,14 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   stream.close()
   # unblock main socket
   ctx.ssock.sock.getFd().setBlocking(false)
+  # for CGI
+  putEnv("SERVER_SOFTWARE", "Chawan")
+  putEnv("SERVER_PROTOCOL", "HTTP/1.0")
+  putEnv("SERVER_NAME", "localhost")
+  putEnv("SERVER_PORT", "80")
+  putEnv("REMOTE_HOST", "localhost")
+  putEnv("REMOTE_ADDR", "127.0.0.1")
+  putEnv("GATEWAY_INTERFACE", "CGI/1.1")
   return ctx
 
 # This is only called when an OutputHandle could not read enough of one (or

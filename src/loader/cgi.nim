@@ -27,13 +27,6 @@ proc putMappedURL(url: URL) =
 proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
     request: Request; contentLen: int; prevURL: URL) =
   let url = request.url
-  putEnv("SERVER_SOFTWARE", "Chawan")
-  putEnv("SERVER_PROTOCOL", "HTTP/1.0")
-  putEnv("SERVER_NAME", "localhost")
-  putEnv("SERVER_PORT", "80")
-  putEnv("REMOTE_HOST", "localhost")
-  putEnv("REMOTE_ADDR", "127.0.0.1")
-  putEnv("GATEWAY_INTERFACE", "CGI/1.1")
   putEnv("SCRIPT_NAME", scriptName)
   putEnv("SCRIPT_FILENAME", cmd)
   putEnv("REQUEST_URI", requestURI)
