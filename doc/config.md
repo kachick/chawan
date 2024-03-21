@@ -335,7 +335,9 @@ supported by cURL may be used. Can be overridden by siteconf.</td>
 <tr>
 <td>default-headers</td>
 <td>Table</td>
-<td>Specify a list of default headers for all HTTP(S) network requests.</td>
+<td>Specify a list of default headers for all HTTP(S) network requests. Can be
+overridden by siteconf.</td>
+</tr>
 
 </table>
 
@@ -649,6 +651,12 @@ with this stylesheet to get the final user stylesheet.)</td>
 <td>Specify a proxy for network requests fetching contents of this buffer.</td>
 </tr>
 
+<tr>
+<td>default-headers</td>
+<td>Table</td>
+<td>Specify a list of default headers for HTTP(S) network requests to this
+buffer.</td>
+</tr>
 
 </table>
 

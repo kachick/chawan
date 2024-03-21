@@ -81,6 +81,10 @@ type
     # when set to true, the loader will not write data from the body (not
     # headers!) into the output until a resume is received.
     suspended*: bool
+    # if defaultHeadersSet is set, then loader will not set default headers
+    # for the request if it was received from the pager. (this is used when
+    # starting requests for new buffers.)
+    defaultHeadersSet*: bool
 
 jsDestructor(Request)
 

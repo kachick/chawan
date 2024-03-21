@@ -429,6 +429,21 @@ proc loadResource(ctx: LoaderContext; client: ClientData; request: Request;
   if tries >= MaxRewrites:
     handle.rejectHandle(ERROR_TOO_MANY_REWRITES)
 
+proc setupRequestDefaults*(request: Request; config: LoaderClientConfig) =
+  request.defaultHeadersSet = true
+  for k, v in config.defaultHeaders.table:
+    if k notin request.headers.table:
+      request.headers.table[k] = v
+  if config.cookieJar != nil and config.cookieJar.cookies.len > 0:
+    if "Cookie" notin request.headers.table:
+      let cookie = config.cookieJar.serialize(request.url)
+      if cookie != "":
+        request.headers["Cookie"] = cookie
+  if request.referrer != nil and "Referer" notin request.headers:
+    let r = request.referrer.getReferrer(request.url, config.referrerPolicy)
+    if r != "":
+      request.headers["Referer"] = r
+
 proc onLoad(ctx: LoaderContext; stream: SocketStream; client: ClientData) =
   var request: Request
   stream.sread(request)
@@ -440,20 +455,10 @@ proc onLoad(ctx: LoaderContext; stream: SocketStream; client: ClientData) =
   if not client.config.filter.match(request.url):
     handle.rejectHandle(ERROR_DISALLOWED_URL)
   else:
-    for k, v in client.config.defaultHeaders.table:
-      if k notin request.headers.table:
-        request.headers.table[k] = v
-    let cookieJar = client.config.cookieJar
-    if cookieJar != nil and cookieJar.cookies.len > 0:
-      if "Cookie" notin request.headers.table:
-        let cookie = cookieJar.serialize(request.url)
-        if cookie != "":
-          request.headers["Cookie"] = cookie
-    if request.referrer != nil and "Referer" notin request.headers:
-      let r = request.referrer.getReferrer(request.url,
-        client.config.referrerPolicy)
-      if r != "":
-        request.headers["Referer"] = r
+    if ctx.pagerClient != client or not request.defaultHeadersSet:
+      # do not override defaults for pager, because it starts requests that
+      # later belong to buffers.
+      request.setupRequestDefaults(client.config)
     if request.proxy == nil or not client.config.acceptProxy:
       request.proxy = client.config.proxy
     ctx.loadResource(client, request, handle)

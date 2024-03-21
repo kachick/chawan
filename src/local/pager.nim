@@ -40,7 +40,6 @@ import types/cell
 import types/color
 import types/cookie
 import types/opt
-import types/referrer
 import types/url
 import types/winattrs
 import utils/strwidth
@@ -123,7 +122,6 @@ type
     numload*: int # number of pages currently being loaded
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
-    proxy: URL
     redraw: bool
     regex: Opt[Regex]
     reverseSearch: bool
@@ -276,7 +274,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   return Pager(
     config: config,
     forkserver: forkserver,
-    proxy: config.getProxy(),
     term: newTerminal(stdout, config),
     alerts: alerts
   )
@@ -298,8 +295,8 @@ proc setLoader*(pager: Pager, loader: FileLoader) =
   pager.devRandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   pager.loader = loader
   let config = LoaderClientConfig(
-    defaultHeaders: pager.config.getDefaultHeaders(),
-    proxy: pager.config.getProxy(),
+    defaultHeaders: newHeaders(pager.config.network.default_headers),
+    proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
   )
   loader.key = pager.addLoaderClient(pager.loader.clientPid, config)
@@ -506,18 +503,7 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     contentType = none(string); charsetStack: seq[Charset] = @[];
     url = request.url; cacheId = -1; cacheFile = ""): Container =
   request.suspended = true
-  if loaderConfig.cookieJar != nil:
-    # loader stores cookie jars per client, but we have no client yet.
-    # therefore we must set cookie here
-    let cookie = loaderConfig.cookieJar.serialize(request.url)
-    if cookie != "":
-      request.headers["Cookie"] = cookie
-  if request.referrer != nil:
-    # same with referrer
-    let r = request.referrer.getReferrer(request.url,
-      loaderConfig.referrerPolicy)
-    if r != "":
-      request.headers["Referer"] = r
+  request.setupRequestDefaults(loaderConfig)
   let stream = pager.loader.startRequest(request)
   pager.loader.registerFun(stream.fd)
   let container = newContainer(
@@ -884,12 +870,12 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   let host = url.host
   var referer_from = false
   var cookieJar: CookieJar = nil
-  var headers = pager.config.getDefaultHeaders()
+  var headers = newHeaders(pager.config.network.default_headers)
   var scripting = false
   var images = false
   var charsets = pager.config.encoding.document_charset
   var userstyle = pager.config.css.stylesheet
-  var proxy = pager.proxy
+  var proxy = pager.config.network.proxy
   for sc in pager.config.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -922,6 +908,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
       proxy = sc.proxy.get
+    if sc.default_headers.isSome:
+      headers = newHeaders(sc.default_headers.get)
   loaderConfig = LoaderClientConfig(
     defaultHeaders: headers,
     cookiejar: cookieJar,

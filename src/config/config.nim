@@ -47,6 +47,7 @@ type
     images*: Opt[bool]
     stylesheet*: Opt[string]
     proxy*: Opt[URL]
+    default_headers*: Opt[Table[string, string]]
 
   OmniRule* = object
     match*: Regex
@@ -87,7 +88,7 @@ type
     max_redirect* {.jsgetset.}: int32
     prepend_https* {.jsgetset.}: bool
     prepend_scheme* {.jsgetset.}: string
-    proxy* {.jsgetset.}: Opt[string]
+    proxy* {.jsgetset.}: URL
     default_headers* {.jsgetset.}: Table[string, string]
 
   DisplayConfig = object
@@ -248,19 +249,6 @@ proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
 
 proc hasprop(a: ptr ActionMap; s: string): bool {.jshasprop.} =
   return s in a[]
-
-func getProxy*(config: Config): URL =
-  if config.network.proxy.isSome:
-    let s = config.network.proxy.get
-    let x = parseURL(s)
-    if x.isSome:
-      return x.get
-    else:
-      raise newException(ValueError, "Invalid proxy URL: " & s)
-  return nil
-
-func getDefaultHeaders*(config: Config): Headers =
-  return newHeaders(config.network.default_headers)
 
 proc openFileExpand(dir, file: string): FileStream =
   if file.len == 0:
