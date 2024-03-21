@@ -54,7 +54,7 @@ if (params[0] == "log") {
 	const cgi = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}&params=show`;
 	const titleParams = params.join(' ').replace(/[&<>]/g,
 		x => ({'&': '&amp', '<': '&lt', '>': '&gt'}[x]));
-	console.log(`<title>git ${titleParams}</title>`);
+	console.log(`<!DOCTYPE html>\n<title>git ${titleParams}</title>`);
 	while ((l = f.getline()) !== null) {
 		console.log(l.replace(/[a-f0-9]{40}/g,
 			x => `<a href='${cgi}%20${x}'>${x}</a>`));

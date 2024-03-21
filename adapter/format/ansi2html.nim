@@ -1,4 +1,5 @@
 import std/options
+import std/os
 import std/selectors
 
 import io/posixstream
@@ -357,7 +358,10 @@ proc processData(state: var State, buf: openArray[char]) =
 proc main() =
   let ps = newPosixStream(stdin.getFileHandle())
   var state = State(os: newPosixStream(stdout.getFileHandle()))
-  state.puts("<!DOCTYPE html>\n<body><pre style='margin: 0'>")
+  let standalone = paramCount() >= 1 and paramStr(1) == "-s"
+  if standalone:
+    state.puts("<!DOCTYPE html>\n<body>")
+  state.puts("<pre style='margin: 0'>")
   ps.setBlocking(false)
   var buffer {.noinit.}: array[4096, char]
   var selector = newSelector[int]()
@@ -373,6 +377,8 @@ proc main() =
         selector.registerHandle(ps.fd, {Read}, 0)
         discard selector.select(-1)
         selector.unregister(ps.fd)
+  if standalone:
+    state.puts("</body>")
   state.flushOutbuf()
 
 main()
