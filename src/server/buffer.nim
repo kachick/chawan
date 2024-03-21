@@ -61,11 +61,11 @@ import chame/tags
 
 type
   BufferCommand* = enum
-    bcPassFd, bcLoad, bcForceRender, bcWindowChange, bcFindAnchor,
-    bcReadSuccess, bcReadCanceled, bcClick, bcFindNextLink, bcFindPrevLink,
-    bcFindNthLink, bcFindRevNthLink, bcFindNextMatch, bcFindPrevMatch,
-    bcGetLines, bcUpdateHover, bcGotoAnchor, bcCancel, bcGetTitle, bcSelect,
-    bcClone, bcFindPrevParagraph, bcFindNextParagraph, bcMarkURL
+    bcLoad, bcForceRender, bcWindowChange, bcFindAnchor, bcReadSuccess,
+    bcReadCanceled, bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink,
+    bcFindRevNthLink, bcFindNextMatch, bcFindPrevMatch, bcGetLines,
+    bcUpdateHover, bcGotoAnchor, bcCancel, bcGetTitle, bcSelect, bcClone,
+    bcFindPrevParagraph, bcFindNextParagraph, bcMarkURL
 
   BufferState = enum
     bsLoadingPage, bsLoadingResources, bsLoaded
@@ -121,6 +121,7 @@ type
     charset: Charset
     cacheId: int
     outputId: int
+    dummyStream: StringStream
 
   InterfaceOpaque = ref object
     stream: SocketStream
@@ -146,7 +147,7 @@ proc getFromOpaque[T](opaque: pointer, res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:
     let dummyStream = opaque.dummyStream
-    opaque.dummyStream.setPosition(0)
+    dummyStream.setPosition(0)
     dummyStream.data = newString(opaque.len)
     let n = opaque.stream.readData(addr dummyStream.data[0], opaque.len)
     assert n == opaque.len
@@ -199,11 +200,6 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
   let nup = ident(funid) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
-  body.add(quote do:
-    var writer {.inject.} = `thisval`.stream.initWriter()
-    writer.swrite(BufferCommand.`nup`)
-    writer.swrite(`thisval`.packetid)
-  )
   var params2: seq[NimNode]
   var retval2: NimNode
   var addfun: NimNode
@@ -213,10 +209,9 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
     retval2 = ident("EmptyPromise")
   else:
     addfun = quote do:
-      addPromise[`retval`](`thisval`.map, `thisval`.packetid, getFromOpaque[`retval`])
-    retval2 = newNimNode(nnkBracketExpr).add(
-      ident("Promise"),
-      retval)
+      addPromise[`retval`](`thisval`.map, `thisval`.packetid,
+        getFromOpaque[`retval`])
+    retval2 = newNimNode(nnkBracketExpr).add(ident"Promise", retval)
   params2.add(retval2)
   params2.add(this2)
   # flatten args
@@ -225,14 +220,27 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
     for i in 0 ..< param.len - 2:
       let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
       params2.add(id2)
+  var len = ident"len"
+  body.add(quote do:
+    var `len` = 0
+  )
   for i in 2 ..< params2.len:
     let s = params2[i][0] # sym e.g. url
     body.add(quote do:
-      when typeof(`s`) is FileHandle:
-        writer.flush()
-        SocketStream(`thisval`.stream.source).sendFileHandle(`s`)
-      else:
-        writer.swrite(`s`)
+      `len` += slen(`s`)
+    )
+  body.add(quote do:
+    `len` += slen(BufferCommand.`nup`)
+    `len` += slen(`thisval`.packetid)
+    var writer {.inject.} = `thisval`.stream.initWriter()
+    writer.swrite(`len`)
+    writer.swrite(BufferCommand.`nup`)
+    writer.swrite(`thisval`.packetid)
+  )
+  for i in 2 ..< params2.len:
+    let s = params2[i][0] # sym e.g. url
+    body.add(quote do:
+      writer.swrite(`s`)
     )
   body.add(quote do:
     writer.flush()
@@ -296,13 +304,6 @@ macro task(fun: typed) =
   let pfun = getProxyFunction(funid)
   pfun.istask = true
   fun
-
-proc passFd*(buffer: Buffer; fd: FileHandle; cacheId: int) {.proxy.} =
-  buffer.fd = fd
-  buffer.istream = newPosixStream(fd)
-  buffer.istream.setBlocking(false)
-  buffer.selector.registerHandle(fd, {Read}, 0)
-  buffer.cacheId = cacheId
 
 func getTitleAttr(node: StyledNode): string =
   if node == nil:
@@ -1697,8 +1698,8 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
           stack.add(element)
   buffer.do_reshape()
 
-macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
-    cmd: BufferCommand, packetid: int) =
+macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
+    cmd: BufferCommand; packetid: int) =
   let switch = newNimNode(nnkCaseStmt)
   switch.add(ident("cmd"))
   for k, v in funs:
@@ -1712,11 +1713,8 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
         let id = ident(param[i].strVal)
         let typ = param[^2]
         stmts.add(quote do:
-          when `typ` is FileHandle:
-            let `id` = `buffer`.pstream.recvFileHandle()
-          else:
-            var `id`: `typ`
-            `buffer`.pstream.sread(`id`)
+          var `id`: `typ`
+          `buffer`.dummyStream.sread(`id`)
         )
         call.add(id)
     var rval: NimNode
@@ -1759,9 +1757,15 @@ macro bufferDispatcher(funs: static ProxyMap, buffer: Buffer,
 
 proc readCommand(buffer: Buffer) =
   var cmd: BufferCommand
-  buffer.pstream.sread(cmd)
+  var len: int
   var packetid: int
-  buffer.pstream.sread(packetid)
+  buffer.pstream.sread(len)
+  buffer.dummyStream.setPosition(0)
+  buffer.dummyStream.data = newString(len)
+  let n = buffer.pstream.readData(addr buffer.dummyStream.data[0], len)
+  assert n == len
+  buffer.dummyStream.sread(cmd)
+  buffer.dummyStream.sread(packetid)
   bufferDispatcher(ProxyFunctions, buffer, cmd, packetid)
 
 proc handleRead(buffer: Buffer, fd: int): bool =
@@ -1852,10 +1856,17 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,
-    outputId: -1
+    outputId: -1,
+    dummyStream: newStringStream()
   )
   buffer.charset = buffer.charsetStack.pop()
-  socks.read(buffer.loader.key)
+  socks.sread(buffer.loader.key)
+  let fd = socks.recvFileHandle()
+  buffer.fd = fd
+  socks.sread(buffer.cacheId)
+  buffer.istream = newPosixStream(fd)
+  buffer.istream.setBlocking(false)
+  buffer.selector.registerHandle(fd, {Read}, 0)
   var gbuffer {.global.}: Buffer
   gbuffer = buffer
   onSignal SIGTERM:

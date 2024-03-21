@@ -422,7 +422,11 @@ proc acceptBuffers(client: Client) =
         outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
         loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
       # pass down fdout
-      container.setStream(stream, registerFun, item.fdout, outCacheId)
+      stream.sendFileHandle(item.fdout)
+      stream.withWriter w:
+        w.swrite(outCacheId)
+      discard close(item.fdout)
+      container.setStream(stream, registerFun)
     else:
       # buffer is cloned, no need to cache anything
       container.setCloneStream(stream, registerFun)

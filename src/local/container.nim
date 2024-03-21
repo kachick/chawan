@@ -1586,11 +1586,9 @@ proc handleCommand(container: Container) =
   container.iface.resolve(packetid, len - slen(packetid))
 
 proc setStream*(container: Container; stream: SocketStream;
-    registerFun: proc(fd: int); fd: FileHandle; outCacheId: int) =
+    registerFun: proc(fd: int)) =
   assert cfCloned notin container.flags
   container.iface = newBufferInterface(stream, registerFun)
-  container.iface.passFd(fd, outCacheId)
-  discard close(fd)
   discard container.iface.load().then(proc(res: int) =
     container.onload(res)
   )
