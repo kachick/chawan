@@ -2653,8 +2653,8 @@ func parseURL*(document: Document, s: string): Option[URL] =
 func media*[T: HTMLLinkElement|HTMLStyleElement](element: T): string =
   return element.attr(atMedia)
 
-func title*(document: Document): string =
-  for title in document.elements(TAG_TITLE):
+func title*(document: Document): string {.jsfget.} =
+  if (let title = document.findFirst(TAG_TITLE); title != nil):
     return title.childTextContent.stripAndCollapse()
   return ""
 

@@ -1106,10 +1106,12 @@ proc load*(buffer: Buffer): int {.proxy, task.} =
     buffer.savetask = true
     return -2 # unused
 
-proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
+proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
+  return buffer.tasks[cmd] != 0
+
+proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
   let packetid = buffer.tasks[cmd]
-  if packetid == 0:
-    return # no task to resolve (TODO this is kind of inefficient)
+  assert packetid != 0
   let len = slen(buffer.tasks[cmd]) + slen(res)
   buffer.pstream.withWriter w:
     w.swrite(len)
@@ -1120,7 +1122,8 @@ proc resolveTask[T](buffer: Buffer, cmd: BufferCommand, res: T) =
 proc onload(buffer: Buffer) =
   case buffer.state
   of bsLoadingResources, bsLoaded:
-    buffer.resolveTask(bcLoad, -1)
+    if buffer.hasTask(bcLoad):
+      buffer.resolveTask(bcLoad, -1)
     return
   of bsLoadingPage:
     discard
@@ -1147,7 +1150,10 @@ proc onload(buffer: Buffer) =
           buffer.state = bsLoaded
           buffer.document.readyState = rsComplete
           buffer.dispatchLoadEvent()
-          buffer.resolveTask(bcLoad, -1)
+          if buffer.hasTask(bcGetTitle):
+            buffer.resolveTask(bcGetTitle, buffer.document.title)
+          if buffer.hasTask(bcLoad):
+            buffer.resolveTask(bcLoad, -1)
         )
         return # skip incr render
     except ErrorAgain:
@@ -1158,11 +1164,18 @@ proc onload(buffer: Buffer) =
     # only makes sense when not in dump mode (and the user has requested a load)
     buffer.do_reshape()
     buffer.reportedBytesRead = buffer.bytesRead
-    buffer.resolveTask(bcLoad, buffer.bytesRead)
+    if buffer.hasTask(bcGetTitle):
+      buffer.resolveTask(bcGetTitle, buffer.document.title)
+    if buffer.hasTask(bcLoad):
+      buffer.resolveTask(bcLoad, buffer.bytesRead)
 
 proc getTitle*(buffer: Buffer): string {.proxy.} =
   if buffer.document != nil:
-    return buffer.document.title
+    let title = buffer.document.findFirst(TAG_TITLE)
+    if title != nil:
+      return title.childTextContent.stripAndCollapse()
+  buffer.savetask = true
+  return ""
 
 proc forceRender*(buffer: Buffer) {.proxy.} =
   buffer.prevStyled = nil

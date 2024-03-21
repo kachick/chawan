@@ -312,7 +312,7 @@ func maxScreenWidth(container: Container): int =
   for line in container.ilines(container.fromy..container.lastVisibleLine):
     result = max(line.str.width(), result)
 
-func getTitle*(container: Container): string {.jsfunc.} =
+func getTitle*(container: Container): string {.jsfget: "title".} =
   if container.title != "":
     return container.title
   return container.url.serialize(excludepassword = true)
@@ -1370,11 +1370,6 @@ proc onload*(container: Container, res: int) =
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
-    container.iface.getTitle().then(proc(title: string) =
-      if title != "":
-        container.title = title
-        container.triggerEvent(cetTitle)
-    )
     if cfHasStart notin container.flags and container.url.anchor != "":
       container.requestLines().then(proc(): Promise[Opt[tuple[x, y: int]]] =
         return container.iface.gotoAnchor()
@@ -1585,22 +1580,28 @@ proc handleCommand(container: Container) =
   container.iface.stream.sread(packetid)
   container.iface.resolve(packetid, len - slen(packetid))
 
+proc startLoad(container: Container) =
+  container.iface.load().then(proc(res: int) =
+    container.onload(res)
+  )
+  container.iface.getTitle().then(proc(title: string) =
+    if title != "":
+      container.title = title
+      container.triggerEvent(cetTitle)
+  )
+
 proc setStream*(container: Container; stream: SocketStream;
     registerFun: proc(fd: int)) =
   assert cfCloned notin container.flags
   container.iface = newBufferInterface(stream, registerFun)
-  discard container.iface.load().then(proc(res: int) =
-    container.onload(res)
-  )
+  container.startLoad()
 
 proc setCloneStream*(container: Container; stream: SocketStream;
     registerFun: proc(fd: int)) =
   assert cfCloned in container.flags
   container.iface = cloneInterface(stream, registerFun)
   # Maybe we have to resume loading. Let's try.
-  discard container.iface.load().then(proc(res: int) =
-    container.onload(res)
-  )
+  container.startLoad()
 
 proc onreadline(container: Container, w: Slice[int],
     handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =
