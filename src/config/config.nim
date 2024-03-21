@@ -460,13 +460,13 @@ proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
     let vv = v.a[i]
     typeCheck(vv, VALUE_STRING, kk)
     case vv.s
-    of "bold": x.incl(FLAG_BOLD)
-    of "italic": x.incl(FLAG_ITALIC)
-    of "underline": x.incl(FLAG_UNDERLINE)
-    of "reverse": x.incl(FLAG_REVERSE)
-    of "strike": x.incl(FLAG_STRIKE)
-    of "overline": x.incl(FLAG_OVERLINE)
-    of "blink": x.incl(FLAG_BLINK)
+    of "bold": x.incl(ffBold)
+    of "italic": x.incl(ffItalic)
+    of "underline": x.incl(ffUnderline)
+    of "reverse": x.incl(ffReverse)
+    of "strike": x.incl(ffStrike)
+    of "overline": x.incl(ffOverline)
+    of "blink": x.incl(ffBlink)
     else:
       raise newException(ValueError, "unknown format mode '" & vv.s &
         "' for key " & kk)

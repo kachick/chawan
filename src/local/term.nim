@@ -219,17 +219,17 @@ proc startFormat(term: Terminal, flag: FormatFlags): string =
   when termcap_found:
     if term.isatty():
       case flag
-      of FLAG_BOLD: return term.cap md
-      of FLAG_UNDERLINE: return term.cap us
-      of FLAG_REVERSE: return term.cap mr
-      of FLAG_BLINK: return term.cap mb
-      of FLAG_ITALIC: return term.cap ZH
+      of ffBold: return term.cap md
+      of ffUnderline: return term.cap us
+      of ffReverse: return term.cap mr
+      of ffBlink: return term.cap mb
+      of ffItalic: return term.cap ZH
       else: discard
   return SGR(FormatCodes[flag].s)
 
 proc endFormat(term: Terminal, flag: FormatFlags): string =
   when termcap_found:
-    if flag == FLAG_UNDERLINE and term.isatty():
+    if flag == ffUnderline and term.isatty():
       return term.cap ue
   return SGR(FormatCodes[flag].e)
 
@@ -503,21 +503,21 @@ proc showCursor*(term: Terminal) =
 
 func emulateOverline(term: Terminal): bool =
   term.config.display.emulate_overline and
-    FLAG_OVERLINE notin term.formatmode and FLAG_UNDERLINE in term.formatmode
+    ffOverline notin term.formatmode and ffUnderline in term.formatmode
 
 proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
   for ly in y ..< y + grid.height:
     for lx in x ..< x + grid.width:
       let i = ly * term.canvas.width + lx
       term.canvas[i] = grid[(ly - y) * grid.width + (lx - x)]
-      let isol = FLAG_OVERLINE in term.canvas[i].format.flags
+      let isol = ffOverline in term.canvas[i].format.flags
       if i >= term.canvas.width and isol and term.emulateOverline:
         let w = grid[(ly - y) * grid.width + (lx - x)].width()
         let s = i - term.canvas.width
         var j = s
         while j < term.canvas.len and j < s + w:
           let cell = addr term.canvas[j]
-          cell.format.flags.incl(FLAG_UNDERLINE)
+          cell.format.flags.incl(ffUnderline)
           if cell.str == "":
             cell.str = " "
           if cell.str == " ":
@@ -821,7 +821,7 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
       if qaRGB in r.attrs:
         term.colormode = TRUE_COLOR
       # just assume the terminal doesn't choke on these.
-      term.formatmode = {FLAG_STRIKE, FLAG_OVERLINE}
+      term.formatmode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
         term.defaultBackground = r.bgcolor.get
       if r.fgcolor.isSome:
@@ -841,15 +841,15 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
     if term.tc != nil:
       term.smcup = term.hascap ti
       if term.hascap(ZH):
-        term.formatmode.incl(FLAG_ITALIC)
+        term.formatmode.incl(ffItalic)
       if term.hascap(us):
-        term.formatmode.incl(FLAG_UNDERLINE)
+        term.formatmode.incl(ffUnderline)
       if term.hascap(md):
-        term.formatmode.incl(FLAG_BOLD)
+        term.formatmode.incl(ffBold)
       if term.hascap(mr):
-        term.formatmode.incl(FLAG_REVERSE)
+        term.formatmode.incl(ffReverse)
       if term.hascap(mb):
-        term.formatmode.incl(FLAG_BLINK)
+        term.formatmode.incl(ffBlink)
   else:
     term.smcup = true
     term.formatmode = {low(FormatFlags)..high(FormatFlags)}

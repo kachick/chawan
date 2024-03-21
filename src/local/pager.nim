@@ -371,7 +371,7 @@ proc refreshStatusMsg*(pager: Pager) =
     pager.writeStatusMessage(pager.alerts[0])
     pager.alerts.delete(0)
   else:
-    var format = Format(flags: {FLAG_REVERSE})
+    var format = Format(flags: {ffReverse})
     pager.alertState = pasNormal
     container.clearHover()
     var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &

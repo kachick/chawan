@@ -56,17 +56,17 @@ func toFormat(computed: CSSComputedValues): Format =
     return Format()
   var flags: set[FormatFlags]
   if computed{"font-style"} in {FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE}:
-    flags.incl(FLAG_ITALIC)
+    flags.incl(ffItalic)
   if computed{"font-weight"} > 500:
-    flags.incl(FLAG_BOLD)
+    flags.incl(ffBold)
   if TEXT_DECORATION_UNDERLINE in computed{"text-decoration"}:
-    flags.incl(FLAG_UNDERLINE)
+    flags.incl(ffUnderline)
   if TEXT_DECORATION_OVERLINE in computed{"text-decoration"}:
-    flags.incl(FLAG_OVERLINE)
+    flags.incl(ffOverline)
   if TEXT_DECORATION_LINE_THROUGH in computed{"text-decoration"}:
-    flags.incl(FLAG_STRIKE)
+    flags.incl(ffStrike)
   if TEXT_DECORATION_BLINK in computed{"text-decoration"}:
-    flags.incl(FLAG_BLINK)
+    flags.incl(ffBlink)
   return Format(
     fgcolor: computed{"color"},
     flags: flags

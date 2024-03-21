@@ -288,10 +288,10 @@ proc drawSelect*(select: Select, display: var FixedGrid) =
     var x = sx
     let dls = y * display.width
     if k < select.selected.len and select.selected[k] == i:
-      format.reverse = true
+      format.flags.incl(ffReverse)
       inc k
     else:
-      format.reverse = false
+      format.flags.excl(ffReverse)
     while j < select.options[i].len:
       fastRuneAt(select.options[i], j, r)
       let rw = r.twidth(x)

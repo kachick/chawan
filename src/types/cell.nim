@@ -3,13 +3,13 @@ import utils/strwidth
 
 type
   FormatFlags* = enum
-    FLAG_BOLD
-    FLAG_ITALIC
-    FLAG_UNDERLINE
-    FLAG_REVERSE
-    FLAG_STRIKE
-    FLAG_OVERLINE
-    FLAG_BLINK
+    ffBold
+    ffItalic
+    ffUnderline
+    ffReverse
+    ffStrike
+    ffOverline
+    ffBlink
 
   Format* = object
     fgcolor*: CellColor
@@ -46,26 +46,14 @@ proc len*(grid: FixedGrid): int = grid.cells.len
 proc high*(grid: FixedGrid): int = grid.cells.high
 
 const FormatCodes*: array[FormatFlags, tuple[s, e: uint8]] = [
-  FLAG_BOLD: (1u8, 22u8),
-  FLAG_ITALIC: (3u8, 23u8),
-  FLAG_UNDERLINE: (4u8, 24u8),
-  FLAG_REVERSE: (7u8, 27u8),
-  FLAG_STRIKE: (9u8, 29u8),
-  FLAG_OVERLINE: (53u8, 55u8),
-  FLAG_BLINK: (5u8, 25u8),
+  ffBold: (1u8, 22u8),
+  ffItalic: (3u8, 23u8),
+  ffUnderline: (4u8, 24u8),
+  ffReverse: (7u8, 27u8),
+  ffStrike: (9u8, 29u8),
+  ffOverline: (53u8, 55u8),
+  ffBlink: (5u8, 25u8),
 ]
-
-template flag_template(format: Format, val: bool, flag: FormatFlags) =
-  if val: format.flags.incl(flag)
-  else: format.flags.excl(flag)
-
-template `italic=`*(f: var Format, b: bool) = flag_template f, b, FLAG_ITALIC
-template `bold=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BOLD
-template `underline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_UNDERLINE
-template `reverse=`*(f: var Format, b: bool) = flag_template f, b, FLAG_REVERSE
-template `strike=`*(f: var Format, b: bool) = flag_template f, b, FLAG_STRIKE
-template `overline=`*(f: var Format, b: bool) = flag_template f, b, FLAG_OVERLINE
-template `blink=`*(f: var Format, b: bool) = flag_template f, b, FLAG_BLINK
 
 func newFixedGrid*(w: int, h: int = 1): FixedGrid =
   return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
