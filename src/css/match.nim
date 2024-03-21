@@ -139,7 +139,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T, sel: Selector, felem:
   of PSEUDO_LANG:
     return sel.pseudo.s == "en" #TODO languages?
   of PSEUDO_LINK:
-    return elem.tagType in {TAG_A, TAG_AREA} and elem.attrb(atHref)
+    return elem.tagType in {TAG_A, TAG_AREA} and elem.attrb(satHref)
   of PSEUDO_VISITED:
     return false
 

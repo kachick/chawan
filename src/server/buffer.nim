@@ -310,13 +310,13 @@ func getTitleAttr(node: StyledNode): string =
     return ""
   if node.t == STYLED_ELEMENT and node.node != nil:
     let element = Element(node.node)
-    if element.attrb(atTitle):
-      return element.attr(atTitle)
+    if element.attrb(satTitle):
+      return element.attr(satTitle)
   if node.node != nil:
     var node = node.node
     for element in node.ancestors:
-      if element.attrb(atTitle):
-        return element.attr(atTitle)
+      if element.attrb(satTitle):
+        return element.attr(satTitle)
   #TODO pseudo-elements
   return ""
 
@@ -378,7 +378,7 @@ proc getImageHover(styledNode: StyledNode): string =
     if styledNode.t == STYLED_ELEMENT:
       if styledNode.node of HTMLImageElement:
         let image = HTMLImageElement(styledNode.node)
-        let src = image.attr(atSrc)
+        let src = image.attr(satSrc)
         if src != "":
           let url = image.document.parseURL(src)
           if url.isSome:
@@ -1232,8 +1232,8 @@ func getOutputEncoding(charset: Charset): Charset =
   return charset
 
 func pickCharset(form: HTMLFormElement): Charset =
-  if form.attrb(atAcceptCharset):
-    let input = form.attr(atAcceptCharset)
+  if form.attrb(satAcceptCharset):
+    let input = form.attr(satAcceptCharset)
     for label in input.split(AsciiWhitespace):
       let charset = label.getCharset()
       if charset != CHARSET_UNKNOWN:
@@ -1458,7 +1458,7 @@ proc click(buffer: Buffer, select: HTMLSelectElement): ClickResult =
       selected.add(i)
     inc i
   let select = SelectResult(
-    multiple: select.attrb(atMultiple),
+    multiple: select.attrb(satMultiple),
     options: options,
     selected: selected
   )

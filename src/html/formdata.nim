@@ -113,7 +113,7 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
   var entrylist: seq[FormDataEntry] = @[]
   for field in form.controls:
     if field.findAncestor({TAG_DATALIST}) != nil or
-        field.attrb(atDisabled) or
+        field.attrb(satDisabled) or
         field.isButton() and Element(field) != submitter:
       continue
     if field of HTMLInputElement:
@@ -121,14 +121,14 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
       if field.inputType in {INPUT_CHECKBOX, INPUT_RADIO} and not field.checked:
         continue
       if field.inputType == INPUT_IMAGE:
-        var name = field.attr(atName)
+        var name = field.attr(satName)
         if name != "":
           name &= '.'
         entrylist.add((name & 'x', $field.xcoord))
         entrylist.add((name & 'y', $field.ycoord))
         continue
     #TODO custom elements
-    let name = field.attr(atName)
+    let name = field.attr(satName)
     if name == "":
       continue
     if field of HTMLSelectElement:
@@ -140,7 +140,7 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
       let field = HTMLInputElement(field)
       case field.inputType
       of INPUT_CHECKBOX, INPUT_RADIO:
-        let v = field.attr(atValue)
+        let v = field.attr(satValue)
         let value = if v != "":
           v
         else:
@@ -166,7 +166,7 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     if field of HTMLTextAreaElement or
         field of HTMLInputElement and
         HTMLInputElement(field).inputType in AutoDirInput:
-      let dirname = field.attr(atDirname)
+      let dirname = field.attr(satDirname)
       if dirname != "":
         let dir = "ltr" #TODO bidi
         entrylist.add((dirname, dir))
