@@ -4,7 +4,7 @@ type
     LRE_FLAG_IGNORECASE = "i"
     LRE_FLAG_MULTILINE = "m"
     LRE_FLAG_DOTALL = "s"
-    LRE_FLAG_UTF16 = "u"
+    LRE_FLAG_UNICODE = "u"
     LRE_FLAG_STICKY = "y"
 
   LREFlags* = set[LREFlag]

@@ -142,7 +142,7 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
   stdout.write(line.processBackspace() & '\n')
   var wasBlank = false
   template re(s: static string): Regex =
-    let r = s.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UTF16})
+    let r = s.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE})
     if r.isNone:
       stdout.write(s & ": " & r.error)
       quit(1)

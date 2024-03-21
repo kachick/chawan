@@ -1071,7 +1071,7 @@ proc checkRegex(pager: Pager, regex: Result[Regex, string]): Opt[Regex] =
   return ok(regex.get)
 
 proc compileSearchRegex(pager: Pager, s: string): Result[Regex, string] =
-  var flags = {LRE_FLAG_UTF16}
+  var flags = {LRE_FLAG_UNICODE}
   if pager.config.search.ignore_case:
     flags.incl(LRE_FLAG_IGNORECASE)
   return compileSearchRegex(s, flags)
