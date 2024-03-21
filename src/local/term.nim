@@ -35,8 +35,9 @@ type
     mr # start reverse mode
     mb # start blink mode
     ZH # start italic mode
-    ue # end underline mode
     se # end standout mode
+    ue # end underline mode
+    ZR # end italic mode
     me # end all formatting modes
     vs # enhance cursor
     vi # make cursor invisible
@@ -229,8 +230,11 @@ proc startFormat(term: Terminal, flag: FormatFlags): string =
 
 proc endFormat(term: Terminal, flag: FormatFlags): string =
   when termcap_found:
-    if flag == ffUnderline and term.isatty():
-      return term.cap ue
+    if term.isatty():
+      case flag
+      of ffUnderline: return term.cap ue
+      of ffItalic: return term.cap ZR
+      else: discard
   return SGR(FormatCodes[flag].e)
 
 proc setCursor*(term: Terminal, x, y: int) =
