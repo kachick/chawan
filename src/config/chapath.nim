@@ -290,3 +290,6 @@ proc fromJSChaPath*(ctx: JSContext; val: JSValue): JSResult[ChaPath] =
 proc unquote*(p: ChaPath): ChaPathResult[string] =
   let s = ?unquote(string(p))
   return ok(normalizedPath(s))
+
+proc unquoteGet*(p: ChaPath): string =
+  return p.unquote().get

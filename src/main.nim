@@ -1,15 +1,11 @@
 import version
 
-import server/forkserver
-import config/chapath
+# Note: we can't just import std/os or the compiler cries. (No idea why.)
 from std/os import getEnv, putEnv, commandLineParams, getCurrentDir
-from types/opt import get
-
-putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquote().get)
-let forks = newForkServer()
-
 import std/options
 
+import server/forkserver
+import config/chapath
 import config/config
 import io/serversocket
 import js/javascript
@@ -20,19 +16,17 @@ import utils/twtstr
 
 import chagashi/charset
 
-proc main() =
-  let params = commandLineParams()
+const ChaVersionStr = block:
+  var s = "Chawan browser v0.1 "
+  when defined(debug):
+    s &= "(debug)"
+  else:
+    s &= "(release)"
+  s &= '\n'
+  s
 
-  proc version(long: static bool = false): string =
-    result = "Chawan browser v0.1 "
-    when defined(debug):
-      result &= "(debug)"
-    else:
-      result &= "(release)"
-
-  proc help(i: int) =
-    let s = version() & """
-
+proc help(i: int) =
+  let s = ChaVersionStr & """
 Usage: cha [options] [URL(s) or file(s)...]
 Options:
     --                          Interpret all following arguments as URLs
@@ -47,175 +41,166 @@ Options:
     -M, --monochrome            Set color-mode to 'monochrome'
     -O, --display-charset <enc> Specify display charset
     -T, --type <type>           Specify content mime type
-    -V, --visual                Visual startup mode"""
+    -V, --visual                Visual startup mode
+"""
+  if i == 0:
+    stdout.write(s)
+  else:
+    stderr.write(s)
+  quit(i)
 
-    if i == 0:
-      stdout.write(s & '\n')
-    else:
-      stderr.write(s & '\n')
-    quit(i)
+proc version() =
+  stdout.write(ChaVersionStr)
+  quit(0)
 
-  var ctype = none(string)
-  var cs = CHARSET_UNKNOWN
-  var pages: seq[string]
-  var dump = false
-  var visual = false
-  var escape_all = false
-  var opts: seq[string]
-  var stylesheet = ""
-  var configPath = none(string)
+type ParamParseContext = object
+  params: seq[string]
+  i: int
+  configPath: Option[string]
+  contentType: Option[string]
+  charset: Charset
+  dump: bool
+  visual: bool
+  opts: seq[string]
+  stylesheet: string
 
-  var i = 0
-  while i < params.len:
-    let param = params[i]
+proc getnext(ctx: var ParamParseContext): string =
+  inc ctx.i
+  if ctx.i < ctx.params.len:
+    return ctx.params[ctx.i]
+  help(1)
 
-    if escape_all: # after --
+proc parseConfig(ctx: var ParamParseContext) =
+  ctx.configPath = some(ctx.getnext())
+
+proc parseMonochrome(ctx: var ParamParseContext) =
+  ctx.opts.add("display.color-mode = monochrome")
+
+proc parseVisual(ctx: var ParamParseContext) =
+  ctx.visual = true
+
+proc parseContentType(ctx: var ParamParseContext) =
+  ctx.contentType = some(ctx.getnext())
+
+proc getCharset(ctx: var ParamParseContext): Charset =
+  let s = ctx.getnext()
+  let charset = getCharset(s)
+  if charset == CHARSET_UNKNOWN:
+    stderr.write("Unknown charset " & s & "\n")
+    quit(1)
+  return charset
+
+proc parseInputCharset(ctx: var ParamParseContext) =
+  ctx.charset = ctx.getCharset()
+
+proc parseOutputCharset(ctx: var ParamParseContext) =
+  ctx.opts.add("encoding.display-charset = '" & $ctx.getCharset() & "'")
+
+proc parseDump(ctx: var ParamParseContext) =
+  ctx.dump = true
+
+proc parseCSS(ctx: var ParamParseContext) =
+  ctx.stylesheet &= ctx.getnext()
+
+proc parseOpt(ctx: var ParamParseContext) =
+  ctx.opts.add(ctx.getnext())
+
+proc parseRun(ctx: var ParamParseContext) =
+  let script = dqEscape(ctx.getnext())
+  ctx.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
+  ctx.opts.add("start.headless = true")
+  ctx.dump = true
+
+proc main() =
+  putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquoteGet())
+  let forkserver = newForkServer()
+  var ctx = ParamParseContext(params: commandLineParams(), i: 0)
+  var escapeAll = false
+  var pages: seq[string] = @[]
+  while ctx.i < ctx.params.len:
+    let param = ctx.params[ctx.i]
+    if escapeAll: # after --
       pages.add(param)
-      inc i
+      inc ctx.i
       continue
-
-    proc getnext(): string =
-      inc i
-      if i < params.len:
-        return params[i]
-      help(1)
-
-    proc pconfig() =
-      configPath = some(getnext())
-
-    proc pversion() =
-      echo version(true)
-      quit(0)
-
-    proc pmonochrome() =
-      opts.add("display.color-mode = monochrome")
-
-    proc pvisual() =
-      visual = true
-
-    proc ptype() =
-      ctype = some(getnext())
-
-    proc pgetCharset(): Charset =
-      let s = getnext()
-      let cs = getCharset(s)
-      if cs == CHARSET_UNKNOWN:
-        stderr.write("Unknown charset " & s & "\n")
-        quit(1)
-      return cs
-
-    proc pinput_charset() =
-      cs = pgetCharset()
-
-    proc poutput_charset() =
-      opts.add("encoding.display-charset = '" & $pgetCharset() & "'")
-
-    proc pdump() =
-      dump = true
-
-    proc pcss() =
-      stylesheet &= getnext()
-
-    proc popt() =
-      opts.add(getnext())
-
-    proc phelp() =
-      help(0)
-
-    proc prun() =
-      let script = dqEscape(getnext())
-      opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
-      opts.add("start.headless = true")
-      dump = true
-
     if param.len == 0:
-      inc i
+      inc ctx.i
       continue
-
-    const NeedsNextParam = {'C', 'I', 'O', 'T', 'c', 'o', 'r'}
-
     if param[0] == '-':
       if param.len == 1:
         # If param == "-", i.e. it is a single dash, then ignore it.
         # (Some programs use single-dash to read from stdin, but we do that
         # automatically when stdin is not a tty. So ignoring it entirely
         # is probably for the best.)
-        inc i
+        inc ctx.i
         continue
       if param[1] != '-':
         for j in 1 ..< param.len:
+          const NeedsNextParam = {'C', 'I', 'O', 'T', 'c', 'o', 'r'}
           if j != param.high and param[j] in NeedsNextParam:
             # expecting next parameter, but not the last char...
             help(1)
           case param[j]
-          of 'C': pconfig()
-          of 'I': pinput_charset()
-          of 'M': pmonochrome()
-          of 'O': poutput_charset()
-          of 'T': ptype()
-          of 'V': pvisual()
-          of 'c': pcss()
-          of 'd': pdump()
-          of 'h': phelp()
-          of 'o': popt()
-          of 'r': prun()
-          of 'v': pversion()
+          of 'C': ctx.parseConfig()
+          of 'I': ctx.parseInputCharset()
+          of 'M': ctx.parseMonochrome()
+          of 'O': ctx.parseOutputCharset()
+          of 'T': ctx.parseContentType()
+          of 'V': ctx.parseVisual()
+          of 'c': ctx.parseCSS()
+          of 'd': ctx.parseDump()
+          of 'h': help(0)
+          of 'o': ctx.parseOpt()
+          of 'r': ctx.parseRun()
+          of 'v': version()
           else: help(1)
       else:
         case param
-        of "--config": pconfig()
-        of "--input-charset": pinput_charset()
-        of "--monochrome": pmonochrome()
-        of "--output-charset": poutput_charset()
-        of "--type": ptype()
-        of "--visual": pvisual()
-        of "--css": pcss()
-        of "--dump": pdump()
-        of "--help": phelp()
-        of "--opt": popt()
-        of "--run": prun()
-        of "--version": pversion()
-        of "--": escape_all = true
+        of "--config": ctx.parseConfig()
+        of "--input-charset": ctx.parseInputCharset()
+        of "--monochrome": ctx.parseMonochrome()
+        of "--output-charset": ctx.parseOutputCharset()
+        of "--type": ctx.parseContentType()
+        of "--visual": ctx.parseVisual()
+        of "--css": ctx.parseCSS()
+        of "--dump": ctx.parseDump()
+        of "--help": help(0)
+        of "--opt": ctx.parseOpt()
+        of "--run": ctx.parseRun()
+        of "--version": version()
+        of "--": escapeAll = true
         else: help(1)
     else:
       pages.add(param)
-    inc i
-
+    inc ctx.i
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
-  let config = readConfig(configPath, jsctx)
+  let config = readConfig(ctx.configPath, jsctx)
   var warnings = newSeq[string]()
-  for opt in opts:
+  for opt in ctx.opts:
     let res = config.parseConfig(getCurrentDir(), opt, laxnames = true)
     if not res.success:
       stderr.write(res.errorMsg)
       quit(1)
-  config.css.stylesheet &= stylesheet
-
+  config.css.stylesheet &= ctx.stylesheet
   set_cjk_ambiguous(config.display.double_width_ambiguous)
-
   if pages.len == 0 and stdin.isatty():
-    if visual:
+    if ctx.visual:
       pages.add(config.start.visual_home)
-    else:
-      let http = getEnv("HTTP_HOME")
-      if http != "": pages.add(http)
-      else:
-        let www = getEnv("WWW_HOME")
-        if www != "": pages.add(www)
-
+    elif (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
+      pages.add(httpHome)
+    elif (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
+      pages.add(wwwHome)
   if pages.len == 0 and not config.start.headless:
     if stdin.isatty():
       help(1)
-
-  forks.loadForkServerConfig(config)
+  forkserver.loadForkServerConfig(config)
   SocketDirectory = config.external.tmpdir
-
-  let c = newClient(config, forks, jsctx, warnings)
+  let client = newClient(config, forkserver, jsctx, warnings)
   try:
-    c.launchClient(pages, ctype, cs, dump)
+    client.launchClient(pages, ctx.contentType, ctx.charset, ctx.dump)
   except CatchableError:
-    c.flushConsole()
+    client.flushConsole()
     raise
 
 main()
