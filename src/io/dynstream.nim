@@ -39,6 +39,13 @@ proc sendData*(s: DynStream; buffer: openArray[char]): int {.inline.} =
 proc sendData*(s: DynStream; buffer: openArray[uint8]): int {.inline.} =
   return s.sendData(unsafeAddr buffer[0], buffer.len)
 
+proc sendDataLoop*(s: DynStream; buffer: pointer; len: int) =
+  var n = 0
+  while true:
+    n += s.sendData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
+    if n == len:
+      break
+
 proc dsClose(s: Stream) =
   DynStream(s).sclose()
 

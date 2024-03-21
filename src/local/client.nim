@@ -400,7 +400,7 @@ proc acceptBuffers(client: Client) =
     client.selector.registerHandle(fd, {Read, Write}, 0)
   for item in pager.procmap:
     let container = item.container
-    let stream = connectSocketStream(container.process, buffered = false)
+    let stream = connectSocketStream(container.process)
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
       continue

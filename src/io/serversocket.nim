@@ -19,10 +19,10 @@ proc getSocketPath*(pid: int): string =
 {.compile: "bind_unix.c".}
 proc bind_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint {.importc.}
 
-proc initServerSocket*(pid: int; buffered = true; blocking = true):
-    ServerSocket =
+proc initServerSocket*(pid: int; blocking = true): ServerSocket =
   createDir(SocketDirectory)
-  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP, buffered)
+  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM,
+    Protocol.IPPROTO_IP, buffered = false)
   if not blocking:
     sock.getFd().setBlocking(false)
   let path = getSocketPath(pid)

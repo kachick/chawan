@@ -16,6 +16,7 @@ type BufferedWriter* = object
   buffer: ptr UncheckedArray[uint8]
   bufSize: int
   bufLen: int
+  writeLen: bool
 
 {.warning[Deprecated]: off.}:
   proc `=destroy`(writer: var BufferedWriter) =
@@ -23,23 +24,28 @@ type BufferedWriter* = object
       dealloc(writer.buffer)
       writer.buffer = nil
 
-proc initWriter*(stream: DynStream; sizeInit = 64): BufferedWriter =
-  return BufferedWriter(
+proc initWriter*(stream: DynStream; sizeInit = 64; writeLen = false):
+    BufferedWriter =
+  var w = BufferedWriter(
     stream: stream,
     buffer: cast[ptr UncheckedArray[uint8]](alloc(sizeInit)),
     bufSize: sizeInit,
-    bufLen: 0
+    bufLen: 0,
+    writeLen: writeLen
   )
+  if writeLen: # add space for `len'
+    w.bufLen += sizeof(w.bufLen)
+    assert w.bufLen < sizeInit
+  return w
 
 proc flush*(writer: var BufferedWriter) =
-  let stream = writer.stream
-  var n = 0
-  while true:
-    n += stream.sendData(addr writer.buffer[n], writer.bufLen - n)
-    if n == writer.bufLen:
-      break
+  if writer.writeLen:
+    # subtract the length field's size
+    var realLen = writer.bufLen - sizeof(writer.bufLen)
+    copyMem(writer.buffer, addr realLen, sizeof(writer.bufLen))
+  writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
   writer.bufLen = 0
-  stream.sflush()
+  writer.stream.sflush()
 
 proc deinit*(writer: var BufferedWriter) =
   dealloc(writer.buffer)
@@ -49,7 +55,14 @@ proc deinit*(writer: var BufferedWriter) =
 
 template withWriter*(stream: DynStream; w, body: untyped) =
   block:
-    var w {.inject.} = stream.initWriter()
+    var w = stream.initWriter()
+    body
+    w.flush()
+    w.deinit()
+
+template withPacketWriter*(stream: DynStream; w, body: untyped) =
+  block:
+    var w = stream.initWriter(writeLen = true)
     body
     w.flush()
     w.deinit()

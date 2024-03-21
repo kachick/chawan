@@ -25,10 +25,8 @@ func slen*(s: string): int
 proc sread*(stream: Stream, b: var bool)
 func slen*(b: bool): int
 
-proc sread*(stream: Stream, url: var URL)
 func slen*(url: URL): int
 
-proc sread*(stream: Stream, tup: var tuple)
 func slen*(tup: tuple): int
 
 proc sread*[I, T](stream: Stream, a: var array[I, T])
@@ -46,10 +44,8 @@ func slen*(obj: object): int
 proc sread*(stream: Stream, obj: var ref object)
 func slen*(obj: ref object): int
 
-proc sread*(stream: Stream, part: var FormDataEntry)
 func slen*(part: FormDataEntry): int
 
-proc sread*(stream: Stream, blob: var Blob)
 func slen*(blob: Blob): int
 
 proc sread*[T](stream: Stream, o: var Option[T])
@@ -112,26 +108,10 @@ proc sread*(stream: Stream, b: var bool) =
 func slen*(b: bool): int =
   return sizeof(uint8)
 
-proc sread*(stream: Stream, url: var URL) =
-  var s: string
-  stream.sread(s)
-  if s == "":
-    url = nil
-  else:
-    let x = newURL(s)
-    if x.isSome:
-      url = x.get
-    else:
-      url = nil
-
 func slen*(url: URL): int =
   if url == nil:
     return slen("")
   return slen(url.serialize())
-
-proc sread*(stream: Stream, tup: var tuple) =
-  for f in tup.fields:
-    stream.sread(f)
 
 func slen*(tup: tuple): int =
   for f in tup.fields:
@@ -193,20 +173,6 @@ func slen*(obj: ref object): int =
   if obj != nil:
     result += slen(obj[])
 
-proc sread*(stream: Stream, part: var FormDataEntry) =
-  var isstr: bool
-  stream.sread(isstr)
-  if isstr:
-    part = FormDataEntry(isstr: true)
-  else:
-    part = FormDataEntry(isstr: false)
-  stream.sread(part.name)
-  stream.sread(part.filename)
-  if part.isstr:
-    stream.sread(part.svalue)
-  else:
-    stream.sread(part.value)
-
 func slen*(part: FormDataEntry): int =
   result += slen(part.isstr)
   result += slen(part.name)
@@ -215,25 +181,6 @@ func slen*(part: FormDataEntry): int =
     result += slen(part.svalue)
   else:
     result += slen(part.value)
-
-proc sread*(stream: Stream, blob: var Blob) =
-  var isfile: bool
-  stream.sread(isfile)
-  if isfile:
-    var file = new WebFile
-    file.isfile = true
-    stream.sread(file.path)
-    blob = file
-  else:
-    blob = Blob()
-    stream.sread(blob.ctype)
-    stream.sread(blob.size)
-    let buffer = alloc(blob.size)
-    blob.buffer = buffer
-    blob.deallocFun = proc() = dealloc(buffer)
-    if blob.size > 0:
-      let n = stream.readData(blob.buffer, int(blob.size))
-      assert n == int(blob.size)
 
 func slen*(blob: Blob): int =
   result += slen(blob.isfile)

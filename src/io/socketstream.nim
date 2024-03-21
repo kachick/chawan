@@ -61,10 +61,9 @@ method sclose*(s: SocketStream) =
 proc connect_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint
   {.importc.}
 
-proc connectSocketStream*(path: string, buffered = true, blocking = true):
-    SocketStream =
+proc connectSocketStream*(path: string; blocking = true): SocketStream =
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM,
-    Protocol.IPPROTO_IP, buffered)
+    Protocol.IPPROTO_IP, buffered = false)
   if not blocking:
     sock.getFd().setBlocking(false)
   if connect_unix_from_c(cint(sock.getFd()), cstring(path),
@@ -77,10 +76,10 @@ proc connectSocketStream*(path: string, buffered = true, blocking = true):
   )
   result.addStreamIface()
 
-proc connectSocketStream*(pid: int, buffered = true, blocking = true):
+proc connectSocketStream*(pid: int; blocking = true):
     SocketStream =
   try:
-    return connectSocketStream(getSocketPath(pid), buffered, blocking)
+    return connectSocketStream(getSocketPath(pid), blocking)
   except OSError:
     return nil
 

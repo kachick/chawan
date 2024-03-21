@@ -5,6 +5,7 @@ import std/streams
 import std/tables
 
 import config/config
+import io/bufreader
 import io/bufwriter
 import io/posixstream
 import io/serialize
@@ -24,7 +25,7 @@ type
     fcForkBuffer, fcForkLoader, fcRemoveChild, fcLoadConfig
 
   ForkServer* = ref object
-    istream: Stream
+    istream: PosixStream
     ostream: PosixStream
     estream*: PosixStream
 
@@ -35,7 +36,7 @@ type
     loaderPid: int
 
 proc newFileLoader*(forkserver: ForkServer; config: LoaderConfig): FileLoader =
-  forkserver.ostream.withWriter w:
+  forkserver.ostream.withPacketWriter w:
     w.swrite(fcForkLoader)
     w.swrite(config)
   var process: int
@@ -43,19 +44,19 @@ proc newFileLoader*(forkserver: ForkServer; config: LoaderConfig): FileLoader =
   return FileLoader(process: process, clientPid: getCurrentProcessId())
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
-  forkserver.ostream.withWriter w:
+  forkserver.ostream.withPacketWriter w:
     w.swrite(fcLoadConfig)
     w.swrite(config.getForkServerConfig())
 
 proc removeChild*(forkserver: ForkServer, pid: int) =
-  forkserver.ostream.withWriter w:
+  forkserver.ostream.withPacketWriter w:
     w.swrite(fcRemoveChild)
     w.swrite(pid)
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     request: Request; attrs: WindowAttributes; ishtml: bool;
     charsetStack: seq[Charset]): int =
-  forkserver.ostream.withWriter w:
+  forkserver.ostream.withPacketWriter w:
     w.swrite(fcForkBuffer)
     w.swrite(config)
     w.swrite(url)
@@ -109,19 +110,19 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): int =
   return pid
 
 var gssock: ServerSocket
-proc forkBuffer(ctx: var ForkServerContext): int =
+proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   var config: BufferConfig
   var url: URL
   var request: Request
   var attrs: WindowAttributes
   var ishtml: bool
   var charsetStack: seq[Charset]
-  ctx.istream.sread(config)
-  ctx.istream.sread(url)
-  ctx.istream.sread(request)
-  ctx.istream.sread(attrs)
-  ctx.istream.sread(ishtml)
-  ctx.istream.sread(charsetStack)
+  r.sread(config)
+  r.sread(url)
+  r.sread(request)
+  r.sread(attrs)
+  r.sread(ishtml)
+  r.sread(charsetStack)
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
@@ -137,7 +138,7 @@ proc forkBuffer(ctx: var ForkServerContext): int =
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
     let pid = getCurrentProcessId()
-    let ssock = initServerSocket(pid, buffered = false)
+    let ssock = initServerSocket(pid)
     gssock = ssock
     onSignal SIGTERM:
       # This will be overridden after buffer has been set up; it is only
@@ -182,34 +183,35 @@ proc runForkServer() =
   signal(SIGCHLD, SIG_IGN)
   while true:
     try:
-      var cmd: ForkCommand
-      ctx.istream.sread(cmd)
-      case cmd
-      of fcRemoveChild:
-        var pid: int
-        ctx.istream.sread(pid)
-        let i = ctx.children.find(pid)
-        if i != -1:
-          ctx.children.del(i)
-      of fcForkBuffer:
-        let r = ctx.forkBuffer()
-        ctx.ostream.withWriter w:
-          w.swrite(r)
-      of fcForkLoader:
-        assert ctx.loaderPid == 0
-        var config: LoaderConfig
-        ctx.istream.sread(config)
-        let pid = ctx.forkLoader(config)
-        ctx.ostream.withWriter w:
-          w.swrite(pid)
-        ctx.loaderPid = pid
-        ctx.children.add(pid)
-      of fcLoadConfig:
-        var config: ForkServerConfig
-        ctx.istream.sread(config)
-        set_cjk_ambiguous(config.ambiguous_double)
-        SocketDirectory = config.tmpdir
-      ctx.ostream.flush()
+      ctx.istream.withPacketReader r:
+        var cmd: ForkCommand
+        r.sread(cmd)
+        case cmd
+        of fcRemoveChild:
+          var pid: int
+          r.sread(pid)
+          let i = ctx.children.find(pid)
+          if i != -1:
+            ctx.children.del(i)
+        of fcForkBuffer:
+          let r = ctx.forkBuffer(r)
+          ctx.ostream.withWriter w:
+            w.swrite(r)
+        of fcForkLoader:
+          assert ctx.loaderPid == 0
+          var config: LoaderConfig
+          r.sread(config)
+          let pid = ctx.forkLoader(config)
+          ctx.ostream.withWriter w:
+            w.swrite(pid)
+          ctx.loaderPid = pid
+          ctx.children.add(pid)
+        of fcLoadConfig:
+          var config: ForkServerConfig
+          r.sread(config)
+          set_cjk_ambiguous(config.ambiguous_double)
+          SocketDirectory = config.tmpdir
+        ctx.ostream.flush()
     except EOFError:
       # EOF
       break
@@ -255,13 +257,10 @@ proc newForkServer*(): ForkServer =
     discard close(pipefd_in[0]) # close read
     discard close(pipefd_out[1]) # close write
     discard close(pipefd_err[1]) # close write
-    var readf: File
-    if not open(readf, pipefd_out[0], fmRead):
-      raise newException(Defect, "Failed to open input handle")
     let estream = newPosixStream(pipefd_err[0])
     estream.setBlocking(false)
     return ForkServer(
       ostream: newPosixStream(pipefd_in[1]),
-      istream: newFileStream(readf),
+      istream: newPosixStream(pipefd_out[0]),
       estream: estream
     )

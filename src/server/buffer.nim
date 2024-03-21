@@ -27,6 +27,7 @@ import html/enums
 import html/env
 import html/event
 import html/formdata as formdata_impl
+import io/bufreader
 import io/bufstream
 import io/bufwriter
 import io/posixstream
@@ -121,11 +122,9 @@ type
     charset: Charset
     cacheId: int
     outputId: int
-    dummyStream: StringStream
 
   InterfaceOpaque = ref object
     stream: SocketStream
-    dummyStream: StringStream
     len: int
 
   BufferInterface* = ref object
@@ -146,16 +145,12 @@ type
 proc getFromOpaque[T](opaque: pointer, res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:
-    let dummyStream = opaque.dummyStream
-    dummyStream.setPosition(0)
-    dummyStream.data = newString(opaque.len)
-    let n = opaque.stream.readData(addr dummyStream.data[0], opaque.len)
-    assert n == opaque.len
-    dummyStream.sread(res)
+    var r = opaque.stream.initReader(opaque.len)
+    r.sread(res)
 
 proc newBufferInterface*(stream: SocketStream, registerFun: proc(fd: int)):
     BufferInterface =
-  let opaque = InterfaceOpaque(stream: stream, dummyStream: newStringStream())
+  let opaque = InterfaceOpaque(stream: stream)
   result = BufferInterface(
     map: newPromiseMap(cast[pointer](opaque)),
     packetid: 1, # ids below 1 are invalid
@@ -976,7 +971,7 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
     buffer.pstream.close()
-    let ssock = initServerSocket(myPid, buffered = false)
+    let ssock = initServerSocket(myPid)
     buffer.ssock = ssock
     ps.write(char(0))
     buffer.url = newurl
@@ -1712,7 +1707,7 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
   buffer.do_reshape()
 
 macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
-    cmd: BufferCommand; packetid: int) =
+    cmd: BufferCommand; packetid: int; r: var BufferedReader) =
   let switch = newNimNode(nnkCaseStmt)
   switch.add(ident("cmd"))
   for k, v in funs:
@@ -1727,7 +1722,7 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
         let typ = param[^2]
         stmts.add(quote do:
           var `id`: `typ`
-          `buffer`.dummyStream.sread(`id`)
+          `r`.sread(`id`)
         )
         call.add(id)
     var rval: NimNode
@@ -1773,13 +1768,10 @@ proc readCommand(buffer: Buffer) =
   var len: int
   var packetid: int
   buffer.pstream.sread(len)
-  buffer.dummyStream.setPosition(0)
-  buffer.dummyStream.data = newString(len)
-  let n = buffer.pstream.readData(addr buffer.dummyStream.data[0], len)
-  assert n == len
-  buffer.dummyStream.sread(cmd)
-  buffer.dummyStream.sread(packetid)
-  bufferDispatcher(ProxyFunctions, buffer, cmd, packetid)
+  var r = buffer.pstream.initReader(len)
+  r.sread(cmd)
+  r.sread(packetid)
+  bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
 
 proc handleRead(buffer: Buffer, fd: int): bool =
   if fd == buffer.rfd:
@@ -1869,8 +1861,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,
-    outputId: -1,
-    dummyStream: newStringStream()
+    outputId: -1
   )
   buffer.charset = buffer.charsetStack.pop()
   socks.sread(buffer.loader.key)
