@@ -137,11 +137,10 @@ implemented yet, so it's not 100% compatible.
 I use vi for editing text, and I prefer my pager to function similarly to
 my editor. Hence the default vi-like keybindings.
 
-### Why does `$WEBSITE` look awful in Chawan?
+### Why does `$WEBSITE` look awful?
 
-Usually, this is because the website uses some CSS features that are not yet
-implemented in Chawan. The most common offenders are flexbox, grid, and CSS
-variables.
+Usually, this is because it uses some CSS features that are not yet implemented
+in Chawan. The most common offenders are flexbox, grid, and CSS variables.
 
 There are three ways of dealing with this:
 
@@ -161,7 +160,7 @@ There are three ways of dealing with this:
 Some potential fixes:
 
 * Usually logging in to websites requires cookies. Some websites also require
-  cookie sharing accross domains. For security reasons, Chawan does not allow
+  cookie sharing across domains. For security reasons, Chawan does not allow
   any of this by default, so you will have to fiddle with siteconf to fix
   it. (i.e. on all target hostnames, set `cookie` to true, `share-cookie-jar`
   to the main host, and `third-party-cookie` to all target hosts. See
