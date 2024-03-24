@@ -42,6 +42,7 @@ import types/cookie
 import types/opt
 import types/url
 import types/winattrs
+import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
 
@@ -1603,7 +1604,10 @@ proc connected(pager: Pager; container: Container; response: Response) =
     container.contentType.get & ";charset=" & $container.charset
   let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
     realContentType)
-  if not mailcapRes.found and not realContentType.startsWithIgnoreCase("text/"):
+  let shortContentType = container.contentType.get
+  if not mailcapRes.found and
+      not shortContentType.startsWithIgnoreCase("text/") and
+      not shortContentType.isJavaScriptType():
     pager.askDownloadPath(container, response)
     return
   if mailcapRes.connect:
