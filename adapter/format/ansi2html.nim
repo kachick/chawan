@@ -362,7 +362,7 @@ proc main() =
   let standalone = paramCount() >= 1 and paramStr(1) == "-s"
   if standalone:
     state.puts("<!DOCTYPE html>\n<body>")
-  state.puts("<pre style='margin: 0'>")
+  state.puts("<pre style='margin: 0'>\n")
   ps.setBlocking(false)
   var buffer {.noinit.}: array[4096, char]
   var selector = newSelector[int]()
