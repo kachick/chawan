@@ -18,6 +18,7 @@ import img/bitmap
 import img/painter
 import img/path
 import img/png
+import io/dynstream
 import io/promise
 import js/console
 import js/domexception
@@ -3515,7 +3516,7 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
   #TODO make this non-blocking somehow
-  let s = response.body.readAll()
+  let s = response.body.recvAll()
   let source = if cs in {CHARSET_UNKNOWN, CHARSET_UTF_8}:
     s.toValidUTF8()
   else:

@@ -14,9 +14,10 @@ when defined(posix):
 import bindings/libregexp
 import config/config
 import config/mailcap
+import io/bufreader
+import io/dynstream
 import io/posixstream
 import io/promise
-import io/serialize
 import io/socketstream
 import io/stdio
 import io/tempfile
@@ -89,7 +90,7 @@ type
 
   LineDataDownload = ref object of LineData
     outputId: int
-    stream: Stream
+    stream: DynStream
 
   LineDataAuth = ref object of LineData
     url: URL
@@ -1101,7 +1102,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
   if pager.loader.redirectToFile(data.outputId, path):
     pager.alert("Saving file to " & path)
     pager.loader.resume(@[data.outputId])
-    data.stream.close()
+    data.stream.sclose()
     pager.lineData = nil
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
@@ -1109,7 +1110,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
         if x:
           pager.setLineEdit(lmDownload, path)
         else:
-          data.stream.close()
+          data.stream.sclose()
           pager.lineData = nil
     )
 
@@ -1170,7 +1171,7 @@ proc updateReadLine*(pager: Pager) =
       of lmCommand: pager.commandMode = false
       of lmDownload:
         let data = LineDataDownload(pager.lineData)
-        data.stream.close()
+        data.stream.sclose()
       else: discard
       pager.lineData = nil
   if lineedit.state in {lesCancel, lesFinish} and
@@ -1299,7 +1300,7 @@ proc runMailcapReadPipe(pager: Pager; stream: SocketStream; cmd: string;
     # child process
     discard close(pipefdOut[0])
     discard dup2(stream.fd, stdin.getFileHandle())
-    stream.close()
+    stream.sclose()
     discard dup2(pipefdOut[1], stdout.getFileHandle())
     closeStderr()
     discard close(pipefdOut[1])
@@ -1319,14 +1320,14 @@ proc runMailcapWritePipe(pager: Pager; stream: SocketStream;
   elif pid == 0:
     # child process
     discard dup2(stream.fd, stdin.getFileHandle())
-    stream.close()
+    stream.sclose()
     if not needsterminal:
       closeStdout()
       closeStderr()
     myExec(cmd)
   else:
     # parent
-    stream.close()
+    stream.sclose()
     if needsterminal:
       var x: cint
       discard waitpid(pid, x, 0)
@@ -1342,11 +1343,11 @@ proc writeToFile(istream: SocketStream; outpath: string): bool =
     if n == 0:
       break
     if ps.sendData(buffer.toOpenArray(0, n - 1)) < n:
-      ps.close()
+      ps.sclose()
       return false
     if n < buffer.len:
       break
-  ps.close()
+  ps.sclose()
   true
 
 # Save input in a file, run the command, and redirect its output to a
@@ -1364,7 +1365,7 @@ proc runMailcapReadFile(pager: Pager; stream: SocketStream;
     if not stream.writeToFile(outpath):
       #TODO print error message
       quit(1)
-    stream.close()
+    stream.sclose()
     let ret = execCmd(cmd)
     discard tryRemoveFile(outpath)
     quit(ret)
@@ -1395,12 +1396,12 @@ proc runMailcapWriteFile(pager: Pager; stream: SocketStream;
       if not stream.writeToFile(outpath):
         #TODO print error message (maybe in parent?)
         quit(1)
-      stream.close()
+      stream.sclose()
       let ret = execCmd(cmd)
       discard tryRemoveFile(outpath)
       quit(ret)
     # parent
-    stream.close()
+    stream.sclose()
 
 proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
     ishtml: bool): CheckMailcapResult =
@@ -1417,7 +1418,7 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
     # child
     discard close(pipefd_out[0])
     discard dup2(stream.fd, stdin.getFileHandle())
-    stream.close()
+    stream.sclose()
     discard dup2(pipefd_out[1], stdout.getFileHandle())
     closeStderr()
     discard close(pipefd_out[1])
@@ -1501,7 +1502,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
     var pipefdOut: array[2, cint]
     if pipe(pipefdOut) == -1:
       pager.alert("Error: failed to open pipe")
-      stream.close() # connect: false implies that we consumed the stream
+      stream.sclose() # connect: false implies that we consumed the stream
       break needsConnect
     let pid = if canpipe:
       pager.runMailcapReadPipe(stream, cmd, pipefdOut)
@@ -1586,7 +1587,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername)
     pager.lineData = LineDataAuth(url: container.url)
-    istream.close()
+    istream.sclose()
     return
   # This forces client to ask for confirmation before quitting.
   # (It checks a flag on container, because console buffers must not affect this
@@ -1626,7 +1627,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     )
     if mailcapRes.fdout != istream.fd:
       # istream has been redirected into a filter
-      istream.close()
+      istream.sclose()
     pager.procmap.add(ProcMapItem(
       container: container,
       fdout: FileHandle(mailcapRes.fdout),
@@ -1650,17 +1651,18 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
   let stream = item.stream
   case item.state
   of ccsBeforeResult:
+    var r = stream.initPacketReader()
     var res: int
-    stream.sread(res)
+    r.sread(res)
     if res == 0:
-      stream.sread(item.outputId)
+      r.sread(item.outputId)
       inc item.state
       container.loadinfo = "Connected to " & $container.url & ". Downloading..."
       pager.onSetLoadInfo(container)
       # continue
     else:
       var msg: string
-      stream.sread(msg)
+      r.sread(msg)
       if msg == "":
         msg = getLoaderErrorMessage(res)
       pager.fail(container, msg)
@@ -1668,9 +1670,10 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
       pager.connectingContainers.del(i)
       pager.selector.unregister(item.stream.fd)
       pager.loader.unregistered.add(item.stream.fd)
-      stream.close()
+      stream.sclose()
   of ccsBeforeStatus:
-    stream.sread(item.status)
+    var r = stream.initPacketReader()
+    r.sread(item.status)
     inc item.state
     # continue
   of ccsBeforeHeaders:
@@ -1681,14 +1684,15 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
       url: container.request.url,
       body: stream
     )
-    stream.sread(response.headers)
+    var r = stream.initPacketReader()
+    r.sread(response.headers)
     # done
     pager.connectingContainers.del(i)
     pager.selector.unregister(item.stream.fd)
     pager.loader.unregistered.add(item.stream.fd)
     let redirect = response.getRedirect(container.request)
     if redirect != nil:
-      stream.close()
+      stream.sclose()
       pager.redirect(container, response, redirect)
     else:
       pager.connected(container, response)
@@ -1698,7 +1702,7 @@ proc handleConnectingContainerError*(pager: Pager; i: int) =
   pager.fail(item.container, "loader died while loading")
   pager.selector.unregister(item.stream.fd)
   pager.loader.unregistered.add(item.stream.fd)
-  item.stream.close()
+  item.stream.sclose()
   pager.connectingContainers.del(i)
 
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):

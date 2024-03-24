@@ -7,7 +7,6 @@ import std/options
 import std/os
 import std/posix
 import std/selectors
-import std/streams
 import std/tables
 import std/unicode
 
@@ -30,9 +29,10 @@ import html/formdata as formdata_impl
 import io/bufreader
 import io/bufstream
 import io/bufwriter
+import io/dynstream
+import io/filestream
 import io/posixstream
 import io/promise
-import io/serialize
 import io/serversocket
 import io/socketstream
 import js/fromjs
@@ -106,7 +106,7 @@ type
     config: BufferConfig
     tasks: array[BufferCommand, int] #TODO this should have arguments
     hoverText: array[HoverType, string]
-    estream: Stream # error stream
+    estream: DynFileStream # error stream
     ssock: ServerSocket
     factory: CAtomFactory
     uastyle: CSSStylesheet
@@ -167,11 +167,10 @@ proc cloneInterface*(stream: SocketStream, registerFun: proc(fd: int)):
   # We have just fork'ed the buffer process inside an interface function,
   # from which the new buffer is going to return as well. So we must also
   # consume the return value of the clone function, which is the pid 0.
-  var len: int
+  var r = stream.initPacketReader()
   var pid: int
-  stream.sread(len)
-  stream.sread(iface.packetid)
-  stream.sread(pid)
+  r.sread(iface.packetid)
+  r.sread(pid)
   return iface
 
 proc resolve*(iface: BufferInterface, packetid, len: int) =
@@ -215,20 +214,8 @@ proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] 
     for i in 0 ..< param.len - 2:
       let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
       params2.add(id2)
-  var len = ident"len"
   body.add(quote do:
-    var `len` = 0
-  )
-  for i in 2 ..< params2.len:
-    let s = params2[i][0] # sym e.g. url
-    body.add(quote do:
-      `len` += slen(`s`)
-    )
-  body.add(quote do:
-    `len` += slen(BufferCommand.`nup`)
-    `len` += slen(`thisval`.packetid)
-    var writer {.inject.} = `thisval`.stream.initWriter()
-    writer.swrite(`len`)
+    var writer {.inject.} = `thisval`.stream.initWriter(writeLen = true)
     writer.swrite(BufferCommand.`nup`)
     writer.swrite(`thisval`.packetid)
   )
@@ -859,7 +846,7 @@ proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
   if unregister:
     buffer.selector.unregister(buffer.fd)
     buffer.loader.unregistered.add(buffer.fd)
-  buffer.istream.close()
+  buffer.istream.sclose()
   buffer.istream = response.body
   buffer.istream.setBlocking(false)
   buffer.fd = response.body.fd
@@ -951,7 +938,7 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
     var ongoing: seq[OngoingData] = @[]
     for data in buffer.loader.ongoing.values:
       ongoing.add(data)
-      data.response.body.close()
+      data.response.body.sclose()
     buffer.loader.ongoing.clear()
     let myPid = getCurrentProcessId()
     for data in ongoing.mitems:
@@ -970,7 +957,7 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
       # the cache. (This also lets us skip suspend/resume in this case.)
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
-    buffer.pstream.close()
+    buffer.pstream.sclose()
     let ssock = initServerSocket(myPid)
     buffer.ssock = ssock
     ps.write(char(0))
@@ -979,7 +966,8 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
       it = 0
     let socks = ssock.acceptSocketStream()
     buffer.loader.clientPid = myPid
-    socks.sread(buffer.loader.key) # get key for new buffer
+    # get key for new buffer
+    socks.recvDataLoop(buffer.loader.key)
     buffer.pstream = socks
     buffer.rfd = socks.fd
     buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
@@ -988,9 +976,9 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
     discard close(pipefd[1]) # close write
     # We must wait for child to tee its ongoing streams.
     let ps = newPosixStream(pipefd[0])
-    let c = ps.readChar()
+    let c = ps.sreadChar()
     assert c == char(0)
-    ps.close()
+    ps.sclose()
     buffer.loader.resume(ids)
     return pid
 
@@ -1006,7 +994,8 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
     if el.ctype == "DOMContentLoaded":
       let e = el.callback(event)
       if e.isErr:
-        ctx.writeException(buffer.estream)
+        buffer.estream.write(ctx.getExceptionStr())
+        buffer.estream.sflush()
       called = true
   if called:
     buffer.do_reshape()
@@ -1022,7 +1011,8 @@ proc dispatchLoadEvent(buffer: Buffer) =
     if el.ctype == "load":
       let e = el.callback(event)
       if e.isErr:
-        ctx.writeException(buffer.estream)
+        buffer.estream.write(ctx.getExceptionStr())
+        buffer.estream.sflush()
       called = true
   let jsWindow = toJS(ctx, window)
   let jsonload = JS_GetPropertyStr(ctx, jsWindow, "onload")
@@ -1052,7 +1042,8 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
         let e = el.callback(event)
         called = true
         if e.isErr:
-          ctx.writeException(buffer.estream)
+          buffer.estream.write(ctx.getExceptionStr())
+          buffer.estream.sflush()
         if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
           stop = true
           break
@@ -1082,7 +1073,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   buffer.cacheId = -1
   buffer.fd = -1
   buffer.outputId = -1
-  buffer.istream.close()
+  buffer.istream.sclose()
   return buffer.loadResources()
 
 # Returns:
@@ -1107,9 +1098,7 @@ proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
 proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
   let packetid = buffer.tasks[cmd]
   assert packetid != 0
-  let len = slen(buffer.tasks[cmd]) + slen(res)
-  buffer.pstream.withWriter w:
-    w.swrite(len)
+  buffer.pstream.withPacketWriter w:
     w.swrite(packetid)
     w.swrite(res)
   buffer.tasks[cmd] = 0
@@ -1183,7 +1172,7 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   for fd, data in buffer.loader.connecting:
     buffer.selector.unregister(fd)
     buffer.loader.unregistered.add(fd)
-    data.stream.close()
+    data.stream.sclose()
   buffer.loader.connecting.clear()
   for fd, data in buffer.loader.ongoing:
     data.response.unregisterFun()
@@ -1194,7 +1183,7 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   buffer.fd = -1
   buffer.cacheId = -1
   buffer.outputId = -1
-  buffer.istream.close()
+  buffer.istream.sclose()
   buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded
@@ -1470,7 +1459,8 @@ proc evalJSURL(buffer: Buffer, url: URL): Opt[string] =
   let ctx = buffer.window.jsctx
   let ret = ctx.eval(scriptSource, $buffer.baseURL, JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
-    ctx.writeException(buffer.estream)
+    buffer.estream.write(ctx.getExceptionStr())
+    buffer.estream.sflush()
     return err() # error
   if JS_IsUndefined(ret):
     return err() # no need to navigate
@@ -1762,16 +1752,12 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     var resolve = newStmtList()
     if rval == nil:
       resolve.add(quote do:
-        let len = slen(`packetid`)
-        buffer.pstream.withWriter w:
-          w.swrite(len)
+        buffer.pstream.withPacketWriter w:
           w.swrite(`packetid`)
       )
     else:
       resolve.add(quote do:
-        let len = slen(`packetid`) + slen(`rval`)
-        buffer.pstream.withWriter w:
-          w.swrite(len)
+        buffer.pstream.withPacketWriter w:
           w.swrite(`packetid`)
           w.swrite(`rval`)
       )
@@ -1864,23 +1850,23 @@ proc runBuffer(buffer: Buffer) =
     buffer.loader.unregistered.setLen(0)
 
 proc cleanup(buffer: Buffer) =
-  buffer.pstream.close()
+  buffer.pstream.sclose()
   buffer.ssock.close()
 
 proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
     loader: FileLoader; ssock: ServerSocket) =
-  let socks = ssock.acceptSocketStream()
+  let pstream = ssock.acceptSocketStream()
   let buffer = Buffer(
     attrs: attrs,
     config: config,
-    estream: newFileStream(stderr),
+    estream: newDynFileStream(stderr),
     ishtml: ishtml,
     loader: loader,
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
-    pstream: socks,
+    pstream: pstream,
     request: request,
-    rfd: socks.fd,
+    rfd: pstream.fd,
     selector: newSelector[int](),
     ssock: ssock,
     url: url,
@@ -1889,10 +1875,11 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     outputId: -1
   )
   buffer.charset = buffer.charsetStack.pop()
-  socks.sread(buffer.loader.key)
-  let fd = socks.recvFileHandle()
+  var r = pstream.initPacketReader()
+  r.sread(buffer.loader.key)
+  r.sread(buffer.cacheId)
+  let fd = pstream.recvFileHandle()
   buffer.fd = fd
-  socks.sread(buffer.cacheId)
   buffer.istream = newPosixStream(fd)
   buffer.istream.setBlocking(false)
   buffer.selector.registerHandle(fd, {Read}, 0)

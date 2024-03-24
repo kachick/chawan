@@ -1,5 +1,4 @@
 import std/selectors
-import std/streams
 
 import bindings/quickjs
 import html/catom
@@ -9,6 +8,7 @@ import html/event
 import html/formdata
 import html/script
 import html/xmlhttprequest
+import io/filestream
 import io/promise
 import js/base64
 import js/console
@@ -34,7 +34,9 @@ proc appVersion(navigator: ptr Navigator): string {.jsfget.} = "5.0 (Windows)"
 proc platform(navigator: ptr Navigator): string {.jsfget.} = "Win32"
 proc product(navigator: ptr Navigator): string {.jsfget.} = "Gecko"
 proc productSub(navigator: ptr Navigator): string {.jsfget.} = "20100101"
-proc userAgent(navigator: ptr Navigator): string {.jsfget.} = "chawan" #TODO TODO TODO this should be configurable
+proc userAgent(navigator: ptr Navigator): string {.jsfget.} =
+  #TODO TODO TODO this should be configurable
+  "chawan"
 proc vendor(navigator: ptr Navigator): string {.jsfget.} = ""
 proc vendorSub(navigator: ptr Navigator): string {.jsfget.} = ""
 proc taintEnabled(navigator: ptr Navigator): bool {.jsfget.} = false
@@ -153,7 +155,7 @@ proc getComputedStyle(window: Window, element: Element,
   #TODO implement this properly
   return ok(element.style)
 
-proc addScripting*(window: Window, selector: Selector[int]) =
+proc addScripting*(window: Window; selector: Selector[int]) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   window.jsrt = rt
@@ -166,11 +168,10 @@ proc addScripting*(window: Window, selector: Selector[int]) =
     evalJSFree = (proc(src, file: string) =
       let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
       if JS_IsException(ret):
-        let ss = newStringStream()
-        window.jsctx.writeException(ss)
-        ss.setPosition(0)
         window.console.log("Exception in document", $window.document.url,
-          ss.readAll())
+          window.jsctx.getExceptionStr())
+      else:
+        JS_FreeValue(ctx, ret)
     )
   )
   var global = JS_GetGlobalObject(ctx)
@@ -200,7 +201,7 @@ proc runJSJobs*(window: Window) =
 proc newWindow*(scripting, images: bool, selector: Selector[int],
     attrs: WindowAttributes, factory: CAtomFactory,
     navigate: proc(url: URL) = nil, loader = none(FileLoader)): Window =
-  let err = newFileStream(stderr)
+  let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
     console: newConsole(err),

@@ -46,9 +46,8 @@ proc flushWrite*(s: BufStream): bool =
   return false
 
 proc newBufStream*(ps: PosixStream, registerFun: proc(fd: int)): BufStream =
-  result = BufStream(
+  return BufStream(
     source: ps,
     blocking: ps.blocking,
     registerFun: registerFun
   )
-  result.addStreamIface()

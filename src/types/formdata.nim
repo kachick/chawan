@@ -1,6 +1,7 @@
-import std/streams
 import std/strutils
 
+import io/dynstream
+import io/filestream
 import js/javascript
 import types/blob
 import utils/twtstr
@@ -56,7 +57,7 @@ proc calcLength*(this: FormData): int =
 proc getContentType*(this: FormData): string =
   return "multipart/form-data; boundary=" & this.boundary
 
-proc writeEntry*(stream: Stream, entry: FormDataEntry, boundary: string) =
+proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
   stream.write("--" & boundary & "\r\n")
   let name = percentEncode(entry.name, {'"', '\r', '\n'})
   if entry.isstr:
@@ -74,17 +75,17 @@ proc writeEntry*(stream: Stream, entry: FormDataEntry, boundary: string) =
       blob.ctype
     stream.write("Content-Type: " & ctype & "\r\n")
     if blob.isfile:
-      let fs = newFileStream(WebFile(blob).path)
+      let fs = newDynFileStream(WebFile(blob).path)
       if fs != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:
-          let n = fs.readData(addr buf[0], 4096)
+          let n = fs.recvData(addr buf[0], 4096)
           if n == 0:
             break
-          stream.writeData(addr buf[0], n)
+          stream.sendDataLoop(addr buf[0], n)
           if n < buf.len:
             break
     else:
-      stream.writeData(blob.buffer, int(blob.size))
+      stream.sendDataLoop(blob.buffer, int(blob.size))
     stream.write("\r\n")
   stream.write("\r\n")

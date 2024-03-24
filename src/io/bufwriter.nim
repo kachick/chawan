@@ -1,4 +1,5 @@
-# Write data to streams.
+# Write data to streams in packets.
+# Each packet is prefixed with its length as a pointer-sized integer.
 
 import std/options
 import std/sets
@@ -52,13 +53,6 @@ proc deinit*(writer: var BufferedWriter) =
   writer.buffer = nil
   writer.bufSize = 0
   writer.bufLen = 0
-
-template withWriter*(stream: DynStream; w, body: untyped) =
-  block:
-    var w = stream.initWriter()
-    body
-    w.flush()
-    w.deinit()
 
 template withPacketWriter*(stream: DynStream; w, body: untyped) =
   block:

@@ -1,9 +1,9 @@
 import std/options
 import std/os
 import std/posix
-import std/streams
 import std/strutils
 
+import io/dynstream
 import io/posixstream
 import io/stdio
 import loader/connecterror
@@ -221,7 +221,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
         let multipart = request.multipart.get
         for entry in multipart.entries:
           ps.writeEntry(entry, multipart.boundary)
-      ps.close()
+      ps.sclose()
     handle.parser = HeaderParser(headers: newHeaders())
     handle.istream = newPosixStream(pipefd[0])
 

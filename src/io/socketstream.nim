@@ -69,12 +69,11 @@ proc connectSocketStream*(path: string; blocking = true): SocketStream =
   if connect_unix_from_c(cint(sock.getFd()), cstring(path),
       cint(path.len)) != 0:
     raiseOSError(osLastError())
-  result = SocketStream(
+  return SocketStream(
     source: sock,
     fd: cint(sock.getFd()),
     blocking: blocking
   )
-  result.addStreamIface()
 
 proc connectSocketStream*(pid: int; blocking = true):
     SocketStream =
@@ -88,9 +87,8 @@ proc acceptSocketStream*(ssock: ServerSocket, blocking = true): SocketStream =
   ssock.sock.accept(sock, inheritable = true)
   if not blocking:
     sock.getFd().setBlocking(false)
-  result = SocketStream(
+  return SocketStream(
     blocking: blocking,
     source: sock,
     fd: cint(sock.getFd())
   )
-  result.addStreamIface()

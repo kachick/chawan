@@ -1,15 +1,15 @@
 import std/options
 import std/os
 import std/posix
-import std/streams
 import std/tables
 
 import config/config
 import io/bufreader
 import io/bufwriter
+import io/dynstream
 import io/posixstream
-import io/serialize
 import io/serversocket
+import io/stdio
 import loader/loader
 import server/buffer
 import types/urimethodmap
@@ -39,8 +39,9 @@ proc newFileLoader*(forkserver: ForkServer; config: LoaderConfig): FileLoader =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcForkLoader)
     w.swrite(config)
+  var r = forkserver.istream.initPacketReader()
   var process: int
-  forkserver.istream.sread(process)
+  r.sread(process)
   return FileLoader(process: process, clientPid: getCurrentProcessId())
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
@@ -64,9 +65,10 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     w.swrite(attrs)
     w.swrite(ishtml)
     w.swrite(charsetStack)
+  var r = forkserver.istream.initPacketReader()
   var bufferPid: int
-  forkserver.istream.sread(bufferPid)
-  bufferPid
+  r.sread(bufferPid)
+  return bufferPid
 
 proc trapSIGINT() =
   # trap SIGINT, so e.g. an external editor receiving an interrupt in the
@@ -147,9 +149,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       gssock.close()
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
-    ps.close()
-    discard close(stdin.getFileHandle())
-    discard close(stdout.getFileHandle())
+    ps.sclose()
+    closeStdin()
+    closeStdout()
     let loader = FileLoader(
       process: loaderPid,
       clientPid: pid
@@ -168,9 +170,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     doAssert false
   discard close(pipefd[1]) # close write
   let ps = newPosixStream(pipefd[0])
-  let c = ps.readChar()
+  let c = ps.sreadChar()
   assert c == char(0)
-  ps.close()
+  ps.sclose()
   ctx.children.add(pid)
   return pid
 
@@ -195,14 +197,14 @@ proc runForkServer() =
             ctx.children.del(i)
         of fcForkBuffer:
           let r = ctx.forkBuffer(r)
-          ctx.ostream.withWriter w:
+          ctx.ostream.withPacketWriter w:
             w.swrite(r)
         of fcForkLoader:
           assert ctx.loaderPid == 0
           var config: LoaderConfig
           r.sread(config)
           let pid = ctx.forkLoader(config)
-          ctx.ostream.withWriter w:
+          ctx.ostream.withPacketWriter w:
             w.swrite(pid)
           ctx.loaderPid = pid
           ctx.children.add(pid)
@@ -211,12 +213,11 @@ proc runForkServer() =
           r.sread(config)
           set_cjk_ambiguous(config.ambiguous_double)
           SocketDirectory = config.tmpdir
-        ctx.ostream.flush()
     except EOFError:
       # EOF
       break
-  ctx.istream.close()
-  ctx.ostream.close()
+  ctx.istream.sclose()
+  ctx.ostream.sclose()
   # Clean up when the main process crashed.
   for child in ctx.children:
     discard kill(cint(child), cint(SIGTERM))

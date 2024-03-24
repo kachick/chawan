@@ -1,6 +1,5 @@
 import std/deques
 import std/net
-import std/streams
 import std/tables
 
 import io/bufwriter
@@ -129,7 +128,7 @@ proc sendResult*(handle: LoaderHandle; res: int; msg = "") =
   let output = handle.output
   let blocking = output.ostream.blocking
   output.ostream.setBlocking(true)
-  output.ostream.withWriter w:
+  output.ostream.withPacketWriter w:
     w.swrite(res)
     if res == 0: # success
       assert msg == ""
@@ -143,7 +142,7 @@ proc sendStatus*(handle: LoaderHandle; status: uint16) =
   inc handle.rstate
   let blocking = handle.output.ostream.blocking
   handle.output.ostream.setBlocking(true)
-  handle.output.ostream.withWriter w:
+  handle.output.ostream.withPacketWriter w:
     w.swrite(status)
   handle.output.ostream.setBlocking(blocking)
 
@@ -152,7 +151,7 @@ proc sendHeaders*(handle: LoaderHandle; headers: Headers) =
   inc handle.rstate
   let blocking = handle.output.ostream.blocking
   handle.output.ostream.setBlocking(true)
-  handle.output.ostream.withWriter w:
+  handle.output.ostream.withPacketWriter w:
     w.swrite(headers)
   handle.output.ostream.setBlocking(blocking)
 
@@ -169,8 +168,8 @@ proc close*(handle: LoaderHandle) =
   for output in handle.outputs:
     #TODO assert not output.registered
     if output.ostream != nil:
-      output.ostream.close()
+      output.ostream.sclose()
       output.ostream = nil
   if handle.istream != nil:
-    handle.istream.close()
+    handle.istream.sclose()
     handle.istream = nil

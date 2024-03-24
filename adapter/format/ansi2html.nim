@@ -2,6 +2,7 @@ import std/options
 import std/os
 import std/selectors
 
+import io/dynstream
 import io/posixstream
 import types/color
 import utils/twtstr

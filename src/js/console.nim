@@ -1,16 +1,15 @@
-import std/streams
-
+import io/dynstream
 import js/javascript
 
 type Console* = ref object
-  err*: Stream
+  err*: DynStream
   clearFun: proc()
   showFun: proc()
   hideFun: proc()
 
 jsDestructor(Console)
 
-proc newConsole*(err: Stream; clearFun: proc() = nil; showFun: proc() = nil;
+proc newConsole*(err: DynStream; clearFun: proc() = nil; showFun: proc() = nil;
     hideFun: proc() = nil): Console =
   return Console(
     err: err,
@@ -25,7 +24,7 @@ proc log*(console: Console, ss: varargs[string]) {.jsfunc.} =
     if i != ss.high:
       console.err.write(' ')
   console.err.write('\n')
-  console.err.flush()
+  console.err.sflush()
 
 proc clear(console: Console) {.jsfunc.} =
   if console.clearFun != nil:

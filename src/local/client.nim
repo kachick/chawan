@@ -22,6 +22,8 @@ import html/formdata
 import html/xmlhttprequest
 import io/bufstream
 import io/bufwriter
+import io/dynstream
+import io/filestream
 import io/posixstream
 import io/promise
 import io/socketstream
@@ -385,7 +387,7 @@ proc acceptBuffers(client: Client) =
       let fd = int(stream.source.fd)
       client.selector.unregister(fd)
       client.fdmap.del(fd)
-      stream.close()
+      stream.sclose()
     elif container.process != -1: # connecting to buffer process
       let i = pager.findProcMapItem(container.process)
       pager.procmap.del(i)
@@ -393,7 +395,7 @@ proc acceptBuffers(client: Client) =
       # connecting to URL
       let stream = pager.connectingContainers[i].stream
       client.selector.unregister(stream.fd)
-      stream.close()
+      stream.sclose()
       pager.connectingContainers.del(i)
   let registerFun = proc(fd: int) =
     client.selector.unregister(fd)
@@ -405,31 +407,32 @@ proc acceptBuffers(client: Client) =
       pager.alert("Error: failed to set up buffer")
       continue
     let key = pager.addLoaderClient(container.process, container.loaderConfig)
-    stream.withWriter w:
+    stream.withPacketWriter w:
       w.swrite(key)
-    let loader = pager.loader
-    if item.fdin != -1:
-      let outputId = item.istreamOutputId
-      if container.cacheId == -1:
-        (container.cacheId, container.cacheFile) = loader.addCacheFile(outputId,
-          loader.clientPid)
-      var outCacheId = container.cacheId
-      let pid = container.process
-      if item.fdout == item.fdin:
-        loader.shareCachedItem(container.cacheId, pid)
-        loader.resume(@[item.istreamOutputId])
-      else:
-        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
-        loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
-      # pass down fdout
-      stream.sendFileHandle(item.fdout)
-      stream.withWriter w:
+      let loader = pager.loader
+      if item.fdin != -1:
+        let outputId = item.istreamOutputId
+        if container.cacheId == -1:
+          (container.cacheId, container.cacheFile) =
+            loader.addCacheFile(outputId, loader.clientPid)
+        var outCacheId = container.cacheId
+        let pid = container.process
+        if item.fdout == item.fdin:
+          loader.shareCachedItem(container.cacheId, pid)
+          loader.resume(@[item.istreamOutputId])
+        else:
+          outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
+          loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
         w.swrite(outCacheId)
+      else:
+        # buffer is cloned, no need to cache anything
+        container.setCloneStream(stream, registerFun)
+    if item.fdin != -1:
+      # pass down fdout
+      # must come after the previous block so the first packet is flushed
+      stream.sendFileHandle(item.fdout)
       discard close(item.fdout)
       container.setStream(stream, registerFun)
-    else:
-      # buffer is cloned, no need to cache anything
-      container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
     client.fdmap[fd] = container
     client.selector.registerHandle(fd, {Read}, 0)
@@ -466,14 +469,14 @@ proc handleRead(client: Client; fd: int) =
           if hadlf:
             client.console.err.write(prefix)
           if j - i > 0:
-            client.console.err.writeData(addr buffer[i], j - i)
+            client.console.err.write(buffer.toOpenArray(i, j - 1))
           i = j
           hadlf = found
       except ErrorAgain:
         break
     if not hadlf:
       client.console.err.write('\n')
-    client.console.err.flush()
+    client.console.err.sflush()
   elif fd in client.loader.connecting:
     client.loader.onConnected(fd)
     client.runJSJobs()
@@ -495,7 +498,7 @@ proc flushConsole*(client: Client) {.jsfunc.} =
   if client.console == nil:
     # hack for when client crashes before console has been initialized
     client.consoleWrapper = ConsoleWrapper(
-      console: newConsole(newFileStream(stderr))
+      console: newConsole(newDynFileStream(stderr))
     )
   client.handleRead(client.forkserver.estream.fd)
 
@@ -654,7 +657,7 @@ proc addConsole(pager: Pager; interactive: bool; clearFun, showFun, hideFun:
     let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
       url, ConsoleTitle, {})
     let err = newPosixStream(pipefd[1])
-    err.writeLine("Type (M-c) console.hide() to return to buffer mode.")
+    err.write("Type (M-c) console.hide() to return to buffer mode.\n")
     let console = newConsole(err, clearFun, showFun, hideFun)
     return ConsoleWrapper(console: console, container: container)
   else:
@@ -673,7 +676,7 @@ proc clearConsole(client: Client) =
   pager.replace(client.consoleWrapper.container, replacement)
   client.consoleWrapper.container = replacement
   let console = client.consoleWrapper.console
-  console.err.close()
+  console.err.sclose()
   console.err = newPosixStream(pipefd[1])
 
 proc dumpBuffers(client: Client) =

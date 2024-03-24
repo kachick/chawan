@@ -1,4 +1,3 @@
-import std/streams
 import std/strutils
 import std/tables
 
@@ -85,7 +84,7 @@ proc close*(response: Response) {.jsfunc.} =
   if response.unregisterFun != nil:
     response.unregisterFun()
   if response.body != nil:
-    response.body.close()
+    response.body.sclose()
 
 func getCharset*(this: Response; fallback: Charset): Charset =
   if "Content-Type" notin this.headers.table:

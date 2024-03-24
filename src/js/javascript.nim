@@ -44,11 +44,11 @@
 import std/macros
 import std/options
 import std/sets
-import std/streams
 import std/strutils
 import std/tables
 import std/unicode
 
+import io/dynstream
 import js/error
 import js/fromjs
 import js/opaque
@@ -208,11 +208,11 @@ proc getExceptionStr*(ctx: JSContext): string =
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 
-proc writeException*(ctx: JSContext, s: Stream) =
+proc writeException*(ctx: JSContext, s: DynStream) =
   s.write(ctx.getExceptionStr())
-  s.flush()
+  s.sflush()
 
-proc runJSJobs*(rt: JSRuntime, err: Stream) =
+proc runJSJobs*(rt: JSRuntime, err: DynStream) =
   while JS_IsJobPending(rt):
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, addr ctx)

@@ -1,7 +1,7 @@
 import std/selectors
-import std/streams
 import std/tables
 
+import io/dynstream
 import js/javascript
 
 type TimeoutState* = object
@@ -12,10 +12,10 @@ type TimeoutState* = object
   interval_fdis: Table[int, int32]
   selector: Selector[int] #TODO would be better with void...
   jsctx: JSContext
-  err: Stream #TODO shouldn't be needed
+  err: DynStream #TODO shouldn't be needed
   evalJSFree: proc(src, file: string) #TODO ew
 
-func newTimeoutState*(selector: Selector[int], jsctx: JSContext, err: Stream,
+func newTimeoutState*(selector: Selector[int]; jsctx: JSContext; err: DynStream;
     evalJSFree: proc(src, file: string)): TimeoutState =
   return TimeoutState(
     selector: selector,
@@ -28,7 +28,7 @@ func empty*(state: TimeoutState): bool =
   return state.timeouts.len == 0 and state.intervals.len == 0
 
 #TODO varargs
-proc setTimeout*[T: JSValue|string](state: var TimeoutState, handler: T,
+proc setTimeout*[T: JSValue|string](state: var TimeoutState; handler: T;
     timeout = 0i32): int32 =
   let id = state.timeoutid
   inc state.timeoutid
@@ -52,14 +52,14 @@ proc setTimeout*[T: JSValue|string](state: var TimeoutState, handler: T,
     ), fdi)
   return id
 
-proc clearTimeout*(state: var TimeoutState, id: int32) =
+proc clearTimeout*(state: var TimeoutState; id: int32) =
   if id in state.timeouts:
     let timeout = state.timeouts[id]
     state.selector.unregister(timeout.fdi)
     state.timeout_fdis.del(timeout.fdi)
     state.timeouts.del(id)
 
-proc clearInterval*(state: var TimeoutState, id: int32) =
+proc clearInterval*(state: var TimeoutState; id: int32) =
   if id in state.intervals:
     let interval = state.intervals[id]
     state.selector.unregister(interval.fdi)
@@ -68,7 +68,7 @@ proc clearInterval*(state: var TimeoutState, id: int32) =
     state.intervals.del(id)
 
 #TODO varargs
-proc setInterval*[T: JSValue|string](state: var TimeoutState, handler: T,
+proc setInterval*[T: JSValue|string](state: var TimeoutState; handler: T;
     interval = 0i32): int32 =
   let id = state.timeoutid
   inc state.timeoutid
@@ -91,7 +91,7 @@ proc setInterval*[T: JSValue|string](state: var TimeoutState, handler: T,
     ), fdi, fun)
   return id
 
-proc runTimeoutFd*(state: var TimeoutState, fd: int): bool =
+proc runTimeoutFd*(state: var TimeoutState; fd: int): bool =
   if fd in state.interval_fdis:
     state.intervals[state.interval_fdis[fd]].handler()
     return true

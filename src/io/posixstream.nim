@@ -1,4 +1,3 @@
-# stdlib file handling is broken, so we use this instead of FileStream.
 import std/posix
 
 import io/dynstream
@@ -53,23 +52,11 @@ proc sreadChar*(s: PosixStream): char =
     s.isend = true
   assert n == 1
 
-proc recvData*(s: PosixStream, buffer: var openArray[uint8]): int {.inline.} =
-  return s.recvData(addr buffer[0], buffer.len)
-
-proc recvData*(s: PosixStream, buffer: var openArray[char]): int {.inline.} =
-  return s.recvData(addr buffer[0], buffer.len)
-
 method sendData*(s: PosixStream, buffer: pointer, len: int): int =
   let n = write(s.fd, buffer, len)
   if n < 0:
     raisePosixIOError()
   return n
-
-proc sendData*(s: PosixStream, buffer: openArray[char]): int {.inline.} =
-  return s.sendData(unsafeAddr buffer[0], buffer.len)
-
-proc sendData*(s: PosixStream, buffer: openArray[uint8]): int {.inline.} =
-  return s.sendData(unsafeAddr buffer[0], buffer.len)
 
 method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
   s.blocking = blocking
@@ -87,9 +74,7 @@ method sclose*(s: PosixStream) =
   discard close(s.fd)
 
 proc newPosixStream*(fd: FileHandle): PosixStream =
-  let ps = PosixStream(fd: fd, blocking: true)
-  ps.addStreamIface()
-  return ps
+  return PosixStream(fd: fd, blocking: true)
 
 proc newPosixStream*(path: string, flags, mode: cint): PosixStream =
   let fd = open(cstring(path), flags, mode)

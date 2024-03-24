@@ -7,8 +7,8 @@ when defined(posix):
 
 import config/config
 import config/mimetypes
+import io/dynstream
 import io/promise
-import io/serialize
 import io/socketstream
 import js/javascript
 import js/jstypes
@@ -1576,9 +1576,9 @@ func hoverImage(container: Container): string {.jsfget.} =
 
 proc handleCommand(container: Container) =
   var packetid, len: int
-  container.iface.stream.sread(len)
-  container.iface.stream.sread(packetid)
-  container.iface.resolve(packetid, len - slen(packetid))
+  container.iface.stream.recvDataLoop(addr len, sizeof(len))
+  container.iface.stream.recvDataLoop(addr packetid, sizeof(packetid))
+  container.iface.resolve(packetid, len - sizeof(packetid))
 
 proc startLoad(container: Container) =
   container.iface.load().then(proc(res: int) =

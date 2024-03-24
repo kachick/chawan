@@ -1,7 +1,5 @@
-import std/streams
-
 type
-  DynStream* = ref object of Stream #TODO should be of RootObj
+  DynStream* = ref object of RootObj
     isend*: bool
     blocking*: bool #TODO move to posixstream
 
@@ -46,6 +44,19 @@ proc sendDataLoop*(s: DynStream; buffer: pointer; len: int) =
     if n == len:
       break
 
+proc sendDataLoop*(s: DynStream; buffer: openArray[char]) {.inline.} =
+  s.sendDataLoop(unsafeAddr buffer[0], buffer.len)
+
+proc write*(s: DynStream; buffer: openArray[char]) {.inline.} =
+  s.sendDataLoop(buffer)
+
+proc write*(s: DynStream; c: char) {.inline.} =
+  s.sendDataLoop(unsafeAddr c, 1)
+
+proc sreadChar*(s: DynStream): char =
+  let n = s.recvData(addr result, 1)
+  assert n == 1
+
 proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
   var n = 0
   while true:
@@ -53,47 +64,18 @@ proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
     if n == len:
       break
 
-proc dsClose(s: Stream) =
-  DynStream(s).sclose()
+proc recvDataLoop*(s: DynStream; buffer: var openArray[uint8]) {.inline.} =
+  s.recvDataLoop(addr buffer[0], buffer.len)
 
-proc dsReadData(s: Stream, buffer: pointer, len: int): int =
-  let s = DynStream(s)
-  assert len != 0 and s.blocking
-  result = 0
-  while result < len:
-    let p = addr cast[ptr UncheckedArray[uint8]](buffer)[result]
-    let n = s.recvData(p, len - result)
+proc recvAll*(s: DynStream): string =
+  var buffer = newString(4096)
+  var idx = 0
+  while true:
+    let n = s.recvData(addr buffer[idx], buffer.len - idx)
     if n == 0:
       break
-    result += n
-
-proc dsWriteData(s: Stream, buffer: pointer, len: int) =
-  let s = DynStream(s)
-  assert len != 0 and s.blocking
-  discard s.sendData(buffer, len)
-
-proc dsReadLine(s: Stream, line: var string): bool =
-  let s = DynStream(s)
-  assert s.blocking
-  line = ""
-  var c: char
-  while true:
-    if s.recvData(addr c, 1) == 0:
-      return false
-    if c == '\r':
-      if s.recvData(addr c, 1) == 0:
-        return false
-    if c == '\n':
-      break
-    line &= c
-  true
-
-proc dsAtEnd(s: Stream): bool =
-  return DynStream(s).isend
-
-proc addStreamIface*(s: DynStream) =
-  s.closeImpl = cast[typeof(s.closeImpl)](dsClose)
-  s.readDataImpl = cast[typeof(s.readDataImpl)](dsReadData)
-  s.writeDataImpl = cast[typeof(s.writeDataImpl)](dsWriteData)
-  s.readLineImpl = cast[typeof(s.readLineImpl)](dsReadLine)
-  s.atEndImpl = dsAtEnd
+    idx += n
+    if idx == buffer.len:
+      buffer.setLen(buffer.len + 4096)
+  buffer.setLen(idx)
+  return buffer

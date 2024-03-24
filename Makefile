@@ -90,7 +90,7 @@ $(OUTDIR_LIBEXEC)/md2html: adapter/format/md2html.nim
 		-o:"$(OUTDIR_LIBEXEC)/md2html" adapter/format/md2html.nim
 
 $(OUTDIR_LIBEXEC)/ansi2html: adapter/format/ansi2html.nim src/io/posixstream.nim \
-		src/types/color.nim src/utils/twtstr.nim
+		src/io/dynstream.nim src/types/color.nim src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/ansi2html" \
 		-o:"$(OUTDIR_LIBEXEC)/ansi2html" adapter/format/ansi2html.nim
