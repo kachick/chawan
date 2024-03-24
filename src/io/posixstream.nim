@@ -44,12 +44,6 @@ method recvData*(s: PosixStream, buffer: pointer, len: int): int =
 
 proc sreadChar*(s: PosixStream): char =
   let n = read(s.fd, addr result, 1)
-  if n < 0:
-    raisePosixIOError()
-  if n == 0:
-    if unlikely(s.isend):
-      raise newException(EOFError, "eof")
-    s.isend = true
   assert n == 1
 
 method sendData*(s: PosixStream, buffer: pointer, len: int): int =

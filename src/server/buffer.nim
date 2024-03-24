@@ -167,8 +167,8 @@ proc cloneInterface*(stream: SocketStream, registerFun: proc(fd: int)):
   # We have just fork'ed the buffer process inside an interface function,
   # from which the new buffer is going to return as well. So we must also
   # consume the return value of the clone function, which is the pid 0.
-  var r = stream.initPacketReader()
   var pid: int
+  var r = stream.initPacketReader()
   r.sread(iface.packetid)
   r.sread(pid)
   return iface
@@ -964,12 +964,12 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
     buffer.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
-    let socks = ssock.acceptSocketStream()
+    buffer.pstream = ssock.acceptSocketStream()
     buffer.loader.clientPid = myPid
     # get key for new buffer
-    socks.recvDataLoop(buffer.loader.key)
-    buffer.pstream = socks
-    buffer.rfd = socks.fd
+    var r = buffer.pstream.initPacketReader()
+    r.sread(buffer.loader.key)
+    buffer.rfd = buffer.pstream.fd
     buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
     return 0
   else: # parent
@@ -1074,6 +1074,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   buffer.fd = -1
   buffer.outputId = -1
   buffer.istream.sclose()
+  buffer.istream = nil
   return buffer.loadResources()
 
 # Returns:
@@ -1153,7 +1154,7 @@ proc onload(buffer: Buffer) =
     if buffer.hasTask(bcLoad):
       buffer.resolveTask(bcLoad, buffer.bytesRead)
 
-proc getTitle*(buffer: Buffer): string {.proxy.} =
+proc getTitle*(buffer: Buffer): string {.proxy, task.} =
   if buffer.document != nil:
     let title = buffer.document.findFirst(TAG_TITLE)
     if title != nil:
@@ -1168,7 +1169,6 @@ proc forceRender*(buffer: Buffer) {.proxy.} =
 proc cancel*(buffer: Buffer): int {.proxy.} =
   if buffer.state == bsLoaded:
     return
-  buffer.state = bsLoaded
   for fd, data in buffer.loader.connecting:
     buffer.selector.unregister(fd)
     buffer.loader.unregistered.add(fd)
@@ -1184,6 +1184,7 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
   buffer.cacheId = -1
   buffer.outputId = -1
   buffer.istream.sclose()
+  buffer.istream = nil
   buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded

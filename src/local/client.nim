@@ -424,15 +424,15 @@ proc acceptBuffers(client: Client) =
           outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
           loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
         w.swrite(outCacheId)
-      else:
-        # buffer is cloned, no need to cache anything
-        container.setCloneStream(stream, registerFun)
     if item.fdin != -1:
       # pass down fdout
       # must come after the previous block so the first packet is flushed
       stream.sendFileHandle(item.fdout)
       discard close(item.fdout)
       container.setStream(stream, registerFun)
+    else:
+      # buffer is cloned, no need to cache anything
+      container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
     client.fdmap[fd] = container
     client.selector.registerHandle(fd, {Read}, 0)
