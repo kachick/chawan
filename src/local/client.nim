@@ -691,7 +691,6 @@ proc dumpBuffers(client: Client) =
       # check for errors
       client.handleRead(client.forkserver.estream.fd)
       quit(1)
-  stdout.close()
 
 proc launchClient*(client: Client; pages: seq[string];
     contentType: Option[string]; cs: Charset; dump: bool) =

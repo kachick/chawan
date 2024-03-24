@@ -248,7 +248,6 @@ proc newForkServer*(): ForkServer =
     discard dup2(readfd, stdin.getFileHandle())
     discard dup2(writefd, stdout.getFileHandle())
     discard dup2(errfd, stderr.getFileHandle())
-    stderr.flushFile()
     discard close(pipefd_in[0])
     discard close(pipefd_out[1])
     discard close(pipefd_err[1])
