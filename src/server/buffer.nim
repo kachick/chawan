@@ -1159,6 +1159,8 @@ proc getTitle*(buffer: Buffer): string {.proxy, task.} =
     let title = buffer.document.findFirst(TAG_TITLE)
     if title != nil:
       return title.childTextContent.stripAndCollapse()
+    if buffer.state == bsLoaded:
+      return "" # title no longer expected
   buffer.savetask = true
   return ""
 
