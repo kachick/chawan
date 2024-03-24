@@ -205,6 +205,10 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     # we leave stderr open, so it can be seen in the browser console
     setupEnv(cmd, scriptName, pathInfo, requestURI, myDir, request, contentLen,
       prevURL)
+    # reset SIGCHLD to the default handler. this is useful if the child process
+    # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
+    # SIGCHLD as SIG_IGN)
+    signal(SIGCHLD, SIG_DFL)
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
     stdout.write("Cha-Control: ConnectionError " & $code & " " &
