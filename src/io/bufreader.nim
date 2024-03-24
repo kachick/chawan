@@ -27,12 +27,14 @@ proc initReader*(stream: DynStream; len: int): BufferedReader =
       break
   return reader
 
+proc initPacketReader*(stream: DynStream): BufferedReader =
+  var len: int
+  stream.recvDataLoop(addr len, sizeof(len))
+  return stream.initReader(len)
+
 template withPacketReader*(stream: DynStream; r, body: untyped) =
   block:
-    var len: int
-    # note: this must be readData
-    doAssert stream.readData(addr len, sizeof(len)) == sizeof(len)
-    var r = stream.initReader(len)
+    var r = stream.initPacketReader()
     body
 
 proc sread*(reader: var BufferedReader; n: var SomeNumber)

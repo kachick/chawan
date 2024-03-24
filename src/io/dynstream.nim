@@ -46,6 +46,13 @@ proc sendDataLoop*(s: DynStream; buffer: pointer; len: int) =
     if n == len:
       break
 
+proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
+  var n = 0
+  while true:
+    n += s.recvData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
+    if n == len:
+      break
+
 proc dsClose(s: Stream) =
   DynStream(s).sclose()
 

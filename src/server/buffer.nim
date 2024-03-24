@@ -1791,11 +1791,9 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
   return switch
 
 proc readCommand(buffer: Buffer) =
+  var r = buffer.pstream.initPacketReader()
   var cmd: BufferCommand
-  var len: int
   var packetid: int
-  buffer.pstream.sread(len)
-  var r = buffer.pstream.initReader(len)
   r.sread(cmd)
   r.sread(packetid)
   bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
