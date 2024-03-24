@@ -95,10 +95,11 @@ $(OUTDIR_LIBEXEC)/ansi2html: adapter/format/ansi2html.nim src/io/posixstream.nim
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/ansi2html" \
 		-o:"$(OUTDIR_LIBEXEC)/ansi2html" adapter/format/ansi2html.nim
 
-GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -lcrypto -lssl -g -O3
+GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -g -O3
+GMIFETCH_LDFLAGS = $$(pkg-config --cflags --libs libssl) $$(pkg-config --cflags --libs libcrypto)
 $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch"
+	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch" $(GMIFETCH_LDFLAGS)
 
 $(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
