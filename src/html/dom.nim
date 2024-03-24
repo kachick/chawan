@@ -1008,13 +1008,13 @@ iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
 
 iterator radiogroup(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for input in form.inputs:
-    if input.inputType == INPUT_RADIO:
+    if input.inputType == itRadio:
       yield input
 
 iterator radiogroup(document: Document): HTMLInputElement {.inline.} =
   for input in document.elements(TAG_INPUT):
     let input = HTMLInputElement(input)
-    if input.form == nil and input.inputType == INPUT_RADIO:
+    if input.form == nil and input.inputType == itRadio:
       yield input
 
 iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
@@ -1764,14 +1764,13 @@ func isSubmitButton*(element: Element): bool =
     return element.attr(satType) == "submit"
   elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
-    return element.inputType in {INPUT_SUBMIT, INPUT_IMAGE}
+    return element.inputType in {itSubmit, itImage}
   return false
 
 func canSubmitImplicitly*(form: HTMLFormElement): bool =
   const BlocksImplicitSubmission = {
-    INPUT_TEXT, INPUT_SEARCH, INPUT_URL, INPUT_TEL, INPUT_EMAIL, INPUT_PASSWORD,
-    INPUT_DATE, INPUT_MONTH, INPUT_WEEK, INPUT_TIME, INPUT_DATETIME_LOCAL,
-    INPUT_NUMBER
+    itText, itSearch, itURL, itTel, itEmail, itPassword, itDate, itMonth,
+    itWeek, itTime, itDatetimeLocal, itNumber
   }
   var found = false
   for control in form.controls:
@@ -2197,20 +2196,24 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
 
 func inputString*(input: HTMLInputElement): string =
   case input.inputType
-  of INPUT_CHECKBOX, INPUT_RADIO:
-    if input.checked: "*"
-    else: " "
-  of INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_URL, INPUT_TEL:
+  of itCheckbox, itRadio:
+    if input.checked:
+      "*"
+    else:
+      " "
+  of itSearch, itText, itEmail, itURL, itTel:
     input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
-  of INPUT_PASSWORD:
+  of itPassword:
     '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(satSize).get(20)))
-  of INPUT_RESET:
+  of itReset:
     if input.value != "": input.value
     else: "RESET"
-  of INPUT_SUBMIT, INPUT_BUTTON:
-    if input.value != "": input.value
-    else: "SUBMIT"
-  of INPUT_FILE:
+  of itSubmit, itButton:
+    if input.value != "":
+      input.value
+    else:
+      "SUBMIT"
+  of itFile:
     if input.file.isNone:
       "".padToWidth(int(input.attrulgz(satSize).get(20)))
     else:
@@ -2236,7 +2239,7 @@ func isButton*(element: Element): bool =
     return true
   if element of HTMLInputElement:
     let element = HTMLInputElement(element)
-    return element.inputType in {INPUT_SUBMIT, INPUT_BUTTON, INPUT_RESET, INPUT_IMAGE}
+    return element.inputType in {itSubmit, itButton, itReset, itImage}
   return false
 
 func action*(element: Element): string =
@@ -3148,13 +3151,12 @@ proc resetElement*(element: Element) =
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     case input.inputType
-    of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
-      input.value = input.attr(satValue)
-    of INPUT_CHECKBOX, INPUT_RADIO:
+    of itCheckbox, itRadio:
       input.checked = input.attrb(satChecked)
-    of INPUT_FILE:
+    of itFile:
       input.file = none(URL)
-    else: discard
+    else:
+      input.value = input.attr(satValue)
     input.invalid = true
   of TAG_SELECT:
     let select = HTMLSelectElement(element)

@@ -1,17 +1,32 @@
 import std/strutils
 import std/tables
 
-import utils/twtstr
-
 import chame/tags
 
 type
   InputType* = enum
-    INPUT_TEXT, INPUT_BUTTON, INPUT_CHECKBOX, INPUT_COLOR, INPUT_DATE,
-    INPUT_DATETIME_LOCAL, INPUT_EMAIL, INPUT_FILE, INPUT_HIDDEN, INPUT_IMAGE,
-    INPUT_MONTH, INPUT_NUMBER, INPUT_PASSWORD, INPUT_RADIO, INPUT_RANGE,
-    INPUT_RESET, INPUT_SEARCH, INPUT_SUBMIT, INPUT_TEL, INPUT_TIME, INPUT_URL,
-    INPUT_WEEK
+    itText = "text"
+    itButton = "button"
+    itCheckbox = "checkbox"
+    itColor = "color"
+    itDate = "date"
+    itDatetimeLocal = "datetime-local"
+    itEmail = "email"
+    itFile = "file"
+    itHidden = "hidden"
+    itImage = "image"
+    itMonth = "month"
+    itNumber = "number"
+    itPassword = "password"
+    itRadio = "radio"
+    itRange = "range"
+    itReset = "reset"
+    itSearch = "search"
+    itSubmit = "submit"
+    itTel = "tel"
+    itTime = "time"
+    itURL = "url"
+    itWeek = "week"
 
   ButtonType* = enum
     BUTTON_SUBMIT, BUTTON_RESET, BUTTON_BUTTON
@@ -31,7 +46,7 @@ type
     NOTATION_NODE = 12
 
 const InputTypeWithSize* = {
-  INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_PASSWORD, INPUT_URL, INPUT_TEL
+  itSearch, itText, itEmail, itPassword, itURL, itTel
 }
 
 const AutocapitalizeInheritingElements* = {
@@ -56,9 +71,7 @@ const ResettableElements* = {
 
 func getInputTypeMap(): Table[string, InputType] =
   for i in InputType:
-    let enumname = $InputType(i)
-    let tagname = enumname.split('_')[1..^1].join('_').toLowerAscii()
-    result[tagname] = InputType(i)
+    result[$InputType(i)] = InputType(i)
 
 const inputTypeMap = getInputTypeMap()
 
@@ -66,6 +79,6 @@ func inputType*(s: string): InputType =
   return inputTypeMap.getOrDefault(s.toLowerAscii())
 
 const AutoDirInput* = {
-  INPUT_HIDDEN, INPUT_TEXT, INPUT_SEARCH, INPUT_TEL, INPUT_URL, INPUT_EMAIL,
-  INPUT_PASSWORD, INPUT_SUBMIT, INPUT_RESET, INPUT_BUTTON
+  itHidden, itText, itSearch, itTel, itURL, itEmail, itPassword, itSubmit,
+  itReset, itButton
 }

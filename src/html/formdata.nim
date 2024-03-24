@@ -106,7 +106,7 @@ func toNameValuePairs*(list: seq[FormDataEntry]):
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 # Warning: we skip the first "constructing entry list" check; the caller must
 # do it.
-proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
+proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     encoding = "UTF-8"): seq[FormDataEntry] =
   assert not form.constructingEntryList
   form.constructingEntryList = true
@@ -118,9 +118,9 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
       continue
     if field of HTMLInputElement:
       let field = HTMLInputElement(field)
-      if field.inputType in {INPUT_CHECKBOX, INPUT_RADIO} and not field.checked:
+      if field.inputType in {itCheckbox, itRadio} and not field.checked:
         continue
-      if field.inputType == INPUT_IMAGE:
+      if field.inputType == itImage:
         var name = field.attr(satName)
         if name != "":
           name &= '.'
@@ -139,17 +139,17 @@ proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
     elif field of HTMLInputElement:
       let field = HTMLInputElement(field)
       case field.inputType
-      of INPUT_CHECKBOX, INPUT_RADIO:
+      of itCheckbox, itRadio:
         let v = field.attr(satValue)
         let value = if v != "":
           v
         else:
           "on"
         entrylist.add((name, value))
-      of INPUT_FILE:
+      of itFile:
         #TODO file
         discard
-      of INPUT_HIDDEN:
+      of itHidden:
         if name.equalsIgnoreCase("_charset_"):
           entrylist.add((name, encoding))
         else:

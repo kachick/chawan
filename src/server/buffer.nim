@@ -346,7 +346,7 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae of HTMLButtonElement and HTMLButtonElement(fae).ctype == BUTTON_SUBMIT:
     return true
   if fae of HTMLInputElement and
-      HTMLInputElement(fae).inputType in {INPUT_SUBMIT, INPUT_BUTTON}:
+      HTMLInputElement(fae).inputType in {itSubmit, itButton}:
     return true
   return false
 
@@ -1390,13 +1390,7 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
     of TAG_INPUT:
       let input = HTMLInputElement(buffer.document.focus)
       case input.inputType
-      of INPUT_SEARCH, INPUT_TEXT, INPUT_PASSWORD:
-        input.value = s
-        input.invalid = true
-        buffer.do_reshape()
-        result.repaint = true
-        result.open = implicitSubmit(input)
-      of INPUT_FILE:
+      of itFile:
         let cdir = parseURL("file://" & getCurrentDir() & DirSep)
         let path = parseURL(s, cdir)
         if path.isSome:
@@ -1405,7 +1399,12 @@ proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
           buffer.do_reshape()
           result.repaint = true
           result.open = implicitSubmit(input)
-      else: discard
+      else:
+        input.value = s
+        input.invalid = true
+        buffer.do_reshape()
+        result.repaint = true
+        result.open = implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
@@ -1535,57 +1534,84 @@ proc click(buffer: Buffer, textarea: HTMLTextAreaElement): ClickResult =
     repaint: repaint
   )
 
+const InputTypePrompt = [
+  itText: "TEXT",
+  itButton: "",
+  itCheckbox: "",
+  itColor: "Color",
+  itDate: "Date",
+  itDatetimeLocal: "Local date/time",
+  itEmail: "E-Mail",
+  itFile: "Filename",
+  itHidden: "",
+  itImage: "Image",
+  itMonth: "Month",
+  itNumber: "Number",
+  itPassword: "Password",
+  itRadio: "Radio",
+  itRange: "Range",
+  itReset: "",
+  itSearch: "Search",
+  itSubmit: "",
+  itTel: "Telephone number",
+  itTime: "Time",
+  itURL: "URL input",
+  itWeek: "Week"
+]
+
 proc click(buffer: Buffer, input: HTMLInputElement): ClickResult =
-  result.repaint = buffer.restoreFocus()
+  let repaint = buffer.restoreFocus()
   case input.inputType
-  of INPUT_SEARCH:
-    result.repaint = buffer.setFocus(input)
-    result.readline = some(ReadLineResult(
-      prompt: "SEARCH: ",
-      value: input.value
-    ))
-  of INPUT_TEXT, INPUT_PASSWORD:
-    result.repaint = buffer.setFocus(input)
-    result.readline = some(ReadLineResult(
-      prompt: "TEXT: ",
-      value: input.value,
-      hide: input.inputType == INPUT_PASSWORD
-    ))
-  of INPUT_FILE:
-    result.repaint = buffer.setFocus(input)
+  of itFile:
     var path = if input.file.isSome:
       input.file.get.path.serialize_unicode()
     else:
       ""
-    result.readline = some(ReadLineResult(
-      prompt: "Filename: ",
-      value: path
-    ))
-  of INPUT_CHECKBOX:
+    return ClickResult(
+      repaint: buffer.setFocus(input) or repaint,
+      readline: some(ReadLineResult(
+        prompt: InputTypePrompt[itFile] & ": ",
+        value: path
+      ))
+    )
+  of itCheckbox:
     input.checked = not input.checked
     input.invalid = true
-    result.repaint = true
     buffer.do_reshape()
-  of INPUT_RADIO:
+    return ClickResult(repaint: true)
+  of itRadio:
     for radio in input.radiogroup:
       radio.checked = false
       radio.invalid = true
     input.checked = true
     input.invalid = true
-    result.repaint = true
     buffer.do_reshape()
-  of INPUT_RESET:
+    return ClickResult(repaint: true)
+  of itReset:
     if input.form != nil:
       input.form.reset()
-      result.repaint = true
       buffer.do_reshape()
-  of INPUT_SUBMIT, INPUT_BUTTON:
+      return ClickResult(repaint: true)
+    return ClickResult(repaint: false)
+  of itSubmit, itButton:
     if input.form != nil:
-      result.open = submitForm(input.form, input)
+      return ClickResult(open: submitForm(input.form, input), repaint: repaint)
+    return ClickResult(repaint: false)
   else:
-    result.repaint = buffer.restoreFocus()
+    # default is text.
+    var prompt = InputTypePrompt[input.inputType]
+    if input.inputType == itRange:
+      prompt &= " (" & input.attr(satMin) & ".." & input.attr(satMax) & ")"
+    return ClickResult(
+      repaint: buffer.setFocus(input) or repaint,
+      readline: some(ReadLineResult(
+        prompt: prompt & ": ",
+        value: input.value,
+        hide: input.inputType == itPassword
+      ))
+    )
 
-proc click(buffer: Buffer, clickable: Element): ClickResult =
+proc click(buffer: Buffer; clickable: Element): ClickResult =
   case clickable.tagType
   of TAG_LABEL:
     return buffer.click(HTMLLabelElement(clickable))
@@ -1602,9 +1628,9 @@ proc click(buffer: Buffer, clickable: Element): ClickResult =
   of TAG_INPUT:
     return buffer.click(HTMLInputElement(clickable))
   else:
-    result.repaint = buffer.restoreFocus()
+    return ClickResult(repaint: buffer.restoreFocus())
 
-proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
+proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return
   var called = false
   var canceled = false
@@ -1617,11 +1643,12 @@ proc click*(buffer: Buffer, cursorx, cursory: int): ClickResult {.proxy.} =
   if not canceled:
     if clickable != nil:
       var res = buffer.click(clickable)
-      res.repaint = called
+      if called: # override repaint
+        res.repaint = true
       return res
   return ClickResult(repaint: called)
 
-proc select*(buffer: Buffer, selected: seq[int]): ClickResult {.proxy.} =
+proc select*(buffer: Buffer; selected: seq[int]): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
       buffer.document.focus of HTMLSelectElement:
     let select = HTMLSelectElement(buffer.document.focus)
@@ -1643,7 +1670,7 @@ proc select*(buffer: Buffer, selected: seq[int]): ClickResult {.proxy.} =
 proc readCanceled*(buffer: Buffer): bool {.proxy.} =
   return buffer.restoreFocus()
 
-proc findAnchor*(buffer: Buffer, anchor: string): bool {.proxy.} =
+proc findAnchor*(buffer: Buffer; anchor: string): bool {.proxy.} =
   return buffer.document != nil and buffer.document.findAnchor(anchor) != nil
 
 type GetLinesResult* = tuple[
@@ -1652,7 +1679,7 @@ type GetLinesResult* = tuple[
   bgcolor: CellColor
 ]
 
-proc getLines*(buffer: Buffer, w: Slice[int]): GetLinesResult {.proxy.} =
+proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
   var w = w
   if w.b < 0 or w.b > buffer.lines.high:
     w.b = buffer.lines.high
