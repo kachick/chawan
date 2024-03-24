@@ -134,18 +134,13 @@ macro fromJSTupleBody(a: tuple) =
       defer: JS_FreeValue(ctx, doneVal)
       `done` = ?fromJS[bool](ctx, doneVal)
       if `done`:
-        JS_ThrowTypeError(ctx,
-          "Too few arguments in sequence (got %d, expected %d)", cint(`i`),
-          cint(`len`))
-        return err()
+        return errTypeError("Too few arguments in sequence (got " & $`i` &
+          ", expected " & $`len` & ")")
       let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE])
       if JS_IsException(valueVal):
         return err()
       defer: JS_FreeValue(ctx, valueVal)
-      let genericRes = fromJS[typeof(`a`[`i`])](ctx, valueVal)
-      if genericRes.isErr: # exception
-        return err()
-      `a`[`i`] = genericRes.get
+      `a`[`i`] = ?fromJS[typeof(`a`[`i`])](ctx, valueVal)
     )
     if i == len - 1:
       result.add(quote do:
@@ -222,10 +217,8 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): JSResult[seq[T]] =
     if JS_IsException(valueVal):
       return err()
     defer: JS_FreeValue(ctx, valueVal)
-    let genericRes = fromJS[typeof(s[0])](ctx, valueVal)
-    if genericRes.isNone: # exception
-      return err()
-    s.add(genericRes.get)
+    let genericRes = ?fromJS[typeof(s[0])](ctx, valueVal)
+    s.add(genericRes)
   return ok(s)
 
 proc fromJSSet[T](ctx: JSContext, val: JSValue): JSResult[set[T]] =
@@ -345,23 +338,16 @@ proc fromJSFunction[T](ctx: JSContext, val: JSValue):
 template optionType[T](o: type Option[T]): auto =
   T
 
-# wrap
+# Option vs Opt:
+# Option is for nullable types, e.g. if you want to return either a string
+# or null. (This is rather pointless for anything else.)
+# Opt is for passing down exceptions received up in the chain.
+# So e.g. none(T) translates to JS_NULL, but err() translates to JS_EXCEPTION.
 proc fromJSOption[T](ctx: JSContext, val: JSValue): JSResult[Option[T]] =
-  if JS_IsUndefined(val):
-    #TODO what about null?
-    return err()
+  if JS_IsNull(val):
+    return ok(none(T))
   let res = ?fromJS[T](ctx, val)
   return ok(option(res))
-
-# wrap
-proc fromJSOpt[T](ctx: JSContext, val: JSValue): JSResult[T] =
-  if JS_IsUndefined(val):
-    #TODO what about null?
-    return err()
-  let res = fromJS[T.valType](ctx, val)
-  if res.isErr:
-    return ok(opt(T.valType))
-  return ok(opt(res.get))
 
 proc fromJSBool(ctx: JSContext, val: JSValue): JSResult[bool] =
   let ret = JS_ToBool(ctx, val)
@@ -391,9 +377,7 @@ proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
   if not JS_IsObject(val):
     return err(newTypeError("Value is not an object"))
   if not isInstanceOfNonGlobal(ctx, val, t):
-    let errmsg = t & " expected"
-    JS_ThrowTypeError(ctx, cstring(errmsg))
-    return err(newTypeError(errmsg))
+    return errTypeError(t & " expected")
   let classid = JS_GetClassID(val)
   let op = JS_GetOpaque(val, classid)
   return ok(op)
@@ -403,7 +387,6 @@ proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): JSResult[T] =
 
 proc fromJSVoid(ctx: JSContext, val: JSValue): JSResult[void] =
   if JS_IsException(val):
-    #TODO maybe wrap or something
     return err()
   return ok()
 
@@ -483,8 +466,6 @@ proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
     return fromJSFunction[T](ctx, val)
   elif T is Option:
     return fromJSOption[optionType(T)](ctx, val)
-  elif T is Opt: # unwrap
-    return fromJSOpt[T](ctx, val)
   elif T is seq:
     return fromJSSeq[typeof(result.get.items)](ctx, val)
   elif T is set:

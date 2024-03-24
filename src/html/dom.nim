@@ -1902,10 +1902,10 @@ func textContent*(node: Node): string =
       if not (child of Comment):
         result &= child.textContent
 
-func jsTextContent(node: Node): Opt[string] {.jsfget: "textContent".} =
+func jsTextContent(node: Node): Option[string] {.jsfget: "textContent".} =
   if node of Document or node of DocumentType:
-    return err() # null
-  return ok(node.textContent)
+    return none(string) # null
+  return some(node.textContent)
 
 func childTextContent*(node: Node): string =
   for child in node.childList:
@@ -2730,10 +2730,10 @@ proc cssText(this: CSSStyleDeclaration): string {.jsfunc.} =
 func length(this: CSSStyleDeclaration): uint32 =
   return uint32(this.decls.len)
 
-func item(this: CSSStyleDeclaration, u: uint32): Opt[string] =
+func item(this: CSSStyleDeclaration, u: uint32): Option[string] =
   if u < this.length:
-    return ok(this.decls[int(u)].name)
-  return err()
+    return some(this.decls[int(u)].name)
+  return none(string)
 
 proc getPropertyValue(this: CSSStyleDeclaration, s: string): string =
   for decl in this.decls:
@@ -2752,16 +2752,16 @@ func IDLAttributeToCSSProperty(s: string, dashPrefix = false): string =
       result &= c
 
 proc getter[T: uint32|string](this: CSSStyleDeclaration, u: T):
-    Opt[string] {.jsgetprop.} =
+    Option[string] {.jsgetprop.} =
   when T is uint32:
     return this.item(u)
   else:
     if u.isSupportedProperty():
-      return ok(this.getPropertyValue(u))
+      return some(this.getPropertyValue(u))
     let u = IDLAttributeToCSSProperty(u)
     if u.isSupportedProperty():
-      return ok(this.getPropertyValue(u))
-    return err()
+      return some(this.getPropertyValue(u))
+    return none(string)
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.style_cached == nil:

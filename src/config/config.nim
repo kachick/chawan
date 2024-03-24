@@ -35,19 +35,19 @@ type
     t: Table[string, string]
 
   SiteConfig* = object
-    url*: Opt[Regex]
-    host*: Opt[Regex]
+    url*: Option[Regex]
+    host*: Option[Regex]
     rewrite_url*: (proc(s: URL): JSResult[URL])
-    cookie*: Opt[bool]
+    cookie*: Option[bool]
     third_party_cookie*: seq[Regex]
-    share_cookie_jar*: Opt[string]
-    referer_from*: Opt[bool]
-    scripting*: Opt[bool]
+    share_cookie_jar*: Option[string]
+    referer_from*: Option[bool]
+    scripting*: Option[bool]
     document_charset*: seq[Charset]
-    images*: Opt[bool]
-    stylesheet*: Opt[string]
-    proxy*: Opt[URL]
-    default_headers*: Opt[Table[string, string]]
+    images*: Option[bool]
+    stylesheet*: Option[string]
+    proxy*: Option[URL]
+    default_headers*: TableRef[string, string]
 
   OmniRule* = object
     match*: Regex
@@ -67,7 +67,7 @@ type
     ignore_case* {.jsgetset.}: bool
 
   EncodingConfig = object
-    display_charset* {.jsgetset.}: Opt[Charset]
+    display_charset* {.jsgetset.}: Option[Charset]
     document_charset* {.jsgetset.}: seq[Charset]
 
   ExternalConfig = object
@@ -92,19 +92,19 @@ type
     default_headers* {.jsgetset.}: Table[string, string]
 
   DisplayConfig = object
-    color_mode* {.jsgetset.}: Opt[ColorMode]
-    format_mode* {.jsgetset.}: Opt[FormatMode]
+    color_mode* {.jsgetset.}: Option[ColorMode]
+    format_mode* {.jsgetset.}: Option[FormatMode]
     no_format_mode* {.jsgetset.}: FormatMode
     emulate_overline* {.jsgetset.}: bool
-    alt_screen* {.jsgetset.}: Opt[bool]
+    alt_screen* {.jsgetset.}: Option[bool]
     highlight_color* {.jsgetset.}: RGBAColor
     highlight_marks* {.jsgetset.}: bool
     double_width_ambiguous* {.jsgetset.}: bool
     minimum_contrast* {.jsgetset.}: int32
     force_clear* {.jsgetset.}: bool
     set_title* {.jsgetset.}: bool
-    default_background_color* {.jsgetset.}: Opt[RGBColor]
-    default_foreground_color* {.jsgetset.}: Opt[RGBColor]
+    default_background_color* {.jsgetset.}: Option[RGBColor]
+    default_foreground_color* {.jsgetset.}: Option[RGBColor]
     query_da1* {.jsgetset.}: bool
     columns* {.jsgetset.}: int32
     lines* {.jsgetset.}: int32
@@ -211,9 +211,10 @@ func getRealKey(key: string): string =
     realk &= '\\'
   return realk
 
-proc getter(a: ptr ActionMap; s: string): Opt[string] {.jsgetprop.} =
+proc getter(a: ptr ActionMap; s: string): Option[string] {.jsgetprop.} =
   a.t.withValue(s, p):
-    return opt(p[])
+    return some(p[])
+  return none(string)
 
 proc setter(a: ptr ActionMap; k, v: string) {.jssetprop.} =
   let k = getRealKey(k)
@@ -294,9 +295,9 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
   k: string)
-proc parseConfigValue(ctx: var ConfigParser; x: var Opt[ColorMode];
+proc parseConfigValue(ctx: var ConfigParser; x: var Option[ColorMode];
   v: TomlValue; k: string)
-proc parseConfigValue(ctx: var ConfigParser; x: var Opt[FormatMode];
+proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
   v: TomlValue; k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
   k: string)
@@ -304,13 +305,13 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
   k: string)
-proc parseConfigValue[T](ctx: var ConfigParser; x: var Opt[T]; v: TomlValue;
-  k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
   k: string)
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var Table[U, V];
+  v: TomlValue; k: string)
+proc parseConfigValue[U; V](ctx: var ConfigParser; x: var TableRef[U, V];
   v: TomlValue; k: string)
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
   k: string)
@@ -358,6 +359,16 @@ proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
     v: TomlValue; k: string) =
   typeCheck(v, VALUE_TABLE, k)
   x.clear()
+  for kk, vv in v:
+    var y: V
+    let kkk = k & "[" & kk & "]"
+    ctx.parseConfigValue(y, vv, kkk)
+    x[kk] = y
+
+proc parseConfigValue[U, V](ctx: var ConfigParser; x: var TableRef[U, V];
+    v: TomlValue; k: string) =
+  typeCheck(v, VALUE_TABLE, k)
+  x = TableRef[U, V]()
   for kk, vv in v:
     var y: V
     let kkk = k & "[" & kk & "]"
@@ -417,28 +428,28 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
   typeCheck(v, VALUE_INTEGER, k)
   x = v.i
 
-proc parseConfigValue(ctx: var ConfigParser; x: var Opt[ColorMode];
+proc parseConfigValue(ctx: var ConfigParser; x: var Option[ColorMode];
     v: TomlValue; k: string) =
   typeCheck(v, VALUE_STRING, k)
   case v.s
-  of "auto": x.err()
-  of "monochrome": x.ok(MONOCHROME)
-  of "ansi": x.ok(ANSI)
-  of "8bit", "eight-bit": x.ok(EIGHT_BIT)
-  of "24bit", "true-color": x.ok(TRUE_COLOR)
+  of "auto": x = none(ColorMode)
+  of "monochrome": x = some(MONOCHROME)
+  of "ansi": x = some(ANSI)
+  of "8bit", "eight-bit": x = some(EIGHT_BIT)
+  of "24bit", "true-color": x = some(TRUE_COLOR)
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
       "' for key " & k)
 
-proc parseConfigValue(ctx: var ConfigParser; x: var Opt[FormatMode];
+proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
     v: TomlValue; k: string) =
   typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
   if v.vt == VALUE_STRING and v.s == "auto":
-    x.err()
+    x = none(FormatMode)
   else:
     var y: FormatMode
     ctx.parseConfigValue(y, v, k)
-    x.ok(y)
+    x = some(y)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
     k: string) =
@@ -477,14 +488,14 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
       "' for key " & k)
   x = c.get
 
-proc parseConfigValue[T](ctx: var ConfigParser; x: var Opt[T]; v: TomlValue;
+proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
     k: string) =
   if v.vt == VALUE_STRING and v.s == "auto":
-    x.err()
+    x = none(T)
   else:
     var y: T
     ctx.parseConfigValue(y, v, k)
-    x.ok(y)
+    x = some(y)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
     k: string) =

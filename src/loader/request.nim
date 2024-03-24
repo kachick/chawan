@@ -71,8 +71,8 @@ type
     httpMethod*: HttpMethod
     url*: URL
     headers* {.jsget.}: Headers
-    body*: Opt[string]
-    multipart*: Opt[FormData]
+    body*: Option[string]
+    multipart*: Option[FormData]
     referrer*: URL
     mode* {.jsget.}: RequestMode
     destination* {.jsget.}: RequestDestination
@@ -103,7 +103,7 @@ iterator pairs*(headers: Headers): (string, string) =
       yield (k, v)
 
 func newRequest*(url: URL; httpMethod = HTTP_GET; headers = newHeaders();
-    body = opt(string); multipart = opt(FormData); mode = RequestMode.NO_CORS;
+    body = none(string); multipart = none(FormData); mode = RequestMode.NO_CORS;
     credentialsMode = CredentialsMode.SAME_ORIGIN;
     destination = RequestDestination.NO_DESTINATION; proxy: URL = nil;
     referrer: URL = nil; suspended = false): Request =
@@ -121,9 +121,9 @@ func newRequest*(url: URL; httpMethod = HTTP_GET; headers = newHeaders();
     suspended: suspended
   )
 
-func newRequest*(url: URL, httpMethod = HTTP_GET,
-    headers: seq[(string, string)] = @[], body = opt(string),
-    multipart = opt(FormData), mode = RequestMode.NO_CORS, proxy: URL = nil):
+func newRequest*(url: URL; httpMethod = HTTP_GET;
+    headers: seq[(string, string)] = @[]; body = none(string);
+    multipart = none(FormData); mode = RequestMode.NO_CORS; proxy: URL = nil):
     Request =
   let hl = newHeaders()
   for pair in headers:
@@ -172,13 +172,13 @@ type
   RequestInit* = object of JSDict
     #TODO aliasing in dicts
     `method`: HttpMethod # default: GET
-    headers: Opt[HeadersInit]
-    body: Opt[BodyInit]
-    referrer: Opt[string]
-    referrerPolicy: Opt[ReferrerPolicy]
-    credentials: Opt[CredentialsMode]
+    headers: Option[HeadersInit]
+    body: Option[BodyInit]
+    referrer: Option[string]
+    referrerPolicy: Option[ReferrerPolicy]
+    credentials: Option[CredentialsMode]
     proxyUrl: URL
-    mode: Opt[RequestMode]
+    mode: Option[RequestMode]
 
 proc fromJSBodyInit(ctx: JSContext, val: JSValue): JSResult[BodyInit] =
   if JS_IsUndefined(val) or JS_IsNull(val):
@@ -211,8 +211,8 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     var headers = newHeaders()
     let referrer: URL = nil
     var credentials = CredentialsMode.SAME_ORIGIN
-    var body: Opt[string]
-    var multipart: Opt[FormData]
+    var body: Option[string]
+    var multipart: Option[FormData]
     var proxyUrl: URL #TODO?
     let fallbackMode = opt(RequestMode.CORS)
   else:
@@ -224,7 +224,7 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
     var body = resource.body
     var multipart = resource.multipart
     var proxyUrl = resource.proxy #TODO?
-    let fallbackMode = opt(RequestMode)
+    let fallbackMode = none(RequestMode)
     #TODO window
   var mode = fallbackMode.get(RequestMode.NO_CORS)
   let destination = NO_DESTINATION
@@ -240,9 +240,9 @@ func newRequest*[T: string|Request](ctx: JSContext, resource: T,
       let ibody = init.body.get
       case ibody.t
       of BODY_INIT_FORM_DATA:
-        multipart = opt(ibody.formData)
+        multipart = some(ibody.formData)
       of BODY_INIT_STRING:
-        body = opt(ibody.str)
+        body = some(ibody.str)
       else:
         discard #TODO
       if httpMethod in {HTTP_GET, HTTP_HEAD}:

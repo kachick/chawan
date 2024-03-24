@@ -146,8 +146,9 @@ type TextDecodeOptions = object of JSDict
   stream: bool
 
 #TODO AllowSharedBufferSource
-proc decode(ctx: JSContext, this: JSTextDecoder, input = opt(JSArrayBufferView),
-    options = TextDecodeOptions()): JSResult[JSValue] {.jsfunc.} =
+proc decode(ctx: JSContext; this: JSTextDecoder;
+    input = none(JSArrayBufferView); options = TextDecodeOptions()):
+    JSResult[JSValue] {.jsfunc.} =
   if not this.doNotFlush:
     if this.td != nil:
       this.td = newTextDecoder(this.encoding)
@@ -175,10 +176,10 @@ func newTextEncoder(): JSTextEncoder {.jsctor.} =
 func jencoding(this: JSTextEncoder): string {.jsfget: "encoding".} =
   return "utf-8"
 
-proc dealloc_wrap(rt: JSRuntime, opaque, p: pointer) {.cdecl.} =
+proc dealloc_wrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
   dealloc(p)
 
-proc encode(this: JSTextEncoder, input = ""): JSUint8Array {.jsfunc.} =
+proc encode(this: JSTextEncoder; input = ""): JSUint8Array {.jsfunc.} =
   # we have to validate input first :/
   #TODO it is possible to do less copies here...
   var input = input.toValidUTF8()

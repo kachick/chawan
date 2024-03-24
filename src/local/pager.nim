@@ -910,8 +910,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
       proxy = sc.proxy.get
-    if sc.default_headers.isSome:
-      headers = newHeaders(sc.default_headers.get)
+    if sc.default_headers != nil:
+      headers = newHeaders(sc.default_headers[])
   loaderConfig = LoaderClientConfig(
     defaultHeaders: headers,
     cookiejar: cookieJar,
@@ -1211,12 +1211,12 @@ proc setEnvVars(pager: Pager) {.jsfunc.} =
 
 #TODO use default values instead...
 type ExternDict = object of JSDict
-  setenv: Opt[bool]
-  suspend: Opt[bool]
+  setenv: Option[bool]
+  suspend: Option[bool]
   wait: bool
 
 #TODO we should have versions with retval as int?
-proc extern(pager: Pager, cmd: string, t = ExternDict()): bool {.jsfunc.} =
+proc extern(pager: Pager; cmd: string; t = ExternDict()): bool {.jsfunc.} =
   if t.setenv.get(true):
     pager.setEnvVars()
   if t.suspend.get(true):
@@ -1236,7 +1236,7 @@ proc externInto(pager: Pager, cmd, ins: string): bool {.jsfunc.} =
   return runProcessInto(cmd, ins)
 
 proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
-    contentType = opt(string)) {.jsfunc.} =
+    contentType = none(string)) {.jsfunc.} =
   let fromc = if c != nil: c else: pager.container
   let fallback = pager.container.contentType.get("text/plain")
   let contentType = contentType.get(fallback)

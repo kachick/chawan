@@ -1,4 +1,5 @@
 import std/math
+import std/options
 import std/times
 
 import bindings/quickjs
@@ -51,7 +52,7 @@ type
     ctype*: string
     callback*: EventListenerCallback
     capture: bool
-    passive: Opt[bool]
+    passive: Option[bool]
     once: bool
     #TODO AbortSignal
     removed: bool
@@ -194,7 +195,7 @@ proc addAnEventListener(eventTarget: EventTarget, listener: EventListener) =
   if listener.callback == nil:
     return
   if listener.passive.isNone:
-    listener.passive = opt(defaultPassiveValue(listener.ctype, eventTarget))
+    listener.passive = some(defaultPassiveValue(listener.ctype, eventTarget))
   if eventTarget.findEventListener(listener.ctype, listener.callback,
       listener.capture) == -1: # dedup
     eventTarget.eventListeners.add(listener)
@@ -216,20 +217,20 @@ proc flattenMore(ctx: JSContext, options: JSValue):
     tuple[
       capture: bool,
       once: bool,
-      passive: Opt[bool]
+      passive: Option[bool]
       #TODO signals
     ] =
   if JS_IsUndefined(options):
     return
   let capture = flatten(ctx, options)
   var once = false
-  var passive: Opt[bool]
+  var passive: Option[bool]
   if JS_IsObject(options):
     once = fromJS[bool](ctx, JS_GetPropertyStr(ctx, options, "once"))
       .get(false)
     let x = fromJS[bool](ctx, JS_GetPropertyStr(ctx, options, "passive"))
     if x.isSome:
-      passive = opt(x.get)
+      passive = some(x.get)
   return (capture, once, passive)
 
 proc addEventListener(ctx: JSContext, eventTarget: EventTarget, ctype: string,

@@ -11,7 +11,6 @@ import loader/headers
 import loader/loaderhandle
 import loader/request
 import types/formdata
-import types/opt
 import types/url
 import utils/twtstr
 

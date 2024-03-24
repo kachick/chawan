@@ -44,7 +44,7 @@ proc newFormData*(form: HTMLFormElement = nil,
 #TODO filename should not be allowed for string entries
 # in other words, this should be an overloaded function, not just an or type
 proc append*[T: string|Blob](this: FormData, name: string, value: T,
-    filename = opt(string)) {.jsfunc.} =
+    filename = none(string)) {.jsfunc.} =
   when T is Blob:
     let filename = if filename.isSome:
       filename.get

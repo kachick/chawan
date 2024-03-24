@@ -211,8 +211,7 @@ proc toJS[T, E](ctx: JSContext, opt: Result[T, E]): JSValue =
       let res = toJS(ctx, opt.error)
       if not JS_IsNull(res):
         return JS_Throw(ctx, res)
-    else:
-      return JS_NULL
+    return JS_EXCEPTION
 
 proc toJS(ctx: JSContext, s: seq): JSValue =
   let a = JS_NewArray(ctx)

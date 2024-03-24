@@ -1200,7 +1200,7 @@ proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =
       let value = makeCRLF(entry.svalue)
       formData.append(name, value)
     else:
-      formData.append(name, entry.value, opt(entry.filename))
+      formData.append(name, entry.value, some(entry.filename))
   return formData
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
@@ -1274,22 +1274,22 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
 
   template submitAsEntityBody() =
     var mimetype: string
-    var body: Opt[string]
-    var multipart: Opt[FormData]
+    var body: Option[string]
+    var multipart: Option[FormData]
     case enctype
     of FORM_ENCODING_TYPE_URLENCODED:
       #TODO with charset
       let kvlist = entrylist.toNameValuePairs()
-      body.ok(serializeApplicationXWWWFormUrlEncoded(kvlist))
+      body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
       mimeType = $enctype
     of FORM_ENCODING_TYPE_MULTIPART:
       #TODO with charset
-      multipart.ok(serializeMultipartFormData(entrylist))
+      multipart = some(serializeMultipartFormData(entrylist))
       mimetype = $enctype
     of FORM_ENCODING_TYPE_TEXT_PLAIN:
       #TODO with charset
       let kvlist = entrylist.toNameValuePairs()
-      body.ok(serializePlainTextFormData(kvlist))
+      body = some(serializePlainTextFormData(kvlist))
       mimetype = $enctype
     let req = newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype},
       body, multipart)
