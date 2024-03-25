@@ -333,31 +333,12 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
 
 proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset; bgcolor: CellColor) =
-  let x = offset.x
-  let y = offset.y
-  let node = fragment.node
-  if fragment.startOffset.y - fragment.size.h == fragment.endOffset.y:
-    let x0 = toInt(x + fragment.startOffset.x)
-    let y0 = toInt(y + fragment.endOffset.y)
-    let x1 = toInt(x + fragment.endOffset.x)
-    let y1 = toInt(y + fragment.startOffset.y)
-    grid.paintBackground(state, bgcolor, x0, y0, x1, y1, node)
-  else:
-    let x0 = toInt(x + fragment.startOffset.x)
-    let y0 = toInt(y)
-    let x1 = toInt(x + fragment.size.w)
-    let y1 = toInt(y + fragment.startOffset.y)
-    grid.paintBackground(state, bgcolor, x0, y0, x1, y1, node)
-    let x2 = toInt(x)
-    let y2 = y1
-    let x3 = x1
-    let y3 = toInt(y + fragment.endOffset.y)
-    grid.paintBackground(state, bgcolor, x2, y2, x3, y3, node)
-    let x4 = x2
-    let y4 = y3
-    let x5 = toInt(x + fragment.endOffset.x)
-    let y5 = toInt(y + fragment.size.h)
-    grid.paintBackground(state, bgcolor, x4, y4, x5, y5, node)
+  for area in fragment.areas:
+    let x1 = toInt(offset.x + area.offset.x)
+    let y1 = toInt(offset.y + area.offset.y)
+    let x2 = toInt(offset.x + area.offset.x + area.size.w)
+    let y2 = toInt(offset.y + area.offset.y + area.size.h)
+    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
 
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset) =
@@ -370,22 +351,22 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     let format = fragment.computed.toFormat()
     for atom in fragment.atoms:
       case atom.t
-      of INLINE_BLOCK:
+      of iatInlineBlock:
         let offset = Offset(
           x: offset.x + atom.offset.x,
           y: offset.y + atom.offset.y
         )
         grid.renderBlockBox(state, atom.innerbox, offset)
-      of INLINE_WORD:
+      of iatWord:
         grid.setRowWord(state, atom, offset, format, fragment.node)
-      of INLINE_SPACING:
+      of iatSpacing:
         grid.setSpacing(state, atom, offset, format, fragment.node)
   if fragment.computed{"position"} != POSITION_STATIC:
     if fragment.splitType != {stSplitStart, stSplitEnd}:
       if stSplitStart in fragment.splitType:
         state.absolutePos.add(Offset(
           x: offset.x + fragment.startOffset.x,
-          y: offset.y + fragment.endOffset.y
+          y: offset.y + fragment.startOffset.y
         ))
       if stSplitEnd in fragment.splitType:
         discard state.absolutePos.pop()

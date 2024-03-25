@@ -12,17 +12,17 @@ type
     h*: LayoutUnit
 
   InlineAtomType* = enum
-    INLINE_SPACING, INLINE_WORD, INLINE_BLOCK
+    iatSpacing, iatWord, iatInlineBlock
 
   InlineAtom* = ref object
     offset*: Offset
     size*: Size
     case t*: InlineAtomType
-    of INLINE_SPACING:
+    of iatSpacing:
       discard
-    of INLINE_WORD:
+    of iatWord:
       str*: string
-    of INLINE_BLOCK:
+    of iatInlineBlock:
       innerbox*: BlockBox
 
   RootInlineFragment* = ref object
@@ -41,23 +41,13 @@ type
   SplitType* = enum
     stSplitStart, stSplitEnd
 
-  InlineFragment* = ref object
-    # Say we have the following inline box:
-    #   abcd
-    # efghij
-    # klm
-    # Then startOffset is x: 2ch, y: 1em, endOffset is x: 3ch, y: 2em,
-    # and size is w: 6ch, h: 3em.
-    # So the algorithm for painting a fragment is:
-    # if startOffset.y == endOffset.y:
-    #   paint(startOffset, endOffset)
-    # else:
-    #   paint(startOffset.x, 0, size.w, startOffset.y)
-    #   paint(0, startOffset.y, size.w, endOffset.y)
-    #   paint(0, endOffset.y, endOffset.x, size.h)
-    startOffset*: Offset
-    endOffset*: Offset
+  Area* = object
+    offset*: Offset
     size*: Size
+
+  InlineFragment* = ref object
+    startOffset*: Offset # offset of the first word, for position: absolute
+    areas*: seq[Area] # background that should be painted by fragment
     children*: seq[InlineFragment]
     atoms*: seq[InlineAtom]
     computed*: CSSComputedValues
