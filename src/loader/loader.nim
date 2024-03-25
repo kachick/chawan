@@ -1030,8 +1030,7 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
   let stream = loader.startRequest(request)
   let response = Response(url: request.url)
   var r = stream.initPacketReader()
-  var res: int
-  r.sread(res) # packet 1
+  r.sread(response.res) # packet 1
   if response.res == 0:
     r.sread(response.outputId) # packet 1
     r = stream.initPacketReader()
