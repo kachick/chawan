@@ -436,20 +436,23 @@ proc verticalAlignLine(ictx: var InlineContext) =
     ictx.currentLine.minHeight = max(ictx.currentLine.minHeight,
       atom.offset.y - offsety + atom.size.h)
 
-  # Set the line height to new top edge + old bottom edge, and set the
-  # baseline.
-  ictx.currentLine.size.h = max(bottomEdge + marginTop, lineheight)
+  # Set the line height that will be used for painting to new top edge + old
+  # bottom edge, and set the baseline.
+  ictx.currentLine.line.height = max(bottomEdge + marginTop, lineheight)
   ictx.currentLine.baseline = baseline
-  # Save line height that will be used for painting.
-  ictx.currentLine.line.height = ictx.currentLine.size.h
-  # Add padding.
-  ictx.currentLine.size.h += ictx.currentLine.paddingTop
-  ictx.currentLine.size.h += ictx.currentLine.paddingBottom
   #TODO this does not really work with rounding :/
   ictx.currentLine.baseline += ictx.currentLine.paddingTop
-  # Round line
-  ictx.currentLine.size.h = max(ictx.currentLine.size.h.round(ch),
-    ictx.currentLine.minHeight)
+  # Ensure that the line is exactly as high as its highest atom demands,
+  # rounded up to the next line.
+  # (This is almost the same as completely ignoring line height. However, there
+  # is a difference because line height is still taken into account when
+  # positioning the atoms.)
+  ictx.currentLine.size.h = ictx.currentLine.minHeight.ceilTo(ch)
+  # Now, if we got a height that is lower than cell height *and* line height,
+  # then set it back to the cell height. (This is to avoid the situation where
+  # we would swallow hard line breaks with <br>.)
+  if lineheight >= ch and ictx.currentLine.size.h < ch:
+    ictx.currentLine.size.h = ch
 
 proc putAtom(state: var LineBoxState; atom: InlineAtom;
     iastate: InlineAtomState; fragment: InlineFragment) =
