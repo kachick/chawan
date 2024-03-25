@@ -544,15 +544,13 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
   var currentStack: seq[InlineFragment] = @[]
   template top: InlineFragment = currentStack[^1]
   var atomIdx = 0
-  for i, line in ictx.lines:
+  var lineSkipped = false
+  for line in ictx.lines:
     if line.atoms.len == 0:
+      # no atoms here; set lineSkipped to true so that we don't accidentally
+      # extend background areas over this
+      lineSkipped = true
       continue
-    # extend current areas
-    for node in currentStack:
-      node.areas.add(Area(
-        offset: Offset(x: line.atoms[0].offset.x, y: line.offsety),
-        size: Size(w: line.atoms[0].size.w, h: line.height)
-      ))
     var prevEnd: LayoutUnit = 0
     for atom in line.atoms:
       if currentStack.len == 0 or atomIdx >= top.atoms.len:
@@ -562,14 +560,32 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
           if thisNode == nil: # sentinel found
             let oldTop = currentStack.pop()
             # finish oldTop area
-            # (must have at least one area on this line b/c we add it at start)
-            assert oldTop.areas[^1].offset.y == line.offsety
-            if prevEnd > 0:
-              oldTop.areas[^1].size.w = prevEnd - oldTop.areas[^1].offset.x
-            else:
-              # fragment got dropped without prevEnd moving anywhere; delete
-              # area
-              oldTop.areas.setLen(oldTop.areas.high)
+            if oldTop.areas[^1].offset.y == line.offsety:
+              # if offset.y is this offsety, then it means that we added it on
+              # this line, so we just have to set its width
+              if prevEnd > 0:
+                oldTop.areas[^1].size.w = prevEnd - oldTop.areas[^1].offset.x
+              else:
+                # fragment got dropped without prevEnd moving anywhere; delete
+                # area
+                oldTop.areas.setLen(oldTop.areas.high)
+            elif prevEnd > 0:
+              # offset.y is presumably from a previous line
+              # (if prevEnd is 0, then the area doesn't extend to this line,
+              # so we do not have to do anything.)
+              let x = line.atoms[0].offset.x
+              let w = prevEnd - x
+              if oldTop.areas[^1].offset.x == x and
+                  oldTop.areas[^1].size.w == w:
+                # same vertical dimensions; just extend.
+                oldTop.areas[^1].size.h = line.offsety + line.height -
+                  oldTop.areas[^1].offset.y
+              else:
+                # vertical dimensions differ; add new area.
+                oldTop.areas.add(Area(
+                  offset: Offset(x: x, y: line.offsety),
+                  size: Size(w: w, h: line.height)
+                ))
             continue
           traverseStack.add(nil) # sentinel
           for i in countdown(thisNode.children.high, 0):
@@ -584,10 +600,27 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
       prevEnd = atom.offset.x + atom.size.w
       assert top.atoms[atomIdx] == atom
       inc atomIdx
-    # finish areas of nodes currently on the stack
+    # extend current areas
     for node in currentStack:
-      assert node.areas[^1].offset.y == line.offsety
-      node.areas[^1].size.w = prevEnd - node.areas[^1].offset.x
+      if node.areas[^1].offset.y == line.offsety:
+        # added in this iteration. no need to extend vertically, but make sure
+        # that it reaches prevEnd.
+        node.areas[^1].size.w = prevEnd - node.areas[^1].offset.x
+        continue
+      let x1 = node.areas[^1].offset.x
+      let x2 = node.areas[^1].offset.x + node.areas[^1].size.w
+      if x1 == line.atoms[0].offset.x and x2 == prevEnd and not lineSkipped:
+        # horizontal dimensions are the same as for the last area. just move its
+        # vertical end to the current line's end.
+        node.areas[^1].size.h = line.offsety + line.height -
+          node.areas[^1].offset.y
+      else:
+        # horizontal dimensions differ; add a new area
+        node.areas.add(Area(
+          offset: Offset(x: line.atoms[0].offset.x, y: line.offsety),
+          size: Size(w: prevEnd - line.atoms[0].offset.x, h: line.height)
+        ))
+    lineSkipped = false
 
 func minwidth(atom: InlineAtom): LayoutUnit =
   if atom.t == iatInlineBlock:
