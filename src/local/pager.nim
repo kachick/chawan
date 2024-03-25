@@ -1570,7 +1570,7 @@ proc askDownloadPath(pager: Pager; container: Container; response: Response) =
   if pathname[^1] == '/':
     buf &= "index.html"
   else:
-    buf &= container.url.pathname.afterLast('/')
+    buf &= container.url.pathname.afterLast('/').percentDecode()
   pager.setLineEdit(lmDownload, buf)
   pager.lineData = LineDataDownload(
     outputId: response.outputId,
