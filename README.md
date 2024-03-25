@@ -109,7 +109,7 @@ particular:
 
 You can fix this manually by adjusting the `display.default-background-color`,
 `display.default-foreground-color`, and `display.color-mode` variables. See
-[doc/config.md](doc/config.md) for details.
+[doc/config.md](doc/config.md#display) for details.
 
 ### Can I view Markdown files using Chawan?
 
@@ -137,6 +137,32 @@ implemented yet, so it's not 100% compatible.
 I use vi for editing text, and I prefer my pager to function similarly to
 my editor. Hence the default vi-like keybindings.
 
+### How do I view text files with wrapping?
+
+By default, text files are not auto-wrapped. This is useful in some cases, but
+viewing plain text files that were not wrapped properly by the authors becomes
+slightly annoying.
+
+A simple workaround is to add this to your [config](doc/config.md#keybindings)'s
+`[page]` section:
+
+```toml
+' f' = "pager.externFilterSource('fmt')"
+```
+
+and then press `<space> f` to view a wrapped version of the current text
+file. (This assumes your system has an `fmt` program - if not, `fold -s` may
+be an alternative.)
+
+Alternatively, you can add this to your [user style](doc/config.md#stylesheets):
+
+```css
+plaintext { white-space: pre-wrap }
+```
+
+and then all plain text files will automatically wrap. To do the same for HTML
+and ANSI text, use `plaintext, pre`.
+
 ### Why does `$WEBSITE` look awful?
 
 Usually, this is because it uses some CSS features that are not yet implemented
@@ -146,10 +172,11 @@ There are three ways of dealing with this:
 
 1. The hacky solution: if the website's contents are mostly text, install
    [rdrview](https://github.com/eafer/rdrview). Then bind the following command
-   to a key of your choice in the config (e.g. <space> r):<br>
+   to a key of your choice in the [config](doc/config.md#keybindings)
+   (e.g. `<space> r`):<br>
    `' r' = "pager.externFilterSource('rdrview -H -u \"$CHA_URL\"')"`<br>
-   This does not fix anything, but will significantly improve your reading
-   experience anyway.
+   This does not fix the core problem, but will significantly improve your
+   reading experience anyway.
 2. The slow solution: complain [here](https://todo.sr.ht/~bptato/chawan),
    and wait until the problem goes away.
 3. If you're feeling adventurous: write a patch to fix the problem, and send it
@@ -190,7 +217,8 @@ Here's some:
 * Uses termcap for basic terminal capability querying, and notcurses-style
   terminal queries for detecting "modern" features (like true color).
 
-For further details, you will have to read the source code.
+For further details, ~~you will have to read the source code~~ please read
+[this](doc/architecture.md).
 
 ## License
 
