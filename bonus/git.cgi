@@ -70,9 +70,11 @@ if (params[0] == "log") {
 } else if (params[0] == "switch" && params.length == 1) {
 	const f = startGitCmd(config, ["branch"]);
 	const cgi = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}&params=switch`;
+	const cgi2 = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}&params=log`;
 	while ((l = f.getline()) !== null) {
 		console.log(l.replace(/^(\s+)([\w.-]+)$/g,
-			(_, ws, name) => `${ws}<a href='${cgi}%20${name}'>${name}</a>`));
+			(_, ws, name) => `${ws}<a href='${cgi}%20${name}'>${name}</a> ` +
+				`(<a href='${cgi2}%20${name}'>view</a>)`));
 	}
 	f.close();
 } else {
