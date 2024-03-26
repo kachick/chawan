@@ -3,73 +3,10 @@
 # ~/.config/chawan/w3m.toml, then at the beginning of
 # ~/.config/chawan/chawan.toml, include = "w3m.toml".)
 
-[page]
-# Page/cursor movement
-' ' = 'n => pager.scrollDown(pager.height * (n ?? 1))'
-C-v = 'n => pager.scrollDown(pager.height * (n ?? 1))'
-b = 'n => pager.scrollUp(pager.height * (n ?? 1))'
-M-v = 'n => pager.scrollUp(pager.height * (n ?? 1))'
-'M-[6~' = 'n => pager.scrollDown(pager.height * (n ?? 1))'
-'M-[5~' = 'n => pager.scrollUp(pager.height * (n ?? 1))'
-l = 'n => pager.cursorRight(n)'
-h = 'n => pager.cursorLeft(n)'
-j = 'n => pager.cursorDown(n)'
-k = 'n => pager.cursorUp(n)'
-C-f = 'n => pager.cursorRight(n)'
-C-b = 'n => pager.cursorLeft(n)'
-C-n = 'n => pager.cursorDown(n)'
-C-p = 'n => pager.cursorUp(n)'
-J = 'n => pager.scrollUp(n)'
-K = 'n => pager.scrollDown(n)'
-'^' = 'pager.cursorLineBegin()'
-C-a = 'pager.cursorLineBegin()'
-'$' = 'pager.cursorLineEnd()'
-C-e = 'pager.cursorLineEnd()'
-w = 'pager.cursorNextWord()'
-W = 'pager.cursorWordBegin()'
-'<' = 'n => pager.pageLeft(n)'
-'>' = 'n => pager.pageRight(n)'
-'.' = 'n => pager.scrollLeft(n)'
-',' = 'n => pager.scrollRight(n)'
-g = 'n => n ? pager.gotoLine(n) : pager.cursorFirstLine()'
-'M-<' = 'pager.cursorFirstLine()'
-G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
-'M->' = 'pager.cursorLastLine()'
-M-g = 'n => pager.gotoLine(n)'
-Z = 'pager.centerColumn()'
-z = 'pager.centerLine()'
-C-i = 'n => pager.cursorNextLink(n)'
-C-u = 'n => pager.cursorPrevLink(n)'
-M-C-i = 'n => pager.cursorPrevLink(n)'
-'[' = 'n => pager.cursorNthLink(n)'
-']' = 'n => pager.cursorRevNthLink(n)'
-# Hyperlink selection
-C-j = 'pager.click()'
-C-m = 'pager.click()'
-c = 'pager.peek()'
-u = 'pager.peekCursor()'
-#TODO download, etc
-# File and URL-related actions
-U = 'pager.load()'
-V = 'pager.load()' #TODO file only
-#TODO exec shell
-# Buffer operations
-B = 'pager.discardBuffer()'
-v = 'pager.toggleSource()'
-#TODO edit
-C-l = 'pager.redraw()'
-R = 'pager.reload()'
-#TODO save, save source
-E = '''
-() => {
-	if (pager.url.protocol == "file:")
-		pager.extern(pager.getEditorCommand(pager.url.pathname))
-	else
-		pager.alert("Can't edit other than local file");
-}
-'''
-#TODO buffer selection mode
-'C-@' = '''
+[cmd.w3m.buffer]
+pageDown = 'n => pager.scrollDown(pager.height * (n ?? 1))'
+pageUp = 'n => pager.scrollUp(pager.height * (n ?? 1))'
+mark = '''
 () => {
 	/* id is always the current position; this way we can clear by
 	   setting a mark twice at the same position. */
@@ -80,7 +17,10 @@ E = '''
 		pager.clearMark(id);
 }
 '''
-M-p = '''
+gotoLine = 'n => pager.gotoLine(n)'
+centerColumn = '() => pager.centerColumn()'
+centerLine = '() => pager.centerLine()'
+prevMark = '''
 () => {
 	const next = pager.findPrevMark();
 	if (next)
@@ -89,30 +29,105 @@ M-p = '''
 		pager.alert("No mark exists before here");
 }
 '''
-M-n = '''
+nextMark = '''
 () => {
 	const next = pager.findNextMark();
 	if (next)
 		pager.gotoMark(next);
 	else
-		pager.alert("No mark exists after here");
+		pager.alert("No mark exists before here");
 }
 '''
-# Search
-'/' = 'pager.searchForward()'
-C-s = 'pager.searchForward()'
-'?' = 'pager.searchBackward()'
-C-r = 'pager.searchBackward()'
-n = 'pager.searchNext()'
-N = 'pager.searchPrev()'
-C-w = '''
-config.search.wrap = !config.search.wrap;
-pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
+
+[cmd.w3m.pager]
+saveFile = '''
+() => {
+	if (pager.url.protocol == "file:")
+		pager.extern(pager.getEditorCommand(pager.url.pathname))
+	else
+		pager.alert("Can't edit other than local file");
+}
 '''
+askQuit = '''
+() => pager.ask("Do you want to exit Chawan?").then(x => x ? quit() : void(0))
+'''
+
+[page]
+# Page/cursor movement
+' ' = 'cmd.w3m.buffer.pageDown'
+C-v = 'cmd.w3m.buffer.pageDown'
+b = 'cmd.w3m.buffer.pageUp'
+M-v = 'cmd.w3m.buffer.pageUp'
+'M-[6~' = 'cmd.w3m.buffer.pageDown'
+'M-[5~' = 'cmd.w3m.buffer.pageUp'
+C-f = 'cmd.buffer.cursorRight'
+C-b = 'cmd.buffer.cursorLeft'
+C-n = 'cmd.buffer.cursorDown'
+C-p = 'cmd.buffer.cursorUp'
+J = 'cmd.buffer.scrollUp'
+K = 'cmd.buffer.scrollDown'
+'^' = 'cmd.buffer.cursorLineBegin'
+C-a = 'cmd.buffer.cursorLineBegin'
+'$' = 'cmd.buffer.cursorLineEnd'
+C-e = 'cmd.buffer.cursorLineEnd'
+w = 'cmd.buffer.cursorNextWord'
+W = 'cmd.buffer.cursorWordBegin'
+'<' = 'cmd.buffer.pageLeft'
+'>' = 'cmd.buffer.pageRight'
+'.' = 'cmd.buffer.scrollLeft'
+',' = 'cmd.buffer.scrollRight'
+g = 'cmd.buffer.gotoLineOrStart'
+'M-<' = 'cmd.buffer.cursorFirstLine'
+G = 'cmd.buffer.gotoLineOrEnd'
+'M->' = 'cmd.buffer.cursorLastLine'
+M-g = 'cmd.w3m.buffer.gotoLine'
+Z = 'cmd.w3m.buffer.centerColumn'
+z = 'cmd.w3m.buffer.centerLine'
+C-i = 'cmd.buffer.cursorNextLink'
+C-u = 'cmd.buffer.cursorPrevLink'
+M-C-i = 'cmd.buffer.cursorPrevLink'
+'[' = 'cmd.buffer.cursorNthLink'
+']' = 'cmd.buffer.cursorRevNthLink'
+# Hyperlink selection
+C-j = 'cmd.buffer.click'
+C-m = 'cmd.buffer.click'
+c = 'cmd.pager.peek'
+u = 'cmd.pager.peekCursor'
+a = 'cmd.pager.saveLink'
+M-C-j = 'cmd.buffer.saveLink'
+M-C-m = 'cmd.buffer.saveLink'
+I = 'cmd.buffer.viewImage'
+#TODO save image
+# File and URL-related actions
+U = 'cmd.pager.load'
+V = 'cmd.pager.load' #TODO file only
+#TODO exec shell
+# Buffer operations
+B = 'cmd.pager.discardBuffer'
+v = 'cmd.pager.toggleSource'
+#TODO edit
+C-l = 'cmd.buffer.redraw'
+R = 'cmd.pager.reload'
+E = 'cmd.pager.editFile'
+M-s = 'cmd.pager.saveSource'
+#TODO save screen, edit screen
+#TODO buffer selection mode
+'C-@' = 'cmd.w3m.buffer.mark'
+M-p = 'cmd.w3m.buffer.prevMark'
+M-n = 'cmd.w3m.buffer.nextMark'
+# Search
+'/' = 'cmd.pager.searchForward'
+C-s = 'cmd.pager.searchForward'
+'?' = 'cmd.pager.searchBackward'
+C-r = 'cmd.pager.searchBackward'
+n = 'cmd.pager.searchNext'
+N = 'cmd.pager.searchPrev'
+C-w = 'cmd.pager.toggleWrap'
 # Misc
 #TODO shell out, help file, options, cookies
-C-c = 'pager.cancel()'
-q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? quit() : void(0))'
-Q = 'quit()'
+C-c = 'cmd.pager.cancel'
+q = 'cmd.w3m.pager.askQuit'
+Q = 'cmd.pager.quit'
+C-d = ''
 
 # w3m line editing is equivalent to Chawan's defaults.

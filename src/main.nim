@@ -175,14 +175,24 @@ proc main() =
     inc ctx.i
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
-  let config = readConfig(ctx.configPath, jsctx)
   var warnings = newSeq[string]()
+  let (config, res) = readConfig(ctx.configPath, jsctx)
+  if not res.success:
+    stderr.write(res.errorMsg)
+    quit(1)
+  warnings.add(res.warnings)
   for opt in ctx.opts:
     let res = config.parseConfig(getCurrentDir(), opt, laxnames = true)
     if not res.success:
       stderr.write(res.errorMsg)
       quit(1)
+    warnings.add(res.warnings)
   config.css.stylesheet &= ctx.stylesheet
+  block commands:
+    let res = config.initCommands()
+    if res.isErr:
+      stderr.write("Error parsing commands: " & res.error)
+      quit(1)
   set_cjk_ambiguous(config.display.double_width_ambiguous)
   if pages.len == 0 and stdin.isatty():
     if ctx.visual:

@@ -181,8 +181,13 @@ proc handlePagerEvents(client: Client) =
   if container != nil:
     client.pager.handleEvents(container)
 
-proc evalAction(client: Client, action: string, arg0: int32): EmptyPromise =
-  var ret = client.evalJS(action, "<command>")
+proc evalActionJS(client: Client; action: string): JSValue =
+  client.config.cmd.map.withValue(action, p):
+    return JS_DupValue(client.jsctx, p[])
+  return client.evalJS(action, "<command>")
+
+proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
+  var ret = client.evalActionJS(action)
   let ctx = client.jsctx
   var p = EmptyPromise()
   p.resolve()
@@ -814,16 +819,13 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
     tmpdir: config.external.tmpdir
   ))
   pager.setLoader(loader)
-  let client = Client(
-    config: config,
-    jsrt: jsrt,
-    jsctx: jsctx,
-    pager: pager
-  )
+  let client = Client(config: config, jsrt: jsrt, jsctx: jsctx, pager: pager)
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
   var global = JS_GetGlobalObject(jsctx)
   jsctx.registerType(Client, asglobal = true)
   setGlobal(jsctx, global, client)
+  jsctx.definePropertyE(global, "cmd", config.cmd.jsObj)
+  config.cmd.jsObj = JS_NULL
   JS_FreeValue(jsctx, global)
   client.addJSModules(jsctx)
   return client

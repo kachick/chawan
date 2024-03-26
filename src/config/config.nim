@@ -1,8 +1,10 @@
 import std/options
 import std/os
 import std/streams
+import std/strutils
 import std/tables
 
+import bindings/quickjs
 import config/chapath
 import config/mailcap
 import config/mimetypes
@@ -12,6 +14,7 @@ import js/fromjs
 import js/javascript
 import js/propertyenumlist
 import js/regex
+import js/tojs
 import loader/headers
 import types/cell
 import types/color
@@ -69,6 +72,11 @@ type
   EncodingConfig = object
     display_charset* {.jsgetset.}: Option[Charset]
     document_charset* {.jsgetset.}: seq[Charset]
+
+  CommandConfig = object
+    jsObj*: JSValue
+    init*: seq[tuple[k, cmd: string]] # initial k/v map
+    map*: Table[string, JSValue] # qualified name -> function
 
   ExternalConfig = object
     tmpdir* {.jsgetset.}: ChaPathResolved
@@ -130,6 +138,7 @@ type
     #TODO getset
     siteconf*: seq[SiteConfig]
     omnirule*: seq[OmniRule]
+    cmd*: CommandConfig
     page* {.jsget.}: ActionMap
     line* {.jsget.}: ActionMap
 
@@ -330,6 +339,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
   k: string)
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string) =
@@ -626,6 +637,28 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
       x.parseURIMethodMap(f.readAll())
   x.append(DefaultURIMethodMap)
 
+func isCompatibleIdent(s: string): bool =
+  if s.len == 0 or s[0] notin AsciiAlpha + {'_', '$'}:
+    return false
+  for i in 1 ..< s.len:
+    if s[i] notin AsciiAlphaNumeric + {'_', '$'}:
+      return false
+  return true
+
+proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
+    k: string) =
+  typeCheck(v, tvtTable, k)
+  for kk, vv in v:
+    let kkk = k & "." & kk
+    typeCheck(vv, {tvtTable, tvtString}, kkk)
+    if not kk.isCompatibleIdent():
+      raise newException(ValueError, "invalid command name: " & kkk)
+    if vv.t == tvtTable:
+      ctx.parseConfigValue(x, vv, kkk)
+    else: # tvtString
+      # skip initial "cmd.", we don't need it
+      x.init.add((kkk.substr("cmd.".len), vv.s))
+
 type ParseConfigResult* = object
   success*: bool
   warnings*: seq[string]
@@ -700,15 +733,64 @@ proc getNormalAction*(config: Config; s: string): string =
 proc getLinedAction*(config: Config; s: string): string =
   return config.line.getOrDefault(s)
 
-proc readConfig*(pathOverride: Option[string]; jsctx: JSContext): Config =
-  result = Config(jsctx: jsctx)
-  discard result.parseConfig("res", newStringStream(defaultConfig)) #TODO TODO TODO
+type ReadConfigResult = tuple
+  config: Config
+  res: ParseConfigResult
+
+proc readConfig*(pathOverride: Option[string]; jsctx: JSContext):
+    ReadConfigResult =
+  let config = Config(jsctx: jsctx)
+  var res = config.parseConfig("res", newStringStream(defaultConfig))
+  if not res.success:
+    return (nil, res)
   if pathOverride.isNone:
     when defined(debug):
-      discard result.readConfig(getCurrentDir() / "res", "config.toml")
-    discard result.readConfig(getConfigDir() / "chawan", "config.toml")
+      res = config.readConfig(getCurrentDir() / "res", "config.toml")
+      if not res.success:
+        return (nil, res)
+    res = config.readConfig(getConfigDir() / "chawan", "config.toml")
   else:
-    discard result.readConfig(getCurrentDir(), pathOverride.get)
+    res = config.readConfig(getCurrentDir(), pathOverride.get)
+  if not res.success:
+    return (nil, res)
+  return (config, res)
+
+# called after parseConfig returns
+proc initCommands*(config: Config): Err[string] =
+  let ctx = config.jsctx
+  let obj = JS_NewObject(ctx)
+  defer: JS_FreeValue(ctx, obj)
+  if JS_IsException(obj):
+    return err(ctx.getExceptionStr())
+  for i in countdown(config.cmd.init.high, 0):
+    let (k, cmd) = config.cmd.init[i]
+    if k in config.cmd.map:
+      # already in map; skip
+      continue
+    var objIt = obj
+    let name = k.afterLast('.')
+    if name.len < k.len:
+      for ss in k.substr(0, k.high - name.len - 1).split('.'):
+        var prop = JS_GetPropertyStr(ctx, objIt, cstring(ss))
+        if JS_IsUndefined(prop):
+          prop = JS_NewObject(ctx)
+          ctx.definePropertyE(objIt, ss, prop)
+        if JS_IsException(prop):
+          return err(ctx.getExceptionStr())
+        objIt = prop
+    if cmd == "":
+      config.cmd.map[k] = JS_UNDEFINED
+      continue
+    let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
+    if JS_IsException(fun):
+      return err(ctx.getExceptionStr())
+    if not JS_IsFunction(ctx, fun):
+      return err(k & " is not a function")
+    ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))
+    config.cmd.map[k] = fun
+  config.cmd.jsObj = JS_DupValue(ctx, obj)
+  config.cmd.init = @[]
+  ok()
 
 proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ActionMap)

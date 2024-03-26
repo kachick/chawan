@@ -183,6 +183,7 @@ proc consumeString(state: var TomlParser, first: char):
     multiline = true
     state.seek(2)
   if multiline and state.peek(0) == '\n':
+    inc state.line
     discard state.consume()
   var escape = false
   var ml_trim = false
@@ -223,6 +224,8 @@ proc consumeString(state: var TomlParser, first: char):
       if c notin {'\n', ' ', '\t'}:
         res &= c
         ml_trim = false
+      if c == '\n':
+        inc state.line
     else:
       if c == '\n':
         inc state.line
