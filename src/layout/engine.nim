@@ -664,9 +664,9 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     shift = ictx.computeShift(state)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
-    ictx.applyLineHeight(ictx.currentLine, state.computed)
-    ictx.currentLine.lineheight = max(ictx.currentLine.lineheight, ictx.cellheight)
     while ictx.shouldWrap2(atom.size.w + shift):
+      ictx.applyLineHeight(ictx.currentLine, state.computed)
+      ictx.currentLine.lineheight = max(ictx.currentLine.lineheight, ictx.cellheight)
       ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
