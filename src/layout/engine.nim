@@ -436,9 +436,6 @@ proc verticalAlignLine(ictx: var InlineContext) =
     ictx.currentLine.minHeight = max(ictx.currentLine.minHeight,
       atom.offset.y - offsety + atom.size.h)
 
-  # Set the line height that will be used for painting to new top edge + old
-  # bottom edge, and set the baseline.
-  ictx.currentLine.line.height = max(bottomEdge + marginTop, lineheight)
   ictx.currentLine.baseline = baseline
   #TODO this does not really work with rounding :/
   ictx.currentLine.baseline += ictx.currentLine.paddingTop
@@ -453,6 +450,8 @@ proc verticalAlignLine(ictx: var InlineContext) =
   # we would swallow hard line breaks with <br>.)
   if lineheight >= ch and ictx.currentLine.size.h < ch:
     ictx.currentLine.size.h = ch
+  # Set the line height to size.h.
+  ictx.currentLine.line.height = ictx.currentLine.size.h
 
 proc putAtom(state: var LineBoxState; atom: InlineAtom;
     iastate: InlineAtomState; fragment: InlineFragment) =
