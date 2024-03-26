@@ -9,14 +9,14 @@ import types/opt
 import utils/twtstr
 
 type
-  ValueType* = enum
-    VALUE_STRING = "string"
-    VALUE_INTEGER = "integer"
-    VALUE_FLOAT = "float"
-    VALUE_BOOLEAN = "boolean"
-    VALUE_DATE_TIME = "datetime"
-    VALUE_TABLE = "table"
-    VALUE_ARRAY = "array"
+  TomlValueType* = enum
+    tvtString = "string"
+    tvtInteger = "integer"
+    tvtFloat = "float"
+    tvtBoolean = "boolean"
+    tvtDateTime = "datetime"
+    tvtTable = "table"
+    tvtArray = "array"
 
   TomlError = string
 
@@ -34,20 +34,20 @@ type
     laxnames: bool
 
   TomlValue* = ref object
-    case vt*: ValueType
-    of VALUE_STRING:
+    case t*: TomlValueType
+    of tvtString:
       s*: string
-    of VALUE_INTEGER:
+    of tvtInteger:
       i*: int64
-    of VALUE_FLOAT:
+    of tvtFloat:
       f*: float64
-    of VALUE_BOOLEAN:
+    of tvtBoolean:
       b*: bool
-    of VALUE_TABLE:
-      t*: TomlTable
-    of VALUE_DATE_TIME:
+    of tvtTable:
+      tab*: TomlTable
+    of tvtDateTime:
       dt*: DateTime
-    of VALUE_ARRAY:
+    of tvtArray:
       a*: seq[TomlValue]
       ad*: bool
 
@@ -88,25 +88,25 @@ func `$`(tab: TomlTable): string =
   result &= '\n'
 
 func `$`*(val: TomlValue): string =
-  case val.vt
-  of VALUE_STRING:
+  case val.t
+  of tvtString:
     result = "\""
     for c in val.s:
       if c == '"':
         result &= '\\'
       result &= c
     result &= '"'
-  of VALUE_INTEGER:
+  of tvtInteger:
     result = $val.i
-  of VALUE_FLOAT:
+  of tvtFloat:
     result = $val.f
-  of VALUE_BOOLEAN:
+  of tvtBoolean:
     result = $val.b
-  of VALUE_TABLE:
+  of tvtTable:
     result = $val.t
-  of VALUE_DATE_TIME:
+  of tvtDateTime:
     result = $val.dt
-  of VALUE_ARRAY:
+  of tvtArray:
     #TODO if ad table array probably
     result = "["
     for it in val.a:
@@ -115,14 +115,14 @@ func `$`*(val: TomlValue): string =
     result &= ']'
 
 func `[]`*(val: TomlValue, key: string): TomlValue =
-  return val.t.map[key]
+  return val.tab.map[key]
 
 iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
-  for k, v in val.t.map:
+  for k, v in val.tab.map:
     yield (k, v)
 
 func contains*(val: TomlValue, key: string): bool =
-  return key in val.t.map
+  return key in val.tab.map
 
 const ValidBare = AsciiAlphaNumeric + {'-', '_'}
 
@@ -253,17 +253,17 @@ proc flushLine(state: var TomlParser): Err[TomlError] =
       while i < keys.len - 1:
         if keys[i] in table.map:
           let node = table.map[keys[i]]
-          if node.vt == VALUE_TABLE:
-            table = node.t
-          elif node.vt == VALUE_ARRAY:
+          if node.t == tvtTable:
+            table = node.tab
+          elif node.t == tvtArray:
             assert state.tarray
-            table = node.a[^1].t
+            table = node.a[^1].tab
           else:
             let s = keys.join('.')
             return state.err("re-definition of node " & s)
         else:
           let node = TomlTable()
-          table.map[keys[i]] = TomlValue(vt: VALUE_TABLE, t: node)
+          table.map[keys[i]] = TomlValue(t: tvtTable, tab: node)
           table = node
         inc i
       if keys[i] in table.map:
@@ -357,23 +357,23 @@ proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
         var node = state.root
         for i in 0 ..< table.key.high:
           if table.key[i] in node.map:
-            node = node.map[table.key[i]].t
+            node = node.map[table.key[i]].tab
           else:
             let t2 = TomlTable()
-            node.map[table.key[i]] = TomlValue(vt: VALUE_TABLE, t: t2)
+            node.map[table.key[i]] = TomlValue(t: tvtTable, tab: t2)
             node = t2
         if table.key[^1] in node.map:
           var last = node.map[table.key[^1]]
-          if last.vt != VALUE_ARRAY:
+          if last.t != tvtArray:
             let key = table.key.join('.')
             return state.err("re-definition of node " & key &
-              " as table array (was " & $last.vt & ")")
+              " as table array (was " & $last.t & ")")
           last.ad = true
-          let val = TomlValue(vt: VALUE_TABLE, t: table)
+          let val = TomlValue(t: tvtTable, tab: table)
           last.a.add(val)
         else:
-          let val = TomlValue(vt: VALUE_TABLE, t: table)
-          let last = TomlValue(vt: VALUE_ARRAY, a: @[val])
+          let val = TomlValue(t: tvtTable, tab: table)
+          let last = TomlValue(t: tvtArray, a: @[val])
           node.map[table.key[^1]] = last
       state.currkey = table.key
       state.node = table
@@ -441,27 +441,27 @@ proc consumeNumber(state: var TomlParser, c: char): TomlResult =
     let val = parseInt64(repr)
     if not val.isSome:
       return state.err("invalid integer")
-    return ok(TomlValue(vt: VALUE_INTEGER, i: val.get))
+    return ok(TomlValue(t: tvtInteger, i: val.get))
   of NUMBER_HEX:
     try:
       let val = parseHexInt(repr)
-      return ok(TomlValue(vt: VALUE_INTEGER, i: val))
+      return ok(TomlValue(t: tvtInteger, i: val))
     except ValueError:
       return state.err("invalid hexadecimal number")
   of NUMBER_OCT:
     try:
       let val = parseOctInt(repr)
-      return ok(TomlValue(vt: VALUE_INTEGER, i:val))
+      return ok(TomlValue(t: tvtInteger, i: val))
     except ValueError:
       return state.err("invalid octal number")
   of NUMBER_FLOAT:
     let val = parseFloat64(repr)
-    return ok(TomlValue(vt: VALUE_FLOAT, f: val))
+    return ok(TomlValue(t: tvtFloat, f: val))
 
 proc consumeValue(state: var TomlParser): TomlResult
 
 proc consumeArray(state: var TomlParser): TomlResult =
-  var res = TomlValue(vt: VALUE_ARRAY)
+  var res = TomlValue(t: tvtArray)
   var val: TomlValue
   while state.has():
     let c = state.consume()
@@ -485,7 +485,7 @@ proc consumeArray(state: var TomlParser): TomlResult =
   return err("unexpected end of file")
 
 proc consumeInlineTable(state: var TomlParser): TomlResult =
-  let res = TomlValue(vt: VALUE_TABLE, t: TomlTable())
+  let res = TomlValue(t: tvtTable, tab: TomlTable())
   var key: seq[string]
   var haskey: bool
   var val: TomlValue
@@ -501,14 +501,14 @@ proc consumeInlineTable(state: var TomlParser): TomlResult =
         return state.err("missing key")
       if val == nil:
         return state.err("comma without element")
-      var table = res.t
+      var table = res.tab
       for i in 0 ..< key.high:
         let k = key[i]
         if k in table.map:
           return state.err("invalid re-definition of key " & k)
         else:
           let node = TomlTable()
-          table.map[k] = TomlValue(vt: VALUE_TABLE, t: node)
+          table.map[k] = TomlValue(t: tvtTable, tab: node)
           table = node
       let k = key[^1]
       if k in table.map:
@@ -536,7 +536,7 @@ proc consumeValue(state: var TomlParser): TomlResult =
     case c
     of '"', '\'':
       let s = ?state.consumeString(c)
-      return ok(TomlValue(vt: VALUE_STRING, s: s))
+      return ok(TomlValue(t: tvtString, s: s))
     of ' ', '\t': discard
     of '\n':
       return state.err("newline without value")
@@ -552,17 +552,17 @@ proc consumeValue(state: var TomlParser): TomlResult =
     elif c in ValidBare:
       let s = ?state.consumeBare(c)
       if s == "true":
-        return ok(TomlValue(vt: VALUE_BOOLEAN, b: true))
+        return ok(TomlValue(t: tvtBoolean, b: true))
       elif s == "false":
-        return ok(TomlValue(vt: VALUE_BOOLEAN, b: false))
+        return ok(TomlValue(t: tvtBoolean, b: false))
       elif state.laxnames:
-        return ok(TomlValue(vt: VALUE_STRING, s: s))
+        return ok(TomlValue(t: tvtString, s: s))
       else:
         return state.err("invalid token: " & s)
     else:
       return state.err("invalid character in value: " & c)
   if state.laxnames:
-    return ok(TomlValue(vt: VALUE_STRING, s: ""))
+    return ok(TomlValue(t: tvtString, s: ""))
   return state.err("unexpected end of file")
 
 proc parseToml*(inputStream: Stream, filename = "<input>", laxnames = false):
@@ -591,4 +591,4 @@ proc parseToml*(inputStream: Stream, filename = "<input>", laxnames = false):
       else: return state.err("invalid character after value: " & c)
   ?state.flushLine()
   inputStream.close()
-  return ok(TomlValue(vt: VALUE_TABLE, t: state.root))
+  return ok(TomlValue(t: tvtTable, tab: state.root))

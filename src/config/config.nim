@@ -25,7 +25,7 @@ import chagashi/charset
 
 type
   ColorMode* = enum
-    MONOCHROME, ANSI, EIGHT_BIT, TRUE_COLOR
+    cmMonochrome, cmANSI, cmEightBit, cmTrueColor
 
   FormatMode* = set[FormatFlags]
 
@@ -332,19 +332,19 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   k: string)
 
-proc typeCheck(v: TomlValue, vt: ValueType, k: string) =
-  if v.vt != vt:
+proc typeCheck(v: TomlValue; t: TomlValueType; k: string) =
+  if v.t != t:
     raise newException(ValueError, "invalid type for key " & k &
-      " (got " & $v.vt & ", expected " & $vt & ")")
+      " (got " & $v.t & ", expected " & $t & ")")
 
-proc typeCheck(v: TomlValue, vt: set[ValueType], k: string) =
-  if v.vt notin vt:
+proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string) =
+  if v.t notin t:
     raise newException(ValueError, "invalid type for key " & k &
-      " (got " & $v.vt & ", expected " & $vt & ")")
+      " (got " & $v.t & ", expected " & $t & ")")
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_TABLE, k)
+  typeCheck(v, tvtTable, k)
   for fk, fv in x.fieldPairs:
     when typeof(fv) isnot JSContext:
       let kebabk = snakeToKebabCase(fk)
@@ -357,7 +357,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
     v: TomlValue; k: string) =
-  typeCheck(v, VALUE_TABLE, k)
+  typeCheck(v, tvtTable, k)
   x.clear()
   for kk, vv in v:
     var y: V
@@ -367,7 +367,7 @@ proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var TableRef[U, V];
     v: TomlValue; k: string) =
-  typeCheck(v, VALUE_TABLE, k)
+  typeCheck(v, tvtTable, k)
   x = TableRef[U, V]()
   for kk, vv in v:
     var y: V
@@ -377,23 +377,23 @@ proc parseConfigValue[U, V](ctx: var ConfigParser; x: var TableRef[U, V];
 
 proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_BOOLEAN, k)
+  typeCheck(v, tvtBoolean, k)
   x = v.b
 
 proc parseConfigValue(ctx: var ConfigParser; x: var string; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   x = v.s
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPath;
     v: TomlValue; k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   x = ChaPath(v.s)
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
     k: string) =
-  typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
-  if v.vt != VALUE_ARRAY:
+  typeCheck(v, {tvtString, tvtArray}, k)
+  if v.t != tvtArray:
     var y: T
     ctx.parseConfigValue(y, v, k)
     x = @[y]
@@ -407,12 +407,12 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
     k: string) =
-  typeCheck(v, {VALUE_TABLE}, k)
-  x = v.t
+  typeCheck(v, {tvtTable}, k)
+  x = v.tab
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   x = getCharset(v.s)
   if x == CHARSET_UNKNOWN:
     raise newException(ValueError, "unknown charset '" & v.s & "' for key " &
@@ -420,31 +420,31 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_INTEGER, k)
+  typeCheck(v, tvtInteger, k)
   x = int32(v.i)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_INTEGER, k)
+  typeCheck(v, tvtInteger, k)
   x = v.i
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Option[ColorMode];
     v: TomlValue; k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   case v.s
   of "auto": x = none(ColorMode)
-  of "monochrome": x = some(MONOCHROME)
-  of "ansi": x = some(ANSI)
-  of "8bit", "eight-bit": x = some(EIGHT_BIT)
-  of "24bit", "true-color": x = some(TRUE_COLOR)
+  of "monochrome": x = some(cmMonochrome)
+  of "ansi": x = some(cmANSI)
+  of "8bit", "eight-bit": x = some(cmEightBit)
+  of "24bit", "true-color": x = some(cmTrueColor)
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
       "' for key " & k)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
     v: TomlValue; k: string) =
-  typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
-  if v.vt == VALUE_STRING and v.s == "auto":
+  typeCheck(v, {tvtString, tvtArray}, k)
+  if v.t == tvtString and v.s == "auto":
     x = none(FormatMode)
   else:
     var y: FormatMode
@@ -453,11 +453,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
 
 proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_ARRAY, k)
+  typeCheck(v, tvtArray, k)
   for i in 0 ..< v.a.len:
     let kk = k & "[" & $i & "]"
     let vv = v.a[i]
-    typeCheck(vv, VALUE_STRING, kk)
+    typeCheck(vv, tvtString, kk)
     case vv.s
     of "bold": x.incl(ffBold)
     of "italic": x.incl(ffItalic)
@@ -472,7 +472,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let c = parseRGBAColor(v.s)
   if c.isNone:
     raise newException(ValueError, "invalid color '" & v.s &
@@ -481,7 +481,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let c = parseLegacyColor(v.s)
   if c.isNone:
     raise newException(ValueError, "invalid color '" & v.s &
@@ -490,7 +490,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
     k: string) =
-  if v.vt == VALUE_STRING and v.s == "auto":
+  if v.t == tvtString and v.s == "auto":
     x = none(T)
   else:
     var y: T
@@ -499,9 +499,9 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_TABLE, k)
+  typeCheck(v, tvtTable, k)
   for kk, vv in v:
-    typeCheck(vv, VALUE_STRING, k & "[" & kk & "]")
+    typeCheck(vv, tvtString, k & "[" & kk & "]")
     let rk = getRealKey(kk)
     var buf: string
     for i in 0 ..< rk.high:
@@ -511,7 +511,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
 
 proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let e = strictParseEnum[T](v.s)
   if e.isNone:
     raise newException(ValueError, "invalid value '" & v.s & "' for key " & k)
@@ -519,8 +519,8 @@ proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
     k: string) =
-  typeCheck(v, {VALUE_STRING, VALUE_ARRAY}, k)
-  if v.vt == VALUE_STRING:
+  typeCheck(v, {tvtString, tvtArray}, k)
+  if v.t == tvtString:
     var xx: T
     xx.parseConfigValue(v, k)
     x = {xx}
@@ -534,7 +534,7 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_TABLE, k)
+  typeCheck(v, tvtTable, k)
   for kk, vv in v:
     let kkk = if k != "":
       k & "." & kk
@@ -542,21 +542,21 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
       kk
     case kk
     of "include":
-      typeCheck(vv, {VALUE_STRING, VALUE_ARRAY}, kkk)
-      case vv.vt
-      of VALUE_STRING:
+      typeCheck(vv, {tvtString, tvtArray}, kkk)
+      case vv.t
+      of tvtString:
         x.stylesheet &= readUserStylesheet(ctx.dir, vv.s)
-      of VALUE_ARRAY:
+      of tvtArray:
         for child in vv.a:
           x.stylesheet &= readUserStylesheet(ctx.dir, vv.s)
       else: discard
     of "inline":
-      typeCheck(vv, VALUE_STRING, kkk)
+      typeCheck(vv, tvtString, kkk)
       x.stylesheet &= vv.s
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let y = compileMatchRegex(v.s)
   if y.isNone:
     raise newException(ValueError, "invalid regex " & k & " : " & y.error)
@@ -564,7 +564,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
     k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let y = parseURL(v.s)
   if y.isNone:
     raise newException(ValueError, "invalid URL " & k)
@@ -572,13 +572,13 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var proc(x: T): JSResult[T];
     v: TomlValue; k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let fun = ctx.config.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
   x = getJSFunction[T, T](ctx.config.jsctx, fun)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     v: TomlValue; k: string) =
-  typeCheck(v, VALUE_STRING, k)
+  typeCheck(v, tvtString, k)
   let y = ChaPath(v.s).unquote()
   if y.isErr:
     raise newException(ValueError, y.error)

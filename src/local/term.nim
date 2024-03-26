@@ -313,13 +313,13 @@ proc correctContrast(term: Terminal, bgcolor, fgcolor: CellColor): CellColor =
           fgY = 255
     let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
     case term.colormode
-    of TRUE_COLOR:
+    of cmTrueColor:
       return cellColor(newrgb)
-    of ANSI:
+    of cmANSI:
       return approximateANSIColor(newrgb, term.defaultForeground)
-    of EIGHT_BIT:
+    of cmEightBit:
       return cellColor(newrgb.toEightBit())
-    of MONOCHROME:
+    of cmMonochrome:
       doAssert false
   return cfgcolor
 
@@ -347,7 +347,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
         result &= term.startFormat(flag)
   var cellf = cellf
   case term.colormode
-  of ANSI:
+  of cmANSI:
     # quantize
     if cellf.bgcolor.t == ctANSI and cellf.bgcolor.color > 15:
       cellf.bgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
@@ -374,7 +374,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
     of ctNone: result &= SGR(49)
     of ctANSI: result &= ansiSGR(cellf.bgcolor.color, 10)
     else: assert false
-  of EIGHT_BIT:
+  of cmEightBit:
     # quantize
     if cellf.bgcolor.t == ctRGB:
       cellf.bgcolor = cellf.bgcolor.rgbcolor.toEightBit().cellColor()
@@ -391,7 +391,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
     of ctNone: result &= SGR(49)
     of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
     of ctRGB: assert false
-  of TRUE_COLOR:
+  of cmTrueColor:
     # correct
     cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
     # print
@@ -405,7 +405,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
       of ctNone: result &= SGR(49)
       of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
       of ctRGB: result &= rgbSGR(cellf.bgcolor.rgbcolor, 10)
-  of MONOCHROME:
+  of cmMonochrome:
     discard # nothing to do
   format = cellf
 
@@ -549,7 +549,7 @@ proc applyConfig(term: Terminal) =
   elif term.isatty():
     let colorterm = getEnv("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
-      term.colormode = TRUE_COLOR
+      term.colormode = cmTrueColor
   if term.config.display.format_mode.isSome:
     term.formatmode = term.config.display.format_mode.get
   for fm in FormatFlags:
@@ -821,9 +821,9 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
       if windowOnly:
         return
       if qaAnsiColor in r.attrs:
-        term.colormode = ANSI
+        term.colormode = cmANSI
       if qaRGB in r.attrs:
-        term.colormode = TRUE_COLOR
+        term.colormode = cmTrueColor
       # just assume the terminal doesn't choke on these.
       term.formatmode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
@@ -836,10 +836,10 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
       result = tsrDA1Fail
   if windowOnly:
     return
-  if term.colormode != TRUE_COLOR:
+  if term.colormode != cmTrueColor:
     let colorterm = getEnv("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
-      term.colormode = TRUE_COLOR
+      term.colormode = cmTrueColor
   when termcap_found:
     term.loadTermcap()
     if term.tc != nil:
