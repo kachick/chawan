@@ -664,8 +664,10 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     shift = ictx.computeShift(state)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
+    ictx.applyLineHeight(ictx.currentLine, state.computed)
+    ictx.currentLine.lineheight = max(ictx.currentLine.lineheight, ictx.cellheight)
     while ictx.shouldWrap2(atom.size.w + shift):
-      ictx.flushLine(state)
+      ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
   if atom.size.w > 0 and atom.size.h > 0:
@@ -1289,8 +1291,8 @@ type
     initialTargetOffset: Offset
     initialParentOffset: Offset
 
-func findNextFloatOffset(bctx: BlockContext, offset: Offset, size: Size,
-    space: AvailableSpace, float: CSSFloat, clear: CSSClear): Offset =
+func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
+    space: AvailableSpace; float: CSSFloat): Offset =
   # Algorithm originally from QEmacs.
   var y = offset.y
   let leftStart = offset.x
@@ -1318,9 +1320,10 @@ func findNextFloatOffset(bctx: BlockContext, offset: Offset, size: Size,
     # Move y to the bottom exclusion edge at the lowest y (where the exclusion
     # still intersects with the previous y).
     y = miny
+  assert false
 
-proc positionFloat(bctx: var BlockContext, child: BlockBox,
-    space: AvailableSpace, bfcOffset: Offset) =
+proc positionFloat(bctx: var BlockContext; child: BlockBox;
+    space: AvailableSpace; bfcOffset: Offset) =
   let clear = child.computed{"clear"}
   if clear != CLEAR_NONE:
     child.offset.clearFloats(bctx, clear)
@@ -1335,16 +1338,12 @@ proc positionFloat(bctx: var BlockContext, child: BlockBox,
   assert space.w.t != FIT_CONTENT
   let ft = child.computed{"float"}
   assert ft != FLOAT_NONE
-  let offset = bctx.findNextFloatOffset(childBfcOffset, size, space, ft, clear)
+  let offset = bctx.findNextFloatOffset(childBfcOffset, size, space, ft)
   child.offset = Offset(
     x: offset.x - bfcOffset.x + child.margin.left,
     y: offset.y - bfcOffset.y + child.margin.top
   )
-  let ex = Exclusion(
-    offset: offset,
-    size: size,
-    t: ft
-  )
+  let ex = Exclusion(offset: offset, size: size, t: ft)
   bctx.exclusions.add(ex)
   bctx.maxFloatHeight = max(bctx.maxFloatHeight, ex.offset.y + ex.size.h)
 
