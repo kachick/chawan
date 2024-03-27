@@ -67,17 +67,17 @@ type
     else: discard
 
   HighlightType = enum
-    HL_SEARCH, HL_SELECT
+    hltSearch, hltSelect
 
   SelectionType = enum
-    SEL_NORMAL = "normal"
-    SEL_BLOCK = "block"
-    SEL_LINE = "line"
+    stNormal = "normal"
+    stBlock = "block"
+    stLine = "line"
 
   Highlight = ref object
     case t: HighlightType
-    of HL_SEARCH: discard
-    of HL_SELECT:
+    of hltSearch: discard
+    of hltSelect:
       selectionType {.jsget.}: SelectionType
     x1, y1: int
     x2, y2: int
@@ -381,18 +381,18 @@ func colorNormal(container: Container, hl: Highlight, y: int,
 func colorArea(container: Container, hl: Highlight, y: int,
     limitx: Slice[int]): Slice[int] =
   case hl.t
-  of HL_SELECT:
+  of hltSelect:
     case hl.selectionType
-    of SEL_NORMAL:
+    of stNormal:
       return container.colorNormal(hl, y, limitx)
-    of SEL_BLOCK:
+    of stBlock:
       if y in hl.starty .. hl.endy:
         let (x, endx) = if hl.x1 < hl.x2:
           (hl.x1, hl.x2)
         else:
           (hl.x2, hl.x1)
         return max(x, limitx.a) .. min(endx, limitx.b)
-    of SEL_LINE:
+    of stLine:
       if y in hl.starty .. hl.endy:
         let w = container.getLine(y).str.width()
         return min(limitx.a, w) .. min(limitx.b, w)
@@ -1213,7 +1213,7 @@ proc cursorRevNthLink*(container: Container, n = 1) {.jsfunc.} =
 
 proc clearSearchHighlights*(container: Container) =
   for i in countdown(container.highlights.high, 0):
-    if container.highlights[i].t == HL_SEARCH:
+    if container.highlights[i].t == hltSearch:
       container.highlights.del(i)
 
 proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
@@ -1223,7 +1223,7 @@ proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
       container.clearSearchHighlights()
       let ex = res.x + res.str.twidth(res.x) - 1
       let hl = Highlight(
-        t: HL_SEARCH,
+        t: hltSearch,
         x1: res.x,
         y1: res.y,
         x2: ex,
@@ -1288,7 +1288,7 @@ proc cursorToggleSelection(container: Container, n = 1,
     let n = n - 1
     container.cursorRight(n)
     let hl = Highlight(
-      t: HL_SELECT,
+      t: hltSelect,
       selectionType: opts.selectionType,
       x1: cx,
       y1: container.cursory,
@@ -1307,7 +1307,7 @@ proc getSelectionText(container: Container, hl: Highlight = nil):
   if container.iface == nil:
     return
   let hl = if hl == nil: container.currentSelection else: hl
-  if hl.t != HL_SELECT:
+  if hl.t != hltSelect:
     let p = newPromise[string]()
     p.resolve("")
     return p
@@ -1319,7 +1319,7 @@ proc getSelectionText(container: Container, hl: Highlight = nil):
   return container.iface.getLines(nw).then(proc(res: GetLinesResult): string =
     var s = ""
     case hl.selectionType
-    of SEL_NORMAL:
+    of stNormal:
       if starty == endy:
         let si = res.lines[0].str.findColBytes(startx)
         let ei = res.lines[0].str.findColBytes(endx + 1, startx, si) - 1
@@ -1331,14 +1331,14 @@ proc getSelectionText(container: Container, hl: Highlight = nil):
           s &= res.lines[i].str & '\n'
         let ei = res.lines[^1].str.findColBytes(endx + 1) - 1
         s &= res.lines[^1].str.substr(0, ei)
-    of SEL_BLOCK:
+    of stBlock:
       for i, line in res.lines:
         let si = line.str.findColBytes(startx)
         let ei = line.str.findColBytes(endx + 1, startx, si) - 1
         if i > 0:
           s &= '\n'
         s &= line.str.substr(si, ei)
-    of SEL_LINE:
+    of stLine:
       for i, line in res.lines:
         if i > 0:
           s &= '\n'
