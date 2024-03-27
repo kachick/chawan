@@ -44,7 +44,7 @@ type
 
   ContainerEventType* = enum
     cetAnchor, cetNoAnchor, cetUpdate, cetReadLine, cetReadArea, cetOpen,
-    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle
+    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -89,7 +89,7 @@ type
   BufferFilter* = ref object
     cmd*: string
 
-  LoadState = enum
+  LoadState* = enum
     lsLoading, lsCanceled, lsLoaded
 
   ContainerFlag* = enum
@@ -136,7 +136,7 @@ type
     hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
     needslines*: bool
-    loadState: LoadState
+    loadState*: LoadState
     events*: Deque[ContainerEvent]
     startpos: Option[CursorPosition]
     redirectDepth*: int
@@ -1359,13 +1359,10 @@ proc setLoadInfo(container: Container, msg: string) =
   container.triggerEvent(cetSetLoadInfo)
 
 #TODO this should be called with a timeout.
-proc onload*(container: Container, res: int) =
+proc onload(container: Container; res: int) =
   if container.loadState == lsCanceled:
-    container.setLoadInfo("")
-    container.iface.cancel().then(proc() =
-      container.needslines = true
-    )
-  elif res == -1:
+    return
+  if res == -1:
     container.loadState = lsLoaded
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
@@ -1441,12 +1438,22 @@ proc applyResponse*(container: Container; response: Response;
       container.charsetStack.add(DefaultCharset)
   container.charset = container.charsetStack[^1]
 
+proc remoteCancel*(container: Container) =
+  container.iface.cancel().then(proc() =
+    container.needslines = true
+  )
+  container.setLoadInfo("")
+  container.alert("Canceled loading")
+
 proc cancel*(container: Container) {.jsfunc.} =
   if container.select.open:
     container.select.cancel()
   elif container.loadState == lsLoading:
     container.loadState = lsCanceled
-    container.alert("Canceled loading")
+    if container.iface != nil:
+      container.remoteCancel()
+    else:
+      container.triggerEvent(cetCancel)
 
 proc findAnchor*(container: Container; anchor: string) =
   container.iface.findAnchor(anchor).then(proc(found: bool) =

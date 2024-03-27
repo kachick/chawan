@@ -147,6 +147,7 @@ proc getFromOpaque[T](opaque: pointer, res: var T) =
   if opaque.len != 0:
     var r = opaque.stream.initReader(opaque.len)
     r.sread(res)
+    opaque.len = 0
 
 proc newBufferInterface*(stream: SocketStream, registerFun: proc(fd: int)):
     BufferInterface =
@@ -176,6 +177,11 @@ proc cloneInterface*(stream: SocketStream, registerFun: proc(fd: int)):
 proc resolve*(iface: BufferInterface, packetid, len: int) =
   iface.opaque.len = len
   iface.map.resolve(packetid)
+  # Protection against accidentally not exhausting data available to read,
+  # by setting opaque len to 0 in getFromOpaque.
+  # (If this assertion is failing, then it means you then()'ed a promise which
+  # should read something from the stream with an empty function.)
+  assert iface.opaque.len == 0
 
 proc hasPromises*(iface: BufferInterface): bool =
   return not iface.map.empty()
@@ -1168,7 +1174,7 @@ proc forceRender*(buffer: Buffer) {.proxy.} =
   buffer.prevStyled = nil
   buffer.do_reshape()
 
-proc cancel*(buffer: Buffer): int {.proxy.} =
+proc cancel*(buffer: Buffer) {.proxy.} =
   if buffer.state == bsLoaded:
     return
   for fd, data in buffer.loader.connecting:
@@ -1177,21 +1183,23 @@ proc cancel*(buffer: Buffer): int {.proxy.} =
     data.stream.sclose()
   buffer.loader.connecting.clear()
   for fd, data in buffer.loader.ongoing:
-    data.response.unregisterFun()
+    buffer.selector.unregister(fd)
+    buffer.loader.unregistered.add(fd)
+    data.response.body.sclose()
   buffer.loader.ongoing.clear()
-  buffer.selector.unregister(buffer.fd)
-  buffer.loader.unregistered.add(buffer.fd)
-  buffer.loader.removeCachedItem(buffer.cacheId)
-  buffer.fd = -1
-  buffer.cacheId = -1
-  buffer.outputId = -1
-  buffer.istream.sclose()
-  buffer.istream = nil
-  buffer.htmlParser.finish()
+  if buffer.istream != nil:
+    buffer.selector.unregister(buffer.fd)
+    buffer.loader.unregistered.add(buffer.fd)
+    buffer.loader.removeCachedItem(buffer.cacheId)
+    buffer.fd = -1
+    buffer.cacheId = -1
+    buffer.outputId = -1
+    buffer.istream.sclose()
+    buffer.istream = nil
+    buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded
   buffer.do_reshape()
-  return buffer.lines.len
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =

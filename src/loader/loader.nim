@@ -987,6 +987,7 @@ proc onConnected*(loader: FileLoader, fd: int) =
     r.sread(msg) # packet 1
     loader.unregisterFun(fd)
     loader.unregistered.add(fd)
+    stream.sclose()
     let err = newTypeError("NetworkError when attempting to fetch resource")
     promise.resolve(JSResult[Response].err(err))
   loader.connecting.del(fd)

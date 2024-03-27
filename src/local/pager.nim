@@ -674,7 +674,8 @@ proc replace*(pager: Pager; target, container: Container) =
     pager.setContainer(container)
 
 proc deleteContainer(pager: Pager; container: Container) =
-  container.cancel()
+  if container.loadState == lsLoading:
+    container.cancel()
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
@@ -1759,6 +1760,20 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
   of cetAlert:
     if pager.container == container:
       pager.alert(event.msg)
+  of cetCancel:
+    let i = pager.findConnectingContainer(container)
+    if i == -1:
+      # whoops. we tried to cancel, but the event loop did not favor us...
+      # at least cancel it in the buffer
+      container.remoteCancel()
+    else:
+      let item = pager.connectingContainers[i]
+      dec pager.numload
+      pager.deleteContainer(container)
+      pager.connectingContainers.del(i)
+      pager.selector.unregister(item.stream.fd)
+      pager.loader.unregistered.add(item.stream.fd)
+      item.stream.sclose()
   return true
 
 proc handleEvents*(pager: Pager, container: Container) =
