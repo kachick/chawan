@@ -43,10 +43,14 @@ type
     vi # make cursor invisible
     ve # reset cursor to normal
 
+  TermcapCapNumeric = enum
+    Co # color?
+
   Termcap = ref object
     bp: array[1024, uint8]
     funcstr: array[256, uint8]
     caps: array[TermcapCap, cstring]
+    numCaps: array[TermcapCapNumeric, cint]
 
   Terminal* = ref TerminalObj
   TerminalObj = object
@@ -646,6 +650,8 @@ when termcap_found:
       term.tc = tc
       for id in TermcapCap:
         tc.caps[id] = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
+      for id in TermcapCapNumeric:
+        tc.numCaps[id] = tgetnum(cstring($id))
     else:
       raise newException(Defect, "Failed to load termcap description for terminal " & term.tname)
 
@@ -844,15 +850,20 @@ proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
     term.loadTermcap()
     if term.tc != nil:
       term.smcup = term.hascap ti
-      if term.hascap(ZH):
+      if term.colormode < cmEightBit and term.tc.numCaps[Co] == 256:
+        # due to termcap limitations, 256 is the highest possible number here
+        term.colormode = cmEightBit
+      elif term.colormode < cmANSI and term.tc.numCaps[Co] >= 8:
+        term.colormode = cmANSI
+      if term.hascap ZH:
         term.formatmode.incl(ffItalic)
-      if term.hascap(us):
+      if term.hascap us:
         term.formatmode.incl(ffUnderline)
-      if term.hascap(md):
+      if term.hascap md:
         term.formatmode.incl(ffBold)
-      if term.hascap(mr):
+      if term.hascap mr:
         term.formatmode.incl(ffReverse)
-      if term.hascap(mb):
+      if term.hascap mb:
         term.formatmode.incl(ffBlink)
   else:
     term.smcup = true
