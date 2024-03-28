@@ -1,13 +1,12 @@
 import version
 
 # Note: we can't just import std/os or the compiler cries. (No idea why.)
-from std/os import getEnv, putEnv, commandLineParams, getCurrentDir
+from std/os import getEnv, putEnv, commandLineParams, getCurrentDir, createDir
 import std/options
 
 import server/forkserver
 import config/chapath
 import config/config
-import io/serversocket
 import js/javascript
 import local/client
 import local/term
@@ -204,8 +203,10 @@ proc main() =
   if pages.len == 0 and not config.start.headless:
     if stdin.isatty():
       help(1)
+  # make sure tmpdir actually exists; if we do this later, then forkserver may
+  # try to open an empty dir
+  createDir(config.external.tmpdir)
   forkserver.loadForkServerConfig(config)
-  SocketDirectory = config.external.tmpdir
   let client = newClient(config, forkserver, jsctx, warnings)
   try:
     client.launchClient(pages, ctx.contentType, ctx.charset, ctx.dump)

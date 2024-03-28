@@ -904,6 +904,10 @@ const bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
 
 proc onload(buffer: Buffer)
 
+when defined(freebsd):
+  # necessary for an ugly hack we will do later
+  import std/kqueue
+
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
@@ -932,7 +936,14 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
     # Closing seems to suffice here.
     when not bsdPlatform:
       buffer.selector.close()
-    buffer.selector = newSelector[int]()
+    when defined(freebsd):
+      # hack necessary because newSelector calls sysctl, but capsicum really
+      # dislikes that.
+      let fd = kqueue()
+      doAssert fd != -1
+      cast[ptr cint](buffer.selector)[] = fd
+    else:
+      buffer.selector = newSelector[int]()
     #TODO set buffer.window.timeouts.selector
     var cfds: seq[int] = @[]
     for fd in buffer.loader.connecting.keys:
@@ -964,7 +975,8 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
     buffer.pstream.sclose()
-    let ssock = initServerSocket(myPid)
+    let ssock = initServerSocket(buffer.loader.sockDir, buffer.loader.sockDirFd,
+      myPid)
     buffer.ssock = ssock
     ps.write(char(0))
     buffer.url = newurl
@@ -1866,7 +1878,7 @@ proc cleanup(buffer: Buffer) =
 
 proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
-    loader: FileLoader; ssock: ServerSocket) =
+    loader: FileLoader; ssock: ServerSocket; selector: Selector[int]) =
   let pstream = ssock.acceptSocketStream()
   let buffer = Buffer(
     attrs: attrs,
@@ -1878,7 +1890,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     pstream: pstream,
     request: request,
     rfd: pstream.fd,
-    selector: newSelector[int](),
+    selector: selector,
     ssock: ssock,
     url: url,
     charsetStack: charsetStack,

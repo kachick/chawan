@@ -58,27 +58,41 @@ method sclose*(s: SocketStream) =
 
 # see serversocket.nim for an explanation
 {.compile: "connect_unix.c".}
-proc connect_unix_from_c(fd: cint, path: cstring, pathlen: cint): cint
+proc connect_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint
   {.importc.}
+when defined(freebsd):
+  # for FreeBSD/capsicum
+  proc connectat_unix_from_c(baseFd, sockFd: cint; rel_path: cstring;
+    rel_pathlen: cint): cint {.importc.}
 
-proc connectSocketStream*(path: string; blocking = true): SocketStream =
+proc connectAtSocketStream0(socketDir: string; baseFd, pid: int;
+    blocking = true): SocketStream =
   let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM,
     Protocol.IPPROTO_IP, buffered = false)
   if not blocking:
     sock.getFd().setBlocking(false)
-  if connect_unix_from_c(cint(sock.getFd()), cstring(path),
-      cint(path.len)) != 0:
-    raiseOSError(osLastError())
+  let path = getSocketPath(socketDir, pid)
+  if baseFd == -1:
+    if connect_unix_from_c(cint(sock.getFd()), cstring(path),
+        cint(path.len)) != 0:
+      raiseOSError(osLastError())
+  else:
+    when defined(freebsd):
+      doAssert baseFd != -1
+      let name = getSocketName(pid)
+      if connectat_unix_from_c(cint(baseFd), cint(sock.getFd()), cstring(name),
+          cint(name.len)) != 0:
+        raiseOSError(osLastError())
   return SocketStream(
     source: sock,
     fd: cint(sock.getFd()),
     blocking: blocking
   )
 
-proc connectSocketStream*(pid: int; blocking = true):
-    SocketStream =
+proc connectSocketStream*(socketDir: string; baseFd, pid: int;
+    blocking = true): SocketStream =
   try:
-    return connectSocketStream(getSocketPath(pid), blocking)
+    return connectAtSocketStream0(socketDir, baseFd, pid, blocking)
   except OSError:
     return nil
 

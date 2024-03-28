@@ -60,6 +60,10 @@ type
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
     unregisterFun*: proc(fd: int)
+    # directory where we store UNIX domain sockets
+    sockDir*: string
+    # (FreeBSD only) fd for the socket directory so we can connectat() on it
+    sockDirFd*: int
 
   ConnectData = object
     promise: Promise[JSResult[Response]]
@@ -678,7 +682,8 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   )
   gctx = ctx
   let myPid = getCurrentProcessId()
-  ctx.ssock = initServerSocket(myPid, blocking = true)
+  # we don't capsicumize loader, so -1 is appropriate here
+  ctx.ssock = initServerSocket(config.tmpdir, -1, myPid, blocking = true)
   let sfd = int(ctx.ssock.sock.getFd())
   ctx.selector.registerHandle(sfd, {Read}, 0)
   # The server has been initialized, so the main process can resume execution.
@@ -847,7 +852,8 @@ template withLoaderPacketWriter(stream: SocketStream; loader: FileLoader;
     body
 
 proc connect(loader: FileLoader): SocketStream =
-  return connectSocketStream(loader.process, blocking = true)
+  return connectSocketStream(loader.sockDir, loader.sockDirFd, loader.process,
+    blocking = true)
 
 # Start a request. This should not block (not for a significant amount of time
 # anyway).
@@ -1092,3 +1098,14 @@ proc removeClient*(loader: FileLoader; pid: int) =
       w.swrite(lcRemoveClient)
       w.swrite(pid)
     stream.sclose()
+
+
+when defined(freebsd):
+  let O_DIRECTORY* {.importc, header: "<fcntl.h>", noinit.}: cint
+
+proc setSocketDir*(loader: FileLoader; path: string) =
+  loader.sockDir = path
+  when defined(freebsd):
+    loader.sockDirFd = open(cstring(path), O_DIRECTORY)
+  else:
+    loader.sockDirFd = -1

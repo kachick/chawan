@@ -1,6 +1,7 @@
 import std/options
 import std/os
 import std/posix
+import std/selectors
 import std/tables
 
 import config/config
@@ -16,6 +17,7 @@ import types/urimethodmap
 import types/url
 import types/winattrs
 import utils/proctitle
+import utils/sandbox
 import utils/strwidth
 
 import chagashi/charset
@@ -34,15 +36,17 @@ type
     ostream: PosixStream
     children: seq[int]
     loaderPid: int
+    sockDirFd: int
+    sockDir: string
 
-proc newFileLoader*(forkserver: ForkServer; config: LoaderConfig): FileLoader =
+proc forkLoader*(forkserver: ForkServer; config: LoaderConfig): int =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcForkLoader)
     w.swrite(config)
   var r = forkserver.istream.initPacketReader()
   var process: int
   r.sread(process)
-  return FileLoader(process: process, clientPid: getCurrentProcessId())
+  return process
 
 proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
   forkserver.ostream.withPacketWriter w:
@@ -137,10 +141,18 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     for i in 0 ..< ctx.children.len: ctx.children[i] = 0
     ctx.children.setLen(0)
     let loaderPid = ctx.loaderPid
+    let sockDir = ctx.sockDir
+    let sockDirFd = ctx.sockDirFd
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
+    closeStdin()
+    closeStdout()
+    # must call before entering the sandbox, or capsicum cries because of Nim
+    # calling sysctl
+    let selector = newSelector[int]()
+    enterSandbox()
     let pid = getCurrentProcessId()
-    let ssock = initServerSocket(pid)
+    let ssock = initServerSocket(sockDir, sockDirFd, pid)
     gssock = ssock
     onSignal SIGTERM:
       # This will be overridden after buffer has been set up; it is only
@@ -150,16 +162,16 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
     ps.sclose()
-    closeStdin()
-    closeStdout()
     let loader = FileLoader(
       process: loaderPid,
-      clientPid: pid
+      clientPid: pid,
+      sockDir: sockDir,
+      sockDirFd: sockDirFd
     )
     try:
       setBufferProcessTitle(url)
       launchBuffer(config, url, request, attrs, ishtml, charsetStack, loader,
-        ssock)
+        ssock, selector)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -180,7 +192,8 @@ proc runForkServer() =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(
     istream: newPosixStream(stdin.getFileHandle()),
-    ostream: newPosixStream(stdout.getFileHandle())
+    ostream: newPosixStream(stdout.getFileHandle()),
+    sockDirFd: -1
   )
   signal(SIGCHLD, SIG_IGN)
   while true:
@@ -212,7 +225,9 @@ proc runForkServer() =
           var config: ForkServerConfig
           r.sread(config)
           set_cjk_ambiguous(config.ambiguous_double)
-          SocketDirectory = config.tmpdir
+          ctx.sockDir = config.tmpdir
+          when defined(freebsd):
+            ctx.sockDirFd = open(cstring(ctx.sockDir), O_DIRECTORY)
     except EOFError:
       # EOF
       break

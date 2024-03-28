@@ -407,7 +407,8 @@ proc acceptBuffers(client: Client) =
     client.selector.registerHandle(fd, {Read, Write}, 0)
   for item in pager.procmap:
     let container = item.container
-    let stream = connectSocketStream(container.process)
+    let stream = connectSocketStream(client.config.external.tmpdir,
+      client.loader.sockDirFd, container.process)
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
       continue
@@ -812,12 +813,14 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
   let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let pager = newPager(config, forkserver, jsctx, warnings)
-  let loader = forkserver.newFileLoader(LoaderConfig(
+  let loaderPid = forkserver.forkLoader(LoaderConfig(
     urimethodmap: config.external.urimethodmap,
     w3mCGICompat: config.external.w3m_cgi_compat,
     cgiDir: seq[string](config.external.cgi_dir),
     tmpdir: config.external.tmpdir
   ))
+  let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
+  loader.setSocketDir(config.external.tmpdir)
   pager.setLoader(loader)
   let client = Client(config: config, jsrt: jsrt, jsctx: jsctx, pager: pager)
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))

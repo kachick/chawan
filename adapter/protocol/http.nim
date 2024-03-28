@@ -4,6 +4,7 @@ else:
   import std/os
 import std/posix
 import std/strutils
+import utils/sandbox
 
 import curl
 import curlerrors
@@ -76,6 +77,7 @@ proc curlPreRequest(clientp: pointer, conn_primary_ip, conn_local_ip: cstring,
   let op = cast[HttpHandle](clientp)
   op.connectreport = true
   puts("Cha-Control: Connected\n")
+  enterSandbox()
   return 0 # ok
 
 proc main() =
