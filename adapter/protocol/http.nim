@@ -45,7 +45,7 @@ proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
       puts("Status: " & $status & "\nCha-Control: ControlDone\n")
     return nitems
 
-  if line == "":
+  if line == "\r\n" or line == "\n":
     # empty line (last, before body)
     if op.earlyhint == EARLY_HINT_STARTED:
       # ignore; we do not have a way to stream headers yet.
@@ -53,6 +53,7 @@ proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
       # reset statusline; we are awaiting the next line.
       op.statusline = false
       return nitems
+    puts("\r\n")
     return nitems
 
   if op.earlyhint != EARLY_HINT_STARTED:
