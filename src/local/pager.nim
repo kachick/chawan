@@ -1256,6 +1256,11 @@ type CheckMailcapResult = object
   ishtml: bool
   found: bool
 
+template myFork(): cint =
+  stdout.flushFile()
+  stderr.flushFile()
+  fork()
+
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
   let entry = pager.config.external.mailcap.getMailcapEntry("text/x-ansi", "",
@@ -1269,7 +1274,7 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
   if pipe(pipefdOutAnsi) == -1:
     pager.alert("Error: failed to open pipe")
     return
-  case fork()
+  case myFork()
   of -1:
     pager.alert("Error: failed to fork ANSI decoder process")
     discard close(pipefdOutAnsi[0])
@@ -1293,7 +1298,7 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
 # needsterminal is ignored.
 proc runMailcapReadPipe(pager: Pager; stream: SocketStream; cmd: string;
     pipefdOut: array[2, cint]): int =
-  let pid = fork()
+  let pid = myFork()
   if pid == -1:
     pager.alert("Error: failed to fork mailcap read process")
     return -1
@@ -1315,7 +1320,7 @@ proc runMailcapWritePipe(pager: Pager; stream: SocketStream;
     needsterminal: bool; cmd: string) =
   if needsterminal:
     pager.term.quit()
-  let pid = fork()
+  let pid = myFork()
   if pid == -1:
     pager.alert("Error: failed to fork mailcap write process")
   elif pid == 0:
@@ -1356,7 +1361,7 @@ proc writeToFile(istream: SocketStream; outpath: string): bool =
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager; stream: SocketStream;
     cmd, outpath: string; pipefdOut: array[2, cint]): int =
-  let pid = fork()
+  let pid = myFork()
   if pid == 0:
     # child process
     discard close(pipefdOut[0])
@@ -1388,7 +1393,7 @@ proc runMailcapWriteFile(pager: Pager; stream: SocketStream;
       pager.term.restart()
   else:
     # don't block
-    let pid = fork()
+    let pid = myFork()
     if pid == 0:
       # child process
       closeStdin()
@@ -1411,7 +1416,7 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
   if pipe(pipefd_out) == -1:
     pager.alert("Error: failed to open pipe")
     return CheckMailcapResult(connect: false, fdout: -1)
-  let pid = fork()
+  let pid = myFork()
   if pid == -1:
     pager.alert("Error: failed to fork buffer filter process")
     return CheckMailcapResult(connect: false, fdout: -1)

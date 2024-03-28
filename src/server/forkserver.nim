@@ -85,6 +85,8 @@ proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): int =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
+  stdout.flushFile()
+  stderr.flushFile()
   let pid = fork()
   if pid == 0:
     # child process
@@ -132,6 +134,8 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
+  stdout.flushFile()
+  stderr.flushFile()
   let pid = fork()
   if pid == -1:
     raise newException(Defect, "Failed to fork process.")
@@ -248,6 +252,8 @@ proc newForkServer*(): ForkServer =
     raise newException(Defect, "Failed to open output pipe.")
   if pipe(pipefd_err) == -1:
     raise newException(Defect, "Failed to open error pipe.")
+  stdout.flushFile()
+  stderr.flushFile()
   let pid = fork()
   if pid == -1:
     raise newException(Defect, "Failed to fork the fork process.")

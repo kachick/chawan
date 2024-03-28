@@ -188,6 +188,8 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     contentLen = request.body.get.len
   elif request.multipart.isSome:
     contentLen = request.multipart.get.calcLength()
+  stdout.flushFile()
+  stderr.flushFile()
   let pid = fork()
   if pid == -1:
     handle.sendResult(ERROR_FAIL_SETUP_CGI)
