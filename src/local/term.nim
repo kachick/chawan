@@ -212,6 +212,7 @@ proc isatty*(term: Terminal): bool =
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
     term.outfile.write(term.clearEnd() & msg)
+    term.outfile.flushFile()
     discard term.istream.sreadChar()
 
 proc resetFormat(term: Terminal): string =
