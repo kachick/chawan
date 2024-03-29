@@ -105,6 +105,7 @@ proc main() =
     url.set(CURLUPART_QUERY, query, flags)
   curl.setopt(CURLOPT_CURLU, url)
   let op = HttpHandle(curl: curl)
+  curl.setopt(CURLOPT_SUPPRESS_CONNECT_HEADERS, 1)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_HEADERDATA, op)
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
