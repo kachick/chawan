@@ -1348,11 +1348,7 @@ proc writeToFile(istream: SocketStream; outpath: string): bool =
     let n = istream.recvData(buffer)
     if n == 0:
       break
-    if ps.sendData(buffer.toOpenArray(0, n - 1)) < n:
-      ps.sclose()
-      return false
-    if n < buffer.len:
-      break
+    ps.sendDataLoop(buffer.toOpenArray(0, n - 1))
   ps.sclose()
   true
 

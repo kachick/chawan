@@ -44,6 +44,9 @@ proc sendDataLoop*(s: DynStream; buffer: pointer; len: int) =
     if n == len:
       break
 
+proc sendDataLoop*(s: DynStream; buffer: openArray[uint8]) {.inline.} =
+  s.sendDataLoop(unsafeAddr buffer[0], buffer.len)
+
 proc sendDataLoop*(s: DynStream; buffer: openArray[char]) {.inline.} =
   s.sendDataLoop(unsafeAddr buffer[0], buffer.len)
 
