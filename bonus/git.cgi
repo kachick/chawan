@@ -10,7 +10,7 @@
  * (if you have ansi2html, it also works with w3m. just set GITCHA_CHA=w3m) */
 
 const gitcha = std.getenv("GITCHA_GITCHA") ?? "gitcha";
-if (scriptArgs[0].split('/').at(-1) == gitcha) {
+if (scriptArgs[0].split('/').pop() == gitcha) {
 	const cha = std.getenv("GITCHA_CHA") ?? 'cha';
 	const params = encodeURIComponent(scriptArgs.slice(1)
 		.map(x => encodeURIComponent(x)).join(' '));
