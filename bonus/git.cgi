@@ -27,12 +27,7 @@ for (const p of std.getenv("QUERY_STRING").split('&')) {
 }
 
 function startGitCmd(config, params) {
-	const titleParams = params.join(' ').replace(/[&<>]/g,
-		x => ({'&': '&amp', '<': '&lt', '>': '&gt'}[x]));
-	std.out.puts(`Content-Type: text/html
-
-<!DOCTYPE html>
-<title>git ${titleParams}</title>`);
+	std.out.puts("Content-Type: text/html\n\n");
 	std.out.flush();
 	const [read_fd, write_fd] = os.pipe();
 	const [read_fd2, write_fd2] = os.pipe();
@@ -43,7 +38,8 @@ function startGitCmd(config, params) {
 	os.close(write_fd);
 	const libexecDir = std.getenv("CHA_LIBEXEC_DIR") ??
 		'/usr/local/libexec/chawan';
-	os.exec([libexecDir + "/ansi2html"], {
+	const title = encodeURIComponent('git ' + params.join(' '));
+	os.exec([libexecDir + "/ansi2html", "-st", title], {
 		stdin: read_fd,
 		stdout: write_fd2,
 		block: false
@@ -78,7 +74,8 @@ if (params[0] == "log") {
 	}
 	f.close();
 } else {
-	std.out.puts("Content-Type: text/x-ansi\n\n");
+	const title = encodeURIComponent('git ' + params.join(' '));
+	std.out.puts(`Content-Type: text/x-ansi;title=${title}\n\n`);
 	std.out.flush();
 	const pid = os.exec(["git", ...config, ...params], {
 		block: false,

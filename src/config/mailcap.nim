@@ -308,6 +308,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
         let s = contentType.getContentTypeAttr(attrname)
         cmd &= quoteFile(s, qs)
         attrname = ""
+        state = STATE_NORMAL
       elif c == '\\':
         state = STATE_ATTR_QUOTED
       else:

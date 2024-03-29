@@ -356,11 +356,39 @@ proc processData(state: var State, buf: openArray[char]) =
     of '\0': state.puts("\uFFFD") # HTML eats NUL, so replace it here
     else: state.putc(c)
 
+proc usage() =
+  stderr.write("Usage: ansihtml [-s] [-t title]\n")
+  quit(1)
+
 proc main() =
   var state = State()
-  let standalone = paramCount() >= 1 and paramStr(1) == "-s"
+  # parse args
+  let H = paramCount()
+  var i = 1
+  var standalone = false
+  var title = ""
+  while i <= H:
+    let s = paramStr(i)
+    if s == "":
+      inc i
+    if s[0] != '-':
+      usage()
+    for j in 1 ..< s.len:
+      case s[j]
+      of 's':
+        standalone = true
+      of 't':
+        inc i
+        if i > H: usage()
+        title = paramStr(i).percentDecode()
+      else: discard
+    inc i
   if standalone:
-    state.puts("<!DOCTYPE html>\n<body>")
+    state.puts("<!DOCTYPE html>\n")
+  if title != "":
+    state.puts("<title>" & title.htmlEscape() & "</title>\n")
+  if standalone:
+    state.puts("<body>\n")
   state.puts("<pre style='margin: 0'>\n")
   let ofl = fcntl(STDIN_FILENO, F_GETFL, 0)
   doAssert ofl != -1
