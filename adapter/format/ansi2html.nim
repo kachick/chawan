@@ -381,7 +381,8 @@ proc main() =
         inc i
         if i > H: usage()
         title = paramStr(i).percentDecode()
-      else: discard
+      else:
+        usage()
     inc i
   if standalone:
     state.puts("<!DOCTYPE html>\n")
