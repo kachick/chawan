@@ -1,9 +1,8 @@
 import std/options
 import std/os
+import std/posix
 import std/selectors
 
-import io/dynstream
-import io/posixstream
 import types/color
 import utils/twtstr
 
@@ -144,7 +143,6 @@ proc reset(parser: var AnsiCodeParser) =
   parser.params = ""
 
 type State = object
-  os: PosixStream
   outbufIdx: int
   outbuf: array[4096, char]
   parser: AnsiCodeParser
@@ -156,9 +154,11 @@ type State = object
   hasPrintingBuf: bool
   backspaceDecay: int
 
+const STDIN_FILENO = 0
+const STDOUT_FILENO = 1
 proc flushOutbuf(state: var State) =
   if state.outbufIdx > 0:
-    discard state.os.sendData(addr state.outbuf[0], state.outbufIdx)
+    discard write(STDOUT_FILENO, addr state.outbuf[0], state.outbufIdx)
     state.outbufIdx = 0
 
 proc putc(state: var State, c: char) {.inline.} =
@@ -357,29 +357,32 @@ proc processData(state: var State, buf: openArray[char]) =
     else: state.putc(c)
 
 proc main() =
-  let ps = newPosixStream(stdin.getFileHandle())
-  var state = State(os: newPosixStream(stdout.getFileHandle()))
+  var state = State()
   let standalone = paramCount() >= 1 and paramStr(1) == "-s"
   if standalone:
     state.puts("<!DOCTYPE html>\n<body>")
   state.puts("<pre style='margin: 0'>\n")
-  ps.setBlocking(false)
+  let ofl = fcntl(STDIN_FILENO, F_GETFL, 0)
+  doAssert ofl != -1
+  discard fcntl(STDIN_FILENO, F_SETFL, ofl and not O_NONBLOCK)
   var buffer {.noinit.}: array[4096, char]
   var selector = newSelector[int]()
   block mainloop:
     while true:
-      try:
-        let n = ps.recvData(buffer.toOpenArrayByte(0, buffer.high))
+      let n = read(STDIN_FILENO, addr buffer[0], buffer.high)
+      if n != -1:
         if n == 0:
           break
         state.processData(buffer.toOpenArray(0, n - 1))
-      except ErrorAgain:
+      else:
+        doAssert errno == EAGAIN or errno == EWOULDBLOCK
         state.flushOutbuf()
-        selector.registerHandle(ps.fd, {Read}, 0)
+        selector.registerHandle(STDIN_FILENO, {Read}, 0)
         discard selector.select(-1)
-        selector.unregister(ps.fd)
+        selector.unregister(STDIN_FILENO)
   if standalone:
     state.puts("</body>")
   state.flushOutbuf()
+  discard fcntl(STDIN_FILENO, F_SETFL, ofl)
 
 main()
