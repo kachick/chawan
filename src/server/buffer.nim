@@ -1727,17 +1727,45 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
         let text = Text(node)
         var res = regex.exec(text.data)
         if res.success:
-          var data = text.data
           var offset = 0
+          var data = ""
+          var j = 0
           for cap in res.captures.mitems:
             if cap.i != 0:
               continue
+            let capLen = cap.e - cap.s
+            while j < cap.s:
+              case (let c = text.data[j]; c)
+              of '<':
+                data &= "&lt;"
+                offset += 3
+              of '>':
+                data &= "&gt;"
+                offset += 3
+              of '\'':
+                data &= "&apos;"
+                offset += 5
+              of '"':
+                data &= "&quot;"
+                offset += 5
+              else:
+                data &= c
+              inc j
             cap.s += offset
             cap.e += offset
-            let s = data[cap.s..<cap.e]
+            let s = text.data[j ..< j + capLen]
             let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
-            data[cap.s..<cap.e] = news
+            data &= news
+            j += cap.e - cap.s
             offset += news.len - (cap.e - cap.s)
+          while j < text.data.len:
+            case (let c = text.data[j]; c)
+            of '<': data &= "&lt;"
+            of '>': data &= "&gt;"
+            of '\'': data &= "&apos;"
+            of '"': data &= "&quot;"
+            else: data &= c
+            inc j
           let replacement = html.fragmentParsingAlgorithm(data)
           discard element.replace(text, replacement)
       elif node of HTMLElement:
