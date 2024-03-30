@@ -118,10 +118,10 @@ func px(l: CSSLength, lctx: LayoutState, p: Option[LayoutUnit]):
   return some(px(l, lctx.attrs, p.get(0)))
 
 func canpx(l: CSSLength, sc: SizeConstraint): bool =
-  return l.unit != UNIT_PERC or sc.isDefinite()
+  return not l.auto and (l.unit != UNIT_PERC or sc.isDefinite())
 
 func canpx(l: CSSLength, p: Option[LayoutUnit]): bool =
-  return l.unit != UNIT_PERC or p.isSome
+  return not l.auto and (l.unit != UNIT_PERC or p.isSome)
 
 # Note: for margins only
 # For percentages, use 0 for indefinite, and containing box's size for
@@ -910,7 +910,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
   let width = computed{"width"}
   let padding = sizes.padding.left + sizes.padding.right
   var widthpx: LayoutUnit = 0
-  if not width.auto and width.canpx(containingWidth):
+  if width.canpx(containingWidth):
     widthpx = width.spx(lctx, containingWidth, computed, padding)
     sizes.space.w = stretch(widthpx)
   sizes.resolveContentWidth(widthpx, containingWidth, computed, width.auto)
@@ -948,7 +948,7 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
   let height = computed{"height"}
   let padding = sizes.padding.top + sizes.padding.bottom
   var heightpx: LayoutUnit = 0
-  if not height.auto and height.canpx(percHeight):
+  if height.canpx(percHeight):
     heightpx = height.spx(lctx, percHeight, computed, padding).get
     sizes.space.h = stretch(heightpx)
   if not computed{"max-height"}.auto:
@@ -1091,7 +1091,7 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
   else:
     high(LayoutUnit)
   let width = computed{"width"}
-  if not width.auto and width.canpx(containingWidth):
+  if width.canpx(containingWidth):
     let widthpx = width.spx(lctx, containingWidth, computed, inlinePadding)
     space.w = stretch(clamp(widthpx, minWidth, maxWidth))
   elif containingWidth.isDefinite():
@@ -1106,7 +1106,7 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
   else:
     high(LayoutUnit)
   let height = computed{"height"}
-  if not height.auto and height.canpx(containingHeight):
+  if height.canpx(containingHeight):
     let heightpx = height.px(lctx, containingHeight)
     space.h = stretch(clamp(heightpx, minHeight, maxHeight))
   elif containingHeight.isDefinite():
@@ -1142,29 +1142,6 @@ proc resolveSizes(lctx: LayoutState, containingWidth,
   else:
     return lctx.resolveBlockSizes(containingWidth, containingHeight,
       percHeight, computed)
-
-proc resolveTableCellSizes(lctx: LayoutState, containingWidth,
-    containingHeight: SizeConstraint, override: bool,
-    computed: CSSComputedValues): ResolvedSizes =
-  var sizes = ResolvedSizes(
-    padding: resolvePadding(containingWidth, lctx, computed),
-    space: AvailableSpace(w: containingWidth, h: containingHeight),
-    minWidth: 0,
-    maxWidth: high(LayoutUnit),
-    minHeight: 0,
-    maxHeight: high(LayoutUnit)
-  )
-  if not override:
-    let width = computed{"width"}
-    if not width.auto and width.unit != UNIT_PERC:
-      sizes.space.w = stretch(width.px(lctx))
-  sizes.space.w.u -= sizes.padding.left
-  sizes.space.w.u -= sizes.padding.right
-  if not override:
-    let height = computed{"height"}
-    if not height.auto and height.unit != UNIT_PERC:
-      sizes.space.h = stretch(height.px(lctx))
-  return sizes
 
 func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
   if sc.isDefinite():
@@ -1707,11 +1684,22 @@ proc buildTableCaption(lctx: LayoutState, builder: TableCaptionBoxBuilder,
   box.size.h += bctx.marginTodo.sum()
   return box
 
-proc buildTableCell(lctx: LayoutState, builder: TableCellBoxBuilder,
-    availableWidth, availableHeight: SizeConstraint, override: bool):
-    BlockBox =
-  let sizes = lctx.resolveTableCellSizes(availableWidth, availableHeight,
-    override, builder.computed)
+proc buildTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
+    availWidth, availHeight: SizeConstraint): BlockBox =
+  var sizes = ResolvedSizes(
+    padding: resolvePadding(availWidth, lctx, builder.computed),
+    space: AvailableSpace(w: availWidth, h: availHeight),
+    minWidth: 0,
+    maxWidth: high(LayoutUnit),
+    minHeight: 0,
+    maxHeight: high(LayoutUnit)
+  )
+  if sizes.space.w.isDefinite():
+    sizes.space.w.u -= sizes.padding.left
+    sizes.space.w.u -= sizes.padding.right
+  if sizes.space.h.isDefinite():
+    sizes.space.h.u -= sizes.padding.top
+    sizes.space.h.u -= sizes.padding.bottom
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
@@ -1776,15 +1764,17 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
     let cellbuilder = TableCellBoxBuilder(child)
     let colspan = cellbuilder.computed{"-cha-colspan"}
     let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
-    let computedWidth = cellbuilder.computed{"width"}
-    let cw = if not computedWidth.auto:
-      stretch(computedWidth.px(pctx.lctx, pctx.space.w))
+    let availWidth = if cellbuilder.computed{"width"}.canpx(pctx.space.w):
+      stretch(cellbuilder.computed{"width"}.px(pctx.lctx, pctx.space.w))
+    else:
+      maxContent()
+    let availHeight = if cellbuilder.computed{"height"}.canpx(pctx.space.h):
+      stretch(cellbuilder.computed{"height"}.px(pctx.lctx, pctx.space.h))
     else:
       maxContent()
     #TODO specified table height should be distributed among rows.
     # Allow the table cell to use its specified width.
-    let box = pctx.lctx.buildTableCell(cellbuilder, cw, maxContent(),
-      override = false)
+    let box = pctx.lctx.buildTableCell(cellbuilder, availWidth, availHeight)
     let wrapper = CellWrapper(
       box: box,
       builder: cellbuilder,
@@ -1813,23 +1803,21 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
       # 4. neither of colwidth or cell width are fixed: take maximum
       if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
       if pctx.cols[i].wspecified:
-        if not computedWidth.auto:
-          let ww = computedWidth.px(pctx.lctx, pctx.space.w)
+        if availWidth.isDefinite():
           # A specified column already exists; we take the larger width.
-          if ww > pctx.cols[i].width:
-            pctx.cols[i].width = ww
+          if availWidth.u > pctx.cols[i].width:
+            pctx.cols[i].width = availWidth.u
             ctx.reflow[i] = true
         else:
           if pctx.cols[i].width < w:
             wrapper.reflow = true
       else:
-        if not computedWidth.auto:
-          let ww = computedWidth.px(pctx.lctx, pctx.space.w)
+        if availWidth.isDefinite():
           # This is the first specified column. Replace colwidth with whatever
           # we have.
           ctx.reflow[i] = true
           pctx.cols[i].wspecified = true
-          pctx.cols[i].width = ww
+          pctx.cols[i].width = availWidth.u
         else:
           if pctx.cols[i].width < w:
             pctx.cols[i].width = w
@@ -1896,7 +1884,7 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
       # </TABLE>
       # the TD with a width of 5ch should be 9ch wide as well.
       cellw.box = pctx.lctx.buildTableCell(cellw.builder, stretch(w),
-        maxContent(), override = true)
+        maxContent())
       w = max(w, cellw.box.size.w)
     let cell = cellw.box
     x += pctx.inlinespacing
