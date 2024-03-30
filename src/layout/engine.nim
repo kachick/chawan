@@ -1065,7 +1065,9 @@ proc resolveAbsoluteSizes(lctx: LayoutState, computed: CSSComputedValues):
     margin: resolveMargins(containingWidth, lctx, computed),
     padding: resolvePadding(containingWidth, lctx, computed),
     minWidth: 0,
-    maxWidth: high(LayoutUnit)
+    maxWidth: high(LayoutUnit),
+    minHeight: 0,
+    maxHeight: high(LayoutUnit)
   )
   sizes.resolveAbsoluteWidth(containingWidth, computed, lctx)
   sizes.resolveAbsoluteHeight(containingHeight, computed, lctx)
