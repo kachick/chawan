@@ -135,6 +135,9 @@ type
 
 jsDestructor(Pager)
 
+# Forward declarations
+proc alert*(pager: Pager; msg: string)
+
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
 
@@ -205,6 +208,8 @@ proc searchNext(pager: Pager, n = 1) {.jsfunc.} =
     else:
       pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
     pager.container.markPos()
+  else:
+    pager.alert("No previous regular expression")
 
 proc searchPrev(pager: Pager, n = 1) {.jsfunc.} =
   if pager.regex.isSome:
@@ -215,6 +220,8 @@ proc searchPrev(pager: Pager, n = 1) {.jsfunc.} =
     else:
       pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
     pager.container.markPos()
+  else:
+    pager.alert("No previous regular expression")
 
 proc getLineHist(pager: Pager; mode: LineMode): LineHistory =
   if pager.linehist[mode] == nil:
@@ -260,8 +267,6 @@ proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
       pager.setLineEdit(lmGotoLine)
       return
   pager.container.gotoLine(s)
-
-proc alert*(pager: Pager, msg: string)
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
@@ -1071,7 +1076,10 @@ proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
         else:
           pager.container.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
     of lesFinish:
-      pager.regex = pager.checkRegex(pager.iregex)
+      if lineedit.news != "":
+        pager.regex = pager.checkRegex(pager.iregex)
+      else:
+        pager.searchNext()
       pager.reverseSearch = linemode == lmISearchB
       pager.container.markPos()
       pager.container.clearSearchHighlights()
