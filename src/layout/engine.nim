@@ -1296,7 +1296,7 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
   # Algorithm originally from QEmacs.
   var y = offset.y
   let leftStart = offset.x
-  let rightStart = max(offset.x + size.w, space.w.u)
+  let rightStart = offset.x + max(size.w, space.w.u)
   while true:
     var left = leftStart
     var right = rightStart
