@@ -916,20 +916,20 @@ proc pageRight(container: Container, n = 1) {.jsfunc.} =
 # Users who disagree are free to implement it themselves. (It is about
 # 5 lines of JS.)
 proc halfPageUp(container: Container, n = 1) {.jsfunc.} =
-  container.setFromY(container.fromy - (container.height div 2 + 1) * n)
-  container.setCursorY(container.cursory - (container.height div 2 + 1) * n)
+  container.setFromY(container.fromy - (container.height + 1) div 2 * n)
+  container.setCursorY(container.cursory - (container.height + 1) div 2 * n)
   container.restoreCursorX()
 
 proc halfPageDown(container: Container, n = 1) {.jsfunc.} =
-  container.setFromY(container.fromy + (container.height div 2 - 1) * n)
-  container.setCursorY(container.cursory + (container.height div 2 - 1) * n)
+  container.setFromY(container.fromy + (container.height + 1) div 2 * n)
+  container.setCursorY(container.cursory + (container.height + 1) div 2 * n)
   container.restoreCursorX()
 
 proc halfPageLeft(container: Container, n = 1) {.jsfunc.} =
-  container.setFromX(container.fromx - (container.width div 2 + 1) * n)
+  container.setFromX(container.fromx - (container.width + 1) div 2 * n)
 
 proc halfPageRight(container: Container, n = 1) {.jsfunc.} =
-  container.setFromX(container.fromx + (container.width div 2 - 1) * n)
+  container.setFromX(container.fromx + (container.width + 1) div 2 * n)
 
 proc markPos0*(container: Container) =
   container.tmpJumpMark = (container.cursorx, container.cursory)
