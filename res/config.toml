@@ -149,7 +149,7 @@ sourceEdit = '''
 () => {
 	const url = pager.url;
 	pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
-		url.pathname :
+		decodeURIComponent(url.pathname) :
 		pager.cacheFile));
 }
 '''

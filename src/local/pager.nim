@@ -801,39 +801,20 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       pager.container.sourcepair = container
       pager.addContainer(container)
 
-func formatEditorName(editor, file: string; line: int): string =
-  result = newStringOfCap(editor.len + file.len)
-  var i = 0
-  var filefound = false
-  while i < editor.len:
-    if editor[i] == '%' and i < editor.high:
-      if editor[i + 1] == 's':
-        result &= file
-        filefound = true
-        i += 2
-        continue
-      elif editor[i + 1] == 'd':
-        result &= $line
-        i += 2
-        continue
-      elif editor[i + 1] == '%':
-        result &= '%'
-        i += 2
-        continue
-    result &= editor[i]
-    inc i
-  if not filefound:
-    if result[^1] != ' ':
-      result &= ' '
-    result &= file
-
 func getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
   if editor == "":
     editor = getEnv("EDITOR")
     if editor == "":
       editor = "vi %s +%d"
-  return formatEditorName(editor, file, line)
+  var canpipe = false
+  var s = unquoteCommand(editor, "", file, nil, canpipe, line)
+  if canpipe:
+    # %s not in command; add file name ourselves
+    if s[^1] != ' ':
+      s &= ' '
+    s &= quoteFile(file, qsNormal)
+  return s
 
 proc openInEditor(pager: Pager; input: var string): bool =
   try:

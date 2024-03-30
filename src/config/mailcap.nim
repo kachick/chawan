@@ -206,111 +206,115 @@ proc parseMailcap*(stream: Stream): Result[Mailcap, string] =
 
 # Mostly based on w3m's mailcap quote/unquote
 type UnquoteState = enum
-  STATE_NORMAL, STATE_QUOTED, STATE_PERC, STATE_ATTR, STATE_ATTR_QUOTED,
-  STATE_DOLLAR
+  usNormal, usQuoted, usPerc, usAttr, usAttrQuoted, usDollar
 
 type UnquoteResult* = object
   canpipe*: bool
   cmd*: string
 
-type QuoteState = enum
-  QS_NORMAL, QS_DQUOTED, QS_SQUOTED
+type QuoteState* = enum
+  qsNormal, qsDoubleQuoted, qsSingleQuoted
 
-proc quoteFile(file: string; qs: QuoteState): string =
+proc quoteFile*(file: string; qs: QuoteState): string =
   var s = ""
   for c in file:
     case c
     of '$', '`', '"', '\\':
-      if qs != QS_SQUOTED:
+      if qs != qsSingleQuoted:
         s &= '\\'
     of '\'':
-      if qs == QS_SQUOTED:
+      if qs == qsSingleQuoted:
         s &= "'\\'" # then re-open the quote by appending c
-      elif qs == QS_NORMAL:
+      elif qs == qsNormal:
         s &= '\\'
       # double-quoted: append normally
     of AsciiAlphaNumeric, '_', '.', ':', '/':
       discard # no need to quote
-    elif qs == QS_NORMAL:
+    elif qs == qsNormal:
       s &= '\\'
     s &= c
   return s
 
 proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
-    canpipe: var bool): string =
+    canpipe: var bool; line = -1): string =
   var cmd = ""
   var attrname = ""
   var state: UnquoteState
-  var qss = @[QS_NORMAL] # quote state stack. len >1
+  var qss = @[qsNormal] # quote state stack. len >1
   template qs: var QuoteState = qss[^1]
   for c in ecmd:
     case state
-    of STATE_QUOTED:
+    of usQuoted:
       cmd &= c
-      state = STATE_NORMAL
-    of STATE_ATTR_QUOTED:
+      state = usNormal
+    of usAttrQuoted:
       attrname &= c.toLowerAscii()
-      state = STATE_ATTR
-    of STATE_NORMAL, STATE_DOLLAR:
-      let prev_dollar = state == STATE_DOLLAR
-      state = STATE_NORMAL
+      state = usAttr
+    of usNormal, usDollar:
+      let prev_dollar = state == usDollar
+      state = usNormal
       case c
       of '%':
-        state = STATE_PERC
+        state = usPerc
       of '\\':
-        state = STATE_QUOTED
+        state = usQuoted
       of '\'':
-        if qs == QS_SQUOTED:
-          qs = QS_NORMAL
+        if qs == qsSingleQuoted:
+          qs = qsNormal
         else:
-          qs = QS_SQUOTED
+          qs = qsSingleQuoted
         cmd &= c
       of '"':
-        if qs == QS_DQUOTED:
-          qs = QS_NORMAL
+        if qs == qsDoubleQuoted:
+          qs = qsNormal
         else:
-          qs = QS_DQUOTED
+          qs = qsDoubleQuoted
         cmd &= c
       of '$':
-        if qs != QS_SQUOTED:
-          state = STATE_DOLLAR
+        if qs != qsSingleQuoted:
+          state = usDollar
         cmd &= c
       of '(':
         if prev_dollar:
-          qss.add(QS_NORMAL)
+          qss.add(qsNormal)
         cmd &= c
       of ')':
-        if qs != QS_SQUOTED:
+        if qs != qsSingleQuoted:
           if qss.len > 1:
             qss.setLen(qss.len - 1)
           else:
             # mismatched parens; probably an invalid shell command...
-            qss[0] = QS_NORMAL
+            qss[0] = qsNormal
         cmd &= c
       else:
         cmd &= c
-    of STATE_PERC:
-      if c == '%':
-        cmd &= c
-      elif c == 's':
+    of usPerc:
+      case c
+      of '%': cmd &= c
+      of 's':
         cmd &= quoteFile(outpath, qs)
         canpipe = false
-      elif c == 't':
+      of 't':
         cmd &= quoteFile(contentType.until(';'), qs)
-      elif c == 'u': # extension
-        cmd &= quoteFile($url, qs)
-      elif c == '{':
-        state = STATE_ATTR
+      of 'u': # Netscape extension
+        if url != nil: # nil in getEditorCommand
+          cmd &= quoteFile($url, qs)
+      of 'd': # line; not used in mailcap, only in getEditorCommand
+        if line != -1: # -1 in mailcap
+          cmd &= $line
+      of '{':
+        state = usAttr
         continue
-      state = STATE_NORMAL
-    of STATE_ATTR:
+      else: discard
+      state = usNormal
+    of usAttr:
       if c == '}':
         let s = contentType.getContentTypeAttr(attrname)
         cmd &= quoteFile(s, qs)
         attrname = ""
-        state = STATE_NORMAL
+        state = usNormal
       elif c == '\\':
-        state = STATE_ATTR_QUOTED
+        state = usAttrQuoted
       else:
         attrname &= c
   return cmd
