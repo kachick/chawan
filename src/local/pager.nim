@@ -1600,11 +1600,15 @@ proc connected(pager: Pager; container: Container; response: Response) =
     else:
       container.flags.excl(cfIsHTML)
     # buffer now actually exists; create a process for it
+    var attrs = pager.attrs
+    # subtract status line height
+    attrs.height -= 1
+    attrs.height_px -= attrs.ppl
     container.process = pager.forkserver.forkBuffer(
       container.config,
       container.url,
       container.request,
-      pager.attrs,
+      attrs,
       mailcapRes.ishtml,
       container.charsetStack
     )
