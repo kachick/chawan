@@ -88,9 +88,9 @@ func processBackspace(line: string): string =
   if inB: s &= "</b>"
   return s
 
-proc isCommand(paths: seq[string]; s: string): bool =
+proc isCommand(paths: seq[string]; name, s: string): bool =
   for p in paths:
-    if fileExists(p & s):
+    if p & name == s:
       return true
   false
 
@@ -195,8 +195,9 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
         if not fileExists(target) and not symlinkExists(target) and
             not dirExists(target):
           continue
-        let link = if paths.isCommand(target):
-          "<a href='man:" & target.afterLast('/') & "'>" & s & "</a>"
+        let name = target.afterLast('/')
+        let link = if paths.isCommand(name, target):
+          "<a href='man:" & name & "'>" & s & "</a>"
         else:
           "<a href='file:" & target & "'>" & s & "</a>"
         line[cap.s..<cap.e] = link
@@ -233,7 +234,7 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
           let man = line[manCap.s..<manCap.e]
           # ignore footers like MYPAGE(1)
           # (just to be safe, we also check if it's in paths too)
-          if man == ignoreMan and not paths.isCommand(man):
+          if man == ignoreMan and not paths.isCommand(man.afterLast('/'), man):
             continue
           let cat = man & line[secCap.s..<secCap.e]
           let link = "<a href='man:" & cat & "'>" & man & "</a>"
