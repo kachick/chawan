@@ -78,12 +78,10 @@ case may end up with `application/octet-stream`.
 Chawan's gemini adapter (in `adapter/protocol/gmifetch.c`) is a C program. It
 requires OpenSSL to work.
 
-Note that gmifetch was written as a candidate for the bonus/ directory when
-Chawan's local CGI support was still in early stages of development, and
-thus has some legacy issues. In particular:
+Currently, it still has some limitations:
 
-* It does not support proxies.
-* It does not support private key authentication.
+* It does not support proxies yet.
+* It does not support sites that require private key authentication.
 
 `adapter/format/gmi2html.nim` is its companion program to convert the
 `text/gemini` file format to HTML. Note that the gemtext specification insists
@@ -166,8 +164,9 @@ to the other.
 
 Chawan is protocol-agnostic. This means that the `cha` binary itself does not
 know much about the protocols listed above; instead, it loads these through a
-combination of local CGI, urimethodmap, and if conversion to HTML or plain text
-is necessary, mailcap (using x-htmloutput and copiousoutput).
+combination of [local CGI](localcgi.md), [urimethodmap](urimethodmap.md), and if
+conversion to HTML or plain text is necessary, [mailcap](mailcap.md) (using
+x-htmloutput, x-ansioutput and copiousoutput).
 
 urimethodmap can also be used to override default handlers for the protocols
 listed above. This is similar to how w3m allows you to override the default
@@ -189,10 +188,63 @@ command that will retrieve the specified `finger:` URL; it prints the header
 'Content-Type: text/plain' to the output, then an empty line, then the body
 of the retrieved resource. If an error is encountered, it prints a
 `Cha-Control` header with an error code and a specific error message instead.
+
+### Adding a new protocol
+
+Here we will add a protocol called "example", so that the URL example:text
+prints "text" after a second of waiting. We will write the adapter in shell
+script.
+
+First, make sure you have a local CGI path `~/cgi-bin` set up in your
+`~/.config/chawan/config.toml`:
+
+```toml
+cgi-dir = ["~/cgi-bin", "${%CHA_LIBEXEC_DIR}/cgi-bin"]
+```
+
+It is also possible to just put your CGI scripts to
+`/usr/local/libexec/chawan/cgi-bin`; this is enabled by default, so you need no
+edits in your config. But it seems more convenient to use a dedicated cgi-bin in
+your home directory.
+
+`mkdir ~/cgi-bin`, and create a CGI script in `~/cgi-bin` called `example.cgi`:
+
+```sh
+#!/bin/sh
+# We are going to wait a second from now, but want Chawan to show
+# "Downloading..." instead of "Connecting...". So signal to the browser that the
+# connection has succeeded.
+printf 'Cha-Control: Connected\n'
+sleep 1 # sleep
+# Status is a special header that signals the equivalent HTTP status code.
+printf 'Status: 200' # HTTP OK
+# Tell the browser that no more control headers are to be expected.
+# This is useful when you want to send remotely received headers; then, it would
+# be an attack vector to simply send the headers without ControlDone, as nothing
+# stops the website from sending a Cha-Control header. With ControlDone sent,
+# even Cha-Control headers will be interpreted as regular headers.
+printf 'Cha-Control: ControlDone\n'
+# As in HTTP, you must send an empty line before the body.
+printf '\n'
+# Now, print the body. We just take the path passed to the URL; urimethodmap
+# sets this as MAPPED_URI_PATH.
+printf '%s' "$MAPPED_URI_PATH"
+```
+
+Now, create a ".urimethodmap" file in your `$HOME` directory.
+
+Then, enter into it the following:
+
+```
+example:	/cgi-bin/example.cgi
+```
+
+Now try `cha example:Hello_world`. If you did everything correctly, it should
+wait one second, then print "Hello_world".
+
 <!-- MANON
 
 ## See also
 
-**cha**(1), **cha-urimethodmap**(5), **cha-localcgi**(5),
-**cha-urimethodmap**(5)
+**cha**(1), **cha-localcgi**(5), **cha-urimethodmap**(5), **cha-mailcap**(5)
 MANOFF -->
