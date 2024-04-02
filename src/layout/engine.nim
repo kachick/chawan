@@ -88,18 +88,10 @@ type
 
   TableCaptionBoxBuilder = ref object of BlockBoxBuilder
 
-#TODO ?
-func stretch(sc: SizeConstraint): SizeConstraint =
-  case sc.t
-  of MIN_CONTENT, MAX_CONTENT:
-    return sc
-  of STRETCH, FIT_CONTENT:
-    return SizeConstraint(t: STRETCH, u: sc.u)
-
 func fitContent(sc: SizeConstraint): SizeConstraint =
   case sc.t
   of MIN_CONTENT, MAX_CONTENT:
-    return SizeConstraint(t: sc.t)
+    return sc
   of STRETCH, FIT_CONTENT:
     return SizeConstraint(t: FIT_CONTENT, u: sc.u)
 
@@ -1133,12 +1125,12 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
 # differs for the root height (TODO: and all heights in quirks mode) in that
 # it uses the lctx height. Therefore we pass percHeight as a separate
 # parameter. (TODO surely there is a better solution to this?)
-proc resolveSizes(lctx: LayoutState, containingWidth,
-    containingHeight: SizeConstraint, percHeight: Option[LayoutUnit],
-    computed: CSSComputedValues): ResolvedSizes =
+proc resolveSizes(lctx: LayoutState; containingWidth,
+    containingHeight: SizeConstraint; percHeight: Option[LayoutUnit];
+    computed: CSSComputedValues; flexItem = false): ResolvedSizes =
   if computed{"position"} == POSITION_ABSOLUTE:
     return lctx.resolveAbsoluteSizes(computed)
-  elif computed{"float"} != FLOAT_NONE:
+  elif computed{"float"} != FLOAT_NONE or flexItem:
     return lctx.resolveFloatSizes(containingWidth, containingHeight,
       percHeight, computed)
   else:
@@ -1159,12 +1151,14 @@ proc append(a: var Strut, b: LayoutUnit) =
 func sum(a: Strut): LayoutUnit =
   return a.pos + a.neg
 
-proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
-  space: AvailableSpace, computed: CSSComputedValues, offset,
-  bfcOffset: Offset): RootInlineFragment
-proc layoutBlock(bctx: var BlockContext, box: BlockBox,
-  builder: BlockBoxBuilder, sizes: ResolvedSizes)
-proc layoutTable(lctx: LayoutState, table: BlockBox, builder: TableBoxBuilder,
+proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
+  space: AvailableSpace; computed: CSSComputedValues;
+  offset, bfcOffset: Offset): RootInlineFragment
+proc layoutBlock(bctx: var BlockContext; box: BlockBox;
+  builder: BlockBoxBuilder; sizes: ResolvedSizes)
+proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
+  sizes: ResolvedSizes)
+proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
 
 # Note: padding must still be applied after this.
@@ -1335,14 +1329,11 @@ func establishesBFC(computed: CSSComputedValues): bool =
   return computed{"float"} != FLOAT_NONE or
     computed{"position"} == POSITION_ABSOLUTE or
     computed{"display"} in {DISPLAY_INLINE_BLOCK, DISPLAY_FLOW_ROOT} +
-      InternalTableBox
-    #TODO overflow, contain, flex, grid, multicol, column-span
+      InternalTableBox + {DISPLAY_FLEX, DISPLAY_INLINE_FLEX}
+    #TODO overflow, contain, grid, multicol, column-span
 
-proc layoutFlow(bctx: var BlockContext, box: BlockBox, builder: BlockBoxBuilder,
+proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     sizes: ResolvedSizes) =
-  let isBfc = builder.computed.establishesBFC()
-  if not isBfc:
-    bctx.marginTodo.append(sizes.margin.top)
   if builder.canFlushMargins(sizes):
     bctx.flushMargins(box)
     bctx.positionFloats()
@@ -1354,8 +1345,6 @@ proc layoutFlow(bctx: var BlockContext, box: BlockBox, builder: BlockBoxBuilder,
   else:
     # Builder only contains block boxes.
     bctx.layoutBlock(box, builder, sizes)
-  if not isBfc:
-    bctx.marginTodo.append(sizes.margin.bottom)
 
 func toperc100(sc: SizeConstraint): Option[LayoutUnit] =
   if sc.isDefinite():
@@ -1381,6 +1370,8 @@ proc addInlineBlock(ictx: var InlineContext, state: var InlineState,
     bctx.layoutFlow(box, builder, sizes)
   of DISPLAY_INLINE_TABLE:
     lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
+  of DISPLAY_INLINE_FLEX:
+    bctx.layoutFlex(box, builder, sizes)
   else:
     assert false, $builder.computed{"display"}
   bctx.positionFloats()
@@ -1451,7 +1442,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     of DISPLAY_INLINE:
       let child = ictx.layoutInline(InlineBoxBuilder(child))
       state.fragment.children.add(child)
-    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
+    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_FLEX:
       # Note: we do not need a separate inline fragment here, because the tree
       # generator already does an iflush() before adding inline blocks.
       let w = fitContent(ictx.space.w)
@@ -1519,28 +1510,9 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
   root.xminwidth = ictx.minwidth
   return root
 
-proc buildMarker(builder: MarkerBoxBuilder, space: AvailableSpace,
-    lctx: LayoutState): RootInlineFragment =
-  let space = AvailableSpace(
-    w: fitContent(space.w),
-    h: space.h
-  )
-  #TODO we should put markers right before the first atom of the parent
-  # list item or something...
-  var bctx = BlockContext(lctx: lctx)
-  let children = @[BoxBuilder(builder)]
-  return bctx.layoutRootInline(children, space, builder.computed, Offset(),
-    Offset())
-
 # Build a block box without establishing a new block formatting context.
-proc buildBlock(bctx: var BlockContext, builder: BlockBoxBuilder,
-    space: AvailableSpace, offset: Offset): BlockBox =
-  let lctx = bctx.lctx
-  let availableWidth = space.w
-  let availableHeight = maxContent() #TODO fit-content when clip
-  let percHeight = space.h.toPercSize()
-  let sizes = lctx.resolveSizes(availableWidth, availableHeight, percHeight,
-    builder.computed)
+proc buildBlock(bctx: var BlockContext; builder: BlockBoxBuilder;
+    sizes: ResolvedSizes; offset: Offset): BlockBox =
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
@@ -1550,14 +1522,8 @@ proc buildBlock(bctx: var BlockContext, builder: BlockBoxBuilder,
   bctx.layoutFlow(box, builder, sizes)
   return box
 
-proc buildListItem(bctx: var BlockContext, builder: ListItemBoxBuilder,
-    space: AvailableSpace, offset: Offset): ListItemBox =
-  let availableWidth = stretch(space.w)
-  let availableHeight = maxContent() #TODO fit-content when clip
-  let percHeight = space.h.toPercSize()
-  let lctx = bctx.lctx
-  let sizes = lctx.resolveSizes(availableWidth, availableHeight, percHeight,
-    builder.computed)
+proc buildListItem(bctx: var BlockContext; builder: ListItemBoxBuilder;
+    sizes: ResolvedSizes; offset: Offset): ListItemBox =
   let box = ListItemBox(
     computed: builder.computed,
     node: builder.node,
@@ -1565,31 +1531,25 @@ proc buildListItem(bctx: var BlockContext, builder: ListItemBoxBuilder,
     margin: sizes.margin
   )
   if builder.marker != nil:
-    box.marker = buildMarker(builder.marker, sizes.space, lctx)
+    #TODO we should put markers right before the first atom of the parent
+    # list item or something...
+    var bctx = BlockContext(lctx: bctx.lctx)
+    let children = @[BoxBuilder(builder.marker)]
+    let space = AvailableSpace(w: fitContent(sizes.space.w), h: sizes.space.h)
+    box.marker = bctx.layoutRootInline(children, space, builder.marker.computed,
+      Offset(), Offset())
   bctx.layoutFlow(box, builder.content, sizes)
   return box
 
-proc buildTable(bctx: var BlockContext, builder: TableBoxBuilder,
-    space: AvailableSpace, offset: Offset): BlockBox =
-  let availableWidth = fitContent(space.w)
-  let availableHeight = maxContent() #TODO fit-content when clip
-  let percHeight = space.h.toPercSize()
-  let lctx = bctx.lctx
-  let sizes = lctx.resolveSizes(availableWidth, availableHeight, percHeight,
-    builder.computed)
+proc buildTable(bctx: var BlockContext; builder: TableBoxBuilder;
+    sizes: ResolvedSizes; offset: Offset): BlockBox =
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
     offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
     margin: sizes.margin
   )
-  let isBfc = builder.computed.establishesBFC()
-  if not isBfc:
-    bctx.marginTodo.append(sizes.margin.top)
-  bctx.flushMargins(box)
-  lctx.layoutTable(box, builder, sizes)
-  if not isBfc:
-    bctx.marginTodo.append(sizes.margin.bottom)
+  bctx.lctx.layoutTable(box, builder, sizes)
   return box
 
 proc positionAbsolute(lctx: LayoutState, box: BlockBox, margin: RelativeRect) =
@@ -1974,9 +1934,8 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     weight: var float64): seq[int] =
   # Spacing for each column:
   var avail = newSeqUninitialized[int](ctx.cols.len)
-  var i = 0
   var j = 0
-  while i < ctx.cols.len:
+  for i in 0 ..< ctx.cols.len:
     if not ctx.cols[i].wspecified:
       avail[j] = i
       let colw = ctx.cols[i].width
@@ -1990,7 +1949,6 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
     else:
       W -= ctx.cols[i].width
       avail.del(j)
-    inc i
   return avail
 
 func needsRedistribution(ctx: TableContext, computed: CSSComputedValues): bool =
@@ -2121,36 +2079,295 @@ proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
   else:
     discard
 
-# Build an outer block box inside an existing block formatting context.
-proc layoutBlockChild(bctx: var BlockContext, builder: BoxBuilder,
-    space: AvailableSpace, offset: Offset): BlockBox =
-  let child = case builder.computed{"display"}
-  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
-    bctx.buildBlock(BlockBoxBuilder(builder), space, offset)
-  of DISPLAY_LIST_ITEM:
-    bctx.buildListItem(ListItemBoxBuilder(builder), space, offset)
-  of DISPLAY_TABLE:
-    bctx.buildTable(TableBoxBuilder(builder), space, offset)
-  else:
-    assert false, "builder.t is " & $builder.computed{"display"}
-    BlockBox(nil)
-  return child
+proc buildFlex(bctx: var BlockContext; builder: BlockBoxBuilder;
+    sizes: ResolvedSizes; offset: Offset): BlockBox =
+  let box = BlockBox(
+    computed: builder.computed,
+    node: builder.node,
+    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
+    margin: sizes.margin
+  )
+  bctx.layoutFlex(box, builder, sizes)
+  return box
 
-# Establish a new block formatting context and build a block box.
-proc layoutRootBlock(lctx: LayoutState, builder: BoxBuilder,
-    space: AvailableSpace, offset: Offset, marginBottomOut: var LayoutUnit):
-    BlockBox =
+proc layoutFlexChild(lctx: LayoutState; builder: BoxBuilder;
+    sizes: ResolvedSizes): BlockBox =
   var bctx = BlockContext(lctx: lctx)
+  # note: we do not append margins here, since those belong to the flex item,
+  # not its inner BFC.
+  var offset = Offset()
   let box = case builder.computed{"display"}
   of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
-    bctx.buildBlock(BlockBoxBuilder(builder), space, offset)
+    bctx.buildBlock(BlockBoxBuilder(builder), sizes, offset)
   of DISPLAY_LIST_ITEM:
-    bctx.buildListItem(ListItemBoxBuilder(builder), space, offset)
+    bctx.buildListItem(ListItemBoxBuilder(builder), sizes, offset)
   of DISPLAY_TABLE:
-    bctx.buildTable(TableBoxBuilder(builder), space, offset)
+    bctx.buildTable(TableBoxBuilder(builder), sizes, offset)
+  of DISPLAY_FLEX:
+    bctx.buildFlex(BlockBoxBuilder(builder), sizes, offset)
   else:
     assert false, "builder.t is " & $builder.computed{"display"}
     BlockBox(nil)
+  return box
+
+type
+  FlexWeightType = enum
+    fwtGrow, fwtShrink
+
+  FlexPendingItem = object
+    child: BlockBox
+    builder: BoxBuilder
+    weights: array[FlexWeightType, float64]
+    space: AvailableSpace
+    sizes: ResolvedSizes
+
+  FlexMainContext = object
+    offset: Offset
+    totalSize: Size
+    maxSize: Size
+    totalWeight: array[FlexWeightType, float64]
+    lctx: LayoutState
+    pending: seq[FlexPendingItem]
+
+const FlexReverse = {FLEX_DIRECTION_ROW_REVERSE, FLEX_DIRECTION_COLUMN_REVERSE}
+const FlexRow = {FLEX_DIRECTION_ROW, FLEX_DIRECTION_ROW_REVERSE}
+
+proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
+  #TODO actually use flex-basis
+  let lctx = mctx.lctx
+  if sizes.space.w.isDefinite:
+    var diff = sizes.space.w.u - mctx.totalSize.w
+    let wt = if diff > 0: fwtGrow else: fwtShrink
+    var totalWeight = mctx.totalWeight[wt]
+    while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
+        totalWeight > 0:
+      mctx.maxSize.h = 0 # redo maxSize calculation; we only need height here
+      let unit = diff / totalWeight
+      # reset total weight & available diff for the next iteration (if there is one)
+      totalWeight = 0
+      diff = 0
+      for it in mctx.pending.mitems:
+        let builder = it.builder
+        if it.weights[wt] == 0:
+          mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
+          continue
+        var w = it.child.size.w + unit * it.weights[wt]
+        # check for min/max violation
+        let minw = max(it.child.xminwidth, it.sizes.minWidth)
+        if minw > w:
+          # min violation
+          if wt == fwtShrink: # freeze
+            diff += w - minw
+            it.weights[wt] = 0
+          w = minw
+        let maxw = it.sizes.maxWidth
+        if maxw < w:
+          # max violation
+          if wt == fwtGrow: # freeze
+            diff += w - maxw
+            it.weights[wt] = 0
+          w = maxw
+        it.space.w = stretch(w)
+        it.sizes = lctx.resolveSizes(it.space.w, it.space.h,
+          it.space.h.toPercSize(), builder.computed)
+        totalWeight += it.weights[wt]
+        #TODO we should call this only on freeze, and then put another loop to
+        # the end for non-freezed items
+        it.child = lctx.layoutFlexChild(builder, it.sizes)
+        mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
+
+proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
+  let lctx = mctx.lctx
+  if sizes.space.h.isDefinite and mctx.totalSize.h != sizes.space.h.u:
+    var diff = sizes.space.h.u - mctx.totalSize.h
+    let wt = if diff > 0: fwtGrow else: fwtShrink
+    var totalWeight = mctx.totalWeight[wt]
+    while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
+        totalWeight > 0:
+      mctx.maxSize.w = 0 # redo maxSize calculation; we only need height here
+      let unit = diff / totalWeight
+      # reset total weight & available diff for the next iteration (if there is one)
+      totalWeight = 0
+      diff = 0
+      for it in mctx.pending.mitems:
+        let builder = it.builder
+        if it.weights[wt] == 0:
+          mctx.maxSize.w = max(mctx.maxSize.w, it.child.size.w)
+          continue
+        var h = max(it.child.size.h + unit * it.weights[wt], 0)
+        # check for min/max violation
+        let minh = it.sizes.minHeight
+        if minh > h:
+          # min violation
+          if wt == fwtShrink: # freeze
+            diff += h - minh
+            it.weights[wt] = 0
+          h = minh
+        let maxh = it.sizes.maxHeight
+        if maxh < h:
+          # max violation
+          if wt == fwtGrow: # freeze
+            diff += h - maxh
+            it.weights[wt] = 0
+          h = maxh
+        it.space.h = stretch(h)
+        it.sizes = lctx.resolveSizes(it.space.w, it.space.h,
+          it.space.h.toPercSize(), builder.computed)
+        totalWeight += it.weights[wt]
+        it.child = lctx.layoutFlexChild(builder, it.sizes)
+        mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
+
+proc flushRow(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
+    totalMaxSize: var Size) =
+  let lctx = mctx.lctx
+  mctx.redistributeWidth(sizes)
+  let h = stretch(mctx.maxSize.h)
+  var offset = mctx.offset
+  for it in mctx.pending.mitems:
+    if it.child.size.h < mctx.maxSize.h and not it.sizes.space.h.isDefinite:
+      # if the max height is greater than our height, then take max height
+      # instead. (if the box's available height is definite, then this will
+      # change nothing, so we skip it as an optimization.)
+      it.sizes.space.h = h
+      it.child = lctx.layoutFlexChild(it.builder, it.sizes)
+    it.child.offset = Offset(
+      x: it.child.offset.x + offset.x,
+      # margins are added here, since they belong to the flex item.
+      y: it.child.offset.y + offset.y + it.child.margin.top +
+        it.child.margin.bottom
+    )
+    offset.x += it.child.size.w
+    box.nested.add(it.child)
+  totalMaxSize.w = max(totalMaxSize.w, offset.x)
+  mctx = FlexMainContext(
+    lctx: mctx.lctx,
+    offset: Offset(
+      x: mctx.offset.x,
+      y: mctx.offset.y + mctx.maxSize.h
+    )
+  )
+
+proc flushColumn(mctx: var FlexMainContext; box: BlockBox;
+    sizes: ResolvedSizes; totalMaxSize: var Size) =
+  let lctx = mctx.lctx
+  mctx.redistributeHeight(sizes)
+  let w = stretch(mctx.maxSize.w)
+  var offset = mctx.offset
+  for it in mctx.pending.mitems:
+    if it.child.size.w < mctx.maxSize.w and not it.sizes.space.w.isDefinite:
+      # see above.
+      it.sizes.space.w = w
+      it.child = lctx.layoutFlexChild(it.builder, it.sizes)
+    # margins belong to the flex item, and influence its positioning
+    offset.y += it.child.margin.top
+    it.child.offset = Offset(
+      x: it.child.offset.x + offset.x,
+      y: it.child.offset.y + offset.y
+    )
+    offset.y += it.child.margin.bottom
+    offset.y += it.child.size.h
+    box.nested.add(it.child)
+  totalMaxSize.h = max(totalMaxSize.h, offset.y)
+  mctx = FlexMainContext(
+    lctx: lctx,
+    offset: Offset(
+      x: mctx.offset.x + mctx.maxSize.w,
+      y: mctx.offset.y
+    )
+  )
+
+proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
+    sizes: ResolvedSizes) =
+  assert not builder.inlinelayout
+  let lctx = bctx.lctx
+  var i = 0
+  var mctx = FlexMainContext(lctx: lctx)
+  let flexDir = builder.computed{"flex-direction"}
+  let children = if builder.computed{"flex-direction"} in FlexReverse:
+    builder.children.reversed()
+  else:
+    builder.children
+  var totalMaxSize = Size() #TODO find a better name for this
+  let canWrap = box.computed{"flex-wrap"} != FLEX_WRAP_NOWRAP
+  let percHeight = sizes.space.h.toPercSize()
+  while i < children.len:
+    let builder = children[i]
+    let childSizes = lctx.resolveFloatSizes(sizes.space.w, sizes.space.h,
+      percHeight, builder.computed)
+    let child = lctx.layoutFlexChild(builder, childSizes)
+    if flexDir in FlexRow:
+      if canWrap and (sizes.space.w.t == MIN_CONTENT or
+          sizes.space.w.isDefinite and
+          mctx.totalSize.w + child.size.w > sizes.space.w.u):
+        mctx.flushRow(box, sizes, totalMaxSize)
+      mctx.totalSize.w += child.size.w
+    else:
+      if canWrap and (sizes.space.h.t == MIN_CONTENT or
+          sizes.space.h.isDefinite and
+          mctx.totalSize.h + child.size.h > sizes.space.h.u):
+        mctx.flushRow(box, sizes, totalMaxSize)
+      mctx.totalSize.h += child.size.h
+    mctx.maxSize.w = max(mctx.maxSize.w, child.size.w)
+    mctx.maxSize.h = max(mctx.maxSize.h, child.size.h)
+    let grow = builder.computed{"flex-grow"}
+    let shrink = builder.computed{"flex-shrink"}
+    mctx.totalWeight[fwtGrow] += grow
+    mctx.totalWeight[fwtShrink] += shrink
+    mctx.pending.add(FlexPendingItem(
+      child: child,
+      builder: builder,
+      weights: [grow, shrink],
+      space: sizes.space,
+      sizes: childSizes
+    ))
+    inc i # need to increment index here for needsGrow
+  if flexDir in FlexRow:
+    if mctx.pending.len > 0:
+      mctx.flushRow(box, sizes, totalMaxSize)
+    box.applyWidth(sizes, totalMaxSize.w)
+    box.applyHeight(sizes, mctx.offset.y)
+  else:
+    if mctx.pending.len > 0:
+      mctx.flushColumn(box, sizes, totalMaxSize)
+    box.applyWidth(sizes, mctx.offset.x)
+    box.applyHeight(sizes, totalMaxSize.h)
+
+# Build an outer block box inside an existing block formatting context.
+proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
+    space: AvailableSpace; offset: Offset; appendMargins: bool): BlockBox =
+  let availHeight = maxContent() #TODO also fit-content when clip
+  let availWidth = if builder.computed{"display"} == DISPLAY_TABLE:
+    fitContent(space.w)
+  else:
+    space.w
+  let sizes = bctx.lctx.resolveSizes(availWidth, availHeight,
+    space.h.toPercSize(), builder.computed)
+  if appendMargins:
+    # for nested blocks that do not establish their own BFC, and thus take part
+    # in margin collapsing.
+    bctx.marginTodo.append(sizes.margin.top)
+  let box = case builder.computed{"display"}
+  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
+    bctx.buildBlock(BlockBoxBuilder(builder), sizes, offset)
+  of DISPLAY_LIST_ITEM:
+    bctx.buildListItem(ListItemBoxBuilder(builder), sizes, offset)
+  of DISPLAY_TABLE:
+    bctx.buildTable(TableBoxBuilder(builder), sizes, offset)
+  of DISPLAY_FLEX:
+    bctx.buildFlex(BlockBoxBuilder(builder), sizes, offset)
+  else:
+    assert false, "builder.t is " & $builder.computed{"display"}
+    BlockBox(nil)
+  if appendMargins:
+    bctx.marginTodo.append(sizes.margin.bottom)
+  return box
+
+# Establish a new block formatting context and build a block box.
+proc layoutRootBlock(lctx: LayoutState; builder: BoxBuilder;
+    space: AvailableSpace; offset: Offset; marginBottomOut: var LayoutUnit):
+    BlockBox =
+  var bctx = BlockContext(lctx: lctx)
+  let box = bctx.layoutBlockChild(builder, space, offset, appendMargins = false)
   bctx.positionFloats()
   marginBottomOut = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
@@ -2227,7 +2444,8 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
       # of margin todo in bctx2 (margin-bottom) + height.
       dy = child.offset.y - state.offset.y + child.size.h + marginBottomOut
     else:
-      child = bctx.layoutBlockChild(builder, state.space, state.offset)
+      child = bctx.layoutBlockChild(builder, state.space, state.offset,
+        appendMargins = true)
       # delta y is difference between old and new offsets (margin-top),
       # plus height.
       dy = child.offset.y - state.offset.y + child.size.h
@@ -2406,7 +2624,7 @@ proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
     DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
   blockgroup.boxes.add(box)
 
-proc flush(blockgroup: var BlockGroup) {.inline.} =
+proc flush(blockgroup: var BlockGroup) =
   if blockgroup.boxes.len > 0:
     assert blockgroup.parent.computed{"display"} != DISPLAY_INLINE
     let computed = blockgroup.parent.computed.inheritProperties()
@@ -2426,7 +2644,7 @@ func canGenerateAnonymousInline(blockgroup: BlockGroup,
 
 proc newBlockGroup(parent: BlockBoxBuilder): BlockGroup =
   assert parent.computed{"display"} != DISPLAY_INLINE
-  result.parent = parent
+  return BlockGroup(parent: parent)
 
 proc generateTableBox(styledNode: StyledNode, lctx: LayoutState,
   parent: var InnerBlockContext): TableBoxBuilder
@@ -2441,11 +2659,17 @@ proc generateTableCaptionBox(styledNode: StyledNode, lctx: LayoutState,
 proc generateBlockBox(styledNode: StyledNode, lctx: LayoutState,
   marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
   BlockBoxBuilder
+proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
+  parent: ptr InnerBlockContext = nil): BlockBoxBuilder
 proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode)
 
-proc generateBlockBox(pctx: var InnerBlockContext, styledNode: StyledNode,
+proc generateBlockBox(pctx: var InnerBlockContext; styledNode: StyledNode;
     marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
   return generateBlockBox(styledNode, pctx.lctx, marker, addr pctx)
+
+proc generateFlexBox(pctx: var InnerBlockContext; styledNode: StyledNode):
+    BlockBoxBuilder =
+  return generateFlexBox(styledNode, pctx.lctx, addr pctx)
 
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
@@ -2502,14 +2726,18 @@ proc reconstructInlineParents(ctx: var InnerBlockContext): InlineBoxBuilder =
     parent = nbox
   return parent
 
-proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
+proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
   let box = ctx.blockgroup.parent
-
   case styledNode.computed{"display"}
   of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
     ctx.iflush()
     ctx.flush()
     let childbox = ctx.generateBlockBox(styledNode)
+    box.children.add(childbox)
+  of DISPLAY_FLEX:
+    ctx.iflush()
+    ctx.flush()
+    let childbox = ctx.generateFlexBox(styledNode)
     box.children.add(childbox)
   of DISPLAY_LIST_ITEM:
     ctx.flush()
@@ -2528,7 +2756,7 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
     box.children.add(childbox)
   of DISPLAY_INLINE:
     ctx.generateInlineBoxes(styledNode)
-  of DISPLAY_INLINE_BLOCK:
+  of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_FLEX:
     # create a new inline box that we can safely put our inline block into
     ctx.iflush()
     let computed = styledNode.computed.inheritProperties()
@@ -2539,7 +2767,14 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
       ctx.iroot = iparent
     else:
       ctx.iroot = ctx.ibox
-    let childbox = ctx.generateBlockBox(styledNode)
+    var childbox: BoxBuilder
+    if styledNode.computed{"display"} == DISPLAY_INLINE_BLOCK:
+      childbox = ctx.generateBlockBox(styledNode)
+    elif styledNode.computed{"display"} == DISPLAY_INLINE_TABLE:
+      childbox = styledNode.generateTableBox(ctx.lctx, ctx)
+    else:
+      assert styledNode.computed{"display"} == DISPLAY_INLINE_FLEX
+      childbox = ctx.generateFlexBox(styledNode)
     ctx.ibox.children.add(childbox)
     ctx.iflush()
   of DISPLAY_TABLE:
@@ -2584,20 +2819,6 @@ proc generateFromElem(ctx: var InnerBlockContext, styledNode: StyledNode) =
         wrappervals{"display"} = DISPLAY_TABLE_ROW
         ctx.anonRow = TableRowBoxBuilder(computed: wrappervals)
       ctx.anonRow.children.add(childbox)
-  of DISPLAY_INLINE_TABLE:
-    # create a new inline box that we can safely put our inline block into
-    ctx.iflush()
-    let computed = styledNode.computed.inheritProperties()
-    ctx.ibox = InlineBoxBuilder(computed: computed, node: styledNode)
-    if ctx.inlineStack.len > 0:
-      let iparent = ctx.reconstructInlineParents()
-      iparent.children.add(ctx.ibox)
-      ctx.iroot = iparent
-    else:
-      ctx.iroot = ctx.ibox
-    let childbox = styledNode.generateTableBox(ctx.lctx, ctx)
-    ctx.ibox.children.add(childbox)
-    ctx.iflush()
   of DISPLAY_TABLE_CAPTION:
     ctx.bflush()
     ctx.flushTableRow()
@@ -2703,19 +2924,20 @@ proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
 
 proc newInnerBlockContext(styledNode: StyledNode, box: BlockBoxBuilder,
     lctx: LayoutState, parent: ptr InnerBlockContext): InnerBlockContext =
-  result = InnerBlockContext(
+  var ctx = InnerBlockContext(
     styledNode: styledNode,
     blockgroup: newBlockGroup(box),
     lctx: lctx,
     parent: parent
   )
   if parent != nil:
-    result.listItemCounter = parent[].listItemCounter
-    result.quoteLevel = parent[].quoteLevel
+    ctx.listItemCounter = parent[].listItemCounter
+    ctx.quoteLevel = parent[].quoteLevel
   for reset in styledNode.computed{"counter-reset"}:
     if reset.name == "list-item":
-      result.listItemCounter = reset.num
-      result.listItemReset = true
+      ctx.listItemCounter = reset.num
+      ctx.listItemReset = true
+  return ctx
 
 proc generateInnerBlockBox(ctx: var InnerBlockContext) =
   let box = ctx.blockgroup.parent
@@ -2732,25 +2954,21 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
       ctx.generateReplacement(child, ctx.styledNode)
   ctx.iflush()
 
-proc generateBlockBox(styledNode: StyledNode, lctx: LayoutState,
-    marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
+proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
+    marker = none(MarkerBoxBuilder); parent: ptr InnerBlockContext = nil):
     BlockBoxBuilder =
   let box = BlockBoxBuilder(computed: styledNode.computed)
   box.node = styledNode
   var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
-
   if marker.isSome:
     ctx.ibox = marker.get
     ctx.iflush()
-
   ctx.generateInnerBlockBox()
-
   # Flush anonymous tables here, to avoid setting inline layout with tables.
   ctx.flushTableRow()
   ctx.flushTable()
   # (flush here, because why not)
   ctx.flushInherit()
-
   # Avoid unnecessary anonymous block boxes. This also helps set our layout to
   # inline even if no inner anonymous block was generated.
   if box.children.len == 0:
@@ -2758,6 +2976,42 @@ proc generateBlockBox(styledNode: StyledNode, lctx: LayoutState,
     box.inlinelayout = true
     ctx.blockgroup.boxes.setLen(0)
   ctx.blockgroup.flush()
+  return box
+
+proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
+    parent: ptr InnerBlockContext = nil): BlockBoxBuilder =
+  let box = BlockBoxBuilder(computed: styledNode.computed, node: styledNode)
+  var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
+  assert box.computed{"display"} != DISPLAY_INLINE
+  for child in ctx.styledNode.children:
+    case child.t
+    of STYLED_ELEMENT:
+      ctx.iflush()
+      let display = child.computed{"display"}.blockify()
+      if display != child.computed{"display"}:
+        #TODO this is a hack.
+        # it exists because passing down a different `computed' would need
+        # changes in way too many procedures, which I am not ready to make yet.
+        let newChild = StyledNode()
+        newChild[] = child[]
+        newChild.computed = child.computed.copyProperties()
+        newChild.computed{"display"} = display
+        ctx.generateFromElem(newChild)
+      else:
+        ctx.generateFromElem(child)
+    of STYLED_TEXT:
+      if ctx.blockgroup.canGenerateAnonymousInline(box.computed, child.text):
+        ctx.generateAnonymousInlineText(child.text, ctx.styledNode)
+    of STYLED_REPLACEMENT:
+      ctx.generateReplacement(child, ctx.styledNode)
+  ctx.iflush()
+  # Flush anonymous tables here, to avoid setting inline layout with tables.
+  ctx.flushTableRow()
+  ctx.flushTable()
+  # (flush here, because why not)
+  ctx.flushInherit()
+  ctx.blockgroup.flush()
+  assert not box.inlinelayout
   return box
 
 proc generateTableCellBox(styledNode: StyledNode, lctx: LayoutState,

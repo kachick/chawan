@@ -58,6 +58,7 @@ Currently implemented features are:
 	* flow layout is supported (now with floats!)
 	* table layout is supported, except for fixed tables
 	* the box model is mostly implemented, except for borders
+	* flexbox layout is supported (some parts are still a WIP)
 * forms
 * incremental loading of various kinds of documents (plain text, HTML, etc.)
 * JavaScript based navigation
@@ -170,7 +171,7 @@ and ANSI text, use `plaintext, pre`.
 ### Why does `$WEBSITE` look awful?
 
 Usually, this is because it uses some CSS features that are not yet implemented
-in Chawan. The most common offenders are flexbox, grid, and CSS variables.
+in Chawan. The most common offenders are grid and CSS variables.
 
 There are three ways of dealing with this:
 

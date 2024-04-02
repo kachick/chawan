@@ -23,6 +23,7 @@ type
     cstPadding = "padding"
     cstBackground = "background"
     cstListStyle = "list-style"
+    cstFlex = "flex"
 
   CSSUnit* = enum
     UNIT_CM, UNIT_MM, UNIT_IN, UNIT_PX, UNIT_PT, UNIT_PC, UNIT_EM, UNIT_EX,
@@ -79,6 +80,11 @@ type
     cptClear = "clear"
     cptTextTransform = "text-transform"
     cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
+    cptFlexDirection = "flex-direction"
+    cptFlexWrap = "flex-wrap"
+    cptFlexGrow = "flex-grow"
+    cptFlexShrink = "flex-shrink"
+    cptFlexBasis = "flex-basis"
 
   CSSValueType* = enum
     cvtNone = ""
@@ -108,6 +114,9 @@ type
     cvtClear = "clear"
     cvtTextTransform = "texttransform"
     cvtBgcolorIsCanvas = "bgcoloriscanvas"
+    cvtFlexDirection = "flexdirection"
+    cvtFlexWrap = "flexwrap"
+    cvtNumber = "number"
 
   CSSGlobalValueType* = enum
     cvtNoglobal, cvtInitial, cvtInherit, cvtRevert, cvtUnset
@@ -118,7 +127,7 @@ type
     DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
     DISPLAY_TABLE_FOOTER_GROUP, DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_ROW,
     DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION,
-    DISPLAY_FLOW_ROOT
+    DISPLAY_FLOW_ROOT, DISPLAY_FLEX, DISPLAY_INLINE_FLEX
 
   CSSWhitespace* = enum
     WHITESPACE_NORMAL, WHITESPACE_NOWRAP, WHITESPACE_PRE, WHITESPACE_PRE_LINE,
@@ -193,15 +202,28 @@ type
     TEXT_TRANSFORM_LOWERCASE, TEXT_TRANSFORM_FULL_WIDTH,
     TEXT_TRANSFORM_FULL_SIZE_KANA, TEXT_TRANSFORM_CHA_HALF_WIDTH
 
-const RowGroupBox* = {DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
-                      DISPLAY_TABLE_FOOTER_GROUP}
-const ProperTableChild* = {DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN,
-                           DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_CAPTION} +
-                           RowGroupBox
-const ProperTableRowParent* = {DISPLAY_TABLE, DISPLAY_INLINE_TABLE} + RowGroupBox
-const InternalTableBox* = {DISPLAY_TABLE_CELL, DISPLAY_TABLE_ROW,
-                           DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_COLUMN_GROUP} +
-                           RowGroupBox
+  CSSFlexDirection* = enum
+    FLEX_DIRECTION_ROW, FLEX_DIRECTION_ROW_REVERSE, FLEX_DIRECTION_COLUMN,
+    FLEX_DIRECTION_COLUMN_REVERSE
+
+  CSSFlexWrap* = enum
+    FLEX_WRAP_NOWRAP, FLEX_WRAP_WRAP, FLEX_WRAP_WRAP_REVERSE
+
+const RowGroupBox* = {
+  DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
+  DISPLAY_TABLE_FOOTER_GROUP
+}
+const ProperTableChild* = RowGroupBox + {
+  DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN, DISPLAY_TABLE_COLUMN_GROUP,
+  DISPLAY_TABLE_CAPTION
+}
+const ProperTableRowParent* = RowGroupBox + {
+  DISPLAY_TABLE, DISPLAY_INLINE_TABLE
+}
+const InternalTableBox* = RowGroupBox + {
+  DISPLAY_TABLE_CELL, DISPLAY_TABLE_ROW, DISPLAY_TABLE_COLUMN,
+  DISPLAY_TABLE_COLUMN_GROUP
+}
 const TabularContainer* = {DISPLAY_TABLE_ROW} + ProperTableRowParent
 
 type
@@ -245,6 +267,8 @@ type
       whitespace*: CSSWhitespace
     of cvtInteger:
       integer*: int
+    of cvtNumber:
+      number*: float64
     of cvtTextDecoration:
       textdecoration*: set[CSSTextDecoration]
     of cvtWordBreak:
@@ -281,6 +305,10 @@ type
       texttransform*: CSSTextTransform
     of cvtBgcolorIsCanvas:
       bgcoloriscanvas*: bool
+    of cvtFlexDirection:
+      flexdirection*: CSSFlexDirection
+    of cvtFlexWrap:
+      flexwrap*: CSSFlexWrap
     of cvtNone: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -303,13 +331,12 @@ type
     importantProperties: array[CSSOrigin, CSSComputedEntries]
     preshints*: CSSComputedValues
 
-const ShorthandNames = {
-  "all": cstAll,
-  "margin": cstMargin,
-  "padding": cstPadding,
-  "background": cstBackground,
-  "list-style": cstListStyle
-}.toTable()
+const ShorthandNames = block:
+  var tab = initTable[string, CSSShorthandType]()
+  for t in CSSShorthandType:
+    if $t != "":
+      tab[$t] = t
+  tab
 
 const PropertyNames = block:
   var tab = initTable[string, CSSPropertyType]()
@@ -318,7 +345,7 @@ const PropertyNames = block:
       tab[$t] = t
   tab
 
-const ValueTypes* = [
+const ValueTypes = [
   cptNone: cvtNone,
   cptColor: cvtColor,
   cptMarginTop: cvtLength,
@@ -367,7 +394,12 @@ const ValueTypes* = [
   cptBoxSizing: cvtBoxSizing,
   cptClear: cvtClear,
   cptTextTransform: cvtTextTransform,
-  cptBgcolorIsCanvas: cvtBgcolorIsCanvas
+  cptBgcolorIsCanvas: cvtBgcolorIsCanvas,
+  cptFlexDirection: cvtFlexDirection,
+  cptFlexWrap: cvtFlexWrap,
+  cptFlexGrow: cvtNumber,
+  cptFlexShrink: cvtNumber,
+  cptFlexBasis: cvtLength
 ]
 
 const InheritedProperties = {
@@ -474,6 +506,22 @@ func px*(l: CSSLength, window: WindowAttributes, p: LayoutUnit): LayoutUnit
     toLayoutUnit(min(window.width_px, window.width_px) / 100 * l.num)
   of UNIT_VMAX:
     toLayoutUnit(max(window.width_px, window.width_px) / 100 * l.num)
+
+func blockify*(display: CSSDisplay): CSSDisplay =
+  case display
+  of DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM, DISPLAY_NONE,
+      DISPLAY_FLOW_ROOT, DISPLAY_FLEX:
+     #TODO grid
+    return display
+  of DISPLAY_INLINE, DISPLAY_INLINE_BLOCK, DISPLAY_TABLE_ROW,
+      DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_COLUMN,
+      DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION,
+      DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP:
+    return DISPLAY_BLOCK
+  of DISPLAY_INLINE_TABLE:
+    return DISPLAY_TABLE
+  of DISPLAY_INLINE_FLEX:
+    return DISPLAY_FLEX
 
 const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toRunes()
 const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toRunes()
@@ -710,9 +758,11 @@ func cssColor*(val: CSSComponentValue): Opt[CellColor] =
       return parseANSI(f.value)
   return err()
 
-func isToken(cval: CSSComponentValue): bool {.inline.} = cval of CSSToken
+func isToken(cval: CSSComponentValue): bool {.inline.} =
+  cval of CSSToken
 
-func getToken(cval: CSSComponentValue): CSSToken = (CSSToken)cval
+func getToken(cval: CSSComponentValue): CSSToken {.inline.} =
+  CSSToken(cval)
 
 func cssIdent[T](map: static openArray[(string, T)], cval: CSSComponentValue):
     Opt[T] =
@@ -869,6 +919,8 @@ func cssDisplay(cval: CSSComponentValue): Opt[CSSDisplay] =
     "table-footer-group": DISPLAY_TABLE_FOOTER_GROUP,
     "table-caption": DISPLAY_TABLE_CAPTION,
     "flow-root": DISPLAY_FLOW_ROOT,
+    "flex": DISPLAY_FLEX,
+    "inline-flex": DISPLAY_INLINE_FLEX,
     "none": DISPLAY_NONE
   }
   return cssIdent(DisplayMap, cval)
@@ -1169,6 +1221,31 @@ func cssTextTransform(cval: CSSComponentValue): Opt[CSSTextTransform] =
   }
   return cssIdent(TextTransformMap, cval)
 
+func cssFlexDirection(cval: CSSComponentValue): Opt[CSSFlexDirection] =
+  const FlexDirectionMap = {
+    "row": FLEX_DIRECTION_ROW,
+    "row-reverse": FLEX_DIRECTION_ROW_REVERSE,
+    "column": FLEX_DIRECTION_COLUMN,
+    "column-reverse": FLEX_DIRECTION_COLUMN_REVERSE,
+  }
+  return cssIdent(FlexDirectionMap, cval)
+
+func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
+  if isToken(cval):
+    let tok = getToken(cval)
+    if tok.tokenType == CSS_NUMBER_TOKEN:
+      if not positive or tok.nvalue >= 0:
+        return ok(tok.nvalue)
+  return err()
+
+func cssFlexWrap(cval: CSSComponentValue): Opt[CSSFlexWrap] =
+  const FlexWrapMap = {
+    "nowrap": FLEX_WRAP_NOWRAP,
+    "wrap": FLEX_WRAP_WRAP,
+    "wrap-reverse": FLEX_WRAP_WRAP_REVERSE
+  }
+  return cssIdent(FlexWrapMap, cval)
+
 proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     vtype: CSSValueType, ptype: CSSPropertyType): Err[void] =
   var i = 0
@@ -1192,6 +1269,7 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop,
        cptPaddingBottom:
       val.length = ?cssLength(cval, has_auto = false)
+    #TODO content for flex-basis
     else:
       val.length = ?cssLength(cval)
   of cvtFontStyle:
@@ -1253,6 +1331,13 @@ proc getValueFromDecl(val: CSSComputedValue, d: CSSDeclaration,
     val.texttransform = ?cssTextTransform(cval)
   of cvtBgcolorIsCanvas:
     return err() # internal value
+  of cvtFlexDirection:
+    val.flexdirection = ?cssFlexDirection(cval)
+  of cvtFlexWrap:
+    val.flexwrap = ?cssFlexWrap(cval)
+  of cvtNumber:
+    const NeedsPositive = {cptFlexGrow}
+    val.number = ?cssNumber(cval, ptype in NeedsPositive)
   of cvtNone:
     discard
   return ok()
@@ -1264,10 +1349,9 @@ func getInitialColor(t: CSSPropertyType): CellColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of cptWidth, cptHeight, cptWordSpacing,
-     cptLineHeight, cptLeft, cptRight, cptTop,
-     cptBottom, cptMaxWidth, cptMaxHeight,
-     cptMinWidth, cptMinHeight:
+  of cptWidth, cptHeight, cptWordSpacing, cptLineHeight, cptLeft, cptRight,
+      cptTop, cptBottom, cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight,
+      cptFlexBasis:
     return CSSLengthAuto
   else:
     return CSSLength(auto: false, unit: UNIT_PX, num: 0)
@@ -1280,6 +1364,11 @@ func getInitialInteger(t: CSSPropertyType): int =
     return 400 # normal
   else:
     return 0
+
+func getInitialNumber(t: CSSPropertyType): float64 =
+  if t == cptFlexShrink:
+    return 1
+  return 0
 
 func calcInitial(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
@@ -1297,6 +1386,8 @@ func calcInitial(t: CSSPropertyType): CSSComputedValue =
     nv = CSSComputedValue(v: v, integer: getInitialInteger(t))
   of cvtQuotes:
     nv = CSSComputedValue(v: v, quotes: CSSQuotes(auto: true))
+  of cvtNumber:
+    nv = CSSComputedValue(v: v, number: getInitialNumber(t))
   else:
     nv = CSSComputedValue(v: v)
   return nv
@@ -1421,6 +1512,8 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
     var valid = true
     if global == cvtNoglobal:
       for tok in d.value:
+        if tok == CSS_WHITESPACE_TOKEN:
+          continue
         if (let r = cssListStylePosition(tok); r.isOk):
           positionVal = CSSComputedValue(
             v: cvtListStylePosition,
@@ -1438,6 +1531,42 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
     if valid:
       res.add((cptListStylePosition, positionVal, global))
       res.add((cptListStyleType, typeVal, global))
+  of cstFlex:
+    let global = cssGlobal(d)
+    if global == cvtNoglobal:
+      var i = 0
+      d.value.skipWhitespace(i)
+      if i >= d.value.len:
+        return err()
+      if (let r = cssNumber(d.value[i], positive = true); r.isSome):
+        # flex-grow
+        let val = CSSComputedValue(v: cvtNumber, number: r.get)
+        res.add((cptFlexGrow, val, global))
+        d.value.skipWhitespace(i)
+        if i < d.value.len:
+          if not d.value[i].isToken:
+            return err()
+          if (let r = cssNumber(d.value[i], positive = true); r.isSome):
+            # flex-shrink
+            let val = CSSComputedValue(v: cvtNumber, number: r.get)
+            res.add((cptFlexShrink, val, global))
+            d.value.skipWhitespace(i)
+      if res.len < 1: # flex-grow omitted, default to 1
+        let val = CSSComputedValue(v: cvtNumber, number: 1)
+        res.add((cptFlexGrow, val, global))
+      if res.len < 2: # flex-shrink omitted, default to 1
+        let val = CSSComputedValue(v: cvtNumber, number: 1)
+        res.add((cptFlexShrink, val, global))
+      if i < d.value.len:
+        # flex-basis
+        let val = CSSComputedValue(v: cvtLength, length: ?cssLength(d.value[i]))
+        res.add((cptFlexBasis, val, global))
+      else: # omitted, default to 0px
+        let val = CSSComputedValue(
+          v: cvtLength,
+          length: CSSLength(unit: UNIT_PX, num: 0)
+        )
+        res.add((cptFlexGrow, val, global))
   return ok()
 
 proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
@@ -1570,16 +1699,7 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder):
       else:
         result[prop] = getDefault(prop)
   if result{"float"} != FLOAT_NONE:
-    case result{"display"}
-    of DISPLAY_BLOCK, DISPLAY_TABLE, DISPLAY_LIST_ITEM, DISPLAY_NONE,
-        DISPLAY_FLOW_ROOT:
-       #TODO flex, grid
-      discard
-      {.linearScanEnd.}
-    of DISPLAY_INLINE, DISPLAY_INLINE_BLOCK, DISPLAY_TABLE_ROW,
-        DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_COLUMN,
-        DISPLAY_TABLE_COLUMN_GROUP, DISPLAY_TABLE_CELL, DISPLAY_TABLE_CAPTION,
-        DISPLAY_TABLE_HEADER_GROUP, DISPLAY_TABLE_FOOTER_GROUP:
-      result{"display"} = DISPLAY_BLOCK
-    of DISPLAY_INLINE_TABLE:
-      result{"display"} = DISPLAY_TABLE
+    #TODO it may be better to handle this in layout
+    let display = result{"display"}.blockify()
+    if display != result{"display"}:
+      result{"display"} = display

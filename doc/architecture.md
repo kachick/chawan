@@ -291,8 +291,8 @@ It has some problems:
 
 * CSS was designed for pixel-based displays, not for character-based ones. So we
   have to round a lot, and sometimes this goes wrong.
-* In the past years, websites have finally started using flexbox and grid, and
-  we have neither, so things look very ugly.
+* In the past years, websites have finally started using grid, and we don't have
+  it, so those websites look very ugly.
 * Even what we do have has plenty of bugs. (Sad.)
 * It's slow on large documents, because we don't have partial layouting
   capabilities.

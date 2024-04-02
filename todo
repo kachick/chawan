@@ -67,13 +67,17 @@ layout engine:
 	  where w3m's space distribution algorithm does not work really well :/
 - do not break inline boxes with out-of-flow block boxes (float, absolute, etc.)
 	* this seems hard to fix properly :(
+	* reminder: this does *not* apply to flexbox; in fact it has the inverse
+	  problem AFAICT.
 - table layout: include caption in width calculation
+- flexbox: flex-basis, align-self, align-items, justify-content, proper margin
+  handling
 - details element
 - overflow
 - incremental layout & layout caching
 	* first for tree generation, then for layout.
 - iframe
-- writing-mode, flexbox, grid, ruby, ... (i.e. cool new stuff)
+- writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
 - sixel encoding (eventually also kitty) -> actually display them :P
 - more formats (apng, gif: write own decoders, jpeg: use libjpeg, webp: ?)
