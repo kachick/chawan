@@ -104,10 +104,10 @@ following steps:
   rewind the source.
 
 The loader process distinguishes between clients (i.e the main process or
-buffers) through client keys. Note that this does not defend against rogue
-clients; the key comparison is susceptible to timing attacks. (TODO: it should
-not be.) It does however help us block further requests from buffers that have
-been discarded by the pager.
+buffers) through client keys. In theory this should help against rogue clients,
+though in practice it is still trivial to crash the loader as a client. It also
+helps us block further requests from buffers that have been discarded by the
+pager, but still haven't found out yet that their life time has ended.
 
 ### Buffer
 

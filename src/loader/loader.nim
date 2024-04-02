@@ -613,6 +613,18 @@ proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientData;
       output.registered = true
       ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
 
+proc equalsConstantTime(a, b: ClientKey): bool =
+  static:
+    doAssert a.len == b.len
+  {.push boundChecks:off, overflowChecks:off.}
+  var i {.volatile.} = 0
+  var res {.volatile.} = 0u8
+  while i < a.len:
+    res = res or (a[i] xor b[i])
+    inc i
+  {.pop.}
+  return res == 0
+
 proc acceptConnection(ctx: LoaderContext) =
   let stream = ctx.ssock.acceptSocketStream()
   try:
@@ -626,7 +638,7 @@ proc acceptConnection(ctx: LoaderContext) =
         stream.sclose()
         return
       let client = ctx.clientData[myPid]
-      if client.key != key:
+      if not client.key.equalsConstantTime(key):
         # ditto
         stream.sclose()
         return
