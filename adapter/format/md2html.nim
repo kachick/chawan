@@ -176,6 +176,8 @@ proc parseInline(line: openArray[char]) =
       append "<!--"
       i += 3
       state.incl(isComment)
+    elif c == '\n' and i >= 2 and line[i - 1] == ' ' and line[i - 2] == ' ':
+      append "<BR>"
     else:
       append c
     inc i
