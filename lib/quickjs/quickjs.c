@@ -1702,7 +1702,7 @@ static size_t js_def_malloc_usable_size(const void *ptr)
     return malloc_size(ptr);
 #elif defined(_WIN32)
     return _msize((void *)ptr);
-#elif defined(EMSCRIPTEN)
+#elif defined(EMSCRIPTEN) || defined(__OpenBSD__)
     return 0;
 #elif defined(__linux__)
     return malloc_usable_size((void *)ptr);
