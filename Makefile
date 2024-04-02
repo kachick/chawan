@@ -26,6 +26,7 @@ OUTDIR_TARGET = $(OUTDIR)/$(TARGET)
 OUTDIR_BIN = $(OUTDIR_TARGET)/bin
 OUTDIR_LIBEXEC = $(OUTDIR_TARGET)/libexec/chawan
 OUTDIR_CGI_BIN = $(OUTDIR_LIBEXEC)/cgi-bin
+OUTDIR_MAN = $(OUTDIR_TARGET)/share/man
 
 # Nim compiler flags
 ifeq ($(TARGET),debug)
@@ -107,19 +108,19 @@ $(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.nim
 		-o:"$(OUTDIR_LIBEXEC)/gmi2html" adapter/format/gmi2html.nim
 
 $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
-	@mkdir -p $(OUTDIR_CGI_BIN)
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
 $(OUTDIR_CGI_BIN)/man: adapter/protocol/man.nim $(QJSOBJ)/libregexp.o \
 		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o src/js/regex.nim \
 		src/bindings/libregexp.nim src/types/opt.nim src/utils/twtstr.nim
-	@mkdir -p $(OUTDIR_CGI_BIN)
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/man" \
 		--passL:"$(QJSOBJ)/libregexp.o $(QJSOBJ)/cutils.o $(QJSOBJ)/libunicode.o" \
 		-o:"$(OUTDIR_CGI_BIN)/man" adapter/protocol/man.nim
 
 $(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
-	@mkdir -p $(OUTDIR_CGI_BIN)
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	cp adapter/protocol/spartan $(OUTDIR_CGI_BIN)
 
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
@@ -215,11 +216,15 @@ clean:
 	rm -rf "$(QJSOBJ)"
 	rm -f lib/libquickjs.a
 
-.PHONY: manpage
-manpage: $(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
+MANPAGES = $(OBJDIR)/man/cha.1 $(OBJDIR)/man/mancha.1 \
+	$(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 	$(OBJDIR)/man/cha-mime.types.5 $(OBJDIR)/man/cha-localcgi.5 \
-	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5 \
-	$(OBJDIR)/man/cha.1 $(OBJDIR)/man/mancha.1
+	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5
+
+.PHONY: manpage
+manpage: $(MANPAGES)
+	mkdir -p "$(OUTDIR_MAN)"
+	for f in $(MANPAGES); do cp "$$f" "$(OUTDIR_MAN)"; done
 
 .PHONY: install
 install:
@@ -244,17 +249,17 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
-	if test -d "$(OBJDIR)/man"; then \
+	if test -d "$(OUTDIR_MAN)"; then \
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"; \
-	install -m644 "$(OBJDIR)/man/cha-config.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OBJDIR)/man/cha-mailcap.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OBJDIR)/man/cha-mime.types.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OBJDIR)/man/cha-localcgi.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OBJDIR)/man/cha-urimethodmap.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OBJDIR)/man/cha-protocols.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OBJDIR)/man/cha.1" "$(DESTDIR)$(MANPREFIX1)"; \
-	install -m644 "$(OBJDIR)/man/mancha.1" "$(DESTDIR)$(MANPREFIX1)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-config.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-mailcap.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-mime.types.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-localcgi.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-urimethodmap.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-protocols.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha.1" "$(DESTDIR)$(MANPREFIX1)"; \
+	install -m644 "$(OUTDIR_MAN)/mancha.1" "$(DESTDIR)$(MANPREFIX1)"; \
 	fi
 
 .PHONY: uninstall
