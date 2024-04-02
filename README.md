@@ -19,21 +19,24 @@ supported yet.)
 1. Clone the Chawan repository:
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 1.6.14 or newer, ideally 2.0.0. Older versions will
-	  not work. (You can check your Nim compiler's version using `nim -v`.)
+	* Please use 1.6.14 or newer, ideally 2.0.2. Versions older than 1.6.14
+	  will not work. (You can check your Nim compiler's version using
+	  `nim -v`.)
 3. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
 	* zlib: <https://zlib.net/>
-	* pkg-config, pkgconf, or similar (must be found as "pkg-config"
-	  in your `$PATH`)
-	* If you are using a system where the default make program is not
-          GNU make (e.g. BSD), install gmake and use that in the following
-	  steps.
+	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
+	  `$PATH`)
+	* If you are using a system where the default make program is not GNU
+	  make (e.g. BSD), install gmake and use that in the following steps.
+	* Optional: a termcap library; e.g. ncurses comes with one.
+	* TLDR for Debian:
+	  `apt install libcurl4-openssl-dev zlib1g-dev pkg-config make ncurses-base`
 4. Download parts of Chawan found in other repositories: `make submodule`
 5. Run `make`. (By default, this will build the whole project in release mode;
    for details, see [doc/build.md](doc/build.md).)
-6. If you want manpages, run `make manpage`. (This requires pandoc to be
-   installed.)
+6. If you want manpages, run `make manpage`. (This requires
+   [pandoc](https://pandoc.org).)
 7. Finally, install using `make install` (e.g. `sudo make install`).
 
 Then, try:
@@ -65,6 +68,7 @@ Currently implemented features are:
 * supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
 * can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
   [urimethodmap](doc/urimethodmap.md) and [mailcap](doc/mailcap.md)
+* markdown viewer
 * man page viewer (like w3mman)
 * mouse support
 
