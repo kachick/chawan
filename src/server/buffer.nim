@@ -904,7 +904,7 @@ const bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
 
 proc onload(buffer: Buffer)
 
-when defined(freebsd):
+when defined(freebsd) or defined(openbsd):
   # necessary for an ugly hack we will do later
   import std/kqueue
 
@@ -936,9 +936,10 @@ proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
     # Closing seems to suffice here.
     when not bsdPlatform:
       buffer.selector.close()
-    when defined(freebsd):
-      # hack necessary because newSelector calls sysctl, but capsicum really
-      # dislikes that.
+    when defined(freebsd) or defined(openbsd):
+      # hack necessary because newSelector calls sysctl, but Capsicum really
+      # dislikes that and we don't want to request systctl capabilities
+      # from pledge either.
       let fd = kqueue()
       doAssert fd != -1
       cast[ptr cint](buffer.selector)[] = fd

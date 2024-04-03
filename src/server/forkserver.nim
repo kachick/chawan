@@ -153,8 +153,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     closeStdout()
     # must call before entering the sandbox, or capsicum cries because of Nim
     # calling sysctl
+    # also lets us deny sysctl call with pledge
     let selector = newSelector[int]()
-    enterSandbox()
+    enterBufferSandbox(sockDir)
     let pid = getCurrentProcessId()
     let ssock = initServerSocket(sockDir, sockDirFd, pid)
     gssock = ssock
