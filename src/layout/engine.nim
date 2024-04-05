@@ -967,8 +967,8 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
         # same reasoning as for width.
         sizes.space.h = stretch(minHeight)
 
-proc resolveAbsoluteWidth(sizes: var ResolvedSizes,
-    containingWidth: SizeConstraint, computed: CSSComputedValues,
+proc resolveAbsoluteWidth(sizes: var ResolvedSizes;
+    containingWidth: SizeConstraint; computed: CSSComputedValues;
     lctx: LayoutState) =
   let left = computed{"left"}
   let right = computed{"right"}
@@ -999,8 +999,8 @@ proc resolveAbsoluteWidth(sizes: var ResolvedSizes,
     # them yet.
     sizes.space.w = stretch(widthpx)
 
-proc resolveAbsoluteHeight(sizes: var ResolvedSizes,
-    containingHeight: SizeConstraint, computed: CSSComputedValues,
+proc resolveAbsoluteHeight(sizes: var ResolvedSizes;
+    containingHeight: SizeConstraint; computed: CSSComputedValues;
     lctx: LayoutState) =
   #TODO this might be incorrect because of percHeight?
   let top = computed{"top"}
@@ -1027,69 +1027,68 @@ proc resolveAbsoluteHeight(sizes: var ResolvedSizes,
     let heightpx = height.spx(lctx, containingHeight, computed, padding)
     sizes.space.h = stretch(heightpx)
 
-proc resolveBlockSizes(lctx: LayoutState, containingWidth,
-    containingHeight: SizeConstraint, percHeight: Option[LayoutUnit],
-    computed: CSSComputedValues): ResolvedSizes =
+proc resolveBlockSizes(lctx: LayoutState; space: AvailableSpace;
+    percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
+    ResolvedSizes =
   var sizes = ResolvedSizes(
-    margin: resolveMargins(containingWidth, lctx, computed),
-    padding: resolvePadding(containingWidth, lctx, computed),
+    margin: resolveMargins(space.w, lctx, computed),
+    padding: resolvePadding(space.w, lctx, computed),
     # Take defined sizes if our width/height resolves to auto.
     # For block boxes, this is:
     # (width: stretch(parentWidth), height: max-content)
-    space: AvailableSpace(w: containingWidth, h: containingHeight),
+    space: space,
     minWidth: 0,
     maxWidth: high(LayoutUnit),
     minHeight: 0,
     maxHeight: high(LayoutUnit)
   )
   # Finally, calculate available width and height.
-  sizes.resolveBlockWidth(containingWidth, computed, lctx)
-  sizes.resolveBlockHeight(containingHeight, percHeight, computed, lctx)
+  sizes.resolveBlockWidth(space.w, computed, lctx)
+  sizes.resolveBlockHeight(space.h, percHeight, computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for absolutely positioned
 # boxes.
-proc resolveAbsoluteSizes(lctx: LayoutState, computed: CSSComputedValues):
+proc resolveAbsoluteSizes(lctx: LayoutState; computed: CSSComputedValues):
     ResolvedSizes =
-  let containingWidth = lctx.positioned[^1].w
-  let containingHeight = lctx.positioned[^1].h
+  let space = lctx.positioned[^1]
   var sizes = ResolvedSizes(
-    margin: resolveMargins(containingWidth, lctx, computed),
-    padding: resolvePadding(containingWidth, lctx, computed),
+    margin: resolveMargins(space.w, lctx, computed),
+    padding: resolvePadding(space.w, lctx, computed),
     minWidth: 0,
     maxWidth: high(LayoutUnit),
     minHeight: 0,
     maxHeight: high(LayoutUnit)
   )
-  sizes.resolveAbsoluteWidth(containingWidth, computed, lctx)
-  sizes.resolveAbsoluteHeight(containingHeight, computed, lctx)
+  sizes.resolveAbsoluteWidth(space.w, computed, lctx)
+  sizes.resolveAbsoluteHeight(space.h, computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for floating boxes.
-proc resolveFloatSizes(lctx: LayoutState, containingWidth,
-    containingHeight: SizeConstraint, percHeight: Option[LayoutUnit],
-    computed: CSSComputedValues): ResolvedSizes =
+proc resolveFloatSizes(lctx: LayoutState; space: AvailableSpace;
+    percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
+    ResolvedSizes =
   var space = AvailableSpace(
-    w: fitContent(containingWidth),
-    h: containingHeight
+    w: fitContent(space.w),
+    h: space.h
   )
-  let padding = resolvePadding(containingWidth, lctx, computed)
+  let padding = resolvePadding(space.w, lctx, computed)
   let inlinePadding = padding.left + padding.right
   let blockPadding = padding.top + padding.bottom
   let minWidth: LayoutUnit = if not computed{"min-width"}.auto:
-    computed{"min-width"}.spx(lctx, containingWidth, computed, inlinePadding)
+    computed{"min-width"}.spx(lctx, space.w, computed, inlinePadding)
   else:
     0
   let maxWidth = if not computed{"max-width"}.auto:
-    computed{"max-width"}.spx(lctx, containingWidth, computed, inlinePadding)
+    computed{"max-width"}.spx(lctx, space.w, computed, inlinePadding)
   else:
     high(LayoutUnit)
   let width = computed{"width"}
-  if width.canpx(containingWidth):
-    let widthpx = width.spx(lctx, containingWidth, computed, inlinePadding)
+  if width.canpx(space.w):
+    let widthpx = width.spx(lctx, space.w, computed, inlinePadding)
     space.w = stretch(clamp(widthpx, minWidth, maxWidth))
-  elif containingWidth.isDefinite():
-    space.w = fitContent(clamp(containingWidth.u, minWidth, maxWidth))
+  elif space.w.isDefinite():
+    space.w = fitContent(clamp(space.w.u, minWidth, maxWidth))
   let minHeight: LayoutUnit = if not computed{"min-height"}.auto:
     computed{"min-height"}.spx(lctx, percHeight, computed, blockPadding).get(0)
   else:
@@ -1100,13 +1099,13 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
   else:
     high(LayoutUnit)
   let height = computed{"height"}
-  if height.canpx(containingHeight):
-    let heightpx = height.px(lctx, containingHeight)
+  if height.canpx(space.h):
+    let heightpx = height.px(lctx, space.h)
     space.h = stretch(clamp(heightpx, minHeight, maxHeight))
-  elif containingHeight.isDefinite():
-    space.h = fitContent(clamp(containingHeight.u, minHeight, maxHeight))
+  elif space.h.isDefinite():
+    space.h = fitContent(clamp(space.h.u, minHeight, maxHeight))
   return ResolvedSizes(
-    margin: resolveMargins(containingWidth, lctx, computed),
+    margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
     space: space,
     minWidth: minWidth,
@@ -1125,22 +1124,24 @@ proc resolveFloatSizes(lctx: LayoutState, containingWidth,
 # differs for the root height (TODO: and all heights in quirks mode) in that
 # it uses the lctx height. Therefore we pass percHeight as a separate
 # parameter. (TODO surely there is a better solution to this?)
-proc resolveSizes(lctx: LayoutState; containingWidth,
-    containingHeight: SizeConstraint; percHeight: Option[LayoutUnit];
-    computed: CSSComputedValues; flexItem = false): ResolvedSizes =
+proc resolveSizes(lctx: LayoutState; space: AvailableSpace;
+    percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
+    ResolvedSizes =
   if computed{"position"} == POSITION_ABSOLUTE:
     return lctx.resolveAbsoluteSizes(computed)
-  elif computed{"float"} != FLOAT_NONE or flexItem:
-    return lctx.resolveFloatSizes(containingWidth, containingHeight,
-      percHeight, computed)
+  elif computed{"float"} != FLOAT_NONE:
+    return lctx.resolveFloatSizes(space, percHeight, computed)
   else:
-    return lctx.resolveBlockSizes(containingWidth, containingHeight,
-      percHeight, computed)
+    return lctx.resolveBlockSizes(space, percHeight, computed)
 
 func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
   if sc.isDefinite():
     return some(sc.u)
   return none(LayoutUnit)
+
+proc resolveSizes(lctx: LayoutState; space: AvailableSpace;
+    computed: CSSComputedValues): ResolvedSizes =
+  return lctx.resolveSizes(space, space.h.toPercSize(), computed)
 
 proc append(a: var Strut, b: LayoutUnit) =
   if b < 0:
@@ -1162,21 +1163,21 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
 
 # Note: padding must still be applied after this.
-proc applyWidth(box: BlockBox, sizes: ResolvedSizes,
+proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit) =
   # Make the box as small/large as the content's width or specified width.
   box.size.w = maxChildWidth.applySizeConstraint(sizes.space.w)
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.size.w = clamp(box.size.w, sizes.minWidth, sizes.maxWidth)
 
-proc applyHeight(box: BlockBox, sizes: ResolvedSizes,
+proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
     maxChildHeight: LayoutUnit) =
   # Make the box as small/large as the content's width or specified width.
   box.size.h = maxChildHeight.applySizeConstraint(sizes.space.h)
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.size.h = clamp(box.size.h, sizes.minHeight, sizes.maxHeight)
 
-proc applyPadding(box: BlockBox, padding: RelativeRect) =
+proc applyPadding(box: BlockBox; padding: RelativeRect) =
   box.size.w += padding.left
   box.size.w += padding.right
   box.size.h += padding.top
@@ -1346,18 +1347,13 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     # Builder only contains block boxes.
     bctx.layoutBlock(box, builder, sizes)
 
-func toperc100(sc: SizeConstraint): Option[LayoutUnit] =
-  if sc.isDefinite():
-    return some(sc.u)
-  return none(LayoutUnit)
-
 # parentWidth, parentHeight: width/height of the containing block.
-proc addInlineBlock(ictx: var InlineContext, state: var InlineState,
-    builder: BlockBoxBuilder, parentWidth, parentHeight: SizeConstraint) =
+proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
+    builder: BlockBoxBuilder; parentWidth, parentHeight: SizeConstraint) =
   let lctx = ictx.lctx
-  let percHeight = parentHeight.toperc100()
-  let sizes = lctx.resolveFloatSizes(parentWidth, maxContent(), percHeight,
-    builder.computed)
+  let percHeight = parentHeight.toPercSize()
+  let space = AvailableSpace(w: parentWidth, h: maxContent())
+  let sizes = lctx.resolveFloatSizes(space, percHeight, builder.computed)
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
@@ -1628,11 +1624,9 @@ type
     reflow: seq[bool]
     space: AvailableSpace # space we got from parent
 
-proc buildTableCaption(lctx: LayoutState, builder: TableCaptionBoxBuilder,
-    availableWidth, availableHeight: SizeConstraint): BlockBox =
-  let percHeight = availableHeight.toperc100()
-  let sizes = lctx.resolveSizes(availableWidth, availableHeight, percHeight,
-    builder.computed)
+proc buildTableCaption(lctx: LayoutState; builder: TableCaptionBoxBuilder;
+    space: AvailableSpace): BlockBox =
+  let sizes = lctx.resolveSizes(space, builder.computed)
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
@@ -2022,20 +2016,22 @@ proc buildTableRows(ctx: TableContext, table: BlockBox, sizes: ResolvedSizes) =
     table.size.w = max(row.size.w, table.size.w)
   table.size.h = applySizeConstraint(y, sizes.space.h)
 
-proc addTableCaption(ctx: TableContext, table: BlockBox) =
+proc addTableCaption(ctx: TableContext; table: BlockBox) =
   let lctx = ctx.lctx
+  let space = AvailableSpace(
+    w: stretch(table.size.w),
+    h: maxContent()
+  )
   case ctx.caption.computed{"caption-side"}
   of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
-    let caption = lctx.buildTableCaption(ctx.caption, stretch(table.size.w),
-      maxContent())
+    let caption = lctx.buildTableCaption(ctx.caption, space)
     for r in table.nested:
       r.offset.y += caption.size.h
     table.nested.insert(caption, 0)
     table.size.h += caption.size.h
     table.size.w = max(table.size.w, caption.size.w)
   of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
-    let caption = lctx.buildTableCaption(ctx.caption, stretch(table.size.w),
-      maxContent())
+    let caption = lctx.buildTableCaption(ctx.caption, space)
     caption.offset.y += table.size.h
     table.nested.add(caption)
     table.size.h += caption.size.h
@@ -2168,8 +2164,7 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
             it.weights[wt] = 0
           w = maxw
         it.space.w = stretch(w)
-        it.sizes = lctx.resolveSizes(it.space.w, it.space.h,
-          it.space.h.toPercSize(), builder.computed)
+        it.sizes = lctx.resolveSizes(it.space, builder.computed)
         totalWeight += it.weights[wt]
         #TODO we should call this only on freeze, and then put another loop to
         # the end for non-freezed items
@@ -2211,8 +2206,7 @@ proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
             it.weights[wt] = 0
           h = maxh
         it.space.h = stretch(h)
-        it.sizes = lctx.resolveSizes(it.space.w, it.space.h,
-          it.space.h.toPercSize(), builder.computed)
+        it.sizes = lctx.resolveSizes(it.space, builder.computed)
         totalWeight += it.weights[wt]
         it.child = lctx.layoutFlexChild(builder, it.sizes)
         mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
@@ -2292,8 +2286,8 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   let percHeight = sizes.space.h.toPercSize()
   while i < children.len:
     let builder = children[i]
-    let childSizes = lctx.resolveFloatSizes(sizes.space.w, sizes.space.h,
-      percHeight, builder.computed)
+    let childSizes = lctx.resolveFloatSizes(sizes.space, percHeight,
+      builder.computed)
     let child = lctx.layoutFlexChild(builder, childSizes)
     if flexDir in FlexRow:
       if canWrap and (sizes.space.w.t == MIN_CONTENT or
@@ -2335,13 +2329,13 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     space: AvailableSpace; offset: Offset; appendMargins: bool): BlockBox =
-  let availHeight = maxContent() #TODO also fit-content when clip
-  let availWidth = if builder.computed{"display"} == DISPLAY_TABLE:
-    fitContent(space.w)
-  else:
-    space.w
-  let sizes = bctx.lctx.resolveSizes(availWidth, availHeight,
-    space.h.toPercSize(), builder.computed)
+  var space = AvailableSpace(
+    w: space.w,
+    h: maxContent() #TODO fit-content when clip
+  )
+  if builder.computed{"display"} == DISPLAY_TABLE:
+    space.w = fitContent(space.w)
+  let sizes = bctx.lctx.resolveSizes(space, builder.computed)
   if appendMargins:
     # for nested blocks that do not establish their own BFC, and thus take part
     # in margin collapsing.
