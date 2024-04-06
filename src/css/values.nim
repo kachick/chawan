@@ -24,6 +24,7 @@ type
     cstBackground = "background"
     cstListStyle = "list-style"
     cstFlex = "flex"
+    cstFlexFlow = "flex-flow"
 
   CSSUnit* = enum
     UNIT_CM, UNIT_MM, UNIT_IN, UNIT_PX, UNIT_PT, UNIT_PC, UNIT_EM, UNIT_EX,
@@ -1467,7 +1468,7 @@ const PropertyPaddingSpec = [
   cptPaddingLeft
 ]
 
-proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
+proc getComputedValues0(res: var seq[CSSComputedEntry]; d: CSSDeclaration):
     Err[void] =
   case shorthandType(d.name)
   of cstNone:
@@ -1542,6 +1543,7 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
         # flex-grow
         let val = CSSComputedValue(v: cvtNumber, number: r.get)
         res.add((cptFlexGrow, val, global))
+        inc i
         d.value.skipWhitespace(i)
         if i < d.value.len:
           if not d.value[i].isToken:
@@ -1550,6 +1552,7 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
             # flex-shrink
             let val = CSSComputedValue(v: cvtNumber, number: r.get)
             res.add((cptFlexShrink, val, global))
+            inc i
             d.value.skipWhitespace(i)
       if res.len < 1: # flex-grow omitted, default to 1
         let val = CSSComputedValue(v: cvtNumber, number: 1)
@@ -1566,7 +1569,31 @@ proc getComputedValues0(res: var seq[CSSComputedEntry], d: CSSDeclaration):
           v: cvtLength,
           length: CSSLength(unit: UNIT_PX, num: 0)
         )
-        res.add((cptFlexGrow, val, global))
+        res.add((cptFlexBasis, val, global))
+    else:
+      res.add((cptFlexGrow, getDefault(cptFlexGrow), global))
+      res.add((cptFlexShrink, getDefault(cptFlexShrink), global))
+      res.add((cptFlexBasis, getDefault(cptFlexBasis), global))
+  of cstFlexFlow:
+    let global = cssGlobal(d)
+    if global == cvtNoglobal:
+      var i = 0
+      d.value.skipWhitespace(i)
+      if i >= d.value.len:
+        return err()
+      if (let dir = cssFlexDirection(d.value[i]); dir.isSome):
+        # flex-direction
+        let val = CSSComputedValue(v: cvtFlexDirection, flexdirection: dir.get)
+        res.add((cptFlexDirection, val, global))
+        inc i
+        d.value.skipWhitespace(i)
+      if i < d.value.len:
+        let wrap = ?cssFlexWrap(d.value[i])
+        let val = CSSComputedValue(v: cvtFlexWrap, flexwrap: wrap)
+        res.add((cptFlexWrap, val, global))
+    else:
+      res.add((cptFlexDirection, getDefault(cptFlexDirection), global))
+      res.add((cptFlexWrap, getDefault(cptFlexWrap), global))
   return ok()
 
 proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =

@@ -2114,7 +2114,6 @@ type
     child: BlockBox
     builder: BoxBuilder
     weights: array[FlexWeightType, float64]
-    space: AvailableSpace
     sizes: ResolvedSizes
 
   FlexMainContext = object
@@ -2163,8 +2162,7 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
             diff += w - maxw
             it.weights[wt] = 0
           w = maxw
-        it.space.w = stretch(w)
-        it.sizes = lctx.resolveSizes(it.space, builder.computed)
+        it.sizes.space.w = stretch(w)
         totalWeight += it.weights[wt]
         #TODO we should call this only on freeze, and then put another loop to
         # the end for non-freezed items
@@ -2205,8 +2203,7 @@ proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
             diff += h - maxh
             it.weights[wt] = 0
           h = maxh
-        it.space.h = stretch(h)
-        it.sizes = lctx.resolveSizes(it.space, builder.computed)
+        it.sizes.space.h = stretch(h)
         totalWeight += it.weights[wt]
         it.child = lctx.layoutFlexChild(builder, it.sizes)
         mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
@@ -2311,7 +2308,6 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
       child: child,
       builder: builder,
       weights: [grow, shrink],
-      space: sizes.space,
       sizes: childSizes
     ))
     inc i # need to increment index here for needsGrow
