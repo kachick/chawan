@@ -327,7 +327,7 @@ proc getJSFunction*[T, U](ctx: JSContext, val: JSValue):
   return fromJSFunction1[T, U](ctx, val)
 
 proc defineConsts*[T](ctx: JSContext, classid: JSClassID,
-    consts: static openarray[(string, T)]) =
+    consts: static openArray[(string, T)]) =
   let proto = ctx.getOpaque().ctors[classid]
   for (k, v) in consts:
     ctx.definePropertyE(proto, k, v)
@@ -1583,7 +1583,7 @@ proc bindEndStmts(endstmts: NimNode, info: RegistryInfo) =
 macro registerType*(ctx: typed, t: typed, parent: JSClassID = 0,
     asglobal = false, nointerface = false, name: static string = "",
     has_extra_getset: static bool = false,
-    extra_getset: static openarray[TabGetSet] = [],
+    extra_getset: static openArray[TabGetSet] = [],
     namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum),
     ishtmldda = false): JSClassID =
   var stmts = newStmtList()

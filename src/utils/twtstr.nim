@@ -23,9 +23,6 @@ func onlyWhitespace*(s: string): bool =
 func isControlChar*(r: Rune): bool =
   return int(r) <= 0x1F or int(r) == 0x7F
 
-func isC0ControlOrSpace*(c: char): bool =
-  return c in (Controls + {' '})
-
 func getControlChar*(c: char): char =
   if c == '?':
     return char(127)
@@ -509,7 +506,7 @@ func dqEscape*(s: string): string =
     result &= c
 
 #basically std join but with char
-func join*(ss: openarray[string], sep: char): string =
+func join*(ss: openArray[string], sep: char): string =
   if ss.len == 0:
     return ""
   var n = ss.high - 1

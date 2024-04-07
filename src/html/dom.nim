@@ -729,7 +729,7 @@ type
 func attrType0(s: static string): StaticAtom =
   return parseEnum[StaticAtom](s)
 
-template toset(ts: openarray[TagType]): set[TagType] =
+template toset(ts: openArray[TagType]): set[TagType] =
   var tags: system.set[TagType]
   for tag in ts:
     tags.incl(tag)
