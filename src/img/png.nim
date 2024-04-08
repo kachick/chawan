@@ -1,5 +1,3 @@
-import std/math
-
 import bindings/zlib
 import img/bitmap
 import types/color
@@ -11,7 +9,7 @@ type PNGWriter = object
   outlen: int
 
 func pngInt(i: uint32): auto =
-  doAssert i < uint32(2) ^ 31
+  doAssert i < 0x80000000u32
   return i.toBytesBE()
 
 func oq(writer: PNGWriter): ptr UncheckedArray[uint8] =
@@ -28,7 +26,7 @@ proc writeInt(writer: var PNGWriter, i: uint32) =
   writer.writeStr(i.toBytesBE())
 
 proc writePngInt(writer: var PNGWriter, i: uint32) =
-  doAssert i < uint32(2) ^ 31
+  doAssert i < 0x80000000u32
   writer.writeInt(i)
 
 proc writeChunk[T](writer: var PNGWriter, t: string, data: T) =
@@ -172,7 +170,7 @@ template readU32(reader: var PNGReader): uint32 =
 
 template readPNGInt(reader: var PNGReader): uint32 =
   let x = reader.readU32()
-  if x >= uint32(2) ^ 31:
+  if x >= 0x80000000u32:
     reader.err "int too large"
   x
 

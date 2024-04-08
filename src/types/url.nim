@@ -1,6 +1,5 @@
 # See https://url.spec.whatwg.org/#url-parsing.
 import std/algorithm
-import std/math
 import std/options
 import std/strutils
 import std/tables
@@ -209,13 +208,13 @@ func parseIpv4(input: string): Option[uint32] =
       if i != high(parts):
         return none(uint32)
     numbers.add(num)
-  if numbers[^1] >= 256^(5-numbers.len):
+  if numbers[^1] >= 1 shl ((5 - numbers.len) * 8):
     return none(uint32)
   var ipv4 = uint32(numbers[^1])
   discard numbers.pop()
   for i in 0..numbers.high:
     let n = uint32(numbers[i])
-    ipv4 += n * (256u32 ^ (3 - i))
+    ipv4 += n * (1u32 shl ((3 - i) * 8))
   return ipv4.some
 
 const ForbiddenHostChars = {
@@ -836,7 +835,7 @@ func serializeip(ipv4: uint32): string =
     result = $(n mod 256) & result
     if i != 4:
       result = '.' & result
-    n = n.floorDiv 256u32
+    n = n div 256
   assert n == 0
 
 func findZeroSeq(ipv6: array[8, uint16]): int =
