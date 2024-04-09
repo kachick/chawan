@@ -708,16 +708,22 @@ proc queryAttrs(term: Terminal, windowOnly: bool): QueryResult =
       case (let c = term.consume; c)
       of '?': # DA1
         var n = 0
-        while (let c = term.consume; c != 'c'):
-          if c == ';':
+        while true:
+          let c = term.consume
+          let x = decValue(c)
+          if x == -1:
             case n
             of 4: result.attrs.incl(qaSixel)
             of 22: result.attrs.incl(qaAnsiColor)
             else: discard
             n = 0
+            if c == 'c':
+              break
+            if c != ';':
+              fail
           else:
             n *= 10
-            n += decValue(c)
+            n += x
         result.success = true
         break # DA1 returned; done
       of '4', '8': # GEOMPIXEL, GEOMCELL
