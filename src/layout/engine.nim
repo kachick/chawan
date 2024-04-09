@@ -2283,9 +2283,28 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   let percHeight = sizes.space.h.toPercSize()
   while i < children.len:
     let builder = children[i]
-    let childSizes = lctx.resolveFloatSizes(sizes.space, percHeight,
+    var childSizes = lctx.resolveFloatSizes(sizes.space, percHeight,
       builder.computed)
-    let child = lctx.layoutFlexChild(builder, childSizes)
+    let flexBasis = builder.computed{"flex-basis"}
+    if not flexBasis.auto:
+      if flexDir in FlexRow:
+        childSizes.space.w = stretch(flexBasis.px(lctx, sizes.space.w))
+      else:
+        childSizes.space.h = stretch(flexBasis.px(lctx, sizes.space.h))
+    var child = lctx.layoutFlexChild(builder, childSizes)
+    if not flexBasis.auto and childSizes.space.w.isDefinite and
+        child.xminwidth > childSizes.space.w.u:
+      # first pass gave us a box that is smaller than the minimum acceptable
+      # width whatever reason; this may have happened because the initial flex
+      # basis was e.g. 0.  Try to resize it to something more usable.
+      # Note: this is a hack; we need it because we cheat with size resolution
+      # by using the algorithm that was in fact designed for floats, and without
+      # this hack layouts with a flex-base of 0 break down horribly.
+      # (And we need flex-base because using auto wherever the two-value `flex'
+      # shorthand is used breaks down even more horribly.)
+      #TODO implement the standard size resolution properly
+      childSizes.space.w = stretch(child.xminwidth)
+      child = lctx.layoutFlexChild(builder, childSizes)
     if flexDir in FlexRow:
       if canWrap and (sizes.space.w.t == MIN_CONTENT or
           sizes.space.w.isDefinite and

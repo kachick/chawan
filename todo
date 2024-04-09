@@ -70,8 +70,8 @@ layout engine:
 	* reminder: this does *not* apply to flexbox; in fact it has the inverse
 	  problem AFAICT.
 - table layout: include caption in width calculation
-- flexbox: flex-basis, align-self, align-items, justify-content, proper margin
-  handling
+- flexbox: align-self, align-items, justify-content, proper margin handling,
+  proper flex base size resolution
 - details element
 - overflow
 - incremental layout & layout caching
