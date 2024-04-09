@@ -15,10 +15,7 @@ import utils/map
 export charcategory
 
 func onlyWhitespace*(s: string): bool =
-  for c in s:
-    if c notin AsciiWhitespace:
-      return false
-  return true
+  return AllChars - AsciiWhitespace notin s
 
 func isControlChar*(r: Rune): bool =
   return int(r) <= 0x1F or int(r) == 0x7F
@@ -86,12 +83,6 @@ func decValue*(c: char): int =
   if c in AsciiDigit:
     return int(c) - int('0')
   return -1
-
-func isAscii*(s: string): bool =
-  for c in s:
-    if c >= char(0x80):
-      return false
-  return true
 
 const HexCharsUpper = "0123456789ABCDEF"
 const HexCharsLower = "0123456789abcdef"

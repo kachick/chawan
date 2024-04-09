@@ -355,7 +355,7 @@ func unicodeToAscii(s: string, beStrict: bool): Option[string] =
   var labels: seq[string]
   var all = 0
   for label in processed.get.split('.'):
-    if not label.isAscii():
+    if AllChars - Ascii in s:
       try:
         let converted = "xn--" & punycode.encode(label)
         labels.add(converted)
@@ -376,7 +376,7 @@ func unicodeToAscii(s: string, beStrict: bool): Option[string] =
 func domainToAscii(domain: string, bestrict = false): Option[string] =
   var needsprocessing = false
   for s in domain.split('.'):
-    if s.startsWith("xn--") or not s.isAscii():
+    if s.startsWith("xn--") or AllChars - Ascii in s:
       needsprocessing = true
       break
   if bestrict or needsprocessing:
