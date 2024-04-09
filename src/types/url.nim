@@ -126,9 +126,9 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
             inc pointer
           else:
             return failure
-        if not has or c notin Digits:
+        if not has or c notin AsciiDigit:
           return failure
-        while has and c in Digits:
+        while has and c in AsciiDigit:
           if ipv4piece == -1:
             ipv4piece = c.decValue
           elif ipv4piece == 0:
@@ -238,10 +238,10 @@ func endsInNumber(input: string): bool =
   if parts.len == 0: return false
   var last = parts[^1]
   if last != "":
-    if last.len == 2 and last[0] in Digits and last[1].toLowerAscii() == 'x':
+    if last.len == 2 and last[0] in AsciiDigit and last[1] in {'x', 'X'}:
       last = last.substr(2)
     for c in last:
-      if c notin Digits:
+      if c notin AsciiDigit:
         return false
     return true
   return false
@@ -661,7 +661,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           insidebrackets = false
         buffer &= c
     of PORT_STATE:
-      if has and c in Digits:
+      if has and c in AsciiDigit:
         buffer &= c
       elif (not has or c in {'/', '?', '#'}) or
         (url.is_special and c == '\\') or override:
