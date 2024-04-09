@@ -192,6 +192,7 @@ proc parseSSHConfig(f: File; curl: CURL; host: string; idSet: var bool) =
       if not quot and line[i] == '\\':
         quot = true
       else:
+        quot = false
         arg &= line[i]
       inc i
     if k == "Match": #TODO support this
