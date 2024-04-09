@@ -73,27 +73,19 @@ func startsWithNoCase*(str, prefix: string): bool =
     if str[i].toLowerAscii() != prefix[i].toLowerAscii(): return false
     inc i
 
-const hexCharMap = (func(): array[char, int] =
-  for i in 0..255:
-    case chr(i)
-    of '0'..'9': result[char(i)] = i - ord('0')
-    of 'a'..'f': result[char(i)] = i - ord('a') + 10
-    of 'A'..'F': result[char(i)] = i - ord('A') + 10
-    else: result[char(i)] = -1
-)()
-
-const decCharMap = (func(): array[char, int] =
-  for i in 0..255:
-    case char(i)
-    of '0'..'9': result[char(i)] = i - ord('0')
-    else: result[char(i)] = -1
-)()
-
 func hexValue*(c: char): int =
-  return hexCharMap[c]
+  if c in AsciiDigit:
+    return int(c) - int('0')
+  if c in 'a'..'f':
+    return int(c) - int('a') + 0xA
+  if c in 'A'..'F':
+    return int(c) - int('A') + 0xA
+  return -1
 
 func decValue*(c: char): int =
-  return decCharMap[c]
+  if c in AsciiDigit:
+    return int(c) - int('0')
+  return -1
 
 func isAscii*(s: string): bool =
   for c in s:
