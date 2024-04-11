@@ -2901,6 +2901,7 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
     option.reflect_bool satSelected, selected
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
+    button.reflect_str satValue, value
     button.reflect_str satType, ctype, (func(s: string): ButtonType =
       case s.toLowerAscii()
       of "submit": return BUTTON_SUBMIT
