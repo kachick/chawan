@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <string.h>
 
 int bind_unix_from_c(int socket, const char *path, int pathlen)
 {
