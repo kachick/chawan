@@ -450,8 +450,11 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         stack.add((box.nested[i], offset))
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
-    styledRoot: StyledNode, attrsp: ptr WindowAttributes) =
+    styledRoot: StyledNode; attrsp: ptr WindowAttributes) =
   grid.setLen(0)
+  if styledRoot == nil:
+    # no HTML element when we run cascade; just clear all lines.
+    return
   var state = RenderState(
     absolutePos: @[Offset(x: 0, y: 0)],
     attrsp: attrsp
