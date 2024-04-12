@@ -121,13 +121,27 @@ You can fix this manually by adjusting the `display.default-background-color`,
 Yes; Chawan now has a built-in markdown converter. If you don't like it, you
 can always [replace it](doc/mailcap.md) with e.g. pandoc.
 
-### Why write another web browser?
+### I set Chawan as my PAGER and now man pages are unreadable.
 
-I've found other text-based web browsers insufficient for my needs, so
-I thought it'd be a fun excercise to write one by myself, for myself.
+TLDR: use mancha.
 
-Generally, I'm happy if Chawan works on websites I use frequently. If it
-also works on other websites, that's a bonus.
+Long explanation:
+
+Most `man` implementations print formatted manual pages by default, which
+Chawan *can* in fact automatically parse, *if* they are passed through standard
+input. Unfortunately, some `man` implementations (mandoc in particular) pass us
+the formatted document as a *file*, which Chawan reasonably interprets as plain
+text without formatting. (mandoc does not even set a useful file extension to
+guide us.)
+
+At this point you have two options:
+
+* Set PAGER='cha -T text/x-ansi', and see that man suddenly works as expected.
+* alias man=mancha in your bashrc, and see that man suddenly works better than
+  expected.
+
+It may be best to do both, to deal with annoying cases like git help which
+shells out to man directly.
 
 ### Where are the keybindings?
 
@@ -224,6 +238,14 @@ Here's some:
 
 For further details, ~~you will have to read the source code~~ please read
 [this](doc/architecture.md).
+
+### Why write another web browser?
+
+I've found other text-based web browsers insufficient for my needs, so
+I thought it'd be a fun excercise to write one by myself, for myself.
+
+Generally, I'm happy if Chawan works on websites I use frequently. If it
+also works on other websites, that's a bonus.
 
 ## License
 
