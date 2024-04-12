@@ -1139,10 +1139,6 @@ func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
     return some(sc.u)
   return none(LayoutUnit)
 
-proc resolveSizes(lctx: LayoutState; space: AvailableSpace;
-    computed: CSSComputedValues): ResolvedSizes =
-  return lctx.resolveSizes(space, space.h.toPercSize(), computed)
-
 proc append(a: var Strut, b: LayoutUnit) =
   if b < 0:
     a.neg = min(b, a.neg)
@@ -1624,22 +1620,6 @@ type
     reflow: seq[bool]
     space: AvailableSpace # space we got from parent
 
-proc buildTableCaption(lctx: LayoutState; builder: TableCaptionBoxBuilder;
-    space: AvailableSpace): BlockBox =
-  let sizes = lctx.resolveSizes(space, builder.computed)
-  let box = BlockBox(
-    computed: builder.computed,
-    node: builder.node,
-    margin: sizes.margin
-  )
-  var bctx = BlockContext(lctx: lctx)
-  bctx.layoutFlow(box, builder, sizes)
-  # Include marginTodo in our own height.
-  #TODO this is not quite correct, as height should be the padding height.
-  box.size.h += box.offset.y
-  box.size.h += bctx.marginTodo.sum()
-  return box
-
 proc buildTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
     availWidth, availHeight: SizeConstraint): BlockBox =
   var sizes = ResolvedSizes(
@@ -2017,25 +1997,28 @@ proc buildTableRows(ctx: TableContext, table: BlockBox, sizes: ResolvedSizes) =
   table.size.h = applySizeConstraint(y, sizes.space.h)
 
 proc addTableCaption(ctx: TableContext; table: BlockBox) =
-  let lctx = ctx.lctx
-  let space = AvailableSpace(
-    w: stretch(table.size.w),
-    h: maxContent()
+  let percHeight = ctx.space.h.toPercSize()
+  let space = AvailableSpace(w: stretch(table.size.w), h: maxContent())
+  let builder = ctx.caption
+  let sizes = ctx.lctx.resolveSizes(space, percHeight, builder.computed)
+  let box = BlockBox(
+    computed: builder.computed,
+    node: builder.node,
+    margin: sizes.margin
   )
-  case ctx.caption.computed{"caption-side"}
+  var bctx = BlockContext(lctx: ctx.lctx)
+  bctx.layoutFlow(box, builder, sizes)
+  let outerHeight = box.offset.y + box.size.h + bctx.marginTodo.sum()
+  table.size.h += outerHeight
+  table.size.w = max(table.size.w, box.size.w)
+  case builder.computed{"caption-side"}
   of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
-    let caption = lctx.buildTableCaption(ctx.caption, space)
     for r in table.nested:
-      r.offset.y += caption.size.h
-    table.nested.insert(caption, 0)
-    table.size.h += caption.size.h
-    table.size.w = max(table.size.w, caption.size.w)
+      r.offset.y += outerHeight
+    table.nested.insert(box, 0)
   of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
-    let caption = lctx.buildTableCaption(ctx.caption, space)
-    caption.offset.y += table.size.h
-    table.nested.add(caption)
-    table.size.h += caption.size.h
-    table.size.w = max(table.size.w, caption.size.w)
+    box.offset.y += outerHeight
+    table.nested.add(box)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
@@ -2344,13 +2327,14 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     space: AvailableSpace; offset: Offset; appendMargins: bool): BlockBox =
+  let percHeight = space.h.toPercSize()
   var space = AvailableSpace(
     w: space.w,
     h: maxContent() #TODO fit-content when clip
   )
   if builder.computed{"display"} == DISPLAY_TABLE:
     space.w = fitContent(space.w)
-  let sizes = bctx.lctx.resolveSizes(space, builder.computed)
+  let sizes = bctx.lctx.resolveSizes(space, percHeight, builder.computed)
   if appendMargins:
     # for nested blocks that do not establish their own BFC, and thus take part
     # in margin collapsing.
@@ -3107,15 +3091,12 @@ proc generateTableBox(styledNode: StyledNode, lctx: LayoutState,
   box.generateTableChildWrappers()
   return box
 
-proc renderLayout*(root: StyledNode, attrsp: ptr WindowAttributes): BlockBox =
+proc renderLayout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   let space = AvailableSpace(
     w: stretch(attrsp[].width_px),
     h: stretch(attrsp[].height_px)
   )
-  let lctx = LayoutState(
-    attrsp: attrsp,
-    positioned: @[space]
-  )
+  let lctx = LayoutState(attrsp: attrsp, positioned: @[space])
   let builder = root.generateBlockBox(lctx)
   var marginBottomOut: LayoutUnit
   return lctx.layoutRootBlock(builder, space, Offset(), marginBottomOut)
