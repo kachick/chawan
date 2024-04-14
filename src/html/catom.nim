@@ -49,6 +49,7 @@ macro makeStaticAtom =
       satMultiple = "multiple"
       satName = "name"
       satNomodule = "nomodule"
+      satOnclick = "onclick"
       satOnload = "onload"
       satReferrerpolicy = "referrerpolicy"
       satRel = "rel"

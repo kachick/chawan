@@ -46,7 +46,7 @@ type
 
   EventHandler* = JSValue
 
-  EventListenerCallback = proc (event: Event): Err[JSError]
+  EventListenerCallback = JSValue
 
   EventListener* = ref object
     ctype*: string
@@ -55,7 +55,9 @@ type
     passive: Option[bool]
     once: bool
     #TODO AbortSignal
-    removed: bool
+    #TODO do we really need `removed'? maybe we could just check if
+    # callback is undefined.
+    removed*: bool
 
 jsDestructor(Event)
 jsDestructor(CustomEvent)
@@ -176,33 +178,60 @@ proc initCustomEvent(this: CustomEvent, ctype: string,
 proc newEventTarget(): EventTarget {.jsctor.} =
   return EventTarget()
 
-proc defaultPassiveValue(ctype: string, eventTarget: EventTarget): bool =
+proc defaultPassiveValue(ctype: string; eventTarget: EventTarget): bool =
   if ctype in ["touchstart", "touchmove", "wheel", "mousewheel"]:
     return true
   return eventTarget.isDefaultPassive()
 
-proc findEventListener(eventTarget: EventTarget, ctype: string,
-    callback: EventListenerCallback, capture: bool): int =
+proc findEventListener(eventTarget: EventTarget; ctype: string;
+    callback: EventListenerCallback; capture: bool): int =
   for i in 0 ..< eventTarget.eventListeners.len:
     let it = eventTarget.eventListeners[i]
     if it.ctype == ctype and it.callback == callback and it.capture == capture:
       return i
   return -1
 
+# EventListener
+proc invoke*(ctx: JSContext; listener: EventListener; event: Event):
+    JSValue =
+  #TODO make this standards compliant
+  if JS_IsNull(listener.callback):
+    return JS_UNDEFINED
+  let jsTarget = ctx.toJS(event.currentTarget)
+  var jsEvent = ctx.toJS(event)
+  if JS_IsFunction(ctx, listener.callback):
+    let ret = JS_Call(ctx, listener.callback, jsTarget, 1, addr jsEvent)
+    JS_FreeValue(ctx, jsTarget)
+    JS_FreeValue(ctx, jsEvent)
+    return ret
+  assert JS_IsObject(listener.callback)
+  let handler = JS_GetPropertyStr(ctx, listener.callback, "handleEvent")
+  if JS_IsException(handler):
+    JS_FreeValue(ctx, jsTarget)
+    JS_FreeValue(ctx, jsEvent)
+    return handler
+  let ret = JS_Call(ctx, handler, jsTarget, 1, addr jsEvent)
+  JS_FreeValue(ctx, jsTarget)
+  JS_FreeValue(ctx, jsEvent)
+  return ret
+
 # shared
-proc addAnEventListener(eventTarget: EventTarget, listener: EventListener) =
+proc addAnEventListener(target: EventTarget; listener: EventListener) =
   #TODO signals
-  if listener.callback == nil:
+  if JS_IsUndefined(listener.callback):
     return
   if listener.passive.isNone:
-    listener.passive = some(defaultPassiveValue(listener.ctype, eventTarget))
-  if eventTarget.findEventListener(listener.ctype, listener.callback,
+    listener.passive = some(defaultPassiveValue(listener.ctype, target))
+  if target.findEventListener(listener.ctype, listener.callback,
       listener.capture) == -1: # dedup
-    eventTarget.eventListeners.add(listener)
+    target.eventListeners.add(listener)
   #TODO signals
 
-proc removeAnEventListener(eventTarget: EventTarget, i: int) =
-  eventTarget.eventListeners[i].removed = true
+proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
+  let listener = eventTarget.eventListeners[i]
+  listener.removed = true
+  JS_FreeValue(ctx, listener.callback)
+  listener.callback = JS_UNDEFINED
   eventTarget.eventListeners.delete(i)
 
 proc flatten(ctx: JSContext, options: JSValue): bool =
@@ -233,17 +262,21 @@ proc flattenMore(ctx: JSContext, options: JSValue):
       passive = some(x.get)
   return (capture, once, passive)
 
-proc addEventListener(ctx: JSContext, eventTarget: EventTarget, ctype: string,
-    callback: EventListenerCallback, options = JS_UNDEFINED) {.jsfunc.} =
+proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: string;
+    callback: EventListenerCallback; options = JS_UNDEFINED): Err[JSError]
+    {.jsfunc.} =
+  if not JS_IsObject(callback) and not JS_IsNull(callback):
+    return errTypeError("callback is not an object")
   let (capture, once, passive) = flattenMore(ctx, options)
   let listener = EventListener(
     ctype: ctype,
     capture: capture,
     passive: passive,
     once: once,
-    callback: callback
+    callback: JS_DupValue(ctx, callback)
   )
   eventTarget.addAnEventListener(listener)
+  ok()
 
 proc removeEventListener(ctx: JSContext, eventTarget: EventTarget,
     ctype: string, callback: EventListenerCallback,
@@ -251,7 +284,7 @@ proc removeEventListener(ctx: JSContext, eventTarget: EventTarget,
   let capture = flatten(ctx, options)
   let i = eventTarget.findEventListener(ctype, callback, capture)
   if i != -1:
-    eventTarget.removeAnEventListener(i)
+    eventTarget.removeAnEventListener(ctx, i)
 
 proc addEventModule*(ctx: JSContext) =
   let eventCID = ctx.registerType(Event)

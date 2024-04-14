@@ -1009,13 +1009,19 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let document = buffer.document
   let event = newEvent(ctx, "DOMContentLoaded", document)
   var called = false
-  for el in document.eventListeners:
+  var els = document.eventListeners
+  for el in els:
+    if el.removed:
+      continue
     if el.ctype == "DOMContentLoaded":
-      let e = el.callback(event)
-      if e.isErr:
+      let e = ctx.invoke(el, event)
+      if JS_IsException(e):
         buffer.estream.write(ctx.getExceptionStr())
         buffer.estream.sflush()
+      JS_FreeValue(ctx, e)
       called = true
+      if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+        break
   if called:
     buffer.do_reshape()
 
@@ -1026,43 +1032,46 @@ proc dispatchLoadEvent(buffer: Buffer) =
   let ctx = window.jsctx
   let event = newEvent(ctx, "load", window)
   var called = false
-  for el in window.eventListeners:
+  var els = window.eventListeners
+  for el in els:
+    if el.removed:
+      continue
     if el.ctype == "load":
-      let e = el.callback(event)
-      if e.isErr:
+      let e = ctx.invoke(el, event)
+      if JS_IsException(e):
         buffer.estream.write(ctx.getExceptionStr())
         buffer.estream.sflush()
+      JS_FreeValue(ctx, e)
       called = true
-  let jsWindow = toJS(ctx, window)
-  let jsonload = JS_GetPropertyStr(ctx, jsWindow, "onload")
-  var jsEvent = toJS(ctx, event)
-  if JS_IsFunction(ctx, jsonload):
-    JS_FreeValue(ctx, JS_Call(ctx, jsonload, jsWindow, 1, addr jsEvent))
-    called = true
-  JS_FreeValue(ctx, jsEvent)
-  JS_FreeValue(ctx, jsonload)
-  JS_FreeValue(ctx, jsWindow)
+      if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+        break
   if called:
     buffer.do_reshape()
 
-proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
-      called: bool,
-      canceled: bool
-    ] =
+type DispatchEventResult = tuple
+  called: bool
+  canceled: bool
+
+proc dispatchEvent(buffer: Buffer; ctype, jsName: string; elem: Element):
+    DispatchEventResult =
   var called = false
   var canceled = false
   let ctx = buffer.window.jsctx
   let event = newEvent(ctx, ctype, elem)
+  var jsEvent = ctx.toJS(event)
+  let jsNameAtom = JS_NewAtomLen(ctx, jsName, csize_t(jsName.len))
   for a in elem.branch:
     event.currentTarget = a
     var stop = false
-    for el in a.eventListeners:
+    var els = a.eventListeners
+    for el in els:
       if el.ctype == ctype:
-        let e = el.callback(event)
+        let e = ctx.invoke(el, event)
         called = true
-        if e.isErr:
+        if JS_IsException(e):
           buffer.estream.write(ctx.getExceptionStr())
           buffer.estream.sflush()
+        JS_FreeValue(ctx, e)
         if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
           stop = true
           break
@@ -1072,6 +1081,8 @@ proc dispatchEvent(buffer: Buffer, ctype: string, elem: Element): tuple[
           canceled = true
     if stop:
       break
+  JS_FreeValue(ctx, jsEvent)
+  JS_FreeAtom(ctx, jsNameAtom)
   return (called, canceled)
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
@@ -1651,7 +1662,7 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if buffer.config.scripting:
     let elem = buffer.getCursorElement(cursorx, cursory)
-    (called, canceled) = buffer.dispatchEvent("click", elem)
+    (called, canceled) = buffer.dispatchEvent("click", "onclick", elem)
     if called:
       buffer.do_reshape()
   if not canceled:

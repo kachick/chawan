@@ -2839,7 +2839,29 @@ proc loadResource(window: Window, image: HTMLImageElement) =
       )
     window.loadingResourcePromises.add(p)
 
-proc reflectAttrs(element: Element, name: CAtom, value: string) =
+proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
+    ctype, value: string) =
+  let document = element.document
+  let ctx = document.window.jsctx
+  let urls = document.baseURL.serialize(excludepassword = true)
+  let fun = ctx.newFunction(["event"], value)
+  assert ctx != nil
+  if JS_IsException(fun):
+    let s = ctx.getExceptionStr()
+    document.window.console.log("Exception in body content attribute of",
+      urls, s)
+  else:
+    let jsTarget = ctx.toJS(target)
+    ctx.definePropertyC(jsTarget, $name, fun)
+    JS_FreeValue(ctx, jsTarget)
+    #TODO this is subtly wrong. In fact, we should not pass `fun'
+    # directly here, but a wrapper function that calls fun. Currently
+    # you can run removeEventListener with element.onclick, that should
+    # not work.
+    doAssert ctx.addEventListener(target, ctype, fun).isOk
+  JS_FreeValue(ctx, fun)
+
+proc reflectAttrs(element: Element; name: CAtom; value: string) =
   let name = element.document.toStaticAtom(name)
   template reflect_str(element: Element, n: StaticAtom, val: untyped) =
     if name == n:
@@ -2875,22 +2897,14 @@ proc reflectAttrs(element: Element, name: CAtom, value: string) =
   if name == satStyle:
     element.style_cached = newCSSStyleDeclaration(element, value)
     return
+  if name == satOnclick and element.scriptingEnabled:
+    element.reflectEvent(element, name, "click", value)
+    return
   case element.tagType
   of TAG_BODY:
     if name == satOnload and element.scriptingEnabled:
-      let document = element.document
-      let ctx = document.window.jsctx
-      let urls = document.baseURL.serialize(excludepassword = true)
-      let fun = ctx.newFunction(["event"], value)
-      assert ctx != nil
-      if JS_IsException(fun):
-        let s = ctx.getExceptionStr()
-        document.window.console.log("Exception in body content attribute of",
-          urls, s)
-      else:
-        let jsWindow = ctx.toJS(document.window)
-        ctx.definePropertyC(jsWindow, "onload", fun)
-        JS_FreeValue(ctx, jsWindow)
+      element.reflectEvent(element.document.window, name, "load", value)
+      return
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     input.reflect_str satValue, value
