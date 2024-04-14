@@ -106,7 +106,6 @@ type
     match: proc(node: Node): bool {.noSideEffect.}
     snapshot: seq[Node]
     livelen: int
-    id: int
 
   NodeList = ref object of Collection
 
@@ -127,12 +126,10 @@ type
     parentNode* {.jsget.}: Node
     root: Node
     index*: int # Index in parents children. -1 for nodes without a parent.
-    # Live collection cache: ids of live collections are saved in all
+    # Live collection cache: pointers to live collections are saved in all
     # nodes they refer to. These are removed when the collection is destroyed,
     # and invalidated when the owner node's children or attributes change.
-    # (We can't just store pointers, because those may be invalidated by
-    # the JavaScript finalizers.)
-    liveCollections: HashSet[int]
+    liveCollections: HashSet[pointer]
     childNodes_cached: NodeList
     document_internal: Document # not nil
 
@@ -176,8 +173,7 @@ type
 
     renderBlockingElements: seq[Element]
 
-    invalidCollections: HashSet[int] # collection ids
-    colln: int
+    invalidCollections: HashSet[pointer] # pointers to Collection objects
 
     all_cached: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
@@ -942,6 +938,8 @@ func `$`*(node: Node): string =
     result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
   elif node of Document:
     result = "Node of Document"
+  elif node of DocumentFragment:
+    result = "Node of DocumentFragment"
   else:
     result = "Unknown node"
 
@@ -1040,6 +1038,9 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
         if opt of HTMLOptionElement:
           yield HTMLOptionElement(opt)
 
+func id(collection: Collection): pointer =
+  return cast[pointer](collection)
+
 proc populateCollection(collection: Collection) =
   if collection.childonly:
     for child in collection.root.childList:
@@ -1100,10 +1101,8 @@ func newCollection[T: Collection](root: Node, match: CollectionMatchFun,
     islive: islive,
     childonly: childonly,
     match: match,
-    root: root,
-    id: root.document.colln
+    root: root
   )
-  inc root.document.colln
   result.populateCollection()
 
 func jsNodeType0(node: Node): NodeType =
