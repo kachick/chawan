@@ -31,30 +31,30 @@ buffer:
 	  buffer
 	* this also includes not crashing when the buffer dies while
 	  container is reading...
-- important: add sandboxing
-	* also, other security stuff:
-		- configurable/better url filtering in loader
-		- make peekCursor show the entire url
+- important: improve sandboxing
+	* add seccomp support on Linux
+	* sandbox more built-in CGI protocol handlers
+- configurable/better url filtering in loader
 - when the log buffer crashes, print its contents to stderr
 	* easiest way seems to be to just dump its cache file
 - add buffer groups
 - xhtml
+pager:
 - better horizontal line handling: allow viewing content positioned before page
   start, handle long lines, etc
+- figure out a way to show long messages on the status line
+- history, bookmarks (w3m format?)
+- save/edit buffer output
+- alert on external command failure
 network:
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
-external:
-- history, bookmarks (w3m format)
-- save buffer (source, output)
-- edit buffer (local file, or whatever we downloaded)
 javascript:
 - important: callbacks should not leak memory
+	* we should probably just remove automatic function conversion
 - add support for JS mixins
 - distinguish double from unrestricted double
-- better dom support, more events
-	* more concretely: get jQuery to work. this needs innerHTML, CSS
-	  properties in DOM, ...
+- better dom support: more events, CSSOM, ...
 - implement ReadableStream, XHR
 - separate console for each buffer
 - buffer selection
@@ -74,21 +74,20 @@ layout engine:
   proper flex base size resolution
 - details element
 - overflow
-- incremental layout & layout caching
-	* first for tree generation, then for layout.
+- partial layout, layout caching
 - iframe
 - writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
 - sixel encoding (eventually also kitty) -> actually display them :P
-- more formats (apng, gif: write own decoders, jpeg: use libjpeg, webp: ?)
-- incremental decoding (maybe implement streams first?)
-- separate image decoder process? or just run on a different thread?
+- remove in-buffer decoder; instead, decode images in fully locked
+  down CGI scripts
+- incremental decoding, interlaced images
 man:
-* add a DOM -> man page converter so that we do not depend on pandoc
+- add a DOM -> man page converter so that we do not depend on pandoc
   for man page conversion
 gmifetch:
 - rewrite in Nim
 etc:
-- tests (including aforementioned fuzzer)
+- publish tests (ideally in a separate submodule)
 - orc support
 - maybe windows support? (blocker: needs a windows machine)
