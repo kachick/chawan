@@ -18,12 +18,11 @@ include res/map/idna_gen
 
 type
   URLState = enum
-    SCHEME_START_STATE, SCHEME_STATE, NO_SCHEME_STATE, FILE_STATE,
-    SPECIAL_RELATIVE_OR_AUTHORITY_STATE, SPECIAL_AUTHORITY_SLASHES_STATE,
-    PATH_OR_AUTHORITY_STATE, OPAQUE_PATH_STATE, FRAGMENT_STATE, RELATIVE_STATE,
-    SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE, AUTHORITY_STATE, PATH_STATE,
-    RELATIVE_SLASH_STATE, QUERY_STATE, HOST_STATE, HOSTNAME_STATE,
-    FILE_HOST_STATE, PORT_STATE, PATH_START_STATE, FILE_SLASH_STATE
+    usSchemeStart, usScheme, usNoScheme, usFile, usSpecialRelativeOrAuthority,
+    usSpecialAuthoritySlashes, usPathOrAuthority, usOpaquePath, usFragment,
+    usRelative, usSpecialAuthorityIgnoreSlashes, usAuthority, usPath,
+    usRelativePath, usQuery, usHost, usHostname, usFileHost, usPort,
+    usPathStart, usFileSlash
 
   BlobURLEntry* = object
     obj: Blob #TODO blob urls
@@ -168,19 +167,17 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
   return address.some
 
 func parseIpv4Number(s: string): int =
-  if s == "": return -1
   var input = s
   var R = 10
   if input.len >= 2 and input[0] == '0':
     if input[1] in {'x', 'X'}:
-      input = input.substr(2)
+      input.delete(0..1)
       R = 16
     else:
-      input = input.substr(1)
+      input.delete(0..0)
       R = 8
   if input == "":
     return 0
-
   var output = 0
   try:
     case R
@@ -188,69 +185,74 @@ func parseIpv4Number(s: string): int =
     of 10: output = parseInt(input)
     of 16: output = parseHexInt(input)
     else: discard
-  except ValueError: return -1
+  except ValueError:
+    return -1
   return output
 
 func parseIpv4(input: string): Option[uint32] =
-  var parts = input.split('.')
-  if parts[^1] == "":
-    if parts.len > 1:
-      discard parts.pop()
-  if parts.len > 4:
-    return none(uint32)
-  var numbers: seq[int]
-  for i in low(parts)..high(parts):
-    let part = parts[i]
-    let num = parseIpv4Number(part)
-    if num < 0:
+  var numbers: seq[int] = @[]
+  var prevEmpty = false
+  var i = 0
+  for part in input.split('.'):
+    if i > 4 or prevEmpty:
       return none(uint32)
-    if num > 255:
-      if i != high(parts):
-        return none(uint32)
+    inc i
+    if part == "":
+      prevEmpty = true
+      continue
+    let num = parseIpv4Number(part)
+    if num notin 0..255:
+      return none(uint32)
     numbers.add(num)
   if numbers[^1] >= 1 shl ((5 - numbers.len) * 8):
     return none(uint32)
   var ipv4 = uint32(numbers[^1])
-  discard numbers.pop()
-  for i in 0..numbers.high:
+  for i in 0 ..< numbers.high:
     let n = uint32(numbers[i])
     ipv4 += n * (1u32 shl ((3 - i) * 8))
   return ipv4.some
 
 const ForbiddenHostChars = {
-  chr(0x00), '\t', '\n', '\r', ' ', '#', '%', '/', ':', '<', '>', '?', '@',
+  char(0x00), '\t', '\n', '\r', ' ', '#', '%', '/', ':', '<', '>', '?', '@',
   '[', '\\', ']', '^', '|'
 }
 func opaqueParseHost(input: string): Option[Host] =
+  var o = ""
   for c in input:
     if c in ForbiddenHostChars:
       return none(Host)
-  var o = ""
-  for c in input:
     o.percentEncode(c, ControlPercentEncodeSet)
   return some(Host(opaquehost: o))
 
 func endsInNumber(input: string): bool =
-  var parts = input.split('.')
-  if parts[^1] == "":
-    if parts.len == 1: return false
-    discard parts.pop()
-  if parts.len == 0: return false
-  var last = parts[^1]
-  if last != "":
-    if last.len == 2 and last[0] in AsciiDigit and last[1] in {'x', 'X'}:
-      last = last.substr(2)
-    for c in last:
-      if c notin AsciiDigit:
+  if input.len == 0:
+    return false
+  var i = input.high
+  if input[i] == '.':
+    dec i
+  i = input.rfind('.', last = i)
+  if i < 0:
+    return false
+  inc i
+  if i + 1 >= input.len and input[i] == '0' and input[i + 1] in {'x', 'X'}:
+    # hex?
+    i += 2
+    while i < input.len and input[i] != '.':
+      if input[i] notin AsciiHexDigit:
         return false
-    return true
-  return false
+      inc i
+  else:
+    while i < input.len and input[i] != '.':
+      if input[i] notin AsciiDigit:
+        return false
+      inc i
+  return true
 
 type u32pair {.packed.} = object
   a: uint32
   b: uint32
 
-func cmpRange(x: u32pair, y: uint32): int =
+func cmpRange(x: u32pair; y: uint32): int =
   if x.a > y:
     return 1
   elif x.b < y:
@@ -259,30 +261,26 @@ func cmpRange(x: u32pair, y: uint32): int =
 
 type
   IDNATableStatus = enum
-    IDNA_VALID, IDNA_IGNORED, IDNA_MAPPED, IDNA_DEVIATION, IDNA_DISALLOWED
+    itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
 
 func getIdnaTableStatus(r: Rune): IDNATableStatus =
   let i = uint32(r)
   if i <= high(uint16):
     let u = uint16(i)
     if u in IgnoredLow:
-      return IDNA_IGNORED
-    if u in DisallowedLow:
-      return IDNA_DISALLOWED
-    if DisallowedRangesLow.isInRange(u):
-      return IDNA_DISALLOWED
+      return itsIgnored
+    if u in DisallowedLow or DisallowedRangesLow.isInRange(u):
+      return itsDisallowed
     if MappedMapLow.isInMap(u):
-      return IDNA_MAPPED
+      return itsMapped
   else:
     if i in IgnoredHigh:
-      return IDNA_IGNORED
-    if i in DisallowedHigh:
-      return IDNA_DISALLOWED
-    if DisallowedRangesHigh.isInRange(i):
-      return IDNA_DISALLOWED
+      return itsIgnored
+    if i in DisallowedHigh or DisallowedRangesHigh.isInRange(i):
+      return itsDisallowed
     if MappedMapHigh.isInMap(uint32(i)):
-      return IDNA_MAPPED
-  return IDNA_VALID
+      return itsMapped
+  return itsValid
 
 func getIdnaMapped(r: Rune): string =
   let i = uint32(r)
@@ -294,7 +292,7 @@ func getIdnaMapped(r: Rune): string =
   let n = MappedMapHigh.searchInMap(i)
   return $MappedMapHigh[n].mapped
 
-func processIdna(str: string, beStrict: bool): Option[string] =
+func processIdna(str: string; beStrict: bool): Option[string] =
   # CheckHyphens = false
   # CheckBidi = true
   # CheckJoiners = true
@@ -305,11 +303,11 @@ func processIdna(str: string, beStrict: bool): Option[string] =
   for r in str.runes():
     let status = getIdnaTableStatus(r)
     case status
-    of IDNA_DISALLOWED: return none(string) #error
-    of IDNA_IGNORED: discard
-    of IDNA_MAPPED: mapped &= getIdnaMapped(r).toRunes()
-    of IDNA_DEVIATION: mapped &= r
-    of IDNA_VALID: mapped &= r
+    of itsDisallowed: return none(string) #error
+    of itsIgnored: discard
+    of itsMapped: mapped &= getIdnaMapped(r).toRunes()
+    of itsDeviation: mapped &= r
+    of itsValid: mapped &= r
   if mapped.len == 0: return
   mapped.mnormalize()
   var cr: CharRange
@@ -330,13 +328,14 @@ func processIdna(str: string, beStrict: bool): Option[string] =
         if x0.len > 0:
           let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
           let c = cast[uint32](x0[0])
-          if binarySearch(toOpenArray(cps, 0, cr.len div 2 - 1), c, cmpRange) != -1:
+          let L = cr.len div 2 - 1
+          if cps.toOpenArray(0, L).binarySearch(c, cmpRange) != -1:
             return none(string) #error
         for r in x0:
           if r == Rune('.'):
             return none(string) #error
           let status = getIdnaTableStatus(r)
-          if status in {IDNA_DISALLOWED, IDNA_IGNORED, IDNA_MAPPED}:
+          if status in {itsDisallowed, itsIgnored, itsMapped}:
             return none(string) #error
           #TODO check joiners
           #TODO check bidi
@@ -348,7 +347,7 @@ func processIdna(str: string, beStrict: bool): Option[string] =
   cr_free(addr cr)
   return some(labels.join('.'))
 
-func unicodeToAscii(s: string, beStrict: bool): Option[string] =
+func unicodeToAscii(s: string; beStrict: bool): Option[string] =
   let processed = s.processIdna(beStrict)
   if processed.isNone:
     return none(string) #error
@@ -373,7 +372,7 @@ func unicodeToAscii(s: string, beStrict: bool): Option[string] =
       return none(string) #error
   return some(labels.join('.'))
 
-func domainToAscii(domain: string, bestrict = false): Option[string] =
+func domainToAscii(domain: string; bestrict = false): Option[string] =
   var needsprocessing = false
   for s in domain.split('.'):
     if s.startsWith("xn--") or AllChars - Ascii in s:
@@ -388,7 +387,7 @@ func domainToAscii(domain: string, bestrict = false): Option[string] =
   else:
     return some(domain.toLowerAscii())
 
-func parseHost(input: string, special: bool): Option[Host] =
+func parseHost(input: string; special: bool): Option[Host] =
   if input.len == 0: return
   if input[0] == '[':
     if input[^1] != ']':
@@ -400,9 +399,8 @@ func parseHost(input: string, special: bool): Option[Host] =
   let asciiDomain = domain.domainToAscii()
   if asciiDomain.isNone:
     return none(Host)
-  for c in asciiDomain.get:
-    if c in ForbiddenHostChars:
-      return none(Host)
+  if ForbiddenHostChars in asciiDomain.get:
+    return none(Host)
   if asciiDomain.get.len > 0 and asciiDomain.get.endsInNumber():
     let ipv4 = parseIpv4(asciiDomain.get)
     return Host(ipv4: ipv4).some
@@ -412,9 +410,8 @@ func isempty(host: Host): bool =
   return host.domain == "" and host.ipv4.isNone and host.ipv6.isNone and
     host.opaquehost == ""
 
-proc shorten_path(url: URL) {.inline.} =
+proc shortenPath(url: URL) {.inline.} =
   assert not url.path.opaque
-
   if url.scheme == "file" and url.path.ss.len == 1 and
       url.path.ss[0].len == 2 and url.path.ss[0][0] in AsciiAlpha and
       url.path.ss[0][1] == ':':
@@ -438,7 +435,7 @@ template canHaveUsernamePasswordPort(url: URL): bool =
   url.host.isSome and url.host.get.serialize() != "" and url.scheme != "file"
 
 #TODO encoding
-proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
+proc basicParseURL*(input: string; base = none(URL); url: URL = URL();
     stateOverride = none(URLState)): Option[URL] =
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)
@@ -451,7 +448,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
   var passwordtokenseen = false
   var pointer = starti
   let override = stateOverride.isSome
-  var state = SCHEME_START_STATE
+  var state = usSchemeStart
   if override:
     state = stateOverride.get
 
@@ -479,16 +476,16 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
       inc pointer
       continue
     case state
-    of SCHEME_START_STATE:
+    of usSchemeStart:
       if has and c.isAlphaAscii():
         buffer &= c.toLowerAscii()
-        state = SCHEME_STATE
+        state = usScheme
       elif not override:
-        state = NO_SCHEME_STATE
+        state = usNoScheme
         dec pointer
       else:
         return none(URL)
-    of SCHEME_STATE:
+    of usScheme:
       if has and c in AsciiAlphaNumeric + {'+', '-', '.'}:
         buffer &= c.toLowerAscii()
       elif has and c == ':':
@@ -509,25 +506,25 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           return url.some
         buffer = ""
         if url.scheme == "file":
-          state = FILE_STATE
+          state = usFile
         elif url.is_special and not base.isNone and
             base.get.scheme == url.scheme:
-          state = SPECIAL_RELATIVE_OR_AUTHORITY_STATE
+          state = usSpecialRelativeOrAuthority
         elif url.is_special:
-          state = SPECIAL_AUTHORITY_SLASHES_STATE
+          state = usSpecialAuthoritySlashes
         elif has(1) and c(1) == '/':
-          state = PATH_OR_AUTHORITY_STATE
+          state = usPathOrAuthority
           inc pointer
         else:
           url.path = EmptyPath
-          state = OPAQUE_PATH_STATE
+          state = usOpaquePath
       elif not override:
         buffer = ""
-        state = NO_SCHEME_STATE
+        state = usNoScheme
         start_over
       else:
         return none(URL)
-    of NO_SCHEME_STATE:
+    of usNoScheme:
       if base.isNone or base.get.path.opaque and (not has or c != '#'):
         return none(URL)
       elif base.get.path.opaque and has and c == '#':
@@ -535,33 +532,33 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         url.path = base.get.path
         url.query = base.get.query
         url.fragment = "".some
-        state = FRAGMENT_STATE
+        state = usFragment
       elif base.get.scheme != "file":
-        state = RELATIVE_STATE
+        state = usRelative
         dec pointer
       else:
-        state = FILE_STATE
+        state = usFile
         dec pointer
-    of SPECIAL_RELATIVE_OR_AUTHORITY_STATE:
+    of usSpecialRelativeOrAuthority:
       if has(1) and c == '/' and c(1) == '/':
-        state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
+        state = usSpecialAuthorityIgnoreSlashes
         inc pointer
       else:
-        state = RELATIVE_STATE
+        state = usRelative
         dec pointer
-    of PATH_OR_AUTHORITY_STATE:
+    of usPathOrAuthority:
       if has and c == '/':
-        state = AUTHORITY_STATE
+        state = usAuthority
       else:
-        state = PATH_STATE
+        state = usPath
         dec pointer
-    of RELATIVE_STATE:
+    of usRelative:
       assert base.get.scheme != "file"
       url.scheme = base.get.scheme
       if has and c == '/':
-        state = RELATIVE_SLASH_STATE
+        state = usRelativePath
       elif url.is_special and has and c == '\\':
-        state = RELATIVE_SLASH_STATE
+        state = usRelativePath
       else:
         url.username = base.get.username
         url.password = base.get.password
@@ -571,39 +568,39 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         url.query = base.get.query
         if has and c == '?':
           url.query = "".some
-          state = QUERY_STATE
+          state = usQuery
         elif has and c == '#':
           url.fragment = "".some
-          state = FRAGMENT_STATE
+          state = usFragment
         else:
           url.query = none(string)
-          url.shorten_path()
-          state = PATH_STATE
+          url.shortenPath()
+          state = usPath
           dec pointer
-    of RELATIVE_SLASH_STATE:
+    of usRelativePath:
       if url.is_special and has and c in {'/', '\\'}:
-        state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
+        state = usSpecialAuthorityIgnoreSlashes
       elif has and c == '/':
-        state = AUTHORITY_STATE
+        state = usAuthority
       else:
         url.username = base.get.username
         url.password = base.get.password
         url.host = base.get.host
         url.port = base.get.port
-        state = PATH_STATE
+        state = usPath
         dec pointer
-    of SPECIAL_AUTHORITY_SLASHES_STATE:
+    of usSpecialAuthoritySlashes:
       if has(1) and c == '/' and c(1) == '/':
-        state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
+        state = usSpecialAuthorityIgnoreSlashes
         inc pointer
       else:
-        state = SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE
+        state = usSpecialAuthorityIgnoreSlashes
         dec pointer
-    of SPECIAL_AUTHORITY_IGNORE_SLASHES_STATE:
+    of usSpecialAuthorityIgnoreSlashes:
       if not has or c notin {'/', '\\'}:
-        state = AUTHORITY_STATE
+        state = usAuthority
         dec pointer
-    of AUTHORITY_STATE:
+    of usAuthority:
       if has and c == '@':
         if atsignseen:
           buffer = "%40" & buffer
@@ -622,13 +619,13 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           return none(URL)
         pointer -= buffer.len + 1
         buffer = ""
-        state = HOST_STATE
+        state = usHost
       else:
         buffer &= c
-    of HOST_STATE, HOSTNAME_STATE:
+    of usHost, usHostname:
       if override and url.scheme == "file":
         dec pointer
-        state = FILE_HOST_STATE
+        state = usFileHost
       elif has and c == ':' and not insidebrackets:
         if buffer == "":
           return none(URL)
@@ -637,7 +634,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           return none(URL)
         url.host = host
         buffer = ""
-        state = PORT_STATE
+        state = usPort
       elif (not has or c in {'/', '?', '#'}) or
         (url.is_special and c == '\\'):
         dec pointer
@@ -651,7 +648,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           return none(URL)
         url.host = host
         buffer = ""
-        state = PATH_START_STATE
+        state = usPathStart
         if override:
           return
       else:
@@ -660,7 +657,7 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         elif c == ']':
           insidebrackets = false
         buffer &= c
-    of PORT_STATE:
+    of usPort:
       if has and c in AsciiDigit:
         buffer &= c
       elif (not has or c in {'/', '?', '#'}) or
@@ -677,15 +674,15 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           buffer = ""
         if override:
           return
-        state = PATH_START_STATE
+        state = usPathStart
         dec pointer
       else:
         return none(URL)
-    of FILE_STATE:
+    of usFile:
       url.scheme = "file"
       url.host = EmptyHost
       if has and (c == '/' or c == '\\'):
-        state = FILE_SLASH_STATE
+        state = usFileSlash
       elif base.isSome and base.get.scheme == "file":
         url.host = base.get.host
         url.path = base.get.path
@@ -693,24 +690,24 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         if has:
           if c == '?':
             url.query = "".some
-            state = QUERY_STATE
+            state = usQuery
           elif c == '#':
             url.fragment = "".some
-            state = FRAGMENT_STATE
+            state = usFragment
           else:
             url.query = none(string)
             if not starts_with_windows_drive_letter(pointer):
-              url.shorten_path()
+              url.shortenPath()
             else:
               url.path.ss.setLen(0)
-            state = PATH_STATE
+            state = usPath
             dec pointer
       else:
-        state = PATH_STATE
+        state = usPath
         dec pointer
-    of FILE_SLASH_STATE:
+    of usFileSlash:
       if has and (c == '/' or c == '\\'):
-        state = FILE_HOST_STATE
+        state = usFileHost
       else:
         if base.isSome and base.get.scheme == "file":
           url.host = base.get.host
@@ -718,18 +715,18 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           if not starts_with_windows_drive_letter(pointer) and
               bpath.len > 0 and bpath[0].is_normalized_windows_drive_letter():
             url.path.append(bpath[0])
-        state = PATH_STATE
+        state = usPath
         dec pointer
-    of FILE_HOST_STATE:
+    of usFileHost:
       if (not has or c in {'/', '\\', '?', '#'}):
         dec pointer
         if not override and buffer.is_windows_drive_letter:
-          state = PATH_STATE
+          state = usPath
         elif buffer == "":
           url.host = Host(domain: "").some
           if override:
             return
-          state = PATH_START_STATE
+          state = usPathStart
         else:
           var host = parseHost(buffer, url.is_special)
           if host.isNone:
@@ -740,32 +737,33 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
           if override:
             return
           buffer = ""
-          state = PATH_START_STATE
+          state = usPathStart
       else:
         buffer &= c
-    of PATH_START_STATE:
+    of usPathStart:
       if url.is_special:
-        state = PATH_STATE
+        state = usPath
         if not has or c notin {'/', '\\'}:
           dec pointer
       elif not override and has and c == '?':
         url.query = "".some
-        state = QUERY_STATE
+        state = usQuery
       elif not override and has and c == '#':
         url.fragment = "".some
-        state = FRAGMENT_STATE
+        state = usFragment
       elif has:
-        state = PATH_STATE
+        state = usPath
         if c != '/':
           dec pointer
       elif override and url.host.isNone:
         url.path.append("")
-    of PATH_STATE:
+    of usPath:
       if not has or c == '/' or (url.is_special and c == '\\') or
           (not override and c in {'?', '#'}):
-        let slash_cond = not has or (c != '/' and not url.is_special and c != '\\')
+        let slash_cond = not has or (c != '/' and not url.is_special and
+          c != '\\')
         if buffer.is_double_dot_path_segment:
-          url.shorten_path()
+          url.shortenPath()
           if slash_cond:
             url.path.append("")
         elif buffer.is_single_dot_path_segment and slash_cond:
@@ -779,23 +777,23 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         if has:
           if c == '?':
             url.query = "".some
-            state = QUERY_STATE
+            state = usQuery
           elif c == '#':
             url.fragment = "".some
-            state = FRAGMENT_STATE
+            state = usFragment
       else:
         buffer.percentEncode(c, PathPercentEncodeSet)
-    of OPAQUE_PATH_STATE:
+    of usOpaquePath:
       if has:
         if c == '?':
           url.query = "".some
-          state = QUERY_STATE
+          state = usQuery
         elif c == '#':
           url.fragment = "".some
-          state = FRAGMENT_STATE
+          state = usFragment
         else:
           url.path.append(percentEncode(c, ControlPercentEncodeSet))
-    of QUERY_STATE:
+    of usQuery:
       #TODO encoding
       if not has or (not override and c == '#'):
         let querypercentencodeset = if url.is_special:
@@ -806,10 +804,10 @@ proc basicParseURL*(input: string, base = none(URL), url: URL = URL(),
         buffer = ""
         if has and c == '#':
           url.fragment = "".some
-          state = FRAGMENT_STATE
+          state = usFragment
       elif has:
         buffer &= c
-    of FRAGMENT_STATE:
+    of usFragment:
       if has:
         url.fragment.get.percentEncode(c, FragmentPercentEncodeSet)
     inc pointer
@@ -820,7 +818,7 @@ func anchor*(url: URL): string =
     return url.fragment.get
   return ""
 
-proc parseURL*(input: string, base = none(URL), override = none(URLState)):
+proc parseURL*(input: string; base = none(URL); override = none(URLState)):
     Option[URL] =
   let url = basicParseURL(input, base, stateOverride = override)
   if url.isNone:
@@ -843,8 +841,8 @@ func findZeroSeq(ipv6: array[8, uint16]): int =
   var maxn = 0
   var newi = -1
   var newn = 1
-  for i in low(ipv6)..high(ipv6):
-    if ipv6[i] == 0:
+  for i, n in ipv6:
+    if n == 0:
       inc newn
       if newi == -1:
         newi = i
@@ -861,10 +859,13 @@ func findZeroSeq(ipv6: array[8, uint16]): int =
 func serializeip(ipv6: array[8, uint16]): string =
   let compress = findZeroSeq(ipv6)
   var ignore0 = false
-  for i in low(ipv6)..high(ipv6):
+  result = ""
+  for i, n in ipv6:
     if ignore0:
-      if ipv6[i] == 0: continue
-      else: ignore0 = false
+      if n == 0:
+        continue
+      else:
+        ignore0 = false
     if i == compress:
       if i == 0:
         result &= "::"
@@ -872,8 +873,8 @@ func serializeip(ipv6: array[8, uint16]): string =
         result &= ':'
       ignore0 = true
       continue
-    result &= toHexLower(ipv6[i])
-    if i != high(ipv6):
+    result &= toHexLower(n)
+    if i != ipv6.high:
       result &= ':'
 
 func serialize(host: Host): string =
@@ -916,7 +917,7 @@ else:
       result &= '/'
       result &= percentDecode(s)
 
-func serialize*(url: URL, excludefragment = false, excludepassword = false):
+func serialize*(url: URL; excludefragment = false; excludepassword = false):
     string =
   result = url.scheme & ':'
   if url.host.isSome:
@@ -937,12 +938,12 @@ func serialize*(url: URL, excludefragment = false, excludepassword = false):
   if not excludefragment and url.fragment.isSome:
     result &= '#' & url.fragment.get
 
-func serialize*(url: Option[URL], excludefragment = false): string =
+func serialize*(url: Option[URL]; excludefragment = false): string =
   if url.isNone:
     return ""
   return url.get.serialize()
 
-func equals*(a, b: URL, excludefragment = false): bool =
+func equals*(a, b: URL; excludefragment = false): bool =
   return a.serialize(excludefragment) == b.serialize(excludefragment)
 
 func `$`*(url: URL): string {.jsfunc.} = url.serialize()
@@ -967,7 +968,7 @@ proc newURL*(url: URL): URL =
   result = URL()
   url.cloneInto(result)
 
-proc setHref(url: URL, s: string): Err[JSError] {.jsfset: "href".} =
+proc setHref(url: URL; s: string): Err[JSError] {.jsfset: "href".} =
   let purl = basicParseURL(s)
   if purl.isNone:
     return err(newTypeError(s & " is not a valid URL"))
@@ -1002,7 +1003,7 @@ proc parseApplicationXWWWFormUrlEncoded(input: string): seq[(string, string)] =
     result.add((percentDecode(name), percentDecode(value)))
 
 #https://url.spec.whatwg.org/#concept-urlencoded-serializer
-proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)],
+proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)];
     spaceAsPlus = true): string =
   for it in kvs:
     let (name, value) = it
@@ -1045,26 +1046,26 @@ proc update(params: URLSearchParams) =
   else:
     params.url.get.query = some(serializedQuery)
 
-proc append*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
+proc append*(params: URLSearchParams; name, value: string) {.jsfunc.} =
   params.list.add((name, value))
   params.update()
 
-proc delete*(params: URLSearchParams, name: string) {.jsfunc.} =
+proc delete*(params: URLSearchParams; name: string) {.jsfunc.} =
   for i in countdown(params.list.high, 0):
     if params.list[i][0] == name:
       params.list.delete(i)
 
-proc get*(params: URLSearchParams, name: string): Option[string] {.jsfunc.} =
+proc get*(params: URLSearchParams; name: string): Option[string] {.jsfunc.} =
   for it in params.list:
     if it[0] == name:
       return some(it[1])
 
-proc getAll*(params: URLSearchParams, name: string): seq[string] {.jsfunc.} =
+proc getAll*(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
   for it in params.list:
     if it[0] == name:
       result.add(it[1])
 
-proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
+proc set*(params: URLSearchParams; name, value: string) {.jsfunc.} =
   var first = true
   for i in 0..params.list.high:
     if params.list[i][0] == name:
@@ -1072,7 +1073,7 @@ proc set*(params: URLSearchParams, name: string, value: string) {.jsfunc.} =
         first = false
         params.list[i][1] = value
 
-proc parseAPIURL(s: string, base: Option[string]): JSResult[URL] =
+proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
   let baseURL = if base.isSome:
     let x = parseURL(base.get)
     if x.isNone:
@@ -1085,7 +1086,7 @@ proc parseAPIURL(s: string, base: Option[string]): JSResult[URL] =
     return err(newTypeError(s & " is not a valid URL"))
   return ok(url.get)
 
-proc newURL*(s: string, base: Option[string] = none(string)):
+proc newURL*(s: string; base: Option[string] = none(string)):
     JSResult[URL] {.jsctor.} =
   let url = ?parseAPIURL(s, base)
   url.searchParams = newURLSearchParams()
@@ -1132,16 +1133,16 @@ proc origin*(url: URL): string {.jsfget.} =
 proc protocol*(url: URL): string {.jsfget.} =
   return url.scheme & ':'
 
-proc setProtocol*(url: URL, s: string) {.jsfset: "protocol".} =
+proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
   discard basicParseURL(s & ':', url = url,
-    stateOverride = some(SCHEME_START_STATE))
+    stateOverride = some(usSchemeStart))
 
-proc username(url: URL, username: string) {.jsfset.} =
+proc username(url: URL; username: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.username = username.percentEncode(UserInfoPercentEncodeSet)
 
-proc password(url: URL, password: string) {.jsfset.} =
+proc password(url: URL; password: string) {.jsfset.} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.password = password.percentEncode(UserInfoPercentEncodeSet)
@@ -1153,55 +1154,55 @@ proc host*(url: URL): string {.jsfget.} =
     return url.host.get.serialize()
   return url.host.get.serialize() & ':' & $url.port.get
 
-proc setHost*(url: URL, s: string) {.jsfset: "host".} =
+proc setHost*(url: URL; s: string) {.jsfset: "host".} =
   if url.path.opaque:
     return
-  discard basicParseURL(s, url = url, stateOverride = some(HOST_STATE))
+  discard basicParseURL(s, url = url, stateOverride = some(usHost))
 
 proc hostname*(url: URL): string {.jsfget.} =
   if url.host.isNone:
     return ""
   return url.host.get.serialize()
 
-proc setHostname*(url: URL, s: string) {.jsfset: "hostname".} =
+proc setHostname*(url: URL; s: string) {.jsfset: "hostname".} =
   if url.path.opaque:
     return
-  discard basicParseURL(s, url = url, stateOverride = some(HOSTNAME_STATE))
+  discard basicParseURL(s, url = url, stateOverride = some(usHostname))
 
 proc port*(url: URL): string {.jsfget.} =
   if url.port.isSome:
     return $url.port.get
 
-proc setPort*(url: URL, s: string) {.jsfset: "port".} =
+proc setPort*(url: URL; s: string) {.jsfset: "port".} =
   if not url.canHaveUsernamePasswordPort:
     return
   if s == "":
     url.port = none(uint16)
   else:
-    discard basicParseURL(s, url = url, stateOverride = some(PORT_STATE))
+    discard basicParseURL(s, url = url, stateOverride = some(usPort))
 
 proc pathname*(url: URL): string {.jsfget.} =
   return url.path.serialize()
 
-proc setPathname*(url: URL, s: string) {.jsfset: "pathname".} =
+proc setPathname*(url: URL; s: string) {.jsfset: "pathname".} =
   if url.path.opaque:
     return
   url.path.ss.setLen(0)
-  discard basicParseURL(s, url = url, stateOverride = some(PATH_START_STATE))
+  discard basicParseURL(s, url = url, stateOverride = some(usPathStart))
 
 proc search*(url: URL): string {.jsfget.} =
   if url.query.get("") == "":
     return ""
   return "?" & url.query.get
 
-proc setSearch*(url: URL, s: string) {.jsfset: "search".} =
+proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
   if s == "":
     url.query = none(string)
     url.searchParams.list.setLen(0)
     return
   let s = if s[0] == '?': s.substr(1) else: s
   url.query = some("")
-  discard basicParseURL(s, url = url, stateOverride = some(QUERY_STATE))
+  discard basicParseURL(s, url = url, stateOverride = some(usQuery))
   url.searchParams.list = parseApplicationXWWWFormUrlEncoded(s)
 
 proc hash*(url: URL): string {.jsfget.} =
@@ -1209,15 +1210,15 @@ proc hash*(url: URL): string {.jsfget.} =
     return ""
   return '#' & url.fragment.get
 
-proc setHash*(url: URL, s: string) {.jsfset: "hash".} =
+proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
   if s == "":
     url.fragment = none(string)
     return
   let s = if s[0] == '#': s.substr(1) else: s
   url.fragment = some("")
-  discard basicParseURL(s, url = url, stateOverride = some(FRAGMENT_STATE))
+  discard basicParseURL(s, url = url, stateOverride = some(usFragment))
 
-proc canParse(url: string, base = none(string)): bool {.jsstfunc: "URL".} =
+proc canParse(url: string; base = none(string)): bool {.jsstfunc: "URL".} =
   return parseAPIURL(url, base).isSome
 
 proc addURLModule*(ctx: JSContext) =
