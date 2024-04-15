@@ -1016,8 +1016,7 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
     if el.ctype == "DOMContentLoaded":
       let e = ctx.invoke(el, event)
       if JS_IsException(e):
-        buffer.estream.write(ctx.getExceptionStr())
-        buffer.estream.sflush()
+        ctx.writeException(buffer.estream)
       JS_FreeValue(ctx, e)
       called = true
       if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
@@ -1039,8 +1038,7 @@ proc dispatchLoadEvent(buffer: Buffer) =
     if el.ctype == "load":
       let e = ctx.invoke(el, event)
       if JS_IsException(e):
-        buffer.estream.write(ctx.getExceptionStr())
-        buffer.estream.sflush()
+        ctx.writeException(buffer.estream)
       JS_FreeValue(ctx, e)
       called = true
       if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
@@ -1069,8 +1067,7 @@ proc dispatchEvent(buffer: Buffer; ctype, jsName: string; elem: Element):
         let e = ctx.invoke(el, event)
         called = true
         if JS_IsException(e):
-          buffer.estream.write(ctx.getExceptionStr())
-          buffer.estream.sflush()
+          ctx.writeException(buffer.estream)
         JS_FreeValue(ctx, e)
         if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
           stop = true
@@ -1494,8 +1491,7 @@ proc evalJSURL(buffer: Buffer, url: URL): Opt[string] =
   let ctx = buffer.window.jsctx
   let ret = ctx.eval(scriptSource, $buffer.baseURL, JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
-    buffer.estream.write(ctx.getExceptionStr())
-    buffer.estream.sflush()
+    ctx.writeException(buffer.estream)
     return err() # error
   if JS_IsUndefined(ret):
     return err() # no need to navigate

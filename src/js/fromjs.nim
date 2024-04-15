@@ -8,7 +8,6 @@ import io/promise
 import js/error
 import js/jstypes
 import js/opaque
-import js/tojs
 import types/opt
 import utils/twtstr
 
@@ -280,61 +279,6 @@ proc fromJSTable[A, B](ctx: JSContext, val: JSValue): JSResult[Table[A, B]] =
     res[kn] = vn
   return ok(res)
 
-#TODO varargs
-proc fromJSFunction1*[T, U](ctx: JSContext, val: JSValue):
-    proc(x: U): JSResult[T] =
-  #TODO this leaks memory!
-  let dupval = JS_DupValue(ctx, JS_DupValue(ctx, val)) # save
-  return proc(x: U): JSResult[T] =
-    var arg1 = toJS(ctx, x)
-    #TODO exceptions?
-    let ret = JS_Call(ctx, dupval, JS_UNDEFINED, 1, addr arg1)
-    result = fromJS[T](ctx, ret)
-    JS_FreeValue(ctx, ret)
-
-proc isErrType(rt: NimNode): bool =
-  let rtType = rt[0]
-  let errType = getTypeInst(Err)
-  return errType.sameType(rtType) and rtType.sameType(errType)
-
-# unpack brackets
-proc getRealTypeFun(x: NimNode): NimNode =
-  var x = x.getTypeImpl()
-  while true:
-    if x.kind == nnkBracketExpr and x.len == 2:
-      x = x[1].getTypeImpl()
-      continue
-    break
-  return x
-
-macro unpackReturnType(f: typed) =
-  var x = f.getRealTypeFun()
-  let params = x.findChild(it.kind == nnkFormalParams)
-  let rv = params[0]
-  if rv.isErrType():
-    return quote do: void
-  let rvv = rv[1]
-  return quote do: `rvv`
-
-macro unpackArg0(f: typed) =
-  var x = f.getRealTypeFun()
-  let params = x.findChild(it.kind == nnkFormalParams)
-  let rv = params[1]
-  doAssert rv.kind == nnkIdentDefs
-  let rvv = rv[1]
-  return quote do: `rvv`
-
-proc fromJSFunction[T](ctx: JSContext, val: JSValue):
-    JSResult[T] =
-  #TODO all args...
-  if not JS_IsFunction(ctx, val):
-    return err(newTypeError("function expected"))
-  return ok(
-    fromJSFunction1[
-      typeof(unpackReturnType(T)),
-      typeof(unpackArg0(T))
-    ](ctx, val))
-
 template optionType[T](o: type Option[T]): auto =
   T
 
@@ -462,8 +406,6 @@ macro fromJS2(ctx: JSContext; val: JSValue; x: static string): untyped =
 proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
   when T is string:
     return fromJSString(ctx, val)
-  elif T is (proc):
-    return fromJSFunction[T](ctx, val)
   elif T is Option:
     return fromJSOption[optionType(T)](ctx, val)
   elif T is seq:

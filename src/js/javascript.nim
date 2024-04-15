@@ -185,7 +185,7 @@ proc free*(rt: var JSRuntime) =
   runtimes.del(runtimes.find(rt))
   rt = nil
 
-proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
+proc setGlobal*[T](ctx: JSContext; global: JSValue; obj: T) =
   # Add JSValue reference.
   let p = JS_VALUE_GET_PTR(global)
   let header = cast[ptr JSRefCountHeader](p)
@@ -193,10 +193,11 @@ proc setGlobal*[T](ctx: JSContext, global: JSValue, obj: T) =
   ctx.setOpaque(global, cast[pointer](obj))
   GC_ref(obj)
 
-proc setInterruptHandler*(rt: JSRuntime, cb: JSInterruptHandler, opaque: pointer = nil) =
+proc setInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
+    opaque: pointer = nil) =
   JS_SetInterruptHandler(rt, cb, opaque)
 
-proc getExceptionStr*(ctx: JSContext): string =
+proc getExceptionMsg*(ctx: JSContext): string =
   result = ""
   let ex = JS_GetException(ctx)
   let str = fromJS[string](ctx, ex)
@@ -208,11 +209,20 @@ proc getExceptionStr*(ctx: JSContext): string =
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 
-proc writeException*(ctx: JSContext, s: DynStream) =
-  s.write(ctx.getExceptionStr())
+proc getExceptionMsg*(ctx: JSContext; err: JSError): string =
+  if err != nil:
+    JS_FreeValue(ctx, ctx.toJS(err)) # note: this implicitly throws
+  return ctx.getExceptionMsg()
+
+proc writeException*(ctx: JSContext; s: DynStream) =
+  s.write(ctx.getExceptionMsg())
   s.sflush()
 
-proc runJSJobs*(rt: JSRuntime, err: DynStream) =
+proc writeException*(ctx: JSContext; s: DynStream; err: JSError) =
+  s.write(ctx.getExceptionMsg(err))
+  s.sflush()
+
+proc runJSJobs*(rt: JSRuntime; err: DynStream) =
   while JS_IsJobPending(rt):
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, addr ctx)
@@ -321,10 +331,6 @@ func getMinArgs(params: seq[FuncParam]): int =
 
 func fromJSP[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
   return fromJS[T](ctx, atom)
-
-proc getJSFunction*[T, U](ctx: JSContext, val: JSValue):
-    (proc(x: T): JSResult[U]) =
-  return fromJSFunction1[T, U](ctx, val)
 
 proc defineConsts*[T](ctx: JSContext, classid: JSClassID,
     consts: static openArray[(string, T)]) =

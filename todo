@@ -50,8 +50,6 @@ network:
 - uBO integration? (or at least implement filter lists)
 - websockets (curl supports ws)
 javascript:
-- important: callbacks should not leak memory
-	* we should probably just remove automatic function conversion
 - add support for JS mixins
 - distinguish double from unrestricted double
 - better dom support: more events, CSSOM, ...

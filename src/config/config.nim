@@ -12,6 +12,7 @@ import config/toml
 import js/error
 import js/fromjs
 import js/javascript
+import js/jstypes
 import js/propertyenumlist
 import js/regex
 import js/tojs
@@ -40,7 +41,7 @@ type
   SiteConfig* = object
     url*: Option[Regex]
     host*: Option[Regex]
-    rewrite_url*: (proc(s: URL): JSResult[URL])
+    rewrite_url*: Option[JSValueFunction]
     cookie*: Option[bool]
     third_party_cookie*: seq[Regex]
     share_cookie_jar*: Option[string]
@@ -54,7 +55,7 @@ type
 
   OmniRule* = object
     match*: Regex
-    substitute_url*: (proc(s: string): JSResult[string])
+    substitute_url*: Option[JSValueFunction]
 
   StartConfig = object
     visual_home* {.jsgetset.}: string
@@ -330,7 +331,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
   k: string)
-proc parseConfigValue[T](ctx: var ConfigParser; x: var proc(x: T): JSResult[T];
+proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
   v: TomlValue; k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
   v: TomlValue; k: string)
@@ -581,11 +582,16 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
     raise newException(ValueError, "invalid URL " & k)
   x = y.get
 
-proc parseConfigValue[T](ctx: var ConfigParser; x: var proc(x: T): JSResult[T];
+proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
     v: TomlValue; k: string) =
   typeCheck(v, tvtString, k)
   let fun = ctx.config.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
-  x = getJSFunction[T, T](ctx.config.jsctx, fun)
+  if JS_IsException(fun):
+    raise newException(ValueError, "exception in " & k & ": " &
+      ctx.config.jsctx.getExceptionMsg())
+  if not JS_IsFunction(ctx.config.jsctx, fun):
+    raise newException(ValueError, k & " is not a function")
+  x = JSValueFunction(fun: fun)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     v: TomlValue; k: string) =
@@ -761,7 +767,7 @@ proc initCommands*(config: Config): Err[string] =
   let obj = JS_NewObject(ctx)
   defer: JS_FreeValue(ctx, obj)
   if JS_IsException(obj):
-    return err(ctx.getExceptionStr())
+    return err(ctx.getExceptionMsg())
   for i in countdown(config.cmd.init.high, 0):
     let (k, cmd) = config.cmd.init[i]
     if k in config.cmd.map:
@@ -776,14 +782,14 @@ proc initCommands*(config: Config): Err[string] =
           prop = JS_NewObject(ctx)
           ctx.definePropertyE(objIt, ss, prop)
         if JS_IsException(prop):
-          return err(ctx.getExceptionStr())
+          return err(ctx.getExceptionMsg())
         objIt = prop
     if cmd == "":
       config.cmd.map[k] = JS_UNDEFINED
       continue
     let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
     if JS_IsException(fun):
-      return err(ctx.getExceptionStr())
+      return err(ctx.getExceptionMsg())
     if not JS_IsFunction(ctx, fun):
       return err(k & " is not a function")
     ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))

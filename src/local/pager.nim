@@ -3,13 +3,11 @@ import std/net
 import std/options
 import std/os
 import std/osproc
+import std/posix
 import std/selectors
 import std/streams
 import std/tables
 import std/unicode
-
-when defined(posix):
-  import std/posix
 
 import bindings/libregexp
 import config/config
@@ -23,6 +21,7 @@ import io/stdio
 import io/tempfile
 import io/urlfilter
 import js/error
+import js/fromjs
 import js/javascript
 import js/jstypes
 import js/regex
@@ -115,6 +114,7 @@ type
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
+    jsctx: JSContext
     lineData: LineData
     lineedit*: Option[LineEdit]
     linehist: array[LineMode, LineHistory]
@@ -282,7 +282,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     config: config,
     forkserver: forkserver,
     term: newTerminal(stdout, config),
-    alerts: alerts
+    alerts: alerts,
+    jsctx: ctx
   )
 
 proc genClientKey(pager: Pager): ClientKey =
@@ -865,15 +866,25 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   var charsets = pager.config.encoding.document_charset
   var userstyle = pager.config.css.stylesheet
   var proxy = pager.config.network.proxy
+  let ctx = pager.jsctx
   for sc in pager.config.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
       continue
-    if sc.rewrite_url != nil:
-      let s = sc.rewrite_url(url)
-      if s.isSome and s.get != nil:
-        url = s.get
+    if sc.rewrite_url.isSome:
+      let fun = sc.rewrite_url.get
+      var arg1 = ctx.toJS(url)
+      let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, addr arg1)
+      let nu = fromJS[URL](ctx, ret)
+      if nu.isOk:
+        if nu.get != nil:
+          url = nu.get
+      elif JS_IsException(ret):
+        #TODO should writeException the message to console
+        pager.alert("Error rewriting URL: " & ctx.getExceptionMsg(nu.error))
+      JS_FreeValue(ctx, arg1)
+      JS_FreeValue(ctx, ret)
     if sc.cookie.isSome:
       if sc.cookie.get:
         # host/url might have changed by now
@@ -964,12 +975,15 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
 proc omniRewrite(pager: Pager, s: string): string =
   for rule in pager.config.omnirule:
     if rule.match.match(s):
-      let sub = rule.substitute_url(s)
-      if sub.isSome:
-        return sub.get
-      else:
-        let buf = $rule.match
-        pager.alert("Error in substitution of rule " & buf & " for " & s)
+      let fun = rule.substitute_url.get
+      let ctx = pager.jsctx
+      var arg1 = ctx.toJS(s)
+      let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, addr arg1)
+      let ret = fromJS[string](ctx, jsRet)
+      if ret.isOk:
+        return ret.get
+      pager.alert("Error in substitution of " & $rule.match & " for " & s &
+        ": " & ctx.getExceptionMsg(ret.error))
   return s
 
 # When the user has passed a partial URL as an argument, they might've meant

@@ -169,7 +169,7 @@ proc addScripting*(window: Window; selector: Selector[int]) =
       let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
       if JS_IsException(ret):
         window.console.log("Exception in document", $window.document.url,
-          window.jsctx.getExceptionStr())
+          window.jsctx.getExceptionMsg())
       else:
         JS_FreeValue(ctx, ret)
     )

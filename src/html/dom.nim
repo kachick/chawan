@@ -2846,9 +2846,8 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
   let fun = ctx.newFunction(["event"], value)
   assert ctx != nil
   if JS_IsException(fun):
-    let s = ctx.getExceptionStr()
     document.window.console.log("Exception in body content attribute of",
-      urls, s)
+      urls, ctx.getExceptionMsg())
   else:
     let jsTarget = ctx.toJS(target)
     ctx.definePropertyC(jsTarget, $name, fun)
@@ -3628,13 +3627,12 @@ proc execute*(element: HTMLScriptElement) =
       let urls = script.baseURL.serialize(excludepassword = true)
       let ctx = window.jsctx
       if JS_IsException(script.record):
-        let s = ctx.getExceptionStr()
-        window.console.log("Exception in document", urls, s)
+        window.console.log("Exception in document", urls, ctx.getExceptionMsg())
       else:
         let ret = ctx.evalFunction(script.record)
         if JS_IsException(ret):
-          let s = ctx.getExceptionStr()
-          window.console.log("Exception in document", urls, s)
+          window.console.log("Exception in document", urls,
+            ctx.getExceptionMsg())
         JS_FreeValue(ctx, ret)
     document.currentScript = oldCurrentScript
   else: discard #TODO

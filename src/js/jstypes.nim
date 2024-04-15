@@ -33,3 +33,11 @@ type
 
 func high*(abuf: JSArrayBuffer): int =
   return int(abuf.len) - 1
+
+# A specialization of JSValue to make writing generic code for functions
+# easier.
+type JSValueFunction* = ref object
+  fun*: JSValue
+
+converter toJSValue*(f: JSValueFunction): JSValue =
+  f.fun
