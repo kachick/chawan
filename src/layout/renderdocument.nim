@@ -431,16 +431,6 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         let y = toInt(offset.y div state.attrs.ppl)
         if y >= 0 and x + w >= 0:
           grid.setText(s, x, y, box.computed.toFormat(), box.node)
-
-      if box of ListItemBox:
-        let box = ListItemBox(box)
-        if box.marker != nil:
-          let offset = Offset(
-            x: offset.x - box.marker.size.w,
-            y: offset.y
-          )
-          grid.renderRootInlineFragment(state, box.marker, offset)
-
     if box.inline != nil:
       assert box.nested.len == 0
       if box.computed{"visibility"} == VISIBILITY_VISIBLE:

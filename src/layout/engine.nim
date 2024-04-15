@@ -1343,6 +1343,43 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     # Builder only contains block boxes.
     bctx.layoutBlock(box, builder, sizes)
 
+proc layoutListItem(bctx: var BlockContext; box: BlockBox;
+    builder: ListItemBoxBuilder; sizes: ResolvedSizes) =
+  if builder.marker != nil:
+    # wrap marker + main box in a new box
+    let innerBox = BlockBox(
+      computed: builder.computed,
+      node: builder.node,
+      offset: Offset(x: sizes.margin.left),
+      margin: sizes.margin
+    )
+    bctx.layoutFlow(innerBox, builder.content, sizes)
+    #TODO we should put markers right before the first atom of the parent
+    # list item or something...
+    var bctx = BlockContext(lctx: bctx.lctx)
+    let children = @[BoxBuilder(builder.marker)]
+    let space = AvailableSpace(w: fitContent(sizes.space.w), h: sizes.space.h)
+    let markerInline = bctx.layoutRootInline(children, space,
+      builder.marker.computed, Offset(), Offset())
+    let marker = BlockBox(
+      computed: builder.marker.computed,
+      inline: markerInline,
+      size: markerInline.size,
+      offset: Offset(x: -markerInline.size.w),
+      xminwidth: markerInline.xminwidth
+    )
+    # take inner box min width etc.
+    box.xminwidth = innerBox.xminwidth
+    box.baseline = innerBox.baseline
+    box.firstBaseline = innerBox.firstBaseline
+    box.size = innerBox.size
+    # innerBox can keep its margin without double margin, it won't be used
+    # anymore.
+    box.margin = innerBox.margin
+    box.nested = @[marker, innerBox]
+  else:
+    bctx.layoutFlow(box, builder.content, sizes)
+
 # parentWidth, parentHeight: width/height of the containing block.
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     builder: BlockBoxBuilder; parentWidth, parentHeight: SizeConstraint) =
@@ -1476,7 +1513,7 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
     of DISPLAY_INLINE:
       let childFragment = ictx.layoutInline(InlineBoxBuilder(child))
       root.fragment.children.add(childFragment)
-    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE:
+    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_FLEX:
       # add an anonymous fragment to contain this
       var state = InlineState(
         computed: computed,
@@ -1501,48 +1538,6 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
   ictx.addBackgroundAreas(root.fragment)
   root.xminwidth = ictx.minwidth
   return root
-
-# Build a block box without establishing a new block formatting context.
-proc buildBlock(bctx: var BlockContext; builder: BlockBoxBuilder;
-    sizes: ResolvedSizes; offset: Offset): BlockBox =
-  let box = BlockBox(
-    computed: builder.computed,
-    node: builder.node,
-    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
-    margin: sizes.margin
-  )
-  bctx.layoutFlow(box, builder, sizes)
-  return box
-
-proc buildListItem(bctx: var BlockContext; builder: ListItemBoxBuilder;
-    sizes: ResolvedSizes; offset: Offset): ListItemBox =
-  let box = ListItemBox(
-    computed: builder.computed,
-    node: builder.node,
-    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
-    margin: sizes.margin
-  )
-  if builder.marker != nil:
-    #TODO we should put markers right before the first atom of the parent
-    # list item or something...
-    var bctx = BlockContext(lctx: bctx.lctx)
-    let children = @[BoxBuilder(builder.marker)]
-    let space = AvailableSpace(w: fitContent(sizes.space.w), h: sizes.space.h)
-    box.marker = bctx.layoutRootInline(children, space, builder.marker.computed,
-      Offset(), Offset())
-  bctx.layoutFlow(box, builder.content, sizes)
-  return box
-
-proc buildTable(bctx: var BlockContext; builder: TableBoxBuilder;
-    sizes: ResolvedSizes; offset: Offset): BlockBox =
-  let box = BlockBox(
-    computed: builder.computed,
-    node: builder.node,
-    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
-    margin: sizes.margin
-  )
-  bctx.lctx.layoutTable(box, builder, sizes)
-  return box
 
 proc positionAbsolute(lctx: LayoutState, box: BlockBox, margin: RelativeRect) =
   let last = lctx.positioned[^1]
@@ -2058,35 +2053,32 @@ proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
   else:
     discard
 
-proc buildFlex(bctx: var BlockContext; builder: BlockBoxBuilder;
-    sizes: ResolvedSizes; offset: Offset): BlockBox =
-  let box = BlockBox(
-    computed: builder.computed,
-    node: builder.node,
-    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
-    margin: sizes.margin
-  )
-  bctx.layoutFlex(box, builder, sizes)
-  return box
+proc layout(bctx: var BlockContext; box: BlockBox; builder: BoxBuilder;
+    sizes: ResolvedSizes) =
+  case builder.computed{"display"}
+  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
+    bctx.layoutFlow(box, BlockBoxBuilder(builder), sizes)
+  of DISPLAY_LIST_ITEM:
+    bctx.layoutListItem(box, ListItemBoxBuilder(builder), sizes)
+  of DISPLAY_TABLE:
+    bctx.lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
+  of DISPLAY_FLEX:
+    bctx.layoutFlex(box, BlockBoxBuilder(builder), sizes)
+  else:
+    assert false, "builder.t is " & $builder.computed{"display"}
 
 proc layoutFlexChild(lctx: LayoutState; builder: BoxBuilder;
     sizes: ResolvedSizes): BlockBox =
   var bctx = BlockContext(lctx: lctx)
   # note: we do not append margins here, since those belong to the flex item,
   # not its inner BFC.
-  var offset = Offset()
-  let box = case builder.computed{"display"}
-  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
-    bctx.buildBlock(BlockBoxBuilder(builder), sizes, offset)
-  of DISPLAY_LIST_ITEM:
-    bctx.buildListItem(ListItemBoxBuilder(builder), sizes, offset)
-  of DISPLAY_TABLE:
-    bctx.buildTable(TableBoxBuilder(builder), sizes, offset)
-  of DISPLAY_FLEX:
-    bctx.buildFlex(BlockBoxBuilder(builder), sizes, offset)
-  else:
-    assert false, "builder.t is " & $builder.computed{"display"}
-    BlockBox(nil)
+  let box = BlockBox(
+    computed: builder.computed,
+    node: builder.node,
+    offset: Offset(x: sizes.margin.left),
+    margin: sizes.margin
+  )
+  bctx.layout(box, builder, sizes)
   return box
 
 type
@@ -2339,18 +2331,13 @@ proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     # for nested blocks that do not establish their own BFC, and thus take part
     # in margin collapsing.
     bctx.marginTodo.append(sizes.margin.top)
-  let box = case builder.computed{"display"}
-  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
-    bctx.buildBlock(BlockBoxBuilder(builder), sizes, offset)
-  of DISPLAY_LIST_ITEM:
-    bctx.buildListItem(ListItemBoxBuilder(builder), sizes, offset)
-  of DISPLAY_TABLE:
-    bctx.buildTable(TableBoxBuilder(builder), sizes, offset)
-  of DISPLAY_FLEX:
-    bctx.buildFlex(BlockBoxBuilder(builder), sizes, offset)
-  else:
-    assert false, "builder.t is " & $builder.computed{"display"}
-    BlockBox(nil)
+  let box = BlockBox(
+    computed: builder.computed,
+    node: builder.node,
+    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
+    margin: sizes.margin
+  )
+  bctx.layout(box, builder, sizes)
   if appendMargins:
     bctx.marginTodo.append(sizes.margin.bottom)
   return box

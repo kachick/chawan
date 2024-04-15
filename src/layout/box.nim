@@ -76,6 +76,3 @@ type
     firstBaseline*: LayoutUnit
     # baseline of the last line box of all descendants
     baseline*: LayoutUnit
-
-  ListItemBox* = ref object of BlockBox
-    marker*: RootInlineFragment
