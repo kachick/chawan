@@ -234,7 +234,7 @@ func endsInNumber(input: string): bool =
   if i < 0:
     return false
   inc i
-  if i + 1 >= input.len and input[i] == '0' and input[i + 1] in {'x', 'X'}:
+  if i + 1 < input.len and input[i] == '0' and input[i + 1] in {'x', 'X'}:
     # hex?
     i += 2
     while i < input.len and input[i] != '.':
