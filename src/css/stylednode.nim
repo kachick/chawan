@@ -37,10 +37,10 @@ import chame/tags
 
 type
   StyledType* = enum
-    STYLED_ELEMENT, STYLED_TEXT, STYLED_REPLACEMENT
+    stElement, stText, stReplacement
 
   DependencyType* = enum
-    DEPEND_HOVER, DEPEND_CHECKED, DEPEND_FOCUS
+    dtHover, dtChecked, dtFocus
 
   DependencyInfo* = object
     # All nodes we depend on, for each dependency type d.
@@ -54,13 +54,13 @@ type
     node*: Node
     pseudo*: PseudoElem
     case t*: StyledType
-    of STYLED_TEXT:
+    of stText:
       text*: string
-    of STYLED_ELEMENT:
+    of stElement:
       computed*: CSSComputedValues
       children*: seq[StyledNode]
       depends*: DependencyInfo
-    of STYLED_REPLACEMENT:
+    of stReplacement:
       # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
@@ -69,13 +69,13 @@ func `$`*(node: StyledNode): string =
   if node == nil:
     return "nil"
   case node.t
-  of STYLED_TEXT:
+  of stText:
     return "#text " & node.text
-  of STYLED_ELEMENT:
+  of stElement:
     if node.node != nil:
       return $node.node
     return $node.pseudo
-  of STYLED_REPLACEMENT:
+  of stReplacement:
     return "#replacement"
 
 iterator branch*(node: StyledNode): StyledNode {.inline.} =
@@ -95,7 +95,7 @@ iterator elementList_rev*(node: StyledNode): StyledNode {.inline.} =
 func findElement*(root: StyledNode; elem: Element): StyledNode =
   var stack: seq[StyledNode]
   for child in root.elementList_rev:
-    if child.t == STYLED_ELEMENT and child.pseudo == PSEUDO_NONE:
+    if child.t == stElement and child.pseudo == peNone:
       stack.add(child)
   let en = Node(elem)
   while stack.len > 0:
@@ -103,11 +103,11 @@ func findElement*(root: StyledNode; elem: Element): StyledNode =
     if node.node == en:
       return node
     for child in node.elementList_rev:
-      if child.t == STYLED_ELEMENT and child.pseudo == PSEUDO_NONE:
+      if child.t == stElement and child.pseudo == peNone:
         stack.add(child)
 
 func isDomElement*(styledNode: StyledNode): bool {.inline.} =
-  styledNode.t == STYLED_ELEMENT and styledNode.pseudo == PSEUDO_NONE
+  styledNode.t == stElement and styledNode.pseudo == peNone
 
 # DOM-style getters, for Element interoperability...
 func parentElement*(node: StyledNode): StyledNode {.inline.} =
@@ -119,9 +119,9 @@ func checked(element: Element): bool =
     result = input.checked
 
 func isValid*(styledNode: StyledNode): bool =
-  if styledNode.t == STYLED_TEXT:
+  if styledNode.t == stText:
     return true
-  if styledNode.t == STYLED_REPLACEMENT:
+  if styledNode.t == stReplacement:
     return true
   if styledNode.node != nil and Element(styledNode.node).invalid:
     return false
@@ -130,13 +130,13 @@ func isValid*(styledNode: StyledNode): bool =
       assert child.node != nil
       let elem = Element(child.node)
       case d
-      of DEPEND_HOVER:
+      of dtHover:
         if child.depends.prev[d] != elem.hover:
           return false
-      of DEPEND_CHECKED:
+      of dtChecked:
         if child.depends.prev[d] != elem.checked:
           return false
-      of DEPEND_FOCUS:
+      of dtFocus:
         let focus = elem.document.focus == elem
         if child.depends.prev[d] != focus:
           return false
@@ -144,10 +144,10 @@ func isValid*(styledNode: StyledNode): bool =
 
 proc applyDependValues*(styledNode: StyledNode) =
   let elem = Element(styledNode.node)
-  styledNode.depends.prev[DEPEND_HOVER] = elem.hover
-  styledNode.depends.prev[DEPEND_CHECKED] = elem.checked
+  styledNode.depends.prev[dtHover] = elem.hover
+  styledNode.depends.prev[dtChecked] = elem.checked
   let focus = elem.document.focus == elem
-  styledNode.depends.prev[DEPEND_FOCUS] = focus
+  styledNode.depends.prev[dtFocus] = focus
   elem.invalid = false
 
 proc addDependency*(styledNode, dep: StyledNode; t: DependencyType) =
@@ -157,7 +157,7 @@ proc addDependency*(styledNode, dep: StyledNode; t: DependencyType) =
 func newStyledElement*(parent: StyledNode; element: Element;
     computed: CSSComputedValues; reg: DependencyInfo): StyledNode =
   return StyledNode(
-    t: STYLED_ELEMENT,
+    t: stElement,
     computed: computed,
     node: element,
     parent: parent,
@@ -165,16 +165,16 @@ func newStyledElement*(parent: StyledNode; element: Element;
   )
 
 func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
-  return StyledNode(t: STYLED_ELEMENT, node: element, parent: parent)
+  return StyledNode(t: stElement, node: element, parent: parent)
 
 # Root
 func newStyledElement*(element: Element): StyledNode =
-  return StyledNode(t: STYLED_ELEMENT, node: element)
+  return StyledNode(t: stElement, node: element)
 
 func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
     computed: CSSComputedValues; reg: sink DependencyInfo): StyledNode =
   return StyledNode(
-    t: STYLED_ELEMENT,
+    t: stElement,
     computed: computed,
     pseudo: pseudo,
     parent: parent,
@@ -184,17 +184,18 @@ func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
 func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
     computed: CSSComputedValues): StyledNode =
   return StyledNode(
-    t: STYLED_ELEMENT,
+    t: stElement,
     computed: computed,
     pseudo: pseudo,
     parent: parent
   )
 
 func newStyledText*(parent: StyledNode; text: string): StyledNode =
-  return StyledNode(t: STYLED_TEXT, text: text, parent: parent)
+  return StyledNode(t: stText, text: text, parent: parent)
 
 func newStyledText*(parent: StyledNode; text: Text): StyledNode =
-  return StyledNode(t: STYLED_TEXT, text: text.data, node: text, parent: parent)
+  return StyledNode(t: stText, text: text.data, node: text, parent: parent)
 
-func newStyledReplacement*(parent: StyledNode; content: CSSContent): StyledNode =
-  return StyledNode(t: STYLED_REPLACEMENT, parent: parent, content: content)
+func newStyledReplacement*(parent: StyledNode; content: CSSContent):
+    StyledNode =
+  return StyledNode(t: stReplacement, parent: parent, content: content)

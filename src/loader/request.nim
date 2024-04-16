@@ -139,8 +139,8 @@ func newRequest*(url: URL; httpMethod = HTTP_GET;
     proxy = proxy
   )
 
-func createPotentialCORSRequest*(url: URL, destination: RequestDestination,
-    cors: CORSAttribute, fallbackFlag = false): Request =
+func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
+    cors: CORSAttribute; fallbackFlag = false): Request =
   var mode = if cors == NO_CORS:
     RequestMode.NO_CORS
   else:
@@ -150,7 +150,12 @@ func createPotentialCORSRequest*(url: URL, destination: RequestDestination,
   let credentialsMode = if cors == ANONYMOUS:
     CredentialsMode.SAME_ORIGIN
   else: CredentialsMode.INCLUDE
-  return newRequest(url, destination = destination, mode = mode, credentialsMode = credentialsMode)
+  return newRequest(
+    url,
+    destination = destination,
+    mode = mode,
+    credentialsMode = credentialsMode
+  )
 
 type
   BodyInitType = enum
@@ -180,7 +185,7 @@ type
     proxyUrl: URL
     mode: Option[RequestMode]
 
-proc fromJSBodyInit(ctx: JSContext, val: JSValue): JSResult[BodyInit] =
+proc fromJSBodyInit(ctx: JSContext; val: JSValue): JSResult[BodyInit] =
   if JS_IsUndefined(val) or JS_IsNull(val):
     return err(nil)
   block formData:
@@ -201,7 +206,7 @@ proc fromJSBodyInit(ctx: JSContext, val: JSValue): JSResult[BodyInit] =
       return ok(BodyInit(t: BODY_INIT_STRING, str: x.get))
   return err(newTypeError("Invalid body init type"))
 
-func newRequest*[T: string|Request](ctx: JSContext, resource: T,
+func newRequest*[T: string|Request](ctx: JSContext; resource: T;
     init = none(RequestInit)): JSResult[Request] {.jsctor.} =
   when T is string:
     let url = ?newURL(resource)

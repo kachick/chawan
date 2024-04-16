@@ -90,7 +90,8 @@ macro makeStaticAtom =
     let tn = $StaticAtom0(i - 1)
     if tn in seen:
       continue
-    decl0.add(newNimNode(nnkEnumFieldDef).add(ident(f.strVal), newStrLitNode(tn)))
+    decl0.add(newNimNode(nnkEnumFieldDef).add(ident(f.strVal),
+      newStrLitNode(tn)))
   decl
 
 makeStaticAtom
@@ -121,7 +122,7 @@ func hash*(atom: CAtom): Hash {.borrow.}
 
 func `$`*(a: CAtom): string {.borrow.}
 
-func toAtom(factory: var CAtomFactoryObj, s: string): CAtom =
+func toAtom(factory: var CAtomFactoryObj; s: string): CAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
   for atom in factory.strMap[i]:
@@ -149,27 +150,27 @@ proc newCAtomFactory*(): CAtomFactory =
   factory[] = factoryInit.obj
   return factory
 
-func toAtom*(factory: CAtomFactory, s: string): CAtom =
+func toAtom*(factory: CAtomFactory; s: string): CAtom =
   return factory[].toAtom(s)
 
-func toAtom*(factory: CAtomFactory, tagType: TagType): CAtom =
+func toAtom*(factory: CAtomFactory; tagType: TagType): CAtom =
   assert tagType != TAG_UNKNOWN
   return CAtom(tagType)
 
-func toAtom*(factory: CAtomFactory, attrType: StaticAtom): CAtom =
+func toAtom*(factory: CAtomFactory; attrType: StaticAtom): CAtom =
   assert attrType != atUnknown
   return CAtom(attrType)
 
-func toStr*(factory: CAtomFactory, atom: CAtom): string =
+func toStr*(factory: CAtomFactory; atom: CAtom): string =
   return factory.atomMap[int(atom)]
 
-func toTagType*(factory: CAtomFactory, atom: CAtom): TagType =
+func toTagType*(factory: CAtomFactory; atom: CAtom): TagType =
   let i = int(atom)
   if i <= int(TagType.high):
     return TagType(i)
   return TAG_UNKNOWN
 
-func toStaticAtom*(factory: CAtomFactory, atom: CAtom): StaticAtom =
+func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
   let i = int(atom)
   if i <= int(StaticAtom.high):
     return StaticAtom(i)

@@ -26,7 +26,7 @@ type
 jsDestructor(Blob)
 jsDestructor(WebFile)
 
-proc newBlob*(buffer: pointer, size: int, ctype: string,
+proc newBlob*(buffer: pointer; size: int; ctype: string;
     deallocFun: DeallocFun): Blob =
   return Blob(
     buffer: buffer,
@@ -45,7 +45,7 @@ proc finalize(file: WebFile) {.jsfin.} =
     file.deallocFun()
     file.buffer = nil
 
-proc newWebFile*(path: string, webkitRelativePath = ""): WebFile =
+proc newWebFile*(path: string; webkitRelativePath = ""): WebFile =
   var file: File
   if not open(file, path, fmRead):
     raise newException(IOError, "Failed to open file")
@@ -65,7 +65,7 @@ type
   FilePropertyBag = object of BlobPropertyBag
     #TODO lastModified: int64
 
-proc newWebFile(ctx: JSContext, fileBits: seq[string], fileName: string,
+proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     options = FilePropertyBag()): WebFile {.jsctor.} =
   let file = WebFile(
     isfile: false,

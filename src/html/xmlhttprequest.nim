@@ -14,12 +14,12 @@ import types/url
 
 type
   XMLHttpRequestResponseType = enum
-    TYPE_UNKNOWN = ""
-    TYPE_ARRAYBUFFER = "arraybuffer"
-    TYPE_BLOB = "blob"
-    TYPE_DOCUMENT = "document"
-    TYPE_JSON = "json"
-    TYPE_TEXT = "text"
+    xhrtUnknown = ""
+    xhrtArraybuffer = "arraybuffer"
+    xhrtBlob = "blob"
+    xhrtDocument = "document"
+    xhrtJSON = "json"
+    xhrtText = "text"
 
   XMLHttpRequestState = enum
     UNSENT = 0u16
@@ -29,7 +29,7 @@ type
     DONE = 4u16
 
   XMLHttpRequestFlag = enum
-    SEND_FLAG, UPLOAD_LISTENER_FLAG, SYNC_FLAG
+    xhrfSend, xhrfUploadListener, xhrfSync
 
   XMLHttpRequestEventTarget = ref object of EventTarget
     onloadstart {.jsgetset.}: EventHandler
@@ -81,7 +81,7 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
   else:
     errDOMException("Invalid method", "SyntaxError")
 
-proc open(ctx: JSContext, this: XMLHttpRequest, httpMethod, url: string):
+proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string):
     Err[DOMException] {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
   let global = JS_GetGlobalObject(ctx)
@@ -98,12 +98,12 @@ proc open(ctx: JSContext, this: XMLHttpRequest, httpMethod, url: string):
   let async = true
   #TODO if async is false... probably just throw.
   #TODO terminate fetch controller
-  this.flags.excl(SEND_FLAG)
-  this.flags.excl(UPLOAD_LISTENER_FLAG)
+  this.flags.excl(xhrfSend)
+  this.flags.excl(xhrfUploadListener)
   if async:
-    this.flags.excl(SYNC_FLAG)
+    this.flags.excl(xhrfSync)
   else:
-    this.flags.incl(SYNC_FLAG)
+    this.flags.incl(xhrfSync)
   this.requestMethod = httpMethod
   this.authorRequestHeaders = newHeaders()
   this.response = makeNetworkError()

@@ -17,7 +17,7 @@ proc atob*(data: string): DOMResult[NarrowString] =
     return errDOMException("Invalid character in string",
       "InvalidCharacterError")
 
-proc btoa*(ctx: JSContext, data: JSValue): DOMResult[string] =
+proc btoa*(ctx: JSContext; data: JSValue): DOMResult[string] =
   let data = JS_ToString(ctx, data)
   if JS_IsException(data):
     return err()

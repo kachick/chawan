@@ -1,7 +1,7 @@
 import std/os
 
 var tmpf_seq: int
-proc getTempFile*(tmpdir: string, ext = ""): string =
+proc getTempFile*(tmpdir: string; ext = ""): string =
   if not dirExists(tmpdir):
     createDir(tmpdir)
   var tmpf = tmpdir / "chatmp" & $getCurrentProcessId() & "-" & $tmpf_seq

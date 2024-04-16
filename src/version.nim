@@ -4,7 +4,7 @@ import std/macros
 
 template imp(x: untyped) = import x
 
-macro tryImport(x: untyped, name: static string) =
+macro tryImport(x: untyped; name: static string) =
   let vs = ident(name & "Version")
   quote do:
     when not compiles(imp `x`):
@@ -13,7 +13,7 @@ macro tryImport(x: untyped, name: static string) =
           ". Please run `make submodule` to fetch the required submodules.")
     import `x` as `vs`
 
-macro checkVersion(xs: static string, major, minor, patch: int) =
+macro checkVersion(xs: static string; major, minor, patch: int) =
   let x = ident(xs & "Version")
   quote do:
     when `x`.Major < `major` or `x`.Minor < `minor` or `x`.Patch < `patch`:

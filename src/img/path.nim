@@ -49,25 +49,25 @@ proc newPath*(): Path =
     needsNewSubpath: true
   )
 
-proc addSubpathAt(path: Path, p: Vector2D) =
+proc addSubpathAt(path: Path; p: Vector2D) =
   path.subpaths.add(Subpath(points: @[p]))
 
-proc addSegment(path: Path, segment: PathSegment, p: Vector2D) =
+proc addSegment(path: Path; segment: PathSegment; p: Vector2D) =
   path.subpaths[^1].segments.add(segment)
   path.subpaths[^1].points.add(p)
 
-proc addStraightSegment(path: Path, p: Vector2D) =
+proc addStraightSegment(path: Path; p: Vector2D) =
   let segment = PathSegment(t: SEGMENT_STRAIGHT)
   path.addSegment(segment, p)
 
-proc addQuadraticSegment(path: Path, cp, p: Vector2D) =
+proc addQuadraticSegment(path: Path; cp, p: Vector2D) =
   let segment = PathSegment(
     t: SEGMENT_QUADRATIC,
     cp: cp
   )
   path.addSegment(segment, p)
 
-proc addBezierSegment(path: Path, cp0, cp1, p: Vector2D) =
+proc addBezierSegment(path: Path; cp0, cp1, p: Vector2D) =
   let segment = PathSegment(
     t: SEGMENT_BEZIER,
     cp0: cp0,
@@ -76,7 +76,7 @@ proc addBezierSegment(path: Path, cp0, cp1, p: Vector2D) =
   path.addSegment(segment, p)
 
 # Goes from start tangent point to end tangent point
-proc addArcSegment(path: Path, o, etan: Vector2D, r: float64, ia: bool) =
+proc addArcSegment(path: Path; o, etan: Vector2D; r: float64; ia: bool) =
   let segment = PathSegment(
     t: SEGMENT_ARC,
     oa: o,
@@ -85,7 +85,7 @@ proc addArcSegment(path: Path, o, etan: Vector2D, r: float64, ia: bool) =
   )
   path.addSegment(segment, etan)
 
-proc addEllipseSegment(path: Path, o, etan: Vector2D, rx, ry: float64) =
+proc addEllipseSegment(path: Path; o, etan: Vector2D; rx, ry: float64) =
   #TODO simplify to bezier?
   let segment = PathSegment(
     t: SEGMENT_ELLIPSE,
@@ -114,9 +114,9 @@ iterator items*(pl: PathLines): LineSegment {.inline.} =
   for line in pl.lines:
     yield line
 
-func `[]`*(pl: PathLines, i: int): LineSegment = pl.lines[i]
-func `[]`*(pl: PathLines, i: BackwardsIndex): LineSegment = pl.lines[i]
-func `[]`*(pl: PathLines, s: Slice[int]): seq[LineSegment] = pl.lines[s]
+func `[]`*(pl: PathLines; i: int): LineSegment = pl.lines[i]
+func `[]`*(pl: PathLines; i: BackwardsIndex): LineSegment = pl.lines[i]
+func `[]`*(pl: PathLines; s: Slice[int]): seq[LineSegment] = pl.lines[s]
 func len*(pl: PathLines): int = pl.lines.len
 
 iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
@@ -163,7 +163,7 @@ func arcControlPoints(p1, p4, o: Vector2D): tuple[c0, c1: Vector2D] =
   let c1 = o + b + Vector2D(x:  k2 * b.y, y: -k2 * b.x)
   return (c0, c1)
 
-iterator arcLines(p0, p1, o: Vector2D, r: float64, i: bool): Line {.inline.} =
+iterator arcLines(p0, p1, o: Vector2D; r: float64; i: bool): Line {.inline.} =
   var p0 = p0
   let pp0 = p0 - o
   let pp1 = p1 - o
@@ -181,7 +181,7 @@ iterator arcLines(p0, p1, o: Vector2D, r: float64, i: bool): Line {.inline.} =
     p0 = p1
     theta -= step
 
-iterator lines(subpath: Subpath, i: int): Line {.inline.} =
+iterator lines(subpath: Subpath; i: int): Line {.inline.} =
   let p0 = subpath.points[i]
   let p1 = subpath.points[i + 1]
   case subpath.segments[i].t
@@ -232,20 +232,20 @@ proc getLineSegments*(path: Path): PathLines =
     lines: segments
   )
 
-proc moveTo(path: Path, v: Vector2D) =
+proc moveTo(path: Path; v: Vector2D) =
   path.addSubpathAt(v)
   path.needsNewSubpath = false #TODO TODO TODO ???? why here
 
 proc beginPath*(path: Path) =
   path.subpaths.setLen(0)
 
-proc moveTo*(path: Path, x, y: float64) =
+proc moveTo*(path: Path; x, y: float64) =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
   path.moveTo(Vector2D(x: x, y: y))
 
-proc ensureSubpath(path: Path, x, y: float64) =
+proc ensureSubpath(path: Path; x, y: float64) =
   if path.needsNewSubpath:
     path.moveTo(x, y)
     path.needsNewSubpath = false
@@ -272,7 +272,7 @@ proc tempOpenPath*(path: Path) =
     path.subpaths[^1].closed = false
     path.tempClosed = false
 
-proc lineTo*(path: Path, x, y: float64) =
+proc lineTo*(path: Path; x, y: float64) =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -281,7 +281,7 @@ proc lineTo*(path: Path, x, y: float64) =
   else:
     path.addStraightSegment(Vector2D(x: x, y: y))
 
-proc quadraticCurveTo*(path: Path, cpx, cpy, x, y: float64) =
+proc quadraticCurveTo*(path: Path; cpx, cpy, x, y: float64) =
   for v in [cpx, cpy, x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -290,7 +290,7 @@ proc quadraticCurveTo*(path: Path, cpx, cpy, x, y: float64) =
   let p = Vector2D(x: x, y: y)
   path.addQuadraticSegment(cp, p)
 
-proc bezierCurveTo*(path: Path, cp0x, cp0y, cp1x, cp1y, x, y: float64) =
+proc bezierCurveTo*(path: Path; cp0x, cp0y, cp1x, cp1y, x, y: float64) =
   for v in [cp0x, cp0y, cp1x, cp1y, x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -300,7 +300,7 @@ proc bezierCurveTo*(path: Path, cp0x, cp0y, cp1x, cp1y, x, y: float64) =
   let p = Vector2D(x: x, y: y)
   path.addBezierSegment(cp0, cp1, p)
 
-proc arcTo*(path: Path, x1, y1, x2, y2, radius: float64): Err[DOMException] =
+proc arcTo*(path: Path; x1, y1, x2, y2, radius: float64): Err[DOMException] =
   for v in [x1, y1, x2, y2, radius]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return ok()
@@ -332,7 +332,7 @@ proc arcTo*(path: Path, x1, y1, x2, y2, radius: float64): Err[DOMException] =
     path.addArcSegment(origin, tv2, radius, true) #TODO always inner?
   return ok()
 
-func resolveEllipsePoint(o: Vector2D, angle, radiusX, radiusY,
+func resolveEllipsePoint(o: Vector2D; angle, radiusX, radiusY,
     rotation: float64): Vector2D =
   # Stolen from SerenityOS
   let tanrel = tan(angle)
@@ -346,7 +346,7 @@ func resolveEllipsePoint(o: Vector2D, angle, radiusX, radiusY,
   let rely = ab * tanrel / sq * sn
   return Vector2D(x: relx, y: rely).rotate(rotation) + o
 
-proc arc*(path: Path, x, y, radius, startAngle, endAngle: float64,
+proc arc*(path: Path; x, y, radius, startAngle, endAngle: float64;
     counterclockwise: bool): Err[DOMException] =
   for v in [x, y, radius, startAngle, endAngle]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
@@ -368,8 +368,8 @@ proc arc*(path: Path, x, y, radius, startAngle, endAngle: float64,
   path.addArcSegment(o, e, radius, abs(startAngle - endAngle) < PI)
   return ok()
 
-proc ellipse*(path: Path, x, y, radiusX, radiusY, rotation, startAngle,
-    endAngle: float64, counterclockwise: bool): Err[DOMException] =
+proc ellipse*(path: Path; x, y, radiusX, radiusY, rotation, startAngle,
+    endAngle: float64; counterclockwise: bool): Err[DOMException] =
   for v in [x, y, radiusX, radiusY, rotation, startAngle, endAngle]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return ok()
@@ -390,7 +390,7 @@ proc ellipse*(path: Path, x, y, radiusX, radiusY, rotation, startAngle,
   path.addEllipseSegment(o, e, radiusX, radiusY)
   return ok()
 
-proc rect*(path: Path, x, y, w, h: float64) =
+proc rect*(path: Path; x, y, w, h: float64) =
   for v in [x, y, w, h]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -401,7 +401,7 @@ proc rect*(path: Path, x, y, w, h: float64) =
   path.addStraightSegment(Vector2D(x: x, y: y))
   path.addSubpathAt(Vector2D(x: x, y: y))
 
-proc roundRect*(path: Path, x, y, w, h, radii: float64) =
+proc roundRect*(path: Path; x, y, w, h, radii: float64) =
   for v in [x, y, w, h]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return

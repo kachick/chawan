@@ -33,7 +33,7 @@ func rewriteURL(pattern, surl: string): string =
 type URIMethodMapResult* = enum
   URI_RESULT_NOT_FOUND, URI_RESULT_SUCCESS, URI_RESULT_WRONG_URL
 
-proc findAndRewrite*(this: URIMethodMap, url: var URL): URIMethodMapResult =
+proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
   let protocol = url.protocol
   if protocol in this.map:
     let surl = this.map[protocol].rewriteURL($url)
@@ -44,7 +44,7 @@ proc findAndRewrite*(this: URIMethodMap, url: var URL): URIMethodMapResult =
     return URI_RESULT_SUCCESS
   return URI_RESULT_NOT_FOUND
 
-proc parseURIMethodMap*(this: var URIMethodMap, s: string) =
+proc parseURIMethodMap*(this: var URIMethodMap; s: string) =
   for line in s.split('\n'):
     if line.len == 0 or line[0] == '#':
       continue # comments
@@ -74,6 +74,6 @@ proc parseURIMethodMap*(s: string): URIMethodMap =
   result = URIMethodMap()
   result.parseURIMethodMap(s)
 
-proc append*(this: var URIMethodMap, that: URIMethodMap) =
+proc append*(this: var URIMethodMap; that: URIMethodMap) =
   for k, v in that.map:
     discard this.map.hasKeyOrPut(k, v)

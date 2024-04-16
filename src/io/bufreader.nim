@@ -118,7 +118,7 @@ proc sread*(reader: var BufferedReader; s: var seq) =
   for x in s.mitems:
     reader.sread(x)
 
-proc sread*[U; V](reader: var BufferedReader, t: var Table[U, V]) =
+proc sread*[U; V](reader: var BufferedReader; t: var Table[U, V]) =
   var len: int
   reader.sread(len)
   for i in 0..<len:

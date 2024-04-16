@@ -970,7 +970,7 @@ proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
 
 const BufferSize = 4096
 
-proc onConnected*(loader: FileLoader, fd: int) =
+proc onConnected*(loader: FileLoader; fd: int) =
   let connectData = loader.connecting[fd]
   let stream = connectData.stream
   let promise = connectData.promise

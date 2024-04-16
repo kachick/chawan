@@ -12,7 +12,7 @@ proc hasKeyOrPut*(mimeTypes: var MimeTypes; k, v: string): bool {.borrow.}
 
 # Add mime types found in stream to mimeTypes.
 # No error handling for now.
-proc parseMimeTypes*(mimeTypes: var MimeTypes, stream: Stream) =
+proc parseMimeTypes*(mimeTypes: var MimeTypes; stream: Stream) =
   var line: string
   while stream.readLine(line):
     if line.len == 0:

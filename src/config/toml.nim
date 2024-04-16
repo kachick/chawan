@@ -114,38 +114,38 @@ func `$`*(val: TomlValue): string =
       result &= ','
     result &= ']'
 
-func `[]`*(val: TomlValue, key: string): TomlValue =
+func `[]`*(val: TomlValue; key: string): TomlValue =
   return val.tab.map[key]
 
 iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
   for k, v in val.tab.map:
     yield (k, v)
 
-func contains*(val: TomlValue, key: string): bool =
+func contains*(val: TomlValue; key: string): bool =
   return key in val.tab.map
 
 const ValidBare = AsciiAlphaNumeric + {'-', '_'}
 
-func peek(state: TomlParser, i: int): char =
+func peek(state: TomlParser; i: int): char =
   return state.buf[state.at + i]
 
-template err(state: TomlParser, msg: string): untyped =
+template err(state: TomlParser; msg: string): untyped =
   err(state.filename & "(" & $state.line & "):" & msg)
 
 proc consume(state: var TomlParser): char =
   result = state.buf[state.at]
   inc state.at
 
-proc seek(state: var TomlParser, n: int) =
+proc seek(state: var TomlParser; n: int) =
   state.at += n
 
 proc reconsume(state: var TomlParser) =
   dec state.at
 
-proc has(state: var TomlParser, i: int = 0): bool =
+proc has(state: var TomlParser; i: int = 0): bool =
   return state.at + i < state.buf.len
 
-proc consumeEscape(state: var TomlParser, c: char): Result[Rune, TomlError] =
+proc consumeEscape(state: var TomlParser; c: char): Result[Rune, TomlError] =
   var len = 4
   if c == 'U':
     len = 8
@@ -171,8 +171,7 @@ proc consumeEscape(state: var TomlParser, c: char): Result[Rune, TomlError] =
   else:
     return state.err("invalid escaped codepoint: " & $c)
 
-proc consumeString(state: var TomlParser, first: char):
-    Result[string, string] =
+proc consumeString(state: var TomlParser; first: char): Result[string, string] =
   var multiline = false
   if first == '"' and state.has(1) and state.peek(0) == '"' and
       state.peek(1) == '"':
@@ -232,7 +231,7 @@ proc consumeString(state: var TomlParser, first: char):
       res &= c
   return ok(res)
 
-proc consumeBare(state: var TomlParser, c: char): Result[string, TomlError] =
+proc consumeBare(state: var TomlParser; c: char): Result[string, TomlError] =
   var res = $c
   while state.has():
     let c = state.consume()
@@ -392,7 +391,7 @@ proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
 type ParsedNumberType = enum
   NUMBER_INTEGER, NUMBER_FLOAT, NUMBER_HEX, NUMBER_OCT
 
-proc consumeNumber(state: var TomlParser, c: char): TomlResult =
+proc consumeNumber(state: var TomlParser; c: char): TomlResult =
   var repr = ""
   var numType = NUMBER_INTEGER
   if c == '0' and state.has():
@@ -568,7 +567,7 @@ proc consumeValue(state: var TomlParser): TomlResult =
     return ok(TomlValue(t: tvtString, s: ""))
   return state.err("unexpected end of file")
 
-proc parseToml*(inputStream: Stream, filename = "<input>", laxnames = false):
+proc parseToml*(inputStream: Stream; filename = "<input>"; laxnames = false):
     TomlResult =
   var state = TomlParser(
     buf: inputStream.readAll(),

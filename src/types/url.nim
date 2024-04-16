@@ -419,7 +419,7 @@ proc shortenPath(url: URL) {.inline.} =
   if url.path.ss.len > 0:
     discard url.path.ss.pop()
 
-proc append(path: var URLPath, s: string) =
+proc append(path: var URLPath; s: string) =
   if path.opaque:
     path.s &= s
   else:
@@ -1013,7 +1013,7 @@ proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)];
     result &= '='
     result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
-proc initURLSearchParams(params: URLSearchParams, init: string) =
+proc initURLSearchParams(params: URLSearchParams; init: string) =
   params.list = parseApplicationXWWWFormUrlEncoded(init)
 
 proc newURLSearchParams[

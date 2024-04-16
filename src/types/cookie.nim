@@ -103,14 +103,16 @@ proc parseCookieDate(val: string): Option[DateTime] =
         year = n
         foundYear = true
         continue
-  if not (foundDayOfMonth and foundMonth and foundYear and foundTime): return none(DateTime)
+  if not (foundDayOfMonth and foundMonth and foundYear and foundTime):
+    return none(DateTime)
   if dayOfMonth notin 0..31: return none(DateTime)
   if year < 1601: return none(DateTime)
   if time[0] > 23: return none(DateTime)
   if time[1] > 59: return none(DateTime)
   if time[2] > 59: return none(DateTime)
-  var dateTime = dateTime(year, Month(month), MonthdayRange(dayOfMonth), HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
-  return some(dateTime)
+  let dt = dateTime(year, Month(month), MonthdayRange(dayOfMonth),
+    HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
+  return some(dt)
 
 # For debugging
 proc `$`*(cookiejar: CookieJar): string =
@@ -152,7 +154,7 @@ func cookiePathMatches(cookiePath, requestPath: string): bool =
 #      *  The last character of the string that is not included in the
 #         domain string is a %x2E (".") character. (???)
 #      *  The string is a host name (i.e., not an IP address).)
-func cookieDomainMatches(cookieDomain: string, url: URL): bool =
+func cookieDomainMatches(cookieDomain: string; url: URL): bool =
   let host = url.host
   if host == cookieDomain:
     return true
@@ -164,7 +166,7 @@ func cookieDomainMatches(cookieDomain: string, url: URL): bool =
     cookieDomain
   return host.endsWith(cookieDomain)
 
-proc add*(cookieJar: CookieJar, cookie: Cookie) =
+proc add*(cookieJar: CookieJar; cookie: Cookie) =
   var i = -1
   for j in 0 ..< cookieJar.cookies.len:
     let old = cookieJar.cookies[j]
@@ -178,12 +180,12 @@ proc add*(cookieJar: CookieJar, cookie: Cookie) =
     cookieJar.cookies.del(i)
   cookieJar.cookies.add(cookie)
 
-proc add*(cookiejar: CookieJar, cookies: seq[Cookie]) =
+proc add*(cookiejar: CookieJar; cookies: seq[Cookie]) =
   for cookie in cookies:
     cookiejar.add(cookie)
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
-proc serialize*(cookiejar: CookieJar, url: URL): string =
+proc serialize*(cookiejar: CookieJar; url: URL): string =
   if not cookiejar.filter.match(url):
     return "" # fail
   let t = now().toTime().toUnix()
@@ -205,7 +207,7 @@ proc serialize*(cookiejar: CookieJar, url: URL): string =
     result &= "="
     result &= cookie.value
 
-proc newCookie*(str: string, url: URL = nil): JSResult[Cookie]
+proc newCookie*(str: string; url: URL = nil): JSResult[Cookie]
     {.jsctor.} =
   let cookie = Cookie(
     expires: -1,
@@ -262,7 +264,7 @@ proc newCookie*(str: string, url: URL = nil): JSResult[Cookie]
       cookie.path = defaultCookiePath(url)
   return ok(cookie)
 
-proc newCookieJar*(location: URL, allowhosts: seq[Regex]): CookieJar =
+proc newCookieJar*(location: URL; allowhosts: seq[Regex]): CookieJar =
   return CookieJar(
     filter: newURLFilter(
       scheme = some(location.scheme),

@@ -15,21 +15,21 @@ func pngInt(i: uint32): auto =
 func oq(writer: PNGWriter): ptr UncheckedArray[uint8] =
   cast[ptr UncheckedArray[uint8]](writer.buf)
 
-proc writeStr[T](writer: var PNGWriter, s: T) =
+proc writeStr[T](writer: var PNGWriter; s: T) =
   if writer.outlen < writer.i + s.len:
     writer.outlen = writer.i + s.len
     writer.buf = realloc(writer.buf, writer.outlen)
   copyMem(addr writer.oq[writer.i], unsafeAddr s[0], s.len)
   writer.i += s.len
 
-proc writeInt(writer: var PNGWriter, i: uint32) =
+proc writeInt(writer: var PNGWriter; i: uint32) =
   writer.writeStr(i.toBytesBE())
 
-proc writePngInt(writer: var PNGWriter, i: uint32) =
+proc writePngInt(writer: var PNGWriter; i: uint32) =
   doAssert i < 0x80000000u32
   writer.writeInt(i)
 
-proc writeChunk[T](writer: var PNGWriter, t: string, data: T) =
+proc writeChunk[T](writer: var PNGWriter; t: string; data: T) =
   var crc = uint32(crc32(0, cast[ptr uint8](unsafeAddr t[0]), cuint(t.len)))
   if data.len > 0:
     crc = uint32(crc32(crc, cast[ptr uint8](unsafeAddr data[0]),
@@ -41,15 +41,15 @@ proc writeChunk[T](writer: var PNGWriter, t: string, data: T) =
   writer.writeInt(uint32(crc))
 
 type PNGColorType {.size: sizeof(uint8).} = enum
-  GRAYSCALE = 0
-  TRUECOLOR = 2
-  INDEXED_COLOR = 3
-  GRAYSCALE_WITH_ALPHA = 4
-  TRUECOLOR_WITH_ALPHA = 6
+  pcGrayscale = 0
+  pcTrueColor = 2
+  pcIndexedColor = 3
+  pcGrayscaleWithAlpha = 4
+  pcTrueColorWithAlpha = 6
 
 const PNGSignature = "\x89PNG\r\n\x1A\n"
-proc writeIHDR(writer: var PNGWriter, width, height: uint32,
-    bitDepth: uint8, colorType: PNGColorType,
+proc writeIHDR(writer: var PNGWriter; width, height: uint32;
+    bitDepth: uint8; colorType: PNGColorType;
     compressionMethod, filterMethod, interlaceMethod: uint8) =
   writer.writeStr(PNGSignature)
   var ihdr {.noinit.}: array[13, uint8]
@@ -64,7 +64,7 @@ proc writeIHDR(writer: var PNGWriter, width, height: uint32,
   ihdr[12] = interlaceMethod
   writer.writeChunk("IHDR", ihdr)
 
-proc writeIDAT(writer: var PNGWriter, bmp: Bitmap) =
+proc writeIDAT(writer: var PNGWriter; bmp: Bitmap) =
   #TODO smaller idat chunks
   # +1 height for filter
   var idat = newSeq[uint8]((bmp.width + 1) * bmp.height * 4)
@@ -87,13 +87,13 @@ proc writeIDAT(writer: var PNGWriter, bmp: Bitmap) =
   oidat.setLen(int(hlen))
   writer.writeChunk("IDAT", oidat)
 
-proc toPNG*(bmp: Bitmap, outlen: var int): pointer =
+proc toPNG*(bmp: Bitmap; outlen: var int): pointer =
   var writer = PNGWriter(
     buf: alloc(PNGSignature.len),
     outlen: PNGSignature.len
   )
   writer.writeIHDR(uint32(bmp.width), uint32(bmp.height), 8,
-    TRUECOLOR_WITH_ALPHA, 0, 0, 0)
+    pcTrueColorWithAlpha, 0, 0, 0)
   writer.writeIDAT(bmp)
   writer.writeChunk("IEND", "")
   outlen = writer.outlen
@@ -125,28 +125,28 @@ func height(reader: PNGReader): int {.inline.} = int(reader.bmp.height)
 
 func spp(reader: PNGReader): int =
   case reader.colorType
-  of TRUECOLOR: return 3
-  of GRAYSCALE: return 1
-  of INDEXED_COLOR: return 1
-  of GRAYSCALE_WITH_ALPHA: return 2
-  of TRUECOLOR_WITH_ALPHA: return 4
+  of pcTrueColor: return 3
+  of pcGrayscale: return 1
+  of pcIndexedColor: return 1
+  of pcGrayscaleWithAlpha: return 2
+  of pcTrueColorWithAlpha: return 4
 
 func scanlen(reader: PNGReader): int {.inline.} =
   let w = reader.width + 1
   return (w * reader.spp * int(reader.bitDepth) + 7) div 8
 
-proc handleError(reader: var PNGReader, msg: string) =
+proc handleError(reader: var PNGReader; msg: string) =
   #TODO proper error handling?
   stderr.write(msg & "\n")
   reader.bmp = nil
   if reader.hasstrm:
     discard inflateEnd(addr reader.strm)
 
-template err(reader: var PNGReader, msg: string) =
+template err(reader: var PNGReader; msg: string) =
   reader.handleError(msg)
   return
 
-template readStr(reader: var PNGReader, L: int): string =
+template readStr(reader: var PNGReader; L: int): string =
   if reader.i + L > reader.limit:
     reader.err "too short"
   var s = newString(L)
@@ -176,20 +176,20 @@ template readPNGInt(reader: var PNGReader): uint32 =
 
 template readColorType(reader: var PNGReader): PNGColorType =
   case reader.readU8()
-  of 0u8: GRAYSCALE
-  of 2u8: TRUECOLOR
-  of 3u8: INDEXED_COLOR
-  of 4u8: GRAYSCALE_WITH_ALPHA
-  of 6u8: TRUECOLOR_WITH_ALPHA
+  of 0u8: pcGrayscale
+  of 2u8: pcTrueColor
+  of 3u8: pcIndexedColor
+  of 4u8: pcGrayscaleWithAlpha
+  of 6u8: pcTrueColorWithAlpha
   else: reader.err "unknown color type"
 
-func bitDepthValid(colorType: PNGColorType, bitDepth: uint8): bool =
+func bitDepthValid(colorType: PNGColorType; bitDepth: uint8): bool =
   case colorType
-  of GRAYSCALE:
+  of pcGrayscale:
     return int(bitDepth) in [1, 2, 4, 8, 16]
-  of INDEXED_COLOR:
+  of pcIndexedColor:
     return int(bitDepth) in [1, 2, 4, 8]
-  of TRUECOLOR, GRAYSCALE_WITH_ALPHA, TRUECOLOR_WITH_ALPHA:
+  of pcTrueColor, pcGrayscaleWithAlpha, pcTrueColorWithAlpha:
     return int(bitDepth) in [8, 16]
 
 proc readIHDR(reader: var PNGReader) =
@@ -220,11 +220,11 @@ proc readIHDR(reader: var PNGReader) =
 
 proc readbKGD(reader: var PNGReader) =
   case reader.colorType
-  of GRAYSCALE, GRAYSCALE_WITH_ALPHA:
+  of pcGrayscale, pcGrayscaleWithAlpha:
     # We can't really use bit depth > 8
     discard reader.readU8()
     reader.background = gray(reader.readU8())
-  of TRUECOLOR, TRUECOLOR_WITH_ALPHA:
+  of pcTrueColor, pcTrueColorWithAlpha:
     discard reader.readU8()
     let r = reader.readU8()
     discard reader.readU8()
@@ -232,7 +232,7 @@ proc readbKGD(reader: var PNGReader) =
     discard reader.readU8()
     let b = reader.readU8()
     reader.background = rgb(r, g, b)
-  of INDEXED_COLOR:
+  of pcIndexedColor:
     let i = int(reader.readU8())
     if i >= reader.palette.len:
       reader.err "invalid palette index"
@@ -240,11 +240,11 @@ proc readbKGD(reader: var PNGReader) =
 
 proc readtRNS(reader: var PNGReader) =
   case reader.colorType
-  of GRAYSCALE, GRAYSCALE_WITH_ALPHA:
+  of pcGrayscale, pcGrayscaleWithAlpha:
     # We can't really use bit depth > 8
     discard reader.readU8()
     reader.trns = gray(reader.readU8())
-  of TRUECOLOR, TRUECOLOR_WITH_ALPHA:
+  of pcTrueColor, pcTrueColorWithAlpha:
     discard reader.readU8()
     let r = reader.readU8()
     discard reader.readU8()
@@ -252,13 +252,13 @@ proc readtRNS(reader: var PNGReader) =
     discard reader.readU8()
     let b = reader.readU8()
     reader.trns = rgb(r, g, b)
-  of INDEXED_COLOR:
+  of pcIndexedColor:
     if reader.limit - reader.i > reader.palette.len:
       reader.err "too many trns values"
     for i in 0 ..< reader.palette.len:
       reader.palette[i].a = reader.readU8()
 
-proc unfilter(reader: var PNGReader, irow: openArray[uint8], bpp: int) =
+proc unfilter(reader: var PNGReader; irow: openArray[uint8]; bpp: int) =
   # none, sub, up -> replace uprow directly
   # average, paeth -> copy to temp array, then replace uprow
   let fil = irow[0]
@@ -283,9 +283,9 @@ proc unfilter(reader: var PNGReader, irow: openArray[uint8], bpp: int) =
   else:
     reader.err "got invalid filter"
 
-proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
+proc writepxs(reader: var PNGReader; crow: var openArray[RGBAColor]) =
   case reader.colorType
-  of GRAYSCALE:
+  of pcGrayscale:
     var i = 0
     var j = 0
     for x in 0 ..< crow.len:
@@ -301,7 +301,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       i += j div 8
       j = j mod 8
       crow[x] = rgba(n, n, n, 255u8)
-  of TRUECOLOR:
+  of pcTrueColor:
     let step = int(reader.bitDepth) div 8
     var i = 0
     for x in 0 ..< crow.len:
@@ -312,7 +312,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       let b = reader.uprow[i]
       i += step
       crow[x] = rgba(r, g, b, 255u8)
-  of INDEXED_COLOR:
+  of pcIndexedColor:
     var i = 0
     var j = 0
     for x in 0 ..< crow.len:
@@ -329,7 +329,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       if unlikely(int(n) >= reader.palette.len):
         reader.err "invalid palette index"
       crow[x] = reader.palette[n]
-  of GRAYSCALE_WITH_ALPHA:
+  of pcGrayscaleWithAlpha:
     let step = int(reader.bitDepth) div 8
     var i = 0
     for x in 0 ..< crow.len:
@@ -338,7 +338,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
       let a = reader.uprow[i]
       i += step
       crow[x] = rgba(n, n, n, a)
-  of TRUECOLOR_WITH_ALPHA:
+  of pcTrueColorWithAlpha:
     let step = int(reader.bitDepth) div 8
     for x in 0 ..< crow.len:
       let r = reader.uprow[x * step]
@@ -350,7 +350,7 @@ proc writepxs(reader: var PNGReader, crow: var openArray[RGBAColor]) =
 proc readPLTE(reader: var PNGReader) =
   # For non-indexed-color, palette is just a suggestion for quantization.
   #TODO support this in term
-  const CanHavePLTE = {TRUECOLOR, INDEXED_COLOR, TRUECOLOR_WITH_ALPHA}
+  const CanHavePLTE = {pcTrueColor, pcIndexedColor, pcTrueColorWithAlpha}
   if reader.plteseen:
     reader.err "too many PLTE chunks"
   if reader.colorType notin CanHavePLTE:
@@ -371,7 +371,7 @@ proc readIDAT(reader: var PNGReader) =
     reader.err "idat buffer already filled"
   if reader.strmend:
     reader.err "stream already ended"
-  if reader.colorType == INDEXED_COLOR and not reader.plteseen:
+  if reader.colorType == pcIndexedColor and not reader.plteseen:
     reader.err "palette expected for indexed color"
   reader.strm.avail_in = cuint(reader.limit - reader.i)
   reader.strm.next_in = addr reader.iq[reader.i]
@@ -414,16 +414,16 @@ proc readIEND(reader: var PNGReader) =
     reader.err "IEND too long"
   reader.isend = true
 
-proc readUnknown(reader: var PNGReader, s: string) =
+proc readUnknown(reader: var PNGReader; s: string) =
   if (int(s[0]) and 0x20) == 0:
     reader.err "unrecognized critical chunk " & s
   #else: eprint "warning: unknown chunk " & s #debug
   reader.i = reader.limit
 
-proc zlibAlloc(opaque: pointer, items: cuint, size: cuint): pointer {.cdecl.} =
+proc zlibAlloc(opaque: pointer; items: cuint; size: cuint): pointer {.cdecl.} =
   return alloc(items * size)
 
-proc zlibFree(opaque: pointer, address: pointer) {.cdecl.} =
+proc zlibFree(opaque: pointer; address: pointer) {.cdecl.} =
   dealloc(address)
 
 proc initZStream(reader: var PNGReader) =

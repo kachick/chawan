@@ -32,7 +32,7 @@ proc raisePosixIOError*() =
   else:
     raise newException(IOError, $strerror(errno))
 
-method recvData*(s: PosixStream, buffer: pointer, len: int): int =
+method recvData*(s: PosixStream; buffer: pointer; len: int): int =
   let n = read(s.fd, buffer, len)
   if n < 0:
     raisePosixIOError()
@@ -46,13 +46,13 @@ proc sreadChar*(s: PosixStream): char =
   let n = read(s.fd, addr result, 1)
   assert n == 1
 
-method sendData*(s: PosixStream, buffer: pointer, len: int): int =
+method sendData*(s: PosixStream; buffer: pointer; len: int): int =
   let n = write(s.fd, buffer, len)
   if n < 0:
     raisePosixIOError()
   return n
 
-method setBlocking*(s: PosixStream, blocking: bool) {.base.} =
+method setBlocking*(s: PosixStream; blocking: bool) {.base.} =
   s.blocking = blocking
   let ofl = fcntl(s.fd, F_GETFL, 0)
   if blocking:
@@ -70,7 +70,7 @@ method sclose*(s: PosixStream) =
 proc newPosixStream*(fd: FileHandle): PosixStream =
   return PosixStream(fd: fd, blocking: true)
 
-proc newPosixStream*(path: string, flags, mode: cint): PosixStream =
+proc newPosixStream*(path: string; flags, mode: cint): PosixStream =
   let fd = open(cstring(path), flags, mode)
   if fd == -1:
     return nil

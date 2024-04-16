@@ -145,7 +145,7 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
     let blob = newBlob(unsafeAddr s[0], s.len, contentType, deallocFun)
     ok(blob))
 
-proc json(ctx: JSContext, this: Response): Promise[JSResult[JSValue]]
+proc json(ctx: JSContext; this: Response): Promise[JSResult[JSValue]]
     {.jsfunc.} =
   return this.text().then(proc(s: JSResult[string]): JSResult[JSValue] =
     let s = ?s

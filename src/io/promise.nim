@@ -16,7 +16,7 @@ type
     res: T
     get: GetValueProc[T]
 
-  GetValueProc[T] = (proc(opaque: pointer, res: var T))
+  GetValueProc[T] = (proc(opaque: pointer; res: var T))
 
   PromiseMap* = object
     tab: Table[int, EmptyPromise]
@@ -30,12 +30,13 @@ proc newPromiseMap*(opaque: pointer): PromiseMap =
     opaque: opaque
   )
 
-proc addPromise*[T](map: var PromiseMap, id: int, get: GetValueProc[T]): Promise[T] =
+proc addPromise*[T](map: var PromiseMap; id: int; get: GetValueProc[T]):
+    Promise[T] =
   let promise = Promise[T](get: get, opaque: map.opaque)
   map.tab[id] = promise
   return promise
 
-proc addEmptyPromise*(map: var PromiseMap, id: int): EmptyPromise =
+proc addEmptyPromise*(map: var PromiseMap; id: int): EmptyPromise =
   let promise = EmptyPromise(opaque: map.opaque)
   map.tab[id] = promise
   return promise
@@ -52,7 +53,7 @@ proc resolve*(promise: EmptyPromise) =
       break
     promise.next = nil
 
-proc resolve*[T](promise: Promise[T], res: T) =
+proc resolve*[T](promise: Promise[T]; res: T) =
   if promise.cb != nil:
     if promise.get != nil:
       promise.get(promise.opaque, promise.res)
@@ -60,7 +61,7 @@ proc resolve*[T](promise: Promise[T], res: T) =
     promise.res = res
     promise.resolve()
 
-proc resolve*(map: var PromiseMap, promiseid: int) =
+proc resolve*(map: var PromiseMap; promiseid: int) =
   var promise: EmptyPromise
   if map.tab.pop(promiseid, promise):
     promise.resolve()
@@ -73,14 +74,14 @@ proc newResolvedPromise*(): EmptyPromise =
 func empty*(map: PromiseMap): bool =
   map.tab.len == 0
 
-proc then*(promise: EmptyPromise, cb: (proc())): EmptyPromise {.discardable.} =
+proc then*(promise: EmptyPromise; cb: (proc())): EmptyPromise {.discardable.} =
   promise.cb = cb
   promise.next = EmptyPromise()
   if promise.state == PROMISE_FULFILLED:
     promise.resolve()
   return promise.next
 
-proc then*(promise: EmptyPromise, cb: (proc(): EmptyPromise)): EmptyPromise
+proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise)): EmptyPromise
     {.discardable.} =
   let next = EmptyPromise()
   promise.then(proc() =
@@ -92,14 +93,16 @@ proc then*(promise: EmptyPromise, cb: (proc(): EmptyPromise)): EmptyPromise
       next.resolve())
   return next
 
-proc then*[T](promise: Promise[T], cb: (proc(x: T))): EmptyPromise {.discardable.} =
+proc then*[T](promise: Promise[T]; cb: (proc(x: T))): EmptyPromise
+    {.discardable.} =
   return promise.then(proc() =
     if promise.get != nil:
       promise.get(promise.opaque, promise.res)
       promise.get = nil
     cb(promise.res))
 
-proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.discardable.} =
+proc then*[T](promise: EmptyPromise; cb: (proc(): Promise[T])): Promise[T]
+    {.discardable.} =
   let next = Promise[T]()
   promise.then(proc() =
     var p2 = cb()
@@ -111,7 +114,8 @@ proc then*[T](promise: EmptyPromise, cb: (proc(): Promise[T])): Promise[T] {.dis
       next.resolve())
   return next
 
-proc then*[T](promise: Promise[T], cb: (proc(x: T): EmptyPromise)): EmptyPromise {.discardable.} =
+proc then*[T](promise: Promise[T]; cb: (proc(x: T): EmptyPromise)): EmptyPromise
+    {.discardable.} =
   let next = EmptyPromise()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -122,14 +126,16 @@ proc then*[T](promise: Promise[T], cb: (proc(x: T): EmptyPromise)): EmptyPromise
       next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T], cb: (proc(x: T): U)): Promise[U] {.discardable.} =
+proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): U)): Promise[U]
+    {.discardable.} =
   let next = Promise[U]()
   promise.then(proc(x: T) =
     next.res = cb(x)
     next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] {.discardable.} =
+proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Promise[U])): Promise[U]
+    {.discardable.} =
   let next = Promise[U]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -141,7 +147,7 @@ proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Promise[U])): Promise[U] 
       next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T], cb: (proc(x: T): Opt[Promise[U]])):
+proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Opt[Promise[U]])):
     Promise[Opt[U]] {.discardable.} =
   let next = Promise[Opt[U]]()
   promise.then(proc(x: T) =

@@ -96,7 +96,7 @@ const GEOMCELL = CSI(18, "t")
 const XTSHIFTESCAPE = CSI(">0s")
 
 # device control string
-template DCS(a, b: char, s: varargs[string]): string =
+template DCS(a, b: char; s: varargs[string]): string =
   "\eP" & a & b & s.join(';') & "\e\\"
 
 template XTGETTCAP(s: varargs[string, `$`]): string =
@@ -138,21 +138,21 @@ when not termcap_found:
   template ED(): string =
     CSI() & "J"
 
-  proc write(term: Terminal, s: string) =
+  proc write(term: Terminal; s: string) =
     term.outfile.write(s)
 else:
-  func hascap(term: Terminal, c: TermcapCap): bool = term.tc.caps[c] != nil
-  func cap(term: Terminal, c: TermcapCap): string = $term.tc.caps[c]
-  func ccap(term: Terminal, c: TermcapCap): cstring = term.tc.caps[c]
+  func hascap(term: Terminal; c: TermcapCap): bool = term.tc.caps[c] != nil
+  func cap(term: Terminal; c: TermcapCap): string = $term.tc.caps[c]
+  func ccap(term: Terminal; c: TermcapCap): cstring = term.tc.caps[c]
 
   var goutfile: File
   proc putc(c: char): cint {.cdecl.} =
     goutfile.write(c)
 
-  proc write(term: Terminal, s: cstring) =
+  proc write(term: Terminal; s: cstring) =
     discard tputs(s, 1, putc)
 
-  proc write(term: Terminal, s: string) =
+  proc write(term: Terminal; s: string) =
     term.write(cstring(s))
 
 proc readChar*(term: Terminal): char =
@@ -188,7 +188,7 @@ const ANSIColorMap = [
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
 
-proc cursorGoto(term: Terminal, x, y: int): string =
+proc cursorGoto(term: Terminal; x, y: int): string =
   when termcap_found:
     return $tgoto(term.ccap cm, cint(x), cint(y))
   else:
@@ -225,7 +225,7 @@ proc resetFormat(term: Terminal): string =
       return term.cap me
   return SGR()
 
-proc startFormat(term: Terminal, flag: FormatFlags): string =
+proc startFormat(term: Terminal; flag: FormatFlags): string =
   when termcap_found:
     if term.isatty():
       case flag
@@ -237,7 +237,7 @@ proc startFormat(term: Terminal, flag: FormatFlags): string =
       else: discard
   return SGR(FormatCodes[flag].s)
 
-proc endFormat(term: Terminal, flag: FormatFlags): string =
+proc endFormat(term: Terminal; flag: FormatFlags): string =
   when termcap_found:
     if term.isatty():
       case flag
@@ -246,7 +246,7 @@ proc endFormat(term: Terminal, flag: FormatFlags): string =
       else: discard
   return SGR(FormatCodes[flag].e)
 
-proc setCursor*(term: Terminal, x, y: int) =
+proc setCursor*(term: Terminal; x, y: int) =
   term.write(term.cursorGoto(x, y))
 
 proc enableAltScreen(term: Terminal): string =
@@ -264,7 +264,7 @@ proc disableAltScreen(term: Terminal): string =
 func mincontrast(term: Terminal): int32 =
   return term.config.display.minimum_contrast
 
-proc getRGB(a: CellColor, termDefault: RGBColor): RGBColor =
+proc getRGB(a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
   of ctNone:
     return termDefault
@@ -299,7 +299,7 @@ proc approximateANSIColor(rgb, termDefault: RGBColor): CellColor =
   return if n == -1: defaultColor else: ANSIColor(n).cellColor()
 
 # Return a fgcolor contrasted to the background by term.mincontrast.
-proc correctContrast(term: Terminal, bgcolor, fgcolor: CellColor): CellColor =
+proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
   let contrast = term.mincontrast
   let cfgcolor = fgcolor
   let bgcolor = getRGB(bgcolor, term.defaultBackground)
@@ -344,10 +344,10 @@ template eightBitSGR(n: uint8, bgmod: int): string =
   else:
     SGR(38 + bgmod, 5, n)
 
-template rgbSGR(rgb: RGBColor, bgmod: int): string =
+template rgbSGR(rgb: RGBColor; bgmod: int): string =
   SGR(38 + bgmod, 2, rgb.r, rgb.g, rgb.b)
 
-proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
+proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
   for flag in FormatFlags:
     if flag in term.formatmode:
       if flag in format.flags and flag notin cellf.flags:
@@ -418,7 +418,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
     discard # nothing to do
   format = cellf
 
-proc setTitle*(term: Terminal, title: string) =
+proc setTitle*(term: Terminal; title: string) =
   if term.set_title:
     term.outfile.write(XTSETTITLE(title.replaceControls()))
 
@@ -428,7 +428,7 @@ proc enableMouse*(term: Terminal) =
 proc disableMouse*(term: Terminal) =
   term.write(SGRMOUSEBTNOFF)
 
-proc processOutputString*(term: Terminal, str: string, w: var int): string =
+proc processOutputString*(term: Terminal; str: string; w: var int): string =
   if str.validateUTF8Surr() != -1:
     return "?"
   # twidth wouldn't work here, the view may start at the nth character.
@@ -446,7 +446,7 @@ proc processOutputString*(term: Terminal, str: string, w: var int): string =
     var success = false
     return newTextEncoder(term.cs).encodeAll(str, success)
 
-proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
+proc generateFullOutput(term: Terminal; grid: FixedGrid): string =
   var format = Format()
   result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
@@ -463,7 +463,7 @@ proc generateFullOutput(term: Terminal, grid: FixedGrid): string =
       result &= term.processFormat(format, cell.format)
       result &= term.processOutputString(cell.str, w)
 
-proc generateSwapOutput(term: Terminal, grid, prev: FixedGrid): string =
+proc generateSwapOutput(term: Terminal; grid, prev: FixedGrid): string =
   var vy = -1
   for y in 0 ..< grid.height:
     var w = 0
@@ -518,7 +518,7 @@ func emulateOverline(term: Terminal): bool =
   term.config.display.emulate_overline and
     ffOverline notin term.formatmode and ffUnderline in term.formatmode
 
-proc writeGrid*(term: Terminal, grid: FixedGrid, x = 0, y = 0) =
+proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
     for lx in x ..< x + grid.width:
       let i = ly * term.canvas.width + lx
@@ -660,7 +660,8 @@ when termcap_found:
       for id in TermcapCapNumeric:
         tc.numCaps[id] = tgetnum(cstring($id))
     else:
-      raise newException(Defect, "Failed to load termcap description for terminal " & term.tname)
+      raise newException(Defect,
+        "Failed to load termcap description for terminal " & term.tname)
 
 type
   QueryAttrs = enum
@@ -676,7 +677,7 @@ type
     width: int
     height: int
 
-proc queryAttrs(term: Terminal, windowOnly: bool): QueryResult =
+proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
   if not windowOnly:
     const outs =
@@ -698,13 +699,13 @@ proc queryAttrs(term: Terminal, windowOnly: bool): QueryResult =
   while true:
     template consume(term: Terminal): char = term.readChar()
     template fail = return
-    template expect(term: Terminal, c: char) =
+    template expect(term: Terminal; c: char) =
       if term.consume != c:
         fail
-    template expect(term: Terminal, s: string) =
+    template expect(term: Terminal; s: string) =
       for c in s:
         term.expect c
-    template skip_until(term: Terminal, c: char) =
+    template skip_until(term: Terminal; c: char) =
       while (let cc = term.consume; cc != c):
         discard
     term.expect '\e'
@@ -813,7 +814,7 @@ type TermStartResult* = enum
   tsrSuccess, tsrDA1Fail
 
 # when windowOnly, only refresh window size.
-proc detectTermAttributes(term: Terminal, windowOnly: bool): TermStartResult =
+proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
   result = tsrSuccess
   term.tname = getEnv("TERM")
   if term.tname == "":
@@ -994,7 +995,7 @@ proc restart*(term: Terminal) =
   if term.set_title:
     term.write(XTPUSHTITLE)
 
-proc newTerminal*(outfile: File, config: Config): Terminal =
+proc newTerminal*(outfile: File; config: Config): Terminal =
   return Terminal(
     outfile: outfile,
     config: config,

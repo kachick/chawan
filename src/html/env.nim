@@ -44,7 +44,8 @@ proc oscpu(navigator: ptr Navigator): string {.jsfget.} = "Windows NT 10.0"
 
 # NavigatorLanguage
 proc language(navigator: ptr Navigator): string {.jsfget.} = "en-US"
-proc languages(navigator: ptr Navigator): seq[string] {.jsfget.} = @["en-US"] #TODO frozen array?
+proc languages(navigator: ptr Navigator): seq[string] {.jsfget.} =
+  @["en-US"] #TODO frozen array?
 
 # NavigatorOnline
 proc onLine(navigator: ptr Navigator): bool {.jsfget.} =
@@ -66,8 +67,12 @@ proc item(pluginArray: ptr PluginArray): JSValue {.jsfunc.} = JS_NULL
 proc length(pluginArray: ptr PluginArray): uint32 {.jsfget.} = 0
 proc item(mimeTypeArray: ptr MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
 proc length(mimeTypeArray: ptr MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: ptr PluginArray, i: int): Option[JSValue] {.jsgetprop.} = discard
-proc getter(mimeTypeArray: ptr MimeTypeArray, i: int): Option[JSValue] {.jsgetprop.} = discard
+proc getter(pluginArray: ptr PluginArray; i: int): Option[JSValue]
+    {.jsgetprop.} =
+  discard
+proc getter(mimeTypeArray: ptr MimeTypeArray; i: int): Option[JSValue]
+    {.jsgetprop.} =
+  discard
 
 # Screen
 proc availWidth(screen: ptr Screen): int64 {.jsfget.} =
@@ -91,24 +96,24 @@ proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(MimeTypeArray)
   ctx.registerType(Screen)
 
-proc fetch[T: Request|string](window: Window, req: T, init = none(RequestInit)):
+proc fetch[T: Request|string](window: Window; req: T; init = none(RequestInit)):
     JSResult[FetchPromise] {.jsfunc.} =
   if window.loader.isSome:
     let req = ?newRequest(window.jsctx, req, init)
     return ok(window.loader.get.fetch(req))
 
-proc setTimeout[T: JSValue|string](window: Window, handler: T,
+proc setTimeout[T: JSValue|string](window: Window; handler: T;
     timeout = 0i32): int32 {.jsfunc.} =
   return window.timeouts.setTimeout(handler, timeout)
 
-proc setInterval[T: JSValue|string](window: Window, handler: T,
+proc setInterval[T: JSValue|string](window: Window; handler: T;
     interval = 0i32): int32 {.jsfunc.} =
   return window.timeouts.setInterval(handler, interval)
 
-proc clearTimeout(window: Window, id: int32) {.jsfunc.} =
+proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
   window.timeouts.clearTimeout(id)
 
-proc clearInterval(window: Window, id: int32) {.jsfunc.} =
+proc clearInterval(window: Window; id: int32) {.jsfunc.} =
   window.timeouts.clearInterval(id)
 
 proc screenX(window: Window): int64 {.jsfget.} = 0
@@ -121,7 +126,7 @@ proc outerHeight(window: Window): int64 {.jsfget.} =
   (addr window.screen).availHeight
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
-proc setLocation(window: Window, s: string): Err[JSError]
+proc setLocation(window: Window; s: string): Err[JSError]
     {.jsfset: "location".} =
   window.document.setLocation(s)
 
@@ -143,14 +148,14 @@ func getTop(window: Window): Window {.jsuffget: "top".} =
 func getParent(window: Window): Window {.jsfget: "parent".} =
   return window #TODO frames?
 
-proc atob(window: Window, data: string): DOMResult[NarrowString] {.jsfunc.} =
+proc atob(window: Window; data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
-proc btoa(ctx: JSContext, window: Window, data: JSValue): DOMResult[string]
+proc btoa(ctx: JSContext; window: Window; data: JSValue): DOMResult[string]
     {.jsfunc.} =
   return btoa(ctx, data)
 
-proc getComputedStyle(window: Window, element: Element,
+proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(Element)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
   #TODO implement this properly
   return ok(element.style)
@@ -198,8 +203,8 @@ proc addScripting*(window: Window; selector: Selector[int]) =
 proc runJSJobs*(window: Window) =
   window.jsrt.runJSJobs(window.console.err)
 
-proc newWindow*(scripting, images: bool, selector: Selector[int],
-    attrs: WindowAttributes, factory: CAtomFactory,
+proc newWindow*(scripting, images: bool; selector: Selector[int];
+    attrs: WindowAttributes; factory: CAtomFactory;
     navigate: proc(url: URL) = nil, loader = none(FileLoader)): Window =
   let err = newDynFileStream(stderr)
   let window = Window(

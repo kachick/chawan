@@ -38,7 +38,7 @@ type
     err_ctors*: array[JSErrorEnum, JSValue]
     htmldda*: JSClassID # only one of these exists: document.all.
 
-  JSFinalizerFunction* = proc(rt: JSRuntime, val: JSValue) {.nimcall.}
+  JSFinalizerFunction* = proc(rt: JSRuntime; val: JSValue) {.nimcall.}
 
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, pointer] # Nim, JS
@@ -70,7 +70,8 @@ func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
       JS_FreeValue(ctx, arrproto)
     block:
       let objproto = JS_GetClassProto(ctx, JS_CLASS_OBJECT)
-      opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto, "valueOf")
+      opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto,
+        "valueOf")
       JS_FreeValue(ctx, objproto)
     block:
       opaque.Uint8Array_ctor = JS_GetPropertyStr(ctx, global, "Uint8Array")
@@ -94,11 +95,11 @@ func getOpaque*(ctx: JSContext): JSContextOpaque =
 func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
   return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
 
-func isGlobal*(ctx: JSContext, class: string): bool =
+func isGlobal*(ctx: JSContext; class: string): bool =
   assert class != ""
   return ctx.getOpaque().gclaz == class
 
-proc setOpaque*(ctx: JSContext, val: JSValue, opaque: pointer) =
+proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
   let rt = JS_GetRuntime(ctx)
   let rtOpaque = rt.getOpaque()
   let p = JS_VALUE_GET_PTR(val)
@@ -110,8 +111,7 @@ func getOpaque0*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
 
-func getGlobalOpaque0*(ctx: JSContext, val: JSValue = JS_UNDEFINED):
-    Opt[pointer] =
+func getGlobalOpaque0*(ctx: JSContext; val = JS_UNDEFINED): Opt[pointer] =
   let global = JS_GetGlobalObject(ctx)
   if JS_IsUndefined(val) or val == global:
     let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
@@ -120,10 +120,10 @@ func getGlobalOpaque0*(ctx: JSContext, val: JSValue = JS_UNDEFINED):
   JS_FreeValue(ctx, global)
   return err()
 
-func getGlobalOpaque*(ctx: JSContext, T: typedesc, val: JSValue = JS_UNDEFINED): Opt[T] =
+func getGlobalOpaque*(ctx: JSContext; T: typedesc; val = JS_UNDEFINED): Opt[T] =
   return ok(cast[T](?getGlobalOpaque0(ctx, val)))
 
-func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
+func getOpaque*(ctx: JSContext; val: JSValue; class: string): pointer =
   # Unfortunately, we can't change the global object's class.
   #TODO: or maybe we can, but I'm afraid of breaking something.
   # This needs further investigation.
@@ -134,5 +134,5 @@ func getOpaque*(ctx: JSContext, val: JSValue, class: string): pointer =
     return opaque
   return getOpaque0(val)
 
-func getOpaque*[T: ref object](ctx: JSContext, val: JSValue): T =
+func getOpaque*[T: ref object](ctx: JSContext; val: JSValue): T =
   cast[T](getOpaque(ctx, val, $T))

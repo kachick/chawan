@@ -28,29 +28,28 @@ type
     terminal: Option[char]
 
   UnquoteState = enum
-    STATE_NORMAL, STATE_TILDE, STATE_DOLLAR, STATE_IDENT, STATE_BSLASH,
-    STATE_CURLY_START, STATE_CURLY, STATE_CURLY_HASH, STATE_CURLY_PERC,
-    STATE_CURLY_COLON, STATE_CURLY_EXPAND, STATE_DONE
+    usNormal, usTilde, usDollar, usIdent, usBslash, usCurlyStart, usCurly,
+    usCurlyHash, usCurlyPerc, usCurlyColon, usCurlyExpand, usDone
 
   ChaPathError = string
 
   ChaPathResult[T] = Result[T, ChaPathError]
 
 proc unquote*(p: ChaPath): ChaPathResult[string]
-proc unquote(p: string, starti: var int, terminal: Option[char]):
+proc unquote(p: string; starti: var int; terminal: Option[char]):
     ChaPathResult[string]
 
-proc stateNormal(ctx: var UnquoteContext, c: char) =
+proc stateNormal(ctx: var UnquoteContext; c: char) =
   case c
-  of '$': ctx.state = STATE_DOLLAR
-  of '\\': ctx.state = STATE_BSLASH
+  of '$': ctx.state = usDollar
+  of '\\': ctx.state = usBslash
   of '~':
     if ctx.i == 0:
-      ctx.state = STATE_TILDE
+      ctx.state = usTilde
     else:
       ctx.s &= c
   elif ctx.terminal.isSome and ctx.terminal.get == c:
-    ctx.state = STATE_DONE
+    ctx.state = usDone
   else:
     ctx.s &= c
 
@@ -62,9 +61,9 @@ proc flushTilde(ctx: var UnquoteContext) =
     if p != nil:
       ctx.s &= $p.pw_dir
     ctx.identStr = ""
-  ctx.state = STATE_NORMAL
+  ctx.state = usNormal
 
-proc stateTilde(ctx: var UnquoteContext, c: char) =
+proc stateTilde(ctx: var UnquoteContext; c: char) =
   if c != '/':
     ctx.identStr &= c
   else:
@@ -73,30 +72,30 @@ proc stateTilde(ctx: var UnquoteContext, c: char) =
 # Kind of a hack. We special case `\$' (backslash-dollar) in TOML, so that
 # it produces itself in dquote strings.
 # Thus by applying stateBSlash we get '\$' -> "$", but also "\$" -> "$".
-proc stateBSlash(ctx: var UnquoteContext, c: char) =
+proc stateBSlash(ctx: var UnquoteContext; c: char) =
   if c != '$':
     ctx.s &= '\\'
   ctx.s &= c
-  ctx.state = STATE_NORMAL
+  ctx.state = usNormal
 
-proc stateDollar(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # $
   case c
   of '$':
     ctx.s &= $getCurrentProcessId()
-    ctx.state = STATE_NORMAL
+    ctx.state = usNormal
   of '0':
     # Note: we intentionally use getAppFileName so that any symbolic links
     # are resolved.
     ctx.s &= getAppFileName()
-    ctx.state = STATE_NORMAL
+    ctx.state = usNormal
   of '1'..'9':
     return err("Parameter substitution is not supported")
   of AsciiAlpha:
     ctx.identStr = $c
-    ctx.state = STATE_IDENT
+    ctx.state = usIdent
   of '{':
-    ctx.state = STATE_CURLY_START
+    ctx.state = usCurlyStart
   else:
     # > If an unquoted '$' is followed by a character that is not one of
     # > the following: [...] the result is unspecified.
@@ -110,35 +109,35 @@ proc flushIdent(ctx: var UnquoteContext) =
 
 const BareChars = AsciiAlphaNumeric + {'_'}
 
-proc stateIdent(ctx: var UnquoteContext, c: char) =
+proc stateIdent(ctx: var UnquoteContext; c: char) =
   # $ident
   if c in BareChars:
     ctx.identStr &= c
   else:
     ctx.flushIdent()
     dec ctx.i
-    ctx.state = STATE_NORMAL
+    ctx.state = usNormal
 
-proc stateCurlyStart(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${
   case c
   of '#':
-    ctx.state = STATE_CURLY_HASH
+    ctx.state = usCurlyHash
   of '%':
-    ctx.state = STATE_CURLY_PERC
+    ctx.state = usCurlyPerc
   of BareChars:
-    ctx.state = STATE_CURLY
+    ctx.state = usCurly
     dec ctx.i
   else:
     return err("unexpected character in substitution: '" & c & "'")
   return ok()
 
-proc stateCurly(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident
   case c
   of '}':
     ctx.s &= $getEnv(ctx.identStr)
-    ctx.state = STATE_NORMAL
+    ctx.state = usNormal
     return ok()
   of '$': # allow $ as first char only
     if ctx.identStr.len > 0:
@@ -149,10 +148,10 @@ proc stateCurly(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
     if ctx.identStr.len > 0:
       return err("substitution without parameter name")
     if c == ':':
-      ctx.state = STATE_CURLY_COLON
+      ctx.state = usCurlyColon
     else:
       ctx.subChar = c
-      ctx.state = STATE_CURLY_EXPAND
+      ctx.state = usCurlyExpand
     return ok()
   of '1'..'9':
     return err("Parameter substitution is not supported")
@@ -162,13 +161,13 @@ proc stateCurly(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
   else:
     return err("unexpected character in substitution: '" & c & "'")
 
-proc stateCurlyHash(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateCurlyHash(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${#ident
   if c == '}':
     let s = getEnv(ctx.identStr)
     ctx.s &= $s.len
     ctx.identStr = ""
-    ctx.state = STATE_NORMAL
+    ctx.state = usNormal
     return ok()
   if c == '$': # allow $ as first char only
     if ctx.identStr.len > 0:
@@ -179,7 +178,7 @@ proc stateCurlyHash(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
   ctx.identStr &= c
   return ok()
 
-proc stateCurlyPerc(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateCurlyPerc(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${%ident
   if c == '}':
     if ctx.identStr == "CHA_BIN_DIR":
@@ -189,23 +188,23 @@ proc stateCurlyPerc(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
     else:
       return err("Unknown internal variable " & ctx.identStr)
     ctx.identStr = ""
-    ctx.state = STATE_NORMAL
+    ctx.state = usNormal
     return ok()
   if c notin BareChars:
     return err("unexpected character in substitution: '" & c & "'")
   ctx.identStr &= c
   return ok()
 
-proc stateCurlyColon(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateCurlyColon(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident:
   if c notin {'-', '?', '+'}: # Note: we don't support `=' (assign)
     return err("unexpected character after colon: '" & c & "'")
   ctx.hasColon = true
   ctx.subChar = c
-  ctx.state = STATE_CURLY_EXPAND
+  ctx.state = usCurlyExpand
   return ok()
 
-proc flushCurlyExpand(ctx: var UnquoteContext, word: string):
+proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
     ChaPathResult[void] =
   case ctx.subChar
   of '-':
@@ -238,41 +237,40 @@ proc flushCurlyExpand(ctx: var UnquoteContext, word: string):
   ctx.hasColon = false
   return ok()
 
-proc stateCurlyExpand(ctx: var UnquoteContext, c: char): ChaPathResult[void] =
+proc stateCurlyExpand(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident:-[word], ${ident:=[word], ${ident:?[word], ${ident:+[word]
   # word must be unquoted too.
   let word = ?unquote(ctx.p, ctx.i, some('}'))
   return ctx.flushCurlyExpand(word)
 
-proc unquote(p: string, starti: var int, terminal: Option[char]):
+proc unquote(p: string; starti: var int; terminal: Option[char]):
     ChaPathResult[string] =
   var ctx = UnquoteContext(p: p, i: starti, terminal: terminal)
   while ctx.i < p.len:
     let c = p[ctx.i]
     case ctx.state
-    of STATE_NORMAL: ctx.stateNormal(c)
-    of STATE_TILDE: ctx.stateTilde(c)
-    of STATE_BSLASH: ctx.stateBSlash(c)
-    of STATE_DOLLAR: ?ctx.stateDollar(c)
-    of STATE_IDENT: ctx.stateIdent(c)
-    of STATE_CURLY_START: ?ctx.stateCurlyStart(c)
-    of STATE_CURLY: ?ctx.stateCurly(c)
-    of STATE_CURLY_HASH: ?ctx.stateCurlyHash(c)
-    of STATE_CURLY_PERC: ?ctx.stateCurlyPerc(c)
-    of STATE_CURLY_COLON: ?ctx.stateCurlyColon(c)
-    of STATE_CURLY_EXPAND: ?ctx.stateCurlyExpand(c)
-    of STATE_DONE: break
+    of usNormal: ctx.stateNormal(c)
+    of usTilde: ctx.stateTilde(c)
+    of usBslash: ctx.stateBSlash(c)
+    of usDollar: ?ctx.stateDollar(c)
+    of usIdent: ctx.stateIdent(c)
+    of usCurlyStart: ?ctx.stateCurlyStart(c)
+    of usCurly: ?ctx.stateCurly(c)
+    of usCurlyHash: ?ctx.stateCurlyHash(c)
+    of usCurlyPerc: ?ctx.stateCurlyPerc(c)
+    of usCurlyColon: ?ctx.stateCurlyColon(c)
+    of usCurlyExpand: ?ctx.stateCurlyExpand(c)
+    of usDone: break
     inc ctx.i
   case ctx.state
-  of STATE_NORMAL, STATE_DONE: discard
-  of STATE_TILDE: ctx.flushTilde()
-  of STATE_BSLASH: ctx.s &= '\\'
-  of STATE_DOLLAR: ctx.s &= '$'
-  of STATE_IDENT: ctx.flushIdent()
-  of STATE_CURLY_START, STATE_CURLY, STATE_CURLY_HASH, STATE_CURLY_PERC,
-      STATE_CURLY_COLON:
+  of usNormal, usDone: discard
+  of usTilde: ctx.flushTilde()
+  of usBslash: ctx.s &= '\\'
+  of usDollar: ctx.s &= '$'
+  of usIdent: ctx.flushIdent()
+  of usCurlyStart, usCurly, usCurlyHash, usCurlyPerc, usCurlyColon:
     return err("} expected")
-  of STATE_CURLY_EXPAND:
+  of usCurlyExpand:
     ?ctx.flushCurlyExpand("")
   starti = ctx.i
   return ok(ctx.s)
@@ -281,7 +279,7 @@ proc unquote(p: string): ChaPathResult[string] =
   var dummy = 0
   return unquote(p, dummy, none(char))
 
-proc toJS*(ctx: JSContext, p: ChaPath): JSValue =
+proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
   toJS(ctx, $p)
 
 proc fromJSChaPath*(ctx: JSContext; val: JSValue): JSResult[ChaPath] =

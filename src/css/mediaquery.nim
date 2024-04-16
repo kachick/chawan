@@ -12,65 +12,64 @@ type
     cvals: seq[CSSComponentValue]
 
   MediaType* = enum
-    MEDIA_TYPE_UNKNOWN = "unknown"
-    MEDIA_TYPE_ALL = "all"
-    MEDIA_TYPE_PRINT = "print"
-    MEDIA_TYPE_SCREEN = "screen"
-    MEDIA_TYPE_SPEECH = "speech"
-    MEDIA_TYPE_TTY = "tty"
+    mtUnknown = "unknown"
+    mtAll = "all"
+    mtPrint = "print"
+    mtScreen = "screen"
+    mtSpeech = "speech"
+    mtTty = "tty"
 
   MediaConditionType* = enum
-    CONDITION_NOT, CONDITION_AND, CONDITION_OR, CONDITION_FEATURE,
-    CONDITION_MEDIA
+    mctNot, mctAnd, mctOr, mctFeature, mctMedia
 
   MediaFeatureType* = enum
-    FEATURE_COLOR, FEATURE_GRID, FEATURE_HOVER, FEATURE_PREFERS_COLOR_SCHEME,
-    FEATURE_WIDTH, FEATURE_HEIGHT, FEATURE_SCRIPTING
+    mftColor, mftGrid, mftHover, mftPrefersColorScheme, mftWidth, mftHeight,
+    mftScripting
 
   MediaFeature* = object
     case t*: MediaFeatureType
-    of FEATURE_COLOR:
+    of mftColor:
       range*: Slice[int]
-    of FEATURE_GRID, FEATURE_HOVER, FEATURE_PREFERS_COLOR_SCHEME,
-        FEATURE_SCRIPTING:
+    of mftGrid, mftHover, mftPrefersColorScheme,
+        mftScripting:
       b*: bool
-    of FEATURE_WIDTH, FEATURE_HEIGHT:
+    of mftWidth, mftHeight:
       lengthrange*: Slice[CSSLength]
       lengthaeq*: bool
       lengthbeq*: bool
 
   MediaQuery* = ref object
     case t*: MediaConditionType
-    of CONDITION_MEDIA:
+    of mctMedia:
       media*: MediaType
-    of CONDITION_FEATURE:
+    of mctFeature:
       feature*: MediaFeature
-    of CONDITION_NOT:
+    of mctNot:
       n*: MediaQuery
-    of CONDITION_OR:
+    of mctOr:
       ora*: MediaQuery
       orb*: MediaQuery
-    of CONDITION_AND:
+    of mctAnd:
       anda*: MediaQuery
       andb*: MediaQuery
 
   MediaQueryList* = seq[MediaQuery]
 
   MediaQueryComparison = enum
-    COMPARISON_EQ, COMPARISON_GT, COMPARISON_LT, COMPARISON_GE, COMPARISON_LE
+    mqcEq, mqcGt, mqcLt, mqcGe, mqcLe
 
 # for debugging
 func `$`*(mf: MediaFeature): string =
   case mf.t
-  of FEATURE_COLOR:
+  of mftColor:
     return "color: " & $mf.range.a & ".." & $mf.range.b
-  of FEATURE_GRID:
+  of mftGrid:
     return "grid: " & $mf.b
-  of FEATURE_HOVER:
+  of mftHover:
     return "hover: " & $mf.b
-  of FEATURE_PREFERS_COLOR_SCHEME:
+  of mftPrefersColorScheme:
     return "prefers-color-scheme: " & $mf.b
-  of FEATURE_WIDTH:
+  of mftWidth:
     result &= $mf.lengthrange.a
     result &= " <"
     if mf.lengthaeq:
@@ -80,7 +79,7 @@ func `$`*(mf: MediaFeature): string =
       result &= "="
     result &= " "
     result &= $mf.lengthrange.b
-  of FEATURE_HEIGHT:
+  of mftHeight:
     result &= $mf.lengthrange.a
     result &= " <"
     if mf.lengthaeq:
@@ -91,28 +90,28 @@ func `$`*(mf: MediaFeature): string =
       result &= "="
     result &= " "
     result &= $mf.lengthrange.b
-  of FEATURE_SCRIPTING:
+  of mftScripting:
     return "scripting: " & (if mf.b: "enabled" else: "none")
 
 func `$`*(mq: MediaQuery): string =
   case mq.t
-  of CONDITION_MEDIA: return $mq.media
-  of CONDITION_FEATURE: return $mq.feature
-  of CONDITION_NOT: return "not (" & $mq.n
-  of CONDITION_OR: return "(" & $mq.ora & ") or (" & $mq.orb & ")"
-  of CONDITION_AND: return "(" & $mq.anda & ") or (" & $mq.andb & ")"
+  of mctMedia: return $mq.media
+  of mctFeature: return $mq.feature
+  of mctNot: return "not (" & $mq.n
+  of mctOr: return "(" & $mq.ora & ") or (" & $mq.orb & ")"
+  of mctAnd: return "(" & $mq.anda & ") or (" & $mq.andb & ")"
 
 const MediaTypes = {
-  "all": MEDIA_TYPE_ALL,
-  "print": MEDIA_TYPE_PRINT,
-  "screen": MEDIA_TYPE_SCREEN,
-  "speech": MEDIA_TYPE_SPEECH,
-  "tty": MEDIA_TYPE_TTY
+  "all": mtAll,
+  "print": mtPrint,
+  "screen": mtScreen,
+  "speech": mtSpeech,
+  "tty": mtTty
 }.toTable()
 
-const RangeFeatures = {FEATURE_COLOR, FEATURE_WIDTH, FEATURE_HEIGHT}
+const RangeFeatures = {mftColor, mftWidth, mftHeight}
 
-proc has(parser: MediaQueryParser, i = 0): bool {.inline.} =
+proc has(parser: MediaQueryParser; i = 0): bool {.inline.} =
   return parser.cvals.len > parser.at + i
 
 proc consume(parser: var MediaQueryParser): CSSComponentValue {.inline.} =
@@ -122,23 +121,23 @@ proc consume(parser: var MediaQueryParser): CSSComponentValue {.inline.} =
 proc reconsume(parser: var MediaQueryParser) {.inline.} =
   dec parser.at
 
-proc peek(parser: MediaQueryParser, i = 0): CSSComponentValue {.inline.} =
+proc peek(parser: MediaQueryParser; i = 0): CSSComponentValue {.inline.} =
   return parser.cvals[parser.at + i]
 
 proc skipBlanks(parser: var MediaQueryParser) {.inline.} =
   while parser.has():
     let cval = parser.peek()
-    if cval of CSSToken and CSSToken(cval).tokenType == CSS_WHITESPACE_TOKEN:
+    if cval of CSSToken and CSSToken(cval).tokenType == cttWhitespace:
       inc parser.at
     else:
       break
 
 proc getBoolFeature(feature: MediaFeatureType): MediaQuery =
-  result = MediaQuery(t: CONDITION_FEATURE)
+  result = MediaQuery(t: mctFeature)
   case feature
-  of FEATURE_GRID, FEATURE_HOVER, FEATURE_PREFERS_COLOR_SCHEME:
+  of mftGrid, mftHover, mftPrefersColorScheme:
     result.feature = MediaFeature(t: feature, b: true)
-  of FEATURE_COLOR:
+  of mftColor:
     result.feature = MediaFeature(t: feature, range: 1..high(int))
   else:
     return nil
@@ -153,7 +152,7 @@ template get_tok(tok: untyped) =
 
 template get_idtok(tok: untyped) =
   get_tok(tok)
-  if tok.tokenType != CSS_IDENT_TOKEN: return nil
+  if tok.tokenType != cttIdent: return nil
 
 template consume_token(): CSSToken =
   let cval = parser.consume()
@@ -168,30 +167,30 @@ template expect_int(i: var int) =
   let cval = parser.consume()
   if not (cval of CSSToken): return nil
   let tok = CSSToken(cval)
-  if tok.tokenType == CSS_NUMBER_TOKEN and tok.tflagb == TFLAGB_INTEGER:
+  if tok.tokenType == cttNumber and tok.tflagb == tflagbInteger:
     i = int(tok.nvalue)
   else:
     return nil
 
-template expect_mq_int(b: bool, ifalse: int, itrue: int) =
+template expect_mq_int(b: bool; ifalse, itrue: int) =
   var i: int
   expect_int(i)
   if i == ifalse: b = false
   elif i == itrue: b = true
   else: return nil
 
-template expect_bool(b: bool, sfalse, strue: string) =
+template expect_bool(b: bool; sfalse, strue: string) =
   let tok = consume_token()
-  if tok.tokenType != CSS_IDENT_TOKEN: return nil
+  if tok.tokenType != cttIdent: return nil
   let s = tok.value
   case s
   of strue: b = true
   of sfalse: b = false
   else: return nil
 
-template expect_bool(b: bool, sfalse, sfalse2, strue: string) =
+template expect_bool(b: bool; sfalse, sfalse2, strue: string) =
   let tok = consume_token()
-  if tok.tokenType != CSS_IDENT_TOKEN: return nil
+  if tok.tokenType != cttIdent: return nil
   let s = tok.value
   case s
   of strue: b = true
@@ -200,7 +199,7 @@ template expect_bool(b: bool, sfalse, sfalse2, strue: string) =
 
 template expect_comparison(comparison: var MediaQueryComparison) =
   let tok = consume_token()
-  if tok != CSS_DELIM_TOKEN: return nil
+  if tok != cttDelim: return nil
   let c = tok.cvalue
   if c notin {'=', '<', '>'}: return nil
   block parse:
@@ -208,24 +207,24 @@ template expect_comparison(comparison: var MediaQueryComparison) =
     of '<':
       if parser.has():
         let tok = skip_consume()
-        if tok == CSS_DELIM_TOKEN and tok.cvalue == '=':
-          comparison = COMPARISON_LE
+        if tok == cttDelim and tok.cvalue == '=':
+          comparison = mqcLe
           break parse
         parser.reconsume()
-      comparison = COMPARISON_LT
+      comparison = mqcLt
     of '>':
       if parser.has():
         let tok = skip_consume()
-        if tok == CSS_DELIM_TOKEN and tok.cvalue == '=':
-          comparison = COMPARISON_GE
+        if tok == cttDelim and tok.cvalue == '=':
+          comparison = mqcGe
           break parse
         parser.reconsume()
-      comparison = COMPARISON_GT
+      comparison = mqcGt
     of '=':
-      comparison = COMPARISON_EQ
+      comparison = mqcEq
     else: return nil
 
-template expect_int_range(range: var Slice[int], ismin, ismax: bool) =
+template expect_int_range(range: var Slice[int]; ismin, ismax: bool) =
   if ismin:
     expect_int(range.a)
   elif ismax:
@@ -233,23 +232,23 @@ template expect_int_range(range: var Slice[int], ismin, ismax: bool) =
   else:
     let tok = consume_token
     parser.reconsume()
-    if tok.tokenType == CSS_DELIM_TOKEN:
+    if tok.tokenType == cttDelim:
       var comparison: MediaQueryComparison
       expect_comparison(comparison)
       if not skip_has: return nil
       case comparison
-      of COMPARISON_EQ:
+      of mqcEq:
         expect_int(range.a) #TODO should be >= 0 (for color at least)
         range.b = range.a
-      of COMPARISON_GT:
+      of mqcGt:
         expect_int(range.a)
         range.b = high(int)
-      of COMPARISON_GE:
+      of mqcGe:
         expect_int(range.a)
         range.b = high(int)
-      of COMPARISON_LT:
+      of mqcLt:
         expect_int(range.b)
-      of COMPARISON_LE:
+      of mqcLe:
         expect_int(range.b)
     else:
       return nil
@@ -261,20 +260,20 @@ template expect_length(length: var CSSLength) =
     return nil
   length = r.get
 
-template expect_length_range(range: var Slice[CSSLength], lengthaeq, lengthbeq:
-    var bool, ismin, ismax: bool) =
+template expect_length_range(range: var Slice[CSSLength];
+    lengthaeq, lengthbeq: var bool; ismin, ismax: bool) =
   if ismin:
     expect_length(range.a)
-    range.b = CSSLength(num: Inf, unit: UNIT_PX)
+    range.b = CSSLength(num: Inf, unit: cuPx)
     lengthaeq = true
   elif ismax:
-    range.a = CSSLength(num: 0, unit: UNIT_PX)
+    range.a = CSSLength(num: 0, unit: cuPx)
     expect_length(range.b)
     lengthbeq = true
   else:
     let tok = consume_token
     parser.reconsume()
-    if tok.tokenType == CSS_DELIM_TOKEN:
+    if tok.tokenType == cttDelim:
       var comparison: MediaQueryComparison
       expect_comparison(comparison)
       if not skip_has: return nil
@@ -282,57 +281,57 @@ template expect_length_range(range: var Slice[CSSLength], lengthaeq, lengthbeq:
       if not skip_has: return nil
       expect_length(range.b)
       case comparison
-      of COMPARISON_EQ:
+      of mqcEq:
         expect_length(range.a)
         range.b = range.a
         lengthaeq = true
         lengthbeq = true
-      of COMPARISON_GT:
+      of mqcGt:
         expect_length(range.a)
-        range.b = CSSLength(num: Inf, unit: UNIT_PX)
-      of COMPARISON_GE:
+        range.b = CSSLength(num: Inf, unit: cuPx)
+      of mqcGe:
         expect_length(range.a)
-        range.b = CSSLength(num: Inf, unit: UNIT_PX)
+        range.b = CSSLength(num: Inf, unit: cuPx)
         lengthaeq = true
-      of COMPARISON_LT:
-        range.a = CSSLength(num: 0, unit: UNIT_PX)
+      of mqcLt:
+        range.a = CSSLength(num: 0, unit: cuPx)
         expect_length(range.b)
-      of COMPARISON_LE:
-        range.a = CSSLength(num: 0, unit: UNIT_PX)
+      of mqcLe:
+        range.a = CSSLength(num: 0, unit: cuPx)
         expect_length(range.b)
         lengthbeq = true
     else:
       return nil
 
-proc parseFeature(parser: var MediaQueryParser, t: MediaFeatureType,
+proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
     ismin, ismax: bool): MediaQuery =
   if not parser.has(): return getBoolFeature(t)
   let cval = parser.consume()
   var tok: CSSToken
   get_tok(tok)
-  if tok.tokenType != CSS_COLON_TOKEN: return nil
+  if tok.tokenType != cttColon: return nil
   parser.skipBlanks()
   if (ismin or ismax) and t notin RangeFeatures:
     return nil
   if not parser.has(): return nil
   let feature = case t
-  of FEATURE_GRID:
+  of mftGrid:
     var b: bool
     expect_mq_int(b, 0, 1)
     MediaFeature(t: t, b: b)
-  of FEATURE_HOVER:
+  of mftHover:
     var b: bool
     expect_bool(b, "none", "hover")
     MediaFeature(t: t, b: b)
-  of FEATURE_PREFERS_COLOR_SCHEME:
+  of mftPrefersColorScheme:
     var b: bool
     expect_bool(b, "light", "dark")
     MediaFeature(t: t, b: b)
-  of FEATURE_COLOR:
+  of mftColor:
     var range: Slice[int]
     expect_int_range(range, ismin, ismax)
     MediaFeature(t: t, range: range)
-  of FEATURE_WIDTH, FEATURE_HEIGHT:
+  of mftWidth, mftHeight:
     var range: Slice[CSSLength]
     var lengthaeq: bool
     var lengthbeq: bool
@@ -343,7 +342,7 @@ proc parseFeature(parser: var MediaQueryParser, t: MediaFeatureType,
       lengthaeq: lengthaeq,
       lengthbeq: lengthbeq
     )
-  of FEATURE_SCRIPTING:
+  of mftScripting:
     if ismin or ismax:
       return nil
     var b: bool
@@ -352,9 +351,10 @@ proc parseFeature(parser: var MediaQueryParser, t: MediaFeatureType,
   parser.skipBlanks()
   if parser.has():
     return nil
-  return MediaQuery(t: CONDITION_FEATURE, feature: feature)
+  return MediaQuery(t: mctFeature, feature: feature)
 
-proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false): MediaQuery
+proc parseMediaCondition(parser: var MediaQueryParser; non = false;
+  noor = false): MediaQuery
 
 proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
   var fparser: MediaQueryParser
@@ -363,7 +363,7 @@ proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
     if not (cval of CSSSimpleBlock): return nil
 
     let sb = CSSSimpleBlock(cval)
-    if sb.token.tokenType != CSS_LPAREN_TOKEN: return nil
+    if sb.token.tokenType != cttLparen: return nil
 
     fparser.cvals = sb.value
     fparser.skipBlanks()
@@ -373,7 +373,7 @@ proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
     var tok: CSSToken
     get_tok(tok)
     fparser.skipBlanks()
-    if tok.tokenType == CSS_IDENT_TOKEN:
+    if tok.tokenType == cttIdent:
       var tokval = tok.value
       let ismin = tokval.startsWith("min-")
       let ismax = tokval.startsWith("max-")
@@ -383,37 +383,38 @@ proc parseMediaInParens(parser: var MediaQueryParser): MediaQuery =
       of "not":
         return fparser.parseMediaCondition(true)
       of "color":
-        return fparser.parseFeature(FEATURE_COLOR, ismin, ismax)
+        return fparser.parseFeature(mftColor, ismin, ismax)
       of "width":
-        return fparser.parseFeature(FEATURE_WIDTH, ismin, ismax)
+        return fparser.parseFeature(mftWidth, ismin, ismax)
       of "grid":
-        return fparser.parseFeature(FEATURE_GRID, ismin, ismax)
+        return fparser.parseFeature(mftGrid, ismin, ismax)
       of "hover":
-        return fparser.parseFeature(FEATURE_HOVER, ismin, ismax)
+        return fparser.parseFeature(mftHover, ismin, ismax)
       of "prefers-color-scheme":
-        return fparser.parseFeature(FEATURE_PREFERS_COLOR_SCHEME, ismin, ismax)
+        return fparser.parseFeature(mftPrefersColorScheme, ismin, ismax)
       of "scripting":
-        return fparser.parseFeature(FEATURE_SCRIPTING, ismin, ismax)
+        return fparser.parseFeature(mftScripting, ismin, ismax)
       else: discard
   return nil
 
-proc parseMediaOr(parser: var MediaQueryParser, left: MediaQuery): MediaQuery =
+proc parseMediaOr(parser: var MediaQueryParser; left: MediaQuery): MediaQuery =
   let right = parser.parseMediaCondition()
   if right != nil:
-    return MediaQuery(t: CONDITION_OR, ora: left, orb: right)
+    return MediaQuery(t: mctOr, ora: left, orb: right)
   return nil
 
-proc parseMediaAnd(parser: var MediaQueryParser, left: MediaQuery): MediaQuery =
+proc parseMediaAnd(parser: var MediaQueryParser; left: MediaQuery): MediaQuery =
   let right = parser.parseMediaCondition()
   if right != nil:
-    return MediaQuery(t: CONDITION_AND, anda: left, andb: right)
+    return MediaQuery(t: mctAnd, anda: left, andb: right)
   return nil
 
-proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false): MediaQuery =
+proc parseMediaCondition(parser: var MediaQueryParser; non = false;
+    noor = false): MediaQuery =
   var non = non
   if not non:
     let cval = parser.consume()
-    if cval of CSSToken and CSSToken(cval).tokenType == CSS_IDENT_TOKEN:
+    if cval of CSSToken and CSSToken(cval).tokenType == cttIdent:
       if CSSToken(cval).value == "not":
         non = true
     else:
@@ -429,7 +430,7 @@ proc parseMediaCondition(parser: var MediaQueryParser, non = false, noor = false
     return nil
 
   if non:
-    result = MediaQuery(t: CONDITION_NOT, n: result)
+    result = MediaQuery(t: mctNot, n: result)
 
   parser.skipBlanks()
   if not parser.has():
@@ -458,7 +459,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     let cval = parser.consume()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      if tok.tokenType == CSS_IDENT_TOKEN:
+      if tok.tokenType == cttIdent:
         let tokval = tok.value
         case tokval
         of "not":
@@ -466,7 +467,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
         of "only":
           discard
         elif tokval in MediaTypes:
-          result = MediaQuery(t: CONDITION_MEDIA, media: MediaTypes[tokval])
+          result = MediaQuery(t: mctMedia, media: MediaTypes[tokval])
         else:
           return nil
       else:
@@ -474,22 +475,20 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     else:
       parser.reconsume()
       return parser.parseMediaCondition()
-
   parser.skipBlanks()
   if not parser.has():
     return result
-
   block:
     let cval = parser.consume()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      if tok.tokenType == CSS_IDENT_TOKEN:
+      if tok.tokenType == cttIdent:
         let tokval = tok.value
         if result == nil:
           if tokval in MediaTypes:
-            let mq = MediaQuery(t: CONDITION_MEDIA, media: MediaTypes[tokval])
+            let mq = MediaQuery(t: mctMedia, media: MediaTypes[tokval])
             if non:
-              result = MediaQuery(t: CONDITION_NOT, n: mq)
+              result = MediaQuery(t: mctNot, n: mq)
             else:
               result = mq
           else:
@@ -505,26 +504,18 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     else:
       parser.reconsume()
       return parser.parseMediaCondition(non)
-
   parser.skipBlanks()
   if not parser.has():
     return result
-
   block:
     let cval = parser.consume()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      if tok.tokenType == CSS_IDENT_TOKEN:
-        let tokval = tok.value
-        if tokval != "and":
-          return nil
-      else:
+      if tok.tokenType != cttIdent or tok.value != "and":
         return nil
-
     parser.skipBlanks()
     if not parser.has():
       return nil
-
     parser.reconsume()
     return parser.parseMediaAnd(result)
 

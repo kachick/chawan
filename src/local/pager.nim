@@ -168,13 +168,13 @@ iterator containers*(pager: Pager): Container {.inline.} =
     for c in root.descendants:
       yield c
 
-proc setContainer*(pager: Pager, c: Container) {.jsfunc.} =
+proc setContainer*(pager: Pager; c: Container) {.jsfunc.} =
   pager.container = c
   pager.redraw = true
   if c != nil:
     pager.term.setTitle(c.getTitle())
 
-proc hasprop(ctx: JSContext, pager: Pager, s: string): bool {.jshasprop.} =
+proc hasprop(ctx: JSContext; pager: Pager; s: string): bool {.jshasprop.} =
   if pager.container != nil:
     let cval = toJS(ctx, pager.container)
     let val = JS_GetPropertyStr(ctx, cval, s)
@@ -182,12 +182,12 @@ proc hasprop(ctx: JSContext, pager: Pager, s: string): bool {.jshasprop.} =
       result = true
     JS_FreeValue(ctx, val)
 
-proc reflect(ctx: JSContext, this_val: JSValue, argc: cint, argv: ptr JSValue,
-             magic: cint, func_data: ptr JSValue): JSValue {.cdecl.} =
+proc reflect(ctx: JSContext; this_val: JSValue; argc: cint; argv: ptr JSValue;
+    magic: cint; func_data: ptr JSValue): JSValue {.cdecl.} =
   let fun = cast[ptr JSValue](cast[int](func_data) + sizeof(JSValue))[]
   return JS_Call(ctx, fun, func_data[], argc, argv)
 
-proc getter(ctx: JSContext, pager: Pager, s: string): Option[JSValue]
+proc getter(ctx: JSContext; pager: Pager; s: string): Option[JSValue]
     {.jsgetprop.} =
   if pager.container != nil:
     let cval = toJS(ctx, pager.container)
@@ -199,7 +199,7 @@ proc getter(ctx: JSContext, pager: Pager, s: string): Option[JSValue]
         return some(fun)
       return some(val)
 
-proc searchNext(pager: Pager, n = 1) {.jsfunc.} =
+proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
   if pager.regex.isSome:
     let wrap = pager.config.search.wrap
     pager.container.markPos0()
@@ -211,7 +211,7 @@ proc searchNext(pager: Pager, n = 1) {.jsfunc.} =
   else:
     pager.alert("No previous regular expression")
 
-proc searchPrev(pager: Pager, n = 1) {.jsfunc.} =
+proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
   if pager.regex.isSome:
     let wrap = pager.config.search.wrap
     pager.container.markPos0()
@@ -233,7 +233,7 @@ proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
   let hist = pager.getLineHist(mode)
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
-  let edit = readLine($mode & extraPrompt, pager.attrs.width, current, {}, hide,
+  let edit = readLine($mode & extraPrompt, current, pager.attrs.width, {}, hide,
     hist)
   pager.lineedit = some(edit)
   pager.linemode = mode
@@ -261,7 +261,7 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.markPos0()
   pager.setLineEdit(lmISearchB)
 
-proc gotoLine[T: string|int](pager: Pager, s: T = "") {.jsfunc.} =
+proc gotoLine[T: string|int](pager: Pager; s: T = "") {.jsfunc.} =
   when s is string:
     if s == "":
       pager.setLineEdit(lmGotoLine)
@@ -272,7 +272,7 @@ proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
     stderr.write("cha: " & msg & '\n')
 
-proc quit*(pager: Pager, code = 0) =
+proc quit*(pager: Pager; code = 0) =
   pager.term.quit()
   pager.dumpAlerts()
 
@@ -292,14 +292,14 @@ proc genClientKey(pager: Pager): ClientKey =
   doAssert n == key.len
   return key
 
-proc addLoaderClient*(pager: Pager, pid: int, config: LoaderClientConfig):
+proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig):
     ClientKey =
   var key = pager.genClientKey()
   while unlikely(not pager.loader.addClient(key, pid, config)):
     key = pager.genClientKey()
   return key
 
-proc setLoader*(pager: Pager, loader: FileLoader) =
+proc setLoader*(pager: Pager; loader: FileLoader) =
   pager.devRandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   pager.loader = loader
   let config = LoaderClientConfig(
@@ -323,7 +323,7 @@ proc clearDisplay(pager: Pager) =
 
 proc buffer(pager: Pager): Container {.jsfget, inline.} = pager.container
 
-proc refreshDisplay(pager: Pager, container = pager.container) =
+proc refreshDisplay(pager: Pager; container = pager.container) =
   pager.clearDisplay()
   let hlcolor = cellColor(pager.config.display.highlight_color)
   container.drawLines(pager.display, hlcolor)
@@ -331,8 +331,8 @@ proc refreshDisplay(pager: Pager, container = pager.container) =
     container.highlightMarks(pager.display, hlcolor)
 
 # Note: this function does not work correctly if start < i of last written char
-proc writeStatusMessage(pager: Pager, str: string, format = Format(),
-    start = 0, maxwidth = -1, clip = '$'): int {.discardable.} =
+proc writeStatusMessage(pager: Pager; str: string; format = Format();
+    start = 0; maxwidth = -1; clip = '$'): int {.discardable.} =
   var maxwidth = maxwidth
   if maxwidth == -1:
     maxwidth = pager.statusgrid.len
@@ -401,7 +401,7 @@ proc showAlerts*(pager: Pager) =
       pager.inputBuffer == "" and pager.precnum == 0:
     pager.refreshStatusMsg()
 
-proc drawBuffer*(pager: Pager, container: Container, ostream: Stream) =
+proc drawBuffer*(pager: Pager; container: Container; ostream: Stream) =
   var format = Format()
   container.readLines(proc(line: SimpleFlexibleLine) =
     if line.formats.len == 0:
@@ -452,7 +452,8 @@ proc draw*(pager: Pager) =
   if pager.askpromise != nil:
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit.isSome:
-    pager.term.setCursor(pager.lineedit.get.getCursorX(), pager.attrs.height - 1)
+    pager.term.setCursor(pager.lineedit.get.getCursorX(),
+      pager.attrs.height - 1)
   elif container != nil:
     if container.select.open:
       pager.term.setCursor(container.select.getCursorX(),
@@ -463,35 +464,35 @@ proc draw*(pager: Pager) =
   pager.term.flush()
   pager.redraw = false
 
-proc writeAskPrompt(pager: Pager, s = "") =
+proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.statusgrid.width - s.len
   let i = pager.writeStatusMessage(pager.askprompt, maxwidth = maxwidth)
   pager.askcursor = pager.writeStatusMessage(s, start = i)
   pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
 
-proc ask(pager: Pager, prompt: string): Promise[bool] {.jsfunc.} =
+proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
   pager.askprompt = prompt
   pager.writeAskPrompt(" (y/n)")
   pager.askpromise = Promise[bool]()
   return pager.askpromise
 
-proc askChar(pager: Pager, prompt: string): Promise[string] {.jsfunc.} =
+proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
   pager.askprompt = prompt
   pager.writeAskPrompt()
   pager.askcharpromise = Promise[string]()
   return pager.askcharpromise
 
-proc fulfillAsk*(pager: Pager, y: bool) =
+proc fulfillAsk*(pager: Pager; y: bool) =
   pager.askpromise.resolve(y)
   pager.askpromise = nil
   pager.askprompt = ""
 
-proc fulfillCharAsk*(pager: Pager, s: string) =
+proc fulfillCharAsk*(pager: Pager; s: string) =
   pager.askcharpromise.resolve(s)
   pager.askcharpromise = nil
   pager.askprompt = ""
 
-proc addContainer*(pager: Pager, container: Container) =
+proc addContainer*(pager: Pager; container: Container) =
   container.parent = pager.container
   if pager.container != nil:
     pager.container.children.insert(container, 0)
@@ -569,7 +570,7 @@ func findProcMapItem*(pager: Pager; pid: int): int =
       return i
   -1
 
-proc dupeBuffer(pager: Pager, container: Container, url: URL) =
+proc dupeBuffer(pager: Pager; container: Container; url: URL) =
   container.clone(url).then(proc(container: Container) =
     if container == nil:
       pager.alert("Failed to duplicate buffer.")
@@ -653,7 +654,7 @@ proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
   pager.setContainer(pager.container.parent.children[n + 1])
   return true
 
-proc alert*(pager: Pager, msg: string) {.jsfunc.} =
+proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   pager.alerts.add(msg)
 
 # replace target with container in the tree
@@ -721,14 +722,14 @@ proc deleteContainer(pager: Pager; container: Container) =
     pager.forkserver.removeChild(container.process)
     pager.loader.removeClient(container.process)
 
-proc discardBuffer*(pager: Pager, container = none(Container)) {.jsfunc.} =
+proc discardBuffer*(pager: Pager; container = none(Container)) {.jsfunc.} =
   let c = container.get(pager.container)
   if c == nil or c.parent == nil and c.children.len == 0:
     pager.alert("Cannot discard last buffer!")
   else:
     pager.deleteContainer(c)
 
-proc discardTree(pager: Pager, container = none(Container)) {.jsfunc.} =
+proc discardTree(pager: Pager; container = none(Container)) {.jsfunc.} =
   let container = container.get(pager.container)
   if container != nil:
     for c in container.descendants:
@@ -754,7 +755,7 @@ proc runProcess(cmd: string): bool =
       result = WIFSIGNALED(wstatus) and WTERMSIG(wstatus) == SIGINT
 
 # Run process (and suspend the terminal controller).
-proc runProcess(term: Terminal, cmd: string, wait = false): bool =
+proc runProcess(term: Terminal; cmd: string; wait = false): bool =
   term.quit()
   result = runProcess(cmd)
   if wait:
@@ -762,7 +763,7 @@ proc runProcess(term: Terminal, cmd: string, wait = false): bool =
   term.restart()
 
 # Run process, and capture its output.
-proc runProcessCapture(cmd: string, outs: var string): bool =
+proc runProcessCapture(cmd: string; outs: var string): bool =
   let file = popen(cmd, "r")
   if file == nil:
     return false
@@ -972,7 +973,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
   else:
     pager.container.findAnchor(request.url.anchor)
 
-proc omniRewrite(pager: Pager, s: string): string =
+proc omniRewrite(pager: Pager; s: string): string =
   for rule in pager.config.omnirule:
     if rule.match.match(s):
       let fun = rule.substitute_url.get
@@ -991,7 +992,7 @@ proc omniRewrite(pager: Pager, s: string): string =
 # * file://$PWD/<file>
 # * https://<url>
 # So we attempt to load both, and see what works.
-proc loadURL*(pager: Pager, url: string, ctype = none(string),
+proc loadURL*(pager: Pager; url: string; ctype = none(string);
     cs = CHARSET_UNKNOWN) =
   let url0 = pager.omniRewrite(url)
   let url = if url[0] == '~': expandPath(url0) else: url0
@@ -1009,7 +1010,8 @@ proc loadURL*(pager: Pager, url: string, ctype = none(string),
     let pageurl = parseURL(pager.config.network.prepend_scheme & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
-  let cdir = parseURL("file://" & percentEncode(getCurrentDir(), LocalPathPercentEncodeSet) & DirSep)
+  let cdir = parseURL("file://" & percentEncode(getCurrentDir(),
+    LocalPathPercentEncodeSet) & DirSep)
   let localurl = percentEncode(url, LocalPathPercentEncodeSet)
   let newurl = parseURL(localurl, cdir)
   if newurl.isSome:
@@ -1039,7 +1041,7 @@ proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
     contentType = some(contentType)
   )
 
-proc readPipe*(pager: Pager, contentType: string, cs: Charset, fd: FileHandle,
+proc readPipe*(pager: Pager; contentType: string; cs: Charset; fd: FileHandle;
     title: string) =
   let url = newURL("stream:-").get
   let container = pager.readPipe0(contentType, cs, fd, url, title,
@@ -1050,24 +1052,24 @@ proc readPipe*(pager: Pager, contentType: string, cs: Charset, fd: FileHandle,
 proc command(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(lmCommand)
 
-proc commandMode(pager: Pager, val: bool) {.jsfset.} =
+proc commandMode(pager: Pager; val: bool) {.jsfset.} =
   pager.commandMode = val
   if val:
     pager.command()
 
-proc checkRegex(pager: Pager, regex: Result[Regex, string]): Opt[Regex] =
+proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
   if regex.isErr:
     pager.alert("Invalid regex: " & regex.error)
     return err()
   return ok(regex.get)
 
-proc compileSearchRegex(pager: Pager, s: string): Result[Regex, string] =
+proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
   var flags = {LRE_FLAG_UNICODE}
   if pager.config.search.ignore_case:
     flags.incl(LRE_FLAG_IGNORECASE)
   return compileSearchRegex(s, flags)
 
-proc updateReadLineISearch(pager: Pager, linemode: LineMode) =
+proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
   let lineedit = pager.lineedit.get
   pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
     case lineedit.state
@@ -1183,11 +1185,11 @@ proc updateReadLine*(pager: Pager) =
     pager.clearLineEdit()
 
 # Same as load(s + '\n')
-proc loadSubmit(pager: Pager, s: string) {.jsfunc.} =
+proc loadSubmit(pager: Pager; s: string) {.jsfunc.} =
   pager.loadURL(s)
 
 # Open a URL prompt and visit the specified URL.
-proc load(pager: Pager, s = "") {.jsfunc.} =
+proc load(pager: Pager; s = "") {.jsfunc.} =
   if s.len > 0 and s[^1] == '\n':
     if s.len > 1:
       pager.loadURL(s[0..^2])
@@ -1197,7 +1199,7 @@ proc load(pager: Pager, s = "") {.jsfunc.} =
     pager.setLineEdit(lmLocation, s)
 
 # Go to specific URL (for JS)
-proc jsGotoURL(pager: Pager, s: string): JSResult[void] {.jsfunc: "gotoURL".} =
+proc jsGotoURL(pager: Pager; s: string): JSResult[void] {.jsfunc: "gotoURL".} =
   pager.gotoURL(newRequest(?newURL(s)))
   ok()
 
@@ -1228,14 +1230,14 @@ proc extern(pager: Pager; cmd: string; t = ExternDict()): bool {.jsfunc.} =
   else:
     return runProcess(cmd)
 
-proc externCapture(pager: Pager, cmd: string): Opt[string] {.jsfunc.} =
+proc externCapture(pager: Pager; cmd: string): Opt[string] {.jsfunc.} =
   pager.setEnvVars()
   var s: string
   if not runProcessCapture(cmd, s):
     return err()
   return ok(s)
 
-proc externInto(pager: Pager, cmd, ins: string): bool {.jsfunc.} =
+proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
   pager.setEnvVars()
   return runProcessInto(cmd, ins)
 
@@ -1784,13 +1786,13 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       item.stream.sclose()
   return true
 
-proc handleEvents*(pager: Pager, container: Container) =
+proc handleEvents*(pager: Pager; container: Container) =
   while container.events.len > 0:
     let event = container.events.popFirst()
     if not pager.handleEvent0(container, event):
       break
 
-proc handleEvent*(pager: Pager, container: Container) =
+proc handleEvent*(pager: Pager; container: Container) =
   try:
     container.handleEvent()
     pager.handleEvents(container)

@@ -203,14 +203,15 @@ proc clone*(container: Container; newurl: URL): Promise[Container] =
     return nc
   )
 
-func lineLoaded(container: Container, y: int): bool =
+func lineLoaded(container: Container; y: int): bool =
   return y - container.lineshift in 0..container.lines.high
 
-func getLine(container: Container, y: int): SimpleFlexibleLine =
+func getLine(container: Container; y: int): SimpleFlexibleLine =
   if container.lineLoaded(y):
     return container.lines[y - container.lineshift]
 
-iterator ilines*(container: Container, slice: Slice[int]): SimpleFlexibleLine {.inline.} =
+iterator ilines*(container: Container; slice: Slice[int]): SimpleFlexibleLine
+    {.inline.} =
   for y in slice:
     yield container.getLine(y)
 
@@ -235,7 +236,7 @@ func lastVisibleLine(container: Container): int =
 func currentLine(container: Container): string =
   return container.getLine(container.cursory).str
 
-func findColBytes(s: string, endx: int, startx = 0, starti = 0): int =
+func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
   var w = startx
   var i = starti
   while i < s.len and w < endx:
@@ -244,10 +245,10 @@ func findColBytes(s: string, endx: int, startx = 0, starti = 0): int =
     w += r.twidth(w)
   return i
 
-func cursorBytes(container: Container, y: int, cc = container.cursorx): int =
+func cursorBytes(container: Container; y: int; cc = container.cursorx): int =
   return container.getLine(y).str.findColBytes(cc, 0, 0)
 
-func currentCursorBytes(container: Container, cc = container.cursorx): int =
+func currentCursorBytes(container: Container; cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
 
 # Returns the X position of the first cell occupied by the character the cursor
@@ -362,7 +363,7 @@ func endx(hl: Highlight): int =
     max(hl.x1, hl.x2)
 func endy(hl: Highlight): int = max(hl.y1, hl.y2)
 
-func colorNormal(container: Container, hl: Highlight, y: int,
+func colorNormal(container: Container; hl: Highlight; y: int;
     limitx: Slice[int]): Slice[int] =
   let starty = hl.starty
   let endy = hl.endy
@@ -378,7 +379,7 @@ func colorNormal(container: Container, hl: Highlight, y: int,
     let w = container.getLine(y).str.width()
     return min(limitx.a, w) .. min(hl.endx, limitx.b)
 
-func colorArea(container: Container, hl: Highlight, y: int,
+func colorArea(container: Container; hl: Highlight; y: int;
     limitx: Slice[int]): Slice[int] =
   case hl.t
   of hltSelect:
@@ -399,7 +400,7 @@ func colorArea(container: Container, hl: Highlight, y: int,
   else:
     return container.colorNormal(hl, y, limitx)
 
-func findHighlights*(container: Container, y: int): seq[Highlight] =
+func findHighlights*(container: Container; y: int): seq[Highlight] =
   for hl in container.highlights:
     if y in hl.starty .. hl.endy:
       result.add(hl)
@@ -410,19 +411,19 @@ func getHoverText*(container: Container): string =
       return container.hoverText[t]
   ""
 
-func isHoverURL*(container: Container, url: URL): bool =
+func isHoverURL*(container: Container; url: URL): bool =
   let hoverurl = parseURL(container.hoverText[htLink])
   return hoverurl.isSome and url.host == hoverurl.get.host
 
-proc triggerEvent(container: Container, event: ContainerEvent) =
+proc triggerEvent(container: Container; event: ContainerEvent) =
   container.events.addLast(event)
 
-proc triggerEvent(container: Container, t: ContainerEventType) =
+proc triggerEvent(container: Container; t: ContainerEventType) =
   container.triggerEvent(ContainerEvent(t: t))
 
 proc updateCursor(container: Container)
 
-proc setNumLines(container: Container, lines: int, finish = false) =
+proc setNumLines(container: Container; lines: int; finish = false) =
   if container.numLines != lines:
     container.numLines = lines
     if container.startpos.isSome and finish:
@@ -476,22 +477,23 @@ proc sendCursorPosition*(container: Container) =
       container.needslines = true
   )
 
-proc setFromY(container: Container, y: int) {.jsfunc.} =
+proc setFromY(container: Container; y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.needslines = true
     container.triggerEvent(cetUpdate)
 
-proc setFromX(container: Container, x: int, refresh = true) {.jsfunc.} =
+proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
   if container.pos.fromx != x:
     container.pos.fromx = max(min(x, container.maxfromx), 0)
     if container.pos.fromx > container.cursorx:
-      container.pos.cursorx = min(container.pos.fromx, container.currentLineWidth())
+      container.pos.cursorx = min(container.pos.fromx,
+        container.currentLineWidth())
       if refresh:
         container.sendCursorPosition()
     container.triggerEvent(cetUpdate)
 
-proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
+proc setFromXY(container: Container; x, y: int) {.jsfunc.} =
   container.setFromY(y)
   container.setFromX(x)
 
@@ -500,7 +502,7 @@ proc setFromXY(container: Container, x, y: int) {.jsfunc.} =
 # * `save = false' inhibits cursor movement if it is currently outside the
 #   screen, and makes it so cursorx is not saved for restoration on cursory
 #   movement.
-proc setCursorX(container: Container, x: int, refresh = true, save = true)
+proc setCursorX(container: Container; x: int; refresh = true; save = true)
     {.jsfunc.} =
   if not container.lineLoaded(container.cursory):
     container.pos.setx = x
@@ -550,7 +552,7 @@ proc restoreCursorX(container: Container) {.jsfunc.} =
   let x = clamp(container.currentLineWidth() - 1, 0, container.xend)
   container.setCursorX(x, false, false)
 
-proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
+proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
   let y = max(min(y, container.numLines - 1), 0)
   if container.cursory == y: return
   if y - container.fromy >= 0 and y - container.height < container.fromy:
@@ -568,7 +570,7 @@ proc setCursorY(container: Container, y: int, refresh = true) {.jsfunc.} =
   if refresh:
     container.sendCursorPosition()
 
-proc setCursorXY*(container: Container, x, y: int, refresh = true) {.jsfunc.} =
+proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
   container.setCursorX(x, refresh)
 
@@ -584,40 +586,40 @@ proc cursorLineTextStart(container: Container) {.jsfunc.} =
   container.setCursorX(x)
 
 # zb
-proc lowerPage(container: Container, n = 0) {.jsfunc.} =
+proc lowerPage(container: Container; n = 0) {.jsfunc.} =
   if n != 0:
     container.setCursorY(n - 1)
   container.setFromY(container.cursory - container.height + 1)
 
 # z-
-proc lowerPageBegin(container: Container, n = 0) {.jsfunc.} =
+proc lowerPageBegin(container: Container; n = 0) {.jsfunc.} =
   container.lowerPage(n)
   container.cursorLineTextStart()
 
 # zz
-proc centerLine(container: Container, n = 0) {.jsfunc.} =
+proc centerLine(container: Container; n = 0) {.jsfunc.} =
   if n != 0:
     container.setCursorY(n - 1)
   container.setFromY(container.cursory - container.height div 2)
 
 # z.
-proc centerLineBegin(container: Container, n = 0) {.jsfunc.} =
+proc centerLineBegin(container: Container; n = 0) {.jsfunc.} =
   container.centerLine(n)
   container.cursorLineTextStart()
 
 # zt
-proc raisePage(container: Container, n = 0) {.jsfunc.} =
+proc raisePage(container: Container; n = 0) {.jsfunc.} =
   if n != 0:
     container.setCursorY(n - 1)
   container.setFromY(container.cursory)
 
 # z^M
-proc raisePageBegin(container: Container, n = 0) {.jsfunc.} =
+proc raisePageBegin(container: Container; n = 0) {.jsfunc.} =
   container.raisePage(n)
   container.cursorLineTextStart()
 
 # z+
-proc nextPageBegin(container: Container, n = 0) {.jsfunc.} =
+proc nextPageBegin(container: Container; n = 0) {.jsfunc.} =
   if n == 0:
     container.setCursorY(container.fromy + container.height)
   else:
@@ -626,7 +628,7 @@ proc nextPageBegin(container: Container, n = 0) {.jsfunc.} =
   container.raisePage()
 
 # z^
-proc previousPageBegin(container: Container, n = 0) {.jsfunc.} =
+proc previousPageBegin(container: Container; n = 0) {.jsfunc.} =
   if n == 0:
     container.setCursorY(container.fromy - 1)
   else:
@@ -637,14 +639,15 @@ proc previousPageBegin(container: Container, n = 0) {.jsfunc.} =
 proc centerColumn(container: Container) {.jsfunc.} =
   container.setFromX(container.cursorx - container.width div 2)
 
-proc setCursorYCenter(container: Container, y: int, refresh = true)
+proc setCursorYCenter(container: Container; y: int; refresh = true)
     {.jsfunc.} =
   let fy = container.fromy
   container.setCursorY(y, refresh)
   if fy != container.fromy:
     container.centerLine()
 
-proc setCursorXYCenter(container: Container, x, y: int, refresh = true) {.jsfunc.} =
+proc setCursorXYCenter(container: Container; x, y: int; refresh = true)
+    {.jsfunc.} =
   let fy = container.fromy
   let fx = container.fromx
   container.setCursorXY(x, y, refresh)
@@ -653,25 +656,25 @@ proc setCursorXYCenter(container: Container, x, y: int, refresh = true) {.jsfunc
   if fx != container.fromx:
     container.centerColumn()
 
-proc cursorDown(container: Container, n = 1) {.jsfunc.} =
+proc cursorDown(container: Container; n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorDown()
   else:
     container.setCursorY(container.cursory + n)
 
-proc cursorUp(container: Container, n = 1) {.jsfunc.} =
+proc cursorUp(container: Container; n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorUp()
   else:
     container.setCursorY(container.cursory - n)
 
-proc cursorLeft(container: Container, n = 1) {.jsfunc.} =
+proc cursorLeft(container: Container; n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorLeft()
   else:
     container.setCursorX(container.cursorFirstX() - n)
 
-proc cursorRight(container: Container, n = 1) {.jsfunc.} =
+proc cursorRight(container: Container; n = 1) {.jsfunc.} =
   if container.select.open:
     container.select.cursorRight()
   else:
@@ -685,7 +688,7 @@ proc cursorLineEnd(container: Container) {.jsfunc.} =
 
 type BreakFunc = proc(r: Rune): BreakCategory {.nimcall.}
 
-proc cursorNextWord(container: Container, breakFunc: BreakFunc) =
+proc cursorNextWord(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var r: Rune
   var b = container.currentCursorBytes()
@@ -694,8 +697,8 @@ proc cursorNextWord(container: Container, breakFunc: BreakFunc) =
   let currentCat = if b < container.currentLine.len:
     container.currentLine.runeAt(b).breakFunc()
   else:
-    BREAK_SPACE
-  if currentCat != BREAK_SPACE:
+    bcSpace
+  if currentCat != bcSpace:
     # not in space, skip chars that have the same category
     while b < container.currentLine.len:
       let pb = b
@@ -709,7 +712,7 @@ proc cursorNextWord(container: Container, breakFunc: BreakFunc) =
   while b < container.currentLine.len:
     let pb = b
     fastRuneAt(container.currentLine, b, r)
-    if r.breakFunc() != BREAK_SPACE:
+    if r.breakFunc() != bcSpace:
       b = pb
       break
     x += r.twidth(x)
@@ -732,7 +735,7 @@ proc cursorNextViWord(container: Container) {.jsfunc.} =
 proc cursorNextBigWord(container: Container) {.jsfunc.} =
   container.cursorNextWord(breaksBigWordCat)
 
-proc cursorPrevWord(container: Container, breakFunc: BreakFunc) =
+proc cursorPrevWord(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var b = container.currentCursorBytes()
   var x = container.cursorx
@@ -741,8 +744,8 @@ proc cursorPrevWord(container: Container, breakFunc: BreakFunc) =
     let currentCat = if b >= 0:
       container.currentLine.runeAt(b).breakFunc()
     else:
-      BREAK_SPACE
-    if currentCat != BREAK_SPACE:
+      bcSpace
+    if currentCat != bcSpace:
       # not in space, skip chars that have the same category
       while b >= 0:
         let (r, o) = lastRune(container.currentLine, b)
@@ -754,7 +757,7 @@ proc cursorPrevWord(container: Container, breakFunc: BreakFunc) =
     # skip space
     while b >= 0:
       let (r, o) = lastRune(container.currentLine, b)
-      if r.breakFunc() != BREAK_SPACE:
+      if r.breakFunc() != bcSpace:
         break
       b -= o
       x -= r.twidth(x)
@@ -779,7 +782,7 @@ proc cursorPrevViWord(container: Container) {.jsfunc.} =
 proc cursorPrevBigWord(container: Container) {.jsfunc.} =
   container.cursorPrevWord(breaksBigWordCat)
 
-proc cursorWordEnd(container: Container, breakFunc: BreakFunc) =
+proc cursorWordEnd(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var r: Rune
   var b = container.currentCursorBytes()
@@ -789,7 +792,7 @@ proc cursorWordEnd(container: Container, breakFunc: BreakFunc) =
   if b < container.currentLine.len:
     let pb = b
     fastRuneAt(container.currentLine, b, r)
-    if r.breakFunc() == BREAK_SPACE:
+    if r.breakFunc() == bcSpace:
       b = pb
     else:
       px = x
@@ -799,7 +802,7 @@ proc cursorWordEnd(container: Container, breakFunc: BreakFunc) =
   while b < container.currentLine.len:
     let pb = b
     fastRuneAt(container.currentLine, b, r)
-    if r.breakFunc() != BREAK_SPACE:
+    if r.breakFunc() != bcSpace:
       b = pb
       break
     x += r.twidth(x)
@@ -836,7 +839,7 @@ proc cursorViWordEnd(container: Container) {.jsfunc.} =
 proc cursorBigWordEnd(container: Container) {.jsfunc.} =
   container.cursorWordEnd(breaksBigWordCat)
 
-proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
+proc cursorWordBegin(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var b = container.currentCursorBytes()
   var x = container.cursorx
@@ -847,7 +850,7 @@ proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
     if b >= 0:
       let (r, o) = lastRune(container.currentLine, b)
       # if not in space, move to the left by one
-      if r.breakFunc() != BREAK_SPACE:
+      if r.breakFunc() != bcSpace:
         b -= o
         px = x
         x -= r.twidth(x)
@@ -855,7 +858,7 @@ proc cursorWordBegin(container: Container, breakFunc: BreakFunc) =
     # skip space
     while b >= 0:
       let (r, o) = lastRune(container.currentLine, b)
-      if r.breakFunc() != BREAK_SPACE:
+      if r.breakFunc() != bcSpace:
         break
       b -= o
       x -= r.twidth(x)
@@ -895,40 +898,40 @@ proc cursorViWordBegin(container: Container) {.jsfunc.} =
 proc cursorBigWordBegin(container: Container) {.jsfunc.} =
   container.cursorWordBegin(breaksBigWordCat)
 
-proc pageDown(container: Container, n = 1) {.jsfunc.} =
+proc pageDown(container: Container; n = 1) {.jsfunc.} =
   container.setFromY(container.fromy + container.height * n)
   container.setCursorY(container.cursory + container.height * n)
   container.restoreCursorX()
 
-proc pageUp(container: Container, n = 1) {.jsfunc.} =
+proc pageUp(container: Container; n = 1) {.jsfunc.} =
   container.setFromY(container.fromy - container.height * n)
   container.setCursorY(container.cursory - container.height * n)
   container.restoreCursorX()
 
-proc pageLeft(container: Container, n = 1) {.jsfunc.} =
+proc pageLeft(container: Container; n = 1) {.jsfunc.} =
   container.setFromX(container.fromx - container.width * n)
 
-proc pageRight(container: Container, n = 1) {.jsfunc.} =
+proc pageRight(container: Container; n = 1) {.jsfunc.} =
   container.setFromX(container.fromx + container.width * n)
 
 # I am not cloning the vi behavior here because it is counter-intuitive
 # and annoying.
 # Users who disagree are free to implement it themselves. (It is about
 # 5 lines of JS.)
-proc halfPageUp(container: Container, n = 1) {.jsfunc.} =
+proc halfPageUp(container: Container; n = 1) {.jsfunc.} =
   container.setFromY(container.fromy - (container.height + 1) div 2 * n)
   container.setCursorY(container.cursory - (container.height + 1) div 2 * n)
   container.restoreCursorX()
 
-proc halfPageDown(container: Container, n = 1) {.jsfunc.} =
+proc halfPageDown(container: Container; n = 1) {.jsfunc.} =
   container.setFromY(container.fromy + (container.height + 1) div 2 * n)
   container.setCursorY(container.cursory + (container.height + 1) div 2 * n)
   container.restoreCursorX()
 
-proc halfPageLeft(container: Container, n = 1) {.jsfunc.} =
+proc halfPageLeft(container: Container; n = 1) {.jsfunc.} =
   container.setFromX(container.fromx - (container.width + 1) div 2 * n)
 
-proc halfPageRight(container: Container, n = 1) {.jsfunc.} =
+proc halfPageRight(container: Container; n = 1) {.jsfunc.} =
   container.setFromX(container.fromx + (container.width + 1) div 2 * n)
 
 proc markPos0*(container: Container) =
@@ -955,7 +958,7 @@ proc cursorLastLine*(container: Container) {.jsfunc.} =
     container.setCursorY(container.numLines - 1)
     container.markPos()
 
-proc cursorTop(container: Container, i = 1) {.jsfunc.} =
+proc cursorTop(container: Container; i = 1) {.jsfunc.} =
   container.markPos0()
   let i = clamp(i - 1, 0, container.height - 1)
   container.setCursorY(container.fromy + i)
@@ -966,7 +969,7 @@ proc cursorMiddle(container: Container) {.jsfunc.} =
   container.setCursorY(container.fromy + (container.height - 2) div 2)
   container.markPos()
 
-proc cursorBottom(container: Container, i = 1) {.jsfunc.} =
+proc cursorBottom(container: Container; i = 1) {.jsfunc.} =
   container.markPos0()
   let i = clamp(i, 0, container.height)
   container.setCursorY(container.fromy + container.height - i)
@@ -981,7 +984,7 @@ proc cursorMiddleColumn(container: Container) {.jsfunc.} =
 proc cursorRightEdge(container: Container) {.jsfunc.} =
   container.setCursorX(container.fromx + container.width - 1)
 
-proc scrollDown*(container: Container, n = 1) {.jsfunc.} =
+proc scrollDown*(container: Container; n = 1) {.jsfunc.} =
   let H = container.numLines
   let y = min(container.fromy + container.height + n, H) - container.height
   if y > container.fromy:
@@ -991,7 +994,7 @@ proc scrollDown*(container: Container, n = 1) {.jsfunc.} =
   else:
     container.cursorDown(n)
 
-proc scrollUp*(container: Container, n = 1) {.jsfunc.} =
+proc scrollUp*(container: Container; n = 1) {.jsfunc.} =
   let y = max(container.fromy - n, 0)
   if y < container.fromy:
     container.setFromY(y)
@@ -1001,18 +1004,18 @@ proc scrollUp*(container: Container, n = 1) {.jsfunc.} =
   else:
     container.cursorUp(n)
 
-proc scrollRight*(container: Container, n = 1) {.jsfunc.} =
+proc scrollRight*(container: Container; n = 1) {.jsfunc.} =
   let msw = container.maxScreenWidth()
   let x = min(container.fromx + container.width + n, msw) - container.width
   if x > container.fromx:
     container.setFromX(x)
 
-proc scrollLeft*(container: Container, n = 1) {.jsfunc.} =
+proc scrollLeft*(container: Container; n = 1) {.jsfunc.} =
   let x = max(container.fromx - n, 0)
   if x < container.fromx:
     container.setFromX(x)
 
-proc alert(container: Container, msg: string) =
+proc alert(container: Container; msg: string) =
   container.triggerEvent(ContainerEvent(t: cetAlert, msg: msg))
 
 proc lineInfo(container: Container) {.jsfunc.} =
@@ -1031,7 +1034,7 @@ proc updateCursor(container: Container) =
     container.setCursorY(container.lastVisibleLine)
     container.alert("Last line is #" & $container.numLines)
 
-proc gotoLine*[T: string|int](container: Container, s: T) =
+proc gotoLine*[T: string|int](container: Container; s: T) =
   when s is string:
     if s == "":
       redraw(container)
@@ -1058,7 +1061,7 @@ proc pushCursorPos*(container: Container) =
   else:
     container.bpos.add(container.pos)
 
-proc popCursorPos*(container: Container, nojump = false) =
+proc popCursorPos*(container: Container; nojump = false) =
   if container.select.open:
     container.select.popCursorPos(nojump)
   else:
@@ -1072,7 +1075,7 @@ proc copyCursorPos*(container, c2: Container) =
   container.startpos = some(c2.pos)
   container.flags.incl(cfHasStart)
 
-proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
+proc cursorNextLink*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1084,7 +1087,7 @@ proc cursorNextLink*(container: Container, n = 1) {.jsfunc.} =
         container.markPos()
     )
 
-proc cursorPrevLink*(container: Container, n = 1) {.jsfunc.} =
+proc cursorPrevLink*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1096,7 +1099,7 @@ proc cursorPrevLink*(container: Container, n = 1) {.jsfunc.} =
         container.markPos()
     )
 
-proc cursorNextParagraph*(container: Container, n = 1) {.jsfunc.} =
+proc cursorNextParagraph*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1107,7 +1110,7 @@ proc cursorNextParagraph*(container: Container, n = 1) {.jsfunc.} =
       container.markPos()
     )
 
-proc cursorPrevParagraph*(container: Container, n = 1) {.jsfunc.} =
+proc cursorPrevParagraph*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1118,7 +1121,7 @@ proc cursorPrevParagraph*(container: Container, n = 1) {.jsfunc.} =
       container.markPos()
     )
 
-proc setMark*(container: Container, id: string, x = none(int),
+proc setMark*(container: Container; id: string; x = none(int);
     y = none(int)): bool {.jsfunc.} =
   let x = x.get(container.cursorx)
   let y = y.get(container.cursory)
@@ -1131,19 +1134,19 @@ proc setMark*(container: Container, id: string, x = none(int),
     container.triggerEvent(cetUpdate)
     return true
 
-proc clearMark*(container: Container, id: string): bool {.jsfunc.} =
+proc clearMark*(container: Container; id: string): bool {.jsfunc.} =
   result = id in container.marks
   container.marks.del(id)
   container.triggerEvent(cetUpdate)
 
-proc getMarkPos(container: Container, id: string): Opt[PagePos] {.jsfunc.} =
+proc getMarkPos(container: Container; id: string): Opt[PagePos] {.jsfunc.} =
   if id == "`" or id == "'":
     return ok(container.jumpMark)
   container.marks.withValue(id, p):
     return ok(p[])
   return err()
 
-proc gotoMark*(container: Container, id: string): bool {.jsfunc.} =
+proc gotoMark*(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let mark = container.getMarkPos(id)
   if mark.isSome:
@@ -1153,7 +1156,7 @@ proc gotoMark*(container: Container, id: string): bool {.jsfunc.} =
     return true
   return false
 
-proc gotoMarkY*(container: Container, id: string): bool {.jsfunc.} =
+proc gotoMarkY*(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let mark = container.getMarkPos(id)
   if mark.isSome:
@@ -1163,7 +1166,7 @@ proc gotoMarkY*(container: Container, id: string): bool {.jsfunc.} =
     return true
   return false
 
-proc findNextMark*(container: Container, x = none(int), y = none(int)):
+proc findNextMark*(container: Container; x = none(int), y = none(int)):
     Option[string] {.jsfunc.} =
   #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
   let x = x.get(container.cursorx)
@@ -1178,7 +1181,7 @@ proc findNextMark*(container: Container, x = none(int), y = none(int)):
       bestid = some(id)
   return bestid
 
-proc findPrevMark*(container: Container, x = none(int), y = none(int)):
+proc findPrevMark*(container: Container; x = none(int), y = none(int)):
     Option[string] {.jsfunc.} =
   #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
   let x = x.get(container.cursorx)
@@ -1193,7 +1196,7 @@ proc findPrevMark*(container: Container, x = none(int), y = none(int)):
       bestid = some(id)
   return bestid
 
-proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
+proc cursorNthLink*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface
@@ -1202,7 +1205,7 @@ proc cursorNthLink*(container: Container, n = 1) {.jsfunc.} =
       if res.x > -1 and res.y != -1:
         container.setCursorXYCenter(res.x, res.y))
 
-proc cursorRevNthLink*(container: Container, n = 1) {.jsfunc.} =
+proc cursorRevNthLink*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface
@@ -1216,7 +1219,7 @@ proc clearSearchHighlights*(container: Container) =
     if container.highlights[i].t == hltSearch:
       container.highlights.del(i)
 
-proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
+proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
   if res.success:
     container.setCursorXYCenter(res.x, res.y, refresh)
     if container.hlon:
@@ -1239,7 +1242,7 @@ proc onMatch(container: Container, res: BufferMatch, refresh: bool) =
     container.needslines = true
     container.hlon = false
 
-proc cursorNextMatch*(container: Container, regex: Regex, wrap, refresh: bool,
+proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
   if container.select.open:
     #TODO
@@ -1254,7 +1257,7 @@ proc cursorNextMatch*(container: Container, regex: Regex, wrap, refresh: bool,
       .then(proc(res: BufferMatch) =
         container.onMatch(res, refresh))
 
-proc cursorPrevMatch*(container: Container, regex: Regex, wrap, refresh: bool,
+proc cursorPrevMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
   if container.select.open:
     #TODO
@@ -1276,7 +1279,7 @@ type
   SelectionOptions = object of JSDict
     selectionType: SelectionType
 
-proc cursorToggleSelection(container: Container, n = 1,
+proc cursorToggleSelection(container: Container; n = 1;
     opts = SelectionOptions()): Highlight {.jsfunc.} =
   if container.currentSelection != nil:
     let i = container.highlights.find(container.currentSelection)
@@ -1302,7 +1305,7 @@ proc cursorToggleSelection(container: Container, n = 1,
 
 #TODO I don't like this API
 # maybe make selection a subclass of highlight?
-proc getSelectionText(container: Container, hl: Highlight = nil):
+proc getSelectionText(container: Container; hl: Highlight = nil):
     Promise[string] {.jsfunc.} =
   if container.iface == nil:
     return
@@ -1354,7 +1357,7 @@ proc markURL(container: Container) {.jsfunc.} =
     container.needslines = true
   )
 
-proc setLoadInfo(container: Container, msg: string) =
+proc setLoadInfo(container: Container; msg: string) =
   container.loadinfo = msg
   container.triggerEvent(cetSetLoadInfo)
 
@@ -1614,8 +1617,8 @@ proc setCloneStream*(container: Container; stream: SocketStream;
   # Maybe we have to resume loading. Let's try.
   container.startLoad()
 
-proc onreadline(container: Container, w: Slice[int],
-    handle: (proc(line: SimpleFlexibleLine)), res: GetLinesResult) =
+proc onreadline(container: Container; w: Slice[int];
+    handle: (proc(line: SimpleFlexibleLine)); res: GetLinesResult) =
   for line in res.lines:
     handle(line)
   if res.numLines > w.b + 1:
@@ -1628,7 +1631,7 @@ proc onreadline(container: Container, w: Slice[int],
     container.setNumLines(res.numLines, true)
 
 # Synchronously read all lines in the buffer.
-proc readLines*(container: Container, handle: proc(line: SimpleFlexibleLine)) =
+proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
   if container.code == 0:
     # load succeded
     let w = 0 .. 23
@@ -1638,7 +1641,7 @@ proc readLines*(container: Container, handle: proc(line: SimpleFlexibleLine)) =
       # fulfill all promises
       container.handleCommand()
 
-proc drawLines*(container: Container, display: var FixedGrid,
+proc drawLines*(container: Container; display: var FixedGrid;
     hlcolor: CellColor) =
   let bgcolor = container.bgcolor
   template set_fmt(cell, cf: typed) =
@@ -1709,7 +1712,7 @@ proc drawLines*(container: Container, display: var FixedGrid,
         display[dls + i - startw].format = hlformat
     inc by
 
-proc highlightMarks*(container: Container, display: var FixedGrid,
+proc highlightMarks*(container: Container; display: var FixedGrid;
     hlcolor: CellColor) =
   for mark in container.marks.values:
     if mark.x in container.fromx ..< container.fromx + display.width and

@@ -15,13 +15,13 @@ proc newBitmap*(width, height: uint64): Bitmap =
     height: height
   )
 
-proc setpx*(bmp: Bitmap, x, y: uint64, color: RGBAColor) {.inline.} =
+proc setpx*(bmp: Bitmap; x, y: uint64; color: RGBAColor) {.inline.} =
   bmp.px[bmp.width * y + x] = color
 
-proc getpx*(bmp: Bitmap, x, y: uint64): RGBAColor {.inline.} =
+proc getpx*(bmp: Bitmap; x, y: uint64): RGBAColor {.inline.} =
   return bmp.px[bmp.width * y + x]
 
-proc setpxb*(bmp: Bitmap, x, y: uint64, color: RGBAColor) {.inline.} =
+proc setpxb*(bmp: Bitmap; x, y: uint64; color: RGBAColor) {.inline.} =
   if color.a == 255:
     bmp.setpx(x, y, color)
   else:

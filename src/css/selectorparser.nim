@@ -8,24 +8,20 @@ import utils/twtstr
 
 type
   SelectorType* = enum
-    TYPE_SELECTOR, ID_SELECTOR, ATTR_SELECTOR, CLASS_SELECTOR,
-    UNIVERSAL_SELECTOR, PSEUDO_SELECTOR, PSELEM_SELECTOR
+    stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement
 
   PseudoElem* = enum
-    PSEUDO_NONE, PSEUDO_BEFORE, PSEUDO_AFTER,
+    peNone, peBefore, peAfter,
     # internal
-    PSEUDO_INPUT_TEXT, PSEUDO_TEXTAREA_TEXT, PSEUDO_IMAGE, PSEUDO_NEWLINE,
-    PSEUDO_VIDEO, PSEUDO_AUDIO
+    peInputText, peTextareaText, peImage, peNewline, peVideo, peAudio
 
   PseudoClass* = enum
-    PSEUDO_FIRST_CHILD, PSEUDO_LAST_CHILD, PSEUDO_ONLY_CHILD, PSEUDO_HOVER,
-    PSEUDO_ROOT, PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD, PSEUDO_CHECKED,
-    PSEUDO_FOCUS, PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE, PSEUDO_LANG,
-    PSEUDO_LINK, PSEUDO_VISITED
+    pcFirstChild, pcLastChild, pcOnlyChild, pcHover, pcRoot, pcNthChild,
+    pcNthLastChild, pcChecked, pcFocus, pcIs, pcNot, pcWhere, pcLang, pcLink,
+    pcVisited
 
   CombinatorType* = enum
-    NO_COMBINATOR, DESCENDANT_COMBINATOR, CHILD_COMBINATOR,
-    NEXT_SIBLING_COMBINATOR, SUBSEQ_SIBLING_COMBINATOR
+    ctNone, ctDescendant, ctChild, ctNextSibling, ctSubsequentSibling
 
   SelectorParser = object
     selectors: seq[ComplexSelector]
@@ -35,11 +31,11 @@ type
     factory: CAtomFactory
 
   RelationType* {.size: sizeof(int) div 2.} = enum
-    RELATION_EXISTS, RELATION_EQUALS, RELATION_TOKEN, RELATION_BEGIN_DASH,
-    RELATION_STARTS_WITH, RELATION_ENDS_WITH, RELATION_CONTAINS
+    rtExists, rtEquals, rtToken, rtBeginDash,
+    rtStartsWith, rtEndsWith, rtContains
 
   RelationFlag* {.size: sizeof(int) div 2.} = enum
-    FLAG_NONE, FLAG_I, FLAG_S
+    rfNone, rfI, rfS
 
   SelectorRelation* = object
     t*: RelationType
@@ -47,39 +43,39 @@ type
 
   Selector* = ref object # Simple selector
     case t*: SelectorType
-    of TYPE_SELECTOR:
+    of stType:
       tag*: CAtom
       when defined(debug):
         tags: string
-    of ID_SELECTOR:
+    of stId:
       id*: CAtom
       when defined(debug):
         ids: string
-    of CLASS_SELECTOR:
+    of stClass:
       class*: CAtom
       when defined(debug):
         classs: string
-    of ATTR_SELECTOR:
+    of stAttr:
       attr*: CAtom
       when defined(debug):
         attrs: string
       value*: string
       rel*: SelectorRelation
-    of UNIVERSAL_SELECTOR: #TODO namespaces?
+    of stUniversal: #TODO namespaces?
       discard
-    of PSEUDO_SELECTOR:
+    of stPseudoClass:
       pseudo*: PseudoData
-    of PSELEM_SELECTOR:
+    of stPseudoElement:
       elem*: PseudoElem
 
   PseudoData* = object
     case t*: PseudoClass
-    of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
+    of pcNthChild, pcNthLastChild:
       anb*: CSSAnB
       ofsels*: SelectorList
-    of PSEUDO_IS, PSEUDO_WHERE, PSEUDO_NOT:
+    of pcIs, pcWhere, pcNot:
       fsels*: SelectorList
-    of PSEUDO_LANG:
+    of pcLang:
       s*: string
     else: discard
 
@@ -95,16 +91,16 @@ iterator items*(sels: CompoundSelector): Selector {.inline.} =
   for it in sels.sels:
     yield it
 
-func `[]`*(sels: CompoundSelector, i: int): Selector {.inline.} =
+func `[]`*(sels: CompoundSelector; i: int): Selector {.inline.} =
   return sels.sels[i]
 
-func `[]`*(sels: CompoundSelector, i: BackwardsIndex): Selector {.inline.} =
+func `[]`*(sels: CompoundSelector; i: BackwardsIndex): Selector {.inline.} =
   return sels.sels[i]
 
 func len*(sels: CompoundSelector): int {.inline.} =
   return sels.sels.len
 
-proc add*(sels: var CompoundSelector, sel: Selector) {.inline.} =
+proc add*(sels: var CompoundSelector; sel: Selector) {.inline.} =
   sels.sels.add(sel)
 
 # For debugging
@@ -115,52 +111,52 @@ func `$`*(cxsel: ComplexSelector): string
 
 func `$`*(sel: Selector): string =
   case sel.t
-  of TYPE_SELECTOR:
+  of stType:
     when defined(debug):
       return sel.tags
     else:
       return "ATOM" & $int(sel.tag)
-  of ID_SELECTOR:
+  of stId:
     when defined(debug):
       return "#" & sel.ids
     else:
       return "#ATOM" & $int(sel.id)
-  of ATTR_SELECTOR:
+  of stAttr:
     let rel = case sel.rel.t
-    of RELATION_EXISTS: ""
-    of RELATION_EQUALS: "="
-    of RELATION_TOKEN: "~="
-    of RELATION_BEGIN_DASH: "|="
-    of RELATION_STARTS_WITH: "^="
-    of RELATION_ENDS_WITH: "$="
-    of RELATION_CONTAINS: "*="
+    of rtExists: ""
+    of rtEquals: "="
+    of rtToken: "~="
+    of rtBeginDash: "|="
+    of rtStartsWith: "^="
+    of rtEndsWith: "$="
+    of rtContains: "*="
     let flag = case sel.rel.flag
-    of FLAG_NONE: ""
-    of FLAG_I: " i"
-    of FLAG_S: " s"
+    of rfNone: ""
+    of rfI: " i"
+    of rfS: " s"
     let attrs = when defined(debug):
       sel.attrs
     else:
       "ATOM" & $int(sel.attr)
     return '[' & attrs & rel & sel.value & flag & ']'
-  of CLASS_SELECTOR:
+  of stClass:
     when defined(debug):
       return "." & sel.classs
     else:
       return ".ATOM" & $int(sel.id)
-  of UNIVERSAL_SELECTOR:
+  of stUniversal:
     return "*"
-  of PSEUDO_SELECTOR:
+  of stPseudoClass:
     result = ':' & sel.pseudo.t.tostr()
     case sel.pseudo.t
-    of PSEUDO_IS, PSEUDO_NOT, PSEUDO_WHERE:
+    of pcIs, pcNot, pcWhere:
       result &= '('
       for fsel in sel.pseudo.fsels:
         result &= $fsel
         if fsel != sel.pseudo.fsels[^1]:
           result &= ", "
       result &= ')'
-    of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
+    of pcNthChild, pcNthLastChild:
       result &= '(' & $sel.pseudo.anb.A & 'n' & $sel.pseudo.anb.B
       if sel.pseudo.ofsels.len != 0:
         result &= " of "
@@ -170,7 +166,7 @@ func `$`*(sel: Selector): string =
             result &= ','
       result &= ')'
     else: discard
-  of PSELEM_SELECTOR:
+  of stPseudoElement:
     return "::" & sel.elem.tostr()
 
 func `$`*(sels: CompoundSelector): string =
@@ -181,11 +177,11 @@ func `$`*(cxsel: ComplexSelector): string =
   for sels in cxsel:
     result &= $sels
     case sels.ct
-    of DESCENDANT_COMBINATOR: result &= ' '
-    of CHILD_COMBINATOR: result &= " > "
-    of NEXT_SIBLING_COMBINATOR: result &= " + "
-    of SUBSEQ_SIBLING_COMBINATOR: result &= " ~ "
-    of NO_COMBINATOR: discard
+    of ctDescendant: result &= ' '
+    of ctChild: result &= " > "
+    of ctNextSibling: result &= " + "
+    of ctSubsequentSibling: result &= " ~ "
+    of ctNone: discard
 
 func `$`*(slist: SelectorList): string =
   var s = false
@@ -199,20 +195,20 @@ func getSpecificity*(cxsel: ComplexSelector): int
 
 func getSpecificity(sel: Selector): int =
   case sel.t
-  of ID_SELECTOR:
+  of stId:
     result += 1000000
-  of CLASS_SELECTOR, ATTR_SELECTOR:
+  of stClass, stAttr:
     result += 1000
-  of PSEUDO_SELECTOR:
+  of stPseudoClass:
     case sel.pseudo.t
-    of PSEUDO_IS, PSEUDO_NOT:
+    of pcIs, pcNot:
       var best = 0
       for child in sel.pseudo.fsels:
         let s = getSpecificity(child)
         if s > best:
           best = s
       result += best
-    of PSEUDO_NTH_CHILD, PSEUDO_NTH_LAST_CHILD:
+    of pcNthChild, pcNthLastChild:
       if sel.pseudo.ofsels.len != 0:
         var best = 0
         for child in sel.pseudo.ofsels:
@@ -221,11 +217,11 @@ func getSpecificity(sel: Selector): int =
             best = s
         result += best
       result += 1000
-    of PSEUDO_WHERE: discard
+    of pcWhere: discard
     else: result += 1000
-  of TYPE_SELECTOR, PSELEM_SELECTOR:
+  of stType, stPseudoElement:
     result += 1
-  of UNIVERSAL_SELECTOR:
+  of stUniversal:
     discard
 
 func getSpecificity*(sels: CompoundSelector): int =
@@ -237,18 +233,18 @@ func getSpecificity*(cxsel: ComplexSelector): int =
     result += getSpecificity(sels)
 
 func pseudo*(cxsel: ComplexSelector): PseudoElem =
-  if cxsel[^1][^1].t == PSELEM_SELECTOR:
+  if cxsel[^1][^1].t == stPseudoElement:
     return cxsel[^1][^1].elem
-  return PSEUDO_NONE
+  return peNone
 
 proc consume(state: var SelectorParser): CSSComponentValue =
   result = state.cvals[state.at]
   inc state.at
 
-proc has(state: var SelectorParser, i = 0): bool =
+proc has(state: var SelectorParser; i = 0): bool =
   return not state.failed and state.at + i < state.cvals.len
 
-proc peek(state: var SelectorParser, i = 0): CSSComponentValue =
+proc peek(state: var SelectorParser; i = 0): CSSComponentValue =
   return state.cvals[state.at + i]
 
 template fail() =
@@ -260,40 +256,41 @@ template get_tok(cval: CSSComponentValue): CSSToken =
   if not (c of CSSToken): fail
   CSSToken(c)
 
-proc parseSelectorList(cvals: seq[CSSComponentValue], factory: CAtomFactory):
+proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
   SelectorList
 
 # Functions that may contain other selectors, functions, etc.
-proc parseRecursiveSelectorFunction(state: var SelectorParser,
-    class: PseudoClass, body: seq[CSSComponentValue]): Selector =
+proc parseRecursiveSelectorFunction(state: var SelectorParser;
+    class: PseudoClass; body: seq[CSSComponentValue]): Selector =
   var fun = Selector(
-    t: PSEUDO_SELECTOR,
+    t: stPseudoClass,
     pseudo: PseudoData(t: class),
   )
   fun.pseudo.fsels = parseSelectorList(body, state.factory)
   if fun.pseudo.fsels.len == 0: fail
   return fun
 
-proc parseNthChild(state: var SelectorParser, cssfunction: CSSFunction, data: PseudoData): Selector =
+proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
+    data: PseudoData): Selector =
   var data = data
   var (anb, i) = parseAnB(cssfunction.value)
   if anb.isNone: fail
   data.anb = anb.get
-  var nthchild = Selector(t: PSEUDO_SELECTOR, pseudo: data)
-  while i < cssfunction.value.len and cssfunction.value[i] == CSS_WHITESPACE_TOKEN:
+  var nthchild = Selector(t: stPseudoClass, pseudo: data)
+  while i < cssfunction.value.len and cssfunction.value[i] == cttWhitespace:
     inc i
   if i >= cssfunction.value.len:
     return nthchild
   if not (get_tok cssfunction.value[i]).value.equalsIgnoreCase("of"): fail
   if i == cssfunction.value.len: fail
-  nthchild.pseudo.ofsels = parseSelectorList(cssfunction.value[i..^1],
-    state.factory)
+  nthchild.pseudo.ofsels = cssfunction.value[i..^1]
+    .parseSelectorList(state.factory)
   if nthchild.pseudo.ofsels.len == 0: fail
   return nthchild
 
 proc skipWhitespace(state: var SelectorParser) =
   while state.has() and state.peek() of CSSToken and
-      CSSToken(state.peek()).tokenType == CSS_WHITESPACE_TOKEN:
+      CSSToken(state.peek()).tokenType == cttWhitespace:
     inc state.at
 
 proc parseLang(cvals: seq[CSSComponentValue]): Selector =
@@ -301,21 +298,22 @@ proc parseLang(cvals: seq[CSSComponentValue]): Selector =
   state.skipWhitespace()
   if not state.has(): fail
   let tok = get_tok state.consume()
-  if tok.tokenType != CSS_IDENT_TOKEN: fail
-  return Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: PSEUDO_LANG, s: tok.value))
+  if tok.tokenType != cttIdent: fail
+  return Selector(t: stPseudoClass, pseudo: PseudoData(t: pcLang, s: tok.value))
 
-proc parseSelectorFunction(state: var SelectorParser, cssfunction: CSSFunction): Selector =
+proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
+    Selector =
   return case cssfunction.name.toLowerAscii()
   of "not":
-    state.parseRecursiveSelectorFunction(PSEUDO_NOT, cssfunction.value)
+    state.parseRecursiveSelectorFunction(pcNot, cssfunction.value)
   of "is":
-    state.parseRecursiveSelectorFunction(PSEUDO_IS, cssfunction.value)
+    state.parseRecursiveSelectorFunction(pcIs, cssfunction.value)
   of "where":
-    state.parseRecursiveSelectorFunction(PSEUDO_WHERE, cssfunction.value)
+    state.parseRecursiveSelectorFunction(pcWhere, cssfunction.value)
   of "nth-child":
-    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_CHILD))
+    state.parseNthChild(cssfunction, PseudoData(t: pcNthChild))
   of "nth-last-child":
-    state.parseNthChild(cssfunction, PseudoData(t: PSEUDO_NTH_LAST_CHILD))
+    state.parseNthChild(cssfunction, PseudoData(t: pcNthLastChild))
   of "lang":
     parseLang(cssfunction.value)
   else: fail
@@ -325,32 +323,32 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   let cval = state.consume()
   if cval of CSSToken:
     template add_pseudo_element(element: PseudoElem) =
-      return Selector(t: PSELEM_SELECTOR, elem: element)
+      return Selector(t: stPseudoElement, elem: element)
     let tok = CSSToken(cval)
     case tok.tokenType
-    of CSS_IDENT_TOKEN:
+    of cttIdent:
       template add_pseudo_class(class: PseudoClass) =
-        return Selector(t: PSEUDO_SELECTOR, pseudo: PseudoData(t: class))
+        return Selector(t: stPseudoClass, pseudo: PseudoData(t: class))
       case tok.value.toLowerAscii()
-      of "before": add_pseudo_element PSEUDO_BEFORE
-      of "after": add_pseudo_element PSEUDO_AFTER
-      of "first-child": add_pseudo_class PSEUDO_FIRST_CHILD
-      of "last-child": add_pseudo_class PSEUDO_LAST_CHILD
-      of "only-child": add_pseudo_class PSEUDO_ONLY_CHILD
-      of "hover": add_pseudo_class PSEUDO_HOVER
-      of "root": add_pseudo_class PSEUDO_ROOT
-      of "checked": add_pseudo_class PSEUDO_CHECKED
-      of "focus": add_pseudo_class PSEUDO_FOCUS
-      of "link": add_pseudo_class PSEUDO_LINK
-      of "visited": add_pseudo_class PSEUDO_VISITED
+      of "before": add_pseudo_element peBefore
+      of "after": add_pseudo_element peAfter
+      of "first-child": add_pseudo_class pcFirstChild
+      of "last-child": add_pseudo_class pcLastChild
+      of "only-child": add_pseudo_class pcOnlyChild
+      of "hover": add_pseudo_class pcHover
+      of "root": add_pseudo_class pcRoot
+      of "checked": add_pseudo_class pcChecked
+      of "focus": add_pseudo_class pcFocus
+      of "link": add_pseudo_class pcLink
+      of "visited": add_pseudo_class pcVisited
       else: fail
-    of CSS_COLON_TOKEN:
+    of cttColon:
       if not state.has(): fail
       let tok = get_tok state.consume()
-      if tok.tokenType != CSS_IDENT_TOKEN: fail
+      if tok.tokenType != cttIdent: fail
       case tok.value.toLowerAscii()
-      of "before": add_pseudo_element PSEUDO_BEFORE
-      of "after": add_pseudo_element PSEUDO_AFTER
+      of "before": add_pseudo_element peBefore
+      of "after": add_pseudo_element peAfter
       else: fail
     else: fail
   elif cval of CSSFunction:
@@ -359,49 +357,49 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
 
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 
-proc parseAttributeSelector(state: var SelectorParser,
+proc parseAttributeSelector(state: var SelectorParser;
     cssblock: CSSSimpleBlock): Selector =
-  if cssblock.token.tokenType != CSS_LBRACKET_TOKEN: fail
+  if cssblock.token.tokenType != cttLbracket: fail
   var state2 = SelectorParser(cvals: cssblock.value)
   state2.skipWhitespace()
   if not state2.has(): fail
   let attr = get_tok state2.consume()
-  if attr.tokenType != CSS_IDENT_TOKEN: fail
+  if attr.tokenType != cttIdent: fail
   state2.skipWhitespace()
   if not state2.has():
     return Selector(
-      t: ATTR_SELECTOR,
+      t: stAttr,
       attr: state.factory.toAtom(attr.value),
-      rel: SelectorRelation(t: RELATION_EXISTS)
+      rel: SelectorRelation(t: rtExists)
     )
   let delim = get_tok state2.consume()
-  if delim.tokenType != CSS_DELIM_TOKEN: fail
+  if delim.tokenType != cttDelim: fail
   let rel = case delim.cvalue
-  of '~': RELATION_TOKEN
-  of '|': RELATION_BEGIN_DASH
-  of '^': RELATION_STARTS_WITH
-  of '$': RELATION_ENDS_WITH
-  of '*': RELATION_CONTAINS
-  of '=': RELATION_EQUALS
+  of '~': rtToken
+  of '|': rtBeginDash
+  of '^': rtStartsWith
+  of '$': rtEndsWith
+  of '*': rtContains
+  of '=': rtEquals
   else: fail
-  if rel != RELATION_EQUALS:
+  if rel != rtEquals:
     let delim = get_tok state2.consume()
-    if delim.tokenType != CSS_DELIM_TOKEN or delim.cvalue != '=': fail
+    if delim.tokenType != cttDelim or delim.cvalue != '=': fail
   state2.skipWhitespace()
   if not state2.has(): fail
   let value = get_tok state2.consume()
-  if value.tokenType notin {CSS_IDENT_TOKEN, CSS_STRING_TOKEN}: fail
+  if value.tokenType notin {cttIdent, cttString}: fail
   state2.skipWhitespace()
-  var flag = FLAG_NONE
+  var flag = rfNone
   if state2.has():
     let delim = get_tok state2.consume()
-    if delim.tokenType != CSS_IDENT_TOKEN: fail
+    if delim.tokenType != cttIdent: fail
     if delim.value.equalsIgnoreCase("i"):
-      flag = FLAG_I
+      flag = rfI
     elif delim.value.equalsIgnoreCase("s"):
-      flag = FLAG_S
+      flag = rfS
   return Selector(
-    t: ATTR_SELECTOR,
+    t: stAttr,
     attr: state.factory.toAtom(attr.value),
     value: value.value,
     rel: SelectorRelation(
@@ -413,9 +411,9 @@ proc parseAttributeSelector(state: var SelectorParser,
 proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
-  if tok.tokenType != CSS_IDENT_TOKEN: fail
+  if tok.tokenType != cttIdent: fail
   let class = state.factory.toAtom(tok.value)
-  result = Selector(t: CLASS_SELECTOR, class: class)
+  result = Selector(t: stClass, class: class)
   when defined(debug):
     result.classs = tok.value
 
@@ -426,39 +424,39 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
     if cval of CSSToken:
       let tok = CSSToken(cval)
       case tok.tokenType
-      of CSS_IDENT_TOKEN:
+      of cttIdent:
         inc state.at
         let s = tok.value.toLowerAscii()
         let tag = state.factory.toAtom(s)
-        let sel = Selector(t: TYPE_SELECTOR, tag: tag)
+        let sel = Selector(t: stType, tag: tag)
         when defined(debug):
           sel.tags = s
         result.add(sel)
-      of CSS_COLON_TOKEN:
+      of cttColon:
         inc state.at
         result.add(state.parsePseudoSelector())
-      of CSS_HASH_TOKEN:
+      of cttHash:
         inc state.at
         let id = state.factory.toAtom(tok.value)
-        result.add(Selector(t: ID_SELECTOR, id: id))
+        result.add(Selector(t: stId, id: id))
         when defined(debug):
           result[^1].ids = tok.value
-      of CSS_COMMA_TOKEN: break
-      of CSS_DELIM_TOKEN:
+      of cttComma: break
+      of cttDelim:
         case tok.cvalue
         of '.':
           inc state.at
           result.add(state.parseClassSelector())
         of '*':
           inc state.at
-          result.add(Selector(t: UNIVERSAL_SELECTOR))
+          result.add(Selector(t: stUniversal))
         of '>', '+', '~': break
         else: fail
-      of CSS_WHITESPACE_TOKEN:
+      of cttWhitespace:
         # skip trailing whitespace
-        if not state.has(1) or state.peek(1) == CSS_COMMA_TOKEN:
+        if not state.has(1) or state.peek(1) == cttComma:
           inc state.at
-        elif state.peek(1) == CSS_DELIM_TOKEN:
+        elif state.peek(1) == cttDelim:
           let tok = CSSToken(state.peek(1))
           if tok.cvalue in {'>', '+', '~'}:
             inc state.at
@@ -480,21 +478,21 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
       break # finish
     let tok = get_tok state.consume()
     case tok.tokenType
-    of CSS_DELIM_TOKEN:
+    of cttDelim:
       case tok.cvalue
-      of '>': result[^1].ct = CHILD_COMBINATOR
-      of '+': result[^1].ct = NEXT_SIBLING_COMBINATOR
-      of '~': result[^1].ct = SUBSEQ_SIBLING_COMBINATOR
+      of '>': result[^1].ct = ctChild
+      of '+': result[^1].ct = ctNextSibling
+      of '~': result[^1].ct = ctSubsequentSibling
       else: fail
-    of CSS_WHITESPACE_TOKEN:
-      result[^1].ct = DESCENDANT_COMBINATOR
-    of CSS_COMMA_TOKEN:
+    of cttWhitespace:
+      result[^1].ct = ctDescendant
+    of cttComma:
       break # finish
     else: fail
-  if result.len == 0 or result[^1].ct != NO_COMBINATOR:
+  if result.len == 0 or result[^1].ct != ctNone:
     fail
 
-proc parseSelectorList(cvals: seq[CSSComponentValue], factory: CAtomFactory):
+proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
     SelectorList =
   var state = SelectorParser(cvals: cvals, factory: factory)
   var res: SelectorList
@@ -503,10 +501,10 @@ proc parseSelectorList(cvals: seq[CSSComponentValue], factory: CAtomFactory):
   if not state.failed:
     return res
 
-proc parseSelectors*(cvals: seq[CSSComponentValue], factory: CAtomFactory):
+proc parseSelectors*(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
     seq[ComplexSelector] =
   return parseSelectorList(cvals, factory)
 
-proc parseSelectors*(stream: Stream, factory: CAtomFactory):
+proc parseSelectors*(stream: Stream; factory: CAtomFactory):
     seq[ComplexSelector] =
   return parseSelectors(parseListOfComponentValues(stream), factory)

@@ -26,7 +26,7 @@ type
   ReadableStream* = object
     underlyingSource: UnderlyingSource
 
-proc newReadableStream(underlyingSource = none(UnderlyingSource),
+proc newReadableStream(underlyingSource = none(UnderlyingSource);
     strategy = none(QueuingStrategySize)): ReadableStream =
   let this = ReadableStream()
   discard

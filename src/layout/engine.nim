@@ -26,7 +26,7 @@ type
   #   in other words, as wide as needed, but wrap if wider than allowed
   # (note: I write width here, but it can apply for any constraint)
   SizeConstraintType = enum
-    STRETCH, FIT_CONTENT, MIN_CONTENT, MAX_CONTENT
+    scStretch, scFitContent, scMinContent, scMaxContent
 
   SizeConstraint = object
     t: SizeConstraintType
@@ -49,13 +49,13 @@ template attrs(state: LayoutState): WindowAttributes =
   state.attrsp[]
 
 func maxContent(): SizeConstraint =
-  return SizeConstraint(t: MAX_CONTENT)
+  return SizeConstraint(t: scMaxContent)
 
 func stretch(u: LayoutUnit): SizeConstraint =
-  return SizeConstraint(t: STRETCH, u: u)
+  return SizeConstraint(t: scStretch, u: u)
 
 func fitContent(u: LayoutUnit): SizeConstraint =
-  return SizeConstraint(t: FIT_CONTENT, u: u)
+  return SizeConstraint(t: scFitContent, u: u)
 
 type
   BoxBuilder = ref object of RootObj
@@ -90,52 +90,52 @@ type
 
 func fitContent(sc: SizeConstraint): SizeConstraint =
   case sc.t
-  of MIN_CONTENT, MAX_CONTENT:
+  of scMinContent, scMaxContent:
     return sc
-  of STRETCH, FIT_CONTENT:
-    return SizeConstraint(t: FIT_CONTENT, u: sc.u)
+  of scStretch, scFitContent:
+    return SizeConstraint(t: scFitContent, u: sc.u)
 
 func isDefinite(sc: SizeConstraint): bool =
-  return sc.t in {STRETCH, FIT_CONTENT}
+  return sc.t in {scStretch, scFitContent}
 
 # Layout (2nd pass)
-func px(l: CSSLength, lctx: LayoutState, p: LayoutUnit = 0):
+func px(l: CSSLength; lctx: LayoutState; p: LayoutUnit = 0):
     LayoutUnit {.inline.} =
   return px(l, lctx.attrs, p)
 
-func px(l: CSSLength, lctx: LayoutState, p: Option[LayoutUnit]):
+func px(l: CSSLength; lctx: LayoutState; p: Option[LayoutUnit]):
     Option[LayoutUnit] {.inline.} =
-  if l.unit == UNIT_PERC and p.isNone:
+  if l.unit == cuPerc and p.isNone:
     return none(LayoutUnit)
   return some(px(l, lctx.attrs, p.get(0)))
 
-func canpx(l: CSSLength, sc: SizeConstraint): bool =
-  return not l.auto and (l.unit != UNIT_PERC or sc.isDefinite())
+func canpx(l: CSSLength; sc: SizeConstraint): bool =
+  return not l.auto and (l.unit != cuPerc or sc.isDefinite())
 
-func canpx(l: CSSLength, p: Option[LayoutUnit]): bool =
-  return not l.auto and (l.unit != UNIT_PERC or p.isSome)
+func canpx(l: CSSLength; p: Option[LayoutUnit]): bool =
+  return not l.auto and (l.unit != cuPerc or p.isSome)
 
 # Note: for margins only
 # For percentages, use 0 for indefinite, and containing box's size for
 # definite.
-func px(l: CSSLength, lctx: LayoutState, p: SizeConstraint): LayoutUnit =
-  if l.unit == UNIT_PERC:
+func px(l: CSSLength; lctx: LayoutState; p: SizeConstraint): LayoutUnit =
+  if l.unit == cuPerc:
     case p.t
-    of MIN_CONTENT, MAX_CONTENT:
+    of scMinContent, scMaxContent:
       return 0
-    of STRETCH, FIT_CONTENT:
+    of scStretch, scFitContent:
       return l.px(lctx, p.u)
   return px(l, lctx.attrs, 0)
 
-func applySizeConstraint(u: LayoutUnit, availableSize: SizeConstraint):
+func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
     LayoutUnit =
   case availableSize.t
-  of STRETCH:
+  of scStretch:
     return availableSize.u
-  of MIN_CONTENT, MAX_CONTENT:
+  of scMinContent, scMaxContent:
     # must be calculated elsewhere...
     return u
-  of FIT_CONTENT:
+  of scFitContent:
     return min(u, availableSize.u)
 
 type
@@ -238,10 +238,11 @@ type
     prevrw: int # last processed rune's width
 
 func whitespacepre(computed: CSSComputedValues): bool =
-  computed{"white-space"} in {WHITESPACE_PRE, WHITESPACE_PRE_LINE, WHITESPACE_PRE_WRAP}
+  computed{"white-space"} in {WhitespacePre, WhitespacePreLine,
+    WhitespacePreWrap}
 
 func nowrap(computed: CSSComputedValues): bool =
-  computed{"white-space"} in {WHITESPACE_NOWRAP, WHITESPACE_PRE}
+  computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
 
 func cellwidth(lctx: LayoutState): int =
   lctx.attrs.ppc
@@ -309,24 +310,24 @@ proc newWord(ictx: var InlineContext; state: var InlineState) =
 
 proc horizontalAlignLines(ictx: var InlineContext; state: InlineState) =
   let width = case ictx.space.w.t
-  of MIN_CONTENT, MAX_CONTENT:
+  of scMinContent, scMaxContent:
     ictx.size.w
-  of FIT_CONTENT:
+  of scFitContent:
     min(ictx.size.w, ictx.space.w.u)
-  of STRETCH:
+  of scStretch:
     max(ictx.size.w, ictx.space.w.u)
   # we don't support directions for now so left = start and right = end
   case state.computed{"text-align"}
-  of TEXT_ALIGN_START, TEXT_ALIGN_LEFT, TEXT_ALIGN_CHA_LEFT, TEXT_ALIGN_JUSTIFY:
+  of TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify:
     discard
-  of TEXT_ALIGN_END, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CHA_RIGHT:
+  of TextAlignEnd, TextAlignRight, TextAlignChaRight:
     # move everything
     for line in ictx.lines:
       let x = max(width, line.size.w) - line.size.w
       for atom in line.atoms:
         atom.offset.x += x
         ictx.size.w = max(atom.offset.x + atom.size.w, ictx.size.w)
-  of TEXT_ALIGN_CENTER, TEXT_ALIGN_CHA_CENTER:
+  of TextAlignCenter, TextAlignChaCenter:
     # NOTE if we need line x offsets, use:
     #let width = width - line.offset.x
     for line in ictx.lines:
@@ -350,12 +351,12 @@ proc verticalAlignLine(ictx: var InlineContext) =
   for i, atom in ictx.currentLine.atoms:
     let iastate = ictx.currentLine.atomstates[i]
     case iastate.vertalign.keyword
-    of VERTICAL_ALIGN_BASELINE:
+    of VerticalAlignBaseline:
       let len = iastate.vertalign.length.px(ictx.lctx, lineheight)
       baseline = max(baseline, iastate.baseline + len)
-    of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
+    of VerticalAlignTop, VerticalAlignBottom:
       baseline = max(baseline, atom.size.h)
-    of VERTICAL_ALIGN_MIDDLE:
+    of VerticalAlignMiddle:
       baseline = max(baseline, atom.size.h div 2)
     else:
       baseline = max(baseline, iastate.baseline)
@@ -372,18 +373,18 @@ proc verticalAlignLine(ictx: var InlineContext) =
     # (Where the atom is actually placed is irrelevant here.)
     ictx.currentLine.size.h = max(ictx.currentLine.size.h, atom.size.h)
     case iastate.vertalign.keyword
-    of VERTICAL_ALIGN_BASELINE:
+    of VerticalAlignBaseline:
       # Line height must be at least as high as
       # (line baseline) - (atom baseline) + (atom height) + (extra height).
       let len = iastate.vertalign.length.px(ictx.lctx, lineheight)
       ictx.currentLine.size.h = max(baseline - iastate.baseline +
         atom.size.h + len, ictx.currentLine.size.h)
-    of VERTICAL_ALIGN_MIDDLE:
+    of VerticalAlignMiddle:
       # Line height must be at least
       # (line baseline) + (atom height / 2).
       ictx.currentLine.size.h = max(baseline + atom.size.h div 2,
         ictx.currentLine.size.h)
-    of VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_BOTTOM:
+    of VerticalAlignTop, VerticalAlignBottom:
       # Line height must be at least atom height (already ensured above.)
       discard
     else:
@@ -395,17 +396,17 @@ proc verticalAlignLine(ictx: var InlineContext) =
   for i, atom in ictx.currentLine.atoms:
     let iastate = ictx.currentLine.atomstates[i]
     case iastate.vertalign.keyword
-    of VERTICAL_ALIGN_BASELINE:
+    of VerticalAlignBaseline:
       # Atom is placed at (line baseline) - (atom baseline) - len
       let len = iastate.vertalign.length.px(ictx.lctx, lineheight)
       atom.offset.y = baseline - iastate.baseline - len
-    of VERTICAL_ALIGN_MIDDLE:
+    of VerticalAlignMiddle:
       # Atom is placed at (line baseline) - ((atom height) / 2)
       atom.offset.y = baseline - atom.size.h div 2
-    of VERTICAL_ALIGN_TOP:
+    of VerticalAlignTop:
       # Atom is placed at the top of the line.
       atom.offset.y = 0
-    of VERTICAL_ALIGN_BOTTOM:
+    of VerticalAlignBottom:
       # Atom is placed at the bottom of the line.
       atom.offset.y = ictx.currentLine.size.h - atom.size.h
     else:
@@ -489,7 +490,7 @@ proc initLine(ictx: var InlineContext) =
     for ex in bctx.exclusions:
       if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
         ictx.currentLine.hasExclusion = true
-        if ex.t == FLOAT_LEFT:
+        if ex.t == FloatLeft:
           left = ex.offset.x + ex.size.w
         else:
           right = ex.offset.x
@@ -500,9 +501,9 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     force = false) =
   if ictx.currentLine.atoms.len != 0 or force:
     let whitespace = state.computed{"white-space"}
-    if whitespace == WHITESPACE_PRE:
+    if whitespace == WhitespacePre:
       ictx.flushWhitespace(state)
-    elif whitespace == WHITESPACE_PRE_WRAP:
+    elif whitespace == WhitespacePreWrap:
       ictx.flushWhitespace(state, hang = true)
     else:
       ictx.whitespacenum = 0
@@ -625,9 +626,9 @@ func shouldWrap(ictx: InlineContext; w: LayoutUnit;
     pcomputed: CSSComputedValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
-  if ictx.space.w.t == MAX_CONTENT:
+  if ictx.space.w.t == scMaxContent:
     return false # no wrap with max-content
-  if ictx.space.w.t == MIN_CONTENT:
+  if ictx.space.w.t == scMinContent:
     return true # always wrap with min-content
   return ictx.currentLine.size.w + w > ictx.currentLine.availableWidth
 
@@ -658,7 +659,8 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     #TODO this is inefficient
     while ictx.shouldWrap2(atom.size.w + shift):
       ictx.applyLineHeight(ictx.currentLine, state.computed)
-      ictx.currentLine.lineheight = max(ictx.currentLine.lineheight, ictx.cellheight)
+      ictx.currentLine.lineheight = max(ictx.currentLine.lineheight,
+        ictx.cellheight)
       ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
@@ -709,20 +711,20 @@ proc checkWrap(ictx: var InlineContext; state: var InlineState; r: Rune) =
     # of any dash inside CJK sentences)
     ictx.wrappos = -1
   case state.computed{"word-break"}
-  of WORD_BREAK_NORMAL:
+  of WordBreakNormal:
     if rw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
       let plusWidth = ictx.word.size.w + shift + rw * ictx.cellwidth
       if ictx.shouldWrap(plusWidth, nil):
         if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
           ictx.finishLine(state, wrap = true)
           ictx.whitespacenum = 0
-  of WORD_BREAK_BREAK_ALL:
+  of WordBreakBreakAll:
     let plusWidth = ictx.word.size.w + shift + rw * ictx.cellwidth
     if ictx.shouldWrap(plusWidth, nil):
       if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
         ictx.finishLine(state, wrap = true)
         ictx.whitespacenum = 0
-  of WORD_BREAK_KEEP_ALL:
+  of WordBreakKeepAll:
     let plusWidth = ictx.word.size.w + shift + rw * ictx.cellwidth
     if ictx.shouldWrap(plusWidth, nil):
       ictx.finishLine(state, wrap = true)
@@ -732,21 +734,21 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
     c: char) =
   discard ictx.addWord(state)
   case state.computed{"white-space"}
-  of WHITESPACE_NORMAL, WHITESPACE_NOWRAP:
+  of WhitespaceNormal, WhitespaceNowrap:
     if ictx.whitespacenum < 1:
       ictx.whitespacenum = 1
       ictx.whitespaceFragment = state.fragment
       ictx.whitespaceIsLF = c == '\n'
     if c != '\n':
       ictx.whitespaceIsLF = false
-  of WHITESPACE_PRE_LINE:
+  of WhitespacePreLine:
     if c == '\n':
       ictx.flushLine(state)
     elif ictx.whitespacenum < 1:
       ictx.whitespaceIsLF = false
       ictx.whitespacenum = 1
       ictx.whitespaceFragment = state.fragment
-  of WHITESPACE_PRE, WHITESPACE_PRE_WRAP:
+  of WhitespacePre, WhitespacePreWrap:
     #TODO whitespace type should be preserved here. (it isn't, because
     # it would break tabs in the current buffer model.)
     ictx.whitespaceIsLF = false
@@ -818,41 +820,41 @@ proc layoutText(ictx: var InlineContext; state: var InlineState; str: string) =
   ictx.flushWhitespace(state)
   ictx.newWord(state)
   case state.computed{"text-transform"}
-  of TEXT_TRANSFORM_NONE:
+  of TextTransformNone:
     ictx.layoutTextLoop(state, str)
     {.linearScanEnd.}
-  of TEXT_TRANSFORM_CAPITALIZE:
+  of TextTransformCapitalize:
     ictx.layoutTextLoop(state, str.capitalize())
-  of TEXT_TRANSFORM_UPPERCASE:
+  of TextTransformUppercase:
     ictx.layoutTextLoop(state, str.toUpper())
-  of TEXT_TRANSFORM_LOWERCASE:
+  of TextTransformLowercase:
     ictx.layoutTextLoop(state, str.toLower())
-  of TEXT_TRANSFORM_FULL_WIDTH:
+  of TextTransformFullWidth:
     ictx.layoutTextLoop(state, str.fullwidth())
-  of TEXT_TRANSFORM_FULL_SIZE_KANA:
+  of TextTransformFullSizeKana:
     ictx.layoutTextLoop(state, str.fullsize())
-  of TEXT_TRANSFORM_CHA_HALF_WIDTH:
+  of TextTransformChaHalfWidth:
     ictx.layoutTextLoop(state, str.halfwidth())
 
-func spx(l: CSSLength, lctx: LayoutState, p: SizeConstraint,
-    computed: CSSComputedValues, padding: LayoutUnit): LayoutUnit =
+func spx(l: CSSLength; lctx: LayoutState; p: SizeConstraint;
+    computed: CSSComputedValues; padding: LayoutUnit): LayoutUnit =
   let u = l.px(lctx, p)
-  if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+  if computed{"box-sizing"} == BoxSizingBorderBox:
     return max(u - padding, 0)
   return max(u, 0)
 
-func spx(l: CSSLength, lctx: LayoutState, p: Option[LayoutUnit],
-    computed: CSSComputedValues, padding: LayoutUnit): Option[LayoutUnit] =
+func spx(l: CSSLength; lctx: LayoutState; p: Option[LayoutUnit];
+    computed: CSSComputedValues; padding: LayoutUnit): Option[LayoutUnit] =
   let u = l.px(lctx, p)
   if u.isSome:
     let u = u.get
-    if computed{"box-sizing"} == BOX_SIZING_BORDER_BOX:
+    if computed{"box-sizing"} == BoxSizingBorderBox:
       return some(max(u - padding, 0))
     return some(max(u, 0))
   return u
 
-proc resolveContentWidth(sizes: var ResolvedSizes, widthpx: LayoutUnit,
-    containingWidth: SizeConstraint, computed: CSSComputedValues,
+proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
+    containingWidth: SizeConstraint; computed: CSSComputedValues;
     isauto = false) =
   if not sizes.space.w.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
@@ -860,7 +862,7 @@ proc resolveContentWidth(sizes: var ResolvedSizes, widthpx: LayoutUnit,
   let total = widthpx + sizes.margin.left + sizes.margin.right +
     sizes.padding.left + sizes.padding.right
   let underflow = containingWidth.u - total
-  if isauto or sizes.space.w.t == FIT_CONTENT:
+  if isauto or sizes.space.w.t == scFitContent:
     if underflow >= 0:
       sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
     else:
@@ -876,7 +878,7 @@ proc resolveContentWidth(sizes: var ResolvedSizes, widthpx: LayoutUnit,
       sizes.margin.left = underflow div 2
       sizes.margin.right = underflow div 2
 
-proc resolveMargins(availableWidth: SizeConstraint, lctx: LayoutState,
+proc resolveMargins(availableWidth: SizeConstraint; lctx: LayoutState;
     computed: CSSComputedValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
   return RelativeRect(
@@ -886,7 +888,7 @@ proc resolveMargins(availableWidth: SizeConstraint, lctx: LayoutState,
     right: computed{"margin-right"}.px(lctx, availableWidth)
   )
 
-proc resolvePadding(availableWidth: SizeConstraint, lctx: LayoutState,
+proc resolvePadding(availableWidth: SizeConstraint; lctx: LayoutState;
     computed: CSSComputedValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
   return RelativeRect(
@@ -896,8 +898,8 @@ proc resolvePadding(availableWidth: SizeConstraint, lctx: LayoutState,
     right: computed{"padding-right"}.px(lctx, availableWidth)
   )
 
-proc resolveBlockWidth(sizes: var ResolvedSizes,
-    containingWidth: SizeConstraint, computed: CSSComputedValues,
+proc resolveBlockWidth(sizes: var ResolvedSizes;
+    containingWidth: SizeConstraint; computed: CSSComputedValues;
     lctx: LayoutState) =
   let width = computed{"width"}
   let padding = sizes.padding.left + sizes.padding.right
@@ -910,13 +912,13 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
     let maxWidth = computed{"max-width"}.spx(lctx, containingWidth, computed,
       padding)
     sizes.maxWidth = maxWidth
-    if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
-        maxWidth < sizes.space.w.u or sizes.space.w.t == MAX_CONTENT:
+    if sizes.space.w.t in {scStretch, scFitContent} and
+        maxWidth < sizes.space.w.u or sizes.space.w.t == scMaxContent:
       sizes.space.w = stretch(maxWidth) #TODO is stretch ok here?
-      if sizes.space.w.t == STRETCH:
+      if sizes.space.w.t == scStretch:
         # available width would stretch over max-width
         sizes.space.w = stretch(maxWidth)
-      else: # FIT_CONTENT
+      else: # scFitContent
         # available width could be higher than max-width (but not necessarily)
         sizes.space.w = fitContent(maxWidth)
       sizes.resolveContentWidth(maxWidth, containingWidth, computed)
@@ -924,8 +926,8 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
     let minWidth = computed{"min-width"}.spx(lctx, containingWidth, computed,
       padding)
     sizes.minWidth = minWidth
-    if sizes.space.w.t in {STRETCH, FIT_CONTENT} and
-        minWidth > sizes.space.w.u or sizes.space.w.t == MIN_CONTENT:
+    if sizes.space.w.t in {scStretch, scFitContent} and
+        minWidth > sizes.space.w.u or sizes.space.w.t == scMinContent:
       # two cases:
       # * available width is stretched under min-width. in this case,
       #   stretch to min-width instead.
@@ -934,9 +936,9 @@ proc resolveBlockWidth(sizes: var ResolvedSizes,
       sizes.space.w = stretch(minWidth)
       sizes.resolveContentWidth(minWidth, containingWidth, computed)
 
-proc resolveBlockHeight(sizes: var ResolvedSizes,
-    containingHeight: SizeConstraint, percHeight: Option[LayoutUnit],
-    computed: CSSComputedValues, lctx: LayoutState) =
+proc resolveBlockHeight(sizes: var ResolvedSizes;
+    containingHeight: SizeConstraint; percHeight: Option[LayoutUnit];
+    computed: CSSComputedValues; lctx: LayoutState) =
   let height = computed{"height"}
   let padding = sizes.padding.top + sizes.padding.bottom
   var heightpx: LayoutUnit = 0
@@ -949,12 +951,12 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
     sizes.maxHeight = maxHeight.get(high(LayoutUnit))
     if maxHeight.isSome:
       let maxHeight = maxHeight.get
-      if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
-          maxHeight < sizes.space.h.u or sizes.space.h.t == MAX_CONTENT:
+      if sizes.space.h.t in {scStretch, scFitContent} and
+          maxHeight < sizes.space.h.u or sizes.space.h.t == scMaxContent:
         # same reasoning as for width.
-        if sizes.space.h.t == STRETCH:
+        if sizes.space.h.t == scStretch:
           sizes.space.h = stretch(maxHeight)
-        else: # FIT_CONTENT
+        else: # scFitContent
           sizes.space.h = fitContent(maxHeight)
   if not computed{"min-height"}.auto:
     let minHeight = computed{"min-height"}.spx(lctx, percHeight, computed,
@@ -962,8 +964,8 @@ proc resolveBlockHeight(sizes: var ResolvedSizes,
     sizes.minHeight = minHeight.get(0)
     if minHeight.isSome:
       let minHeight = minHeight.get
-      if sizes.space.h.t in {STRETCH, FIT_CONTENT} and
-          minHeight > sizes.space.h.u or sizes.space.h.t == MIN_CONTENT:
+      if sizes.space.h.t in {scStretch, scFitContent} and
+          minHeight > sizes.space.h.u or sizes.space.h.t == scMinContent:
         # same reasoning as for width.
         sizes.space.h = stretch(minHeight)
 
@@ -1116,7 +1118,7 @@ proc resolveFloatSizes(lctx: LayoutState; space: AvailableSpace;
 
 # Calculate and resolve available width & height for box children.
 # containingWidth: width of the containing box
-# containingHeight: ditto, but with height.
+# containingHeight: ditto; but with height.
 # Note that this is not the final content size, just the amount of space
 # available for content.
 # The percentage width/height is generally
@@ -1127,9 +1129,9 @@ proc resolveFloatSizes(lctx: LayoutState; space: AvailableSpace;
 proc resolveSizes(lctx: LayoutState; space: AvailableSpace;
     percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
     ResolvedSizes =
-  if computed{"position"} == POSITION_ABSOLUTE:
+  if computed{"position"} == PositionAbsolute:
     return lctx.resolveAbsoluteSizes(computed)
-  elif computed{"float"} != FLOAT_NONE:
+  elif computed{"float"} != FloatNone:
     return lctx.resolveFloatSizes(space, percHeight, computed)
   else:
     return lctx.resolveBlockSizes(space, percHeight, computed)
@@ -1139,7 +1141,7 @@ func toPercSize(sc: SizeConstraint): Option[LayoutUnit] =
     return some(sc.u)
   return none(LayoutUnit)
 
-proc append(a: var Strut, b: LayoutUnit) =
+proc append(a: var Strut; b: LayoutUnit) =
   if b < 0:
     a.neg = min(b, a.neg)
   else:
@@ -1184,7 +1186,7 @@ func bfcOffset(bctx: BlockContext): Offset =
     return bctx.parentBps.offset
   return Offset()
 
-proc layoutInline(bctx: var BlockContext, box: BlockBox,
+proc layoutInline(bctx: var BlockContext; box: BlockBox;
     children: seq[BoxBuilder], sizes: ResolvedSizes) =
   var bfcOffset = bctx.bfcOffset
   let offset = Offset(x: sizes.padding.left, y: sizes.padding.top)
@@ -1200,17 +1202,16 @@ proc layoutInline(bctx: var BlockContext, box: BlockBox,
   box.baseline = offset.y + box.inline.baseline
   box.firstBaseline = offset.y + box.inline.firstBaseline
 
-const DisplayBlockLike = {DISPLAY_BLOCK, DISPLAY_LIST_ITEM,
-  DISPLAY_INLINE_BLOCK}
+const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
 
 # Return true if no more margin collapsing can occur for the current strut.
-func canFlushMargins(builder: BlockBoxBuilder, sizes: ResolvedSizes): bool =
-  if builder.computed{"position"} == POSITION_ABSOLUTE:
+func canFlushMargins(builder: BlockBoxBuilder; sizes: ResolvedSizes): bool =
+  if builder.computed{"position"} == PositionAbsolute:
     return false
   return sizes.padding.top != 0 or sizes.padding.bottom != 0 or
     builder.inlinelayout or builder.computed{"display"} notin DisplayBlockLike
 
-proc flushMargins(bctx: var BlockContext, box: BlockBox) =
+proc flushMargins(bctx: var BlockContext; box: BlockBox) =
   # Apply uncommitted margins.
   let margin = bctx.marginTodo.sum()
   if bctx.marginTarget == nil:
@@ -1227,21 +1228,21 @@ proc flushMargins(bctx: var BlockContext, box: BlockBox) =
     bctx.marginTarget = nil
   bctx.marginTodo = Strut()
 
-proc clearFloats(offset: var Offset, bctx: var BlockContext, clear: CSSClear) =
+proc clearFloats(offset: var Offset; bctx: var BlockContext; clear: CSSClear) =
   var y = bctx.bfcOffset.y + offset.y
   case clear
-  of CLEAR_LEFT, CLEAR_INLINE_START:
+  of ClearLeft, ClearInlineStart:
     for ex in bctx.exclusions:
-      if ex.t == FLOAT_LEFT:
+      if ex.t == FloatLeft:
         y = max(ex.offset.y + ex.size.h, y)
-  of CLEAR_RIGHT, CLEAR_INLINE_END:
+  of ClearRight, ClearInlineEnd:
     for ex in bctx.exclusions:
-      if ex.t == FLOAT_RIGHT:
+      if ex.t == FloatRight:
         y = max(ex.offset.y + ex.size.h, y)
-  of CLEAR_BOTH:
+  of ClearBoth:
     for ex in bctx.exclusions:
       y = max(ex.offset.y + ex.size.h, y)
-  of CLEAR_NONE: assert false
+  of ClearNone: assert false
   bctx.clearOffset = y
   offset.y = y - bctx.bfcOffset.y
 
@@ -1276,16 +1277,16 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
       let ey2 = ex.offset.y + ex.size.h
       if cy2 >= ex.offset.y and y < ey2:
         let ex2 = ex.offset.x + ex.size.w
-        if ex.t == FLOAT_LEFT and left < ex2:
+        if ex.t == FloatLeft and left < ex2:
           left = ex2
-        if ex.t == FLOAT_RIGHT and right > ex.offset.x:
+        if ex.t == FloatRight and right > ex.offset.x:
           right = ex.offset.x
         miny = min(ey2, miny)
     if right - left >= size.w or miny == high(LayoutUnit):
       # Enough space, or no other exclusions found at this y offset.
-      if float == FLOAT_LEFT:
+      if float == FloatLeft:
         return Offset(x: left, y: y)
-      else: # FLOAT_RIGHT
+      else: # FloatRight
         return Offset(x: right - size.w, y: y)
     # Move y to the bottom exclusion edge at the lowest y (where the exclusion
     # still intersects with the previous y).
@@ -1295,7 +1296,7 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
     space: AvailableSpace; bfcOffset: Offset) =
   let clear = child.computed{"clear"}
-  if clear != CLEAR_NONE:
+  if clear != ClearNone:
     child.offset.clearFloats(bctx, clear)
   let size = Size(
     w: child.margin.left + child.margin.right + child.size.w,
@@ -1305,9 +1306,9 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
     x: bfcOffset.x + child.offset.x - child.margin.left,
     y: max(bfcOffset.y + child.offset.y - child.margin.top, bctx.clearOffset)
   )
-  assert space.w.t != FIT_CONTENT
+  assert space.w.t != scFitContent
   let ft = child.computed{"float"}
-  assert ft != FLOAT_NONE
+  assert ft != FloatNone
   let offset = bctx.findNextFloatOffset(childBfcOffset, size, space, ft)
   child.offset = Offset(
     x: offset.x - bfcOffset.x + child.margin.left,
@@ -1322,11 +1323,19 @@ proc positionFloats(bctx: var BlockContext) =
     bctx.positionFloat(f.box, f.space, f.parentBps.offset)
   bctx.unpositionedFloats.setLen(0)
 
+const RowGroupBox = {
+  DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
+}
+const InternalTableBox = RowGroupBox + {
+  DisplayTableCell, DisplayTableRow, DisplayTableColumn,
+  DisplayTableColumnGroup
+}
+
 func establishesBFC(computed: CSSComputedValues): bool =
-  return computed{"float"} != FLOAT_NONE or
-    computed{"position"} == POSITION_ABSOLUTE or
-    computed{"display"} in {DISPLAY_INLINE_BLOCK, DISPLAY_FLOW_ROOT} +
-      InternalTableBox + {DISPLAY_FLEX, DISPLAY_INLINE_FLEX}
+  return computed{"float"} != FloatNone or
+    computed{"position"} == PositionAbsolute or
+    computed{"display"} in {DisplayInlineBlock, DisplayFlowRoot} +
+      InternalTableBox + {DisplayFlex, DisplayInlineFlex}
     #TODO overflow, contain, grid, multicol, column-span
 
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
@@ -1334,7 +1343,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   if builder.canFlushMargins(sizes):
     bctx.flushMargins(box)
     bctx.positionFloats()
-  if builder.computed{"clear"} != CLEAR_NONE:
+  if builder.computed{"clear"} != ClearNone:
     box.offset.clearFloats(bctx, builder.computed{"clear"})
   if builder.inlinelayout:
     # Builder only contains inline boxes.
@@ -1397,11 +1406,11 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   var bctx = BlockContext(lctx: lctx)
   bctx.marginTodo.append(sizes.margin.top)
   case builder.computed{"display"}
-  of DISPLAY_INLINE_BLOCK:
+  of DisplayInlineBlock:
     bctx.layoutFlow(box, builder, sizes)
-  of DISPLAY_INLINE_TABLE:
+  of DisplayInlineTable:
     lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
-  of DISPLAY_INLINE_FLEX:
+  of DisplayInlineFlex:
     bctx.layoutFlex(box, builder, sizes)
   else:
     assert false, $builder.computed{"display"}
@@ -1470,10 +1479,10 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
 
   for child in box.children:
     case child.computed{"display"}
-    of DISPLAY_INLINE:
+    of DisplayInline:
       let child = ictx.layoutInline(InlineBoxBuilder(child))
       state.fragment.children.add(child)
-    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_FLEX:
+    of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
       # Note: we do not need a separate inline fragment here, because the tree
       # generator already does an iflush() before adding inline blocks.
       let w = fitContent(ictx.space.w)
@@ -1502,9 +1511,9 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     )
   return fragment
 
-proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
-    space: AvailableSpace, computed: CSSComputedValues, offset,
-    bfcOffset: Offset): RootInlineFragment =
+proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
+    space: AvailableSpace; computed: CSSComputedValues;
+    offset, bfcOffset: Offset): RootInlineFragment =
   let root = RootInlineFragment(
     offset: offset,
     fragment: InlineFragment(computed: computed)
@@ -1512,10 +1521,10 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
   var ictx = bctx.initInlineContext(space, bfcOffset, root)
   for child in inlines:
     case child.computed{"display"}
-    of DISPLAY_INLINE:
+    of DisplayInline:
       let childFragment = ictx.layoutInline(InlineBoxBuilder(child))
       root.fragment.children.add(childFragment)
-    of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_FLEX:
+    of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
       # add an anonymous fragment to contain this
       var state = InlineState(
         computed: computed,
@@ -1541,7 +1550,7 @@ proc layoutRootInline(bctx: var BlockContext, inlines: seq[BoxBuilder],
   root.xminwidth = ictx.minwidth
   return root
 
-proc positionAbsolute(lctx: LayoutState, box: BlockBox, margin: RelativeRect) =
+proc positionAbsolute(lctx: LayoutState; box: BlockBox; margin: RelativeRect) =
   let last = lctx.positioned[^1]
   let left = box.computed{"left"}
   let right = box.computed{"right"}
@@ -1562,7 +1571,7 @@ proc positionAbsolute(lctx: LayoutState, box: BlockBox, margin: RelativeRect) =
     box.offset.y = parentHeight - bottom.px(lctx, parentHeight) - box.size.h
     box.offset.y -= margin.bottom
 
-proc positionRelative(parent, box: BlockBox, lctx: LayoutState) =
+proc positionRelative(parent, box: BlockBox; lctx: LayoutState) =
   let left = box.computed{"left"}
   let right = box.computed{"right"}
   let top = box.computed{"top"}
@@ -1575,6 +1584,14 @@ proc positionRelative(parent, box: BlockBox, lctx: LayoutState) =
     box.offset.y += top.px(lctx)
   elif not top.auto:
     box.offset.y -= parent.size.h - bottom.px(lctx) - box.size.h
+
+const ProperTableChild = RowGroupBox + {
+  DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup,
+  DisplayTableCaption
+}
+const ProperTableRowParent = RowGroupBox + {
+  DisplayTable, DisplayInlineTable
+}
 
 type
   CellWrapper = ref object
@@ -1659,8 +1676,8 @@ proc sortGrowing(pctx: var TableContext) =
     cmp(a.coli, b.coli))
 
 # Grow cells with a rowspan > 1 (to occupy their place in a new row).
-proc growRowspan(pctx: var TableContext, ctx: var RowContext,
-    growi, i, n: var int, growlen: int) =
+proc growRowspan(pctx: var TableContext; ctx: var RowContext;
+    growi, i, n: var int; growlen: int) =
   while growi < growlen:
     let cellw = pctx.growing[growi]
     if cellw.coli > n:
@@ -1682,9 +1699,12 @@ proc growRowspan(pctx: var TableContext, ctx: var RowContext,
     inc i
     inc growi
 
-proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
-    parent: BlockBox, rowi, numrows: int): RowContext =
-  var ctx = RowContext(builder: box, cells: newSeq[CellWrapper](box.children.len))
+proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
+    parent: BlockBox; rowi, numrows: int): RowContext =
+  var ctx = RowContext(
+    builder: box,
+    cells: newSeq[CellWrapper](box.children.len)
+  )
   var n = 0
   var i = 0
   var growi = 0
@@ -1693,7 +1713,7 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
   let growlen = pctx.growing.len
   for child in box.children:
     pctx.growRowspan(ctx, growi, i, n, growlen)
-    assert child.computed{"display"} == DISPLAY_TABLE_CELL
+    assert child.computed{"display"} == DisplayTableCell
     let cellbuilder = TableCellBoxBuilder(child)
     let colspan = cellbuilder.computed{"-cha-colspan"}
     let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
@@ -1772,18 +1792,18 @@ proc preBuildTableRow(pctx: var TableContext, box: TableRowBoxBuilder,
   ctx.ncols = n
   return ctx
 
-proc alignTableCell(cell: BlockBox, availableHeight, baseline: LayoutUnit) =
+proc alignTableCell(cell: BlockBox; availableHeight, baseline: LayoutUnit) =
   case cell.computed{"vertical-align"}.keyword
-  of VERTICAL_ALIGN_TOP:
+  of VerticalAlignTop:
     cell.offset.y = 0
-  of VERTICAL_ALIGN_MIDDLE:
+  of VerticalAlignMiddle:
     cell.offset.y = availableHeight div 2 - cell.size.h div 2
-  of VERTICAL_ALIGN_BOTTOM:
+  of VerticalAlignBottom:
     cell.offset.y = availableHeight - cell.size.h
   else:
     cell.offset.y = baseline - cell.firstBaseline
 
-proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
+proc buildTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
     builder: TableRowBoxBuilder): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
@@ -1827,7 +1847,7 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
     x += w
     n += cellw.colspan
     const HasNoBaseline = {
-      VERTICAL_ALIGN_TOP, VERTICAL_ALIGN_MIDDLE, VERTICAL_ALIGN_BOTTOM
+      VerticalAlignTop, VerticalAlignMiddle, VerticalAlignBottom
     }
     if cell != nil:
       if cell.computed{"vertical-align"}.keyword notin HasNoBaseline: # baseline
@@ -1855,7 +1875,7 @@ proc buildTableRow(pctx: TableContext, ctx: RowContext, parent: BlockBox,
   row.size.w = x
   return row
 
-proc preBuildTableRows(ctx: var TableContext, rows: seq[TableRowBoxBuilder],
+proc preBuildTableRows(ctx: var TableContext; rows: seq[TableRowBoxBuilder];
     table: BlockBox) =
   for i in 0 ..< rows.len:
     let row = rows[i]
@@ -1863,7 +1883,7 @@ proc preBuildTableRows(ctx: var TableContext, rows: seq[TableRowBoxBuilder],
     ctx.rows.add(rctx)
     ctx.maxwidth = max(rctx.width, ctx.maxwidth)
 
-proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
+proc preBuildTableRows(ctx: var TableContext; builder: TableBoxBuilder;
     table: BlockBox) =
   # Use separate seqs for different row groups, so that e.g. this HTML:
   # echo '<TABLE><TBODY><TR><TD>world<THEAD><TR><TD>hello'|cha -T text/html
@@ -1877,21 +1897,21 @@ proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
   for child in builder.children:
     assert child.computed{"display"} in ProperTableChild
     case child.computed{"display"}
-    of DISPLAY_TABLE_ROW:
+    of DisplayTableRow:
       tbody.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_HEADER_GROUP:
+    of DisplayTableHeaderGroup:
       for child in child.children:
-        assert child.computed{"display"} == DISPLAY_TABLE_ROW
+        assert child.computed{"display"} == DisplayTableRow
         thead.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_ROW_GROUP:
+    of DisplayTableRowGroup:
       for child in child.children:
-        assert child.computed{"display"} == DISPLAY_TABLE_ROW
+        assert child.computed{"display"} == DisplayTableRow
         tbody.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_FOOTER_GROUP:
+    of DisplayTableFooterGroup:
       for child in child.children:
-        assert child.computed{"display"} == DISPLAY_TABLE_ROW
+        assert child.computed{"display"} == DisplayTableRow
         tfoot.add(TableRowBoxBuilder(child))
-    of DISPLAY_TABLE_CAPTION:
+    of DisplayTableCaption:
       if caption == nil:
         caption = TableCaptionBoxBuilder(child)
     else: discard
@@ -1901,7 +1921,7 @@ proc preBuildTableRows(ctx: var TableContext, builder: TableBoxBuilder,
   ctx.preBuildTableRows(tbody, table)
   ctx.preBuildTableRows(tfoot, table)
 
-proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
+proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
     weight: var float64): seq[int] =
   # Spacing for each column:
   var avail = newSeqUninitialized[int](ctx.cols.len)
@@ -1922,15 +1942,15 @@ proc calcUnspecifiedColIndices(ctx: var TableContext, W: var LayoutUnit,
       avail.del(j)
   return avail
 
-func needsRedistribution(ctx: TableContext, computed: CSSComputedValues): bool =
+func needsRedistribution(ctx: TableContext; computed: CSSComputedValues): bool =
   case ctx.space.w.t
-  of MIN_CONTENT, MAX_CONTENT:
+  of scMinContent, scMaxContent:
     # bleh
     return false
-  of STRETCH:
+  of scStretch:
     let u = ctx.space.w.u
     return u > ctx.maxwidth or u < ctx.maxwidth
-  of FIT_CONTENT:
+  of scFitContent:
     let u = ctx.space.w.u
     return u > ctx.maxwidth and not computed{"width"}.auto or u < ctx.maxwidth
 
@@ -1976,10 +1996,10 @@ proc reflowTableCells(ctx: var TableContext) =
           ctx.reflow[n] = true
         dec n
 
-proc buildTableRows(ctx: TableContext, table: BlockBox, sizes: ResolvedSizes) =
+proc buildTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
   var y: LayoutUnit = 0
   for roww in ctx.rows:
-    if roww.builder.computed{"visibility"} == VISIBILITY_COLLAPSE:
+    if roww.builder.computed{"visibility"} == VisibilityCollapse:
       continue
     y += ctx.blockspacing
     let row = ctx.buildTableRow(roww, table, roww.builder)
@@ -2009,11 +2029,11 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
   table.size.h += outerHeight
   table.size.w = max(table.size.w, box.size.w)
   case builder.computed{"caption-side"}
-  of CAPTION_SIDE_TOP, CAPTION_SIDE_BLOCK_START:
+  of CaptionSideTop, CaptionSideBlockStart:
     for r in table.nested:
       r.offset.y += outerHeight
     table.nested.insert(box, 0)
-  of CAPTION_SIDE_BOTTOM, CAPTION_SIDE_BLOCK_END:
+  of CaptionSideBottom, CaptionSideBlockEnd:
     box.offset.y += outerHeight
     table.nested.add(box)
 
@@ -2026,9 +2046,9 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
 #      Distribute the table's content width among cells with an unspecified
 #      width. If this would give any cell a width < min_width, set that
 #      cell's width to min_width, then re-do the distribution.
-proc layoutTable(lctx: LayoutState, table: BlockBox, builder: TableBoxBuilder,
+proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
     sizes: ResolvedSizes) =
-  let collapse = table.computed{"border-collapse"} == BORDER_COLLAPSE_COLLAPSE
+  let collapse = table.computed{"border-collapse"} == BorderCollapseCollapse
   var ctx = TableContext(lctx: lctx, collapse: collapse, space: sizes.space)
   if not ctx.collapse:
     ctx.inlinespacing = table.computed{"border-spacing"}.a.px(lctx)
@@ -2044,13 +2064,13 @@ proc layoutTable(lctx: LayoutState, table: BlockBox, builder: TableBoxBuilder,
   if ctx.caption != nil:
     ctx.addTableCaption(table)
 
-proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
+proc postAlignChild(box, child: BlockBox; width: LayoutUnit) =
   case box.computed{"text-align"}
-  of TEXT_ALIGN_CHA_CENTER:
+  of TextAlignChaCenter:
     child.offset.x += max(width div 2 - child.size.w div 2, 0)
-  of TEXT_ALIGN_CHA_RIGHT:
+  of TextAlignChaRight:
     child.offset.x += max(width - child.size.w - child.margin.right, 0)
-  of TEXT_ALIGN_CHA_LEFT:
+  of TextAlignChaLeft:
     discard # default
   else:
     discard
@@ -2058,13 +2078,13 @@ proc postAlignChild(box, child: BlockBox, width: LayoutUnit) =
 proc layout(bctx: var BlockContext; box: BlockBox; builder: BoxBuilder;
     sizes: ResolvedSizes) =
   case builder.computed{"display"}
-  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
+  of DisplayBlock, DisplayFlowRoot:
     bctx.layoutFlow(box, BlockBoxBuilder(builder), sizes)
-  of DISPLAY_LIST_ITEM:
+  of DisplayListItem:
     bctx.layoutListItem(box, ListItemBoxBuilder(builder), sizes)
-  of DISPLAY_TABLE:
+  of DisplayTable:
     bctx.lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
-  of DISPLAY_FLEX:
+  of DisplayFlex:
     bctx.layoutFlex(box, BlockBoxBuilder(builder), sizes)
   else:
     assert false, "builder.t is " & $builder.computed{"display"}
@@ -2101,8 +2121,8 @@ type
     lctx: LayoutState
     pending: seq[FlexPendingItem]
 
-const FlexReverse = {FLEX_DIRECTION_ROW_REVERSE, FLEX_DIRECTION_COLUMN_REVERSE}
-const FlexRow = {FLEX_DIRECTION_ROW, FLEX_DIRECTION_ROW_REVERSE}
+const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
+const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
 proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
   #TODO actually use flex-basis
@@ -2115,7 +2135,8 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
         totalWeight > 0:
       mctx.maxSize.h = 0 # redo maxSize calculation; we only need height here
       let unit = diff / totalWeight
-      # reset total weight & available diff for the next iteration (if there is one)
+      # reset total weight & available diff for the next iteration (if there is
+      # one)
       totalWeight = 0
       diff = 0
       for it in mctx.pending.mitems:
@@ -2156,7 +2177,8 @@ proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
         totalWeight > 0:
       mctx.maxSize.w = 0 # redo maxSize calculation; we only need height here
       let unit = diff / totalWeight
-      # reset total weight & available diff for the next iteration (if there is one)
+      # reset total weight & available diff for the next iteration (if there is
+      # one)
       totalWeight = 0
       diff = 0
       for it in mctx.pending.mitems:
@@ -2256,7 +2278,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   else:
     builder.children
   var totalMaxSize = Size() #TODO find a better name for this
-  let canWrap = box.computed{"flex-wrap"} != FLEX_WRAP_NOWRAP
+  let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
   let percHeight = sizes.space.h.toPercSize()
   while i < children.len:
     let builder = children[i]
@@ -2283,13 +2305,13 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
       childSizes.space.w = stretch(child.xminwidth)
       child = lctx.layoutFlexChild(builder, childSizes)
     if flexDir in FlexRow:
-      if canWrap and (sizes.space.w.t == MIN_CONTENT or
+      if canWrap and (sizes.space.w.t == scMinContent or
           sizes.space.w.isDefinite and
           mctx.totalSize.w + child.size.w > sizes.space.w.u):
         mctx.flushRow(box, sizes, totalMaxSize)
       mctx.totalSize.w += child.size.w
     else:
-      if canWrap and (sizes.space.h.t == MIN_CONTENT or
+      if canWrap and (sizes.space.h.t == scMinContent or
           sizes.space.h.isDefinite and
           mctx.totalSize.h + child.size.h > sizes.space.h.u):
         mctx.flushRow(box, sizes, totalMaxSize)
@@ -2326,7 +2348,7 @@ proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     w: space.w,
     h: maxContent() #TODO fit-content when clip
   )
-  if builder.computed{"display"} == DISPLAY_TABLE:
+  if builder.computed{"display"} == DisplayTable:
     space.w = fitContent(space.w)
   let sizes = bctx.lctx.resolveSizes(space, percHeight, builder.computed)
   if appendMargins:
@@ -2358,7 +2380,7 @@ proc layoutRootBlock(lctx: LayoutState; builder: BoxBuilder;
     box.size.h = bctx.maxFloatHeight - box.offset.y - marginBottomOut
   return box
 
-proc initBlockPositionStates(state: var BlockState, bctx: var BlockContext,
+proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
     box: BlockBox) =
   let prevBps = bctx.ancestorsHead
   bctx.ancestorsHead = BlockPositionState(
@@ -2389,7 +2411,7 @@ proc initBlockPositionStates(state: var BlockState, bctx: var BlockContext,
   bctx.parentBps = bctx.ancestorsHead
   state.initialParentOffset = bctx.parentBps.offset
 
-func isParentResolved(state: BlockState, bctx: BlockContext): bool =
+func isParentResolved(state: BlockState; bctx: BlockContext): bool =
   return bctx.marginTarget != state.initialMarginTarget or
     state.prevParentBps != nil and state.prevParentBps.resolved
 
@@ -2397,13 +2419,13 @@ func isParentResolved(state: BlockState, bctx: BlockContext): bool =
 # Box placement must occur during this pass, since child box layout in the
 # same block formatting context depends on knowing where the box offset is
 # (because of floats).
-proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
+proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
     children: seq[BoxBuilder]) =
   for builder in children:
     var dy: LayoutUnit = 0 # delta
     var child: BlockBox
-    let isfloat = builder.computed{"float"} != FLOAT_NONE
-    let isinflow = builder.computed{"position"} != POSITION_ABSOLUTE and
+    let isfloat = builder.computed{"float"} != FloatNone
+    let isinflow = builder.computed{"position"} != PositionAbsolute and
       not isfloat
     if builder.computed.establishesBFC():
       var marginBottomOut: LayoutUnit
@@ -2434,11 +2456,11 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
     let childWidth = child.margin.left + child.size.w + child.margin.right
     state.maxChildWidth = max(state.maxChildWidth, childWidth)
     state.xminwidth = max(state.xminwidth, child.xminwidth)
-    if child.computed{"position"} != POSITION_ABSOLUTE and not isfloat:
+    if child.computed{"position"} != PositionAbsolute and not isfloat:
       # Not absolute, and not a float.
       state.offset.y += dy
     elif isfloat:
-      if state.space.w.t == FIT_CONTENT:
+      if state.space.w.t == scFitContent:
         # Float position depends on the available width, but in this case
         # the parent width is not known.
         # Set the "re-layout" flag, and skip this box.
@@ -2474,8 +2496,8 @@ proc layoutBlockChildren(state: var BlockState, bctx: var BlockContext,
 # Unlucky path, where we have floating blocks and a fit-content width.
 # Reset marginTodo & the starting offset, and stretch the box to the
 # max child width.
-proc initReLayout(state: var BlockState, bctx: var BlockContext,
-    box: BlockBox, sizes: ResolvedSizes) =
+proc initReLayout(state: var BlockState; bctx: var BlockContext;
+    box: BlockBox; sizes: ResolvedSizes) =
   bctx.marginTodo = state.oldMarginTodo
   # Note: we do not reset our own BlockPositionState's offset; we assume it
   # has already been resolved in the previous pass.
@@ -2512,22 +2534,22 @@ proc initReLayout(state: var BlockState, bctx: var BlockContext,
 # Re-position the children.
 # The x offset with a fit-content width depends on the parent box's width,
 # so we cannot do this in the first pass.
-proc repositionChildren(state: BlockState, box: BlockBox, lctx: LayoutState) =
+proc repositionChildren(state: BlockState; box: BlockBox; lctx: LayoutState) =
   for child in state.nested:
-    if child.computed{"position"} != POSITION_ABSOLUTE:
+    if child.computed{"position"} != PositionAbsolute:
       box.postAlignChild(child, box.size.w)
     case child.computed{"position"}
-    of POSITION_RELATIVE:
+    of PositionRelative:
       box.positionRelative(child, lctx)
-    of POSITION_ABSOLUTE:
+    of PositionAbsolute:
       lctx.positionAbsolute(child, child.margin)
     else: discard #TODO
 
-proc layoutBlock(bctx: var BlockContext, box: BlockBox,
-    builder: BlockBoxBuilder, sizes: ResolvedSizes) =
+proc layoutBlock(bctx: var BlockContext; box: BlockBox;
+    builder: BlockBoxBuilder; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
   let positioned = box.computed{"position"} notin {
-    POSITION_STATIC, POSITION_FIXED, POSITION_STICKY
+    PositionStatic, PositionFixed, PositionSticky
   }
   if positioned:
     lctx.positioned.add(sizes.space)
@@ -2572,12 +2594,12 @@ proc layoutBlock(bctx: var BlockContext, box: BlockBox,
 
 # Tree generation (1st pass)
 
-proc newMarkerBox(computed: CSSComputedValues, listItemCounter: int):
+proc newMarkerBox(computed: CSSComputedValues; listItemCounter: int):
     MarkerBoxBuilder =
   let computed = computed.inheritProperties()
-  computed{"display"} = DISPLAY_INLINE
+  computed{"display"} = DisplayInline
   # Use pre, so the space at the end of the default markers isn't ignored.
-  computed{"white-space"} = WHITESPACE_PRE
+  computed{"white-space"} = WhitespacePre
   return MarkerBoxBuilder(
     computed: computed,
     text: @[computed{"list-style-type"}.listMarker(listItemCounter)]
@@ -2601,16 +2623,16 @@ type InnerBlockContext = object
   parent: ptr InnerBlockContext
   inlineStack: seq[StyledNode]
 
-proc add(blockgroup: var BlockGroup, box: BoxBuilder) {.inline.} =
-  assert box.computed{"display"} in {DISPLAY_INLINE, DISPLAY_INLINE_TABLE,
-    DISPLAY_INLINE_BLOCK}, $box.computed{"display"}
+proc add(blockgroup: var BlockGroup; box: BoxBuilder) {.inline.} =
+  assert box.computed{"display"} in {DisplayInline, DisplayInlineTable,
+    DisplayInlineBlock}, $box.computed{"display"}
   blockgroup.boxes.add(box)
 
 proc flush(blockgroup: var BlockGroup) =
   if blockgroup.boxes.len > 0:
-    assert blockgroup.parent.computed{"display"} != DISPLAY_INLINE
+    assert blockgroup.parent.computed{"display"} != DisplayInline
     let computed = blockgroup.parent.computed.inheritProperties()
-    computed{"display"} = DISPLAY_BLOCK
+    computed{"display"} = DisplayBlock
     let bbox = BlockBoxBuilder(computed: computed)
     bbox.inlinelayout = true
     bbox.children = blockgroup.boxes
@@ -2618,32 +2640,32 @@ proc flush(blockgroup: var BlockGroup) =
     blockgroup.boxes.setLen(0)
 
 # Don't generate empty anonymous inline blocks between block boxes
-func canGenerateAnonymousInline(blockgroup: BlockGroup,
-    computed: CSSComputedValues, str: string): bool =
+func canGenerateAnonymousInline(blockgroup: BlockGroup;
+    computed: CSSComputedValues; str: string): bool =
   return blockgroup.boxes.len > 0 and
-      blockgroup.boxes[^1].computed{"display"} == DISPLAY_INLINE or
+      blockgroup.boxes[^1].computed{"display"} == DisplayInline or
     computed.whitespacepre or not str.onlyWhitespace()
 
 proc newBlockGroup(parent: BlockBoxBuilder): BlockGroup =
-  assert parent.computed{"display"} != DISPLAY_INLINE
+  assert parent.computed{"display"} != DisplayInline
   return BlockGroup(parent: parent)
 
-proc generateTableBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
   parent: var InnerBlockContext): TableBoxBuilder
-proc generateTableRowGroupBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableRowGroupBox(styledNode: StyledNode; lctx: LayoutState;
   parent: var InnerBlockContext): TableRowGroupBoxBuilder
-proc generateTableRowBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableRowBox(styledNode: StyledNode; lctx: LayoutState;
   parent: var InnerBlockContext): TableRowBoxBuilder
-proc generateTableCellBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableCellBox(styledNode: StyledNode; lctx: LayoutState;
   parent: var InnerBlockContext): TableCellBoxBuilder
-proc generateTableCaptionBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableCaptionBox(styledNode: StyledNode; lctx: LayoutState;
   parent: var InnerBlockContext): TableCaptionBoxBuilder
-proc generateBlockBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
   marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
   BlockBoxBuilder
 proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
   parent: ptr InnerBlockContext = nil): BlockBoxBuilder
-proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode)
+proc generateInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode)
 
 proc generateBlockBox(pctx: var InnerBlockContext; styledNode: StyledNode;
     marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
@@ -2655,12 +2677,12 @@ proc generateFlexBox(pctx: var InnerBlockContext; styledNode: StyledNode):
 
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
-    if ctx.blockgroup.parent.computed{"display"} == DISPLAY_TABLE_ROW:
+    if ctx.blockgroup.parent.computed{"display"} == DisplayTableRow:
       ctx.blockgroup.parent.children.add(ctx.anonRow)
     else:
       if ctx.anonTable == nil:
         var wrappervals = ctx.styledNode.computed.inheritProperties()
-        wrappervals{"display"} = DISPLAY_TABLE
+        wrappervals{"display"} = DisplayTable
         ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(ctx.anonRow)
     ctx.anonRow = nil
@@ -2672,8 +2694,8 @@ proc flushTable(ctx: var InnerBlockContext) =
 
 proc iflush(ctx: var InnerBlockContext) =
   if ctx.iroot != nil:
-    assert ctx.iroot.computed{"display"} in {DISPLAY_INLINE,
-      DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE}
+    assert ctx.iroot.computed{"display"} in {DisplayInline, DisplayInlineBlock,
+      DisplayInlineTable}
     ctx.blockgroup.add(ctx.iroot)
     ctx.iroot = nil
     ctx.ibox = nil
@@ -2711,34 +2733,34 @@ proc reconstructInlineParents(ctx: var InnerBlockContext): InlineBoxBuilder =
 proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
   let box = ctx.blockgroup.parent
   case styledNode.computed{"display"}
-  of DISPLAY_BLOCK, DISPLAY_FLOW_ROOT:
+  of DisplayBlock, DisplayFlowRoot:
     ctx.iflush()
     ctx.flush()
     let childbox = ctx.generateBlockBox(styledNode)
     box.children.add(childbox)
-  of DISPLAY_FLEX:
+  of DisplayFlex:
     ctx.iflush()
     ctx.flush()
     let childbox = ctx.generateFlexBox(styledNode)
     box.children.add(childbox)
-  of DISPLAY_LIST_ITEM:
+  of DisplayListItem:
     ctx.flush()
     inc ctx.listItemCounter
     let childbox = ListItemBoxBuilder(
       computed: styledNode.computed,
       marker: newMarkerBox(styledNode.computed, ctx.listItemCounter)
     )
-    if childbox.computed{"list-style-position"} == LIST_STYLE_POSITION_INSIDE:
+    if childbox.computed{"list-style-position"} == ListStylePositionInside:
       childbox.content = ctx.generateBlockBox(styledNode, some(childbox.marker))
       childbox.marker = nil
     else:
       childbox.content = ctx.generateBlockBox(styledNode)
     childbox.content.computed = childbox.content.computed.copyProperties()
-    childbox.content.computed{"display"} = DISPLAY_BLOCK
+    childbox.content.computed{"display"} = DisplayBlock
     box.children.add(childbox)
-  of DISPLAY_INLINE:
+  of DisplayInline:
     ctx.generateInlineBoxes(styledNode)
-  of DISPLAY_INLINE_BLOCK, DISPLAY_INLINE_TABLE, DISPLAY_INLINE_FLEX:
+  of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
     # create a new inline box that we can safely put our inline block into
     ctx.iflush()
     let computed = styledNode.computed.inheritProperties()
@@ -2750,20 +2772,20 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
     else:
       ctx.iroot = ctx.ibox
     var childbox: BoxBuilder
-    if styledNode.computed{"display"} == DISPLAY_INLINE_BLOCK:
+    if styledNode.computed{"display"} == DisplayInlineBlock:
       childbox = ctx.generateBlockBox(styledNode)
-    elif styledNode.computed{"display"} == DISPLAY_INLINE_TABLE:
+    elif styledNode.computed{"display"} == DisplayInlineTable:
       childbox = styledNode.generateTableBox(ctx.lctx, ctx)
     else:
-      assert styledNode.computed{"display"} == DISPLAY_INLINE_FLEX
+      assert styledNode.computed{"display"} == DisplayInlineFlex
       childbox = ctx.generateFlexBox(styledNode)
     ctx.ibox.children.add(childbox)
     ctx.iflush()
-  of DISPLAY_TABLE:
+  of DisplayTable:
     ctx.flush()
     let childbox = styledNode.generateTableBox(ctx.lctx, ctx)
     box.children.add(childbox)
-  of DISPLAY_TABLE_ROW:
+  of DisplayTableRow:
     ctx.bflush()
     ctx.flushTableRow()
     let childbox = styledNode.generateTableRowBox(ctx.lctx, ctx)
@@ -2773,54 +2795,53 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
       if ctx.anonTable == nil:
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
-        wrappervals{"display"} = DISPLAY_TABLE
+        wrappervals{"display"} = DisplayTable
         ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(childbox)
-  of DISPLAY_TABLE_ROW_GROUP, DISPLAY_TABLE_HEADER_GROUP,
-      DISPLAY_TABLE_FOOTER_GROUP:
+  of DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup:
     ctx.bflush()
     ctx.flushTableRow()
     let childbox = styledNode.generateTableRowGroupBox(ctx.lctx, ctx)
-    if box.computed{"display"} in {DISPLAY_TABLE, DISPLAY_INLINE_TABLE}:
+    if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
       box.children.add(childbox)
     else:
       if ctx.anonTable == nil:
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
-        wrappervals{"display"} = DISPLAY_TABLE
+        wrappervals{"display"} = DisplayTable
         ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(childbox)
-  of DISPLAY_TABLE_CELL:
+  of DisplayTableCell:
     ctx.bflush()
     let childbox = styledNode.generateTableCellBox(ctx.lctx, ctx)
-    if box.computed{"display"} == DISPLAY_TABLE_ROW:
+    if box.computed{"display"} == DisplayTableRow:
       box.children.add(childbox)
     else:
       if ctx.anonRow == nil:
         var wrappervals = box.computed.inheritProperties()
-        wrappervals{"display"} = DISPLAY_TABLE_ROW
+        wrappervals{"display"} = DisplayTableRow
         ctx.anonRow = TableRowBoxBuilder(computed: wrappervals)
       ctx.anonRow.children.add(childbox)
-  of DISPLAY_TABLE_CAPTION:
+  of DisplayTableCaption:
     ctx.bflush()
     ctx.flushTableRow()
     let childbox = styledNode.generateTableCaptionBox(ctx.lctx, ctx)
-    if box.computed{"display"} in {DISPLAY_TABLE, DISPLAY_INLINE_TABLE}:
+    if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
       box.children.add(childbox)
     else:
       if ctx.anonTable == nil:
         var wrappervals = box.computed.inheritProperties()
         #TODO make this an inline-table if we're in an inline context
-        wrappervals{"display"} = DISPLAY_TABLE
+        wrappervals{"display"} = DisplayTable
         ctx.anonTable = TableBoxBuilder(computed: wrappervals)
       ctx.anonTable.children.add(childbox)
-  of DISPLAY_TABLE_COLUMN:
+  of DisplayTableColumn:
     discard #TODO
-  of DISPLAY_TABLE_COLUMN_GROUP:
+  of DisplayTableColumnGroup:
     discard #TODO
-  of DISPLAY_NONE: discard
+  of DisplayNone: discard
 
-proc generateAnonymousInlineText(ctx: var InnerBlockContext, text: string,
+proc generateAnonymousInlineText(ctx: var InnerBlockContext; text: string;
     styledNode: StyledNode) =
   if ctx.iroot == nil:
     let computed = styledNode.computed.inheritProperties()
@@ -2833,9 +2854,10 @@ proc generateAnonymousInlineText(ctx: var InnerBlockContext, text: string,
       ctx.iroot = ctx.ibox
   ctx.ibox.text.add(text)
 
-proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) =
+proc generateReplacement(ctx: var InnerBlockContext;
+    child, parent: StyledNode) =
   case child.content.t
-  of CONTENT_OPEN_QUOTE:
+  of ContentOpenQuote:
     let quotes = parent.computed{"quotes"}
     var text: string
     if quotes.qs.len > 0:
@@ -2845,7 +2867,7 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
     else: return
     ctx.generateAnonymousInlineText(text, parent)
     inc ctx.quoteLevel
-  of CONTENT_CLOSE_QUOTE:
+  of ContentCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
     let quotes = parent.computed{"quotes"}
     var text: string
@@ -2855,21 +2877,21 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
       text = quoteEnd(ctx.quoteLevel)
     else: return
     ctx.generateAnonymousInlineText(text, parent)
-  of CONTENT_NO_OPEN_QUOTE:
+  of ContentNoOpenQuote:
     inc ctx.quoteLevel
-  of CONTENT_NO_CLOSE_QUOTE:
+  of ContentNoCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
-  of CONTENT_STRING:
+  of ContentString:
     #TODO canGenerateAnonymousInline?
     ctx.generateAnonymousInlineText(child.content.s, parent)
-  of CONTENT_IMAGE:
+  of ContentImage:
     #TODO idk
     ctx.generateAnonymousInlineText("[img]", parent)
-  of CONTENT_VIDEO:
+  of ContentVideo:
     ctx.generateAnonymousInlineText("[video]", parent)
-  of CONTENT_AUDIO:
+  of ContentAudio:
     ctx.generateAnonymousInlineText("[audio]", parent)
-  of CONTENT_NEWLINE:
+  of ContentNewline:
     ctx.iflush()
     #TODO ??
     # this used to set ibox (before we had iroot), now I'm not sure if we
@@ -2878,7 +2900,7 @@ proc generateReplacement(ctx: var InnerBlockContext, child, parent: StyledNode) 
     ctx.iroot.newline = true
     ctx.iflush()
 
-proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
+proc generateInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode) =
   ctx.iflush()
   ctx.inlineStack.add(styledNode)
   var lbox = ctx.reconstructInlineParents()
@@ -2886,15 +2908,15 @@ proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   ctx.ibox = lbox
   for child in styledNode.children:
     case child.t
-    of STYLED_ELEMENT:
+    of stElement:
       ctx.generateFromElem(child)
-    of STYLED_TEXT:
+    of stText:
       if ctx.ibox != lbox:
         ctx.iflush()
         lbox = ctx.reconstructInlineParents()
         ctx.ibox = lbox
       lbox.text.add(child.text)
-    of STYLED_REPLACEMENT:
+    of stReplacement:
       ctx.generateReplacement(child, styledNode)
   if ctx.ibox != lbox:
     ctx.iflush()
@@ -2904,8 +2926,8 @@ proc generateInlineBoxes(ctx: var InnerBlockContext, styledNode: StyledNode) =
   ctx.inlineStack.setLen(ctx.inlineStack.len - 1)
   ctx.iflush()
 
-proc newInnerBlockContext(styledNode: StyledNode, box: BlockBoxBuilder,
-    lctx: LayoutState, parent: ptr InnerBlockContext): InnerBlockContext =
+proc newInnerBlockContext(styledNode: StyledNode; box: BlockBoxBuilder;
+    lctx: LayoutState; parent: ptr InnerBlockContext): InnerBlockContext =
   var ctx = InnerBlockContext(
     styledNode: styledNode,
     blockgroup: newBlockGroup(box),
@@ -2923,16 +2945,16 @@ proc newInnerBlockContext(styledNode: StyledNode, box: BlockBoxBuilder,
 
 proc generateInnerBlockBox(ctx: var InnerBlockContext) =
   let box = ctx.blockgroup.parent
-  assert box.computed{"display"} != DISPLAY_INLINE
+  assert box.computed{"display"} != DisplayInline
   for child in ctx.styledNode.children:
     case child.t
-    of STYLED_ELEMENT:
+    of stElement:
       ctx.iflush()
       ctx.generateFromElem(child)
-    of STYLED_TEXT:
+    of stText:
       if canGenerateAnonymousInline(ctx.blockgroup, box.computed, child.text):
         ctx.generateAnonymousInlineText(child.text, ctx.styledNode)
-    of STYLED_REPLACEMENT:
+    of stReplacement:
       ctx.generateReplacement(child, ctx.styledNode)
   ctx.iflush()
 
@@ -2964,10 +2986,10 @@ proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
     parent: ptr InnerBlockContext = nil): BlockBoxBuilder =
   let box = BlockBoxBuilder(computed: styledNode.computed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
-  assert box.computed{"display"} != DISPLAY_INLINE
+  assert box.computed{"display"} != DisplayInline
   for child in ctx.styledNode.children:
     case child.t
-    of STYLED_ELEMENT:
+    of stElement:
       ctx.iflush()
       let display = child.computed{"display"}.blockify()
       if display != child.computed{"display"}:
@@ -2981,10 +3003,10 @@ proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
         ctx.generateFromElem(newChild)
       else:
         ctx.generateFromElem(child)
-    of STYLED_TEXT:
+    of stText:
       if ctx.blockgroup.canGenerateAnonymousInline(box.computed, child.text):
         ctx.generateAnonymousInlineText(child.text, ctx.styledNode)
-    of STYLED_REPLACEMENT:
+    of stReplacement:
       ctx.generateReplacement(child, ctx.styledNode)
   ctx.iflush()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
@@ -2996,7 +3018,7 @@ proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
   assert not box.inlinelayout
   return box
 
-proc generateTableCellBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableCellBox(styledNode: StyledNode; lctx: LayoutState;
     parent: var InnerBlockContext): TableCellBoxBuilder =
   let box = TableCellBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
@@ -3007,9 +3029,9 @@ proc generateTableCellBox(styledNode: StyledNode, lctx: LayoutState,
 proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
-  wrappervals{"display"} = DISPLAY_TABLE_CELL
+  wrappervals{"display"} = DisplayTableCell
   for child in box.children:
-    if child.computed{"display"} == DISPLAY_TABLE_CELL:
+    if child.computed{"display"} == DisplayTableCell:
       newchildren.add(child)
     else:
       let wrapper = TableCellBoxBuilder(computed: wrappervals)
@@ -3017,7 +3039,7 @@ proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableRowBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableRowBox(styledNode: StyledNode; lctx: LayoutState;
     parent: var InnerBlockContext): TableRowBoxBuilder =
   let box = TableRowBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
@@ -3029,9 +3051,9 @@ proc generateTableRowBox(styledNode: StyledNode, lctx: LayoutState,
 proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
-  wrappervals{"display"} = DISPLAY_TABLE_ROW
+  wrappervals{"display"} = DisplayTableRow
   for child in box.children:
-    if child.computed{"display"} == DISPLAY_TABLE_ROW:
+    if child.computed{"display"} == DisplayTableRow:
       newchildren.add(child)
     else:
       let wrapper = TableRowBoxBuilder(computed: wrappervals)
@@ -3040,7 +3062,7 @@ proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableRowGroupBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableRowGroupBox(styledNode: StyledNode; lctx: LayoutState;
     parent: var InnerBlockContext): TableRowGroupBoxBuilder =
   let box = TableRowGroupBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
@@ -3049,7 +3071,7 @@ proc generateTableRowGroupBox(styledNode: StyledNode, lctx: LayoutState,
   box.generateTableRowGroupChildWrappers()
   return box
 
-proc generateTableCaptionBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableCaptionBox(styledNode: StyledNode; lctx: LayoutState;
     parent: var InnerBlockContext): TableCaptionBoxBuilder =
   let box = TableCaptionBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
@@ -3060,7 +3082,7 @@ proc generateTableCaptionBox(styledNode: StyledNode, lctx: LayoutState,
 proc generateTableChildWrappers(box: TableBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
-  wrappervals{"display"} = DISPLAY_TABLE_ROW
+  wrappervals{"display"} = DisplayTableRow
   for child in box.children:
     if child.computed{"display"} in ProperTableChild:
       newchildren.add(child)
@@ -3071,7 +3093,7 @@ proc generateTableChildWrappers(box: TableBoxBuilder) =
       newchildren.add(wrapper)
   box.children = newchildren
 
-proc generateTableBox(styledNode: StyledNode, lctx: LayoutState,
+proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
     parent: var InnerBlockContext): TableBoxBuilder =
   let box = TableBoxBuilder(computed: styledNode.computed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)

@@ -18,13 +18,13 @@ type
     BUBBLING_PHASE = 3u16
 
   EventFlag* = enum
-    FLAG_STOP_PROPAGATION
-    FLAG_STOP_IMMEDIATE_PROPAGATION
-    FLAG_CANCELED
-    FLAG_IN_PASSIVE_LISTENER
-    FLAG_COMPOSED
-    FLAG_INITIALIZED
-    FLAG_DISPATCH
+    efStopPropagation
+    efStopImmediatePropagation
+    efCanceled
+    efInPassiveListener
+    efComposed
+    efInitialized
+    efDispatch
 
   Event* = ref object of RootObj
     ctype {.jsget: "type".}: string
@@ -76,42 +76,42 @@ type
     detail: JSValue
 
 # Event
-proc innerEventCreationSteps(event: Event, eventInitDict: EventInit) =
-  event.flags = {FLAG_INITIALIZED}
+proc innerEventCreationSteps(event: Event; eventInitDict: EventInit) =
+  event.flags = {efInitialized}
   #TODO this is probably incorrect?
   # I think it measures the time since the first fork. not sure though
   event.timeStamp = round(cpuTime())
   event.bubbles = eventInitDict.bubbles
   event.cancelable = eventInitDict.cancelable
   if eventInitDict.composed:
-    event.flags.incl(FLAG_COMPOSED)
+    event.flags.incl(efComposed)
 
 #TODO eventInitDict type
-proc newEvent(ctype: string, eventInitDict = EventInit()):
+proc newEvent(ctype: string; eventInitDict = EventInit()):
     JSResult[Event] {.jsctor.} =
   let event = Event()
   event.innerEventCreationSteps(eventInitDict)
   event.ctype = ctype
   return ok(event)
 
-proc newEvent*(ctx: JSContext, ctype: string, target: EventTarget): Event =
+proc newEvent*(ctx: JSContext; ctype: string; target: EventTarget): Event =
   return Event(
     ctype: ctype,
     target: target,
     currentTarget: target
   )
 
-proc initialize(this: Event, ctype: string, bubbles, cancelable: bool) =
-  this.flags.incl(FLAG_INITIALIZED)
+proc initialize(this: Event; ctype: string; bubbles, cancelable: bool) =
+  this.flags.incl(efInitialized)
   this.isTrusted = false
   this.target = nil
   this.ctype = ctype
   this.bubbles = bubbles
   this.cancelable = cancelable
 
-proc initEvent(this: Event, ctype: string, bubbles, cancelable: bool)
+proc initEvent(this: Event; ctype: string; bubbles, cancelable: bool)
     {.jsfunc.} =
-  if FLAG_DISPATCH notin this.flags:
+  if efDispatch notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
 
 func srcElement(this: Event): EventTarget {.jsfget.} =
@@ -124,40 +124,40 @@ func composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
   return @[this.currentTarget]
 
 proc stopPropagation(this: Event) {.jsfunc.} =
-  this.flags.incl(FLAG_STOP_PROPAGATION)
+  this.flags.incl(efStopPropagation)
 
 func cancelBubble(this: Event): bool {.jsfget.} =
-  return FLAG_STOP_PROPAGATION in this.flags
+  return efStopPropagation in this.flags
 
-proc cancelBubble(this: Event, cancel: bool) {.jsfset.} =
+proc cancelBubble(this: Event; cancel: bool) {.jsfset.} =
   if cancel:
     this.stopPropagation()
 
 proc stopImmediatePropagation(this: Event) {.jsfunc.} =
-  this.flags.incl({FLAG_STOP_PROPAGATION, FLAG_STOP_IMMEDIATE_PROPAGATION})
+  this.flags.incl({efStopPropagation, efStopImmediatePropagation})
 
 proc setCanceledFlag(this: Event) =
-  if this.cancelable and FLAG_IN_PASSIVE_LISTENER notin this.flags:
-    this.flags.incl(FLAG_CANCELED)
+  if this.cancelable and efInPassiveListener notin this.flags:
+    this.flags.incl(efCanceled)
 
 proc returnValue(this: Event): bool {.jsfget.} =
-  return FLAG_CANCELED notin this.flags
+  return efCanceled notin this.flags
 
-proc returnValue(this: Event, value: bool) {.jsfset.} =
+proc returnValue(this: Event; value: bool) {.jsfset.} =
   if not value:
     this.setCanceledFlag()
 
 proc preventDefault(this: Event) {.jsfunc.} =
-  this.flags.incl(FLAG_CANCELED)
+  this.flags.incl(efCanceled)
 
 func defaultPrevented(this: Event): bool {.jsfget.} =
-  return FLAG_CANCELED in this.flags
+  return efCanceled in this.flags
 
 func composed(this: Event): bool {.jsfget.} =
-  return FLAG_COMPOSED in this.flags
+  return efComposed in this.flags
 
 # CustomEvent
-proc newCustomEvent(ctype: string, eventInitDict = CustomEventInit()):
+proc newCustomEvent(ctype: string; eventInitDict = CustomEventInit()):
     JSResult[CustomEvent] {.jsctor.} =
   let event = CustomEvent()
   event.innerEventCreationSteps(eventInitDict)
@@ -165,12 +165,12 @@ proc newCustomEvent(ctype: string, eventInitDict = CustomEventInit()):
   event.ctype = ctype
   return ok(event)
 
-proc finalize(rt: JSRuntime, this: CustomEvent) {.jsfin.} =
+proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
   JS_FreeValueRT(rt, this.detail)
 
-proc initCustomEvent(this: CustomEvent, ctype: string,
-    bubbles, cancelable: bool, detail: JSValue) {.jsfunc.} =
-  if FLAG_DISPATCH notin this.flags:
+proc initCustomEvent(this: CustomEvent; ctype: string;
+    bubbles, cancelable: bool; detail: JSValue) {.jsfunc.} =
+  if efDispatch notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
     this.detail = detail
 
@@ -234,7 +234,7 @@ proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
   listener.callback = JS_UNDEFINED
   eventTarget.eventListeners.delete(i)
 
-proc flatten(ctx: JSContext, options: JSValue): bool =
+proc flatten(ctx: JSContext; options: JSValue): bool =
   if JS_IsBool(options):
     return fromJS[bool](ctx, options).get(false)
   if JS_IsObject(options):
@@ -242,7 +242,7 @@ proc flatten(ctx: JSContext, options: JSValue): bool =
     return fromJS[bool](ctx, x).get(false)
   return false
 
-proc flattenMore(ctx: JSContext, options: JSValue):
+proc flattenMore(ctx: JSContext; options: JSValue):
     tuple[
       capture: bool,
       once: bool,
@@ -278,8 +278,8 @@ proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: string;
   eventTarget.addAnEventListener(listener)
   ok()
 
-proc removeEventListener(ctx: JSContext, eventTarget: EventTarget,
-    ctype: string, callback: EventListenerCallback,
+proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
+    ctype: string; callback: EventListenerCallback;
     options = JS_UNDEFINED) {.jsfunc.} =
   let capture = flatten(ctx, options)
   let i = eventTarget.findEventListener(ctype, callback, capture)

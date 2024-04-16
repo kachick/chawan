@@ -3,7 +3,7 @@ import bindings/quickjs
 import js/javascript
 import js/tojs
 
-proc setImportMeta(ctx: JSContext, funcVal: JSValue, isMain: bool) =
+proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   let moduleNameAtom = JS_GetModuleName(ctx, m)
   let moduleName = JS_AtomToCString(ctx, moduleNameAtom)
@@ -14,7 +14,7 @@ proc setImportMeta(ctx: JSContext, funcVal: JSValue, isMain: bool) =
   JS_FreeAtom(ctx, moduleNameAtom)
   JS_FreeCString(ctx, moduleName)
 
-proc finishLoadModule*(ctx: JSContext, f: string, name: cstring): JSModuleDef =
+proc finishLoadModule*(ctx: JSContext; f: string; name: cstring): JSModuleDef =
   let funcVal = compileModule(ctx, f, name)
   if JS_IsException(funcVal):
     return nil
@@ -24,6 +24,6 @@ proc finishLoadModule*(ctx: JSContext, f: string, name: cstring): JSModuleDef =
   result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   JS_FreeValue(ctx, funcVal)
 
-proc normalizeModuleName*(ctx: JSContext, base_name, name: cstringConst,
+proc normalizeModuleName*(ctx: JSContext; base_name, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
   return js_strdup(ctx, cstring(name))

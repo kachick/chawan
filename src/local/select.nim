@@ -33,7 +33,7 @@ type
     submitFun: SubmitSelect
     bpos: seq[int]
 
-proc windowChange*(select: var Select, height: int) =
+proc windowChange*(select: var Select; height: int) =
   select.maxh = height - 2
   if select.y + select.options.len >= select.maxh:
     select.y = height - select.options.len
@@ -48,8 +48,8 @@ proc windowChange*(select: var Select, height: int) =
       select.si = max(i - select.maxh, 0)
   select.redraw = true
 
-proc initSelect*(select: var Select, selectResult: SelectResult,
-    x, y, height: int, submitFun: SubmitSelect) =
+proc initSelect*(select: var Select; selectResult: SelectResult;
+    x, y, height: int; submitFun: SubmitSelect) =
   select.open = true
   select.multiple = selectResult.multiple
   select.options = selectResult.options
@@ -70,7 +70,7 @@ func hover(select: Select): int =
 func dispheight(select: Select): int =
   return select.maxh - select.y
 
-proc `hover=`(select: var Select, i: int) =
+proc `hover=`(select: var Select; i: int) =
   let i = clamp(i, 0, select.options.high)
   if i >= select.si + select.dispheight:
     select.si = i - select.dispheight + 1
@@ -156,7 +156,7 @@ proc cursorLastLine*(select: var Select) =
     select.si = max(select.options.len - select.maxh, 0)
     select.redraw = true
 
-proc cursorNextMatch*(select: var Select, regex: Regex, wrap: bool) =
+proc cursorNextMatch*(select: var Select; regex: Regex; wrap: bool) =
   var j = -1
   for i in select.hover + 1 ..< select.options.len:
     if regex.exec(select.options[i]).success:
@@ -174,7 +174,7 @@ proc cursorNextMatch*(select: var Select, regex: Regex, wrap: bool) =
       select.hover = j
       select.redraw = true
 
-proc cursorPrevMatch*(select: var Select, regex: Regex, wrap: bool) =
+proc cursorPrevMatch*(select: var Select; regex: Regex; wrap: bool) =
   var j = -1
   for i in countdown(select.hover - 1, 0):
     if regex.exec(select.options[i]).success:
@@ -195,7 +195,7 @@ proc cursorPrevMatch*(select: var Select, regex: Regex, wrap: bool) =
 proc pushCursorPos*(select: var Select) =
   select.bpos.add(select.hover)
 
-proc popCursorPos*(select: var Select, nojump = false) =
+proc popCursorPos*(select: var Select; nojump = false) =
   select.hover = select.bpos.pop()
   if not nojump:
     select.redraw = true
@@ -207,7 +207,7 @@ const CornerTopRight = $Rune(0x2510)
 const CornerBottomLeft = $Rune(0x2514)
 const CornerBottomRight = $Rune(0x2518)
 
-proc drawBorders(display: var FixedGrid, sx, ex, sy, ey: int,
+proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     upmore, downmore: bool) =
   for y in sy .. ey:
     var x = 0
@@ -251,7 +251,7 @@ proc drawBorders(display: var FixedGrid, sx, ex, sy, ey: int,
     display[y * display.width + sx].format = fmt
     display[y * display.width + ex].format = fmt
 
-proc drawSelect*(select: Select, display: var FixedGrid) =
+proc drawSelect*(select: Select; display: var FixedGrid) =
   if display.width < 2 or display.height < 2:
     return # border does not fit...
   # Max width, height with one row/column on the sides.

@@ -11,8 +11,8 @@ type URLFilter* = object
   allowhosts: seq[Regex]
   default: bool
 
-proc newURLFilter*(scheme = none(string), allowschemes: seq[string] = @[],
-    allowhost = none(string), allowhosts: seq[Regex] = @[],
+proc newURLFilter*(scheme = none(string); allowschemes: seq[string] = @[];
+    allowhost = none(string); allowhosts: seq[Regex] = @[];
     default = false): URLFilter =
   doAssert scheme.isSome or allowschemes.len == 0,
     "allowschemes without scheme is not supported"
@@ -28,7 +28,7 @@ proc newURLFilter*(scheme = none(string), allowschemes: seq[string] = @[],
 # If scheme/s are given, only URLs with the same scheme are matched.
 # Then, allowhost and allowhosts are checked; if none of these match the host,
 # the function returns the value of `default'.
-proc match*(filter: URLFilter, url: URL): bool =
+proc match*(filter: URLFilter; url: URL): bool =
   block check_scheme:
     if filter.scheme.isSome and filter.scheme.get != url.scheme:
       for scheme in filter.allowschemes:

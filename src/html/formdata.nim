@@ -13,7 +13,7 @@ import utils/twtstr
 
 import chame/tags
 
-proc constructEntryList*(form: HTMLFormElement, submitter: Element = nil,
+proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     encoding = "UTF-8"): seq[FormDataEntry]
 
 proc generateBoundary(): string =
@@ -26,8 +26,8 @@ proc generateBoundary(): string =
 proc newFormData0*(): FormData =
   return FormData(boundary: generateBoundary())
 
-proc newFormData*(form: HTMLFormElement = nil,
-    submitter: HTMLElement = nil): DOMResult[FormData] {.jsctor.} =
+proc newFormData*(form: HTMLFormElement = nil; submitter: HTMLElement = nil):
+    DOMResult[FormData] {.jsctor.} =
   let this = newFormData0()
   if form != nil:
     if submitter != nil:
@@ -43,7 +43,7 @@ proc newFormData*(form: HTMLFormElement = nil,
 
 #TODO filename should not be allowed for string entries
 # in other words, this should be an overloaded function, not just an or type
-proc append*[T: string|Blob](this: FormData, name: string, value: T,
+proc append*[T: string|Blob](this: FormData; name: string; value: T;
     filename = none(string)) {.jsfunc.} =
   when T is Blob:
     let filename = if filename.isSome:
@@ -65,12 +65,12 @@ proc append*[T: string|Blob](this: FormData, name: string, value: T,
       svalue: value
     ))
 
-proc delete(this: FormData, name: string) {.jsfunc.} =
+proc delete(this: FormData; name: string) {.jsfunc.} =
   for i in countdown(this.entries.high, 0):
     if this.entries[i].name == name:
       this.entries.delete(i)
 
-proc get(ctx: JSContext, this: FormData, name: string): JSValue {.jsfunc.} =
+proc get(ctx: JSContext; this: FormData; name: string): JSValue {.jsfunc.} =
   for entry in this.entries:
     if entry.name == name:
       if entry.isstr:
@@ -79,7 +79,7 @@ proc get(ctx: JSContext, this: FormData, name: string): JSValue {.jsfunc.} =
         return toJS(ctx, entry.value)
   return JS_NULL
 
-proc getAll(ctx: JSContext, this: FormData, name: string): seq[JSValue]
+proc getAll(ctx: JSContext; this: FormData; name: string): seq[JSValue]
     {.jsfunc.} =
   for entry in this.entries:
     if entry.name == name:

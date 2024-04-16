@@ -33,7 +33,7 @@ proc getReferrerPolicy*(s: string): Option[ReferrerPolicy] =
   of "unsafe-url":
     return some(UNSAFE_URL)
 
-proc getReferrer*(prev, target: URL, policy: ReferrerPolicy): string =
+proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
   let origin = prev.origin0
   if origin.isNone:
     return ""

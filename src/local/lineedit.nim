@@ -120,7 +120,7 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.cursorx + edit.padding - edit.shiftx
 
-proc insertCharseq(edit: LineEdit, s: string) =
+proc insertCharseq(edit: LineEdit; s: string) =
   let s = if edit.escNext:
     s
   else:
@@ -152,7 +152,7 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     edit.cursorx -= r.width()
     edit.invalid = true
 
-proc write*(edit: LineEdit, s: string, cs: Charset): bool =
+proc write*(edit: LineEdit; s: string; cs: Charset): bool =
   if cs == CHARSET_UTF_8:
     if s.validateUTF8Surr() != -1:
       return false
@@ -166,7 +166,7 @@ proc write*(edit: LineEdit, s: string, cs: Charset): bool =
     edit.insertCharseq(s)
   return true
 
-proc write(edit: LineEdit, s: string): bool {.jsfunc.} =
+proc write(edit: LineEdit; s: string): bool {.jsfunc.} =
   edit.write(s, CHARSET_UTF_8)
 
 proc delete(edit: LineEdit) {.jsfunc.} =
@@ -304,11 +304,11 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
     edit.end()
     edit.histtmp = ""
 
-proc windowChange*(edit: LineEdit, attrs: WindowAttributes) =
+proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
 
-proc readLine*(prompt: string, termwidth: int, current = "",
-    disallowed: set[char] = {}, hide = false, hist: LineHistory): LineEdit =
+proc readLine*(prompt, current: string; termwidth: int;
+    disallowed: set[char]; hide: bool; hist: LineHistory): LineEdit =
   result = LineEdit(
     prompt: prompt,
     promptw: prompt.width(),

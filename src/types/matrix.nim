@@ -3,7 +3,7 @@ type Matrix* = object
   w: int
   h: int
 
-proc newMatrix*(me: seq[float64], w: int, h: int): Matrix =
+proc newMatrix*(me: seq[float64]; w, h: int): Matrix =
   return Matrix(
     me: me,
     w: w,
@@ -28,7 +28,7 @@ proc newMatrixUninitialized*(w, h: int): Matrix =
   )
 
 #TODO this is extremely inefficient
-proc `*`*(a: Matrix, b: Matrix): Matrix =
+proc `*`*(a, b: Matrix): Matrix =
   assert a.w == b.h
   let h = a.h
   let w = b.w
@@ -42,5 +42,5 @@ proc `*`*(a: Matrix, b: Matrix): Matrix =
       c.me[y * c.w + x] = val
   return c
 
-proc `*=`*(a: var Matrix, b: Matrix) =
+proc `*=`*(a: var Matrix; b: Matrix) =
   a = a * b

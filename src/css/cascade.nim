@@ -26,7 +26,7 @@ type
     user: DeclarationList
     author: seq[DeclarationList]
 
-func appliesLR(feature: MediaFeature, window: Window,
+func appliesLR(feature: MediaFeature; window: Window;
     n: LayoutUnit): bool =
   let a = px(feature.lengthrange.a, window.attrs, 0)
   let b = px(feature.lengthrange.b, window.attrs, 0)
@@ -40,43 +40,43 @@ func appliesLR(feature: MediaFeature, window: Window,
     return false
   return true
 
-func applies(feature: MediaFeature, window: Window): bool =
+func applies(feature: MediaFeature; window: Window): bool =
   case feature.t
-  of FEATURE_COLOR:
+  of mftColor:
     return 8 in feature.range
-  of FEATURE_GRID:
+  of mftGrid:
     return feature.b
-  of FEATURE_HOVER:
+  of mftHover:
     return feature.b
-  of FEATURE_PREFERS_COLOR_SCHEME:
+  of mftPrefersColorScheme:
     return feature.b
-  of FEATURE_WIDTH:
+  of mftWidth:
     return feature.appliesLR(window, toLayoutUnit(window.attrs.width_px))
-  of FEATURE_HEIGHT:
+  of mftHeight:
     return feature.appliesLR(window, toLayoutUnit(window.attrs.height_px))
-  of FEATURE_SCRIPTING:
+  of mftScripting:
     return feature.b == window.settings.scripting
 
-func applies(mq: MediaQuery, window: Window): bool =
+func applies(mq: MediaQuery; window: Window): bool =
   case mq.t
-  of CONDITION_MEDIA:
+  of mctMedia:
     case mq.media
-    of MEDIA_TYPE_ALL: return true
-    of MEDIA_TYPE_PRINT: return false
-    of MEDIA_TYPE_SCREEN: return true
-    of MEDIA_TYPE_SPEECH: return false
-    of MEDIA_TYPE_TTY: return true
-    of MEDIA_TYPE_UNKNOWN: return false
-  of CONDITION_NOT:
+    of mtAll: return true
+    of mtPrint: return false
+    of mtScreen: return true
+    of mtSpeech: return false
+    of mtTty: return true
+    of mtUnknown: return false
+  of mctNot:
     return not mq.n.applies(window)
-  of CONDITION_AND:
+  of mctAnd:
     return mq.anda.applies(window) and mq.andb.applies(window)
-  of CONDITION_OR:
+  of mctOr:
     return mq.ora.applies(window) or mq.orb.applies(window)
-  of CONDITION_FEATURE:
+  of mctFeature:
     return mq.feature.applies(window)
 
-func applies*(mqlist: MediaQueryList, window: Window): bool =
+func applies*(mqlist: MediaQueryList; window: Window): bool =
   for mq in mqlist:
     if mq.applies(window):
       return true
@@ -87,13 +87,13 @@ appliesFwdDecl = applies
 type
   ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
 
-proc calcRule(tosorts: var ToSorts, styledNode: StyledNode, rule: CSSRuleDef) =
+proc calcRule(tosorts: var ToSorts; styledNode: StyledNode; rule: CSSRuleDef) =
   for sel in rule.sels:
     if styledNode.selectorsMatch(sel):
       let spec = getSpecificity(sel)
       tosorts[sel.pseudo].add((spec, rule.decls))
 
-func calcRules(styledNode: StyledNode, sheet: CSSStylesheet): DeclarationList =
+func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): DeclarationList =
   var tosorts: ToSorts
   let elem = Element(styledNode.node)
   for rule in sheet.genRules(elem.localName, elem.id, elem.classList.toks):
@@ -136,24 +136,28 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
   template map_size =
     let s = element.attrul(satSize)
     if s.isSome:
-      set_cv "width", CSSLength(num: float64(s.get), unit: UNIT_CH)
+      set_cv "width", CSSLength(num: float64(s.get), unit: cuCh)
   template map_valign =
     case element.attr(satValign).toLowerAscii()
-    of "top": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_TOP)
-    of "middle": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_MIDDLE)
-    of "bottom": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_BOTTOM)
-    of "baseline": set_cv "vertical-align", CSSVerticalAlign(keyword: VERTICAL_ALIGN_BASELINE)
+    of "top":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignTop)
+    of "middle":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignMiddle)
+    of "bottom":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignBottom)
+    of "baseline":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignBaseline)
   template map_align =
     case element.attr(satAlign).toLowerAscii()
-    of "center", "middle": set_cv "text-align", TEXT_ALIGN_CHA_CENTER
-    of "left": set_cv "text-align", TEXT_ALIGN_CHA_LEFT
-    of "right": set_cv "text-align", TEXT_ALIGN_CHA_RIGHT
+    of "center", "middle": set_cv "text-align", TextAlignChaCenter
+    of "left": set_cv "text-align", TextAlignChaLeft
+    of "right": set_cv "text-align", TextAlignChaRight
   template map_table_align =
     case element.attr(satAlign).toLowerAscii()
     of "left":
-     set_cv "float", FLOAT_LEFT
+     set_cv "float", FloatLeft
     of "right":
-      set_cv "float", FLOAT_RIGHT
+      set_cv "float", FloatRight
     of "center":
       set_cv "margin-left", CSSLengthAuto #TODO should be inline-start
       set_cv "margin-right", CSSLengthAuto #TODO should be inline-end
@@ -185,20 +189,20 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let ctype = element.attr(satType)
     if ctype.len > 0:
       case ctype[0]
-      of '1': set_cv "list-style-type", LIST_STYLE_TYPE_DECIMAL
-      of 'a': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ALPHA
-      of 'A': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ALPHA
-      of 'i': set_cv "list-style-type", LIST_STYLE_TYPE_LOWER_ROMAN
-      of 'I': set_cv "list-style-type", LIST_STYLE_TYPE_UPPER_ROMAN
+      of '1': set_cv "list-style-type", ListStyleTypeDecimal
+      of 'a': set_cv "list-style-type", ListStyleTypeLowerAlpha
+      of 'A': set_cv "list-style-type", ListStyleTypeUpperAlpha
+      of 'i': set_cv "list-style-type", ListStyleTypeLowerRoman
+      of 'I': set_cv "list-style-type", ListStyleTypeUpperRoman
       else: discard
   template map_list_type_ul =
     let ctype = element.attr(satType)
     if ctype.len > 0:
       case ctype.toLowerAscii()
-      of "none": set_cv "list-style-type", LIST_STYLE_TYPE_NONE
-      of "disc": set_cv "list-style-type", LIST_STYLE_TYPE_DISC
-      of "circle": set_cv "list-style-type", LIST_STYLE_TYPE_CIRCLE
-      of "square": set_cv "list-style-type", LIST_STYLE_TYPE_SQUARE
+      of "none": set_cv "list-style-type", ListStyleTypeNone
+      of "disc": set_cv "list-style-type", ListStyleTypeDisc
+      of "circle": set_cv "list-style-type", ListStyleTypeCircle
+      of "square": set_cv "list-style-type", ListStyleTypeSquare
   template set_bgcolor_is_canvas =
     set_cv "-cha-bgcolor-is-canvas", true
 
@@ -238,8 +242,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv "width", CSSLength(unit: UNIT_CH, num: float64(cols))
-    set_cv "height", CSSLength(unit: UNIT_EM, num: float64(rows))
+    set_cv "width", CSSLength(unit: cuCh, num: float64(cols))
+    set_cv "height", CSSLength(unit: cuEm, num: float64(rows))
   of TAG_FONT:
     map_color
   of TAG_INPUT:
@@ -252,35 +256,35 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_list_type_ul
   else: discard
 
-proc applyDeclarations(styledNode: StyledNode, parent: CSSComputedValues,
+proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
     map: DeclarationListMap) =
-  let pseudo = PSEUDO_NONE
+  let pseudo = peNone
   var builder = CSSComputedValuesBuilder(parent: parent)
-  builder.addValues(map.ua[pseudo], ORIGIN_USER_AGENT)
-  builder.addValues(map.user[pseudo], ORIGIN_USER)
+  builder.addValues(map.ua[pseudo], coUserAgent)
+  builder.addValues(map.user[pseudo], coUser)
   for rule in map.author:
-    builder.addValues(rule[pseudo], ORIGIN_AUTHOR)
+    builder.addValues(rule[pseudo], coAuthor)
   if styledNode.node != nil:
     let element = Element(styledNode.node)
     let style = element.style_cached
     if style != nil:
-      builder.addValues(style.decls, ORIGIN_AUTHOR)
+      builder.addValues(style.decls, coAuthor)
     builder.preshints = element.calcPresentationalHints()
   styledNode.computed = builder.buildComputedValues()
 
 # Either returns a new styled node or nil.
-proc applyDeclarations(pseudo: PseudoElem, styledParent: StyledNode,
+proc applyDeclarations(pseudo: PseudoElem; styledParent: StyledNode;
     map: DeclarationListMap): StyledNode =
   var builder = CSSComputedValuesBuilder(parent: styledParent.computed)
-  builder.addValues(map.ua[pseudo], ORIGIN_USER_AGENT)
-  builder.addValues(map.user[pseudo], ORIGIN_USER)
+  builder.addValues(map.ua[pseudo], coUserAgent)
+  builder.addValues(map.user[pseudo], coUser)
   for rule in map.author:
-    builder.addValues(rule[pseudo], ORIGIN_AUTHOR)
+    builder.addValues(rule[pseudo], coAuthor)
   if builder.hasValues():
     let cvals = builder.buildComputedValues()
     result = styledParent.newStyledElement(pseudo, cvals)
 
-func applyMediaQuery(ss: CSSStylesheet, window: Window): CSSStylesheet =
+func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   if ss == nil: return nil
   new(result)
   result[] = ss[]
@@ -288,7 +292,7 @@ func applyMediaQuery(ss: CSSStylesheet, window: Window): CSSStylesheet =
     if mq.query.applies(window):
       result.add(mq.children.applyMediaQuery(window))
 
-func calcRules(styledNode: StyledNode, ua, user: CSSStylesheet,
+func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
     author: seq[CSSStylesheet]): DeclarationListMap =
   let uadecls = calcRules(styledNode, ua)
   var userdecls: DeclarationList
@@ -303,7 +307,7 @@ func calcRules(styledNode: StyledNode, ua, user: CSSStylesheet,
     author: authordecls
   )
 
-proc applyStyle(parent, styledNode: StyledNode, map: DeclarationListMap) =
+proc applyStyle(parent, styledNode: StyledNode; map: DeclarationListMap) =
   let parentComputed = if parent != nil:
     parent.computed
   else:
@@ -326,8 +330,8 @@ proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
 proc applyRulesFrameValid(frame: CascadeFrame): StyledNode =
   let styledParent = frame.styledParent
   let cachedChild = frame.cachedChild
-  let styledChild = if cachedChild.t == STYLED_ELEMENT:
-    if cachedChild.pseudo != PSEUDO_NONE:
+  let styledChild = if cachedChild.t == stElement:
+    if cachedChild.pseudo != peNone:
       # Pseudo elements can't have invalid children.
       cachedChild
     else:
@@ -344,15 +348,15 @@ proc applyRulesFrameValid(frame: CascadeFrame): StyledNode =
     styledParent.children.add(styledChild)
   return styledChild
 
-proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
-    author: seq[CSSStylesheet], declmap: var DeclarationListMap): StyledNode =
+proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
+    author: seq[CSSStylesheet]; declmap: var DeclarationListMap): StyledNode =
   var styledChild: StyledNode
   let pseudo = frame.pseudo
   let styledParent = frame.styledParent
   let child = frame.child
-  if frame.pseudo != PSEUDO_NONE:
+  if frame.pseudo != peNone:
     case pseudo
-    of PSEUDO_BEFORE, PSEUDO_AFTER:
+    of peBefore, peAfter:
       let declmap = frame.parentDeclMap
       let styledPseudo = pseudo.applyDeclarations(styledParent, declmap)
       if styledPseudo != nil:
@@ -360,7 +364,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
         for content in contents:
           styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
         styledParent.children.add(styledPseudo)
-    of PSEUDO_INPUT_TEXT:
+    of peInputText:
       let content = HTMLInputElement(styledParent.node).inputString()
       if content.len > 0:
         let styledText = styledParent.newStyledText(content)
@@ -368,34 +372,34 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
         # directly, so we have to cache them like this.
         styledText.pseudo = pseudo
         styledParent.children.add(styledText)
-    of PSEUDO_TEXTAREA_TEXT:
+    of peTextareaText:
       let content = HTMLTextAreaElement(styledParent.node).textAreaString()
       if content.len > 0:
         let styledText = styledParent.newStyledText(content)
         styledText.pseudo = pseudo
         styledParent.children.add(styledText)
-    of PSEUDO_IMAGE:
+    of peImage:
       let src = Element(styledParent.node).attr(satSrc)
-      let content = CSSContent(t: CONTENT_IMAGE, s: src)
+      let content = CSSContent(t: ContentImage, s: src)
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
       styledParent.children.add(styledText)
-    of PSEUDO_VIDEO:
-      let content = CSSContent(t: CONTENT_VIDEO)
+    of peVideo:
+      let content = CSSContent(t: ContentVideo)
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
       styledParent.children.add(styledText)
-    of PSEUDO_AUDIO:
-      let content = CSSContent(t: CONTENT_AUDIO)
+    of peAudio:
+      let content = CSSContent(t: ContentAudio)
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
       styledParent.children.add(styledText)
-    of PSEUDO_NEWLINE:
-      let content = CSSContent(t: CONTENT_NEWLINE)
+    of peNewline:
+      let content = CSSContent(t: ContentNewline)
       let styledText = styledParent.newStyledReplacement(content)
       styledParent.children.add(styledText)
       styledText.pseudo = pseudo
-    of PSEUDO_NONE: assert false
+    of peNone: assert false
   else:
     assert child != nil
     if styledParent != nil:
@@ -415,8 +419,8 @@ proc applyRulesFrameInvalid(frame: CascadeFrame, ua, user: CSSStylesheet,
       applyStyle(styledParent, styledChild, declmap)
   return styledChild
 
-proc stackAppend(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
-    styledParent: StyledNode, child: Node, i: var int) =
+proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
+    styledParent: StyledNode; child: Node; i: var int) =
   if frame.cachedChild != nil:
     var cached: StyledNode
     while i >= 0:
@@ -428,19 +432,19 @@ proc stackAppend(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
     styledStack.add(CascadeFrame(
       styledParent: styledParent,
       child: child,
-      pseudo: PSEUDO_NONE,
+      pseudo: peNone,
       cachedChild: cached
     ))
   else:
     styledStack.add(CascadeFrame(
       styledParent: styledParent,
       child: child,
-      pseudo: PSEUDO_NONE,
+      pseudo: peNone,
       cachedChild: nil
     ))
 
-proc stackAppend(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
-    styledParent: StyledNode, pseudo: PseudoElem, i: var int,
+proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
+    styledParent: StyledNode; pseudo: PseudoElem; i: var int;
     parentDeclMap: DeclarationListMap = nil) =
   if frame.cachedChild != nil:
     var cached: StyledNode
@@ -474,42 +478,43 @@ proc stackAppend(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
     ))
 
 # Append children to styledChild.
-proc appendChildren(styledStack: var seq[CascadeFrame], frame: CascadeFrame,
-    styledChild: StyledNode, parentDeclMap: DeclarationListMap) =
+proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
+    styledChild: StyledNode; parentDeclMap: DeclarationListMap) =
   # i points to the child currently being inspected.
   var idx = if frame.cachedChild != nil:
     frame.cachedChild.children.len - 1
   else:
     -1
   let elem = Element(styledChild.node)
-  styledStack.stackAppend(frame, styledChild, PSEUDO_AFTER, idx, parentDeclMap)
+  styledStack.stackAppend(frame, styledChild, peAfter, idx, parentDeclMap)
   if elem.tagType == TAG_TEXTAREA:
-    styledStack.stackAppend(frame, styledChild, PSEUDO_TEXTAREA_TEXT, idx)
+    styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
   elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
-    styledStack.stackAppend(frame, styledChild, PSEUDO_IMAGE, idx)
+    styledStack.stackAppend(frame, styledChild, peImage, idx)
   elif elem.tagType == TAG_VIDEO:
-    styledStack.stackAppend(frame, styledChild, PSEUDO_VIDEO, idx)
+    styledStack.stackAppend(frame, styledChild, peVideo, idx)
   elif elem.tagType == TAG_AUDIO:
-    styledStack.stackAppend(frame, styledChild, PSEUDO_AUDIO, idx)
+    styledStack.stackAppend(frame, styledChild, peAudio, idx)
   elif elem.tagType == TAG_BR:
-    styledStack.stackAppend(frame, styledChild, PSEUDO_NEWLINE, idx)
+    styledStack.stackAppend(frame, styledChild, peNewline, idx)
   else:
     for i in countdown(elem.childList.high, 0):
       if elem.childList[i] of Element or elem.childList[i] of Text:
         styledStack.stackAppend(frame, styledChild, elem.childList[i], idx)
     if elem.tagType == TAG_INPUT:
-      styledStack.stackAppend(frame, styledChild, PSEUDO_INPUT_TEXT, idx)
-  styledStack.stackAppend(frame, styledChild, PSEUDO_BEFORE, idx, parentDeclMap)
+      styledStack.stackAppend(frame, styledChild, peInputText, idx)
+  styledStack.stackAppend(frame, styledChild, peBefore, idx, parentDeclMap)
 
 # Builds a StyledNode tree, optionally based on a previously cached version.
-proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledNode): StyledNode =
+proc applyRules(document: Document; ua, user: CSSStylesheet;
+    cachedTree: StyledNode): StyledNode =
   let html = document.html
   if html == nil:
     return
   let author = document.getAuthorSheets()
   var styledStack = @[CascadeFrame(
     child: html,
-    pseudo: PSEUDO_NONE,
+    pseudo: peNone,
     cachedChild: cachedTree
   )]
   var root: StyledNode
@@ -529,12 +534,12 @@ proc applyRules(document: Document, ua, user: CSSStylesheet, cachedTree: StyledN
       if styledParent == nil:
         # Root element
         root = styledChild
-      if styledChild.t == STYLED_ELEMENT and styledChild.node != nil:
+      if styledChild.t == stElement and styledChild.node != nil:
         styledChild.applyDependValues()
         styledStack.appendChildren(frame, styledChild, declmap)
   return root
 
-proc applyStylesheets*(document: Document, uass, userss: CSSStylesheet,
+proc applyStylesheets*(document: Document; uass, userss: CSSStylesheet;
     previousStyled: StyledNode): StyledNode =
   let uass = uass.applyMediaQuery(document.window)
   let userss = userss.applyMediaQuery(document.window)

@@ -18,11 +18,11 @@ func toLREFlags*(flags: cint): LREFlags =
 {.passc: "-Ilib/".}
 
 {.push header: "quickjs/libregexp.h", importc.}
-proc lre_compile*(plen: ptr cint, error_msg: cstring, error_msg_size: cint,
-  buf: cstring, buf_len: csize_t, re_flags: cint, opaque: pointer): ptr uint8
+proc lre_compile*(plen: ptr cint; error_msg: cstring; error_msg_size: cint;
+  buf: cstring; buf_len: csize_t; re_flags: cint; opaque: pointer): ptr uint8
 
-proc lre_exec*(capture: ptr ptr uint8, bc_buf: ptr uint8, cbuf: ptr uint8,
-  cindex: cint, clen: cint, cbuf_type: cint, opaque: pointer): cint
+proc lre_exec*(capture: ptr ptr uint8; bc_buf, cbuf: ptr uint8;
+  cindex, clen, cbuf_type: cint; opaque: pointer): cint
 
 proc lre_get_capture_count*(bc_buf: ptr uint8): cint
 

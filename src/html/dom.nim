@@ -50,12 +50,12 @@ import chame/tags
 
 type
   FormMethod* = enum
-    FORM_METHOD_GET, FORM_METHOD_POST, FORM_METHOD_DIALOG
+    fmGet, fmPost, fmDialog
 
   FormEncodingType* = enum
-    FORM_ENCODING_TYPE_URLENCODED = "application/x-www-form-urlencoded",
-    FORM_ENCODING_TYPE_MULTIPART = "multipart/form-data",
-    FORM_ENCODING_TYPE_TEXT_PLAIN = "text/plain"
+    fetUrlencoded = "application/x-www-form-urlencoded",
+    fetMultipart = "multipart/form-data",
+    fetTextPlain = "text/plain"
 
 type DocumentReadyState* = enum
   rsLoading = "loading"
@@ -428,7 +428,7 @@ jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
 jsDestructor(CSSStyleDeclaration)
 
-proc parseColor(element: Element, s: string): RGBAColor
+proc parseColor(element: Element; s: string): RGBAColor
 
 proc resetTransform(state: var DrawingState) =
   state.transformMatrix = newIdentityMatrix(3)
@@ -439,7 +439,7 @@ proc resetState(state: var DrawingState) =
   state.strokeStyle = rgba(0, 0, 0, 255)
   state.path = newPath()
 
-proc create2DContext*(jctx: JSContext, target: HTMLCanvasElement,
+proc create2DContext*(jctx: JSContext; target: HTMLCanvasElement;
     options: Option[JSValue]):
     CanvasRenderingContext2D =
   let ctx = CanvasRenderingContext2D(
@@ -465,7 +465,7 @@ proc reset(ctx: CanvasRenderingContext2D) {.jsfunc.} =
 
 # CanvasTransform
 #TODO scale
-proc rotate(ctx: CanvasRenderingContext2D, angle: float64) {.jsfunc.} =
+proc rotate(ctx: CanvasRenderingContext2D; angle: float64) {.jsfunc.} =
   if classify(angle) in {fcInf, fcNegInf, fcNan}:
     return
   ctx.state.transformMatrix *= newMatrix(
@@ -478,7 +478,7 @@ proc rotate(ctx: CanvasRenderingContext2D, angle: float64) {.jsfunc.} =
     h = 3
   )
 
-proc translate(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
+proc translate(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -492,7 +492,7 @@ proc translate(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
     h = 3
   )
 
-proc transform(ctx: CanvasRenderingContext2D, a, b, c, d, e, f: float64)
+proc transform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
     {.jsfunc.} =
   for v in [a, b, c, d, e, f]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
@@ -508,7 +508,7 @@ proc transform(ctx: CanvasRenderingContext2D, a, b, c, d, e, f: float64)
   )
 
 #TODO getTransform, setTransform with DOMMatrix (i.e. we're missing DOMMatrix)
-proc setTransform(ctx: CanvasRenderingContext2D, a, b, c, d, e, f: float64)
+proc setTransform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
     {.jsfunc.} =
   for v in [a, b, c, d, e, f]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
@@ -519,7 +519,7 @@ proc setTransform(ctx: CanvasRenderingContext2D, a, b, c, d, e, f: float64)
 proc resetTransform(ctx: CanvasRenderingContext2D) {.jsfunc.} =
   ctx.state.resetTransform()
 
-func transform(ctx: CanvasRenderingContext2D, v: Vector2D): Vector2D =
+func transform(ctx: CanvasRenderingContext2D; v: Vector2D): Vector2D =
   let mul = ctx.state.transformMatrix * newMatrix(@[v.x, v.y, 1], 1, 3)
   return Vector2D(x: mul.me[0], y: mul.me[1])
 
@@ -527,19 +527,19 @@ func transform(ctx: CanvasRenderingContext2D, v: Vector2D): Vector2D =
 proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return ctx.state.fillStyle.serialize()
 
-proc fillStyle(ctx: CanvasRenderingContext2D, s: string) {.jsfset.} =
+proc fillStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
   #TODO gradient, pattern
   ctx.state.fillStyle = ctx.canvas.parseColor(s)
 
 proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return ctx.state.strokeStyle.serialize()
 
-proc strokeStyle(ctx: CanvasRenderingContext2D, s: string) {.jsfset.} =
+proc strokeStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
   #TODO gradient, pattern
   ctx.state.strokeStyle = ctx.canvas.parseColor(s)
 
 # CanvasRect
-proc clearRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+proc clearRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   for v in [x, y, w, h]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -552,7 +552,7 @@ proc clearRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
   let y1 = uint64(min(max(y + h, 0), bh))
   ctx.bitmap.clearRect(x0, x1, y0, y1)
 
-proc fillRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+proc fillRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   for v in [x, y, w, h]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -567,7 +567,7 @@ proc fillRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
   let y1 = uint64(min(max(y + h, 0), bh))
   ctx.bitmap.fillRect(x0, x1, y0, y1, ctx.state.fillStyle)
 
-proc strokeRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+proc strokeRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   for v in [x, y, w, h]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
@@ -586,8 +586,8 @@ proc strokeRect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
 proc beginPath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
   ctx.state.path.beginPath()
 
-proc fill(ctx: CanvasRenderingContext2D,
-    fillRule = CanvasFillRule.NON_ZERO) {.jsfunc.} = #TODO path
+proc fill(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
+  #TODO path
   ctx.state.path.tempClosePath()
   ctx.bitmap.fillPath(ctx.state.path, ctx.state.fillStyle, fillRule)
   ctx.state.path.tempOpenPath()
@@ -595,10 +595,9 @@ proc fill(ctx: CanvasRenderingContext2D,
 proc stroke(ctx: CanvasRenderingContext2D) {.jsfunc.} = #TODO path
   ctx.bitmap.strokePath(ctx.state.path, ctx.state.strokeStyle)
 
-proc clip(ctx: CanvasRenderingContext2D,
-    fillRule = CanvasFillRule.NON_ZERO) {.jsfunc.} = #TODO path
-  #TODO implement
-  discard
+proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
+  #TODO path
+  discard #TODO implement
 
 #TODO clip, ...
 
@@ -606,22 +605,26 @@ proc clip(ctx: CanvasRenderingContext2D,
 
 # CanvasText
 #TODO maxwidth
-proc fillText(ctx: CanvasRenderingContext2D, text: string, x, y: float64) {.jsfunc.} =
+proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
+    {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
   let vec = ctx.transform(Vector2D(x: x, y: y))
-  ctx.bitmap.fillText(text, vec.x, vec.y, ctx.state.fillStyle, ctx.state.textAlign)
+  ctx.bitmap.fillText(text, vec.x, vec.y, ctx.state.fillStyle,
+    ctx.state.textAlign)
 
 #TODO maxwidth
-proc strokeText(ctx: CanvasRenderingContext2D, text: string, x, y: float64) {.jsfunc.} =
+proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
+    {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
   let vec = ctx.transform(Vector2D(x: x, y: y))
-  ctx.bitmap.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle, ctx.state.textAlign)
+  ctx.bitmap.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle,
+    ctx.state.textAlign)
 
-proc measureText(ctx: CanvasRenderingContext2D, text: string): TextMetrics
+proc measureText(ctx: CanvasRenderingContext2D; text: string): TextMetrics
     {.jsfunc.} =
   let tw = text.width()
   return TextMetrics(
@@ -639,12 +642,12 @@ proc measureText(ctx: CanvasRenderingContext2D, text: string): TextMetrics
 proc lineWidth(ctx: CanvasRenderingContext2D): float64 {.jsfget.} =
   return ctx.state.lineWidth
 
-proc lineWidth(ctx: CanvasRenderingContext2D, f: float64) {.jsfset.} =
+proc lineWidth(ctx: CanvasRenderingContext2D; f: float64) {.jsfset.} =
   if classify(f) in {fcZero, fcNegZero, fcInf, fcNegInf, fcNan}:
     return
   ctx.state.lineWidth = f
 
-proc setLineDash(ctx: CanvasRenderingContext2D, segments: seq[float64])
+proc setLineDash(ctx: CanvasRenderingContext2D; segments: seq[float64])
     {.jsfunc.} =
   discard #TODO implement
 
@@ -654,56 +657,57 @@ proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
 # CanvasTextDrawingStyles
 proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   case ctx.state.textAlign
-  of TEXT_ALIGN_START: return "start"
-  of TEXT_ALIGN_END: return "end"
-  of TEXT_ALIGN_LEFT: return "left"
-  of TEXT_ALIGN_RIGHT: return "right"
-  of TEXT_ALIGN_CENTER: return "center"
+  of TextAlignStart: return "start"
+  of TextAlignEnd: return "end"
+  of TextAlignLeft: return "left"
+  of TextAlignRight: return "right"
+  of TextAlignCenter: return "center"
   else: doAssert false
 
-proc textAlign(ctx: CanvasRenderingContext2D, s: string) {.jsfset.} =
+proc textAlign(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
   ctx.state.textAlign = case s
-  of "start": TEXT_ALIGN_START
-  of "end": TEXT_ALIGN_END
-  of "left": TEXT_ALIGN_LEFT
-  of "right": TEXT_ALIGN_RIGHT
-  of "center": TEXT_ALIGN_CENTER
+  of "start": TextAlignStart
+  of "end": TextAlignEnd
+  of "left": TextAlignLeft
+  of "right": TextAlignRight
+  of "center": TextAlignCenter
   else: ctx.state.textAlign
 
 # CanvasPath
 proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
   ctx.state.path.closePath()
 
-proc moveTo(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
+proc moveTo(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
   ctx.state.path.moveTo(x, y)
 
-proc lineTo(ctx: CanvasRenderingContext2D, x, y: float64) {.jsfunc.} =
+proc lineTo(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
   ctx.state.path.lineTo(x, y)
 
-proc quadraticCurveTo(ctx: CanvasRenderingContext2D, cpx, cpy, x,
+proc quadraticCurveTo(ctx: CanvasRenderingContext2D; cpx, cpy, x,
     y: float64) {.jsfunc.} =
   ctx.state.path.quadraticCurveTo(cpx, cpy, x, y)
 
-proc arcTo(ctx: CanvasRenderingContext2D, x1, y1, x2, y2, radius: float64):
+proc arcTo(ctx: CanvasRenderingContext2D; x1, y1, x2, y2, radius: float64):
     Err[DOMException] {.jsfunc.} =
   return ctx.state.path.arcTo(x1, y1, x2, y2, radius)
 
-proc arc(ctx: CanvasRenderingContext2D, x, y, radius, startAngle,
-    endAngle: float64, counterclockwise = false): Err[DOMException]
+proc arc(ctx: CanvasRenderingContext2D; x, y, radius, startAngle,
+    endAngle: float64; counterclockwise = false): Err[DOMException]
     {.jsfunc.} =
   return ctx.state.path.arc(x, y, radius, startAngle, endAngle,
     counterclockwise)
 
-proc ellipse(ctx: CanvasRenderingContext2D, x, y, radiusX, radiusY, rotation,
-    startAngle, endAngle: float64, counterclockwise = false): Err[DOMException]
+proc ellipse(ctx: CanvasRenderingContext2D; x, y, radiusX, radiusY, rotation,
+    startAngle, endAngle: float64; counterclockwise = false): Err[DOMException]
     {.jsfunc.} =
   return ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle,
     endAngle, counterclockwise)
 
-proc rect(ctx: CanvasRenderingContext2D, x, y, w, h: float64) {.jsfunc.} =
+proc rect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   ctx.state.path.rect(x, y, w, h)
 
-proc roundRect(ctx: CanvasRenderingContext2D, x, y, w, h, radii: float64) {.jsfunc.} =
+proc roundRect(ctx: CanvasRenderingContext2D; x, y, w, h, radii: float64)
+    {.jsfunc.} =
   ctx.state.path.roundRect(x, y, w, h, radii)
 
 # Reflected attributes.
@@ -731,7 +735,7 @@ template toset(ts: openArray[TagType]): set[TagType] =
     tags.incl(tag)
   tags
 
-func makes(name: static string, ts: set[TagType]): ReflectEntry =
+func makes(name: static string; ts: set[TagType]): ReflectEntry =
   const attrname = attrType0(name)
   ReflectEntry(
     attrname: attrname,
@@ -740,7 +744,7 @@ func makes(name: static string, ts: set[TagType]): ReflectEntry =
     tags: ts
   )
 
-func makes(attrname, funcname: static string, ts: set[TagType]):
+func makes(attrname, funcname: static string; ts: set[TagType]):
     ReflectEntry =
   const attrname = attrType0(attrname)
   ReflectEntry(
@@ -750,14 +754,14 @@ func makes(attrname, funcname: static string, ts: set[TagType]):
     tags: ts
   )
 
-func makes(name: static string, ts: varargs[TagType]): ReflectEntry =
+func makes(name: static string; ts: varargs[TagType]): ReflectEntry =
   makes(name, toset(ts))
 
-func makes(attrname, funcname: static string, ts: varargs[TagType]):
+func makes(attrname, funcname: static string; ts: varargs[TagType]):
     ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
-func makeb(attrname, funcname: static string, ts: varargs[TagType]):
+func makeb(attrname, funcname: static string; ts: varargs[TagType]):
     ReflectEntry =
   const attrname = attrType0(attrname)
   ReflectEntry(
@@ -767,10 +771,10 @@ func makeb(attrname, funcname: static string, ts: varargs[TagType]):
     tags: toset(ts)
   )
 
-func makeb(name: static string, ts: varargs[TagType]): ReflectEntry =
+func makeb(name: static string; ts: varargs[TagType]): ReflectEntry =
   makeb(name, name, ts)
 
-func makeul(name: static string, ts: varargs[TagType], default = 0u32):
+func makeul(name: static string; ts: varargs[TagType]; default = 0u32):
     ReflectEntry =
   const attrname = attrType0(name)
   ReflectEntry(
@@ -781,7 +785,7 @@ func makeul(name: static string, ts: varargs[TagType], default = 0u32):
     u: default
   )
 
-func makeulgz(name: static string, ts: varargs[TagType], default = 0u32):
+func makeulgz(name: static string; ts: varargs[TagType], default = 0u32):
     ReflectEntry =
   const attrname = attrType0(name)
   ReflectEntry(
@@ -823,43 +827,43 @@ const ReflectTable0 = [
 ]
 
 # Forward declarations
-func attr*(element: Element, s: StaticAtom): string
-func attrb*(element: Element, s: CAtom): bool
-proc attr*(element: Element, name: CAtom, value: string)
-proc attr*(element: Element, name: StaticAtom, value: string)
+func attr*(element: Element; s: StaticAtom): string
+func attrb*(element: Element; s: CAtom): bool
+proc attr*(element: Element; name: CAtom; value: string)
+proc attr*(element: Element; name: StaticAtom; value: string)
 func baseURL*(document: Document): URL
-proc delAttr(element: Element, i: int, keep = false)
-proc reflectAttrs(element: Element, name: CAtom, value: string)
+proc delAttr(element: Element; i: int; keep = false)
+proc reflectAttrs(element: Element; name: CAtom; value: string)
 
 func document*(node: Node): Document =
   if node of Document:
     return Document(node)
   return node.document_internal
 
-proc toAtom*(document: Document, s: string): CAtom =
+proc toAtom*(document: Document; s: string): CAtom =
   return document.factory.toAtom(s)
 
-proc toAtom*(document: Document, at: StaticAtom): CAtom =
+proc toAtom*(document: Document; at: StaticAtom): CAtom =
   return document.factory.toAtom(at)
 
-proc toStr(document: Document, atom: CAtom): string =
+proc toStr(document: Document; atom: CAtom): string =
   return document.factory.toStr(atom)
 
-proc toTagType*(document: Document, atom: CAtom): TagType =
+proc toTagType*(document: Document; atom: CAtom): TagType =
   return document.factory.toTagType(atom)
 
-proc toStaticAtom(document: Document, atom: CAtom): StaticAtom =
+proc toStaticAtom(document: Document; atom: CAtom): StaticAtom =
   return document.factory.toStaticAtom(atom)
 
-proc toAtom*(document: Document, tagType: TagType): CAtom =
+proc toAtom*(document: Document; tagType: TagType): CAtom =
   return document.factory.toAtom(tagType)
 
-proc toAtom(document: Document, namespace: Namespace): CAtom =
+proc toAtom(document: Document; namespace: Namespace): CAtom =
   #TODO optimize
   assert namespace != NO_NAMESPACE
   return document.toAtom($namespace)
 
-proc toAtom(document: Document, prefix: NamespacePrefix): CAtom =
+proc toAtom(document: Document; prefix: NamespacePrefix): CAtom =
   #TODO optimize
   assert prefix != NO_PREFIX
   return document.toAtom($prefix)
@@ -875,22 +879,22 @@ func tagType*(element: Element): TagType =
 func localNameStr*(element: Element): string =
   return element.document.toStr(element.localName)
 
-func findAttr(element: Element, qualifiedName: CAtom): int =
+func findAttr(element: Element; qualifiedName: CAtom): int =
   for i, attr in element.attrs:
     if attr.qualifiedName == qualifiedName:
       return i
   return -1
 
-func findAttr(element: Element, qualifiedName: StaticAtom): int =
+func findAttr(element: Element; qualifiedName: StaticAtom): int =
   return element.findAttr(element.document.toAtom(qualifiedName))
 
-func findAttrNS(element: Element, namespace, qualifiedName: CAtom): int =
+func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
   for i, attr in element.attrs:
     if attr.namespace == namespace and attr.qualifiedName == qualifiedName:
       return i
   return -1
 
-func escapeText(s: string, attribute_mode = false): string =
+func escapeText(s: string; attribute_mode = false): string =
   var nbsp_mode = false
   var nbsp_prev: char
   for c in s:
@@ -915,7 +919,9 @@ func escapeText(s: string, attribute_mode = false): string =
       result &= c
 
 func `$`*(node: Node): string =
-  if node == nil: return "null" #TODO this isn't standard compliant but helps debugging
+  # Note: this function should only be used for debugging.
+  if node == nil:
+    return "null"
   if node of Element:
     let element = Element(node)
     result = "<" & element.localNameStr
@@ -990,12 +996,12 @@ iterator elements*(node: Node): Element {.inline.} =
     if child of Element:
       yield Element(child)
 
-iterator elements*(node: Node, tag: TagType): Element {.inline.} =
+iterator elements*(node: Node; tag: TagType): Element {.inline.} =
   for desc in node.elements:
     if desc.tagType == tag:
       yield desc
 
-iterator elements*(node: Node, tag: set[TagType]): Element {.inline.} =
+iterator elements*(node: Node; tag: set[TagType]): Element {.inline.} =
   for desc in node.elements:
     if desc.tagType in tag:
       yield desc
@@ -1095,7 +1101,7 @@ func len(collection: Collection): int =
 
 type CollectionMatchFun = proc(node: Node): bool {.noSideEffect.}
 
-func newCollection[T: Collection](root: Node, match: CollectionMatchFun,
+func newCollection[T: Collection](root: Node; match: CollectionMatchFun;
     islive, childonly: bool): T =
   result = T(
     islive: islive,
@@ -1167,18 +1173,18 @@ func childNodes(node: Node): NodeList {.jsfget.} =
 func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
   return uint32(tokenList.toks.len)
 
-func item(tokenList: DOMTokenList, i: int): Option[string] {.jsfunc.} =
+func item(tokenList: DOMTokenList; i: int): Option[string] {.jsfunc.} =
   if i < tokenList.toks.len:
     return some(tokenList.element.document.toStr(tokenList.toks[i]))
   return none(string)
 
-func contains*(tokenList: DOMTokenList, a: CAtom): bool =
+func contains*(tokenList: DOMTokenList; a: CAtom): bool =
   return a in tokenList.toks
 
-func contains(tokenList: DOMTokenList, a: StaticAtom): bool =
+func contains(tokenList: DOMTokenList; a: StaticAtom): bool =
   return tokenList.element.document.toAtom(a) in tokenList.toks
 
-func jsContains(tokenList: DOMTokenList, s: string): bool
+func jsContains(tokenList: DOMTokenList; s: string): bool
     {.jsfunc: "contains".} =
   return tokenList.element.document.toAtom(s) in tokenList
 
@@ -1204,7 +1210,7 @@ func validateDOMToken(tok: string): Err[DOMException] =
       "InvalidCharacterError")
   return ok()
 
-proc add(tokenList: DOMTokenList, tokens: varargs[string]): Err[DOMException]
+proc add(tokenList: DOMTokenList; tokens: varargs[string]): Err[DOMException]
     {.jsfunc.} =
   for tok in tokens:
     ?validateDOMToken(tok)
@@ -1214,7 +1220,7 @@ proc add(tokenList: DOMTokenList, tokens: varargs[string]): Err[DOMException]
   tokenList.update()
   return ok()
 
-proc remove(tokenList: DOMTokenList, tokens: varargs[string]):
+proc remove(tokenList: DOMTokenList; tokens: varargs[string]):
     Err[DOMException] {.jsfunc.} =
   for tok in tokens:
     ?validateDOMToken(tok)
@@ -1226,7 +1232,7 @@ proc remove(tokenList: DOMTokenList, tokens: varargs[string]):
   tokenList.update()
   return ok()
 
-proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)):
+proc toggle(tokenList: DOMTokenList; token: string; force = none(bool)):
     DOMResult[bool] {.jsfunc.} =
   ?validateDOMToken(token)
   let token = tokenList.element.document.toAtom(token)
@@ -1243,7 +1249,7 @@ proc toggle(tokenList: DOMTokenList, token: string, force = none(bool)):
     return ok(true)
   return ok(false)
 
-proc replace(tokenList: DOMTokenList, token, newToken: string):
+proc replace(tokenList: DOMTokenList; token, newToken: string):
     DOMResult[bool] {.jsfunc.} =
   ?validateDOMToken(token)
   ?validateDOMToken(newToken)
@@ -1264,7 +1270,7 @@ const SupportedTokensMap = {
   ]
 }.toTable()
 
-func supports(tokenList: DOMTokenList, token: string):
+func supports(tokenList: DOMTokenList; token: string):
     JSResult[bool] {.jsfunc.} =
   let localName = tokenList.element.document.toStaticAtom(tokenList.localName)
   if localName in SupportedTokensMap:
@@ -1275,7 +1281,7 @@ func supports(tokenList: DOMTokenList, token: string):
 func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
 
-func getter(tokenList: DOMTokenList, i: int): Option[string] {.jsgetprop.} =
+func getter(tokenList: DOMTokenList; i: int): Option[string] {.jsgetprop.} =
   return tokenList.item(i)
 
 # DOMStringMap
@@ -1291,18 +1297,18 @@ func validateAttributeQName(name: string): Err[DOMException] =
   return errDOMException("Invalid character in attribute name",
     "InvalidCharacterError")
 
-func hasprop(map: ptr DOMStringMap, name: string): bool {.jshasprop.} =
+func hasprop(map: ptr DOMStringMap; name: string): bool {.jshasprop.} =
   let name = map[].target.document.toAtom("data-" & name)
   return map[].target.attrb(name)
 
-proc delete(map: ptr DOMStringMap, name: string): bool {.jsfunc.} =
+proc delete(map: ptr DOMStringMap; name: string): bool {.jsfunc.} =
   let name = map[].target.document.toAtom("data-" & name.camelToKebabCase())
   let i = map[].target.findAttr(name)
   if i != -1:
     map[].target.delAttr(i)
   return i != -1
 
-func getter(map: ptr DOMStringMap, name: string): Option[string]
+func getter(map: ptr DOMStringMap; name: string): Option[string]
     {.jsgetprop.} =
   let name = map[].target.document.toAtom("data-" & name.camelToKebabCase())
   let i = map[].target.findAttr(name)
@@ -1310,7 +1316,7 @@ func getter(map: ptr DOMStringMap, name: string): Option[string]
     return some(map[].target.attrs[i].value)
   return none(string)
 
-proc setter(map: ptr DOMStringMap, name, value: string): Err[DOMException]
+proc setter(map: ptr DOMStringMap; name, value: string): Err[DOMException]
     {.jssetprop.} =
   var washy = false
   for c in name:
@@ -1325,7 +1331,7 @@ proc setter(map: ptr DOMStringMap, name, value: string): Err[DOMException]
   map.target.attr(aname, value)
   return ok()
 
-func names(ctx: JSContext, map: ptr DOMStringMap): JSPropertyEnumList
+func names(ctx: JSContext; map: ptr DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(map[].target.attrs.len))
   for attr in map[].target.attrs:
@@ -1338,17 +1344,17 @@ func names(ctx: JSContext, map: ptr DOMStringMap): JSPropertyEnumList
 func length(nodeList: NodeList): uint32 {.jsfget.} =
   return uint32(nodeList.len)
 
-func hasprop(nodeList: NodeList, i: int): bool {.jshasprop.} =
+func hasprop(nodeList: NodeList; i: int): bool {.jshasprop.} =
   return i < nodeList.len
 
-func item(nodeList: NodeList, i: int): Node {.jsfunc.} =
+func item(nodeList: NodeList; i: int): Node {.jsfunc.} =
   if i < nodeList.len:
     return nodeList.snapshot[i]
 
-func getter(nodeList: NodeList, i: int): Option[Node] {.jsgetprop.} =
+func getter(nodeList: NodeList; i: int): Option[Node] {.jsgetprop.} =
   return option(nodeList.item(i))
 
-func names(ctx: JSContext, nodeList: NodeList): JSPropertyEnumList
+func names(ctx: JSContext; nodeList: NodeList): JSPropertyEnumList
     {.jspropnames.} =
   let L = nodeList.length
   var list = newJSPropertyEnumList(ctx, L)
@@ -1360,15 +1366,15 @@ func names(ctx: JSContext, nodeList: NodeList): JSPropertyEnumList
 proc length(collection: HTMLCollection): uint32 {.jsfget.} =
   return uint32(collection.len)
 
-func hasprop(collection: HTMLCollection, u: uint32): bool {.jshasprop.} =
+func hasprop(collection: HTMLCollection; u: uint32): bool {.jshasprop.} =
   return u < collection.length
 
-func item(collection: HTMLCollection, u: uint32): Element {.jsfunc.} =
+func item(collection: HTMLCollection; u: uint32): Element {.jsfunc.} =
   if u < collection.length:
     return Element(collection.snapshot[int(u)])
   return nil
 
-func namedItem(collection: HTMLCollection, s: string): Element {.jsfunc.} =
+func namedItem(collection: HTMLCollection; s: string): Element {.jsfunc.} =
   let a = collection.root.document.toAtom(s)
   for it in collection.snapshot:
     let it = Element(it)
@@ -1376,14 +1382,14 @@ func namedItem(collection: HTMLCollection, s: string): Element {.jsfunc.} =
       return it
   return nil
 
-func getter[T: uint32|string](collection: HTMLCollection, u: T):
+func getter[T: uint32|string](collection: HTMLCollection; u: T):
     Option[Element] {.jsgetprop.} =
   when T is uint32:
     return option(collection.item(u))
   else:
     return option(collection.namedItem(u))
 
-func names(ctx: JSContext, collection: HTMLCollection): JSPropertyEnumList
+func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
@@ -1403,17 +1409,18 @@ func names(ctx: JSContext, collection: HTMLCollection): JSPropertyEnumList
 proc length(collection: HTMLAllCollection): uint32 {.jsfget.} =
   return uint32(collection.len)
 
-func hasprop(collection: HTMLAllCollection, i: int): bool {.jshasprop.} =
+func hasprop(collection: HTMLAllCollection; i: int): bool {.jshasprop.} =
   return i < collection.len
 
-func item(collection: HTMLAllCollection, i: int): Element {.jsfunc.} =
+func item(collection: HTMLAllCollection; i: int): Element {.jsfunc.} =
   if i < collection.len:
     return Element(collection.snapshot[i])
 
-func getter(collection: HTMLAllCollection, i: int): Option[Element] {.jsgetprop.} =
+func getter(collection: HTMLAllCollection; i: int): Option[Element]
+    {.jsgetprop.} =
   return option(collection.item(i))
 
-func names(ctx: JSContext, collection: HTMLAllCollection): JSPropertyEnumList
+func names(ctx: JSContext; collection: HTMLAllCollection): JSPropertyEnumList
     {.jspropnames.} =
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
@@ -1458,7 +1465,7 @@ func url(location: Location): URL =
     return document.url
   return newURL("about:blank").get
 
-proc setLocation*(document: Document, s: string): Err[JSError]
+proc setLocation*(document: Document; s: string): Err[JSError]
     {.jsfset: "location".} =
   if document.location == nil:
     return err(newTypeError("document.location is not an object"))
@@ -1476,16 +1483,16 @@ func `$`(location: Location): string {.jsuffunc.} =
 func href(location: Location): string {.jsuffget.} =
   return $location
 
-proc setHref(location: Location, s: string): Err[JSError]
+proc setHref(location: Location; s: string): Err[JSError]
     {.jsfset: "href".} =
   if location.document == nil:
     return ok()
   return location.document.setLocation(s)
 
-proc assign(location: Location, s: string): Err[JSError] {.jsuffunc.} =
+proc assign(location: Location; s: string): Err[JSError] {.jsuffunc.} =
   location.setHref(s)
 
-proc replace(location: Location, s: string): Err[JSError] {.jsuffunc.} =
+proc replace(location: Location; s: string): Err[JSError] {.jsuffunc.} =
   location.setHref(s)
 
 proc reload(location: Location) {.jsuffunc.} =
@@ -1499,7 +1506,7 @@ func origin(location: Location): string {.jsuffget.} =
 func protocol(location: Location): string {.jsuffget.} =
   return location.url.protocol
 
-proc protocol(location: Location, s: string): Err[DOMException] {.jsfset.} =
+proc protocol(location: Location; s: string): Err[DOMException] {.jsfset.} =
   let document = location.document
   if document == nil:
     return
@@ -1513,7 +1520,7 @@ proc protocol(location: Location, s: string): Err[DOMException] {.jsfset.} =
 func host(location: Location): string {.jsuffget.} =
   return location.url.host
 
-proc setHost(location: Location, s: string) {.jsfset: "host".} =
+proc setHost(location: Location; s: string) {.jsfset: "host".} =
   let document = location.document
   if document == nil:
     return
@@ -1524,7 +1531,7 @@ proc setHost(location: Location, s: string) {.jsfset: "host".} =
 proc hostname(location: Location): string {.jsuffget.} =
   return location.url.hostname
 
-proc setHostname(location: Location, s: string) {.jsfset: "hostname".} =
+proc setHostname(location: Location; s: string) {.jsfset: "hostname".} =
   let document = location.document
   if document == nil:
     return
@@ -1535,7 +1542,7 @@ proc setHostname(location: Location, s: string) {.jsfset: "hostname".} =
 proc port(location: Location): string {.jsuffget.} =
   return location.url.port
 
-proc setPort(location: Location, s: string) {.jsfset: "port".} =
+proc setPort(location: Location; s: string) {.jsfset: "port".} =
   let document = location.document
   if document == nil:
     return
@@ -1546,7 +1553,7 @@ proc setPort(location: Location, s: string) {.jsfset: "port".} =
 proc pathname(location: Location): string {.jsuffget.} =
   return location.url.pathname
 
-proc setPathname(location: Location, s: string) {.jsfset: "pathname".} =
+proc setPathname(location: Location; s: string) {.jsfset: "pathname".} =
   let document = location.document
   if document == nil:
     return
@@ -1557,7 +1564,7 @@ proc setPathname(location: Location, s: string) {.jsfset: "pathname".} =
 proc search(location: Location): string {.jsuffget.} =
   return location.url.search
 
-proc setSearch(location: Location, s: string) {.jsfset: "search".} =
+proc setSearch(location: Location; s: string) {.jsfset: "search".} =
   let document = location.document
   if document == nil:
     return
@@ -1568,7 +1575,7 @@ proc setSearch(location: Location, s: string) {.jsfset: "search".} =
 proc hash(location: Location): string {.jsuffget.} =
   return location.url.hash
 
-proc setHash(location: Location, s: string) {.jsfset: "hash".} =
+proc setHash(location: Location; s: string) {.jsfset: "hash".} =
   let document = location.document
   if document == nil:
     return
@@ -1599,13 +1606,13 @@ proc jsValue(attr: Attr): string {.jsfget: "value".} =
 func jsName(attr: Attr): string {.jsfget: "name".} =
   return attr.ownerElement.document.toStr(attr.data.qualifiedName)
 
-func findAttr(map: NamedNodeMap, dataIdx: int): int =
+func findAttr(map: NamedNodeMap; dataIdx: int): int =
   for i, attr in map.attrlist:
     if attr.dataIdx == dataIdx:
       return i
   return -1
 
-proc getAttr(map: NamedNodeMap, dataIdx: int): Attr =
+proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
   let i = map.findAttr(dataIdx)
   if i != -1:
     return map.attrlist[i]
@@ -1618,7 +1625,7 @@ proc getAttr(map: NamedNodeMap, dataIdx: int): Attr =
   map.attrlist.add(attr)
   return attr
 
-func normalizeAttrQName(element: Element, qualifiedName: string): CAtom =
+func normalizeAttrQName(element: Element; qualifiedName: string): CAtom =
   if element.namespace == Namespace.HTML and not element.document.isxml:
     return element.document.toAtom(qualifiedName.toLowerAscii())
   return element.document.toAtom(qualifiedName)
@@ -1639,41 +1646,43 @@ func attributes(element: Element): NamedNodeMap {.jsfget.} =
     ))
   return element.attributesInternal
 
-func findAttr(element: Element, qualifiedName: string): int =
+func findAttr(element: Element; qualifiedName: string): int =
   return element.findAttr(element.normalizeAttrQName(qualifiedName))
 
-func findAttrNS(element: Element, namespace, localName: string): int =
+func findAttrNS(element: Element; namespace, localName: string): int =
   let namespace = element.document.toAtom(namespace)
   let localName = element.document.toAtom(localName)
   return element.findAttrNS(namespace, localName)
 
-func hasAttribute(element: Element, qualifiedName: string): bool {.jsfunc.} =
+func hasAttribute(element: Element; qualifiedName: string): bool {.jsfunc.} =
   return element.findAttr(qualifiedName) != -1
 
-func hasAttributeNS(element: Element, namespace, localName: string): bool {.jsfunc.} =
+func hasAttributeNS(element: Element; namespace, localName: string): bool
+    {.jsfunc.} =
   return element.findAttrNS(namespace, localName) != -1
 
-func getAttribute(element: Element, qualifiedName: string): Option[string] {.jsfunc.} =
+func getAttribute(element: Element; qualifiedName: string): Option[string]
+    {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
   if i != -1:
     return some(element.attrs[i].value)
   return none(string)
 
-func getAttributeNS(element: Element, namespace, localName: string):
+func getAttributeNS(element: Element; namespace, localName: string):
     Option[string] {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
     return some(element.attrs[i].value)
   return none(string)
 
-proc getNamedItem(map: NamedNodeMap, qualifiedName: string): Option[Attr]
+proc getNamedItem(map: NamedNodeMap; qualifiedName: string): Option[Attr]
     {.jsfunc.} =
   let i = map.element.findAttr(qualifiedName)
   if i != -1:
     return some(map.getAttr(i))
   return none(Attr)
 
-proc getNamedItemNS(map: NamedNodeMap, namespace, localName: string):
+proc getNamedItemNS(map: NamedNodeMap; namespace, localName: string):
     Option[Attr] {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
   if i != -1:
@@ -1683,25 +1692,25 @@ proc getNamedItemNS(map: NamedNodeMap, namespace, localName: string):
 func length(map: NamedNodeMap): uint32 {.jsfget.} =
   return uint32(map.element.attrs.len)
 
-proc item(map: NamedNodeMap, i: uint32): Option[Attr] {.jsfunc.} =
+proc item(map: NamedNodeMap; i: uint32): Option[Attr] {.jsfunc.} =
   if int(i) < map.element.attrs.len:
     return some(map.getAttr(int(i)))
   return none(Attr)
 
-func hasprop[T: uint32|string](map: NamedNodeMap, i: T): bool {.jshasprop.} =
+func hasprop[T: uint32|string](map: NamedNodeMap; i: T): bool {.jshasprop.} =
   when T is uint32:
     return int(i) < map.element.attrs.len
   else:
     return map.getNamedItem(i).isSome
 
-func getter[T: uint32|string](map: NamedNodeMap, i: T): Option[Attr]
+func getter[T: uint32|string](map: NamedNodeMap; i: T): Option[Attr]
     {.jsgetprop.} =
   when T is uint32:
     return map.item(i)
   else:
     return map.getNamedItem(i)
 
-func names(ctx: JSContext, map: NamedNodeMap): JSPropertyEnumList
+func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     {.jspropnames.} =
   let len = if map.element.namespace == Namespace.HTML:
     uint32(map.attrlist.len + map.element.attrs.len)
@@ -1798,7 +1807,7 @@ template toOA*(writeBuffer: DocumentWriteBuffer): openArray[char] =
 proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.importc.}
 
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
-proc write(document: Document, text: varargs[string]): Err[DOMException]
+proc write(document: Document; text: varargs[string]): Err[DOMException]
     {.jsfunc.} =
   if document.isxml:
     return errDOMException("document.write not supported in XML documents",
@@ -1819,7 +1828,7 @@ proc write(document: Document, text: varargs[string]): Err[DOMException]
     CDB_parseDocumentWriteChunk(document.parser)
   return ok()
 
-func findFirst*(document: Document, tagType: TagType): HTMLElement =
+func findFirst*(document: Document; tagType: TagType): HTMLElement =
   for element in document.elements(tagType):
     return HTMLElement(element)
   nil
@@ -1839,17 +1848,17 @@ func select*(option: HTMLOptionElement): HTMLSelectElement =
       return HTMLSelectElement(anc)
   return nil
 
-func countChildren(node: Node, nodeType: type): int =
+func countChildren(node: Node; nodeType: type): int =
   for child in node.childList:
     if child of nodeType:
       inc result
 
-func hasChild(node: Node, nodeType: type): bool =
+func hasChild(node: Node; nodeType: type): bool =
   for child in node.childList:
     if child of nodeType:
       return true
 
-func hasChildExcept(node: Node, nodeType: type, ex: Node): bool =
+func hasChildExcept(node: Node; nodeType: type; ex: Node): bool =
   for child in node.childList:
     if child == ex:
       continue
@@ -1869,7 +1878,7 @@ func nextSibling*(node: Node): Node {.jsfget.} =
     return nil
   return node.parentNode.childList[i]
 
-func hasNextSibling(node: Node, nodeType: type): bool =
+func hasNextSibling(node: Node; nodeType: type): bool =
   var node = node.nextSibling
   while node != nil:
     if node of nodeType:
@@ -1877,7 +1886,7 @@ func hasNextSibling(node: Node, nodeType: type): bool =
     node = node.nextSibling
   return false
 
-func hasPreviousSibling(node: Node, nodeType: type): bool =
+func hasPreviousSibling(node: Node; nodeType: type): bool =
   var node = node.previousSibling
   while node != nil:
     if node of nodeType:
@@ -1949,13 +1958,13 @@ func lastElementChild*(node: Node): Element {.jsfget.} =
     return child
   return nil
 
-func findAncestor*(node: Node, tagTypes: set[TagType]): Element =
+func findAncestor*(node: Node; tagTypes: set[TagType]): Element =
   for element in node.ancestors:
     if element.tagType in tagTypes:
       return element
   return nil
 
-func getElementById(node: Node, id: string): Element {.jsfunc.} =
+func getElementById(node: Node; id: string): Element {.jsfunc.} =
   if id.len == 0:
     return nil
   let id = node.document.toAtom(id)
@@ -1964,7 +1973,7 @@ func getElementById(node: Node, id: string): Element {.jsfunc.} =
       return child
   return nil
 
-func getElementsByTagName0(root: Node, tagName: string): HTMLCollection =
+func getElementsByTagName0(root: Node; tagName: string): HTMLCollection =
   if tagName == "*":
     return newCollection[HTMLCollection](
       root,
@@ -1987,13 +1996,15 @@ func getElementsByTagName0(root: Node, tagName: string): HTMLCollection =
     childonly = false
   )
 
-func getElementsByTagName(document: Document, tagName: string): HTMLCollection {.jsfunc.} =
+func getElementsByTagName(document: Document; tagName: string): HTMLCollection
+    {.jsfunc.} =
   return document.getElementsByTagName0(tagName)
 
-func getElementsByTagName(element: Element, tagName: string): HTMLCollection {.jsfunc.} =
+func getElementsByTagName(element: Element; tagName: string): HTMLCollection
+    {.jsfunc.} =
   return element.getElementsByTagName0(tagName)
 
-func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
+func getElementsByClassName0(node: Node; classNames: string): HTMLCollection =
   var classAtoms = newSeq[CAtom]()
   let document = node.document
   let isquirks = document.mode == QUIRKS
@@ -2024,10 +2035,12 @@ func getElementsByClassName0(node: Node, classNames: string): HTMLCollection =
     childonly = false
   )
 
-func getElementsByClassName(document: Document, classNames: string): HTMLCollection {.jsfunc.} =
+func getElementsByClassName(document: Document; classNames: string):
+    HTMLCollection {.jsfunc.} =
   return document.getElementsByClassName0(classNames)
 
-func getElementsByClassName(element: Element, classNames: string): HTMLCollection {.jsfunc.} =
+func getElementsByClassName(element: Element; classNames: string):
+    HTMLCollection {.jsfunc.} =
   return element.getElementsByClassName0(classNames)
 
 func previousElementSibling*(elem: Element): Element {.jsfget.} =
@@ -2051,34 +2064,34 @@ func nextElementSibling*(elem: Element): Element {.jsfget.} =
 func documentElement(document: Document): Element {.jsfget.} =
   document.firstElementChild()
 
-func attr*(element: Element, s: CAtom): string =
+func attr*(element: Element; s: CAtom): string =
   let i = element.findAttr(s)
   if i != -1:
     return element.attrs[i].value
   return ""
 
-func attr*(element: Element, s: StaticAtom): string =
+func attr*(element: Element; s: StaticAtom): string =
   return element.attr(element.document.toAtom(s))
 
-func attrl*(element: Element, s: StaticAtom): Option[int32] =
+func attrl*(element: Element; s: StaticAtom): Option[int32] =
   return parseInt32(element.attr(s))
 
-func attrulgz*(element: Element, s: StaticAtom): Option[uint32] =
+func attrulgz*(element: Element; s: StaticAtom): Option[uint32] =
   let x = parseUInt32(element.attr(s), allowSign = true)
   if x.isSome and x.get > 0:
     return x
   return none(uint32)
 
-func attrul*(element: Element, s: StaticAtom): Option[uint32] =
+func attrul*(element: Element; s: StaticAtom): Option[uint32] =
   let x = parseUInt32(element.attr(s), allowSign = true)
   if x.isSome and x.get >= 0:
     return x
   return none(uint32)
 
-func attrb*(element: Element, s: CAtom): bool =
+func attrb*(element: Element; s: CAtom): bool =
   return element.findAttr(s) != -1
 
-func attrb*(element: Element, at: StaticAtom): bool =
+func attrb*(element: Element; at: StaticAtom): bool =
   let atom = element.document.toAtom(at)
   return element.attrb(atom)
 
@@ -2089,7 +2102,7 @@ func serializesAsVoid(element: Element): bool =
 
 func serializeFragment(node: Node): string
 
-func serializeFragmentInner(child: Node, parentType: TagType): string =
+func serializeFragmentInner(child: Node; parentType: TagType): string =
   result = ""
   if child of Element:
     let element = Element(child)
@@ -2259,29 +2272,27 @@ func enctype*(element: Element): FormEncodingType =
   if element.isSubmitButton():
     if element.attrb(satFormenctype):
       return case element.attr(satFormenctype).toLowerAscii()
-      of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
-      of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
-      of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
-      else: FORM_ENCODING_TYPE_URLENCODED
-
+      of "application/x-www-form-urlencoded": fetUrlencoded
+      of "multipart/form-data": fetMultipart
+      of "text/plain": fetTextPlain
+      else: fetUrlencoded
   if element of HTMLInputElement:
     let element = HTMLInputElement(element)
     if element.form != nil:
       if element.form.attrb(satEnctype):
         return case element.attr(satEnctype).toLowerAscii()
-        of "application/x-www-form-urlencoded": FORM_ENCODING_TYPE_URLENCODED
-        of "multipart/form-data": FORM_ENCODING_TYPE_MULTIPART
-        of "text/plain": FORM_ENCODING_TYPE_TEXT_PLAIN
-        else: FORM_ENCODING_TYPE_URLENCODED
-
-  return FORM_ENCODING_TYPE_URLENCODED
+        of "application/x-www-form-urlencoded": fetUrlencoded
+        of "multipart/form-data": fetMultipart
+        of "text/plain": fetTextPlain
+        else: fetUrlencoded
+  return fetUrlencoded
 
 func parseFormMethod(s: string): FormMethod =
   return case s.toLowerAscii()
-  of "get": FORM_METHOD_GET
-  of "post": FORM_METHOD_POST
-  of "dialog": FORM_METHOD_DIALOG
-  else: FORM_METHOD_GET
+  of "get": fmGet
+  of "post": fmPost
+  of "dialog": fmDialog
+  else: fmGet
 
 func formmethod*(element: Element): FormMethod =
   if element of HTMLFormElement:
@@ -2289,20 +2300,17 @@ func formmethod*(element: Element): FormMethod =
     # on implicit form submission and other browsers seem to agree on this
     # behavior.
     return parseFormMethod(element.attr(satMethod))
-
   if element.isSubmitButton():
     if element.attrb(satFormmethod):
       return parseFormMethod(element.attr(satFormmethod))
-
   if element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.form != nil:
       if element.form.attrb(satMethod):
         return parseFormMethod(element.form.attr(satMethod))
+  return fmGet
 
-  return FORM_METHOD_GET
-
-func findAnchor*(document: Document, id: string): Element =
+func findAnchor*(document: Document; id: string): Element =
   if id.len == 0:
     return nil
   let id = document.toAtom(id)
@@ -2324,7 +2332,7 @@ isDefaultPassive = func (eventTarget: EventTarget): bool =
     EventTarget(node.document.html) == eventTarget or
     EventTarget(node.document.body) == eventTarget
 
-proc parseColor(element: Element, s: string): RGBAColor =
+proc parseColor(element: Element; s: string): RGBAColor =
   let cval = parseComponentValue(newStringStream(s))
   #TODO return element style
   # For now we just use white.
@@ -2369,26 +2377,26 @@ func href(base: HTMLBaseElement): string {.jsfget.} =
 func href*(anchor: HTMLAnchorElement): string {.jsfget.} =
   anchor.href0
 
-proc href(anchor: HTMLAnchorElement, href: string) {.jsfset.} =
+proc href(anchor: HTMLAnchorElement; href: string) {.jsfset.} =
   anchor.attr(satHref, href)
 
 func `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
   anchor.href
 
-proc setRelList(anchor: HTMLAnchorElement, s: string) {.jsfset: "relList".} =
+proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
 
 # <area>
 func href(area: HTMLAreaElement): string {.jsfget.} =
   area.href0
 
-proc href(area: HTMLAreaElement, href: string) {.jsfset.} =
+proc href(area: HTMLAreaElement; href: string) {.jsfset.} =
   area.attr(satHref, href)
 
 func `$`(area: HTMLAreaElement): string {.jsfunc.} =
   area.href
 
-proc setRelList(area: HTMLAreaElement, s: string) {.jsfset: "relList".} =
+proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
   area.attr(satRel, s)
 
 # <label>
@@ -2412,11 +2420,11 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
     return control.form
 
 # <link>
-proc setRelList(link: HTMLLinkElement, s: string) {.jsfset: "relList".} =
+proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
   link.attr(satRel, s)
 
 # <form>
-proc setRelList(form: HTMLFormElement, s: string) {.jsfset: "relList".} =
+proc setRelList(form: HTMLFormElement; s: string) {.jsfset: "relList".} =
   form.attr(satRel, s)
 
 # <input>
@@ -2445,25 +2453,25 @@ func getSrc*(this: HTMLVideoElement|HTMLAudioElement): string =
         break
   src
 
-func newText(document: Document, data: string): Text =
+func newText(document: Document; data: string): Text =
   return Text(
     document_internal: document,
     data: data,
     index: -1
   )
 
-func newText(ctx: JSContext, data = ""): Text {.jsctor.} =
+func newText(ctx: JSContext; data = ""): Text {.jsctor.} =
   let window = ctx.getGlobalOpaque(Window).get
   return window.document.newText(data)
 
-func newCDATASection(document: Document, data: string): CDATASection =
+func newCDATASection(document: Document; data: string): CDATASection =
   return CDATASection(
     document_internal: document,
     data: data,
     index: -1
   )
 
-func newProcessingInstruction(document: Document, target, data: string):
+func newProcessingInstruction(document: Document; target, data: string):
     ProcessingInstruction =
   return ProcessingInstruction(
     document_internal: document,
@@ -2482,20 +2490,20 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
   let window = ctx.getGlobalOpaque(Window).get
   return window.document.newDocumentFragment()
 
-func newComment(document: Document, data: string): Comment =
+func newComment(document: Document; data: string): Comment =
   return Comment(
     document_internal: document,
     data: data,
     index: -1
   )
 
-func newComment(ctx: JSContext, data: string = ""): Comment {.jsctor.} =
+func newComment(ctx: JSContext; data: string = ""): Comment {.jsctor.} =
   let window = ctx.getGlobalOpaque(Window).get
   return window.document.newComment(data)
 
 #TODO custom elements
-proc newHTMLElement*(document: Document, localName: CAtom,
-    namespace = Namespace.HTML, prefix = NO_PREFIX,
+proc newHTMLElement*(document: Document; localName: CAtom;
+    namespace = Namespace.HTML; prefix = NO_PREFIX;
     attrs = newSeq[AttrData]()): HTMLElement =
   let tagType = document.toTagType(localName)
   case tagType
@@ -2582,8 +2590,8 @@ proc newHTMLElement*(document: Document, localName: CAtom,
   result.dataset = DOMStringMap(target: result)
   result.attrs = attrs
 
-proc newHTMLElement*(document: Document, tagType: TagType,
-    namespace = Namespace.HTML, prefix = NO_PREFIX,
+proc newHTMLElement*(document: Document; tagType: TagType;
+    namespace = Namespace.HTML; prefix = NO_PREFIX;
     attrs = newSeq[AttrData]()): HTMLElement =
   let localName = document.toAtom(tagType)
   return document.newHTMLElement(localName, namespace, prefix, attrs)
@@ -2610,7 +2618,7 @@ func newDocument(ctx: JSContext): Document {.jsctor.} =
   let factory = if window != nil: window.factory else: newCAtomFactory()
   return newDocument(factory)
 
-func newDocumentType*(document: Document, name, publicId, systemId: string):
+func newDocumentType*(document: Document; name, publicId, systemId: string):
     DocumentType =
   return DocumentType(
     document_internal: document,
@@ -2649,7 +2657,7 @@ func baseURL*(document: Document): URL =
 func baseURI(node: Node): string {.jsfget.} =
   return $node.document.baseURL
 
-func parseURL*(document: Document, s: string): Option[URL] =
+func parseURL*(document: Document; s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
 
@@ -2686,7 +2694,7 @@ proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
     node.document.invalidCollections.incl(id)
 
-proc delAttr(element: Element, i: int, keep = false) =
+proc delAttr(element: Element; i: int; keep = false) =
   let map = element.attributesInternal
   let name = element.attrs[i].qualifiedName
   element.attrs.delete(i) # ordering matters
@@ -2713,7 +2721,7 @@ proc delAttr(element: Element, i: int, keep = false) =
   element.invalidateCollections()
   element.invalid = true
 
-proc newCSSStyleDeclaration(element: Element, value: string):
+proc newCSSStyleDeclaration(element: Element; value: string):
     CSSStyleDeclaration =
   let inline_rules = newStringStream(value).parseListOfDeclarations2()
   var decls: seq[CSSDeclaration]
@@ -2729,19 +2737,19 @@ proc cssText(this: CSSStyleDeclaration): string {.jsfunc.} =
 func length(this: CSSStyleDeclaration): uint32 =
   return uint32(this.decls.len)
 
-func item(this: CSSStyleDeclaration, u: uint32): Option[string] =
+func item(this: CSSStyleDeclaration; u: uint32): Option[string] =
   if u < this.length:
     return some(this.decls[int(u)].name)
   return none(string)
 
-proc getPropertyValue(this: CSSStyleDeclaration, s: string): string =
+proc getPropertyValue(this: CSSStyleDeclaration; s: string): string =
   for decl in this.decls:
     if decl.name == s:
       return $decl.value
   return ""
 
 # https://drafts.csswg.org/cssom/#idl-attribute-to-css-property
-func IDLAttributeToCSSProperty(s: string, dashPrefix = false): string =
+func IDLAttributeToCSSProperty(s: string; dashPrefix = false): string =
   result = if dashPrefix: "-" else: ""
   for c in s:
     if c in AsciiUpperAlpha:
@@ -2750,7 +2758,7 @@ func IDLAttributeToCSSProperty(s: string, dashPrefix = false): string =
     else:
       result &= c
 
-proc getter[T: uint32|string](this: CSSStyleDeclaration, u: T):
+proc getter[T: uint32|string](this: CSSStyleDeclaration; u: T):
     Option[string] {.jsgetprop.} =
   when T is uint32:
     return this.item(u)
@@ -2768,12 +2776,12 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   return element.style_cached
 
 # Forward declaration hack
-var appliesFwdDecl*: proc(mqlist: MediaQueryList, window: Window): bool
+var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
   {.nimcall, noSideEffect.}
 
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
-proc loadResource(window: Window, link: HTMLLinkElement) =
+proc loadResource(window: Window; link: HTMLLinkElement) =
   if satStylesheet notin link.relList:
     return
   if link.fetchStarted:
@@ -2810,7 +2818,7 @@ proc loadResource(window: Window, link: HTMLLinkElement) =
     )
     window.loadingResourcePromises.add(p)
 
-proc loadResource(window: Window, image: HTMLImageElement) =
+proc loadResource(window: Window; image: HTMLImageElement) =
   if not window.images or image.fetchStarted:
     return
   image.fetchStarted = true
@@ -2861,30 +2869,30 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
 
 proc reflectAttrs(element: Element; name: CAtom; value: string) =
   let name = element.document.toStaticAtom(name)
-  template reflect_str(element: Element, n: StaticAtom, val: untyped) =
+  template reflect_str(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.val = value
       return
-  template reflect_atom(element: Element, n: StaticAtom, val: untyped) =
+  template reflect_atom(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.val = element.document.toAtom(value)
       return
-  template reflect_str(element: Element, n: StaticAtom, val, fun: untyped) =
+  template reflect_str(element: Element; n: StaticAtom; val, fun: untyped) =
     if name == n:
       element.val = fun(value)
       return
-  template reflect_bool(element: Element, n: StaticAtom, val: untyped) =
+  template reflect_bool(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.val = true
       return
-  template reflect_domtoklist0(element: Element, val: untyped) =
+  template reflect_domtoklist0(element: Element; val: untyped) =
     element.val.toks.setLen(0)
     for x in value.split(AsciiWhitespace):
       if x != "":
         let a = element.document.toAtom(x)
         if a notin element.val:
           element.val.toks.add(a)
-  template reflect_domtoklist(element: Element, n: StaticAtom, val: untyped) =
+  template reflect_domtoklist(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.reflect_domtoklist0 val
       return
@@ -2953,7 +2961,7 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
         window.loadResource(image)
   else: discard
 
-proc attr*(element: Element, name: CAtom, value: string) =
+proc attr*(element: Element; name: CAtom; value: string) =
   let i = element.findAttr(name)
   if i != -1:
     element.attrs[i].value = value
@@ -2968,11 +2976,11 @@ proc attr*(element: Element, name: CAtom, value: string) =
     ))
   element.reflectAttrs(name, value)
 
-proc attr*(element: Element, name: StaticAtom, value: string) =
+proc attr*(element: Element; name: StaticAtom; value: string) =
   element.attr(element.document.toAtom(name), value)
 
-proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
-    namespace: Namespace, value: sink string) =
+proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
+    namespace: Namespace; value: sink string) =
   if prefix == NO_PREFIX and namespace == NO_NAMESPACE:
     element.attr(localName, value)
     return
@@ -3002,17 +3010,17 @@ proc attrns*(element: Element, localName: CAtom, prefix: NamespacePrefix,
     ))
   element.reflectAttrs(qualifiedName, value)
 
-proc attrl(element: Element, name: StaticAtom, value: int32) =
+proc attrl(element: Element; name: StaticAtom; value: int32) =
   element.attr(name, $value)
 
-proc attrul(element: Element, name: StaticAtom, value: uint32) =
+proc attrul(element: Element; name: StaticAtom; value: uint32) =
   element.attr(name, $value)
 
-proc attrulgz(element: Element, name: StaticAtom, value: uint32) =
+proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
   if value > 0:
     element.attrul(name, value)
 
-proc setAttribute(element: Element, qualifiedName, value: string):
+proc setAttribute(element: Element; qualifiedName, value: string):
     Err[DOMException] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and
@@ -3023,7 +3031,7 @@ proc setAttribute(element: Element, qualifiedName, value: string):
   element.attr(qualifiedName, value)
   return ok()
 
-proc setAttributeNS(element: Element, namespace, qualifiedName,
+proc setAttributeNS(element: Element; namespace, qualifiedName,
     value: string): Err[DOMException] {.jsfunc.} =
   ?validateAttributeQName(qualifiedName)
   let ps = qualifiedName.until(':')
@@ -3032,8 +3040,10 @@ proc setAttributeNS(element: Element, namespace, qualifiedName,
   #TODO atomize here
   if prefix != "" and namespace == "" or
       prefix == "xml" and namespace != $Namespace.XML or
-      (qualifiedName == "xmlns" or prefix == "xmlns") and namespace != $Namespace.XMLNS or
-      namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and prefix != "xmlns":
+      (qualifiedName == "xmlns" or prefix == "xmlns") and
+        namespace != $Namespace.XMLNS or
+      namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and
+        prefix != "xmlns":
     return errDOMException("Unexpected namespace", "NamespaceError")
   let qualifiedName = element.document.toAtom(qualifiedName)
   let namespace = element.document.toAtom(namespace)
@@ -3049,17 +3059,18 @@ proc setAttributeNS(element: Element, namespace, qualifiedName,
     ))
   return ok()
 
-proc removeAttribute(element: Element, qualifiedName: string) {.jsfunc.} =
+proc removeAttribute(element: Element; qualifiedName: string) {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
   if i != -1:
     element.delAttr(i)
 
-proc removeAttributeNS(element: Element, namespace, localName: string) {.jsfunc.} =
+proc removeAttributeNS(element: Element; namespace, localName: string)
+    {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
     element.delAttr(i)
 
-proc toggleAttribute(element: Element, qualifiedName: string,
+proc toggleAttribute(element: Element; qualifiedName: string;
     force = none(bool)): DOMResult[bool] {.jsfunc.} =
   ?validateAttributeName(qualifiedName)
   let qualifiedName = element.normalizeAttrQName(qualifiedName)
@@ -3075,10 +3086,10 @@ proc toggleAttribute(element: Element, qualifiedName: string,
     return ok(false)
   return ok(true)
 
-proc value(attr: Attr, s: string) {.jsfset.} =
+proc value(attr: Attr; s: string) {.jsfset.} =
   attr.ownerElement.attr(attr.data.qualifiedName, s)
 
-proc setNamedItem(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
+proc setNamedItem(map: NamedNodeMap; attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
   if attr.ownerElement == map.element:
     # Setting attr on its owner element does nothing, since the "get an
@@ -3096,11 +3107,11 @@ proc setNamedItem(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
   map.element.attrs.add(attr.data)
   return ok(nil)
 
-proc setNamedItemNS(map: NamedNodeMap, attr: Attr): DOMResult[Attr]
+proc setNamedItemNS(map: NamedNodeMap; attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
   return map.setNamedItem(attr)
 
-proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
+proc removeNamedItem(map: NamedNodeMap; qualifiedName: string):
     DOMResult[Attr] {.jsfunc.} =
   let i = map.element.findAttr(qualifiedName)
   if i != -1:
@@ -3109,7 +3120,7 @@ proc removeNamedItem(map: NamedNodeMap, qualifiedName: string):
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
-proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
+proc removeNamedItemNS(map: NamedNodeMap; namespace, localName: string):
     DOMResult[Attr] {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
   if i != -1:
@@ -3118,11 +3129,11 @@ proc removeNamedItemNS(map: NamedNodeMap, namespace, localName: string):
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
-proc jsId(element: Element, id: string) {.jsfset: "id".} =
+proc jsId(element: Element; id: string) {.jsfset: "id".} =
   element.attr(satId, id)
 
 # Pass an index to avoid searching for the node in parent's child list.
-proc remove*(node: Node, suppressObservers: bool) =
+proc remove*(node: Node; suppressObservers: bool) =
   let parent = node.parentNode
   assert parent != nil
   assert node.index != -1
@@ -3140,13 +3151,14 @@ proc remove*(node: Node, suppressObservers: bool) =
       node of HTMLLinkElement):
     node.document.cachedSheetsInvalid = true
 
-  #TODO assigned, shadow root, shadow root again, custom nodes, registered observers
+  #TODO assigned, shadow root, shadow root again, custom nodes, registered
+  # observers
   #TODO not suppress observers => queue tree mutation record
 
 proc remove*(node: Node) {.jsfunc.} =
   node.remove(suppressObservers = false)
 
-proc adopt(document: Document, node: Node) =
+proc adopt(document: Document; node: Node) =
   let oldDocument = node.document
   if node.parentNode != nil:
     remove(node)
@@ -3200,7 +3212,7 @@ proc resetElement*(element: Element) =
     textarea.invalid = true
   else: discard
 
-proc setForm*(element: FormAssociatedElement, form: HTMLFormElement) =
+proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
@@ -3460,10 +3472,10 @@ proc replaceAll(parent, node: Node) =
       parent.append(node)
   #TODO tree mutation record
 
-proc createTextNode*(document: Document, data: string): Text {.jsfunc.} =
+proc createTextNode*(document: Document; data: string): Text {.jsfunc.} =
   return newText(document, data)
 
-proc textContent*(node: Node, data: Option[string]) {.jsfset.} =
+proc textContent*(node: Node; data: Option[string]) {.jsfset.} =
   if node of Element or node of DocumentFragment:
     let x = if data.isSome:
       node.document.createTextNode(data.get)
@@ -3495,15 +3507,15 @@ proc blockRendering*(element: Element) =
   if document.contentType == "text/html" and document.body == nil:
     element.document.renderBlockingElements.add(element)
 
-proc markAsReady(element: HTMLScriptElement, res: ScriptResult) =
+proc markAsReady(element: HTMLScriptElement; res: ScriptResult) =
   element.scriptResult = res
   if element.onReady != nil:
     element.onReady()
     element.onReady = nil
   element.delayingTheLoadEvent = false
 
-proc createClassicScript(ctx: JSContext, source: string, baseURL: URL,
-    options: ScriptOptions, mutedErrors = false): Script =
+proc createClassicScript(ctx: JSContext; source: string; baseURL: URL;
+    options: ScriptOptions; mutedErrors = false): Script =
   let urls = baseURL.serialize(excludepassword = true)
   let record = compileScript(ctx, source, cstring(urls))
   return Script(
@@ -3515,8 +3527,8 @@ proc createClassicScript(ctx: JSContext, source: string, baseURL: URL,
 
 type OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
 
-proc fetchClassicScript(element: HTMLScriptElement, url: URL,
-    options: ScriptOptions, cors: CORSAttribute, cs: Charset,
+proc fetchClassicScript(element: HTMLScriptElement; url: URL;
+    options: ScriptOptions; cors: CORSAttribute; cs: Charset,
     onComplete: OnCompleteProc) =
   let window = element.document.window
   if not element.scriptingEnabled or window.loader.isNone:
@@ -3538,15 +3550,15 @@ proc fetchClassicScript(element: HTMLScriptElement, url: URL,
   element.onComplete(ScriptResult(t: RESULT_SCRIPT, script: script))
 
 #TODO settings object
-proc fetchDescendantsAndLink(element: HTMLScriptElement, script: Script,
-    destination: RequestDestination, onComplete: OnCompleteProc)
-proc fetchSingleModule(element: HTMLScriptElement, url: URL,
-    destination: RequestDestination, options: ScriptOptions,
-    referrer: URL, isTopLevel: bool, onComplete: OnCompleteProc)
+proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
+    destination: RequestDestination; onComplete: OnCompleteProc)
+proc fetchSingleModule(element: HTMLScriptElement; url: URL;
+    destination: RequestDestination; options: ScriptOptions;
+    referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc)
 
 #TODO settings object
-proc fetchExternalModuleGraph(element: HTMLScriptElement, url: URL,
-    options: ScriptOptions, onComplete: OnCompleteProc) =
+proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
+    options: ScriptOptions; onComplete: OnCompleteProc) =
   let window = element.document.window
   if not element.scriptingEnabled or window.loader.isNone:
     element.onComplete(ScriptResult(t: RESULT_NULL))
@@ -3558,7 +3570,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement, url: URL,
     options,
     parseURL("about:client").get,
     isTopLevel = true,
-    onComplete = proc(element: HTMLScriptElement, res: ScriptResult) =
+    onComplete = proc(element: HTMLScriptElement; res: ScriptResult) =
       if res.t == RESULT_NULL:
         element.onComplete(res)
       else:
@@ -3566,14 +3578,14 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement, url: URL,
           onComplete)
   )
 
-proc fetchDescendantsAndLink(element: HTMLScriptElement, script: Script,
-    destination: RequestDestination, onComplete: OnCompleteProc) =
+proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
+    destination: RequestDestination; onComplete: OnCompleteProc) =
   discard
 
 #TODO settings object
-proc fetchSingleModule(element: HTMLScriptElement, url: URL,
-    destination: RequestDestination, options: ScriptOptions,
-    referrer: URL, isTopLevel: bool, onComplete: OnCompleteProc) =
+proc fetchSingleModule(element: HTMLScriptElement; url: URL;
+    destination: RequestDestination; options: ScriptOptions,
+    referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc) =
   let moduleType = "javascript"
   #TODO moduleRequest
   let settings = element.document.window.settings
@@ -3672,7 +3684,8 @@ proc prepare*(element: HTMLScriptElement) =
     element.forceAsync = false
   element.alreadyStarted = true
   element.preparationTimeDocument = element.document
-  if parserDocument != nil and parserDocument != element.preparationTimeDocument:
+  if parserDocument != nil and
+      parserDocument != element.preparationTimeDocument:
     return
   if not element.scriptingEnabled:
     return
@@ -3685,15 +3698,20 @@ proc prepare*(element: HTMLScriptElement) =
     let event = element.attr(satEvent).strip(chars = AsciiWhitespace)
     if not f.equalsIgnoreCase("window"):
       return
-    if not event.equalsIgnoreCase("onload") and not event.equalsIgnoreCase("onload()"):
+    if not event.equalsIgnoreCase("onload") and
+        not event.equalsIgnoreCase("onload()"):
       return
   let cs = getCharset(element.attr(satCharset))
   let encoding = if cs != CHARSET_UNKNOWN: cs else: element.document.charset
   let classicCORS = element.crossOrigin
+  let parserMetadata = if element.parserDocument != nil:
+    pmParserInserted
+  else:
+    pmNotParserInserted
   var options = ScriptOptions(
     nonce: element.internalNonce,
     integrity: element.attr(satIntegrity),
-    parserMetadata: if element.parserDocument != nil: PARSER_INSERTED else: NOT_PARSER_INSERTED,
+    parserMetadata: parserMetadata,
     referrerpolicy: element.referrerpolicy
   )
   #TODO settings object
@@ -3742,7 +3760,8 @@ proc prepare*(element: HTMLScriptElement) =
     elif element.parserDocument == nil:
       prepdoc.scriptsToExecInOrder.addFirst(element)
       element.onReady = (proc() =
-        if prepdoc.scriptsToExecInOrder.len > 0 and prepdoc.scriptsToExecInOrder[0] != element:
+        if prepdoc.scriptsToExecInOrder.len > 0 and
+            prepdoc.scriptsToExecInOrder[0] != element:
           while prepdoc.scriptsToExecInOrder.len > 0:
             let script = prepdoc.scriptsToExecInOrder[0]
             if script.scriptResult == nil:
@@ -3768,7 +3787,7 @@ proc prepare*(element: HTMLScriptElement) =
     element.execute()
 
 #TODO options/custom elements
-proc createElement(document: Document, localName: string):
+proc createElement(document: Document; localName: string):
     DOMResult[Element] {.jsfunc.} =
   if not localName.matchNameProduction():
     return errDOMException("Invalid character in element name",
@@ -3777,7 +3796,8 @@ proc createElement(document: Document, localName: string):
     document.toAtom(localName.toLowerAscii())
   else:
     document.toAtom(localName)
-  let namespace = if not document.isxml: #TODO or content type is application/xhtml+xml
+  let namespace = if not document.isxml:
+    #TODO or content type is application/xhtml+xml
     Namespace.HTML
   else:
     NO_NAMESPACE
@@ -3788,7 +3808,7 @@ proc createElement(document: Document, localName: string):
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createDocumentType(implementation: ptr DOMImplementation, qualifiedName,
+proc createDocumentType(implementation: ptr DOMImplementation; qualifiedName,
     publicId, systemId: string): DOMResult[DocumentType] {.jsfunc.} =
   if not qualifiedName.matchQNameProduction():
     return errDOMException("Invalid character in document type name",
@@ -3796,7 +3816,7 @@ proc createDocumentType(implementation: ptr DOMImplementation, qualifiedName,
   let document = implementation.document
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
-proc createHTMLDocument(ctx: JSContext, implementation: ptr DOMImplementation,
+proc createHTMLDocument(ctx: JSContext; implementation: ptr DOMImplementation;
     title = none(string)): Document {.jsfunc.} =
   let doc = newDocument(ctx)
   doc.contentType = "text/html"
@@ -3816,7 +3836,7 @@ proc createHTMLDocument(ctx: JSContext, implementation: ptr DOMImplementation,
 proc hasFeature(implementation: ptr DOMImplementation): bool {.jsfunc.} =
   return true
 
-proc createCDATASection(document: Document, data: string):
+proc createCDATASection(document: Document; data: string):
     DOMResult[CDATASection] {.jsfunc.} =
   if not document.isxml:
     return errDOMException("CDATA sections are not supported in HTML",
@@ -3826,17 +3846,17 @@ proc createCDATASection(document: Document, data: string):
       "InvalidCharacterError")
   return ok(newCDATASection(document, data))
 
-proc createComment*(document: Document, data: string): Comment {.jsfunc.} =
+proc createComment*(document: Document; data: string): Comment {.jsfunc.} =
   return newComment(document, data)
 
-proc createProcessingInstruction(document: Document, target, data: string):
+proc createProcessingInstruction(document: Document; target, data: string):
     DOMResult[ProcessingInstruction] {.jsfunc.} =
   if not target.matchNameProduction() or "?>" in data:
     return errDOMException("Invalid data for processing instruction",
       "InvalidCharacterError")
   return ok(newProcessingInstruction(document, target, data))
 
-proc clone(node: Node, document = none(Document), deep = false): Node =
+proc clone(node: Node; document = none(Document), deep = false): Node =
   let document = document.get(node.document)
   let copy = if node of Element:
     #TODO is value
@@ -3911,18 +3931,18 @@ proc clone(node: Node, document = none(Document), deep = false): Node =
       copy.append(child.clone(deep = true))
   return copy
 
-proc cloneNode(node: Node, deep = false): Node {.jsfunc.} =
+proc cloneNode(node: Node; deep = false): Node {.jsfunc.} =
   #TODO shadow root
   return node.clone(deep = deep)
 
 # Forward definition hack (these are set in selectors.nim)
-var doqsa*: proc (node: Node, q: string): seq[Element]
-var doqs*: proc (node: Node, q: string): Element
+var doqsa*: proc (node: Node; q: string): seq[Element]
+var doqs*: proc (node: Node; q: string): Element
 
-proc querySelectorAll*(node: Node, q: string): seq[Element] {.jsfunc.} =
+proc querySelectorAll*(node: Node; q: string): seq[Element] {.jsfunc.} =
   return doqsa(node, q)
 
-proc querySelector*(node: Node, q: string): Element {.jsfunc.} =
+proc querySelector*(node: Node; q: string): Element {.jsfunc.} =
   return doqs(node, q)
 
 const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
@@ -3949,11 +3969,13 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
     inc i
 )()
 
-proc jsReflectGet(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.} =
+proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
+    {.cdecl.} =
   let entry = ReflectTable[uint16(magic)]
   let op = getOpaque0(this)
   if unlikely(not ctx.isInstanceOf(this, "Element") or op == nil):
-    return JS_ThrowTypeError(ctx, "Reflected getter called on a value that is not an element")
+    return JS_ThrowTypeError(ctx,
+      "Reflected getter called on a value that is not an element")
   let element = cast[Element](op)
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
@@ -3970,9 +3992,11 @@ proc jsReflectGet(ctx: JSContext, this: JSValue, magic: cint): JSValue {.cdecl.}
   of REFLECT_ULONG_GZ:
     return toJS(ctx, element.attrulgz(entry.attrname).get(entry.u))
 
-proc jsReflectSet(ctx: JSContext, this, val: JSValue, magic: cint): JSValue {.cdecl.} =
+proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
+    {.cdecl.} =
   if unlikely(not ctx.isInstanceOf(this, "Element")):
-    return JS_ThrowTypeError(ctx, "Reflected getter called on a value that is not an element")
+    return JS_ThrowTypeError(ctx,
+      "Reflected getter called on a value that is not an element")
   let entry = ReflectTable[uint16(magic)]
   let op = getOpaque0(this)
   assert op != nil
@@ -4020,14 +4044,20 @@ func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
   return result
 
 func getElementReflectFunctions(): seq[TabGetSet] =
+  result = @[]
   var i: int16 = ReflectAllStartIndex
   while i < int16(ReflectTable.len):
     let entry = ReflectTable[i]
     assert entry.tags == AllTagTypes
-    result.add(TabGetSet(name: ReflectTable[i].funcname, get: jsReflectGet, set: jsReflectSet, magic: i))
+    result.add(TabGetSet(
+      name: ReflectTable[i].funcname,
+      get: jsReflectGet,
+      set: jsReflectSet,
+      magic: i
+    ))
     inc i
 
-proc getContext*(jctx: JSContext, this: HTMLCanvasElement, contextId: string,
+proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
     options = none(JSValue)): RenderingContext {.jsfunc.} =
   if contextId == "2d":
     if this.ctx2d != nil:
@@ -4036,7 +4066,7 @@ proc getContext*(jctx: JSContext, this: HTMLCanvasElement, contextId: string,
   return nil
 
 #TODO quality should be `any'
-proc toBlob(ctx: JSContext, this: HTMLCanvasElement, callback: JSValue,
+proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     s = "image/png", quality: float64 = 1): JSValue {.jsfunc.} =
   var outlen: int
   let buf = this.bitmap.toPNG(outlen)
@@ -4059,7 +4089,7 @@ proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =
     fragment.append(child)
   return fragment
 
-proc innerHTML(element: Element, s: string) {.jsfset.} =
+proc innerHTML(element: Element; s: string) {.jsfset.} =
   #TODO shadow root
   let fragment = fragmentParsingAlgorithm(element, s)
   let ctx = if element of HTMLTemplateElement:
@@ -4068,7 +4098,7 @@ proc innerHTML(element: Element, s: string) {.jsfset.} =
     element
   ctx.replaceAll(fragment)
 
-proc outerHTML(element: Element, s: string): Err[DOMException] {.jsfset.} =
+proc outerHTML(element: Element; s: string): Err[DOMException] {.jsfset.} =
   let parent0 = element.parentNode
   if parent0 == nil:
     return ok()
@@ -4098,7 +4128,7 @@ func parseInsertAdjacentPosition(s: string): DOMResult[InsertAdjacentPosition] =
   return errDOMException("Invalid position", "SyntaxError")
 
 # https://w3c.github.io/DOM-Parsing/#dom-element-insertadjacenthtml
-proc insertAdjacentHTML(element: Element, position, text: string):
+proc insertAdjacentHTML(element: Element; position, text: string):
     Err[DOMException] {.jsfunc.} =
   let position = ?parseInsertAdjacentPosition(position)
   let ctx0 = case position
@@ -4126,16 +4156,16 @@ proc insertAdjacentHTML(element: Element, position, text: string):
   of iapAfterEnd:
     ctx.parentNode.insert(fragment, ctx.nextSibling)
 
-proc registerElements(ctx: JSContext, nodeCID: JSClassID) =
+proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
   const extra_getset = getElementReflectFunctions()
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID,
     has_extra_getset = true, extra_getset = extra_getset)
-  template register(t: typed, tags: set[TagType]) =
+  template register(t: typed; tags: set[TagType]) =
     const extra_getset = getReflectFunctions(tags)
     ctx.registerType(t, parent = htmlElementCID,
       has_extra_getset = true, extra_getset = extra_getset)
-  template register(t: typed, tag: TagType) =
+  template register(t: typed; tag: TagType) =
     register(t, {tag})
   register(HTMLInputElement, TAG_INPUT)
   register(HTMLAnchorElement, TAG_A)

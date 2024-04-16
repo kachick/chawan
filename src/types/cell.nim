@@ -34,16 +34,21 @@ type
     width*, height*: int
     cells*: seq[FixedCell]
 
-proc `[]=`*(grid: var FixedGrid, i: int, cell: FixedCell) = grid.cells[i] = cell
-proc `[]=`*(grid: var FixedGrid, i: BackwardsIndex, cell: FixedCell) = grid.cells[i] = cell
-proc `[]`*(grid: var FixedGrid, i: int): var FixedCell = grid.cells[i]
-proc `[]`*(grid: var FixedGrid, i: BackwardsIndex): var FixedCell = grid.cells[i]
-proc `[]`*(grid: FixedGrid, i: int): FixedCell = grid.cells[i]
-proc `[]`*(grid: FixedGrid, i: BackwardsIndex): FixedCell = grid.cells[i]
-iterator items*(grid: FixedGrid): FixedCell {.inline.} =
-  for cell in grid.cells: yield cell
+proc `[]=`*(grid: var FixedGrid; i: int; cell: FixedCell) = grid.cells[i] = cell
+proc `[]=`*(grid: var FixedGrid; i: BackwardsIndex; cell: FixedCell) =
+  grid.cells[i] = cell
+proc `[]`*(grid: var FixedGrid; i: int): var FixedCell = grid.cells[i]
+proc `[]`*(grid: var FixedGrid; i: BackwardsIndex): var FixedCell =
+  grid.cells[i]
+proc `[]`*(grid: FixedGrid; i: int): FixedCell = grid.cells[i]
+proc `[]`*(grid: FixedGrid; i: BackwardsIndex): FixedCell = grid.cells[i]
+
 proc len*(grid: FixedGrid): int = grid.cells.len
 proc high*(grid: FixedGrid): int = grid.cells.high
+
+iterator items*(grid: FixedGrid): FixedCell {.inline.} =
+  for cell in grid.cells:
+    yield cell
 
 const FormatCodes*: array[FormatFlags, tuple[s, e: uint8]] = [
   ffBold: (1u8, 22u8),
@@ -55,14 +60,14 @@ const FormatCodes*: array[FormatFlags, tuple[s, e: uint8]] = [
   ffBlink: (5u8, 25u8),
 ]
 
-func newFixedGrid*(w: int, h: int = 1): FixedGrid =
+func newFixedGrid*(w: int; h: int = 1): FixedGrid =
   return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
 
 func width*(cell: FixedCell): int =
   return cell.str.width()
 
 # Get the first format cell after pos, if any.
-func findFormatN*(line: SimpleFlexibleLine, pos: int): int =
+func findFormatN*(line: SimpleFlexibleLine; pos: int): int =
   var i = 0
   while i < line.formats.len:
     if line.formats[i].pos > pos:
@@ -70,14 +75,14 @@ func findFormatN*(line: SimpleFlexibleLine, pos: int): int =
     inc i
   return i
 
-func findFormat*(line: SimpleFlexibleLine, pos: int): SimpleFormatCell =
+func findFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos) - 1
   if i != -1:
     result = line.formats[i]
   else:
     result.pos = -1
 
-func findNextFormat*(line: SimpleFlexibleLine, pos: int): SimpleFormatCell =
+func findNextFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos)
   if i < line.formats.len:
     result = line.formats[i]

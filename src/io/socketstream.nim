@@ -9,7 +9,7 @@ import io/serversocket
 type SocketStream* = ref object of PosixStream
   source*: Socket
 
-method recvData*(s: SocketStream, buffer: pointer, len: int): int =
+method recvData*(s: SocketStream; buffer: pointer; len: int): int =
   let n = s.source.recv(buffer, len)
   if n < 0:
     raisePosixIOError()
@@ -19,7 +19,7 @@ method recvData*(s: SocketStream, buffer: pointer, len: int): int =
     s.isend = true
   return n
 
-method sendData*(s: SocketStream, buffer: pointer, len: int): int =
+method sendData*(s: SocketStream; buffer: pointer; len: int): int =
   let n = s.source.send(buffer, len)
   if n < 0:
     raisePosixIOError()
@@ -28,7 +28,7 @@ method sendData*(s: SocketStream, buffer: pointer, len: int): int =
 {.compile: "sendfd.c".}
 proc sendfd(sock, fd: cint): int {.importc.}
 
-proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
+proc sendFileHandle*(s: SocketStream; fd: FileHandle) =
   assert not s.source.hasDataBuffered
   let n = sendfd(s.fd, cint(fd))
   if n < 0:
@@ -36,7 +36,7 @@ proc sendFileHandle*(s: SocketStream, fd: FileHandle) =
   assert n == 1 # we send a single nul byte as buf
 
 {.compile: "recvfd.c".}
-proc recvfd(sock: cint, fdout: ptr cint): int {.importc.}
+proc recvfd(sock: cint; fdout: ptr cint): int {.importc.}
 
 proc recvFileHandle*(s: SocketStream): FileHandle =
   assert not s.source.hasDataBuffered
@@ -46,7 +46,7 @@ proc recvFileHandle*(s: SocketStream): FileHandle =
     raisePosixIOError()
   return FileHandle(fd)
 
-method setBlocking*(s: SocketStream, blocking: bool) =
+method setBlocking*(s: SocketStream; blocking: bool) =
   s.blocking = blocking
   s.source.getFd().setBlocking(blocking)
 
@@ -96,7 +96,7 @@ proc connectSocketStream*(socketDir: string; baseFd, pid: int;
   except OSError:
     return nil
 
-proc acceptSocketStream*(ssock: ServerSocket, blocking = true): SocketStream =
+proc acceptSocketStream*(ssock: ServerSocket; blocking = true): SocketStream =
   var sock: Socket
   ssock.sock.accept(sock, inheritable = true)
   if not blocking:

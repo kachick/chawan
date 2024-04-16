@@ -8,10 +8,10 @@ type
     registered: bool
     writeBuffer: string
 
-method recvData*(s: BufStream, buffer: pointer, len: int): int =
+method recvData*(s: BufStream; buffer: pointer; len: int): int =
   s.source.recvData(buffer, len)
 
-method sendData*(s: BufStream, buffer: pointer, len: int): int =
+method sendData*(s: BufStream; buffer: pointer; len: int): int =
   s.source.setBlocking(false)
   block nobuf:
     var n: int
@@ -45,9 +45,5 @@ proc flushWrite*(s: BufStream): bool =
   s.writeBuffer = s.writeBuffer.substr(n)
   return false
 
-proc newBufStream*(ps: PosixStream, registerFun: proc(fd: int)): BufStream =
-  return BufStream(
-    source: ps,
-    blocking: ps.blocking,
-    registerFun: registerFun
-  )
+proc newBufStream*(ps: PosixStream; registerFun: proc(fd: int)): BufStream =
+  return BufStream(source: ps, blocking: ps.blocking, registerFun: registerFun)

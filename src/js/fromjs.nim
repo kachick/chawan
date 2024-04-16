@@ -11,9 +11,9 @@ import js/opaque
 import types/opt
 import utils/twtstr
 
-proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T]
+proc fromJS*[T](ctx: JSContext; val: JSValue): JSResult[T]
 
-func isInstanceOfNonGlobal(ctx: JSContext, val: JSValue, class: string): bool =
+func isInstanceOfNonGlobal(ctx: JSContext; val: JSValue; class: string): bool =
   let ctxOpaque = ctx.getOpaque()
   var classid = JS_GetClassID(val)
   let tclassid = ctxOpaque.creg[class]
@@ -30,7 +30,7 @@ func isInstanceOfNonGlobal(ctx: JSContext, val: JSValue, class: string): bool =
       break
   return found
 
-func isInstanceOfGlobal(ctx: JSContext, val: JSValue, class: string): bool =
+func isInstanceOfGlobal(ctx: JSContext; val: JSValue; class: string): bool =
   let ctxOpaque = ctx.getOpaque()
   #TODO gparent only works for a single level. (But this is not really a
   # problem right now, because our global objects have at most one inheritance
@@ -48,11 +48,11 @@ func isInstanceOfGlobal(ctx: JSContext, val: JSValue, class: string): bool =
         return true
   return false
 
-func isInstanceOf*(ctx: JSContext, val: JSValue, class: string): bool =
+func isInstanceOf*(ctx: JSContext; val: JSValue; class: string): bool =
   return ctx.isInstanceOfGlobal(val, class) or
     ctx.isInstanceOfNonGlobal(val, class)
 
-func toString(ctx: JSContext, val: JSValue): Opt[string] =
+func toString(ctx: JSContext; val: JSValue): Opt[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
   if outp != nil:
@@ -63,7 +63,7 @@ func toString(ctx: JSContext, val: JSValue): Opt[string] =
     result = ok(ret)
     JS_FreeCString(ctx, outp)
 
-func fromJSString(ctx: JSContext, val: JSValue): JSResult[string] =
+func fromJSString(ctx: JSContext; val: JSValue): JSResult[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
   if outp == nil:
@@ -75,7 +75,7 @@ func fromJSString(ctx: JSContext, val: JSValue): JSResult[string] =
   JS_FreeCString(ctx, outp)
   return ok(ret)
 
-func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
+func fromJSInt[T: SomeInteger](ctx: JSContext; val: JSValue):
     JSResult[T] =
   when T is int:
     # Always int32, so we don't risk 32-bit only breakage.
@@ -110,7 +110,7 @@ func fromJSInt[T: SomeInteger](ctx: JSContext, val: JSValue):
       return err()
     return ok(cast[uint64](ret))
 
-proc fromJSFloat64(ctx: JSContext, val: JSValue): JSResult[float64] =
+proc fromJSFloat64(ctx: JSContext; val: JSValue): JSResult[float64] =
   var f64: float64
   if JS_ToFloat64(ctx, addr f64, val) < 0:
     return err()
@@ -150,14 +150,16 @@ macro fromJSTupleBody(a: tuple) =
         let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
         `done` = ?fromJS[bool](ctx, doneVal)
         var i = `i`
-        # we're emulating a sequence, so we must query all remaining parameters too:
+        # we're emulating a sequence, so we must query all remaining parameters
+        # too:
         while not `done`:
           inc i
           let next = JS_Call(ctx, next_method, it, 0, nil)
           if JS_IsException(next):
             return err()
           defer: JS_FreeValue(ctx, next)
-          let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[DONE])
+          let doneVal = JS_GetProperty(ctx, next,
+            ctx.getOpaque().str_refs[DONE])
           if JS_IsException(doneVal):
             return err()
           defer: JS_FreeValue(ctx, doneVal)
@@ -166,10 +168,11 @@ macro fromJSTupleBody(a: tuple) =
             let msg = "Too many arguments in sequence (got " & $i &
               ", expected " & $`len` & ")"
             return err(newTypeError(msg))
-          JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctx.getOpaque().str_refs[VALUE]))
+          JS_FreeValue(ctx, JS_GetProperty(ctx, next,
+            ctx.getOpaque().str_refs[VALUE]))
       )
 
-proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): JSResult[T] =
+proc fromJSTuple[T: tuple](ctx: JSContext; val: JSValue): JSResult[T] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
@@ -186,7 +189,7 @@ proc fromJSTuple[T: tuple](ctx: JSContext, val: JSValue): JSResult[T] =
   fromJSTupleBody(x)
   return ok(x)
 
-proc fromJSSeq[T](ctx: JSContext, val: JSValue): JSResult[seq[T]] =
+proc fromJSSeq[T](ctx: JSContext; val: JSValue): JSResult[seq[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
@@ -220,7 +223,7 @@ proc fromJSSeq[T](ctx: JSContext, val: JSValue): JSResult[seq[T]] =
     s.add(genericRes)
   return ok(s)
 
-proc fromJSSet[T](ctx: JSContext, val: JSValue): JSResult[set[T]] =
+proc fromJSSet[T](ctx: JSContext; val: JSValue): JSResult[set[T]] =
   let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().sym_refs[ITERATOR])
   if JS_IsException(itprop):
     return err()
@@ -254,7 +257,7 @@ proc fromJSSet[T](ctx: JSContext, val: JSValue): JSResult[set[T]] =
     s.incl(genericRes)
   return ok(s)
 
-proc fromJSTable[A, B](ctx: JSContext, val: JSValue): JSResult[Table[A, B]] =
+proc fromJSTable[A, B](ctx: JSContext; val: JSValue): JSResult[Table[A, B]] =
   if not JS_IsObject(val):
     return err(newTypeError("object expected"))
   var ptab: ptr UncheckedArray[JSPropertyEnum]
@@ -287,13 +290,13 @@ template optionType[T](o: type Option[T]): auto =
 # or null. (This is rather pointless for anything else.)
 # Opt is for passing down exceptions received up in the chain.
 # So e.g. none(T) translates to JS_NULL, but err() translates to JS_EXCEPTION.
-proc fromJSOption[T](ctx: JSContext, val: JSValue): JSResult[Option[T]] =
+proc fromJSOption[T](ctx: JSContext; val: JSValue): JSResult[Option[T]] =
   if JS_IsNull(val):
     return ok(none(T))
   let res = ?fromJS[T](ctx, val)
   return ok(option(res))
 
-proc fromJSBool(ctx: JSContext, val: JSValue): JSResult[bool] =
+proc fromJSBool(ctx: JSContext; val: JSValue): JSResult[bool] =
   let ret = JS_ToBool(ctx, val)
   if ret == -1: # exception
     return err()
@@ -301,7 +304,7 @@ proc fromJSBool(ctx: JSContext, val: JSValue): JSResult[bool] =
     return ok(false)
   return ok(true)
 
-proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): JSResult[T] =
+proc fromJSEnum[T: enum](ctx: JSContext; val: JSValue): JSResult[T] =
   if JS_IsException(val):
     return err()
   let s = ?toString(ctx, val)
@@ -310,7 +313,7 @@ proc fromJSEnum[T: enum](ctx: JSContext, val: JSValue): JSResult[T] =
     return ok(r.get)
   return errTypeError("`" & s & "' is not a valid value for enumeration " & $T)
 
-proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
+proc fromJSPObj0(ctx: JSContext; val: JSValue; t: string):
     JSResult[pointer] =
   if JS_IsException(val):
     return err(nil)
@@ -326,15 +329,15 @@ proc fromJSPObj0(ctx: JSContext, val: JSValue, t: string):
   let op = JS_GetOpaque(val, classid)
   return ok(op)
 
-proc fromJSObject[T: ref object](ctx: JSContext, val: JSValue): JSResult[T] =
+proc fromJSObject[T: ref object](ctx: JSContext; val: JSValue): JSResult[T] =
   return ok(cast[T](?fromJSPObj0(ctx, val, $T)))
 
-proc fromJSVoid(ctx: JSContext, val: JSValue): JSResult[void] =
+proc fromJSVoid(ctx: JSContext; val: JSValue): JSResult[void] =
   if JS_IsException(val):
     return err()
   return ok()
 
-proc fromJSDict[T: JSDict](ctx: JSContext, val: JSValue): JSResult[T] =
+proc fromJSDict[T: JSDict](ctx: JSContext; val: JSValue): JSResult[T] =
   if not JS_IsUndefined(val) and not JS_IsNull(val) and not JS_IsObject(val):
     return err(newTypeError("Dictionary is not an object"))
   #TODO throw on missing required values
@@ -346,7 +349,7 @@ proc fromJSDict[T: JSDict](ctx: JSContext, val: JSValue): JSResult[T] =
         v = ?fromJS[typeof(v)](ctx, esm)
   return ok(d)
 
-proc fromJSArrayBuffer(ctx: JSContext, val: JSValue): JSResult[JSArrayBuffer] =
+proc fromJSArrayBuffer(ctx: JSContext; val: JSValue): JSResult[JSArrayBuffer] =
   var len: csize_t
   let p = JS_GetArrayBuffer(ctx, addr len, val)
   if p == nil:
@@ -357,7 +360,7 @@ proc fromJSArrayBuffer(ctx: JSContext, val: JSValue): JSResult[JSArrayBuffer] =
   )
   return ok(abuf)
 
-proc fromJSArrayBufferView(ctx: JSContext, val: JSValue):
+proc fromJSArrayBufferView(ctx: JSContext; val: JSValue):
     JSResult[JSArrayBufferView] =
   var offset: csize_t
   var nmemb: csize_t
@@ -373,15 +376,15 @@ proc fromJSArrayBufferView(ctx: JSContext, val: JSValue):
   )
   return ok(view)
 
-proc promiseThenCallback(ctx: JSContext, this_val: JSValue, argc: cint,
-    argv: ptr JSValue, magic: cint, func_data: ptr JSValue): JSValue {.cdecl.} =
+proc promiseThenCallback(ctx: JSContext; this_val: JSValue; argc: cint;
+    argv: ptr JSValue; magic: cint; func_data: ptr JSValue): JSValue {.cdecl.} =
   let op = JS_GetOpaque(func_data[], JS_GetClassID(func_data[]))
   let p = cast[EmptyPromise](op)
   p.resolve()
   GC_unref(p)
   return JS_UNDEFINED
 
-proc fromJSEmptyPromise(ctx: JSContext, val: JSValue): JSResult[EmptyPromise] =
+proc fromJSEmptyPromise(ctx: JSContext; val: JSValue): JSResult[EmptyPromise] =
   if not JS_IsObject(val):
     return err(newTypeError("Value is not an object"))
   #TODO I have a feeling this leaks memory in some cases :(
@@ -403,7 +406,7 @@ macro fromJS2(ctx: JSContext; val: JSValue; x: static string): untyped =
   return quote do:
     `id`(`ctx`, `val`)
 
-proc fromJS*[T](ctx: JSContext, val: JSValue): JSResult[T] =
+proc fromJS*[T](ctx: JSContext; val: JSValue): JSResult[T] =
   when T is string:
     return fromJSString(ctx, val)
   elif T is Option:
@@ -447,7 +450,7 @@ const JS_ATOM_TAG_INT = cuint(1u32 shl 31)
 func JS_IsNumber*(v: JSAtom): JS_BOOL =
   return (cast[cuint](v) and JS_ATOM_TAG_INT) != 0
 
-func fromJS*[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
+func fromJS*[T: string|uint32](ctx: JSContext; atom: JSAtom): Opt[T] =
   when T is SomeNumber:
     if JS_IsNumber(atom):
       return ok(T(cast[uint32](atom) and (not JS_ATOM_TAG_INT)))
@@ -455,10 +458,10 @@ func fromJS*[T: string|uint32](ctx: JSContext, atom: JSAtom): Opt[T] =
     let val = JS_AtomToValue(ctx, atom)
     return toString(ctx, val)
 
-proc fromJSPObj[T](ctx: JSContext, val: JSValue): JSResult[ptr T] =
+proc fromJSPObj[T](ctx: JSContext; val: JSValue): JSResult[ptr T] =
   return cast[JSResult[ptr T]](fromJSPObj0(ctx, val, $T))
 
-template fromJSP*[T](ctx: JSContext, val: JSValue): untyped =
+template fromJSP*[T](ctx: JSContext; val: JSValue): untyped =
   when T is FromJSAllowedT:
     fromJSPObj[T](ctx, val)
   else:

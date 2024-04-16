@@ -3,14 +3,12 @@ import std/nativesockets
 import std/net
 import std/options
 import std/os
+import std/posix
 import std/selectors
 import std/streams
 import std/strutils
 import std/tables
 import std/unicode
-
-when defined(posix):
-  import std/posix
 
 import bindings/constcharp
 import bindings/quickjs
@@ -67,7 +65,7 @@ type
     jsrt: JSRuntime
     pager {.jsget.}: Pager
     timeouts: TimeoutState
-    pressed: tuple[col: int, row: int]
+    pressed: tuple[col: int; row: int]
 
   ConsoleWrapper = object
     console: Console
@@ -97,12 +95,12 @@ proc finalize(client: Client) {.jsfin.} =
   if client.jsrt != nil:
     free(client.jsrt)
 
-proc fetch[T: Request|string](client: Client, req: T,
+proc fetch[T: Request|string](client: Client; req: T;
     init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
   let req = ?newRequest(client.jsctx, req, init)
   return ok(client.loader.fetch(req))
 
-proc interruptHandler(rt: JSRuntime, opaque: pointer): cint {.cdecl.} =
+proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
   if client.console == nil or client.pager.term.istream == nil:
     return 0
@@ -120,7 +118,7 @@ proc interruptHandler(rt: JSRuntime, opaque: pointer): cint {.cdecl.} =
 proc runJSJobs(client: Client) =
   client.jsrt.runJSJobs(client.console.err)
 
-proc evalJS(client: Client, src, filename: string, module = false): JSValue =
+proc evalJS(client: Client; src, filename: string; module = false): JSValue =
   client.pager.term.unblockStdin()
   let flags = if module:
     JS_EVAL_TYPE_MODULE
@@ -130,11 +128,11 @@ proc evalJS(client: Client, src, filename: string, module = false): JSValue =
   client.runJSJobs()
   client.pager.term.restoreStdin()
 
-proc evalJSFree(client: Client, src, filename: string) =
+proc evalJSFree(client: Client; src, filename: string) =
   JS_FreeValue(client.jsctx, client.evalJS(src, filename))
 
-proc command0(client: Client, src: string, filename = "<command>",
-    silence = false, module = false) =
+proc command0(client: Client; src: string; filename = "<command>";
+    silence = false; module = false) =
   let ret = client.evalJS(src, filename, module = module)
   if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
@@ -145,7 +143,7 @@ proc command0(client: Client, src: string, filename = "<command>",
         client.console.log(str.get)
   JS_FreeValue(client.jsctx, ret)
 
-proc command(client: Client, src: string) =
+proc command(client: Client; src: string) =
   client.command0(src)
   let container = client.consoleWrapper.container
   if container != nil:
@@ -156,7 +154,7 @@ proc suspend(client: Client) {.jsfunc.} =
   discard kill(0, cint(SIGTSTP))
   client.pager.term.restart()
 
-proc quit(client: Client, code = 0) {.jsfunc.} =
+proc quit(client: Client; code = 0) {.jsfunc.} =
   if client.alive:
     client.alive = false
     client.pager.quit()
@@ -173,7 +171,7 @@ proc quit(client: Client, code = 0) {.jsfunc.} =
 proc feedNext(client: Client) {.jsfunc.} =
   client.feednext = true
 
-proc alert(client: Client, msg: string) {.jsfunc.} =
+proc alert(client: Client; msg: string) {.jsfunc.} =
   client.pager.alert(msg)
 
 proc handlePagerEvents(client: Client) =
@@ -218,7 +216,7 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
 # it proves to be too low.
 const MaxPrecNum = 100000000
 
-proc handleCommandInput(client: Client, c: char): EmptyPromise =
+proc handleCommandInput(client: Client; c: char): EmptyPromise =
   if client.config.input.vi_numeric_prefix and not client.pager.notnum:
     if client.pager.precnum != 0 and c == '0' or c in '1' .. '9':
       if client.pager.precnum < MaxPrecNum: # better ignore than eval...
@@ -354,18 +352,18 @@ proc input(client: Client): EmptyPromise =
     p.resolve()
   return p
 
-proc setTimeout[T: JSValue|string](client: Client, handler: T,
+proc setTimeout[T: JSValue|string](client: Client; handler: T;
     timeout = 0i32): int32 {.jsfunc.} =
   return client.timeouts.setTimeout(handler, timeout)
 
-proc setInterval[T: JSValue|string](client: Client, handler: T,
+proc setInterval[T: JSValue|string](client: Client; handler: T;
     interval = 0i32): int32 {.jsfunc.} =
   return client.timeouts.setInterval(handler, interval)
 
-proc clearTimeout(client: Client, id: int32) {.jsfunc.} =
+proc clearTimeout(client: Client; id: int32) {.jsfunc.} =
   client.timeouts.clearTimeout(id)
 
-proc clearInterval(client: Client, id: int32) {.jsfunc.} =
+proc clearInterval(client: Client; id: int32) {.jsfunc.} =
   client.timeouts.clearInterval(id)
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
@@ -494,7 +492,7 @@ proc handleRead(client: Client; fd: int) =
     let container = client.fdmap[fd]
     client.pager.handleEvent(container)
 
-proc handleWrite(client: Client, fd: int) =
+proc handleWrite(client: Client; fd: int) =
   let container = client.fdmap[fd]
   if container.iface.stream.flushWrite():
     client.selector.unregister(fd)
@@ -508,7 +506,7 @@ proc flushConsole*(client: Client) {.jsfunc.} =
     )
   client.handleRead(client.forkserver.estream.fd)
 
-proc handleError(client: Client, fd: int) =
+proc handleError(client: Client; fd: int) =
   if client.pager.term.istream != nil and fd == client.pager.term.istream.fd:
     #TODO do something here...
     stderr.write("Error in tty\n")
@@ -612,7 +610,7 @@ proc headlessLoop(client: Client) =
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
 
-proc clientLoadJSModule(ctx: JSContext, module_name: cstringConst,
+proc clientLoadJSModule(ctx: JSContext; module_name: cstringConst;
     opaque: pointer): JSModuleDef {.cdecl.} =
   let global = JS_GetGlobalObject(ctx)
   JS_FreeValue(ctx, global)
@@ -634,21 +632,21 @@ proc clientLoadJSModule(ctx: JSContext, module_name: cstringConst,
     JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
     return nil
 
-proc readBlob(client: Client, path: string): Option[WebFile] {.jsfunc.} =
+proc readBlob(client: Client; path: string): Option[WebFile] {.jsfunc.} =
   try:
     return some(newWebFile(path))
   except IOError:
     discard
 
 #TODO this is dumb
-proc readFile(client: Client, path: string): string {.jsfunc.} =
+proc readFile(client: Client; path: string): string {.jsfunc.} =
   try:
     return readFile(path)
   except IOError:
     discard
 
 #TODO ditto
-proc writeFile(client: Client, path: string, content: string) {.jsfunc.} =
+proc writeFile(client: Client; path, content: string) {.jsfunc.} =
   writeFile(path, content)
 
 const ConsoleTitle = "Browser Console"
@@ -770,20 +768,20 @@ proc nimCollect(client: Client) {.jsfunc.} =
 proc jsCollect(client: Client) {.jsfunc.} =
   JS_RunGC(client.jsrt)
 
-proc sleep(client: Client, millis: int) {.jsfunc.} =
+proc sleep(client: Client; millis: int) {.jsfunc.} =
   sleep millis
 
-proc atob(client: Client, data: string): DOMResult[NarrowString] {.jsfunc.} =
+proc atob(client: Client; data: string): DOMResult[NarrowString] {.jsfunc.} =
   return atob(data)
 
-proc btoa(ctx: JSContext, client: Client, data: JSValue): DOMResult[string]
+proc btoa(ctx: JSContext; client: Client; data: JSValue): DOMResult[string]
     {.jsfunc.} =
   return btoa(ctx, data)
 
 func line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit.get(nil)
 
-proc addJSModules(client: Client, ctx: JSContext) =
+proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
   ctx.addCookieModule()

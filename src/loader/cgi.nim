@@ -96,7 +96,7 @@ proc handleFirstLine(handle: LoaderHandle; line: string; headers: Headers;
   headers.add(k, v)
   return crDone
 
-proc handleControlLine(handle: LoaderHandle, line: string, headers: Headers,
+proc handleControlLine(handle: LoaderHandle; line: string; headers: Headers;
     status: var uint16): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
@@ -114,7 +114,7 @@ proc handleControlLine(handle: LoaderHandle, line: string, headers: Headers,
   return crDone
 
 # returns false if transfer was interrupted
-proc handleLine(handle: LoaderHandle, line: string, headers: Headers) =
+proc handleLine(handle: LoaderHandle; line: string; headers: Headers) =
   let k = line.until(':')
   if k.len == line.len:
     # invalid

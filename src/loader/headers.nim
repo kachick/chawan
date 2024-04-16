@@ -32,21 +32,21 @@ proc fromJSHeadersInit(ctx: JSContext; val: JSValue): JSResult[HeadersInit] =
   let x = ?fromJS[Table[string, string]](ctx, val)
   return ok(HeadersInit(t: HEADERS_INIT_TABLE, tab: x))
 
-proc fill*(headers: Headers, s: seq[(string, string)]) =
+proc fill*(headers: Headers; s: seq[(string, string)]) =
   for (k, v) in s:
     if k in headers.table:
       headers.table[k].add(v)
     else:
       headers.table[k] = @[v]
 
-proc fill*(headers: Headers, tab: Table[string, string]) =
+proc fill*(headers: Headers; tab: Table[string, string]) =
   for k, v in tab:
     if k in headers.table:
       headers.table[k].add(v)
     else:
       headers.table[k] = @[v]
 
-proc fill*(headers: Headers, init: HeadersInit) =
+proc fill*(headers: Headers; init: HeadersInit) =
   if init.t == HEADERS_INIT_SEQUENCE:
     headers.fill(init.s)
   else: # table
@@ -86,26 +86,26 @@ func clone*(headers: Headers): Headers =
     table: headers.table
   )
 
-proc add*(headers: Headers, k, v: string) =
+proc add*(headers: Headers; k, v: string) =
   let k = k.toHeaderCase()
   headers.table.withValue(k, p):
     p[].add(v)
   do:
     headers.table[k] = @[v]
 
-proc `[]=`*(headers: Headers, k: static string, v: string) =
+proc `[]=`*(headers: Headers; k: static string, v: string) =
   const k = k.toHeaderCase()
   headers.table[k] = @[v]
 
-func `[]`*(headers: Headers, k: static string): string =
+func `[]`*(headers: Headers; k: static string): string =
   const k = k.toHeaderCase()
   return headers.table[k][0]
 
-func contains*(headers: Headers, k: static string): bool =
+func contains*(headers: Headers; k: static string): bool =
   const k = k.toHeaderCase()
   return k in headers.table
 
-func getOrDefault*(headers: Headers, k: static string, default = ""): string =
+func getOrDefault*(headers: Headers; k: static string; default = ""): string =
   const k = k.toHeaderCase()
   headers.table.withValue(k, p):
     return p[][0]

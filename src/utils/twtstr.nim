@@ -86,11 +86,11 @@ func decValue*(c: char): int =
 
 const HexCharsUpper = "0123456789ABCDEF"
 const HexCharsLower = "0123456789abcdef"
-func pushHex*(buf: var string, u: uint8) =
+func pushHex*(buf: var string; u: uint8) =
   buf &= HexCharsUpper[u shr 4]
   buf &= HexCharsUpper[u and 0xF]
 
-func pushHex*(buf: var string, c: char) =
+func pushHex*(buf: var string; c: char) =
   buf.pushHex(cast[uint8](c))
 
 func toHexLower*(u: uint16): string =
@@ -143,36 +143,38 @@ func stripAndCollapse*(s: string): string =
       result &= ' '
     inc i
 
-func skipBlanks*(buf: string, at: int): int =
+func skipBlanks*(buf: string; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
 
-func until*(s: string, c: set[char], starti = 0): string =
+func until*(s: string; c: set[char]; starti = 0): string =
+  result = ""
   for i in starti ..< s.len:
     if s[i] in c:
       break
     result.add(s[i])
 
-func untilLower*(s: string, c: set[char], starti = 0): string =
+func untilLower*(s: string; c: set[char]; starti = 0): string =
+  result = ""
   for i in starti ..< s.len:
     if s[i] in c:
       break
     result.add(s[i].toLowerAscii())
 
-func until*(s: string, c: char, starti = 0): string =
+func until*(s: string; c: char; starti = 0): string =
   s.until({c}, starti)
 
-func after*(s: string, c: set[char]): string =
+func after*(s: string; c: set[char]): string =
   var i = 0
   while i < s.len:
     if s[i] in c:
       return s.substr(i + 1)
     inc i
 
-func after*(s: string, c: char): string = s.after({c})
+func after*(s: string; c: char): string = s.after({c})
 
-func afterLast*(s: string, c: set[char], n = 1): string =
+func afterLast*(s: string; c: set[char]; n = 1): string =
   var j = 0
   for i in countdown(s.high, 0):
     if s[i] in c:
@@ -181,9 +183,9 @@ func afterLast*(s: string, c: set[char], n = 1): string =
         return s.substr(i + 1)
   return s
 
-func afterLast*(s: string, c: char, n = 1): string = s.afterLast({c}, n)
+func afterLast*(s: string; c: char; n = 1): string = s.afterLast({c}, n)
 
-func beforeLast*(s: string, c: set[char], n = 1): string =
+func beforeLast*(s: string; c: set[char]; n = 1): string =
   var j = 0
   for i in countdown(s.high, 0):
     if s[i] in c:
@@ -192,7 +194,7 @@ func beforeLast*(s: string, c: set[char], n = 1): string =
         return s.substr(0, i)
   return s
 
-func beforeLast*(s: string, c: char, n = 1): string = s.beforeLast({c}, n)
+func beforeLast*(s: string; c: char; n = 1): string = s.beforeLast({c}, n)
 
 proc c_sprintf(buf, fm: cstring): cint
   {.header: "<stdio.h>", importc: "sprintf", varargs}
@@ -213,7 +215,7 @@ func convertSize*(size: int): string =
   discard c_sprintf(cstring(result), cstring("%.3g%s"), f, SizeUnit[sizepos])
   result.setLen(cstring(result).len)
 
-func numberAdditive*(i: int, range: HSlice[int, int],
+func numberAdditive*(i: int; range: HSlice[int, int];
     symbols: openArray[(int, string)]): string =
   if i notin range:
     return $i
@@ -432,7 +434,7 @@ else:
   const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
     {'.', '/'}
 
-proc percentEncode*(append: var string, c: char, set: set[char],
+proc percentEncode*(append: var string; c: char; set: set[char];
     spaceAsPlus = false) {.inline.} =
   if spaceAsPlus and c == ' ':
     append &= '+'
@@ -442,19 +444,19 @@ proc percentEncode*(append: var string, c: char, set: set[char],
     append &= '%'
     append.pushHex(c)
 
-proc percentEncode*(append: var string, s: string, set: set[char],
+proc percentEncode*(append: var string; s: string; set: set[char];
     spaceAsPlus = false) {.inline.} =
   for c in s:
     append.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(c: char, set: set[char], spaceAsPlus = false): string
+func percentEncode*(c: char; set: set[char]; spaceAsPlus = false): string
     {.inline.} =
   result.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(s: string, set: set[char], spaceAsPlus = false): string =
+func percentEncode*(s: string; set: set[char]; spaceAsPlus = false): string =
   result.percentEncode(s, set, spaceAsPlus)
 
-func percentDecode*(input: string, si = 0): string =
+func percentDecode*(input: string; si = 0): string =
   var i = si
   while i < input.len:
     let c = input[i]
@@ -489,7 +491,7 @@ func dqEscape*(s: string): string =
     result &= c
 
 #basically std join but with char
-func join*(ss: openArray[string], sep: char): string =
+func join*(ss: openArray[string]; sep: char): string =
   if ss.len == 0:
     return ""
   var n = ss.high - 1
@@ -501,7 +503,7 @@ func join*(ss: openArray[string], sep: char): string =
     result &= sep
     result &= ss[i]
 
-proc passRealloc*(opaque, p: pointer, size: csize_t): pointer {.cdecl.} =
+proc passRealloc*(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
 # https://www.w3.org/TR/xml/#NT-Name
@@ -646,6 +648,22 @@ func strictParseEnum*[T: enum](s: string): Opt[T] =
   when {T.low..T.high}.len <= 4:
     for e in T.low .. T.high:
       if $e == s:
+        return ok(e)
+  else:
+    const tab = (func(): Table[string, T] =
+      result = initTable[string, T]()
+      for e in T.low .. T.high:
+        result[$e] = e
+    )()
+    if s in tab:
+      return ok(tab[s])
+  return err()
+
+func parseEnumNoCase*[T: enum](s: string): Opt[T] =
+  # cmp when len is small enough, otherwise hashmap
+  when {T.low..T.high}.len <= 4:
+    for e in T.low .. T.high:
+      if $e.equalsIgnoreCase(s):
         return ok(e)
   else:
     const tab = (func(): Table[string, T] =

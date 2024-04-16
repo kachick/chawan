@@ -48,12 +48,12 @@ proc forkLoader*(forkserver: ForkServer; config: LoaderConfig): int =
   r.sread(process)
   return process
 
-proc loadForkServerConfig*(forkserver: ForkServer, config: Config) =
+proc loadForkServerConfig*(forkserver: ForkServer; config: Config) =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcLoadConfig)
     w.swrite(config.getForkServerConfig())
 
-proc removeChild*(forkserver: ForkServer, pid: int) =
+proc removeChild*(forkserver: ForkServer; pid: int) =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcRemoveChild)
     w.swrite(pid)
@@ -81,7 +81,7 @@ proc trapSIGINT() =
   # all child processes as well).
   setControlCHook(proc() {.noconv.} = discard)
 
-proc forkLoader(ctx: var ForkServerContext, config: LoaderConfig): int =
+proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")

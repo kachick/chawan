@@ -35,7 +35,7 @@ func width*(r: Rune): int =
 
 # Width, but also works with tabs.
 # Needs the column width of the text so far.
-func twidth*(r: Rune, w: int): int =
+func twidth*(r: Rune; w: int): int =
   if r != Rune('\t'):
     return r.width()
   return ((w div 8) + 1) * 8 - w
@@ -44,7 +44,7 @@ func width*(s: string): int =
   for r in s.runes():
     result += r.twidth(result)
 
-func width*(s: string, start, len: int): int =
+func width*(s: string; start, len: int): int =
   var i = start
   var m = len
   if m > s.len: m = s.len
@@ -57,13 +57,13 @@ func notwidth*(s: string): int =
   for r in s.runes:
     result += r.width()
 
-func twidth*(s: string, w: int): int =
+func twidth*(s: string; w: int): int =
   var i = w
   for r in s.runes():
     i += r.twidth(w)
   return i - w
 
-func padToWidth*(str: string, size: int, schar = '$'): string =
+func padToWidth*(str: string; size: int; schar = '$'): string =
   if str.width() < size:
     return str & ' '.repeat(size - str.width())
   else:
@@ -83,24 +83,24 @@ func isDigitAscii(r: Rune): bool =
   return uint32(r) < 128 and char(r) in AsciiDigit
 
 type BreakCategory* = enum
-  BREAK_ALPHA, BREAK_SPACE, BREAK_SYMBOL
+  bcAlpha, bcSpace, bcSymbol
 
 func breaksWord*(r: Rune): bool =
   return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
 
 func breaksViWordCat*(r: Rune): BreakCategory =
   if r.isWhiteSpace():
-    return BREAK_SPACE
+    return bcSpace
   elif r.breaksWord():
-    return BREAK_SYMBOL
-  return BREAK_ALPHA
+    return bcSymbol
+  return bcAlpha
 
 func breaksWordCat*(r: Rune): BreakCategory =
   if not r.breaksWord():
-    return BREAK_ALPHA
-  return BREAK_SPACE
+    return bcAlpha
+  return bcSpace
 
 func breaksBigWordCat*(r: Rune): BreakCategory =
   if not r.isWhiteSpace():
-    return BREAK_ALPHA
-  return BREAK_SPACE
+    return bcAlpha
+  return bcSpace

@@ -35,11 +35,11 @@ const
   Z_UNKNOWN* = cint(2)
 
 type
-  alloc_func* {.importc, header: "zlib.h".} = proc (opaque: pointer,
-    items: cuint, size: cuint): pointer {.cdecl.}
+  alloc_func* {.importc, header: "zlib.h".} = proc (opaque: pointer;
+    items, size: cuint): pointer {.cdecl.}
 
-  free_func* {.importc, header: "zlib.h".} = proc (opaque: pointer,
-    address: pointer) {.cdecl.}
+  free_func* {.importc, header: "zlib.h".} = proc (opaque, address: pointer)
+    {.cdecl.}
 
   internal_state* {.importc, header: "zlib.h".} = object
 
@@ -70,10 +70,10 @@ type
 proc inflateInit*(strm: z_streamp): cint
 proc inflate*(strm: z_streamp, flush: cint): cint
 proc inflateEnd*(strm: z_streamp): cint
-proc compress*(dest: ptr uint8, destLen: ptr culong, source: ptr uint8,
+proc compress*(dest: ptr uint8; destLen: ptr culong; source: ptr uint8;
   sourceLen: culong): cint
 proc compressBound*(sourceLen: culong): culong
-proc uncompress*(dest: ptr uint8, destLen: ptr culong, source: ptr uint8,
+proc uncompress*(dest: ptr uint8; destLen: ptr culong; source: ptr uint8;
   sourceLen: culong): cint
-proc crc32*(crc: culong, buf: ptr uint8, len: cuint): culong
+proc crc32*(crc: culong; buf: ptr uint8; len: cuint): culong
 {.pop.}

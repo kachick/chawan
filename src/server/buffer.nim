@@ -142,14 +142,14 @@ type
     charsets*: seq[Charset]
     charsetOverride*: Charset
 
-proc getFromOpaque[T](opaque: pointer, res: var T) =
+proc getFromOpaque[T](opaque: pointer; res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:
     var r = opaque.stream.initReader(opaque.len)
     r.sread(res)
     opaque.len = 0
 
-proc newBufferInterface*(stream: SocketStream, registerFun: proc(fd: int)):
+proc newBufferInterface*(stream: SocketStream; registerFun: proc(fd: int)):
     BufferInterface =
   let opaque = InterfaceOpaque(stream: stream)
   result = BufferInterface(
@@ -161,7 +161,7 @@ proc newBufferInterface*(stream: SocketStream, registerFun: proc(fd: int)):
 
 # After cloning a buffer, we need a new interface to the new buffer process.
 # Here we create a new interface for that clone.
-proc cloneInterface*(stream: SocketStream, registerFun: proc(fd: int)):
+proc cloneInterface*(stream: SocketStream; registerFun: proc(fd: int)):
     BufferInterface =
   let iface = newBufferInterface(stream, registerFun)
   #TODO buffered data should probably be copied here
@@ -174,7 +174,7 @@ proc cloneInterface*(stream: SocketStream, registerFun: proc(fd: int)):
   r.sread(pid)
   return iface
 
-proc resolve*(iface: BufferInterface, packetid, len: int) =
+proc resolve*(iface: BufferInterface; packetid, len: int) =
   iface.opaque.len = len
   iface.map.resolve(packetid)
   # Protection against accidentally not exhausting data available to read,
@@ -191,7 +191,8 @@ func getFunId(fun: NimNode): string =
   let name = fun[0] # sym
   return "bc" & name.strVal[0].toUpperAscii() & name.strVal.substr(1)
 
-proc buildInterfaceProc(fun: NimNode, funid: string): tuple[fun, name: NimNode] =
+proc buildInterfaceProc(fun: NimNode; funid: string):
+    tuple[fun, name: NimNode] =
   let name = fun[0] # sym
   let params = fun[3] # formalparams
   let retval = params[0] # sym
@@ -296,7 +297,7 @@ macro task(fun: typed) =
 func getTitleAttr(node: StyledNode): string =
   if node == nil:
     return ""
-  if node.t == STYLED_ELEMENT and node.node != nil:
+  if node.t == stElement and node.node != nil:
     let element = Element(node.node)
     if element.attrb(satTitle):
       return element.attr(satTitle)
@@ -313,9 +314,9 @@ const ClickableElements = {
 }
 
 func isClickable(styledNode: StyledNode): bool =
-  if styledNode.t != STYLED_ELEMENT or styledNode.node == nil:
+  if styledNode.t != stElement or styledNode.node == nil:
     return false
-  if styledNode.computed{"visibility"} != VISIBILITY_VISIBLE:
+  if styledNode.computed{"visibility"} != VisibilityVisible:
     return false
   let element = Element(styledNode.node)
   if element of HTMLAnchorElement:
@@ -329,7 +330,7 @@ func getClickable(styledNode: StyledNode): Element =
       return Element(styledNode.node)
     styledNode = styledNode.parent
 
-proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request]
+proc submitForm(form: HTMLFormElement; submitter: Element): Option[Request]
 
 func canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
@@ -363,7 +364,7 @@ proc getClickHover(styledNode: StyledNode): string =
 proc getImageHover(styledNode: StyledNode): string =
   var styledNode = styledNode
   while styledNode != nil:
-    if styledNode.t == STYLED_ELEMENT:
+    if styledNode.t == stElement:
       if styledNode.node of HTMLImageElement:
         let image = HTMLImageElement(styledNode.node)
         let src = image.attr(satSrc)
@@ -388,26 +389,26 @@ proc getImageHover(styledNode: StyledNode): string =
     styledNode = styledNode.parent
   ""
 
-func getCursorStyledNode(buffer: Buffer, cursorx, cursory: int): StyledNode =
+func getCursorStyledNode(buffer: Buffer; cursorx, cursory: int): StyledNode =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     return buffer.lines[cursory].formats[i].node
   nil
 
-func getCursorElement(buffer: Buffer, cursorx, cursory: int): Element =
+func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
   if styledNode == nil or styledNode.node == nil:
     return nil
-  if styledNode.t == STYLED_ELEMENT:
+  if styledNode.t == stElement:
     return Element(styledNode.node)
   return styledNode.node.parentElement
 
-func getCursorClickable(buffer: Buffer, cursorx, cursory: int): Element =
+func getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
   if styledNode != nil:
     return styledNode.getClickable()
 
-func cursorBytes(buffer: Buffer, y: int, cc: int): int =
+func cursorBytes(buffer: Buffer; y, cc: int): int =
   let line = buffer.lines[y].str
   var w = 0
   var i = 0
@@ -417,11 +418,11 @@ func cursorBytes(buffer: Buffer, y: int, cc: int): int =
     w += r.twidth(w)
   return i
 
-proc navigate(buffer: Buffer, url: URL) =
+proc navigate(buffer: Buffer; url: URL) =
   #TODO how?
   stderr.write("navigate to " & $url & "\n")
 
-proc findPrevLink*(buffer: Buffer, cursorx, cursory, n: int):
+proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
     tuple[x, y: int] {.proxy.} =
   if cursory >= buffer.lines.len: return (-1, -1)
   var found = 0
@@ -468,7 +469,7 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory, n: int):
         # an efficient and correct way to do this.
         break
 
-  template found_pos(x, y: int, fl: Element) =
+  template found_pos(x, y: int; fl: Element) =
     inc found
     link = fl
     if found == n:
@@ -495,7 +496,7 @@ proc findPrevLink*(buffer: Buffer, cursorx, cursory, n: int):
       dec i
   return (-1, -1)
 
-proc findNextLink*(buffer: Buffer, cursorx, cursory, n: int):
+proc findNextLink*(buffer: Buffer; cursorx, cursory, n: int):
     tuple[x, y: int] {.proxy.} =
   if cursory >= buffer.lines.len: return (-1, -1)
   let line = buffer.lines[cursory]
@@ -506,7 +507,7 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory, n: int):
   inc i
 
   var found = 0
-  template found_pos(x, y: int, fl: Element) =
+  template found_pos(x, y: int; fl: Element) =
     inc found
     link = fl
     if found == n:
@@ -519,7 +520,7 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory, n: int):
       found_pos format.pos, cursory, fl
     inc i
 
-  for y in (cursory + 1)..(buffer.lines.len - 1):
+  for y in cursory + 1 .. buffer.lines.len - 1:
     let line = buffer.lines[y]
     for i in 0 ..< line.formats.len:
       let format = line.formats[i]
@@ -528,7 +529,7 @@ proc findNextLink*(buffer: Buffer, cursorx, cursory, n: int):
         found_pos format.pos, y, fl
   return (-1, -1)
 
-proc findPrevParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =
+proc findPrevParagraph*(buffer: Buffer; cursory, n: int): int {.proxy.} =
   var y = cursory
   for i in 0 ..< n:
     while y >= 0 and buffer.lines[y].str.onlyWhitespace():
@@ -537,7 +538,7 @@ proc findPrevParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =
       dec y
   return y
 
-proc findNextParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =
+proc findNextParagraph*(buffer: Buffer; cursory, n: int): int {.proxy.} =
   var y = cursory
   for i in 0 ..< n:
     while y < buffer.lines.len and buffer.lines[y].str.onlyWhitespace():
@@ -546,7 +547,7 @@ proc findNextParagraph*(buffer: Buffer, cursory, n: int): int {.proxy.} =
       inc y
   return y
 
-proc findNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
+proc findNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
   if i == 0:
     return (-1, -1)
   var k = 0
@@ -563,7 +564,7 @@ proc findNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
         link = fl
   return (-1, -1)
 
-proc findRevNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
+proc findRevNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
   if i == 0:
     return (-1, -1)
   var k = 0
@@ -580,7 +581,7 @@ proc findRevNthLink*(buffer: Buffer, i: int): tuple[x, y: int] {.proxy.} =
         link = fl
   return (-1, -1)
 
-proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,
+proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
     wrap: bool, n: int): BufferMatch {.proxy.} =
   if cursory >= buffer.lines.len: return
   var y = cursory
@@ -613,8 +614,8 @@ proc findPrevMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,
       break
     dec y
 
-proc findNextMatch*(buffer: Buffer, regex: Regex, cursorx, cursory: int,
-    wrap: bool, n: int): BufferMatch {.proxy.} =
+proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
+    wrap: bool; n: int): BufferMatch {.proxy.} =
   if cursory >= buffer.lines.len: return
   var y = cursory
   let b = buffer.cursorBytes(y, cursorx + 1)
@@ -674,7 +675,7 @@ proc do_reshape(buffer: Buffer) =
   buffer.lines.renderDocument(buffer.bgcolor, styledRoot, addr buffer.attrs)
   buffer.prevStyled = styledRoot
 
-proc processData0(buffer: Buffer, data: openArray[char]): bool =
+proc processData0(buffer: Buffer; data: openArray[char]): bool =
   if buffer.ishtml:
     if buffer.htmlParser.parseBuffer(data) == PRES_STOP:
       buffer.charsetStack = @[buffer.htmlParser.builder.charset]
@@ -715,7 +716,7 @@ proc switchCharset(buffer: Buffer) =
 
 const BufferSize = 16384
 
-proc decodeData(buffer: Buffer, iq: openArray[uint8]): bool =
+proc decodeData(buffer: Buffer; iq: openArray[uint8]): bool =
   var oq {.noinit.}: array[BufferSize, char]
   var n = 0
   while true:
@@ -738,7 +739,7 @@ proc decodeData(buffer: Buffer, iq: openArray[uint8]): bool =
       doAssert buffer.processData0("\uFFFD")
   true
 
-proc validateData(buffer: Buffer, iq: openArray[char]): bool =
+proc validateData(buffer: Buffer; iq: openArray[char]): bool =
   var pi = 0
   var n = 0
   while true:
@@ -765,7 +766,7 @@ proc validateData(buffer: Buffer, iq: openArray[char]): bool =
       pi = buffer.validator.i
   true
 
-proc bomSniff(buffer: Buffer, iq: openArray[char]): int =
+proc bomSniff(buffer: Buffer; iq: openArray[char]): int =
   if iq[0] == '\xFE' and iq[1] == '\xFF':
     buffer.charsetStack = @[CHARSET_UTF_16_BE]
     buffer.switchCharset()
@@ -780,7 +781,7 @@ proc bomSniff(buffer: Buffer, iq: openArray[char]): int =
     return 3
   return 0
 
-proc processData(buffer: Buffer, iq: openArray[char]): bool =
+proc processData(buffer: Buffer; iq: openArray[char]): bool =
   var start = 0
   if buffer.needsBOMSniff:
     if iq.len >= 3: # ehm... TODO
@@ -790,7 +791,7 @@ proc processData(buffer: Buffer, iq: openArray[char]): bool =
     return buffer.decodeData(iq.toOpenArrayByte(start, iq.high))
   return buffer.validateData(iq.toOpenArray(start, iq.high))
 
-proc windowChange*(buffer: Buffer, attrs: WindowAttributes) {.proxy.} =
+proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
   buffer.prevStyled = nil
   if buffer.window != nil:
@@ -806,7 +807,7 @@ const HoverFun = [
   htLink: getClickHover,
   htImage: getImageHover
 ]
-proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult
+proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
   if cursory >= buffer.lines.len:
     return UpdateHoverResult()
@@ -820,7 +821,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult
   if thisnode != prevnode and (thisnode == nil or prevnode == nil or
       thisnode.node != prevnode.node):
     for styledNode in thisnode.branch:
-      if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
+      if styledNode.t == stElement and styledNode.node != nil:
         let elem = Element(styledNode.node)
         if not elem.hover:
           elem.hover = true
@@ -831,7 +832,7 @@ proc updateHover*(buffer: Buffer, cursorx, cursory: int): UpdateHoverResult
         hover.add((ht, s))
         buffer.hoverText[ht] = s
     for styledNode in prevnode.branch:
-      if styledNode.t == STYLED_ELEMENT and styledNode.node != nil:
+      if styledNode.t == stElement and styledNode.node != nil:
         let elem = Element(styledNode.node)
         if elem.hover:
           elem.hover = false
@@ -910,7 +911,7 @@ when defined(freebsd) or defined(openbsd):
 
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
-proc clone*(buffer: Buffer, newurl: URL): int {.proxy.} =
+proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
     buffer.estream.write("Failed to open pipe.\n")
@@ -1019,7 +1020,7 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
         ctx.writeException(buffer.estream)
       JS_FreeValue(ctx, e)
       called = true
-      if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+      if efStopImmediatePropagation in event.flags:
         break
   if called:
     buffer.do_reshape()
@@ -1041,7 +1042,7 @@ proc dispatchLoadEvent(buffer: Buffer) =
         ctx.writeException(buffer.estream)
       JS_FreeValue(ctx, e)
       called = true
-      if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+      if efStopImmediatePropagation in event.flags:
         break
   if called:
     buffer.do_reshape()
@@ -1069,12 +1070,12 @@ proc dispatchEvent(buffer: Buffer; ctype, jsName: string; elem: Element):
         if JS_IsException(e):
           ctx.writeException(buffer.estream)
         JS_FreeValue(ctx, e)
-        if FLAG_STOP_IMMEDIATE_PROPAGATION in event.flags:
+        if efStopImmediatePropagation in event.flags:
           stop = true
           break
-        if FLAG_STOP_PROPAGATION in event.flags:
+        if efStopPropagation in event.flags:
           stop = true
-        if FLAG_CANCELED in event.flags:
+        if efCanceled in event.flags:
           canceled = true
     if stop:
       break
@@ -1258,7 +1259,7 @@ func pickCharset(form: HTMLFormElement): Charset =
   return form.document.charset.getOutputEncoding()
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
+proc submitForm(form: HTMLFormElement; submitter: Element): Option[Request] =
   if form.constructingEntryList:
     return none(Request)
   #TODO submit()
@@ -1281,13 +1282,13 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   let scheme = parsedaction.scheme
   let enctype = submitter.enctype()
   let formmethod = submitter.formmethod()
-  if formmethod == FORM_METHOD_DIALOG:
+  if formmethod == fmDialog:
     #TODO
     return none(Request)
-  let httpmethod = if formmethod == FORM_METHOD_GET:
+  let httpmethod = if formmethod == fmGet:
     HTTP_GET
   else:
-    assert formmethod == FORM_METHOD_POST
+    assert formmethod == fmPost
     HTTP_POST
 
   #let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
@@ -1308,16 +1309,16 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
     var body: Option[string]
     var multipart: Option[FormData]
     case enctype
-    of FORM_ENCODING_TYPE_URLENCODED:
+    of fetUrlencoded:
       #TODO with charset
       let kvlist = entrylist.toNameValuePairs()
       body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
       mimeType = $enctype
-    of FORM_ENCODING_TYPE_MULTIPART:
+    of fetMultipart:
       #TODO with charset
       multipart = some(serializeMultipartFormData(entrylist))
       mimetype = $enctype
-    of FORM_ENCODING_TYPE_TEXT_PLAIN:
+    of fetTextPlain:
       #TODO with charset
       let kvlist = entrylist.toNameValuePairs()
       body = some(serializePlainTextFormData(kvlist))
@@ -1339,7 +1340,7 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
 
   template mailAsBody() =
     let kvlist = entrylist.toNameValuePairs()
-    let body = if enctype == FORM_ENCODING_TYPE_TEXT_PLAIN:
+    let body = if enctype == fetTextPlain:
       let text = serializePlainTextFormData(kvlist)
       percentEncode(text, PathPercentEncodeSet)
     else:
@@ -1356,27 +1357,27 @@ proc submitForm(form: HTMLFormElement, submitter: Element): Option[Request] =
   of "ftp", "javascript":
     getActionUrl
   of "data":
-    if formmethod == FORM_METHOD_GET:
+    if formmethod == fmGet:
       mutateActionUrl
     else:
-      assert formmethod == FORM_METHOD_POST
+      assert formmethod == fmPost
       getActionUrl
   of "mailto":
-    if formmethod == FORM_METHOD_GET:
+    if formmethod == fmGet:
       mailWithHeaders
     else:
-      assert formmethod == FORM_METHOD_POST
+      assert formmethod == fmPost
       mailAsBody
   else:
     # Note: only http & https are defined by the standard.
     # Assume an HTTP-like protocol.
-    if formmethod == FORM_METHOD_GET:
+    if formmethod == fmGet:
       mutateActionUrl
     else:
-      assert formmethod == FORM_METHOD_POST
+      assert formmethod == fmPost
       submitAsEntityBody
 
-proc setFocus(buffer: Buffer, e: Element): bool =
+proc setFocus(buffer: Buffer; e: Element): bool =
   if buffer.document.focus != e:
     buffer.document.focus = e
     buffer.do_reshape()
@@ -1405,7 +1406,7 @@ proc implicitSubmit(input: HTMLInputElement): Option[Request] =
     else:
       return submitForm(form, form)
 
-proc readSuccess*(buffer: Buffer, s: string): ReadSuccessResult {.proxy.} =
+proc readSuccess*(buffer: Buffer; s: string): ReadSuccessResult {.proxy.} =
   if buffer.document.focus != nil:
     case buffer.document.focus.tagType
     of TAG_INPUT:
@@ -1455,14 +1456,14 @@ type
     repaint*: bool
     select*: Option[SelectResult]
 
-proc click(buffer: Buffer, clickable: Element): ClickResult
+proc click(buffer: Buffer; clickable: Element): ClickResult
 
-proc click(buffer: Buffer, label: HTMLLabelElement): ClickResult =
+proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
   let control = label.control
   if control != nil:
     return buffer.click(control)
 
-proc click(buffer: Buffer, select: HTMLSelectElement): ClickResult =
+proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
   let repaint = buffer.setFocus(select)
   var options: seq[string]
   var selected: seq[int]
@@ -1485,7 +1486,7 @@ proc click(buffer: Buffer, select: HTMLSelectElement): ClickResult =
 func baseURL(buffer: Buffer): URL =
   return buffer.document.baseURL
 
-proc evalJSURL(buffer: Buffer, url: URL): Opt[string] =
+proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
   let encodedScriptSource = ($url)["javascript:".len..^1]
   let scriptSource = percentDecode(encodedScriptSource)
   let ctx = buffer.window.jsctx
@@ -1500,7 +1501,7 @@ proc evalJSURL(buffer: Buffer, url: URL): Opt[string] =
   # Navigate to result.
   return ok(s)
 
-proc click(buffer: Buffer, anchor: HTMLAnchorElement): ClickResult =
+proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
   var repaint = buffer.restoreFocus()
   let url = parseURL(anchor.href, some(buffer.baseURL))
   if url.isSome:
@@ -1528,12 +1529,12 @@ proc click(buffer: Buffer, anchor: HTMLAnchorElement): ClickResult =
     repaint: repaint
   )
 
-proc click(buffer: Buffer, option: HTMLOptionElement): ClickResult =
+proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
   let select = option.select
   if select != nil:
     return buffer.click(select)
 
-proc click(buffer: Buffer, button: HTMLButtonElement): ClickResult =
+proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
     case button.ctype
     of BUTTON_SUBMIT: result.open = submitForm(button.form, button)
@@ -1544,7 +1545,7 @@ proc click(buffer: Buffer, button: HTMLButtonElement): ClickResult =
     of BUTTON_BUTTON: discard
     result.repaint = buffer.setFocus(button)
 
-proc click(buffer: Buffer, textarea: HTMLTextAreaElement): ClickResult =
+proc click(buffer: Buffer; textarea: HTMLTextAreaElement): ClickResult =
   let repaint = buffer.setFocus(textarea)
   let readline = ReadLineResult(
     value: textarea.value,
@@ -1580,7 +1581,7 @@ const InputTypePrompt = [
   itWeek: "Week"
 ]
 
-proc click(buffer: Buffer, input: HTMLInputElement): ClickResult =
+proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
   let repaint = buffer.restoreFocus()
   case input.inputType
   of itFile:
@@ -1843,7 +1844,7 @@ proc readCommand(buffer: Buffer) =
   r.sread(packetid)
   bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
 
-proc handleRead(buffer: Buffer, fd: int): bool =
+proc handleRead(buffer: Buffer; fd: int): bool =
   if fd == buffer.rfd:
     try:
       buffer.readCommand()
@@ -1868,7 +1869,7 @@ proc handleRead(buffer: Buffer, fd: int): bool =
   else: assert false
   true
 
-proc handleError(buffer: Buffer, fd: int, err: OSErrorCode): bool =
+proc handleError(buffer: Buffer; fd: int; err: OSErrorCode): bool =
   if fd == buffer.rfd:
     # Connection reset by peer, probably. Close the buffer.
     return false

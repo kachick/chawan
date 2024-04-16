@@ -5,7 +5,7 @@ import types/url
 
 type
   ParserMetadata* = enum
-    PARSER_INSERTED, NOT_PARSER_INSERTED
+    pmParserInserted, pmNotParserInserted
 
   ScriptType* = enum
     NO_SCRIPTTYPE, CLASSIC, MODULE, IMPORTMAP
@@ -51,17 +51,17 @@ type
 
   ModuleMap* = seq[ModuleMapEntry]
 
-proc find*(moduleMap: ModuleMap, url: URL, moduleType: string): int =
+proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
   for i, entry in moduleMap:
     if entry.key.moduleType == moduleType and entry.key.url == surl:
       return i
   return -1
 
-func fetchDestinationFromModuleType*(defaultDestination: RequestDestination,
+func fetchDestinationFromModuleType*(default: RequestDestination;
     moduleType: string): RequestDestination =
   if moduleType == "json":
     return RequestDestination.JSON
   if moduleType == "css":
     return RequestDestination.STYLE
-  return defaultDestination
+  return default

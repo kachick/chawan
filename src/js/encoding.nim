@@ -63,21 +63,21 @@ proc grow(buf: var Growbuf) =
     buf.cap *= 2
   buf.p = cast[ptr UncheckedArray[uint8]](buf.p.realloc(buf.cap))
 
-proc write(buf: var Growbuf, s: openArray[uint8]) =
+proc write(buf: var Growbuf; s: openArray[uint8]) =
   if buf.len + s.len > buf.cap:
     buf.grow()
   if s.len > 0:
     copyMem(addr buf.p[buf.len], unsafeAddr s[0], s.len)
   buf.len += s.len
 
-proc write(buf: var Growbuf, s: string) =
+proc write(buf: var Growbuf; s: string) =
   if buf.len + s.len > buf.cap:
     buf.grow()
   if s.len > 0:
     copyMem(addr buf.p[buf.len], unsafeAddr s[0], s.len)
   buf.len += s.len
 
-proc decode0(this: JSTextDecoder, ctx: JSContext, input: JSArrayBufferView,
+proc decode0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
     stream: bool): JSResult[JSValue] =
   var oq = Growbuf(
     p: cast[ptr UncheckedArray[uint8]](alloc(BufferSize)),
@@ -106,7 +106,7 @@ proc decode0(this: JSTextDecoder, ctx: JSContext, input: JSArrayBufferView,
       oq.grow()
   return ok(JS_NewStringLen(ctx, cast[cstring](oq.p), csize_t(oq.len)))
 
-proc validate0(this: JSTextDecoder, ctx: JSContext, input: JSArrayBufferView,
+proc validate0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
     stream: bool): JSResult[JSValue] =
   # assume input is valid; do not allocate yet
   var oq = Growbuf(p: nil, len: 0, cap: 0)

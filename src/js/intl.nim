@@ -17,8 +17,8 @@ jsDestructor(NumberFormat)
 jsDestructor(PluralRules)
 
 #TODO ...yeah
-proc newNumberFormat(name: string = "en-US",
-    options = none(JSValue)): NumberFormat {.jsctor.} =
+proc newNumberFormat(name: string = "en-US"; options = none(JSValue)):
+    NumberFormat {.jsctor.} =
   return NumberFormat()
 
 #TODO
@@ -31,7 +31,7 @@ proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
   )
 
 #TODO: this should accept string/BigInt too
-proc format(nf: NumberFormat, num: float64): string {.jsfunc.} =
+proc format(nf: NumberFormat; num: float64): string {.jsfunc.} =
   let s = $num
   var i = 0
   var L = s.len

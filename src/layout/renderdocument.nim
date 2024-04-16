@@ -55,17 +55,17 @@ func toFormat(computed: CSSComputedValues): Format =
   if computed == nil:
     return Format()
   var flags: set[FormatFlags]
-  if computed{"font-style"} in {FONT_STYLE_ITALIC, FONT_STYLE_OBLIQUE}:
+  if computed{"font-style"} in {FontStyleItalic, FontStyleOblique}:
     flags.incl(ffItalic)
   if computed{"font-weight"} > 500:
     flags.incl(ffBold)
-  if TEXT_DECORATION_UNDERLINE in computed{"text-decoration"}:
+  if TextDecorationUnderline in computed{"text-decoration"}:
     flags.incl(ffUnderline)
-  if TEXT_DECORATION_OVERLINE in computed{"text-decoration"}:
+  if TextDecorationOverline in computed{"text-decoration"}:
     flags.incl(ffOverline)
-  if TEXT_DECORATION_LINE_THROUGH in computed{"text-decoration"}:
+  if TextDecorationLineThrough in computed{"text-decoration"}:
     flags.incl(ffStrike)
-  if TEXT_DECORATION_BLINK in computed{"text-decoration"}:
+  if TextDecorationBlink in computed{"text-decoration"}:
     flags.incl(ffBlink)
   return Format(
     fgcolor: computed{"color"},
@@ -361,7 +361,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         grid.setRowWord(state, atom, offset, format, fragment.node)
       of iatSpacing:
         grid.setSpacing(state, atom, offset, format, fragment.node)
-  if fragment.computed{"position"} != POSITION_STATIC:
+  if fragment.computed{"position"} != PositionStatic:
     if fragment.splitType != {stSplitStart, stSplitEnd}:
       if stSplitStart in fragment.splitType:
         state.absolutePos.add(Offset(
@@ -400,11 +400,11 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       offset.y = state.absolutePos[^1].y
     offset.x += box.offset.x
     offset.y += box.offset.y
-    if box.computed{"position"} != POSITION_STATIC:
+    if box.computed{"position"} != PositionStatic:
       state.absolutePos.add(offset)
       stack.add((nil, Offset(x: -1, y: -1)))
 
-    if box.computed{"visibility"} == VISIBILITY_VISIBLE:
+    if box.computed{"visibility"} == VisibilityVisible:
       let bgcolor = box.computed{"background-color"}
       if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.rgbacolor.a > 0:
         if box.computed{"-cha-bgcolor-is-canvas"} and
@@ -417,7 +417,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         let iex = toInt(offset.x + box.size.w)
         let iey = toInt(offset.y + box.size.h)
         grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
-      if box.computed{"background-image"}.t == CONTENT_IMAGE and
+      if box.computed{"background-image"}.t == ContentImage and
           box.computed{"background-image"}.s != "":
         # ugly hack for background-image display... TODO actually display images
         let s = "[img]"
@@ -433,7 +433,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
           grid.setText(s, x, y, box.computed.toFormat(), box.node)
     if box.inline != nil:
       assert box.nested.len == 0
-      if box.computed{"visibility"} == VISIBILITY_VISIBLE:
+      if box.computed{"visibility"} == VisibilityVisible:
         grid.renderRootInlineFragment(state, box.inline, offset)
     else:
       for i in countdown(box.nested.high, 0):

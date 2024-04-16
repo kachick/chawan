@@ -302,7 +302,7 @@ func fastmul1(c, ca: uint32): uint32 =
   ga = ga and 0xFF00FF00u32
   return ga or (rb shr 8)
 
-func fastmul1(c: RGBAColor, ca: uint32): RGBAColor =
+func fastmul1(c: RGBAColor; ca: uint32): RGBAColor =
   return RGBAColor(fastmul1(uint32(c), ca))
 
 func rgba*(r, g, b, a: uint8): RGBAColor
@@ -510,14 +510,14 @@ func parseLegacyColor*(s: string): JSResult[RGBColor] =
     return err(newTypeError("Color must not be transparent"))
   return ok(parseLegacyColor0(s))
 
-proc toJS*(ctx: JSContext, rgb: RGBColor): JSValue =
+proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
   var res = "#"
   res.pushHex(rgb.r)
   res.pushHex(rgb.g)
   res.pushHex(rgb.b)
   return toJS(ctx, res)
 
-proc fromJSRGBColor*(ctx: JSContext, val: JSValue): JSResult[RGBColor] =
+proc fromJSRGBColor*(ctx: JSContext; val: JSValue): JSResult[RGBColor] =
   return parseLegacyColor(?fromJS[string](ctx, val))
 
 proc toJS*(ctx: JSContext; rgba: RGBAColor): JSValue =

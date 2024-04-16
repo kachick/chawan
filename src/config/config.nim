@@ -244,7 +244,7 @@ proc delete(a: ptr ActionMap; k: string): bool {.jsdelprop.} =
   a[].t.del(k)
   return ina
 
-func names(ctx: JSContext, a: ptr ActionMap): JSPropertyEnumList
+func names(ctx: JSContext; a: ptr ActionMap): JSPropertyEnumList
     {.jspropnames.} =
   let L = uint32(a[].t.len)
   var list = newJSPropertyEnumList(ctx, L)
