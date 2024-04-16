@@ -82,6 +82,10 @@ template CSI(s: varargs[string, `$`]): string =
 # primary device attributes
 const DA1 = CSI("c")
 
+# push/pop current title to/from the terminal's title stack
+const XTPUSHTITLE = CSI(22, "t")
+const XTPOPTITLE = CSI(23, "t")
+
 # report xterm text area size in pixels
 const GEOMPIXEL = CSI(14, "t")
 
@@ -102,7 +106,7 @@ template XTGETTCAP(s: varargs[string, `$`]): string =
 template OSC(s: varargs[string, `$`]): string =
   "\e]" & s.join(';') & '\a'
 
-template XTERM_TITLE(s: string): string =
+template XTSETTITLE(s: string): string =
   OSC(0, s)
 
 const XTGETFG = OSC(10, "?") # get foreground color
@@ -416,7 +420,7 @@ proc processFormat*(term: Terminal, format: var Format, cellf: Format): string =
 
 proc setTitle*(term: Terminal, title: string) =
   if term.set_title:
-    term.outfile.write(XTERM_TITLE(title.replaceControls()))
+    term.outfile.write(XTSETTITLE(title.replaceControls()))
 
 proc enableMouse*(term: Terminal) =
   term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
@@ -633,6 +637,8 @@ proc quit*(term: Terminal) =
     else:
       term.write(term.cursorGoto(0, term.attrs.height - 1) &
         term.resetFormat() & "\n")
+    if term.set_title:
+      term.write(XTPOPTITLE)
     if term.config.input.use_mouse:
       term.disableMouse()
     term.showCursor()
@@ -970,6 +976,8 @@ proc start*(term: Terminal; istream: PosixStream): TermStartResult =
     term.enableMouse()
   term.applyConfig()
   term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
+  if term.set_title:
+    term.write(XTPUSHTITLE)
   if term.smcup:
     term.write(term.enableAltScreen())
 
@@ -983,6 +991,8 @@ proc restart*(term: Terminal) =
       term.enableMouse()
   if term.smcup:
     term.write(term.enableAltScreen())
+  if term.set_title:
+    term.write(XTPUSHTITLE)
 
 proc newTerminal*(outfile: File, config: Config): Terminal =
   return Terminal(
