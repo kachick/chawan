@@ -1348,7 +1348,7 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
   if builder.marker != nil:
     # wrap marker + main box in a new box
     let innerBox = BlockBox(
-      computed: builder.computed,
+      computed: builder.content.computed,
       node: builder.node,
       offset: Offset(x: sizes.margin.left),
       margin: sizes.margin
@@ -1373,9 +1373,11 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     box.baseline = innerBox.baseline
     box.firstBaseline = innerBox.firstBaseline
     box.size = innerBox.size
-    # innerBox can keep its margin without double margin, it won't be used
-    # anymore.
+    # move innerBox margin & offset to outer box
+    box.offset += innerBox.offset
     box.margin = innerBox.margin
+    innerBox.offset = Offset()
+    innerBox.margin = RelativeRect()
     box.nested = @[marker, innerBox]
   else:
     bctx.layoutFlow(box, builder.content, sizes)

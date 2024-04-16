@@ -76,3 +76,10 @@ type
     firstBaseline*: LayoutUnit
     # baseline of the last line box of all descendants
     baseline*: LayoutUnit
+
+func `+`*(a, b: Offset): Offset =
+  return Offset(x: a.x + b.x, y: a.y + b.y)
+
+proc `+=`*(a: var Offset; b: Offset) =
+  a.x += b.x
+  a.y += b.y
