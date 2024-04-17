@@ -91,7 +91,7 @@ func breaksWord*(r: Rune): bool =
 func breaksViWordCat*(r: Rune): BreakCategory =
   if r.isWhiteSpace():
     return bcSpace
-  elif r.breaksWord():
+  elif r.breaksWord() and r != Rune'_':
     return bcSymbol
   return bcAlpha
 
