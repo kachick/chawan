@@ -2695,7 +2695,7 @@ proc flushTable(ctx: var InnerBlockContext) =
 proc iflush(ctx: var InnerBlockContext) =
   if ctx.iroot != nil:
     assert ctx.iroot.computed{"display"} in {DisplayInline, DisplayInlineBlock,
-      DisplayInlineTable}
+      DisplayInlineTable, DisplayInlineFlex}
     ctx.blockgroup.add(ctx.iroot)
     ctx.iroot = nil
     ctx.ibox = nil
