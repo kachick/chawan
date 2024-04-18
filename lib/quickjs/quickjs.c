@@ -43432,6 +43432,11 @@ static const JSCFunctionListEntry js_math_obj[] = {
    between UTC time and local time 'd' in minutes */
 static int getTimezoneOffset(int64_t time)
 {
+    /* this is a fingerprinting vector, and doesn't work with seccomp
+     * anyway because the glibc localtime_r tries to openat(2) files
+     * in /usr/share/zoneinfo. */
+    return 0;
+#if 0
     time_t ti;
     int res;
 
@@ -43478,6 +43483,7 @@ static int getTimezoneOffset(int64_t time)
     }
 #endif
     return res;
+#endif
 }
 
 #if 0

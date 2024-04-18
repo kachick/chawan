@@ -27,11 +27,12 @@ supported yet.)
 	* zlib: <https://zlib.net/>
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
 	  `$PATH`)
+	* (Linux only) libseccomp: <https://github.com/seccomp/libseccomp>
 	* If you are using a system where the default make program is not GNU
 	  make (e.g. BSD), install gmake and use that in the following steps.
 	* Optional: a termcap library; e.g. ncurses comes with one.
 	* TLDR for Debian:
-	  `apt install libcurl4-openssl-dev zlib1g-dev pkg-config make ncurses-base`
+	  `apt install libcurl4-openssl-dev zlib1g-dev pkg-config make ncurses-base libseccomp-dev`
 4. Download parts of Chawan found in other repositories: `make submodule`
 5. Run `make`. (By default, this will build the whole project in release mode;
    for details, see [doc/build.md](doc/build.md).)

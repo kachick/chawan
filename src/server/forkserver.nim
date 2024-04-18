@@ -10,6 +10,7 @@ import io/bufwriter
 import io/dynstream
 import io/posixstream
 import io/serversocket
+import io/socketstream
 import io/stdio
 import loader/loader
 import server/buffer
@@ -117,7 +118,6 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
   discard close(pipefd[0])
   return pid
 
-var gssock: ServerSocket
 proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   var config: BufferConfig
   var url: URL
@@ -155,18 +155,24 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     # calling sysctl
     # also lets us deny sysctl call with pledge
     let selector = newSelector[int]()
-    enterBufferSandbox(sockDir)
+    setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
     let ssock = initServerSocket(sockDir, sockDirFd, pid)
-    gssock = ssock
-    onSignal SIGTERM:
-      # This will be overridden after buffer has been set up; it is only
-      # necessary to avoid a race condition when buffer is killed before that.
-      discard sig
-      gssock.close()
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
     ps.sclose()
+    let pstream = ssock.acceptSocketStream()
+    gssock = ssock
+    gpstream = pstream
+    onSignal SIGTERM:
+      discard sig
+      gpstream.sclose()
+      when defined(linux):
+        # no unlink access on Linux
+        gssock.close(unlink = false)
+      else:
+        gssock.close()
+    enterBufferSandbox(sockDir)
     let loader = FileLoader(
       process: loaderPid,
       clientPid: pid,
@@ -174,9 +180,8 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       sockDirFd: sockDirFd
     )
     try:
-      setBufferProcessTitle(url)
       launchBuffer(config, url, request, attrs, ishtml, charsetStack, loader,
-        ssock, selector)
+        ssock, pstream, selector)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim

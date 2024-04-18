@@ -24,6 +24,7 @@ import io/dynstream
 import io/filestream
 import io/posixstream
 import io/promise
+import io/serversocket
 import io/socketstream
 import js/base64
 import js/console
@@ -407,6 +408,9 @@ proc acceptBuffers(client: Client) =
     let container = item.container
     let stream = connectSocketStream(client.config.external.tmpdir,
       client.loader.sockDirFd, container.process)
+    # unlink here; on Linux we can't unlink from the buffer :/
+    discard tryRemoveFile(getSocketPath(client.config.external.tmpdir,
+      container.process))
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
       continue

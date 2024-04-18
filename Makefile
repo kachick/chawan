@@ -18,7 +18,7 @@ LIBEXECDIR ?= '$${%CHA_BIN_DIR}/../libexec/chawan'
 ifeq ($(LIBEXECDIR),'$${%CHA_BIN_DIR}/../libexec/chawan')
 LIBEXECDIR_CHAWAN = "$(DESTDIR)$(PREFIX)/libexec/chawan"
 else
-LIBEXECDIR_CHAWAN = $(LIBEXECDIR)/chawan
+LIBEXECDIR_CHAWAN = $(LIBEXECDIR)
 endif
 
 # These paths are quoted in recipes.
@@ -27,6 +27,11 @@ OUTDIR_BIN = $(OUTDIR_TARGET)/bin
 OUTDIR_LIBEXEC = $(OUTDIR_TARGET)/libexec/chawan
 OUTDIR_CGI_BIN = $(OUTDIR_LIBEXEC)/cgi-bin
 OUTDIR_MAN = $(OUTDIR_TARGET)/share/man
+
+# I won't take this from the environment for obvious reasons. Please override it
+# in the make command if you must, or (preferably) fix your environment so it's
+# not needed.
+DANGER_DISABLE_SANDBOX = 0
 
 # Nim compiler flags
 ifeq ($(TARGET),debug)
@@ -55,7 +60,8 @@ $(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
 		res/**/* res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
-		$(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
+                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) $(FLAGS) \
+		-o:"$(OUTDIR_BIN)/cha" src/main.nim
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
@@ -125,10 +131,11 @@ $(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
 
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
-		src/utils/twtstr.nim
+		src/utils/twtstr.nim src/utils/sandbox.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/http" -d:curlLibName:$(CURLLIBNAME) \
-		-o:"$(OUTDIR_CGI_BIN)/http" adapter/protocol/http.nim
+                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
+                -o:"$(OUTDIR_CGI_BIN)/http" adapter/protocol/http.nim
 
 $(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim res/chawan.html \
 		res/license.html

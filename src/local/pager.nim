@@ -571,7 +571,7 @@ func findProcMapItem*(pager: Pager; pid: int): int =
   -1
 
 proc dupeBuffer(pager: Pager; container: Container; url: URL) =
-  container.clone(url).then(proc(container: Container) =
+  container.clone(url, pager.loader).then(proc(container: Container) =
     if container == nil:
       pager.alert("Failed to duplicate buffer.")
     else:

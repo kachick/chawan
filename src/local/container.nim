@@ -1,14 +1,15 @@
 import std/deques
+import std/net
 import std/options
+import std/os
+import std/posix
 import std/unicode
-
-when defined(posix):
-  import std/posix
 
 import config/config
 import config/mimetypes
 import io/dynstream
 import io/promise
+import io/serversocket
 import io/socketstream
 import js/javascript
 import js/jstypes
@@ -184,14 +185,29 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
 func location(container: Container): URL {.jsfget.} =
   return container.url
 
-proc clone*(container: Container; newurl: URL): Promise[Container] =
+proc clone*(container: Container; newurl: URL; loader: FileLoader):
+    Promise[Container] =
+  if container.iface == nil:
+    return nil
   let url = if newurl != nil:
     newurl
   else:
     container.url
-  return container.iface.clone(url).then(proc(pid: int): Container =
+  let p = container.iface.clone(url)
+  # create a server socket, pass it on to the buffer, then move it to
+  # the expected path after the buffer forked itself
+  #TODO this is very ugly
+  let ssock = initServerSocket(loader.sockDir, loader.sockDirFd,
+    loader.clientPid)
+  SocketStream(container.iface.stream.source)
+    .sendFileHandle(FileHandle(ssock.sock.getFd()))
+  ssock.sock.close()
+  return p.then(proc(pid: int): Container =
     if pid == -1:
       return nil
+    let newPath = getSocketPath(loader.sockDir, pid)
+    let oldPath = getSocketPath(loader.sockDir, loader.clientPid)
+    moveFile(oldPath, newPath)
     let nc = Container()
     nc[] = container[]
     nc.url = url

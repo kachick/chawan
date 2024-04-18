@@ -122,6 +122,7 @@ type
     charset: Charset
     cacheId: int
     outputId: int
+    emptySel: Selector[int]
 
   InterfaceOpaque = ref object
     stream: SocketStream
@@ -909,6 +910,9 @@ when defined(freebsd) or defined(openbsd):
   # necessary for an ugly hack we will do later
   import std/kqueue
 
+var gssock* {.global.}: ServerSocket
+var gpstream* {.global.}: SocketStream
+
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
@@ -930,6 +934,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.estream.write("Failed to clone buffer.\n")
     return -1
   if pid == 0: # child
+    let sockFd = buffer.pstream.recvFileHandle()
     discard close(pipefd[0]) # close read
     let ps = newPosixStream(pipefd[1])
     # We must allocate a new selector for this new process. (Otherwise we
@@ -938,11 +943,23 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     when not bsdPlatform:
       buffer.selector.close()
     when defined(freebsd) or defined(openbsd):
-      # hack necessary because newSelector calls sysctl, but Capsicum really
+      # Hack necessary because newSelector calls sysctl, but Capsicum really
       # dislikes that and we don't want to request systctl capabilities
       # from pledge either.
+      #
+      # To make this work we
+      # * allocate a new Selector object on buffer startup
+      # * copy into it the initial state of the real selector we will use
+      # * on fork, reset the selector object's state by writing the dummy
+      #   selector into it
+      # * override the file handle with a new kqueue().
+      #
+      # Warning: this breaks when threading is enabled; then fds is no longer a
+      # seq, so it's copied by reference (+ leaks). We explicitly disable
+      # threading, so for now we should be fine.
       let fd = kqueue()
       doAssert fd != -1
+      buffer.selector[] = buffer.emptySel[]
       cast[ptr cint](buffer.selector)[] = fd
     else:
       buffer.selector = newSelector[int]()
@@ -952,8 +969,9 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       cfds.add(fd)
     for fd in cfds:
       # connecting: just reconnect
-      buffer.loader.reconnect(buffer.loader.connecting[fd])
+      let data = buffer.loader.connecting[fd]
       buffer.loader.connecting.del(fd)
+      buffer.loader.reconnect(data)
     var ongoing: seq[OngoingData] = @[]
     for data in buffer.loader.ongoing.values:
       ongoing.add(data)
@@ -977,14 +995,17 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
     buffer.pstream.sclose()
-    let ssock = initServerSocket(buffer.loader.sockDir, buffer.loader.sockDirFd,
-      myPid)
+    buffer.ssock.close(unlink = false)
+    let ssock = initServerSocket(SocketHandle(sockFd), buffer.loader.sockDir,
+      buffer.loader.sockDirFd, myPid)
     buffer.ssock = ssock
+    gssock = ssock
     ps.write(char(0))
     buffer.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
     buffer.pstream = ssock.acceptSocketStream()
+    gpstream = buffer.pstream
     buffer.loader.clientPid = myPid
     # get key for new buffer
     var r = buffer.pstream.initPacketReader()
@@ -1866,7 +1887,8 @@ proc handleRead(buffer: Buffer; fd: int): bool =
       buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
-  else: assert false
+  else:
+    assert false
   true
 
 proc handleError(buffer: Buffer; fd: int; err: OSErrorCode): bool =
@@ -1911,12 +1933,18 @@ proc runBuffer(buffer: Buffer) =
 
 proc cleanup(buffer: Buffer) =
   buffer.pstream.sclose()
-  buffer.ssock.close()
+  # no unlink access on Linux
+  when defined(linux):
+    buffer.ssock.close(unlink = false)
+  else:
+    buffer.ssock.close()
 
 proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
-    loader: FileLoader; ssock: ServerSocket; selector: Selector[int]) =
-  let pstream = ssock.acceptSocketStream()
+    loader: FileLoader; ssock: ServerSocket; pstream: SocketStream;
+    selector: Selector[int]) =
+  let emptySel = Selector[int]()
+  emptySel[] = selector[]
   let buffer = Buffer(
     attrs: attrs,
     config: config,
@@ -1932,7 +1960,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,
-    outputId: -1
+    outputId: -1,
+    emptySel: emptySel
   )
   buffer.charset = buffer.charsetStack.pop()
   var r = pstream.initPacketReader()
@@ -1943,12 +1972,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
   buffer.istream = newPosixStream(fd)
   buffer.istream.setBlocking(false)
   buffer.selector.registerHandle(fd, {Read}, 0)
-  var gbuffer {.global.}: Buffer
-  gbuffer = buffer
-  onSignal SIGTERM:
-    discard sig
-    gbuffer.cleanup()
-    exitnow(1)
   loader.registerFun = proc(fd: int) =
     buffer.selector.registerHandle(fd, {Read}, 0)
   loader.unregisterFun = proc(fd: int) =

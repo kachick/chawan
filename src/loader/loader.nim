@@ -258,7 +258,7 @@ proc addFd(ctx: LoaderContext; handle: LoaderHandle) =
   ctx.outputMap[output.ostream.fd] = output
 
 type HandleReadResult = enum
-  hrrDone, hrrUnregister
+  hrrDone, hrrUnregister, hrrBrokenPipe
 
 # Called whenever there is more data available to read.
 proc handleRead(ctx: LoaderContext; handle: LoaderHandle;
@@ -296,7 +296,7 @@ proc handleRead(ctx: LoaderContext; handle: LoaderHandle;
     except ErrorAgain: # retry later
       break
     except ErrorBrokenPipe: # sender died; stop streaming
-      return hrrUnregister
+      return hrrBrokenPipe
   hrrDone
 
 # stream is a regular file, so we can't select on it.
@@ -315,7 +315,7 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: LoaderHandle) =
       output.registered = false
     handle.outputs.del(i)
   for output in handle.outputs:
-    if r == hrrUnregister:
+    if r == hrrBrokenPipe:
       output.ostream.sclose()
       output.ostream = nil
     elif cachedHandle != nil:
@@ -823,7 +823,7 @@ proc runFileLoader*(fd: cint; config: LoaderConfig) =
           let handle = ctx.handleMap[event.fd]
           case ctx.handleRead(handle, unregWrite)
           of hrrDone: discard
-          of hrrUnregister: unregRead.add(handle)
+          of hrrUnregister, hrrBrokenPipe: unregRead.add(handle)
       if Write in event.events:
         ctx.handleWrite(ctx.outputMap[event.fd], unregWrite)
       if Error in event.events:
@@ -1110,7 +1110,6 @@ proc removeClient*(loader: FileLoader; pid: int) =
       w.swrite(lcRemoveClient)
       w.swrite(pid)
     stream.sclose()
-
 
 when defined(freebsd):
   let O_DIRECTORY* {.importc, header: "<fcntl.h>", noinit.}: cint

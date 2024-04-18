@@ -50,7 +50,7 @@ method setBlocking*(s: SocketStream; blocking: bool) =
   s.blocking = blocking
   s.source.getFd().setBlocking(blocking)
 
-method seek*(s: PosixStream; off: int) =
+method seek*(s: SocketStream; off: int) =
   doAssert false
 
 method sclose*(s: SocketStream) =
@@ -83,6 +83,9 @@ proc connectAtSocketStream0(socketDir: string; baseFd, pid: int;
       if connectat_unix_from_c(cint(baseFd), cint(sock.getFd()), cstring(name),
           cint(name.len)) != 0:
         raiseOSError(osLastError())
+    else:
+      # shouldn't have sockDirFd on other architectures
+      doAssert false
   return SocketStream(
     source: sock,
     fd: cint(sock.getFd()),

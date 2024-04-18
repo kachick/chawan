@@ -37,9 +37,16 @@ also override them by setting an environment variable with the same name.
   man pages. The default setting expands to `/usr/local/share/man/man1`, etc.
 * `CURLLIBNAME`: Change the name of the libcurl shared object file.
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is relative
-  to wherever the binary is placed when it is executed.<BR>
+  to wherever the binary is placed when it is executed. (i.e. after installation
+  it would resolve to `/usr/local/libexec`.) <BR>
   WARNING: Unlike other path names, this must be quoted if your path contains
   spaces!
+* `DANGER_DISABLE_SANDBOX`: Set it to 1 to disable OS-level sandboxing even
+  on systems where we have built-in sandboxing support. Note that this is
+  *not* taken from the environment variables; you must use it like
+  `make DANGER_DISABLE_SANDBOX=1`.<BR>
+  WARNING: as the name suggests, this is rarely an optimal solution to whatever
+  problem you are facing.
 
 ## Phony targets
 
