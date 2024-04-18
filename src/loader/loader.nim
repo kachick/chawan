@@ -362,14 +362,11 @@ func find(cacheMap: seq[CachedItem]; id: int): int =
 
 proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
     request: Request) =
-  var id = -1
-  var startFrom = 0
-  try:
-    id = parseInt(request.url.pathname)
-    if request.url.query.isSome:
-      startFrom = parseInt(request.url.query.get)
-  except ValueError:
-    discard
+  let id = parseInt32(request.url.pathname).get(-1)
+  let startFrom = if request.url.query.isSome:
+    parseInt32(request.url.query.get).get(0)
+  else:
+    0
   let n = client.cacheMap.find(id)
   if n != -1:
     let ps = newPosixStream(client.cacheMap[n].path, O_RDONLY, 0)

@@ -7,5 +7,6 @@ const AsciiAlpha* = (AsciiUpperAlpha + AsciiLowerAlpha)
 const NonAscii* = {char(0x80)..char(0xFF)}
 const AsciiDigit* = {'0'..'9'}
 const AsciiAlphaNumeric* = AsciiAlpha + AsciiDigit
+const AsciiOctDigit* = {'0'..'7'}
 const AsciiHexDigit* = (AsciiDigit + {'a'..'f', 'A'..'F'})
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}

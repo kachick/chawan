@@ -310,7 +310,8 @@ func japaneseNumber*(i: int): string =
     dec n
 
 # Implements https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#signed-integers
-func parseIntImpl[T: SomeSignedInt](s: string): Option[T] =
+func parseIntImpl[T: SomeSignedInt](s: string; allowed: set[char]; radix: T):
+    Option[T] =
   var sign: T = 1
   var i = 0
   if i < s.len and s[i] == '-':
@@ -318,20 +319,24 @@ func parseIntImpl[T: SomeSignedInt](s: string): Option[T] =
     inc i
   elif i < s.len and s[i] == '+':
     inc i
-  if i == s.len or s[i] notin AsciiDigit:
+  if i == s.len:
     return none(T)
-  var integer = T(decValue(s[i]))
-  inc i
-  while i < s.len and isDigit(s[i]):
-    if unlikely(integer != 0 and high(T) div 10 < integer):
-      return none(T) # overflow
-    integer *= 10
-    let c = T(decValue(s[i]))
-    if unlikely(high(T) - c < integer):
-      return none(T) # overflow
+  var integer: T = 0
+  while i < s.len:
+    if s[i] notin allowed:
+      return none(T) # invalid
+    let c = T(hexValue(s[i]))
+    if integer != 0:
+      if unlikely(T.high div radix - c < integer or
+          T.low div radix + c > integer):
+        return none(T) # overflow
+    integer *= radix
     integer += c
     inc i
   return some(sign * integer)
+
+func parseIntImpl[T: SomeSignedInt](s: string): Option[T] =
+  return parseIntImpl[T](s, AsciiDigit, 10)
 
 func parseInt32*(s: string): Option[int32] =
   return parseIntImpl[int32](s)
@@ -339,26 +344,35 @@ func parseInt32*(s: string): Option[int32] =
 func parseInt64*(s: string): Option[int64] =
   return parseIntImpl[int64](s)
 
-func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool):
-    Option[T] =
+func parseOctInt64*(s: string): Option[int64] =
+  return parseIntImpl[int64](s, AsciiOctDigit, 8)
+
+func parseHexInt64*(s: string): Option[int64] =
+  return parseIntImpl[int64](s, AsciiHexDigit, 16)
+
+func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool;
+    allowed: set[char]; radix: T): Option[T] =
   var i = 0
   when allowSign:
     if i < s.len and s[i] == '+':
       inc i
-    if i == s.len or s[i] notin AsciiDigit:
-      return none(T)
-  var integer = T(decValue(s[i]))
-  inc i
-  while i < s.len and s[i] in AsciiDigit:
-    if unlikely(integer != 0 and high(T) div 10 < integer):
+  if i == s.len:
+    return none(T)
+  var integer: T = 0
+  while i < s.len:
+    if s[i] notin allowed:
+      return none(T) # invalid
+    let c = T(hexValue(s[i]))
+    if integer != 0 and unlikely(high(T) div radix - c < integer):
       return none(T) # overflow
-    integer *= 10
-    let c = T(decValue(s[i]))
-    if unlikely(high(T) - c < integer):
-      return none(T) # overflow
-    integer += T(c)
+    integer *= radix
+    integer += c
     inc i
   return some(integer)
+
+func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool):
+    Option[T] =
+  return parseUIntImpl[T](s, allowSign, AsciiDigit, 10)
 
 func parseUInt8*(s: string; allowSign: static bool): Option[uint8] =
   return parseUIntImpl[uint8](s, allowSign)
@@ -369,6 +383,12 @@ func parseUInt16*(s: string; allowSign: static bool): Option[uint16] =
 func parseUInt32*(s: string; allowSign: static bool): Option[uint32] =
   return parseUIntImpl[uint32](s, allowSign)
 
+func parseOctUInt32*(s: string; allowSign: static bool): Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign, AsciiOctDigit, 8)
+
+func parseHexUInt32*(s: string; allowSign: static bool): Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign, AsciiHexDigit, 16)
+
 #TODO not sure where this algorithm is from...
 # (probably from CSS)
 func parseFloat64*(s: string): float64 =
@@ -378,27 +398,23 @@ func parseFloat64*(s: string): float64 =
   var integer: float64 = 0
   var f: float64 = 0
   var e: float64 = 0
-
   var i = 0
   if i < s.len and s[i] == '-':
     sign = -1f64
     inc i
   elif i < s.len and s[i] == '+':
     inc i
-
-  while i < s.len and isDigit(s[i]):
+  while i < s.len and s[i] in AsciiDigit:
     integer *= 10
     integer += float64(decValue(s[i]))
     inc i
-
   if i < s.len and s[i] == '.':
     inc i
-    while i < s.len and isDigit(s[i]):
+    while i < s.len and s[i] in AsciiDigit:
       f *= 10
       f += float64(decValue(s[i]))
       inc i
       inc d
-
   if i < s.len and (s[i] == 'e' or s[i] == 'E'):
     inc i
     if i < s.len and s[i] == '-':
@@ -406,12 +422,10 @@ func parseFloat64*(s: string): float64 =
       inc i
     elif i < s.len and s[i] == '+':
       inc i
-
-    while i < s.len and isDigit(s[i]):
+    while i < s.len and s[i] in AsciiDigit:
       e *= 10
       e += float64(decValue(s[i]))
       inc i
-
   return sign * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
 
 const ControlPercentEncodeSet* = Controls + NonAscii

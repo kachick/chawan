@@ -1,6 +1,5 @@
 import std/options
 import std/streams
-import std/strutils
 import std/tables
 import std/times
 import std/unicode
@@ -441,21 +440,19 @@ proc consumeNumber(state: var TomlParser; c: char): TomlResult =
   case numType
   of NUMBER_INTEGER:
     let val = parseInt64(repr)
-    if not val.isSome:
+    if val.isNone:
       return state.err("invalid integer")
     return ok(TomlValue(t: tvtInteger, i: val.get))
   of NUMBER_HEX:
-    try:
-      let val = parseHexInt(repr)
-      return ok(TomlValue(t: tvtInteger, i: val))
-    except ValueError:
+    let val = parseHexInt64(repr)
+    if val.isNone:
       return state.err("invalid hexadecimal number")
+    return ok(TomlValue(t: tvtInteger, i: val.get))
   of NUMBER_OCT:
-    try:
-      let val = parseOctInt(repr)
-      return ok(TomlValue(t: tvtInteger, i: val))
-    except ValueError:
+    let val = parseOctInt64(repr)
+    if val.isNone:
       return state.err("invalid octal number")
+    return ok(TomlValue(t: tvtInteger, i: val.get))
   of NUMBER_FLOAT:
     let val = parseFloat64(repr)
     return ok(TomlValue(t: tvtFloat, f: val))

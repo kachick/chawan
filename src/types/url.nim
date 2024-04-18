@@ -166,7 +166,7 @@ func parseIpv6(input: string): Option[array[8, uint16]] =
     return failure
   return address.some
 
-func parseIpv4Number(s: string): int =
+func parseIpv4Number(s: string): uint32 =
   var input = s
   var R = 10
   if input.len >= 2 and input[0] == '0':
@@ -178,19 +178,16 @@ func parseIpv4Number(s: string): int =
       R = 8
   if input == "":
     return 0
-  var output = 0
-  try:
-    case R
-    of 8: output = parseOctInt(input)
-    of 10: output = parseInt(input)
-    of 16: output = parseHexInt(input)
-    else: discard
-  except ValueError:
-    return -1
+  var output = 0u32
+  case R
+  of 8: output = parseOctUInt32(input, allowSign = false).get(uint32.high)
+  of 10: output = parseUInt32(input, allowSign = false).get(uint32.high)
+  of 16: output = parseHexUInt32(input, allowSign = false).get(uint32.high)
+  else: discard
   return output
 
 func parseIpv4(input: string): Option[uint32] =
-  var numbers: seq[int] = @[]
+  var numbers: seq[uint32] = @[]
   var prevEmpty = false
   var i = 0
   for part in input.split('.'):
@@ -201,10 +198,10 @@ func parseIpv4(input: string): Option[uint32] =
       prevEmpty = true
       continue
     let num = parseIpv4Number(part)
-    if num notin 0..255:
+    if num notin 0u32..255u32:
       return none(uint32)
     numbers.add(num)
-  if numbers[^1] >= 1 shl ((5 - numbers.len) * 8):
+  if numbers[^1] >= 1u32 shl ((5 - numbers.len) * 8):
     return none(uint32)
   var ipv4 = uint32(numbers[^1])
   for i in 0 ..< numbers.high:
@@ -392,7 +389,7 @@ func parseHost(input: string; special: bool): Option[Host] =
   if input[0] == '[':
     if input[^1] != ']':
       return none(Host)
-    return Host(ipv6: parseIpv6(input.substr(1, input.high - 1))).some
+    return some(Host(ipv6: parseIpv6(input.substr(1, input.high - 1))))
   if not special:
     return opaqueParseHost(input)
   let domain = percentDecode(input)
@@ -403,8 +400,9 @@ func parseHost(input: string; special: bool): Option[Host] =
     return none(Host)
   if asciiDomain.get.len > 0 and asciiDomain.get.endsInNumber():
     let ipv4 = parseIpv4(asciiDomain.get)
-    return Host(ipv4: ipv4).some
-  return Host(domain: asciiDomain.get).some
+    if ipv4.isSome:
+      return some(Host(ipv4: ipv4))
+  return some(Host(domain: asciiDomain.get))
 
 func isempty(host: Host): bool =
   return host.domain == "" and host.ipv4.isNone and host.ipv6.isNone and
@@ -477,7 +475,7 @@ proc basicParseURL*(input: string; base = none(URL); url: URL = URL();
       continue
     case state
     of usSchemeStart:
-      if has and c.isAlphaAscii():
+      if has and c in AsciiAlpha:
         buffer &= c.toLowerAscii()
         state = usScheme
       elif not override:
