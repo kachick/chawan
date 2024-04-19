@@ -1162,11 +1162,15 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
 
 # Note: padding must still be applied after this.
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
-    maxChildWidth: LayoutUnit) =
+    maxChildWidth: LayoutUnit; space: AvailableSpace) =
   # Make the box as small/large as the content's width or specified width.
-  box.size.w = maxChildWidth.applySizeConstraint(sizes.space.w)
+  box.size.w = maxChildWidth.applySizeConstraint(space.w)
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.size.w = clamp(box.size.w, sizes.minWidth, sizes.maxWidth)
+
+proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
+    maxChildWidth: LayoutUnit) =
+  box.applyWidth(sizes, maxChildWidth, sizes.space)
 
 proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
     maxChildHeight: LayoutUnit) =
@@ -1250,6 +1254,7 @@ type
   BlockState = object
     offset: Offset
     maxChildWidth: LayoutUnit
+    totalFloatWidth: LayoutUnit # used for re-layouts
     nested: seq[BlockBox]
     space: AvailableSpace
     xminwidth: LayoutUnit
@@ -2420,7 +2425,7 @@ func isParentResolved(state: BlockState; bctx: BlockContext): bool =
 # same block formatting context depends on knowing where the box offset is
 # (because of floats).
 proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
-    children: seq[BoxBuilder]) =
+    children: seq[BoxBuilder]; parent: BlockBox) =
   for builder in children:
     var dy: LayoutUnit = 0 # delta
     var child: BlockBox
@@ -2454,20 +2459,28 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
       # plus height.
       dy = child.offset.y - state.offset.y + child.size.h
     let childWidth = child.margin.left + child.size.w + child.margin.right
-    state.maxChildWidth = max(state.maxChildWidth, childWidth)
     state.xminwidth = max(state.xminwidth, child.xminwidth)
     if child.computed{"position"} != PositionAbsolute and not isfloat:
       # Not absolute, and not a float.
+      state.maxChildWidth = max(state.maxChildWidth, childWidth)
       state.offset.y += dy
     elif isfloat:
       if state.space.w.t == scFitContent:
         # Float position depends on the available width, but in this case
         # the parent width is not known.
+        #
         # Set the "re-layout" flag, and skip this box.
         # (If child boxes with fit-content have floats, those will be
         # re-layouted too first, so we do not have to consider those here.)
         state.needsReLayout = true
+        # Since we emulate max-content here, the float will not contribute to
+        # maxChildWidth in this iteration; instead, its outer width will be
+        # summed up in totalFloatWidth and added to maxChildWidth in
+        # initReLayout.
+        state.totalFloatWidth += child.size.w + child.margin.left +
+          child.margin.right
         continue
+      state.maxChildWidth = max(state.maxChildWidth, childWidth)
       # Two cases exist:
       # a) The float cannot be positioned, because `box' has not resolved
       #    its y offset yet. (e.g. if float comes before the first child,
@@ -2528,7 +2541,7 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
   state.nested.setLen(0)
   bctx.exclusions.setLen(state.oldExclusionsLen)
   state.offset = Offset(x: sizes.padding.left, y: sizes.padding.top)
-  box.applyWidth(sizes, state.maxChildWidth)
+  box.applyWidth(sizes, state.maxChildWidth + state.totalFloatWidth)
   state.space.w = stretch(box.size.w)
 
 # Re-position the children.
@@ -2560,16 +2573,16 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox;
     oldExclusionsLen: bctx.exclusions.len
   )
   state.initBlockPositionStates(bctx, box)
-  state.layoutBlockChildren(bctx, builder.children)
+  state.layoutBlockChildren(bctx, builder.children, box)
   if state.needsReLayout:
     state.initReLayout(bctx, box, sizes)
-    state.layoutBlockChildren(bctx, builder.children)
+    state.layoutBlockChildren(bctx, builder.children, box)
   if state.nested.len > 0:
     let lastNested = state.nested[^1]
     box.baseline = lastNested.offset.y + lastNested.baseline
   # Apply width then move the inline offset of children that still need
   # further relative positioning.
-  box.applyWidth(sizes, state.maxChildWidth)
+  box.applyWidth(sizes, state.maxChildWidth, state.space)
   state.repositionChildren(box, lctx)
   # Set the inner height to the last y offset minus the starting offset
   # (that is, top padding).
