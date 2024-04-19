@@ -88,6 +88,7 @@ elif defined(linux) and not disableSandbox:
       "exit_group", # for quit
       "fcntl", "fcntl64", # for changing blocking status
       "fork", # for when fork is really fork
+      "fstat", # glibc fread seems to call it
       "getpid", # for determining current PID after we fork
       "getrlimit", # glibc uses it after fork it seems
       "getsockname", # Nim needs it for connecting
@@ -131,6 +132,7 @@ elif defined(linux) and not disableSandbox:
       "fcntl", "fcntl64", # so we can set nonblock etc.
       "mmap", "mmap2", "munmap", "brk", # memory allocation
       "poll", # curl needs poll
+      "fstat", # glibc fread seems to call it
       # maybe it will need epoll too in the future
       "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait",
       "ppoll", # or ppoll

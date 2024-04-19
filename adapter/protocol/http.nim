@@ -64,14 +64,14 @@ proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
   return nitems
 
 # From the documentation: size is always 1.
-proc curlWriteBody(p: cstring, size, nmemb: csize_t, userdata: pointer):
+proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   return csize_t(write(stdout.getFileHandle(), p, int(nmemb)))
 
 # From the documentation: size is always 1.
-proc readFromStdin(buffer: cstring, size, nitems: csize_t, userdata: pointer):
+proc readFromStdin(p: pointer; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
-  return csize_t(stdin.readBuffer(buffer, nitems))
+  return csize_t(read(0, p, int(nitems)))
 
 proc curlPreRequest(clientp: pointer, conn_primary_ip, conn_local_ip: cstring,
     conn_primary_port, conn_local_port: cint): cint {.cdecl.} =
