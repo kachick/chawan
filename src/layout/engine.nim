@@ -1364,7 +1364,7 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     let innerBox = BlockBox(
       computed: builder.content.computed,
       node: builder.node,
-      offset: Offset(x: sizes.margin.left),
+      offset: box.offset,
       margin: sizes.margin
     )
     bctx.layoutFlow(innerBox, builder.content, sizes)
@@ -1388,7 +1388,7 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     box.firstBaseline = innerBox.firstBaseline
     box.size = innerBox.size
     # move innerBox margin & offset to outer box
-    box.offset += innerBox.offset
+    box.offset = innerBox.offset
     box.margin = innerBox.margin
     innerBox.offset = Offset()
     innerBox.margin = RelativeRect()
