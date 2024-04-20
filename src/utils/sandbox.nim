@@ -85,6 +85,7 @@ elif defined(linux) and not disableSandbox:
       "close", # duh
       "connect", # for outgoing requests to loader
       "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", # epoll stuff
+      "eventfd", # used by Nim selectors
       "exit_group", # for quit
       "fcntl", "fcntl64", # for changing blocking status
       "fork", # for when fork is really fork
@@ -103,6 +104,9 @@ elif defined(linux) and not disableSandbox:
       "send", "sendmsg", "sendto", # for writing to sockets
       "set_robust_list", # glibc seems to need it for whatever reason
       "setrlimit", # glibc seems to use it for whatever reason
+      "timerfd_create", # used by Nim selectors
+      "timerfd_gettime", # not actually used by Nim but may be in the future
+      "timerfd_settime", # used by Nim selectors
       "write" # for writing to sockets
     ]
     for it in allowList:
