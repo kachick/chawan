@@ -3935,6 +3935,60 @@ proc cloneNode(node: Node; deep = false): Node {.jsfunc.} =
   #TODO shadow root
   return node.clone(deep = deep)
 
+func equals(a, b: AttrData): bool =
+  return a.qualifiedName == b.qualifiedName and
+    a.namespace == b.namespace and
+    a.value == b.value
+
+func isEqualNode(node, other: Node): bool {.jsfunc.} =
+  if node.childList.len != other.childList.len:
+    return false
+  if node of DocumentType:
+    if not (other of DocumentType):
+      return false
+    let node = DocumentType(node)
+    let other = DocumentType(other)
+    if node.name != other.name or node.publicId != other.publicId or
+        node.systemId != other.systemId:
+      return false
+  elif node of Element:
+    if not (other of Element):
+      return false
+    let node = Element(node)
+    let other = Element(other)
+    if node.namespace != other.namespace or
+        node.namespacePrefix != other.namespacePrefix or
+        node.localName != other.localName or
+        node.attrs.len != other.attrs.len:
+      return false
+    for i, attr in node.attrs:
+      if not attr.equals(other.attrs[i]):
+        return false
+  elif node of Attr:
+    if not (other of Attr):
+      return false
+    if not Attr(node).data.equals(Attr(other).data):
+      return false
+  elif node of ProcessingInstruction:
+    if not (other of ProcessingInstruction):
+      return false
+    let node = ProcessingInstruction(node)
+    let other = ProcessingInstruction(other)
+    if node.target != other.target or node.data != other.data:
+      return false
+  elif node of CharacterData:
+    if node of Text and not (other of Text) or
+        node of Comment and not (other of Comment):
+      return false
+    return CharacterData(node).data == CharacterData(other).data
+  for i, child in node.childList:
+    if not child.isEqualNode(other.childList[i]):
+      return false
+  true
+
+func isSameNode(node, other: Node): bool {.jsfunc.} =
+  return node == other
+
 # Forward definition hack (these are set in selectors.nim)
 var doqsa*: proc (node: Node; q: string): seq[Element]
 var doqs*: proc (node: Node; q: string): Element
