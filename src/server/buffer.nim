@@ -704,8 +704,10 @@ func canSwitch(buffer: Buffer): bool {.inline.} =
 
 proc initDecoder(buffer: Buffer) =
   if buffer.charset != CHARSET_UTF_8:
+    buffer.validator = nil
     buffer.decoder = newTextDecoder(buffer.charset)
   else:
+    buffer.decoder = nil
     buffer.validator = (ref TextValidatorUTF8)()
 
 proc switchCharset(buffer: Buffer) =
@@ -1167,7 +1169,7 @@ proc onload(buffer: Buffer) =
   while true:
     try:
       if not reprocess:
-        n = buffer.istream.recvData(addr iq[0], iq.len)
+        n = buffer.istream.recvData(iq)
         buffer.bytesRead += n
       if n != 0:
         if not buffer.processData(iq.toOpenArray(0, n - 1)):
