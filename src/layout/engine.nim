@@ -2122,12 +2122,27 @@ type
     offset: Offset
     totalSize: Size
     maxSize: Size
+    maxMargin: RelativeRect
     totalWeight: array[FlexWeightType, float64]
     lctx: LayoutState
     pending: seq[FlexPendingItem]
 
 const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
+
+func outerWidth(box: BlockBox): LayoutUnit =
+  return box.margin.left + box.size.w + box.margin.right
+
+func outerHeight(box: BlockBox): LayoutUnit =
+  return box.margin.top + box.size.h + box.margin.bottom
+
+proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
+  mctx.maxSize.w = max(mctx.maxSize.w, child.size.w)
+  mctx.maxSize.h = max(mctx.maxSize.h, child.size.h)
+  mctx.maxMargin.left = max(mctx.maxMargin.left, child.margin.left)
+  mctx.maxMargin.right = max(mctx.maxMargin.right, child.margin.right)
+  mctx.maxMargin.top = max(mctx.maxMargin.top, child.margin.top)
+  mctx.maxMargin.bottom = max(mctx.maxMargin.bottom, child.margin.bottom)
 
 proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
   #TODO actually use flex-basis
@@ -2147,7 +2162,7 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
       for it in mctx.pending.mitems:
         let builder = it.builder
         if it.weights[wt] == 0:
-          mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
+          mctx.updateMaxSizes(it.child)
           continue
         var w = it.child.size.w + unit * it.weights[wt]
         # check for min/max violation
@@ -2171,7 +2186,7 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
         #TODO we should call this only on freeze, and then put another loop to
         # the end for non-freezed items
         it.child = lctx.layoutFlexChild(builder, it.sizes)
-        mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
+        mctx.updateMaxSizes(it.child)
 
 proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
   let lctx = mctx.lctx
@@ -2190,7 +2205,7 @@ proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
       for it in mctx.pending.mitems:
         let builder = it.builder
         if it.weights[wt] == 0:
-          mctx.maxSize.w = max(mctx.maxSize.w, it.child.size.w)
+          mctx.updateMaxSizes(it.child)
           continue
         var h = max(it.child.size.h + unit * it.weights[wt], 0)
         # check for min/max violation
@@ -2212,53 +2227,51 @@ proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
           it.sizes.padding.bottom)
         totalWeight += it.weights[wt]
         it.child = lctx.layoutFlexChild(builder, it.sizes)
-        mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
+        mctx.updateMaxSizes(it.child)
 
 proc flushRow(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
     totalMaxSize: var Size) =
   let lctx = mctx.lctx
   mctx.redistributeWidth(sizes)
-  let h = stretch(mctx.maxSize.h)
+  let h = mctx.maxSize.h + mctx.maxMargin.top + mctx.maxMargin.bottom
   var offset = mctx.offset
   for it in mctx.pending.mitems:
-    if it.child.size.h < mctx.maxSize.h and not it.sizes.space.h.isDefinite:
+    if it.child.size.h < h and not it.sizes.space.h.isDefinite:
       # if the max height is greater than our height, then take max height
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
-      it.sizes.space.h = h
+      it.sizes.space.h = stretch(h - it.sizes.margin.top -
+        it.sizes.margin.bottom)
       it.child = lctx.layoutFlexChild(it.builder, it.sizes)
     it.child.offset = Offset(
       x: it.child.offset.x + offset.x,
       # margins are added here, since they belong to the flex item.
-      y: it.child.offset.y + offset.y + it.child.margin.top +
-        it.child.margin.bottom
+      y: it.child.offset.y + offset.y + it.child.margin.top
     )
     offset.x += it.child.size.w
     box.nested.add(it.child)
   totalMaxSize.w = max(totalMaxSize.w, offset.x)
   mctx = FlexMainContext(
     lctx: mctx.lctx,
-    offset: Offset(
-      x: mctx.offset.x,
-      y: mctx.offset.y + mctx.maxSize.h
-    )
+    offset: Offset(x: mctx.offset.x, y: mctx.offset.y + h)
   )
 
 proc flushColumn(mctx: var FlexMainContext; box: BlockBox;
     sizes: ResolvedSizes; totalMaxSize: var Size) =
   let lctx = mctx.lctx
   mctx.redistributeHeight(sizes)
-  let w = stretch(mctx.maxSize.w)
+  let w = mctx.maxSize.w + mctx.maxMargin.left + mctx.maxMargin.right
   var offset = mctx.offset
   for it in mctx.pending.mitems:
-    if it.child.size.w < mctx.maxSize.w and not it.sizes.space.w.isDefinite:
+    if it.child.size.w < w and not it.sizes.space.w.isDefinite:
       # see above.
-      it.sizes.space.w = w
+      it.sizes.space.w = stretch(w - it.sizes.margin.left -
+        it.sizes.margin.right)
       it.child = lctx.layoutFlexChild(it.builder, it.sizes)
     # margins belong to the flex item, and influence its positioning
     offset.y += it.child.margin.top
     it.child.offset = Offset(
-      x: it.child.offset.x + offset.x,
+      x: it.child.offset.x + offset.x + it.child.margin.left,
       y: it.child.offset.y + offset.y
     )
     offset.y += it.child.margin.bottom
@@ -2267,10 +2280,7 @@ proc flushColumn(mctx: var FlexMainContext; box: BlockBox;
   totalMaxSize.h = max(totalMaxSize.h, offset.y)
   mctx = FlexMainContext(
     lctx: lctx,
-    offset: Offset(
-      x: mctx.offset.x + mctx.maxSize.w,
-      y: mctx.offset.y
-    )
+    offset: Offset(x: mctx.offset.x + w, y: mctx.offset.y)
   )
 
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
@@ -2316,15 +2326,14 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
           sizes.space.w.isDefinite and
           mctx.totalSize.w + child.size.w > sizes.space.w.u):
         mctx.flushRow(box, sizes, totalMaxSize)
-      mctx.totalSize.w += child.size.w
+      mctx.totalSize.w += child.outerWidth
     else:
       if canWrap and (sizes.space.h.t == scMinContent or
           sizes.space.h.isDefinite and
           mctx.totalSize.h + child.size.h > sizes.space.h.u):
         mctx.flushRow(box, sizes, totalMaxSize)
-      mctx.totalSize.h += child.size.h
-    mctx.maxSize.w = max(mctx.maxSize.w, child.size.w)
-    mctx.maxSize.h = max(mctx.maxSize.h, child.size.h)
+      mctx.totalSize.h += child.outerHeight
+    mctx.updateMaxSizes(child)
     let grow = builder.computed{"flex-grow"}
     let shrink = builder.computed{"flex-shrink"}
     mctx.totalWeight[fwtGrow] += grow
