@@ -2165,7 +2165,8 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
             diff += w - maxw
             it.weights[wt] = 0
           w = maxw
-        it.sizes.space.w = stretch(w)
+        it.sizes.space.w = stretch(w - it.sizes.padding.left -
+          it.sizes.padding.right)
         totalWeight += it.weights[wt]
         #TODO we should call this only on freeze, and then put another loop to
         # the end for non-freezed items
@@ -2207,7 +2208,8 @@ proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
             diff += h - maxh
             it.weights[wt] = 0
           h = maxh
-        it.sizes.space.h = stretch(h)
+        it.sizes.space.h = stretch(h - it.sizes.padding.top -
+          it.sizes.padding.bottom)
         totalWeight += it.weights[wt]
         it.child = lctx.layoutFlexChild(builder, it.sizes)
         mctx.maxSize.h = max(mctx.maxSize.h, it.child.size.h)
