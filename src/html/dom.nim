@@ -1,3 +1,4 @@
+import std/algorithm
 import std/deques
 import std/math
 import std/options
@@ -219,7 +220,7 @@ type
     id*: CAtom
     name*: CAtom
     classList* {.jsget.}: DOMTokenList
-    attrs: seq[AttrData]
+    attrs: seq[AttrData] # sorted by int(qualifiedName)
     attributesInternal: NamedNodeMap
     hover*: bool
     invalid*: bool
@@ -2503,8 +2504,7 @@ func newComment(ctx: JSContext; data: string = ""): Comment {.jsctor.} =
 
 #TODO custom elements
 proc newHTMLElement*(document: Document; localName: CAtom;
-    namespace = Namespace.HTML; prefix = NO_PREFIX;
-    attrs = newSeq[AttrData]()): HTMLElement =
+    namespace = Namespace.HTML; prefix = NO_PREFIX): HTMLElement =
   let tagType = document.toTagType(localName)
   case tagType
   of TAG_INPUT:
@@ -2588,13 +2588,10 @@ proc newHTMLElement*(document: Document; localName: CAtom;
   result.classList = DOMTokenList(element: result, localName: localName)
   result.index = -1
   result.dataset = DOMStringMap(target: result)
-  result.attrs = attrs
 
-proc newHTMLElement*(document: Document; tagType: TagType;
-    namespace = Namespace.HTML; prefix = NO_PREFIX;
-    attrs = newSeq[AttrData]()): HTMLElement =
+proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   let localName = document.toAtom(tagType)
-  return document.newHTMLElement(localName, namespace, prefix, attrs)
+  return document.newHTMLElement(localName, Namespace.HTML, NO_PREFIX)
 
 func newDocument*(factory: CAtomFactory): Document =
   assert factory != nil
@@ -2961,19 +2958,31 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
         window.loadResource(image)
   else: discard
 
+func cmpAttrName(a: AttrData; b: CAtom): int =
+  return cmp(int(a.qualifiedName), int(b))
+
+# Returns the attr index if found, or the negation - 1 of an upper bound
+# (where a new attr with the passed name may be inserted).
+func findAttrOrNext(element: Element; qualName: CAtom): int =
+  for i, data in element.attrs:
+    if data.qualifiedName == qualName:
+      return i
+    if int(data.qualifiedName) > int(qualName):
+      return -(i + 1)
+  return -(element.attrs.len + 1)
+
 proc attr*(element: Element; name: CAtom; value: string) =
-  let i = element.findAttr(name)
-  if i != -1:
+  let i = element.findAttrOrNext(name)
+  if i >= 0:
     element.attrs[i].value = value
     element.invalidateCollections()
     element.invalid = true
   else:
-    #TODO sort?
-    element.attrs.add(AttrData(
+    element.attrs.insert(AttrData(
       qualifiedName: name,
       localName: name,
       value: value
-    ))
+    ), -(i + 1))
   element.reflectAttrs(name, value)
 
 proc attr*(element: Element; name: StaticAtom; value: string) =
@@ -3000,14 +3009,13 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
     element.invalidateCollections()
     element.invalid = true
   else:
-    #TODO sort?
-    element.attrs.add(AttrData(
+    element.attrs.insert(AttrData(
       prefix: prefixAtom,
       localName: localName,
       qualifiedName: qualifiedName,
       namespace: namespace,
       value: value
-    ))
+    ), element.attrs.upperBound(qualifiedName, cmpAttrName))
   element.reflectAttrs(qualifiedName, value)
 
 proc attrl(element: Element; name: StaticAtom; value: int32) =
@@ -3821,15 +3829,15 @@ proc createHTMLDocument(ctx: JSContext; implementation: ptr DOMImplementation;
   let doc = newDocument(ctx)
   doc.contentType = "text/html"
   doc.append(doc.newDocumentType("html", "", ""))
-  let html = doc.newHTMLElement(TAG_HTML, Namespace.HTML)
+  let html = doc.newHTMLElement(TAG_HTML)
   doc.append(html)
-  let head = doc.newHTMLElement(TAG_HEAD, Namespace.HTML)
+  let head = doc.newHTMLElement(TAG_HEAD)
   html.append(head)
   if title.isSome:
-    let titleElement = doc.newHTMLElement(TAG_TITLE, Namespace.HTML)
+    let titleElement = doc.newHTMLElement(TAG_TITLE)
     titleElement.append(doc.newText(title.get))
     head.append(titleElement)
-  html.append(doc.newHTMLElement(TAG_BODY, Namespace.HTML))
+  html.append(doc.newHTMLElement(TAG_BODY))
   #TODO set origin
   return doc
 
@@ -3862,7 +3870,8 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     #TODO is value
     let element = Element(node)
     let x = document.newHTMLElement(element.localName, element.namespace,
-      element.namespacePrefix, element.attrs)
+      element.namespacePrefix)
+    x.attrs = element.attrs
     #TODO namespaced attrs?
     # Cloning steps
     if x of HTMLScriptElement:
