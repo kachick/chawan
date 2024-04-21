@@ -21,7 +21,7 @@ macro makeStaticAtom =
       satCharset = "charset"
       satChecked = "checked"
       satClass = "class"
-      satClassList
+      satClassList = "classList"
       satColor = "color"
       satCols = "cols"
       satColspan = "colspan"
@@ -49,6 +49,7 @@ macro makeStaticAtom =
       satMultiple = "multiple"
       satName = "name"
       satNomodule = "nomodule"
+      satNovalidate = "novalidate"
       satOnclick = "onclick"
       satOnload = "onload"
       satReferrerpolicy = "referrerpolicy"

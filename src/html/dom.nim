@@ -125,7 +125,6 @@ type
   Node* = ref object of EventTarget
     childList*: seq[Node]
     parentNode* {.jsget.}: Node
-    root: Node
     index*: int # Index in parents children. -1 for nodes without a parent.
     # Live collection cache: pointers to live collections are saved in all
     # nodes they refer to. These are removed when the collection is destroyed,
@@ -261,7 +260,6 @@ type
     selected*: bool
 
   HTMLHeadingElement* = ref object of HTMLElement
-    rank*: uint16
 
   HTMLBRElement* = ref object of HTMLElement
 
@@ -270,7 +268,6 @@ type
   HTMLUListElement* = ref object of HTMLElement
 
   HTMLOListElement* = ref object of HTMLElement
-    start*: Option[int]
 
   HTMLLIElement* = ref object of HTMLElement
     value* {.jsget.}: Option[int32]
@@ -284,9 +281,7 @@ type
     fetchStarted: bool
 
   HTMLFormElement* = ref object of HTMLElement
-    smethod*: string
     enctype*: string
-    novalidate*: bool
     constructingEntryList*: bool
     controls*: seq[FormAssociatedElement]
     relList {.jsget.}: DOMTokenList
@@ -814,6 +809,7 @@ const ReflectTable0 = [
   makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes("href", TAG_LINK),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
+  makeb("novalidate", "noValidate", TAG_FORM),
   makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
   makes("for", "htmlFor", TAG_LABEL),
   makeul("cols", TAG_TEXTAREA, 20u32),
@@ -1934,9 +1930,11 @@ func childTextContent*(node: Node): string =
     if child of Text:
       result &= Text(child).data
 
-func rootNode*(node: Node): Node =
-  if node.root == nil: return node
-  return node.root
+func rootNode(node: Node): Node =
+  var node = node
+  while node.parentNode != nil:
+    node = node.parentNode
+  return node
 
 func isConnected(node: Node): bool {.jsfget.} =
   return node.rootNode of Document #TODO shadow root
@@ -3166,7 +3164,6 @@ proc remove*(node: Node; suppressObservers: bool) =
   parent.childList.setLen(parent.childList.len - 1)
   node.parentNode.invalidateCollections()
   node.parentNode = nil
-  node.root = nil
   node.index = -1
   if node.document != nil and (node of HTMLStyleElement or
       node of HTMLLinkElement):
@@ -3371,7 +3368,6 @@ proc insertNode(parent, node, before: Node) =
       parent.childList[i + 1] = parent.childList[i]
       parent.childList[i + 1].index = i + 1
   parent.childList[node.index] = node
-  node.root = parent.rootNode
   node.parentNode = parent
   node.invalidateCollections()
   parent.invalidateCollections()
