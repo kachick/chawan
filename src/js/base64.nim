@@ -1,5 +1,3 @@
-import std/base64
-
 import bindings/quickjs
 import js/domexception
 import js/javascript
@@ -76,6 +74,44 @@ proc atob*(data: string): DOMResult[NarrowString] =
       "InvalidCharacterError")
   return ok(NarrowString(outs))
 
+const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+func btoa*(data: openArray[uint8]): string =
+  if data.len == 0:
+    return ""
+  var L = data.len div 3 * 4
+  if (let rem = data.len mod 3; rem) > 0:
+    L += 3 - rem
+  var s = newStringOfCap(L)
+  var i = 0
+  let endw = data.len - 2
+  while i < endw:
+    let n = uint32(data[i]) shl 16 or
+      uint32(data[i + 1]) shl 8 or
+      uint32(data[i + 2])
+    i += 3
+    s &= AMap[n shr 18 and 0x3F]
+    s &= AMap[n shr 12 and 0x3F]
+    s &= AMap[n shr 6 and 0x3F]
+    s &= AMap[n and 0x3F]
+  if i < data.len:
+    let b1 = uint32(data[i])
+    inc i
+    if i < data.len:
+      let b2 = uint32(data[i])
+      s &= AMap[b1 shr 2]                      # 6 bits of b1
+      s &= AMap[b1 shl 4 and 0x3F or b2 shr 4] # 2 bits of b1 | 4 bits of b2
+      s &= AMap[b2 shl 2 and 0x3F]             # 4 bits of b2
+    else:
+      s &= AMap[b1 shr 2]          # 6 bits of b1
+      s &= AMap[b1 shl 4 and 0x3F] # 2 bits of b1
+      s &= '='
+    s &= '='
+  return s
+
+func btoa*(data: string): string =
+  return btoa(data.toOpenArrayByte(0, data.len - 1))
+
 proc btoa*(ctx: JSContext; data: JSValue): DOMResult[string] =
   let data = JS_ToString(ctx, data)
   if JS_IsException(data):
@@ -90,6 +126,6 @@ proc btoa*(ctx: JSContext; data: JSValue): DOMResult[string] =
     JS_FreeValue(ctx, data)
     return ok("")
   let buf = JS_GetNarrowStringBuffer(data)
-  let res = base64.encode(buf.toOpenArray(0, len - 1))
+  let res = btoa(buf.toOpenArray(0, len - 1))
   JS_FreeValue(ctx, data)
   return ok(res)

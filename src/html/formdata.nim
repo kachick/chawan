@@ -1,9 +1,9 @@
-import std/base64
 import std/streams
 
 import html/catom
 import html/dom
 import html/enums
+import js/base64
 import js/domexception
 import js/javascript
 import js/tojs
@@ -21,7 +21,7 @@ proc generateBoundary(): string =
   let s = urandom.readStr(32)
   urandom.close()
   # 32 * 4 / 3 (padded) = 44 + prefix string is 22 bytes = 66 bytes
-  return "----WebKitFormBoundary" & base64.encode(s)
+  return "----WebKitFormBoundary" & btoa(s)
 
 proc newFormData0*(): FormData =
   return FormData(boundary: generateBoundary())
