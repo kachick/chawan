@@ -1,0 +1,8 @@
+<!doctype html>
+<title>setTimeout test</title>
+<!-- For now, this only tests whether setTimeout crashes the buffer
+     or not.  (There has been a bug where it did.) -->
+<script>
+setTimeout(() => void(0), 1000);
+</script>
+Success

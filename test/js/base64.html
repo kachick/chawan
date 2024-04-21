@@ -1,0 +1,44 @@
+<!doctype html>
+<title>base64 test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+
+const div = document.getElementById("x");
+assert_equals(atob(""), "");
+assert_equals(atob(" "), "");
+assert_equals(atob("YQ"), "a");
+assert_equals(atob("YR"), "a");
+assert_throws('atob("!")', DOMException);
+assert_throws('atob("a")', DOMException);
+assert_throws('atob("aaaaa")', DOMException);
+assert_throws('atob("Aaa==")', DOMException);
+assert_throws('atob("Aaaa==")', DOMException);
+assert_throws('atob("Aaaaa==")', DOMException);
+assert_throws('atob("Aa aaa= = ")', DOMException);
+assert_equals(atob("AAAAAA=="), atob("AAAAAA"));
+assert_equals(atob("AAAAAA"), atob("A A A A A A"));
+assert_equals(atob("AAAAAA"), "\u0000\u0000\u0000\u0000");
+assert_equals(atob("ABCDEF"), "\u0000\u0010\u0083\u0010");
+assert_equals(atob("//////"), "ÿÿÿÿ");
+const longa =
+	"TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IGhpcyByZWFzb24sIGJ1dCBieSB0aGlz" +
+	"IHNpbmd1bGFyIHBhc3Npb24gZnJvbSBvdGhlciBhbmltYWxzLCB3aGljaCBpcyBhIGx1c3Qgb2Yg" +
+	"dGhlIG1pbmQsIHRoYXQgYnkgYSBwZXJzZXZlcmFuY2Ugb2YgZGVsaWdodCBpbiB0aGUgY29udGlu" +
+	"dWVkIGFuZCBpbmRlZmF0aWdhYmxlIGdlbmVyYXRpb24gb2Yga25vd2xlZGdlLCBleGNlZWRzIHRo" +
+	"ZSBzaG9ydCB2ZWhlbWVuY2Ugb2YgYW55IGNhcm5hbCBwbGVhc3VyZS4K";
+const longb = "Man is distinguished, not only by his reason, but by this " +
+	"singular passion from other animals, which is a lust of the mind, " +
+	"that by a perseverance of delight in the continued and " +
+	"indefatigable generation of knowledge, exceeds the short vehemence " +
+	"of any carnal pleasure.\n";
+assert_equals(atob(longa), longb);
+assert_equals(btoa(""), "");
+assert_equals(btoa("a"), "YQ==");
+assert_equals(btoa("aa"), "YWE=");
+assert_equals(btoa("aaa"), "YWFh");
+assert_equals(btoa("aaazdxfksljdf"), "YWFhemR4ZmtzbGpkZg==");
+assert_equals(btoa(longb), longa);
+assert_throws('btoa("őÉéeé")', DOMException);
+div.textContent = "Success";
+</script>

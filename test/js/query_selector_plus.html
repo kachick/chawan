@@ -1,0 +1,11 @@
+<!DOCTYPE HTML>
+<div id=success>Fail</div>
+<script one>
+</script>
+<script two>
+</script>
+<script>
+if (document.querySelector("script[one] + script").attributes["two"]) {
+	document.getElementById("success").textContent = "Success";
+}
+</script>

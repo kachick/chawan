@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<style>
+#one {
+	width: 10ch;
+	max-width: 2ch;
+	background-color: blue;
+}
+#two {
+	width: 10ch;
+	max-width: 2ch;
+	background-color: red;
+	display: inline-block;
+}
+#three {
+	width: 10ch;
+	max-width: 2ch;
+	background-color: green;
+	display: block;
+}
+#four {
+	width: fit-content(5ch);
+	background-color: purple;
+	max-width: 3ch;
+}
+</style>
+<div id=one>
+	<span><span>This box should have a 2ch wide blue background and should wrap on every word.</span></span>
+</div>
+<div id=two>x</div>This text should be displayed after a 2ch wide red box.
+<div id=three><div>This text should have a 2ch wide green background and should wrap on every word.</div></div>
+<div id=four>II</div>

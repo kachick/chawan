@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+window.onload = function() {
+	const success = document.body.outerHTML == document.querySelector("style").textContent;
+	/*
+	console.log("BODY", document.body.outerHTML)
+	console.log("STYLE", document.querySelector("style").textContent)
+	*/
+	while (document.body.childNodes[0])
+		document.body.childNodes[0].remove();
+	document.body.innerHTML = success ? "Success" : "Fail";
+}
+</script>
+<style><body><h1>Main title</h1>
+
+
+<p>Text.</p>
+<script>
+document.write("<h2>Subtitle</h2>");
+document.write("<scr" + "ipt>document.write('<p>before subtext</p><scri'+'pt>document.write(`third nest`)</scri'+'pt>')</scrip" + "t><p>fin</p>");
+</script><h2>Subtitle</h2><script>document.write('<p>before subtext</p><scri'+'pt>document.write(`third nest`)</scri'+'pt>')</script><p>before subtext</p><script>document.write(`third nest`)</script>third nest<p>fin</p>
+<p>Subtext.</p>
+
+
+
+</body></style>
+<title>Write example</title>
+<script>
+document.write("<h1>Main title</h1>");
+</script>
+</head>
+<body>
+<p>Text.</p>
+<script>
+document.write("<h2>Subtitle</h2>");
+document.write("<scr" + "ipt>document.write('<p>before subtext</p><scri'+'pt>document.write(`third nest`)</scri'+'pt>')</scrip" + "t><p>fin</p>");
+</script>
+<p>Subtext.</p>
+</body>
+</html>
+

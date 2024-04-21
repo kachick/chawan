@@ -86,6 +86,5 @@ man:
 gmifetch:
 - rewrite in Nim
 etc:
-- publish tests (ideally in a separate submodule)
 - orc support
 - maybe windows support? (blocker: needs a windows machine)

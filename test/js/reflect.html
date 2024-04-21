@@ -1,0 +1,18 @@
+<!doctype html>
+<div id=abc>Fail</div>
+<a class=claz target="abcd">test test</a>
+<script>
+(function() {
+	let x = document.getElementById("abc")
+	let a = document.getElementsByTagName("a")[0];
+	if (a.target != "abcd") return;
+	a.target = "defg";
+	if (a.target != "defg") return;
+	if (a.relList != "") return;
+	a.relList = "...";
+	if (a.relList != "...") return;
+	if (a.className != "claz") return;
+	x.textContent = "Success";
+	a.remove(); /* ignore target... */
+})()
+</script>

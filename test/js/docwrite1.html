@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>document.write test</title>
+<script>
+window.onload = function() {
+	const success = document.body.innerHTML == document.querySelector("style").textContent;
+	while (document.body.childNodes[0])
+		document.body.childNodes[0].remove();
+	document.body.innerHTML = success ? "Success" : "Fail";
+}
+let checkpointCounter = 0;
+function checkpoint(n) {
+	if (++checkpointCounter != n)
+		throw new TypeError(`Checkpoint failed: expected ${n} but got ${checkpointCounter}`);
+}
+</script>
+<style><h1>Main title</h1>
+
+
+<p>Text.</p>
+<script>
+document.write(`<h2>Subtitle</h2>
+<script>
+checkpoint(1);
+</scr` + `ipt>
+`);
+
+checkpoint(2);
+
+document.write(`
+<script>
+checkpoint(3);
+document.write(
+'<p>before subtext</p>\\n' +
+'<script>\\n' +
+'checkpoint(4);\\n' +
+'document.write("third nest");\\n' +
+'</scr' + 'ipt>\\n'
+);
+</scr` + `ipt>
+<p>fin</p>
+`);
+</script><h2>Subtitle</h2>
+<script>
+checkpoint(1);
+</script>
+
+<script>
+checkpoint(3);
+document.write(
+'<p>before subtext</p>\n' +
+'<script>\n' +
+'checkpoint(4);\n' +
+'document.write("third nest");\n' +
+'</scr' + 'ipt>\n'
+);
+</script><p>before subtext</p>
+<script>
+checkpoint(4);
+document.write("third nest");
+</script>third nest
+
+<p>fin</p>
+
+<p>Subtext.</p>
+
+
+</style>
+<script>
+document.write("<h1>Main title</h1>");
+</script>
+</head>
+<body>
+<p>Text.</p>
+<script>
+document.write(`<h2>Subtitle</h2>
+<script>
+checkpoint(1);
+</scr` + `ipt>
+`);
+
+checkpoint(2);
+
+document.write(`
+<script>
+checkpoint(3);
+document.write(
+'<p>before subtext</p>\\n' +
+'<script>\\n' +
+'checkpoint(4);\\n' +
+'document.write("third nest");\\n' +
+'</scr' + 'ipt>\\n'
+);
+</scr` + `ipt>
+<p>fin</p>
+`);
+</script>
+<p>Subtext.</p>
+</body>
+</html>

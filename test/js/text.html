@@ -1,0 +1,8 @@
+<!doctype html>
+<div id="succ">Fail</div>
+<script>
+(function() {
+	if (new Text("data").ownerDocument != document) return;
+	document.getElementById("succ").textContent = "Success"
+})()
+</script>

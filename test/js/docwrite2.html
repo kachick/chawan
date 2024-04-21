@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>document.write test</title>
+<script>
+window.onload = function() {
+	const success = document.body.innerHTML == document.querySelector("style").textContent;
+	while (document.body.childNodes[0])
+		document.body.childNodes[0].remove();
+	document.body.innerHTML = success ? "Success" : "Fail";
+}
+let checkpointCounter = 0;
+function checkpoint(n) {
+	if (++checkpointCounter != n)
+		throw new TypeError(`Checkpoint failed: expected ${n} but got ${checkpointCounter}`);
+}
+</script>
+<style><script>
+document.write("a");
+document.write("<script></scr" + "ipt>x");
+document.write("t");
+</script>a<script></script>xt
+
+</style>
+</head>
+<body><script>
+document.write("a");
+document.write("<script></scr" + "ipt>x");
+document.write("t");
+</script></body>
+</html>

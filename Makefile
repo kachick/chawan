@@ -304,3 +304,8 @@ uninstall:
 .PHONY: submodule
 submodule:
 	git submodule update --init
+
+.PHONY: test
+test:
+	(cd test/js; ./run_js_tests.sh)
+	(cd test/layout; ./run_layout_tests.sh)

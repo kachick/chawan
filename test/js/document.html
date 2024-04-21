@@ -1,0 +1,11 @@
+<!doctype html>
+<title>Window test</title>
+<div id="abc">Fail</div>
+<script>
+(function() {
+	if (document.toString() !== "[object Document]") return;
+	if (document !== window.document) return;
+	if (document.implementation !== document.implementation) return;
+	document.getElementById("abc").textContent = "Success";
+})()
+</script>

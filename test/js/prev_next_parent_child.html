@@ -1,0 +1,22 @@
+<!doctype html>
+<main>
+<div id=x>Fail</div>
+test
+<a id=y>test test</a>
+</main>
+<script>
+(function() {
+	let x = document.getElementById("x")
+	let y = document.getElementById("y");
+	if (y.previousSibling === x) return;
+	if (y.previousSibling.textContent.trim() !== "test") return;
+	if (y.previousElementSibling !== x) return;
+	if (x.nextElementSibling !== y) return;
+	if (x.nextSibling.textContent.trim() !== "test") return;
+	x.nextSibling.remove();
+	x.nextSibling.remove();
+	if (x.parentElement.children.length !== 1) return;
+	if (x.parentElement.children[0] !== x) return;
+	x.textContent = "Success";
+})()
+</script>

@@ -1,0 +1,11 @@
+<!doctype html>
+<title>Window test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+assert_equals(window.toString(), "[object Window]");
+const desc = Object.getOwnPropertyDescriptor(window, "window");
+assert(desc.enumerable, "window must be enumerable");
+assert(!desc.configurable, "window must not be configurable");
+document.getElementById("x").textContent = "Success";
+</script>

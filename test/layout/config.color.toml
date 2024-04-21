@@ -1,0 +1,4 @@
+include = "config.toml"
+
+[display]
+color-mode = 'true-color'
