@@ -19,6 +19,7 @@ import js/intl
 import js/javascript
 import js/jstypes
 import js/timeout
+import js/tojs
 import loader/headers
 import loader/loader
 import loader/request
@@ -159,6 +160,15 @@ proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(Element)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
   #TODO implement this properly
   return ok(element.style)
+
+proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
+    {.jsfset: "onload".} =
+  if JS_IsFunction(ctx, val):
+    let this = ctx.toJS(window)
+    ctx.definePropertyC(this, "onload", JS_DupValue(ctx, val))
+    #TODO I haven't checked but this might also be wrong
+    doAssert ctx.addEventListener(window, "load", val).isOk
+    JS_FreeValue(ctx, this)
 
 proc addScripting*(window: Window; selector: Selector[int]) =
   let rt = newJSRuntime()

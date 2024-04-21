@@ -714,17 +714,19 @@ proc roundRect(ctx: CanvasRenderingContext2D; x, y, w, h, radii: float64)
 # Reflected attributes.
 type
   ReflectType = enum
-    REFLECT_STR, REFLECT_BOOL, REFLECT_LONG, REFLECT_ULONG_GZ, REFLECT_ULONG
+    rtStr, rtBool, rtLong, rtUlongGz, rtUlong, rtFunction
 
   ReflectEntry = object
     attrname: StaticAtom
     funcname: string
     tags: set[TagType]
     case t: ReflectType
-    of REFLECT_LONG:
+    of rtLong:
       i: int32
-    of REFLECT_ULONG, REFLECT_ULONG_GZ:
+    of rtUlong, rtUlongGz:
       u: uint32
+    of rtFunction:
+      ctype: string
     else: discard
 
 func attrType0(s: static string): StaticAtom =
@@ -741,7 +743,7 @@ func makes(name: static string; ts: set[TagType]): ReflectEntry =
   ReflectEntry(
     attrname: attrname,
     funcname: name,
-    t: REFLECT_STR,
+    t: rtStr,
     tags: ts
   )
 
@@ -751,7 +753,7 @@ func makes(attrname, funcname: static string; ts: set[TagType]):
   ReflectEntry(
     attrname: attrname,
     funcname: funcname,
-    t: REFLECT_STR,
+    t: rtStr,
     tags: ts
   )
 
@@ -768,7 +770,7 @@ func makeb(attrname, funcname: static string; ts: varargs[TagType]):
   ReflectEntry(
     attrname: attrname,
     funcname: funcname,
-    t: REFLECT_BOOL,
+    t: rtBool,
     tags: toset(ts)
   )
 
@@ -781,20 +783,30 @@ func makeul(name: static string; ts: varargs[TagType]; default = 0u32):
   ReflectEntry(
     attrname: attrname,
     funcname: name,
-    t: REFLECT_ULONG,
+    t: rtUlong,
     tags: toset(ts),
     u: default
   )
 
-func makeulgz(name: static string; ts: varargs[TagType], default = 0u32):
+func makeulgz(name: static string; ts: varargs[TagType]; default = 0u32):
     ReflectEntry =
   const attrname = attrType0(name)
   ReflectEntry(
     attrname: attrname,
     funcname: name,
-    t: REFLECT_ULONG_GZ,
+    t: rtUlongGz,
     tags: toset(ts),
     u: default
+  )
+
+func makef(name: static string; ts: set[TagType]; ctype: string): ReflectEntry =
+  const attrname = attrType0(name)
+  ReflectEntry(
+    attrname: attrname,
+    funcname: name,
+    t: rtFunction,
+    tags: ts,
+    ctype: ctype
   )
 
 const ReflectTable0 = [
@@ -824,7 +836,8 @@ const ReflectTable0 = [
   makeb("ismap", "isMap", TAG_IMG),
   # "super-global" attributes
   makes("slot", AllTagTypes),
-  makes("class", "className", AllTagTypes)
+  makes("class", "className", AllTagTypes),
+  makef("onclick", AllTagTypes, "click"),
 ]
 
 # Forward declarations
@@ -4043,17 +4056,19 @@ proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
-  of REFLECT_STR:
+  of rtStr:
     let x = toJS(ctx, element.attr(entry.attrname))
     return x
-  of REFLECT_BOOL:
+  of rtBool:
     return toJS(ctx, element.attrb(entry.attrname))
-  of REFLECT_LONG:
+  of rtLong:
     return toJS(ctx, element.attrl(entry.attrname).get(entry.i))
-  of REFLECT_ULONG:
+  of rtUlong:
     return toJS(ctx, element.attrul(entry.attrname).get(entry.u))
-  of REFLECT_ULONG_GZ:
+  of rtUlongGz:
     return toJS(ctx, element.attrulgz(entry.attrname).get(entry.u))
+  of rtFunction:
+    return JS_GetPropertyStr(ctx, this, cstring($entry.attrname))
 
 proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
     {.cdecl.} =
@@ -4067,11 +4082,11 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
-  of REFLECT_STR:
+  of rtStr:
     let x = fromJS[string](ctx, val)
     if x.isSome:
       element.attr(entry.attrname, x.get)
-  of REFLECT_BOOL:
+  of rtBool:
     let x = fromJS[bool](ctx, val)
     if x.isSome:
       if x.get:
@@ -4080,18 +4095,24 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
         let i = element.findAttr(entry.attrname)
         if i != -1:
           element.delAttr(i)
-  of REFLECT_LONG:
+  of rtLong:
     let x = fromJS[int32](ctx, val)
     if x.isSome:
       element.attrl(entry.attrname, x.get)
-  of REFLECT_ULONG:
+  of rtUlong:
     let x = fromJS[uint32](ctx, val)
     if x.isSome:
       element.attrul(entry.attrname, x.get)
-  of REFLECT_ULONG_GZ:
+  of rtUlongGz:
     let x = fromJS[uint32](ctx, val)
     if x.isSome:
       element.attrulgz(entry.attrname, x.get)
+  of rtFunction:
+    if JS_IsFunction(ctx, val):
+      let target = fromJS[EventTarget](ctx, this).get
+      ctx.definePropertyC(this, $entry.attrname, JS_DupValue(ctx, val))
+      #TODO I haven't checked but this might also be wrong
+      doAssert ctx.addEventListener(target, entry.ctype, val).isOk
   return JS_DupValue(ctx, val)
 
 func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
@@ -4108,8 +4129,7 @@ func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
 
 func getElementReflectFunctions(): seq[TabGetSet] =
   result = @[]
-  var i: int16 = ReflectAllStartIndex
-  while i < int16(ReflectTable.len):
+  for i in ReflectAllStartIndex ..< int16(ReflectTable.len):
     let entry = ReflectTable[i]
     assert entry.tags == AllTagTypes
     result.add(TabGetSet(
@@ -4118,7 +4138,6 @@ func getElementReflectFunctions(): seq[TabGetSet] =
       set: jsReflectSet,
       magic: i
     ))
-    inc i
 
 proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
     options = none(JSValue)): RenderingContext {.jsfunc.} =
