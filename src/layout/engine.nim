@@ -17,6 +17,7 @@ type
   LayoutState = ref object
     attrsp: ptr WindowAttributes
     positioned: seq[AvailableSpace]
+    myRootProperties: CSSComputedValues
 
   # min-content: box width is longest word's width
   # max-content: box width is content width without wrapping
@@ -1523,27 +1524,14 @@ proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
     offset, bfcOffset: Offset): RootInlineFragment =
   let root = RootInlineFragment(
     offset: offset,
-    fragment: InlineFragment(computed: computed)
+    fragment: InlineFragment(computed: bctx.lctx.myRootProperties)
   )
   var ictx = bctx.initInlineContext(space, bfcOffset, root)
   for child in inlines:
-    case child.computed{"display"}
-    of DisplayInline:
-      let childFragment = ictx.layoutInline(InlineBoxBuilder(child))
-      root.fragment.children.add(childFragment)
-    of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
-      # add an anonymous fragment to contain this
-      var state = InlineState(
-        computed: computed,
-        fragment: InlineFragment(computed: computed),
-        firstLine: true
-      )
-      let w = fitContent(ictx.space.w)
-      let h = ictx.space.h
-      ictx.addInlineBlock(state, BlockBoxBuilder(child), w, h)
-      root.fragment.children.add(state.fragment)
-    else:
-      assert false, "child.t is " & $child.computed{"display"}
+    assert child.computed{"display"} == DisplayInline, "display is " &
+      $child.computed{"display"}
+    let childFragment = ictx.layoutInline(InlineBoxBuilder(child))
+    root.fragment.children.add(childFragment)
   if ictx.firstTextFragment != nil:
     root.fragment.startOffset = ictx.firstTextFragment.startOffset
   let lastFragment = if ictx.lastTextFragment != nil:
@@ -3133,7 +3121,11 @@ proc renderLayout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     w: stretch(attrsp[].width_px),
     h: stretch(attrsp[].height_px)
   )
-  let lctx = LayoutState(attrsp: attrsp, positioned: @[space])
+  let lctx = LayoutState(
+    attrsp: attrsp,
+    positioned: @[space],
+    myRootProperties: rootProperties()
+  )
   let builder = root.generateBlockBox(lctx)
   var marginBottomOut: LayoutUnit
   return lctx.layoutRootBlock(builder, space, Offset(), marginBottomOut)
