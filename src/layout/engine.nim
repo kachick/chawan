@@ -816,25 +816,28 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
   let shift = ictx.computeShift(state)
   ictx.currentLine.widthAfterWhitespace = ictx.currentLine.size.w + shift
 
-proc layoutText(ictx: var InlineContext; state: var InlineState; str: string) =
-  ictx.flushWhitespace(state)
-  ictx.newWord(state)
-  case state.computed{"text-transform"}
-  of TextTransformNone:
+iterator transform(text: seq[string]; v: CSSTextTransform): string {.inline.} =
+  if v == TextTransformNone:
+    for str in text:
+      yield str
+  else:
+    for str in text:
+      let str = case v
+      of TextTransformCapitalize: str.capitalize()
+      of TextTransformUppercase: str.toUpper()
+      of TextTransformLowercase: str.toLower()
+      of TextTransformFullWidth: str.fullwidth()
+      of TextTransformFullSizeKana: str.fullsize()
+      of TextTransformChaHalfWidth: str.halfwidth()
+      else: ""
+      yield str
+
+proc layoutText(ictx: var InlineContext; state: var InlineState;
+    text: seq[string]) =
+  for str in text.transform(state.computed{"text-transform"}):
+    ictx.flushWhitespace(state)
+    ictx.newWord(state)
     ictx.layoutTextLoop(state, str)
-    {.linearScanEnd.}
-  of TextTransformCapitalize:
-    ictx.layoutTextLoop(state, str.capitalize())
-  of TextTransformUppercase:
-    ictx.layoutTextLoop(state, str.toUpper())
-  of TextTransformLowercase:
-    ictx.layoutTextLoop(state, str.toLower())
-  of TextTransformFullWidth:
-    ictx.layoutTextLoop(state, str.fullwidth())
-  of TextTransformFullSizeKana:
-    ictx.layoutTextLoop(state, str.fullsize())
-  of TextTransformChaHalfWidth:
-    ictx.layoutTextLoop(state, str.halfwidth())
 
 func spx(l: CSSLength; lctx: LayoutState; p: SizeConstraint;
     computed: CSSComputedValues; padding: LayoutUnit): LayoutUnit =
@@ -1159,6 +1162,8 @@ proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
   sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
+proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
+    InlineFragment
 
 # Note: padding must still be applied after this.
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
@@ -1447,6 +1452,22 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   discard ictx.addAtom(state, iastate, iblock)
   ictx.whitespacenum = 0
 
+proc layoutChildren(ictx: var InlineContext; state: var InlineState;
+    children: seq[BoxBuilder]) =
+  for child in children:
+    case child.computed{"display"}
+    of DisplayInline:
+      let child = ictx.layoutInline(InlineBoxBuilder(child))
+      state.fragment.children.add(child)
+    of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
+      # Note: we do not need a separate inline fragment here, because the tree
+      # generator already does an iflush() before adding inline blocks.
+      let w = fitContent(ictx.space.w)
+      let h = ictx.space.h
+      ictx.addInlineBlock(state, BlockBoxBuilder(child), w, h)
+    else:
+      assert false, "child.t is " & $child.computed{"display"}
+
 proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     InlineFragment =
   let lctx = ictx.lctx
@@ -1473,29 +1494,13 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
   if stSplitStart in box.splitType:
     let paddingLeft = box.computed{"padding-left"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingLeft
-
   assert box.children.len == 0 or box.text.len == 0
   ictx.applyLineHeight(ictx.currentLine, state.computed)
   if ictx.firstTextFragment == nil:
     ictx.firstTextFragment = fragment
   ictx.lastTextFragment = fragment
-  for text in box.text:
-    ictx.layoutText(state, text)
-
-  for child in box.children:
-    case child.computed{"display"}
-    of DisplayInline:
-      let child = ictx.layoutInline(InlineBoxBuilder(child))
-      state.fragment.children.add(child)
-    of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
-      # Note: we do not need a separate inline fragment here, because the tree
-      # generator already does an iflush() before adding inline blocks.
-      let w = fitContent(ictx.space.w)
-      let h = ictx.space.h
-      ictx.addInlineBlock(state, BlockBoxBuilder(child), w, h)
-    else:
-      assert false, "child.t is " & $child.computed{"display"}
-
+  ictx.layoutText(state, box.text)
+  ictx.layoutChildren(state, box.children)
   if stSplitEnd in box.splitType:
     let paddingRight = box.computed{"padding-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingRight
@@ -1510,10 +1515,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
       y: ictx.currentLine.offsety
     )
   else:
-    fragment.startOffset = Offset(
-      x: 0,
-      y: ictx.currentLine.offsety
-    )
+    fragment.startOffset = Offset(x: 0, y: ictx.currentLine.offsety)
   return fragment
 
 proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
