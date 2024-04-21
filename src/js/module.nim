@@ -6,13 +6,11 @@ import js/tojs
 proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   let moduleNameAtom = JS_GetModuleName(ctx, m)
-  let moduleName = JS_AtomToCString(ctx, moduleNameAtom)
   let metaObj = JS_GetImportMeta(ctx, m)
-  definePropertyCWE(ctx, metaObj, "url", moduleName)
+  definePropertyCWE(ctx, metaObj, "url", JS_AtomToValue(ctx, moduleNameAtom))
   definePropertyCWE(ctx, metaObj, "main", isMain)
   JS_FreeValue(ctx, metaObj)
   JS_FreeAtom(ctx, moduleNameAtom)
-  JS_FreeCString(ctx, moduleName)
 
 proc finishLoadModule*(ctx: JSContext; f: string; name: cstring): JSModuleDef =
   let funcVal = compileModule(ctx, f, name)

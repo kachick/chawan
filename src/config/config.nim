@@ -773,16 +773,17 @@ proc initCommands*(config: Config): Err[string] =
     if k in config.cmd.map:
       # already in map; skip
       continue
-    var objIt = obj
+    var objIt = JS_DupValue(ctx, obj)
     let name = k.afterLast('.')
     if name.len < k.len:
       for ss in k.substr(0, k.high - name.len - 1).split('.'):
         var prop = JS_GetPropertyStr(ctx, objIt, cstring(ss))
         if JS_IsUndefined(prop):
           prop = JS_NewObject(ctx)
-          ctx.definePropertyE(objIt, ss, prop)
+          ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop))
         if JS_IsException(prop):
           return err(ctx.getExceptionMsg())
+        JS_FreeValue(ctx, objIt)
         objIt = prop
     if cmd == "":
       config.cmd.map[k] = JS_UNDEFINED

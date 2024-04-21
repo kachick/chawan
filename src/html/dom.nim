@@ -1446,7 +1446,7 @@ proc newLocation*(window: Window): Location =
   if ctx != nil:
     let val = toJS(ctx, location)
     let valueOf = ctx.getOpaque().Object_prototype_valueOf
-    defineProperty(ctx, val, "valueOf", valueOf)
+    defineProperty(ctx, val, "valueOf", JS_DupValue(ctx, valueOf))
     defineProperty(ctx, val, "toPrimitive", JS_UNDEFINED)
     #TODO [[DefaultProperties]]
     JS_FreeValue(ctx, val)
@@ -2855,7 +2855,7 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
       urls, ctx.getExceptionMsg())
   else:
     let jsTarget = ctx.toJS(target)
-    ctx.definePropertyC(jsTarget, $name, fun)
+    ctx.definePropertyC(jsTarget, $name, JS_DupValue(ctx, fun))
     JS_FreeValue(ctx, jsTarget)
     #TODO this is subtly wrong. In fact, we should not pass `fun'
     # directly here, but a wrapper function that calls fun. Currently
