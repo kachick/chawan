@@ -286,7 +286,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     doAssert JS_SetProperty(ctx, proto, ctxOpaque.sym_refs[ITERATOR], val) == 1
   let news = JS_NewAtomString(ctx, cdef.class_name)
   doAssert not JS_IsException(news)
-  ctx.definePropertyC(proto, ctxOpaque.sym_refs[TO_STRING_TAG], news)
+  ctx.definePropertyC(proto, ctxOpaque.sym_refs[TO_STRING_TAG],
+    JS_DupValue(ctx, news))
   JS_SetClassProto(ctx, result, proto)
   ctx.addClassUnforgeable(proto, result, parent, unforgeable)
   if asglobal:
@@ -294,6 +295,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     assert ctxOpaque.gclaz == ""
     ctxOpaque.gclaz = tname
     ctxOpaque.gparent = parent
+    ctx.definePropertyC(global, ctxOpaque.sym_refs[TO_STRING_TAG],
+      JS_DupValue(ctx, news))
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " &
         $cdef.class_name)
@@ -301,6 +304,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     ctxOpaque.unforgeable.withValue(result, uf):
       JS_SetPropertyFunctionList(ctx, global, addr uf[][0], cint(uf[].len))
     JS_FreeValue(ctx, global)
+  JS_FreeValue(ctx, news)
   let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0,
     JS_CFUNC_constructor)
   if staticfuns.len > 0:
