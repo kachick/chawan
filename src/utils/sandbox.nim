@@ -15,8 +15,8 @@
 # user's system.
 #
 # On OpenBSD, we pledge the minimum amount of promises we need, and
-# unveil the same socket directory as above. It seems to be roughly
-# equivalent to the security we get with FreeBSD Capsicum.
+# do not unveil anything. It seems to be roughly equivalent to the
+# security we get with FreeBSD Capsicum.
 #
 # On Linux, we use libseccomp so that I don't have to manually write
 # BPF filters.
@@ -55,12 +55,9 @@ elif defined(openbsd) and not disableSandbox:
   proc enterBufferSandbox*(sockPath: string) =
     # take whatever we need to
     # * fork
-    # * create/use UNIX domain sockets in sockPath
+    # * connect to UNIX domain sockets
     # * take FDs from the main process
-    # cw is the minimum for being able to make sockets
-    doAssert unveil(cstring(sockPath), "cw") == 0
-    # note: ordering is important; pledge now removes the unveil promise.
-    doAssert pledge("unix stdio sendfd recvfd proc cpath", nil) == 0
+    doAssert pledge("unix stdio sendfd recvfd proc", nil) == 0
 
   proc enterNetworkSandbox*() =
     # we don't need much to write out data from sockets to stdout.
