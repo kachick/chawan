@@ -191,9 +191,8 @@ of the retrieved resource. If an error is encountered, it prints a
 
 ### Adding a new protocol
 
-Here we will add a protocol called "example", so that the URL example:text
-prints "text" after a second of waiting. We will write the adapter in shell
-script.
+Here we will add a protocol called "cowsay", so that the URL cowsay:text
+prints the output of `cowsay text` after a second of waiting.
 
 First, make sure you have a local CGI path `~/cgi-bin` set up in your
 `~/.config/chawan/config.toml`:
@@ -207,7 +206,7 @@ It is also possible to just put your CGI scripts to
 edits in your config. But it seems more convenient to use a dedicated cgi-bin in
 your home directory.
 
-`mkdir ~/cgi-bin`, and create a CGI script in `~/cgi-bin` called `example.cgi`:
+`mkdir ~/cgi-bin`, and create a CGI script in `~/cgi-bin` called `cowsay.cgi`:
 
 ```sh
 #!/bin/sh
@@ -226,9 +225,10 @@ printf 'Status: 200' # HTTP OK
 printf 'Cha-Control: ControlDone\n'
 # As in HTTP, you must send an empty line before the body.
 printf '\n'
-# Now, print the body. We just take the path passed to the URL; urimethodmap
-# sets this as MAPPED_URI_PATH.
-printf '%s' "$MAPPED_URI_PATH"
+# Now, print the body. We take the path passed to the URL; urimethodmap
+# sets this as MAPPED_URI_PATH. This is URI-encoded, so we also run the urldec
+# utility on it.
+cowsay "$(printf '%s\n' "$MAPPED_URI_PATH" | "$CHA_LIBEXEC_DIR"/urldec)"
 ```
 
 Now, create a ".urimethodmap" file in your `$HOME` directory.
@@ -236,11 +236,11 @@ Now, create a ".urimethodmap" file in your `$HOME` directory.
 Then, enter into it the following:
 
 ```
-example:	/cgi-bin/example.cgi
+cowsay:		/cgi-bin/cowsay.cgi
 ```
 
-Now try `cha example:Hello_world`. If you did everything correctly, it should
-wait one second, then print "Hello_world".
+Now try `cha cowsay:Hello,%20world.`. If you did everything correctly, it should
+wait one second, then print a cow saying "Hello, world.".
 
 <!-- MANON
 

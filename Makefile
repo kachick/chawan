@@ -226,7 +226,8 @@ clean:
 MANPAGES = $(OBJDIR)/man/cha.1 $(OBJDIR)/man/mancha.1 \
 	$(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
 	$(OBJDIR)/man/cha-mime.types.5 $(OBJDIR)/man/cha-localcgi.5 \
-	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5
+	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5 \
+	$(OBJDIR)/man/cha-api.5
 
 .PHONY: manpage
 manpage: $(MANPAGES)
@@ -265,6 +266,7 @@ install:
 	install -m644 "$(OUTDIR_MAN)/cha-localcgi.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OUTDIR_MAN)/cha-urimethodmap.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OUTDIR_MAN)/cha-protocols.5" "$(DESTDIR)$(MANPREFIX5)"; \
+	install -m644 "$(OUTDIR_MAN)/cha-api.5" "$(DESTDIR)$(MANPREFIX5)"; \
 	install -m644 "$(OUTDIR_MAN)/cha.1" "$(DESTDIR)$(MANPREFIX1)"; \
 	install -m644 "$(OUTDIR_MAN)/mancha.1" "$(DESTDIR)$(MANPREFIX1)"; \
 	fi

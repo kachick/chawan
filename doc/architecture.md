@@ -246,18 +246,14 @@ it some time...)
 Also, contents of the start.startup-script option are executed at startup. This
 is used when `cha` is called with the `-r` flag.
 
-There *is* an API, but it's severely underdocumented. Web APIs are exposed to
+There *is* an API, but it's somewhat underdocumented. Web APIs are exposed to
 pager too, but you cannot operate on the DOMs themselves from the pager, unless
 you create one yourself with DOMParser.parseFromString.
 
-[config.md](config.md) describes all functions that are used in the default
-config. However, it does not describe the true nature of the API:
-when pager.someFunction is called and someFunction is not present in pager,
-it dispatches the call to pager.buffer.someFunction (where pager.buffer is a
-reference to the current buffer).
+[config.md](config.md) describes all commands that are used in the default
+config.
 
-For example, all cursor movement commands described in config.md are in fact
-dispatched to the current buffer's container.
+A more complete description of the API can be found in [api.md](api.md).
 
 ### JS in the buffer
 

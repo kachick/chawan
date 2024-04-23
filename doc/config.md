@@ -690,35 +690,26 @@ modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
 escape to the keybinding respectively (essentially making `M-` the same as
 `C-[`). Modifiers can be escaped with the `\` sign.
 
+`<action>` is either a command defined in the `[cmd]` section, or a JavaScript
+expression. Here we only describe the pre-defined actions in the default config;
+for a description of the API, please see:
+
+<!-- MANOFF -->
+[the API documentation](api.md).
+<!-- MANON -->
+<!-- MANON
+The API documentation at **cha-api**(5).
+MANOFF -->
+
 Examples:
 
+```toml
+# show change URL when Control, Escape and j are pressed
+'C-M-j' = 'cmd.pager.load'
+# go to the first line of the page when g is pressed twice without a preceding
+# number, or to the line when a preceding number is given.
+'gg' = 'cmd.pager.gotoLineOrStart'
 ```
-# change URL when Control, Escape and j are pressed
-'C-M-j' = 'pager.load()'
-# go to the first line of the page when g is pressed twice
-'gg' = 'pager.cursorFirstLine()'
-# filter the current buffer's source through rdrview, then display the output in
-# a new buffer when the keys `g' and then `f' are pressed
-# (see https://github.com/eafer/rdrview)
-'gr' = 'pager.externFilterSource("rdrview -H")'
-```
-
-An action is a JavaScript expression called by Chawan every time the keybinding
-is typed in. If an action returns a function, Chawan will also call the
-returned function automatically. So this works too:
-
-```
-U = '() => pager.load()' # works
-```
-
-Note however, that JavaScript functions must be called with an appropriate
-this value. Unfortunately, this also means that the following does not work:
-
-```
-q = 'pager.load' # broken!!!
-```
-
-A list of built-in pager functions can be found below.
 
 ### Browser actions
 
@@ -730,21 +721,24 @@ A list of built-in pager functions can be found below.
 </tr>
 
 <tr>
-<td>`quit()`</td>
+<td>`cmd.pager.quit`</td>
 <td>Exit the browser.</td>
 </tr>
 
 <tr>
-<td>`suspend()`</td>
-<td>Temporarily suspend the browser (by delivering the client process a
-SIGTSTP signal.)<br>
-Note: this suspends the entire process group, including e.g. buffer processes or
-CGI scripts.</td>
+<td>`cmd.pager.suspend`</td>
+<td>Temporarily suspend the browser<br>
+Note: this also suspends e.g. buffer processes or CGI scripts. So if you are
+downloading something, that will be delayed until you restart the process.</td>
 </tr>
 
 </table>
 
 ### Pager actions
+
+Note: `n` in the following text refers to a number preceding the action.  e.g.
+in `10gg`, n = 10.  If no preceding number is input, then it is left
+unspecified.
 
 <table>
 
@@ -754,497 +748,301 @@ CGI scripts.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorUp(n = 1)`</td>
+<td>`cmd.pager.cursorUp`</td>
 <td>Move the cursor upwards by n lines, or if n is unspecified, by 1.</td>
 </tr>
 <tr>
-<td>`pager.cursorDown(n = 1)`</td>
+<td>`cmd.pager.cursorDown`</td>
 <td>Move the cursor downwards by n lines, or if n is unspecified, by 1.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorLeft(n = 1)`</td>
+<td>`cmd.pager.cursorLeft`</td>
 <td>Move the cursor to the left by n cells, or if n is unspecified, by 1.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorRight(n = 1)`</td>
+<td>`cmd.pager.cursorRight`</td>
 <td>Move the cursor to the right by n cells, or if n is unspecified, by 1.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorLineBegin()`</td>
+<td>`cmd.pager.cursorLineBegin`</td>
 <td>Move the cursor to the first cell of the line.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorLineTextStart()`</td>
+<td>`cmd.pager.cursorLineTextStart`</td>
 <td>Move the cursor to the first non-blank character of the line.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorLineEnd()`</td>
+<td>`cmd.pager.cursorLineEnd`</td>
 <td>Move the cursor to the last cell of the line.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorNextWord()`, `pager.cursorNextViWord()`,
-`pager.cursorNextBigWord()`</td>
+<td>`cmd.pager.cursorNextWord`, `cmd.pager.cursorNextViWord`,
+`cmd.pager.cursorNextBigWord`</td>
 <td>Move the cursor to the beginning of the next [word](#word-types).</td>
 </tr>
 
 <tr>
-<td>`pager.cursorPrevWord()`, `pager.cursorPrevViWord()`,
-`pager.cursorPrevBigWord()`</td>
+<td>`cmd.pager.cursorPrevWord`, `cmd.pager.cursorPrevViWord`,
+`cmd.pager.cursorPrevBigWord`</td>
 <td>Move the cursor to the end of the previous [word](#word-types).</td>
 </tr>
 
 <tr>
-<td>`pager.cursorWordEnd()`, `pager.cursorViWordEnd()`,
-`pager.cursorBigWordEnd()`</td>
+<td>`cmd.pager.cursorWordEnd`, `cmd.pager.cursorViWordEnd`,
+`cmd.pager.cursorBigWordEnd`</td>
 <td>Move the cursor to the end of the current [word](#word-types), or if already
 there, to the end of the next word.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorWordBegin()`, `pager.cursorViWordBegin()`,
-`pager.cursorBigWordBegin()`</td>
+<td>`cmd.pager.cursorWordBegin`, `cmd.pager.cursorViWordBegin`,
+`cmd.pager.cursorBigWordBegin`</td>
 <td>Move the cursor to the beginning of the current [word](#word-types), or if
 already there, to the end of the previous word.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorNextLink()`</td>
-<td>Move the cursor to the beginning of the next clickable element.</td>
-</tr>
-
-<tr>
-<td>`pager.cursorPrevLink()`</td>
+<td>`cmd.pager.cursorPrevLink`</td>
 <td>Move the cursor to the beginning of the previous clickable element.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorPrevParagraph(n = 1)`</td>
+<td>`cmd.pager.cursorNextLink`</td>
+<td>Move the cursor to the beginning of the next clickable element.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.cursorPrevParagraph`</td>
 <td>Move the cursor to the beginning of the nth next paragraph.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorNextParagraph(n = 1)`</td>
+<td>`cmd.pager.cursorNextParagraph`</td>
 <td>Move the cursor to the end of the nth previous paragraph.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorNthLink(n = 1)`</td>
-<td>Move the cursor to the nth link of the document.</td>
-</tr>
-
-<tr>
-<td>`pager.cursorRevNthLink(n = 1)`</td>
+<td>`cmd.pager.cursorRevNthLink`</td>
 <td>Move the cursor to the nth link of the document, counting backwards
 from the document's last line.</td>
 </tr>
 
 <tr>
-<td>`pager.pageDown(n = 1)`</td>
-<td>Scroll down by n pages.</td>
+<td>`cmd.pager.cursorNthLink`</td>
+<td>Move the cursor to the nth link of the document.</td>
 </tr>
 
 <tr>
-<td>`pager.pageUp(n = 1)`</td>
-<td>Scroll up by n pages.</td>
+<td>`cmd.pager.pageUp`, `cmd.pager.pageDown`, `cmd.pager.pageLeft`,
+`cmd.pager.pageRight`</td>
+<td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
+page.</td>
 </tr>
 
 <tr>
-<td>`pager.pageLeft(n = 1)`</td>
-<td>Scroll to the left by n pages.</td>
+<td>`cmd.pager.halfPageUp`, `cmd.pager.halfPageDown`, `cmd.pager.halfPageLeft`,
+`pager.halfPageUp`</td>
+<td>Scroll up/down/left/right by n half pages, or if n is unspecified, by one
+page.</td>
 </tr>
 
 <tr>
-<td>`pager.pageRight(n = 1)`</td>
-<td>Scroll to the right n pages.</td>
+<td>`cmd.pager.scrollUp`, `cmd.pager.scrollDown`, `cmd.pager.scrollLeft`,
+`cmd.pager.scrollRight`</td>
+<td>Scroll up/down/left/right by n lines, or if n is unspecified, by one
+line.</td>
 </tr>
 
 <tr>
-<td>`pager.halfPageDown(n = 1)`</td>
-<td>Scroll forwards by n half pages.</td>
-</tr>
-
-<tr>
-<td>`pager.halfPageUp(n = 1)`</td>
-<td>Scroll backwards by n half pages.</td>
-</tr>
-
-<tr>
-<td>`pager.halfPageLeft(n = 1)`</td>
-<td>Scroll to the left by n half pages.</td>
-</tr>
-
-<tr>
-<td>`pager.halfPageUp(n = 1)`</td>
-<td>Scroll to the right by n half pages.</td>
-</tr>
-
-<tr>
-<td>`pager.scrollDown(n = 1)`</td>
-<td>Scroll forwards by n lines.</td>
-</tr>
-
-<tr>
-<td>`pager.scrollUp(n = 1)`</td>
-<td>Scroll backwards by n lines.</td>
-</tr>
-
-<tr>
-<td>`pager.scrollLeft(n = 1)`</td>
-<td>Scroll to the left by n columns.</td>
-</tr>
-
-<tr>
-<td>`pager.scrollRight(n = 1)`</td>
-<td>Scroll to the right by n columns.</td>
-</tr>
-
-<tr>
-<td>`pager.click()`</td>
+<td>`cmd.pager.click`</td>
 <td>Click the HTML element currently under the cursor.</td>
 </tr>
 
 <tr>
-<td>`pager.load(url)`</td>
-<td>Put the specified address into the URL bar, and optionally load it.<br>
-Note that this performs auto-expansion of URLs, so Chawan will expand any
-matching omni-rules (e.g. search), try to open schemeless URLs with the default
-scheme/local files, etc.<br>
-Opens a prompt with the current URL when no parameters are specified; otherwise,
-the string passed is displayed in the prompt. If this string ends with a newline
-(e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.</td>
+<td>`cmd.pager.load`</td>
+<td>Open the current address in the URL bar.</td>
 </tr>
 
 <tr>
-<td>`pager.loadSubmit(url)`</td>
-<td>Act as if `url` had been input into the address bar.<br>
-Same as `pager.load(url + "\n")`.</td>
+<td>`cmd.pager.webSearch`</td>
+<td>Open the URL bar with an arbitrary search engine. At the moment, this is
+DuckDuckGo Lite. (Note: Chawan developers aren't affiliated with DuckDuckGo the
+company or their product in any way.)</td>
 </tr>
 
 <tr>
-<td>`pager.gotoURL(url)`</td>
-<td>Go to the specified URL immediately (without a prompt). This differs from
-`load` and `loadSubmit` in that it *does not* try to correct the URL.<br>
-Use this for loading automatically retrieved (i.e. non-user-provided) URLs.</td>
-</tr>
-
-<tr>
-<td>`pager.dupeBuffer()`</td>
+<td>`cmd.pager.dupeBuffer`</td>
 <td>Duplicate the current buffer by loading its source to a new buffer.</td>
 </tr>
 
 <tr>
-<td>`pager.discardBuffer()`</td>
+<td>`cmd.pager.discardBuffer`</td>
 <td>Discard the current buffer, and move back to its previous sibling buffer,
 or if that doesn't exist, to its parent. If the current buffer is a root buffer
 (i.e. it has no parent), move to the next sibling buffer instead.</td>
 </tr>
 
 <tr>
-<td>`pager.discardTree()`</td>
+<td>`cmd.pager.discardTree`</td>
 <td>Discard all child buffers of the current buffer.</td>
 </tr>
 
 <tr>
-<td>`pager.reload()`</td>
+<td>`cmd.pager.reload`</td>
 <td>Open a new buffer with the current buffer's URL, replacing the current
 buffer.</td>
 </tr>
 
 <tr>
-<td>`pager.reshape()`</td>
+<td>`cmd.pager.reshape`</td>
 <td>Reshape the current buffer (=render the current page anew.)</td>
 </tr>
 
 <tr>
-<td>`pager.redraw()`</td>
+<td>`cmd.pager.redraw`</td>
 <td>Redraw screen contents. Useful if something messed up the display.</td>
 </tr>
 
 <tr>
-<td>`pager.toggleSource()`</td>
+<td>`cmd.pager.toggleSource`</td>
 <td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
 open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorFirstLine()`</td>
-<td>Move to the beginning in the buffer.</td>
+<td>`cmd.pager.cursorFirstLine`, `cmd.pager.cursorLastLine`</td>
+<td>Move to the beginning/end in the buffer.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorLastLine()`</td>
-<td>Move to the last line in the buffer.</td>
-</tr>
-
-<tr>
-<td>`pager.cursorTop()`</td>
+<td>`cmd.pager.cursorTop`</td>
 <td>Move to the first line on the screen. (Equivalent to H in vi.)</td>
 </tr>
 
 <tr>
-<td>`pager.cursorMiddle()`</td>
+<td>`cmd.pager.cursorMiddle`</td>
 <td>Move to the line in the middle of the screen. (Equivalent to M in vi.)</td>
 </tr>
 
 <tr>
-<td>`pager.cursorBottom()`</td>
+<td>`cmd.pager.cursorBottom`</td>
 <td>Move to the last line on the screen. (Equivalent to L in vi.)</td>
 </tr>
 
 <tr>
-<td>`pager.lowerPage(n = pager.cursory)`</td>
-<td>Move cursor to line n, then scroll up so that the cursor is on the
-top line on the screen. (`zt` in vim.)</td>
+<td>`cmd.pager.raisePage`, `cmd.pager.raisePageBegin`,
+`cmd.pager.centerLine`, `cmd.pager.centerLineBegin`,
+`cmd.pager.lowerPage`, `cmd.pager.lowerPageBegin`</td>
+<td>If n is specified, move cursor to line n. Then,
+
+* `raisePage` scrolls down so that the cursor is on the top line of the screen.
+  (vi `z<CR>`, vim `zt`.)
+* `centerLine` shifts the screen so that the cursor is in the middle of the
+  screen. (vi `z.`, vim `zz`.)
+* `lowerPage` scrolls up so that the cursor is on the bottom line of the screen.
+  (vi `z-`, vim `zb`.)
+
+The -`Begin` variants also move the cursor to the line's first non-blank
+character, as the variants originating from vi do.
+</td>
 </tr>
 
 <tr>
-<td>`pager.lowerPageBegin(n = pager.cursory)`</td>
-<td>Move cursor to the first non-blank character of line n, then scroll up
-so that the cursor is on the top line on the screen. (`z<CR>` in vi.)</td>
-</tr>
-
-<tr>
-<td>`pager.centerLine(n = pager.cursory)`</td>
-<td>Center screen around line n. (`zz` in vim.)</td>
-</tr>
-
-<tr>
-<td>`pager.centerLineBegin(n = pager.cursory)`</td>
-<td>Center screen around line n, and move the cursor to the line's first
-non-blank character. (`z.` in vi.)</td>
-</tr>
-
-<tr>
-<td>`pager.raisePage(n = pager.cursory)`</td>
-<td>Move cursor to line n, then scroll down so that the cursor is on the
-top line on the screen. (zb in vim.)</td>
-</tr>
-
-<tr>
-<td>`pager.lowerPageBegin(n = pager.cursory)`</td>
-<td>Move cursor to the first non-blank character of line n, then scroll up
-so that the cursor is on the last line on the screen. (`z^` in vi.)</td>
-</tr>
-
-<tr>
-<td>`pager.nextPageBegin(n = pager.cursory)`</td>
-<td>If n was given, move to the screen before the nth line and raise the page.
+<td>`cmd.pager.nextPageBegin`</td>
+<td>If n is specified, move to the screen before the nth line and raise the page.
 Otherwise, go to the previous screen's last line and raise the page. (`z+`
 in vi.)</td>
 </tr>
 
 <tr>
-<td>`pager.cursorLeftEdge()`</td>
-<td>Move to the first column on the screen.</td>
+<td>`cmd.pager.previousPageBegin`</td>
+<td>If n is specified, move to the screen before the nth line and raise the
+page.  Otherwise, go to the previous screen's last line and raise the page.
+(`z+` in vi.)</td>
 </tr>
 
 <tr>
-<td>`pager.cursorMiddleColumn()`</td>
-<td>Move to the column in the middle of the screen.</td>
+<td>`cmd.pager.cursorLeftEdge`, `cmd.pager.cursorMiddleColumn`,
+`cmd.pager.cursorRightEdge`</td>
+<td>Move to the first/middle/last column on the screen.</td>
 </tr>
 
 <tr>
-<td>`pager.cursorRightEdge()`</td>
-<td>Move to the last column on the screen.</td>
+<td>`cmd.pager.centerColumn`</td>
+<td>Center screen around the current column. (w3m `Z`.)</td>
 </tr>
 
 <tr>
-<td>`pager.centerColumn()`</td>
-<td>Center screen around the current column.</td>
+<td>`cmd.pager.lineInfo`</td>
+<td>Display information about the current line on the status line.</td>
 </tr>
 
 <tr>
-<td>`pager.lineInfo()`</td>
-<td>Display information about the current line.</td>
+<td>`cmd.pager.searchForward`, `cmd.pager.searchBackward`</td>
+<td>Search for a string in the current buffer, forwards or backwards.</td>
 </tr>
 
 <tr>
-<td>`pager.searchForward()`</td>
-<td>Search for a string in the current buffer.</td>
+<td>`cmd.pager.isearchForward`, `cmd.pager.searchBackward`</td>
+<td>Incremental-search for a string, highlighting the first result, forwards or
+backwards.</td>
 </tr>
 
 <tr>
-<td>`pager.searchBackward()`</td>
-<td>Search for a string, backwards.</td>
+<td>`cmd.pager.gotoLineOrStart`, `cmd.pager.gotoLineOrEnd`</td>
+<td>If n is specified, jump to line n. Otherwise, jump to the start/end of the
+page.</td>
 </tr>
 
 <tr>
-<td>`pager.isearchForward()`</td>
-<td>Incremental-search for a string, highlighting the first result.</td>
+<td>`cmd.pager.searchNext`, `cmd.pager.searchPrev`</td>
+<td>Jump to the nth (or if unspecified, first) next/previous search result.</td>
 </tr>
 
 <tr>
-<td>`pager.isearchBackward()`</td>
-<td>Incremental-search and highlight the first result, backwards.</td>
+<td>`cmd.pager.peek`</td>
+<td>Display a message of the current buffer's URL on the status line.</td>
 </tr>
 
 <tr>
-<td>`pager.gotoLine(n?)`</td>
-<td>Go to the line passed as the first argument.<br>
-If no arguments were specified, an input window for entering a line is
-shown.</td>
+<td>`cmd.pager.peekCursor`</td>
+<td>Display a message of the URL or title under the cursor on the status line.
+Multiple calls allow cycling through the two. (i.e. by default, press u once ->
+title, press again -> URL)</td>
 </tr>
 
 <tr>
-<td>`pager.searchNext(n = 1)`</td>
-<td>Jump to the nth next search result.</td>
+<td>`cmd.pager.setMark`</td>
+<td>Wait for a character `x` and then set a mark with the ID `x`.</td>
 </tr>
 
 <tr>
-<td>`pager.searchPrev(n = 1)`</td>
-<td>Jump to the nth previous search result.</td>
+<td>`cmd.pager.gotoMark`, `cmd.pager.gotoMarkY`</td>
+<td>Wait for a character `x` and then jump to the mark with the ID `x` (if it
+exists on the page).<br>
+`gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
+position.</td>
 </tr>
 
 <tr>
-<td>`pager.peek()`</td>
-<td>Display an alert message of the current URL.</td>
-</tr>
-
-<tr>
-<td>`pager.peekCursor()`</td>
-<td>Display an alert message of the URL or title under the cursor. Multiple
-calls allow cycling through the two. (i.e. by default, press u once -> title,
-press again -> URL)</td>
-</tr>
-
-<tr>
-<td>`pager.ask(prompt)`</td>
-<td>Ask the user for confirmation. Returns a promise which resolves to a
-boolean value indicating whether the user responded with yes.<br>
-Can be used to implement an exit prompt like this:
-```
-q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
-```
-</td>
-</tr>
-
-<tr>
-<td>`pager.askChar(prompt)`</td>
-<td>Ask the user for any character.<br>
-Like `pager.ask`, but the return value is a character.</td>
-</tr>
-
-<tr>
-<td>`pager.setMark(id, x = pager.cursorx, y = pager.cursory)`</td>
-<td>Set a mark at (x, y) using the name `id`.<br>
-Returns true if no other mark exists with `id`. If one already exists,
-it will be overridden and the function returns false.</td>
-</tr>
-
-<tr>
-<td>`pager.clearMark(id)`</td>
-<td>Clear the mark with the name `id`. Returns true if the mark existed,
-false otherwise.</td>
-</tr>
-
-<tr>
-<td>`pager.gotoMark(id)`</td>
-<td>If the mark `id` exists, jump to its position and return true. Otherwise,
-do nothing and return false.</td>
-</tr>
-
-<tr>
-<td>`pager.gotoMarkY(id)`</td>
-<td>If the mark `id` exists, jump to the beginning of the line at
-its Y position and return true. Otherwise, do nothing and return false.</td>
-</tr>
-
-<tr>
-<td>`pager.getMarkPos(id)`</td>
-<td>If the mark `id` exists, return its position as an array where the
-first element is the X position and the second element is the Y position.
-If the mark does not exist, return null.</td>
-</tr>
-
-<tr>
-<td>`pager.findNextMark(x = pager.cursorx, y = pager.cursory)`</td>
-<td>Find the next mark after `x`, `y`, if any; and return its id (or null
-if none were found.)</td>
-</tr>
-
-<tr>
-<td>`pager.findPrevMark(x = pager.cursorx, y = pager.cursory)`</td>
-<td>Find the previous mark before `x`, `y`, if any; and return its id (or null
-if none were found.)</td>
-</tr>
-
-<tr>
-<td>`pager.markURL()`</td>
+<td>`cmd.pager.markURL`</td>
 <td>Convert URL-like strings to anchors on the current page.</td>
 </tr>
 
 <tr>
-<td>`pager.saveLink()`</td>
-<td>Save URL pointed to by the cursor.</td>
+<td>`cmd.pager.saveLink`</td>
+<td>Save resource from the URL pointed to by the cursor to the disk.</td>
 </tr>
 
 <tr>
-<td>`pager.saveSource()`</td>
-<td>Save the source of the current buffer.</td>
-</tr>
-
-<tr>
-<td>`pager.extern(cmd, options = {setenv: true, suspend: true, wait: false})`
-</td>
-<td>Run an external command `cmd`. The `$CHA_URL` and `$CHA_CHARSET` variables
-are set when `options.setenv` is true. `options.suspend` suspends the pager
-while the command is being executed, and `options.wait` makes it so the user
-must press a key before the pager is resumed.<br>
-Returns true if the command exit successfully, false otherwise.<br>
-Warning: this has a bug where the output is written to stdout even if suspend
-is true. Redirect to /dev/null in the command if this is not desired. (This
-will be fixed in the future.)</td>
-</tr>
-
-<tr>
-<td>`pager.externCapture(cmd)`</td>
-<td>Like extern(), but redirect the command's stdout string into the
-result. null is returned if the command wasn't executed successfully, or if
-the command returned a non-zero exit value.</td>
-</tr>
-
-<tr>
-<td>`pager.externInto(cmd, ins)`</td>
-<td>Like extern(), but redirect `ins` into the command's standard input stream.
-`true` is returned if the command exits successfully, otherwise the return
-value is `false`.</td>
-</tr>
-
-<tr>
-<td>`pager.externFilterSource(cmd, buffer = null, contentType = null)`</td>
-<td>Redirects the specified (or if `buffer` is null, the current) buffer's
-source into `cmd`.<br>
-Then, it pipes the output into a new buffer, with the content type `contentType`
-(or, if `contentType` is null, the original buffer's content type).<br>
-Returns `undefined`. (It should return a promise; TODO.)</td>
-</tr>
-
-<tr>
-<td>`pager.url`</td>
-<td>Getter for the link of the current buffer. Returns a `URL` object.</td>
-</tr>
-
-<tr>
-<td>`pager.hoverLink`</td>
-<td>Getter for the link currently under the cursor. Returns the empty string if
-no link is found.</td>
-</tr>
-
-<tr>
-<td>`pager.hoverTitle`</td>
-<td>Getter for the title currently under the cursor. Returns the empty string if
-no title is found.</td>
-</tr>
-
-<tr>
-<td>`pager.buffer`</td>
-<td>Getter for the currently displayed buffer. Returns a `Buffer` object.</td>
+<td>`cmd.pager.saveSource`</td>
+<td>Save the source of the current buffer to the disk.</td>
 </tr>
 
 </table>
@@ -1260,87 +1058,87 @@ no title is found.</td>
 </tr>
 
 <tr>
-<td>`line.submit()`</td>
+<td>`cmd.line.submit`</td>
 <td>Submit line</td>
 </tr>
 
 <tr>
-<td>`line.cancel()`</td>
+<td>`cmd.line.cancel`</td>
 <td>Cancel operation</td>
 </tr>
 
 <tr>
-<td>`line.backspace()`</td>
+<td>`cmd.line.backspace`</td>
 <td>Delete character before cursor</td>
 </tr>
 
 <tr>
-<td>`line.delete()`</td>
+<td>`cmd.line.delete`</td>
 <td>Delete character after cursor</td>
 </tr>
 
 <tr>
-<td>`line.clear()`</td>
+<td>`cmd.line.clear`</td>
 <td>Clear text before cursor</td>
 </tr>
 
 <tr>
-<td>`line.kill()`</td>
+<td>`cmd.line.kill`</td>
 <td>Clear text after cursor</td>
 </tr>
 
 <tr>
-<td>`line.clearWord()`</td>
+<td>`cmd.line.clearWord`</td>
 <td>Delete word before cursor</td>
 </tr>
 
 <tr>
-<td>`line.killWord()`</td>
+<td>`cmd.line.killWord`</td>
 <td>Delete word after cursor</td>
 </tr>
 
 <tr>
-<td>`line.backward()`</td>
+<td>`cmd.line.backward`</td>
 <td>Move cursor back by one character</td>
 </tr>
 
 <tr>
-<td>`line.forward()`</td>
+<td>`cmd.line.forward`</td>
 <td>Move cursor forward by one character</td>
 </tr>
 
 <tr>
-<td>`line.prevWord()`</td>
+<td>`cmd.line.prevWord`</td>
 <td>Move cursor to the previous word by one character</td>
 </tr>
 
 <tr>
-<td>`line.nextWord()`</td>
+<td>`cmd.line.nextWord`</td>
 <td>Move cursor to the previous word by one character</td>
 </tr>
 
 <tr>
-<td>`line.begin()`</td>
+<td>`cmd.line.begin`</td>
 <td>Move cursor to the previous word by one character</td>
 </tr>
 
 <tr>
-<td>`line.end()`</td>
+<td>`cmd.line.end`</td>
 <td>Move cursor to the previous word by one character</td>
 </tr>
 
 <tr>
-<td>`line.escape()`</td>
+<td>`cmd.line.escape`</td>
 <td>Ignore keybindings for next character</td>
 </tr>
 
 <tr>
-<td>`line.prevHist()`</td>
+<td>`cmd.line.prevHist`</td>
 <td>Jump to the previous history entry</td>
 </tr>
 
 <tr>
-<td>`line.nextHist()`</td>
+<td>`cmd.line.nextHist`</td>
 <td>Jump to the next history entry</td>
 </tr>
 
@@ -1354,11 +1152,11 @@ character. (This means that e.g. `https://` consists of four words: `https`,
 
 ```Examples:
 # Control+A moves the cursor to the beginning of the line.
-'C-a' = 'line.begin()'
+'C-a' = 'cmd.line.begin'
 
 # Escape+D deletes everything after the cursor until it reaches a word-breaking
 # character.
-'M-d' = 'line.killWord()'
+'M-d' = 'cmd.line.killWord'
 ```
 
 ## Appendix
@@ -1366,10 +1164,10 @@ character. (This means that e.g. `https://` consists of four words: `https`,
 ### Regex handling
 
 Regular expressions are currently handled using libregexp which is included in
-QuickJS. This means that all regular expressions should work as in JavaScript.
+QuickJS. This means that all regular expressions work as in JavaScript.
 
-There are two different modes of regex handling in Chawan: "search" mode, and
-"match" mode. "match" mode is used for configurations (meaning in all values
+There are two different modes of regex preprocessing in Chawan: "search" mode,
+and "match" mode. "match" mode is used for configurations (meaning in all values
 in this document described as "regex"). "search" mode is used for the on-page
 search function (using searchForward/isearchForward etc.)
 
@@ -1381,13 +1179,13 @@ with a caret (^) sign or end with an unescaped dollar ($) sign.
 In other words, the following transformations occur:
 
 ```
-^abcd -> ^abcd (no change)
-efgh$ -> efgh$ (no change)
-^ijkl$ -> ^ijkl$ (no change)
-mnop -> ^mnop$ (changed to exact match)
+^abcd -> ^abcd (no change, only beginning is matched)
+efgh$ -> efgh$ (no change, only end is matched)
+^ijkl$ -> ^ijkl$ (no change, the entire line is matched)
+mnop -> ^mnop$ (changed to exact match, the entire line is matched)
 ```
 
-Match mode has no way to toggle JavaScript regex flags.
+Match mode has no way to toggle JavaScript regex flags like `i`.
 
 #### Search mode
 

@@ -80,6 +80,7 @@ Currently implemented features are:
 
 * manpage: [doc/cha.1](doc/cha.1)
 * configuration options: [doc/config.md](doc/config.md)
+* API description (for keybindings): [doc/api.md](doc/api.md)
 * mailcap: [doc/mailcap.md](doc/mailcap.md)
 * mime.types: [doc/mime.types.md](doc/mime.types.md)
 * urimethodmap: [doc/urimethodmap.md](doc/urimethodmap.md)
