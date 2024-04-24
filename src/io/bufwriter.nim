@@ -6,11 +6,11 @@ import std/sets
 import std/tables
 
 import io/dynstream
-
 import types/blob
+import types/color
 import types/formdata
-import types/url
 import types/opt
+import types/url
 
 type BufferedWriter* = object
   stream: DynStream
@@ -77,6 +77,7 @@ proc swrite*(writer: var BufferedWriter; part: FormDataEntry)
 proc swrite*(writer: var BufferedWriter; blob: Blob)
 proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
+proc swrite*(writer: var BufferedWriter; c: RGBAColor) {.inline.}
 
 proc writeData(writer: var BufferedWriter; buffer: pointer; len: int) =
   let targetLen = writer.bufLen + len
@@ -181,3 +182,6 @@ proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E]) =
   else:
     when not (E is void):
       writer.swrite(o.error)
+
+proc swrite*(writer: var BufferedWriter; c: RGBAColor) =
+  writer.swrite(uint32(c))

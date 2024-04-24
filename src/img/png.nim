@@ -132,8 +132,7 @@ func spp(reader: PNGReader): int =
   of pcTrueColorWithAlpha: return 4
 
 func scanlen(reader: PNGReader): int {.inline.} =
-  let w = reader.width + 1
-  return (w * reader.spp * int(reader.bitDepth) + 7) div 8
+  return 1 + (reader.width * reader.spp * int(reader.bitDepth) + 7) div 8
 
 proc handleError(reader: var PNGReader; msg: string) =
   #TODO proper error handling?
@@ -258,28 +257,55 @@ proc readtRNS(reader: var PNGReader) =
     for i in 0 ..< reader.palette.len:
       reader.palette[i].a = reader.readU8()
 
+func paethPredictor(a, b, c: uint16): uint16 =
+  let pa0 = int(b) - int(c)
+  let pb0 = int(a) - int(c)
+  let pa = abs(pa0)
+  let pb = abs(pb0)
+  let pc = abs(pa0 + pb0)
+  return if pa <= pb and pa <= pc: a elif pb <= pc: b else: c
+
 proc unfilter(reader: var PNGReader; irow: openArray[uint8]; bpp: int) =
   # none, sub, up -> replace uprow directly
   # average, paeth -> copy to temp array, then replace uprow
-  let fil = irow[0]
-  let w = reader.width
-  case fil
+  case irow[0]
   of 0u8: # none
-    copyMem(addr reader.uprow[0], unsafeAddr irow[1], w)
+    copyMem(addr reader.uprow[0], unsafeAddr irow[1], irow.len)
   of 1u8: # sub
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
-      reader.uprow[j] = irow[i]
-      if j - bpp >= 0:
-        reader.uprow[j] += irow[j - bpp]
+      let aidx = j - bpp
+      let x = uint16(irow[i])
+      let a = if aidx >= 0: uint16(reader.uprow[aidx]) else: 0u16
+      reader.uprow[j] = uint8((x + a) and 0xFF)
   of 2u8: # up
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
-      reader.uprow[j] += irow[i]
+      let x = uint16(irow[i])
+      let b = uint16(reader.uprow[j])
+      reader.uprow[j] = uint8((x + b) and 0xFF)
   of 3u8: # average
-    reader.err "average not implemented yet"
+    for i in 1 ..< irow.len:
+      let j = i - 1 # skip filter byte
+      let aidx = j - bpp
+      let x = uint16(irow[i])
+      let a = if aidx >= 0: uint16(reader.uprow[aidx]) else: 0u16
+      let b = uint16(reader.uprow[j])
+      reader.uprow[j] = uint8((x + (a + b) div 2) and 0xFF)
   of 4u8: # paeth
-    reader.err "paeth not implemented yet"
+    var cmap: array[8, uint16] # max bpp is 16 bit with true color = 4 * 2
+    var k = 0
+    for i in 1 ..< irow.len:
+      let j = i - 1 # skip filter byte
+      let aidx = j - bpp
+      let x = uint16(irow[i])
+      let a = if aidx >= 0: uint16(reader.uprow[aidx]) else: 0u16
+      let b = uint16(reader.uprow[j])
+      let kk = k mod bpp
+      let c = cmap[kk]
+      cmap[kk] = b
+      reader.uprow[j] = uint8((x + paethPredictor(a, b, c)) and 0xFF)
+      inc k
   else:
     reader.err "got invalid filter"
 
@@ -340,11 +366,16 @@ proc writepxs(reader: var PNGReader; crow: var openArray[RGBAColor]) =
       crow[x] = rgba(n, n, n, a)
   of pcTrueColorWithAlpha:
     let step = int(reader.bitDepth) div 8
+    var i = 0
     for x in 0 ..< crow.len:
-      let r = reader.uprow[x * step]
-      let g = reader.uprow[(x + 1) * step]
-      let b = reader.uprow[(x + 2) * step]
-      let a = reader.uprow[(x + 3) * step]
+      let r = reader.uprow[i]
+      i += step
+      let g = reader.uprow[i]
+      i += step
+      let b = reader.uprow[i]
+      i += step
+      let a = reader.uprow[i]
+      i += step
       crow[x] = rgba(r, g, b, a)
 
 proc readPLTE(reader: var PNGReader) =
@@ -404,10 +435,10 @@ proc readIDAT(reader: var PNGReader) =
   for y in reader.atline ..< maxline:
     let yi = y * sl
     assert yi + sl - 1 < reader.idatAt
-    reader.unfilter(toOpenArray(reader.idatBuf, yi, yi + sl - 1), bpp)
+    reader.unfilter(reader.idatBuf.toOpenArray(yi, yi + sl - 1), bpp)
     if unlikely(reader.bmp == nil): return
     let yj = y * reader.width
-    reader.writepxs(toOpenArray(bmp.px, yj, yj + reader.width - 1))
+    reader.writepxs(bmp.px.toOpenArray(yj, yj + reader.width - 1))
 
 proc readIEND(reader: var PNGReader) =
   if reader.i < reader.limit:

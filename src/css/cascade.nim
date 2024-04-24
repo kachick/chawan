@@ -380,7 +380,11 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         styledParent.children.add(styledText)
     of peImage:
       let src = Element(styledParent.node).attr(satSrc)
-      let content = CSSContent(t: ContentImage, s: src)
+      let content = CSSContent(
+        t: ContentImage,
+        s: src,
+        bmp: HTMLImageElement(styledParent.node).bitmap
+      )
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
       styledParent.children.add(styledText)

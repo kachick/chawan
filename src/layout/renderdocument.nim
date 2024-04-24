@@ -3,12 +3,13 @@ import std/unicode
 
 import css/stylednode
 import css/values
+import img/bitmap
 import layout/box
 import layout/engine
 import layout/layoutunit
-import types/winattrs
 import types/cell
 import types/color
+import types/winattrs
 import utils/strwidth
 
 type
@@ -208,12 +209,19 @@ proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
   assert grid[y].formats[fi].pos <= nx
   # That's it!
 
-type RenderState = object
-  # Position of the absolute positioning containing block:
-  # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
-  absolutePos: seq[Offset]
-  bgcolor: CellColor
-  attrsp: ptr WindowAttributes
+type
+  PosBitmap* = ref object
+    x*: int
+    y*: int
+    bmp*: Bitmap
+
+  RenderState = object
+    # Position of the absolute positioning containing block:
+    # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
+    absolutePos: seq[Offset]
+    bgcolor: CellColor
+    attrsp: ptr WindowAttributes
+    images: seq[PosBitmap]
 
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
@@ -361,6 +369,15 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         grid.setRowWord(state, atom, offset, format, fragment.node)
       of iatSpacing:
         grid.setSpacing(state, atom, offset, format, fragment.node)
+      of iatImage:
+        state.images.add(PosBitmap(
+          x: (offset.x div state.attrs.ppc).toInt,
+          y: (offset.y div state.attrs.ppl).toInt,
+          bmp: atom.bmp
+        ))
+  else:
+    for child in fragment.children:
+      grid.renderInlineFragment(state, child, offset)
   if fragment.computed{"position"} != PositionStatic:
     if fragment.splitType != {stSplitStart, stSplitEnd}:
       if stSplitStart in fragment.splitType:
@@ -370,8 +387,6 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         ))
       if stSplitEnd in fragment.splitType:
         discard state.absolutePos.pop()
-  for child in fragment.children:
-    grid.renderInlineFragment(state, child, offset)
 
 proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     root: RootInlineFragment; offset: Offset) =
@@ -440,7 +455,8 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         stack.add((box.nested[i], offset))
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
-    styledRoot: StyledNode; attrsp: ptr WindowAttributes) =
+    styledRoot: StyledNode; attrsp: ptr WindowAttributes;
+    images: var seq[PosBitmap]) =
   grid.setLen(0)
   if styledRoot == nil:
     # no HTML element when we run cascade; just clear all lines.
@@ -449,8 +465,9 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     absolutePos: @[Offset(x: 0, y: 0)],
     attrsp: attrsp
   )
-  let rootBox = renderLayout(styledRoot, attrsp)
+  let rootBox = styledRoot.layout(attrsp)
   grid.renderBlockBox(state, rootBox, Offset(x: 0, y: 0))
   if grid.len == 0:
     grid.addLines(1)
   bgcolor = state.bgcolor
+  images = state.images

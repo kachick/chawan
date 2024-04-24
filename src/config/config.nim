@@ -33,6 +33,9 @@ type
 
   FormatMode* = set[FormatFlags]
 
+  ImageMode* = enum
+    imNone = "none", imSixel = "sixel", imKitty = "kitty"
+
   ChaPathResolved* = distinct string
 
   ActionMap = object
@@ -104,6 +107,7 @@ type
     color_mode* {.jsgetset.}: Option[ColorMode]
     format_mode* {.jsgetset.}: Option[FormatMode]
     no_format_mode* {.jsgetset.}: FormatMode
+    image_mode* {.jsgetset.}: Option[ImageMode]
     emulate_overline* {.jsgetset.}: bool
     alt_screen* {.jsgetset.}: Option[bool]
     highlight_color* {.jsgetset.}: RGBAColor

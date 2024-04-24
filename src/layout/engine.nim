@@ -5,6 +5,7 @@ import std/unicode
 
 import css/stylednode
 import css/values
+import img/bitmap
 import layout/box
 import layout/layoutunit
 import types/winattrs
@@ -68,6 +69,7 @@ type
     text: seq[string]
     newline: bool
     splitType: set[SplitType]
+    bmp: Bitmap
 
   BlockBoxBuilder = ref object of BoxBuilder
     inlinelayout: bool
@@ -1500,8 +1502,20 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
   if ictx.firstTextFragment == nil:
     ictx.firstTextFragment = fragment
   ictx.lastTextFragment = fragment
-  ictx.layoutText(state, box.text)
-  ictx.layoutChildren(state, box.children)
+  if box.bmp != nil:
+    let iastate = InlineAtomState(
+      vertalign: state.computed{"vertical-align"},
+      baseline: ictx.cellheight
+    )
+    let atom = InlineAtom(
+      t: iatImage,
+      bmp: box.bmp,
+      size: Size(w: int(box.bmp.width), h: int(box.bmp.height)) #TODO overflow
+    )
+    discard ictx.addAtom(state, iastate, atom)
+  else:
+    ictx.layoutText(state, box.text)
+    ictx.layoutChildren(state, box.children)
   if stSplitEnd in box.splitType:
     let paddingRight = box.computed{"padding-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingRight
@@ -2856,10 +2870,10 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
   of DisplayNone: discard
 
 proc generateAnonymousInlineText(ctx: var InnerBlockContext; text: string;
-    styledNode: StyledNode) =
+    styledNode: StyledNode; bmp: Bitmap = nil) =
   if ctx.iroot == nil:
     let computed = styledNode.computed.inheritProperties()
-    ctx.ibox = InlineBoxBuilder(computed: computed, node: styledNode)
+    ctx.ibox = InlineBoxBuilder(computed: computed, node: styledNode, bmp: bmp)
     if ctx.inlineStack.len > 0:
       let iparent = ctx.reconstructInlineParents()
       iparent.children.add(ctx.ibox)
@@ -2900,7 +2914,7 @@ proc generateReplacement(ctx: var InnerBlockContext;
     ctx.generateAnonymousInlineText(child.content.s, parent)
   of ContentImage:
     #TODO idk
-    ctx.generateAnonymousInlineText("[img]", parent)
+    ctx.generateAnonymousInlineText("[img]", parent, child.content.bmp)
   of ContentVideo:
     ctx.generateAnonymousInlineText("[video]", parent)
   of ContentAudio:
@@ -3116,7 +3130,7 @@ proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
   box.generateTableChildWrappers()
   return box
 
-proc renderLayout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
+proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   let space = AvailableSpace(
     w: stretch(attrsp[].width_px),
     h: stretch(attrsp[].height_px)

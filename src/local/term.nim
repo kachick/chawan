@@ -8,7 +8,9 @@ import std/unicode
 
 import bindings/termcap
 import config/config
+import img/bitmap
 import io/posixstream
+import js/base64
 import types/cell
 import types/color
 import types/opt
@@ -64,6 +66,7 @@ type
     attrs*: WindowAttributes
     colormode: ColorMode
     formatmode: FormatMode
+    imagemode: ImageMode
     smcup: bool
     tc: Termcap
     tname: string
@@ -127,6 +130,15 @@ const RMCUP = DECRST(1049)
 # mouse tracking
 const SGRMOUSEBTNON = DECSET(1002, 1006)
 const SGRMOUSEBTNOFF = DECRST(1002, 1006)
+
+# application program command
+
+# This is only used in kitty images, and join()'ing kilobytes of base64
+# is rather inefficient so we don't use a template.
+const APC = "\e_"
+const ST = "\e\\"
+
+const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
 when not termcap_found:
   const CNORM = DECSET(25)
@@ -555,15 +567,13 @@ proc applyConfig(term: Terminal) =
   # colors, formatting
   if term.config.display.color_mode.isSome:
     term.colormode = term.config.display.color_mode.get
-  elif term.isatty():
-    let colorterm = getEnv("COLORTERM")
-    if colorterm in ["24bit", "truecolor"]:
-      term.colormode = cmTrueColor
   if term.config.display.format_mode.isSome:
     term.formatmode = term.config.display.format_mode.get
   for fm in FormatFlags:
     if fm in term.config.display.no_format_mode:
       term.formatmode.excl(fm)
+  if term.config.display.image_mode.isSome:
+    term.imagemode = term.config.display.image_mode.get
   if term.isatty():
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
@@ -602,6 +612,50 @@ proc outputGrid*(term: Terminal) =
     term.pcanvas.cells.setLen(term.canvas.cells.len)
   for i in 0 ..< term.canvas.cells.len:
     term.pcanvas[i] = term.canvas[i]
+
+proc clearImages*(term: Terminal) =
+  if term.imagemode == imKitty:
+    term.write(APC & "Ga=d" & ST)
+
+proc outputImage*(term: Terminal; bmp: Bitmap; x, y, maxw, maxh: int) =
+  case term.imagemode
+  of imNone: discard
+  of imSixel:
+    discard #TODO
+  of imKitty:
+    # max 4096 bytes, base encoded
+    const MaxPixels = ((4096 div 4) * 3) div 3
+    let offx = if x < 0: -(x * term.attrs.ppc) else: 0
+    let offy = if y < 0: -(y * term.attrs.ppl) else: 0
+    let w = int(bmp.width)
+    let h = int(bmp.height)
+    var dispw = w
+    if x + dispw div term.attrs.ppc > maxw:
+      dispw = (maxw - x) * term.attrs.ppc
+    var disph = h
+    if y + disph div term.attrs.ppl > maxh:
+      disph = (maxh - y) * term.attrs.ppl
+    var outs = term.cursorGoto(max(x, 0), max(y, 0))
+    outs &= APC & "Gf=24,m=1,a=T,C=1,s=" & $w & ",v=" & $h &
+      ",x=" & $offx & ",y=" & $offy & ",w=" & $dispw & ",h=" & $disph & ';'
+    var buf = newStringOfCap(MaxPixels * 4)
+    var i = 0
+    # transcode to RGB
+    while i < bmp.px.len: # max is 4096
+      if i > 0 and i mod MaxPixels == 0:
+        outs &= btoa(buf)
+        outs &= ST
+        term.write(outs)
+        buf.setLen(0)
+        outs = APC & "Gm=1;"
+      buf &= char(bmp.px[i].r)
+      buf &= char(bmp.px[i].g)
+      buf &= char(bmp.px[i].b)
+      inc i
+    outs = APC & "Gm=0;"
+    outs &= btoa(buf)
+    outs &= ST
+    term.write(outs)
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
@@ -665,7 +719,7 @@ when termcap_found:
 
 type
   QueryAttrs = enum
-    qaAnsiColor, qaRGB, qaSixel
+    qaAnsiColor, qaRGB, qaSixel, qaKittyImage
 
   QueryResult = object
     success: bool
@@ -683,6 +737,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
     const outs =
       XTGETFG &
       XTGETBG &
+      KITTYQUERY &
       GEOMPIXEL &
       GEOMCELL &
       XTGETTCAP("524742") &
@@ -764,12 +819,15 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       term.expect ';'
       if term.consume == 'r' and term.consume == 'g' and term.consume == 'b':
         term.expect ':'
-        template eat_color(tc: char): uint8 =
+        var was_esc = false
+        template eat_color(tc: set[char]): uint8 =
           var val = 0u8
           var i = 0
-          while (let c = term.consume; c != tc):
+          var c = char(0)
+          while (c = term.consume; c notin tc):
             let v0 = hexValue(c)
-            if i > 4 or v0 == -1: fail # wat
+            if i > 4 or v0 == -1:
+              fail # wat
             let v = uint8(v0)
             if i == 0: # 1st place
               val = (v shl 4) or v
@@ -777,10 +835,14 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
               val = (val xor 0xF) or v
             # all other places are irrelevant
             inc i
+          was_esc = c == '\e'
           val
-        let r = eat_color '/'
-        let g = eat_color '/'
-        let b = eat_color '\a'
+        let r = eat_color {'/'}
+        let g = eat_color {'/'}
+        let b = eat_color {'\a', '\e'}
+        if was_esc:
+          # we got ST, not BEL; at least kitty does this
+          term.expect '\\'
         if c == '0':
           result.fgcolor = some(rgb(r, g, b))
         else:
@@ -805,7 +867,14 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         if id == tcapRGB:
           result.attrs.incl(qaRGB)
       else: # 0
-        term.expect '\e' # ST (1)
+        # pure insanity: kitty returns P0, but also +r524742 after. please
+        # make up your mind!
+        term.skip_until '\e' # ST (1)
+      term.expect '\\' # ST (2)
+    of '_': # APC
+      term.expect 'G'
+      result.attrs.incl(qaKittyImage)
+      term.skip_until '\e' # ST (1)
       term.expect '\\' # ST (2)
     else:
       fail
@@ -844,6 +913,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.colormode = cmANSI
       if qaRGB in r.attrs:
         term.colormode = cmTrueColor
+      if qaSixel in r.attrs:
+        term.imagemode = imSixel
+      if qaKittyImage in r.attrs:
+        term.imagemode = imKitty
       # just assume the terminal doesn't choke on these.
       term.formatmode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:

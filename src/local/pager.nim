@@ -449,6 +449,11 @@ proc draw*(pager: Pager) =
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
   pager.term.outputGrid()
+  if container != nil:
+    pager.term.clearImages()
+    for image in container.images:
+      pager.term.outputImage(image.bmp, image.x - container.fromx,
+        image.y - container.fromy, pager.attrs.width, pager.attrs.height - 1)
   if pager.askpromise != nil:
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit.isSome:

@@ -14,6 +14,7 @@ import io/socketstream
 import js/javascript
 import js/jstypes
 import js/regex
+import layout/renderdocument
 import loader/headers
 import loader/loader
 import loader/request
@@ -25,7 +26,6 @@ import types/cookie
 import types/referrer
 import types/url
 import types/winattrs
-import utils/luwrap
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
@@ -152,6 +152,7 @@ type
     cacheFile* {.jsget.}: string
     mainConfig*: Config
     flags*: set[ContainerFlag]
+    images*: seq[PosBitmap]
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -458,7 +459,6 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     container.lineshift = w.a
     for y in 0 ..< min(res.lines.len, w.len):
       container.lines[y] = res.lines[y]
-      container.lines[y].str.mnormalize()
     var isBgNew = container.bgcolor != res.bgcolor
     if isBgNew:
       container.bgcolor = res.bgcolor
@@ -474,6 +474,7 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
       container.triggerEvent(cetUpdate)
+    container.images = res.images
   )
 
 proc redraw(container: Container) {.jsfunc.} =
@@ -1387,9 +1388,9 @@ proc onload(container: Container; res: int) =
     container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
     if cfHasStart notin container.flags and container.url.anchor != "":
-      container.requestLines().then(proc(): Promise[Opt[tuple[x, y: int]]] =
+      container.requestLines().then(proc(): Promise[GotoAnchorResult] =
         return container.iface.gotoAnchor()
-      ).then(proc(res: Opt[tuple[x, y: int]]) =
+      ).then(proc(res: GotoAnchorResult) =
         if res.isSome:
           let res = res.get
           container.setCursorXYCenter(res.x, res.y)

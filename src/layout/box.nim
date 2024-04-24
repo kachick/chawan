@@ -1,5 +1,6 @@
 import css/stylednode
 import css/values
+import img/bitmap
 import layout/layoutunit
 
 type
@@ -12,7 +13,7 @@ type
     h*: LayoutUnit
 
   InlineAtomType* = enum
-    iatSpacing, iatWord, iatInlineBlock
+    iatSpacing, iatWord, iatInlineBlock, iatImage
 
   InlineAtom* = ref object
     offset*: Offset
@@ -24,6 +25,8 @@ type
       str*: string
     of iatInlineBlock:
       innerbox*: BlockBox
+    of iatImage:
+      bmp*: Bitmap
 
   RootInlineFragment* = ref object
     # offset relative to parent

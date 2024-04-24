@@ -2849,7 +2849,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           return
         let pngData = pngData.get
         let buffer = cast[ptr UncheckedArray[uint8]](pngData.buffer)
-        let high = int(pngData.size - 1)
+        let high = int(pngData.size) - 1
         image.bitmap = fromPNG(toOpenArray(buffer, 0, high))
       )
     window.loadingResourcePromises.add(p)

@@ -26,6 +26,7 @@ import html/enums
 import html/env
 import html/event
 import html/formdata as formdata_impl
+import img/bitmap
 import io/bufreader
 import io/bufstream
 import io/bufwriter
@@ -91,6 +92,7 @@ type
     ishtml: bool
     firstBufferRead: bool
     lines: FlexibleGrid
+    images: seq[PosBitmap]
     request: Request # source request
     attrs: WindowAttributes
     window: Window
@@ -648,7 +650,9 @@ proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
       break
     inc y
 
-proc gotoAnchor*(buffer: Buffer): Opt[tuple[x, y: int]] {.proxy.} =
+type GotoAnchorResult* = Opt[tuple[x, y: int]]
+
+proc gotoAnchor*(buffer: Buffer): GotoAnchorResult {.proxy.} =
   if buffer.document == nil:
     return err()
   let anchor = buffer.document.findAnchor(buffer.url.anchor)
@@ -673,7 +677,8 @@ proc do_reshape(buffer: Buffer) =
     buffer.prevStyled = nil
   let styledRoot = buffer.document.applyStylesheets(uastyle,
     buffer.userstyle, buffer.prevStyled)
-  buffer.lines.renderDocument(buffer.bgcolor, styledRoot, addr buffer.attrs)
+  buffer.lines.renderDocument(buffer.bgcolor, styledRoot, addr buffer.attrs,
+    buffer.images)
   buffer.prevStyled = styledRoot
 
 proc processData0(buffer: Buffer; data: openArray[char]): bool =
@@ -1718,11 +1723,11 @@ proc readCanceled*(buffer: Buffer): bool {.proxy.} =
 proc findAnchor*(buffer: Buffer; anchor: string): bool {.proxy.} =
   return buffer.document != nil and buffer.document.findAnchor(anchor) != nil
 
-type GetLinesResult* = tuple[
-  numLines: int,
-  lines: seq[SimpleFlexibleLine],
+type GetLinesResult* = tuple
+  numLines: int
+  lines: seq[SimpleFlexibleLine]
   bgcolor: CellColor
-]
+  images: seq[PosBitmap]
 
 proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
   var w = w
@@ -1736,6 +1741,11 @@ proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
     result.lines.add(line)
   result.numLines = buffer.lines.len
   result.bgcolor = buffer.bgcolor
+  if buffer.config.images:
+    for image in buffer.images:
+      if image.y <= w.b and
+          image.y + int(image.bmp.height) div buffer.attrs.ppl >= w.a:
+        result.images.add(image)
 
 proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
   if buffer.document == nil or buffer.document.body == nil:
