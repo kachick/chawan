@@ -142,7 +142,9 @@ $(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim res/chawan.html \
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/about" -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
 
-$(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim
+$(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim \
+		src/types/opt.nim src/utils/map.nim src/utils/charcategory.nim \
+		src/loader/connecterror.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/data" -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
 

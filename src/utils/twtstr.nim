@@ -711,3 +711,66 @@ proc getContentTypeAttr*(contentType, attrname: string): string =
     else:
       s &= c
   return s
+
+func atob(c: char): uint8 {.inline.} =
+  # see RFC 4648 table
+  if c in AsciiUpperAlpha:
+    return uint8(c) - uint8('A')
+  if c in AsciiLowerAlpha:
+    return uint8(c) - uint8('a') + 26
+  if c in AsciiDigit:
+    return uint8(c) - uint8('0') + 52
+  if c == '+':
+    return 62
+  if c == '/':
+    return 63
+  return uint8.high
+
+func atob0*(data: string): Result[string, string] =
+  var outs = newStringOfCap(data.len div 4 * 3)
+  var buf: array[4, uint8]
+  var i = 0
+  var j = 0
+  var pad = 0
+  while true:
+    i = data.skipBlanks(i)
+    if i >= data.len:
+      break
+    if data[i] == '=':
+      i = data.skipBlanks(i + 1)
+      inc pad
+      break
+    buf[j] = atob(data[i])
+    if buf[j] == uint8.high:
+      return err("Invalid character in encoded string")
+    if j == 3:
+      let ob1 = (buf[0] shl 2) or (buf[1] shr 4) # 6 bits of b0 | 2 bits of b1
+      let ob2 = (buf[1] shl 4) or (buf[2] shr 2) # 4 bits of b1 | 4 bits of b2
+      let ob3 = (buf[2] shl 6) or buf[3]         # 2 bits of b2 | 6 bits of b3
+      outs &= char(ob1)
+      outs &= char(ob2)
+      outs &= char(ob3)
+      j = 0
+    else:
+      inc j
+    inc i
+  if i < data.len:
+    if i < data.len and data[i] == '=':
+      inc pad
+      inc i
+    i = data.skipBlanks(i)
+  if pad > 0 and j + pad != 4:
+    return err("Too much padding")
+  if i < data.len:
+    return err("Invalid character after encoded string")
+  if j == 3:
+    let ob1 = (buf[0] shl 2) or (buf[1] shr 4) # 6 bits of b0 | 2 bits of b1
+    let ob2 = (buf[1] shl 4) or (buf[2] shr 2) # 4 bits of b1 | 4 bits of b2
+    outs &= char(ob1)
+    outs &= char(ob2)
+  elif j == 2:
+    let ob1 = (buf[0] shl 2) or (buf[1] shr 4) # 6 bits of b0 | 2 bits of b1
+    outs &= char(ob1)
+  elif j != 0:
+    return err("Incorrect number of characters in encoded string")
+  return ok(outs)
