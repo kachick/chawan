@@ -266,11 +266,9 @@ func paethPredictor(a, b, c: uint16): uint16 =
   return if pa <= pb and pa <= pc: a elif pb <= pc: b else: c
 
 proc unfilter(reader: var PNGReader; irow: openArray[uint8]; bpp: int) =
-  # none, sub, up -> replace uprow directly
-  # average, paeth -> copy to temp array, then replace uprow
   case irow[0]
   of 0u8: # none
-    copyMem(addr reader.uprow[0], unsafeAddr irow[1], irow.len)
+    copyMem(addr reader.uprow[0], unsafeAddr irow[1], irow.len - 1)
   of 1u8: # sub
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
