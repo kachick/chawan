@@ -39,6 +39,8 @@ func `==`*(a, b: RGBAColor): bool {.borrow.}
 
 func `==`*(a, b: ANSIColor): bool {.borrow.}
 
+func `==`*(a, b: EightBitColor): bool {.borrow.}
+
 func rgbcolor*(color: CellColor): RGBColor =
   cast[RGBColor](color.n)
 
@@ -273,7 +275,7 @@ func `$`*(rgbacolor: RGBAColor): string =
   return rgbacolor.serialize()
 
 # https://arxiv.org/pdf/2202.02864.pdf
-func fastmul(c, ca: uint32): uint32 =
+func fastmul*(c, ca: uint32): uint32 =
   let u = c or 0xFF000000u32
   var rb = u and 0x00FF00FFu32
   rb *= ca

@@ -32,7 +32,6 @@ buffer:
 	* this also includes not crashing when the buffer dies while
 	  container is reading...
 - important: improve sandboxing
-	* add seccomp support on Linux
 	* sandbox more built-in CGI protocol handlers
 - configurable/better url filtering in loader
 - when the log buffer crashes, print its contents to stderr
@@ -77,13 +76,18 @@ layout engine:
 - writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
 - more efficient kitty display (use IDs)
-- sixels
-- fix race condition
-- remove in-buffer decoder; instead, decode images in fully locked
-  down CGI scripts
+- more efficient sixel display (store encoded images)
+- more efficient display in general (why are we repainting 3-4 times per
+  keypress?)
+- document it (when performance is acceptable)
+- proper sixel color register allocation (current one is a hack)
+- fix race condition where images decoded after buffer load won't display until
+  reshape
+- remove in-buffer decoder; instead, decode images in fully locked down CGI
+  scripts
 	* then, the pager can just read the output from the cache on-demand
 	  instead of copying it from buffers
-- incremental decoding, interlaced images
+- incremental decoding, interlaced images, animation
 man:
 - add a DOM -> man page converter so that we do not depend on pandoc
   for man page conversion

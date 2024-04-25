@@ -22,7 +22,7 @@ import chagashi/charset
 import chagashi/encoder
 import chagashi/validator
 
-#TODO switch from termcap...
+#TODO switch away from termcap...
 
 type
   TermcapCap = enum
@@ -64,9 +64,9 @@ type
     canvas: FixedGrid
     pcanvas: FixedGrid
     attrs*: WindowAttributes
-    colormode: ColorMode
-    formatmode: FormatMode
-    imagemode: ImageMode
+    colorMode: ColorMode
+    formatMode: FormatMode
+    imageMode: ImageMode
     smcup: bool
     tc: Termcap
     tname: string
@@ -77,6 +77,7 @@ type
     defaultBackground: RGBColor
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
+    hasSixel: bool
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
@@ -99,8 +100,10 @@ const GEOMCELL = CSI(18, "t")
 const XTSHIFTESCAPE = CSI(">0s")
 
 # device control string
+const DCSSTART = "\eP"
+
 template DCS(a, b: char; s: varargs[string]): string =
-  "\eP" & a & b & s.join(';') & "\e\\"
+  DCSSTART & a & b & s.join(';') & "\e\\"
 
 template XTGETTCAP(s: varargs[string, `$`]): string =
   DCS('+', 'q', s)
@@ -177,7 +180,7 @@ proc readChar*(term: Terminal): char =
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
 
-#TODO a) this should be customizable b) these defaults sucks
+#TODO a) this should be customizable b) these defaults suck
 const ANSIColorMap = [
   rgb(0, 0, 0),
   rgb(205, 0, 0),
@@ -333,7 +336,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
         if fgY < 0:
           fgY = 255
     let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
-    case term.colormode
+    case term.colorMode
     of cmTrueColor:
       return cellColor(newrgb)
     of cmANSI:
@@ -361,13 +364,13 @@ template rgbSGR(rgb: RGBColor; bgmod: int): string =
 
 proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
   for flag in FormatFlags:
-    if flag in term.formatmode:
+    if flag in term.formatMode:
       if flag in format.flags and flag notin cellf.flags:
         result &= term.endFormat(flag)
       if flag notin format.flags and flag in cellf.flags:
         result &= term.startFormat(flag)
   var cellf = cellf
-  case term.colormode
+  case term.colorMode
   of cmANSI:
     # quantize
     if cellf.bgcolor.t == ctANSI and cellf.bgcolor.color > 15:
@@ -528,7 +531,7 @@ proc showCursor*(term: Terminal) =
 
 func emulateOverline(term: Terminal): bool =
   term.config.display.emulate_overline and
-    ffOverline notin term.formatmode and ffUnderline in term.formatmode
+    ffOverline notin term.formatMode and ffUnderline in term.formatMode
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -566,14 +569,14 @@ proc applyConfigDimensions(term: Terminal) =
 proc applyConfig(term: Terminal) =
   # colors, formatting
   if term.config.display.color_mode.isSome:
-    term.colormode = term.config.display.color_mode.get
+    term.colorMode = term.config.display.color_mode.get
   if term.config.display.format_mode.isSome:
-    term.formatmode = term.config.display.format_mode.get
+    term.formatMode = term.config.display.format_mode.get
   for fm in FormatFlags:
     if fm in term.config.display.no_format_mode:
-      term.formatmode.excl(fm)
+      term.formatMode.excl(fm)
   if term.config.display.image_mode.isSome:
-    term.imagemode = term.config.display.image_mode.get
+    term.imageMode = term.config.display.image_mode.get
   if term.isatty():
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
@@ -604,6 +607,7 @@ proc outputGrid*(term: Terminal) =
   if term.config.display.force_clear or not term.cleared or not samesize:
     term.outfile.write(term.generateFullOutput(term.canvas))
     term.cleared = true
+    term.hasSixel = false
   else:
     term.outfile.write(term.generateSwapOutput(term.canvas, term.pcanvas))
   if not samesize:
@@ -614,48 +618,139 @@ proc outputGrid*(term: Terminal) =
     term.pcanvas[i] = term.canvas[i]
 
 proc clearImages*(term: Terminal) =
-  if term.imagemode == imKitty:
-    term.write(APC & "Ga=d" & ST)
+  #TODO this entire function is a hack:
+  # * for kitty, we shouldn't destroy & re-write every image every frame
+  # * for sixel, we shouldn't practically set force-clear when images are on
+  #   the screen
+  case term.imageMode
+  of imNone: discard
+  of imKitty: term.write(APC & "Ga=d" & ST)
+  of imSixel:
+    if term.hasSixel:
+      term.cleared = false
+
+# data is binary 0..63; the output is the final ASCII form.
+proc compressSixel(data: openArray[uint8]): string =
+  var outs = newStringOfCap(data.len div 4)
+  var n = 0
+  var c = char(0)
+  for u in data:
+    let cc = char((u + 0x3F) and 0xFF)
+    if c != cc:
+      if n > 3:
+        outs &= '!' & $n & c
+      else: # for char(0) n is also 0, so it is ignored.
+        outs &= c.repeat(n)
+      c = cc
+      n = 0
+    inc n
+  if n > 3:
+    outs &= '!' & $n & c
+  else:
+    outs &= c.repeat(n)
+  return outs
+
+type SixelBand = object
+ c: EightBitColor
+ data: seq[uint8]
+
+func find(bands: seq[SixelBand]; c: EightBitColor): int =
+  for i, band in bands:
+    if band.c == c:
+      return i
+  -1
+
+proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
+    bmp: Bitmap) =
+  var outs = term.cursorGoto(x, y)
+  let hsize = ((disph - offy - 1) div 6 + 1) * 6 # round up to 6
+  let wsize = dispw - offx
+  outs &= DCSSTART & 'q'
+  # set raster attributes
+  outs &= "\"1;1;" & $wsize & ';' & $hsize
+  for b in 16 ..< 256:
+    # laziest possible register allocation scheme
+    #TODO obviously this produces sub-optimal results
+    let rgb = EightBitColor(b).toRGB()
+    let rgbq = RGBColor(uint32(rgb).fastmul(100))
+    # 2 is RGB
+    outs &= '#' & $b & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
+  let W = int(dispw) - offx
+  var n = offy * int(bmp.width)
+  let L = disph * int(bmp.width)
+  while n < L:
+    var bands = newSeq[SixelBand]()
+    for i in 0 ..< 6:
+      if n >= bmp.px.len:
+        break
+      let mask = 1u8 shl i
+      for x in 0 ..< W:
+        let c = RGBColor(bmp.px[n + x + offx]).toEightBit()
+        if (let j = bands.find(c); j != -1):
+          bands[j].data[x] = bands[j].data[x] or mask
+        else:
+          bands.add(SixelBand(c: c, data: newSeq[uint8](W)))
+          bands[^1].data[^1] = mask
+      n += int(bmp.width)
+    term.write(outs)
+    outs = ""
+    for i, line in bands:
+      let t = if i != bands.high: '$' else: '-'
+      outs &= '#' & $uint8(line.c) & line.data.compressSixel() & t
+  if outs.len > 0 and outs[^1] == '-':
+    outs.setLen(outs.len - 1)
+  outs &= ST
+  term.write(outs)
+  term.hasSixel = true
+
+proc outputKittyImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
+    bmp: Bitmap) =
+  const MaxPixels = ((4096 div 4) * 3) div 3 # max 4096 bytes, base64 encoded
+  var outs = term.cursorGoto(x, y)
+  outs &= APC & "Gf=24,m=1,a=T,C=1,s=" & $bmp.width & ",v=" & $bmp.height &
+    ",x=" & $offx & ",y=" & $offy & ",w=" & $dispw & ",h=" & $disph & ';'
+  var buf = newStringOfCap(MaxPixels * 4)
+  var i = 0
+  # transcode to RGB
+  while i < bmp.px.len:
+    if i > 0 and i mod MaxPixels == 0:
+      outs &= btoa(buf)
+      outs &= ST
+      term.write(outs)
+      buf.setLen(0)
+      outs = APC & "Gm=1;"
+    buf &= char(bmp.px[i].r)
+    buf &= char(bmp.px[i].g)
+    buf &= char(bmp.px[i].b)
+    inc i
+  outs = APC & "Gm=0;"
+  outs &= btoa(buf)
+  outs &= ST
+  term.write(outs)
 
 proc outputImage*(term: Terminal; bmp: Bitmap; x, y, maxw, maxh: int) =
-  case term.imagemode
+  if term.imageMode == imNone:
+    return
+  let xpx = x * term.attrs.ppc
+  let ypx = y * term.attrs.ppl
+  let maxwpx = maxw * term.attrs.ppc
+  let maxhpx = maxh * term.attrs.ppl
+  let offx = if x < 0: -xpx else: 0
+  let offy = if y < 0: -ypx else: 0
+  var dispw = int(bmp.width)
+  if xpx + dispw > maxwpx:
+    dispw = maxwpx - xpx
+  var disph = int(bmp.height)
+  if ypx + disph > maxhpx:
+    disph = maxhpx - ypx
+  if dispw <= offx or disph <= offy:
+    return
+  let x = max(x, 0)
+  let y = max(y, 0)
+  case term.imageMode
   of imNone: discard
-  of imSixel:
-    discard #TODO
-  of imKitty:
-    # max 4096 bytes, base encoded
-    const MaxPixels = ((4096 div 4) * 3) div 3
-    let offx = if x < 0: -(x * term.attrs.ppc) else: 0
-    let offy = if y < 0: -(y * term.attrs.ppl) else: 0
-    let w = int(bmp.width)
-    let h = int(bmp.height)
-    var dispw = w
-    if x + dispw div term.attrs.ppc > maxw:
-      dispw = (maxw - x) * term.attrs.ppc
-    var disph = h
-    if y + disph div term.attrs.ppl > maxh:
-      disph = (maxh - y) * term.attrs.ppl
-    var outs = term.cursorGoto(max(x, 0), max(y, 0))
-    outs &= APC & "Gf=24,m=1,a=T,C=1,s=" & $w & ",v=" & $h &
-      ",x=" & $offx & ",y=" & $offy & ",w=" & $dispw & ",h=" & $disph & ';'
-    var buf = newStringOfCap(MaxPixels * 4)
-    var i = 0
-    # transcode to RGB
-    while i < bmp.px.len: # max is 4096
-      if i > 0 and i mod MaxPixels == 0:
-        outs &= btoa(buf)
-        outs &= ST
-        term.write(outs)
-        buf.setLen(0)
-        outs = APC & "Gm=1;"
-      buf &= char(bmp.px[i].r)
-      buf &= char(bmp.px[i].g)
-      buf &= char(bmp.px[i].b)
-      inc i
-    outs = APC & "Gm=0;"
-    outs &= btoa(buf)
-    outs &= ST
-    term.write(outs)
+  of imSixel: term.outputSixelImage(x, y, offx, offy, dispw, disph, bmp)
+  of imKitty: term.outputKittyImage(x, y, offx, offy, dispw, disph, bmp)
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
@@ -686,6 +781,8 @@ proc restoreStdin*(term: Terminal) =
 proc quit*(term: Terminal) =
   if term.isatty():
     term.disableRawMode()
+    if term.config.input.use_mouse:
+      term.disableMouse()
     if term.smcup:
       term.write(term.disableAltScreen())
     else:
@@ -693,8 +790,6 @@ proc quit*(term: Terminal) =
         term.resetFormat() & "\n")
     if term.set_title:
       term.write(XTPOPTITLE)
-    if term.config.input.use_mouse:
-      term.disableMouse()
     term.showCursor()
     term.cleared = false
     if term.stdinUnblocked:
@@ -910,15 +1005,15 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       if windowOnly:
         return
       if qaAnsiColor in r.attrs:
-        term.colormode = cmANSI
+        term.colorMode = cmANSI
       if qaRGB in r.attrs:
-        term.colormode = cmTrueColor
+        term.colorMode = cmTrueColor
       if qaSixel in r.attrs:
-        term.imagemode = imSixel
+        term.imageMode = imSixel
       if qaKittyImage in r.attrs:
-        term.imagemode = imKitty
+        term.imageMode = imKitty
       # just assume the terminal doesn't choke on these.
-      term.formatmode = {ffStrike, ffOverline}
+      term.formatMode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
         term.defaultBackground = r.bgcolor.get
       if r.fgcolor.isSome:
@@ -929,32 +1024,32 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       result = tsrDA1Fail
   if windowOnly:
     return
-  if term.colormode != cmTrueColor:
+  if term.colorMode != cmTrueColor:
     let colorterm = getEnv("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
-      term.colormode = cmTrueColor
+      term.colorMode = cmTrueColor
   when termcap_found:
     term.loadTermcap()
     if term.tc != nil:
       term.smcup = term.hascap ti
-      if term.colormode < cmEightBit and term.tc.numCaps[Co] == 256:
+      if term.colorMode < cmEightBit and term.tc.numCaps[Co] == 256:
         # due to termcap limitations, 256 is the highest possible number here
-        term.colormode = cmEightBit
-      elif term.colormode < cmANSI and term.tc.numCaps[Co] >= 8:
-        term.colormode = cmANSI
+        term.colorMode = cmEightBit
+      elif term.colorMode < cmANSI and term.tc.numCaps[Co] >= 8:
+        term.colorMode = cmANSI
       if term.hascap ZH:
-        term.formatmode.incl(ffItalic)
+        term.formatMode.incl(ffItalic)
       if term.hascap us:
-        term.formatmode.incl(ffUnderline)
+        term.formatMode.incl(ffUnderline)
       if term.hascap md:
-        term.formatmode.incl(ffBold)
+        term.formatMode.incl(ffBold)
       if term.hascap mr:
-        term.formatmode.incl(ffReverse)
+        term.formatMode.incl(ffReverse)
       if term.hascap mb:
-        term.formatmode.incl(ffBlink)
+        term.formatMode.incl(ffBlink)
   else:
     term.smcup = true
-    term.formatmode = {low(FormatFlags)..high(FormatFlags)}
+    term.formatMode = {low(FormatFlags)..high(FormatFlags)}
 
 type
   MouseInputType* = enum
@@ -1039,6 +1134,15 @@ proc windowChange*(term: Terminal) =
   term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
   term.cleared = false
 
+proc initScreen(term: Terminal) =
+  # note: deinit happens in quit()
+  if term.set_title:
+    term.write(XTPUSHTITLE)
+  if term.smcup:
+    term.write(term.enableAltScreen())
+  if term.config.input.use_mouse:
+    term.enableMouse()
+
 proc start*(term: Terminal; istream: PosixStream): TermStartResult =
   term.istream = istream
   if term.isatty():
@@ -1046,14 +1150,10 @@ proc start*(term: Terminal; istream: PosixStream): TermStartResult =
   result = term.detectTermAttributes(windowOnly = false)
   if result == tsrDA1Fail:
     term.config.display.query_da1 = false
-  if term.isatty() and term.config.input.use_mouse:
-    term.enableMouse()
   term.applyConfig()
+  if term.isatty():
+    term.initScreen()
   term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
-  if term.set_title:
-    term.write(XTPUSHTITLE)
-  if term.smcup:
-    term.write(term.enableAltScreen())
 
 proc restart*(term: Terminal) =
   if term.isatty():
@@ -1061,12 +1161,7 @@ proc restart*(term: Terminal) =
     if term.stdinWasUnblocked:
       term.unblockStdin()
       term.stdinWasUnblocked = false
-    if term.config.input.use_mouse:
-      term.enableMouse()
-  if term.smcup:
-    term.write(term.enableAltScreen())
-  if term.set_title:
-    term.write(XTPUSHTITLE)
+    term.initScreen()
 
 proc newTerminal*(outfile: File; config: Config): Terminal =
   return Terminal(
