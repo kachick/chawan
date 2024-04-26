@@ -168,6 +168,12 @@ proc matchesPattern(s, pat: openArray[char]): bool =
     inc i
   return true
 
+proc matchesPattern(s: string; pats: openArray[string]): bool =
+  for pat in pats:
+    if s.matchesPattern(pat):
+      return true
+  return false
+
 proc parseSSHConfig(f: File; curl: CURL; host: string; idSet: var bool) =
   var skipTillNext = false
   var line: string
@@ -183,28 +189,40 @@ proc parseSSHConfig(f: File; curl: CURL; host: string; idSet: var bool) =
       i = line.skipBlanks(i + 1)
     if i == line.len or line[i] == '#':
       continue
-    var arg = ""
-    let isStr = line[i] in {'"', '\''}
-    if isStr:
-      inc i
-    var quot = false
-    while i < line.len and (quot or line[i] != '"' or not isStr):
-      if not quot and line[i] == '\\':
-        quot = true
-      else:
+    var args = newSeq[string]()
+    while i < line.len:
+      let isStr = line[i] in {'"', '\''}
+      if isStr:
+        inc i
+      var quot = false
+      var arg = ""
+      while i < line.len:
+        if not quot:
+          if line[i] == '\\':
+            quot = true
+            continue
+          elif line[i] == '"' and isStr or line[i] == ' ' and not isStr:
+            inc i
+            break
         quot = false
         arg &= line[i]
-      inc i
+        inc i
+      if arg.len > 0:
+        args.add(arg)
     if k == "Match": #TODO support this
       skipTillNext = true
     elif k == "Host":
-      skipTillNext = not host.matchesPattern(arg)
+      skipTillNext = not host.matchesPattern(args)
     elif skipTillNext:
       continue
     elif k == "IdentityFile":
-      identityFile = expandTilde(arg)
+      if args.len != 1:
+        continue # error
+      identityFile = expandTilde(args[0])
     elif k == "CertificateFile":
-      certificateFile = expandTilde(arg)
+      if args.len != 1:
+        continue # error
+      certificateFile = expandTilde(args[0])
   if identityFile != "":
     curl.setopt(CURLOPT_SSH_PRIVATE_KEYFILE, identityFile)
     idSet = true
