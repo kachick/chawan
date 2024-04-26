@@ -449,7 +449,7 @@ proc draw*(pager: Pager) =
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
   pager.term.outputGrid()
-  if container != nil:
+  if container != nil and pager.redraw:
     pager.term.clearImages()
     for image in container.images:
       pager.term.outputImage(image.bmp, image.x - container.fromx,
