@@ -14,7 +14,7 @@ import utils/twtstr
 
 type
   EarlyHintState = enum
-    NO_EARLY_HINT, EARLY_HINT_STARTED, EARLY_HINT_DONE
+    ehsNone, ehsStarted, ehsDone
 
   HttpHandle = ref object
     curl: CURL
@@ -26,37 +26,34 @@ type
 proc puts(s: string) =
   discard write(1, unsafeAddr s[0], s.len)
 
-proc curlWriteHeader(p: cstring, size, nitems: csize_t, userdata: pointer):
+proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   var line = newString(nitems)
   if nitems > 0:
-    prepareMutation(line)
     copyMem(addr line[0], p, nitems)
-
   let op = cast[HttpHandle](userdata)
   if not op.statusline:
     op.statusline = true
     var status: clong
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    if status == 103 and op.earlyhint == NO_EARLY_HINT:
-      op.earlyhint = EARLY_HINT_STARTED
+    if status == 103 and op.earlyhint == ehsNone:
+      op.earlyhint = ehsStarted
     else:
       op.connectreport = true
       puts("Status: " & $status & "\nCha-Control: ControlDone\n")
     return nitems
-
   if line == "\r\n" or line == "\n":
     # empty line (last, before body)
-    if op.earlyhint == EARLY_HINT_STARTED:
+    if op.earlyhint == ehsStarted:
       # ignore; we do not have a way to stream headers yet.
-      op.earlyhint = EARLY_HINT_DONE
+      op.earlyhint = ehsDone
       # reset statusline; we are awaiting the next line.
       op.statusline = false
       return nitems
     puts("\r\n")
     return nitems
 
-  if op.earlyhint != EARLY_HINT_STARTED:
+  if op.earlyhint != ehsStarted:
     # Regrettably, we can only write early hint headers after the status
     # code is already known.
     # For now, it seems easiest to just ignore them all.
@@ -73,7 +70,7 @@ proc readFromStdin(p: pointer; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   return csize_t(read(0, p, int(nitems)))
 
-proc curlPreRequest(clientp: pointer, conn_primary_ip, conn_local_ip: cstring,
+proc curlPreRequest(clientp: pointer; conn_primary_ip, conn_local_ip: cstring;
     conn_primary_port, conn_local_port: cint): cint {.cdecl.} =
   let op = cast[HttpHandle](clientp)
   op.connectreport = true

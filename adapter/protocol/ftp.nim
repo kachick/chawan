@@ -38,7 +38,6 @@ proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   var line = newString(nitems)
   if nitems > 0:
-    prepareMutation(line)
     copyMem(addr line[0], p, nitems)
   let op = cast[FtpHandle](userdata)
   if not op.statusline:
@@ -132,20 +131,20 @@ proc finish(op: FtpHandle) =
       let linkfrom = name.substr(0, linki - 1)
       let linkto = name.substr(linki + 4) # you?
       items.add(DirlistItem(
-        t: ITEM_LINK,
+        t: ditLink,
         name: linkfrom,
         modified: dates,
         linkto: linkto
       ))
     of 'd': # directory
       items.add(DirlistItem(
-        t: ITEM_DIR,
+        t: ditDir,
         name: name,
         modified: dates
       ))
     else: # file
       items.add(DirlistItem(
-        t: ITEM_FILE,
+        t: ditFile,
         name: name,
         modified: dates,
         nsize: int(nsize)

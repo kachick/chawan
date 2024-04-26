@@ -103,8 +103,7 @@ type
   JSJobFunc* = proc(ctx: JSContext; argc: cint; argv: ptr JSValue): JSValue
     {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
-  JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime,
-    opaque, p: pointer) {.cdecl.}
+  JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime; opaque, p: pointer) {.cdecl.}
 
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
     flags*: cint

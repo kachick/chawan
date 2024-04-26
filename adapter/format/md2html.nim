@@ -217,7 +217,7 @@ proc parseHash(line: openArray[char]): bool =
 type ListType = enum
   ltOl, ltUl
 
-proc getListDepth(line: string): tuple[depth, len: int, ol: ListType] =
+proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
   var depth = 0
   for i, c in line:
     if c == '\t':
@@ -286,7 +286,7 @@ type
     reprocess: bool
     numPreLines: int
 
-proc pushList(state: var ParseState, t: ListType) =
+proc pushList(state: var ParseState; t: ListType) =
   case t
   of ltOl: stdout.write("<OL>\n<LI>")
   of ltUl: stdout.write("<UL>\n<LI>")
@@ -297,7 +297,7 @@ proc popList(state: var ParseState) =
   of ltOl: stdout.write("</OL>\n")
   of ltUl: stdout.write("</UL>\n")
 
-proc parseNone(state: var ParseState, line: string) =
+proc parseNone(state: var ParseState; line: string) =
   if line == "":
     discard
   elif line[0] == '#' and line.toOpenArray(1, line.high).parseHash():
@@ -337,14 +337,14 @@ proc parseNone(state: var ParseState, line: string) =
     stdout.write("<P>\n")
     state.reprocess = true
 
-proc parsePre(state: var ParseState, line: string) =
+proc parsePre(state: var ParseState; line: string) =
   if line.startsWith("```"):
     state.blockType = btNone
     stdout.write("</PRE>\n")
   else:
     stdout.write(line & "\n")
 
-proc parseList(state: var ParseState, line: string) =
+proc parseList(state: var ParseState; line: string) =
   if line == "":
     state.blockData.parseInline()
     state.blockData = ""
@@ -367,7 +367,7 @@ proc parseList(state: var ParseState, line: string) =
   else:
     state.blockData &= line & "\n"
 
-proc parsePar(state: var ParseState, line: string) =
+proc parsePar(state: var ParseState; line: string) =
   if line == "":
     state.blockData.parseInline()
     state.blockData = ""
@@ -389,7 +389,7 @@ proc parsePar(state: var ParseState, line: string) =
   else:
     state.blockData &= line & "\n"
 
-proc parseHTML(state: var ParseState, line: string) =
+proc parseHTML(state: var ParseState; line: string) =
   if state.hasp:
     state.hasp = false
     stdout.write("</P>\n")
@@ -400,7 +400,7 @@ proc parseHTML(state: var ParseState, line: string) =
   else:
     state.blockData &= line & "\n"
 
-proc parseHTMLPre(state: var ParseState, line: string) =
+proc parseHTMLPre(state: var ParseState; line: string) =
   if state.hasp:
     state.hasp = false
     stdout.write("</P>\n")
@@ -411,7 +411,7 @@ proc parseHTMLPre(state: var ParseState, line: string) =
   else:
     state.blockData &= line & "\n"
 
-proc parseTabPre(state: var ParseState, line: string) =
+proc parseTabPre(state: var ParseState; line: string) =
   if line.len == 0:
     inc state.numPreLines
   elif line[0] != '\t':
@@ -427,7 +427,7 @@ proc parseTabPre(state: var ParseState, line: string) =
       dec state.numPreLines
     state.blockData &= line.substr(1) & "\n"
 
-proc parseSpacePre(state: var ParseState, line: string) =
+proc parseSpacePre(state: var ParseState; line: string) =
   if line.len == 0:
     inc state.numPreLines
   elif not line.startsWith("    "):
@@ -443,7 +443,7 @@ proc parseSpacePre(state: var ParseState, line: string) =
       dec state.numPreLines
     state.blockData &= line.substr(4) & "\n"
 
-proc parseComment(state: var ParseState, line: string) =
+proc parseComment(state: var ParseState; line: string) =
   let i = line.find("-->")
   if i != -1:
     stdout.write(line.substr(0, i + 2))

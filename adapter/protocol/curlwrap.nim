@@ -1,21 +1,21 @@
 import curl
 
-template setopt*(curl: CURL, opt: CURLoption, arg: typed) =
+template setopt*(curl: CURL; opt: CURLoption; arg: typed) =
   discard curl_easy_setopt(curl, opt, arg)
 
-template setopt*(curl: CURL, opt: CURLoption, arg: string) =
+template setopt*(curl: CURL; opt: CURLoption; arg: string) =
   discard curl_easy_setopt(curl, opt, cstring(arg))
 
-template getinfo*(curl: CURL, info: CURLINFO, arg: typed) =
+template getinfo*(curl: CURL; info: CURLINFO; arg: typed) =
   discard curl_easy_getinfo(curl, info, arg)
 
-template set*(url: CURLU, part: CURLUPart, content: cstring, flags: cuint) =
+template set*(url: CURLU; part: CURLUPart; content: cstring; flags: cuint) =
   discard curl_url_set(url, part, content, flags)
 
-template set*(url: CURLU, part: CURLUPart, content: string, flags: cuint) =
+template set*(url: CURLU; part: CURLUPart; content: string; flags: cuint) =
   url.set(part, cstring(content), flags)
 
-template get*(url: CURLU, part: CURLUPart, flags: cuint): cstring =
+template get*(url: CURLU; part: CURLUPart; flags: cuint): cstring =
   var outs: cstring
   if curl_url_get(url, part, addr outs, flags) == CURLUE_OK:
     outs

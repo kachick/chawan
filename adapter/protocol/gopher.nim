@@ -30,7 +30,7 @@ proc onStatusLine(op: GopherHandle) =
   else: ""
   stdout.write(s & "\n")
 
-proc loadSearch(op: GopherHandle, surl: string) =
+proc loadSearch(op: GopherHandle; surl: string) =
   stdout.write("""
 Content-Type: text/html
 
@@ -49,7 +49,7 @@ Content-Type: text/html
 """)
 
 # From the documentation: size is always 1.
-proc curlWriteBody(p: cstring, size, nmemb: csize_t, userdata: pointer):
+proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   let op = cast[GopherHandle](userdata)
   if not op.statusline:

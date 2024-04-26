@@ -377,10 +377,10 @@ type
     CURLUPART_FRAGMENT
     CURLUPART_ZONEID # added in 7.65.0
 
-proc `==`*(a: CURL, b: CURL): bool {.borrow.}
-proc `==`*(a: CURL, b: typeof(nil)): bool {.borrow.}
-proc `==`*(a: CURLM, b: CURLM): bool {.borrow.}
-proc `==`*(a: CURLM, b: typeof(nil)): bool {.borrow.}
+proc `==`*(a: CURL; b: CURL): bool {.borrow.}
+proc `==`*(a: CURL; b: typeof(nil)): bool {.borrow.}
+proc `==`*(a: CURLM; b: CURLM): bool {.borrow.}
+proc `==`*(a: CURLM; b: typeof(nil)): bool {.borrow.}
 
 {.push importc.}
 
@@ -390,41 +390,45 @@ proc curl_free*(p: pointer)
 
 proc curl_easy_init*(): CURL
 proc curl_easy_cleanup*(handle: CURL)
-proc curl_easy_setopt*(handle: CURL, option: CURLoption): CURLcode {.varargs.}
+proc curl_easy_setopt*(handle: CURL; option: CURLoption): CURLcode {.varargs.}
 proc curl_easy_perform*(handle: CURL): CURLcode
-proc curl_easy_getinfo*(handle: CURL, info: CURLINFO): CURLcode {.varargs.}
+proc curl_easy_getinfo*(handle: CURL; info: CURLINFO): CURLcode {.varargs.}
 proc curl_easy_strerror*(errornum: CURLcode): cstring
 
 proc curl_url*(): CURLU
 proc curl_url_cleanup*(handle: CURLU)
 proc curl_url_dup*(inh: CURLU): CURLU
-proc curl_url_get*(handle: CURLU, what: CURLUPart, part: ptr cstring,
+proc curl_url_get*(handle: CURLU; what: CURLUPart; part: ptr cstring;
   flags: cuint): CURLUcode
-proc curl_url_set*(handle: CURLU, what: CURLUPart, part: cstring,
+proc curl_url_set*(handle: CURLU; what: CURLUPart; part: cstring;
   flags: cuint): CURLUcode
 proc curl_url_strerror*(code: CURLUcode): cstring
 
 proc curl_mime_init*(handle: CURL): curl_mime
 proc curl_mime_free*(mime: curl_mime)
 proc curl_mime_addpart*(mime: curl_mime): curl_mimepart
-proc curl_mime_name*(part: curl_mimepart, name: cstring)
-proc curl_mime_data*(part: curl_mimepart, data: pointer, datasize: csize_t)
-proc curl_mime_filename*(part: curl_mimepart, name: cstring)
-proc curl_mime_filedata*(part: curl_mimepart, filename: cstring)
+proc curl_mime_name*(part: curl_mimepart; name: cstring)
+proc curl_mime_data*(part: curl_mimepart; data: pointer; datasize: csize_t)
+proc curl_mime_filename*(part: curl_mimepart; name: cstring)
+proc curl_mime_filedata*(part: curl_mimepart; filename: cstring)
 
-proc curl_slist_append*(slist: curl_slist, str: cstring): curl_slist
+proc curl_slist_append*(slist: curl_slist; str: cstring): curl_slist
 proc curl_slist_free_all*(slist: curl_slist)
 
 proc curl_multi_init*(): CURLM
-proc curl_multi_add_handle*(multi_handle: CURLM, curl_handle: CURL): CURLMcode
-proc curl_multi_remove_handle*(multi_handle: CURLM, curl_handle: CURL): CURLMcode
-proc curl_multi_fdset*(multi_handle: CURLM, read_fd_set, write_fd_set, exc_fd_set: pointer, max_fd: ptr cint): CURLMcode
-proc curl_multi_wait*(multi_handle: CURLM, extra_fds: ptr curl_waitfd, extra_nfds: cuint, timeout_ns: cint, ret: ptr cint): CURLMcode
-proc curl_multi_poll*(multi_handle: CURLM, extra_fds: ptr curl_waitfd, extra_nfds: cuint, timeout_ns: cint, ret: ptr cint): CURLMcode
+proc curl_multi_add_handle*(multi_handle: CURLM; curl_handle: CURL): CURLMcode
+proc curl_multi_remove_handle*(multi_handle: CURLM; curl_handle: CURL): CURLMcode
+proc curl_multi_fdset*(multi_handle: CURLM; read_fd_set, write_fd_set,
+  exc_fd_set: pointer; max_fd: ptr cint): CURLMcode
+proc curl_multi_wait*(multi_handle: CURLM; extra_fds: ptr curl_waitfd;
+  extra_nfds: cuint; timeout_ns: cint; ret: ptr cint): CURLMcode
+proc curl_multi_poll*(multi_handle: CURLM; extra_fds: ptr curl_waitfd;
+  extra_nfds: cuint; timeout_ns: cint; ret: ptr cint): CURLMcode
 proc curl_multi_wakeup*(multi_handle: CURLM): CURLMcode
-proc curl_multi_perform*(multi_handle: CURLM, running_handles: ptr cint): CURLMcode
+proc curl_multi_perform*(multi_handle: CURLM; running_handles: ptr cint):
+  CURLMcode
 proc curl_multi_cleanup*(multi_handle: CURLM): CURLMcode
-proc curl_multi_info_read*(multi_handle: CURLM, msgs_in_queue: ptr cint): CURLMsg
+proc curl_multi_info_read*(multi_handle: CURLM; msgs_in_queue: ptr cint): CURLMsg
 proc curl_multi_strerror*(code: CURLMcode): cstring
 {.pop.}
 

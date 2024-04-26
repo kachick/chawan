@@ -31,7 +31,7 @@ type
     state: AnsiCodeParseState
     params: string
 
-proc getParam(parser: AnsiCodeParser, i: var int, colon = false): string =
+proc getParam(parser: AnsiCodeParser; i: var int; colon = false): string =
   while i < parser.params.len and
       not (parser.params[i] == ';' or colon and parser.params[i] == ':'):
     result &= parser.params[i]
@@ -39,8 +39,7 @@ proc getParam(parser: AnsiCodeParser, i: var int, colon = false): string =
   if i < parser.params.len:
     inc i
 
-template getParamU8(parser: AnsiCodeParser, i: var int,
-    colon = false): uint8 =
+template getParamU8(parser: AnsiCodeParser; i: var int; colon = false): uint8 =
   if i >= parser.params.len:
     return false
   let u = parseUInt8(parser.getParam(i), allowSign = false)
@@ -48,8 +47,8 @@ template getParamU8(parser: AnsiCodeParser, i: var int,
     return false
   u.get
 
-proc parseSGRDefColor(parser: AnsiCodeParser, format: var Format,
-    i: var int, isfg: bool): bool =
+proc parseSGRDefColor(parser: AnsiCodeParser; format: var Format;
+    i: var int; isfg: bool): bool =
   let u = parser.getParamU8(i, colon = true)
   template set_color(c: CellColor) =
     if isfg:
@@ -74,8 +73,8 @@ proc parseSGRDefColor(parser: AnsiCodeParser, format: var Format,
   else:
     return false
 
-proc parseSGRColor(parser: AnsiCodeParser, format: var Format,
-    i: var int, u: uint8): bool =
+proc parseSGRColor(parser: AnsiCodeParser; format: var Format;
+    i: var int; u: uint8): bool =
   if u in 30u8..37u8:
     format.fgcolor = cellColor(ANSIColor(u - 30))
   elif u == 38:
@@ -106,7 +105,7 @@ const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBlink: (5u8, 25u8),
 ]
 
-proc parseSGRAspect(parser: AnsiCodeParser, format: var Format,
+proc parseSGRAspect(parser: AnsiCodeParser; format: var Format;
     i: var int): bool =
   let u = parser.getParamU8(i)
   for flag, (s, e) in FormatCodes:
@@ -122,7 +121,7 @@ proc parseSGRAspect(parser: AnsiCodeParser, format: var Format,
   else:
     return parser.parseSGRColor(format, i, u)
 
-proc parseSGR(parser: AnsiCodeParser, format: var Format) =
+proc parseSGR(parser: AnsiCodeParser; format: var Format) =
   if parser.params.len == 0:
     format = Format()
   else:
@@ -131,7 +130,7 @@ proc parseSGR(parser: AnsiCodeParser, format: var Format) =
       if not parser.parseSGRAspect(format, i):
         break
 
-proc parseControlFunction(parser: var AnsiCodeParser, format: var Format,
+proc parseControlFunction(parser: var AnsiCodeParser; format: var Format;
     f: char) =
   if f == 'm':
     parser.parseSGR(format)
@@ -161,23 +160,14 @@ proc flushOutbuf(state: var State) =
     discard write(STDOUT_FILENO, addr state.outbuf[0], state.outbufIdx)
     state.outbufIdx = 0
 
-proc putc(state: var State, c: char) {.inline.} =
+proc putc(state: var State; c: char) {.inline.} =
   if state.outbufIdx + 4 >= state.outbuf.len: # max utf-8 char length
     state.flushOutbuf()
   state.outbuf[state.outbufIdx] = c
   inc state.outbufIdx
 
-proc puts(state: var State, s: string) =
+proc puts(state: var State; s: openArray[char]) {.inline.} =
   #TODO this is slower than it could be
-  for c in s:
-    state.putc(c)
-
-proc puts(state: var State, s: openArray[char]) =
-  #TODO this is slower than it could be
-  for c in s:
-    state.putc(c)
-
-proc puts(state: var State, s: static string) {.inline.} =
   for c in s:
     state.putc(c)
 
@@ -232,7 +222,7 @@ proc flushFmt(state: var State) =
 type ParseAnsiCodeResult = enum
   pacrProcess, pacrSkip
 
-proc parseAnsiCode(state: var State, format: var Format, c: char):
+proc parseAnsiCode(state: var State; format: var Format; c: char):
     ParseAnsiCodeResult =
   case state.parser.state
   of acpsStart:
@@ -338,7 +328,7 @@ proc parseAnsiCode(state: var State, format: var Format, c: char):
   state.flushFmt()
   pacrSkip
 
-proc processData(state: var State, buf: openArray[char]) =
+proc processData(state: var State; buf: openArray[char]) =
   for c in buf:
     if state.parser.state != acpsDone:
       case state.parseAnsiCode(state.pendingFmt, c)

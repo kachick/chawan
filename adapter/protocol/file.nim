@@ -41,13 +41,13 @@ proc loadDir(path, opath: string) =
     case pc
     of pcDir:
       items.add(DirlistItem(
-        t: ITEM_DIR,
+        t: ditDir,
         name: file,
         modified: modified
       ))
     of pcFile:
       items.add(DirlistItem(
-        t: ITEM_FILE,
+        t: ditFile,
         name: file,
         modified: modified,
         nsize: int(info.size)
@@ -57,7 +57,7 @@ proc loadDir(path, opath: string) =
       if pc == pcLinkToDir:
         target &= '/'
       items.add(DirlistItem(
-        t: ITEM_LINK,
+        t: ditLink,
         name: file,
         modified: modified,
         linkto: target
@@ -71,7 +71,7 @@ proc loadFile(f: File) =
   const BufferSize = 16384
   var buffer {.noinit.}: array[BufferSize, char]
   while true:
-    let n = readBuffer(f, addr buffer[0], BufferSize)
+    let n = f.readBuffer(addr buffer[0], BufferSize)
     if n == 0:
       break
     let n2 = stdout.writeBuffer(addr buffer[0], n)
