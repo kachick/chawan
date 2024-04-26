@@ -1503,14 +1503,15 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     ictx.firstTextFragment = fragment
   ictx.lastTextFragment = fragment
   if box.bmp != nil:
+    let h = int(box.bmp.height).toLayoutUnit().ceilTo(ictx.cellheight)
     let iastate = InlineAtomState(
       vertalign: state.computed{"vertical-align"},
-      baseline: ictx.cellheight
+      baseline: h
     )
     let atom = InlineAtom(
       t: iatImage,
       bmp: box.bmp,
-      size: Size(w: int(box.bmp.width), h: int(box.bmp.height)) #TODO overflow
+      size: Size(w: int(box.bmp.width), h: h), #TODO overflow
     )
     discard ictx.addAtom(state, iastate, atom)
   else:
