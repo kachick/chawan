@@ -77,7 +77,7 @@ proc swrite*(writer: var BufferedWriter; part: FormDataEntry)
 proc swrite*(writer: var BufferedWriter; blob: Blob)
 proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
-proc swrite*(writer: var BufferedWriter; c: RGBAColor) {.inline.}
+proc swrite*(writer: var BufferedWriter; c: ARGBColor) {.inline.}
 
 proc writeData(writer: var BufferedWriter; buffer: pointer; len: int) =
   let targetLen = writer.bufLen + len
@@ -183,5 +183,5 @@ proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E]) =
     when not (E is void):
       writer.swrite(o.error)
 
-proc swrite*(writer: var BufferedWriter; c: RGBAColor) =
+proc swrite*(writer: var BufferedWriter; c: ARGBColor) =
   writer.swrite(uint32(c))

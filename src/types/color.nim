@@ -13,7 +13,7 @@ type
   RGBColor* = distinct uint32
 
   # RGBA color, stored in ARGB format
-  RGBAColor* = distinct uint32
+  ARGBColor* = distinct uint32
 
   ANSIColor* = distinct uint8
 
@@ -22,20 +22,20 @@ type
   # ctNone: default color (intentionally 0), n is unused
   # ctANSI: ANSI color, as selected by SGR 38/48
   # ctRGB: RGB color
-  ColorTag* {.size: sizeof(uint32).} = enum
+  ColorTag* = enum
     ctNone, ctANSI, ctRGB
 
   CellColor* = object
     t*: ColorTag
     n: uint32
 
-func toRGBColor*(i: RGBAColor): RGBColor =
+func toRGBColor*(i: ARGBColor): RGBColor =
   return RGBColor(uint32(i) and 0xFFFFFFu32)
 
-converter toRGBAColor*(i: RGBColor): RGBAColor =
-  return RGBAColor(uint32(i) or 0xFF000000u32)
+converter toARGBColor*(i: RGBColor): ARGBColor =
+  return ARGBColor(uint32(i) or 0xFF000000u32)
 
-func `==`*(a, b: RGBAColor): bool {.borrow.}
+func `==`*(a, b: ARGBColor): bool {.borrow.}
 
 func `==`*(a, b: ANSIColor): bool {.borrow.}
 
@@ -44,8 +44,8 @@ func `==`*(a, b: EightBitColor): bool {.borrow.}
 func rgbcolor*(color: CellColor): RGBColor =
   cast[RGBColor](color.n)
 
-func rgbacolor*(color: CellColor): RGBAColor =
-  cast[RGBAColor](color.n)
+func argbcolor*(color: CellColor): ARGBColor =
+  cast[ARGBColor](color.n)
 
 func color*(color: CellColor): uint8 =
   uint8(color.n)
@@ -56,7 +56,7 @@ func eightbit*(color: CellColor): EightBitColor =
 func cellColor*(rgb: RGBColor): CellColor =
   return CellColor(t: ctRGB, n: uint32(rgb) or 0xFF000000u32)
 
-func cellColor*(rgba: RGBAColor): CellColor =
+func cellColor*(rgba: ARGBColor): CellColor =
   return CellColor(t: ctRGB, n: uint32(rgba))
 
 #TODO bright ANSI colors (8..15)
@@ -235,32 +235,32 @@ const ColorsRGB* = block:
     res[it[0]] = RGBColor(it[1])
   res
 
-func r*(c: RGBAColor): uint8 =
+func r*(c: ARGBColor): uint8 =
   return uint8(uint32(c) shr 16)
 
-func g*(c: RGBAColor): uint8 =
+func g*(c: ARGBColor): uint8 =
   return uint8(uint32(c) shr 8)
 
-func b*(c: RGBAColor): uint8 =
+func b*(c: ARGBColor): uint8 =
   return uint8(uint32(c))
 
-func a*(c: RGBAColor): uint8 =
+func a*(c: ARGBColor): uint8 =
   return uint8(uint32(c) shr 24)
 
-proc `r=`*(c: var RGBAColor, r: uint8) =
-  c = RGBAColor(uint32(c) or (uint32(r) shl 16))
+proc `r=`*(c: var ARGBColor, r: uint8) =
+  c = ARGBColor(uint32(c) or (uint32(r) shl 16))
 
-proc `g=`*(c: var RGBAColor, g: uint8) =
-  c = RGBAColor(uint32(c) or (uint32(g) shl 8))
+proc `g=`*(c: var ARGBColor, g: uint8) =
+  c = ARGBColor(uint32(c) or (uint32(g) shl 8))
 
-proc `b=`*(c: var RGBAColor, b: uint8) =
-  c = RGBAColor(uint32(c) or uint32(b))
+proc `b=`*(c: var ARGBColor, b: uint8) =
+  c = ARGBColor(uint32(c) or uint32(b))
 
-proc `a=`*(c: var RGBAColor, a: uint8) =
-  c = RGBAColor(uint32(c) or (uint32(a) shl 24))
+proc `a=`*(c: var ARGBColor, a: uint8) =
+  c = ARGBColor(uint32(c) or (uint32(a) shl 24))
 
 # https://html.spec.whatwg.org/#serialisation-of-a-color
-func serialize*(color: RGBAColor): string =
+func serialize*(color: ARGBColor): string =
   if color.a == 255:
     var res = "#"
     res.pushHex(color.r)
@@ -271,8 +271,8 @@ func serialize*(color: RGBAColor): string =
   return "rgba(" & $color.r & ", " & $color.g & ", " & $color.b & ", " & $a &
     ")"
 
-func `$`*(rgbacolor: RGBAColor): string =
-  return rgbacolor.serialize()
+func `$`*(argbcolor: ARGBColor): string =
+  return argbcolor.serialize()
 
 # https://arxiv.org/pdf/2202.02864.pdf
 func fastmul*(c, ca: uint32): uint32 =
@@ -304,27 +304,27 @@ func fastmul1(c, ca: uint32): uint32 =
   ga = ga and 0xFF00FF00u32
   return ga or (rb shr 8)
 
-func fastmul1(c: RGBAColor; ca: uint32): RGBAColor =
-  return RGBAColor(fastmul1(uint32(c), ca))
+func fastmul1(c: ARGBColor; ca: uint32): ARGBColor =
+  return ARGBColor(fastmul1(uint32(c), ca))
 
-func rgba*(r, g, b, a: uint8): RGBAColor
+func rgba*(r, g, b, a: uint8): ARGBColor
 
-func premul(c: RGBAColor): RGBAColor =
-  return RGBAColor(fastmul(uint32(c), uint32(c.a)))
+func premul(c: ARGBColor): ARGBColor =
+  return ARGBColor(fastmul(uint32(c), uint32(c.a)))
 
 # This is somewhat faster than floats or a lookup table, and is correct for
 # all inputs.
-proc straight(c: RGBAColor): RGBAColor =
+proc straight(c: ARGBColor): ARGBColor =
   let a8 = c.a
   if a8 == 0:
-    return RGBAColor(0)
+    return ARGBColor(0)
   let a = uint32(a8)
   let r = ((uint32(c.r) * 0xFF00 div a + 0x80) shr 8) and 0xFF
   let g = ((uint32(c.g) * 0xFF00 div a + 0x80) shr 8) and 0xFF
   let b = ((uint32(c.b) * 0xFF00 div a + 0x80) shr 8) and 0xFF
-  return RGBAColor((a shl 24) or (r shl 16) or (g shl 8) or b)
+  return ARGBColor((a shl 24) or (r shl 16) or (g shl 8) or b)
 
-func blend*(c0, c1: RGBAColor): RGBAColor =
+func blend*(c0, c1: ARGBColor): ARGBColor =
   let pc0 = c0.premul()
   let pc1 = c1.premul()
   let k = 255 - pc1.a
@@ -377,11 +377,11 @@ func YUV*(Y, U, V: uint8): RGBColor =
   let b = max(min((298 * C + 516 * D + 128) shr 8, 255), 0)
   return rgb(uint8(r), uint8(g), uint8(b))
 
-func rgba*(r, g, b, a: uint8): RGBAColor =
-  return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or
+func rgba*(r, g, b, a: uint8): ARGBColor =
+  return ARGBColor((uint32(a) shl 24) or (uint32(r) shl 16) or
     (uint32(g) shl 8) or uint32(b))
 
-func rgba*(r, g, b, a: int): RGBAColor =
+func rgba*(r, g, b, a: int): ARGBColor =
   return rgba(uint8(r), uint8(g), uint8(b), uint8(a))
 
 func gray*(n: uint8): RGBColor =
@@ -425,43 +425,43 @@ template `$`*(rgbcolor: RGBColor): string =
 
 template `$`*(color: CellColor): string =
   if color.t == ctRGB:
-    $color.rgbacolor
+    $color.argbcolor
   else:
     "tcolor" & $color.n
 
-func parseHexColor*(s: string): Option[RGBAColor] =
+func parseHexColor*(s: string): Option[ARGBColor] =
   for c in s:
-    if hexValue(c) == -1: return none(RGBAColor)
+    if hexValue(c) == -1: return none(ARGBColor)
   case s.len
   of 6:
     let c = 0xFF000000 or
             (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
             (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
             (hexValue(s[4]) shl 4) or hexValue(s[5])
-    return some(RGBAColor(c))
+    return some(ARGBColor(c))
   of 8:
     let c = (hexValue(s[6]) shl 28) or (hexValue(s[7]) shl 24) or
             (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
             (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
             (hexValue(s[4]) shl 4) or hexValue(s[5])
-    return some(RGBAColor(c))
+    return some(ARGBColor(c))
   of 3:
     let c = 0xFF000000 or
             (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
             (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
             (hexValue(s[2]) shl 4) or hexValue(s[2])
-    return some(RGBAColor(c))
+    return some(ARGBColor(c))
   of 4:
     let c = (hexValue(s[3]) shl 28) or (hexValue(s[3]) shl 24) or
             (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
             (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
             (hexValue(s[2]) shl 4) or hexValue(s[2])
-    return some(RGBAColor(c))
+    return some(ARGBColor(c))
   else: discard
 
-func parseRGBAColor*(s: string): Option[RGBAColor] =
+func parseARGBColor*(s: string): Option[ARGBColor] =
   if s in ColorsRGB:
-    return some(RGBAColor(ColorsRGB[s]))
+    return some(ARGBColor(ColorsRGB[s]))
   if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':
     return parseHexColor(s[1..^1])
   if s.len > 2 and s[0] == '0' and s[1] == 'x':
@@ -522,7 +522,7 @@ proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
 proc fromJSRGBColor*(ctx: JSContext; val: JSValue): JSResult[RGBColor] =
   return parseLegacyColor(?fromJS[string](ctx, val))
 
-proc toJS*(ctx: JSContext; rgba: RGBAColor): JSValue =
+proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   var res = "#"
   res.pushHex(rgba.r)
   res.pushHex(rgba.g)
@@ -530,12 +530,12 @@ proc toJS*(ctx: JSContext; rgba: RGBAColor): JSValue =
   res.pushHex(rgba.a)
   return toJS(ctx, res)
 
-proc fromJSRGBAColor*(ctx: JSContext; val: JSValue): JSResult[RGBAColor] =
+proc fromJSARGBColor*(ctx: JSContext; val: JSValue): JSResult[ARGBColor] =
   if JS_IsNumber(val):
     # as hex
-    return ok(RGBAColor(?fromJS[uint32](ctx, val)))
+    return ok(ARGBColor(?fromJS[uint32](ctx, val)))
   # parse
-  let x = parseRGBAColor(?fromJS[string](ctx, val))
+  let x = parseARGBColor(?fromJS[string](ctx, val))
   if x.isSome:
     return ok(x.get)
   return errTypeError("Unrecognized color")

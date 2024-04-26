@@ -106,7 +106,7 @@ type PNGReader = object
   i: int
   bitDepth: uint8
   colorType: PNGColorType
-  background: RGBAColor
+  background: ARGBColor
   isend: bool
   idatBuf: seq[uint8]
   uprow: seq[uint8]
@@ -116,8 +116,8 @@ type PNGReader = object
   strmend: bool
   atline: int
   plteseen: bool
-  palette: seq[RGBAColor]
-  trns: RGBAColor
+  palette: seq[ARGBColor]
+  trns: ARGBColor
 
 func width(reader: PNGReader): int {.inline.} = int(reader.bmp.width)
 
@@ -307,7 +307,7 @@ proc unfilter(reader: var PNGReader; irow: openArray[uint8]; bpp: int) =
   else:
     reader.err "got invalid filter"
 
-proc writepxs(reader: var PNGReader; crow: var openArray[RGBAColor]) =
+proc writepxs(reader: var PNGReader; crow: var openArray[ARGBColor]) =
   case reader.colorType
   of pcGrayscale:
     var i = 0
@@ -387,7 +387,7 @@ proc readPLTE(reader: var PNGReader) =
   let len = reader.limit - reader.i
   if len mod 3 != 0:
     reader.err "palette length not divisible by 3"
-  reader.palette = newSeq[RGBAColor](len)
+  reader.palette = newSeq[ARGBColor](len)
   for i in 0 ..< len div 3:
     let r = reader.readU8()
     let g = reader.readU8()

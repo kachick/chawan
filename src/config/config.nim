@@ -110,7 +110,7 @@ type
     image_mode* {.jsgetset.}: Option[ImageMode]
     emulate_overline* {.jsgetset.}: bool
     alt_screen* {.jsgetset.}: Option[bool]
-    highlight_color* {.jsgetset.}: RGBAColor
+    highlight_color* {.jsgetset.}: ARGBColor
     highlight_marks* {.jsgetset.}: bool
     double_width_ambiguous* {.jsgetset.}: bool
     minimum_contrast* {.jsgetset.}: int32
@@ -315,7 +315,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
   v: TomlValue; k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
   k: string)
-proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
+proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
   k: string)
@@ -486,10 +486,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
       raise newException(ValueError, "unknown format mode '" & vv.s &
         "' for key " & kk)
 
-proc parseConfigValue(ctx: var ConfigParser; x: var RGBAColor; v: TomlValue;
+proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
     k: string) =
   typeCheck(v, tvtString, k)
-  let c = parseRGBAColor(v.s)
+  let c = parseARGBColor(v.s)
   if c.isNone:
     raise newException(ValueError, "invalid color '" & v.s &
       "' for key " & k)

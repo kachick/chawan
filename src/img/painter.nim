@@ -14,7 +14,7 @@ type CanvasFillRule* = enum
   cfrEvenOdd = "evenodd"
 
 # https://en.wikipedia.org/wiki/Bresenham's_line_algorithm#All_cases
-proc plotLineLow(bmp: Bitmap; x0, y0, x1, y1: int64; color: RGBAColor) =
+proc plotLineLow(bmp: Bitmap; x0, y0, x1, y1: int64; color: ARGBColor) =
   var dx = x1 - x0
   var dy = y1 - y0
   var yi = 1
@@ -32,7 +32,7 @@ proc plotLineLow(bmp: Bitmap; x0, y0, x1, y1: int64; color: RGBAColor) =
        D = D - 2 * dx;
     D = D + 2 * dy;
 
-proc plotLineHigh(bmp: Bitmap; x0, y0, x1, y1: int64; color: RGBAColor) =
+proc plotLineHigh(bmp: Bitmap; x0, y0, x1, y1: int64; color: ARGBColor) =
   var dx = x1 - x0
   var dy = y1 - y0
   var xi = 1
@@ -51,7 +51,7 @@ proc plotLineHigh(bmp: Bitmap; x0, y0, x1, y1: int64; color: RGBAColor) =
     D = D + 2 * dx
 
 #TODO should be uint64...
-proc plotLine(bmp: Bitmap; x0, y0, x1, y1: int64; color: RGBAColor) =
+proc plotLine(bmp: Bitmap; x0, y0, x1, y1: int64; color: ARGBColor) =
   if abs(y1 - y0) < abs(x1 - x0):
     if x0 > x1:
       bmp.plotLineLow(x1, y1, x0, y0, color)
@@ -63,13 +63,13 @@ proc plotLine(bmp: Bitmap; x0, y0, x1, y1: int64; color: RGBAColor) =
     else:
       bmp.plotLineHigh(x0, y0, x1, y1, color)
 
-proc plotLine(bmp: Bitmap; a, b: Vector2D; color: RGBAColor) =
+proc plotLine(bmp: Bitmap; a, b: Vector2D; color: ARGBColor) =
   bmp.plotLine(int64(a.x), int64(a.y), int64(b.x), int64(b.y), color)
 
-proc plotLine(bmp: Bitmap; line: Line; color: RGBAColor) =
+proc plotLine(bmp: Bitmap; line: Line; color: ARGBColor) =
   bmp.plotLine(line.p0, line.p1, color)
 
-proc strokePath*(bmp: Bitmap; path: Path; color: RGBAColor) =
+proc strokePath*(bmp: Bitmap; path: Path; color: ARGBColor) =
   for line in path.lines:
     bmp.plotLine(line, color)
 
@@ -79,7 +79,7 @@ func isInside(windingNumber: int; fillRule: CanvasFillRule): bool =
   of cfrEvenOdd: windingNumber mod 2 == 0
 
 # Mainly adapted from SerenityOS.
-proc fillPath*(bmp: Bitmap; path: Path; color: RGBAColor;
+proc fillPath*(bmp: Bitmap; path: Path; color: ARGBColor;
     fillRule: CanvasFillRule) =
   let lines = path.getLineSegments()
   var i = 0
@@ -118,12 +118,12 @@ proc fillPath*(bmp: Bitmap; path: Path; color: RGBAColor;
     if ylines.len > 0:
       ylines[^1].minyx += ylines[^1].islope
 
-proc fillRect*(bmp: Bitmap; x0, x1, y0, y1: uint64, color: RGBAColor) =
+proc fillRect*(bmp: Bitmap; x0, x1, y0, y1: uint64, color: ARGBColor) =
   for y in y0 ..< y1:
     for x in x0 ..< x1:
       bmp.setpxb(x, y, color)
 
-proc strokeRect*(bmp: Bitmap; x0, x1, y0, y1: uint64, color: RGBAColor) =
+proc strokeRect*(bmp: Bitmap; x0, x1, y0, y1: uint64, color: ARGBColor) =
   for x in x0 ..< x1:
     bmp.setpxb(x, y0, color)
     bmp.setpxb(x, y1, color)
@@ -186,7 +186,7 @@ proc drawBitmap(a, b: Bitmap; p: Vector2D) =
       if ax >= 0 and ay >= y and ax < a.width and ay < a.height:
         a.setpxb(ax, ay, b.getpx(x, y))
 
-proc fillText*(bmp: Bitmap; text: string; x, y: float64; color: RGBAColor;
+proc fillText*(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
     textAlign: CSSTextAlign) =
   var w = 0f64
   var glyphs: seq[Bitmap]
@@ -205,7 +205,7 @@ proc fillText*(bmp: Bitmap; text: string; x, y: float64; color: RGBAColor;
     bmp.drawBitmap(glyph, Vector2D(x: x, y: y - 8))
     x += float64(glyph.width)
 
-proc strokeText*(bmp: Bitmap; text: string; x, y: float64; color: RGBAColor;
+proc strokeText*(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
     textAlign: CSSTextAlign) =
   #TODO
   bmp.fillText(text, x, y, color, textAlign)

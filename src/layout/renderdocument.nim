@@ -352,7 +352,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset) =
   assert fragment.atoms.len == 0 or fragment.children.len == 0
   let bgcolor = fragment.computed{"background-color"}
-  if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.rgbacolor.a > 0:
+  if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
     #TODO color blending
     grid.paintInlineFragment(state, fragment, offset, bgcolor)
   if fragment.atoms.len > 0:
@@ -421,7 +421,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
 
     if box.computed{"visibility"} == VisibilityVisible:
       let bgcolor = box.computed{"background-color"}
-      if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.rgbacolor.a > 0:
+      if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
         if box.computed{"-cha-bgcolor-is-canvas"} and
             state.bgcolor == defaultColor:
           #TODO bgimage

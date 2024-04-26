@@ -575,7 +575,7 @@ func quoteEnd*(level: int): string =
     return "“"
   return "‘"
 
-const Colors: Table[string, RGBAColor] = ((func (): Table[string, RGBAColor] =
+const Colors: Table[string, ARGBColor] = ((func (): Table[string, ARGBColor] =
   for name, rgb in ColorsRGB:
     result[name] = rgb
   result["transparent"] = rgba(0x00, 0x00, 0x00, 0x00)
@@ -636,7 +636,7 @@ func skipWhitespace(vals: openArray[CSSComponentValue]; i: var int) =
       break
     inc i
 
-func parseRGBA(value: openArray[CSSComponentValue]): Opt[CellColor] =
+func parseARGB(value: openArray[CSSComponentValue]): Opt[CellColor] =
   var i = 0
   var commaMode = false
   template check_err(slash: bool) =
@@ -735,7 +735,7 @@ func cssColor*(val: CSSComponentValue): Opt[CellColor] =
   elif val of CSSFunction:
     let f = CSSFunction(val)
     if f.name.equalsIgnoreCase("rgb") or f.name.equalsIgnoreCase("rgba"):
-      return parseRGBA(f.value)
+      return parseARGB(f.value)
     elif f.name.equalsIgnoreCase("-cha-ansi"):
       return parseANSI(f.value)
   return err()

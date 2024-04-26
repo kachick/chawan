@@ -326,8 +326,8 @@ type
     # CanvasTransform
     transformMatrix: Matrix
     # CanvasFillStrokeStyles
-    fillStyle: RGBAColor
-    strokeStyle: RGBAColor
+    fillStyle: ARGBColor
+    strokeStyle: ARGBColor
     # CanvasPathDrawingStyles
     lineWidth: float64
     # CanvasTextDrawingStyles
@@ -424,7 +424,7 @@ jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
 jsDestructor(CSSStyleDeclaration)
 
-proc parseColor(element: Element; s: string): RGBAColor
+proc parseColor(element: Element; s: string): ARGBColor
 
 proc resetTransform(state: var DrawingState) =
   state.transformMatrix = newIdentityMatrix(3)
@@ -2344,7 +2344,7 @@ isDefaultPassive = func (eventTarget: EventTarget): bool =
     EventTarget(node.document.html) == eventTarget or
     EventTarget(node.document.body) == eventTarget
 
-proc parseColor(element: Element; s: string): RGBAColor =
+proc parseColor(element: Element; s: string): ARGBColor =
   let cval = parseComponentValue(newStringStream(s))
   #TODO return element style
   # For now we just use white.
@@ -2357,7 +2357,7 @@ proc parseColor(element: Element; s: string): RGBAColor =
   let color = color0.get
   if color.t != ctRGB:
     return ec
-  return color.rgbacolor
+  return color.argbcolor
 
 #TODO ??
 func target0*(element: Element): string =

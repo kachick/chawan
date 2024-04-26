@@ -54,7 +54,7 @@ proc sread*(reader: var BufferedReader; part: var FormDataEntry)
 proc sread*(reader: var BufferedReader; blob: var Blob)
 proc sread*[T](reader: var BufferedReader; o: var Option[T])
 proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
-proc sread*(reader: var BufferedReader; c: var RGBAColor) {.inline.}
+proc sread*(reader: var BufferedReader; c: var ARGBColor) {.inline.}
 
 proc readData(reader: var BufferedReader; buffer: pointer; len: int) =
   assert reader.bufIdx + len <= reader.buffer.len
@@ -201,5 +201,5 @@ proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E]) =
     else:
       o.err()
 
-proc sread*(reader: var BufferedReader; c: var RGBAColor) =
+proc sread*(reader: var BufferedReader; c: var ARGBColor) =
   reader.sread(uint32(c))
