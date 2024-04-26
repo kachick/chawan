@@ -48,7 +48,7 @@ func rgbacolor*(color: CellColor): RGBAColor =
   cast[RGBAColor](color.n)
 
 func color*(color: CellColor): uint8 =
-  cast[uint8](color.n)
+  uint8(color.n)
 
 func eightbit*(color: CellColor): EightBitColor =
   EightBitColor(color.color)
@@ -236,16 +236,16 @@ const ColorsRGB* = block:
   res
 
 func r*(c: RGBAColor): uint8 =
-  return cast[uint8]((uint32(c) shr 16) and 0xff)
+  return uint8(uint32(c) shr 16)
 
 func g*(c: RGBAColor): uint8 =
-  return cast[uint8]((uint32(c) shr 8) and 0xff)
+  return uint8(uint32(c) shr 8)
 
 func b*(c: RGBAColor): uint8 =
-  return cast[uint8](uint32(c) and 0xff)
+  return uint8(uint32(c))
 
 func a*(c: RGBAColor): uint8 =
-  return cast[uint8]((uint32(c) shr 24) and 0xff)
+  return uint8(uint32(c) shr 24)
 
 proc `r=`*(c: var RGBAColor, r: uint8) =
   c = RGBAColor(uint32(c) or (uint32(r) shl 16))
@@ -329,10 +329,10 @@ func blend*(c0, c1: RGBAColor): RGBAColor =
   let pc1 = c1.premul()
   let k = 255 - pc1.a
   let mc = fastmul1(pc0, uint32(k))
-  let rr = cast[uint8](uint16(pc1.r) + uint16(mc.r))
-  let rg = cast[uint8](uint16(pc1.g) + uint16(mc.g))
-  let rb = cast[uint8](uint16(pc1.b) + uint16(mc.b))
-  let ra = cast[uint8](uint16(pc1.a) + uint16(mc.a))
+  let rr = pc1.r + mc.r
+  let rg = pc1.g + mc.g
+  let rb = pc1.b + mc.b
+  let ra = pc1.a + mc.a
   let pres = rgba(rr, rg, rb, ra)
   let res = straight(pres)
   return res
@@ -341,32 +341,32 @@ func rgb*(r, g, b: uint8): RGBColor =
   return RGBColor((uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
 
 func r*(c: RGBColor): uint8 =
-  return cast[uint8]((uint32(c) shr 16) and 0xff)
+  return uint8(uint32(c) shr 16)
 
 func g*(c: RGBColor): uint8 =
-  return cast[uint8]((uint32(c) shr 8) and 0xff)
+  return uint8(uint32(c) shr 8)
 
 func b*(c: RGBColor): uint8 =
-  return cast[uint8](uint32(c) and 0xff)
+  return uint8(uint32(c))
 
 # see https://learn.microsoft.com/en-us/previous-versions/windows/embedded/ms893078(v=msdn.10)
 func Y*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 66u16
   let gmul = uint16(c.g) * 129u16
   let bmul = uint16(c.b) * 25u16
-  return cast[uint8](((rmul + gmul + bmul + 128) shr 8) + 16)
+  return uint8(((rmul + gmul + bmul + 128) shr 8) + 16)
 
 func U*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 38u16
   let gmul = uint16(c.g) * 74u16
   let bmul = uint16(c.b) * 112u16
-  return cast[uint8](((128 + bmul - rmul - gmul) shr 8) + 128)
+  return uint8(((128 + bmul - rmul - gmul) shr 8) + 128)
 
 func V*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 112u16
   let gmul = uint16(c.g) * 94u16
   let bmul = uint16(c.b) * 18u16
-  return cast[uint8](((128 + rmul - gmul - bmul) shr 8) + 128)
+  return uint8(((128 + rmul - gmul - bmul) shr 8) + 128)
 
 func YUV*(Y, U, V: uint8): RGBColor =
   let C = int(Y) - 16
@@ -375,7 +375,7 @@ func YUV*(Y, U, V: uint8): RGBColor =
   let r = max(min((298 * C + 409 * E + 128) shr 8, 255), 0)
   let g = max(min((298 * C - 100 * D - 208 * E + 128) shr 8, 255), 0)
   let b = max(min((298 * C + 516 * D + 128) shr 8, 255), 0)
-  return rgb(cast[uint8](r), cast[uint8](g), cast[uint8](b))
+  return rgb(uint8(r), uint8(g), uint8(b))
 
 func rgba*(r, g, b, a: uint8): RGBAColor =
   return RGBAColor((uint32(a) shl 24) or (uint32(r) shl 16) or
@@ -394,10 +394,10 @@ func toRGB*(param0: EightBitColor): RGBColor =
   if u in 16u8..231u8:
     #16 + 36 * r + 6 * g + b
     let n = u - 16
-    let r = cast[uint8](int(n div 36) * 255 div 5)
+    let r = uint8(int(n div 36) * 255 div 5)
     let m = int(n mod 36)
-    let g = cast[uint8](((m div 6) * 255) div 5)
-    let b = cast[uint8](((m mod 6) * 255) div 5)
+    let g = uint8(((m div 6) * 255) div 5)
+    let b = uint8(((m mod 6) * 255) div 5)
     return rgb(r, g, b)
   else: # 232..255
     let n = (u - 232) * 10 + 8
@@ -415,9 +415,9 @@ func toEightBit*(rgb: RGBColor): EightBitColor =
       return EightBitColor(16)
     if r > 248:
       return EightBitColor(231)
-    return EightBitColor(cast[uint8](((r - 8) * 24 div 247) + 232))
+    return EightBitColor(uint8(((r - 8) * 24 div 247) + 232))
   #16 + 36 * r + 6 * g + b
-  return EightBitColor(cast[uint8](16 + 36 * (r * 5 div 255) +
+  return EightBitColor(uint8(16 + 36 * (r * 5 div 255) +
     6 * (g * 5 div 255) + (b * 5 div 255)))
 
 template `$`*(rgbcolor: RGBColor): string =

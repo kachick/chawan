@@ -335,7 +335,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
         fgY = bgY - contrast
         if fgY < 0:
           fgY = 255
-    let newrgb = YUV(cast[uint8](fgY), fgcolor.U, fgcolor.V)
+    let newrgb = YUV(uint8(fgY), fgcolor.U, fgcolor.V)
     case term.colorMode
     of cmTrueColor:
       return cellColor(newrgb)
@@ -635,7 +635,7 @@ proc compressSixel(data: openArray[uint8]): string =
   var n = 0
   var c = char(0)
   for u in data:
-    let cc = char((u + 0x3F) and 0xFF)
+    let cc = char(u + 0x3F)
     if c != cc:
       if n > 3:
         outs &= '!' & $n & c

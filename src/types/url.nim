@@ -324,7 +324,7 @@ func processIdna(str: string; beStrict: bool): Option[string] =
         # CheckHyphens is false
         if x0.len > 0:
           let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
-          let c = cast[uint32](x0[0])
+          let c = uint32(x0[0])
           let L = cr.len div 2 - 1
           if cps.toOpenArray(0, L).binarySearch(c, cmpRange) != -1:
             return none(string) #error
@@ -664,7 +664,7 @@ proc basicParseURL*(input: string; base = none(URL); url: URL = URL();
           let i = parseInt32(buffer)
           if i.isNone or i.get notin 0..65535:
             return none(URL)
-          let port = cast[uint16](i.get).some
+          let port = uint16(i.get).some
           url.port = if url.is_special and url.default_port == port:
             none(uint16)
           else:

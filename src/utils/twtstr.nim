@@ -91,7 +91,7 @@ func pushHex*(buf: var string; u: uint8) =
   buf &= HexCharsUpper[u and 0xF]
 
 func pushHex*(buf: var string; c: char) =
-  buf.pushHex(cast[uint8](c))
+  buf.pushHex(uint8(c))
 
 func toHexLower*(u: uint16): string =
   var x = u

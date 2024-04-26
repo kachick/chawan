@@ -257,7 +257,7 @@ proc readtRNS(reader: var PNGReader) =
     for i in 0 ..< reader.palette.len:
       reader.palette[i].a = reader.readU8()
 
-func paethPredictor(a, b, c: uint16): uint16 =
+func paethPredictor(a, b, c: uint8): uint8 =
   let pa0 = int(b) - int(c)
   let pb0 = int(a) - int(c)
   let pa = abs(pa0)
@@ -273,36 +273,36 @@ proc unfilter(reader: var PNGReader; irow: openArray[uint8]; bpp: int) =
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
       let aidx = j - bpp
-      let x = uint16(irow[i])
-      let a = if aidx >= 0: uint16(reader.uprow[aidx]) else: 0u16
-      reader.uprow[j] = uint8((x + a) and 0xFF)
+      let x = irow[i]
+      let a = if aidx >= 0: reader.uprow[aidx] else: 0u8
+      reader.uprow[j] = x + a
   of 2u8: # up
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
-      let x = uint16(irow[i])
-      let b = uint16(reader.uprow[j])
-      reader.uprow[j] = uint8((x + b) and 0xFF)
+      let x = irow[i]
+      let b = reader.uprow[j]
+      reader.uprow[j] = x + b
   of 3u8: # average
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
       let aidx = j - bpp
-      let x = uint16(irow[i])
-      let a = if aidx >= 0: uint16(reader.uprow[aidx]) else: 0u16
-      let b = uint16(reader.uprow[j])
-      reader.uprow[j] = uint8((x + (a + b) div 2) and 0xFF)
+      let x = irow[i]
+      let a = if aidx >= 0: reader.uprow[aidx] else: 0u8
+      let b = reader.uprow[j]
+      reader.uprow[j] = x + uint8((uint16(a) + uint16(b)) div 2)
   of 4u8: # paeth
-    var cmap: array[8, uint16] # max bpp is 16 bit with true color = 4 * 2
+    var cmap: array[8, uint8] # max bpp is 16 bit with true color = 4 * 2
     var k = 0
     for i in 1 ..< irow.len:
       let j = i - 1 # skip filter byte
       let aidx = j - bpp
-      let x = uint16(irow[i])
-      let a = if aidx >= 0: uint16(reader.uprow[aidx]) else: 0u16
-      let b = uint16(reader.uprow[j])
+      let x = irow[i]
+      let a = if aidx >= 0: reader.uprow[aidx] else: 0u8
+      let b = reader.uprow[j]
       let kk = k mod bpp
       let c = cmap[kk]
       cmap[kk] = b
-      reader.uprow[j] = uint8((x + paethPredictor(a, b, c)) and 0xFF)
+      reader.uprow[j] = x + paethPredictor(a, b, c)
       inc k
   else:
     reader.err "got invalid filter"
