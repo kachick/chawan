@@ -35,6 +35,8 @@ also override them by setting an environment variable with the same name.
   `/tmp/usr/local/bin/cha`.
 * `MANPREFIX`, `MANPREFIX1`, `MANPREFIX5`: prefixes for the installation of
   man pages. The default setting expands to `/usr/local/share/man/man1`, etc.
+  (Normally you shouldn't have to set `MANPREFIX1` or `MANPREFIX5` at all,
+  as these are derived from `MANPREFIX`.)
 * `CURLLIBNAME`: Change the name of the libcurl shared object file.
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is relative
   to wherever the binary is placed when it is executed. (i.e. after installation
@@ -52,7 +54,9 @@ also override them by setting an environment variable with the same name.
 
 * `all`: build all required executables
 * `clean`: remove OBJDIR, OUTDIR, and the QuickJS library
-* `manpage`: build man pages; note that this is not part of `all`
+* `manpage`: rebuild man pages; note that this is not part of `all`.
+  Manual pages are included in the repository, so this only needs to be called
+  when you modify the documentation.
 * `install`: install the `cha` binary, and if man pages were generated,
   those as well
 * `uninstall`: remove the `cha` binary and Chawan man pages

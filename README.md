@@ -36,9 +36,7 @@ supported yet.)
 4. Download parts of Chawan found in other repositories: `make submodule`
 5. Run `make`. (By default, this will build the whole project in release mode;
    for details, see [doc/build.md](doc/build.md).)
-6. If you want manpages, run `make manpage`. (This requires
-   [pandoc](https://pandoc.org).)
-7. Finally, install using `make install` (e.g. `sudo make install`).
+6. Finally, install using `make install` (e.g. `sudo make install`).
 
 Then, try:
 

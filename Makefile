@@ -208,16 +208,8 @@ $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
 	./md2manpreproc $< > $@
 
-$(OBJDIR)/man/cha-%.5: $(OBJDIR)/man/cha-%.md
+doc/cha-%.5: $(OBJDIR)/man/cha-%.md
 	pandoc --standalone --to man $< -o $@
-
-$(OBJDIR)/man/cha.1: doc/cha.1
-	@mkdir -p "$(OBJDIR)/man"
-	cp doc/cha.1 "$(OBJDIR)/man/cha.1"
-
-$(OBJDIR)/man/mancha.1: doc/mancha.1
-	@mkdir -p "$(OBJDIR)/man"
-	cp doc/mancha.1 "$(OBJDIR)/man/mancha.1"
 
 .PHONY: clean
 clean:
@@ -225,16 +217,15 @@ clean:
 	rm -rf "$(QJSOBJ)"
 	rm -f lib/libquickjs.a
 
-MANPAGES = $(OBJDIR)/man/cha.1 $(OBJDIR)/man/mancha.1 \
-	$(OBJDIR)/man/cha-config.5 $(OBJDIR)/man/cha-mailcap.5 \
-	$(OBJDIR)/man/cha-mime.types.5 $(OBJDIR)/man/cha-localcgi.5 \
-	$(OBJDIR)/man/cha-urimethodmap.5 $(OBJDIR)/man/cha-protocols.5 \
-	$(OBJDIR)/man/cha-api.5
+MANPAGES1 = doc/cha.1 doc/mancha.1
+MANPAGES5 = doc/cha-config.5 doc/cha-mailcap.5 doc/cha-mime.types.5 \
+	doc/cha-localcgi.5 doc/cha-urimethodmap.5 doc/cha-protocols.5 \
+	doc/cha-api.5
+
+MANPAGES = $(MANPAGES1) $(MANPAGES5)
 
 .PHONY: manpage
 manpage: $(MANPAGES)
-	mkdir -p "$(OUTDIR_MAN)"
-	for f in $(MANPAGES); do cp "$$f" "$(OUTDIR_MAN)"; done
 
 .PHONY: install
 install:
@@ -259,19 +250,8 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
-	if test -d "$(OUTDIR_MAN)"; then \
-	mkdir -p "$(DESTDIR)$(MANPREFIX5)"; \
-	mkdir -p "$(DESTDIR)$(MANPREFIX1)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-config.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-mailcap.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-mime.types.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-localcgi.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-urimethodmap.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-protocols.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha-api.5" "$(DESTDIR)$(MANPREFIX5)"; \
-	install -m644 "$(OUTDIR_MAN)/cha.1" "$(DESTDIR)$(MANPREFIX1)"; \
-	install -m644 "$(OUTDIR_MAN)/mancha.1" "$(DESTDIR)$(MANPREFIX1)"; \
-	fi
+	for f in $(MANPAGES1); do install -m644 "$$f" "$(DESTDIR)$(MANPREFIX1)"; done
+	for f in $(MANPAGES5); do install -m644 "$$f" "$(DESTDIR)$(MANPREFIX5)"; done
 
 .PHONY: uninstall
 uninstall:
