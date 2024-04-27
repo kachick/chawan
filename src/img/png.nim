@@ -154,7 +154,7 @@ template readStr(reader: var PNGReader; L: int): string =
   s
 
 template readU8(reader: var PNGReader): uint8 =
-  if reader.i > reader.limit:
+  if reader.i >= reader.limit:
     reader.err "too short"
   let x = reader.iq[reader.i]
   inc reader.i
