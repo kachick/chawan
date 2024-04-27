@@ -1045,6 +1045,21 @@ position.</td>
 <td>Save the source of the current buffer to the disk.</td>
 </tr>
 
+<tr>
+<td>`cmd.pager.copyURL`</td>
+<td>Copy the current buffer's URL to the system clipboard.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.copyCursorLink`</td>
+<td>Copy the link under the cursor to the system clipboard.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.copyCursorImage`</td>
+<td>Copy the URL of the image under the cursor to the system clipboard.</td>
+</tr>
+
 </table>
 
 

@@ -26,7 +26,7 @@ copyCursorLink = '''
 		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
 }
 '''
-yankCursorImage = '''
+copyCursorImage = '''
 () => {
 	const link = pager.hoverImage;
 	if (!link)
