@@ -78,6 +78,7 @@ type
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
     hasSixel: bool
+    sixelRegisterNum: int
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
@@ -98,6 +99,10 @@ const GEOMCELL = CSI(18, "t")
 
 # allow shift-key to override mouse protocol
 const XTSHIFTESCAPE = CSI(">0s")
+
+# query sixel register number
+template XTSMGRAPHICS(pi, pa, pv: untyped): string =
+  CSI("?" & $pi, $pa, $pv & "S")
 
 # device control string
 const DCSSTART = "\eP"
@@ -180,7 +185,7 @@ proc readChar*(term: Terminal): char =
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
 
-#TODO a) this should be customizable b) these defaults suck
+#TODO a) this should be customizable
 const ANSIColorMap = [
   rgb(0, 0, 0),
   rgb(205, 0, 0),
@@ -674,7 +679,8 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     let rgb = EightBitColor(b).toRGB()
     let rgbq = RGBColor(uint32(rgb).fastmul(100))
     # 2 is RGB
-    outs &= '#' & $b & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
+    let n = b - 15
+    outs &= '#' & $n & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
   let W = int(dispw) - offx
   var n = offy * int(bmp.width)
   let L = disph * int(bmp.width)
@@ -696,7 +702,8 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     outs = ""
     for i, line in bands:
       let t = if i != bands.high: '$' else: '-'
-      outs &= '#' & $uint8(line.c) & line.data.compressSixel() & t
+      let n = uint8(line.c) - 15
+      outs &= '#' & $n & line.data.compressSixel() & t
   if outs.len > 0 and outs[^1] == '-':
     outs.setLen(outs.len - 1)
   outs &= ST
@@ -825,6 +832,7 @@ type
     heightPx: int
     width: int
     height: int
+    registers: int
 
 proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
@@ -835,6 +843,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       KITTYQUERY &
       GEOMPIXEL &
       GEOMCELL &
+      XTSMGRAPHICS(1, 1, 0) & # color registers
       XTGETTCAP("524742") &
       DA1
     term.outfile.write(outs)
@@ -858,47 +867,56 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
     template skip_until(term: Terminal; c: char) =
       while (let cc = term.consume; cc != c):
         discard
+    template consume_int_till(term: Terminal; sentinel: char): int =
+      var n = 0
+      while (let c = term.consume; c != sentinel):
+        if (let x = decValue(c); x != -1):
+          n *= 10
+          n += x
+        else:
+          fail
+      n
+    template consume_int_greedy(term: Terminal; lastc: var char): int =
+      var n = 0
+      while true:
+        let c = term.consume
+        if (let x = decValue(c); x != -1):
+          n *= 10
+          n += x
+        else:
+          lastc = c
+          break
+      n
     term.expect '\e'
     case term.consume
     of '[':
       # CSI
       case (let c = term.consume; c)
-      of '?': # DA1
-        var n = 0
+      of '?': # DA1, XTSMGRAPHICS
+        var lastc: char
+        var params = newSeq[int]()
         while true:
-          let c = term.consume
-          let x = decValue(c)
-          if x == -1:
+          let n = term.consume_int_greedy lastc
+          params.add(n)
+          if lastc in {'c', 'S'}:
+            break
+          if lastc != ';':
+            fail
+        if lastc == 'c':
+          for n in params:
             case n
             of 4: result.attrs.incl(qaSixel)
             of 22: result.attrs.incl(qaAnsiColor)
             else: discard
-            n = 0
-            if c == 'c':
-              break
-            if c != ';':
-              fail
-          else:
-            n *= 10
-            n += x
-        result.success = true
-        break # DA1 returned; done
+          result.success = true
+          break # DA1 returned; done
+        else: # 'S'
+          if params.len >= 3 and params[0] == 1 and params[1] == 0:
+            result.registers = params[2]
       of '4', '8': # GEOMPIXEL, GEOMCELL
         term.expect ';'
-        var height = 0
-        var width = 0
-        while (let c = term.consume; c != ';'):
-          if (let x = decValue(c); x != -1):
-            height *= 10
-            height += x
-          else:
-            fail
-        while (let c = term.consume; c != 't'):
-          if (let x = decValue(c); x != -1):
-            width *= 10
-            width += x
-          else:
-            fail
+        let height = term.consume_int_till ';'
+        let width = term.consume_int_till 't'
         if c == '4': # GEOMSIZE
           result.widthPx = width
           result.heightPx = height
@@ -1010,6 +1028,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.colorMode = cmTrueColor
       if qaSixel in r.attrs:
         term.imageMode = imSixel
+        term.sixelRegisterNum = clamp(r.registers, 16, 1024)
       if qaKittyImage in r.attrs:
         term.imageMode = imKitty
       # just assume the terminal doesn't choke on these.
