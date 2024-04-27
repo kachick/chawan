@@ -684,14 +684,22 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
   let W = int(dispw) - offx
   var n = offy * int(bmp.width)
   let L = disph * int(bmp.width)
+  let cx0 = offx div term.attrs.ppc
   while n < L:
     var bands = newSeq[SixelBand]()
+    let cy = n div int(bmp.width) div term.attrs.ppl
     for i in 0 ..< 6:
       if n >= bmp.px.len:
         break
       let mask = 1u8 shl i
       for x in 0 ..< W:
-        let c = RGBColor(bmp.px[n + x + offx]).toEightBit()
+        let cx = cx0 + x div term.attrs.ppc
+        let bgcolor0 = term.canvas[cy * term.canvas.width + cx].format.bgcolor
+        let bgcolor = if bgcolor0.t == ctRGB:
+          bgcolor0.rgbcolor
+        else:
+          term.defaultBackground
+        let c = RGBColor(bgcolor.blend(bmp.px[n + x + offx])).toEightBit()
         if (let j = bands.find(c); j != -1):
           bands[j].data[x] = bands[j].data[x] or mask
         else:
