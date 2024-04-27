@@ -1427,7 +1427,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     bctx.layoutFlex(box, builder, sizes)
   else:
     assert false, $builder.computed{"display"}
-  bctx.positionFloats()
+  assert bctx.unpositionedFloats.len == 0
   bctx.marginTodo.append(sizes.margin.bottom)
   let marginTop = box.offset.y
   let marginBottom = bctx.marginTodo.sum()
@@ -1522,9 +1522,6 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     ictx.currentLine.size.w += paddingRight
     let marginRight = box.computed{"margin-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += marginRight
-  #TODO we verticalAlignLine here to know line height, but this is incredibly
-  # ugly. Maybe figure out some incremental line alignment scheme instead?
-  ictx.verticalAlignLine()
   if state.firstLine:
     fragment.startOffset = Offset(
       x: state.startOffsetTop.x,
@@ -1665,10 +1662,14 @@ proc buildTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
     node: builder.node,
     margin: sizes.margin
   )
-  var ctx = BlockContext(lctx: lctx)
-  ctx.layoutFlow(box, builder, sizes)
+  var bctx = BlockContext(lctx: lctx)
+  bctx.layoutFlow(box, builder, sizes)
+  assert bctx.unpositionedFloats.len == 0
   # Table cells ignore margins.
   box.offset.y = 0
+  # If the highest float edge is higher than the box itself, set that as
+  # the box height.
+  box.size.h = max(box.size.h, bctx.maxFloatHeight)
   return box
 
 # Sort growing cells, and filter out cells that have grown to their intended
@@ -2035,6 +2036,7 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
   )
   var bctx = BlockContext(lctx: ctx.lctx)
   bctx.layoutFlow(box, builder, sizes)
+  assert bctx.unpositionedFloats.len == 0
   let outerHeight = box.offset.y + box.size.h + bctx.marginTodo.sum()
   table.size.h += outerHeight
   table.size.w = max(table.size.w, box.size.w)
@@ -2111,6 +2113,11 @@ proc layoutFlexChild(lctx: LayoutState; builder: BoxBuilder;
     margin: sizes.margin
   )
   bctx.layout(box, builder, sizes)
+  assert bctx.unpositionedFloats.len == 0
+  # If the highest float edge is higher than the box itself, set that as
+  # the box height.
+  if bctx.maxFloatHeight > box.offset.y + box.size.h:
+    box.size.h = bctx.maxFloatHeight - box.offset.y
   return box
 
 type
@@ -2393,7 +2400,7 @@ proc layoutRootBlock(lctx: LayoutState; builder: BoxBuilder;
     BlockBox =
   var bctx = BlockContext(lctx: lctx)
   let box = bctx.layoutBlockChild(builder, space, offset, appendMargins = false)
-  bctx.positionFloats()
+  assert bctx.unpositionedFloats.len == 0
   marginBottomOut = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.

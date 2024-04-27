@@ -1,6 +1,6 @@
 #!/bin/sh
 if ! test "$CHA_TEST_BIN"
-then	test -f ../../../cha && CHA_TEST_BIN=../../../cha || CHA_TEST_BIN=cha
+then	test -f ../../cha && CHA_TEST_BIN=../../cha || CHA_TEST_BIN=cha
 fi
 failed=0
 for h in *.html
