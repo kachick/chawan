@@ -67,7 +67,7 @@ type
     bcReadCanceled, bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink,
     bcFindRevNthLink, bcFindNextMatch, bcFindPrevMatch, bcGetLines,
     bcUpdateHover, bcGotoAnchor, bcCancel, bcGetTitle, bcSelect, bcClone,
-    bcFindPrevParagraph, bcFindNextParagraph, bcMarkURL
+    bcFindPrevParagraph, bcFindNextParagraph, bcMarkURL, bcToggleImages
 
   BufferState = enum
     bsLoadingPage, bsLoadingResources, bsLoaded
@@ -1815,6 +1815,9 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
         if element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
           stack.add(element)
   buffer.do_reshape()
+
+proc toggleImages*(buffer: Buffer) {.proxy.} =
+  buffer.config.images = not buffer.config.images
 
 macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     cmd: BufferCommand; packetid: int; r: var BufferedReader) =

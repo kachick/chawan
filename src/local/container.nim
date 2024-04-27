@@ -1367,10 +1367,19 @@ proc getSelectionText(container: Container; hl: Highlight = nil):
   )
 
 proc markURL(container: Container) {.jsfunc.} =
+  if container.iface == nil:
+    return
   var schemes: seq[string] = @[]
   for key in container.mainConfig.external.urimethodmap.map.keys:
     schemes.add(key.until(':'))
   container.iface.markURL(schemes).then(proc() =
+    container.needslines = true
+  )
+
+proc toggleImages(container: Container) {.jsfunc.} =
+  if container.iface == nil:
+    return
+  container.iface.toggleImages().then(proc() =
     container.needslines = true
   )
 
