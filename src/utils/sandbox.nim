@@ -133,6 +133,7 @@ elif defined(linux) and not disableSandbox:
       "fcntl", "fcntl64", # so we can set nonblock etc.
       "mmap", "mmap2", "munmap", "brk", # memory allocation
       "poll", # curl needs poll
+      "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
       "fstat", # glibc fread seems to call it
       # maybe it will need epoll too in the future
       "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait",
