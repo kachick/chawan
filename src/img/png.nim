@@ -254,8 +254,10 @@ proc readtRNS(reader: var PNGReader) =
   of pcIndexedColor:
     if reader.limit - reader.i > reader.palette.len:
       reader.err "too many trns values"
-    for i in 0 ..< reader.palette.len:
-      reader.palette[i].a = reader.readU8()
+    for c in reader.palette.mitems:
+      if reader.i >= reader.limit:
+        break
+      c.a = reader.readU8()
 
 func paethPredictor(a, b, c: uint8): uint8 =
   let pa0 = int(b) - int(c)
@@ -387,12 +389,12 @@ proc readPLTE(reader: var PNGReader) =
   let len = reader.limit - reader.i
   if len mod 3 != 0:
     reader.err "palette length not divisible by 3"
-  reader.palette = newSeq[ARGBColor](len)
-  for i in 0 ..< len div 3:
+  reader.palette = newSeq[ARGBColor](len div 3)
+  for c in reader.palette.mitems:
     let r = reader.readU8()
     let g = reader.readU8()
     let b = reader.readU8()
-    reader.palette[i] = rgba(r, g, b, 255)
+    c = rgba(r, g, b, 255)
   reader.plteseen = true
 
 proc readIDAT(reader: var PNGReader) =
