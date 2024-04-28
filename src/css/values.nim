@@ -118,8 +118,8 @@ type
     cvtFlexWrap = "flexwrap"
     cvtNumber = "number"
 
-  CSSGlobalValueType* = enum
-    cvtNoglobal, cvtInitial, cvtInherit, cvtRevert, cvtUnset
+  CSSGlobalType = enum
+    cgtNoglobal, cgtInitial, cgtInherit, cgtRevert, cgtUnset
 
   CSSDisplay* = enum
     DisplayNone, DisplayInline, DisplayBlock, DisplayListItem,
@@ -303,7 +303,7 @@ type
   CSSComputedEntry = tuple
     t: CSSPropertyType
     val: CSSComputedValue
-    global: CSSGlobalValueType
+    global: CSSGlobalType
 
   CSSComputedEntries = seq[CSSComputedEntry]
 
@@ -763,36 +763,29 @@ func cssIdent[T](map: static openArray[(string, T)], cval: CSSComponentValue):
           return ok(MapTable[val])
   return err()
 
-func cssIdentFirst[T](map: static openArray[(string, T)]; d: CSSDeclaration):
-    Opt[T] =
-  if d.value.len == 1:
-    return cssIdent(map, d.value[0])
-  return err()
-
-func cssLength*(val: CSSComponentValue; has_auto: static bool = true;
-    allow_negative: static bool = true): Opt[CSSLength] =
-  block nofail:
-    if val of CSSToken:
-      let tok = CSSToken(val)
-      case tok.tokenType
-      of cttNumber:
-        if tok.nvalue == 0:
-          return ok(CSSLength(num: 0, unit: cuPx))
-      of cttPercentage:
-        when not allow_negative:
-          if tok.nvalue < 0:
-            break nofail
-        return cssLength(tok.nvalue, "%")
-      of cttDimension:
-        when not allow_negative:
-          if tok.nvalue < 0:
-            break nofail
-        return cssLength(tok.nvalue, tok.unit)
-      of cttIdent:
-        when has_auto:
-          if tok.value.equalsIgnoreCase("auto"):
-            return ok(CSSLengthAuto)
-      else: discard
+func cssLength*(val: CSSComponentValue; has_auto = true; allow_negative = true):
+    Opt[CSSLength] =
+  if val of CSSToken:
+    let tok = CSSToken(val)
+    case tok.tokenType
+    of cttNumber:
+      if tok.nvalue == 0:
+        return ok(CSSLength(num: 0, unit: cuPx))
+    of cttPercentage:
+      if not allow_negative:
+        if tok.nvalue < 0:
+          return err()
+      return cssLength(tok.nvalue, "%")
+    of cttDimension:
+      if not allow_negative:
+        if tok.nvalue < 0:
+          return err()
+      return cssLength(tok.nvalue, tok.unit)
+    of cttIdent:
+      if has_auto:
+        if tok.value.equalsIgnoreCase("auto"):
+          return ok(CSSLengthAuto)
+    else: discard
   return err()
 
 func cssAbsoluteLength(val: CSSComponentValue): Opt[CSSLength] =
@@ -820,24 +813,24 @@ func cssWordSpacing(cval: CSSComponentValue): Opt[CSSLength] =
     else: discard
   return err()
 
-func cssGlobal(d: CSSDeclaration): CSSGlobalValueType =
+func cssGlobal(cval: CSSComponentValue): CSSGlobalType =
   const GlobalMap = {
-    "inherit": cvtInherit,
-    "initial": cvtInitial,
-    "unset": cvtUnset,
-    "revert": cvtRevert
+    "inherit": cgtInherit,
+    "initial": cgtInitial,
+    "unset": cgtUnset,
+    "revert": cgtRevert
   }
-  return cssIdentFirst(GlobalMap, d).get(cvtNoglobal)
+  return cssIdent(GlobalMap, cval).get(cgtNoglobal)
 
-func cssQuotes(d: CSSDeclaration): Opt[CSSQuotes] =
+func cssQuotes(cvals: seq[CSSComponentValue]): Opt[CSSQuotes] =
   template die =
     return err()
-  if d.value.len == 0:
+  if cvals.len == 0:
     die
   var res: CSSQuotes
   var sa = false
   var pair: tuple[s, e: string]
-  for cval in d.value:
+  for cval in cvals:
     if res.auto: die
     if isToken(cval):
       let tok = getToken(cval)
@@ -847,7 +840,7 @@ func cssQuotes(d: CSSDeclaration): Opt[CSSQuotes] =
         if tok.value.equalsIgnoreCase("auto"):
           res.auto = true
         elif tok.value.equalsIgnoreCase("none"):
-          if d.value.len != 1:
+          if cvals.len != 1:
             die
         die
       of cttString:
@@ -864,8 +857,8 @@ func cssQuotes(d: CSSDeclaration): Opt[CSSQuotes] =
     die
   return ok(res)
 
-func cssContent(d: CSSDeclaration): seq[CSSContent] =
-  for cval in d.value:
+func cssContent(cvals: seq[CSSComponentValue]): seq[CSSContent] =
+  for cval in cvals:
     if isToken(cval):
       let tok = getToken(cval)
       case tok.tokenType
@@ -941,26 +934,28 @@ func cssFontWeight(cval: CSSComponentValue): Opt[int] =
         return ok(int(tok.nvalue))
   return err()
 
-func cssTextDecoration(d: CSSDeclaration): Opt[set[CSSTextDecoration]] =
-  var s: set[CSSTextDecoration]
-  for cval in d.value:
-    if isToken(cval):
-      let tok = getToken(cval)
-      if tok.tokenType == cttIdent:
-        if tok.value.equalsIgnoreCase("none"):
-          if d.value.len != 1:
-            return err()
-          return ok(s)
-        elif tok.value.equalsIgnoreCase("underline"):
-          s.incl(TextDecorationUnderline)
-        elif tok.value.equalsIgnoreCase("overline"):
-          s.incl(TextDecorationOverline)
-        elif tok.value.equalsIgnoreCase("line-through"):
-          s.incl(TextDecorationLineThrough)
-        elif tok.value.equalsIgnoreCase("blink"):
-          s.incl(TextDecorationBlink)
-        else:
+func cssTextDecoration(cvals: seq[CSSComponentValue]):
+    Opt[set[CSSTextDecoration]] =
+  var s: set[CSSTextDecoration] = {}
+  for cval in cvals:
+    if not isToken(cval):
+      continue
+    let tok = getToken(cval)
+    if tok.tokenType == cttIdent:
+      if tok.value.equalsIgnoreCase("none"):
+        if cvals.len != 1:
           return err()
+        return ok(s)
+      elif tok.value.equalsIgnoreCase("underline"):
+        s.incl(TextDecorationUnderline)
+      elif tok.value.equalsIgnoreCase("overline"):
+        s.incl(TextDecorationOverline)
+      elif tok.value.equalsIgnoreCase("line-through"):
+        s.incl(TextDecorationLineThrough)
+      elif tok.value.equalsIgnoreCase("blink"):
+        s.incl(TextDecorationBlink)
+      else:
+        return err()
   return ok(s)
 
 func cssWordBreak(cval: CSSComponentValue): Opt[CSSWordBreak] =
@@ -1079,13 +1074,13 @@ func cssBorderCollapse(cval: CSSComponentValue): Opt[CSSBorderCollapse] =
   }
   return cssIdent(BorderCollapseMap, cval)
 
-func cssCounterReset(d: CSSDeclaration): Opt[seq[CSSCounterReset]] =
+func cssCounterReset(cvals: seq[CSSComponentValue]): Opt[seq[CSSCounterReset]] =
   template die =
     return err()
-  var r: CSSCounterReset
+  var r = CSSCounterReset()
   var s = false
-  var res: seq[CSSCounterReset]
-  for cval in d.value:
+  var res: seq[CSSCounterReset] = @[]
+  for cval in cvals:
     if isToken(cval):
       let tok = getToken(cval)
       case tok.tokenType
@@ -1228,101 +1223,70 @@ func cssFlexWrap(cval: CSSComponentValue): Opt[CSSFlexWrap] =
   }
   return cssIdent(FlexWrapMap, cval)
 
-proc getValueFromDecl(val: CSSComputedValue; d: CSSDeclaration;
-    vtype: CSSValueType; ptype: CSSPropertyType): Err[void] =
+proc parseValue(cvals: seq[CSSComponentValue]; t: CSSPropertyType):
+    Opt[CSSComputedValue] =
   var i = 0
-  d.value.skipWhitespace(i)
-  if i >= d.value.len:
+  cvals.skipWhitespace(i)
+  if i >= cvals.len:
     return err()
-  let cval = d.value[i]
+  let cval = cvals[i]
   inc i
-  case vtype
-  of cvtColor:
-    val.color = ?cssColor(cval)
+  let v = valueType(t)
+  template return_new(prop, val: untyped) =
+    return ok(CSSComputedValue(v: v, prop: val))
+  case v
+  of cvtColor: return_new color, ?cssColor(cval)
   of cvtLength:
-    case ptype
+    case t
     of cptWordSpacing:
-      val.length = ?cssWordSpacing(cval)
+      return_new length, ?cssWordSpacing(cval)
     of cptLineHeight:
-      val.length = ?cssLineHeight(cval)
-    of cptMaxWidth, cptMaxHeight, cptMinWidth,
-       cptMinHeight:
-      val.length = ?cssMaxMinSize(cval)
-    of cptPaddingLeft, cptPaddingRight, cptPaddingTop,
-       cptPaddingBottom:
-      val.length = ?cssLength(cval, has_auto = false)
+      return_new length, ?cssLineHeight(cval)
+    of cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight:
+      return_new length, ?cssMaxMinSize(cval)
+    of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
+      return_new length, ?cssLength(cval, has_auto = false)
     #TODO content for flex-basis
     else:
-      val.length = ?cssLength(cval)
-  of cvtFontStyle:
-    val.fontstyle = ?cssFontStyle(cval)
-  of cvtDisplay:
-    val.display = ?cssDisplay(cval)
-  of cvtContent:
-    val.content = cssContent(d)
-  of cvtWhiteSpace:
-    val.whitespace = ?cssWhiteSpace(cval)
+      return_new length, ?cssLength(cval)
+  of cvtFontStyle: return_new fontstyle, ?cssFontStyle(cval)
+  of cvtDisplay: return_new display, ?cssDisplay(cval)
+  of cvtContent: return_new content, cssContent(cvals)
+  of cvtWhiteSpace: return_new whitespace, ?cssWhiteSpace(cval)
   of cvtInteger:
-    if ptype == cptFontWeight:
-      val.integer = ?cssFontWeight(cval)
-    elif ptype == cptChaColspan:
-      val.integer = ?cssInteger(cval, 1 .. 1000)
-    elif ptype == cptChaRowspan:
-      val.integer = ?cssInteger(cval, 0 .. 65534)
-  of cvtTextDecoration:
-    val.textdecoration = ?cssTextDecoration(d)
-  of cvtWordBreak:
-    val.wordbreak = ?cssWordBreak(cval)
-  of cvtListStyleType:
-    val.liststyletype = ?cssListStyleType(cval)
-  of cvtVerticalAlign:
-    val.verticalalign = ?cssVerticalAlign(cval)
-  of cvtTextAlign:
-    val.textalign = ?cssTextAlign(cval)
+    case t
+    of cptFontWeight: return_new integer, ?cssFontWeight(cval)
+    of cptChaColspan: return_new integer, ?cssInteger(cval, 1 .. 1000)
+    of cptChaRowspan: return_new integer, ?cssInteger(cval, 0 .. 65534)
+    else: assert false
+  of cvtTextDecoration: return_new textdecoration, ?cssTextDecoration(cvals)
+  of cvtWordBreak: return_new wordbreak, ?cssWordBreak(cval)
+  of cvtListStyleType: return_new liststyletype, ?cssListStyleType(cval)
+  of cvtVerticalAlign: return_new verticalalign, ?cssVerticalAlign(cval)
+  of cvtTextAlign: return_new textalign, ?cssTextAlign(cval)
   of cvtListStylePosition:
-    val.liststyleposition = ?cssListStylePosition(cval)
-  of cvtPosition:
-    val.position = ?cssPosition(cval)
-  of cvtCaptionSide:
-    val.captionside = ?cssCaptionSide(cval)
-  of cvtBorderCollapse:
-    val.bordercollapse = ?cssBorderCollapse(cval)
+    return_new liststyleposition, ?cssListStylePosition(cval)
+  of cvtPosition: return_new position, ?cssPosition(cval)
+  of cvtCaptionSide: return_new captionside, ?cssCaptionSide(cval)
+  of cvtBorderCollapse: return_new bordercollapse, ?cssBorderCollapse(cval)
   of cvtLength2:
-    val.length2.a = ?cssAbsoluteLength(cval)
-    d.value.skipWhitespace(i)
-    if i >= d.value.len:
-      val.length2.b = val.length2.a
-    else:
-      let cval = d.value[i]
-      val.length2.b = ?cssAbsoluteLength(cval)
-  of cvtQuotes:
-    val.quotes = ?cssQuotes(d)
-  of cvtCounterReset:
-    val.counterreset = ?cssCounterReset(d)
-  of cvtImage:
-    val.image = ?cssImage(cval)
-  of cvtFloat:
-    val.float = ?cssFloat(cval)
-  of cvtVisibility:
-    val.visibility = ?cssVisibility(cval)
-  of cvtBoxSizing:
-    val.boxsizing = ?cssBoxSizing(cval)
-  of cvtClear:
-    val.clear = ?cssClear(cval)
-  of cvtTextTransform:
-    val.texttransform = ?cssTextTransform(cval)
-  of cvtBgcolorIsCanvas:
-    return err() # internal value
-  of cvtFlexDirection:
-    val.flexdirection = ?cssFlexDirection(cval)
-  of cvtFlexWrap:
-    val.flexwrap = ?cssFlexWrap(cval)
-  of cvtNumber:
-    const NeedsPositive = {cptFlexGrow}
-    val.number = ?cssNumber(cval, ptype in NeedsPositive)
-  of cvtNone:
-    discard
-  return ok()
+    let a = ?cssAbsoluteLength(cval)
+    cvals.skipWhitespace(i)
+    let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i])
+    return_new length2, (a, b)
+  of cvtQuotes: return_new quotes, ?cssQuotes(cvals)
+  of cvtCounterReset: return_new counterreset, ?cssCounterReset(cvals)
+  of cvtImage: return_new image, ?cssImage(cval)
+  of cvtFloat: return_new float, ?cssFloat(cval)
+  of cvtVisibility: return_new visibility, ?cssVisibility(cval)
+  of cvtBoxSizing: return_new boxsizing, ?cssBoxSizing(cval)
+  of cvtClear: return_new clear, ?cssClear(cval)
+  of cvtTextTransform: return_new texttransform, ?cssTextTransform(cval)
+  of cvtBgcolorIsCanvas: return err() # internal value
+  of cvtFlexDirection: return_new flexdirection, ?cssFlexDirection(cval)
+  of cvtFlexWrap: return_new flexwrap, ?cssFlexWrap(cval)
+  of cvtNumber: return_new number, ?cssNumber(cval, t == cptFlexGrow)
+  of cvtNone: return err()
 
 func getInitialColor(t: CSSPropertyType): CellColor =
   if t == cptBackgroundColor:
@@ -1375,8 +1339,8 @@ func calcInitial(t: CSSPropertyType): CSSComputedValue =
   return nv
 
 func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
-  for i in low(result)..high(result):
-    result[i] = calcInitial(i)
+  for t in CSSPropertyType:
+    result[t] = calcInitial(t)
 
 let defaultTable = getInitialTable()
 
@@ -1384,59 +1348,43 @@ template getDefault(t: CSSPropertyType): CSSComputedValue =
   {.cast(noSideEffect).}:
     defaultTable[t]
 
-func getComputedValue(d: CSSDeclaration; ptype: CSSPropertyType;
-    vtype: CSSValueType): Opt[CSSComputedEntry] =
-  let global = cssGlobal(d)
-  let val = CSSComputedValue(v: vtype)
-  if global != cvtNoglobal:
-    return ok((ptype, val, global))
-  ?val.getValueFromDecl(d, vtype, ptype)
-  return ok((ptype, val, global))
-
-func lengthShorthand(d: CSSDeclaration; props: array[4, CSSPropertyType]):
+func lengthShorthand(cvals: seq[CSSComponentValue];
+    props: array[4, CSSPropertyType]; global: CSSGlobalType; has_auto = true):
     Opt[seq[CSSComputedEntry]] =
+  var res: seq[CSSComputedEntry] = @[]
+  if global != cgtNoglobal:
+    for t in props:
+      res.add((t, nil, global))
+    return ok(res)
+  var lengths: seq[CSSComputedValue] = @[]
   var i = 0
-  var cvals: seq[CSSComponentValue]
-  while i < d.value.len:
-    if d.value[i] != cttWhitespace:
-      cvals.add(d.value[i])
+  while i < cvals.len:
+    cvals.skipWhitespace(i)
+    let length = ?cssLength(cvals[i], has_auto = has_auto)
+    let val = CSSComputedValue(v: cvtLength, length: length)
+    lengths.add(val)
     inc i
-  var res: seq[CSSComputedEntry]
-  case cvals.len
+  case lengths.len
   of 1: # top, bottom, left, right
-    for ptype in props:
-      let vtype = valueType(ptype)
-      let val = CSSComputedValue(v: vtype)
-      ?val.getValueFromDecl(d, vtype, ptype)
-      res.add((ptype, val, cssGlobal(d)))
+    for i, t in props:
+      res.add((t, lengths[0], cgtNoglobal))
   of 2: # top, bottom | left, right
-    for i in 0 ..< props.len:
-      let ptype = props[i]
-      let vtype = valueType(ptype)
-      let val = CSSComputedValue(v: vtype)
-      val.length = ?cssLength(cvals[i mod 2])
-      res.add((ptype, val, cssGlobal(d)))
+    for i, t in props:
+      res.add((t, lengths[i mod 2], cgtNoglobal))
   of 3: # top | left, right | bottom
-    for i in 0 ..< props.len:
-      let ptype = props[i]
-      let vtype = valueType(ptype)
-      let val = CSSComputedValue(v: vtype)
+    for i, t in props:
       let j = if i == 0:
         0 # top
       elif i == 3:
         2 # bottom
       else:
         1 # left, right
-      val.length = ?cssLength(cvals[j])
-      res.add((ptype, val, cssGlobal(d)))
+      res.add((t, lengths[j], cgtNoglobal))
   of 4: # top | right | bottom | left
-    for i in 0 ..< props.len:
-      let ptype = props[i]
-      let vtype = valueType(ptype)
-      let val = CSSComputedValue(v: vtype)
-      val.length = ?cssLength(cvals[i])
-      res.add((ptype, val, cssGlobal(d)))
-  else: discard
+    for i, t in props:
+      res.add((t, lengths[i], cgtNoglobal))
+  else:
+    return err()
   return ok(res)
 
 const PropertyMarginSpec = [
@@ -1447,31 +1395,36 @@ const PropertyPaddingSpec = [
   cptPaddingTop, cptPaddingRight, cptPaddingBottom, cptPaddingLeft
 ]
 
-proc getComputedValues0(res: var seq[CSSComputedEntry]; d: CSSDeclaration):
-    Err[void] =
-  case shorthandType(d.name)
+proc getComputedValues(res: var seq[CSSComputedEntry]; name: string;
+    cvals: seq[CSSComponentValue]): Err[void] =
+  var i = 0
+  cvals.skipWhitespace(i)
+  if i >= cvals.len:
+    return err()
+  let global = cssGlobal(cvals[i])
+  case shorthandType(name)
   of cstNone:
-    let ptype = propertyType(d.name)
-    let vtype = valueType(ptype)
-    res.add(?getComputedValue(d, ptype, vtype))
+    let t = propertyType(name)
+    if global != cgtNoglobal:
+      res.add((t, nil, global))
+    else:
+      res.add((t, ?cvals.parseValue(t), global))
   of cstAll:
-    let global = cssGlobal(d)
-    if global != cvtNoglobal:
-      for ptype in CSSPropertyType:
-        let vtype = valueType(ptype)
-        let val = CSSComputedValue(v: vtype)
-        res.add((ptype, val, global))
+    if global == cgtNoglobal:
+      return err()
+    for t in CSSPropertyType:
+      res.add((t, nil, global))
   of cstMargin:
-    res.add(?lengthShorthand(d, PropertyMarginSpec))
+    res.add(?lengthShorthand(cvals, PropertyMarginSpec, global))
   of cstPadding:
-    res.add(?lengthShorthand(d, PropertyPaddingSpec))
+    res.add(?lengthShorthand(cvals, PropertyPaddingSpec, global,
+      has_auto = false))
   of cstBackground:
-    let global = cssGlobal(d)
     var bgcolorval = getDefault(cptBackgroundColor)
     var bgimageval = getDefault(cptBackgroundImage)
     var valid = true
-    if global == cvtNoglobal:
-      for tok in d.value:
+    if global == cgtNoglobal:
+      for tok in cvals:
         if tok == cttWhitespace:
           continue
         if (let r = cssImage(tok); r.isOk):
@@ -1486,12 +1439,11 @@ proc getComputedValues0(res: var seq[CSSComputedEntry]; d: CSSDeclaration):
       res.add((cptBackgroundColor, bgcolorval, global))
       res.add((cptBackgroundImage, bgimageval, global))
   of cstListStyle:
-    let global = cssGlobal(d)
     var positionVal = getDefault(cptListStylePosition)
     var typeVal = getDefault(cptListStyleType)
     var valid = true
-    if global == cvtNoglobal:
-      for tok in d.value:
+    if global == cgtNoglobal:
+      for tok in cvals:
         if tok == cttWhitespace:
           continue
         if (let r = cssListStylePosition(tok); r.isOk):
@@ -1512,36 +1464,35 @@ proc getComputedValues0(res: var seq[CSSComputedEntry]; d: CSSDeclaration):
       res.add((cptListStylePosition, positionVal, global))
       res.add((cptListStyleType, typeVal, global))
   of cstFlex:
-    let global = cssGlobal(d)
-    if global == cvtNoglobal:
+    if global == cgtNoglobal:
       var i = 0
-      d.value.skipWhitespace(i)
-      if i >= d.value.len:
+      cvals.skipWhitespace(i)
+      if i >= cvals.len:
         return err()
-      if (let r = cssNumber(d.value[i], positive = true); r.isSome):
+      if (let r = cssNumber(cvals[i], positive = true); r.isSome):
         # flex-grow
         let val = CSSComputedValue(v: cvtNumber, number: r.get)
         res.add((cptFlexGrow, val, global))
         inc i
-        d.value.skipWhitespace(i)
-        if i < d.value.len:
-          if not d.value[i].isToken:
+        cvals.skipWhitespace(i)
+        if i < cvals.len:
+          if not cvals[i].isToken:
             return err()
-          if (let r = cssNumber(d.value[i], positive = true); r.isSome):
+          if (let r = cssNumber(cvals[i], positive = true); r.isSome):
             # flex-shrink
             let val = CSSComputedValue(v: cvtNumber, number: r.get)
             res.add((cptFlexShrink, val, global))
             inc i
-            d.value.skipWhitespace(i)
+            cvals.skipWhitespace(i)
       if res.len < 1: # flex-grow omitted, default to 1
         let val = CSSComputedValue(v: cvtNumber, number: 1)
         res.add((cptFlexGrow, val, global))
       if res.len < 2: # flex-shrink omitted, default to 1
         let val = CSSComputedValue(v: cvtNumber, number: 1)
         res.add((cptFlexShrink, val, global))
-      if i < d.value.len:
+      if i < cvals.len:
         # flex-basis
-        let val = CSSComputedValue(v: cvtLength, length: ?cssLength(d.value[i]))
+        let val = CSSComputedValue(v: cvtLength, length: ?cssLength(cvals[i]))
         res.add((cptFlexBasis, val, global))
       else: # omitted, default to 0px
         let val = CSSComputedValue(
@@ -1554,20 +1505,19 @@ proc getComputedValues0(res: var seq[CSSComputedEntry]; d: CSSDeclaration):
       res.add((cptFlexShrink, getDefault(cptFlexShrink), global))
       res.add((cptFlexBasis, getDefault(cptFlexBasis), global))
   of cstFlexFlow:
-    let global = cssGlobal(d)
-    if global == cvtNoglobal:
+    if global == cgtNoglobal:
       var i = 0
-      d.value.skipWhitespace(i)
-      if i >= d.value.len:
+      cvals.skipWhitespace(i)
+      if i >= cvals.len:
         return err()
-      if (let dir = cssFlexDirection(d.value[i]); dir.isSome):
+      if (let dir = cssFlexDirection(cvals[i]); dir.isSome):
         # flex-direction
         let val = CSSComputedValue(v: cvtFlexDirection, flexdirection: dir.get)
         res.add((cptFlexDirection, val, global))
         inc i
-        d.value.skipWhitespace(i)
-      if i < d.value.len:
-        let wrap = ?cssFlexWrap(d.value[i])
+        cvals.skipWhitespace(i)
+      if i < cvals.len:
+        let wrap = ?cssFlexWrap(cvals[i])
         let val = CSSComputedValue(v: cvtFlexWrap, flexwrap: wrap)
         res.add((cptFlexWrap, val, global))
     else:
@@ -1577,7 +1527,7 @@ proc getComputedValues0(res: var seq[CSSComputedEntry]; d: CSSDeclaration):
 
 proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.getComputedValues0(d).isOk:
+  if res.getComputedValues(d.name, d.value).isOk:
     return res
   return @[]
 
@@ -1589,38 +1539,37 @@ proc addValues*(builder: var CSSComputedValuesBuilder;
     else:
       builder.normalProperties[origin].add(getComputedValues(decl))
 
-proc applyValue(vals: CSSComputedValues; prop: CSSPropertyType;
-    val: CSSComputedValue; global: CSSGlobalValueType;
+proc applyValue(vals: CSSComputedValues; entry: CSSComputedEntry;
     parent: CSSComputedValues; previousOrigin: CSSComputedValues) =
   let parentVal = if parent != nil:
-    parent[prop]
+    parent[entry.t]
   else:
     nil
-  case global
-  of cvtInherit:
+  case entry.global
+  of cgtInherit:
     if parentVal != nil:
-      vals[prop] = parentVal
+      vals[entry.t] = parentVal
     else:
-      vals[prop] = getDefault(prop)
-  of cvtInitial:
-    vals[prop] = getDefault(prop)
-  of cvtUnset:
-    if inherited(prop):
+      vals[entry.t] = getDefault(entry.t)
+  of cgtInitial:
+    vals[entry.t] = getDefault(entry.t)
+  of cgtUnset:
+    if inherited(entry.t):
       # inherit
       if parentVal != nil:
-        vals[prop] = parentVal
+        vals[entry.t] = parentVal
       else:
-        vals[prop] = getDefault(prop)
+        vals[entry.t] = getDefault(entry.t)
     else:
       # initial
-      vals[prop] = getDefault(prop)
-  of cvtRevert:
+      vals[entry.t] = getDefault(entry.t)
+  of cgtRevert:
     if previousOrigin != nil:
-      vals[prop] = previousOrigin[prop]
+      vals[entry.t] = previousOrigin[entry.t]
     else:
-      vals[prop] = getDefault(prop)
-  of cvtNoglobal:
-    vals[prop] = val
+      vals[entry.t] = getDefault(entry.t)
+  of cgtNoglobal:
+    vals[entry.t] = entry.val
 
 func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
   new(result)
@@ -1651,41 +1600,31 @@ func buildComputedValues*(builder: CSSComputedValuesBuilder):
     CSSComputedValues =
   new(result)
   var previousOrigins: array[CSSOrigin, CSSComputedValues]
-  block:
-    for build in builder.normalProperties[coUserAgent]:
-      result.applyValue(build.t, build.val, build.global, builder.parent, nil)
-    previousOrigins[coUserAgent] = result.copyProperties()
+  for entry in builder.normalProperties[coUserAgent]: # user agent
+    result.applyValue(entry, builder.parent, nil)
+  previousOrigins[coUserAgent] = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   if builder.preshints != nil:
     for prop in CSSPropertyType:
       if builder.preshints[prop] != nil:
         result[prop] = builder.preshints[prop]
-  block:
-    for build in builder.normalProperties[coUser]:
-      result.applyValue(build.t, build.val, build.global, builder.parent,
-        previousOrigins[coUserAgent])
-    # save user origins so author can use them
-    previousOrigins[coUser] = result.copyProperties()
-  block:
-    for build in builder.normalProperties[coAuthor]:
-      result.applyValue(build.t, build.val, build.global, builder.parent,
-        previousOrigins[coUser])
-    # no need to save user origins
-  block:
-    for build in builder.importantProperties[coAuthor]:
-      result.applyValue(build.t, build.val, build.global, builder.parent,
-        previousOrigins[coUser])
-    # important, so no need to save origins
-  block:
-    for build in builder.importantProperties[coUser]:
-      result.applyValue(build.t, build.val, build.global, builder.parent,
-        previousOrigins[coUserAgent])
-    # important, so no need to save origins
-  block:
-    for build in builder.importantProperties[coUserAgent]:
-      result.applyValue(build.t, build.val, build.global, builder.parent, nil)
-    # important, so no need to save origins
+  for entry in builder.normalProperties[coUser]: # user
+    result.applyValue(entry, builder.parent, previousOrigins[coUserAgent])
+  # save user origins so author can use them
+  previousOrigins[coUser] = result.copyProperties()
+  for entry in builder.normalProperties[coAuthor]: # author
+    result.applyValue(entry, builder.parent, previousOrigins[coUser])
+  # no need to save user origins
+  for entry in builder.importantProperties[coAuthor]: # author important
+    result.applyValue(entry, builder.parent, previousOrigins[coUser])
+  # important, so no need to save origins
+  for entry in builder.importantProperties[coUser]: # user important
+    result.applyValue(entry, builder.parent, previousOrigins[coUserAgent])
+  # important, so no need to save origins
+  for entry in builder.importantProperties[coUserAgent]: # user agent important
+    result.applyValue(entry, builder.parent, nil)
+  # important, so no need to save origins
   # set defaults
   for prop in CSSPropertyType:
     if result[prop] == nil:
