@@ -668,13 +668,9 @@ func find(bands: seq[SixelBand]; c: uint8): int =
 proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     bmp: Bitmap) =
   var outs = term.cursorGoto(x, y)
-  #TODO hsize seems to work without rounding on XTerm, idk if it works
-  # everywhere?
-  let hsize = disph - offy
-  let wsize = dispw - offx
   outs &= DCSSTART & 'q'
   # set raster attributes
-  outs &= "\"1;1;" & $wsize & ';' & $hsize
+  outs &= "\"1;1;" & $(dispw - offx) & ';' & $(disph - offy)
   for b in 16 ..< 256:
     # laziest possible register allocation scheme
     #TODO obviously this produces sub-optimal results
@@ -683,31 +679,31 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     let n = b - 15
     # 2 is RGB
     outs &= '#' & $n & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
-  let W = int(dispw) - offx
-  var n = offy * int(bmp.width)
-  let L = disph * int(bmp.width)
-  let cx0 = offx div term.attrs.ppc
-  let nd = int(bmp.width) * term.attrs.ppl
-  let xd = term.attrs.ppc
-  while n < L:
+  var n = offy * int(bmp.width) # start at offy
+  let H = disph * int(bmp.width) # end at disph
+  var m = y * term.canvas.width * term.attrs.ppl # track absolute y
+  let realw = dispw - offx
+  let cx0 = x * term.attrs.ppc + offx
+  while n < H:
     var bands = newSeq[SixelBand]()
     for i in 0 ..< 6:
-      if n >= L:
+      if n >= H:
         break
-      let cn = n * term.canvas.width div nd
       let mask = 1u8 shl i
-      for x in 0 ..< W:
-        let cx = cx0 + x div xd
-        let bgcolor0 = term.canvas[cn + cx].format.bgcolor
+      let my = m div term.attrs.ppl
+      for bx in 0 ..< realw:
+        let cx = (cx0 + bx) div term.attrs.ppc
+        let bgcolor0 = term.canvas[my + cx].format.bgcolor
         let bgcolor = bgcolor0.getRGB(term.defaultBackground)
-        let c0 = bmp.px[n + x + offx]
+        let c0 = bmp.px[n + bx + offx]
         let c = uint8(RGBColor(bgcolor.blend(c0)).toEightBit())
         if (let j = bands.find(c); j != -1):
-          bands[j].data[x] = bands[j].data[x] or mask
+          bands[j].data[bx] = bands[j].data[bx] or mask
         else:
-          bands.add(SixelBand(c: c, data: newSeq[uint8](W)))
+          bands.add(SixelBand(c: c, data: newSeq[uint8](realw)))
           bands[^1].data[^1] = mask
       n += int(bmp.width)
+      m += term.canvas.width
     term.write(outs)
     outs = ""
     for i, band in bands:
@@ -745,21 +741,24 @@ proc outputKittyImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
   outs &= ST
   term.write(outs)
 
+# x, y, maxw, maxh in cells
+# x, y can be negative, then image starts outside the screen
 proc outputImage*(term: Terminal; bmp: Bitmap; x, y, maxw, maxh: int) =
   if term.imageMode == imNone:
     return
-  let xpx = x * term.attrs.ppc
-  let ypx = y * term.attrs.ppl
+  var xpx = x * term.attrs.ppc
+  var ypx = y * term.attrs.ppl
+  # calculate offset inside image to start from
+  let offx = -min(xpx, 0)
+  let offy = -min(ypx, 0)
+  # calculate maximum image size that fits on the screen relative to the image
+  # origin (*not* offx/offy)
   let maxwpx = maxw * term.attrs.ppc
   let maxhpx = maxh * term.attrs.ppl
-  let offx = if x < 0: -xpx else: 0
-  let offy = if y < 0: -ypx else: 0
-  var dispw = int(bmp.width)
-  if xpx + dispw > maxwpx:
-    dispw = maxwpx - xpx
-  var disph = int(bmp.height)
-  if ypx + disph > maxhpx:
-    disph = maxhpx - ypx
+  xpx = max(xpx, 0)
+  ypx = max(ypx, 0)
+  let dispw = min(int(bmp.width) - offx + xpx, maxwpx) + offx - xpx
+  let disph = min(int(bmp.height) - offy + ypx, maxhpx) + offy - ypx
   if dispw <= offx or disph <= offy:
     return
   let x = max(x, 0)
