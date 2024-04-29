@@ -656,10 +656,10 @@ proc compressSixel(data: openArray[uint8]): string =
   return outs
 
 type SixelBand = object
- c: EightBitColor
+ c: uint8
  data: seq[uint8]
 
-func find(bands: seq[SixelBand]; c: EightBitColor): int =
+func find(bands: seq[SixelBand]; c: uint8): int =
   for i, band in bands:
     if band.c == c:
       return i
@@ -668,7 +668,9 @@ func find(bands: seq[SixelBand]; c: EightBitColor): int =
 proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     bmp: Bitmap) =
   var outs = term.cursorGoto(x, y)
-  let hsize = ((disph - offy - 1) div 6 + 1) * 6 # round up to 6
+  #TODO hsize seems to work without rounding on XTerm, idk if it works
+  # everywhere?
+  let hsize = disph - offy
   let wsize = dispw - offx
   outs &= DCSSTART & 'q'
   # set raster attributes
@@ -678,20 +680,28 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     #TODO obviously this produces sub-optimal results
     let rgb = EightBitColor(b).toRGB()
     let rgbq = RGBColor(uint32(rgb).fastmul(100))
-    # 2 is RGB
     let n = b - 15
+    # 2 is RGB
     outs &= '#' & $n & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
   let W = int(dispw) - offx
   var n = offy * int(bmp.width)
   let L = disph * int(bmp.width)
+  let cx0 = offx div term.attrs.ppc
+  let nd = int(bmp.width) * term.attrs.ppl
+  let xd = term.attrs.ppc
   while n < L:
     var bands = newSeq[SixelBand]()
     for i in 0 ..< 6:
-      if n >= bmp.px.len:
+      if n >= L:
         break
+      let cn = n * term.canvas.width div nd
       let mask = 1u8 shl i
       for x in 0 ..< W:
-        let c = RGBColor(bmp.px[n + x + offx]).toEightBit()
+        let cx = cx0 + x div xd
+        let bgcolor0 = term.canvas[cn + cx].format.bgcolor
+        let bgcolor = bgcolor0.getRGB(term.defaultBackground)
+        let c0 = bmp.px[n + x + offx]
+        let c = uint8(RGBColor(bgcolor.blend(c0)).toEightBit())
         if (let j = bands.find(c); j != -1):
           bands[j].data[x] = bands[j].data[x] or mask
         else:
@@ -700,10 +710,10 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
       n += int(bmp.width)
     term.write(outs)
     outs = ""
-    for i, line in bands:
+    for i, band in bands:
       let t = if i != bands.high: '$' else: '-'
-      let n = uint8(line.c) - 15
-      outs &= '#' & $n & line.data.compressSixel() & t
+      let n = band.c - 15
+      outs &= '#' & $n & band.data.compressSixel() & t
   if outs.len > 0 and outs[^1] == '-':
     outs.setLen(outs.len - 1)
   outs &= ST
