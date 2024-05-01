@@ -388,6 +388,15 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let styledText = styledParent.newStyledReplacement(content)
       styledText.pseudo = pseudo
       styledParent.children.add(styledText)
+    of peCanvas:
+      let content = CSSContent(
+        t: ContentImage,
+        s: "canvas://",
+        bmp: HTMLCanvasElement(styledParent.node).bitmap
+      )
+      let styledText = styledParent.newStyledReplacement(content)
+      styledText.pseudo = pseudo
+      styledParent.children.add(styledText)
     of peVideo:
       let content = CSSContent(t: ContentVideo)
       let styledText = styledParent.newStyledReplacement(content)
@@ -491,16 +500,13 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
     -1
   let elem = Element(styledChild.node)
   styledStack.stackAppend(frame, styledChild, peAfter, idx, parentDeclMap)
-  if elem.tagType == TAG_TEXTAREA:
-    styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
-  elif elem.tagType == TAG_IMG or elem.tagType == TAG_IMAGE:
-    styledStack.stackAppend(frame, styledChild, peImage, idx)
-  elif elem.tagType == TAG_VIDEO:
-    styledStack.stackAppend(frame, styledChild, peVideo, idx)
-  elif elem.tagType == TAG_AUDIO:
-    styledStack.stackAppend(frame, styledChild, peAudio, idx)
-  elif elem.tagType == TAG_BR:
-    styledStack.stackAppend(frame, styledChild, peNewline, idx)
+  case elem.tagType
+  of TAG_TEXTAREA: styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
+  of TAG_IMG, TAG_IMAGE: styledStack.stackAppend(frame, styledChild, peImage, idx)
+  of TAG_VIDEO: styledStack.stackAppend(frame, styledChild, peVideo, idx)
+  of TAG_AUDIO: styledStack.stackAppend(frame, styledChild, peAudio, idx)
+  of TAG_BR: styledStack.stackAppend(frame, styledChild, peNewline, idx)
+  of TAG_CANVAS: styledStack.stackAppend(frame, styledChild, peCanvas, idx)
   else:
     for i in countdown(elem.childList.high, 0):
       if elem.childList[i] of Element or elem.childList[i] of Text:

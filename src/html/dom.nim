@@ -320,7 +320,7 @@ type
 
   HTMLCanvasElement* = ref object of HTMLElement
     ctx2d: CanvasRenderingContext2D
-    bitmap: Bitmap
+    bitmap*: Bitmap
 
   DrawingState = object
     # CanvasTransform
@@ -436,8 +436,7 @@ proc resetState(state: var DrawingState) =
   state.path = newPath()
 
 proc create2DContext*(jctx: JSContext; target: HTMLCanvasElement;
-    options: Option[JSValue]):
-    CanvasRenderingContext2D =
+    options: Option[JSValue]): CanvasRenderingContext2D =
   let ctx = CanvasRenderingContext2D(
     bitmap: target.bitmap,
     canvas: target
@@ -2577,7 +2576,8 @@ proc newHTMLElement*(document: Document; localName: CAtom;
   of TAG_LABEL:
     result = HTMLLabelElement()
   of TAG_CANVAS:
-    result = HTMLCanvasElement()
+    let bitmap = if document.scriptingEnabled: newBitmap(300, 150) else: nil
+    result = HTMLCanvasElement(bitmap: bitmap)
   of TAG_IMG:
     result = HTMLImageElement()
   of TAG_VIDEO:
@@ -2750,10 +2750,15 @@ func item(this: CSSStyleDeclaration; u: uint32): Option[string] =
     return some(this.decls[int(u)].name)
   return none(string)
 
-proc getPropertyValue(this: CSSStyleDeclaration; s: string): string =
-  for decl in this.decls:
+func find(this: CSSStyleDeclaration; s: string): int =
+  for i, decl in this.decls:
     if decl.name == s:
-      return $decl.value
+      return i
+  return -1
+
+proc getPropertyValue(this: CSSStyleDeclaration; s: string): string =
+  if (let i = this.find(s); i != -1):
+    return $this.decls[i].value
   return ""
 
 # https://drafts.csswg.org/cssom/#idl-attribute-to-css-property
@@ -2777,6 +2782,33 @@ proc getter[T: uint32|string](this: CSSStyleDeclaration; u: T):
     if u.isSupportedProperty():
       return some(this.getPropertyValue(u))
     return none(string)
+
+proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
+    Err[void] =
+  if i notin 0 .. this.decls.high:
+    return err()
+  var dummy: seq[CSSComputedEntry]
+  ?parseComputedValues(dummy, this.decls[i].name, cvals)
+  this.decls[i].value = cvals
+  return ok()
+
+proc setter[T: uint32|string](this: CSSStyleDeclaration; u: T;
+    value: string) {.jssetprop.} =
+  let cvals = parseListOfComponentValues(newStringStream(value))
+  when u is uint32:
+    if this.setValue(int(u), cvals).isErr:
+      return
+  else:
+    if (let i = this.find(u); i != -1):
+      if this.setValue(i, cvals).isErr:
+        return
+    else:
+      var dummy: seq[CSSComputedEntry]
+      let val0 = parseComputedValues(dummy, u, cvals)
+      if val0.isErr:
+        return
+      this.decls.add(CSSDeclaration(name: u, value: cvals))
+  this.element.attr(satStyle, $this.decls)
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.style_cached == nil:
@@ -2952,7 +2984,7 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
     let area = HTMLAreaElement(element)
     area.reflect_domtoklist satRel, relList
   of TAG_CANVAS:
-    if element.scriptingEnabled and (name == satWidth or name == satHeight):
+    if element.scriptingEnabled and name in {satWidth, satHeight}:
       let w = element.attrul(satWidth).get(300)
       let h = element.attrul(satHeight).get(150)
       let canvas = HTMLCanvasElement(element)

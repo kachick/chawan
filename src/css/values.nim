@@ -27,8 +27,22 @@ type
     cstFlexFlow = "flex-flow"
 
   CSSUnit* = enum
-    cuCm, cuMm, cuIn, cuPx, cuPt, cuPc, cuEm, cuEx, cuCh, cuRem, cuVw, cuVh,
-    cuVmin, cuVmax, cuPerc, cuIc
+    cuCm = "cm"
+    cuMm = "mm"
+    cuIn = "in"
+    cuPx = "px"
+    cuPt = "pt"
+    cuPc = "pc"
+    cuEm = "em"
+    cuEx = "ex"
+    cuCh = "ch"
+    cuRem = "rem"
+    cuVw = "vw"
+    cuVh = "vh"
+    cuVmin = "vmin"
+    cuVmax = "vmax"
+    cuPerc = "%"
+    cuIc = "ic"
 
   CSSPropertyType* = enum
     cptNone = ""
@@ -119,64 +133,118 @@ type
     cvtNumber = "number"
 
   CSSGlobalType = enum
-    cgtNoglobal, cgtInitial, cgtInherit, cgtRevert, cgtUnset
+    cgtNoglobal = ""
+    cgtInitial = "initial"
+    cgtInherit = "inherit"
+    cgtRevert = "revert"
+    cgtUnset = "unset"
 
   CSSDisplay* = enum
-    DisplayNone, DisplayInline, DisplayBlock, DisplayListItem,
-    DisplayInlineBlock, DisplayTable, DisplayInlineTable, DisplayTableRowGroup,
-    DisplayTableHeaderGroup, DisplayTableFooterGroup, DisplayTableColumnGroup,
-    DisplayTableRow, DisplayTableColumn, DisplayTableCell, DisplayTableCaption,
-    DisplayFlowRoot, DisplayFlex, DisplayInlineFlex
+    DisplayNone = "none"
+    DisplayInline = "inline"
+    DisplayBlock = "block"
+    DisplayListItem = "list-item"
+    DisplayInlineBlock = "inline-block"
+    DisplayTable = "table"
+    DisplayInlineTable = "inline-table"
+    DisplayTableRowGroup = "table-row-group"
+    DisplayTableHeaderGroup = "table-header-group"
+    DisplayTableFooterGroup = "table-footer-group"
+    DisplayTableColumnGroup = "table-column-group"
+    DisplayTableRow = "table-row"
+    DisplayTableColumn = "table-column"
+    DisplayTableCell = "table-cell"
+    DisplayTableCaption = "table-caption"
+    DisplayFlowRoot = "flow-root"
+    DisplayFlex = "flex"
+    DisplayInlineFlex = "inline-flex"
 
-  CSSWhitespace* = enum
-    WhitespaceNormal, WhitespaceNowrap, WhitespacePre, WhitespacePreLine,
-    WhitespacePreWrap
+  CSSWhiteSpace* = enum
+    WhitespaceNormal = "normal"
+    WhitespaceNowrap = "nowrap"
+    WhitespacePre = "pre"
+    WhitespacePreLine = "pre-line"
+    WhitespacePreWrap = "pre-wrap"
 
   CSSFontStyle* = enum
-    FontStyleNormal, FontStyleItalic, FontStyleOblique
+    FontStyleNormal = "normal"
+    FontStyleItalic = "italic"
+    FontStyleOblique = "oblique"
 
   CSSPosition* = enum
-    PositionStatic, PositionRelative, PositionAbsolute, PositionFixed,
-    PositionSticky
+    PositionStatic = "static"
+    PositionRelative = "relative"
+    PositionAbsolute = "absolute"
+    PositionFixed = "fixed"
+    PositionSticky = "sticky"
 
   CSSTextDecoration* = enum
-    TextDecorationNone, TextDecorationUnderline, TextDecorationOverline,
-    TextDecorationLineThrough, TextDecorationBlink
+    TextDecorationNone = "none"
+    TextDecorationUnderline = "underline"
+    TextDecorationOverline = "overline"
+    TextDecorationLineThrough = "line-through"
+    TextDecorationBlink = "blink"
 
   CSSWordBreak* = enum
-    WordBreakNormal, WordBreakBreakAll, WordBreakKeepAll
+    WordBreakNormal = "normal"
+    WordBreakBreakAll = "break-all"
+    WordBreakKeepAll = "keep-all"
 
   CSSListStyleType* = enum
-    ListStyleTypeNone, ListStyleTypeDisc, ListStyleTypeCircle,
-    ListStyleTypeSquare, ListStyleTypeDecimal,
-    ListStyleTypeDisclosureClosed, ListStyleTypeDisclosureOpen,
-    ListStyleTypeCjkEarthlyBranch, ListStyleTypeCjkHeavenlyStem,
-    ListStyleTypeLowerRoman, ListStyleTypeUpperRoman,
-    ListStyleTypeLowerAlpha, ListStyleTypeUpperAlpha,
-    ListStyleTypeLowerGreek,
-    ListStyleTypeHiragana, ListStyleTypeHiraganaIroha,
-    ListStyleTypeKatakana, ListStyleTypeKatakanaIroha,
-    ListStyleTypeJapaneseInformal
+    ListStyleTypeNone = "none"
+    ListStyleTypeDisc = "disc"
+    ListStyleTypeCircle = "circle"
+    ListStyleTypeSquare = "square"
+    ListStyleTypeDecimal = "decimal"
+    ListStyleTypeDisclosureClosed = "disclosure-closed"
+    ListStyleTypeDisclosureOpen = "disclosure-open"
+    ListStyleTypeCjkEarthlyBranch = "cjk-earthly-branch"
+    ListStyleTypeCjkHeavenlyStem = "cjk-heavenly-stem"
+    ListStyleTypeLowerRoman = "lower-roman"
+    ListStyleTypeUpperRoman = "upper-roman"
+    ListStyleTypeLowerAlpha = "lower-alpha"
+    ListStyleTypeUpperAlpha = "upper-alpha"
+    ListStyleTypeLowerGreek = "lower-greek"
+    ListStyleTypeHiragana = "hiragana"
+    ListStyleTypeHiraganaIroha = "hiragana-iroha"
+    ListStyleTypeKatakana = "katakana"
+    ListStyleTypeKatakanaIroha = "katakana-iroha"
+    ListStyleTypeJapaneseInformal = "japanese-informal"
 
   CSSVerticalAlign2* = enum
-    VerticalAlignBaseline, VerticalAlignSub, VerticalAlignSuper,
-    VerticalAlignTextTop, VerticalAlignTextBottom, VerticalAlignMiddle,
-    VerticalAlignTop, VerticalAlignBottom
+    VerticalAlignBaseline = "baseline"
+    VerticalAlignSub = "sub"
+    VerticalAlignSuper = "super"
+    VerticalAlignTextTop = "text-top"
+    VerticalAlignTextBottom = "text-bottom"
+    VerticalAlignMiddle = "middle"
+    VerticalAlignTop = "top"
+    VerticalAlignBottom = "bottom"
 
   CSSTextAlign* = enum
-    TextAlignStart, TextAlignEnd, TextAlignLeft, TextAlignRight,
-    TextAlignCenter, TextAlignJustify, TextAlignChaCenter,
-    TextAlignChaLeft, TextAlignChaRight
+    TextAlignStart = "start"
+    TextAlignEnd = "end"
+    TextAlignLeft = "left"
+    TextAlignRight = "right"
+    TextAlignCenter = "center"
+    TextAlignJustify = "justify"
+    TextAlignChaCenter = "-cha-center"
+    TextAlignChaLeft = "-cha-left"
+    TextAlignChaRight = "-cha-right"
 
   CSSListStylePosition* = enum
-    ListStylePositionOutside, ListStylePositionInside
+    ListStylePositionOutside = "outside"
+    ListStylePositionInside = "inside"
 
   CSSCaptionSide* = enum
-    CaptionSideTop, CaptionSideBottom, CaptionSideBlockStart,
-    CaptionSideBlockEnd,
+    CaptionSideTop = "top"
+    CaptionSideBottom = "bottom"
+    CaptionSideBlockStart = "block-start"
+    CaptionSideBlockEnd = "block-end"
 
   CSSBorderCollapse* = enum
-    BorderCollapseSeparate, BorderCollapseCollapse
+    BorderCollapseSeparate = "separate"
+    BorderCollapseCollapse = "collapse"
 
   CSSContentType* = enum
     ContentString, ContentOpenQuote, ContentCloseQuote,
@@ -184,29 +252,46 @@ type
     ContentVideo, ContentAudio, ContentNewline
 
   CSSFloat* = enum
-    FloatNone, FloatLeft, FloatRight
+    FloatNone = "none"
+    FloatLeft = "left"
+    FloatRight = "right"
 
   CSSVisibility* = enum
-    VisibilityVisible, VisibilityHidden, VisibilityCollapse
+    VisibilityVisible = "visible"
+    VisibilityHidden = "hidden"
+    VisibilityCollapse = "collapse"
 
   CSSBoxSizing* = enum
-    BoxSizingContentBox, BoxSizingBorderBox
+    BoxSizingContentBox = "content-box"
+    BoxSizingBorderBox = "border-box"
 
   CSSClear* = enum
-    ClearNone, ClearLeft, ClearRight, ClearBoth, ClearInlineStart,
-    ClearInlineEnd
+    ClearNone = "none"
+    ClearLeft = "left"
+    ClearRight = "right"
+    ClearBoth = "both"
+    ClearInlineStart = "inline-start"
+    ClearInlineEnd = "inline-end"
 
   CSSTextTransform* = enum
-    TextTransformNone, TextTransformCapitalize, TextTransformUppercase,
-    TextTransformLowercase, TextTransformFullWidth,
-    TextTransformFullSizeKana, TextTransformChaHalfWidth
+    TextTransformNone = "none"
+    TextTransformCapitalize = "capitalize"
+    TextTransformUppercase = "uppercase"
+    TextTransformLowercase = "lowercase"
+    TextTransformFullWidth = "full-width"
+    TextTransformFullSizeKana = "full-size-kana"
+    TextTransformChaHalfWidth = "-cha-half-width"
 
   CSSFlexDirection* = enum
-    FlexDirectionRow, FlexDirectionRowReverse, FlexDirectionColumn,
-    FlexDirectionColumnReverse
+    FlexDirectionRow = "row"
+    FlexDirectionRowReverse = "row-reverse"
+    FlexDirectionColumn = "column"
+    FlexDirectionColumnReverse = "column-reverse"
 
   CSSFlexWrap* = enum
-    FlexWrapNowrap, FlexWrapWrap, FlexWrapWrapReverse
+    FlexWrapNowrap = "nowrap"
+    FlexWrapWrap = "wrap"
+    FlexWrapWrapReverse = "wrap-reverse"
 
 type
   CSSLength* = object
@@ -246,7 +331,7 @@ type
     of cvtQuotes:
       quotes*: CSSQuotes
     of cvtWhiteSpace:
-      whitespace*: CSSWhitespace
+      whitespace*: CSSWhiteSpace
     of cvtInteger:
       integer*: int
     of cvtNumber:
@@ -300,7 +385,7 @@ type
     coUser
     coAuthor
 
-  CSSComputedEntry = tuple
+  CSSComputedEntry* = tuple
     t: CSSPropertyType
     val: CSSComputedValue
     global: CSSGlobalType
@@ -415,25 +500,57 @@ func isSupportedProperty*(s: string): bool =
 func `$`*(length: CSSLength): string =
   if length.auto:
     return "auto"
-  let ss = ($length.unit).split('_')
-  let us = ss.toOpenArray(1, ss.high).join('_').toLowerAscii()
-  return $length.num & us
+  return $length.num & $length.unit
 
 func `$`*(content: CSSContent): string =
   if content.s != "":
     return "url(" & content.s & ")"
   return "none"
 
+func `$`(quotes: CSSQuotes): string =
+  if quotes.auto:
+    return "auto"
+  return "auto" #TODO
+
+func `$`(counterreset: seq[CSSCounterReset]): string =
+  result = ""
+  for it in counterreset:
+    result &= $it.name
+    result &= ' '
+    result &= $it.num
+
 func `$`*(val: CSSComputedValue): string =
   case val.v
-  of cvtColor:
-    result &= $val.color
-  of cvtImage:
-    result &= $val.image
-  of cvtLength:
-    result &= $val.length
-  else:
-    result = $val.v
+  of cvtNone: return "none"
+  of cvtColor: return $val.color
+  of cvtImage: return $val.image
+  of cvtLength: return $val.length
+  of cvtDisplay: return $val.display
+  of cvtFontStyle: return $val.fontstyle
+  of cvtWhiteSpace: return $val.whitespace
+  of cvtInteger: return $val.integer
+  of cvtTextDecoration: return $val.textdecoration
+  of cvtWordBreak: return $val.wordbreak
+  of cvtListStyleType: return $val.liststyletype
+  of cvtVerticalAlign: return $val.verticalalign
+  of cvtTextAlign: return $val.textalign
+  of cvtListStylePosition: return $val.liststyleposition
+  of cvtPosition: return $val.position
+  of cvtCaptionSide: return $val.captionside
+  of cvtLength2: return $val.length2.a & " " & $val.length2.b
+  of cvtBorderCollapse: return $val.bordercollapse
+  of cvtContent: return $val.content
+  of cvtQuotes: return $val.quotes
+  of cvtCounterReset: return $val.counterreset
+  of cvtFloat: return $val.float
+  of cvtVisibility: return $val.visibility
+  of cvtBoxSizing: return $val.boxsizing
+  of cvtClear: return $val.clear
+  of cvtTextTransform: return $val.texttransform
+  of cvtBgcolorIsCanvas: return $val.bgcoloriscanvas
+  of cvtFlexDirection: return $val.flexdirection
+  of cvtFlexWrap: return $val.flexwrap
+  of cvtNumber: return $val.number
 
 macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
   let t = propertyType(s)
@@ -454,18 +571,18 @@ macro `{}=`*(vals: CSSComputedValues; s: static string, val: typed) =
 func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
-func em_to_px(em: float64, window: WindowAttributes): LayoutUnit =
+func em_to_px(em: float64; window: WindowAttributes): LayoutUnit =
   em * float64(window.ppl)
 
-func ch_to_px(ch: float64, window: WindowAttributes): LayoutUnit =
+func ch_to_px(ch: float64; window: WindowAttributes): LayoutUnit =
   ch * float64(window.ppc)
 
 # 水 width, we assume it's 2 chars
-func ic_to_px(ic: float64, window: WindowAttributes): LayoutUnit =
+func ic_to_px(ic: float64; window: WindowAttributes): LayoutUnit =
   ic * float64(window.ppc) * 2
 
 # x-letter height, we assume it's em/2
-func ex_to_px(ex: float64, window: WindowAttributes): LayoutUnit =
+func ex_to_px(ex: float64; window: WindowAttributes): LayoutUnit =
   ex * float64(window.ppc) / 2
 
 func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit
@@ -581,29 +698,46 @@ const Colors: Table[string, ARGBColor] = ((func (): Table[string, ARGBColor] =
   result["transparent"] = rgba(0x00, 0x00, 0x00, 0x00)
 )())
 
-const Units = {
-  "%": cuPerc,
-  "cm": cuCm,
-  "mm": cuMm,
-  "in": cuIn,
-  "px": cuPx,
-  "pt": cuPt,
-  "pc": cuPc,
-  "em": cuEm,
-  "ex": cuEx,
-  "ch": cuCh,
-  "ic": cuCh,
-  "rem": cuRem,
-  "vw": cuVw,
-  "vh": cuVh,
-  "vmin": cuVmin,
-  "vmax": cuVmax,
-}.toTable()
+func isToken(cval: CSSComponentValue): bool {.inline.} =
+  cval of CSSToken
 
-func cssLength(val: float64, unit: string): Opt[CSSLength] =
-  if unit in Units:
-    return ok(CSSLength(num: val, unit: Units[unit]))
+func getToken(cval: CSSComponentValue): CSSToken {.inline.} =
+  CSSToken(cval)
+
+func parseIdent0[T](map: static openArray[(string, T)]; s: string): Opt[T] =
+  # cmp when len is small enough, otherwise lowercase & hashmap
+  when map.len <= 4:
+    for (k, v) in map:
+      if k.equalsIgnoreCase(s):
+        return ok(v)
+  else:
+    const MapTable = map.toTable()
+    let val = s.toLowerAscii()
+    if val in MapTable:
+      return ok(MapTable[val])
   return err()
+
+func parseIdent[T](map: static openArray[(string, T)]; cval: CSSComponentValue):
+    Opt[T] =
+  if isToken(cval):
+    let tok = getToken(cval)
+    if tok.tokenType == cttIdent:
+      return parseIdent0[T](map, tok.value)
+  return err()
+
+func getIdentMap[T: enum](e: typedesc[T]): seq[(string, T)] =
+  result = @[]
+  for e in T.low .. T.high:
+    result.add(($e, e))
+
+func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
+  const IdentMap = getIdentMap(T)
+  return IdentMap.parseIdent(cval)
+
+func cssLength(val: float64; unit: string): Opt[CSSLength] =
+  const UnitMap = getIdentMap(CSSUnit)
+  let u = ?UnitMap.parseIdent0(unit)
+  return ok(CSSLength(num: val, unit: u))
 
 const CSSLengthAuto* = CSSLength(auto: true)
 
@@ -740,29 +874,6 @@ func cssColor*(val: CSSComponentValue): Opt[CellColor] =
       return parseANSI(f.value)
   return err()
 
-func isToken(cval: CSSComponentValue): bool {.inline.} =
-  cval of CSSToken
-
-func getToken(cval: CSSComponentValue): CSSToken {.inline.} =
-  CSSToken(cval)
-
-func cssIdent[T](map: static openArray[(string, T)], cval: CSSComponentValue):
-    Opt[T] =
-  if isToken(cval):
-    let tok = getToken(cval)
-    if tok.tokenType == cttIdent:
-      # cmp when len is small enough, otherwise lowercase & hashmap
-      when map.len <= 4:
-        for (k, v) in map:
-          if k.equalsIgnoreCase(tok.value):
-            return ok(v)
-      else:
-        const MapTable = map.toTable()
-        let val = tok.value.toLowerAscii()
-        if val in MapTable:
-          return ok(MapTable[val])
-  return err()
-
 func cssLength*(val: CSSComponentValue; has_auto = true; allow_negative = true):
     Opt[CSSLength] =
   if val of CSSToken:
@@ -814,15 +925,9 @@ func cssWordSpacing(cval: CSSComponentValue): Opt[CSSLength] =
   return err()
 
 func cssGlobal(cval: CSSComponentValue): CSSGlobalType =
-  const GlobalMap = {
-    "inherit": cgtInherit,
-    "initial": cgtInitial,
-    "unset": cgtUnset,
-    "revert": cgtRevert
-  }
-  return cssIdent(GlobalMap, cval).get(cgtNoglobal)
+  return parseIdent[CSSGlobalType](cval).get(cgtNoglobal)
 
-func cssQuotes(cvals: seq[CSSComponentValue]): Opt[CSSQuotes] =
+func cssQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
   template die =
     return err()
   if cvals.len == 0:
@@ -857,7 +962,7 @@ func cssQuotes(cvals: seq[CSSComponentValue]): Opt[CSSQuotes] =
     die
   return ok(res)
 
-func cssContent(cvals: seq[CSSComponentValue]): seq[CSSContent] =
+func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
   for cval in cvals:
     if isToken(cval):
       let tok = getToken(cval)
@@ -877,47 +982,6 @@ func cssContent(cvals: seq[CSSComponentValue]): seq[CSSContent] =
         result.add(CSSContent(t: ContentString, s: tok.value))
       else: return
 
-func cssDisplay(cval: CSSComponentValue): Opt[CSSDisplay] =
-  const DisplayMap = {
-    "block": DisplayBlock,
-    "inline": DisplayInline,
-    "list-item": DisplayListItem,
-    "inline-block": DisplayInlineBlock,
-    "table": DisplayTable,
-    "table-row": DisplayTableRow,
-    "table-cell": DisplayTableCell,
-    "table-column": DisplayTableColumn,
-    "table-column-group": DisplayTableColumnGroup,
-    "inline-table": DisplayInlineTable,
-    "table-row-group": DisplayTableRowGroup,
-    "table-header-group": DisplayTableHeaderGroup,
-    "table-footer-group": DisplayTableFooterGroup,
-    "table-caption": DisplayTableCaption,
-    "flow-root": DisplayFlowRoot,
-    "flex": DisplayFlex,
-    "inline-flex": DisplayInlineFlex,
-    "none": DisplayNone
-  }
-  return cssIdent(DisplayMap, cval)
-
-func cssFontStyle(cval: CSSComponentValue): Opt[CSSFontStyle] =
-  const FontStyleMap = {
-    "normal": FontStyleNormal,
-    "italic": FontStyleItalic,
-    "oblique": FontStyleOblique
-  }
-  return cssIdent(FontStyleMap, cval)
-
-func cssWhiteSpace(cval: CSSComponentValue): Opt[CSSWhitespace] =
-  const WhiteSpaceMap = {
-    "normal": WhitespaceNormal,
-    "nowrap": WhitespaceNowrap,
-    "pre": WhitespacePre,
-    "pre-line": WhitespacePreLine,
-    "pre-wrap": WhitespacePreWrap
-  }
-  return cssIdent(WhiteSpaceMap, cval)
-
 func cssFontWeight(cval: CSSComponentValue): Opt[int] =
   if isToken(cval):
     let tok = getToken(cval)
@@ -928,13 +992,13 @@ func cssFontWeight(cval: CSSComponentValue): Opt[int] =
         "lighter": 400,
         "bolder": 700
       }
-      return cssIdent(FontWeightMap, cval)
+      return FontWeightMap.parseIdent(cval)
     elif tok.tokenType == cttNumber:
       if tok.nvalue in 1f64..1000f64:
         return ok(int(tok.nvalue))
   return err()
 
-func cssTextDecoration(cvals: seq[CSSComponentValue]):
+func cssTextDecoration(cvals: openArray[CSSComponentValue]):
     Opt[set[CSSTextDecoration]] =
   var s: set[CSSTextDecoration] = {}
   for cval in cvals:
@@ -942,73 +1006,20 @@ func cssTextDecoration(cvals: seq[CSSComponentValue]):
       continue
     let tok = getToken(cval)
     if tok.tokenType == cttIdent:
-      if tok.value.equalsIgnoreCase("none"):
+      let td = ?parseIdent[CSSTextDecoration](tok)
+      if td == TextDecorationNone:
         if cvals.len != 1:
           return err()
         return ok(s)
-      elif tok.value.equalsIgnoreCase("underline"):
-        s.incl(TextDecorationUnderline)
-      elif tok.value.equalsIgnoreCase("overline"):
-        s.incl(TextDecorationOverline)
-      elif tok.value.equalsIgnoreCase("line-through"):
-        s.incl(TextDecorationLineThrough)
-      elif tok.value.equalsIgnoreCase("blink"):
-        s.incl(TextDecorationBlink)
-      else:
-        return err()
+      s.incl(td)
   return ok(s)
-
-func cssWordBreak(cval: CSSComponentValue): Opt[CSSWordBreak] =
-  const WordBreakMap = {
-    "normal": WordBreakNormal,
-    "break-all": WordBreakBreakAll,
-    "keep-all": WordBreakKeepAll
-  }
-  return cssIdent(WordBreakMap, cval)
-
-func cssListStyleType(cval: CSSComponentValue): Opt[CSSListStyleType] =
-  const ListStyleMap = {
-    "none": ListStyleTypeNone,
-    "disc": ListStyleTypeDisc,
-    "circle": ListStyleTypeCircle,
-    "square": ListStyleTypeSquare,
-    "decimal": ListStyleTypeDecimal,
-    "disclosure-open": ListStyleTypeDisclosureOpen,
-    "disclosure-closed": ListStyleTypeDisclosureClosed,
-    "cjk-earthly-branch": ListStyleTypeCjkEarthlyBranch,
-    "cjk-heavenly-stem": ListStyleTypeCjkHeavenlyStem,
-    "upper-roman": ListStyleTypeUpperRoman,
-    "lower-roman": ListStyleTypeLowerRoman,
-    "upper-latin": ListStyleTypeUpperAlpha,
-    "lower-latin": ListStyleTypeLowerAlpha,
-    "upper-alpha": ListStyleTypeUpperAlpha,
-    "lower-alpha": ListStyleTypeUpperAlpha,
-    "lower-greek": ListStyleTypeLowerGreek,
-    "hiragana": ListStyleTypeHiragana,
-    "hiragana-iroha": ListStyleTypeHiraganaIroha,
-    "katakana": ListStyleTypeKatakana,
-    "katakana-iroha": ListStyleTypeKatakanaIroha,
-    "japanese-informal": ListStyleTypeJapaneseInformal
-  }
-  return cssIdent(ListStyleMap, cval)
 
 func cssVerticalAlign(cval: CSSComponentValue): Opt[CSSVerticalAlign] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == cttIdent:
-      const VerticalAlignMap = {
-        "baseline": VerticalAlignBaseline,
-        "sub": VerticalAlignSub,
-        "super": VerticalAlignSuper,
-        "text-top": VerticalAlignTextBottom,
-        "middle": VerticalAlignMiddle,
-        "top": VerticalAlignTop,
-        "bottom": VerticalAlignBottom
-      }
-      let va2 = ?cssIdent(VerticalAlignMap, cval)
-      return ok(CSSVerticalAlign(
-        keyword: va2
-      ))
+      let va2 = ?parseIdent[CSSVerticalAlign2](cval)
+      return ok(CSSVerticalAlign(keyword: va2))
     else:
       return ok(CSSVerticalAlign(
         keyword: VerticalAlignBaseline,
@@ -1029,52 +1040,8 @@ func cssLineHeight(cval: CSSComponentValue): Opt[CSSLength] =
       return cssLength(tok, has_auto = false)
   return err()
 
-func cssTextAlign(cval: CSSComponentValue): Opt[CSSTextAlign] =
-  const TextAlignMap = {
-    "start": TextAlignStart,
-    "end": TextAlignEnd,
-    "left": TextAlignLeft,
-    "right": TextAlignRight,
-    "center": TextAlignCenter,
-    "justify": TextAlignJustify,
-    "-cha-center": TextAlignChaCenter
-  }
-  return cssIdent(TextAlignMap, cval)
-
-func cssListStylePosition(cval: CSSComponentValue): Opt[CSSListStylePosition] =
-  const ListStylePositionMap = {
-    "inside": ListStylePositionInside,
-    "outside": ListStylePositionOutside
-  }
-  return cssIdent(ListStylePositionMap, cval)
-
-func cssPosition(cval: CSSComponentValue): Opt[CSSPosition] =
-  const PositionMap = {
-    "static": PositionStatic,
-    "relative": PositionRelative,
-    "absolute": PositionAbsolute,
-    "fixed": PositionFixed,
-    "sticky": PositionSticky
-  }
-  return cssIdent(PositionMap, cval)
-
-func cssCaptionSide(cval: CSSComponentValue): Opt[CSSCaptionSide] =
-  const CaptionSideMap = {
-    "top": CaptionSideTop,
-    "bottom": CaptionSideBottom,
-    "block-start": CaptionSideBlockStart,
-    "block-end": CaptionSideBlockEnd,
-  }
-  return cssIdent(CaptionSideMap, cval)
-
-func cssBorderCollapse(cval: CSSComponentValue): Opt[CSSBorderCollapse] =
-  const BorderCollapseMap = {
-    "collapse": BorderCollapseCollapse,
-    "separate": BorderCollapseSeparate
-  }
-  return cssIdent(BorderCollapseMap, cval)
-
-func cssCounterReset(cvals: seq[CSSComponentValue]): Opt[seq[CSSCounterReset]] =
+func cssCounterReset(cvals: openArray[CSSComponentValue]):
+    Opt[seq[CSSCounterReset]] =
   template die =
     return err()
   var r = CSSCounterReset()
@@ -1152,61 +1119,6 @@ func cssInteger(cval: CSSComponentValue; range: Slice[int]): Opt[int] =
         return ok(int(tok.nvalue))
   return err()
 
-func cssFloat(cval: CSSComponentValue): Opt[CSSFloat] =
-  const FloatMap = {
-    "none": FloatNone,
-    "left": FloatLeft,
-    "right": FloatRight
-  }
-  return cssIdent(FloatMap, cval)
-
-func cssVisibility(cval: CSSComponentValue): Opt[CSSVisibility] =
-  const VisibilityMap = {
-    "visible": VisibilityVisible,
-    "hidden": VisibilityHidden,
-    "collapse": VisibilityCollapse
-  }
-  return cssIdent(VisibilityMap, cval)
-
-func cssBoxSizing(cval: CSSComponentValue): Opt[CSSBoxSizing] =
-  const BoxSizingMap = {
-    "border-box": BoxSizingBorderBox,
-    "content-box": BoxSizingContentBox
-  }
-  return cssIdent(BoxSizingMap, cval)
-
-func cssClear(cval: CSSComponentValue): Opt[CSSClear] =
-  const ClearMap = {
-    "none": ClearNone,
-    "left": ClearLeft,
-    "right": ClearRight,
-    "both": ClearBoth,
-    "inline-start": ClearInlineStart,
-    "inline-end": ClearInlineEnd
-  }
-  return cssIdent(ClearMap, cval)
-
-func cssTextTransform(cval: CSSComponentValue): Opt[CSSTextTransform] =
-  const TextTransformMap = {
-    "none": TextTransformNone,
-    "capitalize": TextTransformCapitalize,
-    "uppercase": TextTransformUppercase,
-    "lowercase": TextTransformLowercase,
-    "full-width": TextTransformFullWidth,
-    "full-size-kana": TextTransformFullSizeKana,
-    "-cha-half-width": TextTransformChaHalfWidth
-  }
-  return cssIdent(TextTransformMap, cval)
-
-func cssFlexDirection(cval: CSSComponentValue): Opt[CSSFlexDirection] =
-  const FlexDirectionMap = {
-    "row": FlexDirectionRow,
-    "row-reverse": FlexDirectionRowReverse,
-    "column": FlexDirectionColumn,
-    "column-reverse": FlexDirectionColumnReverse,
-  }
-  return cssIdent(FlexDirectionMap, cval)
-
 func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
   if isToken(cval):
     let tok = getToken(cval)
@@ -1215,15 +1127,7 @@ func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
         return ok(tok.nvalue)
   return err()
 
-func cssFlexWrap(cval: CSSComponentValue): Opt[CSSFlexWrap] =
-  const FlexWrapMap = {
-    "nowrap": FlexWrapNowrap,
-    "wrap": FlexWrapWrap,
-    "wrap-reverse": FlexWrapWrapReverse
-  }
-  return cssIdent(FlexWrapMap, cval)
-
-proc parseValue(cvals: seq[CSSComponentValue]; t: CSSPropertyType):
+proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
     Opt[CSSComputedValue] =
   var i = 0
   cvals.skipWhitespace(i)
@@ -1249,10 +1153,10 @@ proc parseValue(cvals: seq[CSSComponentValue]; t: CSSPropertyType):
     #TODO content for flex-basis
     else:
       return_new length, ?cssLength(cval)
-  of cvtFontStyle: return_new fontstyle, ?cssFontStyle(cval)
-  of cvtDisplay: return_new display, ?cssDisplay(cval)
+  of cvtFontStyle: return_new fontstyle, ?parseIdent[CSSFontStyle](cval)
+  of cvtDisplay: return_new display, ?parseIdent[CSSDisplay](cval)
   of cvtContent: return_new content, cssContent(cvals)
-  of cvtWhiteSpace: return_new whitespace, ?cssWhiteSpace(cval)
+  of cvtWhiteSpace: return_new whitespace, ?parseIdent[CSSWhiteSpace](cval)
   of cvtInteger:
     case t
     of cptFontWeight: return_new integer, ?cssFontWeight(cval)
@@ -1260,15 +1164,17 @@ proc parseValue(cvals: seq[CSSComponentValue]; t: CSSPropertyType):
     of cptChaRowspan: return_new integer, ?cssInteger(cval, 0 .. 65534)
     else: assert false
   of cvtTextDecoration: return_new textdecoration, ?cssTextDecoration(cvals)
-  of cvtWordBreak: return_new wordbreak, ?cssWordBreak(cval)
-  of cvtListStyleType: return_new liststyletype, ?cssListStyleType(cval)
+  of cvtWordBreak: return_new wordbreak, ?parseIdent[CSSWordBreak](cval)
+  of cvtListStyleType:
+    return_new liststyletype, ?parseIdent[CSSListStyleType](cval)
   of cvtVerticalAlign: return_new verticalalign, ?cssVerticalAlign(cval)
-  of cvtTextAlign: return_new textalign, ?cssTextAlign(cval)
+  of cvtTextAlign: return_new textalign, ?parseIdent[CSSTextAlign](cval)
   of cvtListStylePosition:
-    return_new liststyleposition, ?cssListStylePosition(cval)
-  of cvtPosition: return_new position, ?cssPosition(cval)
-  of cvtCaptionSide: return_new captionside, ?cssCaptionSide(cval)
-  of cvtBorderCollapse: return_new bordercollapse, ?cssBorderCollapse(cval)
+    return_new liststyleposition, ?parseIdent[CSSListStylePosition](cval)
+  of cvtPosition: return_new position, ?parseIdent[CSSPosition](cval)
+  of cvtCaptionSide: return_new captionside, ?parseIdent[CSSCaptionSide](cval)
+  of cvtBorderCollapse:
+    return_new bordercollapse, ?parseIdent[CSSBorderCollapse](cval)
   of cvtLength2:
     let a = ?cssAbsoluteLength(cval)
     cvals.skipWhitespace(i)
@@ -1277,14 +1183,16 @@ proc parseValue(cvals: seq[CSSComponentValue]; t: CSSPropertyType):
   of cvtQuotes: return_new quotes, ?cssQuotes(cvals)
   of cvtCounterReset: return_new counterreset, ?cssCounterReset(cvals)
   of cvtImage: return_new image, ?cssImage(cval)
-  of cvtFloat: return_new float, ?cssFloat(cval)
-  of cvtVisibility: return_new visibility, ?cssVisibility(cval)
-  of cvtBoxSizing: return_new boxsizing, ?cssBoxSizing(cval)
-  of cvtClear: return_new clear, ?cssClear(cval)
-  of cvtTextTransform: return_new texttransform, ?cssTextTransform(cval)
+  of cvtFloat: return_new float, ?parseIdent[CSSFloat](cval)
+  of cvtVisibility: return_new visibility, ?parseIdent[CSSVisibility](cval)
+  of cvtBoxSizing: return_new boxsizing, ?parseIdent[CSSBoxSizing](cval)
+  of cvtClear: return_new clear, ?parseIdent[CSSClear](cval)
+  of cvtTextTransform:
+    return_new texttransform, ?parseIdent[CSSTextTransform](cval)
   of cvtBgcolorIsCanvas: return err() # internal value
-  of cvtFlexDirection: return_new flexdirection, ?cssFlexDirection(cval)
-  of cvtFlexWrap: return_new flexwrap, ?cssFlexWrap(cval)
+  of cvtFlexDirection:
+    return_new flexdirection, ?parseIdent[CSSFlexDirection](cval)
+  of cvtFlexWrap: return_new flexwrap, ?parseIdent[CSSFlexWrap](cval)
   of cvtNumber: return_new number, ?cssNumber(cval, t == cptFlexGrow)
   of cvtNone: return err()
 
@@ -1348,7 +1256,7 @@ template getDefault(t: CSSPropertyType): CSSComputedValue =
   {.cast(noSideEffect).}:
     defaultTable[t]
 
-func lengthShorthand(cvals: seq[CSSComponentValue];
+func lengthShorthand(cvals: openArray[CSSComponentValue];
     props: array[4, CSSPropertyType]; global: CSSGlobalType; has_auto = true):
     Opt[seq[CSSComputedEntry]] =
   var res: seq[CSSComputedEntry] = @[]
@@ -1395,8 +1303,8 @@ const PropertyPaddingSpec = [
   cptPaddingTop, cptPaddingRight, cptPaddingBottom, cptPaddingLeft
 ]
 
-proc getComputedValues(res: var seq[CSSComputedEntry]; name: string;
-    cvals: seq[CSSComponentValue]): Err[void] =
+proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
+    cvals: openArray[CSSComponentValue]): Err[void] =
   var i = 0
   cvals.skipWhitespace(i)
   if i >= cvals.len:
@@ -1446,12 +1354,12 @@ proc getComputedValues(res: var seq[CSSComputedEntry]; name: string;
       for tok in cvals:
         if tok == cttWhitespace:
           continue
-        if (let r = cssListStylePosition(tok); r.isOk):
+        if (let r = parseIdent[CSSListStylePosition](tok); r.isOk):
           positionVal = CSSComputedValue(
             v: cvtListStylePosition,
             liststyleposition: r.get
           )
-        elif (let r = cssListStyleType(tok); r.isOk):
+        elif (let r = parseIdent[CSSListStyleType](tok); r.isOk):
           typeVal = CSSComputedValue(
             v: cvtListStyleType,
             liststyletype: r.get
@@ -1510,14 +1418,14 @@ proc getComputedValues(res: var seq[CSSComputedEntry]; name: string;
       cvals.skipWhitespace(i)
       if i >= cvals.len:
         return err()
-      if (let dir = cssFlexDirection(cvals[i]); dir.isSome):
+      if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
         # flex-direction
         let val = CSSComputedValue(v: cvtFlexDirection, flexdirection: dir.get)
         res.add((cptFlexDirection, val, global))
         inc i
         cvals.skipWhitespace(i)
       if i < cvals.len:
-        let wrap = ?cssFlexWrap(cvals[i])
+        let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
         let val = CSSComputedValue(v: cvtFlexWrap, flexwrap: wrap)
         res.add((cptFlexWrap, val, global))
     else:
@@ -1525,19 +1433,21 @@ proc getComputedValues(res: var seq[CSSComputedEntry]; name: string;
       res.add((cptFlexWrap, getDefault(cptFlexWrap), global))
   return ok()
 
-proc getComputedValues(d: CSSDeclaration): seq[CSSComputedEntry] =
+proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
+    seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.getComputedValues(d.name, d.value).isOk:
+  if res.parseComputedValues(name, value).isOk:
     return res
   return @[]
 
 proc addValues*(builder: var CSSComputedValuesBuilder;
     decls: seq[CSSDeclaration]; origin: CSSOrigin) =
   for decl in decls:
+    let vals = parseComputedValues(decl.name, decl.value)
     if decl.important:
-      builder.importantProperties[origin].add(getComputedValues(decl))
+      builder.importantProperties[origin].add(vals)
     else:
-      builder.normalProperties[origin].add(getComputedValues(decl))
+      builder.normalProperties[origin].add(vals)
 
 proc applyValue(vals: CSSComputedValues; entry: CSSComputedEntry;
     parent: CSSComputedValues; previousOrigin: CSSComputedValues) =

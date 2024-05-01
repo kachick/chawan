@@ -20,7 +20,7 @@ noscript {
 }
 }
 
-textarea, iframe, frame, input, img {
+textarea, iframe, frame, input, img, canvas {
 	display: inline-block;
 }
 

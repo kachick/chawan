@@ -13,7 +13,7 @@ type
   PseudoElem* = enum
     peNone, peBefore, peAfter,
     # internal
-    peInputText, peTextareaText, peImage, peNewline, peVideo, peAudio
+    peInputText, peTextareaText, peImage, peNewline, peVideo, peAudio, peCanvas
 
   PseudoClass* = enum
     pcFirstChild, pcLastChild, pcOnlyChild, pcHover, pcRoot, pcNthChild,
