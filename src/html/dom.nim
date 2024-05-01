@@ -3,7 +3,6 @@ import std/deques
 import std/math
 import std/options
 import std/sets
-import std/streams
 import std/strutils
 import std/tables
 
@@ -2344,7 +2343,7 @@ isDefaultPassive = func (eventTarget: EventTarget): bool =
     EventTarget(node.document.body) == eventTarget
 
 proc parseColor(element: Element; s: string): ARGBColor =
-  let cval = parseComponentValue(newStringStream(s))
+  let cval = parseComponentValue(s)
   #TODO return element style
   # For now we just use white.
   let ec = rgb(255, 255, 255)
@@ -2731,12 +2730,12 @@ proc delAttr(element: Element; i: int; keep = false) =
 
 proc newCSSStyleDeclaration(element: Element; value: string):
     CSSStyleDeclaration =
-  let inline_rules = newStringStream(value).parseListOfDeclarations2()
+  let inlineRules = value.parseDeclarations2()
   var decls: seq[CSSDeclaration]
-  for rule in inline_rules:
+  for rule in inlineRules:
     if rule.name.isSupportedProperty():
       decls.add(rule)
-  return CSSStyleDeclaration(decls: inline_rules, element: element)
+  return CSSStyleDeclaration(decls: inlineRules, element: element)
 
 proc cssText(this: CSSStyleDeclaration): string {.jsfunc.} =
   #TODO this is incorrect
@@ -2794,7 +2793,7 @@ proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
 
 proc setter[T: uint32|string](this: CSSStyleDeclaration; u: T;
     value: string) {.jssetprop.} =
-  let cvals = parseListOfComponentValues(newStringStream(value))
+  let cvals = parseComponentValues(value)
   when u is uint32:
     if this.setValue(int(u), cvals).isErr:
       return
@@ -2836,7 +2835,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     let url = url.get
     let media = link.media
     if media != "":
-      let cvals = parseListOfComponentValues(newStringStream(media))
+      let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals)
       if not media.appliesFwdDecl(window):
         return
@@ -2845,15 +2844,13 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
       if res.isOk:
         let res = res.get
-        #TODO we should use ReadableStreams for this (which would allow us to
-        # parse CSS asynchronously)
         if res.getContentType() == "text/css":
           return res.text()
         res.unregisterFun()
     ).then(proc(s: JSResult[string]) =
       if s.isOk:
         #TODO non-utf-8 css?
-        link.sheet = parseStylesheet(newStringStream(s.get), window.factory)
+        link.sheet = parseStylesheet(s.get, window.factory)
         window.document.cachedSheetsInvalid = true
     )
     window.loadingResourcePromises.add(p)

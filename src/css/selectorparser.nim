@@ -1,5 +1,4 @@
 import std/options
-import std/streams
 import std/strutils
 
 import css/cssparser
@@ -495,7 +494,7 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
 proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
     SelectorList =
   var state = SelectorParser(cvals: cvals, factory: factory)
-  var res: SelectorList
+  var res: SelectorList = @[]
   while state.has():
     res.add(state.parseComplexSelector())
   if not state.failed:
@@ -505,6 +504,6 @@ proc parseSelectors*(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
     seq[ComplexSelector] =
   return parseSelectorList(cvals, factory)
 
-proc parseSelectors*(stream: Stream; factory: CAtomFactory):
+proc parseSelectors*(ibuf: string; factory: CAtomFactory):
     seq[ComplexSelector] =
-  return parseSelectors(parseListOfComponentValues(stream), factory)
+  return parseSelectors(parseComponentValues(ibuf), factory)

@@ -520,10 +520,9 @@ proc parseMediaQuery(parser: var MediaQueryParser): MediaQuery =
     return parser.parseMediaAnd(result)
 
 proc parseMediaQueryList*(cvals: seq[CSSComponentValue]): MediaQueryList =
-  let cseplist = cvals.parseCommaSeparatedListOfComponentValues()
+  let cseplist = cvals.parseCommaSepComponentValues()
   for list in cseplist:
-    var parser: MediaQueryParser
-    parser.cvals = list
+    var parser = MediaQueryParser(cvals: list)
     let query = parser.parseMediaQuery()
     if query != nil:
       result.add(query)

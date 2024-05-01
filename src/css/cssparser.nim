@@ -1,5 +1,4 @@
 import std/options
-import std/streams
 import std/unicode
 
 import js/domexception
@@ -15,7 +14,6 @@ type
 
   CSSTokenizerState = object
     at: int
-    stream: Stream
     buf: string
     curr: char
 
@@ -171,11 +169,6 @@ func peek(state: CSSTokenizerState; i: int = 0): char =
   return state.buf[state.at + i]
 
 proc has(state: var CSSTokenizerState; i: int = 0): bool =
-  if state.at + i >= state.buf.len and not state.stream.atEnd():
-    try:
-      state.buf &= state.stream.readStr(256)
-    except EOFError:
-      return false
   return state.at + i < state.buf.len
 
 proc isValidEscape(a, b: char): bool =
@@ -230,6 +223,10 @@ proc startsWithNumber(state: var CSSTokenizerState): bool =
     else:
       return false
   return false
+
+proc skipWhitespace(state: var CSSTokenizerState) =
+  while state.has() and state.peek() in AsciiWhitespace:
+    discard state.consume()
 
 proc consumeEscape(state: var CSSTokenizerState): string =
   if not state.has():
@@ -350,9 +347,7 @@ const NonPrintable = {
 
 proc consumeURL(state: var CSSTokenizerState): CSSToken =
   result = CSSToken(tokenType: cttUrl)
-  while state.has() and state.peek() in AsciiWhitespace:
-    discard state.consume()
-
+  state.skipWhitespace()
   while state.has():
     let c = state.consume()
     case c
@@ -362,8 +357,7 @@ proc consumeURL(state: var CSSTokenizerState): CSSToken =
       state.consumeBadURL()
       return CSSToken(tokenType: cttBadUrl)
     of AsciiWhitespace:
-      while state.has() and state.peek() in AsciiWhitespace:
-        discard state.consume()
+      state.skipWhitespace()
       if not state.has():
         return result
       if state.peek() == ')':
@@ -419,8 +413,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
   let c = state.consume()
   case c
   of AsciiWhitespace:
-    while state.has() and state.peek() in AsciiWhitespace:
-      discard state.consume()
+    state.skipWhitespace()
     return CSSToken(tokenType: cttWhitespace)
   of '"', '\'':
     return consumeString(state)
@@ -499,19 +492,12 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
     state.reconsume()
     return CSSToken(tokenType: cttDelim, cvalue: state.consumeRChar())
 
-proc tokenizeCSS*(inputStream: Stream): seq[CSSParsedItem] =
-  var state: CSSTokenizerState
-  state.stream = inputStream
-  try:
-    state.buf = state.stream.readStr(256)
-  except EOFError:
-    discard
+proc tokenizeCSS*(ibuf: string): seq[CSSParsedItem] =
+  var state = CSSTokenizerState(buf: ibuf)
   while state.has():
     let tok = state.consumeToken()
     if tok != nil:
       result.add(tok)
-
-  inputStream.close()
 
 proc consume(state: var CSSParseState): CSSParsedItem =
   result = state.tokens[state.at]
@@ -526,6 +512,10 @@ func has(state: CSSParseState; i: int = 0): bool =
 func peek(state: CSSParseState): CSSParsedItem =
   return state.tokens[state.at]
 
+proc skipWhitespace(state: var CSSParseState) =
+  while state.has() and state.peek() == cttWhitespace:
+    discard state.consume()
+
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue
 
 proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
@@ -537,7 +527,6 @@ proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
   of cttLparen: ending = cttRparen
   of cttLbracket: ending = cttRbracket
   else: doAssert false
-
   result = CSSSimpleBlock(token: t)
   while state.at < state.tokens.len:
     let t = state.consume()
@@ -586,11 +575,9 @@ proc consumeQualifiedRule(state: var CSSParseState): Option[CSSQualifiedRule] =
       r.prelude.add(state.consumeComponentValue())
   return none(CSSQualifiedRule)
 
-
 proc consumeAtRule(state: var CSSParseState): CSSAtRule =
   let t = CSSToken(state.consume())
   result = CSSAtRule(name: t.value)
-
   while state.at < state.tokens.len:
     let t = state.consume()
     if t of CSSSimpleBlock:
@@ -607,17 +594,13 @@ proc consumeAtRule(state: var CSSParseState): CSSAtRule =
 proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
   let t = CSSToken(state.consume())
   var decl = CSSDeclaration(name: t.value)
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
+  state.skipWhitespace()
   if not state.has() or state.peek() != cttColon:
     return none(CSSDeclaration)
   discard state.consume()
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
-
+  state.skipWhitespace()
   while state.has():
     decl.value.add(state.consumeComponentValue())
-
   var i = decl.value.len - 1
   var j = 2
   var k = 0
@@ -636,7 +619,6 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
           decl.value.delete(i)
           break
     dec i
-
   while decl.value.len > 0 and decl.value[^1] == cttWhitespace:
     decl.value.setLen(decl.value.len - 1)
   return some(decl)
@@ -646,7 +628,7 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
 #> all of them, in a given context) are invalid and should be ignored by the
 #> consumer.
 #So we have two versions, one with at rules and one without.
-proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
+proc consumeDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
   while state.has():
     let t = state.consume()
     if t == cttWhitespace or t == cttSemicolon:
@@ -659,7 +641,6 @@ proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
       tempList.add(CSSToken(t))
       while state.has() and state.peek() != cttSemicolon:
         tempList.add(state.consumeComponentValue())
-
       var tempState = CSSParseState(at: 0, tokens: tempList)
       let decl = tempState.consumeDeclaration()
       if decl.isSome:
@@ -669,7 +650,7 @@ proc consumeListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
       if state.peek() != cttSemicolon:
         discard state.consumeComponentValue()
 
-proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
+proc consumeDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
   while state.has():
     let t = state.consume()
     if t == cttWhitespace or t == cttSemicolon:
@@ -683,7 +664,6 @@ proc consumeListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
       tempList.add(tok)
       while state.has() and state.peek() != cttSemicolon:
         tempList.add(state.consumeComponentValue())
-
       var tempState = CSSParseState(at: 0, tokens: tempList)
       let decl = tempState.consumeDeclaration()
       if decl.isSome:
@@ -717,12 +697,11 @@ proc consumeListOfRules(state: var CSSParseState; topLevel = false):
         result.add(q.get)
 
 proc parseStylesheet(state: var CSSParseState): CSSRawStylesheet =
-  result.value.add(state.consumeListOfRules(true))
+  return CSSRawStylesheet(value: state.consumeListOfRules(true))
 
-proc parseStylesheet(inputStream: Stream): CSSRawStylesheet =
+proc parseStylesheet*(ibuf: string): CSSRawStylesheet =
   var state = CSSParseState()
-  state.tokens = tokenizeCSS(inputStream)
-  inputStream.close()
+  state.tokens = tokenizeCSS(ibuf)
   return state.parseStylesheet()
 
 proc parseListOfRules(state: var CSSParseState): seq[CSSRule] =
@@ -734,110 +713,92 @@ proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
   return state.parseListOfRules()
 
 proc parseRule(state: var CSSParseState): DOMResult[CSSRule] =
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
+  state.skipWhitespace()
   if not state.has():
     return errDOMException("Unexpected EOF", "SyntaxError")
-
-  var res: CSSRule
-  if state.peek() == cttAtKeyword:
-    res = state.consumeAtRule()
+  var res = if state.peek() == cttAtKeyword:
+    state.consumeAtRule()
   else:
     let q = state.consumeQualifiedRule()
-    if q.isSome:
-      res = q.get
-    else:
+    if q.isNone:
       return errDOMException("No qualified rule found!", "SyntaxError")
-
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
+    q.get
+  state.skipWhitespace()
   if state.has():
     return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
 
-proc parseRule*(inputStream: Stream): DOMResult[CSSRule] =
+proc parseRule*(ibuf: string): DOMResult[CSSRule] =
   var state = CSSParseState()
-  state.tokens = tokenizeCSS(inputStream)
+  state.tokens = tokenizeCSS(ibuf)
   return state.parseRule()
 
 proc parseDeclaration(state: var CSSParseState): DOMResult[CSSDeclaration] =
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
-
+  state.skipWhitespace()
   if not state.has() or state.peek() != cttIdent:
     return errDOMException("No ident token found", "SyntaxError")
-
   let d = state.consumeDeclaration()
   if d.isSome:
     return ok(d.get)
-
   return errDOMException("No declaration found", "SyntaxError")
 
-proc parseDeclaration*(inputStream: Stream): DOMResult[CSSDeclaration] =
+proc parseDeclaration*(ibuf: string): DOMResult[CSSDeclaration] =
   var state = CSSParseState()
-  state.tokens = tokenizeCSS(inputStream)
+  state.tokens = tokenizeCSS(ibuf)
   return state.parseDeclaration()
 
-proc parseListOfDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
-  return state.consumeListOfDeclarations()
+proc parseDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
+  return state.consumeDeclarations()
 
-proc parseListOfDeclarations*(cvals: seq[CSSComponentValue]):
+proc parseDeclarations*(cvals: seq[CSSComponentValue]):
     seq[CSSParsedItem] =
-  var state: CSSParseState
-  state.tokens = cast[seq[CSSParsedItem]](cvals)
-  return state.consumeListOfDeclarations()
+  var state = CSSParseState(tokens: cast[seq[CSSParsedItem]](cvals))
+  return state.consumeDeclarations()
 
-proc parseListOfDeclarations*(inputStream: Stream): seq[CSSParsedItem] =
-  var state: CSSParseState
-  state.tokens = tokenizeCSS(inputStream)
-  return state.parseListOfDeclarations()
+proc parseDeclarations*(ibuf: string): seq[CSSParsedItem] =
+  var state = CSSParseState()
+  state.tokens = tokenizeCSS(ibuf)
+  return state.parseDeclarations()
 
-proc parseListOfDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
-  return state.consumeListOfDeclarations2()
+proc parseDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
+  return state.consumeDeclarations2()
 
-proc parseListOfDeclarations2*(cvals: seq[CSSComponentValue]):
+proc parseDeclarations2*(cvals: seq[CSSComponentValue]):
     seq[CSSDeclaration] =
-  var state: CSSParseState
-  state.tokens = cast[seq[CSSParsedItem]](cvals)
-  return state.consumeListOfDeclarations2()
+  var state = CSSParseState(tokens: cast[seq[CSSParsedItem]](cvals))
+  return state.consumeDeclarations2()
 
-proc parseListOfDeclarations2*(inputStream: Stream): seq[CSSDeclaration] =
-  var state: CSSParseState
-  state.tokens = tokenizeCSS(inputStream)
-  return state.parseListOfDeclarations2()
+proc parseDeclarations2*(ibuf: string): seq[CSSDeclaration] =
+  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
+  return state.parseDeclarations2()
 
 proc parseComponentValue(state: var CSSParseState):
     DOMResult[CSSComponentValue] =
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
+  state.skipWhitespace()
   if not state.has():
     return errDOMException("Unexpected EOF", "SyntaxError")
-
   let res = state.consumeComponentValue()
-
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
+  state.skipWhitespace()
   if state.has():
     return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
 
-proc parseComponentValue*(inputStream: Stream): DOMResult[CSSComponentValue] =
-  var state: CSSParseState
-  state.tokens = tokenizeCSS(inputStream)
+proc parseComponentValue*(ibuf: string): DOMResult[CSSComponentValue] =
+  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
   return state.parseComponentValue()
 
-proc parseListOfComponentValues(state: var CSSParseState):
-    seq[CSSComponentValue] =
+proc parseComponentValues(state: var CSSParseState): seq[CSSComponentValue] =
+  result = @[]
   while state.has():
     result.add(state.consumeComponentValue())
 
-proc parseListOfComponentValues*(inputStream: Stream): seq[CSSComponentValue] =
-  var state = CSSParseState()
-  state.tokens = tokenizeCSS(inputStream)
-  return state.parseListOfComponentValues()
+proc parseComponentValues*(ibuf: string): seq[CSSComponentValue] =
+  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
+  return state.parseComponentValues()
 
-proc parseCommaSeparatedListOfComponentValues(state: var CSSParseState):
+proc parseCommaSepComponentValues(state: var CSSParseState):
     seq[seq[CSSComponentValue]] =
+  result = @[]
   if state.has():
     result.add(newSeq[CSSComponentValue]())
   while state.has():
@@ -847,11 +808,10 @@ proc parseCommaSeparatedListOfComponentValues(state: var CSSParseState):
     else:
       result.add(newSeq[CSSComponentValue]())
 
-proc parseCommaSeparatedListOfComponentValues*(cvals: seq[CSSComponentValue]):
+proc parseCommaSepComponentValues*(cvals: seq[CSSComponentValue]):
     seq[seq[CSSComponentValue]] =
-  var state: CSSParseState
-  state.tokens = cast[seq[CSSParsedItem]](cvals)
-  return state.parseCommaSeparatedListOfComponentValues()
+  var state = CSSParseState(tokens: cast[seq[CSSParsedItem]](cvals))
+  return state.parseCommaSepComponentValues()
 
 proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
   template is_eof: bool =
@@ -859,9 +819,6 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
   template fail_eof =
     if is_eof:
       return none(CSSAnB)
-  template skip_whitespace =
-    while state.has() and state.peek() == cttWhitespace:
-      discard state.consume()
   template get_plus: bool =
     let tok = state.peek()
     if tok == cttDelim and CSSToken(tok).cvalue == '+':
@@ -870,7 +827,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     else:
       false
   template get_tok: CSSToken =
-    skip_whitespace
+    state.skipWhitespace()
     fail_eof
     CSSToken(state.consume())
   template get_tok_nows: CSSToken =
@@ -899,7 +856,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     fail_non_integer tok, res #TODO check if signless?
 
   fail_eof
-  skip_whitespace
+  state.skipWhitespace()
   fail_eof
   let is_plus = get_plus
   let tok = get_tok_nows
@@ -913,7 +870,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       fail_plus
       return some((2, 0))
     of "n", "N":
-      skip_whitespace
+      state.skipWhitespace()
       if is_eof:
         return some((1, 0))
       let tok2 = get_tok_nows
@@ -930,7 +887,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
         return some((1, int(tok2.nvalue)))
     of "-n", "-N":
       fail_plus
-      skip_whitespace
+      state.skipWhitespace()
       if is_eof:
         return some((-1, 0))
       let tok2 = get_tok_nows
@@ -978,7 +935,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     case tok.unit
     of "n", "N":
       # <n-dimension>
-      skip_whitespace
+      state.skipWhitespace()
       if is_eof:
         return some((int(tok.nvalue), 0))
       let tok2 = get_tok_nows
@@ -1007,12 +964,6 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     return none(CSSAnB)
 
 proc parseAnB*(cvals: seq[CSSComponentValue]): (Option[CSSAnB], int) =
-  var state: CSSParseState
-  state.tokens = cast[seq[CSSParsedItem]](cvals)
+  var state = CSSParseState(tokens: cast[seq[CSSParsedItem]](cvals))
   let anb = state.parseAnB()
   return (anb, state.at)
-
-proc parseCSS*(inputStream: Stream): CSSRawStylesheet =
-  if inputStream.atEnd():
-    return CSSRawStylesheet()
-  return inputStream.parseStylesheet()

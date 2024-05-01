@@ -1,5 +1,4 @@
 import std/algorithm
-import std/streams
 import std/tables
 
 import css/cssparser
@@ -183,7 +182,7 @@ proc addRule(stylesheet: var CSSStylesheet; rule: CSSQualifiedRule) =
   if sels.len > 0:
     let r = CSSRuleDef(
       sels: sels,
-      decls: rule.oblock.value.parseListOfDeclarations2(),
+      decls: rule.oblock.value.parseDeclarations2(),
       idx: stylesheet.len
     )
     stylesheet.add(r)
@@ -211,13 +210,11 @@ proc addAtRule(stylesheet: var CSSStylesheet; atrule: CSSAtRule) =
       stylesheet.len = media.children.len
   else: discard #TODO
 
-proc parseStylesheet*(s: Stream; factory: CAtomFactory): CSSStylesheet =
-  let css = parseCSS(s)
-  result = newStylesheet(css.value.len, factory)
-  for v in css.value:
-    if v of CSSAtRule: result.addAtRule(CSSAtRule(v))
-    else: result.addRule(CSSQualifiedRule(v))
-  s.close()
-
-proc parseStylesheet*(s: string; factory: CAtomFactory): CSSStylesheet =
-  return newStringStream(s).parseStylesheet(factory)
+proc parseStylesheet*(ibuf: string; factory: CAtomFactory): CSSStylesheet =
+  let raw = parseStylesheet(ibuf)
+  result = newStylesheet(raw.value.len, factory)
+  for v in raw.value:
+    if v of CSSAtRule:
+      result.addAtRule(CSSAtRule(v))
+    else:
+      result.addRule(CSSQualifiedRule(v))

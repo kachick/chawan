@@ -1,5 +1,3 @@
-import std/streams
-
 import bindings/quickjs
 import js/error
 import js/javascript

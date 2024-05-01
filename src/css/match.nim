@@ -1,5 +1,4 @@
 import std/options
-import std/streams
 import std/strutils
 import std/tables
 
@@ -246,14 +245,14 @@ func selectorsMatch*[T: Element|StyledNode](elem: T; cxsel: ComplexSelector;
   return elem.complexSelectorMatches(cxsel, felem)
 
 proc querySelectorAll(node: Node; q: string): seq[Element] =
-  let selectors = parseSelectors(newStringStream(q), node.document.factory)
+  let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       result.add(element)
 doqsa = (proc(node: Node, q: string): seq[Element] = querySelectorAll(node, q))
 
 proc querySelector(node: Node; q: string): Element =
-  let selectors = parseSelectors(newStringStream(q), node.document.factory)
+  let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       return element
