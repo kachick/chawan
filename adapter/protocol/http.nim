@@ -100,6 +100,9 @@ proc main() =
   let query = getEnv("MAPPED_URI_QUERY")
   if query != "":
     url.set(CURLUPART_QUERY, query, flags)
+  if getEnv("CHA_INSECURE_SSL_NO_VERIFY") == "1":
+    curl.setopt(CURLOPT_SSL_VERIFYPEER, 0)
+    curl.setopt(CURLOPT_SSL_VERIFYHOST, 0)
   curl.setopt(CURLOPT_CURLU, url)
   let op = HttpHandle(curl: curl)
   curl.setopt(CURLOPT_SUPPRESS_CONNECT_HEADERS, 1)

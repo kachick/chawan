@@ -55,6 +55,7 @@ type
     stylesheet*: Option[string]
     proxy*: Option[URL]
     default_headers*: TableRef[string, string]
+    insecure_ssl_no_verify*: Option[bool]
 
   OmniRule* = object
     match*: Regex

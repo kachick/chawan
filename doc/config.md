@@ -334,7 +334,7 @@ supported by cURL may be used. Can be overridden by siteconf.</td>
 
 <tr>
 <td>default-headers</td>
-<td>Table</td>
+<td>table</td>
 <td>Specify a list of default headers for all HTTP(S) network requests. Can be
 overridden by siteconf.</td>
 </tr>
@@ -631,9 +631,9 @@ Defaults to false.
 
 <tr>
 <td>document-charset</td>
-<td>boolean</td>
-<td>Specify the default encoding for this site. Overrides document-charset
-in [encoding].</td>
+<td>charset label string</td>
+<td>Specify the default encoding for this site. Overrides `document-charset`
+in `[encoding]`.</td>
 </tr>
 
 <tr>
@@ -648,14 +648,25 @@ with this stylesheet to get the final user stylesheet.)</td>
 <tr>
 <td>proxy</td>
 <td>URL</td>
-<td>Specify a proxy for network requests fetching contents of this buffer.</td>
+<td>Specify a proxy for network requests fetching contents of this buffer.
+Overrides `proxy` in `[network]`.</td>
 </tr>
 
 <tr>
 <td>default-headers</td>
-<td>Table</td>
+<td>table</td>
 <td>Specify a list of default headers for HTTP(S) network requests to this
-buffer.</td>
+buffer. Overrides `default-headers` in `[network]`.</td>
+</tr>
+
+<tr>
+<td>insecure-ssl-no-verify</td>
+<td>boolean</td>
+<td>Defaults to false. When set to true, this disables peer and hostname
+verification for SSL keys on this site, like `curl --insecure` would.<br>
+WARNING: this is insecure, and opens up your connections to man-in-the-middle
+attacks. Please do not use this unless you are absolutely sure you know what you
+are doing.</td>
 </tr>
 
 </table>

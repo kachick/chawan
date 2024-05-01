@@ -873,6 +873,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   var userstyle = pager.config.css.stylesheet
   var proxy = pager.config.network.proxy
   let ctx = pager.jsctx
+  var insecureSSLNoVerify = false
   for sc in pager.config.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -916,6 +917,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       proxy = sc.proxy.get
     if sc.default_headers != nil:
       headers = newHeaders(sc.default_headers[])
+    if sc.insecure_ssl_no_verify.isSome:
+      insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
   loaderConfig = LoaderClientConfig(
     defaultHeaders: headers,
     cookiejar: cookieJar,
@@ -924,7 +927,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       scheme = some(url.scheme),
       allowschemes = @["data", "cache"],
       default = true
-    )
+    ),
+    insecureSSLNoVerify: insecureSSLNoVerify
   )
   return BufferConfig(
     userstyle: userstyle,

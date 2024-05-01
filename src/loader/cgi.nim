@@ -24,7 +24,8 @@ proc putMappedURL(url: URL) =
   putEnv("MAPPED_URI_QUERY", url.query.get(""))
 
 proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
-    request: Request; contentLen: int; prevURL: URL) =
+    request: Request; contentLen: int; prevURL: URL;
+    insecureSSLNoVerify: bool) =
   let url = request.url
   putEnv("SCRIPT_NAME", scriptName)
   putEnv("SCRIPT_FILENAME", cmd)
@@ -52,6 +53,8 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
     putEnv("HTTP_REFERER", $request.referrer)
   if request.proxy != nil:
     putEnv("ALL_PROXY", $request.proxy)
+  if insecureSSLNoVerify:
+    putEnv("CHA_INSECURE_SSL_NO_VERIFY", "1")
   setCurrentDir(myDir)
 
 type ControlResult = enum
@@ -123,7 +126,7 @@ proc handleLine(handle: LoaderHandle; line: string; headers: Headers) =
   headers.add(k, v)
 
 proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
-    prevURL: URL) =
+    prevURL: URL; insecureSSLNoVerify: bool) =
   if cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
     return
@@ -205,7 +208,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
       closeStdin()
     # we leave stderr open, so it can be seen in the browser console
     setupEnv(cmd, scriptName, pathInfo, requestURI, myDir, request, contentLen,
-      prevURL)
+      prevURL, insecureSSLNoVerify)
     # reset SIGCHLD to the default handler. this is useful if the child process
     # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
     # SIGCHLD as SIG_IGN)

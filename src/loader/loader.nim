@@ -133,6 +133,7 @@ type
     # loader proxy (i.e. the variable above).
     acceptProxy*: bool
     referrerPolicy*: ReferrerPolicy
+    insecureSSLNoVerify*: bool
 
   FetchPromise* = Promise[JSResult[Response]]
 
@@ -403,7 +404,8 @@ proc loadResource(ctx: LoaderContext; client: ClientData; request: Request;
           redo = true
           continue
     if request.url.scheme == "cgi-bin":
-      handle.loadCGI(request, ctx.config.cgiDir, prevurl)
+      handle.loadCGI(request, ctx.config.cgiDir, prevurl,
+        client.config.insecureSSLNoVerify)
       if handle.istream != nil:
         ctx.addFd(handle)
       else:
@@ -739,6 +741,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   putEnv("REMOTE_HOST", "localhost")
   putEnv("REMOTE_ADDR", "127.0.0.1")
   putEnv("GATEWAY_INTERFACE", "CGI/1.1")
+  putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
   return ctx
 
 # This is only called when an OutputHandle could not read enough of one (or
