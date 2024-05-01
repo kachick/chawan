@@ -19,7 +19,7 @@ supported yet.)
 1. Clone the Chawan repository:
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 1.6.14 or newer, ideally 2.0.2. Versions older than 1.6.14
+	* Please use 1.6.14 or newer, ideally 2.0.4. Versions older than 1.6.14
 	  will not work. (You can check your Nim compiler's version using
 	  `nim -v`.)
 3. Install the following dependencies:
@@ -63,7 +63,7 @@ Currently implemented features are:
 * JavaScript based navigation
 * JavaScript support in documents
 	* some basic DOM manipulation APIs are supported
-        * off by default; use is discouraged until sandboxing is implemented
+	* off by default; use is discouraged until sandboxing is implemented
 * cookies
 * supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
 * can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
@@ -121,24 +121,25 @@ You can fix this manually by adjusting the `display.default-background-color`,
 Yes; Chawan now has a built-in markdown converter. If you don't like it, you
 can always [replace it](doc/mailcap.md) with e.g. pandoc.
 
-### I set Chawan as my PAGER and now man pages are unreadable.
+### I set my `$PAGER` to `cha` and now man pages are unreadable.
 
 TLDR: use mancha.
 
 Long explanation:
 
 Most `man` implementations print formatted manual pages by default, which
-Chawan *can* in fact automatically parse, *if* they are passed through standard
-input. Unfortunately, some `man` implementations (mandoc in particular) pass us
+Chawan *can* automatically parse if they are passed through standard input.
+
+Unfortunately, some `man` implementations (mandoc in particular) pass us
 the formatted document as a *file*, which Chawan reasonably interprets as plain
 text without formatting. (mandoc does not even set a useful file extension to
 guide us.)
 
 At this point you have two options:
 
-* Set PAGER='cha -T text/x-ansi', and see that man suddenly works as expected.
-* alias man=mancha in your bashrc, and see that man suddenly works better than
+* `export PAGER='cha -T text/x-ansi'` and see that man suddenly works as
   expected.
+* `alias man=mancha` and see that man suddenly works better than expected.
 
 It may be best to do both, to deal with annoying cases like git help which
 shells out to man directly.
