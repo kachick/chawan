@@ -517,8 +517,7 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     contentType = none(string); charsetStack: seq[Charset] = @[];
     url = request.url; cacheId = -1; cacheFile = ""): Container =
   request.suspended = true
-  request.setupRequestDefaults(loaderConfig)
-  let stream = pager.loader.startRequest(request)
+  let stream = pager.loader.startRequest(request, loaderConfig)
   pager.loader.registerFun(stream.fd)
   let container = newContainer(
     bufferConfig,

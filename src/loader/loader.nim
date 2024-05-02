@@ -79,6 +79,7 @@ type
     lcAddCacheFile
     lcAddClient
     lcLoad
+    lcLoadConfig
     lcPassFd
     lcRedirectToFile
     lcRemoveCachedItem
@@ -129,13 +130,13 @@ type
     defaultHeaders*: Headers
     filter*: URLFilter
     proxy*: URL
-    # When set to false, requests with a proxy URL are overridden by the
-    # loader proxy (i.e. the variable above).
-    acceptProxy*: bool
     referrerPolicy*: ReferrerPolicy
     insecureSSLNoVerify*: bool
 
   FetchPromise* = Promise[JSResult[Response]]
+
+func isPrivileged(ctx: LoaderContext; client: ClientData): bool =
+  return ctx.pagerClient == client
 
 #TODO this may be too low if we want to use urimethodmap for everything
 const MaxRewrites = 4
@@ -335,8 +336,7 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: LoaderHandle) =
   handle.istream.sclose()
   handle.istream = nil
 
-proc loadStream(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
-    request: Request) =
+proc loadStream(ctx: LoaderContext; handle: LoaderHandle; request: Request) =
   ctx.passedFdMap.withValue(request.url.pathname, fdp):
     handle.sendResult(0)
     handle.sendStatus(200)
@@ -387,8 +387,8 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
   else:
     handle.sendResult(ERROR_URL_NOT_IN_CACHE)
 
-proc loadResource(ctx: LoaderContext; client: ClientData; request: Request;
-    handle: LoaderHandle) =
+proc loadResource(ctx: LoaderContext; client: ClientData; config: LoaderClientConfig;
+    request: Request; handle: LoaderHandle) =
   var redo = true
   var tries = 0
   var prevurl: URL = nil
@@ -405,13 +405,13 @@ proc loadResource(ctx: LoaderContext; client: ClientData; request: Request;
           continue
     if request.url.scheme == "cgi-bin":
       handle.loadCGI(request, ctx.config.cgiDir, prevurl,
-        client.config.insecureSSLNoVerify)
+        config.insecureSSLNoVerify)
       if handle.istream != nil:
         ctx.addFd(handle)
       else:
         handle.close()
     elif request.url.scheme == "stream":
-      ctx.loadStream(client, handle, request)
+      ctx.loadStream(handle, request)
       if handle.istream != nil:
         ctx.addFd(handle)
       else:
@@ -433,8 +433,7 @@ proc loadResource(ctx: LoaderContext; client: ClientData; request: Request;
   if tries >= MaxRewrites:
     handle.rejectHandle(ERROR_TOO_MANY_REWRITES)
 
-proc setupRequestDefaults*(request: Request; config: LoaderClientConfig) =
-  request.defaultHeadersSet = true
+proc setupRequestDefaults(request: Request; config: LoaderClientConfig) =
   for k, v in config.defaultHeaders.table:
     if k notin request.headers.table:
       request.headers.table[k] = v
@@ -448,25 +447,34 @@ proc setupRequestDefaults*(request: Request; config: LoaderClientConfig) =
     if r != "":
       request.headers["Referer"] = r
 
-proc load(ctx: LoaderContext; stream: SocketStream; client: ClientData;
-    r: var BufferedReader) =
-  var request: Request
-  r.sread(request)
+proc load(ctx: LoaderContext; stream: SocketStream; request: Request;
+    client: ClientData; config: LoaderClientConfig) =
   let handle = newLoaderHandle(stream, ctx.getOutputId(), client.pid,
     request.suspended)
   when defined(debug):
     handle.url = request.url
     handle.output.url = request.url
-  if not client.config.filter.match(request.url):
+  if not config.filter.match(request.url):
     handle.rejectHandle(ERROR_DISALLOWED_URL)
   else:
-    if ctx.pagerClient != client or not request.defaultHeadersSet:
-      # do not override defaults for pager, because it starts requests that
-      # later belong to buffers.
-      request.setupRequestDefaults(client.config)
-    if request.proxy == nil or not client.config.acceptProxy:
-      request.proxy = client.config.proxy
-    ctx.loadResource(client, request, handle)
+    request.setupRequestDefaults(config)
+    if request.proxy == nil or not ctx.isPrivileged(client):
+      request.proxy = config.proxy
+    ctx.loadResource(client, config, request, handle)
+
+proc load(ctx: LoaderContext; stream: SocketStream; client: ClientData;
+    r: var BufferedReader) =
+  var request: Request
+  r.sread(request)
+  ctx.load(stream, request, client, client.config)
+
+proc loadConfig(ctx: LoaderContext; stream: SocketStream; client: ClientData;
+    r: var BufferedReader) =
+  var request: Request
+  r.sread(request)
+  var config: LoaderClientConfig
+  r.sread(config)
+  ctx.load(stream, request, client, config)
 
 proc addClient(ctx: LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
@@ -644,7 +652,7 @@ proc acceptConnection(ctx: LoaderContext) =
       var cmd: LoaderCommand
       r.sread(cmd)
       template privileged_command =
-        doAssert client == ctx.pagerClient
+        doAssert ctx.isPrivileged(client)
       case cmd
       of lcAddClient:
         privileged_command
@@ -664,6 +672,9 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcRedirectToFile:
         privileged_command
         ctx.redirectToFile(stream, r)
+      of lcLoadConfig:
+        privileged_command
+        ctx.loadConfig(stream, client, r)
       of lcRemoveCachedItem:
         ctx.removeCachedItem(stream, client, r)
       of lcLoad:
@@ -869,11 +880,20 @@ proc connect(loader: FileLoader): SocketStream =
 
 # Start a request. This should not block (not for a significant amount of time
 # anyway).
-proc startRequest*(loader: FileLoader; request: Request): SocketStream =
+proc startRequest(loader: FileLoader; request: Request): SocketStream =
   let stream = loader.connect()
   stream.withLoaderPacketWriter loader, w:
     w.swrite(lcLoad)
     w.swrite(request)
+  return stream
+
+proc startRequest*(loader: FileLoader; request: Request;
+    config: LoaderClientConfig): SocketStream =
+  let stream = loader.connect()
+  stream.withLoaderPacketWriter loader, w:
+    w.swrite(lcLoadConfig)
+    w.swrite(request)
+    w.swrite(config)
   return stream
 
 #TODO: add init
