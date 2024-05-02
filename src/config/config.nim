@@ -131,6 +131,7 @@ type
 
   Config* = ref object
     jsctx: JSContext
+    jsvfns*: seq[JSValueFunction]
     configdir {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
@@ -363,7 +364,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
     k: string) =
   typeCheck(v, tvtTable, k)
   for fk, fv in x.fieldPairs:
-    when typeof(fv) isnot JSContext:
+    when typeof(fv) isnot JSContext|seq[JSValueFunction]:
       let kebabk = snakeToKebabCase(fk)
       if kebabk in v:
         let kkk = if k != "":
@@ -597,6 +598,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
   if not JS_IsFunction(ctx.config.jsctx, fun):
     raise newException(ValueError, k & " is not a function")
   x = JSValueFunction(fun: fun)
+  ctx.config.jsvfns.add(x) # so we can clean it up on exit
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     v: TomlValue; k: string) =
@@ -667,8 +669,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     if vv.t == tvtTable:
       ctx.parseConfigValue(x, vv, kkk)
     else: # tvtString
-      # skip initial "cmd.", we don't need it
-      x.init.add((kkk.substr("cmd.".len), vv.s))
+      x.init.add((kkk, vv.s))
 
 type ParseConfigResult* = object
   success*: bool
@@ -797,9 +798,11 @@ proc initCommands*(config: Config): Err[string] =
     if JS_IsException(fun):
       return err(ctx.getExceptionMsg())
     if not JS_IsFunction(ctx, fun):
+      JS_FreeValue(ctx, fun)
       return err(k & " is not a function")
     ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))
     config.cmd.map[k] = fun
+    JS_FreeValue(ctx, objIt)
   config.cmd.jsObj = JS_DupValue(ctx, obj)
   config.cmd.init = @[]
   ok()

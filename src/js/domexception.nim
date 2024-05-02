@@ -37,7 +37,7 @@ type
 
 jsDestructor(DOMException)
 
-proc newDOMException*(message = "", name = "Error"): DOMException {.jsctor.} =
+proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
   return DOMException(
     e: JS_DOM_EXCEPTION,
     name: name,

@@ -44,6 +44,7 @@ import bindings/quickjs
 import io/promise
 import js/error
 import js/jstypes
+import js/jsutils
 import js/opaque
 import js/typeptr
 import types/opt
@@ -148,8 +149,8 @@ proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
   for arg in args:
     paramList.add(toJS(ctx, arg))
   paramList.add(toJS(ctx, body))
-  let fun = JS_CallConstructor(ctx, ctx.getOpaque().Function_ctor,
-    cint(paramList.len), addr paramList[0])
+  let fun = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvFunction],
+    cint(paramList.len), paramList.toJSValueArray())
   for param in paramList:
     JS_FreeValue(ctx, param)
   return fun
@@ -234,7 +235,8 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
   var a = toJS(ctx, x)
   if JS_IsException(a):
     return a
-  let ret = JS_CallConstructor(ctx, ctx.getOpaque().Set_ctor, 1, addr a)
+  let ret = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvSet], 1,
+    a.toJSValueArray())
   JS_FreeValue(ctx, a)
   return ret
 
@@ -319,12 +321,12 @@ proc toJS(ctx: JSContext; j: JSValue): JSValue =
 
 proc toJS(ctx: JSContext; promise: EmptyPromise): JSValue =
   var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
+  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc() =
-    var x = JS_UNDEFINED
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, addr x)
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+      JS_UNDEFINED.toJSValueArray())
     JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, resolving_funcs[0])
     JS_FreeValue(ctx, resolving_funcs[1]))
@@ -332,12 +334,13 @@ proc toJS(ctx: JSContext; promise: EmptyPromise): JSValue =
 
 proc toJS[T](ctx: JSContext; promise: Promise[T]): JSValue =
   var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
+  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc(x: T) =
-    var x = toJS(ctx, x)
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, addr x)
+    let x = toJS(ctx, x)
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+      x.toJSValueArray())
     JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, x)
     JS_FreeValue(ctx, resolving_funcs[0])
@@ -346,7 +349,7 @@ proc toJS[T](ctx: JSContext; promise: Promise[T]): JSValue =
 
 proc toJS[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
   var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, addr resolving_funcs[0])
+  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc(x: Result[T, E]) =
@@ -355,7 +358,8 @@ proc toJS[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
         JS_UNDEFINED
       else:
         toJS(ctx, x.get)
-      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1, unsafeAddr x)
+      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+        x.toJSValueArray())
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)
     else: # err
@@ -363,7 +367,8 @@ proc toJS[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
         JS_UNDEFINED
       else:
         toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1, unsafeAddr x)
+      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
+        x.toJSValueArray())
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)
     JS_FreeValue(ctx, resolving_funcs[0])
@@ -376,8 +381,8 @@ proc toJS*(ctx: JSContext; err: JSError): JSValue =
   var msg = toJS(ctx, err.message)
   if JS_IsException(msg):
     return msg
-  let ctor = ctx.getOpaque().err_ctors[err.e]
-  let ret = JS_CallConstructor(ctx, ctor, 1, addr msg)
+  let ctor = ctx.getOpaque().errCtorRefs[err.e]
+  let ret = JS_CallConstructor(ctx, ctor, 1, msg.toJSValueArray())
   JS_FreeValue(ctx, msg)
   return ret
 
@@ -385,9 +390,9 @@ proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
   return JS_NewArrayBuffer(ctx, abuf.p, abuf.len, abuf.dealloc, nil, false)
 
 proc toJS*(ctx: JSContext; u8a: JSUint8Array): JSValue =
-  var jsabuf = toJS(ctx, u8a.abuf)
-  let ctor = ctx.getOpaque().Uint8Array_ctor
-  let ret = JS_CallConstructor(ctx, ctor, 1, addr jsabuf)
+  let jsabuf = toJS(ctx, u8a.abuf)
+  let ctor = ctx.getOpaque().valRefs[jsvUint8Array]
+  let ret = JS_CallConstructor(ctx, ctor, 1, jsabuf.toJSValueArray())
   JS_FreeValue(ctx, jsabuf)
   return ret
 

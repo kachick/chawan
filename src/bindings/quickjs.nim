@@ -80,7 +80,8 @@ type
   JSCFunction* = proc(ctx: JSContext; this_val: JSValue; argc: cint;
       argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.}
   JSCFunctionData* = proc(ctx: JSContext; this_val: JSValue; argc: cint;
-    argv: ptr JSValue; magic: cint; func_data: ptr JSValue): JSValue {.cdecl.}
+    argv: ptr UncheckedArray[JSValue]; magic: cint;
+    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.}
   JSGetterFunction* = proc(ctx: JSContext; this_val: JSValue): JSValue {.cdecl.}
   JSSetterFunction* = proc(ctx: JSContext; this_val, val: JSValue):
     JSValue {.cdecl.}
@@ -90,7 +91,7 @@ type
     magic: cint): JSValue {.cdecl.}
   JSInterruptHandler* = proc(rt: JSRuntime; opaque: pointer): cint {.cdecl.}
   JSClassID* = uint32
-  JSAtom* = uint32
+  JSAtom* = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValue) {.cdecl.}
   JSClassCheckDestroy* = proc(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.}
   JSClassGCMark* = proc(rt: JSRuntime; val: JSValue; mark_func: JS_MarkFunc)
@@ -100,8 +101,8 @@ type
     module_name: cstringConst; opaque: pointer): cstring {.cdecl.}
   JSModuleLoaderFunc* = proc(ctx: JSContext; module_name: cstringConst,
     opaque: pointer): JSModuleDef {.cdecl.}
-  JSJobFunc* = proc(ctx: JSContext; argc: cint; argv: ptr JSValue): JSValue
-    {.cdecl.}
+  JSJobFunc* = proc(ctx: JSContext; argc: cint;
+    argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
   JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime; opaque, p: pointer) {.cdecl.}
 
@@ -185,7 +186,7 @@ type
     base: cint
 
   JSCFunctionListEntryPropList = object
-    tab: ptr JSCFunctionListEntry
+    tab: ptr UncheckedArray[JSCFunctionListEntry]
     len: cint
 
   JSCFunctionListEntryU* {.union.} = object
@@ -372,8 +373,8 @@ proc JS_NewObjectClass*(ctx: JSContext; class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext; proto: JSValue): JSValue
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValue;
   class_id: JSClassID): JSValue
-proc JS_NewPromiseCapability*(ctx: JSContext; resolving_funcs: ptr JSValue):
-  JSValue
+proc JS_NewPromiseCapability*(ctx: JSContext;
+  resolving_funcs: ptr UncheckedArray[JSValue]): JSValue
 proc JS_SetOpaque*(obj: JSValue; opaque: pointer)
 proc JS_GetOpaque*(obj: JSValue; class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext; obj: JSValue; class_id: JSClassID): pointer
@@ -422,7 +423,7 @@ proc JS_FreeAtomRT*(rt: JSRuntime; atom: JSAtom)
 proc JS_NewCFunction2*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   length: cint; proto: JSCFunctionEnum; magic: cint): JSValue
 proc JS_NewCFunctionData*(ctx: JSContext; cfunc: JSCFunctionData;
-  length, magic, data_len: cint; data: ptr JSValue): JSValue
+  length, magic, data_len: cint; data: ptr UncheckedArray[JSValue]): JSValue
 proc JS_NewCFunction*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   length: cint): JSValue
 
@@ -453,13 +454,13 @@ proc JS_GetOwnPropertyNames*(ctx: JSContext;
 proc JS_GetOwnProperty*(ctx: JSContext; desc: ptr JSPropertyDescriptor;
   obj: JSValue; prop: JSAtom): cint
 proc JS_Call*(ctx: JSContext; func_obj, this_obj: JSValue; argc: cint;
-  argv: ptr JSValue): JSValue
+  argv: ptr UncheckedArray[JSValue]): JSValue
 proc JS_NewObjectFromCtor*(ctx: JSContext; ctor: JSValue;
   class_id: JSClassID): JSValue
 proc JS_Invoke*(ctx: JSContext; this_obj: JSValue; atom: JSAtom; argc: cint;
-  argv: ptr JSValue): JSValue
+  argv: ptr UncheckedArray[JSValue]): JSValue
 proc JS_CallConstructor*(ctx: JSContext; func_obj: JSValue; argc: cint;
-  argv: ptr JSValue): JSValue
+  argv: ptr UncheckedArray[JSValue]): JSValue
 
 proc JS_DefineProperty*(ctx: JSContext; this_obj: JSValue; prop: JSAtom;
   val, getter, setter: JSValue; flags: cint): cint
@@ -544,7 +545,7 @@ proc JS_GetImportMeta*(ctx: JSContext; m: JSModuleDef): JSValue
 proc JS_GetModuleName*(ctx: JSContext; m: JSModuleDef): JSAtom
 
 proc JS_EnqueueJob*(ctx: JSContext; job_func: JSJobFunc; argc: cint;
-  argv: ptr JSValue): cint
+  argv: ptr UncheckedArray[JSValue]): cint
 proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
 proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: ptr JSContext): cint
 

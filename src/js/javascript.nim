@@ -30,8 +30,8 @@
 #   can only be used on object fields. (I initially wanted to use the same
 #   keyword, unfortunately that didn't work out.)
 # {.jsgetprop.} for property getters. Called when GetOwnProperty would return
-#   nothing. The key must be either a string or an integer (preferably uint32),
-#   since it is converted from a JSAtom.
+#   nothing. The key must be either a JSAtom, uint32 or string.  (Note that the
+#   string option copies.)
 # {.jssetprop.} for property setters. Called on SetProperty - in fact this
 #   is the set() method of Proxy, except it always returns true. Same rules as
 #   jsgetprop for keys.
@@ -77,11 +77,11 @@ export
   JS_EVAL_FLAG_STRIP,
   JS_EVAL_FLAG_COMPILE_ONLY
 
-export JSRuntime, JSContext, JSValue, JSClassID
+export JSRuntime, JSContext, JSValue, JSClassID, JSAtom
 
 export
   JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
-  JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue
+  JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue, JS_IsUndefined
 
 when sizeof(int) < sizeof(int64):
   export quickjs.`==`
@@ -159,40 +159,41 @@ func newJSCFunction*(ctx: JSContext; name: string; fun: JSCFunction;
   return JS_NewCFunction2(ctx, fun, cstring(name), cint(argc), proto,
     cint(magic))
 
-proc free*(ctx: var JSContext) =
+proc free*(ctx: JSContext) =
   var opaque = ctx.getOpaque()
   if opaque != nil:
-    for a in opaque.sym_refs:
+    for a in opaque.symRefs:
       JS_FreeAtom(ctx, a)
-    for a in opaque.str_refs:
+    for a in opaque.strRefs:
       JS_FreeAtom(ctx, a)
+    for v in opaque.valRefs:
+      JS_FreeValue(ctx, v)
     for classid, v in opaque.ctors:
       JS_FreeValue(ctx, v)
-    JS_FreeValue(ctx, opaque.Array_prototype_values)
-    JS_FreeValue(ctx, opaque.Object_prototype_valueOf)
-    JS_FreeValue(ctx, opaque.Uint8Array_ctor)
-    JS_FreeValue(ctx, opaque.Set_ctor)
-    JS_FreeValue(ctx, opaque.Function_ctor)
-    for v in opaque.err_ctors:
+    for v in opaque.errCtorRefs:
       JS_FreeValue(ctx, v)
+    if opaque.globalUnref != nil:
+      opaque.globalUnref()
     GC_unref(opaque)
   JS_FreeContext(ctx)
-  ctx = nil
 
-proc free*(rt: var JSRuntime) =
+proc free*(rt: JSRuntime) =
   let opaque = rt.getOpaque()
   GC_unref(opaque)
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
-  rt = nil
 
-proc setGlobal*[T](ctx: JSContext; global: JSValue; obj: T) =
+proc setGlobal*[T](ctx: JSContext; obj: T) =
   # Add JSValue reference.
-  let p = JS_VALUE_GET_PTR(global)
-  let header = cast[ptr JSRefCountHeader](p)
-  inc header.ref_count
-  ctx.setOpaque(global, cast[pointer](obj))
+  let global = JS_GetGlobalObject(ctx)
+  let opaque = cast[pointer](obj)
+  ctx.setOpaque(global, opaque)
   GC_ref(obj)
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  ctx.getOpaque().globalUnref = proc() =
+    GC_unref(obj)
+    rtOpaque.plist.del(opaque)
+  JS_FreeValue(ctx, global)
 
 proc setInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
     opaque: pointer = nil) =
@@ -266,13 +267,13 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     ctxOpaque.htmldda = result
   if finalizer != nil:
     rtOpaque.fins[result] = finalizer
-  var proto: JSValue
-  if parent != 0:
+  let proto = if parent != 0:
     let parentProto = JS_GetClassProto(ctx, parent)
-    proto = JS_NewObjectProtoClass(ctx, parentProto, parent)
+    let x = JS_NewObjectProtoClass(ctx, parentProto, parent)
     JS_FreeValue(ctx, parentProto)
+    x
   else:
-    proto = JS_NewObject(ctx)
+    JS_NewObject(ctx)
   if funcs.len > 0:
     # We avoid funcs being GC'ed by putting the list in rtOpaque.
     # (QuickJS uses the pointer later.)
@@ -282,11 +283,12 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
       cint(funcs.len))
   #TODO check if this is an indexed property getter
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
-    let val = JS_DupValue(ctx, ctxOpaque.Array_prototype_values)
-    doAssert JS_SetProperty(ctx, proto, ctxOpaque.sym_refs[ITERATOR], val) == 1
+    let val = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
+    let itSym = ctxOpaque.symRefs[jsyIterator]
+    doAssert JS_SetProperty(ctx, proto, itSym, val) == 1
   let news = JS_NewAtomString(ctx, cdef.class_name)
   doAssert not JS_IsException(news)
-  ctx.definePropertyC(proto, ctxOpaque.sym_refs[TO_STRING_TAG],
+  ctx.definePropertyC(proto, ctxOpaque.symRefs[jsyToStringTag],
     JS_DupValue(ctx, news))
   JS_SetClassProto(ctx, result, proto)
   ctx.addClassUnforgeable(proto, result, parent, unforgeable)
@@ -295,7 +297,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     assert ctxOpaque.gclaz == ""
     ctxOpaque.gclaz = tname
     ctxOpaque.gparent = parent
-    ctx.definePropertyC(global, ctxOpaque.sym_refs[TO_STRING_TAG],
+    ctx.definePropertyC(global, ctxOpaque.symRefs[jsyToStringTag],
       JS_DupValue(ctx, news))
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " &
@@ -313,7 +315,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
       cint(staticfuns.len))
   JS_SetConstructor(ctx, jctor, proto)
   if errid.isSome:
-    ctx.getOpaque().err_ctors[errid.get] = JS_DupValue(ctx, jctor)
+    ctx.getOpaque().errCtorRefs[errid.get] = JS_DupValue(ctx, jctor)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     if JS_IsNull(namespace):
@@ -322,6 +324,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
       JS_FreeValue(ctx, global)
     else:
       ctx.definePropertyCW(namespace, $cdef.class_name, jctor)
+  else:
+    JS_FreeValue(ctx, jctor)
 
 type FuncParam = tuple
   name: string
@@ -596,7 +600,7 @@ proc addUnionParamBranch(gen: var JSFuncGenerator; query, newBranch: NimNode;
 func isSequence*(ctx: JSContext; o: JSValue): bool =
   if not JS_IsObject(o):
     return false
-  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().sym_refs[ITERATOR])
+  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().symRefs[jsyIterator])
   # prop can't be exception (throws_ref_error is 0 and tag is object)
   result = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
@@ -1358,10 +1362,9 @@ func jsname(info: RegistryInfo): string =
   return info.tname
 
 proc newRegistryInfo(t: NimNode; name: string): RegistryInfo =
-  let info = RegistryInfo(
+  return RegistryInfo(
     t: t,
     name: name,
-    dfin: ident("js_" & t.strVal & "ClassCheckDestroy"),
     classDef: ident("classDef"),
     tabList: newNimNode(nnkBracket),
     tabUnforgeable: newNimNode(nnkBracket),
@@ -1374,9 +1377,6 @@ proc newRegistryInfo(t: NimNode; name: string): RegistryInfo =
     propHasFun: newNilLit(),
     propNamesFun: newNilLit()
   )
-  if info.tname notin jsDtors:
-    warning("No destructor has been defined for type " & info.tname)
-  return info
 
 proc bindConstructor(stmts: NimNode; info: var RegistryInfo): NimNode =
   if info.ctorFun != nil:
@@ -1604,14 +1604,21 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
       )
       let `classDef` = JSClassDefConst(addr cd))
 
-macro registerType*(ctx: typed; t: typed; parent: JSClassID = 0,
-    asglobal = false, nointerface = false, name: static string = "",
-    has_extra_getset: static bool = false,
-    extra_getset: static openArray[TabGetSet] = [],
-    namespace: JSValue = JS_NULL, errid = opt(JSErrorEnum),
-    ishtmldda = false): JSClassID =
+macro registerType*(ctx: typed; t: typed; parent: JSClassID = 0;
+    asglobal: static bool = false; nointerface = false; name: static string = "";
+    has_extra_getset: static bool = false;
+    extra_getset: static openArray[TabGetSet] = []; namespace = JS_NULL;
+    errid = opt(JSErrorEnum); ishtmldda = false): JSClassID =
   var stmts = newStmtList()
   var info = newRegistryInfo(t, name)
+  if not asglobal:
+    info.dfin = ident("js_" & t.strVal & "ClassCheckDestroy")
+    if info.tname notin jsDtors:
+      warning("No destructor has been defined for type " & info.tname)
+  else:
+    info.dfin = newNilLit()
+    if info.tname in jsDtors:
+      error("Global object " & info.tname & " must not have a destructor!")
   let pragmas = findPragmas(t)
   stmts.registerGetters(info, pragmas.jsget)
   stmts.registerSetters(info, pragmas.jsset)
@@ -1623,7 +1630,8 @@ macro registerType*(ctx: typed; t: typed; parent: JSClassID = 0,
     # been passed to it at all.
     stmts.bindExtraGetSet(info, extra_getset)
   let sctr = stmts.bindConstructor(info)
-  stmts.bindCheckDestroy(info)
+  if not asglobal:
+    stmts.bindCheckDestroy(info)
   let endstmts = newStmtList()
   endstmts.bindEndStmts(info)
   let tabList = info.tabList

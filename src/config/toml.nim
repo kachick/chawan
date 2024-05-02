@@ -369,12 +369,11 @@ proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
             let key = table.key.join('.')
             return state.err("re-definition of node " & key &
               " as table array (was " & $last.t & ")")
-          last.ad = true
           let val = TomlValue(t: tvtTable, tab: table)
           last.a.add(val)
         else:
           let val = TomlValue(t: tvtTable, tab: table)
-          let last = TomlValue(t: tvtArray, a: @[val])
+          let last = TomlValue(t: tvtArray, a: @[val], ad: true)
           node.map[table.key[^1]] = last
       state.currkey = table.key
       state.node = table

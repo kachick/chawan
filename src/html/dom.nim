@@ -25,6 +25,7 @@ import js/domexception
 import js/error
 import js/fromjs
 import js/javascript
+import js/jsutils
 import js/opaque
 import js/propertyenumlist
 import js/timeout
@@ -370,7 +371,6 @@ jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
 jsDestructor(Screen)
-jsDestructor(Window)
 
 jsDestructor(Element)
 jsDestructor(HTMLElement)
@@ -1276,21 +1276,22 @@ const SupportedTokensMap = {
     "next", "pingback", "preconnect", "prefetch", "preload", "search",
     "stylesheet"
   ]
-}.toTable()
+}
 
 func supports(tokenList: DOMTokenList; token: string):
     JSResult[bool] {.jsfunc.} =
   let localName = tokenList.element.document.toStaticAtom(tokenList.localName)
-  if localName in SupportedTokensMap:
-    let lowercase = token.toLowerAscii()
-    return ok(lowercase in SupportedTokensMap[localName])
+  for it in SupportedTokensMap:
+    if it[0] == localName:
+      let lowercase = token.toLowerAscii()
+      return ok(lowercase in it[1])
   return err(newTypeError("No supported tokens defined for attribute"))
 
 func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
 
-func getter(tokenList: DOMTokenList; i: int): Option[string] {.jsgetprop.} =
-  return tokenList.item(i)
+func getter(tokenList: DOMTokenList; i: uint32): Option[string] {.jsgetprop.} =
+  return tokenList.item(int(i))
 
 # DOMStringMap
 func validateAttributeName(name: string): Err[DOMException] =
@@ -1352,15 +1353,15 @@ func names(ctx: JSContext; map: ptr DOMStringMap): JSPropertyEnumList
 func length(nodeList: NodeList): uint32 {.jsfget.} =
   return uint32(nodeList.len)
 
-func hasprop(nodeList: NodeList; i: int): bool {.jshasprop.} =
-  return i < nodeList.len
+func hasprop(nodeList: NodeList; i: uint32): bool {.jshasprop.} =
+  return int(i) < nodeList.len
 
 func item(nodeList: NodeList; i: int): Node {.jsfunc.} =
   if i < nodeList.len:
     return nodeList.snapshot[i]
 
-func getter(nodeList: NodeList; i: int): Option[Node] {.jsgetprop.} =
-  return option(nodeList.item(i))
+func getter(nodeList: NodeList; i: uint32): Option[Node] {.jsgetprop.} =
+  return option(nodeList.item(int(i)))
 
 func names(ctx: JSContext; nodeList: NodeList): JSPropertyEnumList
     {.jspropnames.} =
@@ -1417,14 +1418,15 @@ func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
 proc length(collection: HTMLAllCollection): uint32 {.jsfget.} =
   return uint32(collection.len)
 
-func hasprop(collection: HTMLAllCollection; i: int): bool {.jshasprop.} =
-  return i < collection.len
+func hasprop(collection: HTMLAllCollection; i: uint32): bool {.jshasprop.} =
+  return int(i) < collection.len
 
-func item(collection: HTMLAllCollection; i: int): Element {.jsfunc.} =
+func item(collection: HTMLAllCollection; i: uint32): Element {.jsfunc.} =
+  let i = int(i)
   if i < collection.len:
     return Element(collection.snapshot[i])
 
-func getter(collection: HTMLAllCollection; i: int): Option[Element]
+func getter(collection: HTMLAllCollection; i: uint32): Option[Element]
     {.jsgetprop.} =
   return option(collection.item(i))
 
@@ -1452,7 +1454,7 @@ proc newLocation*(window: Window): Location =
   let ctx = window.jsctx
   if ctx != nil:
     let val = toJS(ctx, location)
-    let valueOf = ctx.getOpaque().Object_prototype_valueOf
+    let valueOf = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
     defineProperty(ctx, val, "valueOf", JS_DupValue(ctx, valueOf))
     defineProperty(ctx, val, "toPrimitive", JS_UNDEFINED)
     #TODO [[DefaultProperties]]
@@ -4179,7 +4181,8 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
   let buf = this.bitmap.toPNG(outlen)
   let blob = newBlob(buf, outlen, "image/png", proc() = dealloc(buf))
   var jsBlob = toJS(ctx, blob)
-  let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, addr jsBlob)
+  let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, jsBlob.toJSValueArray())
+  JS_FreeValue(ctx, jsBlob)
   # Hack. TODO: implement JSValue to callback
   if res == JS_EXCEPTION:
     return JS_EXCEPTION

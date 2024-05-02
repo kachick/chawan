@@ -7,6 +7,7 @@ import js/error
 import js/fromjs
 import js/javascript
 import js/jstypes
+import js/jsutils
 import js/tojs
 import types/opt
 
@@ -198,9 +199,10 @@ proc invoke*(ctx: JSContext; listener: EventListener; event: Event):
   if JS_IsNull(listener.callback):
     return JS_UNDEFINED
   let jsTarget = ctx.toJS(event.currentTarget)
-  var jsEvent = ctx.toJS(event)
+  let jsEvent = ctx.toJS(event)
   if JS_IsFunction(ctx, listener.callback):
-    let ret = JS_Call(ctx, listener.callback, jsTarget, 1, addr jsEvent)
+    let ret = JS_Call(ctx, listener.callback, jsTarget, 1,
+      jsEvent.toJSValueArray())
     JS_FreeValue(ctx, jsTarget)
     JS_FreeValue(ctx, jsEvent)
     return ret
@@ -210,7 +212,7 @@ proc invoke*(ctx: JSContext; listener: EventListener; event: Event):
     JS_FreeValue(ctx, jsTarget)
     JS_FreeValue(ctx, jsEvent)
     return handler
-  let ret = JS_Call(ctx, handler, jsTarget, 1, addr jsEvent)
+  let ret = JS_Call(ctx, handler, jsTarget, 1, jsEvent.toJSValueArray())
   JS_FreeValue(ctx, jsTarget)
   JS_FreeValue(ctx, jsEvent)
   return ret
@@ -255,9 +257,12 @@ proc flattenMore(ctx: JSContext; options: JSValue):
   var once = false
   var passive: Option[bool]
   if JS_IsObject(options):
-    once = fromJS[bool](ctx, JS_GetPropertyStr(ctx, options, "once"))
-      .get(false)
-    let x = fromJS[bool](ctx, JS_GetPropertyStr(ctx, options, "passive"))
+    let jsOnce = JS_GetPropertyStr(ctx, options, "once")
+    once = fromJS[bool](ctx, jsOnce).get(false)
+    JS_FreeValue(ctx, jsOnce)
+    let jsPassive = JS_GetPropertyStr(ctx, options, "passive")
+    let x = fromJS[bool](ctx, jsPassive)
+    JS_FreeValue(ctx, jsPassive)
     if x.isSome:
       passive = some(x.get)
   return (capture, once, passive)

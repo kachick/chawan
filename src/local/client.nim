@@ -35,6 +35,7 @@ import js/fromjs
 import js/intl
 import js/javascript
 import js/jstypes
+import js/jsutils
 import js/module
 import js/timeout
 import js/tojs
@@ -58,6 +59,7 @@ import chagashi/charset
 type
   Client* = ref object
     alive: bool
+    dead: bool
     config {.jsget.}: Config
     consoleWrapper: ConsoleWrapper
     fdmap: Table[int, Container]
@@ -67,13 +69,12 @@ type
     pager {.jsget.}: Pager
     timeouts: TimeoutState
     pressed: tuple[col: int; row: int]
+    exitCode: int
 
   ConsoleWrapper = object
     console: Console
     container: Container
     prev: Container
-
-jsDestructor(Client)
 
 func console(client: Client): Console {.jsfget.} =
   return client.consoleWrapper.console
@@ -89,12 +90,6 @@ template forkserver(client: Client): ForkServer =
 
 template readChar(client: Client): char =
   client.pager.term.readChar()
-
-proc finalize(client: Client) {.jsfin.} =
-  if client.jsctx != nil:
-    free(client.jsctx)
-  if client.jsrt != nil:
-    free(client.jsrt)
 
 proc fetch[T: Request|string](client: Client; req: T;
     init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
@@ -155,19 +150,32 @@ proc suspend(client: Client) {.jsfunc.} =
   discard kill(0, cint(SIGTSTP))
   client.pager.term.restart()
 
-proc quit(client: Client; code = 0) {.jsfunc.} =
-  if client.alive:
+proc jsQuit(client: Client; code = 0) {.jsfunc: "quit".} =
+  client.exitCode = code
+  client.alive = false
+
+proc quit(client: Client; code = 0) =
+  if not client.dead:
+    # dead is set to true when quit is called; it indicates that the
+    # client has been destroyed.
+    # alive is set to false when jsQuit is called; it is a request to
+    # destroy the client.
+    client.dead = true
     client.alive = false
     client.pager.quit()
+    for val in client.config.cmd.map.values:
+      JS_FreeValue(client.jsctx, val)
+    for fn in client.config.jsvfns:
+      JS_FreeValue(client.jsctx, fn)
     let ctx = client.jsctx
-    var global = JS_GetGlobalObject(ctx)
-    JS_FreeValue(ctx, global)
-    if client.jsctx != nil:
-      free(client.jsctx)
-    #TODO
-    #if client.jsrt != nil:
-    #  free(client.jsrt)
-  quit(code)
+    let rt = client.jsrt
+    # Force the runtime to collect all memory, so QJS can check for
+    # leaks.
+    client[].reset()
+    GC_fullCollect()
+    ctx.free()
+    rt.free()
+  exitnow(code)
 
 proc feedNext(client: Client) {.jsfunc.} =
   client.feednext = true
@@ -192,12 +200,11 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
   p.resolve()
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
-      var arg0 = toJS(ctx, arg0)
-      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 1, addr arg0)
+      let arg0 = toJS(ctx, arg0)
+      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 1, arg0.toJSValueArray())
       JS_FreeValue(ctx, arg0)
       JS_FreeValue(ctx, ret)
       ret = ret2
-      JS_FreeValue(ctx, arg0)
     else: # no precnum
       let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 0, nil)
       JS_FreeValue(ctx, ret)
@@ -514,11 +521,11 @@ proc handleError(client: Client; fd: int) =
   if client.pager.term.istream != nil and fd == client.pager.term.istream.fd:
     #TODO do something here...
     stderr.write("Error in tty\n")
-    quit(1)
+    client.quit(1)
   elif fd == client.forkserver.estream.fd:
     #TODO do something here...
     stderr.write("Fork server crashed :(\n")
-    quit(1)
+    client.quit(1)
   elif fd in client.loader.connecting:
     #TODO handle error?
     discard
@@ -546,7 +553,7 @@ proc inputLoop(client: Client) =
   let selector = client.selector
   selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
   let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
-  while true:
+  while client.alive:
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
@@ -576,7 +583,7 @@ proc inputLoop(client: Client) =
       if not client.pager.hasload:
         # Failed to load every single URL the user passed us. We quit, and that
         # will dump all alerts to stderr.
-        quit(1)
+        client.quit(1)
       else:
         # At least one connection has succeeded, but we have nothing to display.
         # Normally, this means that the input stream has been redirected to a
@@ -586,7 +593,7 @@ proc inputLoop(client: Client) =
         # loader, and then asking for confirmation if there is at least one.
         client.pager.term.setCursor(0, client.pager.term.attrs.height - 1)
         client.pager.term.anyKey("Hit any key to quit Chawan:")
-        quit(0)
+        client.quit(0)
     client.pager.showAlerts()
     client.pager.draw()
 
@@ -598,7 +605,7 @@ func hasSelectFds(client: Client): bool =
     client.pager.procmap.len > 0
 
 proc headlessLoop(client: Client) =
-  while client.hasSelectFds():
+  while client.alive and client.hasSelectFds():
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
@@ -698,7 +705,7 @@ proc dumpBuffers(client: Client) =
       client.console.log("Error in buffer", $container.url)
       # check for errors
       client.handleRead(client.forkserver.estream.fd)
-      quit(1)
+      client.quit(1)
 
 proc launchClient*(client: Client; pages: seq[string];
     contentType: Option[string]; cs: Charset; dump: bool) =
@@ -824,13 +831,19 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
   let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
   loader.setSocketDir(config.external.tmpdir)
   pager.setLoader(loader)
-  let client = Client(config: config, jsrt: jsrt, jsctx: jsctx, pager: pager)
+  let client = Client(
+    config: config,
+    jsrt: jsrt,
+    jsctx: jsctx,
+    pager: pager,
+    alive: true
+  )
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
-  var global = JS_GetGlobalObject(jsctx)
   jsctx.registerType(Client, asglobal = true)
-  setGlobal(jsctx, global, client)
+  jsctx.setGlobal(client)
+  let global = JS_GetGlobalObject(jsctx)
   jsctx.definePropertyE(global, "cmd", config.cmd.jsObj)
-  config.cmd.jsObj = JS_NULL
   JS_FreeValue(jsctx, global)
+  config.cmd.jsObj = JS_NULL
   client.addJSModules(jsctx)
   return client

@@ -287,7 +287,7 @@ force-pixels-per-line = false
 
 [[omnirule]]
 match = '^ddg:'
-substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
 [page]
 # buffer commands

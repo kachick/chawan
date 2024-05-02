@@ -19,8 +19,8 @@ proc newConsole*(err: DynStream; clearFun: proc() = nil; showFun: proc() = nil;
   )
 
 proc log*(console: Console; ss: varargs[string]) {.jsfunc.} =
-  for i in 0..<ss.len:
-    console.err.write(ss[i])
+  for i, s in ss:
+    console.err.write(s)
     if i != ss.high:
       console.err.write(' ')
   console.err.write('\n')

@@ -1,39 +1,32 @@
 <!doctype html>
 <title>TextEncoder/TextDecoder test</title>
 <div id="success">Fail</div>
+<script src=asserts.js></script>
 <script>
-(function() {
-	/* Adapted from: https://developer.mozilla.org/en-US/docs/Glossary/Base64#the_unicode_problem */
-	function base64ToBytes(base64) {
-		const binString = atob(base64);
-		const result = [];
-		for (const c of binString)
-			result.push(Uint8Array.from(c, (m) => m.codePointAt(0)));
-		return result;
-	}
+/* Adapted from: https://developer.mozilla.org/en-US/docs/Glossary/Base64#the_unicode_problem */
+function base64ToBytes(base64) {
+	const binString = atob(base64);
+	const result = [];
+	for (const c of binString)
+		result.push(Uint8Array.from(c, (m) => m.codePointAt(0)));
+	return result;
+}
 
-	function bytesToBase64(bytes) {
-		const binString = String.fromCodePoint(...bytes);
-		return btoa(binString);
-	}
+function bytesToBase64(bytes) {
+	const binString = String.fromCodePoint(...bytes);
+	return btoa(binString);
+}
 
-	const utf8 = new TextEncoder().encode("a Ā 𐀀 文 🦄")
-	const b64utf8 = bytesToBase64(utf8);
-	if (b64utf8 !== "YSDEgCDwkICAIOaWhyDwn6aE") {
-		console.log(b64utf8);
-		return;
-	}
-	const dec = new TextDecoder();
-	const bytes = base64ToBytes(b64utf8);
-	const a = [];
-	let res = "";
-	for (const c of bytes)
-		res += dec.decode(c, {stream: true});
-	res += dec.decode();
-	if (res !== "a Ā 𐀀 文 🦄") {
-		console.log(res);
-		return;
-	}
-	document.getElementById("success").textContent = "Success";
-})();
+const utf8 = new TextEncoder().encode("a Ā 𐀀 文 🦄")
+const b64utf8 = bytesToBase64(utf8);
+assert_equals(b64utf8, "YSDEgCDwkICAIOaWhyDwn6aE")
+const dec = new TextDecoder();
+const bytes = base64ToBytes(b64utf8);
+const a = [];
+let res = "";
+for (const c of bytes)
+	res += dec.decode(c, {stream: true});
+res += dec.decode();
+assert_equals(res, "a Ā 𐀀 文 🦄");
+document.getElementById("success").textContent = "Success";
 </script>

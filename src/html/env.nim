@@ -68,10 +68,10 @@ proc item(pluginArray: ptr PluginArray): JSValue {.jsfunc.} = JS_NULL
 proc length(pluginArray: ptr PluginArray): uint32 {.jsfget.} = 0
 proc item(mimeTypeArray: ptr MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
 proc length(mimeTypeArray: ptr MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: ptr PluginArray; i: int): Option[JSValue]
+proc getter(pluginArray: ptr PluginArray; i: uint32): Option[JSValue]
     {.jsgetprop.} =
   discard
-proc getter(mimeTypeArray: ptr MimeTypeArray; i: int): Option[JSValue]
+proc getter(mimeTypeArray: ptr MimeTypeArray; i: uint32): Option[JSValue]
     {.jsgetprop.} =
   discard
 
@@ -193,7 +193,7 @@ proc addScripting*(window: Window; selector: Selector[int]) =
   ctx.addEventModule()
   let eventTargetCID = ctx.getClass("EventTarget")
   ctx.registerType(Window, asglobal = true, parent = eventTargetCID)
-  ctx.setGlobal(global, window)
+  ctx.setGlobal(window)
   JS_FreeValue(ctx, global)
   ctx.addDOMExceptionModule()
   ctx.addConsoleModule()

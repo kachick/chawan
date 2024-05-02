@@ -10,6 +10,7 @@ import std/tables
 import std/unicode
 
 import bindings/libregexp
+import bindings/quickjs
 import config/config
 import config/mailcap
 import io/bufreader
@@ -24,6 +25,7 @@ import js/error
 import js/fromjs
 import js/javascript
 import js/jstypes
+import js/jsutils
 import js/regex
 import js/tojs
 import loader/connecterror
@@ -175,6 +177,7 @@ proc setContainer*(pager: Pager; c: Container) {.jsfunc.} =
     pager.term.setTitle(c.getTitle())
 
 proc hasprop(ctx: JSContext; pager: Pager; s: string): bool {.jshasprop.} =
+  result = false
   if pager.container != nil:
     let cval = toJS(ctx, pager.container)
     let val = JS_GetPropertyStr(ctx, cval, s)
@@ -182,22 +185,29 @@ proc hasprop(ctx: JSContext; pager: Pager; s: string): bool {.jshasprop.} =
       result = true
     JS_FreeValue(ctx, val)
 
-proc reflect(ctx: JSContext; this_val: JSValue; argc: cint; argv: ptr JSValue;
-    magic: cint; func_data: ptr JSValue): JSValue {.cdecl.} =
-  let fun = cast[ptr JSValue](cast[int](func_data) + sizeof(JSValue))[]
-  return JS_Call(ctx, fun, func_data[], argc, argv)
+proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
+    argv: ptr UncheckedArray[JSValue]; magic: cint;
+    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+  let obj = func_data[0]
+  let fun = func_data[1]
+  return JS_Call(ctx, fun, obj, argc, argv)
 
-proc getter(ctx: JSContext; pager: Pager; s: string): Option[JSValue]
+proc getter(ctx: JSContext; pager: Pager; a: JSAtom): Option[JSValue]
     {.jsgetprop.} =
   if pager.container != nil:
     let cval = toJS(ctx, pager.container)
-    let val = JS_GetPropertyStr(ctx, cval, s)
-    if val != JS_UNDEFINED:
-      if JS_IsFunction(ctx, val):
-        var func_data = @[cval, val]
-        let fun = JS_NewCFunctionData(ctx, reflect, 1, 0, 2, addr func_data[0])
-        return some(fun)
+    let val = JS_GetProperty(ctx, cval, a)
+    if JS_IsFunction(ctx, val):
+      let func_data = @[cval, val]
+      let fun = JS_NewCFunctionData(ctx, reflect, 1, 0, 2,
+        func_data.toJSValueArray())
+      JS_FreeValue(ctx, cval)
+      JS_FreeValue(ctx, val)
+      return some(fun)
+    JS_FreeValue(ctx, cval)
+    if not JS_IsUndefined(val):
       return some(val)
+  return none(JSValue)
 
 proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
   if pager.regex.isSome:
@@ -880,8 +890,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       continue
     if sc.rewrite_url.isSome:
       let fun = sc.rewrite_url.get
-      var arg1 = ctx.toJS(url)
-      let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, addr arg1)
+      var arg0 = ctx.toJS(url)
+      let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
       let nu = fromJS[URL](ctx, ret)
       if nu.isOk:
         if nu.get != nil:
@@ -889,7 +899,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       elif JS_IsException(ret):
         #TODO should writeException the message to console
         pager.alert("Error rewriting URL: " & ctx.getExceptionMsg(nu.error))
-      JS_FreeValue(ctx, arg1)
+      JS_FreeValue(ctx, arg0)
       JS_FreeValue(ctx, ret)
     if sc.cookie.isSome:
       if sc.cookie.get:
@@ -986,9 +996,11 @@ proc omniRewrite(pager: Pager; s: string): string =
     if rule.match.match(s):
       let fun = rule.substitute_url.get
       let ctx = pager.jsctx
-      var arg1 = ctx.toJS(s)
-      let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, addr arg1)
+      var arg0 = ctx.toJS(s)
+      let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
       let ret = fromJS[string](ctx, jsRet)
+      JS_FreeValue(ctx, jsRet)
+      JS_FreeValue(ctx, arg0)
       if ret.isOk:
         return ret.get
       pager.alert("Error in substitution of " & $rule.match & " for " & s &

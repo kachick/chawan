@@ -1,23 +1,17 @@
 <!doctype html>
 <title>Element class test</title>
 <div class="a b c">Fail</div>
+<script src=asserts.js></script>
 <script>
-(function() {
-	let div = document.getElementsByClassName("a")[0]
-	const classes = ["a", "b", "c"];
-	let cl = div.classList;
-	for (let i = 0; i < classes.length; ++i) {
-		if (cl[i] !== classes[i])
-			return;
-	}
-	const classes2 = ["x", "y", "z"];
-	div.setAttribute("class", classes2.join(' '));
-	let i = 0;
-	for (let x of cl) {
-		if (x != classes2[i])
-			return;
-		++i;
-	}
-	div.textContent = "Success";
-})();
+const div = document.getElementsByClassName("a")[0]
+const classes = ["a", "b", "c"];
+let cl = div.classList;
+for (let i = 0; i < classes.length; ++i)
+	assert_equals(cl[i], classes[i]);
+const classes2 = ["x", "y", "z"];
+div.setAttribute("class", classes2.join(' '));
+let i = 0;
+for (let x of cl)
+	assert_equals(x, classes2[i++]);
+div.textContent = "Success";
 </script>

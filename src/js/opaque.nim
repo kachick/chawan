@@ -5,17 +5,24 @@ import js/error
 import types/opt
 
 type
-  JSSymbolRefs* = enum
-    ITERATOR = "iterator"
-    ASYNC_ITERATOR = "asyncIterator"
-    TO_STRING_TAG = "toStringTag"
+  JSSymbolRef* = enum
+    jsyIterator = "iterator"
+    jsyAsyncIterator = "asyncIterator"
+    jsyToStringTag = "toStringTag"
 
-  JSStrRefs* = enum
-    DONE = "done"
-    VALUE = "value"
-    NEXT = "next"
-    PROTOTYPE = "prototype"
-    THEN = "then"
+  JSStrRef* = enum
+    jstDone = "done"
+    jstValue = "value"
+    jstNext = "next"
+    jstPrototype = "prototype"
+    jstThen = "then"
+
+  JSValueRef* = enum
+    jsvArrayPrototypeValues = "Array.prototype.values"
+    jsvUint8Array = "Uint8Array"
+    jsvObjectPrototypeValueOf = "Object.prototype.valueOf"
+    jsvSet = "Set"
+    jsvFunction = "Function"
 
   JSContextOpaque* = ref object
     creg*: Table[string, JSClassID]
@@ -28,15 +35,12 @@ type
     unforgeable*: Table[JSClassID, seq[JSCFunctionListEntry]]
     gclaz*: string
     gparent*: JSClassID
-    sym_refs*: array[JSSymbolRefs, JSAtom]
-    str_refs*: array[JSStrRefs, JSAtom]
-    Array_prototype_values*: JSValue
-    Object_prototype_valueOf*: JSValue
-    Uint8Array_ctor*: JSValue
-    Set_ctor*: JSValue
-    Function_ctor*: JSValue
-    err_ctors*: array[JSErrorEnum, JSValue]
+    symRefs*: array[JSSymbolRef, JSAtom]
+    strRefs*: array[JSStrRef, JSAtom]
+    valRefs*: array[JSValueRef, JSValue]
+    errCtorRefs*: array[JSErrorEnum, JSValue]
     htmldda*: JSClassID # only one of these exists: document.all.
+    globalUnref*: proc() {.closure.}
 
   JSFinalizerFunction* = proc(rt: JSRuntime; val: JSValue) {.nimcall.}
 
@@ -51,41 +55,26 @@ func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque()
   block: # get well-known symbols and other functions
     let global = JS_GetGlobalObject(ctx)
-    block:
-      let sym = JS_GetPropertyStr(ctx, global, "Symbol")
-      for s in JSSymbolRefs:
-        let name = $s
-        let val = JS_GetPropertyStr(ctx, sym, cstring(name))
-        assert JS_IsSymbol(val)
-        opaque.sym_refs[s] = JS_ValueToAtom(ctx, val)
-        JS_FreeValue(ctx, val)
-      JS_FreeValue(ctx, sym)
-      for s in JSStrRefs:
-        let ss = $s
-        opaque.str_refs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
-    block:
-      let arrproto = JS_GetClassProto(ctx, JS_CLASS_ARRAY)
-      opaque.Array_prototype_values = JS_GetPropertyStr(ctx, arrproto,
-        "values")
-      JS_FreeValue(ctx, arrproto)
-    block:
-      let objproto = JS_GetClassProto(ctx, JS_CLASS_OBJECT)
-      opaque.Object_prototype_valueOf = JS_GetPropertyStr(ctx, objproto,
-        "valueOf")
-      JS_FreeValue(ctx, objproto)
-    block:
-      opaque.Uint8Array_ctor = JS_GetPropertyStr(ctx, global, "Uint8Array")
-      assert not JS_IsException(opaque.Uint8Array_ctor)
-    block:
-      opaque.Set_ctor = JS_GetPropertyStr(ctx, global, "Set")
-      assert not JS_IsException(opaque.Set_ctor)
-    block:
-      opaque.Function_ctor = JS_GetPropertyStr(ctx, global, "Function")
-      assert not JS_IsException(opaque.Function_ctor)
+    let sym = JS_GetPropertyStr(ctx, global, "Symbol")
+    for s in JSSymbolRef:
+      let name = $s
+      let val = JS_GetPropertyStr(ctx, sym, cstring(name))
+      assert JS_IsSymbol(val)
+      opaque.symRefs[s] = JS_ValueToAtom(ctx, val)
+      JS_FreeValue(ctx, val)
+    JS_FreeValue(ctx, sym)
+    for s in JSStrRef:
+      let ss = $s
+      opaque.strRefs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
+    for s in JSValueRef:
+      let ss = $s
+      let ret = JS_Eval(ctx, cstring(ss), csize_t(ss.len), "<init>", 0)
+      assert JS_IsFunction(ctx, ret)
+      opaque.valRefs[s] = ret
     for e in JSErrorEnum:
       let s = $e
       let err = JS_GetPropertyStr(ctx, global, cstring(s))
-      opaque.err_ctors[e] = err
+      opaque.errCtorRefs[e] = err
     JS_FreeValue(ctx, global)
   return opaque
 
