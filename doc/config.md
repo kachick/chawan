@@ -1085,87 +1085,52 @@ position.</td>
 
 <tr>
 <td>`cmd.line.submit`</td>
-<td>Submit line</td>
+<td>Submit the line.</td>
 </tr>
 
 <tr>
 <td>`cmd.line.cancel`</td>
-<td>Cancel operation</td>
+<td>Cancel the current operation.</td>
 </tr>
 
 <tr>
-<td>`cmd.line.backspace`</td>
-<td>Delete character before cursor</td>
+<td>`cmd.line.backspace`, `cmd.line.delete`</td>
+<td>Delete character before (backspace)/after (delete) the cursor.</td>
 </tr>
 
 <tr>
-<td>`cmd.line.delete`</td>
-<td>Delete character after cursor</td>
+<td>`cmd.line.clear`, `cmd.line.kill`</td>
+<td>Delete text before (clear)/after (kill) the cursor.</td>
 </tr>
 
 <tr>
-<td>`cmd.line.clear`</td>
-<td>Clear text before cursor</td>
+<td>`cmd.line.clearWord`, `cmd.line.killWord`</td>
+<td>Delete word before (clear)/after (kill) the cursor.</td>
 </tr>
 
 <tr>
-<td>`cmd.line.kill`</td>
-<td>Clear text after cursor</td>
+<td>`cmd.line.backward`, `cmd.line.forward`</td>
+<td>Move cursor backward/forward by one character.</td>
 </tr>
 
 <tr>
-<td>`cmd.line.clearWord`</td>
-<td>Delete word before cursor</td>
+<td>`cmd.line.prevWord`, `cmd.line.nextWord`</td>
+<td>Move cursor to the previous/next word by one character</td>
 </tr>
 
 <tr>
-<td>`cmd.line.killWord`</td>
-<td>Delete word after cursor</td>
-</tr>
-
-<tr>
-<td>`cmd.line.backward`</td>
-<td>Move cursor back by one character</td>
-</tr>
-
-<tr>
-<td>`cmd.line.forward`</td>
-<td>Move cursor forward by one character</td>
-</tr>
-
-<tr>
-<td>`cmd.line.prevWord`</td>
-<td>Move cursor to the previous word by one character</td>
-</tr>
-
-<tr>
-<td>`cmd.line.nextWord`</td>
-<td>Move cursor to the previous word by one character</td>
-</tr>
-
-<tr>
-<td>`cmd.line.begin`</td>
-<td>Move cursor to the previous word by one character</td>
-</tr>
-
-<tr>
-<td>`cmd.line.end`</td>
-<td>Move cursor to the previous word by one character</td>
+<td>`cmd.line.begin`, `cmd.line.end`</td>
+<td>Move cursor to the beginning/end of the line.</td>
 </tr>
 
 <tr>
 <td>`cmd.line.escape`</td>
-<td>Ignore keybindings for next character</td>
+<td>Ignore keybindings for next character.</td>
 </tr>
 
 <tr>
-<td>`cmd.line.prevHist`</td>
-<td>Jump to the previous history entry</td>
-</tr>
-
-<tr>
-<td>`cmd.line.nextHist`</td>
-<td>Jump to the next history entry</td>
+<td>`cmd.line.prevHist`, `cmd.line.nextHist`</td>
+<td>Jump to the previous/next history entry</td>
 </tr>
 
 </table>

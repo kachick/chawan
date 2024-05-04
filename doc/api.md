@@ -52,8 +52,6 @@ just include it in an action:
 The global object (`globalThis`) implements the `Client` interface. Documented
 functions of this are:
 
-Following properties (functions/getters) are defined by `Pager`:
-
 <table>
 
 <tr>
@@ -302,38 +300,28 @@ Following properties (functions/getters) are defined by `Buffer`:
 </tr>
 
 <tr>
-<td>`cursorUp(n = 1)`</td>
-<td>Move the cursor upwards by n lines, or if n is unspecified, by 1.</td>
+<td>`cursorUp(n = 1)`, `cursorDown(n = 1)`</td>
+<td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
+1.</td>
 </tr>
 
 <tr>
-<td>`cursorDown(n = 1)`</td>
-<td>Move the cursor downwards by n lines, or if n is unspecified, by 1.</td>
+<td>`cursorLeft(n = 1)`, `cursorRight(n = 1)`</td>
+<td>Move the cursor to the left/right by n cells, or if n is unspecified, by
+1.<br>
+Note: `n` right now represents cells, but really it should represent characters.
+(The difference is that right now numbered cursorLeft/cursorRight is broken for
+double-width chars.)</td>
 </tr>
 
 <tr>
-<td>`cursorLeft(n = 1)`</td>
-<td>Move the cursor to the left by n cells, or if n is unspecified, by 1.</td>
-</tr>
-
-<tr>
-<td>`cursorRight(n = 1)`</td>
-<td>Move the cursor to the right by n cells, or if n is unspecified, by 1.</td>
-</tr>
-
-<tr>
-<td>`cursorLineBegin()`</td>
-<td>Move the cursor to the first cell of the line.</td>
+<td>`cursorLineBegin()`, `cursorLineEnd()`</td>
+<td>Move the cursor to the first/last cell of the line.</td>
 </tr>
 
 <tr>
 <td>`cursorLineTextStart()`</td>
 <td>Move the cursor to the first non-blank character of the line.</td>
-</tr>
-
-<tr>
-<td>`cursorLineEnd()`</td>
-<td>Move the cursor to the last cell of the line.</td>
 </tr>
 
 <tr>
@@ -365,13 +353,9 @@ element.</td>
 </tr>
 
 <tr>
-<td>`cursorPrevParagraph(n = 1)`</td>
-<td>Move the cursor to the beginning of the nth next paragraph.</td>
-</tr>
-
-<tr>
-<td>`cursorNextParagraph(n = 1)`</td>
-<td>Move the cursor to the end of the nth previous paragraph.</td>
+<td>`cursorNextParagraph(n = 1)`, `cursorPrevParagraph(n = 1)`</td>
+<td>Move the cursor to the beginning/end of the nth next/previous
+paragraph.</td>
 </tr>
 
 <tr>
@@ -392,23 +376,9 @@ from the document's last line.</td>
 </tr>
 
 <tr>
-<td>`halfPageDown(n = 1)`</td>
-<td>Scroll forwards by n half pages.</td>
-</tr>
-
-<tr>
-<td>`halfPageUp(n = 1)`</td>
-<td>Scroll backwards by n half pages.</td>
-</tr>
-
-<tr>
-<td>`halfPageLeft(n = 1)`</td>
-<td>Scroll to the left by n half pages.</td>
-</tr>
-
-<tr>
-<td>`halfPageUp(n = 1)`</td>
-<td>Scroll to the right by n half pages.</td>
+<td>`halfPageUp(n = 1)`, `halfPageDown(n = 1)`, `halfPageLeft(n = 1)`,
+`halfPageRight(n = 1)`</td>
+<td>Scroll up/down/left/right by n half pages.</td>
 </tr>
 
 <tr>
@@ -577,87 +547,67 @@ Following properties (functions/getters) are defined by `LineEdit`:
 
 <tr>
 <td>`submit()`</td>
-<td>Submit line</td>
+<td>Submit line.</td>
 </tr>
 
 <tr>
 <td>`cancel()`</td>
-<td>Cancel operation</td>
+<td>Cancel operation.</td>
 </tr>
 
 <tr>
 <td>`backspace()`</td>
-<td>Delete character before cursor</td>
+<td>Delete character before cursor.</td>
 </tr>
 
 <tr>
 <td>`delete()`</td>
-<td>Delete character after cursor</td>
+<td>Delete character after cursor.</td>
 </tr>
 
 <tr>
 <td>`clear()`</td>
-<td>Clear text before cursor</td>
+<td>Clear text before cursor.</td>
 </tr>
 
 <tr>
 <td>`kill()`</td>
-<td>Clear text after cursor</td>
+<td>Clear text after cursor.</td>
 </tr>
 
 <tr>
 <td>`clearWord()`</td>
-<td>Delete word before cursor</td>
+<td>Delete word before cursor.</td>
 </tr>
 
 <tr>
 <td>`killWord()`</td>
-<td>Delete word after cursor</td>
+<td>Delete word after cursor.</td>
 </tr>
 
 <tr>
-<td>`backward()`</td>
-<td>Move cursor back by one character</td>
+<td>`backward()`, `forward()`</td>
+<td>Move cursor backward/forward by one character.</td>
 </tr>
 
 <tr>
-<td>`forward()`</td>
-<td>Move cursor forward by one character</td>
+<td>`nextWord()`, `prevWord()`</td>
+<td>Move cursor to the next/previous word by one character.</td>
 </tr>
 
 <tr>
-<td>`prevWord()`</td>
-<td>Move cursor to the previous word by one character</td>
-</tr>
-
-<tr>
-<td>`nextWord()`</td>
-<td>Move cursor to the previous word by one character</td>
-</tr>
-
-<tr>
-<td>`begin()`</td>
-<td>Move cursor to the previous word by one character</td>
-</tr>
-
-<tr>
-<td>`end()`</td>
-<td>Move cursor to the previous word by one character</td>
+<td>`begin()`, `end()`</td>
+<td>Move cursor to the beginning/end of the line.</td>
 </tr>
 
 <tr>
 <td>`escape()`</td>
-<td>Ignore keybindings for next character</td>
+<td>Ignore keybindings for next character.</td>
 </tr>
 
 <tr>
-<td>`prevHist()`</td>
-<td>Jump to the previous history entry</td>
-</tr>
-
-<tr>
-<td>`nextHist()`</td>
-<td>Jump to the next history entry</td>
+<td>`nextHist()`, `prevHist()`</td>
+<td>Jump to the previous/next history entry.</td>
 </tr>
 
 </table>
