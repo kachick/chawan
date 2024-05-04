@@ -548,8 +548,6 @@ template fromJS_or_return*(t, ctx, val: untyped): untyped =
   (
     let x = fromJS[t](ctx, val)
     if x.isErr:
-      if x.error == nil:
-        return JS_EXCEPTION
       return toJS(ctx, x.error)
     x.get
   )
@@ -558,8 +556,6 @@ template fromJSP_or_return*(t, ctx, val: untyped): untyped =
   (
     let x = fromJSP[t](ctx, val)
     if x.isErr:
-      if x.error == nil:
-        return JS_EXCEPTION
       return toJS(ctx, x.error)
     x.get
   )

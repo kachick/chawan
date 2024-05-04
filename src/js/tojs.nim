@@ -210,9 +210,8 @@ proc toJS[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
       return JS_UNDEFINED
   else:
     when not (E is void):
-      let res = toJS(ctx, opt.error)
-      if not JS_IsNull(res):
-        return JS_Throw(ctx, res)
+      if opt.error != nil:
+        return JS_Throw(ctx, toJS(ctx, opt.error))
     return JS_EXCEPTION
 
 proc toJS(ctx: JSContext; s: seq): JSValue =
@@ -376,6 +375,8 @@ proc toJS[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
   return jsPromise
 
 proc toJS*(ctx: JSContext; err: JSError): JSValue =
+  if err == nil:
+    return JS_EXCEPTION
   if err.e notin QuickJSErrors:
     return toJSRefObj(ctx, err)
   var msg = toJS(ctx, err.message)
