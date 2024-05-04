@@ -604,7 +604,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     v: TomlValue; k: string) =
   typeCheck(v, tvtString, k)
   let y = ChaPath(v.s).unquote()
-  if y.isErr:
+  if y.isNone:
     raise newException(ValueError, y.error)
   x = ChaPathResolved(y.get)
 
@@ -707,7 +707,7 @@ proc parseConfig(config: Config; dir: string; t: TomlValue): ParseConfigResult =
 proc parseConfig(config: Config; dir: string; stream: Stream; name = "<input>";
     laxnames = false): ParseConfigResult =
   let toml = parseToml(stream, dir / name, laxnames)
-  if toml.isOk:
+  if toml.isSome:
     return config.parseConfig(dir, toml.get)
   else:
     return ParseConfigResult(

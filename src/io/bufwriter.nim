@@ -175,8 +175,8 @@ proc swrite*[T](writer: var BufferedWriter; o: Option[T]) =
     writer.swrite(o.get)
 
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E]) =
-  writer.swrite(o.isOk)
-  if o.isOk:
+  writer.swrite(o.isSome)
+  if o.isSome:
     when not (T is void):
       writer.swrite(o.get)
   else:

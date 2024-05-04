@@ -223,7 +223,7 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
     client.jsctx.writeException(client.console.err)
   if JS_IsObject(ret):
     let maybep = fromJS[EmptyPromise](ctx, ret)
-    if maybep.isOk:
+    if maybep.isSome:
       p = maybep.get
   JS_FreeValue(ctx, ret)
   return p

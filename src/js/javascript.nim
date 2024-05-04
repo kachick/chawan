@@ -545,22 +545,18 @@ template getJSPropNamesParams(): untyped =
   ]
 
 template fromJS_or_return*(t, ctx, val: untyped): untyped =
-  (
-    let x = fromJS[t](ctx, val)
-    if x.isErr:
-      return toJS(ctx, x.error)
-    x.get
-  )
+  let x = fromJS[t](ctx, val)
+  if x.isNone:
+    return toJS(ctx, x.error)
+  x.get
 
 template fromJSP_or_return*(t, ctx, val: untyped): untyped =
-  (
-    let x = fromJSP[t](ctx, val)
-    if x.isErr:
-      return toJS(ctx, x.error)
-    x.get
-  )
+  let x = fromJSP[t](ctx, val)
+  if x.isNone:
+    return toJS(ctx, x.error)
+  x.get
 
-template fromJS_or_die*(t, ctx, val, ev, dl: untyped): untyped =
+template fromJS_or_die*(t, ctx, val, dl: untyped): untyped =
   let x = fromJSP[t](ctx, val)
   if x.isNone:
     break dl
@@ -568,10 +564,9 @@ template fromJS_or_die*(t, ctx, val, ev, dl: untyped): untyped =
 
 proc addParam2(gen: var JSFuncGenerator; s, t, val: NimNode;
     fallback: NimNode = nil) =
-  let ev = gen.errval
   let dl = gen.dielabel
   let stmt = quote do:
-    fromJS_or_die(`t`, ctx, `val`, `ev`, `dl`)
+    fromJS_or_die(`t`, ctx, `val`, `dl`)
   for i in 0..gen.jsFunCallLists.high:
     if fallback == nil:
       gen.jsFunCallLists[i].add(newLetStmt(s, stmt))
@@ -653,7 +648,7 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let x = ident("x")
     let query = quote do:
       let `x` = fromJS[`t`](ctx, `val`)
-      `x`.isOk
+      `x`.isSome
     gen.addUnionParamBranch(query, quote do:
       let `s` = `x`.get,
       fallback)
@@ -664,7 +659,7 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
       isSequence(ctx, `val`)
     let a = seqg.get[1]
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(seq[`a`], ctx, `val`, `ev`, `dl`),
+      let `s` = fromJS_or_die(seq[`a`], ctx, `val`, `dl`),
       fallback)
   # Record:
   if tableg.isSome:
@@ -673,7 +668,7 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let query = quote do:
       JS_IsObject(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(Table[`a`, `b`], ctx, `val`, `ev`, `dl`),
+      let `s` = fromJS_or_die(Table[`a`, `b`], ctx, `val`, `dl`),
       fallback)
   # Object (JSObject variant):
   #TODO non-JS objects (i.e. ref object)
@@ -681,14 +676,14 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let query = quote do:
       JS_IsObject(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(JSValue, ctx, `val`, `ev`, `dl`),
+      let `s` = fromJS_or_die(JSValue, ctx, `val`, `dl`),
       fallback)
   # 11. If Type(V) is Boolean, then:
   if hasBoolean:
     let query = quote do:
       JS_IsBool(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(bool, ctx, `val`, `ev`, `dl`),
+      let `s` = fromJS_or_die(bool, ctx, `val`, `dl`),
       fallback)
   # 12. If Type(V) is Number, then:
   if numg.isSome:
@@ -696,7 +691,7 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let query = quote do:
       JS_IsNumber(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(`ng`, ctx, `val`, `ev`, `dl`),
+      let `s` = fromJS_or_die(`ng`, ctx, `val`, `dl`),
       fallback)
   # 14. If types includes a string type, then return the result of converting V
   # to that type.

@@ -2349,10 +2349,10 @@ proc parseColor(element: Element; s: string): ARGBColor =
   #TODO return element style
   # For now we just use white.
   let ec = rgb(255, 255, 255)
-  if cval.isErr:
+  if cval.isNone:
     return ec
   let color0 = cssColor(cval.get)
-  if color0.isErr:
+  if color0.isNone:
     return ec
   let color = color0.get
   if color.t != ctRGB:
@@ -2797,16 +2797,16 @@ proc setter[T: uint32|string](this: CSSStyleDeclaration; u: T;
     value: string) {.jssetprop.} =
   let cvals = parseComponentValues(value)
   when u is uint32:
-    if this.setValue(int(u), cvals).isErr:
+    if this.setValue(int(u), cvals).isNone:
       return
   else:
     if (let i = this.find(u); i != -1):
-      if this.setValue(i, cvals).isErr:
+      if this.setValue(i, cvals).isNone:
         return
     else:
       var dummy: seq[CSSComputedEntry]
       let val0 = parseComputedValues(dummy, u, cvals)
-      if val0.isErr:
+      if val0.isNone:
         return
       this.decls.add(CSSDeclaration(name: u, value: cvals))
   this.element.attr(satStyle, $this.decls)
@@ -2844,13 +2844,13 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     let p = loader.fetch(
       newRequest(url)
     ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
-      if res.isOk:
+      if res.isSome:
         let res = res.get
         if res.getContentType() == "text/css":
           return res.text()
         res.unregisterFun()
     ).then(proc(s: JSResult[string]) =
-      if s.isOk:
+      if s.isSome:
         #TODO non-utf-8 css?
         link.sheet = parseStylesheet(s.get, window.factory)
         window.document.cachedSheetsInvalid = true
@@ -2870,13 +2870,13 @@ proc loadResource(window: Window; image: HTMLImageElement) =
     let loader = window.loader.get
     let p = loader.fetch(newRequest(url))
       .then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
-        if res.isErr:
+        if res.isNone:
           return
         let res = res.get
         if res.getContentType() == "image/png":
           return res.blob()
       ).then(proc(pngData: JSResult[Blob]) =
-        if pngData.isErr:
+        if pngData.isNone:
           return
         let pngData = pngData.get
         let buffer = cast[ptr UncheckedArray[uint8]](pngData.buffer)
@@ -2903,7 +2903,7 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
     # directly here, but a wrapper function that calls fun. Currently
     # you can run removeEventListener with element.onclick, that should
     # not work.
-    doAssert ctx.addEventListener(target, ctype, fun).isOk
+    doAssert ctx.addEventListener(target, ctype, fun).isSome
   JS_FreeValue(ctx, fun)
 
 proc reflectAttrs(element: Element; name: CAtom; value: string) =
@@ -4139,7 +4139,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
       let target = fromJS[EventTarget](ctx, this).get
       ctx.definePropertyC(this, $entry.attrname, JS_DupValue(ctx, val))
       #TODO I haven't checked but this might also be wrong
-      doAssert ctx.addEventListener(target, entry.ctype, val).isOk
+      doAssert ctx.addEventListener(target, entry.ctype, val).isSome
   return JS_DupValue(ctx, val)
 
 func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =

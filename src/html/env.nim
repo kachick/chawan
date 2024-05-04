@@ -167,7 +167,7 @@ proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     let this = ctx.toJS(window)
     ctx.definePropertyC(this, "onload", JS_DupValue(ctx, val))
     #TODO I haven't checked but this might also be wrong
-    doAssert ctx.addEventListener(window, "load", val).isOk
+    doAssert ctx.addEventListener(window, "load", val).isSome
     JS_FreeValue(ctx, this)
 
 proc addScripting*(window: Window; selector: Selector[int]) =

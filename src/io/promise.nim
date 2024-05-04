@@ -152,7 +152,7 @@ proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Opt[Promise[U]])):
   let next = Promise[Opt[U]]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
-    if p2.isOk:
+    if p2.isSome:
       p2.get.then(proc(y: U) =
         next.res = opt(y)
         next.resolve())

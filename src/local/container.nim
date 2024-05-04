@@ -1418,7 +1418,7 @@ proc extractCookies(response: Response): seq[Cookie] =
   if "Set-Cookie" in response.headers.table:
     for s in response.headers.table["Set-Cookie"]:
       let cookie = newCookie(s, response.url)
-      if cookie.isOk:
+      if cookie.isSome:
         result.add(cookie.get)
 
 proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =

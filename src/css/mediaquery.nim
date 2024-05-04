@@ -256,7 +256,7 @@ template expect_int_range(range: var Slice[int]; ismin, ismax: bool) =
 template expect_length(length: var CSSLength) =
   let cval = parser.consume()
   let r = cssLength(cval)
-  if r.isErr:
+  if r.isNone:
     return nil
   length = r.get
 

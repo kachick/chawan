@@ -893,7 +893,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       var arg0 = ctx.toJS(url)
       let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
       let nu = fromJS[URL](ctx, ret)
-      if nu.isOk:
+      if nu.isSome:
         if nu.get != nil:
           url = nu.get
       elif JS_IsException(ret):
@@ -1001,7 +1001,7 @@ proc omniRewrite(pager: Pager; s: string): string =
       let ret = fromJS[string](ctx, jsRet)
       JS_FreeValue(ctx, jsRet)
       JS_FreeValue(ctx, arg0)
-      if ret.isOk:
+      if ret.isSome:
         return ret.get
       pager.alert("Error in substitution of " & $rule.match & " for " & s &
         ": " & ctx.getExceptionMsg(ret.error))
@@ -1078,7 +1078,7 @@ proc commandMode(pager: Pager; val: bool) {.jsfset.} =
     pager.command()
 
 proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
-  if regex.isErr:
+  if regex.isNone:
     pager.alert("Invalid regex: " & regex.error)
     return err()
   return ok(regex.get)

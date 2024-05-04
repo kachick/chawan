@@ -192,7 +192,7 @@ proc main() =
   config.css.stylesheet &= ctx.stylesheet
   block commands:
     let res = config.initCommands()
-    if res.isErr:
+    if res.isNone:
       stderr.write("Error parsing commands: " & res.error)
       quit(1)
   set_cjk_ambiguous(config.display.double_width_ambiguous)

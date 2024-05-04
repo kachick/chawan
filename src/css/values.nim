@@ -1335,9 +1335,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       for tok in cvals:
         if tok == cttWhitespace:
           continue
-        if (let r = cssImage(tok); r.isOk):
+        if (let r = cssImage(tok); r.isSome):
           bgimageval = CSSComputedValue(v: cvtImage, image: r.get)
-        elif (let r = cssColor(tok); r.isOk):
+        elif (let r = cssColor(tok); r.isSome):
           bgcolorval = CSSComputedValue(v: cvtColor, color: r.get)
         else:
           #TODO when we implement the other shorthands too
@@ -1354,12 +1354,12 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       for tok in cvals:
         if tok == cttWhitespace:
           continue
-        if (let r = parseIdent[CSSListStylePosition](tok); r.isOk):
+        if (let r = parseIdent[CSSListStylePosition](tok); r.isSome):
           positionVal = CSSComputedValue(
             v: cvtListStylePosition,
             liststyleposition: r.get
           )
-        elif (let r = parseIdent[CSSListStyleType](tok); r.isOk):
+        elif (let r = parseIdent[CSSListStyleType](tok); r.isSome):
           typeVal = CSSComputedValue(
             v: cvtListStyleType,
             liststyletype: r.get
@@ -1436,7 +1436,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
     seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.parseComputedValues(name, value).isOk:
+  if res.parseComputedValues(name, value).isSome:
     return res
   return @[]
 

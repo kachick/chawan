@@ -352,7 +352,7 @@ proc toJS[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc(x: Result[T, E]) =
-    if x.isOk:
+    if x.isSome:
       let x = when T is void:
         JS_UNDEFINED
       else:
