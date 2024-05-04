@@ -38,11 +38,7 @@ type
 jsDestructor(DOMException)
 
 proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
-  return DOMException(
-    e: JS_DOM_EXCEPTION,
-    name: name,
-    message: message
-  )
+  return DOMException(e: jeDOMException, name: name, message: message)
 
 template errDOMException*(message, name: string): untyped =
   err(newDOMException(message, name))
@@ -54,4 +50,4 @@ func code(this: DOMException): uint16 {.jsfget.} =
   return NamesTable.getOrDefault(this.name, 0u16)
 
 proc addDOMExceptionModule*(ctx: JSContext) =
-  ctx.registerType(DOMException, JS_CLASS_ERROR, errid = opt(JS_DOM_EXCEPTION))
+  ctx.registerType(DOMException, JS_CLASS_ERROR, errid = opt(jeDOMException))

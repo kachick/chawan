@@ -7,77 +7,53 @@ type
 
   JSErrorEnum* = enum
     # QuickJS internal errors
-    JS_EVAL_ERROR0 = "EvalError"
-    JS_RANGE_ERROR0 = "RangeError"
-    JS_REFERENCE_ERROR0 = "ReferenceError"
-    JS_SYNTAX_ERROR0 = "SyntaxError"
-    JS_TYPE_ERROR0 = "TypeError"
-    JS_URI_ERROR0 = "URIError"
-    JS_INTERNAL_ERROR0 = "InternalError"
-    JS_AGGREGATE_ERROR0 = "AggregateError"
+    jeEvalError = "EvalError"
+    jeRangeError = "RangeError"
+    jeReferenceError = "ReferenceError"
+    jeSyntaxError = "SyntaxError"
+    jeTypeError = "TypeError"
+    jeURIError = "URIError"
+    jeInternalError = "InternalError"
+    jeAggregateError = "AggregateError"
     # Chawan errors
-    JS_DOM_EXCEPTION = "DOMException"
+    jeDOMException = "DOMException"
 
   JSResult*[T] = Result[T, JSError]
 
 const QuickJSErrors* = [
-  JS_EVAL_ERROR0,
-  JS_RANGE_ERROR0,
-  JS_REFERENCE_ERROR0,
-  JS_SYNTAX_ERROR0,
-  JS_TYPE_ERROR0,
-  JS_URI_ERROR0,
-  JS_INTERNAL_ERROR0,
-  JS_AGGREGATE_ERROR0
+  jeEvalError,
+  jeRangeError,
+  jeReferenceError,
+  jeSyntaxError,
+  jeTypeError,
+  jeURIError,
+  jeInternalError,
+  jeAggregateError
 ]
 
 proc newEvalError*(message: string): JSError =
-  return JSError(
-    e: JS_EVAL_ERROR0,
-    message: message
-  )
+  return JSError(e: jeEvalError, message: message)
 
 proc newRangeError*(message: string): JSError =
-  return JSError(
-    e: JS_RANGE_ERROR0,
-    message: message
-  )
+  return JSError(e: jeRangeError, message: message)
 
 proc newReferenceError*(message: string): JSError =
-  return JSError(
-    e: JS_REFERENCE_ERROR0,
-    message: message
-  )
+  return JSError(e: jeReferenceError, message: message)
 
 proc newSyntaxError*(message: string): JSError =
-  return JSError(
-    e: JS_SYNTAX_ERROR0,
-    message: message
-  )
+  return JSError(e: jeSyntaxError, message: message)
 
 proc newTypeError*(message: string): JSError =
-  return JSError(
-    e: JS_TYPE_ERROR0,
-    message: message
-  )
+  return JSError(e: jeTypeError, message: message)
 
 proc newURIError*(message: string): JSError =
-  return JSError(
-    e: JS_URI_ERROR0,
-    message: message
-  )
+  return JSError(e: jeURIError, message: message)
 
 proc newInternalError*(message: string): JSError =
-  return JSError(
-    e: JS_INTERNAL_ERROR0,
-    message: message
-  )
+  return JSError(e: jeInternalError, message: message)
 
 proc newAggregateError*(message: string): JSError =
-  return JSError(
-    e: JS_AGGREGATE_ERROR0,
-    message: message
-  )
+  return JSError(e: jeAggregateError, message: message)
 
 template errTypeError*(message: string): untyped =
   err(newTypeError(message))

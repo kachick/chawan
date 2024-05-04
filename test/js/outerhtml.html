@@ -1,9 +1,9 @@
 <!doctype html>
 <title>innerHTML test</title>
 <div id="test">Fail</div>
+<script src=asserts.js></script>
 <script>
 const div = document.getElementById("test");
-if (div.outerHTML != '<div id="test">Fail</div>')
-	throw new TypeError("invalid outerHTML " + div.outerHTML);
+assert_equals(div.outerHTML, '<div id="test">Fail</div>');
 div.textContent = "Success";
 </script>

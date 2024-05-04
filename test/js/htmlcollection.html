@@ -1,22 +1,21 @@
 <!doctype html>
 <title>HTMLCollection test</title>
 <div class="abc">Fail</div>
+<style>style 0</style>
 <style>style 1</style>
 <style>style 2</style>
-<style>style 3</style>
+<script src=asserts.js></script>
 <script>
-(function() {
-	const abc = document.getElementsByClassName("abc");
-	if (abc.length !== 1) return;
-	abc[0].className = "defg";
-	if (abc.length !== 0) return;
-	const styles = document.getElementsByTagName("style");
-	if (styles.length !== 3) return;
-	if (styles[0].textContent !== "style 1") return;
-	if (styles[1].textContent !== "style 2") return;
-	if (styles[2].textContent !== "style 3") return;
-	for (const style of styles) style.remove();
-	let defg = document.getElementsByClassName("defg");
-	defg[0].textContent = "Success";
-})()
+const abc = document.getElementsByClassName("abc");
+assert_equals(abc.length, 1);
+abc[0].className = "defg";
+assert_equals(abc.length, 0);
+const styles = document.getElementsByTagName("style");
+assert_equals(styles.length, 3);
+for (let i = 0; i < styles.length; ++i)
+	assert_equals(styles[i].textContent, "style " + i);
+for (const style of styles)
+	style.remove();
+const defg = document.getElementsByClassName("defg");
+defg[0].textContent = "Success";
 </script>

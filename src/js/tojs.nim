@@ -299,7 +299,7 @@ proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValue): JSValue =
     GC_ref(obj)
   return val
 
-proc toJSNew[T, E](ctx: JSContext; opt: Result[T, E], ctor: JSValue): JSValue =
+proc toJSNew[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValue): JSValue =
   if opt.isSome:
     when not (T is void):
       return toJSNew(ctx, opt.get, ctor)

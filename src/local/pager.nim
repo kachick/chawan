@@ -282,7 +282,7 @@ proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
     stderr.write("cha: " & msg & '\n')
 
-proc quit*(pager: Pager; code = 0) =
+proc quit*(pager: Pager) =
   pager.term.quit()
   pager.dumpAlerts()
 

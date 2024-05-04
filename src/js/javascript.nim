@@ -180,6 +180,15 @@ proc free*(ctx: JSContext) =
 proc free*(rt: JSRuntime) =
   let opaque = rt.getOpaque()
   GC_unref(opaque)
+  var ps: seq[pointer] = @[]
+  for p in opaque.plist.values:
+    ps.add(p)
+  opaque.plist.clear()
+  for p in ps:
+    #TODO maybe finalize?
+    let val = JS_MKPTR(JS_TAG_OBJECT, p)
+    JS_SetOpaque(val, nil)
+    JS_FreeValueRT(rt, val)
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
 

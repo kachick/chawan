@@ -1,8 +1,7 @@
 <!doctype html>
-<div id="succ">Fail</div>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
 <script>
-(function() {
-	if (new Text("data").ownerDocument != document) return;
-	document.getElementById("succ").textContent = "Success"
-})()
+assert_equals(new Text("data").ownerDocument, document);
+document.getElementById("x").textContent = "Success";
 </script>

@@ -526,6 +526,8 @@ proc JS_IsArray*(ctx: JSContext; v: JSValue): cint
 proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
 proc JS_GetException*(ctx: JSContext): JSValue
 proc JS_IsError*(ctx: JSContext; v: JSValue): JS_BOOL
+proc JS_SetUncatchableError*(ctx: JSContext; val: JSValue; flag: JS_BOOL)
+proc JS_ResetUncatchableError*(ctx: JSContext)
 proc JS_NewError*(ctx: JSContext): JSValue
 proc JS_ThrowSyntaxError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}

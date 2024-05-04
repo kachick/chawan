@@ -37,6 +37,7 @@ import js/javascript
 import js/jstypes
 import js/jsutils
 import js/module
+import js/opaque
 import js/timeout
 import js/tojs
 import loader/headers
@@ -59,7 +60,6 @@ import chagashi/charset
 type
   Client* = ref object
     alive: bool
-    dead: bool
     config {.jsget.}: Config
     consoleWrapper: ConsoleWrapper
     fdmap: Table[int, Container]
@@ -70,6 +70,7 @@ type
     timeouts: TimeoutState
     pressed: tuple[col: int; row: int]
     exitCode: int
+    inEval: bool
 
   ConsoleWrapper = object
     console: Console
@@ -114,15 +115,39 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
 proc runJSJobs(client: Client) =
   client.jsrt.runJSJobs(client.console.err)
 
+proc cleanup(client: Client) =
+  if client.alive:
+    client.alive = false
+    client.pager.quit()
+    for val in client.config.cmd.map.values:
+      JS_FreeValue(client.jsctx, val)
+    for fn in client.config.jsvfns:
+      JS_FreeValue(client.jsctx, fn)
+    assert not client.inEval
+    client.jsctx.free()
+    client.jsrt.free()
+
+proc quit(client: Client; code = 0) =
+  client.cleanup()
+  quit(code)
+
 proc evalJS(client: Client; src, filename: string; module = false): JSValue =
   client.pager.term.unblockStdin()
   let flags = if module:
     JS_EVAL_TYPE_MODULE
   else:
     JS_EVAL_TYPE_GLOBAL
+  let wasInEval = client.inEval
+  client.inEval = true
   result = client.jsctx.eval(src, filename, flags)
-  client.runJSJobs()
+  client.inEval = false
   client.pager.term.restoreStdin()
+  if client.exitCode != -1:
+    # if we are in a nested eval, then just wait until we are not.
+    if not wasInEval:
+      client.quit(client.exitCode)
+  else:
+    client.runJSJobs()
 
 proc evalJSFree(client: Client; src, filename: string) =
   JS_FreeValue(client.jsctx, client.evalJS(src, filename))
@@ -150,32 +175,13 @@ proc suspend(client: Client) {.jsfunc.} =
   discard kill(0, cint(SIGTSTP))
   client.pager.term.restart()
 
-proc jsQuit(client: Client; code = 0) {.jsfunc: "quit".} =
-  client.exitCode = code
-  client.alive = false
-
-proc quit(client: Client; code = 0) =
-  if not client.dead:
-    # dead is set to true when quit is called; it indicates that the
-    # client has been destroyed.
-    # alive is set to false when jsQuit is called; it is a request to
-    # destroy the client.
-    client.dead = true
-    client.alive = false
-    client.pager.quit()
-    for val in client.config.cmd.map.values:
-      JS_FreeValue(client.jsctx, val)
-    for fn in client.config.jsvfns:
-      JS_FreeValue(client.jsctx, fn)
-    let ctx = client.jsctx
-    let rt = client.jsrt
-    # Force the runtime to collect all memory, so QJS can check for
-    # leaks.
-    client[].reset()
-    GC_fullCollect()
-    ctx.free()
-    rt.free()
-  exitnow(code)
+proc jsQuit(client: Client; code: uint32 = 0): JSValue {.jsfunc: "quit".} =
+  client.exitCode = int(code)
+  let ctx = client.jsctx
+  let ctor = ctx.getOpaque().errCtorRefs[jeInternalError]
+  let err = JS_CallConstructor(ctx, ctor, 1, JS_UNDEFINED.toJSValueArray())
+  JS_SetUncatchableError(ctx, err, true);
+  return JS_Throw(ctx, err)
 
 proc feedNext(client: Client) {.jsfunc.} =
   client.feednext = true
@@ -193,6 +199,7 @@ proc evalActionJS(client: Client; action: string): JSValue =
     return JS_DupValue(client.jsctx, p[])
   return client.evalJS(action, "<command>")
 
+# Warning: this is not re-entrant.
 proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
   var ret = client.evalActionJS(action)
   let ctx = client.jsctx
@@ -209,6 +216,9 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
       let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 0, nil)
       JS_FreeValue(ctx, ret)
       ret = ret2
+    if client.exitCode != -1:
+      assert not client.inEval
+      client.quit(client.exitCode)
   if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
   if JS_IsObject(ret):
@@ -553,7 +563,7 @@ proc inputLoop(client: Client) =
   let selector = client.selector
   selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
   let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
-  while client.alive:
+  while true:
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
@@ -605,7 +615,7 @@ func hasSelectFds(client: Client): bool =
     client.pager.procmap.len > 0
 
 proc headlessLoop(client: Client) =
-  while client.alive and client.hasSelectFds():
+  while client.hasSelectFds():
     let events = client.selector.select(-1)
     for event in events:
       if Read in event.events:
@@ -741,8 +751,7 @@ proc launchClient*(client: Client; pages: seq[string];
   # better associate it with jsctx
   client.timeouts = newTimeoutState(client.selector, client.jsctx,
     client.console.err, proc(src, file: string) = client.evalJSFree(src, file))
-  client.alive = true
-  addExitProc((proc() = client.quit()))
+  addExitProc((proc() = client.cleanup()))
   if client.config.start.startup_script != "":
     let s = if fileExists(client.config.start.startup_script):
       readFile(client.config.start.startup_script)
@@ -765,7 +774,6 @@ proc launchClient*(client: Client; pages: seq[string];
     client.dumpBuffers()
   if client.config.start.headless:
     client.headlessLoop()
-  client.quit()
 
 proc nimGCStats(client: Client): string {.jsfunc.} =
   return GC_getStatistics()
@@ -836,6 +844,7 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
     jsrt: jsrt,
     jsctx: jsctx,
     pager: pager,
+    exitCode: -1,
     alive: true
   )
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))

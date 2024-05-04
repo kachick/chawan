@@ -62,6 +62,7 @@ type ParamParseContext = object
   visual: bool
   opts: seq[string]
   stylesheet: string
+  pages: seq[string]
 
 proc getnext(ctx: var ParamParseContext): string =
   inc ctx.i
@@ -110,16 +111,12 @@ proc parseRun(ctx: var ParamParseContext) =
   ctx.opts.add("start.headless = true")
   ctx.dump = true
 
-proc main() =
-  putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquoteGet())
-  let forkserver = newForkServer()
-  var ctx = ParamParseContext(params: commandLineParams(), i: 0)
+proc parse(ctx: var ParamParseContext) =
   var escapeAll = false
-  var pages: seq[string] = @[]
   while ctx.i < ctx.params.len:
     let param = ctx.params[ctx.i]
     if escapeAll: # after --
-      pages.add(param)
+      ctx.pages.add(param)
       inc ctx.i
       continue
     if param.len == 0:
@@ -170,8 +167,14 @@ proc main() =
         of "--": escapeAll = true
         else: help(1)
     else:
-      pages.add(param)
+      ctx.pages.add(param)
     inc ctx.i
+
+proc main() =
+  putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquoteGet())
+  let forkserver = newForkServer()
+  var ctx = ParamParseContext(params: commandLineParams(), i: 0)
+  ctx.parse()
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
   var warnings = newSeq[string]()
@@ -193,14 +196,14 @@ proc main() =
       stderr.write("Error parsing commands: " & res.error)
       quit(1)
   set_cjk_ambiguous(config.display.double_width_ambiguous)
-  if pages.len == 0 and stdin.isatty():
+  if ctx.pages.len == 0 and stdin.isatty():
     if ctx.visual:
-      pages.add(config.start.visual_home)
+      ctx.pages.add(config.start.visual_home)
     elif (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
-      pages.add(httpHome)
+      ctx.pages.add(httpHome)
     elif (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
-      pages.add(wwwHome)
-  if pages.len == 0 and not config.start.headless:
+      ctx.pages.add(wwwHome)
+  if ctx.pages.len == 0 and not config.start.headless:
     if stdin.isatty():
       help(1)
   # make sure tmpdir actually exists; if we do this later, then forkserver may
@@ -209,7 +212,7 @@ proc main() =
   forkserver.loadForkServerConfig(config)
   let client = newClient(config, forkserver, jsctx, warnings)
   try:
-    client.launchClient(pages, ctx.contentType, ctx.charset, ctx.dump)
+    client.launchClient(ctx.pages, ctx.contentType, ctx.charset, ctx.dump)
   except CatchableError:
     client.flushConsole()
     raise
