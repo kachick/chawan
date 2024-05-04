@@ -130,6 +130,12 @@ func px(l: CSSLength; lctx: LayoutState; p: SizeConstraint): LayoutUnit =
       return l.px(lctx, p.u)
   return px(l, lctx.attrs, 0)
 
+func stretchOrMaxContent(l: CSSLength; lctx: LayoutState; sc: SizeConstraint):
+    SizeConstraint =
+  if l.canpx(sc):
+    return stretch(l.px(lctx, sc))
+  return maxContent()
+
 func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
     LayoutUnit =
   case availableSize.t
@@ -1641,11 +1647,11 @@ type
     reflow: seq[bool]
     space: AvailableSpace # space we got from parent
 
-proc buildTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
-    availWidth, availHeight: SizeConstraint): BlockBox =
+proc layoutTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
+    space: AvailableSpace): BlockBox =
   var sizes = ResolvedSizes(
-    padding: resolvePadding(availWidth, lctx, builder.computed),
-    space: AvailableSpace(w: availWidth, h: availHeight),
+    padding: resolvePadding(space.w, lctx, builder.computed),
+    space: space,
     minWidth: 0,
     maxWidth: high(LayoutUnit),
     minHeight: 0,
@@ -1728,17 +1734,15 @@ proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
     let cellbuilder = TableCellBoxBuilder(child)
     let colspan = cellbuilder.computed{"-cha-colspan"}
     let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
-    let availWidth = if cellbuilder.computed{"width"}.canpx(pctx.space.w):
-      stretch(cellbuilder.computed{"width"}.px(pctx.lctx, pctx.space.w))
-    else:
-      maxContent()
-    let availHeight = if cellbuilder.computed{"height"}.canpx(pctx.space.h):
-      stretch(cellbuilder.computed{"height"}.px(pctx.lctx, pctx.space.h))
-    else:
-      maxContent()
+    let cw = cellbuilder.computed{"width"}
+    let ch = cellbuilder.computed{"height"}
+    let space = AvailableSpace(
+      w: cw.stretchOrMaxContent(pctx.lctx, pctx.space.w),
+      h: ch.stretchOrMaxContent(pctx.lctx, pctx.space.h)
+    )
     #TODO specified table height should be distributed among rows.
     # Allow the table cell to use its specified width.
-    let box = pctx.lctx.buildTableCell(cellbuilder, availWidth, availHeight)
+    let box = pctx.lctx.layoutTableCell(cellbuilder, space)
     let wrapper = CellWrapper(
       box: box,
       builder: cellbuilder,
@@ -1767,25 +1771,26 @@ proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
       # 4. neither of colwidth or cell width are fixed: take maximum
       if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
       if pctx.cols[i].wspecified:
-        if availWidth.isDefinite():
+        if space.w.isDefinite():
           # A specified column already exists; we take the larger width.
-          if availWidth.u > pctx.cols[i].width:
-            pctx.cols[i].width = availWidth.u
+          if w > pctx.cols[i].width:
+            pctx.cols[i].width = w
             ctx.reflow[i] = true
-        else:
-          if pctx.cols[i].width < w:
-            wrapper.reflow = true
+        if pctx.cols[i].width != w:
+          wrapper.reflow = true
       else:
-        if availWidth.isDefinite():
+        if space.w.isDefinite():
           # This is the first specified column. Replace colwidth with whatever
           # we have.
           ctx.reflow[i] = true
           pctx.cols[i].wspecified = true
-          pctx.cols[i].width = availWidth.u
+          pctx.cols[i].width = w
         else:
-          if pctx.cols[i].width < w:
+          if w > pctx.cols[i].width:
             pctx.cols[i].width = w
             ctx.reflow[i] = true
+          else:
+            wrapper.reflow = true
       if pctx.cols[i].minwidth < minw:
         pctx.cols[i].minwidth = minw
         if pctx.cols[i].width < minw:
@@ -1847,8 +1852,8 @@ proc buildTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
       # </TR>
       # </TABLE>
       # the TD with a width of 5ch should be 9ch wide as well.
-      cellw.box = pctx.lctx.buildTableCell(cellw.builder, stretch(w),
-        maxContent())
+      let space = AvailableSpace(w: stretch(w), h: maxContent())
+      cellw.box = pctx.lctx.layoutTableCell(cellw.builder, space)
       w = max(w, cellw.box.size.w)
     let cell = cellw.box
     x += pctx.inlinespacing
