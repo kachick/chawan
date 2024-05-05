@@ -12,6 +12,7 @@ import css/values
 import html/catom
 import html/dom
 import html/enums
+import js/jscolor
 import layout/layoutunit
 import types/color
 import types/opt

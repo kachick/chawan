@@ -12,6 +12,7 @@ import config/toml
 import js/error
 import js/fromjs
 import js/javascript
+import js/jscolor
 import js/jstypes
 import js/propertyenumlist
 import js/regex
