@@ -250,7 +250,9 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
+	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
 	for f in $(MANPAGES1); do install -m644 "$$f" "$(DESTDIR)$(MANPREFIX1)"; done
+	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
 	for f in $(MANPAGES5); do install -m644 "$$f" "$(DESTDIR)$(MANPREFIX5)"; done
 
 .PHONY: uninstall
