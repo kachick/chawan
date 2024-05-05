@@ -360,9 +360,8 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
     of peBefore, peAfter:
       let declmap = frame.parentDeclMap
       let styledPseudo = pseudo.applyDeclarations(styledParent, declmap)
-      if styledPseudo != nil:
-        let contents = styledPseudo.computed{"content"}
-        for content in contents:
+      if styledPseudo != nil and styledPseudo.computed{"content"}.len > 0:
+        for content in styledPseudo.computed{"content"}:
           styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
         styledParent.children.add(styledPseudo)
     of peInputText:
