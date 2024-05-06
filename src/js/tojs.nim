@@ -324,8 +324,7 @@ proc toJS(ctx: JSContext; promise: EmptyPromise): JSValue =
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc() =
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
-      JS_UNDEFINED.toJSValueArray())
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 0, nil)
     JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, resolving_funcs[0])
     JS_FreeValue(ctx, resolving_funcs[1]))

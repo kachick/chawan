@@ -1642,8 +1642,8 @@ macro registerType*(ctx: typed; t: typed; parent: JSClassID = 0;
   let staticfuns = info.tabStatic
   endstmts.add(quote do:
     `ctx`.newJSClass(`classDef`, `tname`, getTypePtr(`t`), `sctr`, `tabList`,
-      `parent`, `asglobal`, `nointerface`, `finName`, `namespace`, `errid`,
-      `unforgeable`, `staticfuns`, `ishtmldda`)
+      `parent`, bool(`asglobal`), `nointerface`, `finName`, `namespace`,
+      `errid`, `unforgeable`, `staticfuns`, `ishtmldda`)
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts

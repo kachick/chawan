@@ -179,7 +179,7 @@ proc jsQuit(client: Client; code: uint32 = 0): JSValue {.jsfunc: "quit".} =
   client.exitCode = int(code)
   let ctx = client.jsctx
   let ctor = ctx.getOpaque().errCtorRefs[jeInternalError]
-  let err = JS_CallConstructor(ctx, ctor, 1, JS_UNDEFINED.toJSValueArray())
+  let err = JS_CallConstructor(ctx, ctor, 0, nil)
   JS_SetUncatchableError(ctx, err, true);
   return JS_Throw(ctx, err)
 
