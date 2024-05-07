@@ -2588,7 +2588,7 @@ proc newHTMLElement*(document: Document; localName: CAtom;
   of TAG_AREA:
     let area = HTMLAreaElement()
     let localName = document.toAtom(satRel)
-    area.relList = DOMTokenList(element: result, localName: localName)
+    area.relList = DOMTokenList(element: area, localName: localName)
     result = area
   else:
     result = HTMLElement()
