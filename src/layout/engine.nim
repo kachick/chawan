@@ -1819,7 +1819,7 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LayoutUnit) =
   else:
     cell.offset.y = baseline - cell.firstBaseline
 
-proc buildTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
+proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
     builder: TableRowBoxBuilder): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
@@ -1938,23 +1938,26 @@ proc preBuildTableRows(ctx: var TableContext; builder: TableBoxBuilder;
   ctx.preBuildTableRows(tfoot, table)
 
 proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
-    weight: var float64): seq[int] =
+    weight: var float64; specifiedRatio: LayoutUnit): seq[int] =
   # Spacing for each column:
   var avail = newSeqUninitialized[int](ctx.cols.len)
   var j = 0
-  for i in 0 ..< ctx.cols.len:
-    if not ctx.cols[i].wspecified:
+  for i, col in ctx.cols.mpairs:
+    if not col.wspecified:
       avail[j] = i
-      let colw = ctx.cols[i].width
+      let colw = col.width
       let w = if colw < W:
         toFloat64(colw)
       else:
         toFloat64(W) * (ln(toFloat64(colw) / toFloat64(W)) + 1)
-      ctx.cols[i].weight = w
+      col.weight = w
       weight += w
       inc j
     else:
-      W -= ctx.cols[i].width
+      if specifiedRatio < 1:
+        col.width *= specifiedRatio
+        ctx.reflow[i] = true
+      W -= col.width
       avail.del(j)
   return avail
 
@@ -1974,8 +1977,17 @@ proc redistributeWidth(ctx: var TableContext) =
   var W = ctx.space.w.u
   # Remove inline spacing from distributable width.
   W -= ctx.cols.len * ctx.inlinespacing * 2
-  var weight: float64
-  var avail = ctx.calcUnspecifiedColIndices(W, weight)
+  var weight = 0f64
+  var totalSpecified: LayoutUnit = 0
+  for col in ctx.cols:
+    if col.wspecified:
+      totalSpecified += col.width
+    else:
+      # Hack: reserve the minimum space needed for unspecified columns,
+      # like other browsers do.
+      totalSpecified += col.minwidth
+  let specifiedRatio = if totalSpecified != 0: W / totalSpecified else: 1
+  var avail = ctx.calcUnspecifiedColIndices(W, weight, specifiedRatio)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
     if weight == 0: break # zero weight; nothing to distribute
@@ -2012,13 +2024,13 @@ proc reflowTableCells(ctx: var TableContext) =
           ctx.reflow[n] = true
         dec n
 
-proc buildTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
+proc layoutTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
   var y: LayoutUnit = 0
   for roww in ctx.rows:
     if roww.builder.computed{"visibility"} == VisibilityCollapse:
       continue
     y += ctx.blockspacing
-    let row = ctx.buildTableRow(roww, table, roww.builder)
+    let row = ctx.layoutTableRow(roww, table, roww.builder)
     row.offset.y += y
     row.offset.x += sizes.padding.left
     row.size.w += sizes.padding.left
@@ -2077,7 +2089,7 @@ proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
   for col in ctx.cols:
     table.size.w += col.width
   ctx.reflowTableCells()
-  ctx.buildTableRows(table, sizes)
+  ctx.layoutTableRows(table, sizes)
   if ctx.caption != nil:
     ctx.addTableCaption(table)
 
