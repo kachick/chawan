@@ -1951,7 +1951,7 @@ proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
       weight += w
       inc j
     else:
-      if specifiedRatio < 1:
+      if specifiedRatio != 1:
         col.width *= specifiedRatio
         col.reflow = true
       W -= col.width
@@ -1976,14 +1976,20 @@ proc redistributeWidth(ctx: var TableContext) =
   W -= ctx.cols.len * ctx.inlineSpacing * 2
   var weight = 0f64
   var totalSpecified: LayoutUnit = 0
+  var hasUnspecified = false
   for col in ctx.cols:
     if col.wspecified:
       totalSpecified += col.width
     else:
+      hasUnspecified = true
       # Hack: reserve the minimum space needed for unspecified columns,
       # like other browsers do.
       totalSpecified += col.minwidth
-  let specifiedRatio = if totalSpecified != 0: W / totalSpecified else: 1
+  var specifiedRatio = if totalSpecified != 0: W / totalSpecified else: 1
+  if specifiedRatio > 1 and hasUnspecified:
+    # Only grow specified columns if no unspecified column exists to take the
+    # rest of the space.
+    specifiedRatio = 1
   var avail = ctx.calcUnspecifiedColIndices(W, weight, specifiedRatio)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
