@@ -9,7 +9,7 @@ import utils/mimeguess
 import utils/twtstr
 
 type
-  DeallocFun = proc() {.closure.}
+  DeallocFun = proc() {.closure, raises: [].}
 
   Blob* = ref object of RootObj
     isfile*: bool

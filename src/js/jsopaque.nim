@@ -42,7 +42,8 @@ type
     htmldda*: JSClassID # only one of these exists: document.all.
     globalUnref*: proc() {.closure.}
 
-  JSFinalizerFunction* = proc(rt: JSRuntime; val: JSValue) {.nimcall.}
+  JSFinalizerFunction* = proc(rt: JSRuntime; val: JSValue) {.nimcall,
+    raises: [].}
 
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, pointer] # Nim, JS
