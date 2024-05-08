@@ -4,7 +4,7 @@ import std/strutils
 from std/unicode import runeLenAt
 
 import bindings/libregexp
-import js/regex
+import js/jsregex
 import types/opt
 import utils/twtstr
 

@@ -1,5 +1,5 @@
 import bindings/quickjs
-import js/error
+import js/jserror
 import js/javascript
 import js/jstypes
 

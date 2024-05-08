@@ -1,7 +1,7 @@
 import std/strutils
 
 import bindings/quickjs
-import js/error
+import js/jserror
 import js/fromjs
 import js/javascript
 import js/tojs

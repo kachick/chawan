@@ -4,7 +4,7 @@ import std/tables
 import bindings/quickjs
 import io/promise
 import io/socketstream
-import js/error
+import js/jserror
 import js/javascript
 import loader/headers
 import loader/request

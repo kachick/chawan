@@ -48,12 +48,10 @@ import std/strutils
 import std/tables
 import std/unicode
 
-import io/dynstream
-import js/error
+import js/jserror
 import js/fromjs
-import js/opaque
+import js/jsopaque
 import js/tojs
-import js/typeptr
 import types/opt
 import utils/twtstr
 
@@ -225,20 +223,15 @@ proc getExceptionMsg*(ctx: JSContext; err: JSError): string =
     JS_FreeValue(ctx, ctx.toJS(err)) # note: this implicitly throws
   return ctx.getExceptionMsg()
 
-proc writeException*(ctx: JSContext; s: DynStream) =
-  s.write(ctx.getExceptionMsg())
-  s.sflush()
-
-proc writeException*(ctx: JSContext; s: DynStream; err: JSError) =
-  s.write(ctx.getExceptionMsg(err))
-  s.sflush()
-
-proc runJSJobs*(rt: JSRuntime; err: DynStream) =
+# Returns early with err(JSContext) if an exception was thrown in a
+# context.
+proc runJSJobs*(rt: JSRuntime): Err[JSContext] =
   while JS_IsJobPending(rt):
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, addr ctx)
     if r == -1:
-      ctx.writeException(err)
+      return err(ctx)
+  ok()
 
 # Add all LegacyUnforgeable functions defined on the prototype chain to
 # the opaque.

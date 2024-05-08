@@ -1,10 +1,16 @@
 import std/tables
 
+import bindings/quickjs
+import js/jserror
+import js/javascript
+import js/jsutils
+import js/jsopaque
+import js/tojs
 import types/opt
 
 type
-  PromiseState* = enum
-    PROMISE_PENDING, PROMISE_FULFILLED, PROMISE_REJECTED
+  PromiseState = enum
+    psPending, psFulfilled, psRejected
 
   EmptyPromise* = ref object of RootObj
     cb: (proc())
@@ -47,7 +53,7 @@ proc resolve*(promise: EmptyPromise) =
     if promise.cb != nil:
       promise.cb()
     promise.cb = nil
-    promise.state = PROMISE_FULFILLED
+    promise.state = psFulfilled
     promise = promise.next
     if promise == nil:
       break
@@ -77,7 +83,7 @@ func empty*(map: PromiseMap): bool =
 proc then*(promise: EmptyPromise; cb: (proc())): EmptyPromise {.discardable.} =
   promise.cb = cb
   promise.next = EmptyPromise()
-  if promise.state == PROMISE_FULFILLED:
+  if promise.state == psFulfilled:
     promise.resolve()
   return promise.next
 
@@ -171,3 +177,92 @@ proc all*(promises: seq[EmptyPromise]): EmptyPromise =
   if promises.len == 0:
     res.resolve()
   return res
+
+# * Promise is converted to a JS promise which will be resolved when the Nim
+#   promise is resolved.
+
+proc promiseThenCallback(ctx: JSContext; this_val: JSValue; argc: cint;
+    argv: ptr UncheckedArray[JSValue]; magic: cint;
+    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+  let fun = func_data[0]
+  let op = JS_GetOpaque(fun, JS_GetClassID(fun))
+  if op != nil:
+    let p = cast[EmptyPromise](op)
+    p.resolve()
+    GC_unref(p)
+    JS_SetOpaque(fun, nil)
+  return JS_UNDEFINED
+
+proc fromJSEmptyPromise*(ctx: JSContext; val: JSValue): JSResult[EmptyPromise] =
+  if not JS_IsObject(val):
+    return err(newTypeError("Value is not an object"))
+  var p = EmptyPromise()
+  GC_ref(p)
+  let tmp = JS_NewObject(ctx)
+  JS_SetOpaque(tmp, cast[pointer](p))
+  let fun = JS_NewCFunctionData(ctx, promiseThenCallback, 0, 0, 1,
+    tmp.toJSValueArray())
+  JS_FreeValue(ctx, tmp)
+  let res = JS_Invoke(ctx, val, ctx.getOpaque().strRefs[jstThen], 1,
+    fun.toJSValueArray())
+  JS_FreeValue(ctx, fun)
+  if JS_IsException(res):
+    JS_FreeValue(ctx, res)
+    return err()
+  JS_FreeValue(ctx, res)
+  return ok(p)
+
+proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
+  var resolving_funcs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
+  if JS_IsException(jsPromise):
+    return JS_EXCEPTION
+  promise.then(proc() =
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 0, nil)
+    JS_FreeValue(ctx, res)
+    JS_FreeValue(ctx, resolving_funcs[0])
+    JS_FreeValue(ctx, resolving_funcs[1]))
+  return jsPromise
+
+proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
+  var resolving_funcs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
+  if JS_IsException(jsPromise):
+    return JS_EXCEPTION
+  promise.then(proc(x: T) =
+    let x = toJS(ctx, x)
+    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+      x.toJSValueArray())
+    JS_FreeValue(ctx, res)
+    JS_FreeValue(ctx, x)
+    JS_FreeValue(ctx, resolving_funcs[0])
+    JS_FreeValue(ctx, resolving_funcs[1]))
+  return jsPromise
+
+proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
+  var resolving_funcs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
+  if JS_IsException(jsPromise):
+    return JS_EXCEPTION
+  promise.then(proc(x: Result[T, E]) =
+    if x.isSome:
+      let x = when T is void:
+        JS_UNDEFINED
+      else:
+        toJS(ctx, x.get)
+      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+        x.toJSValueArray())
+      JS_FreeValue(ctx, res)
+      JS_FreeValue(ctx, x)
+    else: # err
+      let x = when E is void:
+        JS_UNDEFINED
+      else:
+        toJS(ctx, x.error)
+      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
+        x.toJSValueArray())
+      JS_FreeValue(ctx, res)
+      JS_FreeValue(ctx, x)
+    JS_FreeValue(ctx, resolving_funcs[0])
+    JS_FreeValue(ctx, resolving_funcs[1]))
+  return jsPromise

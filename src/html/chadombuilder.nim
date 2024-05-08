@@ -4,7 +4,7 @@ import std/options
 import html/catom
 import html/dom
 import html/enums
-import js/error
+import js/jserror
 import js/fromjs
 import js/javascript
 import types/url

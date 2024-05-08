@@ -1,6 +1,6 @@
 import std/options
 
-import js/regex
+import js/jsregex
 import types/url
 
 #TODO add denyhost/s for blocklists

@@ -6,7 +6,7 @@ import std/tables
 import std/unicode
 
 import bindings/libunicode
-import js/error
+import js/jserror
 import js/javascript
 import lib/punycode
 import types/blob

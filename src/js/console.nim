@@ -1,4 +1,5 @@
 import io/dynstream
+import js/jserror
 import js/javascript
 
 type Console* = ref object
@@ -55,3 +56,11 @@ proc addConsoleModule*(ctx: JSContext) =
   #TODO console should not have a prototype
   # "For historical reasons, console is lowercased."
   ctx.registerType(Console, nointerface = true, name = "console")
+
+proc writeException*(ctx: JSContext; s: DynStream) =
+  s.write(ctx.getExceptionMsg())
+  s.sflush()
+
+proc writeException*(ctx: JSContext; s: DynStream; err: JSError) =
+  s.write(ctx.getExceptionMsg(err))
+  s.sflush()

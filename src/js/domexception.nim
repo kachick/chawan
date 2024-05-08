@@ -1,7 +1,7 @@
 import std/tables
 
 import bindings/quickjs
-import js/error
+import js/jserror
 import js/javascript
 
 const NamesTable = {

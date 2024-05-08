@@ -4,11 +4,9 @@ import std/tables
 import std/unicode
 
 import bindings/quickjs
-import io/promise
-import js/error
+import js/jserror
 import js/jstypes
-import js/jsutils
-import js/opaque
+import js/jsopaque
 import types/opt
 import utils/twtstr
 
@@ -374,37 +372,6 @@ proc fromJSArrayBufferView(ctx: JSContext; val: JSValue):
   )
   return ok(view)
 
-proc promiseThenCallback(ctx: JSContext; this_val: JSValue; argc: cint;
-    argv: ptr UncheckedArray[JSValue]; magic: cint;
-    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
-  let fun = func_data[0]
-  let op = JS_GetOpaque(fun, JS_GetClassID(fun))
-  if op != nil:
-    let p = cast[EmptyPromise](op)
-    p.resolve()
-    GC_unref(p)
-    JS_SetOpaque(fun, nil)
-  return JS_UNDEFINED
-
-proc fromJSEmptyPromise(ctx: JSContext; val: JSValue): JSResult[EmptyPromise] =
-  if not JS_IsObject(val):
-    return err(newTypeError("Value is not an object"))
-  var p = EmptyPromise()
-  GC_ref(p)
-  let tmp = JS_NewObject(ctx)
-  JS_SetOpaque(tmp, cast[pointer](p))
-  let fun = JS_NewCFunctionData(ctx, promiseThenCallback, 0, 0, 1,
-    tmp.toJSValueArray())
-  JS_FreeValue(ctx, tmp)
-  let res = JS_Invoke(ctx, val, ctx.getOpaque().strRefs[jstThen], 1,
-    fun.toJSValueArray())
-  JS_FreeValue(ctx, fun)
-  if JS_IsException(res):
-    JS_FreeValue(ctx, res)
-    return err()
-  JS_FreeValue(ctx, res)
-  return ok(p)
-
 type FromJSAllowedT = (object and not (Result|Option|Table|JSValue|JSDict|
   JSArrayBuffer|JSArrayBufferView|JSUint8Array))
 
@@ -437,8 +404,6 @@ proc fromJS*[T](ctx: JSContext; val: JSValue): JSResult[T] =
     return fromJSEnum[T](ctx, val)
   elif T is JSValue:
     return ok(val)
-  elif T is EmptyPromise:
-    return fromJSEmptyPromise(ctx, val)
   elif T is ref object:
     return fromJSObject[T](ctx, val)
   elif T is void:

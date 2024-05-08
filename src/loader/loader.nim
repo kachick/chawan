@@ -33,7 +33,7 @@ import io/serversocket
 import io/socketstream
 import io/tempfile
 import io/urlfilter
-import js/error
+import js/jserror
 import js/javascript
 import loader/cgi
 import loader/connecterror

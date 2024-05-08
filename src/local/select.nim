@@ -1,6 +1,6 @@
 import std/unicode
 
-import js/regex
+import js/jsregex
 import server/buffer
 import types/cell
 import utils/luwrap

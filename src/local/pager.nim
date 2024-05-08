@@ -21,12 +21,12 @@ import io/socketstream
 import io/stdio
 import io/tempfile
 import io/urlfilter
-import js/error
+import js/jserror
 import js/fromjs
 import js/javascript
 import js/jstypes
 import js/jsutils
-import js/regex
+import js/jsregex
 import js/tojs
 import loader/connecterror
 import loader/headers

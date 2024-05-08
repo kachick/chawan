@@ -4,8 +4,6 @@
 #
 # * Primitives are converted to their respective JavaScript counterparts.
 # * seq is converted to a JS array. Note: this always copies the seq's contents.
-# * Promise is converted to a JS promise which will be resolved when the Nim
-#   promise is resolved.
 # * enum is converted to its stringifier's output.
 # * JSValue is returned as-is, *without* a DupValue operation.
 # * JSError is converted to a new error object corresponding to the error
@@ -41,12 +39,10 @@ import std/tables
 import std/unicode
 
 import bindings/quickjs
-import io/promise
-import js/error
+import js/jserror
 import js/jstypes
 import js/jsutils
-import js/opaque
-import js/typeptr
+import js/jsopaque
 import types/opt
 
 # Convert Nim types to the corresponding JavaScript type.
@@ -69,9 +65,6 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue
 proc toJS*(ctx: JSContext; t: tuple): JSValue
 proc toJS*(ctx: JSContext; e: enum): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
-proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue
-proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue
-proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue
 proc toJS*(ctx: JSContext; obj: ref object): JSValue
 proc toJS*(ctx: JSContext; err: JSError): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
@@ -273,6 +266,25 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
     JS_SetIsHTMLDDA(ctx, jsObj)
   return jsObj
 
+# Get a unique pointer for each type.
+proc getTypePtr*[T](x: T): pointer =
+  when T is RootRef:
+    # I'm so sorry.
+    # (This dereferences the object's first member, m_type. Probably.)
+    return cast[ptr pointer](x)[]
+  elif T is RootObj:
+    return cast[pointer](x)
+  else:
+    return getTypeInfo(x)
+
+func getTypePtr*(t: typedesc[ref object]): pointer =
+  var x = t()
+  return getTypePtr(x)
+
+func getTypePtr*(t: type): pointer =
+  var x: t
+  return getTypePtr(x)
+
 proc toJSRefObj(ctx: JSContext; obj: ref object): JSValue =
   if obj == nil:
     return JS_NULL
@@ -317,61 +329,6 @@ proc toJS(ctx: JSContext; e: enum): JSValue =
 
 proc toJS(ctx: JSContext; j: JSValue): JSValue =
   return j
-
-proc toJS(ctx: JSContext; promise: EmptyPromise): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc() =
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 0, nil)
-    JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
-  return jsPromise
-
-proc toJS[T](ctx: JSContext; promise: Promise[T]): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc(x: T) =
-    let x = toJS(ctx, x)
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
-      x.toJSValueArray())
-    JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
-  return jsPromise
-
-proc toJS[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc(x: Result[T, E]) =
-    if x.isSome:
-      let x = when T is void:
-        JS_UNDEFINED
-      else:
-        toJS(ctx, x.get)
-      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
-        x.toJSValueArray())
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, x)
-    else: # err
-      let x = when E is void:
-        JS_UNDEFINED
-      else:
-        toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
-        x.toJSValueArray())
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
-  return jsPromise
 
 proc toJS*(ctx: JSContext; err: JSError): JSValue =
   if err == nil:

@@ -118,7 +118,7 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
 $(OUTDIR_CGI_BIN)/man: adapter/protocol/man.nim $(QJSOBJ)/libregexp.o \
-		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o src/js/regex.nim \
+		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o src/js/jsregex.nim \
 		src/bindings/libregexp.nim src/types/opt.nim src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/man" \

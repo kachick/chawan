@@ -2,9 +2,9 @@ import std/options
 import std/os
 import std/posix
 
-import js/error
 import js/fromjs
 import js/javascript
+import js/jserror
 import js/tojs
 import types/opt
 import utils/twtstr

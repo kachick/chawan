@@ -9,13 +9,13 @@ import config/chapath
 import config/mailcap
 import config/mimetypes
 import config/toml
-import js/error
+import js/jserror
 import js/fromjs
 import js/javascript
 import js/jscolor
 import js/jstypes
-import js/propertyenumlist
-import js/regex
+import js/jspropenumlist
+import js/jsregex
 import js/tojs
 import loader/headers
 import types/cell

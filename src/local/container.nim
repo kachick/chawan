@@ -13,7 +13,7 @@ import io/serversocket
 import io/socketstream
 import js/javascript
 import js/jstypes
-import js/regex
+import js/jsregex
 import layout/renderdocument
 import loader/headers
 import loader/loader

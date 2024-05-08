@@ -30,14 +30,14 @@ import js/base64
 import js/console
 import js/domexception
 import js/encoding
-import js/error
+import js/jserror
 import js/fromjs
 import js/intl
 import js/javascript
 import js/jstypes
 import js/jsutils
-import js/module
-import js/opaque
+import js/jsmodule
+import js/jsopaque
 import js/timeout
 import js/tojs
 import loader/headers
@@ -113,7 +113,12 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   return 0
 
 proc runJSJobs(client: Client) =
-  client.jsrt.runJSJobs(client.console.err)
+  while true:
+    let r = client.jsrt.runJSJobs()
+    if r.isSome:
+      break
+    let ctx = r.error
+    ctx.writeException(client.console.err)
 
 proc cleanup(client: Client) =
   if client.alive:
@@ -221,8 +226,8 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
       client.quit(client.exitCode)
   if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
-  if JS_IsObject(ret):
-    let maybep = fromJS[EmptyPromise](ctx, ret)
+  elif JS_IsObject(ret):
+    let maybep = fromJSEmptyPromise(ctx, ret)
     if maybep.isSome:
       p = maybep.get
   JS_FreeValue(ctx, ret)

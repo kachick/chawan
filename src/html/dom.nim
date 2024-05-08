@@ -22,12 +22,12 @@ import io/dynstream
 import io/promise
 import js/console
 import js/domexception
-import js/error
+import js/jserror
 import js/fromjs
 import js/javascript
 import js/jsutils
-import js/opaque
-import js/propertyenumlist
+import js/jsopaque
+import js/jspropenumlist
 import js/timeout
 import js/tojs
 import loader/loader

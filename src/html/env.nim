@@ -14,7 +14,7 @@ import js/base64
 import js/console
 import js/domexception
 import js/encoding
-import js/error
+import js/jserror
 import js/intl
 import js/javascript
 import js/jstypes
@@ -211,7 +211,12 @@ proc addScripting*(window: Window; selector: Selector[int]) =
   ctx.addEncodingModule()
 
 proc runJSJobs*(window: Window) =
-  window.jsrt.runJSJobs(window.console.err)
+  while true:
+    let r = window.jsrt.runJSJobs()
+    if r.isSome:
+      break
+    let ctx = r.error
+    ctx.writeException(window.console.err)
 
 proc newWindow*(scripting, images: bool; selector: Selector[int];
     attrs: WindowAttributes; factory: CAtomFactory;

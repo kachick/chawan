@@ -36,9 +36,10 @@ import io/posixstream
 import io/promise
 import io/serversocket
 import io/socketstream
+import js/console
 import js/fromjs
 import js/javascript
-import js/regex
+import js/jsregex
 import js/timeout
 import js/tojs
 import layout/renderdocument

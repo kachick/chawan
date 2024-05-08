@@ -3,7 +3,7 @@ import std/strutils
 import std/tables
 
 import bindings/quickjs
-import js/error
+import js/jserror
 import js/fromjs
 import js/javascript
 import js/jstypes
