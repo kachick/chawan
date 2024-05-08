@@ -29,7 +29,9 @@ type
     itWeek = "week"
 
   ButtonType* = enum
-    BUTTON_SUBMIT, BUTTON_RESET, BUTTON_BUTTON
+    btSubmit = "submit"
+    btReset = "reset"
+    btButton = "button"
 
   NodeType* = enum
     ELEMENT_NODE = 1,

@@ -341,7 +341,7 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
     return false
   if fae.form.canSubmitImplicitly():
     return true
-  if fae of HTMLButtonElement and HTMLButtonElement(fae).ctype == BUTTON_SUBMIT:
+  if fae of HTMLButtonElement and HTMLButtonElement(fae).ctype == btSubmit:
     return true
   if fae of HTMLInputElement and
       HTMLInputElement(fae).inputType in {itSubmit, itButton}:
@@ -1554,25 +1554,28 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
       repaint: repaint,
       open: some(newRequest(url, HTTP_GET))
     )
-  return ClickResult(
-    repaint: repaint
-  )
+  return ClickResult(repaint: repaint)
 
 proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
   let select = option.select
   if select != nil:
     return buffer.click(select)
+  return ClickResult()
 
 proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
+    var open = none(Request)
     case button.ctype
-    of BUTTON_SUBMIT: result.open = submitForm(button.form, button)
-    of BUTTON_RESET:
+    of btSubmit:
+      open = submitForm(button.form, button)
+    of btReset:
       button.form.reset()
       buffer.do_reshape()
       return ClickResult(repaint: true)
-    of BUTTON_BUTTON: discard
-    result.repaint = buffer.setFocus(button)
+    of btButton: discard
+    let repaint = buffer.setFocus(button)
+    return ClickResult(open: open, repaint: repaint)
+  return ClickResult()
 
 proc click(buffer: Buffer; textarea: HTMLTextAreaElement): ClickResult =
   let repaint = buffer.setFocus(textarea)

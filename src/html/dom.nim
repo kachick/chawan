@@ -2916,10 +2916,6 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
     if name == n:
       element.val = element.document.toAtom(value)
       return
-  template reflect_str(element: Element; n: StaticAtom; val, fun: untyped) =
-    if name == n:
-      element.val = fun(value)
-      return
   template reflect_bool(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.val = true
@@ -2953,19 +2949,17 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     input.reflect_str satValue, value
-    input.reflect_str satType, inputType, inputType
     input.reflect_bool satChecked, checked
+    if name == satType:
+      input.inputType = inputType(value)
   of TAG_OPTION:
     let option = HTMLOptionElement(element)
     option.reflect_bool satSelected, selected
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
     button.reflect_str satValue, value
-    button.reflect_str satType, ctype, (func(s: string): ButtonType =
-      case s.toLowerAscii()
-      of "submit": return BUTTON_SUBMIT
-      of "reset": return BUTTON_RESET
-      of "button": return BUTTON_BUTTON)
+    if name == satType:
+      button.ctype = parseEnumNoCase[ButtonType](value).get(btSubmit)
   of TAG_LINK:
     let link = HTMLLinkElement(element)
     if name == satRel:

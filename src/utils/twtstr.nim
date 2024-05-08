@@ -675,7 +675,7 @@ func parseEnumNoCase*[T: enum](s: string): Opt[T] =
   # cmp when len is small enough, otherwise hashmap
   when {T.low..T.high}.len <= 4:
     for e in T.low .. T.high:
-      if $e.equalsIgnoreCase(s):
+      if ($e).equalsIgnoreCase(s):
         return ok(e)
   else:
     const tab = (func(): Table[string, T] =
