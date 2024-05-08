@@ -1632,6 +1632,7 @@ type
     minwidth: LayoutUnit
     width: LayoutUnit
     wspecified: bool
+    reflow: bool
     weight: float64
 
   TableContext = object
@@ -1641,10 +1642,8 @@ type
     cols: seq[ColumnContext]
     growing: seq[CellWrapper]
     maxwidth: LayoutUnit
-    blockspacing: LayoutUnit
-    inlinespacing: LayoutUnit
-    collapse: bool
-    reflow: seq[bool]
+    blockSpacing: LayoutUnit
+    inlineSpacing: LayoutUnit
     space: AvailableSpace # space we got from parent
 
 proc layoutTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
@@ -1682,15 +1681,14 @@ proc layoutTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
 # rowspan.
 proc sortGrowing(pctx: var TableContext) =
   var i = 0
-  for j in 0 ..< pctx.growing.len:
+  for j, cellw in pctx.growing:
     if pctx.growing[i].grown == 0:
       continue
     if j != i:
-      pctx.growing[i] = pctx.growing[j]
+      pctx.growing[i] = cellw
     inc i
   pctx.growing.setLen(i)
-  pctx.growing.sort(proc(a, b: CellWrapper): int =
-    cmp(a.coli, b.coli))
+  pctx.growing.sort(proc(a, b: CellWrapper): int = cmp(a.coli, b.coli))
 
 # Grow cells with a rowspan > 1 (to occupy their place in a new row).
 proc growRowspan(pctx: var TableContext; ctx: var RowContext;
@@ -1711,7 +1709,7 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
     ctx.cells[i] = rowspanFiller
     for i in n ..< n + cellw.colspan:
       ctx.width += pctx.cols[i].width
-      ctx.width += pctx.inlinespacing * 2
+      ctx.width += pctx.inlineSpacing * 2
     n += cellw.colspan
     inc i
     inc growi
@@ -1762,7 +1760,7 @@ proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
     let w = box.size.w div colspan
     for i in n ..< n + colspan:
       # Add spacing.
-      ctx.width += pctx.inlinespacing
+      ctx.width += pctx.inlineSpacing
       # Figure out this cell's effect on the column's width.
       # Four cases exits:
       # 1. colwidth already fixed, cell width is fixed: take maximum
@@ -1798,13 +1796,14 @@ proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
           ctx.reflow[i] = true
       ctx.width += pctx.cols[i].width
       # Add spacing to the right side.
-      ctx.width += pctx.inlinespacing
+      ctx.width += pctx.inlineSpacing
     n += colspan
     inc i
   pctx.growRowspan(ctx, growi, i, n, growlen)
   pctx.sortGrowing()
-  for i in 0 ..< ctx.cells.len:
-    doAssert ctx.cells[i] != nil, $i
+  when defined(debug):
+    for cell in ctx.cells:
+      assert cell != nil
   ctx.ncols = n
   return ctx
 
@@ -1839,7 +1838,7 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
     for i in n ..< n + cellw.colspan:
       w += pctx.cols[i].width
     # Add inline spacing for merged columns.
-    w += pctx.inlinespacing * (cellw.colspan - 1) * 2
+    w += pctx.inlineSpacing * (cellw.colspan - 1) * 2
     if cellw.reflow and cellw.builder != nil:
       # Do not allow the table cell to make use of its specified width.
       # e.g. in the following table
@@ -1856,10 +1855,10 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
       cellw.box = pctx.lctx.layoutTableCell(cellw.builder, space)
       w = max(w, cellw.box.size.w)
     let cell = cellw.box
-    x += pctx.inlinespacing
+    x += pctx.inlineSpacing
     if cell != nil:
       cell.offset.x += x
-    x += pctx.inlinespacing
+    x += pctx.inlineSpacing
     x += w
     n += cellw.colspan
     const HasNoBaseline = {
@@ -1893,8 +1892,7 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
 
 proc preBuildTableRows(ctx: var TableContext; rows: seq[TableRowBoxBuilder];
     table: BlockBox) =
-  for i in 0 ..< rows.len:
-    let row = rows[i]
+  for i, row in rows:
     let rctx = ctx.preBuildTableRow(row, table, i, rows.len)
     ctx.rows.add(rctx)
     ctx.maxwidth = max(rctx.width, ctx.maxwidth)
@@ -1906,9 +1904,9 @@ proc preBuildTableRows(ctx: var TableContext; builder: TableBoxBuilder;
   # is rendered as:
   # hello
   # world
-  var thead: seq[TableRowBoxBuilder]
-  var tbody: seq[TableRowBoxBuilder]
-  var tfoot: seq[TableRowBoxBuilder]
+  var thead: seq[TableRowBoxBuilder] = @[]
+  var tbody: seq[TableRowBoxBuilder] = @[]
+  var tfoot: seq[TableRowBoxBuilder] = @[]
   var caption: TableCaptionBoxBuilder
   for child in builder.children:
     assert child.computed{"display"} in ProperTableChild
@@ -1945,18 +1943,17 @@ proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
   for i, col in ctx.cols.mpairs:
     if not col.wspecified:
       avail[j] = i
-      let colw = col.width
-      let w = if colw < W:
-        toFloat64(colw)
+      let w = if col.width < W:
+        toFloat64(col.width)
       else:
-        toFloat64(W) * (ln(toFloat64(colw) / toFloat64(W)) + 1)
+        toFloat64(W) * (ln(toFloat64(col.width) / toFloat64(W)) + 1)
       col.weight = w
       weight += w
       inc j
     else:
       if specifiedRatio < 1:
         col.width *= specifiedRatio
-        ctx.reflow[i] = true
+        col.reflow = true
       W -= col.width
       avail.del(j)
   return avail
@@ -1976,7 +1973,7 @@ func needsRedistribution(ctx: TableContext; computed: CSSComputedValues): bool =
 proc redistributeWidth(ctx: var TableContext) =
   var W = ctx.space.w.u
   # Remove inline spacing from distributable width.
-  W -= ctx.cols.len * ctx.inlinespacing * 2
+  W -= ctx.cols.len * ctx.inlineSpacing * 2
   var weight = 0f64
   var totalSpecified: LayoutUnit = 0
   for col in ctx.cols:
@@ -1994,7 +1991,7 @@ proc redistributeWidth(ctx: var TableContext) =
     if W < 0:
       W = 0
     redo = false
-    # divide delta width by sum of sqrt(width) for all elem in avail
+    # divide delta width by sum of ln(width) for all elem in avail
     let unit = toFloat64(W) / weight
     weight = 0
     for i in countdown(avail.high, 0):
@@ -2009,7 +2006,7 @@ proc redistributeWidth(ctx: var TableContext) =
         redo = true
       else:
         weight += ctx.cols[j].weight
-      ctx.reflow[j] = true
+      ctx.cols[j].reflow = true
 
 proc reflowTableCells(ctx: var TableContext) =
   for i in countdown(ctx.rows.high, 0):
@@ -2018,10 +2015,10 @@ proc reflowTableCells(ctx: var TableContext) =
     for j in countdown(row.cells.high, 0):
       let m = n - row.cells[j].colspan
       while n > m:
-        if ctx.reflow[n]:
+        if ctx.cols[n].reflow:
           row.cells[j].reflow = true
         if n < row.reflow.len and row.reflow[n]:
-          ctx.reflow[n] = true
+          ctx.cols[n].reflow = true
         dec n
 
 proc layoutTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
@@ -2029,13 +2026,13 @@ proc layoutTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
   for roww in ctx.rows:
     if roww.builder.computed{"visibility"} == VisibilityCollapse:
       continue
-    y += ctx.blockspacing
+    y += ctx.blockSpacing
     let row = ctx.layoutTableRow(roww, table, roww.builder)
     row.offset.y += y
     row.offset.x += sizes.padding.left
     row.size.w += sizes.padding.left
     row.size.w += sizes.padding.right
-    y += ctx.blockspacing
+    y += ctx.blockSpacing
     y += row.size.h
     table.nested.add(row)
     table.size.w = max(row.size.w, table.size.w)
@@ -2077,13 +2074,11 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
 #      cell's width to min_width, then re-do the distribution.
 proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
     sizes: ResolvedSizes) =
-  let collapse = table.computed{"border-collapse"} == BorderCollapseCollapse
-  var ctx = TableContext(lctx: lctx, collapse: collapse, space: sizes.space)
-  if not ctx.collapse:
-    ctx.inlinespacing = table.computed{"border-spacing"}.a.px(lctx)
-    ctx.blockspacing = table.computed{"border-spacing"}.b.px(lctx)
+  var ctx = TableContext(lctx: lctx, space: sizes.space)
+  if table.computed{"border-collapse"} != BorderCollapseCollapse:
+    ctx.inlineSpacing = table.computed{"border-spacing"}.a.px(lctx)
+    ctx.blockSpacing = table.computed{"border-spacing"}.b.px(lctx)
   ctx.preBuildTableRows(builder, table)
-  ctx.reflow = newSeq[bool](ctx.cols.len)
   if ctx.needsRedistribution(table.computed):
     ctx.redistributeWidth()
   for col in ctx.cols:
