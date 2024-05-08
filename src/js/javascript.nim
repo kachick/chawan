@@ -1694,7 +1694,7 @@ proc eval*(ctx: JSContext; s, file: string; eval_flags: int): JSValue =
 proc compileScript*(ctx: JSContext; s, file: string): JSValue =
   return ctx.eval(s, file, JS_EVAL_FLAG_COMPILE_ONLY)
 
-proc compileModule*(ctx: JSContext; s: string; file: cstring): JSValue =
+proc compileModule*(ctx: JSContext; s, file: string): JSValue =
   return ctx.eval(s, file, JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
 
 proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =

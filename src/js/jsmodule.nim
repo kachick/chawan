@@ -13,7 +13,7 @@ proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   JS_FreeAtom(ctx, moduleNameAtom)
 
 proc finishLoadModule*(ctx: JSContext; f: string; name: cstring): JSModuleDef =
-  let funcVal = compileModule(ctx, f, name)
+  let funcVal = compileModule(ctx, f, $name)
   if JS_IsException(funcVal):
     return nil
   setImportMeta(ctx, funcVal, false)

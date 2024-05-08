@@ -3565,7 +3565,7 @@ proc markAsReady(element: HTMLScriptElement; res: ScriptResult) =
 proc createClassicScript(ctx: JSContext; source: string; baseURL: URL;
     options: ScriptOptions; mutedErrors = false): Script =
   let urls = baseURL.serialize(excludepassword = true)
-  let record = compileScript(ctx, source, cstring(urls))
+  let record = compileScript(ctx, source, urls)
   return Script(
     record: record,
     baseURL: baseURL,
