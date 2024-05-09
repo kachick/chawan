@@ -360,11 +360,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     for atom in fragment.atoms:
       case atom.t
       of iatInlineBlock:
-        let offset = Offset(
-          x: offset.x + atom.offset.x,
-          y: offset.y + atom.offset.y
-        )
-        grid.renderBlockBox(state, atom.innerbox, offset)
+        grid.renderBlockBox(state, atom.innerbox, offset + atom.offset)
       of iatWord:
         grid.setRowWord(state, atom, offset, format, fragment.node)
       of iatSpacing:
@@ -381,20 +377,13 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
   if fragment.computed{"position"} != PositionStatic:
     if fragment.splitType != {stSplitStart, stSplitEnd}:
       if stSplitStart in fragment.splitType:
-        state.absolutePos.add(Offset(
-          x: offset.x + fragment.startOffset.x,
-          y: offset.y + fragment.startOffset.y
-        ))
+        state.absolutePos.add(offset + fragment.startOffset)
       if stSplitEnd in fragment.splitType:
         discard state.absolutePos.pop()
 
 proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     root: RootInlineFragment; offset: Offset) =
-  let offset = Offset(
-    x: offset.x + root.offset.x,
-    y: offset.y + root.offset.y
-  )
-  grid.renderInlineFragment(state, root.fragment, offset)
+  grid.renderInlineFragment(state, root.fragment, root.offset + offset)
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset) =
@@ -417,7 +406,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     offset.y += box.offset.y
     if box.computed{"position"} != PositionStatic:
       state.absolutePos.add(offset)
-      stack.add((nil, Offset(x: -1, y: -1)))
+      stack.add((nil, offset(-1, -1)))
 
     if box.computed{"visibility"} == VisibilityVisible:
       let bgcolor = box.computed{"background-color"}
@@ -462,11 +451,11 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     # no HTML element when we run cascade; just clear all lines.
     return
   var state = RenderState(
-    absolutePos: @[Offset(x: 0, y: 0)],
+    absolutePos: @[offset(0, 0)],
     attrsp: attrsp
   )
   let rootBox = styledRoot.layout(attrsp)
-  grid.renderBlockBox(state, rootBox, Offset(x: 0, y: 0))
+  grid.renderBlockBox(state, rootBox, offset(0, 0))
   if grid.len == 0:
     grid.addLines(1)
   bgcolor = state.bgcolor

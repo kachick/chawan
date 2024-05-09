@@ -4,13 +4,12 @@ import img/bitmap
 import layout/layoutunit
 
 type
-  Offset* = object
-    x*: LayoutUnit
-    y*: LayoutUnit
+  DimensionType* = enum
+    dtHorizontal, dtVertical
 
-  Size* = object
-    w*: LayoutUnit
-    h*: LayoutUnit
+  Offset* = array[DimensionType, LayoutUnit]
+
+  Size* = array[DimensionType, LayoutUnit]
 
   InlineAtomType* = enum
     iatSpacing, iatWord, iatInlineBlock, iatImage
@@ -80,8 +79,50 @@ type
     # baseline of the last line box of all descendants
     baseline*: LayoutUnit
 
+func offset*(x, y: LayoutUnit): Offset =
+  return [dtHorizontal: x, dtVertical: y]
+
+func x*(offset: Offset): LayoutUnit {.inline.} =
+  return offset[dtHorizontal]
+
+func x*(offset: var Offset): var LayoutUnit {.inline.} =
+  return offset[dtHorizontal]
+
+func `x=`*(offset: var Offset; x: LayoutUnit) {.inline.} =
+  offset[dtHorizontal] = x
+
+func y*(offset: Offset): LayoutUnit {.inline.} =
+  return offset[dtVertical]
+
+func y*(offset: var Offset): var LayoutUnit {.inline.} =
+  return offset[dtVertical]
+
+func `y=`*(offset: var Offset; y: LayoutUnit) {.inline.} =
+  offset[dtVertical] = y
+
+func size*(w, h: LayoutUnit): Offset =
+  return [dtHorizontal: w, dtVertical: h]
+
+func w*(size: Size): LayoutUnit {.inline.} =
+  return size[dtHorizontal]
+
+func w*(size: var Size): var LayoutUnit {.inline.} =
+  return size[dtHorizontal]
+
+func `w=`*(size: var Size; w: LayoutUnit) {.inline.} =
+  size[dtHorizontal] = w
+
+func h*(size: Size): LayoutUnit {.inline.} =
+  return size[dtVertical]
+
+func h*(size: var Size): var LayoutUnit {.inline.} =
+  return size[dtVertical]
+
+func `h=`*(size: var Size; h: LayoutUnit) {.inline.} =
+  size[dtVertical] = h
+
 func `+`*(a, b: Offset): Offset =
-  return Offset(x: a.x + b.x, y: a.y + b.y)
+  return offset(x = a.x + b.x, y = a.y + b.y)
 
 proc `+=`*(a: var Offset; b: Offset) =
   a.x += b.x

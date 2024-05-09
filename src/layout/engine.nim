@@ -34,18 +34,67 @@ type
     t: SizeConstraintType
     u: LayoutUnit
 
-  AvailableSpace = object
-    w: SizeConstraint
-    h: SizeConstraint
+  AvailableSpace = array[DimensionType, SizeConstraint]
+
+  MinMaxSpan = object
+    min: LayoutUnit
+    max: LayoutUnit
 
   ResolvedSizes = object
     margin: RelativeRect
     padding: RelativeRect
     space: AvailableSpace
-    minWidth: LayoutUnit
-    maxWidth: LayoutUnit
-    minHeight: LayoutUnit
-    maxHeight: LayoutUnit
+    minMaxSizes: array[DimensionType, MinMaxSpan]
+
+const DefaultSpan = MinMaxSpan(min: 0, max: LayoutUnit.high)
+
+proc `minWidth=`(sizes: var ResolvedSizes; w: LayoutUnit) =
+  sizes.minMaxSizes[dtHorizontal].min = w
+
+proc `maxWidth=`(sizes: var ResolvedSizes; w: LayoutUnit) =
+  sizes.minMaxSizes[dtHorizontal].max = w
+
+proc `minHeight=`(sizes: var ResolvedSizes; h: LayoutUnit) =
+  sizes.minMaxSizes[dtVertical].min = h
+
+proc `maxHeight=`(sizes: var ResolvedSizes; h: LayoutUnit) =
+  sizes.minMaxSizes[dtVertical].max = h
+
+func dimSum(rect: RelativeRect; dim: DimensionType): LayoutUnit =
+  case dim
+  of dtHorizontal: return rect.left + rect.right
+  of dtVertical: return rect.top + rect.bottom
+
+func dimStart(rect: RelativeRect; dim: DimensionType): LayoutUnit =
+  case dim
+  of dtHorizontal: return rect.left
+  of dtVertical: return rect.top
+
+func opposite(dim: DimensionType): DimensionType =
+  case dim
+  of dtHorizontal: return dtVertical
+  of dtVertical: return dtHorizontal
+
+func availableSpace(w, h: SizeConstraint): AvailableSpace =
+  return [dtHorizontal: w, dtVertical: h]
+
+func w(space: AvailableSpace): SizeConstraint {.inline.} =
+  return space[dtHorizontal]
+
+func w(space: var AvailableSpace): var SizeConstraint {.inline.} =
+  return space[dtHorizontal]
+
+func `w=`(space: var AvailableSpace; w: SizeConstraint) {.inline.} =
+  space[dtHorizontal] = w
+
+func h(space: var AvailableSpace): var SizeConstraint {.inline.} =
+  return space[dtVertical]
+
+func h(space: AvailableSpace): SizeConstraint {.inline.} =
+  return space[dtVertical]
+
+func `h=`(space: var AvailableSpace; h: SizeConstraint) {.inline.} =
+  space[dtVertical] = h
 
 template attrs(state: LayoutState): WindowAttributes =
   state.attrsp[]
@@ -308,7 +357,7 @@ proc applyLineHeight(ictx: InlineContext; state: var LineBoxState;
 proc newWord(ictx: var InlineContext; state: var InlineState) =
   ictx.word = InlineAtom(
     t: iatWord,
-    size: Size(h: ictx.cellheight)
+    size: size(w = 0, h = ictx.cellheight)
   )
   ictx.wordstate = InlineAtomState(
     vertalign: state.computed{"vertical-align"},
@@ -465,8 +514,8 @@ proc addSpacing(ictx: var InlineContext; width, height: LayoutUnit;
     state: InlineState; hang = false) =
   let spacing = InlineAtom(
     t: iatSpacing,
-    size: Size(w: width, h: height),
-    offset: Offset(x: ictx.currentLine.size.w)
+    size: size(w = width, h = height),
+    offset: offset(x = ictx.currentLine.size.w, y = 0)
   )
   let iastate = InlineAtomState(baseline: height)
   if not hang:
@@ -531,9 +580,9 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
       ictx.currentLine.size.w
     if state.firstLine:
       #TODO padding top
-      state.fragment.startOffset = Offset(
-        x: state.startOffsetTop.x,
-        y: y + ictx.currentLine.size.h
+      state.fragment.startOffset = offset(
+        x = state.startOffsetTop.x,
+        y = y + ictx.currentLine.size.h
       )
       state.firstLine = false
     ictx.size.w = max(ictx.size.w, lineWidth)
@@ -587,16 +636,16 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
               else:
                 # vertical dimensions differ; add new area.
                 oldTop.areas.add(Area(
-                  offset: Offset(x: x, y: line.offsety),
-                  size: Size(w: w, h: line.height)
+                  offset: offset(x = x, y = line.offsety),
+                  size: size(w = w, h = line.height)
                 ))
             continue
           traverseStack.add(nil) # sentinel
           for i in countdown(thisNode.children.high, 0):
             traverseStack.add(thisNode.children[i])
           thisNode.areas.add(Area(
-            offset: Offset(x: atom.offset.x, y: line.offsety),
-            size: Size(w: atom.size.w, h: line.height)
+            offset: offset(x = atom.offset.x, y = line.offsety),
+            size: size(w = atom.size.w, h = line.height)
           ))
           currentStack.add(thisNode)
           if thisNode.atoms.len > 0:
@@ -621,8 +670,8 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
       else:
         # horizontal dimensions differ; add a new area
         node.areas.add(Area(
-          offset: Offset(x: line.atoms[0].offset.x, y: line.offsety),
-          size: Size(w: prevEnd - line.atoms[0].offset.x, h: line.height)
+          offset: offset(x = line.atoms[0].offset.x, y = line.offsety),
+          size: size(w = prevEnd - line.atoms[0].offset.x, h = line.height)
         ))
     lineSkipped = false
 
@@ -1051,10 +1100,7 @@ proc resolveBlockSizes(lctx: LayoutState; space: AvailableSpace;
     # For block boxes, this is:
     # (width: stretch(parentWidth), height: max-content)
     space: space,
-    minWidth: 0,
-    maxWidth: high(LayoutUnit),
-    minHeight: 0,
-    maxHeight: high(LayoutUnit)
+    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
   )
   # Finally, calculate available width and height.
   sizes.resolveBlockWidth(space.w, computed, lctx)
@@ -1069,10 +1115,7 @@ proc resolveAbsoluteSizes(lctx: LayoutState; computed: CSSComputedValues):
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: resolvePadding(space.w, lctx, computed),
-    minWidth: 0,
-    maxWidth: high(LayoutUnit),
-    minHeight: 0,
-    maxHeight: high(LayoutUnit)
+    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
   )
   sizes.resolveAbsoluteWidth(space.w, computed, lctx)
   sizes.resolveAbsoluteHeight(space.h, computed, lctx)
@@ -1082,9 +1125,9 @@ proc resolveAbsoluteSizes(lctx: LayoutState; computed: CSSComputedValues):
 proc resolveFloatSizes(lctx: LayoutState; space: AvailableSpace;
     percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
     ResolvedSizes =
-  var space = AvailableSpace(
-    w: fitContent(space.w),
-    h: space.h
+  var space = availableSpace(
+    w = fitContent(space.w),
+    h = space.h
   )
   let padding = resolvePadding(space.w, lctx, computed)
   let inlinePadding = padding.left + padding.right
@@ -1122,10 +1165,10 @@ proc resolveFloatSizes(lctx: LayoutState; space: AvailableSpace;
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
     space: space,
-    minWidth: minWidth,
-    maxWidth: maxWidth,
-    minHeight: minHeight,
-    maxHeight: maxHeight
+    minMaxSizes: [
+      dtHorizontal: MinMaxSpan(min: minWidth, max: maxWidth),
+      dtVertical: MinMaxSpan(min: minHeight, max: maxHeight)
+    ]
   )
 
 # Calculate and resolve available width & height for box children.
@@ -1175,12 +1218,17 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     InlineFragment
 
 # Note: padding must still be applied after this.
+proc applySize(box: BlockBox; sizes: ResolvedSizes;
+    maxChildSize: LayoutUnit; space: AvailableSpace; dim: DimensionType) =
+  # Make the box as small/large as the content's width or specified width.
+  box.size[dim] = maxChildSize.applySizeConstraint(space[dim])
+  # Then, clamp it to minWidth and maxWidth (if applicable).
+  let minMax = sizes.minMaxSizes[dim]
+  box.size[dim] = clamp(box.size[dim], minMax.min, minMax.max)
+
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
-  # Make the box as small/large as the content's width or specified width.
-  box.size.w = maxChildWidth.applySizeConstraint(space.w)
-  # Then, clamp it to minWidth and maxWidth (if applicable).
-  box.size.w = clamp(box.size.w, sizes.minWidth, sizes.maxWidth)
+  box.applySize(sizes, maxChildWidth, space, dtHorizontal)
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit) =
@@ -1188,10 +1236,7 @@ proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
 
 proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
     maxChildHeight: LayoutUnit) =
-  # Make the box as small/large as the content's width or specified width.
-  box.size.h = maxChildHeight.applySizeConstraint(sizes.space.h)
-  # Then, clamp it to minWidth and maxWidth (if applicable).
-  box.size.h = clamp(box.size.h, sizes.minHeight, sizes.maxHeight)
+  box.applySize(sizes, maxChildHeight, sizes.space, dtVertical)
 
 proc applyPadding(box: BlockBox; padding: RelativeRect) =
   box.size.w += padding.left
@@ -1202,12 +1247,12 @@ proc applyPadding(box: BlockBox; padding: RelativeRect) =
 func bfcOffset(bctx: BlockContext): Offset =
   if bctx.parentBps != nil:
     return bctx.parentBps.offset
-  return Offset()
+  return offset(x = 0, y = 0)
 
 proc layoutInline(bctx: var BlockContext; box: BlockBox;
     children: seq[BoxBuilder], sizes: ResolvedSizes) =
   var bfcOffset = bctx.bfcOffset
-  let offset = Offset(x: sizes.padding.left, y: sizes.padding.top)
+  let offset = offset(x = sizes.padding.left, y = sizes.padding.top)
   bfcOffset.x += box.offset.x + offset.x
   bfcOffset.y += box.offset.y + offset.y
   box.inline = bctx.layoutRootInline(children, sizes.space, box.computed,
@@ -1304,9 +1349,9 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     if right - left >= size.w or miny == high(LayoutUnit):
       # Enough space, or no other exclusions found at this y offset.
       if float == FloatLeft:
-        return Offset(x: left, y: y)
+        return offset(x = left, y = y)
       else: # FloatRight
-        return Offset(x: right - size.w, y: y)
+        return offset(x = right - size.w, y = y)
     # Move y to the bottom exclusion edge at the lowest y (where the exclusion
     # still intersects with the previous y).
     y = miny
@@ -1317,21 +1362,21 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
   let clear = child.computed{"clear"}
   if clear != ClearNone:
     child.offset.clearFloats(bctx, clear)
-  let size = Size(
-    w: child.margin.left + child.margin.right + child.size.w,
-    h: child.margin.top + child.margin.bottom + child.size.h
+  let size = size(
+    w = child.margin.left + child.margin.right + child.size.w,
+    h = child.margin.top + child.margin.bottom + child.size.h
   )
-  let childBfcOffset = Offset(
-    x: bfcOffset.x + child.offset.x - child.margin.left,
-    y: max(bfcOffset.y + child.offset.y - child.margin.top, bctx.clearOffset)
+  let childBfcOffset = offset(
+    x = bfcOffset.x + child.offset.x - child.margin.left,
+    y = max(bfcOffset.y + child.offset.y - child.margin.top, bctx.clearOffset)
   )
   assert space.w.t != scFitContent
   let ft = child.computed{"float"}
   assert ft != FloatNone
   let offset = bctx.findNextFloatOffset(childBfcOffset, size, space, ft)
-  child.offset = Offset(
-    x: offset.x - bfcOffset.x + child.margin.left,
-    y: offset.y - bfcOffset.y + child.margin.top
+  child.offset = offset(
+    x = offset.x - bfcOffset.x + child.margin.left,
+    y = offset.y - bfcOffset.y + child.margin.top
   )
   let ex = Exclusion(offset: offset, size: size, t: ft)
   bctx.exclusions.add(ex)
@@ -1386,14 +1431,14 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     # list item or something...
     var bctx = BlockContext(lctx: bctx.lctx)
     let children = @[BoxBuilder(builder.marker)]
-    let space = AvailableSpace(w: fitContent(sizes.space.w), h: sizes.space.h)
+    let space = availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h)
     let markerInline = bctx.layoutRootInline(children, space,
-      builder.marker.computed, Offset(), Offset())
+      builder.marker.computed, offset(x = 0, y = 0), offset(x = 0, y = 0))
     let marker = BlockBox(
       computed: builder.marker.computed,
       inline: markerInline,
       size: markerInline.size,
-      offset: Offset(x: -markerInline.size.w),
+      offset: offset(x = -markerInline.size.w, y = 0),
       xminwidth: markerInline.xminwidth
     )
     # take inner box min width etc.
@@ -1404,7 +1449,7 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     # move innerBox margin & offset to outer box
     box.offset = innerBox.offset
     box.margin = innerBox.margin
-    innerBox.offset = Offset()
+    innerBox.offset = offset(x = 0, y = 0)
     innerBox.margin = RelativeRect()
     box.nested = @[marker, innerBox]
   else:
@@ -1415,7 +1460,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     builder: BlockBoxBuilder; parentWidth, parentHeight: SizeConstraint) =
   let lctx = ictx.lctx
   let percHeight = parentHeight.toPercSize()
-  let space = AvailableSpace(w: parentWidth, h: maxContent())
+  let space = availableSpace(w = parentWidth, h = maxContent())
   let sizes = lctx.resolveFloatSizes(space, percHeight, builder.computed)
   let box = BlockBox(
     computed: builder.computed,
@@ -1446,10 +1491,10 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   let iblock = InlineAtom(
     t: iatInlineBlock,
     innerbox: box,
-    offset: Offset(x: sizes.margin.left),
-    size: Size(
-      w: box.size.w + sizes.margin.left + sizes.margin.right,
-      h: box.size.h
+    offset: offset(x = sizes.margin.left, y = 0),
+    size: size(
+      w = box.size.w + sizes.margin.left + sizes.margin.right,
+      h = box.size.h
     )
   )
   let iastate = InlineAtomState(
@@ -1493,9 +1538,9 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     node: box.node,
     fragment: fragment,
     firstLine: true,
-    startOffsetTop: Offset(
-      x: ictx.currentLine.widthAfterWhitespace,
-      y: ictx.currentLine.offsety
+    startOffsetTop: offset(
+      x = ictx.currentLine.widthAfterWhitespace,
+      y = ictx.currentLine.offsety
     )
   )
   if box.newline:
@@ -1517,7 +1562,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     let atom = InlineAtom(
       t: iatImage,
       bmp: box.bmp,
-      size: Size(w: int(box.bmp.width), h: h), #TODO overflow
+      size: size(w = int(box.bmp.width), h = h), #TODO overflow
     )
     discard ictx.addAtom(state, iastate, atom)
   else:
@@ -1529,12 +1574,12 @@ proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
     let marginRight = box.computed{"margin-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += marginRight
   if state.firstLine:
-    fragment.startOffset = Offset(
-      x: state.startOffsetTop.x,
-      y: ictx.currentLine.offsety
+    fragment.startOffset = offset(
+      x = state.startOffsetTop.x,
+      y = ictx.currentLine.offsety
     )
   else:
-    fragment.startOffset = Offset(x: 0, y: ictx.currentLine.offsety)
+    fragment.startOffset = offset(x = 0, y = ictx.currentLine.offsety)
   return fragment
 
 proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
@@ -1651,10 +1696,7 @@ proc layoutTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
   var sizes = ResolvedSizes(
     padding: resolvePadding(space.w, lctx, builder.computed),
     space: space,
-    minWidth: 0,
-    maxWidth: high(LayoutUnit),
-    minHeight: 0,
-    maxHeight: high(LayoutUnit)
+    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
   )
   if sizes.space.w.isDefinite():
     sizes.space.w.u -= sizes.padding.left
@@ -1734,9 +1776,9 @@ proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
     let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
     let cw = cellbuilder.computed{"width"}
     let ch = cellbuilder.computed{"height"}
-    let space = AvailableSpace(
-      w: cw.stretchOrMaxContent(pctx.lctx, pctx.space.w),
-      h: ch.stretchOrMaxContent(pctx.lctx, pctx.space.h)
+    let space = availableSpace(
+      w = cw.stretchOrMaxContent(pctx.lctx, pctx.space.w),
+      h = ch.stretchOrMaxContent(pctx.lctx, pctx.space.h)
     )
     #TODO specified table height should be distributed among rows.
     # Allow the table cell to use its specified width.
@@ -1851,7 +1893,7 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
       # </TR>
       # </TABLE>
       # the TD with a width of 5ch should be 9ch wide as well.
-      let space = AvailableSpace(w: stretch(w), h: maxContent())
+      let space = availableSpace(w = stretch(w), h = maxContent())
       cellw.box = pctx.lctx.layoutTableCell(cellw.builder, space)
       w = max(w, cellw.box.size.w)
     let cell = cellw.box
@@ -2046,7 +2088,7 @@ proc layoutTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
 
 proc addTableCaption(ctx: TableContext; table: BlockBox) =
   let percHeight = ctx.space.h.toPercSize()
-  let space = AvailableSpace(w: stretch(table.size.w), h: maxContent())
+  let space = availableSpace(w = stretch(table.size.w), h = maxContent())
   let builder = ctx.caption
   let sizes = ctx.lctx.resolveSizes(space, percHeight, builder.computed)
   let box = BlockBox(
@@ -2127,7 +2169,7 @@ proc layoutFlexChild(lctx: LayoutState; builder: BoxBuilder;
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    offset: Offset(x: sizes.margin.left),
+    offset: offset(x = sizes.margin.left, y = 0),
     margin: sizes.margin
   )
   bctx.layout(box, builder, sizes)
@@ -2160,11 +2202,8 @@ type
 const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
-func outerWidth(box: BlockBox): LayoutUnit =
-  return box.margin.left + box.size.w + box.margin.right
-
-func outerHeight(box: BlockBox): LayoutUnit =
-  return box.margin.top + box.size.h + box.margin.bottom
+func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
+  return box.margin.dimSum(dim) + box.size[dim]
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
   mctx.maxSize.w = max(mctx.maxSize.w, child.size.w)
@@ -2174,16 +2213,18 @@ proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
   mctx.maxMargin.top = max(mctx.maxMargin.top, child.margin.top)
   mctx.maxMargin.bottom = max(mctx.maxMargin.bottom, child.margin.bottom)
 
-proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
+proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
+    dim: DimensionType) =
   #TODO actually use flex-basis
   let lctx = mctx.lctx
-  if sizes.space.w.isDefinite:
-    var diff = sizes.space.w.u - mctx.totalSize.w
+  let odim = dim.opposite
+  if sizes.space[dim].isDefinite:
+    var diff = sizes.space[dim].u - mctx.totalSize[dim]
     let wt = if diff > 0: fwtGrow else: fwtShrink
     var totalWeight = mctx.totalWeight[wt]
     while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
         totalWeight > 0:
-      mctx.maxSize.h = 0 # redo maxSize calculation; we only need height here
+      mctx.maxSize[odim] = 0 # redo maxSize calculation; we only need height here
       let unit = diff / totalWeight
       # reset total weight & available diff for the next iteration (if there is
       # one)
@@ -2194,124 +2235,57 @@ proc redistributeWidth(mctx: var FlexMainContext; sizes: ResolvedSizes) =
         if it.weights[wt] == 0:
           mctx.updateMaxSizes(it.child)
           continue
-        var w = it.child.size.w + unit * it.weights[wt]
+        var u = it.child.size[dim] + unit * it.weights[wt]
         # check for min/max violation
-        let minw = max(it.child.xminwidth, it.sizes.minWidth)
-        if minw > w:
+        var minu = it.sizes.minMaxSizes[dim].min
+        if dim == dtHorizontal:
+          minu = max(it.child.xminwidth, minu)
+        if minu > u:
           # min violation
           if wt == fwtShrink: # freeze
-            diff += w - minw
+            diff += u - minu
             it.weights[wt] = 0
-          w = minw
-        let maxw = it.sizes.maxWidth
-        if maxw < w:
+          u = minu
+        let maxu = it.sizes.minMaxSizes[dim].max
+        if maxu < u:
           # max violation
           if wt == fwtGrow: # freeze
-            diff += w - maxw
+            diff += u - maxu
             it.weights[wt] = 0
-          w = maxw
-        it.sizes.space.w = stretch(w - it.sizes.padding.left -
-          it.sizes.padding.right)
+          u = maxu
+        it.sizes.space[dim] = stretch(u - it.sizes.padding.dimSum(dim))
         totalWeight += it.weights[wt]
         #TODO we should call this only on freeze, and then put another loop to
         # the end for non-freezed items
         it.child = lctx.layoutFlexChild(builder, it.sizes)
         mctx.updateMaxSizes(it.child)
 
-proc redistributeHeight(mctx: var FlexMainContext; sizes: ResolvedSizes) =
+proc flushMain(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
+    totalMaxSize: var Size; dim: DimensionType) =
+  let odim = dim.opposite
   let lctx = mctx.lctx
-  if sizes.space.h.isDefinite and mctx.totalSize.h != sizes.space.h.u:
-    var diff = sizes.space.h.u - mctx.totalSize.h
-    let wt = if diff > 0: fwtGrow else: fwtShrink
-    var totalWeight = mctx.totalWeight[wt]
-    while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
-        totalWeight > 0:
-      mctx.maxSize.w = 0 # redo maxSize calculation; we only need height here
-      let unit = diff / totalWeight
-      # reset total weight & available diff for the next iteration (if there is
-      # one)
-      totalWeight = 0
-      diff = 0
-      for it in mctx.pending.mitems:
-        let builder = it.builder
-        if it.weights[wt] == 0:
-          mctx.updateMaxSizes(it.child)
-          continue
-        var h = max(it.child.size.h + unit * it.weights[wt], 0)
-        # check for min/max violation
-        let minh = it.sizes.minHeight
-        if minh > h:
-          # min violation
-          if wt == fwtShrink: # freeze
-            diff += h - minh
-            it.weights[wt] = 0
-          h = minh
-        let maxh = it.sizes.maxHeight
-        if maxh < h:
-          # max violation
-          if wt == fwtGrow: # freeze
-            diff += h - maxh
-            it.weights[wt] = 0
-          h = maxh
-        it.sizes.space.h = stretch(h - it.sizes.padding.top -
-          it.sizes.padding.bottom)
-        totalWeight += it.weights[wt]
-        it.child = lctx.layoutFlexChild(builder, it.sizes)
-        mctx.updateMaxSizes(it.child)
-
-proc flushRow(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
-    totalMaxSize: var Size) =
-  let lctx = mctx.lctx
-  mctx.redistributeWidth(sizes)
-  let h = mctx.maxSize.h + mctx.maxMargin.top + mctx.maxMargin.bottom
+  mctx.redistributeMainSize(sizes, dim)
+  let h = mctx.maxSize[odim] + mctx.maxMargin.dimSum(odim)
   var offset = mctx.offset
   for it in mctx.pending.mitems:
-    if it.child.size.h < h and not it.sizes.space.h.isDefinite:
+    if it.child.size[odim] < h and not it.sizes.space[odim].isDefinite:
       # if the max height is greater than our height, then take max height
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
-      it.sizes.space.h = stretch(h - it.sizes.margin.top -
-        it.sizes.margin.bottom)
+      it.sizes.space[odim] = stretch(h - it.sizes.margin.dimSum(odim))
       it.child = lctx.layoutFlexChild(it.builder, it.sizes)
-    it.child.offset = Offset(
-      x: it.child.offset.x + offset.x,
-      # margins are added here, since they belong to the flex item.
-      y: it.child.offset.y + offset.y + it.child.margin.top
-    )
-    offset.x += it.child.size.w
+    it.child.offset[dim] = it.child.offset[dim] + offset[dim]
+    # margins are added here, since they belong to the flex item.
+    it.child.offset[odim] = it.child.offset[odim] + offset[odim] +
+      it.child.margin.dimStart(odim)
+    offset[dim] += it.child.size[dim]
     box.nested.add(it.child)
-  totalMaxSize.w = max(totalMaxSize.w, offset.x)
+  totalMaxSize[dim] = max(totalMaxSize[dim], offset[dim])
   mctx = FlexMainContext(
     lctx: mctx.lctx,
-    offset: Offset(x: mctx.offset.x, y: mctx.offset.y + h)
+    offset: mctx.offset
   )
-
-proc flushColumn(mctx: var FlexMainContext; box: BlockBox;
-    sizes: ResolvedSizes; totalMaxSize: var Size) =
-  let lctx = mctx.lctx
-  mctx.redistributeHeight(sizes)
-  let w = mctx.maxSize.w + mctx.maxMargin.left + mctx.maxMargin.right
-  var offset = mctx.offset
-  for it in mctx.pending.mitems:
-    if it.child.size.w < w and not it.sizes.space.w.isDefinite:
-      # see above.
-      it.sizes.space.w = stretch(w - it.sizes.margin.left -
-        it.sizes.margin.right)
-      it.child = lctx.layoutFlexChild(it.builder, it.sizes)
-    # margins belong to the flex item, and influence its positioning
-    offset.y += it.child.margin.top
-    it.child.offset = Offset(
-      x: it.child.offset.x + offset.x + it.child.margin.left,
-      y: it.child.offset.y + offset.y
-    )
-    offset.y += it.child.margin.bottom
-    offset.y += it.child.size.h
-    box.nested.add(it.child)
-  totalMaxSize.h = max(totalMaxSize.h, offset.y)
-  mctx = FlexMainContext(
-    lctx: lctx,
-    offset: Offset(x: mctx.offset.x + w, y: mctx.offset.y)
-  )
+  mctx.offset[odim] = mctx.offset[odim] + h
 
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     sizes: ResolvedSizes) =
@@ -2324,9 +2298,10 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     builder.children.reversed()
   else:
     builder.children
-  var totalMaxSize = Size() #TODO find a better name for this
+  var totalMaxSize = size(w = 0, h = 0) #TODO find a better name for this
   let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
   let percHeight = sizes.space.h.toPercSize()
+  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   while i < children.len:
     let builder = children[i]
     var childSizes = lctx.resolveFloatSizes(sizes.space, percHeight,
@@ -2351,18 +2326,11 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
       #TODO implement the standard size resolution properly
       childSizes.space.w = stretch(child.xminwidth)
       child = lctx.layoutFlexChild(builder, childSizes)
-    if flexDir in FlexRow:
-      if canWrap and (sizes.space.w.t == scMinContent or
-          sizes.space.w.isDefinite and
-          mctx.totalSize.w + child.size.w > sizes.space.w.u):
-        mctx.flushRow(box, sizes, totalMaxSize)
-      mctx.totalSize.w += child.outerWidth
-    else:
-      if canWrap and (sizes.space.h.t == scMinContent or
-          sizes.space.h.isDefinite and
-          mctx.totalSize.h + child.size.h > sizes.space.h.u):
-        mctx.flushRow(box, sizes, totalMaxSize)
-      mctx.totalSize.h += child.outerHeight
+    if canWrap and (sizes.space[dim].t == scMinContent or
+        sizes.space[dim].isDefinite and
+        mctx.totalSize[dim] + child.size[dim] > sizes.space[dim].u):
+      mctx.flushMain(box, sizes, totalMaxSize, dim)
+    mctx.totalSize[dim] += child.outerSize(dim)
     mctx.updateMaxSizes(child)
     let grow = builder.computed{"flex-grow"}
     let shrink = builder.computed{"flex-shrink"}
@@ -2375,24 +2343,18 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
       sizes: childSizes
     ))
     inc i # need to increment index here for needsGrow
-  if flexDir in FlexRow:
-    if mctx.pending.len > 0:
-      mctx.flushRow(box, sizes, totalMaxSize)
-    box.applyWidth(sizes, totalMaxSize.w)
-    box.applyHeight(sizes, mctx.offset.y)
-  else:
-    if mctx.pending.len > 0:
-      mctx.flushColumn(box, sizes, totalMaxSize)
-    box.applyWidth(sizes, mctx.offset.x)
-    box.applyHeight(sizes, totalMaxSize.h)
+  if mctx.pending.len > 0:
+    mctx.flushMain(box, sizes, totalMaxSize, dim)
+  box.applySize(sizes, totalMaxSize[dim], sizes.space, dim)
+  box.applySize(sizes, mctx.offset[dim.opposite], sizes.space, dim.opposite)
 
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     space: AvailableSpace; offset: Offset; appendMargins: bool): BlockBox =
   let percHeight = space.h.toPercSize()
-  var space = AvailableSpace(
-    w: space.w,
-    h: maxContent() #TODO fit-content when clip
+  var space = availableSpace(
+    w = space.w,
+    h = maxContent() #TODO fit-content when clip
   )
   if builder.computed{"display"} == DisplayTable:
     space.w = fitContent(space.w)
@@ -2404,7 +2366,7 @@ proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    offset: Offset(x: offset.x + sizes.margin.left, y: offset.y),
+    offset: offset(x = offset.x + sizes.margin.left, y = offset.y),
     margin: sizes.margin
   )
   bctx.layout(box, builder, sizes)
@@ -2431,10 +2393,7 @@ proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
   let prevBps = bctx.ancestorsHead
   bctx.ancestorsHead = BlockPositionState(
     box: box,
-    offset: Offset(
-      x: state.offset.x,
-      y: state.offset.y
-    ),
+    offset: state.offset,
     resolved: bctx.parentBps == nil
   )
   if prevBps != nil:
@@ -2581,7 +2540,7 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
     bctx.ancestorsHead = bctx.marginTarget
   state.nested.setLen(0)
   bctx.exclusions.setLen(state.oldExclusionsLen)
-  state.offset = Offset(x: sizes.padding.left, y: sizes.padding.top)
+  state.offset = offset(x = sizes.padding.left, y = sizes.padding.top)
   box.applyWidth(sizes, state.maxChildWidth + state.totalFloatWidth)
   state.space.w = stretch(box.size.w)
 
@@ -2608,7 +2567,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox;
   if positioned:
     lctx.positioned.add(sizes.space)
   var state = BlockState(
-    offset: Offset(x: sizes.padding.left, y: sizes.padding.top),
+    offset: offset(x = sizes.padding.left, y = sizes.padding.top),
     space: sizes.space,
     oldMarginTodo: bctx.marginTodo,
     oldExclusionsLen: bctx.exclusions.len
@@ -3157,9 +3116,9 @@ proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
   return box
 
 proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
-  let space = AvailableSpace(
-    w: stretch(attrsp[].width_px),
-    h: stretch(attrsp[].height_px)
+  let space = availableSpace(
+    w = stretch(attrsp[].width_px),
+    h = stretch(attrsp[].height_px)
   )
   let lctx = LayoutState(
     attrsp: attrsp,
@@ -3168,4 +3127,5 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   )
   let builder = root.generateBlockBox(lctx)
   var marginBottomOut: LayoutUnit
-  return lctx.layoutRootBlock(builder, space, Offset(), marginBottomOut)
+  return lctx.layoutRootBlock(builder, space, offset(x = 0, y = 0),
+    marginBottomOut)
