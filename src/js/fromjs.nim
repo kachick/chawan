@@ -98,11 +98,6 @@ func fromJSInt[T: SomeInteger](ctx: JSContext; val: JSValue):
     if JS_ToUint32(ctx, addr ret, val) < 0:
       return err()
     return ok(ret)
-  elif T is uint64:
-    var ret: uint32
-    if JS_ToUint32(ctx, addr ret, val) < 0:
-      return err()
-    return ok(uint64(ret))
 
 proc fromJSFloat64(ctx: JSContext; val: JSValue): JSResult[float64] =
   var f64: float64
