@@ -19,21 +19,20 @@ type
     maxy*: float64
 
   PathSegmentType = enum
-    SEGMENT_STRAIGHT, SEGMENT_QUADRATIC, SEGMENT_BEZIER, SEGMENT_ARC,
-    SEGMENT_ELLIPSE
+    pstStraight, pstQuadratic, pstBezier, pstArc, pstEllipse
 
   PathSegment = object
     case t: PathSegmentType
-    of SEGMENT_QUADRATIC:
+    of pstQuadratic:
       cp: Vector2D
-    of SEGMENT_BEZIER:
+    of pstBezier:
       cp0: Vector2D
       cp1: Vector2D
-    of SEGMENT_ARC:
+    of pstArc:
       oa: Vector2D
       r: float64
       ia: bool
-    of SEGMENT_ELLIPSE:
+    of pstEllipse:
       oe: Vector2D
       rx: float64
       ry: float64
@@ -57,19 +56,19 @@ proc addSegment(path: Path; segment: PathSegment; p: Vector2D) =
   path.subpaths[^1].points.add(p)
 
 proc addStraightSegment(path: Path; p: Vector2D) =
-  let segment = PathSegment(t: SEGMENT_STRAIGHT)
+  let segment = PathSegment(t: pstStraight)
   path.addSegment(segment, p)
 
 proc addQuadraticSegment(path: Path; cp, p: Vector2D) =
   let segment = PathSegment(
-    t: SEGMENT_QUADRATIC,
+    t: pstQuadratic,
     cp: cp
   )
   path.addSegment(segment, p)
 
 proc addBezierSegment(path: Path; cp0, cp1, p: Vector2D) =
   let segment = PathSegment(
-    t: SEGMENT_BEZIER,
+    t: pstBezier,
     cp0: cp0,
     cp1: cp1
   )
@@ -78,7 +77,7 @@ proc addBezierSegment(path: Path; cp0, cp1, p: Vector2D) =
 # Goes from start tangent point to end tangent point
 proc addArcSegment(path: Path; o, etan: Vector2D; r: float64; ia: bool) =
   let segment = PathSegment(
-    t: SEGMENT_ARC,
+    t: pstArc,
     oa: o,
     r: r,
     ia: ia
@@ -88,7 +87,7 @@ proc addArcSegment(path: Path; o, etan: Vector2D; r: float64; ia: bool) =
 proc addEllipseSegment(path: Path; o, etan: Vector2D; rx, ry: float64) =
   #TODO simplify to bezier?
   let segment = PathSegment(
-    t: SEGMENT_ELLIPSE,
+    t: pstEllipse,
     oe: o,
     rx: rx,
     ry: ry
@@ -185,24 +184,24 @@ iterator lines(subpath: Subpath; i: int): Line {.inline.} =
   let p0 = subpath.points[i]
   let p1 = subpath.points[i + 1]
   case subpath.segments[i].t
-  of SEGMENT_STRAIGHT:
+  of pstStraight:
     yield Line(p0: p0, p1: p1)
-  of SEGMENT_QUADRATIC:
+  of pstQuadratic:
     let c = subpath.segments[i].cp
     for line in quadraticLines(p0, p1, c):
       yield line
-  of SEGMENT_BEZIER:
+  of pstBezier:
     let c0 = subpath.segments[i].cp0
     let c1 = subpath.segments[i].cp1
     for line in bezierLines(p0, p1, c0, c1):
       yield line
-  of SEGMENT_ARC:
+  of pstArc:
     let o = subpath.segments[i].oa
     let r = subpath.segments[i].r
     let i = subpath.segments[i].ia
     for line in arcLines(p0, p1, o, r, i):
       yield line
-  of SEGMENT_ELLIPSE:
+  of pstEllipse:
     discard #TODO
 
 iterator lines*(path: Path): Line {.inline.} =
