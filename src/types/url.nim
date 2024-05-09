@@ -245,17 +245,6 @@ func endsInNumber(input: string): bool =
       inc i
   return true
 
-type u32pair {.packed.} = object
-  a: uint32
-  b: uint32
-
-func cmpRange(x: u32pair; y: uint32): int =
-  if x.a > y:
-    return 1
-  elif x.b < y:
-    return -1
-  return 0
-
 type
   IDNATableStatus = enum
     itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
@@ -306,7 +295,7 @@ func processIdna(str: string; beStrict: bool): Option[string] =
     of itsDeviation: mapped &= r
     of itsValid: mapped &= r
   if mapped.len == 0: return
-  mapped.mnormalize()
+  mapped = mapped.normalize()
   var cr: CharRange
   {.cast(noSideEffect).}:
     cr_init(addr cr, nil, passRealloc)

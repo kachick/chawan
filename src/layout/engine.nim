@@ -881,9 +881,9 @@ iterator transform(text: seq[string]; v: CSSTextTransform): string {.inline.} =
   else:
     for str in text:
       let str = case v
-      of TextTransformCapitalize: str.capitalize()
-      of TextTransformUppercase: str.toUpper()
-      of TextTransformLowercase: str.toLower()
+      of TextTransformCapitalize: str.capitalizeLU()
+      of TextTransformUppercase: str.toUpperLU()
+      of TextTransformLowercase: str.toLowerLU()
       of TextTransformFullWidth: str.fullwidth()
       of TextTransformFullSizeKana: str.fullsize()
       of TextTransformChaHalfWidth: str.halfwidth()

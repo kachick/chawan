@@ -2,7 +2,6 @@ import std/strutils
 import std/unicode
 
 import utils/proptable
-import utils/charcategory
 import utils/map
 
 include res/map/charwidth_gen
@@ -78,29 +77,3 @@ func padToWidth*(str: string; size: int; schar = '$'): string =
         result &= r
         w += r.width
     result &= schar
-
-func isDigitAscii(r: Rune): bool =
-  return uint32(r) < 128 and char(r) in AsciiDigit
-
-type BreakCategory* = enum
-  bcAlpha, bcSpace, bcSymbol
-
-func breaksWord*(r: Rune): bool =
-  return not (r.isDigitAscii() or r.width() == 0 or r.isAlpha())
-
-func breaksViWordCat*(r: Rune): BreakCategory =
-  if r.isWhiteSpace():
-    return bcSpace
-  elif r.breaksWord() and r != Rune'_':
-    return bcSymbol
-  return bcAlpha
-
-func breaksWordCat*(r: Rune): BreakCategory =
-  if not r.breaksWord():
-    return bcAlpha
-  return bcSpace
-
-func breaksBigWordCat*(r: Rune): BreakCategory =
-  if not r.isWhiteSpace():
-    return bcAlpha
-  return bcSpace

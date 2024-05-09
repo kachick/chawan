@@ -1,3 +1,4 @@
+import std/algorithm
 import std/strutils
 import std/unicode
 
@@ -7,9 +8,10 @@ import utils/charcategory
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
-proc mnormalize*(rs: var seq[Rune]; form = UNICODE_NFC) =
+proc normalize*(rs: seq[Rune]; form = UNICODE_NFC): seq[Rune] =
   {.cast(noSideEffect).}:
-    if rs.len == 0: return
+    if rs.len == 0:
+      return @[]
     var outbuf: ptr uint32
     let p = cast[ptr uint32](unsafeAddr rs[0])
     let out_len = unicode_normalize(addr outbuf, p, cint(rs.len), form, nil,
@@ -18,29 +20,81 @@ proc mnormalize*(rs: var seq[Rune]; form = UNICODE_NFC) =
       raise newException(Defect, "Unicode normalization failed")
     if out_len == 0:
       return
-    rs = cast[seq[Rune]](newSeqUninitialized[uint32](out_len))
+    var rs = cast[seq[Rune]](newSeqUninitialized[uint32](out_len))
     copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
     dealloc(outbuf)
+    return rs
 
-#TODO maybe a utf8 normalization procedure?
 proc mnormalize*(s: var string) =
   if NonAscii notin s:
     return # no need to normalize ascii
-  var rs = s.toRunes()
-  rs.mnormalize()
-  s = $rs
+  s = $s.toRunes().normalize()
 
-func normalize*(rs: seq[Rune]; form = UNICODE_NFC): seq[Rune] =
-  {.cast(noSideEffect).}:
-    if rs.len == 0: return
-    var outbuf: ptr uint32
-    let p = cast[ptr uint32](unsafeAddr rs[0])
-    let out_len = unicode_normalize(addr outbuf, p, cint(rs.len), form,
-      nil, passRealloc)
-    if out_len < 0:
-      raise newException(Defect, "Unicode normalization failed")
-    if out_len == 0:
-      return
-    result = cast[seq[Rune]](newSeqUninitialized[uint32](out_len))
-    copyMem(addr result[0], outbuf, out_len * sizeof(uint32))
-    dealloc(outbuf)
+# n == 0: upper, 1: lower, 2: case fold
+proc toUpperLU(s: string; n: cint): string =
+  result = newStringOfCap(s.len)
+  for r in s.runes:
+    var outa: array[LRE_CC_RES_LEN_MAX, uint32]
+    let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]),
+      uint32(r), n)
+    for i in 0 ..< n:
+      result &= $Rune(outa[i])
+
+proc toUpperLU*(s: string): string =
+  return s.toUpperLU(0)
+
+proc toLowerLU*(s: string): string =
+  return s.toUpperLU(1)
+
+proc capitalizeLU*(s: string): string =
+  result = newStringOfCap(s.len)
+  var wordStart = true
+  for r in s.runes:
+    if lre_is_space(uint32(r)) == 1:
+      wordStart = true
+      result &= $r
+    elif wordStart:
+      var outa: array[LRE_CC_RES_LEN_MAX, uint32]
+      let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]),
+        uint32(r), 0)
+      for i in 0 ..< n:
+        result &= $Rune(outa[i])
+      wordStart = false
+    else:
+      result &= $r
+
+type u32pair* {.packed.} = object
+  a: uint32
+  b: uint32
+
+func cmpRange*(x: u32pair; y: uint32): int =
+  if x.a > y:
+    return 1
+  elif x.b < y:
+    return -1
+  return 0
+
+func contains(cr: CharRange; r: Rune): bool =
+  let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
+  let L = cr.len div 2 - 1
+  return cps.toOpenArray(0, L).binarySearch(uint32(r), cmpRange) != -1
+
+proc isGeneralCategoryLU*(r: Rune; s: string): bool =
+  var cr: CharRange
+  cr_init(addr cr, nil, passRealloc)
+  doAssert unicode_general_category(addr cr, s) == 0
+  result = r in cr
+  cr_free(addr cr)
+
+proc isAlphaLU*(r: Rune): bool =
+  return r.isGeneralCategoryLU("Letter")
+
+proc isScriptLU*(r: Rune; s: string): bool =
+  var cr: CharRange
+  cr_init(addr cr, nil, passRealloc)
+  doAssert unicode_script(addr cr, s, 0) == 0
+  result = r in cr
+  cr_free(addr cr)
+
+proc isWhiteSpaceLU*(r: Rune): bool =
+  return r.isGeneralCategoryLU("Separator")

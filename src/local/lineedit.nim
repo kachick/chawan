@@ -8,6 +8,7 @@ import types/opt
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
+import utils/wordbreak
 
 import chagashi/charset
 import chagashi/validator

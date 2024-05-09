@@ -12,8 +12,8 @@ import io/promise
 import io/serversocket
 import io/socketstream
 import js/javascript
-import js/jstypes
 import js/jsregex
+import js/jstypes
 import layout/renderdocument
 import loader/headers
 import loader/loader
@@ -26,9 +26,11 @@ import types/cookie
 import types/referrer
 import types/url
 import types/winattrs
+import utils/luwrap
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
+import utils/wordbreak
 
 import chagashi/charset
 
@@ -595,7 +597,7 @@ proc cursorLineTextStart(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
   var x = 0
   for r in container.currentLine.runes:
-    if not r.isWhitespace():
+    if not r.isWhiteSpaceLU():
       break
     x += r.twidth(x)
   if x == 0:
