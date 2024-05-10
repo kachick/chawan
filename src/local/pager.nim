@@ -11,6 +11,7 @@ import std/unicode
 
 import bindings/libregexp
 import bindings/quickjs
+import config/chapath
 import config/config
 import config/mailcap
 import io/bufreader
@@ -826,12 +827,11 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       pager.container.sourcepair = container
       pager.addContainer(container)
 
-func getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
+proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
-  if editor == "":
-    editor = getEnv("EDITOR")
-    if editor == "":
-      editor = "vi %s +%d"
+  if (let uqEditor = ChaPath(editor).unquote(); uqEditor.isSome):
+    if uqEditor.get in ["vi", "nvi", "vim", "nvim"]:
+      editor &= " +%d"
   var canpipe = false
   var s = unquoteCommand(editor, "", file, nil, canpipe, line)
   if canpipe:
