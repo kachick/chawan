@@ -61,8 +61,8 @@ type
     istream*: PosixStream
     outfile: File
     cleared: bool
-    canvas: FixedGrid
-    pcanvas: FixedGrid
+    canvas: seq[FixedCell]
+    lineDamage: seq[int]
     attrs*: WindowAttributes
     colorMode: ColorMode
     formatMode: FormatMode
@@ -466,43 +466,32 @@ proc processOutputString*(term: Terminal; str: string; w: var int): string =
     var success = false
     return newTextEncoder(term.cs).encodeAll(str, success)
 
-proc generateFullOutput(term: Terminal; grid: FixedGrid): string =
+proc generateFullOutput(term: Terminal): string =
   var format = Format()
   result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
   result &= term.clearDisplay()
-  for y in 0 ..< grid.height:
+  for y in 0 ..< term.attrs.height:
     if y != 0:
       result &= "\r\n"
     var w = 0
-    for x in 0 ..< grid.width:
+    for x in 0 ..< term.attrs.width:
       while w < x:
         result &= " "
         inc w
-      let cell = grid[y * grid.width + x]
+      let cell = term.canvas[y * term.attrs.width + x]
       result &= term.processFormat(format, cell.format)
       result &= term.processOutputString(cell.str, w)
+    term.lineDamage[y] = term.attrs.width
 
-proc generateSwapOutput(term: Terminal; grid, prev: FixedGrid): string =
+proc generateSwapOutput(term: Terminal): string =
   var vy = -1
-  for y in 0 ..< grid.height:
-    var w = 0
-    var change = false
-    # scan for changes, and set cx to x of the first change
-    var cx = 0
-    # if there is a change, we have to start from the last x with
-    # a string (otherwise we might overwrite a double-width char)
-    var lastx = 0
-    for x in 0 ..< grid.width:
-      let i = y * grid.width + x
-      if grid[i].str != "":
-        lastx = x
-      if grid[i] != prev[i]:
-        change = true
-        cx = lastx
-        w = lastx
-        break
-    if change:
+  for y in 0 ..< term.attrs.height:
+    # set cx to x of the first change
+    let cx = term.lineDamage[y]
+    # w will track the current position on screen
+    var w = cx
+    if cx < term.attrs.width:
       if cx == 0 and vy != -1:
         while vy < y:
           result &= "\r\n"
@@ -512,15 +501,17 @@ proc generateSwapOutput(term: Terminal; grid, prev: FixedGrid): string =
         vy = y
       result &= term.resetFormat()
       var format = Format()
-      for x in cx ..< grid.width:
+      for x in cx ..< term.attrs.width:
         while w < x: # if previous cell had no width, catch up with x
           result &= ' '
           inc w
-        let cell = grid[y * grid.width + x]
+        let cell = term.canvas[y * term.attrs.width + x]
         result &= term.processFormat(format, cell.format)
         result &= term.processOutputString(cell.str, w)
-      if w < grid.width:
+      if w < term.attrs.width:
         result &= term.clearEnd()
+      # damage is gone
+      term.lineDamage[y] = term.attrs.width
 
 proc hideCursor*(term: Terminal) =
   when termcap_found:
@@ -534,29 +525,19 @@ proc showCursor*(term: Terminal) =
   else:
     term.write(CNORM)
 
-func emulateOverline(term: Terminal): bool =
-  term.config.display.emulate_overline and
-    ffOverline notin term.formatMode and ffUnderline in term.formatMode
-
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
+    var lastx = 0
     for lx in x ..< x + grid.width:
-      let i = ly * term.canvas.width + lx
-      term.canvas[i] = grid[(ly - y) * grid.width + (lx - x)]
-      let isol = ffOverline in term.canvas[i].format.flags
-      if i >= term.canvas.width and isol and term.emulateOverline:
-        let w = grid[(ly - y) * grid.width + (lx - x)].width()
-        let s = i - term.canvas.width
-        var j = s
-        while j < term.canvas.len and j < s + w:
-          let cell = addr term.canvas[j]
-          cell.format.flags.incl(ffUnderline)
-          if cell.str == "":
-            cell.str = " "
-          if cell.str == " ":
-            let i = (ly - y) * grid.width + (lx - x)
-            cell.format.fgcolor = grid[i].format.fgcolor
-          j += cell[].width()
+      let i = ly * term.attrs.width + lx
+      let cell = grid[(ly - y) * grid.width + (lx - x)]
+      if term.canvas[i].str != "":
+        # if there is a change, we have to start from the last x with
+        # a string (otherwise we might overwrite half of a double-width char)
+        lastx = lx
+      if cell != term.canvas[i]:
+        term.canvas[i] = cell
+        term.lineDamage[ly] = min(term.lineDamage[ly], lastx)
 
 proc applyConfigDimensions(term: Terminal) =
   # screen dimensions
@@ -607,20 +588,12 @@ proc applyConfig(term: Terminal) =
 
 proc outputGrid*(term: Terminal) =
   term.outfile.write(term.resetFormat())
-  let samesize = term.canvas.width == term.pcanvas.width and
-    term.canvas.height == term.pcanvas.height
-  if term.config.display.force_clear or not term.cleared or not samesize:
-    term.outfile.write(term.generateFullOutput(term.canvas))
+  if term.config.display.force_clear or not term.cleared:
+    term.outfile.write(term.generateFullOutput())
     term.cleared = true
     term.hasSixel = false
   else:
-    term.outfile.write(term.generateSwapOutput(term.canvas, term.pcanvas))
-  if not samesize:
-    term.pcanvas.width = term.canvas.width
-    term.pcanvas.height = term.canvas.height
-    term.pcanvas.cells.setLen(term.canvas.cells.len)
-  for i in 0 ..< term.canvas.cells.len:
-    term.pcanvas[i] = term.canvas[i]
+    term.outfile.write(term.generateSwapOutput())
 
 proc clearImages*(term: Terminal) =
   #TODO this entire function is a hack:
@@ -681,7 +654,7 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     outs &= '#' & $n & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
   var n = offy * int(bmp.width) # start at offy
   let H = disph * int(bmp.width) # end at disph
-  var m = y * term.canvas.width * term.attrs.ppl # track absolute y
+  var m = y * term.attrs.width * term.attrs.ppl # track absolute y
   let realw = dispw - offx
   let cx0 = x * term.attrs.ppc + offx
   while n < H:
@@ -703,7 +676,7 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
           bands.add(SixelBand(c: c, data: newSeq[uint8](realw)))
           bands[^1].data[^1] = mask
       n += int(bmp.width)
-      m += term.canvas.width
+      m += term.attrs.width
     term.write(outs)
     outs = ""
     for i, band in bands:
@@ -1159,7 +1132,8 @@ proc parseMouseInput*(term: Terminal): Opt[MouseInput] =
 proc windowChange*(term: Terminal) =
   discard term.detectTermAttributes(windowOnly = true)
   term.applyConfigDimensions()
-  term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
+  term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
+  term.lineDamage = newSeq[int](term.attrs.height)
   term.cleared = false
 
 proc initScreen(term: Terminal) =
@@ -1181,7 +1155,8 @@ proc start*(term: Terminal; istream: PosixStream): TermStartResult =
   term.applyConfig()
   if term.isatty():
     term.initScreen()
-  term.canvas = newFixedGrid(term.attrs.width, term.attrs.height)
+  term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
+  term.lineDamage = newSeq[int](term.attrs.height)
 
 proc restart*(term: Terminal) =
   if term.isatty():

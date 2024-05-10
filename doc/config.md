@@ -381,13 +381,6 @@ completely.</td>
 </tr>
 
 <tr>
-<td>emulate-overline</td>
-<td>boolean</td>
-<td>When set to true and the overline formatting attribute is not enabled,
-overlines are substituted by underlines on the previous line.</td>
-</tr>
-
-<tr>
 <td>alt-screen</td>
 <td>"auto" / boolean</td>
 <td>Enable/disable the alternative screen.</td>

@@ -110,7 +110,6 @@ type
     format_mode* {.jsgetset.}: Option[FormatMode]
     no_format_mode* {.jsgetset.}: FormatMode
     image_mode* {.jsgetset.}: Option[ImageMode]
-    emulate_overline* {.jsgetset.}: bool
     alt_screen* {.jsgetset.}: Option[bool]
     highlight_color* {.jsgetset.}: ARGBColor
     highlight_marks* {.jsgetset.}: bool
