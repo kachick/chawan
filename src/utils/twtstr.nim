@@ -30,16 +30,16 @@ func getControlLetter*(c: char): char =
     return '?'
   return char(int(c) or 0x40)
 
-func toHeaderCase*(str: string): string =
-  result = str
+func toHeaderCase*(s: string): string =
+  result = s
   var flip = true
   for c in result.mitems:
     if flip:
       c = c.toUpperAscii()
     flip = c == '-'
 
-func snakeToKebabCase*(str: string): string =
-  result = str
+func snakeToKebabCase*(s: string): string =
+  result = s
   for c in result.mitems:
     if c == '_':
       c = '-'
@@ -61,13 +61,15 @@ func camelToKebabCase*(s: string): string =
     else:
       result &= c
 
-func startsWithNoCase*(str, prefix: string): bool =
-  if str.len < prefix.len: return false
+func startsWithNoCase*(s, prefix: string): bool =
+  if s.len < prefix.len:
+    return false
   # prefix.len is always lower
   var i = 0
   while true:
     if i == prefix.len: return true
-    if str[i].toLowerAscii() != prefix[i].toLowerAscii(): return false
+    if s[i].toLowerAscii() != prefix[i].toLowerAscii():
+      return false
     inc i
 
 func hexValue*(c: char): int =
@@ -126,12 +128,15 @@ func endsWithIgnoreCase*(s1, s2: string): bool =
       return false
   return true
 
+func skipBlanks*(buf: string; at: int): int =
+  result = at
+  while result < buf.len and buf[result] in AsciiWhitespace:
+    inc result
+
 func stripAndCollapse*(s: string): string =
-  var i = 0
-  while i < s.len and s[i] in AsciiWhitespace:
-    inc i
   var space = false
-  while i < s.len:
+  result = ""
+  for i in s.skipBlanks(0) ..< s.len:
     if s[i] notin AsciiWhitespace:
       if space:
         result &= ' '
@@ -141,19 +146,13 @@ func stripAndCollapse*(s: string): string =
       space = true
     else:
       result &= ' '
-    inc i
-
-func skipBlanks*(buf: string; at: int): int =
-  result = at
-  while result < buf.len and buf[result] in AsciiWhitespace:
-    inc result
 
 func until*(s: string; c: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
     if s[i] in c:
       break
-    result.add(s[i])
+    result &= s[i]
 
 func untilLower*(s: string; c: set[char]; starti = 0): string =
   result = ""
@@ -163,14 +162,13 @@ func untilLower*(s: string; c: set[char]; starti = 0): string =
     result.add(s[i].toLowerAscii())
 
 func until*(s: string; c: char; starti = 0): string =
-  s.until({c}, starti)
+  return s.until({c}, starti)
 
 func after*(s: string; c: set[char]): string =
-  var i = 0
-  while i < s.len:
-    if s[i] in c:
-      return s.substr(i + 1)
-    inc i
+  let i = s.find(c)
+  if i != -1:
+    return s.substr(i + 1)
+  return ""
 
 func after*(s: string; c: char): string = s.after({c})
 
@@ -214,100 +212,6 @@ func convertSize*(size: int): string =
   let f = floor(csize * 100 + 0.5) / 100
   discard c_sprintf(cstring(result), cstring("%.3g%s"), f, SizeUnit[sizepos])
   result.setLen(cstring(result).len)
-
-func numberAdditive*(i: int; range: HSlice[int, int];
-    symbols: openArray[(int, string)]): string =
-  if i notin range:
-    return $i
-  var n = i
-  var at = 0
-  while n > 0:
-    if n >= symbols[at][0]:
-      n -= symbols[at][0]
-      result &= symbols[at][1]
-      continue
-    inc at
-  return result
-
-const romanNumbers = [
-  (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
-  (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
-]
-
-const romanNumbersLower = block:
-  var res: seq[(int, string)]
-  for (n, s) in romanNumbers:
-    res.add((n, s.toLowerAscii()))
-  res
-
-func romanNumber*(i: int): string =
-  return numberAdditive(i, 1..3999, romanNumbers)
-
-func romanNumberLower*(i: int): string =
-  return numberAdditive(i, 1..3999, romanNumbersLower)
-
-func japaneseNumber*(i: int): string =
-  if i == 0:
-    return "〇"
-  var n = i
-  if i < 0:
-    result &= "マイナス"
-    n *= -1
-
-  let o = n
-
-  var ss: seq[string]
-  var d = 0
-  while n > 0:
-    let m = n mod 10
-
-    if m != 0:
-      case d
-      of 1: ss.add("十")
-      of 2: ss.add("百")
-      of 3: ss.add("千")
-      of 4:
-        ss.add("万")
-        ss.add("一")
-      of 5:
-        ss.add("万")
-        ss.add("十")
-      of 6:
-        ss.add("万")
-        ss.add("百")
-      of 7:
-        ss.add("万")
-        ss.add("千")
-        ss.add("一")
-      of 8:
-        ss.add("億")
-        ss.add("一")
-      of 9:
-        ss.add("億")
-        ss.add("十")
-      else: discard
-    case m
-    of 0:
-      inc d
-      n = n div 10
-    of 1:
-      if o == n:
-        ss.add("一")
-    of 2: ss.add("二")
-    of 3: ss.add("三")
-    of 4: ss.add("四")
-    of 5: ss.add("五")
-    of 6: ss.add("六")
-    of 7: ss.add("七")
-    of 8: ss.add("八")
-    of 9: ss.add("九")
-    else: discard
-    n -= m
-
-  n = ss.len - 1
-  while n >= 0:
-    result &= ss[n]
-    dec n
 
 # Implements https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#signed-integers
 func parseIntImpl[T: SomeSignedInt](s: string; allowed: set[char]; radix: T):
@@ -540,28 +444,28 @@ const NameCharRanges = [ # + NameStartCharRanges
 ]
 const NameStartCharAscii = {':', '_'} + AsciiAlpha
 const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
-func matchNameProduction*(str: string): bool =
-  if str.len == 0:
+func matchNameProduction*(s: string): bool =
+  if s.len == 0:
     return false
   # NameStartChar
   var i = 0
   var r: Rune
-  if str[i] in Ascii:
-    if str[i] notin NameStartCharAscii:
+  if s[i] in Ascii:
+    if s[i] notin NameStartCharAscii:
       return false
     inc i
   else:
-    fastRuneAt(str, i, r)
+    fastRuneAt(s, i, r)
     if not isInRange(NameStartCharRanges, int32(r)):
       return false
   # NameChar
-  while i < str.len:
-    if str[i] in Ascii:
-      if str[i] notin NameCharAscii:
+  while i < s.len:
+    if s[i] in Ascii:
+      if s[i] notin NameCharAscii:
         return false
       inc i
     else:
-      fastRuneAt(str, i, r)
+      fastRuneAt(s, i, r)
       if not isInRange(NameStartCharRanges, int32(r)) and
           not isInMap(NameCharRanges, int32(r)):
         return false
@@ -606,21 +510,14 @@ proc expandPath*(path: string): string =
     return path
 
 func deleteChars*(s: string; todel: set[char]): string =
-  var i = 0
-  block earlyret:
-    for j, c in s:
-      if c in todel:
-        i = j
-        break earlyret
+  let i = s.find(todel)
+  if i == -1:
     return s
-  var rs = newStringOfCap(s.len - 1)
-  for j in 0 ..< i:
-    rs &= s[j]
+  var rs = s.substr(0, i - 1)
   for j in i + 1 ..< s.len:
     if s[j] in todel:
       continue
     rs &= s[j]
-    inc i
   return rs
 
 func replaceControls*(s: string): string =

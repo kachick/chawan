@@ -155,15 +155,16 @@ type
     mainConfig*: Config
     flags*: set[ContainerFlag]
     images*: seq[PosBitmap]
+    luctx: LUContext
 
 jsDestructor(Highlight)
 jsDestructor(Container)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
-    url: URL; request: Request; attrs: WindowAttributes; title: string;
-    redirectDepth: int; flags: set[ContainerFlag]; contentType: Option[string];
-    charsetStack: seq[Charset]; cacheId: int; cacheFile: string;
-    mainConfig: Config): Container =
+    url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
+    title: string; redirectDepth: int; flags: set[ContainerFlag];
+    contentType: Option[string]; charsetStack: seq[Charset]; cacheId: int;
+    cacheFile: string; mainConfig: Config): Container =
   return Container(
     url: url,
     request: request,
@@ -182,7 +183,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     cacheFile: cacheFile,
     process: -1,
     mainConfig: mainConfig,
-    flags: flags
+    flags: flags,
+    luctx: luctx
   )
 
 func location(container: Container): URL {.jsfget.} =
@@ -597,7 +599,7 @@ proc cursorLineTextStart(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
   var x = 0
   for r in container.currentLine.runes:
-    if not r.isWhiteSpaceLU():
+    if not container.luctx.isWhiteSpaceLU(r):
       break
     x += r.twidth(x)
   if x == 0:
@@ -705,7 +707,25 @@ proc cursorLineBegin(container: Container) {.jsfunc.} =
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
 
-type BreakFunc = proc(r: Rune): BreakCategory {.nimcall.}
+type BreakFunc = proc(ctx: LUContext; r: Rune): BreakCategory {.nimcall.}
+
+proc skipSpace(container: Container; b, x: var int; breakFunc: BreakFunc) =
+  while b < container.currentLine.len:
+    var r: Rune
+    let pb = b
+    fastRuneAt(container.currentLine, b, r)
+    if container.luctx.breakFunc(r) != bcSpace:
+      b = pb
+      break
+    x += r.twidth(x)
+
+proc skipSpaceRev(container: Container; b, x: var int; breakFunc: BreakFunc) =
+  while b >= 0:
+    let (r, o) = lastRune(container.currentLine, b)
+    if container.luctx.breakFunc(r) != bcSpace:
+      break
+    b -= o
+    x -= r.twidth(x)
 
 proc cursorNextWord(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
@@ -714,7 +734,7 @@ proc cursorNextWord(container: Container; breakFunc: BreakFunc) =
   var x = container.cursorx
   # meow
   let currentCat = if b < container.currentLine.len:
-    container.currentLine.runeAt(b).breakFunc()
+    container.luctx.breakFunc(container.currentLine.runeAt(b))
   else:
     bcSpace
   if currentCat != bcSpace:
@@ -722,20 +742,11 @@ proc cursorNextWord(container: Container; breakFunc: BreakFunc) =
     while b < container.currentLine.len:
       let pb = b
       fastRuneAt(container.currentLine, b, r)
-      if r.breakFunc() != currentCat:
+      if container.luctx.breakFunc(r) != currentCat:
         b = pb
         break
       x += r.twidth(x)
-
-  # skip space
-  while b < container.currentLine.len:
-    let pb = b
-    fastRuneAt(container.currentLine, b, r)
-    if r.breakFunc() != bcSpace:
-      b = pb
-      break
-    x += r.twidth(x)
-
+  container.skipSpace(b, x, breakFunc)
   if b < container.currentLine.len:
     container.setCursorX(x)
   else:
@@ -761,28 +772,20 @@ proc cursorPrevWord(container: Container; breakFunc: BreakFunc) =
   if container.currentLine.len > 0:
     b = min(b, container.currentLine.len - 1)
     let currentCat = if b >= 0:
-      container.currentLine.runeAt(b).breakFunc()
+      container.luctx.breakFunc(container.currentLine.runeAt(b))
     else:
       bcSpace
     if currentCat != bcSpace:
       # not in space, skip chars that have the same category
       while b >= 0:
         let (r, o) = lastRune(container.currentLine, b)
-        if r.breakFunc() != currentCat:
+        if container.luctx.breakFunc(r) != currentCat:
           break
         b -= o
         x -= r.twidth(x)
-
-    # skip space
-    while b >= 0:
-      let (r, o) = lastRune(container.currentLine, b)
-      if r.breakFunc() != bcSpace:
-        break
-      b -= o
-      x -= r.twidth(x)
+    container.skipSpaceRev(b, x, breakFunc)
   else:
     b = -1
-
   if b >= 0:
     container.setCursorX(x)
   else:
@@ -811,35 +814,25 @@ proc cursorWordEnd(container: Container; breakFunc: BreakFunc) =
   if b < container.currentLine.len:
     let pb = b
     fastRuneAt(container.currentLine, b, r)
-    if r.breakFunc() == bcSpace:
+    if container.luctx.breakFunc(r) == bcSpace:
       b = pb
     else:
       px = x
       x += r.twidth(x)
-
-  # skip space
-  while b < container.currentLine.len:
-    let pb = b
-    fastRuneAt(container.currentLine, b, r)
-    if r.breakFunc() != bcSpace:
-      b = pb
-      break
-    x += r.twidth(x)
-
+  container.skipSpace(b, x, breakFunc)
   # move to the last char in the current category
   let ob = b
   if b < container.currentLine.len:
-    let currentCat = container.currentLine.runeAt(b).breakFunc()
+    let currentCat = container.luctx.breakFunc(container.currentLine.runeAt(b))
     while b < container.currentLine.len:
       let pb = b
       fastRuneAt(container.currentLine, b, r)
-      if r.breakFunc() != currentCat:
+      if container.luctx.breakFunc(r) != currentCat:
         b = pb
         break
       px = x
       x += r.twidth(x)
     x = px
-
   if b < container.currentLine.len or ob != b:
     container.setCursorX(x)
   else:
@@ -869,27 +862,19 @@ proc cursorWordBegin(container: Container; breakFunc: BreakFunc) =
     if b >= 0:
       let (r, o) = lastRune(container.currentLine, b)
       # if not in space, move to the left by one
-      if r.breakFunc() != bcSpace:
+      if container.luctx.breakFunc(r) != bcSpace:
         b -= o
         px = x
         x -= r.twidth(x)
-
-    # skip space
-    while b >= 0:
-      let (r, o) = lastRune(container.currentLine, b)
-      if r.breakFunc() != bcSpace:
-        break
-      b -= o
-      x -= r.twidth(x)
-
+    container.skipSpaceRev(b, x, breakFunc)
     # move to the first char in the current category
     ob = b
     if b >= 0:
       let (r, _) = lastRune(container.currentLine, b)
-      let currentCat = r.breakFunc()
+      let currentCat = container.luctx.breakFunc(r)
       while b >= 0:
         let (r, o) = lastRune(container.currentLine, b)
-        if r.breakFunc() != currentCat:
+        if container.luctx.breakFunc(r) != currentCat:
           break
         b -= o
         px = x
@@ -898,7 +883,6 @@ proc cursorWordBegin(container: Container; breakFunc: BreakFunc) =
   else:
     b = -1
     ob = -1
-
   if b >= 0 or ob != b:
     container.setCursorX(x)
   else:

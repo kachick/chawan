@@ -79,22 +79,62 @@ func contains(cr: CharRange; r: Rune): bool =
   let L = cr.len div 2 - 1
   return cps.toOpenArray(0, L).binarySearch(uint32(r), cmpRange) != -1
 
-proc isGeneralCategoryLU*(r: Rune; s: string): bool =
-  var cr: CharRange
-  cr_init(addr cr, nil, passRealloc)
-  doAssert unicode_general_category(addr cr, s) == 0
-  result = r in cr
-  cr_free(addr cr)
+type
+  LURangeType = enum
+    lurLetter = "Letter"
+    lurSeparator = "Separator"
+    lurHan = "Han"
+    lurHiragana = "Hiragana"
+    lurKatakana = "Katakana"
+    lurHangul = "Hangul"
 
-proc isAlphaLU*(r: Rune): bool =
-  return r.isGeneralCategoryLU("Letter")
+  LUContextObj = object
+    crs: array[LURangeType, CharRange]
+    inited: set[LURangeType]
 
-proc isScriptLU*(r: Rune; s: string): bool =
-  var cr: CharRange
-  cr_init(addr cr, nil, passRealloc)
-  doAssert unicode_script(addr cr, s, 0) == 0
-  result = r in cr
-  cr_free(addr cr)
+  LUContext* = ref LUContextObj
 
-proc isWhiteSpaceLU*(r: Rune): bool =
-  return r.isGeneralCategoryLU("Separator")
+{.warning[Deprecated]: off.}:
+  proc `=destroy`*(ctx: var LUContextObj) =
+    for lur, cr in ctx.crs.mpairs:
+      if lur in ctx.inited:
+        cr_free(addr cr)
+    ctx.inited = {}
+
+proc initGeneralCategory(ctx: LUContext; lur: LURangeType) =
+  if lur notin ctx.inited:
+    let p = addr ctx.crs[lur]
+    cr_init(p, nil, passRealloc)
+    doAssert unicode_general_category(p, cstring($lur)) == 0
+    ctx.inited.incl(lur)
+
+proc initScript(ctx: LUContext; lur: LURangeType) =
+  if lur notin ctx.inited:
+    let p = addr ctx.crs[lur]
+    cr_init(p, nil, passRealloc)
+    doAssert unicode_script(p, cstring($lur), 0) == 0
+    ctx.inited.incl(lur)
+
+proc isAlphaLU*(ctx: LUContext; r: Rune): bool =
+  ctx.initGeneralCategory(lurLetter)
+  return r in ctx.crs[lurLetter]
+
+proc isWhiteSpaceLU*(ctx: LUContext; r: Rune): bool =
+  ctx.initGeneralCategory(lurSeparator)
+  return r in ctx.crs[lurSeparator]
+
+proc isHan*(ctx: LUContext; r: Rune): bool =
+  ctx.initScript(lurHan)
+  return r in ctx.crs[lurHan]
+
+proc isHiragana*(ctx: LUContext; r: Rune): bool =
+  ctx.initScript(lurHiragana)
+  return r in ctx.crs[lurHiragana]
+
+proc isKatakana*(ctx: LUContext; r: Rune): bool =
+  ctx.initScript(lurKatakana)
+  return r in ctx.crs[lurKatakana]
+
+proc isHangul*(ctx: LUContext; r: Rune): bool =
+  ctx.initScript(lurHangul)
+  return r in ctx.crs[lurHangul]

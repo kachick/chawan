@@ -21,12 +21,12 @@ import io/socketstream
 import io/stdio
 import io/tempfile
 import io/urlfilter
-import js/jserror
 import js/fromjs
 import js/javascript
+import js/jserror
+import js/jsregex
 import js/jstypes
 import js/jsutils
-import js/jsregex
 import js/tojs
 import loader/connecterror
 import loader/headers
@@ -44,6 +44,7 @@ import types/cookie
 import types/opt
 import types/url
 import types/winattrs
+import utils/luwrap
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
@@ -134,6 +135,7 @@ type
     statusgrid*: FixedGrid
     term*: Terminal
     unreg*: seq[Container]
+    luctx: LUContext
 
 jsDestructor(Pager)
 
@@ -293,7 +295,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     forkserver: forkserver,
     term: newTerminal(stdout, config),
     alerts: alerts,
-    jsctx: ctx
+    jsctx: ctx,
+    luctx: LUContext()
   )
 
 proc genClientKey(pager: Pager): ClientKey =
@@ -534,6 +537,7 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig,
     url,
     request,
+    pager.luctx,
     pager.term.attrs,
     title,
     redirectDepth,

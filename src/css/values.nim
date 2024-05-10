@@ -655,6 +655,96 @@ func numToFixed(n: int; map: openArray[Rune]): string =
     return $n
   return $map[n]
 
+func numberAdditive(i: int; range: HSlice[int, int];
+    symbols: openArray[(int, string)]): string =
+  if i notin range:
+    return $i
+  var n = i
+  var at = 0
+  while n > 0:
+    if n >= symbols[at][0]:
+      n -= symbols[at][0]
+      result &= symbols[at][1]
+      continue
+    inc at
+  return result
+
+const romanNumbers = [
+  (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+  (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+]
+
+const romanNumbersLower = block:
+  var res: seq[(int, string)]
+  for (n, s) in romanNumbers:
+    res.add((n, s.toLowerAscii()))
+  res
+
+func romanNumber(i: int): string =
+  return numberAdditive(i, 1..3999, romanNumbers)
+
+func romanNumberLower(i: int): string =
+  return numberAdditive(i, 1..3999, romanNumbersLower)
+
+func japaneseNumber(i: int): string =
+  if i == 0:
+    return "〇"
+  var n = i
+  if i < 0:
+    result &= "マイナス"
+    n *= -1
+  let o = n
+  var ss: seq[string] = @[]
+  var d = 0
+  while n > 0:
+    let m = n mod 10
+    if m != 0:
+      case d
+      of 1: ss.add("十")
+      of 2: ss.add("百")
+      of 3: ss.add("千")
+      of 4:
+        ss.add("万")
+        ss.add("一")
+      of 5:
+        ss.add("万")
+        ss.add("十")
+      of 6:
+        ss.add("万")
+        ss.add("百")
+      of 7:
+        ss.add("万")
+        ss.add("千")
+        ss.add("一")
+      of 8:
+        ss.add("億")
+        ss.add("一")
+      of 9:
+        ss.add("億")
+        ss.add("十")
+      else: discard
+    case m
+    of 0:
+      inc d
+      n = n div 10
+    of 1:
+      if o == n:
+        ss.add("一")
+    of 2: ss.add("二")
+    of 3: ss.add("三")
+    of 4: ss.add("四")
+    of 5: ss.add("五")
+    of 6: ss.add("六")
+    of 7: ss.add("七")
+    of 8: ss.add("八")
+    of 9: ss.add("九")
+    else: discard
+    n -= m
+  n = ss.len - 1
+  while n >= 0:
+    result &= ss[n]
+    dec n
+
 func listMarker*(t: CSSListStyleType; i: int): string =
   case t
   of ListStyleTypeNone: return ""

@@ -6,6 +6,7 @@ import js/javascript
 import types/cell
 import types/opt
 import types/winattrs
+import utils/luwrap
 import utils/strwidth
 import utils/twtstr
 import utils/wordbreak
@@ -210,13 +211,14 @@ proc forward(edit: LineEdit) {.jsfunc.} =
 proc prevWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori == 0:
     return
+  let ctx = LUContext()
   let (r, len) = edit.news.lastRune(edit.cursori - 1)
-  if r.breaksWord():
+  if ctx.breaksWord(r):
     edit.cursori -= len
     edit.cursorx -= r.width()
   while edit.cursori > 0:
     let (r, len) = edit.news.lastRune(edit.cursori - 1)
-    if r.breaksWord():
+    if ctx.breaksWord(r):
       break
     edit.cursori -= len
     edit.cursorx -= r.width()
@@ -226,17 +228,18 @@ proc prevWord(edit: LineEdit) {.jsfunc.} =
 proc nextWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
     return
+  let ctx = LUContext()
   let oc = edit.cursori
   var r: Rune
   fastRuneAt(edit.news, edit.cursori, r)
-  if r.breaksWord():
+  if ctx.breaksWord(r):
     edit.cursorx += r.width()
   else:
     edit.cursori = oc
   while edit.cursori < edit.news.len:
     let pc = edit.cursori
     fastRuneAt(edit.news, edit.cursori, r)
-    if r.breaksWord():
+    if ctx.breaksWord(r):
       edit.cursori = pc
       break
     edit.cursorx += r.width()

@@ -25,7 +25,7 @@ proc unicode_normalize*(pdst: ptr ptr uint32; src: ptr uint32; src_len: cint;
   realloc_func: DynBufReallocFunc): cint
 
 proc unicode_script*(cr: ptr CharRange; script_name: cstring; is_ext: cint):
-  cint {.importc, header: "quickjs/libunicode.h".}
+  cint
 proc unicode_prop*(cr: ptr CharRange; prop_name: cstring): cint
 proc unicode_general_category*(cr: ptr CharRange; gc_name: cstring): cint
 

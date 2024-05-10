@@ -1,4 +1,3 @@
-import std/strutils
 import std/unicode
 
 import utils/proptable
@@ -40,40 +39,48 @@ func twidth*(r: Rune; w: int): int =
   return ((w div 8) + 1) * 8 - w
 
 func width*(s: string): int =
-  for r in s.runes():
+  result = 0
+  for r in s.runes:
     result += r.twidth(result)
 
 func width*(s: string; start, len: int): int =
+  result = 0
   var i = start
   var m = len
-  if m > s.len: m = s.len
+  if m > s.len:
+    m = s.len
   while i < m:
     var r: Rune
     fastRuneAt(s, i, r)
     result += r.twidth(result)
 
 func notwidth*(s: string): int =
+  result = 0
   for r in s.runes:
     result += r.width()
 
 func twidth*(s: string; w: int): int =
   var i = w
-  for r in s.runes():
+  for r in s.runes:
     i += r.twidth(w)
   return i - w
 
-func padToWidth*(str: string; size: int; schar = '$'): string =
-  if str.width() < size:
-    return str & ' '.repeat(size - str.width())
-  else:
-    let size = size - 1
-    result = newStringOfCap(str.len)
-    var w = 0
-    var i = 0
-    while i < str.len:
-      var r: Rune
-      fastRuneAt(str, i, r)
-      if w + r.width <= size:
-        result &= r
-        w += r.width
-    result &= schar
+func padToWidth*(s: string; size: int; schar = '$'): string =
+  result = newStringOfCap(s.len)
+  var w = 0
+  var r: Rune
+  var i = 0
+  while i < s.len:
+    fastRuneAt(s, i, r)
+    w += r.width()
+    if w > size - 1:
+      break
+    result &= r
+  if w > size - 1:
+    if w == size and i == s.len:
+      result &= r
+    else:
+      result &= schar
+  while w < size:
+    result &= ' '
+    inc w
