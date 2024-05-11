@@ -1,8 +1,8 @@
-import std/streams
-
 import html/catom
 import html/dom
 import html/enums
+import io/dynstream
+import io/posixstream
 import js/base64
 import js/domexception
 import js/javascript
@@ -16,11 +16,12 @@ import chame/tags
 proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     encoding = "UTF-8"): seq[FormDataEntry]
 
+var urandom* {.global.}: PosixStream
+
 proc generateBoundary(): string =
-  let urandom = newFileStream("/dev/urandom")
-  let s = urandom.readStr(32)
-  urandom.close()
-  # 32 * 4 / 3 (padded) = 44 + prefix string is 22 bytes = 66 bytes
+  var s: array[33, uint8]
+  urandom.recvDataLoop(s)
+  # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
   return "----WebKitFormBoundary" & btoa(s)
 
 proc newFormData0*(): FormData =
@@ -147,8 +148,13 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
           "on"
         entrylist.add((name, value))
       of itFile:
-        #TODO file
-        discard
+        if field.file != nil:
+          entrylist.add(FormDataEntry(
+            name: name,
+            filename: field.file.name,
+            isstr: false,
+            value: field.file
+          ))
       of itHidden:
         if name.equalsIgnoreCase("_charset_"):
           entrylist.add((name, encoding))

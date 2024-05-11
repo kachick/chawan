@@ -51,7 +51,9 @@ import chame/tags
 
 type
   FormMethod* = enum
-    fmGet, fmPost, fmDialog
+    fmGet = "get"
+    fmPost = "post"
+    fmDialog = "dialog"
 
   FormEncodingType* = enum
     fetUrlencoded = "application/x-www-form-urlencoded",
@@ -245,7 +247,7 @@ type
     checked* {.jsget.}: bool
     xcoord*: int
     ycoord*: int
-    file*: Option[URL]
+    file*: WebFile
 
   HTMLAnchorElement* = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
@@ -281,7 +283,6 @@ type
     fetchStarted: bool
 
   HTMLFormElement* = ref object of HTMLElement
-    enctype*: string
     constructingEntryList*: bool
     controls*: seq[FormAssociatedElement]
     relList {.jsget.}: DOMTokenList
@@ -2231,19 +2232,18 @@ func inputString*(input: HTMLInputElement): string =
   of itPassword:
     '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(satSize).get(20)))
   of itReset:
-    if input.value != "": input.value
-    else: "RESET"
+    if input.value != "":
+      input.value
+    else:
+      "RESET"
   of itSubmit, itButton:
     if input.value != "":
       input.value
     else:
       "SUBMIT"
   of itFile:
-    if input.file.isNone:
-      "".padToWidth(int(input.attrulgz(satSize).get(20)))
-    else:
-      input.file.get.path.serialize_unicode()
-        .padToWidth(int(input.attrulgz(satSize).get(20)))
+    let s = if input.file != nil: input.file.name else: ""
+    s.padToWidth(int(input.attrulgz(satSize).get(20)))
   else: input.value
 
 func textAreaString*(textarea: HTMLTextAreaElement): string =
@@ -2281,30 +2281,25 @@ func action*(element: Element): string =
   return ""
 
 func enctype*(element: Element): FormEncodingType =
+  if element of HTMLFormElement:
+    # Note: see below, this is not in the standard.
+    if element.attrb(satEnctype):
+      let s = element.attr(satEnctype)
+      return parseEnumNoCase[FormEncodingType](s).get(fetUrlencoded)
   if element.isSubmitButton():
     if element.attrb(satFormenctype):
-      return case element.attr(satFormenctype).toLowerAscii()
-      of "application/x-www-form-urlencoded": fetUrlencoded
-      of "multipart/form-data": fetMultipart
-      of "text/plain": fetTextPlain
-      else: fetUrlencoded
-  if element of HTMLInputElement:
-    let element = HTMLInputElement(element)
-    if element.form != nil:
-      if element.form.attrb(satEnctype):
-        return case element.attr(satEnctype).toLowerAscii()
-        of "application/x-www-form-urlencoded": fetUrlencoded
-        of "multipart/form-data": fetMultipart
-        of "text/plain": fetTextPlain
-        else: fetUrlencoded
+      let s = element.attr(satFormenctype)
+      return parseEnumNoCase[FormEncodingType](s).get(fetUrlencoded)
+  if element of FormAssociatedElement:
+    let element = FormAssociatedElement(element)
+    if (let form = element.form; form != nil):
+      if form.attrb(satEnctype):
+        let s = form.attr(satEnctype)
+        return parseEnumNoCase[FormEncodingType](s).get(fetUrlencoded)
   return fetUrlencoded
 
 func parseFormMethod(s: string): FormMethod =
-  return case s.toLowerAscii()
-  of "get": fmGet
-  of "post": fmPost
-  of "dialog": fmDialog
-  else: fmGet
+  return parseEnumNoCase[FormMethod](s).get(fmGet)
 
 func formmethod*(element: Element): FormMethod =
   if element of HTMLFormElement:
@@ -2951,7 +2946,7 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
     input.reflect_str satValue, value
     input.reflect_bool satChecked, checked
     if name == satType:
-      input.inputType = inputType(value)
+      input.inputType = parseEnumNoCase[InputType](value).get(itText)
   of TAG_OPTION:
     let option = HTMLOptionElement(element)
     option.reflect_bool satSelected, selected
@@ -3223,7 +3218,7 @@ proc resetElement*(element: Element) =
     of itCheckbox, itRadio:
       input.checked = input.attrb(satChecked)
     of itFile:
-      input.file = none(URL)
+      input.file = nil
     else:
       input.value = input.attr(satValue)
     input.invalid = true

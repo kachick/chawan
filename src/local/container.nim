@@ -7,6 +7,7 @@ import std/unicode
 
 import config/config
 import config/mimetypes
+import io/bufstream
 import io/dynstream
 import io/promise
 import io/serversocket
@@ -46,8 +47,8 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    cetAnchor, cetNoAnchor, cetUpdate, cetReadLine, cetReadArea, cetOpen,
-    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel
+    cetAnchor, cetNoAnchor, cetUpdate, cetReadLine, cetReadArea, cetReadFile,
+    cetOpen, cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -1483,8 +1484,12 @@ proc readCanceled*(container: Container) =
     if repaint:
       container.needslines = true)
 
-proc readSuccess*(container: Container; s: string) =
-  container.iface.readSuccess(s).then(proc(res: ReadSuccessResult) =
+proc readSuccess*(container: Container; s: string; fd = -1) =
+  let p = container.iface.readSuccess(s, fd != -1)
+  if fd != -1:
+    container.iface.stream.reallyFlush()
+    SocketStream(container.iface.stream.source).sendFileHandle(FileHandle(fd))
+  p.then(proc(res: ReadSuccessResult) =
     if res.repaint:
       container.needslines = true
     if res.open.isSome:
@@ -1521,19 +1526,21 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
     container.displaySelect(res.select.get)
   if res.readline.isSome:
     let rl = res.readline.get
-    let event = if rl.area:
-      ContainerEvent(
-        t: cetReadArea,
-        tvalue: rl.value
-      )
-    else:
-      ContainerEvent(
+    case rl.t
+    of rltText:
+      container.triggerEvent(ContainerEvent(
         t: cetReadLine,
         prompt: rl.prompt,
         value: rl.value,
         password: rl.hide
-      )
-    container.triggerEvent(event)
+      ))
+    of rltArea:
+      container.triggerEvent(ContainerEvent(
+        t: cetReadArea,
+        tvalue: rl.value
+      ))
+    of rltFile:
+      container.triggerEvent(ContainerEvent(t: cetReadFile))
 
 proc click*(container: Container) {.jsfunc.} =
   if container.select.open:
@@ -1601,10 +1608,9 @@ func hoverImage(container: Container): string {.jsfget.} =
   return container.hoverText[htImage]
 
 proc handleCommand(container: Container) =
-  var packetid, len: int
-  container.iface.stream.recvDataLoop(addr len, sizeof(len))
-  container.iface.stream.recvDataLoop(addr packetid, sizeof(packetid))
-  container.iface.resolve(packetid, len - sizeof(packetid))
+  var packet: array[3, int] # 0 len, 1 auxLen, 2 packetid
+  container.iface.stream.recvDataLoop(addr packet[0], sizeof(packet))
+  container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
 
 proc startLoad(container: Container) =
   container.iface.load().then(proc(res: int) =

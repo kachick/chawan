@@ -45,5 +45,9 @@ proc flushWrite*(s: BufStream): bool =
   s.writeBuffer = s.writeBuffer.substr(n)
   return false
 
+proc reallyFlush*(s: BufStream) =
+  if s.writeBuffer.len > 0:
+    s.source.sendDataLoop(s.writeBuffer)
+
 proc newBufStream*(ps: PosixStream; registerFun: proc(fd: int)): BufStream =
   return BufStream(source: ps, blocking: ps.blocking, registerFun: registerFun)

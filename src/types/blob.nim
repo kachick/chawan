@@ -1,27 +1,25 @@
 import std/options
-import std/os
+import std/posix
 import std/strutils
 
 import js/fromjs
 import js/javascript
 import js/jstypes
 import utils/mimeguess
-import utils/twtstr
 
 type
   DeallocFun = proc() {.closure, raises: [].}
 
   Blob* = ref object of RootObj
-    isfile*: bool
     size* {.jsget.}: uint64
     ctype* {.jsget: "type".}: string
     buffer*: pointer
     deallocFun*: DeallocFun
+    fd*: Option[FileHandle]
 
   WebFile* = ref object of Blob
     webkitRelativePath {.jsget.}: string
-    path*: string
-    file: File #TODO maybe use fd?
+    name* {.jsget.}: string
 
 jsDestructor(Blob)
 jsDestructor(WebFile)
@@ -36,25 +34,20 @@ proc newBlob*(buffer: pointer; size: int; ctype: string;
   )
 
 proc finalize(blob: Blob) {.jsfin.} =
+  if blob.fd.isSome:
+    discard close(blob.fd.get)
   if blob.deallocFun != nil and blob.buffer != nil:
     blob.deallocFun()
     blob.buffer = nil
 
 proc finalize(file: WebFile) {.jsfin.} =
-  if file.deallocFun != nil and file.buffer != nil:
-    file.deallocFun()
-    file.buffer = nil
+  Blob(file).finalize()
 
-proc newWebFile*(path: string; webkitRelativePath = ""): WebFile =
-  var file: File
-  if not open(file, path, fmRead):
-    raise newException(IOError, "Failed to open file")
+proc newWebFile*(name: string; fd: FileHandle): WebFile =
   return WebFile(
-    isfile: true,
-    path: path,
-    file: file,
-    ctype: DefaultGuess.guessContentType(path),
-    webkitRelativePath: webkitRelativePath
+    name: name,
+    fd: some(fd),
+    ctype: DefaultGuess.guessContentType(name)
   )
 
 type
@@ -68,8 +61,7 @@ type
 proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     options = FilePropertyBag()): WebFile {.jsctor.} =
   let file = WebFile(
-    isfile: false,
-    path: fileName,
+    name: fileName
   )
   var len = 0
   for blobPart in fileBits:
@@ -94,17 +86,15 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
 #TODO File, Blob constructors
 
 proc getSize*(this: Blob): uint64 =
-  if this.isfile:
-    return uint64(WebFile(this).path.getFileSize())
+  if this.fd.isSome:
+    var statbuf: Stat
+    if fstat(this.fd.get, statbuf) < 0:
+      return 0
+    return uint64(statbuf.st_size)
   return this.size
 
 proc size*(this: WebFile): uint64 {.jsfget.} =
   return this.getSize()
-
-func name*(this: WebFile): string {.jsfget.} =
-  if this.path.len > 0 and this.path[^1] != '/':
-    return this.path.afterLast('/')
-  return this.path.afterLast('/', 2)
 
 #TODO lastModified
 

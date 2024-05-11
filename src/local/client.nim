@@ -658,11 +658,12 @@ proc clientLoadJSModule(ctx: JSContext; module_name: cstringConst;
     JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
     return nil
 
-proc readBlob(client: Client; path: string): Option[WebFile] {.jsfunc.} =
-  try:
-    return some(newWebFile(path))
-  except IOError:
-    discard
+proc readBlob(client: Client; path: string): WebFile {.jsfunc.} =
+  let ps = newPosixStream(path, O_RDONLY, 0)
+  if ps == nil:
+    return nil
+  let name = path.afterLast('/')
+  return newWebFile(name, ps.fd)
 
 #TODO this is dumb
 proc readFile(client: Client; path: string): string {.jsfunc.} =

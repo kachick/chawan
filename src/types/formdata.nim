@@ -1,7 +1,7 @@
 import std/strutils
 
 import io/dynstream
-import io/filestream
+import io/posixstream
 import js/javascript
 import types/blob
 import utils/twtstr
@@ -47,12 +47,11 @@ proc calcLength*(this: FormData): int =
       # content type
       result += "Content-Type: \r\n".len
       result += entry.value.ctype.len
-      if entry.value.isfile:
-        result += int(WebFile(entry.value).getSize())
-      else:
-        result += int(entry.value.size)
+      result += int(entry.value.getSize())
     result += "\r\n".len # header is always followed by \r\n
     result += "\r\n".len # value is always followed by \r\n
+  result += "--".len + this.boundary.len + "--\r\n".len
+  result += "\r\n".len
 
 proc getContentType*(this: FormData): string =
   return "multipart/form-data; boundary=" & this.boundary
@@ -61,25 +60,27 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
   stream.write("--" & boundary & "\r\n")
   let name = percentEncode(entry.name, {'"', '\r', '\n'})
   if entry.isstr:
-    stream.write("Content-Disposition: form-data; name=\"" & name & "\"\r\n")
-    stream.write("\r\n")
+    stream.write("Content-Disposition: form-data; name=\"" & name &
+      "\"\r\n\r\n")
     stream.write(entry.svalue)
+    stream.write("\r\n")
   else:
-    stream.write("Content-Disposition: form-data; name=\"" & name & "\";")
+    var buf = "Content-Disposition: form-data; name=\"" & name & "\";"
     let filename = percentEncode(entry.filename, {'"', '\r', '\n'})
-    stream.write(" filename=\"" & filename & "\"\r\n")
+    buf &= " filename=\"" & filename & "\"\r\n"
     let blob = entry.value
     let ctype = if blob.ctype == "":
       "application/octet-stream"
     else:
       blob.ctype
-    stream.write("Content-Type: " & ctype & "\r\n")
-    if blob.isfile:
-      let fs = newDynFileStream(WebFile(blob).path)
-      if fs != nil:
+    buf &= "Content-Type: " & ctype & "\r\n\r\n"
+    stream.write(buf)
+    if blob.fd.isSome:
+      let ps = newPosixStream(blob.fd.get)
+      if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:
-          let n = fs.recvData(addr buf[0], 4096)
+          let n = ps.recvData(addr buf[0], 4096)
           if n == 0:
             break
           stream.sendDataLoop(addr buf[0], n)
@@ -88,4 +89,7 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
     else:
       stream.sendDataLoop(blob.buffer, int(blob.size))
     stream.write("\r\n")
+
+proc writeEnd*(stream: DynStream; boundary: string) =
+  stream.write("--" & boundary & "--\r\n")
   stream.write("\r\n")

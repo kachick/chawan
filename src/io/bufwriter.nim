@@ -6,6 +6,7 @@ import std/sets
 import std/tables
 
 import io/dynstream
+import io/socketstream
 import types/blob
 import types/color
 import types/formdata
@@ -17,49 +18,13 @@ type BufferedWriter* = object
   buffer: ptr UncheckedArray[uint8]
   bufSize: int
   bufLen: int
-  writeLen: bool
+  sendAux: seq[FileHandle]
 
 {.warning[Deprecated]: off.}:
   proc `=destroy`(writer: var BufferedWriter) =
     if writer.buffer != nil:
       dealloc(writer.buffer)
       writer.buffer = nil
-
-proc initWriter*(stream: DynStream; sizeInit = 64; writeLen = false):
-    BufferedWriter =
-  var w = BufferedWriter(
-    stream: stream,
-    buffer: cast[ptr UncheckedArray[uint8]](alloc(sizeInit)),
-    bufSize: sizeInit,
-    bufLen: 0,
-    writeLen: writeLen
-  )
-  if writeLen: # add space for `len'
-    w.bufLen += sizeof(w.bufLen)
-    assert w.bufLen < sizeInit
-  return w
-
-proc flush*(writer: var BufferedWriter) =
-  if writer.writeLen:
-    # subtract the length field's size
-    var realLen = writer.bufLen - sizeof(writer.bufLen)
-    copyMem(writer.buffer, addr realLen, sizeof(writer.bufLen))
-  writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
-  writer.bufLen = 0
-  writer.stream.sflush()
-
-proc deinit*(writer: var BufferedWriter) =
-  dealloc(writer.buffer)
-  writer.buffer = nil
-  writer.bufSize = 0
-  writer.bufLen = 0
-
-template withPacketWriter*(stream: DynStream; w, body: untyped) =
-  block:
-    var w = stream.initWriter(writeLen = true)
-    body
-    w.flush()
-    w.deinit()
 
 proc swrite*(writer: var BufferedWriter; n: SomeNumber)
 proc swrite*[T](writer: var BufferedWriter; s: set[T])
@@ -78,6 +43,41 @@ proc swrite*(writer: var BufferedWriter; blob: Blob)
 proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
 proc swrite*(writer: var BufferedWriter; c: ARGBColor) {.inline.}
+
+const InitLen = sizeof(int) * 2
+const SizeInit = max(64, InitLen)
+proc initWriter*(stream: DynStream):
+    BufferedWriter =
+  return BufferedWriter(
+    stream: stream,
+    buffer: cast[ptr UncheckedArray[uint8]](alloc(SizeInit)),
+    bufSize: SizeInit,
+    bufLen: InitLen
+  )
+
+proc flush*(writer: var BufferedWriter) =
+  # subtract the length field's size
+  let len = [writer.bufLen - InitLen, writer.sendAux.len]
+  copyMem(writer.buffer, unsafeAddr len[0], sizeof(len))
+  writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
+  for i in countdown(writer.sendAux.high, 0):
+    SocketStream(writer.stream).sendFileHandle(writer.sendAux[i])
+  writer.bufLen = 0
+  writer.stream.sflush()
+
+proc deinit*(writer: var BufferedWriter) =
+  dealloc(writer.buffer)
+  writer.buffer = nil
+  writer.bufSize = 0
+  writer.bufLen = 0
+  writer.sendAux.setLen(0)
+
+template withPacketWriter*(stream: DynStream; w, body: untyped) =
+  block:
+    var w = stream.initWriter()
+    body
+    w.flush()
+    w.deinit()
 
 proc writeData(writer: var BufferedWriter; buffer: pointer; len: int) =
   let targetLen = writer.bufLen + len
@@ -161,12 +161,15 @@ proc swrite*(writer: var BufferedWriter; part: FormDataEntry) =
 
 #TODO clean up this mess
 proc swrite*(writer: var BufferedWriter; blob: Blob) =
-  writer.swrite(blob.isfile)
-  if blob.isfile:
-    writer.swrite(WebFile(blob).path)
-  else:
-    writer.swrite(blob.ctype)
-    writer.swrite(blob.size)
+  if blob.fd.isSome:
+    writer.sendAux.add(blob.fd.get)
+  writer.swrite(blob of WebFile)
+  if blob of WebFile:
+    writer.swrite(WebFile(blob).name)
+  writer.swrite(blob.fd.isSome)
+  writer.swrite(blob.ctype)
+  writer.swrite(blob.size)
+  if blob.size > 0:
     writer.writeData(blob.buffer, int(blob.size))
 
 proc swrite*[T](writer: var BufferedWriter; o: Option[T]) =

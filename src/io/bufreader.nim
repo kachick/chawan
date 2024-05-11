@@ -1,10 +1,9 @@
-# Write data to streams.
-
 import std/options
 import std/sets
 import std/tables
 
 import io/dynstream
+import io/socketstream
 import types/blob
 import types/color
 import types/formdata
@@ -14,29 +13,7 @@ import types/url
 type BufferedReader* = object
   buffer: seq[uint8]
   bufIdx: int
-
-proc initReader*(stream: DynStream; len: int): BufferedReader =
-  assert len != 0
-  var reader = BufferedReader(
-    buffer: newSeqUninitialized[uint8](len),
-    bufIdx: 0
-  )
-  var n = 0
-  while true:
-    n += stream.recvData(addr reader.buffer[n], len - n)
-    if n == len:
-      break
-  return reader
-
-proc initPacketReader*(stream: DynStream): BufferedReader =
-  var len: int
-  stream.recvDataLoop(addr len, sizeof(len))
-  return stream.initReader(len)
-
-template withPacketReader*(stream: DynStream; r, body: untyped) =
-  block:
-    var r = stream.initPacketReader()
-    body
+  recvAux: seq[FileHandle] #TODO assert on unused ones
 
 proc sread*(reader: var BufferedReader; n: var SomeNumber)
 proc sread*[T](reader: var BufferedReader; s: var set[T])
@@ -55,6 +32,27 @@ proc sread*(reader: var BufferedReader; blob: var Blob)
 proc sread*[T](reader: var BufferedReader; o: var Option[T])
 proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
 proc sread*(reader: var BufferedReader; c: var ARGBColor) {.inline.}
+
+proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
+  assert len != 0
+  var reader = BufferedReader(
+    buffer: newSeqUninitialized[uint8](len),
+    bufIdx: 0
+  )
+  stream.recvDataLoop(reader.buffer)
+  for i in 0 ..< auxLen:
+    reader.recvAux.add(SocketStream(stream).recvFileHandle())
+  return reader
+
+proc initPacketReader*(stream: DynStream): BufferedReader =
+  var len: array[2, int]
+  stream.recvDataLoop(addr len[0], sizeof(len))
+  return stream.initReader(len[0], len[1])
+
+template withPacketReader*(stream: DynStream; r, body: untyped) =
+  block:
+    var r = stream.initPacketReader()
+    body
 
 proc readData(reader: var BufferedReader; buffer: pointer; len: int) =
   assert reader.bufIdx + len <= reader.buffer.len
@@ -156,22 +154,22 @@ proc sread*(reader: var BufferedReader; part: var FormDataEntry) =
     reader.sread(part.value)
 
 proc sread*(reader: var BufferedReader; blob: var Blob) =
-  var isfile: bool
-  reader.sread(isfile)
-  if isfile:
-    var file = new WebFile
-    file.isfile = true
-    reader.sread(file.path)
-    blob = file
-  else:
-    blob = Blob()
-    reader.sread(blob.ctype)
-    reader.sread(blob.size)
+  var isWebFile: bool
+  reader.sread(isWebFile)
+  blob = if isWebFile: WebFile() else: Blob()
+  if isWebFile:
+    reader.sread(WebFile(blob).name)
+  var hasFd: bool
+  reader.sread(hasFd)
+  if hasFd:
+    blob.fd = some(reader.recvAux.pop())
+  reader.sread(blob.ctype)
+  reader.sread(blob.size)
+  if blob.size > 0:
     let buffer = alloc(blob.size)
+    reader.readData(blob.buffer, int(blob.size))
     blob.buffer = buffer
     blob.deallocFun = proc() = dealloc(buffer)
-    if blob.size > 0:
-      reader.readData(blob.buffer, int(blob.size))
 
 proc sread*[T](reader: var BufferedReader; o: var Option[T]) =
   var x: bool

@@ -1,6 +1,3 @@
-import std/strutils
-import std/tables
-
 import chame/tags
 
 type
@@ -70,15 +67,6 @@ const VoidElements* = {
 const ResettableElements* = {
   TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
 }
-
-func getInputTypeMap(): Table[string, InputType] =
-  for i in InputType:
-    result[$InputType(i)] = InputType(i)
-
-const inputTypeMap = getInputTypeMap()
-
-func inputType*(s: string): InputType =
-  return inputTypeMap.getOrDefault(s.toLowerAscii())
 
 const AutoDirInput* = {
   itHidden, itText, itSearch, itTel, itURL, itEmail, itPassword, itSubmit,

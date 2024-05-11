@@ -45,6 +45,7 @@ import js/tojs
 import layout/renderdocument
 import loader/headers
 import loader/loader
+import types/blob
 import types/cell
 import types/color
 import types/cookie
@@ -94,7 +95,6 @@ type
     firstBufferRead: bool
     lines: FlexibleGrid
     images: seq[PosBitmap]
-    request: Request # source request
     attrs: WindowAttributes
     window: Window
     document: Document
@@ -130,6 +130,7 @@ type
   InterfaceOpaque = ref object
     stream: SocketStream
     len: int
+    auxLen: int
 
   BufferInterface* = ref object
     map: PromiseMap
@@ -149,7 +150,7 @@ type
 proc getFromOpaque[T](opaque: pointer; res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
   if opaque.len != 0:
-    var r = opaque.stream.initReader(opaque.len)
+    var r = opaque.stream.initReader(opaque.len, opaque.auxLen)
     r.sread(res)
     opaque.len = 0
 
@@ -178,8 +179,9 @@ proc cloneInterface*(stream: SocketStream; registerFun: proc(fd: int)):
   r.sread(pid)
   return iface
 
-proc resolve*(iface: BufferInterface; packetid, len: int) =
+proc resolve*(iface: BufferInterface; packetid, len, auxLen: int) =
   iface.opaque.len = len
+  iface.opaque.auxLen = auxLen
   iface.map.resolve(packetid)
   # Protection against accidentally not exhausting data available to read,
   # by setting opaque len to 0 in getFromOpaque.
@@ -226,7 +228,7 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
       let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
       params2.add(id2)
   body.add(quote do:
-    var writer {.inject.} = `thisval`.stream.initWriter(writeLen = true)
+    var writer {.inject.} = `thisval`.stream.initWriter()
     writer.swrite(BufferCommand.`nup`)
     writer.swrite(`thisval`.packetid)
   )
@@ -1435,21 +1437,22 @@ proc implicitSubmit(input: HTMLInputElement): Option[Request] =
     else:
       return submitForm(form, form)
 
-proc readSuccess*(buffer: Buffer; s: string): ReadSuccessResult {.proxy.} =
+proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
+    {.proxy.} =
+  var fd: FileHandle = -1
+  if hasFd:
+    fd = buffer.pstream.recvFileHandle()
   if buffer.document.focus != nil:
     case buffer.document.focus.tagType
     of TAG_INPUT:
       let input = HTMLInputElement(buffer.document.focus)
       case input.inputType
       of itFile:
-        let cdir = parseURL("file://" & getCurrentDir() & DirSep)
-        let path = parseURL(s, cdir)
-        if path.isSome:
-          input.file = path
-          input.invalid = true
-          buffer.do_reshape()
-          result.repaint = true
-          result.open = implicitSubmit(input)
+        input.file = newWebFile(s, fd)
+        input.invalid = true
+        buffer.do_reshape()
+        result.repaint = true
+        result.open = implicitSubmit(input)
       else:
         input.value = s
         input.invalid = true
@@ -1467,11 +1470,15 @@ proc readSuccess*(buffer: Buffer; s: string): ReadSuccessResult {.proxy.} =
     if not result.repaint:
       result.repaint = r
 
-type ReadLineResult* = object
-  prompt*: string
-  value*: string
-  hide*: bool
-  area*: bool
+type
+  ReadLineType* = enum
+    rltText, rltArea, rltFile
+
+  ReadLineResult* = object
+    t*: ReadLineType
+    prompt*: string
+    value*: string
+    hide*: bool
 
 type
   SelectResult* = object
@@ -1580,8 +1587,8 @@ proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
 proc click(buffer: Buffer; textarea: HTMLTextAreaElement): ClickResult =
   let repaint = buffer.setFocus(textarea)
   let readline = ReadLineResult(
-    value: textarea.value,
-    area: true,
+    t: rltArea,
+    value: textarea.value
   )
   return ClickResult(
     readline: some(readline),
@@ -1596,7 +1603,7 @@ const InputTypePrompt = [
   itDate: "Date",
   itDatetimeLocal: "Local date/time",
   itEmail: "E-Mail",
-  itFile: "Filename",
+  itFile: "",
   itHidden: "",
   itImage: "Image",
   itMonth: "Month",
@@ -1617,16 +1624,10 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
   let repaint = buffer.restoreFocus()
   case input.inputType
   of itFile:
-    var path = if input.file.isSome:
-      input.file.get.path.serialize_unicode()
-    else:
-      ""
+    #TODO we should somehow extract the path name from the current file
     return ClickResult(
       repaint: buffer.setFocus(input) or repaint,
-      readline: some(ReadLineResult(
-        prompt: InputTypePrompt[itFile] & ": ",
-        value: path
-      ))
+      readline: some(ReadLineResult(t: rltFile))
     )
   of itCheckbox:
     input.checked = not input.checked
@@ -1952,16 +1953,16 @@ proc runBuffer(buffer: Buffer) =
 
 proc cleanup(buffer: Buffer) =
   buffer.pstream.sclose()
+  urandom.sclose()
   # no unlink access on Linux
   when defined(linux):
     buffer.ssock.close(unlink = false)
   else:
     buffer.ssock.close()
 
-proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
-    attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
-    loader: FileLoader; ssock: ServerSocket; pstream: SocketStream;
-    selector: Selector[int]) =
+proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
+    ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
+    ssock: ServerSocket; pstream: SocketStream; selector: Selector[int]) =
   let emptySel = Selector[int]()
   emptySel[] = selector[]
   let buffer = Buffer(
@@ -1972,7 +1973,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; request: Request;
     loader: loader,
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
     pstream: pstream,
-    request: request,
     rfd: pstream.fd,
     selector: selector,
     ssock: ssock,

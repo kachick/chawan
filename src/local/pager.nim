@@ -65,6 +65,7 @@ type
     lmISearchB = "?"
     lmGotoLine = "Goto line: "
     lmDownload = "(Download)Save file to: "
+    lmBufferFile = "(Upload)Filename: "
 
   # fdin is the original fd; fdout may be the same, or different if mailcap
   # is used.
@@ -1173,6 +1174,19 @@ proc updateReadLine*(pager: Pager) =
         if pager.commandMode:
           pager.command()
       of lmBuffer: pager.container.readSuccess(lineedit.news)
+      of lmBufferFile:
+        let ps = newPosixStream(lineedit.news, O_RDONLY, 0)
+        if ps == nil:
+          pager.alert("File not found")
+          pager.container.readCanceled()
+        else:
+          var stats: Stat
+          if fstat(ps.fd, stats) < 0 or S_ISDIR(stats.st_mode):
+            pager.alert("Not a file: " & lineedit.news)
+          else:
+            let name = lineedit.news.afterLast('/')
+            pager.container.readSuccess(name, ps.fd)
+          ps.sclose()
       of lmSearchF, lmSearchB:
         if lineedit.news != "":
           let regex = pager.compileSearchRegex(lineedit.news)
@@ -1655,7 +1669,6 @@ proc connected(pager: Pager; container: Container; response: Response) =
     container.process = pager.forkserver.forkBuffer(
       container.config,
       container.url,
-      container.request,
       attrs,
       mailcapRes.ishtml,
       container.charsetStack
@@ -1768,6 +1781,9 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       else:
         pager.container.readCanceled()
       pager.redraw = true
+  of cetReadFile:
+    if container == pager.container:
+      pager.setLineEdit(lmBufferFile, "")
   of cetOpen:
     let url = event.request.url
     if not event.save and (pager.container != container or

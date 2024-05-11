@@ -5,6 +5,7 @@ import std/selectors
 import std/tables
 
 import config/config
+import html/formdata
 import io/bufreader
 import io/bufwriter
 import io/dynstream
@@ -60,13 +61,12 @@ proc removeChild*(forkserver: ForkServer; pid: int) =
     w.swrite(pid)
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
-    request: Request; attrs: WindowAttributes; ishtml: bool;
-    charsetStack: seq[Charset]): int =
+    attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset]):
+    int =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcForkBuffer)
     w.swrite(config)
     w.swrite(url)
-    w.swrite(request)
     w.swrite(attrs)
     w.swrite(ishtml)
     w.swrite(charsetStack)
@@ -121,13 +121,11 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
 proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   var config: BufferConfig
   var url: URL
-  var request: Request
   var attrs: WindowAttributes
   var ishtml: bool
   var charsetStack: seq[Charset]
   r.sread(config)
   r.sread(url)
-  r.sread(request)
   r.sread(attrs)
   r.sread(ishtml)
   r.sread(charsetStack)
@@ -161,6 +159,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
     ps.sclose()
+    urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
     let pstream = ssock.acceptSocketStream()
     gssock = ssock
     gpstream = pstream
@@ -180,7 +179,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       sockDirFd: sockDirFd
     )
     try:
-      launchBuffer(config, url, request, attrs, ishtml, charsetStack, loader,
+      launchBuffer(config, url, attrs, ishtml, charsetStack, loader,
         ssock, pstream, selector)
     except CatchableError:
       let e = getCurrentException()
