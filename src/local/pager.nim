@@ -5,7 +5,6 @@ import std/os
 import std/osproc
 import std/posix
 import std/selectors
-import std/streams
 import std/tables
 import std/unicode
 
@@ -416,11 +415,11 @@ proc showAlerts*(pager: Pager) =
       pager.inputBuffer == "" and pager.precnum == 0:
     pager.refreshStatusMsg()
 
-proc drawBuffer*(pager: Pager; container: Container; ostream: Stream) =
+proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
   var format = Format()
   container.readLines(proc(line: SimpleFlexibleLine) =
     if line.formats.len == 0:
-      ostream.write(line.str & "\n")
+      ofile.write(line.str & "\n")
     else:
       var x = 0
       var w = 0
@@ -438,8 +437,8 @@ proc drawBuffer*(pager: Pager; container: Container; ostream: Stream) =
       if i < line.str.len:
         s &= pager.term.processOutputString(line.str.substr(i), w)
       s &= pager.term.processFormat(format, Format()) & "\n"
-      ostream.write(s))
-  ostream.flush()
+      ofile.write(s))
+  ofile.flushFile()
 
 proc redraw(pager: Pager) {.jsfunc.} =
   pager.redraw = true
@@ -787,8 +786,7 @@ proc runProcessCapture(cmd: string; outs: var string): bool =
   let file = popen(cmd, "r")
   if file == nil:
     return false
-  let fs = newFileStream(file)
-  outs = fs.readAll()
+  outs = file.readAll()
   let rv = pclose(file)
   if rv == -1:
     return false
@@ -799,8 +797,7 @@ proc runProcessInto(cmd, ins: string): bool =
   let file = popen(cmd, "w")
   if file == nil:
     return false
-  let fs = newFileStream(file)
-  fs.write(ins)
+  file.write(ins)
   let rv = pclose(file)
   if rv == -1:
     return false

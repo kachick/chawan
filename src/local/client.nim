@@ -5,7 +5,6 @@ import std/options
 import std/os
 import std/posix
 import std/selectors
-import std/streams
 import std/strutils
 import std/tables
 import std/unicode
@@ -712,10 +711,9 @@ proc clearConsole(client: Client) =
 
 proc dumpBuffers(client: Client) =
   client.headlessLoop()
-  let ostream = newFileStream(stdout)
   for container in client.pager.containers:
     try:
-      client.pager.drawBuffer(container, ostream)
+      client.pager.drawBuffer(container, stdout)
       client.pager.handleEvents(container)
     except IOError:
       client.console.log("Error in buffer", $container.url)
