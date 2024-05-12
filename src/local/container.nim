@@ -556,11 +556,6 @@ proc setCursorX(container: Container; x: int; refresh = true; save = true)
     # accordingly
     container.setFromX(max(x - container.width + 1, container.fromx), false)
     container.pos.cursorx = x
-  elif x < container.cursorx:
-    # target x is lower than current x, but is outside the screen
-    #TODO I have no clue if/when this is used :(
-    container.setFromX(x, false)
-    container.pos.cursorx = x
   if container.cursorx == x and container.currentSelection != nil and
       container.currentSelection.x2 != x:
     container.currentSelection.x2 = x
