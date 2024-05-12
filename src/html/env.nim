@@ -29,27 +29,27 @@ import types/url
 import types/winattrs
 
 # NavigatorID
-proc appCodeName(navigator: ptr Navigator): string {.jsfget.} = "Mozilla"
-proc appName(navigator: ptr Navigator): string {.jsfget.} = "Netscape"
-proc appVersion(navigator: ptr Navigator): string {.jsfget.} = "5.0 (Windows)"
-proc platform(navigator: ptr Navigator): string {.jsfget.} = "Win32"
-proc product(navigator: ptr Navigator): string {.jsfget.} = "Gecko"
-proc productSub(navigator: ptr Navigator): string {.jsfget.} = "20100101"
-proc userAgent(navigator: ptr Navigator): string {.jsfget.} =
+proc appCodeName(navigator: var Navigator): string {.jsfget.} = "Mozilla"
+proc appName(navigator: var Navigator): string {.jsfget.} = "Netscape"
+proc appVersion(navigator: var Navigator): string {.jsfget.} = "5.0 (Windows)"
+proc platform(navigator: var Navigator): string {.jsfget.} = "Win32"
+proc product(navigator: var Navigator): string {.jsfget.} = "Gecko"
+proc productSub(navigator: var Navigator): string {.jsfget.} = "20100101"
+proc userAgent(navigator: var Navigator): string {.jsfget.} =
   #TODO TODO TODO this should be configurable
   "chawan"
-proc vendor(navigator: ptr Navigator): string {.jsfget.} = ""
-proc vendorSub(navigator: ptr Navigator): string {.jsfget.} = ""
-proc taintEnabled(navigator: ptr Navigator): bool {.jsfget.} = false
-proc oscpu(navigator: ptr Navigator): string {.jsfget.} = "Windows NT 10.0"
+proc vendor(navigator: var Navigator): string {.jsfget.} = ""
+proc vendorSub(navigator: var Navigator): string {.jsfget.} = ""
+proc taintEnabled(navigator: var Navigator): bool {.jsfget.} = false
+proc oscpu(navigator: var Navigator): string {.jsfget.} = "Windows NT 10.0"
 
 # NavigatorLanguage
-proc language(navigator: ptr Navigator): string {.jsfget.} = "en-US"
-proc languages(navigator: ptr Navigator): seq[string] {.jsfget.} =
+proc language(navigator: var Navigator): string {.jsfget.} = "en-US"
+proc languages(navigator: var Navigator): seq[string] {.jsfget.} =
   @["en-US"] #TODO frozen array?
 
 # NavigatorOnline
-proc onLine(navigator: ptr Navigator): bool {.jsfget.} =
+proc onLine(navigator: var Navigator): bool {.jsfget.} =
   true # at the very least, the terminal is on-line :)
 
 #TODO NavigatorContentUtils
@@ -57,39 +57,39 @@ proc onLine(navigator: ptr Navigator): bool {.jsfget.} =
 # NavigatorCookies
 # "this website needs cookies to be enabled to function correctly"
 # It's probably better to lie here.
-proc cookieEnabled(navigator: ptr Navigator): bool {.jsfget.} = true
+proc cookieEnabled(navigator: var Navigator): bool {.jsfget.} = true
 
 # NavigatorPlugins
-proc pdfViewerEnabled(navigator: ptr Navigator): bool {.jsfget.} = false
-proc javaEnabled(navigator: ptr Navigator): bool {.jsfunc.} = false
-proc namedItem(pluginArray: ptr PluginArray): string {.jsfunc.} = ""
-proc namedItem(mimeTypeArray: ptr MimeTypeArray): string {.jsfunc.} = ""
-proc item(pluginArray: ptr PluginArray): JSValue {.jsfunc.} = JS_NULL
-proc length(pluginArray: ptr PluginArray): uint32 {.jsfget.} = 0
-proc item(mimeTypeArray: ptr MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
-proc length(mimeTypeArray: ptr MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: ptr PluginArray; i: uint32): Option[JSValue]
+proc pdfViewerEnabled(navigator: var Navigator): bool {.jsfget.} = false
+proc javaEnabled(navigator: var Navigator): bool {.jsfunc.} = false
+proc namedItem(pluginArray: var PluginArray): string {.jsfunc.} = ""
+proc namedItem(mimeTypeArray: var MimeTypeArray): string {.jsfunc.} = ""
+proc item(pluginArray: var PluginArray): JSValue {.jsfunc.} = JS_NULL
+proc length(pluginArray: var PluginArray): uint32 {.jsfget.} = 0
+proc item(mimeTypeArray: var MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
+proc length(mimeTypeArray: var MimeTypeArray): uint32 {.jsfget.} = 0
+proc getter(pluginArray: var PluginArray; i: uint32): Option[JSValue]
     {.jsgetprop.} =
   discard
-proc getter(mimeTypeArray: ptr MimeTypeArray; i: uint32): Option[JSValue]
+proc getter(mimeTypeArray: var MimeTypeArray; i: uint32): Option[JSValue]
     {.jsgetprop.} =
   discard
 
 # Screen
-proc availWidth(screen: ptr Screen): int64 {.jsfget.} =
+proc availWidth(screen: var Screen): int64 {.jsfget.} =
   #TODO this is a fingerprinting vector, but users should be able to allow it
   # selectively
   # for now just return something standard-ish
   80 * 9
-proc availHeight(screen: ptr Screen): int64 {.jsfget.} =
+proc availHeight(screen: var Screen): int64 {.jsfget.} =
   #TODO see above
   24 * 18
-proc width(screen: ptr Screen): int64 {.jsfget.} =
+proc width(screen: var Screen): int64 {.jsfget.} =
   screen.availWidth
-proc height(screen: ptr Screen): int64 {.jsfget.} =
+proc height(screen: var Screen): int64 {.jsfget.} =
   screen.availHeight
-proc colorDepth(screen: ptr Screen): int64 {.jsfget.} = 24
-proc pixelDepth(screen: ptr Screen): int64 {.jsfget.} = screen.colorDepth
+proc colorDepth(screen: var Screen): int64 {.jsfget.} = 24
+proc pixelDepth(screen: var Screen): int64 {.jsfget.} = screen.colorDepth
 
 proc addNavigatorModule(ctx: JSContext) =
   ctx.registerType(Navigator)
@@ -122,9 +122,9 @@ proc screenY(window: Window): int64 {.jsfget.} = 0
 proc screenLeft(window: Window): int64 {.jsfget.} = 0
 proc screenTop(window: Window): int64 {.jsfget.} = 0
 proc outerWidth(window: Window): int64 {.jsfget.} =
-  (addr window.screen).availWidth
+  window.screen.availWidth
 proc outerHeight(window: Window): int64 {.jsfget.} =
-  (addr window.screen).availHeight
+  window.screen.availHeight
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
 proc setLocation(window: Window; s: string): Err[JSError]

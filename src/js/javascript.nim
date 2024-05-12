@@ -334,6 +334,7 @@ type FuncParam = tuple
   t: NimNode
   val: Option[NimNode]
   generic: Option[NimNode]
+  isptr: bool
 
 func getMinArgs(params: seq[FuncParam]): int =
   for i in 0..<params.len:
@@ -447,7 +448,8 @@ proc getParams(fun: NimNode): seq[FuncParam] =
         typeof(`x`)
     else:
       error("?? " & treeRepr(it))
-    if t.kind in {nnkRefTy, nnkPtrTy}:
+    let isptr = t.kind == nnkVarTy
+    if t.kind in {nnkRefTy, nnkVarTy}:
       t = t[0]
     let val = if it[^1].kind != nnkEmpty:
       let x = it[^1]
@@ -457,7 +459,7 @@ proc getParams(fun: NimNode): seq[FuncParam] =
     var g = none(NimNode)
     for i in 0 ..< it.len - 2:
       let name = $it[i]
-      funcParams.add((name, t, val, g))
+      funcParams.add((name, t, val, g, isptr))
   funcParams
 
 proc getReturn(fun: NimNode): Option[NimNode] =
@@ -716,46 +718,46 @@ proc addUnionParam(gen: var JSFuncGenerator; tt, s: NimNode;
   gen.addUnionParam0(tt, s, quote do: argv[`j`], fallback)
 
 proc addFixParam(gen: var JSFuncGenerator; name: string) =
-  let s = ident("arg_" & $gen.i)
-  let t = gen.funcParams[gen.i][1]
+  var s = ident("arg_" & $gen.i)
+  let t = gen.funcParams[gen.i].t
   let id = ident(name)
   if t.typeKind == ntyGenericParam:
     gen.addUnionParam0(t, s, id)
   else:
     gen.addParam2(s, t, id)
-  if gen.jsFunCall != nil:
-    gen.jsFunCall.add(s)
+  if gen.funcParams[gen.i].isptr:
+    s = quote do: `s`[]
+  gen.jsFunCall.add(s)
   inc gen.i
 
 proc addRequiredParams(gen: var JSFuncGenerator) =
   while gen.i < gen.minArgs:
-    let s = ident("arg_" & $gen.i)
-    let tt = gen.funcParams[gen.i][1]
+    var s = ident("arg_" & $gen.i)
+    let tt = gen.funcParams[gen.i].t
     if tt.typeKind == ntyGenericParam:
       gen.addUnionParam(tt, s)
     else:
       gen.addValueParam(s, tt)
-    if gen.jsFunCall != nil:
-      gen.jsFunCall.add(s)
+    if gen.funcParams[gen.i].isptr:
+      s = quote do: `s`[]
+    gen.jsFunCall.add(s)
     inc gen.j
     inc gen.i
 
 proc addOptionalParams(gen: var JSFuncGenerator) =
   while gen.i < gen.funcParams.len:
     let j = gen.j
-    let s = ident("arg_" & $gen.i)
-    let tt = gen.funcParams[gen.i][1]
+    var s = ident("arg_" & $gen.i)
+    let tt = gen.funcParams[gen.i].t
     if tt.typeKind == varargs.getType().typeKind: # pray it's not a generic...
       let vt = tt[1].getType()
       for i in 0..gen.jsFunCallLists.high:
         gen.jsFunCallLists[i].add(newLetStmt(s, quote do:
-          (
-            var valist: seq[`vt`]
-            for i in `j`..<argc:
-              let it = fromJS_or_return(`vt`, ctx, argv[i])
-              valist.add(it)
-            valist
-          )
+          var valist: seq[`vt`] = @[]
+          for i in `j`..<argc:
+            let it = fromJS_or_return(`vt`, ctx, argv[i])
+            valist.add(it)
+          valist
         ))
     else:
       if gen.funcParams[gen.i][2].isNone:
@@ -766,8 +768,9 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
         gen.addUnionParam(tt, s, fallback)
       else:
         gen.addValueParam(s, tt, fallback)
-    if gen.jsFunCall != nil:
-      gen.jsFunCall.add(s)
+    if gen.funcParams[gen.i].isptr:
+      s = quote do: `s`[]
+    gen.jsFunCall.add(s)
     inc gen.j
     inc gen.i
 
@@ -868,8 +871,8 @@ proc addJSContext(gen: var JSFuncGenerator) =
 
 proc addThisName(gen: var JSFuncGenerator; thisname: Option[string]) =
   if thisname.isSome:
-    gen.thisTypeNode = gen.funcParams[gen.i][1]
-    gen.thisType = $gen.funcParams[gen.i][1]
+    gen.thisTypeNode = gen.funcParams[gen.i].t
+    gen.thisType = $gen.funcParams[gen.i].t
     gen.newName = ident($gen.t & "_" & gen.thisType & "_" & gen.funcName)
   else:
     let rt = gen.returnType.get
@@ -1597,9 +1600,9 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
       )
       let `classDef` = JSClassDefConst(addr cd))
 
-macro registerType*(ctx: typed; t: typed; parent: JSClassID = 0;
-    asglobal: static bool = false; nointerface = false; name: static string = "";
-    has_extra_getset: static bool = false;
+macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
+    asglobal: static bool = false; nointerface = false;
+    name: static string = ""; has_extra_getset: static bool = false;
     extra_getset: static openArray[TabGetSet] = []; namespace = JS_NULL;
     errid = opt(JSErrorEnum); ishtmldda = false): JSClassID =
   var stmts = newStmtList()

@@ -98,6 +98,9 @@ func fromJSInt[T: SomeInteger](ctx: JSContext; val: JSValue):
     if JS_ToUint32(ctx, addr ret, val) < 0:
       return err()
     return ok(ret)
+  else:
+    static:
+      error($T & " cannot be converted to JS automatically")
 
 proc fromJSFloat64(ctx: JSContext; val: JSValue): JSResult[float64] =
   var f64: float64

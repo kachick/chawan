@@ -1307,26 +1307,26 @@ func validateAttributeQName(name: string): Err[DOMException] =
   return errDOMException("Invalid character in attribute name",
     "InvalidCharacterError")
 
-func hasprop(map: ptr DOMStringMap; name: string): bool {.jshasprop.} =
-  let name = map[].target.document.toAtom("data-" & name)
-  return map[].target.attrb(name)
+func hasprop(map: var DOMStringMap; name: string): bool {.jshasprop.} =
+  let name = map.target.document.toAtom("data-" & name)
+  return map.target.attrb(name)
 
-proc delete(map: ptr DOMStringMap; name: string): bool {.jsfunc.} =
-  let name = map[].target.document.toAtom("data-" & name.camelToKebabCase())
-  let i = map[].target.findAttr(name)
+proc delete(map: var DOMStringMap; name: string): bool {.jsfunc.} =
+  let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
+  let i = map.target.findAttr(name)
   if i != -1:
-    map[].target.delAttr(i)
+    map.target.delAttr(i)
   return i != -1
 
-func getter(map: ptr DOMStringMap; name: string): Option[string]
+func getter(map: var DOMStringMap; name: string): Option[string]
     {.jsgetprop.} =
-  let name = map[].target.document.toAtom("data-" & name.camelToKebabCase())
-  let i = map[].target.findAttr(name)
+  let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
+  let i = map.target.findAttr(name)
   if i != -1:
-    return some(map[].target.attrs[i].value)
+    return some(map.target.attrs[i].value)
   return none(string)
 
-proc setter(map: ptr DOMStringMap; name, value: string): Err[DOMException]
+proc setter(map: var DOMStringMap; name, value: string): Err[DOMException]
     {.jssetprop.} =
   var washy = false
   for c in name:
@@ -1337,15 +1337,15 @@ proc setter(map: ptr DOMStringMap; name, value: string): Err[DOMException]
       "InvalidCharacterError")
   let name = "data-" & name.camelToKebabCase()
   ?name.validateAttributeName()
-  let aname = map[].target.document.toAtom(name)
+  let aname = map.target.document.toAtom(name)
   map.target.attr(aname, value)
   return ok()
 
-func names(ctx: JSContext; map: ptr DOMStringMap): JSPropertyEnumList
+func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
-  var list = newJSPropertyEnumList(ctx, uint32(map[].target.attrs.len))
-  for attr in map[].target.attrs:
-    let k = map[].target.document.toStr(attr.localName)
+  var list = newJSPropertyEnumList(ctx, uint32(map.target.attrs.len))
+  for attr in map.target.attrs:
+    let k = map.target.document.toStr(attr.localName)
     if k.startsWith("data-") and AsciiUpperAlpha notin k:
       list.add(k["data-".len .. ^1].kebabToCamelCase())
   return list
@@ -3845,7 +3845,7 @@ proc createElement(document: Document; localName: string):
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createDocumentType(implementation: ptr DOMImplementation; qualifiedName,
+proc createDocumentType(implementation: var DOMImplementation; qualifiedName,
     publicId, systemId: string): DOMResult[DocumentType] {.jsfunc.} =
   if not qualifiedName.matchQNameProduction():
     return errDOMException("Invalid character in document type name",
@@ -3853,7 +3853,7 @@ proc createDocumentType(implementation: ptr DOMImplementation; qualifiedName,
   let document = implementation.document
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
-proc createHTMLDocument(ctx: JSContext; implementation: ptr DOMImplementation;
+proc createHTMLDocument(ctx: JSContext; implementation: var DOMImplementation;
     title = none(string)): Document {.jsfunc.} =
   let doc = newDocument(ctx)
   doc.contentType = "text/html"
@@ -3870,7 +3870,7 @@ proc createHTMLDocument(ctx: JSContext; implementation: ptr DOMImplementation;
   #TODO set origin
   return doc
 
-proc hasFeature(implementation: ptr DOMImplementation): bool {.jsfunc.} =
+proc hasFeature(implementation: var DOMImplementation): bool {.jsfunc.} =
   return true
 
 proc createCDATASection(document: Document; data: string):

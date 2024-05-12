@@ -227,45 +227,45 @@ func getRealKey(key: string): string =
     realk &= '\\'
   return realk
 
-proc getter(a: ptr ActionMap; s: string): Option[string] {.jsgetprop.} =
+proc getter(a: var ActionMap; s: string): Option[string] {.jsgetprop.} =
   a.t.withValue(s, p):
     return some(p[])
   return none(string)
 
-proc setter(a: ptr ActionMap; k, v: string) {.jssetprop.} =
+proc setter(a: var ActionMap; k, v: string) {.jssetprop.} =
   let k = getRealKey(k)
   if k == "":
     return
-  a[][k] = v
+  a[k] = v
   var teststr = k
   teststr.setLen(teststr.high)
   for i in countdown(k.high, 0):
-    if teststr notin a[]:
-      a[][teststr] = "client.feedNext()"
+    if teststr notin a:
+      a[teststr] = "client.feedNext()"
     teststr.setLen(i)
 
-proc delete(a: ptr ActionMap; k: string): bool {.jsdelprop.} =
+proc delete(a: var ActionMap; k: string): bool {.jsdelprop.} =
   let k = getRealKey(k)
-  let ina = k in a[]
-  a[].t.del(k)
+  let ina = k in a
+  a.t.del(k)
   return ina
 
-func names(ctx: JSContext; a: ptr ActionMap): JSPropertyEnumList
+func names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
     {.jspropnames.} =
-  let L = uint32(a[].t.len)
+  let L = uint32(a.t.len)
   var list = newJSPropertyEnumList(ctx, L)
-  for key in a[].t.keys:
+  for key in a.t.keys:
     list.add(key)
   return list
 
 proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
-  (addr config.page).setter(key, action)
+  config.page.setter(key, action)
 
 proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
-  (addr config.line).setter(key, action)
+  config.line.setter(key, action)
 
-proc hasprop(a: ptr ActionMap; s: string): bool {.jshasprop.} =
-  return s in a[]
+proc hasprop(a: var ActionMap; s: string): bool {.jshasprop.} =
+  return s in a
 
 proc openFileExpand(dir, file: string): FileStream =
   if file.len == 0:
