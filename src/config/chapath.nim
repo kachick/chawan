@@ -145,7 +145,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     ctx.identStr &= c
     return ok()
   of ':', '-', '?', '+': # note: we don't support `=' (assign)
-    if ctx.identStr.len > 0:
+    if ctx.identStr.len == 0:
       return err("substitution without parameter name")
     if c == ':':
       ctx.state = usCurlyColon
@@ -235,6 +235,7 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
   else: assert false
   ctx.subChar = '\0'
   ctx.hasColon = false
+  ctx.state = usNormal
   return ok()
 
 proc stateCurlyExpand(ctx: var UnquoteContext; c: char): ChaPathResult[void] =

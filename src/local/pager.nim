@@ -829,8 +829,8 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
   if (let uqEditor = ChaPath(editor).unquote(); uqEditor.isSome):
     if uqEditor.get in ["vi", "nvi", "vim", "nvim"]:
-      editor &= " +%d"
-  var canpipe = false
+      editor = uqEditor.get & " +%d"
+  var canpipe = true
   var s = unquoteCommand(editor, "", file, nil, canpipe, line)
   if canpipe:
     # %s not in command; add file name ourselves

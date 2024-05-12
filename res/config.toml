@@ -238,7 +238,7 @@ urimethodmap = [
 	"/usr/local/etc/w3m/urimethodmap"
 ]
 tmpdir = "/tmp/cha"
-editor = "${EDITOR:-vi +%d %s}"
+editor = "${EDITOR:-vi}"
 cgi-dir = "${%CHA_LIBEXEC_DIR}/cgi-bin"
 download-dir = "/tmp/"
 w3m-cgi-compat = false
