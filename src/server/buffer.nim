@@ -15,10 +15,10 @@ import bindings/quickjs
 import config/config
 import css/cascade
 import css/cssparser
+import css/cssvalues
 import css/mediaquery
 import css/sheet
 import css/stylednode
-import css/values
 import html/catom
 import html/chadombuilder
 import html/dom

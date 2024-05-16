@@ -2,7 +2,7 @@ import std/strutils
 import std/tables
 
 import css/cssparser
-import css/values
+import css/cssvalues
 import types/opt
 import utils/twtstr
 

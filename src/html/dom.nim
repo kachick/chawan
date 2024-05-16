@@ -7,9 +7,9 @@ import std/strutils
 import std/tables
 
 import css/cssparser
+import css/cssvalues
 import css/mediaquery
 import css/sheet
-import css/values
 import html/catom
 import html/enums
 import html/event
@@ -22,12 +22,12 @@ import io/dynstream
 import io/promise
 import js/console
 import js/domexception
-import js/jserror
 import js/fromjs
 import js/javascript
-import js/jsutils
+import js/jserror
 import js/jsopaque
 import js/jspropenumlist
+import js/jsutils
 import js/timeout
 import js/tojs
 import loader/loader

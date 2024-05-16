@@ -1,8 +1,8 @@
 import std/strutils
 import std/unicode
 
+import css/cssvalues
 import css/stylednode
-import css/values
 import img/bitmap
 import layout/box
 import layout/engine

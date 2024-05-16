@@ -1,7 +1,7 @@
 import std/algorithm
 import std/unicode
 
-import css/values
+import css/cssvalues
 import img/bitmap
 import img/path
 import img/png

@@ -3,8 +3,8 @@ import std/math
 import std/options
 import std/unicode
 
+import css/cssvalues
 import css/stylednode
-import css/values
 import img/bitmap
 import layout/box
 import layout/layoutunit

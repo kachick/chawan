@@ -1,5 +1,5 @@
+import css/cssvalues
 import css/selectorparser
-import css/values
 import html/dom
 
 import chame/tags

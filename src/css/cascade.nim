@@ -3,12 +3,12 @@ import std/options
 import std/strutils
 
 import css/cssparser
+import css/cssvalues
 import css/match
 import css/mediaquery
 import css/selectorparser
 import css/sheet
 import css/stylednode
-import css/values
 import html/catom
 import html/dom
 import html/enums
