@@ -189,6 +189,13 @@ Following is a list of external options:
 </tr>
 
 <tr>
+<td>sockdir</td>
+<td>path</td>
+<td>Directory used to store UNIX domain sockets used for inter-process
+communication.</td>
+</tr>
+
+<tr>
 <td>editor</td>
 <td>shell command</td>
 <td>External editor command. %s is substituted for the file name, %d for
@@ -752,22 +759,15 @@ unspecified.
 </tr>
 
 <tr>
-<td>`cmd.pager.cursorUp`</td>
-<td>Move the cursor upwards by n lines, or if n is unspecified, by 1.</td>
-</tr>
-<tr>
-<td>`cmd.pager.cursorDown`</td>
-<td>Move the cursor downwards by n lines, or if n is unspecified, by 1.</td>
+<td>`cmd.pager.cursorUp`, `cmd.pager.cursorDown`</td>
+<td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
+1.</td>
 </tr>
 
 <tr>
-<td>`cmd.pager.cursorLeft`</td>
-<td>Move the cursor to the left by n cells, or if n is unspecified, by 1.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorRight`</td>
-<td>Move the cursor to the right by n cells, or if n is unspecified, by 1.</td>
+<td>`cmd.pager.cursorLeft`, `cmd.pager.cursorRight`</td>
+<td>Move the cursor to the left/right by n cells, or if n is unspecified, by
+1.</td>
 </tr>
 
 <tr>
@@ -812,23 +812,15 @@ already there, to the end of the previous word.</td>
 </tr>
 
 <tr>
-<td>`cmd.pager.cursorPrevLink`</td>
-<td>Move the cursor to the beginning of the previous clickable element.</td>
+<td>`cmd.pager.cursorPrevLink`, `cmd.pager.cursorNextLink`</td>
+<td>Move the cursor to the end/beginning of the previous/next clickable
+element (e.g. link, input field, etc).</td>
 </tr>
 
 <tr>
-<td>`cmd.pager.cursorNextLink`</td>
-<td>Move the cursor to the beginning of the next clickable element.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorPrevParagraph`</td>
-<td>Move the cursor to the beginning of the nth next paragraph.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorNextParagraph`</td>
-<td>Move the cursor to the end of the nth previous paragraph.</td>
+<td>`cmd.pager.cursorPrevParagraph`, `cmd.pager.cursorNextParagraph`</td>
+<td>Move the cursor to the end/beginning of the nth previous/next
+paragraph.</td>
 </tr>
 
 <tr>
@@ -1180,8 +1172,8 @@ searches for the string `abcd` inside all lines.
 
 * The string `\c` (backslash + lower-case c) inside a search-mode regex enables
   case-insensitive matching.
-* Conversely, `\C` (backslash + capital C) disables case-insensitive
-  matching. (Useful if you have the "i" flag inside default-flags.)
+* Conversely, `\C` (backslash + capital C) disables case-insensitive matching.
+  (Useful if you have `ignore-case` set to true, which is the default.)
 * `\<` and `\>` is converted to `\b` (as in vi, grep, etc.)
 
 Note that none of these work in "match" mode.
@@ -1195,8 +1187,8 @@ Rules for path handling are similar to how strings in the shell are handled.
 * Environment variables can be used like `$ENV_VAR`.
 * Relative paths are relative to the Chawan configuration directory.
 
-Some non-external variables are also defined by Chawan. These can be accessed
-using the syntax `${%VARIABLE}`:
+Some internal variables are also defined by Chawan. These can be accessed using
+the non-standard syntax `${%VARIABLE}`:
 
 * `${%CHA_BIN_DIR}`: the directory which the `cha` binary resides in. Note
   that symbolic links are automatically resolved to determine this path.

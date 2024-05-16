@@ -194,6 +194,15 @@ Directory used to save temporary files.
 T}@T{
 T}
 T{
+sockdir
+T}@T{
+path
+T}@T{
+Directory used to store UNIX domain sockets used for inter\-process
+communication.
+T}@T{
+T}
+T{
 editor
 T}@T{
 shell command
@@ -874,27 +883,17 @@ T}@T{
 T}
 _
 T{
-\f[CR]cmd.pager.cursorUp\f[R]
+\f[CR]cmd.pager.cursorUp\f[R], \f[CR]cmd.pager.cursorDown\f[R]
 T}@T{
-Move the cursor upwards by n lines, or if n is unspecified, by 1.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorDown\f[R]
-T}@T{
-Move the cursor downwards by n lines, or if n is unspecified, by 1.
+Move the cursor upwards/downwards by n lines, or if n is unspecified, by
+1.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorLeft\f[R]
+\f[CR]cmd.pager.cursorLeft\f[R], \f[CR]cmd.pager.cursorRight\f[R]
 T}@T{
-Move the cursor to the left by n cells, or if n is unspecified, by 1.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorRight\f[R]
-T}@T{
-Move the cursor to the right by n cells, or if n is unspecified, by 1.
+Move the cursor to the left/right by n cells, or if n is unspecified, by
+1.
 T}@T{
 T}
 T{
@@ -950,27 +949,17 @@ there, to the end of the previous word.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorPrevLink\f[R]
+\f[CR]cmd.pager.cursorPrevLink\f[R], \f[CR]cmd.pager.cursorNextLink\f[R]
 T}@T{
-Move the cursor to the beginning of the previous clickable element.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorNextLink\f[R]
-T}@T{
-Move the cursor to the beginning of the next clickable element.
+Move the cursor to the end/beginning of the previous/next clickable
+element (e.g.\ link, input field, etc).
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorPrevParagraph\f[R]
-T}@T{
-Move the cursor to the beginning of the nth next paragraph.
-T}@T{
-T}
-T{
+\f[CR]cmd.pager.cursorPrevParagraph\f[R],
 \f[CR]cmd.pager.cursorNextParagraph\f[R]
 T}@T{
-Move the cursor to the end of the nth previous paragraph.
+Move the cursor to the end/beginning of the nth previous/next paragraph.
 T}@T{
 T}
 T{
@@ -1387,7 +1376,8 @@ search\-mode regex enables case\-insensitive matching.
 .IP \[bu] 2
 Conversely, \f[CR]C\f[R] (backslash + capital C) disables
 case\-insensitive matching.
-(Useful if you have the \[lq]i\[rq] flag inside default\-flags.)
+(Useful if you have \f[CR]ignore\-case\f[R] set to true, which is the
+default.)
 .IP \[bu] 2
 \f[CR]<\f[R] and \f[CR]>\f[R] is converted to \f[CR]b\f[R] (as in vi,
 grep, etc.)
@@ -1404,8 +1394,9 @@ Environment variables can be used like \f[CR]$ENV_VAR\f[R].
 .IP \[bu] 2
 Relative paths are relative to the Chawan configuration directory.
 .PP
-Some non\-external variables are also defined by Chawan.
-These can be accessed using the syntax \f[CR]${%VARIABLE}\f[R]:
+Some internal variables are also defined by Chawan.
+These can be accessed using the non\-standard syntax
+\f[CR]${%VARIABLE}\f[R]:
 .IP \[bu] 2
 \f[CR]${%CHA_BIN_DIR}\f[R]: the directory which the \f[CR]cha\f[R]
 binary resides in.

@@ -291,8 +291,6 @@ substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + enco
 
 [page]
 # buffer commands
-q = 'cmd.pager.quit'
-C-z = 'cmd.pager.suspend'
 h = 'cmd.buffer.cursorLeft'
 j = 'cmd.buffer.cursorDown'
 k = 'cmd.buffer.cursorUp'
@@ -369,6 +367,8 @@ V = 'cmd.buffer.cursorToggleSelectionLine'
 C-v = 'cmd.buffer.cursorToggleSelectionBlock'
 
 # pager commands
+q = 'cmd.pager.quit'
+C-z = 'cmd.pager.suspend'
 sS = 'cmd.pager.saveSource'
 M-u = 'cmd.pager.dupeBuffer'
 C-l = 'cmd.pager.load'
