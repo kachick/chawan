@@ -106,30 +106,30 @@ type
     cvtColor = "color"
     cvtContent = "content"
     cvtDisplay = "display"
-    cvtFontStyle = "fontstyle"
-    cvtWhiteSpace = "whitespace"
+    cvtFontStyle = "fontStyle"
+    cvtWhiteSpace = "whiteSpace"
     cvtInteger = "integer"
-    cvtTextDecoration = "textdecoration"
-    cvtWordBreak = "wordbreak"
-    cvtListStyleType = "liststyletype"
-    cvtVerticalAlign = "verticalalign"
-    cvtTextAlign = "textalign"
-    cvtListStylePosition = "liststyleposition"
+    cvtTextDecoration = "textDecoration"
+    cvtWordBreak = "wordBreak"
+    cvtListStyleType = "listStyleType"
+    cvtVerticalAlign = "verticalAlign"
+    cvtTextAlign = "textAlign"
+    cvtListStylePosition = "listStylePosition"
     cvtPosition = "position"
-    cvtCaptionSide = "captionside"
+    cvtCaptionSide = "captionSide"
     cvtLength2 = "length2"
-    cvtBorderCollapse = "bordercollapse"
+    cvtBorderCollapse = "borderCollapse"
     cvtQuotes = "quotes"
-    cvtCounterReset = "counterreset"
+    cvtCounterReset = "counterReset"
     cvtImage = "image"
     cvtFloat = "float"
     cvtVisibility = "visibility"
-    cvtBoxSizing = "boxsizing"
+    cvtBoxSizing = "boxSizing"
     cvtClear = "clear"
-    cvtTextTransform = "texttransform"
-    cvtBgcolorIsCanvas = "bgcoloriscanvas"
-    cvtFlexDirection = "flexdirection"
-    cvtFlexWrap = "flexwrap"
+    cvtTextTransform = "textTransform"
+    cvtBgcolorIsCanvas = "bgcolorIsCanvas"
+    cvtFlexDirection = "flexDirection"
+    cvtFlexWrap = "flexWrap"
     cvtNumber = "number"
 
   CSSGlobalType = enum
@@ -323,7 +323,7 @@ type
     of cvtLength:
       length*: CSSLength
     of cvtFontStyle:
-      fontstyle*: CSSFontStyle
+      fontStyle*: CSSFontStyle
     of cvtDisplay:
       display*: CSSDisplay
     of cvtContent:
@@ -331,33 +331,33 @@ type
     of cvtQuotes:
       quotes*: CSSQuotes
     of cvtWhiteSpace:
-      whitespace*: CSSWhiteSpace
+      whiteSpace*: CSSWhiteSpace
     of cvtInteger:
       integer*: int
     of cvtNumber:
       number*: float64
     of cvtTextDecoration:
-      textdecoration*: set[CSSTextDecoration]
+      textDecoration*: set[CSSTextDecoration]
     of cvtWordBreak:
-      wordbreak*: CSSWordBreak
+      wordBreak*: CSSWordBreak
     of cvtListStyleType:
-      liststyletype*: CSSListStyleType
+      listStyleType*: CSSListStyleType
     of cvtVerticalAlign:
-      verticalalign*: CSSVerticalAlign
+      verticalAlign*: CSSVerticalAlign
     of cvtTextAlign:
-      textalign*: CSSTextAlign
+      textAlign*: CSSTextAlign
     of cvtListStylePosition:
-      liststyleposition*: CSSListStylePosition
+      listStylePosition*: CSSListStylePosition
     of cvtPosition:
       position*: CSSPosition
     of cvtCaptionSide:
-      captionside*: CSSCaptionSide
+      captionSide*: CSSCaptionSide
     of cvtLength2:
       length2*: tuple[a, b: CSSLength]
     of cvtBorderCollapse:
-      bordercollapse*: CSSBorderCollapse
+      borderCollapse*: CSSBorderCollapse
     of cvtCounterReset:
-      counterreset*: seq[CSSCounterReset]
+      counterReset*: seq[CSSCounterReset]
     of cvtImage:
       image*: CSSContent
     of cvtFloat:
@@ -365,17 +365,17 @@ type
     of cvtVisibility:
       visibility*: CSSVisibility
     of cvtBoxSizing:
-      boxsizing*: CSSBoxSizing
+      boxSizing*: CSSBoxSizing
     of cvtClear:
       clear*: CSSClear
     of cvtTextTransform:
-      texttransform*: CSSTextTransform
+      textTransform*: CSSTextTransform
     of cvtBgcolorIsCanvas:
-      bgcoloriscanvas*: bool
+      bgcolorIsCanvas*: bool
     of cvtFlexDirection:
-      flexdirection*: CSSFlexDirection
+      flexDirection*: CSSFlexDirection
     of cvtFlexWrap:
-      flexwrap*: CSSFlexWrap
+      flexWrap*: CSSFlexWrap
     of cvtNone: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -526,30 +526,30 @@ func `$`*(val: CSSComputedValue): string =
   of cvtImage: return $val.image
   of cvtLength: return $val.length
   of cvtDisplay: return $val.display
-  of cvtFontStyle: return $val.fontstyle
-  of cvtWhiteSpace: return $val.whitespace
+  of cvtFontStyle: return $val.fontStyle
+  of cvtWhiteSpace: return $val.whiteSpace
   of cvtInteger: return $val.integer
-  of cvtTextDecoration: return $val.textdecoration
-  of cvtWordBreak: return $val.wordbreak
-  of cvtListStyleType: return $val.liststyletype
-  of cvtVerticalAlign: return $val.verticalalign
-  of cvtTextAlign: return $val.textalign
-  of cvtListStylePosition: return $val.liststyleposition
+  of cvtTextDecoration: return $val.textDecoration
+  of cvtWordBreak: return $val.wordBreak
+  of cvtListStyleType: return $val.listStyleType
+  of cvtVerticalAlign: return $val.verticalAlign
+  of cvtTextAlign: return $val.textAlign
+  of cvtListStylePosition: return $val.listStylePosition
   of cvtPosition: return $val.position
-  of cvtCaptionSide: return $val.captionside
+  of cvtCaptionSide: return $val.captionSide
   of cvtLength2: return $val.length2.a & " " & $val.length2.b
-  of cvtBorderCollapse: return $val.bordercollapse
+  of cvtBorderCollapse: return $val.borderCollapse
   of cvtContent: return $val.content
   of cvtQuotes: return $val.quotes
-  of cvtCounterReset: return $val.counterreset
+  of cvtCounterReset: return $val.counterReset
   of cvtFloat: return $val.float
   of cvtVisibility: return $val.visibility
-  of cvtBoxSizing: return $val.boxsizing
+  of cvtBoxSizing: return $val.boxSizing
   of cvtClear: return $val.clear
-  of cvtTextTransform: return $val.texttransform
-  of cvtBgcolorIsCanvas: return $val.bgcoloriscanvas
-  of cvtFlexDirection: return $val.flexdirection
-  of cvtFlexWrap: return $val.flexwrap
+  of cvtTextTransform: return $val.textTransform
+  of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
+  of cvtFlexDirection: return $val.flexDirection
+  of cvtFlexWrap: return $val.flexWrap
   of cvtNumber: return $val.number
 
 macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
@@ -1243,10 +1243,10 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
     #TODO content for flex-basis
     else:
       return_new length, ?cssLength(cval)
-  of cvtFontStyle: return_new fontstyle, ?parseIdent[CSSFontStyle](cval)
+  of cvtFontStyle: return_new fontStyle, ?parseIdent[CSSFontStyle](cval)
   of cvtDisplay: return_new display, ?parseIdent[CSSDisplay](cval)
   of cvtContent: return_new content, cssContent(cvals)
-  of cvtWhiteSpace: return_new whitespace, ?parseIdent[CSSWhiteSpace](cval)
+  of cvtWhiteSpace: return_new whiteSpace, ?parseIdent[CSSWhiteSpace](cval)
   of cvtInteger:
     case t
     of cptFontWeight: return_new integer, ?cssFontWeight(cval)
@@ -1254,35 +1254,35 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
     of cptChaRowspan: return_new integer, ?cssInteger(cval, 0 .. 65534)
     else: assert false
   of cvtTextDecoration: return_new textdecoration, ?cssTextDecoration(cvals)
-  of cvtWordBreak: return_new wordbreak, ?parseIdent[CSSWordBreak](cval)
+  of cvtWordBreak: return_new wordBreak, ?parseIdent[CSSWordBreak](cval)
   of cvtListStyleType:
     return_new liststyletype, ?parseIdent[CSSListStyleType](cval)
-  of cvtVerticalAlign: return_new verticalalign, ?cssVerticalAlign(cval)
-  of cvtTextAlign: return_new textalign, ?parseIdent[CSSTextAlign](cval)
+  of cvtVerticalAlign: return_new verticalAlign, ?cssVerticalAlign(cval)
+  of cvtTextAlign: return_new textAlign, ?parseIdent[CSSTextAlign](cval)
   of cvtListStylePosition:
-    return_new liststyleposition, ?parseIdent[CSSListStylePosition](cval)
+    return_new listStylePosition, ?parseIdent[CSSListStylePosition](cval)
   of cvtPosition: return_new position, ?parseIdent[CSSPosition](cval)
-  of cvtCaptionSide: return_new captionside, ?parseIdent[CSSCaptionSide](cval)
+  of cvtCaptionSide: return_new captionSide, ?parseIdent[CSSCaptionSide](cval)
   of cvtBorderCollapse:
-    return_new bordercollapse, ?parseIdent[CSSBorderCollapse](cval)
+    return_new borderCollapse, ?parseIdent[CSSBorderCollapse](cval)
   of cvtLength2:
     let a = ?cssAbsoluteLength(cval)
     cvals.skipWhitespace(i)
     let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i])
     return_new length2, (a, b)
   of cvtQuotes: return_new quotes, ?cssQuotes(cvals)
-  of cvtCounterReset: return_new counterreset, ?cssCounterReset(cvals)
+  of cvtCounterReset: return_new counterReset, ?cssCounterReset(cvals)
   of cvtImage: return_new image, ?cssImage(cval)
   of cvtFloat: return_new float, ?parseIdent[CSSFloat](cval)
   of cvtVisibility: return_new visibility, ?parseIdent[CSSVisibility](cval)
-  of cvtBoxSizing: return_new boxsizing, ?parseIdent[CSSBoxSizing](cval)
+  of cvtBoxSizing: return_new boxSizing, ?parseIdent[CSSBoxSizing](cval)
   of cvtClear: return_new clear, ?parseIdent[CSSClear](cval)
   of cvtTextTransform:
-    return_new texttransform, ?parseIdent[CSSTextTransform](cval)
+    return_new textTransform, ?parseIdent[CSSTextTransform](cval)
   of cvtBgcolorIsCanvas: return err() # internal value
   of cvtFlexDirection:
-    return_new flexdirection, ?parseIdent[CSSFlexDirection](cval)
-  of cvtFlexWrap: return_new flexwrap, ?parseIdent[CSSFlexWrap](cval)
+    return_new flexDirection, ?parseIdent[CSSFlexDirection](cval)
+  of cvtFlexWrap: return_new flexWrap, ?parseIdent[CSSFlexWrap](cval)
   of cvtNumber: return_new number, ?cssNumber(cval, t == cptFlexGrow)
   of cvtNone: return err()
 
