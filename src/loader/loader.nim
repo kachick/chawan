@@ -124,6 +124,7 @@ type
     uriMethodMap*: URIMethodMap
     w3mCGICompat*: bool
     tmpdir*: string
+    sockdir*: string
 
   LoaderClientConfig* = object
     cookieJar*: CookieJar
@@ -705,7 +706,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   gctx = ctx
   let myPid = getCurrentProcessId()
   # we don't capsicumize loader, so -1 is appropriate here
-  ctx.ssock = initServerSocket(config.tmpdir, -1, myPid, blocking = true)
+  ctx.ssock = initServerSocket(config.sockdir, -1, myPid, blocking = true)
   let sfd = int(ctx.ssock.sock.getFd())
   ctx.selector.registerHandle(sfd, {Read}, 0)
   # The server has been initialized, so the main process can resume execution.

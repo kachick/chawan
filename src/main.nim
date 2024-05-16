@@ -206,9 +206,10 @@ proc main() =
   if ctx.pages.len == 0 and not config.start.headless:
     if stdin.isatty():
       help(1)
-  # make sure tmpdir actually exists; if we do this later, then forkserver may
-  # try to open an empty dir
+  # make sure tmpdir & sockdir both exist; if we do this later, then
+  # forkserver may try to open an empty dir
   createDir(config.external.tmpdir)
+  createDir(config.external.sockdir)
   forkserver.loadForkServerConfig(config)
   let client = newClient(config, forkserver, jsctx, warnings)
   try:

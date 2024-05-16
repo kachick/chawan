@@ -41,6 +41,10 @@ type
     sockDirFd: int
     sockDir: string
 
+  ForkServerConfig* = object
+    sockdir*: string
+    ambiguous_double*: bool
+
 proc forkLoader*(forkserver: ForkServer; config: LoaderConfig): int =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcForkLoader)
@@ -53,7 +57,10 @@ proc forkLoader*(forkserver: ForkServer; config: LoaderConfig): int =
 proc loadForkServerConfig*(forkserver: ForkServer; config: Config) =
   forkserver.ostream.withPacketWriter w:
     w.swrite(fcLoadConfig)
-    w.swrite(config.getForkServerConfig())
+    w.swrite(ForkServerConfig(
+      sockdir: config.external.sockdir,
+      ambiguous_double: config.display.double_width_ambiguous
+    ))
 
 proc removeChild*(forkserver: ForkServer; pid: int) =
   forkserver.ostream.withPacketWriter w:
@@ -234,7 +241,7 @@ proc runForkServer() =
           var config: ForkServerConfig
           r.sread(config)
           set_cjk_ambiguous(config.ambiguous_double)
-          ctx.sockDir = config.tmpdir
+          ctx.sockDir = config.sockdir
           when defined(freebsd):
             ctx.sockDirFd = open(cstring(ctx.sockDir), O_DIRECTORY)
     except EOFError:

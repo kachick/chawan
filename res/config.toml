@@ -237,7 +237,8 @@ urimethodmap = [
 	"/etc/urimethodmap",
 	"/usr/local/etc/w3m/urimethodmap"
 ]
-tmpdir = "/tmp/cha"
+tmpdir = "/tmp/cha-tmp-$LOGNAME"
+sockdir = "/tmp/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
 cgi-dir = "${%CHA_LIBEXEC_DIR}/cgi-bin"
 download-dir = "/tmp/"

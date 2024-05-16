@@ -7,8 +7,6 @@
 #
 # On FreeBSD, we create a file descriptor to the directory sockets
 # reside in, and then use that for manipulating our sockets.
-#(TODO: currently this is the same directory as the cache directory, which
-# is sub-optimal because rogue buffers could access cached files.)
 #
 # Capsicum does not enable more fine-grained capability control, but
 # in practice the things it does enable should not be enough to harm the

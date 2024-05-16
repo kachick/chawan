@@ -86,6 +86,7 @@ type
 
   ExternalConfig = object
     tmpdir* {.jsgetset.}: ChaPathResolved
+    sockdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
     mailcap*: Mailcap
     mime_types*: MimeTypes
@@ -148,10 +149,6 @@ type
     cmd*: CommandConfig
     page* {.jsget.}: ActionMap
     line* {.jsget.}: ActionMap
-
-  ForkServerConfig* = object
-    tmpdir*: string
-    ambiguous_double*: bool
 
 jsDestructor(ActionMap)
 jsDestructor(StartConfig)
@@ -283,12 +280,6 @@ proc readUserStylesheet(dir, file: string): string =
   if s != nil:
     result = s.readAll()
     s.close()
-
-proc getForkServerConfig*(config: Config): ForkServerConfig =
-  return ForkServerConfig(
-    tmpdir: config.external.tmpdir,
-    ambiguous_double: config.display.double_width_ambiguous
-  )
 
 type ConfigParser = object
   config: Config

@@ -427,10 +427,10 @@ proc acceptBuffers(client: Client) =
     client.selector.registerHandle(fd, {Read, Write}, 0)
   for item in pager.procmap:
     let container = item.container
-    let stream = connectSocketStream(client.config.external.tmpdir,
+    let stream = connectSocketStream(client.config.external.sockdir,
       client.loader.sockDirFd, container.process)
     # unlink here; on Linux we can't unlink from the buffer :/
-    discard tryRemoveFile(getSocketPath(client.config.external.tmpdir,
+    discard tryRemoveFile(getSocketPath(client.config.external.sockdir,
       container.process))
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
@@ -838,10 +838,11 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
     urimethodmap: config.external.urimethodmap,
     w3mCGICompat: config.external.w3m_cgi_compat,
     cgiDir: seq[string](config.external.cgi_dir),
-    tmpdir: config.external.tmpdir
+    tmpdir: config.external.tmpdir,
+    sockdir: config.external.sockdir
   ))
   let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
-  loader.setSocketDir(config.external.tmpdir)
+  loader.setSocketDir(config.external.sockdir)
   pager.setLoader(loader)
   let client = Client(
     config: config,
