@@ -6,9 +6,7 @@ import utils/map
 include res/map/charwidth_gen
 
 # One of the few global variables in the code. Honestly, it should not exist.
-var isCJKAmbiguous = false
-proc set_cjk_ambiguous*(b: bool) =
-  isCJKAmbiguous = b
+var isCJKAmbiguous* = false
 
 # Warning: this shouldn't be called without normalization.
 func width*(r: Rune): int =

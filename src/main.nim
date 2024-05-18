@@ -195,7 +195,7 @@ proc main() =
     if res.isNone:
       stderr.write("Error parsing commands: " & res.error)
       quit(1)
-  set_cjk_ambiguous(config.display.double_width_ambiguous)
+  isCJKAmbiguous = config.display.double_width_ambiguous
   if ctx.pages.len == 0 and stdin.isatty():
     if ctx.visual:
       ctx.pages.add(config.start.visual_home)
