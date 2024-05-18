@@ -1605,16 +1605,16 @@ proc positionAbsolute(lctx: LayoutState; box: BlockBox; margin: RelativeRect) =
   let parentWidth = applySizeConstraint(lctx.attrs.width_px, last.w)
   let parentHeight = applySizeConstraint(lctx.attrs.height_px, last.h)
   if not left.auto:
-    box.offset.x = left.px(lctx, parentWidth)
+    box.offset.x = box.positioned.left
     box.offset.x += margin.left
   elif not right.auto:
-    box.offset.x = parentWidth - right.px(lctx, parentWidth) - box.size.w
+    box.offset.x = parentWidth - box.positioned.right - box.size.w
     box.offset.x -= margin.right
   if not top.auto:
-    box.offset.y = top.px(lctx, parentHeight)
+    box.offset.y = box.positioned.top
     box.offset.y += margin.top
   elif not bottom.auto:
-    box.offset.y = parentHeight - bottom.px(lctx, parentHeight) - box.size.h
+    box.offset.y = parentHeight - box.positioned.bottom - box.size.h
     box.offset.y -= margin.bottom
 
 proc positionRelative(parent, box: BlockBox) =
