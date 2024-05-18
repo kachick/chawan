@@ -1210,12 +1210,12 @@ proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
   offset, bfcOffset: Offset): RootInlineFragment
 proc layoutBlock(bctx: var BlockContext; box: BlockBox;
   builder: BlockBoxBuilder; sizes: ResolvedSizes)
-proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
+proc layoutTable(bctx: BlockContext; table: BlockBox; builder: TableBoxBuilder;
   sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
 proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
-    InlineFragment
+  InlineFragment
 
 # Note: padding must still be applied after this.
 proc applySize(box: BlockBox; sizes: ResolvedSizes;
@@ -1473,7 +1473,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   of DisplayInlineBlock:
     bctx.layoutFlow(box, builder, sizes)
   of DisplayInlineTable:
-    lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
+    bctx.layoutTable(box, TableBoxBuilder(builder), sizes)
   of DisplayInlineFlex:
     bctx.layoutFlex(box, builder, sizes)
   else:
@@ -1977,8 +1977,24 @@ proc preBuildTableRows(ctx: var TableContext; builder: TableBoxBuilder;
   ctx.preBuildTableRows(tbody, table)
   ctx.preBuildTableRows(tfoot, table)
 
+func calcSpecifiedRatio(ctx: TableContext; W: LayoutUnit): LayoutUnit =
+  var totalSpecified: LayoutUnit = 0
+  var hasUnspecified = false
+  for col in ctx.cols:
+    if col.wspecified:
+      totalSpecified += col.width
+    else:
+      hasUnspecified = true
+      totalSpecified += col.minwidth
+  # Only grow specified columns if no unspecified column exists to take the
+  # rest of the space.
+  if totalSpecified == 0 or W > totalSpecified and hasUnspecified:
+    return 1
+  return W / totalSpecified
+
 proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
-    weight: var float64; specifiedRatio: LayoutUnit): seq[int] =
+    weight: var float64): seq[int] =
+  let specifiedRatio = ctx.calcSpecifiedRatio(W)
   # Spacing for each column:
   var avail = newSeqUninitialized[int](ctx.cols.len)
   var j = 0
@@ -2003,36 +2019,18 @@ proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
 func needsRedistribution(ctx: TableContext; computed: CSSComputedValues): bool =
   case ctx.space.w.t
   of scMinContent, scMaxContent:
-    # bleh
     return false
   of scStretch:
-    let u = ctx.space.w.u
-    return u > ctx.maxwidth or u < ctx.maxwidth
+    return ctx.space.w.u != ctx.maxwidth
   of scFitContent:
     let u = ctx.space.w.u
     return u > ctx.maxwidth and not computed{"width"}.auto or u < ctx.maxwidth
 
 proc redistributeWidth(ctx: var TableContext) =
-  var W = ctx.space.w.u
   # Remove inline spacing from distributable width.
-  W -= ctx.cols.len * ctx.inlineSpacing * 2
+  var W = ctx.space.w.u - ctx.cols.len * ctx.inlineSpacing * 2
   var weight = 0f64
-  var totalSpecified: LayoutUnit = 0
-  var hasUnspecified = false
-  for col in ctx.cols:
-    if col.wspecified:
-      totalSpecified += col.width
-    else:
-      hasUnspecified = true
-      # Hack: reserve the minimum space needed for unspecified columns,
-      # like other browsers do.
-      totalSpecified += col.minwidth
-  var specifiedRatio = if totalSpecified != 0: W / totalSpecified else: 1
-  if specifiedRatio > 1 and hasUnspecified:
-    # Only grow specified columns if no unspecified column exists to take the
-    # rest of the space.
-    specifiedRatio = 1
-  var avail = ctx.calcUnspecifiedColIndices(W, weight, specifiedRatio)
+  var avail = ctx.calcUnspecifiedColIndices(W, weight)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
     if weight == 0: break # zero weight; nothing to distribute
@@ -2120,8 +2118,9 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
 #      Distribute the table's content width among cells with an unspecified
 #      width. If this would give any cell a width < min_width, set that
 #      cell's width to min_width, then re-do the distribution.
-proc layoutTable(lctx: LayoutState; table: BlockBox; builder: TableBoxBuilder;
+proc layoutTable(bctx: BlockContext; table: BlockBox; builder: TableBoxBuilder;
     sizes: ResolvedSizes) =
+  let lctx = bctx.lctx
   var ctx = TableContext(lctx: lctx, space: sizes.space)
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
     ctx.inlineSpacing = table.computed{"border-spacing"}.a.px(lctx)
@@ -2155,7 +2154,7 @@ proc layout(bctx: var BlockContext; box: BlockBox; builder: BoxBuilder;
   of DisplayListItem:
     bctx.layoutListItem(box, ListItemBoxBuilder(builder), sizes)
   of DisplayTable:
-    bctx.lctx.layoutTable(box, TableBoxBuilder(builder), sizes)
+    bctx.layoutTable(box, TableBoxBuilder(builder), sizes)
   of DisplayFlex:
     bctx.layoutFlex(box, BlockBoxBuilder(builder), sizes)
   else:
