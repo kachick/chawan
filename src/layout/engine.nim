@@ -1472,8 +1472,8 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   let marginBottom = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
-  if bctx.maxFloatHeight > box.offset.y + box.size.h + marginBottom:
-    box.size.h = bctx.maxFloatHeight - box.offset.y - marginBottom
+  if bctx.maxFloatHeight > box.size.h + marginBottom:
+    box.size.h = bctx.maxFloatHeight - marginBottom
   box.offset.y = 0
   # Apply the block box's properties to the atom itself.
   let iblock = InlineAtom(
@@ -1625,7 +1625,7 @@ proc positionRelative(parent, box: BlockBox) =
   if not box.computed{"top"}.auto:
     box.offset.y += box.positioned.top
   elif not box.computed{"bottom"}.auto:
-    box.offset.y -= parent.size.h - box.positioned.bottom - box.size.h
+    box.offset.y += parent.size.h - box.positioned.bottom - box.size.h
 
 const ProperTableChild = RowGroupBox + {
   DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup,
@@ -2371,8 +2371,8 @@ proc layoutRootBlock(lctx: LayoutState; builder: BoxBuilder;
   marginBottomOut = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
-  if bctx.maxFloatHeight > box.offset.y + box.size.h + marginBottomOut:
-    box.size.h = bctx.maxFloatHeight - box.offset.y - marginBottomOut
+  if bctx.maxFloatHeight > box.size.h + marginBottomOut:
+    box.size.h = bctx.maxFloatHeight - marginBottomOut
   return box
 
 proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
