@@ -70,6 +70,7 @@ type
     offset*: Offset
     size*: Size # padding size
     margin*: RelativeRect #TODO get rid of this?
+    positioned*: RelativeRect #TODO ditto
     # very bad name. basically the minimum content width after the contents
     # have been positioned (usually the width of the shortest word.) used
     # in table cells.

@@ -43,6 +43,7 @@ type
   ResolvedSizes = object
     margin: RelativeRect
     padding: RelativeRect
+    positioned: RelativeRect
     space: AvailableSpace
     minMaxSizes: array[DimensionType, MinMaxSpan]
 
@@ -959,6 +960,17 @@ proc resolvePadding(availableWidth: SizeConstraint; lctx: LayoutState;
     right: computed{"padding-right"}.px(lctx, availableWidth)
   )
 
+func resolvePositioned(space: AvailableSpace; lctx: LayoutState;
+    computed: CSSComputedValues): RelativeRect =
+  # As per standard, vertical percentages refer to the *height*, not the width
+  # (unlike with margin/padding)
+  return RelativeRect(
+    top: computed{"top"}.px(lctx, space.h),
+    bottom: computed{"bottom"}.px(lctx, space.h),
+    left: computed{"left"}.px(lctx, space.w),
+    right: computed{"right"}.px(lctx, space.w)
+  )
+
 proc resolveBlockWidth(sizes: var ResolvedSizes;
     containingWidth: SizeConstraint; computed: CSSComputedValues;
     lctx: LayoutState) =
@@ -1030,65 +1042,30 @@ proc resolveBlockHeight(sizes: var ResolvedSizes;
         # same reasoning as for width.
         sizes.space.h = stretch(minHeight)
 
-proc resolveAbsoluteWidth(sizes: var ResolvedSizes;
-    containingWidth: SizeConstraint; computed: CSSComputedValues;
-    lctx: LayoutState) =
-  let left = computed{"left"}
-  let right = computed{"right"}
-  let width = computed{"width"}
-  if width.auto:
-    if not left.auto and not right.auto:
-      # width is auto and left & right are not auto.
-      # Solve for width.
-      if containingWidth.isDefinite:
-        let leftpx = left.px(lctx, containingWidth)
-        let rightpx = right.px(lctx, containingWidth)
-        let u = containingWidth.u - leftpx - rightpx -
-          sizes.margin.left - sizes.margin.right -
-          sizes.padding.left - sizes.padding.right
-        sizes.space.w = stretch(max(u, 0))
+proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
+    dim: DimensionType; cvalSize, cvalLeft, cvalRight: CSSLength;
+    computed: CSSComputedValues; lctx: LayoutState) =
+  # Note: cvalLeft, cvalRight are top/bottom when called with vertical dim
+  if cvalSize.auto:
+    if space[dim].isDefinite:
+      let u = max(space[dim].u - sizes.positioned.dimSum(dim) -
+        sizes.margin.dimSum(dim) - sizes.padding.dimSum(dim), 0)
+      if not cvalLeft.auto and not cvalRight.auto:
+        # width is auto and left & right are not auto.
+        # Solve for width.
+        sizes.space[dim] = stretch(u)
       else:
-        sizes.space.w = containingWidth
+        # Return shrink to fit and solve for left/right.
+        sizes.space[dim] = fitContent(u)
     else:
-      # Return shrink to fit and solve for left/right.
-      # Note that we do not know content width yet, so it is impossible to
-      # solve left/right yet.
-      sizes.space.w = fitContent(containingWidth)
+      sizes.space[dim] = space[dim]
   else:
-    let padding = sizes.padding.left + sizes.padding.right
-    let widthpx = width.spx(lctx, containingWidth, computed, padding)
+    let padding = sizes.padding.dimSum(dim)
+    let sizepx = cvalSize.spx(lctx, space[dim], computed, padding)
     # We could solve for left/right here, as available width is known.
     # Nevertheless, it is only needed for positioning, so we do not solve
     # them yet.
-    sizes.space.w = stretch(widthpx)
-
-proc resolveAbsoluteHeight(sizes: var ResolvedSizes;
-    containingHeight: SizeConstraint; computed: CSSComputedValues;
-    lctx: LayoutState) =
-  #TODO this might be incorrect because of percHeight?
-  let top = computed{"top"}
-  let bottom = computed{"bottom"}
-  let height = computed{"height"}
-  if height.auto:
-    if not top.auto and not bottom.auto:
-      # height is auto and top & bottom are not auto.
-      # Solve for height.
-      if containingHeight.isDefinite:
-        let toppx = top.px(lctx, containingHeight)
-        let bottompx = bottom.px(lctx, containingHeight)
-        #TODO I assume border collapsing does not matter here?
-        let u = containingHeight.u - toppx - bottompx -
-          sizes.margin.top - sizes.margin.bottom -
-          sizes.padding.top - sizes.padding.bottom
-        sizes.space.h = stretch(max(u, 0))
-      else:
-        sizes.space.h = containingHeight
-    else:
-      sizes.space.h = fitContent(containingHeight)
-  else:
-    let padding = sizes.padding.top + sizes.padding.bottom
-    let heightpx = height.spx(lctx, containingHeight, computed, padding)
-    sizes.space.h = stretch(heightpx)
+    sizes.space[dim] = stretch(sizepx)
 
 proc resolveBlockSizes(lctx: LayoutState; space: AvailableSpace;
     percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
@@ -1102,6 +1079,9 @@ proc resolveBlockSizes(lctx: LayoutState; space: AvailableSpace;
     space: space,
     minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
   )
+  if computed{"position"} == PositionRelative:
+    # only compute this when needed
+    sizes.positioned = resolvePositioned(space, lctx, computed)
   # Finally, calculate available width and height.
   sizes.resolveBlockWidth(space.w, computed, lctx)
   sizes.resolveBlockHeight(space.h, percHeight, computed, lctx)
@@ -1115,10 +1095,14 @@ proc resolveAbsoluteSizes(lctx: LayoutState; computed: CSSComputedValues):
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: resolvePadding(space.w, lctx, computed),
+    positioned: resolvePositioned(space, lctx, computed),
     minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
   )
-  sizes.resolveAbsoluteWidth(space.w, computed, lctx)
-  sizes.resolveAbsoluteHeight(space.h, computed, lctx)
+  sizes.resolveAbsoluteSize(space, dtHorizontal, computed{"width"},
+    computed{"left"}, computed{"right"}, computed, lctx)
+  #TODO this might be incorrect because of percHeight?
+  sizes.resolveAbsoluteSize(space, dtVertical, computed{"height"},
+    computed{"top"}, computed{"bottom"}, computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for floating boxes.
@@ -1424,7 +1408,8 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
       computed: builder.content.computed,
       node: builder.node,
       offset: box.offset,
-      margin: sizes.margin
+      margin: sizes.margin,
+      positioned: sizes.positioned
     )
     bctx.layoutFlow(innerBox, builder.content, sizes)
     #TODO we should put markers right before the first atom of the parent
@@ -1449,8 +1434,10 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     # move innerBox margin & offset to outer box
     box.offset = innerBox.offset
     box.margin = innerBox.margin
+    box.positioned = innerBox.positioned
     innerBox.offset = offset(x = 0, y = 0)
     innerBox.margin = RelativeRect()
+    innerBox.positioned = RelativeRect()
     box.nested = @[marker, innerBox]
   else:
     bctx.layoutFlow(box, builder.content, sizes)
@@ -1465,7 +1452,8 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    margin: sizes.margin
+    margin: sizes.margin,
+    positioned: sizes.positioned
   )
   var bctx = BlockContext(lctx: lctx)
   bctx.marginTodo.append(sizes.margin.top)
@@ -1629,19 +1617,15 @@ proc positionAbsolute(lctx: LayoutState; box: BlockBox; margin: RelativeRect) =
     box.offset.y = parentHeight - bottom.px(lctx, parentHeight) - box.size.h
     box.offset.y -= margin.bottom
 
-proc positionRelative(parent, box: BlockBox; lctx: LayoutState) =
-  let left = box.computed{"left"}
-  let right = box.computed{"right"}
-  let top = box.computed{"top"}
-  let bottom = box.computed{"bottom"}
-  if not left.auto:
-    box.offset.x += right.px(lctx)
-  elif not right.auto:
-    box.offset.x += parent.size.w - right.px(lctx) - box.size.w
-  if not top.auto:
-    box.offset.y += top.px(lctx)
-  elif not top.auto:
-    box.offset.y -= parent.size.h - bottom.px(lctx) - box.size.h
+proc positionRelative(parent, box: BlockBox) =
+  if not box.computed{"left"}.auto:
+    box.offset.x += box.positioned.left
+  elif not box.computed{"right"}.auto:
+    box.offset.x += parent.size.w - box.positioned.right - box.size.w
+  if not box.computed{"top"}.auto:
+    box.offset.y += box.positioned.top
+  elif not box.computed{"bottom"}.auto:
+    box.offset.y -= parent.size.h - box.positioned.bottom - box.size.h
 
 const ProperTableChild = RowGroupBox + {
   DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup,
@@ -1707,7 +1691,8 @@ proc layoutTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    margin: sizes.margin
+    margin: sizes.margin,
+    positioned: sizes.positioned
   )
   var bctx = BlockContext(lctx: lctx)
   bctx.layoutFlow(box, builder, sizes)
@@ -2092,7 +2077,8 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
-    margin: sizes.margin
+    margin: sizes.margin,
+    positioned: sizes.positioned
   )
   var bctx = BlockContext(lctx: ctx.lctx)
   bctx.layoutFlow(box, builder, sizes)
@@ -2169,7 +2155,8 @@ proc layoutFlexChild(lctx: LayoutState; builder: BoxBuilder;
     computed: builder.computed,
     node: builder.node,
     offset: offset(x = sizes.margin.left, y = 0),
-    margin: sizes.margin
+    margin: sizes.margin,
+    positioned: sizes.positioned
   )
   bctx.layout(box, builder, sizes)
   assert bctx.unpositionedFloats.len == 0
@@ -2366,7 +2353,8 @@ proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     computed: builder.computed,
     node: builder.node,
     offset: offset(x = offset.x + sizes.margin.left, y = offset.y),
-    margin: sizes.margin
+    margin: sizes.margin,
+    positioned: sizes.positioned
   )
   bctx.layout(box, builder, sizes)
   if appendMargins:
@@ -2552,7 +2540,7 @@ proc repositionChildren(state: BlockState; box: BlockBox; lctx: LayoutState) =
       box.postAlignChild(child, box.size.w)
     case child.computed{"position"}
     of PositionRelative:
-      box.positionRelative(child, lctx)
+      box.positionRelative(child)
     of PositionAbsolute:
       lctx.positionAbsolute(child, child.margin)
     else: discard #TODO
