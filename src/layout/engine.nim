@@ -1383,8 +1383,9 @@ func establishesBFC(computed: CSSComputedValues): bool =
   return computed{"float"} != FloatNone or
     computed{"position"} == PositionAbsolute or
     computed{"display"} in {DisplayInlineBlock, DisplayFlowRoot} +
-      InternalTableBox + {DisplayFlex, DisplayInlineFlex}
-    #TODO overflow, contain, grid, multicol, column-span
+      InternalTableBox + {DisplayFlex, DisplayInlineFlex} or
+    computed{"overflow"} notin {OverflowVisible, OverflowClip}
+    #TODO contain, grid, multicol, column-span
 
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     sizes: ResolvedSizes) =

@@ -99,6 +99,7 @@ type
     cptFlexGrow = "flex-grow"
     cptFlexShrink = "flex-shrink"
     cptFlexBasis = "flex-basis"
+    cptOverflow = "overflow"
 
   CSSValueType* = enum
     cvtNone = ""
@@ -131,6 +132,7 @@ type
     cvtFlexDirection = "flexDirection"
     cvtFlexWrap = "flexWrap"
     cvtNumber = "number"
+    cvtOverflow = "overflow"
 
   CSSGlobalType = enum
     cgtNoglobal = ""
@@ -293,6 +295,13 @@ type
     FlexWrapWrap = "wrap"
     FlexWrapWrapReverse = "wrap-reverse"
 
+  CSSOverflow* = enum
+    OverflowVisible = "visible"
+    OverflowHidden = "hidden"
+    OverflowClip = "clip"
+    OverflowScroll = "scroll"
+    OverflowAuto = "auto"
+
 type
   CSSLength* = object
     num*: float64
@@ -376,6 +385,8 @@ type
       flexDirection*: CSSFlexDirection
     of cvtFlexWrap:
       flexWrap*: CSSFlexWrap
+    of cvtOverflow:
+      overflow*: CSSOverflow
     of cvtNone: discard
 
   CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
@@ -466,7 +477,8 @@ const ValueTypes = [
   cptFlexWrap: cvtFlexWrap,
   cptFlexGrow: cvtNumber,
   cptFlexShrink: cvtNumber,
-  cptFlexBasis: cvtLength
+  cptFlexBasis: cvtLength,
+  cptOverflow: cvtOverflow
 ]
 
 const InheritedProperties = {
@@ -550,6 +562,7 @@ func `$`*(val: CSSComputedValue): string =
   of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
   of cvtFlexDirection: return $val.flexDirection
   of cvtFlexWrap: return $val.flexWrap
+  of cvtOverflow: return $val.overflow
   of cvtNumber: return $val.number
 
 macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
@@ -1284,6 +1297,7 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
     return_new flexDirection, ?parseIdent[CSSFlexDirection](cval)
   of cvtFlexWrap: return_new flexWrap, ?parseIdent[CSSFlexWrap](cval)
   of cvtNumber: return_new number, ?cssNumber(cval, t == cptFlexGrow)
+  of cvtOverflow: return_new overflow, ?parseIdent[CSSOverflow](cval)
   of cvtNone: return err()
 
 func getInitialColor(t: CSSPropertyType): CellColor =
