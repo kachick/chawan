@@ -707,6 +707,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     iastate: InlineAtomState; atom: InlineAtom): bool =
   result = false
   var shift = ictx.computeShift(state)
+  ictx.currentLine.charwidth += ictx.whitespacenum
   ictx.whitespacenum = 0
   # Line wrapping
   if ictx.shouldWrap(atom.size.w + shift, state.computed):
