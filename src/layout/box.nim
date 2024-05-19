@@ -125,6 +125,9 @@ func `h=`*(size: var Size; h: LayoutUnit) {.inline.} =
 func `+`*(a, b: Offset): Offset =
   return offset(x = a.x + b.x, y = a.y + b.y)
 
+func `-`*(a, b: Offset): Offset =
+  return offset(x = a.x - b.x, y = a.y - b.y)
+
 proc `+=`*(a: var Offset; b: Offset) =
   a.x += b.x
   a.y += b.y

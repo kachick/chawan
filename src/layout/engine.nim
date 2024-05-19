@@ -1311,7 +1311,7 @@ type
     initialParentOffset: Offset
 
 func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
-    space: AvailableSpace; float: CSSFloat): Offset =
+    space: AvailableSpace; float: CSSFloat; outw: var LayoutUnit): Offset =
   # Algorithm originally from QEmacs.
   var y = offset.y
   let leftStart = offset.x
@@ -1330,8 +1330,10 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
         if ex.t == FloatRight and right > ex.offset.x:
           right = ex.offset.x
         miny = min(ey2, miny)
-    if right - left >= size.w or miny == high(LayoutUnit):
+    let w = right - left
+    if w >= size.w or miny == high(LayoutUnit):
       # Enough space, or no other exclusions found at this y offset.
+      outw = w
       if float == FloatLeft:
         return offset(x = left, y = y)
       else: # FloatRight
@@ -1340,6 +1342,15 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     # still intersects with the previous y).
     y = miny
   assert false
+
+func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
+    space: AvailableSpace; float: CSSFloat): Offset =
+  var dummy: LayoutUnit
+  return bctx.findNextFloatOffset(offset, size, space, float, dummy)
+
+func findNextBlockOffset(bctx: BlockContext; offset: Offset; size: Size;
+    space: AvailableSpace; outw: var LayoutUnit): Offset =
+  return bctx.findNextFloatOffset(offset, size, space, FloatLeft, outw)
 
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
     space: AvailableSpace; bfcOffset: Offset) =
@@ -1374,18 +1385,6 @@ proc positionFloats(bctx: var BlockContext) =
 const RowGroupBox = {
   DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
 }
-const InternalTableBox = RowGroupBox + {
-  DisplayTableCell, DisplayTableRow, DisplayTableColumn,
-  DisplayTableColumnGroup
-}
-
-func establishesBFC(computed: CSSComputedValues): bool =
-  return computed{"float"} != FloatNone or
-    computed{"position"} == PositionAbsolute or
-    computed{"display"} in {DisplayInlineBlock, DisplayFlowRoot} +
-      InternalTableBox + {DisplayFlex, DisplayInlineFlex} or
-    computed{"overflow"} notin {OverflowVisible, OverflowClip}
-    #TODO contain, grid, multicol, column-span
 
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     sizes: ResolvedSizes) =
@@ -2408,6 +2407,15 @@ func isParentResolved(state: BlockState; bctx: BlockContext): bool =
   return bctx.marginTarget != state.initialMarginTarget or
     state.prevParentBps != nil and state.prevParentBps.resolved
 
+# Note: this does not include display types that cannot appear as block
+# children.
+func establishesBFC(computed: CSSComputedValues): bool =
+  return computed{"float"} != FloatNone or
+    computed{"position"} == PositionAbsolute or
+    computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayFlex} or
+    computed{"overflow"} notin {OverflowVisible, OverflowClip}
+    #TODO contain, grid, multicol, column-span
+
 # Layout and place all children in the block box.
 # Box placement must occur during this pass, since child box layout in the
 # same block formatting context depends on knowing where the box offset is
@@ -2431,6 +2439,40 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
         bctx.flushMargins(child)
         bctx.positionFloats()
         bctx.marginTodo.append(child.margin.bottom)
+        if bctx.exclusions.len > 0:
+          # Consulting the standard for an important edge case... (abridged)
+          #
+          # > The border box of an element that establishes a new BFC must not
+          # > overlap the margin box of any floats in the same BFC as the
+          # > element itself. If necessary, implementations should clear the
+          # > said element, but may place it adjacent to such floats if there
+          # > is sufficient space. CSS2 does not define when a UA may put said
+          # > element next to the float.
+          #
+          # ...as expected. Thanks for nothing.
+          #
+          # OK here's what we do:
+          # * run a normal pass
+          # * place the longest word (i.e. xminwidth) somewhere
+          # * run another pass with the placement we got
+          #
+          # I suspect this breaks horribly on some layouts, but I don't care
+          # enough to make this convoluted garbage even more complex.
+          #
+          # Note that we do this only for elements in the flow. FF yanks
+          # absolutely positioned elements on top of floats, and so do we.
+          let pbfcOffset = bctx.bfcOffset
+          let bfcOffset = offset(
+            x = pbfcOffset.x + child.offset.x,
+            y = max(pbfcOffset.y + child.offset.y, bctx.clearOffset)
+          )
+          let minSize = size(w = child.xminwidth, h = bctx.lctx.attrs.ppl)
+          var outw: LayoutUnit
+          let offset = bctx.findNextBlockOffset(bfcOffset, minSize,
+            state.space, outw)
+          let space = availableSpace(w = stretch(outw), h = state.space.h)
+          child = bctx.lctx.layoutRootBlock(builder, space, offset - pbfcOffset,
+            marginBottomOut)
       else:
         child.offset.y += child.margin.top
         if state.isParentResolved(bctx):
