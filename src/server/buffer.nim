@@ -1955,11 +1955,8 @@ proc runBuffer(buffer: Buffer) =
 proc cleanup(buffer: Buffer) =
   buffer.pstream.sclose()
   urandom.sclose()
-  # no unlink access on Linux
-  when defined(linux):
-    buffer.ssock.close(unlink = false)
-  else:
-    buffer.ssock.close()
+  # no unlink access on Linux, so just hope that the pager could clean it up
+  buffer.ssock.close(unlink = false)
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
