@@ -91,17 +91,24 @@ proc height(screen: var Screen): int64 {.jsfget.} =
 proc colorDepth(screen: var Screen): int64 {.jsfget.} = 24
 proc pixelDepth(screen: var Screen): int64 {.jsfget.} = screen.colorDepth
 
-proc addNavigatorModule(ctx: JSContext) =
+proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(Navigator)
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
   ctx.registerType(Screen)
 
-proc fetch[T: Request|string](window: Window; req: T; init = none(RequestInit)):
-    JSResult[FetchPromise] {.jsfunc.} =
+proc fetch[T: JSRequest|string](window: Window; input: T;
+    init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
   if window.loader.isSome:
-    let req = ?newRequest(window.jsctx, req, init)
-    return ok(window.loader.get.fetch(req))
+    let input = ?newRequest(window.jsctx, input, init)
+    #TODO cors requests?
+    if not window.settings.origin.isSameOrigin(input.request.url.origin):
+      let promise = FetchPromise()
+      let err = newTypeError("NetworkError when attempting to fetch resource")
+      promise.resolve(JSResult[Response].err(err))
+      return ok(promise)
+    return ok(window.loader.get.fetch(input.request))
+  return ok(nil)
 
 proc setTimeout[T: JSValue|string](window: Window; handler: T;
     timeout = 0i32): int32 {.jsfunc.} =
@@ -116,6 +123,9 @@ proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
 
 proc clearInterval(window: Window; id: int32) {.jsfunc.} =
   window.timeouts.clearInterval(id)
+
+func console(window: Window): Console {.jsfget.} =
+  return window.internalConsole
 
 proc screenX(window: Window): int64 {.jsfget.} = 0
 proc screenY(window: Window): int64 {.jsfget.} = 0
@@ -170,6 +180,17 @@ proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     doAssert ctx.addEventListener(window, "load", val).isSome
     JS_FreeValue(ctx, this)
 
+proc addWindowModule*(ctx: JSContext) =
+  ctx.addEventModule()
+  let eventTargetCID = ctx.getClass("EventTarget")
+  ctx.registerType(Window, parent = eventTargetCID, asglobal = true)
+
+proc addWindowModule2*(ctx: JSContext) =
+  ctx.addEventModule()
+  let eventTargetCID = ctx.getClass("EventTarget")
+  ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
+    globalparent = true)
+
 proc addScripting*(window: Window; selector: Selector[int]) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -189,12 +210,8 @@ proc addScripting*(window: Window; selector: Selector[int]) =
         JS_FreeValue(ctx, ret)
     )
   )
-  var global = JS_GetGlobalObject(ctx)
-  ctx.addEventModule()
-  let eventTargetCID = ctx.getClass("EventTarget")
-  ctx.registerType(Window, asglobal = true, parent = eventTargetCID)
+  ctx.addWindowModule()
   ctx.setGlobal(window)
-  JS_FreeValue(ctx, global)
   ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
@@ -219,17 +236,18 @@ proc runJSJobs*(window: Window) =
     ctx.writeException(window.console.err)
 
 proc newWindow*(scripting, images: bool; selector: Selector[int];
-    attrs: WindowAttributes; factory: CAtomFactory;
-    navigate: proc(url: URL) = nil, loader = none(FileLoader)): Window =
+    attrs: WindowAttributes; factory: CAtomFactory; navigate: proc(url: URL);
+    loader: FileLoader; url: URL): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
-    console: newConsole(err),
+    internalConsole: newConsole(err),
     navigator: Navigator(),
-    loader: loader,
+    internalLoader: some(loader),
     images: images,
     settings: EnvironmentSettings(
-      scripting: scripting
+      scripting: scripting,
+      origin: url.origin
     ),
     navigate: navigate,
     factory: factory

@@ -58,12 +58,21 @@ type
     blob: Option[BlobURLEntry]
     searchParams* {.jsget.}: URLSearchParams
 
-  Origin* = Option[tuple[
-    scheme: string,
-    host: Host,
-    port: Option[uint16],
+  OriginType* = enum
+    otOpaque, otTuple
+
+  TupleOrigin* = tuple
+    scheme: string
+    host: Host
+    port: Option[uint16]
     domain: Option[string]
-  ]]
+
+  Origin* = ref object
+    case t*: OriginType
+    of otOpaque:
+      s: string
+    of otTuple:
+      tup: TupleOrigin
 
 jsDestructor(URL)
 jsDestructor(URLSearchParams)
@@ -876,9 +885,11 @@ func serialize(host: Host): string =
 func serialize*(path: URLPath): string {.inline.} =
   if path.opaque:
     return path.s
+  var buf = ""
   for s in path.ss:
-    result &= '/'
-    result &= s
+    buf &= '/'
+    buf &= s
+  return buf
 
 when defined(windows) or defined(OS2) or defined(DOS):
   func serialize_unicode_dos(path: URLPath): string =
@@ -1081,7 +1092,7 @@ proc newURL*(s: string; base: Option[string] = none(string)):
   url.searchParams.initURLSearchParams(url.query.get(""))
   return ok(url)
 
-proc origin0*(url: URL): Origin =
+proc origin*(url: URL): Origin =
   case url.scheme
   of "blob":
     if url.blob.isSome:
@@ -1089,33 +1100,43 @@ proc origin0*(url: URL): Origin =
       discard
     let pathURL = parseURL($url.path)
     if pathURL.isNone:
-      return # opaque
-    return pathURL.get.origin0
+      return Origin(t: otOpaque, s: $url)
+    return pathURL.get.origin
   of "ftp", "http", "https", "ws", "wss":
-    return some((url.scheme, url.host.get, url.port, none(string)))
+    return Origin(
+      t: otTuple,
+      tup: (url.scheme, url.host.get, url.port, none(string))
+    )
   of "file":
-    #???
-    return # opaque
+    return Origin(t: otOpaque, s: $url)
   else:
-    return # opaque
+    return Origin(t: otOpaque, s: $url)
 
-proc `==`*(a, b: Origin): bool =
-  if a.isNone or b.isNone: return false
-  return a.get == b.get
+proc `==`*(a, b: Origin): bool {.error.} =
+  discard
+
+proc isSameOrigin*(a, b: Origin): bool =
+  if a.t != b.t:
+    return false
+  case a.t
+  of otOpaque:
+    return a.s == b.s
+  of otTuple:
+    return a.tup == b.tup
 
 proc `$`*(origin: Origin): string =
-  if origin.isNone:
+  if origin.t == otOpaque:
     return "null"
-  let origin = origin.get
-  result = origin.scheme
-  result &= "://"
-  result &= origin.host.serialize()
-  if origin.port.isSome:
-    result &= ':'
-    result &= $origin.port.get
+  var s = origin.tup.scheme
+  s &= "://"
+  s &= origin.tup.host.serialize()
+  if origin.tup.port.isSome:
+    s &= ':'
+    s &= $origin.tup.port.get
+  return s
 
-proc origin*(url: URL): string {.jsfget.} =
-  return $url.origin0
+proc jsOrigin*(url: URL): string {.jsfget: "origin".} =
+  return $url.origin
 
 proc protocol*(url: URL): string {.jsfget.} =
   return url.scheme & ':'

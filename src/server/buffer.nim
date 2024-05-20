@@ -887,7 +887,8 @@ proc setHTML(buffer: Buffer) =
     buffer.attrs,
     factory,
     navigate,
-    some(buffer.loader)
+    buffer.loader,
+    buffer.url
   )
   let confidence = if buffer.config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1317,10 +1318,10 @@ proc submitForm(form: HTMLFormElement; submitter: Element): Option[Request] =
     #TODO
     return none(Request)
   let httpmethod = if formmethod == fmGet:
-    HTTP_GET
+    hmGet
   else:
     assert formmethod == fmPost
-    HTTP_POST
+    hmPost
 
   #let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
   #  submitter.attr("formtarget")
@@ -1549,7 +1550,7 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
         repaint = true
         if s.isSome:
           let url = newURL("data:text/html," & s.get).get
-          let req = newRequest(url, HTTP_GET)
+          let req = newRequest(url, hmGet)
           return ClickResult(
             repaint: repaint,
             open: some(req)
@@ -1559,7 +1560,7 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
       )
     return ClickResult(
       repaint: repaint,
-      open: some(newRequest(url, HTTP_GET))
+      open: some(newRequest(url, hmGet))
     )
   return ClickResult(repaint: repaint)
 

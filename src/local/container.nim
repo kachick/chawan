@@ -1405,7 +1405,7 @@ proc extractCookies(response: Response): seq[Cookie] =
 
 proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =
   if "Referrer-Policy" in response.headers:
-    return getReferrerPolicy(response.headers["Referrer-Policy"])
+    return strictParseEnum[ReferrerPolicy](response.headers["Referrer-Policy"])
   return none(ReferrerPolicy)
 
 # Apply data received in response.
@@ -1423,7 +1423,7 @@ proc applyResponse*(container: Container; response: Response;
     if referrerPolicy.isSome:
       container.loaderConfig.referrerPolicy = referrerPolicy.get
   else:
-    container.loaderConfig.referrerPolicy = NO_REFERRER
+    container.loaderConfig.referrerPolicy = rpNoReferrer
   # setup content type; note that isSome means an override so we skip it
   if container.contentType.isNone:
     var contentType = response.getContentType()

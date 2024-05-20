@@ -352,18 +352,14 @@ proc parseFromString(ctx: JSContext; parser: DOMParser; str, t: string):
   case t
   of "text/html":
     let global = JS_GetGlobalObject(ctx)
-    let window = if ctx.hasClass(Window):
-      fromJS[Window](ctx, global).get(nil)
-    else:
-      Window(nil)
+    let window = fromJS[Window](ctx, global).get
     JS_FreeValue(ctx, global)
-    let url = if window != nil and window.document != nil:
+    let url = if window.document != nil:
       window.document.url
     else:
       newURL("about:blank").get
     #TODO this is probably broken in client (or at least sub-optimal)
-    let factory = if window != nil: window.factory else: newCAtomFactory()
-    let builder = newChaDOMBuilder(url, window, factory, ccIrrelevant)
+    let builder = newChaDOMBuilder(url, window, window.factory, ccIrrelevant)
     var parser = initHTML5Parser(builder, HTML5ParserOpts[Node, CAtom]())
     let res = parser.parseChunk(str)
     assert res == PRES_CONTINUE

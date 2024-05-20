@@ -1601,8 +1601,9 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
       let `classDef` = JSClassDefConst(addr cd))
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
-    asglobal: static bool = false; nointerface = false;
-    name: static string = ""; has_extra_getset: static bool = false;
+    asglobal: static bool = false; globalparent: static bool = false;
+    nointerface = false; name: static string = "";
+    has_extra_getset: static bool = false;
     extra_getset: static openArray[TabGetSet] = []; namespace = JS_NULL;
     errid = opt(JSErrorEnum); ishtmldda = false): JSClassID =
   var stmts = newStmtList()
@@ -1636,9 +1637,10 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let tname = info.tname
   let unforgeable = info.tabUnforgeable
   let staticfuns = info.tabStatic
+  let global = asglobal and not globalparent
   endstmts.add(quote do:
     `ctx`.newJSClass(`classDef`, `tname`, getTypePtr(`t`), `sctr`, `tabList`,
-      `parent`, bool(`asglobal`), `nointerface`, `finName`, `namespace`,
+      `parent`, bool(`global`), `nointerface`, `finName`, `namespace`,
       `errid`, `unforgeable`, `staticfuns`, `ishtmldda`)
   )
   stmts.add(newBlockStmt(endstmts))

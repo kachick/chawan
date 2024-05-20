@@ -3,9 +3,10 @@ import std/strutils
 import std/tables
 
 import bindings/quickjs
-import js/jserror
+import html/script
 import js/fromjs
 import js/javascript
+import js/jserror
 import js/jstypes
 import loader/headers
 import types/blob
@@ -15,82 +16,83 @@ import types/url
 
 type
   HttpMethod* = enum
-    HTTP_GET = "GET"
-    HTTP_CONNECT = "CONNECT"
-    HTTP_DELETE = "DELETE"
-    HTTP_HEAD = "HEAD"
-    HTTP_OPTIONS = "OPTIONS"
-    HTTP_PATCH = "PATCH"
-    HTTP_POST = "POST"
-    HTTP_PUT = "PUT"
-    HTTP_TRACE = "TRACE"
+    hmGet = "GET"
+    hmConnect = "CONNECT"
+    hmDelete = "DELETE"
+    hmHead = "HEAD"
+    hmOptions = "OPTIONS"
+    hmPatch = "PATCH"
+    hmPost = "POST"
+    hmPut = "PUT"
+    hmTrace = "TRACE"
 
   RequestMode* = enum
-    NO_CORS = "no-cors"
-    SAME_ORIGIN = "same-origin"
-    CORS = "cors"
-    NAVIGATE = "navigate"
-    WEBSOCKET = "websocket"
-
-  RequestDestination* = enum
-    NO_DESTINATION = ""
-    AUDIO = "audio"
-    AUDIOWORKLET = "audioworklet"
-    DOCUMENT = "document"
-    EMBED = "embed"
-    FONT = "font"
-    FRAME = "frame"
-    IFRAME = "iframe"
-    IMAGE = "image"
-    JSON = "json"
-    MANIFEST = "manifest"
-    OBJECT = "object"
-    PAINTWORKLET = "paintworklet"
-    REPORT = "report"
-    SCRIPT = "script"
-    SERVICEWORKER = "serviceworker"
-    SHAREDWORKER = "sharedworker"
-    STYLE = "style"
-    TRACK = "track"
-    WORKER = "worker"
-    XSLT = "xslt"
-
-  CredentialsMode* = enum
-    SAME_ORIGIN = "same-origin"
-    OMIT = "omit"
-    INCLUDE = "include"
+    rmNoCors = "no-cors"
+    rmSameOrigin = "same-origin"
+    rmCors = "cors"
+    rmNavigate = "navigate"
+    rmWebsocket = "websocket"
 
   CORSAttribute* = enum
-    NO_CORS = "no-cors"
-    ANONYMOUS = "anonymous"
-    USE_CREDENTIALS = "use-credentials"
+    caNoCors = "no-cors"
+    caAnonymous = "anonymous"
+    caUseCredentials = "use-credentials"
 
 type
-  Request* = ref RequestObj
-  RequestObj* = object
+  RequestOriginType* = enum
+    rotClient, rotOrigin
+
+  RequestOrigin* = object
+    case t*: RequestOriginType
+    of rotClient: discard
+    of rotOrigin:
+      origin*: Origin
+
+  RequestWindowType* = enum
+    rwtClient, rwtNoWindow, rwtWindow
+
+  RequestWindow* = object
+    case t*: RequestWindowType
+    of rwtClient, rwtNoWindow: discard
+    of rwtWindow:
+      window*: EnvironmentSettings
+
+  Request* = ref object
     httpMethod*: HttpMethod
     url*: URL
-    headers* {.jsget.}: Headers
+    headers*: Headers
     body*: Option[string]
     multipart*: Option[FormData]
     referrer*: URL
-    mode* {.jsget.}: RequestMode
-    destination* {.jsget.}: RequestDestination
-    credentialsMode* {.jsget.}: CredentialsMode
     proxy*: URL #TODO do something with this
     # when set to true, the loader will not write data from the body (not
     # headers!) into the output until a resume is received.
     suspended*: bool
 
-jsDestructor(Request)
+  JSRequest* = ref object
+    request*: Request
+    mode* {.jsget.}: RequestMode
+    destination* {.jsget.}: RequestDestination
+    credentialsMode* {.jsget.}: CredentialsMode
+    origin*: RequestOrigin
+    window*: RequestWindow
+    client*: Option[EnvironmentSettings]
 
-proc js_url(this: Request): string {.jsfget: "url".} =
+jsDestructor(JSRequest)
+
+func headers(this: JSRequest): Headers {.jsfget.} =
+  return this.request.headers
+
+func url(this: JSRequest): URL =
+  return this.request.url
+
+proc jsUrl(this: JSRequest): string {.jsfget: "url".} =
   return $this.url
 
 #TODO pretty sure this is incorrect
-proc js_referrer(this: Request): string {.jsfget: "referrer".} =
-  if this.referrer != nil:
-    return $this.referrer
+proc jsReferrer(this: JSRequest): string {.jsfget: "referrer".} =
+  if this.request.referrer != nil:
+    return $this.request.referrer
   return ""
 
 iterator pairs*(headers: Headers): (string, string) =
@@ -98,10 +100,8 @@ iterator pairs*(headers: Headers): (string, string) =
     for v in vs:
       yield (k, v)
 
-func newRequest*(url: URL; httpMethod = HTTP_GET; headers = newHeaders();
-    body = none(string); multipart = none(FormData); mode = RequestMode.NO_CORS;
-    credentialsMode = CredentialsMode.SAME_ORIGIN;
-    destination = RequestDestination.NO_DESTINATION; proxy: URL = nil;
+func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders();
+    body = none(string); multipart = none(FormData); proxy: URL = nil;
     referrer: URL = nil; suspended = false): Request =
   return Request(
     url: url,
@@ -109,18 +109,14 @@ func newRequest*(url: URL; httpMethod = HTTP_GET; headers = newHeaders();
     headers: headers,
     body: body,
     multipart: multipart,
-    mode: mode,
-    credentialsMode: credentialsMode,
-    destination: destination,
     referrer: referrer,
     proxy: proxy,
     suspended: suspended
   )
 
-func newRequest*(url: URL; httpMethod = HTTP_GET;
+func newRequest*(url: URL; httpMethod = hmGet;
     headers: seq[(string, string)] = @[]; body = none(string);
-    multipart = none(FormData); mode = RequestMode.NO_CORS; proxy: URL = nil):
-    Request =
+    multipart = none(FormData); proxy: URL = nil): Request =
   let hl = newHeaders()
   for pair in headers:
     let (k, v) = pair
@@ -131,43 +127,39 @@ func newRequest*(url: URL; httpMethod = HTTP_GET;
     hl,
     body,
     multipart,
-    mode,
     proxy = proxy
   )
 
 func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
-    cors: CORSAttribute; fallbackFlag = false): Request =
-  var mode = if cors == NO_CORS:
-    RequestMode.NO_CORS
+    cors: CORSAttribute; fallbackFlag = false): JSRequest =
+  var mode = if cors == caNoCors:
+    rmNoCors
   else:
-    RequestMode.CORS
-  if fallbackFlag and mode == NO_CORS:
-    mode = SAME_ORIGIN
-  let credentialsMode = if cors == ANONYMOUS:
-    CredentialsMode.SAME_ORIGIN
-  else: CredentialsMode.INCLUDE
-  return newRequest(
-    url,
-    destination = destination,
-    mode = mode,
-    credentialsMode = credentialsMode
+    rmCors
+  if fallbackFlag and mode == rmNoCors:
+    mode = rmSameOrigin
+  let credentialsMode = if cors == caAnonymous: cmSameOrigin else: cmInclude
+  return JSRequest(
+    request: newRequest(url),
+    destination: destination,
+    mode: mode,
+    credentialsMode: credentialsMode
   )
 
 type
   BodyInitType = enum
-    BODY_INIT_BLOB, BODY_INIT_FORM_DATA, BODY_INIT_URL_SEARCH_PARAMS,
-    BODY_INIT_STRING
+    bitBlob, bitFormData, bitUrlSearchParams, bitString
 
   BodyInit = object
     #TODO ReadableStream, BufferSource
     case t: BodyInitType
-    of BODY_INIT_BLOB:
+    of bitBlob:
       blob: Blob
-    of BODY_INIT_FORM_DATA:
+    of bitFormData:
       formData: FormData
-    of BODY_INIT_URL_SEARCH_PARAMS:
+    of bitUrlSearchParams:
       searchParams: URLSearchParams
-    of BODY_INIT_STRING:
+    of bitString:
       str: string
 
   RequestInit* = object of JSDict
@@ -180,6 +172,7 @@ type
     credentials: Option[CredentialsMode]
     proxyUrl: URL
     mode: Option[RequestMode]
+    window: Option[JSValue]
 
 proc fromJSBodyInit(ctx: JSContext; val: JSValue): JSResult[BodyInit] =
   if JS_IsUndefined(val) or JS_IsNull(val):
@@ -187,67 +180,72 @@ proc fromJSBodyInit(ctx: JSContext; val: JSValue): JSResult[BodyInit] =
   block formData:
     let x = fromJS[FormData](ctx, val)
     if x.isSome:
-      return ok(BodyInit(t: BODY_INIT_FORM_DATA, formData: x.get))
+      return ok(BodyInit(t: bitFormData, formData: x.get))
   block blob:
     let x = fromJS[Blob](ctx, val)
     if x.isSome:
-      return ok(BodyInit(t: BODY_INIT_BLOB, blob: x.get))
+      return ok(BodyInit(t: bitBlob, blob: x.get))
   block searchParams:
     let x = fromJS[URLSearchParams](ctx, val)
     if x.isSome:
-      return ok(BodyInit(t: BODY_INIT_URL_SEARCH_PARAMS, searchParams: x.get))
+      return ok(BodyInit(t: bitUrlSearchParams, searchParams: x.get))
   block str:
     let x = fromJS[string](ctx, val)
     if x.isSome:
-      return ok(BodyInit(t: BODY_INIT_STRING, str: x.get))
+      return ok(BodyInit(t: bitString, str: x.get))
   return err(newTypeError("Invalid body init type"))
 
-func newRequest*[T: string|Request](ctx: JSContext; resource: T;
-    init = none(RequestInit)): JSResult[Request] {.jsctor.} =
+func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
+    init = none(RequestInit)): JSResult[JSRequest] {.jsctor.} =
+  defer:
+    if init.isSome and init.get.window.isSome:
+      JS_FreeValue(ctx, init.get.window.get)
   when T is string:
     let url = ?newURL(resource)
     if url.username != "" or url.password != "":
       return err(newTypeError("Input URL contains a username or password"))
-    var httpMethod = HTTP_GET
+    var httpMethod = hmGet
     var headers = newHeaders()
     let referrer: URL = nil
-    var credentials = CredentialsMode.SAME_ORIGIN
+    var credentials = cmSameOrigin
     var body: Option[string]
     var multipart: Option[FormData]
     var proxyUrl: URL #TODO?
-    let fallbackMode = opt(RequestMode.CORS)
+    let fallbackMode = opt(rmCors)
+    var window = RequestWindow(t: rwtClient)
   else:
     let url = resource.url
-    var httpMethod = resource.httpMethod
+    var httpMethod = resource.request.httpMethod
     var headers = resource.headers.clone()
-    let referrer = resource.referrer
+    let referrer = resource.request.referrer
     var credentials = resource.credentialsMode
-    var body = resource.body
-    var multipart = resource.multipart
-    var proxyUrl = resource.proxy #TODO?
+    var body = resource.request.body
+    var multipart = resource.request.multipart
+    var proxyUrl = resource.request.proxy #TODO?
     let fallbackMode = none(RequestMode)
-    #TODO window
-  var mode = fallbackMode.get(RequestMode.NO_CORS)
-  let destination = NO_DESTINATION
+    var window = resource.window
+  var mode = fallbackMode.get(rmNoCors)
+  let destination = rdNone
   #TODO origin, window
-  if init.isSome:
-    if mode == RequestMode.NAVIGATE:
-      mode = RequestMode.SAME_ORIGIN
+  if init.isSome: #TODO spec wants us to check if it's "not empty"...
+    let init = init.get
+    if init.window.isSome:
+      if not JS_IsNull(init.window.get):
+        return errTypeError("Expected window to be null")
+      window = RequestWindow(t: rwtNoWindow)
+    if mode == rmNavigate:
+      mode = rmSameOrigin
     #TODO flags?
     #TODO referrer
-    let init = init.get
     httpMethod = init.`method`
     if init.body.isSome:
       let ibody = init.body.get
       case ibody.t
-      of BODY_INIT_FORM_DATA:
-        multipart = some(ibody.formData)
-      of BODY_INIT_STRING:
-        body = some(ibody.str)
-      else:
-        discard #TODO
-      if httpMethod in {HTTP_GET, HTTP_HEAD}:
-        return err(newTypeError("HEAD or GET Request cannot have a body."))
+      of bitFormData: multipart = some(ibody.formData)
+      of bitString: body = some(ibody.str)
+      else: discard #TODO
+      if httpMethod in {hmGet, hmHead}:
+        return errTypeError("HEAD or GET Request cannot have a body.")
     if init.headers.isSome:
       headers.fill(init.headers.get)
     if init.credentials.isSome:
@@ -256,25 +254,28 @@ func newRequest*[T: string|Request](ctx: JSContext; resource: T;
       mode = init.mode.get
     #TODO find a standard compatible way to implement this
     proxyUrl = init.proxyUrl
-  return ok(Request(
-    url: url,
-    httpMethod: httpMethod,
-    headers: headers,
-    body: body,
-    multipart: multipart,
+  return ok(JSRequest(
+    request: newRequest(
+      url,
+      httpMethod,
+      headers,
+      body,
+      multipart,
+      proxy = proxyUrl,
+      referrer = referrer
+    ),
     mode: mode,
     credentialsMode: credentials,
     destination: destination,
-    proxy: proxyUrl,
-    referrer: referrer
+    window: window
   ))
 
 func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute
-  of NO_CORS, ANONYMOUS:
-    return SAME_ORIGIN
-  of USE_CREDENTIALS:
-    return INCLUDE
+  of caNoCors, caAnonymous:
+    return cmSameOrigin
+  of caUseCredentials:
+    return cmInclude
 
 proc addRequestModule*(ctx: JSContext) =
-  ctx.registerType(Request)
+  ctx.registerType(JSRequest, name = "Request")

@@ -552,12 +552,12 @@ proc makeCRLF*(s: string): string =
     else:
       result &= s[i]
 
-func strictParseEnum*[T: enum](s: string): Opt[T] =
+func strictParseEnum*[T: enum](s: string): Option[T] =
   # cmp when len is small enough, otherwise hashmap
   when {T.low..T.high}.len <= 4:
     for e in T.low .. T.high:
       if $e == s:
-        return ok(e)
+        return some(e)
   else:
     const tab = (func(): Table[string, T] =
       result = initTable[string, T]()
@@ -565,15 +565,15 @@ func strictParseEnum*[T: enum](s: string): Opt[T] =
         result[$e] = e
     )()
     if s in tab:
-      return ok(tab[s])
-  return err()
+      return some(tab[s])
+  return none(T)
 
-func parseEnumNoCase*[T: enum](s: string): Opt[T] =
+func parseEnumNoCase*[T: enum](s: string): Option[T] =
   # cmp when len is small enough, otherwise hashmap
   when {T.low..T.high}.len <= 4:
     for e in T.low .. T.high:
       if ($e).equalsIgnoreCase(s):
-        return ok(e)
+        return some(e)
   else:
     const tab = (func(): Table[string, T] =
       result = initTable[string, T]()
@@ -581,8 +581,8 @@ func parseEnumNoCase*[T: enum](s: string): Opt[T] =
         result[$e] = e
     )()
     if s in tab:
-      return ok(tab[s])
-  return err()
+      return some(tab[s])
+  return none(T)
 
 proc getContentTypeAttr*(contentType, attrname: string): string =
   var i = contentType.find(';')

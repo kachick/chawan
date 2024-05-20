@@ -1,72 +1,51 @@
-import std/options
-
 import types/url
 
 type ReferrerPolicy* = enum
-  STRICT_ORIGIN_WHEN_CROSS_ORIGIN
-  NO_REFERRER
-  NO_REFERRER_WHEN_DOWNGRADE
-  STRICT_ORIGIN
-  ORIGIN
-  SAME_ORIGIN
-  ORIGIN_WHEN_CROSS_ORIGIN
-  UNSAFE_URL
+  rpStrictOriginWhenCrossOrigin = "strict-origin-when-cross-origin"
+  rpNoReferrer = "no-referrer"
+  rpNoReferrerWhenDowngrade = "no-referrer-when-downgrade"
+  rpStrictOrigin = "strict-origin"
+  rpOrigin = "origin"
+  rpSameOrigin = "same-origin"
+  rpOriginWhenCrossOrigin = "origin-when-cross-origin"
+  rpUnsafeURL = "unsafe-url"
 
-const DefaultPolicy* = STRICT_ORIGIN_WHEN_CROSS_ORIGIN
-
-proc getReferrerPolicy*(s: string): Option[ReferrerPolicy] =
-  case s
-  of "no-referrer":
-    return some(NO_REFERRER)
-  of "no-referrer-when-downgrade":
-    return some(NO_REFERRER_WHEN_DOWNGRADE)
-  of "origin":
-    return some(ORIGIN)
-  of "origin-when-cross-origin":
-    return some(ORIGIN_WHEN_CROSS_ORIGIN)
-  of "same-origin":
-    return some(SAME_ORIGIN)
-  of "strict-origin":
-    return some(STRICT_ORIGIN)
-  of "strict-origin-when-cross-origin":
-    return some(STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
-  of "unsafe-url":
-    return some(UNSAFE_URL)
+const DefaultPolicy* = rpStrictOriginWhenCrossOrigin
 
 proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
-  let origin = prev.origin0
-  if origin.isNone:
+  let origin = prev.origin
+  if origin.t == otOpaque:
     return ""
   if prev.scheme != "http" and prev.scheme != "https":
     return ""
   if target.scheme != "http" and target.scheme != "https":
     return ""
   case policy
-  of NO_REFERRER:
+  of rpNoReferrer:
     return ""
-  of NO_REFERRER_WHEN_DOWNGRADE:
+  of rpNoReferrerWhenDowngrade:
     if prev.scheme == "https" and target.scheme == "http":
       return ""
     return $origin & prev.pathname & prev.search
-  of SAME_ORIGIN:
-    if origin == target.origin0:
+  of rpSameOrigin:
+    if origin.isSameOrigin(target.origin):
       return $origin
     return ""
-  of ORIGIN:
+  of rpOrigin:
     return $origin
-  of STRICT_ORIGIN:
+  of rpStrictOrigin:
     if prev.scheme == "https" and target.scheme == "http":
       return ""
     return $origin
-  of ORIGIN_WHEN_CROSS_ORIGIN:
-    if origin != target.origin0:
+  of rpOriginWhenCrossOrigin:
+    if not origin.isSameOrigin(target.origin):
       return $origin
     return $origin & prev.pathname & prev.search
-  of STRICT_ORIGIN_WHEN_CROSS_ORIGIN:
+  of rpStrictOriginWhenCrossOrigin:
     if prev.scheme == "https" and target.scheme == "http":
       return $origin
-    if origin != target.origin0:
+    if not origin.isSameOrigin(target.origin):
       return $origin
     return $origin & prev.pathname & prev.search
-  of UNSAFE_URL:
+  of rpUnsafeURL:
     return $origin & prev.pathname & prev.search

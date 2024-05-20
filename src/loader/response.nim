@@ -28,11 +28,11 @@ type
 
   #TODO fully implement headers guards
   HeadersGuard* = enum
-    GUARD_IMMUTABLE = "immutable"
-    GUARD_REQUEST = "request"
-    GUARD_REQUEST_NO_CORS = "request-no-cors"
-    GUARD_RESPONSE = "response"
-    GUARD_NONE = "none"
+    hgImmutable = "immutable"
+    hgRequest = "request"
+    hgRequestNoCors = "request-no-cors"
+    hgResponse = "response"
+    hgNone = "none"
 
   Response* = ref object
     responseType* {.jsget: "type".}: ResponseType
@@ -67,7 +67,7 @@ func makeNetworkError*(): Response {.jsstfunc: "Response:error".} =
     responseType: TYPE_ERROR,
     status: 0,
     headers: newHeaders(),
-    headersGuard: GUARD_IMMUTABLE
+    headersGuard: hgImmutable
   )
 
 func sok(response: Response): bool {.jsfget: "ok".} =

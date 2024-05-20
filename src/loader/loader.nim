@@ -854,18 +854,18 @@ proc getRedirect*(response: Response; request: Request): Request =
       let location = response.headers.table["Location"][0]
       let url = parseURL(location, option(request.url))
       if url.isSome:
-        if (response.status == 303 and
-            request.httpMethod notin {HTTP_GET, HTTP_HEAD}) or
-            (response.status == 301 or response.status == 302 and
-            request.httpMethod == HTTP_POST):
-          return newRequest(url.get, HTTP_GET,
-            mode = request.mode, credentialsMode = request.credentialsMode,
-            destination = request.destination)
+        let status = response.status
+        if status == 303 and request.httpMethod notin {hmGet, hmHead} or
+            status == 301 or
+            status == 302 and request.httpMethod == hmPost:
+          return newRequest(url.get, hmGet)
         else:
-          return newRequest(url.get, request.httpMethod,
-            body = request.body, multipart = request.multipart,
-            mode = request.mode, credentialsMode = request.credentialsMode,
-            destination = request.destination)
+          return newRequest(
+            url.get,
+            request.httpMethod,
+            body = request.body,
+            multipart = request.multipart
+          )
   return nil
 
 template withLoaderPacketWriter(stream: SocketStream; loader: FileLoader;

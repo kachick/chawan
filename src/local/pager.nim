@@ -962,7 +962,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
   var loaderConfig: LoaderClientConfig
   var bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig)
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
-      request.url.hash == "" or request.httpMethod != HTTP_GET:
+      request.url.hash == "" or request.httpMethod != hmGet:
     # Basically, we want to reload the page *only* when
     # a) we force a reload (by setting prevurl to none)
     # b) or the new URL isn't just the old URL + an anchor

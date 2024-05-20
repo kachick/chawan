@@ -69,13 +69,13 @@ func readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
 
 proc parseMethod(s: string): DOMResult[HttpMethod] =
   return case s.toLowerAscii()
-  of "get": ok(HTTP_GET)
-  of "delete": ok(HTTP_DELETE)
-  of "head": ok(HTTP_HEAD)
-  of "options": ok(HTTP_OPTIONS)
-  of "patch": ok(HTTP_PATCH)
-  of "post": ok(HTTP_POST)
-  of "put": ok(HTTP_PUT)
+  of "get": ok(hmGet)
+  of "delete": ok(hmDelete)
+  of "head": ok(hmHead)
+  of "options": ok(hmOptions)
+  of "patch": ok(hmPatch)
+  of "post": ok(hmPost)
+  of "put": ok(hmPut)
   of "connect", "trace", "track":
     errDOMException("Forbidden method", "SecurityError")
   else:

@@ -41,7 +41,7 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
     putEnv("PATH_INFO", pathInfo)
   if url.query.isSome:
     putEnv("QUERY_STRING", url.query.get)
-  if request.httpMethod == HTTP_POST:
+  if request.httpMethod == hmPost:
     if request.multipart.isSome:
       putEnv("CONTENT_TYPE", request.multipart.get.getContentType())
     else:

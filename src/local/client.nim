@@ -12,9 +12,10 @@ import std/unicode
 import bindings/constcharp
 import bindings/quickjs
 import config/config
+import html/catom
 import html/chadombuilder
 import html/dom
-import html/event
+import html/env
 import html/formdata
 import html/xmlhttprequest
 import io/bufstream
@@ -29,14 +30,14 @@ import js/base64
 import js/console
 import js/domexception
 import js/encoding
-import js/jserror
 import js/fromjs
 import js/intl
 import js/javascript
-import js/jstypes
-import js/jsutils
+import js/jserror
 import js/jsmodule
 import js/jsopaque
+import js/jstypes
+import js/jsutils
 import js/timeout
 import js/tojs
 import loader/headers
@@ -57,16 +58,13 @@ import utils/twtstr
 import chagashi/charset
 
 type
-  Client* = ref object
+  Client* = ref object of Window
     alive: bool
     config {.jsget.}: Config
     consoleWrapper: ConsoleWrapper
     fdmap: Table[int, Container]
     feednext: bool
-    jsctx: JSContext
-    jsrt: JSRuntime
     pager {.jsget.}: Pager
-    timeouts: TimeoutState
     pressed: tuple[col: int; row: int]
     exitCode: int
     inEval: bool
@@ -90,11 +88,6 @@ template forkserver(client: Client): ForkServer =
 
 template readChar(client: Client): char =
   client.pager.term.readChar()
-
-proc fetch[T: Request|string](client: Client; req: T;
-    init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
-  let req = ?newRequest(client.jsctx, req, init)
-  return ok(client.loader.fetch(req))
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
@@ -805,12 +798,12 @@ func line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit.get(nil)
 
 proc addJSModules(client: Client; ctx: JSContext) =
+  ctx.addWindowModule2()
   ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
-  ctx.addCookieModule()
-  ctx.addURLModule()
-  ctx.addEventModule()
+  ctx.addNavigatorModule()
   ctx.addDOMModule()
+  ctx.addURLModule()
   ctx.addHTMLModule()
   ctx.addIntlModule()
   ctx.addBlobModule()
@@ -819,11 +812,12 @@ proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()
+  ctx.addEncodingModule()
   ctx.addLineEditModule()
   ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
-  ctx.addEncodingModule()
+  ctx.addCookieModule()
 
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client
@@ -850,14 +844,17 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
     jsctx: jsctx,
     pager: pager,
     exitCode: -1,
-    alive: true
+    alive: true,
+    factory: newCAtomFactory(),
+    internalLoader: some(loader)
   )
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
-  jsctx.registerType(Client, asglobal = true)
-  jsctx.setGlobal(client)
   let global = JS_GetGlobalObject(jsctx)
+  jsctx.setGlobal(client)
   jsctx.definePropertyE(global, "cmd", config.cmd.jsObj)
   JS_FreeValue(jsctx, global)
   config.cmd.jsObj = JS_NULL
   client.addJSModules(jsctx)
+  let windowCID = jsctx.getClass("Window")
+  jsctx.registerType(Client, asglobal = true, parent = windowCID)
   return client

@@ -71,11 +71,11 @@ type
 
   Window* = ref object of EventTarget
     attrs*: WindowAttributes
-    console* {.jsget.}: Console
+    internalConsole*: Console
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
     settings*: EnvironmentSettings
-    loader*: Option[FileLoader]
+    internalLoader*: Option[FileLoader]
     location* {.jsget.}: Location
     jsrt*: JSRuntime
     jsctx*: JSContext
@@ -1512,7 +1512,7 @@ proc reload(location: Location) {.jsuffunc.} =
   location.document.window.navigate(location.url)
 
 func origin(location: Location): string {.jsuffget.} =
-  return location.url.origin
+  return location.url.jsOrigin
 
 func protocol(location: Location): string {.jsuffget.} =
   return location.url.protocol
@@ -2185,14 +2185,14 @@ func outerHTML(element: Element): string {.jsfget.} =
 
 func crossOrigin0(element: HTMLElement): CORSAttribute =
   if not element.attrb(satCrossorigin):
-    return NO_CORS
+    return caNoCors
   case element.attr(satCrossorigin)
   of "anonymous", "":
-    return ANONYMOUS
+    return caAnonymous
   of "use-credentials":
-    return USE_CREDENTIALS
+    return caUseCredentials
   else:
-    return ANONYMOUS
+    return caAnonymous
 
 func crossOrigin(element: HTMLScriptElement): CORSAttribute {.jsfget.} =
   return element.crossOrigin0
@@ -2201,7 +2201,7 @@ func crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
   return element.crossOrigin0
 
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
-  getReferrerPolicy(element.attr(satReferrerpolicy))
+  return strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy))
 
 proc sheets*(document: Document): seq[CSSStylesheet] =
   if document.cachedSheetsInvalid:
@@ -2613,14 +2613,9 @@ func newDocument*(factory: CAtomFactory): Document =
 
 func newDocument(ctx: JSContext): Document {.jsctor.} =
   let global = JS_GetGlobalObject(ctx)
-  let window = if ctx.hasClass(Window):
-    fromJS[Window](ctx, global).get(nil)
-  else:
-    Window(nil)
+  let window = fromJS[Window](ctx, global).get
   JS_FreeValue(ctx, global)
-  #TODO this is probably broken in client (or at least sub-optimal)
-  let factory = if window != nil: window.factory else: newCAtomFactory()
-  return newDocument(factory)
+  return newDocument(window.factory)
 
 func newDocumentType*(document: Document; name, publicId, systemId: string):
     DocumentType =
@@ -2814,6 +2809,12 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
 # Forward declaration hack
 var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
   {.nimcall, noSideEffect.}
+
+func loader*(window: Window): Option[FileLoader] {.inline.} =
+  return window.internalLoader
+
+func console(window: Window): Console =
+  return window.internalConsole
 
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
@@ -3565,19 +3566,20 @@ proc createClassicScript(ctx: JSContext; source: string; baseURL: URL;
 type OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
 
 proc fetchClassicScript(element: HTMLScriptElement; url: URL;
-    options: ScriptOptions; cors: CORSAttribute; cs: Charset,
+    options: ScriptOptions; cors: CORSAttribute; cs: Charset;
     onComplete: OnCompleteProc) =
   let window = element.document.window
   if not element.scriptingEnabled or window.loader.isNone:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
   let loader = window.loader.get
-  let request = createPotentialCORSRequest(url, RequestDestination.SCRIPT, cors)
-  let response = loader.doRequest(request)
+  let request = createPotentialCORSRequest(url, rdScript, cors)
+  request.client = some(window.settings)
+  #TODO make this non-blocking somehow
+  let response = loader.doRequest(request.request)
   if response.res != 0:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
-  #TODO make this non-blocking somehow
   let s = response.body.recvAll()
   let source = if cs in {CHARSET_UNKNOWN, CHARSET_UTF_8}:
     s.toValidUTF8()
@@ -3603,7 +3605,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
   window.importMapsAllowed = false
   element.fetchSingleModule(
     url,
-    RequestDestination.SCRIPT,
+    rdScript,
     options,
     parseURL("about:client").get,
     isTopLevel = true,
@@ -3611,8 +3613,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
       if res.t == RESULT_NULL:
         element.onComplete(res)
       else:
-        element.fetchDescendantsAndLink(res.script, RequestDestination.SCRIPT,
-          onComplete)
+        element.fetchDescendantsAndLink(res.script, rdScript, onComplete)
   )
 
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
@@ -3623,6 +3624,8 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     destination: RequestDestination; options: ScriptOptions,
     referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc) =
+  discard #TODO implement
+  #[
   let moduleType = "javascript"
   #TODO moduleRequest
   let settings = element.document.window.settings
@@ -3634,10 +3637,10 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     element.onComplete(settings.moduleMap[i].value)
     return
   let destination = fetchDestinationFromModuleType(destination, moduleType)
-  let mode = if destination in {WORKER, SHAREDWORKER, SERVICEWORKER}:
-    RequestMode.SAME_ORIGIN
+  let mode = if destination in {rdWorker, rdSharedworker, rdServiceworker}:
+    rmSameOrigin
   else:
-    RequestMode.CORS
+    rmCors
   #TODO client
   #TODO initiator type
   let request = newRequest(
@@ -3647,6 +3650,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     destination = destination
   )
   discard request #TODO
+  ]#
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
