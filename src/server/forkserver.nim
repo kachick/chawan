@@ -167,11 +167,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     onSignal SIGTERM:
       discard sig
       gpstream.sclose()
-      when defined(linux):
-        # no unlink access on Linux
-        gssock.close(unlink = false)
-      else:
-        gssock.close()
+      gssock.close(unlink = false)
     enterBufferSandbox(sockDir)
     let loader = FileLoader(
       process: loaderPid,
