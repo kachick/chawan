@@ -122,24 +122,11 @@ type
     bmp: Bitmap
 
   BlockBoxBuilder = ref object of BoxBuilder
-    inlinelayout: bool
-
-  MarkerBoxBuilder = ref object of InlineBoxBuilder
+    inlineLayout: bool
 
   ListItemBoxBuilder = ref object of BoxBuilder
-    marker: MarkerBoxBuilder
+    marker: InlineBoxBuilder
     content: BlockBoxBuilder
-
-  TableRowGroupBoxBuilder = ref object of BlockBoxBuilder
-
-  TableRowBoxBuilder = ref object of BlockBoxBuilder
-
-  TableCellBoxBuilder = ref object of BlockBoxBuilder
-
-  TableBoxBuilder = ref object of BlockBoxBuilder
-    rowgroups: seq[TableRowGroupBoxBuilder]
-
-  TableCaptionBoxBuilder = ref object of BlockBoxBuilder
 
 func fitContent(sc: SizeConstraint): SizeConstraint =
   case sc.t
@@ -1195,7 +1182,7 @@ proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
   offset, bfcOffset: Offset): RootInlineFragment
 proc layoutBlock(bctx: var BlockContext; box: BlockBox;
   builder: BlockBoxBuilder; sizes: ResolvedSizes)
-proc layoutTable(bctx: BlockContext; table: BlockBox; builder: TableBoxBuilder;
+proc layoutTable(bctx: BlockContext; table: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
@@ -1257,7 +1244,7 @@ func canFlushMargins(builder: BlockBoxBuilder; sizes: ResolvedSizes): bool =
   if builder.computed{"position"} == PositionAbsolute:
     return false
   return sizes.padding.top != 0 or sizes.padding.bottom != 0 or
-    builder.inlinelayout or builder.computed{"display"} notin DisplayBlockLike
+    builder.inlineLayout or builder.computed{"display"} notin DisplayBlockLike
 
 proc flushMargins(bctx: var BlockContext; box: BlockBox) =
   # Apply uncommitted margins.
@@ -1394,7 +1381,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     bctx.positionFloats()
   if builder.computed{"clear"} != ClearNone:
     box.offset.clearFloats(bctx, builder.computed{"clear"})
-  if builder.inlinelayout:
+  if builder.inlineLayout:
     # Builder only contains inline boxes.
     bctx.layoutInline(box, builder.children, sizes)
   else:
@@ -1462,7 +1449,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   of DisplayInlineBlock:
     bctx.layoutFlow(box, builder, sizes)
   of DisplayInlineTable:
-    bctx.layoutTable(box, TableBoxBuilder(builder), sizes)
+    bctx.layoutTable(box, builder, sizes)
   of DisplayInlineFlex:
     bctx.layoutFlex(box, builder, sizes)
   else:
@@ -1638,7 +1625,7 @@ const ProperTableRowParent = RowGroupBox + {
 
 type
   CellWrapper = ref object
-    builder: TableCellBoxBuilder
+    builder: BlockBoxBuilder
     box: BlockBox
     coli: int
     colspan: int
@@ -1655,7 +1642,7 @@ type
     reflow: seq[bool]
     width: LayoutUnit
     height: LayoutUnit
-    builder: TableRowBoxBuilder
+    builder: BlockBoxBuilder
     ncols: int
 
   ColumnContext = object
@@ -1667,7 +1654,7 @@ type
 
   TableContext = object
     lctx: LayoutState
-    caption: TableCaptionBoxBuilder
+    caption: BlockBoxBuilder
     rows: seq[RowContext]
     cols: seq[ColumnContext]
     growing: seq[CellWrapper]
@@ -1676,7 +1663,7 @@ type
     inlineSpacing: LayoutUnit
     space: AvailableSpace # space we got from parent
 
-proc layoutTableCell(lctx: LayoutState; builder: TableCellBoxBuilder;
+proc layoutTableCell(lctx: LayoutState; builder: BlockBoxBuilder;
     space: AvailableSpace): BlockBox =
   var sizes = ResolvedSizes(
     padding: resolvePadding(space.w, lctx, builder.computed),
@@ -1742,7 +1729,7 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
     inc i
     inc growi
 
-proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
+proc preBuildTableRow(pctx: var TableContext; box: BlockBoxBuilder;
     parent: BlockBox; rowi, numrows: int): RowContext =
   var ctx = RowContext(
     builder: box,
@@ -1757,7 +1744,7 @@ proc preBuildTableRow(pctx: var TableContext; box: TableRowBoxBuilder;
   for child in box.children:
     pctx.growRowspan(ctx, growi, i, n, growlen)
     assert child.computed{"display"} == DisplayTableCell
-    let cellbuilder = TableCellBoxBuilder(child)
+    let cellbuilder = BlockBoxBuilder(child)
     let colspan = cellbuilder.computed{"-cha-colspan"}
     let rowspan = min(cellbuilder.computed{"-cha-rowspan"}, numrows - rowi)
     let cw = cellbuilder.computed{"width"}
@@ -1847,7 +1834,7 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LayoutUnit) =
     cell.offset.y = baseline - cell.firstBaseline
 
 proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
-    builder: TableRowBoxBuilder): BlockBox =
+    builder: BlockBoxBuilder): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
   let row = BlockBox(
@@ -1918,47 +1905,46 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
   row.size.w = x
   return row
 
-proc preBuildTableRows(ctx: var TableContext; rows: seq[TableRowBoxBuilder];
+proc preBuildTableRows(ctx: var TableContext; rows: seq[BlockBoxBuilder];
     table: BlockBox) =
   for i, row in rows:
     let rctx = ctx.preBuildTableRow(row, table, i, rows.len)
     ctx.rows.add(rctx)
     ctx.maxwidth = max(rctx.width, ctx.maxwidth)
 
-proc preBuildTableRows(ctx: var TableContext; builder: TableBoxBuilder;
+proc preBuildTableRows(ctx: var TableContext; builder: BlockBoxBuilder;
     table: BlockBox) =
   # Use separate seqs for different row groups, so that e.g. this HTML:
   # echo '<TABLE><TBODY><TR><TD>world<THEAD><TR><TD>hello'|cha -T text/html
   # is rendered as:
   # hello
   # world
-  var thead: seq[TableRowBoxBuilder] = @[]
-  var tbody: seq[TableRowBoxBuilder] = @[]
-  var tfoot: seq[TableRowBoxBuilder] = @[]
-  var caption: TableCaptionBoxBuilder
+  var thead: seq[BlockBoxBuilder] = @[]
+  var tbody: seq[BlockBoxBuilder] = @[]
+  var tfoot: seq[BlockBoxBuilder] = @[]
+  var caption: BlockBoxBuilder = nil
   for child in builder.children:
     assert child.computed{"display"} in ProperTableChild
     case child.computed{"display"}
     of DisplayTableRow:
-      tbody.add(TableRowBoxBuilder(child))
+      tbody.add(BlockBoxBuilder(child))
     of DisplayTableHeaderGroup:
       for child in child.children:
         assert child.computed{"display"} == DisplayTableRow
-        thead.add(TableRowBoxBuilder(child))
+        thead.add(BlockBoxBuilder(child))
     of DisplayTableRowGroup:
       for child in child.children:
         assert child.computed{"display"} == DisplayTableRow
-        tbody.add(TableRowBoxBuilder(child))
+        tbody.add(BlockBoxBuilder(child))
     of DisplayTableFooterGroup:
       for child in child.children:
         assert child.computed{"display"} == DisplayTableRow
-        tfoot.add(TableRowBoxBuilder(child))
+        tfoot.add(BlockBoxBuilder(child))
     of DisplayTableCaption:
       if caption == nil:
-        caption = TableCaptionBoxBuilder(child)
+        caption = BlockBoxBuilder(child)
     else: discard
-  if caption != nil:
-    ctx.caption = caption
+  ctx.caption = caption
   ctx.preBuildTableRows(thead, table)
   ctx.preBuildTableRows(tbody, table)
   ctx.preBuildTableRows(tfoot, table)
@@ -2105,7 +2091,7 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
 #      Distribute the table's content width among cells with an unspecified
 #      width. If this would give any cell a width < min_width, set that
 #      cell's width to min_width, then re-do the distribution.
-proc layoutTable(bctx: BlockContext; table: BlockBox; builder: TableBoxBuilder;
+proc layoutTable(bctx: BlockContext; table: BlockBox; builder: BlockBoxBuilder;
     sizes: ResolvedSizes) =
   let lctx = bctx.lctx
   var ctx = TableContext(lctx: lctx, space: sizes.space)
@@ -2141,7 +2127,7 @@ proc layout(bctx: var BlockContext; box: BlockBox; builder: BoxBuilder;
   of DisplayListItem:
     bctx.layoutListItem(box, ListItemBoxBuilder(builder), sizes)
   of DisplayTable:
-    bctx.layoutTable(box, TableBoxBuilder(builder), sizes)
+    bctx.layoutTable(box, BlockBoxBuilder(builder), sizes)
   of DisplayFlex:
     bctx.layoutFlex(box, BlockBoxBuilder(builder), sizes)
   else:
@@ -2276,7 +2262,7 @@ proc flushMain(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
 
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     sizes: ResolvedSizes) =
-  assert not builder.inlinelayout
+  assert not builder.inlineLayout
   let lctx = bctx.lctx
   var i = 0
   var mctx = FlexMainContext(lctx: lctx)
@@ -2639,12 +2625,12 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox;
 # Tree generation (1st pass)
 
 proc newMarkerBox(computed: CSSComputedValues; listItemCounter: int):
-    MarkerBoxBuilder =
+    InlineBoxBuilder =
   let computed = computed.inheritProperties()
   computed{"display"} = DisplayInline
   # Use pre, so the space at the end of the default markers isn't ignored.
   computed{"white-space"} = WhitespacePre
-  return MarkerBoxBuilder(
+  return InlineBoxBuilder(
     computed: computed,
     text: @[computed{"list-style-type"}.listMarker(listItemCounter)]
   )
@@ -2659,8 +2645,8 @@ type InnerBlockContext = object
   lctx: LayoutState
   ibox: InlineBoxBuilder
   iroot: InlineBoxBuilder
-  anonRow: TableRowBoxBuilder
-  anonTable: TableBoxBuilder
+  anonRow: BlockBoxBuilder
+  anonTable: BlockBoxBuilder
   quoteLevel: int
   listItemCounter: int
   listItemReset: bool
@@ -2678,7 +2664,7 @@ proc flush(blockgroup: var BlockGroup) =
     let computed = blockgroup.parent.computed.inheritProperties()
     computed{"display"} = DisplayBlock
     let bbox = BlockBoxBuilder(computed: computed)
-    bbox.inlinelayout = true
+    bbox.inlineLayout = true
     bbox.children = blockgroup.boxes
     blockgroup.parent.children.add(bbox)
     blockgroup.boxes.setLen(0)
@@ -2695,39 +2681,42 @@ proc newBlockGroup(parent: BlockBoxBuilder): BlockGroup =
   return BlockGroup(parent: parent)
 
 proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
-  parent: var InnerBlockContext): TableBoxBuilder
+  parent: var InnerBlockContext): BlockBoxBuilder
 proc generateTableRowGroupBox(styledNode: StyledNode; lctx: LayoutState;
-  parent: var InnerBlockContext): TableRowGroupBoxBuilder
+  parent: var InnerBlockContext): BlockBoxBuilder
 proc generateTableRowBox(styledNode: StyledNode; lctx: LayoutState;
-  parent: var InnerBlockContext): TableRowBoxBuilder
+  parent: var InnerBlockContext): BlockBoxBuilder
 proc generateTableCellBox(styledNode: StyledNode; lctx: LayoutState;
-  parent: var InnerBlockContext): TableCellBoxBuilder
+  parent: var InnerBlockContext): BlockBoxBuilder
 proc generateTableCaptionBox(styledNode: StyledNode; lctx: LayoutState;
-  parent: var InnerBlockContext): TableCaptionBoxBuilder
+  parent: var InnerBlockContext): BlockBoxBuilder
 proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
-  marker = none(MarkerBoxBuilder), parent: ptr InnerBlockContext = nil):
+  marker = none(InlineBoxBuilder), parent: ptr InnerBlockContext = nil):
   BlockBoxBuilder
 proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
   parent: ptr InnerBlockContext = nil): BlockBoxBuilder
 proc generateInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode)
 
 proc generateBlockBox(pctx: var InnerBlockContext; styledNode: StyledNode;
-    marker = none(MarkerBoxBuilder)): BlockBoxBuilder =
+    marker = none(InlineBoxBuilder)): BlockBoxBuilder =
   return generateBlockBox(styledNode, pctx.lctx, marker, addr pctx)
 
 proc generateFlexBox(pctx: var InnerBlockContext; styledNode: StyledNode):
     BlockBoxBuilder =
   return generateFlexBox(styledNode, pctx.lctx, addr pctx)
 
+proc createAnonTable(ctx: var InnerBlockContext; computed: CSSComputedValues) =
+  if ctx.anonTable == nil:
+    var wrappervals = computed.inheritProperties()
+    wrappervals{"display"} = DisplayTable
+    ctx.anonTable = BlockBoxBuilder(computed: wrappervals)
+
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
     if ctx.blockgroup.parent.computed{"display"} == DisplayTableRow:
       ctx.blockgroup.parent.children.add(ctx.anonRow)
     else:
-      if ctx.anonTable == nil:
-        var wrappervals = ctx.styledNode.computed.inheritProperties()
-        wrappervals{"display"} = DisplayTable
-        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
+      ctx.createAnonTable(ctx.styledNode.computed)
       ctx.anonTable.children.add(ctx.anonRow)
     ctx.anonRow = nil
 
@@ -2815,15 +2804,12 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
       ctx.iroot = iparent
     else:
       ctx.iroot = ctx.ibox
-    var childbox: BoxBuilder
-    if styledNode.computed{"display"} == DisplayInlineBlock:
-      childbox = ctx.generateBlockBox(styledNode)
-    elif styledNode.computed{"display"} == DisplayInlineTable:
-      childbox = styledNode.generateTableBox(ctx.lctx, ctx)
-    else:
-      assert styledNode.computed{"display"} == DisplayInlineFlex
-      childbox = ctx.generateFlexBox(styledNode)
-    ctx.ibox.children.add(childbox)
+    let childBox = case styledNode.computed{"display"}
+    of DisplayInlineBlock: ctx.generateBlockBox(styledNode)
+    of DisplayInlineTable: styledNode.generateTableBox(ctx.lctx, ctx)
+    of DisplayInlineFlex: ctx.generateFlexBox(styledNode)
+    else: nil
+    ctx.ibox.children.add(childBox)
     ctx.iflush()
   of DisplayTable:
     ctx.flush()
@@ -2836,11 +2822,7 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
     if box.computed{"display"} in ProperTableRowParent:
       box.children.add(childbox)
     else:
-      if ctx.anonTable == nil:
-        var wrappervals = box.computed.inheritProperties()
-        #TODO make this an inline-table if we're in an inline context
-        wrappervals{"display"} = DisplayTable
-        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
+      ctx.createAnonTable(box.computed)
       ctx.anonTable.children.add(childbox)
   of DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup:
     ctx.bflush()
@@ -2849,11 +2831,7 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
     if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
       box.children.add(childbox)
     else:
-      if ctx.anonTable == nil:
-        var wrappervals = box.computed.inheritProperties()
-        #TODO make this an inline-table if we're in an inline context
-        wrappervals{"display"} = DisplayTable
-        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
+      ctx.createAnonTable(box.computed)
       ctx.anonTable.children.add(childbox)
   of DisplayTableCell:
     ctx.bflush()
@@ -2864,7 +2842,7 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
       if ctx.anonRow == nil:
         var wrappervals = box.computed.inheritProperties()
         wrappervals{"display"} = DisplayTableRow
-        ctx.anonRow = TableRowBoxBuilder(computed: wrappervals)
+        ctx.anonRow = BlockBoxBuilder(computed: wrappervals)
       ctx.anonRow.children.add(childbox)
   of DisplayTableCaption:
     ctx.bflush()
@@ -2873,11 +2851,7 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
     if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
       box.children.add(childbox)
     else:
-      if ctx.anonTable == nil:
-        var wrappervals = box.computed.inheritProperties()
-        #TODO make this an inline-table if we're in an inline context
-        wrappervals{"display"} = DisplayTable
-        ctx.anonTable = TableBoxBuilder(computed: wrappervals)
+      ctx.createAnonTable(box.computed)
       ctx.anonTable.children.add(childbox)
   of DisplayTableColumn:
     discard #TODO
@@ -3003,7 +2977,7 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
   ctx.iflush()
 
 proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
-    marker = none(MarkerBoxBuilder); parent: ptr InnerBlockContext = nil):
+    marker = none(InlineBoxBuilder); parent: ptr InnerBlockContext = nil):
     BlockBoxBuilder =
   let box = BlockBoxBuilder(computed: styledNode.computed)
   box.node = styledNode
@@ -3021,7 +2995,7 @@ proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
   # inline even if no inner anonymous block was generated.
   if box.children.len == 0:
     box.children = ctx.blockgroup.boxes
-    box.inlinelayout = true
+    box.inlineLayout = true
     ctx.blockgroup.boxes.setLen(0)
   ctx.blockgroup.flush()
   return box
@@ -3059,18 +3033,18 @@ proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
   # (flush here, because why not)
   ctx.flushInherit()
   ctx.blockgroup.flush()
-  assert not box.inlinelayout
+  assert not box.inlineLayout
   return box
 
 proc generateTableCellBox(styledNode: StyledNode; lctx: LayoutState;
-    parent: var InnerBlockContext): TableCellBoxBuilder =
-  let box = TableCellBoxBuilder(computed: styledNode.computed)
+    parent: var InnerBlockContext): BlockBoxBuilder =
+  let box = BlockBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   return box
 
-proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
+proc generateTableRowChildWrappers(box: BlockBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
   wrappervals{"display"} = DisplayTableCell
@@ -3078,21 +3052,21 @@ proc generateTableRowChildWrappers(box: TableRowBoxBuilder) =
     if child.computed{"display"} == DisplayTableCell:
       newchildren.add(child)
     else:
-      let wrapper = TableCellBoxBuilder(computed: wrappervals)
+      let wrapper = BlockBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       newchildren.add(wrapper)
   box.children = newchildren
 
 proc generateTableRowBox(styledNode: StyledNode; lctx: LayoutState;
-    parent: var InnerBlockContext): TableRowBoxBuilder =
-  let box = TableRowBoxBuilder(computed: styledNode.computed)
+    parent: var InnerBlockContext): BlockBoxBuilder =
+  let box = BlockBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   box.generateTableRowChildWrappers()
   return box
 
-proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
+proc generateTableRowGroupChildWrappers(box: BlockBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
   wrappervals{"display"} = DisplayTableRow
@@ -3100,15 +3074,15 @@ proc generateTableRowGroupChildWrappers(box: TableRowGroupBoxBuilder) =
     if child.computed{"display"} == DisplayTableRow:
       newchildren.add(child)
     else:
-      let wrapper = TableRowBoxBuilder(computed: wrappervals)
+      let wrapper = BlockBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       wrapper.generateTableRowChildWrappers()
       newchildren.add(wrapper)
   box.children = newchildren
 
 proc generateTableRowGroupBox(styledNode: StyledNode; lctx: LayoutState;
-    parent: var InnerBlockContext): TableRowGroupBoxBuilder =
-  let box = TableRowGroupBoxBuilder(computed: styledNode.computed)
+    parent: var InnerBlockContext): BlockBoxBuilder =
+  let box = BlockBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
@@ -3116,14 +3090,14 @@ proc generateTableRowGroupBox(styledNode: StyledNode; lctx: LayoutState;
   return box
 
 proc generateTableCaptionBox(styledNode: StyledNode; lctx: LayoutState;
-    parent: var InnerBlockContext): TableCaptionBoxBuilder =
-  let box = TableCaptionBoxBuilder(computed: styledNode.computed)
+    parent: var InnerBlockContext): BlockBoxBuilder =
+  let box = BlockBoxBuilder(computed: styledNode.computed)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
   return box
 
-proc generateTableChildWrappers(box: TableBoxBuilder) =
+proc generateTableChildWrappers(box: BlockBoxBuilder) =
   var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
   var wrappervals = box.computed.inheritProperties()
   wrappervals{"display"} = DisplayTableRow
@@ -3131,15 +3105,15 @@ proc generateTableChildWrappers(box: TableBoxBuilder) =
     if child.computed{"display"} in ProperTableChild:
       newchildren.add(child)
     else:
-      let wrapper = TableRowBoxBuilder(computed: wrappervals)
+      let wrapper = BlockBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       wrapper.generateTableRowChildWrappers()
       newchildren.add(wrapper)
   box.children = newchildren
 
 proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
-    parent: var InnerBlockContext): TableBoxBuilder =
-  let box = TableBoxBuilder(computed: styledNode.computed, node: styledNode)
+    parent: var InnerBlockContext): BlockBoxBuilder =
+  let box = BlockBoxBuilder(computed: styledNode.computed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
