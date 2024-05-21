@@ -230,7 +230,7 @@ func parseIntImpl[T: SomeSignedInt](s: string; allowed: set[char]; radix: T):
     if s[i] notin allowed:
       return none(T) # invalid
     let c = T(hexValue(s[i]))
-    if unlikely(T.high div radix - c < integer):
+    if unlikely((T.high - c) div radix < integer):
       return none(T) # overflow
     integer *= radix
     integer += c
@@ -265,7 +265,7 @@ func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool;
     if s[i] notin allowed:
       return none(T) # invalid
     let c = T(hexValue(s[i]))
-    if unlikely(T.high div radix - c < integer):
+    if unlikely((T.high - c) div radix < integer):
       return none(T) # overflow
     integer *= radix
     integer += c
