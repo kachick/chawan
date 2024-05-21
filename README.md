@@ -13,8 +13,7 @@ It can also be used as a terminal pager.
 
 ## Compiling
 
-Note: a POSIX-compliant operating system is required. (Windows is not
-supported yet.)
+Note: a POSIX-compliant operating system is required.
 
 1. Clone the Chawan repository:
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
@@ -28,15 +27,14 @@ supported yet.)
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
 	  `$PATH`)
 	* (Linux only) libseccomp: <https://github.com/seccomp/libseccomp>
-	* If you are using a system where the default make program is not GNU
-	  make (e.g. BSD), install gmake and use that in the following steps.
-	* Optional: a termcap library; e.g. ncurses comes with one.
-	* TLDR for Debian:
+	* GNU make. On systems where it is not the default make, install and use
+	  `gmake` in the following steps.
+	* Recommended: a termcap library. e.g. ncurses comes with one.
+	* TL;DR for Debian:
 	  `apt install libcurl4-openssl-dev zlib1g-dev pkg-config make ncurses-base libseccomp-dev`
 4. Download parts of Chawan found in other repositories: `make submodule`
-5. Run `make`. (By default, this will build the whole project in release mode;
-   for details, see [doc/build.md](doc/build.md).)
-6. Finally, install using `make install` (e.g. `sudo make install`).
+5. Run `make`.
+6. Install using `make install` (e.g. `sudo make install`).
 
 Then, try:
 
@@ -53,17 +51,15 @@ Currently implemented features are:
 * multi-processing (several buffers can be loaded at once)
 * multi-charset, double-width aware text display (but no bi-di yet)
 * HTML5 support
-* a CSS-capable layout engine
-	* flow layout is supported (now with floats!)
-	* table layout is supported, except for fixed tables
-	* the box model is mostly implemented, except for borders
-	* flexbox layout is supported (some parts are still a WIP)
+* CSS-capable layout engine
+	* flow layout (with floats!), automatic table layout, flexbox layout
+	  (some flex attributes still WIP)
 * forms
-* incremental loading of various kinds of documents (plain text, HTML, etc.)
-* JavaScript based navigation
+* incremental loading of documents
+* JavaScript based navigation (i.e. programmable keybindings)
 * JavaScript support in documents
 	* some basic DOM manipulation APIs are supported
-	* off by default; use is discouraged until sandboxing is implemented
+	* disabled by default; enable it at your own risk.
 * cookies
 * supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
 * can load user-defined protocols/file formats using [local CGI](doc/localcgi.md),
@@ -71,11 +67,14 @@ Currently implemented features are:
 * markdown viewer
 * man page viewer (like w3mman)
 * mouse support
+* OS-level sandboxing on FreeBSD, OpenBSD and Linux (through Capsicum, pledge
+  and libseccomp)
 
 ...with a lot more [planned](todo).
 
 ## Documentation
 
+* build/compilation options: [doc/build.md](doc/build.md)
 * manpage: [doc/cha.1](doc/cha.1)
 * configuration options: [doc/config.md](doc/config.md)
 * API description (for keybindings): [doc/api.md](doc/api.md)
@@ -102,13 +101,23 @@ want to try more established ones:
 
 ## FAQ
 
-### Why does Chawan use strange/incorrect/ugly colors?
+### I can't select/copy text with my mouse?
+
+Your options are:
+
+* Use `v` (and copy with `y`). Drawback: requires keyboard
+* Hold down the shift key while selecting. Drawback: can only select text
+  currently on the screen
+* Disable mouse support (`input.use-mouse = false` in config.toml). Drawback:
+  see above (plus now you can't use the mouse to move on the screen)
+
+### Why do I get strange/incorrect/ugly colors?
 
 Chawan's display capabilities depend on what your terminal reports. In
 particular:
 
-* if it does not respond to querying XTGETTCAP, and the `$COLORTERM` environment
-  variable is not set, then Chawan falls back to ANSI colors
+* if the `$COLORTERM` variable is not set, then it may fall back to 8-bit or
+  ANSI colors
 * if it does not respond to querying the background color, then Chawan's color
   contrast correction will likely malfunction
 
@@ -123,17 +132,11 @@ can always [replace it](doc/mailcap.md) with e.g. pandoc.
 
 ### I set my `$PAGER` to `cha` and now man pages are unreadable.
 
-TLDR: use mancha.
-
-Long explanation:
-
 Most `man` implementations print formatted manual pages by default, which
-Chawan *can* automatically parse if they are passed through standard input.
+Chawan *can* parse if they are passed through standard input.
 
-Unfortunately, some `man` implementations (mandoc in particular) pass us
-the formatted document as a *file*, which Chawan reasonably interprets as plain
-text without formatting. (mandoc does not even set a useful file extension to
-guide us.)
+Unfortunately, mandoc passes us the formatted document as a *file*, which Chawan
+reasonably interprets as plain text without formatting.
 
 At this point you have two options:
 
@@ -141,29 +144,23 @@ At this point you have two options:
   expected.
 * `alias man=mancha` and see that man suddenly works better than expected.
 
-It may be best to do both, to deal with annoying cases like git help which
-shells out to man directly.
+Ideally you should do both, to deal with cases like git help which shells out to
+man directly.
 
 ### Where are the keybindings?
 
-Please run `cha about:chawan` for a list of default keybindings. (By default,
-this is equivalent to `cha -V`.)
+Please run `cha about:chawan` for a list of default keybindings. Users familiar
+with *vi*, *vim*, etc. should find these defaults familiar.
 
-### Where are the w3m keybindings?
-
-At [bonus/w3m.toml](bonus/w3m.toml). Note that not every w3m feature is
-implemented yet, so it's not 100% compatible.
-
-I use vi for editing text, and I prefer my pager to function similarly to
-my editor. Hence the default vi-like keybindings.
+A w3m-like keymap also exists at [bonus/w3m.toml](bonus/w3m.toml). Note that not
+every w3m feature is implemented yet, so it's not 100% compatible.
 
 ### How do I view text files with wrapping?
 
-By default, text files are not auto-wrapped. This is useful in some cases, but
-viewing plain text files that were not wrapped properly by the authors becomes
-slightly annoying.
+By default, text files are not auto-wrapped, so viewing plain text files that
+were not wrapped properly by the authors is somewhat annoying.
 
-A simple workaround is to add this to your [config](doc/config.md#keybindings)'s
+A workaround is to add this to your [config](doc/config.md#keybindings)'s
 `[page]` section:
 
 ```toml
@@ -174,14 +171,14 @@ and then press `<space> f` to view a wrapped version of the current text
 file. (This assumes your system has an `fmt` program - if not, `fold -s` may
 be an alternative.)
 
-Alternatively, you can add this to your [user style](doc/config.md#stylesheets):
+To always automatically wrap, you can add this to your
+[user style](doc/config.md#stylesheets):
 
 ```css
 plaintext { white-space: pre-wrap }
 ```
 
-and then all plain text files will automatically wrap. To do the same for HTML
-and ANSI text, use `plaintext, pre`.
+To do the same for HTML and ANSI text, use `plaintext, pre`.
 
 ### Why does `$WEBSITE` look awful?
 
@@ -190,34 +187,31 @@ in Chawan. The most common offenders are grid and CSS variables.
 
 There are three ways of dealing with this:
 
-1. The hacky solution: if the website's contents are mostly text, install
+1. If the website's contents are mostly text, install
    [rdrview](https://github.com/eafer/rdrview). Then bind the following command
    to a key of your choice in the [config](doc/config.md#keybindings)
    (e.g. `<space> r`):<br>
    `' r' = "pager.externFilterSource('rdrview -H -u \"$CHA_URL\"')"`<br>
    This does not fix the core problem, but will significantly improve your
    reading experience anyway.
-2. The slow solution: complain [here](https://todo.sr.ht/~bptato/chawan),
-   and wait until the problem goes away.
-3. If you're feeling adventurous: write a patch to fix the problem, and send it
+2. Complain [here](https://todo.sr.ht/~bptato/chawan), and wait until the
+   problem goes away.
+3. Write a patch to fix the problem, and send it
    [here](https://lists.sr.ht/~bptato/chawan-devel).
 
 ### `$WEBSITE`'s interactive features don't work!
 
 Some potential fixes:
 
-* Usually logging in to websites requires cookies. Some websites also require
-  cookie sharing across domains. For security reasons, Chawan does not allow
-  any of this by default, so you will have to fiddle with siteconf to fix
-  it. (i.e. on all target hostnames, set `cookie` to true, `share-cookie-jar`
-  to the main host, and `third-party-cookie` to all target hosts. See
-  [doc/config.md#siteconf](doc/config.md#siteconf) for details.)
+* Logging in to websites requires cookies. Some websites also require cookie
+  sharing across domains. For security reasons, Chawan does not allow any of
+  this by default, so you will have to fiddle with siteconf to fix it. See
+  [doc/config.md#siteconf](doc/config.md#siteconf) for details.
 * Set the `referer-from` siteconf value to true; this will cause Chawan to send
   a `Referer` header when navigating to other URLs from the target URL.
 * Enable JavaScript. If something broke, type M-c M-c to check the browser
   console, then follow step 3. of the previous answer.<br>
-  Warning: remote JavaScript execution is inherently unsafe; more so in Chawan,
-  which lacks proper sandboxing of buffer processes. Please only enable
+  Warning: remote JavaScript execution is inherently unsafe. Please only enable
   JavaScript on websites you trust.
 
 ### I'm interested in the technical details of Chawan.
