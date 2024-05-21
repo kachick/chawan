@@ -96,9 +96,11 @@ elif defined(linux) and not disableSandbox:
       "pipe2", # for when pipe is implemented as pipe2
       "prlimit64", # for when getrlimit is implemented as prlimit64
       "read", "recv", "recvfrom", "recvmsg", # for reading from sockets
+      "rt_sigreturn", # for when sigreturn is implemented as rt_sigreturn
       "send", "sendmsg", "sendto", # for writing to sockets
       "set_robust_list", # glibc seems to need it for whatever reason
       "setrlimit", # glibc seems to use it for whatever reason
+      "sigreturn", # called by signal trampoline
       "timerfd_create", # used by Nim selectors
       "timerfd_gettime", # not actually used by Nim but may be in the future
       "timerfd_settime", # used by Nim selectors
