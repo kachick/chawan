@@ -1,32 +1,32 @@
 type GopherType* = enum
-  UNKNOWN = "unsupported"
-  TEXT_FILE = "text file"
-  ERROR = "error"
-  DIRECTORY = "directory"
-  DOS_BINARY = "DOS binary"
-  SEARCH = "search"
-  MESSAGE = "message"
-  SOUND = "sound"
-  GIF = "gif"
-  HTML = "HTML"
-  INFO = ""
-  IMAGE = "image"
-  BINARY = "binary"
-  PNG = "png"
+  gtUnknown = "unsupported"
+  gtTextFile = "text file"
+  gtError = "error"
+  gtDirectory = "directory"
+  gtDOSBinary = "DOS binary"
+  gtSearch = "search"
+  gtMessage = "message"
+  gtSound = "sound"
+  gtGif = "gif"
+  gtHTML = "HTML"
+  gtInfo = ""
+  gtImage = "image"
+  gtBinary = "binary"
+  gtPng = "png"
 
 func gopherType*(c: char): GopherType =
   return case c
-  of '0': TEXT_FILE
-  of '1': DIRECTORY
-  of '3': ERROR
-  of '5': DOS_BINARY
-  of '7': SEARCH
-  of 'm': MESSAGE
-  of 's': SOUND
-  of 'g': GIF
-  of 'h': HTML
-  of 'i': INFO
-  of 'I': IMAGE
-  of '9': BINARY
-  of 'p': PNG
-  else: UNKNOWN
+  of '0': gtTextFile
+  of '1': gtDirectory
+  of '3': gtError
+  of '5': gtDOSBinary
+  of '7': gtSearch
+  of 'm': gtMessage
+  of 's': gtSound
+  of 'g': gtGif
+  of 'h': gtHTML
+  of 'i': gtInfo
+  of 'I': gtImage
+  of '9': gtBinary
+  of 'p': gtPng
+  else: gtUnknown

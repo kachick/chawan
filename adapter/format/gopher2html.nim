@@ -74,7 +74,7 @@ proc main() =
     let host = get_field()
     let port = line.until('\t', i) # ignore anything after port
     var outs = ""
-    if t == INFO:
+    if t == gtInfo:
       if not ispre:
         outs &= "<PRE>"
         ispre = true

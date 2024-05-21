@@ -18,15 +18,12 @@ type GopherHandle = ref object
   statusline: bool
 
 proc onStatusLine(op: GopherHandle) =
-  var status: clong
-  op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-  stdout.write("Status: " & $status & "\n")
   let s = case op.t
-  of DIRECTORY, SEARCH: "Content-Type: text/gopher\n"
-  of HTML: "Content-Type: text/html\n"
-  of GIF: "Content-Type: image/gif\n"
-  of PNG: "Content-Type: image/png\n"
-  of TEXT_FILE, ERROR: "Content-Type: text/plain\n"
+  of gtDirectory, gtSearch: "Content-Type: text/gopher\n"
+  of gtHTML: "Content-Type: text/html\n"
+  of gtGif: "Content-Type: image/gif\n"
+  of gtPng: "Content-Type: image/png\n"
+  of gtTextFile, gtError: "Content-Type: text/plain\n"
   else: ""
   stdout.write(s & "\n")
 
@@ -83,7 +80,7 @@ proc main() =
     curl: curl,
     t: gopherType(path[1])
   )
-  if op.t == SEARCH and query == "":
+  if op.t == gtSearch and query == "":
     const flags = cuint(CURLU_PUNY2IDN)
     let surl = url.get(CURLUPART_URL, flags)
     if surl == nil:
