@@ -36,7 +36,7 @@ proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
     op.statusline = true
     var status: clong
     op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    if status == 103 and op.earlyhint == ehsNone:
+    if status == 103:
       op.earlyhint = ehsStarted
     else:
       op.connectreport = true
