@@ -585,18 +585,18 @@ func inherited(t: CSSPropertyType): bool =
   return InheritedArray[t]
 
 func em_to_px(em: float64; window: WindowAttributes): LayoutUnit =
-  em * float64(window.ppl)
+  (em * float64(window.ppl)).toLayoutUnit()
 
 func ch_to_px(ch: float64; window: WindowAttributes): LayoutUnit =
-  ch * float64(window.ppc)
+  (ch * float64(window.ppc)).toLayoutUnit()
 
 # 水 width, we assume it's 2 chars
 func ic_to_px(ic: float64; window: WindowAttributes): LayoutUnit =
-  ic * float64(window.ppc) * 2
+  (ic * float64(window.ppc) * 2).toLayoutUnit()
 
 # x-letter height, we assume it's em/2
 func ex_to_px(ex: float64; window: WindowAttributes): LayoutUnit =
-  ex * float64(window.ppc) / 2
+  (ex * float64(window.ppc) / 2).toLayoutUnit()
 
 func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit
     {.inline.} =
@@ -927,7 +927,7 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CellColor] =
     return err()
   let tok = CSSToken(value[i])
   if tok.tokenType == cttNumber:
-    if tok.nvalue notin 0..255:
+    if tok.tflagb != tflagbInteger or int(tok.nvalue) notin 0..255:
       return err() # invalid numeric ANSI color
     return ok(ANSIColor(tok.nvalue).cellColor())
   elif tok.tokenType == cttIdent:

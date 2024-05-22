@@ -2014,7 +2014,7 @@ proc redistributeWidth(ctx: var TableContext) =
     weight = 0
     for i in countdown(avail.high, 0):
       let j = avail[i]
-      let x = unit * ctx.cols[j].weight
+      let x = (unit * ctx.cols[j].weight).toLayoutUnit()
       let mw = ctx.cols[j].minwidth
       ctx.cols[j].width = x
       if mw > x:
@@ -2197,8 +2197,9 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
     var totalWeight = mctx.totalWeight[wt]
     while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
         totalWeight > 0:
-      mctx.maxSize[odim] = 0 # redo maxSize calculation; we only need height here
-      let unit = diff / totalWeight
+      # redo maxSize calculation; we only need height here
+      mctx.maxSize[odim] = 0
+      let unit = diff.toFloat64() / totalWeight
       # reset total weight & available diff for the next iteration (if there is
       # one)
       totalWeight = 0
@@ -2208,7 +2209,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
         if it.weights[wt] == 0:
           mctx.updateMaxSizes(it.child)
           continue
-        var u = it.child.size[dim] + unit * it.weights[wt]
+        var u = it.child.size[dim] + (unit * it.weights[wt]).toLayoutUnit()
         # check for min/max violation
         var minu = it.sizes.minMaxSizes[dim].min
         if dim == dtHorizontal:

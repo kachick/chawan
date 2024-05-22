@@ -29,13 +29,10 @@ func toInt*(a: LayoutUnit): int =
 converter toLayoutUnit*(a: int32): LayoutUnit =
   return LayoutUnit(a shl 6)
 
-converter toLayoutUnit*(a: int64): LayoutUnit =
-  return toLayoutUnit(cast[int32](a))
-
 converter toLayoutUnit*(a: int): LayoutUnit =
   return toLayoutUnit(cast[int32](a))
 
-converter toLayoutUnit*(a: float64): LayoutUnit =
+func toLayoutUnit*(a: float64): LayoutUnit =
   if unlikely(a == Inf):
     return LayoutUnit(high(int32))
   elif unlikely(a == -Inf):
