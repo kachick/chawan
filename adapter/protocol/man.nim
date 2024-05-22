@@ -275,9 +275,9 @@ proc myOpen(cmd: string): tuple[ofile, efile: File] =
     return (ofile, efile)
 
 proc doMan(man, keyword, section: string) =
-  let sectionOpt = if section == "": "" else: ' ' & section
+  let sectionOpt = if section == "": "" else: ' ' & quoteShellPosix(section)
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & sectionOpt & ' ' & keyword
+    man & sectionOpt & ' ' & quoteShellPosix(keyword)
   let (ofile, efile) = myOpen(cmd)
   if ofile == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
@@ -294,7 +294,7 @@ proc doLocal(man, path: string) =
   # Note: we intentionally do not use -l, because it is not supported on
   # various systems (at the very least FreeBSD, NetBSD).
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & ' ' & path
+    man & ' ' & quoteShellPosix(path)
   let (ofile, efile) = myOpen(cmd)
   if ofile == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
@@ -305,8 +305,8 @@ proc doLocal(man, path: string) =
 <pre>""", keyword = path.afterLast('/').until('.'))
 
 proc doKeyword(man, keyword, section: string) =
-  let sectionOpt = if section == "": "" else: " -s " & section
-  let cmd = man & sectionOpt & " -k " & keyword
+  let sectionOpt = if section == "": "" else: " -s " & quoteShellPosix(section)
+  let cmd = man & sectionOpt & " -k " & quoteShellPosix(keyword)
   let (ofile, efile) = myOpen(cmd)
   if ofile == nil:
     stdout.write("Cha-Control: ConnectionError 1 failed to run " & cmd)
