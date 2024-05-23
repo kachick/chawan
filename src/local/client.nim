@@ -262,15 +262,15 @@ proc handleCommandInput(client: Client; c: char): EmptyPromise =
             of mitPress:
               client.pressed = (input.col, input.row)
             of mitRelease:
-              #TODO this does not work very well with double width chars,
-              # because pressed could be equivalent to two separate cells
               if client.pressed == (input.col, input.row):
-                if input.col == container.acursorx and
-                    input.row == container.acursory:
+                let prevx = container.cursorx
+                let prevy = container.cursory
+                #TODO I wish we could avoid setCursorXY if we're just going to
+                # click, but that doesn't work with double-width chars
+                container.setCursorXY(container.fromx + input.col,
+                  container.fromy + input.row)
+                if container.cursorx == prevx and container.cursory == prevy:
                   container.click()
-                else:
-                  container.setCursorXY(container.fromx + input.col,
-                    container.fromy + input.row)
               else:
                 let diff = (input.col - client.pressed.col,
                   input.row - client.pressed.row)
