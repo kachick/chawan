@@ -124,10 +124,6 @@ type
   BlockBoxBuilder = ref object of BoxBuilder
     inlineLayout: bool
 
-  ListItemBoxBuilder = ref object of BoxBuilder
-    marker: InlineBoxBuilder
-    content: BlockBoxBuilder
-
 func fitContent(sc: SizeConstraint): SizeConstraint =
   case sc.t
   of scMinContent, scMaxContent:
@@ -1389,26 +1385,30 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
     bctx.layoutBlock(box, builder, sizes)
 
 proc layoutListItem(bctx: var BlockContext; box: BlockBox;
-    builder: ListItemBoxBuilder; sizes: ResolvedSizes) =
-  if builder.marker != nil:
+    builder: BlockBoxBuilder; sizes: ResolvedSizes) =
+  case builder.computed{"list-style-position"}
+  of ListStylePositionOutside:
     # wrap marker + main box in a new box
+    #TODO move this to the first pass
+    let markerBuilder = builder.children[0]
+    let contentBuilder = BlockBoxBuilder(builder.children[1])
     let innerBox = BlockBox(
-      computed: builder.content.computed,
+      computed: contentBuilder.computed,
       node: builder.node,
       offset: box.offset,
       margin: sizes.margin,
       positioned: sizes.positioned
     )
-    bctx.layoutFlow(innerBox, builder.content, sizes)
+    bctx.layoutFlow(innerBox, contentBuilder, sizes)
     #TODO we should put markers right before the first atom of the parent
     # list item or something...
     var bctx = BlockContext(lctx: bctx.lctx)
-    let children = @[BoxBuilder(builder.marker)]
+    let children = @[markerBuilder]
     let space = availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h)
     let markerInline = bctx.layoutRootInline(children, space,
-      builder.marker.computed, offset(x = 0, y = 0), offset(x = 0, y = 0))
+      markerBuilder.computed, offset(x = 0, y = 0), offset(x = 0, y = 0))
     let marker = BlockBox(
-      computed: builder.marker.computed,
+      computed: markerBuilder.computed,
       inline: markerInline,
       size: markerInline.size,
       offset: offset(x = -markerInline.size.w, y = 0),
@@ -1427,8 +1427,8 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     innerBox.margin = RelativeRect()
     innerBox.positioned = RelativeRect()
     box.nested = @[marker, innerBox]
-  else:
-    bctx.layoutFlow(box, builder.content, sizes)
+  of ListStylePositionInside:
+    bctx.layoutFlow(box, builder, sizes)
 
 # parentWidth, parentHeight: width/height of the containing block.
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
@@ -2130,15 +2130,16 @@ proc postAlignChild(box, child: BlockBox; width: LayoutUnit) =
 
 proc layout(bctx: var BlockContext; box: BlockBox; builder: BoxBuilder;
     sizes: ResolvedSizes) =
+  let builder = BlockBoxBuilder(builder)
   case builder.computed{"display"}
   of DisplayBlock, DisplayFlowRoot, DisplayTableCaption:
-    bctx.layoutFlow(box, BlockBoxBuilder(builder), sizes)
+    bctx.layoutFlow(box, builder, sizes)
   of DisplayListItem:
-    bctx.layoutListItem(box, ListItemBoxBuilder(builder), sizes)
+    bctx.layoutListItem(box, builder, sizes)
   of DisplayTableWrapper:
-    bctx.layoutTableWrapper(box, BlockBoxBuilder(builder), sizes)
+    bctx.layoutTableWrapper(box, builder, sizes)
   of DisplayFlex:
-    bctx.layoutFlex(box, BlockBoxBuilder(builder), sizes)
+    bctx.layoutFlex(box, builder, sizes)
   else:
     assert false, "Unexpected layout display " & $builder.computed{"display"}
 
@@ -2702,14 +2703,14 @@ proc generateTableCellBox(styledNode: StyledNode; lctx: LayoutState;
 proc generateTableCaptionBox(styledNode: StyledNode; lctx: LayoutState;
   parent: var InnerBlockContext): BlockBoxBuilder
 proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
-  marker = none(InlineBoxBuilder), parent: ptr InnerBlockContext = nil):
+  marker: InlineBoxBuilder = nil, parent: ptr InnerBlockContext = nil):
   BlockBoxBuilder
 proc generateFlexBox(styledNode: StyledNode; lctx: LayoutState;
   parent: ptr InnerBlockContext = nil): BlockBoxBuilder
 proc generateInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode)
 
 proc generateBlockBox(pctx: var InnerBlockContext; styledNode: StyledNode;
-    marker = none(InlineBoxBuilder)): BlockBoxBuilder =
+    marker: InlineBoxBuilder = nil): BlockBoxBuilder =
   return generateBlockBox(styledNode, pctx.lctx, marker, addr pctx)
 
 proc generateFlexBox(pctx: var InnerBlockContext; styledNode: StyledNode):
@@ -2802,18 +2803,23 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
   of DisplayListItem:
     ctx.flush()
     inc ctx.listItemCounter
-    let childbox = ListItemBoxBuilder(
-      computed: styledNode.computed,
-      marker: newMarkerBox(styledNode.computed, ctx.listItemCounter)
-    )
-    if childbox.computed{"list-style-position"} == ListStylePositionInside:
-      childbox.content = ctx.generateBlockBox(styledNode, some(childbox.marker))
-      childbox.marker = nil
-    else:
-      childbox.content = ctx.generateBlockBox(styledNode)
-    childbox.content.computed = childbox.content.computed.copyProperties()
-    childbox.content.computed{"display"} = DisplayBlock
-    box.children.add(childbox)
+    let marker = newMarkerBox(styledNode.computed, ctx.listItemCounter)
+    let position = styledNode.computed{"list-style-position"}
+    let content = case position
+    of ListStylePositionOutside:
+      ctx.generateBlockBox(styledNode)
+    of ListStylePositionInside:
+      ctx.generateBlockBox(styledNode, marker)
+    case position
+    of ListStylePositionOutside:
+      content.computed = content.computed.copyProperties()
+      content.computed{"display"} = DisplayBlock
+      let childbox = BlockBoxBuilder(computed: styledNode.computed)
+      childbox.children.add(marker)
+      childbox.children.add(content)
+      box.children.add(childbox)
+    of ListStylePositionInside:
+      box.children.add(content)
   of DisplayInline:
     ctx.generateInlineBoxes(styledNode)
   of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
@@ -3004,13 +3010,12 @@ proc generateInnerBlockBox(ctx: var InnerBlockContext) =
   ctx.iflush()
 
 proc generateBlockBox(styledNode: StyledNode; lctx: LayoutState;
-    marker = none(InlineBoxBuilder); parent: ptr InnerBlockContext = nil):
+    marker: InlineBoxBuilder = nil; parent: ptr InnerBlockContext = nil):
     BlockBoxBuilder =
-  let box = BlockBoxBuilder(computed: styledNode.computed)
-  box.node = styledNode
+  let box = BlockBoxBuilder(computed: styledNode.computed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
-  if marker.isSome:
-    ctx.ibox = marker.get
+  if marker != nil:
+    ctx.iroot = marker
     ctx.iflush()
   ctx.generateInnerBlockBox()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
