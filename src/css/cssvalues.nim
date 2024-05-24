@@ -160,6 +160,9 @@ type
     DisplayFlowRoot = "flow-root"
     DisplayFlex = "flex"
     DisplayInlineFlex = "inline-flex"
+    # internal, for layout
+    DisplayTableWrapper = ""
+    DisplayInlineTableWrapper = ""
 
   CSSWhiteSpace* = enum
     WhitespaceNormal = "normal"
@@ -488,15 +491,6 @@ const InheritedProperties = {
   cptQuotes, cptVisibility, cptTextTransform
 }
 
-func getPropInheritedArray(): array[CSSPropertyType, bool] =
-  for prop in CSSPropertyType:
-    if prop in InheritedProperties:
-      result[prop] = true
-    else:
-      result[prop] = false
-
-const InheritedArray = getPropInheritedArray()
-
 func shorthandType(s: string): CSSShorthandType =
   return ShorthandNames.getOrDefault(s.toLowerAscii(), cstNone)
 
@@ -582,7 +576,7 @@ macro `{}=`*(vals: CSSComputedValues; s: static string, val: typed) =
     )
 
 func inherited(t: CSSPropertyType): bool =
-  return InheritedArray[t]
+  return t in InheritedProperties
 
 func em_to_px(em: float64; window: WindowAttributes): LayoutUnit =
   (em * float64(window.ppl)).toLayoutUnit()
@@ -622,7 +616,7 @@ func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit
 func blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
-      DisplayFlex:
+      DisplayFlex, DisplayTableWrapper, DisplayInlineTableWrapper:
      #TODO grid
     return display
   of DisplayInline, DisplayInlineBlock, DisplayTableRow,
@@ -901,14 +895,14 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CellColor] =
     check_err slash
   value.skipWhitespace(i)
   check_err false
-  let r = CSSToken(value[i]).nvalue
+  let r = clamp(CSSToken(value[i]).nvalue, 0, 255)
   next_value true
-  let g = CSSToken(value[i]).nvalue
+  let g = clamp(CSSToken(value[i]).nvalue, 0, 255)
   next_value
-  let b = CSSToken(value[i]).nvalue
+  let b = clamp(CSSToken(value[i]).nvalue, 0, 255)
   next_value false, true
   let a = if i < value.len:
-    CSSToken(value[i]).nvalue
+    clamp(CSSToken(value[i]).nvalue, 0, 1)
   else:
     1
   value.skipWhitespace(i)
@@ -1601,6 +1595,32 @@ func rootProperties*(): CSSComputedValues =
   new(result)
   for prop in CSSPropertyType:
     result[prop] = getDefault(prop)
+
+# Separate CSSComputedValues of a table into those of the wrapper and the actual
+# table.
+func splitTable*(computed: CSSComputedValues):
+    tuple[outerComputed, innnerComputed: CSSComputedValues] =
+  var outerComputed, innerComputed: CSSComputedValues
+  new(outerComputed)
+  new(innerComputed)
+  const props = {
+    cptPosition, cptFloat, cptMarginLeft, cptMarginRight, cptMarginTop,
+    cptMarginBottom, cptTop, cptRight, cptBottom, cptLeft,
+    # Note: the standard does not ask us to include padding or sizing, but the
+    # wrapper & actual table layouts share the same sizing from the wrapper,
+    # so we must add them here.
+    cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom,
+    cptWidth, cptHeight, cptBoxSizing
+  }
+  for prop in CSSPropertyType:
+    if prop in props:
+      outerComputed[prop] = computed[prop]
+      innerComputed[prop] = getDefault(prop)
+    else:
+      outerComputed[prop] = getDefault(prop)
+      innerComputed[prop] = computed[prop]
+  outerComputed{"display"} = computed{"display"}
+  return (outerComputed, innerComputed)
 
 func hasValues*(builder: CSSComputedValuesBuilder): bool =
   for origin in CSSOrigin:

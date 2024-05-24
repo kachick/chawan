@@ -1182,8 +1182,8 @@ proc layoutRootInline(bctx: var BlockContext; inlines: seq[BoxBuilder];
   offset, bfcOffset: Offset): RootInlineFragment
 proc layoutBlock(bctx: var BlockContext; box: BlockBox;
   builder: BlockBoxBuilder; sizes: ResolvedSizes)
-proc layoutTable(bctx: BlockContext; table: BlockBox; builder: BlockBoxBuilder;
-  sizes: ResolvedSizes)
+proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
+  builder: BlockBoxBuilder; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; builder: BlockBoxBuilder;
   sizes: ResolvedSizes)
 proc layoutInline(ictx: var InlineContext; box: InlineBoxBuilder):
@@ -1448,8 +1448,8 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   case builder.computed{"display"}
   of DisplayInlineBlock:
     bctx.layoutFlow(box, builder, sizes)
-  of DisplayInlineTable:
-    bctx.layoutTable(box, builder, sizes)
+  of DisplayInlineTableWrapper:
+    bctx.layoutTableWrapper(box, builder, sizes)
   of DisplayInlineFlex:
     bctx.layoutFlex(box, builder, sizes)
   else:
@@ -1615,9 +1615,9 @@ proc positionRelative(parent, box: BlockBox) =
   elif not box.computed{"bottom"}.auto:
     box.offset.y += parent.size.h - box.positioned.bottom - box.size.h
 
+# Note: caption is not included here
 const ProperTableChild = RowGroupBox + {
-  DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup,
-  DisplayTableCaption
+  DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup
 }
 const ProperTableRowParent = RowGroupBox + {
   DisplayTable, DisplayInlineTable
@@ -1654,7 +1654,6 @@ type
 
   TableContext = object
     lctx: LayoutState
-    caption: BlockBoxBuilder
     rows: seq[RowContext]
     cols: seq[ColumnContext]
     growing: seq[CellWrapper]
@@ -1833,7 +1832,7 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LayoutUnit) =
   else:
     cell.offset.y = baseline - cell.firstBaseline
 
-proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
+proc layoutTableRow(tctx: TableContext; ctx: RowContext; parent: BlockBox;
     builder: BlockBoxBuilder): BlockBox =
   var x: LayoutUnit = 0
   var n = 0
@@ -1851,9 +1850,9 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
   for cellw in ctx.cells:
     var w: LayoutUnit = 0
     for i in n ..< n + cellw.colspan:
-      w += pctx.cols[i].width
+      w += tctx.cols[i].width
     # Add inline spacing for merged columns.
-    w += pctx.inlineSpacing * (cellw.colspan - 1) * 2
+    w += tctx.inlineSpacing * (cellw.colspan - 1) * 2
     if cellw.reflow and cellw.builder != nil:
       # Do not allow the table cell to make use of its specified width.
       # e.g. in the following table
@@ -1867,13 +1866,13 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
       # </TABLE>
       # the TD with a width of 5ch should be 9ch wide as well.
       let space = availableSpace(w = stretch(w), h = maxContent())
-      cellw.box = pctx.lctx.layoutTableCell(cellw.builder, space)
+      cellw.box = tctx.lctx.layoutTableCell(cellw.builder, space)
       w = max(w, cellw.box.size.w)
     let cell = cellw.box
-    x += pctx.inlineSpacing
+    x += tctx.inlineSpacing
     if cell != nil:
       cell.offset.x += x
-    x += pctx.inlineSpacing
+    x += tctx.inlineSpacing
     x += w
     n += cellw.colspan
     const HasNoBaseline = {
@@ -1905,14 +1904,14 @@ proc layoutTableRow(pctx: TableContext; ctx: RowContext; parent: BlockBox;
   row.size.w = x
   return row
 
-proc preBuildTableRows(ctx: var TableContext; rows: seq[BlockBoxBuilder];
+proc preLayoutTableRows(tctx: var TableContext; rows: seq[BlockBoxBuilder];
     table: BlockBox) =
   for i, row in rows:
-    let rctx = ctx.preBuildTableRow(row, table, i, rows.len)
-    ctx.rows.add(rctx)
-    ctx.maxwidth = max(rctx.width, ctx.maxwidth)
+    let rctx = tctx.preBuildTableRow(row, table, i, rows.len)
+    tctx.rows.add(rctx)
+    tctx.maxwidth = max(rctx.width, tctx.maxwidth)
 
-proc preBuildTableRows(ctx: var TableContext; builder: BlockBoxBuilder;
+proc preLayoutTableRows(tctx: var TableContext; builder: BlockBoxBuilder;
     table: BlockBox) =
   # Use separate seqs for different row groups, so that e.g. this HTML:
   # echo '<TABLE><TBODY><TR><TD>world<THEAD><TR><TD>hello'|cha -T text/html
@@ -1922,7 +1921,6 @@ proc preBuildTableRows(ctx: var TableContext; builder: BlockBoxBuilder;
   var thead: seq[BlockBoxBuilder] = @[]
   var tbody: seq[BlockBoxBuilder] = @[]
   var tfoot: seq[BlockBoxBuilder] = @[]
-  var caption: BlockBoxBuilder = nil
   for child in builder.children:
     assert child.computed{"display"} in ProperTableChild
     case child.computed{"display"}
@@ -1940,19 +1938,15 @@ proc preBuildTableRows(ctx: var TableContext; builder: BlockBoxBuilder;
       for child in child.children:
         assert child.computed{"display"} == DisplayTableRow
         tfoot.add(BlockBoxBuilder(child))
-    of DisplayTableCaption:
-      if caption == nil:
-        caption = BlockBoxBuilder(child)
     else: discard
-  ctx.caption = caption
-  ctx.preBuildTableRows(thead, table)
-  ctx.preBuildTableRows(tbody, table)
-  ctx.preBuildTableRows(tfoot, table)
+  tctx.preLayoutTableRows(thead, table)
+  tctx.preLayoutTableRows(tbody, table)
+  tctx.preLayoutTableRows(tfoot, table)
 
-func calcSpecifiedRatio(ctx: TableContext; W: LayoutUnit): LayoutUnit =
+func calcSpecifiedRatio(tctx: TableContext; W: LayoutUnit): LayoutUnit =
   var totalSpecified: LayoutUnit = 0
   var hasUnspecified = false
-  for col in ctx.cols:
+  for col in tctx.cols:
     if col.wspecified:
       totalSpecified += col.width
     else:
@@ -1964,13 +1958,13 @@ func calcSpecifiedRatio(ctx: TableContext; W: LayoutUnit): LayoutUnit =
     return 1
   return W / totalSpecified
 
-proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
+proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LayoutUnit;
     weight: var float64): seq[int] =
-  let specifiedRatio = ctx.calcSpecifiedRatio(W)
+  let specifiedRatio = tctx.calcSpecifiedRatio(W)
   # Spacing for each column:
-  var avail = newSeqUninitialized[int](ctx.cols.len)
+  var avail = newSeqUninitialized[int](tctx.cols.len)
   var j = 0
-  for i, col in ctx.cols.mpairs:
+  for i, col in tctx.cols.mpairs:
     if not col.wspecified:
       avail[j] = i
       let w = if col.width < W:
@@ -1988,21 +1982,22 @@ proc calcUnspecifiedColIndices(ctx: var TableContext; W: var LayoutUnit;
       avail.del(j)
   return avail
 
-func needsRedistribution(ctx: TableContext; computed: CSSComputedValues): bool =
-  case ctx.space.w.t
+func needsRedistribution(tctx: TableContext; computed: CSSComputedValues):
+    bool =
+  case tctx.space.w.t
   of scMinContent, scMaxContent:
     return false
   of scStretch:
-    return ctx.space.w.u != ctx.maxwidth
+    return tctx.space.w.u != tctx.maxwidth
   of scFitContent:
-    let u = ctx.space.w.u
-    return u > ctx.maxwidth and not computed{"width"}.auto or u < ctx.maxwidth
+    let u = tctx.space.w.u
+    return u > tctx.maxwidth and not computed{"width"}.auto or u < tctx.maxwidth
 
-proc redistributeWidth(ctx: var TableContext) =
+proc redistributeWidth(tctx: var TableContext) =
   # Remove inline spacing from distributable width.
-  var W = ctx.space.w.u - ctx.cols.len * ctx.inlineSpacing * 2
+  var W = tctx.space.w.u - tctx.cols.len * tctx.inlineSpacing * 2
   var weight = 0f64
-  var avail = ctx.calcUnspecifiedColIndices(W, weight)
+  var avail = tctx.calcUnspecifiedColIndices(W, weight)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
     if weight == 0: break # zero weight; nothing to distribute
@@ -2014,73 +2009,74 @@ proc redistributeWidth(ctx: var TableContext) =
     weight = 0
     for i in countdown(avail.high, 0):
       let j = avail[i]
-      let x = (unit * ctx.cols[j].weight).toLayoutUnit()
-      let mw = ctx.cols[j].minwidth
-      ctx.cols[j].width = x
+      let x = (unit * tctx.cols[j].weight).toLayoutUnit()
+      let mw = tctx.cols[j].minwidth
+      tctx.cols[j].width = x
       if mw > x:
         W -= mw
-        ctx.cols[j].width = mw
+        tctx.cols[j].width = mw
         avail.del(i)
         redo = true
       else:
-        weight += ctx.cols[j].weight
-      ctx.cols[j].reflow = true
+        weight += tctx.cols[j].weight
+      tctx.cols[j].reflow = true
 
-proc reflowTableCells(ctx: var TableContext) =
-  for i in countdown(ctx.rows.high, 0):
-    var row = addr ctx.rows[i]
-    var n = ctx.cols.len - 1
+proc reflowTableCells(tctx: var TableContext) =
+  for i in countdown(tctx.rows.high, 0):
+    var row = addr tctx.rows[i]
+    var n = tctx.cols.len - 1
     for j in countdown(row.cells.high, 0):
       let m = n - row.cells[j].colspan
       while n > m:
-        if ctx.cols[n].reflow:
+        if tctx.cols[n].reflow:
           row.cells[j].reflow = true
         if n < row.reflow.len and row.reflow[n]:
-          ctx.cols[n].reflow = true
+          tctx.cols[n].reflow = true
         dec n
 
-proc layoutTableRows(ctx: TableContext; table: BlockBox; sizes: ResolvedSizes) =
+proc layoutTableRows(tctx: TableContext; table: BlockBox;
+    sizes: ResolvedSizes) =
   var y: LayoutUnit = 0
-  for roww in ctx.rows:
+  for roww in tctx.rows:
     if roww.builder.computed{"visibility"} == VisibilityCollapse:
       continue
-    y += ctx.blockSpacing
-    let row = ctx.layoutTableRow(roww, table, roww.builder)
+    y += tctx.blockSpacing
+    let row = tctx.layoutTableRow(roww, table, roww.builder)
     row.offset.y += y
     row.offset.x += sizes.padding.left
     row.size.w += sizes.padding.left
     row.size.w += sizes.padding.right
-    y += ctx.blockSpacing
+    y += tctx.blockSpacing
     y += row.size.h
     table.nested.add(row)
     table.size.w = max(row.size.w, table.size.w)
   table.size.h = applySizeConstraint(y, sizes.space.h)
 
-proc addTableCaption(ctx: TableContext; table: BlockBox) =
-  let percHeight = ctx.space.h.toPercSize()
-  let space = availableSpace(w = stretch(table.size.w), h = maxContent())
-  let builder = ctx.caption
-  let sizes = ctx.lctx.resolveSizes(space, percHeight, builder.computed)
+proc layoutCaption(tctx: TableContext; parent: BlockBox;
+    builder: BlockBoxBuilder) =
+  let percHeight = tctx.space.h.toPercSize()
+  let space = availableSpace(w = stretch(parent.size.w), h = maxContent())
+  let sizes = tctx.lctx.resolveSizes(space, percHeight, builder.computed)
   let box = BlockBox(
     computed: builder.computed,
     node: builder.node,
     margin: sizes.margin,
     positioned: sizes.positioned
   )
-  var bctx = BlockContext(lctx: ctx.lctx)
+  var bctx = BlockContext(lctx: tctx.lctx)
   bctx.layoutFlow(box, builder, sizes)
   assert bctx.unpositionedFloats.len == 0
   let outerHeight = box.offset.y + box.size.h + bctx.marginTodo.sum()
-  table.size.h += outerHeight
-  table.size.w = max(table.size.w, box.size.w)
+  parent.size.h += outerHeight
+  parent.size.w = max(parent.size.w, box.size.w)
   case builder.computed{"caption-side"}
   of CaptionSideTop, CaptionSideBlockStart:
-    for r in table.nested:
+    for r in parent.nested:
       r.offset.y += outerHeight
-    table.nested.insert(box, 0)
+    parent.nested.insert(box, 0)
   of CaptionSideBottom, CaptionSideBlockEnd:
     box.offset.y += outerHeight
-    table.nested.add(box)
+    parent.nested.add(box)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
@@ -2091,22 +2087,35 @@ proc addTableCaption(ctx: TableContext; table: BlockBox) =
 #      Distribute the table's content width among cells with an unspecified
 #      width. If this would give any cell a width < min_width, set that
 #      cell's width to min_width, then re-do the distribution.
-proc layoutTable(bctx: BlockContext; table: BlockBox; builder: BlockBoxBuilder;
-    sizes: ResolvedSizes) =
-  let lctx = bctx.lctx
-  var ctx = TableContext(lctx: lctx, space: sizes.space)
+proc layoutTable(tctx: var TableContext; table: BlockBox;
+    builder: BlockBoxBuilder; sizes: ResolvedSizes) =
+  let lctx = tctx.lctx
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
-    ctx.inlineSpacing = table.computed{"border-spacing"}.a.px(lctx)
-    ctx.blockSpacing = table.computed{"border-spacing"}.b.px(lctx)
-  ctx.preBuildTableRows(builder, table)
-  if ctx.needsRedistribution(table.computed):
-    ctx.redistributeWidth()
-  for col in ctx.cols:
+    tctx.inlineSpacing = table.computed{"border-spacing"}.a.px(lctx)
+    tctx.blockSpacing = table.computed{"border-spacing"}.b.px(lctx)
+  tctx.preLayoutTableRows(builder, table) # first pass
+  if tctx.needsRedistribution(table.computed):
+    tctx.redistributeWidth()
+  for col in tctx.cols:
     table.size.w += col.width
-  ctx.reflowTableCells()
-  ctx.layoutTableRows(table, sizes)
-  if ctx.caption != nil:
-    ctx.addTableCaption(table)
+  tctx.reflowTableCells()
+  tctx.layoutTableRows(table, sizes) # second pass
+
+# As per standard, we must put the caption outside the actual table, inside a
+# block-level wrapper box.
+proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
+    builder: BlockBoxBuilder; sizes: ResolvedSizes) =
+  let tableBuilder = BlockBoxBuilder(builder.children[0])
+  let table = BlockBox(computed: tableBuilder.computed, node: tableBuilder.node)
+  var tctx = TableContext(lctx: bctx.lctx, space: sizes.space)
+  tctx.layoutTable(table, tableBuilder, sizes)
+  box.nested.add(table)
+  box.size = table.size
+  if builder.children.len > 1:
+    # do it here, so that caption's box can stretch to our width
+    let caption = BlockBoxBuilder(builder.children[1])
+    #TODO also count caption width in table width
+    tctx.layoutCaption(box, caption)
 
 proc postAlignChild(box, child: BlockBox; width: LayoutUnit) =
   case box.computed{"text-align"}
@@ -2122,16 +2131,16 @@ proc postAlignChild(box, child: BlockBox; width: LayoutUnit) =
 proc layout(bctx: var BlockContext; box: BlockBox; builder: BoxBuilder;
     sizes: ResolvedSizes) =
   case builder.computed{"display"}
-  of DisplayBlock, DisplayFlowRoot:
+  of DisplayBlock, DisplayFlowRoot, DisplayTableCaption:
     bctx.layoutFlow(box, BlockBoxBuilder(builder), sizes)
   of DisplayListItem:
     bctx.layoutListItem(box, ListItemBoxBuilder(builder), sizes)
-  of DisplayTable:
-    bctx.layoutTable(box, BlockBoxBuilder(builder), sizes)
+  of DisplayTableWrapper:
+    bctx.layoutTableWrapper(box, BlockBoxBuilder(builder), sizes)
   of DisplayFlex:
     bctx.layoutFlex(box, BlockBoxBuilder(builder), sizes)
   else:
-    assert false, "builder.t is " & $builder.computed{"display"}
+    assert false, "Unexpected layout display " & $builder.computed{"display"}
 
 proc layoutFlexChild(lctx: LayoutState; builder: BoxBuilder;
     sizes: ResolvedSizes): BlockBox =
@@ -2330,7 +2339,7 @@ proc layoutBlockChild(bctx: var BlockContext; builder: BoxBuilder;
     w = space.w,
     h = maxContent() #TODO fit-content when clip
   )
-  if builder.computed{"display"} == DisplayTable:
+  if builder.computed{"display"} == DisplayTableWrapper:
     space.w = fitContent(space.w)
   let sizes = bctx.lctx.resolveSizes(space, percHeight, builder.computed)
   if appendMargins:
@@ -2400,7 +2409,8 @@ func isParentResolved(state: BlockState; bctx: BlockContext): bool =
 func establishesBFC(computed: CSSComputedValues): bool =
   return computed{"float"} != FloatNone or
     computed{"position"} == PositionAbsolute or
-    computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayFlex} or
+    computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayTableWrapper,
+      DisplayFlex} or
     computed{"overflow"} notin {OverflowVisible, OverflowClip}
     #TODO contain, grid, multicol, column-span
 
@@ -2647,7 +2657,7 @@ type InnerBlockContext = object
   ibox: InlineBoxBuilder
   iroot: InlineBoxBuilder
   anonRow: BlockBoxBuilder
-  anonTable: BlockBoxBuilder
+  anonTableWrapper: BlockBoxBuilder
   quoteLevel: int
   listItemCounter: int
   listItemReset: bool
@@ -2706,11 +2716,23 @@ proc generateFlexBox(pctx: var InnerBlockContext; styledNode: StyledNode):
     BlockBoxBuilder =
   return generateFlexBox(styledNode, pctx.lctx, addr pctx)
 
+func toTableWrapper(display: CSSDisplay): CSSDisplay =
+  if display == DisplayTable:
+    return DisplayTableWrapper
+  assert display == DisplayInlineTable
+  return DisplayInlineTableWrapper
+
 proc createAnonTable(ctx: var InnerBlockContext; computed: CSSComputedValues) =
-  if ctx.anonTable == nil:
-    var wrappervals = computed.inheritProperties()
-    wrappervals{"display"} = DisplayTable
-    ctx.anonTable = BlockBoxBuilder(computed: wrappervals)
+  if ctx.anonTableWrapper == nil:
+    let inherited = computed.inheritProperties()
+    let (outerComputed, innerComputed) = inherited.splitTable()
+    #TODO this should be DisplayInlineTableWrapper inside inline contexts
+    outerComputed{"display"} = DisplayTableWrapper
+    let innerTable = BlockBoxBuilder(computed: innerComputed)
+    ctx.anonTableWrapper = BlockBoxBuilder(
+      computed: outerComputed,
+      children: @[BoxBuilder(innerTable)]
+    )
 
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
@@ -2718,13 +2740,13 @@ proc flushTableRow(ctx: var InnerBlockContext) =
       ctx.blockgroup.parent.children.add(ctx.anonRow)
     else:
       ctx.createAnonTable(ctx.styledNode.computed)
-      ctx.anonTable.children.add(ctx.anonRow)
+      ctx.anonTableWrapper.children[0].children.add(ctx.anonRow)
     ctx.anonRow = nil
 
 proc flushTable(ctx: var InnerBlockContext) =
   ctx.flushTableRow()
-  if ctx.anonTable != nil:
-    ctx.blockgroup.parent.children.add(ctx.anonTable)
+  if ctx.anonTableWrapper != nil:
+    ctx.blockgroup.parent.children.add(ctx.anonTableWrapper)
 
 proc iflush(ctx: var InnerBlockContext) =
   if ctx.iroot != nil:
@@ -2824,7 +2846,7 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
       box.children.add(childbox)
     else:
       ctx.createAnonTable(box.computed)
-      ctx.anonTable.children.add(childbox)
+      ctx.anonTableWrapper.children[0].children.add(childbox)
   of DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup:
     ctx.bflush()
     ctx.flushTableRow()
@@ -2833,7 +2855,7 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
       box.children.add(childbox)
     else:
       ctx.createAnonTable(box.computed)
-      ctx.anonTable.children.add(childbox)
+      ctx.anonTableWrapper.children[0].children.add(childbox)
   of DisplayTableCell:
     ctx.bflush()
     let childbox = styledNode.generateTableCellBox(ctx.lctx, ctx)
@@ -2853,12 +2875,16 @@ proc generateFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
       box.children.add(childbox)
     else:
       ctx.createAnonTable(box.computed)
-      ctx.anonTable.children.add(childbox)
+      # only add first caption
+      if ctx.anonTableWrapper.children.len == 1:
+        ctx.anonTableWrapper.children.add(childbox)
   of DisplayTableColumn:
     discard #TODO
   of DisplayTableColumnGroup:
     discard #TODO
   of DisplayNone: discard
+  of DisplayTableWrapper, DisplayInlineTableWrapper:
+    assert false
 
 proc generateAnonymousInlineText(ctx: var InnerBlockContext; text: string;
     styledNode: StyledNode; bmp: Bitmap = nil) =
@@ -3098,27 +3124,36 @@ proc generateTableCaptionBox(styledNode: StyledNode; lctx: LayoutState;
   ctx.flush()
   return box
 
-proc generateTableChildWrappers(box: BlockBoxBuilder) =
-  var newchildren = newSeqOfCap[BoxBuilder](box.children.len)
+proc generateTableChildWrappers(box: BlockBoxBuilder;
+    computed: CSSComputedValues) =
+  let innerTable = BlockBoxBuilder(computed: computed, node: box.node)
   var wrappervals = box.computed.inheritProperties()
   wrappervals{"display"} = DisplayTableRow
+  var caption: BoxBuilder = nil
   for child in box.children:
     if child.computed{"display"} in ProperTableChild:
-      newchildren.add(child)
+      innerTable.children.add(child)
+    elif child.computed{"display"} == DisplayTableCaption:
+      if caption == nil:
+        caption = child
     else:
       let wrapper = BlockBoxBuilder(computed: wrappervals)
       wrapper.children.add(child)
       wrapper.generateTableRowChildWrappers()
-      newchildren.add(wrapper)
-  box.children = newchildren
+      innerTable.children.add(wrapper)
+  box.children = @[BoxBuilder(innerTable)]
+  if caption != nil:
+    box.children.add(caption)
 
 proc generateTableBox(styledNode: StyledNode; lctx: LayoutState;
     parent: var InnerBlockContext): BlockBoxBuilder =
-  let box = BlockBoxBuilder(computed: styledNode.computed, node: styledNode)
+  let (outerComputed, innerComputed) = styledNode.computed.splitTable()
+  let box = BlockBoxBuilder(computed: outerComputed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, addr parent)
   ctx.generateInnerBlockBox()
   ctx.flush()
-  box.generateTableChildWrappers()
+  outerComputed{"display"} = outerComputed{"display"}.toTableWrapper()
+  box.generateTableChildWrappers(innerComputed)
   return box
 
 proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
