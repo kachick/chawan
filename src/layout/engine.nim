@@ -1446,7 +1446,7 @@ proc layoutChildren(ictx: var InlineContext; state: var InlineState;
     case child.computed{"display"}
     of DisplayInline:
       state.fragment.children.add(ictx.layoutInline(child))
-    of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
+    of DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex:
       # Note: we do not need a separate inline fragment here, because the tree
       # generator already does an iflush() before adding inline blocks.
       let w = fitContent(ictx.space.w)
