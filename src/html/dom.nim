@@ -66,6 +66,9 @@ type DocumentReadyState* = enum
   rsComplete = "complete"
 
 type
+  DependencyType* = enum
+    dtHover, dtChecked, dtFocus
+
   Location = ref object
     window: Window
 
@@ -227,6 +230,10 @@ type
     invalid*: bool
     style_cached*: CSSStyleDeclaration
     children_cached: HTMLCollection
+
+    # The owner StyledNode is marked as invalid when one of these no longer
+    # matches the DOM value.
+    prev*: array[DependencyType, bool]
 
   AttrDummyElement = ref object of Element
 

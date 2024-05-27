@@ -39,15 +39,7 @@ type
   StyledType* = enum
     stElement, stText, stReplacement
 
-  DependencyType* = enum
-    dtHover, dtChecked, dtFocus
-
-  DependencyInfo* = object
-    # All nodes we depend on, for each dependency type d.
-    nodes*: array[DependencyType, seq[StyledNode]]
-    # Previous value. The owner StyledNode is marked as invalid when one of
-    # these no longer matches the DOM value.
-    prev: array[DependencyType, bool]
+  DependencyInfo = array[DependencyType, seq[Element]]
 
   StyledNode* = ref object
     parent*: StyledNode
@@ -59,6 +51,7 @@ type
     of stElement:
       computed*: CSSComputedValues
       children*: seq[StyledNode]
+      # All elements we depend on, for each dependency type d.
       depends*: DependencyInfo
     of stReplacement:
       # replaced elements: quotes, or (TODO) markers, images
@@ -126,33 +119,31 @@ func isValid*(styledNode: StyledNode): bool =
   if styledNode.node != nil and Element(styledNode.node).invalid:
     return false
   for d in DependencyType:
-    for child in styledNode.depends.nodes[d]:
-      assert child.node != nil
-      let elem = Element(child.node)
+    for elem in styledNode.depends[d]:
       case d
       of dtHover:
-        if child.depends.prev[d] != elem.hover:
+        if elem.prev[d] != elem.hover:
           return false
       of dtChecked:
-        if child.depends.prev[d] != elem.checked:
+        if elem.prev[d] != elem.checked:
           return false
       of dtFocus:
         let focus = elem.document.focus == elem
-        if child.depends.prev[d] != focus:
+        if elem.prev[d] != focus:
           return false
   return true
 
 proc applyDependValues*(styledNode: StyledNode) =
   let elem = Element(styledNode.node)
-  styledNode.depends.prev[dtHover] = elem.hover
-  styledNode.depends.prev[dtChecked] = elem.checked
+  elem.prev[dtHover] = elem.hover
+  elem.prev[dtChecked] = elem.checked
   let focus = elem.document.focus == elem
-  styledNode.depends.prev[dtFocus] = focus
+  elem.prev[dtFocus] = focus
   elem.invalid = false
 
-proc addDependency*(styledNode, dep: StyledNode; t: DependencyType) =
-  if dep notin styledNode.depends.nodes[t]:
-    styledNode.depends.nodes[t].add(dep)
+proc addDependency*(styledNode: StyledNode; dep: Element; t: DependencyType) =
+  if dep notin styledNode.depends[t]:
+    styledNode.depends[t].add(dep)
 
 func newStyledElement*(parent: StyledNode; element: Element;
     computed: CSSComputedValues; reg: DependencyInfo): StyledNode =
@@ -172,7 +163,7 @@ func newStyledElement*(element: Element): StyledNode =
   return StyledNode(t: stElement, node: element)
 
 func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
-    computed: CSSComputedValues; reg: sink DependencyInfo): StyledNode =
+    computed: CSSComputedValues; reg: DependencyInfo): StyledNode =
   return StyledNode(
     t: stElement,
     computed: computed,

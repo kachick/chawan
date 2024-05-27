@@ -83,7 +83,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T; sel: Selector;
     return elem.parentNode.firstElementChild == elem and
       elem.parentNode.lastElementChild == elem
   of pcHover:
-    when selem is StyledNode: felem.addDependency(selem, dtHover)
+    when selem is StyledNode: felem.addDependency(elem, dtHover)
     return elem.hover
   of pcRoot: return elem == elem.document.html
   of pcNthChild:
@@ -133,14 +133,14 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T; sel: Selector;
         inc i
     return false
   of pcChecked:
-    when selem is StyledNode: felem.addDependency(selem, dtChecked)
+    when selem is StyledNode: felem.addDependency(elem, dtChecked)
     if elem.tagType == TAG_INPUT:
       return HTMLInputElement(elem).checked
     elif elem.tagType == TAG_OPTION:
       return HTMLOptionElement(elem).selected
     return false
   of pcFocus:
-    when selem is StyledNode: felem.addDependency(selem, dtFocus)
+    when selem is StyledNode: felem.addDependency(elem, dtFocus)
     return elem.document.focus == elem
   of pcNot:
     return not selem.selectorsMatch(sel.pseudo.fsels, felem)
