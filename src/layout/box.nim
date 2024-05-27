@@ -39,6 +39,7 @@ type
     # minimum content width
     xminwidth*: LayoutUnit
     size*: Size
+    children*: seq[InlineBoxBuilder] #TODO remove
 
   SplitType* = enum
     stSplitStart, stSplitEnd
@@ -62,11 +63,17 @@ type
     left*: LayoutUnit
     right*: LayoutUnit
 
-  BlockBox* = ref object of RootObj
-    inline*: RootInlineFragment
-    node*: StyledNode
-    nested*: seq[BlockBox]
+  InlineBoxBuilder* = ref object
     computed*: CSSComputedValues
+    node*: StyledNode
+    children*: seq[InlineBoxBuilder]
+    text*: seq[string]
+    newline*: bool
+    splitType*: set[SplitType]
+    bmp*: Bitmap
+    box*: BlockBox
+
+  BlockBoxLayoutState* = object
     offset*: Offset
     size*: Size # padding size
     margin*: RelativeRect #TODO get rid of this?
@@ -79,6 +86,13 @@ type
     firstBaseline*: LayoutUnit
     # baseline of the last line box of all descendants
     baseline*: LayoutUnit
+
+  BlockBox* = ref object
+    computed*: CSSComputedValues
+    node*: StyledNode
+    inline*: RootInlineFragment
+    nested*: seq[BlockBox]
+    state*: BlockBoxLayoutState
 
 func offset*(x, y: LayoutUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
@@ -101,7 +115,7 @@ func y*(offset: var Offset): var LayoutUnit {.inline.} =
 func `y=`*(offset: var Offset; y: LayoutUnit) {.inline.} =
   offset[dtVertical] = y
 
-func size*(w, h: LayoutUnit): Offset =
+func size*(w, h: LayoutUnit): Size =
   return [dtHorizontal: w, dtVertical: h]
 
 func w*(size: Size): LayoutUnit {.inline.} =

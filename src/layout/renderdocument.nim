@@ -402,12 +402,10 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       offset.x = state.absolutePos[^1].x
     if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
       offset.y = state.absolutePos[^1].y
-    offset.x += box.offset.x
-    offset.y += box.offset.y
+    offset += box.state.offset
     if box.computed{"position"} != PositionStatic:
       state.absolutePos.add(offset)
       stack.add((nil, offset(-1, -1)))
-
     if box.computed{"visibility"} == VisibilityVisible:
       let bgcolor = box.computed{"background-color"}
       if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
@@ -418,8 +416,9 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         #TODO color blending
         let ix = toInt(offset.x)
         let iy = toInt(offset.y)
-        let iex = toInt(offset.x + box.size.w)
-        let iey = toInt(offset.y + box.size.h)
+        let e = offset + box.state.size
+        let iex = toInt(e.x)
+        let iey = toInt(e.y)
         grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
       if box.computed{"background-image"}.t == ContentImage and
           box.computed{"background-image"}.s != "":
@@ -427,10 +426,10 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         let s = "[img]"
         let w = s.len * state.attrs.ppc
         var ix = offset.x
-        if box.size.w < w:
+        if box.state.size.w < w:
           # text is larger than image; center it to minimize error
           ix -= w div 2
-          ix += box.size.w div 2
+          ix += box.state.size.w div 2
         let x = toInt(ix div state.attrs.ppc)
         let y = toInt(offset.y div state.attrs.ppl)
         if y >= 0 and x + w >= 0:
