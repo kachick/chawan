@@ -2467,7 +2467,7 @@ func getSrc*(this: HTMLVideoElement|HTMLAudioElement): string =
         break
   src
 
-func newText(document: Document; data: string): Text =
+func newText*(document: Document; data: string): Text =
   return Text(
     document_internal: document,
     data: data,

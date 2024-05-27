@@ -2871,7 +2871,7 @@ proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode) =
         ctx.iflush()
         lbox = ctx.reconstructInlineParents()
         ctx.ibox = lbox
-      lbox.text.add(child.text)
+      lbox.text.add(child.textData)
     of stReplacement:
       ctx.buildReplacement(child, styledNode)
   if ctx.ibox != lbox:
@@ -2909,8 +2909,9 @@ proc buildInnerBlockBox(ctx: var InnerBlockContext) =
       ctx.iflush()
       ctx.buildFromElem(child)
     of stText:
-      if canBuildAnonymousInline(ctx.blockgroup, box.computed, child.text):
-        ctx.buildAnonymousInlineText(child.text, ctx.styledNode)
+      let text = child.textData
+      if canBuildAnonymousInline(ctx.blockgroup, box.computed, text):
+        ctx.buildAnonymousInlineText(text, ctx.styledNode)
     of stReplacement:
       ctx.buildReplacement(child, ctx.styledNode)
   ctx.iflush()
@@ -2962,8 +2963,9 @@ proc buildFlex(styledNode: StyledNode; lctx: LayoutContext;
       else:
         ctx.buildFromElem(child)
     of stText:
-      if ctx.blockgroup.canBuildAnonymousInline(box.computed, child.text):
-        ctx.buildAnonymousInlineText(child.text, ctx.styledNode)
+      let text = child.textData
+      if ctx.blockgroup.canBuildAnonymousInline(box.computed, text):
+        ctx.buildAnonymousInlineText(text, ctx.styledNode)
     of stReplacement:
       ctx.buildReplacement(child, ctx.styledNode)
   ctx.iflush()

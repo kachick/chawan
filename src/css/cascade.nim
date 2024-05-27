@@ -365,16 +365,18 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
           styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
         styledParent.children.add(styledPseudo)
     of peInputText:
-      let content = HTMLInputElement(styledParent.node).inputString()
-      if content.len > 0:
+      let s = HTMLInputElement(styledParent.node).inputString()
+      if s.len > 0:
+        let content = styledParent.node.document.newText(s)
         let styledText = styledParent.newStyledText(content)
         # Note: some pseudo-elements (like input text) generate text nodes
         # directly, so we have to cache them like this.
         styledText.pseudo = pseudo
         styledParent.children.add(styledText)
     of peTextareaText:
-      let content = HTMLTextAreaElement(styledParent.node).textAreaString()
-      if content.len > 0:
+      let s = HTMLTextAreaElement(styledParent.node).textAreaString()
+      if s.len > 0:
+        let content = styledParent.node.document.newText(s)
         let styledText = styledParent.newStyledText(content)
         styledText.pseudo = pseudo
         styledParent.children.add(styledText)

@@ -47,7 +47,7 @@ type
     pseudo*: PseudoElem
     case t*: StyledType
     of stText:
-      text*: string
+      discard
     of stElement:
       computed*: CSSComputedValues
       children*: seq[StyledNode]
@@ -57,13 +57,16 @@ type
       # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
+func textData*(styledNode: StyledNode): string =
+  return Text(styledNode.node).data
+
 # For debugging
 func `$`*(node: StyledNode): string =
   if node == nil:
     return "nil"
   case node.t
   of stText:
-    return "#text " & node.text
+    return "#text " & node.textData
   of stElement:
     if node.node != nil:
       return $node.node
@@ -181,11 +184,8 @@ func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
     parent: parent
   )
 
-func newStyledText*(parent: StyledNode; text: string): StyledNode =
-  return StyledNode(t: stText, text: text, parent: parent)
-
 func newStyledText*(parent: StyledNode; text: Text): StyledNode =
-  return StyledNode(t: stText, text: text.data, node: text, parent: parent)
+  return StyledNode(t: stText, node: text, parent: parent)
 
 func newStyledReplacement*(parent: StyledNode; content: CSSContent):
     StyledNode =
