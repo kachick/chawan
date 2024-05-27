@@ -1796,6 +1796,9 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
               of '"':
                 data &= "&quot;"
                 offset += 5
+              of '&':
+                data &= "&amp;"
+                offset += 4
               else:
                 data &= c
               inc j
@@ -1812,6 +1815,7 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
             of '>': data &= "&gt;"
             of '\'': data &= "&apos;"
             of '"': data &= "&quot;"
+            of '&': data &= "&amp;"
             else: data &= c
             inc j
           let replacement = html.fragmentParsingAlgorithm(data)
