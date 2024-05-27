@@ -1,31 +1,29 @@
-<!DOCTYPE HTML>
-<HTML>
-<HEAD>
-<TITLE>Licensing</TITLE>
-</HEAD>
-<BODY>
-<P>
+<title>Licensing</title>
+
+# Licensing terms of Chawan
+
 Chawan itself is dedicated to the public domain. However, it contains and
 depends on projects with different licensing terms.
-<P>
+
 This document attempts to list licensing terms of projects included in
 the Chawan repository. Note that Chawan is dynamically linked against
-your copy of zlib, libcurl, your C library, and if exists, your termcap
-library. For licensing terms of these, please consult the appropriate
-library's documentation.
-<P>
+your copy of zlib, libcurl, (on Linux) libseccomp, your C library, and if
+exists, your termcap library. For licensing terms of these, please consult the
+appropriate library's documentation.
+
 Also, Chawan is statically linked to the Nim standard library. At the time
-of writing, (i.e. as of Nim 2.0.0,) this is the MIT license (same terms as
+of writing, (i.e. as of Nim 2.0.4) this is the MIT license (same terms as
 the vendored Punycode library).
-<P>
+
 Table of contents:
-<UL>
-<LI><A HREF="#chawan">Chawan</A>
-<LI><A HREF="#quickjs">QuickJS</A>
-<LI><A HREF="#punycode">Punycode library</A>
-</UL>
-<H2 id=chawan>Chawan</H2>
-<PRE>
+
+* [Chawan](#chawan)
+* [QuickJS](#quickjs)
+* [Punycode library](#punycode-library)
+
+## Chawan
+
+```
 This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or
@@ -50,19 +48,17 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 For more information, please refer to &lt;http://unlicense.org/&gt;
-</PRE>
+```
 
-<H2 id=quickjs>QuickJS</H2>
-Note that our vendored copy of QuickJS also includes code from
-<A HREF="https://www.freelists.org/post/quickjs-devel/PATCH-toplevel-await-TLA">zamfofex</A>,
-<A HREF="https://github.com/bellard/quickjs/pull/132">Bo Yao</A>,
-and
-<A HREF="https://github.com/bellard/quickjs/pull/182">Nick Vatamaniuc</A>.
-<BR>
-We also include changes made to the QuickJS sources in the
-<A HREF="https://github.com/saghul/txiki.js">txiki.js</A> project by
-Saúl Ibarra Corretgé.
-<PRE>
+## QuickJS
+
+Note that our vendored copy is not identical to upstream, as we include some
+patches for integration of the QuickJS and Nim runtimes.
+
+Special thanks to zamfofex, Bo Yao, Nick Vatamaniuc and Saúl Ibarra Corretgé
+for their patches which we used during inactivity of upstream developers.
+
+```
 QuickJS Javascript Engine
 
 Copyright (c) 2017-2021 Fabrice Bellard
@@ -85,12 +81,14 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-</PRE>
+```
 
-<H2 id=punycode>Punycode library</H2>
+## Punycode library
+
 We vendor the punycode library, which is no longer included in the Nim
 standard library. This library is distributed under the following terms:
-<PRE>
+
+```
 MIT License
 
 Copyright (c) 2022 The Nim programming language
@@ -112,7 +110,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-</PRE>
-
-</BODY>
-</HTML>
+```
