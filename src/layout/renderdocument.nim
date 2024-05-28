@@ -341,7 +341,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
 
 proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset; bgcolor: CellColor) =
-  for area in fragment.areas:
+  for area in fragment.state.areas:
     let x1 = toInt(offset.x + area.offset.x)
     let y1 = toInt(offset.y + area.offset.y)
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
@@ -350,14 +350,14 @@ proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
 
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset) =
-  assert fragment.atoms.len == 0 or fragment.children.len == 0
+  assert fragment.state.atoms.len == 0 or fragment.children.len == 0
   let bgcolor = fragment.computed{"background-color"}
   if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
     #TODO color blending
     grid.paintInlineFragment(state, fragment, offset, bgcolor)
-  if fragment.atoms.len > 0:
+  if fragment.state.atoms.len > 0:
     let format = fragment.computed.toFormat()
-    for atom in fragment.atoms:
+    for atom in fragment.state.atoms:
       case atom.t
       of iatInlineBlock:
         grid.renderBlockBox(state, atom.innerbox, offset + atom.offset)
@@ -377,7 +377,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
   if fragment.computed{"position"} != PositionStatic:
     if fragment.splitType != {stSplitStart, stSplitEnd}:
       if stSplitStart in fragment.splitType:
-        state.absolutePos.add(offset + fragment.startOffset)
+        state.absolutePos.add(offset + fragment.state.startOffset)
       if stSplitEnd in fragment.splitType:
         discard state.absolutePos.pop()
 

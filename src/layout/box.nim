@@ -39,7 +39,6 @@ type
     # minimum content width
     xminwidth*: LayoutUnit
     size*: Size
-    children*: seq[InlineBoxBuilder] #TODO remove
 
   SplitType* = enum
     stSplitStart, stSplitEnd
@@ -48,30 +47,27 @@ type
     offset*: Offset
     size*: Size
 
-  InlineFragment* = ref object
+  InlineFragmentState* = object
     startOffset*: Offset # offset of the first word, for position: absolute
     areas*: seq[Area] # background that should be painted by fragment
-    children*: seq[InlineFragment]
     atoms*: seq[InlineAtom]
+
+  InlineFragment* = ref object
+    children*: seq[InlineFragment]
     computed*: CSSComputedValues
     node*: StyledNode
     splitType*: set[SplitType]
+    state*: InlineFragmentState
+    text*: seq[string]
+    newline*: bool #TODO enumify
+    bmp*: Bitmap
+    box*: BlockBox
 
   RelativeRect* = object
     top*: LayoutUnit
     bottom*: LayoutUnit
     left*: LayoutUnit
     right*: LayoutUnit
-
-  InlineBoxBuilder* = ref object
-    computed*: CSSComputedValues
-    node*: StyledNode
-    children*: seq[InlineBoxBuilder]
-    text*: seq[string]
-    newline*: bool
-    splitType*: set[SplitType]
-    bmp*: Bitmap
-    box*: BlockBox
 
   BlockBoxLayoutState* = object
     offset*: Offset
