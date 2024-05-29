@@ -36,40 +36,29 @@ type
 
   AvailableSpace = array[DimensionType, SizeConstraint]
 
-  MinMaxSpan = object
-    min: LayoutUnit
-    max: LayoutUnit
-
   ResolvedSizes = object
     margin: RelativeRect
     padding: RelativeRect
     positioned: RelativeRect
     space: AvailableSpace
-    minMaxSizes: array[DimensionType, MinMaxSpan]
+    minMaxSizes: array[DimensionType, Span]
 
-const DefaultSpan = MinMaxSpan(min: 0, max: LayoutUnit.high)
+const DefaultSpan = Span(start: 0, send: LayoutUnit.high)
 
 proc `minWidth=`(sizes: var ResolvedSizes; w: LayoutUnit) =
-  sizes.minMaxSizes[dtHorizontal].min = w
+  sizes.minMaxSizes[dtHorizontal].start = w
 
 proc `maxWidth=`(sizes: var ResolvedSizes; w: LayoutUnit) =
-  sizes.minMaxSizes[dtHorizontal].max = w
+  sizes.minMaxSizes[dtHorizontal].send = w
 
 proc `minHeight=`(sizes: var ResolvedSizes; h: LayoutUnit) =
-  sizes.minMaxSizes[dtVertical].min = h
+  sizes.minMaxSizes[dtVertical].start = h
 
 proc `maxHeight=`(sizes: var ResolvedSizes; h: LayoutUnit) =
-  sizes.minMaxSizes[dtVertical].max = h
+  sizes.minMaxSizes[dtVertical].send = h
 
 func dimSum(rect: RelativeRect; dim: DimensionType): LayoutUnit =
-  case dim
-  of dtHorizontal: return rect.left + rect.right
-  of dtVertical: return rect.top + rect.bottom
-
-func dimStart(rect: RelativeRect; dim: DimensionType): LayoutUnit =
-  case dim
-  of dtHorizontal: return rect.left
-  of dtVertical: return rect.top
+  return rect[dim].start + rect[dim].send
 
 func opposite(dim: DimensionType): DimensionType =
   case dim
@@ -208,7 +197,7 @@ type
   LineBoxState = object
     atomstates: seq[InlineAtomState]
     baseline: LayoutUnit
-    lineheight: LayoutUnit
+    lineHeight: LayoutUnit
     paddingTop: LayoutUnit
     paddingBottom: LayoutUnit
     line: LineBox
@@ -241,7 +230,6 @@ type
     hasshy: bool
     lctx: LayoutContext
     lines: seq[LineBox]
-    minwidth: LayoutUnit
     space: AvailableSpace
     whitespacenum: int
     whitespaceIsLF: bool
@@ -271,16 +259,16 @@ func whitespacepre(computed: CSSComputedValues): bool =
 func nowrap(computed: CSSComputedValues): bool =
   computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
 
-func cellwidth(lctx: LayoutContext): int =
+func cellWidth(lctx: LayoutContext): int =
   lctx.attrs.ppc
 
-func cellwidth(ictx: InlineContext): int =
-  ictx.lctx.cellwidth
+func cellWidth(ictx: InlineContext): int =
+  ictx.lctx.cellWidth
 
-func cellheight(lctx: LayoutContext): int =
+func cellHeight(lctx: LayoutContext): int =
   lctx.attrs.ppl
 
-func cellheight(ictx: InlineContext): int =
+func cellHeight(ictx: InlineContext): int =
   ictx.lctx.attrs.ppl
 
 template atoms(state: LineBoxState): untyped =
@@ -293,7 +281,7 @@ template offsety(state: LineBoxState): untyped =
   state.line.offsety
 
 func size(ictx: var InlineContext): var Size =
-  ictx.root.size
+  ictx.root.state.size
 
 # Whitespace between words
 func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
@@ -306,31 +294,31 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
     if ictx.currentLine.atoms.len == 0 or
         ictx.currentLine.atoms[^1].t == iatSpacing:
       return 0
-  return ictx.cellwidth * ictx.whitespacenum
+  return ictx.cellWidth * ictx.whitespacenum
 
 proc applyLineHeight(ictx: InlineContext; state: var LineBoxState;
     computed: CSSComputedValues) =
   let lctx = ictx.lctx
   #TODO this should be computed during cascading.
-  let lineheight = if computed{"line-height"}.auto: # ergo normal
-    lctx.cellheight.toLayoutUnit
+  let lineHeight = if computed{"line-height"}.auto: # ergo normal
+    lctx.cellHeight.toLayoutUnit
   else:
     # Percentage: refers to the font size of the element itself.
-    computed{"line-height"}.px(lctx, lctx.cellheight)
+    computed{"line-height"}.px(lctx, lctx.cellHeight)
   let paddingTop = computed{"padding-top"}.px(lctx, ictx.space.w)
   let paddingBottom = computed{"padding-bottom"}.px(lctx, ictx.space.w)
   state.paddingTop = max(paddingTop, state.paddingTop)
   state.paddingBottom = max(paddingBottom, state.paddingBottom)
-  state.lineheight = max(lineheight, state.lineheight)
+  state.lineHeight = max(lineHeight, state.lineHeight)
 
 proc newWord(ictx: var InlineContext; state: var InlineState) =
   ictx.word = InlineAtom(
     t: iatWord,
-    size: size(w = 0, h = ictx.cellheight)
+    size: size(w = 0, h = ictx.cellHeight)
   )
   ictx.wordstate = InlineAtomState(
     vertalign: state.computed{"vertical-align"},
-    baseline: ictx.cellheight
+    baseline: ictx.cellHeight
   )
   ictx.wrappos = -1
   ictx.hasshy = false
@@ -363,23 +351,15 @@ proc horizontalAlignLines(ictx: var InlineContext; align: CSSTextAlign) =
         atom.offset.x += x
         ictx.size.w = max(atom.offset.x + atom.size.w, ictx.size.w)
 
-# Align atoms (inline boxes, text, etc.) vertically (i.e. along the inline
-# axis) inside the line.
-proc verticalAlignLine(ictx: var InlineContext) =
-  # Start with line-height as the baseline and line height.
-  let lineheight = ictx.currentLine.lineheight
-  ictx.currentLine.size.h = lineheight
-  var baseline = lineheight
-
-  # Calculate the line's baseline based on atoms' baseline.
-  # Also, collect the maximum vertical margins of inline blocks.
-  var marginTop: LayoutUnit = 0
-  var bottomEdge = baseline
-  for i, atom in ictx.currentLine.atoms:
-    let iastate = ictx.currentLine.atomstates[i]
+# Calculate the line's baseline based on its atoms' baseline.
+func calcBaseline(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
+  let lineHeight = currentLine.lineHeight
+  var baseline = lineHeight
+  for i, atom in currentLine.atoms:
+    let iastate = currentLine.atomstates[i]
     case iastate.vertalign.keyword
     of VerticalAlignBaseline:
-      let len = iastate.vertalign.length.px(ictx.lctx, lineheight)
+      let len = iastate.vertalign.length.px(lctx, lineHeight)
       baseline = max(baseline, iastate.baseline + len)
     of VerticalAlignTop, VerticalAlignBottom:
       baseline = max(baseline, atom.size.h)
@@ -387,45 +367,49 @@ proc verticalAlignLine(ictx: var InlineContext) =
       baseline = max(baseline, atom.size.h div 2)
     else:
       baseline = max(baseline, iastate.baseline)
+  return baseline
 
-  let ch = ictx.cellheight
-  baseline = baseline.round(ch)
-
-  # Resize the line's height based on atoms' height and baseline.
-  # The line height should be at least as high as the highest baseline used by
-  # an atom plus that atom's height.
-  for i, atom in ictx.currentLine.atoms:
-    let iastate = ictx.currentLine.atomstates[i]
+# Resize the line's height based on atoms' height and baseline.
+# The line height should be at least as high as the highest baseline used by
+# an atom plus that atom's height.
+func resizeLine(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
+  let baseline = currentLine.baseline
+  let lineHeight = currentLine.lineHeight
+  var h = currentLine.size.h
+  for i, atom in currentLine.atoms:
+    let iastate = currentLine.atomstates[i]
     # In all cases, the line's height must at least equal the atom's height.
     # (Where the atom is actually placed is irrelevant here.)
-    ictx.currentLine.size.h = max(ictx.currentLine.size.h, atom.size.h)
+    h = max(h, atom.size.h)
     case iastate.vertalign.keyword
     of VerticalAlignBaseline:
       # Line height must be at least as high as
       # (line baseline) - (atom baseline) + (atom height) + (extra height).
-      let len = iastate.vertalign.length.px(ictx.lctx, lineheight)
-      ictx.currentLine.size.h = max(baseline - iastate.baseline +
-        atom.size.h + len, ictx.currentLine.size.h)
+      let len = iastate.vertalign.length.px(lctx, lineHeight)
+      h = max(baseline - iastate.baseline + atom.size.h + len, h)
     of VerticalAlignMiddle:
       # Line height must be at least
       # (line baseline) + (atom height / 2).
-      ictx.currentLine.size.h = max(baseline + atom.size.h div 2,
-        ictx.currentLine.size.h)
+      h = max(baseline + atom.size.h div 2, h)
     of VerticalAlignTop, VerticalAlignBottom:
       # Line height must be at least atom height (already ensured above.)
       discard
     else:
       # See baseline (with len = 0).
-      ictx.currentLine.size.h = max(baseline - iastate.baseline +
-        atom.size.h, ictx.currentLine.size.h)
+      h = max(baseline - iastate.baseline + atom.size.h, h)
+  return h
 
-  # Now we can calculate the actual position of atoms inside the line.
-  for i, atom in ictx.currentLine.atoms:
-    let iastate = ictx.currentLine.atomstates[i]
+# returns marginTop
+proc positionAtoms(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
+  let lineHeight = currentLine.lineHeight
+  let baseline = currentLine.baseline
+  var marginTop: LayoutUnit = 0
+  for i, atom in currentLine.atoms:
+    let iastate = currentLine.atomstates[i]
     case iastate.vertalign.keyword
     of VerticalAlignBaseline:
       # Atom is placed at (line baseline) - (atom baseline) - len
-      let len = iastate.vertalign.length.px(ictx.lctx, lineheight)
+      let len = iastate.vertalign.length.px(lctx, lineHeight)
       atom.offset.y = baseline - iastate.baseline - len
     of VerticalAlignMiddle:
       # Atom is placed at (line baseline) - ((atom height) / 2)
@@ -435,40 +419,56 @@ proc verticalAlignLine(ictx: var InlineContext) =
       atom.offset.y = 0
     of VerticalAlignBottom:
       # Atom is placed at the bottom of the line.
-      atom.offset.y = ictx.currentLine.size.h - atom.size.h
+      atom.offset.y = currentLine.size.h - atom.size.h
     else:
       # See baseline (with len = 0).
       atom.offset.y = baseline - iastate.baseline
-    # Find the best top margin and bottom edge of all atoms.
-    # In fact, we are looking for the lowest top edge and the highest bottom
-    # edge of the line, so we have to do this after we know where the atoms
-    # will be placed.
+    # Find the best top margin of all atoms.
+    # We are looking for the lowest top edge of the line, so we have to do this
+    # after we know where the atoms will be placed.
+    # Note: we used to calculate the bottom edge based on margins too, but this
+    # generated pointless empty lines so I removed it.
     marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
-    bottomEdge = max(atom.offset.y + atom.size.h + iastate.marginBottom,
-      bottomEdge)
+  return marginTop
 
+proc shiftAtoms(currentLine: var LineBoxState; marginTop: LayoutUnit;
+    cellHeight: int) =
+  let paddingTop = currentLine.paddingTop
+  let offsety = currentLine.offsety
+  for atom in currentLine.atoms:
+    let atomy = atom.offset.y
+    atom.offset.y = (atomy + marginTop + paddingTop + offsety).round(cellHeight)
+    currentLine.minHeight = max(currentLine.minHeight,
+      atomy - offsety + atom.size.h)
+
+# Align atoms (inline boxes, text, etc.) vertically (i.e. along the block/y
+# axis) inside the line.
+proc verticalAlignLine(ictx: var InlineContext) =
+  # Start with line-height as the baseline and line height.
+  let lineHeight = ictx.currentLine.lineHeight
+  ictx.currentLine.size.h = lineHeight
+  let ch = ictx.cellHeight
+  # Find baseline.
+  ictx.currentLine.baseline = ictx.currentLine.calcBaseline(ictx.lctx).round(ch)
+  # Resize according to the baseline and atom sizes.
+  ictx.currentLine.size.h = ictx.currentLine.resizeLine(ictx.lctx)
+  # Now we can calculate the actual position of atoms inside the line.
+  let marginTop = ictx.currentLine.positionAtoms(ictx.lctx)
   # Finally, offset all atoms' y position by the largest top margin and the
   # line box's top padding.
-  let paddingTop = ictx.currentLine.paddingTop
-  let offsety = ictx.currentLine.offsety
-  for atom in ictx.currentLine.atoms:
-    atom.offset.y = (atom.offset.y + marginTop + paddingTop + offsety).round(ch)
-    ictx.currentLine.minHeight = max(ictx.currentLine.minHeight,
-      atom.offset.y - offsety + atom.size.h)
-
-  ictx.currentLine.baseline = baseline
+  ictx.currentLine.shiftAtoms(marginTop, ch)
   #TODO this does not really work with rounding :/
   ictx.currentLine.baseline += ictx.currentLine.paddingTop
   # Ensure that the line is exactly as high as its highest atom demands,
   # rounded up to the next line.
   # (This is almost the same as completely ignoring line height. However, there
-  # is a difference because line height is still taken into account when
+  # *is* a difference, because line height is still taken into account when
   # positioning the atoms.)
   ictx.currentLine.size.h = ictx.currentLine.minHeight.ceilTo(ch)
   # Now, if we got a height that is lower than cell height *and* line height,
   # then set it back to the cell height. (This is to avoid the situation where
   # we would swallow hard line breaks with <br>.)
-  if lineheight >= ch and ictx.currentLine.size.h < ch:
+  if lineHeight >= ch and ictx.currentLine.size.h < ch:
     ictx.currentLine.size.h = ch
   # Set the line height to size.h.
   ictx.currentLine.line.height = ictx.currentLine.size.h
@@ -499,7 +499,7 @@ proc flushWhitespace(ictx: var InlineContext; state: InlineState;
   ictx.currentLine.charwidth += ictx.whitespacenum
   ictx.whitespacenum = 0
   if shift > 0:
-    ictx.addSpacing(shift, ictx.cellheight, state, hang)
+    ictx.addSpacing(shift, ictx.cellHeight, state, hang)
 
 # Prepare the next line's initial width and available width.
 # (If space on the left is excluded by floats, set the initial width to
@@ -540,8 +540,8 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     # * set first baseline if this is the first line box
     # * always set last baseline (so the baseline of the last line box remains)
     if ictx.lines.len == 0:
-      ictx.root.firstBaseline = y + ictx.currentLine.baseline
-    ictx.root.baseline = y + ictx.currentLine.baseline
+      ictx.root.state.firstBaseline = y + ictx.currentLine.baseline
+    ictx.root.state.baseline = y + ictx.currentLine.baseline
     ictx.size.h += ictx.currentLine.size.h
     let lineWidth = if wrap:
       ictx.currentLine.availableWidth
@@ -645,7 +645,7 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
         ))
     lineSkipped = false
 
-func minwidth(atom: InlineAtom): LayoutUnit =
+func xminwidth(atom: InlineAtom): LayoutUnit =
   if atom.t == iatInlineBlock:
     return atom.innerbox.state.xminwidth
   return atom.size.w
@@ -688,15 +688,15 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     #TODO this is inefficient
     while ictx.shouldWrap2(atom.size.w + shift):
       ictx.applyLineHeight(ictx.currentLine, state.computed)
-      ictx.currentLine.lineheight = max(ictx.currentLine.lineheight,
-        ictx.cellheight)
+      ictx.currentLine.lineHeight = max(ictx.currentLine.lineHeight,
+        ictx.cellHeight)
       ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
   if atom.size.w > 0 and atom.size.h > 0:
     if shift > 0:
-      ictx.addSpacing(shift, ictx.cellheight, state)
-    ictx.minwidth = max(ictx.minwidth, atom.minwidth)
+      ictx.addSpacing(shift, ictx.cellHeight, state)
+    ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.xminwidth)
     ictx.applyLineHeight(ictx.currentLine, state.computed)
     if atom.t != iatWord:
       ictx.currentLine.charwidth = 0
@@ -723,7 +723,7 @@ proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
         ictx.hasshy = false
       result = ictx.addWord(state)
       ictx.word.str = leftstr
-      ictx.word.size.w = leftstr.width() * ictx.cellwidth
+      ictx.word.size.w = leftstr.width() * ictx.cellWidth
     else:
       result = ictx.addWord(state)
 
@@ -742,19 +742,19 @@ proc checkWrap(ictx: var InlineContext; state: var InlineState; r: Rune) =
   case state.computed{"word-break"}
   of WordBreakNormal:
     if rw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = ictx.word.size.w + shift + rw * ictx.cellwidth
+      let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
       if ictx.shouldWrap(plusWidth, nil):
         if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
           ictx.finishLine(state, wrap = true)
           ictx.whitespacenum = 0
   of WordBreakBreakAll:
-    let plusWidth = ictx.word.size.w + shift + rw * ictx.cellwidth
+    let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
     if ictx.shouldWrap(plusWidth, nil):
       if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
         ictx.finishLine(state, wrap = true)
         ictx.whitespacenum = 0
   of WordBreakKeepAll:
-    let plusWidth = ictx.word.size.w + shift + rw * ictx.cellwidth
+    let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
     if ictx.shouldWrap(plusWidth, nil):
       ictx.finishLine(state, wrap = true)
       ictx.whitespacenum = 0
@@ -823,7 +823,7 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
         ictx.checkWrap(state, r)
         ictx.word.str &= c
         let w = r.width()
-        ictx.word.size.w += w * ictx.cellwidth
+        ictx.word.size.w += w * ictx.cellWidth
         ictx.currentLine.charwidth += w
         if c == '-': # ascii dash
           ictx.wrappos = ictx.word.str.len
@@ -839,7 +839,7 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
       else:
         ictx.word.str &= r
         let w = r.width()
-        ictx.word.size.w += w * ictx.cellwidth
+        ictx.word.size.w += w * ictx.cellWidth
         ictx.currentLine.charwidth += w
   discard ictx.addWord(state)
   let shift = ictx.computeShift(state)
@@ -891,61 +891,73 @@ proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
   if not sizes.space.w.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
     return
-  let total = widthpx + sizes.margin.left + sizes.margin.right +
-    sizes.padding.left + sizes.padding.right
+  let total = widthpx + sizes.margin.dimSum(dtHorizontal) +
+    sizes.padding.dimSum(dtHorizontal)
   let underflow = containingWidth.u - total
   if isauto or sizes.space.w.t == scFitContent:
     if underflow >= 0:
       sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
     else:
-      sizes.margin.right += underflow
+      sizes.margin[dtHorizontal].send += underflow
   elif underflow > 0:
     if not computed{"margin-left"}.auto and not computed{"margin-right"}.auto:
-      sizes.margin.right += underflow
+      sizes.margin[dtHorizontal].send += underflow
     elif not computed{"margin-left"}.auto and computed{"margin-right"}.auto:
-      sizes.margin.right = underflow
+      sizes.margin[dtHorizontal].send = underflow
     elif computed{"margin-left"}.auto and not computed{"margin-right"}.auto:
-      sizes.margin.left = underflow
+      sizes.margin[dtHorizontal].start = underflow
     else:
-      sizes.margin.left = underflow div 2
-      sizes.margin.right = underflow div 2
+      sizes.margin[dtHorizontal].start = underflow div 2
+      sizes.margin[dtHorizontal].send = underflow div 2
 
 proc resolveMargins(availableWidth: SizeConstraint; lctx: LayoutContext;
     computed: CSSComputedValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
-  return RelativeRect(
-    top: computed{"margin-top"}.px(lctx, availableWidth),
-    bottom: computed{"margin-bottom"}.px(lctx, availableWidth),
-    left: computed{"margin-left"}.px(lctx, availableWidth),
-    right: computed{"margin-right"}.px(lctx, availableWidth)
-  )
+  return [
+    dtHorizontal: Span(
+      start: computed{"margin-left"}.px(lctx, availableWidth),
+      send: computed{"margin-right"}.px(lctx, availableWidth),
+    ),
+    dtVertical: Span(
+      start: computed{"margin-top"}.px(lctx, availableWidth),
+      send: computed{"margin-bottom"}.px(lctx, availableWidth),
+    )
+  ]
 
 proc resolvePadding(availableWidth: SizeConstraint; lctx: LayoutContext;
     computed: CSSComputedValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
-  return RelativeRect(
-    top: computed{"padding-top"}.px(lctx, availableWidth),
-    bottom: computed{"padding-bottom"}.px(lctx, availableWidth),
-    left: computed{"padding-left"}.px(lctx, availableWidth),
-    right: computed{"padding-right"}.px(lctx, availableWidth)
-  )
+  return [
+    dtHorizontal: Span(
+      start: computed{"padding-left"}.px(lctx, availableWidth),
+      send: computed{"padding-right"}.px(lctx, availableWidth)
+    ),
+    dtVertical: Span(
+      start: computed{"padding-top"}.px(lctx, availableWidth),
+      send: computed{"padding-bottom"}.px(lctx, availableWidth),
+    )
+  ]
 
 func resolvePositioned(space: AvailableSpace; lctx: LayoutContext;
     computed: CSSComputedValues): RelativeRect =
   # As per standard, vertical percentages refer to the *height*, not the width
   # (unlike with margin/padding)
-  return RelativeRect(
-    top: computed{"top"}.px(lctx, space.h),
-    bottom: computed{"bottom"}.px(lctx, space.h),
-    left: computed{"left"}.px(lctx, space.w),
-    right: computed{"right"}.px(lctx, space.w)
-  )
+  return [
+    dtHorizontal: Span(
+      start: computed{"left"}.px(lctx, space.w),
+      send: computed{"right"}.px(lctx, space.w)
+    ),
+    dtVertical: Span(
+      start: computed{"top"}.px(lctx, space.h),
+      send: computed{"bottom"}.px(lctx, space.h),
+    )
+  ]
 
 proc resolveBlockWidth(sizes: var ResolvedSizes;
     containingWidth: SizeConstraint; computed: CSSComputedValues;
     lctx: LayoutContext) =
   let width = computed{"width"}
-  let padding = sizes.padding.left + sizes.padding.right
+  let padding = sizes.padding.dimSum(dtHorizontal)
   var widthpx: LayoutUnit = 0
   if width.canpx(containingWidth):
     widthpx = width.spx(lctx, containingWidth, computed, padding)
@@ -1084,8 +1096,8 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     h = space.h
   )
   let padding = resolvePadding(space.w, lctx, computed)
-  let inlinePadding = padding.left + padding.right
-  let blockPadding = padding.top + padding.bottom
+  let inlinePadding = padding.dimSum(dtHorizontal)
+  let blockPadding = padding.dimSum(dtVertical)
   let minWidth: LayoutUnit = if not computed{"min-width"}.auto:
     computed{"min-width"}.spx(lctx, space.w, computed, inlinePadding)
   else:
@@ -1120,14 +1132,13 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     padding: padding,
     space: space,
     minMaxSizes: [
-      dtHorizontal: MinMaxSpan(min: minWidth, max: maxWidth),
-      dtVertical: MinMaxSpan(min: minHeight, max: maxHeight)
+      dtHorizontal: Span(start: minWidth, send: maxWidth),
+      dtVertical: Span(start: minHeight, send: maxHeight)
     ]
   )
 
 # Calculate and resolve available width & height for box children.
-# containingWidth: width of the containing box
-# containingHeight: ditto; but with height.
+# space: width/height of the containing box
 # Note that this is not the final content size, just the amount of space
 # available for content.
 # The percentage width/height is generally
@@ -1172,8 +1183,8 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   # Make the box as small/large as the content's width or specified width.
   box.state.size[dim] = maxChildSize.applySizeConstraint(space[dim])
   # Then, clamp it to minWidth and maxWidth (if applicable).
-  let minMax = sizes.minMaxSizes[dim]
-  box.state.size[dim] = clamp(box.state.size[dim], minMax.min, minMax.max)
+  let span = sizes.minMaxSizes[dim]
+  box.state.size[dim] = clamp(box.state.size[dim], span.start, span.send)
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
@@ -1203,13 +1214,14 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   bfcOffset.y += box.state.offset.y + offset.y
   bctx.layoutRootInline(box.inline, sizes.space, box.computed, offset,
     bfcOffset)
-  box.state.xminwidth = max(box.state.xminwidth, box.inline.xminwidth)
-  box.state.size.w = box.inline.size.w + sizes.padding.dimSum(dtHorizontal)
-  box.applyWidth(sizes, box.inline.size.w)
-  box.applyHeight(sizes, box.inline.size.h)
+  box.state.xminwidth = max(box.state.xminwidth, box.inline.state.xminwidth)
+  box.state.size.w = box.inline.state.size.w +
+    sizes.padding.dimSum(dtHorizontal)
+  box.applyWidth(sizes, box.inline.state.size.w)
+  box.applyHeight(sizes, box.inline.state.size.h)
   box.applyPadding(sizes.padding)
-  box.state.baseline = offset.y + box.inline.baseline
-  box.state.firstBaseline = offset.y + box.inline.firstBaseline
+  box.state.baseline = offset.y + box.inline.state.baseline
+  box.state.firstBaseline = offset.y + box.inline.state.firstBaseline
 
 const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
 
@@ -1344,10 +1356,6 @@ proc positionFloats(bctx: var BlockContext) =
     bctx.positionFloat(f.box, f.space, f.parentBps.offset)
   bctx.unpositionedFloats.setLen(0)
 
-const RowGroupBox = {
-  DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
-}
-
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   if box.canFlushMargins(sizes):
     bctx.flushMargins(box)
@@ -1385,17 +1393,17 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     # take inner box min width etc.
     box.state = content.state
     content.state.offset = offset(x = 0, y = 0)
-    content.state.margin = RelativeRect()
-    content.state.positioned = RelativeRect()
+    content.state.margin = [Span(), Span()]
+    content.state.positioned = [Span(), Span()]
   of ListStylePositionInside:
     bctx.layoutFlow(box, sizes)
 
-# parentWidth, parentHeight: width/height of the containing block.
+# space: width/height of the containing block.
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
-    box: BlockBox; parentWidth, parentHeight: SizeConstraint) =
+    box: BlockBox; space: AvailableSpace) =
   let lctx = ictx.lctx
-  let percHeight = parentHeight.toPercSize()
-  let space = availableSpace(w = parentWidth, h = maxContent())
+  let percHeight = space.h.toPercSize()
+  let space = availableSpace(w = space.w, h = maxContent())
   let sizes = lctx.resolveFloatSizes(space, percHeight, box.computed)
   box.state = BlockBoxLayoutState(
     margin: sizes.margin,
@@ -1404,14 +1412,10 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   var bctx = BlockContext(lctx: lctx)
   bctx.marginTodo.append(sizes.margin.top)
   case box.computed{"display"}
-  of DisplayInlineBlock:
-    bctx.layoutFlow(box, sizes)
-  of DisplayInlineTableWrapper:
-    bctx.layoutTableWrapper(box, sizes)
-  of DisplayInlineFlex:
-    bctx.layoutFlex(box, sizes)
-  else:
-    assert false
+  of DisplayInlineBlock: bctx.layoutFlow(box, sizes)
+  of DisplayInlineTableWrapper: bctx.layoutTableWrapper(box, sizes)
+  of DisplayInlineFlex: bctx.layoutFlex(box, sizes)
+  else: assert false
   assert bctx.unpositionedFloats.len == 0
   bctx.marginTodo.append(sizes.margin.bottom)
   let marginTop = box.state.offset.y
@@ -1453,9 +1457,8 @@ proc layoutChildren(ictx: var InlineContext; state: var InlineState;
         node: child.node,
         fragment: child
       )
-      let w = fitContent(ictx.space.w)
-      let h = ictx.space.h
-      ictx.addInlineBlock(state, child.box, w, h)
+      let space = availableSpace(w = fitContent(ictx.space.w), h = ictx.space.h)
+      ictx.addInlineBlock(state, child.box, space)
     else:
       assert false
 
@@ -1487,7 +1490,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     ictx.firstTextFragment = fragment
   ictx.lastTextFragment = fragment
   if fragment.bmp != nil:
-    let h = int(fragment.bmp.height).toLayoutUnit().ceilTo(ictx.cellheight)
+    let h = int(fragment.bmp.height).toLayoutUnit().ceilTo(ictx.cellHeight)
     let iastate = InlineAtomState(
       vertalign: state.computed{"vertical-align"},
       baseline: h
@@ -1518,12 +1521,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
 proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
     space: AvailableSpace; computed: CSSComputedValues;
     offset, bfcOffset: Offset) =
-  root.offset = offset
-  root.size = size(w = 0, h = 0)
-  root.firstBaseline = 0
-  root.baseline = 0
-  root.xminwidth = 0
-  root.size = size(w = 0, h = 0)
+  root.state = RootInlineFragmentState(offset: offset)
   var ictx = bctx.initInlineContext(space, bfcOffset, root)
   ictx.layoutInline(root.fragment)
   if ictx.firstTextFragment != nil:
@@ -1533,7 +1531,6 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
     ictx.finishLine(state, wrap = false)
   ictx.horizontalAlignLines(computed{"text-align"})
   ictx.addBackgroundAreas(root.fragment)
-  root.xminwidth = ictx.minwidth
 
 proc positionAbsolute(lctx: LayoutContext; box: BlockBox;
     margin: RelativeRect) =
@@ -1564,6 +1561,9 @@ proc positionRelative(parent, box: BlockBox) =
       box.state.size.h
 
 # Note: caption is not included here
+const RowGroupBox = {
+  DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
+}
 const ProperTableChild = RowGroupBox + {
   DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup
 }
@@ -2089,23 +2089,21 @@ type
     lctx: LayoutContext
     pending: seq[FlexPendingItem]
 
-const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
 func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
   return box.state.margin.dimSum(dim) + box.state.size[dim]
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
-  mctx.maxSize.w = max(mctx.maxSize.w, child.state.size.w)
-  mctx.maxSize.h = max(mctx.maxSize.h, child.state.size.h)
-  mctx.maxMargin.left = max(mctx.maxMargin.left, child.state.margin.left)
-  mctx.maxMargin.right = max(mctx.maxMargin.right, child.state.margin.right)
-  mctx.maxMargin.top = max(mctx.maxMargin.top, child.state.margin.top)
-  mctx.maxMargin.bottom = max(mctx.maxMargin.bottom, child.state.margin.bottom)
+  for dim in DimensionType:
+    mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim])
+    mctx.maxMargin[dim].start = max(mctx.maxMargin[dim].start,
+      child.state.margin[dim].start)
+    mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
+      child.state.margin[dim].send)
 
 proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
     dim: DimensionType) =
-  #TODO actually use flex-basis
   let lctx = mctx.lctx
   let odim = dim.opposite
   if sizes.space[dim].isDefinite:
@@ -2128,7 +2126,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
         var u = it.child.state.size[dim] +
           (unit * it.weights[wt]).toLayoutUnit()
         # check for min/max violation
-        var minu = it.sizes.minMaxSizes[dim].min
+        var minu = it.sizes.minMaxSizes[dim].start
         if dim == dtHorizontal:
           minu = max(it.child.state.xminwidth, minu)
         if minu > u:
@@ -2137,7 +2135,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
             diff += u - minu
             it.weights[wt] = 0
           u = minu
-        let maxu = it.sizes.minMaxSizes[dim].max
+        let maxu = it.sizes.minMaxSizes[dim].send
         if maxu < u:
           # max violation
           if wt == fwtGrow: # freeze
@@ -2168,7 +2166,7 @@ proc flushMain(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
     it.child.state.offset[dim] += offset[dim]
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] +
-      it.child.state.margin.dimStart(odim)
+      it.child.state.margin[odim].start
     offset[dim] += it.child.state.size[dim]
   totalMaxSize[dim] = max(totalMaxSize[dim], offset[dim])
   mctx = FlexMainContext(
@@ -2183,7 +2181,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   var i = 0
   var mctx = FlexMainContext(lctx: lctx)
   let flexDir = box.computed{"flex-direction"}
-  var totalMaxSize = size(w = 0, h = 0) #TODO find a better name for this
+  var totalMaxSize = size(w = 0, h = 0)
   let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
   let percHeight = sizes.space.h.toPercSize()
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
@@ -2974,6 +2972,7 @@ proc buildFlex(styledNode: StyledNode; lctx: LayoutContext;
   ctx.flushInherit()
   ctx.blockgroup.flush()
   assert box.inline == nil
+  const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
   if box.computed{"flex-direction"} in FlexReverse:
     box.nested.reverse()
   return box

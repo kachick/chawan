@@ -27,11 +27,9 @@ type
     of iatImage:
       bmp*: Bitmap
 
-  RootInlineFragment* = ref object
+  RootInlineFragmentState* = object
     # offset relative to parent
     offset*: Offset
-    # root fragment
-    fragment*: InlineFragment
     # baseline of the first line box
     firstBaseline*: LayoutUnit
     # baseline of the last line box
@@ -39,6 +37,10 @@ type
     # minimum content width
     xminwidth*: LayoutUnit
     size*: Size
+
+  RootInlineFragment* = ref object
+    fragment*: InlineFragment # root fragment
+    state*: RootInlineFragmentState
 
   SplitType* = enum
     stSplitStart, stSplitEnd
@@ -63,11 +65,11 @@ type
     bmp*: Bitmap
     box*: BlockBox
 
-  RelativeRect* = object
-    top*: LayoutUnit
-    bottom*: LayoutUnit
-    left*: LayoutUnit
-    right*: LayoutUnit
+  Span* = object
+    start*: LayoutUnit
+    send*: LayoutUnit
+
+  RelativeRect* = array[DimensionType, Span]
 
   BlockBoxLayoutState* = object
     offset*: Offset
@@ -141,3 +143,15 @@ func `-`*(a, b: Offset): Offset =
 proc `+=`*(a: var Offset; b: Offset) =
   a.x += b.x
   a.y += b.y
+
+func left*(s: RelativeRect): LayoutUnit =
+  return s[dtHorizontal].start
+
+func right*(s: RelativeRect): LayoutUnit =
+  return s[dtHorizontal].send
+
+func top*(s: RelativeRect): LayoutUnit =
+  return s[dtVertical].start
+
+func bottom*(s: RelativeRect): LayoutUnit =
+  return s[dtVertical].send

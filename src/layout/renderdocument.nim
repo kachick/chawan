@@ -383,7 +383,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
 
 proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     root: RootInlineFragment; offset: Offset) =
-  grid.renderInlineFragment(state, root.fragment, root.offset + offset)
+  grid.renderInlineFragment(state, root.fragment, root.state.offset + offset)
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset) =
@@ -392,7 +392,6 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     offset: Offset
   ]](100)
   stack.add((box, offset))
-
   while stack.len > 0:
     var (box, offset) = stack.pop()
     if box == nil: # positioned marker
